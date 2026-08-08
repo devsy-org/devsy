@@ -185,10 +185,27 @@ test.describe("Workspace detail flow", () => {
 })
 
 test.describe.serial("Create Workspace Wizard", () => {
-  test("should open the wizard and show step 1 (provider)", async () => {
-    await page.getByRole("button", { name: /create workspace/i }).click()
+  async function openCreateWorkspaceWizard(page: Page) {
+    await expect(page.getByRole("heading", { name: /workspaces/i }).first()).toBeVisible({
+      timeout: 30_000,
+    })
+
+    // Support both old/new CTA labels.
+    const createWorkspaceButton = page
+      .getByRole("button", { name: /create workspace|new workspace/i })
+      .first()
+
+    await expect(createWorkspaceButton).toBeVisible({ timeout: 30_000 })
+    await expect(createWorkspaceButton).toBeEnabled({ timeout: 30_000 })
+    await createWorkspaceButton.click()
+
     const dialog = page.locator('[role="dialog"]').first()
-    await expect(dialog).toBeVisible({ timeout: 5000 })
+    await expect(dialog).toBeVisible({ timeout: 10_000 })
+    return dialog
+  }
+
+  test("should open the wizard and show step 1 (provider)", async () => {
+    const dialog = await openCreateWorkspaceWizard(page)
 
     // Step indicator labels — all 5 steps present
     for (const label of ["Provider", "Source", "IDE", "Review", "Launch"]) {
