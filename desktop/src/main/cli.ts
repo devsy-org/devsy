@@ -327,6 +327,9 @@ export class CliRunner {
       onExit(code, cliError)
     }
 
+    // Expose finish for cancelFor timeout handling
+    ;(child as unknown as { _finish?: typeof finish })._finish = finish
+
     // A spawn failure (missing binary, EACCES) emits "error" and never
     // "close". Without this, onExit never fires: callers that wrap this in a
     // promise hang forever, and the concurrency slot is never released.
@@ -362,9 +365,11 @@ export class CliRunner {
       waits.push(
         new Promise<void>((resolve) => {
           let settled = false
+          let timedOut = false
           let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
             timer = null
             settled = true
+            timedOut = true
             resolve()
           }, 2000)
 
@@ -387,9 +392,11 @@ export class CliRunner {
           if (child.exitCode === null && child.signalCode === null) {
             // Run lifecycle cleanup BEFORE suppressing callbacks/removing listeners
             // so finish(...) can properly clean up sessions and call onExit
-            const alreadySettled = settled
-            if (!alreadySettled) {
-              finish(-1, { code: "timeout", message: "Process did not exit in time" })
+            if (timedOut) {
+              const finishFn = (child as unknown as { _finish?: (code: number, cliError?: CLIError) => void })._finish
+              if (finishFn) {
+                finishFn(-1, { code: "timeout", message: "Process did not exit in time" })
+              }
             }
 
             // Now suppress callbacks at the source
