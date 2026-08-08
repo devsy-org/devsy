@@ -186,7 +186,8 @@ test.describe("Workspace detail flow", () => {
 
 test.describe.serial("Create Workspace Wizard", () => {
   async function openCreateWorkspaceWizard(page: Page) {
-    await expect(page.getByRole("heading", { name: /workspaces/i }).first()).toBeVisible({
+    await page.click('[data-sidebar="sidebar"] a[href="#/workspaces"]')
+    await page.locator('[data-slot="sidebar-inset"] main').first().waitFor({
       timeout: 30_000,
     })
 
