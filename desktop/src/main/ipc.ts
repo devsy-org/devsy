@@ -229,11 +229,23 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     if (tunnelProc) {
       tunnelProcesses.delete(workspaceId)
       const tunnelExit = new Promise<void>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+          timer = null
+          resolve()
+        }, 2000)
+
         if (tunnelProc.exitCode !== null || tunnelProc.signalCode !== null) {
+          if (timer) clearTimeout(timer)
           resolve()
           return
         }
-        tunnelProc.once("close", () => resolve())
+        tunnelProc.once("close", () => {
+          if (timer) {
+            clearTimeout(timer)
+            timer = null
+          }
+          resolve()
+        })
       })
       tunnelProc.kill("SIGTERM")
       await tunnelExit
@@ -908,6 +920,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         prebuildRepository?: string
         platform?: string
         recovery?: boolean
+        commandId?: string
       },
     ) => {
       trackEvent("workspace_create", {
@@ -929,7 +942,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.recovery) cliArgs.push("--recovery")
 
       const wsId = args.workspaceId ?? args.source
-      const cmdId = crypto.randomUUID()
+      const cmdId = args.commandId ?? crypto.randomUUID()
       const logPath = logStore.createLogFile(state.workspaceContext(wsId), wsId)
       const sink = createLogSink(
         deps.getMainWindow,
@@ -1064,12 +1077,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "workspace_stop",
-    async (_event, args: { workspaceId: string; debug?: boolean }) => {
+    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
       trackEvent("workspace_stop", {
         workspace_ref: hashWorkspaceRef(args.workspaceId),
       })
       await quiesceWorkspace(args.workspaceId)
-      const cmdId = crypto.randomUUID()
+      const cmdId = args.commandId ?? crypto.randomUUID()
       const logPath = logStore.createLogFile(
         state.workspaceContext(args.workspaceId),
         args.workspaceId,
@@ -1104,7 +1117,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "workspace_delete",
-    async (_event, args: { workspaceId: string; debug?: boolean }) => {
+    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
       trackEvent("workspace_delete", {
         workspace_ref: hashWorkspaceRef(args.workspaceId),
       })
@@ -1114,7 +1127,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       // stdout/stderr lands on a log file the CLI is about to unlink, causing
       // an ENOENT crash in the main process.
       await quiesceWorkspace(args.workspaceId)
-      const cmdId = crypto.randomUUID()
+      const cmdId = args.commandId ?? crypto.randomUUID()
       const logPath = logStore.createLogFile(
         state.workspaceContext(args.workspaceId),
         args.workspaceId,
@@ -1160,11 +1173,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "workspace_rebuild",
-    async (_event, args: { workspaceId: string; debug?: boolean }) => {
+    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
       trackEvent("workspace_rebuild", {
         workspace_ref: hashWorkspaceRef(args.workspaceId),
       })
-      const cmdId = crypto.randomUUID()
+      const cmdId = args.commandId ?? crypto.randomUUID()
       const logPath = logStore.createLogFile(
         state.workspaceContext(args.workspaceId),
         args.workspaceId,
@@ -1201,11 +1214,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "workspace_reset",
-    async (_event, args: { workspaceId: string; debug?: boolean }) => {
+    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
       trackEvent("workspace_reset", {
         workspace_ref: hashWorkspaceRef(args.workspaceId),
       })
-      const cmdId = crypto.randomUUID()
+      const cmdId = args.commandId ?? crypto.randomUUID()
       const logPath = logStore.createLogFile(
         state.workspaceContext(args.workspaceId),
         args.workspaceId,

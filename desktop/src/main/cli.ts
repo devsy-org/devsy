@@ -347,11 +347,23 @@ export class CliRunner {
     for (const child of bucket) {
       waits.push(
         new Promise<void>((resolve) => {
+          let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+            timer = null
+            resolve()
+          }, 2000)
+
           if (child.exitCode !== null || child.signalCode !== null) {
+            if (timer) clearTimeout(timer)
             resolve()
             return
           }
-          child.once("close", () => resolve())
+          child.once("close", () => {
+            if (timer) {
+              clearTimeout(timer)
+              timer = null
+            }
+            resolve()
+          })
         }),
       )
       child.kill("SIGTERM")

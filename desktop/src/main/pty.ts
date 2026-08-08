@@ -104,7 +104,17 @@ export class PtyManager {
       if (!proc) continue
       waits.push(
         new Promise<void>((resolve) => {
+          let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+            timer = null
+            disposable.dispose()
+            resolve()
+          }, 2000)
+
           const disposable = proc.onExit(() => {
+            if (timer) {
+              clearTimeout(timer)
+              timer = null
+            }
             disposable.dispose()
             resolve()
           })

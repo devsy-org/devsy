@@ -410,7 +410,9 @@ function isDebug(): boolean {
   return loadLocalOptions().debugFlag
 }
 
-function startStreamingOp(label: string) {
+function startStreamingOp(label: string): string {
+  const newCmdId = crypto.randomUUID()
+  commandId = newCmdId
   operationLabel = label
   operationRunning = true
   buildFailed = false
@@ -422,18 +424,20 @@ function startStreamingOp(label: string) {
     flushHandle = null
   }
   activeTab = "logs"
+  return newCmdId
 }
 
 async function handleStart() {
   const ide = currentIde
   const folder = customFolder || undefined
-  startStreamingOp("Start")
+  const cmdId = startStreamingOp("Start")
   try {
-    commandId = await workspaceUp({
+    await workspaceUp({
       source: id,
       ide,
       debug: isDebug(),
       workspaceFolder: folder,
+      commandId: cmdId,
     })
   } catch (err) {
     operationRunning = false
@@ -463,14 +467,15 @@ function handleBuildFailure(progress: CommandProgress) {
 async function handleRecovery() {
   const ide = currentIde
   const folder = customFolder || undefined
-  startStreamingOp("Recovery")
+  const cmdId = startStreamingOp("Recovery")
   try {
-    commandId = await workspaceUp({
+    await workspaceUp({
       source: id,
       ide,
       recovery: true,
       debug: isDebug(),
       workspaceFolder: folder,
+      commandId: cmdId,
     })
   } catch (err) {
     operationRunning = false
@@ -484,14 +489,15 @@ async function handleOpenIde() {
   const ide = currentIde
   const folder = customFolder || undefined
   trackEngagement("ide_open", { ide })
-  startStreamingOp("Open IDE")
+  const cmdId = startStreamingOp("Open IDE")
   try {
-    commandId = await workspaceUp({
+    await workspaceUp({
       source: id,
       ide,
       ideLaunch: "auto",
       debug: isDebug(),
       workspaceFolder: folder,
+      commandId: cmdId,
     })
   } catch (err) {
     operationRunning = false
@@ -500,9 +506,9 @@ async function handleOpenIde() {
 }
 
 async function handleStop() {
-  startStreamingOp("Stop")
+  const cmdId = startStreamingOp("Stop")
   try {
-    commandId = await workspaceStop(id, isDebug())
+    await workspaceStop(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
@@ -511,9 +517,9 @@ async function handleStop() {
 
 async function handleRebuild() {
   confirmRebuildOpen = false
-  startStreamingOp("Rebuild")
+  const cmdId = startStreamingOp("Rebuild")
   try {
-    commandId = await workspaceRebuild(id, isDebug())
+    await workspaceRebuild(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to rebuild: ${extractErrorMessage(err)}`)
@@ -522,9 +528,9 @@ async function handleRebuild() {
 
 async function handleReset() {
   confirmResetOpen = false
-  startStreamingOp("Reset")
+  const cmdId = startStreamingOp("Reset")
   try {
-    commandId = await workspaceReset(id, isDebug())
+    await workspaceReset(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
     toasts.error(`Failed to reset: ${extractErrorMessage(err)}`)
@@ -533,10 +539,10 @@ async function handleReset() {
 
 async function handleDelete() {
   confirmDeleteOpen = false
-  startStreamingOp("Delete")
+  const cmdId = startStreamingOp("Delete")
   deleting = true
   try {
-    commandId = await workspaceDelete(id, isDebug())
+    await workspaceDelete(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
     deleting = false

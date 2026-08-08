@@ -47,6 +47,7 @@ export async function workspaceUp(params: {
   prebuildRepository?: string
   platform?: string
   recovery?: boolean
+  commandId?: string
 }): Promise<string> {
   return invoke<string>("workspace_up", params)
 }
@@ -54,29 +55,33 @@ export async function workspaceUp(params: {
 export async function workspaceStop(
   workspaceId: string,
   debug?: boolean,
+  commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_stop", { workspaceId, debug })
+  return invoke<string>("workspace_stop", { workspaceId, debug, commandId })
 }
 
 export async function workspaceDelete(
   workspaceId: string,
   debug?: boolean,
+  commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_delete", { workspaceId, debug })
+  return invoke<string>("workspace_delete", { workspaceId, debug, commandId })
 }
 
 export async function workspaceRebuild(
   workspaceId: string,
   debug?: boolean,
+  commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_rebuild", { workspaceId, debug })
+  return invoke<string>("workspace_rebuild", { workspaceId, debug, commandId })
 }
 
 export async function workspaceReset(
   workspaceId: string,
   debug?: boolean,
+  commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_reset", { workspaceId, debug })
+  return invoke<string>("workspace_reset", { workspaceId, debug, commandId })
 }
 
 export async function workspaceStatus(
