@@ -281,7 +281,7 @@ exit 1
 func TestGetImageTag(t *testing.T) {
 	tests := []struct {
 		name    string
-		repoTag string // echoed by `docker inspect --format ...`
+		repoTag string
 		want    string
 	}{
 		{"normal tag", "ubuntu:22.04\n", "22.04"},
