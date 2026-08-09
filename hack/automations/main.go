@@ -32,6 +32,7 @@ const (
 
 type agent struct {
 	ID                string `yaml:"id"`
+	AutomationName    string `yaml:"automation_name"`
 	BranchPrefix      string `yaml:"branch_prefix"`
 	CommitSubject     string `yaml:"commit_subject"`
 	PRTitle           string `yaml:"pr_title"`
@@ -65,8 +66,18 @@ type renderView struct {
 
 func main() {
 	check := flag.Bool("check", false, "exit 1 if any generated file differs from disk")
+	sync := flag.Bool(
+		"sync",
+		false,
+		"push generated agent.md prompts to the OpenHands automations API",
+	)
+	dryRun := flag.Bool("dry-run", false, "with -sync: report drift without patching")
 	flag.Parse()
 	cfg := loadConfig()
+	if *sync {
+		runSync(cfg, *dryRun)
+		return
+	}
 	tmpl, err := template.New("prompt").Parse(templateText)
 	if err != nil {
 		fail("parse template: %v", err)
@@ -107,6 +118,9 @@ func loadConfig() config {
 func validateAgent(a agent) {
 	if a.ID == "" || a.BranchPrefix == "" {
 		fail("agent missing id or branch_prefix")
+	}
+	if a.AutomationName == "" {
+		fail("agent %s missing automation_name", a.ID)
 	}
 	if a.Description == "" {
 		fail("agent %s missing description", a.ID)

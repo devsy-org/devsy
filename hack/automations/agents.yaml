@@ -4,6 +4,7 @@
 
 agents:
 - id: pkg-container
+  automation_name: Daily Pkg Container Reviewer
   branch_prefix: pkg-container
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
@@ -28,6 +29,7 @@ agents:
     using the service's agentic memory if available. Propose `description` amendments to this
     `agent.md` for human review when scope boundaries shift.
 - id: pkg-core-agent
+  automation_name: Daily Pkg Core Agent Reviewer
   branch_prefix: pkg-core-agent
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
@@ -52,6 +54,7 @@ agents:
     using the service's agentic memory if available. Propose `description` amendments to this
     `agent.md` for human review when scope boundaries shift.
 - id: pkg-ssh-git
+  automation_name: Daily Pkg SSH Git Reviewer
   branch_prefix: pkg-ssh-git
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
@@ -76,6 +79,7 @@ agents:
     service's agentic memory if available. Propose `description` amendments to this `agent.md`
     for human review when scope boundaries shift.
 - id: pkg-system-platform
+  automation_name: Daily Pkg System Platform Reviewer
   branch_prefix: pkg-system-platform
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
@@ -106,6 +110,7 @@ agents:
     the service's agentic memory if available. Propose `description` amendments to this
     `agent.md` for human review when scope boundaries shift.
 - id: pkg-tunnel-network
+  automation_name: Daily Pkg Tunnel Network Reviewer
   branch_prefix: pkg-tunnel-network
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
@@ -131,6 +136,7 @@ agents:
     using the service's agentic memory if available. Propose `description` amendments to this
     `agent.md` for human review when scope boundaries shift.
 - id: cmd-reviewer
+  automation_name: Daily CLI Command Reviewer
   branch_prefix: cmd-reviewer
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
@@ -156,6 +162,7 @@ agents:
     the service's agentic memory if available. Propose `description` amendments to this
     `agent.md` for human review when review priorities change.
 - id: lint-fixer
+  automation_name: Daily Lint Fixer
   branch_prefix: lint-fixer
   commit_subject: '"style: <short description>" "<body>"'
   pr_title: 'style: <short description>'
@@ -188,6 +195,7 @@ agents:
     service's agentic memory if available. Propose `description` amendments to this `agent.md`
     for human review when lint rules change.
 - id: devcontainer-spec
+  automation_name: Daily Devcontainer Spec Reviewer
   branch_prefix: devcontainer-spec
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
@@ -217,6 +225,7 @@ agents:
     service's agentic memory if available. Propose `description` amendments to this `agent.md`
     for human review when spec compliance scope changes.
 - id: integration-test
+  automation_name: Daily E2E Integration Test Reviewer
   branch_prefix: integration-test
   commit_subject: '"test(e2e): <short description>" "<body>"'
   pr_title: 'test(e2e): <short description>'
@@ -246,6 +255,7 @@ agents:
     repo — using the service's agentic memory if available. Propose `description` amendments
     to this `agent.md` for human review when review priorities change.
 - id: docs-keeper
+  automation_name: Daily Docs Keeper
   branch_prefix: docs-keeper
   commit_subject: '"docs: <short description>" "<body>"'
   pr_title: 'docs: <short description>'
@@ -276,6 +286,7 @@ agents:
     agentic memory if available. Propose `description` amendments to this `agent.md` for human
     review when documentation scope changes.
 - id: ci-optimizer
+  automation_name: Daily CI Optimizer
   branch_prefix: ci-optimizer
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
@@ -324,6 +335,7 @@ agents:
     service's agentic memory if available. If a finding changes how CI should be reviewed,
     propose a `description` amendment to this `agent.md` for human review.
 - id: codefactor
+  automation_name: Codefactor Daily Issue Fixer
   branch_prefix: fix/codefactor
   commit_subject: '"fix: <conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: 'fix: <short description>'
@@ -374,6 +386,7 @@ agents:
     available. Propose a `description` amendment to this `agent.md` for human review when
     issue-selection priorities change.
 - id: ui-polish
+  automation_name: Daily Desktop UI Polish
   branch_prefix: ui-polish
   commit_subject: '"fix(ui): <short description>" "<body>"'
   pr_title: 'fix(ui): <short description>'
@@ -415,6 +428,7 @@ agents:
     not the git repo — using the service's agentic memory if available. Propose a
     `description` amendment to this `agent.md` for human review when polish priorities change.
 - id: agent-analytics
+  automation_name: Daily Agent Analytics
   branch_prefix: agent-analytics
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
