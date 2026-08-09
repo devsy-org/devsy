@@ -46,7 +46,11 @@ func (c *connectionCounter) Dec() {
 	c.m.Lock()
 	defer c.m.Unlock()
 
-	c.connections--
+	if c.connections <= 0 {
+		c.connections = 0
+	} else {
+		c.connections--
+	}
 	log.Debugf("Closed connection on %s (Total: %d)", c.address, c.connections)
 	if c.connections <= 0 && c.timeout > 0 {
 		c.generation++
