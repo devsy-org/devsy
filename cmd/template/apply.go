@@ -86,7 +86,7 @@ func runApply(f *ApplyFlags) error {
 		return fmt.Errorf("parse template reference: %w", err)
 	}
 
-	log.Infof("Pulling template: %s", ref.String())
+	log.Infof("pulling template: %s", ref.String())
 
 	img, err := pullTemplateImage(ref)
 	if err != nil {
@@ -133,7 +133,7 @@ func applyToWorkspace(f *ApplyFlags, tempDir string) error {
 		}
 	}
 
-	log.Infof("Template applied successfully to %s", workspaceFolder)
+	log.Infof("template applied successfully to %s", workspaceFolder)
 
 	return nil
 }

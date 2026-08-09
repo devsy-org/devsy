@@ -82,7 +82,7 @@ func runPublish(f *PublishFlags) error {
 		return err
 	}
 
-	log.Infof("Publishing template %q to %s", metadata.ID, ref.String())
+	log.Infof("publishing template %q to %s", metadata.ID, ref.String())
 
 	img, err := buildTemplateImage(target)
 	if err != nil {
@@ -95,7 +95,7 @@ func runPublish(f *PublishFlags) error {
 		return fmt.Errorf("push template to registry: %w", err)
 	}
 
-	log.Infof("Template published successfully: %s", ref.String())
+	log.Infof("template published successfully: %s", ref.String())
 
 	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
