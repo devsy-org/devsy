@@ -8,8 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestApplyURLDefaults_NormalizesTagURL covers the GitHub "/releases/tag/" ->
-// "/releases/download/" normalization applied to a caller-supplied download URL.
 func TestApplyURLDefaults_NormalizesTagURL(t *testing.T) {
 	t.Setenv(config.EnvAgentURL, "")
 
@@ -21,7 +19,6 @@ func TestApplyURLDefaults_NormalizesTagURL(t *testing.T) {
 	assert.Equal(t, config.GitHubReleasesURL+"/releases/download/v1.2.3", opts.DownloadURL)
 }
 
-// TestApplyURLDefaults_PreservesNonTagURL ensures non-tag URLs pass through unchanged.
 func TestApplyURLDefaults_PreservesNonTagURL(t *testing.T) {
 	t.Setenv(config.EnvAgentURL, "")
 
@@ -32,8 +29,6 @@ func TestApplyURLDefaults_PreservesNonTagURL(t *testing.T) {
 	assert.Equal(t, custom, opts.DownloadURL)
 }
 
-// TestApplyURLDefaults_FillsFromEnvWhenEmpty verifies an empty DownloadURL falls
-// back to DefaultAgentDownloadURL, which honors DEVSY_AGENT_URL.
 func TestApplyURLDefaults_FillsFromEnvWhenEmpty(t *testing.T) {
 	override := "http://localhost:8080"
 	t.Setenv(config.EnvAgentURL, override)
@@ -43,11 +38,6 @@ func TestApplyURLDefaults_FillsFromEnvWhenEmpty(t *testing.T) {
 
 	assert.Equal(t, override, opts.DownloadURL)
 }
-
-// The applyPreferDownloadDefaults cases below cover the DEVSY_AGENT_URL /
-// DEVSY_AGENT_PREFER_DOWNLOAD side effects documented in AGENTS.md: a custom agent URL
-// forces remote download and skips the version check, while the prefer-download env var
-// overrides the heuristic. Each case is a top-level test to keep funlen bounded.
 
 func TestApplyPreferDownloadDefaults_CustomAgentURL(t *testing.T) {
 	t.Setenv(config.EnvAgentURL, "http://localhost:8080")
