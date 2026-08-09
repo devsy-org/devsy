@@ -42,10 +42,6 @@ FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
 
 {{.PRStep}}
 
-The PR is the final step. Do NOT wait for or poll CI status checks after opening the PR.
-The task is complete once the commit is app-signed (verified=true), the code is ready,
-and the local checks passed in the formatting gate above (task cli:lint:ci + task cli:test,
-which mirror the prek pre-commit hooks). Stop working and report the PR URL.
 
 Constraints: {{.Agent.Constraints}}
 

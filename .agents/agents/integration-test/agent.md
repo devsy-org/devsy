@@ -88,11 +88,6 @@ STEP 5 — Open the PR as the app (no GITHUB_TOKEN):
   - task github:app:sign-commit -- -pr-only -title test(e2e): <short description> -b "$(cat /tmp/pr_body.md)"
   - Report the PR URL from the output. A run that does not produce a PR URL is a FAILED run.
 
-The PR is the final step. Do NOT wait for or poll CI status checks after opening the PR.
-The task is complete once the commit is app-signed (verified=true), the code is ready,
-and the local checks passed in the formatting gate above (task cli:lint:ci + task cli:test,
-which mirror the prek pre-commit hooks). Stop working and report the PR URL.
-
 Constraints: ONE suite/test per run. Use real code paths, not mocks. If no actionable flakiness or uncovered edge case found, do nothing and report "no actionable e2e issue found". Never use GITHUB_TOKEN for the commit or PR.
 
 ## Self-improvement

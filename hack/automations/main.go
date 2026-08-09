@@ -16,9 +16,6 @@ import (
 //go:embed template.md.tmpl
 var templateText string
 
-// step kinds. kindInstall/kindCommit/kindPR are required per agent; kindVerify
-// selects the scaffolded verify block; kindNote is an unnumbered preamble; an
-// empty kind is a plain (verbatim) numbered step.
 const (
 	kindInstall = "install"
 	kindVerify  = "verify"
@@ -58,10 +55,6 @@ type agent struct {
 	Steps             []step `yaml:"steps"`
 }
 
-// step is one numbered entry in an agent's prompt. Kind selects a scaffolded
-// body generated from shared logic; a plain step (empty Kind) renders its Title
-// and optional Body verbatim. The step number is the entry's position in Steps,
-// so reordering or inserting a step never requires manual renumbering.
 type step struct {
 	Kind         string `yaml:"kind"`          // install, verify, commit, pr, or "" (plain)
 	Title        string `yaml:"title"`         // plain-step title (full first line, incl. trailing punctuation)
@@ -73,9 +66,6 @@ type config struct {
 	Agents []agent `yaml:"agents"`
 }
 
-// renderView carries the pre-rendered, auto-numbered step blocks plus the agent
-// fields the template still references directly. Numbering is baked into each
-// block string, so the template only arranges the scaffold around them.
 type renderView struct {
 	Agent       agent
 	InstallStep string
@@ -247,13 +237,6 @@ const knownGitFailure = "KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClon
 	"If your change introduces any NEW lint issue or test failure, " +
 	"fix the root cause or pick a different improvement."
 
-// renderSteps turns an agent's ordered Steps into the pre-numbered block strings
-// the template arranges. The step number is assigned in list order but only to
-// numbered steps — a kind=note step (a verbatim preamble) renders as-is and does
-// not consume a number, so it never throws off the commit/pr numbering.
-// install/commit/pr are scaffolded (generated bodies); every other numbered step
-// renders verbatim from its Body (this includes kind=verify, whose body comes from
-// verifyBody, and plain review/verify-inline steps authored in YAML).
 func renderSteps(a agent) stepBlocks {
 	idx := stepKindIndices(a.Steps)
 	numbered := numberedStepMap(a.Steps)
@@ -290,8 +273,6 @@ func stepKindIndices(steps []step) stepIndices {
 	return idx
 }
 
-// numberedStepMap assigns sequential STEP numbers to every non-note step. Notes
-// render verbatim and do not consume a number, so they never shift commit/pr.
 func numberedStepMap(steps []step) map[int]int {
 	numbered := make(map[int]int)
 	num := -1
@@ -317,8 +298,6 @@ func joinReviewSteps(a agent, idx stepIndices, numbered map[int]int) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// stepBlocks holds the four pre-rendered, auto-numbered step regions the template
-// arranges around its static scaffold.
 type stepBlocks struct {
 	install string
 	review  string
@@ -326,9 +305,6 @@ type stepBlocks struct {
 	pr      string
 }
 
-// renderStep emits one block. Scaffolded kinds generate a fixed title and body;
-// kind=note renders its Body verbatim (no "STEP N — " prefix); a plain step
-// renders "STEP N — " followed by its Body verbatim.
 func renderStep(s step, num int, a agent) string {
 	switch s.Kind {
 	case kindInstall:
