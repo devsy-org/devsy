@@ -47,7 +47,7 @@ func runMetadata(f *MetadataFlags) error {
 		return fmt.Errorf("parse template reference: %w", err)
 	}
 
-	log.Infof("Fetching metadata for: %s", ref.String())
+	log.Infof("fetching metadata for: %s", ref.String())
 
 	img, err := pullTemplateImage(ref)
 	if err != nil {

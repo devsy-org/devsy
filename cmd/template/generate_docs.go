@@ -70,7 +70,7 @@ func runGenerateDocs(f *GenerateDocsFlags) error {
 	}
 
 	if len(templates) == 0 {
-		log.Infof("No templates found in %s", projectFolder)
+		log.Infof("no templates found in %s", projectFolder)
 		return nil
 	}
 
@@ -83,10 +83,10 @@ func runGenerateDocs(f *GenerateDocsFlags) error {
 			return fmt.Errorf("write documentation for %s: %w", tmpl.metadata.ID, err)
 		}
 
-		log.Infof("Generated docs: %s", docPath)
+		log.Infof("generated docs: %s", docPath)
 	}
 
-	log.Infof("Generated documentation for %d template(s)", len(templates))
+	log.Infof("generated documentation for %d template(s)", len(templates))
 
 	return nil
 }
