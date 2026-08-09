@@ -44,81 +44,81 @@ func TestApplyURLDefaults_FillsFromEnvWhenEmpty(t *testing.T) {
 	assert.Equal(t, override, opts.DownloadURL)
 }
 
-// TestApplyPreferDownloadDefaults covers the DEVSY_AGENT_URL / DEVSY_AGENT_PREFER_DOWNLOAD
-// side effects documented in AGENTS.md: a custom agent URL forces remote download and
-// skips the version check, while the prefer-download env var overrides the heuristic.
-func TestApplyPreferDownloadDefaults(t *testing.T) {
-	t.Run("custom agent url prefers remote and skips version check", func(t *testing.T) {
-		t.Setenv(config.EnvAgentURL, "http://localhost:8080")
-		t.Setenv(config.EnvAgentPreferDownload, "")
+// The applyPreferDownloadDefaults cases below cover the DEVSY_AGENT_URL /
+// DEVSY_AGENT_PREFER_DOWNLOAD side effects documented in AGENTS.md: a custom agent URL
+// forces remote download and skips the version check, while the prefer-download env var
+// overrides the heuristic. Each case is a top-level test to keep funlen bounded.
 
-		opts := &InjectOptions{DownloadURL: "http://localhost:8080"}
-		opts.applyPreferDownloadDefaults()
+func TestApplyPreferDownloadDefaults_CustomAgentURL(t *testing.T) {
+	t.Setenv(config.EnvAgentURL, "http://localhost:8080")
+	t.Setenv(config.EnvAgentPreferDownload, "")
 
-		assert.NotNil(t, opts.PreferDownloadFromRemoteUrl)
-		assert.True(t, *opts.PreferDownloadFromRemoteUrl)
-		assert.True(t, opts.SkipVersionCheck)
-	})
+	opts := &InjectOptions{DownloadURL: "http://localhost:8080"}
+	opts.applyPreferDownloadDefaults()
 
-	t.Run("prefer download env true", func(t *testing.T) {
-		t.Setenv(config.EnvAgentURL, "")
-		t.Setenv(config.EnvAgentPreferDownload, "true")
+	assert.NotNil(t, opts.PreferDownloadFromRemoteUrl)
+	assert.True(t, *opts.PreferDownloadFromRemoteUrl)
+	assert.True(t, opts.SkipVersionCheck)
+}
 
-		opts := &InjectOptions{}
-		opts.applyPreferDownloadDefaults()
+func TestApplyPreferDownloadDefaults_EnvTrue(t *testing.T) {
+	t.Setenv(config.EnvAgentURL, "")
+	t.Setenv(config.EnvAgentPreferDownload, "true")
 
-		assert.NotNil(t, opts.PreferDownloadFromRemoteUrl)
-		assert.True(t, *opts.PreferDownloadFromRemoteUrl)
-		assert.True(t, opts.SkipVersionCheck)
-	})
+	opts := &InjectOptions{}
+	opts.applyPreferDownloadDefaults()
 
-	t.Run("prefer download env false", func(t *testing.T) {
-		t.Setenv(config.EnvAgentURL, "")
-		t.Setenv(config.EnvAgentPreferDownload, "false")
+	assert.NotNil(t, opts.PreferDownloadFromRemoteUrl)
+	assert.True(t, *opts.PreferDownloadFromRemoteUrl)
+	assert.True(t, opts.SkipVersionCheck)
+}
 
-		opts := &InjectOptions{}
-		opts.applyPreferDownloadDefaults()
+func TestApplyPreferDownloadDefaults_EnvFalse(t *testing.T) {
+	t.Setenv(config.EnvAgentURL, "")
+	t.Setenv(config.EnvAgentPreferDownload, "false")
 
-		assert.NotNil(t, opts.PreferDownloadFromRemoteUrl)
-		assert.False(t, *opts.PreferDownloadFromRemoteUrl)
-		assert.True(t, opts.SkipVersionCheck)
-	})
+	opts := &InjectOptions{}
+	opts.applyPreferDownloadDefaults()
 
-	t.Run("prefer download env invalid defaults true", func(t *testing.T) {
-		t.Setenv(config.EnvAgentURL, "")
-		t.Setenv(config.EnvAgentPreferDownload, "not-a-bool")
+	assert.NotNil(t, opts.PreferDownloadFromRemoteUrl)
+	assert.False(t, *opts.PreferDownloadFromRemoteUrl)
+	assert.True(t, opts.SkipVersionCheck)
+}
 
-		opts := &InjectOptions{}
-		opts.applyPreferDownloadDefaults()
+func TestApplyPreferDownloadDefaults_EnvInvalidDefaultsTrue(t *testing.T) {
+	t.Setenv(config.EnvAgentURL, "")
+	t.Setenv(config.EnvAgentPreferDownload, "not-a-bool")
 
-		assert.NotNil(t, opts.PreferDownloadFromRemoteUrl)
-		assert.True(t, *opts.PreferDownloadFromRemoteUrl)
-		assert.True(t, opts.SkipVersionCheck)
-	})
+	opts := &InjectOptions{}
+	opts.applyPreferDownloadDefaults()
 
-	t.Run("default dev build prefers local", func(t *testing.T) {
-		if version.GetVersion() != version.DevVersion {
-			t.Skip("test assumes a dev build")
-		}
-		t.Setenv(config.EnvAgentURL, "")
-		t.Setenv(config.EnvAgentPreferDownload, "")
+	assert.NotNil(t, opts.PreferDownloadFromRemoteUrl)
+	assert.True(t, *opts.PreferDownloadFromRemoteUrl)
+	assert.True(t, opts.SkipVersionCheck)
+}
 
-		opts := &InjectOptions{}
-		opts.ApplyDefaults()
+func TestApplyPreferDownloadDefaults_DevBuildPrefersLocal(t *testing.T) {
+	if version.GetVersion() != version.DevVersion {
+		t.Skip("test assumes a dev build")
+	}
+	t.Setenv(config.EnvAgentURL, "")
+	t.Setenv(config.EnvAgentPreferDownload, "")
 
-		assert.NotNil(t, opts.PreferDownloadFromRemoteUrl)
-		assert.False(t, *opts.PreferDownloadFromRemoteUrl)
-		assert.True(t, opts.SkipVersionCheck)
-	})
+	opts := &InjectOptions{}
+	opts.ApplyDefaults()
 
-	t.Run("explicit preference preserved", func(t *testing.T) {
-		t.Setenv(config.EnvAgentURL, "http://localhost:8080")
-		t.Setenv(config.EnvAgentPreferDownload, "false")
+	assert.NotNil(t, opts.PreferDownloadFromRemoteUrl)
+	assert.False(t, *opts.PreferDownloadFromRemoteUrl)
+	assert.True(t, opts.SkipVersionCheck)
+}
 
-		opts := &InjectOptions{PreferDownloadFromRemoteUrl: Bool(true)}
-		opts.applyPreferDownloadDefaults()
+func TestApplyPreferDownloadDefaults_ExplicitPreferencePreserved(t *testing.T) {
+	t.Setenv(config.EnvAgentURL, "http://localhost:8080")
+	t.Setenv(config.EnvAgentPreferDownload, "false")
 
-		assert.True(t, *opts.PreferDownloadFromRemoteUrl)
-		assert.False(t, opts.SkipVersionCheck)
-	})
+	opts := &InjectOptions{PreferDownloadFromRemoteUrl: new(true)}
+	opts.applyPreferDownloadDefaults()
+
+	assert.True(t, *opts.PreferDownloadFromRemoteUrl)
+	assert.False(t, opts.SkipVersionCheck)
 }
