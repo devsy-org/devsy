@@ -1,6 +1,10 @@
 version: "3"
 
 tasks:
+  go:tools:
+    desc: install go tools
+    cmd: go get -u ./...
+
   cli:tidy:
     desc: tidy go.mod and go.sum
     cmd: go mod tidy
@@ -43,26 +47,20 @@ tasks:
     desc: build devsy CLI
     env:
       GITHUB_REPOSITORY_OWNER: devsy-org
-    cmd: |
-      export PATH="$(go env GOPATH)/bin:$PATH"
-      goreleaser build --id devsy --snapshot --clean
+    cmd: go tool goreleaser build --id devsy --snapshot --clean
 
   cli:build:dev:
     desc: build devsy CLI for development
     env:
       GITHUB_REPOSITORY_OWNER: devsy-org
       DEVSY_CLI_VERSION: v0.0.0
-    cmd: |
-      export PATH="$(go env GOPATH)/bin:$PATH"
-      goreleaser build --id devsy-dev --snapshot --clean
+    cmd: go tool goreleaser build --id devsy-dev --snapshot --clean
 
   cli:build:dev:pro:
     desc: build devsy CLI for pro feature
     vars:
       NS: '{{.NS | default "default"}}'
-    cmd: |
-      export PATH="$(go env GOPATH)/bin:$PATH"
-      goreleaser build --id devsy-pro-dev --snapshot --clean
+    cmd: go tool goreleaser build --id devsy-pro-dev --snapshot --clean
     env:
       GITHUB_REPOSITORY_OWNER: devsy-org
       DEVSY_PRO_NS: "{{.NS}}"
@@ -86,9 +84,6 @@ tasks:
     dir: pkg/agent/tunnel
     cmd: |
       # sudo apt install protobuf-compiler
-      go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
-      go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
-      export PATH="$(go env GOPATH)/bin:$PATH"
       protoc -I . tunnel.proto --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative
 
   cli:test:
@@ -110,7 +105,7 @@ tasks:
       - cli:test:e2e:build
       - cli:test:e2e:ginkgo:install
     dir: e2e
-    cmd: go run github.com/onsi/ginkgo/v2/ginkgo@latest
+    cmd: go tool ginkgo
 
   cli:test:e2e:suite:
     # usage: task cli:test:e2e:suite -- "test suite name"
@@ -118,7 +113,7 @@ tasks:
     deps:
       - cli:test:e2e:ginkgo:install
     dir: e2e
-    cmd: go run github.com/onsi/ginkgo/v2/ginkgo@latest --label-filter {{ .CLI_ARGS }}
+    cmd: go tool ginkgo --label-filter {{ .CLI_ARGS }}
 
   cli:test:e2e:focus:
     # usage: task cli:test:e2e:focus -- "test suite pattern"
@@ -126,7 +121,7 @@ tasks:
     deps:
       - cli:test:e2e:ginkgo:install
     dir: e2e
-    cmd: go run github.com/onsi/ginkgo/v2/ginkgo@latest --focus {{ .CLI_ARGS }}
+    cmd: go tool ginkgo --focus {{ .CLI_ARGS }}
 
   cli:test:e2e:kind:setup:
     desc: setup kind cluster for e2e tests
