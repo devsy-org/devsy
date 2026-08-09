@@ -227,7 +227,8 @@ func (s *instanceStore) Delete(instance *managementv1.DevsyWorkspaceInstance) {
 func (s *instanceStore) List() []*ProWorkspaceInstance {
 	instanceList := []*ProWorkspaceInstance{}
 	// Check local imported workspaces
-	// Eventually this should be implemented by filtering based on ownership and access on the CRD, for now we're stuck with this approach...
+	// Eventually this should be implemented by filtering based on ownership and access
+	// on the CRD, for now we're stuck with this approach...
 	localWorkspaces, err := workspace.ListLocalWorkspaces(
 		s.context,
 		false,
