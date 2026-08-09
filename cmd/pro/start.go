@@ -718,7 +718,8 @@ func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) 
 	containerDetails, err := cmd.inspectContainer(ctx, containerID)
 	if err != nil {
 		return "", err
-	} else if len(containerDetails.NetworkSettings.Ports) > 0 && len(containerDetails.NetworkSettings.Ports["10443/tcp"]) > 0 {
+	} else if len(containerDetails.NetworkSettings.Ports) > 0 &&
+		len(containerDetails.NetworkSettings.Ports["10443/tcp"]) > 0 {
 		return "localhost:" + containerDetails.NetworkSettings.Ports["10443/tcp"][0].HostPort, nil
 	}
 
