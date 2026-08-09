@@ -74,6 +74,9 @@ func main() {
 	dryRun := flag.Bool("dry-run", false, "with -sync: report drift without patching")
 	flag.Parse()
 	cfg := loadConfig()
+	for _, a := range cfg.Agents {
+		validateAgent(a)
+	}
 	if *sync {
 		runSync(cfg, *dryRun)
 		return

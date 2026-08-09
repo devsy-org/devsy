@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 )
 
 const (
@@ -73,14 +75,14 @@ func newSyncClient() (*syncClient, error) {
 	return &syncClient{
 		host:  automationHost(),
 		token: token,
-		hc:    &http.Client{},
+		hc:    &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }
 
 // newSyncClientWith is the testable constructor: it lets a test point at an httptest
 // server and supply a token without touching process-wide env vars.
 func newSyncClientWith(host, token string) *syncClient {
-	return &syncClient{host: host, token: token, hc: &http.Client{}}
+	return &syncClient{host: host, token: token, hc: &http.Client{Timeout: 30 * time.Second}}
 }
 
 func (c *syncClient) do(method, path string, body []byte) ([]byte, error) {
@@ -88,7 +90,8 @@ func (c *syncClient) do(method, path string, body []byte) ([]byte, error) {
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequest(method, c.host+path, reader)
+	host := strings.TrimSuffix(c.host, "/")
+	req, err := http.NewRequest(method, host+path, reader)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +110,7 @@ func (c *syncClient) do(method, path string, body []byte) ([]byte, error) {
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return data, fmt.Errorf(
-			"%s %s: HTTP %d: %s",
+			"%s %s: http %d: %s",
 			method,
 			path,
 			resp.StatusCode,
@@ -183,6 +186,9 @@ func syncWith(cfg config, client *syncClient, agentsDir string, dryRun bool) err
 	}
 	byName := make(map[string]cloudAutomation, len(cloud))
 	for _, a := range cloud {
+		if _, exists := byName[a.Name]; exists {
+			return fmt.Errorf("duplicate cloud automation name: %q", a.Name)
+		}
 		byName[a.Name] = a
 	}
 
