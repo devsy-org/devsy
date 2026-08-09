@@ -449,12 +449,12 @@ func resolveAgentCredentials(
 func resolveAgentDownloadURL(devConfig *config.Config) string {
 	devsyAgentURL := os.Getenv(config.EnvAgentURL)
 	if devsyAgentURL != "" {
-		return strings.TrimSuffix(devsyAgentURL, "/") + "/"
+		return strings.TrimRight(devsyAgentURL, "/") + "/"
 	}
 
 	contextAgentOption, ok := devConfig.Current().Options[config.ContextOptionAgentURL]
 	if ok && contextAgentOption.Value != "" {
-		return strings.TrimSuffix(contextAgentOption.Value, "/") + "/"
+		return strings.TrimRight(contextAgentOption.Value, "/") + "/"
 	}
 
 	return config.DefaultAgentDownloadURL()
