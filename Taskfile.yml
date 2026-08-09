@@ -51,26 +51,20 @@ tasks:
     desc: build devsy CLI
     env:
       GITHUB_REPOSITORY_OWNER: devsy-org
-    cmd: |
-      export PATH="$(go env GOPATH)/bin:$PATH"
-      goreleaser build --id devsy --snapshot --clean
+    cmd: go tool goreleaser build --id devsy --snapshot --clean
 
   cli:build:dev:
     desc: build devsy CLI for development
     env:
       GITHUB_REPOSITORY_OWNER: devsy-org
       DEVSY_CLI_VERSION: v0.0.0
-    cmd: |
-      export PATH="$(go env GOPATH)/bin:$PATH"
-      goreleaser build --id devsy-dev --snapshot --clean
+    cmd: go tool goreleaser build --id devsy-dev --snapshot --clean
 
   cli:build:dev:pro:
     desc: build devsy CLI for pro feature
     vars:
       NS: '{{.NS | default "default"}}'
-    cmd: |
-      export PATH="$(go env GOPATH)/bin:$PATH"
-      goreleaser build --id devsy-pro-dev --snapshot --clean
+    cmd: go tool goreleaser build --id devsy-pro-dev --snapshot --clean
     env:
       GITHUB_REPOSITORY_OWNER: devsy-org
       DEVSY_PRO_NS: "{{.NS}}"
@@ -94,6 +88,7 @@ tasks:
     dir: pkg/agent/tunnel
     cmd: |
       # sudo apt install protobuf-compiler
+      # protoc invokes protoc-gen-go and protoc-gen-go-grpc from PATH, so install the plugins to GOBIN first.
       go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
       go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
       export PATH="$(go env GOPATH)/bin:$PATH"
@@ -116,25 +111,20 @@ tasks:
     desc: run e2e tests
     deps:
       - cli:test:e2e:build
-      - cli:test:e2e:ginkgo:install
     dir: e2e
-    cmd: go run github.com/onsi/ginkgo/v2/ginkgo@latest
+    cmd: go tool ginkgo
 
   cli:test:e2e:suite:
     # usage: task cli:test:e2e:suite -- "test suite name"
     desc: run e2e tests suite
-    deps:
-      - cli:test:e2e:ginkgo:install
     dir: e2e
-    cmd: go run github.com/onsi/ginkgo/v2/ginkgo@latest --label-filter {{ .CLI_ARGS }}
+    cmd: go tool ginkgo --label-filter {{ .CLI_ARGS }}
 
   cli:test:e2e:focus:
     # usage: task cli:test:e2e:focus -- "test suite pattern"
     desc: run focused e2e tests
-    deps:
-      - cli:test:e2e:ginkgo:install
     dir: e2e
-    cmd: go run github.com/onsi/ginkgo/v2/ginkgo@latest --focus {{ .CLI_ARGS }}
+    cmd: go tool ginkgo --focus {{ .CLI_ARGS }}
 
   cli:test:e2e:kind:setup:
     desc: setup kind cluster for e2e tests
@@ -149,7 +139,7 @@ tasks:
     env:
       GOPROXY: direct
     status: [command -v ginkgo >/dev/null 2>&1]
-    cmd: go install github.com/onsi/ginkgo/v2/ginkgo@latest
+    cmd: go install github.com/onsi/ginkgo/v2/ginkgo
 
   cli:test:e2e:act:focus:
     # usage: task cli:test:e2e:act:focus -- "test focus pattern"
