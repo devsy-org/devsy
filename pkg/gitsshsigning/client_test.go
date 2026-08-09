@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -120,4 +121,52 @@ func TestCreateSignatureRequestBody_MissingCertFile_OmitsPublicKey(t *testing.T)
 	var req GitSSHSignatureRequest
 	require.NoError(t, json.Unmarshal(body, &req))
 	assert.Empty(t, req.PublicKey)
+}
+
+func TestGetCredentialsPort_DefaultWhenEnvUnset(t *testing.T) {
+	t.Setenv(config.EnvCredentialsServerPort, "")
+	port, err := getCredentialsPort()
+	require.NoError(t, err)
+	assert.Equal(t, 12049, port)
+}
+
+func TestGetCredentialsPort_UsesEnvOverride(t *testing.T) {
+	t.Setenv(config.EnvCredentialsServerPort, "54321")
+	port, err := getCredentialsPort()
+	require.NoError(t, err)
+	assert.Equal(t, 54321, port)
+}
+
+func TestGetCredentialsPort_InvalidValueReturnsError(t *testing.T) {
+	t.Setenv(config.EnvCredentialsServerPort, "not-a-port")
+	_, err := getCredentialsPort()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not-a-port")
+}
+
+func TestGetSignatureURL_OverrideReturnedDirectly(t *testing.T) {
+	signatureServerURL = "http://override.example/sign"
+	t.Cleanup(func() { signatureServerURL = "" })
+
+	url, err := getSignatureURL()
+	require.NoError(t, err)
+	assert.Equal(t, "http://override.example/sign", url)
+}
+
+func TestGetSignatureURL_BuiltFromDefaultPort(t *testing.T) {
+	signatureServerURL = ""
+	t.Setenv(config.EnvCredentialsServerPort, "")
+
+	url, err := getSignatureURL()
+	require.NoError(t, err)
+	assert.Equal(t, "http://localhost:12049/git-ssh-signature", url)
+}
+
+func TestGetSignatureURL_ErrorWhenPortInvalid(t *testing.T) {
+	signatureServerURL = ""
+	t.Setenv(config.EnvCredentialsServerPort, "abc")
+
+	_, err := getSignatureURL()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "abc")
 }
