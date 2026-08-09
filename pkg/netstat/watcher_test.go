@@ -124,3 +124,29 @@ func TestWatcher_OnAutoForwardNotify_Forwards(t *testing.T) {
 	assert.Equal(t, "notify", attr.OnAutoForward)
 	assert.NotEqual(t, AutoForwardIgnore, attr.OnAutoForward, "notify should not skip")
 }
+
+func TestListenPortsInRange_FiltersByRange(t *testing.T) {
+	socks := []SockTabEntry{
+		{LocalAddr: &SockAddr{Port: 80}},    // below range
+		{LocalAddr: &SockAddr{Port: 1024}},  // range start
+		{LocalAddr: &SockAddr{Port: 8080}},  // in range
+		{LocalAddr: &SockAddr{Port: 12000}}, // range end
+		{LocalAddr: &SockAddr{Port: 13000}}, // above range
+		{LocalAddr: nil},                    // malformed, must not panic
+	}
+
+	got := listenPortsInRange(socks)
+
+	assert.Equal(t, map[string]bool{"1024": true, "8080": true, "12000": true}, got)
+}
+
+func TestListenPortsInRange_NilLocalAddrDoesNotPanic(t *testing.T) {
+	// A nil LocalAddr previously caused a nil-pointer dereference because the
+	// nil check was ordered after the Port dereference. This must not panic.
+	socks := []SockTabEntry{{LocalAddr: nil}}
+
+	assert.NotPanics(t, func() {
+		got := listenPortsInRange(socks)
+		assert.Empty(t, got)
+	})
+}

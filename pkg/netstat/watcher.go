@@ -191,15 +191,22 @@ func (w *Watcher) findPorts() (map[string]bool, error) {
 	}
 	tcpSocks = append(tcpSocks, tcp6Socks...)
 
-	// we only return ports that are within range 1024-12000 that have a program assigned
+	return listenPortsInRange(tcpSocks), nil
+}
+
+// listenPortsInRange collects the ports of listening sockets whose LocalAddr
+// falls within the auto-forward range (1024-12000). Entries with a nil
+// LocalAddr are skipped so a malformed socket entry never panics the loop.
+func listenPortsInRange(socks []SockTabEntry) map[string]bool {
 	retSocks := map[string]bool{}
-	for _, sock := range tcpSocks {
-		if sock.LocalAddr.Port < 1024 || sock.LocalAddr.Port > 12000 || sock.LocalAddr == nil {
+	for _, sock := range socks {
+		// guard against a nil LocalAddr before dereferencing Port, otherwise
+		// a malformed socket entry panics the watcher loop.
+		if sock.LocalAddr == nil || sock.LocalAddr.Port < 1024 || sock.LocalAddr.Port > 12000 {
 			continue
 		}
 
 		retSocks[strconv.Itoa(int(sock.LocalAddr.Port))] = true
 	}
-
-	return retSocks, nil
+	return retSocks
 }
