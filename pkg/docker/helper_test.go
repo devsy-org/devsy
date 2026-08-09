@@ -278,6 +278,34 @@ exit 1
 	assert.False(t, got, "should fall back to no GPU on command failure")
 }
 
+func TestGetImageTag(t *testing.T) {
+	tests := []struct {
+		name    string
+		repoTag string
+		want    string
+	}{
+		{"normal tag", "ubuntu:22.04\n", "22.04"},
+		{"registry port", "localhost:5000/acme/repo:tag\n", "tag"},
+		{"registry with path", "ghcr.io/devsy-org/base:ubuntu\n", "ubuntu"},
+		{"digest dropped", "localhost:5000/acme/repo:tag@sha256:abc\n", "tag"},
+		{"no repo tags", "", ""},
+		{"reference without tag", "alpine\n", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			outFile := filepath.Join(tmp, "repotag")
+			require.NoError(t, os.WriteFile(outFile, []byte(tt.repoTag), 0o600))
+			bin := writeScript(t, tmp, "docker-fake", "#!/bin/sh\ncat "+outFile+"\n")
+			h := &DockerHelper{DockerCommand: bin}
+			got, err := h.GetImageTag(context.Background(), "img")
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestRunCmd_AttachesCtxErrOnFailure(t *testing.T) {
 	tmp := t.TempDir()
 	ready := filepath.Join(tmp, "ready")

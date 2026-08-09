@@ -382,14 +382,17 @@ func (r *DockerHelper) GetImageTag(ctx context.Context, imageID string) (string,
 		return "", fmt.Errorf("inspect image: %w", command.WrapCommandError(out, err))
 	}
 
-	repoTag := string(out)
-	tagSplits := strings.Split(repoTag, ":")
-
-	if len(tagSplits) > 0 {
-		return strings.TrimSpace(tagSplits[1]), nil
+	repoTag := strings.TrimSpace(string(out))
+	if repoTag == "" {
+		return "", nil
 	}
-
-	return "", nil
+	lastSegment := repoTag[strings.LastIndex(repoTag, "/")+1:]
+	lastSegment, _, _ = strings.Cut(lastSegment, "@")
+	_, tag, found := strings.Cut(lastSegment, ":")
+	if !found {
+		return "", nil
+	}
+	return tag, nil
 }
 
 func (r *DockerHelper) InspectImage(
