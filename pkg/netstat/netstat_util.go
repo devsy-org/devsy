@@ -186,7 +186,7 @@ func getProcName(s []byte) string {
 		return ""
 	}
 	j := bytes.LastIndex(s, []byte(")"))
-	if i < 0 {
+	if j < 0 {
 		return ""
 	}
 	if i > j {

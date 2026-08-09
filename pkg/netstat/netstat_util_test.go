@@ -92,3 +92,24 @@ func (s *NetstatUtilTestSuite) TestDoNetstat_PropagatesParseError() {
 
 	assert.Error(s.T(), err, "parser errors must propagate")
 }
+
+func (s *NetstatUtilTestSuite) TestGetProcName() {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"name in parens", "1234 (comm-name) stuff", "comm-name"},
+		{"no opening paren", "comm-name", ""},
+		{"no closing paren", "1234 (comm-name", ""},
+		{"reversed parens", ")comm-name(", ""},
+		{"empty name", "1234 ()", ""},
+		{"name with parens inside", "1234 (a (b) c)", "a (b) c"},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			assert.Equal(s.T(), tt.want, getProcName([]byte(tt.input)))
+		})
+	}
+}
