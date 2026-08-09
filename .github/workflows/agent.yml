@@ -1,0 +1,84 @@
+name: Agent Files
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.agents/**'
+      - 'hack/automations/**'
+      - 'hack/sign_commit/**'
+      - 'agents_test.go'
+      - '.github/workflows/agent.yml'
+  pull_request:
+    paths:
+      - '.agents/**'
+      - 'hack/automations/**'
+      - 'hack/sign_commit/**'
+      - 'agents_test.go'
+      - '.github/workflows/agent.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      agent: ${{ steps.filter.outputs.agent }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
+        id: filter
+        with:
+          filters: |
+            agent:
+              - '.agents/**'
+              - 'hack/automations/**'
+              - 'hack/sign_commit/**'
+              - 'agents_test.go'
+              - '.github/workflows/agent.yml'
+
+  validate:
+    name: Validate Agent Files
+    needs: changes
+    if: needs.changes.outputs.agent == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: agent structure tests
+        run: go test -run 'TestAgentsStructure|TestTaskAgentLinkage|TestPackageScopePartition' -v ./.
+
+      - name: generator idempotency check
+        run: go run ./hack/automations -check
+
+      - name: sign_commit tests
+        run: go test ./hack/sign_commit/...
+
+      - name: automations tests
+        run: go test ./hack/automations/...
+
+  agent-success:
+    name: Agent Files Success
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [changes, validate]
+    steps:
+      - name: Check required jobs
+        run: |
+          if [[ "${{ needs.changes.result }}" == "failure" ]] || \
+             [[ "${{ needs.validate.result }}" == "failure" ]]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+          echo "All required jobs passed or were skipped"

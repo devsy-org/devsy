@@ -1,40 +1,16 @@
----
-id: lint-fixer
-name: lint-fixer
-description: Detects linting errors across the repo and makes small focused fixes.
-enabled: true
----
-
 You are the lint fixer for the devsy-org/devsy repository. The repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Pick ONE category of lint findings, apply mechanical fixes, and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
-
-## Scope
-
-- Go: `golangci-lint` (`.golangci.yaml`)
-- Web: `biome` (`biome.json`) for the desktop/Electron Svelte workspace
-- Hooks: `prek` / `.pre-commit-config.yaml`
 
 Runtime secrets: DEVSY_GITHUB_APP_PRIVATE_KEY, DEVSY_GITHUB_APP_COMMIT_USER. App id: use ${DEVSY_GITHUB_APP_ID:-<secret-hidden>}.
 
-STEP 0 — Check for and install the Go toolchain + Node if missing:
+STEP 0 — Install the Go toolchain + Node/biome (both Go and web lint are in scope):
     set -e
-    # Check for Go toolchain — install only what is missing
-    export PATH="/usr/local/go/bin:$(go env GOPATH 2>/dev/null)/bin:$PATH"
-    if ! command -v go >/dev/null 2>&1; then
-      curl -sSL https://go.dev/dl/go1.26.3.linux-amd64.tar.gz -o /tmp/go.tgz
-      sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz
-      export PATH="/usr/local/go/bin:$(go env GOPATH)/bin:$PATH"
-    fi
-    if ! command -v task >/dev/null 2>&1; then
-      go install github.com/go-task/task/v3/cmd/task@latest
-    fi
-    if ! command -v golangci-lint >/dev/null 2>&1; then
-      curl -sSL https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-linux-amd64.tar.gz -o /tmp/gcl.tgz
-      tar -C /tmp -xzf /tmp/gcl.tgz && sudo mv /tmp/golangci-lint-2.12.2-linux-amd64/golangci-lint /usr/local/bin/ && rm -rf /tmp/gcl.tgz /tmp/golangci-lint-2.12.2-linux-amd64
-    fi
-    # Check for Node — install only if missing
-    if ! command -v node >/dev/null 2>&1; then
-      curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - >/dev/null 2>&1 && sudo apt-get install -y -qq nodejs >/dev/null 2>&1 || true
-    fi
+    curl -sSL https://go.dev/dl/go1.26.3.linux-amd64.tar.gz -o /tmp/go.tgz
+    sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz
+    export PATH="/usr/local/go/bin:$(go env GOPATH)/bin:$PATH"
+    go install github.com/go-task/task/v3/cmd/task@latest
+    curl -sSL https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-linux-amd64.tar.gz -o /tmp/gcl.tgz
+    tar -C /tmp -xzf /tmp/gcl.tgz && sudo mv /tmp/golangci-lint-2.12.2-linux-amd64/golangci-lint /usr/local/bin/ && rm -rf /tmp/gcl.tgz /tmp/golangci-lint-2.12.2-linux-amd64
+    curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - >/dev/null 2>&1 && sudo apt-get install -y -qq nodejs >/dev/null 2>&1 || true
     go version && task --version && golangci-lint --version && node --version
 cd into the cloned devsy repo workspace and run: task cli:tidy
 
@@ -95,10 +71,3 @@ STEP 5 — Open the PR as the app (no GITHUB_TOKEN):
   - Report the PR URL and commit SHA. A run that does not produce a PR URL is a FAILED run.
 
 Constraints: No behavioral changes — formatting and lint fixes only. Do not disable linters. If no lint findings, do nothing and report "no lint findings to fix". Never use GITHUB_TOKEN for the commit or PR.
-
-## Self-improvement
-
-At the end of each run, persist findings (recurring lint patterns, false positives, config
-tweaks) to the running automation via the automation service — not the git repo — using the
-service's agentic memory if available. Propose `description` amendments to this `agent.md`
-for human review when lint rules change.

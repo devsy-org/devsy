@@ -28,6 +28,8 @@ specifications.
 | `lint-fixer` | repo-wide lint | `golangci-lint`, `biome`, `prek` |
 | `docs-keeper` | docs accuracy | `AGENTS.md`, `README.md`, `cmd/` help, `sites/` |
 | `devcontainer-spec` | `.devcontainer/` | devcontainer spec compliance |
+| `codefactor` | Codefactor issues | Go source flagged by Codefactor |
+| `ui-polish` | desktop UI | `desktop/src/renderer/src/` (Svelte/TS) |
 
 The `pkg/*` agents split `pkg/` into logical categories so multiple agents review in
 parallel without overlapping scope.

@@ -8,7 +8,8 @@
 //
 // Credentials reuse the gen_github_app_jwt env vars:
 //
-//   - DEVSY_GITHUB_APP_ID            app client ID (iss claim)
+//   - DEVSY_GITHUB_APP_CLIENT_ID      app client ID (preferred iss claim)
+//   - DEVSY_GITHUB_APP_ID             numeric app ID (legacy iss fallback)
 //   - DEVSY_GITHUB_APP_PRIVATE_KEY   PEM contents
 //   - DEVSY_GITHUB_APP_PRIVATE_KEY_PATH  PEM file path
 //
@@ -29,6 +30,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -36,6 +38,7 @@ import (
 )
 
 const (
+	envClientID       = "DEVSY_GITHUB_APP_CLIENT_ID"
 	envAppID          = "DEVSY_GITHUB_APP_ID"
 	envPrivateKey     = "DEVSY_GITHUB_APP_PRIVATE_KEY"
 	envPrivateKeyPath = "DEVSY_GITHUB_APP_PRIVATE_KEY_PATH"
@@ -50,8 +53,13 @@ type addition struct {
 	Contents string `json:"contents"`
 }
 
+type deletion struct {
+	Path string `json:"path"`
+}
+
 type fileChange struct {
-	Additions []addition `json:"additions"`
+	Additions []addition `json:"additions,omitempty"`
+	Deletions []deletion `json:"deletions,omitempty"`
 }
 
 type branchRef struct {
@@ -81,21 +89,23 @@ type options struct {
 	repo    string
 	branch  string
 	all     bool
+	token   bool
 	paths   []string
 }
 
 func main() {
-	message := flag.String("m", "", "commit subject (required)")
+	// Strip a leading "--" separator (e.g. from `task cmd -- -token` or
+	// `go run ./hack/sign_commit -- -token`) so flags after it are still parsed
+	// by the flag package instead of being treated as positional arguments.
+	os.Args = append(os.Args[:1], stripDashDash(os.Args[1:])...)
+
+	message := flag.String("m", "", "commit subject (required unless -token is set)")
 	body := flag.String("b", "", "commit body (optional)")
 	repo := flag.String("repo", defaultRepo, "owner/name repository")
 	branch := flag.String("branch", "", "branch (default: current)")
 	all := flag.Bool("all", true, "commit all changed files vs origin/main when no paths given")
+	token := flag.Bool("token", false, "print the app installation token and exit (no commit)")
 	flag.Parse()
-
-	if *message == "" {
-		fmt.Fprintln(os.Stderr, "error: -m commit subject is required")
-		os.Exit(2)
-	}
 
 	opts := options{
 		message: *message,
@@ -103,6 +113,7 @@ func main() {
 		repo:    *repo,
 		branch:  *branch,
 		all:     *all,
+		token:   *token,
 		paths:   flag.Args(),
 	}
 	if err := run(opts); err != nil {
@@ -112,15 +123,6 @@ func main() {
 }
 
 func run(o options) error {
-	branch := o.branch
-	if branch == "" {
-		var err error
-		branch, err = currentBranch()
-		if err != nil {
-			return fmt.Errorf("detect branch: %w", err)
-		}
-	}
-
 	owner, _, ok := strings.Cut(o.repo, "/")
 	if !ok {
 		return fmt.Errorf("invalid repo %q, want owner/name", o.repo)
@@ -129,6 +131,26 @@ func run(o options) error {
 	token, err := appToken(owner)
 	if err != nil {
 		return err
+	}
+	if o.token {
+		fmt.Println(token)
+		return nil
+	}
+	return commitFiles(o, token)
+}
+
+func commitFiles(o options, token string) error {
+	if o.message == "" {
+		return fmt.Errorf("-m commit subject is required (or pass -token to print the app token)")
+	}
+
+	branch := o.branch
+	if branch == "" {
+		var err error
+		branch, err = currentBranch()
+		if err != nil {
+			return fmt.Errorf("detect branch: %w", err)
+		}
 	}
 
 	paths, err := resolvePaths(o.all, o.paths)
@@ -141,12 +163,12 @@ func run(o options) error {
 		return fmt.Errorf("read branch head: %w", err)
 	}
 
-	adds, err := additions(paths, os.ReadFile)
+	adds, dels, err := fileChanges(paths, os.ReadFile)
 	if err != nil {
 		return err
 	}
 
-	vars := commitVars(o, branch, head, adds)
+	vars := commitVars(o, branch, head, fileChange{Additions: adds, Deletions: dels})
 	return publishCommit(token, o.repo, vars)
 }
 
@@ -164,12 +186,18 @@ func publishCommit(token, repo string, vars createCommitVars) error {
 }
 
 func appToken(owner string) (string, error) {
-	appID := os.Getenv(envAppID)
+	clientID := os.Getenv(envClientID)
+	if clientID == "" {
+		clientID = os.Getenv(envAppID)
+	}
+	if clientID == "" {
+		return "", fmt.Errorf("client id missing: set %s or %s", envClientID, envAppID)
+	}
 	key, err := loadPrivateKey(os.Getenv(envPrivateKeyPath), os.Getenv(envPrivateKey))
 	if err != nil {
 		return "", fmt.Errorf("load private key: %w", err)
 	}
-	jwtToken, err := generateJWT(appID, key, time.Now())
+	jwtToken, err := generateJWT(clientID, key, time.Now())
 	if err != nil {
 		return "", fmt.Errorf("generate jwt: %w", err)
 	}
@@ -197,13 +225,13 @@ func resolvePaths(all bool, paths []string) ([]string, error) {
 	return files, nil
 }
 
-func commitVars(o options, branch, head string, adds []addition) createCommitVars {
+func commitVars(o options, branch, head string, changes fileChange) createCommitVars {
 	headline, bodyText := splitMessage(o.message, o.body)
 	return createCommitVars{
 		Input: commitInput{
 			Branch:       branchRef{Repo: o.repo, Name: "refs/heads/" + branch},
 			Message:      commitMessage{Headline: headline, Body: bodyText},
-			FileChanges:  fileChange{Additions: adds},
+			FileChanges:  changes,
 			ExpectedHead: head,
 		},
 	}
@@ -211,30 +239,72 @@ func commitVars(o options, branch, head string, adds []addition) createCommitVar
 
 func splitMessage(message, body string) (string, string) {
 	if body != "" {
-		return message, body
+		return sanitizeSecrets(stripCoAuthored(message)), sanitizeSecrets(stripCoAuthored(body))
 	}
 	headline, rest, _ := strings.Cut(message, "\n")
-	return headline, strings.TrimSpace(rest)
+	return headline, sanitizeSecrets(stripCoAuthored(strings.TrimSpace(rest)))
 }
 
-func additions(paths []string, read func(string) ([]byte, error)) ([]addition, error) {
-	out := make([]addition, 0, len(paths))
+// stripCoAuthored removes Co-authored-by trailers so commits always have a
+// single author (the Devsy GitHub App). The trailer may appear anywhere in
+// the body; matching is case-insensitive and tolerates surrounding whitespace.
+func stripCoAuthored(s string) string {
+	var kept []string
+	for line := range strings.SplitSeq(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToLower(trimmed), "co-authored-by:") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	out := strings.Join(kept, "\n")
+	return strings.TrimSpace(out)
+}
+
+var (
+	// ghPat matches GitHub installation tokens (ghs_), OAuth tokens (gho_),
+	// user-to-server tokens (ghu_), and personal access tokens (ghp_/github_pat_).
+	ghPat = regexp.MustCompile(
+		`gh[sou]_[A-Za-z0-9]{36,}|ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{82}`,
+	)
+	// jwtPat matches RS256/ES256 JWT tokens (three dot-separated base64url segments).
+	jwtPat = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`)
+)
+
+// sanitizeSecrets replaces GitHub tokens and JWTs in s with "[REDACTED]" so
+// that secrets accidentally interpolated into commit messages (e.g. via shell
+// command substitution) are never persisted to git history.
+func sanitizeSecrets(s string) string {
+	s = ghPat.ReplaceAllString(s, "[REDACTED]")
+	s = jwtPat.ReplaceAllString(s, "[REDACTED]")
+	return s
+}
+
+func fileChanges(
+	paths []string, read func(string) ([]byte, error),
+) ([]addition, []deletion, error) {
+	var adds []addition
+	var dels []deletion
 	for _, p := range paths {
 		b, err := read(p)
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", p, err)
+			if os.IsNotExist(err) {
+				dels = append(dels, deletion{Path: p})
+				continue
+			}
+			return nil, nil, fmt.Errorf("read %s: %w", p, err)
 		}
-		out = append(out, addition{Path: p, Contents: base64.StdEncoding.EncodeToString(b)})
+		adds = append(adds, addition{Path: p, Contents: base64.StdEncoding.EncodeToString(b)})
 	}
-	return out, nil
+	return adds, dels, nil
 }
 
-func generateJWT(appID string, key *rsa.PrivateKey, now time.Time) (string, error) {
-	if appID == "" {
-		return "", fmt.Errorf("app id missing: set %s", envAppID)
+func generateJWT(clientID string, key *rsa.PrivateKey, now time.Time) (string, error) {
+	if clientID == "" {
+		return "", fmt.Errorf("client id missing: set %s or %s", envClientID, envAppID)
 	}
 	claims := jwt.RegisteredClaims{
-		Issuer:    appID,
+		Issuer:    clientID,
 		IssuedAt:  jwt.NewNumericDate(now.Add(-issuedAtSkew)),
 		ExpiresAt: jwt.NewNumericDate(now.Add(maxExpiration)),
 	}
@@ -430,4 +500,14 @@ func splitLines(s string) []string {
 		return nil
 	}
 	return strings.Split(s, "\n")
+}
+
+// stripDashDash removes a single leading "--" separator from args so that
+// flags after it (e.g. from `task cmd -- -token` or `go run ./tool -- -token`)
+// are parsed by the flag package instead of being treated as positional args.
+func stripDashDash(args []string) []string {
+	if len(args) > 0 && args[0] == "--" {
+		return args[1:]
+	}
+	return args
 }

@@ -1,35 +1,15 @@
----
-id: pkg-core-agent
-name: pkg-core-agent
-description: Reviews the agent runtime, options, config, and workspace packages for small focused improvements.
-enabled: true
----
-
-You are a package reviewer for Devsy's agent-runtime core category. The devsy-org/devsy repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Pick ONE package, review it, make ONE small focused improvement, and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
-
-## Scope
-
-- `pkg/agent`, `pkg/client`, `pkg/command`, `pkg/options`, `pkg/config`
-- `pkg/devsyconfig`, `pkg/task`, `pkg/workspace`, `pkg/template`, `pkg/provider`
+You are a package reviewer for Devsy's container/Docker category. The devsy-org/devsy repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Pick ONE package, review it, make ONE small focused improvement, and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
 
 Runtime secrets: DEVSY_GITHUB_APP_PRIVATE_KEY, DEVSY_GITHUB_APP_COMMIT_USER. App id: use ${DEVSY_GITHUB_APP_ID:-<secret-hidden>}.
 
-STEP 0 — Check for and install the Go toolchain if missing (Go, task, golangci-lint):
+STEP 0 — Install the Go toolchain (the sandbox does NOT have Go/task/golangci-lint):
     set -e
-    # Check for Go toolchain — install only what is missing
-    export PATH="/usr/local/go/bin:$(go env GOPATH 2>/dev/null)/bin:$PATH"
-    if ! command -v go >/dev/null 2>&1; then
-      curl -sSL https://go.dev/dl/go1.26.3.linux-amd64.tar.gz -o /tmp/go.tgz
-      sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz
-      export PATH="/usr/local/go/bin:$(go env GOPATH)/bin:$PATH"
-    fi
-    if ! command -v task >/dev/null 2>&1; then
-      go install github.com/go-task/task/v3/cmd/task@latest
-    fi
-    if ! command -v golangci-lint >/dev/null 2>&1; then
-      curl -sSL https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-linux-amd64.tar.gz -o /tmp/gcl.tgz
-      tar -C /tmp -xzf /tmp/gcl.tgz && sudo mv /tmp/golangci-lint-2.12.2-linux-amd64/golangci-lint /usr/local/bin/ && rm -rf /tmp/gcl.tgz /tmp/golangci-lint-2.12.2-linux-amd64
-    fi
+    curl -sSL https://go.dev/dl/go1.26.3.linux-amd64.tar.gz -o /tmp/go.tgz
+    sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz
+    export PATH="/usr/local/go/bin:$(go env GOPATH)/bin:$PATH"
+    go install github.com/go-task/task/v3/cmd/task@latest
+    curl -sSL https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-linux-amd64.tar.gz -o /tmp/gcl.tgz
+    tar -C /tmp -xzf /tmp/gcl.tgz && sudo mv /tmp/golangci-lint-2.12.2-linux-amd64/golangci-lint /usr/local/bin/ && rm -rf /tmp/gcl.tgz /tmp/golangci-lint-2.12.2-linux-amd64
 go version && task --version && golangci-lint --version
 cd into the cloned devsy repo workspace and run: task cli:tidy
 
@@ -41,7 +21,7 @@ work on, skip it and pick a different one. Do not open a PR for a fix that is al
 flight. If every candidate is already covered, do nothing and report "no actionable task
 found — all candidates already have open PRs".
 
-STEP 1 — Pick ONE package from the scope. Review for: option resolution correctness (see pkg/options/resolve.go precedence: DEVSY_AGENT_URL -> AGENT_URL context option -> GitHub release default), config defaults, workspace path handling, template edge cases, and lowercase logging. Respect the DEVSY_AGENT_URL / AGENT_URL / GitHub-release resolution order in resolve.go. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes.
+STEP 1 — Pick ONE package from the scope. Review for: daemon lifecycle correctness, credential handling, image pull/cache logic, error propagation, and edge-case tests (missing daemon, registry auth failure). Never echo registry tokens or docker config credentials; mask credentials in logs. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes.
 
 STEP 2 — Verify (CRITICAL — use CI-equivalent lint):
   - mkdir -p dist
@@ -55,7 +35,7 @@ ships a Go tool (hack/sign_commit, JWT via golang-jwt/jwt/v5) that authenticates
 app installation and creates the commit through the GraphQL createCommitOnBranch mutation,
 so GitHub signs it (committer: GitHub, verified). No Python, no GITHUB_TOKEN.
   - git fetch --quiet origin main
-  - git checkout -b pkg-core-agent/<short-slug> origin/main
+  - git checkout -b pkg-container/<short-slug> origin/main
   - git add <changed files>
   - WARNING: Do NOT run `git commit` locally. The sign_commit tool creates the commit via
     the GitHub `createCommitOnBranch` mutation (committer: GitHub, verified). A local
@@ -79,14 +59,7 @@ STEP 4 — Open the PR as the app (no GITHUB_TOKEN):
   - TOKEN=$(task github:app:sign-commit -- -token)
   - Write the PR body to /tmp/pr_body.md. It MUST include: the package reviewed, the issue found, the change, the verification performed (lint:ci, cli:test), a line "This PR was created by an AI agent (OpenHands) as part of an automated daily package review job.", and "Commit signature: Verified (GitHub-signed via the Devsy GitHub App createCommitOnBranch mutation)."
   - PR_BODY=$(python3 -c 'import json,sys;print(json.dumps(open("/tmp/pr_body.md").read()))')
-  - curl -s -X POST -H "Authorization: bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/devsy-org/devsy/pulls -d "{\"title\":\"<subject>\",\"head\":\"pkg-core-agent/<slug>\",\"base\":\"main\",\"draft\":true,\"body\":${PR_BODY}}"
+  - curl -s -X POST -H "Authorization: bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/devsy-org/devsy/pulls -d "{\"title\":\"<subject>\",\"head\":\"pkg-container/<slug>\",\"base\":\"main\",\"draft\":true,\"body\":${PR_BODY}}"
   - Report the PR URL and commit SHA. A run that does not produce a PR URL is a FAILED run.
 
-Constraints: ONE package per run. Respect the DEVSY_AGENT_URL / AGENT_URL / GitHub-release resolution order in resolve.go. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
-
-## Self-improvement
-
-At the end of each run, persist findings (resolution-order gotchas, config defaults,
-provider quirks) to the running automation via the automation service — not the git repo —
-using the service's agentic memory if available. Propose `description` amendments to this
-`agent.md` for human review when scope boundaries shift.
+Constraints: ONE package per run. Never echo registry tokens or docker config credentials. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.

@@ -154,12 +154,13 @@ Biome formats and checks web frontend files.
 The release, CLA, and CI workflows authenticate as the Devsy GitHub App through a signed JWT. Local generation, after setting the app credentials:
 
 ```bash
-export DEVSY_GITHUB_APP_ID=<app-client-id>
+export DEVSY_GITHUB_APP_ID=<app-id>           # numeric App ID (legacy iss fallback)
+export DEVSY_GITHUB_APP_CLIENT_ID=<client-id>  # Client ID (preferred iss claim, e.g. Iv1...)
 export DEVSY_GITHUB_APP_PRIVATE_KEY=$(cat path/to/private-key.pem)
 task github:app:jwt
 ```
 
-`task github:app:jwt` runs `hack/gen_github_app_jwt`, which produces an RS256-signed JWT with `iss`/`iat`/`exp` claims matching GitHub's requirements. The `iat` claim is backdated 60 seconds to tolerate clock drift, while `exp` expires 10 minutes after JWT generation (GitHub's maximum). The private key can also be provided through `DEVSY_GITHUB_APP_PRIVATE_KEY_PATH` (a PEM file path) or the `--app-id`/`--private-key`/`--private-key-content` flags.
+`task github:app:jwt` runs `hack/gen_github_app_jwt`, which produces an RS256-signed JWT with `iss`/`iat`/`exp` claims matching GitHub's requirements. Per [GitHub's JWT documentation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app), the `iss` claim should be the App's **Client ID** (`DEVSY_GITHUB_APP_CLIENT_ID`); the numeric App ID (`DEVSY_GITHUB_APP_ID`) is accepted as a legacy fallback. Both `hack/gen_github_app_jwt` and `hack/sign_commit` prefer `DEVSY_GITHUB_APP_CLIENT_ID` and fall back to `DEVSY_GITHUB_APP_ID` if unset. The `iat` claim is backdated 60 seconds to tolerate clock drift, while `exp` expires 10 minutes after JWT generation (GitHub's maximum). The private key can also be provided through `DEVSY_GITHUB_APP_PRIVATE_KEY_PATH` (a PEM file path) or the `--app-id`/`--private-key`/`--private-key-content` flags.
 
 ### Discovering the App ID
 
@@ -183,4 +184,8 @@ The response includes the `app_id` and `app_slug`:
 }
 ```
 
-Use the returned `app_id` as the `iss` claim when minting an installation token from the private key. To confirm a private key matches an app, sign a JWT with `iss=<app_id>` and call `GET /app` — a 200 confirms the pairing.
+Use the returned `app_id` to confirm the installation. To mint an installation token, sign a JWT with `iss=<client-id>` (the App's Client ID, not the numeric `app_id`) and call `GET /app` — a 200 confirms the pairing.
+
+### Workflows Permission
+
+The Devsy GitHub App requires the **Workflows** repository permission (read & write) to commit any file under `.github/workflows/`. Without it, GitHub rejects workflow file writes via every API — the GraphQL `createCommitOnBranch` mutation returns `FORBIDDEN: Resource not accessible by integration`, the REST contents API returns `403`, and `git push` is rejected with `refusing to allow a GitHub App to create or update workflow without workflows permission`. Creating a PR that *contains* a workflow file does not require this permission — only the act of writing the workflow file itself does. If the app lacks the Workflows permission, commit non-workflow files via the app and add workflow files separately (e.g. through the GitHub UI or a PAT with `workflow` scope).
