@@ -7,6 +7,11 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	testUsername = "user"
+	testPassword = "pass"
+)
+
 type CredentialsTestSuite struct {
 	suite.Suite
 }
@@ -16,7 +21,7 @@ func TestCredentialsSuite(t *testing.T) {
 }
 
 func (s *CredentialsTestSuite) TestAuthTokenPrefersUsernameSecretPair() {
-	creds := &Credentials{Username: "user", Secret: "pass"}
+	creds := &Credentials{Username: testUsername, Secret: testPassword}
 	s.Equal("user:pass", creds.AuthToken())
 }
 
@@ -32,20 +37,20 @@ func (s *CredentialsTestSuite) TestAuthTokenEmptyWhenBothMissing() {
 
 func (s *CredentialsTestSuite) TestCredentialsFromAuthConfigUsesPasswordByDefault() {
 	ac := types.AuthConfig{
-		Username:      "user",
-		Password:      "pass",
+		Username:      testUsername,
+		Password:      testPassword,
 		ServerAddress: "ghcr.io",
 	}
 	creds := credentialsFromAuthConfig(ac, "ghcr.io")
 	s.Equal("ghcr.io", creds.ServerURL)
-	s.Equal("user", creds.Username)
-	s.Equal("pass", creds.Secret)
+	s.Equal(testUsername, creds.Username)
+	s.Equal(testPassword, creds.Secret)
 }
 
 func (s *CredentialsTestSuite) TestCredentialsFromAuthConfigPrefersIdentityToken() {
 	ac := types.AuthConfig{
-		Username:      "user",
-		Password:      "pass",
+		Username:      testUsername,
+		Password:      testPassword,
 		IdentityToken: "identity-token",
 		ServerAddress: "registry.example.com",
 	}
@@ -61,7 +66,7 @@ func (s *CredentialsTestSuite) TestCredentialsFromAuthConfigEmptySecretWhenNothi
 }
 
 func (s *CredentialsTestSuite) TestFillFromContainerCredentialsReturnsExistingWhenPopulated() {
-	ac := types.AuthConfig{Username: "user", Password: "pass"}
+	ac := types.AuthConfig{Username: testUsername, Password: testPassword}
 	result, err := fillFromContainerCredentials(ac, "ghcr.io")
 	s.NoError(err)
 	s.Equal(ac, result)
