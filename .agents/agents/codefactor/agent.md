@@ -66,14 +66,14 @@ STEP 1 — Fetch ALL Codefactor issues (deterministic, paginated, no auth):
 
 STEP 2 — Pick ONE issue (any category: Maintainability, Duplication, Complexity). Prefer the most contained change reviewable in ~20 minutes. Pick exactly ONE. (Open PRs were already listed in STEP 0 — do not pick an issue addressed by one of them.)
 
-STEP 3 — Fix it: read FilePath around StartLine..EndLine, make the minimal correct change. Do NOT disable linters or add workaround comments.
+STEP 3 — Fix it: read FilePath around StartLine..EndLine, make the minimal correct change. Do NOT disable linters or add workaround comments. If your change touched pkg/git, ensure you didn't introduce NEW failures.
 
-STEP 4 — Verify (CRITICAL — use CI-equivalent lint, not the full lint):
+STEP 4 — Verify (CRITICAL — use CI-equivalent lint):
   - mkdir -p dist
   - git fetch --quiet origin main
-  - task cli:lint:ci      # checks ONLY new issues introduced by your change (mirrors CI). Must be 0 issues.
-  - task cli:test         # unit tests.
-  KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, that is the baseline; proceed. If your change touched pkg/git, ensure you didn't introduce NEW failures. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different issue.
+  - task cli:lint:ci      # Must be 0 new issues.
+  - task cli:test
+  KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
 
 FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
   - git fetch --quiet origin main

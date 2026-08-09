@@ -32,7 +32,6 @@ const (
 type agent struct {
 	ID                string `yaml:"id"`
 	BranchPrefix      string `yaml:"branch_prefix"`
-	GitAddGlob        string `yaml:"git_add_glob"`
 	CommitSubject     string `yaml:"commit_subject"`
 	PRTitle           string `yaml:"pr_title"`
 	JobName           string `yaml:"job_name"`
@@ -42,6 +41,8 @@ type agent struct {
 	PRStepNumber      int    `yaml:"pr_step_number"`
 	Intro             string `yaml:"intro"`
 	ReviewSteps       string `yaml:"review_steps"`
+	VerifyType        string `yaml:"verify_type"`
+	VerifyExtras      string `yaml:"verify_extras"`
 	PRBodyMustInclude string `yaml:"pr_body_must_include"`
 	Constraints       string `yaml:"constraints"`
 	Description       string `yaml:"description"`
@@ -56,6 +57,7 @@ type config struct {
 type renderView struct {
 	Agent            agent
 	Step0Body        string
+	VerifyBlock      string
 	PRTitleJSON      string
 	StatusStepNumber int
 }
@@ -120,6 +122,7 @@ func renderAgent(tmpl *template.Template, a agent) string {
 	view := renderView{
 		Agent:            a,
 		Step0Body:        installBlock(a.Toolchain),
+		VerifyBlock:      verifyBlock(a),
 		PRTitleJSON:      escapeJSONString(a.PRTitle),
 		StatusStepNumber: a.PRStepNumber + 1,
 	}
@@ -185,6 +188,27 @@ func installBlock(toolchain string) string {
 	default:
 		return toolchain
 	}
+}
+
+const knownGitFailure = "KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement."
+
+func verifyBlock(a agent) string {
+	if a.VerifyType == "" {
+		return ""
+	}
+	stepNum := a.CommitStepNumber - 1
+	lines := []string{
+		fmt.Sprintf("STEP %d — Verify (CRITICAL — use CI-equivalent lint):", stepNum),
+		"  - mkdir -p dist",
+		"  - git fetch --quiet origin main",
+		"  - task cli:lint:ci      # Must be 0 new issues.",
+		"  - task cli:test",
+	}
+	if a.VerifyExtras != "" {
+		lines = append(lines, "  - "+a.VerifyExtras)
+	}
+	lines = append(lines, "  "+knownGitFailure)
+	return joinLines(lines...)
 }
 
 func goInstallBlock() string {

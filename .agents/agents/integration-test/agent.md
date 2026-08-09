@@ -47,13 +47,13 @@ STEP 1 — Authenticate gh read-only with the Devsy GitHub App token to inspect 
 
 STEP 2 — Fix the flaky test OR add an edge-case test the logs reveal as uncovered. Use real code paths, not mocks. Use the e2e framework helpers (e2e/framework/). Keep the change reviewable in 15 minutes.
 
-STEP 3 — Verify (CRITICAL):
+STEP 3 — Verify (CRITICAL — use CI-equivalent lint):
   - mkdir -p dist
   - git fetch --quiet origin main
   - task cli:lint:ci      # Must be 0 new issues.
-  - task cli:test         # unit tests (exclude e2e).
+  - task cli:test
   - Run the focused suite: task cli:test:e2e:suite -- "<suite-name>"  (or task cli:test:e2e:focus -- "<pattern>")
-  KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different test.
+  KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
 
 FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
   - git fetch --quiet origin main

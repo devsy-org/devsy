@@ -51,7 +51,7 @@ STEP 2 — Identify ONE spec requirement that is declared but not implemented, O
 
 STEP 3 — Implement or correct it. If features changed, regenerate the lock via: devcontainer build --workspace-folder . --image-name /tmp/dc-test 2>/dev/null || true (best-effort; lock regeneration may require docker).
 
-STEP 4 — Verify (CRITICAL — use CI-equivalent lint, not the full lint):
+STEP 4 — Verify (CRITICAL — use CI-equivalent lint):
   - mkdir -p dist
   - git fetch --quiet origin main
   - task cli:lint:ci      # Must be 0 new issues.

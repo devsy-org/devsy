@@ -5,7 +5,6 @@
 agents:
 - id: pkg-container
   branch_prefix: pkg-container
-  git_add_glob: <changed files>
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
   job_name: package review job
@@ -13,16 +12,10 @@ agents:
   step0_title: Check for and install the Go toolchain if missing (Go, task, golangci-lint)
   commit_step_number: 3
   pr_step_number: 4
+  verify_type: go
   intro: You are a package reviewer for Devsy's container/Docker category. The devsy-org/devsy repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Pick ONE package, review it, make ONE small focused improvement, and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
   review_steps: |-
     STEP 1 — Pick ONE package from the scope. Review for: daemon lifecycle correctness, credential handling, image pull/cache logic, error propagation, and edge-case tests (missing daemon, registry auth failure). Never echo registry tokens or docker config credentials; mask credentials in logs. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes.
-
-    STEP 2 — Verify (CRITICAL — use CI-equivalent lint):
-      - mkdir -p dist
-      - git fetch --quiet origin main
-      - task cli:lint:ci      # Must be 0 new issues.
-      - task cli:test
-      KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
   pr_body_must_include: the package reviewed, the issue found, the change, the verification performed (lint:ci, cli:test)
   constraints: ONE package per run. Never echo registry tokens or docker config credentials. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
   description: Reviews the Docker, OCI, image, and compose packages for small focused improvements.
@@ -36,7 +29,6 @@ agents:
     `agent.md` for human review when scope boundaries shift.
 - id: pkg-core-agent
   branch_prefix: pkg-core-agent
-  git_add_glob: <changed files>
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
   job_name: package review job
@@ -44,16 +36,10 @@ agents:
   step0_title: Check for and install the Go toolchain if missing (Go, task, golangci-lint)
   commit_step_number: 3
   pr_step_number: 4
+  verify_type: go
   intro: You are a package reviewer for Devsy's agent-runtime core category. The devsy-org/devsy repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Pick ONE package, review it, make ONE small focused improvement, and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
   review_steps: |-
     STEP 1 — Pick ONE package from the scope. Review for: option resolution correctness (see pkg/options/resolve.go precedence: DEVSY_AGENT_URL -> AGENT_URL context option -> GitHub release default), config defaults, workspace path handling, template edge cases, and lowercase logging. Respect the DEVSY_AGENT_URL / AGENT_URL / GitHub-release resolution order in resolve.go. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes.
-
-    STEP 2 — Verify (CRITICAL — use CI-equivalent lint):
-      - mkdir -p dist
-      - git fetch --quiet origin main
-      - task cli:lint:ci      # Must be 0 new issues.
-      - task cli:test
-      KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
   pr_body_must_include: the package reviewed, the issue found, the change, the verification performed (lint:ci, cli:test)
   constraints: ONE package per run. Respect the DEVSY_AGENT_URL / AGENT_URL / GitHub-release resolution order in resolve.go. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
   description: Reviews the agent runtime, options, config, and workspace packages for small focused improvements.
@@ -67,7 +53,6 @@ agents:
     `agent.md` for human review when scope boundaries shift.
 - id: pkg-ssh-git
   branch_prefix: pkg-ssh-git
-  git_add_glob: <changed files>
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
   job_name: package review job
@@ -75,16 +60,10 @@ agents:
   step0_title: Check for and install the Go toolchain if missing (Go, task, golangci-lint)
   commit_step_number: 3
   pr_step_number: 4
+  verify_type: go
   intro: You are a package reviewer for Devsy's SSH/git/credentials category. The devsy-org/devsy repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Pick ONE package, review it, make ONE small focused improvement, and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
   review_steps: |-
-    STEP 1 — Pick ONE package from the scope. Review for: error handling, resource leaks (file/goroutine), lowercase logging, test coverage of edge cases (auth failure, key rotation, permission errors). Never log or print secret/key material; mask credentials in logs. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes.
-
-    STEP 2 — Verify (CRITICAL — use CI-equivalent lint):
-      - mkdir -p dist
-      - git fetch --quiet origin main
-      - task cli:lint:ci      # Must be 0 new issues.
-      - task cli:test
-      KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change touched pkg/git, ensure you didn't introduce NEW failures. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
+    STEP 1 — Pick ONE package from the scope. Review for: error handling, resource leaks (file/goroutine), lowercase logging, test coverage of edge cases (auth failure, key rotation, permission errors). Never log or print secret/key material; mask credentials in logs. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes. If your change touched pkg/git, ensure you didn't introduce NEW failures.
   pr_body_must_include: the package reviewed, the issue found, the change, the verification performed (lint:ci, cli:test)
   constraints: ONE package per run. Never log or print secret/key material; mask credentials in logs. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
   description: Reviews the SSH, git, credentials, and shell packages for small focused improvements.
@@ -98,7 +77,6 @@ agents:
     for human review when scope boundaries shift.
 - id: pkg-system-platform
   branch_prefix: pkg-system-platform
-  git_add_glob: <changed files>
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
   job_name: package review job
@@ -106,16 +84,10 @@ agents:
   step0_title: Check for and install the Go toolchain if missing (Go, task, golangci-lint)
   commit_step_number: 3
   pr_step_number: 4
+  verify_type: go
   intro: You are a package reviewer for Devsy's system/platform/utility category (the largest category — rotate packages across runs). The devsy-org/devsy repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Pick ONE package, review it, make ONE small focused improvement, and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
   review_steps: |-
-    STEP 1 — Pick ONE package from the scope (rotate across runs). Review for: cross-platform correctness (Linux/macOS/Windows), path handling, lowercase logging, secret masking in pkg/secrets/pkg/token, and edge-case tests. Never print secret/token values; mask in logs. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes.
-
-    STEP 2 — Verify (CRITICAL — use CI-equivalent lint):
-      - mkdir -p dist
-      - git fetch --quiet origin main
-      - task cli:lint:ci      # Must be 0 new issues.
-      - task cli:test
-      KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change touched pkg/git, ensure you didn't introduce NEW failures. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
+    STEP 1 — Pick ONE package from the scope (rotate across runs). Review for: cross-platform correctness (Linux/macOS/Windows), path handling, lowercase logging, secret masking in pkg/secrets/pkg/token, and edge-case tests. Never print secret/token values; mask in logs. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes. If your change touched pkg/git, ensure you didn't introduce NEW failures.
   pr_body_must_include: the package reviewed, the issue found, the change, the verification performed (lint:ci, cli:test)
   constraints: ONE package per run. Never print secret/token values; mask in logs. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
   description: Reviews the OS, platform, and utility packages for small focused improvements.
@@ -135,7 +107,6 @@ agents:
     `agent.md` for human review when scope boundaries shift.
 - id: pkg-tunnel-network
   branch_prefix: pkg-tunnel-network
-  git_add_glob: <changed files>
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
   job_name: package review job
@@ -143,17 +114,11 @@ agents:
   step0_title: Check for and install the Go toolchain + protoc if missing
   commit_step_number: 3
   pr_step_number: 4
+  verify_type: go
+  verify_extras: "If tunnel proto changed: task cli:build:grpc"
   intro: You are a package reviewer for Devsy's tunneling/networking category. The devsy-org/devsy repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Pick ONE package, review it, make ONE small focused improvement, and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
   review_steps: |-
     STEP 1 — Pick ONE package from the scope. Review for: connection/goroutine leaks, context cancellation handling, port conflict edge cases, gRPC error codes, and lowercase logging. Do not regenerate gRPC stubs without running task cli:build:grpc. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes.
-
-    STEP 2 — Verify (CRITICAL — use CI-equivalent lint):
-      - mkdir -p dist
-      - git fetch --quiet origin main
-      - task cli:lint:ci      # Must be 0 new issues.
-      - task cli:test
-      - If tunnel proto changed: task cli:build:grpc
-      KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
   pr_body_must_include: the package reviewed, the issue found, the change, the verification performed (lint:ci, cli:test, cli:build:grpc if proto touched)
   constraints: ONE package per run. Do not regenerate gRPC stubs without running task cli:build:grpc. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
   description: Reviews the tunneling, HTTP, and networking packages for small focused improvements.
@@ -167,7 +132,6 @@ agents:
     `agent.md` for human review when scope boundaries shift.
 - id: cmd-reviewer
   branch_prefix: cmd-reviewer
-  git_add_glob: <changed files>
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
   job_name: CLI review job
@@ -175,18 +139,12 @@ agents:
   step0_title: Check for and install the Go toolchain if missing (Go, task, golangci-lint)
   commit_step_number: 4
   pr_step_number: 5
+  verify_type: go
   intro: You are the CLI command reviewer for the devsy-org/devsy repository. The repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Review ONE cmd/ subdirectory per run and open ONE app-signed PR with a small improvement. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
   review_steps: |-
     STEP 1 — Pick ONE cmd/ subdirectory to review. Enumerate with: ls cmd/. Pick one. Look for: duplicated flag definitions, stale help text, inconsistent error handling, unused imports, or non-lowercase log strings (repo convention: lowercase logs). Respect existing flag aliases registered in cmd/flag_aliases_test.go.
 
     STEP 2 — Make ONE small, focused improvement reviewable in ~20 minutes. Prefer correctness/help-text fixes over behavior changes.
-
-    STEP 3 — Verify (CRITICAL — use CI-equivalent lint, not the full lint):
-      - mkdir -p dist
-      - git fetch --quiet origin main
-      - task cli:lint:ci      # checks ONLY new issues introduced by your change (mirrors CI). Must be 0 issues.
-      - task cli:test         # unit tests.
-      KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, that is the baseline; proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
   pr_body_must_include: the cmd/ subdirectory reviewed, the issue found, the minimal change, the verification performed (task cli:lint:ci result, task cli:test result)
   constraints: ONE cmd/ subdirectory, ONE improvement, ONE commit, ONE PR per run (plus at most ONE follow-up fix commit if a status check fails — see the ensure-status-checks step). Keep it reviewable in ~20 minutes. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
   description: Reviews the cmd/ CLI directory for small improvements to command structure, flags, and help text.
@@ -199,7 +157,6 @@ agents:
     `agent.md` for human review when review priorities change.
 - id: lint-fixer
   branch_prefix: lint-fixer
-  git_add_glob: <changed files>
   commit_subject: '"style: <short description>" "<body>"'
   pr_title: 'style: <short description>'
   job_name: lint fix job
@@ -207,6 +164,8 @@ agents:
   step0_title: Check for and install the Go toolchain + Node if missing
   commit_step_number: 4
   pr_step_number: 5
+  verify_type: go+desktop
+  verify_extras: "(cd desktop && npm run check)   # svelte-check / type check, if web files touched"
   intro: You are the lint fixer for the devsy-org/devsy repository. The repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Pick ONE category of lint findings, apply mechanical fixes, and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
   review_steps: |2-
         (cd desktop && npm install --ignore-scripts >/dev/null 2>&1 || true)
@@ -216,14 +175,6 @@ agents:
       - (cd desktop && npx biome check)   # web: biome
 
     STEP 2 — Pick ONE category of findings. Apply mechanical fixes via task cli:lint:fix (Go) or (cd desktop && npx biome check --write) (web). For non-mechanical findings, fix at most 1-3 occurrences so the diff stays reviewable in 15 minutes. No behavioral changes. Do NOT disable linters to silence findings.
-
-    STEP 3 — Verify (CRITICAL — use CI-equivalent lint):
-      - mkdir -p dist
-      - git fetch --quiet origin main
-      - task cli:lint:ci      # Must be 0 new issues introduced.
-      - task cli:test
-      - (cd desktop && npm run check)   # svelte-check / type check, if web files touched
-      KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different category.
   pr_body_must_include: the linter + category, the findings fixed (count), the fix method (mechanical/manual), the verification performed (lint:ci, cli:test, desktop check if web touched)
   constraints: No behavioral changes — formatting and lint fixes only. Do not disable linters. If no lint findings, do nothing and report "no lint findings to fix". Never use GITHUB_TOKEN for the commit or PR.
   description: Detects linting errors across the repo and makes small focused fixes.
@@ -238,7 +189,6 @@ agents:
     for human review when lint rules change.
 - id: devcontainer-spec
   branch_prefix: devcontainer-spec
-  git_add_glob: <changed files>
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
   job_name: devcontainer spec job
@@ -246,6 +196,8 @@ agents:
   step0_title: Check for and install the Go toolchain + devcontainer CLI if missing
   commit_step_number: 5
   pr_step_number: 6
+  verify_type: go
+  verify_extras: "If feasible: task cli:test:e2e:suite -- \"devcontainer\""
   intro: You are the devcontainer specification reviewer for the devsy-org/devsy repository. The repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Find ONE declared-but-unimplemented devcontainer spec requirement or stale feature lock/integrity and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
   review_steps: |-
     STEP 1 — Read .devcontainer/devcontainer.json and the devcontainer spec (https://raw.githubusercontent.com/devcontainers/spec/refs/heads/main/schemas/devContainer.base.schema.json, https://raw.githubusercontent.com/devcontainers/spec/refs/heads/main/schemas/devContainerFeature.schema.json, https://containers.dev/implementors/json_schema/). Read .devcontainer/devcontainer-lock.json, .github/workflows/devcontainer.yml, and e2e/devcontainer-feature.json.
@@ -253,14 +205,6 @@ agents:
     STEP 2 — Identify ONE spec requirement that is declared but not implemented, OR a feature whose lock/integrity (SHA) is stale. Keep the change reviewable in 15 minutes. Do NOT bump feature versions without verifying the SHA/integrity. Pick exactly ONE.
 
     STEP 3 — Implement or correct it. If features changed, regenerate the lock via: devcontainer build --workspace-folder . --image-name /tmp/dc-test 2>/dev/null || true (best-effort; lock regeneration may require docker).
-
-    STEP 4 — Verify (CRITICAL — use CI-equivalent lint, not the full lint):
-      - mkdir -p dist
-      - git fetch --quiet origin main
-      - task cli:lint:ci      # Must be 0 new issues.
-      - task cli:test
-      - If feasible: task cli:test:e2e:suite -- "devcontainer"
-      KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
   pr_body_must_include: the spec requirement, the gap found, the change, the verification performed (lint:ci, cli:test, e2e result)
   constraints: ONE requirement per run. Do not bump feature versions without verifying the SHA/integrity. If no actionable requirement found, do nothing and report "no actionable requirement found". Never use GITHUB_TOKEN for the commit or PR.
   description: Reviews the devcontainer specification, finds unimplemented requirements, and attempts focused implementation.
@@ -274,7 +218,6 @@ agents:
     for human review when spec compliance scope changes.
 - id: integration-test
   branch_prefix: integration-test
-  git_add_glob: <changed files>
   commit_subject: '"test(e2e): <short description>" "<body>"'
   pr_title: 'test(e2e): <short description>'
   job_name: e2e review job
@@ -282,6 +225,8 @@ agents:
   step0_title: Check for and install the Go toolchain if missing (Ginkgo comes with the Go toolchain)
   commit_step_number: 4
   pr_step_number: 5
+  verify_type: go
+  verify_extras: "Run the focused suite: task cli:test:e2e:suite -- \"<suite-name>\"  (or task cli:test:e2e:focus -- \"<pattern>\")"
   intro: You are the integration-test reviewer for the devsy-org/devsy repository. The repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Pick ONE e2e/test suite, fix flakiness or add an edge-case test, and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
   review_steps: |-
     STEP 1 — Authenticate gh read-only with the Devsy GitHub App token to inspect past runs:
@@ -290,14 +235,6 @@ agents:
         Pick ONE failing or flaky test suite from e2e/tests/. Inspect its logs via gh run view <id> --repo devsy-org/devsy --log | tail -200.
 
     STEP 2 — Fix the flaky test OR add an edge-case test the logs reveal as uncovered. Use real code paths, not mocks. Use the e2e framework helpers (e2e/framework/). Keep the change reviewable in 15 minutes.
-
-    STEP 3 — Verify (CRITICAL):
-      - mkdir -p dist
-      - git fetch --quiet origin main
-      - task cli:lint:ci      # Must be 0 new issues.
-      - task cli:test         # unit tests (exclude e2e).
-      - Run the focused suite: task cli:test:e2e:suite -- "<suite-name>"  (or task cli:test:e2e:focus -- "<pattern>")
-      KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different test.
   pr_body_must_include: the suite/test, the logs inspected (run id), the fix/edge-case added, the verification performed (lint:ci, cli:test, focused e2e suite result)
   constraints: ONE suite/test per run. Use real code paths, not mocks. If no actionable flakiness or uncovered edge case found, do nothing and report "no actionable e2e issue found". Never use GITHUB_TOKEN for the commit or PR.
   description: Reviews the e2e integration tests, fixes issues, and adds edge-case tests using past run logs as reference.
@@ -310,7 +247,6 @@ agents:
     to this `agent.md` for human review when review priorities change.
 - id: docs-keeper
   branch_prefix: docs-keeper
-  git_add_glob: <changed files>
   commit_subject: '"docs: <short description>" "<body>"'
   pr_title: 'docs: <short description>'
   job_name: docs job
@@ -341,7 +277,6 @@ agents:
     review when documentation scope changes.
 - id: ci-optimizer
   branch_prefix: ci-optimizer
-  git_add_glob: <changed workflow file(s)>
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
   job_name: CI optimization job
@@ -390,7 +325,6 @@ agents:
     propose a `description` amendment to this `agent.md` for human review.
 - id: codefactor
   branch_prefix: fix/codefactor
-  git_add_glob: <changed files>
   commit_subject: '"fix: <conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: 'fix: <short description>'
   job_name: Codefactor issue fix job
@@ -398,6 +332,7 @@ agents:
   step0_title: Check for and install the Go toolchain if missing (Go, task, golangci-lint)
   commit_step_number: 5
   pr_step_number: 6
+  verify_type: go
   intro: You are the Codefactor issue fixer for the devsy-org/devsy repository. The repo is cloned in your workspace on branch main. Follow AGENTS.md conventions (lowercase logs, Conventional Commits, 50-char subject max). Fix exactly ONE Codefactor issue per run and open ONE app-signed PR. Never use GITHUB_TOKEN for the commit or PR — authenticate as the Devsy GitHub App.
   review_steps: |-
     STEP 1 — Fetch ALL Codefactor issues (deterministic, paginated, no auth):
@@ -425,14 +360,7 @@ agents:
 
     STEP 2 — Pick ONE issue (any category: Maintainability, Duplication, Complexity). Prefer the most contained change reviewable in ~20 minutes. Pick exactly ONE. (Open PRs were already listed in STEP 0 — do not pick an issue addressed by one of them.)
 
-    STEP 3 — Fix it: read FilePath around StartLine..EndLine, make the minimal correct change. Do NOT disable linters or add workaround comments.
-
-    STEP 4 — Verify (CRITICAL — use CI-equivalent lint, not the full lint):
-      - mkdir -p dist
-      - git fetch --quiet origin main
-      - task cli:lint:ci      # checks ONLY new issues introduced by your change (mirrors CI). Must be 0 issues.
-      - task cli:test         # unit tests.
-      KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, that is the baseline; proceed. If your change touched pkg/git, ensure you didn't introduce NEW failures. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different issue.
+    STEP 3 — Fix it: read FilePath around StartLine..EndLine, make the minimal correct change. Do NOT disable linters or add workaround comments. If your change touched pkg/git, ensure you didn't introduce NEW failures.
   pr_body_must_include: the Codefactor issue Key, file:line, the Codefactor message, the fix summary, and that task cli:lint:ci passed (0 new issues) + task cli:test status. Add label "codefactor" if it exists.
   constraints: ONE issue, ONE commit, ONE PR per run (plus at most ONE follow-up fix commit if a status check fails — see the ensure-status-checks step). Keep it reviewable in ~20 minutes. If no fixable issue today, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for commit/PR.
   description: Fixes one Codefactor issue per run by making a minimal, lint-clean change and opening an app-signed PR.
@@ -447,7 +375,6 @@ agents:
     issue-selection priorities change.
 - id: ui-polish
   branch_prefix: ui-polish
-  git_add_glob: <changed files>
   commit_subject: '"fix(ui): <short description>" "<body>"'
   pr_title: 'fix(ui): <short description>'
   job_name: UI polish job
@@ -489,7 +416,6 @@ agents:
     `description` amendment to this `agent.md` for human review when polish priorities change.
 - id: agent-analytics
   branch_prefix: agent-analytics
-  git_add_glob: <changed files>
   commit_subject: '"<conventional-commit subject, 50 chars max>" "<body>"'
   pr_title: <subject>
   job_name: agent analytics job

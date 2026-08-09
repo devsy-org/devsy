@@ -41,14 +41,14 @@ work on, skip it and pick a different one. Do not open a PR for a fix that is al
 flight. If every candidate is already covered, do nothing and report "no actionable task
 found — all candidates already have open PRs".
 
-STEP 1 — Pick ONE package from the scope. Review for: error handling, resource leaks (file/goroutine), lowercase logging, test coverage of edge cases (auth failure, key rotation, permission errors). Never log or print secret/key material; mask credentials in logs. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes.
+STEP 1 — Pick ONE package from the scope. Review for: error handling, resource leaks (file/goroutine), lowercase logging, test coverage of edge cases (auth failure, key rotation, permission errors). Never log or print secret/key material; mask credentials in logs. Prefer adding/fixing a test over a behavioral change. Make ONE small, focused change reviewable in 15 minutes. If your change touched pkg/git, ensure you didn't introduce NEW failures.
 
 STEP 2 — Verify (CRITICAL — use CI-equivalent lint):
   - mkdir -p dist
   - git fetch --quiet origin main
   - task cli:lint:ci      # Must be 0 new issues.
   - task cli:test
-  KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change touched pkg/git, ensure you didn't introduce NEW failures. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
+  KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
 
 FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
   - git fetch --quiet origin main

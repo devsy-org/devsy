@@ -26,7 +26,9 @@ flight. If every candidate is already covered, do nothing and report "no actiona
 found — all candidates already have open PRs".
 
 {{.Agent.ReviewSteps}}
-
+{{if .VerifyBlock}}
+{{.VerifyBlock}}
+{{end}}
 FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
   - git fetch --quiet origin main
   - task cli:format        # auto-format Go code (gofmt, gci, gofumpt via golangci-lint fmt)

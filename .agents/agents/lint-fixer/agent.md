@@ -57,10 +57,10 @@ STEP 2 — Pick ONE category of findings. Apply mechanical fixes via task cli:li
 STEP 3 — Verify (CRITICAL — use CI-equivalent lint):
   - mkdir -p dist
   - git fetch --quiet origin main
-  - task cli:lint:ci      # Must be 0 new issues introduced.
+  - task cli:lint:ci      # Must be 0 new issues.
   - task cli:test
   - (cd desktop && npm run check)   # svelte-check / type check, if web files touched
-  KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different category.
+  KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
 
 FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
   - git fetch --quiet origin main
