@@ -18,13 +18,15 @@ STEP 0 — Check for and install gh + act if missing (no Go needed; CI work is Y
     set -e
     # gh CLI (for listing/viewing workflow runs) — install only if missing
     if ! command -v gh >/dev/null 2>&1; then
-      curl -sSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+      echo "installing gh"
+      curl --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -sSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
       echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
       sudo apt-get update -qq && sudo apt-get install -y -qq gh
     fi
     # act (best-effort local workflow validation; .actrc exists). Docker may be unavailable — that's OK.
     if ! command -v act >/dev/null 2>&1; then
-      curl -sSL https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash -s -- -b /usr/local/bin || true
+      echo "installing act"
+      curl --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -sSL https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash -s -- -b /usr/local/bin || true
     fi
     command -v gh && (command -v act || echo "act unavailable — will validate via YAML parse")
 cd into the cloned devsy repo workspace

@@ -25,15 +25,18 @@ STEP 0 — Check for and install the Go toolchain if missing (Go, task, golangci
     # Check for Go toolchain — install only what is missing
     export PATH="/usr/local/go/bin:$(go env GOPATH 2>/dev/null)/bin:$PATH"
     if ! command -v go >/dev/null 2>&1; then
-      curl -sSL https://go.dev/dl/go1.26.3.linux-amd64.tar.gz -o /tmp/go.tgz
+      echo "installing go 1.26.3"
+      curl --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -sSL https://go.dev/dl/go1.26.3.linux-amd64.tar.gz -o /tmp/go.tgz
       sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz
       export PATH="/usr/local/go/bin:$(go env GOPATH)/bin:$PATH"
     fi
     if ! command -v task >/dev/null 2>&1; then
-      go install github.com/go-task/task/v3/cmd/task@latest
+      echo "installing task"
+      timeout 600 go install github.com/go-task/task/v3/cmd/task@latest
     fi
     if ! command -v golangci-lint >/dev/null 2>&1; then
-      curl -sSL https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-linux-amd64.tar.gz -o /tmp/gcl.tgz
+      echo "installing golangci-lint 2.12.2"
+      curl --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -sSL https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-linux-amd64.tar.gz -o /tmp/gcl.tgz
       tar -C /tmp -xzf /tmp/gcl.tgz && sudo mv /tmp/golangci-lint-2.12.2-linux-amd64/golangci-lint /usr/local/bin/ && rm -rf /tmp/gcl.tgz /tmp/golangci-lint-2.12.2-linux-amd64
     fi
 go version && task --version && golangci-lint --version
