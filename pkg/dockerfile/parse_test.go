@@ -214,6 +214,16 @@ FROM stage1 AS stage2`
 	s.Equal("", user)
 }
 
+func (s *ParseTestSuite) TestFindBaseImageCircularReference() {
+	dockerfile := `FROM stage2 AS stage1
+FROM stage1 AS stage2`
+	d, err := Parse(dockerfile)
+	s.NoError(err)
+
+	baseImage := d.FindBaseImage(map[string]string{}, "stage1")
+	s.Equal("", baseImage, "circular stage reference must not recurse endlessly")
+}
+
 func (s *ParseTestSuite) TestBaseImageEnvironmentVariables() {
 	dockerfile := `FROM ubuntu
 USER $USER`
