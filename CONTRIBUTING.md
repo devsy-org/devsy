@@ -15,13 +15,13 @@ posting a comment on the pull request with the exact text the bot provides.
 
 **CLI Development:**
 
-- [Go 1.25+](https://go.dev/doc/install)
+- [Go 1.26+](https://go.dev/doc/install)
 - [Task](https://taskfile.dev/) (optional, but recommended for running tasks)
 
 **Desktop Application Development:**
 
-- [Node.js 22+](https://nodejs.org/en/) (with npm)
-- [Go 1.20+](https://go.dev/doc/install)
+- [Node.js 24+](https://nodejs.org/en/) (with npm)
+- [Go 1.26+](https://go.dev/doc/install)
 - [Python 3.12+](https://www.python.org/) (for native module builds)
 
 ### Initial Setup
