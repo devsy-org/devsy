@@ -16,7 +16,7 @@ type DeleteCmd struct {
 	*flags.GlobalFlags
 }
 
-// NewDeleteCmd deletes a new command.
+// NewDeleteCmd creates a new command.
 func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 	cmd := &DeleteCmd{
 		GlobalFlags: flags,

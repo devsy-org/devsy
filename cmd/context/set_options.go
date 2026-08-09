@@ -18,7 +18,7 @@ type SetOptionsCmd struct {
 	Options []string
 }
 
-// NewSetOptionsCmd setOptionss a new command.
+// NewSetOptionsCmd creates a new command.
 func NewSetOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 	cmd := &SetOptionsCmd{
 		GlobalFlags: flags,
