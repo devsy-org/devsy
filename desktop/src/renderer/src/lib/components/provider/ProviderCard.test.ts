@@ -13,8 +13,8 @@ vi.mock("$lib/stores/providerVersions.js", async () => {
   }
 })
 
-import ProviderCard from "./ProviderCard.svelte"
 import { providerJobs } from "$lib/stores/providers.js"
+import ProviderCard from "./ProviderCard.svelte"
 
 function makeProvider(name: string, extras: Partial<Provider> = {}): Provider {
   return {

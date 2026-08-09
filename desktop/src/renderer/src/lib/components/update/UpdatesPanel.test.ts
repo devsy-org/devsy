@@ -1,5 +1,5 @@
-import { tick } from "svelte"
 import { render } from "@testing-library/svelte"
+import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const getAppVersion = vi.fn()
@@ -34,8 +34,8 @@ vi.mock("$lib/ipc/events.js", async (importOriginal) => {
   return { ...mod, onUpdateStatus: async () => () => {} }
 })
 
-import UpdatesPanel from "./UpdatesPanel.svelte"
 import { __setForTest, initUpdateStore } from "$lib/stores/updates.svelte.js"
+import UpdatesPanel from "./UpdatesPanel.svelte"
 
 function cardButton(label: RegExp): HTMLButtonElement | null {
   return (

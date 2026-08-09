@@ -1,5 +1,5 @@
-import { render, fireEvent, cleanup } from "@testing-library/svelte"
-import { describe, it, expect, vi, afterEach } from "vitest"
+import { cleanup, fireEvent, render } from "@testing-library/svelte"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("$lib/stores/imageCatalog.js", async () => {
   const { writable } = await import("svelte/store")

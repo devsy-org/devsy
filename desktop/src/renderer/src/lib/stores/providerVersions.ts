@@ -1,12 +1,12 @@
 import { writable } from "svelte/store"
+import {
+  providerCheckUpdates,
+  providerListVersions,
+} from "$lib/ipc/commands.js"
 import type {
   ProviderVersion,
   ProviderVersionCheckResult,
 } from "$lib/types/index.js"
-import {
-  providerListVersions,
-  providerCheckUpdates,
-} from "$lib/ipc/commands.js"
 
 type State = {
   byProvider: Record<

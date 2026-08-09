@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { loadCatalog, __setFetchForTest } from "../image-catalog.js"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { __setFetchForTest, loadCatalog } from "../image-catalog.js"
 
 const SEED = {
   version: 1,

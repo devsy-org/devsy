@@ -1,6 +1,6 @@
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte"
 import { tick } from "svelte"
-import { render, fireEvent, cleanup, waitFor } from "@testing-library/svelte"
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Provider } from "$lib/types/index.js"
 
 const getImagePlatforms = vi.fn()

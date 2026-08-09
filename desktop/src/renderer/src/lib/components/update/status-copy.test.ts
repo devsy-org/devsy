@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, expect, it } from "vitest"
 import { fmtMBps, statusHeadline } from "./status-copy.js"
 
 describe("fmtMBps", () => {

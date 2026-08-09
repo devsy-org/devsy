@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto"
-import { homedir, platform, arch } from "node:os"
-import { PostHog } from "posthog-node"
+import { arch, homedir, platform } from "node:os"
 import { app } from "electron"
+import { PostHog } from "posthog-node"
 import { machineIdSync } from "./machine-id.js"
 
 declare const __DEVSY_POSTHOG_API_KEY__: string | undefined
