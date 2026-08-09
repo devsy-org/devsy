@@ -64,22 +64,7 @@ func getStageIdentifier(stage *BaseStage) string {
 }
 
 func (d *Dockerfile) FindBaseImage(buildArgs map[string]string, target string) string {
-	stage := d.StagesByTarget[target]
-	if stage == nil && len(d.Stages) > 0 {
-		stage = d.Stages[len(d.Stages)-1]
-	}
-	if stage == nil {
-		return ""
-	}
-
-	image := d.expandVariables(stage.Image, buildArgs, nil, &d.Preamble.BaseStage)
-
-	// If image is a stage reference, resolve it recursively
-	if _, ok := d.StagesByTarget[image]; ok {
-		return d.FindBaseImage(buildArgs, image)
-	}
-
-	return image
+	return d.findBaseImage(buildArgs, target, make(map[string]bool, len(d.Stages)))
 }
 
 func (d *Dockerfile) BuildContextFiles() []string {
@@ -218,6 +203,36 @@ func (d *Dockerfile) Dump() string {
 		}
 	}
 	return strings.Join(result, "\n")
+}
+
+// findBaseImage recurses through stage references, tracking visited targets in
+// seen to break circular references (e.g. `FROM stage2 AS stage1` followed by
+// `FROM stage1 AS stage2`) that would otherwise overflow the stack.
+func (d *Dockerfile) findBaseImage(
+	buildArgs map[string]string,
+	target string,
+	seen map[string]bool,
+) string {
+	stage := d.StagesByTarget[target]
+	if stage == nil && len(d.Stages) > 0 {
+		stage = d.Stages[len(d.Stages)-1]
+	}
+	if stage == nil {
+		return ""
+	}
+
+	if seen[target] {
+		return ""
+	}
+	seen[target] = true
+
+	image := d.expandVariables(stage.Image, buildArgs, nil, &d.Preamble.BaseStage)
+
+	if _, ok := d.StagesByTarget[image]; ok {
+		return d.findBaseImage(buildArgs, image, seen)
+	}
+
+	return image
 }
 
 func (d *Dockerfile) expandVariables(
