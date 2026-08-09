@@ -159,10 +159,9 @@ func checkFeatureCache(id string) (string, bool) {
 		if err == nil {
 			log.Debugf("feature already cached: folder=%s", featureExtractedFolder)
 			return featureExtractedFolder, true
-		} else {
-			log.Debugf("feature folder exists but seems empty: folder=%s", featureExtractedFolder)
-			_ = os.RemoveAll(featureFolder)
 		}
+		log.Debugf("feature folder exists but seems empty: folder=%s", featureExtractedFolder)
+		_ = os.RemoveAll(featureFolder)
 	}
 	return "", false
 }
