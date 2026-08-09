@@ -65,6 +65,16 @@ STEP 4 — Verify (REQUIRED before committing):
 
 STEP 5 — Write the PR body to /tmp/pr_body.md. It MUST contain: Problem (1-3 sentences, with the file/component), Change (what you changed, minimal), Why it's safe / reviewable in <15 min, Verification (the exact checks you ran and their results).
 
+FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
+  - git fetch --quiet origin main
+  - task cli:format        # auto-format Go code (gofmt, gci, gofumpt via golangci-lint fmt)
+  - task cli:lint:ci       # Must be 0 new issues. If any issue appears, fix it and re-run.
+  - task cli:test          # Must pass (known pre-existing failures excepted per STEP above).
+  If format or lint reports ANY issue in your changed files, fix the root cause and re-run
+  until both are clean. Do NOT proceed to the commit step with formatting or lint errors.
+  Common formatting failures: gci (import ordering), gofumpt (struct/function spacing),
+  golines (line length > 120). Running task cli:format first auto-fixes most of these.
+
 STEP 6 — Commit via the Devsy GitHub App (signed, verified). The repo
 ships a Go tool (hack/sign_commit, JWT via golang-jwt/jwt/v5) that authenticates as the
 app installation and creates the commit through the GraphQL createCommitOnBranch mutation,
