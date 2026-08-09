@@ -8,11 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// matchIPv4 selects an IPv4 address whose classful default mask is /24
-// (class C, "ffffff00") or /8 (class A, "ff000000"); class B (/16) is skipped.
-// It does not consult the subnet mask carried by *net.IPNet, only the IP's
-// classful default mask. For *net.IPNet the IP is the network address.
-
 func TestMatchIPv4_IPNet_ClassC(t *testing.T) {
 	_, ipNet, err := net.ParseCIDR("192.168.1.0/24")
 	require.NoError(t, err)
