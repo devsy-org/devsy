@@ -3,7 +3,7 @@ version: v1.0.0
 icon: https://dl.devsy.sh/assets/apple.svg
 home: https://github.com/devsy-org/devsy
 description: |-
-  Devsy on Apple container (macOS 26+, Apple silicon)
+  Devsy on Apple container
 optionGroups:
   - options:
       - CONTAINER_PATH
