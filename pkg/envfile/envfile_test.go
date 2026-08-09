@@ -7,9 +7,11 @@ import (
 	"testing"
 )
 
-// useTempLocation points the package-level envfile location at a path inside a
-// temp directory so tests never touch the real /etc/envfile.json. It returns the
-// full path and a cleanup func that also unsets any leaked environment variables.
+const (
+	testEnvVal = "value"
+	testEnvNew = "new"
+)
+
 func useTempLocation(t *testing.T) string {
 	t.Helper()
 
@@ -35,7 +37,6 @@ func writeFile(t *testing.T, path, contents string) {
 func TestApplyNoFileIsNoOp(t *testing.T) {
 	useTempLocation(t)
 
-	// Ensure the var is not already set in the environment.
 	if _, ok := os.LookupEnv("DEVSY_ENVFILE_TEST_ABSENT"); ok {
 		t.Fatal("precondition: DEVSY_ENVFILE_TEST_ABSENT already set")
 	}
@@ -66,7 +67,6 @@ func TestApplyMalformedJSONIsNoOp(t *testing.T) {
 
 	Apply()
 
-	// Existing value must be preserved; malformed file must not clear it.
 	if got := os.Getenv("DEVSY_ENVFILE_TEST_FOO"); got != "keep" {
 		t.Fatalf("DEVSY_ENVFILE_TEST_FOO = %q, want %q", got, "keep")
 	}
@@ -101,9 +101,9 @@ func TestMergeAndApplyCreatesFileWhenAbsent(t *testing.T) {
 	path := useTempLocation(t)
 	t.Setenv("DEVSY_ENVFILE_TEST_NEW", "")
 
-	MergeAndApply(map[string]string{"DEVSY_ENVFILE_TEST_NEW": "value"})
+	MergeAndApply(map[string]string{"DEVSY_ENVFILE_TEST_NEW": testEnvVal})
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //#nosec G304
 	if err != nil {
 		t.Fatalf("read envfile: %v", err)
 	}
@@ -113,12 +113,12 @@ func TestMergeAndApplyCreatesFileWhenAbsent(t *testing.T) {
 		t.Fatalf("parse envfile: %v", err)
 	}
 
-	if got := ef.Env["DEVSY_ENVFILE_TEST_NEW"]; got != "value" {
-		t.Fatalf("envfile DEVSY_ENVFILE_TEST_NEW = %q, want %q", got, "value")
+	if got := ef.Env["DEVSY_ENVFILE_TEST_NEW"]; got != testEnvVal {
+		t.Fatalf("envfile DEVSY_ENVFILE_TEST_NEW = %q, want %q", got, testEnvVal)
 	}
 
-	if got := os.Getenv("DEVSY_ENVFILE_TEST_NEW"); got != "value" {
-		t.Fatalf("env DEVSY_ENVFILE_TEST_NEW = %q, want %q", got, "value")
+	if got := os.Getenv("DEVSY_ENVFILE_TEST_NEW"); got != testEnvVal {
+		t.Fatalf("env DEVSY_ENVFILE_TEST_NEW = %q, want %q", got, testEnvVal)
 	}
 }
 
@@ -129,9 +129,9 @@ func TestMergeAndApplyMergesWithExistingFile(t *testing.T) {
 
 	writeFile(t, path, `{"env":{"DEVSY_ENVFILE_TEST_KEEP":"old"}}`)
 
-	MergeAndApply(map[string]string{"DEVSY_ENVFILE_TEST_ADD": "new"})
+	MergeAndApply(map[string]string{"DEVSY_ENVFILE_TEST_ADD": testEnvNew})
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304
 	if err != nil {
 		t.Fatalf("read envfile: %v", err)
 	}
@@ -144,15 +144,15 @@ func TestMergeAndApplyMergesWithExistingFile(t *testing.T) {
 	if got := ef.Env["DEVSY_ENVFILE_TEST_KEEP"]; got != "old" {
 		t.Fatalf("existing key overwritten: got %q, want %q", got, "old")
 	}
-	if got := ef.Env["DEVSY_ENVFILE_TEST_ADD"]; got != "new" {
-		t.Fatalf("new key missing: got %q, want %q", got, "new")
+	if got := ef.Env["DEVSY_ENVFILE_TEST_ADD"]; got != testEnvNew {
+		t.Fatalf("new key missing: got %q, want %q", got, testEnvNew)
 	}
 
 	if got := os.Getenv("DEVSY_ENVFILE_TEST_KEEP"); got != "old" {
 		t.Fatalf("env DEVSY_ENVFILE_TEST_KEEP = %q, want %q", got, "old")
 	}
-	if got := os.Getenv("DEVSY_ENVFILE_TEST_ADD"); got != "new" {
-		t.Fatalf("env DEVSY_ENVFILE_TEST_ADD = %q, want %q", got, "new")
+	if got := os.Getenv("DEVSY_ENVFILE_TEST_ADD"); got != testEnvNew {
+		t.Fatalf("env DEVSY_ENVFILE_TEST_ADD = %q, want %q", got, testEnvNew)
 	}
 }
 
