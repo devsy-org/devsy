@@ -123,7 +123,20 @@ Biome formats and checks web frontend files.
 
 1. **Contributor License Agreement (CLA)**: All contributors sign the CLA. A CLA bot posts instructions on the PR after it is opened.
 2. **Commit messages**: Conventional Commits, with a concise subject line (50 characters max).
-3. **Commit signing**: Commits are signed by the Devsy GitHub App. Push or create commits through the app installation (see [GitHub App Authentication](#github-app-authentication)); GitHub signs commits made through the app.
+3. **Commit signing**: Commits are signed by the Devsy GitHub App. Use `task github:app:sign-commit` to create verified commits as the app — never run `git commit` locally (local commits are unsigned and fail the signature check). The tool auto-detects all working-tree changes (staged, unstaged, and untracked), auto-creates the remote branch from `origin/main` if it does not yet exist, and creates the commit through GitHub's GraphQL API so GitHub signs it (committer: web-flow, verified). Pass `-pr` to also open a draft PR in the same step:
+
+   ```bash
+   # commit all working-tree changes (auto-creates remote branch if needed)
+   task github:app:sign-commit -- -m "fix: concise subject" -b "body text"
+
+   # commit + open a draft PR in one step
+   task github:app:sign-commit -- -m "fix: concise subject" -b "body text" -pr
+
+   # print the app installation token (for other API calls)
+   task github:app:sign-commit -- -token
+   ```
+
+   See [GitHub App Authentication](#github-app-authentication) for credential setup.
 4. **Pre-commit checks**: Linters, checkers, and relevant unit tests run before pushing. `prek` (a fast pre-commit hook manager) manages them.
    - Installation (Linux and macOS):
 

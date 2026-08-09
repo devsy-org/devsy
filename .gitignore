@@ -9,6 +9,7 @@
 /dist
 # Unit test targets
 /main
+/sign_commit
 /profile.out
 /tagsvendor/
 node_modules/

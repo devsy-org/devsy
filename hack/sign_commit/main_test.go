@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -359,6 +360,77 @@ func TestUrlOrErr(t *testing.T) {
 	}
 	if got := urlOrErr(map[string]any{}); got != "" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestResolveBranchName(t *testing.T) {
+	cases := []struct {
+		name, input, want string
+	}{
+		{"plain name", "feature/foo", "feature/foo"},
+		{"refs prefix", "refs/heads/feature/foo", "feature/foo"},
+		{"main", "refs/heads/main", "main"},
+		{"empty", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := resolveBranchName(c.input); got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestChangedFilesDetectsWorkingTree(t *testing.T) {
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "--quiet"},
+		{"config", "user.email", "t@t.com"},
+		{"config", "user.name", "test"},
+		{"checkout", "-b", "main"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "committed.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "staged.txt"), []byte("s"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	exec.Command("git", "-C", dir, "add", ".").Run()
+	exec.Command("git", "-C", dir, "commit", "--quiet", "-m", "init").Run()
+	exec.Command("git", "-C", dir, "branch", "origin/main").Run()
+
+	if err := os.WriteFile(filepath.Join(dir, "modified.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "committed.txt"), []byte("modified"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	exec.Command("git", "-C", dir, "add", "staged.txt").Run()
+	if err := os.WriteFile(filepath.Join(dir, "staged.txt"), []byte("staged-mod"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Chdir(dir)
+
+	files, err := changedFiles()
+	if err != nil {
+		t.Fatalf("changedFiles: %v", err)
+	}
+	got := make(map[string]bool)
+	for _, f := range files {
+		got[f] = true
+	}
+	want := []string{"committed.txt", "modified.txt", "staged.txt"}
+	for _, f := range want {
+		if !got[f] {
+			t.Errorf("expected %q in changed files, got %v", f, got)
+		}
 	}
 }
 

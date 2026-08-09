@@ -61,10 +61,9 @@ func TestGenerateWritesAllAgents(t *testing.T) {
 		s := string(b)
 		for _, want := range []string{
 			"Do NOT run `git commit`",
-			"Pre-PR check (CRITICAL)",
-			"exactly ONE commit",
-			"createCommitOnBranch",
+			"verified=true",
 			"sign_commit",
+			"-pr-only",
 			"---\nid:",
 			"## Scope",
 			"## Self-improvement",
