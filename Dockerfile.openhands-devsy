@@ -1,0 +1,80 @@
+ARG GO_VERSION=1.26.3
+ARG GOLANGCI_LINT_VERSION=2.12.2
+ARG NODE_MAJOR=24
+ARG GORELEASER_VERSION=v2
+ARG PREK_INSTALLER_URL=https://github.com/j178/prek/releases/latest/download/prek-installer.sh
+ARG ACT_INSTALLER_URL=https://raw.githubusercontent.com/nektos/act/master/install.sh
+
+FROM ghcr.io/openhands/agent-server:1.39.1-python
+
+ARG GO_VERSION
+ARG GOLANGCI_LINT_VERSION
+ARG NODE_MAJOR
+ARG GORELEASER_VERSION
+ARG PREK_INSTALLER_URL
+ARG ACT_INSTALLER_URL
+
+USER root
+
+RUN apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends \
+        protobuf-compiler \
+        xvfb \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV GOTOOLCHAIN=auto \
+    GOPATH=/go \
+    PATH="/usr/local/go/bin:/go/bin:${PATH}"
+RUN ARCH="$(dpkg --print-architecture)" \
+    && curl -sSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" -o /tmp/go.tgz \
+    && rm -rf /usr/local/go \
+    && tar -C /usr/local -xzf /tmp/go.tgz \
+    && rm /tmp/go.tgz \
+    && mkdir -p "${GOPATH}/bin" "${GOPATH}/src"
+
+RUN go install github.com/go-task/task/v3/cmd/task@latest \
+    && go install github.com/onsi/ginkgo/v2/ginkgo@latest \
+    && go install "github.com/goreleaser/goreleaser/v2@${GORELEASER_VERSION}" \
+    && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2 \
+    && go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+
+RUN ARCH="$(dpkg --print-architecture)" \
+    && curl -sSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${ARCH}.tar.gz" -o /tmp/gcl.tgz \
+    && tar -C /tmp -xzf /tmp/gcl.tgz \
+    && mv "/tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${ARCH}/golangci-lint" /usr/local/bin/golangci-lint \
+    && rm -rf /tmp/gcl.tgz "/tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${ARCH}" \
+    && golangci-lint --version
+
+RUN curl -sSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod a+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update -qq \
+    && apt-get install -y -qq gh \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSL "${ACT_INSTALLER_URL}" | bash -s -- -b /usr/local/bin \
+    && act --version 2>/dev/null || true
+
+RUN curl --proto '=https' --tlsv1.2 -LsSf "${PREK_INSTALLER_URL}" | sh \
+    && ln -sf "${HOME}/.local/bin/prek" /usr/local/bin/prek \
+    && prek --version
+
+RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+    && apt-get install -y -qq nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g @biomejs/biome \
+    && node --version && npm --version
+
+RUN command -v uv >/dev/null 2>&1 \
+    || (curl -LsSf https://astral.sh/uv/install.sh | sh \
+        && ln -sf "$HOME/.local/bin/uv" /usr/local/bin/uv) \
+    && uv --version
+
+RUN set -e; for t in go task golangci-lint goreleaser ginkgo \
+        protoc protoc-gen-go protoc-gen-go-grpc \
+        gh act prek node npm npx biome uv uvx git curl xvfb-run; do \
+        command -v "$t" >/dev/null 2>&1 || { echo "missing: $t"; exit 1; }; \
+    done
