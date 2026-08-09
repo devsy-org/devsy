@@ -27,7 +27,18 @@ export class DaemonState {
   private activeContext = ""
 
   updateWorkspaces(list: Workspace[]): boolean {
-    const newMap = new Map(list.map((w) => [w.id, w]))
+    const merged = list.map((w) => {
+      const existing = this.workspaces.get(w.id)
+      if (
+        existing &&
+        typeof w.status === "undefined" &&
+        typeof existing.status !== "undefined"
+      ) {
+        return { ...w, status: existing.status }
+      }
+      return w
+    })
+    const newMap = new Map(merged.map((w) => [w.id, w]))
     if (this.mapsEqual(this.workspaces, newMap)) return false
     this.workspaces = newMap
     return true

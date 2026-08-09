@@ -272,17 +272,24 @@ export class CliRunner {
     }
 
     let lastCliError: CLIError | undefined
+    let suppressCallbacks = false
 
     if (child.stdout) {
       const applyBackpressure = backpressureController(child.stdout)
       const rl = createInterface({ input: child.stdout })
-      rl.on("line", (line) => applyBackpressure(onLine(line, "stdout")))
+      rl.on("line", (line) => {
+        if (suppressCallbacks) return
+        applyBackpressure(onLine(line, "stdout"))
+      })
+      // Store readline interface for cleanup
+      ;(child as unknown as { _rlStdout?: typeof rl })._rlStdout = rl
     }
 
     if (child.stderr) {
       const applyBackpressure = backpressureController(child.stderr)
       const rl = createInterface({ input: child.stderr })
       rl.on("line", (line) => {
+        if (suppressCallbacks) return
         const parsed = parseStderrLine(line)
         if (parsed?.cliError) {
           lastCliError = parsed.cliError
@@ -295,6 +302,13 @@ export class CliRunner {
         }
         applyBackpressure(onLine(line, "stderr", meta))
       })
+      // Store readline interface for cleanup
+      ;(child as unknown as { _rlStderr?: typeof rl })._rlStderr = rl
+    }
+
+    // Expose a method to suppress callbacks (used by cancelFor timeout)
+    ;(child as unknown as { _suppressCallbacks?: () => void })._suppressCallbacks = () => {
+      suppressCallbacks = true
     }
 
     let settled = false
@@ -312,6 +326,9 @@ export class CliRunner {
       this.release()
       onExit(code, cliError)
     }
+
+    // Expose finish for cancelFor timeout handling
+    ;(child as unknown as { _finish?: typeof finish })._finish = finish
 
     // A spawn failure (missing binary, EACCES) emits "error" and never
     // "close". Without this, onExit never fires: callers that wrap this in a
@@ -345,13 +362,66 @@ export class CliRunner {
 
     const waits: Promise<void>[] = []
     for (const child of bucket) {
+      let timedOut = false
       waits.push(
         new Promise<void>((resolve) => {
+          let settled = false
+          let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+            timer = null
+            settled = true
+            timedOut = true
+            resolve()
+          }, 2000)
+
           if (child.exitCode !== null || child.signalCode !== null) {
+            if (timer) clearTimeout(timer)
+            settled = true
             resolve()
             return
           }
-          child.once("close", () => resolve())
+          child.once("close", () => {
+            if (timer) {
+              clearTimeout(timer)
+              timer = null
+            }
+            settled = true
+            resolve()
+          })
+        }).then(() => {
+          // If process did not close in time, forcefully kill and suppress late callbacks
+          if (child.exitCode === null && child.signalCode === null) {
+            // Run lifecycle cleanup BEFORE suppressing callbacks/removing listeners
+            // so finish(...) can properly clean up sessions and call onExit
+            if (timedOut) {
+              const finishFn = (child as unknown as { _finish?: (code: number, cliError?: CLIError) => void })._finish
+              if (finishFn) {
+                finishFn(-1, { code: "timeout", message: "Process did not exit in time" })
+              }
+            }
+
+            // Now suppress callbacks at the source
+            const suppressFn = (child as unknown as { _suppressCallbacks?: () => void })._suppressCallbacks
+            if (suppressFn) suppressFn()
+
+            // Close readline interfaces
+            const rlStdout = (child as unknown as { _rlStdout?: { close: () => void } })._rlStdout
+            const rlStderr = (child as unknown as { _rlStderr?: { close: () => void } })._rlStderr
+            if (rlStdout) rlStdout.close()
+            if (rlStderr) rlStderr.close()
+
+            // Destroy streams to stop emitting data events
+            if (child.stdout) {
+              child.stdout.removeAllListeners()
+              child.stdout.destroy()
+            }
+            if (child.stderr) {
+              child.stderr.removeAllListeners()
+              child.stderr.destroy()
+            }
+
+            child.removeAllListeners()
+            child.kill("SIGKILL")
+          }
         }),
       )
       child.kill("SIGTERM")

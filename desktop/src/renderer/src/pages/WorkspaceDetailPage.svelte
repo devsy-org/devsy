@@ -118,12 +118,27 @@ let isStopped = $derived(
     workspace.status.toLowerCase() === "stopped" ||
     workspace.status.toLowerCase() === "notfound",
 )
-let isBusy = $derived(workspace?.status?.toLowerCase() === "busy")
+let isBusy = $derived.by(() => {
+  const status = workspace?.status?.toLowerCase()
+  return (
+    status === "busy" ||
+    status === "starting" ||
+    status === "stopping" ||
+    status === "deleting"
+  )
+})
 
 function statusBadgeVariant(): "default" | "secondary" | "outline" {
   if (isRunning) return "default"
   if (isBusy) return "secondary"
   return "outline"
+}
+
+function setWorkspaceStatus(status?: string) {
+  if (!id) return
+  workspaces.update((current) =>
+    current.map((ws) => (ws.id === id ? { ...ws, status } : ws)),
+  )
 }
 
 const BUILD_OPS = new Set(["Start", "Open IDE", "Recovery", "Rebuild", "Reset"])
@@ -410,7 +425,9 @@ function isDebug(): boolean {
   return loadLocalOptions().debugFlag
 }
 
-function startStreamingOp(label: string) {
+function startStreamingOp(label: string, pendingStatus?: string): string {
+  const newCmdId = crypto.randomUUID()
+  commandId = newCmdId
   operationLabel = label
   operationRunning = true
   buildFailed = false
@@ -421,22 +438,29 @@ function startStreamingOp(label: string) {
     cancelAnimationFrame(flushHandle)
     flushHandle = null
   }
+  if (pendingStatus) {
+    setWorkspaceStatus(pendingStatus)
+  }
   activeTab = "logs"
+  return newCmdId
 }
 
 async function handleStart() {
   const ide = currentIde
   const folder = customFolder || undefined
-  startStreamingOp("Start")
+  const previousStatus = workspace?.status
+  const cmdId = startStreamingOp("Start", "starting")
   try {
-    commandId = await workspaceUp({
+    await workspaceUp({
       source: id,
       ide,
       debug: isDebug(),
       workspaceFolder: folder,
+      commandId: cmdId,
     })
   } catch (err) {
     operationRunning = false
+    setWorkspaceStatus(previousStatus)
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   }
 }
@@ -463,17 +487,20 @@ function handleBuildFailure(progress: CommandProgress) {
 async function handleRecovery() {
   const ide = currentIde
   const folder = customFolder || undefined
-  startStreamingOp("Recovery")
+  const previousStatus = workspace?.status
+  const cmdId = startStreamingOp("Recovery", "busy")
   try {
-    commandId = await workspaceUp({
+    await workspaceUp({
       source: id,
       ide,
       recovery: true,
       debug: isDebug(),
       workspaceFolder: folder,
+      commandId: cmdId,
     })
   } catch (err) {
     operationRunning = false
+    setWorkspaceStatus(previousStatus)
     toasts.error(
       `Failed to start recovery container: ${extractErrorMessage(err)}`,
     )
@@ -483,63 +510,74 @@ async function handleRecovery() {
 async function handleOpenIde() {
   const ide = currentIde
   const folder = customFolder || undefined
+  const previousStatus = workspace?.status
   trackEngagement("ide_open", { ide })
-  startStreamingOp("Open IDE")
+  const cmdId = startStreamingOp("Open IDE", "busy")
   try {
-    commandId = await workspaceUp({
+    await workspaceUp({
       source: id,
       ide,
       ideLaunch: "auto",
       debug: isDebug(),
       workspaceFolder: folder,
+      commandId: cmdId,
     })
   } catch (err) {
     operationRunning = false
+    setWorkspaceStatus(previousStatus)
     toasts.error(`Failed to open IDE: ${extractErrorMessage(err)}`)
   }
 }
 
 async function handleStop() {
-  startStreamingOp("Stop")
+  const previousStatus = workspace?.status
+  const cmdId = startStreamingOp("Stop", "stopping")
   try {
-    commandId = await workspaceStop(id, isDebug())
+    await workspaceStop(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
+    setWorkspaceStatus(previousStatus)
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   }
 }
 
 async function handleRebuild() {
   confirmRebuildOpen = false
-  startStreamingOp("Rebuild")
+  const previousStatus = workspace?.status
+  const cmdId = startStreamingOp("Rebuild", "busy")
   try {
-    commandId = await workspaceRebuild(id, isDebug())
+    await workspaceRebuild(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
+    setWorkspaceStatus(previousStatus)
     toasts.error(`Failed to rebuild: ${extractErrorMessage(err)}`)
   }
 }
 
 async function handleReset() {
   confirmResetOpen = false
-  startStreamingOp("Reset")
+  const previousStatus = workspace?.status
+  const cmdId = startStreamingOp("Reset", "busy")
   try {
-    commandId = await workspaceReset(id, isDebug())
+    await workspaceReset(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
+    setWorkspaceStatus(previousStatus)
     toasts.error(`Failed to reset: ${extractErrorMessage(err)}`)
   }
 }
 
 async function handleDelete() {
   confirmDeleteOpen = false
-  startStreamingOp("Delete")
+  const previousStatus = workspace?.status
+  const cmdId = startStreamingOp("Delete", "deleting")
   deleting = true
   try {
-    commandId = await workspaceDelete(id, isDebug())
+    await workspaceDelete(id, isDebug(), cmdId)
   } catch (err) {
     operationRunning = false
     deleting = false
+    setWorkspaceStatus(previousStatus)
     toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   }
 }
@@ -619,8 +657,11 @@ async function handleRenameConfirmed() {
                 <span class="sr-only">Rename</span>
               </Button>
             {/if}
-            {#if workspace.status}
-              <span class={badgeVariants({ variant: statusBadgeVariant() })}>{workspace.status}</span>
+            <span class={badgeVariants({ variant: statusBadgeVariant() })}>
+              {workspace.status ?? "Checking..."}
+            </span>
+            {#if operationRunning || isBusy}
+              <Spinner class="size-3" />
             {/if}
             {#if inRecovery}
               <span class="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
@@ -653,17 +694,25 @@ async function handleRenameConfirmed() {
         </div>
 
         <ButtonGroup.Root class="shrink-0">
-          {#if isRunning || isBusy}
-            <Button variant="destructive" size="sm" onclick={handleStop} disabled={operationRunning}>
-              {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
-              Stop
-            </Button>
-          {:else}
-            <Button variant="default" size="sm" onclick={handleStart} disabled={!isStopped || operationRunning || connecting}>
-              {#if operationRunning && operationLabel === "Start"}<Spinner />{:else}<Play class="h-4 w-4" />{/if}
-              Start
-            </Button>
-          {/if}
+          <Button
+            variant="destructive"
+            size="sm"
+            onclick={handleStop}
+            disabled={operationRunning || (!isRunning && !isBusy)}
+          >
+            {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
+            Stop
+          </Button>
+
+          <Button
+            variant="default"
+            size="sm"
+            onclick={handleStart}
+            disabled={operationRunning || connecting || isRunning || isBusy || !isStopped}
+          >
+            {#if operationRunning && operationLabel === "Start"}<Spinner />{:else}<Play class="h-4 w-4" />{/if}
+            Start
+          </Button>
 
           <Button variant="outline" size="sm" onclick={handleOpenIde} disabled={!isRunning || operationRunning || currentIde === "none"}>
             {#if operationRunning && operationLabel === "Open IDE"}<Spinner />{:else}<Monitor class="h-4 w-4" />{/if}
