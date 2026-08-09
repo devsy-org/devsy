@@ -64,7 +64,7 @@ so GitHub signs it (committer: GitHub, verified). No Python, no GITHUB_TOKEN.
   - git add <changed files>
   - WARNING: Do NOT run `git commit` locally. The sign_commit tool creates the commit via
     the GitHub `createCommitOnBranch` mutation (committer: GitHub, verified). A local
-    `git commit` would produce an UNSIGNED commit (committer: openhands) that the mutation
+    `git commit` would produce an UNSIGNED commit that the mutation
     does NOT replace — both commits would land on the branch and the unsigned one fails the
     signature status check. Only `git add` to stage.
   - task github:app:sign-commit -- -m "fix: <conventional-commit subject, 50 chars max>" "<body>"
@@ -82,7 +82,7 @@ so GitHub signs it (committer: GitHub, verified). No Python, no GITHUB_TOKEN.
 
 STEP 6 — Open the PR as the app (no GITHUB_TOKEN):
   - TOKEN=$(task github:app:sign-commit -- -token)
-  - Write the PR body to /tmp/pr_body.md. It MUST include: the Codefactor issue Key, file:line, the Codefactor message, the fix summary, and that task cli:lint:ci passed (0 new issues) + task cli:test status. Add label "codefactor" if it exists., a line "This PR was created by an AI agent (OpenHands) as part of an automated daily Codefactor issue fix job.", and "Commit signature: Verified (GitHub-signed via the Devsy GitHub App createCommitOnBranch mutation)."
+  - Write the PR body to /tmp/pr_body.md. It MUST include: the Codefactor issue Key, file:line, the Codefactor message, the fix summary, and that task cli:lint:ci passed (0 new issues) + task cli:test status. Add label "codefactor" if it exists., a line "This PR was created by an AI agent as part of an automated daily Codefactor issue fix job."
   - PR_BODY=$(python3 -c 'import json,sys;print(json.dumps(open("/tmp/pr_body.md").read()))')
   - curl -s -X POST -H "Authorization: bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/devsy-org/devsy/pulls -d "{\"title\":\"fix: <short description>\",\"head\":\"fix/codefactor/<slug>\",\"base\":\"main\",\"draft\":true,\"body\":${PR_BODY}}"
   - Report the PR URL and commit SHA. A run that does not produce a PR URL is a FAILED run.
