@@ -256,14 +256,7 @@ tasks:
     #        task github:app:sign-commit -- -token   (print the app installation token)
     desc: |
       create a commit signed by the Devsy GitHub App (devsy-app[bot]) on the
-      current branch. Authenticates as the app installation and creates the
-      commit through GitHub so it signs it (committer: web-flow, verified).
-      With no file paths, commits all working-tree changes vs origin/main
-      (staged, unstaged, and untracked files). The remote branch is auto-created
-      from origin/main when it does not yet exist.
-      Pass -pr to also open a draft PR in one step, or -pr-only to open a PR
-      without committing (uses -title or -m for the PR title; use -draft=false
-      for a ready PR).
+      current branch.
       Pass -token to print the app installation token instead (used to open PRs
       as the app without GITHUB_TOKEN).
       Reuses DEVSY_GITHUB_APP_ID / DEVSY_GITHUB_APP_PRIVATE_KEY[_PATH].

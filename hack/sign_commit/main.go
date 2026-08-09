@@ -19,11 +19,6 @@
 //	task github:app:sign-commit -- -m "subject" -pr   (commit + open draft PR)
 //	task github:app:sign-commit -- -m "subject" -pr-only   (open draft PR only)
 //	task github:app:sign-commit -- -token   (print the app installation token)
-//
-// With no file paths, all working-tree changes vs origin/main are committed
-// (staged, unstaged, and untracked). The remote branch is auto-created from
-// origin/main when it does not yet exist. Pass -pr to also open a draft PR in
-// the same step, or -pr-only to open a PR without committing.
 package main
 
 import (

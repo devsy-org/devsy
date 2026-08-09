@@ -48,8 +48,7 @@ func TestGenerateWritesAllAgents(t *testing.T) {
 		"pkg-ssh-git", "pkg-system-platform", "pkg-tunnel-network",
 		"agent-analytics",
 	}
-	// agent-analytics uses uv (PEP 723 inline deps) instead of pip/venv, so the
-	// pip-install/venv ban does not apply to its uv-based toolchain.
+
 	pythonAgents := map[string]bool{"agent-analytics": true}
 	for _, id := range ids {
 		p := agentFilePath(t, id)
