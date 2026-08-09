@@ -11,10 +11,18 @@ const unreadCount = notificationHistory.unreadCount
 <DropdownMenu.Root>
   <DropdownMenu.Trigger>
     {#snippet child({ props })}
-      <Button variant="ghost" size="sm" class="relative" {...props}>
+      <Button
+        variant="ghost"
+        size="sm"
+        class="relative"
+        aria-label={$unreadCount > 0
+          ? `Notifications (${unreadCount} unread)`
+          : "Notifications"}
+        {...props}
+      >
         <Bell class="h-4 w-4" />
         {#if $unreadCount > 0}
-          <span class="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+          <span class="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground" aria-hidden="true">
             {$unreadCount > 9 ? "9+" : $unreadCount}
           </span>
         {/if}
@@ -56,6 +64,7 @@ const unreadCount = notificationHistory.unreadCount
               type="button"
               class="mt-0.5 shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover/item:opacity-60 hover:!opacity-100"
               title="Dismiss"
+              aria-label="Dismiss notification"
               onclick={() => notificationHistory.remove(item.id)}
             >
               <X class="h-3 w-3" />
