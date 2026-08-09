@@ -57,11 +57,10 @@ type config struct {
 }
 
 type renderView struct {
-	Agent            agent
-	Step0Body        string
-	VerifyBlock      string
-	PRTitleJSON      string
-	StatusStepNumber int
+	Agent       agent
+	Step0Body   string
+	VerifyBlock string
+	PRTitleJSON string
 }
 
 func main() {
@@ -138,11 +137,10 @@ func validateAgent(a agent) {
 
 func renderAgent(tmpl *template.Template, a agent) string {
 	view := renderView{
-		Agent:            a,
-		Step0Body:        installBlock(a.Toolchain),
-		VerifyBlock:      verifyBlock(a),
-		PRTitleJSON:      escapeJSONString(a.PRTitle),
-		StatusStepNumber: a.PRStepNumber + 1,
+		Agent:       a,
+		Step0Body:   installBlock(a.Toolchain),
+		VerifyBlock: verifyBlock(a),
+		PRTitleJSON: escapeJSONString(a.PRTitle),
 	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, view); err != nil {
