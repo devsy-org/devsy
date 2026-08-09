@@ -3,7 +3,8 @@
 // GitHub App authentication requires a JWT signed with the app's RSA private
 // key using the RS256 algorithm, carrying the registered claims:
 //
-//   - iss: the GitHub App client ID (numeric app ID or client ID string)
+//   - iss: the GitHub App client ID (prefer the client ID string; the numeric
+//     app ID is accepted as a legacy fallback)
 //   - iat: issued-at time, backdated 60 seconds to tolerate clock drift
 //   - exp: expiration, 10 minutes after JWT generation (GitHub's maximum)
 //
@@ -28,14 +29,19 @@ import (
 const (
 	maxExpiration     = 10 * time.Minute
 	issuedAtSkew      = 60 * time.Second
+	envClientID       = "DEVSY_GITHUB_APP_CLIENT_ID"
 	envAppID          = "DEVSY_GITHUB_APP_ID"
 	envPrivateKey     = "DEVSY_GITHUB_APP_PRIVATE_KEY"
 	envPrivateKeyPath = "DEVSY_GITHUB_APP_PRIVATE_KEY_PATH"
 )
 
 func main() {
-	clientID := flag.String("app-id", os.Getenv(envAppID),
-		"GitHub App client ID (defaults to $"+envAppID+")")
+	clientIDDefault := os.Getenv(envClientID)
+	if clientIDDefault == "" {
+		clientIDDefault = os.Getenv(envAppID)
+	}
+	clientID := flag.String("app-id", clientIDDefault,
+		"GitHub App client ID (defaults to $"+envClientID+", then $"+envAppID+")")
 	privateKeyPath := flag.String("private-key", os.Getenv(envPrivateKeyPath),
 		"path to the GitHub App PEM private key (defaults to $"+envPrivateKeyPath+")")
 	privateKeyVar := flag.String("private-key-content", os.Getenv(envPrivateKey),
@@ -50,7 +56,8 @@ func main() {
 
 func run(clientID, privateKeyPath, privateKeyVar string) error {
 	if clientID == "" {
-		return fmt.Errorf("a GitHub App client ID is required: pass --app-id or set %s", envAppID)
+		return fmt.Errorf("a GitHub App client ID is required: pass --app-id or set %s or %s",
+			envClientID, envAppID)
 	}
 
 	key, err := loadPrivateKey(privateKeyPath, privateKeyVar)

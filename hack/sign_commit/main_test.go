@@ -24,7 +24,10 @@ func testKey(t *testing.T) *rsa.PrivateKey {
 	return key
 }
 
-const testSubject = "subject"
+const (
+	testSubject = "subject"
+	testSummary = "summary"
+)
 
 func TestSplitMessage(t *testing.T) {
 	cases := []struct {
@@ -32,7 +35,7 @@ func TestSplitMessage(t *testing.T) {
 	}{
 		{"body overrides", testSubject, "the body", testSubject, "the body"},
 		{"single line", testSubject, "", testSubject, ""},
-		{"multiline", "subject\nline one\nline two", "", "subject", "line one\nline two"},
+		{"multiline", testSubject + "\nline one\nline two", "", testSubject, "line one\nline two"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -44,7 +47,121 @@ func TestSplitMessage(t *testing.T) {
 	}
 }
 
-func TestAdditions(t *testing.T) {
+func TestStripCoAuthored(t *testing.T) {
+	cases := []struct {
+		name, input, want string
+	}{
+		{"no trailer", "plain body\ntext here", "plain body\ntext here"},
+		{
+			"trailing trailer",
+			"summary line\n\nCo-authored-by: openhands <openhands@all-hands.dev>",
+			"summary line",
+		},
+		{
+			"mid-body trailer",
+			"line one\nCo-authored-by: someone <x@y.com>\nline two",
+			"line one\nline two",
+		},
+		{
+			"case-insensitive",
+			"summary\nco-authored-by: bot <bot@x.com>",
+			testSummary,
+		},
+		{
+			"leading whitespace",
+			"summary\n  Co-authored-by: bot <bot@x.com>",
+			testSummary,
+		},
+		{
+			"multiple trailers",
+			"summary\nCo-authored-by: a <a@x.com>\nCo-authored-by: b <b@x.com>",
+			testSummary,
+		},
+		{"empty after strip", "Co-authored-by: bot <bot@x.com>", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := stripCoAuthored(c.input)
+			if got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeSecrets(t *testing.T) {
+	ghsToken := "ghs_1234567890abcdefghijklmnopqrstuvwxyz1234"
+	ghoToken := "gho_1234567890abcdefghijklmnopqrstuvwxyz1234"
+	ghpToken := "ghp_1234567890abcdefghijklmnopqrstuvwxyz1234"
+	jwtToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
+		".eyJzdWIiOiIxMjM0NTY3ODkwIn0" +
+		".SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+	shortToken := "ghs_abc123XYZabcdefghijklmnopqrstuvwxyz1234"
+
+	cases := []struct {
+		name, input, want string
+	}{
+		{"no secrets", "plain commit body", "plain commit body"},
+		{"ghs token", "token is " + ghsToken + " here", "token is [REDACTED] here"},
+		{"gho token", "auth: " + ghoToken, "auth: [REDACTED]"},
+		{"ghp token", ghpToken, "[REDACTED]"},
+		{"jwt token", "jwt: " + jwtToken, "jwt: [REDACTED]"},
+		{"multiple", ghsToken + " and " + jwtToken, "[REDACTED] and [REDACTED]"},
+		{"embedded in sentence", "via " + shortToken + ", the tool", "via [REDACTED], the tool"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := sanitizeSecrets(c.input)
+			if got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeSecretsInSplitMessage(t *testing.T) {
+	ghsToken := "ghs_1234567890abcdefghijklmnopqrstuvwxyz1234"
+	msg := "subject\nbody with " + ghsToken + " token"
+	head, body := splitMessage(msg, "")
+	if head != "subject" {
+		t.Errorf("headline: got %q", head)
+	}
+	if strings.Contains(body, ghsToken) {
+		t.Errorf("body still contains ghs token: %q", body)
+	}
+	if !strings.Contains(body, "[REDACTED]") {
+		t.Errorf("body should contain [REDACTED]: %q", body)
+	}
+}
+
+func TestSplitMessageStripsCoAuthored(t *testing.T) {
+	msg := "subject\nbody text\n\nCo-authored-by: openhands <openhands@all-hands.dev>"
+	head, body := splitMessage(msg, "")
+	if head != "subject" {
+		t.Errorf("headline: got %q, want %q", head, "subject")
+	}
+	if strings.Contains(body, "Co-authored-by") {
+		t.Errorf("body still contains Co-authored-by: %q", body)
+	}
+	if body != "body text" {
+		t.Errorf("body: got %q, want %q", body, "body text")
+	}
+}
+
+func TestSplitMessageStripsCoAuthoredFromBody(t *testing.T) {
+	head, body := splitMessage(
+		"subject",
+		"body text\n\nCo-authored-by: openhands <openhands@all-hands.dev>",
+	)
+	if strings.Contains(head, "Co-authored-by") {
+		t.Errorf("headline contains Co-authored-by: %q", head)
+	}
+	if strings.Contains(body, "Co-authored-by") {
+		t.Errorf("body still contains Co-authored-by: %q", body)
+	}
+}
+
+func TestFileChanges(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a.txt")
 	b := filepath.Join(dir, "b.txt")
@@ -55,9 +172,12 @@ func TestAdditions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	adds, err := additions([]string{a, b}, os.ReadFile)
+	adds, dels, err := fileChanges([]string{a, b}, os.ReadFile)
 	if err != nil {
-		t.Fatalf("additions: %v", err)
+		t.Fatalf("fileChanges: %v", err)
+	}
+	if len(dels) != 0 {
+		t.Fatalf("got %d deletions, want 0", len(dels))
 	}
 	if len(adds) != 2 {
 		t.Fatalf("got %d additions, want 2", len(adds))
@@ -71,18 +191,25 @@ func TestAdditions(t *testing.T) {
 	}
 }
 
-func TestAdditionsMissingFile(t *testing.T) {
+func TestFileChangesMissingFileIsDeletion(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
-	if _, err := additions([]string{missing}, os.ReadFile); err == nil {
-		t.Fatal("expected error for missing file")
+	adds, dels, err := fileChanges([]string{missing}, os.ReadFile)
+	if err != nil {
+		t.Fatalf("fileChanges: %v", err)
+	}
+	if len(adds) != 0 {
+		t.Fatalf("got %d additions, want 0", len(adds))
+	}
+	if len(dels) != 1 || dels[0].Path != missing {
+		t.Fatalf("got deletions %+v, want [{%s}]", dels, missing)
 	}
 }
 
-func TestAdditionsBase64(t *testing.T) {
+func TestFileChangesBase64(t *testing.T) {
 	reader := func(string) ([]byte, error) { return []byte{0x00, 0xff}, nil }
-	adds, err := additions([]string{"x"}, reader)
+	adds, _, err := fileChanges([]string{"x"}, reader)
 	if err != nil {
-		t.Fatalf("additions: %v", err)
+		t.Fatalf("fileChanges: %v", err)
 	}
 	if adds[0].Contents != "AP8=" {
 		t.Errorf("got %q, want AP8=", adds[0].Contents)
@@ -107,23 +234,36 @@ func TestResolvePathsNoAll(t *testing.T) {
 
 func TestCommitVars(t *testing.T) {
 	o := options{message: testSubject, body: "body text", repo: "devsy-org/devsy"}
-	adds := []addition{{Path: "f", Contents: "AA=="}}
-	vars := commitVars(o, "mybranch", "deadbeef", adds)
+	changes := fileChange{
+		Additions: []addition{{Path: "f", Contents: "AA=="}},
+		Deletions: []deletion{{Path: "g"}},
+	}
+	vars := commitVars(o, "mybranch", "deadbeef", changes)
 	in := vars.Input
-	if in.Branch.Repo != "devsy-org/devsy" {
-		t.Errorf("repo: got %q", in.Branch.Repo)
+	checkBranch := func(wantRepo, wantName string) {
+		t.Helper()
+		if in.Branch.Repo != wantRepo {
+			t.Errorf("repo: got %q", in.Branch.Repo)
+		}
+		if in.Branch.Name != wantName {
+			t.Errorf("branch name: got %q", in.Branch.Name)
+		}
 	}
-	if in.Branch.Name != "refs/heads/mybranch" {
-		t.Errorf("branch name: got %q", in.Branch.Name)
+	checkField := func(label, got, want string) {
+		t.Helper()
+		if got != want {
+			t.Errorf("%s: got %q, want %q", label, got, want)
+		}
 	}
-	if in.ExpectedHead != "deadbeef" {
-		t.Errorf("head: got %q", in.ExpectedHead)
-	}
-	if in.Message.Headline != "subject" || in.Message.Body != "body text" {
-		t.Errorf("message: got %+v", in.Message)
-	}
+	checkBranch("devsy-org/devsy", "refs/heads/mybranch")
+	checkField("head", in.ExpectedHead, "deadbeef")
+	checkField("headline", in.Message.Headline, "subject")
+	checkField("body", in.Message.Body, "body text")
 	if len(in.FileChanges.Additions) != 1 || in.FileChanges.Additions[0].Path != "f" {
 		t.Errorf("additions: got %+v", in.FileChanges.Additions)
+	}
+	if len(in.FileChanges.Deletions) != 1 || in.FileChanges.Deletions[0].Path != "g" {
+		t.Errorf("deletions: got %+v", in.FileChanges.Deletions)
 	}
 }
 
@@ -183,6 +323,33 @@ func TestSplitLines(t *testing.T) {
 	got := splitLines("a\nb\nc")
 	if !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
 		t.Errorf("got %v", got)
+	}
+}
+
+func TestStripDashDash(t *testing.T) {
+	const tok = "-token"
+	cases := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{"no separator", []string{tok}, []string{tok}},
+		{"leading separator", []string{"--", tok}, []string{tok}},
+		{
+			"separator with multiple flags",
+			[]string{"--", "-m", "msg", "-b", "body"},
+			[]string{"-m", "msg", "-b", "body"},
+		},
+		{"no args", nil, nil},
+		{"separator only", []string{"--"}, []string{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := stripDashDash(c.args)
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
 	}
 }
 
