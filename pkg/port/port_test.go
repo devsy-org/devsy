@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// freePort returns an OS-assigned free TCP port on 127.0.0.1 and the listener
-// must be closed by the caller (use defer) before treating the port as free.
 func freePort(t *testing.T) (int, *net.TCPListener) {
 	t.Helper()
 	l, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
@@ -35,7 +33,7 @@ func TestIsAvailable_FreePort(t *testing.T) {
 
 func TestIsAvailable_OccupiedPort(t *testing.T) {
 	port, l := freePort(t)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	addr := "127.0.0.1:" + strconv.Itoa(port)
 	got, err := IsAvailable(addr)
@@ -74,7 +72,7 @@ func TestFindAvailablePort_ReturnsStartWhenFree(t *testing.T) {
 
 func TestFindAvailablePort_SkipsOccupiedPort(t *testing.T) {
 	occupied, l := freePort(t)
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	got, err := FindAvailablePort(occupied)
 	if err != nil {
