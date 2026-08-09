@@ -15,10 +15,6 @@ import (
 	"gotest.tools/assert"
 )
 
-// resolveAgentDownloadURL encodes the agent-download-URL resolution order:
-// DEVSY_AGENT_URL env -> AGENT_URL context option -> GitHub release default.
-// These cases lock in that precedence so a regression is caught early.
-
 type testCase struct {
 	Name                       string
 	ProviderOptions            map[string]*types.Option
@@ -829,8 +825,6 @@ func TestResolveAgentMicrosandboxConfig(t *testing.T) {
 }
 
 func TestResolveAgentDownloadURL(t *testing.T) {
-	// In tests the version is the dev version (v0.0.0), so the default
-	// branch resolves to the floating "latest" release URL.
 	const (
 		localHost         = "http://localhost:8080/"
 		localHostTrail    = "http://localhost:8080///"
