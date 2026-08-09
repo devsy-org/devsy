@@ -13,8 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-// exitError runs a shell command that exits with the given code and returns
-// the resulting *exec.ExitError.
 func exitError(t *testing.T, code string) *exec.ExitError {
 	t.Helper()
 	// #nosec G204 -- test helper with controlled exit code argument
@@ -44,8 +42,6 @@ func TestIsRetryableSSHError_TunnelToContainer_NotRetryable(t *testing.T) {
 }
 
 func TestIsRetryableSSHError_RemoteCommandFailure(t *testing.T) {
-	// The devsy CLI wraps all command failures with "tunnel to container:" in stderr.
-	// This must NOT be treated as a transient SSH error.
 	assert.False(
 		t,
 		isRetryableSSHError(
@@ -96,7 +92,6 @@ func TestIsRetryableSSHError_ForkExecWithoutPermissionDenied_NotRetryable(t *tes
 }
 
 func TestIsRetryableSSHError_ExitCode1_NoSSHPattern(t *testing.T) {
-	// Remote command failure (e.g. cat on missing file) — should NOT be retried.
 	assert.False(
 		t,
 		isRetryableSSHError(
@@ -161,17 +156,10 @@ func TestIsRetryableDockerError_Empty(t *testing.T) {
 	assert.False(t, isRetryableDockerError(""))
 }
 
-// transientExitErr is a deterministic, real *exec.ExitError (exit code 1) used
-// by the retry-loop tests so the predicate's errors.As/exec.ExitCode checks
-// exercise the same code path as real devsy CLI invocations.
 func transientExitErr(t *testing.T) *exec.ExitError {
 	return exitError(t, "1")
 }
 
-// withFastBackoffs temporarily replaces the package-level retry backoffs with
-// millisecond-scale durations so the loop tests do not sleep for minutes. The
-// real backoff values (30s/60s/120s for Docker, 5s/10s for SSH) are restored on
-// test completion. Steps are preserved so exhaustion assertions stay meaningful.
 func withFastBackoffs(t *testing.T) {
 	t.Helper()
 	origDocker := dockerPullBackoff
@@ -194,8 +182,6 @@ func withFastBackoffs(t *testing.T) {
 	})
 }
 
-// TestExecWithDockerRetry_SuccessFirstTry verifies a successful invocation is
-// not retried and returns the captured stdout/stderr without error.
 func TestExecWithDockerRetry_SuccessFirstTry(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -211,9 +197,6 @@ func TestExecWithDockerRetry_SuccessFirstTry(t *testing.T) {
 	assert.Equal(t, "done", stderr)
 }
 
-// TestExecWithDockerRetry_NonRetryableError verifies a non-transient failure
-// short-circuits after a single attempt and wraps the error with the attempt
-// count.
 func TestExecWithDockerRetry_NonRetryableError(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -232,8 +215,6 @@ func TestExecWithDockerRetry_NonRetryableError(t *testing.T) {
 	assert.Contains(t, err.Error(), "after 1 attempts")
 }
 
-// TestExecWithDockerRetry_RetryThenSuccess verifies a transient Docker error is
-// retried and that a subsequent success returns the successful result.
 func TestExecWithDockerRetry_RetryThenSuccess(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -252,9 +233,6 @@ func TestExecWithDockerRetry_RetryThenSuccess(t *testing.T) {
 	assert.Equal(t, "", stderr)
 }
 
-// TestExecWithDockerRetry_RetryExhausted verifies that a persistently
-// transient error is retried up to dockerPullBackoff.Steps (4) times and the
-// final error reports the full attempt count.
 func TestExecWithDockerRetry_RetryExhausted(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -272,9 +250,6 @@ func TestExecWithDockerRetry_RetryExhausted(t *testing.T) {
 		fmt.Sprintf("after %d attempts", dockerPullBackoff.Steps))
 }
 
-// TestExecWithDockerRetry_ContextCanceled verifies that an already-canceled
-// context surfaces context.Canceled without wrapping it in the attempt-count
-// message.
 func TestExecWithDockerRetry_ContextCanceled(t *testing.T) {
 	withFastBackoffs(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -286,15 +261,11 @@ func TestExecWithDockerRetry_ContextCanceled(t *testing.T) {
 			return "", "connection reset by peer", fmt.Errorf("pull failed")
 		},
 	)
-	// Either the context blocked the call entirely (0 calls) or it was canceled
-	// mid-retry; either way context.Canceled must propagate unwrapped.
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.NotContains(t, err.Error(), "after")
 }
 
-// TestExecWithSSHRetry_SuccessFirstTry verifies a successful SSH invocation is
-// not retried.
 func TestExecWithSSHRetry_SuccessFirstTry(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -309,10 +280,6 @@ func TestExecWithSSHRetry_SuccessFirstTry(t *testing.T) {
 	assert.Equal(t, "ok", out)
 }
 
-// TestExecWithSSHRetry_NonRetryableError verifies a non-transient remote
-// command failure is not retried and is wrapped with the attempt count plus the
-// captured stderr (the loop attaches stderr whenever it is non-empty, even for
-// non-retryable failures, to aid debugging).
 func TestExecWithSSHRetry_NonRetryableError(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -333,8 +300,6 @@ func TestExecWithSSHRetry_NonRetryableError(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), stderrMsg))
 }
 
-// TestExecWithSSHRetry_RetryThenSuccess verifies a transient SSH error is
-// retried and that a subsequent success returns the successful stdout.
 func TestExecWithSSHRetry_RetryThenSuccess(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -354,9 +319,6 @@ func TestExecWithSSHRetry_RetryThenSuccess(t *testing.T) {
 	assert.Equal(t, "ok", out)
 }
 
-// TestExecWithSSHRetry_RetryExhausted verifies a persistently transient SSH
-// error is retried up to sshBackoff.Steps (3) times and the final error
-// includes both the attempt count and the captured stderr.
 func TestExecWithSSHRetry_RetryExhausted(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -378,10 +340,6 @@ func TestExecWithSSHRetry_RetryExhausted(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), stderrMsg))
 }
 
-// TestExecWithSSHRetry_ContextDeadlineExceeded verifies that a deadline firing
-// during a backoff wait surfaces context.DeadlineExceeded unwrapped. The
-// per-step backoff duration is set longer than the context deadline so the
-// deadline trips the wait between attempts rather than completing all steps.
 func TestExecWithSSHRetry_ContextDeadlineExceeded(t *testing.T) {
 	t.Helper()
 	origSSH := sshBackoff
