@@ -66,6 +66,9 @@ STEP 4 — Verify (REQUIRED before committing):
 STEP 5 — Write the PR body to /tmp/pr_body.md. It MUST contain: Problem (1-3 sentences, with the file/component), Change (what you changed, minimal), Why it's safe / reviewable in <15 min, Verification (the exact checks you ran and their results).
 
 FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
+  Write self-documenting code: clear names, small functions, obvious structure.
+  Avoid wordy comments — prefer no comments unless the code expresses something
+  genuinely unintuitive (a non-obvious invariant, workaround, or trade-off).
   - git fetch --quiet origin main
   - task cli:format        # auto-format Go code (gofmt, gci, gofumpt via golangci-lint fmt)
   - task cli:lint:ci       # Must be 0 new issues. If any issue appears, fix it and re-run.

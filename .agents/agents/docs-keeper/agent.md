@@ -36,6 +36,9 @@ STEP 3 — Verify:
   - If the doc references a CLI flag, confirm it exists in cmd/ source.
 
 FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
+  Write self-documenting code: clear names, small functions, obvious structure.
+  Avoid wordy comments — prefer no comments unless the code expresses something
+  genuinely unintuitive (a non-obvious invariant, workaround, or trade-off).
   - git fetch --quiet origin main
   - task cli:format        # auto-format Go code (gofmt, gci, gofumpt via golangci-lint fmt)
   - task cli:lint:ci       # Must be 0 new issues. If any issue appears, fix it and re-run.

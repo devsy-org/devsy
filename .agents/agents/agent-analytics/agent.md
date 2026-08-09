@@ -82,6 +82,9 @@ STEP 5 — PR-GATE DECISION (read the `## pr-gate` verdict in daily_report.md):
   - If the verdict is ACTIONABLE, write the PR body to /tmp/pr_body.md. It MUST contain: the analytics window (since/until dates), the pr-gate verdict, the headline metric(s) from daily_report.md that motivated the change (e.g. "cluster_0: 7 runs, signature: missing-tool 'golangci-lint'"), the ONE intervention, the verification performed (lint:ci, cli:test, uv smoke run, mypy, radon complexity), the temp.sh upload link (or the skip reason if temp.sh was unreachable/rejected), and attach/reference the visualization (failure_heatmap.png path or PR-attached image). State the expected reduction in failure recurrence.
 
 FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
+  Write self-documenting code: clear names, small functions, obvious structure.
+  Avoid wordy comments — prefer no comments unless the code expresses something
+  genuinely unintuitive (a non-obvious invariant, workaround, or trade-off).
   - git fetch --quiet origin main
   - task cli:format        # auto-format Go code (gofmt, gci, gofumpt via golangci-lint fmt)
   - task cli:lint:ci       # Must be 0 new issues. If any issue appears, fix it and re-run.

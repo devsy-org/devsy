@@ -51,6 +51,9 @@ STEP 2 — Verify (CRITICAL — use CI-equivalent lint):
   KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
 
 FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
+  Write self-documenting code: clear names, small functions, obvious structure.
+  Avoid wordy comments — prefer no comments unless the code expresses something
+  genuinely unintuitive (a non-obvious invariant, workaround, or trade-off).
   - git fetch --quiet origin main
   - task cli:format        # auto-format Go code (gofmt, gci, gofumpt via golangci-lint fmt)
   - task cli:lint:ci       # Must be 0 new issues. If any issue appears, fix it and re-run.
