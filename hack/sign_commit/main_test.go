@@ -363,13 +363,16 @@ func TestUrlOrErr(t *testing.T) {
 	}
 }
 
+const testMainBranch = "main"
+
 func TestResolveBranchName(t *testing.T) {
+	const plain = "feature/foo"
 	cases := []struct {
 		name, input, want string
 	}{
-		{"plain name", "feature/foo", "feature/foo"},
-		{"refs prefix", "refs/heads/feature/foo", "feature/foo"},
-		{"main", "refs/heads/main", "main"},
+		{"plain name", plain, plain},
+		{"refs prefix", "refs/heads/" + plain, plain},
+		{testMainBranch, "refs/heads/" + testMainBranch, testMainBranch},
 		{"empty", "", ""},
 	}
 	for _, c := range cases {
@@ -381,43 +384,40 @@ func TestResolveBranchName(t *testing.T) {
 	}
 }
 
+func gitRun(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestChangedFilesDetectsWorkingTree(t *testing.T) {
 	dir := t.TempDir()
-	for _, args := range [][]string{
-		{"init", "--quiet"},
-		{"config", "user.email", "t@t.com"},
-		{"config", "user.name", "test"},
-		{"checkout", "-b", "main"},
-	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if err := cmd.Run(); err != nil {
-			t.Fatalf("git %v: %v", args, err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dir, "committed.txt"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "staged.txt"), []byte("s"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	exec.Command("git", "-C", dir, "add", ".").Run()
-	exec.Command("git", "-C", dir, "commit", "--quiet", "-m", "init").Run()
-	exec.Command("git", "-C", dir, "branch", "origin/main").Run()
+	gitRun(t, dir, "init", "--quiet")
+	gitRun(t, dir, "config", "user.email", "t@t.com")
+	gitRun(t, dir, "config", "user.name", "test")
+	gitRun(t, dir, "checkout", "-b", testMainBranch)
+	writeFile(t, filepath.Join(dir, "committed.txt"), "x")
+	writeFile(t, filepath.Join(dir, "staged.txt"), "s")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "--quiet", "-m", "init")
+	gitRun(t, dir, "branch", "origin/main")
 
-	if err := os.WriteFile(filepath.Join(dir, "modified.txt"), []byte("hello"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "committed.txt"), []byte("modified"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	exec.Command("git", "-C", dir, "add", "staged.txt").Run()
-	if err := os.WriteFile(filepath.Join(dir, "staged.txt"), []byte("staged-mod"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, filepath.Join(dir, "modified.txt"), "hello")
+	writeFile(t, filepath.Join(dir, "committed.txt"), "modified")
+	gitRun(t, dir, "add", "staged.txt")
+	writeFile(t, filepath.Join(dir, "staged.txt"), "staged-mod")
 
 	t.Chdir(dir)
-
 	files, err := changedFiles()
 	if err != nil {
 		t.Fatalf("changedFiles: %v", err)

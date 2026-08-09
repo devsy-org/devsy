@@ -190,7 +190,11 @@ func installBlock(toolchain string) string {
 	}
 }
 
-const knownGitFailure = "KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement."
+const knownGitFailure = "KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on " +
+	"origin/main already — a stale assertion, NOT caused by your change. " +
+	"If ONLY pkg/git fails and your change did not touch pkg/git, proceed. " +
+	"If your change introduces any NEW lint issue or test failure, " +
+	"fix the root cause or pick a different improvement."
 
 func verifyBlock(a agent) string {
 	if a.VerifyType == "" {

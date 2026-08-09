@@ -52,6 +52,8 @@ const (
 	apiBase           = "https://api.github.com"
 	maxExpiration     = 10 * time.Minute
 	issuedAtSkew      = 60 * time.Second
+	mainBranch        = "main"
+	bodyKey           = "body"
 )
 
 type addition struct {
@@ -113,10 +115,21 @@ func main() {
 	body := flag.String("b", "", "commit body (optional)")
 	repo := flag.String("repo", defaultRepo, "owner/name repository")
 	branch := flag.String("branch", "", "branch (default: current)")
-	all := flag.Bool("all", true, "commit all working-tree changes vs origin/main when no paths given")
+	all := flag.Bool(
+		"all",
+		true,
+		"commit all working-tree changes vs origin/main when no paths given",
+	)
 	token := flag.Bool("token", false, "print the app installation token and exit (no commit)")
-	pr := flag.Bool("pr", false, "create a draft PR after committing (uses -title or -m for the PR title)")
-	prOnly := flag.Bool("pr-only", false, "create a draft PR without committing (uses -title or -m for title, -b for body)")
+	pr := flag.Bool(
+		"pr",
+		false,
+		"create a draft PR after committing (uses -title or -m for the PR title)",
+	)
+	prOnly := flag.Bool(
+		"pr-only", false,
+		"create a draft PR without committing (uses -title or -m for title, -b for body)",
+	)
 	title := flag.String("title", "", "PR title (default: commit subject from -m)")
 	draft := flag.Bool("draft", true, "create the PR as draft (use -draft=false for a ready PR)")
 	flag.Parse()
@@ -155,14 +168,7 @@ func run(o options) error {
 		return nil
 	}
 	if o.prOnly {
-		branch := o.branch
-		if branch == "" {
-			branch, err = currentBranch()
-			if err != nil {
-				return fmt.Errorf("detect branch: %w", err)
-			}
-		}
-		return createPR(token, o, branch)
+		return createPRFromOptions(token, o)
 	}
 	_, err = commitFiles(o, token)
 	if err != nil {
@@ -174,9 +180,23 @@ func run(o options) error {
 	return nil
 }
 
+func createPRFromOptions(token string, o options) error {
+	branch := o.branch
+	if branch == "" {
+		b, err := currentBranch()
+		if err != nil {
+			return fmt.Errorf("detect branch: %w", err)
+		}
+		branch = b
+	}
+	return createPR(token, o, branch)
+}
+
 func commitFiles(o options, token string) (string, error) {
 	if o.message == "" {
-		return "", fmt.Errorf("-m commit subject is required (or pass -token to print the app token)")
+		return "", fmt.Errorf(
+			"-m commit subject is required (or pass -token to print the app token)",
+		)
 	}
 
 	branch := o.branch
@@ -411,9 +431,13 @@ func ensureBranch(token, repo, branch string) (string, error) {
 	if err == nil {
 		return sha, nil
 	}
-	mainSHA, mErr := refSHA(token, repo, "main")
+	mainSHA, mErr := refSHA(token, repo, mainBranch)
 	if mErr != nil {
-		return "", fmt.Errorf("branch %q missing and cannot read origin/main to create it: %w", branch, mErr)
+		return "", fmt.Errorf(
+			"branch %q missing and cannot read origin/main to create it: %w",
+			branch,
+			mErr,
+		)
 	}
 	if cErr := createBranchRef(token, repo, branch, mainSHA); cErr != nil {
 		return "", fmt.Errorf("auto-create branch %q: %w", branch, cErr)
@@ -444,8 +468,8 @@ func createPR(token string, o options, branch string) error {
 	payload := map[string]any{
 		"title": title,
 		"head":  resolveBranchName(branch),
-		"base":  "main",
-		"body":  prBody,
+		"base":  mainBranch,
+		bodyKey: prBody,
 		"draft": o.draft,
 	}
 	body, err := ghPost(token, fmt.Sprintf("%s/repos/%s/pulls", apiBase, o.repo), payload)
