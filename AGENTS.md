@@ -186,6 +186,22 @@ The response includes the `app_id` and `app_slug`:
 
 Use the returned `app_id` to confirm the installation. To mint an installation token, sign a JWT with `iss=<client-id>` (the App's Client ID, not the numeric `app_id`) and call `GET /app` — a 200 confirms the pairing.
 
+### Updating Deployed Automations from Templates
+
+The 13 daily automations run on the OpenHands automation service (`${OPENHANDS_HOST}/api/automation/v1`, auth `OPENHANDS_API_KEY`). Their `prompt` field mirrors the body (after the frontmatter) of the canonical `.agents/agents/<id>/agent.md` templates, which are generated from `hack/automations/agents.yaml` + `hack/automations/template.md.tmpl` by `go run ./hack/automations` (`task automations:generate`; `task automations:check` fails on drift).
+
+To re-sync deployed prompts to the latest templates without changing their schedule, timeout, or enabled state: `PATCH /api/automation/v1/{id}` with `{"prompt": <agent.md body>}`. The `prompt` includes the leading blank line that follows the frontmatter — match it byte-for-byte. Drift to watch for: the canonical templates intentionally omit the manual tweaks that previously accumulated on deployed prompts (the "(committer: openhands)" note in the WARNING, the "Commit signature: Verified" line in the PR-body-must-include clause, and "~20 minutes"→"~15 minutes"). If a tweak is wanted permanently, add it to `agents.yaml` and regenerate instead of editing deployed prompts directly.
+
+### Status checks: agents must verify and fix
+
+Daily PRs are opened as drafts, but a failing status check (most often the `Lint` job — `golangci-lint-action` with `only-new-issues: true`, mirrored locally by `task cli:lint:ci`) leaves a PR needing a manual follow-up. Each agent prompt therefore ends with an "Ensure status checks pass" step that:
+
+1. Captures the PR number when opening the PR and polls `gh pr checks "$PR_NUMBER" --repo devsy-org/devsy` (REST fallback: `check-runs` on the head SHA) until checks complete.
+2. On a `FAILURE` (typically `Lint`), fetches the failing log via `gh run view <run-id> --log-failed`, fixes the root cause (no `//nolint`, no disabling linters), re-verifies with `task cli:format && task cli:lint:ci` (Go) or `npx biome check --write && npm run check` (desktop), then pushes **one** follow-up commit via `task github:app:sign-commit` and re-polls.
+3. Caps the loop at one follow-up fix commit; if a second round is needed, stops and reports the remaining failing check so a human finishes it.
+
+The `ONE commit` constraints in `agents.yaml` explicitly allow this single follow-up fix commit. The status-check step and the relaxed constraints are generated from `agents.yaml` + `template.md.tmpl`, so regenerate (`task automations:generate`) and re-sync deployed prompts after any change to them.
+
 ### Workflows Permission
 
 The Devsy GitHub App requires the **Workflows** repository permission (read & write) to commit any file under `.github/workflows/`. Without it, GitHub rejects workflow file writes via every API — the GraphQL `createCommitOnBranch` mutation returns `FORBIDDEN: Resource not accessible by integration`, the REST contents API returns `403`, and `git push` is rejected with `refusing to allow a GitHub App to create or update workflow without workflows permission`. Creating a PR that *contains* a workflow file does not require this permission — only the act of writing the workflow file itself does. If the app lacks the Workflows permission, commit non-workflow files via the app and add workflow files separately (e.g. through the GitHub UI or a PAT with `workflow` scope).
