@@ -2,6 +2,8 @@ package config
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -67,5 +69,45 @@ func TestFeatureConfig_DependsOnKeysEmpty(t *testing.T) {
 	var cfg FeatureConfig
 	if got := cfg.DependsOnKeys(); len(got) != 0 {
 		t.Errorf("DependsOnKeys() = %v, want empty", got)
+	}
+}
+
+func TestParseDevContainerFeatureRequiresID(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{"missing id", `{"version":"1.0.0","name":"Go"}`},
+		{"empty id", `{"id":"","version":"1.0.0","name":"Go"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(
+				filepath.Join(dir, DevContainerFeatureFileName), []byte(tc.raw), 0o600,
+			); err != nil {
+				t.Fatalf("write feature file: %v", err)
+			}
+			if _, err := ParseDevContainerFeature(dir); err == nil {
+				t.Fatalf("ParseDevContainerFeature expected error for %s, got nil", tc.name)
+			}
+		})
+	}
+}
+
+func TestParseDevContainerFeatureAcceptsID(t *testing.T) {
+	dir := t.TempDir()
+	raw := `{"id":"go","version":"1.0.0","name":"Go"}`
+	if err := os.WriteFile(
+		filepath.Join(dir, DevContainerFeatureFileName), []byte(raw), 0o600,
+	); err != nil {
+		t.Fatalf("write feature file: %v", err)
+	}
+	cfg, err := ParseDevContainerFeature(dir)
+	if err != nil {
+		t.Fatalf("ParseDevContainerFeature: %v", err)
+	}
+	if cfg.ID != "go" {
+		t.Errorf("ID = %q, want %q", cfg.ID, "go")
 	}
 }
