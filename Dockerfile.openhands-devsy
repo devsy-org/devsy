@@ -37,7 +37,9 @@ RUN go install github.com/go-task/task/v3/cmd/task@latest \
     && go install github.com/onsi/ginkgo/v2/ginkgo@latest \
     && go install "github.com/goreleaser/goreleaser/v2@${GORELEASER_VERSION}" \
     && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2 \
-    && go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+    && go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 \
+    && go clean -cache \
+    && rm -rf /go/pkg/mod /root/.cache/go-build
 
 RUN ARCH="$(dpkg --print-architecture)" \
     && curl -sSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${ARCH}.tar.gz" -o /tmp/gcl.tgz \
