@@ -33,7 +33,7 @@ posting a comment on the pull request with the exact text the bot provides.
    ```
 
 2. If you want to change Devsy agent code:
-   - Exchange the URL in [DefaultAgentDownloadURL](./pkg/agent/agent.go) with a custom public repository release
+   - Exchange the URL in [DefaultAgentDownloadURL](./pkg/config/repo.go) with a custom public repository release
    - Build devsy via: `task cli:build:dev`
    - Upload `dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64` and ARM64 variant to your public repository release assets
 
