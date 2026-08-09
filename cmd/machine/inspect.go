@@ -20,7 +20,7 @@ func NewInspectCmd(flags *flags.GlobalFlags) *cobra.Command {
 	cmd := &InspectCmd{
 		GlobalFlags: flags,
 	}
-	stopCmd := &cobra.Command{
+	inspectCmd := &cobra.Command{
 		Use:   "inspect",
 		Short: "Inspects an existing machine",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
@@ -28,7 +28,7 @@ func NewInspectCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	return stopCmd
+	return inspectCmd
 }
 
 func (cmd *InspectCmd) Run(ctx context.Context, args []string) error {
@@ -47,8 +47,25 @@ func (cmd *InspectCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	machineConfig := machineClient.MachineConfig()
+	maskMachineOptions(machineConfig, p)
+
+	out, err := json.MarshalIndent(machineConfig, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(out)) //nolint:forbidigo // CLI stdout output
+
+	return nil
+}
+
+// maskMachineOptions redacts sensitive option values on the machine config before it is
+// printed.
+func maskMachineOptions(machineConfig *provider.Machine, p *provider.ProviderConfig) {
 	for k := range machineConfig.Provider.Options {
 		optConfig := p.Options[k]
+		if optConfig == nil {
+			continue
+		}
 		if optConfig.Hidden {
 			delete(machineConfig.Provider.Options, k)
 			continue
@@ -56,15 +73,8 @@ func (cmd *InspectCmd) Run(ctx context.Context, args []string) error {
 
 		if optConfig.Password {
 			opt := machineConfig.Provider.Options[k]
-			opt.Value = "********"
+			opt.Value = "***"
+			machineConfig.Provider.Options[k] = opt
 		}
 	}
-
-	out, err := json.MarshalIndent(machineConfig, "", "  ")
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(out))
-
-	return nil
 }
