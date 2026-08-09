@@ -23,10 +23,11 @@ const (
 	golangciArchive  = "golangci-lint-" + golangciVersion + "-linux-amd64.tar.gz"
 	golangciDownload = "https://github.com/golangci/golangci-lint/releases/download/v" +
 		golangciVersion + "/" + golangciArchive
-	goTaskInstall = "go install github.com/go-task/task/v3/cmd/task@latest"
+	goTaskInstall = "timeout 600 go install github.com/go-task/task/v3/cmd/task@latest"
 	goVerify      = "go version && task --version && golangci-lint --version"
 	cdTidy        = "cd into the cloned devsy repo workspace and run: task cli:tidy"
 	cdPlain       = "cd into the cloned devsy repo workspace"
+	curlFlags     = "--retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -sSL"
 )
 
 type agent struct {
@@ -223,15 +224,18 @@ func goInstallBlock() string {
 		"    # Check for Go toolchain — install only what is missing",
 		`    export PATH="/usr/local/go/bin:$(go env GOPATH 2>/dev/null)/bin:$PATH"`,
 		"    if ! command -v go >/dev/null 2>&1; then",
-		"      curl -sSL "+goDownloadURL+" -o /tmp/go.tgz",
+		`      echo "installing go `+goVersion+`"`,
+		"      curl "+curlFlags+" "+goDownloadURL+" -o /tmp/go.tgz",
 		"      sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf /tmp/go.tgz && rm /tmp/go.tgz",
 		`      export PATH="/usr/local/go/bin:$(go env GOPATH)/bin:$PATH"`,
 		"    fi",
 		"    if ! command -v task >/dev/null 2>&1; then",
+		`      echo "installing task"`,
 		"      "+goTaskInstall,
 		"    fi",
 		"    if ! command -v golangci-lint >/dev/null 2>&1; then",
-		"      curl -sSL "+golangciDownload+" -o /tmp/gcl.tgz",
+		`      echo "installing golangci-lint `+golangciVersion+`"`,
+		"      curl "+curlFlags+" "+golangciDownload+" -o /tmp/gcl.tgz",
 		"      "+golangciExtract,
 		"    fi",
 	)
@@ -241,8 +245,10 @@ func nodeInstallBlock() string {
 	return joinLines(
 		"    # Check for Node — install only if missing",
 		"    if ! command -v node >/dev/null 2>&1; then",
-		"      curl -fsSL https://deb.nodesource.com/setup_24.x | "+
-			"sudo -E bash - >/dev/null 2>&1 && sudo apt-get install -y -qq nodejs >/dev/null 2>&1 || true",
+		`      echo "installing node via nodesource setup_24.x"`,
+		"      curl "+curlFlags+" https://deb.nodesource.com/setup_24.x -o /tmp/ns_setup.sh",
+		"      sudo -E bash /tmp/ns_setup.sh >/dev/null 2>&1 && "+
+			"sudo apt-get install -y -qq nodejs >/dev/null 2>&1 || true",
 		"    fi",
 	)
 }
@@ -292,7 +298,8 @@ func ghActBlock() string {
 	return joinLines(
 		"    # gh CLI (for listing/viewing workflow runs) — install only if missing",
 		"    if ! command -v gh >/dev/null 2>&1; then",
-		"      curl -sSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | "+
+		`      echo "installing gh"`,
+		"      curl "+curlFlags+" https://cli.github.com/packages/githubcli-archive-keyring.gpg | "+
 			"sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg",
 		`      echo "deb [arch=$(dpkg --print-architecture) `+
 			`signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] `+
@@ -303,7 +310,8 @@ func ghActBlock() string {
 		"    # act (best-effort local workflow validation; .actrc exists). "+
 			"Docker may be unavailable — that's OK.",
 		"    if ! command -v act >/dev/null 2>&1; then",
-		"      curl -sSL https://raw.githubusercontent.com/nektos/act/master/install.sh | "+
+		`      echo "installing act"`,
+		"      curl "+curlFlags+" https://raw.githubusercontent.com/nektos/act/master/install.sh | "+
 			"sudo bash -s -- -b /usr/local/bin || true",
 		"    fi",
 	)

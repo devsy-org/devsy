@@ -116,3 +116,33 @@ func TestToolchainPins(t *testing.T) {
 		t.Errorf("ci-optimizer: should not install Go toolchain (toolchain=gh+act)")
 	}
 }
+
+func TestToolchainDownloadsAreBounded(t *testing.T) {
+	runGenerator(t)
+	for _, id := range []string{"ui-polish", "pkg-container", "agent-analytics"} {
+		p := agentFilePath(t, id)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		s := string(b)
+		if !strings.Contains(s, "STEP 0") {
+			continue
+		}
+		for _, bad := range []string{
+			"curl -sSL https://go.dev/dl",
+			"curl -fsSL https://deb.nodesource.com",
+			"curl -sSL https://github.com/golangci",
+		} {
+			if strings.Contains(s, bad) {
+				t.Errorf("%s: unbounded curl download remains: %q", id, bad)
+			}
+		}
+		if !strings.Contains(s, "--max-time 300") {
+			t.Errorf("%s: curl downloads must set --max-time", id)
+		}
+		if !strings.Contains(s, "echo \"installing go 1.26.3\"") {
+			t.Errorf("%s: go install must echo progress for observability", id)
+		}
+	}
+}
