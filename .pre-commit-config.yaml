@@ -57,7 +57,7 @@ repos:
     rev: v2.12.2
     hooks:
       - id: golangci-lint
-        args: ["--timeout=10m", "--new-from-rev=origin/main"]
+        args: ["--timeout=10m", "--new-from-rev=HEAD~"]
       - id: golangci-lint-fmt
   - repo: local
     hooks:
