@@ -290,19 +290,19 @@ func (c *client) Login(host string, insecure bool) error {
 			err,
 			fmt.Sprintf(AccessKeyPath, host),
 		)
-	} else {
-		log.Infof("If the browser does not open automatically, navigate to %s", loginUrl)
-		msg := "If you have problems logging in, navigate to %s/profile/access-keys, " +
-			"click on 'Create Access Key' and then login via '%s %s --access-key ACCESS_KEY"
-		if insecure {
-			msg += " --insecure"
-		}
-		msg += "'"
-		log.Infof(msg, host, pkgconfig.BinaryName+" pro login", host)
-		log.Infof("Logging into Devsy Pro")
-
-		key = <-keyChannel
 	}
+
+	log.Infof("If the browser does not open automatically, navigate to %s", loginUrl)
+	msg := "If you have problems logging in, navigate to %s/profile/access-keys, " +
+		"click on 'Create Access Key' and then login via '%s %s --access-key ACCESS_KEY"
+	if insecure {
+		msg += " --insecure"
+	}
+	msg += "'"
+	log.Infof(msg, host, pkgconfig.BinaryName+" pro login", host)
+	log.Infof("Logging into Devsy Pro")
+
+	key = <-keyChannel
 
 	go func() {
 		err = server.Shutdown(context.Background())
