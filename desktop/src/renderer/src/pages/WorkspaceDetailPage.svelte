@@ -933,6 +933,7 @@ async function handleRenameConfirmed() {
                         {#snippet child({ props })}
                           <Button variant="ghost" size="icon-sm" {...props} onclick={() => copyToClipboard(outputLines.map(stripAnsi).join("\n"))}>
                             <ClipboardCopy class="h-4 w-4" />
+                            <span class="sr-only">Copy output</span>
                           </Button>
                         {/snippet}
                       </Tooltip.Trigger>
@@ -991,6 +992,7 @@ async function handleRenameConfirmed() {
                                       onclick={() => copyToClipboard(logContent)}
                                     >
                                       <ClipboardCopy class="h-3.5 w-3.5" />
+                                      <span class="sr-only">Copy log</span>
                                     </button>
                                   {/snippet}
                                 </Tooltip.Trigger>
@@ -1007,6 +1009,7 @@ async function handleRenameConfirmed() {
                                     onclick={() => deleteLog(entry)}
                                   >
                                     <Trash2 class="h-3.5 w-3.5" />
+                                    <span class="sr-only">Delete log</span>
                                   </button>
                                 {/snippet}
                               </Tooltip.Trigger>
