@@ -186,12 +186,6 @@ The response includes the `app_id` and `app_slug`:
 
 Use the returned `app_id` to confirm the installation. To mint an installation token, sign a JWT with `iss=<client-id>` (the App's Client ID, not the numeric `app_id`) and call `GET /app` — a 200 confirms the pairing.
 
-### Updating Deployed Automations from Templates
-
-The 13 daily automations run on the OpenHands automation service (`${OPENHANDS_HOST}/api/automation/v1`, auth `OPENHANDS_API_KEY`). Their `prompt` field mirrors the body (after the frontmatter) of the canonical `.agents/agents/<id>/agent.md` templates, which are generated from `hack/automations/agents.yaml` + `hack/automations/template.md.tmpl` by `go run ./hack/automations` (`task automations:generate`; `task automations:check` fails on drift).
-
-To re-sync deployed prompts to the latest templates without changing their schedule, timeout, or enabled state: `PATCH /api/automation/v1/{id}` with `{"prompt": <agent.md body>}`. The `prompt` includes the leading blank line that follows the frontmatter — match it byte-for-byte. Drift to watch for: the canonical templates intentionally omit the manual tweaks that previously accumulated on deployed prompts (the "(committer: openhands)" note in the WARNING, the "Commit signature: Verified" line in the PR-body-must-include clause, and "~20 minutes"→"~15 minutes"). If a tweak is wanted permanently, add it to `agents.yaml` and regenerate instead of editing deployed prompts directly.
-
 ### Status checks: agents must verify and fix
 
 Daily PRs are opened as drafts, but a failing status check (most often the `Lint` job — `golangci-lint-action` with `only-new-issues: true`, mirrored locally by `task cli:lint:ci`) leaves a PR needing a manual follow-up. Each agent prompt therefore ends with an "Ensure status checks pass" step that:
