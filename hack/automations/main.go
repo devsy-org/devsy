@@ -172,6 +172,8 @@ func installBlock(toolchain string) string {
 		return joinLines(goInstallBlock(), goVerify, cdTidy)
 	case "go+node":
 		return joinLines(goInstallBlock(), nodeInstallBlock(), goVerifyNode(), cdTidy)
+	case "go+python":
+		return joinLines(goInstallBlock(), pythonInstallBlock(), goVerifyPython(), cdTidy)
 	case "go+protoc":
 		return joinLines(goInstallBlock(), protocInstall(), goVerify, cdTidy)
 	case "go+devcontainer":
@@ -219,6 +221,20 @@ func nodeInstallBlock() string {
 
 func goVerifyNode() string {
 	return "    go version && task --version && golangci-lint --version && node --version"
+}
+
+func pythonInstallBlock() string {
+	return joinLines(
+		"    # Check for uv — install only if missing (scripts declare deps inline via PEP 723)",
+		"    if ! command -v uv >/dev/null 2>&1; then",
+		"      curl -LsSf https://astral.sh/uv/install.sh | sh",
+		"    fi",
+	)
+}
+
+func goVerifyPython() string {
+	return "    go version && task --version && golangci-lint --version && " +
+		"uv --version && uv run hack/analytics/analyze_runs.py --sample --out-dir /tmp/analytics-verify >/dev/null"
 }
 
 func protocInstall() string {

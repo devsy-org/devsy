@@ -16,3 +16,6 @@ desktop/dist/
 desktop/release/
 desktop/playwright-report/
 desktop/test-results/
+__pycache__/
+*.pyc
+dist/analytics/

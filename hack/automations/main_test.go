@@ -46,7 +46,11 @@ func TestGenerateWritesAllAgents(t *testing.T) {
 		"ci-optimizer", "cmd-reviewer", "devcontainer-spec", "docs-keeper",
 		"integration-test", "lint-fixer", "pkg-container", "pkg-core-agent",
 		"pkg-ssh-git", "pkg-system-platform", "pkg-tunnel-network",
+		"agent-analytics",
 	}
+	// agent-analytics uses uv (PEP 723 inline deps) instead of pip/venv, so the
+	// pip-install/venv ban does not apply to its uv-based toolchain.
+	pythonAgents := map[string]bool{"agent-analytics": true}
 	for _, id := range ids {
 		p := agentFilePath(t, id)
 		b, err := os.ReadFile(p)
@@ -73,7 +77,13 @@ func TestGenerateWritesAllAgents(t *testing.T) {
 			t.Errorf("%s: still references app_commit.py", id)
 		}
 		if strings.Contains(s, "pip install") {
-			t.Errorf("%s: still installs pip packages", id)
+			t.Errorf("%s: still uses pip install; use uv run with PEP 723 inline deps", id)
+		}
+		if strings.Contains(s, "python3 -m venv") || strings.Contains(s, "venv/bin/python") {
+			t.Errorf("%s: still uses a venv; use uv run only", id)
+		}
+		if pythonAgents[id] && !strings.Contains(s, "uv run hack/analytics/analyze_runs.py") {
+			t.Errorf("%s: expected uv run invocation for the analytics script", id)
 		}
 	}
 }

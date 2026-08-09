@@ -30,6 +30,7 @@ specifications.
 | `devcontainer-spec` | `.devcontainer/` | devcontainer spec compliance |
 | `codefactor` | Codefactor issues | Go source flagged by Codefactor |
 | `ui-polish` | desktop UI | `desktop/src/renderer/src/` (Svelte/TS) |
+| `agent-analytics` | agent-fleet analytics | `hack/analytics/`, `.agents/`, `pkg/`/`cmd/` (data-driven only), OpenHands Cloud API (read-only) |
 
 The `pkg/*` agents split `pkg/` into logical categories so multiple agents review in
 parallel without overlapping scope.
