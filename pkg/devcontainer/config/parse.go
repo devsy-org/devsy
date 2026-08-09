@@ -51,6 +51,13 @@ func ParseDevContainerFeature(folder string) (*FeatureConfig, error) {
 		return nil, err
 	}
 
+	if featureConfig.ID == "" {
+		// "id" is required by the devcontainer Feature schema.
+		return nil, fmt.Errorf(
+			"%s is missing required property \"id\"", DevContainerFeatureFileName,
+		)
+	}
+
 	featureConfig.Origin = path
 	return featureConfig, nil
 }

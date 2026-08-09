@@ -143,10 +143,6 @@ func validatePublishTarget(target string) (*config.FeatureConfig, error) {
 		return nil, fmt.Errorf("parse feature metadata: %w", err)
 	}
 
-	if featureCfg.ID == "" {
-		return nil, fmt.Errorf("feature metadata missing required 'id' field")
-	}
-
 	return featureCfg, nil
 }
 

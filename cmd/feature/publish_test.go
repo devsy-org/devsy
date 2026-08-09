@@ -126,7 +126,7 @@ func TestValidatePublishTarget_MissingID(t *testing.T) {
 
 	_, err := validatePublishTarget(tmpDir)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing required 'id' field")
+	assert.Contains(t, err.Error(), "missing required property \"id\"")
 }
 
 func TestValidatePublishTarget_Valid(t *testing.T) {
