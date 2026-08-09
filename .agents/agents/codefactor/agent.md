@@ -114,10 +114,43 @@ STEP 6 — Open the PR as the app (no GITHUB_TOKEN):
   - TOKEN=$(task github:app:sign-commit -- -token)
   - Write the PR body to /tmp/pr_body.md. It MUST include: the Codefactor issue Key, file:line, the Codefactor message, the fix summary, and that task cli:lint:ci passed (0 new issues) + task cli:test status. Add label "codefactor" if it exists., a line "This PR was created by an AI agent as part of an automated daily Codefactor issue fix job."
   - PR_BODY=$(python3 -c 'import json,sys;print(json.dumps(open("/tmp/pr_body.md").read()))')
-  - curl -s -X POST -H "Authorization: bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/devsy-org/devsy/pulls -d "{\"title\":\"fix: <short description>\",\"head\":\"fix/codefactor/<slug>\",\"base\":\"main\",\"draft\":true,\"body\":${PR_BODY}}"
+  - PR_JSON=$(curl -s -X POST -H "Authorization: bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/devsy-org/devsy/pulls -d "{\"title\":\"fix: <short description>\",\"head\":\"fix/codefactor/<slug>\",\"base\":\"main\",\"draft\":true,\"body\":${PR_BODY}}")
+  - PR_NUMBER=$(python3 -c 'import json,sys;print(json.loads(sys.stdin.read())["number"])' <<< "$PR_JSON")
+  - PR_URL=$(python3 -c 'import json,sys;print(json.loads(sys.stdin.read())["html_url"])' <<< "$PR_JSON")
   - Report the PR URL and commit SHA. A run that does not produce a PR URL is a FAILED run.
 
-Constraints: ONE issue, ONE commit, ONE PR per run. Keep it reviewable in ~20 minutes. If no fixable issue today, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for commit/PR.
+STEP 7 — Ensure status checks pass (lint failures are the most common reason a daily PR needs a follow-up):
+  GitHub runs the `Lint` job (golangci-lint-action, `only-new-issues: true`) and, for desktop
+  changes, the `Desktop CI` `lint-and-test` job. `task cli:lint:ci` mirrors the Go lint job
+  locally, but the agent must still verify the PR's actual checks and fix any that fail.
+  - Wait for checks to start, then poll until they complete (timeout ~15 min):
+      gh pr checks "$PR_NUMBER" --repo devsy-org/devsy --interval 30 --watch --fail-fast >/dev/null 2>&1 || true
+      gh pr checks "$PR_NUMBER" --repo devsy-org/devsy --json name,state,conclusion
+    (`gh pr checks --watch` blocks until checks finish; if it returns early or is unavailable in
+    this environment, poll the REST API instead:
+    `gh api repos/devsy-org/devsy/commits/$(git rev-parse HEAD)/check-runs --jq '.check_runs[] | {name,state,conclusion}'`
+    in a loop until every `state` is `completed`.)
+  - If all checks are `SUCCESS`/`NEUTRAL`/`SKIPPED`, the run is complete; nothing more to do.
+  - If a check FAILED (most often `Lint`), do NOT abandon the PR:
+      1. Fetch the failing job's log: `gh pr view "$PR_NUMBER" --repo devsy-org/devsy --json statusCheckRollup --jq '.statusCheckRollup[] | select(.conclusion=="FAILURE") | .name'`,
+         then `gh run view <run-id> --repo devsy-org/devsy --log-failed | tail -200` to read the linter output.
+      2. Diagnose the failure against your diff. Common lint failures that slip past `cli:lint:ci`
+         (shallow clone merge-base, format-after-lint, or env differences): unused import, shadow,
+         gocritic, errcheck, gci/gofumpt formatting. Fix the root cause in the source — do NOT add
+         `//nolint` or disable linters.
+      3. Re-apply the fix, then re-verify locally exactly as CI does:
+           - Go files: `task cli:format && task cli:lint:ci` (0 new issues) and, if relevant, `task cli:test`.
+           - Desktop files: `cd desktop && npx biome check --write && npm run check`.
+      4. Stage the fix and push a follow-up commit via the app (same flow as the original commit):
+           - git add <changed files>
+           - task github:app:sign-commit -- -m "<fixup subject, 50 chars max>" "<body>"
+           - git log --oneline origin/main..HEAD   # the fix is a SECOND commit on the branch
+      5. Re-poll `gh pr checks "$PR_NUMBER"` until the check that failed is now `SUCCESS`/`NEUTRAL`.
+  - Cap the loop at ONE follow-up fix commit. If a second round is needed, stop, leave the PR
+    in its current state, and report the remaining failing check name + log tail in the run
+    summary so a human can finish it. Do not pile up many fixup commits.
+
+Constraints: ONE issue, ONE commit, ONE PR per run (plus at most ONE follow-up fix commit if a status check fails — see the ensure-status-checks step). Keep it reviewable in ~20 minutes. If no fixable issue today, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for commit/PR.
 
 ## Self-improvement
 

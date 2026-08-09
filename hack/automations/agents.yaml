@@ -188,7 +188,7 @@ agents:
       - task cli:test         # unit tests.
       KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, that is the baseline; proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
   pr_body_must_include: the cmd/ subdirectory reviewed, the issue found, the minimal change, the verification performed (task cli:lint:ci result, task cli:test result)
-  constraints: ONE cmd/ subdirectory, ONE improvement, ONE commit, ONE PR per run. Keep it reviewable in ~20 minutes. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
+  constraints: ONE cmd/ subdirectory, ONE improvement, ONE commit, ONE PR per run (plus at most ONE follow-up fix commit if a status check fails — see the ensure-status-checks step). Keep it reviewable in ~20 minutes. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
   description: Reviews the cmd/ CLI directory for small improvements to command structure, flags, and help text.
   scope: |-
     - `cmd/` and its subcommands (`cmd/<command>/`)
@@ -378,7 +378,7 @@ agents:
       - If act + docker are available: act --list -W <file> (best-effort; ignore if docker missing).
       - If validation reveals your edit is wrong, fix it or pick a different improvement.
   pr_body_must_include: the run(s) you inspected (id + conclusion/duration), the problem found, the minimal change, the validation performed (YAML parse result; act result or "act/docker unavailable")
-  constraints: ONE improvement, ONE commit, ONE PR per run. Keep it reviewable in ~20 minutes. If no actionable improvement is found today, do nothing and report "no actionable CI improvement found" — do not force a change. Never use GITHUB_TOKEN for the commit or PR.
+  constraints: ONE improvement, ONE commit, ONE PR per run (plus at most ONE follow-up fix commit if a status check fails — see the ensure-status-checks step). Keep it reviewable in ~20 minutes. If no actionable improvement is found today, do nothing and report "no actionable CI improvement found" — do not force a change. Never use GITHUB_TOKEN for the commit or PR.
   description: Reviews GitHub workflows and Action run logs, identifies small concise CI improvements, and makes focused changes.
   scope: |-
     - `.github/workflows/*.yml`
@@ -434,7 +434,7 @@ agents:
       - task cli:test         # unit tests.
       KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, that is the baseline; proceed. If your change touched pkg/git, ensure you didn't introduce NEW failures. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different issue.
   pr_body_must_include: the Codefactor issue Key, file:line, the Codefactor message, the fix summary, and that task cli:lint:ci passed (0 new issues) + task cli:test status. Add label "codefactor" if it exists.
-  constraints: ONE issue, ONE commit, ONE PR per run. Keep it reviewable in ~20 minutes. If no fixable issue today, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for commit/PR.
+  constraints: ONE issue, ONE commit, ONE PR per run (plus at most ONE follow-up fix commit if a status check fails — see the ensure-status-checks step). Keep it reviewable in ~20 minutes. If no fixable issue today, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for commit/PR.
   description: Fixes one Codefactor issue per run by making a minimal, lint-clean change and opening an app-signed PR.
   scope: |-
     - Codefactor issues for `devsy-org/devsy` (https://www.codefactor.io/repository/github/devsy-org/devsy)
