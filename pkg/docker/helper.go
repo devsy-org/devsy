@@ -382,7 +382,6 @@ func (r *DockerHelper) GetImageTag(ctx context.Context, imageID string) (string,
 		return "", fmt.Errorf("inspect image: %w", command.WrapCommandError(out, err))
 	}
 
-
 	repoTag := strings.TrimSpace(string(out))
 	if repoTag == "" {
 		return "", nil
