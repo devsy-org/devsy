@@ -287,8 +287,8 @@ task cli:test:e2e:focus     # Run focused tests
 - `/pkg` - Core packages and libraries
 - `/desktop` - Desktop application (Electron + Svelte)
 - `/e2e` - End-to-end tests
-- `/docs` - Documentation website
-- `/examples` - Example devcontainer configurations
+- `/providers` - Built-in provider definitions
+- `/sites` - Documentation and download websites
 - `/hack` - Build and development scripts
 
 ## Getting Help
