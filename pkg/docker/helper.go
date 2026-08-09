@@ -382,14 +382,22 @@ func (r *DockerHelper) GetImageTag(ctx context.Context, imageID string) (string,
 		return "", fmt.Errorf("inspect image: %w", command.WrapCommandError(out, err))
 	}
 
-	repoTag := string(out)
-	tagSplits := strings.Split(repoTag, ":")
-
-	if len(tagSplits) > 0 {
-		return strings.TrimSpace(tagSplits[1]), nil
+	// The template emits the first RepoTag (e.g. "ubuntu:22.04",
+	// "localhost:5000/foo:tag") or "" when the image has none. Splitting on
+	// ":" naively would panic on an empty result and mis-parse a registry
+	// port (localhost:5000/foo:tag). Inspect the final path segment and drop
+	// any @digest suffix, matching pkg/apple's parseImageTag.
+	repoTag := strings.TrimSpace(string(out))
+	if repoTag == "" {
+		return "", nil
 	}
-
-	return "", nil
+	lastSegment := repoTag[strings.LastIndex(repoTag, "/")+1:]
+	lastSegment, _, _ = strings.Cut(lastSegment, "@")
+	_, tag, found := strings.Cut(lastSegment, ":")
+	if !found {
+		return "", nil
+	}
+	return tag, nil
 }
 
 func (r *DockerHelper) InspectImage(
