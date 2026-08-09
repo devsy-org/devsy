@@ -6,14 +6,22 @@ import (
 	"testing"
 )
 
+const (
+	helloInput  = "hello"
+	helloSHA256 = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	emptySHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	helloFNV32  = uint32(1335831723)
+	emptyFNV32  = uint32(2166136261)
+)
+
 func TestString(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{"empty", "", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
-		{"hello", "hello", "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"},
+		{"empty", "", emptySHA256},
+		{"hello", helloInput, helloSHA256},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -38,8 +46,8 @@ func TestStringToNumber(t *testing.T) {
 		in   string
 		want uint32
 	}{
-		{"empty", "", 2166136261},
-		{"hello", "hello", 1335831723},
+		{"empty", "", emptyFNV32},
+		{"hello", helloInput, helloFNV32},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -53,7 +61,7 @@ func TestStringToNumber(t *testing.T) {
 func TestFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "input.txt")
-	content := []byte("hello")
+	content := []byte(helloInput)
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
@@ -62,9 +70,8 @@ func TestFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("File(%q) error: %v", path, err)
 	}
-	want := "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-	if got != want {
-		t.Fatalf("File(%q) = %q, want %q", path, got, want)
+	if got != helloSHA256 {
+		t.Fatalf("File(%q) = %q, want %q", path, got, helloSHA256)
 	}
 }
 
