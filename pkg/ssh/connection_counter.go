@@ -46,9 +46,6 @@ func (c *connectionCounter) Dec() {
 	c.m.Lock()
 	defer c.m.Unlock()
 
-	// Guard against spurious Dec() calls (e.g. a close notification arriving
-	// without a matching open): clamp at zero so the count never goes negative
-	// and a subsequent Add() does not under-account an active connection.
 	if c.connections <= 0 {
 		c.connections = 0
 	} else {

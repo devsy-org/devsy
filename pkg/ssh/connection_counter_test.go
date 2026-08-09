@@ -10,9 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// recordingTimeout captures the address of the counter so tests can assert
-// which counter triggered the callback (guards against stale-generation
-// callbacks firing on the wrong generation).
 func newRecordingCounter(t *testing.T, timeout time.Duration) (*connectionCounter, *atomic.Int32) {
 	t.Helper()
 	var calls atomic.Int32
