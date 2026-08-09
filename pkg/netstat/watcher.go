@@ -195,13 +195,11 @@ func (w *Watcher) findPorts() (map[string]bool, error) {
 }
 
 // listenPortsInRange collects the ports of listening sockets whose LocalAddr
-// falls within the auto-forward range (1024-12000). Entries with a nil
-// LocalAddr are skipped so a malformed socket entry never panics the loop.
+// falls within the auto-forward range (1024-12000). Skips malformed entries
+// with nil LocalAddr to avoid panics.
 func listenPortsInRange(socks []SockTabEntry) map[string]bool {
 	retSocks := map[string]bool{}
 	for _, sock := range socks {
-		// guard against a nil LocalAddr before dereferencing Port, otherwise
-		// a malformed socket entry panics the watcher loop.
 		if sock.LocalAddr == nil || sock.LocalAddr.Port < 1024 || sock.LocalAddr.Port > 12000 {
 			continue
 		}

@@ -141,8 +141,6 @@ func TestListenPortsInRange_FiltersByRange(t *testing.T) {
 }
 
 func TestListenPortsInRange_NilLocalAddrDoesNotPanic(t *testing.T) {
-	// A nil LocalAddr previously caused a nil-pointer dereference because the
-	// nil check was ordered after the Port dereference. This must not panic.
 	socks := []SockTabEntry{{LocalAddr: nil}}
 
 	assert.NotPanics(t, func() {
