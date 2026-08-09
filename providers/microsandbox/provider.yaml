@@ -3,7 +3,7 @@ version: v1.0.0
 icon: https://dl.devsy.sh/assets/devsy.svg
 home: https://github.com/devsy-org/devsy
 description: |-
-  Devsy on microsandbox (hardware-isolated microVMs, libkrun)
+  Devsy on Microsandbox
 optionGroups:
   - options:
       - MICROSANDBOX_MEMORY
