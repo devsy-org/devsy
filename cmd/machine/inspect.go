@@ -59,9 +59,7 @@ func (cmd *InspectCmd) Run(ctx context.Context, args []string) error {
 }
 
 // maskMachineOptions redacts sensitive option values on the machine config before it is
-// printed. Hidden provider options are removed entirely, and password option values are
-// replaced with "********". Provider option values are stored by value in a map, so the
-// masked value must be written back to the map entry.
+// printed.
 func maskMachineOptions(machineConfig *provider.Machine, p *provider.ProviderConfig) {
 	for k := range machineConfig.Provider.Options {
 		optConfig := p.Options[k]
@@ -75,7 +73,7 @@ func maskMachineOptions(machineConfig *provider.Machine, p *provider.ProviderCon
 
 		if optConfig.Password {
 			opt := machineConfig.Provider.Options[k]
-			opt.Value = "********"
+			opt.Value = "***"
 			machineConfig.Provider.Options[k] = opt
 		}
 	}
