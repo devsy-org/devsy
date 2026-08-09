@@ -48,12 +48,12 @@ func IsLegacyUID(uid string) bool {
 	return len(uid) != WorkspaceUIDLength && len(uid) != MachineUIDLength
 }
 
-func SafeConcatNameMax(name []string, max int) string {
+func SafeConcatNameMax(name []string, maxLen int) string {
 	fullPath := strings.Join(name, "-")
-	if len(fullPath) > max {
+	if len(fullPath) > maxLen {
 		digest := sha256.Sum256([]byte(fullPath))
 		digestEncoded := hex.EncodeToString(digest[0:])
-		trimmedPath := fullPath[0 : max-6]
+		trimmedPath := fullPath[0 : maxLen-6]
 		if strings.HasSuffix(trimmedPath, "-") {
 			trimmedPath += digestEncoded[0:6]
 		} else {
