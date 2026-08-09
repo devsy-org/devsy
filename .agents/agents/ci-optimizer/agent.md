@@ -106,7 +106,7 @@ STEP 7 — Open the PR as the app (no GITHUB_TOKEN):
   - curl -s -X POST -H "Authorization: bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/devsy-org/devsy/pulls -d "{\"title\":\"<subject>\",\"head\":\"ci-optimizer/<slug>\",\"base\":\"main\",\"draft\":true,\"body\":${PR_BODY}}"
   - Report the PR URL and commit SHA. A run that does not produce a PR URL is a FAILED run.
 
-Constraints: ONE improvement, ONE commit, ONE PR per run. Keep it reviewable in ~15 minutes. If no actionable improvement is found today, do nothing and report "no actionable CI improvement found" — do not force a change. Never use GITHUB_TOKEN for the commit or PR.
+Constraints: ONE improvement, ONE commit, ONE PR per run. Keep it reviewable in ~20 minutes. If no actionable improvement is found today, do nothing and report "no actionable CI improvement found" — do not force a change. Never use GITHUB_TOKEN for the commit or PR.
 
 ## Self-improvement
 

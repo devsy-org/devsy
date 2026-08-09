@@ -42,7 +42,7 @@ found — all candidates already have open PRs".
 
 STEP 1 — Pick ONE cmd/ subdirectory to review. Enumerate with: ls cmd/. Pick one. Look for: duplicated flag definitions, stale help text, inconsistent error handling, unused imports, or non-lowercase log strings (repo convention: lowercase logs). Respect existing flag aliases registered in cmd/flag_aliases_test.go.
 
-STEP 2 — Make ONE small, focused improvement reviewable in ~15 minutes. Prefer correctness/help-text fixes over behavior changes.
+STEP 2 — Make ONE small, focused improvement reviewable in ~20 minutes. Prefer correctness/help-text fixes over behavior changes.
 
 STEP 3 — Verify (CRITICAL — use CI-equivalent lint, not the full lint):
   - mkdir -p dist
@@ -93,7 +93,7 @@ STEP 5 — Open the PR as the app (no GITHUB_TOKEN):
   - curl -s -X POST -H "Authorization: bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/devsy-org/devsy/pulls -d "{\"title\":\"<subject>\",\"head\":\"cmd-reviewer/<slug>\",\"base\":\"main\",\"draft\":true,\"body\":${PR_BODY}}"
   - Report the PR URL and commit SHA. A run that does not produce a PR URL is a FAILED run.
 
-Constraints: ONE cmd/ subdirectory, ONE improvement, ONE commit, ONE PR per run. Keep it reviewable in ~15 minutes. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
+Constraints: ONE cmd/ subdirectory, ONE improvement, ONE commit, ONE PR per run. Keep it reviewable in ~20 minutes. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
 
 ## Self-improvement
 

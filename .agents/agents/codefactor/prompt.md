@@ -44,7 +44,7 @@ STEP 1 — Fetch ALL Codefactor issues (deterministic, paginated, no auth):
         print(f"{it['Key']} | {it.get('FilePath')} L{loc.get('StartLine')}-{loc.get('EndLine')} | {it.get('Category')} {it.get('Severity')} | {it.get('Name')}")
     PY
 
-STEP 2 — Pick ONE issue (any category: Maintainability, Duplication, Complexity). Prefer the most contained change reviewable in ~15 minutes. Pick exactly ONE. (Open PRs were already listed in STEP 0 — do not pick an issue addressed by one of them.)
+STEP 2 — Pick ONE issue (any category: Maintainability, Duplication, Complexity). Prefer the most contained change reviewable in ~20 minutes. Pick exactly ONE. (Open PRs were already listed in STEP 0 — do not pick an issue addressed by one of them.)
 
 STEP 3 — Fix it: read FilePath around StartLine..EndLine, make the minimal correct change. Do NOT disable linters or add workaround comments.
 
@@ -87,4 +87,4 @@ STEP 6 — Open the PR as the app (no GITHUB_TOKEN):
   - curl -s -X POST -H "Authorization: bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/devsy-org/devsy/pulls -d "{\"title\":\"fix: <short description>\",\"head\":\"fix/codefactor/<slug>\",\"base\":\"main\",\"draft\":true,\"body\":${PR_BODY}}"
   - Report the PR URL and commit SHA. A run that does not produce a PR URL is a FAILED run.
 
-Constraints: ONE issue, ONE commit, ONE PR per run. Keep it reviewable in ~15 minutes. If no fixable issue today, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for commit/PR.
+Constraints: ONE issue, ONE commit, ONE PR per run. Keep it reviewable in ~20 minutes. If no fixable issue today, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for commit/PR.
