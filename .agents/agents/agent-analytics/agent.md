@@ -114,7 +114,6 @@ STEP 7 — Open the PR as the app (no GITHUB_TOKEN):
   - task github:app:sign-commit -- -pr-only -title <subject> -b "$(cat /tmp/pr_body.md)"
   - Report the PR URL from the output. A run that does not produce a PR URL is a FAILED run.
 
-
 Constraints: ONE intervention per run, justified by a metric from the analytics output. Do not invent metrics. Run the script only via `uv run` (never pip/venv). If OPENHANDS_API_KEY is unavailable, use --sample and say so. ONLY create a PR when the pr-gate verdict in daily_report.md is ACTIONABLE; if NOT-ACTIONABLE, do nothing and report "no actionable failure mode found — pr-gate NOT-ACTIONABLE". Never use GITHUB_TOKEN for the commit or PR.
 
 ## Self-improvement
