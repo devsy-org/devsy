@@ -26,7 +26,7 @@ const unreadCount = notificationHistory.unreadCount
     <div class="flex items-center justify-between px-2 py-1.5">
       <DropdownMenu.Label class="text-sm font-semibold">Notifications</DropdownMenu.Label>
       {#if $notificationHistory.length > 0}
-        <Button variant="ghost" size="icon-xs" onclick={() => notificationHistory.clear()}>
+        <Button variant="ghost" size="icon-xs" aria-label="Clear all notifications" title="Clear all" onclick={() => notificationHistory.clear()}>
           <Trash2 class="h-3 w-3" />
         </Button>
       {/if}
