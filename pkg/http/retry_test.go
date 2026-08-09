@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var errConnectionRefused = errors.New("connection refused")
+
 type stubRoundTripper struct {
 	calls int
 	fn    func(attempt int) (*http.Response, error)
@@ -113,6 +115,42 @@ func TestRetryTransportDoesNotRetryRequestWithBody(t *testing.T) {
 	}
 	if stub.calls != 1 {
 		t.Fatalf("expected no retry for a request with a body, got %d attempts", stub.calls)
+	}
+}
+
+func TestRetryTransportRetriesConnectionError(t *testing.T) {
+	stub := &stubRoundTripper{fn: func(attempt int) (*http.Response, error) {
+		if attempt < 2 {
+			return nil, errConnectionRefused
+		}
+		return stubResp(http.StatusOK, nil), nil
+	}}
+	rt := NewRetryTransport(stub, fastRetry())
+
+	resp, err := rt.RoundTrip(mustGet(t, http.MethodGet))
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 after retrying connection error, got %d", resp.StatusCode)
+	}
+	if stub.calls != 2 {
+		t.Fatalf("expected 2 attempts, got %d", stub.calls)
+	}
+}
+
+func TestRetryTransportGivesUpOnConnectionError(t *testing.T) {
+	stub := &stubRoundTripper{fn: func(int) (*http.Response, error) {
+		return nil, errConnectionRefused
+	}}
+	rt := NewRetryTransport(stub, fastRetry())
+
+	_, err := rt.RoundTrip(mustGet(t, http.MethodGet))
+	if !errors.Is(err, errConnectionRefused) {
+		t.Fatalf("expected connection error returned, got %v", err)
+	}
+	if stub.calls != 3 {
+		t.Fatalf("expected 3 attempts, got %d", stub.calls)
 	}
 }
 
