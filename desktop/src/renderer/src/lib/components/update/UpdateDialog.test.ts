@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render } from "@testing-library/svelte"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("$lib/ipc/commands.js", () => ({
   checkForUpdates: vi.fn(),
@@ -11,11 +11,11 @@ vi.mock("$lib/ipc/events.js", async (importOriginal) => {
   return { ...mod, onUpdateStatus: async () => () => {} }
 })
 
-import UpdateDialog from "./UpdateDialog.svelte"
 import {
   __setForTest,
   initUpdateStore,
 } from "$lib/stores/updates.svelte.js"
+import UpdateDialog from "./UpdateDialog.svelte"
 
 function bodyText(): string {
   return document.body.textContent ?? ""

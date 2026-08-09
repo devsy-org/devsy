@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { buildUpdateMenuItems } from "../tray.js"
 
 vi.mock("electron", () => ({}))

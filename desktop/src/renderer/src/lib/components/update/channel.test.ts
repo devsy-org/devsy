@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, expect, it } from "vitest"
 import { CHANNELS, channelLabel, isDowngrade } from "./channel.js"
 
 describe("channel labels", () => {

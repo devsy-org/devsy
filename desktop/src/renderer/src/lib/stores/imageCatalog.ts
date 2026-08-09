@@ -1,11 +1,11 @@
 import { writable } from "svelte/store"
+import { imageCatalogGet, imageCatalogRefresh } from "$lib/ipc/commands.js"
 import type {
   CatalogCategory,
   CatalogImage,
   CatalogOrigin,
   LoadCatalogResult,
 } from "$lib/types/index.js"
-import { imageCatalogGet, imageCatalogRefresh } from "$lib/ipc/commands.js"
 
 type State = {
   images: CatalogImage[]

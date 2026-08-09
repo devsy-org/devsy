@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
 import { get } from "svelte/store"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("$lib/ipc/commands.js", () => ({
   providerListVersions: vi.fn(),
@@ -7,15 +7,15 @@ vi.mock("$lib/ipc/commands.js", () => ({
 }))
 
 import {
+  providerCheckUpdates,
+  providerListVersions,
+} from "$lib/ipc/commands.js"
+import {
+  loadVersionsFor,
   providerVersions,
   refreshUpdates,
-  loadVersionsFor,
   resetProviderVersionsStore,
 } from "./providerVersions.js"
-import {
-  providerListVersions,
-  providerCheckUpdates,
-} from "$lib/ipc/commands.js"
 
 describe("providerVersions store", () => {
   beforeEach(() => {

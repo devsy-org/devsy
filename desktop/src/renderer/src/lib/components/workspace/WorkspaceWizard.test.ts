@@ -1,7 +1,7 @@
-import { tick } from "svelte"
 import { fireEvent, render } from "@testing-library/svelte"
+import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { Provider, CommandProgress } from "$lib/types/index.js"
+import type { CommandProgress, Provider } from "$lib/types/index.js"
 
 const workspaceUp = vi.fn()
 const onCommandProgress = vi.fn()

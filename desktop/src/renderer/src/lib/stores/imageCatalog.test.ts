@@ -1,20 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
 import { get } from "svelte/store"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("$lib/ipc/commands.js", () => ({
   imageCatalogGet: vi.fn(),
   imageCatalogRefresh: vi.fn(),
 }))
 
-import {
-  imageCatalog,
-  loadImageCatalog,
-  resetImageCatalogStore,
-  filterImages,
-  isImageCompatible,
-} from "./imageCatalog.js"
 import { imageCatalogGet } from "$lib/ipc/commands.js"
 import type { CatalogImage } from "$lib/types/index.js"
+import {
+  filterImages,
+  imageCatalog,
+  isImageCompatible,
+  loadImageCatalog,
+  resetImageCatalogStore,
+} from "./imageCatalog.js"
 
 const IMAGES: CatalogImage[] = [
   {

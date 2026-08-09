@@ -9,18 +9,17 @@ import { app, dialog, ipcMain } from "electron"
 import type { CLIError } from "../shared/cli-error.js"
 import { parseCliEnvelope } from "../shared/cli-error.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
+import type { CliRunner } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
+import type { LogStore } from "./log-store.js"
 import type {
   ProviderActivity,
   ProviderJobs,
   ProviderPhase,
 } from "./provider-jobs.js"
-import type { CliRunner } from "./cli.js"
-import type { LogStore } from "./log-store.js"
 import type { PtyManager } from "./pty.js"
 import type { DaemonState } from "./state.js"
 import {
-  type ReleaseChannel,
   checkForUpdates,
   checkForUpdatesWithChannel,
   downloadUpdate,
@@ -28,6 +27,7 @@ import {
   getLastStatus,
   getReleaseChannel,
   installUpdate,
+  type ReleaseChannel,
   setAutoDownloadEnabled,
   setReleaseChannel,
 } from "./updater.js"

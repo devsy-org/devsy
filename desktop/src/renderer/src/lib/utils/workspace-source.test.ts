@@ -1,12 +1,12 @@
-import { describe, it, expect } from "vitest"
-import {
-  buildWorkspaceSource,
-  buildDevcontainerArg,
-} from "./workspace-source.js"
+import { describe, expect, it } from "vitest"
 import type {
   GitSourceForm,
-  LocalSourceForm,
   ImageSourceForm,
+  LocalSourceForm,
+} from "./workspace-source.js"
+import {
+  buildDevcontainerArg,
+  buildWorkspaceSource,
 } from "./workspace-source.js"
 
 function gitForm(overrides: Partial<GitSourceForm>): GitSourceForm {
