@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -359,6 +360,77 @@ func TestUrlOrErr(t *testing.T) {
 	}
 	if got := urlOrErr(map[string]any{}); got != "" {
 		t.Errorf("got %q", got)
+	}
+}
+
+const testMainBranch = "main"
+
+func TestResolveBranchName(t *testing.T) {
+	const plain = "feature/foo"
+	cases := []struct {
+		name, input, want string
+	}{
+		{"plain name", plain, plain},
+		{"refs prefix", "refs/heads/" + plain, plain},
+		{testMainBranch, "refs/heads/" + testMainBranch, testMainBranch},
+		{"empty", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := resolveBranchName(c.input); got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func gitRun(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestChangedFilesDetectsWorkingTree(t *testing.T) {
+	dir := t.TempDir()
+	gitRun(t, dir, "init", "--quiet")
+	gitRun(t, dir, "config", "user.email", "t@t.com")
+	gitRun(t, dir, "config", "user.name", "test")
+	gitRun(t, dir, "checkout", "-b", testMainBranch)
+	writeFile(t, filepath.Join(dir, "committed.txt"), "x")
+	writeFile(t, filepath.Join(dir, "staged.txt"), "s")
+	gitRun(t, dir, "add", ".")
+	gitRun(t, dir, "commit", "--quiet", "-m", "init")
+	gitRun(t, dir, "branch", "origin/main")
+
+	writeFile(t, filepath.Join(dir, "modified.txt"), "hello")
+	writeFile(t, filepath.Join(dir, "committed.txt"), "modified")
+	gitRun(t, dir, "add", "staged.txt")
+	writeFile(t, filepath.Join(dir, "staged.txt"), "staged-mod")
+
+	t.Chdir(dir)
+	files, err := changedFiles()
+	if err != nil {
+		t.Fatalf("changedFiles: %v", err)
+	}
+	got := make(map[string]bool)
+	for _, f := range files {
+		got[f] = true
+	}
+	want := []string{"committed.txt", "modified.txt", "staged.txt"}
+	for _, f := range want {
+		if !got[f] {
+			t.Errorf("expected %q in changed files, got %v", f, got)
+		}
 	}
 }
 

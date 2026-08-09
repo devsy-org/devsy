@@ -9,6 +9,7 @@
 /dist
 # Unit test targets
 /main
+/sign_commit
 /profile.out
 /tagsvendor/
 node_modules/
@@ -16,3 +17,6 @@ desktop/dist/
 desktop/release/
 desktop/playwright-report/
 desktop/test-results/
+__pycache__/
+*.pyc
+dist/analytics/

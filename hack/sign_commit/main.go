@@ -16,8 +16,9 @@
 // Usage:
 //
 //	task github:app:sign-commit -- -m "subject" [-b "body"] [files...]
-//
-// With no file paths, changed files vs origin/main are committed.
+//	task github:app:sign-commit -- -m "subject" -pr   (commit + open draft PR)
+//	task github:app:sign-commit -- -m "subject" -pr-only   (open draft PR only)
+//	task github:app:sign-commit -- -token   (print the app installation token)
 package main
 
 import (
@@ -46,6 +47,8 @@ const (
 	apiBase           = "https://api.github.com"
 	maxExpiration     = 10 * time.Minute
 	issuedAtSkew      = 60 * time.Second
+	mainBranch        = "main"
+	bodyKey           = "body"
 )
 
 type addition struct {
@@ -90,6 +93,10 @@ type options struct {
 	branch  string
 	all     bool
 	token   bool
+	pr      bool
+	prOnly  bool
+	title   string
+	draft   bool
 	paths   []string
 }
 
@@ -103,8 +110,23 @@ func main() {
 	body := flag.String("b", "", "commit body (optional)")
 	repo := flag.String("repo", defaultRepo, "owner/name repository")
 	branch := flag.String("branch", "", "branch (default: current)")
-	all := flag.Bool("all", true, "commit all changed files vs origin/main when no paths given")
+	all := flag.Bool(
+		"all",
+		true,
+		"commit all working-tree changes vs origin/main when no paths given",
+	)
 	token := flag.Bool("token", false, "print the app installation token and exit (no commit)")
+	pr := flag.Bool(
+		"pr",
+		false,
+		"create a draft PR after committing (uses -title or -m for the PR title)",
+	)
+	prOnly := flag.Bool(
+		"pr-only", false,
+		"create a draft PR without committing (uses -title or -m for title, -b for body)",
+	)
+	title := flag.String("title", "", "PR title (default: commit subject from -m)")
+	draft := flag.Bool("draft", true, "create the PR as draft (use -draft=false for a ready PR)")
 	flag.Parse()
 
 	opts := options{
@@ -114,6 +136,10 @@ func main() {
 		branch:  *branch,
 		all:     *all,
 		token:   *token,
+		pr:      *pr,
+		prOnly:  *prOnly,
+		title:   *title,
+		draft:   *draft,
 		paths:   flag.Args(),
 	}
 	if err := run(opts); err != nil {
@@ -136,12 +162,36 @@ func run(o options) error {
 		fmt.Println(token)
 		return nil
 	}
-	return commitFiles(o, token)
+	if o.prOnly {
+		return createPRFromOptions(token, o)
+	}
+	_, err = commitFiles(o, token)
+	if err != nil {
+		return err
+	}
+	if o.pr {
+		return createPR(token, o, o.branch)
+	}
+	return nil
 }
 
-func commitFiles(o options, token string) error {
+func createPRFromOptions(token string, o options) error {
+	branch := o.branch
+	if branch == "" {
+		b, err := currentBranch()
+		if err != nil {
+			return fmt.Errorf("detect branch: %w", err)
+		}
+		branch = b
+	}
+	return createPR(token, o, branch)
+}
+
+func commitFiles(o options, token string) (string, error) {
 	if o.message == "" {
-		return fmt.Errorf("-m commit subject is required (or pass -token to print the app token)")
+		return "", fmt.Errorf(
+			"-m commit subject is required (or pass -token to print the app token)",
+		)
 	}
 
 	branch := o.branch
@@ -149,40 +199,41 @@ func commitFiles(o options, token string) error {
 		var err error
 		branch, err = currentBranch()
 		if err != nil {
-			return fmt.Errorf("detect branch: %w", err)
+			return "", fmt.Errorf("detect branch: %w", err)
 		}
+		o.branch = branch
 	}
 
 	paths, err := resolvePaths(o.all, o.paths)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	head, err := refSHA(token, o.repo, branch)
+	head, err := ensureBranch(token, o.repo, branch)
 	if err != nil {
-		return fmt.Errorf("read branch head: %w", err)
+		return "", err
 	}
 
 	adds, dels, err := fileChanges(paths, os.ReadFile)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	vars := commitVars(o, branch, head, fileChange{Additions: adds, Deletions: dels})
 	return publishCommit(token, o.repo, vars)
 }
 
-func publishCommit(token, repo string, vars createCommitVars) error {
+func publishCommit(token, repo string, vars createCommitVars) (string, error) {
 	sha, err := createCommit(token, vars)
 	if err != nil {
-		return fmt.Errorf("create commit: %w", err)
+		return "", fmt.Errorf("create commit: %w", err)
 	}
 	verified, err := commitVerified(token, repo, sha)
 	if err != nil {
-		return fmt.Errorf("verify commit: %w", err)
+		return "", fmt.Errorf("verify commit: %w", err)
 	}
 	fmt.Printf("%s verified=%v\n", sha, verified)
-	return nil
+	return sha, nil
 }
 
 func appToken(owner string) (string, error) {
@@ -367,6 +418,70 @@ func refSHA(token, repo, branch string) (string, error) {
 	return sha, nil
 }
 
+// ensureBranch reads the remote branch SHA, auto-creating the branch from
+// origin/main when it does not yet exist. This removes the need for agents to
+// manually create the remote ref before committing.
+func ensureBranch(token, repo, branch string) (string, error) {
+	sha, err := refSHA(token, repo, branch)
+	if err == nil {
+		return sha, nil
+	}
+	mainSHA, mErr := refSHA(token, repo, mainBranch)
+	if mErr != nil {
+		return "", fmt.Errorf(
+			"branch %q missing and cannot read origin/main to create it: %w",
+			branch,
+			mErr,
+		)
+	}
+	if cErr := createBranchRef(token, repo, branch, mainSHA); cErr != nil {
+		return "", fmt.Errorf("auto-create branch %q: %w", branch, cErr)
+	}
+	fmt.Printf("created remote branch %s from origin/main (%s)\n", branch, mainSHA)
+	return mainSHA, nil
+}
+
+func createBranchRef(token, repo, branch, sha string) error {
+	payload := map[string]any{
+		"ref": "refs/heads/" + branch,
+		"sha": sha,
+	}
+	_, err := ghPost(token, fmt.Sprintf("%s/repos/%s/git/refs", apiBase, repo), payload)
+	return err
+}
+
+// createPR opens a pull request for the branch after a successful commit.
+func createPR(token string, o options, branch string) error {
+	title := o.title
+	if title == "" {
+		title = o.message
+	}
+	prBody := o.body
+	if prBody == "" {
+		prBody = "This PR was created by an AI agent on behalf of the user."
+	}
+	payload := map[string]any{
+		"title": title,
+		"head":  resolveBranchName(branch),
+		"base":  mainBranch,
+		bodyKey: prBody,
+		"draft": o.draft,
+	}
+	body, err := ghPost(token, fmt.Sprintf("%s/repos/%s/pulls", apiBase, o.repo), payload)
+	if err != nil {
+		return fmt.Errorf("create PR: %w", err)
+	}
+	url, _ := body["html_url"].(string)
+	num, _ := body["number"].(float64)
+	fmt.Printf("PR #%d: %s (draft=%v)\n", int(num), url, o.draft)
+	return nil
+}
+
+// resolveBranchName returns the branch name without a refs/heads/ prefix.
+func resolveBranchName(branch string) string {
+	return strings.TrimPrefix(branch, "refs/heads/")
+}
+
 func commitVerified(token, repo, sha string) (bool, error) {
 	body, err := ghGet(token, fmt.Sprintf("%s/repos/%s/commits/%s", apiBase, repo, sha))
 	if err != nil {
@@ -476,13 +591,29 @@ func currentBranch() (string, error) {
 func changedFiles() ([]string, error) {
 	base, err := gitOutput("merge-base", "HEAD", "origin/main")
 	if err != nil {
-		return nil, err
+		base = "origin/main"
 	}
-	out, err := gitOutput("diff", "--name-only", base, "HEAD")
+	tracked, err := gitOutput("diff", "--name-only", base)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list tracked changes: %w", err)
 	}
-	return splitLines(out), nil
+	untracked, err := gitOutput("ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, fmt.Errorf("list untracked files: %w", err)
+	}
+	seen := make(map[string]bool)
+	var files []string
+	for _, f := range splitLines(tracked + "\n" + untracked) {
+		if f == "" || seen[f] {
+			continue
+		}
+		seen[f] = true
+		files = append(files, f)
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+	return files, nil
 }
 
 func gitOutput(args ...string) (string, error) {

@@ -51,6 +51,9 @@ STEP 2 — Verify (CRITICAL — use CI-equivalent lint):
   KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClone*) fail on origin/main already — a stale assertion, NOT caused by your change. If ONLY pkg/git fails and your change did not touch pkg/git, proceed. If your change introduces any NEW lint issue or test failure, fix the root cause or pick a different improvement.
 
 FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
+  Write self-documenting code: clear names, small functions, obvious structure.
+  Avoid wordy comments — prefer no comments unless the code expresses something
+  genuinely unintuitive (a non-obvious invariant, workaround, or trade-off).
   - git fetch --quiet origin main
   - task cli:format        # auto-format Go code (gofmt, gci, gofumpt via golangci-lint fmt)
   - task cli:lint:ci       # Must be 0 new issues. If any issue appears, fix it and re-run.
@@ -60,39 +63,22 @@ FORMATTING GATE (CRITICAL — run BEFORE committing, must pass):
   Common formatting failures: gci (import ordering), gofumpt (struct/function spacing),
   golines (line length > 120). Running task cli:format first auto-fixes most of these.
 
-STEP 3 — Commit via the Devsy GitHub App (signed, verified). The repo
-ships a Go tool (hack/sign_commit, JWT via golang-jwt/jwt/v5) that authenticates as the
-app installation and creates the commit through the GraphQL createCommitOnBranch mutation,
-so GitHub signs it (committer: GitHub, verified). No Python, no GITHUB_TOKEN.
+STEP 3 — Commit via the Devsy GitHub App (signed, verified).
+The repo ships a Go tool (hack/sign_commit) that authenticates as the app installation
+and creates the commit through GitHub's GraphQL API, so GitHub signs it (committer:
+web-flow, verified). It auto-detects all working-tree changes (staged, unstaged, and
+untracked files) and auto-creates the remote branch from origin/main if needed.
+Do NOT run `git commit` locally — it produces an unsigned commit that fails the signature
+check.
   - git fetch --quiet origin main
   - git checkout -b pkg-container/<short-slug> origin/main
-  - git add <changed files>
-  - WARNING: Do NOT run `git commit` locally. The sign_commit tool creates the commit via
-    the GitHub `createCommitOnBranch` mutation (committer: GitHub, verified). A local
-    `git commit` would produce an UNSIGNED commit that the mutation
-    does NOT replace — both commits would land on the branch and the unsigned one fails the
-    signature status check. Only `git add` to stage.
   - task github:app:sign-commit -- -m "<conventional-commit subject, 50 chars max>" "<body>"
   - Confirm output: verified=true.
-  - Pre-PR check (CRITICAL): confirm the branch has exactly ONE commit ahead of
-    origin/main and it is verified. Run:
-      git log --oneline origin/main..HEAD
-    If there is MORE than one commit (e.g. an extra unsigned local commit), reset and
-    redo cleanly:
-      git reset --hard origin/main
-      # re-apply your edit, then: git add <changed files>
-      task github:app:sign-commit -- -m "<conventional-commit subject, 50 chars max>" "<body>"
-      git log --oneline origin/main..HEAD   # must show exactly ONE commit
-    Only proceed to open the PR once exactly one verified commit is on the branch.
 
 STEP 4 — Open the PR as the app (no GITHUB_TOKEN):
-  - TOKEN=$(task github:app:sign-commit -- -token)
   - Write the PR body to /tmp/pr_body.md. It MUST include: the package reviewed, the issue found, the change, the verification performed (lint:ci, cli:test), a line "This PR was created by an AI agent as part of an automated daily package review job."
-  - PR_BODY=$(python3 -c 'import json,sys;print(json.dumps(open("/tmp/pr_body.md").read()))')
-  - PR_JSON=$(curl -s -X POST -H "Authorization: bearer $TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/devsy-org/devsy/pulls -d "{\"title\":\"<subject>\",\"head\":\"pkg-container/<slug>\",\"base\":\"main\",\"draft\":true,\"body\":${PR_BODY}}")
-  - PR_NUMBER=$(python3 -c 'import json,sys;print(json.loads(sys.stdin.read())["number"])' <<< "$PR_JSON")
-  - PR_URL=$(python3 -c 'import json,sys;print(json.loads(sys.stdin.read())["html_url"])' <<< "$PR_JSON")
-  - Report the PR URL and commit SHA. A run that does not produce a PR URL is a FAILED run.
+  - task github:app:sign-commit -- -pr-only -title <subject> -b "$(cat /tmp/pr_body.md)"
+  - Report the PR URL from the output. A run that does not produce a PR URL is a FAILED run.
 
 STEP 5 — Ensure status checks pass (lint failures are the most common reason a daily PR needs a follow-up):
   GitHub runs the `Lint` job (golangci-lint-action, `only-new-issues: true`) and, for desktop
@@ -117,7 +103,6 @@ STEP 5 — Ensure status checks pass (lint failures are the most common reason a
            - Go files: `task cli:format && task cli:lint:ci` (0 new issues) and, if relevant, `task cli:test`.
            - Desktop files: `cd desktop && npx biome check --write && npm run check`.
       4. Stage the fix and push a follow-up commit via the app (same flow as the original commit):
-           - git add <changed files>
            - task github:app:sign-commit -- -m "<fixup subject, 50 chars max>" "<body>"
            - git log --oneline origin/main..HEAD   # the fix is a SECOND commit on the branch
       5. Re-poll `gh pr checks "$PR_NUMBER"` until the check that failed is now `SUCCESS`/`NEUTRAL`.
