@@ -97,6 +97,7 @@ STEP 5 — Open the PR as the app (no GITHUB_TOKEN):
   - task github:app:sign-commit -- -pr-only -title style: <short description> -b "$(cat /tmp/pr_body.md)"
   - Report the PR URL from the output. A run that does not produce a PR URL is a FAILED run.
 
+
 Constraints: No behavioral changes — formatting and lint fixes only. Do not disable linters. If no lint findings, do nothing and report "no lint findings to fix". Never use GITHUB_TOKEN for the commit or PR.
 
 ## Self-improvement

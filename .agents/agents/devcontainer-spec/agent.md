@@ -92,6 +92,7 @@ STEP 6 — Open the PR as the app (no GITHUB_TOKEN):
   - task github:app:sign-commit -- -pr-only -title <subject> -b "$(cat /tmp/pr_body.md)"
   - Report the PR URL from the output. A run that does not produce a PR URL is a FAILED run.
 
+
 Constraints: ONE requirement per run. Do not bump feature versions without verifying the SHA/integrity. If no actionable requirement found, do nothing and report "no actionable requirement found". Never use GITHUB_TOKEN for the commit or PR.
 
 ## Self-improvement

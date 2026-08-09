@@ -100,6 +100,7 @@ STEP 7 — Open the PR as the app (no GITHUB_TOKEN):
   - task github:app:sign-commit -- -pr-only -title fix(ui): <short description> -b "$(cat /tmp/pr_body.md)"
   - Report the PR URL from the output. A run that does not produce a PR URL is a FAILED run.
 
+
 Constraints: Make exactly ONE improvement per run. Do not bundle multiple fixes. Never change logic outside the UI layer, and never touch package.json, package-lock.json, or any dependency manifest. Use a Conventional Commit message, type "fix" or "style". If no qualifying issue, do NOT force a change — report it instead. Never use GITHUB_TOKEN for the commit or PR.
 
 ## Self-improvement

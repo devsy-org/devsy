@@ -108,6 +108,7 @@ STEP 6 — Open the PR as the app (no GITHUB_TOKEN):
   - task github:app:sign-commit -- -pr-only -title fix: <short description> -b "$(cat /tmp/pr_body.md)"
   - Report the PR URL from the output. A run that does not produce a PR URL is a FAILED run.
 
+
 Constraints: ONE issue, ONE commit, ONE PR per run (plus at most ONE follow-up fix commit if a status check fails — see the ensure-status-checks step). Keep it reviewable in ~20 minutes. If no fixable issue today, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for commit/PR.
 
 ## Self-improvement
