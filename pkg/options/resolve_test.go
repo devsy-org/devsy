@@ -823,3 +823,60 @@ func TestResolveAgentMicrosandboxConfig(t *testing.T) {
 	assert.Equal(t, "8192", agentConfig.Microsandbox.MaxMemory)
 	assert.Equal(t, types.StrBool("true"), agentConfig.Microsandbox.BlockEgress)
 }
+
+func TestResolveAgentDownloadURL(t *testing.T) {
+	const (
+		localHost         = "http://localhost:8080/"
+		localHostTrail    = "http://localhost:8080///"
+		exampleAgent      = "https://example.com/agent/"
+		exampleAgentTrail = "https://example.com/agent///"
+		exampleAgentPlain = "https://example.com/agent"
+		defaultURL        = config.AgentLatestDownloadURL
+	)
+
+	cases := []struct {
+		name       string
+		envURL     string
+		contextURL string
+		want       string
+	}{
+		{
+			name:       "env override wins over context option",
+			envURL:     localHost,
+			contextURL: exampleAgentPlain,
+			want:       localHost,
+		},
+		{
+			name:   "env value trailing slash normalized to single",
+			envURL: localHostTrail,
+			want:   localHost,
+		},
+		{name: "context option used when env unset", contextURL: exampleAgent, want: exampleAgent},
+		{
+			name:       "context option trailing slash normalized",
+			contextURL: exampleAgentTrail,
+			want:       exampleAgent,
+		},
+		{name: "default release url when neither set", want: defaultURL},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(config.EnvAgentURL, tc.envURL)
+
+			devConfig := &config.Config{
+				DefaultContext: config.DefaultContext,
+				Contexts: map[string]*config.ContextConfig{
+					config.DefaultContext: {},
+				},
+			}
+			if tc.contextURL != "" {
+				devConfig.Contexts[config.DefaultContext].Options = map[string]config.OptionValue{
+					config.ContextOptionAgentURL: {Value: tc.contextURL},
+				}
+			}
+
+			assert.Equal(t, tc.want, resolveAgentDownloadURL(devConfig))
+		})
+	}
+}
