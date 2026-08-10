@@ -103,7 +103,7 @@ ERROR: Unable to detect distribution`)
 	}
 
 	supported := map[string]bool{
-		"ubuntu": true, "debian": true, "raspbian": true,
+		DistroUbuntu: true, DistroDebian: true, DistroRaspbian: true,
 		"centos": true, "fedora": true, "rhel": true,
 		"sles": true,
 	}

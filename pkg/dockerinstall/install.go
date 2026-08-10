@@ -58,7 +58,7 @@ func Install(stdout, stderr io.Writer) (string, error) {
 
 func createInstaller(distro *Distro, opts *InstallOptions) Installer {
 	switch distro.ID {
-	case "ubuntu", "debian", "raspbian":
+	case DistroUbuntu, DistroDebian, DistroRaspbian:
 		return NewDebianInstaller(distro, opts)
 	default:
 		return nil

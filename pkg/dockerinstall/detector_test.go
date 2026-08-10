@@ -29,7 +29,7 @@ VERSION_ID="22.04"
 VERSION_CODENAME=jammy`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
-	s.Equal("ubuntu", distro.ID)
+	s.Equal(DistroUbuntu, distro.ID)
 	s.Equal("jammy", distro.Version)
 }
 
@@ -41,7 +41,7 @@ ID_LIKE=debian
 VERSION_ID="22.04"`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
-	s.Equal("ubuntu", distro.ID)
+	s.Equal(DistroUbuntu, distro.ID)
 	s.Equal("22.04", distro.Version, "Should fall back to VERSION_ID when codename missing")
 }
 
@@ -53,7 +53,7 @@ VERSION_ID="12"
 VERSION_CODENAME=bookworm`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
-	s.Equal("debian", distro.ID)
+	s.Equal(DistroDebian, distro.ID)
 	s.Equal("bookworm", distro.Version)
 }
 
@@ -71,7 +71,7 @@ SUPPORT_URL="https://www.debian.org/support"
 BUG_REPORT_URL="https://bugs.debian.org/"`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
-	s.Equal("debian", distro.ID)
+	s.Equal(DistroDebian, distro.ID)
 	s.Equal("trixie", distro.Version, "Should extract VERSION_CODENAME, not VERSION_ID")
 	s.False(isNumericVersion(distro.Version), "Version should be codename, not numeric")
 }
@@ -83,7 +83,7 @@ ID=debian
 VERSION_ID="12"`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
-	s.Equal("debian", distro.ID)
+	s.Equal(DistroDebian, distro.ID)
 	s.Equal("12", distro.Version, "Should fall back to VERSION_ID")
 }
 
@@ -103,7 +103,7 @@ func (s *DetectorTestSuite) TestParseOSRelease_QuotedValues() {
 VERSION_CODENAME="jammy"`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
-	s.Equal("ubuntu", distro.ID)
+	s.Equal(DistroUbuntu, distro.ID)
 	s.Equal("jammy", distro.Version)
 }
 
@@ -112,7 +112,7 @@ func (s *DetectorTestSuite) TestParseOSRelease_UnquotedValues() {
 VERSION_CODENAME=jammy`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
-	s.Equal("ubuntu", distro.ID)
+	s.Equal(DistroUbuntu, distro.ID)
 	s.Equal("jammy", distro.Version)
 }
 
@@ -146,9 +146,9 @@ func (s *DetectorTestSuite) TestMapDebianVersion() {
 }
 
 func (s *DetectorTestSuite) TestMapDebianID() {
-	s.Equal("raspbian", s.detector.mapDebianID("osmc"))
-	s.Equal("debian", s.detector.mapDebianID("linuxmint"))
-	s.Equal("debian", s.detector.mapDebianID("unknown"))
+	s.Equal(DistroRaspbian, s.detector.mapDebianID("osmc"))
+	s.Equal(DistroDebian, s.detector.mapDebianID("linuxmint"))
+	s.Equal(DistroDebian, s.detector.mapDebianID("unknown"))
 }
 
 func (s *DetectorTestSuite) TestIsNumericVersion() {
@@ -185,12 +185,12 @@ func (s *DetectorTestSuite) TestDistro_HasCodename() {
 		distro   *Distro
 		expected bool
 	}{
-		{&Distro{ID: "ubuntu", Version: "jammy"}, true},
-		{&Distro{ID: "debian", Version: "bookworm"}, true},
-		{&Distro{ID: "ubuntu", Version: "22.04"}, false},
-		{&Distro{ID: "debian", Version: "12"}, false},
+		{&Distro{ID: DistroUbuntu, Version: "jammy"}, true},
+		{&Distro{ID: DistroDebian, Version: "bookworm"}, true},
+		{&Distro{ID: DistroUbuntu, Version: "22.04"}, false},
+		{&Distro{ID: DistroDebian, Version: "12"}, false},
 		{&Distro{ID: "fedora", Version: "39"}, false},
-		{&Distro{ID: "ubuntu", Version: ""}, false},
+		{&Distro{ID: DistroUbuntu, Version: ""}, false},
 	}
 
 	for _, tt := range tests {
