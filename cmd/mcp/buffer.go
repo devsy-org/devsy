@@ -12,11 +12,11 @@ type BoundedBuffer struct {
 }
 
 // NewBoundedBuffer returns a BoundedBuffer with the given capacity (minimum 64).
-func NewBoundedBuffer(cap int) *BoundedBuffer {
-	if cap < 64 {
-		cap = 64
+func NewBoundedBuffer(capacity int) *BoundedBuffer {
+	if capacity < 64 {
+		capacity = 64
 	}
-	return &BoundedBuffer{cap: cap, buf: make([]byte, 0, cap)}
+	return &BoundedBuffer{cap: capacity, buf: make([]byte, 0, capacity)}
 }
 
 func (b *BoundedBuffer) Write(p []byte) (int, error) {
