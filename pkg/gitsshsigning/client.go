@@ -73,7 +73,7 @@ func writeSignatureToFile(signature []byte, bufferFile string) error {
 	sigFile := bufferFile + ".sig"
 	// #nosec G306 -- TODO Consider using a more secure permission setting and ownership if needed.
 	if err := os.WriteFile(sigFile, signature, 0o644); err != nil {
-		log.Errorf("Failed to write signature to file: %v", err)
+		log.Errorf("failed to write signature to file: %v", err)
 		return err
 	}
 	return nil
@@ -127,7 +127,7 @@ func sendSignatureRequest(requestBody []byte) ([]byte, error) {
 		bytes.NewReader(requestBody),
 	)
 	if err != nil {
-		log.Errorf("Error retrieving git ssh signature: %v", err)
+		log.Errorf("error retrieving git ssh signature: %v", err)
 		return nil, err
 	}
 	defer func() { _ = response.Body.Close() }()
@@ -151,7 +151,7 @@ func sendSignatureRequest(requestBody []byte) ([]byte, error) {
 func parseSignatureResponse(responseBody []byte) ([]byte, error) {
 	signatureResponse := &GitSSHSignatureResponse{}
 	if err := json.Unmarshal(responseBody, signatureResponse); err != nil {
-		log.Errorf("Error decoding git ssh signature: %v", err)
+		log.Errorf("error decoding git ssh signature: %v", err)
 		return nil, fmt.Errorf(
 			"error decoding signature response (body: %s): %w",
 			string(responseBody),

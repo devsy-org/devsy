@@ -37,22 +37,22 @@ var GitConfigTemplate = `
 // - users this script as gpg.ssh.program
 // This is needed since git expects `gpg.ssh.program` to be an executable.
 func ConfigureHelper(userName, gitSigningKey string) error {
-	log.Debug("Creating helper script")
+	log.Debug("creating helper script")
 	if err := createHelperScript(); err != nil {
 		return err
 	}
-	log.Debugf("Helper script created. Making it executable.")
+	log.Debugf("helper script created. making it executable.")
 	if err := makeScriptExecutable(); err != nil {
 		return err
 	}
-	log.Debugf("Script executable. Getting config path.")
+	log.Debugf("script executable. getting config path.")
 	gitConfigPath, err := getGitConfigPath(userName)
 	if err != nil {
 		return err
 	}
-	log.Debugf("Got config path: %v", gitConfigPath)
+	log.Debugf("got config path: %v", gitConfigPath)
 	if err := updateGitConfig(gitConfigPath, userName, gitSigningKey); err != nil {
-		log.Errorf("Failed updating git configuration: %v", err)
+		log.Errorf("failed updating git configuration: %v", err)
 		return err
 	}
 
