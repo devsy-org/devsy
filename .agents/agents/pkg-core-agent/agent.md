@@ -83,35 +83,6 @@ STEP 4 — Open the PR as the app (no GITHUB_TOKEN):
   - task github:app:sign-commit -- -pr-only -title <subject> -b "$(cat /tmp/pr_body.md)"
   - Report the PR URL from the output. A run that does not produce a PR URL is a FAILED run.
 
-STEP 5 — Ensure status checks pass (lint failures are the most common reason a daily PR needs a follow-up):
-  GitHub runs the `Lint` job (golangci-lint-action, `only-new-issues: true`) and, for desktop
-  changes, the `Desktop CI` `lint-and-test` job. `task cli:lint:ci` mirrors the Go lint job
-  locally, but the agent must still verify the PR's actual checks and fix any that fail.
-  - Wait for checks to start, then poll until they complete (timeout ~15 min):
-      gh pr checks "$PR_NUMBER" --repo devsy-org/devsy --interval 30 --watch --fail-fast >/dev/null 2>&1 || true
-      gh pr checks "$PR_NUMBER" --repo devsy-org/devsy --json name,state,conclusion
-    (`gh pr checks --watch` blocks until checks finish; if it returns early or is unavailable in
-    this environment, poll the REST API instead:
-    `gh api repos/devsy-org/devsy/commits/$(git rev-parse HEAD)/check-runs --jq '.check_runs[] | {name,state,conclusion}'`
-    in a loop until every `state` is `completed`.)
-  - If all checks are `SUCCESS`/`NEUTRAL`/`SKIPPED`, the run is complete; nothing more to do.
-  - If a check FAILED (most often `Lint`), do NOT abandon the PR:
-      1. Fetch the failing job's log: `gh pr view "$PR_NUMBER" --repo devsy-org/devsy --json statusCheckRollup --jq '.statusCheckRollup[] | select(.conclusion=="FAILURE") | .name'`,
-         then `gh run view <run-id> --repo devsy-org/devsy --log-failed | tail -200` to read the linter output.
-      2. Diagnose the failure against your diff. Common lint failures that slip past `cli:lint:ci`
-         (shallow clone merge-base, format-after-lint, or env differences): unused import, shadow,
-         gocritic, errcheck, gci/gofumpt formatting. Fix the root cause in the source — do NOT add
-         `//nolint` or disable linters.
-      3. Re-apply the fix, then re-verify locally exactly as CI does:
-           - Go files: `task cli:format && task cli:lint:ci` (0 new issues) and, if relevant, `task cli:test`.
-           - Desktop files: `cd desktop && npx biome check --write && npm run check`.
-      4. Stage the fix and push a follow-up commit via the app (same flow as the original commit):
-           - task github:app:sign-commit -- -m "<fixup subject, 50 chars max>" "<body>"
-           - git log --oneline origin/main..HEAD   # the fix is a SECOND commit on the branch
-      5. Re-poll `gh pr checks "$PR_NUMBER"` until the check that failed is now `SUCCESS`/`NEUTRAL`.
-  - Cap the loop at ONE follow-up fix commit. If a second round is needed, stop, leave the PR
-    in its current state, and report the remaining failing check name + log tail in the run
-    summary so a human can finish it. Do not pile up many fixup commits.
 
 Constraints: ONE package per run. Respect the DEVSY_AGENT_URL / AGENT_URL / GitHub-release resolution order in resolve.go. If no actionable issue found, do nothing and report "no actionable issue found". Never use GITHUB_TOKEN for the commit or PR.
 

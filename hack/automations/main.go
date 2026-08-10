@@ -17,6 +17,14 @@ import (
 var templateText string
 
 const (
+	kindInstall = "install"
+	kindVerify  = "verify"
+	kindCommit  = "commit"
+	kindPR      = "pr"
+	kindNote    = "note"
+)
+
+const (
 	goVersion        = "1.26.3"
 	golangciVersion  = "2.12.2"
 	goDownloadURL    = "https://go.dev/dl/go" + goVersion + ".linux-amd64.tar.gz"
@@ -38,18 +46,20 @@ type agent struct {
 	PRTitle           string `yaml:"pr_title"`
 	JobName           string `yaml:"job_name"`
 	Toolchain         string `yaml:"toolchain"`
-	Step0Title        string `yaml:"step0_title"`
-	CommitStepNumber  int    `yaml:"commit_step_number"`
-	PRStepNumber      int    `yaml:"pr_step_number"`
 	Intro             string `yaml:"intro"`
-	ReviewSteps       string `yaml:"review_steps"`
-	VerifyType        string `yaml:"verify_type"`
-	VerifyExtras      string `yaml:"verify_extras"`
 	PRBodyMustInclude string `yaml:"pr_body_must_include"`
 	Constraints       string `yaml:"constraints"`
 	Description       string `yaml:"description"`
 	Scope             string `yaml:"scope"`
 	SelfImprovement   string `yaml:"self_improvement"`
+	Steps             []step `yaml:"steps"`
+}
+
+type step struct {
+	Kind         string `yaml:"kind"`          // install, verify, commit, pr, or "" (plain)
+	Title        string `yaml:"title"`         // plain-step title (full first line, incl. trailing punctuation)
+	Body         string `yaml:"body"`          // plain-step body (lines after the title; optional)
+	VerifyExtras string `yaml:"verify_extras"` // kind=verify: extra verify bullets
 }
 
 type config struct {
@@ -57,11 +67,11 @@ type config struct {
 }
 
 type renderView struct {
-	Agent            agent
-	Step0Body        string
-	VerifyBlock      string
-	PRTitleJSON      string
-	StatusStepNumber int
+	Agent       agent
+	InstallStep string
+	ReviewSteps string
+	CommitStep  string
+	PRStep      string
 }
 
 func main() {
@@ -134,15 +144,28 @@ func validateAgent(a agent) {
 	if a.SelfImprovement == "" {
 		fail("agent %s missing self_improvement", a.ID)
 	}
+	if len(a.Steps) == 0 {
+		fail("agent %s has no steps", a.ID)
+	}
+	kinds := map[string]bool{}
+	for _, s := range a.Steps {
+		kinds[s.Kind] = true
+	}
+	for _, required := range []string{kindInstall, kindCommit, kindPR} {
+		if !kinds[required] {
+			fail("agent %s steps missing a %q step", a.ID, required)
+		}
+	}
 }
 
 func renderAgent(tmpl *template.Template, a agent) string {
+	blocks := renderSteps(a)
 	view := renderView{
-		Agent:            a,
-		Step0Body:        installBlock(a.Toolchain),
-		VerifyBlock:      verifyBlock(a),
-		PRTitleJSON:      escapeJSONString(a.PRTitle),
-		StatusStepNumber: a.PRStepNumber + 1,
+		Agent:       a,
+		InstallStep: blocks.install,
+		ReviewSteps: blocks.review,
+		CommitStep:  blocks.commit,
+		PRStep:      blocks.pr,
 	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, view); err != nil {
@@ -214,23 +237,142 @@ const knownGitFailure = "KNOWN PRE-EXISTING FAILURE: pkg/git tests (TestRepoClon
 	"If your change introduces any NEW lint issue or test failure, " +
 	"fix the root cause or pick a different improvement."
 
-func verifyBlock(a agent) string {
-	if a.VerifyType == "" {
-		return ""
+func renderSteps(a agent) stepBlocks {
+	idx := stepKindIndices(a.Steps)
+	numbered := numberedStepMap(a.Steps)
+
+	blocks := stepBlocks{
+		install: renderStep(a.Steps[idx.install], numbered[idx.install], a),
+		commit:  renderStep(a.Steps[idx.commit], numbered[idx.commit], a),
+		pr:      renderStep(a.Steps[idx.pr], numbered[idx.pr], a),
 	}
-	stepNum := a.CommitStepNumber - 1
+	blocks.review = joinReviewSteps(a, idx, numbered)
+	return blocks
+}
+
+// stepIndices holds the list positions of the install/commit/pr steps.
+type stepIndices struct {
+	install int
+	commit  int
+	pr      int
+}
+
+// stepKindIndices returns the list positions of the install/commit/pr steps.
+func stepKindIndices(steps []step) stepIndices {
+	idx := stepIndices{commit: -1, pr: -1}
+	for i, s := range steps {
+		switch s.Kind {
+		case kindInstall:
+			idx.install = i
+		case kindCommit:
+			idx.commit = i
+		case kindPR:
+			idx.pr = i
+		}
+	}
+	return idx
+}
+
+func numberedStepMap(steps []step) map[int]int {
+	numbered := make(map[int]int)
+	num := -1
+	for i, s := range steps {
+		if s.Kind == kindNote {
+			continue
+		}
+		num++
+		numbered[i] = num
+	}
+	return numbered
+}
+
+func joinReviewSteps(a agent, idx stepIndices, numbered map[int]int) string {
+	skip := map[int]bool{idx.install: true, idx.commit: true, idx.pr: true}
+	var parts []string
+	for i, s := range a.Steps {
+		if skip[i] {
+			continue
+		}
+		parts = append(parts, renderStep(s, numbered[i], a))
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+type stepBlocks struct {
+	install string
+	review  string
+	commit  string
+	pr      string
+}
+
+func renderStep(s step, num int, a agent) string {
+	switch s.Kind {
+	case kindInstall:
+		return fmt.Sprintf("STEP %d — %s:\n    set -e\n%s", num, s.Title, installBlock(a.Toolchain))
+	case kindVerify:
+		return fmt.Sprintf(
+			"STEP %d — Verify (CRITICAL — use CI-equivalent lint):\n%s",
+			num,
+			verifyBody(s),
+		)
+	case kindCommit:
+		return fmt.Sprintf(
+			"STEP %d — Commit via the Devsy GitHub App (signed, verified).\n%s",
+			num,
+			commitBody(a),
+		)
+	case kindPR:
+		return fmt.Sprintf(
+			"STEP %d — Open the PR as the app (no GITHUB_TOKEN):\n%s",
+			num,
+			prBody(a),
+		)
+	case kindNote:
+		return s.Body
+	default:
+		return fmt.Sprintf("STEP %d — %s", num, s.Body)
+	}
+}
+
+func verifyBody(s step) string {
 	lines := []string{
-		fmt.Sprintf("STEP %d — Verify (CRITICAL — use CI-equivalent lint):", stepNum),
 		"  - mkdir -p dist",
 		"  - git fetch --quiet origin main",
 		"  - task cli:lint:ci      # Must be 0 new issues.",
 		"  - task cli:test",
 	}
-	if a.VerifyExtras != "" {
-		lines = append(lines, "  - "+a.VerifyExtras)
+	if s.VerifyExtras != "" {
+		lines = append(lines, "  - "+s.VerifyExtras)
 	}
 	lines = append(lines, "  "+knownGitFailure)
 	return joinLines(lines...)
+}
+
+// commitBody is the shared commit-instruction body (the part after the STEP line).
+func commitBody(a agent) string {
+	return joinLines(
+		"The repo ships a Go tool (hack/sign_commit) that authenticates as the app installation",
+		"and creates the commit through GitHub's GraphQL API, so GitHub signs it (committer:",
+		"web-flow, verified). It auto-detects all working-tree changes (staged, unstaged, and",
+		"untracked files) and auto-creates the remote branch from origin/main if needed.",
+		"Do NOT run `git commit` locally — it produces an unsigned commit that fails the signature",
+		"check.",
+		"  - git fetch --quiet origin main",
+		"  - git checkout -b "+a.BranchPrefix+"/<short-slug> origin/main",
+		"  - task github:app:sign-commit -- -m "+a.CommitSubject,
+		"  - Confirm output: verified=true.",
+	)
+}
+
+// prBody is the shared PR-instruction body (the part after the STEP line).
+func prBody(a agent) string {
+	return joinLines(
+		"  - Write the PR body to /tmp/pr_body.md. It MUST include: "+a.PRBodyMustInclude+
+			", a line \"This PR was created by an AI agent as part of an automated daily "+a.JobName+".\"",
+		"  - task github:app:sign-commit -- -pr-only -title "+escapeJSONString(a.PRTitle)+
+			" -b \"$(cat /tmp/pr_body.md)\"",
+		"  - Report the PR URL from the output. A run that does not produce a PR URL is a FAILED run.",
+	)
 }
 
 func goInstallBlock() string {
