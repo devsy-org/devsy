@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,30 +28,30 @@ func TestNewApplyCmd_CommandName(t *testing.T) {
 
 func TestNewApplyCmd_ContainerFlagRequired(t *testing.T) {
 	cmd := NewApplyCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup(flagApplyContainer)
+	f := cmd.Flags().Lookup(names.Container)
 	require.NotNil(t, f)
 
-	annotations := cmd.MarkFlagRequired(flagApplyContainer)
+	annotations := cmd.MarkFlagRequired(names.Container)
 	assert.NoError(t, annotations)
 }
 
 func TestNewApplyCmd_ConfigFlagOptional(t *testing.T) {
 	cmd := NewApplyCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup(flagApplyConfig)
+	f := cmd.Flags().Lookup(names.Config)
 	require.NotNil(t, f)
 	assert.Equal(t, "", f.DefValue)
 }
 
 func TestNewApplyCmd_WorkspaceFolderFlagOptional(t *testing.T) {
 	cmd := NewApplyCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup(flagApplyWorkspaceFolder)
+	f := cmd.Flags().Lookup(names.WorkspaceFolder)
 	require.NotNil(t, f)
 	assert.Equal(t, "", f.DefValue)
 }
 
 func TestNewApplyCmd_DockerPathFlagOptional(t *testing.T) {
 	cmd := NewApplyCmd(&flags.GlobalFlags{})
-	f := cmd.Flags().Lookup(flagApplyDockerPath)
+	f := cmd.Flags().Lookup(names.DockerPath)
 	require.NotNil(t, f)
 	assert.Equal(t, "", f.DefValue)
 }
