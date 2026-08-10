@@ -65,10 +65,6 @@ func TestParseReference_DoesNotSpecialCaseDockerInternalHost(t *testing.T) {
 }
 
 func TestIsValidDockerTag(t *testing.T) {
-	// Docker tag grammar: [\w][\w.-]{0,127} — a single word char then up to 127
-	// word/dot/hyphen chars. pkg/image accepts an empty string as valid because the
-	// build caller (cmd/workspace/build.go) only invokes ValidateTags when the tag
-	// slice is non-empty, so an empty element means "no tag"; pin that here.
 	longTag := strings.Repeat("a", DockerTagMaxSize)
 	overlongTag := strings.Repeat("a", DockerTagMaxSize+1)
 	const latestTag = "latest"
