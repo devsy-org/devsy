@@ -218,11 +218,11 @@ func detectLanguageByExtension(root string, maxFiles int) ProgrammingLanguage {
 	counts := countLanguageFiles(root, maxFiles)
 
 	best := None
-	max := 0
+	maxCount := 0
 	for lang, count := range counts {
-		if count > max || (count == max && lang < best) {
+		if count > maxCount || (count == maxCount && lang < best) {
 			best = lang
-			max = count
+			maxCount = count
 		}
 	}
 	return best
