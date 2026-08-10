@@ -27,7 +27,7 @@ This task:
 
 Manual installation, when needed:
 
-- **Go 1.26.3**: The repository targets Go 1.26.3 (`go.mod`). With `GOTOOLCHAIN=auto`, an older Go toolchain automatically downloads Go 1.26 when task commands run.
+- **Go 1.26.5**: The repository targets Go 1.26.5 (`go.mod`). With `GOTOOLCHAIN=auto`, an older Go toolchain automatically downloads Go 1.26 when task commands run.
 - **NodeJS 24**: Required for building and testing the desktop workspace (`.nvmrc`, CI `node-version`).
 - **Taskfile (go-task)**: All build, test, and setup commands run through `task`. Installation:
 
