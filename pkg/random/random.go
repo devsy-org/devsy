@@ -14,5 +14,8 @@ func String(length int) string {
 }
 
 func InRange(min, max int) int {
+	if max <= min {
+		return min
+	}
 	return rand.Intn(max-min) + min
 }
