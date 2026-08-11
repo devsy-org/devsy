@@ -85,7 +85,7 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 
 	log.Infof("updated provider: providerName=%s", providerConfig.Name)
 	if !cmd.Use {
-		log.Infof("To initialize the provider, run: devsy provider init %s", providerConfig.Name)
+		log.Infof("to initialize the provider, run: devsy provider init %s", providerConfig.Name)
 		// No PhaseReady: not ready until a following `provider init` runs.
 		return nil
 	}

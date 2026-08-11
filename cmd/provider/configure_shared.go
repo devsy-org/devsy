@@ -167,7 +167,7 @@ func assertProviderMatchesGlobal(resolved, globalFlag string) error {
 		return nil
 	}
 	log.Infof("providerName=%+v", resolved)
-	log.Infof("GlobalFlags.Provider=%+v", globalFlag)
+	log.Infof("globalFlags.provider=%+v", globalFlag)
 	return fmt.Errorf("ambiguous provider configuration detected")
 }
 
