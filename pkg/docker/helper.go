@@ -204,10 +204,9 @@ func (r *DockerHelper) DeleteVolume(ctx context.Context, volume string) error {
 		return nil
 	}
 
-	// If volume does not exist, just exit
 	out, err := r.buildCmd(ctx, "volume", "list", "-q", "--filter", "name="+volume).CombinedOutput()
 	if err != nil {
-		return nil
+		return fmt.Errorf("list volume %s: %s: %w", volume, strings.TrimSpace(string(out)), err)
 	}
 	if len(out) == 0 {
 		return nil

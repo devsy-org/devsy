@@ -379,3 +379,62 @@ exit 1
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, context.Canceled)
 }
+
+func TestDeleteVolume_EmptyNameIsNoOp(t *testing.T) {
+	h := &DockerHelper{DockerCommand: "/nonexistent-binary-xyz"}
+	assert.NoError(t, h.DeleteVolume(context.Background(), ""))
+}
+
+func TestDeleteVolume_MissingVolumeIsNoOp(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  volume)
+    case "$2" in
+      list) ;; # no matching volume -> empty stdout, exit 0
+      rm) echo "unexpected rm call" >&2; exit 1 ;;
+    esac ;;
+esac
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	assert.NoError(t, h.DeleteVolume(context.Background(), "ghost-volume"))
+}
+
+func TestDeleteVolume_DaemonUnreachablePropagatesError(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  volume)
+    case "$2" in
+      list) echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" >&2; exit 1 ;;
+    esac ;;
+esac
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.DeleteVolume(context.Background(), "my-volume")
+
+	require.Error(t, err, "daemon failure during volume list must not be swallowed as a miss")
+	assert.Contains(t, err.Error(), "list volume my-volume")
+	assert.Contains(t, err.Error(), "Cannot connect to the Docker daemon")
+}
+
+func TestDeleteVolume_RemovesExistingVolume(t *testing.T) {
+	tmp := t.TempDir()
+	removed := filepath.Join(tmp, "removed")
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  volume)
+    case "$2" in
+      list) echo "my-volume" ;;
+      rm) touch `+removed+` ;;
+    esac ;;
+esac
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	require.NoError(t, h.DeleteVolume(context.Background(), "my-volume"))
+	_, err := os.Stat(removed)
+	assert.NoError(t, err, "volume rm should be invoked for an existing volume")
+}
