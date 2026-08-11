@@ -9,11 +9,11 @@ type opSemaphore struct {
 	slots chan struct{}
 }
 
-func newOpSemaphore(max int) *opSemaphore {
-	if max <= 0 {
-		max = 1
+func newOpSemaphore(maxSlots int) *opSemaphore {
+	if maxSlots <= 0 {
+		maxSlots = 1
 	}
-	return &opSemaphore{slots: make(chan struct{}, max)}
+	return &opSemaphore{slots: make(chan struct{}, maxSlots)}
 }
 
 func (s *opSemaphore) acquire(ctx context.Context) (func(), error) {
