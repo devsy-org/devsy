@@ -177,7 +177,7 @@ This requires:
 
 4. Start a workspace:
    ```bash
-   ./dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 up examples/simple
+   ./dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 workspace up github.com/microsoft/vscode-remote-try-node
    ```
 
 ### Using Act for Local CI Testing
