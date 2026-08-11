@@ -158,6 +158,7 @@ function handleExit() {
             type="button"
             class="ml-auto shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover/tab:opacity-60 hover:!opacity-100"
             title="Close"
+            aria-label="Close {session.label}"
             onclick={(e) => { e.stopPropagation(); closeSession(session.id) }}
           >
             <X class="h-3 w-3" />
@@ -170,7 +171,7 @@ function handleExit() {
 
     <!-- Actions -->
     <div class="flex shrink-0 items-center gap-0.5">
-      <Button variant="ghost" size="icon-sm" onclick={createShell} title="New shell">
+      <Button variant="ghost" size="icon-sm" onclick={createShell} title="New shell" aria-label="New shell">
         <Plus class="h-4 w-4" />
       </Button>
 
@@ -178,7 +179,7 @@ function handleExit() {
         <DropdownMenu.Root>
           <DropdownMenu.Trigger>
             {#snippet child({ props })}
-              <Button variant="ghost" size="icon-sm" {...props} title="SSH into workspace">
+              <Button variant="ghost" size="icon-sm" {...props} title="SSH into workspace" aria-label="SSH into workspace">
                 <Monitor class="h-4 w-4" />
               </Button>
             {/snippet}
