@@ -177,6 +177,7 @@ jobs:
             runner: ubuntu-latest
 
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -455,6 +456,7 @@ jobs:
             requires-secret: false
 
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     steps:
       - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         if: matrix.free-disk-space == true && runner.os == 'Linux' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
