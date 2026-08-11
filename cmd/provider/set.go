@@ -105,7 +105,7 @@ func (cmd *SetCmd) loadProvider(
 	if os.Getenv(config.EnvUI) == "" && len(cmd.Options) == 0 {
 		return nil, nil, fmt.Errorf("specify option")
 	}
-	log.Debugf("Options=%+v", cmd.Options)
+	log.Debugf("options=%+v", cmd.Options)
 
 	providerWithOptions, err := workspace.FindProvider(devsyConfig, providerName)
 	if err != nil {
