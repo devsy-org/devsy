@@ -19,7 +19,7 @@ func TestHelperContentSuite(t *testing.T) {
 }
 
 func (s *HelperContentTestSuite) TestBuildHelperContentUnix() {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		s.T().Skip("unix variant only on non-windows host")
 	}
 
@@ -37,7 +37,7 @@ func (s *HelperContentTestSuite) TestBuildHelperContentUnix() {
 }
 
 func (s *HelperContentTestSuite) TestBuildHelperContentWindows() {
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != windowsOS {
 		s.T().Skip("windows variant only on windows host")
 	}
 
@@ -54,7 +54,7 @@ func (s *HelperContentTestSuite) TestBuildHelperContentWindows() {
 }
 
 func (s *HelperContentTestSuite) TestBuildHelperContentQuotesSpacesInBinaryPath() {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		s.T().Skip("unix quoting variant only on non-windows host")
 	}
 
@@ -67,7 +67,7 @@ func (s *HelperContentTestSuite) TestBuildHelperContentQuotesSpacesInBinaryPath(
 }
 
 func (s *HelperContentTestSuite) TestBuildHelperContentEscapesWindowsPercent() {
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != windowsOS {
 		s.T().Skip("windows percent-escaping only on windows host")
 	}
 
@@ -80,7 +80,7 @@ func (s *HelperContentTestSuite) TestBuildHelperContentEscapesWindowsPercent() {
 }
 
 func (s *HelperContentTestSuite) TestBuildHelperContentDoublesWindowsPercentInPath() {
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != windowsOS {
 		s.T().Skip("windows percent-doubling only on windows host")
 	}
 
@@ -109,7 +109,7 @@ func (s *HelperContentTestSuite) TestNewDockerCredentialsDirStructure() {
 
 func (s *HelperContentTestSuite) TestAppendToPathAddsDir() {
 	orig := os.Getenv("PATH")
-	s.T().Cleanup(func() { os.Setenv("PATH", orig) })
+	s.T().Cleanup(func() { _ = os.Setenv("PATH", orig) })
 
 	s.NoError(os.Setenv("PATH", "/usr/bin"))
 	s.NoError(appendToPath("/opt/bin"))
