@@ -16,13 +16,13 @@ on:
       runCmd:
         description: "Command to run inside the devcontainer"
         required: false
-        default: for c in task prek uv node; do command -v "$c" >/dev/null 2>&1 || { echo "missing $c" >&2; exit 1; }; done
+        default: for c in go task prek uv node; do command -v "$c" >/dev/null 2>&1 || { echo "missing $c" >&2; exit 1; }; done
 
 permissions:
   contents: read
 
 env:
-  DEFAULT_RUN_CMD: for c in task prek uv node; do command -v "$c" >/dev/null 2>&1 || { echo "missing $c" >&2; exit 1; }; done
+  DEFAULT_RUN_CMD: for c in go task prek uv node; do command -v "$c" >/dev/null 2>&1 || { echo "missing $c" >&2; exit 1; }; done
 
 jobs:
   build:
