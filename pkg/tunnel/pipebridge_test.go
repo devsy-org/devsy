@@ -215,11 +215,6 @@ func TestRunPairPipesClosedAfterReturn(t *testing.T) {
 	}
 }
 
-// TestRunPairJoinsTunnelWhenHandlerFinishesFirst verifies that when the handler
-// completes first, awaitPair unblocks and joins the tunnel goroutine instead of
-// orphaning it. The tunnel blocks reading from its stdin until the pipe is
-// closed; if awaitPair returns without closing the pipe, the tunnel goroutine
-// would never exit.
 func TestRunPairJoinsTunnelWhenHandlerFinishesFirst(t *testing.T) {
 	t.Parallel()
 
