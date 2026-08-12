@@ -74,10 +74,10 @@ func awaitPair(
 
 	select {
 	case handlerErr = <-handlerChan:
-		select {
-		case tunnelErr = <-tunnelChan:
-		default:
-		}
+		cancel()
+		_ = stdoutWriter.Close()
+		_ = stdinWriter.Close()
+		tunnelErr = <-tunnelChan
 	case tunnelErr = <-tunnelChan:
 		cancel()
 		_ = stdoutWriter.Close()

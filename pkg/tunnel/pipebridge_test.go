@@ -214,3 +214,40 @@ func TestRunPairPipesClosedAfterReturn(t *testing.T) {
 		t.Fatal("timed out waiting for write checks")
 	}
 }
+
+// TestRunPairJoinsTunnelWhenHandlerFinishesFirst verifies that when the handler
+// completes first, awaitPair unblocks and joins the tunnel goroutine instead of
+// orphaning it. The tunnel blocks reading from its stdin until the pipe is
+// closed; if awaitPair returns without closing the pipe, the tunnel goroutine
+// would never exit.
+func TestRunPairJoinsTunnelWhenHandlerFinishesFirst(t *testing.T) {
+	t.Parallel()
+
+	pb, err := NewPipeBridge()
+	if err != nil {
+		t.Fatalf("NewPipeBridge() error = %v", err)
+	}
+	defer pb.Close()
+
+	tunnelExited := make(chan struct{})
+	tunnel := func(_ context.Context, stdin *os.File, _ *os.File) error {
+		buf := make([]byte, 1)
+		_, err := stdin.Read(buf) // blocks until stdin write end is closed
+		close(tunnelExited)
+		return err
+	}
+
+	handler := func(_ context.Context, _ *os.File, _ *os.File) error {
+		return nil
+	}
+
+	if err := pb.RunPair(context.Background(), tunnel, handler); err != nil {
+		t.Fatalf("RunPair() error = %v", err)
+	}
+
+	select {
+	case <-tunnelExited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("tunnel goroutine was orphaned when handler finished first")
+	}
+}
