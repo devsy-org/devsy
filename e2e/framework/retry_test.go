@@ -71,6 +71,26 @@ func TestIsRetryableSSHError_WorkspaceNotFound(t *testing.T) {
 	)
 }
 
+func TestIsRetryableSSHError_NoSuchContainer(t *testing.T) {
+	assert.True(
+		t,
+		isRetryableSSHError(
+			exitError(t, "1"),
+			"Error: no such container: devsy-workspace-abc123",
+		),
+	)
+}
+
+func TestIsRetryableSSHError_BrokenPipe(t *testing.T) {
+	assert.True(
+		t,
+		isRetryableSSHError(
+			exitError(t, "1"),
+			"write: broken pipe",
+		),
+	)
+}
+
 func TestIsRetryableSSHError_ForkExecPermissionDenied(t *testing.T) {
 	assert.True(
 		t,
