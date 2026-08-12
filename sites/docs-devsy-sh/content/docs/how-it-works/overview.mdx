@@ -25,4 +25,4 @@ The tunnel's transport depends on the provider — AWS uses Instance Connect, Ku
 
 Port forwarding requires an active IDE or SSH session — Devsy needs the agent's SSH server, which only runs while one of those connections is open.
 
-Instead of building from a devcontainer each time, you can also create a workspace from a previously saved [workspace snapshot](../developing-in-workspaces/workspace-snapshots.mdx) with `devsy up --from-snapshot`, which restores the container filesystem and volumes directly and skips the build step entirely.
+Instead of building from a devcontainer each time, you can also create a workspace from a previously saved [workspace snapshot](../developing-in-workspaces/workspace-snapshots.mdx) with `devsy workspace up --from-snapshot`, which restores the container filesystem and volumes directly and skips the build step entirely.
