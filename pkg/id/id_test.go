@@ -5,15 +5,21 @@ import (
 	"testing"
 )
 
+const (
+	fooVal = "foo"
+	barVal = "bar"
+
+)
+
 func TestSafeConcatName(t *testing.T) {
 	tests := []struct {
 		name string
 		in   []string
 		want string
 	}{
-		{"single", []string{"foo"}, "foo"},
-		{"multiple", []string{"foo", "bar", "baz"}, "foo-bar-baz"},
-		{"empty parts joined", []string{"", "bar"}, "-bar"},
+		{"single", []string{fooVal}, fooVal},
+		{"multiple", []string{fooVal, barVal, "baz"}, "foo-bar-baz"},
+		{"empty parts joined", []string{"", barVal}, "-bar"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -25,7 +31,7 @@ func TestSafeConcatName(t *testing.T) {
 }
 
 func TestSafeConcatNameMaxUnderLimit(t *testing.T) {
-	got := SafeConcatNameMax([]string{"foo", "bar"}, 63)
+	got := SafeConcatNameMax([]string{fooVal, barVal}, 63)
 	if got != "foo-bar" {
 		t.Fatalf("SafeConcatNameMax = %q, want %q", got, "foo-bar")
 	}
