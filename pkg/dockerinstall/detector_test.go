@@ -54,7 +54,7 @@ VERSION_CODENAME=bookworm`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
 	s.Equal(DistroDebian, distro.ID)
-	s.Equal("bookworm", distro.Version)
+	s.Equal(CodenameBookworm, distro.Version)
 }
 
 func (s *DetectorTestSuite) TestParseOSRelease_Debian() {
@@ -72,7 +72,7 @@ BUG_REPORT_URL="https://bugs.debian.org/"`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
 	s.Equal(DistroDebian, distro.ID)
-	s.Equal("trixie", distro.Version, "Should extract VERSION_CODENAME, not VERSION_ID")
+	s.Equal(CodenameTrixie, distro.Version, "Should extract VERSION_CODENAME, not VERSION_ID")
 	s.False(isNumericVersion(distro.Version), "Version should be codename, not numeric")
 }
 
@@ -127,14 +127,14 @@ func (s *DetectorTestSuite) TestMapDebianVersion() {
 		input    string
 		expected string
 	}{
-		{"13\n", "trixie"},
-		{"12\n", "bookworm"},
-		{"11\n", "bullseye"},
-		{"10\n", "buster"},
-		{"9\n", "stretch"},
-		{"8\n", "jessie"},
-		{"12.5\n", "bookworm"},
-		{"11/sid\n", "bullseye"},
+		{"13\n", CodenameTrixie},
+		{"12\n", CodenameBookworm},
+		{"11\n", CodenameBullseye},
+		{"10\n", CodenameBuster},
+		{"9\n", CodenameStretch},
+		{"8\n", CodenameJessie},
+		{"12.5\n", CodenameBookworm},
+		{"11/sid\n", CodenameBullseye},
 		{"99\n", ""},
 		{"invalid\n", ""},
 	}
@@ -160,7 +160,7 @@ func (s *DetectorTestSuite) TestIsNumericVersion() {
 		{"11", true},
 		{"12.5", true},
 		{"jammy", false},
-		{"bookworm", false},
+		{CodenameBookworm, false},
 		{"focal", false},
 		{"", false},
 		{"1.2.3", true},
@@ -186,7 +186,7 @@ func (s *DetectorTestSuite) TestDistro_HasCodename() {
 		expected bool
 	}{
 		{&Distro{ID: DistroUbuntu, Version: "jammy"}, true},
-		{&Distro{ID: DistroDebian, Version: "bookworm"}, true},
+		{&Distro{ID: DistroDebian, Version: CodenameBookworm}, true},
 		{&Distro{ID: DistroUbuntu, Version: "22.04"}, false},
 		{&Distro{ID: DistroDebian, Version: "12"}, false},
 		{&Distro{ID: "fedora", Version: "39"}, false},
