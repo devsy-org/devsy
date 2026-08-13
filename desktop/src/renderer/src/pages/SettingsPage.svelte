@@ -130,7 +130,7 @@ const ON_BUILD_FAILURE_OPTIONS: { value: OnBuildFailure; label: string }[] = [
 const shortcuts = [
   { keys: "Cmd/Ctrl + K", action: "Open command palette" },
   { keys: "Cmd/Ctrl + N", action: "New workspace" },
-  { keys: "Cmd/Ctrl + 1-7", action: "Navigate sections" },
+  { keys: "Cmd/Ctrl + 1-9, 0", action: "Navigate sections" },
   { keys: "Escape", action: "Close dialogs and palette" },
 ]
 
