@@ -113,7 +113,7 @@ func (t *gpgTunnel) run(ctx context.Context, sshClient *ssh.Client) {
 // returns.
 func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) bool {
 	if gpg.IsGpgTunnelRunning(ctx, t.cmd.User, sshClient) {
-		log.Debugf("GPG tunnel is running, skipping setup")
+		log.Debugf("gpg tunnel is running, skipping setup")
 		t.failureReported = false
 		return true
 	}
@@ -124,17 +124,17 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) bool {
 	}
 	if gpg.IsGpgTunnelRunning(ctx, t.cmd.User, sshClient) {
 		log.Debugf(
-			"GPG tunnel setup failed but tunnel is live (won by a concurrent terminal): %v",
+			"gpg tunnel setup failed but tunnel is live (won by a concurrent terminal): %v",
 			err,
 		)
 		t.failureReported = false
 		return true
 	}
 	if ctx.Err() != nil {
-		log.Debugf("GPG tunnel setup aborted by context cancellation: %v", err)
+		log.Debugf("gpg tunnel setup aborted by context cancellation: %v", err)
 		return false
 	}
-	log.Warnf("GPG agent forwarding failed (continuing without it): %v", err)
+	log.Warnf("gpg agent forwarding failed (continuing without it): %v", err)
 	if t.failureReported {
 		return false
 	}

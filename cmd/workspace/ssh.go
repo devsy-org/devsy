@@ -245,7 +245,7 @@ func (cmd *SSHCmd) addPrivateKeysToAgentIfEnabled(ctx context.Context, devsyConf
 		"adding ssh keys to agent, disable via 'devsy context set -o SSH_ADD_PRIVATE_KEYS=false'",
 	)
 	if err := devssh.AddPrivateKeysToAgent(ctx); err != nil {
-		log.Debugf("Error adding private keys to ssh-agent: %v", err)
+		log.Debugf("error adding private keys to ssh-agent: %v", err)
 	}
 }
 
@@ -343,7 +343,7 @@ func (cmd *SSHCmd) startServicesDaemon(
 			},
 		)
 		if err != nil {
-			log.Errorf("Error starting services: %v", err)
+			log.Errorf("error starting services: %v", err)
 		}
 	}()
 }
@@ -353,7 +353,7 @@ func (cmd *SSHCmd) startProxyTunnel(
 	devsyConfig *config.Config,
 	client client2.ProxyClient,
 ) error {
-	log.Debugf("Start proxy tunnel")
+	log.Debugf("start proxy tunnel")
 	return tunnel.NewTunnel(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
@@ -439,7 +439,7 @@ func (cmd *SSHCmd) startTunnel(
 
 	workdir := resolveWorkdir(cmd.WorkDir, workspaceClient)
 
-	log.Debugf("Run outer container tunnel")
+	log.Debugf("run outer container tunnel")
 	command := cmd.buildSSHServerCommand(workdir)
 
 	envVars, err := cmd.retrieveEnVars()
@@ -567,7 +567,7 @@ func (cmd *SSHCmd) buildSSHServerCommand(workdir string) string {
 		workdir,
 	}
 	if cmd.ReuseSSHAuthSock != "" {
-		log.Debug("Reusing SSH_AUTH_SOCK")
+		log.Debug("reusing SSH_AUTH_SOCK")
 		commandArgs = append(
 			commandArgs,
 			names.Flag(names.ReuseSSHAuthSock),
@@ -611,7 +611,7 @@ func resolveMergedWorkspaceFolder(
 
 	result, err := provider.LoadWorkspaceResult(workspaceConfig.Context, workspaceConfig.ID)
 	if err != nil {
-		log.Warnf("Error loading workspace result for workdir resolution: %v", err)
+		log.Warnf("error loading workspace result for workdir resolution: %v", err)
 		return ""
 	}
 	if result == nil || result.MergedConfig == nil {
@@ -653,7 +653,7 @@ func (cmd *SSHCmd) startServices(
 			},
 		)
 		if err != nil {
-			log.Debugf("Error running credential server: %v", err)
+			log.Debugf("error running credential server: %v", err)
 		}
 	}
 }
@@ -673,7 +673,7 @@ func startSSHKeepAlive(
 		case <-ticker.C:
 			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
 			if err != nil {
-				log.Errorf("Failed to send keepalive: %v", err)
+				log.Errorf("failed to send keepalive: %v", err)
 			}
 		}
 	}
