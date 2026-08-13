@@ -184,7 +184,7 @@ func (r *DockerHelper) PodmanMachineExists(ctx context.Context) bool {
 // anyPodmanMachine reports whether `podman machine list --format {{.Name}}`
 // output names at least one machine.
 func anyPodmanMachine(stdout []byte) bool {
-	for _, line := range strings.Split(string(stdout), "\n") {
+	for line := range strings.SplitSeq(string(stdout), "\n") {
 		if strings.TrimSpace(line) != "" {
 			return true
 		}
@@ -192,16 +192,17 @@ func anyPodmanMachine(stdout []byte) bool {
 	return false
 }
 
-// StartRootlessPodmanSocket starts the rootless podman user socket via systemd,
-// mirroring how Preflight auto-starts a Podman machine. It is best-effort: on a
-// non-systemd host or a rootful setup it fails, and preflight then falls through
-// to surfacing the original ping error. Rootful podman's system socket is out of
-// scope here (starting it needs root).
+// StartRootlessPodmanSocket starts the rootless podman user socket via
+// systemd, mirroring how Preflight auto-starts a Podman machine. It is
+// best-effort: on a non-systemd host or a rootful setup it fails, and
+// preflight then falls through to surfacing the original ping error.
+// Rootful podman's system socket is out of scope here (it needs root).
 func (r *DockerHelper) StartRootlessPodmanSocket(ctx context.Context) error {
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(cctx, "systemctl", "--user", "start", "podman.socket").CombinedOutput()
+	cmd := exec.CommandContext(cctx, "systemctl", "--user", "start", "podman.socket")
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if msg := strings.TrimSpace(string(out)); msg != "" {
 			return fmt.Errorf("%s: %w", msg, err)

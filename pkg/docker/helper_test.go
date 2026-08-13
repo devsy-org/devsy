@@ -462,7 +462,7 @@ echo "podman-machine-default"
 `)
 
 	h := &DockerHelper{DockerCommand: bin}
-	assert.True(t, h.PodmanMachineExists(context.Background()), "a listed machine should be detected")
+	assert.True(t, h.PodmanMachineExists(context.Background()), "listed machine detected")
 }
 
 func TestPodmanMachineExists_None(t *testing.T) {
@@ -472,7 +472,7 @@ exit 0
 `)
 
 	h := &DockerHelper{DockerCommand: bin}
-	assert.False(t, h.PodmanMachineExists(context.Background()), "no listed machine should be detected")
+	assert.False(t, h.PodmanMachineExists(context.Background()), "no machine detected")
 }
 
 func TestProbeRootlessPodman(t *testing.T) {
@@ -490,7 +490,8 @@ func TestProbeRootlessPodman(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tmp := t.TempDir()
 			bin := writeScript(t, tmp, "podman-fake", tt.script)
-			rootless, ok := probeRootlessPodman(context.Background(), (&DockerHelper{DockerCommand: bin}).buildCmd)
+			h := &DockerHelper{DockerCommand: bin}
+			rootless, ok := probeRootlessPodman(context.Background(), h.buildCmd)
 			assert.Equal(t, tt.wantOk, ok, "ok mismatch")
 			assert.Equal(t, tt.want, rootless, "rootless mismatch")
 		})

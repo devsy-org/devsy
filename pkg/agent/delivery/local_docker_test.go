@@ -201,8 +201,9 @@ func TestPopulateVolumeDirectCopy_PodmanFallsBackToUnshareOnPermission(t *testin
 	require.NoError(t, os.MkdirAll(mountDir, 0o750))
 	// Make the mountpoint unwritable to provoke the EACCES direct-write failure
 	// that a rootless podman volume would produce.
+	// #nosec G302 -- intentional: testing a restrictive, unwritable mountpoint
 	require.NoError(t, os.Chmod(mountDir, 0o550))
-	t.Cleanup(func() { _ = os.Chmod(mountDir, 0o750) })
+	t.Cleanup(func() { _ = os.Chmod(mountDir, 0o750) }) // #nosec G302 -- restore for cleanup
 
 	destPath := filepath.Join(mountDir, binaryName())
 	binaryContent := []byte("fake-agent-binary-content")
