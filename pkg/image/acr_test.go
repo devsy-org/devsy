@@ -73,7 +73,7 @@ func TestACRCredHelper_UnimplementedMutations(t *testing.T) {
 
 // newACRCredentialsHelper returns a value satisfying credentials.Helper.
 func TestNewACRCredentialsHelperSatisfiesInterface(t *testing.T) {
-	var helper credentials.Helper = newACRCredentialsHelper()
+	helper := newACRCredentialsHelper()
 	if helper == nil {
 		t.Fatal("expected non-nil credentials.Helper")
 	}
