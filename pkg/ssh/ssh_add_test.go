@@ -31,8 +31,8 @@ func TestFindPrivateKeys_ReturnsOnlyValidPrivateKeys(t *testing.T) {
 	// Public keys, config files, and subdirectories are not private keys and
 	// must not be returned, even when they live alongside a valid key.
 	require.NoError(t, os.WriteFile(
-		filepath.Join(sshDir, "id_ed25519.pub"), []byte("ssh-ed25519 AAAAfake test"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(sshDir, "config"), []byte("Host *\n"), 0o644))
+		filepath.Join(sshDir, "id_ed25519.pub"), []byte("ssh-ed25519 AAAAfake test"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(sshDir, "config"), []byte("Host *\n"), 0o600))
 	require.NoError(t, os.MkdirAll(filepath.Join(sshDir, "subdir"), 0o700))
 
 	keys, err := FindPrivateKeys()
