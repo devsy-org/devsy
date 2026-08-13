@@ -165,6 +165,47 @@ func (r *DockerHelper) StartPodmanMachine(ctx context.Context) error {
 	return nil
 }
 
+// PodmanMachineExists reports whether a Podman machine exists, by listing
+// machines and checking for any names.
+func (r *DockerHelper) PodmanMachineExists(ctx context.Context) bool {
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	out, err := r.buildCmd(cctx, "machine", "list", "--format", "{{.Name}}").Output()
+	if err != nil {
+		return false
+	}
+	return anyPodmanMachine(out)
+}
+
+// anyPodmanMachine reports whether `podman machine list --format {{.Name}}`
+// output names at least one machine.
+func anyPodmanMachine(stdout []byte) bool {
+	for line := range strings.SplitSeq(string(stdout), "\n") {
+		if strings.TrimSpace(line) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// StartRootlessPodmanSocket starts the podman.socket systemd unit for rootless
+// Podman, which is required for rootless operation.
+func (r *DockerHelper) StartRootlessPodmanSocket(ctx context.Context) error {
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(cctx, "systemctl", "--user", "start", "podman.socket")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			return fmt.Errorf("%s: %w", msg, err)
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *DockerHelper) FindDevContainer(
 	ctx context.Context,
 	labels []string,

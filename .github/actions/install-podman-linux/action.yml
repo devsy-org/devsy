@@ -1,0 +1,70 @@
+name: Install Podman
+description: |
+  Install podman/runc on a Linux host and bring up a persistent podman socket for rootless or rootful mode.
+
+inputs:
+  mode:
+    description: Socket mode ("rootless" or "rootful")
+    required: true
+  apt-cache-dir:
+    description: Directory to cache apt packages into (must be writable by the runner)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: install and start podman
+      shell: bash
+      env:
+        APT_CACHE_DIR: ${{ inputs.apt-cache-dir }}
+        PODMAN_MODE: ${{ inputs.mode }}
+      run: |
+        # /var/cache/apt/archives is root-owned and actions/cache restores
+        # unprivileged, so cache into a runner-owned dir.
+        mkdir -p "$APT_CACHE_DIR"
+        sudo apt-get -o Dir::Cache::Archives="$APT_CACHE_DIR" update
+        sudo apt-get -o Dir::Cache::Archives="$APT_CACHE_DIR" install -y podman runc
+
+        case "$PODMAN_MODE" in
+          rootless|rootful) ;;
+          *) echo "::error::invalid mode: $PODMAN_MODE (expected rootless|rootful)"; exit 1 ;;
+        esac
+
+        # podman defaults to crun, which fails on this runner image; force runc.
+        if [ "$PODMAN_MODE" = "rootless" ]; then
+          mkdir -p ~/.config/containers
+          printf '[engine]\nruntime = "runc"\n' > ~/.config/containers/containers.conf
+
+          # Lingering keeps the user manager (and rootless socket) alive for the
+          # whole suite; otherwise the daemon can drop mid-suite. Devsy
+          # only auto-starts a Podman machine when one exists, and this job creates none.
+          sudo loginctl enable-linger "$USER"
+          systemctl --user enable --now podman.socket
+          PODMAN_SOCK="$XDG_RUNTIME_DIR/podman/podman.sock"
+          PODMAN=(podman)
+          SOCK_STATUS=(systemctl --user status podman.socket --no-pager)
+          SOCK_LOG=(journalctl --user -u podman.socket --no-pager -n 100)
+        else
+          sudo mkdir -p /etc/containers
+          printf '[engine]\nruntime = "runc"\n' | sudo tee /etc/containers/containers.conf >/dev/null
+
+          sudo systemctl enable --now podman.socket
+          PODMAN_SOCK="/run/podman/podman.sock"
+          PODMAN=(sudo podman)
+          SOCK_STATUS=(sudo systemctl status podman.socket --no-pager)
+          SOCK_LOG=(sudo journalctl -u podman.socket --no-pager -n 100)
+        fi
+
+        if ! timeout 30 bash -c "until ${PODMAN[*]} info >/dev/null 2>&1; do sleep 1; done"; then
+          echo "::error::podman daemon did not become ready within 30s ($PODMAN_MODE)"
+          "${SOCK_STATUS[@]}" || true
+          "${SOCK_LOG[@]}" || true
+          exit 1
+        fi
+
+        # The test runs under sudo as root; root can reach the rootless socket
+        # at /run/user/<uid>/... Point DOCKER_HOST at whichever socket we brought up.
+        echo "DOCKER_HOST=unix://$PODMAN_SOCK" >> "$GITHUB_ENV"
+
+        "${PODMAN[@]}" info
+        "${PODMAN[@]}" run --rm busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d echo "podman runtime preflight OK"

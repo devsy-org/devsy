@@ -154,7 +154,7 @@ func TestIsPodman(t *testing.T) {
 	}
 }
 
-func TestPopulateVolumeDirectCopy_PodmanUsesUnshare(t *testing.T) {
+func TestPopulateVolumeDirectCopy_PodmanWritesDirectlyWhenWritable(t *testing.T) {
 	tmpDir := t.TempDir()
 	mountDir := filepath.Join(tmpDir, "mount")
 	require.NoError(t, os.MkdirAll(mountDir, 0o750))
@@ -184,6 +184,41 @@ func TestPopulateVolumeDirectCopy_PodmanUsesUnshare(t *testing.T) {
 	info, err := os.Stat(destPath)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+}
+
+func TestPopulateVolumeDirectCopy_PodmanFallsBackToUnshareOnPermission(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions; EACCES fallback cannot be exercised")
+	}
+	tmpDir := t.TempDir()
+	mountDir := filepath.Join(tmpDir, "mount")
+	require.NoError(t, os.MkdirAll(mountDir, 0o750))
+	require.NoError(
+		t,
+		os.Chmod(mountDir, 0o550),
+	) // #nosec G302 -- test sets restrictive permissions to trigger EACCES
+	t.Cleanup(func() { _ = os.Chmod(mountDir, 0o750) }) // #nosec G302 -- restore for cleanup
+
+	destPath := filepath.Join(mountDir, binaryName())
+	binaryContent := []byte("fake-agent-binary-content")
+	scriptPath := filepath.Join(tmpDir, "podman")
+	require.NoError(t, os.WriteFile(scriptPath, []byte(
+		"#!/bin/sh\n"+
+			"case \"$1\" in\n"+
+			"  unshare) chmod 755 \""+mountDir+"\" 2>/dev/null; shift; exec \"$@\" ;;\n"+
+			"  volume) echo \""+mountDir+"\" ;;\n"+
+			"  *) exit 1 ;;\n"+
+			"esac\n"), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	err := d.populateVolumeDirectCopy(context.Background(), "test-vol", binaryContent)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(destPath) //nolint:gosec // test reads from a temp directory we control
+	require.NoError(t, err)
+	assert.Equal(t, binaryContent, data)
 }
 
 func TestPopulateVolumeDirectCopy_DockerUsesDirectWrite(t *testing.T) {

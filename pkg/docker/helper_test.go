@@ -438,3 +438,62 @@ esac
 	_, err := os.Stat(removed)
 	assert.NoError(t, err, "volume rm should be invoked for an existing volume")
 }
+
+func TestAnyPodmanMachine(t *testing.T) {
+	cases := map[string]bool{
+		"":                         false,
+		"\n":                       false,
+		"podman-machine-default\n": true,
+		"machine-a\nmachine-b\n":   true,
+		"  \n\t\n":                 false,
+	}
+	for out, want := range cases {
+		if got := anyPodmanMachine([]byte(out)); got != want {
+			t.Errorf("anyPodmanMachine(%q) = %v, want %v", out, got, want)
+		}
+	}
+}
+
+func TestPodmanMachineExists(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "podman-fake", `#!/bin/sh
+# `+`podman machine list --format {{.Name}}`+`
+echo "podman-machine-default"
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	assert.True(t, h.PodmanMachineExists(context.Background()), "listed machine detected")
+}
+
+func TestPodmanMachineExists_None(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "podman-fake", `#!/bin/sh
+exit 0
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	assert.False(t, h.PodmanMachineExists(context.Background()), "no machine detected")
+}
+
+func TestProbeRootlessPodman(t *testing.T) {
+	tests := []struct {
+		name   string
+		script string
+		want   bool
+		wantOk bool
+	}{
+		{"rootless", "#!/bin/sh\necho true\n", true, true},
+		{"rootful", "#!/bin/sh\necho false\n", false, true},
+		{"probe error", "#!/bin/sh\necho oops >&2; exit 1\n", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			bin := writeScript(t, tmp, "podman-fake", tt.script)
+			h := &DockerHelper{DockerCommand: bin}
+			rootless, ok := probeRootlessPodman(context.Background(), h.buildCmd)
+			assert.Equal(t, tt.wantOk, ok, "ok mismatch")
+			assert.Equal(t, tt.want, rootless, "rootless mismatch")
+		})
+	}
+}
