@@ -73,6 +73,7 @@ func TestPostWithRetry_RetriesConnectionRefusedThenSucceeds(t *testing.T) {
 			return
 		}
 		srv := &http.Server{
+			ReadHeaderTimeout: 5 * time.Second,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = w.Write([]byte("recovered"))
 			}),
