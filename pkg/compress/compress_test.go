@@ -1,6 +1,7 @@
 package compress
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -46,17 +47,19 @@ func TestCompressDecompressRoundTrip(t *testing.T) {
 	}
 }
 
+var base64StdChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+
+func isBase64Std(r rune) bool {
+	return strings.ContainsRune(base64StdChars, r)
+}
+
 func TestCompressOutputIsBase64(t *testing.T) {
 	compressed, err := Compress("decodable")
 	if err != nil {
 		t.Fatalf("Compress error: %v", err)
 	}
 	for _, r := range compressed {
-		isBase64Std := (r >= 'A' && r <= 'Z') ||
-			(r >= 'a' && r <= 'z') ||
-			(r >= '0' && r <= '9') ||
-			r == '+' || r == '/' || r == '='
-		if !isBase64Std {
+		if !isBase64Std(r) {
 			t.Fatalf("Compress produced non-base64 char %q in %q", r, compressed)
 		}
 	}
