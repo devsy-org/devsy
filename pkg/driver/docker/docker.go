@@ -106,7 +106,8 @@ var (
 )
 
 // Preflight checks the runtime binary is installed and its daemon reachable,
-// starting a stopped Podman machine unless auto-start is disabled.
+// starting a stopped Podman machine (or rootless user socket) unless
+// auto-start is disabled.
 func (d *dockerDriver) Preflight(ctx context.Context, opts driver.PreflightOptions) error {
 	return runPreflight(ctx, opts, dockerProbe{
 		command:       d.Docker.DockerCommand,
@@ -115,6 +116,7 @@ func (d *dockerDriver) Preflight(ctx context.Context, opts driver.PreflightOptio
 		ping:          d.Docker.Ping,
 		start:         d.Docker.StartPodmanMachine,
 		machineExists: d.Docker.PodmanMachineExists,
+		startSocket:   d.Docker.StartRootlessPodmanSocket,
 	})
 }
 
@@ -131,6 +133,10 @@ type dockerProbe struct {
 	// extra cost. A nil machineExists assumes a machine exists (preserves the
 	// unconditional start behavior for callers that don't supply it).
 	machineExists func(context.Context) bool
+	// startSocket starts the rootless Podman user socket, used when no Podman
+	// machine exists (the common Linux rootless case). Best-effort: a failure
+	// just falls through to surfacing the ping error.
+	startSocket func(context.Context) error
 }
 
 func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerProbe) error {
@@ -148,15 +154,35 @@ func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerPro
 		return nil
 	}
 
-	if p.runtime == docker.RuntimePodman && !opts.DisableAutoStart && (p.machineExists == nil || p.machineExists(ctx)) {
-		log.Infof(
-			"Podman machine is not running, attempting to start it (this may take a while)...",
-		)
-		if startErr := p.start(ctx); startErr != nil {
-			log.Warnf("failed to start Podman machine: %v", startErr)
-		} else if err = p.ping(ctx); err == nil {
-			return nil
+	if p.runtime == docker.RuntimePodman && !opts.DisableAutoStart {
+		// A nil machineExists assumes a machine exists (preserves the unconditional
+		// start behavior for callers that don't supply it).
+		machineExists := p.machineExists == nil || p.machineExists(ctx)
+		if machineExists {
+			log.Infof(
+				"Podman machine is not running, attempting to start it (this may take a while)...",
+			)
+			if startErr := p.start(ctx); startErr != nil {
+				log.Warnf("failed to start Podman machine: %v", startErr)
+			} else if err = p.ping(ctx); err == nil {
+				return nil
+			}
+		} else if p.startSocket != nil {
+			// No Podman machine: the rootless Linux case, where the user socket
+			// is often not running until first use.
+			log.Infof("Podman is not reachable, attempting to start the rootless user socket...")
+			if startErr := p.startSocket(ctx); startErr != nil {
+				log.Warnf("failed to start rootless Podman socket: %v", startErr)
+			} else if err = p.ping(ctx); err == nil {
+				return nil
+			}
 		}
+	}
+
+	// For the rootless Linux case (no machine to start), point the user at the
+	// socket rather than leaving a bare "cannot connect" error.
+	if p.runtime == docker.RuntimePodman && p.machineExists != nil && !p.machineExists(ctx) {
+		err = fmt.Errorf("%w\n\nHint: start the Podman socket — `systemctl --user start podman.socket` (rootless) or `sudo systemctl start podman.socket` (rootful)", err)
 	}
 
 	return &driver.PreflightError{Provider: runtimeName, Err: err}

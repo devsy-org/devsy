@@ -192,6 +192,25 @@ func anyPodmanMachine(stdout []byte) bool {
 	return false
 }
 
+// StartRootlessPodmanSocket starts the rootless podman user socket via systemd,
+// mirroring how Preflight auto-starts a Podman machine. It is best-effort: on a
+// non-systemd host or a rootful setup it fails, and preflight then falls through
+// to surfacing the original ping error. Rootful podman's system socket is out of
+// scope here (starting it needs root).
+func (r *DockerHelper) StartRootlessPodmanSocket(ctx context.Context) error {
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(cctx, "systemctl", "--user", "start", "podman.socket").CombinedOutput()
+	if err != nil {
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			return fmt.Errorf("%s: %w", msg, err)
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *DockerHelper) FindDevContainer(
 	ctx context.Context,
 	labels []string,

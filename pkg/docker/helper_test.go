@@ -474,3 +474,25 @@ exit 0
 	h := &DockerHelper{DockerCommand: bin}
 	assert.False(t, h.PodmanMachineExists(context.Background()), "no listed machine should be detected")
 }
+
+func TestProbeRootlessPodman(t *testing.T) {
+	tests := []struct {
+		name   string
+		script string
+		want   bool
+		wantOk bool
+	}{
+		{"rootless", "#!/bin/sh\necho true\n", true, true},
+		{"rootful", "#!/bin/sh\necho false\n", false, true},
+		{"probe error", "#!/bin/sh\necho oops >&2; exit 1\n", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			bin := writeScript(t, tmp, "podman-fake", tt.script)
+			rootless, ok := probeRootlessPodman(context.Background(), (&DockerHelper{DockerCommand: bin}).buildCmd)
+			assert.Equal(t, tt.wantOk, ok, "ok mismatch")
+			assert.Equal(t, tt.want, rootless, "rootless mismatch")
+		})
+	}
+}

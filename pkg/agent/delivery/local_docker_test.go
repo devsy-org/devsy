@@ -154,7 +154,7 @@ func TestIsPodman(t *testing.T) {
 	}
 }
 
-func TestPopulateVolumeDirectCopy_PodmanUsesUnshare(t *testing.T) {
+func TestPopulateVolumeDirectCopy_PodmanWritesDirectlyWhenWritable(t *testing.T) {
 	tmpDir := t.TempDir()
 	mountDir := filepath.Join(tmpDir, "mount")
 	require.NoError(t, os.MkdirAll(mountDir, 0o750))
@@ -177,6 +177,8 @@ func TestPopulateVolumeDirectCopy_PodmanUsesUnshare(t *testing.T) {
 	err := d.populateVolumeDirectCopy(context.Background(), "test-vol", binaryContent)
 	require.NoError(t, err)
 
+	// A host-writable mountpoint (rootful podman) is written directly; the
+	// unshare path is not exercised.
 	data, err := os.ReadFile(destPath) //nolint:gosec // test reads from a temp directory we control
 	require.NoError(t, err)
 	assert.Equal(t, binaryContent, data)
@@ -184,6 +186,48 @@ func TestPopulateVolumeDirectCopy_PodmanUsesUnshare(t *testing.T) {
 	info, err := os.Stat(destPath)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+}
+
+// TestPopulateVolumeDirectCopy_PodmanFallsBackToUnshareOnPermission verifies
+// that a podman volume whose mountpoint the host cannot write (the rootless
+// case: owned by a mapped UID) falls back to `podman unshare` rather than
+// failing on a permission error.
+func TestPopulateVolumeDirectCopy_PodmanFallsBackToUnshareOnPermission(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions; EACCES fallback cannot be exercised")
+	}
+	tmpDir := t.TempDir()
+	mountDir := filepath.Join(tmpDir, "mount")
+	require.NoError(t, os.MkdirAll(mountDir, 0o750))
+	// Make the mountpoint unwritable to provoke the EACCES direct-write failure
+	// that a rootless podman volume would produce.
+	require.NoError(t, os.Chmod(mountDir, 0o550))
+	t.Cleanup(func() { _ = os.Chmod(mountDir, 0o750) })
+
+	destPath := filepath.Join(mountDir, binaryName())
+	binaryContent := []byte("fake-agent-binary-content")
+
+	// The fake podman's `unshare` path stands in for the user-namespace re-map:
+	// it re-grants writability, then execs the real subcommand podman would run
+	// (`sh -c 'cat > "$1" && chmod 755 "$1"' -- <destPath>`), writing the binary.
+	scriptPath := filepath.Join(tmpDir, "podman")
+	require.NoError(t, os.WriteFile(scriptPath, []byte(
+		"#!/bin/sh\n"+
+			"case \"$1\" in\n"+
+			"  unshare) chmod 755 \""+mountDir+"\" 2>/dev/null; shift; exec \"$@\" ;;\n"+
+			"  volume) echo \""+mountDir+"\" ;;\n"+
+			"  *) exit 1 ;;\n"+
+			"esac\n"), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	err := d.populateVolumeDirectCopy(context.Background(), "test-vol", binaryContent)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(destPath) //nolint:gosec // test reads from a temp directory we control
+	require.NoError(t, err)
+	assert.Equal(t, binaryContent, data)
 }
 
 func TestPopulateVolumeDirectCopy_DockerUsesDirectWrite(t *testing.T) {
