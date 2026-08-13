@@ -23,17 +23,31 @@ tasks:
 
   cli:lint:
     desc: lint go code using golangci-lint
+    deps: [cli:lint:version]
     cmd: golangci-lint run ./...
 
   cli:lint:ci:
     desc: lint exactly as CI does (golangci-lint-action only-new-issues -> new-from-patch vs the merge-base with origin/main)
+    deps: [cli:lint:version]
     cmds:
+      - golangci-lint config verify
       - git fetch --quiet origin main
       - |
         patch="$(mktemp)"
         trap 'rm -f "$patch"' EXIT
         git diff "$(git merge-base HEAD origin/main)" > "$patch"
         golangci-lint run --new-from-patch="$patch" --new=false ./...
+
+  cli:lint:version:
+    desc: assert the local golangci-lint matches .golangci-version (the version CI uses)
+    cmd: |
+      want="$(sed 's/^v//' .golangci-version | tr -d '[:space:]')"
+      cur="$(golangci-lint --version 2>&1 | sed -n 's/.*version \([0-9][0-9A-Za-z.+-]*\).*/\1/p')"
+      if [ "$cur" != "$want" ]; then
+        echo "golangci-lint version mismatch: local=${cur:-<not found>}, expected=${want} (from .golangci-version, as used by CI). Install golangci-lint v${want}." >&2
+        exit 1
+      fi
+    silent: true
 
   cli:lint:fix:
     desc: fix lint issues using golangci-lint
