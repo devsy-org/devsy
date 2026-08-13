@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/docker"
@@ -98,6 +99,97 @@ func TestRunPreflightPodmanAutoStartFails(t *testing.T) {
 		start:    alwaysErr(nil), // start fails; original ping error is surfaced
 	}
 	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
+	if !errors.Is(err, down) {
+		t.Fatalf("want original daemon error surfaced, got %v", err)
+	}
+}
+
+// TestRunPreflightPodmanSkipsStartWhenNoMachine asserts that when no Podman
+// machine exists (e.g. rootless CI without one) a daemon blip never triggers
+// `podman machine start`, which would be doomed and mask the ping error.
+func TestRunPreflightPodmanSkipsStartWhenNoMachine(t *testing.T) {
+	down := errors.New("Cannot connect to Podman")
+	started := false
+	p := dockerProbe{
+		runtime:       docker.RuntimePodman,
+		lookPath:      installed,
+		ping:          func(context.Context) error { return down },
+		machineExists: func(context.Context) bool { return false },
+		start: func(context.Context) error {
+			started = true
+			return nil
+		},
+	}
+	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
+	if started {
+		t.Error("machine start must not run when no machine exists")
+	}
+	if !errors.Is(err, down) {
+		t.Fatalf("want original daemon error surfaced, got %v", err)
+	}
+}
+
+func TestRunPreflightPodmanSocketAutoStartRecovers(t *testing.T) {
+	pinged := 0
+	socketStarted := false
+	p := dockerProbe{
+		runtime:       docker.RuntimePodman,
+		lookPath:      installed,
+		machineExists: func(context.Context) bool { return false },
+		ping: func(context.Context) error {
+			pinged++
+			if pinged == 1 {
+				return errors.New("Cannot connect to Podman")
+			}
+			return nil
+		},
+		startSocket: func(context.Context) error {
+			socketStarted = true
+			return nil
+		},
+	}
+	if err := runPreflight(context.Background(), driver.PreflightOptions{}, p); err != nil {
+		t.Fatalf("socket auto-start recovery = %v, want nil", err)
+	}
+	if !socketStarted {
+		t.Error("expected rootless socket start to be attempted")
+	}
+	if pinged != 2 {
+		t.Errorf("expected a re-ping after socket start, ping count = %d", pinged)
+	}
+}
+
+func TestRunPreflightPodmanSocketAutoStartFails(t *testing.T) {
+	down := errors.New("Cannot connect to Podman")
+	p := dockerProbe{
+		runtime:       docker.RuntimePodman,
+		lookPath:      installed,
+		machineExists: func(context.Context) bool { return false },
+		ping:          func(context.Context) error { return down },
+		startSocket:   alwaysErr(errors.New("systemctl: not found")),
+	}
+	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
+	if !errors.Is(err, down) {
+		t.Fatalf("want original daemon error surfaced, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "systemctl --user start podman.socket") {
+		t.Fatalf("want rootless socket hint in error, got %v", err)
+	}
+}
+
+func TestRunPreflightPodmanNoHintIfMachineExists(t *testing.T) {
+	down := errors.New("Cannot connect to Podman")
+	p := dockerProbe{
+		runtime:       docker.RuntimePodman,
+		lookPath:      installed,
+		machineExists: func(context.Context) bool { return true },
+		ping:          func(context.Context) error { return down },
+		start:         alwaysErr(errors.New("machine start failed")),
+	}
+	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
+	if strings.Contains(err.Error(), "systemctl --user start podman.socket") {
+		t.Fatalf("want no rootless socket hint when a machine exists, got %v", err)
+	}
 	if !errors.Is(err, down) {
 		t.Fatalf("want original daemon error surfaced, got %v", err)
 	}
