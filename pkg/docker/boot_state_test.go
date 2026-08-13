@@ -6,6 +6,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	statusDead       = "dead"
+	statusRemoving   = "removing"
+	statusExited     = "exited"
+	statusCreated    = "created"
+	statusPaused     = "paused"
+	statusRestarting = "restarting"
+)
+
 func TestFailedBootSentinel(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -14,22 +23,28 @@ func TestFailedBootSentinel(t *testing.T) {
 		wantSentinel error
 		wantNil      bool
 	}{
-		{"dead is terminal regardless of grace", "dead", false, ErrContainerTerminal, false},
-		{"dead is terminal even after grace", "dead", true, ErrContainerTerminal, false},
+		{"dead is terminal regardless of grace", statusDead, false, ErrContainerTerminal, false},
+		{"dead is terminal even after grace", statusDead, true, ErrContainerTerminal, false},
 		{
 			"removing is terminal regardless of grace",
-			"removing",
+			statusRemoving,
 			false,
 			ErrContainerTerminal,
 			false,
 		},
-		{"removing is terminal even after grace", "removing", true, ErrContainerTerminal, false},
-		{"exited before grace is still booting", "exited", false, nil, true},
-		{"exited after grace failed", "exited", true, ErrContainerExited, false},
-		{"created before grace is still booting", "created", false, nil, true},
-		{"created after grace failed", "created", true, ErrContainerExited, false},
-		{"paused is not a terminal boot state", "paused", true, nil, true},
-		{"restarting is not a terminal boot state", "restarting", false, nil, true},
+		{
+			"removing is terminal even after grace",
+			statusRemoving,
+			true,
+			ErrContainerTerminal,
+			false,
+		},
+		{"exited before grace is still booting", statusExited, false, nil, true},
+		{"exited after grace failed", statusExited, true, ErrContainerExited, false},
+		{"created before grace is still booting", statusCreated, false, nil, true},
+		{"created after grace failed", statusCreated, true, ErrContainerExited, false},
+		{"paused is not a terminal boot state", statusPaused, true, nil, true},
+		{"restarting is not a terminal boot state", statusRestarting, false, nil, true},
 		{"empty status is not a terminal boot state", "", true, nil, true},
 	}
 
@@ -54,8 +69,8 @@ func TestFailedBootSentinel(t *testing.T) {
 }
 
 func TestFailedBootSentinel_TerminalNotConfusedWithExited(t *testing.T) {
-	terminal := failedBootSentinel("removing", false)
-	exited := failedBootSentinel("exited", true)
+	terminal := failedBootSentinel(statusRemoving, false)
+	exited := failedBootSentinel(statusExited, true)
 
 	assert.ErrorIs(t, terminal, ErrContainerTerminal)
 	assert.NotErrorIs(t, terminal, ErrContainerExited,
