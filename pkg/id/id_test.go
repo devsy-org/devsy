@@ -8,7 +8,6 @@ import (
 const (
 	fooVal = "foo"
 	barVal = "bar"
-
 )
 
 func TestSafeConcatName(t *testing.T) {
