@@ -4,23 +4,26 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockForwarder struct {
 	forwarded     []string
 	forwardedAttr []PortForwardAttribute
 	stopped       []string
+	forwardErr    error
+	stopErr       error
 }
 
 func (m *mockForwarder) Forward(port string, attr PortForwardAttribute) error {
 	m.forwarded = append(m.forwarded, port)
 	m.forwardedAttr = append(m.forwardedAttr, attr)
-	return nil
+	return m.forwardErr
 }
 
 func (m *mockForwarder) StopForward(port string) error {
 	m.stopped = append(m.stopped, port)
-	return nil
+	return m.stopErr
 }
 
 func TestNewWatcher_NilFilter(t *testing.T) {
@@ -147,4 +150,84 @@ func TestListenPortsInRange_NilLocalAddrDoesNotPanic(t *testing.T) {
 		got := listenPortsInRange(socks)
 		assert.Empty(t, got)
 	})
+}
+
+func TestStartPort_ForwardsWithAttr(t *testing.T) {
+	mf := &mockForwarder{}
+	resolver := func(port string) PortForwardAttribute {
+		return PortForwardAttribute{Label: "svc", Protocol: "tcp", OnAutoForward: "notify"}
+	}
+	w := NewWatcher(mf, WithPortAttributes(resolver))
+
+	err := w.startPort("8080")
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"8080"}, mf.forwarded)
+	require.Len(t, mf.forwardedAttr, 1)
+	assert.Equal(t, "svc", mf.forwardedAttr[0].Label)
+	assert.Equal(t, "notify", mf.forwardedAttr[0].OnAutoForward)
+}
+
+func TestStartPort_PortFilterSkips(t *testing.T) {
+	mf := &mockForwarder{}
+	w := NewWatcher(mf, WithPortFilter(func(port string) bool { return port != "9090" }))
+
+	err := w.startPort("9090")
+	assert.NoError(t, err)
+	assert.Empty(t, mf.forwarded, "filtered port must not be forwarded")
+}
+
+func TestStartPort_OnAutoForwardIgnoreSkips(t *testing.T) {
+	mf := &mockForwarder{}
+	resolver := func(port string) PortForwardAttribute {
+		return PortForwardAttribute{OnAutoForward: AutoForwardIgnore}
+	}
+	w := NewWatcher(mf, WithPortAttributes(resolver))
+
+	err := w.startPort("8080")
+	assert.NoError(t, err)
+	assert.Empty(t, mf.forwarded, "ignored port must not be forwarded")
+}
+
+func TestStartPort_ForwardErrorPropagates(t *testing.T) {
+	mf := &mockForwarder{forwardErr: assert.AnError}
+	w := NewWatcher(mf)
+
+	err := w.startPort("8080")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "error forwarding port 8080")
+}
+
+func TestStopRemovedPorts_StopsGonePorts(t *testing.T) {
+	mf := &mockForwarder{}
+	w := NewWatcher(mf)
+	w.forwardedPorts = map[string]bool{"8080": true, "9090": true}
+
+	err := w.stopRemovedPorts(map[string]bool{"9090": true})
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"8080"}, mf.stopped)
+}
+
+func TestStopRemovedPorts_StopErrorPropagates(t *testing.T) {
+	mf := &mockForwarder{stopErr: assert.AnError}
+	w := NewWatcher(mf)
+	w.forwardedPorts = map[string]bool{"8080": true}
+
+	err := w.stopRemovedPorts(map[string]bool{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "error stop forwarding port 8080")
+}
+
+func TestStartNewPorts_StartsOnlyNewPorts(t *testing.T) {
+	mf := &mockForwarder{}
+	w := NewWatcher(mf)
+	w.forwardedPorts = map[string]bool{"8080": true}
+
+	err := w.startNewPorts(map[string]bool{"8080": true, "9090": true})
+	assert.NoError(t, err)
+	assert.Equal(
+		t,
+		[]string{"9090"},
+		mf.forwarded,
+		"already-forwarded ports must not be re-forwarded",
+	)
 }
