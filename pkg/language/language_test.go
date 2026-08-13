@@ -87,7 +87,7 @@ func TestDetectLanguageSkipsIgnoredDirs(t *testing.T) {
 	writeFile(t, dir, "keep.py")
 
 	nodeModules := filepath.Join(dir, "node_modules")
-	if err := os.Mkdir(nodeModules, 0o755); err != nil {
+	if err := os.Mkdir(nodeModules, 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	writeFile(t, nodeModules, "noise.js")
