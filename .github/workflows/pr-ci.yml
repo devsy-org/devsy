@@ -642,6 +642,26 @@ jobs:
           mkdir -p ~/.config/containers
           printf '[engine]\nruntime = "runc"\n' > ~/.config/containers/containers.conf
 
+          # Start a persistent rootless podman socket so the daemon stays
+          # reachable for the whole suite. Without it the rootless service is
+          # transient and can drop mid-suite, cascading into preflight failures.
+          # (Preflight only auto-starts a Podman machine when one exists, and
+          # this job creates none, so no doomed `podman machine start` is tried.)
+          sudo loginctl enable-linger "$USER"
+          systemctl --user enable --now podman.socket
+          PODMAN_SOCK="$XDG_RUNTIME_DIR/podman/podman.sock"
+          if ! timeout 30 bash -c "until [ -S '$PODMAN_SOCK' ]; do sleep 1; done"; then
+            echo "::error::rootless podman.socket did not become ready within 30s"
+            systemctl --user status podman.socket --no-pager || true
+            journalctl --user -u podman.socket --no-pager -n 100 || true
+            exit 1
+          fi
+
+          # The test runs under sudo as root; point DOCKER_HOST at the rootless
+          # socket (root can access /run/user/<uid>/...), matching the rootful
+          # job so the daemon stays reachable for the whole suite.
+          echo "DOCKER_HOST=unix://$PODMAN_SOCK" >> "$GITHUB_ENV"
+
           podman info
           podman run --rm busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d echo "podman runtime preflight OK"
 

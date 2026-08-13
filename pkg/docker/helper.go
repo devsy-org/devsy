@@ -165,6 +165,33 @@ func (r *DockerHelper) StartPodmanMachine(ctx context.Context) error {
 	return nil
 }
 
+// PodmanMachineExists reports whether at least one Podman machine is defined.
+// Podman machines are an optional backend on every supported OS (a VM on
+// macOS/Windows, a nested VM on Linux); auto-starting one only makes sense when
+// a machine exists, so preflight uses this to avoid a doomed `machine start`
+// (e.g. rootless CI with no machine, where it is refused as root).
+func (r *DockerHelper) PodmanMachineExists(ctx context.Context) bool {
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	out, err := r.buildCmd(cctx, "machine", "list", "--format", "{{.Name}}").Output()
+	if err != nil {
+		return false
+	}
+	return anyPodmanMachine(out)
+}
+
+// anyPodmanMachine reports whether `podman machine list --format {{.Name}}`
+// output names at least one machine.
+func anyPodmanMachine(stdout []byte) bool {
+	for _, line := range strings.Split(string(stdout), "\n") {
+		if strings.TrimSpace(line) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *DockerHelper) FindDevContainer(
 	ctx context.Context,
 	labels []string,

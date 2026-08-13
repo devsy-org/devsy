@@ -109,11 +109,12 @@ var (
 // starting a stopped Podman machine unless auto-start is disabled.
 func (d *dockerDriver) Preflight(ctx context.Context, opts driver.PreflightOptions) error {
 	return runPreflight(ctx, opts, dockerProbe{
-		command:  d.Docker.DockerCommand,
-		runtime:  d.Docker.GetRuntime().Name(),
-		lookPath: exec.LookPath,
-		ping:     d.Docker.Ping,
-		start:    d.Docker.StartPodmanMachine,
+		command:       d.Docker.DockerCommand,
+		runtime:       d.Docker.GetRuntime().Name(),
+		lookPath:      exec.LookPath,
+		ping:          d.Docker.Ping,
+		start:         d.Docker.StartPodmanMachine,
+		machineExists: d.Docker.PodmanMachineExists,
 	})
 }
 
@@ -125,6 +126,11 @@ type dockerProbe struct {
 	lookPath func(string) (string, error)
 	ping     func(context.Context) error
 	start    func(context.Context) error
+	// machineExists reports whether a Podman machine exists to start. It is
+	// consulted only after a failed ping, so the common reachable case pays no
+	// extra cost. A nil machineExists assumes a machine exists (preserves the
+	// unconditional start behavior for callers that don't supply it).
+	machineExists func(context.Context) bool
 }
 
 func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerProbe) error {
@@ -142,7 +148,7 @@ func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerPro
 		return nil
 	}
 
-	if p.runtime == docker.RuntimePodman && !opts.DisableAutoStart {
+	if p.runtime == docker.RuntimePodman && !opts.DisableAutoStart && (p.machineExists == nil || p.machineExists(ctx)) {
 		log.Infof(
 			"Podman machine is not running, attempting to start it (this may take a while)...",
 		)

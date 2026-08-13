@@ -438,3 +438,39 @@ esac
 	_, err := os.Stat(removed)
 	assert.NoError(t, err, "volume rm should be invoked for an existing volume")
 }
+
+func TestAnyPodmanMachine(t *testing.T) {
+	cases := map[string]bool{
+		"":                         false,
+		"\n":                       false,
+		"podman-machine-default\n": true,
+		"machine-a\nmachine-b\n":   true,
+		"  \n\t\n":                 false,
+	}
+	for out, want := range cases {
+		if got := anyPodmanMachine([]byte(out)); got != want {
+			t.Errorf("anyPodmanMachine(%q) = %v, want %v", out, got, want)
+		}
+	}
+}
+
+func TestPodmanMachineExists(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "podman-fake", `#!/bin/sh
+# `+`podman machine list --format {{.Name}}`+`
+echo "podman-machine-default"
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	assert.True(t, h.PodmanMachineExists(context.Background()), "a listed machine should be detected")
+}
+
+func TestPodmanMachineExists_None(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "podman-fake", `#!/bin/sh
+exit 0
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	assert.False(t, h.PodmanMachineExists(context.Background()), "no listed machine should be detected")
+}
