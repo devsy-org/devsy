@@ -24,6 +24,13 @@ runs:
         sudo apt-get -o Dir::Cache::Archives="$APT_CACHE_DIR" update
         sudo apt-get -o Dir::Cache::Archives="$APT_CACHE_DIR" install -y podman runc
 
+        # Fail fast on a mistyped mode: without this, an invalid value falls
+        # into the rootful branch and the job runs the wrong setup silently.
+        case "$PODMAN_MODE" in
+          rootless|rootful) ;;
+          *) echo "::error::invalid mode: $PODMAN_MODE (expected rootless|rootful)"; exit 1 ;;
+        esac
+
         # podman defaults to crun, which fails on this runner image; force runc.
         if [ "$PODMAN_MODE" = "rootless" ]; then
           mkdir -p ~/.config/containers
