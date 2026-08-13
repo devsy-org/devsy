@@ -57,7 +57,15 @@ func (c cliClient) Create(ctx context.Context, sandbox string, spec sandboxSpec)
 	if err := c.ensureVolumes(ctx, spec.Mounts); err != nil {
 		return err
 	}
-	return msbRun(ctx, createArgs(sandbox, spec)...)
+	return msbRun(ctx, runArgs(sandbox, spec)...)
+}
+
+func runArgs(sandbox string, spec sandboxSpec) []string {
+	args := []string{"run", "--detach", names.Flag(names.Name), sandbox}
+	args = append(args, runtimeArgs(spec)...)
+	args = append(args, resourceArgs(spec)...)
+	args = append(args, mountArgs(spec.Mounts)...)
+	return append(args, spec.Image)
 }
 
 func (cliClient) Find(ctx context.Context, sandbox string) (*sandboxInfo, error) {
@@ -158,10 +166,30 @@ func createArgs(sandbox string, spec sandboxSpec) []string {
 	return append(args, spec.Image)
 }
 
+func shellScriptEntrypoint(argv []string) (string, bool) {
+	if len(argv) != 4 ||
+		argv[0] != "/bin/sh" ||
+		argv[1] != "-c" ||
+		argv[3] != "-" {
+		return "", false
+	}
+
+	return "#!/bin/sh\n" + argv[2], true
+}
+
 func runtimeArgs(spec sandboxSpec) []string {
 	var args []string
+
 	if len(spec.Entrypoint) > 0 {
-		args = append(args, "--entrypoint", strings.Join(spec.Entrypoint, " "))
+		if script, ok := shellScriptEntrypoint(spec.Entrypoint); ok {
+			args = append(
+				args,
+				"--script-raw", "devsy-entrypoint="+script,
+				"--entrypoint", "/.msb/scripts/devsy-entrypoint",
+			)
+		} else if len(spec.Entrypoint) == 1 {
+			args = append(args, "--entrypoint", spec.Entrypoint[0])
+		}
 	}
 	for k, v := range spec.Env {
 		args = append(args, names.Flag(names.Env), k+"="+v)
