@@ -104,9 +104,6 @@ func TestRunPreflightPodmanAutoStartFails(t *testing.T) {
 	}
 }
 
-// TestRunPreflightPodmanSkipsStartWhenNoMachine asserts that when no Podman
-// machine exists (e.g. rootless CI without one) a daemon blip never triggers
-// `podman machine start`, which would be doomed and mask the ping error.
 func TestRunPreflightPodmanSkipsStartWhenNoMachine(t *testing.T) {
 	down := errors.New("Cannot connect to Podman")
 	started := false

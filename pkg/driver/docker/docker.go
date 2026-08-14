@@ -158,8 +158,6 @@ func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerPro
 		return nil
 	}
 
-	// For the rootless Linux case (no machine to start), point the user at the
-	// socket rather than leaving a bare "cannot connect" error.
 	if p.runtime == docker.RuntimePodman && p.machineExists != nil && !p.machineExists(ctx) {
 		err = fmt.Errorf(
 			"%w\n\nstart the Podman socket with"+
