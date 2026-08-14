@@ -358,3 +358,19 @@ FROM ${REGISTRY}/${IMAGE}:${TAG}`
 	)
 	s.Equal("gcr.io/my/image:latest", baseImage)
 }
+
+// A bare directive with no value must not panic the parser; the buildkit parser
+// still emits the node, so parseUser/parseArg must tolerate a nil Next.
+func (s *ParseTestSuite) TestValuelessUserDoesNotPanic() {
+	d, err := Parse("FROM ubuntu\nUSER")
+	s.NoError(err)
+	s.Require().NotEmpty(d.Stages)
+	s.Empty(d.Stages[0].Users[0].Key)
+}
+
+func (s *ParseTestSuite) TestValuelessArgDoesNotPanic() {
+	d, err := Parse("FROM ubuntu\nARG")
+	s.NoError(err)
+	s.Require().NotEmpty(d.Stages)
+	s.Empty(d.Stages[0].Args[0].Key)
+}

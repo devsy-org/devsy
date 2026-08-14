@@ -453,6 +453,9 @@ func (d *Dockerfile) indexStagesByTarget() {
 }
 
 func parseUser(instruction *parser.Node) instructions.KeyValuePair {
+	if instruction.Next == nil {
+		return instructions.KeyValuePair{}
+	}
 	value := instruction.Next.Value
 	if strings.Contains(value, ":") && !strings.HasPrefix(value, "${") {
 		value = strings.Split(value, ":")[0]
@@ -462,6 +465,9 @@ func parseUser(instruction *parser.Node) instructions.KeyValuePair {
 
 func parseArg(instruction *parser.Node) instructions.KeyValuePairOptional {
 	node := instruction.Next
+	if node == nil {
+		return instructions.KeyValuePairOptional{}
+	}
 	if node.Next != nil {
 		value := node.Next.Value
 		return instructions.KeyValuePairOptional{Key: node.Value, Value: &value}
