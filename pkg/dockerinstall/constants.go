@@ -45,4 +45,12 @@ const (
 	DistroRaspbian = "raspbian"
 	DistroOSMC     = "osmc"
 	DistroDebian   = "debian"
+
+	// Debian release codenames.
+	CodenameTrixie   = "trixie"
+	CodenameBookworm = "bookworm"
+	CodenameBullseye = "bullseye"
+	CodenameBuster   = "buster"
+	CodenameStretch  = "stretch"
+	CodenameJessie   = "jessie"
 )
