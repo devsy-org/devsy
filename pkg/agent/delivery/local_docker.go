@@ -66,7 +66,7 @@ func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStart
 	if opts.RunOptions.Env == nil {
 		opts.RunOptions.Env = make(map[string]string)
 	}
-	opts.RunOptions.Env["DEVSY_AGENT_PATH"] = volumeMountPath + "/" + binaryName()
+	opts.RunOptions.Env[pkgconfig.EnvAgentPath] = volumeMountPath + "/" + binaryName()
 
 	return nil
 }
