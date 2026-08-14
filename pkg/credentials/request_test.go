@@ -50,14 +50,10 @@ func TestPostWithRetry_ReturnsErrorOnNon200(t *testing.T) {
 	assert.Nil(t, out)
 	assert.Contains(t, err.Error(), "500")
 	assert.Contains(t, err.Error(), "endpoint")
-	// A non-200 is not connection-refused, so it must not be retried.
+
 	assert.Less(t, elapsed, 500*time.Millisecond, "non-200 response must not trigger retries")
 }
 
-// TestPostWithRetry_RetriesConnectionRefusedThenSucceeds proves the retry loop
-// recovers when the credentials server comes up between attempts: the port is
-// initially closed (connection refused) and a server is bound on it shortly
-// after, so a later retry succeeds.
 func TestPostWithRetry_RetriesConnectionRefusedThenSucceeds(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -93,8 +89,6 @@ func TestPostWithRetry_RetriesConnectionRefusedThenSucceeds(t *testing.T) {
 }
 
 func TestPostWithRetry_ExhaustsRetriesOnConnectionRefused(t *testing.T) {
-	// A port with no listener yields ECONNREFUSED on every attempt; the loop
-	// must exhaust its retries and return an error wrapping ECONNREFUSED.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := ln.Addr().(*net.TCPAddr).Port
@@ -108,7 +102,7 @@ func TestPostWithRetry_ExhaustsRetriesOnConnectionRefused(t *testing.T) {
 	assert.Nil(t, out)
 	assert.True(t, errors.Is(err, syscall.ECONNREFUSED),
 		"error must wrap ECONNREFUSED after exhausting retries, got: %v", err)
-	// At least one backoff step must elapse before giving up.
+
 	assert.Greater(
 		t,
 		elapsed,
