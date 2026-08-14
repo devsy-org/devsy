@@ -90,7 +90,7 @@ func runPublish(f *PublishFlags) error {
 		return err
 	}
 
-	log.Infof("Publishing feature %q to %s", featureCfg.ID, ref.String())
+	log.Infof("publishing feature %q to %s", featureCfg.ID, ref.String())
 
 	img, err := buildFeatureImage(target)
 	if err != nil {
@@ -103,7 +103,7 @@ func runPublish(f *PublishFlags) error {
 		return fmt.Errorf("push feature to registry: %w", err)
 	}
 
-	log.Infof("Feature published successfully: %s", ref.String())
+	log.Infof("feature published successfully: %s", ref.String())
 
 	metadata := publishedFeatureMetadata{
 		ID:      featureCfg.ID,
