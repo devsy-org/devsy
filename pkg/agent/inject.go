@@ -31,7 +31,10 @@ const (
 	osLinux = "linux"
 )
 
-var waitForInstanceConnectionTimeout = time.Minute * 5
+var (
+	waitForInstanceConnectionTimeout = time.Minute * 5
+	remoteVersionCheckTimeout        = time.Second * 30
+)
 
 // InjectOptions defines the parameters for injecting the Devsy agent into a remote environment.
 type InjectOptions struct {
@@ -362,7 +365,10 @@ func (vc *versionChecker) detectRemoteAgentVersion(
 ) (string, error) {
 	buf := &bytes.Buffer{}
 	versionCmd := fmt.Sprintf("%s --version", agentPath)
-	err := exec(ctx, versionCmd, nil, buf, io.Discard)
+	checkCtx, cancel := context.WithTimeout(ctx, remoteVersionCheckTimeout)
+	defer cancel()
+
+	err := exec(checkCtx, versionCmd, nil, buf, io.Discard)
 	if err != nil {
 		return "", fmt.Errorf("failed to get remote agent version: %w", err)
 	}

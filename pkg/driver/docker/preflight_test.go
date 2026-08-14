@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -126,6 +127,29 @@ func TestRunPreflightPodmanSkipsStartWhenNoMachine(t *testing.T) {
 	}
 }
 
+func TestRunPreflightPodmanRootfulNoMachineNoRecovery(t *testing.T) {
+	down := errors.New("Cannot connect to Podman")
+	socketStarted := false
+	p := dockerProbe{
+		runtime:       docker.RuntimePodman,
+		lookPath:      installed,
+		ping:          func(context.Context) error { return down },
+		machineExists: func(context.Context) (bool, error) { return false, nil },
+		startSocket: func(context.Context) error {
+			socketStarted = true
+			return nil
+		},
+		rootless: false,
+	}
+	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
+	if socketStarted {
+		t.Error("rootless socket start must not run for rootful Podman with no machine")
+	}
+	if !errors.Is(err, down) {
+		t.Fatalf("want original daemon error surfaced, got %v", err)
+	}
+}
+
 func TestRunPreflightPodmanSocketAutoStartRecovers(t *testing.T) {
 	pinged := 0
 	socketStarted := false
@@ -144,6 +168,7 @@ func TestRunPreflightPodmanSocketAutoStartRecovers(t *testing.T) {
 			socketStarted = true
 			return nil
 		},
+		rootless: true,
 	}
 	if err := runPreflight(context.Background(), driver.PreflightOptions{}, p); err != nil {
 		t.Fatalf("socket auto-start recovery = %v, want nil", err)
@@ -164,12 +189,13 @@ func TestRunPreflightPodmanSocketAutoStartFails(t *testing.T) {
 		machineExists: func(context.Context) (bool, error) { return false, nil },
 		ping:          func(context.Context) error { return down },
 		startSocket:   alwaysErr(errors.New("systemctl: not found")),
+		rootless:      true,
 	}
 	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
 	if !errors.Is(err, down) {
 		t.Fatalf("want original daemon error surfaced, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "systemctl --user start podman.socket") {
+	if !strings.Contains(err.Error(), "podman machine is not running") {
 		t.Fatalf("want rootless socket hint in error, got %v", err)
 	}
 }
@@ -184,7 +210,7 @@ func TestRunPreflightPodmanNoHintIfMachineExists(t *testing.T) {
 		start:         alwaysErr(errors.New("machine start failed")),
 	}
 	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
-	if strings.Contains(err.Error(), "systemctl --user start podman.socket") {
+	if strings.Contains(err.Error(), "podman machine is not running") {
 		t.Fatalf("want no rootless socket hint when a machine exists, got %v", err)
 	}
 	if !errors.Is(err, down) {
@@ -232,5 +258,31 @@ func TestRunPreflightPodmanOptOutSkipsStart(t *testing.T) {
 	}
 	if started {
 		t.Error("auto-start must not run when DisableAutoStart is set")
+	}
+}
+
+func TestIsRootlessDockerHost(t *testing.T) {
+	cases := map[string]bool{
+		// explicit rootless socket path
+		"unix:///run/user/1001/podman/podman.sock": true,
+		"unix:///run/user/1000/podman/podman.sock": true,
+		// rootful socket path
+		"unix:///run/podman/podman.sock": false,
+		// docker / tcp / other hosts are not rootless podman
+		"unix:///var/run/docker.sock":             false,
+		"tcp://1.2.3.4:2376":                      false,
+		"npipe:////./pipe/podman-machine-default": false,
+	}
+	for host, want := range cases {
+		if got := isRootlessDockerHost(host); got != want {
+			t.Errorf("isRootlessDockerHost(%q) = %v, want %v", host, got, want)
+		}
+	}
+}
+
+func TestIsRootlessDockerHostEmptyFallsBackToUID(t *testing.T) {
+	want := os.Geteuid() != 0
+	if got := isRootlessDockerHost(""); got != want {
+		t.Errorf("isRootlessDockerHost(\"\") = %v, want %v (uid=%d)", got, want, os.Geteuid())
 	}
 }

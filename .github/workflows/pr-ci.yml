@@ -387,14 +387,14 @@ jobs:
             install-kind: true
             requires-secret: false
 
-          - label: up-provider-podman
+          - label: up-provider-podman-rootless
             runner: ubuntu-latest
             free-disk-space: true
             install-kind: false
             requires-secret: false
             install-podman: rootless
 
-          - label: up-provider-podman
+          - label: up-provider-podman-rootful
             runner: ubuntu-latest
             free-disk-space: true
             install-kind: false

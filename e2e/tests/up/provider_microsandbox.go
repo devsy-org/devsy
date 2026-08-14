@@ -12,9 +12,6 @@ import (
 
 const osLinux = "linux"
 
-// skipIfNoMicrosandbox skips when the microsandbox runtime or hardware
-// virtualization is unavailable, mirroring how other providers guard on their
-// runtime being present.
 func skipIfNoMicrosandbox() {
 	if _, err := exec.LookPath("msb"); err != nil {
 		ginkgo.Skip("microsandbox runtime (msb) not found on PATH")

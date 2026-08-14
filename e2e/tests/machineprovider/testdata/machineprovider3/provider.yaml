@@ -22,7 +22,16 @@ exec:
     docker stop devsy-${MACHINE_ID}
   start: |-
     docker start devsy-${MACHINE_ID}
-    sleep 5
+    i=0
+    until docker exec devsy-${MACHINE_ID} docker info >/dev/null 2>&1; do
+      i=$((i+1))
+      if [ $i -gt 60 ]; then
+        echo "dockerd in devsy-${MACHINE_ID} did not become ready within 60s" >&2
+        docker logs --tail 50 devsy-${MACHINE_ID} >&2 || true
+        exit 1
+      fi
+      sleep 1
+    done
   status: |-
     STATUS=$(docker inspect devsy-${MACHINE_ID} 2>/dev/null | ${DEVSY} internal json get "[0].State.Status" || true)
     if [ -z $STATUS ]; then
@@ -39,6 +48,15 @@ exec:
   create: |-
     docker run -d --privileged --name devsy-${MACHINE_ID} docker
     docker exec devsy-${MACHINE_ID} mkdir /etc/init.d
-    sleep 5
+    i=0
+    until docker exec devsy-${MACHINE_ID} docker info >/dev/null 2>&1; do
+      i=$((i+1))
+      if [ $i -gt 60 ]; then
+        echo "dockerd in devsy-${MACHINE_ID} did not become ready within 60s" >&2
+        docker logs --tail 50 devsy-${MACHINE_ID} >&2 || true
+        exit 1
+      fi
+      sleep 1
+    done
   delete: |-
     docker stop devsy-${MACHINE_ID} && docker rm devsy-${MACHINE_ID}

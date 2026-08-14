@@ -7,8 +7,8 @@ import (
 )
 
 // probeRootlessPodman reports whether the podman daemon reachable via build is
-// running rootless. ok is false when the probe itself failed (e.g. the daemon
-// is unreachable), so callers can apply their own policy.
+// running rootless. If the probe succeeds, ok is true and rootless indicates
+// whether the daemon is rootless. If the probe fails, ok is false and rootless is false.
 func probeRootlessPodman(
 	ctx context.Context,
 	build func(context.Context, ...string) *exec.Cmd,

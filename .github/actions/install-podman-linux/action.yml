@@ -31,6 +31,11 @@ runs:
         esac
 
         # podman defaults to crun, which fails on this runner image; force runc.
+        #
+        # The rootful socket at /run/podman/podman.sock is root-owned, but the
+        # step runs unprivileged, so every podman call that talks to it must go
+        # through sudo. The rootless socket lives under $XDG_RUNTIME_DIR and is
+        # runner-owned, so it needs no sudo. PODMAN_SUDO selects between them.
         if [ "$PODMAN_MODE" = "rootless" ]; then
           mkdir -p ~/.config/containers
           printf '[engine]\nruntime = "runc"\n' > ~/.config/containers/containers.conf
@@ -41,6 +46,7 @@ runs:
           sudo loginctl enable-linger "$USER"
           systemctl --user enable --now podman.socket
           PODMAN_SOCK="$XDG_RUNTIME_DIR/podman/podman.sock"
+          PODMAN_SUDO=""
           SOCK_STATUS=(systemctl --user status podman.socket --no-pager)
           SOCK_LOG=(journalctl --user -u podman.socket --no-pager -n 100)
         else
@@ -49,11 +55,12 @@ runs:
 
           sudo systemctl enable --now podman.socket
           PODMAN_SOCK="/run/podman/podman.sock"
+          PODMAN_SUDO="sudo"
           SOCK_STATUS=(sudo systemctl status podman.socket --no-pager)
           SOCK_LOG=(sudo journalctl -u podman.socket --no-pager -n 100)
         fi
 
-        if ! timeout 30 bash -c "until podman --remote --url \"unix://$PODMAN_SOCK\" info >/dev/null 2>&1; do sleep 1; done"; then
+        if ! timeout 30 bash -c "until $PODMAN_SUDO podman --remote --url \"unix://$PODMAN_SOCK\" info >/dev/null 2>&1; do sleep 1; done"; then
           echo "::error::podman daemon did not become ready within 30s ($PODMAN_MODE)"
           "${SOCK_STATUS[@]}" || true
           "${SOCK_LOG[@]}" || true
@@ -64,5 +71,5 @@ runs:
         # at /run/user/<uid>/... Point DOCKER_HOST at whichever socket we brought up.
         echo "DOCKER_HOST=unix://$PODMAN_SOCK" >> "$GITHUB_ENV"
 
-        podman --remote --url "unix://$PODMAN_SOCK" info
+        $PODMAN_SUDO podman --remote --url "unix://$PODMAN_SOCK" info
         sudo podman --remote --url "unix://$PODMAN_SOCK" run --rm busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d echo "podman runtime preflight OK"

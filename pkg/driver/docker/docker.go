@@ -3,8 +3,10 @@ package docker
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 
 	"github.com/devsy-org/devsy/pkg/compose"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -19,6 +21,8 @@ const (
 	dockerExec = "exec"
 	// rootUser is the conventional root account name/uid-0 owner.
 	rootUser = "root"
+
+	osLinux = "linux"
 )
 
 func makeEnvironment(env map[string]string) []string {
@@ -117,26 +121,50 @@ func (d *dockerDriver) Preflight(ctx context.Context, opts driver.PreflightOptio
 		start:         d.Docker.StartPodmanMachine,
 		machineExists: d.Docker.PodmanMachineExists,
 		startSocket:   d.Docker.StartRootlessPodmanSocket,
+		rootless:      runtime.GOOS == osLinux && isRootlessDockerHost(os.Getenv("DOCKER_HOST")),
 	})
+}
+
+// isRootlessDockerHost reports whether a DOCKER_HOST value targets a rootless
+// Podman socket. A rootless socket lives under /run/user/<uid>/... (e.g.
+// $XDG_RUNTIME_DIR/podman/podman.sock), while the rootful socket is at
+// /run/podman/podman.sock.
+func isRootlessDockerHost(host string) bool {
+	if host == "" {
+		return os.Geteuid() != 0
+	}
+	return strings.Contains(host, "/run/user/")
 }
 
 // dockerProbe bundles the operations runPreflight depends on so the branching
 // can be exercised with fakes, without abstracting the whole DockerHelper.
 type dockerProbe struct {
-	command  string
-	runtime  docker.RuntimeName
+	// command is the runtime binary name (docker or podman) for lookPath and error messages.
+	command string
+
+	// runtime is the runtime name (docker or podman) for error messages.
+	runtime docker.RuntimeName
+
+	// lookPath is the operation that checks whether the runtime binary is installed.
 	lookPath func(string) (string, error)
-	ping     func(context.Context) error
-	start    func(context.Context) error
+
+	// ping is the operation that checks whether the runtime daemon is reachable.
+	ping func(context.Context) error
+
+	// start is only set for the Podman case, where a machine may be stopped and needs
+	// to be started. A nil value assumes a machine is running.
+	start func(context.Context) error
 
 	// machineExists is only set for the Podman case, where a machine may or may not exist.
-	// A nil value assumes a machine exists (preserves the unconditional start behavior for
-	// callers that do not supply it). Returns (exists, error); the bool is only meaningful when error is nil.
+	// A nil value assumes a machine exists.
 	machineExists func(context.Context) (bool, error)
 
 	// startSocket is only set for the rootless Linux case, where a Podman machine
 	// does not exist and the user socket is often not running until first use.
 	startSocket func(context.Context) error
+
+	// rootless is true when Podman is running rootless (Linux non-root user).
+	rootless bool
 }
 
 func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerProbe) error {
@@ -158,23 +186,27 @@ func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerPro
 		return nil
 	}
 
-	if p.runtime == docker.RuntimePodman && p.machineExists != nil {
-		exists, checkErr := p.machineExists(ctx)
-		if checkErr == nil && !exists {
-			err = fmt.Errorf(
-				"%w\n\nstart the Podman socket with"+
-					" `systemctl --user start podman.socket` (rootless)"+
-					" or `sudo systemctl start podman.socket` (rootful)",
-				err,
-			)
+	if p.runtime == docker.RuntimePodman &&
+		p.machineExists != nil { // podman machine may be stopped
+		if exists, checkErr := p.machineExists(
+			ctx,
+		); checkErr == nil &&
+			!exists { // machine does not exist
+			return &driver.PreflightError{
+				Provider: runtimeName,
+				Err:      fmt.Errorf("%w: podman machine is not running", err),
+			}
 		}
 	}
 
-	return &driver.PreflightError{Provider: runtimeName, Err: err}
+	return &driver.PreflightError{
+		Provider: runtimeName,
+		Err:      fmt.Errorf("%w: %s daemon is not reachable", err, p.runtime),
+	}
 }
 
 // recoverPodman attempts to bring a stopped Podman backend back up after a ping
-// failure. It reports whether the backend became reachable.
+// failure. Runtime is recovered if the ping is successful.
 func recoverPodman(ctx context.Context, opts driver.PreflightOptions, p dockerProbe) bool {
 	if p.runtime != docker.RuntimePodman || opts.DisableAutoStart {
 		return false
@@ -191,6 +223,11 @@ func recoverPodman(ctx context.Context, opts driver.PreflightOptions, p dockerPr
 	}
 	if exists {
 		return startPodmanMachine(ctx, p)
+	}
+
+	if !p.rootless { // rootful Podman without a machine is not recoverable
+		log.Warnf("podman is not reachable and no machine exists, and this is not rootless")
+		return false
 	}
 
 	return startPodmanSocket(ctx, p)

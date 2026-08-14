@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -165,10 +166,7 @@ func (r *DockerHelper) StartPodmanMachine(ctx context.Context) error {
 	return nil
 }
 
-// PodmanMachineExists reports whether a Podman machine exists, by listing
-// machines and checking for any names. It returns (exists, error); the bool is
-// only meaningful when error is nil. A command failure returns (false, err),
-// while a successful empty list returns (false, nil).
+// PodmanMachineExists reports whether a Podman machine exists.
 func (r *DockerHelper) PodmanMachineExists(ctx context.Context) (bool, error) {
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -192,20 +190,31 @@ func anyPodmanMachine(stdout []byte) bool {
 }
 
 // StartRootlessPodmanSocket starts the podman.socket systemd unit for rootless
-// Podman, which is required for rootless operation.
+// Podman.
 func (r *DockerHelper) StartRootlessPodmanSocket(ctx context.Context) error {
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(cctx, "systemctl", "--user", "start", "podman.socket")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		if msg := strings.TrimSpace(string(out)); msg != "" {
-			return fmt.Errorf("%s: %w", msg, err)
+	if runtime.GOOS == "linux" && isSystemdRunning() {
+		cmd := exec.CommandContext(cctx, "systemctl", "--user", "start", "podman.socket")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			if msg := strings.TrimSpace(string(out)); msg != "" {
+				return fmt.Errorf("%s: %w", msg, err)
+			}
+			return err
 		}
-		return err
 	}
 	return nil
+}
+
+func isSystemdRunning() bool {
+	cmd := exec.Command("systemctl", "is-system-running")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "running"
 }
 
 func (r *DockerHelper) FindDevContainer(

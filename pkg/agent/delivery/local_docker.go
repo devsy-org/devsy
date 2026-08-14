@@ -227,11 +227,8 @@ func (d *LocalDockerDelivery) populateVolumeWithHelper(
 }
 
 // populateVolumeDirectCopy writes the agent binary to a volume mountpoint the
-// host can write directly (docker, or rootful podman).
-//
-// NOTE: Podman rootless volumes are owned by a mapped UID, so a direct host write
-// fails with EACCES. `podman unshare` re-enters the container's user
-// namespace to write the mountpoint. Rootful podman and docker write directly.
+// host can write directly (docker, or rootful podman). Podman rootless
+// volumes are not directly writable by the host.
 func (d *LocalDockerDelivery) populateVolumeDirectCopy(
 	ctx context.Context,
 	volumeName string,
