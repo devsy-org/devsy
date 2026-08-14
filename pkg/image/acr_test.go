@@ -35,8 +35,6 @@ func TestIsACRRegistry(t *testing.T) {
 	}
 }
 
-// Get must reject non-ACR registries without touching the network or Azure
-// credentials, so a misrouted server URL surfaces a clear local error.
 func TestACRCredHelper_GetRejectsNonACRRegistry(t *testing.T) {
 	helper := newACRCredentialsHelper()
 	user, pass, err := helper.Get("docker.io")
@@ -51,8 +49,6 @@ func TestACRCredHelper_GetRejectsNonACRRegistry(t *testing.T) {
 	}
 }
 
-// Add/Delete/List are read-only-store operations ACR exchange auth does not
-// support; they must report unimplemented rather than silently succeeding.
 func TestACRCredHelper_UnimplementedMutations(t *testing.T) {
 	helper := newACRCredentialsHelper()
 
@@ -71,7 +67,6 @@ func TestACRCredHelper_UnimplementedMutations(t *testing.T) {
 	}
 }
 
-// newACRCredentialsHelper returns a value satisfying credentials.Helper.
 func TestNewACRCredentialsHelperSatisfiesInterface(t *testing.T) {
 	helper := newACRCredentialsHelper()
 	if helper == nil {
