@@ -55,7 +55,7 @@ runs:
           SOCK_LOG=(sudo journalctl -u podman.socket --no-pager -n 100)
         fi
 
-        if ! timeout 30 bash -c "until ${PODMAN[*]} info >/dev/null 2>&1; do sleep 1; done"; then
+        if ! timeout 30 bash -c "until podman --remote --url \"unix://$PODMAN_SOCK\" info >/dev/null 2>&1; do sleep 1; done"; then
           echo "::error::podman daemon did not become ready within 30s ($PODMAN_MODE)"
           "${SOCK_STATUS[@]}" || true
           "${SOCK_LOG[@]}" || true
@@ -66,5 +66,5 @@ runs:
         # at /run/user/<uid>/... Point DOCKER_HOST at whichever socket we brought up.
         echo "DOCKER_HOST=unix://$PODMAN_SOCK" >> "$GITHUB_ENV"
 
-        "${PODMAN[@]}" info
-        "${PODMAN[@]}" run --rm busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d echo "podman runtime preflight OK"
+        podman --remote --url "unix://$PODMAN_SOCK" info
+        sudo podman --remote --url "unix://$PODMAN_SOCK" run --rm busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d echo "podman runtime preflight OK"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/user"
+	"time"
 )
 
 func (r *DockerHelper) LingerWarning(ctx context.Context) string {
@@ -11,7 +12,10 @@ func (r *DockerHelper) LingerWarning(ctx context.Context) string {
 		return ""
 	}
 
-	rootless, ok := probeRootlessPodman(ctx, r.buildCmd)
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	rootless, ok := probeRootlessPodman(cctx, r.buildCmd)
 	if !ok || rootless {
 		if !lingerEnabled() {
 			return "rootless Podman without systemd linger: the workspace container will " +

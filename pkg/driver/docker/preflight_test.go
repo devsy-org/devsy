@@ -111,7 +111,7 @@ func TestRunPreflightPodmanSkipsStartWhenNoMachine(t *testing.T) {
 		runtime:       docker.RuntimePodman,
 		lookPath:      installed,
 		ping:          func(context.Context) error { return down },
-		machineExists: func(context.Context) bool { return false },
+		machineExists: func(context.Context) (bool, error) { return false, nil },
 		start: func(context.Context) error {
 			started = true
 			return nil
@@ -132,7 +132,7 @@ func TestRunPreflightPodmanSocketAutoStartRecovers(t *testing.T) {
 	p := dockerProbe{
 		runtime:       docker.RuntimePodman,
 		lookPath:      installed,
-		machineExists: func(context.Context) bool { return false },
+		machineExists: func(context.Context) (bool, error) { return false, nil },
 		ping: func(context.Context) error {
 			pinged++
 			if pinged == 1 {
@@ -161,7 +161,7 @@ func TestRunPreflightPodmanSocketAutoStartFails(t *testing.T) {
 	p := dockerProbe{
 		runtime:       docker.RuntimePodman,
 		lookPath:      installed,
-		machineExists: func(context.Context) bool { return false },
+		machineExists: func(context.Context) (bool, error) { return false, nil },
 		ping:          func(context.Context) error { return down },
 		startSocket:   alwaysErr(errors.New("systemctl: not found")),
 	}
@@ -179,13 +179,36 @@ func TestRunPreflightPodmanNoHintIfMachineExists(t *testing.T) {
 	p := dockerProbe{
 		runtime:       docker.RuntimePodman,
 		lookPath:      installed,
-		machineExists: func(context.Context) bool { return true },
+		machineExists: func(context.Context) (bool, error) { return true, nil },
 		ping:          func(context.Context) error { return down },
 		start:         alwaysErr(errors.New("machine start failed")),
 	}
 	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
 	if strings.Contains(err.Error(), "systemctl --user start podman.socket") {
 		t.Fatalf("want no rootless socket hint when a machine exists, got %v", err)
+	}
+	if !errors.Is(err, down) {
+		t.Fatalf("want original daemon error surfaced, got %v", err)
+	}
+}
+
+func TestRunPreflightPodmanMachineDetectionFails(t *testing.T) {
+	down := errors.New("Cannot connect to Podman")
+	listErr := errors.New("machine list: permission denied")
+	started := false
+	p := dockerProbe{
+		runtime:       docker.RuntimePodman,
+		lookPath:      installed,
+		ping:          func(context.Context) error { return down },
+		machineExists: func(context.Context) (bool, error) { return false, listErr },
+		start: func(context.Context) error {
+			started = true
+			return nil
+		},
+	}
+	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
+	if started {
+		t.Error("machine start must not run when detection fails")
 	}
 	if !errors.Is(err, down) {
 		t.Fatalf("want original daemon error surfaced, got %v", err)

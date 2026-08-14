@@ -131,8 +131,8 @@ type dockerProbe struct {
 
 	// machineExists is only set for the Podman case, where a machine may or may not exist.
 	// A nil value assumes a machine exists (preserves the unconditional start behavior for
-	// callers that do not supply it).
-	machineExists func(context.Context) bool
+	// callers that do not supply it). Returns (exists, error); the bool is only meaningful when error is nil.
+	machineExists func(context.Context) (bool, error)
 
 	// startSocket is only set for the rootless Linux case, where a Podman machine
 	// does not exist and the user socket is often not running until first use.
@@ -158,13 +158,16 @@ func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerPro
 		return nil
 	}
 
-	if p.runtime == docker.RuntimePodman && p.machineExists != nil && !p.machineExists(ctx) {
-		err = fmt.Errorf(
-			"%w\n\nstart the Podman socket with"+
-				" `systemctl --user start podman.socket` (rootless)"+
-				" or `sudo systemctl start podman.socket` (rootful)",
-			err,
-		)
+	if p.runtime == docker.RuntimePodman && p.machineExists != nil {
+		exists, checkErr := p.machineExists(ctx)
+		if checkErr == nil && !exists {
+			err = fmt.Errorf(
+				"%w\n\nstart the Podman socket with"+
+					" `systemctl --user start podman.socket` (rootless)"+
+					" or `sudo systemctl start podman.socket` (rootful)",
+				err,
+			)
+		}
 	}
 
 	return &driver.PreflightError{Provider: runtimeName, Err: err}
@@ -178,9 +181,26 @@ func recoverPodman(ctx context.Context, opts driver.PreflightOptions, p dockerPr
 		return false
 	}
 
-	if p.machineExists == nil || p.machineExists(ctx) { // nil assumes a machine exists
+	if p.machineExists == nil { // nil assumes a machine exists
 		log.Infof(
-			"Podman machine is not running, attempting to start the machine.",
+			"podman machine is not running, attempting to start the machine.",
+		)
+		if startErr := p.start(ctx); startErr != nil {
+			log.Warnf("failed to start Podman machine: %v", startErr)
+			return false
+		}
+		return p.ping(ctx) == nil
+	}
+
+	exists, err := p.machineExists(ctx)
+	if err != nil {
+		log.Warnf("failed to detect Podman mode (machine list failed): %v", err)
+		return false
+	}
+
+	if exists {
+		log.Infof(
+			"podman machine is not running, attempting to start the machine.",
 		)
 		if startErr := p.start(ctx); startErr != nil {
 			log.Warnf("failed to start Podman machine: %v", startErr)
@@ -190,7 +210,7 @@ func recoverPodman(ctx context.Context, opts driver.PreflightOptions, p dockerPr
 	}
 
 	if p.startSocket != nil { // rootless Linux
-		log.Infof("Podman is not reachable, attempting to start the rootless user socket.")
+		log.Infof("podman is not reachable, attempting to start the rootless user socket.")
 		if startErr := p.startSocket(ctx); startErr != nil {
 			log.Warnf("failed to start rootless Podman socket: %v", startErr)
 			return false

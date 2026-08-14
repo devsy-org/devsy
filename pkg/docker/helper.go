@@ -166,16 +166,18 @@ func (r *DockerHelper) StartPodmanMachine(ctx context.Context) error {
 }
 
 // PodmanMachineExists reports whether a Podman machine exists, by listing
-// machines and checking for any names.
-func (r *DockerHelper) PodmanMachineExists(ctx context.Context) bool {
+// machines and checking for any names. It returns (exists, error); the bool is
+// only meaningful when error is nil. A command failure returns (false, err),
+// while a successful empty list returns (false, nil).
+func (r *DockerHelper) PodmanMachineExists(ctx context.Context) (bool, error) {
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	out, err := r.buildCmd(cctx, "machine", "list", "--format", "{{.Name}}").Output()
 	if err != nil {
-		return false
+		return false, err
 	}
-	return anyPodmanMachine(out)
+	return anyPodmanMachine(out), nil
 }
 
 // anyPodmanMachine reports whether `podman machine list --format {{.Name}}`

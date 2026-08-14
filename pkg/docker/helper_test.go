@@ -462,7 +462,9 @@ echo "podman-machine-default"
 `)
 
 	h := &DockerHelper{DockerCommand: bin}
-	assert.True(t, h.PodmanMachineExists(context.Background()), "listed machine detected")
+	exists, err := h.PodmanMachineExists(context.Background())
+	assert.NoError(t, err)
+	assert.True(t, exists, "listed machine detected")
 }
 
 func TestPodmanMachineExists_None(t *testing.T) {
@@ -472,7 +474,9 @@ exit 0
 `)
 
 	h := &DockerHelper{DockerCommand: bin}
-	assert.False(t, h.PodmanMachineExists(context.Background()), "no machine detected")
+	exists, err := h.PodmanMachineExists(context.Background())
+	assert.NoError(t, err)
+	assert.False(t, exists, "no machine detected")
 }
 
 func TestProbeRootlessPodman(t *testing.T) {

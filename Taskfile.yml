@@ -51,10 +51,12 @@ tasks:
 
   cli:lint:fix:
     desc: fix lint issues using golangci-lint
+    deps: [cli:lint:version]
     cmd: golangci-lint run --fix ./...
 
   cli:format:
     desc: format go code using golangci-lint formatters
+    deps: [cli:lint:version]
     cmd: golangci-lint fmt ./...
 
   cli:act:lint:
