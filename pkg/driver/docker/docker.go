@@ -174,22 +174,14 @@ func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerPro
 }
 
 // recoverPodman attempts to bring a stopped Podman backend back up after a ping
-// failure: a Podman machine if one exists, otherwise the rootless user socket.
-// It reports whether the backend became reachable.
+// failure. It reports whether the backend became reachable.
 func recoverPodman(ctx context.Context, opts driver.PreflightOptions, p dockerProbe) bool {
 	if p.runtime != docker.RuntimePodman || opts.DisableAutoStart {
 		return false
 	}
 
 	if p.machineExists == nil { // nil assumes a machine exists
-		log.Infof(
-			"podman machine is not running, attempting to start the machine.",
-		)
-		if startErr := p.start(ctx); startErr != nil {
-			log.Warnf("failed to start Podman machine: %v", startErr)
-			return false
-		}
-		return p.ping(ctx) == nil
+		return startPodmanMachine(ctx, p)
 	}
 
 	exists, err := p.machineExists(ctx)
@@ -197,28 +189,35 @@ func recoverPodman(ctx context.Context, opts driver.PreflightOptions, p dockerPr
 		log.Warnf("failed to detect Podman mode (machine list failed): %v", err)
 		return false
 	}
-
 	if exists {
-		log.Infof(
-			"podman machine is not running, attempting to start the machine.",
-		)
-		if startErr := p.start(ctx); startErr != nil {
-			log.Warnf("failed to start Podman machine: %v", startErr)
-			return false
-		}
-		return p.ping(ctx) == nil
+		return startPodmanMachine(ctx, p)
 	}
 
-	if p.startSocket != nil { // rootless Linux
-		log.Infof("podman is not reachable, attempting to start the rootless user socket.")
-		if startErr := p.startSocket(ctx); startErr != nil {
-			log.Warnf("failed to start rootless Podman socket: %v", startErr)
-			return false
-		}
-		return p.ping(ctx) == nil
+	return startPodmanSocket(ctx, p)
+}
+
+func startPodmanMachine(ctx context.Context, p dockerProbe) bool {
+	log.Infof("podman machine is not running, attempting to start the machine.")
+	if startErr := p.start(ctx); startErr != nil {
+		log.Warnf("failed to start Podman machine: %v", startErr)
+		return false
 	}
 
-	return false
+	return p.ping(ctx) == nil
+}
+
+func startPodmanSocket(ctx context.Context, p dockerProbe) bool {
+	if p.startSocket == nil { // rootless Linux
+		return false
+	}
+
+	log.Infof("podman is not reachable, attempting to start the rootless user socket.")
+	if startErr := p.startSocket(ctx); startErr != nil {
+		log.Warnf("failed to start rootless Podman socket: %v", startErr)
+		return false
+	}
+
+	return p.ping(ctx) == nil
 }
 
 func (d *dockerDriver) TargetArchitecture(ctx context.Context, workspaceId string) (string, error) {

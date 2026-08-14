@@ -41,7 +41,6 @@ runs:
           sudo loginctl enable-linger "$USER"
           systemctl --user enable --now podman.socket
           PODMAN_SOCK="$XDG_RUNTIME_DIR/podman/podman.sock"
-          PODMAN=(podman)
           SOCK_STATUS=(systemctl --user status podman.socket --no-pager)
           SOCK_LOG=(journalctl --user -u podman.socket --no-pager -n 100)
         else
@@ -50,7 +49,6 @@ runs:
 
           sudo systemctl enable --now podman.socket
           PODMAN_SOCK="/run/podman/podman.sock"
-          PODMAN=(sudo podman)
           SOCK_STATUS=(sudo systemctl status podman.socket --no-pager)
           SOCK_LOG=(sudo journalctl -u podman.socket --no-pager -n 100)
         fi
