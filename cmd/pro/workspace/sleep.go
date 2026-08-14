@@ -108,8 +108,8 @@ func (cmd *SleepCmd) sleep(
 		return err
 	}
 
-	// wait for sleeping
-	log.Info("Wait until workspace is sleeping")
+	// wait for the workspace to sleep
+	log.Info("wait until workspace is sleeping")
 	err = waitForWorkspacePhase(ctx, waitForWorkspacePhaseParams{
 		managementClient: managementClient,
 		projectName:      cmd.Project,
