@@ -29,27 +29,27 @@ type Content struct {
 	Files map[string]string `json:"files"`
 }
 
-type command struct {
+type Command struct {
 	cmd  string
 	args []string
 }
 
-func New(cmd string) *command {
-	newCommand := &command{cmd: getBinName()}
+func New(cmd string) *Command {
+	newCommand := &Command{cmd: getBinName()}
 	return newCommand.WithArg(cmd)
 }
 
-func (c *command) WithFlag(flag, val string) *command {
+func (c *Command) WithFlag(flag, val string) *Command {
 	c.args = append(c.args, flag, val)
 	return c
 }
 
-func (c *command) WithArg(arg string) *command {
+func (c *Command) WithArg(arg string) *Command {
 	c.args = append(c.args, arg)
 	return c
 }
 
-func (c *command) Run() (string, error) {
+func (c *Command) Run() (string, error) {
 	cmd := exec.Command(c.cmd, c.args...)
 
 	var outBuf, errBuf bytes.Buffer
@@ -85,15 +85,15 @@ func PullConfigFromSource(
 		return "", fmt.Errorf("failed to pull config from source based on options")
 	}
 
-	command := New(PullCommand).
+	cmd := New(PullCommand).
 		WithArg(EnvironmentCrane).
 		WithArg(options.Platform.EnvironmentTemplate)
 
 	if options.Platform.EnvironmentTemplateVersion != "" {
-		command = command.WithFlag("--version", options.Platform.EnvironmentTemplateVersion)
+		cmd = cmd.WithFlag("--version", options.Platform.EnvironmentTemplateVersion)
 	}
 
-	data, err = command.Run()
+	data, err = cmd.Run()
 	if err != nil {
 		return "", err
 	}
