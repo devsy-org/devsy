@@ -2,6 +2,7 @@ package port
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 )
@@ -36,7 +37,8 @@ func toAddress(host, port string) (Address, error) {
 
 		return Address{
 			Protocol: "tcp",
-			Address:  host + ":" + port,
+			// JoinHostPort brackets IPv6 literals so net.Listen can parse them.
+			Address: net.JoinHostPort(host, port),
 		}, nil
 	}
 

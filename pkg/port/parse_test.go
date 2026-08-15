@@ -151,7 +151,13 @@ func TestToAddress_TCP(t *testing.T) {
 			Address{Protocol: protoTCP, Address: "database.internal:5432"},
 		},
 		{"short hostname", "db", "5432", Address{Protocol: protoTCP, Address: "db:5432"}},
-		{"IPv6 address", "::1", "8080", Address{Protocol: protoTCP, Address: "::1:8080"}},
+		{"IPv6 address", "::1", "8080", Address{Protocol: protoTCP, Address: "[::1]:8080"}},
+		{
+			"IPv6 host brackets for listen",
+			"fe80::1",
+			"443",
+			Address{Protocol: protoTCP, Address: "[fe80::1]:443"},
+		},
 	}
 
 	for _, tt := range tests {
