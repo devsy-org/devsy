@@ -294,7 +294,7 @@ func runCmd(ctx context.Context, cmd *exec.Cmd) error {
 	var cancelledByCtx atomic.Bool
 	cmd.Cancel = func() error {
 		cancelledByCtx.Store(true)
-		return cmd.Process.Kill()
+		return killCmd(cmd)
 	}
 
 	err := cmd.Run()
@@ -695,6 +695,7 @@ func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 	}
 	//nolint:gosec // command and args come from trusted provider config
 	cmd := exec.CommandContext(ctx, name, cmdArgs...)
+	cmd.SysProcAttr = cmdSysProcAttr()
 	if r.Environment != nil {
 		cmd.Env = append(os.Environ(), r.Environment...)
 	}
