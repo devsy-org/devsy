@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -66,4 +67,45 @@ wait
 		return syscall.Kill(childPID, syscall.Signal(0)) != nil
 	}, 5*time.Second, 10*time.Millisecond,
 		"grandchild process %d must be killed along with its process group", childPID)
+}
+
+// TestRunCmd_InteractiveStdinKeepsSharedProcessGroup guards the other half of
+// the tradeoff runCmd makes: cmd.Stdin == os.Stdin means an interactive
+// session (e.g. `devsy exec`) that relies on sharing devsy's own process
+// group so the terminal's Ctrl+C reaches it directly. Isolating it into its
+// own group (as TestRunCmd_CancelKillsProcessGroup validates for every other
+// case) would silently break that.
+func TestRunCmd_InteractiveStdinKeepsSharedProcessGroup(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", "#!/bin/sh\nexit 0\n")
+	//nolint:gosec // test script path we just wrote to a temp directory we control
+	cmd := exec.CommandContext(context.Background(), bin)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+
+	require.NoError(t, runCmd(context.Background(), cmd))
+
+	require.False(t, cmd.SysProcAttr != nil && cmd.SysProcAttr.Setpgid,
+		"an interactive command sharing os.Stdin must not be moved into its own process group")
+}
+
+// TestKillCmd_NoGroupFallsBackToSingleProcess guards the killCmd side of the
+// same tradeoff: when a command was never given its own process group (the
+// interactive case), killCmd must never attempt a process-group signal,
+// because that group is still devsy's own and killing it would kill devsy.
+func TestKillCmd_NoGroupFallsBackToSingleProcess(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", "#!/bin/sh\nexec sleep 30\n")
+	//nolint:gosec // test script path we just wrote to a temp directory we control
+	cmd := exec.Command(bin)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	require.NoError(t, cmd.Start())
+	go func() { _ = cmd.Wait() }() // reap so the liveness check below isn't fooled by a zombie
+
+	require.Nil(t, cmd.SysProcAttr, "precondition: no process group was requested")
+	require.NoError(t, killCmd(cmd))
+
+	require.Eventually(t, func() bool {
+		return syscall.Kill(cmd.Process.Pid, syscall.Signal(0)) != nil
+	}, 5*time.Second, 10*time.Millisecond, "killCmd must still terminate the single process")
 }

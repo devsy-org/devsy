@@ -290,7 +290,21 @@ type PullOptions struct {
 	Stderr   io.Writer
 }
 
+// runCmd runs cmd and kills it (its whole process group, when cmd.Stdin isn't
+// the controlling terminal) if ctx is canceled first.
+//
+// The terminal delivers Ctrl+C to the foreground process group. cmd.Stdin ==
+// os.Stdin means cmd is an interactive session (e.g. `devsy exec`) sharing
+// devsy's own process group specifically so that delivery reaches cmd too;
+// isolating it into its own group would silently break Ctrl+C for that
+// session. Every other caller gets its own group so cancellation can reap a
+// privilege-elevation helper's child (see killCmd) instead of leaving it to
+// hold cmd's output pipes open indefinitely.
 func runCmd(ctx context.Context, cmd *exec.Cmd) error {
+	if cmd.Stdin != os.Stdin {
+		cmd.SysProcAttr = cmdSysProcAttr()
+	}
+
 	var cancelledByCtx atomic.Bool
 	cmd.Cancel = func() error {
 		cancelledByCtx.Store(true)
@@ -695,7 +709,6 @@ func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 	}
 	//nolint:gosec // command and args come from trusted provider config
 	cmd := exec.CommandContext(ctx, name, cmdArgs...)
-	cmd.SysProcAttr = cmdSysProcAttr()
 	if r.Environment != nil {
 		cmd.Env = append(os.Environ(), r.Environment...)
 	}
