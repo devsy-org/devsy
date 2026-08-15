@@ -26,14 +26,14 @@ func TestProviderVersionFields(t *testing.T) {
 func TestClassifyVersionSource(t *testing.T) {
 	cases := []struct {
 		in   string
-		kind sourceKind
+		kind SourceKind
 	}{
-		{"github.com/devsy-org/devsy-provider-aws@v1.2.0", sourceGitHub},
-		{"github.com/devsy-org/devsy-provider-aws", sourceGitHub},
-		{"https://example.com/foo/provider.yaml", sourceManifestURL},
-		{"https://example.com/foo/provider.yaml@v1.0.0", sourceManifestURL},
-		{"/abs/path/provider.yaml", sourceLocal},
-		{"./relative/provider.yaml", sourceLocal},
+		{"github.com/devsy-org/devsy-provider-aws@v1.2.0", SourceGitHub},
+		{"github.com/devsy-org/devsy-provider-aws", SourceGitHub},
+		{"https://example.com/foo/provider.yaml", SourceManifestURL},
+		{"https://example.com/foo/provider.yaml@v1.0.0", SourceManifestURL},
+		{"/abs/path/provider.yaml", SourceLocal},
+		{"./relative/provider.yaml", SourceLocal},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {

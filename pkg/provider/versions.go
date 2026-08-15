@@ -17,17 +17,17 @@ type ProviderVersionCheckResult struct {
 	Error           string `json:"error,omitempty"`
 }
 
-type sourceKind int
+type SourceKind int
 
 const (
-	sourceUnknown sourceKind = iota
-	sourceGitHub
-	sourceManifestURL
-	sourceLocal
+	SourceUnknown SourceKind = iota
+	SourceGitHub
+	SourceManifestURL
+	SourceLocal
 )
 
 // ClassifyVersionSource categorises a canonical source string into its source kind.
-func ClassifyVersionSource(canonical string) sourceKind {
+func ClassifyVersionSource(canonical string) SourceKind {
 	// Strip @version suffix if present; only the leftmost @ counts as a tag separator.
 	bare := canonical
 	if before, _, ok := strings.Cut(canonical, "@"); ok {
@@ -35,30 +35,30 @@ func ClassifyVersionSource(canonical string) sourceKind {
 	}
 	switch {
 	case strings.HasPrefix(bare, "github.com/"):
-		return sourceGitHub
+		return SourceGitHub
 	case strings.HasPrefix(bare, "https://"), strings.HasPrefix(bare, "http://"):
-		return sourceManifestURL
+		return SourceManifestURL
 	case strings.HasPrefix(bare, "/"),
 		strings.HasPrefix(bare, "./"),
 		strings.HasPrefix(bare, "../"):
-		return sourceLocal
+		return SourceLocal
 	default:
-		return sourceUnknown
+		return SourceUnknown
 	}
 }
 
 // ListVersionsForSource dispatches to the appropriate lister based on source shape.
 func ListVersionsForSource(source string, opts ListVersionsOptions) ([]ProviderVersion, error) {
 	switch ClassifyVersionSource(source) {
-	case sourceGitHub:
+	case SourceGitHub:
 		org, repo, ok := parseGitHubSourcePath(source)
 		if !ok {
 			return nil, fmt.Errorf("invalid github source: %s", source)
 		}
 		return ListGitHubReleases(GithubAPIBaseURL, org, repo, opts.IncludePrerelease)
-	case sourceManifestURL:
+	case SourceManifestURL:
 		return ListManifestVersions(source, opts.IncludePrerelease)
-	case sourceLocal, sourceUnknown:
+	case SourceLocal, SourceUnknown:
 		return nil, ErrVersionListUnsupported
 	}
 	return nil, ErrVersionListUnsupported
