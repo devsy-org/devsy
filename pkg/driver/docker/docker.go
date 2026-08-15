@@ -218,7 +218,7 @@ func recoverPodman(ctx context.Context, opts driver.PreflightOptions, p dockerPr
 
 	exists, err := p.machineExists(ctx)
 	if err != nil {
-		log.Warnf("failed to detect Podman mode (machine list failed): %v", err)
+		log.Warnf("failed to detect podman mode (machine list failed): %v", err)
 		return false
 	}
 	if exists {
@@ -236,7 +236,7 @@ func recoverPodman(ctx context.Context, opts driver.PreflightOptions, p dockerPr
 func startPodmanMachine(ctx context.Context, p dockerProbe) bool {
 	log.Infof("podman machine is not running, attempting to start the machine.")
 	if startErr := p.start(ctx); startErr != nil {
-		log.Warnf("failed to start Podman machine: %v", startErr)
+		log.Warnf("failed to start podman machine: %v", startErr)
 		return false
 	}
 
@@ -250,7 +250,7 @@ func startPodmanSocket(ctx context.Context, p dockerProbe) bool {
 
 	log.Infof("podman is not reachable, attempting to start the rootless user socket.")
 	if startErr := p.startSocket(ctx); startErr != nil {
-		log.Warnf("failed to start rootless Podman socket: %v", startErr)
+		log.Warnf("failed to start rootless podman socket: %v", startErr)
 		return false
 	}
 

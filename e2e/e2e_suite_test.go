@@ -7,9 +7,6 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
-
 	// Register tests.
 	_ "github.com/devsy-org/devsy/e2e/tests/build"
 	_ "github.com/devsy-org/devsy/e2e/tests/ci"
@@ -40,6 +37,8 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/up"
 	_ "github.com/devsy-org/devsy/e2e/tests/up-features"
 	_ "github.com/devsy-org/devsy/e2e/tests/upgrade"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 )
 
 func TestRunE2ETests(t *testing.T) {

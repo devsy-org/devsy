@@ -165,7 +165,7 @@ func TestPopulateVolumeDirectCopy_PodmanWritesDirectlyWhenWritable(t *testing.T)
 	scriptPath := filepath.Join(tmpDir, "podman")
 	script := "#!/bin/sh\n" +
 		"case \"$1\" in\n" +
-		"  unshare) shift; exec \"$@\" ;;\n" +
+		"  unshare) echo \"unexpected unshare\" >&2; exit 1 ;;\n" +
 		"  volume) echo \"" + mountDir + "\" ;;\n" +
 		"  *) exit 1 ;;\n" +
 		"esac\n"
@@ -219,6 +219,10 @@ func TestPopulateVolumeDirectCopy_PodmanFallsBackToUnshareOnPermission(t *testin
 	data, err := os.ReadFile(destPath) //nolint:gosec // test reads from a temp directory we control
 	require.NoError(t, err)
 	assert.Equal(t, binaryContent, data)
+
+	info, err := os.Stat(destPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
 }
 
 func TestPopulateVolumeDirectCopy_DockerUsesDirectWrite(t *testing.T) {

@@ -195,7 +195,7 @@ func (r *DockerHelper) StartRootlessPodmanSocket(ctx context.Context) error {
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	if runtime.GOOS == "linux" && isSystemdRunning() {
+	if runtime.GOOS == "linux" && isSystemdRunning(cctx) {
 		cmd := exec.CommandContext(cctx, "systemctl", "--user", "start", "podman.socket")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -208,8 +208,8 @@ func (r *DockerHelper) StartRootlessPodmanSocket(ctx context.Context) error {
 	return nil
 }
 
-func isSystemdRunning() bool {
-	cmd := exec.Command("systemctl", "is-system-running")
+func isSystemdRunning(ctx context.Context) bool {
+	cmd := exec.CommandContext(ctx, "systemctl", "is-system-running")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return false

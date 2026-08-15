@@ -16,7 +16,7 @@ func (r *DockerHelper) LingerWarning(ctx context.Context) string {
 	defer cancel()
 
 	rootless, ok := probeRootlessPodman(cctx, r.buildCmd)
-	if !ok || rootless {
+	if ok && rootless {
 		if !lingerEnabled() {
 			return "rootless Podman without systemd linger: the workspace container will " +
 				"stop when your login session ends. Run `loginctl enable-linger` to keep " +

@@ -1,28 +1,71 @@
 package docker
 
 import (
-	"os"
-	"path/filepath"
+	"context"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
-func TestUserHasLinger(t *testing.T) {
-	dir := t.TempDir()
-	orig := lingerDir
-	lingerDir = dir
-	t.Cleanup(func() { lingerDir = orig })
+// withoutLinger points lingerDir at an empty directory for the duration of
+// the test, so lingerEnabled() deterministically reports false regardless of
+// the host's actual systemd linger state.
+func withoutLinger(t *testing.T) {
+	t.Helper()
+	original := lingerDir
+	lingerDir = t.TempDir()
+	t.Cleanup(func() { lingerDir = original })
+}
 
-	if userHasLinger("alice") {
-		t.Fatal("expected no linger when marker file is absent")
-	}
+func TestLingerWarning_ProbeFailureDoesNotWarn(t *testing.T) {
+	withoutLinger(t)
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "podman-fake", "#!/bin/sh\n"+
+		"case \"$1\" in\n"+
+		"  --version) echo \"podman version 4.0.0\" ;;\n"+
+		"  *) echo oops >&2; exit 1 ;;\n"+
+		"esac\n")
 
-	if err := os.WriteFile(filepath.Join(dir, "alice"), nil, 0o600); err != nil {
-		t.Fatalf("write marker: %v", err)
-	}
-	if !userHasLinger("alice") {
-		t.Fatal("expected linger when marker file exists")
-	}
-	if userHasLinger("bob") {
-		t.Fatal("expected no linger for a different user")
-	}
+	h := &DockerHelper{DockerCommand: bin}
+	assert.Empty(t, h.LingerWarning(context.Background()),
+		"a failed rootless probe must not be treated as a confirmed rootless daemon")
+}
+
+func TestLingerWarning_RootfulDoesNotWarn(t *testing.T) {
+	withoutLinger(t)
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "podman-fake", "#!/bin/sh\n"+
+		"case \"$1\" in\n"+
+		"  --version) echo \"podman version 4.0.0\" ;;\n"+
+		"  *) echo false ;;\n"+
+		"esac\n")
+
+	h := &DockerHelper{DockerCommand: bin}
+	assert.Empty(t, h.LingerWarning(context.Background()))
+}
+
+func TestLingerWarning_RootlessWithoutLingerWarns(t *testing.T) {
+	withoutLinger(t)
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "podman-fake", "#!/bin/sh\n"+
+		"case \"$1\" in\n"+
+		"  --version) echo \"podman version 4.0.0\" ;;\n"+
+		"  *) echo true ;;\n"+
+		"esac\n")
+
+	h := &DockerHelper{DockerCommand: bin}
+	assert.NotEmpty(t, h.LingerWarning(context.Background()))
+}
+
+func TestLingerWarning_NonPodmanDoesNotWarn(t *testing.T) {
+	withoutLinger(t)
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", "#!/bin/sh\n"+
+		"case \"$1\" in\n"+
+		"  --version) echo \"Docker version 27.0.0\" ;;\n"+
+		"  *) echo true ;;\n"+
+		"esac\n")
+
+	h := &DockerHelper{DockerCommand: bin}
+	assert.Empty(t, h.LingerWarning(context.Background()))
 }

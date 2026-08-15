@@ -30,24 +30,18 @@ var _ = ginkgo.Describe(
 		var f *framework.Framework
 
 		ginkgo.BeforeEach(func(ctx context.Context) {
-			wrapper, err := os.Create(initialDir + "/bin/podman-rootful")
+			// #nosec G306 -- wrapper script needs execute permission
+			err := os.WriteFile(
+				initialDir+"/bin/podman-rootful",
+				[]byte("#!/bin/sh\nsudo podman \"$@\"\n"),
+				0o755,
+			)
 			framework.ExpectNoError(err)
 
-			_, err = wrapper.WriteString("#!/bin/sh\nsudo podman \"$@\"\n")
-			if err != nil {
-				_ = wrapper.Close()
-				framework.ExpectNoError(err)
-			}
-
-			err = wrapper.Close()
-			framework.ExpectNoError(err)
-
-			// #nosec G302 -- wrapper script needs execute permission
-			err = os.Chmod(initialDir+"/bin/podman-rootful", 0o755)
-			framework.ExpectNoError(err)
-
-			err = exec.Command(initialDir+"/bin/podman-rootful", "ps").Run()
-			framework.ExpectNoError(err)
+			// #nosec G204 -- fixed wrapper path we just created, not user input
+			out, err := exec.CommandContext(ctx, initialDir+"/bin/podman-rootful", "ps").
+				CombinedOutput()
+			framework.ExpectNoError(err, string(out))
 
 			ginkgo.DeferCleanup(func() {
 				_ = os.Remove(initialDir + "/bin/podman-rootful")

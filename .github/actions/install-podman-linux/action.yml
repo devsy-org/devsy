@@ -44,6 +44,11 @@ runs:
           # whole suite; otherwise the daemon can drop mid-suite. Devsy
           # only auto-starts a Podman machine when one exists, and this job creates none.
           sudo loginctl enable-linger "$USER"
+
+          # XDG_RUNTIME_DIR is not reliably set for composite action shells, so
+          # derive it from the UID (systemd-logind's standard convention)
+          # rather than trusting an inherited environment variable.
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
           systemctl --user enable --now podman.socket
           PODMAN_SOCK="$XDG_RUNTIME_DIR/podman/podman.sock"
           PODMAN_SUDO=""

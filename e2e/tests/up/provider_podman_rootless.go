@@ -677,6 +677,5 @@ var _ = ginkgo.Describe(
 				framework.ExpectEqual(out, "ID=alpine\n")
 			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 		})
-
 	},
 )
