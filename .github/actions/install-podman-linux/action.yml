@@ -19,8 +19,6 @@ runs:
         APT_CACHE_DIR: ${{ inputs.apt-cache-dir }}
         PODMAN_MODE: ${{ inputs.mode }}
       run: |
-        # /var/cache/apt/archives is root-owned and actions/cache restores
-        # unprivileged, so cache into a runner-owned dir.
         mkdir -p "$APT_CACHE_DIR"
         sudo apt-get -o Dir::Cache::Archives="$APT_CACHE_DIR" update
         sudo apt-get -o Dir::Cache::Archives="$APT_CACHE_DIR" install -y podman runc
@@ -30,24 +28,12 @@ runs:
           *) echo "::error::invalid mode: $PODMAN_MODE (expected rootless|rootful)"; exit 1 ;;
         esac
 
-        # podman defaults to crun, which fails on this runner image; force runc.
-        #
-        # The rootful socket at /run/podman/podman.sock is root-owned, but the
-        # step runs unprivileged, so every podman call that talks to it must go
-        # through sudo. The rootless socket lives under $XDG_RUNTIME_DIR and is
-        # runner-owned, so it needs no sudo. PODMAN_SUDO selects between them.
         if [ "$PODMAN_MODE" = "rootless" ]; then
           mkdir -p ~/.config/containers
           printf '[engine]\nruntime = "runc"\n' > ~/.config/containers/containers.conf
 
-          # Lingering keeps the user manager (and rootless socket) alive for the
-          # whole suite; otherwise the daemon can drop mid-suite. Devsy
-          # only auto-starts a Podman machine when one exists, and this job creates none.
           sudo loginctl enable-linger "$USER"
 
-          # XDG_RUNTIME_DIR is not reliably set for composite action shells, so
-          # derive it from the UID (systemd-logind's standard convention)
-          # rather than trusting an inherited environment variable.
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
           systemctl --user enable --now podman.socket
           PODMAN_SOCK="$XDG_RUNTIME_DIR/podman/podman.sock"
@@ -72,9 +58,6 @@ runs:
           exit 1
         fi
 
-        # The test runs under sudo as root; root can reach the rootless socket
-        # at /run/user/<uid>/... Point DOCKER_HOST at whichever socket we brought up.
         echo "DOCKER_HOST=unix://$PODMAN_SOCK" >> "$GITHUB_ENV"
-
         $PODMAN_SUDO podman --remote --url "unix://$PODMAN_SOCK" info
         sudo podman --remote --url "unix://$PODMAN_SOCK" run --rm busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d echo "podman runtime preflight OK"

@@ -7,9 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// withoutLinger points lingerDir at an empty directory for the duration of
-// the test, so lingerEnabled() deterministically reports false regardless of
-// the host's actual systemd linger state.
 func withoutLinger(t *testing.T) {
 	t.Helper()
 	original := lingerDir
