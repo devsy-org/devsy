@@ -200,13 +200,13 @@ func (cmd *CredentialsServerCmd) configureGitSigningKey() func() {
 
 	decodedKey, err := base64.StdEncoding.DecodeString(cmd.GitUserSigningKey)
 	if err != nil {
-		log.Errorf("Failed to decode git SSH signing key, signing will be unavailable: %v", err)
+		log.Errorf("failed to decode git SSH signing key, signing will be unavailable: %v", err)
 		return noop
 	}
 
 	if err := gitsshsigning.ConfigureHelper(cmd.User, string(decodedKey)); err != nil {
 		log.Errorf(
-			"Failed to configure git SSH signature helper, signing will be unavailable: %v",
+			"failed to configure git SSH signature helper, signing will be unavailable: %v",
 			err,
 		)
 		return noop
@@ -279,12 +279,12 @@ func forwardPorts(ctx context.Context, client tunnel.TunnelClient) error {
 func portOptionsFromResult() []netstat.WatcherOption {
 	raw, err := os.ReadFile(config.DevContainerResultPath)
 	if err != nil {
-		log.Debugf("Could not read result for port attributes: %v", err)
+		log.Debugf("could not read result for port attributes: %v", err)
 		return nil
 	}
 	result := &devconfig.Result{}
 	if err := json.Unmarshal(raw, result); err != nil {
-		log.Debugf("Could not parse result for port attributes: %v", err)
+		log.Debugf("could not parse result for port attributes: %v", err)
 		return nil
 	}
 	mc := result.MergedConfig
@@ -320,7 +320,7 @@ type forwarder struct {
 // Forward relays the auto-discovered port to the client over gRPC.
 func (f *forwarder) Forward(port string, attr netstat.PortForwardAttribute) error {
 	if attr.Label != "" {
-		log.Debugf("Forwarding port %s (%s, protocol=%s)", port, attr.Label, attr.Protocol)
+		log.Debugf("forwarding port %s (%s, protocol=%s)", port, attr.Label, attr.Protocol)
 	}
 	_, err := f.client.ForwardPort(f.ctx, &tunnel.ForwardPortRequest{Port: port})
 	return err
