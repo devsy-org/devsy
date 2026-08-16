@@ -15,18 +15,18 @@ import (
 const testShellPath = "/bin/sh"
 
 func TestBuildForwardArgs(t *testing.T) {
-	got := buildForwardArgs("root", "test-context", "test-workspace")
+	got := buildForwardArgs(defaultRemoteUser, "test-context", "test-workspace")
 	expected := []string{
-		"workspace",
-		"ssh",
+		workspaceCommand,
+		sshCommand,
 		"--ssh-gpg-forwarding=true",
 		"--agent-forwarding=true",
 		"--start-services=true",
-		"--user", "root",
+		"--user", defaultRemoteUser,
 		"--context", "test-context",
 		"test-workspace",
 		"--log-output=raw",
-		"--command", "sleep infinity",
+		"--command", forwardKeepAlive,
 	}
 	assert.Equal(t, expected, got)
 }
@@ -34,8 +34,8 @@ func TestBuildForwardArgs(t *testing.T) {
 func TestBuildForwardArgs_NonRootUser(t *testing.T) {
 	got := buildForwardArgs("vscode", "test-context", "test-workspace")
 	expected := []string{
-		"workspace",
-		"ssh",
+		workspaceCommand,
+		sshCommand,
 		"--ssh-gpg-forwarding=true",
 		"--agent-forwarding=true",
 		"--start-services=true",
@@ -43,7 +43,7 @@ func TestBuildForwardArgs_NonRootUser(t *testing.T) {
 		"--context", "test-context",
 		"test-workspace",
 		"--log-output=raw",
-		"--command", "sleep infinity",
+		"--command", forwardKeepAlive,
 	}
 	assert.Equal(t, expected, got)
 }

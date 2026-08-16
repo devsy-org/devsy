@@ -37,7 +37,7 @@ func IsGpgTunnelRunning(
 	defer func() { _ = writer.Close() }()
 
 	command := `echo "GETINFO version" | timeout 5 gpg-connect-agent --no-autostart`
-	if user != "" && user != "root" {
+	if user != "" && user != defaultRemoteUser {
 		command = shellescape.QuoteCommand([]string{"su", "-c", command, user})
 	}
 

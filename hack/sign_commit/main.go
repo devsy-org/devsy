@@ -334,12 +334,15 @@ func sanitizeSecrets(s string) string {
 func fileChanges(
 	paths []string, read func(string) ([]byte, error),
 ) ([]addition, []deletion, error) {
+	wd, _ := os.Getwd()
+	fmt.Fprintf(os.Stderr, "debug: cwd=%s paths=%v\n", wd, paths)
 	var adds []addition
 	var dels []deletion
 	for _, p := range paths {
 		b, err := read(p)
 		if err != nil {
 			if os.IsNotExist(err) {
+				fmt.Fprintf(os.Stderr, "debug: delete path %s\n", p)
 				dels = append(dels, deletion{Path: p})
 				continue
 			}
@@ -513,6 +516,9 @@ func createCommit(token string, vars createCommitVars) (string, error) {
 	}
 	cc, ok := data["createCommitOnBranch"].(map[string]any)
 	if !ok {
+		if raw, mErr := json.Marshal(body); mErr == nil {
+			return "", fmt.Errorf("createCommitOnBranch missing: %s", string(raw))
+		}
 		return "", fmt.Errorf("createCommitOnBranch missing")
 	}
 	commit, ok := cc["commit"].(map[string]any)

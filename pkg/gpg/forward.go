@@ -21,6 +21,13 @@ var forwardRestartBackoff = backoff{min: time.Second, max: 30 * time.Second}
 
 const EnvForwardReadyFD = "DEVSY_GPG_FORWARD_READY_FD"
 
+const (
+	defaultRemoteUser = "root"
+	workspaceCommand  = "workspace"
+	sshCommand        = "ssh"
+	forwardKeepAlive  = "sleep infinity"
+)
+
 // forwardReadyTimeout bounds ForwardAgent's wait so a stuck forward cannot
 // block the caller indefinitely.
 const forwardReadyTimeout = 30 * time.Second
@@ -42,7 +49,7 @@ func ForwardAgent(ctx context.Context, client client2.BaseWorkspaceClient) error
 		client.WorkspaceConfig().SSHConfigIncludePath,
 	)
 	if err != nil {
-		remoteUser = "root"
+		remoteUser = defaultRemoteUser
 	}
 
 	log.Info("forwarding gpg-agent")
@@ -159,8 +166,8 @@ func signalOnce(ready chan<- struct{}) {
 
 func buildForwardArgs(user, context, workspace string) []string {
 	return []string{
-		"workspace",
-		"ssh",
+		workspaceCommand,
+		sshCommand,
 		names.FlagTrue(names.SSHGPGForwarding),
 		names.FlagTrue(names.AgentForwarding),
 		names.FlagTrue(names.StartServices),
@@ -170,6 +177,6 @@ func buildForwardArgs(user, context, workspace string) []string {
 		context,
 		workspace,
 		names.FlagValue(names.LogOutput, "raw"),
-		names.Flag(names.Command), "sleep infinity",
+		names.Flag(names.Command), forwardKeepAlive,
 	}
 }
