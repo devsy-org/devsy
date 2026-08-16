@@ -37,6 +37,11 @@ repos:
     hooks:
       - id: actionlint
         files: '^\.github/workflows/'
+        # actionlint v1.7.12 does not yet recognize the background/wait/
+        # wait-all/cancel/parallel step keywords GitHub Actions shipped
+        # 2026-06-25 (https://github.blog/changelog/2026-06-25-actions-steps-can-now-be-run-in-parallel/).
+        # Tracked upstream: https://github.com/rhysd/actionlint/issues/693
+        args: ["-ignore", "unexpected key \"background\" for step"]
   - repo: https://github.com/biomejs/pre-commit
     rev: v2.5.6
     hooks:

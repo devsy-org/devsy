@@ -44,7 +44,7 @@ func assertOverride(t *testing.T, s *workspaceClient, wantOK bool, wantStatus cl
 
 func TestTaskStatusOverride_NoTasks(t *testing.T) {
 	useTempTaskDir(t)
-	s := &workspaceClient{workspace: &provider.Workspace{ID: testWorkspaceID}}
+	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, false, "")
 }
 
@@ -55,7 +55,7 @@ func TestTaskStatusOverride_ActiveUpTaskReportsProvisioning(t *testing.T) {
 	_, err = store.Create(task.CreateOptions{Command: "up", WorkspaceID: testWorkspaceID})
 	require.NoError(t, err)
 
-	s := &workspaceClient{workspace: &provider.Workspace{ID: testWorkspaceID}}
+	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, true, client.StatusProvisioning)
 }
 
@@ -67,7 +67,7 @@ func TestTaskStatusOverride_FailedTaskReportsFailed(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tsk.Fail(errors.New("build failed")))
 
-	s := &workspaceClient{workspace: &provider.Workspace{ID: testWorkspaceID}}
+	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, true, client.StatusFailed)
 }
 
@@ -79,7 +79,7 @@ func TestTaskStatusOverride_SucceededTaskDefersToContainerStatus(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tsk.Succeed(nil))
 
-	s := &workspaceClient{workspace: &provider.Workspace{ID: testWorkspaceID}}
+	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, false, "")
 }
 
@@ -90,7 +90,7 @@ func TestTaskStatusOverride_IgnoresOtherWorkspaces(t *testing.T) {
 	_, err = store.Create(task.CreateOptions{Command: "up", WorkspaceID: "other-ws"})
 	require.NoError(t, err)
 
-	s := &workspaceClient{workspace: &provider.Workspace{ID: testWorkspaceID}}
+	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, false, "")
 }
 
@@ -101,7 +101,7 @@ func TestTaskStatusOverride_IgnoresNonUpCommands(t *testing.T) {
 	_, err = store.Create(task.CreateOptions{Command: "delete", WorkspaceID: testWorkspaceID})
 	require.NoError(t, err)
 
-	s := &workspaceClient{workspace: &provider.Workspace{ID: testWorkspaceID}}
+	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, false, "")
 }
 
@@ -118,7 +118,7 @@ func TestTaskStatusOverride_MostRecentTaskWins(t *testing.T) {
 	_, err = store.Create(task.CreateOptions{Command: "up", WorkspaceID: testWorkspaceID})
 	require.NoError(t, err)
 
-	s := &workspaceClient{workspace: &provider.Workspace{ID: testWorkspaceID}}
+	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, true, client.StatusProvisioning)
 }
 
@@ -133,7 +133,7 @@ func TestTaskStatusOverride_AbandonedTaskReportsFailed(t *testing.T) {
 	require.NoError(t, tk.HoldWorkerLock())
 	require.NoError(t, tk.ReleaseWorkerLockForTest())
 
-	s := &workspaceClient{workspace: &provider.Workspace{ID: testWorkspaceID}}
+	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, true, client.StatusFailed)
 
 	// Persisted, so `task list` agrees with what Status just reported.
@@ -153,6 +153,6 @@ func TestTaskStatusOverride_LiveWorkerStillReportsProvisioning(t *testing.T) {
 	// file can block TempDir removal on some platforms.
 	t.Cleanup(func() { require.NoError(t, tk.ReleaseWorkerLockForTest()) })
 
-	s := &workspaceClient{workspace: &provider.Workspace{ID: testWorkspaceID}}
+	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, true, client.StatusProvisioning)
 }

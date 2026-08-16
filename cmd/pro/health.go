@@ -1,17 +1,14 @@
 package pro
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
-	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/client/proxycmd"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
-	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/spf13/cobra"
@@ -73,22 +70,9 @@ func (cmd *HealthCmd) Run(
 	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
-	var buf bytes.Buffer
-
-	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
-		Ctx:     ctx,
-		Command: provider.Exec.Proxy.Health,
-		Context: devsyConfig.DefaultContext,
-		Options: devsyConfig.ProviderOptions(provider.Name),
-		Config:  provider,
-		Stdout:  &buf,
-		Stderr:  log.Writer(log.LevelError),
+	return proxycmd.RunAndPrint(ctx, proxycmd.Options{
+		Command:     provider.Exec.Proxy.Health,
+		DevsyConfig: devsyConfig,
+		Provider:    provider,
 	})
-	if err != nil {
-		return fmt.Errorf("check health with provider %q: %w", provider.Name, err)
-	}
-
-	fmt.Println(buf.String())
-
-	return nil
 }

@@ -28,39 +28,31 @@ var (
 )
 
 const (
-	osLinux = "linux"
+	osLinux    = "linux"
+	statusDone = "done"
 )
 
-var waitForInstanceConnectionTimeout = time.Minute * 5
+var (
+	waitForInstanceConnectionTimeout = time.Minute * 5
+	versionCheckTimeout              = time.Second * 30
+)
 
 // InjectOptions defines the parameters for injecting the Devsy agent into a remote environment.
 type InjectOptions struct {
-	// Ctx is the context for the injection operation. Required.
-	Ctx context.Context
 	// Exec is the function used to execute commands on the remote machine. Required.
-	//nolint:staticcheck // SA1019: legacy shell injection path, retained until callers migrate to AgentDelivery
+	// nolint:staticcheck
 	Exec inject.ExecFunc
-
 	// IsLocal indicates if the injection target is the local machine.
 	IsLocal bool
 	// RemoteAgentPath is the path where the agent binary should be placed on the remote machine.
-	// Defaults to config.RemoteDevsyHelperLocation.
 	RemoteAgentPath string
-	// DownloadURL is the base URL to download the agent binary from. Defaults to config.DefaultAgentDownloadURL().
+	// DownloadURL is the base URL to download the agent binary from.
 	DownloadURL string
 	// PreferDownloadFromRemoteUrl forces downloading the agent even if a local binary is available.
 	// Defaults to true for release versions, false for dev versions.
 	PreferDownloadFromRemoteUrl *bool
 	// Timeout is the maximum duration to wait for the injection to complete. Defaults to 5 minutes.
 	Timeout time.Duration
-
-	// Command is the command to execute after successful injection.
-	Command string
-
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
-
 	// LocalVersion is the version of the local Devsy binary.
 	// Defaults to version.GetVersion().
 	LocalVersion string
@@ -70,6 +62,11 @@ type InjectOptions struct {
 	// SkipVersionCheck disables the validation of the remote agent's version.
 	// Defaults to false, unless DEVSY_AGENT_URL is set.
 	SkipVersionCheck bool
+	// Command is the command to execute upon successful injection.
+	Command string
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
 }
 
 func (o *InjectOptions) ApplyDefaults() {
@@ -78,15 +75,7 @@ func (o *InjectOptions) ApplyDefaults() {
 	o.applyPreferDownloadDefaults()
 }
 
-//go:fix inline
-func Bool(b bool) *bool {
-	return new(b)
-}
-
 func (o *InjectOptions) Validate() error {
-	if o.Ctx == nil {
-		return fmt.Errorf("context is required")
-	}
 	if o.Exec == nil {
 		return fmt.Errorf("exec function is required")
 	}
@@ -163,14 +152,14 @@ func (o *InjectOptions) applyEnvPreference(preferDownloadEnv string) {
 	o.SkipVersionCheck = true
 }
 
-func InjectAgent(opts *InjectOptions) error {
+func InjectAgent(ctx context.Context, opts *InjectOptions) error {
 	opts.ApplyDefaults()
 	if err := opts.Validate(); err != nil {
 		return err
 	}
 
 	if opts.IsLocal {
-		return injectLocally(opts)
+		return injectLocally(ctx, opts)
 	}
 
 	vc := newVersionChecker(opts)
@@ -189,7 +178,7 @@ func InjectAgent(opts *InjectOptions) error {
 
 	log.Debug("starting agent injection")
 	return retry.OnError(backoff, func(err error) bool {
-		if opts.Ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return false
 		}
 		if errors.Is(err, docker.ErrContainerTerminal) {
@@ -199,7 +188,7 @@ func InjectAgent(opts *InjectOptions) error {
 		log.Debugf("retrying injection: %v", err)
 		return true
 	}, func() error {
-		return injectAgent(&injectContext{
+		return injectAgent(ctx, &injectConfig{
 			opts: opts,
 			bm:   bm,
 			vc:   vc,
@@ -207,44 +196,43 @@ func InjectAgent(opts *InjectOptions) error {
 	})
 }
 
-func injectLocally(opts *InjectOptions) error {
+func injectLocally(ctx context.Context, opts *InjectOptions) error {
 	if opts.Command == "" {
 		return nil
 	}
 	log.Debug("execute command locally")
-	return shell.RunEmulatedShell(opts.Ctx, opts.Command, opts.Stdin, opts.Stdout, opts.Stderr, nil)
+	return shell.RunEmulatedShell(ctx, &shell.CommandRunner{
+		Command: opts.Command,
+		Stdin:   opts.Stdin,
+		Stdout:  opts.Stdout,
+		Stderr:  opts.Stderr,
+		Environ: nil,
+	})
 }
 
-type injectContext struct {
+type injectConfig struct {
 	opts *InjectOptions
 	bm   *BinaryManager
 	vc   *versionChecker
 }
 
-func injectAgent(ctx *injectContext) error {
-	opts := ctx.opts
-
+func injectAgent(ctx context.Context, cfg *injectConfig) error {
 	buf := &bytes.Buffer{}
-	stderr := setupStderr(opts, buf)
-	binaryLoader := createBinaryLoader(ctx)
-	scriptParams := buildScriptParams(ctx)
-
-	//nolint:staticcheck // SA1019: legacy shell injection path, retained until callers migrate to AgentDelivery
-	wasExecuted, err := inject.Inject(inject.InjectOptions{
-		Ctx:          opts.Ctx,
-		Exec:         opts.Exec,
-		LocalFile:    binaryLoader,
-		ScriptParams: scriptParams,
-		Stdin:        opts.Stdin,
-		Stdout:       opts.Stdout,
-		Stderr:       stderr,
-		Timeout:      opts.Timeout,
+	//nolint:staticcheck
+	wasExecuted, err := inject.Inject(ctx, inject.InjectOptions{
+		Exec:         cfg.opts.Exec,
+		LocalFile:    createBinaryLoader(ctx, cfg),
+		ScriptParams: buildScriptParams(cfg),
+		Stdin:        cfg.opts.Stdin,
+		Stdout:       cfg.opts.Stdout,
+		Stderr:       setupStderr(cfg.opts, buf),
+		Timeout:      cfg.opts.Timeout,
 	})
 	if err != nil {
 		return handleInjectError(err, wasExecuted, buf)
 	}
 
-	return performVersionCheck(ctx)
+	return performVersionCheck(ctx, cfg)
 }
 
 func setupStderr(opts *InjectOptions, buf *bytes.Buffer) io.Writer {
@@ -254,23 +242,23 @@ func setupStderr(opts *InjectOptions, buf *bytes.Buffer) io.Writer {
 	return buf
 }
 
-func createBinaryLoader(ctx *injectContext) func(bool) (io.ReadCloser, error) {
+func createBinaryLoader(ctx context.Context, cfg *injectConfig) func(bool) (io.ReadCloser, error) {
 	return func(arm bool) (io.ReadCloser, error) {
 		arch := "amd64"
 		if arm {
 			arch = "arm64"
 		}
-		return ctx.bm.AcquireBinary(ctx.opts.Ctx, arch)
+		return cfg.bm.AcquireBinary(ctx, arch)
 	}
 }
 
-func buildScriptParams(ctx *injectContext) *inject.Params {
-	opts := ctx.opts
+func buildScriptParams(cfg *injectConfig) *inject.Params {
+	opts := cfg.opts
 	return &inject.Params{
 		Command:             opts.Command,
 		AgentRemotePath:     opts.RemoteAgentPath,
 		DownloadURLs:        inject.NewDownloadURLs(opts.DownloadURL),
-		ExistsCheck:         ctx.vc.buildExistsCheck(opts.RemoteAgentPath),
+		ExistsCheck:         cfg.vc.buildExistsCheck(opts.RemoteAgentPath),
 		PreferAgentDownload: *opts.PreferDownloadFromRemoteUrl,
 		ShouldChmodPath:     true,
 	}
@@ -286,11 +274,11 @@ func handleInjectError(err error, wasExecuted bool, buf *bytes.Buffer) error {
 	return &InjectError{Stage: InjectStageInject, Cause: err}
 }
 
-func performVersionCheck(ctx *injectContext) error {
-	opts := ctx.opts
+func performVersionCheck(ctx context.Context, cfg *injectConfig) error {
+	opts := cfg.opts
 
-	detectedVersion, err := ctx.vc.detectRemoteAgentVersion(
-		opts.Ctx,
+	detectedVersion, err := cfg.vc.detectRemoteAgentVersion(
+		ctx,
 		opts.Exec,
 		opts.RemoteAgentPath,
 	)
@@ -354,7 +342,7 @@ func (vc *versionChecker) buildExistsCheck(agentPath string) string {
 		agentPath, agentPath, vc.remoteVersion)
 }
 
-//nolint:staticcheck // SA1019: legacy shell injection path, retained until callers migrate
+// session encapsulates the state and resources for an injection session.
 func (vc *versionChecker) detectRemoteAgentVersion(
 	ctx context.Context,
 	exec inject.ExecFunc,
@@ -362,8 +350,14 @@ func (vc *versionChecker) detectRemoteAgentVersion(
 ) (string, error) {
 	buf := &bytes.Buffer{}
 	versionCmd := fmt.Sprintf("%s --version", agentPath)
-	err := exec(ctx, versionCmd, nil, buf, io.Discard)
+
+	checkCtx, cancel := context.WithTimeout(ctx, versionCheckTimeout)
+	defer cancel()
+	err := exec(checkCtx, versionCmd, nil, buf, io.Discard)
 	if err != nil {
+		if errors.Is(checkCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+			return "", fmt.Errorf("get remote agent version timed out: %w", err)
+		}
 		return "", fmt.Errorf("failed to get remote agent version: %w", err)
 	}
 
