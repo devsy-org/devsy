@@ -35,9 +35,7 @@ jobs:
         with:
           node-version: "latest"
 
-      # A frozen-lockfile build fails if devcontainer-lock.json is missing or
-      # out of sync with the declared features, catching lock drift in CI.
-      - name: Verify feature lockfile integrity
+      - name: verify feature lockfile integrity
         run: |
           npm install -g @devcontainers/cli@latest
           devcontainer build --workspace-folder . --image-name devsy-lock-verify:tmp --frozen-lockfile
