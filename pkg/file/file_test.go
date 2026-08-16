@@ -46,6 +46,7 @@ func TestIsLocalDirRelativePathResolvesToAbsolute(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 
+	//nolint:gosec
 	if err := os.Mkdir("relsub", 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
