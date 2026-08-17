@@ -411,15 +411,17 @@ func listInstancesProxyProvider(
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	if err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
-		Ctx:     ctx,
-		Command: providerConfig.Exec.Proxy.List.Workspaces,
-		Context: devsyConfig.DefaultContext,
-		Options: opts,
-		Config:  providerConfig,
-		Stdout:  &stdout,
-		Stderr:  &stderr,
-	}); err != nil {
+	if err := clientimplementation.RunCommandWithBinaries(
+		ctx,
+		clientimplementation.WorkspaceCommandConfig{
+			Command:              providerConfig.Exec.Proxy.List.Workspaces,
+			WorkspaceContextName: devsyConfig.DefaultContext,
+			Options:              opts,
+			Config:               providerConfig,
+			Stdout:               &stdout,
+			Stderr:               &stderr,
+		},
+	); err != nil {
 		return nil, fmt.Errorf("failed to list pro workspaces: %s: %w", stderr.String(), err)
 	}
 	if stdout.Len() == 0 {

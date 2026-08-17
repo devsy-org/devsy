@@ -229,8 +229,7 @@ func (cmd *DaemonCmd) runShutdownCommand(
 	log.Infof("running shutdown command for workspace %s: %s", workspace.Workspace.ID, shutdown)
 
 	var stdout, stderr bytes.Buffer
-	err = clientimplementation.RunCommand(clientimplementation.RunCommandOptions{
-		Ctx:     ctx,
+	err = clientimplementation.RunCommand(ctx, clientimplementation.RunCommandOptions{
 		Command: workspace.Agent.Exec.Shutdown,
 		Environ: environ,
 		Stdout:  &stdout,

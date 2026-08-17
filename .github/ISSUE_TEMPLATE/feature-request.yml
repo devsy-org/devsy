@@ -2,14 +2,14 @@ name: Feature Request
 description: Suggest an idea or improvement
 title: "[Feature]: "
 labels:
-  - kind/feature
+  - enhancement
 body:
   - type: checkboxes
     id: preflight
     attributes:
       label: Before submitting
       options:
-        - label: I have searched existing issues and discussions to confirm this hasn't been requested
+        - label: I have searched existing feature requests and discussions to confirm this has not been requested
           required: true
 
   - type: textarea
@@ -25,7 +25,7 @@ body:
     id: solution
     attributes:
       label: Proposed solution
-      description: Describe the solution you'd like. Be as specific as possible.
+      description: Describe the solution you would like. Be as specific as possible.
     validations:
       required: true
 
