@@ -96,7 +96,7 @@ func TestExtract_NormalArchive(t *testing.T) {
 func TestExtract_PathTraversalBlocked(t *testing.T) {
 	t.Parallel()
 	buf := newTarGz(t, []tarEntry{
-		{name: "../../etc/passwd", body: "malicious"},
+		{name: etcPasswd, body: "malicious"},
 	})
 
 	dest := t.TempDir()
@@ -114,7 +114,7 @@ func TestExtract_SymlinkTraversalBlocked(t *testing.T) {
 	buf := newTarGz(t, []tarEntry{
 		{
 			name:       "evil-link",
-			linkTarget: "../../etc/passwd",
+			linkTarget: etcPasswd,
 			symlink:    true,
 		},
 	})
@@ -134,7 +134,7 @@ func TestExtract_HardLinkTraversalBlocked(t *testing.T) {
 	buf := newTarGz(t, []tarEntry{
 		{
 			name:       "evil-link",
-			linkTarget: "../../etc/passwd",
+			linkTarget: etcPasswd,
 			symlink:    false,
 		},
 	})
@@ -152,10 +152,10 @@ func TestExtract_HardLinkTraversalBlocked(t *testing.T) {
 func TestExtract_ValidSymlinkAllowed(t *testing.T) {
 	t.Parallel()
 	buf := newTarGz(t, []tarEntry{
-		{name: "target.txt", body: "content"},
+		{name: targetFileName, body: "content"},
 		{
 			name:       "link.txt",
-			linkTarget: "target.txt",
+			linkTarget: targetFileName,
 			symlink:    true,
 		},
 	})
@@ -170,7 +170,7 @@ func TestExtract_ValidSymlinkAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readlink: %v", err)
 	}
-	if target != "target.txt" {
-		t.Fatalf("symlink target = %q, want %q", target, "target.txt")
+	if target != targetFileName {
+		t.Fatalf("symlink target = %q, want %q", target, targetFileName)
 	}
 }

@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+const (
+	targetFileName = "target.txt"
+	etcPasswd      = "../../etc/passwd"
+)
+
 func TestWithinDir(t *testing.T) {
 	t.Parallel()
 	const dest = "/tmp/dest"
@@ -41,7 +46,7 @@ func TestResolveLinkTarget(t *testing.T) {
 	}{
 		{"absolute target preserved", "/etc/passwd", "/tmp/dest/link", "/etc/passwd"},
 		{"relative parent", "../target", "/tmp/dest/sub/link", "/tmp/dest/target"},
-		{"relative sibling", "target.txt", "/tmp/dest/link", "/tmp/dest/target.txt"},
+		{"relative sibling", targetFileName, "/tmp/dest/link", "/tmp/dest/target.txt"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -99,9 +104,9 @@ func TestValidateLinkTarget(t *testing.T) {
 		linkname  string
 		wantError string
 	}{
-		{"symlink inside allowed", tar.TypeSymlink, "target.txt", ""},
-		{"symlink outside blocked", tar.TypeSymlink, "../../etc/passwd", "symlink traversal"},
-		{"hard link outside blocked", tar.TypeLink, "../../etc/passwd", "hard link traversal"},
+		{"symlink inside allowed", tar.TypeSymlink, targetFileName, ""},
+		{"symlink outside blocked", tar.TypeSymlink, etcPasswd, "symlink traversal"},
+		{"hard link outside blocked", tar.TypeLink, etcPasswd, "hard link traversal"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
