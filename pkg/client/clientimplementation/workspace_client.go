@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,22 +33,22 @@ import (
 
 func NewWorkspaceClient(
 	devsyConfig *config.Config,
-	prov *provider.ProviderConfig,
+	providerConfig *provider.ProviderConfig,
 	workspace *provider.Workspace,
 	machine *provider.Machine,
 ) (client.WorkspaceClient, error) {
 	if workspace.Machine.ID != "" && machine == nil {
 		return nil, errors.New("machine not found")
 	}
-	if prov.IsMachineProvider() && workspace.Machine.ID == "" {
+	if providerConfig.IsMachineProvider() && workspace.Machine.ID == "" {
 		return nil, errors.New("machine id empty for machine provider")
 	}
 
 	return &workspaceClient{
-		devsyConfig: devsyConfig,
-		config:      prov,
-		workspace:   workspace,
-		machine:     machine,
+		devsyConfig:       devsyConfig,
+		providerConfig:    providerConfig,
+		providerWorkspace: workspace,
+		providerMachine:   machine,
 	}, nil
 }
 
@@ -59,32 +60,32 @@ type workspaceClient struct {
 	workspaceLock     *flock.Flock
 	machineLock       *flock.Flock
 
-	devsyConfig *config.Config
-	config      *provider.ProviderConfig
-	workspace   *provider.Workspace
-	machine     *provider.Machine
+	devsyConfig       *config.Config
+	providerConfig    *provider.ProviderConfig
+	providerWorkspace *provider.Workspace
+	providerMachine   *provider.Machine
 }
 
 func (s *workspaceClient) Provider() string {
-	return s.config.Name
+	return s.providerConfig.Name
 }
 
 func (s *workspaceClient) Context() string {
-	return s.workspace.Context
+	return s.providerWorkspace.Context
 }
 
 func (s *workspaceClient) Workspace() string {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	return s.workspace.ID
+	return s.providerWorkspace.ID
 }
 
 func (s *workspaceClient) WorkspaceConfig() *provider.Workspace {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	return provider.CloneWorkspace(s.workspace)
+	return provider.CloneWorkspace(s.providerWorkspace)
 }
 
 func (s *workspaceClient) AgentLocal() bool {
@@ -198,11 +199,11 @@ func (s *workspaceClient) Create(ctx context.Context) error {
 	if !s.isMachineProvider() {
 		return nil
 	}
-	if s.machine == nil {
+	if s.providerMachine == nil {
 		return errors.New("machine not defined")
 	}
 
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.providerConfig, s.providerMachine)
 	if err != nil {
 		return err
 	}
@@ -230,10 +231,10 @@ func (s *workspaceClient) Delete(ctx context.Context, opt client.DeleteOptions) 
 	}
 
 	return DeleteWorkspaceFolder(DeleteWorkspaceFolderParams{
-		Context:              s.workspace.Context,
-		WorkspaceID:          s.workspace.ID,
-		SSHConfigPath:        s.workspace.SSHConfigPath,
-		SSHConfigIncludePath: s.workspace.SSHConfigIncludePath,
+		Context:              s.providerWorkspace.Context,
+		WorkspaceID:          s.providerWorkspace.ID,
+		SSHConfigPath:        s.providerWorkspace.SSHConfigPath,
+		SSHConfigIncludePath: s.providerWorkspace.SSHConfigIncludePath,
 	})
 }
 
@@ -241,11 +242,11 @@ func (s *workspaceClient) Start(ctx context.Context) error {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	if !s.isMachineProvider() || s.machine == nil {
+	if !s.isMachineProvider() || s.providerMachine == nil {
 		return nil
 	}
 
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.providerConfig, s.providerMachine)
 	if err != nil {
 		return err
 	}
@@ -257,11 +258,11 @@ func (s *workspaceClient) Stop(ctx context.Context, opt client.StopOptions) erro
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	if !s.isMachineProvider() || !s.workspace.Machine.AutoDelete {
+	if !s.isMachineProvider() || !s.providerWorkspace.Machine.AutoDelete {
 		return s.stopContainer(ctx)
 	}
 
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.providerConfig, s.providerMachine)
 	if err != nil {
 		return err
 	}
@@ -275,9 +276,8 @@ func (s *workspaceClient) Command(ctx context.Context, opt client.CommandOptions
 		return err
 	}
 
-	return RunCommand(RunCommandOptions{
-		Ctx:     ctx,
-		Command: s.config.Exec.Command,
+	return RunCommand(ctx, RunCommandOptions{
+		Command: s.providerConfig.Exec.Command,
 		Environ: environ,
 		Stdin:   opt.Stdin,
 		Stdout:  opt.Stdout,
@@ -297,7 +297,7 @@ func (s *workspaceClient) Status(
 		err    error
 	)
 	switch {
-	case s.isMachineProvider() && len(s.config.Exec.Status) > 0:
+	case s.isMachineProvider() && len(s.providerConfig.Exec.Status) > 0:
 		result, err = s.machineStatus(ctx, opt)
 	case opt.ContainerStatus:
 		result, err = s.getContainerStatus(ctx)
@@ -318,14 +318,14 @@ func (s *workspaceClient) Describe(ctx context.Context) (string, error) {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	if !s.isMachineProvider() || len(s.config.Exec.Describe) == 0 {
+	if !s.isMachineProvider() || len(s.providerConfig.Exec.Describe) == 0 {
 		return client.DescriptionNotFound, nil
 	}
-	if s.machine == nil {
+	if s.providerMachine == nil {
 		return client.DescriptionNotFound, nil
 	}
 
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.providerConfig, s.providerMachine)
 	if err != nil {
 		return client.DescriptionNotFound, err
 	}
@@ -363,7 +363,7 @@ func (s *workspaceClient) latestUpTask() *task.State {
 		return nil
 	}
 
-	latest := newestUpTask(states, s.workspace.ID)
+	latest := newestUpTask(states, s.providerWorkspace.ID)
 	if latest == nil {
 		return nil
 	}
@@ -385,7 +385,12 @@ func newestUpTask(states []*task.State, workspaceID string) *task.State {
 }
 
 func (s *workspaceClient) agentConfig() provider.ProviderAgentConfig {
-	return options.ResolveAgentConfig(s.devsyConfig, s.config, s.workspace, s.machine)
+	return options.ResolveAgentConfig(
+		s.devsyConfig,
+		s.providerConfig,
+		s.providerWorkspace,
+		s.providerMachine,
+	)
 }
 
 func (s *workspaceClient) agentLocal() bool {
@@ -393,29 +398,29 @@ func (s *workspaceClient) agentLocal() bool {
 }
 
 func (s *workspaceClient) isMachineProvider() bool {
-	return len(s.config.Exec.Create) > 0
+	return len(s.providerConfig.Exec.Create) > 0
 }
 
 func (s *workspaceClient) refreshMachineOptions(
 	ctx context.Context,
 	userOptions map[string]string,
 ) error {
-	if s.machine == nil {
+	if s.providerMachine == nil {
 		return nil
 	}
 
 	machine, err := options.ResolveAndSaveOptionsMachine(
 		ctx,
 		s.devsyConfig,
-		s.config,
-		s.machine,
+		s.providerConfig,
+		s.providerMachine,
 		userOptions,
 	)
 	if err != nil {
 		return err
 	}
 
-	s.machine = machine
+	s.providerMachine = machine
 	return nil
 }
 
@@ -426,8 +431,8 @@ func (s *workspaceClient) refreshWorkspaceOptions(
 	workspace, err := options.ResolveAndSaveOptionsWorkspace(
 		ctx,
 		s.devsyConfig,
-		s.config,
-		s.workspace,
+		s.providerConfig,
+		s.providerWorkspace,
 		userOptions,
 	)
 	if err != nil {
@@ -439,8 +444,8 @@ func (s *workspaceClient) refreshWorkspaceOptions(
 		return nil
 	}
 
-	s.workspace = workspace
-	log.Debugf("refreshed workspace options: workspaceId=%s", s.workspace.ID)
+	s.providerWorkspace = workspace
+	log.Debugf("refreshed workspace options: workspaceId=%s", s.providerWorkspace.ID)
 	return nil
 }
 
@@ -465,8 +470,8 @@ func (s *workspaceClient) compressedAgentInfo(
 func (s *workspaceClient) agentInfo(cliOptions provider.CLIOptions) *provider.AgentWorkspaceInfo {
 	agentInfo := &provider.AgentWorkspaceInfo{
 		WorkspaceOrigin:        s.workspaceOrigin(),
-		Workspace:              s.workspace,
-		Machine:                s.machine,
+		Workspace:              s.providerWorkspace,
+		Machine:                s.providerMachine,
 		LastDevContainerConfig: s.lastDevContainerConfig(),
 		CLIOptions:             cliOptions,
 		Agent:                  s.agentConfig(),
@@ -492,18 +497,18 @@ func (s *workspaceClient) agentInfo(cliOptions provider.CLIOptions) *provider.Ag
 }
 
 func (s *workspaceClient) workspaceOrigin() string {
-	if s.workspace == nil {
+	if s.providerWorkspace == nil {
 		return ""
 	}
-	return s.workspace.Origin
+	return s.providerWorkspace.Origin
 }
 
 func (s *workspaceClient) lastDevContainerConfig() *config2.DevContainerConfigWithPath {
-	if s.workspace == nil {
+	if s.providerWorkspace == nil {
 		return nil
 	}
 
-	result, err := provider.LoadWorkspaceResult(s.workspace.Context, s.workspace.ID)
+	result, err := provider.LoadWorkspaceResult(s.providerWorkspace.Context, s.providerWorkspace.ID)
 	if err != nil {
 		log.Debugf("load workspace result: %v", err)
 		return nil
@@ -532,11 +537,12 @@ func (s *workspaceClient) deleteContext(
 }
 
 func (s *workspaceClient) deleteInstance(ctx context.Context, opt client.DeleteOptions) error {
-	if !s.isMachineProvider() || !s.workspace.Machine.AutoDelete {
+	if !s.isMachineProvider() || !s.providerWorkspace.Machine.AutoDelete {
 		return s.deleteContainer(ctx, opt)
 	}
 
-	if s.machine != nil && s.workspace.Machine.ID != "" && len(s.config.Exec.Delete) > 0 {
+	if s.providerMachine != nil && s.providerWorkspace.Machine.ID != "" &&
+		len(s.providerConfig.Exec.Delete) > 0 {
 		return s.deleteMachine(ctx, opt)
 	}
 
@@ -581,7 +587,7 @@ func handleForceError(err error, force bool) error {
 }
 
 func (s *workspaceClient) deleteMachine(ctx context.Context, opt client.DeleteOptions) error {
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.providerConfig, s.providerMachine)
 	if err != nil {
 		if !opt.Force {
 			return err
@@ -615,7 +621,7 @@ func (s *workspaceClient) isMachineRunning(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.providerConfig, s.providerMachine)
 	if err != nil {
 		return false, err
 	}
@@ -632,11 +638,11 @@ func (s *workspaceClient) machineStatus(
 	ctx context.Context,
 	opt client.StatusOptions,
 ) (client.Status, error) {
-	if s.machine == nil {
+	if s.providerMachine == nil {
 		return client.StatusNotFound, nil
 	}
 
-	machineClient, err := NewMachineClient(s.devsyConfig, s.config, s.machine)
+	machineClient, err := NewMachineClient(s.devsyConfig, s.providerConfig, s.providerMachine)
 	if err != nil {
 		return client.StatusNotFound, err
 	}
@@ -654,7 +660,10 @@ func (s *workspaceClient) machineStatus(
 }
 
 func (s *workspaceClient) workspaceFolderStatus() (client.Status, error) {
-	workspaceFolder, err := provider.GetWorkspaceDir(s.workspace.Context, s.workspace.ID)
+	workspaceFolder, err := provider.GetWorkspaceDir(
+		s.providerWorkspace.Context,
+		s.providerWorkspace.ID,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -720,17 +729,16 @@ func (s *workspaceClient) runProviderCommand(
 	command string,
 	stdout, stderr io.Writer,
 ) error {
-	return RunCommandWithBinaries(CommandOptions{
-		Ctx:       ctx,
-		Command:   s.config.Exec.Command,
-		Context:   s.workspace.Context,
-		Workspace: s.workspace,
-		Machine:   s.machine,
-		Options:   s.devsyConfig.ProviderOptions(s.config.Name),
-		Config:    s.config,
-		ExtraEnv:  map[string]string{provider.CommandEnv: command},
-		Stdout:    stdout,
-		Stderr:    stderr,
+	return RunCommandWithBinaries(ctx, WorkspaceCommandConfig{
+		Command:              s.providerConfig.Exec.Command,
+		WorkspaceContextName: s.providerWorkspace.Context,
+		Workspace:            s.providerWorkspace,
+		Machine:              s.providerMachine,
+		Options:              s.devsyConfig.ProviderOptions(s.providerConfig.Name),
+		Config:               s.providerConfig,
+		ExtraEnv:             map[string]string{provider.CommandEnv: command},
+		Stdout:               stdout,
+		Stderr:               stderr,
 	})
 }
 
@@ -739,11 +747,11 @@ func (s *workspaceClient) buildEnvironment(command string) ([]string, error) {
 	defer s.m.Unlock()
 
 	return provider.ToEnvironmentWithBinaries(provider.EnvironmentOptions{
-		Context:   s.workspace.Context,
-		Workspace: s.workspace,
-		Machine:   s.machine,
-		Options:   s.devsyConfig.ProviderOptions(s.config.Name),
-		Config:    s.config,
+		Context:   s.providerWorkspace.Context,
+		Workspace: s.providerWorkspace,
+		Machine:   s.providerMachine,
+		Options:   s.devsyConfig.ProviderOptions(s.providerConfig.Name),
+		Config:    s.providerConfig,
 		ExtraEnv:  map[string]string{provider.CommandEnv: command},
 	})
 }
@@ -753,7 +761,7 @@ func (s *workspaceClient) initLock() error {
 		s.m.Lock()
 		defer s.m.Unlock()
 
-		workspaceLocksDir, err := provider.GetLocksDir(s.workspace.Context)
+		workspaceLocksDir, err := provider.GetLocksDir(s.providerWorkspace.Context)
 		if err != nil {
 			s.workspaceLockErr = fmt.Errorf("get workspaces dir: %w", err)
 			return
@@ -764,12 +772,12 @@ func (s *workspaceClient) initLock() error {
 		}
 
 		s.workspaceLock = flock.New(
-			filepath.Join(workspaceLocksDir, s.workspace.ID+".workspace.lock"),
+			filepath.Join(workspaceLocksDir, s.providerWorkspace.ID+".workspace.lock"),
 		)
 
-		if s.machine != nil {
+		if s.providerMachine != nil {
 			s.machineLock = flock.New(
-				filepath.Join(workspaceLocksDir, s.machine.ID+".machine.lock"),
+				filepath.Join(workspaceLocksDir, s.providerMachine.ID+".machine.lock"),
 			)
 		}
 	})
@@ -787,45 +795,42 @@ func stripProviderOptions(info *provider.AgentWorkspaceInfo) {
 	}
 }
 
-type CommandOptions struct {
-	Ctx       context.Context
-	Command   types.StrArray
-	Context   string
-	Workspace *provider.Workspace
-	Machine   *provider.Machine
-	Options   map[string]config.OptionValue
-	Config    *provider.ProviderConfig
-	ExtraEnv  map[string]string
-	Stdin     io.Reader
-	Stdout    io.Writer
-	Stderr    io.Writer
+type WorkspaceCommandConfig struct {
+	WorkspaceContextName string
+	ExtraEnv             map[string]string
+	Options              map[string]config.OptionValue
+	Stdin                io.Reader
+	Stdout               io.Writer
+	Stderr               io.Writer
+	Command              types.StrArray
+	Workspace            *provider.Workspace
+	Machine              *provider.Machine
+	Config               *provider.ProviderConfig
 }
 
-func RunCommandWithBinaries(opts CommandOptions) error {
+func RunCommandWithBinaries(ctx context.Context, cfg WorkspaceCommandConfig) error {
 	environ, err := provider.ToEnvironmentWithBinaries(provider.EnvironmentOptions{
-		Context:   opts.Context,
-		Workspace: opts.Workspace,
-		Machine:   opts.Machine,
-		Options:   opts.Options,
-		Config:    opts.Config,
-		ExtraEnv:  opts.ExtraEnv,
+		Context:   cfg.WorkspaceContextName,
+		Workspace: cfg.Workspace,
+		Machine:   cfg.Machine,
+		Options:   cfg.Options,
+		Config:    cfg.Config,
+		ExtraEnv:  cfg.ExtraEnv,
 	})
 	if err != nil {
 		return err
 	}
 
-	return RunCommand(RunCommandOptions{
-		Ctx:     opts.Ctx,
-		Command: opts.Command,
+	return RunCommand(ctx, RunCommandOptions{
+		Command: cfg.Command,
 		Environ: environ,
-		Stdin:   opts.Stdin,
-		Stdout:  opts.Stdout,
-		Stderr:  opts.Stderr,
+		Stdin:   cfg.Stdin,
+		Stdout:  cfg.Stdout,
+		Stderr:  cfg.Stderr,
 	})
 }
 
 type RunCommandOptions struct {
-	Ctx     context.Context
 	Command types.StrArray
 	Environ []string
 	Stdin   io.Reader
@@ -833,7 +838,7 @@ type RunCommandOptions struct {
 	Stderr  io.Writer
 }
 
-func RunCommand(opts RunCommandOptions) error {
+func RunCommand(ctx context.Context, opts RunCommandOptions) error {
 	if len(opts.Command) == 0 {
 		return nil
 	}
@@ -843,22 +848,45 @@ func RunCommand(opts RunCommandOptions) error {
 	}
 
 	if len(opts.Command) == 1 {
-		return shell.RunEmulatedShell(
-			opts.Ctx,
-			opts.Command[0],
-			opts.Stdin,
-			opts.Stdout,
-			opts.Stderr,
-			opts.Environ,
-		)
+		if err := shell.RunEmulatedShell(ctx, &shell.CommandRunner{
+			Command: opts.Command[0],
+			Stdin:   opts.Stdin,
+			Stdout:  opts.Stdout,
+			Stderr:  opts.Stderr,
+			Environ: opts.Environ,
+		}); err != nil {
+			return fmt.Errorf(
+				"run provider command %q (%s): %w",
+				opts.Command[0],
+				providerAction(opts.Environ),
+				err,
+			)
+		}
+		return nil
 	}
 
-	cmd := exec.CommandContext(opts.Ctx, opts.Command[0], opts.Command[1:]...) // #nosec G204
+	cmd := exec.CommandContext(ctx, opts.Command[0], opts.Command[1:]...) // #nosec G204
 	cmd.Stdin = opts.Stdin
 	cmd.Stdout = opts.Stdout
 	cmd.Stderr = opts.Stderr
 	cmd.Env = opts.Environ
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf(
+			"run provider command %q (%s): %w",
+			strings.Join(opts.Command, " "), providerAction(opts.Environ), err,
+		)
+	}
+	return nil
+}
+
+// providerAction extracts the provider action from the environment variables.
+func providerAction(environ []string) string {
+	for _, kv := range environ {
+		if rest, ok := strings.CutPrefix(kv, provider.CommandEnv+"="); ok {
+			return rest
+		}
+	}
+	return ""
 }
 
 func DeleteMachineFolder(context, machineID string) error {
@@ -1040,8 +1068,7 @@ func BuildAgentClient(ctx context.Context, opts BuildAgentClientOptions) (*confi
 	defer cancel()
 
 	command := buildAgentCommand(opts.WorkspaceClient, opts.AgentCommand, workspaceInfo)
-	errChan := runAgentInjection(agentInjectionOptions{
-		ctx:             cancelCtx,
+	errChan := runAgentInjection(cancelCtx, workspaceInjectionConfig{
 		workspaceClient: opts.WorkspaceClient,
 		command:         command,
 		stdin:           pipes.stdinReader,
@@ -1074,14 +1101,14 @@ func buildAgentCommand(
 	return command
 }
 
-type agentPipes struct {
+type processIOPipes struct {
 	stdoutReader *os.File
 	stdoutWriter *os.File
 	stdinReader  *os.File
 	stdinWriter  *os.File
 }
 
-func newAgentPipes() (*agentPipes, error) {
+func newAgentPipes() (*processIOPipes, error) {
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return nil, err
@@ -1094,7 +1121,7 @@ func newAgentPipes() (*agentPipes, error) {
 		return nil, err
 	}
 
-	return &agentPipes{
+	return &processIOPipes{
 		stdoutReader: stdoutReader,
 		stdoutWriter: stdoutWriter,
 		stdinReader:  stdinReader,
@@ -1102,15 +1129,14 @@ func newAgentPipes() (*agentPipes, error) {
 	}, nil
 }
 
-func (p *agentPipes) close() {
+func (p *processIOPipes) close() {
 	_ = p.stdoutWriter.Close()
 	_ = p.stdoutReader.Close()
 	_ = p.stdinReader.Close()
 	_ = p.stdinWriter.Close()
 }
 
-type agentInjectionOptions struct {
-	ctx             context.Context
+type workspaceInjectionConfig struct {
 	workspaceClient client.WorkspaceClient
 	command         string
 	stdin           *os.File
@@ -1119,33 +1145,33 @@ type agentInjectionOptions struct {
 	cancel          context.CancelFunc
 }
 
-func runAgentInjection(opts agentInjectionOptions) chan error {
+func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan error {
 	errChan := make(chan error, 1)
 	go func() {
-		defer log.Debugf("up command completed")
-		defer opts.cancel()
-
 		writer := log.Writer(log.LevelInfo)
-		defer func() { _ = writer.Close() }()
+		defer func() {
+			log.Debugf("up command completed")
+			cfg.cancel()
+			_ = writer.Close()
+		}()
 
-		errChan <- agent.InjectAgent(&agent.InjectOptions{
-			Ctx: opts.ctx,
+		errChan <- agent.InjectAgent(ctx, &agent.InjectOptions{
 			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-				return opts.workspaceClient.Command(ctx, client.CommandOptions{
+				return cfg.workspaceClient.Command(ctx, client.CommandOptions{
 					Command: command,
 					Stdin:   stdin,
 					Stdout:  stdout,
 					Stderr:  stderr,
 				})
 			},
-			IsLocal:         opts.workspaceClient.AgentLocal(),
-			RemoteAgentPath: opts.workspaceClient.AgentPath(),
-			DownloadURL:     opts.workspaceClient.AgentURL(),
-			Command:         opts.command,
-			Stdin:           opts.stdin,
-			Stdout:          opts.stdout,
+			IsLocal:         cfg.workspaceClient.AgentLocal(),
+			RemoteAgentPath: cfg.workspaceClient.AgentPath(),
+			DownloadURL:     cfg.workspaceClient.AgentURL(),
+			Command:         cfg.command,
+			Stdin:           cfg.stdin,
+			Stdout:          cfg.stdout,
 			Stderr:          writer,
-			Timeout:         opts.timeout,
+			Timeout:         cfg.timeout,
 		})
 	}()
 	return errChan

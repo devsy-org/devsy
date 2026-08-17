@@ -4,31 +4,26 @@ import (
 	"context"
 	"os"
 	"os/user"
-	"strings"
 	"time"
 )
 
 func (r *DockerHelper) LingerWarning(ctx context.Context) string {
-	if !r.IsPodman() || !r.isRootless(ctx) {
+	if !r.IsPodman() {
 		return ""
 	}
-	if lingerEnabled() {
-		return ""
-	}
-	return "rootless Podman without systemd linger: the workspace container will " +
-		"stop when your login session ends. Run `loginctl enable-linger` to keep " +
-		"it running after logout (Docker does not require this)."
-}
 
-func (r *DockerHelper) isRootless(ctx context.Context) bool {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	out, err := r.buildCmd(ctx, "info", "--format", "{{.Host.Security.Rootless}}").Output()
-	if err != nil {
-		return true
+	rootless, ok := probeRootlessPodman(cctx, r.buildCmd)
+	if ok && rootless {
+		if !lingerEnabled() {
+			return "rootless Podman without systemd linger: the workspace container will " +
+				"stop when your login session ends. Run `loginctl enable-linger` to keep " +
+				"it running after logout."
+		}
 	}
-	return strings.TrimSpace(string(out)) != "false"
+	return ""
 }
 
 var lingerDir = "/var/lib/systemd/linger"
