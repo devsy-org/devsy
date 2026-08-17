@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -165,6 +166,70 @@ func (r *DockerHelper) StartPodmanMachine(ctx context.Context) error {
 	return nil
 }
 
+// PodmanMachineExists reports whether a Podman machine exists.
+func (r *DockerHelper) PodmanMachineExists(ctx context.Context) (bool, error) {
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	out, err := r.buildCmd(cctx, "machine", "list", "--format", "{{.Name}}").Output()
+	if err != nil {
+		return false, err
+	}
+	return anyPodmanMachine(out), nil
+}
+
+// anyPodmanMachine reports whether `podman machine list --format {{.Name}}`
+// output names at least one machine.
+func anyPodmanMachine(stdout []byte) bool {
+	for line := range strings.SplitSeq(string(stdout), "\n") {
+		if strings.TrimSpace(line) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// StartRootlessPodmanSocket starts the podman.socket systemd unit for rootless
+// Podman.
+func (r *DockerHelper) StartRootlessPodmanSocket(ctx context.Context) error {
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	if runtime.GOOS == "linux" && isSystemdRunning(cctx) {
+		cmd := exec.CommandContext(cctx, "systemctl", "--user", "start", "podman.socket")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			if msg := strings.TrimSpace(string(out)); msg != "" {
+				return fmt.Errorf("%s: %w", msg, err)
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func isSystemdRunning(ctx context.Context) bool {
+	cmd := exec.CommandContext(ctx, "systemctl", "is-system-running")
+	out, _ := cmd.CombinedOutput()
+	return systemdStateIsUsable(string(out))
+}
+
+const (
+	systemdStateRunning  = "running"
+	systemdStateDegraded = "degraded"
+)
+
+// systemdStateIsUsable reports whether the output of `systemctl is-system-running`
+// indicates that user-session units are usable.
+func systemdStateIsUsable(output string) bool {
+	switch strings.TrimSpace(output) {
+	case systemdStateRunning, systemdStateDegraded:
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *DockerHelper) FindDevContainer(
 	ctx context.Context,
 	labels []string,
@@ -238,11 +303,16 @@ type PullOptions struct {
 	Stderr   io.Writer
 }
 
+// runCmd runs the given command, wiring up stdin/stdout/stderr and handling context cancellation.
 func runCmd(ctx context.Context, cmd *exec.Cmd) error {
+	if cmd.Stdin == os.Stdin {
+		cmd.SysProcAttr = nil
+	}
+
 	var cancelledByCtx atomic.Bool
 	cmd.Cancel = func() error {
 		cancelledByCtx.Store(true)
-		return cmd.Process.Kill()
+		return killProcessGroup(cmd)
 	}
 
 	err := cmd.Run()
@@ -646,5 +716,15 @@ func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 	if r.Environment != nil {
 		cmd.Env = append(os.Environ(), r.Environment...)
 	}
+	PrepareForGroupCancellation(cmd)
 	return cmd
+}
+
+// PrepareForGroupCancellation sets the Cancel function of the given exec.Cmd
+// to kill the entire process group, allowing for cleanup of child processes.
+// This is necessary because exec.Cmd does not automatically kill child processes
+// when the context is canceled.
+func PrepareForGroupCancellation(cmd *exec.Cmd) {
+	setProcessGroupAttrs(cmd)
+	cmd.Cancel = func() error { return killProcessGroup(cmd) }
 }

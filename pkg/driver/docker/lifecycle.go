@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const containerRestartAttempts = 3
@@ -280,16 +282,27 @@ func (d *dockerDriver) RunImageDevContainer(
 	return d.UpdateContainerUserUID(ctx, params.WorkspaceID, params.ParsedConfig, writer)
 }
 
+var (
+	imageInspectPollInterval = 500 * time.Millisecond
+	imageInspectPollTimeout  = 10 * time.Second
+)
+
 func (d *dockerDriver) EnsureImage(
 	ctx context.Context,
 	options *driver.RunOptions,
 ) error {
 	log.Infof("inspecting image: image=%s", options.Image)
-	_, err := d.Docker.InspectImage(ctx, options.Image, false)
+	err := d.inspectImage(ctx, options)
 	if err == nil {
 		return nil
 	}
 	if !errors.Is(err, docker.ErrImageNotFound) {
+		return fmt.Errorf("inspect image %s: %w", options.Image, err)
+	}
+	if options.ImageBuilt {
+		// A devsy-built, locally-tagged image can never be resolved by a
+		// registry pull: no registry has it, and a same-named external tag
+		// would run an entirely different image than the one that was built.
 		return fmt.Errorf("inspect image %s: %w", options.Image, err)
 	}
 
@@ -303,6 +316,42 @@ func (d *dockerDriver) EnsureImage(
 		Stdout:   writer,
 		Stderr:   writer,
 	})
+}
+
+// inspectImage inspects the given image; if options.ImageBuilt is true, it retries while the only failure is
+// ErrImageNotFound, otherwise it returns immediately on any error.
+func (d *dockerDriver) inspectImage(ctx context.Context, options *driver.RunOptions) error {
+	if !options.ImageBuilt {
+		_, err := d.Docker.InspectImage(ctx, options.Image, false)
+		return err
+	}
+	return d.waitForLocalImage(ctx, options.Image)
+}
+
+// waitForLocalImage inspects image, retrying while the only failure is
+// ErrImageNotFound. Any other inspect error (e.g. daemon unreachable) stops
+// the retry immediately. Returns nil once found, or the last ErrImageNotFound
+// once imageInspectPollTimeout elapses without the image appearing.
+func (d *dockerDriver) waitForLocalImage(ctx context.Context, image string) error {
+	var lastErr error
+	pollErr := wait.PollUntilContextTimeout(
+		ctx, imageInspectPollInterval, imageInspectPollTimeout, true,
+		func(ctx context.Context) (bool, error) {
+			_, err := d.Docker.InspectImage(ctx, image, false)
+			if err == nil {
+				return true, nil
+			}
+			if errors.Is(err, docker.ErrImageNotFound) {
+				lastErr = err
+				return false, nil
+			}
+			return false, err
+		},
+	)
+	if pollErr != nil && lastErr != nil {
+		return lastErr
+	}
+	return pollErr
 }
 
 func (d *dockerDriver) startContainer(

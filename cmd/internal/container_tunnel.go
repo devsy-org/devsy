@@ -3,17 +3,18 @@ package cmdinternal
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/internal/agentworkspace"
 	"github.com/devsy-org/devsy/pkg/agent"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
-	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/encoding"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -23,7 +24,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ContainerTunnelCmd holds the ws-tunnel cmd flags.
+const containerStatusRunning = "running"
+
+// containerRootUser is the user to use when running commands inside the container that
+// require root privileges.
+const containerRootUser = "root"
+
+// sighupExitGrace is the grace period after SIGHUP before os.Exit(0) is
+// called, to avoid orphaning any processes that ignore context cancellation.
+const sighupExitGrace = 5 * time.Second
+
+var findDevContainerTimeout = 30 * time.Second
+
+// ContainerTunnelCmd holds the container-tunnel cmd flags.
 type ContainerTunnelCmd struct {
 	*flags.GlobalFlags
 
@@ -31,10 +44,12 @@ type ContainerTunnelCmd struct {
 	User          string
 }
 
-// NewContainerTunnelCmd creates a new command.
-func NewContainerTunnelCmd(flags *flags.GlobalFlags) *cobra.Command {
+// NewContainerTunnelCmd creates the container-tunnel command, which brings a
+// workspace's devcontainer up if needed and then bridges an SSH tunnel into
+// it over the calling process's stdio.
+func NewContainerTunnelCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &ContainerTunnelCmd{
-		GlobalFlags: flags,
+		GlobalFlags: globalFlags,
 	}
 	containerTunnelCmd := &cobra.Command{
 		Use:   "container-tunnel",
@@ -53,41 +68,36 @@ func NewContainerTunnelCmd(flags *flags.GlobalFlags) *cobra.Command {
 	return containerTunnelCmd
 }
 
-// Run runs the command logic.
-func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
-	// write workspace info
+// Run brings the workspace's devcontainer to a running state and then
+// blocks bridging an SSH tunnel into it, until the tunnel closes or cobraCtx
+// is cancelled.
+func (cmd *ContainerTunnelCmd) Run(cobraCtx context.Context) error {
+	ctx, cancel := context.WithCancel(cobraCtx)
+	defer cancel()
+
+	stopSighupWatch := watchForSighup(cancel)
+	defer stopSighupWatch()
+
 	shouldExit, workspaceInfo, err := agent.WriteWorkspaceInfo(cmd.WorkspaceInfo)
 	if err != nil {
-		return err
-	} else if shouldExit {
+		return fmt.Errorf("write workspace info: %w", err)
+	}
+	if shouldExit {
 		return nil
 	}
 
-	// make sure content folder exists
-	_, err = agentworkspace.InitContentFolder(ctx, workspaceInfo)
-	if err != nil {
-		return err
+	if _, err := agentworkspace.InitContentFolder(ctx, workspaceInfo); err != nil {
+		return fmt.Errorf("init content folder: %w", err)
 	}
 
-	// create runner
 	runner, err := agentworkspace.CreateRunner(ctx, workspaceInfo)
 	if err != nil {
-		return err
+		return fmt.Errorf("create runner: %w", err)
 	}
 
-	// wait until devcontainer is started
-	err = startDevContainer(ctx, workspaceInfo, runner)
-	if err != nil {
+	if err := startDevContainer(ctx, workspaceInfo, runner); err != nil {
 		return err
 	}
-
-	// handle SIGHUP
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGHUP)
-	go func() {
-		<-sigs
-		os.Exit(0)
-	}()
 
 	return agent.Tunnel(ctx, agent.TunnelOptions{
 		Exec: func(
@@ -112,61 +122,96 @@ func (cmd *ContainerTunnelCmd) Run(ctx context.Context) error {
 	})
 }
 
+// watchForSighup cancels on SIGHUP (the SSH channel driving this process
+// closed) so in-flight commands are killed instead of orphaned, then falls
+// back to os.Exit(0) if something still ignores cancellation.
+func watchForSighup(cancel context.CancelFunc) (stop func()) {
+	done := make(chan struct{})
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGHUP)
+
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-sigs:
+			cancel()
+		}
+		select {
+		case <-done:
+		case <-time.After(sighupExitGrace):
+			os.Exit(0)
+		}
+	}()
+
+	return func() {
+		signal.Stop(sigs)
+		close(done)
+	}
+}
+
+// startDevContainer ensures workspaceConfig's devcontainer is up and, for
+// legacy UIDs, that its result file is readable, (re)starting the container
+// when either check fails.
 func startDevContainer(
 	ctx context.Context,
 	workspaceConfig *provider2.AgentWorkspaceInfo,
 	runner devcontainer.Runner,
 ) error {
-	containerDetails, err := runner.Find(ctx)
+	findCtx, cancel := context.WithTimeout(ctx, findDevContainerTimeout)
+	defer cancel()
+
+	containerDetails, err := runner.Find(findCtx)
 	if err != nil {
-		return err
+		return fmt.Errorf("find devcontainer: %w", err)
 	}
 
-	// start container if it is missing or not running
-	if containerDetails == nil || containerDetails.State.Status != "running" {
-		_, err = StartContainer(ctx, runner, workspaceConfig)
-		return err
+	if containerDetails == nil || containerDetails.State.Status != containerStatusRunning {
+		if err := startContainer(ctx, runner, workspaceConfig); err != nil {
+			return fmt.Errorf("start container: %w", err)
+		}
+		return nil
 	}
 
-	// for legacy UIDs, ensure the workspace result is present in the container,
-	// restarting it when the result is missing
 	if encoding.IsLegacyUID(workspaceConfig.Workspace.UID) &&
 		!hasDevContainerResult(ctx, runner) {
-		_, err = StartContainer(ctx, runner, workspaceConfig)
-		return err
+		if err := startContainer(ctx, runner, workspaceConfig); err != nil {
+			return fmt.Errorf("restart container after missing devcontainer result: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// hasDevContainerResult reports whether the devcontainer result file is readable
-// inside the running container.
+// hasDevContainerResult reports whether the devcontainer result file is
+// readable inside the running container.
 func hasDevContainerResult(ctx context.Context, runner devcontainer.Runner) bool {
-	buf := &bytes.Buffer{}
+	var buf bytes.Buffer
 	err := runner.Command(ctx, devcontainer.CommandParams{
-		User:    "root",
+		User:    containerRootUser,
 		Command: "cat " + pkgconfig.DevContainerResultPath,
-		Stdout:  buf,
-		Stderr:  buf,
+		Stdout:  &buf,
+		Stderr:  &buf,
 	})
 	return err == nil
 }
 
-func StartContainer(
+// startContainer runs the devcontainer's full up workflow, skipping the
+// image build, to bring the container to a running state.
+func startContainer(
 	ctx context.Context,
 	runner devcontainer.Runner,
 	workspaceConfig *provider2.AgentWorkspaceInfo,
-) (*config.Result, error) {
-	log.Debugf("starting Devsy container")
-	result, err := runner.Up(
+) error {
+	log.Debug("starting container")
+	if _, err := runner.Up(
 		ctx,
 		devcontainer.UpOptions{NoBuild: true},
 		workspaceConfig.InjectTimeout,
 		status.Nop(),
-	)
-	if err != nil {
-		return result, err
+	); err != nil {
+		return fmt.Errorf("up devcontainer: %w", err)
 	}
-	log.Debugf("started Devsy container")
-	return result, err
+	log.Debug("started container")
+	return nil
 }
