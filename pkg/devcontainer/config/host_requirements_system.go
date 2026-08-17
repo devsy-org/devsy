@@ -56,5 +56,8 @@ func readMemTotalFromProc() (uint64, error) {
 		}
 		return kb * 1024, nil
 	}
+	if err := scanner.Err(); err != nil {
+		return 0, fmt.Errorf("scan /proc/meminfo: %w", err)
+	}
 	return 0, fmt.Errorf("MemTotal not found in /proc/meminfo")
 }

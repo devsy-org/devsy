@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -144,15 +145,13 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 			InstallTerminfo: cmd.InstallTerminfo,
 		},
 		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-			command := fmt.Sprintf(
-				"'%s' internal ssh-server --stdio",
-				machineClient.AgentPath(),
-			)
+			c := strings.Builder{}
+			_, _ = fmt.Fprintf(&c, "'%s' internal ssh-server --stdio", machineClient.AgentPath())
 			if cmd.Debug {
-				command += " --debug"
+				_, _ = c.WriteString(" --debug")
 			}
-			return devagent.InjectAgent(&devagent.InjectOptions{
-				Ctx: ctx,
+			command := c.String()
+			return devagent.InjectAgent(ctx, &devagent.InjectOptions{
 				Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 					return machineClient.Command(ctx, client.CommandOptions{
 						Command: command,
