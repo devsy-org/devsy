@@ -29,6 +29,9 @@ func ParseKeyValueFile(filename string) ([]string, error) {
 			keyValuePairs = append(keyValuePairs, line)
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
 	return keyValuePairs, nil
 }
 

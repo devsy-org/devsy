@@ -124,6 +124,7 @@ func buildFinalResult(
 		PrebuildHash:  opts.PrebuildHash,
 		RegistryCache: opts.Options.RegistryCache,
 		Tags:          opts.Options.Tag,
+		BuiltLocally:  false, // built remotely and pushed to a registry, not local
 	}, nil
 }
 
@@ -242,6 +243,7 @@ func checkExistingImage(params checkExistingImageParams) *config.BuildInfo {
 		PrebuildHash:  params.Opts.PrebuildHash,
 		RegistryCache: params.Opts.Options.RegistryCache,
 		Tags:          params.Opts.Options.Tag,
+		BuiltLocally:  false, // found in the registry, not local
 	}
 }
 
