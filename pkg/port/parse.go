@@ -37,7 +37,7 @@ func toAddress(host, port string) (Address, error) {
 
 		return Address{
 			Protocol: "tcp",
-			Address: net.JoinHostPort(host, port),
+			Address:  net.JoinHostPort(host, port),
 		}, nil
 	}
 
