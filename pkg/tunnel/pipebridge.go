@@ -62,23 +62,6 @@ type (
 // RunPair runs the tunnel and handler sides of the bridge concurrently and
 // returns once both have finished (or the slower side is abandoned after
 // joinTimeout).
-//
-// Lifecycle:
-//  1. Both sides run in their own goroutine under a shared cancellable context.
-//  2. When either side returns, OR the parent ctx is cancelled first (both
-//     sides may be blocked in a raw Read that does not itself observe ctx),
-//     stop is invoked: the context is cancelled and the bridge write ends are
-//     closed so reads on either side observe EOF rather than blocking forever.
-//  3. RunPair then waits for both sides, but no longer than joinTimeout once
-//     the first side has finished, so a side that ignores cancellation cannot
-//     hang the caller.
-//  4. Errors are classified by ClassifyTunnelErrors: a nil handler result is
-//     success regardless of the tunnel's exit; an EOF handler error with a
-//     tunnel error is surfaced as a connection error.
-//
-// The shared context is always cancelled before RunPair returns, so neither
-// goroutine outlives the call (barring a side that ignores its context, which
-// the joinTimeout bound makes non-fatal).
 func (pb *PipeBridge) RunPair(
 	ctx context.Context,
 	tunnelFn TunnelFunc,

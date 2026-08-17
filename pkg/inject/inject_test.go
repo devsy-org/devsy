@@ -686,10 +686,6 @@ func expectLine(t *testing.T, r io.Reader, want string) {
 	}
 }
 
-// syncBuffer is a bytes.Buffer safe for concurrent Write (from the exec
-// package's stderr-copying goroutine) and String (from the test goroutine),
-// since cmd.Stderr may still be actively written to when the test reads it
-// (e.g. on a timeout path where the process hasn't exited yet).
 type syncBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer

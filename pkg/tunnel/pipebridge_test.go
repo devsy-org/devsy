@@ -380,10 +380,6 @@ func TestRunPairStopsBothSidesWhenParentContextCancelledBeforeEitherReturns(t *t
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Neither side watches ctx at all -- both block in a raw Read on their
-	// assigned pipe end, exactly like a real bridged os.File would when no
-	// bytes are in flight. Only closing the underlying fd (not merely
-	// cancelling ctx) can unblock a pending Read.
 	tunnel := func(_ context.Context, stdin *os.File, _ *os.File) error {
 		buf := make([]byte, 1)
 		_, err := stdin.Read(buf)
