@@ -102,8 +102,7 @@ func (c *ContainerTunnel) runHostTunnel(
 	if log.DebugEnabled() {
 		command += " --debug"
 	}
-	return agent.InjectAgent(&agent.InjectOptions{
-		Ctx: ctx,
+	return agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			return c.client.Command(ctx, client.CommandOptions{
 				Command: command,
@@ -132,21 +131,18 @@ func (c *ContainerTunnel) updateConfig(ctx context.Context, sshClient *ssh.Clien
 		case <-time.After(c.updateConfigInterval):
 			log.Debugf("Start refresh")
 
-			// update options
 			err := c.client.RefreshOptions(ctx, nil, false)
 			if err != nil {
 				log.Errorf("Error refreshing workspace options: %v", err)
 				break
 			}
 
-			// compress info
 			workspaceInfo, agentInfo, err := c.client.AgentInfo(provider.CLIOptions{})
 			if err != nil {
 				log.Errorf("Error compressing workspace info: %v", err)
 				break
 			}
 
-			// update workspace remotely
 			buf := &bytes.Buffer{}
 			command := fmt.Sprintf(
 				"%q internal agent workspace update-config --workspace-info %q",
@@ -208,9 +204,7 @@ func (c *ContainerTunnel) runInContainer(
 
 	containerClient, err := devssh.StdioClient(pb.StdoutReader, pb.StdinWriter, false)
 	if err != nil {
-		// StdioClient failed — check if the tunnel goroutine already exited
-		// with an error. If so, the tunnel error is the root cause.
-		select {
+		select { // check if the tunnel goroutine has already returned an error
 		case tunnelErr := <-tunnelDone:
 			if tunnelErr != nil {
 				return tunnelErr

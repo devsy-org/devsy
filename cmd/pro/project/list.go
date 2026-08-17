@@ -1,20 +1,17 @@
 package project
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
-	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/client/proxycmd"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -61,40 +58,26 @@ func (cmd *ListProjectsCmd) Run(
 	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
-	var buf bytes.Buffer
-
-	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
-		Ctx:     ctx,
-		Command: provider.Exec.Proxy.List.Projects,
-		Context: devsyConfig.DefaultContext,
-		Options: devsyConfig.ProviderOptions(provider.Name),
-		Config:  provider,
-		Stdout:  &buf,
-	})
-	if err != nil {
-		return fmt.Errorf("watch workspaces with provider %q: %w", provider.Name, err)
-	}
-
 	headers := []string{proutil.HeaderName, proutil.HeaderDisplayName, "Description"}
-	if buf.Len() == 0 {
-		table.Print(headers, nil)
-		return nil
-	}
 
-	projects := []managementv1.Project{}
-	if err := json.Unmarshal(buf.Bytes(), &projects); err != nil {
-		return fmt.Errorf("parse projects output: %w", err)
-	}
+	return proxycmd.RunAndPrintTable(ctx, proxycmd.Options{
+		Command:     provider.Exec.Proxy.List.Projects,
+		DevsyConfig: devsyConfig,
+		Provider:    provider,
+	}, headers, func(payload []byte) ([][]string, error) {
+		projects := []managementv1.Project{}
+		if err := json.Unmarshal(payload, &projects); err != nil {
+			return nil, err
+		}
 
-	rows := make([][]string, 0, len(projects))
-	for _, p := range projects {
-		rows = append(rows, []string{
-			p.GetName(),
-			p.Spec.DisplayName,
-			p.Spec.Description,
-		})
-	}
-	table.Print(headers, rows)
-
-	return nil
+		rows := make([][]string, 0, len(projects))
+		for _, p := range projects {
+			rows = append(rows, []string{
+				p.GetName(),
+				p.Spec.DisplayName,
+				p.Spec.Description,
+			})
+		}
+		return rows, nil
+	})
 }
