@@ -72,17 +72,16 @@ type execParams struct {
 
 // execute runs a proxy command with common settings.
 func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
-	return RunCommandWithBinaries(CommandOptions{
-		Ctx:       ctx,
-		Command:   params.command,
-		Context:   e.client.workspace.Context,
-		Workspace: e.client.workspace,
-		Options:   e.client.devsyConfig.ProviderOptions(e.client.config.Name),
-		Config:    e.client.config,
-		ExtraEnv:  params.extraEnv,
-		Stdin:     params.stdin,
-		Stdout:    params.stdout,
-		Stderr:    params.stderr,
+	return RunCommandWithBinaries(ctx, WorkspaceCommandConfig{
+		Command:              params.command,
+		WorkspaceContextName: e.client.workspace.Context,
+		Workspace:            e.client.workspace,
+		Options:              e.client.devsyConfig.ProviderOptions(e.client.config.Name),
+		Config:               e.client.config,
+		ExtraEnv:             params.extraEnv,
+		Stdin:                params.stdin,
+		Stdout:               params.stdout,
+		Stderr:               params.stderr,
 	})
 }
 
@@ -314,18 +313,17 @@ func (s *proxyClient) Status(
 
 	stdout := &bytes.Buffer{}
 	buf := &bytes.Buffer{}
-	err := RunCommandWithBinaries(CommandOptions{
-		Ctx:       ctx,
-		Command:   s.config.Exec.Proxy.Status,
-		Context:   s.workspace.Context,
-		Workspace: s.workspace,
-		Machine:   nil,
-		Options:   s.devsyConfig.ProviderOptions(s.config.Name),
-		Config:    s.config,
-		ExtraEnv:  EncodeOptions(options, config.EnvFlagsStatus),
-		Stdin:     nil,
-		Stdout:    io.MultiWriter(stdout, buf),
-		Stderr:    buf,
+	err := RunCommandWithBinaries(ctx, WorkspaceCommandConfig{
+		Command:              s.config.Exec.Proxy.Status,
+		WorkspaceContextName: s.workspace.Context,
+		Workspace:            s.workspace,
+		Machine:              nil,
+		Options:              s.devsyConfig.ProviderOptions(s.config.Name),
+		Config:               s.config,
+		ExtraEnv:             EncodeOptions(options, config.EnvFlagsStatus),
+		Stdin:                nil,
+		Stdout:               io.MultiWriter(stdout, buf),
+		Stderr:               buf,
 	})
 	if err != nil {
 		return client.StatusNotFound, fmt.Errorf(

@@ -35,6 +35,11 @@ jobs:
         with:
           node-version: "latest"
 
+      - name: verify feature lockfile integrity
+        run: |
+          npm install -g @devcontainers/cli@latest
+          devcontainer build --workspace-folder . --image-name devsy-lock-verify:tmp --frozen-lockfile
+
       - uses: devcontainers/ci@513af61f4de4f75d37e4438f184ba4358f0fc1ca # v0.3
         with:
           runCmd: ${{ inputs.runCmd || env.DEFAULT_RUN_CMD }}

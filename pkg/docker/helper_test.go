@@ -438,3 +438,19 @@ esac
 	_, err := os.Stat(removed)
 	assert.NoError(t, err, "volume rm should be invoked for an existing volume")
 }
+
+func TestSystemdStateIsUsable(t *testing.T) {
+	cases := map[string]bool{
+		systemdStateRunning:  true,
+		systemdStateDegraded: true,
+		"starting":           false,
+		"stopping":           false,
+		"maintenance":        false,
+		"offline":            false,
+		"":                   false,
+	}
+	for state, want := range cases {
+		assert.Equal(t, want, systemdStateIsUsable(state), "state=%q", state)
+	}
+	assert.True(t, systemdStateIsUsable(systemdStateDegraded+"\n"))
+}
