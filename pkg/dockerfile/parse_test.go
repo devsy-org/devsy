@@ -359,8 +359,6 @@ FROM ${REGISTRY}/${IMAGE}:${TAG}`
 	s.Equal("gcr.io/my/image:latest", baseImage)
 }
 
-// A bare directive with no value must not panic the parser; the buildkit parser
-// still emits the node, so parseUser/parseArg must tolerate a nil Next.
 func (s *ParseTestSuite) TestValuelessUserDoesNotPanic() {
 	d, err := Parse("FROM ubuntu\nUSER")
 	s.NoError(err)
