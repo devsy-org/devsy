@@ -45,6 +45,10 @@ const (
 	DistroRaspbian = "raspbian"
 	DistroOSMC     = "osmc"
 	DistroDebian   = "debian"
+	DistroCentOS   = "centos"
+	DistroFedora   = "fedora"
+	DistroRHEL     = "rhel"
+	DistroSLES     = "sles"
 
 	// Debian release codenames.
 	CodenameTrixie   = "trixie"

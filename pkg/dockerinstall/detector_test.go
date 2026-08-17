@@ -42,7 +42,11 @@ VERSION_ID="22.04"`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
 	s.Equal(DistroUbuntu, distro.ID)
-	s.Equal(ubuntuRelease2204, distro.Version, "Should fall back to VERSION_ID when codename missing")
+	s.Equal(
+		ubuntuRelease2204,
+		distro.Version,
+		"Should fall back to VERSION_ID when codename missing",
+	)
 }
 
 func (s *DetectorTestSuite) TestParseOSRelease_Debian_WithCodename() {
