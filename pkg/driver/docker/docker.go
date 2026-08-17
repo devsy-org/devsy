@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -213,9 +214,16 @@ func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerPro
 		}
 	}
 
+	reachability := fmt.Sprintf("%s daemon is not reachable", p.runtime)
+	if errors.Is(err, context.DeadlineExceeded) {
+		reachability = fmt.Sprintf(
+			"%s daemon did not respond in time (it may just be slow to start, not necessarily down)",
+			p.runtime,
+		)
+	}
 	return &driver.PreflightError{
 		Provider: runtimeName,
-		Err:      fmt.Errorf("%w: %s daemon is not reachable", err, p.runtime),
+		Err:      fmt.Errorf("%w: %s", err, reachability),
 	}
 }
 
