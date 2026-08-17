@@ -130,20 +130,16 @@ func (r *DockerHelper) ClientVersion(ctx context.Context) string {
 }
 
 // podmanMachineStartTimeout bounds a Podman machine boot, which spins up a VM.
-const podmanMachineStartTimeout = 90 * time.Second
+var podmanMachineStartTimeout = 90 * time.Second
 
-// Ping reports whether the runtime daemon is reachable, returning its own
-// message (e.g. "Cannot connect to Podman") on failure. It runs a bare `info`
-// and judges reachability by exit status: `--format` field names differ
-// between docker (.ServerVersion) and podman/nerdctl, so a shared template
-// would falsely fail non-docker runtimes.
-func (r *DockerHelper) Ping(ctx context.Context) error {
-	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+var pingTimeout = 30 * time.Second
 
-	out, err := r.buildCmd(cctx, "info").CombinedOutput()
-	if err != nil {
-		if msg := strings.TrimSpace(string(out)); msg != "" {
+func runCmdCombined(ctx context.Context, cmd *exec.Cmd) error {
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := runCmd(ctx, cmd); err != nil {
+		if msg := strings.TrimSpace(out.String()); msg != "" {
 			return fmt.Errorf("%s: %w", msg, err)
 		}
 		return err
@@ -151,19 +147,24 @@ func (r *DockerHelper) Ping(ctx context.Context) error {
 	return nil
 }
 
+// Ping reports whether the runtime daemon is reachable, returning its own
+// message (e.g. "Cannot connect to Podman") on failure. It runs a bare `info`
+// and judges reachability by exit status: `--format` field names differ
+// between docker (.ServerVersion) and podman/nerdctl, so a shared template
+// would falsely fail non-docker runtimes.
+func (r *DockerHelper) Ping(ctx context.Context) error {
+	cctx, cancel := context.WithTimeout(ctx, pingTimeout)
+	defer cancel()
+
+	return runCmdCombined(cctx, r.buildCmd(cctx, "info"))
+}
+
 // StartPodmanMachine starts the default Podman machine, which must already exist.
 func (r *DockerHelper) StartPodmanMachine(ctx context.Context) error {
 	cctx, cancel := context.WithTimeout(ctx, podmanMachineStartTimeout)
 	defer cancel()
 
-	out, err := r.buildCmd(cctx, "machine", "start").CombinedOutput()
-	if err != nil {
-		if msg := strings.TrimSpace(string(out)); msg != "" {
-			return fmt.Errorf("%s: %w", msg, err)
-		}
-		return err
-	}
-	return nil
+	return runCmdCombined(cctx, r.buildCmd(cctx, "machine", "start"))
 }
 
 // PodmanMachineExists reports whether a Podman machine exists.
@@ -197,11 +198,7 @@ func (r *DockerHelper) StartRootlessPodmanSocket(ctx context.Context) error {
 
 	if runtime.GOOS == "linux" && isSystemdRunning(cctx) {
 		cmd := exec.CommandContext(cctx, "systemctl", "--user", "start", "podman.socket")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			if msg := strings.TrimSpace(string(out)); msg != "" {
-				return fmt.Errorf("%s: %w", msg, err)
-			}
+		if err := runCmdCombined(cctx, cmd); err != nil {
 			return err
 		}
 	}
