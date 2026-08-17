@@ -727,6 +727,65 @@ func TestResolveServiceEntrypoint(t *testing.T) {
 	})
 }
 
+func TestBuildOverrideEntrypointSingleLine(t *testing.T) {
+	script := buildOverrideEntrypoint(
+		&config.MergedDevContainerConfig{
+			UpdatedConfigProperties: config.UpdatedConfigProperties{
+				Entrypoints: []string{"echo setup"},
+			},
+		},
+		nil,
+	)
+	if len(script) < 3 {
+		t.Fatalf("expected at least [%s -c <script>], got %v", shShellPath, script)
+	}
+	if script[0] != shShellPath || script[1] != "-c" {
+		t.Fatalf("expected %s -c prefix, got %v", shShellPath, script)
+	}
+	body := script[2]
+	if strings.Contains(body, "\n") {
+		t.Fatalf("buildOverrideEntrypoint() script must be single-line, got %q", body)
+	}
+	if !strings.Contains(body, "echo setup") {
+		t.Errorf("expected custom entrypoint in script, got %q", body)
+	}
+}
+
+func TestBuildOverrideEntrypointComposeEscapesExecPassthrough(t *testing.T) {
+	script := buildOverrideEntrypoint(&config.MergedDevContainerConfig{}, nil)
+	body := script[2]
+	if !strings.Contains(body, `exec "$$@"`) {
+		t.Fatalf(`expected literal exec "$$@" (compose-escaped), got %q`, body)
+	}
+	if strings.Contains(body, `exec "$@"`) {
+		t.Fatalf("exec \"$@\" must be compose-escaped to \"$$@\", got %q", body)
+	}
+}
+
+func TestBuildOverrideEntrypointAppendsUserEntrypoint(t *testing.T) {
+	script := buildOverrideEntrypoint(
+		&config.MergedDevContainerConfig{},
+		[]string{"user-cmd", "arg"},
+	)
+	want := []string{shShellPath, "-c", script[2], "-", "user-cmd", "arg"}
+	if len(script) != len(want) {
+		t.Fatalf("script = %v, want %v", script, want)
+	}
+	for i := range want {
+		if script[i] != want[i] {
+			t.Fatalf("script[%d] = %q, want %q", i, script[i], want[i])
+		}
+	}
+}
+
+func TestBuildOverrideEntrypointKeepsDefaultEntrypointReachable(t *testing.T) {
+	script := buildOverrideEntrypoint(&config.MergedDevContainerConfig{}, nil)
+	body := script[2]
+	if !strings.Contains(body, "devsy internal agent container daemon") {
+		t.Errorf("expected default entrypoint invocation in script, got %q", body)
+	}
+}
+
 func TestNamedVolumesFromMounts(t *testing.T) {
 	t.Run("nil when no volume mounts", func(t *testing.T) {
 		if got := namedVolumesFromMounts([]*config.Mount{{Type: mountTypeBind}}); got != nil {

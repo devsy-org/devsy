@@ -142,14 +142,17 @@ func buildOverrideEntrypoint(
 	mergedConfig *config.MergedDevContainerConfig,
 	userEntrypoint []string,
 ) composetypes.ShellCommand {
+	statements := []string{
+		startScriptEchoStatement,
+		startScriptTrapStatement,
+	}
+	statements = append(statements, mergedConfig.Entrypoints...)
+	// "$$@" keeps a literal "$@" after compose's variable interpolation; see composeLabelEscaper.
+	statements = append(statements, `exec "$$@"`, DefaultEntrypoint)
 	entrypoint := composetypes.ShellCommand{
-		"/bin/sh",
+		shShellPath,
 		"-c",
-		`echo Container started
-trap "exit 0" 15
-` + strings.Join(mergedConfig.Entrypoints, "\n") + `
-exec "$$@"
-` + DefaultEntrypoint,
+		joinShellStatements(statements...),
 		"-",
 	}
 	return append(entrypoint, userEntrypoint...)
