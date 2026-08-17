@@ -80,8 +80,8 @@ esac
 func withShortImageInspectPoll(t *testing.T) {
 	t.Helper()
 	origInterval, origTimeout := imageInspectPollInterval, imageInspectPollTimeout
-	imageInspectPollInterval = time.Millisecond
-	imageInspectPollTimeout = 20 * time.Millisecond
+	imageInspectPollInterval = 5 * time.Millisecond
+	imageInspectPollTimeout = 300 * time.Millisecond
 	t.Cleanup(func() {
 		imageInspectPollInterval, imageInspectPollTimeout = origInterval, origTimeout
 	})
