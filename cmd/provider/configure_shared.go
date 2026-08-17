@@ -203,15 +203,17 @@ func initProvider(
 		return fmt.Errorf("save init state: %w", err)
 	}
 
-	runErr := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
-		Ctx:     ctx,
-		Command: provider.Exec.Init,
-		Context: devsyConfig.DefaultContext,
-		Options: devsyConfig.ProviderOptions(provider.Name),
-		Config:  provider,
-		Stdout:  io2.stdout,
-		Stderr:  io2.stderr,
-	})
+	runErr := clientimplementation.RunCommandWithBinaries(
+		ctx,
+		clientimplementation.WorkspaceCommandConfig{
+			Command:              provider.Exec.Init,
+			WorkspaceContextName: devsyConfig.DefaultContext,
+			Options:              devsyConfig.ProviderOptions(provider.Name),
+			Config:               provider,
+			Stdout:               io2.stdout,
+			Stderr:               io2.stderr,
+		},
+	)
 	if runErr != nil {
 		entry.InitError = truncateInitError(runErr.Error())
 		if saveErr := config.SaveConfig(devsyConfig); saveErr != nil {

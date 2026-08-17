@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -23,7 +24,6 @@ func (s *InjectTestSuite) SetupTest() {
 
 func (s *InjectTestSuite) TestLocalInjection() {
 	opts := &InjectOptions{
-		Ctx:     s.ctx,
 		Exec:    (&MockExecFunc{}).Exec,
 		IsLocal: true,
 		Command: "echo hello",
@@ -67,6 +67,36 @@ func (s *InjectTestSuite) TestVersionChecker() {
 		s.NoError(err)
 		s.Equal("v0.9.0", detected)
 	})
+}
+
+func (s *InjectTestSuite) TestVersionChecker_BoundedByVersionCheckTimeout() {
+	original := versionCheckTimeout
+	versionCheckTimeout = 50 * time.Millisecond
+	defer func() { versionCheckTimeout = original }()
+
+	vc := &versionChecker{remoteVersion: "v2.0.0"}
+	hangingExec := func(
+		ctx context.Context,
+		_ string,
+		_ io.Reader,
+		_ io.Writer,
+		_ io.Writer,
+	) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	start := time.Now()
+	detected, err := vc.detectRemoteAgentVersion(context.Background(), hangingExec, "/path")
+	elapsed := time.Since(start)
+
+	s.Empty(detected)
+	s.Error(err)
+	s.Less(
+		elapsed, 2*time.Second,
+		"detectRemoteAgentVersion took %s, want bounded by versionCheckTimeout", elapsed,
+	)
+	s.ErrorContains(err, "timed out")
 }
 
 // MockExecFunc is a helper for testing.
