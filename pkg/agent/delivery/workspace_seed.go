@@ -147,7 +147,9 @@ func (d *LocalDockerDelivery) copyDirIntoVolume(
 	var script strings.Builder
 	script.WriteString("cd /source && tar -c")
 	for _, artifact := range config.BuildArtifactExcludes() {
-		script.WriteString(" --exclude='" + artifact + "'")
+		script.WriteString(" --exclude='")
+		script.WriteString(artifact)
+		script.WriteString("'")
 	}
 	script.WriteString(" . | tar -x -C /target")
 	args := []string{

@@ -87,24 +87,23 @@ func TestRemoveAll(t *testing.T) {
 
 func TestRunCommand(t *testing.T) {
 	t.Run("empty command is a no-op", func(t *testing.T) {
-		assert.NoError(t, RunCommand(RunCommandOptions{Ctx: context.Background()}))
+		assert.NoError(t, RunCommand(context.Background(), RunCommandOptions{}))
 	})
 
 	t.Run("multi-arg command runs via exec", func(t *testing.T) {
 		stdout := &bytes.Buffer{}
-		err := RunCommand(RunCommandOptions{
-			Ctx:     context.Background(),
-			Command: types.StrArray{"echo", "hello"},
-			Stdout:  stdout,
-		})
+		err := RunCommand(context.Background(),
+			RunCommandOptions{
+				Command: types.StrArray{"echo", "hello"},
+				Stdout:  stdout,
+			})
 		require.NoError(t, err)
 		assert.Equal(t, "hello", strings.TrimSpace(stdout.String()))
 	})
 
 	t.Run("single command runs via emulated shell", func(t *testing.T) {
 		stdout := &bytes.Buffer{}
-		err := RunCommand(RunCommandOptions{
-			Ctx:     context.Background(),
+		err := RunCommand(context.Background(), RunCommandOptions{
 			Command: types.StrArray{"echo emulated"},
 			Stdout:  stdout,
 		})
