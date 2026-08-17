@@ -532,6 +532,9 @@ jobs:
     steps:
       - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         background: true
+        docker-images: false
+        swap-storage: false
+        background: true
         if: matrix.free-disk-space == true && runner.os == 'Linux' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
