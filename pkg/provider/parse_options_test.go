@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,23 +21,23 @@ func TestParseOptions(t *testing.T) {
 		},
 		{
 			name:    "single key value",
-			options: []string{"FOO=bar"},
-			want:    map[string]string{testNameFoo: testNameBar},
+			options: []string{"foo=bar"},
+			want:    map[string]string{strings.ToUpper(testNameFoo): testNameBar},
 		},
 		{
 			name:    "value containing equals is preserved",
-			options: []string{"FOO=a=b"},
-			want:    map[string]string{testNameFoo: "a=b"},
+			options: []string{"foo=a=b"},
+			want:    map[string]string{strings.ToUpper(testNameFoo): "a=b"},
 		},
 		{
 			name:    "lowercase key is uppercased",
-			options: []string{"FOO=bar"},
-			want:    map[string]string{testNameFoo: testNameBar},
+			options: []string{"foo=bar"},
+			want:    map[string]string{strings.ToUpper(testNameFoo): testNameBar},
 		},
 		{
 			name:    "surrounding whitespace around key is trimmed",
 			options: []string{" foo =bar"},
-			want:    map[string]string{testNameFoo: testNameBar},
+			want:    map[string]string{strings.ToUpper(testNameFoo): testNameBar},
 		},
 		{
 			name:    "multiple options are collected",
@@ -45,8 +46,8 @@ func TestParseOptions(t *testing.T) {
 		},
 		{
 			name:    "option without equals is rejected",
-			options: []string{testNameFoo},
-			wantErr: `invalid option foo, expected format KEY=VALUE`,
+			options: []string{strings.ToUpper(testNameFoo)},
+			wantErr: `invalid option FOO, expected format KEY=VALUE`,
 		},
 	}
 
