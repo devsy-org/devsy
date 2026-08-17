@@ -286,11 +286,6 @@ func TestExecWithDockerRetry_ContextCanceled(t *testing.T) {
 	assert.NotContains(t, err.Error(), "after")
 }
 
-// TestExecWithDockerRetry_ContextDeadlineExceeded covers the spec-timeout path
-// seen in flaky up-provider-podman runs: when the context deadline fires during
-// retries, the raw context.DeadlineExceeded sentinel must be returned (not the
-// "after N attempts" wrapping) so callers can distinguish a timeout from a real
-// failure. Mirrors TestExecWithSSHRetry_ContextDeadlineExceeded.
 func TestExecWithDockerRetry_ContextDeadlineExceeded(t *testing.T) {
 	t.Helper()
 	origDocker := dockerPullBackoff
