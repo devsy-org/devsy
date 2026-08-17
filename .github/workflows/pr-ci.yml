@@ -399,6 +399,16 @@ jobs:
             job-timeout-minutes: 20
             flake-attempts: 2
 
+          - label: up-provider-podman-rootless-exec
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootless
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
           - label: up-provider-podman-rootless-lifecycle
             runner: ubuntu-latest
             free-disk-space: true
@@ -440,6 +450,16 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootful-lifecycle
+            runner: ubuntu-latest
+            free-disk-space: true
+            install-kind: false
+            requires-secret: false
+            install-podman: rootful
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootful-lifecycle-2
             runner: ubuntu-latest
             free-disk-space: true
             install-kind: false
