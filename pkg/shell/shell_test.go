@@ -32,11 +32,12 @@ func TestRunEmulatedShell_KillExecutesRealBinary(t *testing.T) {
 func TestRunEmulatedShell_ParseError(t *testing.T) {
 	err := RunEmulatedShell(
 		context.Background(),
-		"if then fi (((( broken syntax",
-		nil,
-		&bytes.Buffer{},
-		&bytes.Buffer{},
-		os.Environ(),
+		&CommandRunner{
+			Command: "if then fi (((( broken syntax",
+			Stdout:  &bytes.Buffer{},
+			Stderr:  &bytes.Buffer{},
+			Environ: os.Environ(),
+		},
 	)
 	if err == nil {
 		t.Fatal("expected parse error for malformed command, got nil")
@@ -50,11 +51,12 @@ func TestRunEmulatedShell_DevNullRedirect(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := RunEmulatedShell(
 		context.Background(),
-		"echo suppressed > /dev/null; echo visible",
-		nil,
-		&stdout,
-		&stderr,
-		os.Environ(),
+		&CommandRunner{
+			Command: "echo suppressed > /dev/null; echo visible",
+			Stdout:  &stdout,
+			Stderr:  &stderr,
+			Environ: os.Environ(),
+		},
 	)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v\nstderr: %s", err, stderr.String())
@@ -68,11 +70,12 @@ func TestRunEmulatedShell_NilEnvFallsBackToSystem(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := RunEmulatedShell(
 		context.Background(),
-		"echo $HOME",
-		nil,
-		&stdout,
-		&stderr,
-		nil,
+		&CommandRunner{
+			Command: "echo $HOME",
+			Stdout:  &stdout,
+			Stderr:  &stderr,
+			Environ: nil,
+		},
 	)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v\nstderr: %s", err, stderr.String())
