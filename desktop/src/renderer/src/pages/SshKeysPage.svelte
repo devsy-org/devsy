@@ -177,7 +177,7 @@ async function copyPublicKey(key: SshKeyInfo) {
                 {#if key.hasPassphrase}
                   <ShieldCheck class="h-4 w-4 text-green-600 dark:text-green-400" />
                 {:else}
-                  <ShieldAlert class="h-4 w-4 text-amber-500" />
+                  <ShieldAlert class="h-4 w-4 text-amber-600 dark:text-amber-400" />
                 {/if}
               </div>
               {#if key.comment}
@@ -204,8 +204,8 @@ async function copyPublicKey(key: SshKeyInfo) {
     </ScrollArea>
 
     <p class="text-xs text-muted-foreground">
-      Keys with <ShieldCheck class="inline h-3 w-3 text-green-600" /> have a passphrase.
-      Keys with <ShieldAlert class="inline h-3 w-3 text-amber-500" /> do not.
+      Keys with <ShieldCheck class="inline h-3 w-3 text-green-600 dark:text-green-400" /> have a passphrase.
+      Keys with <ShieldAlert class="inline h-3 w-3 text-amber-600 dark:text-amber-400" /> do not.
     </p>
   {/if}
 </div>

@@ -69,7 +69,7 @@ func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_DefaultTrue_WhenConfigNi
 	}
 	s.driver.UpdateRemoteUserUIDDefault = ""
 	result := s.driver.shouldUpdateUserUID(cfg)
-	if runtime.GOOS == testOSLinux {
+	if runtime.GOOS == osLinux {
 		s.True(result)
 	}
 }
@@ -93,7 +93,7 @@ func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_CLIDefaultOn_WhenConfigN
 	}
 	s.driver.UpdateRemoteUserUIDDefault = testUpdateUIDDefaultOn
 	result := s.driver.shouldUpdateUserUID(cfg)
-	if runtime.GOOS == testOSLinux {
+	if runtime.GOOS == osLinux {
 		s.True(result)
 	}
 }
@@ -108,7 +108,7 @@ func (s *DockerDriverTestSuite) TestShouldUpdateUserUID_ConfigTakesPrecedence_Tr
 	}
 	s.driver.UpdateRemoteUserUIDDefault = testUpdateUIDDefaultOff
 	result := s.driver.shouldUpdateUserUID(cfg)
-	if runtime.GOOS == testOSLinux {
+	if runtime.GOOS == osLinux {
 		s.True(result, "devcontainer.json true should override CLI default off")
 	}
 }
