@@ -41,14 +41,14 @@ func ValidateIDLabels(labels []string) error {
 }
 
 type BuildInfo struct {
-	ImageDetails  *ImageDetails
-	ImageMetadata *ImageMetadataConfig
+	BuiltLocally  bool
 	ImageName     string
 	PrebuildHash  string
 	RegistryCache string
+	ImageDetails  *ImageDetails
+	ImageMetadata *ImageMetadataConfig
+	Dockerless    *BuildInfoDockerless
 	Tags          []string
-
-	Dockerless *BuildInfoDockerless
 }
 
 type BuildInfoDockerless struct {
