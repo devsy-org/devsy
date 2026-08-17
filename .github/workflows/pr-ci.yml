@@ -551,7 +551,6 @@ jobs:
     timeout-minutes: ${{ matrix.job-timeout-minutes || 45 }}
     steps:
       - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        background: true
         docker-images: false
         swap-storage: false
         background: true
