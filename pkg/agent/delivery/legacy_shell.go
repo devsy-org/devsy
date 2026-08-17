@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
@@ -11,47 +12,33 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-// Deprecated: LegacyShellDelivery is deprecated. Platform-native AgentDelivery implementations
-// (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 type LegacyShellDelivery struct {
-	ExecFunc    inject.ExecFunc //nolint:staticcheck // deprecated injection path
+	ExecFunc    inject.ExecFunc //nolint:staticcheck
 	DownloadURL string
-	Timeout     func() *agent.InjectOptions
+	Timeout     func() time.Duration
 }
 
-// Deprecated: Phase is part of LegacyShellDelivery which is deprecated.
 func (d *LegacyShellDelivery) Phase() DeliveryPhase {
 	return PhasePostStart
 }
 
-// Deprecated: DeliverPreStart is part of LegacyShellDelivery which is deprecated.
 func (d *LegacyShellDelivery) DeliverPreStart(_ context.Context, _ PreStartOptions) error {
 	return fmt.Errorf("LegacyShellDelivery does not support pre-start delivery")
 }
 
-// Deprecated: DeliverPostStart is part of LegacyShellDelivery which is deprecated.
 func (d *LegacyShellDelivery) DeliverPostStart(ctx context.Context, opts PostStartOptions) error {
 	if d.ExecFunc == nil {
 		return fmt.Errorf("exec function is required for legacy shell delivery")
 	}
 
-	injectOpts := &agent.InjectOptions{
-		Ctx:                         ctx,
+	if err := agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec:                        d.ExecFunc,
 		IsLocal:                     false,
 		RemoteAgentPath:             pkgconfig.ContainerDevsyHelperLocation,
 		DownloadURL:                 d.downloadURL(),
 		PreferDownloadFromRemoteUrl: new(false),
-	}
-
-	if d.Timeout != nil {
-		overrides := d.Timeout()
-		if overrides != nil && overrides.Timeout > 0 {
-			injectOpts.Timeout = overrides.Timeout
-		}
-	}
-
-	if err := agent.InjectAgent(injectOpts); err != nil {
+		Timeout:                     d.timeout(),
+	}); err != nil {
 		return fmt.Errorf("legacy shell inject: %w", err)
 	}
 
@@ -59,9 +46,15 @@ func (d *LegacyShellDelivery) DeliverPostStart(ctx context.Context, opts PostSta
 	return nil
 }
 
-// Deprecated: Cleanup is part of LegacyShellDelivery which is deprecated.
 func (d *LegacyShellDelivery) Cleanup(_ context.Context, _ string) error {
 	return nil
+}
+
+func (d *LegacyShellDelivery) timeout() time.Duration {
+	if d.Timeout == nil {
+		return 0
+	}
+	return d.Timeout()
 }
 
 func (d *LegacyShellDelivery) downloadURL() string {
@@ -71,12 +64,6 @@ func (d *LegacyShellDelivery) downloadURL() string {
 	return pkgconfig.DefaultAgentDownloadURL()
 }
 
-// ExecFuncFromDriver creates an inject.ExecFunc that routes commands through
-// the provided driver command function. This adapts the driver's
-// CommandDevContainer signature for use with the legacy injection path.
-//
-// Deprecated: Platform-native AgentDelivery implementations
-// (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 func ExecFuncFromDriver(
 	cmdFn func(ctx context.Context, user, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error,
 	user string,

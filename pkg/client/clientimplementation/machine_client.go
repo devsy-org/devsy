@@ -76,17 +76,16 @@ func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 		log.Infof(cfg.startMsg)
 	}
 
-	err := RunCommandWithBinaries(CommandOptions{
-		Ctx:      ctx,
-		Command:  cfg.command,
-		Context:  e.client.machine.Context,
-		Machine:  e.client.machine,
-		Options:  e.client.devsyConfig.ProviderOptions(e.client.config.Name),
-		Config:   e.client.config,
-		Stdout:   cfg.stdout,
-		Stderr:   cfg.stderr,
-		ExtraEnv: cfg.extraEnv,
-		Stdin:    cfg.stdin,
+	err := RunCommandWithBinaries(ctx, WorkspaceCommandConfig{
+		Command:              cfg.command,
+		WorkspaceContextName: e.client.machine.Context,
+		Machine:              e.client.machine,
+		Options:              e.client.devsyConfig.ProviderOptions(e.client.config.Name),
+		Config:               e.client.config,
+		Stdout:               cfg.stdout,
+		Stderr:               cfg.stderr,
+		ExtraEnv:             cfg.extraEnv,
+		Stdin:                cfg.stdin,
 	})
 	if err != nil {
 		return err

@@ -1,17 +1,15 @@
+//nolint:dupl // structurally similar to update.go; intentional sibling command
 package workspace
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
-	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/client/proxycmd"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
-	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
@@ -26,8 +24,6 @@ type CreateWorkspaceCmd struct {
 }
 
 // NewCreateCmd creates a new command.
-//
-//nolint:dupl // structurally similar to NewUpdateCmd; intentional sibling factory
 func NewCreateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &CreateWorkspaceCmd{
 		GlobalFlags: globalFlags,
@@ -68,25 +64,12 @@ func (cmd *CreateWorkspaceCmd) Run(
 	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
-	opts := devsyConfig.ProviderOptions(provider.Name)
-	opts[platform.WorkspaceInstanceEnv] = config.OptionValue{Value: cmd.Instance}
-
-	var buf bytes.Buffer
-
-	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
-		Ctx:     ctx,
-		Command: provider.Exec.Proxy.Create.Workspace,
-		Context: devsyConfig.DefaultContext,
-		Options: opts,
-		Config:  provider,
-		Stdout:  &buf,
-		Stderr:  log.Writer(log.LevelError),
+	return proxycmd.RunAndPrint(ctx, proxycmd.Options{
+		Command:     provider.Exec.Proxy.Create.Workspace,
+		DevsyConfig: devsyConfig,
+		Provider:    provider,
+		ExtraOptions: map[string]config.OptionValue{
+			platform.WorkspaceInstanceEnv: {Value: cmd.Instance},
+		},
 	})
-	if err != nil {
-		return fmt.Errorf("create workspace: %w", err)
-	}
-
-	fmt.Println(buf.String())
-
-	return nil
 }
