@@ -523,7 +523,7 @@ jobs:
 
           - label: up-features
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: true
             requires-secret: false
 
@@ -553,6 +553,9 @@ jobs:
       - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         background: true
         if: matrix.free-disk-space == true && runner.os == 'Linux' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        with:
+          docker-images: false
+          swap-storage: false
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
