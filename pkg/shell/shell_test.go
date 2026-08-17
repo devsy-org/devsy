@@ -46,9 +46,6 @@ func TestRunEmulatedShell_ParseError(t *testing.T) {
 }
 
 func TestRunEmulatedShell_DevNullRedirect(t *testing.T) {
-	// The custom OpenHandler intercepts "/dev/null" so redirections to it
-	// never touch the real filesystem. Output redirected there is discarded
-	// while subsequent commands still run.
 	var stdout, stderr bytes.Buffer
 	err := RunEmulatedShell(
 		context.Background(),
@@ -67,8 +64,6 @@ func TestRunEmulatedShell_DevNullRedirect(t *testing.T) {
 }
 
 func TestRunEmulatedShell_NilEnvFallsBackToSystem(t *testing.T) {
-	// A nil env slice must fall back to os.Environ() so that referenced
-	// variables still resolve during emulation.
 	var stdout, stderr bytes.Buffer
 	err := RunEmulatedShell(
 		context.Background(),
