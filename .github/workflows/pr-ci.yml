@@ -717,8 +717,6 @@ jobs:
           sudo mkdir -p /etc/containers
           printf '[engine]\nruntime = "runc"\n' | sudo tee /etc/containers/containers.conf
 
-
-
       - name: Install Podman (Linux rootless)
         if: matrix.install-podman == 'rootless' && runner.os == 'Linux'
         env:
