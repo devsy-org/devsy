@@ -6,6 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const agentInternalSSHGitClone = "agent internal ssh-git-clone"
+
 func TestQuote(t *testing.T) {
 	cases := []struct {
 		name string
@@ -21,13 +23,13 @@ func TestQuote(t *testing.T) {
 		},
 		{
 			name: "single arg with spaces passed through unchanged",
-			args: []string{"agent internal ssh-git-clone"},
-			want: "agent internal ssh-git-clone",
+			args: []string{agentInternalSSHGitClone},
+			want: agentInternalSSHGitClone,
 		},
 		{
 			name: "multiple args are shell-quoted and joined",
 			args: []string{"agent", "internal", "ssh-git-clone"},
-			want: "agent internal ssh-git-clone",
+			want: agentInternalSSHGitClone,
 		},
 		{
 			name: "arg needing escaping is single-quoted",
