@@ -368,3 +368,42 @@ func TestRunPairBothSidesAlwaysRun(t *testing.T) {
 		t.Fatal("handler side never ran")
 	}
 }
+
+func TestRunPairStopsBothSidesWhenParentContextCancelledBeforeEitherReturns(t *testing.T) {
+	t.Parallel()
+
+	pb, err := NewPipeBridge()
+	if err != nil {
+		t.Fatalf("NewPipeBridge() error = %v", err)
+	}
+	defer pb.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Neither side watches ctx at all -- both block in a raw Read on their
+	// assigned pipe end, exactly like a real bridged os.File would when no
+	// bytes are in flight. Only closing the underlying fd (not merely
+	// cancelling ctx) can unblock a pending Read.
+	tunnel := func(_ context.Context, stdin *os.File, _ *os.File) error {
+		buf := make([]byte, 1)
+		_, err := stdin.Read(buf)
+		return err
+	}
+	handler := func(_ context.Context, stdout *os.File, _ *os.File) error {
+		buf := make([]byte, 1)
+		_, err := stdout.Read(buf)
+		return err
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- pb.RunPair(ctx, tunnel, handler) }()
+
+	time.Sleep(50 * time.Millisecond) // let both sides actually enter Read
+	cancel()                          // parent ctx ends while both are still blocked
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("RunPair hung after parent ctx cancellation with both sides blocked in Read")
+	}
+}

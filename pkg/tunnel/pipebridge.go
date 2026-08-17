@@ -3,6 +3,7 @@ package tunnel
 import (
 	"context"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/util/iojoin"
@@ -64,11 +65,13 @@ type (
 //
 // Lifecycle:
 //  1. Both sides run in their own goroutine under a shared cancellable context.
-//  2. When either side returns, the other is signalled to stop: its context is
-//     cancelled and the bridge write ends are closed so reads on the other
-//     side observe EOF rather than blocking.
-//  3. RunPair then waits for the remaining side, but no longer than
-//     joinTimeout, so a side that ignores cancellation cannot hang the caller.
+//  2. When either side returns, OR the parent ctx is cancelled first (both
+//     sides may be blocked in a raw Read that does not itself observe ctx),
+//     stop is invoked: the context is cancelled and the bridge write ends are
+//     closed so reads on either side observe EOF rather than blocking forever.
+//  3. RunPair then waits for both sides, but no longer than joinTimeout once
+//     the first side has finished, so a side that ignores cancellation cannot
+//     hang the caller.
 //  4. Errors are classified by ClassifyTunnelErrors: a nil handler result is
 //     success regardless of the tunnel's exit; an EOF handler error with a
 //     tunnel error is surfaced as a connection error.
@@ -84,21 +87,37 @@ func (pb *PipeBridge) RunPair(
 	pairCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			cancel()
+			_ = pb.StdoutWriter.Close()
+			_ = pb.StdinWriter.Close()
+		})
+	}
+	defer stop()
+
+	// If the parent ctx is cancelled before either side returns (e.g. both
+	// are blocked in a raw file Read that doesn't itself watch ctx), stop
+	// them directly instead of waiting on iojoin.Join's onFirst, which never
+	// fires unless one side already completed.
+	stopped := make(chan struct{})
+	defer close(stopped)
+	go func() {
+		select {
+		case <-ctx.Done():
+			stop()
+		case <-stopped:
+		}
+	}()
+
 	tunnelSide := func() error { return tunnelFn(pairCtx, pb.StdinReader, pb.StdoutWriter) }
 	handlerSide := func() error {
-		defer cancel() // the handler is the primary side; if it returns, stop the tunnel
 		return handlerFn(pairCtx, pb.StdoutReader, pb.StdinWriter)
 	}
 
 	// Run the two sides concurrently and wait for both to finish (or the slower
 	// side to be abandoned after joinTimeout).
-	tunnelErr, handlerErr := iojoin.Join(
-		tunnelSide, handlerSide, joinTimeout,
-		func() {
-			cancel()
-			_ = pb.StdoutWriter.Close()
-			_ = pb.StdinWriter.Close()
-		},
-	)
+	tunnelErr, handlerErr := iojoin.Join(tunnelSide, handlerSide, joinTimeout, stop)
 	return ClassifyTunnelErrors(tunnelErr, handlerErr)
 }
