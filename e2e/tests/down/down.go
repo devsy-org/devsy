@@ -122,6 +122,10 @@ var _ = ginkgo.Describe(
 			err = f.DevsyStop(ctx, tempDir)
 			framework.ExpectNoError(err)
 
+			status, err = f.DevsyStatus(ctx, tempDir)
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.ToUpper(status.State)).To(gomega.Equal("STOPPED"))
+
 			_, err = f.FindWorkspace(ctx, tempDir)
 			framework.ExpectNoError(err)
 

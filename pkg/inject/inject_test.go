@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -685,10 +686,31 @@ func expectLine(t *testing.T, r io.Reader, want string) {
 	}
 }
 
+// syncBuffer is a bytes.Buffer safe for concurrent Write (from the exec
+// package's stderr-copying goroutine) and String (from the test goroutine),
+// since cmd.Stderr may still be actively written to when the test reads it
+// (e.g. on a timeout path where the process hasn't exited yet).
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 type shProcessIO struct {
 	stdin  io.Reader
 	stdout io.Writer
-	stderr *bytes.Buffer
+	stderr *syncBuffer
 }
 
 type shTestPipe struct {
@@ -700,7 +722,7 @@ func startInjectShProcess(
 	t *testing.T,
 	command, installPath string,
 	procIO shProcessIO,
-) (*exec.Cmd, chan error) {
+) (*exec.Cmd, <-chan struct{}) {
 	t.Helper()
 
 	rendered, err := GenerateScript(Script, &Params{
@@ -723,9 +745,12 @@ func startInjectShProcess(
 	cmd.Stderr = procIO.stderr
 	require.NoError(t, cmd.Start())
 
-	cmdErr := make(chan error, 1)
-	go func() { cmdErr <- cmd.Wait() }()
-	return cmd, cmdErr
+	waitDone := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(waitDone)
+	}()
+	return cmd, waitDone
 }
 
 func driveBinaryHandshake(t *testing.T, shPipe shTestPipe, binary []byte) {
@@ -775,18 +800,19 @@ func TestInjectScript_RealShellBinaryTransfer(t *testing.T) {
 
 	stdinR, stdinW := io.Pipe()
 	stdoutR, stdoutW := io.Pipe()
-	var stderr bytes.Buffer
+	stderr := &syncBuffer{}
 	command := "printf 'CMD-START\\n' && cat"
-	cmd, cmdErr := startInjectShProcess(
+	cmd, waitDone := startInjectShProcess(
 		t,
 		command,
 		installPath,
-		shProcessIO{stdin: stdinR, stdout: stdoutW, stderr: &stderr},
+		shProcessIO{stdin: stdinR, stdout: stdoutW, stderr: stderr},
 	)
 	t.Cleanup(func() {
 		_ = stdinW.Close()
 		_ = stdoutW.Close()
 		_ = cmd.Process.Kill()
+		<-waitDone
 	})
 	shPipe := shTestPipe{in: stdinW, out: stdoutR}
 
@@ -799,7 +825,7 @@ func TestInjectScript_RealShellBinaryTransfer(t *testing.T) {
 	_ = stdinW.Close()
 	_ = stdoutW.Close()
 	select {
-	case <-cmdErr:
+	case <-waitDone:
 	case <-time.After(5 * time.Second):
 		t.Fatalf("inject.sh did not exit: stderr=%s", stderr.String())
 	}
