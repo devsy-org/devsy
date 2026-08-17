@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,13 +8,12 @@ import (
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
-	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/client/proxycmd"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
-	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
 
@@ -66,42 +64,29 @@ func (cmd *ListClustersCmd) Run(
 	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
-	opts := devsyConfig.ProviderOptions(provider.Name)
-	opts[platform.ProjectEnv] = config.OptionValue{Value: cmd.Project}
-
-	var buf bytes.Buffer
-	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
-		Ctx:     ctx,
-		Command: provider.Exec.Proxy.List.Clusters,
-		Context: devsyConfig.DefaultContext,
-		Options: opts,
-		Config:  provider,
-		Stdout:  &buf,
-	})
-	if err != nil {
-		return fmt.Errorf("list clusters with provider %q: %w", provider.Name, err)
-	}
-
 	headers := []string{proutil.HeaderName, proutil.HeaderDisplayName, "Online"}
-	if buf.Len() == 0 {
-		table.Print(headers, nil)
-		return nil
-	}
 
-	clusters := managementv1.ProjectClusters{}
-	if err := json.Unmarshal(buf.Bytes(), &clusters); err != nil {
-		return fmt.Errorf("parse clusters output: %w", err)
-	}
+	return proxycmd.RunAndPrintTable(ctx, proxycmd.Options{
+		Command:     provider.Exec.Proxy.List.Clusters,
+		DevsyConfig: devsyConfig,
+		Provider:    provider,
+		ExtraOptions: map[string]config.OptionValue{
+			platform.ProjectEnv: {Value: cmd.Project},
+		},
+	}, headers, func(payload []byte) ([][]string, error) {
+		clusters := managementv1.ProjectClusters{}
+		if err := json.Unmarshal(payload, &clusters); err != nil {
+			return nil, err
+		}
 
-	rows := make([][]string, 0, len(clusters.Clusters))
-	for _, c := range clusters.Clusters {
-		rows = append(rows, []string{
-			c.GetName(),
-			c.Spec.DisplayName,
-			fmt.Sprintf("%t", c.Status.Online),
-		})
-	}
-	table.Print(headers, rows)
-
-	return nil
+		rows := make([][]string, 0, len(clusters.Clusters))
+		for _, c := range clusters.Clusters {
+			rows = append(rows, []string{
+				c.GetName(),
+				c.Spec.DisplayName,
+				fmt.Sprintf("%t", c.Status.Online),
+			})
+		}
+		return rows, nil
+	})
 }
