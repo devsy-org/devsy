@@ -95,7 +95,7 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 			false,
 		)
 		if err != nil {
-			log.Warnf("Failed to list workspaces: %v", err)
+			log.Warnf("failed to list workspaces: %v", err)
 		} else {
 			cleanupLocalWorkspaces(
 				ctx,
@@ -109,12 +109,12 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 		daemonClient := daemon.NewLocalClient(proInstanceConfig.Provider)
 		err = daemonClient.Shutdown(ctx)
 		if err != nil {
-			log.Warnf("Failed to shut down daemon: %v", err)
+			log.Warnf("failed to shut down daemon: %v", err)
 		}
-		log.Debug("Waiting for daemon to shut down")
+		log.Debug("waiting for daemon to shut down")
 		err = waitDaemonStopped(ctx, providerConfig.Name)
 		if err != nil {
-			log.Warnf("Failed to wait for daemon to be stopped: %v", err)
+			log.Warnf("failed to wait for daemon to be stopped: %v", err)
 		}
 	}
 
