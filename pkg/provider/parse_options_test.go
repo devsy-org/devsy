@@ -6,6 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const foo = "FOO"
+
 func TestParseOptions(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -21,22 +23,22 @@ func TestParseOptions(t *testing.T) {
 		{
 			name:    "single key value",
 			options: []string{"FOO=bar"},
-			want:    map[string]string{"FOO": "bar"},
+			want:    map[string]string{foo: "bar"},
 		},
 		{
 			name:    "value containing equals is preserved",
 			options: []string{"FOO=a=b"},
-			want:    map[string]string{"FOO": "a=b"},
+			want:    map[string]string{foo: "a=b"},
 		},
 		{
 			name:    "lowercase key is uppercased",
 			options: []string{"foo=bar"},
-			want:    map[string]string{"FOO": "bar"},
+			want:    map[string]string{foo: "bar"},
 		},
 		{
 			name:    "surrounding whitespace around key is trimmed",
 			options: []string{" foo =bar"},
-			want:    map[string]string{"FOO": "bar"},
+			want:    map[string]string{foo: "bar"},
 		},
 		{
 			name:    "multiple options are collected",
@@ -45,8 +47,8 @@ func TestParseOptions(t *testing.T) {
 		},
 		{
 			name:    "option without equals is rejected",
-			options: []string{"FOO"},
-			wantErr: `invalid option "FOO", expected format KEY=VALUE`,
+			options: []string{foo},
+			wantErr: `invalid option foo, expected format KEY=VALUE`,
 		},
 	}
 
