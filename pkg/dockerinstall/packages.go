@@ -12,7 +12,7 @@ func BuildPackageList(version, pkgVersion, cliPkgVersion string, extraPkgs ...st
 	pkgs = append(pkgs, PkgDockerCE+pkgVersion)
 
 	// CLI and containerd (18.09+)
-	if versionGte(version, "18.09") {
+	if versionGte(version, ubuntuRelease1809) {
 		if cliPkgVersion != "" {
 			pkgs = append(pkgs, PkgDockerCECLI+cliPkgVersion, PkgContainerd)
 		} else {
@@ -21,12 +21,12 @@ func BuildPackageList(version, pkgVersion, cliPkgVersion string, extraPkgs ...st
 	}
 
 	// Compose plugin (20.10+)
-	if versionGte(version, "20.10") {
+	if versionGte(version, ubuntuRelease2010) {
 		pkgs = append(pkgs, PkgDockerCompose)
 	}
 
 	// Buildx plugin (23.0+)
-	if versionGte(version, "23.0") {
+	if versionGte(version, ubuntuRelease230) {
 		pkgs = append(pkgs, PkgDockerBuildx)
 	}
 

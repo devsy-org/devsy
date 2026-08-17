@@ -28,7 +28,7 @@ func (s *PackagesTestSuite) TestBuildPackageList_PreCLI() {
 }
 
 func (s *PackagesTestSuite) TestBuildPackageList_CLIWithPinnedCLI() {
-	version := "18.09"
+	version := ubuntuRelease1809
 	got := BuildPackageList(version, "=1:18.09.0", "=1:18.09.0-3")
 
 	pkgs := strings.Split(got, " ")
@@ -45,7 +45,7 @@ func (s *PackagesTestSuite) TestBuildPackageList_CLIWithPinnedCLI() {
 }
 
 func (s *PackagesTestSuite) TestBuildPackageList_CLIWithoutPinnedCLI() {
-	version := "18.09"
+	version := ubuntuRelease1809
 	got := BuildPackageList(version, "=1:18.09.0", "")
 
 	pkgs := strings.Split(got, " ")
@@ -56,7 +56,7 @@ func (s *PackagesTestSuite) TestBuildPackageList_CLIWithoutPinnedCLI() {
 }
 
 func (s *PackagesTestSuite) TestBuildPackageList_ComposeAt2010() {
-	version := "20.10"
+	version := ubuntuRelease2010
 	got := BuildPackageList(version, "=5:20.10.0", "=5:20.10.0")
 
 	s.Contains(got, PkgDockerCompose)
@@ -64,7 +64,7 @@ func (s *PackagesTestSuite) TestBuildPackageList_ComposeAt2010() {
 }
 
 func (s *PackagesTestSuite) TestBuildPackageList_BuildxAt230() {
-	version := "23.0"
+	version := ubuntuRelease230
 	got := BuildPackageList(version, "=5:23.0.0", "=5:23.0.0")
 
 	pkgs := strings.Split(got, " ")
@@ -97,7 +97,7 @@ func (s *PackagesTestSuite) TestBuildPackageList_EmptyVersionEnablesAllFeatures(
 }
 
 func (s *PackagesTestSuite) TestBuildPackageList_ExtraPackagesAppended() {
-	got := BuildPackageList("23.0", "", "", PkgDockerRootlessExtras, PkgDockerScan)
+	got := BuildPackageList(ubuntuRelease230, "", "", PkgDockerRootlessExtras, PkgDockerScan)
 
 	s.True(strings.HasSuffix(got, PkgDockerRootlessExtras+" "+PkgDockerScan))
 	s.Contains(got, PkgDockerBuildx)
@@ -109,18 +109,18 @@ func (s *PackagesTestSuite) TestVersionGte_Table() {
 		target  string
 		want    bool
 	}{
-		{"", "18.09", true},
-		{"18.09", "18.09", true},
-		{"20.10", "18.09", true},
-		{"18.08", "18.09", false},
-		{"17.09", "18.09", false},
-		{"22.04", "23.0", false},
-		{"24.0", "23.0", true},
-		{"23", "23.0", true},
-		{"23.0", "23.0", true},
-		{"20.10-ce", "20.10", true},
-		{"18.09-0~debian", "18.09", true},
-		{"abc.0", "18.09", false},
+		{"", ubuntuRelease1809, true},
+		{ubuntuRelease1809, ubuntuRelease1809, true},
+		{ubuntuRelease2010, ubuntuRelease1809, true},
+		{"18.08", ubuntuRelease1809, false},
+		{"17.09", ubuntuRelease1809, false},
+		{ubuntuRelease2204, ubuntuRelease230, false},
+		{"24.0", ubuntuRelease230, true},
+		{"23", ubuntuRelease230, true},
+		{ubuntuRelease230, ubuntuRelease230, true},
+		{"20.10-ce", ubuntuRelease2010, true},
+		{"18.09-0~debian", ubuntuRelease1809, true},
+		{"abc.0", ubuntuRelease1809, false},
 		{"1.2.3", "1.2", true},
 	}
 

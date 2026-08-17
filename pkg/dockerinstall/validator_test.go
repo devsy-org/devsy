@@ -66,7 +66,7 @@ func (s *ValidatorTestSuite) TestCheckWSL_IsWSL_DryRun() {
 
 func (s *ValidatorTestSuite) TestCheckDeprecation_NotDeprecated() {
 	validator := NewValidator(s.opts)
-	distro := &Distro{ID: "ubuntu", Version: "22.04"}
+	distro := &Distro{ID: "ubuntu", Version: ubuntuRelease2204}
 	validator.CheckDeprecation(distro)
 	s.Empty(s.stdout.String())
 }
@@ -106,7 +106,7 @@ func (s *ValidatorTestSuite) TestCheckDeprecation_CurrentFedora() {
 
 func (s *ValidatorTestSuite) TestValidateDistro_EmptyID() {
 	validator := NewValidator(s.opts)
-	distro := &Distro{ID: "", Version: "22.04"}
+	distro := &Distro{ID: "", Version: ubuntuRelease2204}
 	err := validator.ValidateDistro(distro)
 	s.Error(err)
 	s.Contains(s.stderr.String(), "Unable to detect distribution")
