@@ -1,6 +1,4 @@
 #!/bin/sh
-# Deprecated: inject.sh is deprecated. Platform-native AgentDelivery implementations
-# (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 set -e
 
 INSTALL_DIR="{{ .InstallDir }}"
@@ -43,7 +41,19 @@ inject_binary() {
 
     temp_file="$(mktemp "$INSTALL_PATH.XXXXXX" 2>/dev/null || echo "$INSTALL_PATH.$$-$(date +%s)")"
 
-    if ! $sh_c "cat > \"$temp_file\""; then
+    if ! read -r BINARY_SIZE; then
+        >&2 echo "Error: Failed to read binary size"
+        return 1
+    fi
+
+    case "$BINARY_SIZE" in
+        '' | *[!0-9]*)
+            >&2 echo "Error: Invalid binary size: $BINARY_SIZE"
+            return 1
+            ;;
+    esac
+
+    if ! $sh_c "head -c \"$BINARY_SIZE\" > \"$temp_file\""; then
         >&2 echo "Error: Failed to write binary to $temp_file"
         $sh_c "rm -f \"$temp_file\"" 2>/dev/null || true
         return 1

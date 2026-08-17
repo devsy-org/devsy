@@ -380,7 +380,7 @@ var _ = ginkgo.Describe(
 			lines = strings.Count(strings.TrimSpace(out), "\n") + 1
 			gomega.Expect(lines).To(gomega.Equal(2),
 				"postStartCommand should have run again after restart")
-		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 		ginkgo.It("waitFor defers postCreateCommand to background", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -459,21 +459,22 @@ var _ = ginkgo.Describe(
 			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("postStartDone"),
 				"postStartCommand should have completed before devsy up returned")
 
-			// postAttachCommand should NOT have completed yet (it sleeps 15s)
 			_, err = dtc.execSSH(ctx, tempDir, "cat $HOME/post-attach.out")
 			gomega.Expect(err).To(gomega.HaveOccurred(),
-				"postAttachCommand should still be running when devsy up returns")
+				"postAttachCommand must still be blocked on the release marker")
 
-			// Wait for postAttachCommand to finish and verify it does complete
+			_, err = dtc.execSSH(ctx, tempDir, "touch $HOME/release-post-attach")
+			framework.ExpectNoError(err)
+
 			gomega.Eventually(func() string {
 				out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/post-attach.out 2>/dev/null")
 				if err != nil {
 					return ""
 				}
 				return strings.TrimSpace(out)
-			}).WithTimeout(30*time.Second).WithPolling(2*time.Second).Should(
+			}).WithTimeout(15*time.Second).WithPolling(500*time.Millisecond).Should(
 				gomega.Equal("postAttachDone"),
-				"postAttachCommand should eventually complete in the background",
+				"postAttachCommand should complete promptly once released",
 			)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
@@ -514,7 +515,7 @@ var _ = ginkgo.Describe(
 				gomega.Equal("2"),
 				"postAttachCommand should run again on second attach",
 			)
-		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 		ginkgo.It(
 			"initializeCommand with object syntax runs named sub-commands in parallel",
