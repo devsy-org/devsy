@@ -198,8 +198,6 @@ func handleRunError(ctx context.Context, err error, command string) error {
 	if errors.As(err, &exitErr) {
 		exitCode := exitErr.ExitStatus()
 
-		// Signal-driven exits are normal ways to end an interactive session,
-		// so they are not treated as errors.
 		if isSignalInterrupt(exitCode) {
 			return nil
 		}

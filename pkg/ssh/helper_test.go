@@ -94,8 +94,6 @@ func TestHandleRunError_GenericErrorIsWrappedWithCommand(t *testing.T) {
 }
 
 func TestHandleRunError_ExitErrorIsWrappedInDevsyExitError(t *testing.T) {
-	// *ssh.ExitError embeds Waitmsg, whose zero value yields ExitStatus() == 0,
-	// so it is not a signal interrupt and must be wrapped in our ExitError.
 	sshExitErr := &ssh.ExitError{}
 
 	err := handleRunError(context.Background(), sshExitErr, "run")
@@ -123,7 +121,5 @@ func TestSetupContextCancellation_ReturnsCleanupThatStopsWatcher(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cleanup)
 
-	// Calling cleanup closes the watcher's done channel so the goroutine exits
-	// without ever touching the session. It must be safe to call exactly once.
 	assert.NotPanics(t, cleanup)
 }
