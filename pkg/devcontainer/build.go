@@ -94,6 +94,7 @@ func (r *runner) extendImage(
 			ImageName:     imageBase,
 			RegistryCache: options.RegistryCache,
 			Tags:          options.Tag,
+			BuiltLocally:  false, // devcontainer.json "image:" reference
 		}, nil
 	}
 
@@ -402,6 +403,7 @@ func (r *runner) findPrebuildImage(
 			PrebuildHash:  params.prebuildHash,
 			RegistryCache: options.RegistryCache,
 			Tags:          options.Tag,
+			BuiltLocally:  false, // prebuild repository image, may need a real pull
 		}, nil
 	}
 
@@ -612,6 +614,8 @@ func (r *runner) composeBuildInfo(
 		PrebuildHash:  imageTag,
 		RegistryCache: options.RegistryCache,
 		Tags:          options.Tag,
+		BuiltLocally: extendResult.buildImageName != "" &&
+			currentImageName == extendResult.buildImageName,
 	}, nil
 }
 

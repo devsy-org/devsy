@@ -323,6 +323,7 @@ func (r *imageResolver) tryResolve(
 		PrebuildHash:  req.prebuildHash,
 		RegistryCache: req.options.RegistryCache,
 		Tags:          req.options.Tag,
+		BuiltLocally:  true,
 	}, true
 }
 
@@ -437,5 +438,6 @@ func (d *dockerDriver) createBuildInfo(
 		PrebuildHash:  req.PrebuildHash,
 		RegistryCache: req.Options.RegistryCache,
 		Tags:          req.Options.Tag,
+		BuiltLocally:  !buildOptions.Push,
 	}, nil
 }

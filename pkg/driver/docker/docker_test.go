@@ -12,7 +12,6 @@ const (
 	testBindMount           = "type=bind,src=/a,dst=/b"
 	testUpdateUIDDefaultOff = "off"
 	testUpdateUIDDefaultOn  = "on"
-	testOSLinux             = "linux"
 	testRemoteUser          = "vscode"
 	testRunArg              = "run"
 	testDockerCmd           = "docker"
