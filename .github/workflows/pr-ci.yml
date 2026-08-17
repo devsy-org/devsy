@@ -275,7 +275,7 @@ jobs:
 
           - label: build
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: true
             requires-secret: true
 
