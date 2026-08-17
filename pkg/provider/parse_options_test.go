@@ -47,7 +47,7 @@ func TestParseOptions(t *testing.T) {
 		{
 			name:    "option without equals is rejected",
 			options: []string{strings.ToUpper(testNameFoo)},
-			wantErr: `invalid option FOO, expected format KEY=VALUE`,
+			wantErr: `invalid option "FOO", expected format KEY=VALUE`,
 		},
 	}
 
