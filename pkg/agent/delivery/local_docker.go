@@ -226,6 +226,9 @@ func (d *LocalDockerDelivery) populateVolumeWithHelper(
 	return nil
 }
 
+// populateVolumeDirectCopy writes the agent binary to a volume mountpoint the
+// host can write directly (docker, or rootful podman). Podman rootless
+// volumes are not directly writable by the host.
 func (d *LocalDockerDelivery) populateVolumeDirectCopy(
 	ctx context.Context,
 	volumeName string,
@@ -238,19 +241,23 @@ func (d *LocalDockerDelivery) populateVolumeDirectCopy(
 
 	destPath := filepath.Join(mountpoint, binaryName())
 
-	if d.isRootlessPodman(ctx) {
-		return d.populateVolumeViaUnshare(ctx, destPath, data)
+	if err := writeBinaryDirect(destPath, data); err == nil {
+		return nil
+	} else if !d.isPodman() || !errors.Is(err, os.ErrPermission) {
+		return fmt.Errorf("write binary to volume: %w", err)
 	}
 
+	return d.populateVolumeViaUnshare(ctx, destPath, data)
+}
+
+// writeBinaryDirect writes the agent binary to a volume mountpoint the host
+// can write directly (docker, or rootful podman).
+func writeBinaryDirect(destPath string, data []byte) error {
 	if err := os.WriteFile(destPath, data, 0o600); err != nil {
 		return fmt.Errorf("write binary to volume: %w", err)
 	}
-	// #nosec G302 -- agent binary must be executable
-	if err := os.Chmod(destPath, 0o755); err != nil {
-		return fmt.Errorf("chmod binary: %w", err)
-	}
 
-	return nil
+	return os.Chmod(destPath, 0o755) // #nosec G302 -- agent binary must be executable
 }
 
 func (d *LocalDockerDelivery) populateVolumeViaUnshare(
@@ -270,21 +277,6 @@ func (d *LocalDockerDelivery) populateVolumeViaUnshare(
 
 func (d *LocalDockerDelivery) isPodman() bool {
 	return filepath.Base(d.dockerCommand()) == podmanCmd
-}
-
-// isRootlessPodman reports whether the configured podman is running rootless.
-// Only rootless podman requires "podman unshare" to write into a volume's
-// mountpoint; rootful podman's mountpoint is directly writable like docker's.
-func (d *LocalDockerDelivery) isRootlessPodman(ctx context.Context) bool {
-	if !d.isPodman() {
-		return false
-	}
-	out, err := d.cmd(ctx, "info", "--format", "{{.Host.Security.Rootless}}").Output()
-	if err != nil {
-		log.Debugf("failed to detect podman rootless mode, assuming rootful: %v", err)
-		return false
-	}
-	return strings.TrimSpace(string(out)) == "true"
 }
 
 func (d *LocalDockerDelivery) volumeMountpoint(
