@@ -17,6 +17,8 @@ import (
 
 const containerRestartAttempts = 3
 
+const containerStatusRunning = "running"
+
 // snapshotImageLabel marks a committed image as a devsy workspace snapshot,
 // so it's identifiable via `docker inspect`/`docker images --filter` by
 // anyone who pulls or lists it outside `devsy snapshot` tooling — the
@@ -72,7 +74,7 @@ func (d *dockerDriver) ensureContainerRunning(
 			status,
 		)
 	}
-	if status == "running" {
+	if status == containerStatusRunning {
 		return nil
 	}
 
@@ -189,6 +191,8 @@ func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag str
 	return nil
 }
 
+// DeleteDevContainer stops a still-running container before removing it,
+// since podman/docker refuse to `rm` a running container.
 func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId string) error {
 	container, err := d.FindDevContainer(ctx, workspaceId)
 	if err != nil {
@@ -197,12 +201,13 @@ func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId strin
 		return nil
 	}
 
-	err = d.Docker.Remove(ctx, container.ID)
-	if err != nil {
-		return err
+	if strings.ToLower(container.State.Status) == containerStatusRunning {
+		if err := d.Docker.Stop(ctx, container.ID); err != nil {
+			log.Warnf("stop before delete failed for %s: %v", container.ID, err)
+		}
 	}
 
-	return nil
+	return d.Docker.Remove(ctx, container.ID)
 }
 
 func (d *dockerDriver) StartDevContainer(ctx context.Context, workspaceId string) error {
