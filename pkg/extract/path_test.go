@@ -8,7 +8,7 @@ import (
 
 const (
 	targetFileName = "target.txt"
-	etcPasswd      = "../../etc/passwd"
+	etcPasswd      = "../../etc/passwd" // #nosec G101
 )
 
 func TestWithinDir(t *testing.T) {
