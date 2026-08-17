@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -351,4 +352,32 @@ func TestIsRootlessDockerHostEmptyFallsBackToUID(t *testing.T) {
 	if got := isRootlessDockerHost(""); got != want {
 		t.Errorf("isRootlessDockerHost(\"\") = %v, want %v (uid=%d)", got, want, os.Geteuid())
 	}
+}
+
+func TestRunPreflightDistinguishesTimeoutFromRefusal(t *testing.T) {
+	timedOut := fmt.Errorf("%w: %w", context.DeadlineExceeded, errors.New("signal: killed"))
+	p := dockerProbe{
+		runtime:  docker.RuntimeDocker,
+		lookPath: installed,
+		ping:     func(context.Context) error { return timedOut },
+	}
+	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.NotContains(t, err.Error(), "is not reachable",
+		"a self-inflicted timeout must not be reported as an authoritative refusal")
+	require.Contains(t, err.Error(), "did not respond in time")
+}
+
+func TestRunPreflightDaemonRefusalKeepsUnreachableMessage(t *testing.T) {
+	down := errors.New("Cannot connect to the Docker daemon")
+	p := dockerProbe{
+		runtime:  docker.RuntimeDocker,
+		lookPath: installed,
+		ping:     func(context.Context) error { return down },
+	}
+	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, context.DeadlineExceeded)
+	require.Contains(t, err.Error(), "is not reachable")
 }

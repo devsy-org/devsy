@@ -275,7 +275,7 @@ jobs:
 
           - label: build
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: true
             requires-secret: true
 
@@ -391,7 +391,17 @@ jobs:
 
           - label: up-provider-podman-rootless-basic
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootless
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootless-exec
+            runner: ubuntu-latest
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootless
@@ -401,7 +411,7 @@ jobs:
 
           - label: up-provider-podman-rootless-lifecycle
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootless
@@ -411,7 +421,7 @@ jobs:
 
           - label: up-provider-podman-rootless-config
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootless
@@ -421,7 +431,7 @@ jobs:
 
           - label: up-provider-podman-rootless-features
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootless
@@ -431,7 +441,7 @@ jobs:
 
           - label: up-provider-podman-rootful-basic
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootful
@@ -440,6 +450,16 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootful-lifecycle
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootful
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootful-lifecycle-2
             runner: ubuntu-latest
             free-disk-space: true
             install-kind: false
@@ -451,7 +471,7 @@ jobs:
 
           - label: up-provider-podman-rootful-config
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootful
@@ -461,7 +481,7 @@ jobs:
 
           - label: up-provider-podman-rootful-features
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootful
@@ -477,7 +497,7 @@ jobs:
 
           - label: up-provider-microsandbox
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-microsandbox: true
@@ -503,7 +523,7 @@ jobs:
 
           - label: up-features
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: true
             requires-secret: false
 
@@ -533,6 +553,9 @@ jobs:
       - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         background: true
         if: matrix.free-disk-space == true && runner.os == 'Linux' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        with:
+          docker-images: false
+          swap-storage: false
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'

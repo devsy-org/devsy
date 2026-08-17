@@ -286,6 +286,29 @@ func TestExecWithDockerRetry_ContextCanceled(t *testing.T) {
 	assert.NotContains(t, err.Error(), "after")
 }
 
+func TestExecWithDockerRetry_ContextDeadlineExceeded(t *testing.T) {
+	t.Helper()
+	origDocker := dockerPullBackoff
+	dockerPullBackoff = wait.Backoff{
+		Steps:    origDocker.Steps,
+		Duration: 200 * time.Millisecond,
+		Factor:   1.0,
+		Jitter:   0,
+	}
+	t.Cleanup(func() { dockerPullBackoff = origDocker })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	t.Cleanup(cancel)
+	_, _, err := execWithDockerRetry(ctx,
+		func(context.Context) (string, string, error) {
+			return "", "i/o timeout", fmt.Errorf("pull failed")
+		},
+	)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.NotContains(t, err.Error(), "after")
+}
+
 func TestExecWithSSHRetry_SuccessFirstTry(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
