@@ -391,7 +391,7 @@ jobs:
 
           - label: up-provider-podman-rootless-basic
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootless
@@ -401,7 +401,7 @@ jobs:
 
           - label: up-provider-podman-rootless-lifecycle
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootless
@@ -411,7 +411,7 @@ jobs:
 
           - label: up-provider-podman-rootless-config
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootless
@@ -421,7 +421,7 @@ jobs:
 
           - label: up-provider-podman-rootless-features
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootless
@@ -431,7 +431,7 @@ jobs:
 
           - label: up-provider-podman-rootful-basic
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootful
@@ -441,7 +441,7 @@ jobs:
 
           - label: up-provider-podman-rootful-lifecycle
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootful
@@ -451,7 +451,7 @@ jobs:
 
           - label: up-provider-podman-rootful-config
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootful
@@ -461,7 +461,7 @@ jobs:
 
           - label: up-provider-podman-rootful-features
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootful
@@ -477,7 +477,7 @@ jobs:
 
           - label: up-provider-microsandbox
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-microsandbox: true
