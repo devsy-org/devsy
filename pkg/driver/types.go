@@ -161,4 +161,8 @@ type RunOptions struct {
 	// Platform is the target platform (os/arch) to run the container under,
 	// e.g. "linux/amd64". Empty means use the host's native platform.
 	Platform string `json:"platform,omitempty"`
+
+	// ImageBuilt is true if the image was built locally and is not expected to be
+	// pullable from a registry. False for a devcontainer.json "image:" reference.
+	ImageBuilt bool `json:"imageBuilt,omitempty"`
 }

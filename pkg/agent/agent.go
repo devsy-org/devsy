@@ -432,8 +432,7 @@ type TunnelOptions struct {
 }
 
 func Tunnel(ctx context.Context, opts TunnelOptions) error {
-	if err := InjectAgent(&InjectOptions{
-		Ctx: ctx,
+	if err := InjectAgent(ctx, &InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			return opts.Exec(ctx, "root", command, stdin, stdout, stderr)
 		},

@@ -1,13 +1,11 @@
 package pro
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
-	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/client/proxycmd"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -58,21 +56,9 @@ func (cmd *SelfCmd) Run(
 	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
-	var buf bytes.Buffer
-
-	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
-		Ctx:     ctx,
-		Command: provider.Exec.Proxy.Get.Self,
-		Context: devsyConfig.DefaultContext,
-		Options: devsyConfig.ProviderOptions(provider.Name),
-		Config:  provider,
-		Stdout:  &buf,
+	return proxycmd.RunAndPrint(ctx, proxycmd.Options{
+		Command:     provider.Exec.Proxy.Get.Self,
+		DevsyConfig: devsyConfig,
+		Provider:    provider,
 	})
-	if err != nil {
-		return fmt.Errorf("get self: %w", err)
-	}
-
-	fmt.Println(buf.String())
-
-	return nil
 }
