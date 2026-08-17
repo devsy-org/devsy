@@ -503,7 +503,7 @@ jobs:
 
           - label: up-features
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: true
             requires-secret: false
 
