@@ -461,7 +461,7 @@ jobs:
 
           - label: up-provider-podman-rootful-lifecycle-2
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootful
