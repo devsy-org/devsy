@@ -331,7 +331,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			ctx,
 			"tests/up/testdata/docker",
 			"--dotfiles",
-			"https://github.com/loft-sh/example-dotfiles",
+			"https://github.com/devsy-org/example-dotfiles",
 		)
 		framework.ExpectNoError(err)
 
@@ -348,7 +348,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			ctx,
 			"tests/up/testdata/docker",
 			"--dotfiles",
-			"https://github.com/loft-sh/example-dotfiles",
+			"https://github.com/devsy-org/example-dotfiles",
 			"--dotfiles-script",
 			"install-example",
 		)
@@ -364,7 +364,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			ctx,
 			"tests/up/testdata/docker",
 			"--dotfiles",
-			"https://github.com/loft-sh/example-dotfiles@sha256:9a0b41808bf8f50e9871b3b5c9280fe22bf46a04",
+			"https://github.com/devsy-org/example-dotfiles@sha256:9a0b41808bf8f50e9871b3b5c9280fe22bf46a04",
 		)
 		framework.ExpectNoError(err)
 
@@ -381,7 +381,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			ctx,
 			"tests/up/testdata/docker",
 			"--dotfiles",
-			"https://github.com/loft-sh/example-dotfiles@do-not-delete",
+			"https://github.com/devsy-org/example-dotfiles@do-not-delete",
 		)
 		framework.ExpectNoError(err)
 
@@ -395,7 +395,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			ctx,
 			"tests/up/testdata/docker-dotfiles-lifecycle-order",
 			"--dotfiles",
-			"https://github.com/loft-sh/example-dotfiles",
+			"https://github.com/devsy-org/example-dotfiles",
 			"--dotfiles-script",
 			"install-example",
 		)
