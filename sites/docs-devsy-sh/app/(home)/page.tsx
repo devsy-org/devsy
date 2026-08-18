@@ -127,10 +127,13 @@ export default function HomePage() {
             <h1>
               Ship from <span className="grad">day zero</span>.
             </h1>
-            <p className="hero-sub">Standardized workspaces, engineering at scale.</p>
+            <p className="hero-sub">
+              Developer workspaces, built from your devcontainer.json, for engineers and their AI agents.
+            </p>
             <p className="lede">
-              Devsy gives every engineer the same environment. Cut hardware cost, shorten onboarding, and raise
-              developer productivity. Deploy across Docker, Kubernetes, cloud providers, and SSH hosts.
+              Devsy runs the same devcontainer.json as a Docker container, a Kubernetes pod, or a hardware-isolated
+              microVM, on a laptop, in the cloud, or on a shared host. Switch backends with one command. No
+              rewrite, no lock-in, and the isolation that protects your engineers protects every agent too.
             </p>
             <div className="hero-cta">
               <a className="btn btn-primary" href="/docs/getting-started/install">
