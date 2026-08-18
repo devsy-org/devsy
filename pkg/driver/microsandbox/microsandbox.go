@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"runtime"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ type specDefaults struct {
 	maxMemory   uint32
 	maxCPUs     uint8
 	blockEgress bool
+	rootDiskGB  uint32
 }
 
 type microsandboxDriver struct {
@@ -80,6 +82,7 @@ func NewMicrosandboxDriver(
 		maxMemory:   parseUint32(cfg.MaxMemory),
 		maxCPUs:     parseUint8(cfg.MaxCPUs),
 		blockEgress: cfg.BlockEgress == pkgconfig.BoolTrue,
+		rootDiskGB:  parseUint32(cfg.Storage),
 	}
 
 	log.Debugf(
@@ -100,7 +103,7 @@ func (d *microsandboxDriver) RunDevContainer(
 	workspaceID string,
 	options *driver.RunOptions,
 ) error {
-	return d.runFromOptions(ctx, workspaceID, options)
+	return d.runFromOptions(ctx, workspaceID, options, nil)
 }
 
 func (d *microsandboxDriver) RunImageDevContainer(
@@ -110,7 +113,11 @@ func (d *microsandboxDriver) RunImageDevContainer(
 	if err := checkGPURequirement(params.ParsedConfig); err != nil {
 		return err
 	}
-	return d.runFromOptions(ctx, params.WorkspaceID, params.Options)
+	var hostReqs *config.HostRequirements
+	if params.ParsedConfig != nil {
+		hostReqs = params.ParsedConfig.HostRequirements
+	}
+	return d.runFromOptions(ctx, params.WorkspaceID, params.Options, hostReqs)
 }
 
 func checkGPURequirement(parsedConfig *config.DevContainerConfig) error {
@@ -305,6 +312,7 @@ func (d *microsandboxDriver) runFromOptions(
 	ctx context.Context,
 	workspaceID string,
 	options *driver.RunOptions,
+	hostReqs *config.HostRequirements,
 ) error {
 	if options == nil {
 		return fmt.Errorf(
@@ -324,7 +332,7 @@ func (d *microsandboxDriver) runFromOptions(
 	if err := d.client.Create(
 		ctx,
 		sandboxName(workspaceID),
-		d.buildSpec(workspaceID, options),
+		d.buildSpec(workspaceID, options, hostReqs),
 	); err != nil {
 		return fmt.Errorf("create microsandbox VM: %w", err)
 	}
@@ -346,7 +354,12 @@ func (d *microsandboxDriver) dockerImageDriver() (driver.ImageDriver, error) {
 	return dd, nil
 }
 
-func (d *microsandboxDriver) buildSpec(workspaceID string, options *driver.RunOptions) sandboxSpec {
+// buildSpec resolves sizing from, in priority order, the operator-configured
+// MICROSANDBOX_* defaults, then the devcontainer's hostRequirements, falling
+// back to the microsandbox runtime default (zero) when neither is set.
+func (d *microsandboxDriver) buildSpec(
+	workspaceID string, options *driver.RunOptions, hostReqs *config.HostRequirements,
+) sandboxSpec {
 	labels := config.ListToObject(config.GetIDLabels(workspaceID, d.idLabels))
 	if labels == nil {
 		labels = map[string]string{}
@@ -354,12 +367,24 @@ func (d *microsandboxDriver) buildSpec(workspaceID string, options *driver.RunOp
 	if options.User != "" {
 		labels[userLabel] = options.User
 	}
+	memory := d.defaults.memory
+	if memory == 0 {
+		memory = hostRequirementMemoryMiB(hostReqs)
+	}
+	cpus := d.defaults.cpus
+	if cpus == 0 {
+		cpus = hostRequirementCPUs(hostReqs)
+	}
+	rootDiskGB := d.defaults.rootDiskGB
+	if rootDiskGB == 0 {
+		rootDiskGB = hostRequirementStorageGB(hostReqs)
+	}
 	return sandboxSpec{
 		Image:       options.Image,
 		Entrypoint:  options.Entrypoint,
 		Cmd:         options.Cmd,
-		Memory:      d.defaults.memory,
-		CPUs:        d.defaults.cpus,
+		Memory:      memory,
+		CPUs:        cpus,
 		Env:         options.Env,
 		Labels:      labels,
 		Ephemeral:   d.defaults.ephemeral,
@@ -368,6 +393,7 @@ func (d *microsandboxDriver) buildSpec(workspaceID string, options *driver.RunOp
 		MaxMemory:   d.defaults.maxMemory,
 		MaxCPUs:     d.defaults.maxCPUs,
 		BlockEgress: d.defaults.blockEgress,
+		RootDiskGB:  rootDiskGB,
 	}
 }
 
@@ -473,7 +499,7 @@ func parseUint32(s string) uint32 {
 	}
 	v, err := strconv.ParseUint(s, 10, 32)
 	if err != nil {
-		log.Warnf("invalid microsandbox memory value %q, using runtime default", s)
+		log.Warnf("invalid microsandbox numeric value %q, using runtime default", s)
 		return 0
 	}
 	return uint32(v)
@@ -499,8 +525,78 @@ func parseUint8(s string) uint8 {
 	}
 	v, err := strconv.ParseUint(s, 10, 8)
 	if err != nil {
-		log.Warnf("invalid microsandbox cpus value %q, using runtime default", s)
+		log.Warnf("invalid microsandbox numeric value %q, using runtime default", s)
 		return 0
 	}
 	return uint8(v)
+}
+
+// hostRequirementCPUs converts devcontainer.json's hostRequirements.cpus into
+// a vCPU count, used only as a fallback when no MICROSANDBOX_CPUS default is
+// configured.
+func hostRequirementCPUs(hostReqs *config.HostRequirements) uint8 {
+	if hostReqs == nil || hostReqs.CPUs <= 0 {
+		return 0
+	}
+	return parseUint8(strconv.Itoa(hostReqs.CPUs))
+}
+
+// hostRequirementMemoryMiB converts devcontainer.json's hostRequirements.memory
+// (e.g. "8gb") into MiB, used only as a fallback when no MICROSANDBOX_MEMORY
+// default is configured.
+func hostRequirementMemoryMiB(hostReqs *config.HostRequirements) uint32 {
+	if hostReqs == nil || hostReqs.Memory == "" {
+		return 0
+	}
+	bytes, err := config.ParseSizeToBytes(hostReqs.Memory)
+	if err != nil {
+		log.Warnf(
+			"invalid hostRequirements.memory %q, ignoring for microsandbox sizing: %v",
+			hostReqs.Memory, err,
+		)
+		return 0
+	}
+	return ceilBytesToUint32(bytes, 1024*1024)
+}
+
+// hostRequirementStorageGB converts devcontainer.json's hostRequirements.storage
+// (e.g. "32gb") into GiB for --root-disk, used only as a fallback when no
+// MICROSANDBOX_STORAGE default is configured.
+func hostRequirementStorageGB(hostReqs *config.HostRequirements) uint32 {
+	if hostReqs == nil || hostReqs.Storage == "" {
+		return 0
+	}
+	bytes, err := config.ParseSizeToBytes(hostReqs.Storage)
+	if err != nil {
+		log.Warnf(
+			"invalid hostRequirements.storage %q, ignoring for microsandbox sizing: %v",
+			hostReqs.Storage, err,
+		)
+		return 0
+	}
+	return ceilBytesToUint32(bytes, 1024*1024*1024)
+}
+
+// clampUint64ToUint32 saturates rather than wraps, so an outsized
+// hostRequirements value degrades to the largest representable size instead
+// of silently overflowing to a small or negative one.
+func clampUint64ToUint32(v uint64) uint32 {
+	if v > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(v)
+}
+
+// ceilBytesToUint32 rounds a byte count up to the next whole unit before
+// clamping. hostRequirements express a minimum, so any fractional or
+// sub-unit remainder must round up rather than truncate away — otherwise a
+// requirement like "1536mb" (1.5GiB) would provision less than requested,
+// and a sub-unit requirement like "512mb" would truncate to zero and be
+// silently dropped.
+func ceilBytesToUint32(bytes, unit uint64) uint32 {
+	value := bytes / unit
+	if bytes%unit != 0 {
+		value++
+	}
+	return clampUint64ToUint32(value)
 }

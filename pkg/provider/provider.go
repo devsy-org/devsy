@@ -195,6 +195,9 @@ type ProviderMicrosandboxDriverConfig struct {
 
 	// Ephemeral removes the sandbox's disk state when it stops.
 	Ephemeral types.StrBool `json:"ephemeral,omitempty"`
+
+	// Storage is the OCI root disk size in GiB. Empty uses the runtime default.
+	Storage string `json:"storage,omitempty"`
 }
 
 type ProviderCustomDriverConfig struct {

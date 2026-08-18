@@ -10,6 +10,7 @@ optionGroups:
       - MICROSANDBOX_CPUS
       - MICROSANDBOX_MAX_MEMORY
       - MICROSANDBOX_MAX_CPUS
+      - MICROSANDBOX_STORAGE
       - MICROSANDBOX_BLOCK_EGRESS
       - MICROSANDBOX_EPHEMERAL
       - INACTIVITY_TIMEOUT
@@ -24,12 +25,14 @@ options:
     description: "Hotplug memory ceiling in MiB. Empty uses the runtime default."
   MICROSANDBOX_MAX_CPUS:
     description: "Hotplug CPU ceiling. Empty uses the runtime default."
+  MICROSANDBOX_STORAGE:
+    description: "OCI root disk size in GiB. Empty uses the runtime default. Falls back to devcontainer.json's hostRequirements.storage when set."
   MICROSANDBOX_BLOCK_EGRESS:
     description: "If true, deny the microVM outbound public network (sandbox hardening)."
     default: "false"
     type: boolean
   MICROSANDBOX_EPHEMERAL:
-    description: "If true, the microVM's disk state is discarded when it stops."
+    description: "If true, boot from a tmpfs root disk so the microVM's disk state is discarded when it stops. Sized by MICROSANDBOX_STORAGE/hostRequirements.storage, or 8GiB if neither is set."
     default: "false"
     type: boolean
   INACTIVITY_TIMEOUT:
@@ -43,6 +46,7 @@ agent:
     cpus: ${MICROSANDBOX_CPUS}
     maxMemory: ${MICROSANDBOX_MAX_MEMORY}
     maxCpus: ${MICROSANDBOX_MAX_CPUS}
+    storage: ${MICROSANDBOX_STORAGE}
     blockEgress: ${MICROSANDBOX_BLOCK_EGRESS}
     ephemeral: ${MICROSANDBOX_EPHEMERAL}
 exec:
