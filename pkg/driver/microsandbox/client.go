@@ -8,7 +8,8 @@ import (
 
 type sandboxSpec struct {
 	Image       string
-	Entrypoint  []string
+	Entrypoint  string
+	Cmd         []string
 	Memory      uint32
 	CPUs        uint8
 	Env         map[string]string

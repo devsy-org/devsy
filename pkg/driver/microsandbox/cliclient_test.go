@@ -9,10 +9,15 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 )
 
-func TestCreateArgsFull(t *testing.T) {
+func runPrefix() []string {
+	return []string{msbCmdRun, msbFlagDetach, names.Flag(names.Name), wsName}
+}
+
+func TestRunArgsFull(t *testing.T) {
 	spec := sandboxSpec{
 		Image:       testImg,
-		Entrypoint:  []string{shPath, "-c", "sleep infinity"},
+		Entrypoint:  shPath,
+		Cmd:         []string{"-c", "sleep infinity", "-"},
 		Env:         map[string]string{"K": "v"},
 		Labels:      map[string]string{"devsy.sh/user": "vscode"},
 		IdleTimeout: 90 * time.Second,
@@ -26,18 +31,23 @@ func TestCreateArgsFull(t *testing.T) {
 			{Target: "/tmp", Tmpfs: true},
 		},
 	}
-	args := createArgs(wsName, spec)
+	args := runArgs(wsName, spec)
 
-	// name comes first, image last.
-	if args[0] != names.Create || args[1] != names.Flag(names.Name) || args[2] != wsName {
-		t.Errorf("prefix = %v", args[:3])
-	}
-	if args[len(args)-1] != testImg {
-		t.Errorf("image should be the final arg, got %q", args[len(args)-1])
+	if !slices.Equal(args[:4], runPrefix()) {
+		t.Errorf("prefix = %v, want %v", args[:4], runPrefix())
 	}
 
-	want := [][2]string{
-		{"--entrypoint", "/bin/sh -c sleep infinity"},
+	imgIdx := slices.Index(args, testImg)
+	if imgIdx < 0 {
+		t.Fatalf("image not found in %v", args)
+	}
+	wantSuffix := append([]string{testImg, "--"}, spec.Cmd...)
+	if !slices.Equal(args[imgIdx:], wantSuffix) {
+		t.Errorf("image+cmd suffix = %v, want %v", args[imgIdx:], wantSuffix)
+	}
+
+	wantFlags := [][2]string{
+		{"--entrypoint", shPath},
 		{names.Flag(names.Env), "K=v"},
 		{"--label", "devsy.sh/user=vscode"},
 		{"--idle-timeout", "1m30s"},
@@ -48,20 +58,38 @@ func TestCreateArgsFull(t *testing.T) {
 		{"--mount-named", "cache-vol:/cache"},
 		{"--tmpfs", "/tmp"},
 	}
-	for _, kv := range want {
+	for _, kv := range wantFlags {
 		if !hasFlagValue(args, kv[0], kv[1]) {
 			t.Errorf("missing %s %q in %v", kv[0], kv[1], args)
 		}
 	}
-	if hasFlag(args, "--net-default-egress") == false {
+	if !hasFlag(args, "--net-default-egress") {
 		t.Errorf("expected egress deny flag in %v", args)
 	}
 }
 
-func TestCreateArgsMinimal(t *testing.T) {
-	args := createArgs(wsName, sandboxSpec{Image: testImg})
-	// Only name + image; no sizing/runtime flags for a bare spec.
-	want := []string{names.Create, names.Flag(names.Name), wsName, testImg}
+func TestRunArgsMinimal(t *testing.T) {
+	args := runArgs(wsName, sandboxSpec{Image: testImg})
+	want := append(runPrefix(), testImg)
+	if !slices.Equal(args, want) {
+		t.Errorf("args = %v, want %v", args, want)
+	}
+}
+
+func TestRunArgsCmdWithoutEntrypoint(t *testing.T) {
+	args := runArgs(wsName, sandboxSpec{Image: testImg, Cmd: []string{"python3", "worker.py"}})
+	if hasFlag(args, "--entrypoint") {
+		t.Errorf("did not expect --entrypoint in %v", args)
+	}
+	want := append(runPrefix(), testImg, "--", "python3", "worker.py")
+	if !slices.Equal(args, want) {
+		t.Errorf("args = %v, want %v", args, want)
+	}
+}
+
+func TestRunArgsEntrypointWithoutCmd(t *testing.T) {
+	args := runArgs(wsName, sandboxSpec{Image: testImg, Entrypoint: shPath})
+	want := append(runPrefix(), "--entrypoint", shPath, testImg)
 	if !slices.Equal(args, want) {
 		t.Errorf("args = %v, want %v", args, want)
 	}

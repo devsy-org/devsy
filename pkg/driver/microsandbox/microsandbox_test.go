@@ -365,15 +365,13 @@ func TestRunDevContainerSetsEntrypoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDevContainer: %v", err)
 	}
-	got := f.created[wsName].Entrypoint
-	want := []string{shPath, "-c", "start", "-"}
-	if len(got) != len(want) {
-		t.Fatalf("entrypoint = %v, want %v", got, want)
+	got := f.created[wsName]
+	if got.Entrypoint != shPath {
+		t.Errorf("entrypoint = %q, want %q", got.Entrypoint, shPath)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("entrypoint = %v, want %v", got, want)
-		}
+	want := []string{"-c", "start", "-"}
+	if !slices.Equal(got.Cmd, want) {
+		t.Errorf("cmd = %v, want %v", got.Cmd, want)
 	}
 }
 
