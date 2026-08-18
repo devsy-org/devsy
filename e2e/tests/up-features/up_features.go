@@ -502,7 +502,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 
 			out, err := f.DevsySSH(ctx, wsName, "python3 --version")
 			framework.ExpectNoError(err)
-			gomega.Expect(out).To(gomega.ContainSubstring("Python 3.11"))
+			gomega.Expect(out).To(gomega.ContainSubstring("Python 3.13.15"))
 		},
 		ginkgo.SpecTimeout(framework.TimeoutLong()),
 	)
