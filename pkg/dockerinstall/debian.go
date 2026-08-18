@@ -114,7 +114,7 @@ func (i *DebianInstaller) findVersions() (string, string, error) {
 	}
 
 	cliPkgVersion := ""
-	if versionGte(i.opts.version, "18.09") {
+	if versionGte(i.opts.version, ubuntuRelease1809) {
 		cliPkgVersion, err = i.findPackageVersion("docker-ce-cli")
 		if err != nil {
 			return "", "", err

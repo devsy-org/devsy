@@ -49,6 +49,10 @@ const (
 	DistroRaspbian = "raspbian"
 	DistroOSMC     = "osmc"
 	DistroDebian   = "debian"
+	DistroCentOS   = "centos"
+	DistroFedora   = "fedora"
+	DistroRHEL     = "rhel"
+	DistroSLES     = "sles"
 
 	// Debian release codenames.
 	CodenameTrixie   = "trixie"
@@ -57,4 +61,10 @@ const (
 	CodenameBuster   = "buster"
 	CodenameStretch  = "stretch"
 	CodenameJessie   = "jessie"
+
+	// Ubuntu release.
+	ubuntuRelease1809 = "18.09"
+	ubuntuRelease2010 = "20.10"
+	ubuntuRelease2204 = "22.04"
+	ubuntuRelease230  = "23.0"
 )

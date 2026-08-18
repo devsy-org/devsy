@@ -142,7 +142,7 @@ func echoDockerAsNonroot(opts *InstallOptions) {
 
 	fprintln(opts.stdout, `
 ================================================================================`)
-	if versionGte(opts.version, "20.10") {
+	if versionGte(opts.version, ubuntuRelease2010) {
 		fprintln(opts.stdout, `
 To run Docker as a non-privileged user, consider setting up the
 Docker daemon in rootless mode for your user:
