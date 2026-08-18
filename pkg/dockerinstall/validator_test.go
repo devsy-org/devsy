@@ -83,7 +83,7 @@ func (s *ValidatorTestSuite) TestCheckDeprecation_DeprecatedUbuntu_DryRun() {
 func (s *ValidatorTestSuite) TestCheckDeprecation_DeprecatedDebian() {
 	s.opts.dryRun = true
 	validator := NewValidator(s.opts)
-	distro := &Distro{ID: "debian", Version: "stretch"}
+	distro := &Distro{ID: "debian", Version: CodenameStretch}
 	validator.CheckDeprecation(distro)
 	s.Contains(s.stdout.String(), "DEPRECATION WARNING")
 	s.Contains(s.stdout.String(), "debian stretch")

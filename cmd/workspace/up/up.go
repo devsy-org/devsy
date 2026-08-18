@@ -339,7 +339,7 @@ func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
 		defer cleanup()
 	}
 	if err := cmd.reconfigureSSHWithTunnel(args.devsyConfig, args.client, args.wctx); err != nil {
-		log.Warnf("Failed to reconfigure SSH with tunnel port: %v", err)
+		log.Warnf("failed to reconfigure ssh with tunnel port: %v", err)
 	}
 
 	ideURL, err := cmd.openIDE(ctx, args.devsyConfig, args.client, args.wctx)
@@ -351,7 +351,7 @@ func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
 	}
 	if args.wctx.tunnelPort > 0 {
 		log.Infof(
-			"SSH tunnel active on port %d, waiting for shutdown signal",
+			"ssh tunnel active on port %d, waiting for shutdown signal",
 			args.wctx.tunnelPort,
 		)
 		<-ctx.Done()
@@ -374,7 +374,7 @@ func (cmd *UpCmd) maybeStartTunnel(
 	}
 	tunnelPort, tunnelCleanup, err := cmd.startTunnel(ctx, devsyConfig, client, wctx)
 	if err != nil {
-		log.Warnf("Failed to start SSH tunnel, falling back to ProxyCommand: %v", err)
+		log.Warnf("failed to start ssh tunnel, falling back to ProxyCommand: %v", err)
 		return nil
 	}
 	wctx.tunnelPort = tunnelPort
@@ -503,10 +503,10 @@ func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient) {
 
 	if !cmd.Platform.Enabled && ide.ReusesAuthSock(targetIDE) {
 		cmd.SSHAuthSockID = util.RandStringBytes(10)
-		log.Debug("Reusing SSH_AUTH_SOCK", cmd.SSHAuthSockID)
+		log.Debug("reusing SSH_AUTH_SOCK", cmd.SSHAuthSockID)
 	} else if cmd.Platform.Enabled && ide.ReusesAuthSock(targetIDE) {
 		log.Debug(
-			"Reusing SSH_AUTH_SOCK is not supported with platform mode, consider launching the IDE from the platform UI",
+			"reusing SSH_AUTH_SOCK is not supported with platform mode, consider launching the IDE from the platform UI",
 		)
 	}
 }

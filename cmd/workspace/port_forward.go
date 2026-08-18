@@ -24,7 +24,7 @@ func (cmd *SSHCmd) forwardTimeout() (time.Duration, error) {
 		return 0, fmt.Errorf("parse forward ports timeout: %w", err)
 	}
 
-	log.Infof("Using port forwarding timeout of %s", cmd.ForwardPortsTimeout)
+	log.Infof("using port forwarding timeout of %s", cmd.ForwardPortsTimeout)
 	return timeout, nil
 }
 

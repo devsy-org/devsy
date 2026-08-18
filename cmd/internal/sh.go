@@ -46,15 +46,20 @@ func (cmd *ShellCommand) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("only a single script file can be used")
 	}
 
-	// load command from file
 	if len(args) > 0 {
-		content, err := os.ReadFile(args[0])
+		fileContent, err := os.ReadFile(args[0])
 		if err != nil {
 			return err
 		}
 
-		cmd.Command = string(content)
+		cmd.Command = string(fileContent)
 	}
 
-	return shell.RunEmulatedShell(ctx, cmd.Command, os.Stdin, os.Stdout, os.Stderr, os.Environ())
+	return shell.RunEmulatedShell(ctx, &shell.CommandRunner{
+		Command: cmd.Command,
+		Stdin:   os.Stdin,
+		Stdout:  os.Stdout,
+		Stderr:  os.Stderr,
+		Environ: os.Environ(),
+	})
 }

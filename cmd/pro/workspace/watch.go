@@ -92,15 +92,17 @@ func (cmd *WatchWorkspacesCmd) Run(
 		cancel()
 	}()
 
-	err := clientimplementation.RunCommandWithBinaries(clientimplementation.CommandOptions{
-		Ctx:     cancelCtx,
-		Command: providerConfig.Exec.Proxy.Watch.Workspaces,
-		Context: devsyConfig.DefaultContext,
-		Options: opts,
-		Config:  providerConfig,
-		Stdout:  os.Stdout,
-		Stderr:  log.Writer(log.LevelError),
-	})
+	err := clientimplementation.RunCommandWithBinaries(
+		cancelCtx,
+		clientimplementation.WorkspaceCommandConfig{
+			Command:              providerConfig.Exec.Proxy.Watch.Workspaces,
+			WorkspaceContextName: devsyConfig.DefaultContext,
+			Options:              opts,
+			Config:               providerConfig,
+			Stdout:               os.Stdout,
+			Stderr:               log.Writer(log.LevelError),
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("watch workspaces with provider %q: %w", providerConfig.Name, err)
 	}

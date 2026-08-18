@@ -93,6 +93,6 @@ func (cmd *SetIDECmd) Run(_ context.Context, workspaceName, ideName string) erro
 		return fmt.Errorf("refresh ide options: %w", err)
 	}
 
-	log.Infof("set IDE for workspace %q to %q", workspace.ID, workspace.IDE.Name)
+	log.Infof("set ide for workspace %q to %q", workspace.ID, workspace.IDE.Name)
 	return nil
 }

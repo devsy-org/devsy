@@ -121,8 +121,7 @@ func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
 	stderr := log.Writer(log.LevelDebug)
 	defer func() { _ = stderr.Close() }()
 
-	return agent.InjectAgent(&agent.InjectOptions{
-		Ctx: ctx,
+	return agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec: func(ctx context.Context, command string, stdinR io.Reader, stdoutW io.Writer, stderrW io.Writer) error {
 			return params.client.Command(ctx, clientpkg.CommandOptions{
 				Command: command,
