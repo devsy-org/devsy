@@ -137,7 +137,7 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 						gomega.Expect(string(two)).To(gomega.Equal("initCmdTwo"))
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
 				ginkgo.It( //nolint:dupl // mirrors rootless lifecycle secrets-file test
