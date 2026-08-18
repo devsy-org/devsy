@@ -96,7 +96,12 @@ func (d *dockerDriver) ensureContainerRunning(
 			return err
 		}
 		lastErr = err
-		log.Debugf("container %s restart attempt %d failed: %v", container.ID, attempt, err)
+		// Surface restart failures at warn (not debug) so the container's exit
+		// code and tail logs are visible without --debug. An exit code 0 here
+		// usually means PID 1 caught a SIGTERM mid-startup (e.g. an unstable
+		// Podman/WSL machine), which is otherwise indistinguishable from a
+		// clean shutdown in the debug output.
+		log.Warnf("container %s restart attempt %d failed: %v", container.ID, attempt, err)
 	}
 
 	return fmt.Errorf(

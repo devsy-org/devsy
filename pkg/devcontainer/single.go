@@ -31,11 +31,12 @@ const (
 	RemoteContainersExtraEnvVar = "REMOTE_CONTAINERS"
 
 	DefaultEntrypoint = `
-while ! command -v /usr/local/bin/devsy >/dev/null 2>&1; do
+DEVSYPATH="${DEVSY_AGENT_PATH:-/usr/local/bin/devsy}"
+while ! command -v "$DEVSYPATH" >/dev/null 2>&1; do
   echo "waiting for devsy agent to be available"
   sleep 1
 done
-exec /usr/local/bin/devsy internal agent container daemon
+exec "$DEVSYPATH" internal agent container daemon
 `
 )
 

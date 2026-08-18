@@ -668,9 +668,59 @@ jobs:
           echo "$installDir" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
 
           wsl --set-default-version 2
-          & "$installDir\podman.exe" machine init
-          & "$installDir\podman.exe" machine set --rootful
-          & "$installDir\podman.exe" machine start
+
+          # podman machine start can return before the WSL VM and its API socket
+          # are fully ready, leaving a window where containers created immediately
+          # afterwards get SIGTERM'd mid-startup (the flaky "container exited
+          # (exit code 0)" + "[inject] EOF" cascade). Retry init/start a few
+          # times, then gate the e2e suite behind a readiness probe + a throwaway
+          # preflight container, mirroring the Linux rootful setup below.
+          $busybox = "busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d"
+          $machineReady = $false
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            if ($attempt -gt 1) {
+              Write-Host "--- retrying podman machine start (attempt $attempt/3) ---"
+              & "$installDir\podman.exe" machine stop 2>$null
+              Start-Sleep -Seconds 3
+            } else {
+              # machine init is not idempotent (errors if the machine already
+              # exists), so only create it on the first attempt; later attempts
+              # reuse the existing machine and just restart it.
+              & "$installDir\podman.exe" machine init
+              & "$installDir\podman.exe" machine set --rootful
+            }
+            & "$installDir\podman.exe" machine start
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "podman machine start exited $LASTEXITCODE on attempt $attempt"
+              continue
+            }
+
+            $ready = $false
+            $deadline = (Get-Date).AddSeconds(60)
+            while ((Get-Date) -lt $deadline) {
+              & "$installDir\podman.exe" info *> $null
+              if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+              Start-Sleep -Seconds 2
+            }
+            if (-not $ready) {
+              Write-Host "::warning::podman info did not succeed within 60s on attempt $attempt"
+              & "$installDir\podman.exe" machine list
+              continue
+            }
+
+            Write-Host "Running podman runtime preflight..."
+            & "$installDir\podman.exe" run --rm $busybox echo "podman runtime preflight OK"
+            if ($LASTEXITCODE -eq 0) {
+              $machineReady = $true
+              break
+            }
+            Write-Host "podman preflight container failed (exit $LASTEXITCODE) on attempt $attempt"
+          }
+          if (-not $machineReady) {
+            & "$installDir\podman.exe" machine list
+            & "$installDir\podman.exe" info
+            throw "podman machine did not become ready after 3 attempts"
+          }
 
       - name: cache kind.exe (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')

@@ -60,6 +60,13 @@ const (
 	// EnvAgentPreferDownload forces agent binary download even if a local copy exists.
 	EnvAgentPreferDownload = "DEVSY_AGENT_PREFER_DOWNLOAD"
 
+	// EnvAgentPath is set by pre-start delivery strategies (e.g.
+	// LocalDockerDelivery) to the in-container path of the volume-mounted agent
+	// binary. The container entrypoint honors it to exec the daemon directly
+	// from the delivered binary, decoupling daemon startup from post-start
+	// shell injection.
+	EnvAgentPath = "DEVSY_AGENT_PATH"
+
 	// EnvOS is set to the host operating system (runtime.GOOS).
 	EnvOS = "DEVSY_OS"
 
