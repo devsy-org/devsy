@@ -148,6 +148,7 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 		WorkspaceID:     r.id,
 		DockerCommand:   dockerCmd,
 		DockerEnv:       dockerEnv,
+		IsRemoteDocker:  docker.RemoteDockerHost(dockerEnv),
 		HelperImage:     r.workspaceConfig.Agent.Docker.HelperImage,
 		ContainerID:     r.id,
 		ExecFunc:        execFn,

@@ -1,13 +1,59 @@
 package devcontainer
 
 import (
+	"reflect"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/agent/delivery"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 )
+
+const testDockerHostEnvKey = "DOCKER_HOST"
+
+func TestNewAgentDelivery_RemoteDockerHostWiring(t *testing.T) {
+	cases := []struct {
+		name     string
+		env      map[string]string
+		wantType any
+	}{
+		{
+			name:     "unset DOCKER_HOST uses local delivery",
+			env:      nil,
+			wantType: &delivery.LocalDockerDelivery{},
+		},
+		{
+			name:     "unix socket DOCKER_HOST uses local delivery",
+			env:      map[string]string{testDockerHostEnvKey: "unix:///var/run/docker.sock"},
+			wantType: &delivery.LocalDockerDelivery{},
+		},
+		{
+			name:     "ssh DOCKER_HOST uses remote delivery",
+			env:      map[string]string{testDockerHostEnvKey: "ssh://user@localhost"},
+			wantType: &delivery.RemoteDockerDelivery{},
+		},
+		{
+			name:     "tcp DOCKER_HOST uses remote delivery",
+			env:      map[string]string{testDockerHostEnvKey: "tcp://192.168.1.100:2376"},
+			wantType: &delivery.RemoteDockerDelivery{},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newTestRunner(&mockDriver{})
+			r.workspaceConfig.Agent.Driver = provider2.DockerDriver
+			r.workspaceConfig.Agent.Docker = provider2.ProviderDockerDriverConfig{Env: tc.env}
+
+			got := r.newAgentDelivery()
+			if reflect.TypeOf(got) != reflect.TypeOf(tc.wantType) {
+				t.Errorf("newAgentDelivery() = %T, want %T", got, tc.wantType)
+			}
+		})
+	}
+}
 
 func TestShouldChownWorkspace(t *testing.T) {
 	cases := []struct {

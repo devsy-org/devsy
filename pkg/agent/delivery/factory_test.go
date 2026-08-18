@@ -5,6 +5,7 @@ import (
 	"io"
 	"testing"
 
+	dockerpkg "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
@@ -137,14 +138,14 @@ func TestNewAgentDelivery_KubernetesDriver_FallsBackWhenNoPodExec(t *testing.T) 
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 
-func TestIsDockerLocal(t *testing.T) {
-	assert.True(t, isLocalDockerHost(""))
-	assert.True(t, isLocalDockerHost("unix:///var/run/docker.sock"))
-	assert.True(t, isLocalDockerHost("unix:///home/user/.docker/desktop/docker.sock"))
-	assert.True(t, isLocalDockerHost("npipe:////./pipe/docker_engine"))
-	assert.True(t, isLocalDockerHost("npipe:////./pipe/podman-machine-default"))
-	assert.False(t, isLocalDockerHost("tcp://192.168.1.100:2376"))
-	assert.False(t, isLocalDockerHost("ssh://user@remote-host"))
+func TestIsLocalDockerHost(t *testing.T) {
+	assert.True(t, dockerpkg.IsLocalDockerHost(""))
+	assert.True(t, dockerpkg.IsLocalDockerHost("unix:///var/run/docker.sock"))
+	assert.True(t, dockerpkg.IsLocalDockerHost("unix:///home/user/.docker/desktop/docker.sock"))
+	assert.True(t, dockerpkg.IsLocalDockerHost("npipe:////./pipe/docker_engine"))
+	assert.True(t, dockerpkg.IsLocalDockerHost("npipe:////./pipe/podman-machine-default"))
+	assert.False(t, dockerpkg.IsLocalDockerHost("tcp://192.168.1.100:2376"))
+	assert.False(t, dockerpkg.IsLocalDockerHost("ssh://user@remote-host"))
 }
 
 func TestDeliver_PreStart(t *testing.T) {

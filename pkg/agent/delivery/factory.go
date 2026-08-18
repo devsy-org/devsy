@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/inject"
@@ -86,17 +85,16 @@ func microsandboxDelivery(opts FactoryOptions) AgentDelivery {
 	return &KubernetesDelivery{Exec: opts.PodExec}
 }
 
+// dockerDelivery is only reached when the caller (NewAgentDelivery) has
+// already determined, from the workspace's resolved DOCKER_HOST, that the
+// daemon is local. remoteDockerDelivery handles the non-local case.
 func dockerDelivery(opts FactoryOptions) AgentDelivery {
-	if isDockerLocal(opts.DockerCommand) {
-		log.Debugf("using local docker delivery (named volume)")
-		return &LocalDockerDelivery{
-			DockerCommand: opts.DockerCommand,
-			Environment:   opts.DockerEnv,
-			HelperImage:   opts.HelperImage,
-		}
+	log.Debugf("using local docker delivery (named volume)")
+	return &LocalDockerDelivery{
+		DockerCommand: opts.DockerCommand,
+		Environment:   opts.DockerEnv,
+		HelperImage:   opts.HelperImage,
 	}
-	log.Debugf("using remote docker delivery for non-local docker daemon")
-	return remoteDockerDelivery(opts)
 }
 
 func remoteDockerDelivery(opts FactoryOptions) AgentDelivery {
@@ -116,21 +114,6 @@ func legacyShellDelivery(opts FactoryOptions, reason string) AgentDelivery {
 		ExecFunc:    opts.ExecFunc,
 		DownloadURL: "",
 	}
-}
-
-func isDockerLocal(_ string) bool {
-	envHost := os.Getenv("DOCKER_HOST")
-	return envHost == "" || isLocalDockerHost(envHost)
-}
-
-func isLocalDockerHost(host string) bool {
-	if host == "" {
-		return true
-	}
-	hasPrefix := func(s, prefix string) bool {
-		return len(s) >= len(prefix) && s[:len(prefix)] == prefix
-	}
-	return hasPrefix(host, "unix://") || hasPrefix(host, "npipe://")
 }
 
 // CommandFunc adapts a driver's command function to inject.ExecFunc.

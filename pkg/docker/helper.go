@@ -109,6 +109,35 @@ func (r *DockerHelper) GPUSupportEnabled() (bool, error) {
 	return r.GetRuntime().GPUAvailable(ctx, r)
 }
 
+// IsLocalDockerHost reports whether host points at a daemon sharing the local
+// filesystem. An empty value is the docker default local socket.
+func IsLocalDockerHost(host string) bool {
+	if host == "" {
+		return true
+	}
+	return strings.HasPrefix(host, "unix://") || strings.HasPrefix(host, "npipe://")
+}
+
+// RemoteDockerHost reports whether env targets a daemon on a different host
+// than the devsy process, by inspecting DOCKER_HOST.
+func RemoteDockerHost(env []string) bool {
+	host, ok := envValue(env, "DOCKER_HOST")
+	if !ok {
+		return false
+	}
+	return !IsLocalDockerHost(host)
+}
+
+func envValue(env []string, name string) (string, bool) {
+	prefix := name + "="
+	for _, e := range env {
+		if v, ok := strings.CutPrefix(e, prefix); ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
 // GetRuntime returns the container runtime for this helper.
 // If no runtime was explicitly set, it auto-detects from the docker command.
 func (r *DockerHelper) GetRuntime() ContainerRuntime {

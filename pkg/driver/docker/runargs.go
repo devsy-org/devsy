@@ -481,22 +481,22 @@ func (d *dockerDriver) getRemoteUser(
 }
 
 func (d *dockerDriver) EnsurePath(path *config.Mount) *config.Mount {
-	// Local Windows to remote Linux over TCP requires manual path conversion.
-	if runtime.GOOS == "windows" {
-		for _, v := range d.Docker.Environment {
-			// Convert only when DOCKER_HOST is a direct TCP connection to a
-			// docker daemon running in WSL, not the docker-desktop engine.
-			if strings.Contains(v, "DOCKER_HOST=tcp://") {
-				unixPath := path.Source
-				unixPath = strings.Replace(unixPath, "C:", "c", 1)
-				unixPath = strings.ReplaceAll(unixPath, "\\", "/")
-				unixPath = "/mnt/" + unixPath
-
-				path.Source = unixPath
-
-				return path
-			}
-		}
+	if runtime.GOOS != "windows" {
+		return path
 	}
+	// A remote daemon (ssh://, tcp://, …) lives on a different host whose
+	// filesystem does not share Windows drive paths; translate to the WSL
+	// /mnt/<drive> form the remote daemon can resolve.
+	if !docker.RemoteDockerHost(d.Docker.Environment) {
+		return path
+	}
+
+	path.Source = windowsToWSLPath(path.Source)
 	return path
+}
+
+func windowsToWSLPath(winPath string) string {
+	unixPath := strings.Replace(winPath, "C:", "c", 1)
+	unixPath = strings.ReplaceAll(unixPath, "\\", "/")
+	return "/mnt/" + unixPath
 }
