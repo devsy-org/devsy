@@ -747,8 +747,7 @@ jobs:
         if: matrix.install-podman == 'rootful' && runner.os == 'Linux'
         run: |
           sudo mkdir -p /run/podman
-          sudo -b podman system service --time=0 unix:///run/podman/podman.sock \
-            > /tmp/podman-service.log 2>&1
+          sudo -b sh -c 'podman system service --time=0 unix:///run/podman/podman.sock > /tmp/podman-service.log 2>&1'
           if ! timeout 30 bash -c 'until sudo podman info >/dev/null 2>&1; do sleep 1; done'; then
             echo "::error::podman service did not become ready within 30s"
             cat /tmp/podman-service.log || true
