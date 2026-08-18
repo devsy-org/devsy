@@ -714,14 +714,14 @@ jobs:
           image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
           skipClusterLogsExport: true
 
-      - name: cache Homebrew downloads (podman/runc)
+      - name: cache Homebrew downloads (podman)
         if: (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && runner.os == 'Linux'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/homebrew-cache
-          key: brew-podman-runc-${{ runner.os }}-${{ runner.arch }}-v1
+          key: brew-podman-${{ runner.os }}-${{ runner.arch }}-v1
 
-      - name: install podman/runc (Homebrew)
+      - name: install podman (Homebrew)
         if: (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && runner.os == 'Linux'
         timeout-minutes: 10
         env:
@@ -731,18 +731,11 @@ jobs:
         run: |
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           echo "$HOMEBREW_PREFIX/bin" >> "$GITHUB_PATH"
-          brew install runc podman
+          brew install podman
 
-          # sudo's default secure_path excludes Homebrew's prefix, but rootful
-          # podman runs as root (via sudo) and needs it on PATH to exec runc,
-          # conmon, crun, and fuse-overlayfs.
           echo "Defaults secure_path=\"$HOMEBREW_PREFIX/bin:$HOMEBREW_PREFIX/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"" \
             | sudo tee /etc/sudoers.d/homebrew-path >/dev/null
           sudo visudo -cf /etc/sudoers.d/homebrew-path
-
-          sudo mkdir -p /etc/containers
-          printf '[engine]\nruntime = "runc"\n\n[engine.runtimes]\nrunc = ["%s/bin/runc"]\n' "$HOMEBREW_PREFIX" \
-            | sudo tee /etc/containers/containers.conf
 
       - name: Install Podman (Linux rootless)
         if: matrix.install-podman == 'rootless' && runner.os == 'Linux'
