@@ -11,6 +11,18 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	excludePatternLog         = "*.log"
+	excludePatternTest        = "*.test"
+	excludeDirNodeModules     = "node_modules"
+	excludeDirVendor          = "vendor"
+	includeDirScripts         = "scripts"
+	includeDirSrc             = "src"
+	includeFilePackageJSON    = "package.json"
+	includeNameTest           = "test"
+	excludeFileScriptsInstall = "scripts/install.sh"
+)
+
 type HashTestSuite struct {
 	suite.Suite
 	tempDir string
@@ -73,18 +85,18 @@ func (s *HashTestSuite) TestDirectoryHash_ExcludePatterns_Basic() {
 	s.createFile("file.txt", "content")
 	s.createFile("file.log", "log content")
 
-	hash1, err := DirectoryHash(s.tempDir, []string{"*.log"}, nil)
+	hash1, err := DirectoryHash(s.tempDir, []string{excludePatternLog}, nil)
 	require.NoError(s.T(), err)
 
 	// Change excluded file - hash should not change
 	s.createFile("file.log", "changed log")
-	hash2, err := DirectoryHash(s.tempDir, []string{"*.log"}, nil)
+	hash2, err := DirectoryHash(s.tempDir, []string{excludePatternLog}, nil)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), hash1, hash2)
 
 	// Change included file - hash should change
 	s.createFile("file.txt", "changed")
-	hash3, err := DirectoryHash(s.tempDir, []string{"*.log"}, nil)
+	hash3, err := DirectoryHash(s.tempDir, []string{excludePatternLog}, nil)
 	require.NoError(s.T(), err)
 	assert.NotEqual(s.T(), hash1, hash3)
 }
@@ -93,33 +105,45 @@ func (s *HashTestSuite) TestDirectoryHash_ExcludePatterns_Directory() {
 	s.createFile("src/main.go", "package main")
 	s.createFile("node_modules/lib/index.js", "module.exports = {}")
 
-	hash1, err := DirectoryHash(s.tempDir, []string{"node_modules"}, nil)
+	hash1, err := DirectoryHash(s.tempDir, []string{excludeDirNodeModules}, nil)
 	require.NoError(s.T(), err)
 
 	// Change excluded directory - hash should not change
 	s.createFile("node_modules/lib/index.js", "changed")
-	hash2, err := DirectoryHash(s.tempDir, []string{"node_modules"}, nil)
+	hash2, err := DirectoryHash(s.tempDir, []string{excludeDirNodeModules}, nil)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), hash1, hash2)
 }
 
 func (s *HashTestSuite) TestDirectoryHash_ExcludePatterns_Precedence() {
 	s.createFile("scripts/build.sh", "build")
-	s.createFile("scripts/install.sh", "install")
+	s.createFile(excludeFileScriptsInstall, "install")
 
 	// Exclude takes precedence over include
-	hash1, err := DirectoryHash(s.tempDir, []string{"scripts/install.sh"}, []string{"scripts"})
+	hash1, err := DirectoryHash(
+		s.tempDir,
+		[]string{excludeFileScriptsInstall},
+		[]string{includeDirScripts},
+	)
 	require.NoError(s.T(), err)
 
 	// Change excluded file - hash should not change
-	s.createFile("scripts/install.sh", "changed")
-	hash2, err := DirectoryHash(s.tempDir, []string{"scripts/install.sh"}, []string{"scripts"})
+	s.createFile(excludeFileScriptsInstall, "changed")
+	hash2, err := DirectoryHash(
+		s.tempDir,
+		[]string{excludeFileScriptsInstall},
+		[]string{includeDirScripts},
+	)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), hash1, hash2)
 
 	// Change included file - hash should change
 	s.createFile("scripts/build.sh", "changed")
-	hash3, err := DirectoryHash(s.tempDir, []string{"scripts/install.sh"}, []string{"scripts"})
+	hash3, err := DirectoryHash(
+		s.tempDir,
+		[]string{excludeFileScriptsInstall},
+		[]string{includeDirScripts},
+	)
 	require.NoError(s.T(), err)
 	assert.NotEqual(s.T(), hash1, hash3)
 }
@@ -135,43 +159,43 @@ func (s *HashTestSuite) TestDirectoryHash_IncludeFiles_Empty() {
 }
 
 func (s *HashTestSuite) TestDirectoryHash_IncludeFiles_ExactMatch() {
-	s.createFile("test", "test content")
+	s.createFile(includeNameTest, "test content")
 	s.createFile("testing", "testing content")
 
 	// Should only match "test", not "testing"
-	hash1, err := DirectoryHash(s.tempDir, nil, []string{"test"})
+	hash1, err := DirectoryHash(s.tempDir, nil, []string{includeNameTest})
 	require.NoError(s.T(), err)
 
 	// Change "testing" - hash should not change (not included)
 	s.createFile("testing", "changed")
-	hash2, err := DirectoryHash(s.tempDir, nil, []string{"test"})
+	hash2, err := DirectoryHash(s.tempDir, nil, []string{includeNameTest})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), hash1, hash2)
 
 	// Change "test" - hash should change
-	s.createFile("test", "changed")
-	hash3, err := DirectoryHash(s.tempDir, nil, []string{"test"})
+	s.createFile(includeNameTest, "changed")
+	hash3, err := DirectoryHash(s.tempDir, nil, []string{includeNameTest})
 	require.NoError(s.T(), err)
 	assert.NotEqual(s.T(), hash1, hash3)
 }
 
 func (s *HashTestSuite) TestDirectoryHash_IncludeFiles_DirectoryPrefix() {
-	s.createFile("test/file.go", "test")
+	s.createFile("test/file.go", includeNameTest)
 	s.createFile("testing/file.go", "testing")
 
 	// Should only match "test/" directory, not "testing/"
-	hash1, err := DirectoryHash(s.tempDir, nil, []string{"test"})
+	hash1, err := DirectoryHash(s.tempDir, nil, []string{includeNameTest})
 	require.NoError(s.T(), err)
 
 	// Change "testing/" - hash should not change
 	s.createFile("testing/file.go", "changed")
-	hash2, err := DirectoryHash(s.tempDir, nil, []string{"test"})
+	hash2, err := DirectoryHash(s.tempDir, nil, []string{includeNameTest})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), hash1, hash2)
 
 	// Change "test/" - hash should change
 	s.createFile("test/file.go", "changed")
-	hash3, err := DirectoryHash(s.tempDir, nil, []string{"test"})
+	hash3, err := DirectoryHash(s.tempDir, nil, []string{includeNameTest})
 	require.NoError(s.T(), err)
 	assert.NotEqual(s.T(), hash1, hash3)
 }
@@ -184,28 +208,28 @@ func (s *HashTestSuite) TestDirectoryHash_IncludeFiles_TrailingSeparator() {
 	assert.NotEmpty(s.T(), hash1)
 
 	// Should work the same without trailing separator
-	hash2, err := DirectoryHash(s.tempDir, nil, []string{"src"})
+	hash2, err := DirectoryHash(s.tempDir, nil, []string{includeDirSrc})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), hash1, hash2)
 }
 
 func (s *HashTestSuite) TestDirectoryHash_IncludeFiles_Multiple() {
 	s.createFile("src/main.go", "main")
-	s.createFile("test/test.go", "test")
+	s.createFile("test/test.go", includeNameTest)
 	s.createFile("docs/readme.md", "docs")
 
-	hash1, err := DirectoryHash(s.tempDir, nil, []string{"src", "test"})
+	hash1, err := DirectoryHash(s.tempDir, nil, []string{includeDirSrc, includeNameTest})
 	require.NoError(s.T(), err)
 
 	// Change excluded directory - hash should not change
 	s.createFile("docs/readme.md", "changed")
-	hash2, err := DirectoryHash(s.tempDir, nil, []string{"src", "test"})
+	hash2, err := DirectoryHash(s.tempDir, nil, []string{includeDirSrc, includeNameTest})
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), hash1, hash2)
 
 	// Change included directory - hash should change
 	s.createFile("src/main.go", "changed")
-	hash3, err := DirectoryHash(s.tempDir, nil, []string{"src", "test"})
+	hash3, err := DirectoryHash(s.tempDir, nil, []string{includeDirSrc, includeNameTest})
 	require.NoError(s.T(), err)
 	assert.NotEqual(s.T(), hash1, hash3)
 }
@@ -379,14 +403,14 @@ func (s *HashTestSuite) TestDirectoryHash_RelativePath() {
 func (s *HashTestSuite) TestDirectoryHash_RealWorldScenario_NodeProject() {
 	s.createFile("src/index.js", "console.log('hello')")
 	s.createFile("src/utils.js", "module.exports = {}")
-	s.createFile("package.json", "{}")
+	s.createFile(includeFilePackageJSON, "{}")
 	s.createFile("node_modules/lib/index.js", "module.exports = {}")
 	s.createFile("build.log", "build output")
 
 	hash1, err := DirectoryHash(
 		s.tempDir,
-		[]string{"node_modules", "*.log"},
-		[]string{"src", "package.json"},
+		[]string{excludeDirNodeModules, excludePatternLog},
+		[]string{includeDirSrc, includeFilePackageJSON},
 	)
 	require.NoError(s.T(), err)
 
@@ -395,8 +419,8 @@ func (s *HashTestSuite) TestDirectoryHash_RealWorldScenario_NodeProject() {
 	s.createFile("build.log", "changed")
 	hash2, err := DirectoryHash(
 		s.tempDir,
-		[]string{"node_modules", "*.log"},
-		[]string{"src", "package.json"},
+		[]string{excludeDirNodeModules, excludePatternLog},
+		[]string{includeDirSrc, includeFilePackageJSON},
 	)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), hash1, hash2)
@@ -405,8 +429,8 @@ func (s *HashTestSuite) TestDirectoryHash_RealWorldScenario_NodeProject() {
 	s.createFile("src/index.js", "changed")
 	hash3, err := DirectoryHash(
 		s.tempDir,
-		[]string{"node_modules", "*.log"},
-		[]string{"src", "package.json"},
+		[]string{excludeDirNodeModules, excludePatternLog},
+		[]string{includeDirSrc, includeFilePackageJSON},
 	)
 	require.NoError(s.T(), err)
 	assert.NotEqual(s.T(), hash1, hash3)
@@ -418,19 +442,19 @@ func (s *HashTestSuite) TestDirectoryHash_RealWorldScenario_GoProject() {
 	s.createFile("vendor/lib/lib.go", "package lib")
 	s.createFile("main.test", "test binary")
 
-	hash1, err := DirectoryHash(s.tempDir, []string{"vendor", "*.test"}, nil)
+	hash1, err := DirectoryHash(s.tempDir, []string{excludeDirVendor, excludePatternTest}, nil)
 	require.NoError(s.T(), err)
 
 	// Change excluded files - hash should not change
 	s.createFile("vendor/lib/lib.go", "changed")
 	s.createFile("main.test", "changed")
-	hash2, err := DirectoryHash(s.tempDir, []string{"vendor", "*.test"}, nil)
+	hash2, err := DirectoryHash(s.tempDir, []string{excludeDirVendor, excludePatternTest}, nil)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), hash1, hash2)
 
 	// Change included file - hash should change
 	s.createFile("main.go", "changed")
-	hash3, err := DirectoryHash(s.tempDir, []string{"vendor", "*.test"}, nil)
+	hash3, err := DirectoryHash(s.tempDir, []string{excludeDirVendor, excludePatternTest}, nil)
 	require.NoError(s.T(), err)
 	assert.NotEqual(s.T(), hash1, hash3)
 }
