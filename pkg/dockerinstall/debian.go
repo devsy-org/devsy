@@ -64,20 +64,40 @@ func (i *DebianInstaller) setupRepo(shC string) error {
 		i.opts.channel,
 	)
 
+	aptUpdateCmd := strings.Join([]string{
+		"apt-get",
+		"-o Acquire::http::Timeout=\"30\"",
+		"-o Acquire::https::Timeout=\"30\"",
+		"-o Acquire::Retries=\"3\"",
+		"update -qq >/dev/null",
+	}, " ")
+
+	aptInstallCmd := strings.Join([]string{
+		"DEBIAN_FRONTEND=noninteractive",
+		"apt-get",
+		"-o Acquire::http::Timeout=\"30\"",
+		"-o Acquire::https::Timeout=\"30\"",
+		"-o Acquire::Retries=\"3\"",
+		"install -y -qq",
+		preReqs,
+		">/dev/null",
+	}, " ")
+
+	cmdKeyringDir := "mkdir -p /etc/apt/keyrings && chmod -R 0755 /etc/apt/keyrings"
+
+	cmdDockerGPG := fmt.Sprintf(
+		"curl -fsSL \"%s/linux/%s/gpg\" | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg",
+		i.opts.downloadURL, i.distro.ID,
+	)
+
 	cmds := []string{
-		"apt-get -o Acquire::http::Timeout=\"30\" -o Acquire::https::Timeout=\"30\" -o Acquire::Retries=\"3\" update -qq >/dev/null",
-		fmt.Sprintf(
-			"DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::http::Timeout=\"30\" -o Acquire::https::Timeout=\"30\" -o Acquire::Retries=\"3\" install -y -qq %s >/dev/null",
-			preReqs,
-		),
-		"mkdir -p /etc/apt/keyrings && chmod -R 0755 /etc/apt/keyrings",
-		fmt.Sprintf(
-			"curl -fsSL \"%s/linux/%s/gpg\" | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg",
-			i.opts.downloadURL, i.distro.ID,
-		),
+		aptUpdateCmd,
+		aptInstallCmd,
+		cmdKeyringDir,
+		cmdDockerGPG,
 		"chmod a+r /etc/apt/keyrings/docker.gpg",
 		fmt.Sprintf("echo %q > /etc/apt/sources.list.d/docker.list", aptRepo),
-		"apt-get update -qq >/dev/null",
+		aptUpdateCmd,
 	}
 
 	return i.executor.RunCommandsWithRetry(shC, cmds, DefaultTimeout)
