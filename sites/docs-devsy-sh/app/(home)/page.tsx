@@ -131,7 +131,7 @@ export default function HomePage() {
               Secure workspaces, built using a devcontainer.json, for developers and agents.
             </p>
             <p className="lede">
-              Devsy runs the same developer environment in a Docker container, a Kubernetes pod, microVM, 
+              Devsy runs the same developer environment in a Docker container, a Kubernetes pod, microVM,
               on a laptop, in the cloud, or on a shared host. Switch backends with one command. No
               rewrite, and no lock-in.
             </p>
