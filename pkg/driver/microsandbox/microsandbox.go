@@ -356,7 +356,8 @@ func (d *microsandboxDriver) buildSpec(workspaceID string, options *driver.RunOp
 	}
 	return sandboxSpec{
 		Image:       options.Image,
-		Entrypoint:  entrypointArgv(options),
+		Entrypoint:  options.Entrypoint,
+		Cmd:         options.Cmd,
 		Memory:      d.defaults.memory,
 		CPUs:        d.defaults.cpus,
 		Env:         options.Env,
@@ -435,14 +436,6 @@ func isPrivileged(options *driver.RunOptions) bool {
 
 func hasUserNSMapping(options *driver.RunOptions) bool {
 	return options.Userns != "" || len(options.UidMap) > 0 || len(options.GidMap) > 0
-}
-
-func entrypointArgv(options *driver.RunOptions) []string {
-	var argv []string
-	if options.Entrypoint != "" {
-		argv = append(argv, options.Entrypoint)
-	}
-	return append(argv, options.Cmd...)
 }
 
 func toContainerDetails(info *sandboxInfo) *config.ContainerDetails {

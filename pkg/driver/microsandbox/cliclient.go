@@ -57,7 +57,7 @@ func (c cliClient) Create(ctx context.Context, sandbox string, spec sandboxSpec)
 	if err := c.ensureVolumes(ctx, spec.Mounts); err != nil {
 		return err
 	}
-	return msbRun(ctx, createArgs(sandbox, spec)...)
+	return msbRun(ctx, runArgs(sandbox, spec)...)
 }
 
 func (cliClient) Find(ctx context.Context, sandbox string) (*sandboxInfo, error) {
@@ -150,19 +150,32 @@ func (cliClient) ensureVolumes(ctx context.Context, mounts []volumeMount) error 
 	return nil
 }
 
-func createArgs(sandbox string, spec sandboxSpec) []string {
-	args := []string{names.Create, names.Flag(names.Name), sandbox}
+const (
+	msbCmdRun     = "run"
+	msbFlagDetach = "--detach"
+)
+
+// runArgs builds a detached `msb run` invocation, matching microsandbox's own
+// ENTRYPOINT/CMD split: --entrypoint sets the executable, and a trailing "--"
+// plus argv overrides the image CMD.
+func runArgs(sandbox string, spec sandboxSpec) []string {
+	args := []string{msbCmdRun, msbFlagDetach, names.Flag(names.Name), sandbox}
+	if spec.Entrypoint != "" {
+		args = append(args, "--entrypoint", spec.Entrypoint)
+	}
 	args = append(args, runtimeArgs(spec)...)
 	args = append(args, resourceArgs(spec)...)
 	args = append(args, mountArgs(spec.Mounts)...)
-	return append(args, spec.Image)
+	args = append(args, spec.Image)
+	if len(spec.Cmd) > 0 {
+		args = append(args, "--")
+		args = append(args, spec.Cmd...)
+	}
+	return args
 }
 
 func runtimeArgs(spec sandboxSpec) []string {
 	var args []string
-	if len(spec.Entrypoint) > 0 {
-		args = append(args, "--entrypoint", strings.Join(spec.Entrypoint, " "))
-	}
 	for k, v := range spec.Env {
 		args = append(args, names.Flag(names.Env), k+"="+v)
 	}
