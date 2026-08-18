@@ -128,12 +128,12 @@ export default function HomePage() {
               Ship from <span className="grad">day zero</span>.
             </h1>
             <p className="hero-sub">
-              Secure workspaces, built using a devcontainer.json, for developers and agents.
+              Secure workspaces, at scale, for developers and agents.
             </p>
             <p className="lede">
               Devsy runs the same developer environment in a Docker container, a Kubernetes pod, microVM,
               on a laptop, in the cloud, or on a shared host. Switch backends with one command. No
-              rewrite, and no lock-in.
+              rewrite and no lock-in.
             </p>
             <div className="hero-cta">
               <a className="btn btn-primary" href="/docs/getting-started/install">
