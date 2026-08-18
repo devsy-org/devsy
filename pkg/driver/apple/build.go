@@ -65,6 +65,7 @@ func (d *appleDriver) BuildDevContainer(
 		PrebuildHash:  req.PrebuildHash,
 		RegistryCache: req.Options.RegistryCache,
 		Tags:          req.Options.Tag,
+		BuiltLocally:  true,
 	}, nil
 }
 
@@ -90,6 +91,7 @@ func (d *appleDriver) resolveExistingImage(
 		PrebuildHash:  req.PrebuildHash,
 		RegistryCache: req.Options.RegistryCache,
 		Tags:          req.Options.Tag,
+		BuiltLocally:  true,
 	}, true
 }
 

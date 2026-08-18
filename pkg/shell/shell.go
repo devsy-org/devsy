@@ -18,47 +18,45 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+type CommandRunner struct {
+	Command string
+	Environ []string
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
+}
+
 func RunEmulatedShell(
 	ctx context.Context,
-	command string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-	env []string,
+	runner *CommandRunner,
 ) error {
-	command = strings.ReplaceAll(command, "\r", "")
-
-	// Let's parse the complete command
-	parsed, err := syntax.NewParser().Parse(strings.NewReader(command), "")
+	runner.Command = strings.ReplaceAll(runner.Command, "\r", "")
+	parsed, err := syntax.NewParser().Parse(strings.NewReader(runner.Command), "")
 	if err != nil {
 		return fmt.Errorf("parse shell command: %w", err)
 	}
 
-	// use system default as environ if unspecified
-	if env == nil {
-		env = []string{}
-		env = append(env, os.Environ()...)
+	if runner.Environ == nil {
+		runner.Environ = []string{}
+		runner.Environ = append(runner.Environ, os.Environ()...)
 	}
 
-	// Get current working directory
 	dir, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 
-	// Create shell runner
-	r, err := interp.New(buildRunnerOptions(runnerParams{
-		stdin:  stdin,
-		stdout: stdout,
-		stderr: stderr,
-		env:    env,
+	r, err := interp.New(buildRunnerOptions(shellRunnerOptions{
+		stdin:  runner.Stdin,
+		stdout: runner.Stdout,
+		stderr: runner.Stderr,
+		env:    runner.Environ,
 		dir:    dir,
 	})...)
 	if err != nil {
 		return fmt.Errorf("create shell runner: %w", err)
 	}
 
-	// Run command
 	err = r.Run(ctx, parsed)
 	if err != nil {
 		var exitStatus interp.ExitStatus
@@ -72,7 +70,7 @@ func RunEmulatedShell(
 	return nil
 }
 
-type runnerParams struct {
+type shellRunnerOptions struct {
 	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
@@ -80,7 +78,7 @@ type runnerParams struct {
 	dir    string
 }
 
-func buildRunnerOptions(p runnerParams) []interp.RunnerOption {
+func buildRunnerOptions(p shellRunnerOptions) []interp.RunnerOption {
 	defaultOpenHandler := interp.DefaultOpenHandler()
 	defaultExecHandler := interp.DefaultExecHandler(2 * time.Second)
 	return []interp.RunnerOption{
@@ -132,21 +130,17 @@ func (devNull) Close() error {
 }
 
 func GetShell(userName string) ([]string, error) {
-	// try to get a shell
 	if runtime.GOOS != "windows" {
-		// infere login shell from getent
 		shell, err := getUserShell(userName)
 		if err == nil {
 			return []string{shell}, nil
 		}
 
-		// fallback to $SHELL env var
 		shell, ok := os.LookupEnv("SHELL")
 		if ok {
 			return []string{shell}, nil
 		}
 
-		// fallback to path discovery
 		_, err = exec.LookPath("bash")
 		if err == nil {
 			return []string{"bash"}, nil
@@ -158,7 +152,6 @@ func GetShell(userName string) ([]string, error) {
 		}
 	}
 
-	// fallback to our in-built shell
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, err

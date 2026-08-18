@@ -15,11 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeDocker writes an executable shell script that emulates the docker CLI
-// subcommands used by ensureContainerRunning. `inspect` reports "exited" until
-// the number of prior `start` invocations reaches startsUntilRunning, after
-// which it reports "running". A startsUntilRunning of -1 keeps it exited
-// forever (a container that never boots).
+const testImageRef = "x:latest"
+
 func fakeDocker(t *testing.T, startsUntilRunning int) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -80,15 +77,115 @@ esac
 	return path
 }
 
-func TestEnsureImage_NotFoundPulls(t *testing.T) {
+func withShortImageInspectPoll(t *testing.T) {
+	t.Helper()
+	origInterval, origTimeout := imageInspectPollInterval, imageInspectPollTimeout
+	imageInspectPollInterval = 5 * time.Millisecond
+	imageInspectPollTimeout = 300 * time.Millisecond
+	t.Cleanup(func() {
+		imageInspectPollInterval, imageInspectPollTimeout = origInterval, origTimeout
+	})
+}
+
+func TestEnsureImage_BuiltImageNeverFoundDoesNotPull(t *testing.T) {
+	withShortImageInspectPoll(t)
 	marker := filepath.Join(t.TempDir(), "pulled")
 	bin := fakeEnsureImageDocker(t, "Error response from daemon: No such image: x", marker)
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
 
-	err := d.EnsureImage(context.Background(), &driver.RunOptions{Image: "x:latest"})
+	err := d.EnsureImage(
+		context.Background(),
+		&driver.RunOptions{Image: testImageRef, ImageBuilt: true},
+	)
+
+	require.Error(
+		t,
+		err,
+		"a devsy-built image that never appears locally must not fall back to pull",
+	)
+	assert.ErrorIs(t, err, docker.ErrImageNotFound)
+	assert.NoFileExists(
+		t,
+		marker,
+		"a locally-built image can never be resolved by a pull; pulling risks running an unrelated image under the same tag",
+	)
+}
+
+func TestEnsureImage_TransientMissRecoversWithoutPulling(t *testing.T) {
+	withShortImageInspectPoll(t)
+	imageInspectPollTimeout = time.Second // must outlast a couple of retries
+
+	tmp := t.TempDir()
+	marker := filepath.Join(tmp, "pulled")
+	readyAfter := filepath.Join(tmp, "attempts")
+	bin := filepath.Join(tmp, "docker-fake")
+	script := `#!/bin/sh
+case "$1" in
+  inspect)
+    n=$(cat "` + readyAfter + `" 2>/dev/null || echo 0)
+    n=$((n + 1))
+    echo "$n" > "` + readyAfter + `"
+    if [ "$n" -lt 3 ]; then
+      echo 'Error response from daemon: No such image: x' >&2
+      exit 1
+    fi
+    echo '[{"Id":"sha256:fake"}]'
+    ;;
+  pull)
+    echo pulled > "` + marker + `"
+    ;;
+esac
+`
+	//nolint:gosec // test helper script needs exec bit
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+
+	err := d.EnsureImage(
+		context.Background(),
+		&driver.RunOptions{Image: testImageRef, ImageBuilt: true},
+	)
 
 	require.NoError(t, err)
-	assert.FileExists(t, marker, "a not-found image should trigger a pull")
+	assert.NoFileExists(t, marker,
+		"a transient miss that resolves on retry must not fall back to pull")
+}
+
+func TestEnsureImage_ExternalImageSkipsRetryAndPullsImmediately(t *testing.T) {
+	withShortImageInspectPoll(t)
+	imageInspectPollTimeout = time.Second // would need to elapse if (wrongly) retried
+
+	tmp := t.TempDir()
+	marker := filepath.Join(tmp, "pulled")
+	attempts := filepath.Join(tmp, "attempts")
+	bin := filepath.Join(tmp, "docker-fake")
+	script := `#!/bin/sh
+case "$1" in
+  inspect)
+    n=$(cat "` + attempts + `" 2>/dev/null || echo 0)
+    echo $((n + 1)) > "` + attempts + `"
+    echo 'Error response from daemon: No such image: x' >&2
+    exit 1
+    ;;
+  pull)
+    echo pulled > "` + marker + `"
+    ;;
+esac
+`
+	//nolint:gosec // test helper script needs exec bit
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+
+	start := time.Now()
+	err := d.EnsureImage(context.Background(), &driver.RunOptions{Image: testImageRef})
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	assert.FileExists(t, marker, "a not-found external image should trigger a pull")
+	attemptsRaw, readErr := os.ReadFile(attempts) //nolint:gosec // test-controlled path
+	require.NoError(t, readErr)
+	assert.Equal(t, "1\n", string(attemptsRaw), "must inspect exactly once, no retries")
+	assert.Less(t, elapsed, imageInspectPollTimeout,
+		"must not wait out the retry window for an image it never built")
 }
 
 func TestEnsureImage_RealErrorDoesNotPull(t *testing.T) {
@@ -96,7 +193,7 @@ func TestEnsureImage_RealErrorDoesNotPull(t *testing.T) {
 	bin := fakeEnsureImageDocker(t, "Cannot connect to the Docker daemon", marker)
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
 
-	err := d.EnsureImage(context.Background(), &driver.RunOptions{Image: "x:latest"})
+	err := d.EnsureImage(context.Background(), &driver.RunOptions{Image: testImageRef})
 
 	require.Error(t, err)
 	assert.NoFileExists(t, marker, "a genuine daemon failure must not trigger a pull")
@@ -106,7 +203,7 @@ func TestEnsureContainerRunning_AlreadyRunning(t *testing.T) {
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: testDockerCmd}}
 	container := &config.ContainerDetails{
 		ID:    "c1",
-		State: config.ContainerDetailsState{Status: "running"},
+		State: config.ContainerDetailsState{Status: containerStatusRunning},
 	}
 
 	require.NoError(t, d.ensureContainerRunning(context.Background(), container))
@@ -228,4 +325,36 @@ esac
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestDeleteDevContainer_StopsRunningContainerBeforeRemove(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	script := `#!/bin/sh
+echo "$1" >> "` + calls + `"
+case "$1" in
+  inspect)
+    echo '[{"ID":"c1","State":{"Status":"running"}}]'
+    ;;
+  stop) ;;
+  rm)
+    if ! grep -q '^stop$' "` + calls + `"; then
+      echo "cannot remove running container" >&2
+      exit 1
+    fi
+    ;;
+esac
+`
+	bin := filepath.Join(dir, "docker-fake")
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755)) //nolint:gosec
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin, ContainerID: "c1"}}
+
+	err := d.DeleteDevContainer(context.Background(), "ws1")
+	require.NoError(t, err)
+
+	logged, readErr := os.ReadFile(calls) //nolint:gosec // G304: test-controlled path
+	require.NoError(t, readErr)
+	assert.Contains(t, string(logged), "stop\n")
+	assert.Contains(t, string(logged), "rm\n")
 }

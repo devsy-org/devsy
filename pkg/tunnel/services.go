@@ -209,8 +209,11 @@ func runServicesIteration(
 		errChan:      errChan,
 	})
 
-	writer := log.Writer(log.LevelDebug)
-	defer func() { _ = writer.Close() }()
+	writer, writerDone := log.PipeJSONStream()
+	defer func() {
+		_ = writer.Close()
+		<-writerDone
+	}()
 
 	command := buildCredentialsCommand(ctx, opts)
 
