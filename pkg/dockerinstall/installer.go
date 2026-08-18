@@ -1,6 +1,9 @@
 package dockerinstall
 
-import "io"
+import (
+	"context"
+	"io"
+)
 
 type InstallOptions struct {
 	channel     string
@@ -13,5 +16,5 @@ type InstallOptions struct {
 }
 
 type Installer interface {
-	Install(shC string) error
+	Install(ctx context.Context, shC string) error
 }

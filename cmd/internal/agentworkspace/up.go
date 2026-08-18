@@ -331,7 +331,7 @@ func (w *workspaceInitializer) initialize(ctx context.Context) error {
 		log.Warnf("failed to set up docker/git credentials (continuing without them): %v", err)
 	}
 
-	dockerErrChan := w.installDockerAsync()
+	dockerErrChan := w.installDockerAsync(ctx)
 
 	if err := w.prepareWorkspaceContent(ctx); err != nil {
 		return err
@@ -400,7 +400,7 @@ type dockerInstallResult struct {
 	err  error
 }
 
-func (w *workspaceInitializer) installDockerAsync() <-chan dockerInstallResult {
+func (w *workspaceInitializer) installDockerAsync(ctx context.Context) <-chan dockerInstallResult {
 	resultChan := make(chan dockerInstallResult, 1)
 
 	go func() {
@@ -410,14 +410,14 @@ func (w *workspaceInitializer) installDockerAsync() <-chan dockerInstallResult {
 			return
 		}
 
-		dockerPath, err := w.ensureDockerInstalled()
+		dockerPath, err := w.ensureDockerInstalled(ctx)
 		resultChan <- dockerInstallResult{path: dockerPath, err: err}
 	}()
 
 	return resultChan
 }
 
-func (w *workspaceInitializer) ensureDockerInstalled() (string, error) {
+func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (string, error) {
 	dockerCmd := w.getDockerCommand()
 
 	if command.Exists(dockerCmd) {
@@ -444,7 +444,7 @@ func (w *workspaceInitializer) ensureDockerInstalled() (string, error) {
 	}
 
 	log.Debug("attempting to install docker")
-	dockerPath, err := installDocker()
+	dockerPath, err := installDocker(ctx)
 	log.Debugf("docker installation path=%q, err=%v", dockerPath, err)
 	return dockerPath, err
 }
@@ -784,11 +784,11 @@ func prepareImage(workspaceDir, image string) error {
 
 // installDocker installs Docker and returns the path to the docker binary.
 // This function assumes docker does not already exist - the caller should check first.
-func installDocker() (dockerPath string, err error) {
+func installDocker(ctx context.Context) (dockerPath string, err error) {
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 	log.Debug("installing Docker")
-	return dockerinstall.Install(writer, writer)
+	return dockerinstall.Install(ctx, writer, writer)
 }
 
 func configureDockerDaemon(ctx context.Context) error {

@@ -13,6 +13,10 @@ const (
 	DeprecationDelay    = 10 * time.Second
 	RetryDelay          = 10 * time.Second
 
+	// Apt options.
+	AptTimeoutSeconds = 30
+	AptRetries        = 3
+
 	// Paths.
 	DefaultDownloadURL = "https://download.docker.com"
 	DefaultRepoFile    = "docker-ce.repo"
