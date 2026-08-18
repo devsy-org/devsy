@@ -113,3 +113,35 @@ func (s *NetstatUtilTestSuite) TestGetProcName() {
 		})
 	}
 }
+
+func (s *NetstatUtilTestSuite) TestParseAddr() {
+	tests := []struct {
+		name     string
+		input    string
+		wantIP   string
+		wantPort uint16
+		wantErr  bool
+	}{
+		{"ipv4 loopback", "0100007F:0050", "127.0.0.1", 80, false},
+		{"ipv6 any", "00000000000000000000000000000000:0016", "::", 22, false},
+		{"missing port", "foo", "", 0, true},
+		{"bad ip length", "ZZ:0050", "", 0, true},
+		{"invalid ipv4 hex", "0100007G:0050", "", 0, true},
+		{"invalid port hex", "0100007F:zzzz", "", 0, true},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			got, err := parseAddr(tt.input)
+			if tt.wantErr {
+				assert.Error(s.T(), err)
+				assert.Nil(s.T(), got)
+				return
+			}
+			require.NoError(s.T(), err)
+			require.NotNil(s.T(), got)
+			assert.Equal(s.T(), tt.wantIP, got.IP.String())
+			assert.Equal(s.T(), tt.wantPort, got.Port)
+		})
+	}
+}
