@@ -254,6 +254,7 @@ jobs:
             free-disk-space: false
             install-kind: false
             requires-secret: false
+            flake-attempts: 2
 
           - label: mcp
             runner: ubuntu-latest
@@ -266,6 +267,7 @@ jobs:
             free-disk-space: true
             install-kind: true
             requires-secret: false
+            flake-attempts: 2
 
           - label: ssh
             runner: ubuntu-latest
