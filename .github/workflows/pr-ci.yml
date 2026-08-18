@@ -723,7 +723,7 @@ jobs:
 
       - name: cache apt packages (podman/runc)
         if: (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && runner.os == 'Linux'
-        timeout: 10m
+        timeout-minutes: 10
         run: |
           for i in $(seq 1 60); do
             if sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
