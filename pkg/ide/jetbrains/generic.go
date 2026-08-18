@@ -27,6 +27,11 @@ const (
 	VersionOption       = "VERSION"
 	DownloadAmd64Option = "DOWNLOAD_AMD64"
 	DownloadArm64Option = "DOWNLOAD_ARM64"
+
+	versionOptionDescription       = "The version for the binary"
+	versionOptionDefault           = "latest"
+	downloadArm64OptionDescription = "The download url for the arm64 server binary"
+	downloadAmd64OptionDescription = "The download url for the amd64 server binary"
 )
 
 func getLatestDownloadURL(code string, platform string) string {
@@ -42,7 +47,7 @@ func getDownloadURLs(
 ) (string, string) {
 	version := options.GetValue(values, VersionOption)
 	var amd64Download, arm64Download string
-	if version == "latest" {
+	if version == versionOptionDefault {
 		amd64Download = getLatestDownloadURL(productCode, "linux")
 		arm64Download = getLatestDownloadURL(productCode, "linuxARM64")
 	} else {
