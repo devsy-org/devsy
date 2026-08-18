@@ -217,3 +217,103 @@ func TestRemoveHelperOnMissingConfigIsNoError(t *testing.T) {
 		RemoveHelperFromPath(context.Background(), filepath.Join(t.TempDir(), "does-not-exist")),
 	)
 }
+
+const (
+	httpPathTestHost       = "github.com"
+	httpPathTestProtocol   = "https"
+	httpPathTestRepository = "https://github.com/org/repo.git"
+	httpPathTestRepoPath   = "/org/repo.git"
+)
+
+func httpPathTestEnv(t *testing.T, credentialConfig string) {
+	t.Helper()
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(tmpHome, ".gitconfig"), []byte(credentialConfig), 0o600),
+	)
+}
+
+func TestGetHTTPPath_ReturnsCurrentPathWhenProvided(t *testing.T) {
+	httpPathTestEnv(t, "")
+
+	got, err := GetHTTPPath(context.Background(), GetHttpPathParameters{
+		Host:        httpPathTestHost,
+		Protocol:    httpPathTestProtocol,
+		CurrentPath: "/existing/path",
+		Repository:  httpPathTestRepository,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "/existing/path", got)
+}
+
+func TestGetHTTPPath_EmptyWhenUseHttpPathDisabled(t *testing.T) {
+	httpPathTestEnv(t, "")
+
+	got, err := GetHTTPPath(context.Background(), GetHttpPathParameters{
+		Host:       httpPathTestHost,
+		Protocol:   httpPathTestProtocol,
+		Repository: httpPathTestRepository,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func TestGetHTTPPath_ReturnsRepositoryPathWhenUseHttpPathEnabled(t *testing.T) {
+	httpPathTestEnv(t, `[credential "https://github.com"]
+	useHttpPath = true
+`)
+
+	got, err := GetHTTPPath(context.Background(), GetHttpPathParameters{
+		Host:       httpPathTestHost,
+		Protocol:   httpPathTestProtocol,
+		Repository: httpPathTestRepository,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, httpPathTestRepoPath, got)
+}
+
+func TestGetHTTPPath_EmptyPathWhenRepositoryHasNoPath(t *testing.T) {
+	httpPathTestEnv(t, `[credential "https://github.com"]
+	useHttpPath = true
+`)
+
+	got, err := GetHTTPPath(context.Background(), GetHttpPathParameters{
+		Host:       httpPathTestHost,
+		Protocol:   httpPathTestProtocol,
+		Repository: "https://github.com",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, got, "a host-only repository URL has no path component")
+}
+
+func TestGetHTTPPath_ErrorOnInvalidRepositoryURL(t *testing.T) {
+	httpPathTestEnv(t, `[credential "https://github.com"]
+	useHttpPath = true
+`)
+
+	_, err := GetHTTPPath(context.Background(), GetHttpPathParameters{
+		Host:       httpPathTestHost,
+		Protocol:   httpPathTestProtocol,
+		Repository: "://not-a-url",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parse workspace repository")
+}
+
+func TestGetHTTPPath_PerHostScopedConfigOnly(t *testing.T) {
+	httpPathTestEnv(t, `[credential "https://gitlab.com"]
+	useHttpPath = true
+`)
+
+	got, err := GetHTTPPath(context.Background(), GetHttpPathParameters{
+		Host:       httpPathTestHost,
+		Protocol:   httpPathTestProtocol,
+		Repository: httpPathTestRepository,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, got, "useHttpPath set for a different host must not apply")
+}
