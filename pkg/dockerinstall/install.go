@@ -1,6 +1,7 @@
 package dockerinstall
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -8,7 +9,7 @@ import (
 	"strings"
 )
 
-func Install(stdout, stderr io.Writer) (string, error) {
+func Install(ctx context.Context, stdout, stderr io.Writer) (string, error) {
 	opts := &InstallOptions{
 		channel:     getEnv("CHANNEL", ChannelStable),
 		version:     getEnv("VERSION", ""),
@@ -47,7 +48,7 @@ func Install(stdout, stderr io.Writer) (string, error) {
 	if installer == nil {
 		return "", fmt.Errorf("unsupported distribution: %s", distro.ID)
 	}
-	if err := installer.Install(shC); err != nil {
+	if err := installer.Install(ctx, shC); err != nil {
 		return "", fmt.Errorf("docker installation failed: %w", err)
 	}
 
@@ -141,7 +142,7 @@ func echoDockerAsNonroot(opts *InstallOptions) {
 
 	fprintln(opts.stdout, `
 ================================================================================`)
-	if versionGte(opts.version, "20.10") {
+	if versionGte(opts.version, ubuntuRelease2010) {
 		fprintln(opts.stdout, `
 To run Docker as a non-privileged user, consider setting up the
 Docker daemon in rootless mode for your user:

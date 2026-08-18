@@ -14,16 +14,16 @@ const (
 var RustRoverOptions = ide.Options{
 	VersionOption: {
 		Name:        VersionOption,
-		Description: "The version for the binary",
-		Default:     "latest",
+		Description: versionOptionDescription,
+		Default:     versionOptionDefault,
 	},
 	DownloadArm64Option: {
 		Name:        DownloadArm64Option,
-		Description: "The download url for the arm64 server binary",
+		Description: downloadArm64OptionDescription,
 	},
 	DownloadAmd64Option: {
 		Name:        DownloadAmd64Option,
-		Description: "The download url for the amd64 server binary",
+		Description: downloadAmd64OptionDescription,
 	},
 }
 

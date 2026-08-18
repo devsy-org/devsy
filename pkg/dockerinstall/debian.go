@@ -1,9 +1,17 @@
 package dockerinstall
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+)
+
+// aptFlags configures apt-get to fail fast on transient network issues
+// instead of hanging indefinitely, retrying a bounded number of times first.
+var aptFlags = fmt.Sprintf(
+	`-o Acquire::http::Timeout="%d" -o Acquire::https::Timeout="%d" -o Acquire::Retries="%d"`,
+	AptTimeoutSeconds, AptTimeoutSeconds, AptRetries,
 )
 
 type DebianInstaller struct {
@@ -20,8 +28,8 @@ func NewDebianInstaller(distro *Distro, opts *InstallOptions) *DebianInstaller {
 	}
 }
 
-func (i *DebianInstaller) Install(shC string) error {
-	if err := i.setupRepo(shC); err != nil {
+func (i *DebianInstaller) Install(ctx context.Context, shC string) error {
+	if err := i.setupRepo(ctx, shC); err != nil {
 		return err
 	}
 
@@ -32,17 +40,18 @@ func (i *DebianInstaller) Install(shC string) error {
 	pkgs := BuildPackageList(i.opts.version, pkgVersion, cliPkgVersion)
 
 	installCmd := fmt.Sprintf(
-		"DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends %s >/dev/null",
+		"DEBIAN_FRONTEND=noninteractive apt-get %s install -y -qq --no-install-recommends %s >/dev/null",
+		aptFlags,
 		pkgs,
 	)
-	if err := i.executor.RunWithRetry(shC, installCmd, DefaultTimeout); err != nil {
+	if err := i.executor.RunWithRetry(ctx, shC, installCmd, DefaultTimeout); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (i *DebianInstaller) setupRepo(shC string) error {
+func (i *DebianInstaller) setupRepo(ctx context.Context, shC string) error {
 	preReqs := "apt-transport-https ca-certificates curl"
 	if !commandExists("gpg") {
 		preReqs += " gnupg"
@@ -64,20 +73,31 @@ func (i *DebianInstaller) setupRepo(shC string) error {
 		i.opts.channel,
 	)
 
+	cmdAptUpdate := fmt.Sprintf("apt-get %s update -qq >/dev/null", aptFlags)
+
+	cmdAptInstall := fmt.Sprintf(
+		"DEBIAN_FRONTEND=noninteractive apt-get %s install -y -qq %s >/dev/null",
+		aptFlags, preReqs,
+	)
+
+	cmdKeyringDir := "mkdir -p /etc/apt/keyrings && chmod -R 0755 /etc/apt/keyrings"
+
+	cmdDockerGPG := fmt.Sprintf(
+		"curl -fsSL \"%s/linux/%s/gpg\" | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg",
+		i.opts.downloadURL, i.distro.ID,
+	)
+
 	cmds := []string{
-		"apt-get update -qq >/dev/null",
-		fmt.Sprintf("DEBIAN_FRONTEND=noninteractive apt-get install -y -qq %s >/dev/null", preReqs),
-		"mkdir -p /etc/apt/keyrings && chmod -R 0755 /etc/apt/keyrings",
-		fmt.Sprintf(
-			"curl -fsSL \"%s/linux/%s/gpg\" | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg",
-			i.opts.downloadURL, i.distro.ID,
-		),
+		cmdAptUpdate,
+		cmdAptInstall,
+		cmdKeyringDir,
+		cmdDockerGPG,
 		"chmod a+r /etc/apt/keyrings/docker.gpg",
 		fmt.Sprintf("echo %q > /etc/apt/sources.list.d/docker.list", aptRepo),
-		"apt-get update -qq >/dev/null",
+		cmdAptUpdate,
 	}
 
-	return i.executor.RunCommandsWithRetry(shC, cmds, DefaultTimeout)
+	return i.executor.RunCommandsWithRetry(ctx, shC, cmds, DefaultTimeout)
 }
 
 func (i *DebianInstaller) findVersions() (string, string, error) {
@@ -94,7 +114,7 @@ func (i *DebianInstaller) findVersions() (string, string, error) {
 	}
 
 	cliPkgVersion := ""
-	if versionGte(i.opts.version, "18.09") {
+	if versionGte(i.opts.version, ubuntuRelease1809) {
 		cliPkgVersion, err = i.findPackageVersion("docker-ce-cli")
 		if err != nil {
 			return "", "", err

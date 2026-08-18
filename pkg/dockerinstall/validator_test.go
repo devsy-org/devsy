@@ -66,7 +66,7 @@ func (s *ValidatorTestSuite) TestCheckWSL_IsWSL_DryRun() {
 
 func (s *ValidatorTestSuite) TestCheckDeprecation_NotDeprecated() {
 	validator := NewValidator(s.opts)
-	distro := &Distro{ID: "ubuntu", Version: "22.04"}
+	distro := &Distro{ID: DistroUbuntu, Version: ubuntuRelease2204}
 	validator.CheckDeprecation(distro)
 	s.Empty(s.stdout.String())
 }
@@ -74,7 +74,7 @@ func (s *ValidatorTestSuite) TestCheckDeprecation_NotDeprecated() {
 func (s *ValidatorTestSuite) TestCheckDeprecation_DeprecatedUbuntu_DryRun() {
 	s.opts.dryRun = true
 	validator := NewValidator(s.opts)
-	distro := &Distro{ID: "ubuntu", Version: "xenial"}
+	distro := &Distro{ID: DistroUbuntu, Version: "xenial"}
 	validator.CheckDeprecation(distro)
 	s.Contains(s.stdout.String(), "DEPRECATION WARNING")
 	s.Contains(s.stdout.String(), "ubuntu xenial")
@@ -83,7 +83,7 @@ func (s *ValidatorTestSuite) TestCheckDeprecation_DeprecatedUbuntu_DryRun() {
 func (s *ValidatorTestSuite) TestCheckDeprecation_DeprecatedDebian() {
 	s.opts.dryRun = true
 	validator := NewValidator(s.opts)
-	distro := &Distro{ID: "debian", Version: CodenameStretch}
+	distro := &Distro{ID: DistroDebian, Version: CodenameStretch}
 	validator.CheckDeprecation(distro)
 	s.Contains(s.stdout.String(), "DEPRECATION WARNING")
 	s.Contains(s.stdout.String(), "debian stretch")
@@ -92,28 +92,36 @@ func (s *ValidatorTestSuite) TestCheckDeprecation_DeprecatedDebian() {
 func (s *ValidatorTestSuite) TestCheckDeprecation_DeprecatedFedora() {
 	s.opts.dryRun = true
 	validator := NewValidator(s.opts)
-	distro := &Distro{ID: "fedora", Version: "32"}
+	distro := &Distro{ID: DistroFedora, Version: "32"}
 	validator.CheckDeprecation(distro)
 	s.Contains(s.stdout.String(), "DEPRECATION WARNING")
 }
 
 func (s *ValidatorTestSuite) TestCheckDeprecation_CurrentFedora() {
 	validator := NewValidator(s.opts)
-	distro := &Distro{ID: "fedora", Version: "39"}
+	distro := &Distro{ID: DistroFedora, Version: "39"}
 	validator.CheckDeprecation(distro)
 	s.Empty(s.stdout.String())
 }
 
 func (s *ValidatorTestSuite) TestValidateDistro_EmptyID() {
 	validator := NewValidator(s.opts)
-	distro := &Distro{ID: "", Version: "22.04"}
+	distro := &Distro{ID: "", Version: ubuntuRelease2204}
 	err := validator.ValidateDistro(distro)
 	s.Error(err)
 	s.Contains(s.stderr.String(), "Unable to detect distribution")
 }
 
 func (s *ValidatorTestSuite) TestValidateDistro_Supported() {
-	supported := []string{"ubuntu", "debian", "raspbian", "centos", "fedora", "rhel", "sles"}
+	supported := []string{
+		DistroUbuntu,
+		DistroDebian,
+		DistroRaspbian,
+		DistroCentOS,
+		DistroFedora,
+		DistroRHEL,
+		DistroSLES,
+	}
 	for _, id := range supported {
 		s.SetupTest()
 		validator := NewValidator(s.opts)

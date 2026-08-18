@@ -371,8 +371,8 @@ func installAgent(
 		helmCmd.Stderr = log.Writer(log.LevelDebug)
 		helmCmd.Stdin = os.Stdin
 
-		log.Info("Installing agent")
-		log.Debugf("Running helm command: %v", helmCmd.Args)
+		log.Info("installing agent")
+		log.Debugf("running helm command: %v", helmCmd.Args)
 
 		if err := helmCmd.Run(); err != nil {
 			errChan <- fmt.Errorf("failed to install chart: %w", err)
@@ -394,7 +394,7 @@ func waitForClusterInitialized(
 	managementClient kube.Interface,
 	clusterName string,
 ) error {
-	log.Info("Waiting for the cluster to be initialized")
+	log.Info("waiting for the cluster to be initialized")
 	waitErr := wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,

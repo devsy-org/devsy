@@ -42,7 +42,11 @@ VERSION_ID="22.04"`
 
 	distro := s.detector.parseOSRelease(strings.NewReader(osRelease))
 	s.Equal(DistroUbuntu, distro.ID)
-	s.Equal("22.04", distro.Version, "Should fall back to VERSION_ID when codename missing")
+	s.Equal(
+		ubuntuRelease2204,
+		distro.Version,
+		"Should fall back to VERSION_ID when codename missing",
+	)
 }
 
 func (s *DetectorTestSuite) TestParseOSRelease_Debian_WithCodename() {
@@ -156,7 +160,7 @@ func (s *DetectorTestSuite) TestIsNumericVersion() {
 		version  string
 		expected bool
 	}{
-		{"22.04", true},
+		{ubuntuRelease2204, true},
 		{"11", true},
 		{"12.5", true},
 		{"jammy", false},
@@ -187,7 +191,7 @@ func (s *DetectorTestSuite) TestDistro_HasCodename() {
 	}{
 		{&Distro{ID: DistroUbuntu, Version: "jammy"}, true},
 		{&Distro{ID: DistroDebian, Version: CodenameBookworm}, true},
-		{&Distro{ID: DistroUbuntu, Version: "22.04"}, false},
+		{&Distro{ID: DistroUbuntu, Version: ubuntuRelease2204}, false},
 		{&Distro{ID: DistroDebian, Version: "12"}, false},
 		{&Distro{ID: "fedora", Version: "39"}, false},
 		{&Distro{ID: DistroUbuntu, Version: ""}, false},

@@ -88,7 +88,7 @@ func (cmd *WakeupCmd) wakeup(
 	workspaceInstance *managementv1.DevsyWorkspaceInstance,
 ) error {
 	if workspaceInstance.Status.Phase != storagev1.InstanceSleeping {
-		log.Infof("Workspace %s is not sleeping", workspaceInstance.Name)
+		log.Infof("workspace %s is not sleeping", workspaceInstance.Name)
 		return nil
 	}
 
@@ -101,8 +101,8 @@ func (cmd *WakeupCmd) wakeup(
 		return err
 	}
 
-	// wait for sleeping
-	log.Info("Wait until workspace wakes up")
+	// wait for the workspace to wake up
+	log.Info("wait until workspace wakes up")
 	err = waitForWorkspacePhase(ctx, waitForWorkspacePhaseParams{
 		managementClient: managementClient,
 		projectName:      cmd.Project,

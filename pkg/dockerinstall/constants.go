@@ -13,6 +13,10 @@ const (
 	DeprecationDelay    = 10 * time.Second
 	RetryDelay          = 10 * time.Second
 
+	// Apt options.
+	AptTimeoutSeconds = 30
+	AptRetries        = 3
+
 	// Paths.
 	DefaultDownloadURL = "https://download.docker.com"
 	DefaultRepoFile    = "docker-ce.repo"
@@ -45,6 +49,10 @@ const (
 	DistroRaspbian = "raspbian"
 	DistroOSMC     = "osmc"
 	DistroDebian   = "debian"
+	DistroCentOS   = "centos"
+	DistroFedora   = "fedora"
+	DistroRHEL     = "rhel"
+	DistroSLES     = "sles"
 
 	// Debian release codenames.
 	CodenameTrixie   = "trixie"
@@ -53,4 +61,10 @@ const (
 	CodenameBuster   = "buster"
 	CodenameStretch  = "stretch"
 	CodenameJessie   = "jessie"
+
+	// Ubuntu release.
+	ubuntuRelease1809 = "18.09"
+	ubuntuRelease2010 = "20.10"
+	ubuntuRelease2204 = "22.04"
+	ubuntuRelease230  = "23.0"
 )
