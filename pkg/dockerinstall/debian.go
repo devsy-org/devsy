@@ -64,7 +64,7 @@ func (i *DebianInstaller) setupRepo(shC string) error {
 		i.opts.channel,
 	)
 
-	aptUpdateCmd := strings.Join([]string{
+	cmdAptUpdate := strings.Join([]string{
 		"apt-get",
 		"-o Acquire::http::Timeout=\"30\"",
 		"-o Acquire::https::Timeout=\"30\"",
@@ -72,7 +72,7 @@ func (i *DebianInstaller) setupRepo(shC string) error {
 		"update -qq >/dev/null",
 	}, " ")
 
-	aptInstallCmd := strings.Join([]string{
+	cmdAptInstall := strings.Join([]string{
 		"DEBIAN_FRONTEND=noninteractive",
 		"apt-get",
 		"-o Acquire::http::Timeout=\"30\"",
@@ -91,13 +91,13 @@ func (i *DebianInstaller) setupRepo(shC string) error {
 	)
 
 	cmds := []string{
-		aptUpdateCmd,
-		aptInstallCmd,
+		cmdAptUpdate,
+		cmdAptInstall,
 		cmdKeyringDir,
 		cmdDockerGPG,
 		"chmod a+r /etc/apt/keyrings/docker.gpg",
 		fmt.Sprintf("echo %q > /etc/apt/sources.list.d/docker.list", aptRepo),
-		aptUpdateCmd,
+		cmdAptUpdate,
 	}
 
 	return i.executor.RunCommandsWithRetry(shC, cmds, DefaultTimeout)
