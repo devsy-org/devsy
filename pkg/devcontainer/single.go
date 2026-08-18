@@ -833,6 +833,7 @@ func (r *runner) getRunOptions(
 	return &driver.RunOptions{
 		UID:            r.workspaceUID(),
 		Image:          buildInfo.ImageName,
+		ImageBuilt:     buildInfo.BuiltLocally,
 		User:           user,
 		Entrypoint:     entrypoint,
 		Cmd:            cmd,

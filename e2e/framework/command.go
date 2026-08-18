@@ -80,7 +80,7 @@ func (f *Framework) DevsyUpStreams(
 	workspace string,
 	additionalArgs ...string,
 ) (string, string, error) {
-	upArgs := []string{cmdWorkspace, "up", flagIDE, ideNone, workspace}
+	upArgs := []string{cmdWorkspace, "up", flagDebug, flagIDE, ideNone, workspace}
 	upArgs = append(upArgs, additionalArgs...)
 
 	stdout, stderr, err := execWithDockerRetry(

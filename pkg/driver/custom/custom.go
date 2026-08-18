@@ -41,32 +41,24 @@ func (c *customDriver) FindDevContainer(
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	// run command
 	stdout := &bytes.Buffer{}
-	err := c.runCommand(
-		ctx,
-		workspaceId,
-		"findDevContainer",
-		c.workspaceInfo.Agent.Custom.FindDevContainer,
-		nil,
-		stdout,
-		writer,
-		nil,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error finding dev container: %s%w", stdout.String(), err)
+	if err := c.runCommand(ctx, runCommandOptions{
+		workspaceId: workspaceId,
+		name:        "findDevContainer",
+		command:     c.workspaceInfo.Agent.Custom.FindDevContainer,
+		stdout:      stdout,
+		stderr:      writer,
+	}); err != nil {
+		return nil, fmt.Errorf("error finding devcontainer: %s%w", stdout.String(), err)
 	} else if len(stdout.Bytes()) == 0 {
 		return nil, nil
 	}
-
-	// parse stdout
-	containerDetails := &config.ContainerDetails{}
-	err = json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), containerDetails)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing container details %s: %w", stdout.String(), err)
+	var containerDetails config.ContainerDetails
+	if err := json.Unmarshal(stdout.Bytes(), &containerDetails); err != nil {
+		return nil, fmt.Errorf("error parsing devcontainer details: %s%w", stdout.String(), err)
 	}
 
-	return containerDetails, nil
+	return &containerDetails, nil
 }
 
 // CommandDevContainer runs the given command inside the devcontainer.
@@ -74,22 +66,19 @@ func (c *customDriver) CommandDevContainer(
 	ctx context.Context,
 	params *driver.CommandParams,
 ) error {
-	// run command
-	err := c.runCommand(
-		ctx,
-		params.WorkspaceID,
-		"commandDevContainer",
-		c.workspaceInfo.Agent.Custom.CommandDevContainer,
-		params.Stdin,
-		params.Stdout,
-		params.Stderr,
-		[]string{
+	if err := c.runCommand(ctx, runCommandOptions{
+		workspaceId: params.WorkspaceID,
+		name:        "commandDevContainer",
+		command:     c.workspaceInfo.Agent.Custom.CommandDevContainer,
+		stdin:       params.Stdin,
+		stdout:      params.Stdout,
+		stderr:      params.Stderr,
+		extraEnv: []string{
 			"DEVCONTAINER_USER=" + params.User,
 			"DEVCONTAINER_COMMAND=" + params.Command,
 		},
-	)
-	if err != nil {
-		return err
+	}); err != nil {
+		return fmt.Errorf("error running command in devcontainer: %w", err)
 	}
 
 	return nil
@@ -100,23 +89,17 @@ func (c *customDriver) TargetArchitecture(ctx context.Context, workspaceId strin
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	// run command
 	stdout := &bytes.Buffer{}
-	err := c.runCommand(
-		ctx,
-		workspaceId,
-		"getTargetArchitecture",
-		c.workspaceInfo.Agent.Custom.TargetArchitecture,
-		nil,
-		stdout,
-		writer,
-		nil,
-	)
-	if err != nil {
+	if err := c.runCommand(ctx, runCommandOptions{
+		workspaceId: workspaceId,
+		name:        "getTargetArchitecture",
+		command:     c.workspaceInfo.Agent.Custom.TargetArchitecture,
+		stdout:      stdout,
+		stderr:      writer,
+	}); err != nil {
 		return "", fmt.Errorf("error getting target architecture: %s%w", stdout.String(), err)
 	}
 
-	// parse stdout
 	targetArchitecture := strings.ToLower(strings.TrimSpace(stdout.String()))
 	if targetArchitecture != "amd64" && targetArchitecture != "arm64" {
 		return "", fmt.Errorf(
@@ -133,21 +116,17 @@ func (c *customDriver) DeleteDevContainer(ctx context.Context, workspaceId strin
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	// run command
-	err := c.runCommand(
-		ctx,
-		workspaceId,
-		"deleteDevContainer",
-		c.workspaceInfo.Agent.Custom.DeleteDevContainer,
-		nil,
-		writer,
-		writer,
-		nil,
-	)
-	if err != nil {
+	if err := c.runCommand(ctx, runCommandOptions{
+		workspaceId: workspaceId,
+		name:        "deleteDevContainer",
+		command:     c.workspaceInfo.Agent.Custom.DeleteDevContainer,
+		stdin:       nil,
+		stdout:      writer,
+		stderr:      writer,
+		extraEnv:    nil,
+	}); err != nil {
 		return fmt.Errorf("error deleting devcontainer: %w", err)
 	}
-
 	return nil
 }
 
@@ -156,18 +135,13 @@ func (c *customDriver) StartDevContainer(ctx context.Context, workspaceId string
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	// run command
-	err := c.runCommand(
-		ctx,
-		workspaceId,
-		"startDevContainer",
-		c.workspaceInfo.Agent.Custom.StartDevContainer,
-		nil,
-		writer,
-		writer,
-		nil,
-	)
-	if err != nil {
+	if err := c.runCommand(ctx, runCommandOptions{
+		workspaceId: workspaceId,
+		name:        "startDevContainer",
+		command:     c.workspaceInfo.Agent.Custom.StartDevContainer,
+		stdout:      writer,
+		stderr:      writer,
+	}); err != nil {
 		return fmt.Errorf("error starting devcontainer: %w", err)
 	}
 
@@ -179,18 +153,15 @@ func (c *customDriver) StopDevContainer(ctx context.Context, workspaceId string)
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	// run command
-	err := c.runCommand(
-		ctx,
-		workspaceId,
-		"stopDevContainer",
-		c.workspaceInfo.Agent.Custom.StopDevContainer,
-		nil,
-		writer,
-		writer,
-		nil,
-	)
-	if err != nil {
+	if err := c.runCommand(ctx, runCommandOptions{
+		workspaceId: workspaceId,
+		name:        "stopDevContainer",
+		command:     c.workspaceInfo.Agent.Custom.StopDevContainer,
+		stdin:       nil,
+		stdout:      writer,
+		stderr:      writer,
+		extraEnv:    nil,
+	}); err != nil {
 		return fmt.Errorf("error stopping devcontainer: %w", err)
 	}
 
@@ -219,26 +190,21 @@ func (c *customDriver) RunDevContainer(
 		done <- struct{}{}
 	}()
 
-	// run command
-	err = c.runCommand(
-		ctx,
-		workspaceId,
-		"runDevContainer",
-		c.workspaceInfo.Agent.Custom.RunDevContainer,
-		nil,
-		writer,
-		writer,
-		[]string{
+	if err := c.runCommand(ctx, runCommandOptions{
+		workspaceId: workspaceId,
+		name:        "runDevContainer",
+		command:     c.workspaceInfo.Agent.Custom.RunDevContainer,
+		stdin:       nil,
+		stdout:      writer,
+		stderr:      writer,
+		extraEnv: []string{
 			"DEVCONTAINER_RUN_OPTIONS=" + string(out),
 		},
-	)
-	if err != nil {
-		// close writer, wait for logging to flush and shut down
-		_ = writer.Close()
+	}); err != nil {
+		_ = writer.Close() // close writer to unblock logging goroutine
 		select {
 		case <-done:
-		// forcibly shut down after 1 second
-		case <-time.After(1 * time.Second):
+		case <-time.After(1 * time.Second): // timeout to avoid hanging if logging goroutine is blocked
 		}
 		return fmt.Errorf("error running devcontainer: %w", err)
 	}
@@ -252,18 +218,13 @@ func (c *customDriver) GetDevContainerLogs(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
-	// run command
-	err := c.runCommand(
-		ctx,
-		workspaceID,
-		"getDevContainerLogs",
-		c.workspaceInfo.Agent.Custom.GetDevContainerLogs,
-		nil,
-		stdout,
-		stderr,
-		nil,
-	)
-	if err != nil {
+	if err := c.runCommand(ctx, runCommandOptions{
+		workspaceId: workspaceID,
+		name:        "getDevContainerLogs",
+		command:     c.workspaceInfo.Agent.Custom.GetDevContainerLogs,
+		stdout:      stdout,
+		stderr:      stderr,
+	}); err != nil {
 		return fmt.Errorf("error getting devcontainer logs: %w", err)
 	}
 
@@ -276,44 +237,42 @@ func (c *customDriver) CanReprovision() bool {
 	return c.workspaceInfo.Agent.Custom.CanReprovision == pkgconfig.BoolTrue
 }
 
+type runCommandOptions struct {
+	workspaceId string
+	name        string
+	command     types.StrArray
+	stdin       io.Reader
+	stdout      io.Writer
+	stderr      io.Writer
+	extraEnv    []string
+}
+
 func (c *customDriver) runCommand(
 	ctx context.Context,
-	workspaceId string,
-	name string,
-	command types.StrArray,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-	extraEnv []string,
+	runOpts runCommandOptions,
 ) error {
-	if len(command) == 0 {
+	if len(runOpts.command) == 0 {
 		return nil
 	}
 
-	// log
-	log.Debugf("Run %s driver command: %s", name, strings.Join(command, " "))
-
-	// get environ
+	log.Debugf("run %s driver command: %s", runOpts.name, strings.Join(runOpts.command, " "))
 	environ, err := ToEnvironWithBinaries(ctx, c.workspaceInfo)
 	if err != nil {
 		return err
 	}
-	environ = append(environ, pkgconfig.EnvDevcontainerID+"="+workspaceId)
-	environ = append(environ, extraEnv...)
+	environ = append(environ, pkgconfig.EnvDevcontainerID+"="+runOpts.workspaceId)
+	environ = append(environ, runOpts.extraEnv...)
 
-	// set debug level
 	if log.Underlying().Core().Enabled(zapcore.DebugLevel) {
 		environ = append(environ, pkgconfig.EnvDebug+"="+pkgconfig.BoolTrue)
 	}
 
-	// run the command
-	return clientimplementation.RunCommand(clientimplementation.RunCommandOptions{
-		Ctx:     ctx,
-		Command: command,
+	return clientimplementation.RunCommand(ctx, clientimplementation.RunCommandOptions{
+		Command: runOpts.command,
 		Environ: environ,
-		Stdin:   stdin,
-		Stdout:  stdout,
-		Stderr:  stderr,
+		Stdin:   runOpts.stdin,
+		Stdout:  runOpts.stdout,
+		Stderr:  runOpts.stderr,
 	})
 }
 
@@ -330,7 +289,6 @@ func ToEnvironWithBinaries(
 		)
 	}
 
-	// download binaries
 	agentBinaries, err := provider.DownloadBinaries(ctx, workspace.Agent.Binaries, binariesDir)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -340,7 +298,6 @@ func ToEnvironWithBinaries(
 		)
 	}
 
-	// get environ
 	environ := provider.ToEnvironment(
 		workspace.Workspace,
 		workspace.Machine,

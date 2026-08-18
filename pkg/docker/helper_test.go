@@ -379,3 +379,140 @@ exit 1
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, context.Canceled)
 }
+
+func TestDeleteVolume_EmptyNameIsNoOp(t *testing.T) {
+	h := &DockerHelper{DockerCommand: "/nonexistent-binary-xyz"}
+	assert.NoError(t, h.DeleteVolume(context.Background(), ""))
+}
+
+func TestDeleteVolume_MissingVolumeIsNoOp(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  volume)
+    case "$2" in
+      list) ;; # no matching volume -> empty stdout, exit 0
+      rm) echo "unexpected rm call" >&2; exit 1 ;;
+    esac ;;
+esac
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	assert.NoError(t, h.DeleteVolume(context.Background(), "ghost-volume"))
+}
+
+func TestDeleteVolume_DaemonUnreachablePropagatesError(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  volume)
+    case "$2" in
+      list) echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" >&2; exit 1 ;;
+    esac ;;
+esac
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.DeleteVolume(context.Background(), "my-volume")
+
+	require.Error(t, err, "daemon failure during volume list must not be swallowed as a miss")
+	assert.Contains(t, err.Error(), "list volume my-volume")
+	assert.Contains(t, err.Error(), "Cannot connect to the Docker daemon")
+}
+
+func TestDeleteVolume_RemovesExistingVolume(t *testing.T) {
+	tmp := t.TempDir()
+	removed := filepath.Join(tmp, "removed")
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  volume)
+    case "$2" in
+      list) echo "my-volume" ;;
+      rm) touch `+removed+` ;;
+    esac ;;
+esac
+`)
+
+	h := &DockerHelper{DockerCommand: bin}
+	require.NoError(t, h.DeleteVolume(context.Background(), "my-volume"))
+	_, err := os.Stat(removed)
+	assert.NoError(t, err, "volume rm should be invoked for an existing volume")
+}
+
+func TestSystemdStateIsUsable(t *testing.T) {
+	cases := map[string]bool{
+		systemdStateRunning:  true,
+		systemdStateDegraded: true,
+		"starting":           false,
+		"stopping":           false,
+		"maintenance":        false,
+		"offline":            false,
+		"":                   false,
+	}
+	for state, want := range cases {
+		assert.Equal(t, want, systemdStateIsUsable(state), "state=%q", state)
+	}
+	assert.True(t, systemdStateIsUsable(systemdStateDegraded+"\n"))
+}
+
+func withPingTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	original := pingTimeout
+	pingTimeout = d
+	t.Cleanup(func() { pingTimeout = original })
+}
+
+func TestPing_Succeeds(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+echo '{"ServerVersion":"1.0"}'
+`)
+	h := &DockerHelper{DockerCommand: bin}
+	assert.NoError(t, h.Ping(context.Background()))
+}
+
+func TestPing_DaemonRefusalIsNotAttributedToTimeout(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" >&2
+exit 1
+`)
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.Ping(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Cannot connect to the Docker daemon")
+	assert.NotErrorIs(t, err, context.DeadlineExceeded,
+		"a fast, native refusal must not look like our own timeout")
+}
+
+func TestPing_SelfInflictedTimeoutIsDistinguishableFromDaemonDown(t *testing.T) {
+	withPingTimeout(t, 50*time.Millisecond)
+
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+sleep 5
+`)
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.Ping(context.Background())
+
+	require.Error(t, err)
+	assert.ErrorIs(
+		t,
+		err,
+		context.DeadlineExceeded,
+		"a kill caused by Ping's own deadline must be attributable to it, not reported as a bare daemon-down error",
+	)
+}
+
+func TestStartPodmanMachine_SelfInflictedTimeoutIsDistinguishable(t *testing.T) {
+	original := podmanMachineStartTimeout
+	podmanMachineStartTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { podmanMachineStartTimeout = original })
+
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+sleep 5
+`)
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.StartPodmanMachine(context.Background())
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}

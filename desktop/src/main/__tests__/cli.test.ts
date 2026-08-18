@@ -5,6 +5,11 @@ import { Readable } from "node:stream"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { CliRunner } from "../cli.js"
 
+type ExecCb = (
+  error: Error | null,
+  result: { stdout: string; stderr: string },
+) => void
+
 function fakeChild() {
   const child = new EventEmitter() as EventEmitter & {
     stdout: EventEmitter
@@ -59,7 +64,7 @@ describe("CliRunner", () => {
         typeof vi.fn
       >
       mockExecFile.mockImplementation(
-        (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
           callback(null, { stdout: '[{"id":"ws-1"}]', stderr: "" })
         },
       )
@@ -91,7 +96,7 @@ describe("CliRunner", () => {
         typeof vi.fn
       >
       mockExecFile.mockImplementation(
-        (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
           const error = new Error("Command failed") as Error & {
             code: number
             stderr: string
@@ -122,7 +127,7 @@ describe("CliRunner", () => {
         cliError: cliErrorPayload,
       })
       mockExecFile.mockImplementation(
-        (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
           const error = new Error("Command failed") as Error & {
             code: number
             stderr: string
@@ -148,7 +153,7 @@ describe("CliRunner", () => {
         typeof vi.fn
       >
       mockExecFile.mockImplementation(
-        (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
           callback(null, { stdout: "v0.6.0-dev\n", stderr: "" })
         },
       )
@@ -203,7 +208,7 @@ describe("CliRunner", () => {
         typeof vi.fn
       >
       mockExecFile.mockImplementation(
-        (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
           callback(null, { stdout: "[]", stderr: "" })
         },
       )

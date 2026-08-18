@@ -177,7 +177,7 @@ This requires:
 
 4. Start a workspace:
    ```bash
-   ./dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 up examples/simple
+   ./dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 workspace up github.com/microsoft/vscode-remote-try-node
    ```
 
 ### Using Act for Local CI Testing
@@ -205,7 +205,7 @@ Read [the docs](https://devsy.sh/docs/developing-providers/quickstart) for an in
 Once your provider is ready:
 
 1. Update `community.yaml` with your provider information
-2. Update `sites/docs-devsy-sh/pages/managing-providers/add-provider.mdx` with documentation
+2. Update `sites/docs-devsy-sh/content/docs/managing-providers/manage-providers.mdx` with documentation
 
 This will feature your provider in both the documentation and the UI.
 

@@ -14,20 +14,19 @@ import (
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/util/iojoin"
 )
 
-// Deprecated: Script embeds inject.sh which is deprecated. Platform-native AgentDelivery
-// implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
-//
+const (
+	statusDone           = "done"
+	defaultInjectTimeout = 20 * time.Second
+)
+
 //go:embed inject.sh
 var Script string
 
-// Deprecated: ExecFunc is part of the legacy shell injection path. Platform-native AgentDelivery
-// implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 type ExecFunc func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 
-// Deprecated: LocalFile is part of the legacy shell injection path. Platform-native AgentDelivery
-// implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 type LocalFile func(arm bool) (io.ReadCloser, error)
 
 type injectResult struct {
@@ -35,10 +34,7 @@ type injectResult struct {
 	err         error
 }
 
-// Deprecated: InjectOptions is part of the legacy shell injection path. Platform-native AgentDelivery
-// implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
 type InjectOptions struct {
-	Ctx          context.Context
 	Exec         ExecFunc
 	LocalFile    LocalFile
 	ScriptParams *Params
@@ -48,21 +44,24 @@ type InjectOptions struct {
 	Timeout      time.Duration
 }
 
-// Deprecated: Inject is part of the legacy shell injection path. Platform-native AgentDelivery
-// implementations (LocalDockerDelivery, RemoteDockerDelivery, KubernetesDelivery) are the replacements.
-//
-//nolint:funlen // legacy shell injection path, frozen pending caller migration to AgentDelivery
-func Inject(opts InjectOptions) (bool, error) {
-	if err := validateInjectOptions(opts); err != nil {
-		return false, err
+// Inject runs the inject.sh handshake and bridges the caller's stdio to the exec's stdio.
+// It returns true if the handshake completed and the exec was started, false if the handshake
+// failed and the exec was not started.
+func Inject(ctx context.Context, opts InjectOptions) (bool, error) {
+	if opts.Exec == nil {
+		return false, fmt.Errorf("inject: Exec is required")
 	}
-
+	if opts.ScriptParams == nil {
+		return false, fmt.Errorf("inject: ScriptParams is required")
+	}
+	if opts.Timeout <= 0 {
+		opts.Timeout = defaultInjectTimeout
+	}
 	start := time.Now()
-	log.Infof("injection: start")
-	defer func() { log.Infof("injection: complete elapsed=%s", time.Since(start)) }()
+	log.Debugf("start inject")
+	defer func() { log.Debugf("complete elapsed=%s", time.Since(start)) }()
 
-	logPreferAgentDownload(opts.ScriptParams)
-
+	logPreferredAgentDownloadURL(opts.ScriptParams)
 	scriptRawCode, err := GenerateScript(Script, opts.ScriptParams)
 	if err != nil {
 		return true, err
@@ -70,88 +69,186 @@ func Inject(opts InjectOptions) (bool, error) {
 
 	log.Debug("execute inject script")
 	defer log.Debug("done injecting")
-
-	// start script
-	stdinReader, stdinWriter, err := os.Pipe()
+	sess, err := newSession(opts, scriptRawCode, start)
 	if err != nil {
 		return true, err
 	}
-	defer func() { _ = stdinWriter.Close() }()
-
-	stdoutReader, stdoutWriter, err := os.Pipe()
-	if err != nil {
-		return true, err
-	}
-
-	// delayed stderr
-	delayedStderr := newDelayedWriter(opts.Stderr)
-
-	// check if context is done
+	defer sess.Close()
 	select {
-	case <-opts.Ctx.Done():
-		return true, context.Canceled
+	case <-ctx.Done():
+		return false, ctx.Err()
 	default:
 	}
 
-	// create cancel context
-	cancelCtx, cancel := context.WithCancel(opts.Ctx)
-	defer cancel()
+	execCtx, execCancel := context.WithCancel(ctx)
+	defer execCancel()
 
-	// start execution of inject.sh
-	execErrChan := make(chan error, 1)
-	go runInjectScript(cancelCtx, runInjectScriptParams{
+	return sess.run(execCtx, opts.Timeout)
+}
+
+type pipeEnds struct {
+	r *os.File
+	w *os.File
+}
+
+func (p pipeEnds) Close() {
+	_ = p.r.Close()
+	_ = p.w.Close()
+}
+
+type session struct {
+	opts          InjectOptions
+	script        string
+	delayedStderr *delayedWriter
+	start         time.Time
+	stdin         pipeEnds
+	stdout        pipeEnds
+}
+
+func newSession(opts InjectOptions, script string, start time.Time) (*session, error) {
+	stdinR, stdinW, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	stdin := pipeEnds{r: stdinR, w: stdinW}
+	stdoutR, stdoutW, err := os.Pipe()
+	if err != nil {
+		stdin.Close() // don't leak the first pair on partial open
+		return nil, err
+	}
+	stdout := pipeEnds{r: stdoutR, w: stdoutW}
+
+	return &session{
 		opts:          opts,
-		script:        scriptRawCode,
-		stdin:         stdinReader,
-		stdout:        stdoutWriter,
-		delayedStderr: delayedStderr,
-		execErrChan:   execErrChan,
-	})
+		script:        script,
+		delayedStderr: newDelayedWriter(opts.Stderr),
+		start:         start,
+		stdin:         stdin,
+		stdout:        stdout,
+	}, nil
+}
 
-	// inject file
+func (s *session) Close() {
+	s.stdin.Close()
+	s.stdout.Close()
+}
+
+// run executes the inject.sh handshake and bridges the caller's stdio to the exec's stdio.
+func (s *session) run(ctx context.Context, handshakeTimeout time.Duration) (bool, error) {
+	execErrChan := make(chan error, 1)
+	go s.runExec(ctx, execErrChan)
+
 	injectChan := make(chan injectResult, 1)
 	go func() {
-		defer func() { _ = stdinWriter.Close() }()
 		defer log.Debug("done inject")
-
-		wasExecuted, err := inject(
-			opts.LocalFile,
-			stdinWriter,
-			opts.Stdin,
-			stdoutReader,
-			opts.Stdout,
-			delayedStderr,
-			opts.Timeout,
-		)
+		wasExecuted, err := s.handshakeAndBridge(ctx, handshakeTimeout)
 		injectChan <- injectResult{
 			wasExecuted: wasExecuted,
-			err:         command.WrapCommandError(delayedStderr.Buffer(), err),
+			err:         command.WrapCommandError(s.delayedStderr.Buffer(), err),
 		}
 	}()
 
-	return awaitInjectResult(awaitInjectResultParams{
-		opts:          opts,
-		start:         start,
-		execErrChan:   execErrChan,
-		injectChan:    injectChan,
-		delayedStderr: delayedStderr,
+	result, execErr := resolveRunResult(execErrChan, injectChan)
+	log.Debugf("payload delivered elapsed=%s", time.Since(s.start))
+
+	if result.err != nil {
+		return result.wasExecuted, result.err
+	}
+	if execErr != nil && result.wasExecuted {
+		return result.wasExecuted, execErr
+	}
+	return result.wasExecuted, nil
+}
+
+// resolveRunResult waits for execErrChan and/or injectChan and decides which
+// to trust. execErrChan's send in runExec always happens-before s.stdout.w's
+// deferred Close(), which is what unblocks handshakeAndBridge's pipeStreams
+// and lets injectChan fire -- so whenever injectChan's wasExecuted is true,
+// execErrChan is already populated by the time injectChan is read here.
+// select doesn't prefer whichever channel became ready earlier once both are
+// ready, so without the inner non-blocking receive a real exec error could
+// be silently dropped in favor of a false "succeeded" result.
+func resolveRunResult(
+	execErrChan <-chan error,
+	injectChan <-chan injectResult,
+) (injectResult, error) {
+	var result injectResult
+	var execErr error
+	select {
+	case execErr = <-execErrChan:
+		result = <-injectChan
+	case result = <-injectChan:
+		select {
+		case execErr = <-execErrChan:
+		default:
+		}
+	}
+	return result, execErr
+}
+
+func (s *session) runExec(ctx context.Context, execErrChan chan<- error) {
+	defer func() { _ = s.stdout.w.Close() }()
+	defer log.Debug("done exec")
+
+	err := s.opts.Exec(ctx, s.script, s.stdin.r, s.stdout.w, s.delayedStderr)
+	if err != nil && !errors.Is(err, context.Canceled) &&
+		!strings.Contains(err.Error(), "signal: ") {
+		execErrChan <- command.WrapCommandError(s.delayedStderr.Buffer(), err)
+	} else {
+		execErrChan <- nil
+	}
+}
+
+// handshakeAndBridge performs the inject.sh handshake and then bridges the
+// caller's stdio to the exec's stdio.
+func (s *session) handshakeAndBridge(
+	ctx context.Context,
+	handshakeTimeout time.Duration,
+) (bool, error) {
+	handshakeCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+	defer cancel()
+
+	injectStart := time.Now()
+
+	// inject.sh announces readiness with "ping".
+	line, err := readLine(handshakeCtx, s.stdout.r)
+	if err != nil {
+		return false, fmt.Errorf("read ping: %w", err)
+	}
+	if strings.TrimSpace(line) != "ping" {
+		return false, fmt.Errorf("unexpected start line %q", line)
+	}
+	if _, err := s.stdin.w.Write([]byte("pong\n")); err != nil {
+		return false, fmt.Errorf("write pong: %w", err)
+	}
+	log.Debugf("handshake complete elapsed=%s", time.Since(injectStart))
+
+	line, err = readLine(handshakeCtx, s.stdout.r)
+	if err != nil {
+		return false, fmt.Errorf("read inject signal: %w", err)
+	}
+	log.Debugf("received line after pong: line=%s", line)
+
+	signal := strings.TrimSpace(line)
+	if isBinaryRequest(signal) {
+		log.Debug("inject binary")
+		if err := s.sendBinary(handshakeCtx, signal); err != nil {
+			return false, err
+		}
+	} else if signal != statusDone {
+		return false, fmt.Errorf("unexpected message during inject %q", signal)
+	}
+
+	return pipeStreams(streamPipeConfig{
+		stdin:         s.stdin.w,
+		hostStdin:     s.opts.Stdin,
+		hostStdout:    s.opts.Stdout,
+		stdout:        s.stdout.r,
+		delayedStderr: s.delayedStderr,
 	})
 }
 
-func validateInjectOptions(opts InjectOptions) error {
-	if opts.Ctx == nil {
-		return fmt.Errorf("context is required")
-	}
-	if opts.Exec == nil {
-		return fmt.Errorf("exec function is required")
-	}
-	if opts.ScriptParams == nil {
-		return fmt.Errorf("script params is required")
-	}
-	return nil
-}
-
-func logPreferAgentDownload(params *Params) {
+func logPreferredAgentDownloadURL(params *Params) {
 	if !params.PreferAgentDownload {
 		return
 	}
@@ -162,304 +259,170 @@ func logPreferAgentDownload(params *Params) {
 	log.Debugf("prefer downloading agent from URL: url=%s", url)
 }
 
-type runInjectScriptParams struct {
-	opts          InjectOptions
-	script        string
-	stdin         io.Reader
-	stdout        io.WriteCloser
-	delayedStderr *delayedWriter
-	execErrChan   chan<- error
+func isBinaryRequest(signal string) bool {
+	return strings.HasPrefix(signal, "ARM-")
 }
 
-func runInjectScript(ctx context.Context, p runInjectScriptParams) {
-	defer func() { _ = p.stdout.Close() }()
-	defer log.Debug("done exec")
-
-	err := p.opts.Exec(ctx, p.script, p.stdin, p.stdout, p.delayedStderr)
-	if err != nil && !errors.Is(err, context.Canceled) &&
-		!strings.Contains(err.Error(), "signal: ") {
-		p.execErrChan <- command.WrapCommandError(p.delayedStderr.Buffer(), err)
-	} else {
-		p.execErrChan <- nil
-	}
+func binaryReaderFor(localFile LocalFile, signal string) (io.ReadCloser, error) {
+	isArm := strings.TrimPrefix(signal, "ARM-") == config.BoolTrue
+	return localFile(isArm)
 }
 
-type awaitInjectResultParams struct {
-	opts          InjectOptions
-	start         time.Time
-	execErrChan   chan error
-	injectChan    chan injectResult
-	delayedStderr *delayedWriter
+// sizer is implemented by *os.File; to detect when the binary reader is a file
+// to avoid reading the whole file into memory to get its size.
+type sizer interface {
+	Stat() (os.FileInfo, error)
 }
 
-func awaitInjectResult(p awaitInjectResultParams) (bool, error) {
-	// wait here
-	var result injectResult
-	var err error
-	select {
-	case err = <-p.execErrChan:
-		result = <-p.injectChan
-	case result = <-p.injectChan:
-		// we don't wait for the command termination here and will just retry on error
-	}
-	log.Debugf("injection: payload delivered elapsed=%s", time.Since(p.start))
-
-	if result.err != nil {
-		return result.wasExecuted, result.err
-	}
-
-	// Exec EOF during binary injection is expected: the container entrypoint
-	// may exec the daemon (killing the docker exec process) before inject.sh
-	// prints its final response. Only surface exec errors when a command was
-	// actually executed through the script.
-	if err != nil && result.wasExecuted {
-		return result.wasExecuted, err
-	}
-
-	if result.wasExecuted || p.opts.ScriptParams.Command == "" {
-		return result.wasExecuted, nil
-	}
-
-	log.Debugf("Rerun command as binary was injected")
-	p.delayedStderr.Start()
-	return true, p.opts.Exec(
-		p.opts.Ctx,
-		p.opts.ScriptParams.Command,
-		p.opts.Stdin,
-		p.opts.Stdout,
-		p.delayedStderr,
-	)
-}
-
-func inject(
-	localFile LocalFile,
-	stdin io.WriteCloser,
-	stdinOut io.Reader,
-	stdout io.ReadCloser,
-	stdoutOut io.Writer,
-	delayedStderr *delayedWriter,
-	timeout time.Duration,
-) (bool, error) {
-	injectStart := time.Now()
-
-	// wait until we read start
-	var line string
-	errChan := make(chan error)
-	go func() {
-		var err error
-		line, err = readLine(stdout)
-		errChan <- err
-	}()
-
-	// wait for line to be read
-	err := waitForMessage(errChan, timeout)
+// sendBinary transfers the agent binary to inject.sh using length-prefixed
+// framing.
+func (s *session) sendBinary(ctx context.Context, signal string) error {
+	r, err := binaryReaderFor(s.opts.LocalFile, signal)
 	if err != nil {
-		return false, err
+		return fmt.Errorf("open binary: %w", err)
 	}
+	defer func() { _ = r.Close() }()
 
-	err = performMutualHandshake(line, stdin)
-	if err != nil {
-		return false, err
-	}
-	log.Debugf("injection: handshake complete elapsed=%s", time.Since(injectStart))
-
-	// wait until we read something
-	line, err = readLine(stdout)
-	if err != nil {
-		return false, err
-	}
-	log.Debugf("received line after pong: line=%s", line)
-
-	lineStr := strings.TrimSpace(line)
-	if isInjectingOfBinaryNeeded(lineStr) {
-		log.Debugf("inject binary")
-		defer log.Debugf("done injecting binary")
-
-		if err := injectBinaryPayload(localFile, lineStr, stdin, stdout); err != nil {
-			return false, err
+	size, ok := binarySize(r)
+	if !ok {
+		buf, err := io.ReadAll(r)
+		if err != nil {
+			return fmt.Errorf("read binary: %w", err)
 		}
-		// start exec with command
-		return false, nil
-	}
-	if lineStr != "done" {
-		return false, fmt.Errorf("unexpected message during inject %s", lineStr)
+		if err := writeFramed(s.stdin.w, int64(len(buf)), bytes.NewReader(buf)); err != nil {
+			return err
+		}
+		return awaitDone(ctx, s.stdout.r)
 	}
 
-	return pipeStreams(pipeStreamsParams{
-		stdin:         stdin,
-		stdinOut:      stdinOut,
-		stdoutOut:     stdoutOut,
-		stdout:        stdout,
-		delayedStderr: delayedStderr,
-	})
+	if err := writeFramed(s.stdin.w, size, r); err != nil {
+		return err
+	}
+	return awaitDone(ctx, s.stdout.r)
 }
 
-func injectBinaryPayload(
-	localFile LocalFile,
-	lineStr string,
-	stdin io.WriteCloser,
-	stdout io.ReadCloser,
-) error {
-	fileReader, err := getFileReader(localFile, lineStr)
-	if err != nil {
-		return err
+// binarySize returns the size of the binary if r is a *os.File, otherwise false.
+func binarySize(r io.Reader) (int64, bool) {
+	f, ok := r.(sizer)
+	if !ok {
+		return 0, false
 	}
-	defer func() { _ = fileReader.Close() }()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return 0, false
+	}
+	return info.Size(), true
+}
 
-	if err := injectBinary(fileReader, stdin, stdout); err != nil {
-		return err
+// writeFramed writes a length-prefixed payload to stdin.
+func writeFramed(stdin io.Writer, size int64, payload io.Reader) error {
+	if _, err := fmt.Fprintf(stdin, "%d\n", size); err != nil {
+		return fmt.Errorf("write binary size: %w", err)
 	}
-	_ = stdout.Close()
+	if _, err := io.Copy(stdin, payload); err != nil {
+		return fmt.Errorf("write binary payload: %w", err)
+	}
 	return nil
 }
 
-type pipeStreamsParams struct {
+func awaitDone(ctx context.Context, stdout io.ReadCloser) error {
+	line, err := readLine(ctx, stdout)
+	if err != nil {
+		return fmt.Errorf("read binary done: %w", err)
+	}
+	if strings.TrimSpace(line) != statusDone {
+		return fmt.Errorf("unexpected line during inject %q", line)
+	}
+	return nil
+}
+
+type streamPipeConfig struct {
 	stdin         io.WriteCloser
-	stdinOut      io.Reader
-	stdoutOut     io.Writer
+	hostStdin     io.Reader
+	hostStdout    io.Writer
 	stdout        io.ReadCloser
 	delayedStderr *delayedWriter
 }
 
-func pipeStreams(p pipeStreamsParams) (bool, error) {
-	stdoutOut := p.stdoutOut
-	stdinOut := p.stdinOut
-	if stdoutOut == nil {
-		stdoutOut = io.Discard
+func pipeStreams(cfg streamPipeConfig) (bool, error) {
+	hostStdout := cfg.hostStdout
+	hostStdin := cfg.hostStdin
+	if hostStdout == nil {
+		hostStdout = io.Discard
 	}
-	if stdinOut == nil {
-		stdinOut = bytes.NewReader(nil)
+	if hostStdin == nil {
+		hostStdin = bytes.NewReader(nil)
 	}
 
-	// now pipe reader into stdout
-	p.delayedStderr.Start()
+	cfg.delayedStderr.Start()
 	return true, pipe(
-		p.stdin, stdinOut,
-		stdoutOut, p.stdout,
+		cfg.stdin, hostStdin,
+		hostStdout, cfg.stdout,
 	)
 }
 
-func isInjectingOfBinaryNeeded(lineStr string) bool {
-	return strings.HasPrefix(lineStr, "ARM-")
-}
-
-func getFileReader(localFile LocalFile, lineStr string) (io.ReadCloser, error) {
-	isArm := strings.TrimPrefix(lineStr, "ARM-") == config.BoolTrue
-	return localFile(isArm)
-}
-
-func performMutualHandshake(line string, stdin io.WriteCloser) error {
-	// check for string
-	if strings.TrimSpace(line) != "ping" {
-		return fmt.Errorf("unexpected start line %v", line)
+// readLine reads a single line from r, returning the line without the trailing
+// newline. It is bound to ctx so a hung inject.sh aborts instead of hanging the
+// caller.
+func readLine(ctx context.Context, r io.ReadCloser) (string, error) {
+	type result struct {
+		line string
+		err  error
 	}
-
-	// send our response
-	_, err := stdin.Write([]byte("pong\n"))
-	if err != nil {
-		return fmt.Errorf("write to stdin: %w", err)
-	}
-
-	// successful handshake
-	return nil
-}
-
-func injectBinary(
-	fileReader io.ReadCloser,
-	stdin io.WriteCloser,
-	stdout io.ReadCloser,
-) error {
-	// copy into writer
-	_, err := io.Copy(stdin, fileReader)
-	if err != nil {
-		return err
-	}
-
-	// close stdin
-	_ = stdin.Close()
-
-	// wait for done
-	line, err := readLine(stdout)
-	if err != nil {
-		return err
-	} else if strings.TrimSpace(line) != "done" {
-		return fmt.Errorf("unexpected line during inject %s", line)
-	}
-	return nil
-}
-
-func waitForMessage(errChannel chan error, timeout time.Duration) error {
-	select {
-	case err := <-errChannel:
-		return err
-	case <-time.After(timeout):
-		return context.DeadlineExceeded
-	}
-}
-
-func readLine(reader io.Reader) (string, error) {
-	// we always only read a single byte
-	buf := make([]byte, 1)
-	str := ""
-	for {
-		n, err := reader.Read(buf)
-		switch {
-		case err != nil:
-			return "", err
-		case n == 0:
-			continue
-		case buf[0] == '\n':
-			return str, nil
+	ch := make(chan result, 1)
+	go func() {
+		var b strings.Builder
+		one := make([]byte, 1)
+		for {
+			n, err := r.Read(one)
+			if n > 0 {
+				if one[0] == '\n' {
+					ch <- result{b.String(), nil}
+					return
+				}
+				b.WriteByte(one[0])
+			}
+			if err != nil {
+				ch <- result{b.String(), err}
+				return
+			}
 		}
+	}()
 
-		str += string(buf)
+	select {
+	case res := <-ch:
+		return res.line, res.err
+	case <-ctx.Done():
+		_ = r.Close()        // Abort: close r so the read goroutine unblocks and exits.
+		go func() { <-ch }() // nolint:govet // drain goroutine on r's terminal error
+		return "", ctx.Err()
 	}
 }
 
 const pipeSecondDirTimeout = 5 * time.Second
 
+// pipe runs the two directions of a duplex bridge concurrently, returning once
+// both have completed or the slower side is abandoned after timeout.
 func pipe(
 	toStdin io.WriteCloser, fromStdin io.Reader,
 	toStdout io.Writer, fromStdout io.ReadCloser,
 ) error {
-	stdinErr := make(chan error, 1)
-	stdoutErr := make(chan error, 1)
-
-	go func() {
+	stdoutSide := func() error {
 		_, err := io.Copy(toStdout, fromStdout)
-		stdoutErr <- err
-	}()
-	go func() {
+		return err
+	}
+	stdinSide := func() error {
 		_, err := io.Copy(toStdin, fromStdin)
-		stdinErr <- err
-	}()
-
-	// Wait for whichever direction completes first.
-	var firstErr error
-	var otherCh <-chan error
-	select {
-	case firstErr = <-stdinErr:
-		otherCh = stdoutErr
-	case firstErr = <-stdoutErr:
-		otherCh = stdinErr
+		return err
 	}
 
-	// Give the other direction time to finish naturally so we can
-	// capture any real error and avoid interrupting data in flight.
-	// If it doesn't finish in time, close pipes to force completion.
-	var secondErr error
-	timer := time.NewTimer(pipeSecondDirTimeout)
-	defer timer.Stop()
-	select {
-	case secondErr = <-otherCh:
-	case <-timer.C:
-	}
+	stdinErr, stdoutErr := iojoin.Join(stdinSide, stdoutSide, pipeSecondDirTimeout, nil)
 
 	_ = toStdin.Close()
 	_ = fromStdout.Close()
 
-	if firstErr != nil {
-		return firstErr
+	if stdinErr != nil {
+		return stdinErr
 	}
-	return secondErr
+	return stdoutErr
 }

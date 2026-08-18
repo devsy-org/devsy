@@ -225,7 +225,7 @@ func (cmd *BuildCmd) cleanupTempWorkspace(
 	ctx context.Context, c client.BaseWorkspaceClient,
 ) {
 	if err := c.Delete(ctx, client.DeleteOptions{Force: true}); err != nil {
-		log.Errorf("Error deleting workspace: %v", err)
+		log.Errorf("error deleting workspace: %v", err)
 	}
 }
 

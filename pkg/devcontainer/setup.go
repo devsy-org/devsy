@@ -226,8 +226,7 @@ func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
 }
 
 func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error {
-	err := agent.InjectAgent(&agent.InjectOptions{
-		Ctx: ctx,
+	err := agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
 				WorkspaceID: r.id,

@@ -102,7 +102,7 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 
 	log.Infof("installed provider: providerName=%s", providerConfig.Name)
 	if !cmd.Use {
-		log.Infof("To initialize the provider, run: devsy provider init %s", providerConfig.Name)
+		log.Infof("to initialize the provider, run: devsy provider init %s", providerConfig.Name)
 		// No PhaseReady: installed but not initialized.
 		return nil
 	}
