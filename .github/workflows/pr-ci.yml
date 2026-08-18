@@ -723,6 +723,7 @@ jobs:
 
       - name: cache apt packages (podman/runc)
         if: (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && runner.os == 'Linux'
+        timeout: 10m
         run: |
           for i in $(seq 1 60); do
             if sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
@@ -733,8 +734,18 @@ jobs:
             fi
           done
           mkdir -p "${{ runner.temp }}/apt-archives"
-          sudo apt-get -o Dir::Cache::Archives="${{ runner.temp }}/apt-archives" update
-          sudo apt-get -o Dir::Cache::Archives="${{ runner.temp }}/apt-archives" install -y podman runc
+          sudo apt-get \
+            -o Acquire::http::Timeout="30" \
+            -o Acquire::https::Timeout="30" \
+            -o Acquire::Retries="3" \
+            -o Dir::Cache::Archives="${{ runner.temp }}/apt-archives" \
+            update
+          sudo apt-get \
+            -o Acquire::http::Timeout="30" \
+            -o Acquire::https::Timeout="30" \
+            -o Acquire::Retries="3" \
+            -o Dir::Cache::Archives="${{ runner.temp }}/apt-archives" \
+            install -y podman runc
 
           sudo rm -f "${{ runner.temp }}/apt-archives/lock"
           sudo rm -rf "${{ runner.temp }}/apt-archives/partial"

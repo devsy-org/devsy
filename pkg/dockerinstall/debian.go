@@ -65,8 +65,11 @@ func (i *DebianInstaller) setupRepo(shC string) error {
 	)
 
 	cmds := []string{
-		"apt-get update -qq >/dev/null",
-		fmt.Sprintf("DEBIAN_FRONTEND=noninteractive apt-get install -y -qq %s >/dev/null", preReqs),
+		"apt-get -o Acquire::http::Timeout=\"30\" -o Acquire::https::Timeout=\"30\" -o Acquire::Retries=\"3\" update -qq >/dev/null",
+		fmt.Sprintf(
+			"DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::http::Timeout=\"30\" -o Acquire::https::Timeout=\"30\" -o Acquire::Retries=\"3\" install -y -qq %s >/dev/null",
+			preReqs,
+		),
 		"mkdir -p /etc/apt/keyrings && chmod -R 0755 /etc/apt/keyrings",
 		fmt.Sprintf(
 			"curl -fsSL \"%s/linux/%s/gpg\" | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg",
