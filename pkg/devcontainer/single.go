@@ -30,13 +30,24 @@ const (
 	DevsyExtraEnvVar            = "DEVSY"
 	RemoteContainersExtraEnvVar = "REMOTE_CONTAINERS"
 
-	DefaultEntrypoint = `
-while ! command -v /usr/local/bin/devsy >/dev/null 2>&1; do
-  echo "waiting for devsy agent to be available"
-  sleep 1
-done
-exec /usr/local/bin/devsy internal agent container daemon
-`
+	shShellPath              = "/bin/sh"
+	startScriptEchoStatement = "echo Container started"
+	startScriptTrapStatement = `trap "exit 0" 15`
+)
+
+// joinShellStatements joins statements into a single-line script, avoiding
+// embedded newlines that get mangled by YAML/log formatting.
+func joinShellStatements(statements ...string) string {
+	return strings.Join(statements, "; ")
+}
+
+// DefaultEntrypoint waits for the devsy agent binary to become available
+// before handing off to the container daemon.
+var DefaultEntrypoint = joinShellStatements(
+	`while ! command -v /usr/local/bin/devsy >/dev/null 2>&1; do echo "waiting for devsy agent to be available"`,
+	"sleep 1",
+	"done",
+	"exec /usr/local/bin/devsy internal agent container daemon",
 )
 
 // resolvedContainer holds the outputs that every code path through
@@ -938,11 +949,14 @@ func (r *runner) addWorkspaceEnvVars(env map[string]string) {
 }
 
 func GetStartScript(mergedConfig *config.MergedDevContainerConfig) string {
-	customEntrypoints := mergedConfig.Entrypoints
-	return `echo Container started
-trap "exit 0" 15
-exec "$@"
-` + strings.Join(customEntrypoints, "\n") + DefaultEntrypoint
+	statements := []string{
+		startScriptEchoStatement,
+		startScriptTrapStatement,
+		`exec "$@"`,
+	}
+	statements = append(statements, mergedConfig.Entrypoints...)
+	statements = append(statements, DefaultEntrypoint)
+	return joinShellStatements(statements...)
 }
 
 func GetContainerEntrypointAndArgs(
@@ -959,5 +973,5 @@ func GetContainerEntrypointAndArgs(
 		cmd = append(cmd, imageDetails.Config.Entrypoint...)
 		cmd = append(cmd, imageDetails.Config.Cmd...)
 	}
-	return "/bin/sh", cmd
+	return shShellPath, cmd
 }

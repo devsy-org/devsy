@@ -1,6 +1,7 @@
 package devcontainer
 
 import (
+	"strings"
 	"testing"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
@@ -201,6 +202,71 @@ func TestRecoveryDevContainerConfigDockerfile(t *testing.T) {
 	}
 	if source.Dockerfile != "Dockerfile" {
 		t.Error("source config must not be mutated")
+	}
+}
+
+func TestDefaultEntrypointSingleLine(t *testing.T) {
+	if strings.Contains(DefaultEntrypoint, "\n") {
+		t.Fatalf("DefaultEntrypoint must be single-line, got %q", DefaultEntrypoint)
+	}
+	if !strings.Contains(DefaultEntrypoint, "devsy internal agent container daemon") {
+		t.Errorf("DefaultEntrypoint must invoke the agent daemon, got %q", DefaultEntrypoint)
+	}
+}
+
+func TestGetStartScriptSingleLine(t *testing.T) {
+	merged := &config.MergedDevContainerConfig{
+		UpdatedConfigProperties: config.UpdatedConfigProperties{
+			Entrypoints: []string{"echo setup"},
+		},
+	}
+	got := GetStartScript(merged)
+	if strings.Contains(got, "\n") {
+		t.Fatalf("GetStartScript() must be single-line, got %q", got)
+	}
+	if !strings.Contains(got, `exec "$@"`) {
+		t.Fatalf("GetStartScript() must keep the shell exec passthrough, got %q", got)
+	}
+	if !strings.Contains(got, "devsy internal agent container daemon") {
+		t.Fatalf("GetStartScript() must invoke the agent, got %q", got)
+	}
+}
+
+func TestGetStartScriptPreservesStatementOrder(t *testing.T) {
+	merged := &config.MergedDevContainerConfig{
+		UpdatedConfigProperties: config.UpdatedConfigProperties{
+			Entrypoints: []string{"first-entrypoint", "second-entrypoint"},
+		},
+	}
+	got := GetStartScript(merged)
+	wantOrder := []string{
+		startScriptEchoStatement,
+		startScriptTrapStatement,
+		`exec "$@"`,
+		"first-entrypoint",
+		"second-entrypoint",
+		"devsy internal agent container daemon",
+	}
+	lastIdx := -1
+	for _, want := range wantOrder {
+		idx := strings.Index(got, want)
+		if idx == -1 {
+			t.Fatalf("expected %q in script, got %q", want, got)
+		}
+		if idx <= lastIdx {
+			t.Fatalf("expected %q to appear after previous statement in %q", want, got)
+		}
+		lastIdx = idx
+	}
+}
+
+func TestGetStartScriptOmitsEmptyStatementForNoCustomEntrypoints(t *testing.T) {
+	got := GetStartScript(&config.MergedDevContainerConfig{})
+	if strings.Contains(got, ";;") || strings.Contains(got, "; ;") {
+		t.Errorf(
+			"expected no empty statement between built-ins and default entrypoint, got %q",
+			got,
+		)
 	}
 }
 
