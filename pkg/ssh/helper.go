@@ -198,13 +198,8 @@ func handleRunError(ctx context.Context, err error, command string) error {
 	if errors.As(err, &exitErr) {
 		exitCode := exitErr.ExitStatus()
 
-		// Exit codes 128+N indicate death by signal N
-		// 130 = 128 + 2 (SIGINT) - Ctrl+C (user interrupted)
-		// 129 = 128 + 1 (SIGHUP) - hangup (terminal closed)
-		// 143 = 128 + 15 (SIGTERM) - graceful termination
-		// These are "normal" ways to exit an interactive session
-		if exitCode == 130 || exitCode == 129 || exitCode == 143 {
-			return nil // Don't treat user interrupts as errors
+		if isSignalInterrupt(exitCode) {
+			return nil
 		}
 
 		// Return exit code for all other cases
@@ -220,4 +215,17 @@ func handleRunError(ctx context.Context, err error, command string) error {
 	}
 
 	return fmt.Errorf("SSH command failed while running %s: %w", command, err)
+}
+
+// isSignalInterrupt reports whether an exit code corresponds to a process
+// terminated by a signal that ends an interactive session normally.
+// Exit codes follow the 128+N convention: 130 = SIGINT, 129 = SIGHUP,
+// 143 = SIGTERM.
+func isSignalInterrupt(exitCode int) bool {
+	switch exitCode {
+	case 130, 129, 143:
+		return true
+	default:
+		return false
+	}
 }
