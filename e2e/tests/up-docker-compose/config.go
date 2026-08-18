@@ -14,8 +14,11 @@ import (
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/compose"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/docker/docker/api/types/container"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -566,6 +569,168 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(containerWorkspaceFolderBasename).To(gomega.Equal("workspaces"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+		ginkgo.Context("compose project name resolution", func() {
+			const composeProjectLabel = "com.docker.compose.project"
+
+			composeProjectFromContainer := func(
+				ctx context.Context,
+				workspace *provider2.Workspace,
+			) string {
+				name, err := composeProjectForWorkspace(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID,
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(name).To(gomega.Not(gomega.BeEmpty()),
+					"dev container has a "+composeProjectLabel+" label")
+				return name
+			}
+
+			devContainer := func(
+				ctx context.Context,
+				workspace *provider2.Workspace,
+			) *container.InspectResponse {
+				ids, err := tc.dockerHelper.FindContainer(ctx, []string{
+					fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspace.UID),
+				})
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1),
+					"exactly one dev container for the workspace")
+				detail, err := tc.inspectContainer(ctx, ids)
+				framework.ExpectNoError(err)
+				return detail
+			}
+
+			ginkgo.It("uses the top-level compose name as project name", func(ctx context.Context) {
+				_, workspace, err := tc.setupAndStartWorkspace(
+					ctx,
+					"tests/up-docker-compose/testdata/docker-compose-v2-with-name",
+				)
+				framework.ExpectNoError(err)
+
+				gomega.Expect(composeProjectFromContainer(ctx, workspace)).
+					To(gomega.Equal("testproject"),
+						"project name comes from the top-level compose name field")
+			}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+			ginkgo.It(
+				"uses COMPOSE_PROJECT_NAME from .env as project name",
+				func(ctx context.Context) {
+					tempDir, err := setupWorkspace(
+						"tests/up-docker-compose/testdata/docker-compose-project-name-envfile",
+						tc.initialDir, tc.f,
+					)
+					framework.ExpectNoError(err)
+
+					framework.ExpectNoError(
+						os.WriteFile(
+							filepath.Join(tempDir, ".env"),
+							[]byte("COMPOSE_PROJECT_NAME=devsy-e2e-envfile-project\n"),
+							0o600,
+						),
+					)
+
+					framework.ExpectNoError(tc.f.DevsyUp(ctx, tempDir))
+
+					workspace, err := tc.f.FindWorkspace(ctx, tempDir)
+					framework.ExpectNoError(err)
+
+					gomega.Expect(composeProjectFromContainer(ctx, workspace)).
+						To(gomega.Equal("devsy-e2e-envfile-project"),
+							"project name comes from COMPOSE_PROJECT_NAME in .env")
+				},
+				ginkgo.SpecTimeout(framework.TimeoutLong()),
+			)
+
+			ginkgo.It(
+				"uses COMPOSE_PROJECT_NAME from a .env colocated with the compose file",
+				func(ctx context.Context) {
+					tempDir, err := setupWorkspace(
+						"tests/up-docker-compose/testdata/docker-compose-nested-envfile",
+						tc.initialDir, tc.f,
+					)
+					framework.ExpectNoError(err)
+
+					framework.ExpectNoError(
+						os.WriteFile(
+							filepath.Join(tempDir, "dockerfiles", ".env"),
+							[]byte("COMPOSE_PROJECT_NAME=devsy-e2e-subdir-envfile-project\n"),
+							0o600,
+						),
+					)
+
+					framework.ExpectNoError(tc.f.DevsyUp(ctx, tempDir))
+
+					workspace, err := tc.f.FindWorkspace(ctx, tempDir)
+					framework.ExpectNoError(err)
+
+					gomega.Expect(composeProjectFromContainer(ctx, workspace)).
+						To(gomega.Equal("devsy-e2e-subdir-envfile-project"),
+							"project name comes from COMPOSE_PROJECT_NAME in the "+
+								"compose file's own directory, not just the workspace root")
+				},
+				ginkgo.SpecTimeout(framework.TimeoutLong()),
+			)
+
+			ginkgo.It(
+				"uses COMPOSE_PROJECT_NAME from the shell as project name",
+				func(ctx context.Context) {
+					tempDir, err := setupWorkspace(
+						"tests/up-docker-compose/testdata/docker-compose", tc.initialDir, tc.f,
+					)
+					framework.ExpectNoError(err)
+
+					framework.ExpectNoError(
+						os.Setenv(compose.ComposeProjectNameEnv, "devsy-e2e-shell-project"),
+					)
+					ginkgo.DeferCleanup(func() {
+						framework.ExpectNoError(os.Unsetenv(compose.ComposeProjectNameEnv))
+					})
+
+					err = tc.f.DevsyUp(ctx, tempDir)
+					framework.ExpectNoError(err)
+
+					workspace, err := tc.f.FindWorkspace(ctx, tempDir)
+					framework.ExpectNoError(err)
+
+					gomega.Expect(composeProjectFromContainer(ctx, workspace)).
+						To(gomega.Equal("devsy-e2e-shell-project"),
+							"shell COMPOSE_PROJECT_NAME overrides all other sources")
+				},
+				ginkgo.SpecTimeout(framework.TimeoutLong()),
+			)
+
+			ginkgo.It(
+				"reuses the existing compose project on a second up",
+				func(ctx context.Context) {
+					tempDir, err := setupWorkspace(
+						"tests/up-docker-compose/testdata/docker-compose-v2-with-name",
+						tc.initialDir, tc.f,
+					)
+					framework.ExpectNoError(err)
+
+					err = tc.f.DevsyUp(ctx, tempDir)
+					framework.ExpectNoError(err)
+					workspace, err := tc.f.FindWorkspace(ctx, tempDir)
+					framework.ExpectNoError(err)
+
+					firstProject := composeProjectFromContainer(ctx, workspace)
+					firstID := devContainer(ctx, workspace).ID
+
+					err = tc.f.DevsyUp(ctx, tempDir)
+					framework.ExpectNoError(err)
+
+					secondProject := composeProjectFromContainer(ctx, workspace)
+					secondID := devContainer(ctx, workspace).ID
+
+					gomega.Expect(secondProject).To(gomega.Equal(firstProject),
+						"second up reuses the same compose project name")
+					gomega.Expect(secondID).To(gomega.Equal(firstID),
+						"second up reuses the same container (no separate project spawned)")
+				},
+				ginkgo.SpecTimeout(framework.TimeoutLong()),
+			)
+		})
 
 		ginkgo.Context("host requirements enforcement", func() {
 			var btc *baseTestContext

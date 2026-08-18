@@ -186,20 +186,51 @@ func setupDockerProvider(binDir string) (*framework.Framework, error) {
 	return framework.SetupDockerProvider(binDir, "docker")
 }
 
+// findComposeContainer returns the compose container IDs for a workspace's
+// service, resolving devsy's actual project name first since it may not be
+// the sanitized workspace UID.
 func findComposeContainer(
 	ctx context.Context,
 	dockerHelper *docker.DockerHelper,
 	composeHelper *compose.ComposeHelper,
 	workspaceUID, serviceName string,
 ) ([]string, error) {
+	projectName, err := composeProjectForWorkspace(ctx, dockerHelper, composeHelper, workspaceUID)
+	if err != nil {
+		return nil, err
+	}
 	return dockerHelper.FindContainer(ctx, []string{
-		fmt.Sprintf(
-			"%s=%s",
-			pkgconfig.ComposeProjectLabel,
-			composeHelper.GetProjectName(workspaceUID),
-		),
+		fmt.Sprintf("%s=%s", pkgconfig.ComposeProjectLabel, projectName),
 		fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, serviceName),
 	})
+}
+
+// composeProjectForWorkspace resolves the compose project name devsy used
+// for the workspace by inspecting its dev container's labels, falling back
+// to the sanitized workspace UID when none is found.
+func composeProjectForWorkspace(
+	ctx context.Context,
+	dockerHelper *docker.DockerHelper,
+	composeHelper *compose.ComposeHelper,
+	workspaceUID string,
+) (string, error) {
+	devIDs, err := dockerHelper.FindContainer(ctx, []string{
+		fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspaceUID),
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(devIDs) == 0 {
+		return composeHelper.GetProjectName(workspaceUID), nil
+	}
+	var dev []container.InspectResponse
+	if err := dockerHelper.Inspect(ctx, devIDs[:1], "container", &dev); err != nil {
+		return "", err
+	}
+	if name, ok := dev[0].Config.Labels[pkgconfig.ComposeProjectLabel]; ok {
+		return name, nil
+	}
+	return composeHelper.GetProjectName(workspaceUID), nil
 }
 
 func devsyUpAndFindWorkspace(

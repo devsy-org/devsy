@@ -364,6 +364,13 @@ func (h *ComposeHelper) GetProjectName(runnerID string) string {
 	return h.toProjectName(runnerID)
 }
 
+// SanitizeProjectName exposes toProjectName's compose-version-aware
+// sanitization for callers outside this package (e.g. the devsy runner id
+// fallback for compose project names).
+func (h *ComposeHelper) SanitizeProjectName(name string) string {
+	return h.toProjectName(name)
+}
+
 func (h *ComposeHelper) toProjectName(projectName string) string {
 	useNewProjectNameFormat, _ := h.useNewProjectName()
 	if !useNewProjectNameFormat {

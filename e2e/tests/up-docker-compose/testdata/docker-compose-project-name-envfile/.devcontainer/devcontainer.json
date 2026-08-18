@@ -1,0 +1,6 @@
+{
+  "name": "Compose project name from .env",
+  "dockerComposeFile": "../docker-compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces"
+}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -160,12 +160,18 @@ func (r *runner) deleteDockerCompose(
 func (r *runner) dockerComposeProjectFiles(
 	parsedConfig *config.SubstitutedConfig,
 ) (composeProjectFiles, error) {
-	envFiles := r.getEnvFiles()
+	// baseEnvFiles are needed to resolve $COMPOSE_FILE and COMPOSE_PROJECT_NAME
+	// before the compose files themselves are known.
+	baseEnvFiles := r.baseEnvFiles(parsedConfig)
 
-	composeFiles, err := r.getDockerComposeFilePaths(parsedConfig, envFiles)
+	composeFiles, err := r.getDockerComposeFilePaths(parsedConfig, baseEnvFiles)
 	if err != nil {
 		return composeProjectFiles{}, fmt.Errorf("get docker compose file paths: %w", err)
 	}
+
+	// Colocated with the compose files, so only known once they are resolved;
+	// they cannot drive $COMPOSE_FILE but can still set COMPOSE_PROJECT_NAME.
+	envFiles := appendEnvFiles(baseEnvFiles, composeDirEnvFiles(composeFiles))
 
 	var args []string
 	for _, configFile := range composeFiles {
@@ -217,8 +223,8 @@ func (r *runner) runDockerCompose(
 	return r.finalizeComposeContainer(ctx, runParams, project, containerDetails)
 }
 
-// loadComposeProject loads the docker compose project from the resolved compose
-// and env files and names it after the workspace.
+// loadComposeProject loads the docker compose project and resolves its
+// project name (see resolveComposeProjectName).
 func (r *runner) loadComposeProject(
 	ctx context.Context,
 	composeHelper *compose.ComposeHelper,
@@ -234,7 +240,12 @@ func (r *runner) loadComposeProject(
 	if err != nil {
 		return nil, fmt.Errorf("load docker compose project: %w", err)
 	}
-	project.Name = composeHelper.GetProjectName(r.id)
+
+	name, err := r.resolveComposeProjectName(composeHelper, project, projFiles)
+	if err != nil {
+		return nil, fmt.Errorf("resolve compose project name: %w", err)
+	}
+	project.Name = name
 	log.Debugf("Loaded project %s", project.Name)
 
 	if err := validateRunServices(parsedConfig.Config.RunServices, project); err != nil {
@@ -242,6 +253,48 @@ func (r *runner) loadComposeProject(
 	}
 
 	return project, nil
+}
+
+// resolveComposeProjectName trusts compose-go's own resolved project.Name
+// when the user named the project explicitly (shell env, .env file, or a
+// compose file's top-level "name"); otherwise it substitutes the sanitized
+// random runner id for compose-go's directory-basename default. It never
+// consults devcontainer.json's "name", which is a UI display name per the
+// Dev Containers spec, not a compose project name.
+func (r *runner) resolveComposeProjectName(
+	composeHelper *compose.ComposeHelper,
+	project *composetypes.Project,
+	projFiles composeProjectFiles,
+) (string, error) {
+	named, err := hasExplicitComposeProjectName(projFiles)
+	if err != nil {
+		return "", err
+	}
+	if named {
+		return project.Name, nil
+	}
+	return composeHelper.SanitizeProjectName(r.id), nil
+}
+
+// hasExplicitComposeProjectName reports whether the user named the compose
+// project via the shell, a .env file, or a compose file's top-level "name",
+// mirroring compose-go's own precedence: a present (even empty) shell
+// COMPOSE_PROJECT_NAME wins or loses on its own and blocks .env files.
+func hasExplicitComposeProjectName(projFiles composeProjectFiles) (bool, error) {
+	if shellValue, ok := os.LookupEnv(compose.ComposeProjectNameEnv); ok {
+		if shellValue != "" {
+			return true, nil
+		}
+		return compose.ComposeFilesDeclareName(projFiles.composeFiles)
+	}
+	envName, err := compose.ProjectNameFromEnvFiles(projFiles.envFiles)
+	if err != nil {
+		return false, err
+	}
+	if envName != "" {
+		return true, nil
+	}
+	return compose.ComposeFilesDeclareName(projFiles.composeFiles)
 }
 
 // composeContainerParams groups the inputs for ensuring a running compose dev
@@ -601,14 +654,63 @@ func composeFileFromEnv(envFiles []string) (string, error) {
 	return "", nil
 }
 
-func (r *runner) getEnvFiles() []string {
+// baseEnvFiles collects the .env files that exist before the compose files are
+// resolved: the devcontainer config directory's .env (e.g.
+// .devcontainer/.env) and the workspace root .env. They feed both
+// $COMPOSE_FILE resolution and COMPOSE_PROJECT_NAME.
+func (r *runner) baseEnvFiles(parsedConfig *config.SubstitutedConfig) []string {
 	var envFiles []string
-	envFile := path.Join(r.localWorkspaceFolder, ".env")
-	envFileStat, err := os.Stat(envFile)
-	if err == nil && envFileStat.Mode().IsRegular() {
-		envFiles = append(envFiles, envFile)
+	if parsedConfig != nil && parsedConfig.Config != nil && parsedConfig.Config.Origin != "" {
+		envFiles = appendExistingEnvFile(
+			envFiles,
+			filepath.Join(filepath.Dir(parsedConfig.Config.Origin), ".env"),
+		)
+	}
+	envFiles = appendExistingEnvFile(envFiles, filepath.Join(r.localWorkspaceFolder, ".env"))
+	return envFiles
+}
+
+// composeDirEnvFiles returns the .env file colocated with each compose file's
+// directory. These are added after the compose files are resolved so they can
+// contribute COMPOSE_PROJECT_NAME (they cannot drive $COMPOSE_FILE, which is
+// resolved earlier).
+func composeDirEnvFiles(composeFiles []string) []string {
+	var envFiles []string
+	for _, composeFile := range composeFiles {
+		envFiles = appendExistingEnvFile(envFiles, filepath.Join(filepath.Dir(composeFile), ".env"))
 	}
 	return envFiles
+}
+
+// appendExistingEnvFile appends path to envFiles when it is a regular file that
+// is not already in the list.
+func appendExistingEnvFile(envFiles []string, path string) []string {
+	if slices.Contains(envFiles, path) {
+		return envFiles
+	}
+	envFileStat, err := os.Stat(path)
+	if err == nil && envFileStat.Mode().IsRegular() {
+		return append(envFiles, path)
+	}
+	return envFiles
+}
+
+// appendEnvFiles appends new files to base, skipping duplicates already present
+// while preserving first-seen order.
+func appendEnvFiles(base, additional []string) []string {
+	seen := make(map[string]bool, len(base))
+	for _, f := range base {
+		seen[f] = true
+	}
+	out := make([]string, len(base))
+	copy(out, base)
+	for _, f := range additional {
+		if !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // resolveComposeServiceImage looks up the named devcontainer service in the
