@@ -748,13 +748,13 @@ jobs:
         run: |
           sudo mkdir -p /run/podman
           sudo -b sh -c 'podman system service --time=0 unix:///run/podman/podman.sock > /tmp/podman-service.log 2>&1'
-          if ! timeout 30 bash -c 'until sudo podman info >/dev/null 2>&1; do sleep 1; done'; then
+          if ! timeout 30 bash -c 'until sudo podman --remote --url unix:///run/podman/podman.sock info >/dev/null 2>&1; do sleep 1; done'; then
             echo "::error::podman service did not become ready within 30s"
             cat /tmp/podman-service.log || true
             exit 1
           fi
           echo "DOCKER_HOST=unix:///run/podman/podman.sock" >> "$GITHUB_ENV"
-          sudo podman info
+          sudo podman --remote --url unix:///run/podman/podman.sock info
           sudo podman run --rm busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d echo "podman runtime preflight OK"
 
       - name: get microsandbox latest version

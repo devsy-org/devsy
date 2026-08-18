@@ -787,7 +787,7 @@ func prepareImage(workspaceDir, image string) error {
 func installDocker(ctx context.Context) (dockerPath string, err error) {
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
-	log.Debug("installing Docker")
+	log.Debug("installing docker")
 	return dockerinstall.Install(ctx, writer, writer)
 }
 

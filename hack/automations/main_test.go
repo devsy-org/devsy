@@ -9,12 +9,6 @@ import (
 	"testing"
 )
 
-// newSandbox copies the generator's real inputs (agents.yaml and the existing
-// .agents/agents tree) into an isolated temp directory and returns its path.
-// The generator writes agent.md files relative to its working directory, and
-// goreleaser's build hooks run this test suite once per target arch in
-// parallel; without isolation, concurrent runs race on the same real
-// .agents/agents/*/agent.md files in the checkout.
 func newSandbox(t *testing.T) string {
 	t.Helper()
 	root := repoRoot(t)

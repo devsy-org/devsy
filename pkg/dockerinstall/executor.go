@@ -79,8 +79,13 @@ func (e *Executor) RunWithRetry(
 			return false, nil
 		},
 	)
-	if pollErr != nil && lastErr != nil {
-		return fmt.Errorf("timeout waiting for dpkg lock after %v: %w", timeout, lastErr)
+	if pollErr != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if lastErr != nil {
+			return fmt.Errorf("timeout waiting for dpkg lock after %v: %w", timeout, lastErr)
+		}
 	}
 	return pollErr
 }
