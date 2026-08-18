@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/devsy-org/devsy/pkg/docker"
 )
 
 // ExecCommand executes the command string with the devsy test binary.
@@ -16,6 +18,7 @@ func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (strin
 	var execOut bytes.Buffer
 
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
+	docker.PrepareForGroupCancellation(cmd)
 	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
 	cmd.Stderr = os.Stderr
 
@@ -29,6 +32,7 @@ func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (strin
 // ExecCommandStdout executes the command string with the devsy test binary.
 func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error {
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
+	docker.PrepareForGroupCancellation(cmd)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -48,6 +52,7 @@ func (f *Framework) ExecCommand(
 	var execOut bytes.Buffer
 
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
+	docker.PrepareForGroupCancellation(cmd)
 	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
 	cmd.Stderr = os.Stderr
 
@@ -72,6 +77,7 @@ func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (stri
 	var execErr bytes.Buffer
 
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
+	docker.PrepareForGroupCancellation(cmd)
 	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
 	cmd.Stderr = io.MultiWriter(os.Stderr, &execErr)
 
