@@ -342,7 +342,7 @@ func (cmd *ExecCmd) execInContainer(ctx context.Context, opts execOpts, args []s
 	execArgs = append(execArgs, args...)
 
 	redacted := strings.Join(redactExecArgs(execArgs), " ")
-	log.Debugf("Executing in container: %s %s", opts.dockerCmd, redacted)
+	log.Debugf("executing in container: %s %s", opts.dockerCmd, redacted)
 
 	helper := &docker.DockerHelper{DockerCommand: opts.dockerCmd, Environment: opts.dockerEnv}
 	return helper.Run(ctx, execArgs, docker.Streams{

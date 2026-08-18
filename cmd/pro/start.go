@@ -1938,11 +1938,10 @@ func getIngressHost(
 			Get(ctx, "loft-ingress", metav1.GetOptions{})
 		if err != nil {
 			return "", err
-		} else {
-			// find host
-			for _, rule := range ingress.Spec.Rules {
-				return rule.Host, nil
-			}
+		}
+		// find host
+		for _, rule := range ingress.Spec.Rules {
+			return rule.Host, nil
 		}
 	} else {
 		// find host

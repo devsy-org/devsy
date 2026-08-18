@@ -438,3 +438,81 @@ esac
 	_, err := os.Stat(removed)
 	assert.NoError(t, err, "volume rm should be invoked for an existing volume")
 }
+
+func TestSystemdStateIsUsable(t *testing.T) {
+	cases := map[string]bool{
+		systemdStateRunning:  true,
+		systemdStateDegraded: true,
+		"starting":           false,
+		"stopping":           false,
+		"maintenance":        false,
+		"offline":            false,
+		"":                   false,
+	}
+	for state, want := range cases {
+		assert.Equal(t, want, systemdStateIsUsable(state), "state=%q", state)
+	}
+	assert.True(t, systemdStateIsUsable(systemdStateDegraded+"\n"))
+}
+
+func withPingTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	original := pingTimeout
+	pingTimeout = d
+	t.Cleanup(func() { pingTimeout = original })
+}
+
+func TestPing_Succeeds(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+echo '{"ServerVersion":"1.0"}'
+`)
+	h := &DockerHelper{DockerCommand: bin}
+	assert.NoError(t, h.Ping(context.Background()))
+}
+
+func TestPing_DaemonRefusalIsNotAttributedToTimeout(t *testing.T) {
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" >&2
+exit 1
+`)
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.Ping(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Cannot connect to the Docker daemon")
+	assert.NotErrorIs(t, err, context.DeadlineExceeded,
+		"a fast, native refusal must not look like our own timeout")
+}
+
+func TestPing_SelfInflictedTimeoutIsDistinguishableFromDaemonDown(t *testing.T) {
+	withPingTimeout(t, 50*time.Millisecond)
+
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+sleep 5
+`)
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.Ping(context.Background())
+
+	require.Error(t, err)
+	assert.ErrorIs(
+		t,
+		err,
+		context.DeadlineExceeded,
+		"a kill caused by Ping's own deadline must be attributable to it, not reported as a bare daemon-down error",
+	)
+}
+
+func TestStartPodmanMachine_SelfInflictedTimeoutIsDistinguishable(t *testing.T) {
+	original := podmanMachineStartTimeout
+	podmanMachineStartTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { podmanMachineStartTimeout = original })
+
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+sleep 5
+`)
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.StartPodmanMachine(context.Background())
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}

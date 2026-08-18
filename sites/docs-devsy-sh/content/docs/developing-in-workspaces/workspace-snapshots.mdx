@@ -13,7 +13,7 @@ Snapshots are pushed to and pulled from an OCI registry (Docker Hub, GHCR, ECR, 
 
 ## Create a Snapshot
 
-The workspace must already be running (`devsy up` must have created it, so its mount information is available):
+The workspace must already be running (`devsy workspace up` must have created it, so its mount information is available):
 
 ```sh
 devsy snapshot create my-workspace --registry ghcr.io/my-org/snapshots
@@ -60,10 +60,10 @@ devsy snapshot restore ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2
 
 This creates a new workspace from the snapshot's committed filesystem and volumes, skipping the devcontainer build entirely since the image is already built. By default the new workspace reuses the original workspace ID; pass `--workspace-id` to restore under a different one, or `--target-provider` to restore using a different provider than the one the snapshot was taken from.
 
-Equivalently, you can restore as part of `devsy up`:
+Equivalently, you can restore as part of `devsy workspace up`:
 
 ```sh
-devsy up --from-snapshot ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
+devsy workspace up --from-snapshot ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
 ```
 
 `--from-snapshot` can't be combined with a positional source or `--source`.

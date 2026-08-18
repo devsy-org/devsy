@@ -1,5 +1,5 @@
 {
   "image": "ghcr.io/devsy-org/test-images/go:1",
   "postStartCommand": "echo postStartDone > $HOME/post-start.out",
-  "postAttachCommand": "sleep 15 && echo postAttachDone > $HOME/post-attach.out"
+  "postAttachCommand": "i=0; while [ ! -f $HOME/release-post-attach ] && [ $i -lt 300 ]; do sleep 1; i=$((i+1)); done; echo postAttachDone > $HOME/post-attach.out"
 }

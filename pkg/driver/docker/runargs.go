@@ -218,7 +218,7 @@ func shouldBustBindCache(helper *docker.DockerHelper) bool {
 	if helper.GetRuntime().Name() != docker.RuntimeDocker {
 		return false
 	}
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == osLinux {
 		return false
 	}
 	return dockerMajorAtLeast(helper.ClientVersion(context.Background()), minBindCreateSrcMajor)

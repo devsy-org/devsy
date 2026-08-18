@@ -2,7 +2,8 @@
   "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.11"
+      "version": "3.13",
+      "installTools": false
     },
     "./features/test-feature": {}
   }

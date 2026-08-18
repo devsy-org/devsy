@@ -216,7 +216,7 @@ func (cmd *ImportCmd) importMachine(
 
 	// if machine already exists we skip
 	if cmd.MachineReuse && provider.MachineExists(devsyConfig.DefaultContext, cmd.MachineID) {
-		log.Infof("Reusing existing machine %s", cmd.MachineID)
+		log.Infof("reusing existing machine %s", cmd.MachineID)
 		return nil
 	}
 
@@ -254,7 +254,7 @@ func (cmd *ImportCmd) importProvider(
 ) error {
 	// if provider already exists we skip
 	if cmd.ProviderReuse && provider.ProviderExists(devsyConfig.DefaultContext, cmd.ProviderID) {
-		log.Infof("Reusing existing provider %s", cmd.ProviderID)
+		log.Infof("reusing existing provider %s", cmd.ProviderID)
 		return nil
 	}
 

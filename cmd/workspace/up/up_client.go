@@ -68,8 +68,8 @@ func (cmd *UpCmd) prepareClient(
 		return nil, err
 	}
 	if cmd.Platform.Enabled {
-		log.Debug("Running in platform mode")
-		log.Debug("Using error output stream")
+		log.Debug("running in platform mode")
+		log.Debug("using error output stream")
 		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
 	}
 	if err := cmd.prepareSecrets(devsyConfig); err != nil {

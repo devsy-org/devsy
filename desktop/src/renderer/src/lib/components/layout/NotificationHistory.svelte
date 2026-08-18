@@ -62,7 +62,7 @@ const unreadCount = notificationHistory.unreadCount
             </div>
             <button
               type="button"
-              class="mt-0.5 shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover/item:opacity-60 hover:!opacity-100"
+              class="mt-0.5 shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-muted group-hover/item:opacity-60 hover:!opacity-100 focus-visible:opacity-100"
               title="Dismiss"
               aria-label="Dismiss notification"
               onclick={() => notificationHistory.remove(item.id)}

@@ -136,7 +136,7 @@ func (cmd *UpgradeCmd) applyUpgrades(configPath string, outdated []outdatedEntry
 		old := entry.repo + ":" + entry.current
 		updated := entry.repo + ":" + entry.latest
 		content = strings.ReplaceAll(content, old, updated)
-		log.Infof("Upgraded %s: %s to %s", entry.repo, entry.current, entry.latest)
+		log.Infof("upgraded %s: %s to %s", entry.repo, entry.current, entry.latest)
 	}
 
 	//nolint:gosec // G306 -- matching existing file permissions in the codebase

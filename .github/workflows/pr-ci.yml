@@ -221,7 +221,7 @@ jobs:
           GH_ACCESS_TOKEN: ${{ github.token }}
           GH_CREDENTIAL_USERNAME: x-access-token
         run: |
-          ./e2e.test -test.v -ginkgo.v -test.timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
+          ./e2e.test -test.v -ginkgo.v -test.timeout 1500s -ginkgo.fail-on-empty --ginkgo.label-filter="${{ matrix.label }}"
 
   integration-tests:
     name: Test ${{ matrix.label }}${{ matrix.install-podman && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
@@ -254,12 +254,20 @@ jobs:
             free-disk-space: false
             install-kind: false
             requires-secret: false
+            flake-attempts: 2
+
+          - label: mcp
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
 
           - label: provider
             runner: ubuntu-latest
             free-disk-space: true
             install-kind: true
             requires-secret: false
+            flake-attempts: 2
 
           - label: ssh
             runner: ubuntu-latest
@@ -269,7 +277,7 @@ jobs:
 
           - label: build
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: true
             requires-secret: true
 
@@ -291,7 +299,7 @@ jobs:
             install-kind: false
             requires-secret: false
 
-          - label: features
+          - label: feature
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
@@ -333,7 +341,7 @@ jobs:
             install-kind: false
             requires-secret: false
 
-          - label: setup
+          - label: config-apply
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
@@ -383,19 +391,105 @@ jobs:
             install-kind: true
             requires-secret: false
 
-          - label: up-provider-podman
+          - label: up-provider-podman-rootless-basic
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootless
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
 
-          - label: up-provider-podman
+          - label: up-provider-podman-rootless-exec
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootless
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootless-lifecycle
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootless
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootless-config
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootless
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootless-features
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootless
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootful-basic
+            runner: ubuntu-latest
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-podman: rootful
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootful-lifecycle
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootful
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootful-lifecycle-2
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootful
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootful-config
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootful
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
+
+          - label: up-provider-podman-rootful-features
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-podman: rootful
+            test-timeout: 600s
+            job-timeout-minutes: 20
+            flake-attempts: 2
 
           - label: up-provider-docker
             runner: ubuntu-latest
@@ -405,7 +499,7 @@ jobs:
 
           - label: up-provider-microsandbox
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: false
             requires-secret: false
             install-microsandbox: true
@@ -431,7 +525,7 @@ jobs:
 
           - label: up-features
             runner: ubuntu-latest
-            free-disk-space: true
+            free-disk-space: false
             install-kind: true
             requires-secret: false
 
@@ -456,10 +550,14 @@ jobs:
             requires-secret: false
 
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ matrix.job-timeout-minutes || 45 }}
     steps:
       - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        background: true
         if: matrix.free-disk-space == true && runner.os == 'Linux' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        with:
+          docker-images: false
+          swap-storage: false
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
@@ -502,7 +600,6 @@ jobs:
           name: e2e-test-${{ steps.os.outputs.runner_os }}
           path: ./e2e/
 
-      # e2e expects executable to have name defined in e2e/framework/framework.go
       - name: setup executable
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
         shell: bash
@@ -624,24 +721,32 @@ jobs:
           path: ${{ runner.temp }}/apt-archives
           key: apt-podman-runc-${{ runner.os }}-v1
 
+      - name: cache apt packages (podman/runc)
+        if: (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && runner.os == 'Linux'
+        run: |
+          for i in $(seq 1 60); do
+            if sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+              echo "waiting for dpkg lock to be released ($i/60)"
+              sleep 2
+            else
+              break
+            fi
+          done
+          mkdir -p "${{ runner.temp }}/apt-archives"
+          sudo apt-get -o Dir::Cache::Archives="${{ runner.temp }}/apt-archives" update
+          sudo apt-get -o Dir::Cache::Archives="${{ runner.temp }}/apt-archives" install -y podman runc
+
+          sudo rm -f "${{ runner.temp }}/apt-archives/lock"
+          sudo rm -rf "${{ runner.temp }}/apt-archives/partial"
+
+          sudo mkdir -p /etc/containers
+          printf '[engine]\nruntime = "runc"\n' | sudo tee /etc/containers/containers.conf
+
       - name: Install Podman (Linux rootless)
         if: matrix.install-podman == 'rootless' && runner.os == 'Linux'
         env:
           APT_CACHE_DIR: ${{ runner.temp }}/apt-archives
         run: |
-          # Cache into a runner-owned dir: /var/cache/apt/archives is root-owned
-          # and actions/cache (running unprivileged) can't write into it on restore.
-          mkdir -p "$APT_CACHE_DIR"
-          sudo apt-get -o Dir::Cache::Archives="$APT_CACHE_DIR" update
-          sudo apt-get -o Dir::Cache::Archives="$APT_CACHE_DIR" install -y podman runc
-
-          # podman defaults to crun, which has been observed to fail with
-          # "OCI runtime error: crun: unknown version specified" on this
-          # runner image. Force runc, which is known-good, and fail fast
-          # with diagnostics if it isn't.
-          mkdir -p ~/.config/containers
-          printf '[engine]\nruntime = "runc"\n' > ~/.config/containers/containers.conf
-
           podman info
           podman run --rm busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d echo "podman runtime preflight OK"
 
@@ -650,17 +755,6 @@ jobs:
         env:
           APT_CACHE_DIR: ${{ runner.temp }}/apt-archives
         run: |
-          # Cache into a runner-owned dir: /var/cache/apt/archives is root-owned
-          # and actions/cache (running unprivileged) can't write into it on restore.
-          mkdir -p "$APT_CACHE_DIR"
-          sudo apt-get -o Dir::Cache::Archives="$APT_CACHE_DIR" update
-          sudo apt-get -o Dir::Cache::Archives="$APT_CACHE_DIR" install -y podman runc
-
-          # See the rootless step above: force runc over the default crun,
-          # which has been observed to fail on this runner image.
-          sudo mkdir -p /etc/containers
-          printf '[engine]\nruntime = "runc"\n' | sudo tee /etc/containers/containers.conf
-
           sudo systemctl enable --now podman.socket
           if ! timeout 30 bash -c 'until sudo podman info >/dev/null 2>&1; do sleep 1; done'; then
             echo "::error::podman.socket did not become ready within 30s"
@@ -709,19 +803,6 @@ jobs:
           sudo apt-get remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
           sudo rm -rf /var/lib/docker /var/lib/containerd /usr/bin/docker /usr/bin/dockerd
 
-      # The snapshot e2e suite pushes/pulls against a local registry:2
-      # fixture at host.docker.internal:15500 (see e2e/tests/snapshot/helper.go),
-      # reachable both from the host CLI and from inside the workspace
-      # container. Plain-HTTP is only safe here because that address is
-      # always local to this runner.
-      #
-      # host.docker.internal is Docker Desktop/OrbStack magic; plain Linux
-      # (this runner) resolves it for neither the host CLI process nor
-      # containers by default. The container side gets it via the fixture
-      # devcontainer.json's "--add-host=host.docker.internal:host-gateway"
-      # runArgs; the host side (the devsy CLI's own push-permission checks,
-      # which run before any container exists) needs an explicit /etc/hosts
-      # entry, since there's no running container to attach a gateway to yet.
       - name: configure insecure registry for snapshot tests (Linux)
         if: matrix.configure-insecure-registry == true && runner.os == 'Linux'
         run: |
@@ -738,7 +819,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
-          app-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
+          client-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
@@ -751,6 +832,8 @@ jobs:
           GH_USERNAME: ${{ github.repository_owner }}
           GH_ACCESS_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           GH_CREDENTIAL_USERNAME: x-access-token
+          TEST_TIMEOUT: ${{ matrix.test-timeout || '1500s' }}
+          FLAKE_ATTEMPTS: ${{ matrix.flake-attempts || '1' }}
         run: |
           if [ "${{ runner.os }}" == "Linux" ]; then
             sudo \
@@ -760,7 +843,7 @@ jobs:
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
               PATH="${PATH}" \
-              ./e2e.test -test.v -ginkgo.v -test.timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
+              ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
           else
             GH_USERNAME="${GH_USERNAME}" \
               GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
@@ -768,7 +851,7 @@ jobs:
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
               DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
-              ./e2e.test.exe -test.v -ginkgo.v -test.timeout 1500s --ginkgo.label-filter="${{ matrix.label }}"
+              ./e2e.test.exe -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
           fi
 
       - name: verify docker is installed

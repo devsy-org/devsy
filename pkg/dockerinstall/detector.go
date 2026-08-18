@@ -104,12 +104,12 @@ func (d *Detector) mapDebianVersion(data []byte) string {
 	version = strings.Split(version, ".")[0]
 
 	versionMap := map[string]string{
-		"13": "trixie",
-		"12": "bookworm",
-		"11": "bullseye",
-		"10": "buster",
-		"9":  "stretch",
-		"8":  "jessie",
+		"13": CodenameTrixie,
+		"12": CodenameBookworm,
+		"11": CodenameBullseye,
+		"10": CodenameBuster,
+		"9":  CodenameStretch,
+		"8":  CodenameJessie,
 	}
 
 	if mapped, ok := versionMap[version]; ok {
