@@ -3,23 +3,23 @@ import { HomeLayout } from 'fumadocs-ui/layouts/home';
 import { baseOptions } from '@/lib/layout.shared';
 
 export const metadata: Metadata = {
-  title: 'Devsy: Standardized development workspaces, engineering at scale',
+  title: 'Devsy: Devcontainer Workspaces, Any Backend, No Lock-In',
   description:
-    'Devsy gives teams and AI coding agents standardized, isolated workspaces that cut hardware cost, shorten onboarding, and contain agent risk. Deploy across Docker, Kubernetes, cloud providers, and SSH hosts.',
+    'Devsy runs devcontainer-based developer workspaces as Docker containers, Kubernetes pods, or microVMs, for engineers and their AI agents.',
   openGraph: {
     type: 'website',
     siteName: 'Devsy',
-    title: 'Devsy: Engineering at scale',
+    title: 'Devsy: Devcontainer Workspaces, Any Backend',
     description:
-      'Standardized, reproducible development workspaces that run anywhere: local, cloud, Kubernetes, or remote SSH.',
+      'Developer workspaces built from your devcontainer.json, portable across Docker, Kubernetes, microVMs, cloud, and SSH.',
     url: 'https://www.devsy.sh/',
     images: 'https://www.devsy.sh/docs/media/devsy.png',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Devsy: Engineering at scale',
+    title: 'Devsy: Devcontainer Workspaces, Any Backend',
     description:
-      'Standardized, reproducible development workspaces that run anywhere: local, cloud, Kubernetes, or remote SSH.',
+      'Developer workspaces built from your devcontainer.json, portable across Docker, Kubernetes, microVMs, cloud, and SSH.',
     images: 'https://www.devsy.sh/docs/media/devsy.png',
   },
 };

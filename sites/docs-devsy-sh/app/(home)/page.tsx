@@ -127,10 +127,13 @@ export default function HomePage() {
             <h1>
               Ship from <span className="grad">day zero</span>.
             </h1>
-            <p className="hero-sub">Standardized workspaces, engineering at scale.</p>
+            <p className="hero-sub">
+              Secure workspaces, at scale, for developers and agents.
+            </p>
             <p className="lede">
-              Devsy gives every engineer the same environment. Cut hardware cost, shorten onboarding, and raise
-              developer productivity. Deploy across Docker, Kubernetes, cloud providers, and SSH hosts.
+              Devsy runs the same developer environment in a Docker container, a Kubernetes pod, or a microVM,
+              whether it runs on a laptop, in the cloud, or on a shared host. Switch backends with one command.
+              No rewrite and no lock-in.
             </p>
             <div className="hero-cta">
               <a className="btn btn-primary" href="/docs/getting-started/install">
