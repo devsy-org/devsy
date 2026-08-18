@@ -87,7 +87,7 @@ func microsandboxDelivery(opts FactoryOptions) AgentDelivery {
 
 // dockerDelivery is only reached when the caller (NewAgentDelivery) has
 // already determined, from the workspace's resolved DOCKER_HOST, that the
-// daemon is local. 
+// daemon is local.
 func dockerDelivery(opts FactoryOptions) AgentDelivery {
 	log.Debugf("using local docker delivery (named volume)")
 	return &LocalDockerDelivery{
