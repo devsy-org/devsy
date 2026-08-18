@@ -484,7 +484,7 @@ func (d *dockerDriver) EnsurePath(path *config.Mount) *config.Mount {
 	if runtime.GOOS != "windows" {
 		return path
 	}
-	// A remote daemon (ssh://, tcp://, …) lives on a different host whose
+	// A remote daemon (ssh://, tcp://, etc.) lives on a different host whose
 	// filesystem does not share Windows drive paths; translate to the WSL
 	// /mnt/<drive> form the remote daemon can resolve.
 	if !docker.RemoteDockerHost(d.Docker.Environment) {
