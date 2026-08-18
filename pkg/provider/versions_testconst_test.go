@@ -5,4 +5,5 @@ const (
 	testTagV999 = "v9.9.9"
 	testNameABC = "abc"
 	testNameBar = "bar"
+	testNameFoo = "foo"
 )

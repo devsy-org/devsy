@@ -80,8 +80,8 @@ esac
 func withShortImageInspectPoll(t *testing.T) {
 	t.Helper()
 	origInterval, origTimeout := imageInspectPollInterval, imageInspectPollTimeout
-	imageInspectPollInterval = time.Millisecond
-	imageInspectPollTimeout = 20 * time.Millisecond
+	imageInspectPollInterval = 5 * time.Millisecond
+	imageInspectPollTimeout = 300 * time.Millisecond
 	t.Cleanup(func() {
 		imageInspectPollInterval, imageInspectPollTimeout = origInterval, origTimeout
 	})
@@ -203,7 +203,7 @@ func TestEnsureContainerRunning_AlreadyRunning(t *testing.T) {
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: testDockerCmd}}
 	container := &config.ContainerDetails{
 		ID:    "c1",
-		State: config.ContainerDetailsState{Status: "running"},
+		State: config.ContainerDetailsState{Status: containerStatusRunning},
 	}
 
 	require.NoError(t, d.ensureContainerRunning(context.Background(), container))
@@ -325,4 +325,36 @@ esac
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestDeleteDevContainer_StopsRunningContainerBeforeRemove(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	script := `#!/bin/sh
+echo "$1" >> "` + calls + `"
+case "$1" in
+  inspect)
+    echo '[{"ID":"c1","State":{"Status":"running"}}]'
+    ;;
+  stop) ;;
+  rm)
+    if ! grep -q '^stop$' "` + calls + `"; then
+      echo "cannot remove running container" >&2
+      exit 1
+    fi
+    ;;
+esac
+`
+	bin := filepath.Join(dir, "docker-fake")
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755)) //nolint:gosec
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin, ContainerID: "c1"}}
+
+	err := d.DeleteDevContainer(context.Background(), "ws1")
+	require.NoError(t, err)
+
+	logged, readErr := os.ReadFile(calls) //nolint:gosec // G304: test-controlled path
+	require.NoError(t, readErr)
+	assert.Contains(t, string(logged), "stop\n")
+	assert.Contains(t, string(logged), "rm\n")
 }

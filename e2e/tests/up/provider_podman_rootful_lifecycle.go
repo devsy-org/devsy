@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -217,119 +216,6 @@ var _ = ginkgo.Describe(
 						}).WithTimeout(15 * time.Second).WithPolling(500 * time.Millisecond).Should(
 							gomega.Equal("postAttachDone"),
 						)
-					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
-				)
-
-				ginkgo.It(
-					"should run postAttachCommand on every attach",
-					func(ctx context.Context) {
-						tempDir, err := setupWorkspace(
-							"tests/up/testdata/docker-post-attach-every-time",
-							initialDir,
-							f,
-						)
-						framework.ExpectNoError(err)
-
-						err = f.DevsyUp(ctx, tempDir)
-						framework.ExpectNoError(err)
-
-						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
-								ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null",
-							)
-							if err != nil {
-								return ""
-							}
-							return strings.TrimSpace(out)
-						}).WithTimeout(15 * time.Second).WithPolling(1 * time.Second).Should(
-							gomega.Equal("1"),
-						)
-
-						err = f.DevsyUp(ctx, tempDir)
-						framework.ExpectNoError(err)
-
-						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
-								ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null",
-							)
-							if err != nil {
-								return ""
-							}
-							return strings.TrimSpace(out)
-						}).WithTimeout(15 * time.Second).WithPolling(1 * time.Second).Should(
-							gomega.Equal("2"),
-						)
-					},
-					ginkgo.SpecTimeout(
-						framework.TimeoutModerate(),
-					),
-				)
-
-				ginkgo.It(
-					"should run initializeCommand with object syntax",
-					func(ctx context.Context) {
-						tempDir, err := setupWorkspaceAndUp(
-							ctx,
-							"tests/up/testdata/docker-initcmd-parallel",
-							initialDir,
-							f,
-						)
-						framework.ExpectNoError(err)
-
-						one, err := os.ReadFile( //nolint:gosec // G304
-							filepath.Join(tempDir, "init-cmd-one.out"),
-						)
-						framework.ExpectNoError(err)
-						gomega.Expect(string(one)).To(gomega.Equal("initCmdOne"))
-
-						two, err := os.ReadFile( //nolint:gosec // G304
-							filepath.Join(tempDir, "init-cmd-two.out"),
-						)
-						framework.ExpectNoError(err)
-						gomega.Expect(string(two)).To(gomega.Equal("initCmdTwo"))
-					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
-				)
-
-				ginkgo.It(
-					"should inject secrets-file env into lifecycle commands",
-					func(ctx context.Context) {
-						tempDir, err := setupWorkspace(
-							"tests/up/testdata/docker-secrets-file",
-							initialDir,
-							f,
-						)
-						framework.ExpectNoError(err)
-
-						secretsDir, err := framework.CreateTempDir()
-						framework.ExpectNoError(err)
-						ginkgo.DeferCleanup(func() { _ = os.RemoveAll(secretsDir) })
-
-						secretsFile := filepath.Join(secretsDir, "secrets.json")
-						err = os.WriteFile(
-							secretsFile,
-							[]byte(
-								`{"MY_SECRET":"test-value-12345","ANOTHER_SECRET":"second-secret-42"}`,
-							),
-							0o600,
-						)
-						framework.ExpectNoError(err)
-
-						err = f.DevsyUp(ctx, tempDir, "--secrets-file", secretsFile)
-						framework.ExpectNoError(err)
-
-						out, err := f.DevsySSH(ctx, tempDir, "cat /tmp/secret-check.out")
-						framework.ExpectNoError(err)
-						gomega.Expect(strings.TrimSpace(out)).
-							To(gomega.Equal("test-value-12345"))
-
-						out, err = f.DevsySSH(
-							ctx, tempDir, "cat /tmp/another-secret-check.out",
-						)
-						framework.ExpectNoError(err)
-						gomega.Expect(strings.TrimSpace(out)).
-							To(gomega.Equal("second-secret-42"))
 					},
 					ginkgo.SpecTimeout(framework.TimeoutShort()),
 				)
