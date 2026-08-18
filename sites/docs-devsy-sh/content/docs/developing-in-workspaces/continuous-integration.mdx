@@ -77,10 +77,10 @@ devsy ci --keep -- ./run-integration-tests.sh
 ### Pre-building and pushing images
 
 `devsy ci` focuses on running a command. To pre-build and publish a devcontainer
-image for reuse as a build cache, use `devsy build`:
+image for reuse as a build cache, use `devsy workspace build`:
 
 ```sh
-devsy build --repository ghcr.io/my-org/my-devcontainer --tag latest --push
+devsy workspace build --repository ghcr.io/my-org/my-devcontainer --tag latest --push
 ```
 
 Downstream CI jobs can then reference that image via `--cache-from` to speed up

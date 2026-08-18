@@ -154,7 +154,7 @@ func shouldSkipUpdate(localUser *user.User, info *user.User) bool {
 }
 
 func (d *dockerDriver) shouldUpdateUserUID(parsedConfig *config.DevContainerConfig) bool {
-	isLinux := runtime.GOOS == "linux"
+	isLinux := runtime.GOOS == osLinux
 	hasUser := parsedConfig.ContainerUser != "" || parsedConfig.RemoteUser != ""
 
 	var shouldUpdate bool
