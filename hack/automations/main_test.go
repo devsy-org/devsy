@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,14 +9,68 @@ import (
 	"testing"
 )
 
-func runGenerator(t *testing.T, args ...string) string {
+func newSandbox(t *testing.T) string {
+	t.Helper()
+	root := repoRoot(t)
+	dir := t.TempDir()
+
+	copyFile(t,
+		filepath.Join(root, "hack", "automations", "agents.yaml"),
+		filepath.Join(dir, "hack", "automations", "agents.yaml"))
+	copyTree(t,
+		filepath.Join(root, ".agents", "agents"),
+		filepath.Join(dir, ".agents", "agents"))
+
+	return dir
+}
+
+func copyFile(t *testing.T, src, dst string) {
+	t.Helper()
+	b, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read %s: %v", src, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(dst), err)
+	}
+	if err := os.WriteFile(dst, b, 0o644); err != nil {
+		t.Fatalf("write %s: %v", dst, err)
+	}
+}
+
+func copyTree(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, b, 0o644)
+	})
+	if err != nil {
+		t.Fatalf("copy tree %s: %v", src, err)
+	}
+}
+
+func runGenerator(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "automations")
 	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
 	cmd := exec.Command(bin, args...)
-	cmd.Dir = repoRoot(t)
+	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("generator output:\n%s", out)
@@ -32,13 +87,13 @@ func repoRoot(t *testing.T) string {
 	return filepath.Dir(filepath.Dir(wd))
 }
 
-func agentFilePath(t *testing.T, id string) string {
-	t.Helper()
-	return filepath.Join(repoRoot(t), ".agents", "agents", id, "agent.md")
+func agentFilePath(dir, id string) string {
+	return filepath.Join(dir, ".agents", "agents", id, "agent.md")
 }
 
 func TestGenerateWritesAllAgents(t *testing.T) {
-	out := runGenerator(t)
+	dir := newSandbox(t)
+	out := runGenerator(t, dir)
 	if !strings.Contains(out, "wrote") {
 		t.Fatalf("expected write output, got:\n%s", out)
 	}
@@ -51,7 +106,7 @@ func TestGenerateWritesAllAgents(t *testing.T) {
 
 	pythonAgents := map[string]bool{"agent-analytics": true}
 	for _, id := range ids {
-		p := agentFilePath(t, id)
+		p := agentFilePath(dir, id)
 		b, err := os.ReadFile(p)
 		if err != nil {
 			t.Errorf("read %s: %v", p, err)
@@ -87,16 +142,18 @@ func TestGenerateWritesAllAgents(t *testing.T) {
 }
 
 func TestCheckIsIdempotent(t *testing.T) {
-	runGenerator(t)
-	out := runGenerator(t, "-check")
+	dir := newSandbox(t)
+	runGenerator(t, dir)
+	out := runGenerator(t, dir, "-check")
 	if strings.Contains(out, "DRIFT") {
 		t.Fatalf("freshly generated files report drift:\n%s", out)
 	}
 }
 
 func TestToolchainPins(t *testing.T) {
-	runGenerator(t)
-	goAgent := agentFilePath(t, "pkg-container")
+	dir := newSandbox(t)
+	runGenerator(t, dir)
+	goAgent := agentFilePath(dir, "pkg-container")
 	b, err := os.ReadFile(goAgent)
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +164,7 @@ func TestToolchainPins(t *testing.T) {
 			t.Errorf("pkg-container: missing pinned %q", want)
 		}
 	}
-	ciAgent := agentFilePath(t, "ci-optimizer")
+	ciAgent := agentFilePath(dir, "ci-optimizer")
 	cb, err := os.ReadFile(ciAgent)
 	if err != nil {
 		t.Fatal(err)
@@ -118,9 +175,10 @@ func TestToolchainPins(t *testing.T) {
 }
 
 func TestToolchainDownloadsAreBounded(t *testing.T) {
-	runGenerator(t)
+	dir := newSandbox(t)
+	runGenerator(t, dir)
 	for _, id := range []string{"ui-polish", "pkg-container", "agent-analytics"} {
-		p := agentFilePath(t, id)
+		p := agentFilePath(dir, id)
 		b, err := os.ReadFile(p)
 		if err != nil {
 			continue
