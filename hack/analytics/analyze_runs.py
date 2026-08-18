@@ -66,6 +66,8 @@ from sklearn.cluster import KMeans
 
 app = typer.Typer(add_completion=False, help="Deterministic agent-fleet run analyzer.")
 
+EVENTS_PAGE_SIZE: int = 100
+
 FEATURE_BUCKETS: list[str] = [
     "missing-tool", "test-failure", "cmd-exit-nonzero", "permission-denied",
     "timeout", "git-baseline", "lint-issue", "commit-signing",
@@ -280,9 +282,30 @@ class CloudClient:
         return normalize_items(data)
 
     def conversation_events(self, conv_id: str, limit: int = 500) -> list[dict[str, Any]]:
-        """Fetch events for one conversation."""
+        """Fetch events for one conversation, paging through the API.
+
+        The events endpoint caps ``limit`` at 100 per request, so a single
+        call with a larger limit is rejected (HTTP 422). Page in batches of
+        ``EVENTS_PAGE_SIZE`` using the ``page_id`` cursor until ``limit`` is
+        reached or the server signals the end (``next_page_id`` is empty).
+        """
         path = f"/api/v1/conversation/{conv_id}/events/search"
-        return normalize_items(self.get(path, {"limit": limit}))
+        collected: list[dict[str, Any]] = []
+        cursor: str | None = None
+        while len(collected) < limit:
+            page_size = min(EVENTS_PAGE_SIZE, limit - len(collected))
+            params: dict[str, Any] = {"limit": page_size}
+            if cursor is not None:
+                params["page_id"] = cursor
+            data = self.get(path, params)
+            if not isinstance(data, dict):
+                collected.extend(normalize_items(data))
+                break
+            collected.extend(normalize_items(data.get("items")))
+            cursor = data.get("next_page_id")
+            if not cursor or len(normalize_items(data.get("items"))) < page_size:
+                break
+        return collected
 
     def get(self, path: str, params: dict[str, Any]) -> Any:
         """Issue a GET request and decode JSON, raising on HTTP/parse errors."""
