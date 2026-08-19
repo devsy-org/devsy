@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"strconv"
+	"syscall"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -91,6 +93,19 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	ln, err := claimPort(port)
+	if err != nil {
+		if errors.Is(err, errPortOwnedByAnotherSession) {
+			log.Debugf(
+				"skipping credentials server: %v (another session already provides it for this container)",
+				err,
+			)
+			return nil
+		}
+		return err
+	}
+	defer func() { _ = ln.Close() }()
+
 	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, ExitCodeIO)
 	if err != nil {
 		return fmt.Errorf("error creating tunnel client: %w", err)
@@ -99,12 +114,6 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	if _, err := tunnelClient.Ping(runCtx, &tunnel.Empty{}); err != nil {
 		return fmt.Errorf("ping client: %w", err)
 	}
-
-	ln, err := claimPort(port)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = ln.Close() }()
 
 	cmd.maybeForwardPorts(runCtx, tunnelClient)
 
@@ -129,6 +138,13 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	return credentials.RunCredentialsServerWithListener(runCtx, ln, tunnelClient)
 }
 
+// errPortOwnedByAnotherSession indicates the credentials-server port is
+// already bound, almost certainly by another session's credentials-server
+// for this same container. Only one session's credentials-server can hold
+// this port at a time; losing the race is expected, not a failure, so
+// callers should treat it as a no-op rather than an error.
+var errPortOwnedByAnotherSession = errors.New("credentials server port owned by another session")
+
 // claimPort binds port and returns the listener, holding it exclusively so
 // no other session can bind the same port until the caller closes it (or
 // hands it to RunCredentialsServerWithListener). Only one session's
@@ -137,11 +153,10 @@ func claimPort(port int) (net.Listener, error) {
 	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"port %d not available (another session may own the credentials server): %w",
-			port,
-			err,
-		)
+		if errors.Is(err, syscall.EADDRINUSE) {
+			return nil, fmt.Errorf("%w: %w", errPortOwnedByAnotherSession, err)
+		}
+		return nil, fmt.Errorf("port %d not available: %w", port, err)
 	}
 	return ln, nil
 }

@@ -1,6 +1,8 @@
 package agentcontainer
 
 import (
+	"context"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -23,7 +25,7 @@ func TestClaimPort_ErrorsWhenPortHeld(t *testing.T) {
 
 	_, err = claimPort(port)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not available")
+	assert.ErrorIs(t, err, errPortOwnedByAnotherSession)
 }
 
 func TestClaimPort_BecomesClaimableAfterHolderReleases(t *testing.T) {
@@ -78,4 +80,21 @@ func TestClaimPort_OnlyOneConcurrentCallerWins(t *testing.T) {
 	if winner != nil {
 		_ = winner.Close()
 	}
+}
+
+func TestCredentialsServerCmd_Run_TreatsPortOwnedByAnotherSessionAsNoOp(t *testing.T) {
+	ln, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	cmd := &CredentialsServerCmd{}
+	err = cmd.Run(context.Background(), port)
+	require.NoError(t, err, "losing the port claim to another session must not be an error")
+}
+
+func TestClaimPort_WrapsNonAddrInUseErrorsWithoutSentinel(t *testing.T) {
+	_, err := claimPort(-1)
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, errPortOwnedByAnotherSession))
 }
