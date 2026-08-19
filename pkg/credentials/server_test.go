@@ -148,3 +148,39 @@ func TestFetchOwner_EmptyWhenEndpointMissing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, owner)
 }
+
+func TestFetchOwner_DoesNotFollowRedirects(t *testing.T) {
+	evil := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("evil-owner"))
+	}))
+	defer evil.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, evil.URL, http.StatusFound)
+	}))
+	defer server.Close()
+
+	var port int
+	_, err := fmt.Sscanf(server.URL, "http://127.0.0.1:%d", &port)
+	require.NoError(t, err)
+
+	owner, err := FetchOwner(context.Background(), port)
+	require.NoError(t, err)
+	assert.Empty(t, owner, "a redirect must not be followed to another owner value")
+}
+
+func TestFetchOwner_CapsResponseSize(t *testing.T) {
+	oversized := strings.Repeat("a", maxOwnerResponseSize*2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(oversized))
+	}))
+	defer server.Close()
+
+	var port int
+	_, err := fmt.Sscanf(server.URL, "http://127.0.0.1:%d", &port)
+	require.NoError(t, err)
+
+	owner, err := FetchOwner(context.Background(), port)
+	require.NoError(t, err)
+	assert.LessOrEqual(t, len(owner), maxOwnerResponseSize)
+}

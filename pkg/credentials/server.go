@@ -145,6 +145,20 @@ func newCredentialsHandler(
 
 const fetchOwnerTimeout = 2 * time.Second
 
+// maxOwnerResponseSize bounds how much of the /owner response FetchOwner
+// reads. Port claimPort failed to bind, so whatever is listening there
+// isn't necessarily our own credentials server; cap the read instead of
+// trusting it to behave.
+const maxOwnerResponseSize = 4096
+
+// fetchOwnerClient never follows redirects: /owner always answers 200 with
+// a plain-text body, so a redirect means the port isn't ours to trust.
+var fetchOwnerClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
 // FetchOwner returns "" without error if owner is unset or ownerPath is missing.
 func FetchOwner(ctx context.Context, port int) (string, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, fetchOwnerTimeout)
@@ -156,17 +170,17 @@ func FetchOwner(ctx context.Context, port int) (string, error) {
 		return "", err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fetchOwnerClient.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode != http.StatusOK {
 		return "", nil
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxOwnerResponseSize))
 	if err != nil {
 		return "", err
 	}
