@@ -59,11 +59,8 @@ func RunCredentialsServer(
 // exclusively (via net.Listen) from before startup through to serving, so no
 // other process can bind the same port in between.
 //
-// owner identifies who this server is serving (e.g. the container user that
-// configured it), exposed on ownerPath so a session that loses the port
-// claim can tell whether skipping is safe (same owner: redundant, safe to
-// skip) or not (different owner: that owner's credential helpers were never
-// configured).
+// owner is exposed on ownerPath so a losing session can tell a redundant
+// same-owner collision from a different-owner one.
 func RunCredentialsServerWithListener(
 	ctx context.Context,
 	ln net.Listener,
@@ -100,9 +97,7 @@ type credentialsHandlerFunc func(
 	context.Context, http.ResponseWriter, *http.Request, CredentialsClient,
 ) error
 
-// ownerPath serves the owner string RunCredentialsServerWithListener was
-// started with, so a session that loses the port claim can distinguish a
-// redundant same-owner collision from a different-owner one.
+// ownerPath reports the owner a losing session's port claim collided with.
 const ownerPath = "/owner"
 
 // newCredentialsHandler returns an http.Handler that routes requests to the
@@ -151,14 +146,9 @@ func newCredentialsHandler(
 	})
 }
 
-// fetchOwnerTimeout bounds how long a session that lost the port claim
-// waits to learn who currently owns it before giving up and treating the
-// owner as unknown.
 const fetchOwnerTimeout = 2 * time.Second
 
-// FetchOwner asks the credentials server already listening on port who it
-// is serving. Returns an empty owner (with no error) if the server predates
-// ownerPath or doesn't report one.
+// FetchOwner returns "" without error if owner is unset or ownerPath is missing.
 func FetchOwner(ctx context.Context, port int) (string, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, fetchOwnerTimeout)
 	defer cancel()

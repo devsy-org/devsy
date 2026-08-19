@@ -89,9 +89,6 @@ func TestClaimPort_OnlyOneConcurrentCallerWins(t *testing.T) {
 	}
 }
 
-// startFakeCredentialsServer binds an ephemeral port and serves it as the
-// given owner, simulating the session that wins the credentials-server port
-// claim race. It returns the port once the server is dialable.
 func startFakeCredentialsServer(t *testing.T, owner string) int {
 	t.Helper()
 
@@ -151,8 +148,6 @@ func TestCredentialsServerCmd_Run_DifferentOwnerCollisionWarnsButDoesNotError(t 
 	assert.Contains(t, logged, "alice", "warning must name the owning session")
 }
 
-// fakeCredentialsClient satisfies credentials.CredentialsClient for tests
-// that only need a listening server, not real request handling.
 type fakeCredentialsClient struct{}
 
 func (fakeCredentialsClient) GitCredentials(

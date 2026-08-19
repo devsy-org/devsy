@@ -135,11 +135,8 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	return credentials.RunCredentialsServerWithListener(runCtx, ln, tunnelClient, cmd.User)
 }
 
-// errPortOwnedByAnotherSession indicates the credentials-server port is
-// already bound, almost certainly by another session's credentials-server
-// for this same container. Only one session's credentials-server can hold
-// this port at a time; losing the race is expected, not a failure, so
-// callers should treat it as a no-op rather than an error.
+// errPortOwnedByAnotherSession marks a bind failure as another session
+// already owning the port, not a real error.
 var errPortOwnedByAnotherSession = errors.New("credentials server port owned by another session")
 
 // claimPort binds port and returns the listener, holding it exclusively so
@@ -158,13 +155,8 @@ func claimPort(port int) (net.Listener, error) {
 	return ln, nil
 }
 
-// logPortOwnedByAnotherSession reports why this session is skipping
-// credentials-server setup after losing the port claim. It fetches the
-// owner of the server that won the race to tell apart the two outcomes:
-// the same container user already has a working credentials server
-// (redundant and harmless), versus a different user's session owns it, in
-// which case cmd.User's own git/docker/signing helpers were never
-// configured and won't work until that other session ends.
+// logPortOwnedByAnotherSession warns only when the owning session is a
+// different user, whose credential helpers were never configured.
 func (cmd *CredentialsServerCmd) logPortOwnedByAnotherSession(ctx context.Context, port int) {
 	owner, err := credentials.FetchOwner(ctx, port)
 	switch {
