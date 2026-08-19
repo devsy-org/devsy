@@ -58,9 +58,6 @@ func RunCredentialsServer(
 // already-bound listener. Use this when the caller must hold the port
 // exclusively (via net.Listen) from before startup through to serving, so no
 // other process can bind the same port in between.
-//
-// owner is exposed on ownerPath so a losing session can tell a redundant
-// same-owner collision from a different-owner one.
 func RunCredentialsServerWithListener(
 	ctx context.Context,
 	ln net.Listener,

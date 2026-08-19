@@ -155,8 +155,6 @@ func claimPort(port int) (net.Listener, error) {
 	return ln, nil
 }
 
-// logPortOwnedByAnotherSession warns only when the owning session is a
-// different user, whose credential helpers were never configured.
 func (cmd *CredentialsServerCmd) logPortOwnedByAnotherSession(ctx context.Context, port int) {
 	owner, err := credentials.FetchOwner(ctx, port)
 	switch {
