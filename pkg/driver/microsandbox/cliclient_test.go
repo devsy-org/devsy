@@ -1,6 +1,7 @@
 package microsandbox
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -125,6 +126,36 @@ func TestResourceArgsOmitsZero(t *testing.T) {
 	); !slices.Equal(
 		got,
 		[]string{"--memory", "512M"},
+	) {
+		t.Errorf("resourceArgs = %v", got)
+	}
+}
+
+func TestResourceArgsRootDisk(t *testing.T) {
+	if got := resourceArgs(sandboxSpec{RootDiskGB: 32}); !slices.Equal(
+		got,
+		[]string{flagRootDisk, "32G"},
+	) {
+		t.Errorf("resourceArgs = %v", got)
+	}
+	if got := resourceArgs(sandboxSpec{}); slices.Contains(got, flagRootDisk) {
+		t.Errorf("zero RootDiskGB should omit --root-disk, got %v", got)
+	}
+}
+
+func TestResourceArgsEphemeralUsesTmpfsRootDisk(t *testing.T) {
+	if got := resourceArgs(sandboxSpec{Ephemeral: true, RootDiskGB: 32}); !slices.Equal(
+		got,
+		[]string{flagRootDisk, "tmpfs:32G"},
+	) {
+		t.Errorf("resourceArgs = %v", got)
+	}
+}
+
+func TestResourceArgsEphemeralWithoutSizeUsesDefault(t *testing.T) {
+	if got := resourceArgs(sandboxSpec{Ephemeral: true}); !slices.Equal(
+		got,
+		[]string{flagRootDisk, fmt.Sprintf("tmpfs:%dG", defaultEphemeralRootDiskGB)},
 	) {
 		t.Errorf("resourceArgs = %v", got)
 	}

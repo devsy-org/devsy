@@ -140,8 +140,12 @@ Available options:
 - **cpus**: number of virtual CPUs. Empty uses the runtime default.
 - **maxMemory**: hotplug memory ceiling in MiB. Empty uses the runtime default.
 - **maxCpus**: hotplug CPU ceiling. Empty uses the runtime default.
+- **storage**: OCI root disk size in GiB. Empty uses the runtime default, falling
+  back to the devcontainer's `hostRequirements.storage` when set.
 - **blockEgress**: if true, deny the microVM outbound public network access (sandbox hardening).
-- **ephemeral**: if true, the microVM's disk state is discarded when it stops.
+- **ephemeral**: if true, boot from a tmpfs root disk so the microVM's disk
+  state is discarded when it stops. Sized by `storage`/`hostRequirements.storage`,
+  or 8GiB if neither is set.
 
 ```yaml
 agent:

@@ -806,6 +806,7 @@ func TestResolveAgentMicrosandboxConfig(t *testing.T) {
 
 	agentConfig.Microsandbox.MaxMemory = "${MICROSANDBOX_MAX_MEMORY}"
 	agentConfig.Microsandbox.BlockEgress = types.StrBool("${MICROSANDBOX_BLOCK_EGRESS}")
+	agentConfig.Microsandbox.Storage = "${MICROSANDBOX_STORAGE}"
 
 	options := map[string]string{
 		"MICROSANDBOX_MEMORY":       "2048",
@@ -813,6 +814,7 @@ func TestResolveAgentMicrosandboxConfig(t *testing.T) {
 		"MICROSANDBOX_EPHEMERAL":    "true",
 		"MICROSANDBOX_MAX_MEMORY":   "8192",
 		"MICROSANDBOX_BLOCK_EGRESS": "true",
+		"MICROSANDBOX_STORAGE":      "32",
 	}
 
 	resolveAgentMicrosandboxConfig(agentConfig, options)
@@ -822,6 +824,7 @@ func TestResolveAgentMicrosandboxConfig(t *testing.T) {
 	assert.Equal(t, types.StrBool("true"), agentConfig.Microsandbox.Ephemeral)
 	assert.Equal(t, "8192", agentConfig.Microsandbox.MaxMemory)
 	assert.Equal(t, types.StrBool("true"), agentConfig.Microsandbox.BlockEgress)
+	assert.Equal(t, "32", agentConfig.Microsandbox.Storage)
 }
 
 func TestResolveAgentDownloadURL(t *testing.T) {

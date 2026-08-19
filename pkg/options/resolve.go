@@ -392,6 +392,10 @@ func resolveAgentMicrosandboxConfig(
 	agentConfig.Microsandbox.BlockEgress = types.StrBool(
 		resolver.ResolveDefaultValue(string(agentConfig.Microsandbox.BlockEgress), options),
 	)
+	agentConfig.Microsandbox.Storage = resolver.ResolveDefaultValue(
+		agentConfig.Microsandbox.Storage,
+		options,
+	)
 }
 
 func resolveAgentPathAndURL(

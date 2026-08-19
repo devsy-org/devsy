@@ -20,6 +20,7 @@ type sandboxSpec struct {
 	MaxMemory   uint32
 	MaxCPUs     uint8
 	BlockEgress bool
+	RootDiskGB  uint32
 }
 
 type volumeMount struct {
