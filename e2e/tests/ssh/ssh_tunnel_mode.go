@@ -1,12 +1,17 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
@@ -14,6 +19,101 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
+
+const tunnelActiveMarker = "waiting for shutdown signal"
+
+const tunnelActiveTimeout = 4 * time.Minute
+
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+type tunnelUpProcess struct {
+	cmd     *exec.Cmd
+	output  *safeBuffer
+	exited  chan struct{}
+	exitErr error
+}
+
+func startTunnelUp(
+	f *framework.Framework, workspace string, extraArgs ...string,
+) (*tunnelUpProcess, error) {
+	args := []string{
+		cmdWorkspace, "up",
+		names.Flag(names.Debug),
+		names.Flag(names.IDE), "none",
+		names.Flag(names.SSHTunnel),
+	}
+	args = append(args, extraArgs...)
+	args = append(args, workspace)
+
+	// #nosec G204 -- test binary with controlled arguments
+	cmd := exec.Command(filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
+	out := &safeBuffer{}
+	cmd.Stdout = out
+	cmd.Stderr = out
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start devsy up --ssh-tunnel: %w", err)
+	}
+
+	p := &tunnelUpProcess{cmd: cmd, output: out, exited: make(chan struct{})}
+	go func() {
+		p.exitErr = cmd.Wait()
+		close(p.exited)
+	}()
+	return p, nil
+}
+
+func (p *tunnelUpProcess) waitUntilActive() error {
+	deadline := time.Now().Add(tunnelActiveTimeout)
+	for {
+		if strings.Contains(p.output.String(), tunnelActiveMarker) {
+			return nil
+		}
+		select {
+		case <-p.exited:
+			return fmt.Errorf(
+				"devsy up exited before the tunnel became active: %v\noutput:\n%s",
+				p.exitErr, p.output.String(),
+			)
+		case <-time.After(50 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf(
+				"devsy up did not report an active tunnel within %s\noutput:\n%s",
+				tunnelActiveTimeout, p.output.String(),
+			)
+		}
+	}
+}
+
+func (p *tunnelUpProcess) stop() {
+	select {
+	case <-p.exited:
+		return
+	default:
+	}
+	_ = p.cmd.Process.Signal(syscall.SIGINT)
+	select {
+	case <-p.exited:
+	case <-time.After(15 * time.Second):
+		_ = p.cmd.Process.Kill()
+		<-p.exited
+	}
+}
 
 var _ = ginkgo.Describe(
 	"devsy ssh tunnel mode",
@@ -48,9 +148,11 @@ var _ = ginkgo.Describe(
 					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
-				devsyUpCtx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
-				defer cancel()
-				err = f.DevsyUp(devsyUpCtx, tempDir, names.Flag(names.SSHTunnel))
+				proc, err := startTunnelUp(f, tempDir)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(proc.stop)
+
+				err = proc.waitUntilActive()
 				framework.ExpectNoError(err)
 
 				devsySSHCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(20*time.Second))
@@ -83,15 +185,11 @@ var _ = ginkgo.Describe(
 					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
-				devsyUpCtx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
-				defer cancel()
-				err = f.DevsyUp(
-					devsyUpCtx,
-					tempDir,
-					names.Flag(names.SSHTunnel),
-					"--ssh-config",
-					sshConfigPath,
-				)
+				proc, err := startTunnelUp(f, tempDir, "--ssh-config", sshConfigPath)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(proc.stop)
+
+				err = proc.waitUntilActive()
 				framework.ExpectNoError(err)
 
 				configBytes, err := os.ReadFile(filepath.Clean(sshConfigPath))
@@ -136,15 +234,11 @@ var _ = ginkgo.Describe(
 					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
-				devsyUpCtx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
-				defer cancel()
-				err = f.DevsyUp(
-					devsyUpCtx,
-					tempDir,
-					names.Flag(names.SSHTunnel),
-					"--ssh-config",
-					sshConfigPath,
-				)
+				proc, err := startTunnelUp(f, tempDir, "--ssh-config", sshConfigPath)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(proc.stop)
+
+				err = proc.waitUntilActive()
 				framework.ExpectNoError(err)
 
 				configBytes, err := os.ReadFile(filepath.Clean(sshConfigPath))
@@ -190,9 +284,11 @@ var _ = ginkgo.Describe(
 					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
-				devsyUpCtx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
-				defer cancel()
-				err = f.DevsyUp(devsyUpCtx, tempDir, names.Flag(names.SSHTunnel))
+				proc, err := startTunnelUp(f, tempDir)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(proc.stop)
+
+				err = proc.waitUntilActive()
 				framework.ExpectNoError(err)
 
 				for i := range 3 {
