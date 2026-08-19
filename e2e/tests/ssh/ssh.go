@@ -74,7 +74,6 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 
 	ginkgo.It(
 		"should start workspace with GPG forwarding when host uses SSH signing format",
-		ginkgo.Label("gpg"),
 		ginkgo.SpecTimeout(framework.TimeoutModerate()),
 		func(ctx ginkgo.SpecContext) {
 			if runtime.GOOS == osWindows {
@@ -124,7 +123,6 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 
 	ginkgo.It(
 		"should expose the host GPG secret key in the container via agent forwarding",
-		ginkgo.Label("gpg"),
 		ginkgo.SpecTimeout(framework.TimeoutModerate()),
 		func(ctx ginkgo.SpecContext) {
 			if runtime.GOOS == osWindows {

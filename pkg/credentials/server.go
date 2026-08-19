@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -44,12 +45,13 @@ func RunCredentialsServer(
 	ctx context.Context,
 	port int,
 	client CredentialsClient,
+	owner string,
 ) error {
 	ln, err := net.Listen("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
 	if err != nil {
 		return fmt.Errorf("listen on port %d: %w", port, err)
 	}
-	return RunCredentialsServerWithListener(ctx, ln, client)
+	return RunCredentialsServerWithListener(ctx, ln, client, owner)
 }
 
 // RunCredentialsServerWithListener is like RunCredentialsServer, but takes an
@@ -60,9 +62,10 @@ func RunCredentialsServerWithListener(
 	ctx context.Context,
 	ln net.Listener,
 	client CredentialsClient,
+	owner string,
 ) error {
 	srv := &http.Server{
-		Handler:           newCredentialsHandler(ctx, client),
+		Handler:           newCredentialsHandler(ctx, client, owner),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -91,17 +94,30 @@ type credentialsHandlerFunc func(
 	context.Context, http.ResponseWriter, *http.Request, CredentialsClient,
 ) error
 
+// ownerPath reports the owner a losing session's port claim collided with.
+const ownerPath = "/owner"
+
 // newCredentialsHandler returns an http.Handler that routes requests to the
 // appropriate handler function, which calls the CredentialsClient to get the
 // credentials and writes them to the response.
 //
 // Root is a readiness probe (see waitForServer); it must return 200 so the
 // server is detected as up. Unknown paths still 404 below.
-func newCredentialsHandler(ctx context.Context, client CredentialsClient) http.Handler {
+func newCredentialsHandler(
+	ctx context.Context,
+	client CredentialsClient,
+	owner string,
+) http.Handler {
 	routes := map[string]credentialsHandlerFunc{
 		"/": func(_ context.Context, writer http.ResponseWriter, _ *http.Request, _ CredentialsClient) error {
 			writer.WriteHeader(http.StatusOK)
 			return nil
+		},
+		ownerPath: func(_ context.Context, writer http.ResponseWriter, _ *http.Request, _ CredentialsClient) error {
+			writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			writer.WriteHeader(http.StatusOK)
+			_, err := writer.Write([]byte(owner))
+			return err
 		},
 		"/git-credentials":            handleGitCredentialsRequest,
 		"/docker-credentials":         handleDockerCredentialsRequest,
@@ -125,6 +141,50 @@ func newCredentialsHandler(ctx context.Context, client CredentialsClient) http.H
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
 		}
 	})
+}
+
+const fetchOwnerTimeout = 2 * time.Second
+
+// maxOwnerResponseSize bounds how much of the /owner response FetchOwner
+// reads. Port claimPort failed to bind, so whatever is listening there
+// isn't necessarily our own credentials server; cap the read instead of
+// trusting it to behave.
+const maxOwnerResponseSize = 4096
+
+// fetchOwnerClient never follows redirects: /owner always answers 200 with
+// a plain-text body, so a redirect means the port isn't ours to trust.
+var fetchOwnerClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
+// FetchOwner returns "" without error if owner is unset or ownerPath is missing.
+func FetchOwner(ctx context.Context, port int) (string, error) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, fetchOwnerTimeout)
+	defer cancel()
+
+	url := fmt.Sprintf("http://localhost:%d%s", port, ownerPath)
+	req, err := http.NewRequestWithContext(timeoutCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := fetchOwnerClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", nil
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxOwnerResponseSize))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(body)), nil
 }
 
 func GetPort() (int, error) {

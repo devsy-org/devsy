@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"strconv"
+	"syscall"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -91,6 +93,16 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	ln, err := claimPort(port)
+	if err != nil {
+		if errors.Is(err, errPortOwnedByAnotherSession) {
+			cmd.logPortOwnedByAnotherSession(ctx, port)
+			return nil
+		}
+		return err
+	}
+	defer func() { _ = ln.Close() }()
+
 	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, ExitCodeIO)
 	if err != nil {
 		return fmt.Errorf("error creating tunnel client: %w", err)
@@ -99,12 +111,6 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	if _, err := tunnelClient.Ping(runCtx, &tunnel.Empty{}); err != nil {
 		return fmt.Errorf("ping client: %w", err)
 	}
-
-	ln, err := claimPort(port)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = ln.Close() }()
 
 	cmd.maybeForwardPorts(runCtx, tunnelClient)
 
@@ -126,8 +132,12 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	cleanupGitSigning := cmd.configureGitSigningKey()
 	defer cleanupGitSigning()
 
-	return credentials.RunCredentialsServerWithListener(runCtx, ln, tunnelClient)
+	return credentials.RunCredentialsServerWithListener(runCtx, ln, tunnelClient, cmd.User)
 }
+
+// errPortOwnedByAnotherSession marks a bind failure as another session
+// already owning the port, not a real error.
+var errPortOwnedByAnotherSession = errors.New("credentials server port owned by another session")
 
 // claimPort binds port and returns the listener, holding it exclusively so
 // no other session can bind the same port until the caller closes it (or
@@ -137,13 +147,40 @@ func claimPort(port int) (net.Listener, error) {
 	addr := net.JoinHostPort("localhost", strconv.Itoa(port))
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"port %d not available (another session may own the credentials server): %w",
+		if errors.Is(err, syscall.EADDRINUSE) {
+			return nil, fmt.Errorf("%w: %w", errPortOwnedByAnotherSession, err)
+		}
+		return nil, fmt.Errorf("port %d not available: %w", port, err)
+	}
+	return ln, nil
+}
+
+func (cmd *CredentialsServerCmd) logPortOwnedByAnotherSession(ctx context.Context, port int) {
+	owner, err := credentials.FetchOwner(ctx, port)
+	switch {
+	case err != nil:
+		log.Debugf(
+			"skipping credentials server for user %s: port %d is taken and its owner could not be determined: %v",
+			cmd.User,
 			port,
 			err,
 		)
+	case owner == "" || owner == cmd.User:
+		log.Debugf(
+			"skipping credentials server for user %s: another session already provides it on port %d",
+			cmd.User,
+			port,
+		)
+	default:
+		log.Warnf(
+			"credentials server for user %s was not started: port %d is already owned by user %s's session; "+
+				"git/docker/signing credential helpers for %s will not work until that session ends",
+			cmd.User,
+			port,
+			owner,
+			cmd.User,
+		)
 	}
-	return ln, nil
 }
 
 func (cmd *CredentialsServerCmd) maybeForwardPorts(
