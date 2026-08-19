@@ -17,7 +17,7 @@ import (
 
 var _ = ginkgo.Describe(
 	"devsy ssh tunnel mode",
-	ginkgo.Label("ssh"),
+	ginkgo.Label("ssh-tunnel-mode"),
 	ginkgo.Ordered,
 	func() {
 		var initialDir string

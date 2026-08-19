@@ -275,6 +275,30 @@ jobs:
             install-kind: false
             requires-secret: false
 
+          - label: agent-forward
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
+          - label: ports-attributes
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
+          - label: ssh-tunnel-mode
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
+          - label: credentials-server-race
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
           - label: build
             runner: ubuntu-latest
             free-disk-space: false

@@ -21,7 +21,6 @@ import (
 // per-connection socket directory must be cleaned up on disconnect.
 var _ = ginkgo.Describe(
 	"devsy ssh agent forwarding",
-	ginkgo.Label("ssh"),
 	ginkgo.Label("agent-forward"),
 	ginkgo.Ordered,
 	func() {
@@ -253,8 +252,6 @@ var _ = ginkgo.Describe(
 
 		ginkgo.It(
 			"connection without any agent request still cleans up",
-			ginkgo.Label("ssh"),
-			ginkgo.Label("agent-forward"),
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx ginkgo.SpecContext) {
 				tmpDir, err := os.MkdirTemp("", "devsy-ssh-cm-clean-")
@@ -325,7 +322,6 @@ var _ = ginkgo.Describe(
 
 		ginkgo.It(
 			"parallel sessions on one connection observe the same socket concurrently",
-			ginkgo.Label("agent-forward"),
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(_ ginkgo.SpecContext) {
 				controlPath, closeCM, err := framework.OpenSSHControlMaster(
