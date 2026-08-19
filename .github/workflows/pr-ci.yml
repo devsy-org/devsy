@@ -275,13 +275,13 @@ jobs:
             install-kind: false
             requires-secret: false
 
-          - label: agent-forward
+          - label: ssh-agent-forward
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
             requires-secret: false
 
-          - label: ports-attributes
+          - label: ssh-ports-attributes
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false
@@ -293,7 +293,7 @@ jobs:
             install-kind: false
             requires-secret: false
 
-          - label: credentials-server-race
+          - label: ssh-credentials-server-race
             runner: ubuntu-latest
             free-disk-space: false
             install-kind: false

@@ -21,7 +21,7 @@ import (
 // per-connection socket directory must be cleaned up on disconnect.
 var _ = ginkgo.Describe(
 	"devsy ssh agent forwarding",
-	ginkgo.Label("agent-forward"),
+	ginkgo.Label("ssh-agent-forward"),
 	ginkgo.Ordered,
 	func() {
 		var (

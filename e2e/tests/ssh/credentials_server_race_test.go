@@ -18,7 +18,7 @@ const (
 
 var _ = ginkgo.Describe(
 	"devsy ssh credentials server race",
-	ginkgo.Label("credentials-server-race"),
+	ginkgo.Label("ssh-credentials-server-race"),
 	ginkgo.Ordered,
 	func() {
 		var initialDir string
