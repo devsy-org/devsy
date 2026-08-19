@@ -77,27 +77,19 @@ func startTunnelUp(
 	return p, nil
 }
 
-func (p *tunnelUpProcess) waitUntilActive() error {
-	deadline := time.Now().Add(tunnelActiveTimeout)
-	for {
-		if strings.Contains(p.output.String(), tunnelActiveMarker) {
-			return nil
-		}
+func (p *tunnelUpProcess) waitUntilActive(ctx context.Context) {
+	gomega.Eventually(func() (string, error) {
+		out := p.output.String()
 		select {
 		case <-p.exited:
-			return fmt.Errorf(
-				"devsy up exited before the tunnel became active: %v\noutput:\n%s",
-				p.exitErr, p.output.String(),
-			)
-		case <-time.After(50 * time.Millisecond):
+			return out, gomega.StopTrying(
+				"devsy up exited before the tunnel became active",
+			).Wrap(p.exitErr)
+		default:
+			return out, nil
 		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf(
-				"devsy up did not report an active tunnel within %s\noutput:\n%s",
-				tunnelActiveTimeout, p.output.String(),
-			)
-		}
-	}
+	}).WithContext(ctx).WithTimeout(tunnelActiveTimeout).WithPolling(100 * time.Millisecond).
+		Should(gomega.ContainSubstring(tunnelActiveMarker))
 }
 
 func (p *tunnelUpProcess) stop() {
@@ -152,8 +144,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(proc.stop)
 
-				err = proc.waitUntilActive()
-				framework.ExpectNoError(err)
+				proc.waitUntilActive(ctx)
 
 				devsySSHCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(20*time.Second))
 				defer cancelSSH()
@@ -189,8 +180,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(proc.stop)
 
-				err = proc.waitUntilActive()
-				framework.ExpectNoError(err)
+				proc.waitUntilActive(ctx)
 
 				configBytes, err := os.ReadFile(filepath.Clean(sshConfigPath))
 				framework.ExpectNoError(err)
@@ -238,8 +228,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(proc.stop)
 
-				err = proc.waitUntilActive()
-				framework.ExpectNoError(err)
+				proc.waitUntilActive(ctx)
 
 				configBytes, err := os.ReadFile(filepath.Clean(sshConfigPath))
 				framework.ExpectNoError(err)
@@ -288,8 +277,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(proc.stop)
 
-				err = proc.waitUntilActive()
-				framework.ExpectNoError(err)
+				proc.waitUntilActive(ctx)
 
 				for i := range 3 {
 					sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(20*time.Second))
