@@ -482,8 +482,6 @@ func (t *tunnelServer) StreamWorkspace(
 		}
 	}
 
-	excludes = append(excludes, config.BuildArtifactExcludes()...)
-
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	err = extract.WriteTarExclude(buf, t.workspace.Source.LocalFolder, false, excludes)
 	if err != nil {
@@ -516,7 +514,7 @@ func (t *tunnelServer) StreamMount(
 		return fmt.Errorf("mount %s is not allowed to download", message.Mount)
 	}
 
-	excludes := append(t.workspaceIgnoreExcludes(), config.BuildArtifactExcludes()...)
+	excludes := t.workspaceIgnoreExcludes()
 
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	err := extract.WriteTarExclude(buf, mount.Source, false, excludes)

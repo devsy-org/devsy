@@ -74,6 +74,105 @@ func TestStreamSnapshotVolumes_TarsMountTargets(t *testing.T) {
 	require.True(t, found, "expected tar entry %q not found", wantName)
 }
 
+type fakeStreamServer struct {
+	tunnel.Tunnel_StreamWorkspaceServer
+	chunks [][]byte
+}
+
+func (f *fakeStreamServer) Send(c *tunnel.Chunk) error {
+	f.chunks = append(f.chunks, c.Content)
+	return nil
+}
+
+func (f *fakeStreamServer) Context() context.Context { return context.Background() }
+
+func tarEntryNames(t *testing.T, chunks [][]byte) []string {
+	t.Helper()
+	var buf bytes.Buffer
+	for _, c := range chunks {
+		buf.Write(c)
+	}
+	var names []string
+	tr := tar.NewReader(&buf)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		names = append(names, hdr.Name)
+	}
+	return names
+}
+
+func TestStreamWorkspace_IncludesDevsyInternalBuildArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	internalDir := filepath.Join(dir, config.DevsyContextFeatureFolder)
+	require.NoError(t, os.MkdirAll(internalDir, 0o750))
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(internalDir, "Dockerfile-without-features"),
+			[]byte("FROM scratch"),
+			0o600,
+		),
+	)
+
+	srv := &tunnelServer{
+		workspace: &provider2.Workspace{Source: provider2.WorkspaceSource{LocalFolder: dir}},
+	}
+
+	fake := &fakeStreamServer{}
+	require.NoError(t, srv.StreamWorkspace(&tunnel.Empty{}, fake))
+
+	names := tarEntryNames(t, fake.chunks)
+	require.Contains(
+		t,
+		names,
+		filepath.ToSlash(filepath.Join(
+			config.DevsyContextFeatureFolder,
+			"Dockerfile-without-features",
+		)),
+	)
+}
+
+func TestStreamMount_IncludesDevsyInternalBuildArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	mountSource := filepath.Join(dir, "mount")
+	internalDir := filepath.Join(mountSource, config.DevsyContextFeatureFolder)
+	require.NoError(t, os.MkdirAll(internalDir, 0o750))
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(internalDir, "Dockerfile-without-features"),
+			[]byte("FROM scratch"),
+			0o600,
+		),
+	)
+
+	srv := &tunnelServer{
+		mounts: []*config.Mount{
+			{Source: mountSource, Target: "/workspaces/e2e"},
+		},
+	}
+
+	fake := &fakeStreamServer{}
+	require.NoError(
+		t,
+		srv.StreamMount(&tunnel.StreamMountRequest{Mount: srv.mounts[0].String()}, fake),
+	)
+
+	names := tarEntryNames(t, fake.chunks)
+	require.Contains(
+		t,
+		names,
+		filepath.ToSlash(filepath.Join(
+			config.DevsyContextFeatureFolder,
+			"Dockerfile-without-features",
+		)),
+	)
+}
+
 func TestRunWithResult_CancelBeforeResult(t *testing.T) {
 	srv := New()
 

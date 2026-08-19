@@ -383,6 +383,49 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 				},
 			)
 		})
+
+	ginkgo.It(
+		"kubernetes dockerless build cleans up .devsy-internal after streaming",
+		ginkgo.SpecTimeout(framework.TimeoutShort()),
+		func(ctx context.Context) {
+			if runtime.GOOS == osWindows {
+				ginkgo.Skip("skipping on windows")
+			}
+
+			f := framework.NewDefaultFramework(initialDir + "/bin")
+			tempDir, err := framework.CopyToTempDir("tests/build/testdata/kubernetes")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+			_ = f.DevsyProviderDelete(ctx, "kubernetes")
+			err = f.DevsyProviderAdd(ctx, "kubernetes")
+			framework.ExpectNoError(err)
+			err = f.DevsyProviderUse(ctx, "kubernetes", "-o", "KUBERNETES_NAMESPACE=devsy")
+			framework.ExpectNoError(err)
+
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+
+			err = f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			out, err := f.DevsySSH(ctx, tempDir, "echo -n $MY_TEST")
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(out, "test456")
+
+			workspaceArtifact := "/workspaces/" + filepath.Base(tempDir) +
+				"/.devcontainer/" + config.DevsyContextFeatureFolder
+			_, err = f.DevsySSH(ctx, tempDir, "test -e "+workspaceArtifact)
+			framework.ExpectError(err)
+
+			hostArtifact := filepath.Join(
+				tempDir,
+				".devcontainer",
+				config.DevsyContextFeatureFolder,
+			)
+			_, statErr := os.Stat(hostArtifact)
+			framework.ExpectEqual(os.IsNotExist(statErr), true)
+		},
+	)
 })
 
 func validateKubernetesDeploymentWithoutDocker(
