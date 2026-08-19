@@ -96,10 +96,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	ln, err := claimPort(port)
 	if err != nil {
 		if errors.Is(err, errPortOwnedByAnotherSession) {
-			log.Debugf(
-				"skipping credentials server: %v (another session already provides it for this container)",
-				err,
-			)
+			cmd.logPortOwnedByAnotherSession(ctx, port)
 			return nil
 		}
 		return err
@@ -135,7 +132,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	cleanupGitSigning := cmd.configureGitSigningKey()
 	defer cleanupGitSigning()
 
-	return credentials.RunCredentialsServerWithListener(runCtx, ln, tunnelClient)
+	return credentials.RunCredentialsServerWithListener(runCtx, ln, tunnelClient, cmd.User)
 }
 
 // errPortOwnedByAnotherSession indicates the credentials-server port is
@@ -159,6 +156,41 @@ func claimPort(port int) (net.Listener, error) {
 		return nil, fmt.Errorf("port %d not available: %w", port, err)
 	}
 	return ln, nil
+}
+
+// logPortOwnedByAnotherSession reports why this session is skipping
+// credentials-server setup after losing the port claim. It fetches the
+// owner of the server that won the race to tell apart the two outcomes:
+// the same container user already has a working credentials server
+// (redundant and harmless), versus a different user's session owns it, in
+// which case cmd.User's own git/docker/signing helpers were never
+// configured and won't work until that other session ends.
+func (cmd *CredentialsServerCmd) logPortOwnedByAnotherSession(ctx context.Context, port int) {
+	owner, err := credentials.FetchOwner(ctx, port)
+	switch {
+	case err != nil:
+		log.Debugf(
+			"skipping credentials server for user %s: port %d is taken and its owner could not be determined: %v",
+			cmd.User,
+			port,
+			err,
+		)
+	case owner == "" || owner == cmd.User:
+		log.Debugf(
+			"skipping credentials server for user %s: another session already provides it on port %d",
+			cmd.User,
+			port,
+		)
+	default:
+		log.Warnf(
+			"credentials server for user %s was not started: port %d is already owned by user %s's session; "+
+				"git/docker/signing credential helpers for %s will not work until that session ends",
+			cmd.User,
+			port,
+			owner,
+			cmd.User,
+		)
+	}
 }
 
 func (cmd *CredentialsServerCmd) maybeForwardPorts(

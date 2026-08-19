@@ -23,7 +23,7 @@ func StartCredentialsServer(
 	}
 
 	go func() {
-		err := RunCredentialsServer(ctx, port, client)
+		err := RunCredentialsServer(ctx, port, client, "")
 		if err != nil {
 			log.Errorf("error running git credentials server: error=%v", err)
 		}

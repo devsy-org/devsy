@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -44,25 +45,33 @@ func RunCredentialsServer(
 	ctx context.Context,
 	port int,
 	client CredentialsClient,
+	owner string,
 ) error {
 	ln, err := net.Listen("tcp", net.JoinHostPort("localhost", strconv.Itoa(port)))
 	if err != nil {
 		return fmt.Errorf("listen on port %d: %w", port, err)
 	}
-	return RunCredentialsServerWithListener(ctx, ln, client)
+	return RunCredentialsServerWithListener(ctx, ln, client, owner)
 }
 
 // RunCredentialsServerWithListener is like RunCredentialsServer, but takes an
 // already-bound listener. Use this when the caller must hold the port
 // exclusively (via net.Listen) from before startup through to serving, so no
 // other process can bind the same port in between.
+//
+// owner identifies who this server is serving (e.g. the container user that
+// configured it), exposed on ownerPath so a session that loses the port
+// claim can tell whether skipping is safe (same owner: redundant, safe to
+// skip) or not (different owner: that owner's credential helpers were never
+// configured).
 func RunCredentialsServerWithListener(
 	ctx context.Context,
 	ln net.Listener,
 	client CredentialsClient,
+	owner string,
 ) error {
 	srv := &http.Server{
-		Handler:           newCredentialsHandler(ctx, client),
+		Handler:           newCredentialsHandler(ctx, client, owner),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -91,17 +100,32 @@ type credentialsHandlerFunc func(
 	context.Context, http.ResponseWriter, *http.Request, CredentialsClient,
 ) error
 
+// ownerPath serves the owner string RunCredentialsServerWithListener was
+// started with, so a session that loses the port claim can distinguish a
+// redundant same-owner collision from a different-owner one.
+const ownerPath = "/owner"
+
 // newCredentialsHandler returns an http.Handler that routes requests to the
 // appropriate handler function, which calls the CredentialsClient to get the
 // credentials and writes them to the response.
 //
 // Root is a readiness probe (see waitForServer); it must return 200 so the
 // server is detected as up. Unknown paths still 404 below.
-func newCredentialsHandler(ctx context.Context, client CredentialsClient) http.Handler {
+func newCredentialsHandler(
+	ctx context.Context,
+	client CredentialsClient,
+	owner string,
+) http.Handler {
 	routes := map[string]credentialsHandlerFunc{
 		"/": func(_ context.Context, writer http.ResponseWriter, _ *http.Request, _ CredentialsClient) error {
 			writer.WriteHeader(http.StatusOK)
 			return nil
+		},
+		ownerPath: func(_ context.Context, writer http.ResponseWriter, _ *http.Request, _ CredentialsClient) error {
+			writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			writer.WriteHeader(http.StatusOK)
+			_, err := writer.Write([]byte(owner))
+			return err
 		},
 		"/git-credentials":            handleGitCredentialsRequest,
 		"/docker-credentials":         handleDockerCredentialsRequest,
@@ -125,6 +149,41 @@ func newCredentialsHandler(ctx context.Context, client CredentialsClient) http.H
 			http.Error(writer, err.Error(), http.StatusInternalServerError)
 		}
 	})
+}
+
+// fetchOwnerTimeout bounds how long a session that lost the port claim
+// waits to learn who currently owns it before giving up and treating the
+// owner as unknown.
+const fetchOwnerTimeout = 2 * time.Second
+
+// FetchOwner asks the credentials server already listening on port who it
+// is serving. Returns an empty owner (with no error) if the server predates
+// ownerPath or doesn't report one.
+func FetchOwner(ctx context.Context, port int) (string, error) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, fetchOwnerTimeout)
+	defer cancel()
+
+	url := fmt.Sprintf("http://localhost:%d%s", port, ownerPath)
+	req, err := http.NewRequestWithContext(timeoutCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 400 {
+		return "", nil
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(body)), nil
 }
 
 func GetPort() (int, error) {
