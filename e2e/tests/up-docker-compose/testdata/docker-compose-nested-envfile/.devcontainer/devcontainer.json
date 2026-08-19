@@ -1,0 +1,6 @@
+{
+  "name": "Compose project name from subdirectory .env",
+  "dockerComposeFile": "../dockerfiles/docker-compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces"
+}
