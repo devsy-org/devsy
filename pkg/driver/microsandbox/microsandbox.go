@@ -588,11 +588,7 @@ func clampUint64ToUint32(v uint64) uint32 {
 }
 
 // ceilBytesToUint32 rounds a byte count up to the next whole unit before
-// clamping. hostRequirements express a minimum, so any fractional or
-// sub-unit remainder must round up rather than truncate away — otherwise a
-// requirement like "1536mb" (1.5GiB) would provision less than requested,
-// and a sub-unit requirement like "512mb" would truncate to zero and be
-// silently dropped.
+// clamping.
 func ceilBytesToUint32(bytes, unit uint64) uint32 {
 	value := bytes / unit
 	if bytes%unit != 0 {

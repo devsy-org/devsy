@@ -235,19 +235,16 @@ func TestRunImageDevContainerAppliesHostRequirementsSizing(t *testing.T) {
 }
 
 func TestCheckGPURequirement(t *testing.T) {
-	// required GPU -> error
 	req := &config.DevContainerConfig{}
 	req.HostRequirements = &config.HostRequirements{GPU: &config.GPURequirement{Value: "true"}}
 	if err := checkGPURequirement(req); err == nil {
 		t.Error("expected an error when a GPU is required")
 	}
-	// optional GPU -> no error
 	opt := &config.DevContainerConfig{}
 	opt.HostRequirements = &config.HostRequirements{GPU: &config.GPURequirement{Value: "optional"}}
 	if err := checkGPURequirement(opt); err != nil {
 		t.Errorf("optional GPU should not error, got %v", err)
 	}
-	// no GPU / nil config -> no error
 	if err := checkGPURequirement(nil); err != nil {
 		t.Errorf("nil config should not error, got %v", err)
 	}
@@ -569,8 +566,6 @@ func TestBuildSpecIgnoresNilHostRequirements(t *testing.T) {
 }
 
 func TestHostRequirementStorageGBRoundsUpFractionalGiB(t *testing.T) {
-	// 1536mb = 1.5GiB; a hostRequirements minimum must round up, not down,
-	// or the provisioned disk would be smaller than what was requested.
 	got := hostRequirementStorageGB(&config.HostRequirements{Storage: "1536mb"})
 	if got != 2 {
 		t.Errorf("hostRequirementStorageGB(1536mb) = %d, want 2", got)
@@ -578,9 +573,6 @@ func TestHostRequirementStorageGBRoundsUpFractionalGiB(t *testing.T) {
 }
 
 func TestHostRequirementStorageGBRoundsUpSubGiB(t *testing.T) {
-	// A sub-GiB requirement must not truncate to zero, which would silently
-	// drop the requirement (and, on the ephemeral path, fall through to an
-	// unrelated default size).
 	got := hostRequirementStorageGB(&config.HostRequirements{Storage: "512mb"})
 	if got != 1 {
 		t.Errorf("hostRequirementStorageGB(512mb) = %d, want 1", got)
@@ -588,8 +580,6 @@ func TestHostRequirementStorageGBRoundsUpSubGiB(t *testing.T) {
 }
 
 func TestHostRequirementMemoryMiBRoundsUpFractionalMiB(t *testing.T) {
-	// 1500kb = 1500*1024 bytes = 1.46484375MiB; must round up to 2, not
-	// truncate to 1.
 	got := hostRequirementMemoryMiB(&config.HostRequirements{Memory: "1500kb"})
 	if got != 2 {
 		t.Errorf("hostRequirementMemoryMiB(1500kb) = %d, want 2", got)

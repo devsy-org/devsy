@@ -151,14 +151,9 @@ func (cliClient) ensureVolumes(ctx context.Context, mounts []volumeMount) error 
 }
 
 const (
-	msbCmdRun     = "run"
-	msbFlagDetach = "--detach"
-	flagRootDisk  = "--root-disk"
-
-	// defaultEphemeralRootDiskGB sizes an ephemeral sandbox's tmpfs root disk
-	// when no explicit MICROSANDBOX_STORAGE/hostRequirements.storage size is
-	// configured. tmpfs requires an explicit size; this is devsy's own chosen
-	// default, not a microsandbox runtime default.
+	msbCmdRun                  = "run"
+	msbFlagDetach              = "--detach"
+	flagRootDisk               = "--root-disk"
 	defaultEphemeralRootDiskGB = 8
 )
 
