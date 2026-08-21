@@ -32,7 +32,7 @@ const (
 	DockerBuilderBuildKit
 )
 
-const (
+var (
 	containerRunningPollInterval = 500 * time.Millisecond
 	containerRunningTimeout      = 30 * time.Second
 	containerExitGrace           = 2 * time.Second
@@ -42,6 +42,12 @@ var (
 	ErrContainerTerminal = errors.New("container in terminal state")
 	ErrContainerExited   = errors.New("container exited after start")
 	ErrImageNotFound     = errors.New("image not found")
+
+	// podmanMachineStartTimeout is the maximum time to wait for a Podman machine to start.
+	podmanMachineStartTimeout = 90 * time.Second
+
+	// pingTimeout is the maximum time to wait for a ping to the runtime daemon.
+	pingTimeout = 30 * time.Second
 )
 
 var imageNotFoundMarkers = []string{
@@ -157,11 +163,6 @@ func (r *DockerHelper) ClientVersion(ctx context.Context) string {
 	}
 	return strings.TrimSpace(string(out))
 }
-
-// podmanMachineStartTimeout bounds a Podman machine boot, which spins up a VM.
-var podmanMachineStartTimeout = 90 * time.Second
-
-var pingTimeout = 30 * time.Second
 
 func runCmdCombined(ctx context.Context, cmd *exec.Cmd) error {
 	var out bytes.Buffer
@@ -439,6 +440,16 @@ func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) e
 	return nil
 }
 
+// UnpauseContainer unpauses a paused container.
+func (r *DockerHelper) UnpauseContainer(ctx context.Context, containerId string) error {
+	out, err := r.buildCmd(ctx, "unpause", containerId).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to unpause container: %s: %w", string(out), err)
+	}
+
+	return nil
+}
+
 // WaitContainerRunning waits for the given container to be running, returning an error if
 // it is in a terminal state or does not become running within a timeout.
 func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID string) error {
@@ -450,7 +461,7 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 			details, err := r.InspectContainers(ctx, []string{containerID})
 			if err != nil {
 				lastErr = err
-				log.Debugf("WaitContainerRunning: inspect error (will retry): %v", err)
+				log.Debugf("inspecting container %s: %v", containerID, err)
 				return false, nil
 			}
 			lastErr = nil
@@ -458,7 +469,12 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 		},
 	)
 	if pollErr != nil && lastErr != nil {
-		return fmt.Errorf("%w (last inspect error: %v)", pollErr, lastErr)
+		return fmt.Errorf(
+			"waiting for container %s to be running: %w (last inspect error: %v)",
+			containerID,
+			pollErr,
+			lastErr,
+		)
 	}
 	return pollErr
 }

@@ -203,7 +203,7 @@ func TestEnsureContainerRunning_AlreadyRunning(t *testing.T) {
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: testDockerCmd}}
 	container := &config.ContainerDetails{
 		ID:    "c1",
-		State: config.ContainerDetailsState{Status: containerStatusRunning},
+		State: config.ContainerDetailsState{Status: string(containerStatusRunning)},
 	}
 
 	require.NoError(t, d.ensureContainerRunning(context.Background(), container))
@@ -357,4 +357,55 @@ esac
 	require.NoError(t, readErr)
 	assert.Contains(t, string(logged), "stop\n")
 	assert.Contains(t, string(logged), "rm\n")
+}
+
+func TestEnsureContainerRunning_PausedUnpausesNotRestarts(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	script := `#!/bin/sh
+echo "$1" >> "` + calls + `"
+case "$1" in
+  inspect)
+    echo '[{"ID":"c1","State":{"Status":"running"}}]'
+    ;;
+  unpause)
+    ;;
+  start)
+    echo "start should not be called on paused container" >&2
+    exit 1
+    ;;
+esac
+`
+	bin := filepath.Join(dir, "docker-fake")
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755)) //nolint:gosec
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	container := &config.ContainerDetails{
+		ID:    "c1",
+		State: config.ContainerDetailsState{Status: "paused"},
+	}
+
+	require.NoError(t, d.ensureContainerRunning(context.Background(), container))
+
+	logged, readErr := os.ReadFile(calls) //nolint:gosec // test-controlled path
+	require.NoError(t, readErr)
+	assert.Contains(t, string(logged), "unpause\n")
+	assert.NotContains(
+		t,
+		string(logged),
+		"start\n",
+		"paused containers should be unpaused, not started",
+	)
+}
+
+func TestEnsureContainerRunning_UnknownStateIsTerminal(t *testing.T) {
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: testDockerCmd}}
+	container := &config.ContainerDetails{
+		ID:    "c1",
+		State: config.ContainerDetailsState{Status: "unknown"},
+	}
+
+	err := d.ensureContainerRunning(context.Background(), container)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, docker.ErrContainerTerminal)
 }

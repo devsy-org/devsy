@@ -44,10 +44,17 @@ func joinShellStatements(statements ...string) string {
 // DefaultEntrypoint waits for the devsy agent binary to become available
 // before handing off to the container daemon.
 var DefaultEntrypoint = joinShellStatements(
-	`while ! command -v /usr/local/bin/devsy >/dev/null 2>&1; do echo "waiting for devsy agent to be available"`,
+	fmt.Sprintf(
+		`while ! command -v "${%s:-/usr/local/bin/devsy}" >/dev/null 2>&1`,
+		pkgconfig.EnvAgentPath,
+	),
+	`do echo "waiting for devsy agent to be available"`,
 	"sleep 1",
 	"done",
-	"exec /usr/local/bin/devsy internal agent container daemon",
+	fmt.Sprintf(
+		`exec "${%s:-/usr/local/bin/devsy}" internal agent container daemon`,
+		pkgconfig.EnvAgentPath,
+	),
 )
 
 // resolvedContainer holds the outputs that every code path through

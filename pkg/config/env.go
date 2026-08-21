@@ -60,10 +60,15 @@ const (
 	// EnvAgentPreferDownload forces agent binary download even if a local copy exists.
 	EnvAgentPreferDownload = "DEVSY_AGENT_PREFER_DOWNLOAD"
 
-	// EnvOS is set to the host operating system (runtime.GOOS).
+	// EnvAgentPath is the path to the agent binary inside the workspace
+	// container, set by agent delivery so the container entrypoint can locate
+	// it (defaults to /usr/local/bin/devsy).
+	EnvAgentPath = "DEVSY_AGENT_PATH"
+
+	// EnvOS is set to the host operating system.
 	EnvOS = "DEVSY_OS"
 
-	// EnvArch is set to the host architecture (runtime.GOARCH).
+	// EnvArch is set to the host architecture.
 	EnvArch = "DEVSY_ARCH"
 
 	// EnvLogLevel is set to the current log level.
@@ -120,8 +125,6 @@ const (
 
 	// EnvProviderPrefix is the prefix for provider-specific option env vars (append provider name + "_").
 	EnvProviderPrefix = EnvPrefix + "PROVIDER_"
-
-	// --- Provider-scoped env vars (set when running provider commands) ---.
 
 	// EnvProviderWorkspaceID is the workspace identifier passed to providers.
 	EnvProviderWorkspaceID = "WORKSPACE_ID"

@@ -781,7 +781,7 @@ func TestBuildOverrideEntrypointAppendsUserEntrypoint(t *testing.T) {
 func TestBuildOverrideEntrypointKeepsDefaultEntrypointReachable(t *testing.T) {
 	script := buildOverrideEntrypoint(&config.MergedDevContainerConfig{}, nil)
 	body := script[2]
-	if !strings.Contains(body, "devsy internal agent container daemon") {
+	if !strings.Contains(body, "internal agent container daemon") {
 		t.Errorf("expected default entrypoint invocation in script, got %q", body)
 	}
 }
