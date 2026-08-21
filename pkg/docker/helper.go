@@ -40,8 +40,8 @@ const (
 
 var (
 	ErrContainerTerminal = errors.New("container in terminal state")
-	ErrContainerExited = errors.New("container exited after start")
-	ErrImageNotFound = errors.New("image not found")
+	ErrContainerExited   = errors.New("container exited after start")
+	ErrImageNotFound     = errors.New("image not found")
 
 	// podmanMachineStartTimeout is the maximum time to wait for a Podman machine to start.
 	podmanMachineStartTimeout = 90 * time.Second
