@@ -561,8 +561,11 @@ func (s *workspaceClient) deleteContainer(ctx context.Context, opt client.Delete
 		return nil
 	}
 
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
+	writer, done := log.PipeJSONStream()
+	defer func() {
+		_ = writer.Close()
+		<-done
+	}()
 
 	log.Info("deleting workspace container")
 	command, err := s.agentWorkspaceCommand("delete")
@@ -599,8 +602,11 @@ func (s *workspaceClient) deleteMachine(ctx context.Context, opt client.DeleteOp
 }
 
 func (s *workspaceClient) stopContainer(ctx context.Context) error {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
+	writer, done := log.PipeJSONStream()
+	defer func() {
+		_ = writer.Close()
+		<-done
+	}()
 
 	log.Info("stopping container")
 	command, err := s.agentWorkspaceCommand("stop")
