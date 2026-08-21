@@ -40,8 +40,14 @@ const (
 
 var (
 	ErrContainerTerminal = errors.New("container in terminal state")
-	ErrContainerExited   = errors.New("container exited after start")
-	ErrImageNotFound     = errors.New("image not found")
+	ErrContainerExited = errors.New("container exited after start")
+	ErrImageNotFound = errors.New("image not found")
+
+	// podmanMachineStartTimeout is the maximum time to wait for a Podman machine to start.
+	podmanMachineStartTimeout = 90 * time.Second
+
+	// pingTimeout is the maximum time to wait for a ping to the runtime daemon.
+	pingTimeout = 30 * time.Second
 )
 
 var imageNotFoundMarkers = []string{
@@ -157,11 +163,6 @@ func (r *DockerHelper) ClientVersion(ctx context.Context) string {
 	}
 	return strings.TrimSpace(string(out))
 }
-
-// podmanMachineStartTimeout bounds a Podman machine boot, which spins up a VM.
-var podmanMachineStartTimeout = 90 * time.Second
-
-var pingTimeout = 30 * time.Second
 
 func runCmdCombined(ctx context.Context, cmd *exec.Cmd) error {
 	var out bytes.Buffer
@@ -450,7 +451,7 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 			details, err := r.InspectContainers(ctx, []string{containerID})
 			if err != nil {
 				lastErr = err
-				log.Debugf("WaitContainerRunning: inspect error (will retry): %v", err)
+				log.Debugf("inspecting container %s: %v", containerID, err)
 				return false, nil
 			}
 			lastErr = nil
@@ -458,7 +459,7 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 		},
 	)
 	if pollErr != nil && lastErr != nil {
-		return fmt.Errorf("%w (last inspect error: %v)", pollErr, lastErr)
+		return fmt.Errorf("waiting for container %s to be running: %w", containerID, lastErr)
 	}
 	return pollErr
 }

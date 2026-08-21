@@ -415,13 +415,14 @@ func (d *dockerDriver) executeBuild(
 	return nil
 }
 
+// createBuildInfo constructs the BuildInfo after a successful build. When pushing,
+// the image may not be available locally, so ImageDetails may be nil.
 func (d *dockerDriver) createBuildInfo(
 	ctx context.Context,
 	imageName string,
 	req driver.BuildRequest,
 	buildOptions *build.BuildOptions,
 ) (*config.BuildInfo, error) {
-	// When pushing, image may not be available locally
 	var imageDetails *config.ImageDetails
 	if !buildOptions.Push {
 		var err error

@@ -209,8 +209,11 @@ func TestDefaultEntrypointSingleLine(t *testing.T) {
 	if strings.Contains(DefaultEntrypoint, "\n") {
 		t.Fatalf("DefaultEntrypoint must be single-line, got %q", DefaultEntrypoint)
 	}
-	if !strings.Contains(DefaultEntrypoint, "devsy internal agent container daemon") {
+	if !strings.Contains(DefaultEntrypoint, "internal agent container daemon") {
 		t.Errorf("DefaultEntrypoint must invoke the agent daemon, got %q", DefaultEntrypoint)
+	}
+	if !strings.Contains(DefaultEntrypoint, `"${DEVSY_AGENT_PATH:-/usr/local/bin/devsy}"`) {
+		t.Errorf("DefaultEntrypoint must honor DEVSY_AGENT_PATH, got %q", DefaultEntrypoint)
 	}
 }
 
@@ -227,7 +230,7 @@ func TestGetStartScriptSingleLine(t *testing.T) {
 	if !strings.Contains(got, `exec "$@"`) {
 		t.Fatalf("GetStartScript() must keep the shell exec passthrough, got %q", got)
 	}
-	if !strings.Contains(got, "devsy internal agent container daemon") {
+	if !strings.Contains(got, "internal agent container daemon") {
 		t.Fatalf("GetStartScript() must invoke the agent, got %q", got)
 	}
 }
@@ -245,7 +248,7 @@ func TestGetStartScriptPreservesStatementOrder(t *testing.T) {
 		`exec "$@"`,
 		"first-entrypoint",
 		"second-entrypoint",
-		"devsy internal agent container daemon",
+		"internal agent container daemon",
 	}
 	lastIdx := -1
 	for _, want := range wantOrder {

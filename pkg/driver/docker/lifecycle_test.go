@@ -203,7 +203,7 @@ func TestEnsureContainerRunning_AlreadyRunning(t *testing.T) {
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: testDockerCmd}}
 	container := &config.ContainerDetails{
 		ID:    "c1",
-		State: config.ContainerDetailsState{Status: containerStatusRunning},
+		State: config.ContainerDetailsState{Status: string(containerStatusRunning)},
 	}
 
 	require.NoError(t, d.ensureContainerRunning(context.Background(), container))
