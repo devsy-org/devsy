@@ -99,9 +99,11 @@ func (d *dockerDriver) ensureContainerRunning(
 			container.ID,
 			status,
 		)
+	case containerStatusPaused:
+		return d.unpauseAndWait(ctx, container)
 	case containerStatusExited, containerStatusCreated,
-		containerStatusPaused, containerStatusRestarting:
-		return d.restartAndWait(ctx, container)
+		containerStatusRestarting:
+		return d.restartAndWait(ctx, container, status)
 	default:
 		return fmt.Errorf(
 			"%w: container %s is in unknown state %q",
@@ -118,6 +120,7 @@ func (d *dockerDriver) ensureContainerRunning(
 func (d *dockerDriver) restartAndWait(
 	ctx context.Context,
 	container *config.ContainerDetails,
+	status containerState,
 ) error {
 	var lastErr error
 	for attempt := 1; attempt <= containerRestartAttempts; attempt++ {
@@ -126,7 +129,7 @@ func (d *dockerDriver) restartAndWait(
 		}
 		log.Infof(
 			"restarting container %s (status=%s, attempt=%d/%d)",
-			container.ID, container.State.Status, attempt, containerRestartAttempts,
+			container.ID, status, attempt, containerRestartAttempts,
 		)
 		if err := d.Docker.StartContainer(ctx, container.ID); err != nil {
 			lastErr = fmt.Errorf("start container: %w", err)
@@ -148,6 +151,22 @@ func (d *dockerDriver) restartAndWait(
 		"%w: container %s did not stay running after %d attempts: %w",
 		docker.ErrContainerTerminal, container.ID, containerRestartAttempts, lastErr,
 	)
+}
+
+// unpauseAndWait unpauses a paused container and waits for it to be running.
+func (d *dockerDriver) unpauseAndWait(
+	ctx context.Context,
+	container *config.ContainerDetails,
+) error {
+	log.Infof("unpausing container %s", container.ID)
+	if err := d.Docker.UnpauseContainer(ctx, container.ID); err != nil {
+		return fmt.Errorf("unpause container: %w", err)
+	}
+	if err := d.Docker.WaitContainerRunning(ctx, container.ID); err != nil {
+		return fmt.Errorf("wait for container to be running: %w", err)
+	}
+	log.Infof("container %s is running", container.ID)
+	return nil
 }
 
 func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error {

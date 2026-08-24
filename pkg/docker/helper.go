@@ -32,7 +32,7 @@ const (
 	DockerBuilderBuildKit
 )
 
-const (
+var (
 	containerRunningPollInterval = 500 * time.Millisecond
 	containerRunningTimeout      = 30 * time.Second
 	containerExitGrace           = 2 * time.Second
@@ -440,6 +440,16 @@ func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) e
 	return nil
 }
 
+// UnpauseContainer unpauses a paused container.
+func (r *DockerHelper) UnpauseContainer(ctx context.Context, containerId string) error {
+	out, err := r.buildCmd(ctx, "unpause", containerId).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to unpause container: %s: %w", string(out), err)
+	}
+
+	return nil
+}
+
 // WaitContainerRunning waits for the given container to be running, returning an error if
 // it is in a terminal state or does not become running within a timeout.
 func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID string) error {
@@ -459,7 +469,7 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 		},
 	)
 	if pollErr != nil && lastErr != nil {
-		return fmt.Errorf("waiting for container %s to be running: %w", containerID, lastErr)
+		return fmt.Errorf("waiting for container %s to be running: %w (last inspect error: %v)", containerID, pollErr, lastErr)
 	}
 	return pollErr
 }

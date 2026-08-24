@@ -43,6 +43,10 @@ func joinShellStatements(statements ...string) string {
 
 // DefaultEntrypoint waits for the devsy agent binary to become available
 // before handing off to the container daemon.
+//
+// The env var name here must match pkgconfig.EnvAgentPath (set by agent
+// delivery in pkg/agent/delivery/local_docker.go). It cannot reference the
+// Go constant from a shell string, so the coupling is maintained by convention.
 var DefaultEntrypoint = joinShellStatements(
 	`while ! command -v "${DEVSY_AGENT_PATH:-/usr/local/bin/devsy}" >/dev/null 2>&1`,
 	`do echo "waiting for devsy agent to be available"`,
