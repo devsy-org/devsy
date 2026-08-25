@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/encoding"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -23,8 +24,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/spf13/cobra"
 )
-
-const containerStatusRunning = "running"
 
 // containerRootUser is the user to use when running commands inside the container that
 // require root privileges.
@@ -166,7 +165,7 @@ func startDevContainer(
 		return fmt.Errorf("find devcontainer: %w", err)
 	}
 
-	if containerDetails == nil || containerDetails.State.Status != containerStatusRunning {
+	if containerDetails == nil || containerDetails.State.Status != config.ContainerStatusRunning {
 		if err := startContainer(ctx, runner, workspaceConfig); err != nil {
 			return fmt.Errorf("start container: %w", err)
 		}

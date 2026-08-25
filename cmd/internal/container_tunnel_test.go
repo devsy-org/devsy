@@ -124,7 +124,7 @@ func TestStartDevContainer_RunningContainerWithoutResultRestarts(t *testing.T) {
 	upErr := errors.New("boom")
 	runner := stubRunner{
 		findResult: &config.ContainerDetails{
-			State: config.ContainerDetailsState{Status: containerStatusRunning},
+			State: config.ContainerDetailsState{Status: config.ContainerStatusRunning},
 		},
 		commandErr: errors.New("cat: no such file"), // hasDevContainerResult -> false
 		upErr:      upErr,
@@ -147,7 +147,7 @@ func TestStartDevContainer_RunningContainerWithoutResultRestarts(t *testing.T) {
 func TestStartDevContainer_RunningContainerWithResultIsNoOp(t *testing.T) {
 	runner := stubRunner{
 		findResult: &config.ContainerDetails{
-			State: config.ContainerDetailsState{Status: containerStatusRunning},
+			State: config.ContainerDetailsState{Status: config.ContainerStatusRunning},
 		},
 		commandErr: nil, // hasDevContainerResult -> true
 		upErr:      errors.New("Up must not be called on the happy path"),
