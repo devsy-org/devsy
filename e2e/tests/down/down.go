@@ -180,7 +180,7 @@ var _ = ginkgo.Describe(
 				err = f.DevsyWorkspaceDelete(ctx, tempDir)
 				framework.ExpectNoError(err)
 
-				// #nosec G204 -- e2e spec with controlled docker binary and volume name
+				// #nosec G204
 				cmd := exec.CommandContext(ctx, "docker", "volume", "inspect", volumeName)
 				out, _ := cmd.CombinedOutput()
 				gomega.Expect(strings.ToLower(string(out))).To(

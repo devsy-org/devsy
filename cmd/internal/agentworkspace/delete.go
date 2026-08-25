@@ -57,7 +57,7 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 			&cmd.RemoveVolumes,
 			names.RemoveVolumes,
 			false,
-			"Remove declared volumes when deleting docker compose workspaces; devsy-managed volumes are always removed",
+			"Remove declared volumes when deleting docker compose workspaces",
 		),
 		cliflags.String(&cmd.WorkspaceInfo, names.WorkspaceInfo, "", "The workspace info"),
 	)

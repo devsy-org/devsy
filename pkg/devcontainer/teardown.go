@@ -9,14 +9,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
-// Required steps fail teardown when they error; best-effort steps only warn.
 type teardownStep struct {
 	name     string
 	required bool
 	run      func(ctx context.Context) error
 }
 
-// Every step runs independently: one failure never skips later steps.
 type teardownPlan struct {
 	steps []teardownStep
 }
@@ -41,7 +39,6 @@ func (t *teardownPlan) execute(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// Nil details means the container is foreign or already gone.
 func (r *runner) buildTeardownPlan(
 	details *config.ContainerDetails,
 	options DeleteOptions,
@@ -58,7 +55,6 @@ func (r *runner) buildTeardownPlan(
 	return plan
 }
 
-// Stopped first since runtimes refuse to rm running containers.
 func (r *runner) addContainerTeardown(
 	plan *teardownPlan,
 	details *config.ContainerDetails,
@@ -72,7 +68,7 @@ func (r *runner) addContainerTeardown(
 	}
 
 	if options.RemoveVolumes {
-		log.Infof("--remove-volumes only removes declared volumes for docker compose workspaces")
+		log.Debugf("--remove-volumes only removes declared volumes for docker compose workspaces")
 	}
 	if details.State.Status == config.ContainerStatusRunning {
 		plan.add("stop devcontainer", true, func(ctx context.Context) error {

@@ -494,13 +494,13 @@ func TestLocalDockerDelivery_Cleanup_RemovesLegacyUnlabeledAgentVolume(t *testin
 		"fi\n" +
 		"exit 0\n"
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
-	// #nosec G302 -- test script must be executable
+	// #nosec G302
 	require.NoError(t, os.Chmod(scriptPath, 0o755))
 
 	d := &LocalDockerDelivery{DockerCommand: scriptPath}
 	require.NoError(t, d.Cleanup(context.Background(), "ws-legacy"))
 
-	logged, err := os.ReadFile(logPath) //nolint:gosec // test reads a temp file we control
+	logged, err := os.ReadFile(logPath) //nolint:gosec
 	require.NoError(t, err)
 	assert.Equal(t, "volume rm -f devsy-agent-ws-legacy\n", string(logged))
 }

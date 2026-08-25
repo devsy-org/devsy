@@ -77,7 +77,7 @@ func (d *LocalDockerDelivery) DeliverPostStart(_ context.Context, _ PostStartOpt
 }
 
 // only labeled devsy-managed volumes and the canonical agent volume are
-// removed; foreign volumes are never included.
+// removed.
 func (d *LocalDockerDelivery) Cleanup(ctx context.Context, workspaceID string) error {
 	volumes, err := d.listManagedVolumes(ctx, workspaceID)
 	if err != nil {

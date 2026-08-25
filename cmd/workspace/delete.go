@@ -60,7 +60,7 @@ Use --ignore-not-found to treat a missing workspace as success.`,
 			"Delete workspace even if it is not found remotely anymore"),
 		cliflags.Bool(&cmd.RemoveVolumes, names.RemoveVolumes, false,
 			"Remove named volumes associated with the workspace "+
-				"(docker compose only); devsy-managed volumes are always removed"),
+				"(docker compose only)"),
 	)
 	return deleteCmd
 }
