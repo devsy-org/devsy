@@ -398,6 +398,50 @@ esac
 	)
 }
 
+func TestEnsureContainerRunning_RestartingWaitsNotStarts(t *testing.T) {
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	inspects := filepath.Join(dir, "inspects")
+	script := `#!/bin/sh
+echo "$1" >> "` + calls + `"
+case "$1" in
+  inspect)
+    n=$(cat "` + inspects + `" 2>/dev/null || echo 0)
+    n=$((n + 1))
+    echo "$n" > "` + inspects + `"
+    if [ "$n" -ge 2 ]; then
+      echo '[{"ID":"c1","State":{"Status":"running"}}]'
+    else
+      echo '[{"ID":"c1","State":{"Status":"restarting"}}]'
+    fi
+    ;;
+  start)
+    echo "start should not be called on a restarting container" >&2
+    exit 1
+    ;;
+esac
+`
+	bin := filepath.Join(dir, "docker-fake")
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755)) //nolint:gosec
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	container := &config.ContainerDetails{
+		ID:    "c1",
+		State: config.ContainerDetailsState{Status: config.ContainerStatusRestarting},
+	}
+
+	require.NoError(t, d.ensureContainerRunning(context.Background(), container))
+
+	logged, readErr := os.ReadFile(calls) //nolint:gosec // test-controlled path
+	require.NoError(t, readErr)
+	assert.NotContains(
+		t,
+		string(logged),
+		"start\n",
+		"restarting containers should be waited out, not started",
+	)
+}
+
 func TestEnsureContainerRunning_UnknownStateIsTerminal(t *testing.T) {
 	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: testDockerCmd}}
 	container := &config.ContainerDetails{

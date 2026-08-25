@@ -72,8 +72,9 @@ func (d *dockerDriver) ensureContainerRunning(
 		)
 	case config.ContainerStatusPaused:
 		return d.unpauseAndWait(ctx, container)
-	case config.ContainerStatusExited, config.ContainerStatusCreated,
-		config.ContainerStatusRestarting:
+	case config.ContainerStatusRestarting:
+		return d.waitForRestart(ctx, container)
+	case config.ContainerStatusExited, config.ContainerStatusCreated:
 		return d.restartAndWait(ctx, container, status)
 	default:
 		return fmt.Errorf(
@@ -138,6 +139,27 @@ func (d *dockerDriver) unpauseAndWait(
 	}
 	log.Infof("container %s is running", container.ID)
 	return nil
+}
+
+// waitForRestart lets the daemon finish an in-flight restart before acting:
+// DockerHelper.StartContainer rejects containers still in the "restarting"
+// state. Once the container settles, either it is already running or it has
+// stopped again (ErrContainerExited) and needs an explicit start.
+func (d *dockerDriver) waitForRestart(
+	ctx context.Context,
+	container *config.ContainerDetails,
+) error {
+	log.Infof("container %s is restarting, waiting for a stable state", container.ID)
+	err := d.Docker.WaitContainerRunning(ctx, container.ID)
+	switch {
+	case err == nil:
+		log.Infof("container %s is running", container.ID)
+		return nil
+	case errors.Is(err, docker.ErrContainerExited):
+		return d.restartAndWait(ctx, container, config.ContainerStatusExited)
+	default:
+		return err
+	}
 }
 
 func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error {
