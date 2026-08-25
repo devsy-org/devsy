@@ -3,48 +3,70 @@ package docker
 import (
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/stretchr/testify/assert"
-)
-
-const (
-	statusDead       = "dead"
-	statusRemoving   = "removing"
-	statusExited     = "exited"
-	statusCreated    = "created"
-	statusPaused     = "paused"
-	statusRestarting = "restarting"
 )
 
 func TestFailedBootSentinel(t *testing.T) {
 	tests := []struct {
 		name         string
-		status       string
+		status       config.ContainerStatus
 		graceElapsed bool
 		wantSentinel error
 		wantNil      bool
 	}{
-		{"dead is terminal regardless of grace", statusDead, false, ErrContainerTerminal, false},
-		{"dead is terminal even after grace", statusDead, true, ErrContainerTerminal, false},
+		{
+			"dead is terminal regardless of grace",
+			config.ContainerStatusDead,
+			false,
+			ErrContainerTerminal,
+			false,
+		},
+		{
+			"dead is terminal even after grace",
+			config.ContainerStatusDead,
+			true,
+			ErrContainerTerminal,
+			false,
+		},
 		{
 			"removing is terminal regardless of grace",
-			statusRemoving,
+			config.ContainerStatusRemoving,
 			false,
 			ErrContainerTerminal,
 			false,
 		},
 		{
 			"removing is terminal even after grace",
-			statusRemoving,
+			config.ContainerStatusRemoving,
 			true,
 			ErrContainerTerminal,
 			false,
 		},
-		{"exited before grace is still booting", statusExited, false, nil, true},
-		{"exited after grace failed", statusExited, true, ErrContainerExited, false},
-		{"created before grace is still booting", statusCreated, false, nil, true},
-		{"created after grace failed", statusCreated, true, ErrContainerExited, false},
-		{"paused is not a terminal boot state", statusPaused, true, nil, true},
-		{"restarting is not a terminal boot state", statusRestarting, false, nil, true},
+		{"exited before grace is still booting", config.ContainerStatusExited, false, nil, true},
+		{
+			"exited after grace failed",
+			config.ContainerStatusExited,
+			true,
+			ErrContainerExited,
+			false,
+		},
+		{"created before grace is still booting", config.ContainerStatusCreated, false, nil, true},
+		{
+			"created after grace failed",
+			config.ContainerStatusCreated,
+			true,
+			ErrContainerExited,
+			false,
+		},
+		{"paused is not a terminal boot state", config.ContainerStatusPaused, true, nil, true},
+		{
+			"restarting is not a terminal boot state",
+			config.ContainerStatusRestarting,
+			false,
+			nil,
+			true,
+		},
 		{"empty status is not a terminal boot state", "", true, nil, true},
 	}
 
@@ -69,8 +91,8 @@ func TestFailedBootSentinel(t *testing.T) {
 }
 
 func TestFailedBootSentinel_TerminalNotConfusedWithExited(t *testing.T) {
-	terminal := failedBootSentinel(statusRemoving, false)
-	exited := failedBootSentinel(statusExited, true)
+	terminal := failedBootSentinel(config.ContainerStatusRemoving, false)
+	exited := failedBootSentinel(config.ContainerStatusExited, true)
 
 	assert.ErrorIs(t, terminal, ErrContainerTerminal)
 	assert.NotErrorIs(t, terminal, ErrContainerExited,

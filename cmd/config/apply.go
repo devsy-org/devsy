@@ -159,7 +159,7 @@ func (cmd *ApplyCmd) inspectRunningContainer(
 	}
 
 	containerDetails := &details[0]
-	if !strings.EqualFold(containerDetails.State.Status, pkgworkspace.ContainerStatusRunning) {
+	if containerDetails.State.Status != devcconfig.ContainerStatusRunning {
 		return nil, fmt.Errorf(
 			"container %s is not running (status: %s)",
 			cmd.Container,

@@ -9,8 +9,6 @@ import (
 )
 
 const (
-	stateRunning  = "running"
-	stateExited   = "exited"
 	mountTypeBind = "bind"
 	archUnknown   = "unknown" // placeholder arch in Apple's multi-arch image index
 )
@@ -130,12 +128,13 @@ func (c containerInspect) toContainerDetails() config.ContainerDetails {
 	}
 }
 
-func normalizeState(state string) string {
-	s := strings.ToLower(strings.TrimSpace(state))
+// normalizeState maps the runner's status vocabulary onto the shared Docker
+// vocabulary: "stopped" means the container ran and exited, matching what
+// terminal-state checks expect.
+func normalizeState(state string) config.ContainerStatus {
+	s := config.ToContainerStatus(strings.TrimSpace(state))
 	if s == "stopped" {
-		// Docker uses "exited" for a container that ran and stopped; the
-		// runner's terminal-state checks key off that vocabulary.
-		return stateExited
+		return config.ContainerStatusExited
 	}
 	return s
 }

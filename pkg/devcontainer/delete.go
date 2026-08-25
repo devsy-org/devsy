@@ -3,7 +3,6 @@ package devcontainer
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -32,7 +31,7 @@ func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
 func (r *runner) stopAndDeleteContainer(
 	ctx context.Context, containerDetails *config.ContainerDetails,
 ) error {
-	if strings.ToLower(containerDetails.State.Status) == "running" {
+	if containerDetails.State.Status == config.ContainerStatusRunning {
 		if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
 			return err
 		}
@@ -65,7 +64,7 @@ func (r *runner) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	if strings.ToLower(containerDetails.State.Status) != "running" {
+	if containerDetails.State.Status != config.ContainerStatusRunning {
 		return nil
 	}
 

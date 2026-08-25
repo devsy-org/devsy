@@ -167,10 +167,10 @@ func (h *AppleHelper) WaitContainerRunning(ctx context.Context, id string) error
 			if len(details) == 0 {
 				return false, nil
 			}
-			switch strings.ToLower(details[0].State.Status) {
-			case stateRunning:
+			switch details[0].State.Status {
+			case config.ContainerStatusRunning:
 				return true, nil
-			case stateExited:
+			case config.ContainerStatusExited:
 				return false, fmt.Errorf("container %s exited before reaching running state", id)
 			default:
 				return false, nil
@@ -249,7 +249,7 @@ func (h *AppleHelper) FindContainerByID(
 		return nil, err
 	}
 	for i := range details {
-		if strings.ToLower(details[i].State.Status) != "removing" {
+		if details[i].State.Status != config.ContainerStatusRemoving {
 			return &details[i], nil
 		}
 	}
@@ -357,7 +357,7 @@ func (h *AppleHelper) SystemRunning(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	return strings.Contains(strings.ToLower(string(out)), stateRunning)
+	return strings.Contains(strings.ToLower(string(out)), string(config.ContainerStatusRunning))
 }
 
 func (h *AppleHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {

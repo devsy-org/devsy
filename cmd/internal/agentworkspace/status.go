@@ -3,11 +3,11 @@ package agentworkspace
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client"
+	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
@@ -66,10 +66,11 @@ func (cmd *StatusCmd) Run(ctx context.Context) error {
 	}
 
 	// is running?
-	if strings.ToLower(containerDetails.State.Status) == "running" {
+	switch containerDetails.State.Status {
+	case config2.ContainerStatusRunning:
 		fmt.Print(client.StatusRunning)
 		return nil
-	} else if strings.ToLower(containerDetails.State.Status) == "exited" {
+	case config2.ContainerStatusExited:
 		fmt.Print(client.StatusStopped)
 		return nil
 	}

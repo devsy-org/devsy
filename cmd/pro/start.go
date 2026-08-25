@@ -24,6 +24,7 @@ import (
 	loftclientset "github.com/devsy-org/api/pkg/clientset/versioned"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/hash"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/machineid"
@@ -665,8 +666,8 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 			containerDetails, err := cmd.inspectContainer(ctx, containerID)
 			if err != nil {
 				return false, fmt.Errorf("inspect loft container: %w", err)
-			} else if strings.ToLower(containerDetails.State.Status) == "exited" ||
-				strings.ToLower(containerDetails.State.Status) == "dead" {
+			} else if containerDetails.State.Status == devcconfig.ContainerStatusExited ||
+				containerDetails.State.Status == devcconfig.ContainerStatusDead {
 				logs, _ := cmd.logsContainer(ctx, containerID)
 				return false, fmt.Errorf(
 					"container failed (status: %s):\n %s",
@@ -919,7 +920,7 @@ func (cmd *StartCmd) resolveRunningContainer(
 		switch {
 		case err != nil:
 			return "", err
-		case onlyRunning && strings.ToLower(containerState.State.Status) != "running":
+		case onlyRunning && containerState.State.Status != devcconfig.ContainerStatusRunning:
 			err = cmd.removeContainer(ctx, containerID)
 			if err != nil {
 				return "", err
@@ -2144,8 +2145,8 @@ type ContainerDetailsConfig struct {
 }
 
 type ContainerDetailsState struct {
-	Status    string `json:"Status,omitempty"`
-	StartedAt string `json:"StartedAt,omitempty"`
+	Status    devcconfig.ContainerStatus `json:"Status,omitempty"`
+	StartedAt string                     `json:"StartedAt,omitempty"`
 }
 
 func WrapCommandError(stdout []byte, err error) error {

@@ -516,3 +516,23 @@ sleep 5
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
+
+func TestWaitContainerRunning_PreservesDeadlineExceededWithInspectError(t *testing.T) {
+	original := containerRunningTimeout
+	containerRunningTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { containerRunningTimeout = original })
+
+	bin := writeScript(t, t.TempDir(), "docker-fake", `#!/bin/sh
+case "$1" in
+  inspect) echo "Cannot connect to the Docker daemon" >&2; exit 1 ;;
+esac
+`)
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.WaitContainerRunning(context.Background(), "c1")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded,
+		"poll timeout must remain in the error chain even when inspect also fails")
+	assert.Contains(t, err.Error(), "Cannot connect to the Docker daemon",
+		"inspect error should be included for diagnostics")
+}

@@ -15,17 +15,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-const containerRestartAttempts = 3
+const (
+	containerRestartAttempts = 3
 
-const containerStatusRunning = "running"
-
-// snapshotImageLabel marks a committed image as a devsy workspace snapshot,
-// so it's identifiable via `docker inspect`/`docker images --filter` by
-// anyone who pulls or lists it outside `devsy snapshot` tooling — the
-// snapshot manifest (pkg/snapshot) already carries richer sh.devsy.snapshot.*
-// metadata, but that lives in a separate OCI artifact a raw image pull won't
-// see.
-const snapshotImageLabel = "sh.devsy.snapshot=true"
+	// snapshotImageLabel marks a committed image as a devsy workspace snapshot,
+	// so it's identifiable via `docker inspect`/`docker images --filter`.
+	snapshotImageLabel = "sh.devsy.snapshot=true"
+)
 
 func (d *dockerDriver) CommandDevContainer(
 	ctx context.Context,
@@ -58,75 +54,123 @@ func (d *dockerDriver) CommandDevContainer(
 	return nil
 }
 
-// ensureContainerRunning checks that the given container is running, and if
-// not, attempts to start it and wait for it to be running. If the container is
-// in a terminal state (dead or removing), it returns an error.
+// ensureContainerRunning checks the container's state and starts it if necessary.
 func (d *dockerDriver) ensureContainerRunning(
 	ctx context.Context,
 	container *config.ContainerDetails,
 ) error {
-	status := strings.ToLower(container.State.Status)
-	if status == "dead" || status == "removing" {
+	status := container.State.Status
+	switch status {
+	case config.ContainerStatusRunning:
+		return nil
+	case config.ContainerStatusDead, config.ContainerStatusRemoving:
 		return fmt.Errorf(
 			"%w: container %s is %q",
 			docker.ErrContainerTerminal,
 			container.ID,
 			status,
 		)
+	case config.ContainerStatusPaused:
+		return d.unpauseAndWait(ctx, container)
+	case config.ContainerStatusRestarting:
+		return d.waitForRestart(ctx, container)
+	case config.ContainerStatusExited, config.ContainerStatusCreated:
+		return d.restartAndWait(ctx, container, status)
+	default:
+		return fmt.Errorf(
+			"%w: container %s is in unknown state %q",
+			docker.ErrContainerTerminal,
+			container.ID,
+			status,
+		)
 	}
-	if status == containerStatusRunning {
-		return nil
-	}
+}
 
+// restartAndWait starts the container and waits for it to be running,
+// retrying up to containerRestartAttempts times. It aborts immediately when
+// the container enters a terminal state.
+func (d *dockerDriver) restartAndWait(
+	ctx context.Context,
+	container *config.ContainerDetails,
+	status config.ContainerStatus,
+) error {
 	var lastErr error
 	for attempt := 1; attempt <= containerRestartAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		log.Infof(
-			"container %s is not running (status=%s), restarting (attempt %d/%d)",
+			"restarting container %s (status=%s, attempt=%d/%d)",
 			container.ID, status, attempt, containerRestartAttempts,
 		)
-		err := d.restartAndWait(ctx, container.ID)
-		if err == nil {
-			log.Infof("container %s is now running", container.ID)
+		if err := d.Docker.StartContainer(ctx, container.ID); err != nil {
+			lastErr = fmt.Errorf("start container: %w", err)
+		} else if err := d.Docker.WaitContainerRunning(ctx, container.ID); err != nil {
+			lastErr = fmt.Errorf("wait for container to be running: %w", err)
+		} else {
+			log.Infof("container %s is running", container.ID)
 			return nil
 		}
-		if errors.Is(err, docker.ErrContainerTerminal) {
-			return err
+		if errors.Is(lastErr, docker.ErrContainerTerminal) ||
+			errors.Is(lastErr, context.Canceled) ||
+			errors.Is(lastErr, context.DeadlineExceeded) {
+			return lastErr
 		}
-		lastErr = err
-		log.Debugf("container %s restart attempt %d failed: %v", container.ID, attempt, err)
+		log.Debugf("container %s restart attempt %d failed: %v", container.ID, attempt, lastErr)
 	}
 
 	return fmt.Errorf(
-		"%w: container %s did not stay running after %d restart attempts: %v",
+		"%w: container %s did not stay running after %d attempts: %w",
 		docker.ErrContainerTerminal, container.ID, containerRestartAttempts, lastErr,
 	)
 }
 
-func (d *dockerDriver) restartAndWait(ctx context.Context, containerID string) error {
-	if err := d.Docker.StartContainer(ctx, containerID); err != nil {
-		return fmt.Errorf("restart container: %w", err)
+// unpauseAndWait unpauses a paused container and waits for it to be running.
+func (d *dockerDriver) unpauseAndWait(
+	ctx context.Context,
+	container *config.ContainerDetails,
+) error {
+	log.Infof("unpausing container %s", container.ID)
+	if err := d.Docker.UnpauseContainer(ctx, container.ID); err != nil {
+		return fmt.Errorf("unpause container: %w", err)
 	}
-	if err := d.Docker.WaitContainerRunning(ctx, containerID); err != nil {
+	if err := d.Docker.WaitContainerRunning(ctx, container.ID); err != nil {
 		return fmt.Errorf("wait for container to be running: %w", err)
 	}
+	log.Infof("container %s is running", container.ID)
 	return nil
 }
 
+// waitForRestart lets the daemon finish an in-flight restart before acting:
+// DockerHelper.StartContainer rejects containers still in the "restarting"
+// state. Once the container settles, either it is already running or it has
+// stopped again (ErrContainerExited) and needs an explicit start.
+func (d *dockerDriver) waitForRestart(
+	ctx context.Context,
+	container *config.ContainerDetails,
+) error {
+	log.Infof("container %s is restarting, waiting for a stable state", container.ID)
+	err := d.Docker.WaitContainerRunning(ctx, container.ID)
+	switch {
+	case err == nil:
+		log.Infof("container %s is running", container.ID)
+		return nil
+	case errors.Is(err, docker.ErrContainerExited):
+		return d.restartAndWait(ctx, container, config.ContainerStatusExited)
+	default:
+		return err
+	}
+}
+
 func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error {
-	// push image
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	// build args
 	args := []string{
 		"push",
 		image,
 	}
 
-	// run command
 	log.Debugf(
 		"running docker push command: command=%s, args=%s",
 		d.Docker.DockerCommand,
@@ -141,18 +185,15 @@ func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error
 }
 
 func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) error {
-	// Tag image
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
-	// build args
 	args := []string{
 		"tag",
 		image,
 		tag,
 	}
 
-	// run command
 	log.Debugf(
 		"running docker tag command: command=%s, args=%s",
 		d.Docker.DockerCommand,
@@ -201,7 +242,7 @@ func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId strin
 		return nil
 	}
 
-	if strings.ToLower(container.State.Status) == containerStatusRunning {
+	if container.State.Status == config.ContainerStatusRunning {
 		if err := d.Docker.Stop(ctx, container.ID); err != nil {
 			log.Warnf("stop before delete failed for %s: %v", container.ID, err)
 		}

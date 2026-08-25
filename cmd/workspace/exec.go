@@ -245,7 +245,7 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 	}
 
 	containerDetails := &details[0]
-	if !strings.EqualFold(containerDetails.State.Status, workspace2.ContainerStatusRunning) {
+	if containerDetails.State.Status != devcconfig.ContainerStatusRunning {
 		return fmt.Errorf(
 			"container %s is not running (status: %s)",
 			cmd.ContainerID,

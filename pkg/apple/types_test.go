@@ -3,6 +3,8 @@ package apple
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
 // containerInspectFixture is verbatim output from `container inspect` on
@@ -46,7 +48,7 @@ func TestContainerInspectMapping(t *testing.T) {
 		name, got, want string
 	}{
 		{"ID", got.ID, "devsy-probe"},
-		{"State.Status", got.State.Status, stateRunning},
+		{"State.Status", string(got.State.Status), string(config.ContainerStatusRunning)},
 		{"StartedAt", got.State.StartedAt, "2026-07-25T01:57:25Z"},
 		{"WorkingDir", got.Config.WorkingDir, "/"},
 		{"User", got.Config.User, "0"},
@@ -69,11 +71,14 @@ func TestContainerInspectMapping(t *testing.T) {
 }
 
 func TestNormalizeState(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"running", stateRunning},
-		{"Running", stateRunning},
-		{"stopped", stateExited},
-		{"Stopped", stateExited},
+	cases := []struct {
+		in   string
+		want config.ContainerStatus
+	}{
+		{"running", config.ContainerStatusRunning},
+		{"Running", config.ContainerStatusRunning},
+		{"stopped", config.ContainerStatusExited},
+		{"Stopped", config.ContainerStatusExited},
 	}
 	for _, c := range cases {
 		if got := normalizeState(c.in); got != c.want {

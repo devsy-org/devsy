@@ -32,12 +32,19 @@ const (
 	DockerBuilderBuildKit
 )
 
-const (
+var (
 	containerRunningPollInterval = 500 * time.Millisecond
 	containerRunningTimeout      = 30 * time.Second
 	containerExitGrace           = 2 * time.Second
+
+	// podmanMachineStartTimeout is the maximum time to wait for a Podman machine to start.
+	podmanMachineStartTimeout = 90 * time.Second
+
+	// pingTimeout is the maximum time to wait for a ping to the runtime daemon.
+	pingTimeout = 30 * time.Second
 )
 
+// Sentinels for container lifecycle failures; match with errors.Is.
 var (
 	ErrContainerTerminal = errors.New("container in terminal state")
 	ErrContainerExited   = errors.New("container exited after start")
@@ -158,11 +165,6 @@ func (r *DockerHelper) ClientVersion(ctx context.Context) string {
 	return strings.TrimSpace(string(out))
 }
 
-// podmanMachineStartTimeout bounds a Podman machine boot, which spins up a VM.
-var podmanMachineStartTimeout = 90 * time.Second
-
-var pingTimeout = 30 * time.Second
-
 func runCmdCombined(ctx context.Context, cmd *exec.Cmd) error {
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -279,11 +281,10 @@ func (r *DockerHelper) FindContainerByID(
 		return nil, err
 	}
 
-	// find matching container
-	for _, details := range containerDetails {
-		if strings.ToLower(details.State.Status) != "removing" {
-			details.State.Status = strings.ToLower(details.State.Status)
-			return &details, nil
+	// find matching container, skipping containers already being removed
+	for i := range containerDetails {
+		if containerDetails[i].State.Status != config.ContainerStatusRemoving {
+			return &containerDetails[i], nil
 		}
 	}
 
@@ -439,6 +440,16 @@ func (r *DockerHelper) StartContainer(ctx context.Context, containerId string) e
 	return nil
 }
 
+// UnpauseContainer unpauses a paused container.
+func (r *DockerHelper) UnpauseContainer(ctx context.Context, containerId string) error {
+	out, err := r.buildCmd(ctx, "unpause", containerId).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to unpause container: %s: %w", string(out), err)
+	}
+
+	return nil
+}
+
 // WaitContainerRunning waits for the given container to be running, returning an error if
 // it is in a terminal state or does not become running within a timeout.
 func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID string) error {
@@ -450,7 +461,7 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 			details, err := r.InspectContainers(ctx, []string{containerID})
 			if err != nil {
 				lastErr = err
-				log.Debugf("WaitContainerRunning: inspect error (will retry): %v", err)
+				log.Debugf("inspecting container %s: %v", containerID, err)
 				return false, nil
 			}
 			lastErr = nil
@@ -458,7 +469,12 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 		},
 	)
 	if pollErr != nil && lastErr != nil {
-		return fmt.Errorf("%w (last inspect error: %v)", pollErr, lastErr)
+		return fmt.Errorf(
+			"waiting for container %s to be running: %w (last inspect error: %v)",
+			containerID,
+			pollErr,
+			lastErr,
+		)
 	}
 	return pollErr
 }
@@ -671,7 +687,7 @@ func (r *DockerHelper) containerStateError(
 		"%w: container %s is %q (%s)",
 		sentinel,
 		containerID,
-		strings.ToLower(state.Status),
+		state.Status,
 		detail,
 	)
 }
@@ -706,8 +722,8 @@ func (r *DockerHelper) evaluateContainerState(
 		)
 	}
 	state := details[0].State
-	status := strings.ToLower(state.Status)
-	if status == "running" {
+	status := state.Status
+	if status == config.ContainerStatusRunning {
 		return true, nil
 	}
 	if sentinel := failedBootSentinel(status, elapsed > containerExitGrace); sentinel != nil {
@@ -719,11 +735,11 @@ func (r *DockerHelper) evaluateContainerState(
 
 // failedBootSentinel returns an error if the container is in a terminal state or has exited
 // after the grace period, or nil if it is still booting.
-func failedBootSentinel(status string, graceElapsed bool) error {
+func failedBootSentinel(status config.ContainerStatus, graceElapsed bool) error {
 	switch status {
-	case "dead", "removing":
+	case config.ContainerStatusDead, config.ContainerStatusRemoving:
 		return ErrContainerTerminal
-	case "exited", "created":
+	case config.ContainerStatusExited, config.ContainerStatusCreated:
 		if graceElapsed {
 			return ErrContainerExited
 		}

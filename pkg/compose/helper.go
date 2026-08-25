@@ -217,9 +217,9 @@ func (h *ComposeHelper) FindDevContainer(
 		return nil, err
 	}
 
-	for _, details := range containerDetails {
-		if details.State.Status != "removing" {
-			return &details, nil
+	for i := range containerDetails {
+		if containerDetails[i].State.Status != config.ContainerStatusRemoving {
+			return &containerDetails[i], nil
 		}
 	}
 
