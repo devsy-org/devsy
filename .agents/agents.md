@@ -10,7 +10,6 @@ specifications.
 .agents/
 ├── agents.md          # this index + conventions
 ├── agents/<id>/       # sub-agent profiles (agent.md)
-└── tasks/<id>/        # scheduled repeat tasks (task.md)
 ```
 
 ## Agents
@@ -46,27 +45,3 @@ configures when and how the task runs.
 
 **`agents/<id>/agent.md`** — required: `id`, `name`, `description`, `enabled`.
 `id` and `name` must equal the directory name (kebab-case).
-
-**`tasks/<id>/task.md`** — required: `kind: task`, `id`.
-`id` must equal the directory name. Optional `agent` links the task to an agent id.
-Schedule fields are omitted; the hosting platform sets the schedule.
-
-### Self-improvement loop
-
-Every agent prompt ends with an instruction to, upon task completion:
-
-1. Persist key findings / regressions / config gotchas for the next run by updating the
-   running automation through the automation service (a configuration change, not a git
-   commit) — e.g. `PATCH /api/automation/v1/{id}` — or via the service's agentic memory
-   system when one is available. Run findings and memory are never committed to this repo.
-2. If a finding changes how the task should be run, propose a `description` amendment to
-   its own `agent.md` (a committed prompt change is acceptable) and surface it for human
-   review.
-
-This keeps the prompts from going stale while keeping transient run learnings with the
-automation that produced them, out of git history.
-
-### Platform-agnostic execution
-
-Tasks declare scope, not schedules. A platform that reads the `.agents/` convention
-configures and runs them. No platform-specific runtime lives here.

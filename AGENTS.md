@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guide for AI coding agents working in the Devsy repository. It covers the codebase layout, environment setup, common commands, testing, code style, and contribution conventions.
+Guide for AI coding agents working in the Devsy repository.
 
 ---
 
@@ -8,26 +8,9 @@ Guide for AI coding agents working in the Devsy repository. It covers the codeba
 
 Devsy is a monorepo with a Go-based CLI and an Electron-based Svelte 5 desktop application.
 
-### Setup Target
-
-A custom task installs all prerequisites and builds required artifacts in one step:
-
-```bash
-task setup:agent
-```
-
-This task:
-1. Installs system dependencies (`protobuf-compiler`, `xvfb`) when `apt-get` is available (requires root or sudo privileges).
-2. Installs the `goreleaser/v2` Go release tool.
-3. Tidies Go modules (`task cli:tidy`).
-4. Builds gRPC code (`task cli:build:grpc`, under `pkg/agent/tunnel`).
-5. Sets up the Electron workspace and installs Node dependencies (`task desktop:setup`).
-
 ### Prerequisites and Tooling
 
-Manual installation, when needed:
-
-- **Go 1.26.5**: The repository targets Go 1.26.5 (`go.mod`). With `GOTOOLCHAIN=auto`, an older Go toolchain automatically downloads Go 1.26 when task commands run.
+- **Go 1.26**: The repository targets Go 1.26 (`go.mod`). With `GOTOOLCHAIN=auto`, an older Go toolchain automatically downloads the required Go version.
 - **NodeJS 24**: Required for building and testing the desktop workspace (`.nvmrc`, CI `node-version`).
 - **Taskfile (go-task)**: All build, test, and setup commands run through `task`. Installation:
 
@@ -110,7 +93,7 @@ Devsy uses [Ginkgo](https://onsi.github.io/ginkgo/) for Go E2E and integration t
 
 ### Go Code Style
 
-- **Linter**: `golangci-lint` via `task cli:lint` (or `task cli:lint:fix`).
+- **Linter**: `golangci-lint` via `task cli:lint` (or `task cli:lint:fix`). Run `task cli:lint:ci` before pushing changes.
 - **Logs**: Log messages and logging strings are lowercase.
 
 ### TypeScript / Svelte Code Style
@@ -121,83 +104,25 @@ Biome formats and checks web frontend files.
 
 ## Pull Request and Commit Guidelines
 
-1. **Contributor License Agreement (CLA)**: All contributors sign the CLA. A CLA bot posts instructions on the PR after it is opened.
+1. **Contributor License Agreement (CLA)**: All contributors sign the CLA.
 2. **Commit messages**: Conventional Commits, with a concise subject line (50 characters max).
-3. **Commit signing**: Commits are signed by the Devsy GitHub App. Use `task github:app:sign-commit` to create verified commits as the app — never run `git commit` locally (local commits are unsigned and fail the signature check).
+3. **Commit signing**: All commits are required to be signed.
+4. **Branch name**: Branch should be named according to the task.
 
-   ```bash
-   # commit all working-tree changes (auto-creates remote branch if needed)
-   task github:app:sign-commit -- -m "fix: concise subject" -b "body text"
-
-   # commit + open a draft PR in one step
-   task github:app:sign-commit -- -m "fix: concise subject" -b "body text" -pr
-
-   # print the app installation token (for other API calls)
-   task github:app:sign-commit -- -token
-   ```
-
-4. **Pre-commit checks**: Linters, checkers, and relevant unit tests run before pushing. `prek` (a fast pre-commit hook manager) manages them.
+4. **Pre-commit checks**: Linters, checkers, and relevant unit tests run before pushing. `prek` (a pre-commit hook manager) manages them.
    - Installation (Linux and macOS):
-
      ```bash
      curl --proto '=https' --tlsv1.2 -LsSf https://github.com/j178/prek/releases/latest/download/prek-installer.sh | sh
      ```
-
    - Installation (Windows):
-
      ```powershell
      powershell -ExecutionPolicy ByPass -c "irm https://github.com/j178/prek/releases/latest/download/prek-installer.ps1 | iex"
      ```
-
    - Manual run on all files:
-
      ```bash
      prek run --all-files
      ```
-
    - Git hook installation:
-
      ```bash
      prek install
      ```
-
-## GitHub App Authentication
-
-The release, CLA, and CI workflows authenticate as the Devsy GitHub App through a signed JWT. Local generation, after setting the app credentials:
-
-```bash
-export DEVSY_GITHUB_APP_ID=<app-id>           # numeric App ID (legacy iss fallback)
-export DEVSY_GITHUB_APP_CLIENT_ID=<client-id>  # Client ID (preferred iss claim, e.g. Iv1...)
-export DEVSY_GITHUB_APP_PRIVATE_KEY=$(cat path/to/private-key.pem)
-task github:app:jwt
-```
-
-`task github:app:jwt` runs `hack/gen_github_app_jwt`, which produces an RS256-signed JWT with `iss`/`iat`/`exp` claims matching GitHub's requirements. Per [GitHub's JWT documentation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app), the `iss` claim should be the App's **Client ID** (`DEVSY_GITHUB_APP_CLIENT_ID`); the numeric App ID (`DEVSY_GITHUB_APP_ID`) is accepted as a legacy fallback. Both `hack/gen_github_app_jwt` and `hack/sign_commit` prefer `DEVSY_GITHUB_APP_CLIENT_ID` and fall back to `DEVSY_GITHUB_APP_ID` if unset. The `iat` claim is backdated 60 seconds to tolerate clock drift, while `exp` expires 10 minutes after JWT generation (GitHub's maximum). The private key can also be provided through `DEVSY_GITHUB_APP_PRIVATE_KEY_PATH` (a PEM file path) or the `--app-id`/`--private-key`/`--private-key-content` flags.
-
-### Discovering the App ID
-
-When `DEVSY_GITHUB_APP_ID` is unavailable, discover it by listing installations for the organization. Authenticate with an existing app JWT (or any token with read access):
-
-```bash
-curl -H "Authorization: Bearer <your-token>" \
-     -H "Accept: application/vnd.github+json" \
-     https://api.github.com/orgs/{org}/installations
-```
-
-The response includes the `app_id` and `app_slug`:
-
-```json
-{
-  "id": 555555,
-  "app_id": 123456,
-  "app_slug": "example-app",
-  "target_id": 98765,
-  "target_type": "Organization"
-}
-```
-
-Use the returned `app_id` to confirm the installation. To mint an installation token, sign a JWT with `iss=<client-id>` (the App's Client ID, not the numeric `app_id`) and call `GET /app` — a 200 confirms the pairing.
-
-### Workflows Permission
-
-The Devsy GitHub App requires the **Workflows** repository permission (read & write) to commit any file under `.github/workflows/`. Without it, GitHub rejects workflow file writes via every API — the GraphQL `createCommitOnBranch` mutation returns `FORBIDDEN: Resource not accessible by integration`, the REST contents API returns `403`, and `git push` is rejected with `refusing to allow a GitHub App to create or update workflow without workflows permission`. Creating a PR that *contains* a workflow file does not require this permission — only the act of writing the workflow file itself does. If the app lacks the Workflows permission, commit non-workflow files via the app and add workflow files separately (e.g. through the GitHub UI or a PAT with `workflow` scope).
