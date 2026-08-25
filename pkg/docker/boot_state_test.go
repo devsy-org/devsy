@@ -15,8 +15,20 @@ func TestFailedBootSentinel(t *testing.T) {
 		wantSentinel error
 		wantNil      bool
 	}{
-		{"dead is terminal regardless of grace", config.ContainerStatusDead, false, ErrContainerTerminal, false},
-		{"dead is terminal even after grace", config.ContainerStatusDead, true, ErrContainerTerminal, false},
+		{
+			"dead is terminal regardless of grace",
+			config.ContainerStatusDead,
+			false,
+			ErrContainerTerminal,
+			false,
+		},
+		{
+			"dead is terminal even after grace",
+			config.ContainerStatusDead,
+			true,
+			ErrContainerTerminal,
+			false,
+		},
 		{
 			"removing is terminal regardless of grace",
 			config.ContainerStatusRemoving,
@@ -32,11 +44,29 @@ func TestFailedBootSentinel(t *testing.T) {
 			false,
 		},
 		{"exited before grace is still booting", config.ContainerStatusExited, false, nil, true},
-		{"exited after grace failed", config.ContainerStatusExited, true, ErrContainerExited, false},
+		{
+			"exited after grace failed",
+			config.ContainerStatusExited,
+			true,
+			ErrContainerExited,
+			false,
+		},
 		{"created before grace is still booting", config.ContainerStatusCreated, false, nil, true},
-		{"created after grace failed", config.ContainerStatusCreated, true, ErrContainerExited, false},
+		{
+			"created after grace failed",
+			config.ContainerStatusCreated,
+			true,
+			ErrContainerExited,
+			false,
+		},
 		{"paused is not a terminal boot state", config.ContainerStatusPaused, true, nil, true},
-		{"restarting is not a terminal boot state", config.ContainerStatusRestarting, false, nil, true},
+		{
+			"restarting is not a terminal boot state",
+			config.ContainerStatusRestarting,
+			false,
+			nil,
+			true,
+		},
 		{"empty status is not a terminal boot state", "", true, nil, true},
 	}
 
