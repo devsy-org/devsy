@@ -83,8 +83,8 @@ func (p *probe) findRunning(label string) *config.ContainerDetails {
 	if found == nil {
 		p.t.Fatal("FindDevContainer returned nil for a running labelled container")
 	}
-	if found.State.Status != stateRunning {
-		p.t.Errorf("found.State.Status = %q, want %q", found.State.Status, stateRunning)
+	if found.State.Status != config.ContainerStatusRunning {
+		p.t.Errorf("found.State.Status = %q, want %q", found.State.Status, config.ContainerStatusRunning)
 	}
 	if found.Config.Labels["devsy.e2e"] != "1" {
 		p.t.Errorf("label devsy.e2e = %q, want 1", found.Config.Labels["devsy.e2e"])

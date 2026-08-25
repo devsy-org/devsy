@@ -36,18 +36,19 @@ var (
 	containerRunningPollInterval = 500 * time.Millisecond
 	containerRunningTimeout      = 30 * time.Second
 	containerExitGrace           = 2 * time.Second
-)
-
-var (
-	ErrContainerTerminal = errors.New("container in terminal state")
-	ErrContainerExited   = errors.New("container exited after start")
-	ErrImageNotFound     = errors.New("image not found")
 
 	// podmanMachineStartTimeout is the maximum time to wait for a Podman machine to start.
 	podmanMachineStartTimeout = 90 * time.Second
 
 	// pingTimeout is the maximum time to wait for a ping to the runtime daemon.
 	pingTimeout = 30 * time.Second
+)
+
+// Sentinels for container lifecycle failures; match with errors.Is.
+var (
+	ErrContainerTerminal = errors.New("container in terminal state")
+	ErrContainerExited   = errors.New("container exited after start")
+	ErrImageNotFound     = errors.New("image not found")
 )
 
 var imageNotFoundMarkers = []string{
@@ -280,11 +281,10 @@ func (r *DockerHelper) FindContainerByID(
 		return nil, err
 	}
 
-	// find matching container
-	for _, details := range containerDetails {
-		if strings.ToLower(details.State.Status) != "removing" {
-			details.State.Status = strings.ToLower(details.State.Status)
-			return &details, nil
+	// find matching container, skipping containers already being removed
+	for i := range containerDetails {
+		if containerDetails[i].State.Status != config.ContainerStatusRemoving {
+			return &containerDetails[i], nil
 		}
 	}
 
@@ -687,7 +687,7 @@ func (r *DockerHelper) containerStateError(
 		"%w: container %s is %q (%s)",
 		sentinel,
 		containerID,
-		strings.ToLower(state.Status),
+		state.Status,
 		detail,
 	)
 }
@@ -722,8 +722,8 @@ func (r *DockerHelper) evaluateContainerState(
 		)
 	}
 	state := details[0].State
-	status := strings.ToLower(state.Status)
-	if status == "running" {
+	status := state.Status
+	if status == config.ContainerStatusRunning {
 		return true, nil
 	}
 	if sentinel := failedBootSentinel(status, elapsed > containerExitGrace); sentinel != nil {
@@ -735,11 +735,11 @@ func (r *DockerHelper) evaluateContainerState(
 
 // failedBootSentinel returns an error if the container is in a terminal state or has exited
 // after the grace period, or nil if it is still booting.
-func failedBootSentinel(status string, graceElapsed bool) error {
+func failedBootSentinel(status config.ContainerStatus, graceElapsed bool) error {
 	switch status {
-	case "dead", "removing":
+	case config.ContainerStatusDead, config.ContainerStatusRemoving:
 		return ErrContainerTerminal
-	case "exited", "created":
+	case config.ContainerStatusExited, config.ContainerStatusCreated:
 		if graceElapsed {
 			return ErrContainerExited
 		}

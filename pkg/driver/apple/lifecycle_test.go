@@ -103,7 +103,7 @@ func (m *mockClient) GetContainerLogs(context.Context, string, io.Writer, io.Wri
 func running(id string) *config.ContainerDetails {
 	return &config.ContainerDetails{
 		ID:    id,
-		State: config.ContainerDetailsState{Status: statusRunning},
+		State: config.ContainerDetailsState{Status: config.ContainerStatusRunning},
 	}
 }
 

@@ -465,9 +465,9 @@ func hasUserNSMapping(options *driver.RunOptions) bool {
 }
 
 func toContainerDetails(info *sandboxInfo) *config.ContainerDetails {
-	status := "exited"
+	status := config.ContainerStatusExited
 	if info.Running {
-		status = "running"
+		status = config.ContainerStatusRunning
 	}
 	return &config.ContainerDetails{
 		ID:      info.Name,

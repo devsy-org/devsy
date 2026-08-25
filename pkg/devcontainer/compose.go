@@ -24,7 +24,6 @@ const (
 	FeaturesBuildOverrideFilePrefix = "docker-compose.devcontainer.build"
 	FeaturesStartOverrideFilePrefix = "docker-compose.devcontainer.containerFeatures"
 
-	containerStatusRunning = "running"
 	composeProjectNameFlag = "--project-name"
 )
 
@@ -328,7 +327,7 @@ func (r *runner) ensureComposeContainer(
 	}
 
 	// container already exists and is running, nothing to do
-	if containerDetails != nil && containerDetails.State.Status == containerStatusRunning &&
+	if containerDetails != nil && containerDetails.State.Status == config.ContainerStatusRunning &&
 		!options.Recreate {
 		return containerDetails, nil
 	}

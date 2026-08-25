@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/devsy-org/devsy/pkg/apple"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -116,7 +115,7 @@ func (r *AppleRuntime) FindRunning(
 	if container == nil {
 		return nil, fmt.Errorf("no running container found for workspace %q", workspaceID)
 	}
-	if !strings.EqualFold(container.State.Status, ContainerStatusRunning) {
+	if container.State.Status != devcconfig.ContainerStatusRunning {
 		return nil, fmt.Errorf(
 			"container %s is not running (status: %s)",
 			container.ID, container.State.Status,

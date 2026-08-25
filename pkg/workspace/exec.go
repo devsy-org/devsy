@@ -23,8 +23,7 @@ import (
 )
 
 const (
-	DefaultDockerCommand   = "docker"
-	ContainerStatusRunning = "running"
+	DefaultDockerCommand = "docker"
 )
 
 // defaultExecTimeoutSeconds bounds an exec when no caller or configured default
@@ -283,7 +282,7 @@ func (r *DockerRuntime) FindRunning(
 		)
 	}
 
-	if !strings.EqualFold(container.State.Status, ContainerStatusRunning) {
+	if container.State.Status != devcconfig.ContainerStatusRunning {
 		return nil, fmt.Errorf(
 			"container %s is not running (status: %s)",
 			container.ID,

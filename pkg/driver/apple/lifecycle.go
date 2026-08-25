@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/devsy-org/devsy/pkg/apple"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -44,7 +43,7 @@ func (d *appleDriver) ensureContainerRunning(
 	ctx context.Context,
 	container *config.ContainerDetails,
 ) error {
-	if strings.ToLower(container.State.Status) == statusRunning {
+	if container.State.Status == config.ContainerStatusRunning {
 		return nil
 	}
 	if err := d.Apple.StartContainer(ctx, container.ID); err != nil {
@@ -83,7 +82,7 @@ func (d *appleDriver) DeleteDevContainer(ctx context.Context, workspaceID string
 	// Apple's `delete` requires a stopped container. `container stop` is synchronous;
 	// a stop failure is logged but delete is still attempted (it fails loudly if the
 	// container is genuinely still running).
-	if strings.ToLower(container.State.Status) == statusRunning {
+	if container.State.Status == config.ContainerStatusRunning {
 		if err := d.Apple.Stop(ctx, container.ID); err != nil {
 			log.Warnf("stop before delete failed for %s: %v", container.ID, err)
 		}

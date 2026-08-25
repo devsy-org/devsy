@@ -36,9 +36,9 @@ func (k *KubernetesDriver) FindDevContainer(
 	}
 
 	// determine status
-	status := "exited"
+	status := config.ContainerStatusExited
 	if pod != nil && isPodRunning(pod) {
-		status = "running"
+		status = config.ContainerStatusRunning
 	}
 
 	// check started

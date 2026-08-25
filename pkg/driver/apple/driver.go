@@ -22,7 +22,6 @@ import (
 const (
 	appleExec      = "exec"
 	defaultCommand = "container"
-	statusRunning  = "running"
 )
 
 type appleDriver struct {

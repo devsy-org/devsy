@@ -216,7 +216,7 @@ func (r *runner) ensureRunning(
 	ctx context.Context,
 	containerDetails *config.ContainerDetails,
 ) (*config.ContainerDetails, error) {
-	if strings.ToLower(containerDetails.State.Status) == containerStatusRunning {
+	if containerDetails.State.Status == config.ContainerStatusRunning {
 		return containerDetails, nil
 	}
 

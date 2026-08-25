@@ -15,35 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-type containerState string
-
-const (
-	containerStatusRunning    containerState = "running"
-	containerStatusExited     containerState = "exited"
-	containerStatusCreated    containerState = "created"
-	containerStatusPaused     containerState = "paused"
-	containerStatusRestarting containerState = "restarting"
-	containerStatusDead       containerState = "dead"
-	containerStatusRemoving   containerState = "removing"
-)
-
-var containerStates = map[string]containerState{
-	"running":    containerStatusRunning,
-	"exited":     containerStatusExited,
-	"created":    containerStatusCreated,
-	"paused":     containerStatusPaused,
-	"restarting": containerStatusRestarting,
-	"dead":       containerStatusDead,
-	"removing":   containerStatusRemoving,
-}
-
-func toContainerState(s string) containerState {
-	if state, ok := containerStates[strings.ToLower(s)]; ok {
-		return state
-	}
-	return containerState(s)
-}
-
 const (
 	containerRestartAttempts = 3
 
@@ -88,21 +59,21 @@ func (d *dockerDriver) ensureContainerRunning(
 	ctx context.Context,
 	container *config.ContainerDetails,
 ) error {
-	status := toContainerState(container.State.Status)
+	status := container.State.Status
 	switch status {
-	case containerStatusRunning:
+	case config.ContainerStatusRunning:
 		return nil
-	case containerStatusDead, containerStatusRemoving:
+	case config.ContainerStatusDead, config.ContainerStatusRemoving:
 		return fmt.Errorf(
 			"%w: container %s is %q",
 			docker.ErrContainerTerminal,
 			container.ID,
 			status,
 		)
-	case containerStatusPaused:
+	case config.ContainerStatusPaused:
 		return d.unpauseAndWait(ctx, container)
-	case containerStatusExited, containerStatusCreated,
-		containerStatusRestarting:
+	case config.ContainerStatusExited, config.ContainerStatusCreated,
+		config.ContainerStatusRestarting:
 		return d.restartAndWait(ctx, container, status)
 	default:
 		return fmt.Errorf(
@@ -120,7 +91,7 @@ func (d *dockerDriver) ensureContainerRunning(
 func (d *dockerDriver) restartAndWait(
 	ctx context.Context,
 	container *config.ContainerDetails,
-	status containerState,
+	status config.ContainerStatus,
 ) error {
 	var lastErr error
 	for attempt := 1; attempt <= containerRestartAttempts; attempt++ {
@@ -249,7 +220,7 @@ func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId strin
 		return nil
 	}
 
-	if status := toContainerState(container.State.Status); status == containerStatusRunning {
+	if container.State.Status == config.ContainerStatusRunning {
 		if err := d.Docker.Stop(ctx, container.ID); err != nil {
 			log.Warnf("stop before delete failed for %s: %v", container.ID, err)
 		}
