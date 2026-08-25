@@ -482,6 +482,29 @@ func TestLocalDockerDelivery_Cleanup_RemovesManagedVolumes(t *testing.T) {
 	assert.Contains(t, removed, "ws1-workspace")
 }
 
+func TestLocalDockerDelivery_Cleanup_RemovesLegacyUnlabeledAgentVolume(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "calls.log")
+
+	scriptPath := filepath.Join(tmpDir, "fake-docker.sh")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"volume\" ] && [ \"$2\" = \"ls\" ]; then exit 0; fi\n" +
+		"if [ \"$1\" = \"volume\" ] && [ \"$2\" = \"rm\" ]; then\n" +
+		"  echo \"$@\" >> \"" + logPath + "\"; exit 0\n" +
+		"fi\n" +
+		"exit 0\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	require.NoError(t, d.Cleanup(context.Background(), "ws-legacy"))
+
+	logged, err := os.ReadFile(logPath) //nolint:gosec // test reads a temp file we control
+	require.NoError(t, err)
+	assert.Equal(t, "volume rm -f devsy-agent-ws-legacy\n", string(logged))
+}
+
 func TestLocalDockerDelivery_SeedExcludesBuildInternal(t *testing.T) {
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "run.log")
