@@ -169,7 +169,7 @@ func (g *GPGConf) SetupRemoteSocketLink(ctx context.Context) error {
 		if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
 			return err
 		}
-		_ = os.Remove(link)
+		_ = os.Remove(link) // #nosec G703 -- link derives from $HOME and the current uid, not user input
 		if err := os.Symlink(g.SocketPath, link); err != nil {
 			return err
 		}

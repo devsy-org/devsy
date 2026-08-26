@@ -604,7 +604,7 @@ func markerFileExists(markerName string, markerContent string) (bool, error) {
 		filepath.Dir(markerName),
 		0o755,
 	) // #nosec G301 -- Standard directory permissions
-	err = os.WriteFile(markerName, []byte(markerContent), 0o600)
+	err = os.WriteFile(markerName, []byte(markerContent), 0o600) // #nosec G703 -- fixed caller-defined marker name under ContainerDataDir
 	if err != nil {
 		return false, fmt.Errorf("write marker: %w", err)
 	}

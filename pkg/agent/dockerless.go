@@ -48,7 +48,7 @@ func GetDockerlessBuildContext() string {
 }
 
 func ImageConfigExists(path string) bool {
-	_, err := os.Stat(path)
+	_, err := os.Stat(path) // #nosec G703 -- path is the agent-written image config output, not user input
 	return err == nil
 }
 

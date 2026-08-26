@@ -311,7 +311,7 @@ func CreateWorkspaceBusyFile(folder string) {
 
 func HasWorkspaceBusyFile(folder string) bool {
 	filePath := filepath.Join(folder, config.WorkspaceBusyFile)
-	_, err := os.Stat(filePath)
+	_, err := os.Stat(filePath) // #nosec G703 -- folder is the agent-resolved workspace dir, not user input
 	return err == nil
 }
 
