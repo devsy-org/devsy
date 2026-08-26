@@ -10,8 +10,8 @@ const (
 	ContextOptionSSHAddPrivateKeys          = "SSH_ADD_PRIVATE_KEYS"
 	ContextOptionGPGAgentForwarding         = "GPG_AGENT_FORWARDING"
 	ContextOptionGitSSHSignatureForwarding  = "GIT_SSH_SIGNATURE_FORWARDING"
-	ContextOptionSSHInjectDockerCredentials = "SSH_INJECT_DOCKER_CREDENTIALS"
-	ContextOptionSSHInjectGitCredentials    = "SSH_INJECT_GIT_CREDENTIALS"
+	ContextOptionSSHInjectDockerCredentials = "SSH_INJECT_DOCKER_CREDENTIALS" //nolint:gosec // G101: context option name, not a credential
+	ContextOptionSSHInjectGitCredentials    = "SSH_INJECT_GIT_CREDENTIALS"    //nolint:gosec // G101: context option name, not a credential
 	ContextOptionExitAfterTimeout           = "EXIT_AFTER_TIMEOUT"
 	ContextOptionTelemetry                  = "TELEMETRY"
 	ContextOptionAgentURL                   = "AGENT_URL"
