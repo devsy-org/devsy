@@ -12,7 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"
-	"tailscale.com/types/netmap"
+	"tailscale.com/ipn/ipnstate"
 )
 
 // DevsyTSNetDomain is the MagicDNS suffix for the Devsy tailnet.
@@ -80,21 +80,24 @@ func WaitHostReachable(
 	return fmt.Errorf("host %s not reachable", addr.String())
 }
 
+// WatchNetmap invokes netmapChangedFn whenever the tailnet state changes:
+// first with the initial status, then on self or peer updates. The full
+// snapshot is fetched on demand via LocalClient.Status instead of reading
+// the deprecated ipn.Notify.NetMap bus field.
 func WatchNetmap(
 	ctx context.Context,
 	lc *local.Client,
-	netmapChangedFn func(nm *netmap.NetworkMap),
+	netmapChangedFn func(status *ipnstate.Status),
 ) error {
 	watcher, err := lc.WatchIPNBus(
 		ctx,
-		ipn.NotifyInitialNetMap|ipn.NotifyRateLimit|ipn.NotifyWatchEngineUpdates,
+		ipn.NotifyInitialStatus|ipn.NotifyWatchEngineUpdates,
 	)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = watcher.Close() }()
 
-	var netMap *netmap.NetworkMap
 	for {
 		n, err := watcher.Next()
 		if err != nil {
@@ -103,11 +106,22 @@ func WatchNetmap(
 		if n.ErrMessage != nil {
 			return fmt.Errorf("tailscale error: %w", errors.New(*n.ErrMessage))
 		}
-		if n.NetMap != nil {
-			if n.NetMap != netMap {
-				netMap = n.NetMap
-				netmapChangedFn(netMap)
-			}
+		if !netmapChanged(n) {
+			continue
 		}
+		status, err := lc.Status(ctx)
+		if err != nil {
+			return fmt.Errorf("fetch status: %w", err)
+		}
+		netmapChangedFn(status)
 	}
+}
+
+// netmapChanged reports whether a bus notification indicates a tailnet
+// state change, mirroring how upstream consumers react to InitialStatus,
+// SelfChange, and peer deltas.
+func netmapChanged(n ipn.Notify) bool {
+	return n.InitialStatus != nil || n.SelfChange != nil ||
+		len(n.PeersChanged) > 0 || len(n.PeersRemoved) > 0 ||
+		len(n.PeerChangedPatch) > 0
 }

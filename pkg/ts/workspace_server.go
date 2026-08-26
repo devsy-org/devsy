@@ -20,9 +20,9 @@ import (
 	sshServer "github.com/devsy-org/devsy/pkg/ssh/server"
 	"tailscale.com/client/local"
 	"tailscale.com/envknob"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/ipn/store/mem"
 	"tailscale.com/tsnet"
-	"tailscale.com/types/netmap"
 )
 
 const (
@@ -87,20 +87,20 @@ func (s *WorkspaceServer) Start(ctx context.Context) error {
 
 	go func() {
 		lastUpdate := time.Now()
-		if err := WatchNetmap(ctx, lc, func(netMap *netmap.NetworkMap) {
+		if err := WatchNetmap(ctx, lc, func(status *ipnstate.Status) {
 			if time.Since(lastUpdate) < netMapCooldown {
 				return
 			}
 			lastUpdate = time.Now()
 
-			nm, err := json.Marshal(netMap)
+			nm, err := json.Marshal(status)
 			if err != nil {
-				log.Errorf("Failed to marshal netmap: %v", err)
+				log.Errorf("failed to marshal netmap: %v", err)
 			} else {
 				_ = os.WriteFile(filepath.Join(s.config.RootDir, "netmap.json"), nm, 0o644)
 			}
 		}); err != nil {
-			log.Errorf("Failed to watch netmap: %v", err)
+			log.Errorf("failed to watch netmap: %v", err)
 		}
 	}()
 
