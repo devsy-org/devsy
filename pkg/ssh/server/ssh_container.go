@@ -143,10 +143,14 @@ func (s *containerServer) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, e
 	}
 
 	if len(sess.RawCommand()) == 0 {
-		cmd = exec.Command(shell[0], args...)
+		cmd = exec.Command(
+			shell[0],
+			args...) // #nosec G204 -- ssh sessions run the user's login shell by design
 	} else {
 		args = append(args, "-c", sess.RawCommand())
-		cmd = exec.Command(shell[0], args...)
+		cmd = exec.Command(
+			shell[0],
+			args...) // #nosec G204 -- running the session's raw command is this server's purpose
 	}
 
 	err = config.PrepareCmdUser(cmd, user)

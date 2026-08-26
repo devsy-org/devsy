@@ -172,7 +172,12 @@ func openViaCLI(ctx context.Context, params OpenParams) error {
 		cliPath,
 		strings.Join(args, " "),
 	)
-	out, err := exec.CommandContext(ctx, cliPath, args...).CombinedOutput()
+	out, err := exec.CommandContext( // #nosec G204 -- cliPath resolved by getCLIPath; args built internally
+		ctx,
+		cliPath,
+		args...,
+	).
+		CombinedOutput()
 	if err != nil {
 		return command.WrapCommandError(out, err)
 	}
@@ -209,7 +214,12 @@ func listInstalledExtensions(
 func ensureSSHExtension(ctx context.Context, cliPath, sshExtension string) error {
 	args := []string{"--install-extension", sshExtension}
 	log.Debugf("%s %s", cliPath, strings.Join(args, " "))
-	out, err := exec.CommandContext(ctx, cliPath, args...).CombinedOutput()
+	out, err := exec.CommandContext( // #nosec G204 -- cliPath resolved by getCLIPath; extension id from static config
+		ctx,
+		cliPath,
+		args...,
+	).
+		CombinedOutput()
 	if err != nil {
 		return command.WrapCommandError(out, err)
 	}

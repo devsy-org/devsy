@@ -38,8 +38,9 @@ func InstallAPKRequirements() {
 		dependencies = append(dependencies, "curl")
 	}
 
-	out, err := exec.Command("sh", "-c", "apk update && apk add "+strings.Join(dependencies, " ")).
-		CombinedOutput()
+	out, err := exec.Command( // #nosec G204 -- package names come from a static list above
+		"sh", "-c", "apk update && apk add "+strings.Join(dependencies, " "),
+	).CombinedOutput()
 	if err != nil {
 		log.Errorf("Error updating apk dependencies: %v", command.WrapCommandError(out, err))
 	}

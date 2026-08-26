@@ -51,6 +51,13 @@ func ExistsForUser(cmd, user string) bool {
 		return Exists(cmd)
 	}
 
-	_, err = exec.Command("su", user, "-l", "-c", command).CombinedOutput()
+	_, err = exec.Command( // #nosec G204 -- runs the caller-provided command as the target workspace user
+		"su",
+		user,
+		"-l",
+		"-c",
+		command,
+	).
+		CombinedOutput()
 	return err == nil
 }

@@ -208,9 +208,16 @@ func (o *VsCodeServer) buildExtensionCommand(binPath, extension string) *exec.Cm
 
 	if o.userName != "" {
 		cmd := shellescape.QuoteCommand(append([]string{binPath}, args...))
-		return exec.Command("su", o.userName, "-c", cmd)
+		return exec.Command(
+			"su",
+			o.userName,
+			"-c",
+			cmd,
+		) // #nosec G204 -- runs the workspace user's extension install by design
 	}
-	return exec.Command(binPath, args...)
+	return exec.Command(
+		binPath,
+		args...) // #nosec G204 -- binPath resolved from known server locations
 }
 
 func (o *VsCodeServer) findServerBinaryPath(location string) string {
