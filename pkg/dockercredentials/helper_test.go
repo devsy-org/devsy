@@ -30,6 +30,7 @@ func (s *HelperTestSuite) TestGet_Success() {
 		s.NoError(err)
 		s.Equal("docker.io", request.ServerURL)
 
+		// #nosec G117 -- test fixture credentials.
 		_ = json.NewEncoder(w).Encode(&Credentials{
 			ServerURL: "docker.io",
 			Username:  "testuser",
@@ -92,6 +93,7 @@ func (s *HelperTestSuite) TestGet_WorkspaceServerFallback() {
 			s.NoError(err)
 			s.Equal("docker.io", request.ServerURL)
 
+			// #nosec G117 -- test fixture credentials.
 			_ = json.NewEncoder(w).Encode(&Credentials{
 				ServerURL: "docker.io",
 				Username:  "workspaceuser",

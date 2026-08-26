@@ -148,6 +148,7 @@ func doRequest(
 	credentials *gitcredentials.GitCredentials,
 	url string,
 ) (*gitcredentials.GitCredentials, error) {
+	// #nosec G117 -- credentials request legitimately carries the password.
 	rawJSON, err := json.Marshal(credentials)
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling credentials: %w", err)
