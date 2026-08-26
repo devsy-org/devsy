@@ -227,7 +227,7 @@ func (o *GenericJetBrainsServer) getDirectory(baseFolder string) string {
 }
 
 func (o *GenericJetBrainsServer) extractArchive(fromPath string, toPath string) error {
-	file, err := os.Open(fromPath)
+	file, err := os.Open(fromPath) // #nosec G304 -- internal install path
 	if err != nil {
 		return err
 	}
@@ -237,7 +237,7 @@ func (o *GenericJetBrainsServer) extractArchive(fromPath string, toPath string) 
 }
 
 func (o *GenericJetBrainsServer) download(targetFolder string) (string, error) {
-	err := os.MkdirAll(targetFolder, os.ModePerm)
+	err := os.MkdirAll(targetFolder, 0o750)
 	if err != nil {
 		return "", err
 	}
