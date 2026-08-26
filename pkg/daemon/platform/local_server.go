@@ -122,7 +122,7 @@ func newLocalServer(
 		handlers.PrintRecoveryStack(true),
 	)(mux)
 	handler = handlers.LoggingHandler(log.Writer(log.LevelDebug), handler)
-	l.httpServer = &http.Server{Handler: handler}
+	l.httpServer = &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 
 	return l
 }
