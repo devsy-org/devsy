@@ -13,7 +13,7 @@ import (
 func NewSSHPassClient(user, addr, password string) (*ssh.Client, error) {
 	clientConfig := &ssh.ClientConfig{
 		Auth:            []ssh.AuthMethod{},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // #nosec G106 -- agent-managed SSH server inside its own workspace
 	}
 
 	clientConfig.Auth = append(clientConfig.Auth, ssh.Password(password))
@@ -86,7 +86,7 @@ func StdioClientFromKeyBytesWithUser(
 func ConfigFromKeyBytes(keyBytes []byte) (*ssh.ClientConfig, error) {
 	clientConfig := &ssh.ClientConfig{
 		Auth:            []ssh.AuthMethod{},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // #nosec G106 -- agent-managed SSH server inside its own workspace
 	}
 
 	// key file authentication?
