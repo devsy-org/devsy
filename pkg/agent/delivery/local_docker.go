@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
@@ -75,17 +76,17 @@ func (d *LocalDockerDelivery) DeliverPostStart(_ context.Context, _ PostStartOpt
 	return fmt.Errorf("LocalDockerDelivery does not support post-start delivery")
 }
 
-// Cleanup removes every devsy-managed volume owned by the workspace (the agent
-// volume and any seeded workspace volume), identified by labels. Only labeled
-// volumes are removed, so foreign/external volumes are left untouched.
+// only labeled devsy-managed volumes and the canonical agent volume are
+// removed.
 func (d *LocalDockerDelivery) Cleanup(ctx context.Context, workspaceID string) error {
 	volumes, err := d.listManagedVolumes(ctx, workspaceID)
 	if err != nil {
 		return err
 	}
-	// Attempt every volume so one transient failure does not orphan the rest.
 	var errs []error
-	for _, name := range volumes {
+	volumes = append(volumes, volumePrefix+workspaceID)
+	slices.Sort(volumes)
+	for _, name := range slices.Compact(volumes) {
 		if err := d.removeVolume(ctx, name); err != nil {
 			errs = append(errs, err)
 			continue

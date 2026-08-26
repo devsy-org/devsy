@@ -2,6 +2,7 @@ package agentworkspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -56,7 +57,7 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 			&cmd.RemoveVolumes,
 			names.RemoveVolumes,
 			false,
-			"Remove named volumes associated with the workspace",
+			"Remove declared volumes when deleting docker compose workspaces",
 		),
 		cliflags.String(&cmd.WorkspaceInfo, names.WorkspaceInfo, "", "The workspace info"),
 	)
@@ -65,7 +66,6 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DeleteCmd) Run(ctx context.Context) error {
-	// get workspace
 	shouldExit, workspaceInfo, err := agent.WorkspaceInfo(
 		cmd.WorkspaceInfo,
 	)
@@ -75,25 +75,21 @@ func (cmd *DeleteCmd) Run(ctx context.Context) error {
 		return nil
 	}
 
-	// remove daemon
+	var errs []error
 	if cmd.Daemon {
-		err = removeDaemon(workspaceInfo)
-		if err != nil {
-			return fmt.Errorf("remove daemon: %w", err)
+		if err := removeDaemon(workspaceInfo); err != nil {
+			errs = append(errs, fmt.Errorf("remove daemon: %w", err))
 		}
 	}
-
-	// cleanup docker container
 	if cmd.Container {
-		err = removeContainer(ctx, workspaceInfo, cmd.RemoveVolumes)
-		if err != nil {
-			return fmt.Errorf("remove container: %w", err)
+		if err := removeContainer(ctx, workspaceInfo, cmd.RemoveVolumes); err != nil {
+			errs = append(errs, fmt.Errorf("remove container: %w", err))
 		}
 	}
 
 	removeWorkspaceFolders(workspaceInfo)
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // removeWorkspaceFolders deletes the workspace's config folder and cached
@@ -129,17 +125,12 @@ func removeContainer(
 		return err
 	}
 
-	if workspaceInfo.Workspace.Source.Container != "" {
-		log.Info("skipping container deletion, since it was not created by Devsy")
-	} else {
-		err = runner.Delete(ctx, devcontainer.DeleteOptions{
-			RemoveVolumes: removeVolumes,
-		})
-		if err != nil {
-			return err
-		}
-		log.Debug("removed Devsy container from server")
+	if err := runner.Delete(ctx, devcontainer.DeleteOptions{
+		RemoveVolumes: removeVolumes,
+	}); err != nil {
+		return err
 	}
+	log.Debug("removed Devsy container from server")
 
 	return nil
 }

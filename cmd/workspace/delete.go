@@ -59,7 +59,8 @@ Use --ignore-not-found to treat a missing workspace as success.`,
 		cliflags.Bool(&cmd.Force, names.Force, false,
 			"Delete workspace even if it is not found remotely anymore"),
 		cliflags.Bool(&cmd.RemoveVolumes, names.RemoveVolumes, false,
-			"Remove named volumes associated with the workspace"),
+			"Remove named volumes associated with the workspace "+
+				"(docker compose only)"),
 	)
 	return deleteCmd
 }

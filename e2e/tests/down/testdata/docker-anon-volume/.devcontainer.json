@@ -1,0 +1,6 @@
+{
+  "name": "anon-volume",
+  "build": {
+    "dockerfile": "Dockerfile"
+  }
+}

@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -138,5 +141,51 @@ var _ = ginkgo.Describe(
 				"container should still exist after stop (only stopped, not deleted)",
 			)
 		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+
+		ginkgo.It("workspace delete removes anonymous volumes declared by the image",
+			func(ctx context.Context) {
+				f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
+				framework.ExpectNoError(err)
+
+				tempDir, err := framework.CopyToTempDir("tests/down/testdata/docker-anon-volume")
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+
+				err = f.DevsyUp(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				workspace, err := f.FindWorkspace(ctx, tempDir)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+
+				ids, err := dockerHelper.FindContainer(ctx, []string{
+					fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspace.UID),
+				})
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).NotTo(gomega.BeEmpty())
+
+				var details []container.InspectResponse
+				err = dockerHelper.Inspect(ctx, ids, "container", &details)
+				framework.ExpectNoError(err)
+
+				var volumeName string
+				for _, m := range details[0].Mounts {
+					if m.Type == mount.TypeVolume && m.Destination == "/data" {
+						volumeName = m.Name
+					}
+				}
+				gomega.Expect(volumeName).NotTo(gomega.BeEmpty(),
+					"container should have an anonymous volume mounted at /data")
+
+				err = f.DevsyWorkspaceDelete(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				// #nosec G204
+				cmd := exec.CommandContext(ctx, "docker", "volume", "inspect", volumeName)
+				out, _ := cmd.CombinedOutput()
+				gomega.Expect(strings.ToLower(string(out))).To(
+					gomega.ContainSubstring("no such volume"),
+					"anonymous volume should be removed along with its container")
+			}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 	},
 )

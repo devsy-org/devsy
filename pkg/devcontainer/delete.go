@@ -9,51 +9,23 @@ import (
 )
 
 func (r *runner) Delete(ctx context.Context, options DeleteOptions) error {
-	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
+	details, err := r.findTeardownContainer(ctx)
 	if err != nil {
 		return fmt.Errorf("find dev container: %w", err)
 	}
-	defer r.cleanupDeliveryVolume(ctx)
-	defer r.cleanupImportedDevContainer()
-	if containerDetails == nil {
-		return nil
+	if details != nil {
+		log.Infof("deleting devcontainer: devcontainerID=%s", details.ID)
 	}
-
-	log.Infof("deleting devcontainer: devcontainerID=%s", containerDetails.ID)
-	if isDockerCompose, projectName := getDockerComposeProject(containerDetails); isDockerCompose {
-		return r.deleteDockerCompose(ctx, projectName, options.RemoveVolumes)
-	}
-	return r.stopAndDeleteContainer(ctx, containerDetails)
+	return r.buildTeardownPlan(details, options).execute(ctx)
 }
 
-// stopAndDeleteContainer stops containerDetails' devcontainer if it
-// is running, then deletes it.
-func (r *runner) stopAndDeleteContainer(
-	ctx context.Context, containerDetails *config.ContainerDetails,
-) error {
-	if containerDetails.State.Status == config.ContainerStatusRunning {
-		if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
-			return err
-		}
-	}
-	return r.driver.DeleteDevContainer(ctx, r.id)
-}
-
-func (r *runner) cleanupDeliveryVolume(ctx context.Context) {
-	if err := r.newAgentDelivery().Cleanup(ctx, r.id); err != nil {
-		log.Debugf("delivery volume cleanup: %v", err)
-	}
-}
-
-func (r *runner) cleanupImportedDevContainer() {
+func (r *runner) cleanupImportedDevContainer() error {
 	if r.workspaceConfig == nil ||
 		r.workspaceConfig.Workspace == nil ||
 		r.workspaceConfig.Workspace.Source.LocalFolder == "" {
-		return
+		return nil
 	}
-	if err := CleanupImportedDevContainers(r.localWorkspaceFolder); err != nil {
-		log.Debugf("imported devcontainer cleanup: %v", err)
-	}
+	return CleanupImportedDevContainers(r.localWorkspaceFolder)
 }
 
 func (r *runner) Stop(ctx context.Context) error {

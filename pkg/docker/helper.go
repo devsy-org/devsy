@@ -363,7 +363,7 @@ func (r *DockerHelper) Pull(ctx context.Context, opts PullOptions) error {
 }
 
 func (r *DockerHelper) Remove(ctx context.Context, id string) error {
-	out, err := r.buildCmd(ctx, "rm", id).CombinedOutput()
+	out, err := r.buildCmd(ctx, "rm", "-v", id).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s: %w", string(out), err)
 	}
