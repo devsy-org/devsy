@@ -80,10 +80,7 @@ func WaitHostReachable(
 	return fmt.Errorf("host %s not reachable", addr.String())
 }
 
-// WatchNetmap invokes netmapChangedFn whenever the tailnet state changes:
-// first with the initial status, then on self or peer updates. The full
-// snapshot is fetched on demand via LocalClient.Status instead of reading
-// the deprecated ipn.Notify.NetMap bus field.
+// WatchNetmap invokes netmapChangedFn whenever the tailnet state changes.
 func WatchNetmap(
 	ctx context.Context,
 	lc *local.Client,
@@ -118,8 +115,7 @@ func WatchNetmap(
 }
 
 // netmapChanged reports whether a bus notification indicates a tailnet
-// state change, mirroring how upstream consumers react to InitialStatus,
-// SelfChange, and peer deltas.
+// state change.
 func netmapChanged(n ipn.Notify) bool {
 	return n.InitialStatus != nil || n.SelfChange != nil ||
 		len(n.PeersChanged) > 0 || len(n.PeersRemoved) > 0 ||
