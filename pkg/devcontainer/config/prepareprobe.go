@@ -28,8 +28,8 @@ func PrepareCmdUser(cmd *exec.Cmd, userName string) error {
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
-			Uid: uint32(uid),
-			Gid: uint32(gid),
+			Uid: uint32(uid), //nolint:gosec // G115: uid from user lookup fits uint32
+			Gid: uint32(gid), //nolint:gosec // G115: gid from user lookup fits uint32
 		},
 	}
 

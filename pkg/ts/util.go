@@ -62,6 +62,7 @@ func WaitHostReachable(
 	for i := range maxRetries {
 		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
+		//nolint:gosec // G115: fixed workspace SSH port
 		conn, err := lc.DialTCP(timeoutCtx, addr.Host(), uint16(addr.Port()))
 		if err == nil {
 			_ = conn.Close()
