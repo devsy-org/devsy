@@ -3,13 +3,10 @@ package daemon
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
@@ -167,12 +164,7 @@ func (d *Daemon) watchNetmap(ctx context.Context) error {
 	}
 
 	return ts.WatchNetmap(ctx, lc, func(status *ipnstate.Status) {
-		nm, err := json.Marshal(status)
-		if err != nil {
-			log.Errorf("failed to marshal netmap: %v", err)
-		} else {
-			_ = os.WriteFile(filepath.Join(d.rootDir, "netmap.json"), nm, 0o644)
-		}
+		ts.PersistNetmapStatus(d.rootDir, status)
 	})
 }
 

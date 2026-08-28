@@ -2,7 +2,6 @@ package ts
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/platform/client"
 	sshServer "github.com/devsy-org/devsy/pkg/ssh/server"
 	"tailscale.com/client/local"
 	"tailscale.com/envknob"
@@ -36,8 +34,6 @@ const (
 	RunnerProxySocket string = "runner-proxy.sock"
 
 	netMapCooldown = 30 * time.Second
-
-	netmapFileName = "netmap.json"
 )
 
 // WorkspaceServer holds the TSNet server and its listeners.
@@ -56,8 +52,11 @@ type WorkspaceServerConfig struct {
 	PlatformHost  string
 	WorkspaceHost string
 	LogF          func(format string, args ...any)
-	Client        client.Client
 	RootDir       string
+	// Insecure skips TLS certificate verification for the DERP probe and
+	// the TSNet control-plane connection. Only set for coordinators known
+	// to use self-signed certificates.
+	Insecure bool
 }
 
 // NewWorkspaceServer creates a new TSNet server instance.
@@ -154,7 +153,7 @@ func (s *WorkspaceServer) setupControlURL(ctx context.Context) (*url.URL, error)
 		Scheme: GetEnvOrDefault("DEVSY_TSNET_SCHEME", "https"),
 		Host:   s.config.PlatformHost,
 	}
-	if err := CheckDerpConnection(ctx, baseURL); err != nil {
+	if err := CheckDerpConnection(ctx, baseURL, s.config.Insecure); err != nil {
 		return nil, fmt.Errorf("failed to verify DERP connection: %w", err)
 	}
 	return baseURL, nil
@@ -163,7 +162,9 @@ func (s *WorkspaceServer) setupControlURL(ctx context.Context) (*url.URL, error)
 // initTsServer initializes the TSNet server.
 func (s *WorkspaceServer) initTsServer(ctx context.Context, controlURL *url.URL) error {
 	store, _ := mem.New(s.config.LogF, "")
-	envknob.Setenv("TS_DEBUG_TLS_DIAL_INSECURE_SKIP_VERIFY", "true")
+	if s.config.Insecure {
+		envknob.Setenv("TS_DEBUG_TLS_DIAL_INSECURE_SKIP_VERIFY", "true")
+	}
 	log.Infof("connecting to control URL - %s/coordinator/", controlURL.String())
 	s.tsServer = &tsnet.Server{
 		Hostname:   s.config.WorkspaceHost,
@@ -198,21 +199,10 @@ func (s *WorkspaceServer) watchNetmap(ctx context.Context, lc *local.Client) {
 			return
 		}
 		lastUpdate = time.Now()
-		s.persistNetmap(status)
+		PersistNetmapStatus(s.config.RootDir, status)
 	})
 	if err != nil {
 		log.Errorf("failed to watch netmap: %v", err)
-	}
-}
-
-func (s *WorkspaceServer) persistNetmap(status *ipnstate.Status) {
-	nm, err := json.Marshal(status)
-	if err != nil {
-		log.Errorf("failed to marshal netmap: %v", err)
-		return
-	}
-	if err := os.WriteFile(filepath.Join(s.config.RootDir, netmapFileName), nm, 0o600); err != nil {
-		log.Errorf("failed to write netmap: %v", err)
 	}
 }
 

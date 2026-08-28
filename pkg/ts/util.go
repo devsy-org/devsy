@@ -2,9 +2,12 @@ package ts
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -54,11 +57,16 @@ func WaitHostReachable(
 	addr Addr,
 	maxRetries int,
 ) error {
+	port, err := toUint16Port(addr.Port())
+	if err != nil {
+		return fmt.Errorf("host %s: %w", addr.String(), err)
+	}
+
 	for i := range maxRetries {
 		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		conn, err := lc.DialTCP(timeoutCtx, addr.Host(), uint16(addr.Port()))
-		if err == nil {
+		conn, dialErr := lc.DialTCP(timeoutCtx, addr.Host(), port)
+		cancel()
+		if dialErr == nil {
 			_ = conn.Close()
 			return nil // Host is reachable
 		}
@@ -73,6 +81,14 @@ func WaitHostReachable(
 	}
 
 	return fmt.Errorf("host %s not reachable", addr.String())
+}
+
+// toUint16Port validates that port fits the uint16 range TCP ports use.
+func toUint16Port(port int) (uint16, error) {
+	if port < 0 || port > math.MaxUint16 {
+		return 0, fmt.Errorf("port %d out of range", port)
+	}
+	return uint16(port), nil // #nosec G115 -- bounds-checked above
 }
 
 // ipnWatcher is the subset of *local.IPNBusWatcher used by watchNetmap.
@@ -150,4 +166,22 @@ func netmapChanged(n ipn.Notify) bool {
 	return n.InitialStatus != nil || n.SelfChange != nil ||
 		len(n.PeersChanged) > 0 || len(n.PeersRemoved) > 0 ||
 		len(n.PeerChangedPatch) > 0
+}
+
+// netmapFileName is the debug snapshot both the daemon and workspace
+// server's WatchNetmap callbacks write on every tailnet state change.
+const netmapFileName = "netmap.json"
+
+// PersistNetmapStatus marshals status and writes it to netmap.json under
+// rootDir for debugging, logging rather than returning any failure since
+// callers invoke this from a WatchNetmap callback with no error path.
+func PersistNetmapStatus(rootDir string, status *ipnstate.Status) {
+	nm, err := json.Marshal(status)
+	if err != nil {
+		log.Errorf("failed to marshal netmap: %v", err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(rootDir, netmapFileName), nm, 0o600); err != nil {
+		log.Errorf("failed to write netmap: %v", err)
+	}
 }

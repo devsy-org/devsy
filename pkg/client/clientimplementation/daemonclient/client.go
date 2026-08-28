@@ -183,11 +183,15 @@ func (c *client) SSHClients(
 		return c.tsClient.DialTCP(ctx, addressParts[0], uint16(port))
 	}
 
-	toolClient, err = ts.WaitForSSHClient(ctx, dial, "tcp", address, "root", time.Second*10)
+	toolClient, err = ts.WaitForSSHClient(ctx, ts.SSHDialConfig{
+		Dialer: dial, Network: "tcp", Address: address, User: "root", Timeout: time.Second * 10,
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("create SSH tool client: %w", err)
 	}
-	userClient, err = ts.WaitForSSHClient(ctx, dial, "tcp", address, user, time.Second*10)
+	userClient, err = ts.WaitForSSHClient(ctx, ts.SSHDialConfig{
+		Dialer: dial, Network: "tcp", Address: address, User: user, Timeout: time.Second * 10,
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("create SSH user client: %w", err)
 	}

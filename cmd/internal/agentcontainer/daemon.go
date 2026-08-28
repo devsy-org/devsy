@@ -248,8 +248,8 @@ func runNetworkServer(
 		AccessKey:     cmd.Config.Platform.AccessKey,
 		PlatformHost:  ts.RemoveProtocol(cmd.Config.Platform.PlatformHost),
 		WorkspaceHost: cmd.Config.Platform.WorkspaceHost,
-		Client:        baseClient,
 		RootDir:       RootDir,
+		Insecure:      true,
 		LogF: func(format string, args ...any) {
 			log.Infof(format, args...)
 		},
