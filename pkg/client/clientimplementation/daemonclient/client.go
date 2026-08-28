@@ -132,7 +132,7 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("resolve workspace hostname: %w", err)
 	}
-	err = ts.WaitHostReachable(ctx, c.tsClient, wAddr, 5)
+	err = ts.WaitHostReachable(ctx, c.tsClient, wAddr, 30*time.Second)
 	if err == nil {
 		log.Debugf("Host %s is reachable. Proceeding with SSH session", wAddr.Host())
 		return nil
@@ -149,7 +149,7 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 		time.Sleep(2 * time.Second)
 
 		// let's try again
-		err = ts.WaitHostReachable(ctx, c.tsClient, wAddr, 20)
+		err = ts.WaitHostReachable(ctx, c.tsClient, wAddr, 2*time.Minute)
 		if err == nil {
 			return nil
 		}

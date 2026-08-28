@@ -13,6 +13,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
@@ -50,37 +51,37 @@ func GetURL(host string, port int) string {
 	return fmt.Sprintf("%s.%s:%d", host, DevsyTSNetDomain, port)
 }
 
-// WaitHostReachable polls until the given host is reachable via ts.
+// WaitHostReachable polls until the given host is reachable via ts, or
+// timeout elapses.
 func WaitHostReachable(
 	ctx context.Context,
 	lc *local.Client,
 	addr Addr,
-	maxRetries int,
+	timeout time.Duration,
 ) error {
 	port, err := ToUint16Port(addr.Port())
 	if err != nil {
 		return fmt.Errorf("host %s: %w", addr.String(), err)
 	}
 
-	for i := range maxRetries {
-		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		conn, dialErr := lc.DialTCP(timeoutCtx, addr.Host(), port)
-		cancel()
-		if dialErr == nil {
+	var lastErr error
+	pollErr := wait.PollUntilContextTimeout(ctx, 200*time.Millisecond, timeout, true,
+		func(ctx context.Context) (bool, error) {
+			dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			conn, dialErr := lc.DialTCP(dialCtx, addr.Host(), port)
+			if dialErr != nil {
+				lastErr = dialErr
+				log.Debugf("host %s not reachable: %v", addr.String(), dialErr)
+				return false, nil // keep polling; not fatal
+			}
 			_ = conn.Close()
-			return nil // Host is reachable
-		}
-		log.Debugf("host %s not reachable, retrying (%d/%d)", addr.String(), i+1, maxRetries)
-		time.Sleep(200 * time.Millisecond)
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+			return true, nil
+		})
+	if pollErr != nil {
+		return fmt.Errorf("host %s not reachable: %w", addr.String(), lastErr)
 	}
-
-	return fmt.Errorf("host %s not reachable", addr.String())
+	return nil
 }
 
 // ToUint16Port validates that port fits the uint16 range TCP ports use.
