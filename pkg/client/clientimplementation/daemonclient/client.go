@@ -51,49 +51,76 @@ const daemonHealthCheckDelay = 30 * time.Second
 // desktop app itself failed.
 var errGiveUpReachingWorkspace = errors.New("give up reaching workspace")
 
-// workspaceReachabilityCheck holds CheckWorkspaceReachable's poll state
-// across attempts: the last dial error, whether the desktop app has already
-// been launched, and whatever workspace status that launch decision was
-// based on (reused in the final error if every attempt fails).
-type workspaceReachabilityCheck struct {
+// workspaceDialer checks tailnet reachability only -- no daemon-health or
+// desktop-app concerns.
+type workspaceDialer struct {
+	tsClient *local.Client
+	wAddr    ts.Addr
+	port     uint16
+}
+
+func (d workspaceDialer) reachable(ctx context.Context) error {
+	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	conn, err := d.tsClient.DialTCP(dialCtx, d.wAddr.Host(), d.port)
+	if err != nil {
+		return err
+	}
+	_ = conn.Close()
+	return nil
+}
+
+// daemonRecovery decides, once daemonHealthCheckDelay has passed without a
+// reachable host, whether the daemon itself is down and, if so, launches the
+// desktop app to restart it -- no network-reachability concerns. attempt is
+// idempotent after opened is set: later calls are no-ops until the daemon's
+// state needs re-checking (which the caller does once polling ends).
+type daemonRecovery struct {
 	client *client
-	wAddr  ts.Addr
-	port   uint16
 	start  time.Time
 
-	desktopOpened   bool
-	reachErr        error
+	opened          bool
 	getWorkspaceErr error
 	instance        *managementv1.DevsyWorkspaceInstance
 }
 
-// step is one poll attempt: dial the workspace, and once
-// daemonHealthCheckDelay has passed without success, check whether the
-// daemon itself is down and launch the desktop app to restart it.
-func (r *workspaceReachabilityCheck) step(ctx context.Context) (bool, error) {
-	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	conn, dialErr := r.client.tsClient.DialTCP(dialCtx, r.wAddr.Host(), r.port)
-	if dialErr == nil {
-		_ = conn.Close()
-		return true, nil
-	}
-	r.reachErr = dialErr
-
-	if r.desktopOpened || time.Since(r.start) < daemonHealthCheckDelay {
-		return false, nil
+// attempt returns errGiveUpReachingWorkspace once retrying can no longer
+// help: the daemon is confirmed running (so an unreachable host has some
+// other cause), or launching the desktop app itself failed.
+func (r *daemonRecovery) attempt(ctx context.Context) error {
+	if r.opened || time.Since(r.start) < daemonHealthCheckDelay {
+		return nil
 	}
 
 	r.instance, r.getWorkspaceErr = r.client.localClient.GetWorkspace(ctx, r.client.workspace.UID)
 	if !daemon.IsDaemonNotAvailableError(r.getWorkspaceErr) {
-		// Daemon is reachable (or failed for an unrelated reason); no amount
-		// of retrying fixes an unreachable host in that case.
-		return false, errGiveUpReachingWorkspace
+		return errGiveUpReachingWorkspace
 	}
 
-	r.desktopOpened = true
+	r.opened = true
 	if openErr := r.client.openDesktopApp(); openErr != nil {
-		return false, errGiveUpReachingWorkspace // inform user about daemon state
+		return errGiveUpReachingWorkspace // inform user about daemon state
+	}
+	return nil
+}
+
+// workspaceReachabilityCheck is CheckWorkspaceReachable's poll step: dial,
+// and on failure hand off to daemonRecovery.
+type workspaceReachabilityCheck struct {
+	dial     workspaceDialer
+	recovery *daemonRecovery
+	reachErr error
+}
+
+func (r *workspaceReachabilityCheck) step(ctx context.Context) (bool, error) {
+	dialErr := r.dial.reachable(ctx)
+	if dialErr == nil {
+		return true, nil
+	}
+	r.reachErr = dialErr
+
+	if err := r.recovery.attempt(ctx); err != nil {
+		return false, err
 	}
 	return false, nil
 }
@@ -204,7 +231,10 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 		return fmt.Errorf("resolve workspace hostname: %w", err)
 	}
 
-	check := &workspaceReachabilityCheck{client: c, wAddr: wAddr, port: port, start: time.Now()}
+	check := &workspaceReachabilityCheck{
+		dial:     workspaceDialer{tsClient: c.tsClient, wAddr: wAddr, port: port},
+		recovery: &daemonRecovery{client: c, start: time.Now()},
+	}
 	pollErr := wait.PollUntilContextTimeout(
 		ctx,
 		200*time.Millisecond,
@@ -217,10 +247,11 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 		return nil
 	}
 
-	instance, getWorkspaceErr := check.instance, check.getWorkspaceErr
-	// check.getWorkspaceErr predates the desktop-app launch; re-query once the
-	// daemon has had a chance to come back so the reported cause is current.
-	if check.desktopOpened || (instance == nil && getWorkspaceErr == nil) {
+	instance, getWorkspaceErr := check.recovery.instance, check.recovery.getWorkspaceErr
+	// check.recovery's cached state predates the desktop-app launch; re-query
+	// once the daemon has had a chance to come back so the reported cause is
+	// current.
+	if check.recovery.opened || (instance == nil && getWorkspaceErr == nil) {
 		instance, getWorkspaceErr = c.localClient.GetWorkspace(ctx, c.workspace.UID)
 	}
 	return c.workspaceUnreachableError(instance, getWorkspaceErr, check.reachErr)
