@@ -25,16 +25,37 @@ func waitUntil(t *testing.T, timeout time.Duration, msg string, cond func() bool
 	}
 }
 
+func waitFor(t *testing.T, timeout time.Duration, msg string, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(timeout):
+		t.Fatal(msg)
+	}
+}
+
+func selfChangeNotifs(n int) []ipn.Notify {
+	notifs := make([]ipn.Notify, n)
+	for i := range notifs {
+		notifs[i] = ipn.Notify{SelfChange: &tailcfg.Node{}}
+	}
+	return notifs
+}
+
 // fakeIPNWatcher replays a fixed sequence of notifications, then blocks until
 // the test signals it to report the watch as closed.
 type fakeIPNWatcher struct {
-	notifs []ipn.Notify
-	idx    atomic.Int32
-	closed chan struct{}
+	notifs     []ipn.Notify
+	idx        atomic.Int32
+	afterFirst chan struct{}
+	closed     chan struct{}
 }
 
 func (w *fakeIPNWatcher) Next() (ipn.Notify, error) {
 	i := w.idx.Load()
+	if i == 1 {
+		<-w.afterFirst
+	}
 	if int(i) < len(w.notifs) {
 		w.idx.Add(1)
 		return w.notifs[i], nil
@@ -51,19 +72,18 @@ func (w *fakeIPNWatcher) Next() (ipn.Notify, error) {
 func TestWatchNetmapDrainsBurstWhileStatusFetchBlocked(t *testing.T) {
 	const burst = 129
 
-	notifs := make([]ipn.Notify, burst)
-	for i := range notifs {
-		notifs[i] = ipn.Notify{SelfChange: &tailcfg.Node{}}
+	watcher := &fakeIPNWatcher{
+		notifs:     selfChangeNotifs(burst),
+		afterFirst: make(chan struct{}),
+		closed:     make(chan struct{}),
 	}
-	watcher := &fakeIPNWatcher{notifs: notifs, closed: make(chan struct{})}
 
 	firstFetchStarted := make(chan struct{})
 	unblockFirstFetch := make(chan struct{})
 	var fetchCount atomic.Int32
 
 	fetchStatus := func(context.Context) (*ipnstate.Status, error) { //nolint:unparam // exercises the success path only
-		n := fetchCount.Add(1)
-		if n == 1 {
+		if fetchCount.Add(1) == 1 {
 			close(firstFetchStarted)
 			<-unblockFirstFetch
 		}
@@ -78,11 +98,8 @@ func TestWatchNetmapDrainsBurstWhileStatusFetchBlocked(t *testing.T) {
 		errc <- watchNetmap(context.Background(), watcher, fetchStatus, callback)
 	}()
 
-	select {
-	case <-firstFetchStarted:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first status fetch never started")
-	}
+	waitFor(t, 5*time.Second, "first status fetch never started", firstFetchStarted)
+	close(watcher.afterFirst)
 
 	waitUntil(t, 5*time.Second, "watcher stalled while status fetch was blocked", func() bool {
 		return watcher.idx.Load() == burst
