@@ -88,7 +88,7 @@ func WatchNetmap(
 ) error {
 	watcher, err := lc.WatchIPNBus(
 		ctx,
-		ipn.NotifyInitialStatus|ipn.NotifyWatchEngineUpdates,
+		ipn.NotifyInitialStatus|ipn.NotifyWatchEngineUpdates|ipn.NotifyPeerChanges,
 	)
 	if err != nil {
 		return err
