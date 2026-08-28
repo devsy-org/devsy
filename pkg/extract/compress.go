@@ -135,7 +135,9 @@ func (a *Archiver) tarFolder(target string, targetStat os.FileInfo) error {
 		hdr, _ := tar.FileInfoHeader(targetStat, filePath)
 		hdr.Uid = 0
 		hdr.Gid = 0
-		hdr.Mode = fillGo18FileTypeBits(int64(chmodTarEntry(os.FileMode(hdr.Mode))), targetStat)
+		//nolint:gosec // G115: tar header mode bits fit os.FileMode
+		fileMode := os.FileMode(hdr.Mode)
+		hdr.Mode = fillGo18FileTypeBits(int64(chmodTarEntry(fileMode)), targetStat)
 		hdr.Name = target
 		if err := a.writer.WriteHeader(hdr); err != nil {
 			return fmt.Errorf("tar write header: %w", err)
@@ -177,7 +179,9 @@ func (a *Archiver) tarFile(target string, targetStat os.FileInfo) error {
 	hdr.Name = target
 	hdr.Uid = 0
 	hdr.Gid = 0
-	hdr.Mode = fillGo18FileTypeBits(int64(chmodTarEntry(os.FileMode(hdr.Mode))), targetStat)
+	//nolint:gosec // G115: tar header mode bits fit os.FileMode
+	fileMode := os.FileMode(hdr.Mode)
+	hdr.Mode = fillGo18FileTypeBits(int64(chmodTarEntry(fileMode)), targetStat)
 	hdr.ModTime = time.Unix(targetStat.ModTime().Unix(), 0)
 
 	if err := a.writer.WriteHeader(hdr); err != nil {

@@ -440,7 +440,7 @@ func VerifyVersion(baseClient Client) error {
 		return nil
 	}
 
-	backendMajor, err := strconv.Atoi(v.Major)
+	backendMajor, err := strconv.ParseUint(v.Major, 10, 64)
 	if err != nil {
 		return fmt.Errorf("parse major version string: %w", err)
 	}
@@ -456,7 +456,7 @@ func VerifyVersion(baseClient Client) error {
 		return err
 	}
 
-	if int(cliVersion.Major) > backendMajor {
+	if cliVersion.Major > backendMajor {
 		return fmt.Errorf(
 			"unsupported %[1]s version %[2]s. Downgrade your CLI to below v%[3]d.0.0 to support this version, "+
 				"as %[1]s v%[3]d.0.0 and newer versions are incompatible with v%[4]d.x.x",
@@ -465,7 +465,7 @@ func VerifyVersion(baseClient Client) error {
 			cliVersion.Major,
 			backendMajor,
 		)
-	} else if int(cliVersion.Major) < backendMajor {
+	} else if cliVersion.Major < backendMajor {
 		return fmt.Errorf(
 			"unsupported %[1]s version %[2]s. Upgrade your CLI to v%[3]d.0.0 or above to support this version, "+
 				"as %[1]s v%[3]d.0.0 and newer versions are incompatible with v%[4]d.x.x",

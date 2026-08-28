@@ -28,7 +28,7 @@ func ForUser(cmd *exec.Cmd, userName string) error {
 	}
 
 	// Set the user cmd should run as
-	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	//nolint:gosec // G115: uid/gid from user lookup fit uint32
 	cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}
 
 	return nil

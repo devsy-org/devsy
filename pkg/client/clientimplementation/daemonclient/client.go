@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/netip"
 	"strconv"
@@ -180,6 +181,10 @@ func (c *client) SSHClients(
 			return nil, fmt.Errorf("invalid port: %s", addressParts[1])
 		}
 
+		if port < 0 || port > math.MaxUint16 {
+			return nil, fmt.Errorf("invalid port: %s", addressParts[1])
+		}
+
 		return c.tsClient.DialTCP(ctx, addressParts[0], uint16(port))
 	}
 
@@ -200,6 +205,7 @@ func (c *client) DirectTunnel(ctx context.Context, stdin io.Reader, stdout io.Wr
 	if err != nil {
 		return fmt.Errorf("resolve workspace hostname: %w", err)
 	}
+	//nolint:gosec // G115: fixed default SSH port
 	conn, err := c.tsClient.DialTCP(ctx, wAddr.Host(), uint16(wAddr.Port()))
 	if err != nil {
 		return fmt.Errorf("failed to connect to SSH server in proxy mode: %w", err)
