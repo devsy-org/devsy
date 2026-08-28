@@ -56,8 +56,8 @@ func newSSHClient(
 
 	clientConfig := &ssh.ClientConfig{
 		User:            user,
-		Auth:            []ssh.AuthMethod{}, // The SSH server is only reachable through the tailnet
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Auth:            []ssh.AuthMethod{},          // The SSH server is only reachable through the tailnet
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // #nosec G106 -- workspace agent server reachable only through the encrypted tailnet
 	}
 
 	sshConn, channels, requests, err := ssh.NewClientConn(conn, address, clientConfig)

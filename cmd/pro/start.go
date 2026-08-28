@@ -1261,7 +1261,7 @@ func (cmd *StartCmd) pingLoftRouter(ctx context.Context, loftPod *corev1.Pod) (s
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+				InsecureSkipVerify: true, // #nosec G402 -- self-signed cert of the user's own pro instance
 			},
 		},
 	}
@@ -1379,7 +1379,9 @@ func (cmd *StartCmd) loginViaCLI(url string) error {
 	}
 	loginRequestBuf := bytes.NewBuffer(loginRequestBytes)
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, // #nosec G402 -- self-signed cert of the user's own pro instance
+		},
 	}
 	httpClient := &http.Client{Transport: tr}
 
@@ -1966,7 +1968,9 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	// we disable http2 as Kubernetes has problems with this
 	transport.ForceAttemptHTTP2 = false
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	transport.TLSClientConfig = &tls.Config{
+		InsecureSkipVerify: true, // #nosec G402 -- self-signed cert of the user's own pro instance
+	}
 	// wait until loft is reachable at the given url
 	client := &http.Client{Transport: transport}
 	url := "https://" + host + "/version"

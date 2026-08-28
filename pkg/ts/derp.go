@@ -17,7 +17,7 @@ type ConnTrackingFunc func(address string)
 func CheckDerpConnection(ctx context.Context, baseUrl *url.URL) error {
 	newTransport := http.DefaultTransport.(*http.Transport).Clone()
 	newTransport.TLSClientConfig = &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // #nosec G402 -- reachability probe of our own coordinator; no data exchanged
 	}
 
 	client := &http.Client{
