@@ -80,6 +80,11 @@ func WaitHostReachable(
 	return fmt.Errorf("host %s not reachable", addr.String())
 }
 
+// ipnWatcher is the subset of *local.IPNBusWatcher used by watchNetmap.
+type ipnWatcher interface {
+	Next() (ipn.Notify, error)
+}
+
 // WatchNetmap invokes netmapChangedFn whenever the tailnet state changes.
 func WatchNetmap(
 	ctx context.Context,
@@ -95,22 +100,61 @@ func WatchNetmap(
 	}
 	defer func() { _ = watcher.Close() }()
 
+	return watchNetmap(ctx, watcher, lc.Status, netmapChangedFn)
+}
+
+// watchNetmap drains watcher on a dedicated goroutine so notifications keep
+// flowing while fetchStatus is in flight, coalescing any changes that arrive
+// during a fetch into a single follow-up call. Without this, a burst of
+// notifications (e.g. NotifyPeerChanges deltas) can fill the IPN bus's
+// 128-entry queue while netmapChangedFn's caller blocks in fetchStatus,
+// causing tailscaled to close the watch ("IPN bus consumer fell behind").
+func watchNetmap(
+	ctx context.Context,
+	watcher ipnWatcher,
+	fetchStatus func(context.Context) (*ipnstate.Status, error),
+	netmapChangedFn func(status *ipnstate.Status),
+) error {
+	trigger := make(chan struct{}, 1)
+	errc := make(chan error, 1)
+
+	go drainNotifications(watcher, trigger, errc)
+
+	for {
+		select {
+		case err := <-errc:
+			return err
+		case <-trigger:
+			status, err := fetchStatus(ctx)
+			if err != nil {
+				return fmt.Errorf("fetch status: %w", err)
+			}
+			netmapChangedFn(status)
+		}
+	}
+}
+
+// drainNotifications continuously reads watcher.Next(), coalescing every
+// relevant change into a non-blocking signal on trigger, until watcher
+// reports a terminal error (or a bus-side ErrMessage) on errc.
+func drainNotifications(watcher ipnWatcher, trigger chan<- struct{}, errc chan<- error) {
 	for {
 		n, err := watcher.Next()
 		if err != nil {
-			return fmt.Errorf("watch ipn: %w", err)
+			errc <- fmt.Errorf("watch ipn: %w", err)
+			return
 		}
 		if n.ErrMessage != nil {
-			return fmt.Errorf("tailscale error: %w", errors.New(*n.ErrMessage))
+			errc <- fmt.Errorf("tailscale error: %w", errors.New(*n.ErrMessage))
+			return
 		}
 		if !netmapChanged(n) {
 			continue
 		}
-		status, err := lc.Status(ctx)
-		if err != nil {
-			return fmt.Errorf("fetch status: %w", err)
+		select {
+		case trigger <- struct{}{}:
+		default:
 		}
-		netmapChangedFn(status)
 	}
 }
 
