@@ -10,6 +10,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	snapshotpkg "github.com/devsy-org/devsy/pkg/snapshot"
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -421,6 +423,36 @@ func TestUpCmd_ValidateFromSnapshotFailsOnMissingManifest(t *testing.T) {
 	err := cmd.validateFromSnapshot(context.Background(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "validate --from-snapshot ref")
+}
+
+func TestUpCmd_ApplyFromSnapshotOverridesKeepsExplicitRemoteUserFlag(t *testing.T) {
+	cmd := &UpCmd{CLIOptions: provider2.CLIOptions{RemoteUser: "explicit-user"}}
+	manifest := mustBuildManifest(t, "snapshot-user")
+
+	require.NoError(t, cmd.applyFromSnapshotOverrides(manifest))
+
+	assert.Equal(t, "explicit-user", cmd.RemoteUser)
+}
+
+func TestUpCmd_ApplyFromSnapshotOverridesUsesSnapshotRemoteUserWhenUnset(t *testing.T) {
+	cmd := &UpCmd{}
+	manifest := mustBuildManifest(t, "snapshot-user")
+
+	require.NoError(t, cmd.applyFromSnapshotOverrides(manifest))
+
+	assert.Equal(t, "snapshot-user", cmd.RemoteUser)
+}
+
+func mustBuildManifest(t *testing.T, remoteUser string) *snapshotpkg.Manifest {
+	t.Helper()
+	manifest, err := snapshotpkg.BuildManifest(snapshotpkg.BuildManifestOptions{
+		WorkspaceUID:         "ws-uid",
+		ContainerImageDigest: "sha256:" + strings.Repeat("a", 64),
+		VolumesDigest:        "sha256:" + strings.Repeat("b", 64),
+		RemoteUser:           remoteUser,
+	})
+	require.NoError(t, err)
+	return manifest
 }
 
 func TestBuildUpCmd_DoesNotMutateCallerGlobalFlags(t *testing.T) {

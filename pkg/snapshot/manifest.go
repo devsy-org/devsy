@@ -7,15 +7,10 @@ import (
 )
 
 const (
-	VolumesMediaType     = "application/vnd.devsy.snapshot.volumes.v1.tar+gzip"
-	ManifestMediaType    = "application/vnd.oci.image.manifest.v1+json"
-	ManifestArtifactType = "application/vnd.devsy.snapshot.manifest.v1+json"
-	emptyConfigMediaType = "application/vnd.oci.empty.v1+json"
-	// defaultContainerImageMediaType is used only when
-	// BuildManifestOptions.ContainerImageMediaType is unset. Real callers
-	// (cmd/snapshot/create.go) always pass the media type the registry
-	// actually reported for the pushed image, which may be the OCI or the
-	// Docker v2 manifest format depending on the daemon/registry.
+	VolumesMediaType               = "application/vnd.devsy.snapshot.volumes.v1.tar+gzip"
+	ManifestMediaType              = "application/vnd.oci.image.manifest.v1+json"
+	ManifestArtifactType           = "application/vnd.devsy.snapshot.manifest.v1+json"
+	emptyConfigMediaType           = "application/vnd.oci.empty.v1+json"
 	defaultContainerImageMediaType = "application/vnd.docker.distribution.manifest.v2+json"
 )
 
@@ -26,26 +21,10 @@ const (
 	AnnotationDevContainerHash = "sh.devsy.snapshot.devcontainer-hash"
 	AnnotationSourceProvider   = "sh.devsy.snapshot.source-provider"
 	AnnotationMessage          = "sh.devsy.snapshot.message"
-	// AnnotationMountPrefix is the create-time mount target path (leading "/"
-	// trimmed) that volumes archive entries are prefixed with. Restore must
-	// strip exactly this many path segments regardless of the restore-side
-	// mount target's own depth, since the two are not guaranteed to match
-	// (different provider defaults, different workspace-folder conventions).
-	AnnotationMountPrefix = "sh.devsy.snapshot.mount-prefix"
-	// AnnotationRunArgs is the create-time devcontainer.json's runArgs
-	// (JSON-encoded []string), replayed onto the restored container so
-	// runArgs the original devcontainer.json relied on (e.g.
-	// --add-host=host.docker.internal:host-gateway for a registry reachable
-	// only via that hostname) still apply — restore pins DevContainerSource
-	// to the committed image, which bypasses the project devcontainer.json
-	// and would otherwise silently drop them.
-	AnnotationRunArgs = "sh.devsy.snapshot.run-args"
-	// AnnotationContainerEnv is the create-time devcontainer.json's
-	// containerEnv (JSON-encoded map[string]string), replayed onto the
-	// restored container for the same reason as AnnotationRunArgs: restore
-	// pins DevContainerSource to the committed image, bypassing the project
-	// devcontainer.json and silently dropping any containerEnv it set.
-	AnnotationContainerEnv = "sh.devsy.snapshot.container-env"
+	AnnotationMountPrefix      = "sh.devsy.snapshot.mount-prefix"
+	AnnotationRunArgs          = "sh.devsy.snapshot.run-args"
+	AnnotationContainerEnv     = "sh.devsy.snapshot.container-env"
+	AnnotationRemoteUser       = "sh.devsy.snapshot.remote-user"
 )
 
 // Descriptor mirrors the OCI content descriptor fields we need; kept minimal
@@ -76,6 +55,7 @@ type BuildManifestOptions struct {
 	MountPrefix      string
 	RunArgs          []string
 	ContainerEnv     map[string]string
+	RemoteUser       string
 
 	ContainerImageMediaType string
 	ContainerImageDigest    string
@@ -165,6 +145,9 @@ func addDevContainerOverrideAnnotations(
 		}
 		annotations[AnnotationContainerEnv] = string(raw)
 	}
+	if opts.RemoteUser != "" {
+		annotations[AnnotationRemoteUser] = opts.RemoteUser
+	}
 	return nil
 }
 
@@ -180,6 +163,12 @@ func (m *Manifest) RunArgs() ([]string, error) {
 		return nil, fmt.Errorf("parse %s annotation: %w", AnnotationRunArgs, err)
 	}
 	return args, nil
+}
+
+// RemoteUser returns the create-time devcontainer.json's remoteUser, or ""
+// when the snapshot carries none.
+func (m *Manifest) RemoteUser() string {
+	return m.Annotations[AnnotationRemoteUser]
 }
 
 // ContainerEnv decodes the create-time devcontainer.json's containerEnv from

@@ -3,10 +3,12 @@ package setup
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"go.uber.org/zap/zapcore"
@@ -188,5 +190,179 @@ func TestWriteResultFileTo_WidensStaleModeEvenWhenContentUnchanged(t *testing.T)
 	}
 	if got := info.Mode().Perm(); got != 0o644 {
 		t.Errorf("mode = %o, want 0644 even though content was already up to date", got)
+	}
+}
+
+// removeMarkerFile deletes a marker file if present, treating an existing
+// leftover from an earlier interrupted run the same as no marker at all.
+func removeMarkerFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove marker %s: %v", path, err)
+	}
+}
+
+func TestMarkerRoundTrip(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("markers live under /var/devsy; writing them needs root")
+	}
+	markerPath := filepath.Join(pkgconfig.ContainerDataDir, "testmarker.marker")
+	removeMarkerFile(t, markerPath)
+	t.Cleanup(func() { _ = os.Remove(markerPath) })
+
+	exists, err := markerExists("testmarker", "ws-1")
+	if err != nil {
+		t.Fatalf("markerExists on miss: %v", err)
+	}
+	if exists {
+		t.Fatal("markerExists = true before writeMarker, want false")
+	}
+
+	if err := writeMarker("testmarker", "ws-1"); err != nil {
+		t.Fatalf("writeMarker: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "matching content", content: "ws-1", want: true},
+		{name: "mismatched content", content: "ws-2", want: false},
+		{name: "empty content matches any", content: "", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := markerExists("testmarker", tc.content)
+			if err != nil {
+				t.Fatalf("markerExists: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("markerExists(%q) = %v, want %v", tc.content, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestChownWorkspaceSkipsAbsentFolder(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("markers live under /var/devsy; writing them needs root")
+	}
+	t.Setenv(pkgconfig.EnvWorkspaceID, "ws-absent")
+	t.Cleanup(func() {
+		_ = os.Remove(filepath.Join(pkgconfig.ContainerDataDir, "chownWorkspace.marker"))
+	})
+
+	result := &config.Result{
+		SubstitutionContext: &config.SubstitutionContext{
+			ContainerWorkspaceFolder: filepath.Join(t.TempDir(), "missing"),
+		},
+	}
+
+	for i := range 2 {
+		if err := chownWorkspace(result, true); err != nil {
+			t.Fatalf("chownWorkspace absent folder (call %d): %v", i, err)
+		}
+	}
+
+	exists, err := markerExists("chownWorkspace", "ws-absent")
+	if err != nil {
+		t.Fatalf("markerExists: %v", err)
+	}
+	if exists {
+		t.Fatal("chownWorkspace wrote the marker for a workspace it never chowned")
+	}
+}
+
+func TestChownWorkspaceIgnoresForeignMarkerWithoutWorkspaceID(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("markers live under /var/devsy; writing them needs root")
+	}
+	t.Setenv(pkgconfig.EnvWorkspaceID, "")
+	if err := writeMarker("chownWorkspace", "some-other-workspace"); err != nil {
+		t.Fatalf("writeMarker: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(filepath.Join(pkgconfig.ContainerDataDir, "chownWorkspace.marker"))
+	})
+	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+
+	result := &config.Result{
+		SubstitutionContext: &config.SubstitutionContext{
+			ContainerWorkspaceFolder: t.TempDir(),
+		},
+	}
+	if err := chownWorkspace(result, false); err != nil {
+		t.Fatalf("chownWorkspace: %v", err)
+	}
+
+	if got := logs.FilterMessageSnippet("chown workspace:").Len(); got == 0 {
+		t.Error("chownWorkspace skipped chowning because of an unrelated workspace's marker")
+	}
+}
+
+// mountReadOnly bind-mounts dir onto itself read-only so Lchown inside it fails with EROFS even for root.
+func mountReadOnly(t *testing.T, dir string) {
+	t.Helper()
+	//nolint:gosec // G204: dir is a t.TempDir() path, not external input
+	if err := exec.Command("mount", "--bind", dir, dir).Run(); err != nil {
+		t.Skipf("bind mount unavailable in this environment: %v", err)
+	}
+	t.Cleanup(func() {
+		//nolint:gosec // G204: dir is a t.TempDir() path, not external input
+		_ = exec.Command("umount", dir).Run()
+	})
+	//nolint:gosec // G204: dir is a t.TempDir() path, not external input
+	if err := exec.Command("mount", "-o", "remount,bind,ro", dir).Run(); err != nil {
+		t.Fatalf("remount read-only: %v", err)
+	}
+}
+
+// newForeignOwnedDir creates dir/f.txt owned by a uid other than root, so a
+// chown to root actually attempts (and, once read-only, fails) reassignment.
+func newForeignOwnedDir(t *testing.T) string {
+	t.Helper()
+	folder := filepath.Join(t.TempDir(), "ws")
+	if err := os.Mkdir(folder, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	file := filepath.Join(folder, "f.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := os.Lchown(folder, 1, 1); err != nil {
+		t.Fatalf("chown folder to non-root owner: %v", err)
+	}
+	if err := os.Lchown(file, 1, 1); err != nil {
+		t.Fatalf("chown file to non-root owner: %v", err)
+	}
+	return folder
+}
+
+func TestChownWorkspaceDeniedRecursiveChownSkipsMarker(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root: writes markers under /var/devsy and bind-mounts read-only")
+	}
+
+	folder := newForeignOwnedDir(t)
+	mountReadOnly(t, folder)
+
+	t.Setenv(pkgconfig.EnvWorkspaceID, "ws-denied")
+	t.Cleanup(func() {
+		_ = os.Remove(filepath.Join(pkgconfig.ContainerDataDir, "chownWorkspace.marker"))
+	})
+
+	result := &config.Result{
+		SubstitutionContext: &config.SubstitutionContext{ContainerWorkspaceFolder: folder},
+	}
+	if err := chownWorkspace(result, true); err != nil {
+		t.Fatalf("chownWorkspace: %v", err)
+	}
+
+	exists, err := markerExists("chownWorkspace", "ws-denied")
+	if err != nil {
+		t.Fatalf("markerExists: %v", err)
+	}
+	if exists {
+		t.Fatal("chownWorkspace latched the marker despite a fully denied recursive chown")
 	}
 }

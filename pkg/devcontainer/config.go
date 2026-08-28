@@ -186,6 +186,9 @@ func (r *runner) rawConfigFromSource(
 		log.Infof("ignoring project devcontainer, using image %s", spec.Image)
 		return r.saveSynthesizedConfig(&config.DevContainerConfig{
 			ImageContainer: config.ImageContainer{Image: spec.Image},
+			DevContainerConfigBase: config.DevContainerConfigBase{
+				RemoteUser: options.RemoteUser,
+			},
 			NonComposeBase: config.NonComposeBase{
 				RunArgs:      options.RunArgs,
 				ContainerEnv: options.ContainerEnv,

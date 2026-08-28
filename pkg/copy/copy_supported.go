@@ -3,6 +3,7 @@
 package copy
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -11,6 +12,12 @@ import (
 func IsUID(info os.FileInfo, uid uint32) bool {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	return ok && stat.Uid == uid
+}
+
+// DeniedByFilesystem reports whether err means the filesystem refused the
+// reassignment (insufficient privilege or a read-only share).
+func DeniedByFilesystem(err error) bool {
+	return errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EROFS)
 }
 
 func Lchown(info os.FileInfo, sourcePath, destPath string) error {

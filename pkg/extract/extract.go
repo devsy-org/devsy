@@ -14,11 +14,11 @@ import (
 )
 
 type Options struct {
-	StripLevels int
-
-	Perm *os.FileMode
-	UID  *int
-	GID  *int
+	StripLevels       int
+	Perm              *os.FileMode
+	UID               *int
+	GID               *int
+	PreserveOwnership bool
 }
 
 type Option func(o *Options)
@@ -26,6 +26,13 @@ type Option func(o *Options)
 func StripLevels(levels int) Option {
 	return func(o *Options) {
 		o.StripLevels = levels
+	}
+}
+
+// PreserveHeaderOwnership makes Extract apply each entry's tar-header uid/gid.
+func PreserveHeaderOwnership() Option {
+	return func(o *Options) {
+		o.PreserveOwnership = true
 	}
 }
 
@@ -99,6 +106,14 @@ func resolveRelativePath(header *tar.Header, opts *Options) string {
 	return rel
 }
 
+// entryTarget groups the paths every entry-materializing step needs: the
+// entry's own destination path, and destFolder for resolving hard-link
+// targets against the archive root.
+type entryTarget struct {
+	outFileName string
+	destFolder  string
+}
+
 func extractNext(
 	tarReader *tar.Reader, destFolder string, options *Options,
 ) (bool, error) {
@@ -111,9 +126,9 @@ func extractNext(
 	}
 
 	rel := resolveRelativePath(header, options)
-	outFileName := filepath.Join(destFolder, rel)
+	target := entryTarget{outFileName: filepath.Join(destFolder, rel), destFolder: destFolder}
 
-	if !withinDir(outFileName, destFolder) {
+	if !withinDir(target.outFileName, destFolder) {
 		return false, fmt.Errorf(
 			"path traversal detected: %s resolves outside destination",
 			header.Name,
@@ -122,21 +137,21 @@ func extractNext(
 
 	switch header.Typeflag {
 	case tar.TypeSymlink, tar.TypeLink:
-		if err := validateLinkTarget(header, outFileName, destFolder); err != nil {
+		if err := validateLinkTarget(header, target, options); err != nil {
 			return false, err
 		}
 	}
 
-	if err := extractEntry(tarReader, header, outFileName, options); err != nil {
+	if err := extractEntry(tarReader, header, target, options); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
 // validateLinkTarget ensures a symlink or hard link target stays within destFolder.
-func validateLinkTarget(header *tar.Header, outFileName, destFolder string) error {
-	linkTarget := resolveLinkTarget(header.Linkname, outFileName)
-	if !withinDir(linkTarget, destFolder) {
+func validateLinkTarget(header *tar.Header, target entryTarget, options *Options) error {
+	linkTarget := resolveLinkTarget(header, target, options)
+	if !withinDir(linkTarget, target.destFolder) {
 		kind := "symlink"
 		if header.Typeflag == tar.TypeLink {
 			kind = "hard link"
@@ -149,36 +164,94 @@ func validateLinkTarget(header *tar.Header, outFileName, destFolder string) erro
 	return nil
 }
 
-// resolveLinkTarget resolves a link target to an absolute path.
-func resolveLinkTarget(linkname, outFileName string) string {
-	if filepath.IsAbs(linkname) {
-		return filepath.Clean(linkname)
+// resolveLinkTarget resolves a link target to an absolute path. A symlink's
+// Linkname is a filesystem path relative to the link's own directory (or
+// absolute); a hard link's Linkname instead names another archive member,
+// in the same root+StripLevels namespace as every entry's Name.
+func resolveLinkTarget(header *tar.Header, target entryTarget, options *Options) string {
+	if header.Typeflag == tar.TypeLink {
+		rel := resolveRelativePath(&tar.Header{Name: header.Linkname}, options)
+		// #nosec G305 -- rel is confined to destFolder by resolveRelativePath
+		// plus the caller's withinDir check; this mirrors outFileName's own join.
+		return filepath.Clean(filepath.Join(target.destFolder, rel))
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(outFileName), linkname))
+	if filepath.IsAbs(header.Linkname) {
+		return filepath.Clean(header.Linkname)
+	}
+	// #nosec G305 -- resolved path is validated against destFolder by the
+	// caller's withinDir check before any filesystem operation uses it.
+	return filepath.Clean(filepath.Join(filepath.Dir(target.outFileName), header.Linkname))
 }
 
 func extractEntry(
-	tarReader *tar.Reader, header *tar.Header,
-	outFileName string, options *Options,
+	tarReader *tar.Reader, header *tar.Header, target entryTarget, options *Options,
 ) error {
-	dirPerm := os.ModePerm
-	if options.Perm != nil {
-		dirPerm = *options.Perm
-	}
-	if err := os.MkdirAll(filepath.Dir(outFileName), dirPerm); err != nil {
+	if err := os.MkdirAll(filepath.Dir(target.outFileName), dirMode(options)); err != nil {
 		return err
 	}
 
+	if err := createEntry(tarReader, header, target, options); err != nil {
+		return err
+	}
+
+	return applyOwnership(target.outFileName, header, options)
+}
+
+// createEntry materializes one tar entry on disk according to its type.
+func createEntry(
+	tarReader *tar.Reader, header *tar.Header, target entryTarget, options *Options,
+) error {
 	switch header.Typeflag {
 	case tar.TypeDir:
-		return os.MkdirAll(outFileName, dirPerm)
+		return os.MkdirAll(target.outFileName, dirMode(options))
 	case tar.TypeSymlink:
-		return os.Symlink(header.Linkname, outFileName)
+		return os.Symlink(header.Linkname, target.outFileName)
 	case tar.TypeLink:
-		return os.Link(header.Linkname, outFileName)
+		return os.Link(resolveLinkTarget(header, target, options), target.outFileName)
 	default:
-		return extractRegularFile(tarReader, header, outFileName, options)
+		return extractRegularFile(tarReader, header, target.outFileName, options)
 	}
+}
+
+// dirMode returns the directory permission mode to extract with.
+func dirMode(options *Options) os.FileMode {
+	if options.Perm != nil {
+		return *options.Perm
+	}
+	return os.ModePerm
+}
+
+// applyOwnership chowns a freshly extracted entry when the options ask for
+// it, preferring explicit UID/GID overrides over the entry's header values.
+func applyOwnership(
+	outFileName string, header *tar.Header, options *Options,
+) error {
+	uid, gid, ok := ownershipFor(header, options)
+	if !ok {
+		return nil
+	}
+	if err := os.Lchown(outFileName, uid, gid); err != nil {
+		if os.Geteuid() != 0 && errors.Is(err, os.ErrPermission) {
+			return nil
+		}
+		return fmt.Errorf("chown %s: %w", outFileName, err)
+	}
+	return nil
+}
+
+// ownershipFor resolves the uid/gid to apply and whether any chown is wanted.
+func ownershipFor(header *tar.Header, options *Options) (int, int, bool) {
+	if options.UID == nil && options.GID == nil {
+		return header.Uid, header.Gid, options.PreserveOwnership
+	}
+	uid, gid := 0, 0
+	if options.UID != nil {
+		uid = *options.UID
+	}
+	if options.GID != nil {
+		gid = *options.GID
+	}
+	return uid, gid, true
 }
 
 func extractRegularFile(

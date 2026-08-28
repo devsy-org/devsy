@@ -1,7 +1,6 @@
 package copy
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -28,6 +27,45 @@ func Chown(path string, userName string) error {
 	return os.Lchown(path, uidInt, gidInt)
 }
 
+// ChownFailure is one entry a recursive chown could not reassign.
+type ChownFailure struct {
+	Path string
+	Err  error
+}
+
+func (f ChownFailure) Error() string { return fmt.Sprintf("%s: %v", f.Path, f.Err) }
+
+func (f ChownFailure) Unwrap() error { return f.Err }
+
+// ChownFailures aggregates the entries ChownR could not chown. Callers
+// distinguish wholesale breakage from entries a shared filesystem refuses to
+// reassign via AllDenied.
+type ChownFailures []ChownFailure
+
+func (fs ChownFailures) Error() string {
+	return fmt.Sprintf("%d entries could not be chowned, first: %v", len(fs), fs[0])
+}
+
+func (fs ChownFailures) Unwrap() []error {
+	errs := make([]error, len(fs))
+	for i, f := range fs {
+		errs[i] = f
+	}
+	return errs
+}
+
+// AllDenied reports whether every failure was refused by the filesystem
+// (permission denied or read-only share) — the expected case for entries on
+// virtiofs shares such as read-only .git pack files.
+func (fs ChownFailures) AllDenied() bool {
+	for _, f := range fs {
+		if !DeniedByFilesystem(f.Err) {
+			return false
+		}
+	}
+	return len(fs) > 0
+}
+
 func ChownR(path string, userName string) error {
 	if userName == "" {
 		return nil
@@ -44,28 +82,30 @@ func ChownR(path string, userName string) error {
 	// #nosec G115 -- a resolved system uid is non-negative and fits uint32.
 	uidU32 := uint32(uidInt)
 
-	// A single un-chownable entry (e.g. a read-only file on a virtiofs share)
-	// must not abort the walk and leave the rest of the tree unowned.
-	var errs []error
+	var failures ChownFailures
 	_ = filepath.WalkDir(path, func(name string, dirEntry fs.DirEntry, err error) error {
 		if err != nil {
-			errs = append(errs, err)
+			failures = append(failures, ChownFailure{Path: name, Err: err})
 			return nil
 		}
 		info, err := dirEntry.Info()
 		if err != nil {
+			failures = append(failures, ChownFailure{Path: name, Err: err})
 			return nil
 		}
 		if IsUID(info, uidU32) {
 			return nil
 		}
 		// #nosec G122 -- best-effort chown of a freshly provisioned tree we own; WalkDir yields real paths.
-		if err := os.Lchown(name, uidInt, gidInt); err != nil {
-			errs = append(errs, err)
+		if lerr := os.Lchown(name, uidInt, gidInt); lerr != nil {
+			failures = append(failures, ChownFailure{Path: name, Err: lerr})
 		}
 		return nil
 	})
-	return errors.Join(errs...)
+	if len(failures) == 0 {
+		return nil
+	}
+	return failures
 }
 
 func MkdirAllChown(path string, perm os.FileMode, userName string) error {

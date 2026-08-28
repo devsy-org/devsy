@@ -3,6 +3,7 @@
 package copy
 
 import (
+	"errors"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -230,4 +231,46 @@ func mustReadFile(t *testing.T, path string) []byte {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return b
+}
+
+// Chowning a file to a different owner requires privileges, so pointing
+// ChownR at root as an unprivileged user exercises the denied-failure path
+// deterministically.
+func TestChownRDeniedFailuresAreTyped(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("requires an unprivileged user")
+	}
+	root := t.TempDir()
+	file := filepath.Join(root, "f.txt")
+	//nolint:gosec // G306 — test temp file
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	err := ChownR(root, "root")
+	var failures ChownFailures
+	if !errors.As(err, &failures) {
+		t.Fatalf("ChownR err = %v, want ChownFailures", err)
+	}
+	if !failures.AllDenied() {
+		t.Errorf("AllDenied() = false for %v", failures)
+	}
+	for _, f := range failures {
+		if !DeniedByFilesystem(f.Err) {
+			t.Errorf("%s: unexpected cause %v", f.Path, f.Err)
+		}
+	}
+}
+
+func TestChownRSameOwnerSucceeds(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "f.txt")
+	//nolint:gosec // G306 — test temp file
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := ChownR(root, currentUserName(t)); err != nil {
+		t.Fatalf("ChownR same owner: %v", err)
+	}
 }
