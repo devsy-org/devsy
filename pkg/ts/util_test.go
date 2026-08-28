@@ -12,8 +12,6 @@ import (
 	"tailscale.com/tailcfg"
 )
 
-// waitUntil polls cond until it reports true, failing the test if it does
-// not become true within timeout.
 func waitUntil(t *testing.T, timeout time.Duration, msg string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -42,8 +40,6 @@ func selfChangeNotifs(n int) []ipn.Notify {
 	return notifs
 }
 
-// fakeIPNWatcher replays a fixed sequence of notifications, then blocks until
-// the test signals it to report the watch as closed.
 type fakeIPNWatcher struct {
 	notifs     []ipn.Notify
 	idx        atomic.Int32
@@ -64,11 +60,6 @@ func (w *fakeIPNWatcher) Next() (ipn.Notify, error) {
 	return ipn.Notify{}, errors.New("watcher closed")
 }
 
-// TestWatchNetmapDrainsBurstWhileStatusFetchBlocked verifies that a burst of
-// notifications arriving while fetchStatus is in flight does not stall
-// notification draining: watchNetmap must keep calling watcher.Next() so a
-// burst larger than the IPN bus's 128-entry queue never causes tailscaled to
-// close the watch, and must coalesce the burst into a single follow-up fetch.
 func TestWatchNetmapDrainsBurstWhileStatusFetchBlocked(t *testing.T) {
 	const burst = 129
 

@@ -29,6 +29,9 @@ const (
 	// TSPortForwardPort is the fixed port on which the workspace WebSocket reverse proxy listens.
 	TSPortForwardPort string = "12051"
 
+	// DevsyTSNetDomain is the MagicDNS suffix for the Devsy tailnet.
+	DevsyTSNetDomain = "ts.devsy"
+
 	RunnerProxySocket string = "runner-proxy.sock"
 
 	netMapCooldown = 30 * time.Second
@@ -67,7 +70,6 @@ func NewWorkspaceServer(config *WorkspaceServerConfig) *WorkspaceServer {
 func (s *WorkspaceServer) Start(ctx context.Context) error {
 	log.Infof("Starting workspace server")
 
-	// Perform TSNet initialization (validation, control URL, server startup, hostname parsing)
 	workspaceName, projectName, err := s.setupTSNet(ctx)
 	if err != nil {
 		return err
@@ -77,10 +79,8 @@ func (s *WorkspaceServer) Start(ctx context.Context) error {
 		return err
 	}
 
-	// send heartbeats
 	go s.sendHeartbeats(ctx, projectName, workspaceName, lc)
 
-	// Start both SSH and HTTP reverse proxy listeners
 	if err := s.startListeners(ctx, projectName, workspaceName, lc); err != nil {
 		return err
 	}
@@ -104,7 +104,6 @@ func (s *WorkspaceServer) Start(ctx context.Context) error {
 		}
 	}()
 
-	// Wait until the context is canceled.
 	<-ctx.Done()
 	return nil
 }
@@ -174,7 +173,7 @@ func (s *WorkspaceServer) setupControlURL(ctx context.Context) (*url.URL, error)
 func (s *WorkspaceServer) initTsServer(ctx context.Context, controlURL *url.URL) error {
 	store, _ := mem.New(s.config.LogF, "")
 	envknob.Setenv("TS_DEBUG_TLS_DIAL_INSECURE_SKIP_VERIFY", "true")
-	log.Infof("Connecting to control URL - %s/coordinator/", controlURL.String())
+	log.Infof("connecting to control URL - %s/coordinator/", controlURL.String())
 	s.tsServer = &tsnet.Server{
 		Hostname:   s.config.WorkspaceHost,
 		Logf:       s.config.LogF,
@@ -205,15 +204,13 @@ func (s *WorkspaceServer) startListeners(
 	projectName, workspaceName string,
 	lc *local.Client,
 ) error {
-	// Create and start the SSH listener.
-	log.Infof("Starting SSH listener")
+	log.Infof("starting SSH listener")
 	sshListener, err := s.createListener(fmt.Sprintf(":%d", sshServer.DefaultUserPort))
 	if err != nil {
 		return err
 	}
 
-	// Create and start the HTTP reverse proxy listener.
-	log.Infof("Starting HTTP reverse proxy listener on TSNet port %s", TSPortForwardPort)
+	log.Infof("starting HTTP reverse proxy listener on TSNet port %s", TSPortForwardPort)
 	wsListener, err := s.createListener(fmt.Sprintf(":%s", TSPortForwardPort))
 	if err != nil {
 		return fmt.Errorf("failed to create listener on TS port %s: %w", TSPortForwardPort, err)
@@ -221,7 +218,7 @@ func (s *WorkspaceServer) startListeners(
 
 	// Create and start the platform HTTP git credentials listener
 	runnerProxySocket := filepath.Join(s.config.RootDir, RunnerProxySocket)
-	log.Infof("Starting runner proxy socket on %s", runnerProxySocket)
+	log.Infof("starting runner proxy socket on %s", runnerProxySocket)
 	_ = os.Remove(runnerProxySocket)
 	runnerProxyListener, err := net.Listen("unix", runnerProxySocket)
 	if err != nil {
@@ -233,10 +230,8 @@ func (s *WorkspaceServer) startListeners(
 		0o777,
 	) // #nosec G302 -- required so all users can connect to the unix socket
 
-	// add all listeners to the list
 	s.listeners = append(s.listeners, sshListener, wsListener, runnerProxyListener)
 
-	// Setup HTTP handler for git and docker credentials on the runner proxy.
 	go func() {
 		mux := http.NewServeMux()
 		transport := &http.Transport{DialContext: s.tsServer.Dial}
@@ -249,7 +244,6 @@ func (s *WorkspaceServer) startListeners(
 		serveMux(runnerProxyListener, mux, "HTTP runner proxy server error: %v")
 	}()
 
-	// Setup HTTP handler for port forwarding.
 	go func() {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/portforward", s.httpPortForwardHandler)
@@ -260,7 +254,6 @@ func (s *WorkspaceServer) startListeners(
 		)
 	}()
 
-	// Start handling SSH connections.
 	go s.handleSSHConnections(ctx, sshListener)
 
 	return nil
@@ -306,17 +299,16 @@ func (s *WorkspaceServer) gitCredentialsHandler(
 ) {
 	log.Infof("Received git credentials request from %s", r.RemoteAddr)
 
-	// create a new http client with a custom transport
 	discoveredRunner, err := s.discoverRunner(r.Context(), lc)
 	if err != nil {
 		http.Error(w, "failed to discover runner", http.StatusInternalServerError)
 		return
 	}
 
-	// build the runner URL
 	runnerURL := fmt.Sprintf(
-		"http://%s.ts.loft/devsy/%s/%s/workspace-git-credentials",
+		"http://%s.%s/devsy/%s/%s/workspace-git-credentials",
 		discoveredRunner,
+		DevsyTSNetDomain
 		projectName,
 		workspaceName,
 	)
@@ -347,19 +339,18 @@ func (s *WorkspaceServer) dockerCredentialsHandler(
 	transport *http.Transport,
 	projectName, workspaceName string,
 ) {
-	log.Infof("Received docker credentials request from %s", r.RemoteAddr)
+	log.Infof("received docker credentials request from %s", r.RemoteAddr)
 
-	// create a new http client with a custom transport
 	discoveredRunner, err := s.discoverRunner(r.Context(), lc)
 	if err != nil {
 		http.Error(w, "failed to discover runner", http.StatusInternalServerError)
 		return
 	}
 
-	// build the runner URL
 	runnerURL := fmt.Sprintf(
-		"http://%s.ts.loft/devsy/%s/%s/workspace-docker-credentials",
+		"http://%s.%s/devsy/%s/%s/workspace-docker-credentials",
 		discoveredRunner,
+		DevsyTSNetDomain
 		projectName,
 		workspaceName,
 	)
@@ -389,20 +380,18 @@ func (s *WorkspaceServer) httpPortForwardHandler(w http.ResponseWriter, r *http.
 	defer s.removeConnection()
 	log.Debugf("httpPortForwardHandler: starting")
 
-	// Retrieve required custom headers.
-	targetPort := r.Header.Get("X-Loft-Forward-Port")
-	baseForwardStr := r.Header.Get("X-Loft-Forward-Url")
+	targetPort := r.Header.Get("X-Devsy-Forward-Port")
+	baseForwardStr := r.Header.Get("X-Devsy-Forward-Url")
 	if targetPort == "" || baseForwardStr == "" {
-		http.Error(w, "missing required X-Loft headers", http.StatusBadRequest)
+		http.Error(w, "missing required X-Devsy headers", http.StatusBadRequest)
 		return
 	}
 	log.Debugf(
-		"httpPortForwardHandler: received headers: X-Loft-Forward-Port=%s, X-Loft-Forward-Url=%s",
+		"httpPortForwardHandler: received headers: X-Devsy-Forward-Port=%s, X-Devsy-Forward-Url=%s",
 		targetPort,
 		baseForwardStr,
 	)
 
-	// Parse and modify the URL to target the local endpoint.
 	parsedURL, err := url.Parse(baseForwardStr)
 	if err != nil {
 		log.Errorf("httpPortForwardHandler: failed to parse base URL: %v", err)
@@ -419,9 +408,9 @@ func (s *WorkspaceServer) httpPortForwardHandler(w http.ResponseWriter, r *http.
 			pr.Out.URL = &dest
 			pr.Out.Host = dest.Host
 			// Remove custom headers so they are not forwarded.
-			pr.Out.Header.Del("X-Loft-Forward-Port")
-			pr.Out.Header.Del("X-Loft-Forward-Url")
-			pr.Out.Header.Del("X-Loft-Forward-Authorization")
+			pr.Out.Header.Del("X-Devsy-Forward-Port")
+			pr.Out.Header.Del("X-Devsy-Forward-Url")
+			pr.Out.Header.Del("X-Devsy-Forward-Authorization")
 			addForwardedFor(pr)
 		},
 	}
@@ -485,7 +474,6 @@ func (s *WorkspaceServer) handleSSHConnection(clientConn net.Conn) {
 	}
 	defer func() { _ = backendConn.Close() }()
 
-	// Start bidirectional copy between client and backend.
 	go func() {
 		defer func() { _ = clientConn.Close() }()
 		defer func() { _ = backendConn.Close() }()
@@ -499,11 +487,9 @@ func (s *WorkspaceServer) sendHeartbeats(
 	projectName, workspaceName string,
 	lc *local.Client,
 ) {
-	// create a new http client with a custom transport
 	transport := &http.Transport{DialContext: s.tsServer.Dial}
 	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
 
-	// create a ticker to send heartbeats every 10 seconds
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -511,12 +497,10 @@ func (s *WorkspaceServer) sendHeartbeats(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// get the current number of connections
 			s.connectionCounterMu.Lock()
 			connections := s.connectionCounter
 			s.connectionCounterMu.Unlock()
 
-			// send a heartbeat if there are connections
 			if connections > 0 {
 				err := s.sendHeartbeat(ctx, client, projectName, workspaceName, lc, connections)
 				if err != nil {
@@ -543,13 +527,14 @@ func (s *WorkspaceServer) sendHeartbeat(
 	}
 
 	heartbeatURL := fmt.Sprintf(
-		"http://%s.ts.loft/devsy/%s/%s/heartbeat",
+		"http://%s.%s/devsy/%s/%s/heartbeat",
 		discoveredRunner,
+		DevsyTSNetDomain,
 		projectName,
 		workspaceName,
 	)
 	log.Infof(
-		"Sending heartbeat to %s, because there are %d active connections",
+		"sending heartbeat to %s, because there are %d active connections",
 		heartbeatURL,
 		connections,
 	)

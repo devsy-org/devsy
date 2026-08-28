@@ -15,11 +15,6 @@ import (
 	"tailscale.com/ipn/ipnstate"
 )
 
-// DevsyTSNetDomain is the MagicDNS suffix for the Devsy tailnet.
-// The literal value matches the configured Tailscale tailnet and must stay
-// in sync with operator network configuration.
-const DevsyTSNetDomain = "ts.loft"
-
 func GetClientHostname(userName string) (string, error) {
 	osHostname, err := os.Hostname()
 	if err != nil {
@@ -103,12 +98,6 @@ func WatchNetmap(
 	return watchNetmap(ctx, watcher, lc.Status, netmapChangedFn)
 }
 
-// watchNetmap drains watcher on a dedicated goroutine so notifications keep
-// flowing while fetchStatus is in flight, coalescing any changes that arrive
-// during a fetch into a single follow-up call. Without this, a burst of
-// notifications (e.g. NotifyPeerChanges deltas) can fill the IPN bus's
-// 128-entry queue while netmapChangedFn's caller blocks in fetchStatus,
-// causing tailscaled to close the watch ("IPN bus consumer fell behind").
 func watchNetmap(
 	ctx context.Context,
 	watcher ipnWatcher,
@@ -134,9 +123,6 @@ func watchNetmap(
 	}
 }
 
-// drainNotifications continuously reads watcher.Next(), coalescing every
-// relevant change into a non-blocking signal on trigger, until watcher
-// reports a terminal error (or a bus-side ErrMessage) on errc.
 func drainNotifications(watcher ipnWatcher, trigger chan<- struct{}, errc chan<- error) {
 	for {
 		n, err := watcher.Next()
@@ -158,7 +144,7 @@ func drainNotifications(watcher ipnWatcher, trigger chan<- struct{}, errc chan<-
 	}
 }
 
-// netmapChanged reports whether a bus notification indicates a tailnet
+// netmapChanged reports whether a notification indicates a tailnet
 // state change.
 func netmapChanged(n ipn.Notify) bool {
 	return n.InitialStatus != nil || n.SelfChange != nil ||
