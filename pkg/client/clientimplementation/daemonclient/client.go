@@ -218,7 +218,9 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 	}
 
 	instance, getWorkspaceErr := check.instance, check.getWorkspaceErr
-	if instance == nil && getWorkspaceErr == nil {
+	// check.getWorkspaceErr predates the desktop-app launch; re-query once the
+	// daemon has had a chance to come back so the reported cause is current.
+	if check.desktopOpened || (instance == nil && getWorkspaceErr == nil) {
 		instance, getWorkspaceErr = c.localClient.GetWorkspace(ctx, c.workspace.UID)
 	}
 	return c.workspaceUnreachableError(instance, getWorkspaceErr, check.reachErr)
