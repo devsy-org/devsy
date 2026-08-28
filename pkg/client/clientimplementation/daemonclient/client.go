@@ -39,10 +39,12 @@ import (
 const checkWorkspaceReachableTimeout = 150 * time.Second
 
 // daemonHealthCheckDelay is how long CheckWorkspaceReachable retries a plain
-// dial before it checks whether the daemon itself is down and, if so,
+// dial before it first checks whether the daemon itself is down and, if so,
 // launches the desktop app to restart it. Checking immediately would fire on
 // every transient dial failure; the delay gives a live daemon a chance to
-// become reachable on its own first.
+// become reachable on its own first. Also the minimum interval between
+// re-checks after an inconclusive one (see attempt), so a recurring
+// transient GetWorkspace error can't turn into a hot loop.
 const daemonHealthCheckDelay = 30 * time.Second
 
 // errGiveUpReachingWorkspace stops CheckWorkspaceReachable's poll early once
@@ -80,21 +82,37 @@ type daemonRecovery struct {
 	start  time.Time
 
 	opened          bool
+	lastCheck       time.Time
 	getWorkspaceErr error
 	instance        *managementv1.DevsyWorkspaceInstance
 }
 
 // attempt returns errGiveUpReachingWorkspace once retrying can no longer
-// help: the daemon is confirmed running (so an unreachable host has some
-// other cause), or launching the desktop app itself failed.
+// help: GetWorkspace succeeded (so the daemon is up and reported the actual,
+// unfixable-by-retrying workspace state), or launching the desktop app
+// failed. A GetWorkspace error other than DaemonNotAvailableError (e.g. a
+// transient backend error) is inconclusive, not terminal: re-check after
+// another daemonHealthCheckDelay instead of giving up.
 func (r *daemonRecovery) attempt(ctx context.Context) error {
-	if r.opened || time.Since(r.start) < daemonHealthCheckDelay {
+	if r.opened {
 		return nil
 	}
+	now := time.Now()
+	nextCheck := r.start.Add(daemonHealthCheckDelay)
+	if !r.lastCheck.IsZero() {
+		nextCheck = r.lastCheck.Add(daemonHealthCheckDelay)
+	}
+	if now.Before(nextCheck) {
+		return nil
+	}
+	r.lastCheck = now
 
 	r.instance, r.getWorkspaceErr = r.client.localClient.GetWorkspace(ctx, r.client.workspace.UID)
-	if !daemon.IsDaemonNotAvailableError(r.getWorkspaceErr) {
+	if r.getWorkspaceErr == nil {
 		return errGiveUpReachingWorkspace
+	}
+	if !daemon.IsDaemonNotAvailableError(r.getWorkspaceErr) {
+		return nil
 	}
 
 	r.opened = true
