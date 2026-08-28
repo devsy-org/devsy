@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -23,6 +23,7 @@ import (
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/ipn/store/mem"
 	"tailscale.com/tsnet"
+	"tailscale.com/types/key"
 )
 
 const (
@@ -35,6 +36,8 @@ const (
 	RunnerProxySocket string = "runner-proxy.sock"
 
 	netMapCooldown = 30 * time.Second
+
+	netmapFileName = "netmap.json"
 )
 
 // WorkspaceServer holds the TSNet server and its listeners.
@@ -42,8 +45,7 @@ type WorkspaceServer struct {
 	tsServer  *tsnet.Server
 	listeners []net.Listener
 
-	connectionCounter   int
-	connectionCounterMu sync.Mutex
+	connectionCount atomic.Int64
 
 	config *WorkspaceServerConfig
 }
@@ -79,30 +81,19 @@ func (s *WorkspaceServer) Start(ctx context.Context) error {
 		return err
 	}
 
-	go s.sendHeartbeats(ctx, projectName, workspaceName, lc)
-
-	if err := s.startListeners(ctx, projectName, workspaceName, lc); err != nil {
-		return err
+	runner := &runnerClient{
+		lc:            lc,
+		accessKey:     s.config.AccessKey,
+		projectName:   projectName,
+		workspaceName: workspaceName,
 	}
 
-	go func() {
-		lastUpdate := time.Now()
-		if err := WatchNetmap(ctx, lc, func(status *ipnstate.Status) {
-			if time.Since(lastUpdate) < netMapCooldown {
-				return
-			}
-			lastUpdate = time.Now()
+	go s.sendHeartbeats(ctx, runner)
+	go s.watchNetmap(ctx, lc)
 
-			nm, err := json.Marshal(status)
-			if err != nil {
-				log.Errorf("failed to marshal netmap: %v", err)
-			} else {
-				_ = os.WriteFile(filepath.Join(s.config.RootDir, "netmap.json"), nm, 0o644)
-			}
-		}); err != nil {
-			log.Errorf("failed to watch netmap: %v", err)
-		}
-	}()
+	if err := s.startListeners(ctx, runner); err != nil {
+		return err
+	}
 
 	<-ctx.Done()
 	return nil
@@ -189,7 +180,7 @@ func (s *WorkspaceServer) initTsServer(ctx context.Context, controlURL *url.URL)
 	return nil
 }
 
-// parseHostname extracts workspace and project names from the hostname.
+// parseWorkspaceHostname extracts workspace and project names from the hostname.
 func (s *WorkspaceServer) parseWorkspaceHostname() (workspace, project string, err error) {
 	parts := strings.Split(s.config.WorkspaceHost, ".")
 	if len(parts) < 4 {
@@ -198,12 +189,35 @@ func (s *WorkspaceServer) parseWorkspaceHostname() (workspace, project string, e
 	return parts[1], parts[2], nil
 }
 
+// watchNetmap persists the tailnet status to netmap.json for debugging,
+// throttled to once per netMapCooldown.
+func (s *WorkspaceServer) watchNetmap(ctx context.Context, lc *local.Client) {
+	lastUpdate := time.Now()
+	err := WatchNetmap(ctx, lc, func(status *ipnstate.Status) {
+		if time.Since(lastUpdate) < netMapCooldown {
+			return
+		}
+		lastUpdate = time.Now()
+		s.persistNetmap(status)
+	})
+	if err != nil {
+		log.Errorf("failed to watch netmap: %v", err)
+	}
+}
+
+func (s *WorkspaceServer) persistNetmap(status *ipnstate.Status) {
+	nm, err := json.Marshal(status)
+	if err != nil {
+		log.Errorf("failed to marshal netmap: %v", err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(s.config.RootDir, netmapFileName), nm, 0o600); err != nil {
+		log.Errorf("failed to write netmap: %v", err)
+	}
+}
+
 // startListeners creates and starts the SSH and HTTP reverse proxy listeners.
-func (s *WorkspaceServer) startListeners(
-	ctx context.Context,
-	projectName, workspaceName string,
-	lc *local.Client,
-) error {
+func (s *WorkspaceServer) startListeners(ctx context.Context, runner *runnerClient) error {
 	log.Infof("starting SSH listener")
 	sshListener, err := s.createListener(fmt.Sprintf(":%d", sshServer.DefaultUserPort))
 	if err != nil {
@@ -216,47 +230,69 @@ func (s *WorkspaceServer) startListeners(
 		return fmt.Errorf("failed to create listener on TS port %s: %w", TSPortForwardPort, err)
 	}
 
-	// Create and start the platform HTTP git credentials listener
-	runnerProxySocket := filepath.Join(s.config.RootDir, RunnerProxySocket)
-	log.Infof("starting runner proxy socket on %s", runnerProxySocket)
-	_ = os.Remove(runnerProxySocket)
-	runnerProxyListener, err := net.Listen("unix", runnerProxySocket)
+	runnerProxyListener, err := s.createRunnerProxySocket()
 	if err != nil {
-		return fmt.Errorf("failed to create listener on TS port %s: %w", TSPortForwardPort, err)
+		return err
 	}
-
-	_ = os.Chmod(
-		runnerProxySocket,
-		0o777,
-	) // #nosec G302 -- required so all users can connect to the unix socket
 
 	s.listeners = append(s.listeners, sshListener, wsListener, runnerProxyListener)
 
-	go func() {
-		mux := http.NewServeMux()
-		transport := &http.Transport{DialContext: s.tsServer.Dial}
-		mux.HandleFunc("/git-credentials", func(w http.ResponseWriter, r *http.Request) {
-			s.gitCredentialsHandler(w, r, lc, transport, projectName, workspaceName)
-		})
-		mux.HandleFunc("/docker-credentials", func(w http.ResponseWriter, r *http.Request) {
-			s.dockerCredentialsHandler(w, r, lc, transport, projectName, workspaceName)
-		})
-		serveMux(runnerProxyListener, mux, "HTTP runner proxy server error: %v")
-	}()
-
-	go func() {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/portforward", s.httpPortForwardHandler)
-		serveMux(
-			wsListener,
-			mux,
-			fmt.Sprintf("HTTP server error on TS port %s: %%v", TSPortForwardPort),
-		)
-	}()
-
+	transport := &http.Transport{DialContext: s.tsServer.Dial}
+	go s.serveRunnerProxy(runnerProxyListener, runner, transport)
+	go s.servePortForward(wsListener)
 	go s.handleSSHConnections(ctx, sshListener)
 
 	return nil
+}
+
+// createRunnerProxySocket creates the unix socket the platform runner uses to
+// reach the workspace's credential-proxy endpoints.
+func (s *WorkspaceServer) createRunnerProxySocket() (net.Listener, error) {
+	runnerProxySocket := filepath.Join(s.config.RootDir, RunnerProxySocket)
+	log.Infof("starting runner proxy socket on %s", runnerProxySocket)
+
+	_ = os.Remove(runnerProxySocket)
+	listener, err := net.Listen("unix", runnerProxySocket)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to create runner proxy socket %s: %w",
+			runnerProxySocket,
+			err,
+		)
+	}
+
+	chmodErr := os.Chmod(
+		runnerProxySocket,
+		0o777,
+	) // #nosec G302 -- all users must reach the unix socket
+	if chmodErr != nil {
+		log.Errorf("failed to chmod runner proxy socket %s: %v", runnerProxySocket, chmodErr)
+	}
+
+	return listener, nil
+}
+
+func (s *WorkspaceServer) serveRunnerProxy(
+	listener net.Listener,
+	runner *runnerClient,
+	transport *http.Transport,
+) {
+	mux := http.NewServeMux()
+	mux.HandleFunc(
+		"/git-credentials",
+		s.runnerProxyHandler(runner, transport, "workspace-git-credentials"),
+	)
+	mux.HandleFunc(
+		"/docker-credentials",
+		s.runnerProxyHandler(runner, transport, "workspace-docker-credentials"),
+	)
+	serveMux(listener, mux, "runner proxy server error: %v")
+}
+
+func (s *WorkspaceServer) servePortForward(listener net.Listener) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/portforward", s.httpPortForwardHandler)
+	serveMux(listener, mux, fmt.Sprintf("HTTP server error on TS port %s: %%v", TSPortForwardPort))
 }
 
 func serveMux(listener net.Listener, mux *http.ServeMux, errFormat string) {
@@ -266,111 +302,57 @@ func serveMux(listener net.Listener, mux *http.ServeMux, errFormat string) {
 	}
 }
 
-// createListener creates a raw listener and wraps it with connection tracking.
+// createListener creates a listener bound to the TSNet server.
 func (s *WorkspaceServer) createListener(addr string) (net.Listener, error) {
 	l, err := s.tsServer.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
-
-	// create a new tracked listener to track the number of connections
 	return l, nil
 }
 
 func (s *WorkspaceServer) addConnection() {
-	s.connectionCounterMu.Lock()
-	defer s.connectionCounterMu.Unlock()
-	s.connectionCounter++
+	s.connectionCount.Add(1)
 }
 
 func (s *WorkspaceServer) removeConnection() {
-	s.connectionCounterMu.Lock()
-	defer s.connectionCounterMu.Unlock()
-	s.connectionCounter--
+	s.connectionCount.Add(-1)
 }
 
-// gitCredentialsHandler is the handler for git credentials requests for workspace.
-func (s *WorkspaceServer) gitCredentialsHandler(
-	w http.ResponseWriter,
-	r *http.Request,
-	lc *local.Client,
+// runnerProxyHandler builds a reverse-proxy handler that discovers the
+// runner peer and forwards the request to path on it.
+func (s *WorkspaceServer) runnerProxyHandler(
+	runner *runnerClient,
 	transport *http.Transport,
-	projectName, workspaceName string,
-) {
-	log.Infof("Received git credentials request from %s", r.RemoteAddr)
+	path string,
+) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Infof("received %s request from %s", path, r.RemoteAddr)
 
-	discoveredRunner, err := s.discoverRunner(r.Context(), lc)
-	if err != nil {
-		http.Error(w, "failed to discover runner", http.StatusInternalServerError)
-		return
+		runnerHost, err := runner.discoverRunner(r.Context())
+		if err != nil {
+			http.Error(w, "failed to discover runner", http.StatusInternalServerError)
+			return
+		}
+
+		parsedURL, err := url.Parse(runner.url(runnerHost, path))
+		if err != nil {
+			http.Error(w, "failed to parse runner URL", http.StatusInternalServerError)
+			return
+		}
+
+		proxy := &httputil.ReverseProxy{
+			Transport: transport,
+			Rewrite: func(pr *httputil.ProxyRequest) {
+				dest := *parsedURL
+				pr.Out.URL = &dest
+				pr.Out.Host = dest.Host
+				pr.Out.Header.Set("Authorization", "Bearer "+runner.accessKey)
+				addForwardedFor(pr)
+			},
+		}
+		proxy.ServeHTTP(w, r)
 	}
-
-	runnerURL := fmt.Sprintf(
-		"http://%s.%s/devsy/%s/%s/workspace-git-credentials",
-		discoveredRunner,
-		DevsyTSNetDomain
-		projectName,
-		workspaceName,
-	)
-	parsedURL, err := url.Parse(runnerURL)
-	if err != nil {
-		http.Error(w, "failed to parse runner URL", http.StatusInternalServerError)
-		return
-	}
-
-	proxy := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			dest := *parsedURL
-			pr.Out.URL = &dest
-			pr.Out.Host = dest.Host
-			pr.Out.Header.Set("Authorization", "Bearer "+s.config.AccessKey)
-			addForwardedFor(pr)
-		},
-	}
-	proxy.Transport = transport
-	proxy.ServeHTTP(w, r)
-}
-
-// dockerCredentialsHandler is the handler for docker credentials requests for workspace.
-func (s *WorkspaceServer) dockerCredentialsHandler(
-	w http.ResponseWriter,
-	r *http.Request,
-	lc *local.Client,
-	transport *http.Transport,
-	projectName, workspaceName string,
-) {
-	log.Infof("received docker credentials request from %s", r.RemoteAddr)
-
-	discoveredRunner, err := s.discoverRunner(r.Context(), lc)
-	if err != nil {
-		http.Error(w, "failed to discover runner", http.StatusInternalServerError)
-		return
-	}
-
-	runnerURL := fmt.Sprintf(
-		"http://%s.%s/devsy/%s/%s/workspace-docker-credentials",
-		discoveredRunner,
-		DevsyTSNetDomain
-		projectName,
-		workspaceName,
-	)
-	parsedURL, err := url.Parse(runnerURL)
-	if err != nil {
-		http.Error(w, "failed to parse runner URL", http.StatusInternalServerError)
-		return
-	}
-
-	proxy := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			dest := *parsedURL
-			pr.Out.URL = &dest
-			pr.Out.Host = dest.Host
-			pr.Out.Header.Set("Authorization", "Bearer "+s.config.AccessKey)
-			addForwardedFor(pr)
-		},
-	}
-	proxy.Transport = transport
-	proxy.ServeHTTP(w, r)
 }
 
 // httpPortForwardHandler is the HTTP reverse proxy handler for workspace.
@@ -403,6 +385,7 @@ func (s *WorkspaceServer) httpPortForwardHandler(w http.ResponseWriter, r *http.
 	log.Debugf("httpPortForwardHandler: final target URL=%s", parsedURL.String())
 
 	proxy := &httputil.ReverseProxy{
+		Transport: http.DefaultTransport,
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			dest := *parsedURL
 			pr.Out.URL = &dest
@@ -414,7 +397,6 @@ func (s *WorkspaceServer) httpPortForwardHandler(w http.ResponseWriter, r *http.
 			addForwardedFor(pr)
 		},
 	}
-	proxy.Transport = http.DefaultTransport
 
 	log.Infof(
 		"httpPortForwardHandler: final proxied request: %s %s",
@@ -482,13 +464,11 @@ func (s *WorkspaceServer) handleSSHConnection(clientConn net.Conn) {
 	_, err = io.Copy(clientConn, backendConn)
 }
 
-func (s *WorkspaceServer) sendHeartbeats(
-	ctx context.Context,
-	projectName, workspaceName string,
-	lc *local.Client,
-) {
-	transport := &http.Transport{DialContext: s.tsServer.Dial}
-	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+func (s *WorkspaceServer) sendHeartbeats(ctx context.Context, runner *runnerClient) {
+	client := &http.Client{
+		Transport: &http.Transport{DialContext: s.tsServer.Dial},
+		Timeout:   10 * time.Second,
+	}
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -497,15 +477,11 @@ func (s *WorkspaceServer) sendHeartbeats(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.connectionCounterMu.Lock()
-			connections := s.connectionCounter
-			s.connectionCounterMu.Unlock()
-
-			if connections > 0 {
-				err := s.sendHeartbeat(ctx, client, projectName, workspaceName, lc, connections)
-				if err != nil {
-					log.Errorf("Failed to send heartbeat: %v", err)
-				}
+			if s.connectionCount.Load() <= 0 {
+				continue
+			}
+			if err := s.sendHeartbeat(ctx, client, runner); err != nil {
+				log.Errorf("Failed to send heartbeat: %v", err)
 			}
 		}
 	}
@@ -514,36 +490,29 @@ func (s *WorkspaceServer) sendHeartbeats(
 func (s *WorkspaceServer) sendHeartbeat(
 	ctx context.Context,
 	client *http.Client,
-	projectName, workspaceName string,
-	lc *local.Client,
-	connections int,
+	runner *runnerClient,
 ) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	discoveredRunner, err := s.discoverRunner(ctx, lc)
+	runnerHost, err := runner.discoverRunner(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to discover runner: %w", err)
 	}
 
-	heartbeatURL := fmt.Sprintf(
-		"http://%s.%s/devsy/%s/%s/heartbeat",
-		discoveredRunner,
-		DevsyTSNetDomain,
-		projectName,
-		workspaceName,
-	)
+	heartbeatURL := runner.url(runnerHost, "heartbeat")
 	log.Infof(
 		"sending heartbeat to %s, because there are %d active connections",
 		heartbeatURL,
-		connections,
+		s.connectionCount.Load(),
 	)
-	req, err := http.NewRequestWithContext(ctx, "GET", heartbeatURL, nil)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, heartbeatURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request for %s: %w", heartbeatURL, err)
 	}
+	req.Header.Set("Authorization", "Bearer "+runner.accessKey)
 
-	req.Header.Set("Authorization", "Bearer "+s.config.AccessKey)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("request to %s failed: %w", heartbeatURL, err)
@@ -551,34 +520,56 @@ func (s *WorkspaceServer) sendHeartbeat(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("received response from %s - Status: %d", heartbeatURL, resp.StatusCode)
+		return fmt.Errorf("received response from %s - status: %d", heartbeatURL, resp.StatusCode)
 	}
-	log.Infof("received response from %s - Status: %d", heartbeatURL, resp.StatusCode)
+	log.Infof("received response from %s - status: %d", heartbeatURL, resp.StatusCode)
 	return nil
 }
 
-// discoverRunner attempts to find the runner peer from the TSNet status.
-func (s *WorkspaceServer) discoverRunner(ctx context.Context, lc *local.Client) (string, error) {
-	status, err := lc.Status(ctx)
+// runnerClient bundles what's needed to locate the platform runner peer and
+// address its endpoints on the tailnet.
+type runnerClient struct {
+	lc            *local.Client
+	accessKey     string
+	projectName   string
+	workspaceName string
+}
+
+// discoverRunner finds the runner peer's hostname from the TSNet status.
+func (rc *runnerClient) discoverRunner(ctx context.Context) (string, error) {
+	status, err := rc.lc.Status(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get status: %w", err)
 	}
 
-	var runner string
-	for _, peer := range status.Peer {
-		if peer == nil || peer.HostName == "" {
-			continue
-		}
-
-		if strings.HasSuffix(peer.HostName, "runner") {
-			runner = peer.HostName
-			break
-		}
-	}
-	if runner == "" {
+	runnerHost, ok := selectRunnerPeer(status.Peer)
+	if !ok {
 		return "", fmt.Errorf("no active runner found")
 	}
+	log.Infof("discoverRunner: selected runner = %s", runnerHost)
+	return runnerHost, nil
+}
 
-	log.Infof("discoverRunner: selected runner = %s", runner)
-	return runner, nil
+// selectRunnerPeer picks the platform runner from the tailnet's peer set,
+// identified by a "runner"-suffixed hostname.
+func selectRunnerPeer(peers map[key.NodePublic]*ipnstate.PeerStatus) (string, bool) {
+	for _, peer := range peers {
+		if peer != nil && strings.HasSuffix(peer.HostName, "runner") {
+			return peer.HostName, true
+		}
+	}
+	return "", false
+}
+
+// url builds the runner-relative URL for path, e.g. "heartbeat" or
+// "workspace-git-credentials".
+func (rc *runnerClient) url(runnerHost, path string) string {
+	return fmt.Sprintf(
+		"http://%s.%s/devsy/%s/%s/%s",
+		runnerHost,
+		DevsyTSNetDomain,
+		rc.projectName,
+		rc.workspaceName,
+		path,
+	)
 }
