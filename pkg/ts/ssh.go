@@ -29,7 +29,7 @@ func WaitForSSHClient(ctx context.Context, cfg SSHDialConfig) (*ssh.Client, erro
 		c   *ssh.Client
 		err error
 	)
-	log.Debugf("Attempting to establish SSH connection with %s as user %s", cfg.Address, cfg.User)
+	log.Debugf("attempting to establish SSH connection with %s as user %s", cfg.Address, cfg.User)
 	for time.Now().Before(deadline) {
 		c, err = newSSHClient(ctx, cfg)
 		if err == nil {
@@ -42,7 +42,7 @@ func WaitForSSHClient(ctx context.Context, cfg SSHDialConfig) (*ssh.Client, erro
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
-	log.Debugf("Failed to establish SSH connection %v", err)
+	log.Debugf("failed to establish SSH connection %v", err)
 
 	return c, err
 }

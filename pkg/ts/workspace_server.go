@@ -69,7 +69,7 @@ func NewWorkspaceServer(config *WorkspaceServerConfig) *WorkspaceServer {
 // Start initializes the TSNet server, sets up listeners for SSH and HTTP
 // reverse proxy traffic, and waits until the given context is canceled.
 func (s *WorkspaceServer) Start(ctx context.Context) error {
-	log.Infof("Starting workspace server")
+	log.Infof("starting workspace server")
 
 	workspaceName, projectName, err := s.setupTSNet(ctx)
 	if err != nil {
@@ -251,10 +251,11 @@ func (s *WorkspaceServer) createRunnerProxySocket() (net.Listener, error) {
 		)
 	}
 
-	chmodErr := os.Chmod(
-		runnerProxySocket,
-		0o777,
-	) // #nosec G302 -- all users must reach the unix socket
+	// The daemon runs as the container's default (often root) user, but git/docker
+	// commands invoking the credential helper run as whatever devcontainer remoteUser
+	// an interactive session su'd to (see pkg/ssh/server), a different UID. All local
+	// users must therefore reach this socket.
+	chmodErr := os.Chmod(runnerProxySocket, 0o777) // #nosec G302 -- see comment above
 	if chmodErr != nil {
 		log.Errorf("failed to chmod runner proxy socket %s: %v", runnerProxySocket, chmodErr)
 	}
@@ -282,7 +283,7 @@ func (s *WorkspaceServer) serveRunnerProxy(
 func (s *WorkspaceServer) servePortForward(listener net.Listener) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/portforward", s.httpPortForwardHandler)
-	serveMux(listener, mux, fmt.Sprintf("HTTP server error on TS port %s: %%v", TSPortForwardPort))
+	serveMux(listener, mux, fmt.Sprintf("http server error on TS port %s: %%v", TSPortForwardPort))
 }
 
 func serveMux(listener net.Listener, mux *http.ServeMux, errFormat string) {
@@ -425,7 +426,7 @@ func (s *WorkspaceServer) handleSSHConnections(ctx context.Context, listener net
 			if ctx.Err() != nil {
 				return
 			}
-			log.Errorf("Failed to accept connection: %v", err)
+			log.Errorf("failed to accept connection: %v", err)
 			continue
 		}
 		go s.handleSSHConnection(clientConn)
@@ -441,7 +442,7 @@ func (s *WorkspaceServer) handleSSHConnection(clientConn net.Conn) {
 	localAddr := fmt.Sprintf("127.0.0.1:%d", sshServer.DefaultUserPort)
 	backendConn, err := net.Dial("tcp", localAddr)
 	if err != nil {
-		log.Errorf("Failed to connect to local address %s: %v", localAddr, err)
+		log.Errorf("failed to connect to local address %s: %v", localAddr, err)
 		return
 	}
 	defer func() { _ = backendConn.Close() }()
@@ -471,7 +472,7 @@ func (s *WorkspaceServer) sendHeartbeats(ctx context.Context, runner *runnerClie
 				continue
 			}
 			if err := s.sendHeartbeat(ctx, client, runner); err != nil {
-				log.Errorf("Failed to send heartbeat: %v", err)
+				log.Errorf("failed to send heartbeat: %v", err)
 			}
 		}
 	}
