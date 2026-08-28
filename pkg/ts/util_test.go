@@ -41,6 +41,8 @@ func selfChangeNotifs(n int) []ipn.Notify {
 	return notifs
 }
 
+// fakeIPNWatcher blocks Next's second call on afterFirst so a test can force
+// a burst to arrive while a status fetch is still in flight.
 type fakeIPNWatcher struct {
 	notifs     []ipn.Notify
 	idx        atomic.Int32
@@ -61,6 +63,8 @@ func (w *fakeIPNWatcher) Next() (ipn.Notify, error) {
 	return ipn.Notify{}, errors.New("watcher closed")
 }
 
+// Regression test for the burst-drain/coalescing bug: draining must not
+// stall behind a blocked status fetch.
 func TestWatchNetmapDrainsBurstWhileStatusFetchBlocked(t *testing.T) {
 	const burst = 129
 
