@@ -179,8 +179,12 @@ func (c *client) SSHClients(
 		if err != nil {
 			return nil, fmt.Errorf("invalid port: %s", addressParts[1])
 		}
+		port16, err := ts.ToUint16Port(port)
+		if err != nil {
+			return nil, fmt.Errorf("invalid port: %w", err)
+		}
 
-		return c.tsClient.DialTCP(ctx, addressParts[0], uint16(port))
+		return c.tsClient.DialTCP(ctx, addressParts[0], port16)
 	}
 
 	toolClient, err = ts.WaitForSSHClient(ctx, ts.SSHDialConfig{
@@ -204,7 +208,11 @@ func (c *client) DirectTunnel(ctx context.Context, stdin io.Reader, stdout io.Wr
 	if err != nil {
 		return fmt.Errorf("resolve workspace hostname: %w", err)
 	}
-	conn, err := c.tsClient.DialTCP(ctx, wAddr.Host(), uint16(wAddr.Port()))
+	port, err := wAddr.PortUint16()
+	if err != nil {
+		return fmt.Errorf("invalid workspace port: %w", err)
+	}
+	conn, err := c.tsClient.DialTCP(ctx, wAddr.Host(), port)
 	if err != nil {
 		return fmt.Errorf("failed to connect to SSH server in proxy mode: %w", err)
 	}

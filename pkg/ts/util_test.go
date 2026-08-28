@@ -3,6 +3,7 @@ package ts
 import (
 	"context"
 	"errors"
+	"math"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -115,5 +116,64 @@ func TestWatchNetmapDrainsBurstWhileStatusFetchBlocked(t *testing.T) {
 	close(watcher.closed)
 	if err := <-errc; err == nil {
 		t.Fatal("watchNetmap returned nil error after watcher closed, want an error")
+	}
+}
+
+func TestToUint16Port(t *testing.T) {
+	cases := []struct {
+		name    string
+		port    int
+		want    uint16
+		wantErr bool
+	}{
+		{name: "negative", port: -1, wantErr: true},
+		{name: "zero", port: 0, want: 0},
+		{name: "max", port: math.MaxUint16, want: math.MaxUint16},
+		{name: "over max", port: math.MaxUint16 + 1, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ToUint16Port(tc.port)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("ToUint16Port(%d) = %d, nil; want an error", tc.port, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ToUint16Port(%d) returned unexpected error: %v", tc.port, err)
+			}
+			if got != tc.want {
+				t.Errorf("ToUint16Port(%d) = %d, want %d", tc.port, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNetmapChanged(t *testing.T) {
+	cases := []struct {
+		name string
+		n    ipn.Notify
+		want bool
+	}{
+		{name: "empty notify", n: ipn.Notify{}, want: false},
+		{name: "initial status", n: ipn.Notify{InitialStatus: &ipnstate.Status{}}, want: true},
+		{name: "self change", n: ipn.Notify{SelfChange: &tailcfg.Node{}}, want: true},
+		{name: "peers changed", n: ipn.Notify{PeersChanged: []*tailcfg.Node{{}}}, want: true},
+		{name: "peers removed", n: ipn.Notify{PeersRemoved: []tailcfg.NodeID{1}}, want: true},
+		{
+			name: "peer changed patch",
+			n:    ipn.Notify{PeerChangedPatch: []*tailcfg.PeerChange{{}}},
+			want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := netmapChanged(tc.n); got != tc.want {
+				t.Errorf("netmapChanged(%+v) = %v, want %v", tc.n, got, tc.want)
+			}
+		})
 	}
 }

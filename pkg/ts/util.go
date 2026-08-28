@@ -57,7 +57,7 @@ func WaitHostReachable(
 	addr Addr,
 	maxRetries int,
 ) error {
-	port, err := toUint16Port(addr.Port())
+	port, err := ToUint16Port(addr.Port())
 	if err != nil {
 		return fmt.Errorf("host %s: %w", addr.String(), err)
 	}
@@ -83,8 +83,8 @@ func WaitHostReachable(
 	return fmt.Errorf("host %s not reachable", addr.String())
 }
 
-// toUint16Port validates that port fits the uint16 range TCP ports use.
-func toUint16Port(port int) (uint16, error) {
+// ToUint16Port validates that port fits the uint16 range TCP ports use.
+func ToUint16Port(port int) (uint16, error) {
 	if port < 0 || port > math.MaxUint16 {
 		return 0, fmt.Errorf("port %d out of range", port)
 	}
