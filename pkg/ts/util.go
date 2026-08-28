@@ -62,7 +62,6 @@ type ipnWatcher interface {
 	Next() (ipn.Notify, error)
 }
 
-// WatchNetmap invokes netmapChangedFn whenever the tailnet state changes.
 func WatchNetmap(
 	ctx context.Context,
 	lc *local.Client,
@@ -80,6 +79,10 @@ func WatchNetmap(
 	return watchNetmap(ctx, watcher, lc.Status, netmapChangedFn)
 }
 
+// watchNetmap drains notifications on a separate goroutine (drainNotifications)
+// so a burst never outruns tailscaled's 128-entry IPN bus queue while
+// fetchStatus is in flight below; bursts are coalesced into a single
+// follow-up fetch via the buffered trigger channel.
 func watchNetmap(
 	ctx context.Context,
 	watcher ipnWatcher,
@@ -126,8 +129,6 @@ func drainNotifications(watcher ipnWatcher, trigger chan<- struct{}, errc chan<-
 	}
 }
 
-// netmapChanged reports whether a notification indicates a tailnet
-// state change.
 func netmapChanged(n ipn.Notify) bool {
 	return n.InitialStatus != nil || n.SelfChange != nil ||
 		len(n.PeersChanged) > 0 || len(n.PeersRemoved) > 0 ||

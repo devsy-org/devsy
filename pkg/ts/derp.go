@@ -47,7 +47,6 @@ func CheckDerpConnection(ctx context.Context, baseUrl *url.URL, insecure bool) e
 	return nil
 }
 
-// Utility function to get environment variable or default.
 func GetEnvOrDefault(envVar, defaultVal string) string {
 	if val := os.Getenv(envVar); val != "" {
 		return val
@@ -55,7 +54,6 @@ func GetEnvOrDefault(envVar, defaultVal string) string {
 	return defaultVal
 }
 
-// RemoveProtocol removes protocol from URL.
 func RemoveProtocol(hostPath string) string {
 	if _, after, ok := strings.Cut(hostPath, "://"); ok {
 		return after

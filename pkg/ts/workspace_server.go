@@ -59,7 +59,6 @@ type WorkspaceServerConfig struct {
 	Insecure bool
 }
 
-// NewWorkspaceServer creates a new TSNet server instance.
 func NewWorkspaceServer(config *WorkspaceServerConfig) *WorkspaceServer {
 	return &WorkspaceServer{
 		config: config,
@@ -112,7 +111,6 @@ func (s *WorkspaceServer) Stop() {
 	log.Info("Tailscale server stopped")
 }
 
-// Dial dials the given address using the TSNet server.
 func (s *WorkspaceServer) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	if s.tsServer == nil {
 		return nil, fmt.Errorf("tailscale server is not running")
@@ -139,7 +137,6 @@ func (s *WorkspaceServer) setupTSNet(ctx context.Context) (workspace, project st
 	return s.parseWorkspaceHostname()
 }
 
-// validateConfig ensures required configuration values are set.
 func (s *WorkspaceServer) validateConfig() error {
 	if s.config.AccessKey == "" || s.config.PlatformHost == "" || s.config.WorkspaceHost == "" {
 		return fmt.Errorf("access key, host, or hostname cannot be empty")
@@ -159,7 +156,6 @@ func (s *WorkspaceServer) setupControlURL(ctx context.Context) (*url.URL, error)
 	return baseURL, nil
 }
 
-// initTsServer initializes the TSNet server.
 func (s *WorkspaceServer) initTsServer(ctx context.Context, controlURL *url.URL) error {
 	store, _ := mem.New(s.config.LogF, "")
 	if s.config.Insecure {
@@ -181,7 +177,6 @@ func (s *WorkspaceServer) initTsServer(ctx context.Context, controlURL *url.URL)
 	return nil
 }
 
-// parseWorkspaceHostname extracts workspace and project names from the hostname.
 func (s *WorkspaceServer) parseWorkspaceHostname() (workspace, project string, err error) {
 	parts := strings.Split(s.config.WorkspaceHost, ".")
 	if len(parts) < 4 {
@@ -293,7 +288,6 @@ func serveMux(listener net.Listener, mux *http.ServeMux, errFormat string) {
 	}
 }
 
-// createListener creates a listener bound to the TSNet server.
 func (s *WorkspaceServer) createListener(addr string) (net.Listener, error) {
 	l, err := s.tsServer.Listen("tcp", addr)
 	if err != nil {
