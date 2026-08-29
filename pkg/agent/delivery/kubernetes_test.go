@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	execerr "k8s.io/client-go/util/exec"
 )
 
 const testVersion = "v1.2.3"
@@ -155,4 +156,121 @@ func TestKubernetesDelivery_Cleanup_IsNoOp(t *testing.T) {
 	d := &KubernetesDelivery{}
 	err := d.Cleanup(context.Background(), "workspace-123")
 	assert.NoError(t, err)
+}
+
+func TestKubernetesDelivery_DeliverPostStart_PrefersDownloadOverExecStream(t *testing.T) {
+	// Probe returns nothing, download succeeds -> the binary must never be
+	// streamed over exec-stdin at all.
+	exec := &recordingExec{stdouts: []string{""}}
+	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
+
+	err := d.DeliverPostStart(context.Background(), PostStartOptions{
+		BinarySource: binarySourceFrom("should-not-be-streamed"),
+		Arch:         testArch,
+		DownloadURL:  "https://example.com/releases",
+	})
+	require.NoError(t, err)
+
+	require.Len(t, exec.calls, 2, "probe, then in-container download")
+	downloadScript := strings.Join(exec.calls[1].argv, " ")
+	assert.Contains(t, downloadScript, "curl")
+	assert.Contains(t, downloadScript, "example.com/releases")
+	assert.Empty(t, exec.calls[1].stdin, "download must not receive the binary over stdin")
+}
+
+func TestKubernetesDelivery_DeliverPostStart_FallsBackToExecStreamWhenNoDownloadTool(t *testing.T) {
+	binaryData := "test-binary-content"
+	exec := &recordingExec{
+		stdouts: []string{""},
+		errs:    []error{nil, execerr.CodeExitError{Code: noDownloadToolExitCode}},
+	}
+	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
+
+	err := d.DeliverPostStart(context.Background(), PostStartOptions{
+		BinarySource: binarySourceFrom(binaryData),
+		Arch:         testArch,
+		DownloadURL:  "https://example.com/releases",
+	})
+	require.NoError(t, err)
+
+	require.Len(t, exec.calls, 3, "probe, failed download, then exec-stream fallback")
+	assert.Equal(t, binaryData, exec.calls[2].stdin)
+}
+
+func TestKubernetesDelivery_DeliverPostStart_SkipsDownloadWhenNoURLConfigured(t *testing.T) {
+	binaryData := "test-binary-content"
+	exec := &recordingExec{stdouts: []string{""}}
+	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
+
+	err := d.DeliverPostStart(context.Background(), PostStartOptions{
+		BinarySource: binarySourceFrom(binaryData),
+		Arch:         testArch,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, exec.calls, 2, "probe, then exec-stream (no download attempted)")
+	assert.Equal(t, binaryData, exec.calls[1].stdin)
+}
+
+func TestKubernetesDelivery_DeliverViaExecStream_RetriesTransientFailureOnce(t *testing.T) {
+	exec := &recordingExec{
+		errs: []error{fmt.Errorf("write binary to container: %w", context.DeadlineExceeded), nil},
+	}
+	d := &KubernetesDelivery{Exec: exec.fn}
+
+	err := d.deliverViaExecStream(context.Background(), "/usr/local/bin/devsy", PostStartOptions{
+		BinarySource: binarySourceFrom("data"),
+		Arch:         testArch,
+	})
+	require.NoError(t, err)
+	assert.Len(t, exec.calls, execStreamMaxAttempts, "one stalled attempt, one successful retry")
+}
+
+func TestKubernetesDelivery_DeliverViaExecStream_DoesNotRetryPermanentFailure(t *testing.T) {
+	permanentErr := execerr.CodeExitError{Code: 1, Err: fmt.Errorf("no such file or directory")}
+	exec := &recordingExec{errs: []error{permanentErr}}
+	d := &KubernetesDelivery{Exec: exec.fn}
+
+	err := d.deliverViaExecStream(context.Background(), "/usr/local/bin/devsy", PostStartOptions{
+		BinarySource: binarySourceFrom("data"),
+		Arch:         testArch,
+	})
+	require.Error(t, err)
+	assert.Len(t, exec.calls, 1, "a permanent failure must not be retried")
+}
+
+func TestIsTransientDeliveryError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil is not transient", err: nil, want: false},
+		{name: "our own deadline firing is transient", err: context.DeadlineExceeded, want: true},
+		{name: "i/o timeout is transient", err: fmt.Errorf("write tcp: i/o timeout"), want: true},
+		{name: "broken pipe is transient", err: fmt.Errorf("write: broken pipe"), want: true},
+		{
+			name: "connection reset is transient",
+			err:  fmt.Errorf("read: connection reset by peer"),
+			want: true,
+		},
+		{
+			name: "a real exit code is not transient",
+			err:  execerr.CodeExitError{Code: 1, Err: fmt.Errorf("boom")},
+			want: false,
+		},
+		{
+			name: "missing download tool is not transient",
+			err: execerr.CodeExitError{
+				Code: noDownloadToolExitCode,
+				Err:  fmt.Errorf("command terminated with exit code 127"),
+			},
+			want: false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assert.Equal(t, c.want, isTransientDeliveryError(c.err))
+		})
+	}
 }

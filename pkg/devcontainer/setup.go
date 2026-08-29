@@ -99,53 +99,18 @@ func (r *runner) setupContainer(
 	return result, nil
 }
 
-// nativeDeliveryAttempts bounds retries of the platform-native delivery path
-// before falling back to legacy inject. The kubernetes exec-stream transport
-// occasionally stalls after a successful protocol upgrade (a transient
-// network hiccup between the client and the cluster's API server) and is
-// never retried internally: client-go's FallbackExecutor only falls back to
-// SPDY on upgrade failure, not on a stall in an already-upgraded stream. One
-// retry is enough to ride out that kind of transient stall without adding
-// much delay before falling back for a genuinely broken delivery path.
-const nativeDeliveryAttempts = 2
-
 func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Duration) error {
 	strategy := r.newAgentDelivery()
 
 	if strategy.Phase() == delivery.PhasePostStart {
-		if err := retryNativeDelivery(func() error {
-			return r.deliverPostStart(ctx, strategy)
-		}); err != nil {
-			log.Warnf(
-				"platform-native delivery failed after %d attempts, falling back to legacy inject: %v",
-				nativeDeliveryAttempts,
-				err,
-			)
+		if err := r.deliverPostStart(ctx, strategy); err != nil {
+			log.Warnf("platform-native delivery failed, falling back to legacy inject: %v", err)
 			return r.legacyInject(ctx, timeout)
 		}
 		return nil
 	}
 
 	return r.legacyInject(ctx, timeout)
-}
-
-// retryNativeDelivery retries deliver up to nativeDeliveryAttempts times,
-// returning nil on the first success or the last error once attempts are
-// exhausted.
-func retryNativeDelivery(deliver func() error) error {
-	var lastErr error
-	for attempt := 1; attempt <= nativeDeliveryAttempts; attempt++ {
-		if lastErr = deliver(); lastErr == nil {
-			return nil
-		}
-		log.Warnf(
-			"platform-native delivery attempt %d/%d failed: %v",
-			attempt,
-			nativeDeliveryAttempts,
-			lastErr,
-		)
-	}
-	return lastErr
 }
 
 // podExecCapableDriver is implemented by the kubernetes driver, decoupling
@@ -224,6 +189,7 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 		WorkspaceID:  r.id,
 		BinarySource: binarySource,
 		Arch:         arch,
+		DownloadURL:  r.resolvedAgentDownloadURL(),
 	})
 	if err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)
@@ -249,12 +215,17 @@ func (r *runner) prefetchAgentBinary(ctx context.Context) {
 	_, _ = io.Copy(io.Discard, rc)
 }
 
-func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
-	downloadURL := r.agentDownloadURL
-	if downloadURL == "" {
-		downloadURL = pkgconfig.DefaultAgentDownloadURL()
+// resolvedAgentDownloadURL is the base URL used to fetch the agent binary,
+// falling back to the default release URL when the workspace has no override.
+func (r *runner) resolvedAgentDownloadURL() string {
+	if r.agentDownloadURL != "" {
+		return r.agentDownloadURL
 	}
-	mgr, err := agent.NewBinaryManager(downloadURL)
+	return pkgconfig.DefaultAgentDownloadURL()
+}
+
+func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
+	mgr, err := agent.NewBinaryManager(r.resolvedAgentDownloadURL())
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +246,7 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 		},
 		IsLocal:                     false,
 		RemoteAgentPath:             pkgconfig.ContainerDevsyHelperLocation,
-		DownloadURL:                 pkgconfig.DefaultAgentDownloadURL(),
+		DownloadURL:                 r.resolvedAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     timeout,
 	})

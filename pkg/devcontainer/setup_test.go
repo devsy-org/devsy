@@ -1,7 +1,6 @@
 package devcontainer
 
 import (
-	"errors"
 	"reflect"
 	"testing"
 
@@ -236,61 +235,5 @@ func TestBuildResult_DefaultUserEnvProbeEmpty(t *testing.T) {
 			testLoginInteractiveShell,
 			result.MergedConfig.UserEnvProbe,
 		)
-	}
-}
-
-func TestRetryNativeDelivery_SucceedsAfterTransientFailure(t *testing.T) {
-	attempts := 0
-	err := retryNativeDelivery(func() error {
-		attempts++
-		if attempts < nativeDeliveryAttempts {
-			return errors.New("transient exec stream stall")
-		}
-		return nil
-	})
-	if err != nil {
-		t.Errorf("retryNativeDelivery() = %v, want nil", err)
-	}
-	if attempts != nativeDeliveryAttempts {
-		t.Errorf(
-			"attempts = %d, want %d (should stop retrying once it succeeds)",
-			attempts,
-			nativeDeliveryAttempts,
-		)
-	}
-}
-
-func TestRetryNativeDelivery_ReturnsLastErrorWhenExhausted(t *testing.T) {
-	attempts := 0
-	wantErr := errors.New("persistent delivery failure")
-
-	err := retryNativeDelivery(func() error {
-		attempts++
-		return wantErr
-	})
-
-	if !errors.Is(err, wantErr) {
-		t.Errorf("retryNativeDelivery() = %v, want %v", err, wantErr)
-	}
-	if attempts != nativeDeliveryAttempts {
-		t.Errorf(
-			"attempts = %d, want %d (should not retry beyond nativeDeliveryAttempts)",
-			attempts,
-			nativeDeliveryAttempts,
-		)
-	}
-}
-
-func TestRetryNativeDelivery_SucceedsOnFirstAttemptWithoutRetrying(t *testing.T) {
-	attempts := 0
-	err := retryNativeDelivery(func() error {
-		attempts++
-		return nil
-	})
-	if err != nil {
-		t.Errorf("retryNativeDelivery() = %v, want nil", err)
-	}
-	if attempts != 1 {
-		t.Errorf("attempts = %d, want 1 (should not retry a successful first attempt)", attempts)
 	}
 }

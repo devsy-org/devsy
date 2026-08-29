@@ -41,6 +41,10 @@ type PostStartOptions struct {
 	ContainerDetails *config.ContainerDetails
 	BinarySource     BinarySourceFunc
 	Arch             string
+	// DownloadURL is the base URL the target can use to fetch its own agent
+	// binary, when the delivery strategy supports having the remote side pull
+	// its own bytes instead of receiving them from the host.
+	DownloadURL string
 }
 
 // Cleaner removes the resources a delivery created for a workspace. Cleanup is
