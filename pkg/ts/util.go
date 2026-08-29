@@ -2,23 +2,20 @@ package ts
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
+	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"
-	"tailscale.com/types/netmap"
+	"tailscale.com/ipn/ipnstate"
 )
-
-// DevsyTSNetDomain is the MagicDNS suffix for the Devsy tailnet.
-// The literal value matches the configured Tailscale tailnet and must stay
-// in sync with operator network configuration.
-const DevsyTSNetDomain = "ts.loft"
 
 func GetClientHostname(userName string) (string, error) {
 	osHostname, err := os.Hostname()
@@ -52,62 +49,106 @@ func GetURL(host string, port int) string {
 	return fmt.Sprintf("%s.%s:%d", host, DevsyTSNetDomain, port)
 }
 
-// WaitHostReachable polls until the given host is reachable via ts.
-func WaitHostReachable(
-	ctx context.Context,
-	lc *local.Client,
-	addr Addr,
-	maxRetries int,
-) error {
-	for i := range maxRetries {
-		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		conn, err := lc.DialTCP(timeoutCtx, addr.Host(), uint16(addr.Port()))
-		if err == nil {
-			_ = conn.Close()
-			return nil // Host is reachable
-		}
-		log.Debugf("Host %s not reachable, retrying (%d/%d)", addr.String(), i+1, maxRetries)
-		time.Sleep(200 * time.Millisecond)
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+// ToUint16Port validates that port fits the uint16 range TCP ports use.
+func ToUint16Port(port int) (uint16, error) {
+	if port < 0 || port > math.MaxUint16 {
+		return 0, fmt.Errorf("port %d out of range", port)
 	}
+	return uint16(port), nil // #nosec G115 -- bounds-checked above
+}
 
-	return fmt.Errorf("host %s not reachable", addr.String())
+// ipnWatcher is the subset of *local.IPNBusWatcher used by watchNetmap.
+type ipnWatcher interface {
+	Next() (ipn.Notify, error)
 }
 
 func WatchNetmap(
 	ctx context.Context,
 	lc *local.Client,
-	netmapChangedFn func(nm *netmap.NetworkMap),
+	netmapChangedFn func(status *ipnstate.Status),
 ) error {
 	watcher, err := lc.WatchIPNBus(
 		ctx,
-		ipn.NotifyInitialNetMap|ipn.NotifyRateLimit|ipn.NotifyWatchEngineUpdates,
+		ipn.NotifyInitialStatus|ipn.NotifyWatchEngineUpdates|ipn.NotifyPeerChanges,
 	)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = watcher.Close() }()
 
-	var netMap *netmap.NetworkMap
+	return watchNetmap(ctx, watcher, lc.Status, netmapChangedFn)
+}
+
+// watchNetmap drains notifications on a separate goroutine (drainNotifications)
+// so a burst never outruns tailscaled's 128-entry IPN bus queue while
+// fetchStatus is in flight below; bursts are coalesced into a single
+// follow-up fetch via the buffered trigger channel.
+func watchNetmap(
+	ctx context.Context,
+	watcher ipnWatcher,
+	fetchStatus func(context.Context) (*ipnstate.Status, error),
+	netmapChangedFn func(status *ipnstate.Status),
+) error {
+	trigger := make(chan struct{}, 1)
+	errc := make(chan error, 1)
+
+	go drainNotifications(watcher, trigger, errc)
+
+	for {
+		select {
+		case err := <-errc:
+			return err
+		case <-trigger:
+			status, err := fetchStatus(ctx)
+			if err != nil {
+				return fmt.Errorf("fetch status: %w", err)
+			}
+			netmapChangedFn(status)
+		}
+	}
+}
+
+func drainNotifications(watcher ipnWatcher, trigger chan<- struct{}, errc chan<- error) {
 	for {
 		n, err := watcher.Next()
 		if err != nil {
-			return fmt.Errorf("watch ipn: %w", err)
+			errc <- fmt.Errorf("watch ipn: %w", err)
+			return
 		}
 		if n.ErrMessage != nil {
-			return fmt.Errorf("tailscale error: %w", errors.New(*n.ErrMessage))
+			errc <- fmt.Errorf("tailscale error: %w", errors.New(*n.ErrMessage))
+			return
 		}
-		if n.NetMap != nil {
-			if n.NetMap != netMap {
-				netMap = n.NetMap
-				netmapChangedFn(netMap)
-			}
+		if !netmapChanged(n) {
+			continue
 		}
+		select {
+		case trigger <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func netmapChanged(n ipn.Notify) bool {
+	return n.InitialStatus != nil || n.SelfChange != nil ||
+		len(n.PeersChanged) > 0 || len(n.PeersRemoved) > 0 ||
+		len(n.PeerChangedPatch) > 0
+}
+
+// netmapFileName is the debug snapshot both the daemon and workspace
+// server's WatchNetmap callbacks write on every tailnet state change.
+const netmapFileName = "netmap.json"
+
+// PersistNetmapStatus marshals status and writes it to netmap.json under
+// rootDir for debugging, logging rather than returning any failure since
+// callers invoke this from a WatchNetmap callback with no error path.
+func PersistNetmapStatus(rootDir string, status *ipnstate.Status) {
+	nm, err := json.Marshal(status)
+	if err != nil {
+		log.Errorf("failed to marshal netmap: %v", err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(rootDir, netmapFileName), nm, 0o600); err != nil {
+		log.Errorf("failed to write netmap: %v", err)
 	}
 }

@@ -27,9 +27,121 @@ import (
 	sshServer "github.com/devsy-org/devsy/pkg/ssh/server"
 	"github.com/devsy-org/devsy/pkg/ts"
 	"golang.org/x/crypto/ssh"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"tailscale.com/client/local"
 	"tailscale.com/tailcfg"
 )
+
+// checkWorkspaceReachableTimeout is CheckWorkspaceReachable's overall retry
+// budget, covering both the initial reachability check and, if the daemon
+// needed restarting, however long the desktop app takes to bring the
+// workspace back up.
+const checkWorkspaceReachableTimeout = 150 * time.Second
+
+// daemonHealthCheckDelay is how long CheckWorkspaceReachable retries a plain
+// dial before it first checks whether the daemon itself is down and, if so,
+// launches the desktop app to restart it. Checking immediately would fire on
+// every transient dial failure; the delay gives a live daemon a chance to
+// become reachable on its own first. Also the minimum interval between
+// re-checks after an inconclusive one (see attempt), so a recurring
+// transient GetWorkspace error can't turn into a hot loop.
+const daemonHealthCheckDelay = 30 * time.Second
+
+// errGiveUpReachingWorkspace stops CheckWorkspaceReachable's poll early once
+// retrying can no longer help: either the daemon is confirmed to be running
+// and the host is unreachable for some other reason, or launching the
+// desktop app itself failed.
+var errGiveUpReachingWorkspace = errors.New("give up reaching workspace")
+
+// workspaceDialer checks tailnet reachability only -- no daemon-health or
+// desktop-app concerns.
+type workspaceDialer struct {
+	tsClient *local.Client
+	wAddr    ts.Addr
+	port     uint16
+}
+
+func (d workspaceDialer) reachable(ctx context.Context) error {
+	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	conn, err := d.tsClient.DialTCP(dialCtx, d.wAddr.Host(), d.port)
+	if err != nil {
+		return err
+	}
+	_ = conn.Close()
+	return nil
+}
+
+// daemonRecovery decides, once daemonHealthCheckDelay has passed without a
+// reachable host, whether the daemon itself is down and, if so, launches the
+// desktop app to restart it -- no network-reachability concerns. attempt is
+// idempotent after opened is set: later calls are no-ops until the daemon's
+// state needs re-checking (which the caller does once polling ends).
+type daemonRecovery struct {
+	client *client
+	start  time.Time
+
+	opened          bool
+	lastCheck       time.Time
+	getWorkspaceErr error
+	instance        *managementv1.DevsyWorkspaceInstance
+}
+
+// attempt returns errGiveUpReachingWorkspace once retrying can no longer
+// help: GetWorkspace succeeded (so the daemon is up and reported the actual,
+// unfixable-by-retrying workspace state), or launching the desktop app
+// failed. A GetWorkspace error other than DaemonNotAvailableError (e.g. a
+// transient backend error) is inconclusive, not terminal: re-check after
+// another daemonHealthCheckDelay instead of giving up.
+func (r *daemonRecovery) attempt(ctx context.Context) error {
+	if r.opened {
+		return nil
+	}
+	now := time.Now()
+	nextCheck := r.start.Add(daemonHealthCheckDelay)
+	if !r.lastCheck.IsZero() {
+		nextCheck = r.lastCheck.Add(daemonHealthCheckDelay)
+	}
+	if now.Before(nextCheck) {
+		return nil
+	}
+	r.lastCheck = now
+
+	r.instance, r.getWorkspaceErr = r.client.localClient.GetWorkspace(ctx, r.client.workspace.UID)
+	if r.getWorkspaceErr == nil {
+		return errGiveUpReachingWorkspace
+	}
+	if !daemon.IsDaemonNotAvailableError(r.getWorkspaceErr) {
+		return nil
+	}
+
+	r.opened = true
+	if openErr := r.client.openDesktopApp(); openErr != nil {
+		return errGiveUpReachingWorkspace // inform user about daemon state
+	}
+	return nil
+}
+
+// workspaceReachabilityCheck is CheckWorkspaceReachable's poll step: dial,
+// and on failure hand off to daemonRecovery.
+type workspaceReachabilityCheck struct {
+	dial     workspaceDialer
+	recovery *daemonRecovery
+	reachErr error
+}
+
+func (r *workspaceReachabilityCheck) step(ctx context.Context) (bool, error) {
+	dialErr := r.dial.reachable(ctx)
+	if dialErr == nil {
+		return true, nil
+	}
+	r.reachErr = dialErr
+
+	if err := r.recovery.attempt(ctx); err != nil {
+		return false, err
+	}
+	return false, nil
+}
 
 func New(
 	devsyConfig *config.Config,
@@ -132,31 +244,35 @@ func (c *client) CheckWorkspaceReachable(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("resolve workspace hostname: %w", err)
 	}
-	err = ts.WaitHostReachable(ctx, c.tsClient, wAddr, 5)
-	if err == nil {
-		log.Debugf("Host %s is reachable. Proceeding with SSH session", wAddr.Host())
+	port, err := wAddr.PortUint16()
+	if err != nil {
+		return fmt.Errorf("resolve workspace hostname: %w", err)
+	}
+
+	check := &workspaceReachabilityCheck{
+		dial:     workspaceDialer{tsClient: c.tsClient, wAddr: wAddr, port: port},
+		recovery: &daemonRecovery{client: c, start: time.Now()},
+	}
+	pollErr := wait.PollUntilContextTimeout(
+		ctx,
+		200*time.Millisecond,
+		checkWorkspaceReachableTimeout,
+		true,
+		check.step,
+	)
+	if pollErr == nil {
+		log.Debugf("host %s is reachable, proceeding with SSH session", wAddr.Host())
 		return nil
 	}
 
-	instance, getWorkspaceErr := c.localClient.GetWorkspace(ctx, c.workspace.UID)
-	// if we can't reach the daemon try to start the desktop app
-	if daemon.IsDaemonNotAvailableError(getWorkspaceErr) {
-		openErr := c.openDesktopApp()
-		if openErr != nil {
-			return getWorkspaceErr // inform user about daemon state
-		}
-		// give desktop app a chance to start
-		time.Sleep(2 * time.Second)
-
-		// let's try again
-		err = ts.WaitHostReachable(ctx, c.tsClient, wAddr, 20)
-		if err == nil {
-			return nil
-		}
+	instance, getWorkspaceErr := check.recovery.instance, check.recovery.getWorkspaceErr
+	// check.recovery's cached state predates the desktop-app launch; re-query
+	// once the daemon has had a chance to come back so the reported cause is
+	// current.
+	if check.recovery.opened || (instance == nil && getWorkspaceErr == nil) {
 		instance, getWorkspaceErr = c.localClient.GetWorkspace(ctx, c.workspace.UID)
 	}
-
-	return c.workspaceUnreachableError(instance, getWorkspaceErr, err)
+	return c.workspaceUnreachableError(instance, getWorkspaceErr, check.reachErr)
 }
 
 func (c *client) SSHClients(
@@ -179,15 +295,23 @@ func (c *client) SSHClients(
 		if err != nil {
 			return nil, fmt.Errorf("invalid port: %s", addressParts[1])
 		}
+		port16, err := ts.ToUint16Port(port)
+		if err != nil {
+			return nil, fmt.Errorf("invalid port: %w", err)
+		}
 
-		return c.tsClient.DialTCP(ctx, addressParts[0], uint16(port))
+		return c.tsClient.DialTCP(ctx, addressParts[0], port16)
 	}
 
-	toolClient, err = ts.WaitForSSHClient(ctx, dial, "tcp", address, "root", time.Second*10)
+	toolClient, err = ts.WaitForSSHClient(ctx, ts.SSHDialConfig{
+		Dialer: dial, Network: "tcp", Address: address, User: "root", Timeout: time.Second * 10,
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("create SSH tool client: %w", err)
 	}
-	userClient, err = ts.WaitForSSHClient(ctx, dial, "tcp", address, user, time.Second*10)
+	userClient, err = ts.WaitForSSHClient(ctx, ts.SSHDialConfig{
+		Dialer: dial, Network: "tcp", Address: address, User: user, Timeout: time.Second * 10,
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("create SSH user client: %w", err)
 	}
@@ -200,7 +324,11 @@ func (c *client) DirectTunnel(ctx context.Context, stdin io.Reader, stdout io.Wr
 	if err != nil {
 		return fmt.Errorf("resolve workspace hostname: %w", err)
 	}
-	conn, err := c.tsClient.DialTCP(ctx, wAddr.Host(), uint16(wAddr.Port()))
+	port, err := wAddr.PortUint16()
+	if err != nil {
+		return fmt.Errorf("invalid workspace port: %w", err)
+	}
+	conn, err := c.tsClient.DialTCP(ctx, wAddr.Host(), port)
 	if err != nil {
 		return fmt.Errorf("failed to connect to SSH server in proxy mode: %w", err)
 	}

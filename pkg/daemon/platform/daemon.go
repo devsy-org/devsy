@@ -3,13 +3,10 @@ package daemon
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
@@ -17,8 +14,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/ts"
 	"tailscale.com/client/local"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
-	"tailscale.com/types/netmap"
 )
 
 type Daemon struct {
@@ -166,13 +163,8 @@ func (d *Daemon) watchNetmap(ctx context.Context) error {
 		return err
 	}
 
-	return ts.WatchNetmap(ctx, lc, func(netMap *netmap.NetworkMap) {
-		nm, err := json.Marshal(netMap)
-		if err != nil {
-			log.Errorf("Failed to marshal netmap: %v", err)
-		} else {
-			_ = os.WriteFile(filepath.Join(d.rootDir, "netmap.json"), nm, 0o644)
-		}
+	return ts.WatchNetmap(ctx, lc, func(status *ipnstate.Status) {
+		ts.PersistNetmapStatus(d.rootDir, status)
 	})
 }
 

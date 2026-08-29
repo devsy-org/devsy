@@ -11,17 +11,18 @@ import (
 	"time"
 )
 
-type ConnTrackingFunc func(address string)
-
-// CheckDerpConnection validates the DERP connection.
-func CheckDerpConnection(ctx context.Context, baseUrl *url.URL) error {
-	newTransport := http.DefaultTransport.(*http.Transport).Clone()
-	newTransport.TLSClientConfig = &tls.Config{
-		InsecureSkipVerify: true,
+// CheckDerpConnection validates the DERP connection. insecure skips TLS
+// certificate verification, for coordinators known to use self-signed certs.
+func CheckDerpConnection(ctx context.Context, baseUrl *url.URL, insecure bool) error {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if insecure {
+		transport.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		} // #nosec G402 -- opt-in via explicit insecure flag
 	}
 
 	client := &http.Client{
-		Transport: newTransport,
+		Transport: transport,
 		Timeout:   5 * time.Second,
 	}
 
@@ -34,14 +35,18 @@ func CheckDerpConnection(ctx context.Context, baseUrl *url.URL) error {
 	}
 
 	res, err := client.Do(req)
-	if err != nil || (res != nil && res.StatusCode != http.StatusOK) {
+	if err != nil {
 		return fmt.Errorf("failed to reach the coordinator server: %w", err)
+	}
+	defer func() { _ = res.Body.Close() }()
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("coordinator server returned status %d", res.StatusCode)
 	}
 
 	return nil
 }
 
-// Utility function to get environment variable or default.
 func GetEnvOrDefault(envVar, defaultVal string) string {
 	if val := os.Getenv(envVar); val != "" {
 		return val
@@ -49,7 +54,6 @@ func GetEnvOrDefault(envVar, defaultVal string) string {
 	return defaultVal
 }
 
-// RemoveProtocol removes protocol from URL.
 func RemoveProtocol(hostPath string) string {
 	if _, after, ok := strings.Cut(hostPath, "://"); ok {
 		return after

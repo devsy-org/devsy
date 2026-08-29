@@ -26,7 +26,7 @@ func newTSServer(
 		Scheme: ts.GetEnvOrDefault("DEVSY_TSNET_SCHEME", "https"),
 		Host:   ts.RemoveProtocol(host),
 	}
-	if err := ts.CheckDerpConnection(ctx, &baseUrl); err != nil {
+	if err := ts.CheckDerpConnection(ctx, &baseUrl, insecure); err != nil {
 		return nil, nil, fmt.Errorf("failed to verify DERP connection: %w", err)
 	}
 	if insecure {
