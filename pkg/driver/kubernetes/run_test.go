@@ -10,11 +10,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+const (
+	testImageName  = "image"
+	testEntrypoint = "entrypoint"
+)
+
 func TestGetContainersDefaultRunsAsRoot(t *testing.T) {
-	containers, err := getContainers(
-		nil, "image", "entrypoint", nil, nil, nil,
-		corev1.ResourceRequirements{}, securityContextOptions{}, "",
-	)
+	containers, err := getContainers(nil, devsyContainerInputs{
+		ImageName: testImageName, Entrypoint: testEntrypoint,
+		Resources: corev1.ResourceRequirements{}, Security: securityContextOptions{},
+	})
 	if err != nil {
 		t.Fatalf("getContainers: %v", err)
 	}
@@ -25,17 +30,12 @@ func TestGetContainersDefaultRunsAsRoot(t *testing.T) {
 }
 
 func TestGetContainersStrictSecurityClearsRunAs(t *testing.T) {
-	containers, err := getContainers(
-		nil,
-		"image",
-		"entrypoint",
-		nil,
-		nil,
-		nil,
-		corev1.ResourceRequirements{},
-		securityContextOptions{StrictSecurity: pkgconfig.BoolTrue},
-		"",
-	)
+	containers, err := getContainers(nil, devsyContainerInputs{
+		ImageName:  testImageName,
+		Entrypoint: testEntrypoint,
+		Resources:  corev1.ResourceRequirements{},
+		Security:   securityContextOptions{StrictSecurity: pkgconfig.BoolTrue},
+	})
 	if err != nil {
 		t.Fatalf("getContainers: %v", err)
 	}
@@ -46,12 +46,12 @@ func TestGetContainersStrictSecurityClearsRunAs(t *testing.T) {
 }
 
 func TestGetContainersAgentSecurityContextOverride(t *testing.T) {
-	containers, err := getContainers(
-		nil, "image", "entrypoint", nil, nil, nil,
-		corev1.ResourceRequirements{},
-		securityContextOptions{AgentSecurityContext: "runAsUser: 1002010000\n"},
-		"",
-	)
+	containers, err := getContainers(nil, devsyContainerInputs{
+		ImageName:  testImageName,
+		Entrypoint: testEntrypoint,
+		Resources:  corev1.ResourceRequirements{},
+		Security:   securityContextOptions{AgentSecurityContext: "runAsUser: 1002010000\n"},
+	})
 	if err != nil {
 		t.Fatalf("getContainers: %v", err)
 	}
@@ -62,12 +62,12 @@ func TestGetContainersAgentSecurityContextOverride(t *testing.T) {
 }
 
 func TestGetContainersInvalidAgentSecurityContextErrors(t *testing.T) {
-	_, err := getContainers(
-		nil, "image", "entrypoint", nil, nil, nil,
-		corev1.ResourceRequirements{},
-		securityContextOptions{AgentSecurityContext: "not: valid: yaml: at: all:"},
-		"",
-	)
+	_, err := getContainers(nil, devsyContainerInputs{
+		ImageName:  testImageName,
+		Entrypoint: testEntrypoint,
+		Resources:  corev1.ResourceRequirements{},
+		Security:   securityContextOptions{AgentSecurityContext: "not: valid: yaml: at: all:"},
+	})
 	if err == nil {
 		t.Fatal("expected error for invalid AGENT_SECURITY_CONTEXT")
 	}
@@ -204,17 +204,12 @@ func TestGetContainersTemplateSecurityContextWinsUnderStrict(t *testing.T) {
 		},
 	}
 
-	containers, err := getContainers(
-		pod,
-		"image",
-		"entrypoint",
-		nil,
-		nil,
-		nil,
-		corev1.ResourceRequirements{},
-		securityContextOptions{StrictSecurity: pkgconfig.BoolTrue},
-		"",
-	)
+	containers, err := getContainers(pod, devsyContainerInputs{
+		ImageName:  testImageName,
+		Entrypoint: testEntrypoint,
+		Resources:  corev1.ResourceRequirements{},
+		Security:   securityContextOptions{StrictSecurity: pkgconfig.BoolTrue},
+	})
 	if err != nil {
 		t.Fatalf("getContainers: %v", err)
 	}
@@ -243,12 +238,14 @@ func TestGetContainersTemplateSecurityContextWinsOverAgentSecurityContext(t *tes
 		},
 	}
 
-	containers, err := getContainers(
-		pod, "image", "entrypoint", nil, nil, nil,
-		corev1.ResourceRequirements{},
-		securityContextOptions{AgentSecurityContext: "runAsUser: 1000\nrunAsNonRoot: true\n"},
-		"",
-	)
+	containers, err := getContainers(pod, devsyContainerInputs{
+		ImageName:  testImageName,
+		Entrypoint: testEntrypoint,
+		Resources:  corev1.ResourceRequirements{},
+		Security: securityContextOptions{
+			AgentSecurityContext: "runAsUser: 1000\nrunAsNonRoot: true\n",
+		},
+	})
 	if err != nil {
 		t.Fatalf("getContainers: %v", err)
 	}
@@ -277,10 +274,10 @@ func TestGetContainersDefaultModeTemplateSecurityContextWins(t *testing.T) {
 		},
 	}
 
-	containers, err := getContainers(
-		pod, "image", "entrypoint", nil, nil, nil,
-		corev1.ResourceRequirements{}, securityContextOptions{}, "",
-	)
+	containers, err := getContainers(pod, devsyContainerInputs{
+		ImageName: testImageName, Entrypoint: testEntrypoint,
+		Resources: corev1.ResourceRequirements{}, Security: securityContextOptions{},
+	})
 	if err != nil {
 		t.Fatalf("getContainers: %v", err)
 	}
@@ -338,7 +335,7 @@ func TestAssemblePodSpecOpenShiftScenario(t *testing.T) {
 	pod := &corev1.Pod{}
 
 	err := k.assemblePodSpec(pod, "devsy-ws-openshift", &podSpecInputs{
-		options: &driver.RunOptions{Image: "image", Entrypoint: "devsy"},
+		options: &driver.RunOptions{Image: testImageName, Entrypoint: "devsy"},
 		meta:    &podMetadata{labels: map[string]string{}, nodeSelector: map[string]string{}},
 	})
 	if err != nil {

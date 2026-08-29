@@ -211,22 +211,21 @@ func (k *KubernetesDriver) assemblePodSpec(pod *corev1.Pod, id string, in *podSp
 	pod.Spec.NodeSelector = in.meta.nodeSelector
 	pod.Spec.InitContainers = in.initContainers
 
-	containers, err := getContainers(
-		pod,
-		in.options.Image,
-		in.options.Entrypoint,
-		in.options.Cmd,
-		in.envVars,
-		in.volumeMounts,
-		in.meta.resources,
-		securityContextOptions{
+	containers, err := getContainers(pod, devsyContainerInputs{
+		ImageName:    in.options.Image,
+		Entrypoint:   in.options.Entrypoint,
+		Args:         in.options.Cmd,
+		EnvVars:      in.envVars,
+		VolumeMounts: in.volumeMounts,
+		Resources:    in.meta.resources,
+		Security: securityContextOptions{
 			Capabilities:         in.capabilities,
 			Privileged:           in.options.Privileged,
 			StrictSecurity:       k.options.StrictSecurity,
 			AgentSecurityContext: k.options.AgentSecurityContext,
 		},
-		in.daemonConfigSecretName,
-	)
+		DaemonConfigSecretName: in.daemonConfigSecretName,
+	})
 	if err != nil {
 		return err
 	}
@@ -529,17 +528,20 @@ func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Po
 	return nil
 }
 
-func getContainers(
-	pod *corev1.Pod,
-	imageName,
-	entrypoint string,
-	args []string,
-	envVars []corev1.EnvVar,
-	volumeMounts []corev1.VolumeMount,
-	resources corev1.ResourceRequirements,
-	security securityContextOptions,
-	daemonConfigSecretName string,
-) ([]corev1.Container, error) {
+type devsyContainerInputs struct {
+	ImageName              string
+	Entrypoint             string
+	Args                   []string
+	EnvVars                []corev1.EnvVar
+	VolumeMounts           []corev1.VolumeMount
+	Resources              corev1.ResourceRequirements
+	Security               securityContextOptions
+	DaemonConfigSecretName string
+}
+
+func getContainers(pod *corev1.Pod, in devsyContainerInputs) ([]corev1.Container, error) {
+	daemonConfigSecretName := in.DaemonConfigSecretName
+	volumeMounts := in.VolumeMounts
 	if daemonConfigSecretName != "" {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      DevContainerName + "-daemon-config",
@@ -547,22 +549,21 @@ func getContainers(
 		})
 	}
 
-	securityContext, err := security.resolve()
+	securityContext, err := in.Security.resolve()
 	if err != nil {
 		return nil, err
 	}
 
 	devsyContainer := corev1.Container{
 		Name:            DevContainerName,
-		Image:           imageName,
-		Command:         []string{entrypoint},
-		Args:            args,
-		Env:             envVars,
-		Resources:       resources,
+		Image:           in.ImageName,
+		Command:         []string{in.Entrypoint},
+		Args:            in.Args,
+		Env:             in.EnvVars,
+		Resources:       in.Resources,
 		VolumeMounts:    volumeMounts,
 		SecurityContext: securityContext,
 	}
-
 	var existingDevsyContainer *corev1.Container
 	retContainers := []corev1.Container{}
 	if pod != nil {
