@@ -633,8 +633,8 @@ var writableContainerDataDirOnce = sync.OnceValue(func() string {
 		return pkgconfig.ContainerDataDir
 	}
 	// Non-root containers (e.g. OpenShift's restricted SCC) can't create
-	// /var/devsy; fall back to a directory every local user can write to.
-	fallback := filepath.Join(os.TempDir(), pkgconfig.BinaryName+"-data")
+	// /var/devsy; fall back to the agreed-on path every reader checks.
+	fallback := pkgconfig.ContainerDataDirFallback
 	log.Debugf(
 		"%s is not writable, using %s for container-local scratch data",
 		pkgconfig.ContainerDataDir,
@@ -644,8 +644,8 @@ var writableContainerDataDirOnce = sync.OnceValue(func() string {
 })
 
 // containerDataDir returns config.ContainerDataDir when writable (the
-// common, root-owned case), falling back to a directory under the OS temp
-// dir for non-root containers that can't create it.
+// common, root-owned case), falling back to config.ContainerDataDirFallback
+// for non-root containers that can't create it.
 func containerDataDir() string {
 	return writableContainerDataDirOnce()
 }
