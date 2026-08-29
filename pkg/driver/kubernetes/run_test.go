@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	corev1 "k8s.io/api/core/v1"
@@ -262,6 +263,67 @@ func TestGetContainersTemplateSecurityContextWinsOverAgentSecurityContext(t *tes
 		t.Errorf(
 			"RunAsNonRoot = %v, want true (AGENT_SECURITY_CONTEXT fills the field the template left unset)",
 			sc.RunAsNonRoot,
+		)
+	}
+}
+
+func TestGetContainersDefaultModeTemplateSecurityContextWins(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:            DevContainerName,
+				SecurityContext: &corev1.SecurityContext{RunAsNonRoot: new(true)},
+			}},
+		},
+	}
+
+	containers, err := getContainers(
+		pod, "image", "entrypoint", nil, nil, nil,
+		corev1.ResourceRequirements{}, securityContextOptions{}, "",
+	)
+	if err != nil {
+		t.Fatalf("getContainers: %v", err)
+	}
+	sc := containers[0].SecurityContext
+	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Errorf(
+			"RunAsNonRoot = %v, want true (POD_MANIFEST_TEMPLATE wins over the hardcoded default in default mode)",
+			sc.RunAsNonRoot,
+		)
+	}
+	if sc.RunAsUser == nil || *sc.RunAsUser != 0 {
+		t.Errorf("RunAsUser = %v, want 0 (default, template didn't set it)", sc.RunAsUser)
+	}
+}
+
+func TestGetInitContainersTemplateSecurityContextWins(t *testing.T) {
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{StrictSecurity: pkgconfig.BoolTrue},
+	}
+	options := &driver.RunOptions{
+		Mounts: []*config.Mount{{Type: pkgconfig.ResourceVolume, Target: "/workspace"}},
+	}
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{{
+				Name:            InitContainerName,
+				SecurityContext: &corev1.SecurityContext{RunAsUser: new(int64(7000))},
+			}},
+		},
+	}
+
+	containers, err := k.getInitContainers(options, pod, true)
+	if err != nil {
+		t.Fatalf("getInitContainers: %v", err)
+	}
+	if len(containers) != 1 {
+		t.Fatalf("got %d init containers, want 1", len(containers))
+	}
+	sc := containers[0].SecurityContext
+	if sc.RunAsUser == nil || *sc.RunAsUser != 7000 {
+		t.Errorf(
+			"RunAsUser = %v, want 7000 (POD_MANIFEST_TEMPLATE wins over STRICT_SECURITY for the init container)",
+			sc.RunAsUser,
 		)
 	}
 }
