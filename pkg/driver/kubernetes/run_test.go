@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/driver"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
@@ -115,5 +116,44 @@ func TestFinalizePodSpecRespectsTemplateHostUsers(t *testing.T) {
 
 	if pod.Spec.HostUsers == nil || !*pod.Spec.HostUsers {
 		t.Errorf("HostUsers = %v, want true (template value preserved)", pod.Spec.HostUsers)
+	}
+}
+
+func TestAssemblePodSpecOpenShiftScenario(t *testing.T) {
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{
+			StrictSecurity:       "true",
+			AgentSecurityContext: "runAsUser: 1002010000\nrunAsGroup: 1002010000\nrunAsNonRoot: true\n",
+		},
+	}
+	pod := &corev1.Pod{}
+
+	err := k.assemblePodSpec(pod, "devsy-ws-openshift", &podSpecInputs{
+		options: &driver.RunOptions{Image: "image", Entrypoint: "devsy"},
+		meta:    &podMetadata{labels: map[string]string{}, nodeSelector: map[string]string{}},
+	})
+	if err != nil {
+		t.Fatalf("assemblePodSpec: %v", err)
+	}
+
+	if pod.Spec.HostUsers == nil || *pod.Spec.HostUsers {
+		t.Errorf("HostUsers = %v, want false", pod.Spec.HostUsers)
+	}
+
+	var devsyContainer *corev1.Container
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name == DevContainerName {
+			devsyContainer = &pod.Spec.Containers[i]
+		}
+	}
+	if devsyContainer == nil {
+		t.Fatal("devsy container not found")
+	}
+	sc := devsyContainer.SecurityContext
+	if sc == nil || sc.RunAsUser == nil || *sc.RunAsUser != 1002010000 {
+		t.Errorf("RunAsUser = %v, want 1002010000", sc)
+	}
+	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Errorf("RunAsNonRoot = %v, want true", sc.RunAsNonRoot)
 	}
 }

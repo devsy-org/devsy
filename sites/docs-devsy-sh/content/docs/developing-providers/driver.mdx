@@ -76,6 +76,16 @@ The allowed options for the Kubernetes driver are:
 - **podManifestTemplate**: a pod manifest template (inline YAML or a file path) used as the base to build the Devsy pod
 - **labels**: labels to add to the workspace pod, e.g. `devsy.sh/example=value,devsy.sh/example2=value2`
 - **strictSecurity**: *Experimental.* Removes the default security context and merges the one from `podManifestTemplate` if specified.
+- **agentSecurityContext**: *Experimental.* Inline YAML for a `corev1.SecurityContext` (e.g. `runAsUser`, `runAsGroup`, `runAsNonRoot`) merged onto the workspace and init containers, overriding Devsy's defaults field by field.
+
+<Callout>
+On OpenShift, the default container security context (fixed `runAsUser`/`runAsGroup`) is
+rejected by the `restricted-v2`/`restricted-v3` SCCs, which assign UIDs/GIDs from a
+per-namespace range. Set `strictSecurity: "true"` and/or `agentSecurityContext` (or override
+the container's `securityContext` via a named container in `podManifestTemplate`) to satisfy
+those SCCs. Setting either `strictSecurity` or `agentSecurityContext` also sets the pod's
+`hostUsers: false`.
+</Callout>
 
 <Callout>
 Devsy also supports building images inside Kubernetes without Docker, via a
