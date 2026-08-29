@@ -174,8 +174,10 @@ func resolveContainerSecurityContext(
 		return nil, fmt.Errorf("AGENT_SECURITY_CONTEXT: %w", err)
 	}
 	if override != nil {
-		if base != nil {
+		if override.Capabilities == nil && base != nil {
 			override.Capabilities = base.Capabilities
+		}
+		if override.Privileged == nil && base != nil {
 			override.Privileged = base.Privileged
 		}
 		return override, nil

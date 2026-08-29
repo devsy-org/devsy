@@ -117,6 +117,27 @@ func TestResolveContainerSecurityContextOverride(t *testing.T) {
 	}
 }
 
+func TestResolveContainerSecurityContextOverrideOwnCapabilitiesWin(t *testing.T) {
+	sc, err := resolveContainerSecurityContext(
+		"",
+		"runAsUser: 1000\nallowPrivilegeEscalation: false\ncapabilities:\n  drop: [\"ALL\"]\n",
+		rootBase(),
+	)
+	if err != nil {
+		t.Fatalf("resolveContainerSecurityContext: %v", err)
+	}
+	if sc.Capabilities == nil || len(sc.Capabilities.Add) != 0 || len(sc.Capabilities.Drop) != 1 ||
+		sc.Capabilities.Drop[0] != "ALL" {
+		t.Errorf("Capabilities = %+v, want override's drop=[ALL] with no inherited Add", sc.Capabilities)
+	}
+	if sc.Privileged == nil || !*sc.Privileged {
+		t.Errorf("Privileged = %v, want true (override left it unset, falls back to base)", sc.Privileged)
+	}
+	if sc.AllowPrivilegeEscalation == nil || *sc.AllowPrivilegeEscalation {
+		t.Errorf("AllowPrivilegeEscalation = %v, want false", sc.AllowPrivilegeEscalation)
+	}
+}
+
 func TestResolveContainerSecurityContextOverrideWinsOverStrict(t *testing.T) {
 	sc, err := resolveContainerSecurityContext("true", "runAsUser: 5000\n", rootBase())
 	if err != nil {
