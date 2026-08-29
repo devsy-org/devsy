@@ -99,18 +99,53 @@ func (r *runner) setupContainer(
 	return result, nil
 }
 
+// nativeDeliveryAttempts bounds retries of the platform-native delivery path
+// before falling back to legacy inject. The kubernetes exec-stream transport
+// occasionally stalls after a successful protocol upgrade (a transient
+// network hiccup between the client and the cluster's API server) and is
+// never retried internally: client-go's FallbackExecutor only falls back to
+// SPDY on upgrade failure, not on a stall in an already-upgraded stream. One
+// retry is enough to ride out that kind of transient stall without adding
+// much delay before falling back for a genuinely broken delivery path.
+const nativeDeliveryAttempts = 2
+
 func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Duration) error {
 	strategy := r.newAgentDelivery()
 
 	if strategy.Phase() == delivery.PhasePostStart {
-		if err := r.deliverPostStart(ctx, strategy); err != nil {
-			log.Warnf("platform-native delivery failed, falling back to legacy inject: %v", err)
+		if err := retryNativeDelivery(func() error {
+			return r.deliverPostStart(ctx, strategy)
+		}); err != nil {
+			log.Warnf(
+				"platform-native delivery failed after %d attempts, falling back to legacy inject: %v",
+				nativeDeliveryAttempts,
+				err,
+			)
 			return r.legacyInject(ctx, timeout)
 		}
 		return nil
 	}
 
 	return r.legacyInject(ctx, timeout)
+}
+
+// retryNativeDelivery retries deliver up to nativeDeliveryAttempts times,
+// returning nil on the first success or the last error once attempts are
+// exhausted.
+func retryNativeDelivery(deliver func() error) error {
+	var lastErr error
+	for attempt := 1; attempt <= nativeDeliveryAttempts; attempt++ {
+		if lastErr = deliver(); lastErr == nil {
+			return nil
+		}
+		log.Warnf(
+			"platform-native delivery attempt %d/%d failed: %v",
+			attempt,
+			nativeDeliveryAttempts,
+			lastErr,
+		)
+	}
+	return lastErr
 }
 
 // podExecCapableDriver is implemented by the kubernetes driver, decoupling

@@ -115,7 +115,7 @@ var _ = ginkgo.Describe(
 				err = f.DevsySSHEchoTestString(ctx, tempDir)
 				framework.ExpectNoError(err)
 			},
-			ginkgo.SpecTimeout(framework.TimeoutShort()),
+			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 		)
 	},
 )
