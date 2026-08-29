@@ -147,12 +147,20 @@ func parseSecurityContext(raw string) (*corev1.SecurityContext, error) {
 
 	p, err := filepath.Abs(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing security context failed: %w (inline)", errInline)
+		return nil, fmt.Errorf(
+			"parsing security context failed: %w (inline) or %w (file)",
+			errInline,
+			err,
+		)
 	}
 	// #nosec G304 -- path comes from the operator-controlled AGENT_SECURITY_CONTEXT provider option, not untrusted input
 	body, err := os.ReadFile(p)
 	if err != nil {
-		return nil, fmt.Errorf("parsing security context failed: %w (inline)", errInline)
+		return nil, fmt.Errorf(
+			"parsing security context failed: %w (inline) or %w (file)",
+			errInline,
+			err,
+		)
 	}
 	if err := yaml.Unmarshal(body, sc); err == nil {
 		return sc, nil
