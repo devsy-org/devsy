@@ -95,6 +95,10 @@ var _ = ginkgo.Describe(
 					"-o", "STRICT_SECURITY=true",
 					"-o", "AGENT_SECURITY_CONTEXT="+restrictedSecurityContextYAML,
 					"-o", "POD_MANIFEST_TEMPLATE=spec:\n  hostUsers: true\n",
+					// /usr/local/bin (the default install path) requires root
+					// to write; a fixed non-root UID (via AGENT_SECURITY_CONTEXT)
+					// needs a writable path instead, e.g. under /tmp.
+					"-o", "AGENT_INSTALL_PATH=/tmp/devsy",
 				)
 				framework.ExpectNoError(err)
 

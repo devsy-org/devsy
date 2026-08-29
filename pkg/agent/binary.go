@@ -88,6 +88,20 @@ func (m *BinaryManager) AcquireBinary(ctx context.Context, arch string) (io.Read
 	return nil, ErrBinaryNotFound
 }
 
+// HasLocalOverride reports whether the host can supply the binary's bytes
+// directly -- an env override, or this process's own executable when its
+// OS/arch matches the target -- without needing a network download.
+// Callers that could otherwise have the *target* fetch its own binary over
+// HTTP should skip that shortcut in this case: a local dev/test build's own
+// binary, not a possibly-stale published release, is what should actually
+// get delivered.
+func (m *BinaryManager) HasLocalOverride(arch string) bool {
+	if strings.TrimSpace(os.Getenv(config.EnvAgentBinary)) != "" {
+		return true
+	}
+	return runtime.GOOS == osLinux && runtime.GOARCH == arch
+}
+
 type BinaryCache struct {
 	BaseDir string
 }
