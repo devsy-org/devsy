@@ -894,18 +894,51 @@ func configureSystemGitCredentials(
 	_ = os.Setenv(config2.EnvGitHelperPort, strconv.Itoa(serverPort))
 
 	gitConfig := git.At("", git.WithStrictHostKeyChecking(false)).Config()
-	if err = gitConfig.Add(ctx, "credential.helper", gitCredentials, git.ScopeSystem); err != nil {
-		return nil, fmt.Errorf("add git credential helper: %w", err)
+	scope, err := addGitCredentialHelper(ctx, gitConfig, gitCredentials)
+	if err != nil {
+		return nil, err
 	}
 
 	cleanup := func() {
-		log.Debug("unset setup system credential helper")
-		if err = gitConfig.Unset(ctx, "credential.helper", git.ScopeSystem); err != nil {
-			log.Errorf("unset system credential helper %v", err)
+		log.Debug("unset setup credential helper")
+		if err = gitConfig.Unset(ctx, "credential.helper", scope); err != nil {
+			log.Errorf("unset credential helper %v", err)
 		}
 	}
 
 	return cleanup, nil
+}
+
+// addGitCredentialHelper installs the credential helper system-wide
+// (/etc/gitconfig) so it applies regardless of which local user's git
+// invocation picks it up -- a container's remoteUser can differ from the
+// process configuring it. Falls back to the current user's global config
+// when /etc/gitconfig isn't writable (e.g. a non-root OpenShift-style pod
+// running as a single fixed UID, where that multi-user concern doesn't
+// apply), returning the scope actually used so the caller unsets the same one.
+func addGitCredentialHelper(
+	ctx context.Context,
+	gitConfig *git.Config,
+	value string,
+) (git.ConfigScope, error) {
+	err := gitConfig.Add(ctx, "credential.helper", value, git.ScopeSystem)
+	if err == nil {
+		return git.ScopeSystem, nil
+	}
+	if !isGitPermissionDenied(err) {
+		return git.ConfigScope{}, fmt.Errorf("add git credential helper: %w", err)
+	}
+
+	log.Debugf("system git config is not writable, falling back to the user's global config")
+	if err := gitConfig.Add(ctx, "credential.helper", value, git.ScopeGlobal); err != nil {
+		return git.ConfigScope{}, fmt.Errorf("add git credential helper: %w", err)
+	}
+	return git.ScopeGlobal, nil
+}
+
+func isGitPermissionDenied(err error) bool {
+	var cmdErr *git.CommandError
+	return errors.As(err, &cmdErr) && strings.Contains(cmdErr.Stderr, "Permission denied")
 }
 
 func streamMount(

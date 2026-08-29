@@ -23,6 +23,18 @@ const (
 	// ContainerDataDir is the base directory for Devsy data inside containers.
 	ContainerDataDir = "/var/" + BinaryName
 
+	// ContainerDataDirFallback is used instead of ContainerDataDir when a
+	// non-root container (e.g. an OpenShift restricted-SCC pod) can't create
+	// /var/devsy. Readers that expect a fixed, agreed-on path (like the
+	// devcontainer result file, read back over exec from the host) check
+	// both locations rather than requiring explicit coordination of which
+	// one a given container actually used.
+	ContainerDataDirFallback = "/tmp/" + BinaryName + "-data"
+
+	// DevContainerResultFallbackPath mirrors DevContainerResultPath under
+	// ContainerDataDirFallback.
+	DevContainerResultFallbackPath = ContainerDataDirFallback + "/result.json"
+
 	// ContainerDevsyHelperLocation is where the Devsy agent binary lives inside containers.
 	ContainerDevsyHelperLocation = "/usr/local/bin/" + BinaryName
 
@@ -35,3 +47,12 @@ const (
 	// WorkspaceBusyFile is the per-workspace lock file written under the workspace folder.
 	WorkspaceBusyFile = "workspace.lock"
 )
+
+// ReadDevContainerResultCommand returns the shell command that reads the
+// devcontainer result file over exec, trying DevContainerResultPath first
+// and falling back to DevContainerResultFallbackPath: a non-root container
+// may have had to write to the fallback location, and this lets the host
+// find it without needing separate coordination of which one was used.
+func ReadDevContainerResultCommand() string {
+	return "cat " + DevContainerResultPath + " 2>/dev/null || cat " + DevContainerResultFallbackPath
+}

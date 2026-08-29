@@ -309,7 +309,7 @@ func getContainerResult(ctx context.Context, p portForwardParams) (*config2.Resu
 	stderr := &bytes.Buffer{}
 	err := devssh.Run(ctx, devssh.RunOptions{
 		Client:  p.containerClient,
-		Command: "cat " + config.DevContainerResultPath,
+		Command: config.ReadDevContainerResultCommand(),
 		Stdout:  stdout,
 		Stderr:  stderr,
 	})
@@ -327,7 +327,7 @@ func getContainerResult(ctx context.Context, p portForwardParams) (*config2.Resu
 	if err != nil {
 		return nil, fmt.Errorf("error parsing container result %s: %w", stdout.String(), err)
 	}
-	log.Debugf("parsed container result from %s", config.DevContainerResultPath)
+	log.Debugf("parsed container result")
 
 	return result, nil
 }

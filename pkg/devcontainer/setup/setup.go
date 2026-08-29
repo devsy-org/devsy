@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -212,7 +213,18 @@ func writeResultFile(cfg *ContainerSetupConfig) {
 	}
 
 	if err := writeResultFileTo(pkgconfig.DevContainerResultPath, rawBytes); err != nil {
-		log.Warnf("error write result to %s: %v", pkgconfig.DevContainerResultPath, err)
+		log.Debugf(
+			"%s is not writable (%v), falling back to %s",
+			pkgconfig.DevContainerResultPath,
+			err,
+			pkgconfig.DevContainerResultFallbackPath,
+		)
+		if err := writeResultFileTo(
+			pkgconfig.DevContainerResultFallbackPath,
+			rawBytes,
+		); err != nil {
+			log.Warnf("error write result to %s: %v", pkgconfig.DevContainerResultFallbackPath, err)
+		}
 	}
 }
 
@@ -509,7 +521,7 @@ func shouldSkipKubeConfig(tunnelClient tunnel.TunnelClient) bool {
 		return true
 	}
 
-	markerPath := filepath.Join(pkgconfig.ContainerDataDir, "setupKubeConfig.marker")
+	markerPath := filepath.Join(containerDataDir(), "setupKubeConfig.marker")
 	info, err := os.Stat(markerPath)
 	if err == nil {
 		if info.Mode().Perm()&0o022 != 0 {
@@ -591,7 +603,7 @@ func ensureKubeConfigMaps(config *clientcmdapi.Config) *clientcmdapi.Config {
 }
 
 func markerFileExists(markerName string, markerContent string) (bool, error) {
-	markerName = filepath.Join(pkgconfig.ContainerDataDir, markerName+".marker")
+	markerName = filepath.Join(containerDataDir(), markerName+".marker")
 	t, err := os.ReadFile(markerName)
 	if err != nil && !os.IsNotExist(err) {
 		return false, err
@@ -600,8 +612,9 @@ func markerFileExists(markerName string, markerContent string) (bool, error) {
 	}
 
 	// write marker
+	dir := filepath.Dir(markerName)
 	_ = os.MkdirAll(
-		filepath.Dir(markerName),
+		dir,
 		0o755,
 	) // #nosec G301 -- Standard directory permissions
 	err = os.WriteFile(markerName, []byte(markerContent), 0o600)
@@ -610,6 +623,31 @@ func markerFileExists(markerName string, markerContent string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// writableContainerDataDirOnce caches the resolved container data dir for
+// the process lifetime: containerDataDir may be called many times (once per
+// marker check) and re-probing MkdirAll each time would be wasteful.
+var writableContainerDataDirOnce = sync.OnceValue(func() string {
+	if err := os.MkdirAll(pkgconfig.ContainerDataDir, 0o755); err == nil { // #nosec G301
+		return pkgconfig.ContainerDataDir
+	}
+	// Non-root containers (e.g. OpenShift's restricted SCC) can't create
+	// /var/devsy; fall back to a directory every local user can write to.
+	fallback := filepath.Join(os.TempDir(), pkgconfig.BinaryName+"-data")
+	log.Debugf(
+		"%s is not writable, using %s for container-local scratch data",
+		pkgconfig.ContainerDataDir,
+		fallback,
+	)
+	return fallback
+})
+
+// containerDataDir returns config.ContainerDataDir when writable (the
+// common, root-owned case), falling back to a directory under the OS temp
+// dir for non-root containers that can't create it.
+func containerDataDir() string {
+	return writableContainerDataDirOnce()
 }
 
 func setupPlatformGitCredentials(
