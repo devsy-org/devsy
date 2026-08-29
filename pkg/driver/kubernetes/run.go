@@ -143,7 +143,10 @@ func (k *KubernetesDriver) buildPod(
 		return nil, err
 	}
 
-	initContainers := k.getInitContainers(options, pod, initialize)
+	initContainers, err := k.getInitContainers(options, pod, initialize)
+	if err != nil {
+		return nil, err
+	}
 
 	volumeMounts, tmpfsVolumes := buildVolumeMounts(mount, options)
 	capabilities := buildCapabilities(options.CapAdd)
@@ -169,7 +172,7 @@ func (k *KubernetesDriver) buildPod(
 		return nil, err
 	}
 
-	k.assemblePodSpec(pod, id, &podSpecInputs{
+	if err := k.assemblePodSpec(pod, id, &podSpecInputs{
 		options:                options,
 		meta:                   meta,
 		initContainers:         initContainers,
@@ -180,7 +183,9 @@ func (k *KubernetesDriver) buildPod(
 		serviceAccount:         serviceAccount,
 		daemonConfigSecretName: daemonConfigSecretName,
 		pullSecretsCreated:     pullSecretsCreated,
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	return pod, nil
 }
@@ -198,30 +203,40 @@ type podSpecInputs struct {
 	pullSecretsCreated     bool
 }
 
-func (k *KubernetesDriver) assemblePodSpec(pod *corev1.Pod, id string, in *podSpecInputs) {
+func (k *KubernetesDriver) assemblePodSpec(pod *corev1.Pod, id string, in *podSpecInputs) error {
 	pod.Name = id
 	pod.Labels = in.meta.labels
 
 	pod.Spec.ServiceAccountName = in.serviceAccount
 	pod.Spec.NodeSelector = in.meta.nodeSelector
 	pod.Spec.InitContainers = in.initContainers
-	pod.Spec.Containers = getContainers(
+
+	containers, err := getContainers(
 		pod,
 		in.options.Image,
 		in.options.Entrypoint,
 		in.options.Cmd,
 		in.envVars,
 		in.volumeMounts,
-		in.capabilities,
 		in.meta.resources,
-		in.options.Privileged,
-		k.options.StrictSecurity,
+		securityContextOptions{
+			Capabilities:         in.capabilities,
+			Privileged:           in.options.Privileged,
+			StrictSecurity:       k.options.StrictSecurity,
+			AgentSecurityContext: k.options.AgentSecurityContext,
+		},
 		in.daemonConfigSecretName,
 	)
+	if err != nil {
+		return err
+	}
+	pod.Spec.Containers = containers
+
 	pod.Spec.Volumes = append(
 		getVolumes(pod, id, in.daemonConfigSecretName),
 		in.tmpfsVolumes...)
 	k.finalizePodSpec(pod, id, in.pullSecretsCreated)
+	return nil
 }
 
 func (k *KubernetesDriver) resolveWorkspaceMount(
@@ -516,40 +531,33 @@ func getContainers(
 	args []string,
 	envVars []corev1.EnvVar,
 	volumeMounts []corev1.VolumeMount,
-	capabilities *corev1.Capabilities,
 	resources corev1.ResourceRequirements,
-	privileged *bool,
-	strictSecurity string,
+	security securityContextOptions,
 	daemonConfigSecretName string,
-) []corev1.Container {
+) ([]corev1.Container, error) {
 	if daemonConfigSecretName != "" {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      DevContainerName + "-daemon-config",
 			MountPath: "/var/run/secrets/" + DevContainerName,
 		})
 	}
+
+	securityContext, err := security.resolve()
+	if err != nil {
+		return nil, err
+	}
+
 	devsyContainer := corev1.Container{
-		Name:         DevContainerName,
-		Image:        imageName,
-		Command:      []string{entrypoint},
-		Args:         args,
-		Env:          envVars,
-		Resources:    resources,
-		VolumeMounts: volumeMounts,
-		SecurityContext: &corev1.SecurityContext{
-			Capabilities: capabilities,
-			Privileged:   privileged,
-			RunAsUser:    &[]int64{0}[0],
-			RunAsGroup:   &[]int64{0}[0],
-			RunAsNonRoot: &[]bool{false}[0],
-		},
+		Name:            DevContainerName,
+		Image:           imageName,
+		Command:         []string{entrypoint},
+		Args:            args,
+		Env:             envVars,
+		Resources:       resources,
+		VolumeMounts:    volumeMounts,
+		SecurityContext: securityContext,
 	}
 
-	if strictSecurity == pkgconfig.BoolTrue {
-		devsyContainer.SecurityContext = nil
-	}
-
-	// merge with existing container if it exists
 	var existingDevsyContainer *corev1.Container
 	retContainers := []corev1.Container{}
 	if pod != nil {
@@ -565,7 +573,7 @@ func getContainers(
 	mergeContainer(&devsyContainer, existingDevsyContainer)
 	retContainers = append(retContainers, devsyContainer)
 
-	return retContainers
+	return retContainers, nil
 }
 
 func getVolumes(pod *corev1.Pod, id string, daemonConfigSecretName string) []corev1.Volume {

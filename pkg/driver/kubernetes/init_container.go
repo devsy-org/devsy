@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -13,28 +12,24 @@ func (k *KubernetesDriver) getInitContainers(
 	options *driver.RunOptions,
 	pod *corev1.Pod,
 	initialize bool,
-) []corev1.Container {
+) ([]corev1.Container, error) {
 	if !initialize {
-		// don't build init container and clean up existing one if defined
-		return filterOutInitContainer(pod.Spec.InitContainers)
+		return filterOutInitContainer(pod.Spec.InitContainers), nil
 	}
 
 	volumeMounts, commands := buildVolumeCopyCommands(options)
 
 	retContainers, existingInitContainer := splitInitContainers(pod.Spec.InitContainers)
-
-	// check if there is at least one mount
 	if len(volumeMounts) == 0 {
-		return retContainers
+		return retContainers, nil
 	}
 
-	securityContext := &corev1.SecurityContext{
-		RunAsUser:    &[]int64{0}[0],
-		RunAsGroup:   &[]int64{0}[0],
-		RunAsNonRoot: &[]bool{false}[0],
-	}
-	if k.options.StrictSecurity == pkgconfig.BoolTrue {
-		securityContext = nil
+	securityContext, err := (securityContextOptions{
+		StrictSecurity:       k.options.StrictSecurity,
+		AgentSecurityContext: k.options.AgentSecurityContext,
+	}).resolve()
+	if err != nil {
+		return nil, err
 	}
 
 	resources := corev1.ResourceRequirements{}
@@ -55,7 +50,7 @@ func (k *KubernetesDriver) getInitContainers(
 	mergeContainer(&initContainer, existingInitContainer)
 
 	retContainers = append(retContainers, initContainer)
-	return retContainers
+	return retContainers, nil
 }
 
 func filterOutInitContainer(containers []corev1.Container) []corev1.Container {
