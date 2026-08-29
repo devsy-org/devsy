@@ -84,10 +84,17 @@ var _ = ginkgo.Describe(
 				gomega.Expect(err).To(gomega.HaveOccurred())
 
 				ginkgo.By("switching to an OpenShift-compatible security context")
+				// hostUsers is forced to true via POD_MANIFEST_TEMPLATE: Kubernetes Pod Security
+				// Admission "restricted" does not check hostUsers (it's an OpenShift SCC-only
+				// concern, already covered by unit tests), and this repo's pinned kind node image
+				// predates the fix for https://github.com/kubernetes-sigs/kind/issues/4178, where
+				// hostUsers: false makes every pod loop-fail sandbox creation via kind's
+				// mount-product-files.sh OCI hook.
 				err = f.DevsyProviderUse(
 					ctx, "kubernetes",
 					"-o", "STRICT_SECURITY=true",
 					"-o", "AGENT_SECURITY_CONTEXT="+restrictedSecurityContextYAML,
+					"-o", "POD_MANIFEST_TEMPLATE=spec:\n  hostUsers: true\n",
 				)
 				framework.ExpectNoError(err)
 
@@ -98,7 +105,7 @@ var _ = ginkgo.Describe(
 
 				list := waitForPodCount(ctx, restrictedNamespace, 1, "Expect 1 pod")
 				gomega.Expect(list.Items[0].Spec.HostUsers).ToNot(gomega.BeNil())
-				gomega.Expect(*list.Items[0].Spec.HostUsers).To(gomega.BeFalse())
+				gomega.Expect(*list.Items[0].Spec.HostUsers).To(gomega.BeTrue())
 
 				sc := list.Items[0].Spec.Containers[0].SecurityContext
 				gomega.Expect(sc).ToNot(gomega.BeNil())
