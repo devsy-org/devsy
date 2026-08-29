@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 )
 
@@ -131,4 +133,81 @@ func parseResource(resourceName string) (string, resource.Quantity, error) {
 	}
 
 	return splittedResource[0], quantity, nil
+}
+
+func parseSecurityContext(raw string) (*corev1.SecurityContext, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	sc := &corev1.SecurityContext{}
+	errInline := yaml.Unmarshal([]byte(raw), sc)
+	if errInline == nil {
+		return sc, nil
+	}
+
+	p, err := filepath.Abs(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing security context failed: %w (inline)", errInline)
+	}
+	body, err := os.ReadFile(p)
+	if err != nil {
+		return nil, fmt.Errorf("parsing security context failed: %w (inline)", errInline)
+	}
+	if err := yaml.Unmarshal(body, sc); err == nil {
+		return sc, nil
+	}
+
+	return nil, fmt.Errorf(
+		"parsing security context failed: %w (inline) or %w (file)",
+		errInline,
+		err,
+	)
+}
+
+func resolveContainerSecurityContext(
+	strictSecurity, agentSecurityContext string,
+	base *corev1.SecurityContext,
+) (*corev1.SecurityContext, error) {
+	override, err := parseSecurityContext(agentSecurityContext)
+	if err != nil {
+		return nil, fmt.Errorf("AGENT_SECURITY_CONTEXT: %w", err)
+	}
+	if override != nil {
+		if base != nil {
+			override.Capabilities = base.Capabilities
+			override.Privileged = base.Privileged
+		}
+		return override, nil
+	}
+
+	if strictSecurity == pkgconfig.BoolTrue {
+		if base == nil {
+			return nil, nil
+		}
+		return &corev1.SecurityContext{
+			Capabilities: base.Capabilities,
+			Privileged:   base.Privileged,
+		}, nil
+	}
+
+	return base, nil
+}
+
+type securityContextOptions struct {
+	Capabilities         *corev1.Capabilities
+	Privileged           *bool
+	StrictSecurity       string
+	AgentSecurityContext string
+}
+
+func (o securityContextOptions) resolve() (*corev1.SecurityContext, error) {
+	base := &corev1.SecurityContext{
+		Capabilities: o.Capabilities,
+		Privileged:   o.Privileged,
+		RunAsUser:    ptr.To(int64(0)),
+		RunAsGroup:   ptr.To(int64(0)),
+		RunAsNonRoot: ptr.To(false),
+	}
+	return resolveContainerSecurityContext(o.StrictSecurity, o.AgentSecurityContext, base)
 }
