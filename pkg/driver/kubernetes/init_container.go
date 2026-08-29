@@ -106,7 +106,12 @@ func splitInitContainers(containers []corev1.Container) ([]corev1.Container, *co
 	return retContainers, existingInitContainer
 }
 
-//nolint:cyclop // flat per-field null-coalesce over SecurityContext; splitting hurts readability
+func overrideIfSet[T any](dst **T, src *T) {
+	if src != nil {
+		*dst = src
+	}
+}
+
 func mergeSecurityContext(dst, src *corev1.SecurityContext) *corev1.SecurityContext {
 	if src == nil {
 		return dst
@@ -115,42 +120,18 @@ func mergeSecurityContext(dst, src *corev1.SecurityContext) *corev1.SecurityCont
 	if dst != nil {
 		merged = *dst
 	}
-	if src.Capabilities != nil {
-		merged.Capabilities = src.Capabilities
-	}
-	if src.Privileged != nil {
-		merged.Privileged = src.Privileged
-	}
-	if src.SELinuxOptions != nil {
-		merged.SELinuxOptions = src.SELinuxOptions
-	}
-	if src.WindowsOptions != nil {
-		merged.WindowsOptions = src.WindowsOptions
-	}
-	if src.RunAsUser != nil {
-		merged.RunAsUser = src.RunAsUser
-	}
-	if src.RunAsGroup != nil {
-		merged.RunAsGroup = src.RunAsGroup
-	}
-	if src.RunAsNonRoot != nil {
-		merged.RunAsNonRoot = src.RunAsNonRoot
-	}
-	if src.ReadOnlyRootFilesystem != nil {
-		merged.ReadOnlyRootFilesystem = src.ReadOnlyRootFilesystem
-	}
-	if src.AllowPrivilegeEscalation != nil {
-		merged.AllowPrivilegeEscalation = src.AllowPrivilegeEscalation
-	}
-	if src.ProcMount != nil {
-		merged.ProcMount = src.ProcMount
-	}
-	if src.SeccompProfile != nil {
-		merged.SeccompProfile = src.SeccompProfile
-	}
-	if src.AppArmorProfile != nil {
-		merged.AppArmorProfile = src.AppArmorProfile
-	}
+	overrideIfSet(&merged.Capabilities, src.Capabilities)
+	overrideIfSet(&merged.Privileged, src.Privileged)
+	overrideIfSet(&merged.SELinuxOptions, src.SELinuxOptions)
+	overrideIfSet(&merged.WindowsOptions, src.WindowsOptions)
+	overrideIfSet(&merged.RunAsUser, src.RunAsUser)
+	overrideIfSet(&merged.RunAsGroup, src.RunAsGroup)
+	overrideIfSet(&merged.RunAsNonRoot, src.RunAsNonRoot)
+	overrideIfSet(&merged.ReadOnlyRootFilesystem, src.ReadOnlyRootFilesystem)
+	overrideIfSet(&merged.AllowPrivilegeEscalation, src.AllowPrivilegeEscalation)
+	overrideIfSet(&merged.ProcMount, src.ProcMount)
+	overrideIfSet(&merged.SeccompProfile, src.SeccompProfile)
+	overrideIfSet(&merged.AppArmorProfile, src.AppArmorProfile)
 	return &merged
 }
 
