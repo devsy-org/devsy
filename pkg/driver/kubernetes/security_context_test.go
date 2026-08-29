@@ -3,8 +3,8 @@ package kubernetes
 import (
 	"testing"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
 )
 
 func TestParseSecurityContextEmpty(t *testing.T) {
@@ -18,7 +18,9 @@ func TestParseSecurityContextEmpty(t *testing.T) {
 }
 
 func TestParseSecurityContextInlineYAML(t *testing.T) {
-	sc, err := parseSecurityContext("runAsUser: 1002010000\nrunAsGroup: 1002010000\nrunAsNonRoot: true\n")
+	sc, err := parseSecurityContext(
+		"runAsUser: 1002010000\nrunAsGroup: 1002010000\nrunAsNonRoot: true\n",
+	)
 	if err != nil {
 		t.Fatalf("parseSecurityContext: %v", err)
 	}
@@ -39,10 +41,10 @@ func TestParseSecurityContextInvalid(t *testing.T) {
 func rootBase() *corev1.SecurityContext {
 	return &corev1.SecurityContext{
 		Capabilities: &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN"}},
-		Privileged:   ptr.To(true),
-		RunAsUser:    ptr.To(int64(0)),
-		RunAsGroup:   ptr.To(int64(0)),
-		RunAsNonRoot: ptr.To(false),
+		Privileged:   new(true),
+		RunAsUser:    new(int64(0)),
+		RunAsGroup:   new(int64(0)),
+		RunAsNonRoot: new(bool),
 	}
 }
 
@@ -62,8 +64,22 @@ func TestResolveContainerSecurityContextDefault(t *testing.T) {
 	}
 }
 
+func assertCapabilitiesUnchanged(t *testing.T, sc *corev1.SecurityContext) {
+	t.Helper()
+	if sc.Capabilities == nil || len(sc.Capabilities.Add) != 1 {
+		t.Errorf("Capabilities not preserved: %+v", sc.Capabilities)
+	}
+}
+
+func assertPrivilegedUnchanged(t *testing.T, sc *corev1.SecurityContext) {
+	t.Helper()
+	if sc.Privileged == nil || !*sc.Privileged {
+		t.Errorf("Privileged not preserved: %v", sc.Privileged)
+	}
+}
+
 func TestResolveContainerSecurityContextStrict(t *testing.T) {
-	sc, err := resolveContainerSecurityContext("true", "", rootBase())
+	sc, err := resolveContainerSecurityContext(pkgconfig.BoolTrue, "", rootBase())
 	if err != nil {
 		t.Fatalf("resolveContainerSecurityContext: %v", err)
 	}
@@ -76,16 +92,12 @@ func TestResolveContainerSecurityContextStrict(t *testing.T) {
 	if sc.RunAsNonRoot != nil {
 		t.Errorf("RunAsNonRoot = %v, want nil", sc.RunAsNonRoot)
 	}
-	if sc.Capabilities == nil || len(sc.Capabilities.Add) != 1 {
-		t.Errorf("Capabilities not preserved under STRICT_SECURITY: %+v", sc.Capabilities)
-	}
-	if sc.Privileged == nil || !*sc.Privileged {
-		t.Errorf("Privileged not preserved under STRICT_SECURITY: %v", sc.Privileged)
-	}
+	assertCapabilitiesUnchanged(t, sc)
+	assertPrivilegedUnchanged(t, sc)
 }
 
 func TestResolveContainerSecurityContextStrictNilBase(t *testing.T) {
-	sc, err := resolveContainerSecurityContext("true", "", nil)
+	sc, err := resolveContainerSecurityContext(pkgconfig.BoolTrue, "", nil)
 	if err != nil {
 		t.Fatalf("resolveContainerSecurityContext: %v", err)
 	}
@@ -109,11 +121,18 @@ func TestResolveContainerSecurityContextOverride(t *testing.T) {
 	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
 		t.Errorf("RunAsNonRoot = %v, want true", sc.RunAsNonRoot)
 	}
-	if sc.Capabilities == nil || len(sc.Capabilities.Add) != 1 {
-		t.Errorf("Capabilities not preserved with override: %+v", sc.Capabilities)
-	}
-	if sc.Privileged == nil || !*sc.Privileged {
-		t.Errorf("Privileged not preserved with override: %v", sc.Privileged)
+	assertCapabilitiesUnchanged(t, sc)
+	assertPrivilegedUnchanged(t, sc)
+}
+
+func assertCapabilitiesDropAll(t *testing.T, sc *corev1.SecurityContext) {
+	t.Helper()
+	if sc.Capabilities == nil || len(sc.Capabilities.Add) != 0 || len(sc.Capabilities.Drop) != 1 ||
+		sc.Capabilities.Drop[0] != "ALL" {
+		t.Errorf(
+			"Capabilities = %+v, want override's drop=[ALL] with no inherited Add",
+			sc.Capabilities,
+		)
 	}
 }
 
@@ -126,20 +145,15 @@ func TestResolveContainerSecurityContextOverrideOwnCapabilitiesWin(t *testing.T)
 	if err != nil {
 		t.Fatalf("resolveContainerSecurityContext: %v", err)
 	}
-	if sc.Capabilities == nil || len(sc.Capabilities.Add) != 0 || len(sc.Capabilities.Drop) != 1 ||
-		sc.Capabilities.Drop[0] != "ALL" {
-		t.Errorf("Capabilities = %+v, want override's drop=[ALL] with no inherited Add", sc.Capabilities)
-	}
-	if sc.Privileged == nil || !*sc.Privileged {
-		t.Errorf("Privileged = %v, want true (override left it unset, falls back to base)", sc.Privileged)
-	}
+	assertCapabilitiesDropAll(t, sc)
+	assertPrivilegedUnchanged(t, sc)
 	if sc.AllowPrivilegeEscalation == nil || *sc.AllowPrivilegeEscalation {
 		t.Errorf("AllowPrivilegeEscalation = %v, want false", sc.AllowPrivilegeEscalation)
 	}
 }
 
 func TestResolveContainerSecurityContextOverrideWinsOverStrict(t *testing.T) {
-	sc, err := resolveContainerSecurityContext("true", "runAsUser: 5000\n", rootBase())
+	sc, err := resolveContainerSecurityContext(pkgconfig.BoolTrue, "runAsUser: 5000\n", rootBase())
 	if err != nil {
 		t.Fatalf("resolveContainerSecurityContext: %v", err)
 	}
@@ -149,7 +163,11 @@ func TestResolveContainerSecurityContextOverrideWinsOverStrict(t *testing.T) {
 }
 
 func TestResolveContainerSecurityContextInvalidOverride(t *testing.T) {
-	if _, err := resolveContainerSecurityContext("", "not: valid: yaml: at: all:", rootBase()); err == nil {
+	if _, err := resolveContainerSecurityContext(
+		"",
+		"not: valid: yaml: at: all:",
+		rootBase(),
+	); err == nil {
 		t.Fatal("expected error for invalid AGENT_SECURITY_CONTEXT")
 	}
 }
@@ -165,7 +183,7 @@ func TestSecurityContextOptionsResolveDefault(t *testing.T) {
 }
 
 func TestSecurityContextOptionsResolveStrictNoCapabilities(t *testing.T) {
-	sc, err := (securityContextOptions{StrictSecurity: "true"}).resolve()
+	sc, err := (securityContextOptions{StrictSecurity: pkgconfig.BoolTrue}).resolve()
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -179,7 +197,7 @@ func TestSecurityContextOptionsResolveStrictNoCapabilities(t *testing.T) {
 
 func TestSecurityContextOptionsResolvePropagatesCapabilities(t *testing.T) {
 	caps := &corev1.Capabilities{Add: []corev1.Capability{"NET_ADMIN"}}
-	sc, err := (securityContextOptions{Capabilities: caps, Privileged: ptr.To(true)}).resolve()
+	sc, err := (securityContextOptions{Capabilities: caps, Privileged: new(true)}).resolve()
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}

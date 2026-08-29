@@ -447,7 +447,7 @@ func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecre
 	restrictedCluster := k.options.StrictSecurity == pkgconfig.BoolTrue ||
 		k.options.AgentSecurityContext != ""
 	if restrictedCluster && pod.Spec.HostUsers == nil {
-		pod.Spec.HostUsers = ptr.To(false)
+		pod.Spec.HostUsers = new(bool)
 	}
 	if k.options.KubernetesPullSecretsEnabled == pkgconfig.BoolTrue && pullSecretsCreated {
 		pod.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: getPullSecretsName(id)}}

@@ -3,10 +3,10 @@ package kubernetes
 import (
 	"testing"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
 )
 
 func TestGetContainersDefaultRunsAsRoot(t *testing.T) {
@@ -25,8 +25,15 @@ func TestGetContainersDefaultRunsAsRoot(t *testing.T) {
 
 func TestGetContainersStrictSecurityClearsRunAs(t *testing.T) {
 	containers, err := getContainers(
-		nil, "image", "entrypoint", nil, nil, nil,
-		corev1.ResourceRequirements{}, securityContextOptions{StrictSecurity: "true"}, "",
+		nil,
+		"image",
+		"entrypoint",
+		nil,
+		nil,
+		nil,
+		corev1.ResourceRequirements{},
+		securityContextOptions{StrictSecurity: pkgconfig.BoolTrue},
+		"",
 	)
 	if err != nil {
 		t.Fatalf("getContainers: %v", err)
@@ -66,7 +73,9 @@ func TestGetContainersInvalidAgentSecurityContextErrors(t *testing.T) {
 }
 
 func TestFinalizePodSpecSetsHostUsersFalseWhenStrict(t *testing.T) {
-	k := &KubernetesDriver{options: &provider2.ProviderKubernetesDriverConfig{StrictSecurity: "true"}}
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{StrictSecurity: pkgconfig.BoolTrue},
+	}
 	pod := &corev1.Pod{}
 
 	k.finalizePodSpec(pod, "devsy-ws-1", false)
@@ -109,8 +118,10 @@ func TestFinalizePodSpecLeavesHostUsersUnsetByDefault(t *testing.T) {
 }
 
 func TestFinalizePodSpecRespectsTemplateHostUsers(t *testing.T) {
-	k := &KubernetesDriver{options: &provider2.ProviderKubernetesDriverConfig{StrictSecurity: "true"}}
-	pod := &corev1.Pod{Spec: corev1.PodSpec{HostUsers: ptr.To(true)}}
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{StrictSecurity: pkgconfig.BoolTrue},
+	}
+	pod := &corev1.Pod{Spec: corev1.PodSpec{HostUsers: new(true)}}
 
 	k.finalizePodSpec(pod, "devsy-ws-1", false)
 
@@ -119,10 +130,29 @@ func TestFinalizePodSpecRespectsTemplateHostUsers(t *testing.T) {
 	}
 }
 
+func findContainerByName(pod *corev1.Pod, name string) *corev1.Container {
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name == name {
+			return &pod.Spec.Containers[i]
+		}
+	}
+	return nil
+}
+
+func assertRunAsUserAndNonRoot(t *testing.T, sc *corev1.SecurityContext, wantUID int64) {
+	t.Helper()
+	if sc == nil || sc.RunAsUser == nil || *sc.RunAsUser != wantUID {
+		t.Errorf("RunAsUser = %v, want %d", sc, wantUID)
+	}
+	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Errorf("RunAsNonRoot = %v, want true", sc.RunAsNonRoot)
+	}
+}
+
 func TestAssemblePodSpecOpenShiftScenario(t *testing.T) {
 	k := &KubernetesDriver{
 		options: &provider2.ProviderKubernetesDriverConfig{
-			StrictSecurity:       "true",
+			StrictSecurity:       pkgconfig.BoolTrue,
 			AgentSecurityContext: "runAsUser: 1002010000\nrunAsGroup: 1002010000\nrunAsNonRoot: true\n",
 		},
 	}
@@ -140,20 +170,9 @@ func TestAssemblePodSpecOpenShiftScenario(t *testing.T) {
 		t.Errorf("HostUsers = %v, want false", pod.Spec.HostUsers)
 	}
 
-	var devsyContainer *corev1.Container
-	for i := range pod.Spec.Containers {
-		if pod.Spec.Containers[i].Name == DevContainerName {
-			devsyContainer = &pod.Spec.Containers[i]
-		}
-	}
+	devsyContainer := findContainerByName(pod, DevContainerName)
 	if devsyContainer == nil {
 		t.Fatal("devsy container not found")
 	}
-	sc := devsyContainer.SecurityContext
-	if sc == nil || sc.RunAsUser == nil || *sc.RunAsUser != 1002010000 {
-		t.Errorf("RunAsUser = %v, want 1002010000", sc)
-	}
-	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
-		t.Errorf("RunAsNonRoot = %v, want true", sc.RunAsNonRoot)
-	}
+	assertRunAsUserAndNonRoot(t, devsyContainer.SecurityContext, 1002010000)
 }

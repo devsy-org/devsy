@@ -13,11 +13,21 @@ import (
 
 const restrictedNamespace = "devsy-restricted"
 
+const restrictedSecurityContextYAML = "runAsUser: 1000\n" +
+	"runAsGroup: 1000\n" +
+	"runAsNonRoot: true\n" +
+	"allowPrivilegeEscalation: false\n" +
+	"seccompProfile:\n" +
+	"  type: RuntimeDefault\n" +
+	"capabilities:\n" +
+	"  drop: [\"ALL\"]\n"
+
 func labelNamespaceRestricted(ctx context.Context) error {
 	createOrUpdate := fmt.Sprintf(
 		"kubectl create namespace %s --dry-run=client -o yaml | kubectl apply -f -",
 		restrictedNamespace,
 	)
+	// #nosec G204 -- createOrUpdate is built from the fixed restrictedNamespace const, not untrusted input
 	if err := exec.CommandContext(ctx, "sh", "-c", createOrUpdate).Run(); err != nil {
 		return err
 	}
@@ -45,7 +55,8 @@ var _ = ginkgo.Describe(
 		})
 
 		ginkgo.AfterEach(func() {
-			_ = exec.Command("kubectl", "delete", "namespace", restrictedNamespace, "--ignore-not-found").Run()
+			_ = exec.Command("kubectl", "delete", "namespace", restrictedNamespace, "--ignore-not-found").
+				Run()
 		})
 
 		ginkgo.It(
@@ -76,7 +87,7 @@ var _ = ginkgo.Describe(
 				err = f.DevsyProviderUse(
 					ctx, "kubernetes",
 					"-o", "STRICT_SECURITY=true",
-					"-o", "AGENT_SECURITY_CONTEXT=runAsUser: 1000\nrunAsGroup: 1000\nrunAsNonRoot: true\nallowPrivilegeEscalation: false\nseccompProfile:\n  type: RuntimeDefault\ncapabilities:\n  drop: [\"ALL\"]\n",
+					"-o", "AGENT_SECURITY_CONTEXT="+restrictedSecurityContextYAML,
 				)
 				framework.ExpectNoError(err)
 
