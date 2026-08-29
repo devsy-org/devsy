@@ -344,6 +344,7 @@ func resolveAgentKubernetesConfig(
 	k8s.PodManifestTemplate = resolver.ResolveDefaultValue(k8s.PodManifestTemplate, options)
 	k8s.Labels = resolver.ResolveDefaultValue(k8s.Labels, options)
 	k8s.StrictSecurity = resolver.ResolveDefaultValue(k8s.StrictSecurity, options)
+	k8s.AgentSecurityContext = resolver.ResolveDefaultValue(k8s.AgentSecurityContext, options)
 	k8s.CreateNamespace = resolver.ResolveDefaultValue(k8s.CreateNamespace, options)
 	k8s.ClusterRole = resolver.ResolveDefaultValue(k8s.ClusterRole, options)
 	k8s.ServiceAccount = resolver.ResolveDefaultValue(k8s.ServiceAccount, options)

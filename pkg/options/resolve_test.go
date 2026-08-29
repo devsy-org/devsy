@@ -883,3 +883,17 @@ func TestResolveAgentDownloadURL(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveAgentKubernetesConfigAgentSecurityContext(t *testing.T) {
+	agentConfig := &provider.ProviderAgentConfig{}
+	options := map[string]string{
+		"AGENT_SECURITY_CONTEXT": "runAsUser: 1000",
+	}
+	agentConfig.Kubernetes.AgentSecurityContext = "${AGENT_SECURITY_CONTEXT}"
+
+	resolveAgentKubernetesConfig(agentConfig, options)
+
+	if got := agentConfig.Kubernetes.AgentSecurityContext; got != "runAsUser: 1000" {
+		t.Errorf("AgentSecurityContext = %q, want %q", got, "runAsUser: 1000")
+	}
+}

@@ -281,7 +281,8 @@ type ProviderKubernetesDriverConfig struct {
 	PodManifestTemplate string `json:"podManifestTemplate,omitempty"`
 	Labels              string `json:"labels,omitempty"`
 
-	StrictSecurity string `json:"strictSecurity,omitempty"`
+	StrictSecurity       string `json:"strictSecurity,omitempty"`
+	AgentSecurityContext string `json:"agentSecurityContext,omitempty"`
 }
 
 type ProviderAgentConfigExec struct {
