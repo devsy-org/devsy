@@ -106,6 +106,54 @@ func splitInitContainers(containers []corev1.Container) ([]corev1.Container, *co
 	return retContainers, existingInitContainer
 }
 
+//nolint:cyclop // flat per-field null-coalesce over SecurityContext; splitting hurts readability
+func mergeSecurityContext(dst, src *corev1.SecurityContext) *corev1.SecurityContext {
+	if src == nil {
+		return dst
+	}
+	merged := corev1.SecurityContext{}
+	if dst != nil {
+		merged = *dst
+	}
+	if src.Capabilities != nil {
+		merged.Capabilities = src.Capabilities
+	}
+	if src.Privileged != nil {
+		merged.Privileged = src.Privileged
+	}
+	if src.SELinuxOptions != nil {
+		merged.SELinuxOptions = src.SELinuxOptions
+	}
+	if src.WindowsOptions != nil {
+		merged.WindowsOptions = src.WindowsOptions
+	}
+	if src.RunAsUser != nil {
+		merged.RunAsUser = src.RunAsUser
+	}
+	if src.RunAsGroup != nil {
+		merged.RunAsGroup = src.RunAsGroup
+	}
+	if src.RunAsNonRoot != nil {
+		merged.RunAsNonRoot = src.RunAsNonRoot
+	}
+	if src.ReadOnlyRootFilesystem != nil {
+		merged.ReadOnlyRootFilesystem = src.ReadOnlyRootFilesystem
+	}
+	if src.AllowPrivilegeEscalation != nil {
+		merged.AllowPrivilegeEscalation = src.AllowPrivilegeEscalation
+	}
+	if src.ProcMount != nil {
+		merged.ProcMount = src.ProcMount
+	}
+	if src.SeccompProfile != nil {
+		merged.SeccompProfile = src.SeccompProfile
+	}
+	if src.AppArmorProfile != nil {
+		merged.AppArmorProfile = src.AppArmorProfile
+	}
+	return &merged
+}
+
 func mergeContainer(dst, src *corev1.Container) {
 	if src == nil {
 		return
@@ -119,7 +167,5 @@ func mergeContainer(dst, src *corev1.Container) {
 		dst.VolumeMounts...)
 	dst.ImagePullPolicy = src.ImagePullPolicy
 
-	if dst.SecurityContext == nil && src.SecurityContext != nil {
-		dst.SecurityContext = src.SecurityContext
-	}
+	dst.SecurityContext = mergeSecurityContext(dst.SecurityContext, src.SecurityContext)
 }

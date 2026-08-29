@@ -141,11 +141,128 @@ func findContainerByName(pod *corev1.Pod, name string) *corev1.Container {
 
 func assertRunAsUserAndNonRoot(t *testing.T, sc *corev1.SecurityContext, wantUID int64) {
 	t.Helper()
-	if sc == nil || sc.RunAsUser == nil || *sc.RunAsUser != wantUID {
+	if sc == nil {
+		t.Fatalf("SecurityContext = nil, want RunAsUser=%d", wantUID)
+	}
+	if sc.RunAsUser == nil || *sc.RunAsUser != wantUID {
 		t.Errorf("RunAsUser = %v, want %d", sc, wantUID)
 	}
 	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
 		t.Errorf("RunAsNonRoot = %v, want true", sc.RunAsNonRoot)
+	}
+}
+
+func TestMergeSecurityContextTemplateFieldsWinPerField(t *testing.T) {
+	dst := &corev1.SecurityContext{
+		RunAsUser:    new(int64(1000)),
+		RunAsNonRoot: new(true),
+	}
+	src := &corev1.SecurityContext{
+		RunAsUser:      new(int64(2000)),
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+	}
+
+	merged := mergeSecurityContext(dst, src)
+
+	if merged.RunAsUser == nil || *merged.RunAsUser != 2000 {
+		t.Errorf("RunAsUser = %v, want 2000 (template field wins)", merged.RunAsUser)
+	}
+	if merged.RunAsNonRoot == nil || !*merged.RunAsNonRoot {
+		t.Errorf(
+			"RunAsNonRoot = %v, want true (kept from dst, template didn't set it)",
+			merged.RunAsNonRoot,
+		)
+	}
+	wantRuntimeDefault := merged.SeccompProfile != nil &&
+		merged.SeccompProfile.Type == corev1.SeccompProfileTypeRuntimeDefault
+	if !wantRuntimeDefault {
+		t.Errorf(
+			"SeccompProfile = %v, want RuntimeDefault (template-only field applied)",
+			merged.SeccompProfile,
+		)
+	}
+}
+
+func TestMergeSecurityContextNilSrcKeepsDst(t *testing.T) {
+	dst := &corev1.SecurityContext{RunAsUser: new(int64(1000))}
+	if got := mergeSecurityContext(dst, nil); got != dst {
+		t.Errorf("mergeSecurityContext(dst, nil) = %v, want dst unchanged", got)
+	}
+}
+
+func TestGetContainersTemplateSecurityContextWinsUnderStrict(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name: DevContainerName,
+				SecurityContext: &corev1.SecurityContext{
+					RunAsUser:    new(int64(5000)),
+					RunAsNonRoot: new(true),
+				},
+			}},
+		},
+	}
+
+	containers, err := getContainers(
+		pod,
+		"image",
+		"entrypoint",
+		nil,
+		nil,
+		nil,
+		corev1.ResourceRequirements{},
+		securityContextOptions{StrictSecurity: pkgconfig.BoolTrue},
+		"",
+	)
+	if err != nil {
+		t.Fatalf("getContainers: %v", err)
+	}
+	sc := containers[0].SecurityContext
+	if sc.RunAsUser == nil || *sc.RunAsUser != 5000 {
+		t.Errorf(
+			"RunAsUser = %v, want 5000 (POD_MANIFEST_TEMPLATE wins over STRICT_SECURITY)",
+			sc.RunAsUser,
+		)
+	}
+	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Errorf(
+			"RunAsNonRoot = %v, want true (POD_MANIFEST_TEMPLATE wins over STRICT_SECURITY)",
+			sc.RunAsNonRoot,
+		)
+	}
+}
+
+func TestGetContainersTemplateSecurityContextWinsOverAgentSecurityContext(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:            DevContainerName,
+				SecurityContext: &corev1.SecurityContext{RunAsUser: new(int64(5000))},
+			}},
+		},
+	}
+
+	containers, err := getContainers(
+		pod, "image", "entrypoint", nil, nil, nil,
+		corev1.ResourceRequirements{},
+		securityContextOptions{AgentSecurityContext: "runAsUser: 1000\nrunAsNonRoot: true\n"},
+		"",
+	)
+	if err != nil {
+		t.Fatalf("getContainers: %v", err)
+	}
+	sc := containers[0].SecurityContext
+	if sc.RunAsUser == nil || *sc.RunAsUser != 5000 {
+		t.Errorf(
+			"RunAsUser = %v, want 5000 (POD_MANIFEST_TEMPLATE wins over AGENT_SECURITY_CONTEXT)",
+			sc.RunAsUser,
+		)
+	}
+	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Errorf(
+			"RunAsNonRoot = %v, want true (AGENT_SECURITY_CONTEXT fills the field the template left unset)",
+			sc.RunAsNonRoot,
+		)
 	}
 }
 
