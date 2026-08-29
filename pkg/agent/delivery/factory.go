@@ -21,6 +21,10 @@ type FactoryOptions struct {
 	ContainerID     string
 	ExecFunc        inject.ExecFunc //nolint:staticcheck // legacy delivery strategies require this type
 	PodExec         PodExecFunc
+
+	// KubernetesAgentInstallPath overrides where KubernetesDelivery installs
+	// the agent binary inside the container, when set.
+	KubernetesAgentInstallPath string
 }
 
 func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
@@ -71,7 +75,7 @@ func kubernetesDelivery(opts FactoryOptions) AgentDelivery {
 		return legacyShellDelivery(opts, "kubernetes pod exec unavailable")
 	}
 	log.Debugf("using kubernetes-native delivery (exec stream)")
-	return &KubernetesDelivery{Exec: opts.PodExec}
+	return &KubernetesDelivery{Exec: opts.PodExec, InstallPath: opts.KubernetesAgentInstallPath}
 }
 
 // microsandboxDelivery streams the agent binary over the SDK's guest exec

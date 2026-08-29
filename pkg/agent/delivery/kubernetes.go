@@ -25,18 +25,28 @@ var _ AgentDelivery = (*KubernetesDelivery)(nil)
 type PodExecFunc func(ctx context.Context, argv []string, streams driver.Streams) error
 
 // KubernetesDelivery gets the agent binary into the pod over the cluster's
-// exec API. It prefers having the pod download its own binary (a short,
-// no-stdin exec call) over streaming the binary's bytes through exec-stdin:
-// a multi-hundred-MB write over that transport has been observed to hang
-// indefinitely, with no error, until an OS-level TCP timeout eventually fires
-// (tens of seconds), whereas a small command-only exec call is reliable.
-// Exec-stdin streaming remains as a fallback for clusters without pod egress
-// to a download URL.
+// exec API. When the caller's own BinarySource would resolve to a network
+// download anyway (opts.PreferInContainerDownload), it prefers having the
+// pod download its own binary directly (a short, no-stdin exec call) over
+// streaming the same bytes through exec-stdin twice (host downloads, then
+// re-uploads): a multi-hundred-MB write over that transport has also been
+// observed to hang indefinitely, with no error, until an OS-level TCP
+// timeout eventually fires (tens of seconds), whereas a small command-only
+// exec call is reliable. When a local dev/test build (or an explicit path
+// override) can supply the bytes directly, exec-stdin streaming is used
+// instead, so that binary -- not a possibly-stale published release -- is
+// what actually gets delivered.
 type KubernetesDelivery struct {
 	Exec PodExecFunc
 
 	// ExpectedVersion defaults to version.GetVersion() when empty.
 	ExpectedVersion string
+
+	// InstallPath overrides where the agent binary is installed inside the
+	// container. Defaults to pkgconfig.ContainerDevsyHelperLocation
+	// (/usr/local/bin/devsy), which requires root to write; set this to a
+	// writable path when the container runs non-root.
+	InstallPath string
 }
 
 const (
@@ -78,7 +88,7 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 		return fmt.Errorf("exec function is required for kubernetes delivery")
 	}
 
-	destPath := pkgconfig.ContainerDevsyHelperLocation
+	destPath := d.destPath()
 
 	// Skip delivery when the in-pod binary already matches.
 	expected := d.expectedVersion()
@@ -87,14 +97,16 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 		return nil
 	}
 
-	if err := d.deliverViaDownload(ctx, destPath, opts.DownloadURL, opts.Arch); err != nil {
-		log.Debugf(
-			"in-container download unavailable, falling back to exec-stream delivery: %v",
-			err,
-		)
-	} else {
-		log.Debugf("delivered agent binary to pod via in-container download")
-		return nil
+	if opts.PreferInContainerDownload {
+		if err := d.deliverViaDownload(ctx, destPath, opts.DownloadURL, opts.Arch); err != nil {
+			log.Debugf(
+				"in-container download unavailable, falling back to exec-stream delivery: %v",
+				err,
+			)
+		} else {
+			log.Debugf("delivered agent binary to pod via in-container download")
+			return nil
+		}
 	}
 
 	if err := d.deliverViaExecStream(ctx, destPath, opts); err != nil {
@@ -133,7 +145,11 @@ func (d *KubernetesDelivery) deliverViaDownload(
 	// stderr set; capture stderr for diagnostics even though delivery itself
 	// needs no output.
 	var stderr bytes.Buffer
-	if err := d.Exec(ctx, []string{"sh", "-c", script}, driver.Streams{Stderr: &stderr}); err != nil {
+	if err := d.Exec(
+		ctx,
+		[]string{"sh", "-c", script},
+		driver.Streams{Stderr: &stderr},
+	); err != nil {
 		var codeErr execerr.CodeExitError
 		if errors.As(err, &codeErr) && codeErr.Code == noDownloadToolExitCode {
 			return fmt.Errorf("no curl or wget in the image: %w", err)
@@ -250,6 +266,13 @@ func (d *KubernetesDelivery) expectedVersion() string {
 		return d.ExpectedVersion
 	}
 	return version.GetVersion()
+}
+
+func (d *KubernetesDelivery) destPath() string {
+	if d.InstallPath != "" {
+		return d.InstallPath
+	}
+	return pkgconfig.ContainerDevsyHelperLocation
 }
 
 // detectVersion returns the agent version in the pod, or "" if absent or unprobeable.

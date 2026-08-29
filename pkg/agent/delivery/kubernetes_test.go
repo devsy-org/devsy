@@ -165,9 +165,10 @@ func TestKubernetesDelivery_DeliverPostStart_PrefersDownloadOverExecStream(t *te
 	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
 
 	err := d.DeliverPostStart(context.Background(), PostStartOptions{
-		BinarySource: binarySourceFrom("should-not-be-streamed"),
-		Arch:         testArch,
-		DownloadURL:  "https://example.com/releases",
+		BinarySource:              binarySourceFrom("should-not-be-streamed"),
+		Arch:                      testArch,
+		DownloadURL:               "https://example.com/releases",
+		PreferInContainerDownload: true,
 	})
 	require.NoError(t, err)
 
@@ -182,14 +183,21 @@ func TestKubernetesDelivery_DeliverPostStart_FallsBackToExecStreamWhenNoDownload
 	binaryData := "test-binary-content"
 	exec := &recordingExec{
 		stdouts: []string{""},
-		errs:    []error{nil, execerr.CodeExitError{Code: noDownloadToolExitCode}},
+		errs: []error{
+			nil,
+			execerr.CodeExitError{
+				Code: noDownloadToolExitCode,
+				Err:  fmt.Errorf("command terminated with exit code %d", noDownloadToolExitCode),
+			},
+		},
 	}
 	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
 
 	err := d.DeliverPostStart(context.Background(), PostStartOptions{
-		BinarySource: binarySourceFrom(binaryData),
-		Arch:         testArch,
-		DownloadURL:  "https://example.com/releases",
+		BinarySource:              binarySourceFrom(binaryData),
+		Arch:                      testArch,
+		DownloadURL:               "https://example.com/releases",
+		PreferInContainerDownload: true,
 	})
 	require.NoError(t, err)
 
@@ -273,4 +281,29 @@ func TestIsTransientDeliveryError(t *testing.T) {
 			assert.Equal(t, c.want, isTransientDeliveryError(c.err))
 		})
 	}
+}
+
+func TestKubernetesDelivery_DeliverPostStart_UsesInstallPathOverride(t *testing.T) {
+	binaryData := "test-binary-content"
+	exec := &recordingExec{stdouts: []string{""}}
+	installPath := "/home/vscode/.local/bin/devsy"
+	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion, InstallPath: installPath}
+
+	err := d.DeliverPostStart(context.Background(), PostStartOptions{
+		BinarySource: binarySourceFrom(binaryData),
+		Arch:         testArch,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, exec.calls, 2)
+	probeScript := strings.Join(exec.calls[0].argv, " ")
+	assert.Contains(t, probeScript, installPath)
+	writeScript := strings.Join(exec.calls[1].argv, " ")
+	assert.Contains(t, writeScript, installPath)
+	assert.NotContains(t, writeScript, pkgconfig.ContainerDevsyHelperLocation)
+}
+
+func TestKubernetesDelivery_DestPath_DefaultsWhenInstallPathUnset(t *testing.T) {
+	d := &KubernetesDelivery{}
+	assert.Equal(t, pkgconfig.ContainerDevsyHelperLocation, d.destPath())
 }

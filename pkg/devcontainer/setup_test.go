@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/agent/delivery"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -235,5 +236,56 @@ func TestBuildResult_DefaultUserEnvProbeEmpty(t *testing.T) {
 			testLoginInteractiveShell,
 			result.MergedConfig.UserEnvProbe,
 		)
+	}
+}
+
+const testAgentInstallPath = "/home/vscode/.local/bin/devsy"
+
+func TestAgentContainerPath(t *testing.T) {
+	cases := []struct {
+		name             string
+		driverName       string
+		agentInstallPath string
+		want             string
+	}{
+		{
+			name:       "non-kubernetes driver always uses the default",
+			driverName: provider2.DockerDriver,
+			want:       pkgconfig.ContainerDevsyHelperLocation,
+		},
+		{
+			name:       "kubernetes driver with no override uses the default",
+			driverName: provider2.KubernetesDriver,
+			want:       pkgconfig.ContainerDevsyHelperLocation,
+		},
+		{
+			name:             "kubernetes driver with AGENT_INSTALL_PATH uses the override",
+			driverName:       provider2.KubernetesDriver,
+			agentInstallPath: testAgentInstallPath,
+			want:             testAgentInstallPath,
+		},
+		{
+			name:             "non-kubernetes driver ignores a stray AgentInstallPath value",
+			driverName:       provider2.DockerDriver,
+			agentInstallPath: testAgentInstallPath,
+			want:             pkgconfig.ContainerDevsyHelperLocation,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := &runner{
+				workspaceConfig: &provider2.AgentWorkspaceInfo{
+					Agent: provider2.ProviderAgentConfig{
+						Driver: c.driverName,
+						Kubernetes: provider2.ProviderKubernetesDriverConfig{
+							AgentInstallPath: c.agentInstallPath,
+						},
+					},
+				},
+			}
+			if got := r.agentContainerPath(); got != c.want {
+				t.Errorf("agentContainerPath() = %q, want %q", got, c.want)
+			}
+		})
 	}
 }

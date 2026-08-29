@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
@@ -153,6 +154,27 @@ func (a ProviderAgentConfig) IsDockerDriver() bool {
 	return a.Driver == "" || a.Driver == DockerDriver
 }
 
+// ContainerInstallPath is where the agent binary lives inside the container
+// for this driver: config.ContainerDevsyHelperLocation by default, or the
+// Kubernetes driver's AgentInstallPath override when set (a writable path
+// for non-root containers, e.g. an OpenShift restricted-SCC pod).
+func (a ProviderAgentConfig) ContainerInstallPath() string {
+	if a.Driver == KubernetesDriver && a.Kubernetes.AgentInstallPath != "" {
+		return a.Kubernetes.AgentInstallPath
+	}
+	return config.ContainerDevsyHelperLocation
+}
+
+// RunsFixedNonRootUser reports whether the container's own process already
+// runs as a fixed non-root UID assigned by the cluster (Kubernetes'
+// AGENT_SECURITY_CONTEXT or STRICT_SECURITY, e.g. an OpenShift restricted
+// SCC), so there is no root to su from: an su into the remote user would
+// only ever fail, not drop privilege, and must be skipped.
+func (a ProviderAgentConfig) RunsFixedNonRootUser() bool {
+	return a.Driver == KubernetesDriver &&
+		(a.Kubernetes.AgentSecurityContext != "" || a.Kubernetes.StrictSecurity == config.BoolTrue)
+}
+
 const (
 	DockerDriver       = "docker"
 	KubernetesDriver   = "kubernetes"
@@ -283,6 +305,13 @@ type ProviderKubernetesDriverConfig struct {
 
 	StrictSecurity       string `json:"strictSecurity,omitempty"`
 	AgentSecurityContext string `json:"agentSecurityContext,omitempty"`
+
+	// AgentInstallPath overrides where the agent binary is installed inside
+	// the devsy/devsy-init containers. Defaults to /usr/local/bin/devsy,
+	// which requires root to write; set this (to a path under a writable
+	// mount, e.g. the workspace volume) when running non-root so delivery
+	// and the container's own entrypoint agree on a writable location.
+	AgentInstallPath string `json:"agentInstallPath,omitempty"`
 }
 
 type ProviderAgentConfigExec struct {

@@ -897,3 +897,17 @@ func TestResolveAgentKubernetesConfigAgentSecurityContext(t *testing.T) {
 		t.Errorf("AgentSecurityContext = %q, want %q", got, "runAsUser: 1000")
 	}
 }
+
+func TestResolveAgentKubernetesConfigAgentInstallPath(t *testing.T) {
+	agentConfig := &provider.ProviderAgentConfig{}
+	options := map[string]string{
+		"AGENT_INSTALL_PATH": "/home/vscode/.local/bin/devsy",
+	}
+	agentConfig.Kubernetes.AgentInstallPath = "${AGENT_INSTALL_PATH}"
+
+	resolveAgentKubernetesConfig(agentConfig, options)
+
+	if got := agentConfig.Kubernetes.AgentInstallPath; got != "/home/vscode/.local/bin/devsy" {
+		t.Errorf("AgentInstallPath = %q, want %q", got, "/home/vscode/.local/bin/devsy")
+	}
+}

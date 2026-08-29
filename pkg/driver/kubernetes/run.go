@@ -151,6 +151,7 @@ func (k *KubernetesDriver) buildPod(
 	volumeMounts, tmpfsVolumes := buildVolumeMounts(mount, options)
 	capabilities := buildCapabilities(options.CapAdd)
 	envVars, daemonConfig := splitEnvVars(options.Env)
+	envVars = withAgentInstallPathEnv(envVars, k.options.AgentInstallPath)
 
 	serviceAccount, err := k.ensureServiceAccount(ctx, id)
 	if err != nil {
@@ -353,6 +354,17 @@ func splitEnvVars(env map[string]string) ([]corev1.EnvVar, string) {
 	}
 
 	return envVars, daemonConfig
+}
+
+// withAgentInstallPathEnv sets DEVSY_AGENT_PATH on the container's env when
+// installPath overrides the default install location, so the container's
+// own entrypoint (which waits for and execs the agent binary) agrees with
+// where delivery installs it.
+func withAgentInstallPathEnv(envVars []corev1.EnvVar, installPath string) []corev1.EnvVar {
+	if installPath == "" {
+		return envVars
+	}
+	return append(envVars, corev1.EnvVar{Name: pkgconfig.EnvAgentPath, Value: installPath})
 }
 
 func (k *KubernetesDriver) ensureServiceAccount(

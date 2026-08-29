@@ -29,6 +29,32 @@ func TestGetContainersDefaultRunsAsRoot(t *testing.T) {
 	}
 }
 
+func TestWithAgentInstallPathEnv_AppendsWhenSet(t *testing.T) {
+	envVars := withAgentInstallPathEnv(
+		[]corev1.EnvVar{{Name: "FOO", Value: "bar"}},
+		"/home/vscode/.local/bin/devsy",
+	)
+
+	if len(envVars) != 2 {
+		t.Fatalf("envVars = %+v, want 2 entries", envVars)
+	}
+	got := envVars[1]
+	want := corev1.EnvVar{Name: pkgconfig.EnvAgentPath, Value: "/home/vscode/.local/bin/devsy"}
+	if got != want {
+		t.Errorf("envVars[1] = %+v, want %+v", got, want)
+	}
+}
+
+func TestWithAgentInstallPathEnv_LeavesUnchangedWhenUnset(t *testing.T) {
+	original := []corev1.EnvVar{{Name: "FOO", Value: "bar"}}
+
+	got := withAgentInstallPathEnv(original, "")
+
+	if len(got) != 1 || got[0] != original[0] {
+		t.Errorf("envVars = %+v, want unchanged %+v", got, original)
+	}
+}
+
 func TestGetContainersStrictSecurityClearsRunAs(t *testing.T) {
 	containers, err := getContainers(nil, devsyContainerInputs{
 		ImageName:  testImageName,

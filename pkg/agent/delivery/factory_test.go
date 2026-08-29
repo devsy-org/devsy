@@ -96,6 +96,27 @@ func TestNewAgentDelivery_KubernetesDriver_Native(t *testing.T) {
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 
+func TestNewAgentDelivery_KubernetesDriver_ThreadsInstallPath(t *testing.T) {
+	podExec := func(_ context.Context, _ []string, _ driver.Streams) error {
+		return nil
+	}
+
+	opts := FactoryOptions{
+		WorkspaceConfig: &provider.AgentWorkspaceInfo{
+			Agent: provider.ProviderAgentConfig{
+				Driver: provider.KubernetesDriver,
+			},
+		},
+		PodExec:                    podExec,
+		KubernetesAgentInstallPath: "/home/vscode/.local/bin/devsy",
+	}
+
+	d := NewAgentDelivery(opts)
+	native, ok := d.(*KubernetesDelivery)
+	require.True(t, ok)
+	assert.Equal(t, "/home/vscode/.local/bin/devsy", native.InstallPath)
+}
+
 func TestNewAgentDelivery_MicrosandboxUsesStreamDelivery(t *testing.T) {
 	podExec := func(_ context.Context, _ []string, _ driver.Streams) error {
 		return nil

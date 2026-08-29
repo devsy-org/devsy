@@ -429,15 +429,28 @@ type TunnelOptions struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Timeout time.Duration
+
+	// RemoteAgentPath overrides where the agent binary is expected inside
+	// the container. Defaults to config.ContainerDevsyHelperLocation when
+	// empty; callers whose delivery already installed it elsewhere (e.g. a
+	// Kubernetes workspace with AGENT_INSTALL_PATH set for a non-root pod)
+	// must pass the same path here, or this redundant ensure-agent-present
+	// check looks in the wrong place and re-triggers a root-only install.
+	RemoteAgentPath string
 }
 
 func Tunnel(ctx context.Context, opts TunnelOptions) error {
+	remoteAgentPath := opts.RemoteAgentPath
+	if remoteAgentPath == "" {
+		remoteAgentPath = config.ContainerDevsyHelperLocation
+	}
+
 	if err := InjectAgent(ctx, &InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			return opts.Exec(ctx, "root", command, stdin, stdout, stderr)
 		},
 		IsLocal:                     false,
-		RemoteAgentPath:             config.ContainerDevsyHelperLocation,
+		RemoteAgentPath:             remoteAgentPath,
 		DownloadURL:                 config.DefaultAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     opts.Timeout,
@@ -445,7 +458,7 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 		return err
 	}
 
-	command := fmt.Sprintf("'%s' internal ssh-server --stdio", config.ContainerDevsyHelperLocation)
+	command := fmt.Sprintf("'%s' internal ssh-server --stdio", remoteAgentPath)
 	if log.DebugEnabled() {
 		command += " --debug"
 	}

@@ -440,7 +440,7 @@ func (cmd *SSHCmd) startTunnel(
 	workdir := resolveWorkdir(cmd.WorkDir, workspaceClient)
 
 	log.Debugf("run outer container tunnel")
-	command := cmd.buildSSHServerCommand(workdir)
+	command := cmd.buildSSHServerCommand(workdir, resolveAgentConfig(workspaceClient))
 
 	envVars, err := cmd.retrieveEnVars()
 	if err != nil {
@@ -466,6 +466,24 @@ func (cmd *SSHCmd) startTunnel(
 		envVars:         envVars,
 		writer:          writer,
 	})
+}
+
+// resolveAgentConfig returns the workspace's agent config when workspaceClient
+// exposes it (client2.WorkspaceClient), or a zero value otherwise (e.g. a
+// platform ProxyClient): ContainerInstallPath()/RunsFixedNonRootUser() both
+// fall back to today's defaults for the zero value, so callers without
+// AgentInfo behave exactly as before.
+func resolveAgentConfig(workspaceClient client2.BaseWorkspaceClient) provider.ProviderAgentConfig {
+	full, ok := workspaceClient.(client2.WorkspaceClient)
+	if !ok {
+		return provider.ProviderAgentConfig{}
+	}
+	_, agentInfo, err := full.AgentInfo(provider.CLIOptions{})
+	if err != nil {
+		log.Debugf("resolve agent info: %v", err)
+		return provider.ProviderAgentConfig{}
+	}
+	return agentInfo.Agent
 }
 
 // setupTunnelWriter wires up the JSON log pipe and GPG agent tunnel shared by
@@ -556,9 +574,12 @@ func (cmd *SSHCmd) startTunnelServices(
 	go cmd.startServices(ctx, devsyConfig, containerClient, workspaceClient.WorkspaceConfig(), opts)
 }
 
-func (cmd *SSHCmd) buildSSHServerCommand(workdir string) string {
+func (cmd *SSHCmd) buildSSHServerCommand(
+	workdir string,
+	agent provider.ProviderAgentConfig,
+) string {
 	commandArgs := []string{
-		config.ContainerDevsyHelperLocation,
+		agent.ContainerInstallPath(),
 		"internal",
 		"ssh-server",
 		names.Flag(names.TrackActivity),
@@ -578,7 +599,7 @@ func (cmd *SSHCmd) buildSSHServerCommand(workdir string) string {
 		commandArgs = append(commandArgs, names.Flag(names.Debug))
 	}
 	command := shellescape.QuoteCommand(commandArgs)
-	if cmd.User != "" && cmd.User != "root" {
+	if cmd.User != "" && cmd.User != "root" && !agent.RunsFixedNonRootUser() {
 		command = shellescape.QuoteCommand([]string{"su", "-c", command, cmd.User})
 	}
 	return command
