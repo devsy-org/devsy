@@ -444,6 +444,11 @@ func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecre
 			FSGroupChangePolicy: ptr.To(corev1.FSGroupChangeOnRootMismatch),
 		}
 	}
+	restrictedCluster := k.options.StrictSecurity == pkgconfig.BoolTrue ||
+		k.options.AgentSecurityContext != ""
+	if restrictedCluster && pod.Spec.HostUsers == nil {
+		pod.Spec.HostUsers = ptr.To(false)
+	}
 	if k.options.KubernetesPullSecretsEnabled == pkgconfig.BoolTrue && pullSecretsCreated {
 		pod.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: getPullSecretsName(id)}}
 	}

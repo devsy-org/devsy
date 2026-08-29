@@ -3,7 +3,9 @@ package kubernetes
 import (
 	"testing"
 
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestGetContainersDefaultRunsAsRoot(t *testing.T) {
@@ -59,5 +61,59 @@ func TestGetContainersInvalidAgentSecurityContextErrors(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("expected error for invalid AGENT_SECURITY_CONTEXT")
+	}
+}
+
+func TestFinalizePodSpecSetsHostUsersFalseWhenStrict(t *testing.T) {
+	k := &KubernetesDriver{options: &provider2.ProviderKubernetesDriverConfig{StrictSecurity: "true"}}
+	pod := &corev1.Pod{}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if pod.Spec.HostUsers == nil || *pod.Spec.HostUsers {
+		t.Errorf("HostUsers = %v, want false", pod.Spec.HostUsers)
+	}
+}
+
+func TestFinalizePodSpecSetsHostUsersFalseWhenAgentSecurityContextSet(t *testing.T) {
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{
+			AgentSecurityContext: "runAsUser: 1000\n",
+		},
+	}
+	pod := &corev1.Pod{}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if pod.Spec.HostUsers == nil || *pod.Spec.HostUsers {
+		t.Errorf(
+			"HostUsers = %v, want false when AGENT_SECURITY_CONTEXT is set without STRICT_SECURITY",
+			pod.Spec.HostUsers,
+		)
+	}
+}
+
+func TestFinalizePodSpecLeavesHostUsersUnsetByDefault(t *testing.T) {
+	k := &KubernetesDriver{options: &provider2.ProviderKubernetesDriverConfig{}}
+	pod := &corev1.Pod{}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if pod.Spec.HostUsers != nil {
+		t.Errorf(
+			"HostUsers = %v, want nil (untouched) when neither STRICT_SECURITY nor AGENT_SECURITY_CONTEXT is set",
+			pod.Spec.HostUsers,
+		)
+	}
+}
+
+func TestFinalizePodSpecRespectsTemplateHostUsers(t *testing.T) {
+	k := &KubernetesDriver{options: &provider2.ProviderKubernetesDriverConfig{StrictSecurity: "true"}}
+	pod := &corev1.Pod{Spec: corev1.PodSpec{HostUsers: ptr.To(true)}}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if pod.Spec.HostUsers == nil || !*pod.Spec.HostUsers {
+		t.Errorf("HostUsers = %v, want true (template value preserved)", pod.Spec.HostUsers)
 	}
 }
