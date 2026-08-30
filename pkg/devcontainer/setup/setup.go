@@ -244,8 +244,9 @@ func writeResultFileTo(path string, rawBytes []byte) error {
 		return sharedfile.WidenWithSudoFallback(context.Background(), path, 0o644)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301
-		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
+	dir := filepath.Dir(path)
+	if securedContainerDataDir(dir) == "" {
+		return fmt.Errorf("create or secure %s", dir)
 	}
 	return sharedfile.WriteFile(path, rawBytes, 0o644)
 }
@@ -629,21 +630,47 @@ func markerFileExists(markerName string, markerContent string) (bool, error) {
 // the process lifetime: containerDataDir may be called many times (once per
 // marker check) and re-probing write access each time would be wasteful.
 var writableContainerDataDirOnce = sync.OnceValue(func() string {
-	if err := os.MkdirAll(pkgconfig.ContainerDataDir, 0o755); err == nil && // #nosec G301
-		dirIsWritable(pkgconfig.ContainerDataDir) {
-		return pkgconfig.ContainerDataDir
+	if dir := securedContainerDataDir(pkgconfig.ContainerDataDir); dir != "" {
+		return dir
 	}
-	// Non-root containers (e.g. OpenShift's restricted SCC) can't write to
+	// Non-root containers (e.g. OpenShift's restricted SCC) can't secure
 	// /var/devsy, whether because it can't be created or because it already
 	// exists root-owned; fall back to the agreed-on path every reader checks.
 	fallback := pkgconfig.ContainerDataDirFallback
-	log.Debugf(
-		"%s is not writable, using %s for container-local scratch data",
-		pkgconfig.ContainerDataDir,
+	if dir := securedContainerDataDir(fallback); dir != "" {
+		return dir
+	}
+	log.Warnf(
+		"%s could not be created or secured to the current user; using it anyway",
 		fallback,
 	)
 	return fallback
 })
+
+// securedContainerDataDir creates dir if needed, verifies the current user
+// owns it, and returns "" if that can't be done or the result still isn't
+// writable. /tmp is world-writable, so another user inside the same
+// container could otherwise pre-create the fallback directory first and
+// control what devsy reads back from marker or result files placed there;
+// chmod succeeds only for the owner (or root), so a failure here reliably
+// signals a directory we don't own and must not trust. The mode itself
+// stays 0755, matching writeResultFileTo's own directory creation: some
+// files placed here (the devcontainer result) are intentionally readable
+// by every container user, not just root.
+func securedContainerDataDir(dir string) string {
+	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301
+		return ""
+	}
+	// #nosec G302 -- directory mode; matches writeResultFileTo's own dir creation
+	if err := os.Chmod(dir, 0o755); err != nil {
+		log.Debugf("%s is owned by another user, refusing to trust it: %v", dir, err)
+		return ""
+	}
+	if !dirIsWritable(dir) {
+		return ""
+	}
+	return dir
+}
 
 // dirIsWritable reports whether dir accepts new files for the current user.
 // os.MkdirAll alone can't tell: it succeeds when the directory already

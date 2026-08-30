@@ -364,6 +364,12 @@ func withAgentInstallPathEnv(envVars []corev1.EnvVar, installPath string) []core
 	if installPath == "" {
 		return envVars
 	}
+	for i := range envVars {
+		if envVars[i].Name == pkgconfig.EnvAgentPath {
+			envVars[i].Value = installPath
+			return envVars
+		}
+	}
 	return append(envVars, corev1.EnvVar{Name: pkgconfig.EnvAgentPath, Value: installPath})
 }
 
@@ -455,9 +461,7 @@ func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecre
 			FSGroupChangePolicy: ptr.To(corev1.FSGroupChangeOnRootMismatch),
 		}
 	}
-	restrictedCluster := k.options.StrictSecurity == pkgconfig.BoolTrue ||
-		k.options.AgentSecurityContext != ""
-	if restrictedCluster && pod.Spec.HostUsers == nil {
+	if k.options.KubernetesUserNamespaces == pkgconfig.BoolTrue && pod.Spec.HostUsers == nil {
 		pod.Spec.HostUsers = new(bool)
 	}
 	if k.options.KubernetesPullSecretsEnabled == pkgconfig.BoolTrue && pullSecretsCreated {

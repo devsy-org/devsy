@@ -30,6 +30,7 @@ optionGroups:
       - DOCKERLESS_IMAGE
       - AGENT_SECURITY_CONTEXT
       - AGENT_INSTALL_PATH
+      - KUBERNETES_USER_NAMESPACES
     name: "Advanced Options"
 options:
   DISK_SIZE:
@@ -94,17 +95,21 @@ options:
     global: true
     default: "false"
   STRICT_SECURITY:
-    description: "EXPERIMENTAL! Use at your own risk. Clears the injected containers' RunAsUser/RunAsGroup/RunAsNonRoot (letting the cluster assign a UID, e.g. an OpenShift SCC) unless POD_MANIFEST_TEMPLATE or AGENT_SECURITY_CONTEXT already set these fields. Capabilities and Privileged (from CapAdd/--privileged) are always kept. Also sets spec.securityContext.hostUsers to false (same as AGENT_SECURITY_CONTEXT does), unless the pod template already set it."
+    description: "EXPERIMENTAL! Use at your own risk. Clears the injected containers' RunAsUser/RunAsGroup/RunAsNonRoot (letting the cluster assign a UID, e.g. an OpenShift SCC) unless POD_MANIFEST_TEMPLATE or AGENT_SECURITY_CONTEXT already set these fields. Capabilities and Privileged (from CapAdd/--privileged) are always kept."
     type: boolean
     default: false
   AGENT_SECURITY_CONTEXT:
-    description: Inline YAML (or a file path) for a Kubernetes SecurityContext applied to the injected devsy and devsy-init containers' RunAsUser/RunAsGroup/RunAsNonRoot fields, e.g. to satisfy an OpenShift SCC's allocated UID range. Takes precedence over STRICT_SECURITY and the built-in root default. A container matching the devsy/devsy-init name in POD_MANIFEST_TEMPLATE still takes precedence over this option. Setting this also sets spec.securityContext.hostUsers to false (same as STRICT_SECURITY does), unless the pod template already set it.
+    description: Inline YAML (or a file path) for a Kubernetes SecurityContext applied to the injected devsy and devsy-init containers' RunAsUser/RunAsGroup/RunAsNonRoot fields, e.g. to satisfy an OpenShift SCC's allocated UID range. Takes precedence over STRICT_SECURITY and the built-in root default. A container matching the devsy/devsy-init name in POD_MANIFEST_TEMPLATE still takes precedence over this option.
     global: true
     type: multiline
   AGENT_INSTALL_PATH:
     description: Overrides where the agent binary is installed inside the devsy/devsy-init containers, e.g. a path under a writable mount such as WORKSPACE_VOLUME_MOUNT. The default (/usr/local/bin/devsy) requires root to write; set this when running non-root (e.g. with AGENT_SECURITY_CONTEXT or STRICT_SECURITY on an OpenShift restricted SCC) so delivery and the container's own entrypoint agree on a writable location.
     global: true
     type: string
+  KUBERNETES_USER_NAMESPACES:
+    description: "EXPERIMENTAL! Sets spec.hostUsers to false (unless POD_MANIFEST_TEMPLATE already set it), so the kubelet maps the workspace pod's UIDs into a Linux user namespace. Requires the cluster's UserNamespacesSupport feature gate (on by default only from Kubernetes 1.33) and node-level support (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+); enabling this on a cluster without that support can get the pod rejected or mishandled, so it is never inferred from STRICT_SECURITY or AGENT_SECURITY_CONTEXT alone."
+    type: boolean
+    default: false
   WORKSPACE_VOLUME_MOUNT:
     description: Sets the path of the workspace volume mount. By default it is the root of your workspace source code, usually /workspaces/$WORKSPACE_ID. If you intend to create multi-repo workspaces or need additional files throughout the lifecycle of the workspace, set this option to a parent directory of the workspace mount.
     type: string
@@ -141,6 +146,7 @@ agent:
     strictSecurity: ${STRICT_SECURITY}
     agentSecurityContext: ${AGENT_SECURITY_CONTEXT}
     agentInstallPath: ${AGENT_INSTALL_PATH}
+    kubernetesUserNamespaces: ${KUBERNETES_USER_NAMESPACES}
 exec:
   command: |-
     "${DEVSY}" internal sh -c "${COMMAND}"

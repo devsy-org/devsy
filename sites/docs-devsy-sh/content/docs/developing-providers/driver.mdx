@@ -75,17 +75,17 @@ The allowed options for the Kubernetes driver are:
 - **workspaceVolumeMount**: overrides the path where the workspace volume is mounted. Defaults to the root of your workspace source code.
 - **podManifestTemplate**: a pod manifest template (inline YAML or a file path) used as the base to build the Devsy pod
 - **labels**: labels to add to the workspace pod, e.g. `devsy.sh/example=value,devsy.sh/example2=value2`
-- **strictSecurity**: *Experimental.* Clears the hardcoded `runAsUser`/`runAsGroup`/`runAsNonRoot` fields (retaining capabilities and `privileged`) and sets `hostUsers: false`, letting the cluster assign the container's UID/GID instead of forcing root.
-- **agentSecurityContext**: *Experimental.* Inline YAML for a `corev1.SecurityContext` (e.g. `runAsUser`, `runAsGroup`, `runAsNonRoot`) merged onto the workspace and init containers, overriding Devsy's defaults field by field.
+- **strictSecurity**: *Experimental.* Clears the hardcoded `runAsUser`/`runAsGroup`/`runAsNonRoot` fields (retaining capabilities and `privileged`), letting the cluster assign the container's UID/GID instead of forcing root.
+- **agentSecurityContext**: *Experimental.* Inline YAML or a file path for a `corev1.SecurityContext` (e.g. `runAsUser`, `runAsGroup`, `runAsNonRoot`) merged onto the workspace and init containers, overriding Devsy's defaults field by field.
 - **agentInstallPath**: overrides where the agent binary is installed inside the devsy/devsy-init containers. Defaults to `/usr/local/bin/devsy`, which requires root to write; set this to a path under a writable mount (e.g. the workspace volume) when running non-root.
+- **kubernetesUserNamespaces**: *Experimental.* Sets `hostUsers: false` (unless `podManifestTemplate` already set it), mapping the pod's UIDs into a Linux user namespace. Requires the cluster's `UserNamespacesSupport` feature gate (on by default only from Kubernetes 1.33) and node-level support (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+); enabling this without that support can get the pod rejected or mishandled. Never inferred from `strictSecurity` or `agentSecurityContext` alone.
 
 <Callout>
 On OpenShift, the default container security context (fixed `runAsUser`/`runAsGroup`) is
 rejected by the `restricted-v2`/`restricted-v3` SCCs, which assign UIDs/GIDs from a
 per-namespace range. Set `strictSecurity: "true"` and/or `agentSecurityContext` (or override
 the container's `securityContext` via a named container in `podManifestTemplate`) to satisfy
-those SCCs. Setting either `strictSecurity` or `agentSecurityContext` also sets the pod's
-`hostUsers: false`.
+those SCCs.
 </Callout>
 
 <Callout>

@@ -355,6 +355,10 @@ func resolveAgentKubernetesConfig(
 	)
 	k8s.DiskSize = resolver.ResolveDefaultValue(k8s.DiskSize, options)
 	k8s.AgentInstallPath = resolver.ResolveDefaultValue(k8s.AgentInstallPath, options)
+	k8s.KubernetesUserNamespaces = resolver.ResolveDefaultValue(
+		k8s.KubernetesUserNamespaces,
+		options,
+	)
 }
 
 func resolveAgentAppleConfig(

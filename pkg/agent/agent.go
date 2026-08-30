@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -451,16 +452,25 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 		return err
 	}
 
-	command := fmt.Sprintf("'%s' internal ssh-server --stdio", remoteAgentPath)
-	if log.DebugEnabled() {
-		command += " --debug"
-	}
+	command := sshServerCommand(remoteAgentPath, log.DebugEnabled())
 	user := opts.User
 	if user == "" {
 		user = "root"
 	}
 
 	return opts.Exec(ctx, user, command, opts.Stdin, opts.Stdout, opts.Stderr)
+}
+
+// sshServerCommand builds the remote command that runs the ssh-server
+// subcommand at agentPath, shell-escaping every argument so a configured
+// path containing shell metacharacters (e.g. AGENT_INSTALL_PATH with a
+// quote) can't inject additional shell syntax.
+func sshServerCommand(agentPath string, debug bool) string {
+	args := []string{agentPath, "internal", "ssh-server", "--stdio"}
+	if debug {
+		args = append(args, "--debug")
+	}
+	return shellescape.QuoteCommand(args)
 }
 
 func applyDockerEnv(cmd *exec.Cmd, envs map[string]string) {

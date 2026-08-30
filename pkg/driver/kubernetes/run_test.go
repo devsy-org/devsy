@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	testImageName  = "image"
-	testEntrypoint = "entrypoint"
+	testImageName   = "image"
+	testEntrypoint  = "entrypoint"
+	testEnvVarName  = "FOO"
+	testEnvVarValue = "bar"
 )
 
 func TestGetContainersDefaultRunsAsRoot(t *testing.T) {
@@ -31,7 +33,7 @@ func TestGetContainersDefaultRunsAsRoot(t *testing.T) {
 
 func TestWithAgentInstallPathEnv_AppendsWhenSet(t *testing.T) {
 	envVars := withAgentInstallPathEnv(
-		[]corev1.EnvVar{{Name: "FOO", Value: "bar"}},
+		[]corev1.EnvVar{{Name: testEnvVarName, Value: testEnvVarValue}},
 		"/home/vscode/.local/bin/devsy",
 	)
 
@@ -46,12 +48,33 @@ func TestWithAgentInstallPathEnv_AppendsWhenSet(t *testing.T) {
 }
 
 func TestWithAgentInstallPathEnv_LeavesUnchangedWhenUnset(t *testing.T) {
-	original := []corev1.EnvVar{{Name: "FOO", Value: "bar"}}
+	original := []corev1.EnvVar{{Name: testEnvVarName, Value: testEnvVarValue}}
 
 	got := withAgentInstallPathEnv(original, "")
 
 	if len(got) != 1 || got[0] != original[0] {
 		t.Errorf("envVars = %+v, want unchanged %+v", got, original)
+	}
+}
+
+// TestWithAgentInstallPathEnv_ReplacesExistingEntry is a regression test:
+// if options.Env already sets DEVSY_AGENT_PATH, the container must not end
+// up with two entries of the same name (undefined effective value).
+func TestWithAgentInstallPathEnv_ReplacesExistingEntry(t *testing.T) {
+	envVars := withAgentInstallPathEnv(
+		[]corev1.EnvVar{
+			{Name: testEnvVarName, Value: testEnvVarValue},
+			{Name: pkgconfig.EnvAgentPath, Value: "/old/path"},
+		},
+		"/new/path",
+	)
+
+	if len(envVars) != 2 {
+		t.Fatalf("envVars = %+v, want 2 entries", envVars)
+	}
+	want := corev1.EnvVar{Name: pkgconfig.EnvAgentPath, Value: "/new/path"}
+	if envVars[1] != want {
+		t.Errorf("envVars[1] = %+v, want %+v", envVars[1], want)
 	}
 }
 
@@ -99,9 +122,12 @@ func TestGetContainersInvalidAgentSecurityContextErrors(t *testing.T) {
 	}
 }
 
-func TestFinalizePodSpecSetsHostUsersFalseWhenStrict(t *testing.T) {
+func TestFinalizePodSpecSetsHostUsersFalseWhenUserNamespacesEnabled(t *testing.T) {
 	k := &KubernetesDriver{
-		options: &provider2.ProviderKubernetesDriverConfig{StrictSecurity: pkgconfig.BoolTrue},
+		options: &provider2.ProviderKubernetesDriverConfig{
+			StrictSecurity:           pkgconfig.BoolTrue,
+			KubernetesUserNamespaces: pkgconfig.BoolTrue,
+		},
 	}
 	pod := &corev1.Pod{}
 
@@ -112,7 +138,13 @@ func TestFinalizePodSpecSetsHostUsersFalseWhenStrict(t *testing.T) {
 	}
 }
 
-func TestFinalizePodSpecSetsHostUsersFalseWhenAgentSecurityContextSet(t *testing.T) {
+// TestFinalizePodSpecLeavesHostUsersUnsetWhenSecurityContextSetWithoutOptIn is
+// a regression test: STRICT_SECURITY/AGENT_SECURITY_CONTEXT alone must never
+// set spec.hostUsers, since the field's mere presence requires the
+// cluster's UserNamespacesSupport feature gate and node-level support that
+// devsy can't detect -- KUBERNETES_USER_NAMESPACES must be requested
+// explicitly.
+func TestFinalizePodSpecLeavesHostUsersUnsetWhenSecurityContextSetWithoutOptIn(t *testing.T) {
 	k := &KubernetesDriver{
 		options: &provider2.ProviderKubernetesDriverConfig{
 			AgentSecurityContext: "runAsUser: 1000\n",
@@ -122,9 +154,9 @@ func TestFinalizePodSpecSetsHostUsersFalseWhenAgentSecurityContextSet(t *testing
 
 	k.finalizePodSpec(pod, "devsy-ws-1", false)
 
-	if pod.Spec.HostUsers == nil || *pod.Spec.HostUsers {
+	if pod.Spec.HostUsers != nil {
 		t.Errorf(
-			"HostUsers = %v, want false when AGENT_SECURITY_CONTEXT is set without STRICT_SECURITY",
+			"HostUsers = %v, want nil: AGENT_SECURITY_CONTEXT alone must not opt into hostUsers",
 			pod.Spec.HostUsers,
 		)
 	}
@@ -138,7 +170,7 @@ func TestFinalizePodSpecLeavesHostUsersUnsetByDefault(t *testing.T) {
 
 	if pod.Spec.HostUsers != nil {
 		t.Errorf(
-			"HostUsers = %v, want nil (untouched) when neither STRICT_SECURITY nor AGENT_SECURITY_CONTEXT is set",
+			"HostUsers = %v, want nil (untouched) by default",
 			pod.Spec.HostUsers,
 		)
 	}
@@ -146,7 +178,9 @@ func TestFinalizePodSpecLeavesHostUsersUnsetByDefault(t *testing.T) {
 
 func TestFinalizePodSpecRespectsTemplateHostUsers(t *testing.T) {
 	k := &KubernetesDriver{
-		options: &provider2.ProviderKubernetesDriverConfig{StrictSecurity: pkgconfig.BoolTrue},
+		options: &provider2.ProviderKubernetesDriverConfig{
+			KubernetesUserNamespaces: pkgconfig.BoolTrue,
+		},
 	}
 	pod := &corev1.Pod{Spec: corev1.PodSpec{HostUsers: new(true)}}
 
@@ -354,8 +388,9 @@ func TestGetInitContainersTemplateSecurityContextWins(t *testing.T) {
 func TestAssemblePodSpecOpenShiftScenario(t *testing.T) {
 	k := &KubernetesDriver{
 		options: &provider2.ProviderKubernetesDriverConfig{
-			StrictSecurity:       pkgconfig.BoolTrue,
-			AgentSecurityContext: "runAsUser: 1002010000\nrunAsGroup: 1002010000\nrunAsNonRoot: true\n",
+			StrictSecurity:           pkgconfig.BoolTrue,
+			AgentSecurityContext:     "runAsUser: 1002010000\nrunAsGroup: 1002010000\nrunAsNonRoot: true\n",
+			KubernetesUserNamespaces: pkgconfig.BoolTrue,
 		},
 	}
 	pod := &corev1.Pod{}
