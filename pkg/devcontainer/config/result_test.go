@@ -51,3 +51,108 @@ func TestResultErr(t *testing.T) {
 		})
 	}
 }
+
+func TestGetRemoteUser(t *testing.T) {
+	for _, tt := range getRemoteUserCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GetRemoteUser(tt.result); got != tt.want {
+				t.Errorf("GetRemoteUser() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+type getRemoteUserCase struct {
+	name   string
+	result *Result
+	want   string
+}
+
+func getRemoteUserCases() []getRemoteUserCase {
+	return append(remoteUserRootFallbackCases(), remoteUserPrecedenceCases()...)
+}
+
+func remoteUserRootFallbackCases() []getRemoteUserCase {
+	return []getRemoteUserCase{
+		{
+			name:   "nil result falls back to root",
+			result: nil,
+			want:   testUserRoot,
+		},
+		{
+			name: "no user sources falls back to root",
+			result: &Result{
+				MergedConfig: &MergedDevContainerConfig{},
+				ContainerDetails: &ContainerDetails{
+					Config: ContainerDetailsConfig{},
+				},
+			},
+			want: testUserRoot,
+		},
+	}
+}
+
+func remoteUserPrecedenceCases() []getRemoteUserCase {
+	return []getRemoteUserCase{
+		{
+			name: "remoteUser from config wins",
+			result: &Result{
+				MergedConfig: &MergedDevContainerConfig{
+					DevContainerConfigBase: DevContainerConfigBase{
+						RemoteUser: "cfg-user",
+					},
+					NonComposeBase: NonComposeBase{ContainerUser: testContainerUser},
+				},
+				ContainerDetails: &ContainerDetails{
+					Config: ContainerDetailsConfig{User: testInspectUser},
+				},
+			},
+			want: "cfg-user",
+		},
+		{
+			name: "devsy.user label beats docker inspect user",
+			result: &Result{
+				ContainerDetails: &ContainerDetails{
+					Config: ContainerDetailsConfig{
+						User:   testInspectUser,
+						Labels: map[string]string{UserLabel: testLabelUser},
+					},
+				},
+			},
+			want: testLabelUser,
+		},
+		{
+			name: "containerUser from config beats devsy.user label",
+			result: &Result{
+				MergedConfig: &MergedDevContainerConfig{
+					NonComposeBase: NonComposeBase{ContainerUser: testContainerUser},
+				},
+				ContainerDetails: &ContainerDetails{
+					Config: ContainerDetailsConfig{
+						User:   testInspectUser,
+						Labels: map[string]string{UserLabel: testLabelUser},
+					},
+				},
+			},
+			want: testContainerUser,
+		},
+		{
+			name: "containerUser beats docker inspect user",
+			result: &Result{
+				MergedConfig: &MergedDevContainerConfig{
+					NonComposeBase: NonComposeBase{ContainerUser: testContainerUser},
+				},
+				ContainerDetails: &ContainerDetails{
+					Config: ContainerDetailsConfig{User: testInspectUser},
+				},
+			},
+			want: testContainerUser,
+		},
+	}
+}
+
+const (
+	testContainerUser = "container-user"
+	testInspectUser   = "inspect-user"
+	testLabelUser     = "label-user"
+)

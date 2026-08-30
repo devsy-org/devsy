@@ -70,7 +70,10 @@ func RestoreVolumes(
 	}
 
 	levels := len(strings.Split(layer.MountPrefix, "/"))
-	if err := extract.Extract(rc, target, extract.StripLevels(levels)); err != nil {
+	if err := extract.Extract(
+		rc, target,
+		extract.StripLevels(levels), extract.PreserveHeaderOwnership(),
+	); err != nil {
 		return fmt.Errorf("extract snapshot volumes into %s: %w", target, err)
 	}
 	return nil

@@ -86,6 +86,9 @@ type Options struct {
 	// the same suppressed-discovery circumstances as RunArgs. Used by
 	// snapshot restore to replay the original devcontainer.json's containerEnv.
 	ContainerEnv map[string]string
+	// RemoteUser is the remoteUser to replay under the same
+	// suppressed-discovery circumstances as RunArgs. Used by snapshot restore.
+	RemoteUser string
 }
 
 type HeadlessOptions struct {
@@ -202,6 +205,7 @@ func buildUpCmd(g *flags.GlobalFlags, opts Options) *UpCmd {
 	cmd.DevContainerSource = opts.DevContainerSource
 	cmd.RunArgs = opts.RunArgs
 	cmd.ContainerEnv = opts.ContainerEnv
+	cmd.RemoteUser = opts.RemoteUser
 	if opts.Name != "" {
 		cmd.ID = opts.Name
 	}

@@ -557,8 +557,9 @@ func (cmd *UpCmd) validateFromSnapshot(ctx context.Context, args []string) error
 }
 
 // applyFromSnapshotOverrides replays the create-time devcontainer.json
-// settings the snapshot's manifest carries (runArgs, containerEnv) onto cmd,
-// so the image-sourced restored container behaves like the original did.
+// settings the snapshot's manifest carries (runArgs, containerEnv,
+// remoteUser) onto cmd, so the image-sourced restored container behaves like
+// the original did.
 func (cmd *UpCmd) applyFromSnapshotOverrides(manifest *snapshotpkg.Manifest) error {
 	runArgs, err := manifest.RunArgs()
 	if err != nil {
@@ -571,6 +572,10 @@ func (cmd *UpCmd) applyFromSnapshotOverrides(manifest *snapshotpkg.Manifest) err
 		return fmt.Errorf("read --from-snapshot container env: %w", err)
 	}
 	cmd.ContainerEnv = containerEnv
+
+	if cmd.RemoteUser == "" {
+		cmd.RemoteUser = manifest.RemoteUser()
+	}
 	return nil
 }
 

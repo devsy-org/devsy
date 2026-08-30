@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	targetFileName = "target.txt"
-	etcPasswd      = "../../etc/passwd" // #nosec G101
+	targetFileName  = "target.txt"
+	etcPasswd       = "../../etc/passwd" // #nosec G101
+	testHardLinkRel = "dir/file"
 )
 
 func TestWithinDir(t *testing.T) {
@@ -38,6 +39,7 @@ func TestWithinDir(t *testing.T) {
 
 func TestResolveLinkTarget(t *testing.T) {
 	t.Parallel()
+	const dest = "/tmp/dest"
 	cases := []struct {
 		name     string
 		linkname string
@@ -51,7 +53,10 @@ func TestResolveLinkTarget(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := resolveLinkTarget(tt.linkname, tt.outFile); got != tt.want {
+			header := &tar.Header{Typeflag: tar.TypeSymlink, Linkname: tt.linkname}
+			target := entryTarget{outFileName: tt.outFile, destFolder: dest}
+			got := resolveLinkTarget(header, target, &Options{})
+			if got != tt.want {
 				t.Errorf(
 					"resolveLinkTarget(%q, %q) = %q, want %q",
 					tt.linkname,
@@ -61,6 +66,17 @@ func TestResolveLinkTarget(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestResolveLinkTarget_HardLinkUsesArchiveRoot(t *testing.T) {
+	t.Parallel()
+	const dest = "/tmp/dest"
+	header := &tar.Header{Typeflag: tar.TypeLink, Linkname: testHardLinkRel}
+	target := entryTarget{outFileName: dest + "/dir/sub/link", destFolder: dest}
+	want := dest + "/dir/file"
+	if got := resolveLinkTarget(header, target, &Options{}); got != want {
+		t.Errorf("resolveLinkTarget(hard link) = %q, want %q", got, want)
 	}
 }
 
@@ -113,7 +129,8 @@ func TestValidateLinkTarget(t *testing.T) {
 			t.Parallel()
 			header := &tar.Header{Typeflag: tt.typeflag, Name: "link", Linkname: tt.linkname}
 			outFile := dest + "/link"
-			err := validateLinkTarget(header, outFile, dest)
+			target := entryTarget{outFileName: outFile, destFolder: dest}
+			err := validateLinkTarget(header, target, &Options{})
 			if tt.wantError == "" {
 				if err != nil {
 					t.Errorf("expected no error, got %v", err)

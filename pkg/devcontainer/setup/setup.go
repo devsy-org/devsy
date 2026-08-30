@@ -335,46 +335,59 @@ func linkRootHome(setupInfo *config.Result) error {
 }
 
 func chownWorkspace(setupInfo *config.Result, recursive bool) error {
-	user := config.GetRemoteUser(setupInfo)
-	// Marker content is the workspace ID, not empty: a snapshot-restored
-	// container runs the ORIGINAL workspace's committed image, which already
-	// carries a chownWorkspace marker from when that original workspace was
-	// set up. That marker says nothing about whether THIS container's freshly
-	// restored (root-owned, just-extracted) volume content has been chowned,
-	// so an empty/content-agnostic marker would wrongly skip chown here and
-	// leave the workspace folder inaccessible to the remote user.
-	exists, err := markerFileExists("chownWorkspace", os.Getenv(pkgconfig.EnvWorkspaceID))
-	if err != nil {
-		return err
-	} else if exists {
-		return nil
+	workspaceFolder := setupInfo.SubstitutionContext.ContainerWorkspaceFolder
+	// Compose services are not guaranteed a workspaceMount
+	if _, err := os.Lstat(workspaceFolder); err != nil {
+		if os.IsNotExist(err) {
+			log.Debugf("skip chown: workspace folder does not exist: %s", workspaceFolder)
+			return nil
+		}
+		return fmt.Errorf("stat workspace %s: %w", workspaceFolder, err)
 	}
 
-	workspaceRoot := filepath.Dir(setupInfo.SubstitutionContext.ContainerWorkspaceFolder)
+	user := config.GetRemoteUser(setupInfo)
+	// Scope the marker to a workspace so a restored image does not suppress
+	// ownership setup for a different workspace; an unset workspace ID can't
+	// be scoped, so skip the marker gate entirely and chown every run.
+	workspaceID := os.Getenv(pkgconfig.EnvWorkspaceID)
+	if workspaceID != "" {
+		exists, err := markerExists("chownWorkspace", workspaceID)
+		if err != nil {
+			return err
+		} else if exists {
+			return nil
+		}
+	}
 
+	workspaceRoot := filepath.Dir(workspaceFolder)
 	if workspaceRoot != "/" {
 		log.Infof("chown workspace: user=%s, workspaceRoot=%s", user, workspaceRoot)
-		err = copy2.Chown(workspaceRoot, user)
-		if err != nil {
-			log.Warn(err)
+		if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.Unsupported(err) {
+			return fmt.Errorf("chown %s: %w", workspaceRoot, err)
 		}
 	}
 
 	if recursive {
-		log.Infof(
-			"chown workspace recursively: user=%s, workspaceFolder=%s",
-			user,
-			setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
-		)
-		err = copy2.ChownR(setupInfo.SubstitutionContext.ContainerWorkspaceFolder, user)
-		// Best effort: some entries (e.g. read-only .git pack files on a
-		// virtiofs share) legitimately cannot be chowned. The remote user can
-		// still work in the tree, so this is not worth a warning.
-		if err != nil {
-			log.Debugf("chown workspace: some entries could not be chowned: %v", err)
+		log.Infof("chown workspace recursively: user=%s, workspaceFolder=%s", user, workspaceFolder)
+		err := copy2.ChownR(workspaceFolder, user)
+		var failures copy2.ChownFailures
+		switch {
+		case err == nil:
+		case errors.As(err, &failures) && failures.AllDenied():
+			// Read-only shared files, such as virtiofs pack files, can refuse chown.
+			// A future container for this workspace may not share the same read-only mount.
+			log.Warnf("chown workspace: %d entries kept their owner: %v", len(failures), err)
+			return nil
+		default:
+			return fmt.Errorf("chown %s recursively: %w", workspaceFolder, err)
 		}
 	}
 
+	if workspaceID != "" {
+		if err := writeMarker("chownWorkspace", workspaceID); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -603,26 +616,47 @@ func ensureKubeConfigMaps(config *clientcmdapi.Config) *clientcmdapi.Config {
 	return config
 }
 
-func markerFileExists(markerName string, markerContent string) (bool, error) {
-	markerName = filepath.Join(containerDataDir(), markerName+".marker")
-	t, err := os.ReadFile(markerName)
-	if err != nil && !os.IsNotExist(err) {
-		return false, err
-	} else if err == nil && (markerContent == "" || string(t) == markerContent) {
-		return true, nil
-	}
-
-	// write marker
-	dir := filepath.Dir(markerName)
-	_ = os.MkdirAll(
-		dir,
-		0o755,
-	) // #nosec G301 -- Standard directory permissions
-	err = os.WriteFile(markerName, []byte(markerContent), 0o600)
+// markerExists reports whether the named marker exists with the expected
+// content; empty markerContent matches any existing marker. It never writes.
+func markerExists(markerName string, markerContent string) (bool, error) {
+	// #nosec G703 -- markerName is an internal constant
+	path := filepath.Join(containerDataDir(), markerName+".marker")
+	// #nosec G304 -- path is built from internal constants
+	t, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return markerContent == "" || string(t) == markerContent, nil
+}
+
+// writeMarker records that the work gated by markerExists has completed.
+func writeMarker(markerName string, markerContent string) error {
+	dir := containerDataDir()
+	if securedContainerDataDir(dir) == "" {
+		return fmt.Errorf("create or secure %s", dir)
+	}
+	// #nosec G703 -- markerName is an internal constant
+	path := filepath.Join(dir, markerName+".marker")
+	// #nosec G703 -- path is built from internal constants
+	if err := os.WriteFile(path, []byte(markerContent), 0o600); err != nil {
+		return fmt.Errorf("write marker: %w", err)
+	}
+	return nil
+}
+
+// markerFileExists checks for the marker and writes it on miss. Work that must be
+// retried on failure should bracket itself with markerExists and writeMarker instead.
+func markerFileExists(markerName string, markerContent string) (bool, error) {
+	exists, err := markerExists(markerName, markerContent)
+	if err != nil || exists {
+		return exists, err
+	}
+	if err := writeMarker(markerName, markerContent); err != nil {
 		return false, fmt.Errorf("write marker: %w", err)
 	}
-
 	return false, nil
 }
 

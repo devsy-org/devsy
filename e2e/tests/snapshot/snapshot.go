@@ -21,6 +21,7 @@ const (
 	snapshotCmd         = "snapshot"
 	snapshotVerbCreate  = "create"
 	snapshotVerbRestore = "restore"
+	nonRootRemoteUser   = "devsyuser"
 )
 
 var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
@@ -430,11 +431,6 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		restoredWorkspace, err := f.FindWorkspace(ctx, restoredID)
 		framework.ExpectNoError(err)
 
-		// The custom --label runArg only exists in this fixture's
-		// devcontainer.json, not in the base image or --add-host (which the
-		// registry fixture itself already depends on to function at all): its
-		// presence on the restored container proves restore replays the
-		// original runArgs generally, not just the one the test harness needs.
 		containerIDs, err := dockerHelper.FindContainer(ctx, []string{
 			fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, restoredWorkspace.UID),
 			"devsy-e2e-snapshot-runargs=true",
@@ -444,5 +440,58 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 			gomega.BeEmpty(),
 			"restored container should carry the original devcontainer.json's custom runArg label",
 		)
+	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+	ginkgo.It("restores files owned by the remote user when reusing the original id", func(
+		ctx context.Context,
+	) {
+		initialDir, err := os.Getwd()
+		framework.ExpectNoError(err)
+
+		tempDir, err := framework.CopyToTempDir("tests/snapshot/testdata/docker-nonroot")
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+		ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+		framework.ExpectNoError(f.DevsyUp(ctx, tempDir))
+
+		workspaceFolder, err := f.DevsySSH(ctx, tempDir, "pwd")
+		framework.ExpectNoError(err)
+		workspaceFolder = strings.TrimSpace(workspaceFolder)
+
+		markerCmd := fmt.Sprintf("echo mutated > %s/marker.txt", workspaceFolder)
+		_, err = f.DevsySSH(ctx, tempDir, markerCmd)
+		framework.ExpectNoError(err)
+
+		out, _, err := f.ExecCommandCapture(ctx, []string{
+			snapshotCmd, snapshotVerbCreate, tempDir, registryFlag, registryHost + "/e2e/snapshots",
+			debugFlag,
+		})
+		framework.ExpectNoError(err)
+		snapshotRef := strings.TrimSpace(out)
+
+		framework.ExpectNoError(f.DevsyWorkspaceDelete(ctx, tempDir))
+
+		_, _, err = f.ExecCommandCapture(ctx, []string{
+			snapshotCmd, snapshotVerbRestore, snapshotRef, debugFlag,
+		})
+		framework.ExpectNoError(err)
+
+		restoredWorkspaceFolder, err := f.DevsySSH(ctx, tempDir, "pwd")
+		framework.ExpectNoError(err)
+		restoredWorkspaceFolder = strings.TrimSpace(restoredWorkspaceFolder)
+
+		content, err := f.DevsySSH(
+			ctx, tempDir, fmt.Sprintf("cat %s/marker.txt", restoredWorkspaceFolder),
+		)
+		framework.ExpectNoError(err)
+		gomega.Expect(content).To(gomega.ContainSubstring("mutated"))
+
+		ownerCmd := fmt.Sprintf(
+			`test "$(stat -c %%U %s/marker.txt)" = %q && echo OWNER_OK || echo OWNER_MISMATCH`,
+			restoredWorkspaceFolder, nonRootRemoteUser,
+		)
+		ownerOut, err := f.DevsySSH(ctx, tempDir, ownerCmd)
+		framework.ExpectNoError(err)
+		gomega.Expect(ownerOut).To(gomega.ContainSubstring("OWNER_OK"))
 	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 })
