@@ -30,7 +30,7 @@ func TestSecuredContainerDataDir_CreatesWithExpectedPermissions(t *testing.T) {
 // whatever mode it already has.
 func TestSecuredContainerDataDir_NarrowsPreExistingLaxPermissions(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "devsy-data")
-	if err := os.Mkdir(dir, 0o777); err != nil {
+	if err := os.Mkdir(dir, 0o777); err != nil { // #nosec G301 -- deliberately lax mode under test
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}
 
