@@ -75,7 +75,7 @@ The allowed options for the Kubernetes driver are:
 - **workspaceVolumeMount**: overrides the path where the workspace volume is mounted. Defaults to the root of your workspace source code.
 - **podManifestTemplate**: a pod manifest template (inline YAML or a file path) used as the base to build the Devsy pod
 - **labels**: labels to add to the workspace pod, e.g. `devsy.sh/example=value,devsy.sh/example2=value2`
-- **strictSecurity**: *Experimental.* Removes the default security context and merges the one from `podManifestTemplate` if specified.
+- **strictSecurity**: *Experimental.* Clears the hardcoded `runAsUser`/`runAsGroup`/`runAsNonRoot` fields (retaining capabilities and `privileged`) and sets `hostUsers: false`, letting the cluster assign the container's UID/GID instead of forcing root.
 - **agentSecurityContext**: *Experimental.* Inline YAML for a `corev1.SecurityContext` (e.g. `runAsUser`, `runAsGroup`, `runAsNonRoot`) merged onto the workspace and init containers, overriding Devsy's defaults field by field.
 - **agentInstallPath**: overrides where the agent binary is installed inside the devsy/devsy-init containers. Defaults to `/usr/local/bin/devsy`, which requires root to write; set this to a path under a writable mount (e.g. the workspace volume) when running non-root.
 

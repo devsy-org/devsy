@@ -158,6 +158,11 @@ func waitForStream(ctx context.Context, stream func(context.Context) error) erro
 		}
 		return ctx.Err()
 	case err := <-errChan:
+		if err == nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+		}
 		return err
 	}
 }

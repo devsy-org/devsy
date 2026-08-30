@@ -627,13 +627,15 @@ func markerFileExists(markerName string, markerContent string) (bool, error) {
 
 // writableContainerDataDirOnce caches the resolved container data dir for
 // the process lifetime: containerDataDir may be called many times (once per
-// marker check) and re-probing MkdirAll each time would be wasteful.
+// marker check) and re-probing write access each time would be wasteful.
 var writableContainerDataDirOnce = sync.OnceValue(func() string {
-	if err := os.MkdirAll(pkgconfig.ContainerDataDir, 0o755); err == nil { // #nosec G301
+	if err := os.MkdirAll(pkgconfig.ContainerDataDir, 0o755); err == nil && // #nosec G301
+		dirIsWritable(pkgconfig.ContainerDataDir) {
 		return pkgconfig.ContainerDataDir
 	}
-	// Non-root containers (e.g. OpenShift's restricted SCC) can't create
-	// /var/devsy; fall back to the agreed-on path every reader checks.
+	// Non-root containers (e.g. OpenShift's restricted SCC) can't write to
+	// /var/devsy, whether because it can't be created or because it already
+	// exists root-owned; fall back to the agreed-on path every reader checks.
 	fallback := pkgconfig.ContainerDataDirFallback
 	log.Debugf(
 		"%s is not writable, using %s for container-local scratch data",
@@ -642,6 +644,21 @@ var writableContainerDataDirOnce = sync.OnceValue(func() string {
 	)
 	return fallback
 })
+
+// dirIsWritable reports whether dir accepts new files for the current user.
+// os.MkdirAll alone can't tell: it succeeds when the directory already
+// exists even if it's root-owned and unwritable by a non-root container's
+// user, so callers that need real write access must probe it directly.
+func dirIsWritable(dir string) bool {
+	f, err := os.CreateTemp(dir, ".devsy-write-probe-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	return true
+}
 
 // containerDataDir returns config.ContainerDataDir when writable (the
 // common, root-owned case), falling back to config.ContainerDataDirFallback

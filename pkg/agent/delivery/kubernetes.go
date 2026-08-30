@@ -16,7 +16,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/version"
+	"k8s.io/apimachinery/pkg/util/wait"
 	execerr "k8s.io/client-go/util/exec"
+	"k8s.io/client-go/util/retry"
 )
 
 var _ AgentDelivery = (*KubernetesDelivery)(nil)
@@ -172,31 +174,46 @@ func (d *KubernetesDelivery) deliverViaExecStream(
 	destPath string,
 	opts PostStartOptions,
 ) error {
-	var lastErr error
-	for attempt := 1; attempt <= execStreamMaxAttempts; attempt++ {
-		binary, err := opts.BinarySource(ctx, opts.Arch)
-		if err != nil {
-			return fmt.Errorf("acquire binary: %w", err)
-		}
+	attempt := 0
+	err := retry.OnError(
+		wait.Backoff{Steps: execStreamMaxAttempts},
+		isTransientDeliveryError,
+		func() error {
+			attempt++
+			binary, err := opts.BinarySource(ctx, opts.Arch)
+			if err != nil {
+				return &permanentDeliveryError{fmt.Errorf("acquire binary: %w", err)}
+			}
+			defer func() { _ = binary.Close() }()
 
-		attemptCtx, cancel := context.WithTimeout(ctx, execStreamAttemptTimeout)
-		lastErr = d.execStreamOnce(attemptCtx, destPath, binary)
-		cancel()
-		_ = binary.Close()
-
-		if lastErr == nil {
-			return nil
-		}
-		if !isTransientDeliveryError(lastErr) {
-			return lastErr
-		}
-		log.Warnf(
-			"exec-stream delivery attempt %d/%d stalled or reset, retrying: %v",
-			attempt, execStreamMaxAttempts, lastErr,
-		)
+			attemptCtx, cancel := context.WithTimeout(ctx, execStreamAttemptTimeout)
+			defer cancel()
+			streamErr := d.execStreamOnce(attemptCtx, destPath, binary)
+			if streamErr != nil && isTransientDeliveryError(streamErr) &&
+				attempt < execStreamMaxAttempts {
+				log.Warnf(
+					"exec-stream delivery attempt %d/%d stalled or reset, retrying: %v",
+					attempt, execStreamMaxAttempts, streamErr,
+				)
+			}
+			return streamErr
+		},
+	)
+	var perm *permanentDeliveryError
+	if errors.As(err, &perm) {
+		return perm.err
 	}
-	return lastErr
+	return err
 }
+
+// permanentDeliveryError marks an error that must never be retried, even if
+// it happens to look transient to isTransientDeliveryError (e.g. a network
+// error surfaced while acquiring the binary rather than while streaming it).
+type permanentDeliveryError struct{ err error }
+
+func (e *permanentDeliveryError) Error() string { return e.err.Error() }
+
+func (e *permanentDeliveryError) Unwrap() error { return e.err }
 
 // execStreamOnce writes to a temp file in the container and moves it into place,
 // so that a partial write does not leave a broken binary in place.
@@ -205,11 +222,12 @@ func (d *KubernetesDelivery) execStreamOnce(
 	destPath string,
 	binary io.Reader,
 ) error {
+	quotedDest := shellescape.Quote(destPath)
 	script := fmt.Sprintf(
 		`set -e; d=$(dirname %s); mkdir -p "$d"; `+
 			`t=$(mktemp %s.XXXXXX); `+
 			`cat > "$t" && chmod 0755 "$t" && mv -f "$t" %s || { rm -f "$t"; exit 1; }`,
-		destPath, destPath, destPath,
+		quotedDest, quotedDest, quotedDest,
 	)
 	return d.Exec(ctx, []string{"sh", "-c", script}, driver.Streams{Stdin: binary})
 }
@@ -218,6 +236,9 @@ func (d *KubernetesDelivery) execStreamOnce(
 // transient and worth retrying, e.g. a stalled exec stream or a TCP reset.
 func isTransientDeliveryError(err error) bool {
 	if err == nil {
+		return false
+	}
+	if _, ok := errors.AsType[*permanentDeliveryError](err); ok {
 		return false
 	}
 	if errors.Is(err, context.DeadlineExceeded) {

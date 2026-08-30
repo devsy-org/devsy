@@ -162,7 +162,7 @@ func parseSecurityContext(raw string) (*corev1.SecurityContext, error) {
 			err,
 		)
 	}
-	if err := yaml.Unmarshal(body, sc); err == nil {
+	if err = yaml.Unmarshal(body, sc); err == nil {
 		return sc, nil
 	}
 

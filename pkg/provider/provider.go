@@ -3,6 +3,7 @@ package provider
 import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/types"
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -165,14 +166,26 @@ func (a ProviderAgentConfig) ContainerInstallPath() string {
 	return config.ContainerDevsyHelperLocation
 }
 
-// RunsFixedNonRootUser reports whether the container's own process already
-// runs as a fixed non-root UID assigned by the cluster (Kubernetes'
-// AGENT_SECURITY_CONTEXT or STRICT_SECURITY, e.g. an OpenShift restricted
-// SCC), so there is no root to su from: an su into the remote user would
-// only ever fail, not drop privilege, and must be skipped.
+// RunsFixedNonRootUser reports whether AGENT_SECURITY_CONTEXT explicitly
+// guarantees the container runs as a fixed non-root UID (an OpenShift
+// restricted SCC, for example), so there is no root to su from: an su into
+// the remote user would only ever fail, not drop privilege, and must be
+// skipped. STRICT_SECURITY alone only clears the hardcoded root fields; it
+// does not guarantee which UID the cluster ends up assigning, so it is not
+// treated as a signal here.
 func (a ProviderAgentConfig) RunsFixedNonRootUser() bool {
-	return a.Driver == KubernetesDriver &&
-		(a.Kubernetes.AgentSecurityContext != "" || a.Kubernetes.StrictSecurity == config.BoolTrue)
+	if a.Driver != KubernetesDriver {
+		return false
+	}
+	var sc struct {
+		RunAsUser    *int64 `json:"runAsUser,omitempty"`
+		RunAsNonRoot *bool  `json:"runAsNonRoot,omitempty"`
+	}
+	if err := yaml.Unmarshal([]byte(a.Kubernetes.AgentSecurityContext), &sc); err != nil {
+		return false
+	}
+	return (sc.RunAsNonRoot != nil && *sc.RunAsNonRoot) ||
+		(sc.RunAsUser != nil && *sc.RunAsUser != 0)
 }
 
 const (

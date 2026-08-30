@@ -1,6 +1,9 @@
 package kubernetes
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
@@ -35,6 +38,24 @@ func TestParseSecurityContextInlineYAML(t *testing.T) {
 func TestParseSecurityContextInvalid(t *testing.T) {
 	if _, err := parseSecurityContext("not: valid: yaml: at: all:"); err == nil {
 		t.Fatal("expected error for invalid inline yaml and nonexistent file path")
+	}
+}
+
+// TestParseSecurityContextInvalidFileReturnsRealParseError is a regression
+// test: a file that exists but holds invalid YAML must surface the actual
+// unmarshal error, not a formatted-nil placeholder from a shadowed variable.
+func TestParseSecurityContextInvalidFileReturnsRealParseError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "security-context.yaml")
+	if err := os.WriteFile(path, []byte("not: [valid"), 0o600); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	_, err := parseSecurityContext(path)
+	if err == nil {
+		t.Fatal("expected error for invalid YAML file")
+	}
+	if strings.Contains(err.Error(), "%!w(<nil>)") {
+		t.Fatalf("error lost the real parse failure behind a shadowed nil: %v", err)
 	}
 }
 

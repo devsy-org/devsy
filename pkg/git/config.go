@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -89,6 +90,25 @@ func (c *Config) Unset(ctx context.Context, key string, scope ConfigScope) error
 	args := append([]string{subConfig}, scope.args()...)
 	args = append(args, "--unset", key)
 	if _, err := c.repo.run(ctx, args...); err != nil {
+		return fmt.Errorf("unset git config %q: %w", key, err)
+	}
+	return nil
+}
+
+// UnsetValue removes a single value of a possibly multi-valued config key in
+// the given scope, leaving any other values untouched. value is matched as
+// an exact (regex-escaped) pattern, so a plain `git config --unset key`
+// (which git rejects for a multi-valued key) is never needed. An absent key
+// or a value with no matching entry is not an error.
+func (c *Config) UnsetValue(ctx context.Context, key, value string, scope ConfigScope) error {
+	args := append([]string{subConfig}, scope.args()...)
+	args = append(args, "--unset", key, "^"+regexp.QuoteMeta(value)+"$")
+	if _, err := c.repo.run(ctx, args...); err != nil {
+		// Exit code 5 means the key does not exist or no value matched the pattern.
+		var cmdErr *CommandError
+		if errors.As(err, &cmdErr) && cmdErr.ExitCode == 5 {
+			return nil
+		}
 		return fmt.Errorf("unset git config %q: %w", key, err)
 	}
 	return nil

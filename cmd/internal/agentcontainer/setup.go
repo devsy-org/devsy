@@ -901,7 +901,7 @@ func configureSystemGitCredentials(
 
 	cleanup := func() {
 		log.Debug("unset setup credential helper")
-		if err = gitConfig.Unset(ctx, "credential.helper", scope); err != nil {
+		if err = gitConfig.UnsetValue(ctx, "credential.helper", gitCredentials, scope); err != nil {
 			log.Errorf("unset credential helper %v", err)
 		}
 	}

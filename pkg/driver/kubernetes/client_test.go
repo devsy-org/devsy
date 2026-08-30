@@ -48,6 +48,23 @@ func TestWaitForStream_CancellationIsNeverReportedAsSuccess(t *testing.T) {
 	<-streamReturned
 }
 
+// TestWaitForStream_NeverReportsSuccessWhenContextAlreadyCancelled is a
+// regression test for a race in the original select: ctx.Done() and errChan
+// can both be ready at once, and selecting the errChan case with a nil
+// stream error must still surface the cancellation rather than success.
+func TestWaitForStream_NeverReportsSuccessWhenContextAlreadyCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for range 200 {
+		err := waitForStream(ctx, func(_ context.Context) error {
+			return nil
+		})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	}
+}
+
 func TestWaitForStream_PropagatesRealStreamErrorEvenAfterCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
