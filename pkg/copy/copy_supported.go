@@ -20,6 +20,13 @@ func DeniedByFilesystem(err error) bool {
 	return errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EROFS)
 }
 
+// Unsupported reports whether err means chown itself isn't a meaningful
+// operation on this platform (Windows only). On unix, chown is always a
+// real operation, so any failure here is a genuine denial, never this.
+func Unsupported(error) bool {
+	return false
+}
+
 func Lchown(info os.FileInfo, sourcePath, destPath string) error {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {

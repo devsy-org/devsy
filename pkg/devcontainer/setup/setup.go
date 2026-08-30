@@ -349,7 +349,7 @@ func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	workspaceRoot := filepath.Dir(workspaceFolder)
 	if workspaceRoot != "/" {
 		log.Infof("chown workspace: user=%s, workspaceRoot=%s", user, workspaceRoot)
-		if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.DeniedByFilesystem(err) {
+		if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.Unsupported(err) {
 			return fmt.Errorf("chown %s: %w", workspaceRoot, err)
 		}
 	}

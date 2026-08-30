@@ -366,3 +366,36 @@ func TestChownWorkspaceDeniedRecursiveChownSkipsMarker(t *testing.T) {
 		t.Fatal("chownWorkspace latched the marker despite a fully denied recursive chown")
 	}
 }
+
+func TestChownWorkspaceDeniedWorkspaceRootChownFails(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root: writes markers under /var/devsy and bind-mounts read-only")
+	}
+
+	parent := t.TempDir()
+	folder := filepath.Join(parent, "ws")
+	if err := os.Mkdir(folder, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	mountReadOnly(t, parent)
+
+	t.Setenv(pkgconfig.EnvWorkspaceID, "ws-root-denied")
+	t.Cleanup(func() {
+		_ = os.Remove(filepath.Join(pkgconfig.ContainerDataDir, "chownWorkspace.marker"))
+	})
+
+	result := &config.Result{
+		SubstitutionContext: &config.SubstitutionContext{ContainerWorkspaceFolder: folder},
+	}
+	if err := chownWorkspace(result, false); err == nil {
+		t.Fatal("expected chownWorkspace to fail when the workspace-root chown is denied")
+	}
+
+	exists, err := markerExists("chownWorkspace", "ws-root-denied")
+	if err != nil {
+		t.Fatalf("markerExists: %v", err)
+	}
+	if exists {
+		t.Fatal("chownWorkspace latched the marker despite a denied workspace-root chown")
+	}
+}
