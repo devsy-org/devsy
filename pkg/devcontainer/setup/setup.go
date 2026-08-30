@@ -362,8 +362,13 @@ func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	workspaceRoot := filepath.Dir(workspaceFolder)
 	if workspaceRoot != "/" {
 		log.Infof("chown workspace: user=%s, workspaceRoot=%s", user, workspaceRoot)
-		if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.Unsupported(err) {
+		if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.DeniedByFilesystem(err) {
 			return fmt.Errorf("chown %s: %w", workspaceRoot, err)
+		} else if err != nil {
+			// A non-root container (e.g. an OpenShift restricted-SCC pod) does
+			// not own workspaceRoot and cannot chown it; the workspace folder
+			// itself may still get a usable owner below.
+			log.Debugf("chown workspace: %s kept its owner: %v", workspaceRoot, err)
 		}
 	}
 
