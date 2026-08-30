@@ -16,6 +16,7 @@ type tarEntry struct {
 	body       string
 	linkTarget string
 	symlink    bool
+	directory  bool
 	uid        int
 	gid        int
 }
@@ -33,6 +34,15 @@ func (e tarEntry) header() *tar.Header {
 			Typeflag: tar.TypeLink,
 			Name:     e.name,
 			Linkname: e.linkTarget,
+		}
+	}
+	if e.directory {
+		return &tar.Header{
+			Typeflag: tar.TypeDir,
+			Name:     e.name,
+			Mode:     0o755,
+			Uid:      e.uid,
+			Gid:      e.gid,
 		}
 	}
 	return &tar.Header{
@@ -241,7 +251,7 @@ func TestExtract_ValidSymlinkAllowed(t *testing.T) {
 func TestExtract_PreserveHeaderOwnership(t *testing.T) {
 	t.Parallel()
 	buf := newTarGz(t, []tarEntry{
-		{name: "dir", uid: os.Getuid(), gid: os.Getgid()},
+		{name: "dir", directory: true, uid: os.Getuid(), gid: os.Getgid()},
 	})
 
 	dest := t.TempDir()
@@ -252,6 +262,9 @@ func TestExtract_PreserveHeaderOwnership(t *testing.T) {
 	info, err := os.Stat(filepath.Join(dest, "dir"))
 	if err != nil {
 		t.Fatalf("stat dir: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("extracted entry is not a directory: %v", info.Mode())
 	}
 	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 		//nolint:gosec // G115 — uid/gid are uint32 on every supported platform
