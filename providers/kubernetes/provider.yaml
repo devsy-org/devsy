@@ -99,7 +99,7 @@ options:
     type: boolean
     default: false
   AGENT_SECURITY_CONTEXT:
-    description: Inline YAML (or a file path) for a Kubernetes SecurityContext applied to the injected devsy and devsy-init containers' RunAsUser/RunAsGroup/RunAsNonRoot fields, e.g. to satisfy an OpenShift SCC's allocated UID range. Takes precedence over STRICT_SECURITY and the built-in root default. A container matching the devsy/devsy-init name in POD_MANIFEST_TEMPLATE still takes precedence over this option.
+    description: Inline YAML (or a file path) for a Kubernetes SecurityContext merged field by field onto the injected devsy and devsy-init containers. It can set run-as, capabilities, privilege escalation, seccomp, and other supported SecurityContext fields, e.g. to satisfy an OpenShift SCC's allocated UID range. Takes precedence over STRICT_SECURITY and the built-in root default. A container matching the devsy/devsy-init name in POD_MANIFEST_TEMPLATE still takes precedence over this option.
     global: true
     type: multiline
   AGENT_INSTALL_PATH:

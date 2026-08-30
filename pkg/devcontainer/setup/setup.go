@@ -509,7 +509,11 @@ func setupKubeConfig(
 	setupInfo *config.Result,
 	tunnelClient tunnel.TunnelClient,
 ) error {
-	if shouldSkipKubeConfig(tunnelClient) {
+	skip, err := shouldSkipKubeConfig(tunnelClient)
+	if err != nil {
+		return err
+	}
+	if skip {
 		return nil
 	}
 
@@ -535,12 +539,16 @@ func setupKubeConfig(
 	return nil
 }
 
-func shouldSkipKubeConfig(tunnelClient tunnel.TunnelClient) bool {
+func shouldSkipKubeConfig(tunnelClient tunnel.TunnelClient) (bool, error) {
 	if tunnelClient == nil {
-		return true
+		return true, nil
 	}
 
-	markerPath := filepath.Join(containerDataDir(), "setupKubeConfig.marker")
+	dir := containerDataDir()
+	if dir == "" {
+		return false, fmt.Errorf("container data directory is unavailable")
+	}
+	markerPath := filepath.Join(dir, "setupKubeConfig.marker")
 	info, err := os.Stat(markerPath)
 	if err == nil {
 		if info.Mode().Perm()&0o022 != 0 {
@@ -549,14 +557,14 @@ func shouldSkipKubeConfig(tunnelClient tunnel.TunnelClient) bool {
 				markerPath,
 				info.Mode().Perm(),
 			)
-			return false
+			return false, nil
 		}
-		return true
+		return true, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		log.Warnf("error checking marker file in shouldSkipKubeConfig: %v", err)
 	}
-	return false
+	return false, nil
 }
 
 func writeKubeConfig(setupInfo *config.Result, configData string) error {
@@ -624,8 +632,12 @@ func ensureKubeConfigMaps(config *clientcmdapi.Config) *clientcmdapi.Config {
 // markerExists reports whether the named marker exists with the expected
 // content; empty markerContent matches any existing marker. It never writes.
 func markerExists(markerName string, markerContent string) (bool, error) {
+	dir := containerDataDir()
+	if dir == "" {
+		return false, nil
+	}
 	// #nosec G703 -- markerName is an internal constant
-	path := filepath.Join(containerDataDir(), markerName+".marker")
+	path := filepath.Join(dir, markerName+".marker")
 	// #nosec G304 -- path is built from internal constants
 	t, err := os.ReadFile(path)
 	if err != nil {
@@ -640,6 +652,9 @@ func markerExists(markerName string, markerContent string) (bool, error) {
 // writeMarker records that the work gated by markerExists has completed.
 func writeMarker(markerName string, markerContent string) error {
 	dir := containerDataDir()
+	if dir == "" {
+		return fmt.Errorf("container data directory is unavailable")
+	}
 	if securedContainerDataDir(dir) == "" {
 		return fmt.Errorf("create or secure %s", dir)
 	}
@@ -665,37 +680,20 @@ func markerFileExists(markerName string, markerContent string) (bool, error) {
 	return false, nil
 }
 
-// writableContainerDataDirOnce caches the resolved container data dir for
-// the process lifetime: containerDataDir may be called many times (once per
-// marker check) and re-probing write access each time would be wasteful.
+// writableContainerDataDirOnce resolves a writable, user-owned data directory once.
 var writableContainerDataDirOnce = sync.OnceValue(func() string {
 	if dir := securedContainerDataDir(pkgconfig.ContainerDataDir); dir != "" {
 		return dir
 	}
-	// Non-root containers (e.g. OpenShift's restricted SCC) can't secure
-	// /var/devsy, whether because it can't be created or because it already
-	// exists root-owned; fall back to the agreed-on path every reader checks.
 	fallback := pkgconfig.ContainerDataDirFallback
 	if dir := securedContainerDataDir(fallback); dir != "" {
 		return dir
 	}
-	log.Warnf(
-		"%s could not be created or secured to the current user; using it anyway",
-		fallback,
-	)
-	return fallback
+	log.Warnf("%s could not be created or secured to the current user", fallback)
+	return ""
 })
 
-// securedContainerDataDir creates dir if needed, verifies the current user
-// owns it, and returns "" if that can't be done or the result still isn't
-// writable. /tmp is world-writable, so another user inside the same
-// container could otherwise pre-create the fallback directory first and
-// control what devsy reads back from marker or result files placed there;
-// chmod succeeds only for the owner (or root), so a failure here reliably
-// signals a directory we don't own and must not trust. The mode itself
-// stays 0755, matching writeResultFileTo's own directory creation: some
-// files placed here (the devcontainer result) are intentionally readable
-// by every container user, not just root.
+// securedContainerDataDir returns dir only when it is user-owned and writable.
 func securedContainerDataDir(dir string) string {
 	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301
 		return ""
@@ -711,10 +709,6 @@ func securedContainerDataDir(dir string) string {
 	return dir
 }
 
-// dirIsWritable reports whether dir accepts new files for the current user.
-// os.MkdirAll alone can't tell: it succeeds when the directory already
-// exists even if it's root-owned and unwritable by a non-root container's
-// user, so callers that need real write access must probe it directly.
 func dirIsWritable(dir string) bool {
 	f, err := os.CreateTemp(dir, ".devsy-write-probe-*")
 	if err != nil {
@@ -726,9 +720,6 @@ func dirIsWritable(dir string) bool {
 	return true
 }
 
-// containerDataDir returns config.ContainerDataDir when writable (the
-// common, root-owned case), falling back to config.ContainerDataDirFallback
-// for non-root containers that can't create it.
 func containerDataDir() string {
 	return writableContainerDataDirOnce()
 }

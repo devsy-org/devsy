@@ -40,21 +40,10 @@ type KubernetesDelivery struct {
 }
 
 const (
-	// noDownloadToolExitCode is returned by the in-container download script
-	// when the image has neither curl nor wget.
-	noDownloadToolExitCode = 127
-
-	// downloadTimeoutSeconds bounds the in-container curl/wget call so a
-	// cluster with no egress to the download URL fails fast.
-	downloadTimeoutSeconds = 25
-
-	// execStreamAttemptTimeout bounds a single exec-stdin delivery attempt so
-	// a stalled stream is retried.
+	noDownloadToolExitCode   = 127
+	downloadTimeoutSeconds   = 25
 	execStreamAttemptTimeout = 30 * time.Second
-
-	// execStreamMaxAttempts retries the exec-stdin fallback only for errors
-	// classified as transient.
-	execStreamMaxAttempts = 2
+	execStreamMaxAttempts    = 2
 )
 
 func (d *KubernetesDelivery) Phase() DeliveryPhase {
@@ -106,8 +95,6 @@ func (d *KubernetesDelivery) Cleanup(_ context.Context, _ string) error {
 	return nil
 }
 
-// deliverViaDownload has the pod fetch its own agent binary via curl/wget
-// instead of streaming its bytes through exec-stdin.
 func (d *KubernetesDelivery) deliverViaDownload(
 	ctx context.Context,
 	destPath, downloadURL, arch string,
@@ -123,9 +110,6 @@ func (d *KubernetesDelivery) deliverViaDownload(
 
 	script := downloadScript(destPath, fetchURL)
 
-	// The kubernetes exec API rejects a request with none of stdin/stdout/
-	// stderr set; capture stderr for diagnostics even though delivery itself
-	// needs no output.
 	var stderr bytes.Buffer
 	if err := d.Exec(
 		ctx,
@@ -167,8 +151,6 @@ mv -f "$t" %s
 	)
 }
 
-// deliverViaExecStream streams the agent binary's bytes over exec-stdin, the
-// fallback for clusters without pod egress to a download URL.
 func (d *KubernetesDelivery) deliverViaExecStream(
 	ctx context.Context,
 	destPath string,
@@ -206,17 +188,12 @@ func (d *KubernetesDelivery) deliverViaExecStream(
 	return err
 }
 
-// permanentDeliveryError marks an error that must never be retried, even if
-// it happens to look transient to isTransientDeliveryError (e.g. a network
-// error surfaced while acquiring the binary rather than while streaming it).
 type permanentDeliveryError struct{ err error }
 
 func (e *permanentDeliveryError) Error() string { return e.err.Error() }
 
 func (e *permanentDeliveryError) Unwrap() error { return e.err }
 
-// execStreamOnce writes to a temp file in the container and moves it into place,
-// so that a partial write does not leave a broken binary in place.
 func (d *KubernetesDelivery) execStreamOnce(
 	ctx context.Context,
 	destPath string,
@@ -232,8 +209,6 @@ func (d *KubernetesDelivery) execStreamOnce(
 	return d.Exec(ctx, []string{"sh", "-c", script}, driver.Streams{Stdin: binary})
 }
 
-// isTransientDeliveryError returns true for errors that are likely to be
-// transient and worth retrying, e.g. a stalled exec stream or a TCP reset.
 func isTransientDeliveryError(err error) bool {
 	if err == nil {
 		return false

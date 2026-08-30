@@ -85,7 +85,6 @@ func TestKubernetesDelivery_DeliverPostStart_RequiresExec(t *testing.T) {
 
 func TestKubernetesDelivery_DeliverPostStart_WritesBinary(t *testing.T) {
 	binaryData := "test-binary-content"
-	// Probe returns nothing → deliver.
 	exec := &recordingExec{stdouts: []string{""}}
 
 	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
@@ -125,7 +124,6 @@ func TestKubernetesDelivery_DeliverPostStart_SkipsWhenVersionMatches(t *testing.
 }
 
 func TestKubernetesDelivery_DeliverPostStart_DeliversWhenProbeErrors(t *testing.T) {
-	// A failing probe must not abort delivery; the write still succeeds.
 	probeErr := &recordingExec{
 		stdouts: []string{""},
 		errs:    []error{fmt.Errorf("probe boom"), nil},
@@ -159,8 +157,6 @@ func TestKubernetesDelivery_Cleanup_IsNoOp(t *testing.T) {
 }
 
 func TestKubernetesDelivery_DeliverPostStart_PrefersDownloadOverExecStream(t *testing.T) {
-	// Probe returns nothing, download succeeds -> the binary must never be
-	// streamed over exec-stdin at all.
 	exec := &recordingExec{stdouts: []string{""}}
 	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
 
