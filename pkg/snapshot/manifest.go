@@ -7,14 +7,6 @@ import (
 )
 
 const (
-	VolumesMediaType               = "application/vnd.devsy.snapshot.volumes.v1.tar+gzip"
-	ManifestMediaType              = "application/vnd.oci.image.manifest.v1+json"
-	ManifestArtifactType           = "application/vnd.devsy.snapshot.manifest.v1+json"
-	emptyConfigMediaType           = "application/vnd.oci.empty.v1+json"
-	defaultContainerImageMediaType = "application/vnd.docker.distribution.manifest.v2+json"
-)
-
-const (
 	AnnotationWorkspaceUID     = "sh.devsy.snapshot.workspace-uid"
 	AnnotationCreatedAt        = "sh.devsy.snapshot.created-at"
 	AnnotationParent           = "sh.devsy.snapshot.parent"
@@ -25,6 +17,13 @@ const (
 	AnnotationRunArgs          = "sh.devsy.snapshot.run-args"
 	AnnotationContainerEnv     = "sh.devsy.snapshot.container-env"
 	AnnotationRemoteUser       = "sh.devsy.snapshot.remote-user"
+
+	VolumesMediaType     = "application/vnd.devsy.snapshot.volumes.v1.tar+gzip"
+	ManifestMediaType    = "application/vnd.oci.image.manifest.v1+json"
+	ManifestArtifactType = "application/vnd.devsy.snapshot.manifest.v1+json"
+
+	emptyConfigMediaType           = "application/vnd.oci.empty.v1+json"
+	defaultContainerImageMediaType = "application/vnd.docker.distribution.manifest.v2+json"
 )
 
 // Descriptor mirrors the OCI content descriptor fields we need; kept minimal

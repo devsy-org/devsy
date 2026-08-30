@@ -37,9 +37,7 @@ func (f ChownFailure) Error() string { return fmt.Sprintf("%s: %v", f.Path, f.Er
 
 func (f ChownFailure) Unwrap() error { return f.Err }
 
-// ChownFailures aggregates the entries ChownR could not chown. Callers
-// distinguish wholesale breakage from entries a shared filesystem refuses to
-// reassign via AllDenied.
+// ChownFailures aggregates the entries ChownR could not chown.
 type ChownFailures []ChownFailure
 
 func (fs ChownFailures) Error() string {
@@ -55,7 +53,7 @@ func (fs ChownFailures) Unwrap() []error {
 }
 
 // AllDenied reports whether every failure was refused by the filesystem
-// (permission denied or read-only share) — the expected case for entries on
+// (permission denied or read-only share); the expected case for entries on
 // virtiofs shares such as read-only .git pack files.
 func (fs ChownFailures) AllDenied() bool {
 	for _, f := range fs {

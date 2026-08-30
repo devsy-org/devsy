@@ -171,15 +171,13 @@ func validateLinkTarget(header *tar.Header, target entryTarget, options *Options
 func resolveLinkTarget(header *tar.Header, target entryTarget, options *Options) string {
 	if header.Typeflag == tar.TypeLink {
 		rel := resolveRelativePath(&tar.Header{Name: header.Linkname}, options)
-		// #nosec G305 -- rel is confined to destFolder by resolveRelativePath
-		// plus the caller's withinDir check; this mirrors outFileName's own join.
+		// #nosec G305 -- rel is confined to destFolder by resolveRelativePath.
 		return filepath.Clean(filepath.Join(target.destFolder, rel))
 	}
 	if filepath.IsAbs(header.Linkname) {
 		return filepath.Clean(header.Linkname)
 	}
-	// #nosec G305 -- resolved path is validated against destFolder by the
-	// caller's withinDir check before any filesystem operation uses it.
+	// #nosec G305 -- resolved path is validated against destFolder.
 	return filepath.Clean(filepath.Join(filepath.Dir(target.outFileName), header.Linkname))
 }
 

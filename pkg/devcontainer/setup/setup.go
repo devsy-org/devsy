@@ -323,7 +323,7 @@ func linkRootHome(setupInfo *config.Result) error {
 
 func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	workspaceFolder := setupInfo.SubstitutionContext.ContainerWorkspaceFolder
-	// Compose services aren't guaranteed a workspaceMount; absence is expected.
+	// Compose services are not guaranteed a workspaceMount
 	if _, err := os.Lstat(workspaceFolder); err != nil {
 		if os.IsNotExist(err) {
 			log.Debugf("skip chown: workspace folder does not exist: %s", workspaceFolder)
@@ -362,8 +362,7 @@ func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 		case err == nil:
 		case errors.As(err, &failures) && failures.AllDenied():
 			// Read-only shared files, such as virtiofs pack files, can refuse chown.
-			// Don't latch completion: a future container for this workspace may
-			// not share the same read-only mount.
+			// A future container for this workspace may not share the same read-only mount.
 			log.Warnf("chown workspace: %d entries kept their owner: %v", len(failures), err)
 			return nil
 		default:
@@ -607,9 +606,9 @@ func ensureKubeConfigMaps(config *clientcmdapi.Config) *clientcmdapi.Config {
 // markerExists reports whether the named marker exists with the expected
 // content; empty markerContent matches any existing marker. It never writes.
 func markerExists(markerName string, markerContent string) (bool, error) {
-	// #nosec G703 -- markerName is an internal constant, never user input
+	// #nosec G703 -- markerName is an internal constant
 	path := filepath.Join(pkgconfig.ContainerDataDir, markerName+".marker")
-	// #nosec G304 -- path is built from internal constants, never user input
+	// #nosec G304 -- path is built from internal constants
 	t, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -622,13 +621,13 @@ func markerExists(markerName string, markerContent string) (bool, error) {
 
 // writeMarker records that the work gated by markerExists has completed.
 func writeMarker(markerName string, markerContent string) error {
-	// #nosec G703 -- markerName is an internal constant, never user input
+	// #nosec G703 -- markerName is an internal constant
 	path := filepath.Join(pkgconfig.ContainerDataDir, markerName+".marker")
 	// #nosec G301 -- Standard directory permissions
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 	}
-	// #nosec G703 -- path is built from internal constants, never user input
+	// #nosec G703 -- path is built from internal constants
 	if err := os.WriteFile(path, []byte(markerContent), 0o600); err != nil {
 		return fmt.Errorf("write marker: %w", err)
 	}

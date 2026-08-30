@@ -300,25 +300,24 @@ func TestChownWorkspaceIgnoresForeignMarkerWithoutWorkspaceID(t *testing.T) {
 	}
 }
 
-// mountReadOnly bind-mounts dir onto itself read-only so Lchown inside it fails with EROFS even for root.
 func mountReadOnly(t *testing.T, dir string) {
 	t.Helper()
-	//nolint:gosec // G204: dir is a t.TempDir() path, not external input
+	//nolint:gosec // G204: dir is a t.TempDir() path
 	if err := exec.Command("mount", "--bind", dir, dir).Run(); err != nil {
 		t.Skipf("bind mount unavailable in this environment: %v", err)
 	}
 	t.Cleanup(func() {
-		//nolint:gosec // G204: dir is a t.TempDir() path, not external input
+		//nolint:gosec // G204: dir is a t.TempDir() path
 		_ = exec.Command("umount", dir).Run()
 	})
-	//nolint:gosec // G204: dir is a t.TempDir() path, not external input
+	//nolint:gosec // G204: dir is a t.TempDir() path
 	if err := exec.Command("mount", "-o", "remount,bind,ro", dir).Run(); err != nil {
 		t.Fatalf("remount read-only: %v", err)
 	}
 }
 
 // newForeignOwnedDir creates dir/f.txt owned by a uid other than root, so a
-// chown to root actually attempts (and, once read-only, fails) reassignment.
+// chown to root attempts (and, once read-only, fails) reassignment.
 func newForeignOwnedDir(t *testing.T) string {
 	t.Helper()
 	folder := filepath.Join(t.TempDir(), "ws")

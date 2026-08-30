@@ -233,9 +233,6 @@ func mustReadFile(t *testing.T, path string) []byte {
 	return b
 }
 
-// Chowning a file to a different owner requires privileges, so pointing
-// ChownR at root as an unprivileged user exercises the denied-failure path
-// deterministically.
 func TestChownRDeniedFailuresAreTyped(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("requires an unprivileged user")

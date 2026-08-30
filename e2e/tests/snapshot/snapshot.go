@@ -486,9 +486,6 @@ var _ = ginkgo.Describe("devsy snapshot", ginkgo.Label("snapshot"), func() {
 		framework.ExpectNoError(err)
 		gomega.Expect(content).To(gomega.ContainSubstring("mutated"))
 
-		// Compare the recorded owner name against the devcontainer.json's
-		// remoteUser rather than the SSH session's uid: the ssh session may
-		// resolve to root when no ssh-config entry was written
 		ownerCmd := fmt.Sprintf(
 			`test "$(stat -c %%U %s/marker.txt)" = %q && echo OWNER_OK || echo OWNER_MISMATCH`,
 			restoredWorkspaceFolder, nonRootRemoteUser,
