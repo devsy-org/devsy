@@ -423,19 +423,12 @@ type Exec func(
 ) error
 
 type TunnelOptions struct {
-	Exec    Exec
-	User    string
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
-	Timeout time.Duration
-
-	// RemoteAgentPath overrides where the agent binary is expected inside
-	// the container. Defaults to config.ContainerDevsyHelperLocation when
-	// empty; callers whose delivery already installed it elsewhere (e.g. a
-	// Kubernetes workspace with AGENT_INSTALL_PATH set for a non-root pod)
-	// must pass the same path here, or this redundant ensure-agent-present
-	// check looks in the wrong place and re-triggers a root-only install.
+	Exec            Exec
+	User            string
+	Stdin           io.Reader
+	Stdout          io.Writer
+	Stderr          io.Writer
+	Timeout         time.Duration
 	RemoteAgentPath string
 }
 

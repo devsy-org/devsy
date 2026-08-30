@@ -88,13 +88,8 @@ func (m *BinaryManager) AcquireBinary(ctx context.Context, arch string) (io.Read
 	return nil, ErrBinaryNotFound
 }
 
-// HasLocalOverride reports whether the host can supply the binary's bytes
-// directly -- an env override, or this process's own executable when its
-// OS/arch matches the target -- without needing a network download.
-// Callers that could otherwise have the *target* fetch its own binary over
-// HTTP should skip that shortcut in this case: a local dev/test build's own
-// binary, not a possibly-stale published release, is what should actually
-// get delivered.
+// HasLocalOverride returns true when the host can supply a local Linux binary
+// for the given arch.
 func (m *BinaryManager) HasLocalOverride(arch string) bool {
 	if strings.TrimSpace(os.Getenv(config.EnvAgentBinary)) != "" {
 		return true
@@ -258,7 +253,7 @@ func (s *HTTPDownloadSource) SourceName() string {
 // fetch its own binary (rather than receiving its bytes from the host) can
 // build the identical URL without duplicating the naming convention.
 func AgentDownloadURL(baseURL, arch string) (string, error) {
-	binaryName := config.BinaryName + "-" + osLinux + "-" + arch
+	binaryName := strings.Join([]string{config.BinaryName, osLinux, arch}, "-")
 	downloadURL, err := url.JoinPath(baseURL, binaryName)
 	if err != nil {
 		return "", fmt.Errorf("failed to construct download URL: %w", err)

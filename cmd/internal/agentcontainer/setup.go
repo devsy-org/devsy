@@ -911,9 +911,9 @@ func configureSystemGitCredentials(
 
 // addGitCredentialHelper installs the credential helper system-wide
 // (/etc/gitconfig) so it applies regardless of which local user's git
-// invocation picks it up -- a container's remoteUser can differ from the
+// invocation picks it up. A container's remoteUser can differ from the
 // process configuring it. Falls back to the current user's global config
-// when /etc/gitconfig isn't writable (e.g. a non-root OpenShift-style pod
+// when /etc/gitconfig is not writable (e.g. a non-root OpenShift-style pod
 // running as a single fixed UID, where that multi-user concern doesn't
 // apply), returning the scope actually used so the caller unsets the same one.
 func addGitCredentialHelper(

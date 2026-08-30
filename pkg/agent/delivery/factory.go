@@ -12,19 +12,16 @@ import (
 )
 
 type FactoryOptions struct {
-	WorkspaceConfig *provider.AgentWorkspaceInfo
-	WorkspaceID     string
-	DockerCommand   string
-	DockerEnv       []string
-	HelperImage     string
-	IsRemoteDocker  bool
-	ContainerID     string
-	ExecFunc        inject.ExecFunc //nolint:staticcheck // legacy delivery strategies require this type
-	PodExec         PodExecFunc
-
-	// KubernetesAgentInstallPath overrides where KubernetesDelivery installs
-	// the agent binary inside the container, when set.
+	IsRemoteDocker             bool
+	WorkspaceID                string
+	DockerCommand              string
+	HelperImage                string
 	KubernetesAgentInstallPath string
+	ContainerID                string
+	DockerEnv                  []string
+	WorkspaceConfig            *provider.AgentWorkspaceInfo
+	ExecFunc                   inject.ExecFunc //nolint:staticcheck // legacy delivery strategies require this type
+	PodExec                    PodExecFunc
 }
 
 func NewAgentDelivery(opts FactoryOptions) AgentDelivery {

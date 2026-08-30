@@ -469,10 +469,7 @@ func (cmd *SSHCmd) startTunnel(
 }
 
 // resolveAgentConfig returns the workspace's agent config when workspaceClient
-// exposes it (client2.WorkspaceClient), or a zero value otherwise (e.g. a
-// platform ProxyClient): ContainerInstallPath()/RunsFixedNonRootUser() both
-// fall back to today's defaults for the zero value, so callers without
-// AgentInfo behave exactly as before.
+// exposes it, or a zero value otherwise.
 func resolveAgentConfig(workspaceClient client2.BaseWorkspaceClient) provider.ProviderAgentConfig {
 	full, ok := workspaceClient.(client2.WorkspaceClient)
 	if !ok {

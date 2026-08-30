@@ -27,7 +27,7 @@ func labelNamespaceRestricted(ctx context.Context) error {
 		"kubectl create namespace %s --dry-run=client -o yaml | kubectl apply -f -",
 		restrictedNamespace,
 	)
-	// #nosec G204 -- createOrUpdate is built from the fixed restrictedNamespace const, not untrusted input
+	// #nosec G204 -- createOrUpdate is built from the fixed restrictedNamespace const
 	if err := exec.CommandContext(ctx, "sh", "-c", createOrUpdate).Run(); err != nil {
 		return err
 	}
@@ -84,20 +84,11 @@ var _ = ginkgo.Describe(
 				gomega.Expect(err).To(gomega.HaveOccurred())
 
 				ginkgo.By("switching to an OpenShift-compatible security context")
-				// hostUsers is forced to true via POD_MANIFEST_TEMPLATE: Kubernetes Pod Security
-				// Admission "restricted" does not check hostUsers (it's an OpenShift SCC-only
-				// concern, already covered by unit tests), and this repo's pinned kind node image
-				// predates the fix for https://github.com/kubernetes-sigs/kind/issues/4178, where
-				// hostUsers: false makes every pod loop-fail sandbox creation via kind's
-				// mount-product-files.sh OCI hook.
 				err = f.DevsyProviderUse(
 					ctx, "kubernetes",
 					"-o", "STRICT_SECURITY=true",
 					"-o", "AGENT_SECURITY_CONTEXT="+restrictedSecurityContextYAML,
 					"-o", "POD_MANIFEST_TEMPLATE=spec:\n  hostUsers: true\n",
-					// /usr/local/bin (the default install path) requires root
-					// to write; a fixed non-root UID (via AGENT_SECURITY_CONTEXT)
-					// needs a writable path instead, e.g. under /tmp.
 					"-o", "AGENT_INSTALL_PATH=/tmp/devsy",
 				)
 				framework.ExpectNoError(err)
