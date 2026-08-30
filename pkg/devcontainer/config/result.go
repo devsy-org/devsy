@@ -69,33 +69,48 @@ func GetContainerID(result *Result) string {
 	return ""
 }
 
-// GetRemoteUser determines the remote user using DevContainer specification priority order:
-// 1. remoteUser from configuration
-// 2. devsy.user label from container
-// 3. User field from Docker inspect
-// 4. containerUser from configuration
-//
-// Per DevContainer specification (https://containers.dev/implementors/json_reference/):
-// "remoteUser: Overrides the user that devcontainer.json supporting services tools / runs as in the container...
-// Defaults to the user the container as a whole is running as (often root).".
+// GetRemoteUser resolves the user tools and the IDE run as inside the
+// container, in spec priority order: remoteUser, then containerUser
+// (the spec's default is "the user the container as a whole is
+// running as"), then the image-derived devsy.user label and Docker-inspect
+// user. Falls back to root.
 func GetRemoteUser(result *Result) string {
 	if result == nil {
-		return "root"
+		return remoteUserRoot
 	}
+	if user := userFromConfig(result); user != "" {
+		return user
+	}
+	if user := userFromContainer(result); user != "" {
+		return user
+	}
+	return remoteUserRoot
+}
 
-	if result.MergedConfig != nil && result.MergedConfig.RemoteUser != "" {
+const remoteUserRoot = "root"
+
+// userFromConfig returns the config-declared users: remoteUser first, then
+// containerUser, which overrides the image user the container starts with.
+func userFromConfig(result *Result) string {
+	if result.MergedConfig == nil {
+		return ""
+	}
+	if result.MergedConfig.RemoteUser != "" {
 		return result.MergedConfig.RemoteUser
 	}
+	return result.MergedConfig.ContainerUser
+}
 
+// userFromContainer returns the container's effective image user: first the
+// devsy.user label recorded at creation, then Docker inspect's User field.
+func userFromContainer(result *Result) string {
 	if userLabel := userFromContainerLabel(result); userLabel != "" {
 		return userLabel
 	}
-
-	if result.MergedConfig != nil && result.MergedConfig.ContainerUser != "" {
-		return result.MergedConfig.ContainerUser
+	if result.ContainerDetails != nil {
+		return result.ContainerDetails.Config.User
 	}
-
-	return "root"
+	return ""
 }
 
 func userFromContainerLabel(result *Result) string {

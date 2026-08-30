@@ -25,13 +25,11 @@ func WriteTarExclude(
 		return fmt.Errorf("absolute: %w", err)
 	}
 
-	// Check if target is there
 	stat, err := os.Stat(absolute)
 	if err != nil {
 		return fmt.Errorf("stat: %w", err)
 	}
 
-	// Use compression
 	gw := writer
 	if compress {
 		gwWriter := gzip.NewWriter(writer)
@@ -40,11 +38,9 @@ func WriteTarExclude(
 		gw = gwWriter
 	}
 
-	// Create tar writer
 	tarWriter := tar.NewWriter(gw)
 	defer func() { _ = tarWriter.Close() }()
 
-	// When its a file we copy the file to the toplevel of the tar
 	if !stat.IsDir() {
 		return NewArchiver(
 			filepath.Dir(absolute),
@@ -53,8 +49,6 @@ func WriteTarExclude(
 		).AddToArchive(filepath.Base(absolute))
 	}
 
-	// When its a folder we copy the contents and not the folder itself to the
-	// toplevel of the tar
 	return NewArchiver(absolute, tarWriter, excludedPaths).AddToArchive("")
 }
 
@@ -88,24 +82,19 @@ func (a *Archiver) AddToArchive(relativePath string) error {
 		return nil
 	}
 
-	// We skip files that are suddenly not there anymore
 	stat, err := os.Lstat(path.Join(a.basePath, relativePath))
 	if err != nil {
-		// config.Logf("[Upstream] Couldn't stat file %s: %s\n", absFilepath, err.Error())
 		return nil
 	}
 
 	if stat.IsDir() {
-		// check if excluded
 		if a.isExcluded(path.Clean(relativePath) + "/") {
 			return nil
 		}
 
-		// Recursively tar folder
 		return a.tarFolder(relativePath, stat)
 	}
 
-	// check if excluded
 	if a.isExcluded(path.Clean(relativePath)) {
 		return nil
 	}
@@ -126,15 +115,11 @@ func (a *Archiver) tarFolder(target string, targetStat os.FileInfo) error {
 	filePath := path.Join(a.basePath, target)
 	files, err := os.ReadDir(filePath)
 	if err != nil {
-		// config.Logf("[Upstream] Couldn't read dir %s: %s\n", filepath, err.Error())
 		return nil
 	}
 
 	if len(files) == 0 && target != "" {
-		// Case empty directory
 		hdr, _ := tar.FileInfoHeader(targetStat, filePath)
-		hdr.Uid = 0
-		hdr.Gid = 0
 		hdr.Mode = fillGo18FileTypeBits(int64(chmodTarEntry(os.FileMode(hdr.Mode))), targetStat)
 		hdr.Name = target
 		if err := a.writer.WriteHeader(hdr); err != nil {
@@ -175,8 +160,6 @@ func (a *Archiver) tarFile(target string, targetStat os.FileInfo) error {
 		return fmt.Errorf("create tar file info header: %w", err)
 	}
 	hdr.Name = target
-	hdr.Uid = 0
-	hdr.Gid = 0
 	hdr.Mode = fillGo18FileTypeBits(int64(chmodTarEntry(os.FileMode(hdr.Mode))), targetStat)
 	hdr.ModTime = time.Unix(targetStat.ModTime().Unix(), 0)
 

@@ -120,6 +120,7 @@ func (cmd *CreateCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		MountPrefix:             vols.MountPrefix,
 		RunArgs:                 vols.RunArgs,
 		ContainerEnv:            vols.ContainerEnv,
+		RemoteUser:              vols.RemoteUser,
 		ContainerImageMediaType: img.MediaType,
 		ContainerImageDigest:    img.Digest,
 		ContainerImageSize:      img.Size,
@@ -301,6 +302,7 @@ type pushedVolumes struct {
 	MountPrefix  string
 	RunArgs      []string
 	ContainerEnv map[string]string
+	RemoteUser   string
 }
 
 // The volumes RPC (StreamSnapshotVolumes) is served by a tunnelServer reading
@@ -341,6 +343,7 @@ func (cmd *CreateCmd) pushVolumes(
 		MountPrefix:  mountPrefix,
 		RunArgs:      result.MergedConfig.RunArgs,
 		ContainerEnv: redactedContainerEnv(result.MergedConfig.ContainerEnv),
+		RemoteUser:   devcontainerconfig.GetRemoteUser(result),
 	}, nil
 }
 

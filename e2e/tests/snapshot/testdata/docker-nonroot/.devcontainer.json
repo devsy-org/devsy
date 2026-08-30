@@ -1,0 +1,11 @@
+{
+  "name": "snapshot non-root",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "devsyuser",
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+  "containerEnv": {
+    "DEVSY_INSECURE_DOCKER_INTERNAL": "true"
+  }
+}

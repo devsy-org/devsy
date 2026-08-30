@@ -94,6 +94,7 @@ func (cmd *RestoreCmd) Run(
 	if err != nil {
 		return fmt.Errorf("read snapshot container env: %w", err)
 	}
+	remoteUser := manifest.RemoteUser()
 
 	log.Infof("restoring snapshot: ref=%s workspaceId=%s", snapshotRef, ws.ID)
 
@@ -105,6 +106,7 @@ func (cmd *RestoreCmd) Run(
 		DevContainerSource: ws.DevContainerSource,
 		RunArgs:            runArgs,
 		ContainerEnv:       containerEnv,
+		RemoteUser:         remoteUser,
 	})
 }
 
