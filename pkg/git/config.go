@@ -95,7 +95,7 @@ func (c *Config) Unset(ctx context.Context, key string, scope ConfigScope) error
 	return nil
 }
 
-// UnsetValue 
+// UnsetValue removes a single matching value from a config key.
 func (c *Config) UnsetValue(ctx context.Context, key, value string, scope ConfigScope) error {
 	args := append([]string{subConfig}, scope.args()...)
 	args = append(args, "--unset", key, "^"+regexp.QuoteMeta(value)+"$")
