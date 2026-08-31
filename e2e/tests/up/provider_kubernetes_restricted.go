@@ -88,6 +88,7 @@ var _ = ginkgo.Describe(
 					ctx, "kubernetes",
 					"-o", "STRICT_SECURITY=true",
 					"-o", "AGENT_SECURITY_CONTEXT="+restrictedSecurityContextYAML,
+					"-o", "POD_MANIFEST_TEMPLATE=spec:\n  hostUsers: true\n",
 					"-o", "AGENT_INSTALL_PATH=/tmp/devsy",
 				)
 				framework.ExpectNoError(err)
@@ -99,8 +100,7 @@ var _ = ginkgo.Describe(
 
 				list := waitForPodCount(ctx, restrictedNamespace, 1, "Expect 1 pod")
 				gomega.Expect(list.Items[0].Spec.HostUsers).ToNot(gomega.BeNil())
-				gomega.Expect(*list.Items[0].Spec.HostUsers).To(gomega.BeFalse())
-
+				gomega.Expect(*list.Items[0].Spec.HostUsers).To(gomega.BeTrue())
 				sc := list.Items[0].Spec.Containers[0].SecurityContext
 				gomega.Expect(sc).ToNot(gomega.BeNil())
 				gomega.Expect(*sc.RunAsUser).To(gomega.Equal(int64(1000)))
