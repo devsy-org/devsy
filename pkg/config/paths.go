@@ -14,7 +14,8 @@ const (
 	DockerCredentialHelperName = "docker-credential-" + BinaryName
 
 	// DevContainerResultPath is where devcontainer results are written.
-	DevContainerResultPath = "/var/run/" + BinaryName + "/result.json"
+	DevContainerResultPath         = "/var/run/" + BinaryName + "/result.json"
+	DevContainerResultSelectorPath = "/var/run/" + BinaryName + "/result.path"
 
 	// DaemonProcessName is the name used for the fallback background daemon process
 	// PID file and lock file in os.TempDir().
@@ -30,7 +31,8 @@ const (
 
 	// DevContainerResultFallbackPath mirrors DevContainerResultPath under
 	// ContainerDataDirFallback.
-	DevContainerResultFallbackPath = ContainerDataDirFallback + "/result.json"
+	DevContainerResultFallbackPath         = ContainerDataDirFallback + "/result.json"
+	DevContainerResultFallbackSelectorPath = ContainerDataDirFallback + "/result.path"
 
 	// ContainerDevsyHelperLocation is where the Devsy agent binary lives inside containers.
 	ContainerDevsyHelperLocation = "/usr/local/bin/" + BinaryName
@@ -45,11 +47,26 @@ const (
 	WorkspaceBusyFile = "workspace.lock"
 )
 
-// ReadDevContainerResultCommand returns the shell command that reads the
-// devcontainer result file over exec, trying DevContainerResultPath first
-// and falling back to DevContainerResultFallbackPath: a non-root container
-// may have had to write to the fallback location, and this lets the host
-// find it without needing separate coordination of which one was used.
+// ReadDevContainerResultCommand returns a command that reads the result selected
+// by the setup process. It fails when no valid selector exists.
 func ReadDevContainerResultCommand() string {
-	return "cat " + DevContainerResultPath + " 2>/dev/null || cat " + DevContainerResultFallbackPath
+	return readDevContainerResultCommand(
+		DevContainerResultPath,
+		DevContainerResultFallbackPath,
+		DevContainerResultSelectorPath,
+		DevContainerResultFallbackSelectorPath,
+	)
+}
+
+func readDevContainerResultCommand(
+	primary, fallback, primarySelector, fallbackSelector string,
+) string {
+	return "if [ -f " + primarySelector + " ] && [ -f " + primary +
+		" ] && ( [ ! -f " + fallbackSelector +
+		" ] || [ " + primarySelector + " -nt " + fallbackSelector +
+		" ) && [ \"$(cat " + primarySelector + ")\" = " + primary +
+		" ]; then cat " + primary +
+		"; elif [ -f " + fallbackSelector + " ] && [ \"$(cat " +
+		fallbackSelector + ")\" = " + fallback + " ]; then cat " + fallback +
+		"; else echo 'devsy result path selector is missing' >&2; exit 1; fi"
 }

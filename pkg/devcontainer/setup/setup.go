@@ -212,20 +212,34 @@ func writeResultFile(cfg *ContainerSetupConfig) {
 		return
 	}
 
-	if err := writeResultFileTo(pkgconfig.DevContainerResultPath, rawBytes); err != nil {
+	activePath := pkgconfig.DevContainerResultPath
+	if err := writeResultFileTo(activePath, rawBytes); err != nil {
 		log.Debugf(
 			"%s is not writable (%v), falling back to %s",
-			pkgconfig.DevContainerResultPath,
+			activePath,
 			err,
 			pkgconfig.DevContainerResultFallbackPath,
 		)
-		if err := writeResultFileTo(
-			pkgconfig.DevContainerResultFallbackPath,
-			rawBytes,
-		); err != nil {
-			log.Warnf("error write result to %s: %v", pkgconfig.DevContainerResultFallbackPath, err)
+		activePath = pkgconfig.DevContainerResultFallbackPath
+		if err := writeResultFileTo(activePath, rawBytes); err != nil {
+			log.Warnf("error write result to %s: %v", activePath, err)
+			return
 		}
 	}
+	if err := writeResultPathSelector(activePath); err != nil {
+		log.Warnf("error selecting result path %s: %v", activePath, err)
+	}
+}
+
+func writeResultPathSelector(activePath string) error {
+	selectorPath := pkgconfig.DevContainerResultSelectorPath
+	if activePath == pkgconfig.DevContainerResultFallbackPath {
+		selectorPath = pkgconfig.DevContainerResultFallbackSelectorPath
+	}
+	if securedContainerDataDir(filepath.Dir(selectorPath)) == "" {
+		return fmt.Errorf("create or secure %s", filepath.Dir(selectorPath))
+	}
+	return sharedfile.WriteFile(selectorPath, []byte(activePath), 0o644)
 }
 
 // writeResultFileTo writes rawBytes to path at 0644: readable by any
