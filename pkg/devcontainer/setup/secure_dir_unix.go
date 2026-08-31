@@ -33,9 +33,12 @@ func secureContainerDataDir(dir string) error {
 func openContainerDataParent(dir string) (int, string, error) {
 	parent := filepath.Dir(dir)
 	name := filepath.Base(dir)
+	// The parent is a fixed system directory (/var or /tmp). macOS exposes
+	// /tmp as a symlink, so only the final data-directory component is opened
+	// with O_NOFOLLOW below.
 	fd, err := unix.Open(
 		parent,
-		unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW,
+		unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC,
 		0,
 	)
 	if err != nil {
