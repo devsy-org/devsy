@@ -120,6 +120,13 @@ func mergeSecurityContext(dst, src *corev1.SecurityContext) *corev1.SecurityCont
 	if dst != nil {
 		merged = *dst
 	}
+	if src.RunAsUser == nil &&
+		src.RunAsNonRoot != nil && *src.RunAsNonRoot &&
+		merged.RunAsUser != nil && *merged.RunAsUser == 0 {
+		// A template that sets runAsNonRoot=true without runAsUser must
+		// remove the generated container's implicit root UID.
+		merged.RunAsUser = nil
+	}
 	overrideIfSet(&merged.Capabilities, src.Capabilities)
 	overrideIfSet(&merged.Privileged, src.Privileged)
 	overrideIfSet(&merged.SELinuxOptions, src.SELinuxOptions)

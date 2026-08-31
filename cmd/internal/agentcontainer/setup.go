@@ -962,7 +962,9 @@ func addGitCredentialHelper(
 
 func isGitPermissionDenied(err error) bool {
 	var cmdErr *git.CommandError
-	return errors.As(err, &cmdErr) && strings.Contains(cmdErr.Stderr, "Permission denied")
+	return errors.As(err, &cmdErr) &&
+		(strings.Contains(cmdErr.Stderr, "Permission denied") ||
+			strings.Contains(cmdErr.Stderr, "Read-only file system"))
 }
 
 func streamMount(

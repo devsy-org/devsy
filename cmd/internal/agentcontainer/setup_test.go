@@ -7,9 +7,17 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestIsGitPermissionDenied_ReadOnlyFileSystem(t *testing.T) {
+	err := &git.CommandError{
+		Stderr: "fatal: could not write config: Read-only file system",
+	}
+	require.True(t, isGitPermissionDenied(err))
+}
 
 func TestSkipSnapshotRestore_EmptyDir(t *testing.T) {
 	dir := t.TempDir()

@@ -254,6 +254,16 @@ func mergeRunAsFields(dst *runAsFields, haveAny *bool, fields *runAsFields) {
 	}
 }
 
+func normalizeRunAsFields(dst, override *runAsFields) {
+	if override == nil ||
+		override.RunAsUser != nil ||
+		override.RunAsNonRoot == nil || !*override.RunAsNonRoot ||
+		dst.RunAsUser == nil || *dst.RunAsUser != 0 {
+		return
+	}
+	dst.RunAsUser = nil
+}
+
 func effectiveKubernetesRunAsFields(k ProviderKubernetesDriverConfig) *runAsFields {
 	var sc runAsFields
 	haveAny := false
@@ -276,6 +286,7 @@ func effectiveKubernetesRunAsFields(k ProviderKubernetesDriverConfig) *runAsFiel
 		haveAny = true
 	}
 	mergeRunAsFields(&sc, &haveAny, containerFields)
+	normalizeRunAsFields(&sc, containerFields)
 	if !haveAny {
 		return nil
 	}

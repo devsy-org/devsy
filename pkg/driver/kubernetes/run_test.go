@@ -350,8 +350,11 @@ func TestGetContainersDefaultModeTemplateSecurityContextWins(t *testing.T) {
 			sc.RunAsNonRoot,
 		)
 	}
-	if sc.RunAsUser == nil || *sc.RunAsUser != 0 {
-		t.Errorf("RunAsUser = %v, want 0 (default, template didn't set it)", sc.RunAsUser)
+	if sc.RunAsUser != nil {
+		t.Errorf(
+			"RunAsUser = %v, want nil (runAsNonRoot=true clears the implicit root default)",
+			sc.RunAsUser,
+		)
 	}
 }
 
