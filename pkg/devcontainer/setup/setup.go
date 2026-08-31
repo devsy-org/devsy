@@ -234,13 +234,21 @@ func writeResultFile(cfg *ContainerSetupConfig) error {
 
 func writeResultPathSelector(activePath string) error {
 	selectorPath := pkgconfig.DevContainerResultSelectorPath
+	inactiveSelectorPath := pkgconfig.DevContainerResultFallbackSelectorPath
 	if activePath == pkgconfig.DevContainerResultFallbackPath {
 		selectorPath = pkgconfig.DevContainerResultFallbackSelectorPath
+		inactiveSelectorPath = pkgconfig.DevContainerResultSelectorPath
 	}
 	if securedContainerDataDir(filepath.Dir(selectorPath)) == "" {
 		return fmt.Errorf("create or secure %s", filepath.Dir(selectorPath))
 	}
-	return sharedfile.WriteFile(selectorPath, []byte(activePath), 0o644)
+	if err := sharedfile.WriteFile(selectorPath, []byte(activePath), 0o644); err != nil {
+		return err
+	}
+	if err := os.Remove(inactiveSelectorPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove inactive result selector %s: %w", inactiveSelectorPath, err)
+	}
+	return nil
 }
 
 // writeResultFileTo writes rawBytes to path at 0644: readable by any
@@ -710,12 +718,8 @@ var writableContainerDataDirOnce = sync.OnceValue(func() string {
 
 // securedContainerDataDir returns dir only when it is user-owned and writable.
 func securedContainerDataDir(dir string) string {
-	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301
-		return ""
-	}
-	// #nosec G302 -- directory mode; matches writeResultFileTo's own dir creation
-	if err := os.Chmod(dir, 0o755); err != nil {
-		log.Debugf("%s is owned by another user, refusing to trust it: %v", dir, err)
+	if err := secureContainerDataDir(dir); err != nil {
+		log.Debugf("%s is not a secure directory: %v", dir, err)
 		return ""
 	}
 	if !dirIsWritable(dir) {

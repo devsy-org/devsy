@@ -72,7 +72,7 @@ var basicRunsFixedNonRootUserCases = []runsFixedNonRootUserCase{
 		config: ProviderAgentConfig{
 			Driver: KubernetesDriver,
 			Kubernetes: ProviderKubernetesDriverConfig{
-				AgentSecurityContext: "/etc/devsy/security-context.yaml",
+				AgentSecurityContext: "runAsUser: [",
 			},
 		},
 		want: false,

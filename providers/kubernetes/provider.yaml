@@ -108,7 +108,7 @@ options:
     global: true
     type: string
   KUBERNETES_USER_NAMESPACES:
-    description: Sets spec.hostUsers to false (unless POD_MANIFEST_TEMPLATE already set it), so the kubelet maps the workspace pod's UIDs into a Linux user namespace. STRICT_SECURITY and AGENT_SECURITY_CONTEXT also enable this OpenShift restricted-v3 compatibility behavior. Requires the cluster's UserNamespacesSupport feature gate (on by default only from Kubernetes 1.33) and node-level support (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+); enabling this on a cluster without that support can get the pod rejected or mishandled.
+    description: Sets spec.hostUsers to false (unless POD_MANIFEST_TEMPLATE already set it), so the kubelet maps the workspace pod's UIDs into a Linux user namespace. STRICT_SECURITY and AGENT_SECURITY_CONTEXT also enable this OpenShift restricted-v3 compatibility behavior. Requires the cluster's UserNamespacesSupport feature gate through Kubernetes 1.35; the feature is GA and the gate is locked on from Kubernetes 1.36. Node-level support is also required (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+); enabling this on a cluster without that support can get the pod rejected or mishandled.
     type: boolean
     default: false
   WORKSPACE_VOLUME_MOUNT:

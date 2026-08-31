@@ -69,11 +69,10 @@ func readDevContainerResultCommand(
 	fallbackSelector = shellescape.Quote(fallbackSelector)
 
 	return "if [ -f " + primarySelector + " ] && [ -f " + primary +
-		" ] && ( [ ! -f " + fallbackSelector +
-		" ] || [ " + primarySelector + " -nt " + fallbackSelector +
-		" ] ) && [ \"$(cat " + primarySelector + ")\" = " + primary +
+		" ] && [ \"$(cat " + primarySelector + ")\" = " + primary +
 		" ]; then cat " + primary +
-		"; elif [ -f " + fallbackSelector + " ] && [ \"$(cat " +
-		fallbackSelector + ")\" = " + fallback + " ]; then cat " + fallback +
+		"; elif [ -f " + fallbackSelector + " ] && [ -f " + fallback +
+		" ] && [ \"$(cat " + fallbackSelector + ")\" = " + fallback +
+		" ]; then cat " + fallback +
 		"; else echo 'devsy result path selector is missing' >&2; exit 1; fi"
 }

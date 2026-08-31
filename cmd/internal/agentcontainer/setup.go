@@ -229,6 +229,7 @@ func (cmd *SetupContainerCmd) prepareWorkspace(
 	cleanupFunc := cmd.setupGitCredentials(
 		ctx,
 		state.tunnelClient,
+		config.GetRemoteUser(state.setupInfo),
 	)
 
 	cloneErr := cmd.cloneRepositoryIfNeeded(
@@ -520,6 +521,7 @@ func skipSnapshotRestore(target string) bool {
 func (cmd *SetupContainerCmd) setupGitCredentials(
 	ctx context.Context,
 	tunnelClient tunnel.TunnelClient,
+	remoteUser string,
 ) func() {
 	if !cmd.InjectGitCredentials {
 		return nil
@@ -531,7 +533,11 @@ func (cmd *SetupContainerCmd) setupGitCredentials(
 	}
 
 	cancelCtx, cancel := context.WithCancel(ctx)
-	cleanupFunc, err := configureSystemGitCredentials(cancelCtx, tunnelClient)
+	cleanupFunc, err := configureSystemGitCredentials(
+		cancelCtx,
+		tunnelClient,
+		remoteUser,
+	)
 	if err != nil {
 		cancel()
 		log.Errorf("error configuring git credentials: %v", err)
@@ -701,7 +707,6 @@ func (cmd *SetupContainerCmd) installIDE(
 	if newServer, ok := jetbrainsServers[ide.Name]; ok {
 		return newServer(config.GetRemoteUser(setupInfo), ide.Options).Install(setupInfo)
 	}
-
 	switch ide.Name {
 	case string(config2.IDENone):
 		return nil
@@ -871,11 +876,8 @@ func (cmd *SetupContainerCmd) startBrowserExtensionsInstall(
 func configureSystemGitCredentials(
 	ctx context.Context,
 	client tunnel.TunnelClient,
+	remoteUser string,
 ) (func(), error) {
-	if !command.Exists("git") {
-		return nil, errors.New("git not found")
-	}
-
 	serverPort, err := credentials.StartCredentialsServer(ctx, client)
 	if err != nil {
 		return nil, err
@@ -894,7 +896,12 @@ func configureSystemGitCredentials(
 	_ = os.Setenv(config2.EnvGitHelperPort, strconv.Itoa(serverPort))
 
 	gitConfig := git.At("", git.WithStrictHostKeyChecking(false)).Config()
-	scope, err := addGitCredentialHelper(ctx, gitConfig, gitCredentials)
+	gitConfig, scope, err := addGitCredentialHelper(
+		ctx,
+		gitConfig,
+		gitCredentials,
+		remoteUser,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -912,28 +919,45 @@ func configureSystemGitCredentials(
 // addGitCredentialHelper installs the credential helper system-wide
 // (/etc/gitconfig) so it applies regardless of which local user's git
 // invocation picks it up. A container's remoteUser can differ from the
-// process configuring it. Falls back to the current user's global config
+// process configuring it. Falls back to remoteUser's global config
 // when /etc/gitconfig is not writable (e.g. a non-root OpenShift-style pod
 // running as a single fixed UID, where that multi-user concern doesn't
-// apply), returning the scope actually used so the caller unsets the same one.
+// apply), returning the config and scope actually used so the caller unsets
+// the same one.
 func addGitCredentialHelper(
 	ctx context.Context,
 	gitConfig *git.Config,
 	value string,
-) (git.ConfigScope, error) {
+	remoteUser string,
+) (*git.Config, git.ConfigScope, error) {
 	err := gitConfig.Add(ctx, "credential.helper", value, git.ScopeSystem)
 	if err == nil {
-		return git.ScopeSystem, nil
+		return gitConfig, git.ScopeSystem, nil
 	}
 	if !isGitPermissionDenied(err) {
-		return git.ConfigScope{}, fmt.Errorf("add git credential helper: %w", err)
+		return nil, git.ConfigScope{}, fmt.Errorf("add git credential helper: %w", err)
 	}
 
-	log.Debugf("system git config is not writable, falling back to the user's global config")
-	if err := gitConfig.Add(ctx, "credential.helper", value, git.ScopeGlobal); err != nil {
-		return git.ConfigScope{}, fmt.Errorf("add git credential helper: %w", err)
+	homeDir, err := command.GetHome(remoteUser)
+	if err != nil {
+		return nil, git.ConfigScope{}, fmt.Errorf(
+			"resolve remote user home for git credentials: %w",
+			err,
+		)
 	}
-	return git.ScopeGlobal, nil
+	log.Debugf("system git config is not writable, falling back to %s's global config", remoteUser)
+	globalGitConfig := git.At(
+		"",
+		git.WithStrictHostKeyChecking(false),
+		git.WithEnv([]string{
+			"HOME=" + homeDir,
+			"XDG_CONFIG_HOME=" + filepath.Join(homeDir, ".config"),
+		}),
+	).Config()
+	if err := globalGitConfig.Add(ctx, "credential.helper", value, git.ScopeGlobal); err != nil {
+		return nil, git.ConfigScope{}, fmt.Errorf("add git credential helper: %w", err)
+	}
+	return globalGitConfig, git.ScopeGlobal, nil
 }
 
 func isGitPermissionDenied(err error) bool {

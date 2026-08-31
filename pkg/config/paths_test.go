@@ -14,11 +14,12 @@ const (
 )
 
 type resultCommandTest struct {
-	name                              string
-	primaryContent, fallbackContent   string
-	primarySelector, fallbackSelector bool
-	primaryTime, fallbackTime         time.Time
-	want                              string
+	name                                            string
+	primaryContent, fallbackContent                 string
+	primarySelector, fallbackSelector               bool
+	primarySelectorContent, fallbackSelectorContent string
+	primaryTime, fallbackTime                       time.Time
+	want                                            string
 }
 
 func writeResultTestFile(t *testing.T, path, content string) {
@@ -62,15 +63,23 @@ func runResultCommandTest(t *testing.T, test resultCommandTest) ([]byte, error) 
 	if test.fallbackContent != "" {
 		writeResultTestFile(t, fallback, test.fallbackContent)
 	}
+	primarySelectorContent := test.primarySelectorContent
+	if primarySelectorContent == "" {
+		primarySelectorContent = primary
+	}
+	fallbackSelectorContent := test.fallbackSelectorContent
+	if fallbackSelectorContent == "" {
+		fallbackSelectorContent = fallback
+	}
 	writeResultTestSelector(t, resultSelectorTest{
 		path:       primaryPath,
-		resultPath: primary,
+		resultPath: primarySelectorContent,
 		enabled:    test.primarySelector,
 		mtime:      test.primaryTime,
 	})
 	writeResultTestSelector(t, resultSelectorTest{
 		path:       fallbackPath,
-		resultPath: fallback,
+		resultPath: fallbackSelectorContent,
 		enabled:    test.fallbackSelector,
 		mtime:      test.fallbackTime,
 	})
@@ -79,27 +88,35 @@ func runResultCommandTest(t *testing.T, test resultCommandTest) ([]byte, error) 
 	return exec.Command("sh", "-c", command).CombinedOutput()
 }
 
-func TestReadDevContainerResultCommandSelectsValidNewestSelector(t *testing.T) {
+func TestReadDevContainerResultCommandSelectsActiveSelector(t *testing.T) {
 	tests := []resultCommandTest{
 		{
 			name:             "fallback",
 			primaryContent:   resultStale,
 			fallbackContent:  resultCurrent,
-			primarySelector:  true,
 			fallbackSelector: true,
-			primaryTime:      time.Unix(1, 0),
+			primaryTime:      time.Unix(2, 0),
 			fallbackTime:     time.Unix(2, 0),
 			want:             resultCurrent,
 		},
 		{
-			name:             "primary",
+			name:             "equal selector timestamps prefer primary",
 			primaryContent:   resultCurrent,
 			fallbackContent:  resultStale,
 			primarySelector:  true,
 			fallbackSelector: true,
 			primaryTime:      time.Unix(2, 0),
-			fallbackTime:     time.Unix(1, 0),
+			fallbackTime:     time.Unix(2, 0),
 			want:             resultCurrent,
+		},
+		{
+			name:            "primary",
+			primaryContent:  resultCurrent,
+			fallbackContent: resultStale,
+			primarySelector: true,
+			primaryTime:     time.Unix(2, 0),
+			fallbackTime:    time.Unix(2, 0),
+			want:            resultCurrent,
 		},
 		{
 			name:             "missing primary",
@@ -107,7 +124,7 @@ func TestReadDevContainerResultCommandSelectsValidNewestSelector(t *testing.T) {
 			primarySelector:  true,
 			fallbackSelector: true,
 			primaryTime:      time.Unix(2, 0),
-			fallbackTime:     time.Unix(1, 0),
+			fallbackTime:     time.Unix(2, 0),
 			want:             resultCurrent,
 		},
 	}

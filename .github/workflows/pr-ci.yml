@@ -732,7 +732,7 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
           CLUSTER_NAME=$(python -c "import uuid; print(uuid.uuid4().hex)")
-          kind create cluster --name "$CLUSTER_NAME" --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+          kind create cluster --name "$CLUSTER_NAME" --image kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
 
       # NOTE: skevetter/setup-kind does not work on Windows runners
       - name: setup kind
@@ -741,7 +741,7 @@ jobs:
         with:
           name: ${{ steps.uuid.outputs.result }}
           version: v0.33.0
-          image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+          image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
           skipClusterLogsExport: true
 
       - name: cache podman installer (Linux)

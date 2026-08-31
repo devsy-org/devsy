@@ -282,7 +282,7 @@ func TestIsTransientDeliveryError(t *testing.T) {
 func TestKubernetesDelivery_DeliverPostStart_UsesInstallPathOverride(t *testing.T) {
 	binaryData := "test-binary-content"
 	exec := &recordingExec{stdouts: []string{""}}
-	installPath := "/home/vscode/.local/bin/devsy"
+	installPath := testKubernetesInstallPath
 	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion, InstallPath: installPath}
 
 	err := d.DeliverPostStart(context.Background(), PostStartOptions{

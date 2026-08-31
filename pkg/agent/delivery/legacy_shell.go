@@ -13,9 +13,10 @@ import (
 )
 
 type LegacyShellDelivery struct {
-	ExecFunc    inject.ExecFunc //nolint:staticcheck
-	DownloadURL string
-	Timeout     func() time.Duration
+	ExecFunc        inject.ExecFunc //nolint:staticcheck
+	DownloadURL     string
+	RemoteAgentPath string
+	Timeout         func() time.Duration
 }
 
 func (d *LegacyShellDelivery) Phase() DeliveryPhase {
@@ -34,7 +35,7 @@ func (d *LegacyShellDelivery) DeliverPostStart(ctx context.Context, opts PostSta
 	if err := agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec:                        d.ExecFunc,
 		IsLocal:                     false,
-		RemoteAgentPath:             pkgconfig.ContainerDevsyHelperLocation,
+		RemoteAgentPath:             d.remoteAgentPath(),
 		DownloadURL:                 d.downloadURL(),
 		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     d.timeout(),
@@ -62,6 +63,13 @@ func (d *LegacyShellDelivery) downloadURL() string {
 		return d.DownloadURL
 	}
 	return pkgconfig.DefaultAgentDownloadURL()
+}
+
+func (d *LegacyShellDelivery) remoteAgentPath() string {
+	if d.RemoteAgentPath != "" {
+		return d.RemoteAgentPath
+	}
+	return pkgconfig.ContainerDevsyHelperLocation
 }
 
 func ExecFuncFromDriver(

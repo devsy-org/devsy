@@ -144,7 +144,28 @@ tasks:
 
   cli:test:e2e:kind:setup:
     desc: setup kind cluster for e2e tests
-    cmd: kind create cluster --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    cmd: |
+      kind_version="$(kind version -q)"
+      kind_version="${kind_version#v}"
+      kind_minor="${kind_version#0.}"
+      kind_minor="${kind_minor%%.*}"
+      case "$kind_version" in
+        [1-9].*) ;;
+        0.*)
+          case "$kind_minor" in
+            ''|*[!0-9]*) kind_minor=0 ;;
+          esac
+          if [ "$kind_minor" -lt 33 ]; then
+            echo "kind v0.33.0 or newer is required for Kubernetes v1.36.4 (found $kind_version)" >&2
+            exit 1
+          fi
+          ;;
+        *)
+          echo "kind v0.33.0 or newer is required for Kubernetes v1.36.4 (found $kind_version)" >&2
+          exit 1
+          ;;
+      esac
+      kind create cluster --image kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
 
   cli:test:e2e:kind:teardown:
     desc: teardown kind cluster for e2e tests
