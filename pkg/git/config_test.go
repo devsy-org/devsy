@@ -87,9 +87,18 @@ func TestConfigUnsetValueScopesToExactValue(t *testing.T) {
 
 	err := config.UnsetValue(context.Background(), "credential.helper", "!my-helper", ScopeSystem)
 	assert.NilError(t, err)
-	assert.DeepEqual(t,
-		[]string{subConfig, flagSystem, "--fixed-value", "--unset-all", "credential.helper", "!my-helper"},
-		fake.lastArgs())
+	assert.DeepEqual(
+		t,
+		[]string{
+			subConfig,
+			flagSystem,
+			"--fixed-value",
+			"--unset-all",
+			"credential.helper",
+			"!my-helper",
+		},
+		fake.lastArgs(),
+	)
 }
 
 func TestConfigUnsetValueNoMatchIsNotError(t *testing.T) {

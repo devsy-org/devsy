@@ -8,125 +8,128 @@ import (
 	"time"
 )
 
-func TestReadDevContainerResultCommandSelectsNewestResultSelector(t *testing.T) {
-	dir := t.TempDir()
-	primary := filepath.Join(dir, "primary.json")
-	fallback := filepath.Join(dir, "fallback.json")
-	primarySelector := filepath.Join(dir, "primary.path")
-	fallbackSelector := filepath.Join(dir, "fallback.path")
-	command := readDevContainerResultCommand(primary, fallback, primarySelector, fallbackSelector)
+const (
+	resultCurrent = "current"
+	resultStale   = "stale"
+)
 
-	if err := os.WriteFile(primary, []byte("stale"), 0o644); err != nil {
+type resultCommandTest struct {
+	name                              string
+	primaryContent, fallbackContent   string
+	primarySelector, fallbackSelector bool
+	primaryTime, fallbackTime         time.Time
+	want                              string
+}
+
+func writeResultTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	// #nosec G306 -- test files intentionally use result-file permissions.
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
-	}
-	if err := os.WriteFile(fallback, []byte("current"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(primarySelector, []byte(primary), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(fallbackSelector, []byte(fallback), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(primarySelector, time.Unix(1, 0), time.Unix(1, 0)); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(fallbackSelector, time.Unix(2, 0), time.Unix(2, 0)); err != nil {
-		t.Fatal(err)
-	}
-	output, err := exec.Command("sh", "-c", command).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(output) != "current" {
-		t.Fatalf("result = %q, want current", output)
 	}
 }
 
-func TestReadDevContainerResultCommandSelectsNewestPrimarySelector(t *testing.T) {
+type resultSelectorTest struct {
+	path, resultPath string
+	enabled          bool
+	mtime            time.Time
+}
+
+func writeResultTestSelector(t *testing.T, test resultSelectorTest) {
+	t.Helper()
+	if !test.enabled {
+		return
+	}
+	// #nosec G306 -- test files intentionally use selector permissions.
+	if err := os.WriteFile(test.path, []byte(test.resultPath), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(test.path, test.mtime, test.mtime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runResultCommandTest(t *testing.T, test resultCommandTest) ([]byte, error) {
+	t.Helper()
 	dir := t.TempDir()
 	primary := filepath.Join(dir, "primary.json")
 	fallback := filepath.Join(dir, "fallback.json")
-	primarySelector := filepath.Join(dir, "primary.path")
-	fallbackSelector := filepath.Join(dir, "fallback.path")
-	command := readDevContainerResultCommand(primary, fallback, primarySelector, fallbackSelector)
+	primaryPath := filepath.Join(dir, "primary.path")
+	fallbackPath := filepath.Join(dir, "fallback.path")
+	if test.primaryContent != "" {
+		writeResultTestFile(t, primary, test.primaryContent)
+	}
+	if test.fallbackContent != "" {
+		writeResultTestFile(t, fallback, test.fallbackContent)
+	}
+	writeResultTestSelector(t, resultSelectorTest{
+		path:       primaryPath,
+		resultPath: primary,
+		enabled:    test.primarySelector,
+		mtime:      test.primaryTime,
+	})
+	writeResultTestSelector(t, resultSelectorTest{
+		path:       fallbackPath,
+		resultPath: fallback,
+		enabled:    test.fallbackSelector,
+		mtime:      test.fallbackTime,
+	})
+	command := readDevContainerResultCommand(primary, fallback, primaryPath, fallbackPath)
+	// #nosec G204 -- command is generated from test-owned temporary paths.
+	return exec.Command("sh", "-c", command).CombinedOutput()
+}
 
-	if err := os.WriteFile(primary, []byte("current"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(fallback, []byte("stale"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(primarySelector, []byte(primary), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(fallbackSelector, []byte(fallback), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(primarySelector, time.Unix(2, 0), time.Unix(2, 0)); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(fallbackSelector, time.Unix(1, 0), time.Unix(1, 0)); err != nil {
-		t.Fatal(err)
+func TestReadDevContainerResultCommandSelectsValidNewestSelector(t *testing.T) {
+	tests := []resultCommandTest{
+		{
+			name:             "fallback",
+			primaryContent:   resultStale,
+			fallbackContent:  resultCurrent,
+			primarySelector:  true,
+			fallbackSelector: true,
+			primaryTime:      time.Unix(1, 0),
+			fallbackTime:     time.Unix(2, 0),
+			want:             resultCurrent,
+		},
+		{
+			name:             "primary",
+			primaryContent:   resultCurrent,
+			fallbackContent:  resultStale,
+			primarySelector:  true,
+			fallbackSelector: true,
+			primaryTime:      time.Unix(2, 0),
+			fallbackTime:     time.Unix(1, 0),
+			want:             resultCurrent,
+		},
+		{
+			name:             "missing primary",
+			fallbackContent:  resultCurrent,
+			primarySelector:  true,
+			fallbackSelector: true,
+			primaryTime:      time.Unix(2, 0),
+			fallbackTime:     time.Unix(1, 0),
+			want:             resultCurrent,
+		},
 	}
 
-	output, err := exec.Command("sh", "-c", command).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(output) != "current" {
-		t.Fatalf("result = %q, want current", output)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output, err := runResultCommandTest(t, test)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(output) != test.want {
+				t.Fatalf("result = %q, want %q", output, test.want)
+			}
+		})
 	}
 }
 
 func TestReadDevContainerResultCommandRequiresSelector(t *testing.T) {
-	dir := t.TempDir()
-	primary := filepath.Join(dir, "primary.json")
-	fallback := filepath.Join(dir, "fallback.json")
-	command := readDevContainerResultCommand(
-		primary,
-		fallback,
-		filepath.Join(dir, "primary.path"),
-		filepath.Join(dir, "fallback.path"),
-	)
-	if err := os.WriteFile(fallback, []byte("fallback"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if output, err := exec.Command("sh", "-c", command).CombinedOutput(); err == nil {
-		t.Fatalf("result = %q, want missing-selector error", output)
-	}
-}
-
-func TestReadDevContainerResultCommandSkipsMissingSelectedPrimary(t *testing.T) {
-	dir := t.TempDir()
-	primary := filepath.Join(dir, "primary.json")
-	fallback := filepath.Join(dir, "fallback.json")
-	primarySelector := filepath.Join(dir, "primary.path")
-	fallbackSelector := filepath.Join(dir, "fallback.path")
-	command := readDevContainerResultCommand(primary, fallback, primarySelector, fallbackSelector)
-
-	if err := os.WriteFile(primarySelector, []byte(primary), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(fallback, []byte("current"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(fallbackSelector, []byte(fallback), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(primarySelector, time.Unix(2, 0), time.Unix(2, 0)); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(fallbackSelector, time.Unix(1, 0), time.Unix(1, 0)); err != nil {
-		t.Fatal(err)
-	}
-
-	output, err := exec.Command("sh", "-c", command).Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(output) != "current" {
-		t.Fatalf("result = %q, want current", output)
+	_, err := runResultCommandTest(t, resultCommandTest{
+		fallbackContent: resultStale,
+	})
+	if err == nil {
+		t.Fatal("expected missing-selector error")
 	}
 }
