@@ -431,6 +431,7 @@ type TunnelOptions struct {
 	Stderr          io.Writer
 	Timeout         time.Duration
 	RemoteAgentPath string
+	DownloadURL     string
 }
 
 func Tunnel(ctx context.Context, opts TunnelOptions) error {
@@ -445,7 +446,7 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 		},
 		IsLocal:                     false,
 		RemoteAgentPath:             remoteAgentPath,
-		DownloadURL:                 config.DefaultAgentDownloadURL(),
+		DownloadURL:                 opts.DownloadURL,
 		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     opts.Timeout,
 	}); err != nil {

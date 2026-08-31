@@ -461,7 +461,9 @@ func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecre
 			FSGroupChangePolicy: ptr.To(corev1.FSGroupChangeOnRootMismatch),
 		}
 	}
-	if k.options.KubernetesUserNamespaces == pkgconfig.BoolTrue && pod.Spec.HostUsers == nil {
+	if (k.options.KubernetesUserNamespaces == pkgconfig.BoolTrue ||
+		k.options.StrictSecurity == pkgconfig.BoolTrue ||
+		k.options.AgentSecurityContext != "") && pod.Spec.HostUsers == nil {
 		pod.Spec.HostUsers = new(bool)
 	}
 	if k.options.KubernetesPullSecretsEnabled == pkgconfig.BoolTrue && pullSecretsCreated {

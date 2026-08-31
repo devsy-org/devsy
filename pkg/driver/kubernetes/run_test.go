@@ -138,13 +138,7 @@ func TestFinalizePodSpecSetsHostUsersFalseWhenUserNamespacesEnabled(t *testing.T
 	}
 }
 
-// TestFinalizePodSpecLeavesHostUsersUnsetWhenSecurityContextSetWithoutOptIn is
-// a regression test: STRICT_SECURITY/AGENT_SECURITY_CONTEXT alone must never
-// set spec.hostUsers, since the field's mere presence requires the
-// cluster's UserNamespacesSupport feature gate and node-level support that
-// devsy can't detect -- KUBERNETES_USER_NAMESPACES must be requested
-// explicitly.
-func TestFinalizePodSpecLeavesHostUsersUnsetWhenSecurityContextSetWithoutOptIn(t *testing.T) {
+func TestFinalizePodSpecSetsHostUsersFalseWhenSecurityContextSet(t *testing.T) {
 	k := &KubernetesDriver{
 		options: &provider2.ProviderKubernetesDriverConfig{
 			AgentSecurityContext: "runAsUser: 1000\n",
@@ -154,11 +148,8 @@ func TestFinalizePodSpecLeavesHostUsersUnsetWhenSecurityContextSetWithoutOptIn(t
 
 	k.finalizePodSpec(pod, "devsy-ws-1", false)
 
-	if pod.Spec.HostUsers != nil {
-		t.Errorf(
-			"HostUsers = %v, want nil: AGENT_SECURITY_CONTEXT alone must not opt into hostUsers",
-			pod.Spec.HostUsers,
-		)
+	if pod.Spec.HostUsers == nil || *pod.Spec.HostUsers {
+		t.Errorf("HostUsers = %v, want false", pod.Spec.HostUsers)
 	}
 }
 

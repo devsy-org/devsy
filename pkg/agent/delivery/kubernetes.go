@@ -247,7 +247,8 @@ func (d *KubernetesDelivery) destPath() string {
 
 // detectVersion returns the agent version in the pod, or "" if absent or unprobeable.
 func (d *KubernetesDelivery) detectVersion(ctx context.Context, destPath string) string {
-	script := fmt.Sprintf(`[ -x "%s" ] && "%s" --version 2>/dev/null || true`, destPath, destPath)
+	quotedPath := shellescape.Quote(destPath)
+	script := fmt.Sprintf(`[ -x %s ] && %s --version 2>/dev/null || true`, quotedPath, quotedPath)
 
 	var stdout bytes.Buffer
 	err := d.Exec(ctx, []string{"sh", "-c", script}, driver.Streams{Stdout: &stdout})

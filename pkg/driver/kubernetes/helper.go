@@ -140,7 +140,7 @@ func parseSecurityContext(raw string) (*corev1.SecurityContext, error) {
 	}
 
 	sc := &corev1.SecurityContext{}
-	errInline := yaml.Unmarshal([]byte(raw), sc)
+	errInline := yaml.UnmarshalStrict([]byte(raw), sc)
 	if errInline == nil {
 		return sc, nil
 	}
@@ -162,7 +162,7 @@ func parseSecurityContext(raw string) (*corev1.SecurityContext, error) {
 			err,
 		)
 	}
-	if err = yaml.Unmarshal(body, sc); err == nil {
+	if err = yaml.UnmarshalStrict(body, sc); err == nil {
 		return sc, nil
 	}
 

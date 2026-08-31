@@ -119,6 +119,7 @@ func (cmd *ContainerTunnelCmd) Run(cobraCtx context.Context) error {
 		Stderr:          os.Stderr,
 		Timeout:         workspaceInfo.InjectTimeout,
 		RemoteAgentPath: workspaceInfo.Agent.ContainerInstallPath(),
+		DownloadURL:     workspaceInfo.Agent.DownloadURL,
 	})
 }
 
