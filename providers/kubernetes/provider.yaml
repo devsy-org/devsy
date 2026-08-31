@@ -96,8 +96,9 @@ options:
     default: "false"
   STRICT_SECURITY:
     description: Clears the injected containers' RunAsUser/RunAsGroup/RunAsNonRoot (letting the cluster assign a UID, e.g. an OpenShift SCC) unless POD_MANIFEST_TEMPLATE or AGENT_SECURITY_CONTEXT already set these fields. It also sets spec.hostUsers to false unless POD_MANIFEST_TEMPLATE explicitly sets it, as required by OpenShift restricted-v3. Capabilities and Privileged (from CapAdd/--privileged) are always kept.
+    global: true
     type: boolean
-    default: false
+    default: "false"
   AGENT_SECURITY_CONTEXT:
     description: Inline YAML (or a file path) for a Kubernetes SecurityContext merged field by field onto the injected devsy and devsy-init containers. It can set run-as, capabilities, privilege escalation, seccomp, and other supported SecurityContext fields, e.g. to satisfy an OpenShift SCC's allocated UID range. Takes precedence over STRICT_SECURITY and the built-in root default. It does not enable user namespaces. A container matching the devsy/devsy-init name in POD_MANIFEST_TEMPLATE still takes precedence over this option.
     global: true
