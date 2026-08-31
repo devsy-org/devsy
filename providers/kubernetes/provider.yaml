@@ -95,11 +95,11 @@ options:
     global: true
     default: "false"
   STRICT_SECURITY:
-    description: Clears the injected containers' RunAsUser/RunAsGroup/RunAsNonRoot (letting the cluster assign a UID, e.g. an OpenShift SCC) unless POD_MANIFEST_TEMPLATE or AGENT_SECURITY_CONTEXT already set these fields. Capabilities and Privileged (from CapAdd/--privileged) are always kept.
+    description: Clears the injected containers' RunAsUser/RunAsGroup/RunAsNonRoot (letting the cluster assign a UID, e.g. an OpenShift SCC) unless POD_MANIFEST_TEMPLATE or AGENT_SECURITY_CONTEXT already set these fields. It also sets spec.hostUsers to false unless POD_MANIFEST_TEMPLATE explicitly sets it, as required by OpenShift restricted-v3. Capabilities and Privileged (from CapAdd/--privileged) are always kept.
     type: boolean
     default: false
   AGENT_SECURITY_CONTEXT:
-    description: Inline YAML (or a file path) for a Kubernetes SecurityContext merged field by field onto the injected devsy and devsy-init containers. It can set run-as, capabilities, privilege escalation, seccomp, and other supported SecurityContext fields, e.g. to satisfy an OpenShift SCC's allocated UID range. Takes precedence over STRICT_SECURITY and the built-in root default. A container matching the devsy/devsy-init name in POD_MANIFEST_TEMPLATE still takes precedence over this option.
+    description: Inline YAML (or a file path) for a Kubernetes SecurityContext merged field by field onto the injected devsy and devsy-init containers. It can set run-as, capabilities, privilege escalation, seccomp, and other supported SecurityContext fields, e.g. to satisfy an OpenShift SCC's allocated UID range. Takes precedence over STRICT_SECURITY and the built-in root default. It does not enable user namespaces. A container matching the devsy/devsy-init name in POD_MANIFEST_TEMPLATE still takes precedence over this option.
     global: true
     type: multiline
   AGENT_INSTALL_PATH:
@@ -107,7 +107,7 @@ options:
     global: true
     type: string
   KUBERNETES_USER_NAMESPACES:
-    description: Sets spec.hostUsers to false (unless POD_MANIFEST_TEMPLATE already set it), so the kubelet maps the workspace pod's UIDs into a Linux user namespace. Requires the cluster's UserNamespacesSupport feature gate (on by default only from Kubernetes 1.33) and node-level support (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+); enabling this on a cluster without that support can get the pod rejected or mishandled, so it is never inferred from STRICT_SECURITY or AGENT_SECURITY_CONTEXT alone.
+    description: Sets spec.hostUsers to false (unless POD_MANIFEST_TEMPLATE already set it), so the kubelet maps the workspace pod's UIDs into a Linux user namespace. Requires the cluster's UserNamespacesSupport feature gate (on by default only from Kubernetes 1.33) and node-level support (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+); enabling this on a cluster without that support can get the pod rejected or mishandled. It is never inferred from AGENT_SECURITY_CONTEXT alone.
     type: boolean
     default: false
   WORKSPACE_VOLUME_MOUNT:

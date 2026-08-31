@@ -1,5 +1,7 @@
 package config
 
+import "al.essio.dev/pkg/shellescape"
+
 const (
 	// IgnoreFileName is the name of the devsy ignore file.
 	IgnoreFileName = "." + BinaryName + "ignore"
@@ -61,10 +63,15 @@ func ReadDevContainerResultCommand() string {
 func readDevContainerResultCommand(
 	primary, fallback, primarySelector, fallbackSelector string,
 ) string {
+	primary = shellescape.Quote(primary)
+	fallback = shellescape.Quote(fallback)
+	primarySelector = shellescape.Quote(primarySelector)
+	fallbackSelector = shellescape.Quote(fallbackSelector)
+
 	return "if [ -f " + primarySelector + " ] && [ -f " + primary +
 		" ] && ( [ ! -f " + fallbackSelector +
 		" ] || [ " + primarySelector + " -nt " + fallbackSelector +
-		" ) && [ \"$(cat " + primarySelector + ")\" = " + primary +
+		" ] ) && [ \"$(cat " + primarySelector + ")\" = " + primary +
 		" ]; then cat " + primary +
 		"; elif [ -f " + fallbackSelector + " ] && [ \"$(cat " +
 		fallbackSelector + ")\" = " + fallback + " ]; then cat " + fallback +

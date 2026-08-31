@@ -119,10 +119,24 @@ func TestGetContainersInvalidAgentSecurityContextErrors(t *testing.T) {
 	}
 }
 
+func TestFinalizePodSpecSetsHostUsersFalseWhenStrictSecurityEnabled(t *testing.T) {
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{
+			StrictSecurity: pkgconfig.BoolTrue,
+		},
+	}
+	pod := &corev1.Pod{}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if pod.Spec.HostUsers == nil || *pod.Spec.HostUsers {
+		t.Errorf("HostUsers = %v, want false", pod.Spec.HostUsers)
+	}
+}
+
 func TestFinalizePodSpecSetsHostUsersFalseWhenUserNamespacesEnabled(t *testing.T) {
 	k := &KubernetesDriver{
 		options: &provider2.ProviderKubernetesDriverConfig{
-			StrictSecurity:           pkgconfig.BoolTrue,
 			KubernetesUserNamespaces: pkgconfig.BoolTrue,
 		},
 	}
@@ -135,7 +149,7 @@ func TestFinalizePodSpecSetsHostUsersFalseWhenUserNamespacesEnabled(t *testing.T
 	}
 }
 
-func TestFinalizePodSpecSetsHostUsersFalseWhenSecurityContextSet(t *testing.T) {
+func TestFinalizePodSpecLeavesHostUsersUnsetWhenOnlySecurityContextSet(t *testing.T) {
 	k := &KubernetesDriver{
 		options: &provider2.ProviderKubernetesDriverConfig{
 			AgentSecurityContext: "runAsUser: 1000\n",
@@ -145,8 +159,8 @@ func TestFinalizePodSpecSetsHostUsersFalseWhenSecurityContextSet(t *testing.T) {
 
 	k.finalizePodSpec(pod, "devsy-ws-1", false)
 
-	if pod.Spec.HostUsers == nil || *pod.Spec.HostUsers {
-		t.Errorf("HostUsers = %v, want false", pod.Spec.HostUsers)
+	if pod.Spec.HostUsers != nil {
+		t.Errorf("HostUsers = %v, want nil", pod.Spec.HostUsers)
 	}
 }
 

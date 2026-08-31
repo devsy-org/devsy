@@ -81,14 +81,14 @@ func TestConfigUnsetSystemScope(t *testing.T) {
 		fake.lastArgs())
 }
 
-func TestConfigUnsetValueScopesToExactPattern(t *testing.T) {
+func TestConfigUnsetValueScopesToExactValue(t *testing.T) {
 	fake := &fakeRunner{}
 	config := At("", WithRunner(fake)).Config()
 
 	err := config.UnsetValue(context.Background(), "credential.helper", "!my-helper", ScopeSystem)
 	assert.NilError(t, err)
 	assert.DeepEqual(t,
-		[]string{subConfig, flagSystem, "--unset", "credential.helper", "^!my-helper$"},
+		[]string{subConfig, flagSystem, "--fixed-value", "--unset-all", "credential.helper", "!my-helper"},
 		fake.lastArgs())
 }
 

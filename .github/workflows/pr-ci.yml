@@ -708,7 +708,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/kind.exe
-          key: ${{ runner.os }}-${{ runner.arch }}-kind-v0.24.0
+          key: ${{ runner.os }}-${{ runner.arch }}-kind-v0.33.0
 
       - name: setup kind (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
@@ -718,8 +718,8 @@ jobs:
           DOCKER_HOST: npipe:////./pipe/podman-machine-default
         run: |
           if [ "${{ steps.kind-cache-windows.outputs.cache-hit }}" != "true" ]; then
-            curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.24.0/kind-windows-amd64"
-            expected="6f724188289cc79395f45afae0f2b85e0d220c2b84c6ed2f5047d9d0c9a67028"
+            curl -Lo "$RUNNER_TEMP/kind.exe" "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-windows-amd64"
+            expected="4b22adaa135368c5a465d56bbd8e520cbea87272a06ca00b6078e7b81515c9fc"
             actual=$(sha256sum "$RUNNER_TEMP/kind.exe" | awk '{print $1}' | sed 's/^[^a-f0-9]*//')
             if [ "$actual" != "$expected" ]; then
               echo "SHA256 mismatch for kind.exe! Expected: $expected, Got: $actual"
@@ -732,7 +732,7 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
           CLUSTER_NAME=$(python -c "import uuid; print(uuid.uuid4().hex)")
-          kind create cluster --name "$CLUSTER_NAME" --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+          kind create cluster --name "$CLUSTER_NAME" --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
 
       # NOTE: skevetter/setup-kind does not work on Windows runners
       - name: setup kind
@@ -740,8 +740,8 @@ jobs:
         uses: skevetter/setup-kind@7febac2ed35df332069b3bb687c6b1fa00fc0883 # v1
         with:
           name: ${{ steps.uuid.outputs.result }}
-          version: v0.24.0
-          image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+          version: v0.33.0
+          image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
           skipClusterLogsExport: true
 
       - name: cache podman installer (Linux)

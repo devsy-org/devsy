@@ -460,8 +460,7 @@ func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecre
 		}
 	}
 	if (k.options.KubernetesUserNamespaces == pkgconfig.BoolTrue ||
-		k.options.StrictSecurity == pkgconfig.BoolTrue ||
-		k.options.AgentSecurityContext != "") && pod.Spec.HostUsers == nil {
+		k.options.StrictSecurity == pkgconfig.BoolTrue) && pod.Spec.HostUsers == nil {
 		pod.Spec.HostUsers = new(bool)
 	}
 	if k.options.KubernetesPullSecretsEnabled == pkgconfig.BoolTrue && pullSecretsCreated {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -95,12 +94,12 @@ func (c *Config) Unset(ctx context.Context, key string, scope ConfigScope) error
 	return nil
 }
 
-// UnsetValue removes a single matching value from a config key.
+// UnsetValue removes all exact matching values from a config key.
 func (c *Config) UnsetValue(ctx context.Context, key, value string, scope ConfigScope) error {
 	args := append([]string{subConfig}, scope.args()...)
-	args = append(args, "--unset", key, "^"+regexp.QuoteMeta(value)+"$")
+	args = append(args, "--fixed-value", "--unset-all", key, value)
 	if _, err := c.repo.run(ctx, args...); err != nil {
-		// Exit code 5 means the key does not exist or no value matched the pattern.
+		// Exit code 5 means the key does not exist or no value matched.
 		var cmdErr *CommandError
 		if errors.As(err, &cmdErr) && cmdErr.ExitCode == 5 {
 			return nil

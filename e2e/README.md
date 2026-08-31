@@ -17,7 +17,7 @@ BUILDDIR=bin SRCDIR=".." ../hack/build-e2e.sh
 For tests that require Kubernetes (labeled with `up-kubernetes` or `build`), you need to set up a kind cluster:
 
 ```bash
-kind create cluster --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+kind create cluster --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
 ```
 
 To delete the cluster after testing:
