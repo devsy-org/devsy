@@ -151,6 +151,7 @@ func TestNewAgentDelivery_KubernetesDriver_FallsBackWhenNoPodExec(t *testing.T) 
 			},
 		},
 		ExecFunc:                   execFn,
+		DownloadURL:                "https://artifacts.example.test/devsy",
 		KubernetesAgentInstallPath: testKubernetesInstallPath,
 		// PodExec intentionally nil → legacy fallback.
 	}
@@ -160,6 +161,7 @@ func TestNewAgentDelivery_KubernetesDriver_FallsBackWhenNoPodExec(t *testing.T) 
 	require.True(t, ok)
 	assert.NotNil(t, legacy.ExecFunc)
 	assert.Equal(t, testKubernetesInstallPath, legacy.RemoteAgentPath)
+	assert.Equal(t, "https://artifacts.example.test/devsy", legacy.DownloadURL)
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 

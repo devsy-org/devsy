@@ -91,12 +91,61 @@ func TestRunsFixedNonRootUser(t *testing.T) {
 
 var podManifestTemplateRunsFixedNonRootUserCases = []runsFixedNonRootUserCase{
 	{
+		name: "strict security exposes pod-level runAsUser",
+		config: ProviderAgentConfig{
+			Driver: KubernetesDriver,
+			Kubernetes: ProviderKubernetesDriverConfig{
+				StrictSecurity: "true",
+				PodManifestTemplate: "spec:\n" +
+					"  securityContext:\n    runAsUser: 1000\n",
+			},
+		},
+		want: true,
+	},
+	{
+		name: "default root container masks pod-level runAsUser",
+		config: ProviderAgentConfig{
+			Driver: KubernetesDriver,
+			Kubernetes: ProviderKubernetesDriverConfig{
+				PodManifestTemplate: "spec:\n" +
+					"  securityContext:\n    runAsUser: 1000\n",
+			},
+		},
+		want: false,
+	},
+	{
+		name: "agent context inherits pod-level runAsUser when unset",
+		config: ProviderAgentConfig{
+			Driver: KubernetesDriver,
+			Kubernetes: ProviderKubernetesDriverConfig{
+				AgentSecurityContext: "runAsNonRoot: false",
+				PodManifestTemplate: "spec:\n" +
+					"  securityContext:\n    runAsUser: 1000\n",
+			},
+		},
+		want: true,
+	},
+	{
+		name: "agent security context overrides pod-level runAsUser",
+		config: ProviderAgentConfig{
+			Driver: KubernetesDriver,
+			Kubernetes: ProviderKubernetesDriverConfig{
+				AgentSecurityContext: "runAsUser: 0",
+				PodManifestTemplate: "spec:\n" +
+					"  securityContext:\n    runAsUser: 1000\n",
+			},
+		},
+		want: false,
+	},
+	{
 		name: "podManifestTemplate devsy container overrides agentSecurityContext to root",
 		config: ProviderAgentConfig{
 			Driver: KubernetesDriver,
 			Kubernetes: ProviderKubernetesDriverConfig{
 				AgentSecurityContext: "runAsUser: 1000\nrunAsNonRoot: true",
-				PodManifestTemplate: "spec:\n  containers:\n" +
+				PodManifestTemplate: "spec:\n" +
+					"  securityContext:\n    runAsUser: 2000\n" +
+					"  containers:\n" +
 					"  - name: " + config.BinaryName + "\n" +
 					"    securityContext:\n      runAsUser: 0\n      runAsNonRoot: false\n",
 			},

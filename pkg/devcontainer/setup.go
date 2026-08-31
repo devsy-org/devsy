@@ -151,6 +151,7 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 		IsRemoteDocker:             docker.RemoteDockerHost(dockerEnv),
 		HelperImage:                r.workspaceConfig.Agent.Docker.HelperImage,
 		ContainerID:                r.id,
+		DownloadURL:                r.resolvedAgentDownloadURL(),
 		ExecFunc:                   execFn,
 		PodExec:                    podExec,
 		KubernetesAgentInstallPath: r.workspaceConfig.Agent.Kubernetes.AgentInstallPath,

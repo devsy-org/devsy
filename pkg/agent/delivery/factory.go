@@ -20,6 +20,7 @@ type FactoryOptions struct {
 	ContainerID                string
 	DockerEnv                  []string
 	WorkspaceConfig            *provider.AgentWorkspaceInfo
+	DownloadURL                string
 	ExecFunc                   inject.ExecFunc //nolint:staticcheck // legacy delivery strategies require this type
 	PodExec                    PodExecFunc
 }
@@ -64,7 +65,7 @@ func namedDriverDelivery(driverType string, opts FactoryOptions) AgentDelivery {
 // fallback.
 func appleDelivery(opts FactoryOptions) AgentDelivery {
 	log.Debugf("using shell-based delivery for apple driver")
-	return &LegacyShellDelivery{ExecFunc: opts.ExecFunc, DownloadURL: ""}
+	return &LegacyShellDelivery{ExecFunc: opts.ExecFunc, DownloadURL: opts.DownloadURL}
 }
 
 func kubernetesDelivery(opts FactoryOptions) AgentDelivery {
@@ -118,7 +119,7 @@ func legacyShellDelivery(opts FactoryOptions, reason, remoteAgentPath string) Ag
 	)
 	return &LegacyShellDelivery{
 		ExecFunc:        opts.ExecFunc,
-		DownloadURL:     "",
+		DownloadURL:     opts.DownloadURL,
 		RemoteAgentPath: remoteAgentPath,
 	}
 }

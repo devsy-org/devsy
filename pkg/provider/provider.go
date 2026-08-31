@@ -197,34 +197,16 @@ func unmarshalInlineOrFile(raw string, out any) error {
 	return yaml.Unmarshal(body, out)
 }
 
-// devsyContainerRunAsFields extracts the run-as-user fields of the "devsy"
-// container's securityContext from a podManifestTemplate, or nil if the
-// template is empty, unparsable, or sets no such container.
-func devsyContainerRunAsFields(podManifestTemplate string) *runAsFields {
-	if podManifestTemplate == "" {
-		return nil
-	}
-	var pod minimalPodManifest
-	if err := unmarshalInlineOrFile(podManifestTemplate, &pod); err != nil {
-		return nil
-	}
-	for _, c := range pod.Spec.Containers {
-		if c.Name == config.BinaryName {
-			return c.SecurityContext
-		}
-	}
-	return nil
-}
-
 // minimalPodManifest is the subset of corev1.Pod this package needs to
-// resolve a podManifestTemplate's per-container run-as-user override,
+// resolve a podManifestTemplate's pod- and per-container run-as overrides,
 // without depending on k8s.io/api.
 type minimalPodManifest struct {
 	Spec minimalPodSpec `json:"spec"`
 }
 
 type minimalPodSpec struct {
-	Containers []minimalContainer `json:"containers"`
+	SecurityContext *runAsFields       `json:"securityContext,omitempty"`
+	Containers      []minimalContainer `json:"containers"`
 }
 
 type minimalContainer struct {
@@ -232,29 +214,67 @@ type minimalContainer struct {
 	SecurityContext *runAsFields `json:"securityContext,omitempty"`
 }
 
-// effectiveKubernetesRunAsFields resolves the run-as-user fields Devsy's
-// Kubernetes driver actually applies to the "devsy" container: a named
-// "devsy" container securityContext in podManifestTemplate has the highest
-// precedence and overrides agentSecurityContext field by field (pkg/driver/
-// kubernetes: resolveContainerSecurityContext, mergeContainer).
+// podManifestRunAsFields returns the pod-level and named "devsy" container
+// run-as fields from a podManifestTemplate, or nil fields if the template is
+// empty, unparsable, or contains no corresponding values.
+func podManifestRunAsFields(podManifestTemplate string) (pod, container *runAsFields) {
+	if podManifestTemplate == "" {
+		return nil, nil
+	}
+	var manifest minimalPodManifest
+	if err := unmarshalInlineOrFile(podManifestTemplate, &manifest); err != nil {
+		return nil, nil
+	}
+	for _, c := range manifest.Spec.Containers {
+		if c.Name == config.BinaryName {
+			return manifest.Spec.SecurityContext, c.SecurityContext
+		}
+	}
+	return manifest.Spec.SecurityContext, nil
+}
+
+// effectiveKubernetesRunAsFields resolves the run-as fields Devsy's
+// Kubernetes driver actually applies to the "devsy" container. Container-level
+// fields from podManifestTemplate override AGENT_SECURITY_CONTEXT fields,
+// which override pod-level fields (pkg/driver/kubernetes: resolveContainer-
+// SecurityContext, mergeContainer). The generated default container security
+// context explicitly runs as root, so pod-level fields are effective only when
+// strict security or an agent security context removes those defaults.
 func effectiveKubernetesRunAsFields(k ProviderKubernetesDriverConfig) *runAsFields {
 	var sc runAsFields
 	haveAny := false
-	if k.AgentSecurityContext != "" {
-		if err := unmarshalInlineOrFile(k.AgentSecurityContext, &sc); err == nil {
+	apply := func(fields *runAsFields) {
+		if fields == nil {
+			return
+		}
+		if fields.RunAsUser != nil {
+			sc.RunAsUser = fields.RunAsUser
+			haveAny = true
+		}
+		if fields.RunAsNonRoot != nil {
+			sc.RunAsNonRoot = fields.RunAsNonRoot
 			haveAny = true
 		}
 	}
-	if override := devsyContainerRunAsFields(k.PodManifestTemplate); override != nil {
-		if override.RunAsUser != nil {
-			sc.RunAsUser = override.RunAsUser
-			haveAny = true
+
+	podFields, containerFields := podManifestRunAsFields(k.PodManifestTemplate)
+	switch {
+	case k.AgentSecurityContext != "":
+		var agentFields runAsFields
+		if err := unmarshalInlineOrFile(k.AgentSecurityContext, &agentFields); err == nil {
+			apply(podFields)
+			apply(&agentFields)
 		}
-		if override.RunAsNonRoot != nil {
-			sc.RunAsNonRoot = override.RunAsNonRoot
-			haveAny = true
-		}
+	case k.StrictSecurity == config.BoolTrue:
+		apply(podFields)
+	default:
+		rootUID := int64(0)
+		root := false
+		sc.RunAsUser = &rootUID
+		sc.RunAsNonRoot = &root
+		haveAny = true
 	}
+	apply(containerFields)
 	if !haveAny {
 		return nil
 	}
@@ -262,14 +282,10 @@ func effectiveKubernetesRunAsFields(k ProviderKubernetesDriverConfig) *runAsFiel
 }
 
 // RunsFixedNonRootUser reports whether the effective Kubernetes container
-// security context (AGENT_SECURITY_CONTEXT, as overridden field by field by
-// any named "devsy" container in POD_MANIFEST_TEMPLATE) explicitly
-// guarantees the container runs as a fixed non-root UID (an OpenShift
-// restricted SCC, for example), so there is no root to su from: an su into
-// the remote user would only ever fail, not drop privilege, and must be
-// skipped. STRICT_SECURITY alone only clears the hardcoded root fields; it
-// does not guarantee which UID the cluster ends up assigning, so it is not
-// treated as a signal here.
+// security context explicitly guarantees the container runs as a fixed
+// non-root UID. STRICT_SECURITY can expose pod-level run-as fields because it
+// removes the generated root defaults; an agent context can also omit those
+// fields and inherit the pod-level values.
 func (a ProviderAgentConfig) RunsFixedNonRootUser() bool {
 	if a.Driver != KubernetesDriver {
 		return false

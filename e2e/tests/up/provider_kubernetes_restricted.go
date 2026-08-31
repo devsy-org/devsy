@@ -47,17 +47,17 @@ var _ = ginkgo.Describe(
 	func() {
 		var initialDir string
 
-		ginkgo.BeforeEach(func() {
+		ginkgo.BeforeEach(func(ctx ginkgo.SpecContext) {
 			var err error
 			initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			err = labelNamespaceRestricted(context.Background())
+			err = labelNamespaceRestricted(ctx)
 			framework.ExpectNoError(err)
 		})
 
-		ginkgo.AfterEach(func() {
-			_ = exec.Command("kubectl", "delete", "namespace", restrictedNamespace, "--ignore-not-found").
+		ginkgo.AfterEach(func(ctx ginkgo.SpecContext) {
+			_ = exec.CommandContext(ctx, "kubectl", "delete", "namespace", restrictedNamespace, "--ignore-not-found").
 				Run()
 		})
 
