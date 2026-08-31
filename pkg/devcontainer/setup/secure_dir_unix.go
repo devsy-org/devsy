@@ -69,9 +69,7 @@ func secureOpenedContainerDataDir(fd int) error {
 	if err := unix.Fstat(fd, &stat); err != nil {
 		return fmt.Errorf("stat directory: %w", err)
 	}
-	currentUID := uint32(
-		unix.Geteuid(),
-	) //nolint:gosec // euid is nonnegative and Unix UIDs are uint32
+	currentUID := currentUnixUID()
 	if currentUID != stat.Uid {
 		return fmt.Errorf("directory is owned by uid %d", stat.Uid)
 	}
@@ -82,4 +80,8 @@ func secureOpenedContainerDataDir(fd int) error {
 		return fmt.Errorf("chmod directory: %w", err)
 	}
 	return nil
+}
+
+func currentUnixUID() uint32 {
+	return uint32(unix.Geteuid()) //nolint:gosec // euid is nonnegative and Unix UIDs are uint32
 }
