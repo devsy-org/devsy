@@ -24,11 +24,8 @@ const (
 	ContainerDataDir = "/var/" + BinaryName
 
 	// ContainerDataDirFallback is used instead of ContainerDataDir when a
-	// non-root container (e.g. an OpenShift restricted-SCC pod) can't create
-	// /var/devsy. Readers that expect a fixed, agreed-on path (like the
-	// devcontainer result file, read back over exec from the host) check
-	// both locations rather than requiring explicit coordination of which
-	// one a given container actually used.
+	// non-root container (e.g. an OpenShift restricted-SCC pod) cannot create
+	// /var/devsy.
 	ContainerDataDirFallback = "/tmp/" + BinaryName + "-data"
 
 	// DevContainerResultFallbackPath mirrors DevContainerResultPath under

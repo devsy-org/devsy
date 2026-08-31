@@ -463,9 +463,7 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 }
 
 // sshServerCommand builds the remote command that runs the ssh-server
-// subcommand at agentPath, shell-escaping every argument so a configured
-// path containing shell metacharacters (e.g. AGENT_INSTALL_PATH with a
-// quote) can't inject additional shell syntax.
+// subcommand at agentPath.
 func sshServerCommand(agentPath string, debug bool) string {
 	args := []string{agentPath, "internal", "ssh-server", "--stdio"}
 	if debug {

@@ -356,10 +356,8 @@ func splitEnvVars(env map[string]string) ([]corev1.EnvVar, string) {
 	return envVars, daemonConfig
 }
 
-// withAgentInstallPathEnv sets DEVSY_AGENT_PATH on the container's env when
-// installPath overrides the default install location, so the container's
-// own entrypoint (which waits for and execs the agent binary) agrees with
-// where delivery installs it.
+// withAgentInstallPathEnv adds the AGENT_INSTALL_PATH env var to envVars if installPath is non-empty,
+// replacing any existing value.
 func withAgentInstallPathEnv(envVars []corev1.EnvVar, installPath string) []corev1.EnvVar {
 	if installPath == "" {
 		return envVars

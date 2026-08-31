@@ -95,11 +95,7 @@ func (c *Config) Unset(ctx context.Context, key string, scope ConfigScope) error
 	return nil
 }
 
-// UnsetValue removes a single value of a possibly multi-valued config key in
-// the given scope, leaving any other values untouched. value is matched as
-// an exact (regex-escaped) pattern, so a plain `git config --unset key`
-// (which git rejects for a multi-valued key) is never needed. An absent key
-// or a value with no matching entry is not an error.
+// UnsetValue 
 func (c *Config) UnsetValue(ctx context.Context, key, value string, scope ConfigScope) error {
 	args := append([]string{subConfig}, scope.args()...)
 	args = append(args, "--unset", key, "^"+regexp.QuoteMeta(value)+"$")

@@ -57,9 +57,6 @@ func TestWithAgentInstallPathEnv_LeavesUnchangedWhenUnset(t *testing.T) {
 	}
 }
 
-// TestWithAgentInstallPathEnv_ReplacesExistingEntry is a regression test:
-// if options.Env already sets DEVSY_AGENT_PATH, the container must not end
-// up with two entries of the same name (undefined effective value).
 func TestWithAgentInstallPathEnv_ReplacesExistingEntry(t *testing.T) {
 	envVars := withAgentInstallPathEnv(
 		[]corev1.EnvVar{

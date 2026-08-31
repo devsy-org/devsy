@@ -140,11 +140,8 @@ func (c *Client) Exec(ctx context.Context, options *ExecStreamOptions) error {
 	})
 }
 
-// waitForStream runs stream in a goroutine and waits for either its
-// completion or ctx cancellation. stream is expected to observe ctx and
-// return promptly once it's done, so this always waits for it -- never
-// leaking the goroutine -- but never reports a cancelled or timed-out
-// attempt as success by discarding ctx's own error.
+// waitForStream waits for the stream to complete or the context to be canceled,
+// returning the first error that occurs.
 func waitForStream(ctx context.Context, stream func(context.Context) error) error {
 	errChan := make(chan error, 1)
 	go func() {

@@ -153,7 +153,7 @@ func parseSecurityContext(raw string) (*corev1.SecurityContext, error) {
 			err,
 		)
 	}
-	// #nosec G304 -- path comes from the operator-controlled AGENT_SECURITY_CONTEXT provider option, not untrusted input
+	// #nosec G304 -- path comes from the operator-controlled AGENT_SECURITY_CONTEXT provider option
 	body, err := os.ReadFile(p)
 	if err != nil {
 		return nil, fmt.Errorf(

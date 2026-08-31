@@ -93,8 +93,6 @@ func TestConfigUnsetValueScopesToExactPattern(t *testing.T) {
 }
 
 func TestConfigUnsetValueNoMatchIsNotError(t *testing.T) {
-	// `git config --unset key pattern` exits 5 when the key is absent or no
-	// value matches the pattern.
 	fake := &fakeRunner{err: &CommandError{ExitCode: 5}}
 	config := At("", WithRunner(fake)).Config()
 

@@ -130,12 +130,6 @@ var podManifestTemplateRunsFixedNonRootUserCases = []runsFixedNonRootUserCase{
 	},
 }
 
-// TestRunsFixedNonRootUser_PodManifestTemplatePrecedence covers the
-// Kubernetes driver's own precedence rule (pkg/driver/kubernetes:
-// resolveContainerSecurityContext, mergeContainer): a named "devsy"
-// container securityContext in podManifestTemplate overrides
-// agentSecurityContext field by field, so RunsFixedNonRootUser must reflect
-// the effective merged fields, not agentSecurityContext alone.
 func TestRunsFixedNonRootUser_PodManifestTemplatePrecedence(t *testing.T) {
 	for _, tc := range podManifestTemplateRunsFixedNonRootUserCases {
 		t.Run(tc.name, func(t *testing.T) {

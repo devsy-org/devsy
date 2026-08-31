@@ -249,9 +249,7 @@ func (s *HTTPDownloadSource) SourceName() string {
 
 // AgentDownloadURL returns the URL to download the linux agent binary for
 // arch from baseURL, matching the naming HTTPDownloadSource resolves for the
-// host-side binary manager. Exposed so callers that need the container to
-// fetch its own binary (rather than receiving its bytes from the host) can
-// build the identical URL without duplicating the naming convention.
+// host-side binary manager.
 func AgentDownloadURL(baseURL, arch string) (string, error) {
 	binaryName := strings.Join([]string{config.BinaryName, osLinux, arch}, "-")
 	downloadURL, err := url.JoinPath(baseURL, binaryName)

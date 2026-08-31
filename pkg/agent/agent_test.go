@@ -8,11 +8,6 @@ import (
 	"testing"
 )
 
-// TestSSHServerCommand_EscapesAgentPath is a regression test: an agent path
-// containing shell metacharacters (as AGENT_INSTALL_PATH can) must not be
-// able to inject additional shell syntax into the remote command. It proves
-// this empirically by running the built command through sh -c with an
-// injection payload that plants a marker file on success.
 func TestSSHServerCommand_EscapesAgentPath(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "pwned")
 	malicious := "/tmp/devsy'; touch " + marker + "; echo 'still-quoted"

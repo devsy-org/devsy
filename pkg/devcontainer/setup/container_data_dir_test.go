@@ -23,11 +23,6 @@ func TestSecuredContainerDataDir_CreatesWithExpectedPermissions(t *testing.T) {
 	}
 }
 
-// TestSecuredContainerDataDir_NarrowsPreExistingLaxPermissions is a
-// regression test: /tmp is world-writable, so another user inside the same
-// container could pre-create the fallback directory with lax permissions.
-// securedContainerDataDir must narrow it back down rather than trusting
-// whatever mode it already has.
 func TestSecuredContainerDataDir_NarrowsPreExistingLaxPermissions(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "devsy-data")
 	if err := os.Mkdir(dir, 0o777); err != nil { // #nosec G301 -- deliberately lax mode under test
