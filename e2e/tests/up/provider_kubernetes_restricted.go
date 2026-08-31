@@ -117,10 +117,10 @@ var _ = ginkgo.Describe(
 					true,
 					"mYtEsTsTrInG",
 					[]string{
-						"workspace",
-						"ssh",
+						cmdWorkspace,
+						cmdSSH,
 						"--agent-forwarding=false",
-						"--command",
+						flagCommand,
 						"echo 'bVl0RXNUc1RySW5H' | base64 -d",
 						tempDir,
 					},

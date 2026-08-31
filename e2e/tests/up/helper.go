@@ -16,7 +16,11 @@ import (
 	"github.com/onsi/ginkgo/v2"
 )
 
-const secretCmd = "secret"
+const (
+	secretCmd   = "secret"
+	cmdSSH      = "ssh"
+	flagCommand = "--command"
+)
 
 // useFileSecretsBackend forces the file backend so tests do not depend on an OS
 // keyring (unavailable in CI); env is restored on cleanup.
@@ -72,7 +76,7 @@ func (btc *baseTestContext) execSSHCapture(
 ) (string, error) {
 	output, _, err := btc.f.ExecCommandCapture(
 		ctx,
-		[]string{"workspace", "ssh", "--command", command, projectName},
+		[]string{cmdWorkspace, cmdSSH, flagCommand, command, projectName},
 	)
 	return strings.TrimSpace(output), err
 }
