@@ -423,12 +423,12 @@ type ProviderKubernetesDriverConfig struct {
 	// KubernetesUserNamespaces opts into setting spec.hostUsers to false
 	// (unless a pod template already sets it), so the kubelet maps the
 	// container's UIDs into a Linux user namespace instead of the host's.
-	// Defaults unset: the field's mere presence requires the cluster's
-	// UserNamespacesSupport feature gate (on by default only from
-	// Kubernetes 1.33) and node-level user-namespace support (Linux kernel
-	// 6.3+, containerd 2.0+/CRI-O 1.25+); a cluster without either rejects
-	// or silently mishandles the pod, so this is never inferred just from
-	// StrictSecurity or AgentSecurityContext being set.
+	// Defaults unset: STRICT_SECURITY and AGENT_SECURITY_CONTEXT also set
+	// HostUsers false for OpenShift restricted-v3 compatibility. The field's
+	// mere presence requires the cluster's UserNamespacesSupport feature gate
+	// (on by default only from Kubernetes 1.33) and node-level user-namespace
+	// support (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+); use a pod
+	// template to override HostUsers on clusters without that support.
 	KubernetesUserNamespaces string `json:"kubernetesUserNamespaces,omitempty"`
 }
 

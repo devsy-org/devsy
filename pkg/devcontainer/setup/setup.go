@@ -64,7 +64,9 @@ func SetupContainerPreAttach(
 		return DeferredHooks{}, err
 	}
 
-	writeResultFile(cfg)
+	if err := writeResultFile(cfg); err != nil {
+		return DeferredHooks{}, fmt.Errorf("write container result: %w", err)
+	}
 
 	if err := setupWorkspaceOwnership(cfg); err != nil {
 		return DeferredHooks{}, err
@@ -205,11 +207,10 @@ func secretMountPath(target string) (string, error) {
 	return filepath.Join(config.SecretsMountDir, target), nil
 }
 
-func writeResultFile(cfg *ContainerSetupConfig) {
+func writeResultFile(cfg *ContainerSetupConfig) error {
 	rawBytes, err := json.Marshal(cfg.SetupInfo)
 	if err != nil {
-		log.Warnf("error marshal result: %v", err)
-		return
+		return fmt.Errorf("marshal result: %w", err)
 	}
 
 	activePath := pkgconfig.DevContainerResultPath
@@ -222,13 +223,13 @@ func writeResultFile(cfg *ContainerSetupConfig) {
 		)
 		activePath = pkgconfig.DevContainerResultFallbackPath
 		if err := writeResultFileTo(activePath, rawBytes); err != nil {
-			log.Warnf("error write result to %s: %v", activePath, err)
-			return
+			return fmt.Errorf("write result to %s: %w", activePath, err)
 		}
 	}
 	if err := writeResultPathSelector(activePath); err != nil {
-		log.Warnf("error selecting result path %s: %v", activePath, err)
+		return fmt.Errorf("select result path %s: %w", activePath, err)
 	}
+	return nil
 }
 
 func writeResultPathSelector(activePath string) error {
