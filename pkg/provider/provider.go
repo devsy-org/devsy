@@ -240,33 +240,34 @@ func podManifestRunAsFields(podManifestTemplate string) (pod, container *runAsFi
 // SecurityContext, mergeContainer). The generated default container security
 // context explicitly runs as root, so pod-level fields are effective only when
 // strict security or an agent security context removes those defaults.
+func mergeRunAsFields(dst *runAsFields, haveAny *bool, fields *runAsFields) {
+	if fields == nil {
+		return
+	}
+	if fields.RunAsUser != nil {
+		dst.RunAsUser = fields.RunAsUser
+		*haveAny = true
+	}
+	if fields.RunAsNonRoot != nil {
+		dst.RunAsNonRoot = fields.RunAsNonRoot
+		*haveAny = true
+	}
+}
+
 func effectiveKubernetesRunAsFields(k ProviderKubernetesDriverConfig) *runAsFields {
 	var sc runAsFields
 	haveAny := false
-	apply := func(fields *runAsFields) {
-		if fields == nil {
-			return
-		}
-		if fields.RunAsUser != nil {
-			sc.RunAsUser = fields.RunAsUser
-			haveAny = true
-		}
-		if fields.RunAsNonRoot != nil {
-			sc.RunAsNonRoot = fields.RunAsNonRoot
-			haveAny = true
-		}
-	}
 
 	podFields, containerFields := podManifestRunAsFields(k.PodManifestTemplate)
 	switch {
 	case k.AgentSecurityContext != "":
 		var agentFields runAsFields
 		if err := unmarshalInlineOrFile(k.AgentSecurityContext, &agentFields); err == nil {
-			apply(podFields)
-			apply(&agentFields)
+			mergeRunAsFields(&sc, &haveAny, podFields)
+			mergeRunAsFields(&sc, &haveAny, &agentFields)
 		}
 	case k.StrictSecurity == config.BoolTrue:
-		apply(podFields)
+		mergeRunAsFields(&sc, &haveAny, podFields)
 	default:
 		rootUID := int64(0)
 		root := false
@@ -274,7 +275,7 @@ func effectiveKubernetesRunAsFields(k ProviderKubernetesDriverConfig) *runAsFiel
 		sc.RunAsNonRoot = &root
 		haveAny = true
 	}
-	apply(containerFields)
+	mergeRunAsFields(&sc, &haveAny, containerFields)
 	if !haveAny {
 		return nil
 	}
