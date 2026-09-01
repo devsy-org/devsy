@@ -72,7 +72,7 @@ var _ = ginkgo.Describe(
 
 			err = f.DevsyUp(
 				ctx,
-				"https://github.com/loft-sh/examples@subpath:/devsy/jupyter-notebook-hello-world",
+				"https://github.com/devsy-org/examples@subpath:/devsy/jupyter-notebook-hello-world",
 			)
 			framework.ExpectNoError(err)
 
