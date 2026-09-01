@@ -37,10 +37,12 @@ type PreStartOptions struct {
 }
 
 type PostStartOptions struct {
-	WorkspaceID      string
-	ContainerDetails *config.ContainerDetails
-	BinarySource     BinarySourceFunc
-	Arch             string
+	WorkspaceID               string
+	ContainerDetails          *config.ContainerDetails
+	BinarySource              BinarySourceFunc
+	Arch                      string
+	DownloadURL               string
+	PreferInContainerDownload bool
 }
 
 // Cleaner removes the resources a delivery created for a workspace. Cleanup is

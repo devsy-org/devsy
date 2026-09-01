@@ -144,15 +144,17 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 	}
 
 	return delivery.NewAgentDelivery(delivery.FactoryOptions{
-		WorkspaceConfig: r.workspaceConfig,
-		WorkspaceID:     r.id,
-		DockerCommand:   dockerCmd,
-		DockerEnv:       dockerEnv,
-		IsRemoteDocker:  docker.RemoteDockerHost(dockerEnv),
-		HelperImage:     r.workspaceConfig.Agent.Docker.HelperImage,
-		ContainerID:     r.id,
-		ExecFunc:        execFn,
-		PodExec:         podExec,
+		WorkspaceConfig:            r.workspaceConfig,
+		WorkspaceID:                r.id,
+		DockerCommand:              dockerCmd,
+		DockerEnv:                  dockerEnv,
+		IsRemoteDocker:             docker.RemoteDockerHost(dockerEnv),
+		HelperImage:                r.workspaceConfig.Agent.Docker.HelperImage,
+		ContainerID:                r.id,
+		DownloadURL:                r.resolvedAgentDownloadURL(),
+		ExecFunc:                   execFn,
+		PodExec:                    podExec,
+		KubernetesAgentInstallPath: r.workspaceConfig.Agent.Kubernetes.AgentInstallPath,
 	})
 }
 
@@ -175,7 +177,7 @@ func (r *runner) deliveryArch(ctx context.Context) (string, error) {
 }
 
 func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDelivery) error {
-	binarySource, err := r.newBinarySource()
+	mgr, err := agent.NewBinaryManager(r.resolvedAgentDownloadURL())
 	if err != nil {
 		return fmt.Errorf("create binary source: %w", err)
 	}
@@ -186,9 +188,11 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 	}
 
 	err = strategy.DeliverPostStart(ctx, delivery.PostStartOptions{
-		WorkspaceID:  r.id,
-		BinarySource: binarySource,
-		Arch:         arch,
+		WorkspaceID:               r.id,
+		BinarySource:              mgr.AcquireBinary,
+		Arch:                      arch,
+		DownloadURL:               r.resolvedAgentDownloadURL(),
+		PreferInContainerDownload: !mgr.HasLocalOverride(arch),
 	})
 	if err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)
@@ -214,12 +218,25 @@ func (r *runner) prefetchAgentBinary(ctx context.Context) {
 	_, _ = io.Copy(io.Discard, rc)
 }
 
-func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
-	downloadURL := r.agentDownloadURL
-	if downloadURL == "" {
-		downloadURL = pkgconfig.DefaultAgentDownloadURL()
+// resolvedAgentDownloadURL is the base URL used to fetch the agent binary,
+// falling back to the default release URL when the workspace has no override.
+func (r *runner) resolvedAgentDownloadURL() string {
+	if r.agentDownloadURL != "" {
+		return r.agentDownloadURL
 	}
-	mgr, err := agent.NewBinaryManager(downloadURL)
+	return pkgconfig.DefaultAgentDownloadURL()
+}
+
+// agentContainerPath is where the agent binary lives inside the container.
+// Defaults to pkgconfig.ContainerDevsyHelperLocation; Kubernetes workspaces
+// can override it (AGENT_INSTALL_PATH) to a writable path when running
+// non-root, since the default requires root to write.
+func (r *runner) agentContainerPath() string {
+	return r.workspaceConfig.Agent.ContainerInstallPath()
+}
+
+func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
+	mgr, err := agent.NewBinaryManager(r.resolvedAgentDownloadURL())
 	if err != nil {
 		return nil, err
 	}
@@ -239,8 +256,8 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 			})
 		},
 		IsLocal:                     false,
-		RemoteAgentPath:             pkgconfig.ContainerDevsyHelperLocation,
-		DownloadURL:                 pkgconfig.DefaultAgentDownloadURL(),
+		RemoteAgentPath:             r.agentContainerPath(),
+		DownloadURL:                 r.resolvedAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     timeout,
 	})
@@ -355,7 +372,7 @@ func (r *runner) compressWorkspaceConfig() (string, error) {
 func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string) string {
 	log.Infof("setting up container")
 	args := []string{
-		shellescape.Quote(pkgconfig.ContainerDevsyHelperLocation),
+		shellescape.Quote(r.agentContainerPath()),
 		"internal",
 		"agent",
 		"container",
@@ -534,7 +551,7 @@ func (r *runner) executeSetup(
 
 func (r *runner) buildSSHTunnelCommand() string {
 	args := []string{
-		shellescape.Quote(pkgconfig.ContainerDevsyHelperLocation),
+		shellescape.Quote(r.agentContainerPath()),
 		"internal", "ssh-server", names.Flag(names.Stdio),
 	}
 

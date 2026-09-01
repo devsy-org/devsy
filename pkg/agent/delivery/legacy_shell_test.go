@@ -5,6 +5,7 @@ import (
 	"io"
 	"testing"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,6 +45,16 @@ func TestLegacyShellDelivery_DownloadURL_Default(t *testing.T) {
 func TestLegacyShellDelivery_DownloadURL_Custom(t *testing.T) {
 	d := &LegacyShellDelivery{DownloadURL: "https://custom.example.com/agent"}
 	assert.Equal(t, "https://custom.example.com/agent", d.downloadURL())
+}
+
+func TestLegacyShellDelivery_RemoteAgentPath_Default(t *testing.T) {
+	d := &LegacyShellDelivery{}
+	assert.Equal(t, pkgconfig.ContainerDevsyHelperLocation, d.remoteAgentPath())
+}
+
+func TestLegacyShellDelivery_RemoteAgentPath_Custom(t *testing.T) {
+	d := &LegacyShellDelivery{RemoteAgentPath: testKubernetesInstallPath}
+	assert.Equal(t, testKubernetesInstallPath, d.remoteAgentPath())
 }
 
 func TestExecFuncFromDriver(t *testing.T) {

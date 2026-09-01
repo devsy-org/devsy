@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -131,4 +132,98 @@ func parseResource(resourceName string) (string, resource.Quantity, error) {
 	}
 
 	return splittedResource[0], quantity, nil
+}
+
+func parseSecurityContext(raw string) (*corev1.SecurityContext, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	sc := &corev1.SecurityContext{}
+	errInline := yaml.UnmarshalStrict([]byte(raw), sc)
+	if errInline == nil {
+		return sc, nil
+	}
+
+	p, err := filepath.Abs(raw)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"parsing security context failed: %w (inline) or %w (file)",
+			errInline,
+			err,
+		)
+	}
+	// #nosec G304 -- path comes from the operator-controlled AGENT_SECURITY_CONTEXT provider option
+	body, err := os.ReadFile(p)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"parsing security context failed: %w (inline) or %w (file)",
+			errInline,
+			err,
+		)
+	}
+	if err = yaml.UnmarshalStrict(body, sc); err == nil {
+		return sc, nil
+	}
+
+	return nil, fmt.Errorf(
+		"parsing security context failed: %w (inline) or %w (file)",
+		errInline,
+		err,
+	)
+}
+
+func applyBaseFallback(override, base *corev1.SecurityContext) {
+	if base == nil {
+		return
+	}
+	if override.Capabilities == nil {
+		override.Capabilities = base.Capabilities
+	}
+	if override.Privileged == nil {
+		override.Privileged = base.Privileged
+	}
+}
+
+func resolveContainerSecurityContext(
+	strictSecurity, agentSecurityContext string,
+	base *corev1.SecurityContext,
+) (*corev1.SecurityContext, error) {
+	override, err := parseSecurityContext(agentSecurityContext)
+	if err != nil {
+		return nil, fmt.Errorf("AGENT_SECURITY_CONTEXT: %w", err)
+	}
+	if override != nil {
+		applyBaseFallback(override, base)
+		return override, nil
+	}
+
+	if strictSecurity != pkgconfig.BoolTrue {
+		return base, nil
+	}
+	if base == nil {
+		return nil, nil
+	}
+	return &corev1.SecurityContext{
+		Capabilities: base.Capabilities,
+		Privileged:   base.Privileged,
+	}, nil
+}
+
+type securityContextOptions struct {
+	Capabilities         *corev1.Capabilities
+	Privileged           *bool
+	StrictSecurity       string
+	AgentSecurityContext string
+}
+
+func (o securityContextOptions) resolve() (*corev1.SecurityContext, error) {
+	base := &corev1.SecurityContext{
+		Capabilities: o.Capabilities,
+		Privileged:   o.Privileged,
+		RunAsUser:    new(int64),
+		RunAsGroup:   new(int64),
+		RunAsNonRoot: new(bool),
+	}
+	return resolveContainerSecurityContext(o.StrictSecurity, o.AgentSecurityContext, base)
 }

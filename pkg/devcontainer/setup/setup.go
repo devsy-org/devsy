@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -63,7 +64,9 @@ func SetupContainerPreAttach(
 		return DeferredHooks{}, err
 	}
 
-	writeResultFile(cfg)
+	if err := writeResultFile(cfg); err != nil {
+		return DeferredHooks{}, fmt.Errorf("write container result: %w", err)
+	}
 
 	if err := setupWorkspaceOwnership(cfg); err != nil {
 		return DeferredHooks{}, err
@@ -204,16 +207,48 @@ func secretMountPath(target string) (string, error) {
 	return filepath.Join(config.SecretsMountDir, target), nil
 }
 
-func writeResultFile(cfg *ContainerSetupConfig) {
+func writeResultFile(cfg *ContainerSetupConfig) error {
 	rawBytes, err := json.Marshal(cfg.SetupInfo)
 	if err != nil {
-		log.Warnf("error marshal result: %v", err)
-		return
+		return fmt.Errorf("marshal result: %w", err)
 	}
 
-	if err := writeResultFileTo(pkgconfig.DevContainerResultPath, rawBytes); err != nil {
-		log.Warnf("error write result to %s: %v", pkgconfig.DevContainerResultPath, err)
+	activePath := pkgconfig.DevContainerResultPath
+	if err := writeResultFileTo(activePath, rawBytes); err != nil {
+		log.Debugf(
+			"%s is not writable (%v), falling back to %s",
+			activePath,
+			err,
+			pkgconfig.DevContainerResultFallbackPath,
+		)
+		activePath = pkgconfig.DevContainerResultFallbackPath
+		if err := writeResultFileTo(activePath, rawBytes); err != nil {
+			return fmt.Errorf("write result to %s: %w", activePath, err)
+		}
 	}
+	if err := writeResultPathSelector(activePath); err != nil {
+		return fmt.Errorf("select result path %s: %w", activePath, err)
+	}
+	return nil
+}
+
+func writeResultPathSelector(activePath string) error {
+	selectorPath := pkgconfig.DevContainerResultSelectorPath
+	inactiveSelectorPath := pkgconfig.DevContainerResultFallbackSelectorPath
+	if activePath == pkgconfig.DevContainerResultFallbackPath {
+		selectorPath = pkgconfig.DevContainerResultFallbackSelectorPath
+		inactiveSelectorPath = pkgconfig.DevContainerResultSelectorPath
+	}
+	if securedContainerDataDir(filepath.Dir(selectorPath)) == "" {
+		return fmt.Errorf("create or secure %s", filepath.Dir(selectorPath))
+	}
+	if err := sharedfile.WriteFile(selectorPath, []byte(activePath), 0o644); err != nil {
+		return err
+	}
+	if err := os.Remove(inactiveSelectorPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove inactive result selector %s: %w", inactiveSelectorPath, err)
+	}
+	return nil
 }
 
 // writeResultFileTo writes rawBytes to path at 0644: readable by any
@@ -232,8 +267,9 @@ func writeResultFileTo(path string, rawBytes []byte) error {
 		return sharedfile.WidenWithSudoFallback(context.Background(), path, 0o644)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301
-		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
+	dir := filepath.Dir(path)
+	if securedContainerDataDir(dir) == "" {
+		return fmt.Errorf("create or secure %s", dir)
 	}
 	return sharedfile.WriteFile(path, rawBytes, 0o644)
 }
@@ -349,8 +385,13 @@ func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	workspaceRoot := filepath.Dir(workspaceFolder)
 	if workspaceRoot != "/" {
 		log.Infof("chown workspace: user=%s, workspaceRoot=%s", user, workspaceRoot)
-		if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.Unsupported(err) {
+		if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.DeniedByFilesystem(err) {
 			return fmt.Errorf("chown %s: %w", workspaceRoot, err)
+		} else if err != nil {
+			// A non-root container (e.g. an OpenShift restricted-SCC pod) does
+			// not own workspaceRoot and cannot chown it; the workspace folder
+			// itself may still get a usable owner below.
+			log.Debugf("chown workspace: %s kept its owner: %v", workspaceRoot, err)
 		}
 	}
 
@@ -491,7 +532,11 @@ func setupKubeConfig(
 	setupInfo *config.Result,
 	tunnelClient tunnel.TunnelClient,
 ) error {
-	if shouldSkipKubeConfig(tunnelClient) {
+	skip, err := shouldSkipKubeConfig(tunnelClient)
+	if err != nil {
+		return err
+	}
+	if skip {
 		return nil
 	}
 
@@ -517,12 +562,16 @@ func setupKubeConfig(
 	return nil
 }
 
-func shouldSkipKubeConfig(tunnelClient tunnel.TunnelClient) bool {
+func shouldSkipKubeConfig(tunnelClient tunnel.TunnelClient) (bool, error) {
 	if tunnelClient == nil {
-		return true
+		return true, nil
 	}
 
-	markerPath := filepath.Join(pkgconfig.ContainerDataDir, "setupKubeConfig.marker")
+	dir := containerDataDir()
+	if dir == "" {
+		return false, fmt.Errorf("container data directory is unavailable")
+	}
+	markerPath := filepath.Join(dir, "setupKubeConfig.marker")
 	info, err := os.Stat(markerPath)
 	if err == nil {
 		if info.Mode().Perm()&0o022 != 0 {
@@ -531,14 +580,14 @@ func shouldSkipKubeConfig(tunnelClient tunnel.TunnelClient) bool {
 				markerPath,
 				info.Mode().Perm(),
 			)
-			return false
+			return false, nil
 		}
-		return true
+		return true, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		log.Warnf("error checking marker file in shouldSkipKubeConfig: %v", err)
 	}
-	return false
+	return false, nil
 }
 
 func writeKubeConfig(setupInfo *config.Result, configData string) error {
@@ -606,8 +655,12 @@ func ensureKubeConfigMaps(config *clientcmdapi.Config) *clientcmdapi.Config {
 // markerExists reports whether the named marker exists with the expected
 // content; empty markerContent matches any existing marker. It never writes.
 func markerExists(markerName string, markerContent string) (bool, error) {
+	dir := containerDataDir()
+	if dir == "" {
+		return false, nil
+	}
 	// #nosec G703 -- markerName is an internal constant
-	path := filepath.Join(pkgconfig.ContainerDataDir, markerName+".marker")
+	path := filepath.Join(dir, markerName+".marker")
 	// #nosec G304 -- path is built from internal constants
 	t, err := os.ReadFile(path)
 	if err != nil {
@@ -621,12 +674,15 @@ func markerExists(markerName string, markerContent string) (bool, error) {
 
 // writeMarker records that the work gated by markerExists has completed.
 func writeMarker(markerName string, markerContent string) error {
-	// #nosec G703 -- markerName is an internal constant
-	path := filepath.Join(pkgconfig.ContainerDataDir, markerName+".marker")
-	// #nosec G301 -- Standard directory permissions
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
+	dir := containerDataDir()
+	if dir == "" {
+		return fmt.Errorf("container data directory is unavailable")
 	}
+	if securedContainerDataDir(dir) == "" {
+		return fmt.Errorf("create or secure %s", dir)
+	}
+	// #nosec G703 -- markerName is an internal constant
+	path := filepath.Join(dir, markerName+".marker")
 	// #nosec G703 -- path is built from internal constants
 	if err := os.WriteFile(path, []byte(markerContent), 0o600); err != nil {
 		return fmt.Errorf("write marker: %w", err)
@@ -645,6 +701,46 @@ func markerFileExists(markerName string, markerContent string) (bool, error) {
 		return false, fmt.Errorf("write marker: %w", err)
 	}
 	return false, nil
+}
+
+// writableContainerDataDirOnce resolves a writable, user-owned data directory once.
+var writableContainerDataDirOnce = sync.OnceValue(func() string {
+	if dir := securedContainerDataDir(pkgconfig.ContainerDataDir); dir != "" {
+		return dir
+	}
+	fallback := pkgconfig.ContainerDataDirFallback
+	if dir := securedContainerDataDir(fallback); dir != "" {
+		return dir
+	}
+	log.Warnf("%s could not be created or secured to the current user", fallback)
+	return ""
+})
+
+// securedContainerDataDir returns dir only when it is user-owned and writable.
+func securedContainerDataDir(dir string) string {
+	if err := secureContainerDataDir(dir); err != nil {
+		log.Debugf("%s is not a secure directory: %v", dir, err)
+		return ""
+	}
+	if !dirIsWritable(dir) {
+		return ""
+	}
+	return dir
+}
+
+func dirIsWritable(dir string) bool {
+	f, err := os.CreateTemp(dir, ".devsy-write-probe-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	return true
+}
+
+func containerDataDir() string {
+	return writableContainerDataDirOnce()
 }
 
 func setupPlatformGitCredentials(

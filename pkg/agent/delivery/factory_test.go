@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testKubernetesInstallPath = "/home/vscode/.local/bin/devsy"
+
 func TestNewAgentDelivery_LocalDocker(t *testing.T) {
 	opts := FactoryOptions{
 		WorkspaceConfig: &provider.AgentWorkspaceInfo{
@@ -96,6 +98,27 @@ func TestNewAgentDelivery_KubernetesDriver_Native(t *testing.T) {
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 
+func TestNewAgentDelivery_KubernetesDriver_ThreadsInstallPath(t *testing.T) {
+	podExec := func(_ context.Context, _ []string, _ driver.Streams) error {
+		return nil
+	}
+
+	opts := FactoryOptions{
+		WorkspaceConfig: &provider.AgentWorkspaceInfo{
+			Agent: provider.ProviderAgentConfig{
+				Driver: provider.KubernetesDriver,
+			},
+		},
+		PodExec:                    podExec,
+		KubernetesAgentInstallPath: testKubernetesInstallPath,
+	}
+
+	d := NewAgentDelivery(opts)
+	native, ok := d.(*KubernetesDelivery)
+	require.True(t, ok)
+	assert.Equal(t, testKubernetesInstallPath, native.InstallPath)
+}
+
 func TestNewAgentDelivery_MicrosandboxUsesStreamDelivery(t *testing.T) {
 	podExec := func(_ context.Context, _ []string, _ driver.Streams) error {
 		return nil
@@ -127,7 +150,9 @@ func TestNewAgentDelivery_KubernetesDriver_FallsBackWhenNoPodExec(t *testing.T) 
 				Driver: provider.KubernetesDriver,
 			},
 		},
-		ExecFunc: execFn,
+		ExecFunc:                   execFn,
+		DownloadURL:                "https://artifacts.example.test/devsy",
+		KubernetesAgentInstallPath: testKubernetesInstallPath,
 		// PodExec intentionally nil → legacy fallback.
 	}
 
@@ -135,6 +160,8 @@ func TestNewAgentDelivery_KubernetesDriver_FallsBackWhenNoPodExec(t *testing.T) 
 	legacy, ok := d.(*LegacyShellDelivery)
 	require.True(t, ok)
 	assert.NotNil(t, legacy.ExecFunc)
+	assert.Equal(t, testKubernetesInstallPath, legacy.RemoteAgentPath)
+	assert.Equal(t, "https://artifacts.example.test/devsy", legacy.DownloadURL)
 	assert.Equal(t, PhasePostStart, d.Phase())
 }
 

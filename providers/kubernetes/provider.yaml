@@ -28,6 +28,9 @@ optionGroups:
       - LABELS
       - DOCKERLESS_DISABLED
       - DOCKERLESS_IMAGE
+      - AGENT_SECURITY_CONTEXT
+      - AGENT_INSTALL_PATH
+      - KUBERNETES_USER_NAMESPACES
     name: "Advanced Options"
 options:
   DISK_SIZE:
@@ -92,7 +95,20 @@ options:
     global: true
     default: "false"
   STRICT_SECURITY:
-    description: "EXPERIMENTAL! Use at your own risk. Removes the default security context and merges the one from POD_MANIFEST_TEMPLATE if specified."
+    description: Clears the injected containers' RunAsUser/RunAsGroup/RunAsNonRoot (letting the cluster assign a UID, e.g. an OpenShift SCC) unless POD_MANIFEST_TEMPLATE or AGENT_SECURITY_CONTEXT already set these fields. It also sets spec.hostUsers to false unless POD_MANIFEST_TEMPLATE explicitly sets it, as required by OpenShift restricted-v3. Capabilities and Privileged (from CapAdd/--privileged) are always kept.
+    global: true
+    type: boolean
+    default: "false"
+  AGENT_SECURITY_CONTEXT:
+    description: Inline YAML (or a file path) for a Kubernetes SecurityContext merged field by field onto the injected devsy and devsy-init containers. It can set run-as, capabilities, privilege escalation, seccomp, and other supported SecurityContext fields, e.g. to satisfy an OpenShift SCC's allocated UID range. Takes precedence over STRICT_SECURITY and the built-in root default. It sets spec.hostUsers to false unless POD_MANIFEST_TEMPLATE explicitly sets it. A container matching the devsy/devsy-init name in POD_MANIFEST_TEMPLATE still takes precedence over this option.
+    global: true
+    type: multiline
+  AGENT_INSTALL_PATH:
+    description: Overrides where the agent binary is installed inside the devsy/devsy-init containers, e.g. a path under a writable mount such as WORKSPACE_VOLUME_MOUNT. The default (/usr/local/bin/devsy) requires root to write; set this when running non-root (e.g. with AGENT_SECURITY_CONTEXT or STRICT_SECURITY on an OpenShift restricted SCC) so delivery and the container's own entrypoint agree on a writable location.
+    global: true
+    type: string
+  KUBERNETES_USER_NAMESPACES:
+    description: Sets spec.hostUsers to false (unless POD_MANIFEST_TEMPLATE already set it), so the kubelet maps the workspace pod's UIDs into a Linux user namespace. STRICT_SECURITY and AGENT_SECURITY_CONTEXT also enable this OpenShift restricted-v3 compatibility behavior. Requires the cluster's UserNamespacesSupport feature gate through Kubernetes 1.35; the feature is GA and the gate is locked on from Kubernetes 1.36. Node-level support is also required (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+); enabling this on a cluster without that support can get the pod rejected or mishandled.
     type: boolean
     default: false
   WORKSPACE_VOLUME_MOUNT:
@@ -129,6 +145,9 @@ agent:
     podManifestTemplate: ${POD_MANIFEST_TEMPLATE}
     labels: ${LABELS}
     strictSecurity: ${STRICT_SECURITY}
+    agentSecurityContext: ${AGENT_SECURITY_CONTEXT}
+    agentInstallPath: ${AGENT_INSTALL_PATH}
+    kubernetesUserNamespaces: ${KUBERNETES_USER_NAMESPACES}
 exec:
   command: |-
     "${DEVSY}" internal sh -c "${COMMAND}"

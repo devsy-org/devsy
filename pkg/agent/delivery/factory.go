@@ -12,15 +12,17 @@ import (
 )
 
 type FactoryOptions struct {
-	WorkspaceConfig *provider.AgentWorkspaceInfo
-	WorkspaceID     string
-	DockerCommand   string
-	DockerEnv       []string
-	HelperImage     string
-	IsRemoteDocker  bool
-	ContainerID     string
-	ExecFunc        inject.ExecFunc //nolint:staticcheck // legacy delivery strategies require this type
-	PodExec         PodExecFunc
+	IsRemoteDocker             bool
+	WorkspaceID                string
+	DockerCommand              string
+	HelperImage                string
+	KubernetesAgentInstallPath string
+	ContainerID                string
+	DockerEnv                  []string
+	WorkspaceConfig            *provider.AgentWorkspaceInfo
+	DownloadURL                string
+	ExecFunc                   inject.ExecFunc //nolint:staticcheck // legacy delivery strategies require this type
+	PodExec                    PodExecFunc
 }
 
 func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
@@ -38,7 +40,7 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 		return dockerDelivery(opts)
 	}
 
-	return legacyShellDelivery(opts, fmt.Sprintf("driver: %s", driverType))
+	return legacyShellDelivery(opts, fmt.Sprintf("driver: %s", driverType), "")
 }
 
 // namedDriverDelivery returns the delivery strategy for driver types that
@@ -46,7 +48,7 @@ func NewAgentDelivery(opts FactoryOptions) AgentDelivery {
 func namedDriverDelivery(driverType string, opts FactoryOptions) AgentDelivery {
 	switch driverType {
 	case provider.CustomDriver:
-		return legacyShellDelivery(opts, "custom driver")
+		return legacyShellDelivery(opts, "custom driver", "")
 	case provider.KubernetesDriver:
 		return kubernetesDelivery(opts)
 	case provider.AppleDriver:
@@ -63,15 +65,19 @@ func namedDriverDelivery(driverType string, opts FactoryOptions) AgentDelivery {
 // fallback.
 func appleDelivery(opts FactoryOptions) AgentDelivery {
 	log.Debugf("using shell-based delivery for apple driver")
-	return &LegacyShellDelivery{ExecFunc: opts.ExecFunc, DownloadURL: ""}
+	return &LegacyShellDelivery{ExecFunc: opts.ExecFunc, DownloadURL: opts.DownloadURL}
 }
 
 func kubernetesDelivery(opts FactoryOptions) AgentDelivery {
 	if opts.PodExec == nil {
-		return legacyShellDelivery(opts, "kubernetes pod exec unavailable")
+		return legacyShellDelivery(
+			opts,
+			"kubernetes pod exec unavailable",
+			opts.KubernetesAgentInstallPath,
+		)
 	}
 	log.Debugf("using kubernetes-native delivery (exec stream)")
-	return &KubernetesDelivery{Exec: opts.PodExec}
+	return &KubernetesDelivery{Exec: opts.PodExec, InstallPath: opts.KubernetesAgentInstallPath}
 }
 
 // microsandboxDelivery streams the agent binary over the SDK's guest exec
@@ -79,7 +85,7 @@ func kubernetesDelivery(opts FactoryOptions) AgentDelivery {
 // exposes no argv exec.
 func microsandboxDelivery(opts FactoryOptions) AgentDelivery {
 	if opts.PodExec == nil {
-		return legacyShellDelivery(opts, "microsandbox argv exec unavailable")
+		return legacyShellDelivery(opts, "microsandbox argv exec unavailable", "")
 	}
 	log.Debugf("using stream delivery (exec stream) for microsandbox")
 	return &KubernetesDelivery{Exec: opts.PodExec}
@@ -106,14 +112,15 @@ func remoteDockerDelivery(opts FactoryOptions) AgentDelivery {
 	}
 }
 
-func legacyShellDelivery(opts FactoryOptions, reason string) AgentDelivery {
+func legacyShellDelivery(opts FactoryOptions, reason, remoteAgentPath string) AgentDelivery {
 	log.Debugf("using legacy shell delivery for %s", reason)
 	log.Warnf(
 		"legacy shell delivery is deprecated; platform-native delivery will replace this in a future release",
 	)
 	return &LegacyShellDelivery{
-		ExecFunc:    opts.ExecFunc,
-		DownloadURL: "",
+		ExecFunc:        opts.ExecFunc,
+		DownloadURL:     opts.DownloadURL,
+		RemoteAgentPath: remoteAgentPath,
 	}
 }
 

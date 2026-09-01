@@ -113,11 +113,13 @@ func (cmd *ContainerTunnelCmd) Run(cobraCtx context.Context) error {
 				Stderr:  stderr,
 			})
 		},
-		User:    cmd.User,
-		Stdin:   os.Stdin,
-		Stdout:  os.Stdout,
-		Stderr:  os.Stderr,
-		Timeout: workspaceInfo.InjectTimeout,
+		User:            cmd.User,
+		Stdin:           os.Stdin,
+		Stdout:          os.Stdout,
+		Stderr:          os.Stderr,
+		Timeout:         workspaceInfo.InjectTimeout,
+		RemoteAgentPath: workspaceInfo.Agent.ContainerInstallPath(),
+		DownloadURL:     workspaceInfo.Agent.DownloadURL,
 	})
 }
 
@@ -188,7 +190,7 @@ func hasDevContainerResult(ctx context.Context, runner devcontainer.Runner) bool
 	var buf bytes.Buffer
 	err := runner.Command(ctx, devcontainer.CommandParams{
 		User:    containerRootUser,
-		Command: "cat " + pkgconfig.DevContainerResultPath,
+		Command: pkgconfig.ReadDevContainerResultCommand(),
 		Stdout:  &buf,
 		Stderr:  &buf,
 	})

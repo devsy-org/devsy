@@ -1,7 +1,12 @@
 package provider
 
 import (
+	"os"
+	"path/filepath"
+
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/types"
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -153,6 +158,158 @@ func (a ProviderAgentConfig) IsDockerDriver() bool {
 	return a.Driver == "" || a.Driver == DockerDriver
 }
 
+// ContainerInstallPath is where the agent binary lives inside the container
+// for this driver: config.ContainerDevsyHelperLocation by default, or the
+// Kubernetes driver's AgentInstallPath override when set (a writable path
+// for non-root containers, e.g. an OpenShift restricted-SCC pod).
+func (a ProviderAgentConfig) ContainerInstallPath() string {
+	if a.Driver == KubernetesDriver && a.Kubernetes.AgentInstallPath != "" {
+		return a.Kubernetes.AgentInstallPath
+	}
+	return config.ContainerDevsyHelperLocation
+}
+
+// runAsFields is the subset of corev1.SecurityContext this package needs to
+// judge effective non-root execution, without depending on k8s.io/api.
+type runAsFields struct {
+	RunAsUser    *int64 `json:"runAsUser,omitempty"`
+	RunAsNonRoot *bool  `json:"runAsNonRoot,omitempty"`
+}
+
+// unmarshalInlineOrFile parses raw as inline YAML into out, falling back to
+// treating raw as a file path on failure. It mirrors the Kubernetes driver's
+// own dual-mode parsing of AGENT_SECURITY_CONTEXT and POD_MANIFEST_TEMPLATE
+// (pkg/driver/kubernetes: parseSecurityContext, getPodTemplate).
+func unmarshalInlineOrFile(raw string, out any) error {
+	if err := yaml.Unmarshal([]byte(raw), out); err == nil {
+		return nil
+	}
+	p, err := filepath.Abs(raw)
+	if err != nil {
+		return err
+	}
+	body, err := os.ReadFile(
+		p,
+	) // #nosec G304 -- path comes from the operator-controlled provider config, not untrusted input
+	if err != nil {
+		return err
+	}
+	return yaml.Unmarshal(body, out)
+}
+
+// minimalPodManifest is the subset of corev1.Pod this package needs to
+// resolve a podManifestTemplate's pod- and per-container run-as overrides,
+// without depending on k8s.io/api.
+type minimalPodManifest struct {
+	Spec minimalPodSpec `json:"spec"`
+}
+
+type minimalPodSpec struct {
+	SecurityContext *runAsFields       `json:"securityContext,omitempty"`
+	Containers      []minimalContainer `json:"containers"`
+}
+
+type minimalContainer struct {
+	Name            string       `json:"name"`
+	SecurityContext *runAsFields `json:"securityContext,omitempty"`
+}
+
+// podManifestRunAsFields returns the pod-level and named "devsy" container
+// run-as fields from a podManifestTemplate, or nil fields if the template is
+// empty, unparsable, or contains no corresponding values.
+func podManifestRunAsFields(podManifestTemplate string) (pod, container *runAsFields) {
+	if podManifestTemplate == "" {
+		return nil, nil
+	}
+	var manifest minimalPodManifest
+	if err := unmarshalInlineOrFile(podManifestTemplate, &manifest); err != nil {
+		return nil, nil
+	}
+	for _, c := range manifest.Spec.Containers {
+		if c.Name == config.BinaryName {
+			return manifest.Spec.SecurityContext, c.SecurityContext
+		}
+	}
+	return manifest.Spec.SecurityContext, nil
+}
+
+// effectiveKubernetesRunAsFields resolves the run-as fields Devsy's
+// Kubernetes driver actually applies to the "devsy" container. Container-level
+// fields from podManifestTemplate override AGENT_SECURITY_CONTEXT fields,
+// which override pod-level fields (pkg/driver/kubernetes: resolveContainer-
+// SecurityContext, mergeContainer). The generated default container security
+// context explicitly runs as root, so pod-level fields are effective only when
+// strict security or an agent security context removes those defaults.
+func mergeRunAsFields(dst *runAsFields, haveAny *bool, fields *runAsFields) {
+	if fields == nil {
+		return
+	}
+	if fields.RunAsUser != nil {
+		dst.RunAsUser = fields.RunAsUser
+		*haveAny = true
+	}
+	if fields.RunAsNonRoot != nil {
+		dst.RunAsNonRoot = fields.RunAsNonRoot
+		*haveAny = true
+	}
+}
+
+func normalizeRunAsFields(dst, override *runAsFields) {
+	if override == nil ||
+		override.RunAsUser != nil ||
+		override.RunAsNonRoot == nil || !*override.RunAsNonRoot ||
+		dst.RunAsUser == nil || *dst.RunAsUser != 0 {
+		return
+	}
+	dst.RunAsUser = nil
+}
+
+func effectiveKubernetesRunAsFields(k ProviderKubernetesDriverConfig) *runAsFields {
+	var sc runAsFields
+	haveAny := false
+
+	podFields, containerFields := podManifestRunAsFields(k.PodManifestTemplate)
+	switch {
+	case k.AgentSecurityContext != "":
+		var agentFields runAsFields
+		if err := unmarshalInlineOrFile(k.AgentSecurityContext, &agentFields); err == nil {
+			mergeRunAsFields(&sc, &haveAny, podFields)
+			mergeRunAsFields(&sc, &haveAny, &agentFields)
+		}
+	case k.StrictSecurity == config.BoolTrue:
+		mergeRunAsFields(&sc, &haveAny, podFields)
+	default:
+		rootUID := int64(0)
+		root := false
+		sc.RunAsUser = &rootUID
+		sc.RunAsNonRoot = &root
+		haveAny = true
+	}
+	mergeRunAsFields(&sc, &haveAny, containerFields)
+	normalizeRunAsFields(&sc, containerFields)
+	if !haveAny {
+		return nil
+	}
+	return &sc
+}
+
+// RunsFixedNonRootUser reports whether the effective Kubernetes container
+// security context explicitly guarantees the container runs as a fixed
+// non-root UID. STRICT_SECURITY can expose pod-level run-as fields because it
+// removes the generated root defaults; an agent context can also omit those
+// fields and inherit the pod-level values.
+func (a ProviderAgentConfig) RunsFixedNonRootUser() bool {
+	if a.Driver != KubernetesDriver {
+		return false
+	}
+	sc := effectiveKubernetesRunAsFields(a.Kubernetes)
+	if sc == nil {
+		return false
+	}
+	return (sc.RunAsNonRoot != nil && *sc.RunAsNonRoot) ||
+		(sc.RunAsUser != nil && *sc.RunAsUser != 0)
+}
+
 const (
 	DockerDriver       = "docker"
 	KubernetesDriver   = "kubernetes"
@@ -281,7 +438,26 @@ type ProviderKubernetesDriverConfig struct {
 	PodManifestTemplate string `json:"podManifestTemplate,omitempty"`
 	Labels              string `json:"labels,omitempty"`
 
-	StrictSecurity string `json:"strictSecurity,omitempty"`
+	StrictSecurity       string `json:"strictSecurity,omitempty"`
+	AgentSecurityContext string `json:"agentSecurityContext,omitempty"`
+
+	// AgentInstallPath overrides where the agent binary is installed inside
+	// the devsy/devsy-init containers. Defaults to /usr/local/bin/devsy,
+	// which requires root to write; set this (to a path under a writable
+	// mount, e.g. the workspace volume) when running non-root so delivery
+	// and the container's own entrypoint agree on a writable location.
+	AgentInstallPath string `json:"agentInstallPath,omitempty"`
+
+	// KubernetesUserNamespaces opts into setting spec.hostUsers to false
+	// (unless a pod template already sets it), so the kubelet maps the
+	// container's UIDs into a Linux user namespace instead of the host's.
+	// Defaults unset: STRICT_SECURITY and AGENT_SECURITY_CONTEXT also set
+	// HostUsers false for OpenShift restricted-v3 compatibility. The field's
+	// mere presence requires the cluster's UserNamespacesSupport feature gate
+	// (on by default only from Kubernetes 1.33) and node-level user-namespace
+	// support (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+); use a pod
+	// template to override HostUsers on clusters without that support.
+	KubernetesUserNamespaces string `json:"kubernetesUserNamespaces,omitempty"`
 }
 
 type ProviderAgentConfigExec struct {

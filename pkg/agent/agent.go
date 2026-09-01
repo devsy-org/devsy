@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -423,38 +424,52 @@ type Exec func(
 ) error
 
 type TunnelOptions struct {
-	Exec    Exec
-	User    string
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
-	Timeout time.Duration
+	Exec            Exec
+	User            string
+	Stdin           io.Reader
+	Stdout          io.Writer
+	Stderr          io.Writer
+	Timeout         time.Duration
+	RemoteAgentPath string
+	DownloadURL     string
 }
 
 func Tunnel(ctx context.Context, opts TunnelOptions) error {
+	remoteAgentPath := opts.RemoteAgentPath
+	if remoteAgentPath == "" {
+		remoteAgentPath = config.ContainerDevsyHelperLocation
+	}
+
 	if err := InjectAgent(ctx, &InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			return opts.Exec(ctx, "root", command, stdin, stdout, stderr)
 		},
 		IsLocal:                     false,
-		RemoteAgentPath:             config.ContainerDevsyHelperLocation,
-		DownloadURL:                 config.DefaultAgentDownloadURL(),
+		RemoteAgentPath:             remoteAgentPath,
+		DownloadURL:                 opts.DownloadURL,
 		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     opts.Timeout,
 	}); err != nil {
 		return err
 	}
 
-	command := fmt.Sprintf("'%s' internal ssh-server --stdio", config.ContainerDevsyHelperLocation)
-	if log.DebugEnabled() {
-		command += " --debug"
-	}
+	command := sshServerCommand(remoteAgentPath, log.DebugEnabled())
 	user := opts.User
 	if user == "" {
 		user = "root"
 	}
 
 	return opts.Exec(ctx, user, command, opts.Stdin, opts.Stdout, opts.Stderr)
+}
+
+// sshServerCommand builds the remote command that runs the ssh-server
+// subcommand at agentPath.
+func sshServerCommand(agentPath string, debug bool) string {
+	args := []string{agentPath, "internal", "ssh-server", "--stdio"}
+	if debug {
+		args = append(args, "--debug")
+	}
+	return shellescape.QuoteCommand(args)
 }
 
 func applyDockerEnv(cmd *exec.Cmd, envs map[string]string) {

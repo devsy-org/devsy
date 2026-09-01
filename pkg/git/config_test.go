@@ -81,6 +81,46 @@ func TestConfigUnsetSystemScope(t *testing.T) {
 		fake.lastArgs())
 }
 
+func TestConfigUnsetValueScopesToExactValue(t *testing.T) {
+	fake := &fakeRunner{}
+	config := At("", WithRunner(fake)).Config()
+
+	err := config.UnsetValue(context.Background(), "credential.helper", "!my-helper", ScopeSystem)
+	assert.NilError(t, err)
+	assert.DeepEqual(
+		t,
+		[]string{
+			subConfig,
+			flagSystem,
+			"--fixed-value",
+			"--unset-all",
+			"credential.helper",
+			"!my-helper",
+		},
+		fake.lastArgs(),
+	)
+}
+
+func TestConfigUnsetValueNoMatchIsNotError(t *testing.T) {
+	fake := &fakeRunner{err: &CommandError{ExitCode: 5}}
+	config := At("", WithRunner(fake)).Config()
+
+	err := config.UnsetValue(context.Background(), "credential.helper", "!my-helper", ScopeSystem)
+	assert.NilError(t, err)
+}
+
+func TestConfigUnsetValueRealFailurePropagates(t *testing.T) {
+	fake := &fakeRunner{err: &CommandError{ExitCode: 128, Stderr: "fatal: bad config"}}
+	config := At("", WithRunner(fake)).Config()
+
+	err := config.UnsetValue(context.Background(), "credential.helper", "!my-helper", ScopeSystem)
+	assert.Assert(t, err != nil)
+
+	var cmdErr *CommandError
+	assert.Assert(t, errors.As(err, &cmdErr))
+	assert.Equal(t, 128, cmdErr.ExitCode)
+}
+
 func TestConfigGetAbsentKeyIsNotError(t *testing.T) {
 	// `git config --get` exits 1 with no output when the key is absent.
 	fake := &fakeRunner{err: &CommandError{ExitCode: 1}}

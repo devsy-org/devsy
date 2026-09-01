@@ -94,6 +94,21 @@ func (c *Config) Unset(ctx context.Context, key string, scope ConfigScope) error
 	return nil
 }
 
+// UnsetValue removes all exact matching values from a config key.
+func (c *Config) UnsetValue(ctx context.Context, key, value string, scope ConfigScope) error {
+	args := append([]string{subConfig}, scope.args()...)
+	args = append(args, "--fixed-value", "--unset-all", key, value)
+	if _, err := c.repo.run(ctx, args...); err != nil {
+		// Exit code 5 means the key does not exist or no value matched.
+		var cmdErr *CommandError
+		if errors.As(err, &cmdErr) && cmdErr.ExitCode == 5 {
+			return nil
+		}
+		return fmt.Errorf("unset git config %q: %w", key, err)
+	}
+	return nil
+}
+
 // UnsetAll removes all values of a multi-valued config key in the given scope. An absent key is not an error.
 func (c *Config) UnsetAll(ctx context.Context, key string, scope ConfigScope) error {
 	args := append([]string{subConfig}, scope.args()...)

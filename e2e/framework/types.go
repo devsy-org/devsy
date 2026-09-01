@@ -11,8 +11,16 @@ type Pod struct {
 
 type PodSpec struct {
 	Containers []PodContainer `json:"containers,omitempty"`
+	HostUsers  *bool          `json:"hostUsers,omitempty"`
 }
 
 type PodContainer struct {
-	Image string `json:"image,omitempty"`
+	Image           string           `json:"image,omitempty"`
+	SecurityContext *SecurityContext `json:"securityContext,omitempty"`
+}
+
+type SecurityContext struct {
+	RunAsUser    *int64 `json:"runAsUser,omitempty"`
+	RunAsGroup   *int64 `json:"runAsGroup,omitempty"`
+	RunAsNonRoot *bool  `json:"runAsNonRoot,omitempty"`
 }

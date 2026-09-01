@@ -14,10 +14,11 @@ BUILDDIR=bin SRCDIR=".." ../hack/build-e2e.sh
 
 #### Kubernetes Tests Setup
 
-For tests that require Kubernetes (labeled with `up-kubernetes` or `build`), you need to set up a kind cluster:
+For Kubernetes tests, Kind v0.33.0 or newer is required for the Kubernetes v1.36.4 node image. The setup task enforces this prerequisite automatically.
 
+For tests that require Kubernetes (labeled with `up-kubernetes` or `build`), you need to set up a kind cluster:
 ```bash
-kind create cluster --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+kind create cluster --image kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
 ```
 
 To delete the cluster after testing:

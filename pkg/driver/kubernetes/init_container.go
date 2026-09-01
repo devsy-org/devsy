@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -13,28 +12,24 @@ func (k *KubernetesDriver) getInitContainers(
 	options *driver.RunOptions,
 	pod *corev1.Pod,
 	initialize bool,
-) []corev1.Container {
+) ([]corev1.Container, error) {
 	if !initialize {
-		// don't build init container and clean up existing one if defined
-		return filterOutInitContainer(pod.Spec.InitContainers)
+		return filterOutInitContainer(pod.Spec.InitContainers), nil
 	}
 
 	volumeMounts, commands := buildVolumeCopyCommands(options)
 
 	retContainers, existingInitContainer := splitInitContainers(pod.Spec.InitContainers)
-
-	// check if there is at least one mount
 	if len(volumeMounts) == 0 {
-		return retContainers
+		return retContainers, nil
 	}
 
-	securityContext := &corev1.SecurityContext{
-		RunAsUser:    &[]int64{0}[0],
-		RunAsGroup:   &[]int64{0}[0],
-		RunAsNonRoot: &[]bool{false}[0],
-	}
-	if k.options.StrictSecurity == pkgconfig.BoolTrue {
-		securityContext = nil
+	securityContext, err := (securityContextOptions{
+		StrictSecurity:       k.options.StrictSecurity,
+		AgentSecurityContext: k.options.AgentSecurityContext,
+	}).resolve()
+	if err != nil {
+		return nil, err
 	}
 
 	resources := corev1.ResourceRequirements{}
@@ -55,7 +50,7 @@ func (k *KubernetesDriver) getInitContainers(
 	mergeContainer(&initContainer, existingInitContainer)
 
 	retContainers = append(retContainers, initContainer)
-	return retContainers
+	return retContainers, nil
 }
 
 func filterOutInitContainer(containers []corev1.Container) []corev1.Container {
@@ -111,6 +106,42 @@ func splitInitContainers(containers []corev1.Container) ([]corev1.Container, *co
 	return retContainers, existingInitContainer
 }
 
+func overrideIfSet[T any](dst **T, src *T) {
+	if src != nil {
+		*dst = src
+	}
+}
+
+func mergeSecurityContext(dst, src *corev1.SecurityContext) *corev1.SecurityContext {
+	if src == nil {
+		return dst
+	}
+	merged := corev1.SecurityContext{}
+	if dst != nil {
+		merged = *dst
+	}
+	if src.RunAsUser == nil &&
+		src.RunAsNonRoot != nil && *src.RunAsNonRoot &&
+		merged.RunAsUser != nil && *merged.RunAsUser == 0 {
+		// A template that sets runAsNonRoot=true without runAsUser must
+		// remove the generated container's implicit root UID.
+		merged.RunAsUser = nil
+	}
+	overrideIfSet(&merged.Capabilities, src.Capabilities)
+	overrideIfSet(&merged.Privileged, src.Privileged)
+	overrideIfSet(&merged.SELinuxOptions, src.SELinuxOptions)
+	overrideIfSet(&merged.WindowsOptions, src.WindowsOptions)
+	overrideIfSet(&merged.RunAsUser, src.RunAsUser)
+	overrideIfSet(&merged.RunAsGroup, src.RunAsGroup)
+	overrideIfSet(&merged.RunAsNonRoot, src.RunAsNonRoot)
+	overrideIfSet(&merged.ReadOnlyRootFilesystem, src.ReadOnlyRootFilesystem)
+	overrideIfSet(&merged.AllowPrivilegeEscalation, src.AllowPrivilegeEscalation)
+	overrideIfSet(&merged.ProcMount, src.ProcMount)
+	overrideIfSet(&merged.SeccompProfile, src.SeccompProfile)
+	overrideIfSet(&merged.AppArmorProfile, src.AppArmorProfile)
+	return &merged
+}
+
 func mergeContainer(dst, src *corev1.Container) {
 	if src == nil {
 		return
@@ -124,7 +155,5 @@ func mergeContainer(dst, src *corev1.Container) {
 		dst.VolumeMounts...)
 	dst.ImagePullPolicy = src.ImagePullPolicy
 
-	if dst.SecurityContext == nil && src.SecurityContext != nil {
-		dst.SecurityContext = src.SecurityContext
-	}
+	dst.SecurityContext = mergeSecurityContext(dst.SecurityContext, src.SecurityContext)
 }

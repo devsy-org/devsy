@@ -144,7 +144,45 @@ tasks:
 
   cli:test:e2e:kind:setup:
     desc: setup kind cluster for e2e tests
-    cmd: kind create cluster --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+    cmd: |
+      kind_version="$(kind version -q)"
+      kind_version="${kind_version#v}"
+      kind_major="${kind_version%%.*}"
+      kind_minor_patch="${kind_version#*.}"
+      kind_minor="${kind_minor_patch%%.*}"
+      kind_patch="${kind_minor_patch#*.}"
+      kind_version_valid=true
+      case "$kind_version" in
+        *.*.*) ;;
+        *) kind_version_valid=false ;;
+      esac
+      case "$kind_major" in
+        ''|*[!0-9]*) kind_version_valid=false ;;
+      esac
+      case "$kind_minor" in
+        ''|*[!0-9]*) kind_version_valid=false ;;
+      esac
+      case "$kind_patch" in
+        ''|*[!0-9]*) kind_version_valid=false ;;
+      esac
+      if [ "$kind_version_valid" != true ]; then
+        echo "kind v0.33.0 or newer is required for Kubernetes v1.36.4 (found $kind_version)" >&2
+        exit 1
+      fi
+      case "$kind_major" in
+        0)
+          if [ "$kind_minor" -lt 33 ]; then
+            echo "kind v0.33.0 or newer is required for Kubernetes v1.36.4 (found $kind_version)" >&2
+            exit 1
+          fi
+          ;;
+        [1-9]|[1-9][0-9]*) ;;
+        *)
+          echo "kind v0.33.0 or newer is required for Kubernetes v1.36.4 (found $kind_version)" >&2
+          exit 1
+          ;;
+      esac
+      kind create cluster --image kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
 
   cli:test:e2e:kind:teardown:
     desc: teardown kind cluster for e2e tests

@@ -131,20 +131,35 @@ func (c *Client) Exec(ctx context.Context, options *ExecStreamOptions) error {
 		return err
 	}
 
-	errChan := make(chan error)
-	go func() {
-		errChan <- exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+	return waitForStream(ctx, func(streamCtx context.Context) error {
+		return exec.StreamWithContext(streamCtx, remotecommand.StreamOptions{
 			Stdin:  options.Stdin,
 			Stdout: options.Stdout,
 			Stderr: options.Stderr,
 		})
+	})
+}
+
+// waitForStream waits for the stream to complete or the context to be canceled,
+// returning the first error that occurs.
+func waitForStream(ctx context.Context, stream func(context.Context) error) error {
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- stream(ctx)
 	}()
 
 	select {
 	case <-ctx.Done():
-		<-errChan
-		return nil
-	case err = <-errChan:
+		if streamErr := <-errChan; streamErr != nil {
+			return streamErr
+		}
+		return ctx.Err()
+	case err := <-errChan:
+		if err == nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+		}
 		return err
 	}
 }

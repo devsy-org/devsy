@@ -88,6 +88,15 @@ func (m *BinaryManager) AcquireBinary(ctx context.Context, arch string) (io.Read
 	return nil, ErrBinaryNotFound
 }
 
+// HasLocalOverride returns true when the host can supply a local Linux binary
+// for the given arch.
+func (m *BinaryManager) HasLocalOverride(arch string) bool {
+	if strings.TrimSpace(os.Getenv(config.EnvAgentBinary)) != "" {
+		return true
+	}
+	return runtime.GOOS == osLinux && runtime.GOARCH == arch
+}
+
 type BinaryCache struct {
 	BaseDir string
 }
@@ -238,13 +247,20 @@ func (s *HTTPDownloadSource) SourceName() string {
 	return "http download"
 }
 
-func (s *HTTPDownloadSource) buildDownloadURL(arch string) (string, error) {
-	binaryName := config.BinaryName + "-" + osLinux + "-" + arch
-	downloadURL, err := url.JoinPath(s.BaseURL, binaryName)
+// AgentDownloadURL returns the URL to download the linux agent binary for
+// arch from baseURL, matching the naming HTTPDownloadSource resolves for the
+// host-side binary manager.
+func AgentDownloadURL(baseURL, arch string) (string, error) {
+	binaryName := strings.Join([]string{config.BinaryName, osLinux, arch}, "-")
+	downloadURL, err := url.JoinPath(baseURL, binaryName)
 	if err != nil {
 		return "", fmt.Errorf("failed to construct download URL: %w", err)
 	}
 	return downloadURL, nil
+}
+
+func (s *HTTPDownloadSource) buildDownloadURL(arch string) (string, error) {
+	return AgentDownloadURL(s.BaseURL, arch)
 }
 
 func (s *HTTPDownloadSource) downloadFile(

@@ -75,7 +75,19 @@ The allowed options for the Kubernetes driver are:
 - **workspaceVolumeMount**: overrides the path where the workspace volume is mounted. Defaults to the root of your workspace source code.
 - **podManifestTemplate**: a pod manifest template (inline YAML or a file path) used as the base to build the Devsy pod
 - **labels**: labels to add to the workspace pod, e.g. `devsy.sh/example=value,devsy.sh/example2=value2`
-- **strictSecurity**: *Experimental.* Removes the default security context and merges the one from `podManifestTemplate` if specified.
+- **strictSecurity**: Clears the hardcoded `runAsUser`/`runAsGroup`/`runAsNonRoot` fields (retaining capabilities and `privileged`), letting the cluster assign the container's UID/GID instead of forcing root. It sets `hostUsers: false` unless `podManifestTemplate` explicitly supplies `hostUsers`; this satisfies OpenShift `restricted-v3`.
+- **agentSecurityContext**: Inline YAML or a file path for a `corev1.SecurityContext` merged field by field onto the workspace and init containers. It can configure run-as, capabilities, privilege escalation, seccomp, and other supported security-context fields, overriding Devsy's defaults. It sets `hostUsers: false` unless `podManifestTemplate` explicitly supplies `hostUsers`. A matching named container in `podManifestTemplate` remains the highest-precedence override.
+- **agentInstallPath**: overrides where the agent binary is installed inside the devsy/devsy-init containers. Defaults to `/usr/local/bin/devsy`, which requires root to write; set this to a path under a writable mount (e.g. the workspace volume) when running non-root.
+- **kubernetesUserNamespaces**: Sets `hostUsers: false` (unless `podManifestTemplate` already set it), mapping the pod's UIDs into a Linux user namespace. `strictSecurity` and `agentSecurityContext` also opt in for OpenShift `restricted-v3`; provide `hostUsers` explicitly through `podManifestTemplate` on clusters without user-namespace support. UserNamespacesSupport is disabled by default in Kubernetes 1.30–1.32, enabled by default in 1.33–1.35, and becomes GA with the gate locked on from 1.36. Node-level support is also required (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+).
+
+<Callout>
+On OpenShift, the default container security context (fixed `runAsUser`/`runAsGroup`) is
+rejected by the `restricted-v2`/`restricted-v3` SCCs, which assign UIDs/GIDs from a
+per-namespace range. Set `strictSecurity: "true"` and/or `agentSecurityContext` (or override
+the container's `securityContext` via a named container in `podManifestTemplate`) to satisfy
+those SCCs. Also set `agentInstallPath` to a path under a writable mount, because a non-root
+container cannot write the default `/usr/local/bin/devsy`.
+</Callout>
 
 <Callout>
 Devsy also supports building images inside Kubernetes without Docker, via a
