@@ -68,7 +68,7 @@ func StdioClientFromKeyBytesWithUser(
 	user string,
 	exitOnClose bool,
 ) (*ssh.Client, error) {
-	conn := stdio.NewStdioStream(reader, writer, exitOnClose, 0)
+	conn := stdio.NewStdioStream(reader, writer)
 	clientConfig, err := ConfigFromKeyBytes(keyBytes)
 	if err != nil {
 		return nil, err

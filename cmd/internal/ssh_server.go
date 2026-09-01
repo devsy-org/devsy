@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -106,7 +107,7 @@ func (cmd *sshServerCmd) serveStdio(ctx context.Context, server sshserver.Server
 		go runActivityHeartbeat(ctx, config.ContainerActivityFile)
 	}
 	go shutdownOnCancel(ctx, server) // #nosec G118 -- see shutdownOnCancel.
-	lis := stdio.NewStdioListener(os.Stdin, os.Stdout, true)
+	lis := stdio.NewStdioListener(os.Stdin, os.Stdout)
 	return ignoreServerClosed(server.Serve(lis))
 }
 
@@ -135,10 +136,10 @@ func shutdownOnCancel(ctx context.Context, server sshserver.Server) {
 	}
 }
 
-// ignoreServerClosed turns the expected post-Shutdown error into a clean
-// return so cobra doesn't surface "ssh: Server closed" as a failure.
+// ignoreServerClosed turns expected listener shutdown errors into a clean
+// return so cobra doesn't surface them as a failure.
 func ignoreServerClosed(err error) error {
-	if err == nil || errors.Is(err, ssh.ErrServerClosed) {
+	if err == nil || errors.Is(err, ssh.ErrServerClosed) || errors.Is(err, net.ErrClosed) {
 		return nil
 	}
 	return err

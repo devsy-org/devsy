@@ -165,6 +165,9 @@ func TestIgnoreServerClosed(t *testing.T) {
 	if err := ignoreServerClosed(ssh.ErrServerClosed); err != nil {
 		t.Errorf("ErrServerClosed should map to nil, got %v", err)
 	}
+	if err := ignoreServerClosed(net.ErrClosed); err != nil {
+		t.Errorf("net.ErrClosed should map to nil, got %v", err)
+	}
 	other := errors.New("boom")
 	if err := ignoreServerClosed(other); err != other {
 		t.Errorf("unrelated error should pass through, got %v", err)

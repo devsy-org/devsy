@@ -192,6 +192,9 @@ func NewServer(
 
 	server.sshServer.Handler = server.handler
 	server.sshServer.ConnCallback = server.connCallback
+	server.sshServer.ConnectionCompleteCallback = func(conn *gossh.ServerConn, err error) {
+		log.Debugf("ssh transport completed remote=%v err=%v", conn.RemoteAddr(), err)
+	}
 	server.sshServer.ConnectionClosingCallback = cleanupAgentOnConnClosing
 	return server, nil
 }
