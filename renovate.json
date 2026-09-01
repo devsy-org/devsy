@@ -34,6 +34,15 @@
       "prPriority": 4
     },
     {
+      "matchManagers": ["pre-commit"],
+      "matchPackageNames": ["https://github.com/golangci/golangci-lint"],
+      "matchFileNames": [".pre-commit-config.yaml"],
+      "allowedVersions": "v2.12.2",
+      "automerge": false,
+      "description": "keep golangci-lint aligned with the pinned Go 1.26.5 toolchain"
+    },
+
+    {
       "matchManagers": ["gomod"],
       "automerge": true,
       "prPriority": 3
