@@ -236,7 +236,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		id := "subpath--devsy-jupyter-notebook-hello-world"
 		err = f.DevsyUp(
 			ctx,
-			"https://github.com/loft-sh/examples@subpath:/devsy/jupyter-notebook-hello-world",
+			"https://github.com/devsy-org/examples@subpath:/devsy/jupyter-notebook-hello-world",
 		)
 		framework.ExpectNoError(err)
 
@@ -246,7 +246,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		// recreate
 		err = f.DevsyUpRecreate(
 			ctx,
-			"https://github.com/loft-sh/examples@subpath:/devsy/jupyter-notebook-hello-world",
+			"https://github.com/devsy-org/examples@subpath:/devsy/jupyter-notebook-hello-world",
 		)
 		framework.ExpectNoError(err)
 
