@@ -25,6 +25,8 @@ var (
 	MarkerEndPrefix   = "# Devsy End "
 )
 
+const windowsGOOS = "windows"
+
 type SSHConfigParams struct {
 	SSHConfigPath        string
 	SSHConfigIncludePath string
@@ -117,7 +119,7 @@ func normalizeSSHExecPath(execPath string) string {
 }
 
 func normalizeSSHExecPathForOS(execPath, goos string) string {
-	if goos == "windows" {
+	if goos == windowsGOOS {
 		return strings.ReplaceAll(execPath, `\`, "/")
 	}
 
@@ -317,7 +319,7 @@ func mergeSSHConfig(lines, newLines []string, position int) string {
 	merged := slices.Insert(lines, position, newLines...)
 
 	newLineSep := "\n"
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		newLineSep = "\r\n"
 	}
 

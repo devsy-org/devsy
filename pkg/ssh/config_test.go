@@ -379,13 +379,13 @@ func TestNormalizeSSHExecPathForOS(t *testing.T) {
 	}{
 		{
 			name:     "windows path",
-			goos:     "windows",
+			goos:     windowsGOOS,
 			input:    `C:\Users\test\AppData\Local\Programs\Devsy\devsy.exe`,
 			expected: `C:/Users/test/AppData/Local/Programs/Devsy/devsy.exe`,
 		},
 		{
 			name:     "windows path with spaces",
-			goos:     "windows",
+			goos:     windowsGOOS,
 			input:    `C:\Users\Test User\AppData\Local\Programs\Devsy\devsy.exe`,
 			expected: `C:/Users/Test User/AppData/Local/Programs/Devsy/devsy.exe`,
 		},

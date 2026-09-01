@@ -43,9 +43,10 @@ var _ = ginkgo.Describe(
 				fixtureDir := filepath.Join(ginkgo.GinkgoT().TempDir(), "Devsy Test")
 				framework.ExpectNoError(os.MkdirAll(fixtureDir, 0o700))
 				fixturePath := filepath.Join(fixtureDir, baseFramework.DevsyBinName)
+				// #nosec G304 -- controlled path to the E2E fixture binary
 				binary, err := os.ReadFile(sourcePath)
 				framework.ExpectNoError(err)
-				framework.ExpectNoError(os.WriteFile(fixturePath, binary, 0o700))
+				framework.ExpectNoError(os.WriteFile(fixturePath, binary, 0o600))
 				gomega.Expect(fixturePath).To(gomega.ContainSubstring(" "))
 
 				f := framework.NewDefaultFramework(fixtureDir)
@@ -82,6 +83,7 @@ var _ = ginkgo.Describe(
 				host := filepath.Base(tempDir) + ".devsy"
 				sshCtx, cancelSSH := context.WithTimeout(ctx, 30*time.Second)
 				defer cancelSSH()
+				// #nosec G204 -- controlled OpenSSH invocation for the E2E test
 				cmd := exec.CommandContext(
 					sshCtx,
 					sshPath,
@@ -100,7 +102,9 @@ var _ = ginkgo.Describe(
 					"OpenSSH should launch ProxyCommand; stdout=%q stderr=%q",
 					stdout.String(), stderr.String(),
 				)
-				gomega.Expect(strings.TrimSpace(stdout.String())).To(gomega.Equal("proxy-command-ok"))
+				gomega.Expect(strings.TrimSpace(stdout.String())).To(
+					gomega.Equal("proxy-command-ok"),
+				)
 			},
 		)
 	},
