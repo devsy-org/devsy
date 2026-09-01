@@ -33,11 +33,11 @@ type observerEntry struct {
 }
 
 func TestJSONLogStreamerStructuredLogPreservesLevel(t *testing.T) {
-	entries := streamTestOutput(t,
+	entries := streamTestOutput(
+		t,
 		`{"level":"debug","ts":"2026-09-01T08:27:30.002Z","msg":"received docker credentials post data: bytes=23"}`+"\n",
 		StreamerOptions{FallbackLevel: LevelInfo},
 	)
-
 	require.Len(t, entries, 1)
 	assert.Equal(t, zapcore.DebugLevel, entries[0].Level)
 	assert.Equal(t, "received docker credentials post data: bytes=23", entries[0].Message)
@@ -45,9 +45,13 @@ func TestJSONLogStreamerStructuredLogPreservesLevel(t *testing.T) {
 }
 
 func TestJSONLogStreamerSupportsMessageField(t *testing.T) {
-	entries := streamTestOutput(t, `{"level":"warn","message":"example warning"}`+"\n", StreamerOptions{
-		FallbackLevel: LevelInfo,
-	})
+	entries := streamTestOutput(
+		t,
+		`{"level":"warn","message":"example warning"}`+"\n",
+		StreamerOptions{
+			FallbackLevel: LevelInfo,
+		},
+	)
 
 	require.Len(t, entries, 1)
 	assert.Equal(t, zapcore.WarnLevel, entries[0].Level)
@@ -56,7 +60,11 @@ func TestJSONLogStreamerSupportsMessageField(t *testing.T) {
 
 func TestJSONLogStreamerUnknownLevelUsesFallback(t *testing.T) {
 	line := `{"msg":"application JSON output"}`
-	entries := streamTestOutput(t, line+"\n", StreamerOptions{FallbackLevel: LevelInfo})
+	entries := streamTestOutput(
+		t,
+		line+"\n",
+		StreamerOptions{FallbackLevel: LevelInfo},
+	)
 
 	require.Len(t, entries, 1)
 	assert.Equal(t, zapcore.InfoLevel, entries[0].Level)
@@ -64,10 +72,13 @@ func TestJSONLogStreamerUnknownLevelUsesFallback(t *testing.T) {
 }
 
 func TestJSONLogStreamerPlainTextUsesFallbackLevel(t *testing.T) {
-	entries := streamTestOutput(t, "#12 [4/8] RUN apt-get update\n", StreamerOptions{
-		FallbackLevel: LevelInfo,
-	})
-
+	entries := streamTestOutput(
+		t,
+		"#12 [4/8] RUN apt-get update\n",
+		StreamerOptions{
+			FallbackLevel: LevelInfo,
+		},
+	)
 	require.Len(t, entries, 1)
 	assert.Equal(t, zapcore.InfoLevel, entries[0].Level)
 	assert.Equal(t, "#12 [4/8] RUN apt-get update", entries[0].Message)
@@ -75,7 +86,11 @@ func TestJSONLogStreamerPlainTextUsesFallbackLevel(t *testing.T) {
 
 func TestJSONLogStreamerMalformedJSONUsesFallbackLevel(t *testing.T) {
 	line := `{"level":"debug","msg":`
-	entries := streamTestOutput(t, line+"\n", StreamerOptions{FallbackLevel: LevelInfo})
+	entries := streamTestOutput(
+		t,
+		line+"\n",
+		StreamerOptions{FallbackLevel: LevelInfo},
+	)
 
 	require.Len(t, entries, 1)
 	assert.Equal(t, zapcore.InfoLevel, entries[0].Level)
@@ -83,12 +98,16 @@ func TestJSONLogStreamerMalformedJSONUsesFallbackLevel(t *testing.T) {
 }
 
 func TestJSONLogStreamerMixedStream(t *testing.T) {
-	entries := streamTestOutput(t, strings.Join([]string{
-		"#1 loading build definition",
-		`{"level":"debug","msg":"received docker credentials post data: bytes=23"}`,
-		"#2 building image",
-		"",
-	}, "\n"), StreamerOptions{FallbackLevel: LevelInfo})
+	entries := streamTestOutput(
+		t,
+		strings.Join([]string{
+			"#1 loading build definition",
+			`{"level":"debug","msg":"received docker credentials post data: bytes=23"}`,
+			"#2 building image",
+			"",
+		}, "\n"),
+		StreamerOptions{FallbackLevel: LevelInfo},
+	)
 
 	require.Len(t, entries, 3)
 	assert.Equal(t, zapcore.InfoLevel, entries[0].Level)
@@ -100,9 +119,13 @@ func TestJSONLogStreamerMixedStream(t *testing.T) {
 }
 
 func TestJSONLogStreamerNoDoubleWrappedStructuredOutput(t *testing.T) {
-	entries := streamTestOutput(t, `{"level":"debug","msg":"credential request received"}`+"\n", StreamerOptions{
-		FallbackLevel: LevelInfo,
-	})
+	entries := streamTestOutput(
+		t,
+		`{"level":"debug","msg":"credential request received"}`+"\n",
+		StreamerOptions{
+			FallbackLevel: LevelInfo,
+		},
+	)
 
 	require.Len(t, entries, 1)
 	assert.Equal(t, zapcore.DebugLevel, entries[0].Level)

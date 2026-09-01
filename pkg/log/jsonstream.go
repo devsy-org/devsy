@@ -57,12 +57,12 @@ func readJSONStreamWithFallback(reader io.Reader, fallback io.Writer) {
 			continue
 		}
 
-		msg, level, hasText, recognized := decodeJSONLogLine(line)
-		if !hasText || !recognized {
+		decoded, ok := decodeJSONLogLine(line)
+		if !ok || !decoded.recognized {
 			writeFallbackLine(fallback, line)
 			continue
 		}
-		logAtZapLevel(level, msg)
+		logAtZapLevel(decoded.level, decoded.text)
 	}
 }
 

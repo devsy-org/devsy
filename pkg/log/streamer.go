@@ -92,9 +92,9 @@ func (s *JSONLogStreamer) LogLine(line string) {
 		return
 	}
 
-	if msg, level, hasText, recognized := decodeJSONLogLine([]byte(line)); hasText &&
-		(recognized || s.treatUnknownJSONAsDebug) {
-		logAtZapLevel(level, msg)
+	if decoded, ok := decodeJSONLogLine([]byte(line)); ok &&
+		(decoded.recognized || s.treatUnknownJSONAsDebug) {
+		logAtZapLevel(decoded.level, decoded.text)
 	} else if s.detectLevelPrefixes {
 		if matched, level := extractLevelPrefix(line); matched {
 			logAtZapLevel(level, line)
@@ -150,20 +150,32 @@ func (l *jsonLine) text() string {
 	return l.Msg
 }
 
-func decodeJSONLogLine(line []byte) (string, zapcore.Level, bool, bool) {
+type decodedJSONLogLine struct {
+	text       string
+	level      zapcore.Level
+	recognized bool
+}
+
+func decodeJSONLogLine(line []byte) (decodedJSONLogLine, bool) {
 	var obj jsonLine
 	if err := json.Unmarshal(line, &obj); err != nil || obj.text() == "" {
-		return "", 0, false, false
+		return decodedJSONLogLine{}, false
 	}
 	level, recognized := normalizeZapLevel(obj.Level)
-	return obj.text(), level, true, recognized
+	return decodedJSONLogLine{
+		text:       obj.text(),
+		level:      level,
+		recognized: recognized,
+	}, true
 }
+
+const infoLevelName = "info"
 
 func normalizeZapLevel(raw string) (zapcore.Level, bool) {
 	switch strings.ToLower(raw) {
 	case "trace", "debug":
 		return zapcore.DebugLevel, true
-	case "info":
+	case infoLevelName:
 		return zapcore.InfoLevel, true
 	case "warning", "warn":
 		return zapcore.WarnLevel, true
@@ -183,7 +195,7 @@ func extractLevelPrefix(line string) (bool, zapcore.Level) {
 	switch strings.ToLower(parts[1]) {
 	case "trace", "debug":
 		return true, zapcore.DebugLevel
-	case "info":
+	case infoLevelName:
 		return true, zapcore.InfoLevel
 	case "warning", "warn":
 		return true, zapcore.WarnLevel
