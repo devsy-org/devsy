@@ -10,6 +10,25 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+const keepAliveRequestType = "keepalive@openssh.com"
+
+func handleKeepAliveRequests(in <-chan *ssh.Request) <-chan *ssh.Request {
+	out := make(chan *ssh.Request)
+	go func() {
+		defer close(out)
+		for req := range in {
+			if req.Type == keepAliveRequestType {
+				if req.WantReply {
+					_ = req.Reply(true, nil)
+				}
+				continue
+			}
+			out <- req
+		}
+	}()
+	return out
+}
+
 func NewSSHPassClient(user, addr, password string) (*ssh.Client, error) {
 	clientConfig := &ssh.ClientConfig{
 		Auth:            []ssh.AuthMethod{},
@@ -78,7 +97,7 @@ func StdioClientFromKeyBytesWithUser(
 		return nil, err
 	}
 
-	return ssh.NewClient(c, chans, req), nil
+	return ssh.NewClient(c, chans, handleKeepAliveRequests(req)), nil
 }
 
 func ConfigFromKeyBytes(keyBytes []byte) (*ssh.ClientConfig, error) {
