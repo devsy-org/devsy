@@ -84,6 +84,9 @@ func runResultCommandTest(t *testing.T, test resultCommandTest) ([]byte, error) 
 		mtime:      test.fallbackTime,
 	})
 	command := readDevContainerResultCommand(primary, fallback, primaryPath, fallbackPath)
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skipf("skipping result command test: sh unavailable: %v", err)
+	}
 	// #nosec G204 -- command is generated from test-owned temporary paths.
 	return exec.Command("sh", "-c", command).CombinedOutput()
 }

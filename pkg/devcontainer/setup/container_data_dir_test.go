@@ -28,13 +28,23 @@ func TestSecuredContainerDataDir_NarrowsPreExistingLaxPermissions(t *testing.T) 
 	if err := os.Mkdir(dir, 0o777); err != nil { // #nosec G301 -- deliberately lax mode under test
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}
+	if err := os.Chmod(dir, 0o777); err != nil { // #nosec G302 -- deliberately lax mode under test
+		t.Fatalf("chmod %s: %v", dir, err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat %s: %v", dir, err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o777 {
+		t.Fatalf("mode = %o, want 0777 before narrowing", perm)
+	}
 
 	got := securedContainerDataDir(dir)
 	if got != dir {
 		t.Fatalf("securedContainerDataDir() = %q, want %q", got, dir)
 	}
 
-	info, err := os.Stat(dir)
+	info, err = os.Stat(dir)
 	if err != nil {
 		t.Fatalf("stat %s: %v", dir, err)
 	}
