@@ -1,16 +1,12 @@
 package sshtunnel
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"strings"
-	"sync"
 	"time"
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
@@ -98,13 +94,10 @@ func executeSSHServerHelper(
 ) error {
 	defer log.Debug("done executing SSH server helper command")
 
-	// AgentInject's stderr always carries the ssh-server command's structured
+	// AgentInject's stderr carries the ssh-server command's structured
 	// JSON logs, and for some callers (see newAgentInjectFunc) also the
-	// injection script's plain-text preamble first. TunnelLogStreamer handles
-	// both: JSON lines are re-emitted at their own level, plain-text lines
-	// fall back to level-prefix extraction, so neither is silently dropped or
-	// double-wrapped as a single log line.
-	streamer := NewTunnelLogStreamer()
+	// injection script's plain-text preamble.
+	streamer := newSSHTunnelJSONLogStreamer()
 	defer func() { _ = streamer.Close() }()
 
 	log.Debugf("injecting and running SSH server command: %q", opts.SSHCommand)
@@ -246,7 +239,7 @@ type sshCommandParams struct {
 }
 
 func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdout *os.File) error {
-	streamer := NewTunnelLogStreamer()
+	streamer := newSSHTunnelJSONLogStreamer()
 	defer func() { _ = streamer.Close() }()
 
 	log.Debugf("running agent command in SSH tunnel: %q", p.command)
@@ -269,157 +262,11 @@ func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdou
 
 const maxLogLines = 1
 
-type TunnelLogStreamer struct {
-	pw   *io.PipeWriter
-	done chan struct{}
-
-	mu        sync.Mutex
-	lastLines []string
-}
-
-func NewTunnelLogStreamer() *TunnelLogStreamer {
-	pr, pw := io.Pipe()
-	l := &TunnelLogStreamer{
-		pw:        pw,
-		done:      make(chan struct{}),
-		lastLines: make([]string, 0, maxLogLines),
-	}
-
-	go l.process(pr)
-	return l
-}
-
-func (l *TunnelLogStreamer) Write(p []byte) (int, error) {
-	return l.pw.Write(p)
-}
-
-func (l *TunnelLogStreamer) Close() error {
-	err := l.pw.Close()
-	<-l.done
-	return err
-}
-
-func (l *TunnelLogStreamer) ErrorOutput() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if len(l.lastLines) == 0 {
-		return ""
-	}
-
-	return strings.Join(l.lastLines, "\n")
-}
-
-func (l *TunnelLogStreamer) process(r io.Reader) {
-	defer close(l.done)
-	scanner := bufio.NewScanner(r)
-
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		l.logLine(line)
-
-		l.mu.Lock()
-		if len(l.lastLines) >= maxLogLines {
-			l.lastLines = l.lastLines[1:]
-		}
-		l.lastLines = append(l.lastLines, line)
-		l.mu.Unlock()
-	}
-
-	if err := scanner.Err(); err != nil {
-		log.Debugf("error reading tunnel output: %v", err)
-	}
-}
-
-type jsonLogLine struct {
-	Message string `json:"message,omitempty"`
-	Msg     string `json:"msg,omitempty"`
-	Level   string `json:"level,omitempty"`
-}
-
-func (j *jsonLogLine) text() string {
-	if j.Message != "" {
-		return j.Message
-	}
-	return j.Msg
-}
-
-func (l *TunnelLogStreamer) logLine(line string) {
-	line = strings.TrimSpace(line)
-	// Remove carriage returns to prevent terminal overwriting (e.g. git progress)
-	line = strings.ReplaceAll(line, "\r", "")
-	if line == "" {
-		return
-	}
-
-	var obj jsonLogLine
-	if json.Unmarshal([]byte(line), &obj) == nil && obj.text() != "" {
-		level := normalizeLevel(obj.Level)
-		logAtLevel(level, obj.text())
-		return
-	}
-
-	if matched, level := extractLogLevel(line); matched {
-		logAtLevel(level, line)
-	} else {
-		log.Debug(line)
-	}
-}
-
-const (
-	levelDebug = "debug"
-	levelInfo  = "info"
-	levelWarn  = "warn"
-	levelError = "error"
-	levelFatal = "fatal"
-)
-
-func normalizeLevel(raw string) string {
-	switch strings.ToLower(raw) {
-	case "trace", levelDebug:
-		return levelDebug
-	case levelInfo:
-		return levelInfo
-	case "warning", levelWarn:
-		return levelWarn
-	case levelError, "panic", levelFatal:
-		return levelError
-	default:
-		return levelDebug
-	}
-}
-
-func extractLogLevel(line string) (bool, string) {
-	parts := strings.SplitN(line, " ", 3)
-	if len(parts) < 2 || !strings.Contains(parts[0], ":") {
-		return false, ""
-	}
-
-	level := strings.ToLower(parts[1])
-	switch level {
-	case levelDebug, levelInfo, levelWarn, levelError, levelFatal:
-		return true, level
-	default:
-		return false, ""
-	}
-}
-
-func logAtLevel(level, msg string) {
-	switch level {
-	case levelDebug:
-		log.Debug(msg)
-	case levelInfo:
-		log.Info(msg)
-	case levelWarn:
-		log.Warn(msg)
-	case levelError:
-		log.Error(msg)
-	case levelFatal:
-		log.Error(msg)
-	default:
-		log.Debug(msg)
-	}
+func newSSHTunnelJSONLogStreamer() *log.JSONLogStreamer {
+	return log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:           log.LevelDebug,
+		CaptureLines:            maxLogLines,
+		DetectLevelPrefixes:     true,
+		TreatUnknownJSONAsDebug: true,
+	})
 }

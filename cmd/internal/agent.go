@@ -33,10 +33,6 @@ func NewAgentCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return agentCmd
 }
 
-// agentPreRunE builds the PersistentPreRunE shared by the agent command and the
-// utility plumbing commands. Logging is forced to JSON because the agent
-// subprocess uses stdout as a binary protocol channel, so log output must stay
-// on stderr as single-line JSON captured by TunnelLogStreamer.lastLines.
 func agentPreRunE(globalFlags *flags.GlobalFlags) func(*cobra.Command, []string) error {
 	return func(cobraCmd *cobra.Command, _ []string) error {
 		root := cobraCmd

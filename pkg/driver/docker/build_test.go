@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,9 +11,12 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/build"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 )
 
 func writeHelperScript(t *testing.T, dir, name, output string) string {
@@ -177,9 +182,53 @@ func TestTailBuffer(t *testing.T) {
 	assert.Equal(t, "bcde", b.String())
 
 	// A single oversized write keeps its tail (buildx emits the real error last).
+
 	b2 := &tailBuffer{limit: 4}
 	n, err = b2.Write([]byte("0123456789"))
 	require.NoError(t, err)
 	assert.Equal(t, 10, n)
 	assert.Equal(t, "6789", b2.String())
+}
+
+type testBuildStrategy struct {
+	output string
+}
+
+func (s testBuildStrategy) build(
+	_ context.Context,
+	writer io.Writer,
+	_ string,
+	_ *build.BuildOptions,
+) error {
+	_, err := io.WriteString(writer, s.output)
+	return err
+}
+
+func (testBuildStrategy) name() string { return "test build" }
+
+func TestExecuteBuildDecodesStructuredOutput(t *testing.T) {
+	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+	driverUnderTest := &dockerDriver{}
+	strategy := testBuildStrategy{
+		output: "build starting\n" +
+			`{"level":"debug","msg":"credential request received"}` + "\n" +
+			"build complete\n",
+	}
+
+	err := driverUnderTest.executeBuild(
+		t.Context(),
+		strategy,
+		driver.BuildRequest{},
+		&build.BuildOptions{},
+	)
+	require.NoError(t, err)
+
+	entries := logs.All()
+	require.Len(t, entries, 4)
+	assert.Equal(t, "build with test build", entries[0].Message)
+	assert.Equal(t, "build starting", entries[1].Message)
+	assert.Equal(t, zapcore.DebugLevel, entries[2].Level)
+	assert.Equal(t, "credential request received", entries[2].Message)
+	assert.Equal(t, "build complete", entries[3].Message)
+	assert.NotContains(t, entries[2].Message, `{"level":"debug"`)
 }

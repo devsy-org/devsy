@@ -406,7 +406,9 @@ func (d *dockerDriver) executeBuild(
 	buildOptions *build.BuildOptions,
 ) error {
 	log.Infof("build with %s", strategy.name())
-	writer := log.Writer(log.LevelInfo)
+	writer := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel: log.LevelInfo,
+	})
 	defer func() { _ = writer.Close() }()
 
 	if err := strategy.build(ctx, writer, req.Options.Platform, buildOptions); err != nil {

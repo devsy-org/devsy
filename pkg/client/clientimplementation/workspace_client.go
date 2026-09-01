@@ -1154,11 +1154,14 @@ type workspaceInjectionConfig struct {
 func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan error {
 	errChan := make(chan error, 1)
 	go func() {
-		writer := log.Writer(log.LevelInfo)
+		streamer := log.NewJSONLogStreamer(log.StreamerOptions{
+			FallbackLevel:       log.LevelInfo,
+			DetectLevelPrefixes: true,
+		})
 		defer func() {
 			log.Debugf("up command completed")
 			cfg.cancel()
-			_ = writer.Close()
+			_ = streamer.Close()
 		}()
 
 		errChan <- agent.InjectAgent(ctx, &agent.InjectOptions{
@@ -1176,7 +1179,7 @@ func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan e
 			Command:         cfg.command,
 			Stdin:           cfg.stdin,
 			Stdout:          cfg.stdout,
-			Stderr:          writer,
+			Stderr:          streamer,
 			Timeout:         cfg.timeout,
 		})
 	}()

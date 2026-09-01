@@ -118,8 +118,11 @@ func (cmd *LogsCmd) getWorkspaceClient(
 // injectLogsAgent injects the devsy agent binary over stdin/stdout and runs the
 // remote ssh-server that runLogsSession then connects to.
 func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
-	stderr := log.Writer(log.LevelDebug)
-	defer func() { _ = stderr.Close() }()
+	streamer := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.LevelDebug,
+		DetectLevelPrefixes: true,
+	})
+	defer func() { _ = streamer.Close() }()
 
 	return agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec: func(ctx context.Context, command string, stdinR io.Reader, stdoutW io.Writer, stderrW io.Writer) error {
@@ -136,7 +139,7 @@ func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
 		Command:         params.sshServerCmd,
 		Stdin:           params.stdin,
 		Stdout:          params.stdout,
-		Stderr:          stderr,
+		Stderr:          streamer,
 		Timeout:         params.timeout,
 	})
 }
