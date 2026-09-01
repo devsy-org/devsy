@@ -27,8 +27,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const ExitCodeIO int = 64
-
 // CredentialsServerCmd holds the cmd flags.
 type CredentialsServerCmd struct {
 	*flags.GlobalFlags
@@ -103,7 +101,7 @@ func (cmd *CredentialsServerCmd) Run(ctx context.Context, port int) error {
 	}
 	defer func() { _ = ln.Close() }()
 
-	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, ExitCodeIO)
+	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout)
 	if err != nil {
 		return fmt.Errorf("error creating tunnel client: %w", err)
 	}

@@ -64,6 +64,12 @@ func (lis *StdioListener) Close() error {
 	return nil
 }
 
+// Addr implements interface.
+func (lis *StdioListener) Addr() net.Addr {
+	return NewStdinAddr("listener")
+}
+
+// markClosed transitions the listener to the closed state.
 func (lis *StdioListener) markClosed() {
 	lis.once.Do(func() {
 		lis.mu.Lock()
@@ -71,9 +77,4 @@ func (lis *StdioListener) markClosed() {
 		close(lis.closedCh)
 		lis.mu.Unlock()
 	})
-}
-
-// Addr implements interface.
-func (lis *StdioListener) Addr() net.Addr {
-	return NewStdinAddr("listener")
 }

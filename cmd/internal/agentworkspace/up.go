@@ -370,7 +370,7 @@ func (w *workspaceInitializer) tryConfigureDockerDaemon(ctx context.Context) {
 }
 
 func (w *workspaceInitializer) initializeTunnel(ctx context.Context) error {
-	client, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, 0)
+	client, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout)
 	if err != nil {
 		return fmt.Errorf("error creating tunnel client: %w", err)
 	}

@@ -150,7 +150,7 @@ type injectLogsAgentParams struct {
 }
 
 func runLogsSession(stdout, stdin *os.File, client clientpkg.WorkspaceClient) error {
-	sshClient, err := ssh.StdioClientWithUser(stdout, stdin, "", false)
+	sshClient, err := ssh.StdioClientWithUser(stdout, stdin, "")
 	if err != nil {
 		return err
 	}

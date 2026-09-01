@@ -406,7 +406,7 @@ func newLocalTunnelClient(
 		serverDone <- tunnelServ.Run(serverCtx, clientToServerR, serverToClientW)
 	}()
 
-	tunnelClient, err := tunnelserver.NewTunnelClient(serverToClientR, clientToServerW, false, 0)
+	tunnelClient, err := tunnelserver.NewTunnelClient(serverToClientR, clientToServerW)
 	if err != nil {
 		cancel()
 		_ = clientToServerW.Close()

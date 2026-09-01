@@ -39,7 +39,7 @@ func TestStdioListenerAcceptsOneConnection(t *testing.T) {
 	if conn == nil {
 		t.Fatal("first Accept() returned nil connection")
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	secondDone := make(chan error, 1)
 	go func() {

@@ -64,7 +64,7 @@ func (c *ContainerTunnel) Run(
 			return c.runHostTunnel(ctx, stdin, stdout, timeout)
 		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
-			sshClient, err := devssh.StdioClient(stdout, stdin, false)
+			sshClient, err := devssh.StdioClient(stdout, stdin)
 			if err != nil {
 				return fmt.Errorf("create ssh client: %w", err)
 			}
@@ -202,7 +202,7 @@ func (c *ContainerTunnel) runInContainer(
 		})
 	}()
 
-	containerClient, err := devssh.StdioClient(pb.StdoutReader, pb.StdinWriter, false)
+	containerClient, err := devssh.StdioClient(pb.StdoutReader, pb.StdinWriter)
 	if err != nil {
 		select { // check if the tunnel goroutine has already returned an error
 		case tunnelErr := <-tunnelDone:

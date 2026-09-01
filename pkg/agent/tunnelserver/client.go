@@ -15,8 +15,6 @@ import (
 func NewTunnelClient(
 	reader io.Reader,
 	writer io.WriteCloser,
-	exitOnClose bool,
-	exitCode int,
 ) (tunnel.TunnelClient, error) {
 	pipe := stdio.NewStdioStream(reader, writer)
 
