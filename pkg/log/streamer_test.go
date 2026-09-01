@@ -132,6 +132,25 @@ func TestJSONLogStreamerNoDoubleWrappedStructuredOutput(t *testing.T) {
 	assert.NotContains(t, entries[0].Message, `{"level":"debug"`)
 }
 
+func TestJSONLogStreamerTabDelimitedLevelPrefix(t *testing.T) {
+	entries := streamTestOutput(
+		t,
+		"2026-09-01T08:27:30.002Z\tDEBUG\tcredential request received\n",
+		StreamerOptions{
+			FallbackLevel:       LevelInfo,
+			DetectLevelPrefixes: true,
+		},
+	)
+
+	require.Len(t, entries, 1)
+	assert.Equal(t, zapcore.DebugLevel, entries[0].Level)
+	assert.Equal(
+		t,
+		"2026-09-01T08:27:30.002Z\tDEBUG\tcredential request received",
+		entries[0].Message,
+	)
+}
+
 func TestJSONLogStreamerCaptureLinesIsBounded(t *testing.T) {
 	logs := InitTestObserved(t, zapcore.DebugLevel)
 	streamer := NewJSONLogStreamer(StreamerOptions{

@@ -187,7 +187,7 @@ func normalizeZapLevel(raw string) (zapcore.Level, bool) {
 }
 
 func extractLevelPrefix(line string) (bool, zapcore.Level) {
-	parts := strings.SplitN(line, " ", 3)
+	parts := strings.Fields(line)
 	if len(parts) < 2 || !strings.Contains(parts[0], ":") {
 		return false, 0
 	}
