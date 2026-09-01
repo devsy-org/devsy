@@ -10,6 +10,25 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+const keepAliveRequestType = "keepalive@openssh.com"
+
+func handleKeepAliveRequests(in <-chan *ssh.Request) <-chan *ssh.Request {
+	out := make(chan *ssh.Request)
+	go func() {
+		defer close(out)
+		for req := range in {
+			if req.Type == keepAliveRequestType {
+				if req.WantReply {
+					_ = req.Reply(true, nil)
+				}
+				continue
+			}
+			out <- req
+		}
+	}()
+	return out
+}
+
 func NewSSHPassClient(user, addr, password string) (*ssh.Client, error) {
 	clientConfig := &ssh.ClientConfig{
 		Auth:            []ssh.AuthMethod{},
@@ -48,17 +67,16 @@ func NewSSHClient(user, addr string, keyBytes []byte) (*ssh.Client, error) {
 	return client, nil
 }
 
-func StdioClient(reader io.Reader, writer io.WriteCloser, exitOnClose bool) (*ssh.Client, error) {
-	return StdioClientFromKeyBytesWithUser(nil, reader, writer, "", exitOnClose)
+func StdioClient(reader io.Reader, writer io.WriteCloser) (*ssh.Client, error) {
+	return StdioClientFromKeyBytesWithUser(nil, reader, writer, "")
 }
 
 func StdioClientWithUser(
 	reader io.Reader,
 	writer io.WriteCloser,
 	user string,
-	exitOnClose bool,
 ) (*ssh.Client, error) {
-	return StdioClientFromKeyBytesWithUser(nil, reader, writer, user, exitOnClose)
+	return StdioClientFromKeyBytesWithUser(nil, reader, writer, user)
 }
 
 func StdioClientFromKeyBytesWithUser(
@@ -66,9 +84,8 @@ func StdioClientFromKeyBytesWithUser(
 	reader io.Reader,
 	writer io.WriteCloser,
 	user string,
-	exitOnClose bool,
 ) (*ssh.Client, error) {
-	conn := stdio.NewStdioStream(reader, writer, exitOnClose, 0)
+	conn := stdio.NewStdioStream(reader, writer)
 	clientConfig, err := ConfigFromKeyBytes(keyBytes)
 	if err != nil {
 		return nil, err
@@ -80,7 +97,7 @@ func StdioClientFromKeyBytesWithUser(
 		return nil, err
 	}
 
-	return ssh.NewClient(c, chans, req), nil
+	return ssh.NewClient(c, chans, handleKeepAliveRequests(req)), nil
 }
 
 func ConfigFromKeyBytes(keyBytes []byte) (*ssh.ClientConfig, error) {

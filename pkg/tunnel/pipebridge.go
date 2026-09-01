@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util/iojoin"
 )
 
@@ -102,5 +103,12 @@ func (pb *PipeBridge) RunPair(
 	// Run the two sides concurrently and wait for both to finish (or the slower
 	// side to be abandoned after joinTimeout).
 	tunnelErr, handlerErr := iojoin.Join(tunnelSide, handlerSide, joinTimeout, stop)
+	log.Debugf(
+		"pipe bridge completed: tunnel_err=%v handler_err=%v parent_err=%v pair_err=%v",
+		tunnelErr,
+		handlerErr,
+		ctx.Err(),
+		pairCtx.Err(),
+	)
 	return ClassifyTunnelErrors(tunnelErr, handlerErr)
 }

@@ -15,10 +15,8 @@ import (
 func NewTunnelClient(
 	reader io.Reader,
 	writer io.WriteCloser,
-	exitOnClose bool,
-	exitCode int,
 ) (tunnel.TunnelClient, error) {
-	pipe := stdio.NewStdioStream(reader, writer, exitOnClose, exitCode)
+	pipe := stdio.NewStdioStream(reader, writer)
 
 	// After moving from deprecated grpc.Dial to grpc.NewClient we need to setup resolver first
 	// https://github.com/grpc/grpc-go/issues/1786#issuecomment-2119088770

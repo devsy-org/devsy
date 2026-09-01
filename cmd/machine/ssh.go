@@ -188,7 +188,7 @@ func StartSSHSession(ctx context.Context, options StartSSHSessionOptions) error 
 			return options.Exec(ctx, stdin, stdout, options.Stderr)
 		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
-			sshClient, err := devssh.StdioClientWithUser(stdout, stdin, options.User, false)
+			sshClient, err := devssh.StdioClientWithUser(stdout, stdin, options.User)
 			if err != nil {
 				return err
 			}

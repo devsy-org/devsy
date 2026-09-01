@@ -28,7 +28,7 @@ func NewTunnel(ctx context.Context, tunnel Tunnel, handler Handler) error {
 			return tunnel(ctx, stdin, stdout)
 		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
-			sshClient, err := devssh.StdioClient(stdout, stdin, false)
+			sshClient, err := devssh.StdioClient(stdout, stdin)
 			if err != nil {
 				return err
 			}

@@ -131,7 +131,7 @@ func (t *tunnelServer) RunWithResult(
 	reader io.Reader,
 	writer io.WriteCloser,
 ) (*config.Result, error) {
-	lis := stdio.NewStdioListener(reader, writer, false)
+	lis := stdio.NewStdioListener(reader, writer)
 	s := grpc.NewServer()
 	tunnel.RegisterTunnelServer(s, t)
 	reflection.Register(s)

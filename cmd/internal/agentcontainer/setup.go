@@ -401,7 +401,7 @@ func buildDeferredHooksCmd(
 func (cmd *SetupContainerCmd) initializeTunnelClient(
 	ctx context.Context,
 ) (tunnel.TunnelClient, error) {
-	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout, true, 0)
+	tunnelClient, err := tunnelserver.NewTunnelClient(os.Stdin, os.Stdout)
 	if err != nil {
 		return nil, fmt.Errorf("initializing tunnel client: %w", err)
 	}

@@ -3,7 +3,7 @@ package stdio
 import (
 	"io"
 	"net"
-	"os"
+	"sync"
 	"time"
 )
 
@@ -14,19 +14,23 @@ type StdioStream struct {
 	local  *StdinAddr
 	remote *StdinAddr
 
-	exitOnClose bool
-	exitCode    int
+	closeOnce sync.Once
+	closeErr  error
+	onClose   func()
 }
 
 // NewStdioStream is used to implement the connection interface.
-func NewStdioStream(in io.Reader, out io.WriteCloser, exitOnClose bool, exitCode int) *StdioStream {
+func NewStdioStream(in io.Reader, out io.WriteCloser) *StdioStream {
+	return newStdioStream(in, out, nil)
+}
+
+func newStdioStream(in io.Reader, out io.WriteCloser, onClose func()) *StdioStream {
 	return &StdioStream{
-		local:       NewStdinAddr("local"),
-		remote:      NewStdinAddr("remote"),
-		in:          in,
-		out:         out,
-		exitOnClose: exitOnClose,
-		exitCode:    exitCode,
+		local:   NewStdinAddr("local"),
+		remote:  NewStdinAddr("remote"),
+		in:      in,
+		out:     out,
+		onClose: onClose,
 	}
 }
 
@@ -52,12 +56,13 @@ func (s *StdioStream) Write(b []byte) (n int, err error) {
 
 // Close implements interface.
 func (s *StdioStream) Close() error {
-	if s.exitOnClose {
-		// We kill ourself here because the streams are closed
-		os.Exit(s.exitCode)
-	}
-
-	return s.out.Close()
+	s.closeOnce.Do(func() {
+		s.closeErr = s.out.Close()
+		if s.onClose != nil {
+			s.onClose()
+		}
+	})
+	return s.closeErr
 }
 
 // SetDeadline implements interface.
