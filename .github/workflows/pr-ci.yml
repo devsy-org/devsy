@@ -135,6 +135,7 @@ jobs:
           name: e2e-test-${{ steps.os.outputs.runner_os }}
           path: ./e2e/e2e.test*
 
+
   licenses:
     name: Third-party licenses
     needs: [changes, precommit, lint]
@@ -578,6 +579,12 @@ jobs:
             free-disk-space: false
             install-kind: true
             requires-secret: false
+          - label: ssh-proxy-command
+            runner: windows-latest
+            free-disk-space: false
+            install-kind: true
+            requires-secret: false
+
 
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.job-timeout-minutes || 45 }}

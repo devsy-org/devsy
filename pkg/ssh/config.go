@@ -25,6 +25,8 @@ var (
 	MarkerEndPrefix   = "# Devsy End "
 )
 
+const windowsGOOS = "windows"
+
 type SSHConfigParams struct {
 	SSHConfigPath        string
 	SSHConfigIncludePath string
@@ -112,11 +114,32 @@ type proxyCommandBuilder struct {
 	options     []string
 }
 
+func normalizeSSHExecPath(execPath string) string {
+	return normalizeSSHExecPathForOS(execPath, runtime.GOOS)
+}
+
+func normalizeSSHExecPathForOS(execPath, goos string) string {
+	if goos == windowsGOOS {
+		return strings.ReplaceAll(execPath, `\`, "/")
+	}
+
+	return execPath
+}
+
 func newProxyCommandBuilder(execPath, context, user, workspace string) *proxyCommandBuilder {
+	normalizedExecPath := normalizeSSHExecPath(execPath)
+	log.Debugw(
+		"ssh proxy command config",
+		"os", runtime.GOOS,
+		"executable_raw", execPath,
+		"executable_normalized", normalizedExecPath,
+		"workspace", workspace,
+	)
+
 	return &proxyCommandBuilder{
 		baseCommand: fmt.Sprintf(
 			"\"%s\" workspace ssh %s %s %s %s %s %s",
-			execPath,
+			normalizedExecPath,
 			names.Flag(names.Stdio),
 			names.Flag(names.Context),
 			context,
@@ -296,7 +319,7 @@ func mergeSSHConfig(lines, newLines []string, position int) string {
 	merged := slices.Insert(lines, position, newLines...)
 
 	newLineSep := "\n"
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		newLineSep = "\r\n"
 	}
 
