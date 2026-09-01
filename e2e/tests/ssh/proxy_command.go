@@ -49,9 +49,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(os.WriteFile(fixturePath, binary, 0o600))
 				gomega.Expect(fixturePath).To(gomega.ContainSubstring(" "))
 
-				f := framework.NewDefaultFramework(fixtureDir)
-				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
+				f, err := framework.SetupDockerProvider(fixtureDir, "podman")
 				framework.ExpectNoError(err)
 
 				sshConfigPath := filepath.Join(ginkgo.GinkgoT().TempDir(), "ssh config")
