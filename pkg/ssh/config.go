@@ -112,11 +112,32 @@ type proxyCommandBuilder struct {
 	options     []string
 }
 
+func normalizeSSHExecPath(execPath string) string {
+	return normalizeSSHExecPathForOS(execPath, runtime.GOOS)
+}
+
+func normalizeSSHExecPathForOS(execPath, goos string) string {
+	if goos == "windows" {
+		return strings.ReplaceAll(execPath, `\`, "/")
+	}
+
+	return execPath
+}
+
 func newProxyCommandBuilder(execPath, context, user, workspace string) *proxyCommandBuilder {
+	normalizedExecPath := normalizeSSHExecPath(execPath)
+	log.Debugw(
+		"ssh proxy command config",
+		"os", runtime.GOOS,
+		"executable_raw", execPath,
+		"executable_normalized", normalizedExecPath,
+		"workspace", workspace,
+	)
+
 	return &proxyCommandBuilder{
 		baseCommand: fmt.Sprintf(
 			"\"%s\" workspace ssh %s %s %s %s %s %s",
-			execPath,
+			normalizedExecPath,
 			names.Flag(names.Stdio),
 			names.Flag(names.Context),
 			context,

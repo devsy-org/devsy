@@ -369,3 +369,43 @@ func (s *SSHConfigTestSuite) TestAddHostSection() {
 		})
 	}
 }
+
+func TestNormalizeSSHExecPathForOS(t *testing.T) {
+	tests := []struct {
+		name     string
+		goos     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "windows path",
+			goos:     "windows",
+			input:    `C:\Users\test\AppData\Local\Programs\Devsy\devsy.exe`,
+			expected: `C:/Users/test/AppData/Local/Programs/Devsy/devsy.exe`,
+		},
+		{
+			name:     "windows path with spaces",
+			goos:     "windows",
+			input:    `C:\Users\Test User\AppData\Local\Programs\Devsy\devsy.exe`,
+			expected: `C:/Users/Test User/AppData/Local/Programs/Devsy/devsy.exe`,
+		},
+		{
+			name:     "linux path",
+			goos:     "linux",
+			input:    `/usr/local/bin/devsy`,
+			expected: `/usr/local/bin/devsy`,
+		},
+		{
+			name:     "macos path",
+			goos:     "darwin",
+			input:    `/Applications/Devsy.app/Contents/MacOS/devsy`,
+			expected: `/Applications/Devsy.app/Contents/MacOS/devsy`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, normalizeSSHExecPathForOS(tt.input, tt.goos))
+		})
+	}
+}
