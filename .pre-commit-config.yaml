@@ -59,7 +59,7 @@ repos:
       - id: commitizen
         stages: [commit-msg]
   - repo: https://github.com/golangci/golangci-lint
-    rev: v2.12.2
+    rev: v2.13.2
     hooks:
       - id: golangci-lint
         args: ["--timeout=10m"]
