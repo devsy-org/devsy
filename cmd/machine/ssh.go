@@ -130,8 +130,11 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
+	streamer := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.LevelInfo,
+		DetectLevelPrefixes: true,
+	})
+	defer func() { _ = streamer.Close() }()
 
 	// Get the timeout from the context options
 	timeout := config.ParseTimeOption(devsyConfig, config.ContextOptionAgentInjectTimeout)
@@ -170,7 +173,7 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 				Timeout:         timeout,
 			})
 		},
-		Stderr: writer,
+		Stderr: streamer,
 	})
 }
 

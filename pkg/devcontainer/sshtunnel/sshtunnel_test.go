@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"testing"
 
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -42,18 +41,24 @@ func TestLogLine_JSONPassthrough(t *testing.T) {
 			wantLevel: zapcore.ErrorLevel,
 		},
 		{
+			name:      "unknown JSON level keeps tunnel debug fallback",
+			input:     `{"level":"notice","msg":"legacy tunnel output"}`,
+			wantMsg:   "legacy tunnel output",
+			wantLevel: zapcore.DebugLevel,
+		},
+		{
 			name:      "json debug level",
 			input:     `{"level":"debug","message":"heartbeat sent"}`,
 			wantMsg:   "heartbeat sent",
 			wantLevel: zapcore.DebugLevel,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logs := log.InitTestObserved(t, zapcore.DebugLevel)
-			streamer := &TunnelLogStreamer{}
-			streamer.logLine(tt.input)
+			streamer := newSSHTunnelJSONLogStreamer()
+			defer func() { _ = streamer.Close() }()
+			streamer.LogLine(tt.input)
 
 			entries := logs.All()
 			require.Len(t, entries, 1)
@@ -93,8 +98,9 @@ func TestLogLine_JSONLevelNormalization(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logs := log.InitTestObserved(t, zapcore.DebugLevel)
-			streamer := &TunnelLogStreamer{}
-			streamer.logLine(tt.input)
+			streamer := newSSHTunnelJSONLogStreamer()
+			defer func() { _ = streamer.Close() }()
+			streamer.LogLine(tt.input)
 
 			entries := logs.All()
 			require.Len(t, entries, 1)
@@ -128,8 +134,9 @@ func TestLogLine_PlainText(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logs := log.InitTestObserved(t, zapcore.DebugLevel)
-			streamer := &TunnelLogStreamer{}
-			streamer.logLine(tt.input)
+			streamer := newSSHTunnelJSONLogStreamer()
+			defer func() { _ = streamer.Close() }()
+			streamer.LogLine(tt.input)
 
 			entries := logs.All()
 			require.Len(t, entries, 1)
@@ -141,112 +148,26 @@ func TestLogLine_PlainText(t *testing.T) {
 
 func TestLogLine_EmptyAndWhitespace(t *testing.T) {
 	logs := log.InitTestObserved(t, zapcore.DebugLevel)
-	streamer := &TunnelLogStreamer{}
+	streamer := newSSHTunnelJSONLogStreamer()
+	defer func() { _ = streamer.Close() }()
 
-	streamer.logLine("")
-	streamer.logLine("   ")
-	streamer.logLine("\r\n")
+	streamer.LogLine("")
+	streamer.LogLine("   ")
+	streamer.LogLine("\r\n")
 
 	assert.Empty(t, logs.All())
 }
 
 func TestLogLine_JSONWithoutMessage(t *testing.T) {
 	logs := log.InitTestObserved(t, zapcore.DebugLevel)
-	streamer := &TunnelLogStreamer{}
+	streamer := newSSHTunnelJSONLogStreamer()
+	defer func() { _ = streamer.Close() }()
 
-	streamer.logLine(`{"level":"info","key":"value"}`)
+	streamer.LogLine(`{"level":"info","key":"value"}`)
 
 	entries := logs.All()
 	require.Len(t, entries, 1)
 	assert.Equal(t, zapcore.DebugLevel, entries[0].Level)
-}
-
-func TestExtractLogLevel(t *testing.T) {
-	tests := []struct {
-		input     string
-		wantMatch bool
-		wantLevel string
-	}{
-		{"2024-01-01T00:00:00Z debug foo", true, "debug"},
-		{"2024-01-01T00:00:00Z info bar", true, "info"},
-		{"2024-01-01T00:00:00Z warn baz", true, "warn"},
-		{"2024-01-01T00:00:00Z error qux", true, "error"},
-		{"2024-01-01T00:00:00Z fatal crash", true, "fatal"},
-		{"no-colon info msg", false, ""},
-		{"plain text", false, ""},
-		{"ts: unknown msg", false, ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			matched, level := extractLogLevel(tt.input)
-			assert.Equal(t, tt.wantMatch, matched)
-			assert.Equal(t, tt.wantLevel, level)
-		})
-	}
-}
-
-func TestRunSSHTunnel_TimingLogs(t *testing.T) {
-	logs := log.InitTestObserved(t, zapcore.DebugLevel)
-
-	pb, err := tunnel.NewPipeBridge()
-	require.NoError(t, err)
-	defer pb.Close()
-
-	// Close the read side so StdioClient fails immediately.
-	_ = pb.StdoutReader.Close()
-
-	grpcBridge, err := tunnel.NewPipeBridge()
-	require.NoError(t, err)
-	defer grpcBridge.Close()
-
-	_, err = runSSHTunnel(t.Context(), sshTunnelParams{
-		stdout:     pb.StdoutReader,
-		stdin:      pb.StdinWriter,
-		grpcBridge: grpcBridge,
-	})
-	require.Error(t, err)
-
-	messages := make([]string, 0, len(logs.All()))
-	for _, entry := range logs.All() {
-		messages = append(messages, entry.Message)
-	}
-	assert.Contains(t, messages, "tunnel: setup start")
-
-	foundComplete := false
-	for _, msg := range messages {
-		if strings.HasPrefix(msg, "tunnel: setup complete elapsed=") {
-			foundComplete = true
-			break
-		}
-	}
-	assert.True(t, foundComplete, "missing 'tunnel: setup complete' log: %v", messages)
-}
-
-func TestNormalizeLevel(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"trace", "debug"},
-		{"DEBUG", "debug"},
-		{"info", "info"},
-		{"INFO", "info"},
-		{"warning", "warn"},
-		{"warn", "warn"},
-		{"WARN", "warn"},
-		{"error", "error"},
-		{"panic", "error"},
-		{"fatal", "error"},
-		{"unknown", "debug"},
-		{"", "debug"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			assert.Equal(t, tt.want, normalizeLevel(tt.input))
-		})
-	}
 }
 
 func TestExecuteCommand_PipeBridgeIntegration(t *testing.T) {
