@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/transport"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -53,50 +54,39 @@ func (c *ContainerTunnel) Run(
 
 	timeout := config.ParseTimeOption(cfg, config.ContextOptionAgentInjectTimeout)
 
-	pb, err := NewPipeBridge()
+	conn, err := transport.OpenCallbackConn(ctx, func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+		return c.runHostTunnel(ctx, stdin, stdout, timeout)
+	}, transport.CallbackConnOptions{
+		LocalAddr:  transport.NewAddr("workspace"),
+		RemoteAddr: transport.NewAddr("provider:" + c.client.Provider()),
+	})
 	if err != nil {
 		return err
 	}
-	defer pb.Close()
+	defer func() { _ = conn.Close() }()
 
-	info, err := runPersistentPair(
-		ctx,
-		pb,
-		func(ctx context.Context, stdin, stdout *os.File) error {
-			return c.runHostTunnel(ctx, stdin, stdout, timeout)
-		},
-		func(ctx context.Context, stdout, stdin *os.File) error {
-			sshClient, err := devssh.StdioClient(stdout, stdin)
-			if err != nil {
-				return fmt.Errorf("create ssh client: %w", err)
-			}
-			defer func() { _ = sshClient.Close() }()
-			defer log.Debugf("connection to container closed")
-			log.Debugf("connected to host")
-
-			if c.updateConfigInterval > 0 {
-				go c.updateConfig(ctx, sshClient)
-			}
-
-			if err := c.runInContainer(ctx, sshClient, handler, envVars); err != nil {
-				return fmt.Errorf("run in container: %w", err)
-			}
-			return nil
-		},
-	)
-	LogTransportClose(info, TransportLogMetadata{
-		Provider:  c.client.Provider(),
-		Mode:      workspaceSubcommand,
-		Workspace: c.client.Workspace(),
-	})
-	return err
+	sshClient, err := devssh.ClientFromConn(conn, "", nil)
+	if err != nil {
+		return fmt.Errorf("create ssh client: %w", err)
+	}
+	defer func() { _ = sshClient.Close() }()
+	defer log.Debugf("connection to container closed")
+	log.Debugf("connected to host")
+	if c.updateConfigInterval > 0 {
+		go c.updateConfig(ctx, sshClient)
+	}
+	err = c.runInContainer(ctx, sshClient, handler, envVars)
+	if err != nil {
+		return fmt.Errorf("run in container: %w", err)
+	}
+	return nil
 }
 
 // runHostTunnel injects the devsy agent onto the host and starts the SSH server,
 // forwarding stdio through the provided pipes.
 func (c *ContainerTunnel) runHostTunnel(
 	ctx context.Context,
-	stdinReader, stdoutWriter *os.File,
+	stdinReader io.Reader, stdoutWriter io.Writer,
 	timeout time.Duration,
 ) error {
 	writer, done := log.PipeJSONStreamWithFallback(log.PassthroughWriter())
