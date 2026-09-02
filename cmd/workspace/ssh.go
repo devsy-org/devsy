@@ -22,6 +22,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -355,24 +356,27 @@ func (cmd *SSHCmd) startProxyTunnel(
 	client client2.ProxyClient,
 ) error {
 	log.Debugf("start proxy tunnel")
-	return tunnel.NewTunnelWithMetadata(
-		ctx,
-		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-			return client.Ssh(ctx, client2.SshOptions{
-				User:   cmd.User,
-				Stdin:  stdin,
-				Stdout: stdout,
-			})
+	conn, err := client.OpenSSHTransport(ctx, client2.SSHTransportOptions{User: cmd.User})
+	if err != nil {
+		return err
+	}
+	return transport.RunManaged(transport.RunManagedOptions{
+		Parent:        ctx,
+		Conn:          conn,
+		TransportSide: transport.SideProvider,
+		Metadata: transport.LogMetadata{
+			Provider: client.Provider(), Mode: "proxy",
+			Workspace: client.Workspace(), TransportImpl: "callback",
 		},
-		func(ctx context.Context, containerClient *ssh.Client) error {
+		Handler: func(ctx context.Context) error {
+			containerClient, err := devssh.ClientFromConn(conn, cmd.User, nil)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = containerClient.Close() }()
 			return cmd.startTunnel(ctx, devsyConfig, containerClient, client)
 		},
-		tunnel.TransportLogMetadata{
-			Provider:  client.Provider(),
-			Mode:      "proxy",
-			Workspace: client.Workspace(),
-		},
-	)
+	})
 }
 
 func (cmd *SSHCmd) retrieveEnVars() (map[string]string, error) {

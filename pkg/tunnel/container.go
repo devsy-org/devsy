@@ -189,42 +189,38 @@ func (c *ContainerTunnel) runInContainer(
 		return err
 	}
 
-	pb, err := NewPipeBridge()
-	if err != nil {
-		return err
-	}
-	defer pb.Close()
-
-	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// tunnel to container
-	tunnelDone := make(chan error, 1)
-	go func() {
-		tunnelDone <- c.runContainerTunnel(cancelCtx, containerTunnelOpts{
-			sshClient:     sshClient,
-			workspaceInfo: workspaceInfo,
-			stdinReader:   pb.StdinReader,
-			stdoutWriter:  pb.StdoutWriter,
-			envVars:       envVars,
-		})
+	writer, writerDone := log.PipeJSONStream()
+	defer func() {
+		_ = writer.Close()
+		<-writerDone
 	}()
 
-	containerClient, err := devssh.StdioClient(pb.StdoutReader, pb.StdinWriter)
+	command := fmt.Sprintf(
+		"%q internal agent container-tunnel --workspace-info %q",
+		c.client.AgentPath(),
+		workspaceInfo,
+	)
+	if log.DebugEnabled() {
+		command += " --debug"
+	}
+	containerConn, err := devssh.OpenSessionConn(ctx, sshClient, devssh.SessionConnOptions{
+		Command: command,
+		Env:     envVars,
+		Stderr:  writer,
+	})
 	if err != nil {
-		select { // check if the tunnel goroutine has already returned an error
-		case tunnelErr := <-tunnelDone:
-			if tunnelErr != nil {
-				return tunnelErr
-			}
-		default:
-		}
+		return fmt.Errorf("open container transport: %w", err)
+	}
+	defer func() { _ = containerConn.Close() }()
+
+	containerClient, err := devssh.ClientFromConn(containerConn, "", nil)
+	if err != nil {
 		return fmt.Errorf("ssh client: %w", err)
 	}
 	defer func() { _ = containerClient.Close() }()
 	log.Debugf("connected to container")
 
-	return handler(cancelCtx, containerClient)
+	return handler(ctx, containerClient)
 }
 
 type containerTunnelOpts struct {

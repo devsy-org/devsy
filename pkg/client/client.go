@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/transport"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -70,6 +71,10 @@ type ProxyClient interface {
 
 	// Ssh starts an ssh tunnel to the workspace container
 	Ssh(ctx context.Context, options SshOptions) error
+
+	// OpenSSHTransport starts an SSH transport whose stdin/stdout carry the
+	// persistent SSH protocol.
+	OpenSSHTransport(ctx context.Context, options SSHTransportOptions) (transport.ManagedConn, error)
 }
 
 // DaemonClient connects to workspaces through a shared daemon.
@@ -174,6 +179,11 @@ type SshOptions struct {
 
 	Stdin  io.Reader
 	Stdout io.Writer
+}
+
+type SSHTransportOptions struct {
+	User   string
+	Stderr io.Writer
 }
 
 type Status string
