@@ -46,11 +46,9 @@ type TransportCloseInfo struct {
 	Side   TransportSide
 }
 
-// PersistentTransport owns lifecycle state shared by a persistent transport.
-// It provides a transport-scoped context, a one-shot completion signal, and the
-// authoritative close reason. It deliberately does not own the underlying
-// sockets, subprocesses, or PipeBridge; the caller remains responsible for
-// those resources while using this object as the lifecycle owner.
+// PersistentTransport is retained as a compatibility alias for
+// transport.PersistentLifecycle. New persistent transports should use the
+// managed connection APIs directly.
 type PersistentTransport struct {
 	ctx    context.Context
 	cancel context.CancelFunc

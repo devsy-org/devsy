@@ -13,8 +13,8 @@ import (
 const joinTimeout = 5 * time.Second
 
 // PipeBridge is a duplex bridge between two concurrent units of work that share
-// resources. It is used to implement the bridge between the caller's stdio and
-// the exec's stdio.
+// resources. It is intended for bounded duplex operations. Persistent
+// multiplexed SSH transports should use transport.ManagedConn instead.
 type PipeBridge struct {
 	StdoutReader *os.File
 	StdoutWriter *os.File
