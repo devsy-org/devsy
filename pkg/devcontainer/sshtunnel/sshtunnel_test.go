@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"testing"
 
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -175,7 +174,7 @@ func TestExecuteCommand_PipeBridgeIntegration(t *testing.T) {
 		wantErr := fmt.Errorf("inject failed")
 
 		_, err := ExecuteCommand(context.Background(), ExecuteCommandOptions{
-			AgentInject: func(_ context.Context, _ string, _ *os.File, _ *os.File, _ io.WriteCloser) error {
+			AgentInject: func(_ context.Context, _ string, _ io.Reader, _ io.Writer, _ io.WriteCloser) error {
 				return wantErr
 			},
 			SSHCommand: "test-ssh",
@@ -194,7 +193,7 @@ func TestExecuteCommand_PipeBridgeIntegration(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 
 		_, err := ExecuteCommand(ctx, ExecuteCommandOptions{
-			AgentInject: func(ctx context.Context, _ string, _ *os.File, _ *os.File, _ io.WriteCloser) error {
+			AgentInject: func(ctx context.Context, _ string, _ io.Reader, _ io.Writer, _ io.WriteCloser) error {
 				cancel()
 				<-ctx.Done()
 				return ctx.Err()
