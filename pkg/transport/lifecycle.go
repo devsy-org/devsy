@@ -11,8 +11,6 @@ import (
 
 type CloseReason string
 
-type TransportCloseReason = CloseReason
-
 const (
 	CloseUnknown           CloseReason = "unknown"
 	ClosePeerEOF           CloseReason = "peer_eof"
@@ -26,8 +24,6 @@ const (
 )
 
 type Side string
-
-type TransportSide = Side
 
 const (
 	SideUnknown  Side = "unknown"
@@ -61,8 +57,6 @@ type CloseInfo struct {
 	Side   Side
 }
 
-type TransportCloseInfo = CloseInfo
-
 type PersistentLifecycle struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -81,12 +75,6 @@ func NewPersistentLifecycle(parent context.Context) *PersistentLifecycle {
 		ctx: ctx, cancel: cancel, done: make(chan struct{}),
 		info: CloseInfo{Reason: CloseUnknown, Side: SideUnknown},
 	}
-}
-
-type PersistentTransport = PersistentLifecycle
-
-func NewPersistentTransport(parent context.Context) *PersistentLifecycle {
-	return NewPersistentLifecycle(parent)
 }
 
 func (l *PersistentLifecycle) Context() context.Context { return l.ctx }
@@ -136,10 +124,6 @@ func Classify(side Side, err error, parent context.Context) CloseInfo {
 	}
 }
 
-func ClassifyTransportError(side Side, err error, parent context.Context) CloseInfo {
-	return Classify(side, err, parent)
-}
-
 type LogMetadata struct {
 	Provider      string
 	Mode          string
@@ -153,12 +137,6 @@ func LogClose(info CloseInfo, metadata LogMetadata) {
 		"provider", metadata.Provider, "mode", metadata.Mode,
 		"workspace", metadata.Workspace, "transport_impl", metadata.TransportImpl,
 	)
-}
-
-type TransportLogMetadata = LogMetadata
-
-func LogTransportClose(info CloseInfo, metadata LogMetadata) {
-	LogClose(info, metadata)
 }
 
 type RunManagedOptions struct {

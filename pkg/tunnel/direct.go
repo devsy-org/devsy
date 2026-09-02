@@ -11,32 +11,8 @@ import (
 // Tunnel defines the function to create an "outer" tunnel.
 type Tunnel func(ctx context.Context, stdin io.Reader, stdout io.Writer) error
 
-// NewTunnel creates a tunnel to the devcontainer using generic functions
-// to establish the "outer" and "inner" tunnel, used by proxy clients.
-// The tunnel will be an SSH connection with its STDIO as arguments and the
-// handler will be the function to execute the command using the
-// connected SSH client.
+// NewTunnel creates a managed SSH tunnel using generic transport callbacks.
 func NewTunnel(ctx context.Context, tunnel Tunnel, handler Handler) error {
-	return newTunnel(ctx, tunnel, handler, TransportLogMetadata{})
-}
-
-// NewTunnelWithMetadata is NewTunnel with context for the canonical transport
-// close event.
-func NewTunnelWithMetadata(
-	ctx context.Context,
-	tunnel Tunnel,
-	handler Handler,
-	metadata TransportLogMetadata,
-) error {
-	return newTunnel(ctx, tunnel, handler, metadata)
-}
-
-func newTunnel(
-	ctx context.Context,
-	tunnel Tunnel,
-	handler Handler,
-	metadata TransportLogMetadata,
-) error {
 	conn, err := transport.OpenCallbackConn(ctx, func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 		return tunnel(ctx, stdin, stdout)
 	}, transport.CallbackConnOptions{
@@ -52,10 +28,7 @@ func newTunnel(
 		Parent:        ctx,
 		Conn:          conn,
 		TransportSide: transport.SideProvider,
-		Metadata: transport.LogMetadata{
-			Provider: metadata.Provider, Mode: metadata.Mode,
-			Workspace: metadata.Workspace, TransportImpl: "callback",
-		},
+		Metadata:      transport.LogMetadata{TransportImpl: "callback"},
 		Handler: func(ctx context.Context) error {
 			sshClient, err := devssh.ClientFromConn(conn, "", nil)
 			if err != nil {
