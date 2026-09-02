@@ -59,7 +59,10 @@ type Client interface {
 	Command(ctx context.Context, options CommandOptions) error
 
 	// OpenCommandTransport starts a long-lived command as a managed connection.
-	OpenCommandTransport(ctx context.Context, options CommandTransportOptions) (transport.ManagedConn, error)
+	OpenCommandTransport(
+		ctx context.Context,
+		options CommandTransportOptions,
+	) (transport.ManagedConn, error)
 }
 
 // ProxyClient executes it's commands on the platform.
@@ -77,7 +80,10 @@ type ProxyClient interface {
 
 	// OpenSSHTransport starts an SSH transport whose stdin/stdout carry the
 	// persistent SSH protocol.
-	OpenSSHTransport(ctx context.Context, options SSHTransportOptions) (transport.ManagedConn, error)
+	OpenSSHTransport(
+		ctx context.Context,
+		options SSHTransportOptions,
+	) (transport.ManagedConn, error)
 }
 
 // DaemonClient connects to workspaces through a shared daemon.

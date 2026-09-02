@@ -49,12 +49,16 @@ func ExecuteCommand(ctx context.Context, opts ExecuteCommandOptions) (*config2.R
 
 	var result *config2.Result
 
-	conn, err := transport.OpenCallbackConn(ctx, func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-		return executeSSHServerHelper(ctx, opts, stdin, stdout)
-	}, transport.CallbackConnOptions{
-		LocalAddr:  transport.NewAddr("devcontainer"),
-		RemoteAddr: transport.NewAddr("ssh-server"),
-	})
+	conn, err := transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return executeSSHServerHelper(ctx, opts, stdin, stdout)
+		},
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("devcontainer"),
+			RemoteAddr: transport.NewAddr("ssh-server"),
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

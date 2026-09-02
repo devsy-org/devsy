@@ -13,12 +13,16 @@ type Tunnel func(ctx context.Context, stdin io.Reader, stdout io.Writer) error
 
 // NewTunnel creates a managed SSH tunnel using generic transport callbacks.
 func NewTunnel(ctx context.Context, tunnel Tunnel, handler Handler) error {
-	conn, err := transport.OpenCallbackConn(ctx, func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-		return tunnel(ctx, stdin, stdout)
-	}, transport.CallbackConnOptions{
-		LocalAddr:  transport.NewAddr("tunnel"),
-		RemoteAddr: transport.NewAddr("provider"),
-	})
+	conn, err := transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return tunnel(ctx, stdin, stdout)
+		},
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("tunnel"),
+			RemoteAddr: transport.NewAddr("provider"),
+		},
+	)
 	if err != nil {
 		return err
 	}

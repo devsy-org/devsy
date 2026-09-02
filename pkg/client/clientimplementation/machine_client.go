@@ -207,14 +207,18 @@ func (s *machineClient) OpenCommandTransport(
 	ctx context.Context,
 	opt client.CommandTransportOptions,
 ) (transport.ManagedConn, error) {
-	return transport.OpenCallbackConn(ctx, func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-		return s.Command(ctx, client.CommandOptions{
-			Command: opt.Command, Stdin: stdin, Stdout: stdout, Stderr: opt.Stderr,
-		})
-	}, transport.CallbackConnOptions{
-		LocalAddr:  transport.NewAddr("machine"),
-		RemoteAddr: transport.NewAddr("provider:" + s.Provider()),
-	})
+	return transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return s.Command(ctx, client.CommandOptions{
+				Command: opt.Command, Stdin: stdin, Stdout: stdout, Stderr: opt.Stderr,
+			})
+		},
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("machine"),
+			RemoteAddr: transport.NewAddr("provider:" + s.Provider()),
+		},
+	)
 }
 
 func (s *machineClient) Status(

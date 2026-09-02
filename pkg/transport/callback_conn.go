@@ -23,7 +23,11 @@ type callbackConn struct {
 	state  *managedState
 }
 
-func OpenCallbackConn(ctx context.Context, callback Callback, opts CallbackConnOptions) (ManagedConn, error) {
+func OpenCallbackConn(
+	ctx context.Context,
+	callback Callback,
+	opts CallbackConnOptions,
+) (ManagedConn, error) {
 	if callback == nil {
 		return nil, fmt.Errorf("callback is required")
 	}
@@ -82,7 +86,7 @@ func (c *callbackConn) Wait() error                        { return c.state.wait
 
 type netPipeAddr struct{}
 
-func (netPipeAddr) Network() string { return "devsy-transport" }
+func (netPipeAddr) Network() string { return networkName }
 func (netPipeAddr) String() string  { return "callback" }
 
 type addrConn struct {

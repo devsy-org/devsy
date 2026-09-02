@@ -248,17 +248,21 @@ func (s *proxyClient) OpenSSHTransport(
 	ctx context.Context,
 	opt client.SSHTransportOptions,
 ) (transport.ManagedConn, error) {
-	return transport.OpenCallbackConn(ctx, func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-		return s.executor.executeWithJSONLog(ctx, execParams{
-			command:  s.config.Exec.Proxy.Ssh,
-			extraEnv: EncodeOptions(client.SshOptions{User: opt.User}, config.EnvFlagsSSH),
-			stdin:    stdin,
-			stdout:   stdout,
-		})
-	}, transport.CallbackConnOptions{
-		LocalAddr:  transport.NewAddr("proxy"),
-		RemoteAddr: transport.NewAddr("provider:" + s.config.Name),
-	})
+	return transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return s.executor.executeWithJSONLog(ctx, execParams{
+				command:  s.config.Exec.Proxy.Ssh,
+				extraEnv: EncodeOptions(client.SshOptions{User: opt.User}, config.EnvFlagsSSH),
+				stdin:    stdin,
+				stdout:   stdout,
+			})
+		},
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("proxy"),
+			RemoteAddr: transport.NewAddr("provider:" + s.config.Name),
+		},
+	)
 }
 
 func (s *proxyClient) Stop(ctx context.Context, opt client.StopOptions) error {

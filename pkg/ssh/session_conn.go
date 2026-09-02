@@ -38,19 +38,16 @@ func OpenSessionConn(
 	client *xssh.Client,
 	opts SessionConnOptions,
 ) (transport.ManagedConn, error) {
-	if client == nil {
-		return nil, fmt.Errorf("ssh client is required")
-	}
-	if opts.Command == "" {
-		return nil, fmt.Errorf("command is required")
+	if err := validateSessionConn(client, opts); err != nil {
+		return nil, err
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	session, err := client.NewSession()
+	session, err := startSession(client, opts)
 	if err != nil {
-		return nil, fmt.Errorf("create ssh session: %w", err)
+		return nil, err
 	}
 	stdin, err := session.StdinPipe()
 	if err != nil {
@@ -61,17 +58,6 @@ func OpenSessionConn(
 	if err != nil {
 		_ = session.Close()
 		return nil, fmt.Errorf("create ssh session stdout: %w", err)
-	}
-	session.Stderr = opts.Stderr
-	for key, value := range opts.Env {
-		if err := session.Setenv(key, value); err != nil {
-			_ = session.Close()
-			return nil, fmt.Errorf("set ssh session environment %q: %w", key, err)
-		}
-	}
-	if err := session.Start(opts.Command); err != nil {
-		_ = session.Close()
-		return nil, fmt.Errorf("start ssh session: %w", err)
 	}
 
 	sessionCtx, cancel := context.WithCancel(ctx)
@@ -84,6 +70,35 @@ func OpenSessionConn(
 		_ = conn.Close()
 	}()
 	return conn, nil
+}
+
+func validateSessionConn(client *xssh.Client, opts SessionConnOptions) error {
+	if client == nil {
+		return fmt.Errorf("ssh client is required")
+	}
+	if opts.Command == "" {
+		return fmt.Errorf("command is required")
+	}
+	return nil
+}
+
+func startSession(client *xssh.Client, opts SessionConnOptions) (*xssh.Session, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return nil, fmt.Errorf("create ssh session: %w", err)
+	}
+	session.Stderr = opts.Stderr
+	for key, value := range opts.Env {
+		if err := session.Setenv(key, value); err != nil {
+			_ = session.Close()
+			return nil, fmt.Errorf("set ssh session environment %q: %w", key, err)
+		}
+	}
+	if err := session.Start(opts.Command); err != nil {
+		_ = session.Close()
+		return nil, fmt.Errorf("start ssh session: %w", err)
+	}
+	return session, nil
 }
 
 func (c *sessionConn) Read(p []byte) (int, error)  { return c.stdout.Read(p) }
@@ -118,5 +133,7 @@ func (c *sessionConn) Wait() error {
 	return c.waitErr
 }
 
-var _ net.Conn = (*sessionConn)(nil)
-var _ transport.ManagedConn = (*sessionConn)(nil)
+var (
+	_ net.Conn              = (*sessionConn)(nil)
+	_ transport.ManagedConn = (*sessionConn)(nil)
+)

@@ -294,16 +294,20 @@ func (s *workspaceClient) OpenCommandTransport(
 	if err != nil {
 		return nil, err
 	}
-	return transport.OpenCallbackConn(ctx, func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-		return RunCommand(ctx, RunCommandOptions{
-			Command: s.providerConfig.Exec.Command,
-			Environ: environ,
-			Stdin:   stdin, Stdout: stdout, Stderr: opt.Stderr,
-		})
-	}, transport.CallbackConnOptions{
-		LocalAddr:  transport.NewAddr("workspace"),
-		RemoteAddr: transport.NewAddr("provider:" + s.Provider()),
-	})
+	return transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return RunCommand(ctx, RunCommandOptions{
+				Command: s.providerConfig.Exec.Command,
+				Environ: environ,
+				Stdin:   stdin, Stdout: stdout, Stderr: opt.Stderr,
+			})
+		},
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("workspace"),
+			RemoteAddr: transport.NewAddr("provider:" + s.Provider()),
+		},
+	)
 }
 
 func (s *workspaceClient) Status(

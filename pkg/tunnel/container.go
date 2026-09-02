@@ -53,12 +53,16 @@ func (c *ContainerTunnel) Run(
 
 	timeout := config.ParseTimeOption(cfg, config.ContextOptionAgentInjectTimeout)
 
-	conn, err := transport.OpenCallbackConn(ctx, func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-		return c.runHostTunnel(ctx, stdin, stdout, timeout)
-	}, transport.CallbackConnOptions{
-		LocalAddr:  transport.NewAddr("workspace"),
-		RemoteAddr: transport.NewAddr("provider:" + c.client.Provider()),
-	})
+	conn, err := transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return c.runHostTunnel(ctx, stdin, stdout, timeout)
+		},
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("workspace"),
+			RemoteAddr: transport.NewAddr("provider:" + c.client.Provider()),
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -216,7 +220,10 @@ func (c *ContainerTunnel) runInContainer(
 		Parent:        ctx,
 		Conn:          containerConn,
 		TransportSide: transport.SideProvider,
-		Metadata:      transport.LogMetadata{Mode: workspaceSubcommand, TransportImpl: "ssh_session"},
+		Metadata: transport.LogMetadata{
+			Mode:          workspaceSubcommand,
+			TransportImpl: "ssh_session",
+		},
 		Handler: func(ctx context.Context) error {
 			containerClient, err := devssh.ClientFromConn(containerConn, "", nil)
 			if err != nil {

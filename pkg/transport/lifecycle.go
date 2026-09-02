@@ -101,19 +101,26 @@ func Classify(side Side, err error, parent context.Context) CloseInfo {
 		return CloseInfo{Reason: CloseContextCancelled, Side: SideParent, Err: parent.Err()}
 	}
 	if err == nil {
-		switch side {
-		case SideProvider:
-			return CloseInfo{Reason: CloseProviderExit, Side: side}
-		case SideSSH:
-			return CloseInfo{Reason: CloseSessionExit, Side: side}
-		default:
-			return CloseInfo{Reason: CloseLocalShutdown, Side: side}
-		}
+		return classifyNil(side)
 	}
-
 	if errors.Is(err, io.EOF) {
 		return CloseInfo{Reason: ClosePeerEOF, Side: side, Err: err}
 	}
+	return classifyError(side, err)
+}
+
+func classifyNil(side Side) CloseInfo {
+	switch side {
+	case SideProvider:
+		return CloseInfo{Reason: CloseProviderExit, Side: side}
+	case SideSSH:
+		return CloseInfo{Reason: CloseSessionExit, Side: side}
+	default:
+		return CloseInfo{Reason: CloseLocalShutdown, Side: side}
+	}
+}
+
+func classifyError(side Side, err error) CloseInfo {
 	switch side {
 	case SideProvider:
 		return CloseInfo{Reason: CloseProviderError, Side: side, Err: err}

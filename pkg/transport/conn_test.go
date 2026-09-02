@@ -10,15 +10,21 @@ import (
 	"time"
 )
 
+const testOSWindows = "windows"
+
 func TestCallbackConnEchoAndWait(t *testing.T) {
-	conn, err := OpenCallbackConn(context.Background(), func(_ context.Context, stdin io.Reader, stdout io.Writer) error {
-		_, err := io.Copy(stdout, stdin)
-		return err
-	}, CallbackConnOptions{})
+	conn, err := OpenCallbackConn(
+		context.Background(),
+		func(_ context.Context, stdin io.Reader, stdout io.Writer) error {
+			_, err := io.Copy(stdout, stdin)
+			return err
+		},
+		CallbackConnOptions{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	input := []byte("managed callback")
 	readDone := make(chan error, 1)
@@ -47,9 +53,13 @@ func TestCallbackConnEchoAndWait(t *testing.T) {
 
 func TestCallbackConnPreservesErrorAndUnblocksOnClose(t *testing.T) {
 	wantErr := errors.New("callback failed")
-	conn, err := OpenCallbackConn(context.Background(), func(_ context.Context, _ io.Reader, _ io.Writer) error {
-		return wantErr
-	}, CallbackConnOptions{})
+	conn, err := OpenCallbackConn(
+		context.Background(),
+		func(_ context.Context, _ io.Reader, _ io.Writer) error {
+			return wantErr
+		},
+		CallbackConnOptions{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,10 +76,14 @@ func TestCallbackConnPreservesErrorAndUnblocksOnClose(t *testing.T) {
 }
 
 func TestCallbackConnConcurrentClose(t *testing.T) {
-	conn, err := OpenCallbackConn(context.Background(), func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
-		<-ctx.Done()
-		return ctx.Err()
-	}, CallbackConnOptions{})
+	conn, err := OpenCallbackConn(
+		context.Background(),
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+		CallbackConnOptions{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,15 +103,7 @@ func TestCallbackConnConcurrentClose(t *testing.T) {
 }
 
 func TestProcessConnEchoAndExit(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell command differs on Windows")
-	}
-	conn, err := StartProcessConn(context.Background(), ProcessSpec{
-		Command: []string{"sh", "-c", "cat"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	conn := openProcessTestConn(t, "cat")
 	input := []byte("managed process")
 	if _, err := conn.Write(input); err != nil {
 		t.Fatal(err)
@@ -121,8 +127,22 @@ func TestProcessConnEchoAndExit(t *testing.T) {
 	}
 }
 
+func openProcessTestConn(t *testing.T, command string) ManagedConn {
+	t.Helper()
+	if runtime.GOOS == testOSWindows {
+		t.Skip("shell command differs on Windows")
+	}
+	conn, err := StartProcessConn(context.Background(), ProcessSpec{
+		Command: []string{"sh", "-c", command},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return conn
+}
+
 func TestProcessConnReportsExitError(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == testOSWindows {
 		t.Skip("shell command differs on Windows")
 	}
 
@@ -143,7 +163,7 @@ func TestProcessConnReportsExitError(t *testing.T) {
 }
 
 func TestProcessConnCancellationTerminatesProcess(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == testOSWindows {
 		t.Skip("shell command differs on Windows")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
