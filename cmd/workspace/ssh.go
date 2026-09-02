@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -354,7 +355,7 @@ func (cmd *SSHCmd) startProxyTunnel(
 	client client2.ProxyClient,
 ) error {
 	log.Debugf("start proxy tunnel")
-	return tunnel.NewTunnel(
+	return tunnel.NewTunnelWithMetadata(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			return client.Ssh(ctx, client2.SshOptions{
@@ -365,6 +366,11 @@ func (cmd *SSHCmd) startProxyTunnel(
 		},
 		func(ctx context.Context, containerClient *ssh.Client) error {
 			return cmd.startTunnel(ctx, devsyConfig, containerClient, client)
+		},
+		tunnel.TransportLogMetadata{
+			Provider:  client.Provider(),
+			Mode:      "proxy",
+			Workspace: client.Workspace(),
 		},
 	)
 }
@@ -689,10 +695,20 @@ func startSSHKeepAlive(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
-			if err != nil {
+			ok, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+			if err := checkKeepAliveResponse(ok, err); err != nil {
 				log.Errorf("failed to send keepalive: %v", err)
 			}
 		}
 	}
+}
+
+func checkKeepAliveResponse(ok bool, err error) error {
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("keepalive request rejected")
+	}
+	return nil
 }

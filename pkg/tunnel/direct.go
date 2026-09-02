@@ -13,17 +13,39 @@ type Tunnel func(ctx context.Context, stdin io.Reader, stdout io.Writer) error
 
 // NewTunnel creates a tunnel to the devcontainer using generic functions
 // to establish the "outer" and "inner" tunnel, used by proxy clients.
-// The tunnel will be an SSH connection with its STDIO as arguments and
-// the handler will be the function to execute the command using the
+// The tunnel will be an SSH connection with its STDIO as arguments and the
+// handler will be the function to execute the command using the
 // connected SSH client.
 func NewTunnel(ctx context.Context, tunnel Tunnel, handler Handler) error {
+	return newTunnel(ctx, tunnel, handler, TransportLogMetadata{})
+}
+
+// NewTunnelWithMetadata is NewTunnel with context for the canonical transport
+// close event.
+func NewTunnelWithMetadata(
+	ctx context.Context,
+	tunnel Tunnel,
+	handler Handler,
+	metadata TransportLogMetadata,
+) error {
+	return newTunnel(ctx, tunnel, handler, metadata)
+}
+
+func newTunnel(
+	ctx context.Context,
+	tunnel Tunnel,
+	handler Handler,
+	metadata TransportLogMetadata,
+) error {
 	pb, err := NewPipeBridge()
 	if err != nil {
 		return err
 	}
 	defer pb.Close()
 
-	return pb.RunPair(ctx,
+	info, err := runPersistentPair(
+		ctx,
+		pb,
 		func(ctx context.Context, stdin, stdout *os.File) error {
 			return tunnel(ctx, stdin, stdout)
 		},
@@ -36,4 +58,6 @@ func NewTunnel(ctx context.Context, tunnel Tunnel, handler Handler) error {
 			return handler(ctx, sshClient)
 		},
 	)
+	LogTransportClose(info, metadata)
+	return err
 }
