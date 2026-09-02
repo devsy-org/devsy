@@ -53,6 +53,7 @@ func TestCallbackConnPreservesErrorAndUnblocksOnClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if err := conn.Wait(); !errors.Is(err, wantErr) {
 		t.Fatalf("Wait() = %v, want %v", err, wantErr)
 	}
@@ -61,6 +62,29 @@ func TestCallbackConnPreservesErrorAndUnblocksOnClose(t *testing.T) {
 	}
 	if err := conn.Close(); err != nil {
 		t.Fatalf("Close() = %v", err)
+	}
+}
+
+func TestCallbackConnConcurrentClose(t *testing.T) {
+	conn, err := OpenCallbackConn(context.Background(), func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}, CallbackConnOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	for range 32 {
+		go func() {
+			_ = conn.Close()
+			done <- struct{}{}
+		}()
+	}
+	for range 32 {
+		<-done
+	}
+	if err := conn.Wait(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Wait() = %v, want context.Canceled", err)
 	}
 }
 
@@ -97,6 +121,7 @@ func TestProcessConnReportsExitError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell command differs on Windows")
 	}
+
 	conn, err := StartProcessConn(context.Background(), ProcessSpec{
 		Command: []string{"sh", "-c", "exit 7"},
 	})
@@ -110,5 +135,27 @@ func TestProcessConnReportsExitError(t *testing.T) {
 	}
 	if exitErr.ExitCode() != 7 {
 		t.Fatalf("exit code = %d, want 7", exitErr.ExitCode())
+	}
+}
+
+func TestProcessConnCancellationTerminatesProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell command differs on Windows")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	conn, err := StartProcessConn(ctx, ProcessSpec{
+		Command: []string{"sh", "-c", "sleep 30"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	_ = conn.Close()
+	done := make(chan error, 1)
+	go func() { done <- conn.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("process did not terminate after cancellation")
 	}
 }
