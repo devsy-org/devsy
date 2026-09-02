@@ -59,7 +59,9 @@ func (c *ContainerTunnel) Run(
 	}
 	defer pb.Close()
 
-	return pb.RunPair(ctx,
+	info, err := runPersistentPair(
+		ctx,
+		pb,
 		func(ctx context.Context, stdin, stdout *os.File) error {
 			return c.runHostTunnel(ctx, stdin, stdout, timeout)
 		},
@@ -82,6 +84,12 @@ func (c *ContainerTunnel) Run(
 			return nil
 		},
 	)
+	LogTransportClose(info, TransportLogMetadata{
+		Provider:  c.client.Provider(),
+		Mode:      workspaceSubcommand,
+		Workspace: c.client.Workspace(),
+	})
+	return err
 }
 
 // runHostTunnel injects the devsy agent onto the host and starts the SSH server,
