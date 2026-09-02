@@ -3,9 +3,9 @@ package tunnel
 import (
 	"context"
 	"io"
-	"os"
 
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/transport"
 )
 
 // Tunnel defines the function to create an "outer" tunnel.
@@ -37,27 +37,32 @@ func newTunnel(
 	handler Handler,
 	metadata TransportLogMetadata,
 ) error {
-	pb, err := NewPipeBridge()
+	conn, err := transport.OpenCallbackConn(ctx, func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+		return tunnel(ctx, stdin, stdout)
+	}, transport.CallbackConnOptions{
+		LocalAddr:  transport.NewAddr("tunnel"),
+		RemoteAddr: transport.NewAddr("provider"),
+	})
 	if err != nil {
 		return err
 	}
-	defer pb.Close()
+	defer func() { _ = conn.Close() }()
 
-	info, err := runPersistentPair(
-		ctx,
-		pb,
-		func(ctx context.Context, stdin, stdout *os.File) error {
-			return tunnel(ctx, stdin, stdout)
+	return transport.RunManaged(transport.RunManagedOptions{
+		Parent:        ctx,
+		Conn:          conn,
+		TransportSide: transport.SideProvider,
+		Metadata: transport.LogMetadata{
+			Provider: metadata.Provider, Mode: metadata.Mode,
+			Workspace: metadata.Workspace, TransportImpl: "callback",
 		},
-		func(ctx context.Context, stdout, stdin *os.File) error {
-			sshClient, err := devssh.StdioClient(stdout, stdin)
+		Handler: func(ctx context.Context) error {
+			sshClient, err := devssh.ClientFromConn(conn, "", nil)
 			if err != nil {
 				return err
 			}
 			defer func() { _ = sshClient.Close() }()
 			return handler(ctx, sshClient)
 		},
-	)
-	LogTransportClose(info, metadata)
-	return err
+	})
 }
