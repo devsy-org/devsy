@@ -57,6 +57,9 @@ type Client interface {
 
 	// Command creates an SSH tunnel into the workspace
 	Command(ctx context.Context, options CommandOptions) error
+
+	// OpenCommandTransport starts a long-lived command as a managed connection.
+	OpenCommandTransport(ctx context.Context, options CommandTransportOptions) (transport.ManagedConn, error)
 }
 
 // ProxyClient executes it's commands on the platform.
@@ -162,6 +165,11 @@ type CommandOptions struct {
 	Command string
 	Stdin   io.Reader
 	Stdout  io.Writer
+	Stderr  io.Writer
+}
+
+type CommandTransportOptions struct {
+	Command string
 	Stderr  io.Writer
 }
 
