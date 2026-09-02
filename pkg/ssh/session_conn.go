@@ -31,6 +31,14 @@ type sessionConn struct {
 	waitErr   error
 }
 
+// startedSession bundles a started SSH session together with its stdin/stdout
+// pipes, which must be created before Session.Start is called.
+type startedSession struct {
+	session *xssh.Session
+	stdin   io.WriteCloser
+	stdout  io.Reader
+}
+
 // OpenSessionConn exposes a long-lived command on an existing SSH client as a
 // managed connection. Closing it never closes the parent client.
 func OpenSessionConn(
@@ -45,24 +53,14 @@ func OpenSessionConn(
 		ctx = context.Background()
 	}
 
-	session, err := startSession(client, opts)
+	started, err := startSession(client, opts)
 	if err != nil {
 		return nil, err
-	}
-	stdin, err := session.StdinPipe()
-	if err != nil {
-		_ = session.Close()
-		return nil, fmt.Errorf("create ssh session stdin: %w", err)
-	}
-	stdout, err := session.StdoutPipe()
-	if err != nil {
-		_ = session.Close()
-		return nil, fmt.Errorf("create ssh session stdout: %w", err)
 	}
 
 	sessionCtx, cancel := context.WithCancel(ctx)
 	conn := &sessionConn{
-		stdin: stdin, stdout: stdout, session: session, cancel: cancel,
+		stdin: started.stdin, stdout: started.stdout, session: started.session, cancel: cancel,
 		waitDone: make(chan struct{}),
 	}
 	go func() {
@@ -82,23 +80,39 @@ func validateSessionConn(client *xssh.Client, opts SessionConnOptions) error {
 	return nil
 }
 
-func startSession(client *xssh.Client, opts SessionConnOptions) (*xssh.Session, error) {
+func startSession(
+	client *xssh.Client,
+	opts SessionConnOptions,
+) (*startedSession, error) {
 	session, err := client.NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("create ssh session: %w", err)
 	}
 	session.Stderr = opts.Stderr
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		_ = session.Close()
+		return nil, fmt.Errorf("create ssh session stdin: %w", err)
+	}
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		_ = stdin.Close()
+		_ = session.Close()
+		return nil, fmt.Errorf("create ssh session stdout: %w", err)
+	}
 	for key, value := range opts.Env {
 		if err := session.Setenv(key, value); err != nil {
+			_ = stdin.Close()
 			_ = session.Close()
 			return nil, fmt.Errorf("set ssh session environment %q: %w", key, err)
 		}
 	}
 	if err := session.Start(opts.Command); err != nil {
+		_ = stdin.Close()
 		_ = session.Close()
 		return nil, fmt.Errorf("start ssh session: %w", err)
 	}
-	return session, nil
+	return &startedSession{session: session, stdin: stdin, stdout: stdout}, nil
 }
 
 func (c *sessionConn) Read(p []byte) (int, error)  { return c.stdout.Read(p) }

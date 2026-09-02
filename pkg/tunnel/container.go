@@ -67,8 +67,6 @@ func (c *ContainerTunnel) Run(
 		return err
 	}
 	defer func() { _ = conn.Close() }()
-	updateCtx, cancelUpdate := context.WithCancel(ctx)
-	defer cancelUpdate()
 	return transport.RunManaged(transport.RunManagedOptions{
 		Parent:        ctx,
 		Conn:          conn,
@@ -82,9 +80,11 @@ func (c *ContainerTunnel) Run(
 			if err != nil {
 				return fmt.Errorf("create ssh client: %w", err)
 			}
-			defer func() { _ = sshClient.Close() }()
 			defer log.Debugf("connection to container closed")
 			log.Debugf("connected to host")
+			updateCtx, cancelUpdate := context.WithCancel(ctx)
+			defer func() { _ = sshClient.Close() }()
+			defer cancelUpdate()
 			if c.updateConfigInterval > 0 {
 				go c.updateConfig(updateCtx, sshClient)
 			}

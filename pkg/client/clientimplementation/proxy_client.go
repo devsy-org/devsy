@@ -95,7 +95,11 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 // where the actionable error message usually lives.
 func (e *proxyExecutor) executeWithJSONLog(ctx context.Context, params execParams) error {
 	writer, done := log.PipeJSONStream()
-	params.stderr = writer
+	if params.stderr == nil {
+		params.stderr = writer
+	} else {
+		params.stderr = io.MultiWriter(writer, params.stderr)
+	}
 	err := e.execute(ctx, params)
 	_ = writer.Close()
 	<-done
