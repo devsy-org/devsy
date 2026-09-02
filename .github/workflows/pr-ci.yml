@@ -757,7 +757,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/podman-linux-amd64.tar.gz
-          key: ${{ runner.os }}-${{ runner.arch }}-podman-static-v5.8.2
+          key: ${{ runner.os }}-${{ runner.arch }}-podman-static-v5.8.4
 
       - name: install podman (Linux)
         if: (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && runner.os == 'Linux'
@@ -766,10 +766,10 @@ jobs:
           archive="${{ runner.temp }}/podman-linux-amd64.tar.gz"
           if [ "${{ steps.podman-cache-linux.outputs.cache-hit }}" != "true" ]; then
             curl -fsSL -o "$archive" \
-              https://github.com/mgoltzsche/podman-static/releases/download/v5.8.2/podman-linux-amd64.tar.gz
+              https://github.com/mgoltzsche/podman-static/releases/download/v5.8.4/podman-linux-amd64.tar.gz
           fi
 
-          expectedHash="228b9adf1ba3585d1d72f0a4bb9a669de5ea806d13884b2c43b5e65601a1a580"
+          expectedHash="a58765fe8be6ab3fb79f892f1a027b4ce4a7e8eb589df1ef960c167cbde08d69"
           actualHash=$(sha256sum "$archive" | cut -d' ' -f1)
           if [ "$actualHash" != "$expectedHash" ]; then
             echo "::error::SHA256 mismatch for podman-static archive! Expected: $expectedHash, Got: $actualHash"
