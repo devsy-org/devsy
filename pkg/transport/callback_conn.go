@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -112,7 +113,7 @@ func (c *addrConn) CloseWrite() error {
 	if closeWriter, ok := c.Conn.(CloseWriter); ok {
 		return closeWriter.CloseWrite()
 	}
-	return net.ErrClosed
+	return fmt.Errorf("close write: %w", errors.ErrUnsupported)
 }
 
 func (c *addrConn) PID() int {

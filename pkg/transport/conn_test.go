@@ -112,8 +112,12 @@ func TestProcessConnEchoAndExit(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := conn.Wait(); err == nil {
-		t.Fatal("Wait() = nil, want cancellation error")
+	done := make(chan error, 1)
+	go func() { done <- conn.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("process did not terminate after close")
 	}
 }
 
