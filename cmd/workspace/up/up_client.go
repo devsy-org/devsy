@@ -64,33 +64,15 @@ func (cmd *UpCmd) prepareClient(
 	devsyConfig *config.Config,
 	args []string,
 ) (client2.BaseWorkspaceClient, error) {
-	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
+	if err := cmd.prepareClientEnvironment(devsyConfig, args, ctx); err != nil {
 		return nil, err
 	}
-	if cmd.Platform.Enabled {
-		log.Debug("running in platform mode")
-		log.Debug("using error output stream")
-		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
-	}
-	if err := cmd.validateFromSnapshot(ctx, args); err != nil {
-		return nil, err
-	}
+
 	source, err := cmd.parseWorkspaceSource()
 	if err != nil {
 		return nil, err
 	}
-
-	// Bootstrap credentials are resolved exclusively from sources that are
-	// available before repository acquisition. Repository-owned sources are
-	// deliberately not registered yet, which prevents circular clone auth.
-	if err := cmd.prepareBootstrapGitToken(ctx, devsyConfig, source); err != nil {
-		return nil, err
-	}
-	projectSecrets, err := cmd.discoverProjectSecrets(ctx, source)
-	if err != nil {
-		return nil, err
-	}
-	if err := cmd.prepareSecretsWithProject(ctx, devsyConfig, projectSecrets); err != nil {
+	if err := cmd.prepareWorkspaceSecrets(ctx, devsyConfig, source); err != nil {
 		return nil, err
 	}
 
@@ -110,6 +92,40 @@ func (cmd *UpCmd) prepareClient(
 		return nil, err
 	}
 	return client, nil
+}
+
+func (cmd *UpCmd) prepareClientEnvironment(
+	devsyConfig *config.Config,
+	args []string,
+	ctx context.Context,
+) error {
+	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
+		return err
+	}
+	if cmd.Platform.Enabled {
+		log.Debug("running in platform mode")
+		log.Debug("using error output stream")
+		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
+	}
+	return cmd.validateFromSnapshot(ctx, args)
+}
+
+func (cmd *UpCmd) prepareWorkspaceSecrets(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	source *provider2.WorkspaceSource,
+) error {
+	// Bootstrap credentials are resolved exclusively from sources that are
+	// available before repository acquisition. Repository-owned sources are
+	// deliberately not registered yet, which prevents circular clone auth.
+	if err := cmd.prepareBootstrapGitToken(ctx, devsyConfig, source); err != nil {
+		return err
+	}
+	projectSecrets, err := cmd.discoverProjectSecrets(ctx, source)
+	if err != nil {
+		return err
+	}
+	return cmd.prepareSecretsWithProject(ctx, devsyConfig, projectSecrets)
 }
 
 // checkProviderUpdate checks for a provider update, unless running in platform mode.
