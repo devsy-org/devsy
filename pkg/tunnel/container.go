@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent"
@@ -83,17 +84,32 @@ func (c *ContainerTunnel) Run(
 			defer log.Debugf("connection to container closed")
 			log.Debugf("connected to host")
 			updateCtx, cancelUpdate := context.WithCancel(ctx)
-			defer func() { _ = sshClient.Close() }()
-			defer cancelUpdate()
+			var updateWG sync.WaitGroup
 			if c.updateConfigInterval > 0 {
-				go c.updateConfig(updateCtx, sshClient)
+				updateWG.Go(func() {
+					c.updateConfig(updateCtx, sshClient)
+				})
 			}
+			defer stopUpdateThenClose(cancelUpdate, &updateWG, sshClient)
 			if err := c.runInContainer(ctx, sshClient, handler, envVars); err != nil {
 				return fmt.Errorf("run in container: %w", err)
 			}
 			return nil
 		},
 	})
+}
+
+// stopUpdateThenClose cancels the periodic config-update goroutine and waits
+// for it to fully exit before closing sshClient. Closing sshClient before the
+// goroutine returns would race its in-flight use of the same connection.
+func stopUpdateThenClose(
+	cancelUpdate context.CancelFunc,
+	updateWG *sync.WaitGroup,
+	sshClient io.Closer,
+) {
+	cancelUpdate()
+	updateWG.Wait()
+	_ = sshClient.Close()
 }
 
 // runHostTunnel injects the devsy agent onto the host and starts the SSH server,
