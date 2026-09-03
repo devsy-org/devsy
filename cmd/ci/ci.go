@@ -139,16 +139,21 @@ func (cmd *CICmd) registerSecretsFlags(ciCmd *cobra.Command) {
 		cliflags.String(&cmd.FeatureSecretsFile, names.FeatureSecretsFile, "",
 			"Path to a JSON file containing secret values for features, format: "+
 				`{"featureId": {"optionName": "value"}}`),
-		cliflags.StringArray(&cmd.Secrets, names.Secret, nil,
-			"Stored Devsy secret to inject, as NAME[,type=env|mount][,target=X]; "+
-				"type=env (default) sets an env var, type=mount writes /run/secrets/<target>. Repeatable"),
+		cliflags.StringArray(
+			&cmd.Secrets,
+			names.Secret,
+			nil,
+			"Secret to inject: NAME or source-qualified TYPE:SOURCE/NAME[,type=env|mount][,target=X]; "+
+				"type=env (default) sets an env var, type=mount writes /run/secrets/<target>. Repeatable",
+		),
 		cliflags.StringArray(&cmd.EnvVars, names.Env, nil,
 			"Stored Devsy env var to inject into the workspace as NAME[=TARGET]. Repeatable"),
 		cliflags.StringArray(&cmd.BuildSecretNames, names.BuildSecret, nil,
-			"Stored Devsy secret exposed to the build via BuildKit "+
+			"Secret to expose to the build via BuildKit; accepts NAME or TYPE:SOURCE/NAME "+
 				"(RUN --mount=type=secret,id=NAME). Repeatable"),
 		cliflags.String(&cmd.GitTokenSecret, names.GitToken, "",
-			"Stored Devsy secret holding an access token for cloning a private HTTP repository"),
+			"Secret holding an access token for cloning a private HTTP repository; "+
+				"repository-owned sources cannot bootstrap their own clone"),
 		cliflags.String(&cmd.GitTokenUsername, names.GitTokenUsername, "",
 			"Username for --git-token (default inferred from the repo host)"),
 	)

@@ -10,12 +10,13 @@ import (
 func NewSecretsCmd(flags *flags.GlobalFlags) *cobra.Command {
 	secretsCmd := &cobra.Command{
 		Use:   "secret",
-		Short: "Manage secrets",
-		Long: `Manage named secrets stored locally and injected into workspaces.
+		Short: "Manage secrets and external secret sources",
+		Long: `Manage secrets and external secret sources used by Devsy workspaces.
 
-Secret values are kept in the OS keyring (macOS Keychain, Windows Credential
-Manager, or libsecret) when available, and in an age-encrypted file otherwise.
-Only non-sensitive metadata is stored in the Devsy config directory.`,
+Devsy-managed secret values are kept in the OS keyring (macOS Keychain,
+Windows Credential Manager, or libsecret) when available, and in an
+age-encrypted file otherwise. External sources such as SOPS remain owned by
+their encrypted source file and are resolved only when needed.`,
 	}
 
 	secretsCmd.AddCommand(NewSetCmd(flags))
@@ -24,6 +25,7 @@ Only non-sensitive metadata is stored in the Devsy config directory.`,
 	secretsCmd.AddCommand(NewDeleteCmd(flags))
 	secretsCmd.AddCommand(NewAttachCmd(flags))
 	secretsCmd.AddCommand(NewDetachCmd(flags))
+	secretsCmd.AddCommand(NewSourceCmd(flags))
 	return secretsCmd
 }
 
