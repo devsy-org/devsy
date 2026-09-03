@@ -58,7 +58,6 @@ type CloseInfo struct {
 }
 
 type PersistentLifecycle struct {
-	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
 	once   sync.Once
@@ -66,19 +65,25 @@ type PersistentLifecycle struct {
 	info   CloseInfo
 }
 
-func NewPersistentLifecycle(parent context.Context) *PersistentLifecycle {
+// NewPersistentLifecycle derives a cancellable context from parent and
+// returns it alongside the lifecycle that controls it. The context is
+// returned rather than stored on the lifecycle (mirroring
+// context.WithCancel) so callers pass it explicitly instead of reading it
+// back off the struct; storing a Context in a struct field is discouraged
+// by the Go documentation.
+func NewPersistentLifecycle(parent context.Context) (*PersistentLifecycle, context.Context) {
 	if parent == nil {
 		parent = context.Background()
 	}
 	ctx, cancel := context.WithCancel(parent)
-	return &PersistentLifecycle{
-		ctx: ctx, cancel: cancel, done: make(chan struct{}),
+	lifecycle := &PersistentLifecycle{
+		cancel: cancel, done: make(chan struct{}),
 		info: CloseInfo{Reason: CloseUnknown, Side: SideUnknown},
 	}
+	return lifecycle, ctx
 }
 
-func (l *PersistentLifecycle) Context() context.Context { return l.ctx }
-func (l *PersistentLifecycle) Done() <-chan struct{}    { return l.done }
+func (l *PersistentLifecycle) Done() <-chan struct{} { return l.done }
 
 func (l *PersistentLifecycle) Close(info CloseInfo) {
 	l.once.Do(func() {
@@ -164,9 +169,9 @@ func RunManaged(opts RunManagedOptions) error {
 	if opts.Handler == nil {
 		return errors.New("handler is required")
 	}
-	lifecycle := NewPersistentLifecycle(opts.Parent)
+	lifecycle, ctx := NewPersistentLifecycle(opts.Parent)
 	handlerDone := make(chan error, 1)
-	go func() { handlerDone <- opts.Handler(lifecycle.Context()) }()
+	go func() { handlerDone <- opts.Handler(ctx) }()
 	connDone := make(chan error, 1)
 	go func() { connDone <- opts.Conn.Wait() }()
 
