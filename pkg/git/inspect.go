@@ -87,11 +87,11 @@ func fetchInspectionPR(
 	var lastErr error
 	for _, host := range prCandidates(repository) {
 		refspec := host.Refspec(number)
-		if _, err := repo.run(ctx, "fetch", "--depth=1", "origin", refspec); err == nil {
+		_, err := repo.run(ctx, "fetch", "--depth=1", "origin", refspec)
+		if err == nil {
 			return "FETCH_HEAD", nil
-		} else {
-			lastErr = err
 		}
+		lastErr = err
 	}
 	return "", fmt.Errorf("fetch request revision: %w", lastErr)
 }

@@ -15,6 +15,7 @@ const (
 	secretAPIKey = "API_KEY"
 	secretToken  = "TOKEN"
 	secretTLSKey = "TLS_KEY"
+	testNPMToken = "NPM_TOKEN"
 )
 
 func testConfig(bound ...string) *config.Config {
@@ -166,30 +167,30 @@ func TestApplyEnvVars_AllowsNonSensitive(t *testing.T) {
 
 func TestApplyBuildSecretsUsesUnqualifiedKeyAsID(t *testing.T) {
 	cmd := &UpCmd{}
-	cmd.BuildSecretNames = []string{"sops:project/NPM_TOKEN"}
+	cmd.BuildSecretNames = []string{"sops:project/" + testNPMToken}
 	resolver := secretspkg.NewResolver()
 	require.NoError(t, resolver.Register("project", "sops", fixedSource{
-		values: map[string]string{"NPM_TOKEN": "secret"}, sensitive: true,
+		values: map[string]string{testNPMToken: "secret"}, sensitive: true,
 	}))
 
 	err := cmd.applyBuildSecrets(context.Background(), resolver)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"NPM_TOKEN=secret"}, cmd.BuildSecrets)
+	assert.Equal(t, []string{testNPMToken + "=secret"}, cmd.BuildSecrets)
 }
 
 func TestApplyBuildSecretsRejectsDuplicateIDs(t *testing.T) {
 	cmd := &UpCmd{}
-	cmd.BuildSecretNames = []string{"sops:project/NPM_TOKEN", "sops:other/NPM_TOKEN"}
+	cmd.BuildSecretNames = []string{"sops:project/" + testNPMToken, "sops:other/" + testNPMToken}
 	resolver := secretspkg.NewResolver()
 	require.NoError(t, resolver.Register("project", "sops", fixedSource{
-		values: map[string]string{"NPM_TOKEN": "secret-a"}, sensitive: true,
+		values: map[string]string{testNPMToken: "secret-a"}, sensitive: true,
 	}))
 	require.NoError(t, resolver.Register("other", "sops", fixedSource{
-		values: map[string]string{"NPM_TOKEN": "secret-b"}, sensitive: true,
+		values: map[string]string{testNPMToken: "secret-b"}, sensitive: true,
 	}))
 
 	err := cmd.applyBuildSecrets(context.Background(), resolver)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "both use BuildKit id \"NPM_TOKEN\"")
+	assert.Contains(t, err.Error(), "both use BuildKit id \""+testNPMToken+"\"")
 	assert.Empty(t, cmd.BuildSecrets)
 }
