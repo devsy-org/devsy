@@ -66,11 +66,7 @@ type PersistentLifecycle struct {
 }
 
 // NewPersistentLifecycle derives a cancellable context from parent and
-// returns it alongside the lifecycle that controls it. The context is
-// returned rather than stored on the lifecycle (mirroring
-// context.WithCancel) so callers pass it explicitly instead of reading it
-// back off the struct; storing a Context in a struct field is discouraged
-// by the Go documentation.
+// returns it alongside the lifecycle that controls it.
 func NewPersistentLifecycle(parent context.Context) (*PersistentLifecycle, context.Context) {
 	if parent == nil {
 		parent = context.Background()
