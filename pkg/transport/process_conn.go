@@ -48,8 +48,7 @@ func StartProcessConn(ctx context.Context, spec ProcessSpec) (ManagedConn, error
 	}
 
 	processCtx, cancel := context.WithCancel(ctx)
-	// Command and arguments are explicitly supplied by the caller as a
-	// provider command specification, not derived from user-controlled input.
+	// Command and arguments are supplied by the caller
 	cmd := exec.CommandContext(processCtx, spec.Command[0], spec.Command[1:]...) // #nosec G204
 	cmd.Stdin = childStdin
 	cmd.Stdout = childStdout

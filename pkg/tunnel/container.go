@@ -99,9 +99,8 @@ func (c *ContainerTunnel) Run(
 	})
 }
 
-// stopUpdateThenClose cancels the periodic config-update goroutine and waits
-// for it to fully exit before closing sshClient. Closing sshClient before the
-// goroutine returns would race its in-flight use of the same connection.
+// stopUpdateThenClose cancels the periodic config-update and waits
+// for it to fully exit before closing sshClient.
 func stopUpdateThenClose(
 	cancelUpdate context.CancelFunc,
 	updateWG *sync.WaitGroup,
