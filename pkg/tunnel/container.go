@@ -8,7 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
+	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent"
@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
+	"github.com/devsy-org/devsy/pkg/transport"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -53,50 +54,68 @@ func (c *ContainerTunnel) Run(
 
 	timeout := config.ParseTimeOption(cfg, config.ContextOptionAgentInjectTimeout)
 
-	pb, err := NewPipeBridge()
+	conn, err := transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return c.runHostTunnel(ctx, stdin, stdout, timeout)
+		},
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("workspace"),
+			RemoteAddr: transport.NewAddr("provider:" + c.client.Provider()),
+		},
+	)
 	if err != nil {
 		return err
 	}
-	defer pb.Close()
-
-	info, err := runPersistentPair(
-		ctx,
-		pb,
-		func(ctx context.Context, stdin, stdout *os.File) error {
-			return c.runHostTunnel(ctx, stdin, stdout, timeout)
+	defer func() { _ = conn.Close() }()
+	return transport.RunManaged(transport.RunManagedOptions{
+		Parent:        ctx,
+		Conn:          conn,
+		TransportSide: transport.SideProvider,
+		Metadata: transport.LogMetadata{
+			Provider: c.client.Provider(), Mode: workspaceSubcommand,
+			Workspace: c.client.Workspace(), TransportImpl: "callback",
 		},
-		func(ctx context.Context, stdout, stdin *os.File) error {
-			sshClient, err := devssh.StdioClient(stdout, stdin)
+		Handler: func(ctx context.Context) error {
+			sshClient, err := devssh.ClientFromConn(conn, "", nil)
 			if err != nil {
 				return fmt.Errorf("create ssh client: %w", err)
 			}
-			defer func() { _ = sshClient.Close() }()
 			defer log.Debugf("connection to container closed")
 			log.Debugf("connected to host")
-
+			updateCtx, cancelUpdate := context.WithCancel(ctx)
+			var updateWG sync.WaitGroup
 			if c.updateConfigInterval > 0 {
-				go c.updateConfig(ctx, sshClient)
+				updateWG.Go(func() {
+					c.updateConfig(updateCtx, sshClient)
+				})
 			}
-
+			defer stopUpdateThenClose(cancelUpdate, &updateWG, sshClient)
 			if err := c.runInContainer(ctx, sshClient, handler, envVars); err != nil {
 				return fmt.Errorf("run in container: %w", err)
 			}
 			return nil
 		},
-	)
-	LogTransportClose(info, TransportLogMetadata{
-		Provider:  c.client.Provider(),
-		Mode:      workspaceSubcommand,
-		Workspace: c.client.Workspace(),
 	})
-	return err
+}
+
+// stopUpdateThenClose cancels the periodic config-update and waits
+// for it to fully exit before closing sshClient.
+func stopUpdateThenClose(
+	cancelUpdate context.CancelFunc,
+	updateWG *sync.WaitGroup,
+	sshClient io.Closer,
+) {
+	cancelUpdate()
+	updateWG.Wait()
+	_ = sshClient.Close()
 }
 
 // runHostTunnel injects the devsy agent onto the host and starts the SSH server,
 // forwarding stdio through the provided pipes.
 func (c *ContainerTunnel) runHostTunnel(
 	ctx context.Context,
-	stdinReader, stdoutWriter *os.File,
+	stdinReader io.Reader, stdoutWriter io.Writer,
 	timeout time.Duration,
 ) error {
 	writer, done := log.PipeJSONStreamWithFallback(log.PassthroughWriter())
@@ -189,83 +208,45 @@ func (c *ContainerTunnel) runInContainer(
 		return err
 	}
 
-	pb, err := NewPipeBridge()
-	if err != nil {
-		return err
-	}
-	defer pb.Close()
-
-	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// tunnel to container
-	tunnelDone := make(chan error, 1)
-	go func() {
-		tunnelDone <- c.runContainerTunnel(cancelCtx, containerTunnelOpts{
-			sshClient:     sshClient,
-			workspaceInfo: workspaceInfo,
-			stdinReader:   pb.StdinReader,
-			stdoutWriter:  pb.StdoutWriter,
-			envVars:       envVars,
-		})
-	}()
-
-	containerClient, err := devssh.StdioClient(pb.StdoutReader, pb.StdinWriter)
-	if err != nil {
-		select { // check if the tunnel goroutine has already returned an error
-		case tunnelErr := <-tunnelDone:
-			if tunnelErr != nil {
-				return tunnelErr
-			}
-		default:
-		}
-		return fmt.Errorf("ssh client: %w", err)
-	}
-	defer func() { _ = containerClient.Close() }()
-	log.Debugf("connected to container")
-
-	return handler(cancelCtx, containerClient)
-}
-
-type containerTunnelOpts struct {
-	sshClient     *ssh.Client
-	workspaceInfo string
-	stdinReader   *os.File
-	stdoutWriter  *os.File
-	envVars       map[string]string
-}
-
-// runContainerTunnel runs the container tunnel SSH command. It closes
-// stdoutWriter on exit so StdioClient gets EOF when the tunnel dies.
-func (c *ContainerTunnel) runContainerTunnel(ctx context.Context, opts containerTunnelOpts) error {
-	writer, done := log.PipeJSONStream()
+	writer, writerDone := log.PipeJSONStream()
 	defer func() {
 		_ = writer.Close()
-		<-done
+		<-writerDone
 	}()
-	defer func() { _ = opts.stdoutWriter.Close() }()
-
-	log.Debugf("Run container tunnel")
-	defer log.Debugf("Container tunnel exited")
 
 	command := fmt.Sprintf(
 		"%q internal agent container-tunnel --workspace-info %q",
 		c.client.AgentPath(),
-		opts.workspaceInfo,
+		workspaceInfo,
 	)
 	if log.DebugEnabled() {
 		command += " --debug"
 	}
-	err := devssh.Run(ctx, devssh.RunOptions{
-		Client:  opts.sshClient,
+	containerConn, err := devssh.OpenSessionConn(ctx, sshClient, devssh.SessionConnOptions{
 		Command: command,
-		Stdin:   opts.stdinReader,
-		Stdout:  opts.stdoutWriter,
+		Env:     envVars,
 		Stderr:  writer,
-		EnvVars: opts.envVars,
 	})
-	if err != nil && ctx.Err() == nil {
-		return fmt.Errorf("container tunnel: %w", err)
+	if err != nil {
+		return fmt.Errorf("open container transport: %w", err)
 	}
-	return nil
+	defer func() { _ = containerConn.Close() }()
+	return transport.RunManaged(transport.RunManagedOptions{
+		Parent:        ctx,
+		Conn:          containerConn,
+		TransportSide: transport.SideProvider,
+		Metadata: transport.LogMetadata{
+			Mode:          workspaceSubcommand,
+			TransportImpl: "ssh_session",
+		},
+		Handler: func(ctx context.Context) error {
+			containerClient, err := devssh.ClientFromConn(containerConn, "", nil)
+			if err != nil {
+				return fmt.Errorf("ssh client: %w", err)
+			}
+			defer func() { _ = containerClient.Close() }()
+			log.Debugf("connected to container")
+			return handler(ctx, containerClient)
+		},
+	})
 }

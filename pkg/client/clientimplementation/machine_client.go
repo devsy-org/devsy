@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
@@ -200,6 +201,24 @@ func (s *machineClient) Command(ctx context.Context, commandOptions client.Comma
 			provider.CommandEnv: commandOptions.Command,
 		},
 	})
+}
+
+func (s *machineClient) OpenCommandTransport(
+	ctx context.Context,
+	opt client.CommandTransportOptions,
+) (transport.ManagedConn, error) {
+	return transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return s.Command(ctx, client.CommandOptions{
+				Command: opt.Command, Stdin: stdin, Stdout: stdout, Stderr: opt.Stderr,
+			})
+		},
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("machine"),
+			RemoteAddr: transport.NewAddr("provider:" + s.Provider()),
+		},
+	)
 }
 
 func (s *machineClient) Status(

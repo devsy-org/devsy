@@ -22,6 +22,7 @@ import (
 	platformclient "github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/terminal"
+	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/gofrs/flock"
 )
@@ -94,7 +95,11 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 // where the actionable error message usually lives.
 func (e *proxyExecutor) executeWithJSONLog(ctx context.Context, params execParams) error {
 	writer, done := log.PipeJSONStream()
-	params.stderr = writer
+	if params.stderr == nil {
+		params.stderr = writer
+	} else {
+		params.stderr = io.MultiWriter(writer, params.stderr)
+	}
 	err := e.execute(ctx, params)
 	_ = writer.Close()
 	<-done
@@ -241,6 +246,27 @@ func (s *proxyClient) Ssh(ctx context.Context, opt client.SshOptions) error {
 		stdin:    opt.Stdin,
 		stdout:   opt.Stdout,
 	})
+}
+
+func (s *proxyClient) OpenSSHTransport(
+	ctx context.Context,
+	opt client.SSHTransportOptions,
+) (transport.ManagedConn, error) {
+	return transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return s.executor.executeWithJSONLog(ctx, execParams{
+				command:  s.config.Exec.Proxy.Ssh,
+				extraEnv: EncodeOptions(client.SshOptions{User: opt.User}, config.EnvFlagsSSH),
+				stdin:    stdin,
+				stdout:   stdout,
+			})
+		},
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("proxy"),
+			RemoteAddr: transport.NewAddr("provider:" + s.config.Name),
+		},
+	)
 }
 
 func (s *proxyClient) Stop(ctx context.Context, opt client.StopOptions) error {

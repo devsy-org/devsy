@@ -14,13 +14,14 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
+	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 type (
-	AgentInjectFunc  func(context.Context, string, *os.File, *os.File, io.WriteCloser) error
+	AgentInjectFunc  func(context.Context, string, io.Reader, io.Writer, io.WriteCloser) error
 	TunnelServerFunc func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config2.Result, error)
 )
 
@@ -34,17 +35,11 @@ type ExecuteCommandOptions struct {
 }
 
 // ExecuteCommand runs the command in an SSH Tunnel and returns the result.
-// It uses two PipeBridges: sshBridge connects the helper (agent inject) to
-// the SSH tunnel, and grpcBridge connects the SSH command to the gRPC server.
+// The SSH transport is managed as a connection; grpcBridge remains a bounded
+// duplex operation between the SSH command and the gRPC server.
 func ExecuteCommand(ctx context.Context, opts ExecuteCommandOptions) (*config2.Result, error) {
 	log.Debugf("starting SSH tunnel execution: ssh=%q workspace=%q addKeys=%v",
 		opts.SSHCommand, opts.Command, opts.AddPrivateKeys)
-
-	sshBridge, err := tunnel.NewPipeBridge()
-	if err != nil {
-		return nil, err
-	}
-	defer sshBridge.Close()
 
 	grpcBridge, err := tunnel.NewPipeBridge()
 	if err != nil {
@@ -54,24 +49,26 @@ func ExecuteCommand(ctx context.Context, opts ExecuteCommandOptions) (*config2.R
 
 	var result *config2.Result
 
-	err = sshBridge.RunPair(ctx,
-		func(ctx context.Context, stdin, stdout *os.File) error {
+	conn, err := transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			return executeSSHServerHelper(ctx, opts, stdin, stdout)
 		},
-		func(ctx context.Context, stdout, stdin *os.File) error {
-			if opts.AddPrivateKeys {
-				addPrivateKeys(ctx)
-			}
-			var runErr error
-			result, runErr = runSSHTunnel(ctx, sshTunnelParams{
-				opts:       opts,
-				stdout:     stdout,
-				stdin:      stdin,
-				grpcBridge: grpcBridge,
-			})
-			return runErr
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("devcontainer"),
+			RemoteAddr: transport.NewAddr("ssh-server"),
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	if opts.AddPrivateKeys {
+		addPrivateKeys(ctx)
+	}
+	result, err = runSSHTunnel(ctx, sshTunnelParams{
+		opts: opts, conn: conn, grpcBridge: grpcBridge,
+	})
 
 	return result, err
 }
@@ -90,7 +87,8 @@ func isExpectedError(err error) bool {
 func executeSSHServerHelper(
 	ctx context.Context,
 	opts ExecuteCommandOptions,
-	stdin, stdout *os.File,
+	stdin io.Reader,
+	stdout io.Writer,
 ) error {
 	defer log.Debug("done executing SSH server helper command")
 
@@ -118,8 +116,7 @@ func addPrivateKeys(ctx context.Context) {
 
 type sshTunnelParams struct {
 	opts       ExecuteCommandOptions
-	stdout     *os.File
-	stdin      *os.File
+	conn       transport.ManagedConn
 	grpcBridge *tunnel.PipeBridge
 }
 
@@ -129,7 +126,7 @@ func runSSHTunnel(ctx context.Context, p sshTunnelParams) (*config2.Result, erro
 	defer func() { log.Infof("tunnel: setup complete elapsed=%s", time.Since(start)) }()
 
 	log.Debug("creating SSH client")
-	sshClient, err := devssh.StdioClient(p.stdout, p.stdin)
+	sshClient, err := devssh.ClientFromConn(p.conn, "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSH client: %w", err)
 	}

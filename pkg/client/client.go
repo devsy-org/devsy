@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/transport"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -56,6 +57,12 @@ type Client interface {
 
 	// Command creates an SSH tunnel into the workspace
 	Command(ctx context.Context, options CommandOptions) error
+
+	// OpenCommandTransport starts a long-lived command as a managed connection.
+	OpenCommandTransport(
+		ctx context.Context,
+		options CommandTransportOptions,
+	) (transport.ManagedConn, error)
 }
 
 // ProxyClient executes it's commands on the platform.
@@ -70,6 +77,13 @@ type ProxyClient interface {
 
 	// Ssh starts an ssh tunnel to the workspace container
 	Ssh(ctx context.Context, options SshOptions) error
+
+	// OpenSSHTransport starts an SSH transport whose stdin/stdout carry the
+	// persistent SSH protocol.
+	OpenSSHTransport(
+		ctx context.Context,
+		options SSHTransportOptions,
+	) (transport.ManagedConn, error)
 }
 
 // DaemonClient connects to workspaces through a shared daemon.
@@ -160,6 +174,11 @@ type CommandOptions struct {
 	Stderr  io.Writer
 }
 
+type CommandTransportOptions struct {
+	Command string
+	Stderr  io.Writer
+}
+
 type UpOptions struct {
 	provider.CLIOptions
 
@@ -174,6 +193,11 @@ type SshOptions struct {
 
 	Stdin  io.Reader
 	Stdout io.Writer
+}
+
+type SSHTransportOptions struct {
+	User   string
+	Stderr io.Writer
 }
 
 type Status string

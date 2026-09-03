@@ -246,7 +246,7 @@ func newAgentInjectFunc(
 	return func(
 		cancelCtx context.Context,
 		sshCmd string,
-		sshTunnelStdinReader, sshTunnelStdoutWriter *os.File,
+		sshTunnelStdinReader io.Reader, sshTunnelStdoutWriter io.Writer,
 		writer io.WriteCloser,
 	) error {
 		return agent.InjectAgent(cancelCtx, &agent.InjectOptions{

@@ -27,6 +27,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
+	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/gofrs/flock"
 )
@@ -283,6 +284,30 @@ func (s *workspaceClient) Command(ctx context.Context, opt client.CommandOptions
 		Stdout:  opt.Stdout,
 		Stderr:  opt.Stderr,
 	})
+}
+
+func (s *workspaceClient) OpenCommandTransport(
+	ctx context.Context,
+	opt client.CommandTransportOptions,
+) (transport.ManagedConn, error) {
+	environ, err := s.buildEnvironment(opt.Command)
+	if err != nil {
+		return nil, err
+	}
+	return transport.OpenCallbackConn(
+		ctx,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return RunCommand(ctx, RunCommandOptions{
+				Command: s.providerConfig.Exec.Command,
+				Environ: environ,
+				Stdin:   stdin, Stdout: stdout, Stderr: opt.Stderr,
+			})
+		},
+		transport.CallbackConnOptions{
+			LocalAddr:  transport.NewAddr("workspace"),
+			RemoteAddr: transport.NewAddr("provider:" + s.Provider()),
+		},
+	)
 }
 
 func (s *workspaceClient) Status(

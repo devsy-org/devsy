@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 
 	"github.com/devsy-org/devsy/pkg/stdio"
 	"golang.org/x/crypto/ssh"
@@ -86,6 +87,14 @@ func StdioClientFromKeyBytesWithUser(
 	user string,
 ) (*ssh.Client, error) {
 	conn := stdio.NewStdioStream(reader, writer)
+	return ClientFromConn(conn, user, keyBytes)
+}
+
+// ClientFromConn creates an SSH client over an existing network connection.
+func ClientFromConn(conn net.Conn, user string, keyBytes []byte) (*ssh.Client, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("connection is required")
+	}
 	clientConfig, err := ConfigFromKeyBytes(keyBytes)
 	if err != nil {
 		return nil, err

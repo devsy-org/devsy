@@ -21,7 +21,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/pty"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	devsshagent "github.com/devsy-org/devsy/pkg/ssh/agent"
-	"github.com/devsy-org/devsy/pkg/tunnel"
+	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
@@ -66,6 +66,7 @@ type StartSSHSessionOptions struct {
 	Command         string
 	AgentForwarding bool
 	SessionOptions  SSHSessionOptions
+	OpenTransport   func(context.Context) (transport.ManagedConn, error)
 	Exec            ExecFunc
 	Stderr          io.Writer
 }
@@ -180,18 +181,36 @@ func (cmd *SSHCmd) Run(ctx context.Context, args []string) error {
 type ExecFunc func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 
 func StartSSHSession(ctx context.Context, options StartSSHSessionOptions) error {
-	pb, err := tunnel.NewPipeBridge()
+	openTransport := options.OpenTransport
+	if openTransport == nil {
+		if options.Exec == nil {
+			return errors.New("open transport or exec function is required")
+		}
+		openTransport = func(ctx context.Context) (transport.ManagedConn, error) {
+			return transport.OpenCallbackConn(ctx, func(
+				ctx context.Context,
+				stdin io.Reader,
+				stdout io.Writer,
+			) error {
+				return options.Exec(ctx, stdin, stdout, options.Stderr)
+			}, transport.CallbackConnOptions{
+				LocalAddr:  transport.NewAddr("machine"),
+				RemoteAddr: transport.NewAddr("provider"),
+			})
+		}
+	}
+
+	conn, err := openTransport(ctx)
 	if err != nil {
 		return err
 	}
-	defer pb.Close()
-
-	return pb.RunPair(ctx,
-		func(ctx context.Context, stdin, stdout *os.File) error {
-			return options.Exec(ctx, stdin, stdout, options.Stderr)
-		},
-		func(ctx context.Context, stdout, stdin *os.File) error {
-			sshClient, err := devssh.StdioClientWithUser(stdout, stdin, options.User)
+	return transport.RunManaged(transport.RunManagedOptions{
+		Parent:        ctx,
+		Conn:          conn,
+		TransportSide: transport.SideProvider,
+		Metadata:      transport.LogMetadata{Mode: "machine", TransportImpl: "callback"},
+		Handler: func(ctx context.Context) error {
+			sshClient, err := devssh.ClientFromConn(conn, options.User, nil)
 			if err != nil {
 				return err
 			}
@@ -204,7 +223,7 @@ func StartSSHSession(ctx context.Context, options StartSSHSessionOptions) error 
 				Stderr:          options.Stderr,
 			})
 		},
-	)
+	})
 }
 
 func RunSSHSession(ctx context.Context, sshClient *ssh.Client, options RunSSHSessionOptions) error {

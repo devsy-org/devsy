@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -526,7 +525,7 @@ func (r *runner) executeSetup(
 	agentInjectFunc := func(
 		cancelCtx context.Context,
 		sshCmd string,
-		sshTunnelStdinReader, sshTunnelStdoutWriter *os.File,
+		sshTunnelStdinReader io.Reader, sshTunnelStdoutWriter io.Writer,
 		writer io.WriteCloser,
 	) error {
 		return r.driver.CommandDevContainer(cancelCtx, &driver.CommandParams{
