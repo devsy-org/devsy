@@ -23,7 +23,7 @@ require (
 	github.com/devsy-org/agentapi v1.0.1
 	github.com/devsy-org/api v1.1.0
 	github.com/devsy-org/apiserver v1.5.3
-	github.com/devsy-org/ssh v1.2.5
+	github.com/devsy-org/ssh v1.2.7
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.7.1+incompatible
 	github.com/docker/docker v28.5.2+incompatible
@@ -63,7 +63,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
 	go.uber.org/zap v1.28.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/mod v0.38.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
