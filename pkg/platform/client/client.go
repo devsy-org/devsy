@@ -533,7 +533,7 @@ func GetRestConfig(host, token string, insecure bool) (*rest.Config, error) {
 }
 
 func startServer(redirectURI string, keyChannel chan keyStruct) *http.Server {
-	srv := &http.Server{Addr: ":25843"}
+	srv := &http.Server{Addr: ":25843", ReadHeaderTimeout: 5 * time.Second}
 
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		keys, ok := r.URL.Query()["key"]
