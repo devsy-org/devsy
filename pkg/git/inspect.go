@@ -152,11 +152,9 @@ func (i *Inspection) ReadFile(ctx context.Context, filePath string) ([]byte, err
 // another repository-relative path.
 func cleanRepoRelativePath(kind, value string) (string, error) {
 	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	value = strings.TrimPrefix(value, "/")
 	if value == "" {
 		return "", nil
-	}
-	if strings.HasPrefix(value, "/") {
-		return "", fmt.Errorf("git %s %q must be relative to the repository root", kind, value)
 	}
 	clean := path.Clean(value)
 	if clean == "." {

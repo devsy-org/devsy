@@ -100,11 +100,9 @@ func validateProjectSecret(value string, sources map[string]struct{}) error {
 // never be able to read arbitrary host files.
 func CleanProjectSourcePath(value string) (string, error) {
 	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	value = strings.TrimPrefix(value, "/")
 	if value == "" {
 		return "", fmt.Errorf("source path must not be empty")
-	}
-	if strings.HasPrefix(value, "/") {
-		return "", fmt.Errorf("source path %q must be relative to the repository root", value)
 	}
 	clean := path.Clean(value)
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {

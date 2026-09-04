@@ -34,7 +34,11 @@ func TestCleanProjectSourcePath(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "config/secrets.enc.yaml", clean)
 
-	for _, bad := range []string{"", "/etc/passwd", "../secret", "a/../../secret"} {
+	cleanAbs, err := CleanProjectSourcePath("/config/secrets.enc.yaml")
+	require.NoError(t, err)
+	require.Equal(t, "config/secrets.enc.yaml", cleanAbs)
+
+	for _, bad := range []string{"", "../secret", "a/../../secret"} {
 		_, err := CleanProjectSourcePath(bad)
 		require.Error(t, err, bad)
 	}
