@@ -38,7 +38,15 @@ func TestParseRef(t *testing.T) {
 }
 
 func TestParseRefRejectsMalformedQualifiedRefs(t *testing.T) {
-	for _, value := range []string{"", "sops:", "sops:project", "sops:/TOKEN", "sops:project/", "sops:project/a/b", "sops:project/API=TOKEN"} {
+	for _, value := range []string{
+		"",
+		"sops:",
+		"sops:project",
+		"sops:/TOKEN",
+		"sops:project/",
+		"sops:project/a/b",
+		"sops:project/API=TOKEN",
+	} {
 		t.Run(value, func(t *testing.T) {
 			if _, err := ParseRef(value); err == nil {
 				t.Fatalf("ParseRef(%q) unexpectedly succeeded", value)
