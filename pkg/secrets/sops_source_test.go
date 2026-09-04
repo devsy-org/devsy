@@ -79,6 +79,16 @@ func TestParseSOPSDocumentJSON(t *testing.T) {
 	require.Equal(t, "5432", values["PORT"])
 }
 
+func TestParseSOPSDocumentJSONPreservesLargeIntegers(t *testing.T) {
+	values, err := parseSOPSDocument(
+		[]byte(`{"API_TOKEN":"secret","COUNT":9007199254740993}`),
+		SOPSFormatJSON,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "secret", values["API_TOKEN"])
+	require.Equal(t, "9007199254740993", values["COUNT"])
+}
+
 func TestParseSOPSDocumentDotenv(t *testing.T) {
 	values, err := parseSOPSDocument(
 		[]byte("API_TOKEN=secret\nPORT=5432\n"),

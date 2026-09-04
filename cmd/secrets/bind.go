@@ -50,7 +50,7 @@ func verifySecretReference(
 	devsyConfig *config.Config,
 	ref secrets.SecretRef,
 ) error {
-	if ref.Source == secrets.LocalSourceName {
+	if ref.Source == secrets.LocalSourceName && (ref.Type == "" || ref.Type == secrets.LocalSourceName) {
 		return verifyLocalSensitive(devsyConfig, devsyConfig.DefaultContext, ref.Name)
 	}
 	resolver, err := secrets.NewResolverForConfig(devsyConfig)

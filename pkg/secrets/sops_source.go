@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -175,7 +176,9 @@ func parseSOPSDocument(plaintext []byte, format string) (map[string]string, erro
 	var raw map[string]any
 	var err error
 	if format == SOPSFormatJSON {
-		err = json.Unmarshal(plaintext, &raw)
+		decoder := json.NewDecoder(bytes.NewReader(plaintext))
+		decoder.UseNumber()
+		err = decoder.Decode(&raw)
 	} else {
 		err = yaml.Unmarshal(plaintext, &raw)
 	}
@@ -201,7 +204,9 @@ func stringifySecretScalar(value any) (string, error) {
 	switch v := value.(type) {
 	case string:
 		return v, nil
-	case bool, int, int64, uint64, float64:
+	case bool, int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64, json.Number:
 		return fmt.Sprint(v), nil
 	case nil:
 		return "", fmt.Errorf("value is null; only scalar non-null values are supported")

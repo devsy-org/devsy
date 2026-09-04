@@ -123,7 +123,17 @@ func RunHeadless(
 	if err := cmd.validate(); err != nil {
 		return nil, err
 	}
-	if err := cmd.prepareSecrets(opts.DevsyConfig); err != nil {
+	var (
+		project *projectSecretContext
+		err     error
+	)
+	if cfg := client.WorkspaceConfig(); cfg != nil {
+		project, err = cmd.discoverProjectSecrets(ctx, &cfg.Source)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := cmd.prepareSecretsWithProject(ctx, opts.DevsyConfig, project); err != nil {
 		return nil, err
 	}
 	cmd.prepareWorkspace(client)

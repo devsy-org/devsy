@@ -48,6 +48,9 @@ func parseQualifiedRef(value string) (SecretRef, error) {
 	if err := ValidateSourceName(sourceName); err != nil {
 		return SecretRef{}, fmt.Errorf("invalid secret reference %q: %w", value, err)
 	}
+	if err := ValidateName(name); err != nil {
+		return SecretRef{}, fmt.Errorf("invalid secret reference %q: %w", value, err)
+	}
 	return SecretRef{Type: typeName, Source: sourceName, Name: name}, nil
 }
 
