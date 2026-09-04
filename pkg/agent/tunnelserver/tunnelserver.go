@@ -222,6 +222,7 @@ func (t *tunnelServer) DockerCredentials(
 			return nil, err
 		}
 
+		// #nosec G117 -- docker credential response legitimately carries the secret.
 		out, err := json.Marshal(credentials)
 		if err != nil {
 			return nil, err
@@ -299,6 +300,7 @@ func (t *tunnelServer) GitCredentials(
 		return nil, err
 	}
 
+	// #nosec G117 -- git credential response legitimately carries the password.
 	out, err := json.Marshal(credentials)
 	if err != nil {
 		return nil, err

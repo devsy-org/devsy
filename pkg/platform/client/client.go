@@ -199,6 +199,7 @@ func (c *client) Save() error {
 		return err
 	}
 
+	// #nosec G117 -- persisted client config legitimately carries the access key.
 	out, err := json.Marshal(c.config)
 	if err != nil {
 		return err
