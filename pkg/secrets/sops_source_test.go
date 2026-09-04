@@ -89,6 +89,20 @@ func TestParseSOPSDocumentJSONPreservesLargeIntegers(t *testing.T) {
 	require.Equal(t, "9007199254740993", values["COUNT"])
 }
 
+func TestParseSOPSDocumentJSONRejectsTrailingData(t *testing.T) {
+	_, err := parseSOPSDocument(
+		[]byte(`{"API_TOKEN":"secret"}{"extra":"value"}`),
+		SOPSFormatJSON,
+	)
+	require.ErrorContains(t, err, "trailing data")
+
+	_, err = parseSOPSDocument(
+		[]byte(`{"API_TOKEN":"secret"} garbage`),
+		SOPSFormatJSON,
+	)
+	require.ErrorContains(t, err, "trailing data")
+}
+
 func TestParseSOPSDocumentDotenv(t *testing.T) {
 	values, err := parseSOPSDocument(
 		[]byte("API_TOKEN=secret\nPORT=5432\n"),

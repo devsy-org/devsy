@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,6 +166,26 @@ func canonicalSOPSFormat(format string) (string, error) {
 	}
 }
 
+// decodeSOPSJSON decodes a single JSON value from plaintext, preserving
+// large integers via json.Number, and rejects any trailing content after
+// the first value (e.g. a second top-level value or stray text) that
+// json.Decoder would otherwise silently ignore.
+func decodeSOPSJSON(plaintext []byte, raw *map[string]any) error {
+	decoder := json.NewDecoder(bytes.NewReader(plaintext))
+	decoder.UseNumber()
+	if err := decoder.Decode(raw); err != nil {
+		return err
+	}
+	var extra json.RawMessage
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("unexpected trailing data after JSON document")
+		}
+		return fmt.Errorf("unexpected trailing data after JSON document: %w", err)
+	}
+	return nil
+}
+
 func parseSOPSDocument(plaintext []byte, format string) (map[string]string, error) {
 	if format == SOPSFormatDotenv {
 		values, err := godotenv.Unmarshal(string(plaintext))
@@ -176,9 +198,7 @@ func parseSOPSDocument(plaintext []byte, format string) (map[string]string, erro
 	var raw map[string]any
 	var err error
 	if format == SOPSFormatJSON {
-		decoder := json.NewDecoder(bytes.NewReader(plaintext))
-		decoder.UseNumber()
-		err = decoder.Decode(&raw)
+		err = decodeSOPSJSON(plaintext, &raw)
 	} else {
 		err = yaml.Unmarshal(plaintext, &raw)
 	}
