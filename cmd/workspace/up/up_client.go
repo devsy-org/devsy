@@ -72,7 +72,10 @@ func (cmd *UpCmd) prepareClient(
 	if err != nil {
 		return nil, err
 	}
-	if err := cmd.prepareWorkspaceSecrets(ctx, devsyConfig, source); err != nil {
+	// Bootstrap credentials are resolved exclusively from sources that are
+	// available before repository acquisition. Repository-owned sources are
+	// deliberately not registered yet, which prevents circular clone auth.
+	if err := cmd.prepareBootstrapGitToken(ctx, devsyConfig, source); err != nil {
 		return nil, err
 	}
 
@@ -88,6 +91,17 @@ func (cmd *UpCmd) prepareClient(
 	if err != nil {
 		return nil, err
 	}
+
+	// The workspace source (local folder, git repository, or image) is only
+	// fully known once Resolve has determined it, e.g. from a positional
+	// workspace argument rather than --source/--from-snapshot. Repository-
+	// owned secret discovery must therefore happen after Resolve, using the
+	// client's resolved WorkspaceConfig().Source, not the possibly-nil
+	// source parsed above.
+	if err := cmd.prepareResolvedWorkspaceSecrets(ctx, devsyConfig, client); err != nil {
+		return nil, err
+	}
+
 	if err := cmd.checkProviderUpdate(ctx, devsyConfig, client); err != nil {
 		return nil, err
 	}
@@ -110,16 +124,20 @@ func (cmd *UpCmd) prepareClientEnvironment(
 	return cmd.validateFromSnapshot(ctx, args)
 }
 
-func (cmd *UpCmd) prepareWorkspaceSecrets(
+// prepareResolvedWorkspaceSecrets discovers repository-owned project secrets
+// (e.g. SOPS sources declared in .devsy/config.yaml) using the workspace's
+// fully resolved source and merges them with attached/explicit secrets.
+// This must run after workspace2.Resolve, since a positional workspace
+// argument's local-folder/git-repository/image classification is only known
+// once Resolve has determined client.WorkspaceConfig().Source.
+func (cmd *UpCmd) prepareResolvedWorkspaceSecrets(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	source *provider2.WorkspaceSource,
+	client client2.BaseWorkspaceClient,
 ) error {
-	// Bootstrap credentials are resolved exclusively from sources that are
-	// available before repository acquisition. Repository-owned sources are
-	// deliberately not registered yet, which prevents circular clone auth.
-	if err := cmd.prepareBootstrapGitToken(ctx, devsyConfig, source); err != nil {
-		return err
+	var source *provider2.WorkspaceSource
+	if cfg := client.WorkspaceConfig(); cfg != nil {
+		source = &cfg.Source
 	}
 	projectSecrets, err := cmd.discoverProjectSecrets(ctx, source)
 	if err != nil {
@@ -173,12 +191,6 @@ func (cmd *UpCmd) resolveParams(
 		ChangeLastUsed: true,
 		Owner:          cmd.Owner,
 	}
-}
-
-// prepareSecrets preserves the headless/internal call path where repository
-// discovery has already happened elsewhere or is not applicable.
-func (cmd *UpCmd) prepareSecrets(devsyConfig *config.Config) error {
-	return cmd.prepareSecretsWithProject(context.Background(), devsyConfig, nil)
 }
 
 func (cmd *UpCmd) prepareSecretsWithProject(
