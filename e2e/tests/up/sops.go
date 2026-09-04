@@ -163,6 +163,7 @@ func unsetSOPSEnv(name string) {
 }
 
 func registerSOPSSource(ctx context.Context, dtc *dockerTestContext, name, filePath string) {
+	_, _ = dtc.f.ExecCommandOutput(ctx, []string{secretCmd, "source", "remove", name})
 	_, err := dtc.f.ExecCommandOutput(
 		ctx,
 		[]string{secretCmd, "source", "add", "sops", name, filePath},
