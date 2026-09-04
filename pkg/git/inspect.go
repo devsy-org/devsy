@@ -125,40 +125,54 @@ func (i *Inspection) ReadFile(ctx context.Context, filePath string) ([]byte, err
 	if i == nil || i.repo == nil {
 		return nil, fmt.Errorf("git inspection is closed")
 	}
-	filePath = strings.TrimPrefix(strings.ReplaceAll(filePath, "\\", "/"), "./")
-	if i.subPath != "" {
-		filePath = path.Join(i.subPath, filePath)
+	cleanPath, err := cleanRepoRelativePath("file path", filePath)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
 	}
-	object := i.rev + ":" + filePath
+	if cleanPath == "" {
+		return nil, fmt.Errorf("read file: path must not be empty")
+	}
+	if i.subPath != "" {
+		cleanPath = path.Join(i.subPath, cleanPath)
+	}
+	object := i.rev + ":" + cleanPath
 	if _, err := i.repo.run(ctx, "cat-file", "-e", object); err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrRevisionPathNotFound, filePath)
+		return nil, fmt.Errorf("%w: %s", ErrRevisionPathNotFound, cleanPath)
 	}
 	result, err := i.repo.run(ctx, "show", object)
 	if err != nil {
-		return nil, fmt.Errorf("read %q from revision %s: %w", filePath, i.rev, err)
+		return nil, fmt.Errorf("read %q from revision %s: %w", cleanPath, i.rev, err)
 	}
 	return append([]byte(nil), result.Stdout...), nil
 }
 
-// cleanInspectionSubPath normalizes and validates a repository-relative
-// subpath selector (from an @subpath: reference), rejecting anything that
-// would escape the repository root once joined with a file path.
-func cleanInspectionSubPath(value string) (string, error) {
+// cleanRepoRelativePath normalizes and validates a repository-relative path
+// (either an @subpath: selector or a file path to read), rejecting anything
+// absolute or that would escape the repository root once joined with
+// another repository-relative path.
+func cleanRepoRelativePath(kind, value string) (string, error) {
 	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
 	if value == "" {
 		return "", nil
 	}
 	if strings.HasPrefix(value, "/") {
-		return "", fmt.Errorf("git subpath %q must be relative to the repository root", value)
+		return "", fmt.Errorf("git %s %q must be relative to the repository root", kind, value)
 	}
 	clean := path.Clean(value)
 	if clean == "." {
 		return "", nil
 	}
 	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", fmt.Errorf("git subpath %q escapes the repository root", value)
+		return "", fmt.Errorf("git %s %q escapes the repository root", kind, value)
 	}
 	return clean, nil
+}
+
+// cleanInspectionSubPath normalizes and validates a repository-relative
+// subpath selector (from an @subpath: reference), rejecting anything that
+// would escape the repository root once joined with a file path.
+func cleanInspectionSubPath(value string) (string, error) {
+	return cleanRepoRelativePath("subpath", value)
 }
 
 func (i *Inspection) Revision() string {

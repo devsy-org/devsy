@@ -66,3 +66,17 @@ func TestCleanInspectionSubPath(t *testing.T) {
 		})
 	}
 }
+
+// TestInspectionReadFileRejectsPathEscape is a regression test ensuring
+// ReadFile itself rejects a path that would escape the repository root (or
+// the selected subpath) once cleaned and joined, rather than relying solely
+// on callers to pre-validate the path.
+func TestInspectionReadFileRejectsPathEscape(t *testing.T) {
+	runner := &fakeRunner{stdout: []byte("secret-contents")}
+	repo := At("/tmp/repo", WithRunner(runner))
+	inspection := &Inspection{repo: repo, rev: inspectionHeadRev, subPath: testSubPath}
+
+	_, err := inspection.ReadFile(context.Background(), "../../etc/passwd")
+	assert.Assert(t, err != nil)
+	assert.Equal(t, len(runner.calls), 0)
+}

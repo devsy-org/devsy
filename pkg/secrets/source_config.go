@@ -61,6 +61,11 @@ func SaveSourceConfigs(devsyConfig *config.Config, sources []SourceConfig) error
 	if err != nil {
 		return err
 	}
+	unlock, err := acquireFlock(filepath.Dir(filePath), sourceConfigFileName+".lock")
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	registry, err := loadSourceRegistry(filePath)
 	if err != nil {
 		return err
