@@ -124,16 +124,16 @@ func readDockerignore(contextDir string, dockerfile string) ([]string, error) {
 	)
 
 	dockerignorefilepath := dockerfile + ".dockerignore"
-	if filepath.IsAbs(dockerignorefilepath) {
-		f, err = os.Open(dockerignorefilepath)
-	} else {
-		f, err = os.Open(filepath.Join(contextDir, dockerignorefilepath))
+	dockerignorepath := dockerignorefilepath
+	if !filepath.IsAbs(dockerignorepath) {
+		dockerignorepath = filepath.Join(contextDir, dockerignorepath)
 	}
+	f, err = os.Open(dockerignorepath) // #nosec G304 -- internal build path
 	if os.IsNotExist(err) {
-		dockerignorefilepath = ".dockerignore"
-		f, err = os.Open(filepath.Join(contextDir, dockerignorefilepath))
+		dockerignorepath = filepath.Join(contextDir, ".dockerignore")
+		f, err = os.Open(dockerignorepath) // #nosec G304 -- internal build path
 		if os.IsNotExist(err) {
-			return ensureDockerIgnoreAndDockerFile(excludes, dockerfile, dockerignorefilepath), nil
+			return ensureDockerIgnoreAndDockerFile(excludes, dockerfile, ".dockerignore"), nil
 		} else if err != nil {
 			return nil, err
 		}

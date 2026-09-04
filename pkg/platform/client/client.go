@@ -194,7 +194,7 @@ func (c *client) Save() error {
 		c.config.APIVersion = "storage.devsy.sh/v1"
 	}
 
-	err := os.MkdirAll(filepath.Dir(c.configPath), 0o755)
+	err := os.MkdirAll(filepath.Dir(c.configPath), 0o750)
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func (c *client) Save() error {
 		return err
 	}
 
-	return os.WriteFile(c.configPath, out, 0o660)
+	return os.WriteFile(c.configPath, out, 0o600)
 }
 
 func (c *client) ManagementConfig() (*rest.Config, error) {

@@ -270,7 +270,7 @@ func installDeb(debPath string) error {
 }
 
 func ensureConfigFolder(userName string) error {
-	err := os.MkdirAll(dataFolder, os.ModePerm)
+	err := os.MkdirAll(dataFolder, 0o750)
 	if err != nil {
 		return err
 	}
@@ -288,9 +288,13 @@ func setupSingleUserMode(configFolder, userName string) error {
 	dbConf := fmt.Sprintf(`provider=sqlite
 directory=%s`, configFolder)
 	dbConfPath := filepath.Join(configFolder, "dbconf.conf")
-	err := os.WriteFile(dbConfPath, []byte(dbConf), os.ModePerm)
+	err := os.WriteFile(dbConfPath, []byte(dbConf), 0o600)
 	if err != nil {
 		return fmt.Errorf("save db conf: %w", err)
+	}
+	err = copypkg.Chown(dbConfPath, userName)
+	if err != nil {
+		return fmt.Errorf("chown db conf: %w", err)
 	}
 
 	rServerConf := fmt.Sprintf(
@@ -309,9 +313,13 @@ database-config-file=%s/dbconf.conf
 	serverConfPath := filepath.Join(rstudioConfigFolder, "rserver.conf")
 	// The RStudio installer automatically creates an empty file at destConfPath, let's try to remove that first
 	_ = os.Remove(serverConfPath)
-	err = os.WriteFile(serverConfPath, []byte(rServerConf), os.ModePerm)
+	err = os.WriteFile(serverConfPath, []byte(rServerConf), 0o600)
 	if err != nil {
 		return fmt.Errorf("save rserver conf: %w", err)
+	}
+	err = copypkg.Chown(serverConfPath, userName)
+	if err != nil {
+		return fmt.Errorf("chown rserver conf: %w", err)
 	}
 
 	return nil
@@ -335,7 +343,7 @@ func setupPreferences(workspaceFolder, userName string) error {
 	}
 
 	prefsPath := filepath.Join(prefsDir, preferencesFile)
-	err = os.WriteFile(prefsPath, outPrefs, os.ModePerm)
+	err = os.WriteFile(prefsPath, outPrefs, 0o600)
 	if err != nil {
 		return fmt.Errorf("save preferences: %w", err)
 	}
