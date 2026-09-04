@@ -134,13 +134,25 @@ var _ = ginkgo.Describe(
 
 func useSOPSAgeIdentity() {
 	setSOPSEnv("SOPS_AGE_KEY", sopsE2EAgeIdentity)
-	setSOPSEnv("SOPS_AGE_KEY_FILE", "")
-	setSOPSEnv("SOPS_AGE_KEY_CMD", "")
+	unsetSOPSEnv("SOPS_AGE_KEY_FILE")
+	unsetSOPSEnv("SOPS_AGE_KEY_CMD")
 }
 
 func setSOPSEnv(name, value string) {
 	previous, had := os.LookupEnv(name)
 	framework.ExpectNoError(os.Setenv(name, value))
+	ginkgo.DeferCleanup(func() {
+		if had {
+			_ = os.Setenv(name, previous)
+			return
+		}
+		_ = os.Unsetenv(name)
+	})
+}
+
+func unsetSOPSEnv(name string) {
+	previous, had := os.LookupEnv(name)
+	framework.ExpectNoError(os.Unsetenv(name))
 	ginkgo.DeferCleanup(func() {
 		if had {
 			_ = os.Setenv(name, previous)
