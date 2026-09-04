@@ -5,11 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
 
-const bloblessCloneFilter = "--filter=blob:none"
+const (
+	bloblessCloneFilter = "--filter=blob:none"
+	// inspectionHeadRev is the default revision selector used when the
+	// inspection carries no explicit commit or PR reference.
+	inspectionHeadRev = "HEAD"
+)
 
 var ErrRevisionPathNotFound = errors.New("path not found in git revision")
 
@@ -19,6 +25,10 @@ type Inspection struct {
 	repo *Repo
 	rev  string
 	root string
+	// subPath is the repository-relative directory that ReadFile treats as
+	// the project root, mirroring info.SubPath (the @subpath: selector).
+	// Empty means the repository root.
+	subPath string
 }
 
 // InspectRemote creates a temporary blobless clone and selects the exact
@@ -42,7 +52,12 @@ func InspectRemote(ctx context.Context, info *GitInfo, env []string) (*Inspectio
 		_ = os.RemoveAll(root)
 		return nil, err
 	}
-	return &Inspection{repo: repo, rev: rev, root: root}, nil
+	subPath, err := cleanInspectionSubPath(info.SubPath)
+	if err != nil {
+		_ = os.RemoveAll(root)
+		return nil, err
+	}
+	return &Inspection{repo: repo, rev: rev, root: root, subPath: subPath}, nil
 }
 
 func cloneInspectionRepo(
@@ -72,7 +87,7 @@ func selectInspectionRevision(ctx context.Context, repo *Repo, info *GitInfo) (s
 	if info.Commit != "" {
 		return fetchInspectionCommit(ctx, repo, info.Commit)
 	}
-	return "HEAD", nil
+	return inspectionHeadRev, nil
 }
 
 func fetchInspectionPR(
@@ -103,13 +118,17 @@ func fetchInspectionCommit(ctx context.Context, repo *Repo, commit string) (stri
 	return "FETCH_HEAD", nil
 }
 
-// ReadFile returns the bytes for a repository-relative path at the exact
+// ReadFile returns the bytes for a path relative to the selected subpath
+// project root (or the repository root when no subpath is set) at the exact
 // revision selected by InspectRemote.
 func (i *Inspection) ReadFile(ctx context.Context, filePath string) ([]byte, error) {
 	if i == nil || i.repo == nil {
 		return nil, fmt.Errorf("git inspection is closed")
 	}
 	filePath = strings.TrimPrefix(strings.ReplaceAll(filePath, "\\", "/"), "./")
+	if i.subPath != "" {
+		filePath = path.Join(i.subPath, filePath)
+	}
 	object := i.rev + ":" + filePath
 	if _, err := i.repo.run(ctx, "cat-file", "-e", object); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrRevisionPathNotFound, filePath)
@@ -119,6 +138,27 @@ func (i *Inspection) ReadFile(ctx context.Context, filePath string) ([]byte, err
 		return nil, fmt.Errorf("read %q from revision %s: %w", filePath, i.rev, err)
 	}
 	return append([]byte(nil), result.Stdout...), nil
+}
+
+// cleanInspectionSubPath normalizes and validates a repository-relative
+// subpath selector (from an @subpath: reference), rejecting anything that
+// would escape the repository root once joined with a file path.
+func cleanInspectionSubPath(value string) (string, error) {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	if value == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(value, "/") {
+		return "", fmt.Errorf("git subpath %q must be relative to the repository root", value)
+	}
+	clean := path.Clean(value)
+	if clean == "." {
+		return "", nil
+	}
+	if clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("git subpath %q escapes the repository root", value)
+	}
+	return clean, nil
 }
 
 func (i *Inspection) Revision() string {
