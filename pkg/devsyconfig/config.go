@@ -44,7 +44,13 @@ func AuthVClusterCliToPlatform(config *client.Config) error {
 		return nil
 	}
 
-	cmd := exec.Command("vcluster", "login", "--access-key", config.AccessKey, config.Host)
+	cmd := exec.Command( // #nosec G204 -- vcluster resolved via LookPath above; args come from local config
+		"vcluster",
+		"login",
+		"--access-key",
+		config.AccessKey,
+		config.Host,
+	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Debugf("Failed executing `vcluster login` : %v, output: %s", err, out)
