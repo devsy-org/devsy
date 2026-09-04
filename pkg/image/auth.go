@@ -24,7 +24,7 @@ var (
 	)
 )
 
-const tokenFileLocation = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+const tokenFileLocation = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // G101: projected service account token file path, not a credential
 
 // See https://github.com/kubernetes/kubernetes/blob/30ae12d018697d3c5f04e225b11f242f5310e097/pkg/serviceaccount/claims.go#L55
 type privateClaims struct {
