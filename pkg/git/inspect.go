@@ -112,10 +112,23 @@ func fetchInspectionPR(
 }
 
 func fetchInspectionCommit(ctx context.Context, repo *Repo, commit string) (string, error) {
-	if _, err := repo.run(ctx, "fetch", "--depth=1", "origin", commit); err != nil {
-		return "", fmt.Errorf("fetch commit %q: %w", commit, err)
+	if _, err := repo.run(ctx, "cat-file", "-e", commit+"^{commit}"); err == nil {
+		return commit, nil
 	}
-	return "FETCH_HEAD", nil
+	if _, err := repo.run(ctx, "fetch", "--depth=1", "origin", commit); err == nil {
+		return "FETCH_HEAD", nil
+	}
+	if _, err := repo.run(ctx, "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*"); err == nil {
+		if _, err := repo.run(ctx, "cat-file", "-e", commit+"^{commit}"); err == nil {
+			return commit, nil
+		}
+	}
+	if _, err := repo.run(ctx, "fetch", "--unshallow", "origin"); err == nil {
+		if _, err := repo.run(ctx, "cat-file", "-e", commit+"^{commit}"); err == nil {
+			return commit, nil
+		}
+	}
+	return "", fmt.Errorf("fetch commit %q: commit not found in remote repository", commit)
 }
 
 // ReadFile returns the bytes for a path relative to the selected subpath
@@ -152,11 +165,9 @@ func (i *Inspection) ReadFile(ctx context.Context, filePath string) ([]byte, err
 // another repository-relative path.
 func cleanRepoRelativePath(kind, value string) (string, error) {
 	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	value = strings.TrimPrefix(value, "/")
 	if value == "" {
 		return "", nil
-	}
-	if strings.HasPrefix(value, "/") {
-		return "", fmt.Errorf("git %s %q must be relative to the repository root", kind, value)
 	}
 	clean := path.Clean(value)
 	if clean == "." {

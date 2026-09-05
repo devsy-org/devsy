@@ -99,10 +99,12 @@ func (cmd *UpCmd) prepareClient(
 	// client's resolved WorkspaceConfig().Source, not the possibly-nil
 	// source parsed above.
 	if err := cmd.prepareResolvedWorkspaceSecrets(ctx, devsyConfig, client); err != nil {
+		_ = client.Delete(ctx, client2.DeleteOptions{Force: true, IgnoreNotFound: true})
 		return nil, err
 	}
 
 	if err := cmd.checkProviderUpdate(ctx, devsyConfig, client); err != nil {
+		_ = client.Delete(ctx, client2.DeleteOptions{Force: true, IgnoreNotFound: true})
 		return nil, err
 	}
 	return client, nil
