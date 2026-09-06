@@ -37,3 +37,29 @@ func TestEnsureArgsForFromSnapshot_NoOpWithoutFromSnapshot(t *testing.T) {
 		t.Errorf("args = %v, want nil (no --from-snapshot, nothing to synthesize)", args)
 	}
 }
+
+func TestEnsureArgs_SynthesizesPlaceholderWhenSourceProvidedAndArgsEmpty(t *testing.T) {
+	cmd := &UpCmd{}
+	cmd.Source = "https://github.com/devsy-org/devsy"
+
+	args := cmd.ensureArgs(nil)
+
+	if len(args) != 1 || args[0] != cmd.Source {
+		t.Errorf(
+			"args = %v, want a single placeholder arg [https://github.com/devsy-org/devsy]",
+			args,
+		)
+	}
+}
+
+func TestEnsureArgs_PrefersFromSnapshotOverSourceWhenBothEmptyArgs(t *testing.T) {
+	cmd := &UpCmd{}
+	cmd.FromSnapshot = "ghcr.io/acme/snapshots:my-ws-20260731150405-abcxyz"
+	cmd.Source = "https://github.com/devsy-org/devsy"
+
+	args := cmd.ensureArgs(nil)
+
+	if len(args) != 1 || args[0] != cmd.FromSnapshot {
+		t.Errorf("args = %v, want snapshot arg", args)
+	}
+}

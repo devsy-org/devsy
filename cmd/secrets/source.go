@@ -107,20 +107,17 @@ func resolveSOPSFile(filePath string) (string, error) {
 }
 
 func persistSOPSSource(devsyConfig *config.Config, name, filePath, format string) error {
-	sources, err := secrets2.LoadSourceConfigs(devsyConfig)
-	if err != nil {
-		return err
-	}
-	sources, err = secrets2.AddSourceConfig(sources, secrets2.SourceConfig{
-		Name:   name,
-		Type:   secrets2.SOPSFormatter,
-		Path:   filePath,
-		Format: format,
-	})
-	if err != nil {
-		return err
-	}
-	return secrets2.SaveSourceConfigs(devsyConfig, sources)
+	return secrets2.ModifySourceConfigs(
+		devsyConfig,
+		func(sources []secrets2.SourceConfig) ([]secrets2.SourceConfig, error) {
+			return secrets2.AddSourceConfig(sources, secrets2.SourceConfig{
+				Name:   name,
+				Type:   secrets2.SOPSFormatter,
+				Path:   filePath,
+				Format: format,
+			})
+		},
+	)
 }
 
 func newSourceListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
@@ -211,13 +208,14 @@ func attachedSourceReferences(devsyConfig *config.Config, name string) []string 
 }
 
 func removeSourceConfig(devsyConfig *config.Config, name string) error {
-	sources, err := secrets2.LoadSourceConfigs(devsyConfig)
-	if err != nil {
-		return err
-	}
-	sources, removed := secrets2.RemoveSourceConfig(sources, name)
-	if !removed {
-		return fmt.Errorf("secret source %q is not configured", name)
-	}
-	return secrets2.SaveSourceConfigs(devsyConfig, sources)
+	return secrets2.ModifySourceConfigs(
+		devsyConfig,
+		func(sources []secrets2.SourceConfig) ([]secrets2.SourceConfig, error) {
+			sources, removed := secrets2.RemoveSourceConfig(sources, name)
+			if !removed {
+				return nil, fmt.Errorf("secret source %q is not configured", name)
+			}
+			return sources, nil
+		},
+	)
 }

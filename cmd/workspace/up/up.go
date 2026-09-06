@@ -65,6 +65,13 @@ type UpCmd struct {
 	Out io.Writer
 	// Set at the start of Run; nil until then.
 	statusReporter status.Reporter
+
+	// resolveWorkspace overrides workspace.Resolve; nil falls back to workspace.Resolve.
+	resolveWorkspace func(
+		ctx context.Context,
+		devsyConfig *config.Config,
+		params workspace.ResolveParams,
+	) (client2.BaseWorkspaceClient, error)
 }
 
 // Options is the structured input form of the up command.

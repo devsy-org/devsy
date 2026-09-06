@@ -6,15 +6,19 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/cmd/flags"
 	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/require"
 )
 
 // fakeWorkspaceClient is a minimal client2.BaseWorkspaceClient used to
 // exercise prepareResolvedWorkspaceSecrets without a real provider.
 type fakeWorkspaceClient struct {
-	config *provider.Workspace
+	config  *provider.Workspace
+	deleted bool
 }
 
 func (f *fakeWorkspaceClient) Provider() string { return "" }
@@ -29,8 +33,11 @@ func (f *fakeWorkspaceClient) Status(
 ) (client2.Status, error) {
 	return client2.StatusRunning, nil
 }
-func (f *fakeWorkspaceClient) Stop(context.Context, client2.StopOptions) error     { return nil }
-func (f *fakeWorkspaceClient) Delete(context.Context, client2.DeleteOptions) error { return nil }
+func (f *fakeWorkspaceClient) Stop(context.Context, client2.StopOptions) error { return nil }
+func (f *fakeWorkspaceClient) Delete(context.Context, client2.DeleteOptions) error {
+	f.deleted = true
+	return nil
+}
 
 func (f *fakeWorkspaceClient) Workspace() string { return "" }
 
@@ -93,4 +100,81 @@ func TestPrepareResolvedWorkspaceSecrets_DiscoversLocalProjectSecrets(t *testing
 	require.NoError(t, err)
 
 	require.Contains(t, cmd.SecretsEnv, "SOPS_E2E_SECRET="+testProjectSecretsPlaintext)
+}
+
+func newFailingProjectWorkspace(t *testing.T) *fakeWorkspaceClient {
+	t.Helper()
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".devsy"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, ".devsy", "config.yaml"),
+		[]byte("secretSources:\n"+
+			"  - name: project\n"+
+			"    type: sops\n"+
+			"    path: nonexistent.enc.yaml\n"+
+			"secrets:\n"+
+			"  - sops:project/MISSING\n"),
+		0o600,
+	))
+	return &fakeWorkspaceClient{
+		config: &provider.Workspace{
+			ID:     "my-test-workspace",
+			Source: provider.WorkspaceSource{LocalFolder: root},
+		},
+	}
+}
+
+// TestPrepareClient_InteractiveResolutionPreservesExistingWorkspaceOnError verifies
+// that when a workspace is resolved without positional arguments (interactive resolution),
+// any subsequent failure in prepareResolvedWorkspaceSecrets does not force-delete the
+// user's selected existing workspace.
+func TestPrepareClient_InteractiveResolutionPreservesExistingWorkspaceOnError(t *testing.T) {
+	client := newFailingProjectWorkspace(t)
+	cmd := &UpCmd{
+		GlobalFlags: &flags.GlobalFlags{},
+		resolveWorkspace: func(
+			context.Context,
+			*config.Config,
+			workspace.ResolveParams,
+		) (client2.BaseWorkspaceClient, error) {
+			return client, nil
+		},
+	}
+
+	_, err := cmd.prepareClient(context.Background(), testConfig(), nil)
+	require.Error(t, err)
+	require.False(
+		t,
+		client.deleted,
+		"interactively resolved existing workspace must not be deleted on secret error",
+	)
+}
+
+// TestPrepareClient_NewWorkspaceCleanedUpOnError verifies that when a newly created
+// workspace fails during secret preparation, it is cleanly removed so that no
+// orphaned workspace folder or record remains.
+func TestPrepareClient_NewWorkspaceCleanedUpOnError(t *testing.T) {
+	client := newFailingProjectWorkspace(t)
+	cmd := &UpCmd{
+		GlobalFlags: &flags.GlobalFlags{},
+		resolveWorkspace: func(
+			context.Context,
+			*config.Config,
+			workspace.ResolveParams,
+		) (client2.BaseWorkspaceClient, error) {
+			return client, nil
+		},
+	}
+
+	_, err := cmd.prepareClient(
+		context.Background(),
+		testConfig(),
+		[]string{filepath.Join(t.TempDir(), "new-workspace")},
+	)
+	require.Error(t, err)
+	require.True(
+		t,
+		client.deleted,
+		"newly created workspace must be cleaned up on secret error",
+	)
 }

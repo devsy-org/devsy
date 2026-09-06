@@ -81,18 +81,25 @@ func (cmd *UpCmd) prepareClient(
 	}
 
 	cmd.resolveSSHConfig(devsyConfig)
-	args = cmd.ensureArgsForFromSnapshot(args)
+	args = cmd.ensureArgs(args)
 
-	existed := false
-	if cmd.ID != "" {
+	var existed bool
+	switch {
+	case cmd.ID != "":
 		existed = workspace2.Exists(ctx, devsyConfig, nil, cmd.ID, cmd.Owner) != ""
-	} else if len(args) > 0 {
+	case len(args) > 0:
 		_, name := file.IsLocalDir(args[0])
 		existed = workspace2.Exists(ctx, devsyConfig, nil, workspace2.ToID(name), cmd.Owner) != ""
+	default:
+		existed = true
 	}
 
 	log.Debugf("up: resolving workspace with cmd.IDE=%q ide-launch=%q", cmd.IDE, cmd.IDELaunch)
-	client, err := workspace2.Resolve(
+	resolver := cmd.resolveWorkspace
+	if resolver == nil {
+		resolver = workspace2.Resolve
+	}
+	client, err := resolver(
 		ctx,
 		devsyConfig,
 		cmd.resolveParams(args, source, devsyConfig),
@@ -174,13 +181,22 @@ func (cmd *UpCmd) checkProviderUpdate(
 	return workspace2.CheckProviderUpdate(ctx, devsyConfig, proInstance)
 }
 
-// ensureArgsForFromSnapshot returns args unchanged unless --from-snapshot is
+// ensureArgs returns args unchanged unless either --from-snapshot or --source is
 // set and args is empty, in which case it synthesizes a placeholder arg.
-func (cmd *UpCmd) ensureArgsForFromSnapshot(args []string) []string {
-	if cmd.FromSnapshot != "" && len(args) == 0 {
-		return []string{cmd.FromSnapshot}
+func (cmd *UpCmd) ensureArgs(args []string) []string {
+	if len(args) == 0 {
+		if cmd.FromSnapshot != "" {
+			return []string{cmd.FromSnapshot}
+		}
+		if cmd.Source != "" {
+			return []string{cmd.Source}
+		}
 	}
 	return args
+}
+
+func (cmd *UpCmd) ensureArgsForFromSnapshot(args []string) []string {
+	return cmd.ensureArgs(args)
 }
 
 func (cmd *UpCmd) resolveParams(

@@ -52,8 +52,12 @@ func LoadSourceConfigs(devsyConfig *config.Config) ([]SourceConfig, error) {
 	return append([]SourceConfig(nil), items...), nil
 }
 
-// SaveSourceConfigs writes external source metadata for the active context.
-func SaveSourceConfigs(devsyConfig *config.Config, sources []SourceConfig) error {
+// ModifySourceConfigs serializes external source modifications across processes
+// by holding the secret-sources lock while loading, mutating, and writing configuration.
+func ModifySourceConfigs(
+	devsyConfig *config.Config,
+	mutate func(sources []SourceConfig) ([]SourceConfig, error),
+) error {
 	if devsyConfig == nil {
 		return fmt.Errorf("devsy config is nil")
 	}
@@ -70,8 +74,23 @@ func SaveSourceConfigs(devsyConfig *config.Config, sources []SourceConfig) error
 	if err != nil {
 		return err
 	}
-	setContextSources(&registry, devsyConfig.DefaultContext, sources)
+	var current []SourceConfig
+	if registry.Contexts != nil {
+		current = registry.Contexts[devsyConfig.DefaultContext]
+	}
+	updated, err := mutate(append([]SourceConfig(nil), current...))
+	if err != nil {
+		return err
+	}
+	setContextSources(&registry, devsyConfig.DefaultContext, updated)
 	return writeSourceRegistry(filePath, registry)
+}
+
+// SaveSourceConfigs writes external source metadata for the active context.
+func SaveSourceConfigs(devsyConfig *config.Config, sources []SourceConfig) error {
+	return ModifySourceConfigs(devsyConfig, func(_ []SourceConfig) ([]SourceConfig, error) {
+		return sources, nil
+	})
 }
 
 func loadSourceRegistry(filePath string) (sourceRegistryFile, error) {
