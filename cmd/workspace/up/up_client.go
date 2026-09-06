@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -82,6 +83,14 @@ func (cmd *UpCmd) prepareClient(
 	cmd.resolveSSHConfig(devsyConfig)
 	args = cmd.ensureArgsForFromSnapshot(args)
 
+	existed := false
+	if cmd.ID != "" {
+		existed = workspace2.Exists(ctx, devsyConfig, nil, cmd.ID, cmd.Owner) != ""
+	} else if len(args) > 0 {
+		_, name := file.IsLocalDir(args[0])
+		existed = workspace2.Exists(ctx, devsyConfig, nil, workspace2.ToID(name), cmd.Owner) != ""
+	}
+
 	log.Debugf("up: resolving workspace with cmd.IDE=%q ide-launch=%q", cmd.IDE, cmd.IDELaunch)
 	client, err := workspace2.Resolve(
 		ctx,
@@ -99,10 +108,16 @@ func (cmd *UpCmd) prepareClient(
 	// client's resolved WorkspaceConfig().Source, not the possibly-nil
 	// source parsed above.
 	if err := cmd.prepareResolvedWorkspaceSecrets(ctx, devsyConfig, client); err != nil {
+		if !existed {
+			_ = client.Delete(ctx, client2.DeleteOptions{Force: true, IgnoreNotFound: true})
+		}
 		return nil, err
 	}
 
 	if err := cmd.checkProviderUpdate(ctx, devsyConfig, client); err != nil {
+		if !existed {
+			_ = client.Delete(ctx, client2.DeleteOptions{Force: true, IgnoreNotFound: true})
+		}
 		return nil, err
 	}
 	return client, nil

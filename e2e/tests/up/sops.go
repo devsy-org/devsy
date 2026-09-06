@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	sourceSubCmd       = "source"
 	sopsE2EPlaintext   = "SUPER_SECRET_TEST_VALUE_7B91"
 	sopsE2EMounted     = "mounted-value-77"
 	sopsE2EAgeIdentity = "AGE-SECRET-KEY-12UWYSAH2MRDQ5K4EWC4253PDTCSCS32Y5EFQ8TEN2SL3QYU2GN2SG88CZX" // gitleaks:allow
@@ -163,12 +164,13 @@ func unsetSOPSEnv(name string) {
 }
 
 func registerSOPSSource(ctx context.Context, dtc *dockerTestContext, name, filePath string) {
+	_, _ = dtc.f.ExecCommandOutput(ctx, []string{secretCmd, sourceSubCmd, "remove", name})
 	_, err := dtc.f.ExecCommandOutput(
 		ctx,
-		[]string{secretCmd, "source", "add", "sops", name, filePath},
+		[]string{secretCmd, sourceSubCmd, "add", "sops", name, filePath},
 	)
 	framework.ExpectNoError(err)
 	ginkgo.DeferCleanup(func() {
-		_, _ = dtc.f.ExecCommandOutput(ctx, []string{secretCmd, "source", "remove", name})
+		_, _ = dtc.f.ExecCommandOutput(ctx, []string{secretCmd, sourceSubCmd, "remove", name})
 	})
 }

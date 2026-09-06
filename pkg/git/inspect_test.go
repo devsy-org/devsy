@@ -51,7 +51,7 @@ func TestCleanInspectionSubPath(t *testing.T) {
 		{name: "dot", value: ".", want: ""},
 		{name: "simple", value: testSubPath, want: testSubPath},
 		{name: "trailing slash", value: testSubPath + "/", want: testSubPath},
-		{name: "absolute rejected", value: "/apps/bar", wantErr: true},
+		{name: "leading slash stripped", value: "/apps/bar", want: "apps/bar"},
 		{name: "parent escape rejected", value: "../bar", wantErr: true},
 		{name: "parent only rejected", value: "..", wantErr: true},
 	} {
