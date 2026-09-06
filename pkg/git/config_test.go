@@ -48,14 +48,17 @@ func TestConfigGetWithScope(t *testing.T) {
 		fake.lastArgs())
 }
 
+// #nosec G101 -- not a credential value; it is a git config key name.
+const credentialHelperKey = "credential.helper"
+
 func TestConfigAddSystemScope(t *testing.T) {
 	fake := &fakeRunner{}
 	config := At("", WithRunner(fake)).Config()
 
-	err := config.Add(context.Background(), "credential.helper", "!helper", ScopeSystem)
+	err := config.Add(context.Background(), credentialHelperKey, "!helper", ScopeSystem)
 	assert.NilError(t, err)
 	assert.DeepEqual(t,
-		[]string{subConfig, flagSystem, "--add", "credential.helper", "!helper"},
+		[]string{subConfig, flagSystem, "--add", credentialHelperKey, "!helper"},
 		fake.lastArgs())
 }
 
@@ -74,10 +77,10 @@ func TestConfigUnsetSystemScope(t *testing.T) {
 	fake := &fakeRunner{}
 	config := At("", WithRunner(fake)).Config()
 
-	err := config.Unset(context.Background(), "credential.helper", ScopeSystem)
+	err := config.Unset(context.Background(), credentialHelperKey, ScopeSystem)
 	assert.NilError(t, err)
 	assert.DeepEqual(t,
-		[]string{subConfig, flagSystem, "--unset", "credential.helper"},
+		[]string{subConfig, flagSystem, "--unset", credentialHelperKey},
 		fake.lastArgs())
 }
 
@@ -85,7 +88,7 @@ func TestConfigUnsetValueScopesToExactValue(t *testing.T) {
 	fake := &fakeRunner{}
 	config := At("", WithRunner(fake)).Config()
 
-	err := config.UnsetValue(context.Background(), "credential.helper", "!my-helper", ScopeSystem)
+	err := config.UnsetValue(context.Background(), credentialHelperKey, "!my-helper", ScopeSystem)
 	assert.NilError(t, err)
 	assert.DeepEqual(
 		t,
@@ -94,7 +97,7 @@ func TestConfigUnsetValueScopesToExactValue(t *testing.T) {
 			flagSystem,
 			"--fixed-value",
 			"--unset-all",
-			"credential.helper",
+			credentialHelperKey,
 			"!my-helper",
 		},
 		fake.lastArgs(),
@@ -105,7 +108,7 @@ func TestConfigUnsetValueNoMatchIsNotError(t *testing.T) {
 	fake := &fakeRunner{err: &CommandError{ExitCode: 5}}
 	config := At("", WithRunner(fake)).Config()
 
-	err := config.UnsetValue(context.Background(), "credential.helper", "!my-helper", ScopeSystem)
+	err := config.UnsetValue(context.Background(), credentialHelperKey, "!my-helper", ScopeSystem)
 	assert.NilError(t, err)
 }
 
@@ -113,7 +116,7 @@ func TestConfigUnsetValueRealFailurePropagates(t *testing.T) {
 	fake := &fakeRunner{err: &CommandError{ExitCode: 128, Stderr: "fatal: bad config"}}
 	config := At("", WithRunner(fake)).Config()
 
-	err := config.UnsetValue(context.Background(), "credential.helper", "!my-helper", ScopeSystem)
+	err := config.UnsetValue(context.Background(), credentialHelperKey, "!my-helper", ScopeSystem)
 	assert.Assert(t, err != nil)
 
 	var cmdErr *CommandError

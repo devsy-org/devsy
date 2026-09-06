@@ -12,6 +12,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -64,26 +65,31 @@ func (cmd *UpCmd) prepareClient(
 	devsyConfig *config.Config,
 	args []string,
 ) (client2.BaseWorkspaceClient, error) {
-	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
+	if err := cmd.prepareClientEnvironment(devsyConfig, args, ctx); err != nil {
 		return nil, err
 	}
-	if cmd.Platform.Enabled {
-		log.Debug("running in platform mode")
-		log.Debug("using error output stream")
-		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
-	}
-	if err := cmd.prepareSecrets(devsyConfig); err != nil {
-		return nil, err
-	}
-	if err := cmd.validateFromSnapshot(ctx, args); err != nil {
-		return nil, err
-	}
+
 	source, err := cmd.parseWorkspaceSource()
 	if err != nil {
 		return nil, err
 	}
+	// Bootstrap credentials are resolved exclusively from sources that are
+	// available before repository acquisition. Repository-owned sources are
+	// deliberately not registered yet, which prevents circular clone auth.
+	if err := cmd.prepareBootstrapGitToken(ctx, devsyConfig, source); err != nil {
+		return nil, err
+	}
+
 	cmd.resolveSSHConfig(devsyConfig)
 	args = cmd.ensureArgsForFromSnapshot(args)
+
+	existed := false
+	if cmd.ID != "" {
+		existed = workspace2.Exists(ctx, devsyConfig, nil, cmd.ID, cmd.Owner) != ""
+	} else if len(args) > 0 {
+		_, name := file.IsLocalDir(args[0])
+		existed = workspace2.Exists(ctx, devsyConfig, nil, workspace2.ToID(name), cmd.Owner) != ""
+	}
 
 	log.Debugf("up: resolving workspace with cmd.IDE=%q ide-launch=%q", cmd.IDE, cmd.IDELaunch)
 	client, err := workspace2.Resolve(
@@ -94,10 +100,65 @@ func (cmd *UpCmd) prepareClient(
 	if err != nil {
 		return nil, err
 	}
+
+	// The workspace source (local folder, git repository, or image) is only
+	// fully known once Resolve has determined it, e.g. from a positional
+	// workspace argument rather than --source/--from-snapshot. Repository-
+	// owned secret discovery must therefore happen after Resolve, using the
+	// client's resolved WorkspaceConfig().Source, not the possibly-nil
+	// source parsed above.
+	if err := cmd.prepareResolvedWorkspaceSecrets(ctx, devsyConfig, client); err != nil {
+		if !existed {
+			_ = client.Delete(ctx, client2.DeleteOptions{Force: true, IgnoreNotFound: true})
+		}
+		return nil, err
+	}
+
 	if err := cmd.checkProviderUpdate(ctx, devsyConfig, client); err != nil {
+		if !existed {
+			_ = client.Delete(ctx, client2.DeleteOptions{Force: true, IgnoreNotFound: true})
+		}
 		return nil, err
 	}
 	return client, nil
+}
+
+func (cmd *UpCmd) prepareClientEnvironment(
+	devsyConfig *config.Config,
+	args []string,
+	ctx context.Context,
+) error {
+	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
+		return err
+	}
+	if cmd.Platform.Enabled {
+		log.Debug("running in platform mode")
+		log.Debug("using error output stream")
+		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
+	}
+	return cmd.validateFromSnapshot(ctx, args)
+}
+
+// prepareResolvedWorkspaceSecrets discovers repository-owned project secrets
+// (e.g. SOPS sources declared in .devsy/config.yaml) using the workspace's
+// fully resolved source and merges them with attached/explicit secrets.
+// This must run after workspace2.Resolve, since a positional workspace
+// argument's local-folder/git-repository/image classification is only known
+// once Resolve has determined client.WorkspaceConfig().Source.
+func (cmd *UpCmd) prepareResolvedWorkspaceSecrets(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	var source *provider2.WorkspaceSource
+	if cfg := client.WorkspaceConfig(); cfg != nil {
+		source = &cfg.Source
+	}
+	projectSecrets, err := cmd.discoverProjectSecrets(ctx, source)
+	if err != nil {
+		return err
+	}
+	return cmd.prepareSecretsWithProject(ctx, devsyConfig, projectSecrets)
 }
 
 // checkProviderUpdate checks for a provider update, unless running in platform mode.
@@ -115,13 +176,6 @@ func (cmd *UpCmd) checkProviderUpdate(
 
 // ensureArgsForFromSnapshot returns args unchanged unless --from-snapshot is
 // set and args is empty, in which case it synthesizes a placeholder arg.
-// resolveWorkspace only takes its create-new-workspace path when args is
-// non-empty (see pkg/workspace.resolveWorkspace); --from-snapshot forbids a
-// positional source (validateFromSnapshot), so without this, a
-// --from-snapshot restore into a workspace id that doesn't exist yet always
-// fails with "doesn't exist" instead of creating it. The synthesized value
-// itself is never read on this path: DesiredID and Source (both already set
-// by resolveExplicitSource) take priority over it.
 func (cmd *UpCmd) ensureArgsForFromSnapshot(args []string) []string {
 	if cmd.FromSnapshot != "" && len(args) == 0 {
 		return []string{cmd.FromSnapshot}
@@ -154,7 +208,11 @@ func (cmd *UpCmd) resolveParams(
 	}
 }
 
-func (cmd *UpCmd) prepareSecrets(devsyConfig *config.Config) error {
+func (cmd *UpCmd) prepareSecretsWithProject(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	project *projectSecretContext,
+) error {
 	if err := mergeEnvFromFiles(&cmd.CLIOptions); err != nil {
 		return err
 	}
@@ -169,7 +227,7 @@ func (cmd *UpCmd) prepareSecrets(devsyConfig *config.Config) error {
 		}
 	}
 
-	if err := cmd.resolveStoredSecrets(devsyConfig); err != nil {
+	if err := cmd.resolveStoredSecrets(ctx, devsyConfig, project); err != nil {
 		return err
 	}
 
@@ -189,130 +247,23 @@ func (cmd *UpCmd) prepareSecrets(devsyConfig *config.Config) error {
 	return nil
 }
 
-func (cmd *UpCmd) resolveStoredSecrets(devsyConfig *config.Config) error {
-	requests, err := collectSecretRequests(cmd.Secrets, devsyConfig)
-	if err != nil {
-		return err
-	}
-	if !cmd.hasStoredValues(requests) {
-		return nil
-	}
-
-	store, err := secrets.NewStoreForConfig(devsyConfig)
-	if err != nil {
-		return err
-	}
-	r := secretResolver{store: store, context: devsyConfig.DefaultContext}
-
-	if err := cmd.applyLifecycleSecrets(requests, r.get); err != nil {
-		return err
-	}
-	if err := cmd.applyEnvVars(r.get, r.sensitive); err != nil {
-		return err
-	}
-	if err := cmd.applyBuildSecrets(r.get); err != nil {
-		return err
-	}
-	return cmd.applyGitToken(r.get)
-}
-
-type secretResolver struct {
-	store   secrets.Store
-	context string
-}
-
-func (r secretResolver) get(name string) (string, error) {
-	value, err := r.store.Get(r.context, name)
-	if err != nil {
-		return "", fmt.Errorf("resolve secret %q in context %q: %w", name, r.context, err)
-	}
-	return value, nil
-}
-
-func (r secretResolver) sensitive(name string) (bool, error) {
-	meta, err := r.store.Meta(r.context, name)
-	if err != nil {
-		return false, fmt.Errorf("resolve secret %q in context %q: %w", name, r.context, err)
-	}
-	return meta.Sensitive(), nil
-}
-
-func (cmd *UpCmd) hasStoredValues(requests []secretRequest) bool {
-	return len(requests) > 0 || len(cmd.EnvVars) > 0 ||
-		len(cmd.BuildSecretNames) > 0 || cmd.GitTokenSecret != ""
-}
-
-func (cmd *UpCmd) applyLifecycleSecrets(
-	requests []secretRequest,
-	get func(string) (string, error),
+func (cmd *UpCmd) prepareBootstrapGitToken(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	source *provider2.WorkspaceSource,
 ) error {
-	for _, req := range requests {
-		value, err := get(req.name)
-		if err != nil {
-			return err
-		}
-		if req.mount {
-			cmd.SecretsMount = append(cmd.SecretsMount, req.target+"="+value)
-		} else {
-			cmd.SecretsEnv = append(cmd.SecretsEnv, req.target+"="+value)
-		}
-	}
-	return nil
-}
-
-// applyEnvVars resolves --env entries into WorkspaceEnv. A sensitive secret must
-// never be routed here: WorkspaceEnv rides in the setup argv (ps-visible).
-func (cmd *UpCmd) applyEnvVars(
-	get func(string) (string, error),
-	isSensitive func(string) (bool, error),
-) error {
-	for _, entry := range cmd.EnvVars {
-		name, target, ok := strings.Cut(entry, "=")
-		if !ok {
-			target = name
-		} else if target == "" {
-			return fmt.Errorf("invalid --env %q: target after %q= must not be empty", entry, name)
-		}
-		sensitive, err := isSensitive(name)
-		if err != nil {
-			return err
-		}
-		if sensitive {
-			return fmt.Errorf(
-				"%q is a secret and cannot be passed with --env (it would be visible in the process list); use --secret %s instead",
-				name,
-				name,
-			)
-		}
-		value, err := get(name)
-		if err != nil {
-			return err
-		}
-		cmd.WorkspaceEnv = append(cmd.WorkspaceEnv, target+"="+value)
-	}
-	return nil
-}
-
-func (cmd *UpCmd) applyBuildSecrets(get func(string) (string, error)) error {
-	for _, name := range cmd.BuildSecretNames {
-		value, err := get(name)
-		if err != nil {
-			return err
-		}
-		cmd.BuildSecrets = append(cmd.BuildSecrets, name+"="+value)
-	}
-	return nil
-}
-
-func (cmd *UpCmd) applyGitToken(get func(string) (string, error)) error {
 	if cmd.GitTokenSecret == "" {
 		return nil
 	}
-	token, err := get(cmd.GitTokenSecret)
+	resolver, err := secrets.NewResolverForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
-	gitToken, err := cmd.buildGitToken(token)
+	resolved, err := validateBootstrapSecretReference(ctx, resolver, cmd.GitTokenSecret)
+	if err != nil {
+		return err
+	}
+	gitToken, err := cmd.buildGitTokenForSource(resolved.Value, source)
 	if err != nil {
 		return err
 	}
@@ -320,10 +271,134 @@ func (cmd *UpCmd) applyGitToken(get func(string) (string, error)) error {
 	return nil
 }
 
-// buildGitToken host-scopes the token; it fails on an unresolvable host so the
-// token is never left unscoped.
-func (cmd *UpCmd) buildGitToken(token string) (*provider2.GitToken, error) {
-	host := gitHostFromSource(cmd.Source)
+func (cmd *UpCmd) resolveStoredSecrets(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	project *projectSecretContext,
+) error {
+	requests, err := collectSecretRequests(cmd.Secrets, devsyConfig, project.attachedSecrets())
+	if err != nil {
+		return err
+	}
+	if !cmd.hasStoredValues(requests) {
+		return nil
+	}
+
+	resolver, err := secrets.NewResolverForConfig(devsyConfig)
+	if err != nil {
+		return err
+	}
+	if err := project.register(resolver); err != nil {
+		return err
+	}
+
+	if err := cmd.applyLifecycleSecrets(ctx, requests, resolver); err != nil {
+		return err
+	}
+	if err := cmd.applyEnvVars(ctx, resolver); err != nil {
+		return err
+	}
+	return cmd.applyBuildSecrets(ctx, resolver)
+}
+
+func (cmd *UpCmd) hasStoredValues(requests []secretRequest) bool {
+	return len(requests) > 0 || len(cmd.EnvVars) > 0 || len(cmd.BuildSecretNames) > 0
+}
+
+func (cmd *UpCmd) applyLifecycleSecrets(
+	ctx context.Context,
+	requests []secretRequest,
+	resolver *secrets.Resolver,
+) error {
+	for _, req := range requests {
+		resolved, err := resolver.Resolve(ctx, req.ref)
+		if err != nil {
+			return err
+		}
+		if req.mount {
+			cmd.SecretsMount = append(cmd.SecretsMount, req.target+"="+resolved.Value)
+		} else {
+			cmd.SecretsEnv = append(cmd.SecretsEnv, req.target+"="+resolved.Value)
+		}
+	}
+	return nil
+}
+
+// applyEnvVars resolves --env entries from the local Devsy store. External
+// sensitive sources intentionally use --secret instead: WorkspaceEnv rides in
+// the setup argv and is process-list visible.
+func (cmd *UpCmd) applyEnvVars(ctx context.Context, resolver *secrets.Resolver) error {
+	for _, entry := range cmd.EnvVars {
+		name, target, ok := strings.Cut(entry, "=")
+		if !ok {
+			target = name
+		} else if target == "" {
+			return fmt.Errorf("invalid --env %q: target after %q= must not be empty", entry, name)
+		}
+		ref, err := secrets.ParseRef(name)
+		if err != nil {
+			return err
+		}
+		if ref.Source != secrets.LocalSourceName {
+			return fmt.Errorf(
+				"--env only accepts Devsy-managed values; use --secret %s instead",
+				name,
+			)
+		}
+		resolved, err := resolver.Resolve(ctx, ref)
+		if err != nil {
+			return err
+		}
+		if resolved.Sensitive {
+			return fmt.Errorf(
+				"%q is a secret and cannot be passed with --env (it would be visible in the process list); use --secret %s instead",
+				name,
+				name,
+			)
+		}
+		cmd.WorkspaceEnv = append(cmd.WorkspaceEnv, target+"="+resolved.Value)
+	}
+	return nil
+}
+
+func (cmd *UpCmd) applyBuildSecrets(ctx context.Context, resolver *secrets.Resolver) error {
+	seen := map[string]string{}
+	built := make([]string, 0, len(cmd.BuildSecretNames))
+	for _, value := range cmd.BuildSecretNames {
+		ref, err := secrets.ParseRef(value)
+		if err != nil {
+			return err
+		}
+		if other, dup := seen[ref.Name]; dup {
+			return fmt.Errorf(
+				"build secrets %q and %q both use BuildKit id %q",
+				other,
+				ref.String(),
+				ref.Name,
+			)
+		}
+		seen[ref.Name] = ref.String()
+		resolved, err := resolver.Resolve(ctx, ref)
+		if err != nil {
+			return err
+		}
+		built = append(built, ref.Name+"="+resolved.Value)
+	}
+	cmd.BuildSecrets = built
+	return nil
+}
+
+func (cmd *UpCmd) buildGitTokenForSource(
+	token string,
+	source *provider2.WorkspaceSource,
+) (*provider2.GitToken, error) {
+	host := ""
+	if source != nil && source.GitRepository != "" {
+		host = gitHostFromSource(source.GitRepository)
+	}
+	if host == "" {
+		host = gitHostFromSource(cmd.Source)
+	}
 	if host == "" {
 		return nil, fmt.Errorf(
 			"cannot use --git-token: workspace source %q has no HTTP(S) host to scope the token to",
@@ -334,12 +409,11 @@ func (cmd *UpCmd) buildGitToken(token string) (*provider2.GitToken, error) {
 	if username == "" {
 		username = gitTokenUsernameForHost(host)
 	}
-
 	return &provider2.GitToken{Host: host, Username: username, Token: token}, nil
 }
 
 // gitHostFromSource returns the host of an HTTP(S) git source, or "". A git
-// token is only usable over HTTP(S), so non-HTTP(S) schemes (e.g. ssh) yield "".
+// token is only usable over HTTP(S), so non-HTTP(S) schemes yield "".
 func gitHostFromSource(source string) string {
 	s := strings.TrimPrefix(source, "git:")
 	u, err := url.Parse(s)
@@ -360,40 +434,76 @@ func gitTokenUsernameForHost(host string) string {
 }
 
 type secretRequest struct {
-	name   string
+	ref    secrets.SecretRef
 	target string
 	mount  bool
 }
 
-// collectSecretRequests merges context bindings with secret flags; flags override bindings.
-func collectSecretRequests(flags []string, devsyConfig *config.Config) ([]secretRequest, error) {
+// collectSecretRequests merges context/project bindings with secret flags;
+// explicit flags override automatic bindings for the same reference.
+func collectSecretRequests(
+	flags []string,
+	devsyConfig *config.Config,
+	projectSecrets []string,
+) ([]secretRequest, error) {
 	byName := map[string]secretRequest{}
 
+	var attached []string
 	if ctxConfig := devsyConfig.Contexts[devsyConfig.DefaultContext]; ctxConfig != nil {
-		for _, name := range ctxConfig.Secrets {
-			byName[name] = secretRequest{name: name, target: name}
-		}
+		attached = ctxConfig.Secrets
+	}
+	if err := addSecretBindings(byName, attached, "attached"); err != nil {
+		return nil, err
+	}
+	if err := addSecretBindings(byName, projectSecrets, "project"); err != nil {
+		return nil, err
+	}
+	if err := addSecretFlags(byName, flags); err != nil {
+		return nil, err
 	}
 
-	for _, entry := range flags {
-		req, err := parseSecretFlag(entry)
+	requests := sortedSecretRequests(byName)
+	if err := checkDuplicateMountTargets(requests); err != nil {
+		return nil, err
+	}
+	return requests, nil
+}
+
+func addSecretBindings(
+	byName map[string]secretRequest,
+	values []string,
+	kind string,
+) error {
+	for _, value := range values {
+		ref, err := secrets.ParseRef(value)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("invalid %s secret %q: %w", kind, value, err)
 		}
-		byName[req.name] = req
+		byName[ref.String()] = secretRequest{ref: ref, target: ref.Name}
 	}
+	return nil
+}
 
+func addSecretFlags(byName map[string]secretRequest, values []string) error {
+	for _, value := range values {
+		req, err := parseSecretFlag(value)
+		if err != nil {
+			return err
+		}
+		byName[req.ref.String()] = req
+	}
+	return nil
+}
+
+func sortedSecretRequests(byName map[string]secretRequest) []secretRequest {
 	requests := make([]secretRequest, 0, len(byName))
 	for _, req := range byName {
 		requests = append(requests, req)
 	}
-	sort.Slice(requests, func(i, j int) bool { return requests[i].name < requests[j].name })
-
-	if err := checkDuplicateMountTargets(requests); err != nil {
-		return nil, err
-	}
-
-	return requests, nil
+	sort.Slice(requests, func(i, j int) bool {
+		return requests[i].ref.String() < requests[j].ref.String()
+	})
+	return requests
 }
 
 func checkDuplicateMountTargets(requests []secretRequest) error {
@@ -405,20 +515,21 @@ func checkDuplicateMountTargets(requests []secretRequest) error {
 		if other, dup := targets[req.target]; dup {
 			return fmt.Errorf(
 				"secrets %q and %q both mount to target %q; give one a distinct target=",
-				other, req.name, req.target,
+				other, req.ref.String(), req.target,
 			)
 		}
-		targets[req.target] = req.name
+		targets[req.target] = req.ref.String()
 	}
 	return nil
 }
 
 func parseSecretFlag(entry string) (secretRequest, error) {
 	parts := strings.Split(entry, ",")
-	req := secretRequest{name: parts[0]}
-	if req.name == "" {
-		return secretRequest{}, fmt.Errorf("invalid secret %q: missing name", entry)
+	ref, err := secrets.ParseRef(parts[0])
+	if err != nil {
+		return secretRequest{}, err
 	}
+	req := secretRequest{ref: ref}
 
 	for _, opt := range parts[1:] {
 		key, value, ok := strings.Cut(opt, "=")
@@ -434,9 +545,8 @@ func parseSecretFlag(entry string) (secretRequest, error) {
 	}
 
 	if req.target == "" {
-		req.target = req.name
+		req.target = req.ref.Name
 	}
-
 	return req, nil
 }
 
@@ -459,7 +569,6 @@ func (req *secretRequest) applyOption(key, value string) error {
 	default:
 		return fmt.Errorf("invalid secret option %q, expected type or target", key)
 	}
-
 	return nil
 }
 
@@ -488,21 +597,6 @@ func (cmd *UpCmd) parseWorkspaceSource() (*provider2.WorkspaceSource, error) {
 	return source, nil
 }
 
-// resolveExplicitSource returns an explicit WorkspaceSource when --from-snapshot
-// is set, composed identically to `devsy snapshot restore` via
-// snapshot.RestoreComposition ("snapshot:<ref>" source, "image:<repo>:<tag>-fs"
-// DevContainerSource), taking priority over positional-arg source resolution.
-// It also sets cmd.DevContainerSource so the workspace runs the snapshot's
-// committed filesystem image instead of rebuilding, matching restore's
-// behavior exactly.
-//
-// Since --from-snapshot forbids a positional source (validateFromSnapshot),
-// there is no other way for the workspace ID to reach ResolveParams.DesiredID
-// on this path; without defaulting it here, workspace resolution falls back
-// to selecting an unrelated existing workspace (or fails confusingly in
-// non-TTY contexts). So when --id wasn't given explicitly, default it from
-// the snapshot ref's workspace id, mirroring `devsy snapshot restore`'s
-// buildWorkspace.
 func (cmd *UpCmd) resolveExplicitSource() (*provider2.WorkspaceSource, error) {
 	if cmd.FromSnapshot == "" {
 		return nil, nil
@@ -531,14 +625,6 @@ func (cmd *UpCmd) resolveExplicitSource() (*provider2.WorkspaceSource, error) {
 	return source, nil
 }
 
-// validateFromSnapshot enforces --from-snapshot's invariants before workspace
-// resolution: it cannot be combined with an explicit source (positional arg
-// or --source) or used in platform mode (snapshots are local-only — `devsy
-// snapshot create` rejects machine-provider workspaces up front, and restore
-// has no remote-registry-backed equivalent of a platform-managed container),
-// and the referenced snapshot must actually exist. Mirrors `devsy snapshot
-// restore`'s upfront PullManifest check so a bad or missing ref fails fast
-// with a clear error instead of partway through workspace creation.
 func (cmd *UpCmd) validateFromSnapshot(ctx context.Context, args []string) error {
 	if cmd.FromSnapshot == "" {
 		return nil
@@ -556,10 +642,6 @@ func (cmd *UpCmd) validateFromSnapshot(ctx context.Context, args []string) error
 	return cmd.applyFromSnapshotOverrides(manifest)
 }
 
-// applyFromSnapshotOverrides replays the create-time devcontainer.json
-// settings the snapshot's manifest carries (runArgs, containerEnv,
-// remoteUser) onto cmd, so the image-sourced restored container behaves like
-// the original did.
 func (cmd *UpCmd) applyFromSnapshotOverrides(manifest *snapshotpkg.Manifest) error {
 	runArgs, err := manifest.RunArgs()
 	if err != nil {

@@ -1,0 +1,4 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "postCreateCommand": "printf '%s' \"$SOPS_E2E_SECRET\" > /tmp/sops-project-check.out"
+}

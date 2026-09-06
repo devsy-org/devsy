@@ -1,0 +1,6 @@
+secretSources:
+  - name: project
+    type: sops
+    path: secrets.enc.yaml
+secrets:
+  - sops:project/SOPS_E2E_SECRET

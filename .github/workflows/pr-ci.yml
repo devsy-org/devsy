@@ -423,7 +423,7 @@ jobs:
             requires-secret: false
 
           - label: up-provider-podman-rootless-basic
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             free-disk-space: false
             install-kind: false
             requires-secret: false
@@ -433,7 +433,7 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootless-exec
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             free-disk-space: false
             install-kind: false
             requires-secret: false
@@ -443,7 +443,7 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootless-lifecycle
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             free-disk-space: false
             install-kind: false
             requires-secret: false
@@ -453,7 +453,7 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootless-config
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             free-disk-space: false
             install-kind: false
             requires-secret: false
@@ -463,7 +463,7 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootless-features
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             free-disk-space: false
             install-kind: false
             requires-secret: false
@@ -473,7 +473,7 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootful-basic
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             free-disk-space: false
             install-kind: false
             requires-secret: false
@@ -483,7 +483,7 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootful-lifecycle
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             free-disk-space: false
             install-kind: false
             requires-secret: false
@@ -493,7 +493,7 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootful-lifecycle-2
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             free-disk-space: false
             install-kind: false
             requires-secret: false
@@ -503,7 +503,7 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootful-config
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             free-disk-space: false
             install-kind: false
             requires-secret: false
@@ -513,7 +513,7 @@ jobs:
             flake-attempts: 2
 
           - label: up-provider-podman-rootful-features
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             free-disk-space: false
             install-kind: false
             requires-secret: false
@@ -781,26 +781,17 @@ jobs:
 
           command -v newuidmap >/dev/null || sudo apt-get install -y uidmap
 
-      - name: Install Podman (Linux rootless)
+      - name: Install Podman (Linux)
         if: matrix.install-podman == 'rootless' && runner.os == 'Linux'
+        shell: bash
         run: |
-          podman info
-          podman run --rm busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d echo "podman runtime preflight OK"
+          ./hack/ci/setup-podman-linux.sh rootless
 
       - name: Install Podman (Linux rootful)
         if: matrix.install-podman == 'rootful' && runner.os == 'Linux'
+        shell: bash
         run: |
-          sudo systemctl daemon-reload
-          sudo systemctl enable --now podman.socket
-          if ! timeout 30 bash -c 'until sudo podman --remote --url unix:///run/podman/podman.sock info >/dev/null 2>&1; do sleep 1; done'; then
-            echo "::error::podman service did not become ready within 30s"
-            sudo systemctl status podman.socket --no-pager || true
-            sudo journalctl -u podman.socket --no-pager -n 100 || true
-            exit 1
-          fi
-          echo "DOCKER_HOST=unix:///run/podman/podman.sock" >> "$GITHUB_ENV"
-          sudo podman --remote --url unix:///run/podman/podman.sock info
-          sudo podman run --rm busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d echo "podman runtime preflight OK"
+          ./hack/ci/setup-podman-linux.sh rootful
 
       - name: get microsandbox latest version
         if: matrix.install-microsandbox == true && runner.os == 'Linux'

@@ -224,16 +224,21 @@ func (cmd *UpCmd) registerWorkspaceSecretsFlags(upCmd *cobra.Command) {
 			"File of env vars for the workspace"),
 		flags.String(&cmd.SecretsFile, names.SecretsFile, "",
 			`JSON file ({"KEY":"value"}) of secrets for lifecycle commands`),
-		flags.StringArray(&cmd.Secrets, names.Secret, nil,
-			"Stored Devsy secret to inject, as NAME[,type=env|mount][,target=X]; "+
-				"type=env (default) sets an env var, type=mount writes /run/secrets/<target>. Repeatable"),
+		flags.StringArray(
+			&cmd.Secrets,
+			names.Secret,
+			nil,
+			"Secret to inject: NAME or source-qualified TYPE:SOURCE/NAME[,type=env|mount][,target=X]; "+
+				"type=env (default) sets an env var, type=mount writes /run/secrets/<target>. Repeatable",
+		),
 		flags.StringArray(&cmd.EnvVars, names.Env, nil,
 			"Stored Devsy env var to inject into the workspace as NAME[=TARGET]. Repeatable"),
 		flags.StringArray(&cmd.BuildSecretNames, names.BuildSecret, nil,
-			"Stored Devsy secret exposed to the build via BuildKit "+
+			"Secret to expose to the build via BuildKit; accepts NAME or TYPE:SOURCE/NAME "+
 				"(RUN --mount=type=secret,id=NAME). Repeatable"),
 		flags.String(&cmd.GitTokenSecret, names.GitToken, "",
-			"Stored Devsy secret holding an access token for cloning a private HTTP repository"),
+			"Secret holding an access token for cloning a private HTTP repository; "+
+				"repository-owned sources cannot bootstrap their own clone"),
 		flags.String(&cmd.GitTokenUsername, names.GitTokenUsername, "",
 			"Username for --git-token (default inferred from the repo host)"),
 		flags.String(&cmd.FeatureSecretsFile, names.FeatureSecretsFile, "",

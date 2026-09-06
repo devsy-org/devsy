@@ -123,7 +123,25 @@ func RunHeadless(
 	if err := cmd.validate(); err != nil {
 		return nil, err
 	}
-	if err := cmd.prepareSecrets(opts.DevsyConfig); err != nil {
+	var (
+		project *projectSecretContext
+		err     error
+	)
+	if cfg := client.WorkspaceConfig(); cfg != nil {
+		// Bootstrap credentials must be resolved before repository-owned
+		// secret sources are discovered, mirroring
+		// prepareResolvedWorkspaceSecrets/prepareBootstrapGitToken, so that
+		// authenticated remote inspection (and any later use of
+		// cmd.GitToken) works from the headless path too.
+		if err := cmd.prepareBootstrapGitToken(ctx, opts.DevsyConfig, &cfg.Source); err != nil {
+			return nil, err
+		}
+		project, err = cmd.discoverProjectSecrets(ctx, &cfg.Source)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := cmd.prepareSecretsWithProject(ctx, opts.DevsyConfig, project); err != nil {
 		return nil, err
 	}
 	cmd.prepareWorkspace(client)
