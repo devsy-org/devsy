@@ -26,7 +26,7 @@ const (
 
 // SOPSSource resolves values from one SOPS-encrypted document. A source is
 // command-scoped: decrypted values are cached in memory for the lifetime of the
-// source instance and are never persisted by Devsy.
+// source instance.
 type SOPSSource struct {
 	name      string
 	path      string
@@ -120,9 +120,7 @@ func (s *SOPSSource) decrypt(format string) ([]byte, error) {
 		plaintext, err = decrypt.File(s.path, format)
 	}
 	if err != nil {
-		// Do not include encrypted/decrypted document contents in the error. The
-		// upstream error is retained because it contains actionable key-provider
-		// information (for example, an unmatched age recipient or KMS failure).
+		// Error must not include encrypted/decrypted document contents.
 		return nil, fmt.Errorf("failed to decrypt SOPS source %q: %w", s.name, err)
 	}
 	return plaintext, nil

@@ -14,7 +14,7 @@ import (
 const ProjectConfigPath = ".devsy/config.yaml"
 
 // ProjectConfig is the repository-owned subset of Devsy configuration used by
-// secret discovery. It is intentionally declarative and does not execute code.
+// secret discovery.
 type ProjectConfig struct {
 	SecretSources []SourceConfig `json:"secretSources,omitempty" yaml:"secretSources,omitempty"`
 	Secrets       []string       `json:"secrets,omitempty"       yaml:"secrets,omitempty"`
@@ -96,8 +96,7 @@ func validateProjectSecret(value string, sources map[string]struct{}) error {
 }
 
 // CleanProjectSourcePath validates a repository-controlled source path and
-// returns a normalized repository-relative slash path. Repository config must
-// never be able to read arbitrary host files.
+// returns a normalized repository-relative slash path.
 func CleanProjectSourcePath(value string) (string, error) {
 	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
 	value = strings.TrimPrefix(value, "/")

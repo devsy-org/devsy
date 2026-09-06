@@ -73,9 +73,6 @@ func (cmd *UpCmd) prepareClient(
 	if err != nil {
 		return nil, err
 	}
-	// Bootstrap credentials are resolved exclusively from sources that are
-	// available before repository acquisition. Repository-owned sources are
-	// deliberately not registered yet, which prevents circular clone auth.
 	if err := cmd.prepareBootstrapGitToken(ctx, devsyConfig, source); err != nil {
 		return nil, err
 	}
@@ -94,7 +91,7 @@ func (cmd *UpCmd) prepareClient(
 		existed = true
 	}
 
-	log.Debugf("up: resolving workspace with cmd.IDE=%q ide-launch=%q", cmd.IDE, cmd.IDELaunch)
+	log.Debugf("resolving workspace with ide=%q launch=%q", cmd.IDE, cmd.IDELaunch)
 	resolver := cmd.resolveWorkspace
 	if resolver == nil {
 		resolver = workspace2.Resolve
@@ -108,12 +105,6 @@ func (cmd *UpCmd) prepareClient(
 		return nil, err
 	}
 
-	// The workspace source (local folder, git repository, or image) is only
-	// fully known once Resolve has determined it, e.g. from a positional
-	// workspace argument rather than --source/--from-snapshot. Repository-
-	// owned secret discovery must therefore happen after Resolve, using the
-	// client's resolved WorkspaceConfig().Source, not the possibly-nil
-	// source parsed above.
 	if err := cmd.prepareResolvedWorkspaceSecrets(ctx, devsyConfig, client); err != nil {
 		if !existed {
 			_ = client.Delete(ctx, client2.DeleteOptions{Force: true, IgnoreNotFound: true})
@@ -140,18 +131,14 @@ func (cmd *UpCmd) prepareClientEnvironment(
 	}
 	if cmd.Platform.Enabled {
 		log.Debug("running in platform mode")
-		log.Debug("using error output stream")
 		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
 	}
 	return cmd.validateFromSnapshot(ctx, args)
 }
 
 // prepareResolvedWorkspaceSecrets discovers repository-owned project secrets
-// (e.g. SOPS sources declared in .devsy/config.yaml) using the workspace's
-// fully resolved source and merges them with attached/explicit secrets.
-// This must run after workspace2.Resolve, since a positional workspace
-// argument's local-folder/git-repository/image classification is only known
-// once Resolve has determined client.WorkspaceConfig().Source.
+// using the workspace's resolved source and merges them with attached/explicit
+// secrets. This must run after workspace2.Resolve.
 func (cmd *UpCmd) prepareResolvedWorkspaceSecrets(
 	ctx context.Context,
 	devsyConfig *config.Config,
@@ -340,7 +327,7 @@ func (cmd *UpCmd) applyLifecycleSecrets(
 	return nil
 }
 
-// applyEnvVars resolves --env entries from the local Devsy store. External
+// applyEnvVars resolves --env entries from the local store. External
 // sensitive sources intentionally use --secret instead: WorkspaceEnv rides in
 // the setup argv and is process-list visible.
 func (cmd *UpCmd) applyEnvVars(ctx context.Context, resolver *secrets.Resolver) error {

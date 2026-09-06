@@ -19,15 +19,12 @@ const (
 
 var ErrRevisionPathNotFound = errors.New("path not found in git revision")
 
-// Inspection is a lightweight, blobless, no-checkout clone used to inspect a
-// small number of repository-owned configuration files before workspace build.
+// Inspection is a blobless, no-checkout clone used to inspect a
+// repository-owned configuration files before workspace build.
 type Inspection struct {
-	repo *Repo
-	rev  string
-	root string
-	// subPath is the repository-relative directory that ReadFile treats as
-	// the project root, mirroring info.SubPath (the @subpath: selector).
-	// Empty means the repository root.
+	repo    *Repo
+	rev     string
+	root    string
 	subPath string
 }
 

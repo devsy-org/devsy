@@ -136,10 +136,7 @@ func RunHeadless(
 	)
 	if cfg := client.WorkspaceConfig(); cfg != nil {
 		// Bootstrap credentials must be resolved before repository-owned
-		// secret sources are discovered, mirroring
-		// prepareResolvedWorkspaceSecrets/prepareBootstrapGitToken, so that
-		// authenticated remote inspection (and any later use of
-		// cmd.GitToken) works from the headless path too.
+		// secret sources are discovered
 		if err := cmd.prepareBootstrapGitToken(ctx, opts.DevsyConfig, &cfg.Source); err != nil {
 			return nil, err
 		}

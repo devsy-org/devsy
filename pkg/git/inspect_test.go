@@ -9,10 +9,6 @@ import (
 
 const testSubPath = "apps/foo"
 
-// TestInspectionReadFileUsesSubPath verifies that ReadFile resolves paths
-// relative to the selected @subpath: project root instead of the repository
-// root, so repository-owned config (e.g. .devsy/config.yaml) and SOPS source
-// files inside a subproject are discovered correctly.
 func TestInspectionReadFileUsesSubPath(t *testing.T) {
 	runner := &fakeRunner{stdout: []byte("secret-contents")}
 	repo := At("/tmp/repo", WithRunner(runner))
@@ -67,10 +63,6 @@ func TestCleanInspectionSubPath(t *testing.T) {
 	}
 }
 
-// TestInspectionReadFileRejectsPathEscape is a regression test ensuring
-// ReadFile itself rejects a path that would escape the repository root (or
-// the selected subpath) once cleaned and joined, rather than relying solely
-// on callers to pre-validate the path.
 func TestInspectionReadFileRejectsPathEscape(t *testing.T) {
 	runner := &fakeRunner{stdout: []byte("secret-contents")}
 	repo := At("/tmp/repo", WithRunner(runner))

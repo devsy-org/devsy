@@ -7,7 +7,7 @@ import (
 )
 
 // NewResolverForConfig constructs the local Devsy source plus all external
-// sources registered in the active local context. Sources decrypt lazily.
+// sources registered in the active local context.
 func NewResolverForConfig(devsyConfig *config.Config) (*Resolver, error) {
 	if devsyConfig == nil {
 		return nil, fmt.Errorf("devsy config is nil")

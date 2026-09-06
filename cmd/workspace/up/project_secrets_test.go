@@ -14,8 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeWorkspaceClient is a minimal client2.BaseWorkspaceClient used to
-// exercise prepareResolvedWorkspaceSecrets without a real provider.
 type fakeWorkspaceClient struct {
 	config  *provider.Workspace
 	deleted bool
@@ -52,11 +50,6 @@ const (
 	testProjectEncryptedFixture   = "testdata/sops-project-secrets.enc.yaml"
 )
 
-// newTestProjectWorkspace writes a .devsy/config.yaml declaring a repository-
-// owned SOPS source plus an attached secret, and the matching encrypted
-// document, under a fresh temp directory. It returns a fake client whose
-// WorkspaceConfig().Source.LocalFolder points at that directory, mirroring
-// what workspace2.Resolve produces for a local-folder positional argument.
 func newTestProjectWorkspace(t *testing.T) *fakeWorkspaceClient {
 	t.Helper()
 	root := t.TempDir()
@@ -84,13 +77,6 @@ func newTestProjectWorkspace(t *testing.T) *fakeWorkspaceClient {
 	}
 }
 
-// TestPrepareResolvedWorkspaceSecrets_DiscoversLocalProjectSecrets is a
-// regression test for a bug where repository-owned SOPS secrets declared in
-// a local project's .devsy/config.yaml were never discovered for ordinary
-// `devsy up <path>` CLI invocations: project discovery ran against the
-// source returned by parseWorkspaceSource (populated only by --source/
-// --from-snapshot), not the workspace source workspace2.Resolve derives
-// from a positional argument.
 func TestPrepareResolvedWorkspaceSecrets_DiscoversLocalProjectSecrets(t *testing.T) {
 	t.Setenv("SOPS_AGE_KEY", testProjectSecretsAgeIdentity)
 	client := newTestProjectWorkspace(t)
@@ -124,10 +110,6 @@ func newFailingProjectWorkspace(t *testing.T) *fakeWorkspaceClient {
 	}
 }
 
-// TestPrepareClient_InteractiveResolutionPreservesExistingWorkspaceOnError verifies
-// that when a workspace is resolved without positional arguments (interactive resolution),
-// any subsequent failure in prepareResolvedWorkspaceSecrets does not force-delete the
-// user's selected existing workspace.
 func TestPrepareClient_InteractiveResolutionPreservesExistingWorkspaceOnError(t *testing.T) {
 	client := newFailingProjectWorkspace(t)
 	cmd := &UpCmd{
@@ -150,9 +132,6 @@ func TestPrepareClient_InteractiveResolutionPreservesExistingWorkspaceOnError(t 
 	)
 }
 
-// TestPrepareClient_NewWorkspaceCleanedUpOnError verifies that when a newly created
-// workspace fails during secret preparation, it is cleanly removed so that no
-// orphaned workspace folder or record remains.
 func TestPrepareClient_NewWorkspaceCleanedUpOnError(t *testing.T) {
 	client := newFailingProjectWorkspace(t)
 	cmd := &UpCmd{

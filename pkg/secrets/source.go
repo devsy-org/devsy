@@ -10,8 +10,7 @@ type ResolvedSecret struct {
 	Source    string
 }
 
-// Source resolves externally or locally owned secret values. Implementations
-// must not persist values as a side effect of Get.
+// Source resolves externally or locally owned secret values.
 type Source interface {
 	Get(ctx context.Context, name string) (ResolvedSecret, error)
 }

@@ -13,7 +13,7 @@ func NewSecretsCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Manage secrets and external secret sources",
 		Long: `Manage secrets and external secret sources used by Devsy workspaces.
 
-Devsy-managed secret values are kept in the OS keyring (macOS Keychain,
+Managed secret values are kept in the OS keyring (macOS Keychain,
 Windows Credential Manager, or libsecret) when available, and in an
 age-encrypted file otherwise. External sources such as SOPS remain owned by
 their encrypted source file and are resolved only when needed.`,

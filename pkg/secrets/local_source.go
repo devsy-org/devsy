@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// LocalSource adapts the existing Devsy Store to the generic source interface.
+// LocalSource adapts the Devsy Store to the generic source interface.
 type LocalSource struct {
 	store   Store
 	context string
