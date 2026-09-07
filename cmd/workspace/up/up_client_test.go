@@ -2,10 +2,11 @@ package up
 
 import "testing"
 
+const testSnapshotImage = "ghcr.io/acme/snapshots:my-ws-20260731150405-abcxyz"
+
 func TestEnsureArgsForFromSnapshot_SynthesizesPlaceholderWhenArgsEmpty(t *testing.T) {
 	cmd := &UpCmd{}
-	cmd.FromSnapshot = "ghcr.io/acme/snapshots:my-ws-20260731150405-abcxyz"
-
+	cmd.FromSnapshot = testSnapshotImage
 	args := cmd.ensureArgsForFromSnapshot(nil)
 
 	if len(args) != 1 || args[0] != cmd.FromSnapshot {
@@ -19,8 +20,7 @@ func TestEnsureArgsForFromSnapshot_SynthesizesPlaceholderWhenArgsEmpty(t *testin
 
 func TestEnsureArgsForFromSnapshot_LeavesNonEmptyArgsUntouched(t *testing.T) {
 	cmd := &UpCmd{}
-	cmd.FromSnapshot = "ghcr.io/acme/snapshots:my-ws-20260731150405-abcxyz"
-
+	cmd.FromSnapshot = testSnapshotImage
 	args := cmd.ensureArgsForFromSnapshot([]string{"already-set"})
 
 	if len(args) != 1 || args[0] != "already-set" {
@@ -54,9 +54,8 @@ func TestEnsureArgs_SynthesizesPlaceholderWhenSourceProvidedAndArgsEmpty(t *test
 
 func TestEnsureArgs_PrefersFromSnapshotOverSourceWhenBothEmptyArgs(t *testing.T) {
 	cmd := &UpCmd{}
-	cmd.FromSnapshot = "ghcr.io/acme/snapshots:my-ws-20260731150405-abcxyz"
+	cmd.FromSnapshot = testSnapshotImage
 	cmd.Source = "https://github.com/devsy-org/devsy"
-
 	args := cmd.ensureArgs(nil)
 
 	if len(args) != 1 || args[0] != cmd.FromSnapshot {

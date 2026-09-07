@@ -128,11 +128,52 @@ func writeSourceRegistry(filePath string, registry sourceRegistryFile) error {
 	if err != nil {
 		return fmt.Errorf("marshal secret source config: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filePath, data, 0o600); err != nil {
-		return fmt.Errorf("write secret source config: %w", err)
+	tmpName, err := createTempSourceRegistry(dir, data)
+	if err != nil {
+		return err
+	}
+	return replaceSourceRegistry(tmpName, filePath, dir)
+}
+
+func createTempSourceRegistry(dir string, data []byte) (string, error) {
+	tmpFile, err := os.CreateTemp(dir, sourceConfigFileName+".tmp-*")
+	if err != nil {
+		return "", fmt.Errorf("create temp secret source config: %w", err)
+	}
+	tmpName := tmpFile.Name()
+	var success bool
+	defer func() {
+		_ = tmpFile.Close()
+		if !success {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if err := tmpFile.Chmod(0o600); err != nil {
+		return "", fmt.Errorf("chmod temp secret source config: %w", err)
+	}
+	if _, err := tmpFile.Write(data); err != nil {
+		return "", fmt.Errorf("write temp secret source config: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		return "", fmt.Errorf("sync temp secret source config: %w", err)
+	}
+	success = true
+	return tmpName, nil
+}
+
+func replaceSourceRegistry(tmpName, filePath, dir string) error {
+	defer func() { _ = os.Remove(tmpName) }()
+	if err := os.Rename(tmpName, filePath); err != nil {
+		return fmt.Errorf("replace secret source config: %w", err)
+	}
+	// #nosec G304 -- dir is filepath.Dir(filePath) under Devsy's config directory.
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
 	}
 	return nil
 }

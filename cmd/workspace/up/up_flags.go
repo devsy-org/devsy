@@ -238,7 +238,7 @@ func (cmd *UpCmd) registerWorkspaceSecretsFlags(upCmd *cobra.Command) {
 				"(RUN --mount=type=secret,id=NAME). Repeatable"),
 		flags.String(&cmd.GitTokenSecret, names.GitToken, "",
 			"Secret holding an access token for cloning a private HTTP repository; "+
-				"repository-owned sources cannot bootstrap their own clone"),
+				"accepts NAME or TYPE:SOURCE/NAME; repository-owned sources cannot bootstrap their own clone"),
 		flags.String(&cmd.GitTokenUsername, names.GitTokenUsername, "",
 			"Username for --git-token (default inferred from the repo host)"),
 		flags.String(&cmd.FeatureSecretsFile, names.FeatureSecretsFile, "",

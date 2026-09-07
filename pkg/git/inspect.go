@@ -49,12 +49,29 @@ func InspectRemote(ctx context.Context, info *GitInfo, env []string) (*Inspectio
 		_ = os.RemoveAll(root)
 		return nil, err
 	}
+	commitSHA, err := resolveCommitSHA(ctx, repo, rev)
+	if err != nil {
+		_ = os.RemoveAll(root)
+		return nil, err
+	}
 	subPath, err := cleanInspectionSubPath(info.SubPath)
 	if err != nil {
 		_ = os.RemoveAll(root)
 		return nil, err
 	}
-	return &Inspection{repo: repo, rev: rev, root: root, subPath: subPath}, nil
+	return &Inspection{repo: repo, rev: commitSHA, root: root, subPath: subPath}, nil
+}
+
+func resolveCommitSHA(ctx context.Context, repo *Repo, rev string) (string, error) {
+	revResult, err := repo.run(ctx, "rev-parse", rev+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("resolve immutable commit sha: %w", err)
+	}
+	commitSHA := strings.TrimSpace(string(revResult.Stdout))
+	if commitSHA == "" {
+		return "", fmt.Errorf("empty commit sha for revision %q", rev)
+	}
+	return commitSHA, nil
 }
 
 func cloneInspectionRepo(
@@ -99,8 +116,12 @@ func fetchInspectionPR(
 	if number == "" {
 		return "", fmt.Errorf("invalid pull/merge request reference %q", request)
 	}
+	candidates := prCandidates(repository)
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("unsupported repository host for pull/merge request %q", repository)
+	}
 	var lastErr error
-	for _, host := range prCandidates(repository) {
+	for _, host := range candidates {
 		refspec := host.Refspec(number)
 		_, err := repo.run(ctx, "fetch", "--depth=1", "origin", refspec)
 		if err == nil {
@@ -169,11 +190,14 @@ func (i *Inspection) ReadFile(ctx context.Context, filePath string) ([]byte, err
 // absolute or that would escape the repository root once joined with
 // another repository-relative path.
 func cleanRepoRelativePath(kind, value string) (string, error) {
-	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
-	value = strings.TrimPrefix(value, "/")
+	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", nil
 	}
+	if err := validateRepoRelativePath(kind, value); err != nil {
+		return "", err
+	}
+	value = strings.TrimPrefix(strings.ReplaceAll(value, `\`, "/"), "/")
 	clean := path.Clean(value)
 	if clean == "." {
 		return "", nil
@@ -182,6 +206,52 @@ func cleanRepoRelativePath(kind, value string) (string, error) {
 		return "", fmt.Errorf("git %s %q escapes the repository root", kind, value)
 	}
 	return clean, nil
+}
+
+func validateRepoRelativePath(kind, value string) error {
+	if filepath.VolumeName(value) != "" || isWindowsAbs(value) {
+		return fmt.Errorf("git %s %q must be relative to the repository root", kind, value)
+	}
+	if kind == "file path" && (strings.HasPrefix(value, "/") || strings.HasPrefix(value, `\`)) {
+		return fmt.Errorf("git %s %q must be relative to the repository root", kind, value)
+	}
+	return nil
+}
+
+func isWindowsAbs(value string) bool {
+	if len(value) >= 2 && value[1] == ':' {
+		c := value[0]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			return true
+		}
+	}
+	return strings.HasPrefix(value, `\\`) || strings.HasPrefix(value, `//`)
+}
+
+// ReadDevContainerConfig locates and reads the devcontainer.json configuration
+// from the inspection repository at its pinned revision, searching explicit paths,
+// standard root locations (.devcontainer/devcontainer.json, .devcontainer.json),
+// and profile-specific paths (.devcontainer/<id>/devcontainer.json).
+func (i *Inspection) ReadDevContainerConfig(
+	ctx context.Context,
+	devContainerPath, devContainerID string,
+) ([]byte, string, error) {
+	if i == nil || i.repo == nil {
+		return nil, "", fmt.Errorf("git inspection is closed")
+	}
+	if devContainerPath != "" {
+		return i.readExplicitDevContainerConfig(ctx, devContainerPath)
+	}
+	if devContainerID != "" {
+		return i.readProfileDevContainerConfig(ctx, devContainerID)
+	}
+	if data, pathFound, err := i.readRootDevContainerConfig(
+		ctx,
+	); err == nil ||
+		!errors.Is(err, ErrRevisionPathNotFound) {
+		return data, pathFound, err
+	}
+	return i.readNestedDevContainerConfig(ctx)
 }
 
 // cleanInspectionSubPath normalizes and validates a repository-relative
@@ -206,4 +276,98 @@ func (i *Inspection) Close() error {
 	i.root = ""
 	i.repo = nil
 	return os.RemoveAll(root)
+}
+
+func (i *Inspection) readExplicitDevContainerConfig(
+	ctx context.Context,
+	devContainerPath string,
+) ([]byte, string, error) {
+	clean, err := cleanRepoRelativePath("devcontainer path", devContainerPath)
+	if err != nil {
+		return nil, "", err
+	}
+	data, err := i.ReadFile(ctx, clean)
+	if err != nil {
+		return nil, "", err
+	}
+	return data, clean, nil
+}
+
+func (i *Inspection) readProfileDevContainerConfig(
+	ctx context.Context,
+	devContainerID string,
+) ([]byte, string, error) {
+	cleanID, err := cleanRepoRelativePath("devcontainer id", devContainerID)
+	if err != nil {
+		return nil, "", err
+	}
+	idPath := path.Join(".devcontainer", cleanID, "devcontainer.json")
+	data, err := i.ReadFile(ctx, idPath)
+	if err == nil {
+		return data, idPath, nil
+	}
+	if !errors.Is(err, ErrRevisionPathNotFound) {
+		return nil, "", err
+	}
+	return nil, "", fmt.Errorf("devcontainer with ID %q not found in repository", devContainerID)
+}
+
+func (i *Inspection) readRootDevContainerConfig(ctx context.Context) ([]byte, string, error) {
+	for _, candidate := range []string{
+		path.Join(".devcontainer", "devcontainer.json"),
+		".devcontainer.json",
+	} {
+		data, err := i.ReadFile(ctx, candidate)
+		if err == nil {
+			return data, candidate, nil
+		}
+		if !errors.Is(err, ErrRevisionPathNotFound) {
+			return nil, "", err
+		}
+	}
+	return nil, "", ErrRevisionPathNotFound
+}
+
+func (i *Inspection) readNestedDevContainerConfig(ctx context.Context) ([]byte, string, error) {
+	nested := i.listDevContainerConfigs(ctx)
+	if len(nested) == 1 {
+		data, err := i.ReadFile(ctx, nested[0])
+		if err != nil {
+			return nil, "", err
+		}
+		return data, nested[0], nil
+	}
+	if len(nested) > 1 {
+		return nil, "", fmt.Errorf("multiple devcontainer configurations found: %v", nested)
+	}
+	return nil, "", ErrRevisionPathNotFound
+}
+
+func (i *Inspection) listDevContainerConfigs(ctx context.Context) []string {
+	treePath := ".devcontainer"
+	if i.subPath != "" {
+		treePath = path.Join(i.subPath, treePath)
+	}
+	targetTree := i.rev + ":" + treePath
+	result, err := i.repo.run(ctx, "ls-tree", "--name-only", targetTree)
+	if err != nil {
+		return nil
+	}
+	entries := strings.Split(strings.TrimSpace(string(result.Stdout)), "\n")
+	var matches []string
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		cand := path.Join(".devcontainer", entry, "devcontainer.json")
+		fullCand := cand
+		if i.subPath != "" {
+			fullCand = path.Join(i.subPath, cand)
+		}
+		if _, err := i.repo.run(ctx, "cat-file", "-e", i.rev+":"+fullCand); err == nil {
+			matches = append(matches, cand)
+		}
+	}
+	return matches
 }

@@ -14,11 +14,11 @@ func TestInspectionReadFileUsesSubPath(t *testing.T) {
 	repo := At("/tmp/repo", WithRunner(runner))
 	inspection := &Inspection{repo: repo, rev: inspectionHeadRev, subPath: testSubPath}
 
-	out, err := inspection.ReadFile(context.Background(), ".devsy/config.yaml")
+	out, err := inspection.ReadFile(context.Background(), ".devcontainer/devcontainer.json")
 	assert.NilError(t, err)
 	assert.Equal(t, string(out), "secret-contents")
 
-	wantObject := inspectionHeadRev + ":" + testSubPath + "/.devsy/config.yaml"
+	wantObject := inspectionHeadRev + ":" + testSubPath + "/.devcontainer/devcontainer.json"
 	// cat-file existence check, then show; both must target the subpath.
 	assert.Equal(t, len(runner.calls), 2)
 	assert.Equal(t, runner.calls[0].Args[len(runner.calls[0].Args)-1], wantObject)
@@ -30,9 +30,9 @@ func TestInspectionReadFileWithoutSubPathUsesRepoRoot(t *testing.T) {
 	repo := At("/tmp/repo", WithRunner(runner))
 	inspection := &Inspection{repo: repo, rev: inspectionHeadRev}
 
-	_, err := inspection.ReadFile(context.Background(), ".devsy/config.yaml")
+	_, err := inspection.ReadFile(context.Background(), ".devcontainer/devcontainer.json")
 	assert.NilError(t, err)
-	wantObject := inspectionHeadRev + ":.devsy/config.yaml"
+	wantObject := inspectionHeadRev + ":.devcontainer/devcontainer.json"
 	assert.Equal(t, runner.calls[0].Args[len(runner.calls[0].Args)-1], wantObject)
 }
 
@@ -71,4 +71,61 @@ func TestInspectionReadFileRejectsPathEscape(t *testing.T) {
 	_, err := inspection.ReadFile(context.Background(), "../../etc/passwd")
 	assert.Assert(t, err != nil)
 	assert.Equal(t, len(runner.calls), 0)
+}
+
+func TestInspectionReadFileRejectsAbsolutePath(t *testing.T) {
+	runner := &fakeRunner{stdout: []byte("secret-contents")}
+	repo := At("/tmp/repo", WithRunner(runner))
+	inspection := &Inspection{repo: repo, rev: inspectionHeadRev, subPath: testSubPath}
+
+	for _, bad := range []string{
+		"/secrets.enc.yaml",
+		"/etc/passwd",
+		`C:\secrets.enc.yaml`,
+		`\\server\share\secrets.enc.yaml`,
+	} {
+		_, err := inspection.ReadFile(context.Background(), bad)
+		assert.Assert(t, err != nil, bad)
+	}
+}
+
+func TestInspectionReadDevContainerConfig_RootConfig(t *testing.T) {
+	runner := &fakeRunner{stdout: []byte(`{"customizations":{"devsy":{}}}`)}
+	repo := At("/tmp/repo", WithRunner(runner))
+	inspection := &Inspection{repo: repo, rev: inspectionHeadRev}
+
+	data, pathFound, err := inspection.ReadDevContainerConfig(context.Background(), "", "")
+	assert.NilError(t, err)
+	assert.Equal(t, pathFound, ".devcontainer/devcontainer.json")
+	assert.Assert(t, len(data) > 0)
+}
+
+func TestInspectionReadDevContainerConfig_ExplicitPath(t *testing.T) {
+	runner := &fakeRunner{stdout: []byte(`{"customizations":{"devsy":{}}}`)}
+	repo := At("/tmp/repo", WithRunner(runner))
+	inspection := &Inspection{repo: repo, rev: inspectionHeadRev}
+
+	data, pathFound, err := inspection.ReadDevContainerConfig(
+		context.Background(),
+		"custom/devcontainer.json",
+		"",
+	)
+	assert.NilError(t, err)
+	assert.Equal(t, pathFound, "custom/devcontainer.json")
+	assert.Assert(t, len(data) > 0)
+}
+
+func TestInspectionReadDevContainerConfig_DevContainerID(t *testing.T) {
+	runner := &fakeRunner{stdout: []byte(`{"customizations":{"devsy":{}}}`)}
+	repo := At("/tmp/repo", WithRunner(runner))
+	inspection := &Inspection{repo: repo, rev: inspectionHeadRev}
+
+	data, pathFound, err := inspection.ReadDevContainerConfig(
+		context.Background(),
+		"",
+		"my-profile",
+	)
+	assert.NilError(t, err)
+	assert.Equal(t, pathFound, ".devcontainer/my-profile/devcontainer.json")
+	assert.Assert(t, len(data) > 0)
 }

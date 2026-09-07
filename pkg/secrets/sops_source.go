@@ -33,9 +33,10 @@ type SOPSSource struct {
 	format    string
 	encrypted []byte
 
-	once sync.Once
-	data map[string]string
-	err  error
+	once     sync.Once
+	data     map[string]string
+	err      error
+	loadHook func()
 }
 
 func NewSOPSSource(name, filePath, format string) *SOPSSource {
@@ -60,7 +61,10 @@ func (s *SOPSSource) Get(ctx context.Context, name string) (ResolvedSecret, erro
 	if s == nil {
 		return ResolvedSecret{}, fmt.Errorf("SOPS secret source is nil")
 	}
-	s.once.Do(func() { s.data, s.err = s.load(ctx) })
+	s.once.Do(func() { s.data, s.err = s.load(context.Background()) })
+	if err := ctx.Err(); err != nil {
+		return ResolvedSecret{}, err
+	}
 	if s.err != nil {
 		return ResolvedSecret{}, s.err
 	}
@@ -80,11 +84,17 @@ func (s *SOPSSource) Validate(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	s.once.Do(func() { s.data, s.err = s.load(ctx) })
+	s.once.Do(func() { s.data, s.err = s.load(context.Background()) })
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return s.err
 }
 
 func (s *SOPSSource) load(ctx context.Context) (map[string]string, error) {
+	if s.loadHook != nil {
+		s.loadHook()
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

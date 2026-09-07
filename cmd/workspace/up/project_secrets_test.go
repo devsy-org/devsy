@@ -3,7 +3,9 @@ package up
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -44,27 +46,38 @@ func (f *fakeWorkspaceClient) Lock(context.Context) error           { return nil
 func (f *fakeWorkspaceClient) Unlock()                              {}
 
 const (
-	// Synthetic test-only identity generated solely for this fixture. gitleaks:allow.
-	testProjectSecretsAgeIdentity = "AGE-SECRET-KEY-12UWYSAH2MRDQ5K4EWC4253PDTCSCS32Y5EFQ8TEN2SL3QYU2GN2SG88CZX"
-	testProjectSecretsPlaintext   = "SUPER_SECRET_TEST_VALUE_7B91"
-	testProjectEncryptedFixture   = "testdata/sops-project-secrets.enc.yaml"
+	// Synthetic test-only identity generated solely for this fixture.
+	testProjectAgeIdentity = "AGE-SECRET-KEY-12UWYSAH2MRDQ5K4EWC4253PDTCSCS32Y5EFQ8TEN2SL3QYU2GN2SG88CZX" // gitleaks:allow
+	testProjectPlaintext   = "SUPER_SECRET_TEST_VALUE_7B91"
+	testProjectFixture     = "testdata/sops-project-secrets.enc.yaml"
 )
 
 func newTestProjectWorkspace(t *testing.T) *fakeWorkspaceClient {
 	t.Helper()
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".devsy"), 0o750))
+	devcontainerDir := filepath.Join(root, ".devcontainer")
+	require.NoError(t, os.MkdirAll(devcontainerDir, 0o750))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(root, ".devsy", "config.yaml"),
-		[]byte("secretSources:\n"+
-			"  - name: project\n"+
-			"    type: sops\n"+
-			"    path: secrets.enc.yaml\n"+
-			"secrets:\n"+
-			"  - sops:project/SOPS_E2E_SECRET\n"),
+		filepath.Join(devcontainerDir, "devcontainer.json"),
+		[]byte(`{
+  "customizations": {
+    "devsy": {
+      "secretSources": [
+        {
+          "name": "project",
+          "type": "sops",
+          "path": "secrets.enc.yaml"
+        }
+      ],
+      "secrets": [
+        "sops:project/SOPS_E2E_SECRET"
+      ]
+    }
+  }
+}`),
 		0o600,
 	))
-	fixture, err := os.ReadFile(testProjectEncryptedFixture)
+	fixture, err := os.ReadFile(testProjectFixture)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile( // #nosec G703 -- t.TempDir()-derived path
 		filepath.Join(root, "secrets.enc.yaml"),
@@ -78,28 +91,39 @@ func newTestProjectWorkspace(t *testing.T) *fakeWorkspaceClient {
 }
 
 func TestPrepareResolvedWorkspaceSecrets_DiscoversLocalProjectSecrets(t *testing.T) {
-	t.Setenv("SOPS_AGE_KEY", testProjectSecretsAgeIdentity)
+	t.Setenv("SOPS_AGE_KEY", testProjectAgeIdentity)
 	client := newTestProjectWorkspace(t)
 
 	cmd := &UpCmd{}
 	err := cmd.prepareResolvedWorkspaceSecrets(context.Background(), testConfig(), client)
 	require.NoError(t, err)
 
-	require.Contains(t, cmd.SecretsEnv, "SOPS_E2E_SECRET="+testProjectSecretsPlaintext)
+	require.Contains(t, cmd.SecretsEnv, "SOPS_E2E_SECRET="+testProjectPlaintext)
 }
 
 func newFailingProjectWorkspace(t *testing.T) *fakeWorkspaceClient {
 	t.Helper()
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".devsy"), 0o750))
+	devcontainerDir := filepath.Join(root, ".devcontainer")
+	require.NoError(t, os.MkdirAll(devcontainerDir, 0o750))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(root, ".devsy", "config.yaml"),
-		[]byte("secretSources:\n"+
-			"  - name: project\n"+
-			"    type: sops\n"+
-			"    path: nonexistent.enc.yaml\n"+
-			"secrets:\n"+
-			"  - sops:project/MISSING\n"),
+		filepath.Join(devcontainerDir, "devcontainer.json"),
+		[]byte(`{
+  "customizations": {
+    "devsy": {
+      "secretSources": [
+        {
+          "name": "project",
+          "type": "sops",
+          "path": "nonexistent.enc.yaml"
+        }
+      ],
+      "secrets": [
+        "sops:project/MISSING"
+      ]
+    }
+  }
+}`),
 		0o600,
 	))
 	return &fakeWorkspaceClient{
@@ -156,4 +180,113 @@ func TestPrepareClient_NewWorkspaceCleanedUpOnError(t *testing.T) {
 		client.deleted,
 		"newly created workspace must be cleaned up on secret error",
 	)
+}
+
+func setupTestGitRepoWithDevContainer(
+	t *testing.T,
+	dir string,
+) (func(args ...string) string, string) {
+	t.Helper()
+	runGit := func(args ...string) string {
+		c := exec.Command(
+			"git",
+			args...) // #nosec G204 -- test runner helper with controlled arguments
+		c.Dir = dir
+		c.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		out, err := c.CombinedOutput()
+		require.NoError(t, err, string(out))
+		return strings.TrimSpace(string(out))
+	}
+
+	runGit("init", "-b", "main")
+	runGit("config", "user.name", "Test")
+	runGit("config", "user.email", "test@example.com")
+
+	devcontainerDir := filepath.Join(dir, ".devcontainer")
+	require.NoError(t, os.MkdirAll(devcontainerDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(devcontainerDir, "devcontainer.json"),
+		[]byte(`{
+  "customizations": {
+    "devsy": {
+      "secretSources": [
+        {"name": "project", "type": "sops", "path": "secrets.enc.yaml"}
+      ],
+      "secrets": ["sops:project/SOPS_E2E_SECRET"]
+    }
+  }
+}`),
+		0o600,
+	))
+	fixture, err := os.ReadFile(testProjectFixture)
+	require.NoError(t, err)
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(dir, "secrets.enc.yaml"), fixture, 0o600),
+	) // #nosec G703 -- test temp dir
+	runGit("add", ".")
+	runGit("commit", "-m", "initial commit with secrets")
+	commitA := runGit("rev-parse", "HEAD")
+	return runGit, commitA
+}
+
+func TestDiscoverRemoteProjectSecrets_PinsImmutableCommitSHA(t *testing.T) {
+	t.Setenv("SOPS_AGE_KEY", testProjectAgeIdentity)
+	gitDir := t.TempDir()
+	runGit, commitA := setupTestGitRepoWithDevContainer(t, gitDir)
+
+	source := &provider.WorkspaceSource{
+		GitRepository: gitDir,
+		GitBranch:     "main",
+	}
+
+	cmd := &UpCmd{}
+	projectCtx, err := cmd.discoverProjectSecrets(context.Background(), source)
+	require.NoError(t, err)
+	require.NotNil(t, projectCtx)
+
+	// Verify immutable SHA pinning (99A.1)
+	require.Equal(t, commitA, source.GitCommit, "inspected source must be pinned to commit A")
+
+	// Advance the branch to commit B
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(gitDir, "dummy.txt"), []byte("advance branch"), 0o600),
+	)
+	runGit("add", "dummy.txt")
+	runGit("commit", "-m", "advance branch to commit B")
+	commitB := runGit("rev-parse", "HEAD")
+	require.NotEqual(t, commitA, commitB)
+
+	// Rediscover using the source that has GitCommit pinned to commitA
+	projectCtx2, err := cmd.discoverProjectSecrets(context.Background(), source)
+	require.NoError(t, err)
+	require.NotNil(t, projectCtx2)
+	require.Equal(t, commitA, source.GitCommit, "rediscovered source must remain pinned to commitA")
+}
+
+func TestDiscoverProjectSecrets_RejectsAbsolutePaths(t *testing.T) {
+	root := t.TempDir()
+	devcontainerDir := filepath.Join(root, ".devcontainer")
+	require.NoError(t, os.MkdirAll(devcontainerDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(devcontainerDir, "devcontainer.json"),
+		[]byte(`{
+  "customizations": {
+    "devsy": {
+      "secretSources": [
+        {"name": "project", "type": "sops", "path": "/secrets.enc.yaml"}
+      ],
+      "secrets": ["sops:project/SOPS_E2E_SECRET"]
+    }
+  }
+}`),
+		0o600,
+	))
+
+	source := &provider.WorkspaceSource{LocalFolder: root}
+	cmd := &UpCmd{}
+	_, err := cmd.discoverProjectSecrets(context.Background(), source)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must be relative to the repository root")
 }

@@ -136,3 +136,27 @@ func TestNormalizeSOPSFormat(t *testing.T) {
 		require.Equal(t, tc.want, got)
 	}
 }
+
+func TestSOPSSource_CanceledFirstCallerDoesNotPoisonLaterCaller(t *testing.T) {
+	t.Setenv("SOPS_AGE_KEY", testSOPSAgeIdentity)
+	source := NewSOPSDataSource(
+		"test-source",
+		"secrets.enc.yaml",
+		SOPSFormatYAML,
+		encryptedSOPSTestFixture(t),
+	)
+
+	callerCtx, cancel := context.WithCancel(context.Background())
+	// Hook cancels caller context after load execution has started inside once.Do,
+	// exercising the once.Do completion path rather than the pre-call guard.
+	source.loadHook = func() {
+		cancel()
+	}
+
+	_, err := source.Get(callerCtx, "SOPS_E2E_SECRET")
+	require.ErrorIs(t, err, context.Canceled)
+
+	resolved, err := source.Get(context.Background(), "SOPS_E2E_SECRET")
+	require.NoError(t, err)
+	require.Equal(t, testSOPSPlaintextMarker, resolved.Value)
+}

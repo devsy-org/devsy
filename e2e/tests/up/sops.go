@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -85,6 +86,41 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 
 				err = dtc.f.DevsyUp(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				value, err := dtc.execSSH(ctx, tempDir, "cat /tmp/sops-project-check.out")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(value)).To(gomega.Equal(sopsE2EPlaintext))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+		ginkgo.It(
+			"discovers remote Git repository-owned SOPS sources from customizations.devsy",
+			func(ctx context.Context) {
+				useSOPSAgeIdentity()
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-sops-project",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+
+				// Initialize a real Git repository in tempDir
+				execGit := func(args ...string) {
+					c := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- test helper
+					c.Dir = tempDir
+					out, gitErr := c.CombinedOutput()
+					framework.ExpectNoError(gitErr, string(out))
+				}
+				execGit("init", "-b", "main")
+				execGit("config", "user.name", "Devsy")
+				execGit("config", "user.email", "devsy@example.com")
+				execGit("add", ".")
+				execGit("commit", "-m", "initial commit")
+
+				// Start workspace pointing to the Git repository
+				gitURI := "file://" + filepath.ToSlash(tempDir)
+				err = dtc.f.DevsyUp(ctx, gitURI)
 				framework.ExpectNoError(err)
 
 				value, err := dtc.execSSH(ctx, tempDir, "cat /tmp/sops-project-check.out")

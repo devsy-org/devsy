@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -8,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/tailscale/hujson"
 	"sigs.k8s.io/yaml"
 )
-
-const ProjectConfigPath = ".devsy/config.yaml"
 
 // ProjectConfig is the repository-owned subset of Devsy configuration used by
 // secret discovery.
@@ -20,15 +21,48 @@ type ProjectConfig struct {
 	Secrets       []string       `json:"secrets,omitempty"       yaml:"secrets,omitempty"`
 }
 
+type devContainerCustomizationsWrapper struct {
+	Customizations map[string]json.RawMessage `json:"customizations"`
+}
+
 func ParseProjectConfig(data []byte) (*ProjectConfig, error) {
+	if cfg, handled, err := parseDevContainerCustomizations(data); handled {
+		return cfg, err
+	}
 	cfg := &ProjectConfig{}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", ProjectConfigPath, err)
+		return nil, fmt.Errorf("parse project secret configuration: %w", err)
 	}
 	if err := ValidateProjectConfig(cfg); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func parseDevContainerCustomizations(data []byte) (*ProjectConfig, bool, error) {
+	normalized, err := hujson.Standardize(data)
+	if err != nil {
+		return nil, false, nil
+	}
+	var wrapper devContainerCustomizationsWrapper
+	if err := json.Unmarshal(normalized, &wrapper); err != nil || wrapper.Customizations == nil {
+		return nil, false, nil
+	}
+	rawDevsy := wrapper.Customizations["devsy"]
+	if len(rawDevsy) == 0 {
+		rawDevsy = wrapper.Customizations[config.BinaryName]
+	}
+	if len(rawDevsy) == 0 {
+		return nil, true, nil
+	}
+	cfg := &ProjectConfig{}
+	if err := json.Unmarshal(rawDevsy, cfg); err != nil {
+		return nil, true, fmt.Errorf("parse customizations.devsy: %w", err)
+	}
+	if err := ValidateProjectConfig(cfg); err != nil {
+		return nil, true, err
+	}
+	return cfg, true, nil
 }
 
 func ValidateProjectConfig(cfg *ProjectConfig) error {
@@ -98,35 +132,130 @@ func validateProjectSecret(value string, sources map[string]struct{}) error {
 // CleanProjectSourcePath validates a repository-controlled source path and
 // returns a normalized repository-relative slash path.
 func CleanProjectSourcePath(value string) (string, error) {
-	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
-	value = strings.TrimPrefix(value, "/")
+	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", fmt.Errorf("source path must not be empty")
 	}
-	clean := path.Clean(value)
+	if err := validateRelativePath(value); err != nil {
+		return "", err
+	}
+	normalized := strings.ReplaceAll(value, `\`, "/")
+	clean := path.Clean(normalized)
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", fmt.Errorf("source path %q escapes the repository root", value)
 	}
 	return strings.TrimPrefix(clean, "./"), nil
 }
 
+func validateRelativePath(value string) error {
+	if filepath.VolumeName(value) != "" || isWindowsAbs(value) {
+		return fmt.Errorf("source path %q must be relative to the repository root", value)
+	}
+	if strings.HasPrefix(value, "/") || strings.HasPrefix(value, `\`) {
+		return fmt.Errorf("source path %q must be relative to the repository root", value)
+	}
+	return nil
+}
+
+func isWindowsAbs(value string) bool {
+	if len(value) >= 2 && value[1] == ':' {
+		c := value[0]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			return true
+		}
+	}
+	return strings.HasPrefix(value, `\\`) || strings.HasPrefix(value, `//`)
+}
+
 // LoadProjectConfigFromRoot loads repository-owned config from a local checkout.
-// A missing .devsy/config.yaml is not an error.
+// A missing configuration is not an error.
 func LoadProjectConfigFromRoot(root string) (*ProjectConfig, bool, error) {
-	configPath := filepath.Join(root, filepath.FromSlash(ProjectConfigPath))
-	// #nosec G304 -- configPath is intentionally rooted under the selected repository.
-	data, err := os.ReadFile(configPath)
+	return LoadProjectConfigFromRootWithOptions(root, "", "")
+}
+
+// LoadProjectConfigFromRootWithOptions loads repository-owned config from a local checkout,
+// checking the specified devcontainer path, conventional root devcontainer locations,
+// and profile-specific devcontainer directories for customizations.devsy.
+func LoadProjectConfigFromRootWithOptions(
+	root, devContainerPath, devContainerID string,
+) (*ProjectConfig, bool, error) {
+	candidates, err := devContainerCandidates(devContainerPath, devContainerID, root)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, relPath := range candidates {
+		if cfg, found, err := loadCandidateConfig(root, relPath); found || err != nil {
+			return cfg, found, err
+		}
+	}
+	return nil, false, nil
+}
+
+func devContainerCandidates(devContainerPath, devContainerID, root string) ([]string, error) {
+	if devContainerPath != "" {
+		clean, err := CleanProjectSourcePath(devContainerPath)
+		if err != nil {
+			return nil, err
+		}
+		return []string{clean}, nil
+	}
+	candidates := []string{
+		path.Join(".devcontainer", "devcontainer.json"),
+		".devcontainer.json",
+	}
+	if devContainerID != "" {
+		cleanID, err := CleanProjectSourcePath(devContainerID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid devcontainer id %q: %w", devContainerID, err)
+		}
+		return []string{path.Join(".devcontainer", cleanID, "devcontainer.json")}, nil
+	}
+	if nested := findNestedDevContainer(root); nested != "" {
+		candidates = append(candidates, nested)
+	}
+	return candidates, nil
+}
+
+func findNestedDevContainer(root string) string {
+	devcontainerDir := filepath.Join(root, ".devcontainer")
+	entries, err := os.ReadDir(devcontainerDir)
+	if err != nil {
+		return ""
+	}
+	var nested []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		cand := filepath.Join(devcontainerDir, entry.Name(), "devcontainer.json")
+		if _, err := os.Stat(cand); err == nil {
+			nested = append(nested, path.Join(".devcontainer", entry.Name(), "devcontainer.json"))
+		}
+	}
+	if len(nested) == 1 {
+		return nested[0]
+	}
+	return ""
+}
+
+func loadCandidateConfig(root, relPath string) (*ProjectConfig, bool, error) {
+	fullPath := filepath.Join(root, filepath.FromSlash(relPath))
+	// #nosec G304 -- fullPath is rooted under the selected repository.
+	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, false, nil
 		}
-		return nil, false, fmt.Errorf("read %s: %w", ProjectConfigPath, err)
+		return nil, false, fmt.Errorf("read %s: %w", relPath, err)
 	}
 	cfg, err := ParseProjectConfig(data)
 	if err != nil {
-		return nil, false, err
+		return nil, false, fmt.Errorf("parse %s: %w", relPath, err)
 	}
-	return cfg, true, nil
+	if cfg != nil && (len(cfg.SecretSources) > 0 || len(cfg.Secrets) > 0) {
+		return cfg, true, nil
+	}
+	return nil, false, nil
 }
 
 // ResolveProjectSourcePath converts a repository-controlled relative path to a

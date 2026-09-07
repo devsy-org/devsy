@@ -80,16 +80,7 @@ func (cmd *UpCmd) prepareClient(
 	cmd.resolveSSHConfig(devsyConfig)
 	args = cmd.ensureArgs(args)
 
-	var existed bool
-	switch {
-	case cmd.ID != "":
-		existed = workspace2.Exists(ctx, devsyConfig, nil, cmd.ID, cmd.Owner) != ""
-	case len(args) > 0:
-		_, name := file.IsLocalDir(args[0])
-		existed = workspace2.Exists(ctx, devsyConfig, nil, workspace2.ToID(name), cmd.Owner) != ""
-	default:
-		existed = true
-	}
+	existed := cmd.checkWorkspaceExisted(ctx, devsyConfig, args)
 
 	log.Debugf("resolving workspace with ide=%q launch=%q", cmd.IDE, cmd.IDELaunch)
 	resolver := cmd.resolveWorkspace
@@ -105,20 +96,47 @@ func (cmd *UpCmd) prepareClient(
 		return nil, err
 	}
 
-	if err := cmd.prepareResolvedWorkspaceSecrets(ctx, devsyConfig, client); err != nil {
-		if !existed {
-			_ = client.Delete(ctx, client2.DeleteOptions{Force: true, IgnoreNotFound: true})
-		}
-		return nil, err
-	}
-
-	if err := cmd.checkProviderUpdate(ctx, devsyConfig, client); err != nil {
-		if !existed {
-			_ = client.Delete(ctx, client2.DeleteOptions{Force: true, IgnoreNotFound: true})
-		}
+	if err := cmd.postResolveWorkspace(ctx, devsyConfig, client, existed); err != nil {
 		return nil, err
 	}
 	return client, nil
+}
+
+func (cmd *UpCmd) checkWorkspaceExisted(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	args []string,
+) bool {
+	switch {
+	case cmd.ID != "":
+		return workspace2.Exists(ctx, devsyConfig, nil, cmd.ID, cmd.Owner) != ""
+	case len(args) > 0:
+		_, name := file.IsLocalDir(args[0])
+		return workspace2.Exists(ctx, devsyConfig, nil, workspace2.ToID(name), cmd.Owner) != ""
+	default:
+		return true
+	}
+}
+
+func (cmd *UpCmd) postResolveWorkspace(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+	existed bool,
+) error {
+	cleanupOnFailure := func(err error) error {
+		if !existed {
+			_ = client.Delete(ctx, client2.DeleteOptions{Force: true, IgnoreNotFound: true})
+		}
+		return err
+	}
+	if err := cmd.prepareResolvedWorkspaceSecrets(ctx, devsyConfig, client); err != nil {
+		return cleanupOnFailure(err)
+	}
+	if err := cmd.checkProviderUpdate(ctx, devsyConfig, client); err != nil {
+		return cleanupOnFailure(err)
+	}
+	return nil
 }
 
 func (cmd *UpCmd) prepareClientEnvironment(
@@ -332,41 +350,63 @@ func (cmd *UpCmd) applyLifecycleSecrets(
 // the setup argv and is process-list visible.
 func (cmd *UpCmd) applyEnvVars(ctx context.Context, resolver *secrets.Resolver) error {
 	for _, entry := range cmd.EnvVars {
-		name, target, ok := strings.Cut(entry, "=")
-		if !ok {
-			target = name
-		} else if target == "" {
-			return fmt.Errorf("invalid --env %q: target after %q= must not be empty", entry, name)
-		}
-		ref, err := secrets.ParseRef(name)
+		envVar, err := resolveEnvVarEntry(ctx, resolver, entry)
 		if err != nil {
 			return err
 		}
-		if ref.Source != secrets.LocalSourceName {
-			return fmt.Errorf(
-				"--env only accepts Devsy-managed values; use --secret %s instead",
-				name,
-			)
-		}
-		resolved, err := resolver.Resolve(ctx, ref)
-		if err != nil {
-			return err
-		}
-		if resolved.Sensitive {
-			return fmt.Errorf(
-				"%q is a secret and cannot be passed with --env (it would be visible in the process list); use --secret %s instead",
-				name,
-				name,
-			)
-		}
-		cmd.WorkspaceEnv = append(cmd.WorkspaceEnv, target+"="+resolved.Value)
+		cmd.WorkspaceEnv = append(cmd.WorkspaceEnv, envVar)
 	}
 	return nil
 }
 
+func resolveEnvVarEntry(
+	ctx context.Context,
+	resolver *secrets.Resolver,
+	entry string,
+) (string, error) {
+	name, explicitTarget, hasTarget := strings.Cut(entry, "=")
+	if hasTarget && explicitTarget == "" {
+		return "", fmt.Errorf("invalid --env %q: target after %q= must not be empty", entry, name)
+	}
+	ref, err := secrets.ParseRef(name)
+	if err != nil {
+		return "", err
+	}
+	target := ref.Name
+	if hasTarget {
+		target = explicitTarget
+	}
+	if ref.Source != secrets.LocalSourceName {
+		return "", fmt.Errorf(
+			"--env only accepts Devsy-managed values; use --secret %s instead",
+			name,
+		)
+	}
+	resolved, err := resolver.Resolve(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	if resolved.Sensitive {
+		return "", fmt.Errorf(
+			"%q is a secret and cannot be passed with --env (it would be visible in the process list); use --secret %s instead",
+			name,
+			name,
+		)
+	}
+	return target + "=" + resolved.Value, nil
+}
+
 func (cmd *UpCmd) applyBuildSecrets(ctx context.Context, resolver *secrets.Resolver) error {
+	if len(cmd.BuildSecretNames) == 0 {
+		return nil
+	}
 	seen := map[string]string{}
-	built := make([]string, 0, len(cmd.BuildSecretNames))
+	for _, existing := range cmd.BuildSecrets {
+		if k, _, ok := strings.Cut(existing, "="); ok {
+			seen[k] = existing
+		}
+	}
+	built := append([]string(nil), cmd.BuildSecrets...)
 	for _, value := range cmd.BuildSecretNames {
 		ref, err := secrets.ParseRef(value)
 		if err != nil {
@@ -466,7 +506,7 @@ func collectSecretRequests(
 	}
 
 	requests := sortedSecretRequests(byName)
-	if err := checkDuplicateMountTargets(requests); err != nil {
+	if err := checkDuplicateTargets(requests); err != nil {
 		return nil, err
 	}
 	return requests, nil
@@ -509,19 +549,29 @@ func sortedSecretRequests(byName map[string]secretRequest) []secretRequest {
 	return requests
 }
 
-func checkDuplicateMountTargets(requests []secretRequest) error {
-	targets := map[string]string{}
+func checkDuplicateTargets(requests []secretRequest) error {
+	envTargets := map[string]string{}
+	mountTargets := map[string]string{}
 	for _, req := range requests {
-		if !req.mount {
-			continue
+		if req.mount {
+			if other, dup := mountTargets[req.target]; dup {
+				return fmt.Errorf(
+					"secrets %q and %q both mount to target %q; give one a distinct target=",
+					other, req.ref.String(), req.target,
+				)
+			}
+			mountTargets[req.target] = req.ref.String()
+		} else {
+			if other, dup := envTargets[req.target]; dup {
+				return fmt.Errorf(
+					"secrets %q and %q both inject to environment variable %q; give one a distinct target=",
+					other,
+					req.ref.String(),
+					req.target,
+				)
+			}
+			envTargets[req.target] = req.ref.String()
 		}
-		if other, dup := targets[req.target]; dup {
-			return fmt.Errorf(
-				"secrets %q and %q both mount to target %q; give one a distinct target=",
-				other, req.ref.String(), req.target,
-			)
-		}
-		targets[req.target] = req.ref.String()
 	}
 	return nil
 }

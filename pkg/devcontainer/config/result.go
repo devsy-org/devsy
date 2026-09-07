@@ -121,13 +121,20 @@ func userFromContainerLabel(result *Result) string {
 }
 
 func GetDevsyCustomizations(parsedConfig *DevContainerConfig) *DevsyCustomizations {
-	if parsedConfig.Customizations == nil ||
-		parsedConfig.Customizations[pkgconfig.BinaryName] == nil {
+	if parsedConfig == nil || parsedConfig.Customizations == nil {
+		return &DevsyCustomizations{}
+	}
+
+	customization := parsedConfig.Customizations["devsy"]
+	if customization == nil {
+		customization = parsedConfig.Customizations[pkgconfig.BinaryName]
+	}
+	if customization == nil {
 		return &DevsyCustomizations{}
 	}
 
 	devsy := &DevsyCustomizations{}
-	err := convert(parsedConfig.Customizations[pkgconfig.BinaryName], devsy)
+	err := convert(customization, devsy)
 	if err != nil {
 		return &DevsyCustomizations{}
 	}

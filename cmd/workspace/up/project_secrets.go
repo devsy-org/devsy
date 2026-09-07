@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	gitpkg "github.com/devsy-org/devsy/pkg/git"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -48,7 +50,15 @@ func (cmd *UpCmd) discoverProjectSecrets(
 		return nil, nil
 	}
 	if source.LocalFolder != "" {
-		return discoverLocalProjectSecrets(source.LocalFolder)
+		folder := source.LocalFolder
+		if source.GitSubPath != "" {
+			cleanSubPath, err := secrets.CleanProjectSourcePath(source.GitSubPath)
+			if err != nil {
+				return nil, fmt.Errorf("invalid subpath %q: %w", source.GitSubPath, err)
+			}
+			folder = filepath.Join(folder, filepath.FromSlash(cleanSubPath))
+		}
+		return cmd.discoverLocalProjectSecrets(folder)
 	}
 	if source.GitRepository == "" {
 		return nil, nil
@@ -56,12 +66,16 @@ func (cmd *UpCmd) discoverProjectSecrets(
 	return cmd.discoverRemoteProjectSecrets(ctx, source)
 }
 
-func discoverLocalProjectSecrets(root string) (*projectSecretContext, error) {
+func (cmd *UpCmd) discoverLocalProjectSecrets(root string) (*projectSecretContext, error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
-	cfg, found, err := secrets.LoadProjectConfigFromRoot(root)
+	cfg, found, err := secrets.LoadProjectConfigFromRootWithOptions(
+		root,
+		cmd.DevContainerPath,
+		cmd.DevContainerID,
+	)
 	if err != nil || !found {
 		return nil, err
 	}
@@ -96,19 +110,61 @@ func (cmd *UpCmd) discoverRemoteProjectSecrets(
 		return nil, err
 	}
 	defer func() { _ = inspection.Close() }()
-
-	configBytes, err := inspection.ReadFile(ctx, secrets.ProjectConfigPath)
-	if err != nil {
-		if errors.Is(err, gitpkg.ErrRevisionPathNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("discover repository secret configuration: %w", err)
+	if inspection.Revision() != "" {
+		source.GitCommit = inspection.Revision()
 	}
-	cfg, err := secrets.ParseProjectConfig(configBytes)
+
+	cfg, err := cmd.readRemoteProjectConfig(ctx, inspection)
+	if err != nil || cfg == nil {
+		return nil, err
+	}
+
+	sources, err := loadRemoteProjectSources(ctx, inspection, cfg)
 	if err != nil {
 		return nil, err
 	}
-	project := &projectSecretContext{config: cfg, sources: map[string]secrets.Source{}}
+	return &projectSecretContext{config: cfg, sources: sources}, nil
+}
+
+func (cmd *UpCmd) readRemoteProjectConfig(
+	ctx context.Context,
+	inspection *gitpkg.Inspection,
+) (*secrets.ProjectConfig, error) {
+	devContainerBytes, _, err := inspection.ReadDevContainerConfig(
+		ctx,
+		cmd.DevContainerPath,
+		cmd.DevContainerID,
+	)
+	if err == nil {
+		cfg, parseErr := parseValidProjectConfig(devContainerBytes)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse devcontainer.json: %w", parseErr)
+		}
+		return cfg, nil
+	}
+	if !errors.Is(err, gitpkg.ErrRevisionPathNotFound) {
+		return nil, fmt.Errorf("discover repository devcontainer configuration: %w", err)
+	}
+	return nil, nil
+}
+
+func parseValidProjectConfig(data []byte) (*secrets.ProjectConfig, error) {
+	parsed, err := secrets.ParseProjectConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	if parsed != nil && (len(parsed.SecretSources) > 0 || len(parsed.Secrets) > 0) {
+		return parsed, nil
+	}
+	return nil, nil
+}
+
+func loadRemoteProjectSources(
+	ctx context.Context,
+	inspection *gitpkg.Inspection,
+	cfg *secrets.ProjectConfig,
+) (map[string]secrets.Source, error) {
+	sources := make(map[string]secrets.Source, len(cfg.SecretSources))
 	for _, sourceConfig := range cfg.SecretSources {
 		cleanPath, err := secrets.CleanProjectSourcePath(sourceConfig.Path)
 		if err != nil {
@@ -123,14 +179,14 @@ func (cmd *UpCmd) discoverRemoteProjectSecrets(
 				err,
 			)
 		}
-		project.sources[sourceConfig.Name] = secrets.NewSOPSDataSource(
+		sources[sourceConfig.Name] = secrets.NewSOPSDataSource(
 			sourceConfig.Name,
 			cleanPath,
 			sourceConfig.Format,
 			encrypted,
 		)
 	}
-	return project, nil
+	return sources, nil
 }
 
 func (cmd *UpCmd) gitInspectionEnv() []string {
@@ -148,10 +204,22 @@ func (cmd *UpCmd) gitInspectionEnv() []string {
 	}
 	credential := base64.StdEncoding.EncodeToString([]byte(username + ":" + cmd.GitToken.Token))
 	key := "http.https://" + host + "/.extraHeader"
-	return append(env,
-		"GIT_CONFIG_COUNT=1",
-		"GIT_CONFIG_KEY_0="+key,
-		"GIT_CONFIG_VALUE_0=Authorization: Basic "+credential,
+	count := 0
+	outEnv := make([]string, 0, len(env)+3)
+	for _, entry := range env {
+		if val, ok := strings.CutPrefix(entry, "GIT_CONFIG_COUNT="); ok {
+			if n, err := strconv.Atoi(val); err == nil {
+				count = n
+			}
+			continue
+		}
+		outEnv = append(outEnv, entry)
+	}
+
+	return append(outEnv,
+		fmt.Sprintf("GIT_CONFIG_COUNT=%d", count+1),
+		fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", count, key),
+		fmt.Sprintf("GIT_CONFIG_VALUE_%d=Authorization: Basic %s", count, credential),
 	)
 }
 
