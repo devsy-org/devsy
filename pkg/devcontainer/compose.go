@@ -1007,7 +1007,7 @@ func (r *runner) composeUpAndFindContainer(
 ) (*config.ContainerDetails, error) {
 	upArgs := []string{composeProjectNameFlag, params.project.Name}
 	upArgs = append(upArgs, params.composeGlobalArgs...)
-	upArgs = append(upArgs, "up", "-d")
+	upArgs = append(upArgs, "up", "--wait")
 	if params.hasExistingContainer {
 		upArgs = append(upArgs, "--no-recreate")
 	}
@@ -1019,7 +1019,6 @@ func (r *runner) composeUpAndFindContainer(
 		return nil, fmt.Errorf("docker-compose run: %w", err)
 	}
 
-	// TODO wait for started event?
 	containerDetails, err := params.composeHelper.FindDevContainer(
 		ctx,
 		params.project.Name,
