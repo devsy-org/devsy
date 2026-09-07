@@ -1,3 +1,8 @@
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+  - commit-msg
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -74,4 +79,11 @@ repos:
         language: system
         types: [go]
         pass_filenames: false
+        stages: [pre-push]
+      - id: check-signed-commits
+        name: check signed commits
+        entry: go run ./hack/check_signed_commits
+        language: system
+        pass_filenames: false
+        always_run: true
         stages: [pre-push]
