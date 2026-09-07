@@ -34,4 +34,10 @@ git config --global commit.gpgsign true
 git config --global tag.gpgsign true
 git config --global user.name "$DEVSY_GIT_AUTHOR_NAME"
 git config --global user.email "$DEVSY_GIT_AUTHOR_EMAIL"
+
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+echo "$DEVSY_GIT_AUTHOR_EMAIL $(cat $SIGNING_PUBLIC_KEY)" > "$HOME/.ssh/allowed_signers"
+chmod 600 "$HOME/.ssh/allowed_signers"
+git config --global gpg.ssh.allowedSignersFile "$HOME/.ssh/allowed_signers"
 '''
