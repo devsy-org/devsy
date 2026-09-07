@@ -206,9 +206,41 @@ func isClosedNetErr(err error) bool {
 		strings.Contains(msg, "connection is closed")
 }
 
+func isExitMissingErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "remote command exited without exit status or exit signal")
+}
+
+func isTransportTeardownError(err error) bool {
+	if err == nil {
+		return true
+	}
+	return isTeardownOrCancellationError(err) || isExitMissingErr(err)
+}
+
+func isMeaningfulHandlerErr(outcome managedOutcome) bool {
+	return outcome.handlerCompleted && outcome.handlerErr != nil &&
+		!isTeardownOrCancellationError(outcome.handlerErr)
+}
+
+func isGenuineProviderFailure(outcome managedOutcome) bool {
+	if !outcome.transportCompleted || outcome.transportErr == nil {
+		return false
+	}
+	return outcome.firstSide == SideProvider && !isTransportTeardownError(outcome.transportErr)
+}
+
 func resolveManagedErrors(outcome managedOutcome) error {
 	if outcome.firstSide == SideParent {
 		return outcome.parentErr
+	}
+	if isMeaningfulHandlerErr(outcome) {
+		return outcome.handlerErr
+	}
+	if isGenuineProviderFailure(outcome) {
+		return outcome.transportErr
 	}
 	if outcome.handlerCompleted && outcome.handlerErr == nil {
 		return nil
@@ -216,13 +248,18 @@ func resolveManagedErrors(outcome managedOutcome) error {
 	if err := resolveParentCancellation(outcome); err != nil {
 		return err
 	}
-	if outcome.firstSide == SideSSH {
+	return resolveByFirstSide(outcome)
+}
+
+func resolveByFirstSide(outcome managedOutcome) error {
+	switch outcome.firstSide {
+	case SideSSH:
 		return outcome.handlerErr
-	}
-	if outcome.firstSide == SideProvider {
+	case SideProvider:
 		return resolveProviderFirst(outcome)
+	default:
+		return resolveFallback(outcome)
 	}
-	return resolveFallback(outcome)
 }
 
 func resolveParentCancellation(outcome managedOutcome) error {
@@ -279,8 +316,9 @@ func waitForFirst(
 func initiateTeardown(conn ManagedConn, firstSide Side, handlerErr error) {
 	if firstSide == SideSSH && handlerErr == nil {
 		if cw, ok := conn.(CloseWriter); ok {
-			_ = cw.CloseWrite()
-			return
+			if err := cw.CloseWrite(); err == nil {
+				return
+			}
 		}
 	}
 	_ = conn.Close()

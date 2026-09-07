@@ -166,8 +166,7 @@ func TestRunManagedHandlerSuccessBeatsCleanupError(t *testing.T) {
 		TransportSide: SideProvider,
 		Handler: func(ctx context.Context) error {
 			conn.TriggerCleanupError(errTeardown)
-			<-conn.waitResultPublished
-			time.Sleep(5 * time.Millisecond)
+			<-ctx.Done()
 			return nil
 		},
 	})
@@ -187,13 +186,31 @@ func TestRunManagedHandlerErrorWinsOverCleanupError(t *testing.T) {
 		TransportSide: SideProvider,
 		Handler: func(ctx context.Context) error {
 			conn.TriggerCleanupError(errTeardown)
-			<-conn.waitResultPublished
-			time.Sleep(5 * time.Millisecond)
+			<-ctx.Done()
 			return wantErr
 		},
 	})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("RunManaged() = %v, want %v", err, wantErr)
+	}
+}
+
+func TestRunManagedProviderFailureWinsOverLaterHandlerSuccess(t *testing.T) {
+	conn := newControlledManagedConn()
+	providerErr := errors.New("connection reset by peer")
+
+	err := RunManaged(RunManagedOptions{
+		Parent:        context.Background(),
+		Conn:          conn,
+		TransportSide: SideProvider,
+		Handler: func(ctx context.Context) error {
+			conn.TriggerCleanupError(providerErr)
+			<-ctx.Done()
+			return nil
+		},
+	})
+	if !errors.Is(err, providerErr) {
+		t.Fatalf("RunManaged() = %v, want %v", err, providerErr)
 	}
 }
 
@@ -265,6 +282,43 @@ func TestRunManagedBoundedSecondSideShutdown(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("RunManaged hung waiting for second side")
+	}
+}
+
+type closeWriteFailingConn struct {
+	*testManagedConn
+	closeWriteCalled bool
+}
+
+func (c *closeWriteFailingConn) CloseWrite() error {
+	c.closeWriteCalled = true
+	return errors.ErrUnsupported
+}
+
+func TestRunManagedCloseWriteFailureFallsBackToClose(t *testing.T) {
+	conn := &closeWriteFailingConn{
+		testManagedConn: newTestManagedConn(nil),
+	}
+
+	err := RunManaged(RunManagedOptions{
+		Parent:        context.Background(),
+		Conn:          conn,
+		TransportSide: SideProvider,
+		JoinTimeout:   2 * time.Second,
+		Handler: func(ctx context.Context) error {
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunManaged() = %v, want nil", err)
+	}
+	if !conn.closeWriteCalled {
+		t.Fatal("CloseWrite was not called")
+	}
+	select {
+	case <-conn.closed:
+	default:
+		t.Fatal("Close was not called after CloseWrite failed")
 	}
 }
 
@@ -392,6 +446,17 @@ func TestResolveManagedErrors_ProviderFailure(t *testing.T) {
 				firstSide:          SideProvider,
 				transportErr:       errProvider,
 				handlerCompleted:   false,
+				transportCompleted: true,
+			},
+			wantErr: errProvider,
+		},
+		{
+			name: "genuine provider failure wins over later handler success",
+			outcome: managedOutcome{
+				firstSide:          SideProvider,
+				handlerErr:         nil,
+				transportErr:       errProvider,
+				handlerCompleted:   true,
 				transportCompleted: true,
 			},
 			wantErr: errProvider,
