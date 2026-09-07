@@ -4,6 +4,21 @@ Guide for AI coding agents working in the Devsy repository.
 
 ---
 
+## Development environment
+
+This repository uses mise to define supported development tool versions.
+
+If mise is available, run:
+
+    mise install --locked
+    mise run setup
+
+Use the repository Taskfile for build, test, lint, and development commands.
+
+Some automated environments may apply additional environment-specific setup,
+but general contributors and coding agents should not assume those credentials
+or integrations are available.
+
 ## Environment Setup
 
 Devsy is a monorepo with a Go-based CLI and an Electron-based Svelte 5 desktop application.

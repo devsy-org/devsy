@@ -15,7 +15,11 @@ protoc = "36.1"
 gh = "2.100.0"
 
 [tasks.setup]
-depends = ["setup:dependencies", "setup:hooks"]
+depends = [
+  "setup:dependencies",
+  "setup:hooks",
+  "setup:validate",
+]
 
 [tasks."setup:dependencies"]
 run = '''
@@ -29,3 +33,13 @@ run = '''
 prek install
 '''
 
+[tasks."setup:validate"]
+run = '''
+go version
+node --version
+task --version
+golangci-lint --version
+prek --version
+protoc --version
+gh --version
+'''

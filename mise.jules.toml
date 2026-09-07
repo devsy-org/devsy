@@ -1,0 +1,65 @@
+[env]
+DEVSY_GIT_AUTHOR_NAME = "Devsy Agent"
+DEVSY_GIT_AUTHOR_EMAIL = "skevetter@pm.me"
+DEVSY_GIT_SIGNING_PRIVATE_KEY = { age = { value = "<INSERT_CIPHERTEXT_HERE>" } }
+
+[tasks."setup:jules"]
+depends = [
+  "setup",
+  "setup:jules:git-signing",
+  "setup:jules:validate",
+]
+
+[tasks."setup:jules:git-signing"]
+run = '''
+set -euo pipefail
+
+# materialize key outside repo
+SIGNING_DIR="$HOME/.local/share/devsy/signing"
+SIGNING_PRIVATE_KEY="$SIGNING_DIR/devsy-agent-signing"
+SIGNING_PUBLIC_KEY="$SIGNING_DIR/devsy-agent-signing.pub"
+
+mkdir -p "$SIGNING_DIR"
+chmod 700 "$SIGNING_DIR"
+
+echo "$DEVSY_GIT_SIGNING_PRIVATE_KEY" > "$SIGNING_PRIVATE_KEY"
+chmod 600 "$SIGNING_PRIVATE_KEY"
+
+# Ensure public key is present. ssh-keygen -y derives it from the private key.
+ssh-keygen -y -f "$SIGNING_PRIVATE_KEY" > "$SIGNING_PUBLIC_KEY"
+
+# configure SSH commit signing
+git config --global gpg.format ssh
+git config --global user.signingkey "$SIGNING_PUBLIC_KEY"
+git config --global commit.gpgsign true
+git config --global tag.gpgsign true
+git config --global user.name "$DEVSY_GIT_AUTHOR_NAME"
+git config --global user.email "$DEVSY_GIT_AUTHOR_EMAIL"
+'''
+
+[tasks."setup:jules:validate"]
+run = '''
+set -euo pipefail
+
+# validate Git configuration
+test "$(git config --global --get gpg.format)" = "ssh"
+test "$(git config --global --get commit.gpgsign)" = "true"
+test -n "$(git config --global --get user.signingkey)"
+test -n "$(git config --global --get user.name)"
+test -n "$(git config --global --get user.email)"
+
+# create disposable real signed commit
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+git -C "$tmp" init
+git -C "$tmp" config user.name "$DEVSY_GIT_AUTHOR_NAME"
+git -C "$tmp" config user.email "$DEVSY_GIT_AUTHOR_EMAIL"
+git -C "$tmp" config gpg.format ssh
+git -C "$tmp" config user.signingkey "$HOME/.local/share/devsy/signing/devsy-agent-signing.pub"
+git -C "$tmp" config commit.gpgsign true
+
+touch "$tmp/README"
+git -C "$tmp" add README
+git -C "$tmp" commit -m "test: verify agent signing"
+'''
