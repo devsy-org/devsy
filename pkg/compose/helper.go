@@ -371,13 +371,18 @@ func (h *ComposeHelper) SanitizeProjectName(name string) string {
 	return h.toProjectName(name)
 }
 
+var (
+	oldProjectNameRegex = regexp.MustCompile("[^a-z0-9]")
+	newProjectNameRegex = regexp.MustCompile("[^-_a-z0-9]")
+)
+
 func (h *ComposeHelper) toProjectName(projectName string) string {
 	useNewProjectNameFormat, _ := h.useNewProjectName()
 	if !useNewProjectNameFormat {
-		return regexp.MustCompile("[^a-z0-9]").ReplaceAllString(strings.ToLower(projectName), "")
+		return oldProjectNameRegex.ReplaceAllString(strings.ToLower(projectName), "")
 	}
 
-	return regexp.MustCompile("[^-_a-z0-9]").ReplaceAllString(strings.ToLower(projectName), "")
+	return newProjectNameRegex.ReplaceAllString(strings.ToLower(projectName), "")
 }
 
 func (h *ComposeHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
