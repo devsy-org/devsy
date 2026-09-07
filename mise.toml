@@ -1,0 +1,31 @@
+[settings]
+lockfile = true
+lockfile_platforms = ["linux-x64"]
+
+[tool_config]
+locked = true
+
+[tools]
+go = "1.26.5"
+node = "24"
+task = "3.53.1"
+golangci-lint = "2.12.2"
+prek = "0.5.2"
+protoc = "36.1"
+gh = "2.100.0"
+
+[tasks.setup]
+depends = ["setup:dependencies", "setup:hooks"]
+
+[tasks."setup:dependencies"]
+run = '''
+go mod download
+npm ci
+(cd desktop && npm ci)
+'''
+
+[tasks."setup:hooks"]
+run = '''
+prek install
+'''
+
