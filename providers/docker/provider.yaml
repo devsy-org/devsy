@@ -8,6 +8,7 @@ optionGroups:
   - options:
       - DOCKER_PATH
       - DOCKER_HOST
+      - DOCKER_CONTEXT
       - DOCKER_ELEVATION
       - INACTIVITY_TIMEOUT
       - DOCKER_BUILDER
@@ -24,6 +25,9 @@ options:
   DOCKER_HOST:
     global: true
     description: The docker host to use.
+  DOCKER_CONTEXT:
+    global: true
+    description: The Docker context to use.
   DOCKER_BUILDER:
     global: true
     description: The docker builder to use.
@@ -37,6 +41,7 @@ agent:
     install: false
     env:
       DOCKER_HOST: ${DOCKER_HOST}
+      DOCKER_CONTEXT: ${DOCKER_CONTEXT}
 exec:
   command: |-
     "${DEVSY}" internal sh -c "${COMMAND}"
