@@ -179,4 +179,43 @@ describe("UpdatesPanel status display", () => {
     )
     expect(btn).toBeTruthy()
   })
+
+  it("renders idle state when no check has run yet", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("stable")
+    await initUpdateStore()
+    __setForTest({ state: "idle", currentVersion: "1.17.0" })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/no update check has run yet/i)
+  })
+
+  it("renders dev-mode notice for unpackaged builds", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("stable")
+    await initUpdateStore()
+    __setForTest({ state: "up-to-date", currentVersion: "1.17.0", code: "dev-mode" })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/updates run in packaged builds/i)
+  })
+
+  it("renders channel-missing notice when channel has no releases", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("beta")
+    await initUpdateStore()
+    __setForTest({ state: "up-to-date", currentVersion: "1.17.0", code: "channel-missing" })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/no releases on this channel yet/i)
+  })
 })

@@ -336,6 +336,9 @@ export async function initAutoUpdater(
         channel: currentChannel,
         result,
       })
+      // autoDownload is honored by electron-updater at the moment this event
+      // fires, so a rejected candidate would still be fetched. Cancel it.
+      autoUpdater.autoDownload = false
       setStatus({
         state: "up-to-date",
         currentVersion,
@@ -344,6 +347,9 @@ export async function initAutoUpdater(
       })
       return
     }
+
+    // Restore user preference before a legitimate candidate downloads.
+    autoUpdater.autoDownload = autoDownloadEnabled
 
     logUpdateDecision({
       currentVersion,
@@ -380,14 +386,10 @@ export async function initAutoUpdater(
   })
 
   autoUpdater.on("download-progress", (info) => {
-    const availableVersion =
-      (lastStatus.state === "available" ||
-      lastStatus.state === "downloading" ||
-      lastStatus.state === "downloaded"
-        ? lastStatus.availableVersion
-        : undefined) ??
-      lastStatus.version ??
-      ""
+    if (lastStatus.state !== "available" && lastStatus.state !== "downloading") {
+      return
+    }
+    const availableVersion = lastStatus.availableVersion
     setStatus({
       state: "downloading",
       currentVersion: getCurrentVersion(),
@@ -403,13 +405,10 @@ export async function initAutoUpdater(
   })
 
   autoUpdater.on("update-downloaded", (info) => {
-    const availableVersion =
-      (lastStatus.state === "available" ||
-      lastStatus.state === "downloading" ||
-      lastStatus.state === "downloaded"
-        ? lastStatus.availableVersion
-        : undefined) ?? info.version
-    trackEvent("update_downloaded", { version: availableVersion })
+    if (lastStatus.state !== "available" && lastStatus.state !== "downloading") {
+      return
+    }
+    const availableVersion = lastStatus.availableVersion
     const currentVersion = getCurrentVersion()
     logUpdateDecision({
       currentVersion,

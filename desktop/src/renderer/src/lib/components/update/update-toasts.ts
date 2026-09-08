@@ -33,6 +33,7 @@ function fireAvailable(
   s: Extract<UpdateStatus, { state: "available" }>,
   autoDownload: boolean,
 ): void {
+  userInitiated = false
   const version = s.availableVersion ?? s.version ?? ""
   if (autoDownload) {
     toast.info(`Update v${version} found, downloading…`, { duration: 4000 })

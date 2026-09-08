@@ -113,6 +113,8 @@ onMount(async () => {
             <CheckCircle2 class="h-5 w-5 text-primary" />
           {:else if s.state === "error"}
             <AlertTriangle class="h-5 w-5 text-destructive" />
+          {:else if s.state === "idle" || s.code === "dev-mode" || s.code === "channel-missing"}
+            <CheckCircle2 class="h-5 w-5 text-muted-foreground" />
           {:else}
             <CheckCircle2 class="h-5 w-5 text-green-600 dark:text-green-500" />
           {/if}
@@ -155,6 +157,24 @@ onMount(async () => {
           {:else if s.state === "error"}
             <p class="text-sm font-medium">Couldn't check for updates</p>
             <p class="text-xs text-destructive">{s.error}</p>
+          {:else if s.state === "idle"}
+            <p class="text-sm font-medium">No update check has run yet</p>
+            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+              {#if installedVersion}
+                <span>Version {installedVersion}</span>
+              {/if}
+              <span>{channelLabel(releaseChannel)} channel</span>
+            </div>
+          {:else if s.code === "dev-mode"}
+            <p class="text-sm font-medium">Updates run in packaged builds</p>
+          {:else if s.code === "channel-missing"}
+            <p class="text-sm font-medium">No releases on this channel yet</p>
+            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+              <span>{channelLabel(releaseChannel)} channel</span>
+              {#if lastChecked}
+                <span>Last checked at {fmtTime(lastChecked)}</span>
+              {/if}
+            </div>
           {:else}
             <p class="text-sm font-medium">Devsy is up to date</p>
             <div class="flex items-center gap-3 text-xs text-muted-foreground">

@@ -87,6 +87,7 @@ describe("updater", () => {
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
+    electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
     electronUpdaterMock.autoUpdater.emit("download-progress", {
       percent: 42,
       bytesPerSecond: 1000,
@@ -132,6 +133,7 @@ describe("updater", () => {
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
+    electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
     electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "2.0.0" })
 
     let quittingWhenInstalled: boolean | undefined
@@ -146,7 +148,6 @@ describe("updater", () => {
       electronUpdaterMock.autoUpdater.quitAndInstall,
     ).toHaveBeenCalledTimes(1)
   })
-
   it("swallows a channel-missing rejection from check_for_updates", async () => {
     electronUpdaterMock.autoUpdater.checkForUpdates.mockRejectedValueOnce(
       new Error(
@@ -171,6 +172,7 @@ describe("updater", () => {
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
+    electronUpdaterMock.autoUpdater.emit("update-available", { version: "9.9.9" })
     electronUpdaterMock.autoUpdater.emit("update-downloaded", {
       version: "9.9.9",
     })
@@ -242,6 +244,7 @@ describe("updater", () => {
         electronUpdaterMock.autoUpdater.checkForUpdates,
       ).toHaveBeenCalledTimes(1)
 
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "9.9.9" })
       electronUpdaterMock.autoUpdater.emit("update-downloaded", {
         version: "9.9.9",
       })
@@ -321,6 +324,38 @@ describe("updater", () => {
         expect.objectContaining({ state: "available" }),
       )
       expect(electronUpdaterMock.autoUpdater.downloadUpdate).not.toHaveBeenCalled()
+    })
+
+    it("cancels autoDownload and ignores download events for rejected candidate", async () => {
+      mockAppVersion = "1.17.0"
+      const { initAutoUpdater } = await import("../updater.js")
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { send } } as never
+      await initAutoUpdater(() => win)
+
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.16.2" })
+      expect(electronUpdaterMock.autoUpdater.autoDownload).toBe(false)
+      expect(send).toHaveBeenCalledWith(
+        "update-status",
+        expect.objectContaining({ state: "up-to-date" }),
+      )
+
+      electronUpdaterMock.autoUpdater.emit("download-progress", {
+        percent: 50,
+        bytesPerSecond: 1000,
+        transferred: 50,
+        total: 100,
+      })
+      electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "1.16.2" })
+
+      expect(send).not.toHaveBeenCalledWith(
+        "update-status",
+        expect.objectContaining({ state: "downloading" }),
+      )
+      expect(send).not.toHaveBeenCalledWith(
+        "update-status",
+        expect.objectContaining({ state: "downloaded" }),
+      )
     })
 
     it("treats equal version (1.17.0 vs 1.17.0) as not-available", async () => {
