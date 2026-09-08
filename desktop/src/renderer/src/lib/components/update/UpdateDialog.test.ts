@@ -11,10 +11,7 @@ vi.mock("$lib/ipc/events.js", async (importOriginal) => {
   return { ...mod, onUpdateStatus: async () => () => {} }
 })
 
-import {
-  __setForTest,
-  initUpdateStore,
-} from "$lib/stores/updates.svelte.js"
+import { __setForTest, initUpdateStore } from "$lib/stores/updates.svelte.js"
 import UpdateDialog from "./UpdateDialog.svelte"
 
 function bodyText(): string {

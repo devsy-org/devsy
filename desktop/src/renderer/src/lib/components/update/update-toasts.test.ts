@@ -75,7 +75,9 @@ describe("update-toasts", () => {
   })
 
   it("fires error toast after markUserInitiated, then resets the flag", async () => {
-    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    const { initUpdateToasts, markUserInitiated } = await import(
+      "./update-toasts.js"
+    )
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
@@ -89,7 +91,9 @@ describe("update-toasts", () => {
   })
 
   it("suppresses error toast when code is dev-mode", async () => {
-    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    const { initUpdateToasts, markUserInitiated } = await import(
+      "./update-toasts.js"
+    )
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
@@ -100,7 +104,9 @@ describe("update-toasts", () => {
   })
 
   it("openUpdateDialog calls the bound opener", async () => {
-    const { bindDialogOpener, openUpdateDialog } = await import("./update-toasts.js")
+    const { bindDialogOpener, openUpdateDialog } = await import(
+      "./update-toasts.js"
+    )
     const opener = vi.fn()
     bindDialogOpener(opener)
     openUpdateDialog()
@@ -124,7 +130,11 @@ describe("update-toasts", () => {
     const emit = listeners[0]
 
     emit({ state: "available", version: "1.0.0" })
-    emit({ state: "downloading", version: "1.0.0", progress: { percent: 50, bytesPerSecond: 0, transferred: 0, total: 0 } })
+    emit({
+      state: "downloading",
+      version: "1.0.0",
+      progress: { percent: 50, bytesPerSecond: 0, transferred: 0, total: 0 },
+    })
     emit({ state: "available", version: "2.0.0" })
 
     expect(toastFns.info).toHaveBeenCalledTimes(2)

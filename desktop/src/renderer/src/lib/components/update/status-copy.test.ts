@@ -20,9 +20,9 @@ describe("statusHeadline", () => {
   })
 
   it("announces an available version", () => {
-    expect(statusHeadline({ state: "available", version: "2.0.0" }, "1.2.3")).toBe(
-      "Version 2.0.0 is available",
-    )
+    expect(
+      statusHeadline({ state: "available", version: "2.0.0" }, "1.2.3"),
+    ).toBe("Version 2.0.0 is available")
   })
 
   it("announces download progress", () => {
@@ -31,7 +31,12 @@ describe("statusHeadline", () => {
         {
           state: "downloading",
           version: "2.0.0",
-          progress: { percent: 42, bytesPerSecond: 0, transferred: 0, total: 0 },
+          progress: {
+            percent: 42,
+            bytesPerSecond: 0,
+            transferred: 0,
+            total: 0,
+          },
         },
         "1.2.3",
       ),
@@ -39,17 +44,20 @@ describe("statusHeadline", () => {
   })
 
   it("announces ready-to-install", () => {
-    expect(statusHeadline({ state: "downloaded", version: "2.0.0" }, "1.2.3")).toBe(
-      "Version 2.0.0 is ready to install",
-    )
+    expect(
+      statusHeadline({ state: "downloaded", version: "2.0.0" }, "1.2.3"),
+    ).toBe("Version 2.0.0 is ready to install")
   })
 
   it("distinguishes dev-mode and channel-missing", () => {
-    expect(statusHeadline({ state: "not-available", code: "dev-mode" }, null)).toBe(
-      "Updates run in packaged builds",
-    )
     expect(
-      statusHeadline({ state: "not-available", code: "channel-missing" }, "1.2.3"),
+      statusHeadline({ state: "not-available", code: "dev-mode" }, null),
+    ).toBe("Updates run in packaged builds")
+    expect(
+      statusHeadline(
+        { state: "not-available", code: "channel-missing" },
+        "1.2.3",
+      ),
     ).toBe("No releases on this channel yet")
   })
 })

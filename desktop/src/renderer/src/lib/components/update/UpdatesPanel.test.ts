@@ -39,9 +39,9 @@ import UpdatesPanel from "./UpdatesPanel.svelte"
 
 function cardButton(label: RegExp): HTMLButtonElement | null {
   return (
-    Array.from(document.querySelectorAll<HTMLButtonElement>('button[role="radio"]')).find(
-      (b) => label.test(b.textContent ?? ""),
-    ) ?? null
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>('button[role="radio"]'),
+    ).find((b) => label.test(b.textContent ?? "")) ?? null
   )
 }
 

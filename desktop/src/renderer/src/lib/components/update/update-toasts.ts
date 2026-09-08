@@ -43,7 +43,9 @@ function fireDownloaded(s: UpdateStatus): void {
       label: "Restart",
       onClick: () => {
         installUpdate().catch(() => {
-          toast.error("Failed to start update. Try restarting the app manually.")
+          toast.error(
+            "Failed to start update. Try restarting the app manually.",
+          )
         })
       },
     },

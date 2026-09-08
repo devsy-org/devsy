@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { Button } from "$lib/components/ui/button/index.js"
-  import { Download, CheckCircle2 } from "@lucide/svelte"
-  import { hasUpdate, isReady, updateStatus } from "$lib/stores/updates.svelte.js"
+import { Button } from "$lib/components/ui/button/index.js"
+import { Download, CheckCircle2 } from "@lucide/svelte"
+import { hasUpdate, isReady, updateStatus } from "$lib/stores/updates.svelte.js"
 
-  let { onclick }: { onclick: () => void } = $props()
+let { onclick }: { onclick: () => void } = $props()
 
-  const s = $derived(updateStatus())
-  const show = $derived(hasUpdate())
-  const ready = $derived(isReady())
-  const downloading = $derived(s.state === "downloading")
+const s = $derived(updateStatus())
+const show = $derived(hasUpdate())
+const ready = $derived(isReady())
+const downloading = $derived(s.state === "downloading")
 </script>
 
 {#if show}

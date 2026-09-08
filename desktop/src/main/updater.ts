@@ -50,7 +50,9 @@ function settingsPath(): string {
 
 function loadSettings(): PersistedSettings {
   try {
-    return JSON.parse(readFileSync(settingsPath(), "utf-8")) as PersistedSettings
+    return JSON.parse(
+      readFileSync(settingsPath(), "utf-8"),
+    ) as PersistedSettings
   } catch {
     return {}
   }
@@ -112,11 +114,16 @@ function normalizeReleaseNotes(
 
 function classifyError(err: Error): UpdateErrorCode {
   const m = err.message.toLowerCase()
-  if (m.includes("cannot find channel") || (m.includes("404") && m.includes(".yml"))) {
+  if (
+    m.includes("cannot find channel") ||
+    (m.includes("404") && m.includes(".yml"))
+  ) {
     return "channel-missing"
   }
-  if (m.includes("net::") || m.includes("network") || m.includes("enotfound")) return "network"
-  if (m.includes("sha512") || m.includes("checksum") || m.includes("integrity")) return "verification"
+  if (m.includes("net::") || m.includes("network") || m.includes("enotfound"))
+    return "network"
+  if (m.includes("sha512") || m.includes("checksum") || m.includes("integrity"))
+    return "verification"
   return "feed-error"
 }
 
@@ -150,7 +157,7 @@ export function setAutoDownloadEnabled(enabled: boolean): void {
 // reach it through `default` (the CJS module.exports), which invokes the
 // getter and returns the platform-specific updater instance.
 async function loadAutoUpdater(): Promise<
-  (typeof import("electron-updater"))["autoUpdater"] | null
+  typeof import("electron-updater")["autoUpdater"] | null
 > {
   const mod = await import("electron-updater")
   return mod.default?.autoUpdater ?? mod.autoUpdater ?? null
@@ -258,7 +265,10 @@ export async function initAutoUpdater(
     // Skip while a download is already in flight or staged — re-fetching the
     // manifest would just churn state. autoUpdater.autoDownload is already set
     // from the user's preference, so a plain check honors that toggle.
-    if (lastStatus.state === "downloading" || lastStatus.state === "downloaded") {
+    if (
+      lastStatus.state === "downloading" ||
+      lastStatus.state === "downloaded"
+    ) {
       return
     }
     autoUpdater.checkForUpdates().catch((err: Error) => {
@@ -315,7 +325,9 @@ export async function checkForUpdates(): Promise<void> {
   await runUpdateCheck(autoUpdater)
 }
 
-export async function checkForUpdatesWithChannel(channel: ReleaseChannel): Promise<void> {
+export async function checkForUpdatesWithChannel(
+  channel: ReleaseChannel,
+): Promise<void> {
   // Caller (set_release_channel IPC) already persisted the channel choice.
   // Just reconfigure the running autoUpdater and kick off a check.
   currentChannel = channel
