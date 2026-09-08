@@ -49,7 +49,7 @@ function fireDownloaded(s: Extract<UpdateStatus, { state: "downloaded" }>): void
   toast.success(`Update v${version} ready`, {
     duration: Infinity,
     action: {
-      label: "Restart",
+      label: "Restart & update",
       onClick: () => {
         installUpdate().catch(() => {
           toast.error("Failed to start update. Try restarting the app manually.")
@@ -75,7 +75,7 @@ function fireNotAvailable(
   if (s.code === "channel-missing") {
     toast.info("No releases are available on this channel yet.")
   } else {
-    toast.success("You're on the latest version.")
+    toast.success("Devsy is up to date.")
   }
   userInitiated = false
 }
