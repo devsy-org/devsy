@@ -14,6 +14,7 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/configread"
 	_ "github.com/devsy-org/devsy/e2e/tests/context"
 	_ "github.com/devsy-org/devsy/e2e/tests/delivery"
+	_ "github.com/devsy-org/devsy/e2e/tests/dockercontext"
 	_ "github.com/devsy-org/devsy/e2e/tests/dockerinstall"
 	_ "github.com/devsy-org/devsy/e2e/tests/down"
 	_ "github.com/devsy-org/devsy/e2e/tests/exec"
