@@ -50,7 +50,7 @@ async function renderPanel(channel: "stable" | "beta") {
   getReleaseChannel.mockResolvedValue(channel)
   setReleaseChannel.mockResolvedValue(undefined)
   await initUpdateStore()
-  __setForTest({ state: "not-available", version: "1.2.3" })
+  __setForTest({ state: "not-available", currentVersion: "1.2.3", version: "1.2.3" })
   render(UpdatesPanel)
   // Let onMount's async version/channel loads resolve.
   await tick()

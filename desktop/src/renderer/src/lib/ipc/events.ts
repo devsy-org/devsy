@@ -17,6 +17,7 @@ export type UpdateStateValue =
   | "available"
   | "downloading"
   | "downloaded"
+  | "up-to-date"
   | "not-available"
   | "error"
 
@@ -35,15 +36,56 @@ export interface UpdateProgress {
   total: number
 }
 
-export interface UpdateStatus {
-  state: UpdateStateValue
-  version?: string
-  releaseNotes?: string
-  releaseName?: string
-  progress?: UpdateProgress
-  error?: string
-  code?: UpdateErrorCode
-}
+export type UpdateStatus =
+  | {
+      state: "idle"
+      currentVersion: string
+      version?: string
+    }
+  | {
+      state: "checking"
+      currentVersion: string
+      version?: string
+    }
+  | {
+      state: "up-to-date" | "not-available"
+      currentVersion: string
+      version?: string
+      lastCheckedAt?: number
+      feedVersion?: string
+      code?: UpdateErrorCode
+    }
+  | {
+      state: "available"
+      currentVersion: string
+      availableVersion: string
+      version?: string
+      releaseNotes?: string
+      releaseName?: string
+      code?: UpdateErrorCode
+    }
+  | {
+      state: "downloading"
+      currentVersion: string
+      availableVersion: string
+      version?: string
+      progress: UpdateProgress
+    }
+  | {
+      state: "downloaded"
+      currentVersion: string
+      availableVersion: string
+      version?: string
+      releaseNotes?: string
+      releaseName?: string
+    }
+  | {
+      state: "error"
+      currentVersion: string
+      version?: string
+      code: UpdateErrorCode
+      error: string
+    }
 
 export const EVENT_NAMES = {
   WORKSPACES_CHANGED: "workspaces-changed",

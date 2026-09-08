@@ -78,7 +78,7 @@ describe("updater", () => {
     await initAutoUpdater(() => win)
     expect(send).toHaveBeenCalledWith(
       "update-status",
-      expect.objectContaining({ state: "not-available", code: "dev-mode" }),
+      expect.objectContaining({ state: "up-to-date", code: "dev-mode" }),
     )
   })
 
@@ -314,7 +314,7 @@ describe("updater", () => {
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.16.2" })
       expect(send).toHaveBeenCalledWith(
         "update-status",
-        expect.objectContaining({ state: "not-available" }),
+        expect.objectContaining({ state: "up-to-date" }),
       )
       expect(send).not.toHaveBeenCalledWith(
         "update-status",
@@ -333,7 +333,7 @@ describe("updater", () => {
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.17.0" })
       expect(send).toHaveBeenCalledWith(
         "update-status",
-        expect.objectContaining({ state: "not-available" }),
+        expect.objectContaining({ state: "up-to-date" }),
       )
       expect(send).not.toHaveBeenCalledWith(
         "update-status",
@@ -395,7 +395,7 @@ describe("updater", () => {
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.17.0" })
       expect(send).toHaveBeenCalledWith(
         "update-status",
-        expect.objectContaining({ state: "not-available" }),
+        expect.objectContaining({ state: "up-to-date" }),
       )
       expect(send).not.toHaveBeenCalledWith(
         "update-status",
@@ -413,7 +413,7 @@ describe("updater", () => {
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "not-a-version" })
       expect(send).toHaveBeenCalledWith(
         "update-status",
-        expect.objectContaining({ state: "not-available" }),
+        expect.objectContaining({ state: "up-to-date" }),
       )
       expect(electronUpdaterMock.autoUpdater.downloadUpdate).not.toHaveBeenCalled()
     })

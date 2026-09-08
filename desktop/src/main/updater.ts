@@ -13,6 +13,7 @@ export type UpdateStateValue =
   | "available"
   | "downloading"
   | "downloaded"
+  | "up-to-date"
   | "not-available"
   | "error"
 
@@ -65,16 +66,56 @@ export interface UpdateProgress {
   transferred: number
   total: number
 }
-
-export interface UpdateStatus {
-  state: UpdateStateValue
-  version?: string
-  releaseNotes?: string
-  releaseName?: string
-  progress?: UpdateProgress
-  error?: string
-  code?: UpdateErrorCode
-}
+export type UpdateStatus =
+  | {
+      state: "idle"
+      currentVersion: string
+      version?: string
+    }
+  | {
+      state: "checking"
+      currentVersion: string
+      version?: string
+    }
+  | {
+      state: "up-to-date" | "not-available"
+      currentVersion: string
+      version?: string
+      lastCheckedAt?: number
+      feedVersion?: string
+      code?: UpdateErrorCode
+    }
+  | {
+      state: "available"
+      currentVersion: string
+      availableVersion: string
+      version?: string
+      releaseNotes?: string
+      releaseName?: string
+      code?: UpdateErrorCode
+    }
+  | {
+      state: "downloading"
+      currentVersion: string
+      availableVersion: string
+      version?: string
+      progress: UpdateProgress
+    }
+  | {
+      state: "downloaded"
+      currentVersion: string
+      availableVersion: string
+      version?: string
+      releaseNotes?: string
+      releaseName?: string
+    }
+  | {
+      state: "error"
+      currentVersion: string
+      version?: string
+      code: UpdateErrorCode
+      error: string
+    }
 
 interface PersistedSettings {
   channel?: ReleaseChannel
@@ -111,10 +152,18 @@ function saveSettings(patch: PersistedSettings): void {
 const INITIAL_CHECK_DELAY_MS = 10_000
 const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 
+function getCurrentVersion(): string {
+  try {
+    return app.getVersion()
+  } catch {
+    return ""
+  }
+}
+
 let currentChannel: ReleaseChannel = "stable"
 let autoDownloadEnabled = true
 let getMainWindowFn: (() => BrowserWindow | null) | null = null
-let lastStatus: UpdateStatus = { state: "idle" }
+let lastStatus: UpdateStatus = { state: "idle", currentVersion: "" }
 let initialCheckTimer: ReturnType<typeof setTimeout> | null = null
 let recheckTimer: ReturnType<typeof setInterval> | null = null
 
@@ -207,7 +256,11 @@ export async function initAutoUpdater(
   autoDownloadEnabled = settings.autoDownload ?? true
 
   if (!app.isPackaged) {
-    setStatus({ state: "not-available", code: "dev-mode" })
+    setStatus({
+      state: "up-to-date",
+      currentVersion: getCurrentVersion(),
+      code: "dev-mode",
+    })
     return
   }
 
@@ -216,6 +269,7 @@ export async function initAutoUpdater(
   if (!autoUpdater || typeof autoUpdater.checkForUpdates !== "function") {
     setStatus({
       state: "error",
+      currentVersion: getCurrentVersion(),
       code: "unsupported",
       error: "Updates require a packaged build",
     })
@@ -225,21 +279,27 @@ export async function initAutoUpdater(
   autoUpdater.autoDownload = autoDownloadEnabled
   autoUpdater.autoInstallOnAppQuit = true
   configureUpdaterChannel(autoUpdater, currentChannel)
+
   autoUpdater.on("checking-for-update", () => {
     trackEvent("update_check")
-    setStatus({ state: "checking" })
+    setStatus({
+      state: "checking",
+      currentVersion: getCurrentVersion(),
+    })
   })
 
   autoUpdater.on("update-available", (info) => {
-    const currentVersion = app.getVersion()
+    const currentVersion = getCurrentVersion()
     const candidate = classifyCandidate(currentVersion, info.version)
 
     if (candidate.kind !== "newer") {
       console.warn(
-        `[updater] candidate ${info.version} is not newer than installed ${currentVersion} (${candidate.kind}); treating as not available`,
+        `[updater] candidate ${info.version} is not newer than installed ${currentVersion} (${candidate.kind}); treating as up to date`,
       )
       setStatus({
-        state: "not-available",
+        state: "up-to-date",
+        currentVersion,
+        feedVersion: info.version,
         version: info.version,
       })
       return
@@ -248,6 +308,8 @@ export async function initAutoUpdater(
     trackEvent("update_available", { version: info.version })
     setStatus({
       state: "available",
+      currentVersion,
+      availableVersion: info.version,
       version: info.version,
       releaseName: info.releaseName ?? undefined,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
@@ -256,15 +318,27 @@ export async function initAutoUpdater(
 
   autoUpdater.on("update-not-available", (info) => {
     setStatus({
-      state: "not-available",
+      state: "up-to-date",
+      currentVersion: getCurrentVersion(),
+      feedVersion: info.version,
       version: info.version,
     })
   })
 
   autoUpdater.on("download-progress", (info) => {
+    const availableVersion =
+      (lastStatus.state === "available" ||
+      lastStatus.state === "downloading" ||
+      lastStatus.state === "downloaded"
+        ? lastStatus.availableVersion
+        : undefined) ??
+      lastStatus.version ??
+      ""
     setStatus({
-      ...lastStatus,
       state: "downloading",
+      currentVersion: getCurrentVersion(),
+      availableVersion,
+      version: availableVersion,
       progress: {
         percent: info.percent,
         bytesPerSecond: info.bytesPerSecond,
@@ -275,10 +349,18 @@ export async function initAutoUpdater(
   })
 
   autoUpdater.on("update-downloaded", (info) => {
-    trackEvent("update_downloaded", { version: info.version })
+    const availableVersion =
+      (lastStatus.state === "available" ||
+      lastStatus.state === "downloading" ||
+      lastStatus.state === "downloaded"
+        ? lastStatus.availableVersion
+        : undefined) ?? info.version
+    trackEvent("update_downloaded", { version: availableVersion })
     setStatus({
       state: "downloaded",
-      version: info.version,
+      currentVersion: getCurrentVersion(),
+      availableVersion,
+      version: availableVersion,
       releaseName: info.releaseName ?? undefined,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
     })
@@ -289,7 +371,8 @@ export async function initAutoUpdater(
     trackEvent("update_error", { error_type: err.name })
     if (code === "channel-missing") {
       setStatus({
-        state: "not-available",
+        state: "up-to-date",
+        currentVersion: getCurrentVersion(),
         code,
       })
       console.warn("Auto-update: channel manifest missing:", err.message)
@@ -297,6 +380,7 @@ export async function initAutoUpdater(
     }
     setStatus({
       state: "error",
+      currentVersion: getCurrentVersion(),
       code,
       error: err.message,
     })
@@ -332,13 +416,18 @@ export function stopAutoUpdater(): void {
 
 async function getUpdater() {
   if (!app.isPackaged) {
-    setStatus({ state: "not-available", code: "dev-mode" })
+    setStatus({
+      state: "up-to-date",
+      currentVersion: getCurrentVersion(),
+      code: "dev-mode",
+    })
     return null
   }
   const autoUpdater = await loadAutoUpdater()
   if (!autoUpdater || typeof autoUpdater.checkForUpdates !== "function") {
     setStatus({
       state: "error",
+      currentVersion: getCurrentVersion(),
       code: "unsupported",
       error: "Updates require a packaged build",
     })
@@ -376,8 +465,8 @@ export async function checkForUpdatesWithChannel(channel: ReleaseChannel): Promi
 
 export async function downloadUpdate(): Promise<void> {
   if (lastStatus.state !== "available") return
-  const currentVersion = app.getVersion()
-  const candidateVersion = lastStatus.version ?? ""
+  const currentVersion = getCurrentVersion()
+  const candidateVersion = lastStatus.availableVersion ?? lastStatus.version ?? ""
   if (classifyCandidate(currentVersion, candidateVersion).kind !== "newer") {
     return
   }
