@@ -3,6 +3,8 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"sync"
 	"testing"
@@ -116,6 +118,7 @@ type controlledManagedConn struct {
 	net.Conn
 	mu                  sync.Mutex
 	triggerOnce         sync.Once
+	closeOnce           sync.Once
 	waitErr             error
 	triggerWait         chan struct{}
 	waitResultPublished chan struct{}
@@ -140,12 +143,10 @@ func (c *controlledManagedConn) Wait() error {
 }
 
 func (c *controlledManagedConn) Close() error {
-	select {
-	case <-c.closed:
-	default:
+	c.closeOnce.Do(func() {
 		close(c.closed)
 		c.triggerOnce.Do(func() { close(c.triggerWait) })
-	}
+	})
 	return nil
 }
 
@@ -408,6 +409,16 @@ func TestResolveManagedErrors_HandlerError(t *testing.T) {
 			},
 			wantErr: errUser,
 		},
+		{
+			name: "transport error returned when handler did not complete in SideSSH",
+			outcome: managedOutcome{
+				firstSide:          SideSSH,
+				transportErr:       errTeardown,
+				handlerCompleted:   false,
+				transportCompleted: true,
+			},
+			wantErr: errTeardown,
+		},
 	}
 
 	for _, tt := range tests {
@@ -465,7 +476,7 @@ func TestResolveManagedErrors_ProviderFailure(t *testing.T) {
 			name: "clean provider exit with handler EOF returns nil",
 			outcome: managedOutcome{
 				firstSide:          SideProvider,
-				handlerErr:         errors.New("read: EOF"),
+				handlerErr:         fmt.Errorf("read: %w", io.EOF),
 				handlerCompleted:   true,
 				transportCompleted: true,
 			},

@@ -201,10 +201,7 @@ func isClosedNetErr(err error) bool {
 	if errors.Is(err, net.ErrClosed) {
 		return true
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "closed network connection") ||
-		strings.Contains(msg, "use of closed network connection") ||
-		strings.Contains(msg, "connection is closed")
+	return strings.Contains(err.Error(), "use of closed network connection")
 }
 
 func isExitMissingErr(err error) bool {
@@ -259,12 +256,22 @@ func resolveManagedErrors(outcome managedOutcome) error {
 func resolveByFirstSide(outcome managedOutcome) error {
 	switch outcome.firstSide {
 	case SideSSH:
-		return outcome.handlerErr
+		return resolveSSHFirst(outcome)
 	case SideProvider:
 		return resolveProviderFirst(outcome)
 	default:
 		return resolveFallback(outcome)
 	}
+}
+
+func resolveSSHFirst(outcome managedOutcome) error {
+	if !outcome.handlerCompleted || isTeardownOrCancellationError(outcome.handlerErr) {
+		if outcome.transportErr != nil {
+			return outcome.transportErr
+		}
+		return nil
+	}
+	return outcome.handlerErr
 }
 
 func resolveParentCancellation(outcome managedOutcome) error {
