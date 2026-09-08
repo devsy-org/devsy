@@ -153,7 +153,7 @@ func TestNewAgentDelivery_KubernetesDriver_FallsBackWhenNoPodExec(t *testing.T) 
 		ExecFunc:                   execFn,
 		DownloadURL:                "https://artifacts.example.test/devsy",
 		KubernetesAgentInstallPath: testKubernetesInstallPath,
-		// PodExec intentionally nil → legacy fallback.
+		// PodExec intentionally nil -> legacy fallback.
 	}
 
 	d := NewAgentDelivery(opts)

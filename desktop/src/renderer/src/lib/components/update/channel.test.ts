@@ -21,11 +21,11 @@ describe("channel labels", () => {
 })
 
 describe("isDowngrade", () => {
-  it("treats Preview → Stable as a downgrade", () => {
+  it("treats Preview -> Stable as a downgrade", () => {
     expect(isDowngrade("beta", "stable")).toBe(true)
   })
 
-  it("treats Stable → Preview as not a downgrade", () => {
+  it("treats Stable -> Preview as not a downgrade", () => {
     expect(isDowngrade("stable", "beta")).toBe(false)
   })
 
