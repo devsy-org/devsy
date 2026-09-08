@@ -151,7 +151,7 @@ describe("update-toasts", () => {
     expect(toastFns.success).toHaveBeenCalledWith("Devsy is up to date.")
   })
 
-  it("fires downloaded toast with Restart & update action", async () => {
+  it("fires downloaded toast with Restart action", async () => {
     const { initUpdateToasts } = await import("./update-toasts.js")
     initUpdateToasts(() => true)
     const emit = listeners[0]
@@ -161,7 +161,7 @@ describe("update-toasts", () => {
     expect(toastFns.success).toHaveBeenCalledWith(
       "Update v1.1.0 ready",
       expect.objectContaining({
-        action: expect.objectContaining({ label: "Restart & update" }),
+        action: expect.objectContaining({ label: "Restart" }),
       }),
     )
   })

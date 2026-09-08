@@ -159,7 +159,7 @@ describe("UpdatesPanel status display", () => {
     expect(btn).toBeTruthy()
   })
 
-  it("renders downloaded state with 'Restart & update' CTA", async () => {
+  it("renders downloaded state with 'Restart' CTA", async () => {
     getAppVersion.mockResolvedValue("1.17.0")
     getReleaseChannel.mockResolvedValue("stable")
     await initUpdateStore()
@@ -175,7 +175,7 @@ describe("UpdatesPanel status display", () => {
 
     expect(document.body.textContent).toMatch(/devsy 1\.18\.0 is ready/i)
     const btn = Array.from(document.querySelectorAll("button")).find((b) =>
-      /restart & update/i.test(b.textContent ?? ""),
+      /restart/i.test(b.textContent ?? ""),
     )
     expect(btn).toBeTruthy()
   })

@@ -20,8 +20,8 @@ export function buildUpdateMenuItems(
   const label = installationFailed
     ? `Retry Install Update v${status.version ?? ""}`
     : version
-      ? `Restart & Update to ${version}`
-      : "Restart & Update"
+      ? `Update to ${version}`
+      : "Restart"
   return [
     { label, click: onInstall },
     { type: "separator" },
