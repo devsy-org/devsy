@@ -39,7 +39,11 @@ let pendingChannel = $state<ReleaseChannel | null>(null)
 
 const s = $derived(updateStatus())
 const lastChecked = $derived(lastCheckedAt())
-const sanitizedNotes = $derived(s.releaseNotes ? DOMPurify.sanitize(s.releaseNotes) : "")
+const sanitizedNotes = $derived(
+  (s.state === "available" || s.state === "downloaded") && s.releaseNotes
+    ? DOMPurify.sanitize(s.releaseNotes)
+    : "",
+)
 const headline = $derived(statusHeadline(s, appVersion))
 
 async function loadVersion(): Promise<void> {

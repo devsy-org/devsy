@@ -24,7 +24,9 @@ let {
 const s = $derived(updateStatus())
 const lastChecked = $derived(lastCheckedAt())
 const sanitizedNotes = $derived(
-  s.releaseNotes ? DOMPurify.sanitize(s.releaseNotes) : "",
+  (s.state === "available" || s.state === "downloaded") && s.releaseNotes
+    ? DOMPurify.sanitize(s.releaseNotes)
+    : "",
 )
 
 async function onCheck() {

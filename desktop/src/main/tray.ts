@@ -18,7 +18,7 @@ export function buildUpdateMenuItems(
   if (status.state !== "downloaded" && !installationFailed) return []
   const label = installationFailed
     ? `Retry Install Update v${status.version ?? ""}`
-    : `Install Update v${status.version ?? ""}`
+    : `Install Update v${status.availableVersion ?? status.version ?? ""}`
   return [
     { label, click: onInstall },
     { type: "separator" },
