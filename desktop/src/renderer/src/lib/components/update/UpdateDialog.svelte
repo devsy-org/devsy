@@ -54,9 +54,9 @@ async function onInstall() {
 		{:else if s.state === "available"}
 			<div class="space-y-3">
 				<p class="text-sm">
-					<span class="font-medium">Version {s.version}</span> is available.
+					<span class="font-medium">Version {s.availableVersion ?? s.version}</span> is available.
 				</p>
-				{#if s.releaseNotes}
+				{#if sanitizedNotes}
 					<div class="prose prose-sm dark:prose-invert max-h-48 overflow-y-auto rounded-md border p-3">
 						{@html sanitizedNotes}
 					</div>
@@ -64,33 +64,33 @@ async function onInstall() {
 				{#if autoDownloadEnabled}
 					<p class="text-xs text-muted-foreground">Downloading in the background…</p>
 				{:else}
-					<Button onclick={onDownload}>Download</Button>
+					<Button onclick={onDownload}>Download update</Button>
 				{/if}
 			</div>
 		{:else if s.state === "downloading"}
 			<div class="space-y-3">
-				<p class="text-sm font-medium">Downloading v{s.version}…</p>
-				<Progress value={s.progress?.percent ?? 0} max={100} />
+				<p class="text-sm font-medium">Downloading v{s.availableVersion ?? s.version}…</p>
+				<Progress value={s.progress.percent} max={100} />
 				<p class="text-xs text-muted-foreground">
-					{(s.progress?.percent ?? 0).toFixed(0)}% · {fmtMBps(s.progress?.bytesPerSecond)}
+					{s.progress.percent.toFixed(0)}% · {fmtMBps(s.progress.bytesPerSecond)}
 				</p>
 			</div>
 		{:else if s.state === "downloaded"}
 			<div class="space-y-3">
 				<p class="text-sm">
-					<span class="font-medium">Version {s.version}</span> is ready to install.
+					<span class="font-medium">Version {s.availableVersion ?? s.version}</span> is ready to install.
 				</p>
-				{#if s.releaseNotes}
+				{#if sanitizedNotes}
 					<div class="prose prose-sm dark:prose-invert max-h-48 overflow-y-auto rounded-md border p-3">
 						{@html sanitizedNotes}
 					</div>
 				{/if}
 				<div class="flex gap-2 justify-end">
 					<Button variant="ghost" onclick={() => (open = false)}>Later</Button>
-					<Button onclick={onInstall}>Restart</Button>
+					<Button onclick={onInstall}>Restart & update</Button>
 				</div>
 			</div>
-		{:else if s.state === "not-available"}
+		{:else if s.state === "up-to-date" || s.state === "not-available"}
 			{#if s.code === "dev-mode"}
 				<p class="text-sm text-muted-foreground">Updates are available in packaged builds.</p>
 			{:else if s.code === "channel-missing"}
@@ -105,7 +105,7 @@ async function onInstall() {
 				</div>
 			{:else}
 				<div class="space-y-2">
-					<p class="text-sm text-muted-foreground">You're on the latest version.</p>
+					<p class="text-sm text-muted-foreground">Devsy is up to date.</p>
 					{#if lastChecked}
 						<p class="text-xs text-muted-foreground">Last checked at {fmtTime(lastChecked)}</p>
 					{/if}
@@ -116,9 +116,9 @@ async function onInstall() {
 			{/if}
 		{:else if s.state === "error"}
 			<div class="space-y-2">
-				<p class="text-sm text-destructive">Update check failed: {s.error}</p>
+				<p class="text-sm text-destructive">Couldn't check for updates: {s.error}</p>
 				<Button variant="outline" size="sm" onclick={onCheck} disabled={isChecking()}>
-					Check Again
+					Try again
 				</Button>
 			</div>
 		{:else}

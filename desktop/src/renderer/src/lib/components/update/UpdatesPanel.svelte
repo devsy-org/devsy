@@ -45,6 +45,7 @@ const sanitizedNotes = $derived(
     : "",
 )
 const headline = $derived(statusHeadline(s, appVersion))
+const installedVersion = $derived(s.currentVersion || appVersion || "")
 
 async function loadVersion(): Promise<void> {
   try {
@@ -113,22 +114,58 @@ onMount(async () => {
           {:else if s.state === "error"}
             <AlertTriangle class="h-5 w-5 text-destructive" />
           {:else}
-            <CheckCircle2 class="h-5 w-5 text-muted-foreground" />
+            <CheckCircle2 class="h-5 w-5 text-green-600 dark:text-green-500" />
           {/if}
         </div>
 
         <div class="min-w-0 flex-1 space-y-2">
-          <p class="text-sm font-medium">{headline}</p>
-
-          {#if s.state === "error"}
-            <p class="text-xs text-destructive">{s.error}</p>
+          {#if s.state === "checking"}
+            <p class="text-sm font-medium">Checking for updates…</p>
+            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+              {#if installedVersion}
+                <span>Installed: v{installedVersion}</span>
+              {/if}
+              <span>{channelLabel(releaseChannel)} channel</span>
+            </div>
+          {:else if s.state === "available"}
+            <p class="text-sm font-medium">Devsy {s.availableVersion} is available</p>
+            <div class="grid grid-cols-3 gap-2 rounded-md border bg-muted/40 p-2 text-xs">
+              <div>
+                <span class="text-muted-foreground">Installed:</span>
+                <span class="font-mono font-medium ml-1">v{installedVersion || "unknown"}</span>
+              </div>
+              <div>
+                <span class="text-muted-foreground">Available:</span>
+                <span class="font-mono font-medium text-primary ml-1">v{s.availableVersion}</span>
+              </div>
+              <div>
+                <span class="text-muted-foreground">Channel:</span>
+                <span class="font-medium ml-1">{channelLabel(releaseChannel)}</span>
+              </div>
+            </div>
           {:else if s.state === "downloading"}
-            <Progress value={s.progress?.percent ?? 0} max={100} />
+            <p class="text-sm font-medium">Downloading Devsy {s.availableVersion}</p>
+            <Progress value={s.progress.percent} max={100} />
             <p class="text-xs text-muted-foreground">
-              {(s.progress?.percent ?? 0).toFixed(0)}% · {fmtMBps(s.progress?.bytesPerSecond)}
+              {s.progress.percent.toFixed(0)}% · {fmtMBps(s.progress.bytesPerSecond)}
             </p>
-          {:else if lastChecked && (s.state === "not-available" || s.state === "idle")}
-            <p class="text-xs text-muted-foreground">Last checked at {fmtTime(lastChecked)}</p>
+          {:else if s.state === "downloaded"}
+            <p class="text-sm font-medium">Devsy {s.availableVersion} is ready</p>
+            <p class="text-xs text-muted-foreground">Restart Devsy to finish updating.</p>
+          {:else if s.state === "error"}
+            <p class="text-sm font-medium">Couldn't check for updates</p>
+            <p class="text-xs text-destructive">{s.error}</p>
+          {:else}
+            <p class="text-sm font-medium">Devsy is up to date</p>
+            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+              {#if installedVersion}
+                <span>Version {installedVersion}</span>
+              {/if}
+              <span>{channelLabel(releaseChannel)} channel</span>
+              {#if lastChecked}
+                <span>Last checked at {fmtTime(lastChecked)}</span>
+              {/if}
+            </div>
           {/if}
 
           {#if (s.state === "available" || s.state === "downloaded") && sanitizedNotes}
@@ -140,9 +177,20 @@ onMount(async () => {
 
         <div class="shrink-0">
           {#if s.state === "available"}
-            <Button size="sm" onclick={() => downloadUpdate()}>Download</Button>
+            <Button size="sm" onclick={() => downloadUpdate()}>Download update</Button>
           {:else if s.state === "downloaded"}
-            <Button size="sm" onclick={() => installUpdate()}>Restart</Button>
+            <Button size="sm" onclick={() => installUpdate()}>Restart & update</Button>
+          {:else if s.state === "error"}
+            <Button
+              variant="outline"
+              size="sm"
+              onclick={handleCheckForUpdates}
+              disabled={isChecking()}
+              class="gap-2"
+            >
+              <RefreshCw class="h-3.5 w-3.5 {isChecking() ? 'animate-spin' : ''}" />
+              Try again
+            </Button>
           {:else}
             <Button
               variant="outline"
