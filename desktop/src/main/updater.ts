@@ -186,7 +186,11 @@ const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 function getCurrentVersion(): string {
   try {
     return app.getVersion()
-  } catch {
+  } catch (err) {
+    console.error(
+      "Auto-update: unable to read app version:",
+      err instanceof Error ? err.message : String(err),
+    )
     return ""
   }
 }
