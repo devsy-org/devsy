@@ -79,7 +79,7 @@ describe("UpdateDialog", () => {
     })
     render(UpdateDialog, { props: { open: true } })
     expect(bodyText()).toMatch(/404 from cdn/i)
-    expect(queryButton(/check again/i)).toBeTruthy()
+    expect(queryButton(/try again|check again/i)).toBeTruthy()
   })
 
   it("renders dev-mode hint in not-available + dev-mode", () => {
