@@ -1,6 +1,8 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { app, type BrowserWindow } from "electron"
+import type { AppUpdater } from "electron-updater"
+import semver from "semver"
 import { trackEvent } from "./analytics.js"
 
 export type ReleaseChannel = "stable" | "beta"
@@ -22,6 +24,41 @@ export type UpdateErrorCode =
   | "verification"
   | "channel-missing"
 
+export type CandidateResult =
+  | { kind: "newer"; version: string }
+  | { kind: "same"; version: string }
+  | { kind: "older"; version: string }
+  | { kind: "invalid"; version: string }
+
+export function classifyCandidate(
+  currentVersion: string,
+  candidateVersion: string,
+): CandidateResult {
+  const current = semver.clean(currentVersion) ?? semver.valid(currentVersion)
+  const candidate = semver.clean(candidateVersion) ?? semver.valid(candidateVersion)
+
+  if (!current || !candidate) {
+    return { kind: "invalid", version: candidateVersion }
+  }
+
+  const diff = semver.compare(candidate, current)
+  if (diff > 0) {
+    return { kind: "newer", version: candidate }
+  }
+  if (diff === 0) {
+    return { kind: "same", version: candidate }
+  }
+  return { kind: "older", version: candidate }
+}
+
+export function configureUpdaterChannel(
+  autoUpdater: AppUpdater,
+  channel: ReleaseChannel,
+): void {
+  autoUpdater.allowPrerelease = channel === "beta"
+  autoUpdater.channel = channel === "beta" ? "beta" : "latest"
+  autoUpdater.allowDowngrade = false
+}
 export interface UpdateProgress {
   percent: number
   bytesPerSecond: number
@@ -187,15 +224,27 @@ export async function initAutoUpdater(
 
   autoUpdater.autoDownload = autoDownloadEnabled
   autoUpdater.autoInstallOnAppQuit = true
-  autoUpdater.allowPrerelease = currentChannel === "beta"
-  autoUpdater.channel = currentChannel === "beta" ? "beta" : "latest"
-
+  configureUpdaterChannel(autoUpdater, currentChannel)
   autoUpdater.on("checking-for-update", () => {
     trackEvent("update_check")
     setStatus({ state: "checking" })
   })
 
   autoUpdater.on("update-available", (info) => {
+    const currentVersion = app.getVersion()
+    const candidate = classifyCandidate(currentVersion, info.version)
+
+    if (candidate.kind !== "newer") {
+      console.warn(
+        `[updater] candidate ${info.version} is not newer than installed ${currentVersion} (${candidate.kind}); treating as not available`,
+      )
+      setStatus({
+        state: "not-available",
+        version: info.version,
+      })
+      return
+    }
+
     trackEvent("update_available", { version: info.version })
     setStatus({
       state: "available",
@@ -321,18 +370,24 @@ export async function checkForUpdatesWithChannel(channel: ReleaseChannel): Promi
   currentChannel = channel
   const autoUpdater = await getUpdater()
   if (!autoUpdater) return
-  autoUpdater.allowPrerelease = channel === "beta"
-  autoUpdater.channel = channel === "beta" ? "beta" : "latest"
+  configureUpdaterChannel(autoUpdater, channel)
   await runUpdateCheck(autoUpdater)
 }
 
 export async function downloadUpdate(): Promise<void> {
+  if (lastStatus.state !== "available") return
+  const currentVersion = app.getVersion()
+  const candidateVersion = lastStatus.version ?? ""
+  if (classifyCandidate(currentVersion, candidateVersion).kind !== "newer") {
+    return
+  }
   const autoUpdater = await getUpdater()
   if (!autoUpdater) return
   await autoUpdater.downloadUpdate()
 }
 
 export async function installUpdate(): Promise<void> {
+  if (lastStatus.state !== "downloaded") return
   const autoUpdater = await getUpdater()
   if (!autoUpdater || typeof autoUpdater.quitAndInstall !== "function") return
   ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
