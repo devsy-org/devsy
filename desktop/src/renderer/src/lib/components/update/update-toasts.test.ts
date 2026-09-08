@@ -129,4 +129,40 @@ describe("update-toasts", () => {
 
     expect(toastFns.info).toHaveBeenCalledTimes(2)
   })
+
+  it("stays silent on background up-to-date check", async () => {
+    const { initUpdateToasts } = await import("./update-toasts.js")
+    initUpdateToasts(() => true)
+    const emit = listeners[0]
+
+    emit({ state: "up-to-date", currentVersion: "1.0.0" })
+
+    expect(toastFns.success).not.toHaveBeenCalled()
+  })
+
+  it("fires success toast on user-initiated up-to-date check", async () => {
+    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    initUpdateToasts(() => true)
+    const emit = listeners[0]
+
+    markUserInitiated()
+    emit({ state: "up-to-date", currentVersion: "1.0.0" })
+
+    expect(toastFns.success).toHaveBeenCalledWith("Devsy is up to date.")
+  })
+
+  it("fires downloaded toast with Restart & update action", async () => {
+    const { initUpdateToasts } = await import("./update-toasts.js")
+    initUpdateToasts(() => true)
+    const emit = listeners[0]
+
+    emit({ state: "downloaded", currentVersion: "1.0.0", availableVersion: "1.1.0" })
+
+    expect(toastFns.success).toHaveBeenCalledWith(
+      "Update v1.1.0 ready",
+      expect.objectContaining({
+        action: expect.objectContaining({ label: "Restart & update" }),
+      }),
+    )
+  })
 })

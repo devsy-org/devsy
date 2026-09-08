@@ -433,4 +433,37 @@ describe("updater", () => {
       expect(electronUpdaterMock.autoUpdater.allowDowngrade).toBe(false)
     })
   })
+
+  describe("structured diagnostics logging", () => {
+    it("logs check result with current, feed, channel, and result fields", async () => {
+      mockAppVersion = "1.17.0"
+      const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
+      const { initAutoUpdater } = await import("../updater.js")
+      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      await initAutoUpdater(() => win)
+
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.16.2" })
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /\[updater\] check result: current=1\.17\.0 feed=1\.16\.2 channel=stable result=feed-behind/,
+        ),
+      )
+
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0" })
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /\[updater\] check result: current=1\.17\.0 feed=1\.18\.0 available=1\.18\.0 channel=stable result=newer/,
+        ),
+      )
+
+      electronUpdaterMock.autoUpdater.emit("update-not-available", { version: "1.17.0" })
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /\[updater\] check result: current=1\.17\.0 feed=1\.17\.0 channel=stable result=same/,
+        ),
+      )
+
+      infoSpy.mockRestore()
+    })
+  })
 })

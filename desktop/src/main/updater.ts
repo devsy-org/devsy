@@ -60,6 +60,37 @@ export function configureUpdaterChannel(
   autoUpdater.channel = channel === "beta" ? "beta" : "latest"
   autoUpdater.allowDowngrade = false
 }
+
+export type UpdateDecisionResult =
+  | "newer"
+  | "same"
+  | "feed-behind"
+  | "invalid-version"
+  | "download-started"
+  | "downloaded"
+  | "error"
+
+export interface UpdateDecisionLog {
+  currentVersion: string
+  feedVersion?: string
+  availableVersion?: string
+  channel: ReleaseChannel
+  result: UpdateDecisionResult
+  error?: string
+}
+
+export function logUpdateDecision(params: UpdateDecisionLog): void {
+  const parts = [
+    `[updater] check result:`,
+    `current=${params.currentVersion}`,
+    params.feedVersion ? `feed=${params.feedVersion}` : null,
+    params.availableVersion ? `available=${params.availableVersion}` : null,
+    `channel=${params.channel}`,
+    `result=${params.result}`,
+    params.error ? `error=${params.error}` : null,
+  ].filter(Boolean)
+  console.info(parts.join(" "))
+}
 export interface UpdateProgress {
   percent: number
   bytesPerSecond: number
@@ -293,9 +324,18 @@ export async function initAutoUpdater(
     const candidate = classifyCandidate(currentVersion, info.version)
 
     if (candidate.kind !== "newer") {
-      console.warn(
-        `[updater] candidate ${info.version} is not newer than installed ${currentVersion} (${candidate.kind}); treating as up to date`,
-      )
+      const result: UpdateDecisionResult =
+        candidate.kind === "older"
+          ? "feed-behind"
+          : candidate.kind === "same"
+            ? "same"
+            : "invalid-version"
+      logUpdateDecision({
+        currentVersion,
+        feedVersion: info.version,
+        channel: currentChannel,
+        result,
+      })
       setStatus({
         state: "up-to-date",
         currentVersion,
@@ -305,6 +345,13 @@ export async function initAutoUpdater(
       return
     }
 
+    logUpdateDecision({
+      currentVersion,
+      feedVersion: info.version,
+      availableVersion: info.version,
+      channel: currentChannel,
+      result: "newer",
+    })
     trackEvent("update_available", { version: info.version })
     setStatus({
       state: "available",
@@ -317,9 +364,16 @@ export async function initAutoUpdater(
   })
 
   autoUpdater.on("update-not-available", (info) => {
+    const currentVersion = getCurrentVersion()
+    logUpdateDecision({
+      currentVersion,
+      feedVersion: info.version,
+      channel: currentChannel,
+      result: "same",
+    })
     setStatus({
       state: "up-to-date",
-      currentVersion: getCurrentVersion(),
+      currentVersion,
       feedVersion: info.version,
       version: info.version,
     })
@@ -356,23 +410,36 @@ export async function initAutoUpdater(
         ? lastStatus.availableVersion
         : undefined) ?? info.version
     trackEvent("update_downloaded", { version: availableVersion })
+    const currentVersion = getCurrentVersion()
+    logUpdateDecision({
+      currentVersion,
+      availableVersion,
+      channel: currentChannel,
+      result: "downloaded",
+    })
     setStatus({
       state: "downloaded",
-      currentVersion: getCurrentVersion(),
+      currentVersion,
       availableVersion,
       version: availableVersion,
       releaseName: info.releaseName ?? undefined,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
     })
   })
-
   autoUpdater.on("error", (err) => {
     const code = classifyError(err)
+    const currentVersion = getCurrentVersion()
+    logUpdateDecision({
+      currentVersion,
+      channel: currentChannel,
+      result: "error",
+      error: err.message,
+    })
     trackEvent("update_error", { error_type: err.name })
     if (code === "channel-missing") {
       setStatus({
         state: "up-to-date",
-        currentVersion: getCurrentVersion(),
+        currentVersion,
         code,
       })
       console.warn("Auto-update: channel manifest missing:", err.message)
@@ -380,7 +447,7 @@ export async function initAutoUpdater(
     }
     setStatus({
       state: "error",
-      currentVersion: getCurrentVersion(),
+      currentVersion,
       code,
       error: err.message,
     })
@@ -470,6 +537,12 @@ export async function downloadUpdate(): Promise<void> {
   if (classifyCandidate(currentVersion, candidateVersion).kind !== "newer") {
     return
   }
+  logUpdateDecision({
+    currentVersion,
+    availableVersion: candidateVersion,
+    channel: currentChannel,
+    result: "download-started",
+  })
   const autoUpdater = await getUpdater()
   if (!autoUpdater) return
   await autoUpdater.downloadUpdate()
