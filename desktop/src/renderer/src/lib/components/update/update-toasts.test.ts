@@ -165,4 +165,18 @@ describe("update-toasts", () => {
       }),
     )
   })
+
+  it("clears userInitiated flag on available so subsequent up-to-date is silent", async () => {
+    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    initUpdateToasts(() => true)
+    const emit = listeners[0]
+
+    markUserInitiated()
+    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.1.0" })
+    expect(toastFns.info).toHaveBeenCalledTimes(1)
+
+    // Subsequent background up-to-date should not fire success toast
+    emit({ state: "up-to-date", currentVersion: "1.0.0" })
+    expect(toastFns.success).not.toHaveBeenCalled()
+  })
 })
