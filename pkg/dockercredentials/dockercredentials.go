@@ -11,6 +11,7 @@ import (
 	dockerconfig "github.com/containers/image/v5/pkg/docker/config"
 	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -158,6 +159,12 @@ func buildHelperContent(binaryPath, shebang string, port int) []byte {
 
 func ConfigureCredentialsDockerless(targetFolder string, port int) (string, error) {
 	dockerConfigDir := newDockerCredentialsDir(targetFolder)
+
+	if err := preserveDockerConfig(dockerConfigDir); err != nil {
+		_ = os.RemoveAll(dockerConfigDir)
+		return "", err
+	}
+
 	err := configureCredentials(
 		"",
 		"#!/.dockerless/bin/sh",
@@ -187,6 +194,12 @@ func ConfigureCredentialsDockerless(targetFolder string, port int) (string, erro
 
 func ConfigureCredentialsMachine(targetFolder string, port int) (string, error) {
 	dockerConfigDir := newDockerCredentialsDir(targetFolder)
+
+	if err := preserveDockerConfig(dockerConfigDir); err != nil {
+		_ = os.RemoveAll(dockerConfigDir)
+		return "", err
+	}
+
 	err := configureCredentials("", "#!/bin/sh", dockerConfigDir, dockerConfigDir, port)
 	if err != nil {
 		_ = os.RemoveAll(dockerConfigDir)
@@ -206,6 +219,44 @@ func ConfigureCredentialsMachine(targetFolder string, port int) (string, error) 
 	}
 
 	return dockerConfigDir, nil
+}
+
+func getDockerConfigDir() string {
+	if cfgDir := os.Getenv("DOCKER_CONFIG"); cfgDir != "" {
+		return cfgDir
+	}
+	return config.Dir()
+}
+
+func preserveDockerConfig(dockerConfigDir string) error {
+	srcDir := getDockerConfigDir()
+	if err := file.MkdirAll("", dockerConfigDir, 0o750); err != nil {
+		return err
+	}
+
+	// Copy config.json if it exists
+	srcConfigFile := filepath.Join(srcDir, config.ConfigFileName)
+	if _, err := os.Stat(srcConfigFile); err == nil {
+		destConfigFile := filepath.Join(dockerConfigDir, config.ConfigFileName)
+		if err := copy.File(srcConfigFile, destConfigFile, 0o600); err != nil {
+			return fmt.Errorf("copy config.json: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect Docker config: %w", err)
+	}
+
+	// Copy contexts if they exist
+	srcContextsDir := filepath.Join(srcDir, "contexts")
+	if _, err := os.Stat(srcContextsDir); err == nil {
+		destContextsDir := filepath.Join(dockerConfigDir, "contexts")
+		if err := copy.Directory(srcContextsDir, destContextsDir); err != nil {
+			return fmt.Errorf("copy contexts: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect Docker contexts: %w", err)
+	}
+
+	return nil
 }
 
 func ListCredentials() (*ListResponse, error) {
