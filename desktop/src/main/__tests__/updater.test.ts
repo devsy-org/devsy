@@ -1,25 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 let mockAppVersion = "1.0.0"
+let mockAllowPrerelease = false
+let mockChannel = "latest"
 
 const electronUpdaterMock = {
   autoUpdater: {
     autoDownload: true,
     autoInstallOnAppQuit: true,
-    _allowPrerelease: false,
     get allowPrerelease() {
-      return this._allowPrerelease
+      return mockAllowPrerelease
     },
     set allowPrerelease(v: boolean) {
-      this._allowPrerelease = v
+      mockAllowPrerelease = v
       if (v) this.allowDowngrade = true
     },
-    _channel: "latest",
     get channel() {
-      return this._channel
+      return mockChannel
     },
     set channel(v: string) {
-      this._channel = v
+      mockChannel = v
       this.allowDowngrade = true
     },
     allowDowngrade: false,
@@ -59,8 +59,8 @@ describe("updater", () => {
     electronUpdaterMock.autoUpdater.downloadUpdate.mockClear()
     electronUpdaterMock.autoUpdater.quitAndInstall.mockReset()
     electronUpdaterMock.autoUpdater.allowDowngrade = false
-    electronUpdaterMock.autoUpdater._allowPrerelease = false
-    electronUpdaterMock.autoUpdater._channel = "latest"
+    mockAllowPrerelease = false
+    mockChannel = "latest"
     mockAppVersion = "1.0.0"
     vi.resetModules()
     // Restore isPackaged on every test so an early throw in one test
