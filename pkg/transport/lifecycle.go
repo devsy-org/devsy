@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
+	"golang.org/x/crypto/ssh"
 )
 
 type CloseReason string
@@ -209,6 +210,10 @@ func isClosedNetErr(err error) bool {
 func isExitMissingErr(err error) bool {
 	if err == nil {
 		return false
+	}
+	var exitMissing *ssh.ExitMissingError
+	if errors.As(err, &exitMissing) {
+		return true
 	}
 	return strings.Contains(err.Error(), "remote command exited without exit status or exit signal")
 }
