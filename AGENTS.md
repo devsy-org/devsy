@@ -1,7 +1,5 @@
 # AGENTS.md
 
-Guide for AI coding agents working in the Devsy repository.
-
 ---
 
 ## Environment Setup
@@ -10,24 +8,18 @@ Devsy is a monorepo with a Go-based CLI and an Electron-based Svelte 5 desktop a
 
 ### Prerequisites and Tooling
 
-- **Go 1.26**: The repository targets Go 1.26 (`go.mod`). With `GOTOOLCHAIN=auto`, an older Go toolchain automatically downloads the required Go version.
-- **NodeJS 24**: Required for building and testing the desktop workspace (`.nvmrc`, CI `node-version`).
-- **Taskfile (go-task)**: All build, test, and setup commands run through `task`. Installation:
-
-  ```bash
-  sudo sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
-  ```
+Toolchain is managed by mise. Install mise using `curl https://mise.run | sh`. Install toolchain dependencies with `mise install`.
 
 ---
 
 ## Common Developer Commands
 
-`task --list` shows all available commands. The most common tasks:
+`task --list` shows developer commands. The most common tasks:
 
 ### CLI (Go) Development
 
 - **Tidy Go modules**: `task cli:tidy`
-- **Lint CLI**: `task cli:lint` (or `task cli:lint:fix` to apply fixes)
+- **Lint CLI**: `task cli:lint` and `task cli:lint:ci` (or `task cli:lint:fix` to apply fixes)
 - **Format CLI**: `task cli:format`
 - **Run unit tests**: `task cli:test` (writes coverage to `dist/profile.out`; a `dist` directory is required, e.g. `mkdir -p dist`)
 - **Build development binary**: `task cli:build:dev` (output under `dist/devsy-dev_linux_amd64_v1/`)
@@ -69,14 +61,12 @@ The agent binary runs inside the (Linux) workspace, so it is a Linux binary (`de
 
 ### Headless / Xvfb Requirements
 
-Desktop tests run inside an Electron browser environment. In headless or container environments (CI, automated sandbox agents), Electron-dependent commands require an `xvfb-run` prefix to emulate a display server:
+Desktop tests run inside an Electron browser environment. In headless or container environments, Electron commands require an `xvfb-run` prefix to emulate a display server:
 
 ```bash
-# Desktop unit tests headlessly
-xvfb-run task desktop:test
+xvfb-run task desktop:test # Desktop unit tests headlessly
 
-# Desktop E2E tests headlessly
-xvfb-run task desktop:test:e2e
+xvfb-run task desktop:test:e2e # Desktop E2E tests headlessly
 ```
 
 ### E2E (Ginkgo) Tests
@@ -93,8 +83,9 @@ Devsy uses [Ginkgo](https://onsi.github.io/ginkgo/) for Go E2E and integration t
 
 ### Go Code Style
 
+- **Idiomatic**: Focus on simplicity, reliability, and efficiency when writing clear, idiomatic Go code.
+- **Style Guide**: Use the Uber style guide https://github.com/uber-go/guide/blob/master/style.md.
 - **Linter**: `golangci-lint` via `task cli:lint` (or `task cli:lint:fix`). Run `task cli:lint:ci` before pushing changes.
-- **Logs**: Log messages and logging strings are lowercase.
 
 ### TypeScript / Svelte Code Style
 
@@ -105,24 +96,7 @@ Biome formats and checks web frontend files.
 ## Pull Request and Commit Guidelines
 
 1. **Contributor License Agreement (CLA)**: All contributors sign the CLA.
-2. **Commit messages**: Conventional Commits, with a concise subject line (50 characters max).
+2. **Commit messages**: Conventional Commits, with a concise subject line.
 3. **Commit signing**: All commits are required to be signed.
 4. **Branch name**: Branch should be named according to the task.
-
-4. **Pre-commit checks**: Linters, checkers, and relevant unit tests run before pushing. `prek` (a pre-commit hook manager) manages them.
-   - Installation (Linux and macOS):
-     ```bash
-     curl --proto '=https' --tlsv1.2 -LsSf https://github.com/j178/prek/releases/latest/download/prek-installer.sh | sh
-     ```
-   - Installation (Windows):
-     ```powershell
-     powershell -ExecutionPolicy ByPass -c "irm https://github.com/j178/prek/releases/latest/download/prek-installer.ps1 | iex"
-     ```
-   - Manual run on all files:
-     ```bash
-     prek run --all-files
-     ```
-   - Git hook installation:
-     ```bash
-     prek install
-     ```
+5. **Pre-commit checks**: Linters, checkers, and relevant unit tests run before pushing. `prek` (a pre-commit hook manager) manages them.

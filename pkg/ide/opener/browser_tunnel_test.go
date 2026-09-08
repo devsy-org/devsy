@@ -403,7 +403,7 @@ func relistenAfter(addr string, delay, hold time.Duration) <-chan error {
 }
 
 // checkRelistenOrSkip drains a non-blocking read from listenErr. A non-nil
-// error means the OS reassigned the port in the close→relisten window;
+// error means the OS reassigned the port in the close->relisten window;
 // skip rather than fail to avoid spurious CI failures on busy hosts.
 func checkRelistenOrSkip(t *testing.T, addr string, listenErr <-chan error) {
 	t.Helper()

@@ -300,7 +300,7 @@ export async function invoke<T>(
   await new Promise((r) => setTimeout(r, 50 + Math.random() * 100))
 
   const result = handler(args ?? {})
-  console.debug(`[mock] ${cmd}`, args ?? {}, "→", result)
+  console.debug(`[mock] ${cmd}`, args ?? {}, "->", result)
   return result as T
 }
 

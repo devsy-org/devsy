@@ -327,7 +327,7 @@ func ListToObject(list []string) map[string]string {
 }
 
 // ComputeDevContainerID implements the official devcontainer CLI algorithm:
-// SHA-256(JSON.stringify(labels, sorted keys)) → BigInt → base-32 (0-9a-v) → left-pad to 52 chars.
+// SHA-256(JSON.stringify(labels, sorted keys)) -> BigInt -> base-32 (0-9a-v) -> left-pad to 52 chars.
 func ComputeDevContainerID(labels map[string]string) string {
 	keys := make([]string, 0, len(labels))
 	for k := range labels {

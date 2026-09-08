@@ -19,9 +19,6 @@ import (
 // Process group isolation (SysProcAttr) ensures child processes can be
 // properly signaled on shutdown. SSH client signals are forwarded to the
 // process.
-//
-// Loosely modeled after Coder's startNonPTYSession:
-//   - https://github.com/coder/coder/blob/main/agent/agentssh/agentssh.go
 func execNonPTY(sess ssh.Session, cmd *exec.Cmd) (err error) {
 	log.Debugf("execute SSH server command: %s", strings.Join(cmd.Args, " "))
 
@@ -125,13 +122,11 @@ type ptyExecParams struct {
 // SSH signal forwarding. Output is copied on the main goroutine to ensure all
 // buffered data is flushed before process.Wait().
 //
-// DisablePTYEmulation prevents double NL→CRNL translation. The kernel's line
+// DisablePTYEmulation prevents double NL->CRNL translation. The kernel's line
 // discipline already performs this; the gliderlabs/ssh library's own conversion
 // would corrupt terminal escape sequences.
 //
-// Ported from coder/ssh (Coder's fork of gliderlabs/ssh):
-//   - Coder issue:  https://github.com/coder/coder/issues/3371
-//   - Neovim issue: https://github.com/neovim/neovim/issues/3875
+// - Neovim issue: https://github.com/neovim/neovim/issues/3875
 func execPTY(p ptyExecParams) (retErr error) {
 	log.Debugf("execute SSH server PTY command: %s", strings.Join(p.cmd.Args, " "))
 	p.sess.DisablePTYEmulation()
