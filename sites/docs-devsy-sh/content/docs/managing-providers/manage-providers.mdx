@@ -183,6 +183,53 @@ devsy provider set aws --option AWS_DISK_SIZE=120
 
 Run `devsy provider get aws` again to confirm — the `VALUE` column for `AWS_DISK_SIZE` now reads `120`.
 
+
+## Docker Provider: Contexts and Daemon Endpoints
+
+Devsy follows standard Docker CLI context and endpoint semantics when running workspaces with the Docker provider.
+
+### Context Preservation
+
+When Devsy configures credentials for Docker, it automatically preserves your existing Docker client configuration (`config.json`) and stored context metadata (`contexts/`). This ensures that non-default Docker contexts—such as those managed by Docker Desktop (`desktop-linux`), OrbStack (`orbstack`), or custom remote endpoints—remain active and accessible during workspace creation and execution.
+
+### Explicit Context Selection (`DOCKER_CONTEXT`)
+
+You can target a specific Docker context explicitly:
+
+- Via provider option:
+  ```sh
+  devsy provider set docker -o DOCKER_CONTEXT=<context-name>
+  ```
+- Via environment variable:
+  ```sh
+  DOCKER_CONTEXT=<context-name> devsy workspace up <workspace>
+  ```
+
+When set, `DOCKER_CONTEXT` takes precedence over both `DOCKER_HOST` and the persisted current context set in `config.json`.
+
+### Explicit Daemon Targeting (`DOCKER_HOST`)
+
+To direct Docker commands directly to a specific socket or remote daemon endpoint without using a context, configure `DOCKER_HOST`:
+
+- Via provider option:
+  ```sh
+  devsy provider set docker -o DOCKER_HOST=ssh://user@docker-host
+  ```
+- Via environment variable:
+  ```sh
+  DOCKER_HOST=ssh://user@docker-host devsy workspace up <workspace>
+  ```
+
+For remote TCP daemons, enable mutual TLS authentication by configuring `DOCKER_TLS_VERIFY=1` and pointing `DOCKER_CERT_PATH` to your client certificates.
+
+### Precedence
+
+Devsy resolves the active Docker connection in the same order as the Docker CLI:
+1. `DOCKER_CONTEXT` (explicit context selection)
+2. `DOCKER_HOST` (explicit daemon endpoint)
+3. Persisted active context in `$DOCKER_CONFIG/config.json` when `DOCKER_CONFIG` is set, and `~/.docker/config.json` otherwise (used for context resolution and credential preservation)
+4. Default local Unix socket (`unix:///var/run/docker.sock`)
+
 ## Single Machine Provider
 
 By default, Devsy will use a separate machine for each workspace using the same provider,
