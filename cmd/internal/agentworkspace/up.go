@@ -421,7 +421,7 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 	dockerCmd := w.getDockerCommand()
 
 	if command.Exists(dockerCmd) {
-		log.Debug("docker command exists, skipping installation")
+		log.Debug("docker CLI found")
 		return "", nil
 	}
 

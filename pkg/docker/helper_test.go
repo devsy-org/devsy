@@ -536,3 +536,121 @@ esac
 	assert.Contains(t, err.Error(), "Cannot connect to the Docker daemon",
 		"inspect error should be included for diagnostics")
 }
+
+func TestRuntimeDiagnostics_Docker_DefaultContext(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  context)
+    case "$2" in
+      show) echo "default";;
+      inspect) echo "";;
+    esac
+    ;;
+esac
+`)
+	t.Setenv("DOCKER_HOST", "")
+	t.Setenv("DOCKER_CONTEXT", "")
+	h := &DockerHelper{DockerCommand: bin}
+	diag := h.RuntimeDiagnostics(context.Background())
+	assert.Equal(t, "default", diag["context"])
+	assert.Equal(t, "unix:///var/run/docker.sock", diag["endpoint"])
+}
+
+func TestRuntimeDiagnostics_Docker_CustomContext(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  context)
+    case "$2" in
+      show) echo "custom-ctx";;
+      inspect) echo "unix:///custom/docker.sock";;
+    esac
+    ;;
+esac
+`)
+	t.Setenv("DOCKER_HOST", "")
+	t.Setenv("DOCKER_CONTEXT", "")
+	h := &DockerHelper{DockerCommand: bin}
+	diag := h.RuntimeDiagnostics(context.Background())
+	assert.Equal(t, "custom-ctx", diag["context"])
+	assert.Equal(t, "unix:///custom/docker.sock", diag["endpoint"])
+}
+
+func TestRuntimeDiagnostics_Docker_HostOverride(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  context)
+    case "$2" in
+      show) echo "default";;
+    esac
+    ;;
+esac
+`)
+	t.Setenv("DOCKER_HOST", "tcp://example:2376")
+	t.Setenv("DOCKER_CONTEXT", "")
+
+	h := &DockerHelper{DockerCommand: bin}
+	diag := h.RuntimeDiagnostics(context.Background())
+
+	assert.Equal(t, "tcp://example:2376", diag["endpoint"])
+	assert.Equal(t, "tcp://example:2376", diag["docker_host"])
+}
+
+func TestRuntimeDiagnostics_Docker_ExplicitContextOverride(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "docker-fake", `#!/bin/sh
+case "$1" in
+  context)
+    case "$2" in
+      inspect) echo "unix:///explicit/docker.sock";;
+    esac
+    ;;
+esac
+`)
+	t.Setenv("DOCKER_HOST", "tcp://example:2376")
+	t.Setenv("DOCKER_CONTEXT", "explicit-ctx")
+
+	h := &DockerHelper{DockerCommand: bin}
+	diag := h.RuntimeDiagnostics(context.Background())
+
+	assert.Equal(t, "explicit-ctx", diag["context"])
+	assert.Equal(t, "unix:///explicit/docker.sock", diag["endpoint"])
+}
+
+func TestRuntimeDiagnostics_Podman(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "podman-fake", `#!/bin/sh
+echo "should not be called" >&2
+exit 1
+`)
+	t.Setenv("DOCKER_HOST", "")
+	t.Setenv("CONTAINER_HOST", "")
+
+	h := &DockerHelper{
+		DockerCommand: bin,
+		Runtime:       podmanRuntime{},
+	}
+	diag := h.RuntimeDiagnostics(context.Background())
+
+	assert.Equal(t, "<not applicable>", diag["context"])
+	assert.Equal(t, "<not applicable>", diag["endpoint"])
+}
+
+func TestRuntimeDiagnostics_PodmanWithHost(t *testing.T) {
+	tmp := t.TempDir()
+	bin := writeScript(t, tmp, "podman-fake", `#!/bin/sh
+exit 1
+`)
+	t.Setenv("CONTAINER_HOST", "unix:///run/user/1000/podman/podman.sock")
+
+	h := &DockerHelper{
+		DockerCommand: bin,
+		Runtime:       podmanRuntime{},
+	}
+	diag := h.RuntimeDiagnostics(context.Background())
+
+	assert.Equal(t, "<not applicable>", diag["context"])
+	assert.Equal(t, "unix:///run/user/1000/podman/podman.sock", diag["endpoint"])
+}
