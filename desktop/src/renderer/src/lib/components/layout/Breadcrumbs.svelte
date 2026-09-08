@@ -40,15 +40,21 @@ let crumbs = $derived.by(() => {
 </script>
 
 {#if crumbs.length > 0}
-  <nav class="flex items-center gap-1 text-sm text-muted-foreground">
-    <a href="#/" class="hover:text-foreground transition-colors">Home</a>
-    {#each crumbs as crumb}
-      <ChevronRight class="h-3 w-3" />
-      {#if crumb.href}
-        <a href={crumb.href} class="hover:text-foreground transition-colors">{crumb.label}</a>
-      {:else}
-        <span class="text-foreground font-medium">{crumb.label}</span>
-      {/if}
-    {/each}
+  <nav aria-label="Breadcrumb" class="flex items-center gap-1 text-sm text-muted-foreground">
+    <ol class="flex items-center gap-1">
+      <li class="flex items-center gap-1">
+        <a href="#/" class="hover:text-foreground transition-colors">Home</a>
+      </li>
+      {#each crumbs as crumb}
+        <li class="flex items-center gap-1">
+          <ChevronRight class="h-3 w-3" aria-hidden="true" />
+          {#if crumb.href}
+            <a href={crumb.href} class="hover:text-foreground transition-colors">{crumb.label}</a>
+          {:else}
+            <span class="text-foreground font-medium" aria-current="page">{crumb.label}</span>
+          {/if}
+        </li>
+      {/each}
+    </ol>
   </nav>
 {/if}
