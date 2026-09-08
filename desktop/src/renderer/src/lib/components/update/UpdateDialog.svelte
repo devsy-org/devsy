@@ -87,7 +87,7 @@ async function onInstall() {
 				{/if}
 				<div class="flex gap-2 justify-end">
 					<Button variant="ghost" onclick={() => (open = false)}>Later</Button>
-					<Button onclick={onInstall}>Restart & update</Button>
+					<Button onclick={onInstall}>Restart</Button>
 				</div>
 			</div>
 		{:else if s.state === "up-to-date" || s.state === "not-available"}

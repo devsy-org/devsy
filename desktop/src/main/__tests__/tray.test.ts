@@ -39,14 +39,14 @@ describe("buildUpdateMenuItems", () => {
     ).toEqual([])
   })
 
-  it("adds Restart & Update item + separator when downloaded", () => {
+  it("adds Update item + separator when downloaded", () => {
     const onInstall = vi.fn()
     const items = buildUpdateMenuItems(
       { state: "downloaded", currentVersion: "1.0.0", availableVersion: "9.9.9", version: "9.9.9" },
       onInstall,
     )
     expect(items).toHaveLength(2)
-    expect(items[0]).toMatchObject({ label: "Restart & Update to 9.9.9" })
+    expect(items[0]).toMatchObject({ label: "Update to 9.9.9" })
     expect(items[1]).toEqual({ type: "separator" })
 
     const click = (items[0] as { click?: () => void }).click
@@ -59,6 +59,6 @@ describe("buildUpdateMenuItems", () => {
       { state: "downloaded", currentVersion: "1.0.0", availableVersion: "" },
       () => {},
     )
-    expect(items[0]).toMatchObject({ label: "Restart & Update" })
+    expect(items[0]).toMatchObject({ label: "Restart" })
   })
 })
