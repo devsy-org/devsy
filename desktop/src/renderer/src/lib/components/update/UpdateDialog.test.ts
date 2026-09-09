@@ -45,7 +45,6 @@ describe("UpdateDialog", () => {
       state: "downloaded",
       currentVersion: "1.0.0",
       availableVersion: "9.9.9",
-      version: "9.9.9",
     })
     render(UpdateDialog, { props: { open: true } })
     expect(bodyText()).toMatch(/version 9\.9\.9/i)
@@ -57,7 +56,6 @@ describe("UpdateDialog", () => {
       state: "downloading",
       currentVersion: "1.0.0",
       availableVersion: "9.9.9",
-      version: "9.9.9",
       progress: {
         percent: 42,
         bytesPerSecond: 1_500_000,

@@ -11,7 +11,7 @@
   const downloading = $derived(s.state === "downloading")
   const version = $derived(
     s.state === "available" || s.state === "downloading" || s.state === "downloaded"
-      ? (s.availableVersion ?? s.version ?? "")
+      ? s.availableVersion
       : "",
   )
   const percent = $derived(s.state === "downloading" ? s.progress.percent : 0)

@@ -46,9 +46,9 @@ describe("update-toasts", () => {
     expect(listeners.length).toBe(1)
     const emit = listeners[0]
 
-    emit({ state: "available", version: "1.0.0" })
-    emit({ state: "available", version: "1.0.0" })
-    emit({ state: "available", version: "1.0.0" })
+    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
+    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
+    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
 
     expect(toastFns.info).toHaveBeenCalledTimes(1)
   })
@@ -58,8 +58,8 @@ describe("update-toasts", () => {
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
-    emit({ state: "available", version: "1.0.0" })
-    emit({ state: "available", version: "1.0.1" })
+    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
+    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.1" })
 
     expect(toastFns.info).toHaveBeenCalledTimes(2)
   })
@@ -69,7 +69,7 @@ describe("update-toasts", () => {
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
-    emit({ state: "error", error: "feed down", code: "feed-error" })
+    emit({ state: "error", currentVersion: "1.0.0", error: "feed down", code: "feed-error" })
 
     expect(toastFns.error).not.toHaveBeenCalled()
   })
@@ -80,11 +80,11 @@ describe("update-toasts", () => {
     const emit = listeners[0]
 
     markUserInitiated()
-    emit({ state: "error", error: "feed down", code: "feed-error" })
+    emit({ state: "error", currentVersion: "1.0.0", error: "feed down", code: "feed-error" })
     expect(toastFns.error).toHaveBeenCalledTimes(1)
 
     // Different error to bypass dedupe; flag should already be reset, so silent.
-    emit({ state: "error", error: "different", code: "network" })
+    emit({ state: "error", currentVersion: "1.0.0", error: "different", code: "network" })
     expect(toastFns.error).toHaveBeenCalledTimes(1)
   })
 
@@ -94,7 +94,7 @@ describe("update-toasts", () => {
     const emit = listeners[0]
 
     markUserInitiated()
-    emit({ state: "error", error: "x", code: "dev-mode" })
+    emit({ state: "error", currentVersion: "1.0.0", error: "x", code: "dev-mode" })
 
     expect(toastFns.error).not.toHaveBeenCalled()
   })
@@ -112,7 +112,7 @@ describe("update-toasts", () => {
     initUpdateToasts(() => false)
     const emit = listeners[0]
 
-    emit({ state: "available", version: "1.0.0" })
+    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
 
     expect(toastFns.info).not.toHaveBeenCalled()
     expect(toastFns.default).toHaveBeenCalledTimes(1)
@@ -123,9 +123,14 @@ describe("update-toasts", () => {
     initUpdateToasts(() => true)
     const emit = listeners[0]
 
-    emit({ state: "available", version: "1.0.0" })
-    emit({ state: "downloading", version: "1.0.0", progress: { percent: 50, bytesPerSecond: 0, transferred: 0, total: 0 } })
-    emit({ state: "available", version: "2.0.0" })
+    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "1.0.0" })
+    emit({
+      state: "downloading",
+      currentVersion: "1.0.0",
+      availableVersion: "1.0.0",
+      progress: { percent: 50, bytesPerSecond: 0, transferred: 0, total: 0 },
+    })
+    emit({ state: "available", currentVersion: "1.0.0", availableVersion: "2.0.0" })
 
     expect(toastFns.info).toHaveBeenCalledTimes(2)
   })

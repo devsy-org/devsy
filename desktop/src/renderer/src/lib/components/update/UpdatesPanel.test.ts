@@ -50,7 +50,7 @@ async function renderPanel(channel: "stable" | "beta") {
   getReleaseChannel.mockResolvedValue(channel)
   setReleaseChannel.mockResolvedValue(undefined)
   await initUpdateStore()
-  __setForTest({ state: "not-available", currentVersion: "1.2.3", version: "1.2.3" })
+  __setForTest({ state: "not-available", currentVersion: "1.2.3" })
   render(UpdatesPanel)
   // Let onMount's async version/channel loads resolve.
   await tick()
@@ -217,5 +217,29 @@ describe("UpdatesPanel status display", () => {
     await tick()
 
     expect(document.body.textContent).toMatch(/no releases on this channel yet/i)
+  })
+
+  it("renders error notice for malformed-version failures and does not claim up to date", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("stable")
+    await initUpdateStore()
+    __setForTest({
+      state: "error",
+      currentVersion: "1.17.0",
+      code: "feed-error",
+      error: "Invalid version from update feed: not-a-version",
+    })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/couldn't check for updates/i)
+    expect(document.body.textContent).toMatch(/invalid version from update feed/i)
+    expect(document.body.textContent).not.toMatch(/devsy is up to date/i)
+    const retryBtn = Array.from(document.querySelectorAll("button")).find((b) =>
+      /try again/i.test(b.textContent ?? ""),
+    )
+    expect(retryBtn).toBeTruthy()
   })
 })

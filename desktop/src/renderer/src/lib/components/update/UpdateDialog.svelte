@@ -54,7 +54,7 @@ async function onInstall() {
 		{:else if s.state === "available"}
 			<div class="space-y-3">
 				<p class="text-sm">
-					<span class="font-medium">Version {s.availableVersion ?? s.version}</span> is available.
+					<span class="font-medium">Version {s.availableVersion}</span> is available.
 				</p>
 				{#if sanitizedNotes}
 					<div class="prose prose-sm dark:prose-invert max-h-48 overflow-y-auto rounded-md border p-3">
@@ -69,7 +69,7 @@ async function onInstall() {
 			</div>
 		{:else if s.state === "downloading"}
 			<div class="space-y-3">
-				<p class="text-sm font-medium">Downloading v{s.availableVersion ?? s.version}…</p>
+				<p class="text-sm font-medium">Downloading v{s.availableVersion}…</p>
 				<Progress value={s.progress.percent} max={100} />
 				<p class="text-xs text-muted-foreground">
 					{s.progress.percent.toFixed(0)}% · {fmtMBps(s.progress.bytesPerSecond)}
@@ -78,7 +78,7 @@ async function onInstall() {
 		{:else if s.state === "downloaded"}
 			<div class="space-y-3">
 				<p class="text-sm">
-					<span class="font-medium">Version {s.availableVersion ?? s.version}</span> is ready to install.
+					<span class="font-medium">Version {s.availableVersion}</span> is ready to install.
 				</p>
 				{#if sanitizedNotes}
 					<div class="prose prose-sm dark:prose-invert max-h-48 overflow-y-auto rounded-md border p-3">

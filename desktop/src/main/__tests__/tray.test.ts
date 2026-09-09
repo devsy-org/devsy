@@ -69,7 +69,7 @@ describe("buildUpdateMenuItems", () => {
         state: "error",
         currentVersion: "1.0.0",
         code: "install-failed",
-        version: "9.9.9",
+        availableVersion: "9.9.9",
         error: "install failed",
       },
       onInstall,

@@ -16,9 +16,9 @@ export function buildUpdateMenuItems(
   const installationFailed =
     status.state === "error" && status.code === "install-failed"
   if (status.state !== "downloaded" && !installationFailed) return []
-  const version = status.availableVersion ?? status.version ?? ""
+  const version = status.availableVersion ?? ""
   const label = installationFailed
-    ? `Retry Install Update v${status.version ?? ""}`
+    ? `Retry Install Update v${version}`
     : version
       ? `Update to ${version}`
       : "Restart"

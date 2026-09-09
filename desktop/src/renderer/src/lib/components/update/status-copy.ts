@@ -16,18 +16,12 @@ export function statusHeadline(s: UpdateStatus, currentVersion: string | null): 
   switch (s.state) {
     case "checking":
       return "Checking for updates…"
-    case "available": {
-      const v = s.availableVersion ?? s.version ?? "unknown"
-      return `Version ${v} is available`
-    }
-    case "downloading": {
-      const v = s.availableVersion ?? s.version ?? "?"
-      return `Downloading v${v} · ${(s.progress?.percent ?? 0).toFixed(0)}%`
-    }
-    case "downloaded": {
-      const v = s.availableVersion ?? s.version ?? "unknown"
-      return `Version ${v} is ready to install`
-    }
+    case "available":
+      return `Version ${s.availableVersion} is available`
+    case "downloading":
+      return `Downloading v${s.availableVersion} · ${(s.progress?.percent ?? 0).toFixed(0)}%`
+    case "downloaded":
+      return `Version ${s.availableVersion} is ready to install`
     case "error":
       return "Update check failed"
     case "up-to-date":
