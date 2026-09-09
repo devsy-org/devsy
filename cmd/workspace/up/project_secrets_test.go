@@ -290,6 +290,7 @@ func TestDiscoverProjectSecrets_RejectsAbsolutePaths(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "must be relative to the repository root")
 }
+
 func TestGitInspectionEnv_PreservesInheritedGitConfig(t *testing.T) {
 	t.Setenv("GIT_CONFIG_COUNT", "2")
 	t.Setenv("GIT_CONFIG_KEY_0", "test.first")

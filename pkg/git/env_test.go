@@ -10,17 +10,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testGitPromptEnv = "GIT_TERMINAL_PROMPT=0"
+	testGitKey0Entry = "GIT_CONFIG_KEY_0=test.first"
+	testGitKey1Entry = "GIT_CONFIG_KEY_1=test.second"
+)
+
 func TestAppendGitConfig_PreserveInheritedEntries(t *testing.T) {
 	environ := []string{
 		"GIT_CONFIG_COUNT=2",
-		"GIT_CONFIG_KEY_0=test.first",
+		testGitKey0Entry,
 		"GIT_CONFIG_VALUE_0=first",
-		"GIT_CONFIG_KEY_1=test.second",
+		testGitKey1Entry,
 		"GIT_CONFIG_VALUE_1=second",
 	}
-	baseEnv := []string{"GIT_TERMINAL_PROMPT=0"}
+	baseEnv := []string{testGitPromptEnv}
 
-	result := AppendGitConfigWithEnviron(baseEnv, environ, "http.https://github.com/.extraHeader", "secret-token")
+	result := AppendGitConfigWithEnviron(
+		baseEnv,
+		environ,
+		"http.https://github.com/.extraHeader",
+		"secret-token",
+	)
 
 	// Verify base environment preserved
 	assert.Contains(t, result, "GIT_TERMINAL_PROMPT=0")
@@ -31,7 +42,7 @@ func TestAppendGitConfig_PreserveInheritedEntries(t *testing.T) {
 	assert.Contains(t, result, "GIT_CONFIG_VALUE_2=secret-token")
 
 	// Verify effective merged environment seen by a child process
-	merged := append(environ, result...)
+	merged := append(append([]string(nil), environ...), result...)
 	assert.Equal(t, "3", envValue(merged, "GIT_CONFIG_COUNT"))
 	assert.Equal(t, "test.first", envValue(merged, "GIT_CONFIG_KEY_0"))
 	assert.Equal(t, "first", envValue(merged, "GIT_CONFIG_VALUE_0"))
@@ -42,9 +53,14 @@ func TestAppendGitConfig_PreserveInheritedEntries(t *testing.T) {
 }
 
 func TestAppendGitConfig_NoInheritedEntries(t *testing.T) {
-	baseEnv := []string{"GIT_TERMINAL_PROMPT=0"}
+	baseEnv := []string{testGitPromptEnv}
 
-	result := AppendGitConfigWithEnviron(baseEnv, nil, "http.https://github.com/.extraHeader", "secret-token")
+	result := AppendGitConfigWithEnviron(
+		baseEnv,
+		nil,
+		"http.https://github.com/.extraHeader",
+		"secret-token",
+	)
 
 	assert.Contains(t, result, "GIT_TERMINAL_PROMPT=0")
 	assert.Contains(t, result, "GIT_CONFIG_COUNT=1")
@@ -57,14 +73,19 @@ func TestAppendGitConfig_MalformedInheritedCount(t *testing.T) {
 		t.Run(badCount, func(t *testing.T) {
 			environ := []string{
 				"GIT_CONFIG_COUNT=" + badCount,
-				"GIT_CONFIG_KEY_0=test.first",
+				testGitKey0Entry,
 				"GIT_CONFIG_VALUE_0=first",
-				"GIT_CONFIG_KEY_1=test.second",
+				testGitKey1Entry,
 				"GIT_CONFIG_VALUE_1=second",
 			}
-			baseEnv := []string{"GIT_TERMINAL_PROMPT=0"}
+			baseEnv := []string{testGitPromptEnv}
 
-			result := AppendGitConfigWithEnviron(baseEnv, environ, "http.https://github.com/.extraHeader", "secret-token")
+			result := AppendGitConfigWithEnviron(
+				baseEnv,
+				environ,
+				"http.https://github.com/.extraHeader",
+				"secret-token",
+			)
 
 			// Even with malformed count, existing keys 0 and 1 are detected and key 2 is appended
 			assert.Contains(t, result, "GIT_CONFIG_COUNT=3")
@@ -81,7 +102,12 @@ func TestAppendGitConfig_BaseEnvAlreadyHasCount(t *testing.T) {
 		"GIT_CONFIG_VALUE_0=initial",
 	}
 
-	result := AppendGitConfigWithEnviron(baseEnv, nil, "http.https://github.com/.extraHeader", "secret-token")
+	result := AppendGitConfigWithEnviron(
+		baseEnv,
+		nil,
+		"http.https://github.com/.extraHeader",
+		"secret-token",
+	)
 
 	// Previous GIT_CONFIG_COUNT=1 in baseEnv must be replaced by GIT_CONFIG_COUNT=2
 	countMatches := 0
@@ -100,19 +126,25 @@ func TestAppendGitConfig_BaseEnvAlreadyHasCount(t *testing.T) {
 func TestAppendGitConfig_GitObservesAllEntries(t *testing.T) {
 	environ := []string{
 		"GIT_CONFIG_COUNT=2",
-		"GIT_CONFIG_KEY_0=test.first",
+		testGitKey0Entry,
 		"GIT_CONFIG_VALUE_0=first-value",
-		"GIT_CONFIG_KEY_1=test.second",
+		testGitKey1Entry,
 		"GIT_CONFIG_VALUE_1=second-value",
 	}
-	baseEnv := []string{"GIT_TERMINAL_PROMPT=0"}
+	baseEnv := []string{testGitPromptEnv}
 
 	extra := AppendGitConfigWithEnviron(baseEnv, environ, "test.third", "third-value")
-	merged := append(environ, extra...)
+	merged := append(append([]string(nil), environ...), extra...)
 
 	// Execute real git command to confirm git observes all three values via its environment
 	runGitConfig := func(key string) string {
-		cmd := exec.CommandContext(context.Background(), "git", "config", "--get", key) // #nosec G204
+		cmd := exec.CommandContext(
+			context.Background(),
+			"git",
+			"config",
+			"--get",
+			key,
+		) // #nosec G204
 		cmd.Env = merged
 		out, err := cmd.CombinedOutput()
 		require.NoError(t, err, "reading config %s: %s", key, string(out))
