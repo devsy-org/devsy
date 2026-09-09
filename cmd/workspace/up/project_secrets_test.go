@@ -290,3 +290,44 @@ func TestDiscoverProjectSecrets_RejectsAbsolutePaths(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "must be relative to the repository root")
 }
+func TestGitInspectionEnv_PreservesInheritedGitConfig(t *testing.T) {
+	t.Setenv("GIT_CONFIG_COUNT", "2")
+	t.Setenv("GIT_CONFIG_KEY_0", "test.first")
+	t.Setenv("GIT_CONFIG_VALUE_0", "first")
+	t.Setenv("GIT_CONFIG_KEY_1", "test.second")
+	t.Setenv("GIT_CONFIG_VALUE_1", "second")
+
+	cmd := &UpCmd{}
+	cmd.GitToken = &provider.GitToken{
+		Host:     "github.com",
+		Username: "oauth2",
+		Token:    "secret-token-123",
+	}
+
+	env := cmd.gitInspectionEnv()
+	require.Contains(t, env, "GIT_CONFIG_COUNT=3")
+	require.Contains(t, env, "GIT_CONFIG_KEY_2=http.https://github.com/.extraHeader")
+
+	hasAuthValue := false
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "GIT_CONFIG_VALUE_2=Authorization: Basic ") {
+			hasAuthValue = true
+			break
+		}
+	}
+	require.True(t, hasAuthValue, "Authorization value must be set at index 2")
+}
+
+func TestGitInspectionEnv_NoInheritedEntries(t *testing.T) {
+	t.Setenv("GIT_CONFIG_COUNT", "")
+	cmd := &UpCmd{}
+	cmd.GitToken = &provider.GitToken{
+		Host:     "gitlab.com",
+		Username: "oauth2",
+		Token:    "secret-token-456",
+	}
+
+	env := cmd.gitInspectionEnv()
+	require.Contains(t, env, "GIT_CONFIG_COUNT=1")
+	require.Contains(t, env, "GIT_CONFIG_KEY_0=http.https://gitlab.com/.extraHeader")
+}

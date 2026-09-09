@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	gitpkg "github.com/devsy-org/devsy/pkg/git"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -204,23 +202,7 @@ func (cmd *UpCmd) gitInspectionEnv() []string {
 	}
 	credential := base64.StdEncoding.EncodeToString([]byte(username + ":" + cmd.GitToken.Token))
 	key := "http.https://" + host + "/.extraHeader"
-	count := 0
-	outEnv := make([]string, 0, len(env)+3)
-	for _, entry := range env {
-		if val, ok := strings.CutPrefix(entry, "GIT_CONFIG_COUNT="); ok {
-			if n, err := strconv.Atoi(val); err == nil {
-				count = n
-			}
-			continue
-		}
-		outEnv = append(outEnv, entry)
-	}
-
-	return append(outEnv,
-		fmt.Sprintf("GIT_CONFIG_COUNT=%d", count+1),
-		fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", count, key),
-		fmt.Sprintf("GIT_CONFIG_VALUE_%d=Authorization: Basic %s", count, credential),
-	)
+	return gitpkg.AppendGitConfig(env, key, "Authorization: Basic "+credential)
 }
 
 func validateBootstrapSecretReference(
