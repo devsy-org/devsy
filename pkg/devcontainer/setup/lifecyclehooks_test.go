@@ -762,7 +762,7 @@ func (s *LifecycleHookTestSuite) TestPostCreateHookUsesOnceSemantics() {
 
 	hooks := preAttachPhaseParams(result, env, false)
 
-	// postCreateCommand should have content = Created (non-empty → once semantics).
+	// postCreateCommand should have content = Created (non-empty -> once semantics).
 	var postCreate, postStart hookRunParams
 	for _, h := range hooks {
 		if h.phase == PhasePostCreate {

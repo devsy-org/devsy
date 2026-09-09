@@ -111,11 +111,12 @@ var (
 // starting a stopped Podman machine unless auto-start is disabled.
 func (d *dockerDriver) Preflight(ctx context.Context, opts driver.PreflightOptions) error {
 	probe := dockerProbe{
-		command:  d.Docker.DockerCommand,
-		runtime:  d.Docker.GetRuntime().Name(),
-		lookPath: exec.LookPath,
-		ping:     d.Docker.Ping,
-		start:    d.Docker.StartPodmanMachine,
+		command:     d.Docker.DockerCommand,
+		runtime:     d.Docker.GetRuntime().Name(),
+		lookPath:    exec.LookPath,
+		ping:        d.Docker.Ping,
+		start:       d.Docker.StartPodmanMachine,
+		diagnostics: d.Docker.RuntimeDiagnostics,
 	}
 	if podmanMachineApplicable {
 		probe.machineExists = d.Docker.PodmanMachineExists
@@ -178,12 +179,17 @@ type dockerProbe struct {
 
 	// rootless is true when Podman is running rootless (Linux non-root user).
 	rootless bool
+
+	// diagnostics resolves information about the effective docker runtime configuration.
+	diagnostics func(context.Context) map[string]string
 }
 
 var podmanMachineApplicable = runtime.GOOS != osLinux
 
 func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerProbe) error {
 	runtimeName := string(p.runtime)
+
+	logRuntimeDiagnostics(ctx, p)
 
 	if _, err := p.lookPath(p.command); err != nil {
 		return &driver.PreflightError{
@@ -201,30 +207,91 @@ func runPreflight(ctx context.Context, opts driver.PreflightOptions, p dockerPro
 		return nil
 	}
 
-	if p.runtime == docker.RuntimePodman &&
-		p.machineExists != nil { // podman machine may be stopped
-		if exists, checkErr := p.machineExists(
-			ctx,
-		); checkErr == nil &&
-			!exists { // machine does not exist
-			return &driver.PreflightError{
-				Provider: runtimeName,
-				Err:      fmt.Errorf("%w: podman machine is not running", err),
-			}
+	if machineErr := checkPodmanMachine(ctx, p, err); machineErr != nil {
+		return &driver.PreflightError{
+			Provider: runtimeName,
+			Err:      machineErr,
 		}
 	}
 
-	reachability := fmt.Sprintf("%s daemon is not reachable", p.runtime)
-	if errors.Is(err, context.DeadlineExceeded) {
-		reachability = fmt.Sprintf(
-			"%s daemon did not respond in time (it may just be slow to start, not necessarily down)",
-			p.runtime,
-		)
-	}
+	reachability := formatReachabilityMessage(p.runtime, err)
+	diagDetails := formatDiagnosticDetails(ctx, p)
+	recommendation := formatDaemonRecommendation(p.runtime)
+
 	return &driver.PreflightError{
 		Provider: runtimeName,
-		Err:      fmt.Errorf("%w: %s", err, reachability),
+		Err:      fmt.Errorf("%w: %s%s. %s", err, reachability, diagDetails, recommendation),
 	}
+}
+
+func logRuntimeDiagnostics(ctx context.Context, p dockerProbe) {
+	if p.diagnostics == nil {
+		return
+	}
+	diag := p.diagnostics(ctx)
+	log.Debugf(
+		"docker runtime resolved: command=%s context=%s endpoint=%s docker_config=%s docker_host=%s docker_context=%s",
+		diag["command"],
+		diag["context"],
+		diag["endpoint"],
+		diag["docker_config"],
+		diag["docker_host"],
+		diag["docker_context"],
+	)
+}
+
+func checkPodmanMachine(ctx context.Context, p dockerProbe, pingErr error) error {
+	if p.runtime != docker.RuntimePodman || p.machineExists == nil {
+		return nil
+	}
+	exists, checkErr := p.machineExists(ctx)
+	if checkErr == nil && !exists {
+		return fmt.Errorf("%w: podman machine is not running", pingErr)
+	}
+	return nil
+}
+
+func formatReachabilityMessage(runtime docker.RuntimeName, err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Sprintf(
+			"%s daemon did not respond in time (it may just be slow to start, not necessarily down).",
+			runtime,
+		)
+	}
+	return fmt.Sprintf(
+		"%s CLI is installed, but the selected %s daemon is unreachable.",
+		runtime,
+		runtime,
+	)
+}
+
+func formatDiagnosticDetails(ctx context.Context, p dockerProbe) string {
+	if p.diagnostics == nil {
+		return ""
+	}
+	diag := p.diagnostics(ctx)
+	socketInfo := ""
+	if rest, ok := strings.CutPrefix(diag["endpoint"], "unix://"); ok {
+		if _, statErr := os.Stat(rest); os.IsNotExist(statErr) {
+			socketInfo = ", socket=not found"
+		}
+	}
+	return fmt.Sprintf(
+		" (context=%s, endpoint=%s, docker_config=%s, docker_host=%s, docker_context=%s%s)",
+		diag["context"],
+		diag["endpoint"],
+		diag["docker_config"],
+		diag["docker_host"],
+		diag["docker_context"],
+		socketInfo,
+	)
+}
+
+func formatDaemonRecommendation(runtime docker.RuntimeName) string {
+	if runtime == docker.RuntimePodman {
+		return fmt.Sprintf("Check that the %s daemon is running.", runtime)
+	}
+	return fmt.Sprintf("Check that the %s daemon for the selected context is running.", runtime)
 }
 
 // recoverPodman attempts to bring a stopped Podman backend back up after a ping

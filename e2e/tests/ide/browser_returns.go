@@ -92,7 +92,7 @@ var _ = ginkgo.Describe(
 
 				// Run up with a browser IDE. --ide-launch=headless suppresses the
 				// host browser launch (no display available in CI) but still runs
-				// openIDE → startDetachedBrowserTunnel → writes tunnel.json.
+				// openIDE -> startDetachedBrowserTunnel -> writes tunnel.json.
 				// --ide-launch=skip would skip openIDE entirely, which is not what
 				// the test exercises. With the old blocking behavior this would
 				// still hang past SpecTimeout; with the new behavior the CLI
@@ -180,7 +180,7 @@ var _ = ginkgo.Describe(
 					"expected --recreate to spawn a new helper (PID1=%d, PID2=%d)", pid1, pid2)
 
 				// PID1 should now be dead. Use Eventually because the kill is
-				// best-effort SIGTERM → wait → SIGKILL.
+				// best-effort SIGTERM -> wait -> SIGKILL.
 				gomega.Eventually(func() error {
 					return syscall.Kill(pid1, 0)
 				}).WithTimeout(5*time.Second).WithPolling(100*time.Millisecond).

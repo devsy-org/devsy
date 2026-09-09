@@ -13,14 +13,6 @@ tasks:
     desc: verify THIRD_PARTY_LICENSES.md is in sync and all licenses are allowed (CI)
     cmd: go run ./hack/licenses --check
 
-  automations:generate:
-    desc: regenerate .agents/agents/<id>/agent.md from hack/automations
-    cmd: go run ./hack/automations
-
-  automations:check:
-    desc: verify generated agent prompts are in sync (CI / pre-commit)
-    cmd: go run ./hack/automations -check
-
   cli:lint:
     desc: lint go code using golangci-lint
     deps: [cli:lint:version]

@@ -178,6 +178,53 @@ func runCmdCombined(ctx context.Context, cmd *exec.Cmd) error {
 	return nil
 }
 
+const envUnset = "<unset>"
+
+// RuntimeDiagnostics resolves information about the effective docker runtime configuration.
+func (r *DockerHelper) RuntimeDiagnostics(ctx context.Context) map[string]string {
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	diagnostics := map[string]string{
+		"command":        r.DockerCommand,
+		"docker_config":  resolveEnvValue(r.Environment, "DOCKER_CONFIG"),
+		"docker_host":    resolveEnvValue(r.Environment, "DOCKER_HOST"),
+		"docker_context": resolveEnvValue(r.Environment, "DOCKER_CONTEXT"),
+	}
+
+	if r.IsPodman() {
+		runtimeDiagnosticsPodman(r, diagnostics)
+		return diagnostics
+	}
+
+	r.runtimeDiagnosticsDocker(cctx, diagnostics)
+	return diagnostics
+}
+
+func resolveEnvValue(env []string, key string) string {
+	if val, ok := envValue(env, key); ok {
+		if val != "" {
+			return val
+		}
+		return envUnset
+	}
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return envUnset
+}
+
+func runtimeDiagnosticsPodman(r *DockerHelper, diag map[string]string) {
+	diag["context"] = "<not applicable>"
+	if host := resolveEnvValue(r.Environment, "CONTAINER_HOST"); host != envUnset {
+		diag["endpoint"] = host
+	} else if host := resolveEnvValue(r.Environment, "DOCKER_HOST"); host != envUnset {
+		diag["endpoint"] = host
+	} else {
+		diag["endpoint"] = "<not applicable>"
+	}
+}
+
 // Ping reports whether the runtime daemon is reachable, returning its own
 // message (e.g. "Cannot connect to Podman") on failure. It runs a bare `info`
 // and judges reachability by exit status: `--format` field names differ
@@ -760,6 +807,70 @@ func (r *DockerHelper) buildCmd(ctx context.Context, args ...string) *exec.Cmd {
 	}
 	PrepareForGroupCancellation(cmd)
 	return cmd
+}
+
+func (r *DockerHelper) resolveDockerContext(ctx context.Context, envContext string) string {
+	if envContext != envUnset {
+		return envContext
+	}
+	out, err := r.buildCmd(ctx, "context", "show").Output()
+	if err == nil {
+		if cur := strings.TrimSpace(string(out)); cur != "" {
+			return cur
+		}
+	}
+	return "default"
+}
+
+func (r *DockerHelper) getEndpointFromContext(ctx context.Context, contextName string) string {
+	out, err := r.buildCmd(
+		ctx,
+		"context",
+		"inspect",
+		contextName,
+		"--format",
+		"{{.Endpoints.docker.Host}}",
+	).Output()
+	if err == nil {
+		if endpoint := strings.TrimSpace(string(out)); endpoint != "" && endpoint != "<no value>" {
+			return endpoint
+		}
+	}
+	return ""
+}
+
+func (r *DockerHelper) endpointForContext(ctx context.Context, contextName string) string {
+	if ep := r.getEndpointFromContext(ctx, contextName); ep != "" {
+		return ep
+	}
+	if contextName == "default" {
+		return "unix:///var/run/docker.sock"
+	}
+	return "<unknown>"
+}
+
+func (r *DockerHelper) resolveDockerEndpoint(
+	ctx context.Context,
+	activeContext, envContext, dockerHost string,
+) string {
+	if envContext != envUnset {
+		return r.endpointForContext(ctx, envContext)
+	}
+	if dockerHost != envUnset {
+		return dockerHost
+	}
+	return r.endpointForContext(ctx, activeContext)
+}
+
+func (r *DockerHelper) runtimeDiagnosticsDocker(ctx context.Context, diag map[string]string) {
+	activeContext := r.resolveDockerContext(ctx, diag["docker_context"])
+	diag["context"] = activeContext
+	diag["endpoint"] = r.resolveDockerEndpoint(
+		ctx,
+		activeContext,
+		diag["docker_context"],
+		diag["docker_host"],
+	)
 }
 
 // PrepareForGroupCancellation sets the Cancel function of the given exec.Cmd

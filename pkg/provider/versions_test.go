@@ -78,7 +78,7 @@ func TestMarkCurrent_NoTag(t *testing.T) {
 	versions := []ProviderVersion{{Tag: testTagV100}}
 	got := MarkCurrent(versions, "github.com/foo/bar")
 	if got[0].Current {
-		t.Fatal("no pinned tag → none current")
+		t.Fatal("no pinned tag -> none current")
 	}
 }
 
