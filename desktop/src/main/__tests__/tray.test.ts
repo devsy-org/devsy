@@ -13,7 +13,7 @@ describe("buildUpdateMenuItems", () => {
     expect(buildUpdateMenuItems({ state: "checking", currentVersion: "1.0.0" }, () => {})).toEqual([])
     expect(
       buildUpdateMenuItems(
-        { state: "available", currentVersion: "1.0.0", availableVersion: "1.1.0", version: "1.1.0" },
+        { state: "available", currentVersion: "1.0.0", availableVersion: "1.1.0" },
         () => {},
       ),
     ).toEqual([])
@@ -23,7 +23,6 @@ describe("buildUpdateMenuItems", () => {
           state: "downloading",
           currentVersion: "1.0.0",
           availableVersion: "1.1.0",
-          version: "1.1.0",
           progress: { percent: 50, bytesPerSecond: 1000, transferred: 50, total: 100 },
         },
         () => {},
@@ -42,7 +41,7 @@ describe("buildUpdateMenuItems", () => {
   it("adds Update item + separator when downloaded", () => {
     const onInstall = vi.fn()
     const items = buildUpdateMenuItems(
-      { state: "downloaded", currentVersion: "1.0.0", availableVersion: "9.9.9", version: "9.9.9" },
+      { state: "downloaded", currentVersion: "1.0.0", availableVersion: "9.9.9" },
       onInstall,
     )
     expect(items).toHaveLength(2)

@@ -91,27 +91,26 @@ export function logUpdateDecision(params: UpdateDecisionLog): void {
   ].filter(Boolean)
   console.info(parts.join(" "))
 }
+
 export interface UpdateProgress {
   percent: number
   bytesPerSecond: number
   transferred: number
   total: number
 }
+
 export type UpdateStatus =
   | {
       state: "idle"
       currentVersion: string
-      version?: string
     }
   | {
       state: "checking"
       currentVersion: string
-      version?: string
     }
   | {
       state: "up-to-date" | "not-available"
       currentVersion: string
-      version?: string
       lastCheckedAt?: number
       feedVersion?: string
       code?: UpdateErrorCode
@@ -120,7 +119,6 @@ export type UpdateStatus =
       state: "available"
       currentVersion: string
       availableVersion: string
-      version?: string
       releaseNotes?: string
       releaseName?: string
       code?: UpdateErrorCode
@@ -129,21 +127,18 @@ export type UpdateStatus =
       state: "downloading"
       currentVersion: string
       availableVersion: string
-      version?: string
       progress: UpdateProgress
     }
   | {
       state: "downloaded"
       currentVersion: string
       availableVersion: string
-      version?: string
       releaseNotes?: string
       releaseName?: string
     }
   | {
       state: "error"
       currentVersion: string
-      version?: string
       code: UpdateErrorCode
       error: string
     }
@@ -183,15 +178,16 @@ function saveSettings(patch: PersistedSettings): void {
 const INITIAL_CHECK_DELAY_MS = 10_000
 const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 
-function getCurrentVersion(): string {
+function getCurrentVersion(): string | null {
   try {
-    return app.getVersion()
+    const v = app.getVersion()
+    return v || null
   } catch (err) {
     console.error(
       "Auto-update: unable to read app version:",
       err instanceof Error ? err.message : String(err),
     )
-    return ""
+    return null
   }
 }
 
@@ -293,7 +289,7 @@ export async function initAutoUpdater(
   if (!app.isPackaged) {
     setStatus({
       state: "up-to-date",
-      currentVersion: getCurrentVersion(),
+      currentVersion: getCurrentVersion() ?? "",
       code: "dev-mode",
     })
     return
@@ -304,7 +300,7 @@ export async function initAutoUpdater(
   if (!autoUpdater || typeof autoUpdater.checkForUpdates !== "function") {
     setStatus({
       state: "error",
-      currentVersion: getCurrentVersion(),
+      currentVersion: getCurrentVersion() ?? "",
       code: "unsupported",
       error: "Updates require a packaged build",
     })
@@ -319,21 +315,51 @@ export async function initAutoUpdater(
     trackEvent("update_check")
     setStatus({
       state: "checking",
-      currentVersion: getCurrentVersion(),
+      currentVersion: getCurrentVersion() ?? "",
     })
   })
 
   autoUpdater.on("update-available", (info) => {
     const currentVersion = getCurrentVersion()
+    if (!currentVersion) {
+      logUpdateDecision({
+        currentVersion: "unknown",
+        feedVersion: info.version,
+        channel: currentChannel,
+        result: "invalid-version",
+        error: "current version unavailable",
+      })
+      setStatus({
+        state: "error",
+        currentVersion: "",
+        code: "unsupported",
+        error: "Unable to determine current application version",
+      })
+      return
+    }
+
     const candidate = classifyCandidate(currentVersion, info.version)
+
+    if (candidate.kind === "invalid") {
+      logUpdateDecision({
+        currentVersion,
+        feedVersion: info.version,
+        channel: currentChannel,
+        result: "invalid-version",
+      })
+      autoUpdater.autoDownload = false
+      setStatus({
+        state: "error",
+        currentVersion,
+        code: "feed-error",
+        error: `Invalid version from update feed: ${info.version}`,
+      })
+      return
+    }
 
     if (candidate.kind !== "newer") {
       const result: UpdateDecisionResult =
-        candidate.kind === "older"
-          ? "feed-behind"
-          : candidate.kind === "same"
-            ? "same"
-            : "invalid-version"
+        candidate.kind === "older" ? "feed-behind" : "same"
       logUpdateDecision({
         currentVersion,
         feedVersion: info.version,
@@ -347,7 +373,6 @@ export async function initAutoUpdater(
         state: "up-to-date",
         currentVersion,
         feedVersion: info.version,
-        version: info.version,
       })
       return
     }
@@ -367,14 +392,13 @@ export async function initAutoUpdater(
       state: "available",
       currentVersion,
       availableVersion: info.version,
-      version: info.version,
       releaseName: info.releaseName ?? undefined,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
     })
   })
 
   autoUpdater.on("update-not-available", (info) => {
-    const currentVersion = getCurrentVersion()
+    const currentVersion = getCurrentVersion() ?? ""
     logUpdateDecision({
       currentVersion,
       feedVersion: info.version,
@@ -385,7 +409,6 @@ export async function initAutoUpdater(
       state: "up-to-date",
       currentVersion,
       feedVersion: info.version,
-      version: info.version,
     })
   })
 
@@ -396,9 +419,8 @@ export async function initAutoUpdater(
     const availableVersion = lastStatus.availableVersion
     setStatus({
       state: "downloading",
-      currentVersion: getCurrentVersion(),
+      currentVersion: getCurrentVersion() ?? "",
       availableVersion,
-      version: availableVersion,
       progress: {
         percent: info.percent,
         bytesPerSecond: info.bytesPerSecond,
@@ -413,7 +435,8 @@ export async function initAutoUpdater(
       return
     }
     const availableVersion = lastStatus.availableVersion
-    const currentVersion = getCurrentVersion()
+    trackEvent("update_downloaded", { version: availableVersion })
+    const currentVersion = getCurrentVersion() ?? ""
     logUpdateDecision({
       currentVersion,
       availableVersion,
@@ -424,14 +447,14 @@ export async function initAutoUpdater(
       state: "downloaded",
       currentVersion,
       availableVersion,
-      version: availableVersion,
       releaseName: info.releaseName ?? undefined,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
     })
   })
+
   autoUpdater.on("error", (err) => {
     const code = classifyError(err)
-    const currentVersion = getCurrentVersion()
+    const currentVersion = getCurrentVersion() ?? ""
     logUpdateDecision({
       currentVersion,
       channel: currentChannel,
@@ -488,7 +511,7 @@ async function getUpdater() {
   if (!app.isPackaged) {
     setStatus({
       state: "up-to-date",
-      currentVersion: getCurrentVersion(),
+      currentVersion: getCurrentVersion() ?? "",
       code: "dev-mode",
     })
     return null
@@ -497,7 +520,7 @@ async function getUpdater() {
   if (!autoUpdater || typeof autoUpdater.checkForUpdates !== "function") {
     setStatus({
       state: "error",
-      currentVersion: getCurrentVersion(),
+      currentVersion: getCurrentVersion() ?? "",
       code: "unsupported",
       error: "Updates require a packaged build",
     })
@@ -536,7 +559,8 @@ export async function checkForUpdatesWithChannel(channel: ReleaseChannel): Promi
 export async function downloadUpdate(): Promise<void> {
   if (lastStatus.state !== "available") return
   const currentVersion = getCurrentVersion()
-  const candidateVersion = lastStatus.availableVersion ?? lastStatus.version ?? ""
+  if (!currentVersion) return
+  const candidateVersion = lastStatus.availableVersion
   if (classifyCandidate(currentVersion, candidateVersion).kind !== "newer") {
     return
   }

@@ -317,7 +317,11 @@ describe("updater", () => {
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.16.2" })
       expect(send).toHaveBeenCalledWith(
         "update-status",
-        expect.objectContaining({ state: "up-to-date" }),
+        expect.objectContaining({
+          state: "up-to-date",
+          currentVersion: "1.17.0",
+          feedVersion: "1.16.2",
+        }),
       )
       expect(send).not.toHaveBeenCalledWith(
         "update-status",
@@ -368,7 +372,11 @@ describe("updater", () => {
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.17.0" })
       expect(send).toHaveBeenCalledWith(
         "update-status",
-        expect.objectContaining({ state: "up-to-date" }),
+        expect.objectContaining({
+          state: "up-to-date",
+          currentVersion: "1.17.0",
+          feedVersion: "1.17.0",
+        }),
       )
       expect(send).not.toHaveBeenCalledWith(
         "update-status",
@@ -386,7 +394,11 @@ describe("updater", () => {
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0" })
       expect(send).toHaveBeenCalledWith(
         "update-status",
-        expect.objectContaining({ state: "available", version: "1.18.0" }),
+        expect.objectContaining({
+          state: "available",
+          currentVersion: "1.17.0",
+          availableVersion: "1.18.0",
+        }),
       )
     })
 
@@ -400,7 +412,11 @@ describe("updater", () => {
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.17.1" })
       expect(send).toHaveBeenCalledWith(
         "update-status",
-        expect.objectContaining({ state: "available", version: "1.17.1" }),
+        expect.objectContaining({
+          state: "available",
+          currentVersion: "1.17.0",
+          availableVersion: "1.17.1",
+        }),
       )
     })
 
@@ -415,7 +431,11 @@ describe("updater", () => {
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0-beta.3" })
       expect(send).toHaveBeenCalledWith(
         "update-status",
-        expect.objectContaining({ state: "available", version: "1.18.0-beta.3" }),
+        expect.objectContaining({
+          state: "available",
+          currentVersion: "1.18.0-beta.2",
+          availableVersion: "1.18.0-beta.3",
+        }),
       )
     })
 
@@ -438,7 +458,7 @@ describe("updater", () => {
       )
     })
 
-    it("safely handles malformed candidate versions", async () => {
+    it("reports feed-error for malformed candidate versions", async () => {
       mockAppVersion = "1.17.0"
       const { initAutoUpdater } = await import("../updater.js")
       const send = vi.fn()
@@ -447,6 +467,37 @@ describe("updater", () => {
 
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "not-a-version" })
       expect(send).toHaveBeenCalledWith(
+        "update-status",
+        expect.objectContaining({
+          state: "error",
+          code: "feed-error",
+          currentVersion: "1.17.0",
+        }),
+      )
+      expect(send).not.toHaveBeenCalledWith(
+        "update-status",
+        expect.objectContaining({ state: "up-to-date" }),
+      )
+      expect(electronUpdaterMock.autoUpdater.downloadUpdate).not.toHaveBeenCalled()
+    })
+
+    it("reports feed-error when current app version is malformed", async () => {
+      mockAppVersion = "not-a-version"
+      const { initAutoUpdater } = await import("../updater.js")
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { send } } as never
+      await initAutoUpdater(() => win)
+
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0" })
+      expect(send).toHaveBeenCalledWith(
+        "update-status",
+        expect.objectContaining({
+          state: "error",
+          code: "feed-error",
+          currentVersion: "not-a-version",
+        }),
+      )
+      expect(send).not.toHaveBeenCalledWith(
         "update-status",
         expect.objectContaining({ state: "up-to-date" }),
       )
@@ -466,6 +517,24 @@ describe("updater", () => {
       await checkForUpdatesWithChannel("stable")
       expect(electronUpdaterMock.autoUpdater.allowPrerelease).toBe(false)
       expect(electronUpdaterMock.autoUpdater.allowDowngrade).toBe(false)
+    })
+
+    it("does not populate the legacy version field in published update-status", async () => {
+      mockAppVersion = "1.17.0"
+      const { initAutoUpdater } = await import("../updater.js")
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { send } } as never
+      await initAutoUpdater(() => win)
+
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0" })
+      const availableStatus = send.mock.calls[send.mock.calls.length - 1][1] as Record<string, unknown>
+      expect(availableStatus.availableVersion).toBe("1.18.0")
+      expect(availableStatus.version).toBeUndefined()
+
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.16.2" })
+      const upToDateStatus = send.mock.calls[send.mock.calls.length - 1][1] as Record<string, unknown>
+      expect(upToDateStatus.feedVersion).toBe("1.16.2")
+      expect(upToDateStatus.version).toBeUndefined()
     })
   })
 
