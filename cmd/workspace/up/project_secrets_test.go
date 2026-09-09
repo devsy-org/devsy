@@ -50,6 +50,7 @@ const (
 	testProjectAgeIdentity = "AGE-SECRET-KEY-12UWYSAH2MRDQ5K4EWC4253PDTCSCS32Y5EFQ8TEN2SL3QYU2GN2SG88CZX" // gitleaks:allow
 	testProjectPlaintext   = "SUPER_SECRET_TEST_VALUE_7B91"
 	testProjectFixture     = "testdata/sops-project-secrets.enc.yaml"
+	testOAuth2Username     = "oauth2"
 )
 
 func newTestProjectWorkspace(t *testing.T) *fakeWorkspaceClient {
@@ -301,7 +302,7 @@ func TestGitInspectionEnv_PreservesInheritedGitConfig(t *testing.T) {
 	cmd := &UpCmd{}
 	cmd.GitToken = &provider.GitToken{
 		Host:     "github.com",
-		Username: "oauth2",
+		Username: testOAuth2Username,
 		Token:    "secret-token-123",
 	}
 
@@ -324,10 +325,9 @@ func TestGitInspectionEnv_NoInheritedEntries(t *testing.T) {
 	cmd := &UpCmd{}
 	cmd.GitToken = &provider.GitToken{
 		Host:     "gitlab.com",
-		Username: "oauth2",
+		Username: testOAuth2Username,
 		Token:    "secret-token-456",
 	}
-
 	env := cmd.gitInspectionEnv()
 	require.Contains(t, env, "GIT_CONFIG_COUNT=1")
 	require.Contains(t, env, "GIT_CONFIG_KEY_0=http.https://gitlab.com/.extraHeader")
