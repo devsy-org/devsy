@@ -65,7 +65,7 @@ func TestExecWithRunnerExitCode(t *testing.T) {
 }
 
 func TestProbeEnvWithRunner(t *testing.T) {
-	// /proc/self/environ succeeds → NUL-separated parse.
+	// /proc/self/environ succeeds -> NUL-separated parse.
 	run := func(_ context.Context, _ []string, _ io.Reader, stdout, _ io.Writer) error {
 		_, _ = stdout.Write([]byte("PATH=/bin\x00HOME=/root\x00"))
 		return nil
@@ -76,7 +76,7 @@ func TestProbeEnvWithRunner(t *testing.T) {
 		t.Errorf("probed env = %v", env)
 	}
 
-	// Total failure → empty map (documented contract), never a panic.
+	// Total failure -> empty map (documented contract), never a panic.
 	failRun := func(_ context.Context, _ []string, _ io.Reader, _, _ io.Writer) error {
 		return errors.New("exec failed")
 	}

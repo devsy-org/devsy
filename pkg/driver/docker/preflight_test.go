@@ -379,5 +379,5 @@ func TestRunPreflightDaemonRefusalKeepsUnreachableMessage(t *testing.T) {
 	err := runPreflight(context.Background(), driver.PreflightOptions{}, p)
 	require.Error(t, err)
 	require.NotErrorIs(t, err, context.DeadlineExceeded)
-	require.Contains(t, err.Error(), "is not reachable")
+	require.Contains(t, err.Error(), "daemon is unreachable")
 }

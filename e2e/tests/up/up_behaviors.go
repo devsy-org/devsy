@@ -412,6 +412,6 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			"postCreate",
 			"dotfiles-before-postStart",
 			"postStart",
-		}), "lifecycle ordering should be: postCreate → dotfiles → postStart")
+		}), "lifecycle ordering should be: postCreate -> dotfiles -> postStart")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })

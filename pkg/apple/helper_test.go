@@ -124,7 +124,7 @@ func TestParseImageTag(t *testing.T) {
 }
 
 func TestWaitContainerRunningFailsFastOnExit(t *testing.T) {
-	// A container reporting a terminal (stopped→exited) state must error
+	// A container reporting a terminal (stopped->exited) state must error
 	// immediately rather than block for the full poll timeout.
 	stdout := `[{"id":"c1","configuration":{"id":"c1"},"status":{"state":"stopped"}}]`
 	h := &AppleHelper{Command: stubContainer(t, stdout, 0)}
@@ -143,7 +143,7 @@ func TestWaitContainerRunningFailsFastOnExit(t *testing.T) {
 }
 
 func TestEnsureBuilderRunning(t *testing.T) {
-	// Exit 0 (the real CLI's behavior even when already running) → no error.
+	// Exit 0 (the real CLI's behavior even when already running) -> no error.
 	okHelper := &AppleHelper{Command: stubContainer(t, "", 0)}
 	if err := okHelper.EnsureBuilderRunning(context.Background()); err != nil {
 		t.Errorf("exit 0 must succeed, got %v", err)

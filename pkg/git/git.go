@@ -65,7 +65,7 @@ func NormalizeRepository(str string) *GitInfo {
 
 // canonicalizeURL strips the workspace-source "git:" scheme (the form
 // WorkspaceSource.String emits; without this strip, a value that round-trips
-// through workspace list → up becomes "https://git:https://...") and upgrades
+// through workspace list -> up becomes "https://git:https://...") and upgrades
 // bare host[/path] inputs to https://.
 func canonicalizeURL(str string) string {
 	str = strings.TrimPrefix(str, "git:")

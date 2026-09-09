@@ -492,9 +492,9 @@ func (suite *GraphTestSuite) TestLargeGraph() {
 }
 
 func (suite *GraphTestSuite) TestSortNodeIDsRoundBased() {
-	// A→B edge means B depends on A.
-	// Round 1: A and C both have in-degree 0 → sorted alpha → [A, C]
-	// Round 2: B (now in-degree 0 after A processed) → [B]
+	// A->B edge means B depends on A.
+	// Round 1: A and C both have in-degree 0 -> sorted alpha -> [A, C]
+	// Round 2: B (now in-degree 0 after A processed) -> [B]
 	// Final: [A, C, B]
 	suite.Require().NoError(suite.graph.AddNode("A", "dataA"))
 	suite.Require().NoError(suite.graph.AddNode("B", "dataB"))
@@ -507,10 +507,10 @@ func (suite *GraphTestSuite) TestSortNodeIDsRoundBased() {
 }
 
 func (suite *GraphTestSuite) TestSortNodeIDsRoundBasedMultiLevel() {
-	// A→B→D, C→D (independent chains with shared sink)
-	// Round 1: A, C (in-degree 0) → [A, C]
-	// Round 2: B (depends on A only) → [B]
-	// Round 3: D (depends on B and C, but C was processed in round 1) → [D]
+	// A->B->D, C->D (independent chains with shared sink)
+	// Round 1: A, C (in-degree 0) -> [A, C]
+	// Round 2: B (depends on A only) -> [B]
+	// Round 3: D (depends on B and C, but C was processed in round 1) -> [D]
 	suite.Require().NoError(suite.graph.AddNode("A", "dataA"))
 	suite.Require().NoError(suite.graph.AddNode("B", "dataB"))
 	suite.Require().NoError(suite.graph.AddNode("C", "dataC"))

@@ -105,7 +105,7 @@ test.describe
       // Click Continue to add the provider
       await wizard.getByRole("button", { name: /^Continue$/ }).click()
 
-      // Docker mock has no required options → wizard jumps to init then complete.
+      // Docker mock has no required options -> wizard jumps to init then complete.
       // Wait for the "Done" button on the Complete step.
       await wizard
         .getByRole("button", { name: "Done" })
@@ -269,7 +269,7 @@ test.describe
     })
 
     test("should show new workspace in table", async () => {
-      // Workspace ID from template name: 'Node.js' → 'node-js'
+      // Workspace ID from template name: 'Node.js' -> 'node-js'
       await expect(page.locator("table")).toContainText("node-js", {
         timeout: 10000,
       })
@@ -408,7 +408,7 @@ test.describe
     })
 
     test("should show python workspace in table", async () => {
-      // Template name 'Python' → workspace id 'python'
+      // Template name 'Python' -> workspace id 'python'
       await expect(page.locator("table")).toContainText("python", {
         timeout: 10000,
       })

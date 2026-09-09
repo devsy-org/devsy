@@ -73,7 +73,7 @@ func LoadProviderVersionCache() (ProviderVersionCache, error) {
 	}
 	cache := ProviderVersionCache{}
 	if err := json.Unmarshal(data, &cache); err != nil {
-		// Corrupt cache → start fresh.
+		// Corrupt cache -> start fresh.
 		return ProviderVersionCache{}, nil
 	}
 	return cache, nil
