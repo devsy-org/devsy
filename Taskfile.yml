@@ -233,6 +233,9 @@ tasks:
     dir: desktop
     cmd: npm run check
 
+  desktop:icons:
+    desc: generate application icon assets from canonical SVG source
+    cmd: go run ./hack/icons
   desktop:test:
     desc: run desktop unit tests
     dir: desktop
