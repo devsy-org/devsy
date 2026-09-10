@@ -17,6 +17,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	aliasRm   = "rm"
+	aliasDown = "down"
+)
+
 // DeleteCmd holds the delete cmd flags.
 type DeleteCmd struct {
 	*flags.GlobalFlags
@@ -30,9 +35,13 @@ func NewDeleteCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	}
 	deleteCmd := &cobra.Command{
 		Use:     "delete [flags] [workspace-path|workspace-name]",
-		Aliases: []string{"rm"},
+		Aliases: []string{aliasRm, aliasDown},
 		Short:   "Delete a workspace",
 		Long: `Delete a workspace by path or name.
+
+Aliases "rm" and "down" perform the same full Devsy workspace teardown.
+For Docker Compose workspaces, teardown uses Docker/Podman Compose down.
+
 Use --ignore-not-found to treat a missing workspace as success.`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd, args)

@@ -49,6 +49,13 @@ Run the following command to delete a workspace:
 devsy workspace delete my-workspace
 ```
 
+`devsy workspace down` (as well as `rm`) is an alias for `devsy workspace delete`. It performs the same full Devsy workspace teardown:
+```
+devsy workspace down my-workspace
+```
+
+For Docker Compose-backed workspaces, teardown uses Compose `down` (with `--remove-volumes` remaining an opt-in flag to remove associated named volumes). Use `devsy workspace stop` when you want to stop a workspace while retaining its configuration and state so it can be started again later.
+
 If deletion fails because the Provider is not reachable anymore or another error has occurred, you can also force delete a workspace via:
 ```
 devsy workspace delete my-workspace --force
