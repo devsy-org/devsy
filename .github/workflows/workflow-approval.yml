@@ -16,7 +16,9 @@ jobs:
           client-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
 
-      - uses: skevetter/automatic-approve-action@80f16f6e6bea1dfc0f613df222390ee143a4d8e9 # v2
+      - uses: skevetter/automatic-approve-action@e9a649e3353c1d4a93197dbf78087c9f80f8f70a # v2.2.0
         with:
           token: ${{ steps.app-token.outputs.token }}
           workflows: "commit.yml,pr-ci.yml"
+          pull-request-number: ${{ github.event.pull_request.number }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
