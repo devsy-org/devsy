@@ -8,6 +8,7 @@ import type { DaemonClient } from "./daemon-client.js"
 import type { ProviderJobs } from "./provider-jobs.js"
 import type { DaemonState } from "./state.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
+import { normalizeWorkspaceStatus } from "./workspace-status.js"
 
 interface WatcherDeps {
   cli: CliRunner
@@ -58,6 +59,7 @@ export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
 
 export class Watcher {
   private pollTimer: ReturnType<typeof setInterval> | null = null
+  private workspaceStatusTimer: ReturnType<typeof setInterval> | null = null
   private fsWatcher: ReturnType<typeof watch> | null = null
   private polling = false
   private pollQueued = false
@@ -68,11 +70,18 @@ export class Watcher {
   // Same serialization for pollWorkspaces, so a manual refreshWorkspaces()
   // (e.g. after a delete finishes) can't overlap a scheduled poll.
   private workspacePollChain: Promise<void> = Promise.resolve()
+  private workspaceStatusChain: Promise<void> = Promise.resolve()
+  private workspaceStatusPolling = false
+  private workspaceStatusQueued = false
 
   constructor(private deps: WatcherDeps) {}
 
   start(): Promise<void> {
     this.pollTimer = setInterval(() => this.schedulePoll(), 3000)
+    this.workspaceStatusTimer = setInterval(
+      () => this.scheduleWorkspaceStatusPoll(),
+      10_000,
+    )
 
     const devsyDir = join(homedir(), ".devsy")
     if (existsSync(devsyDir)) {
@@ -84,7 +93,9 @@ export class Watcher {
       this.fsWatcher.on("all", () => this.schedulePoll())
     }
 
-    return this.pollOnce()
+    return this.pollOnce().then(() => {
+      void this.refreshWorkspaceStatuses()
+    })
   }
 
   stop(): void {
@@ -92,6 +103,11 @@ export class Watcher {
       clearInterval(this.pollTimer)
       this.pollTimer = null
     }
+    if (this.workspaceStatusTimer) {
+      clearInterval(this.workspaceStatusTimer)
+      this.workspaceStatusTimer = null
+    }
+    this.workspaceStatusQueued = false
     if (this.fsWatcher) {
       this.fsWatcher.close()
       this.fsWatcher = null
@@ -141,6 +157,72 @@ export class Watcher {
   /** Re-read the workspace list from disk now, without waiting for the next scheduled poll. */
   async refreshWorkspaces(): Promise<void> {
     await this.queueWorkspacePoll()
+  }
+
+  async refreshWorkspaceStatus(workspaceId: string): Promise<void> {
+    await this.queueWorkspaceStatusPoll([workspaceId])
+  }
+
+  async refreshWorkspaceStatuses(): Promise<void> {
+    await this.queueWorkspaceStatusPoll()
+  }
+
+  private scheduleWorkspaceStatusPoll(): void {
+    if (this.workspaceStatusPolling) {
+      this.workspaceStatusQueued = true
+      return
+    }
+    void this.refreshWorkspaceStatuses()
+  }
+
+  private queueWorkspaceStatusPoll(workspaceIds?: string[]): Promise<void> {
+    const run = this.workspaceStatusChain.then(() =>
+      this.pollWorkspaceStatuses(workspaceIds),
+    )
+    this.workspaceStatusChain = run
+    return run
+  }
+
+  private async pollWorkspaceStatuses(workspaceIds?: string[]): Promise<void> {
+    this.workspaceStatusPolling = true
+    let changed = false
+    try {
+      const ids = workspaceIds ?? this.deps.state.workspaceList().map((ws) => ws.id)
+      const concurrency = 6
+      let next = 0
+      const worker = async (): Promise<void> => {
+        while (next < ids.length) {
+          const id = ids[next++]
+          try {
+            const raw = await this.deps.cli.runRaw([
+              "workspace",
+              "status",
+              id,
+              "--result-format",
+              "json",
+              "--timeout",
+              "15s",
+            ])
+            const status = normalizeWorkspaceStatus(raw)
+            if (status && this.deps.state.updateWorkspaceStatus(id, status)) {
+              changed = true
+            }
+          } catch {
+            // Preserve the last known status and retry on the next sweep.
+          }
+        }
+      }
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, ids.length) }, worker),
+      )
+      if (changed) this.broadcastWorkspaces()
+    } finally {
+      this.workspaceStatusPolling = false
+      if (this.workspaceStatusQueued) {
+        this.workspaceStatusQueued = false
+        void this.refreshWorkspaceStatuses()
+      }
+    }
   }
 
   private queueWorkspacePoll(): Promise<void> {

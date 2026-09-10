@@ -27,6 +27,7 @@ export type UpdateErrorCode =
   | "feed-error"
   | "verification"
   | "channel-missing"
+  | "install-failed"
 
 export interface UpdateProgress {
   percent: number

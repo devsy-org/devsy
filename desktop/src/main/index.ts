@@ -2,6 +2,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { app, BrowserWindow, session } from "electron"
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics.js"
+import { isAppQuitting, markAppQuitting } from "./app-lifecycle.js"
 import { CliRunner } from "./cli.js"
 import { DaemonManager } from "./daemon-manager.js"
 import { registerIpcHandlers } from "./ipc.js"
@@ -18,10 +19,13 @@ const PROTOCOL = "devsy"
 
 let mainWindow: BrowserWindow | null = null
 let pendingDeepLink: string | null = null
+let pendingRoute: string | null = null
+let appTray: AppTray | null = null
+let watcher: Watcher | null = null
 const state = new DaemonState()
 
 function handleDeepLink(url: string): void {
-  if (mainWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
@@ -29,6 +33,18 @@ function handleDeepLink(url: string): void {
   } else {
     pendingDeepLink = url
   }
+}
+
+function showDevsy(route?: string): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    pendingRoute = route ?? null
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  if (route) mainWindow.webContents.send("navigate", route)
 }
 
 // Enforce single instance; forward deep links from second instances to the first.
@@ -41,7 +57,7 @@ app.on("second-instance", (_event, argv) => {
   const url = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`))
   if (url) {
     handleDeepLink(url)
-  } else if (mainWindow) {
+  } else if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
@@ -72,7 +88,7 @@ function createWindow(): void {
   mainWindow.on("close", (event) => {
     if (
       mainWindow &&
-      !(app as typeof app & { isQuitting?: boolean }).isQuitting
+      !isAppQuitting()
     ) {
       event.preventDefault()
       mainWindow.hide()
@@ -87,6 +103,10 @@ function createWindow(): void {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show()
+    if (pendingRoute) {
+      mainWindow?.webContents.send("navigate", pendingRoute)
+      pendingRoute = null
+    }
     if (pendingDeepLink) {
       mainWindow?.webContents.send("deep-link", pendingDeepLink)
       pendingDeepLink = null
@@ -150,7 +170,7 @@ app.whenReady().then(() => {
   daemonManager.start()
 
   app.on("before-quit", () => {
-    ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
+    markAppQuitting()
     trackEvent("app_close")
     shutdownAnalytics().catch(() => {})
     cli.killAll()
@@ -160,6 +180,8 @@ app.whenReady().then(() => {
     daemonManager.stop()
     ptyManager.destroyAll()
     stopAutoUpdater()
+    watcher?.stop()
+    appTray?.destroy()
   })
 
   const providerJobs = new ProviderJobs()
@@ -170,6 +192,7 @@ app.whenReady().then(() => {
     tunnelProcesses,
     scheduleProviderUpdateCheck,
     runInitialProviderUpdateCheck,
+    workspaceActions,
   } = registerIpcHandlers({
     cli,
     state,
@@ -181,7 +204,7 @@ app.whenReady().then(() => {
   })
 
   // Start state watcher
-  const watcher = new Watcher({
+  watcher = new Watcher({
     cli,
     daemon: daemonManager.daemonClient,
     state,
@@ -189,18 +212,27 @@ app.whenReady().then(() => {
     providerJobs,
     workspaceJobs,
   })
-  providerJobs.onChange(() => watcher.broadcastProviders())
-  providerJobs.setRefresh(() => watcher.refreshProviders())
-  workspaceJobs.onChange(() => watcher.broadcastWorkspaces())
-  workspaceJobs.setRefresh(() => watcher.refreshWorkspaces())
+  providerJobs.onChange(() => watcher?.broadcastProviders())
+  providerJobs.setRefresh(() =>
+    watcher ? watcher.refreshProviders() : Promise.resolve(),
+  )
+  workspaceJobs.onChange(() => watcher?.broadcastWorkspaces())
+  workspaceJobs.setRefresh(() =>
+    watcher ? watcher.refreshWorkspaces() : Promise.resolve(),
+  )
 
   void watcher.start().then(runInitialProviderUpdateCheck)
   scheduleProviderUpdateCheck()
 
   // Set up system tray
-  const appTray = new AppTray({
+  appTray = new AppTray({
     state,
-    getMainWindow: () => mainWindow,
+    showDevsy,
+    stopWorkspace: workspaceActions.stop,
+    refreshWorkspace: (id) =>
+      watcher ? watcher.refreshWorkspaceStatus(id) : Promise.resolve(),
+    refreshWorkspaces: () =>
+      watcher ? watcher.refreshWorkspaces() : Promise.resolve(),
   })
   appTray.setup()
 

@@ -27,7 +27,6 @@ vi.mock("electron-updater", () => ({
 vi.mock("electron", () => ({
   app: {
     isPackaged: true,
-    isQuitting: false,
     getPath: () => "/tmp/devsy-test",
     getVersion: () => "1.0.0",
   },
@@ -102,23 +101,61 @@ describe("updater", () => {
     ).not.toHaveBeenCalled()
   })
 
-  it("sets app.isQuitting before quitAndInstall so the window can close", async () => {
-    const electron = await import("electron")
-    ;(
-      electron.app as typeof electron.app & { isQuitting?: boolean }
-    ).isQuitting = false
-    let quittingWhenInstalled: boolean | undefined
-    electronUpdaterMock.autoUpdater.quitAndInstall.mockImplementation(() => {
-      quittingWhenInstalled = (
-        electron.app as typeof electron.app & { isQuitting?: boolean }
-      ).isQuitting
-    })
+  it("marks the app as quitting before quitAndInstall", async () => {
     const { installUpdate } = await import("../updater.js")
+    const { isAppQuitting } = await import("../app-lifecycle.js")
     await installUpdate()
-    expect(quittingWhenInstalled).toBe(true)
+    expect(isAppQuitting()).toBe(true)
     expect(
       electronUpdaterMock.autoUpdater.quitAndInstall,
     ).toHaveBeenCalledTimes(1)
+  })
+
+  it("restores lifecycle state when quitAndInstall fails", async () => {
+    electronUpdaterMock.autoUpdater.quitAndInstall.mockImplementation(() => {
+      throw new Error("install failed")
+    })
+    const { getLastStatus, initAutoUpdater, installUpdate } = await import(
+      "../updater.js"
+    )
+    const { isAppQuitting } = await import("../app-lifecycle.js")
+    const send = vi.fn()
+    const win = { isDestroyed: () => false, webContents: { send } } as never
+    await initAutoUpdater(() => win)
+    electronUpdaterMock.autoUpdater.emit("update-downloaded", {
+      version: "9.9.9",
+    })
+
+    await expect(installUpdate()).rejects.toThrow("install failed")
+    expect(isAppQuitting()).toBe(false)
+    expect(getLastStatus()).toMatchObject({
+      state: "error",
+      code: "install-failed",
+      version: "9.9.9",
+    })
+  })
+
+  it("continues notifying update listeners after one throws", async () => {
+    const { initAutoUpdater, onUpdateStatusChanged } = await import(
+      "../updater.js"
+    )
+    const send = vi.fn()
+    const win = { isDestroyed: () => false, webContents: { send } } as never
+    await initAutoUpdater(() => win)
+    const first = vi.fn(() => {
+      throw new Error("listener failed")
+    })
+    const second = vi.fn()
+    onUpdateStatusChanged(first)
+    onUpdateStatusChanged(second)
+
+    expect(() =>
+      electronUpdaterMock.autoUpdater.emit("update-available", {
+        version: "9.9.9",
+      }),
+    ).not.toThrow()
+    expect(first).toHaveBeenCalled()
+    expect(second).toHaveBeenCalled()
   })
 
   it("swallows a channel-missing rejection from check_for_updates", async () => {
