@@ -2,7 +2,6 @@ package workspace
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -707,12 +706,8 @@ func startSSHKeepAlive(
 	}
 }
 
-func checkKeepAliveResponse(ok bool, err error) error {
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return errors.New("keepalive request rejected")
-	}
-	return nil
+// A positive or negative SSH reply proves that the peer is alive. Only a
+// transport error means that the keepalive request failed.
+func checkKeepAliveResponse(_ bool, err error) error {
+	return err
 }
