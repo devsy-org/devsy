@@ -727,7 +727,7 @@ func optionsEqual(a, b *provider2.ProviderKubernetesDriverConfig) bool {
 func (k *KubernetesDriver) createNamespace(ctx context.Context) error {
 	_, err := k.client.Client().CoreV1().Namespaces().Get(ctx, k.namespace, metav1.GetOptions{})
 	if kerrors.IsNotFound(err) || kerrors.IsForbidden(err) {
-	log.Debugf("Create namespace %q", k.namespace)
+		log.Debugf("Create namespace %q", k.namespace)
 		_, err := k.client.Client().CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: k.namespace,

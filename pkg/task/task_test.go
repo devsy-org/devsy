@@ -128,7 +128,7 @@ func TestReporterRecordsFailureStateAndSanitizedMessage(t *testing.T) {
 	}
 }
 
-func TestReporterPersistsCurrentStatusMetadata(t *testing.T) {
+func TestReporterPersistsCurrentStatusMetadata(t *testing.T) { //nolint:cyclop // asserts the complete persisted metadata contract
 	store := newTestStore(t)
 	task, err := store.Create(CreateOptions{})
 	if err != nil {
@@ -162,7 +162,7 @@ func TestReporterPersistsCurrentStatusMetadata(t *testing.T) {
 	}
 }
 
-func TestReporterRedactsPersistedFailureMetadata(t *testing.T) {
+func TestReporterRedactsPersistedFailureMetadata(t *testing.T) { //nolint:cyclop // checks every persisted secret-bearing field
 	t.Setenv("DEVSY_TASK_SECRET", "task-secret-846297")
 	store := newTestStore(t)
 	tk, err := store.Create(CreateOptions{})

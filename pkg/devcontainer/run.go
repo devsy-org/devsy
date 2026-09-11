@@ -160,13 +160,14 @@ func (r *runner) Up(
 
 	// Recovery skips initializeCommand: a failing host hook must not block the
 	// recovery container.
-	if options.Recovery {
+	switch {
+	case options.Recovery:
 		status.Skip(reporter, status.PhaseInitializeCommand, "recovery mode")
-	} else if options.Platform.Enabled {
+	case options.Platform.Enabled:
 		// Platform workspaces execute initialization remotely; this host-side
 		// phase is intentionally not run and must not appear successful.
 		status.Skip(reporter, status.PhaseInitializeCommand, "platform mode")
-	} else {
+	default:
 		err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseInitializeCommand}, func(ctx context.Context) error {
 			if err := r.runInitializeCommand(ctx, substitutedConfig.Config, options); err != nil {
 				return clierr.Recoverable(fmt.Errorf("initialize command: %w", err))

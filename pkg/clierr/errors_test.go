@@ -137,7 +137,7 @@ func TestCLIError_MarshalJSONSnapshot(t *testing.T) {
 func TestCLIError_MarshalJSONIncludesHintAndContext(t *testing.T) {
 	e := &CLIError{
 		Code:    CodeUnknown,
-		Message: "Docker daemon is unavailable.",
+		Message: "Docker daemon is unavailable.", //nolint:goconst // verifies the stable public error message
 		Hint:    "Start Docker and retry.",
 		Context: map[string]string{"context": "desktop-linux"},
 	}
@@ -145,7 +145,7 @@ func TestCLIError_MarshalJSONIncludesHintAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	want := `{"code":"UNKNOWN","message":"Docker daemon is unavailable.","hint":"Start Docker and retry.","context":{"context":"desktop-linux"}}`
+	want := `{"code":"UNKNOWN","message":"Docker daemon is unavailable.","hint":"Start Docker and retry.","context":{"context":"desktop-linux"}}` //nolint:lll // exact serialized envelope fixture
 	if string(b) != want {
 		t.Fatalf("JSON mismatch.\n got: %s\nwant: %s", b, want)
 	}

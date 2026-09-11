@@ -257,7 +257,7 @@ func (k *KubernetesDriver) deleteRoleBinding(ctx context.Context, workspaceId st
 func (k *KubernetesDriver) deleteWorkspaceSecrets(ctx context.Context, workspaceId string) error {
 	// delete daemon config secret
 	if k.secretExists(ctx, getDaemonSecretName(workspaceId)) {
-	log.Debugf("Delete daemon config secret %q", workspaceId)
+		log.Debugf("Delete daemon config secret %q", workspaceId)
 		if err := k.DeleteSecret(ctx, getDaemonSecretName(workspaceId)); err != nil {
 			return err
 		}
@@ -265,7 +265,7 @@ func (k *KubernetesDriver) deleteWorkspaceSecrets(ctx context.Context, workspace
 
 	// delete pull secret
 	if k.options.KubernetesPullSecretsEnabled != "" {
-	log.Debugf("Delete pull secret %q", workspaceId)
+		log.Debugf("Delete pull secret %q", workspaceId)
 		if err := k.DeleteSecret(ctx, getPullSecretsName(workspaceId)); err != nil {
 			return err
 		}

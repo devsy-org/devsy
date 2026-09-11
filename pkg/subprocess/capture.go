@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -131,7 +132,7 @@ func (r Result) DiagnosticOutput() string {
 // Run executes binary with args and captures bounded, redacted output from
 // both streams. The returned error is the original execution error wrapped
 // with the display-safe command; output remains available in Result.
-func Run(ctx context.Context, binary string, args []string, options Options) (Result, error) {
+func Run(ctx context.Context, binary string, args []string, options Options) (Result, error) { //nolint:cyclop // assembles the complete subprocess capture configuration
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -216,8 +217,8 @@ func processSignal(state *os.ProcessState) string {
 	// ProcessState.String is portable and includes the signal name for a
 	// signaled process (for example, "signal: killed").
 	text := state.String()
-	if strings.HasPrefix(text, "signal: ") {
-		return strings.TrimPrefix(text, "signal: ")
+	if signal, ok := strings.CutPrefix(text, "signal: "); ok {
+		return signal
 	}
 	return ""
 }
@@ -267,7 +268,7 @@ func (b *Buffer) String() string {
 	return string(b.data)
 }
 
-func (b *Buffer) appendLocked(text []byte) {
+func (b *Buffer) appendLocked(text []byte) { //nolint:funcorder // private helper is shared by the two write methods above
 	if len(text) == 0 {
 		return
 	}
@@ -279,8 +280,8 @@ func (b *Buffer) appendLocked(text []byte) {
 	if lines := strings.Count(string(b.data), "\n"); lines > MaxCapturedLines {
 		cut := 0
 		seen := 0
-		for i := len(b.data) - 1; i >= 0; i-- {
-			if b.data[i] == '\n' {
+		for i, value := range slices.Backward(b.data) {
+			if value == '\n' {
 				seen++
 				if seen == MaxCapturedLines {
 					cut = i + 1

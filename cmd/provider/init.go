@@ -45,7 +45,7 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return status.Run(cobraCmd.Context(), reporter, status.Operation{Phase: status.PhaseReady, Step: name}, func(ctx context.Context) error {
+			return status.Run(cobraCmd.Context(), reporter, status.Operation{Phase: status.PhaseReady, Step: name}, func(ctx context.Context) error { //nolint:lll // status operation callback keeps the command boundary explicit
 				return ConfigureProvider(ctx, ProviderOptionsConfig{
 					Provider:           p.Config,
 					ContextName:        devsyConfig.DefaultContext,

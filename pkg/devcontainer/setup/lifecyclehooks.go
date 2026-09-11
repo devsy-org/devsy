@@ -309,7 +309,7 @@ func RunPreAttachHooks(
 	redactor := mergeSecretsEnv(env.remoteEnv, opts.SecretsEnv, opts.SecretsMount)
 	all := preAttachPhaseParams(setupInfo, env, opts.Prebuild)
 	for i := range all {
-		all[i].params.ctx = ctx
+		all[i].params.ctx = ctx //nolint:fatcontext // each deferred hook must retain the lifecycle context
 		all[i].params.redactor = redactor
 	}
 
@@ -620,7 +620,7 @@ func runSingleHookCommand(
 	)
 }
 
-func executeAndCapture(
+func executeAndCapture( //nolint:revive // the arguments describe independent lifecycle command execution inputs
 	ctx context.Context,
 	binary string,
 	args []string,
