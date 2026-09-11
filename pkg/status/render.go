@@ -161,7 +161,7 @@ func (r PlainReporter) Report(e Event) {
 	}
 	duration := eventDuration(e.Duration, r.showDurations)
 	_, _ = fmt.Fprintf(r.out, "%-6s %s%s\n", marker, message, duration)
-	if state == StateFailed && e.Error != nil && !r.suppressFailureDetails {
+	if e.State == StateFailed && e.Error != nil && !r.suppressFailureDetails {
 		r.reportFailureDetails(e.Error)
 	}
 }
