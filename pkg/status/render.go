@@ -34,7 +34,7 @@ type ReporterOptions struct {
 // NewReporter selects one status presentation for a command. Selection is
 // deliberately centralized so command implementations do not each grow their
 // own terminal and machine-consumer rules.
-func NewReporter(opts ReporterOptions) (Reporter, error) {
+func NewReporter(opts ReporterOptions) (Reporter, error) { //nolint:cyclop // centralizes the supported output-format selection matrix
 	format := opts.Format
 	if format == "" {
 		format = "auto"
@@ -120,7 +120,7 @@ func newPlainReporter(out io.Writer, prefix string, labels map[Phase]string, ver
 	}
 }
 
-func (r PlainReporter) Report(e Event) {
+func (r PlainReporter) Report(e Event) { //nolint:cyclop // renders the complete structured failure detail set in one record
 	if r.out == nil {
 		return
 	}

@@ -154,7 +154,7 @@ func TestWriteResultJSON(t *testing.T) {
 	}
 }
 
-func TestWriteCLIErrorJSONMessages(t *testing.T) {
+func TestWriteCLIErrorJSONMessages(t *testing.T) { //nolint:cyclop // table covers JSON escaping and framing cases
 	tests := []struct {
 		name    string
 		message string
@@ -446,7 +446,7 @@ func TestParseStatusLineAcceptsVersionedLifecycleEvent(t *testing.T) {
 	}
 }
 
-func TestWriteStatusJSONIncludesCurrentLifecycleFields(t *testing.T) {
+func TestWriteStatusJSONIncludesCurrentLifecycleFields(t *testing.T) { //nolint:cyclop // asserts the complete lifecycle envelope contract
 	var buf bytes.Buffer
 	want := status.Event{
 		Pipeline:          status.PipelineWorkspaceUp,

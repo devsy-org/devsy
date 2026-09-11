@@ -176,7 +176,7 @@ func TestTeeForwardsToEachReporter(t *testing.T) {
 	}
 }
 
-func TestRunReportsLifecycleAndParent(t *testing.T) {
+func TestRunReportsLifecycleAndParent(t *testing.T) { //nolint:cyclop // validates multiple lifecycle invariants
 	r := &recordingReporter{}
 	err := Run(context.Background(), r, Operation{Phase: PhaseBuildingImage, Step: "image"}, func(ctx context.Context) error {
 		if ParentOperationID(ctx) == "" {
@@ -199,7 +199,7 @@ func TestRunReportsLifecycleAndParent(t *testing.T) {
 	}
 }
 
-func TestRunReportsFailureAndNestedParent(t *testing.T) {
+func TestRunReportsFailureAndNestedParent(t *testing.T) { //nolint:cyclop // validates nested failure lifecycle invariants
 	r := &recordingReporter{}
 	wantErr := errors.New("boom")
 	err := Run(context.Background(), r, Operation{Phase: PhaseBuildingImage}, func(ctx context.Context) error {
