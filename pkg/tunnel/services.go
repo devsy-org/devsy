@@ -289,7 +289,11 @@ type portForwardParams struct {
 }
 
 // forwardDevContainerPorts forwards all the ports defined in the devcontainer.json.
-func forwardDevContainerPorts(ctx context.Context, p portForwardParams, result *config2.Result) []string {
+func forwardDevContainerPorts(
+	ctx context.Context,
+	p portForwardParams,
+	result *config2.Result,
+) []string {
 	forwardedPorts := []string{}
 	forwardedPorts = append(forwardedPorts, forwardExtraPorts(ctx, p)...)
 	forwardedPorts = append(forwardedPorts, forwardAppPorts(ctx, p, result)...)

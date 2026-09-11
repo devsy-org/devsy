@@ -36,30 +36,11 @@ type connectionCounter struct {
 	m           sync.Mutex
 	connections int
 	timer       *time.Timer
+	timerToken  *connectionTimerToken
 	closed      bool
 }
 
-func (c *connectionCounter) armTimeoutLocked() {
-	if c.closed || c.connections != 0 || c.timeout <= 0 || c.ctx.Err() != nil {
-		return
-	}
-	if c.timer != nil {
-		c.timer.Stop()
-	}
-	var timer *time.Timer
-	timer = time.AfterFunc(c.timeout, func() {
-		c.m.Lock()
-		if c.timer != timer || c.closed || c.connections != 0 || c.ctx.Err() != nil {
-			c.m.Unlock()
-			return
-		}
-		c.timer = nil
-		onTimeout := c.onTimeout
-		c.m.Unlock()
-		onTimeout()
-	})
-	c.timer = timer
-}
+type connectionTimerToken struct{}
 
 func (c *connectionCounter) Add() {
 	c.m.Lock()
@@ -72,6 +53,7 @@ func (c *connectionCounter) Add() {
 		c.timer.Stop()
 		c.timer = nil
 	}
+	c.timerToken = nil
 	c.connections++
 	log.Debugf("New connection on %s (Total: %d)", c.address, c.connections)
 }
@@ -100,4 +82,47 @@ func (c *connectionCounter) Close() {
 		c.timer.Stop()
 		c.timer = nil
 	}
+	c.timerToken = nil
+}
+
+func (c *connectionCounter) armTimeoutLocked() {
+	if !c.canArmTimeoutLocked() {
+		return
+	}
+	if c.timer != nil {
+		c.timer.Stop()
+		c.timer = nil
+	}
+	token := new(connectionTimerToken)
+	c.timerToken = token
+	c.timer = time.AfterFunc(c.timeout, func() {
+		c.handleTimeout(token)
+	})
+}
+
+func (c *connectionCounter) canArmTimeoutLocked() bool {
+	if c.closed || c.connections != 0 {
+		return false
+	}
+	if c.timeout <= 0 {
+		return false
+	}
+	return c.ctx.Err() == nil
+}
+
+func (c *connectionCounter) handleTimeout(token *connectionTimerToken) {
+	c.m.Lock()
+	if c.timerToken != token {
+		c.m.Unlock()
+		return
+	}
+	if !c.canArmTimeoutLocked() {
+		c.m.Unlock()
+		return
+	}
+	c.timer = nil
+	c.timerToken = nil
+	onTimeout := c.onTimeout
+	c.m.Unlock()
+	onTimeout()
 }

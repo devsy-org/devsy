@@ -692,21 +692,30 @@ type sshKeepAliveClient interface {
 	Close() error
 }
 
+type sshKeepAliveOptions struct {
+	interval     time.Duration
+	probeTimeout time.Duration
+	maxFailures  int
+}
+
 func startSSHKeepAlive(
 	ctx context.Context,
 	client sshKeepAliveClient,
 	interval time.Duration,
 ) {
-	startSSHKeepAliveWithOptions(ctx, client, interval, sshKeepAliveProbeTimeout, sshKeepAliveMaxFailures)
+	startSSHKeepAliveWithOptions(ctx, client, sshKeepAliveOptions{
+		interval:     interval,
+		probeTimeout: sshKeepAliveProbeTimeout,
+		maxFailures:  sshKeepAliveMaxFailures,
+	})
 }
 
 func startSSHKeepAliveWithOptions(
 	ctx context.Context,
 	client sshKeepAliveClient,
-	interval, probeTimeout time.Duration,
-	maxFailures int,
+	opts sshKeepAliveOptions,
 ) {
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(opts.interval)
 	defer ticker.Stop()
 	failures := 0
 
@@ -715,14 +724,17 @@ func startSSHKeepAliveWithOptions(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := sendBoundedKeepAlive(ctx, client, probeTimeout); err != nil {
+			if err := sendBoundedKeepAlive(ctx, client, opts.probeTimeout); err != nil {
 				if ctx.Err() != nil {
 					return
 				}
 				log.Errorf("failed to send keepalive: %v", err)
 				failures++
-				if failures >= maxFailures {
-					log.Errorf("SSH keepalive failed %d consecutive times; closing client", failures)
+				if failures >= opts.maxFailures {
+					log.Errorf(
+						"SSH keepalive failed %d consecutive times; closing client",
+						failures,
+					)
 					_ = client.Close()
 					return
 				}
@@ -733,7 +745,11 @@ func startSSHKeepAliveWithOptions(
 	}
 }
 
-func sendBoundedKeepAlive(ctx context.Context, client sshKeepAliveClient, timeout time.Duration) error {
+func sendBoundedKeepAlive(
+	ctx context.Context,
+	client sshKeepAliveClient,
+	timeout time.Duration,
+) error {
 	result := make(chan error, 1)
 	go func() {
 		ok, _, err := client.SendRequest("keepalive@openssh.com", true, nil)

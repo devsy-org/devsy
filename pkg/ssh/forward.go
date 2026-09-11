@@ -20,13 +20,12 @@ var ErrIdleTimeout = errors.New("port forward idle timeout")
 
 var ErrTransportClosed = errors.New("ssh transport closed")
 
-type ForwardingFunction func(
-	context.Context,
-	net.Conn,
-	*ssh.Client,
-	string,
-	string,
-)
+type forwardTarget struct {
+	network string
+	address string
+}
+
+type ForwardingFunction func(context.Context, net.Conn, *ssh.Client, forwardTarget)
 
 func PortForward(
 	ctx context.Context,
@@ -173,7 +172,10 @@ func portForwarding(
 		go func() {
 			defer counter.Dec()
 
-			forwardFn(fwdCtx, connection, client, dstNetwork, dstAddr)
+			forwardFn(fwdCtx, connection, client, forwardTarget{
+				network: dstNetwork,
+				address: dstAddr,
+			})
 		}()
 	}
 }
@@ -207,11 +209,11 @@ func forward(
 	ctx context.Context,
 	localConn net.Conn,
 	client *ssh.Client,
-	remoteNetwork, remoteAddr string,
+	target forwardTarget,
 ) {
 	defer func() { _ = localConn.Close() }()
 	// Setup sshConn (type net.Conn)
-	sshConn, err := client.Dial(remoteNetwork, remoteAddr)
+	sshConn, err := client.Dial(target.network, target.address)
 	if err != nil {
 		log.Debugf("error dialing remote: %v", err)
 		return
@@ -226,11 +228,11 @@ func reverseForward(
 	ctx context.Context,
 	remoteConn net.Conn,
 	client *ssh.Client,
-	localNetwork, localAddr string,
+	target forwardTarget,
 ) {
 	defer func() { _ = remoteConn.Close() }()
 	// Setup localConn (type net.Conn)
-	localConn, err := net.Dial(localNetwork, localAddr)
+	localConn, err := net.Dial(target.network, target.address)
 	if err != nil {
 		log.Debugf("error dialing remote: %v", err)
 		return
@@ -277,7 +279,7 @@ func relayDuplex(ctx context.Context, left, right net.Conn) error {
 	go relayOneWay(left, right, "remote-to-local", results)
 
 	var firstErr error
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		result := <-results
 		if result.err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("%s relay: %w", result.direction, result.err)
