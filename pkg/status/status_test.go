@@ -104,7 +104,7 @@ func TestMemoryReporterDeepCopiesEvents(t *testing.T) {
 	r := NewMemoryReporter()
 	original := Event{
 		Phase: PhaseBuildingImage,
-		Error: &ErrorInfo{Message: "before", Context: map[string]string{"key": "before"}},
+		Error: &ErrorInfo{Message: "before", Context: map[string]string{"key": "before"}}, //nolint:goconst // snapshot isolation fixture
 	}
 	r.Report(original)
 	original.Error.Message = "mutated"
@@ -178,12 +178,13 @@ func TestTeeForwardsToEachReporter(t *testing.T) {
 
 func TestRunReportsLifecycleAndParent(t *testing.T) { //nolint:cyclop // validates multiple lifecycle invariants
 	r := &recordingReporter{}
-	err := Run(context.Background(), r, Operation{Phase: PhaseBuildingImage, Step: "image"}, func(ctx context.Context) error {
-		if ParentOperationID(ctx) == "" {
-			t.Fatal("child context has no operation ID")
-		}
-		return nil
-	})
+	err := Run(context.Background(), r, Operation{Phase: PhaseBuildingImage, Step: "image"}, //nolint:lll // lifecycle callback fixture
+		func(ctx context.Context) error {
+			if ParentOperationID(ctx) == "" {
+				t.Fatal("child context has no operation ID")
+			}
+			return nil
+		})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -298,7 +299,7 @@ func TestPlainReporterUsesASCIILifecycleMarkers(t *testing.T) {
 		Context: map[string]string{"endpoint": "unix:///var/run/docker.sock"},
 	}})
 	got := buf.String()
-	want := "[RUN]  up: Build image\n[OK]   up: Build image (1.5s)\n[FAIL] up: Build image\n       Docker daemon is unavailable.\n       Error code: docker_daemon_unreachable\n       Context:\n         endpoint: unix:///var/run/docker.sock\n       Try: Start Docker and retry.\n"
+	want := "[RUN]  up: Build image\n[OK]   up: Build image (1.5s)\n[FAIL] up: Build image\n       Docker daemon is unavailable.\n       Error code: docker_daemon_unreachable\n       Context:\n         endpoint: unix:///var/run/docker.sock\n       Try: Start Docker and retry.\n" //nolint:lll // exact rendered output fixture
 	if got != want {
 		t.Errorf("plain output = %q, want %q", got, want)
 	}

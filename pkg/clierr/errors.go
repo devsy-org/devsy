@@ -147,7 +147,7 @@ func Classify(err error) *CLIError {
 		strings.Contains(lowerMessage, "is the docker daemon running") {
 		return &CLIError{
 			Code:    CodeDockerDaemonUnreachable,
-			Message: "Docker daemon is unavailable.",
+			Message: "Docker daemon is unavailable.", //nolint:goconst // stable user-facing error text
 			Hint:    "Start the Docker daemon for the selected context and retry.",
 			wrapped: err,
 		}

@@ -9,7 +9,7 @@ import (
 func TestNewReporter_SelectsPlainAndEnvelope(t *testing.T) {
 	var plain bytes.Buffer
 	plainReporter, err := NewReporter(ReporterOptions{
-		Format: "plain",
+		Format: "plain", //nolint:goconst // verifies the plain reporter selection
 		Out:    &plain,
 	})
 	if err != nil {
@@ -22,7 +22,7 @@ func TestNewReporter_SelectsPlainAndEnvelope(t *testing.T) {
 
 	var events []Event
 	jsonReporter, err := NewReporter(ReporterOptions{
-		Format: "json",
+		Format: "json", //nolint:goconst // verifies the JSON reporter selection
 		Out:    &plain,
 		Envelope: func(e Event) error {
 			events = append(events, e)
@@ -41,7 +41,7 @@ func TestNewReporter_SelectsPlainAndEnvelope(t *testing.T) {
 func TestNewReporter_AutoUsesPlainForInteractive(t *testing.T) {
 	var out bytes.Buffer
 	reporter, err := NewReporter(ReporterOptions{
-		Format:      "auto",
+		Format:      "auto", //nolint:goconst // verifies automatic reporter selection
 		Out:         &out,
 		Interactive: true,
 	})

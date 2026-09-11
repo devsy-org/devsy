@@ -17,7 +17,7 @@ func newWorkspaceStatusReporter(
 	reporter, err := status.NewReporter(status.ReporterOptions{
 		Format:                 resultFormat,
 		Out:                    out,
-		Prefix:                 "workspace",
+		Prefix:                 "workspace", //nolint:goconst // semantic prefix is intentionally local to workspace output
 		Verbose:                verbose,
 		SuppressFailureDetails: true,
 		Labels: map[status.Phase]string{

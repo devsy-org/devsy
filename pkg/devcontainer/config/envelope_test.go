@@ -235,7 +235,7 @@ func TestWriteStatusJSONRedactsStructuredErrorContext(t *testing.T) {
 		Phase: status.PhaseReady,
 		State: status.StateFailed,
 		Error: &status.ErrorInfo{
-			Code:    "status-secret",
+			Code:    "status-secret", //nolint:goconst // verifies redaction of the error code
 			Message: "failed with status-secret",
 			Hint:    "retry with status-secret",
 			Context: map[string]string{"token": "status-secret"},
@@ -368,14 +368,14 @@ func TestParseStatusLineRejectsIncompleteEnvelopes(t *testing.T) {
 		{name: "empty phase", line: `{"kind":"status","schemaVersion":1,"phase":"","state":"started"}`},
 		{name: "missing state", line: `{"kind":"status","schemaVersion":1,"phase":"ready"}`},
 		{name: "legacy started field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","started":true}`},
-		{name: "legacy structured error field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","errorInfo":{"message":"boom"}}`},
-		{name: "legacy string error field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":"boom"}`},
-		{name: "error without message", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"code":"boom"}}`},
-		{name: "error with unknown field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"message":"boom","details":"old"}}`},
-		{name: "failed without structured error", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed"}`},
+		{name: "legacy structured error field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","errorInfo":{"message":"boom"}}`},        //nolint:lll // exact compatibility fixture
+		{name: "legacy string error field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":"boom"}`},                            //nolint:lll // exact compatibility fixture
+		{name: "error without message", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"code":"boom"}}`},                       //nolint:lll // exact validation fixture
+		{name: "error with unknown field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"message":"boom","details":"old"}}`}, //nolint:lll // exact validation fixture
+		{name: "failed without structured error", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed"}`},                                     //nolint:lll // exact validation fixture
 		{name: "unknown state", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"running"}`},
-		{name: "negative duration", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded","durationMs":-1}`},
-		{name: "duration overflow", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded","durationMs":9223372036855}`},
+		{name: "negative duration", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded","durationMs":-1}`},            //nolint:lll // exact validation fixture
+		{name: "duration overflow", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded","durationMs":9223372036855}`}, //nolint:lll // exact validation fixture
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -433,7 +433,7 @@ func TestParseStatusLineWithoutPipeline(t *testing.T) {
 }
 
 func TestParseStatusLineAcceptsVersionedLifecycleEvent(t *testing.T) {
-	line := `{"kind":"status","schemaVersion":1,"pipeline":"workspace_up","operationId":"op-17","phase":"building_image","state":"succeeded","durationMs":8214}`
+	line := `{"kind":"status","schemaVersion":1,"pipeline":"workspace_up","operationId":"op-17","phase":"building_image","state":"succeeded","durationMs":8214}` //nolint:lll // exact protocol fixture
 	event, ok := ParseStatusLine(line)
 	if !ok {
 		t.Fatal("ParseStatusLine rejected a versioned lifecycle event")

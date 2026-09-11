@@ -37,10 +37,10 @@ type ReporterOptions struct {
 func NewReporter(opts ReporterOptions) (Reporter, error) { //nolint:cyclop // centralizes the supported output-format selection matrix
 	format := opts.Format
 	if format == "" {
-		format = "auto"
+		format = "auto" //nolint:goconst // format values are part of the public reporter contract
 	}
 	if os.Getenv("DEVSY_UI") == "true" {
-		format = "json"
+		format = "json" //nolint:goconst // format values are part of the public reporter contract
 	}
 	if format == "auto" {
 		// Most command callers pass os.Stdout, which is a writer rather than a
@@ -52,7 +52,7 @@ func NewReporter(opts ReporterOptions) (Reporter, error) { //nolint:cyclop // ce
 			opts.Interactive = opts.Interactive || terminal.IsTerminal(reader)
 		}
 		if opts.Interactive {
-			format = "plain"
+			format = "plain" //nolint:goconst // format values are part of the public reporter contract
 		} else {
 			format = "json"
 		}
@@ -98,7 +98,7 @@ func NewHumanReporter(out io.Writer, prefix string, labels map[Phase]string) Rep
 	return newHumanReporter(out, prefix, labels, false, false)
 }
 
-func newHumanReporter(out io.Writer, prefix string, labels map[Phase]string, verbose, suppressFailureDetails bool) Reporter {
+func newHumanReporter(out io.Writer, prefix string, labels map[Phase]string, verbose, suppressFailureDetails bool) Reporter { //nolint:revive // options are kept aligned with newPlainReporter
 	return HumanReporter{PlainReporter: newPlainReporter(out, prefix, labels, verbose, suppressFailureDetails)}
 }
 
@@ -108,7 +108,7 @@ func NewPlainReporter(out io.Writer, prefix string, labels map[Phase]string) Rep
 	return newPlainReporter(out, prefix, labels, false, false)
 }
 
-func newPlainReporter(out io.Writer, prefix string, labels map[Phase]string, verbose, suppressFailureDetails bool) PlainReporter {
+func newPlainReporter(out io.Writer, prefix string, labels map[Phase]string, verbose, suppressFailureDetails bool) PlainReporter { //nolint:revive // options are kept aligned with newHumanReporter
 	return PlainReporter{
 		mu:                     &sync.Mutex{},
 		out:                    out,
