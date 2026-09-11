@@ -37,7 +37,9 @@ func TestRenderCLIErrorRedactsEnvironmentSecrets(t *testing.T) {
 		Code:    clierr.CodeUnknown,
 		Message: "failed with root-error-secret-846302",
 		Hint:    "remove root-error-secret-846302 and retry",
-		Context: map[string]string{"token": "root-error-secret-846302"},
+		Context: map[string]string{
+			"token": "root-error-secret-846302",
+		}, //nolint:gosec // test credential fixture
 	}, false)
 	require.NoError(t, w.Close())
 	os.Stderr = original
@@ -210,22 +212,37 @@ func TestConfigureOutput_SelectsDiagnosticLogFormat(t *testing.T) {
 
 func assertDiagnosticLogFormat(t *testing.T, format, line string) {
 	t.Helper()
-	switch format {
-	case logOutputJSON:
-		var record map[string]any
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
-			t.Fatalf("log line is not JSON: %v (%q)", err, line)
-		}
-	case logOutputLogfmt:
-		if !strings.Contains(line, "level=info") || !strings.Contains(line, "msg=") {
-			t.Fatalf("log line is not logfmt: %q", line)
-		}
-	case logOutputText:
-		if !strings.Contains(line, "INFO") || !strings.Contains(line, "root format test") {
-			t.Fatalf("log line is not text: %q", line)
-		}
-	default:
+	assertions := map[string]func(*testing.T, string){
+		logOutputJSON:   assertJSONLogLine,
+		logOutputLogfmt: assertLogfmtLine,
+		logOutputText:   assertTextLogLine,
+	}
+	assertion, ok := assertions[format]
+	if !ok {
 		t.Fatalf("unexpected log format %q", format)
+	}
+	assertion(t, line)
+}
+
+func assertJSONLogLine(t *testing.T, line string) {
+	t.Helper()
+	var record map[string]any
+	if err := json.Unmarshal([]byte(line), &record); err != nil {
+		t.Fatalf("log line is not JSON: %v (%q)", err, line)
+	}
+}
+
+func assertLogfmtLine(t *testing.T, line string) {
+	t.Helper()
+	if !strings.Contains(line, "level=info") || !strings.Contains(line, "msg=") {
+		t.Fatalf("log line is not logfmt: %q", line)
+	}
+}
+
+func assertTextLogLine(t *testing.T, line string) {
+	t.Helper()
+	if !strings.Contains(line, "INFO") || !strings.Contains(line, "root format test") {
+		t.Fatalf("log line is not text: %q", line)
 	}
 }
 

@@ -112,12 +112,13 @@ func TestRunCommand(t *testing.T) {
 	})
 
 	t.Run("redacts environment secrets from both streams", func(t *testing.T) {
-		const secret = "run-command-secret-846307"
+		const secret = "run-command-secret-846307" //nolint:gosec // test credential fixture
 		stdout := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
 		err := RunCommand(context.Background(), RunCommandOptions{
 			Command: types.StrArray{
-				"/bin/sh", "-c",
+				"/bin/sh",
+				"-c",
 				`printf '%s' "$DEVSY_RUN_COMMAND_SECRET"; printf '%s' "$DEVSY_RUN_COMMAND_SECRET" >&2`,
 			},
 			Environ: []string{"DEVSY_RUN_COMMAND_SECRET=" + secret},

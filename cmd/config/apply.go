@@ -83,11 +83,16 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 
 	var containerDetails *devcconfig.ContainerDetails
 	var result *devcconfig.Result
-	err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseResolvingConfig}, func(ctx context.Context) error {
-		var resolveErr error
-		containerDetails, result, resolveErr = cmd.prepareContainer(ctx, helper)
-		return resolveErr
-	})
+	err = status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseResolvingConfig},
+		func(ctx context.Context) error {
+			var resolveErr error
+			containerDetails, result, resolveErr = cmd.prepareContainer(ctx, helper)
+			return resolveErr
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -96,12 +101,17 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 	envArgs := workspace.BuildLifecycleEnvArgs(result)
 	envArgs = append(envArgs, buildContainerEnvArgs(result.MergedConfig.ContainerEnv)...)
 
-	if err := status.Run(ctx, reporter, status.Operation{Phase: status.PhaseRunningLifecycleHook, Step: "install features"}, func(ctx context.Context) error {
-		if err := cmd.installFeatures(ctx, helper, result, emitJSON); err != nil {
-			return fmt.Errorf("feature installation: %w", err)
-		}
-		return nil
-	}); err != nil {
+	if err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseRunningLifecycleHook, Step: "install features"},
+		func(ctx context.Context) error {
+			if err := cmd.installFeatures(ctx, helper, result, emitJSON); err != nil {
+				return fmt.Errorf("feature installation: %w", err)
+			}
+			return nil
+		},
+	); err != nil {
 		return err
 	}
 
@@ -114,14 +124,24 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		User:        devcconfig.GetRemoteUser(result),
 	}
 
-	if err := status.Run(ctx, reporter, status.Operation{Phase: status.PhaseRunningLifecycleHook}, func(context.Context) error {
-		return cmd.runApplyLifecycleHooks(params, result)
-	}); err != nil {
+	if err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseRunningLifecycleHook},
+		func(context.Context) error {
+			return cmd.runApplyLifecycleHooks(params, result)
+		},
+	); err != nil {
 		return err
 	}
-	if err := status.Run(ctx, reporter, status.Operation{Phase: status.PhaseReady}, func(context.Context) error {
-		return nil
-	}); err != nil {
+	if err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseReady},
+		func(context.Context) error {
+			return nil
+		},
+	); err != nil {
 		return err
 	}
 
@@ -286,7 +306,13 @@ func (cmd *ApplyCmd) installFeatures(
 		return err
 	}
 
-	if err := cmd.copyAndExecFeatures(ctx, helper, featureSets, featureStageDir, emitJSON); err != nil {
+	if err := cmd.copyAndExecFeatures(
+		ctx,
+		helper,
+		featureSets,
+		featureStageDir,
+		emitJSON,
+	); err != nil {
 		return err
 	}
 

@@ -73,7 +73,11 @@ func NewRunUserCommandsCmdAlias(f *flags.GlobalFlags) *cobra.Command {
 
 const updateContentCommand = "updateContentCommand"
 
-func newLifecycleStatusReporter(resultFormat string, out *os.File, verbose bool) (status.Reporter, error) {
+func newLifecycleStatusReporter(
+	resultFormat string,
+	out *os.File,
+	verbose bool,
+) (status.Reporter, error) {
 	reporter, err := status.NewReporter(status.ReporterOptions{
 		Format:                 resultFormat,
 		Out:                    out,
@@ -99,7 +103,11 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 	if err := cmd.validate(); err != nil {
 		return err
 	}
-	reporter, err := newLifecycleStatusReporter(cmd.ResultFormat, os.Stderr, cmd.Verbosity > 0 || cmd.Debug)
+	reporter, err := newLifecycleStatusReporter(
+		cmd.ResultFormat,
+		os.Stderr,
+		cmd.Verbosity > 0 || cmd.Debug,
+	)
 	if err != nil {
 		return err
 	}
