@@ -256,12 +256,16 @@ func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdou
 	return nil
 }
 
-const maxLogLines = 25
+const (
+	maxLogLines = 25
+	maxLogBytes = 256 * 1024
+)
 
 func newSSHTunnelJSONLogStreamer() *log.JSONLogStreamer {
 	return log.NewJSONLogStreamer(log.StreamerOptions{
 		FallbackLevel:           log.LevelDebug,
 		CaptureLines:            maxLogLines,
+		CaptureBytes:            maxLogBytes,
 		DetectLevelPrefixes:     true,
 		TreatUnknownJSONAsDebug: true,
 	})

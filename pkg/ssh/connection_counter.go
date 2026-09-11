@@ -38,16 +38,17 @@ type connectionCounter struct {
 	timer       *time.Timer
 	timerToken  *connectionTimerToken
 	closed      bool
+	timingOut   bool
 }
 
 type connectionTimerToken struct{}
 
-func (c *connectionCounter) Add() {
+func (c *connectionCounter) Add() bool {
 	c.m.Lock()
 	defer c.m.Unlock()
 
-	if c.closed {
-		return
+	if c.closed || c.timingOut {
+		return false
 	}
 	if c.timer != nil {
 		c.timer.Stop()
@@ -56,6 +57,7 @@ func (c *connectionCounter) Add() {
 	c.timerToken = nil
 	c.connections++
 	log.Debugf("New connection on %s (Total: %d)", c.address, c.connections)
+	return true
 }
 
 func (c *connectionCounter) Dec() {
@@ -120,6 +122,7 @@ func (c *connectionCounter) handleTimeout(token *connectionTimerToken) {
 		c.m.Unlock()
 		return
 	}
+	c.timingOut = true
 	c.timer = nil
 	c.timerToken = nil
 	onTimeout := c.onTimeout

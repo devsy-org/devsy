@@ -165,6 +165,30 @@ func TestJSONLogStreamerCaptureLinesIsBounded(t *testing.T) {
 	assert.Len(t, logs.All(), 2)
 }
 
+func TestJSONLogStreamerCaptureBytesIsBounded(t *testing.T) {
+	const maxBytes = 16
+	streamer := NewJSONLogStreamer(StreamerOptions{
+		CaptureLines: 25,
+		CaptureBytes: maxBytes,
+	})
+	_, err := streamer.Write([]byte("first line\nsecond line\n"))
+	require.NoError(t, err)
+	require.NoError(t, streamer.Close())
+
+	assert.LessOrEqual(t, len(streamer.ErrorOutput()), maxBytes)
+	assert.Equal(t, "second line", streamer.ErrorOutput())
+}
+
+func TestJSONLogStreamerCaptureBytesTruncatesOversizedLine(t *testing.T) {
+	const maxBytes = 8
+	streamer := NewJSONLogStreamer(StreamerOptions{CaptureBytes: maxBytes})
+	_, err := streamer.Write([]byte("prefix-0123456789\n"))
+	require.NoError(t, err)
+	require.NoError(t, streamer.Close())
+
+	assert.Equal(t, "23456789", streamer.ErrorOutput())
+}
+
 func TestJSONLogStreamerFormattedOutputHasNoNestedEnvelope(t *testing.T) {
 	var output bytes.Buffer
 	previous := sugar.Load()

@@ -166,7 +166,10 @@ func portForwarding(
 		}
 
 		// tell the counter there is a connection
-		counter.Add()
+		if !counter.Add() {
+			_ = connection.Close()
+			continue
+		}
 
 		// forward connection
 		go func() {

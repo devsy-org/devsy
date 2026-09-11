@@ -16,6 +16,9 @@ type StreamerOptions struct {
 	FallbackLevel int
 	// CaptureLines retains this many raw lines for ErrorOutput.
 	CaptureLines int
+	// CaptureBytes bounds the total raw bytes retained for ErrorOutput,
+	// including newline separators. A zero value means no byte limit.
+	CaptureBytes int
 	// DetectLevelPrefixes preserves a level from timestamp-prefixed plain text.
 	DetectLevelPrefixes bool
 	// TreatUnknownJSONAsDebug preserves the historical tunnel behavior for
@@ -34,11 +37,13 @@ type JSONLogStreamer struct {
 	detectLevelPrefixes     bool
 	treatUnknownJSONAsDebug bool
 	captureLines            int
+	captureBytes            int
 
-	mu        sync.Mutex
-	lastLines []string
-	closeOnce sync.Once
-	closeErr  error
+	mu            sync.Mutex
+	lastLines     []string
+	capturedBytes int
+	closeOnce     sync.Once
+	closeErr      error
 }
 
 // NewJSONLogStreamer returns a writer that decodes Devsy JSON log lines while
@@ -52,6 +57,7 @@ func NewJSONLogStreamer(options StreamerOptions) *JSONLogStreamer {
 		detectLevelPrefixes:     options.DetectLevelPrefixes,
 		treatUnknownJSONAsDebug: options.TreatUnknownJSONAsDebug,
 		captureLines:            options.CaptureLines,
+		captureBytes:            options.CaptureBytes,
 	}
 	if options.CaptureLines > 0 {
 		streamer.lastLines = make([]string, 0, options.CaptureLines)
@@ -126,15 +132,39 @@ func (s *JSONLogStreamer) process(reader io.Reader) {
 }
 
 func (s *JSONLogStreamer) capture(line string) {
-	if s.captureLines <= 0 {
+	if s.captureLines <= 0 && s.captureBytes <= 0 {
 		return
+	}
+	if s.captureBytes > 0 && len(line) > s.captureBytes {
+		line = line[len(line)-s.captureBytes:]
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.lastLines) >= s.captureLines {
-		s.lastLines = s.lastLines[1:]
+	for (s.captureLines > 0 && len(s.lastLines) >= s.captureLines) ||
+		(s.captureBytes > 0 && len(s.lastLines) > 0 &&
+			s.capturedBytes+1+len(line) > s.captureBytes) {
+		s.dropOldestLine()
+	}
+	if s.captureBytes > 0 && len(s.lastLines) > 0 &&
+		s.capturedBytes+1+len(line) > s.captureBytes {
+		line = line[len(line)-(s.captureBytes-s.capturedBytes-1):]
+	}
+	if len(s.lastLines) > 0 {
+		s.capturedBytes++
 	}
 	s.lastLines = append(s.lastLines, line)
+	s.capturedBytes += len(line)
+}
+
+func (s *JSONLogStreamer) dropOldestLine() {
+	if len(s.lastLines) == 0 {
+		return
+	}
+	s.capturedBytes -= len(s.lastLines[0])
+	if len(s.lastLines) > 1 {
+		s.capturedBytes--
+	}
+	s.lastLines = s.lastLines[1:]
 }
 
 type jsonLine struct {
