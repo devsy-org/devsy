@@ -57,7 +57,7 @@ func TestNewReporter_AutoUsesPlainForInteractive(t *testing.T) {
 func TestNewReporter_VerboseShowsShortDurations(t *testing.T) {
 	var out bytes.Buffer
 	reporter, err := NewReporter(ReporterOptions{
-		Format:  "plain",
+		Format:  formatPlain,
 		Out:     &out,
 		Verbose: true,
 	})

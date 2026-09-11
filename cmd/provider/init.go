@@ -41,7 +41,11 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug)
+			reporter, err := newStatusReporter(
+				cmd.ResultFormat,
+				os.Stdout,
+				cmd.Verbosity > 0 || cmd.Debug,
+			)
 			if err != nil {
 				return err
 			}

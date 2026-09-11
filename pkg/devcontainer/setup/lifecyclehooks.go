@@ -640,7 +640,10 @@ func executeAndCapture(ctx context.Context, options executeCaptureOptions) error
 		if details != "" {
 			return fmt.Errorf(
 				"%s: command %q failed: %s: %w",
-				options.phaseName, options.redactor.Redact(strings.Join(options.command, " ")), details, err,
+				options.phaseName,
+				options.redactor.Redact(strings.Join(options.command, " ")),
+				details,
+				err,
 			)
 		}
 		return fmt.Errorf(

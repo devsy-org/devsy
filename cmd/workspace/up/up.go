@@ -268,7 +268,11 @@ func (cmd *UpCmd) Run(
 	emitJSON := mode == output.ModeJSON
 
 	out := cmd.stdout()
-	cmd.statusReporter, err = newStatusReporter(cmd.ResultFormat, out, cmd.Verbosity > 0 || cmd.Debug)
+	cmd.statusReporter, err = newStatusReporter(
+		cmd.ResultFormat,
+		out,
+		cmd.Verbosity > 0 || cmd.Debug,
+	)
 	if err != nil {
 		return err
 	}
@@ -366,7 +370,12 @@ func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
 	if err := cmd.configureWorkspacePhase(ctx, args); err != nil {
 		return reportErr(err, args.emitJSON, args.out)
 	}
-	if cleanup := cmd.maybeStartTunnel(ctx, args.devsyConfig, args.client, args.wctx); cleanup != nil {
+	if cleanup := cmd.maybeStartTunnel(
+		ctx,
+		args.devsyConfig,
+		args.client,
+		args.wctx,
+	); cleanup != nil {
 		defer cleanup()
 	}
 	cmd.reconfigureSSHPhase(ctx, args)
@@ -381,41 +390,64 @@ func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
 		emitUpResult(args.wctx, ideURL, args.out)
 	}
 	if args.wctx.tunnelPort > 0 {
-		log.Debugf("ssh tunnel active on port %d, waiting for shutdown signal", args.wctx.tunnelPort)
+		log.Debugf(
+			"ssh tunnel active on port %d, waiting for shutdown signal",
+			args.wctx.tunnelPort,
+		)
 		<-ctx.Done()
 	}
 	return nil
 }
 
 func (cmd *UpCmd) configureWorkspacePhase(ctx context.Context, args *finalizeUpArgs) error {
-	return status.Run(ctx, cmd.reporter(), status.Operation{Phase: status.PhaseConfiguringWorkspace}, func(context.Context) error {
-		return cmd.configureWorkspace(args.devsyConfig, args.client, args.wctx)
-	})
+	return status.Run(
+		ctx,
+		cmd.reporter(),
+		status.Operation{Phase: status.PhaseConfiguringWorkspace},
+		func(context.Context) error {
+			return cmd.configureWorkspace(args.devsyConfig, args.client, args.wctx)
+		},
+	)
 }
 
 func (cmd *UpCmd) reconfigureSSHPhase(ctx context.Context, args *finalizeUpArgs) {
 	if !cmd.ConfigureSSH || args.wctx.tunnelPort <= 0 {
 		return
 	}
-	if err := status.Run(ctx, cmd.reporter(), status.Operation{Phase: status.PhaseConfiguringSSH}, func(context.Context) error {
-		return cmd.reconfigureSSHWithTunnel(args.devsyConfig, args.client, args.wctx)
-	}); err != nil {
+	if err := status.Run(
+		ctx,
+		cmd.reporter(),
+		status.Operation{Phase: status.PhaseConfiguringSSH},
+		func(context.Context) error {
+			return cmd.reconfigureSSHWithTunnel(args.devsyConfig, args.client, args.wctx)
+		},
+	); err != nil {
 		log.Warnf("failed to reconfigure ssh with tunnel port: %v", err)
 	}
 }
 
 func (cmd *UpCmd) launchIDEPhase(ctx context.Context, args *finalizeUpArgs) (string, error) {
 	var ideURL string
-	err := status.Run(ctx, cmd.reporter(), status.Operation{Phase: status.PhaseLaunchingIDE}, func(ctx context.Context) error {
-		var err error
-		ideURL, err = cmd.openIDE(ctx, args.devsyConfig, args.client, args.wctx)
-		return err
-	})
+	err := status.Run(
+		ctx,
+		cmd.reporter(),
+		status.Operation{Phase: status.PhaseLaunchingIDE},
+		func(ctx context.Context) error {
+			var err error
+			ideURL, err = cmd.openIDE(ctx, args.devsyConfig, args.client, args.wctx)
+			return err
+		},
+	)
 	return ideURL, err
 }
 
 func (cmd *UpCmd) reportReady(ctx context.Context) error {
-	return status.Run(ctx, cmd.reporter(), status.Operation{Phase: status.PhaseReady}, func(context.Context) error { return nil })
+	return status.Run(
+		ctx,
+		cmd.reporter(),
+		status.Operation{Phase: status.PhaseReady},
+		func(context.Context) error { return nil },
+	)
 }
 
 // maybeStartTunnel starts the SSH tunnel when enabled and returns its cleanup

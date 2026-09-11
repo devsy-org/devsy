@@ -55,10 +55,18 @@ func resolveFormat(opts ReporterOptions) string {
 	if format != formatAuto {
 		return format
 	}
+	return resolveAutomaticFormat(opts)
+}
+
+func resolveAutomaticFormat(opts ReporterOptions) string {
 	if opts.Out == os.Stdout {
-		opts.Interactive = opts.Interactive || terminal.IsTerminalOut
-	} else if reader, ok := opts.Out.(io.Reader); ok {
-		opts.Interactive = opts.Interactive || terminal.IsTerminal(reader)
+		if terminal.IsTerminalOut {
+			return formatPlain
+		}
+		return formatJSON
+	}
+	if reader, ok := opts.Out.(io.Reader); ok && terminal.IsTerminal(reader) {
+		return formatPlain
 	}
 	if opts.Interactive {
 		return formatPlain
@@ -146,30 +154,38 @@ func (r PlainReporter) Report(e Event) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 	}
-	state := e.State
-	marker := "[INFO]"
-	switch state {
-	case StateStarted:
-		marker = "[RUN]"
-	case StateSucceeded:
-		marker = "[OK]"
-	case StateFailed:
-		marker = "[FAIL]"
-	case StateSkipped:
-		marker = "[SKIP]"
-	}
+	marker := eventMarker(e.State)
 	message := r.redact(r.message(e))
 	if r.prefix != "" {
 		message = r.prefix + ": " + message
 	}
-	duration := ""
-	if e.Duration >= time.Second || (r.showDurations && e.Duration > 0) {
-		duration = fmt.Sprintf(" (%.1fs)", e.Duration.Seconds())
-	}
+	duration := eventDuration(e.Duration, r.showDurations)
 	_, _ = fmt.Fprintf(r.out, "%-6s %s%s\n", marker, message, duration)
 	if state == StateFailed && e.Error != nil && !r.suppressFailureDetails {
 		r.reportFailureDetails(e.Error)
 	}
+}
+
+func eventMarker(state State) string {
+	switch state {
+	case StateStarted:
+		return "[RUN]"
+	case StateSucceeded:
+		return "[OK]"
+	case StateFailed:
+		return "[FAIL]"
+	case StateSkipped:
+		return "[SKIP]"
+	default:
+		return "[INFO]"
+	}
+}
+
+func eventDuration(duration time.Duration, showDurations bool) string {
+	if duration < time.Second && (!showDurations || duration <= 0) {
+		return ""
+	}
+	return fmt.Sprintf(" (%.1fs)", duration.Seconds())
 }
 
 func (r PlainReporter) reportFailureDetails(info *ErrorInfo) {

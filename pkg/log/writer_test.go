@@ -10,6 +10,7 @@ import (
 )
 
 const testFormatJSON = "json"
+const testFormatLogfmt = "logfmt"
 
 func TestWriter_EmitsStructuredJSONLine(t *testing.T) {
 	Init(Config{Verbosity: 2, Format: testFormatJSON})
@@ -38,7 +39,7 @@ func TestWriter_EmitsStructuredJSONLine(t *testing.T) {
 }
 
 func TestLoggerFormatsHaveStableRecords(t *testing.T) {
-	for _, format := range []string{"text", testFormatJSON, "logfmt"} {
+	for _, format := range []string{"text", testFormatJSON, testFormatLogfmt} {
 		t.Run(format, func(t *testing.T) { assertStableLogFormat(t, format) })
 	}
 }
@@ -55,20 +56,40 @@ func assertStableLogFormat(t *testing.T, format string) {
 	if strings.ContainsAny(line, "\x1b\r") {
 		t.Fatalf("format %q contains terminal control characters: %q", format, line)
 	}
+	assertFormatFields(t, format, line)
+}
+
+func assertFormatFields(t *testing.T, format, line string) {
+	t.Helper()
 	switch format {
 	case testFormatJSON:
-		var record map[string]any
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
-			t.Fatalf("JSON log is invalid: %v (%q)", err, line)
-		}
-	case "logfmt":
-		if !strings.Contains(line, "level=info") || !strings.Contains(line, "msg=") {
-			t.Fatalf("logfmt fields missing: %q", line)
-		}
+		assertJSONLog(t, line)
+	case testFormatLogfmt:
+		assertLogfmtLog(t, line)
 	default:
-		if !strings.Contains(line, "INFO") || !strings.Contains(line, "format canary") {
-			t.Fatalf("text fields missing: %q", line)
-		}
+		assertTextLog(t, line)
+	}
+}
+
+func assertJSONLog(t *testing.T, line string) {
+	t.Helper()
+	var record map[string]any
+	if err := json.Unmarshal([]byte(line), &record); err != nil {
+		t.Fatalf("JSON log is invalid: %v (%q)", err, line)
+	}
+}
+
+func assertLogfmtLog(t *testing.T, line string) {
+	t.Helper()
+	if !strings.Contains(line, "level=info") || !strings.Contains(line, "msg=") {
+		t.Fatalf("logfmt fields missing: %q", line)
+	}
+}
+
+func assertTextLog(t *testing.T, line string) {
+	t.Helper()
+	if !strings.Contains(line, "INFO") || !strings.Contains(line, "format canary") {
+		t.Fatalf("text fields missing: %q", line)
 	}
 }
 
