@@ -298,11 +298,11 @@ func cloneEvent(e Event) Event {
 	if e.Error == nil {
 		return e
 	}
-	copy := *e.Error
+	errorCopy := *e.Error
 	if e.Error.Context != nil {
-		copy.Context = maps.Clone(e.Error.Context)
+		errorCopy.Context = maps.Clone(e.Error.Context)
 	}
-	e.Error = &copy
+	e.Error = &errorCopy
 	return e
 }
 

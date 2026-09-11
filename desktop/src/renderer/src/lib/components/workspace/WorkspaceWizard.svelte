@@ -456,41 +456,55 @@ function flushLines() {
   }
 }
 
-function handleProgress(progress: CommandProgress, wsId: string | undefined) {
+function queueProgressLines(progress: CommandProgress) {
   const incoming = progress.lines ?? (progress.message ? [progress.message] : [])
-  if (incoming.length > 0) {
-    pendingLines.push(...incoming)
-    if (flushHandle === null) {
-      flushHandle = requestAnimationFrame(flushLines)
-    }
+  if (incoming.length === 0) return
+  pendingLines.push(...incoming)
+  if (flushHandle === null) {
+    flushHandle = requestAnimationFrame(flushLines)
   }
+}
+
+function finishProgress(progress: CommandProgress, wsId: string | undefined) {
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+  }
+  flushLines()
+  launchRunning = false
+  clearWatchdog()
+  if (isCommandSuccess(progress.success)) {
+    finishSuccessfulLaunch(wsId)
+    return
+  }
+  finishFailedLaunch(progress)
+}
+
+function finishSuccessfulLaunch(wsId: string | undefined) {
+  launchSuccess = true
+  launchedWorkspaceId = wsId ?? null
+  toasts.success(`Workspace ${wsId ?? "created"} is ready`)
+  if (wsId) oncomplete?.(wsId)
+}
+
+function finishFailedLaunch(progress: CommandProgress) {
+  const cliError = progress.cliError
+  launchError = cliError?.message
+    ? `${cliError.message}${cliError.hint ? ` Try: ${cliError.hint}` : ""}`
+    : "Workspace creation failed. Check output for details."
+  toasts.error(launchError)
+  if (!isRecoverableBuildFailure(progress.cliError)) return
+  const pref = loadLocalOptions().onBuildFailure
+  if (pref === "auto-recovery" && !launchIsRecovery) {
+    void handleLaunch(true)
+  } else if (pref !== "nothing") {
+    launchBuildFailed = true
+  }
+}
+
+function handleProgress(progress: CommandProgress, wsId: string | undefined) {
+  queueProgressLines(progress)
   if (progress.done) {
-    if (flushHandle !== null) {
-      cancelAnimationFrame(flushHandle)
-    }
-    flushLines()
-    launchRunning = false
-    clearWatchdog()
-    if (isCommandSuccess(progress.success)) {
-      launchSuccess = true
-      launchedWorkspaceId = wsId ?? null
-      toasts.success(`Workspace ${wsId ?? "created"} is ready`)
-      if (wsId) oncomplete?.(wsId)
-    } else {
-      const cliError = progress.cliError
-      launchError = cliError?.message
-        ? `${cliError.message}${cliError.hint ? ` Try: ${cliError.hint}` : ""}`
-        : "Workspace creation failed. Check output for details."
-      toasts.error(launchError)
-      if (isRecoverableBuildFailure(progress.cliError)) {
-        const pref = loadLocalOptions().onBuildFailure
-        if (pref === "auto-recovery" && !launchIsRecovery) {
-          void handleLaunch(true)
-        } else if (pref !== "nothing") {
-          launchBuildFailed = true
-        }
-      }
-    }
+    finishProgress(progress, wsId)
   }
 }
 
