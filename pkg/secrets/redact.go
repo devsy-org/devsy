@@ -150,7 +150,7 @@ func (r *StreamingRedactor) RedactChunk(chunk string) string {
 // incompleteCredentialURLStart returns the start of a URL suffix that may
 // still contain unredacted userinfo. Waiting for the terminating '@' prevents
 // a password from escaping when the URL is split across writes.
-func incompleteCredentialURLStart(value string) int {
+func incompleteCredentialURLStart(value string) int { //nolint:cyclop // checks each supported split credential prefix
 	lower := strings.ToLower(value)
 	start := max(strings.LastIndex(lower, "http://"), strings.LastIndex(lower, "https://"))
 	if start >= 0 {

@@ -37,7 +37,7 @@ func TestWriter_EmitsStructuredJSONLine(t *testing.T) {
 	}
 }
 
-func TestLoggerFormatsHaveStableRecords(t *testing.T) {
+func TestLoggerFormatsHaveStableRecords(t *testing.T) { //nolint:cyclop // table covers all supported log formats
 	for _, format := range []string{"text", "json", "logfmt"} {
 		t.Run(format, func(t *testing.T) {
 			Init(Config{Verbosity: 1, Format: format})

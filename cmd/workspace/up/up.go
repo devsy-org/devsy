@@ -362,7 +362,7 @@ type finalizeUpArgs struct {
 
 // finalizeUp performs the post-up steps: workspace configuration, optional SSH
 // tunnel, IDE launch, and terminal result emission. Split out to keep Run small.
-func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
+func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error { //nolint:cyclop // sequences the required post-up lifecycle phases
 	if err := status.Run(ctx, cmd.reporter(), status.Operation{
 		Phase: status.PhaseConfiguringWorkspace,
 	}, func(context.Context) error {
