@@ -214,6 +214,7 @@ func resolveLifecycleEnv(
 // preAttachPhaseParams returns the hookRunParams for each pre-attach
 // lifecycle phase in spec order.
 func preAttachPhaseParams(
+	ctx context.Context,
 	setupInfo *config.Result,
 	env lifecycleEnv,
 	prebuild bool,
@@ -230,6 +231,7 @@ func preAttachPhaseParams(
 		{
 			phase: PhaseOnCreate,
 			params: hookRunParams{
+				ctx:      ctx,
 				commands: mc.OnCreateCommands,
 				env:      env,
 				name:     "onCreateCommands",
@@ -239,6 +241,7 @@ func preAttachPhaseParams(
 		{
 			phase: PhaseUpdateContent,
 			params: hookRunParams{
+				ctx:      ctx,
 				commands: mc.UpdateContentCommands,
 				env:      env,
 				name:     "updateContentCommands",
@@ -248,6 +251,7 @@ func preAttachPhaseParams(
 		{
 			phase: PhasePostCreate,
 			params: hookRunParams{
+				ctx:      ctx,
 				commands: mc.PostCreateCommands,
 				env:      env,
 				name:     "postCreateCommands",
@@ -257,6 +261,7 @@ func preAttachPhaseParams(
 		{
 			phase: PhasePostStart,
 			params: hookRunParams{
+				ctx:      ctx,
 				commands: mc.PostStartCommands,
 				env:      env,
 				name:     "postStartCommands",
@@ -307,9 +312,8 @@ func RunPreAttachHooks(
 ) (DeferredHooks, error) {
 	env := resolveLifecycleEnv(ctx, setupInfo)
 	redactor := mergeSecretsEnv(env.remoteEnv, opts.SecretsEnv, opts.SecretsMount)
-	all := preAttachPhaseParams(setupInfo, env, opts.Prebuild)
+	all := preAttachPhaseParams(ctx, setupInfo, env, opts.Prebuild)
 	for i := range all {
-		all[i].params.ctx = ctx //nolint:fatcontext // each deferred hook must retain the lifecycle context
 		all[i].params.redactor = redactor
 	}
 
@@ -607,37 +611,26 @@ func runSingleHookCommand(
 		return fmt.Errorf("command not found: %s: %w", args[0], err)
 	}
 
-	return executeAndCapture(
-		ctx,
-		resolvedPath,
-		args,
-		p.name,
-		key,
-		c,
-		p.env.workspaceFolder,
-		remoteEnvArr,
-		p.redactor,
-	)
+	return executeAndCapture(ctx, executeCaptureOptions{
+		binary: resolvedPath, args: args, phaseName: p.name, key: key,
+		command: c, dir: p.env.workspaceFolder, env: remoteEnvArr, redactor: p.redactor,
+	})
 }
 
-func executeAndCapture( //nolint:revive // the arguments describe independent lifecycle command execution inputs
-	ctx context.Context,
-	binary string,
-	args []string,
-	phaseName string,
-	key string,
-	c []string,
-	dir string,
-	env []string,
-	redactor *secrets.Redactor,
-) error {
+type executeCaptureOptions struct {
+	binary, phaseName, key, dir string
+	args, command, env          []string
+	redactor                    *secrets.Redactor
+}
+
+func executeAndCapture(ctx context.Context, options executeCaptureOptions) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	result, err := subprocess.Run(ctx, binary, args[1:], subprocess.Options{
-		Dir:      dir,
-		Env:      env,
-		Redactor: redactor,
+	result, err := subprocess.Run(ctx, options.binary, options.args[1:], subprocess.Options{
+		Dir:      options.dir,
+		Env:      options.env,
+		Redactor: options.redactor,
 	})
 	if err != nil {
 		// Include only the bounded, redacted tail in the returned error. This
@@ -647,18 +640,18 @@ func executeAndCapture( //nolint:revive // the arguments describe independent li
 		if details != "" {
 			return fmt.Errorf(
 				"%s: command %q failed: %s: %w",
-				phaseName, redactor.Redact(strings.Join(c, " ")), details, err,
+				options.phaseName, options.redactor.Redact(strings.Join(options.command, " ")), details, err,
 			)
 		}
 		return fmt.Errorf(
 			"%s: command %q failed: %w",
-			phaseName, redactor.Redact(strings.Join(c, " ")), err,
+			options.phaseName, options.redactor.Redact(strings.Join(options.command, " ")), err,
 		)
 	}
 
 	log.Debugf(
 		"ran lifecycle command: command=%s, duration=%s, outputBytes=%d",
-		key, result.Duration.Round(time.Millisecond), len(result.Stdout)+len(result.Stderr),
+		options.key, result.Duration.Round(time.Millisecond), len(result.Stdout)+len(result.Stderr),
 	)
 	return nil
 }

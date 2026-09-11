@@ -137,7 +137,7 @@ func TestCLIError_MarshalJSONSnapshot(t *testing.T) {
 func TestCLIError_MarshalJSONIncludesHintAndContext(t *testing.T) {
 	e := &CLIError{
 		Code:    CodeUnknown,
-		Message: "Docker daemon is unavailable.", //nolint:goconst // verifies the stable public error message
+		Message: dockerDaemonUnavailableMessage,
 		Hint:    "Start Docker and retry.",
 		Context: map[string]string{"context": "desktop-linux"},
 	}

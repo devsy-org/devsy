@@ -7,6 +7,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
+const workspaceStatusPrefix = "workspace"
+
 // newWorkspaceStatusReporter centralizes semantic progress presentation for
 // workspace commands that expose a result stream.
 func newWorkspaceStatusReporter(
@@ -17,7 +19,7 @@ func newWorkspaceStatusReporter(
 	reporter, err := status.NewReporter(status.ReporterOptions{
 		Format:                 resultFormat,
 		Out:                    out,
-		Prefix:                 "workspace", //nolint:goconst // semantic prefix is intentionally local to workspace output
+		Prefix:                 workspaceStatusPrefix,
 		Verbose:                verbose,
 		SuppressFailureDetails: true,
 		Labels: map[status.Phase]string{

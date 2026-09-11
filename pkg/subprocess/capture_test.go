@@ -13,8 +13,13 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
+const (
+	captureTestSecret = "DEVSY_SECRET_TEST_846297"
+	testWindows       = "windows"
+)
+
 func TestBoundedBufferRedactsAndCapsLines(t *testing.T) {
-	b := NewBuffer(secrets.NewRedactor([]string{"TOKEN=DEVSY_SECRET_TEST_846297"})) //nolint:gosec,goconst // test-only redaction fixture
+	b := NewBuffer(secrets.NewRedactor([]string{"TOKEN=" + captureTestSecret})) //nolint:gosec // test-only redaction fixture
 	for range MaxCapturedLines + 5 {
 		_, _ = b.Write([]byte("DEVSY_SECRET_TEST_846297\n"))
 	}
@@ -57,7 +62,7 @@ func TestRedactingWriterRedactsSecretSplitAcrossWrites(t *testing.T) {
 		Next:     &out,
 		Redactor: secrets.NewRedactor([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
 	}
-	secret := "DEVSY_SECRET_TEST_846297" //nolint:gosec,goconst // test-only redaction fixture
+	secret := captureTestSecret
 	_, _ = w.Write([]byte("token=" + secret[:7]))
 	_, _ = w.Write([]byte(secret[7:]))
 	_ = w.Flush()
@@ -67,7 +72,7 @@ func TestRedactingWriterRedactsSecretSplitAcrossWrites(t *testing.T) {
 }
 
 func TestBoundedBufferRedactsSecretSplitAcrossWrites(t *testing.T) {
-	secret := "DEVSY_SECRET_TEST_846297" //nolint:gosec,goconst // test-only redaction fixture
+	secret := captureTestSecret
 	b := NewBuffer(secrets.NewRedactor([]string{"TOKEN=" + secret}))
 	_, _ = b.Write([]byte("prefix=" + secret[:8]))
 	_, _ = b.Write([]byte(secret[8:] + " suffix"))
@@ -82,7 +87,7 @@ func TestBoundedBufferRedactsSecretSplitAcrossWrites(t *testing.T) {
 }
 
 func TestRunCapturesFailureOutput(t *testing.T) {
-	if runtime.GOOS == "windows" { //nolint:goconst // platform branch is explicit
+	if runtime.GOOS == testWindows {
 		t.Skip("test command uses sh")
 	}
 	result, err := Run(context.Background(), "sh", []string{"-c", "printf out; printf err >&2; exit 7"}, Options{})
@@ -98,10 +103,10 @@ func TestRunCapturesFailureOutput(t *testing.T) {
 }
 
 func TestRunRedactsSensitiveEnvironmentAndArgvValues(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == testWindows {
 		t.Skip("test command uses sh")
 	}
-	secretFromEnv := "DEVSY_SECRET_TEST_846297" //nolint:gosec,goconst // test-only redaction fixture
+	secretFromEnv := captureTestSecret
 	secretFromArgs := "DEVSY_ARG_SECRET_846298" //nolint:gosec // test-only redaction fixture
 	result, err := Run(context.Background(), "sh", []string{"-c", "printf '%s %s' \"$TOKEN\" \"$1\"", "sh", secretFromArgs}, Options{
 		Env:             []string{"TOKEN=" + secretFromEnv},
@@ -124,7 +129,7 @@ func TestRunRedactsSensitiveEnvironmentAndArgvValues(t *testing.T) {
 }
 
 func TestRunCapturesSignal(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == testWindows {
 		t.Skip("test command uses sh")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)

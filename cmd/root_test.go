@@ -174,7 +174,7 @@ func TestConfigureOutput_SilencesCobra(t *testing.T) {
 	}
 }
 
-func TestConfigureOutput_SelectsDiagnosticLogFormat(t *testing.T) { //nolint:cyclop // table covers each machine-readable diagnostic format
+func TestConfigureOutput_SelectsDiagnosticLogFormat(t *testing.T) {
 	origArgs := os.Args
 	t.Cleanup(func() { os.Args = origArgs })
 

@@ -14,13 +14,14 @@ import (
 type Code string
 
 const (
-	CodeRateLimited             Code = "RATE_LIMITED"
-	CodePanic                   Code = "PANIC"
-	CodeUnknown                 Code = "UNKNOWN"
-	CodeBuildFailedRecoverable  Code = "BUILD_FAILED_RECOVERABLE"
-	CodeDockerDaemonUnreachable Code = "docker_daemon_unreachable"
-	CodeCanceled                Code = "canceled"
-	CodeDeadlineExceeded        Code = "deadline_exceeded"
+	dockerDaemonUnavailableMessage      = "Docker daemon is unavailable."
+	CodeRateLimited                Code = "RATE_LIMITED"
+	CodePanic                      Code = "PANIC"
+	CodeUnknown                    Code = "UNKNOWN"
+	CodeBuildFailedRecoverable     Code = "BUILD_FAILED_RECOVERABLE"
+	CodeDockerDaemonUnreachable    Code = "docker_daemon_unreachable"
+	CodeCanceled                   Code = "canceled"
+	CodeDeadlineExceeded           Code = "deadline_exceeded"
 )
 
 type CLIError struct {
@@ -147,7 +148,7 @@ func Classify(err error) *CLIError {
 		strings.Contains(lowerMessage, "is the docker daemon running") {
 		return &CLIError{
 			Code:    CodeDockerDaemonUnreachable,
-			Message: "Docker daemon is unavailable.", //nolint:goconst // stable user-facing error text
+			Message: dockerDaemonUnavailableMessage,
 			Hint:    "Start the Docker daemon for the selected context and retry.",
 			wrapped: err,
 		}

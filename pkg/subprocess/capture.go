@@ -132,10 +132,8 @@ func (r Result) DiagnosticOutput() string {
 // Run executes binary with args and captures bounded, redacted output from
 // both streams. The returned error is the original execution error wrapped
 // with the display-safe command; output remains available in Result.
-func Run(ctx context.Context, binary string, args []string, options Options) (Result, error) { //nolint:cyclop // assembles the complete subprocess capture configuration
-	if ctx == nil {
-		ctx = context.Background()
-	}
+func Run(ctx context.Context, binary string, args []string, options Options) (Result, error) {
+	ctx = nonNilContext(ctx)
 	if options.OperationID == "" {
 		options.OperationID = status.OperationID(ctx)
 	}
@@ -145,26 +143,40 @@ func Run(ctx context.Context, binary string, args []string, options Options) (Re
 		cmd.Env = append(os.Environ(), options.Env...)
 	}
 	cmd.Stdin = options.Stdin
-	redactor := options.Redactor
-	if len(options.Env) > 0 {
-		envRedactor := secrets.NewEnvironmentRedactor(options.Env)
-		redactor = secrets.Combine(redactor, envRedactor)
-	}
-	if len(options.SensitiveValues) > 0 {
-		entries := make([]string, 0, len(options.SensitiveValues))
-		for i, value := range options.SensitiveValues {
-			entries = append(entries, fmt.Sprintf("DEVSY_SENSITIVE_%d=%s", i, value))
-		}
-		redactor = secrets.Combine(redactor, secrets.NewRedactor(entries))
-	}
+	redactor := commandRedactor(options)
 	result, err := RunCommand(cmd, redactor)
-	if err != nil && ctx.Err() != nil {
-		// Keep both causes: callers can classify the stable context error while
-		// still inspecting the underlying process failure and captured output.
-		err = fmt.Errorf("%w: %w", ctx.Err(), err)
-	}
+	err = withContextError(ctx, err)
 	result.OperationID = options.OperationID
 	return result, err
+}
+
+func nonNilContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
+func commandRedactor(options Options) *secrets.Redactor {
+	redactor := options.Redactor
+	if len(options.Env) > 0 {
+		redactor = secrets.Combine(redactor, secrets.NewEnvironmentRedactor(options.Env))
+	}
+	if len(options.SensitiveValues) == 0 {
+		return redactor
+	}
+	entries := make([]string, 0, len(options.SensitiveValues))
+	for i, value := range options.SensitiveValues {
+		entries = append(entries, fmt.Sprintf("DEVSY_SENSITIVE_%d=%s", i, value))
+	}
+	return secrets.Combine(redactor, secrets.NewRedactor(entries))
+}
+
+func withContextError(ctx context.Context, err error) error {
+	if err == nil || ctx.Err() == nil {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ctx.Err(), err)
 }
 
 // RunCommand executes an already-configured command with bounded, redacted
@@ -268,7 +280,13 @@ func (b *Buffer) String() string {
 	return string(b.data)
 }
 
-func (b *Buffer) appendLocked(text []byte) { //nolint:funcorder // private helper is shared by the two write methods above
+func (b *Buffer) Truncated() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.truncated
+}
+
+func (b *Buffer) appendLocked(text []byte) {
 	if len(text) == 0 {
 		return
 	}
@@ -293,10 +311,4 @@ func (b *Buffer) appendLocked(text []byte) { //nolint:funcorder // private helpe
 		b.truncated = true
 	}
 	b.lines = strings.Count(string(b.data), "\n")
-}
-
-func (b *Buffer) Truncated() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.truncated
 }

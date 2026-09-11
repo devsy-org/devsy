@@ -761,7 +761,7 @@ func (s *LifecycleHookTestSuite) TestPostCreateHookUsesOnceSemantics() {
 		SubstitutionContext: &config.SubstitutionContext{ContainerWorkspaceFolder: "/tmp"},
 	}
 
-	hooks := preAttachPhaseParams(result, env, false)
+	hooks := preAttachPhaseParams(context.Background(), result, env, false)
 
 	// postCreateCommand should have content = Created (non-empty -> once semantics).
 	var postCreate, postStart hookRunParams

@@ -12,6 +12,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/clierr"
 )
 
+const statusTestSecret = "status-secret"
+
 type recordingReporter struct {
 	events []Event
 }
@@ -104,7 +106,7 @@ func TestMemoryReporterDeepCopiesEvents(t *testing.T) {
 	r := NewMemoryReporter()
 	original := Event{
 		Phase: PhaseBuildingImage,
-		Error: &ErrorInfo{Message: "before", Context: map[string]string{"key": "before"}}, //nolint:goconst // snapshot isolation fixture
+		Error: &ErrorInfo{Message: "before", Context: map[string]string{"key": "before"}},
 	}
 	r.Report(original)
 	original.Error.Message = "mutated"
@@ -176,15 +178,18 @@ func TestTeeForwardsToEachReporter(t *testing.T) {
 	}
 }
 
-func TestRunReportsLifecycleAndParent(t *testing.T) { //nolint:cyclop // validates multiple lifecycle invariants
+func TestRunReportsLifecycleAndParent(t *testing.T) {
 	r := &recordingReporter{}
-	err := Run(context.Background(), r, Operation{Phase: PhaseBuildingImage, Step: "image"}, //nolint:lll // lifecycle callback fixture
+	err := Run(
+		context.Background(), r,
+		Operation{Phase: PhaseBuildingImage, Step: "image"},
 		func(ctx context.Context) error {
 			if ParentOperationID(ctx) == "" {
 				t.Fatal("child context has no operation ID")
 			}
 			return nil
-		})
+		},
+	)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -192,15 +197,11 @@ func TestRunReportsLifecycleAndParent(t *testing.T) { //nolint:cyclop // validat
 		t.Fatalf("got %d events, want 2", len(r.events))
 	}
 	start, done := r.events[0], r.events[1]
-	if start.State != StateStarted || start.OperationID == "" {
-		t.Errorf("unexpected start event: %+v", start)
-	}
-	if done.State != StateSucceeded || done.OperationID != start.OperationID || done.Duration < 0 {
-		t.Errorf("unexpected completion event: %+v", done)
-	}
+	assertLifecycleStart(t, start)
+	assertLifecycleCompletion(t, start, done)
 }
 
-func TestRunReportsFailureAndNestedParent(t *testing.T) { //nolint:cyclop // validates nested failure lifecycle invariants
+func TestRunReportsFailureAndNestedParent(t *testing.T) {
 	r := &recordingReporter{}
 	wantErr := errors.New("boom")
 	err := Run(context.Background(), r, Operation{Phase: PhaseBuildingImage}, func(ctx context.Context) error {
@@ -213,14 +214,36 @@ func TestRunReportsFailureAndNestedParent(t *testing.T) { //nolint:cyclop // val
 		t.Fatalf("got %d events, want 4", len(r.events))
 	}
 	outerStart, innerStart, innerDone, outerDone := r.events[0], r.events[1], r.events[2], r.events[3]
+	assertNestedFailure(t, outerStart, innerStart, innerDone, outerDone, wantErr)
+}
+
+func assertLifecycleStart(t *testing.T, event Event) {
+	t.Helper()
+	if event.State != StateStarted || event.OperationID == "" {
+		t.Errorf("unexpected start event: %+v", event)
+	}
+}
+
+func assertLifecycleCompletion(t *testing.T, start, done Event) {
+	t.Helper()
+	if done.State != StateSucceeded || done.OperationID != start.OperationID || done.Duration < 0 {
+		t.Errorf("unexpected completion event: %+v", done)
+	}
+}
+
+func assertNestedFailure(t *testing.T, outerStart, innerStart, innerDone, outerDone Event, wantErr error) {
+	t.Helper()
 	if innerStart.ParentOperationID != outerStart.OperationID {
 		t.Errorf("inner parent = %q, want %q", innerStart.ParentOperationID, outerStart.OperationID)
 	}
-	if innerDone.State != StateFailed || innerDone.Error == nil || innerDone.Error.Message != wantErr.Error() {
-		t.Errorf("unexpected inner failure: %+v", innerDone)
-	}
-	if outerDone.State != StateFailed || outerDone.Error == nil || outerDone.Error.Message != wantErr.Error() {
-		t.Errorf("unexpected outer failure: %+v", outerDone)
+	assertFailedEvent(t, innerDone, wantErr)
+	assertFailedEvent(t, outerDone, wantErr)
+}
+
+func assertFailedEvent(t *testing.T, event Event, wantErr error) {
+	t.Helper()
+	if event.State != StateFailed || event.Error == nil || event.Error.Message != wantErr.Error() {
+		t.Errorf("unexpected failure: %+v", event)
 	}
 }
 
@@ -306,15 +329,15 @@ func TestPlainReporterUsesASCIILifecycleMarkers(t *testing.T) {
 }
 
 func TestPlainReporterRedactsEnvironmentSecrets(t *testing.T) {
-	t.Setenv("DEVSY_TEST_TOKEN", "status-secret")
+	t.Setenv("DEVSY_TEST_TOKEN", statusTestSecret)
 	var buf bytes.Buffer
 	r := NewPlainReporter(&buf, "up", nil)
 	r.Report(Event{
 		Phase: PhaseFailed,
 		State: StateFailed,
-		Error: &ErrorInfo{Message: "failed with status-secret", Hint: "retry status-secret"},
+		Error: &ErrorInfo{Message: "failed with " + statusTestSecret, Hint: "retry " + statusTestSecret},
 	})
-	if strings.Contains(buf.String(), "status-secret") {
+	if strings.Contains(buf.String(), statusTestSecret) {
 		t.Fatalf("secret escaped plain status output: %q", buf.String())
 	}
 }
