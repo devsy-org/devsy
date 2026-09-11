@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -34,7 +35,11 @@ var (
 	}
 )
 
-const fileURLScheme = "file"
+const (
+	fileURLScheme      = "file"
+	docsWordmarkWidth  = 1000
+	docsWordmarkHeight = 329
+)
 
 func findChromeBinary() (string, error) {
 	home, _ := os.UserHomeDir()
@@ -69,16 +74,16 @@ func validateSVG(svgPath string) error {
 	return nil
 }
 
-func renderPageContents(svgPath string) string {
+func renderPageContents(svgPath string, width, height int) string {
 	svgURL := (&url.URL{Scheme: fileURLScheme, Path: svgPath}).String()
 	return fmt.Sprintf(`<!doctype html>
 <html><head><style>
-html, body, img { width: 1024px; height: 1024px; margin: 0; padding: 0; overflow: hidden; }
+html, body, img { width: %dpx; height: %dpx; margin: 0; padding: 0; overflow: hidden; }
 img { display: block; }
-</style></head><body><img src="%s"></body></html>`, svgURL)
+</style></head><body><img src="%s"></body></html>`, width, height, svgURL)
 }
 
-func renderMasterPNG(svgPath, outPNG string) error {
+func renderSVGPNG(svgPath, outPNG string, width, height int) error {
 	chrome, err := findChromeBinary()
 	if err != nil {
 		return err
@@ -87,16 +92,21 @@ func renderMasterPNG(svgPath, outPNG string) error {
 	if err != nil {
 		return err
 	}
-	renderPage := filepath.Join(filepath.Dir(outPNG), "render-icon.html")
-	if err := os.WriteFile(renderPage, []byte(renderPageContents(absSVG)), 0o644); err != nil {
+	renderPage := outPNG + ".html"
+	pageContents := renderPageContents(absSVG, width, height)
+	if err := os.WriteFile(renderPage, []byte(pageContents), 0o644); err != nil {
 		return fmt.Errorf("write SVG render page: %w", err)
 	}
+	defer func() { _ = os.Remove(renderPage) }()
 
 	cmd := exec.Command(chrome,
 		"--headless",
 		"--no-sandbox",
+		"--allow-file-access-from-files",
+		"--virtual-time-budget=1000",
+		"--default-background-color=00000000",
 		fmt.Sprintf("--screenshot=%s", outPNG),
-		"--window-size=1024,1024",
+		fmt.Sprintf("--window-size=%d,%d", width, height),
 		(&url.URL{Scheme: fileURLScheme, Path: renderPage}).String(),
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -106,6 +116,10 @@ func renderMasterPNG(svgPath, outPNG string) error {
 		return fmt.Errorf("rendered png missing: %w", err)
 	}
 	return nil
+}
+
+func renderMasterPNG(svgPath, outPNG string) error {
+	return renderSVGPNG(svgPath, outPNG, 1024, 1024)
 }
 
 func resizePNG(inPNG, outPNG string, size int) error {
@@ -309,18 +323,66 @@ func writeLinuxIcons(resourcesDir, repoRoot string, frames map[int][]byte) error
 	}
 	log.Println("✓ Updated Linux icons (32x32, 128x128) and icon.png")
 
-	docsIconPNG := filepath.Join(
+	docsMediaDir := filepath.Join(
 		repoRoot,
 		"sites",
 		"docs-devsy-sh",
 		"public",
 		"docs",
 		"media",
-		"devsy-icon.png",
 	)
-	if _, err := os.Stat(filepath.Dir(docsIconPNG)); err == nil {
+	if _, err := os.Stat(docsMediaDir); err == nil {
+		docsIconPNG := filepath.Join(docsMediaDir, "devsy-icon.png")
 		if err := os.WriteFile(docsIconPNG, frames[1024], 0o644); err != nil {
 			return fmt.Errorf("write docs icon: %w", err)
+		}
+		if err := writeDocsWordmarks(docsMediaDir, frames[256]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func docsWordmarkSVG(textColor string, iconPNG []byte) string {
+	iconDataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(iconPNG)
+	wordmark := fmt.Sprintf(`<svg width="%d" height="%d"
+     viewBox="0 0 %d %d" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Devsy</title>
+  <defs><clipPath id="app-icon"><rect x="40" y="40" width="249" height="249" rx="56"/></clipPath></defs>
+  <image href="%s" x="40" y="40" width="249" height="249" clip-path="url(#app-icon)"/>
+  <text x="340" y="215" font-family="Inter, 'Helvetica Neue', Arial, sans-serif"
+        font-size="160" font-weight="600" letter-spacing="-6" fill="%s">devsy</text>
+</svg>`,
+		docsWordmarkWidth,
+		docsWordmarkHeight,
+		docsWordmarkWidth,
+		docsWordmarkHeight,
+		iconDataURL,
+		textColor,
+	)
+	return wordmark
+}
+
+func writeDocsWordmarks(docsMediaDir string, iconPNG []byte) error {
+	variants := []struct {
+		svgName   string
+		pngName   string
+		textColor string
+	}{
+		{"devsy-logo-horizontal.svg", "devsy.png", "#0B0B14"},
+		{"devsy-logo-horizontal-dark.svg", "devsy-dark.png", "#FFFFFF"},
+	}
+
+	for _, variant := range variants {
+		svgPath := filepath.Join(docsMediaDir, variant.svgName)
+		wordmarkSVG := docsWordmarkSVG(variant.textColor, iconPNG)
+		if err := os.WriteFile(svgPath, []byte(wordmarkSVG), 0o644); err != nil {
+			return fmt.Errorf("write docs wordmark SVG: %w", err)
+		}
+		pngPath := filepath.Join(docsMediaDir, variant.pngName)
+		err := renderSVGPNG(svgPath, pngPath, docsWordmarkWidth, docsWordmarkHeight)
+		if err != nil {
+			return fmt.Errorf("render docs wordmark PNG: %w", err)
 		}
 	}
 	return nil

@@ -132,7 +132,7 @@ func TestValidateSVG(t *testing.T) {
 
 func TestRenderPageContentsScalesSVGToCanvas(t *testing.T) {
 	svgPath := "/tmp/large icon.svg"
-	page := renderPageContents(svgPath)
+	page := renderPageContents(svgPath, 1024, 1024)
 
 	expectedURL := (&url.URL{Scheme: fileURLScheme, Path: svgPath}).String()
 	if !strings.Contains(page, `width: 1024px; height: 1024px`) {
@@ -140,5 +140,15 @@ func TestRenderPageContentsScalesSVGToCanvas(t *testing.T) {
 	}
 	if !strings.Contains(page, `img src="`+expectedURL+`"`) {
 		t.Errorf("render page does not reference the SVG: %s", page)
+	}
+}
+
+func TestDocsWordmarkSVG(t *testing.T) {
+	wordmark := docsWordmarkSVG("#FFFFFF", []byte("icon"))
+	if !strings.Contains(wordmark, `href="data:image/png;base64,aWNvbg=="`) {
+		t.Error("wordmark does not embed the generated application icon")
+	}
+	if !strings.Contains(wordmark, `fill="#FFFFFF"`) {
+		t.Error("wordmark does not use its requested text color")
 	}
 }
