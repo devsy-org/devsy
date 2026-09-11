@@ -34,6 +34,8 @@ var (
 	}
 )
 
+const fileURLScheme = "file"
+
 func findChromeBinary() (string, error) {
 	home, _ := os.UserHomeDir()
 	candidates := []string{
@@ -68,7 +70,7 @@ func validateSVG(svgPath string) error {
 }
 
 func renderPageContents(svgPath string) string {
-	svgURL := (&url.URL{Scheme: "file", Path: svgPath}).String()
+	svgURL := (&url.URL{Scheme: fileURLScheme, Path: svgPath}).String()
 	return fmt.Sprintf(`<!doctype html>
 <html><head><style>
 html, body, img { width: 1024px; height: 1024px; margin: 0; padding: 0; overflow: hidden; }
@@ -95,7 +97,7 @@ func renderMasterPNG(svgPath, outPNG string) error {
 		"--no-sandbox",
 		fmt.Sprintf("--screenshot=%s", outPNG),
 		"--window-size=1024,1024",
-		(&url.URL{Scheme: "file", Path: renderPage}).String(),
+		(&url.URL{Scheme: fileURLScheme, Path: renderPage}).String(),
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("render svg with chrome: %w, output: %s", err, string(out))
