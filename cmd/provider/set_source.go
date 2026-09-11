@@ -76,11 +76,21 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 	}
 
 	var providerConfig *provider.ProviderConfig
-	err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseInstallingProvider, Step: args[0]}, func(ctx context.Context) error {
-		var updateErr error
-		providerConfig, updateErr = workspace.UpdateProvider(ctx, devsyConfig, args[0], providerSource)
-		return updateErr
-	})
+	err = status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseInstallingProvider, Step: args[0]},
+		func(ctx context.Context) error {
+			var updateErr error
+			providerConfig, updateErr = workspace.UpdateProvider(
+				ctx,
+				devsyConfig,
+				args[0],
+				providerSource,
+			)
+			return updateErr
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -103,18 +113,23 @@ func (cmd *SetSourceCmd) activateProvider(
 	providerConfig *provider.ProviderConfig,
 	reporter status.Reporter,
 ) error {
-	return status.Run(ctx, reporter, status.Operation{Phase: status.PhaseReady, Step: providerConfig.Name}, func(ctx context.Context) error {
-		if err := ConfigureProvider(ctx, ProviderOptionsConfig{
-			Provider:    providerConfig,
-			ContextName: devsyConfig.DefaultContext,
-			UserOptions: cmd.Options,
-			Reporter:    reporter,
-		}); err != nil {
-			return fmt.Errorf("configure provider: %w", err)
-		}
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseReady, Step: providerConfig.Name},
+		func(ctx context.Context) error {
+			if err := ConfigureProvider(ctx, ProviderOptionsConfig{
+				Provider:    providerConfig,
+				ContextName: devsyConfig.DefaultContext,
+				UserOptions: cmd.Options,
+				Reporter:    reporter,
+			}); err != nil {
+				return fmt.Errorf("configure provider: %w", err)
+			}
 
-		return writeDefaultProvider(cmd.Context, providerConfig.Name)
-	})
+			return writeDefaultProvider(cmd.Context, providerConfig.Name)
+		},
+	)
 }
 
 func (cmd *SetSourceCmd) runPinVersion(

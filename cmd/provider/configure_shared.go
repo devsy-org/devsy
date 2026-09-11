@@ -102,14 +102,19 @@ func configureProviderOptions(
 
 	// fill defaults
 	reporter := cfg.reporter()
-	err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseResolvingOptions, Step: cfg.Provider.Name}, func(ctx context.Context) error {
-		var resolveErr error
-		devsyConfig, resolveErr = options2.ResolveOptions(
-			ctx, devsyConfig, cfg.Provider, options,
-			cfg.SkipRequired, cfg.SkipSubOptions, cfg.SingleMachine,
-		)
-		return resolveErr
-	})
+	err = status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseResolvingOptions, Step: cfg.Provider.Name},
+		func(ctx context.Context) error {
+			var resolveErr error
+			devsyConfig, resolveErr = options2.ResolveOptions(
+				ctx, devsyConfig, cfg.Provider, options,
+				cfg.SkipRequired, cfg.SkipSubOptions, cfg.SingleMachine,
+			)
+			return resolveErr
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("resolve options: %w", err)
 	}
@@ -122,9 +127,19 @@ func configureProviderOptions(
 		stderr := log.Writer(log.LevelError)
 		defer func() { _ = stderr.Close() }()
 
-		err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseRunningInit, Step: cfg.Provider.Name}, func(ctx context.Context) error {
-			return initProvider(ctx, devsyConfig, cfg.Provider, initIO{stdout: stdout, stderr: stderr})
-		})
+		err = status.Run(
+			ctx,
+			reporter,
+			status.Operation{Phase: status.PhaseRunningInit, Step: cfg.Provider.Name},
+			func(ctx context.Context) error {
+				return initProvider(
+					ctx,
+					devsyConfig,
+					cfg.Provider,
+					initIO{stdout: stdout, stderr: stderr},
+				)
+			},
+		)
 		if err != nil {
 			return nil, err
 		}
