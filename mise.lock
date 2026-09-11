@@ -13,6 +13,12 @@ url = "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_am
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/542974264"
 provenance = "github-attestations"
 
+[tools.gh."platforms.macos-arm64"]
+checksum = "sha256:45f9a62da2f6e641a7fad57e2ce39656dfd7ef331372d80a2a2aed65abb01642"
+url = "https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_macOS_arm64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/542974295"
+provenance = "github-attestations"
+
 [[tools.go]]
 version = "1.26.5"
 backend = "core:go"
@@ -21,6 +27,10 @@ specifiers = ["1.26.5"]
 [tools.go."platforms.linux-x64"]
 checksum = "sha256:5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053"
 url = "https://dl.google.com/go/go1.26.5.linux-amd64.tar.gz"
+
+[tools.go."platforms.macos-arm64"]
+checksum = "sha256:efb87ff28af9a188d0536ef5d42e63dd52ba8263cd7344a993cc48dd11dedb6a"
+url = "https://dl.google.com/go/go1.26.5.darwin-arm64.tar.gz"
 
 [[tools.golangci-lint]]
 version = "2.12.2"
@@ -33,6 +43,12 @@ url = "https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golan
 url_api = "https://api.github.com/repos/golangci/golangci-lint/releases/assets/413471054"
 provenance = "github-attestations"
 
+[tools.golangci-lint."platforms.macos-arm64"]
+checksum = "sha256:a9c54498731b3128f79e090be6110f3e5fffccc617b08142ed244d4126c73f29"
+url = "https://github.com/golangci/golangci-lint/releases/download/v2.12.2/golangci-lint-2.12.2-darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/golangci/golangci-lint/releases/assets/413470950"
+provenance = "github-attestations"
+
 [[tools.node]]
 version = "24.20.0"
 backend = "core:node"
@@ -41,6 +57,10 @@ specifiers = ["24"]
 [tools.node."platforms.linux-x64"]
 checksum = "sha256:855d581f8a4eb1a8117e3426de25fe02770592febcfb31369aee1ffbfee9e8ec"
 url = "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-x64.tar.gz"
+
+[tools.node."platforms.macos-arm64"]
+checksum = "sha256:40e5607e5ecb3db9192723776da2d75d966260fc74a7a9e731c1bd67dda96bc8"
+url = "https://nodejs.org/dist/v24.20.0/node-v24.20.0-darwin-arm64.tar.gz"
 
 [[tools.prek]]
 version = "0.5.2"
@@ -53,6 +73,12 @@ url = "https://github.com/j178/prek/releases/download/v0.5.2/prek-x86_64-unknown
 url_api = "https://api.github.com/repos/j178/prek/releases/assets/541547346"
 provenance = "github-attestations"
 
+[tools.prek."platforms.macos-arm64"]
+checksum = "sha256:f3ef7692f8873c36d9437c77389833d3165fbe705ea66e53e169d83a89055f9b"
+url = "https://github.com/j178/prek/releases/download/v0.5.2/prek-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/541547294"
+provenance = "github-attestations"
+
 [[tools.protoc]]
 version = "36.1"
 backend = "aqua:protocolbuffers/protobuf/protoc"
@@ -63,6 +89,11 @@ checksum = "sha256:c4bc672d9d49214dc8cafdceadf4df92182d6ca8e3ec65a56b2d7de560266
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v36.1/protoc-36.1-linux-x86_64.zip"
 url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets/538583183"
 
+[tools.protoc."platforms.macos-arm64"]
+checksum = "sha256:de56d57afe30c5d191b11d24ff93dd4025728d7fb43b773886b2d3613e0bdbb2"
+url = "https://github.com/protocolbuffers/protobuf/releases/download/v36.1/protoc-36.1-osx-aarch_64.zip"
+url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets/538583189"
+
 [[tools.task]]
 version = "3.53.1"
 backend = "aqua:go-task/task"
@@ -72,3 +103,8 @@ specifiers = ["3.53.1"]
 checksum = "sha256:a54a408f6861ff921f6e87774180db31bacd8c1e7c944ca696db9fea49a82fc7"
 url = "https://github.com/go-task/task/releases/download/v3.53.1/task_linux_amd64.tar.gz"
 url_api = "https://api.github.com/repos/go-task/task/releases/assets/519645449"
+
+[tools.task."platforms.macos-arm64"]
+checksum = "sha256:85d2d96c2380b33d7855b07b3f7a20dc7ca0eda999a26efa0fb5f6f32b366cd7"
+url = "https://github.com/go-task/task/releases/download/v3.53.1/task_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/go-task/task/releases/assets/519645491"
