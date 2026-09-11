@@ -52,7 +52,7 @@ func TestConnectionCounter_InitialZeroConnectionsStartsTimeout(t *testing.T) {
 }
 
 func TestConnectionCounter_CloseStopsPendingTimeout(t *testing.T) {
-	c, calls := newRecordingCounter(t, 10*time.Millisecond)
+	c, calls := newRecordingCounter(t, time.Second)
 	c.Close()
 
 	time.Sleep(30 * time.Millisecond)

@@ -250,7 +250,7 @@ func RunServices(ctx context.Context, opts RunServicesOptions) error {
 
 	result, err := getContainerResult(ctx, fp)
 	if err != nil {
-		return fmt.Errorf("retrieve container result: %w", err)
+		return err
 	}
 	forwardedPorts := forwardDevContainerPorts(ctx, fp, result)
 
