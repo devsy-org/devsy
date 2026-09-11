@@ -273,7 +273,12 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 		}
 		slices.Sort(keys)
 		for _, key := range keys {
-			fmt.Fprintf(os.Stderr, "  %s: %s\n", redactor.Redact(key), redactor.Redact(cliErr.Context[key]))
+			fmt.Fprintf(
+				os.Stderr,
+				"  %s: %s\n",
+				redactor.Redact(key),
+				redactor.Redact(cliErr.Context[key]),
+			)
 		}
 	}
 	if cliErr.Hint != "" {

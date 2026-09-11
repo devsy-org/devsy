@@ -176,36 +176,36 @@ func TestWriteCLIErrorJSONMessages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			err := WriteCLIErrorJSON(&buf, errors.New(tt.message))
-			if err != nil {
-				t.Fatalf("WriteCLIErrorJSON returned error: %v", err)
-			}
-
-			output := buf.Bytes()
-			if output[len(output)-1] != '\n' {
-				t.Fatal("output must be newline-terminated")
-			}
-
-			var envelope ErrorEnvelope
-			if err := json.Unmarshal(output, &envelope); err != nil {
-				t.Fatalf("output is not valid JSON: %v", err)
-			}
-
-			if envelope.Outcome != "error" {
-				t.Errorf("outcome = %q, want %q", envelope.Outcome, "error")
-			}
-			if envelope.Code != string(clierr.CodeUnknown) {
-				t.Errorf("code = %q, want %q", envelope.Code, clierr.CodeUnknown)
-			}
-			if envelope.Message != tt.message {
-				t.Errorf("message = %q, want %q", envelope.Message, tt.message)
-			}
-
-			if bytes.Contains(output[:len(output)-1], []byte("\n")) {
-				t.Error("JSON must be single-line (no embedded newlines)")
-			}
+			assertCLIErrorJSONMessage(t, tt.message)
 		})
+	}
+}
+
+func assertCLIErrorJSONMessage(t *testing.T, message string) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := WriteCLIErrorJSON(&buf, errors.New(message)); err != nil {
+		t.Fatalf("WriteCLIErrorJSON returned error: %v", err)
+	}
+	output := buf.Bytes()
+	if output[len(output)-1] != '\n' {
+		t.Fatal("output must be newline-terminated")
+	}
+	var envelope ErrorEnvelope
+	if err := json.Unmarshal(output, &envelope); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if envelope.Outcome != "error" {
+		t.Errorf("outcome = %q, want %q", envelope.Outcome, "error")
+	}
+	if envelope.Code != string(clierr.CodeUnknown) {
+		t.Errorf("code = %q, want %q", envelope.Code, clierr.CodeUnknown)
+	}
+	if envelope.Message != message {
+		t.Errorf("message = %q, want %q", envelope.Message, message)
+	}
+	if bytes.Contains(output[:len(output)-1], []byte("\n")) {
+		t.Error("JSON must be single-line (no embedded newlines)")
 	}
 }
 
@@ -398,8 +398,8 @@ func TestParseStatusLineRejectsIncompleteEnvelopes(t *testing.T) {
 		}, //nolint:lll // exact validation fixture
 		{
 			name: "error with unknown field",
-			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"message":"boom","details":"old"}}`,
-		}, //nolint:lll // exact validation fixture
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"message":"boom","details":"old"}}`, //nolint:lll // exact validation fixture
+		},
 		{
 			name: "failed without structured error",
 			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed"}`,
@@ -489,8 +489,7 @@ func TestParseStatusLineAcceptsVersionedLifecycleEvent(t *testing.T) {
 }
 
 func TestWriteStatusJSONIncludesCurrentLifecycleFields(t *testing.T) {
-	var buf bytes.Buffer
-	want := status.Event{
+	assertStatusJSONLifecycleFields(t, status.Event{
 		Pipeline:          status.PipelineWorkspaceUp,
 		OperationID:       "op-17",
 		ParentOperationID: "op-1",
@@ -502,7 +501,12 @@ func TestWriteStatusJSONIncludesCurrentLifecycleFields(t *testing.T) {
 			Message: "daemon unavailable",
 			Hint:    "Start Docker and retry.",
 		},
-	}
+	})
+}
+
+func assertStatusJSONLifecycleFields(t *testing.T, want status.Event) {
+	t.Helper()
+	var buf bytes.Buffer
 	if err := WriteStatusJSON(&buf, want); err != nil {
 		t.Fatalf("WriteStatusJSON: %v", err)
 	}

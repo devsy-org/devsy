@@ -14,9 +14,14 @@ import (
 
 func AuthDevsyCliToPlatform(config *client.Config) error {
 	args := []string{"pro", "login", "--access-key", config.AccessKey, config.Host}
-	result, err := subprocess.Run(context.Background(), pkgconfig.BinaryName, args, subprocess.Options{
-		Redactor: secrets.NewRedactor([]string{"ACCESS_KEY=" + config.AccessKey}),
-	})
+	result, err := subprocess.Run(
+		context.Background(),
+		pkgconfig.BinaryName,
+		args,
+		subprocess.Options{
+			Redactor: secrets.NewRedactor([]string{"ACCESS_KEY=" + config.AccessKey}),
+		},
+	)
 	if err != nil {
 		log.Debugf(
 			"Failed executing `%s pro login`: %v, output: %s",

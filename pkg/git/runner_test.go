@@ -51,7 +51,7 @@ func TestExecRunnerExitCode(t *testing.T) {
 }
 
 func TestExecRunnerRedactsStreamedStdout(t *testing.T) {
-	const secret = "git-stream-secret-846308"
+	const secret = "git-stream-secret-846308" //nolint:gosec // test credential fixture
 	var stdout bytes.Buffer
 	runner := execRunner{}
 
