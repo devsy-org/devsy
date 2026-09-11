@@ -4,14 +4,19 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
+	"os"
 	"strings"
 	"sync"
 
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"go.uber.org/zap/zapcore"
 )
 
 // StreamerOptions configures a JSON-aware subprocess log streamer.
 type StreamerOptions struct {
+	// Redactor is applied before subprocess lines are logged or retained.
+	// When omitted, sensitive values from the current environment are masked.
+	Redactor *secrets.Redactor
 	// FallbackLevel is used for non-structured subprocess output.
 	FallbackLevel int
 	// CaptureLines retains this many raw lines for ErrorOutput.
@@ -38,6 +43,7 @@ type JSONLogStreamer struct {
 	treatUnknownJSONAsDebug bool
 	captureLines            int
 	captureBytes            int
+	redactor                *secrets.Redactor
 
 	mu            sync.Mutex
 	lastLines     []string
@@ -58,7 +64,12 @@ func NewJSONLogStreamer(options StreamerOptions) *JSONLogStreamer {
 		treatUnknownJSONAsDebug: options.TreatUnknownJSONAsDebug,
 		captureLines:            options.CaptureLines,
 		captureBytes:            options.CaptureBytes,
+		redactor:                options.Redactor,
 	}
+	streamer.redactor = secrets.Combine(
+		streamer.redactor,
+		secrets.NewEnvironmentRedactor(os.Environ()),
+	)
 	if options.CaptureLines > 0 {
 		streamer.lastLines = make([]string, 0, options.CaptureLines)
 	}
@@ -119,7 +130,7 @@ func (s *JSONLogStreamer) process(reader io.Reader) {
 	scanner.Buffer(buf, 1024*1024)
 
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := s.redactor.Redact(scanner.Text())
 		s.LogLine(line)
 		s.capture(line)
 	}

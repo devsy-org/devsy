@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -12,6 +13,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -76,16 +78,30 @@ Use --ignore-not-found to treat a missing workspace as success.`,
 
 // Run runs the command logic.
 func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
-	devsyConfig, err := cmd.loadConfig()
+	ctx := cobraCmd.Context()
+	reporter, err := newWorkspaceStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+	)
 	if err != nil {
 		return err
 	}
-
-	ctx := cobraCmd.Context()
-	if len(args) <= 1 {
-		err = cmd.deleteSingle(ctx, devsyConfig, args)
-	} else {
-		err = cmd.deleteMultiple(ctx, devsyConfig, args)
+	var deleteErr error
+	var devsyConfig *config.Config
+	deleteErr = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseDeletingWorkspace}, func(context.Context) error {
+		var err error
+		devsyConfig, err = cmd.loadConfig()
+		if err != nil {
+			return err
+		}
+		if len(args) <= 1 {
+			return cmd.deleteSingle(ctx, devsyConfig, args)
+		}
+		return cmd.deleteMultiple(ctx, devsyConfig, args)
+	})
+	if devsyConfig == nil {
+		return deleteErr
 	}
 
 	count, countErr := workspace.CountLocalWorkspaces(devsyConfig.DefaultContext)
@@ -95,7 +111,7 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 		telemetry.FromContext(ctx).RecordWorkspaceGauge(count)
 	}
 
-	return err
+	return deleteErr
 }
 
 func (cmd *DeleteCmd) loadConfig() (*config.Config, error) {
@@ -124,7 +140,7 @@ func (cmd *DeleteCmd) deleteSingle(
 		return err
 	}
 
-	log.Infof("deleted workspace %s", name)
+	log.Debugf("deleted workspace %s", name)
 
 	return nil
 }
@@ -143,7 +159,7 @@ func (cmd *DeleteCmd) deleteMultiple(
 			continue
 		}
 
-		log.Infof("deleted workspace %s", name)
+		log.Debugf("deleted workspace %s", name)
 	}
 
 	if len(errs) > 0 {

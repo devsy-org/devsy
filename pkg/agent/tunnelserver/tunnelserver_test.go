@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,6 +73,62 @@ func TestStreamSnapshotVolumes_TarsMountTargets(t *testing.T) {
 		}
 	}
 	require.True(t, found, "expected tar entry %q not found", wantName)
+}
+
+func TestStatus_ForwardsCurrentStructuredEvent(t *testing.T) {
+	reporter := status.NewMemoryReporter()
+	srv := New(WithStatusReporter(reporter))
+
+	_, err := srv.Status(context.Background(), &tunnel.StatusUpdate{
+		Phase:             "starting_container",
+		Step:              "start container",
+		State:             "failed",
+		DurationMs:        312,
+		OperationId:       "op-17",
+		ParentOperationId: "op-1",
+		Error: &tunnel.StatusError{
+			Code:    "docker_daemon_unreachable",
+			Message: "Docker daemon is unavailable.",
+			Hint:    "Start Docker and retry.",
+			Context: map[string]string{"context": "desktop-linux"},
+		},
+	})
+	require.NoError(t, err)
+
+	events := reporter.Events()
+	require.Len(t, events, 1)
+	got := events[0]
+	require.Equal(t, status.StateFailed, got.State)
+	require.Equal(t, 312*time.Millisecond, got.Duration)
+	require.Equal(t, "op-17", got.OperationID)
+	require.Equal(t, "op-1", got.ParentOperationID)
+	require.Equal(t, "docker_daemon_unreachable", got.Error.Code)
+	require.Equal(t, "desktop-linux", got.Error.Context["context"])
+}
+
+func TestStatusRejectsMissingCurrentState(t *testing.T) {
+	srv := New()
+	_, err := srv.Status(context.Background(), &tunnel.StatusUpdate{Phase: "ready"})
+	require.Error(t, err)
+}
+
+func TestStatusRejectsNegativeDuration(t *testing.T) {
+	srv := New()
+	_, err := srv.Status(context.Background(), &tunnel.StatusUpdate{
+		Phase:      "ready",
+		State:      string(status.StateStarted),
+		DurationMs: -1,
+	})
+	require.Error(t, err)
+}
+
+func TestStatusRejectsFailedWithoutStructuredError(t *testing.T) {
+	srv := New()
+	_, err := srv.Status(context.Background(), &tunnel.StatusUpdate{
+		Phase: "ready",
+		State: string(status.StateFailed),
+	})
+	require.Error(t, err)
 }
 
 type fakeStreamServer struct {

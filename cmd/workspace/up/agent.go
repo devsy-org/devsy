@@ -171,7 +171,7 @@ func (cmd *UpCmd) devsyUpMachine(
 		return nil, fmt.Errorf("wait for machine: %w", err)
 	}
 
-	log.Info("creating devcontainer")
+	log.Debug("creating devcontainer")
 	defer log.Debug("done creating devcontainer")
 
 	if cmd.Platform.Enabled {

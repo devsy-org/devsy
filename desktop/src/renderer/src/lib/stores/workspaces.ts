@@ -1,8 +1,8 @@
 import { get, writable } from "svelte/store"
-import { workspaceList } from "$lib/ipc/commands.js"
-import { onWorkspacesChanged } from "$lib/ipc/events.js"
+import { workspaceList, workspaceStatus } from "$lib/ipc/commands.js"
+import { onWorkspaceStatus, onWorkspacesChanged } from "$lib/ipc/events.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
-import type { Workspace, WorkspaceJob } from "$lib/types/index.js"
+import type { Workspace, WorkspaceJob, WorkspaceStatus } from "$lib/types/index.js"
 
 export const workspaces = writable<Workspace[]>([])
 export const workspacesLoading = writable(true)
@@ -10,8 +10,14 @@ export const workspacesLoading = writable(true)
 // In-flight workspace deletes, keyed by workspace id. Owned by the main
 // process so it survives navigation and window reload.
 export const workspaceJobs = writable<Record<string, WorkspaceJob>>({})
+/** Latest structured operation status pushed by the main process per workspace. */
+export const workspaceStatuses = writable<Record<string, WorkspaceStatus>>({})
 
 let unlisten: UnlistenFn | null = null
+let unlistenStatus: UnlistenFn | null = null
+let pollInterval: ReturnType<typeof setInterval> | null = null
+
+const STATUS_POLL_MS = 10_000
 
 function mergeWorkspaceStatuses(current: Workspace[], updated: Workspace[]) {
   const statusMap = new Map(current.map((ws) => [ws.id, ws.status]))
@@ -26,6 +32,7 @@ export async function initWorkspaces() {
   try {
     const list = await workspaceList()
     workspaces.set(mergeWorkspaceStatuses(get(workspaces), list))
+    fetchStatuses(list)
   } catch {
     // IPC not available (e.g. during browser preview)
   } finally {
@@ -36,15 +43,73 @@ export async function initWorkspaces() {
     unlisten = await onWorkspacesChanged((updated, jobs) => {
       workspaces.update((current) => mergeWorkspaceStatuses(current, updated))
       workspaceJobs.set(jobs)
+      fetchStatuses(updated)
     })
   } catch {
     // Event listener setup failed
   }
+  try {
+    unlistenStatus = await onWorkspaceStatus((status) => {
+      workspaceStatuses.update((current) => ({
+        ...current,
+        [status.workspaceId]: status,
+      }))
+    })
+  } catch {
+    // Event listener setup failed
+  }
+
+  // Poll statuses periodically to keep dashboard and badges fresh
+  pollInterval = setInterval(() => {
+    const current = get(workspaces)
+    if (current.length > 0) {
+      fetchStatuses(current)
+    }
+  }, STATUS_POLL_MS)
 }
 
 export function destroyWorkspaces() {
   if (unlisten) {
     unlisten()
     unlisten = null
+  }
+  if (unlistenStatus) {
+    unlistenStatus()
+    unlistenStatus = null
+  }
+  workspaceStatuses.set({})
+  if (pollInterval) {
+    clearInterval(pollInterval)
+    pollInterval = null
+  }
+}
+
+/** Fetch status for each workspace and merge into store */
+function fetchStatuses(list: Workspace[]) {
+  for (const ws of list) {
+    workspaceStatus(ws.id)
+      .then((raw) => {
+        try {
+          const parsed = JSON.parse(raw) as { state?: string }
+          if (parsed.state) {
+            workspaces.update((current) =>
+              current.map((w) =>
+                w.id === ws.id ? { ...w, status: parsed.state } : w,
+              ),
+            )
+          }
+        } catch {
+          // Status response wasn't valid JSON — use raw as status
+          const status = raw.trim()
+          if (status) {
+            workspaces.update((current) =>
+              current.map((w) => (w.id === ws.id ? { ...w, status } : w)),
+            )
+          }
+        }
+      })
+      .catch(() => {
+        // Status fetch failed — leave as-is
+      })
   }
 }

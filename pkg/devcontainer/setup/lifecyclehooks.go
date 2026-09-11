@@ -1,11 +1,9 @@
 package setup
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -15,17 +13,15 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/devsy-org/devsy/pkg/types"
 )
-
-// hookRedactor masks injected secret values in lifecycle-hook logs. It is set
-// once per process by mergeSecretsEnv, the single point where secrets enter.
-var hookRedactor = secrets.NewRedactor(nil)
 
 // LifecyclePhase identifies a devcontainer lifecycle command.
 type LifecyclePhase string
@@ -128,8 +124,10 @@ func phaseIndex(p LifecyclePhase) int {
 
 // hookRunParams groups the arguments for running a single lifecycle phase.
 type hookRunParams struct {
+	ctx      context.Context
 	commands []types.LifecycleHook
 	env      lifecycleEnv
+	redactor *secrets.Redactor
 	name     string
 	content  string
 }
@@ -144,8 +142,8 @@ type lifecycleEnv struct {
 // mergeSecretsEnv injects secretsEnv into the hook env (config keys win) and
 // builds the log redactor. secretsMount values are added to the redactor only:
 // mount secrets are files, never injected into the env, but must still be masked.
-func mergeSecretsEnv(env map[string]string, secretsEnv, secretsMount []string) {
-	hookRedactor = secrets.NewRedactor(slices.Concat(secretsEnv, secretsMount))
+func mergeSecretsEnv(env map[string]string, secretsEnv, secretsMount []string) *secrets.Redactor {
+	redactor := secrets.NewRedactor(slices.Concat(secretsEnv, secretsMount))
 	for _, entry := range secretsEnv {
 		key, value, ok := strings.Cut(entry, "=")
 		if !ok {
@@ -155,6 +153,7 @@ func mergeSecretsEnv(env map[string]string, secretsEnv, secretsMount []string) {
 			env[key] = value
 		}
 	}
+	return redactor
 }
 
 // MountSecretsForRedaction reads SecretsMountDir into "name=value" entries so a
@@ -229,23 +228,39 @@ func preAttachPhaseParams(
 
 	return []phaseHook{
 		{
-			phase:  PhaseOnCreate,
-			params: hookRunParams{mc.OnCreateCommands, env, "onCreateCommands", cd.Created},
+			phase: PhaseOnCreate,
+			params: hookRunParams{
+				commands: mc.OnCreateCommands,
+				env:      env,
+				name:     "onCreateCommands",
+				content:  cd.Created,
+			},
 		},
 		{
 			phase: PhaseUpdateContent,
 			params: hookRunParams{
-				mc.UpdateContentCommands, env, "updateContentCommands", updateContentMarker,
+				commands: mc.UpdateContentCommands,
+				env:      env,
+				name:     "updateContentCommands",
+				content:  updateContentMarker,
 			},
 		},
 		{
-			phase:  PhasePostCreate,
-			params: hookRunParams{mc.PostCreateCommands, env, "postCreateCommands", cd.Created},
+			phase: PhasePostCreate,
+			params: hookRunParams{
+				commands: mc.PostCreateCommands,
+				env:      env,
+				name:     "postCreateCommands",
+				content:  cd.Created,
+			},
 		},
 		{
 			phase: PhasePostStart,
 			params: hookRunParams{
-				mc.PostStartCommands, env, "postStartCommands", cd.State.StartedAt,
+				commands: mc.PostStartCommands,
+				env:      env,
+				name:     "postStartCommands",
+				content:  cd.State.StartedAt,
 			},
 		},
 	}
@@ -291,8 +306,12 @@ func RunPreAttachHooks(
 	opts PreAttachOptions,
 ) (DeferredHooks, error) {
 	env := resolveLifecycleEnv(ctx, setupInfo)
-	mergeSecretsEnv(env.remoteEnv, opts.SecretsEnv, opts.SecretsMount)
+	redactor := mergeSecretsEnv(env.remoteEnv, opts.SecretsEnv, opts.SecretsMount)
 	all := preAttachPhaseParams(setupInfo, env, opts.Prebuild)
+	for i := range all {
+		all[i].params.ctx = ctx
+		all[i].params.redactor = redactor
+	}
 
 	// Insert the dotfiles phase between postCreate and postStart.
 	created := setupInfo.ContainerDetails.Created
@@ -329,7 +348,7 @@ func filterSkippedPhases(all []phaseHook, skip SkipPhases) []phaseHook {
 	filtered := make([]phaseHook, 0, len(all))
 	for _, ph := range all {
 		if skipped[ph.phase] {
-			log.Infof("skipping %s (--skip flag set)", ph.phase)
+			log.Debugf("skipping %s (--skip flag set)", ph.phase)
 			continue
 		}
 		filtered = append(filtered, ph)
@@ -469,15 +488,17 @@ func RunPostAttachHooks(
 	skipPostAttach ...bool,
 ) error {
 	if len(skipPostAttach) > 0 && skipPostAttach[0] {
-		log.Infof("skipping postAttachCommand (--skip-post-attach set)")
+		log.Debugf("skipping postAttachCommand (--skip-post-attach set)")
 		return nil
 	}
 	env := resolveLifecycleEnv(ctx, setupInfo)
-	mergeSecretsEnv(env.remoteEnv, secretsEnv, secretsMount)
+	redactor := mergeSecretsEnv(env.remoteEnv, secretsEnv, secretsMount)
 
 	return runHook(hookRunParams{
+		ctx:      ctx,
 		commands: setupInfo.MergedConfig.PostAttachCommands,
 		env:      env,
+		redactor: redactor,
 		name:     "postAttachCommands",
 		content:  "",
 	})
@@ -493,7 +514,7 @@ func runHook(p hookRunParams) error {
 	}
 
 	envArr := buildEnvArr(p.env.remoteEnv)
-	return executeHookCommands(p, envArr)
+	return executeHookCommands(p.ctx, p, envArr)
 }
 
 func shouldSkipHook(name, content string) (bool, error) {
@@ -511,12 +532,12 @@ func buildEnvArr(remoteEnv map[string]string) []string {
 	return arr
 }
 
-func executeHookCommands(p hookRunParams, envArr []string) error {
+func executeHookCommands(ctx context.Context, p hookRunParams, envArr []string) error {
 	for _, cmd := range p.commands {
 		if len(cmd) == 0 {
 			continue
 		}
-		if err := executeLifecycleHook(p, envArr, cmd); err != nil {
+		if err := executeLifecycleHook(ctx, p, envArr, cmd); err != nil {
 			return err
 		}
 	}
@@ -527,13 +548,14 @@ func executeHookCommands(p hookRunParams, envArr []string) error {
 // When the hook has multiple named keys (object syntax), the sub-commands run
 // concurrently per the devcontainer spec. Single-key hooks run directly.
 func executeLifecycleHook(
+	ctx context.Context,
 	p hookRunParams,
 	envArr []string,
 	hook types.LifecycleHook,
 ) error {
 	if len(hook) <= 1 {
 		for k, c := range hook {
-			return runSingleHookCommand(p, envArr, k, c)
+			return runSingleHookCommand(ctx, p, envArr, k, c)
 		}
 	}
 
@@ -547,7 +569,7 @@ func executeLifecycleHook(
 	for k, c := range hook {
 		go func() {
 			defer wg.Done()
-			if err := runSingleHookCommand(p, envArr, k, c); err != nil {
+			if err := runSingleHookCommand(ctx, p, envArr, k, c); err != nil {
 				mu.Lock()
 				errs = append(errs, fmt.Errorf("named command %q failed: %w", k, err))
 				mu.Unlock()
@@ -560,13 +582,14 @@ func executeLifecycleHook(
 }
 
 func runSingleHookCommand(
+	ctx context.Context,
 	p hookRunParams,
 	remoteEnvArr []string,
 	key string, c []string,
 ) error {
-	log.Infof(
+	log.Debugf(
 		"running %s lifecycle hook: %s %s",
-		p.name, key, hookRedactor.Redact(strings.Join(c, " ")),
+		p.name, key, p.redactor.Redact(strings.Join(c, " ")),
 	)
 	currentUser, err := user.Current()
 	if err != nil {
@@ -584,86 +607,60 @@ func runSingleHookCommand(
 		return fmt.Errorf("command not found: %s: %w", args[0], err)
 	}
 
-	cmd := &exec.Cmd{
-		Path: resolvedPath,
-		Args: args,
-		Dir:  p.env.workspaceFolder,
-		Env:  append(os.Environ(), remoteEnvArr...),
-	}
-
-	return executeAndLog(cmd, p.name, key, c)
+	return executeAndCapture(
+		ctx,
+		resolvedPath,
+		args,
+		p.name,
+		key,
+		c,
+		p.env.workspaceFolder,
+		remoteEnvArr,
+		p.redactor,
+	)
 }
 
-func executeAndLog(cmd *exec.Cmd, phaseName string, key string, c []string) error {
-	stdoutPipe, err := cmd.StdoutPipe()
+func executeAndCapture(
+	ctx context.Context,
+	binary string,
+	args []string,
+	phaseName string,
+	key string,
+	c []string,
+	dir string,
+	env []string,
+	redactor *secrets.Redactor,
+) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := subprocess.Run(ctx, binary, args[1:], subprocess.Options{
+		Dir:      dir,
+		Env:      env,
+		Redactor: redactor,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to get stdout pipe: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stderr pipe: %w", err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start command: %w", err)
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		logPipeOutput(stdoutPipe, true)
-	}()
-
-	go func() {
-		defer wg.Done()
-		logPipeOutput(stderrPipe, false)
-	}()
-
-	wg.Wait()
-	if err := cmd.Wait(); err != nil {
-		log.Debugf(
-			"failed running %s lifecycle script: command=%v, error=%v",
-			key,
-			hookRedactor.Redact(strings.Join(cmd.Args, " ")),
-			err,
-		)
+		// Include only the bounded, redacted tail in the returned error. This
+		// gives normal users actionable diagnostics without replaying an
+		// unbounded subprocess stream or requiring debug mode.
+		details := result.DiagnosticOutput()
+		if details != "" {
+			return fmt.Errorf(
+				"%s: command %q failed: %s: %w",
+				phaseName, redactor.Redact(strings.Join(c, " ")), details, err,
+			)
+		}
 		return fmt.Errorf(
 			"%s: command %q failed: %w",
-			phaseName, hookRedactor.Redact(strings.Join(c, " ")), err,
+			phaseName, redactor.Redact(strings.Join(c, " ")), err,
 		)
 	}
 
-	log.Infof(
-		"ran command: command=%s, args=%s",
-		key, hookRedactor.Redact(strings.Join(c, " ")),
+	log.Debugf(
+		"ran lifecycle command: command=%s, duration=%s, outputBytes=%d",
+		key, result.Duration.Round(time.Millisecond), len(result.Stdout)+len(result.Stderr),
 	)
 	return nil
-}
-
-func logPipeOutput(pipe io.ReadCloser, isStdout bool) {
-	scanner := bufio.NewScanner(pipe)
-	for scanner.Scan() {
-		line := hookRedactor.Redact(scanner.Text())
-		if isStdout {
-			log.Info(line)
-		} else {
-			if containsError(line) {
-				log.Error(line)
-			} else {
-				log.Warn(line)
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		log.Errorf("error reading pipe: error=%v", err)
-	}
-}
-
-// containsError defines what log line treated as error log should contain.
-func containsError(line string) bool {
-	return strings.Contains(strings.ToLower(line), "error")
 }
 
 func mergeRemoteEnv(

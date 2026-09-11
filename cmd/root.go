@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime/debug"
+	"slices"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/ci"
@@ -34,6 +35,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/flatpak"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/telemetry"
 	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -181,13 +183,18 @@ func configureOutput(
 
 	format := logOutput
 	if format == "" {
-		format = logOutputText
+		if machineMode {
+			format = logOutputJSON
+		} else {
+			format = logOutputText
+		}
 	}
 	log.Init(log.Config{
 		Verbosity: globalFlags.Verbosity,
 		Quiet:     globalFlags.Quiet,
 		Debug:     globalFlags.Debug,
 		Format:    format,
+		Redactor:  secrets.NewEnvironmentRedactor(os.Environ()),
 	})
 	return machineMode
 }
@@ -253,7 +260,25 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 		log.JSONError(cliErr)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "Error: %s\n", cliErr.Message)
+	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	fmt.Fprintf(os.Stderr, "Error: %s\n", redactor.Redact(cliErr.Message))
+	if cliErr.Code != "" && cliErr.Code != clierr.CodeUnknown {
+		fmt.Fprintf(os.Stderr, "Error code: %s\n", redactor.Redact(string(cliErr.Code)))
+	}
+	if len(cliErr.Context) > 0 {
+		fmt.Fprintln(os.Stderr, "Context:")
+		keys := make([]string, 0, len(cliErr.Context))
+		for key := range cliErr.Context {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		for _, key := range keys {
+			fmt.Fprintf(os.Stderr, "  %s: %s\n", redactor.Redact(key), redactor.Redact(cliErr.Context[key]))
+		}
+	}
+	if cliErr.Hint != "" {
+		fmt.Fprintf(os.Stderr, "Try: %s\n", redactor.Redact(cliErr.Hint))
+	}
 }
 
 // BuildRoot constructs the root command and returns it alongside the parsed
@@ -278,12 +303,21 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 
 	rootCmd.PersistentPreRunE = func(cobraCmd *cobra.Command, _ []string) error {
 		cobraCmd.SilenceUsage = true
+		logFormat := globalFlags.LogOutput
+		if logFormat == "" {
+			if isMachineConsumer("", topLevelCommand(cobraCmd) == internalCommand) {
+				logFormat = logOutputJSON
+			} else {
+				logFormat = logOutputText
+			}
+		}
 
 		log.Init(log.Config{
 			Verbosity: globalFlags.Verbosity,
 			Quiet:     globalFlags.Quiet,
 			Debug:     globalFlags.Debug,
-			Format:    globalFlags.LogOutput,
+			Format:    logFormat,
+			Redactor:  secrets.NewEnvironmentRedactor(os.Environ()),
 		})
 		klog.SetLogger(logr.New(log.LogrSink()))
 

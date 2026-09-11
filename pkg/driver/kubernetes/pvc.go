@@ -24,7 +24,7 @@ func (k *KubernetesDriver) createPersistentVolumeClaim(
 		return err
 	}
 
-	log.Infof("Create Persistent Volume Claim %q", id)
+	log.Debugf("Create Persistent Volume Claim %q", id)
 	_, err = k.client.Client().
 		CoreV1().
 		PersistentVolumeClaims(k.namespace).

@@ -315,7 +315,7 @@ func (r *imageResolver) tryResolve(
 		return nil, false
 	}
 
-	log.Infof("found existing local image %s", req.imageName)
+	log.Debugf("found existing local image %s", req.imageName)
 	return &config.BuildInfo{
 		ImageDetails:  imageDetails,
 		ImageMetadata: req.extendedBuildInfo.MetadataConfig,
@@ -405,7 +405,7 @@ func (d *dockerDriver) executeBuild(
 	req driver.BuildRequest,
 	buildOptions *build.BuildOptions,
 ) error {
-	log.Infof("build with %s", strategy.name())
+	log.Debugf("build with %s", strategy.name())
 	writer := log.NewJSONLogStreamer(log.StreamerOptions{
 		FallbackLevel: log.LevelInfo,
 	})

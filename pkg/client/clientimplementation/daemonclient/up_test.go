@@ -42,7 +42,7 @@ func TestStatusSniffingWriter_ExtractsStatusLines(t *testing.T) {
 	w := newStatusSniffingWriter(&next, reporter)
 
 	input := `before
-{"kind":"status","phase":"building_image","started":true}
+{"kind":"status","schemaVersion":1,"phase":"building_image","state":"started"}
 after
 `
 	if _, err := w.Write([]byte(input)); err != nil {
@@ -59,7 +59,7 @@ after
 		t.Fatalf("expected 1 status event, got %d", len(reporter.events))
 	}
 	e := reporter.events[0]
-	if e.Phase != status.PhaseBuildingImage || !e.Started {
+	if e.Phase != status.PhaseBuildingImage || e.State != status.StateStarted {
 		t.Errorf("unexpected event: %+v", e)
 	}
 }
@@ -90,7 +90,7 @@ func TestStatusSniffingWriter_SplitAcrossWrites(t *testing.T) {
 	if _, err := w.Write([]byte(`{"kind":"status","phase":"read`)); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if _, err := w.Write([]byte(`y","started":false}` + "\n")); err != nil {
+	if _, err := w.Write([]byte(`y","schemaVersion":1,"state":"succeeded"}` + "\n")); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	if err := w.Close(); err != nil {
@@ -102,5 +102,20 @@ func TestStatusSniffingWriter_SplitAcrossWrites(t *testing.T) {
 	}
 	if len(reporter.events) != 1 || reporter.events[0].Phase != status.PhaseReady {
 		t.Errorf("unexpected events: %+v", reporter.events)
+	}
+}
+
+func TestStatusSniffingWriterBoundsUnterminatedLine(t *testing.T) {
+	var next bytes.Buffer
+	w := newStatusSniffingWriter(&next, &recordingReporter{})
+	input := bytes.Repeat([]byte{'x'}, maxStatusLineBytes+1)
+	if _, err := w.Write(input); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if w.buf.Len() != 0 {
+		t.Fatalf("buffer retained %d bytes after limit, want 0", w.buf.Len())
+	}
+	if next.Len() != len(input) {
+		t.Fatalf("forwarded %d bytes, want %d", next.Len(), len(input))
 	}
 }

@@ -6,8 +6,11 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { app, dialog, ipcMain } from "electron"
-import type { CLIError } from "../shared/cli-error.js"
-import { parseCliEnvelope } from "../shared/cli-error.js"
+import type { CLIError, OperationStatus } from "../shared/cli-error.js"
+import {
+  normalizeOperationStatus,
+  parseCliEnvelope,
+} from "../shared/cli-error.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import type { CliRunner } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
@@ -15,7 +18,6 @@ import type { LogStore } from "./log-store.js"
 import type {
   ProviderActivity,
   ProviderJobs,
-  ProviderPhase,
 } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
 import type { DaemonState } from "./state.js"
@@ -121,6 +123,66 @@ interface ProgressSink {
   ): Promise<void>
 }
 
+function redactSensitiveText(value: string): string {
+  const secrets = Object.entries(process.env)
+    .filter(([name, secret]) =>
+      secret &&
+      /(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|APIKEY|AUTH|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)/i.test(name),
+    )
+    .map(([, secret]) => secret as string)
+    .sort((a, b) => b.length - a.length)
+  const redacted = secrets.reduce((text, secret) => text.split(secret).join("***"), value)
+  return redacted
+    .replace(/(https?:\/\/)[^\s/@]+@/gi, "$1***@")
+    .replace(/(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,]+/gi, "$1***")
+}
+
+function redactCLIError(error: CLIError): CLIError {
+  return {
+    ...error,
+    message: redactSensitiveText(error.message),
+    hint: error.hint ? redactSensitiveText(error.hint) : undefined,
+    context: error.context
+      ? Object.fromEntries(
+          Object.entries(error.context).map(([key, value]) => [
+            redactSensitiveText(key),
+            redactSensitiveText(value),
+          ]),
+        )
+      : undefined,
+  }
+}
+
+function redactOperationStatus(value: OperationStatus): OperationStatus {
+  return {
+    ...value,
+    phase: redactSensitiveText(value.phase),
+    step: value.step ? redactSensitiveText(value.step) : undefined,
+    operationId: value.operationId
+      ? redactSensitiveText(value.operationId)
+      : undefined,
+    parentOperationId: value.parentOperationId
+      ? redactSensitiveText(value.parentOperationId)
+      : undefined,
+    error: value.error
+      ? {
+          ...value.error,
+          code: value.error.code ? redactSensitiveText(value.error.code) : undefined,
+          message: redactSensitiveText(value.error.message),
+          hint: value.error.hint ? redactSensitiveText(value.error.hint) : undefined,
+          context: value.error.context
+            ? Object.fromEntries(
+                Object.entries(value.error.context).map(([key, text]) => [
+                  redactSensitiveText(key),
+                  redactSensitiveText(text),
+                ]),
+              )
+            : undefined,
+        }
+      : undefined,
+  }
+}
+
 function createLogSink(
   getWin: () => BrowserWindow | null,
   commandId: string,
@@ -150,23 +212,31 @@ function createLogSink(
     buf = []
     getWin()?.webContents.send("command-progress", {
       commandId,
-      lines,
+      lines: lines.map(redactSensitiveText),
       done,
-      ...extra,
+      ...(extra
+        ? {
+            ...extra,
+            message: extra.message ? redactSensitiveText(extra.message) : undefined,
+            cliError: extra.cliError ? redactCLIError(extra.cliError) : undefined,
+          }
+        : {}),
     })
   }
 
   return {
     line(formatted) {
-      const ok = appendLog?.(formatted) ?? true
-      buf.push(formatted)
+      const safeLine = redactSensitiveText(formatted)
+      const ok = appendLog?.(safeLine) ?? true
+      buf.push(safeLine)
       if (buf.length >= MAX_BATCH) post(false)
       else if (!timer) timer = setTimeout(() => post(false), FLUSH_MS)
       return ok
     },
     async done(finalLine, extra) {
-      appendLog?.(finalLine)
-      buf.push(finalLine)
+      const safeLine = redactSensitiveText(finalLine)
+      appendLog?.(safeLine)
+      buf.push(safeLine)
       await flush?.()
       post(true, { message: finalLine, ...extra })
     },
@@ -310,6 +380,50 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     return error instanceof Error ? error.message : String(error)
   }
 
+  function cliErrorOrFallback(error: unknown, code: string): CLIError {
+    const cliError = (error as { cliError?: CLIError }).cliError
+    return cliError ?? { code, message: errorMessage(error) }
+  }
+
+  function forwardWorkspaceStatus(
+    commandId: string,
+    workspaceId: string,
+    line: string,
+    stream: "stdout" | "stderr",
+  ): boolean {
+    if (stream !== "stdout") return false
+    const envelope = parseCliEnvelope(line)
+    if (envelope?.kind !== "status") return false
+    deps.getMainWindow()?.webContents.send("workspace-status", {
+      commandId,
+      workspaceId,
+      ...redactOperationStatus(normalizeOperationStatus(envelope)),
+    })
+    return true
+  }
+
+  function emitWorkspaceStatus(
+    commandId: string,
+    workspaceId: string,
+    phase: string,
+    state: "started" | "succeeded" | "failed",
+    cliError?: CLIError,
+  ): void {
+    deps.getMainWindow()?.webContents.send("workspace-status", {
+      commandId,
+      workspaceId,
+      phase,
+      state,
+      ...(cliError
+        ? {
+            error: {
+              ...redactCLIError(cliError),
+            },
+          }
+        : {}),
+    })
+  }
+
   /**
    * Track a provider job for the duration of fn, so the job cannot outlive the
    * work it describes. Opening a job in one place and closing it in another
@@ -329,7 +443,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       result = await fn()
     } catch (error) {
       const cliError = (error as { cliError?: CLIError }).cliError
-      await providerJobs.finish(name, cliError?.message ?? errorMessage(error))
+        ? redactCLIError((error as { cliError: CLIError }).cliError)
+        : undefined
+      await providerJobs.finish(
+        name,
+        cliError ?? redactCLIError({ code: "provider_failed", message: errorMessage(error) }),
+      )
       throw error
     }
     await providerJobs.finish(name)
@@ -353,11 +472,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             if (stream !== "stdout") return
             const envelope = parseCliEnvelope(line)
             if (envelope?.kind === "status") {
-              providerJobs.report(
-                name,
-                envelope.phase as ProviderPhase,
-                envelope.error,
-              )
+              const status = redactOperationStatus(normalizeOperationStatus(envelope))
+              providerJobs.reportStatus(name, status)
             }
           },
           (code, cliError) => {
@@ -508,7 +624,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       try {
         await runProviderWithStatus(args.name, cliArgs)
       } catch (error) {
-        await providerJobs.finish(args.name, errorMessage(error))
+        const cliError = (error as { cliError?: CLIError }).cliError
+        await providerJobs.finish(
+          args.name,
+          redactCLIError(
+            cliError ?? { code: "provider_failed", message: errorMessage(error) },
+          ),
+        )
         throw error
       }
     },
@@ -547,7 +669,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       return { ok: true } as const
     } catch (err) {
       const cliError = (err as { cliError?: CLIError }).cliError
-      return { ok: false, message: errorMessage(err), cliError } as const
+      return {
+        ok: false,
+        message: redactSensitiveText(errorMessage(err)),
+        cliError: cliError ? redactCLIError(cliError) : undefined,
+      } as const
     }
   })
 
@@ -567,15 +693,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           if (stream === "stdout") {
             const envelope = parseCliEnvelope(line)
             if (envelope?.kind === "status") {
-              providerJobs.report(
-                args.name,
-                envelope.phase as ProviderPhase,
-                envelope.error,
-              )
+              const status = redactOperationStatus(normalizeOperationStatus(envelope))
+              providerJobs.reportStatus(args.name, status)
               return
             }
           }
-          const formatted = formatLogLine(line)
+          const formatted = redactSensitiveText(formatLogLine(line))
           win?.webContents.send("command-progress", {
             commandId: cmdId,
             message: formatted,
@@ -590,18 +713,23 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             args.name,
             code === 0
               ? undefined
-              : (cliError?.message ?? `provider init exited with ${code}`),
+              : redactCLIError(
+                  cliError ?? {
+                    code: "provider_init_failed",
+                    message: `provider init exited with ${code}`,
+                  },
+                ),
           )
-          const exitMsg = formatLogLine(
+          const exitMsg = redactSensitiveText(formatLogLine(
             `Exit code: ${code}`,
             code === 0 ? "INFO" : "ERROR",
-          )
+          ))
           win?.webContents.send("command-progress", {
             commandId: cmdId,
             message: exitMsg,
             level: code === 0 ? "info" : "error",
             success: code === 0,
-            cliError,
+            cliError: cliError ? redactCLIError(cliError) : undefined,
             done: true,
           })
         },
@@ -1035,6 +1163,18 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
         let signalledDone = false
         let suppressCallbacks = false
+        const sendWorkspaceFailureStatus = (cliError: CLIError | undefined) => {
+          const safeError = redactCLIError(
+            cliError ?? { code: "up_failed", message: "workspace up failed" },
+          )
+          deps.getMainWindow()?.webContents.send("workspace-status", {
+            commandId: cmdId,
+            workspaceId: wsId,
+            phase: "failed",
+            state: "failed",
+            error: safeError,
+          })
+        }
         let child: import("node:child_process").ChildProcess
         try {
           child = await cli.runStreaming(
@@ -1048,13 +1188,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                 stream === "stdout" ? parseCliEnvelope(line) : undefined
 
               if (envelope?.kind === "status") {
+                const status = redactOperationStatus(normalizeOperationStatus(envelope))
                 deps.getMainWindow()?.webContents.send("workspace-status", {
                   commandId: cmdId,
                   workspaceId: wsId,
-                  phase: envelope.phase,
-                  step: envelope.step,
-                  started: envelope.started,
-                  error: envelope.error,
+                  ...status,
                 })
                 return
               }
@@ -1074,7 +1212,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                 void sink.done(formatted, {
                   level: "error",
                   success: false,
-                  cliError: { code: "up_failed", message: envelope.message },
+                  cliError: {
+                    code: envelope.code ?? "up_failed",
+                    message: envelope.message,
+                    hint: envelope.hint,
+                    context: envelope.context,
+                  },
                 })
                 return
               }
@@ -1088,6 +1231,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                 tunnelProcesses.delete(wsId)
               }
               if (signalledDone || suppressCallbacks) return
+              if (code !== 0) sendWorkspaceFailureStatus(cliError)
               void sink.done(
                 formatLogLine(
                   `Exit code: ${code}`,
@@ -1109,6 +1253,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           // cancel can still reach it, and close the sink so the UI isn't
           // left waiting on a follower that never started.
           const err = error as Error & { cliError?: CLIError }
+          sendWorkspaceFailureStatus(err.cliError)
           void sink.done(formatLogLine(err.message, "ERROR"), {
             level: "error",
             success: false,
@@ -1156,37 +1301,58 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     const completion = new Promise<void>((resolve, reject) => {
       const cliArgs = ["workspace", "stop", args.workspaceId]
       if (args.debug) cliArgs.push("--debug")
-
-      cli
-        .runStreaming(
-          cliArgs,
-          (line) => {
-            if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
-          },
-          (code, cliError) => {
-            void sink
-              .done(
-                formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
-                code === 0
-                  ? { success: true }
-                  : { level: "error", success: false, cliError },
-              )
-              .then(() => {
-                if (code === 0) resolve()
-                else reject(new Error(`workspace stop exited with ${code}`))
-              })
-              .catch(reject)
-          },
-          args.workspaceId,
-        )
-        .catch((error: unknown) => {
+      emitWorkspaceStatus(commandId, args.workspaceId, "stopping_workspace", "started")
+      void cli.runStreaming(
+        cliArgs,
+        (line, stream) => {
+          if (forwardWorkspaceStatus(commandId, args.workspaceId, line, stream)) return
+          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
+        },
+        (code, cliError) => {
+          if (code === 0) {
+            emitWorkspaceStatus(commandId, args.workspaceId, "stopping_workspace", "succeeded")
+          } else {
+            emitWorkspaceStatus(
+              commandId,
+              args.workspaceId,
+              "stopping_workspace",
+              "failed",
+              cliError ?? {
+                code: "workspace_stop_failed",
+                message: `workspace stop exited with code ${code}`,
+              },
+            )
+          }
           void sink
-            .done(formatLogLine(errorMessage(error), "ERROR"), {
-              success: false,
+            .done(
+              formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
+              { success: code === 0 },
+            )
+            .then(() => {
+              if (code === 0) resolve()
+              else reject(new Error(`workspace stop exited with code ${code}`))
             })
-            .catch(() => {})
-            .finally(() => reject(error))
-        })
+            .catch(reject)
+        },
+        args.workspaceId,
+      ).catch((error) => {
+        const cliError = cliErrorOrFallback(error, "workspace_stop_failed")
+        emitWorkspaceStatus(
+          commandId,
+          args.workspaceId,
+          "stopping_workspace",
+          "failed",
+          cliError,
+        )
+        void sink
+          .done(formatLogLine(cliError.message, "ERROR"), {
+            level: "error",
+            success: false,
+            cliError,
+          })
+          .catch(() => {})
+          .finally(() => reject(error))
+      })
     })
     void completion
       .then(
@@ -1238,13 +1404,29 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
       // The card shows "Deleting" until finish() below
       const jobGeneration = workspaceJobs.start(args.workspaceId)
+      emitWorkspaceStatus(cmdId, args.workspaceId, "deleting_workspace", "started")
 
-      cli.runStreaming(
+      void cli.runStreaming(
         cliArgs,
-        (line) => {
+        (line, stream) => {
+          if (forwardWorkspaceStatus(cmdId, args.workspaceId, line, stream)) return
           if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
         },
         (code, cliError) => {
+          if (code === 0) {
+            emitWorkspaceStatus(cmdId, args.workspaceId, "deleting_workspace", "succeeded")
+          } else {
+            emitWorkspaceStatus(
+              cmdId,
+              args.workspaceId,
+              "deleting_workspace",
+              "failed",
+              cliError ?? {
+                code: "workspace_delete_failed",
+                message: `workspace delete exited with code ${code}`,
+              },
+            )
+          }
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
             { success: code === 0 },
@@ -1258,7 +1440,22 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           )
         },
         args.workspaceId,
-      )
+      ).catch((error) => {
+        const cliError = cliErrorOrFallback(error, "workspace_delete_failed")
+        emitWorkspaceStatus(
+          cmdId,
+          args.workspaceId,
+          "deleting_workspace",
+          "failed",
+          cliError,
+        )
+        void sink.done(formatLogLine(cliError.message, "ERROR"), {
+          level: "error",
+          success: false,
+          cliError,
+        })
+        void workspaceJobs.finish(args.workspaceId, jobGeneration, cliError.message)
+      })
 
       return cmdId
     },
@@ -1284,13 +1481,33 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
       const cliArgs = ["workspace", "up", args.workspaceId, "--recreate"]
       if (args.debug) cliArgs.push("--debug")
+      let sawFailedStatus = false
 
-      cli.runStreaming(
+      void cli.runStreaming(
         cliArgs,
-        (line) => {
+        (line, stream) => {
+          const envelope = stream === "stdout" ? parseCliEnvelope(line) : undefined
+          if (envelope?.kind === "status" && envelope.state === "failed") {
+            sawFailedStatus = true
+          }
+          if (forwardWorkspaceStatus(cmdId, args.workspaceId, line, stream)) {
+            return
+          }
           if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
         },
         (code, cliError) => {
+          if (code !== 0 && !sawFailedStatus) {
+            emitWorkspaceStatus(
+              cmdId,
+              args.workspaceId,
+              "rebuilding_workspace",
+              "failed",
+              cliError ?? {
+                code: "workspace_rebuild_failed",
+                message: `workspace rebuild exited with code ${code}`,
+              },
+            )
+          }
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
             code === 0
@@ -1299,7 +1516,21 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           )
         },
         args.workspaceId,
-      )
+      ).catch((error) => {
+        const cliError = cliErrorOrFallback(error, "workspace_rebuild_failed")
+        emitWorkspaceStatus(
+          cmdId,
+          args.workspaceId,
+          "rebuilding_workspace",
+          "failed",
+          cliError,
+        )
+        void sink.done(formatLogLine(cliError.message, "ERROR"), {
+          level: "error",
+          success: false,
+          cliError,
+        })
+      })
 
       return cmdId
     },
@@ -1325,13 +1556,33 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
       const cliArgs = ["workspace", "up", args.workspaceId, "--reset"]
       if (args.debug) cliArgs.push("--debug")
+      let sawFailedStatus = false
 
-      cli.runStreaming(
+      void cli.runStreaming(
         cliArgs,
-        (line) => {
+        (line, stream) => {
+          const envelope = stream === "stdout" ? parseCliEnvelope(line) : undefined
+          if (envelope?.kind === "status" && envelope.state === "failed") {
+            sawFailedStatus = true
+          }
+          if (forwardWorkspaceStatus(cmdId, args.workspaceId, line, stream)) {
+            return
+          }
           if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
         },
         (code, cliError) => {
+          if (code !== 0 && !sawFailedStatus) {
+            emitWorkspaceStatus(
+              cmdId,
+              args.workspaceId,
+              "resetting_workspace",
+              "failed",
+              cliError ?? {
+                code: "workspace_reset_failed",
+                message: `workspace reset exited with code ${code}`,
+              },
+            )
+          }
           void sink.done(
             formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
             code === 0
@@ -1340,7 +1591,21 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           )
         },
         args.workspaceId,
-      )
+      ).catch((error) => {
+        const cliError = cliErrorOrFallback(error, "workspace_reset_failed")
+        emitWorkspaceStatus(
+          cmdId,
+          args.workspaceId,
+          "resetting_workspace",
+          "failed",
+          cliError,
+        )
+        void sink.done(formatLogLine(cliError.message, "ERROR"), {
+          level: "error",
+          success: false,
+          cliError,
+        })
+      })
 
       return cmdId
     },

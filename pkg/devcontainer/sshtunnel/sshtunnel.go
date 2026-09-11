@@ -122,8 +122,8 @@ type sshTunnelParams struct {
 
 func runSSHTunnel(ctx context.Context, p sshTunnelParams) (*config2.Result, error) {
 	start := time.Now()
-	log.Infof("tunnel: setup start")
-	defer func() { log.Infof("tunnel: setup complete elapsed=%s", time.Since(start)) }()
+	log.Debug("tunnel: setup start")
+	defer func() { log.Debugf("tunnel: setup complete elapsed=%s", time.Since(start)) }()
 
 	log.Debug("creating SSH client")
 	sshClient, err := devssh.ClientFromConn(p.conn, "", nil)

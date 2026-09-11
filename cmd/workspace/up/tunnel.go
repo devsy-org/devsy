@@ -19,7 +19,7 @@ func (cmd *UpCmd) startTunnel(
 	client client2.BaseWorkspaceClient,
 	wctx *workspaceContext,
 ) (int, func(), error) {
-	log.Info("starting ssh tunnel for workspace")
+	log.Debug("starting ssh tunnel for workspace")
 
 	dialer := &tunnel.WorkspaceDialer{
 		Context:   client.Context(),
@@ -37,7 +37,7 @@ func (cmd *UpCmd) startTunnel(
 		return 0, nil, fmt.Errorf("create local tunnel: %w", err)
 	}
 
-	log.Infof("ssh tunnel listening on port %d", localTunnel.Port())
+	log.Debugf("ssh tunnel listening on port %d", localTunnel.Port())
 
 	cleanup := func() {
 		_ = localTunnel.Close()

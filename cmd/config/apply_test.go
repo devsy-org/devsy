@@ -1,10 +1,13 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -90,4 +93,21 @@ func TestApplyCmd_ResolveDockerPath_Custom(t *testing.T) {
 		DockerPath:  "/usr/local/bin/podman",
 	}
 	assert.Equal(t, "/usr/local/bin/podman", cmd.resolveDockerPath())
+}
+
+func TestApplyStatusReporterEmitsCurrentStatusEnvelope(t *testing.T) {
+	var out bytes.Buffer
+	reporter, err := newStatusReporter("json", &out, false)
+	require.NoError(t, err)
+	reporter.Report(status.Event{
+		Phase: status.PhaseReady,
+		State: status.StateSucceeded,
+	})
+
+	var envelope map[string]any
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(out.Bytes()), &envelope))
+	assert.Equal(t, "status", envelope["kind"])
+	assert.Equal(t, float64(1), envelope["schemaVersion"])
+	assert.Equal(t, string(status.PipelineWorkspaceUp), envelope["pipeline"])
+	assert.Equal(t, string(status.StateSucceeded), envelope["state"])
 }

@@ -46,7 +46,7 @@ func (k *KubernetesDriver) EnsureDaemonConfigSecret(
 		return fmt.Errorf("create daemon config secret: %w", err)
 	}
 
-	log.Infof("Daemon config secret %q created", secretName)
+	log.Debugf("Daemon config secret %q created", secretName)
 	return nil
 }
 

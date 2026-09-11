@@ -38,7 +38,7 @@ func (k *KubernetesDriver) ensureServiceAccountResource(
 	}
 
 	// create service account if it does not exist
-	log.Infof("Create Service Account %q", serviceAccount)
+	log.Debugf("Create Service Account %q", serviceAccount)
 	_, err = k.client.Client().
 		CoreV1().
 		ServiceAccounts(k.namespace).
@@ -75,7 +75,7 @@ func (k *KubernetesDriver) ensureRoleBinding(
 	}
 
 	// create role binding
-	log.Infof("Create Role Binding %q", serviceAccount)
+	log.Debugf("Create Role Binding %q", serviceAccount)
 	_, err = k.client.Client().
 		RbacV1().
 		RoleBindings(k.namespace).

@@ -5,11 +5,47 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/secrets"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
+
+func TestJSONLogStreamerRedactsCapturedLines(t *testing.T) {
+	streamer := NewJSONLogStreamer(StreamerOptions{
+		FallbackLevel: LevelInfo,
+		CaptureLines:  2,
+		Redactor:      secrets.NewRedactor([]string{"TOKEN=DEVSY_STREAM_SECRET_846297"}),
+	})
+	_, _ = streamer.Write([]byte("token=DEVSY_STREAM_SECRET_846297\n"))
+	if err := streamer.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if got := streamer.ErrorOutput(); strings.Contains(got, "DEVSY_STREAM_SECRET_846297") {
+		t.Fatalf("captured output leaked secret: %q", got)
+	}
+}
+
+func TestJSONLogStreamerCombinesConfiguredAndEnvironmentRedaction(t *testing.T) {
+	t.Setenv("DEVSY_STREAM_ENV_SECRET", "stream-env-secret-846299")
+	streamer := NewJSONLogStreamer(StreamerOptions{
+		FallbackLevel: LevelInfo,
+		CaptureLines:  1,
+		Redactor:      secrets.NewRedactor([]string{"TOKEN=stream-config-secret-846300"}),
+	})
+	_, _ = streamer.Write([]byte("stream-env-secret-846299 stream-config-secret-846300 canary\n"))
+	if err := streamer.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if got := streamer.ErrorOutput(); strings.Contains(got, "stream-env-secret-846299") || strings.Contains(got, "stream-config-secret-846300") {
+		t.Fatalf("combined redaction leaked secret: %q", got)
+	}
+	if got := streamer.ErrorOutput(); !strings.Contains(got, "canary") {
+		t.Fatalf("expected a non-secret canary in captured output, got %q", got)
+	}
+}
 
 func streamTestOutput(t *testing.T, input string, options StreamerOptions) []observerEntry {
 	t.Helper()

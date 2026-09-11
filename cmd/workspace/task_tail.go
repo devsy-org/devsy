@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/task"
 )
 
@@ -97,5 +98,10 @@ func isEnvelopeLine(line []byte) bool {
 	if err := json.Unmarshal(trimmed, &probe); err != nil {
 		return false
 	}
-	return probe.Kind != ""
+	switch probe.Kind {
+	case devcconfig.KindStatus, devcconfig.KindResult, devcconfig.KindError, devcconfig.KindTask:
+		return true
+	default:
+		return false
+	}
 }

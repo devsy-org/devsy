@@ -87,18 +87,21 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		return err
 	}
 
-	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout)
+	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug)
 	if err != nil {
 		return err
 	}
 
-	status.Enter(reporter, status.PhaseInstallingProvider, providerName)
-	providerConfig, options, err := cmd.resolveProviderConfig(ctx, devsyConfig, providerName, args)
+	var providerConfig *provider.ProviderConfig
+	var options []string
+	err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseInstallingProvider, Step: providerName}, func(ctx context.Context) error {
+		var resolveErr error
+		providerConfig, options, resolveErr = cmd.resolveProviderConfig(ctx, devsyConfig, providerName, args)
+		return resolveErr
+	})
 	if err != nil {
-		status.Fail(reporter, status.PhaseInstallingProvider, err)
 		return err
 	}
-	status.Leave(reporter, status.PhaseInstallingProvider, providerConfig.Name)
 
 	log.Infof("installed provider: providerName=%s", providerConfig.Name)
 	if !cmd.Use {
@@ -107,11 +110,9 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		return nil
 	}
 
-	if err := cmd.useProvider(ctx, devsyConfig, providerConfig, options, reporter); err != nil {
-		return err
-	}
-	status.Leave(reporter, status.PhaseReady, providerConfig.Name)
-	return nil
+	return status.Run(ctx, reporter, status.Operation{Phase: status.PhaseReady, Step: providerConfig.Name}, func(ctx context.Context) error {
+		return cmd.useProvider(ctx, devsyConfig, providerConfig, options, reporter)
+	})
 }
 
 func validateOptionalProviderName(providerName string) error {
