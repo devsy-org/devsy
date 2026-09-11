@@ -128,7 +128,7 @@ func TestReporterRecordsFailureStateAndSanitizedMessage(t *testing.T) {
 	}
 }
 
-func TestReporterPersistsCurrentStatusMetadata(t *testing.T) { //nolint:cyclop // asserts the complete persisted metadata contract
+func TestReporterPersistsCurrentStatusMetadata(t *testing.T) {
 	store := newTestStore(t)
 	task, err := store.Create(CreateOptions{})
 	if err != nil {
@@ -154,15 +154,10 @@ func TestReporterPersistsCurrentStatusMetadata(t *testing.T) { //nolint:cyclop /
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if state.OperationID != "op-17" || state.ParentOperationID != "op-9" || state.DurationMs != 1500 {
-		t.Fatalf("status metadata was not persisted: %+v", state)
-	}
-	if state.ErrorCode != "docker_daemon_unreachable" || state.ErrorHint != "Start Docker and retry." || state.ErrorContext["context"] != "desktop-linux" {
-		t.Fatalf("structured error metadata was not persisted: %+v", state)
-	}
+	assertCurrentStatusMetadata(t, state)
 }
 
-func TestReporterRedactsPersistedFailureMetadata(t *testing.T) { //nolint:cyclop // checks every persisted secret-bearing field
+func TestReporterRedactsPersistedFailureMetadata(t *testing.T) {
 	t.Setenv("DEVSY_TASK_SECRET", "task-secret-846297")
 	store := newTestStore(t)
 	tk, err := store.Create(CreateOptions{})
@@ -188,14 +183,24 @@ func TestReporterRedactsPersistedFailureMetadata(t *testing.T) { //nolint:cyclop
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if strings.Contains(state.Error, "task-secret-846297") ||
-		strings.Contains(state.ErrorCode, "task-secret-846297") ||
-		strings.Contains(state.ErrorHint, "task-secret-846297") ||
-		strings.Contains(state.ErrorContext["token"], "task-secret-846297") ||
-		strings.Contains(state.Step, "task-secret-846297") ||
-		strings.Contains(state.OperationID, "task-secret-846297") ||
-		strings.Contains(state.ParentOperationID, "task-secret-846297") {
-		t.Fatalf("task state leaked secret: %+v", state)
+	values := []string{
+		state.Error, state.ErrorCode, state.ErrorHint, state.ErrorContext["token"],
+		state.Step, state.OperationID, state.ParentOperationID,
+	}
+	for _, value := range values {
+		if strings.Contains(value, "task-secret-846297") {
+			t.Fatalf("task state leaked secret: %+v", state)
+		}
+	}
+}
+
+func assertCurrentStatusMetadata(t *testing.T, state *State) {
+	t.Helper()
+	if state.OperationID != "op-17" || state.ParentOperationID != "op-9" || state.DurationMs != 1500 {
+		t.Fatalf("status metadata was not persisted: %+v", state)
+	}
+	if state.ErrorCode != "docker_daemon_unreachable" || state.ErrorHint != "Start Docker and retry." || state.ErrorContext["context"] != "desktop-linux" {
+		t.Fatalf("structured error metadata was not persisted: %+v", state)
 	}
 }
 

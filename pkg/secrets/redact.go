@@ -150,15 +150,30 @@ func (r *StreamingRedactor) RedactChunk(chunk string) string {
 // incompleteCredentialURLStart returns the start of a URL suffix that may
 // still contain unredacted userinfo. Waiting for the terminating '@' prevents
 // a password from escaping when the URL is split across writes.
-func incompleteCredentialURLStart(value string) int { //nolint:cyclop // checks each supported split credential prefix
+func incompleteCredentialURLStart(value string) int {
 	lower := strings.ToLower(value)
-	start := max(strings.LastIndex(lower, "http://"), strings.LastIndex(lower, "https://"))
-	if start >= 0 {
-		suffix := value[start:]
-		if len(suffix) <= 512 && !strings.ContainsAny(suffix, " \t\r\n") && !strings.Contains(suffix, "@") {
-			return start
-		}
+	if start := credentialURLStart(value, lower); start >= 0 {
+		return start
 	}
+	if start := splitSchemeStart(value, lower); start >= 0 {
+		return start
+	}
+	return splitAuthorizationStart(value, lower)
+}
+
+func credentialURLStart(value, lower string) int {
+	start := max(strings.LastIndex(lower, "http://"), strings.LastIndex(lower, "https://"))
+	if start < 0 {
+		return -1
+	}
+	suffix := value[start:]
+	if len(suffix) <= 512 && !strings.ContainsAny(suffix, " \t\r\n") && !strings.Contains(suffix, "@") {
+		return start
+	}
+	return -1
+}
+
+func splitSchemeStart(value, lower string) int {
 	for _, scheme := range []string{"http://", "https://"} {
 		for i := 1; i < len(scheme); i++ {
 			if strings.HasSuffix(lower, scheme[:i]) {
@@ -167,20 +182,22 @@ func incompleteCredentialURLStart(value string) int { //nolint:cyclop // checks 
 		}
 	}
 
+	return -1
+}
+
+func splitAuthorizationStart(value, lower string) int {
 	// Authorization headers can be split at any point, including between the
 	// header name, scheme, and credential. Keep a bounded suffix until the
 	// credential arrives so it cannot escape through a chunk boundary.
-	const authPrefix = "authorization: bearer "
-	for i := 1; i <= len(authPrefix); i++ {
-		prefix := authPrefix[:i]
-		if strings.HasSuffix(lower, prefix) {
-			return len(value) - i
-		}
+	if start := authorizationPrefixStart(value, lower, "authorization: bearer "); start >= 0 {
+		return start
 	}
-	const basicPrefix = "authorization: basic "
-	for i := 1; i <= len(basicPrefix); i++ {
-		prefix := basicPrefix[:i]
-		if strings.HasSuffix(lower, prefix) {
+	return authorizationPrefixStart(value, lower, "authorization: basic ")
+}
+
+func authorizationPrefixStart(value, lower, prefix string) int {
+	for i := 1; i <= len(prefix); i++ {
+		if strings.HasSuffix(lower, prefix[:i]) {
 			return len(value) - i
 		}
 	}

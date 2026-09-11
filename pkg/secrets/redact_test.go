@@ -96,9 +96,10 @@ func TestRedactor_MasksCredentialBearingURLsAndAuthorizationHeaders(t *testing.T
 }
 
 func TestStreamingRedactor_MasksFormatCredentialsWithoutKnownValues(t *testing.T) {
+	const expectedURL = "https://***@example.com"
 	r := secrets.NewStreamingRedactor(secrets.NewRedactor(nil))
 	got := r.RedactChunk("https://user:pass@example.com") + r.Flush()
-	if got != "https://***@example.com" { //nolint:goconst // exact redaction output fixture
+	if got != expectedURL {
 		t.Fatalf("streaming format redaction = %q", got)
 	}
 }

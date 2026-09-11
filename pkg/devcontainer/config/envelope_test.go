@@ -13,7 +13,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
-//nolint:goconst,cyclop,funlen // test table values
+const envelopeTestSecret = "status-secret"
+
 func TestWriteResultJSON(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -154,7 +155,7 @@ func TestWriteResultJSON(t *testing.T) {
 	}
 }
 
-func TestWriteCLIErrorJSONMessages(t *testing.T) { //nolint:cyclop // table covers JSON escaping and framing cases
+func TestWriteCLIErrorJSONMessages(t *testing.T) {
 	tests := []struct {
 		name    string
 		message string
@@ -229,16 +230,16 @@ func TestWriteCLIErrorJSONIncludesStructuredFields(t *testing.T) {
 }
 
 func TestWriteStatusJSONRedactsStructuredErrorContext(t *testing.T) {
-	t.Setenv("DEVTestStatusSecret", "status-secret")
+	t.Setenv("DEVTestStatusSecret", envelopeTestSecret)
 	var buf bytes.Buffer
 	err := WriteStatusJSON(&buf, status.Event{
 		Phase: status.PhaseReady,
 		State: status.StateFailed,
 		Error: &status.ErrorInfo{
-			Code:    "status-secret", //nolint:goconst // verifies redaction of the error code
-			Message: "failed with status-secret",
-			Hint:    "retry with status-secret",
-			Context: map[string]string{"token": "status-secret"},
+			Code:    envelopeTestSecret,
+			Message: "failed with " + envelopeTestSecret,
+			Hint:    "retry with " + envelopeTestSecret,
+			Context: map[string]string{"token": envelopeTestSecret},
 		},
 	})
 	if err != nil {
@@ -253,7 +254,7 @@ func TestWriteStatusJSONRedactsStructuredErrorContext(t *testing.T) {
 }
 
 func TestWriteStatusJSONRedactsMetadata(t *testing.T) {
-	t.Setenv("DEVTestStatusSecret", "status-secret")
+	t.Setenv("DEVTestStatusSecret", envelopeTestSecret)
 	var buf bytes.Buffer
 	if err := WriteStatusJSON(&buf, status.Event{
 		Pipeline:          "status-secret",
@@ -446,7 +447,7 @@ func TestParseStatusLineAcceptsVersionedLifecycleEvent(t *testing.T) {
 	}
 }
 
-func TestWriteStatusJSONIncludesCurrentLifecycleFields(t *testing.T) { //nolint:cyclop // asserts the complete lifecycle envelope contract
+func TestWriteStatusJSONIncludesCurrentLifecycleFields(t *testing.T) {
 	var buf bytes.Buffer
 	want := status.Event{
 		Pipeline:          status.PipelineWorkspaceUp,

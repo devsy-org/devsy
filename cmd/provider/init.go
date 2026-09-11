@@ -45,17 +45,21 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return status.Run(cobraCmd.Context(), reporter, status.Operation{Phase: status.PhaseReady, Step: name}, func(ctx context.Context) error { //nolint:lll // status operation callback keeps the command boundary explicit
-				return ConfigureProvider(ctx, ProviderOptionsConfig{
-					Provider:           p.Config,
-					ContextName:        devsyConfig.DefaultContext,
-					UserOptions:        cmd.Options,
-					DiscardPriorValues: cmd.Reset,
-					SkipInit:           cmd.SkipInit,
-					SingleMachine:      &cmd.SingleMachine,
-					Reporter:           reporter,
-				})
-			})
+			return status.Run(
+				cobraCmd.Context(), reporter,
+				status.Operation{Phase: status.PhaseReady, Step: name},
+				func(ctx context.Context) error {
+					return ConfigureProvider(ctx, ProviderOptionsConfig{
+						Provider:           p.Config,
+						ContextName:        devsyConfig.DefaultContext,
+						UserOptions:        cmd.Options,
+						DiscardPriorValues: cmd.Reset,
+						SkipInit:           cmd.SkipInit,
+						SingleMachine:      &cmd.SingleMachine,
+						Reporter:           reporter,
+					})
+				},
+			)
 		},
 		ValidArgsFunction: func(
 			rootCmd *cobra.Command,
