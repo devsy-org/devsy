@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -125,5 +127,18 @@ func TestValidateSVG(t *testing.T) {
 	}
 	if err := validateSVG(invalidSVG); err == nil {
 		t.Error("expected invalid SVG to fail")
+	}
+}
+
+func TestRenderPageContentsScalesSVGToCanvas(t *testing.T) {
+	svgPath := "/tmp/large icon.svg"
+	page := renderPageContents(svgPath)
+
+	expectedURL := (&url.URL{Scheme: "file", Path: svgPath}).String()
+	if !strings.Contains(page, `width: 1024px; height: 1024px`) {
+		t.Error("render page does not set a 1024x1024 canvas")
+	}
+	if !strings.Contains(page, `img src="`+expectedURL+`"`) {
+		t.Errorf("render page does not reference the SVG: %s", page)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,6 +67,15 @@ func validateSVG(svgPath string) error {
 	return nil
 }
 
+func renderPageContents(svgPath string) string {
+	svgURL := (&url.URL{Scheme: "file", Path: svgPath}).String()
+	return fmt.Sprintf(`<!doctype html>
+<html><head><style>
+html, body, img { width: 1024px; height: 1024px; margin: 0; padding: 0; overflow: hidden; }
+img { display: block; }
+</style></head><body><img src="%s"></body></html>`, svgURL)
+}
+
 func renderMasterPNG(svgPath, outPNG string) error {
 	chrome, err := findChromeBinary()
 	if err != nil {
@@ -75,12 +85,17 @@ func renderMasterPNG(svgPath, outPNG string) error {
 	if err != nil {
 		return err
 	}
+	renderPage := filepath.Join(filepath.Dir(outPNG), "render-icon.html")
+	if err := os.WriteFile(renderPage, []byte(renderPageContents(absSVG)), 0o644); err != nil {
+		return fmt.Errorf("write SVG render page: %w", err)
+	}
+
 	cmd := exec.Command(chrome,
 		"--headless",
 		"--no-sandbox",
 		fmt.Sprintf("--screenshot=%s", outPNG),
 		"--window-size=1024,1024",
-		fmt.Sprintf("file://%s", absSVG),
+		(&url.URL{Scheme: "file", Path: renderPage}).String(),
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("render svg with chrome: %w, output: %s", err, string(out))
