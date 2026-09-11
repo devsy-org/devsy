@@ -181,36 +181,10 @@ func TestConfigureOutput_SelectsDiagnosticLogFormat(t *testing.T) {
 	cases := []struct {
 		name string
 		flag string
-		want func(t *testing.T, line string)
 	}{
-		{
-			name: "json",
-			flag: logOutputJSON,
-			want: func(t *testing.T, line string) {
-				var record map[string]any
-				if err := json.Unmarshal([]byte(line), &record); err != nil {
-					t.Fatalf("log line is not JSON: %v (%q)", err, line)
-				}
-			},
-		},
-		{
-			name: "logfmt",
-			flag: logOutputLogfmt,
-			want: func(t *testing.T, line string) {
-				if !strings.Contains(line, "level=info") || !strings.Contains(line, "msg=") {
-					t.Fatalf("log line is not logfmt: %q", line)
-				}
-			},
-		},
-		{
-			name: "text",
-			flag: logOutputText,
-			want: func(t *testing.T, line string) {
-				if !strings.Contains(line, "INFO") || !strings.Contains(line, "root format test") {
-					t.Fatalf("log line is not text: %q", line)
-				}
-			},
-		},
+		{name: "json", flag: logOutputJSON},
+		{name: "logfmt", flag: logOutputLogfmt},
+		{name: "text", flag: logOutputText},
 	}
 
 	for _, tc := range cases {
@@ -229,8 +203,29 @@ func TestConfigureOutput_SelectsDiagnosticLogFormat(t *testing.T) {
 			if len(lines) == 0 || lines[0] == "" {
 				t.Fatalf("no diagnostic line captured: %q", sink.String())
 			}
-			tc.want(t, lines[len(lines)-1])
+			assertDiagnosticLogFormat(t, tc.flag, lines[len(lines)-1])
 		})
+	}
+}
+
+func assertDiagnosticLogFormat(t *testing.T, format, line string) {
+	t.Helper()
+	switch format {
+	case logOutputJSON:
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("log line is not JSON: %v (%q)", err, line)
+		}
+	case logOutputLogfmt:
+		if !strings.Contains(line, "level=info") || !strings.Contains(line, "msg=") {
+			t.Fatalf("log line is not logfmt: %q", line)
+		}
+	case logOutputText:
+		if !strings.Contains(line, "INFO") || !strings.Contains(line, "root format test") {
+			t.Fatalf("log line is not text: %q", line)
+		}
+	default:
+		t.Fatalf("unexpected log format %q", format)
 	}
 }
 

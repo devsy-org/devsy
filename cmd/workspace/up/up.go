@@ -261,18 +261,7 @@ func (cmd *UpCmd) Run(
 ) error {
 	cmd.prepareWorkspace(client)
 
-	mode, err := output.ResolveMode(cmd.ResultFormat)
-	if err != nil {
-		return err
-	}
-	emitJSON := mode == output.ModeJSON
-
-	out := cmd.stdout()
-	cmd.statusReporter, err = newStatusReporter(
-		cmd.ResultFormat,
-		out,
-		cmd.Verbosity > 0 || cmd.Debug,
-	)
+	emitJSON, out, err := cmd.configureRun()
 	if err != nil {
 		return err
 	}
@@ -288,14 +277,7 @@ func (cmd *UpCmd) Run(
 		return reportErr(err, emitJSON, out)
 	}
 	if wctx == nil || cmd.Prebuild {
-		if err := status.Run(ctx, cmd.reporter(), status.Operation{
-			Phase: status.PhaseReady,
-		}, func(context.Context) error { return nil }); err != nil {
-			failTask(t, err)
-			return reportErr(err, emitJSON, out)
-		}
-		succeedTask(t, nil)
-		return nil // Platform mode or prebuild-only run.
+		return cmd.finishWithoutWorkspace(ctx, t, emitJSON, out)
 	}
 
 	err = cmd.finalizeUp(ctx, &finalizeUpArgs{
@@ -311,6 +293,36 @@ func (cmd *UpCmd) Run(
 	}
 	succeedTask(t, wctx.result)
 	return nil
+}
+
+func (cmd *UpCmd) configureRun() (bool, io.Writer, error) {
+	mode, err := output.ResolveMode(cmd.ResultFormat)
+	if err != nil {
+		return false, nil, err
+	}
+	out := cmd.stdout()
+	cmd.statusReporter, err = newStatusReporter(
+		cmd.ResultFormat,
+		out,
+		cmd.Verbosity > 0 || cmd.Debug,
+	)
+	return mode == output.ModeJSON, out, err
+}
+
+func (cmd *UpCmd) finishWithoutWorkspace(
+	ctx context.Context,
+	t *task.Task,
+	emitJSON bool,
+	out io.Writer,
+) error {
+	if err := status.Run(ctx, cmd.reporter(), status.Operation{
+		Phase: status.PhaseReady,
+	}, func(context.Context) error { return nil }); err != nil {
+		failTask(t, err)
+		return reportErr(err, emitJSON, out)
+	}
+	succeedTask(t, nil)
+	return nil // Platform mode or prebuild-only run.
 }
 
 // setUpTask opens the run's task (if any), tees the status reporter into it,

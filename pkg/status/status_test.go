@@ -13,6 +13,7 @@ import (
 )
 
 const statusTestSecret = "status-secret"
+
 const statusBefore = "before"
 
 type recordingReporter struct {
@@ -48,7 +49,9 @@ func TestFail(t *testing.T) {
 	}
 	got := r.events[0]
 	wantStep := string(PhaseRunningLifecycleHook)
-	if got.Phase != PhaseFailed || got.State != StateFailed || got.Error == nil || got.Error.Message != "boom" || got.Step != wantStep {
+	if got.Phase != PhaseFailed || got.State != StateFailed || got.Error == nil ||
+		got.Error.Message != "boom" ||
+		got.Step != wantStep {
 		t.Errorf("unexpected fail event: %+v", got)
 	}
 }
@@ -69,7 +72,8 @@ func TestSkipReportsSkippedEvent(t *testing.T) {
 	if len(r.events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(r.events))
 	}
-	if got := r.events[0]; got.State != StateSkipped || got.Phase != PhaseInitializeCommand || got.Step != "recovery mode" {
+	if got := r.events[0]; got.State != StateSkipped || got.Phase != PhaseInitializeCommand ||
+		got.Step != "recovery mode" {
 		t.Errorf("unexpected skip event: %+v", got)
 	}
 }
@@ -82,7 +86,8 @@ func TestErrorFromPreservesActionableContext(t *testing.T) {
 		Context: map[string]string{"context": "desktop-linux"},
 	}
 	got := ErrorFrom(err)
-	if got == nil || got.Code != string(clierr.CodeUnknown) || got.Context["context"] != "desktop-linux" {
+	if got == nil || got.Code != string(clierr.CodeUnknown) ||
+		got.Context["context"] != "desktop-linux" {
 		t.Fatalf("ErrorFrom lost context: %+v", got)
 	}
 }
@@ -205,9 +210,19 @@ func TestRunReportsLifecycleAndParent(t *testing.T) {
 func TestRunReportsFailureAndNestedParent(t *testing.T) {
 	r := &recordingReporter{}
 	wantErr := errors.New("boom")
-	err := Run(context.Background(), r, Operation{Phase: PhaseBuildingImage}, func(ctx context.Context) error {
-		return Run(ctx, r, Operation{Phase: PhaseStartingContainer}, func(context.Context) error { return wantErr })
-	})
+	err := Run(
+		context.Background(),
+		r,
+		Operation{Phase: PhaseBuildingImage},
+		func(ctx context.Context) error {
+			return Run(
+				ctx,
+				r,
+				Operation{Phase: PhaseStartingContainer},
+				func(context.Context) error { return wantErr },
+			)
+		},
+	)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Run error = %v, want original error", err)
 	}
@@ -215,7 +230,10 @@ func TestRunReportsFailureAndNestedParent(t *testing.T) {
 		t.Fatalf("got %d events, want 4", len(r.events))
 	}
 	outerStart, innerStart, innerDone, outerDone := r.events[0], r.events[1], r.events[2], r.events[3]
-	assertNestedFailure(t, nestedFailureEvents{outerStart, innerStart, innerDone, outerDone, wantErr})
+	assertNestedFailure(
+		t,
+		nestedFailureEvents{outerStart, innerStart, innerDone, outerDone, wantErr},
+	)
 }
 
 func assertLifecycleStart(t *testing.T, event Event) {
@@ -240,7 +258,11 @@ type nestedFailureEvents struct {
 func assertNestedFailure(t *testing.T, events nestedFailureEvents) {
 	t.Helper()
 	if events.innerStart.ParentOperationID != events.outerStart.OperationID {
-		t.Errorf("inner parent = %q, want %q", events.innerStart.ParentOperationID, events.outerStart.OperationID)
+		t.Errorf(
+			"inner parent = %q, want %q",
+			events.innerStart.ParentOperationID,
+			events.outerStart.OperationID,
+		)
 	}
 	assertFailedEvent(t, events.innerDone, events.wantErr)
 	assertFailedEvent(t, events.outerDone, events.wantErr)
@@ -284,7 +306,12 @@ func TestRunConcurrentOperationsHaveUniqueIDs(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 32 {
 		wg.Go(func() {
-			_ = Run(context.Background(), r, Operation{Phase: PhaseReady}, func(context.Context) error { return nil })
+			_ = Run(
+				context.Background(),
+				r,
+				Operation{Phase: PhaseReady},
+				func(context.Context) error { return nil },
+			)
 		})
 	}
 	wg.Wait()
@@ -309,11 +336,17 @@ func TestRunReportsPanicBeforeRethrowing(t *testing.T) {
 				t.Fatal("Run did not rethrow the original panic")
 			}
 		}()
-		_ = Run(context.Background(), r, Operation{Phase: PhaseBuildingImage}, func(context.Context) error {
-			panic("boom")
-		})
+		_ = Run(
+			context.Background(),
+			r,
+			Operation{Phase: PhaseBuildingImage},
+			func(context.Context) error {
+				panic("boom")
+			},
+		)
 	}()
-	if len(r.events) != 2 || r.events[1].State != StateFailed || r.events[1].Error == nil || !strings.Contains(r.events[1].Error.Message, "boom") {
+	if len(r.events) != 2 || r.events[1].State != StateFailed || r.events[1].Error == nil ||
+		!strings.Contains(r.events[1].Error.Message, "boom") {
 		t.Fatalf("unexpected panic event: %+v", r.events)
 	}
 }
@@ -322,9 +355,13 @@ func TestPlainReporterUsesASCIILifecycleMarkers(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewPlainReporter(&buf, "up", map[Phase]string{PhaseBuildingImage: "Build image"})
 	r.Report(Event{Phase: PhaseBuildingImage, State: StateStarted})
-	r.Report(Event{Phase: PhaseBuildingImage, State: StateSucceeded, Duration: 1500 * time.Millisecond})
+	r.Report(
+		Event{Phase: PhaseBuildingImage, State: StateSucceeded, Duration: 1500 * time.Millisecond},
+	)
 	r.Report(Event{Phase: PhaseBuildingImage, State: StateFailed, Error: &ErrorInfo{
-		Code: "docker_daemon_unreachable", Message: "Docker daemon is unavailable.", Hint: "Start Docker and retry.",
+		Code:    "docker_daemon_unreachable",
+		Message: "Docker daemon is unavailable.",
+		Hint:    "Start Docker and retry.",
 		Context: map[string]string{"endpoint": "unix:///var/run/docker.sock"},
 	}})
 	got := buf.String()
@@ -341,7 +378,10 @@ func TestPlainReporterRedactsEnvironmentSecrets(t *testing.T) {
 	r.Report(Event{
 		Phase: PhaseFailed,
 		State: StateFailed,
-		Error: &ErrorInfo{Message: "failed with " + statusTestSecret, Hint: "retry " + statusTestSecret},
+		Error: &ErrorInfo{
+			Message: "failed with " + statusTestSecret,
+			Hint:    "retry " + statusTestSecret,
+		},
 	})
 	if strings.Contains(buf.String(), statusTestSecret) {
 		t.Fatalf("secret escaped plain status output: %q", buf.String())

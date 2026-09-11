@@ -14,13 +14,15 @@ import (
 )
 
 const (
-	captureTestSecret = "DEVSY_SECRET_TEST_846297"
+	captureTestSecret = "DEVSY_SECRET_TEST_846297" //nolint:gosec // test credential fixture
 	testWindows       = "windows"
 	captureToken      = "TOKEN="
 )
 
 func TestBoundedBufferRedactsAndCapsLines(t *testing.T) {
-	b := NewBuffer(secrets.NewRedactor([]string{"TOKEN=" + captureTestSecret})) //nolint:gosec // test-only redaction fixture
+	b := NewBuffer(
+		secrets.NewRedactor([]string{"TOKEN=" + captureTestSecret}),
+	) //nolint:gosec // test-only redaction fixture
 	for range MaxCapturedLines + 5 {
 		_, _ = b.Write([]byte("DEVSY_SECRET_TEST_846297\n"))
 	}
@@ -34,13 +36,20 @@ func TestBoundedBufferRedactsAndCapsLines(t *testing.T) {
 		t.Fatalf("captured %d lines, want at most %d", got, MaxCapturedLines)
 	}
 	if !strings.HasSuffix(b.String(), "***\n") {
-		t.Fatalf("buffer did not retain the useful tail: %q", b.String()[max(0, len(b.String())-80):])
+		t.Fatalf(
+			"buffer did not retain the useful tail: %q",
+			b.String()[max(0, len(b.String())-80):],
+		)
 	}
 }
 
 func TestDisplayCommandRedactsAndQuotes(t *testing.T) {
 	redactor := secrets.NewRedactor([]string{captureToken + captureTestSecret})
-	got := displayCommand("docker", []string{"run", "token=DEVSY_SECRET_TEST_846297", "hello world"}, redactor)
+	got := displayCommand(
+		"docker",
+		[]string{"run", "token=DEVSY_SECRET_TEST_846297", "hello world"},
+		redactor,
+	)
 	want := `docker run token=*** "hello world"`
 	if got != want {
 		t.Errorf("display command = %q, want %q", got, want)
@@ -49,7 +58,10 @@ func TestDisplayCommandRedactsAndQuotes(t *testing.T) {
 
 func TestRedactingWriterRedactsStreamedOutput(t *testing.T) {
 	var out bytes.Buffer
-	w := &StreamingRedactingWriter{Next: &out, Redactor: secrets.NewRedactor([]string{"TOKEN=DEVSY_SECRET_TEST_846297"})}
+	w := &StreamingRedactingWriter{
+		Next:     &out,
+		Redactor: secrets.NewRedactor([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
+	}
 	_, _ = w.Write([]byte("token=DEVSY_SECRET_TEST_846297"))
 	_ = w.Flush()
 	if got := out.String(); got != "token=***" {
@@ -91,7 +103,12 @@ func TestRunCapturesFailureOutput(t *testing.T) {
 	if runtime.GOOS == testWindows {
 		t.Skip("test command uses sh")
 	}
-	result, err := Run(context.Background(), "sh", []string{"-c", "printf out; printf err >&2; exit 7"}, Options{})
+	result, err := Run(
+		context.Background(),
+		"sh",
+		[]string{"-c", "printf out; printf err >&2; exit 7"},
+		Options{},
+	)
 	if err == nil {
 		t.Fatal("Run succeeded, want failure")
 	}
@@ -109,10 +126,15 @@ func TestRunRedactsSensitiveEnvironmentAndArgvValues(t *testing.T) {
 	}
 	secretFromEnv := captureTestSecret
 	secretFromArgs := "DEVSY_ARG_SECRET_846298" //nolint:gosec // test-only redaction fixture
-	result, err := Run(context.Background(), "sh", []string{"-c", "printf '%s %s' \"$TOKEN\" \"$1\"", "sh", secretFromArgs}, Options{
-		Env:             []string{"TOKEN=" + secretFromEnv},
-		SensitiveValues: []string{secretFromArgs},
-	})
+	result, err := Run(
+		context.Background(),
+		"sh",
+		[]string{"-c", "printf '%s %s' \"$TOKEN\" \"$1\"", "sh", secretFromArgs},
+		Options{
+			Env:             []string{"TOKEN=" + secretFromEnv},
+			SensitiveValues: []string{secretFromArgs},
+		},
+	)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -165,11 +187,16 @@ func TestDiagnosticOutputAnnotatesTruncatedTail(t *testing.T) {
 
 func TestRunAssociatesActiveOperation(t *testing.T) {
 	var got Result
-	err := status.Run(context.Background(), status.Nop(), status.Operation{Phase: status.PhaseBuildingImage}, func(ctx context.Context) error {
-		var err error
-		got, err = Run(ctx, "sh", []string{"-c", "exit 0"}, Options{})
-		return err
-	})
+	err := status.Run(
+		context.Background(),
+		status.Nop(),
+		status.Operation{Phase: status.PhaseBuildingImage},
+		func(ctx context.Context) error {
+			var err error
+			got, err = Run(ctx, "sh", []string{"-c", "exit 0"}, Options{})
+			return err
+		},
+	)
 	if err != nil {
 		t.Fatalf("status.Run: %v", err)
 	}
