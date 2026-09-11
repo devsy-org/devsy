@@ -74,7 +74,7 @@ func TestLogTailerEmitsLinesAsTheyAreAppended(t *testing.T) {
 func TestLogTailerSkipsStructuredEnvelopeLines(t *testing.T) {
 	tailer, path := newTestTailer(t, "task2")
 	content := `{"level":"debug","ts":"2026-01-01T00:00:00.000-0500","msg":"a debug line"}
-{"kind":"status","phase":"building_image","started":true}
+{"kind":"status","schemaVersion":1,"phase":"building_image","state":"started"}
 {"kind":"result","outcome":"success","containerId":"abc"}
 plain unstructured line
 `
@@ -94,6 +94,24 @@ plain unstructured line
 	}
 	if bytes.Contains([]byte(got), []byte(`"kind"`)) {
 		t.Errorf("expected structured envelope lines to be filtered out, got %q", got)
+	}
+}
+
+func TestLogTailerPreservesArbitraryJSON(t *testing.T) {
+	tailer, path := newTestTailer(t, "task-json")
+	content := `{"kind":"application","value":"keep this command output"}
+{"kind":"status","schemaVersion":1,"phase":"running_command","state":"started"}
+{"kind":"result","outcome":"success"}
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	var out bytes.Buffer
+	tailer.poll(&out)
+
+	if got, want := out.String(), "{\"kind\":\"application\",\"value\":\"keep this command output\"}\n"; got != want {
+		t.Fatalf("got %q, want arbitrary JSON to pass through as %q", got, want)
 	}
 }
 

@@ -73,6 +73,7 @@ func (r *runner) extendImage(
 
 	// get extend image build info
 	extendedBuildInfo, err := feature.GetExtendedBuildInfo(&feature.ExtendedBuildParams{
+		ExecutionContext:   ctx,
 		Ctx:                substitutionContext,
 		ImageBuildInfo:     imageBuildInfo,
 		Target:             imageBase,
@@ -171,6 +172,7 @@ func (r *runner) buildAndExtendImage(
 
 	// get image build info
 	imageBuildInfo, err := r.getImageBuildInfoFromDockerfile(
+		ctx,
 		substitutionContext,
 		string(base.content),
 		parsedConfig.Config.GetArgs(),
@@ -182,6 +184,7 @@ func (r *runner) buildAndExtendImage(
 
 	// get extend image build info
 	extendedBuildInfo, err := feature.GetExtendedBuildInfo(&feature.ExtendedBuildParams{
+		ExecutionContext:   ctx,
 		Ctx:                substitutionContext,
 		ImageBuildInfo:     imageBuildInfo,
 		Target:             base.imageBase,
@@ -271,6 +274,7 @@ func (r *runner) getImageBuildInfoFromImage(
 }
 
 func (r *runner) getImageBuildInfoFromDockerfile(
+	ctx context.Context,
 	substitutionContext *config.SubstitutionContext,
 	dockerFileContent string,
 	buildArgs map[string]string,
@@ -290,7 +294,7 @@ func (r *runner) getImageBuildInfoFromDockerfile(
 		return nil, fmt.Errorf("find base image %s", target)
 	}
 
-	imageDetails, err := r.inspectImage(context.TODO(), baseImage)
+	imageDetails, err := r.inspectImage(ctx, baseImage)
 	if err != nil {
 		return nil, fmt.Errorf("inspect image %s: %w", baseImage, err)
 	}
@@ -390,7 +394,7 @@ func (r *runner) findPrebuildImage(
 			continue
 		}
 
-		log.Infof("Found existing prebuilt image %s", prebuildImage)
+		log.Debugf("Found existing prebuilt image %s", prebuildImage)
 		imageDetails, err := r.inspectImage(ctx, prebuildImage)
 		if err != nil {
 			return nil, fmt.Errorf("get image details: %w", err)
@@ -463,14 +467,13 @@ func (r *runner) buildImage(
 		}
 	}
 
-	status.Enter(r.reporter, status.PhaseBuildingImage, "")
-	buildInfo, err := r.executeBuild(ctx, params, prebuildHash, targetArch)
-	if err != nil {
-		status.Fail(r.reporter, status.PhaseBuildingImage, err)
-		return nil, err
-	}
-	status.Leave(r.reporter, status.PhaseBuildingImage, "")
-	return buildInfo, nil
+	var buildInfo *config.BuildInfo
+	err = status.Run(ctx, r.reporter, status.Operation{Phase: status.PhaseBuildingImage}, func(ctx context.Context) error {
+		var buildErr error
+		buildInfo, buildErr = r.executeBuild(ctx, params, prebuildHash, targetArch)
+		return buildErr
+	})
+	return buildInfo, err
 }
 
 // executeBuild dispatches the actual image build to the appropriate backend:

@@ -38,6 +38,7 @@ function fakeChild() {
 
 function setup(exitCode = 0) {
   const workspaceJobs = new WorkspaceJobs()
+  const sent: Array<{ channel: string; payload: unknown }> = []
   const cli = {
     run: vi.fn(async () => []),
     runRaw: vi.fn(async () => ""),
@@ -66,13 +67,17 @@ function setup(exitCode = 0) {
       onDrain: async () => undefined,
     },
     pty: { cancelFor: vi.fn(async () => undefined) },
-    getMainWindow: () => null,
+    getMainWindow: () => ({
+      webContents: {
+        send: (channel: string, payload: unknown) => sent.push({ channel, payload }),
+      },
+    }),
     providerJobs: new ProviderJobs(),
     workspaceJobs,
   }
   // biome-ignore lint/suspicious/noExplicitAny: partial test doubles
   registerIpcHandlers(deps as any)
-  return { workspaceJobs }
+  return { workspaceJobs, sent }
 }
 
 function invoke(channel: string, args: Record<string, unknown>) {
@@ -93,7 +98,7 @@ describe("workspace delete job lifecycle over IPC", () => {
   })
 
   it("shows a deleting job while the command runs, then clears it", async () => {
-    const { workspaceJobs } = setup(0)
+    const { workspaceJobs, sent } = setup(0)
 
     // workspace_delete resolves as soon as the CLI command is launched, well
     // before it exits — the job must already be visible at that point.
@@ -105,6 +110,10 @@ describe("workspace delete job lifecycle over IPC", () => {
     await vi.runAllTimersAsync()
 
     expect(workspaceJobs.get("ws1")).toBeUndefined()
+    expect(sent.filter((entry) => entry.channel === "workspace-status").map((entry) => entry.payload)).toEqual([
+      { commandId: expect.any(String), workspaceId: "ws1", phase: "deleting_workspace", state: "started" },
+      { commandId: expect.any(String), workspaceId: "ws1", phase: "deleting_workspace", state: "succeeded" },
+    ])
   })
 
   it("retains the failure when the delete command fails", async () => {

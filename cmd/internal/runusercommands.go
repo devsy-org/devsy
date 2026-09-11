@@ -16,6 +16,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -39,6 +40,7 @@ type RunUserCommandsCmd struct {
 	SkipPostAttach          bool
 	SkipOnCreate            bool
 	SkipUpdateContent       bool
+	statusReporter          status.Reporter
 }
 
 // NewRunUserCommandsCmd creates a new run-user-commands command.
@@ -71,11 +73,37 @@ func NewRunUserCommandsCmdAlias(f *flags.GlobalFlags) *cobra.Command {
 
 const updateContentCommand = "updateContentCommand"
 
+func newLifecycleStatusReporter(resultFormat string, out *os.File, verbose bool) (status.Reporter, error) {
+	reporter, err := status.NewReporter(status.ReporterOptions{
+		Format:                 resultFormat,
+		Out:                    out,
+		Prefix:                 "lifecycle",
+		Verbose:                verbose,
+		SuppressFailureDetails: true,
+		Labels: map[status.Phase]string{
+			status.PhaseRunningLifecycleHook: "running lifecycle hooks",
+			status.PhaseReady:                "ready",
+		},
+		Envelope: func(e status.Event) error {
+			return devcconfig.WriteStatusJSON(out, e)
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return status.ForPipeline(reporter, status.PipelineWorkspaceUp), nil
+}
+
 // Run executes the run-user-commands logic.
 func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 	if err := cmd.validate(); err != nil {
 		return err
 	}
+	reporter, err := newLifecycleStatusReporter(cmd.ResultFormat, os.Stderr, cmd.Verbosity > 0 || cmd.Debug)
+	if err != nil {
+		return err
+	}
+	cmd.statusReporter = reporter
 
 	if cmd.ContainerID != "" {
 		return cmd.runWithContainerID(ctx)
@@ -91,7 +119,7 @@ func (cmd *RunUserCommandsCmd) Run(ctx context.Context) error {
 	}
 
 	user := devcconfig.GetRemoteUser(result)
-	log.Infof("lifecycle commands completed for container %s", params.ContainerID)
+	log.Debugf("lifecycle commands completed for container %s", params.ContainerID)
 	_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
 		ContainerID:           params.ContainerID,
 		RemoteUser:            user,
@@ -267,7 +295,7 @@ func (cmd *RunUserCommandsCmd) runWithContainerID(ctx context.Context) error {
 	}
 
 	user := devcconfig.GetRemoteUser(result)
-	log.Infof("lifecycle commands completed for container %s", params.ContainerID)
+	log.Debugf("lifecycle commands completed for container %s", params.ContainerID)
 	_ = devcconfig.WriteResultJSON(os.Stderr, devcconfig.ResultEnvelope{
 		ContainerID:           params.ContainerID,
 		RemoteUser:            user,
@@ -289,12 +317,10 @@ func (cmd *RunUserCommandsCmd) inspectRunningContainer(
 ) (*devcconfig.ContainerDetails, error) {
 	details, err := helper.InspectContainers(ctx, []string{cmd.ContainerID})
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return nil, fmt.Errorf("inspect container %s: %w", cmd.ContainerID, err)
 	}
 	if len(details) == 0 {
 		errMsg := fmt.Sprintf("container %s not found", cmd.ContainerID)
-		_ = devcconfig.WriteErrorJSON(os.Stderr, errMsg)
 		return nil, errors.New(errMsg)
 	}
 
@@ -305,7 +331,6 @@ func (cmd *RunUserCommandsCmd) inspectRunningContainer(
 			cmd.ContainerID,
 			containerDetails.State.Status,
 		)
-		_ = devcconfig.WriteErrorJSON(os.Stderr, errMsg)
 		return nil, errors.New(errMsg)
 	}
 	return containerDetails, nil
@@ -326,18 +351,15 @@ func (cmd *RunUserCommandsCmd) loadContainerIDConfig(
 		cmd.Config,
 	)
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return nil, fmt.Errorf("parse devcontainer config: %w", err)
 	}
 	if devContainerConfig == nil {
 		errMsg := "no devcontainer configuration found"
-		_ = devcconfig.WriteErrorJSON(os.Stderr, errMsg)
 		return nil, errors.New(errMsg)
 	}
 
 	mergedConfig, err := devcconfig.MergeConfiguration(devContainerConfig, nil)
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return nil, fmt.Errorf("merge configuration: %w", err)
 	}
 
@@ -359,7 +381,6 @@ func (cmd *RunUserCommandsCmd) applyOverrideConfig(
 		return nil
 	}
 	if err := devcconfig.MergeExtraRemoteEnv(ctx, mergedConfig, cmd.OverrideConfig); err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return fmt.Errorf("apply override config: %w", err)
 	}
 	return nil
@@ -390,7 +411,6 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 		Owner:       cmd.Owner,
 	})
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return nil, nil, fmt.Errorf("resolve workspace: %w", err)
 	}
 
@@ -404,16 +424,11 @@ func (cmd *RunUserCommandsCmd) resolveContainer(
 		ctx, devcontainer.GetRunnerIDFromWorkspace(workspaceConfig), cmd.IDLabels,
 	)
 	if err != nil {
-		_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 		return nil, nil, err
 	}
 
 	result := workspace2.LoadExecResult(workspaceConfig, containerDetails)
 	if result == nil || result.MergedConfig == nil {
-		_ = devcconfig.WriteErrorJSON(
-			os.Stderr,
-			"no workspace result found; lifecycle commands unavailable",
-		)
 		return nil, nil, fmt.Errorf("no workspace result found; lifecycle commands unavailable")
 	}
 
@@ -442,6 +457,18 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 	params *workspace.LifecycleExecParams,
 	result *devcconfig.Result,
 ) error {
+	return status.Run(params.Ctx, cmd.statusReporter, status.Operation{
+		Phase: status.PhaseRunningLifecycleHook,
+	}, func(ctx context.Context) error {
+		params.Ctx = ctx
+		return cmd.runLifecycleHooksUnscoped(params, result)
+	})
+}
+
+func (cmd *RunUserCommandsCmd) runLifecycleHooksUnscoped(
+	params *workspace.LifecycleExecParams,
+	result *devcconfig.Result,
+) error {
 	hooks := []struct {
 		name string
 		cmds []types.LifecycleHook
@@ -462,7 +489,7 @@ func (cmd *RunUserCommandsCmd) runLifecycleHooks(
 			return nil
 		}
 		if hook.skip {
-			log.Infof("skipping %s (--skip flag set)", hook.name)
+			log.Debugf("skipping %s (--skip flag set)", hook.name)
 			continue
 		}
 		if err := execLifecycleHooks(params, hook.name, hook.cmds); err != nil {
@@ -477,7 +504,7 @@ func (cmd *RunUserCommandsCmd) shouldStopLifecycle(
 	boundaryName string,
 ) bool {
 	if cmd.Prebuild && i >= 2 {
-		log.Infof(
+		log.Debugf(
 			"stopping lifecycle execution (%s: after %s)",
 			names.Flag(names.Prebuild),
 			updateContentCommand,
@@ -485,7 +512,7 @@ func (cmd *RunUserCommandsCmd) shouldStopLifecycle(
 		return true
 	}
 	if cmd.SkipNonBlockingCommands && i > waitForBoundary {
-		log.Infof(
+		log.Debugf(
 			"stopping lifecycle execution (--skip-non-blocking-commands: after %s)",
 			boundaryName,
 		)
@@ -501,7 +528,6 @@ func execLifecycleHooks(
 ) error {
 	for _, h := range cmds {
 		if err := workspace.ExecLifecycleHook(params, name, h); err != nil {
-			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
 			return fmt.Errorf("lifecycle hooks: %s: %w", name, err)
 		}
 	}

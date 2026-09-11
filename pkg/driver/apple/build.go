@@ -83,7 +83,7 @@ func (d *appleDriver) resolveExistingImage(
 		return nil, false
 	}
 
-	log.Infof("found existing local image %s", imageName)
+	log.Debugf("found existing local image %s", imageName)
 	return &config.BuildInfo{
 		ImageDetails:  imageDetails,
 		ImageMetadata: req.ExtendedBuildInfo.MetadataConfig,
@@ -101,7 +101,7 @@ func (d *appleDriver) executeBuild(
 	platform string,
 ) error {
 	args := buildArgs(options, platform)
-	log.Infof("building image with: container %s", redactArgs(args))
+	log.Debugf("building image with: container %s", redactArgs(args))
 
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()

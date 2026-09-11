@@ -51,11 +51,11 @@ type ComposeHelper struct {
 	Docker  *docker.DockerHelper
 }
 
-// NewComposeHelper creates a new ComposeHelper instance after detecting whether Docker
-// Compose V2, Podman Compose, or Docker Compose V1 is installed. The detection order
-// depends on the container runtime: Podman runtimes try podman compose first, while
-// Docker/nerdctl runtimes try docker compose V2 first. It returns an error if none
-// are found.
+// NewComposeHelper creates a new ComposeHelper instance after detecting whether
+// Docker Compose V2 or Podman Compose is installed. The detection order depends
+// on the container runtime: Podman runtimes try podman compose first, while
+// Docker/nerdctl runtimes try docker compose V2 first. It returns an error if
+// none are found.
 func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error) {
 	dockerCmd := dockerHelper.DockerCommand
 	if dockerCmd == "" {
@@ -69,13 +69,11 @@ func NewComposeHelper(dockerHelper *docker.DockerHelper) (*ComposeHelper, error)
 		detectors = []tryFunc{
 			func() (*ComposeHelper, error) { return tryComposeSubcommand(dockerCmd) },
 			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
-			tryDockerComposeV1,
 		}
 	} else {
 		detectors = []tryFunc{
 			func() (*ComposeHelper, error) { return tryDockerComposeV2(dockerCmd) },
 			func() (*ComposeHelper, error) { return tryComposeSubcommand("podman") },
-			tryDockerComposeV1,
 		}
 	}
 
@@ -126,7 +124,7 @@ func tryDockerComposeV2(dockerCmd string) (*ComposeHelper, error) {
 	}
 	if bxErr != nil {
 		// Gracefully handle missing buildx as users might only use compose for running existing images
-		log.Errorf("docker buildx not available: %v (%s %s)",
+		log.Warnf("docker buildx not available: %v (%s %s)",
 			bxErr, strings.TrimSpace(string(bxOut)), strings.TrimSpace(string(bxErrOut)))
 	}
 
@@ -170,31 +168,6 @@ func tryComposeSubcommand(dockerCmd string) (*ComposeHelper, error) {
 		Command: dockerCmd,
 		Version: parsed.String(),
 		Args:    []string{"compose"},
-	}, nil
-}
-
-func tryDockerComposeV1() (*ComposeHelper, error) {
-	if _, err := exec.LookPath("docker-compose"); err != nil {
-		return nil, fmt.Errorf("docker-compose not found in PATH")
-	}
-
-	cmd := exec.Command("docker-compose", "version", "--short")
-	out, stderr, err := runCmdCapture(cmd)
-	if len(stderr) > 0 {
-		log.Warnf("%s: %s", strings.TrimSpace(string(stderr)), strings.TrimSpace(string(out)))
-	}
-	if err != nil {
-		return nil, fmt.Errorf(
-			"failed to get docker-compose version %s: %w",
-			strings.TrimSpace(string(stderr)),
-			err,
-		)
-	}
-
-	return &ComposeHelper{
-		Command: "docker-compose",
-		Version: strings.TrimSpace(string(out)),
-		Args:    []string{},
 	}, nil
 }
 

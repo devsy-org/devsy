@@ -131,7 +131,7 @@ func (s *releaseSource) fetchBinary(
 	ctx context.Context,
 	req fetchRequest,
 ) (path string, cleanup func(), err error) {
-	log.Infof("downloading %s %s release from %s", req.binary, s.version, req.url)
+	log.Debugf("downloading %s %s release from %s", req.binary, s.version, req.url)
 	body, err := download.File(ctx, req.url)
 	if err != nil {
 		return "", nil, fmt.Errorf("download %s release: %w", req.binary, err)

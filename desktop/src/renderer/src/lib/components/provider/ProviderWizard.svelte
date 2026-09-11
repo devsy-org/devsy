@@ -166,7 +166,7 @@ onMount(async () => {
       }
       if (progress.done) {
         initRunning = false
-        if (isCommandSuccess(progress.message, progress.success)) {
+        if (isCommandSuccess(progress.success)) {
           refreshAndComplete()
         } else {
           initError =

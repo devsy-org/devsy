@@ -505,7 +505,17 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 	pollErr := wait.PollUntilContextTimeout(
 		ctx, containerRunningPollInterval, containerRunningTimeout, true,
 		func(ctx context.Context) (bool, error) {
-			details, err := r.InspectContainers(ctx, []string{containerID})
+			inspectCtx, cancel := inspectionDiagnosticContext(ctx)
+			details, err := r.InspectContainers(inspectCtx, []string{containerID})
+			cancel()
+			if err != nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded)) {
+				// The first inspect may have been killed exactly as the polling
+				// deadline fired. Retry once without that deadline so Docker's
+				// daemon error can still be captured for the final diagnostic.
+				diagnosticCtx, diagnosticCancel := context.WithTimeout(context.WithoutCancel(ctx), 250*time.Millisecond)
+				details, err = r.InspectContainers(diagnosticCtx, []string{containerID})
+				diagnosticCancel()
+			}
 			if err != nil {
 				lastErr = err
 				log.Debugf("inspecting container %s: %v", containerID, err)
@@ -524,6 +534,22 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 		)
 	}
 	return pollErr
+}
+
+// inspectionDiagnosticContext gives a final docker inspect a small bounded
+// grace period when the polling deadline is already firing. Docker may need
+// a moment to start the CLI process and write its daemon error; without this
+// grace window the context kill replaces useful diagnostics with "signal:
+// killed". Caller cancellation remains immediate.
+func inspectionDiagnosticContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		return ctx, func() {}
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok || time.Until(deadline) > 100*time.Millisecond {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), 250*time.Millisecond)
 }
 
 func (r *DockerHelper) GetImageTag(ctx context.Context, imageID string) (string, error) {

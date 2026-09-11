@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -128,8 +129,8 @@ func newTaskLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Aliases: []string{"attach"},
 		Short:   "Show a task's status, or follow it until it finishes",
 		Args:    cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return cmd.run(args[0])
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			return cmd.run(cobraCmd.Context(), args[0])
 		},
 	}
 	cliflags.Add(logsCmd,
@@ -142,7 +143,7 @@ func newTaskLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return logsCmd
 }
 
-func (cmd *taskLogsCmd) run(id string) error {
+func (cmd *taskLogsCmd) run(ctx context.Context, id string) error {
 	emitJSON, err := resolveEmitJSON(cmd.GlobalFlags)
 	if err != nil {
 		return err
@@ -167,7 +168,7 @@ func (cmd *taskLogsCmd) run(id string) error {
 	if interval <= 0 {
 		return fmt.Errorf("--interval must be positive, got %q", cmd.Interval)
 	}
-	return followTask(context.Background(), store, followTaskOptions{
+	return followTask(ctx, store, followTaskOptions{
 		id:       id,
 		interval: interval,
 		emitJSON: emitJSON,
@@ -211,18 +212,44 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 }
 
 func emitTaskTransition(last, current *task.State, emitJSON bool) {
-	if last != nil && last.Phase == current.Phase && last.Step == current.Step {
+	if last != nil && last.Phase == current.Phase && last.Step == current.Step &&
+		last.Status == current.Status && last.OperationID == current.OperationID &&
+		(!emitJSON || last.DurationMs == current.DurationMs) {
 		return
 	}
 	if current.Phase == "" {
 		return
 	}
-	event := status.Event{Phase: status.Phase(current.Phase), Step: current.Step, Started: true}
+	event := taskStatusEvent(current)
 	if emitJSON {
 		_ = config2.WriteStatusJSON(os.Stdout, event)
 		return
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", current.ID, current.Phase)
+}
+
+func taskStatusEvent(current *task.State) status.Event {
+	event := status.Event{
+		Phase:             status.Phase(current.Phase),
+		Step:              current.Step,
+		OperationID:       current.OperationID,
+		ParentOperationID: current.ParentOperationID,
+		Duration:          time.Duration(current.DurationMs) * time.Millisecond,
+		State:             status.StateStarted,
+	}
+	switch current.Status {
+	case task.StatusSucceeded:
+		event.State = status.StateSucceeded
+	case task.StatusFailed:
+		event.State = status.StateFailed
+		event.Error = &status.ErrorInfo{
+			Code:    current.ErrorCode,
+			Message: taskErrorMessage(current),
+			Hint:    current.ErrorHint,
+			Context: current.ErrorContext,
+		}
+	}
+	return event
 }
 
 type taskCancelCmd struct {
@@ -325,14 +352,17 @@ func resolveEmitJSON(g *flags.GlobalFlags) (bool, error) {
 }
 
 func reportTaskState(state *task.State, emitJSON bool) error {
+	// Let the command root own final error rendering. Writing an error envelope
+	// here and then returning an error would emit the same failure twice in
+	// machine mode (and print it twice for human consumers).
+	if state.Status == task.StatusFailed {
+		return taskStateError(state)
+	}
 	if emitJSON {
 		return reportTaskStateJSON(state)
 	}
 
 	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", state.ID, state.Status)
-	if state.Status == task.StatusFailed {
-		return fmt.Errorf("%s", taskErrorMessage(state))
-	}
 	return nil
 }
 
@@ -348,19 +378,27 @@ func taskErrorMessage(state *task.State) string {
 func reportTaskStateJSON(state *task.State) error {
 	switch state.Status {
 	case task.StatusFailed:
-		message := taskErrorMessage(state)
-		if err := config2.WriteErrorJSON(os.Stdout, message); err != nil {
-			return err
-		}
-		return fmt.Errorf("%s", message)
+		return taskStateError(state)
 	case task.StatusSucceeded:
 		return config2.WriteResultJSON(os.Stdout, resultEnvelopeFrom(state))
 	default:
-		return config2.WriteStatusJSON(os.Stdout, status.Event{
-			Phase:   status.Phase(state.Phase),
-			Step:    state.Step,
-			Started: true,
-		})
+		if state.Phase == "" {
+			return fmt.Errorf("task %s has no current status phase", state.ID)
+		}
+		return config2.WriteStatusJSON(os.Stdout, taskStatusEvent(state))
+	}
+}
+
+func taskStateError(state *task.State) error {
+	code := clierr.Code(state.ErrorCode)
+	if code == "" {
+		code = clierr.CodeUnknown
+	}
+	return &clierr.CLIError{
+		Code:    code,
+		Message: taskErrorMessage(state),
+		Hint:    state.ErrorHint,
+		Context: state.ErrorContext,
 	}
 }
 

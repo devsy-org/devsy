@@ -23,6 +23,22 @@ let {
           <p class="text-xs font-mono text-destructive/70">{cliError.code}</p>
         {/if}
       </div>
+      {#if cliError.hint}
+        <p class="text-sm text-destructive/90">Try: {cliError.hint}</p>
+      {/if}
+      {#if cliError.context && Object.keys(cliError.context).length > 0}
+        <details class="text-xs text-destructive/80">
+          <summary class="cursor-pointer font-medium">Context</summary>
+          <dl class="mt-1 space-y-0.5 font-mono">
+            {#each Object.entries(cliError.context) as [key, value]}
+              <div class="flex gap-2 break-words">
+                <dt class="shrink-0">{key}:</dt>
+                <dd>{value}</dd>
+              </div>
+            {/each}
+          </dl>
+        </details>
+      {/if}
     </div>
   </div>
 </div>

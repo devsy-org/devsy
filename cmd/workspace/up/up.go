@@ -102,6 +102,7 @@ type HeadlessOptions struct {
 	GlobalFlags        *flags.GlobalFlags
 	DevsyConfig        *config.Config
 	CLIOptions         provider2.CLIOptions
+	Reporter           status.Reporter
 	ProviderOptions    []string
 	SecretsFile        string
 	FeatureSecretsFile string
@@ -149,6 +150,7 @@ func RunHeadless(
 		return nil, err
 	}
 	cmd.prepareWorkspace(client)
+	cmd.statusReporter = opts.Reporter
 
 	wctx, err := cmd.executeDevsyUp(ctx, opts.DevsyConfig, client)
 	if err != nil {
@@ -266,7 +268,10 @@ func (cmd *UpCmd) Run(
 	emitJSON := mode == output.ModeJSON
 
 	out := cmd.stdout()
-	cmd.statusReporter = newStatusReporter(emitJSON, out)
+	cmd.statusReporter, err = newStatusReporter(cmd.ResultFormat, out, cmd.Verbosity > 0 || cmd.Debug)
+	if err != nil {
+		return err
+	}
 
 	t, err := cmd.setUpTask(client, emitJSON, out)
 	if err != nil {
@@ -279,6 +284,12 @@ func (cmd *UpCmd) Run(
 		return reportErr(err, emitJSON, out)
 	}
 	if wctx == nil || cmd.Prebuild {
+		if err := status.Run(ctx, cmd.reporter(), status.Operation{
+			Phase: status.PhaseReady,
+		}, func(context.Context) error { return nil }); err != nil {
+			failTask(t, err)
+			return reportErr(err, emitJSON, out)
+		}
 		succeedTask(t, nil)
 		return nil // Platform mode or prebuild-only run.
 	}
@@ -350,9 +361,13 @@ type finalizeUpArgs struct {
 }
 
 // finalizeUp performs the post-up steps: workspace configuration, optional SSH
-// tunnel, IDE launch, and JSON envelope emission. Split out to keep Run small.
+// tunnel, IDE launch, and terminal result emission. Split out to keep Run small.
 func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
-	if err := cmd.configureWorkspace(args.devsyConfig, args.client, args.wctx); err != nil {
+	if err := status.Run(ctx, cmd.reporter(), status.Operation{
+		Phase: status.PhaseConfiguringWorkspace,
+	}, func(context.Context) error {
+		return cmd.configureWorkspace(args.devsyConfig, args.client, args.wctx)
+	}); err != nil {
 		return reportErr(err, args.emitJSON, args.out)
 	}
 
@@ -364,19 +379,40 @@ func (cmd *UpCmd) finalizeUp(ctx context.Context, args *finalizeUpArgs) error {
 	); cleanup != nil {
 		defer cleanup()
 	}
-	if err := cmd.reconfigureSSHWithTunnel(args.devsyConfig, args.client, args.wctx); err != nil {
-		log.Warnf("failed to reconfigure ssh with tunnel port: %v", err)
+	if cmd.ConfigureSSH && args.wctx.tunnelPort > 0 {
+		if err := status.Run(ctx, cmd.reporter(), status.Operation{
+			Phase: status.PhaseConfiguringSSH,
+		}, func(context.Context) error {
+			return cmd.reconfigureSSHWithTunnel(args.devsyConfig, args.client, args.wctx)
+		}); err != nil {
+			log.Warnf("failed to reconfigure ssh with tunnel port: %v", err)
+		}
 	}
 
-	ideURL, err := cmd.openIDE(ctx, args.devsyConfig, args.client, args.wctx)
+	var ideURL string
+	err := status.Run(ctx, cmd.reporter(), status.Operation{
+		Phase: status.PhaseLaunchingIDE,
+	}, func(ctx context.Context) error {
+		var err error
+		ideURL, err = cmd.openIDE(ctx, args.devsyConfig, args.client, args.wctx)
+		return err
+	})
 	if err != nil {
+		return reportErr(err, args.emitJSON, args.out)
+	}
+	// The terminal ready event must precede the final machine-readable result.
+	// Keep this before tunnel wait so non-detached tunnel invocations still
+	// publish their result promptly.
+	if err := status.Run(ctx, cmd.reporter(), status.Operation{
+		Phase: status.PhaseReady,
+	}, func(context.Context) error { return nil }); err != nil {
 		return reportErr(err, args.emitJSON, args.out)
 	}
 	if args.emitJSON {
 		emitUpResult(args.wctx, ideURL, args.out)
 	}
 	if args.wctx.tunnelPort > 0 {
-		log.Infof(
+		log.Debugf(
 			"ssh tunnel active on port %d, waiting for shutdown signal",
 			args.wctx.tunnelPort,
 		)
@@ -398,7 +434,15 @@ func (cmd *UpCmd) maybeStartTunnel(
 		devsyConfig.ContextOption(config.ContextOptionSSHTunnelMode) != config.BoolTrue {
 		return nil
 	}
-	tunnelPort, tunnelCleanup, err := cmd.startTunnel(ctx, devsyConfig, client, wctx)
+	var tunnelPort int
+	var tunnelCleanup func()
+	err := status.Run(ctx, cmd.reporter(), status.Operation{
+		Phase: status.PhaseStartingSSHTunnel,
+	}, func(ctx context.Context) error {
+		var err error
+		tunnelPort, tunnelCleanup, err = cmd.startTunnel(ctx, devsyConfig, client, wctx)
+		return err
+	})
 	if err != nil {
 		log.Warnf("failed to start ssh tunnel, falling back to ProxyCommand: %v", err)
 		return nil
@@ -414,11 +458,10 @@ func (cmd *UpCmd) stdout() io.Writer {
 	return os.Stdout
 }
 
-// reportErr writes the error to JSON output when requested and returns it for the caller.
-func reportErr(err error, emitJSON bool, out io.Writer) error {
-	if emitJSON {
-		_ = config2.WriteErrorJSON(out, err.Error())
-	}
+// reportErr preserves the error for the command root, which owns final
+// rendering. Status reporters already emitted the failed operation; writing a
+// CLI error here would duplicate the root's final error envelope.
+func reportErr(err error, _ bool, _ io.Writer) error {
 	return err
 }
 

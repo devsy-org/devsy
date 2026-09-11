@@ -91,6 +91,26 @@ describe("CliRunner", () => {
       )
     })
 
+    it("parses the final result after structured status NDJSON", async () => {
+      const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
+        typeof vi.fn
+      >
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
+          callback(null, {
+            stdout:
+              '{"kind":"status","schemaVersion":1,"phase":"building_image","state":"started"}\n' +
+              '{"kind":"status","schemaVersion":1,"phase":"building_image","state":"succeeded","durationMs":12}\n' +
+              '{"id":"ws-1"}\n',
+            stderr: "",
+          })
+        },
+      )
+
+      await expect(cli.run<{ id: string }>(["workspace", "list"]))
+        .resolves.toEqual({ id: "ws-1" })
+    })
+
     it("throws on non-zero exit code with stripped ANSI stderr", async () => {
       const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
         typeof vi.fn

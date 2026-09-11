@@ -110,14 +110,29 @@ function out(data) {
   )
 }
 
-function providerStatus(phase, started, step) {
+function providerStatus(phase, state, step) {
   out(
     JSON.stringify({
       kind: "status",
+      schemaVersion: 1,
       pipeline: "provider",
       phase,
       ...(step ? { step } : {}),
-      started,
+      state,
+    }),
+  )
+}
+
+function workspaceStatus(phase, state, step, error) {
+  out(
+    JSON.stringify({
+      kind: "status",
+      schemaVersion: 1,
+      pipeline: "workspace_up",
+      phase,
+      ...(step ? { step } : {}),
+      state,
+      ...(error ? { error } : {}),
     }),
   )
 }
@@ -268,10 +283,13 @@ function handleUp(args) {
     return
   }
 
-  out("Resolving source")
-  out("Pulling image")
-  out("Starting workspace")
-  out("Workspace ready")
+  workspaceStatus("resolving_config", "started")
+  workspaceStatus("resolving_config", "succeeded")
+  workspaceStatus("building_image", "started")
+  workspaceStatus("building_image", "succeeded")
+  workspaceStatus("starting_container", "started")
+  workspaceStatus("starting_container", "succeeded")
+  workspaceStatus("ready", "succeeded")
   materializeWorkspace(wsId, source, providerFlag, ideFlag, "Running")
   process.exit(0)
 }
@@ -326,10 +344,37 @@ function handleTaskLogs(args) {
     return
   }
 
-  out("Resolving source")
-  out("Pulling image")
-  out("Starting workspace")
-  out("Workspace ready")
+  if (t.source && /fail/i.test(t.source)) {
+    workspaceStatus("resolving_config", "started")
+    workspaceStatus("resolving_config", "succeeded")
+    workspaceStatus("building_image", "started")
+    workspaceStatus("building_image", "failed", undefined, {
+      code: "build_failed",
+      message: "The mock image build failed.",
+      hint: "Check the build output and retry.",
+    })
+    t.status = "failed"
+    saveState(state)
+    out(
+      JSON.stringify({
+        kind: "error",
+        outcome: "error",
+        code: "build_failed",
+        message: "The mock image build failed.",
+        hint: "Check the build output and retry.",
+      }),
+    )
+    process.exit(1)
+    return
+  }
+
+  workspaceStatus("resolving_config", "started")
+  workspaceStatus("resolving_config", "succeeded")
+  workspaceStatus("building_image", "started")
+  workspaceStatus("building_image", "succeeded")
+  workspaceStatus("starting_container", "started")
+  workspaceStatus("starting_container", "succeeded")
+  workspaceStatus("ready", "succeeded")
   materializeWorkspace(t.wsId, t.source, t.providerFlag, t.ideFlag)
   t.status = "succeeded"
   saveState(state)
@@ -424,12 +469,15 @@ function handleStart(args) {
   const { positional, idFlag, providerFlag, ideFlag } = parseArgs(args)
   const source = positional[0]
   const wsId = idFlag || source || "workspace"
-  out("Resolving source")
-  out("Pulling image")
-  out("Starting workspace")
-  out("Workspace ready")
-  materializeWorkspace(wsId, source, providerFlag, ideFlag, "Running")
-  process.exit(0)
+  workspaceStatus("resolving_config", "started")
+  workspaceStatus("resolving_config", "succeeded")
+  workspaceStatus("starting_container", "started")
+  setTimeout(() => {
+    workspaceStatus("starting_container", "succeeded")
+    workspaceStatus("ready", "succeeded")
+    materializeWorkspace(wsId, source, providerFlag, ideFlag, "Running")
+    process.exit(0)
+  }, 500)
 }
 
 function handleDelete(args) {
@@ -600,16 +648,16 @@ switch (cmd) {
           saveState(state)
         }
         // No ready phase: install finished, init has not run.
-        providerStatus("installing_provider", true)
-        providerStatus("installing_provider", false, provName)
+        providerStatus("installing_provider", "started")
+        providerStatus("installing_provider", "succeeded", provName)
         process.exit(0)
         break
       }
       case "init": {
         const provName = extra || providerFlag
-        providerStatus("resolving_options", true, provName)
-        providerStatus("resolving_options", false, provName)
-        providerStatus("running_init", true, provName)
+        providerStatus("resolving_options", "started", provName)
+        providerStatus("resolving_options", "succeeded", provName)
+        providerStatus("running_init", "started", provName)
         // *probe suffix delays init so lifecycle tests can observe in-flight state.
         const initMs = /probe$/.test(provName) ? 5000 : 150
         setTimeout(() => {
@@ -618,8 +666,8 @@ switch (cmd) {
             latest.providers[provName].state.initialized = true
             saveState(latest)
           }
-          providerStatus("running_init", false, provName)
-          providerStatus("ready", false, provName)
+          providerStatus("running_init", "succeeded", provName)
+          providerStatus("ready", "succeeded", provName)
           process.exit(0)
         }, initMs)
         break
@@ -673,8 +721,8 @@ switch (cmd) {
           state.providers[provName].state.initialized = false
           saveState(state)
         }
-        providerStatus("installing_provider", true, provName)
-        providerStatus("installing_provider", false, provName)
+        providerStatus("installing_provider", "started", provName)
+        providerStatus("installing_provider", "succeeded", provName)
         process.exit(0)
         break
       }

@@ -82,8 +82,18 @@ message LogMessage {
 message StatusUpdate {
   string phase = 1;
   string step = 2;
-  bool started = 3;
-  string error = 4;
+  string state = 3;
+  int64 duration_ms = 4;
+  string operation_id = 5;
+  string parent_operation_id = 6;
+  StatusError error = 7;
+}
+
+message StatusError {
+  string code = 1;
+  string message = 2;
+  string hint = 3;
+  map<string, string> context = 4;
 }
 
 message Empty {

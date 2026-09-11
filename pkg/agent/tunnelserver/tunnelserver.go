@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -447,14 +448,33 @@ func (t *tunnelServer) Status(
 	ctx context.Context,
 	update *tunnel.StatusUpdate,
 ) (*tunnel.Empty, error) {
+	if update == nil || update.Phase == "" || !status.ValidState(status.State(update.State)) || update.DurationMs < 0 {
+		return nil, fmt.Errorf("invalid status update: phase, duration, and recognized state are required")
+	}
+	if update.State == string(status.StateFailed) &&
+		(update.Error == nil || update.Error.Message == "") {
+		return nil, fmt.Errorf("invalid failed status update: structured error is required")
+	}
 	// No Pipeline: the tunnel only carries container-side up events, and the
 	// host's reporter stamps the pipeline on arrival.
-	t.statusReporter.Report(status.Event{
-		Phase:   status.Phase(update.Phase),
-		Step:    update.Step,
-		Started: update.Started,
-		Err:     update.Error,
-	})
+	e := status.Event{
+		Phase:             status.Phase(update.Phase),
+		Step:              update.Step,
+		State:             status.State(update.State),
+		Duration:          time.Duration(update.DurationMs) * time.Millisecond,
+		OperationID:       update.OperationId,
+		ParentOperationID: update.ParentOperationId,
+	}
+	if update.Error != nil {
+		e.State = status.StateFailed
+		e.Error = &status.ErrorInfo{
+			Code:    update.Error.Code,
+			Message: update.Error.Message,
+			Hint:    update.Error.Hint,
+			Context: update.Error.Context,
+		}
+	}
+	t.statusReporter.Report(e)
 	return &tunnel.Empty{}, nil
 }
 

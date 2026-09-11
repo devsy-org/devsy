@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -47,4 +48,19 @@ func TestExecRunnerExitCode(t *testing.T) {
 	var cmdErr *CommandError
 	assert.Assert(t, errors.As(err, &cmdErr))
 	assert.Equal(t, 1, cmdErr.ExitCode)
+}
+
+func TestExecRunnerRedactsStreamedStdout(t *testing.T) {
+	const secret = "git-stream-secret-846308"
+	var stdout bytes.Buffer
+	runner := execRunner{}
+
+	_, err := runner.Run(context.Background(), RunOptions{
+		Args:   []string{"-c", "user.name=" + secret, "config", "--get", "user.name"},
+		Env:    []string{"DEVSY_GIT_TOKEN=" + secret},
+		Stdout: &stdout,
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !strings.Contains(stdout.String(), secret))
+	assert.Assert(t, strings.Contains(stdout.String(), "***"))
 }

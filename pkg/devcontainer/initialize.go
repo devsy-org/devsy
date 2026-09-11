@@ -85,7 +85,7 @@ func (c *initializeCommand) run(ctx context.Context, name string, cmd []string) 
 		args = append(append([]string{}, c.shell...), cmd[0])
 	}
 
-	log.Infof(
+	log.Debugf(
 		"Running initializeCommand %q from devcontainer.json: %q",
 		name,
 		strings.Join(args, " "),

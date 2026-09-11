@@ -7,6 +7,9 @@ export interface ProviderStatus {
   label: string
   /** Present when kind is "failed". */
   error?: string
+  errorCode?: string
+  errorHint?: string
+  errorContext?: Record<string, string>
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -34,7 +37,14 @@ export function providerStatus(
   job?: ProviderJob,
 ): ProviderStatus {
   if (job?.error) {
-    return { kind: "failed", label: "failed", error: job.error }
+    return {
+      kind: "failed",
+      label: "failed",
+      error: job.error,
+      errorCode: job.errorCode,
+      errorHint: job.errorHint,
+      errorContext: job.errorContext,
+    }
   }
   if (job) {
     const label =

@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -21,18 +22,50 @@ func Writer(level int) io.WriteCloser {
 // PassthroughWriter writes bytes exactly as received, with no level
 // filtering, line buffering, or structured formatting.
 func PassthroughWriter() io.WriteCloser {
-	return passthroughWriter{}
+	return PassthroughWriterWithRedactor(secrets.NewEnvironmentRedactor(os.Environ()))
 }
 
-type passthroughWriter struct{}
+// PassthroughWriterWithRedactor writes raw bytes to stderr while applying the
+// supplied streaming redactor before anything leaves the process.
+func PassthroughWriterWithRedactor(redactor *secrets.Redactor) io.WriteCloser {
+	return &passthroughWriter{
+		stream: secrets.NewStreamingRedactor(redactor),
+	}
+}
 
-func (passthroughWriter) Write(p []byte) (int, error) {
-	_, _ = os.Stderr.Write(p)
-	_, _ = extraSinks.Write(p)
+type passthroughWriter struct {
+	mu     sync.Mutex
+	stream *secrets.StreamingRedactor
+}
+
+func (w *passthroughWriter) Write(p []byte) (int, error) {
+	if w == nil {
+		return len(p), nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	redacted := []byte(w.stream.RedactChunk(string(p)))
+	if len(redacted) > 0 {
+		_, _ = os.Stderr.Write(redacted)
+		_, _ = extraSinks.Write(redacted)
+	}
 	return len(p), nil
 }
 
-func (passthroughWriter) Close() error { return nil }
+func (w *passthroughWriter) Close() error {
+	if w == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.stream != nil {
+		if pending := w.stream.Flush(); pending != "" {
+			_, _ = os.Stderr.Write([]byte(pending))
+			_, _ = extraSinks.Write([]byte(pending))
+		}
+	}
+	return nil
+}
 
 func verbosityConstToZapLevel(level int) zapcore.Level {
 	switch level {

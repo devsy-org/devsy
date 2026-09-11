@@ -146,25 +146,36 @@ func (r *runner) Up(
 		timeout,
 	)
 
-	status.Enter(reporter, status.PhaseResolvingConfig, "")
-	substitutedConfig, substitutionContext, err := r.getSubstitutedConfig(options.CLIOptions)
+	var substitutedConfig *config.SubstitutedConfig
+	var substitutionContext *config.SubstitutionContext
+	err := status.Run(ctx, reporter, status.Operation{Phase: status.PhaseResolvingConfig}, func(ctx context.Context) error {
+		var resolveErr error
+		substitutedConfig, substitutionContext, resolveErr = r.getSubstitutedConfigWithContext(ctx, options.CLIOptions)
+		return resolveErr
+	})
 	if err != nil {
-		status.Fail(reporter, status.PhaseResolvingConfig, err)
 		return nil, err
 	}
-	status.Leave(reporter, status.PhaseResolvingConfig, "")
 	defer cleanupBuildInformation(substitutedConfig.Config)
 
 	// Recovery skips initializeCommand: a failing host hook must not block the
 	// recovery container.
-	if !options.Recovery {
-		status.Enter(reporter, status.PhaseInitializeCommand, "")
-		if err := r.runInitializeCommand(ctx, substitutedConfig.Config, options); err != nil {
-			err = clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
-			status.Fail(reporter, status.PhaseInitializeCommand, err)
+	if options.Recovery {
+		status.Skip(reporter, status.PhaseInitializeCommand, "recovery mode")
+	} else if options.Platform.Enabled {
+		// Platform workspaces execute initialization remotely; this host-side
+		// phase is intentionally not run and must not appear successful.
+		status.Skip(reporter, status.PhaseInitializeCommand, "platform mode")
+	} else {
+		err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseInitializeCommand}, func(ctx context.Context) error {
+			if err := r.runInitializeCommand(ctx, substitutedConfig.Config, options); err != nil {
+				return clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
+			}
+			return nil
+		})
+		if err != nil {
 			return nil, err
 		}
-		status.Leave(reporter, status.PhaseInitializeCommand, "")
 	}
 
 	params := &runContainerParams{
@@ -174,15 +185,15 @@ func (r *runner) Up(
 		timeout:             timeout,
 	}
 
-	result, err := r.dispatchByConfigKind(ctx, substitutedConfig, params)
+	var result *config.Result
+	err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseReady}, func(ctx context.Context) error {
+		var dispatchErr error
+		result, dispatchErr = r.dispatchByConfigKind(ctx, substitutedConfig, params)
+		return dispatchErr
+	})
 	if result != nil {
 		result.RecoveryContainer = r.recovering
 	}
-	if err != nil {
-		status.Fail(reporter, status.PhaseReady, err)
-		return result, err
-	}
-	status.Leave(reporter, status.PhaseReady, "")
 	return result, err
 }
 
@@ -242,7 +253,7 @@ func (r *runner) runInitializeCommand(
 ) error {
 	if options.Platform.Enabled {
 		if len(conf.InitializeCommand) > 0 {
-			log.Info("Skipping initializeCommand on platform")
+			log.Debug("Skipping initializeCommand on platform")
 		}
 		return nil
 	}

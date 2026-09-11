@@ -103,7 +103,7 @@ func syncTemplateIfRequired(
 		return instance, nil
 	}
 
-	log.Info("Template update required")
+	log.Debug("Template update required")
 	oldInstance := instance.DeepCopy()
 	instance.Spec.TemplateRef.SyncOnce = true
 
@@ -111,7 +111,7 @@ func syncTemplateIfRequired(
 	if err != nil {
 		return nil, fmt.Errorf("update instance: %w", err)
 	}
-	log.Info("updated template")
+	log.Debug("updated template")
 
 	return updated, nil
 }
@@ -302,7 +302,7 @@ func observeTask(
 	)
 	errChan := make(chan error, 1)
 
-	printCtx, cancelPrintCtx := context.WithCancel(context.Background())
+	printCtx, cancelPrintCtx := context.WithCancel(ctx)
 	defer cancelPrintCtx()
 
 	go func() {
@@ -322,7 +322,7 @@ func observeTask(
 			if err != nil {
 				errChan <- err
 			} else {
-				errChan <- errors.New("canceled")
+				errChan <- ctx.Err()
 			}
 		case <-errChan:
 		case <-printCtx.Done():
@@ -512,6 +512,8 @@ type statusSniffingWriter struct {
 	buf      bytes.Buffer
 }
 
+const maxStatusLineBytes = 1 << 20
+
 func newStatusSniffingWriter(next io.Writer, reporter status.Reporter) *statusSniffingWriter {
 	return &statusSniffingWriter{next: next, reporter: reporter}
 }
@@ -533,6 +535,16 @@ func (w *statusSniffingWriter) Write(p []byte) (int, error) {
 		if _, err := w.next.Write([]byte(line)); err != nil {
 			return len(p), err
 		}
+	}
+	if w.buf.Len() > maxStatusLineBytes {
+		// A valid status envelope is small and newline-delimited. Forward a
+		// pathological unterminated line as diagnostics instead of retaining
+		// unbounded remote output in memory.
+		pending := w.buf.Bytes()
+		if _, err := w.next.Write(pending); err != nil {
+			return len(p), err
+		}
+		w.buf.Reset()
 	}
 	return len(p), nil
 }

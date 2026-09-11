@@ -6,6 +6,19 @@ import (
 	"github.com/devsy-org/devsy/pkg/terminal"
 )
 
+func TestResolveMode_DesktopAlwaysUsesJSON(t *testing.T) {
+	t.Setenv("DEVSY_UI", "true")
+	for _, value := range []string{"auto", "plain", "json"} {
+		got, err := ResolveMode(value)
+		if err != nil {
+			t.Fatalf("ResolveMode(%q) returned error: %v", value, err)
+		}
+		if got != ModeJSON {
+			t.Errorf("ResolveMode(%q) = %q, want %q", value, got, ModeJSON)
+		}
+	}
+}
+
 func TestResolveMode_JSON(t *testing.T) {
 	got, err := ResolveMode("json")
 	if err != nil {

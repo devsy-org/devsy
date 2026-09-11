@@ -99,7 +99,7 @@ func (d *dockerDriver) restartAndWait(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		log.Infof(
+		log.Debugf(
 			"restarting container %s (status=%s, attempt=%d/%d)",
 			container.ID, status, attempt, containerRestartAttempts,
 		)
@@ -108,7 +108,7 @@ func (d *dockerDriver) restartAndWait(
 		} else if err := d.Docker.WaitContainerRunning(ctx, container.ID); err != nil {
 			lastErr = fmt.Errorf("wait for container to be running: %w", err)
 		} else {
-			log.Infof("container %s is running", container.ID)
+			log.Debugf("container %s is running", container.ID)
 			return nil
 		}
 		if errors.Is(lastErr, docker.ErrContainerTerminal) ||
@@ -130,14 +130,14 @@ func (d *dockerDriver) unpauseAndWait(
 	ctx context.Context,
 	container *config.ContainerDetails,
 ) error {
-	log.Infof("unpausing container %s", container.ID)
+	log.Debugf("unpausing container %s", container.ID)
 	if err := d.Docker.UnpauseContainer(ctx, container.ID); err != nil {
 		return fmt.Errorf("unpause container: %w", err)
 	}
 	if err := d.Docker.WaitContainerRunning(ctx, container.ID); err != nil {
 		return fmt.Errorf("wait for container to be running: %w", err)
 	}
-	log.Infof("container %s is running", container.ID)
+	log.Debugf("container %s is running", container.ID)
 	return nil
 }
 
@@ -149,11 +149,11 @@ func (d *dockerDriver) waitForRestart(
 	ctx context.Context,
 	container *config.ContainerDetails,
 ) error {
-	log.Infof("container %s is restarting, waiting for a stable state", container.ID)
+	log.Debugf("container %s is restarting, waiting for a stable state", container.ID)
 	err := d.Docker.WaitContainerRunning(ctx, container.ID)
 	switch {
 	case err == nil:
-		log.Infof("container %s is running", container.ID)
+		log.Debugf("container %s is running", container.ID)
 		return nil
 	case errors.Is(err, docker.ErrContainerExited):
 		return d.restartAndWait(ctx, container, config.ContainerStatusExited)
@@ -337,7 +337,7 @@ func (d *dockerDriver) EnsureImage(
 	ctx context.Context,
 	options *driver.RunOptions,
 ) error {
-	log.Infof("inspecting image: image=%s", options.Image)
+	log.Debugf("inspecting image: image=%s", options.Image)
 	err := d.inspectImage(ctx, options)
 	if err == nil {
 		return nil
@@ -352,7 +352,7 @@ func (d *dockerDriver) EnsureImage(
 		return fmt.Errorf("inspect image %s: %w", options.Image, err)
 	}
 
-	log.Infof("image not found, pulling image: image=%s", options.Image)
+	log.Debugf("image not found, pulling image: image=%s", options.Image)
 	writer := log.Writer(log.LevelDebug)
 	defer func() { _ = writer.Close() }()
 
@@ -406,7 +406,7 @@ func (d *dockerDriver) startContainer(
 	args []string,
 	writer io.Writer,
 ) error {
-	log.Infof(
+	log.Debugf(
 		"running docker command: command=%s, args=%s, cwd=%s",
 		d.Docker.DockerCommand,
 		strings.Join(args, " "),
