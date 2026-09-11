@@ -65,6 +65,13 @@ type UpCmd struct {
 	Out io.Writer
 	// Set at the start of Run; nil until then.
 	statusReporter status.Reporter
+
+	// resolveWorkspace overrides workspace.Resolve; nil falls back to workspace.Resolve.
+	resolveWorkspace func(
+		ctx context.Context,
+		devsyConfig *config.Config,
+		params workspace.ResolveParams,
+	) (client2.BaseWorkspaceClient, error)
 }
 
 // Options is the structured input form of the up command.
@@ -123,7 +130,22 @@ func RunHeadless(
 	if err := cmd.validate(); err != nil {
 		return nil, err
 	}
-	if err := cmd.prepareSecrets(opts.DevsyConfig); err != nil {
+	var (
+		project *projectSecretContext
+		err     error
+	)
+	if cfg := client.WorkspaceConfig(); cfg != nil {
+		// Bootstrap credentials must be resolved before repository-owned
+		// secret sources are discovered
+		if err := cmd.prepareBootstrapGitToken(ctx, opts.DevsyConfig, &cfg.Source); err != nil {
+			return nil, err
+		}
+		project, err = cmd.discoverProjectSecrets(ctx, &cfg.Source)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := cmd.prepareSecretsWithProject(ctx, opts.DevsyConfig, project); err != nil {
 		return nil, err
 	}
 	cmd.prepareWorkspace(client)

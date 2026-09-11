@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
@@ -561,8 +562,23 @@ func matchPortRegex(key, portStr string) bool {
 }
 
 type DevsyCustomizations struct {
-	PrebuildRepository         types.StrArray    `json:"prebuildRepository,omitempty"`
-	FeatureDownloadHTTPHeaders map[string]string `json:"featureDownloadHTTPHeaders,omitempty"`
+	PrebuildRepository         types.StrArray         `json:"prebuildRepository,omitempty"`
+	FeatureDownloadHTTPHeaders map[string]string      `json:"featureDownloadHTTPHeaders,omitempty"`
+	SecretSources              []secrets.SourceConfig `json:"secretSources,omitempty"`
+	Secrets                    []string               `json:"secrets,omitempty"`
+}
+
+func (d *DevsyCustomizations) ToProjectConfig() *secrets.ProjectConfig {
+	if d == nil {
+		return nil
+	}
+	if len(d.SecretSources) == 0 && len(d.Secrets) == 0 {
+		return nil
+	}
+	return &secrets.ProjectConfig{
+		SecretSources: append([]secrets.SourceConfig(nil), d.SecretSources...),
+		Secrets:       append([]string(nil), d.Secrets...),
+	}
 }
 
 type VSCodeCustomizations struct {

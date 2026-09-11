@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	probeNone       = "none"
-	flagNameMount   = "mount"
-	flagMount       = "--" + flagNameMount
-	testBindMountAB = "type=bind,source=/a,target=/b"
-	testSnapshotRef = "ghcr.io/acme/s:my-ws-20260731150405-abcxyz"
+	probeNone        = "none"
+	flagNameMount    = "mount"
+	flagMount        = "--" + flagNameMount
+	testBindMountAB  = "type=bind,source=/a,target=/b"
+	testSnapshotRef  = "ghcr.io/acme/s:my-ws-20260731150405-abcxyz"
+	emptyIsValidName = "empty is valid"
 )
 
 func TestUpCmd_NoLockfileAndFrozenLockfileMutuallyExclusive(t *testing.T) {
@@ -42,7 +43,7 @@ func TestUpCmd_ValidateDefaultUserEnvProbe(t *testing.T) {
 		value   string
 		wantErr bool
 	}{
-		{name: "empty is valid", value: "", wantErr: false},
+		{name: emptyIsValidName, value: "", wantErr: false},
 		{name: "none", value: probeNone, wantErr: false},
 		{name: "loginShell", value: "loginShell", wantErr: false},
 		{name: "interactiveShell", value: "interactiveShell", wantErr: false},
@@ -119,7 +120,7 @@ func TestUpCmd_ValidateWorkspaceMountConsistency(t *testing.T) {
 		value   string
 		wantErr bool
 	}{
-		{name: "empty is valid", value: "", wantErr: false},
+		{name: emptyIsValidName, value: "", wantErr: false},
 		{name: "consistent", value: MountConsistencyConsistent, wantErr: false},
 		{name: "cached", value: MountConsistencyCached, wantErr: false},
 		{name: "delegated", value: MountConsistencyDelegated, wantErr: false},
@@ -265,7 +266,7 @@ func TestUpCmd_ValidateMounts(t *testing.T) {
 		mounts  []string
 		wantErr bool
 	}{
-		{name: "empty is valid", mounts: []string{}},
+		{name: emptyIsValidName, mounts: []string{}},
 		{
 			name:    "valid bind mount",
 			mounts:  []string{"type=bind,source=/host,target=/container"},

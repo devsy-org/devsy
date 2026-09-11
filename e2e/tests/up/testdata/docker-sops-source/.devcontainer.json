@@ -1,0 +1,4 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "postCreateCommand": "printf '%s' \"$SOPS_ALIAS\" > /tmp/sops-env-check.out && cat /run/secrets/tls_key > /tmp/sops-mount-check.out"
+}
