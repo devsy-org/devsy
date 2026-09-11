@@ -99,6 +99,7 @@ interface IpcDependencies {
   getMainWindow: () => BrowserWindow | null
   providerJobs: ProviderJobs
   workspaceJobs: WorkspaceJobs
+  onWorkspaceStopComplete?: (workspaceId: string) => Promise<void>
 }
 
 /** Format a line in zap console format so log-parser.ts can parse it. */
@@ -1185,6 +1186,17 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             .finally(() => reject(error))
         })
     })
+    void completion
+      .then(
+        () => deps.onWorkspaceStopComplete?.(args.workspaceId),
+        () => deps.onWorkspaceStopComplete?.(args.workspaceId),
+      )
+      .catch((error) => {
+        console.warn(
+          `[ipc] failed to reconcile workspace ${args.workspaceId}:`,
+          error,
+        )
+      })
     return { commandId, completion }
   }
 

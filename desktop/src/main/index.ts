@@ -201,6 +201,13 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
     providerJobs,
     workspaceJobs,
+    onWorkspaceStopComplete: async (workspaceId) => {
+      try {
+        await watcher?.refreshWorkspaceStatus(workspaceId)
+      } finally {
+        watcher?.broadcastWorkspaces()
+      }
+    },
   })
 
   // Start state watcher

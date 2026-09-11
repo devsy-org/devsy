@@ -23,6 +23,8 @@ import {
 import { terminalCount } from "$lib/stores/terminals.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
 import { appReady, analyticsTrack } from "$lib/ipc/commands.js"
+import { onNavigate } from "$lib/ipc/events.js"
+import type { UnlistenFn } from "$lib/ipc/types.js"
 import { initSessionTracking } from "$lib/analytics.js"
 import { location } from "$lib/router.js"
 import UpdateBadge from "$lib/components/update/UpdateBadge.svelte"
@@ -106,7 +108,9 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 let unsubLocation: (() => void) | undefined
+let unsubNavigate: UnlistenFn | undefined
 let stopSessionTracking: (() => void) | undefined
+let destroyed = false
 
 function normalizeAnalyticsPath(path: string): string {
   // Match id segments but not the static sub-routes that share the prefix.
@@ -158,6 +162,12 @@ onMount(async () => {
     })
   })
 
+  const navigateUnlisten = await onNavigate((route) => {
+    if (typeof route === "string" && route.startsWith("/")) push(route)
+  })
+  if (destroyed) navigateUnlisten()
+  else unsubNavigate = navigateUnlisten
+
   // Signal the backend that the frontend is ready
   appReady().catch((err) => {
     console.warn("[Devsy] appReady failed:", err)
@@ -174,10 +184,12 @@ onMount(async () => {
 })
 
 onDestroy(() => {
+  destroyed = true
   unsubscribeToasts?.()
   disposeUpdateStore()
   stopSessionTracking?.()
   unsubLocation?.()
+  unsubNavigate?.()
   destroyWorkspaces()
   destroyProviders()
   destroyMachines()
