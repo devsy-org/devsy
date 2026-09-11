@@ -94,11 +94,21 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 
 	var providerConfig *provider.ProviderConfig
 	var options []string
-	err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseInstallingProvider, Step: providerName}, func(ctx context.Context) error {
-		var resolveErr error
-		providerConfig, options, resolveErr = cmd.resolveProviderConfig(ctx, devsyConfig, providerName, args)
-		return resolveErr
-	})
+	err = status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseInstallingProvider, Step: providerName},
+		func(ctx context.Context) error {
+			var resolveErr error
+			providerConfig, options, resolveErr = cmd.resolveProviderConfig(
+				ctx,
+				devsyConfig,
+				providerName,
+				args,
+			)
+			return resolveErr
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -110,9 +120,14 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		return nil
 	}
 
-	return status.Run(ctx, reporter, status.Operation{Phase: status.PhaseReady, Step: providerConfig.Name}, func(ctx context.Context) error {
-		return cmd.useProvider(ctx, devsyConfig, providerConfig, options, reporter)
-	})
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseReady, Step: providerConfig.Name},
+		func(ctx context.Context) error {
+			return cmd.useProvider(ctx, devsyConfig, providerConfig, options, reporter)
+		},
+	)
 }
 
 func validateOptionalProviderName(providerName string) error {

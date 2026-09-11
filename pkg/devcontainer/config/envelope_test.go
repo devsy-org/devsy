@@ -195,7 +195,7 @@ func assertCLIErrorJSONMessage(t *testing.T, message string) {
 	if err := json.Unmarshal(output, &envelope); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
-	if envelope.Outcome != "error" {
+	if envelope.Outcome != KindError {
 		t.Errorf("outcome = %q, want %q", envelope.Outcome, "error")
 	}
 	if envelope.Code != string(clierr.CodeUnknown) {
@@ -514,12 +514,18 @@ func assertStatusJSONLifecycleFields(t *testing.T, want status.Event) {
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.SchemaVersion != 1 || got.State != status.StateFailed || got.DurationMs != 1500 ||
-		got.Error == nil ||
-		got.Error.Code != "docker_daemon_unreachable" {
+	assertStatusEnvelopeFields(t, got)
+}
+
+func assertStatusEnvelopeFields(t *testing.T, got StatusEnvelope) {
+	t.Helper()
+	if got.SchemaVersion != 1 || got.State != status.StateFailed || got.DurationMs != 1500 {
 		t.Fatalf("unexpected envelope: %+v", got)
 	}
-	if got.State != status.StateFailed || got.Error == nil {
+	if got.Error == nil || got.Error.Code != "docker_daemon_unreachable" {
+		t.Fatalf("unexpected error envelope: %+v", got)
+	}
+	if got.State != status.StateFailed {
 		t.Fatalf("current status fields missing: %+v", got)
 	}
 }
