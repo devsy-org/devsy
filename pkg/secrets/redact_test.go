@@ -85,7 +85,8 @@ func TestCombineMasksValuesFromEveryRedactor(t *testing.T) {
 }
 
 func TestRedactor_MasksCredentialBearingURLsAndAuthorizationHeaders(t *testing.T) {
-	input := "clone https://git-user:git-token@example.com/repo and Authorization: Bearer api-token" //nolint:gosec // redaction fixture intentionally contains credential-shaped text
+	input := "clone https://git-user:git-token@example.com/repo " + //nolint:gosec // redaction fixture intentionally contains credential-shaped text
+		"and Authorization: Bearer api-token"
 	got := secrets.NewRedactor(nil).Redact(input)
 	if strings.Contains(got, "git-token") || strings.Contains(got, "api-token") {
 		t.Fatalf("credential escaped format redaction: %q", got)

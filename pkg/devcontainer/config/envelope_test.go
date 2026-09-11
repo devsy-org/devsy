@@ -308,7 +308,10 @@ func TestWriteStatusJSONRoundTrips(t *testing.T) {
 		name string
 		e    status.Event
 	}{
-		{name: "entering phase", e: status.Event{Phase: status.PhaseBuildingImage, State: status.StateStarted}},
+		{
+			name: "entering phase",
+			e:    status.Event{Phase: status.PhaseBuildingImage, State: status.StateStarted},
+		},
 		{
 			name: "completed phase",
 			e:    status.Event{Phase: status.PhaseBuildingImage, State: status.StateSucceeded},
@@ -363,20 +366,56 @@ func TestParseStatusLineRejectsIncompleteEnvelopes(t *testing.T) {
 		line string
 	}{
 		{name: "not JSON", line: "Pulling image..."},
-		{name: "wrong kind", line: `{"kind":"result","schemaVersion":1,"phase":"ready","state":"started"}`},
-		{name: "missing schema version", line: `{"kind":"status","phase":"ready","state":"started"}`},
+		{
+			name: "wrong kind",
+			line: `{"kind":"result","schemaVersion":1,"phase":"ready","state":"started"}`,
+		},
+		{
+			name: "missing schema version",
+			line: `{"kind":"status","phase":"ready","state":"started"}`,
+		},
 		{name: "missing phase", line: `{"kind":"status","schemaVersion":1,"state":"started"}`},
-		{name: "empty phase", line: `{"kind":"status","schemaVersion":1,"phase":"","state":"started"}`},
+		{
+			name: "empty phase",
+			line: `{"kind":"status","schemaVersion":1,"phase":"","state":"started"}`,
+		},
 		{name: "missing state", line: `{"kind":"status","schemaVersion":1,"phase":"ready"}`},
-		{name: "legacy started field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","started":true}`},
-		{name: "legacy structured error field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","errorInfo":{"message":"boom"}}`},        //nolint:lll // exact compatibility fixture
-		{name: "legacy string error field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":"boom"}`},                            //nolint:lll // exact compatibility fixture
-		{name: "error without message", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"code":"boom"}}`},                       //nolint:lll // exact validation fixture
-		{name: "error with unknown field", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"message":"boom","details":"old"}}`}, //nolint:lll // exact validation fixture
-		{name: "failed without structured error", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed"}`},                                     //nolint:lll // exact validation fixture
-		{name: "unknown state", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"running"}`},
-		{name: "negative duration", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded","durationMs":-1}`},            //nolint:lll // exact validation fixture
-		{name: "duration overflow", line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded","durationMs":9223372036855}`}, //nolint:lll // exact validation fixture
+		{
+			name: "legacy started field",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","started":true}`,
+		},
+		{
+			name: "legacy structured error field",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","errorInfo":{"message":"boom"}}`,
+		}, //nolint:lll // exact compatibility fixture
+		{
+			name: "legacy string error field",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":"boom"}`,
+		}, //nolint:lll // exact compatibility fixture
+		{
+			name: "error without message",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"code":"boom"}}`,
+		}, //nolint:lll // exact validation fixture
+		{
+			name: "error with unknown field",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"message":"boom","details":"old"}}`,
+		}, //nolint:lll // exact validation fixture
+		{
+			name: "failed without structured error",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed"}`,
+		}, //nolint:lll // exact validation fixture
+		{
+			name: "unknown state",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"running"}`,
+		},
+		{
+			name: "negative duration",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded","durationMs":-1}`,
+		}, //nolint:lll // exact validation fixture
+		{
+			name: "duration overflow",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded","durationMs":9223372036855}`,
+		}, //nolint:lll // exact validation fixture
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -388,7 +427,9 @@ func TestParseStatusLineRejectsIncompleteEnvelopes(t *testing.T) {
 }
 
 func TestParseStatusLineAcceptsSucceededState(t *testing.T) {
-	event, ok := ParseStatusLine(`{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded"}`)
+	event, ok := ParseStatusLine(
+		`{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded"}`,
+	)
 	if !ok {
 		t.Fatal("ParseStatusLine rejected a valid completed-phase envelope")
 	}
@@ -456,7 +497,11 @@ func TestWriteStatusJSONIncludesCurrentLifecycleFields(t *testing.T) {
 		Phase:             status.PhaseBuildingImage,
 		State:             status.StateFailed,
 		Duration:          1500 * time.Millisecond,
-		Error:             &status.ErrorInfo{Code: "docker_daemon_unreachable", Message: "daemon unavailable", Hint: "Start Docker and retry."},
+		Error: &status.ErrorInfo{
+			Code:    "docker_daemon_unreachable",
+			Message: "daemon unavailable",
+			Hint:    "Start Docker and retry.",
+		},
 	}
 	if err := WriteStatusJSON(&buf, want); err != nil {
 		t.Fatalf("WriteStatusJSON: %v", err)
@@ -465,7 +510,9 @@ func TestWriteStatusJSONIncludesCurrentLifecycleFields(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.SchemaVersion != 1 || got.State != status.StateFailed || got.DurationMs != 1500 || got.Error == nil || got.Error.Code != "docker_daemon_unreachable" {
+	if got.SchemaVersion != 1 || got.State != status.StateFailed || got.DurationMs != 1500 ||
+		got.Error == nil ||
+		got.Error.Code != "docker_daemon_unreachable" {
 		t.Fatalf("unexpected envelope: %+v", got)
 	}
 	if got.State != status.StateFailed || got.Error == nil {

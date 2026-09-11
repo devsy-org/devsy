@@ -108,7 +108,10 @@ func TestStatus_ForwardsCurrentStructuredEvent(t *testing.T) {
 
 func TestStatusRejectsMissingCurrentState(t *testing.T) {
 	srv := New()
-	_, err := srv.Status(context.Background(), &tunnel.StatusUpdate{Phase: string(status.PhaseReady)})
+	_, err := srv.Status(
+		context.Background(),
+		&tunnel.StatusUpdate{Phase: string(status.PhaseReady)},
+	)
 	require.Error(t, err)
 }
 

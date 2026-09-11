@@ -148,11 +148,19 @@ func (r *runner) Up(
 
 	var substitutedConfig *config.SubstitutedConfig
 	var substitutionContext *config.SubstitutionContext
-	err := status.Run(ctx, reporter, status.Operation{Phase: status.PhaseResolvingConfig}, func(ctx context.Context) error {
-		var resolveErr error
-		substitutedConfig, substitutionContext, resolveErr = r.getSubstitutedConfigWithContext(ctx, options.CLIOptions)
-		return resolveErr
-	})
+	err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseResolvingConfig},
+		func(ctx context.Context) error {
+			var resolveErr error
+			substitutedConfig, substitutionContext, resolveErr = r.getSubstitutedConfigWithContext(
+				ctx,
+				options.CLIOptions,
+			)
+			return resolveErr
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -168,12 +176,21 @@ func (r *runner) Up(
 		// phase is intentionally not run and must not appear successful.
 		status.Skip(reporter, status.PhaseInitializeCommand, "platform mode")
 	default:
-		err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseInitializeCommand}, func(ctx context.Context) error {
-			if err := r.runInitializeCommand(ctx, substitutedConfig.Config, options); err != nil {
-				return clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
-			}
-			return nil
-		})
+		err = status.Run(
+			ctx,
+			reporter,
+			status.Operation{Phase: status.PhaseInitializeCommand},
+			func(ctx context.Context) error {
+				if err := r.runInitializeCommand(
+					ctx,
+					substitutedConfig.Config,
+					options,
+				); err != nil {
+					return clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
+				}
+				return nil
+			},
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -187,11 +204,16 @@ func (r *runner) Up(
 	}
 
 	var result *config.Result
-	err = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseReady}, func(ctx context.Context) error {
-		var dispatchErr error
-		result, dispatchErr = r.dispatchByConfigKind(ctx, substitutedConfig, params)
-		return dispatchErr
-	})
+	err = status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseReady},
+		func(ctx context.Context) error {
+			var dispatchErr error
+			result, dispatchErr = r.dispatchByConfigKind(ctx, substitutedConfig, params)
+			return dispatchErr
+		},
+	)
 	if result != nil {
 		result.RecoveryContainer = r.recovering
 	}

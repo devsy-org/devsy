@@ -13,6 +13,7 @@ import (
 )
 
 const statusTestSecret = "status-secret"
+const statusBefore = "before"
 
 type recordingReporter struct {
 	events []Event
@@ -106,7 +107,7 @@ func TestMemoryReporterDeepCopiesEvents(t *testing.T) {
 	r := NewMemoryReporter()
 	original := Event{
 		Phase: PhaseBuildingImage,
-		Error: &ErrorInfo{Message: "before", Context: map[string]string{"key": "before"}},
+		Error: &ErrorInfo{Message: statusBefore, Context: map[string]string{"key": statusBefore}},
 	}
 	r.Report(original)
 	original.Error.Message = "mutated"
@@ -116,7 +117,7 @@ func TestMemoryReporterDeepCopiesEvents(t *testing.T) {
 	got[0].Error.Message = "changed snapshot"
 	got[0].Error.Context["key"] = "changed snapshot"
 	again := r.Events()
-	if again[0].Error.Message != "before" || again[0].Error.Context["key"] != "before" {
+	if again[0].Error.Message != statusBefore || again[0].Error.Context["key"] != statusBefore {
 		t.Fatalf("memory reporter did not isolate event mutations: %+v", again[0])
 	}
 }
@@ -214,7 +215,7 @@ func TestRunReportsFailureAndNestedParent(t *testing.T) {
 		t.Fatalf("got %d events, want 4", len(r.events))
 	}
 	outerStart, innerStart, innerDone, outerDone := r.events[0], r.events[1], r.events[2], r.events[3]
-	assertNestedFailure(t, outerStart, innerStart, innerDone, outerDone, wantErr)
+	assertNestedFailure(t, nestedFailureEvents{outerStart, innerStart, innerDone, outerDone, wantErr})
 }
 
 func assertLifecycleStart(t *testing.T, event Event) {
@@ -231,13 +232,18 @@ func assertLifecycleCompletion(t *testing.T, start, done Event) {
 	}
 }
 
-func assertNestedFailure(t *testing.T, outerStart, innerStart, innerDone, outerDone Event, wantErr error) {
+type nestedFailureEvents struct {
+	outerStart, innerStart, innerDone, outerDone Event
+	wantErr                                      error
+}
+
+func assertNestedFailure(t *testing.T, events nestedFailureEvents) {
 	t.Helper()
-	if innerStart.ParentOperationID != outerStart.OperationID {
-		t.Errorf("inner parent = %q, want %q", innerStart.ParentOperationID, outerStart.OperationID)
+	if events.innerStart.ParentOperationID != events.outerStart.OperationID {
+		t.Errorf("inner parent = %q, want %q", events.innerStart.ParentOperationID, events.outerStart.OperationID)
 	}
-	assertFailedEvent(t, innerDone, wantErr)
-	assertFailedEvent(t, outerDone, wantErr)
+	assertFailedEvent(t, events.innerDone, events.wantErr)
+	assertFailedEvent(t, events.outerDone, events.wantErr)
 }
 
 func assertFailedEvent(t *testing.T, event Event, wantErr error) {

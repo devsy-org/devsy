@@ -16,6 +16,7 @@ import (
 const (
 	captureTestSecret = "DEVSY_SECRET_TEST_846297"
 	testWindows       = "windows"
+	captureToken      = "TOKEN="
 )
 
 func TestBoundedBufferRedactsAndCapsLines(t *testing.T) {
@@ -38,7 +39,7 @@ func TestBoundedBufferRedactsAndCapsLines(t *testing.T) {
 }
 
 func TestDisplayCommandRedactsAndQuotes(t *testing.T) {
-	redactor := secrets.NewRedactor([]string{"TOKEN=DEVSY_SECRET_TEST_846297"})
+	redactor := secrets.NewRedactor([]string{captureToken + captureTestSecret})
 	got := displayCommand("docker", []string{"run", "token=DEVSY_SECRET_TEST_846297", "hello world"}, redactor)
 	want := `docker run token=*** "hello world"`
 	if got != want {

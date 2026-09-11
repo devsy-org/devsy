@@ -22,7 +22,12 @@ func TestClassifyCancellation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := Classify(tc.err)
 			if got.Code != tc.code || got.Message == "" || got.Hint == "" {
-				t.Fatalf("Classify(%v) = %+v, want code %q and actionable text", tc.err, got, tc.code)
+				t.Fatalf(
+					"Classify(%v) = %+v, want code %q and actionable text",
+					tc.err,
+					got,
+					tc.code,
+				)
 			}
 		})
 	}
@@ -169,7 +174,11 @@ func TestCLIError_LogObjectShape(t *testing.T) {
 }
 
 func TestClassifyDockerDaemonUnreachable(t *testing.T) {
-	got := Classify(stderrs.New("inspect container: Cannot connect to the Docker daemon at unix:///var/run/docker.sock"))
+	got := Classify(
+		stderrs.New(
+			"inspect container: Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+		),
+	)
 	if got.Code != CodeDockerDaemonUnreachable {
 		t.Fatalf("Code = %q, want %q", got.Code, CodeDockerDaemonUnreachable)
 	}
