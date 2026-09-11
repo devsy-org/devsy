@@ -3,9 +3,9 @@ package ssh
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -21,6 +21,7 @@ var ErrIdleTimeout = errors.New("port forward idle timeout")
 var ErrTransportClosed = errors.New("ssh transport closed")
 
 type ForwardingFunction func(
+	context.Context,
 	net.Conn,
 	*ssh.Client,
 	string,
@@ -151,6 +152,7 @@ func portForwarding(
 		)
 		cancel(ErrIdleTimeout)
 	}, srcAddr)
+	defer counter.Close()
 	for {
 		// waiting for a new connection
 		connection, err := listener.Accept()
@@ -171,7 +173,7 @@ func portForwarding(
 		go func() {
 			defer counter.Dec()
 
-			forwardFn(connection, client, dstNetwork, dstAddr)
+			forwardFn(fwdCtx, connection, client, dstNetwork, dstAddr)
 		}()
 	}
 }
@@ -202,10 +204,12 @@ func watchTransportClosed(
 }
 
 func forward(
+	ctx context.Context,
 	localConn net.Conn,
 	client *ssh.Client,
 	remoteNetwork, remoteAddr string,
 ) {
+	defer func() { _ = localConn.Close() }()
 	// Setup sshConn (type net.Conn)
 	sshConn, err := client.Dial(remoteNetwork, remoteAddr)
 	if err != nil {
@@ -213,35 +217,18 @@ func forward(
 		return
 	}
 	defer func() { _ = sshConn.Close() }()
-
-	// Copy localConn.Reader to sshConn.Writer
-	waitGroup := sync.WaitGroup{}
-	waitGroup.Go(func() {
-		defer func() { _ = sshConn.Close() }()
-
-		_, err = io.Copy(sshConn, localConn)
-		if err != nil {
-			log.Debugf("error copying to remote: %v", err)
-		}
-	})
-
-	// Copy sshConn.Reader to localConn.Writer
-	waitGroup.Go(func() {
-		defer func() { _ = localConn.Close() }()
-
-		_, err = io.Copy(localConn, sshConn)
-		if err != nil {
-			log.Debugf("error copying to local: %v", err)
-		}
-	})
-	waitGroup.Wait()
+	if err := relayDuplex(ctx, localConn, sshConn); err != nil {
+		log.Debugf("error forwarding connection: %v", err)
+	}
 }
 
 func reverseForward(
+	ctx context.Context,
 	remoteConn net.Conn,
 	client *ssh.Client,
 	localNetwork, localAddr string,
 ) {
+	defer func() { _ = remoteConn.Close() }()
 	// Setup localConn (type net.Conn)
 	localConn, err := net.Dial(localNetwork, localAddr)
 	if err != nil {
@@ -249,26 +236,54 @@ func reverseForward(
 		return
 	}
 	defer func() { _ = localConn.Close() }()
+	if err := relayDuplex(ctx, remoteConn, localConn); err != nil {
+		log.Debugf("error forwarding reverse connection: %v", err)
+	}
+}
 
-	// Copy localConn.Reader to sshConn.Writer
-	waitGroup := sync.WaitGroup{}
-	waitGroup.Go(func() {
-		defer func() { _ = localConn.Close() }()
+type closeWriter interface{ CloseWrite() error }
 
-		_, err = io.Copy(localConn, remoteConn)
-		if err != nil {
-			log.Debugf("error copying to local: %v", err)
+type relayResult struct {
+	direction string
+	err       error
+}
+
+func relayOneWay(dst net.Conn, src net.Conn, direction string, results chan<- relayResult) {
+	_, err := io.Copy(dst, src)
+	if err == nil {
+		cw, ok := dst.(closeWriter)
+		if !ok {
+			err = errors.New("destination does not support CloseWrite")
+		} else if closeErr := cw.CloseWrite(); closeErr != nil && !errors.Is(closeErr, io.EOF) {
+			err = closeErr
 		}
-	})
+	}
+	results <- relayResult{direction: direction, err: err}
+}
 
-	// Copy sshConn.Reader to localConn.Writer
-	waitGroup.Go(func() {
-		defer func() { _ = remoteConn.Close() }()
-
-		_, err = io.Copy(remoteConn, localConn)
-		if err != nil {
-			log.Debugf("error copying to remote: %v", err)
+func relayDuplex(ctx context.Context, left, right net.Conn) error {
+	results := make(chan relayResult, 2)
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = left.Close()
+			_ = right.Close()
+		case <-stop:
 		}
-	})
-	waitGroup.Wait()
+	}()
+	go relayOneWay(right, left, "local-to-remote", results)
+	go relayOneWay(left, right, "remote-to-local", results)
+
+	var firstErr error
+	for i := 0; i < 2; i++ {
+		result := <-results
+		if result.err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("%s relay: %w", result.direction, result.err)
+			_ = left.Close()
+			_ = right.Close()
+		}
+	}
+	return firstErr
 }

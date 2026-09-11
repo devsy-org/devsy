@@ -248,12 +248,13 @@ func RunServices(ctx context.Context, opts RunServicesOptions) error {
 		extraListeners:   opts.ExtraListeners,
 	}
 
-	forwardedPorts, err := forwardDevContainerPorts(ctx, fp)
+	result, err := getContainerResult(ctx, fp)
 	if err != nil {
-		return fmt.Errorf("forward ports: %w", err)
+		return fmt.Errorf("retrieve container result: %w", err)
 	}
+	forwardedPorts := forwardDevContainerPorts(ctx, fp, result)
 
-	resolver := buildPortAttributeResolver(ctx, fp)
+	resolver := buildPortAttributeResolver(result)
 
 	return retry.OnError(wait.Backoff{
 		Steps:    maxRetrySteps,
@@ -268,9 +269,8 @@ func RunServices(ctx context.Context, opts RunServicesOptions) error {
 }
 
 // buildPortAttributeResolver loads port attributes from the container result.
-func buildPortAttributeResolver(ctx context.Context, p portForwardParams) PortAttributeResolver {
-	result, err := getContainerResult(ctx, p)
-	if err != nil || result == nil || result.MergedConfig == nil {
+func buildPortAttributeResolver(result *config2.Result) PortAttributeResolver {
+	if result == nil || result.MergedConfig == nil {
 		return nil
 	}
 	mc := result.MergedConfig
@@ -289,18 +289,13 @@ type portForwardParams struct {
 }
 
 // forwardDevContainerPorts forwards all the ports defined in the devcontainer.json.
-func forwardDevContainerPorts(ctx context.Context, p portForwardParams) ([]string, error) {
-	result, err := getContainerResult(ctx, p)
-	if err != nil {
-		return nil, err
-	}
-
+func forwardDevContainerPorts(ctx context.Context, p portForwardParams, result *config2.Result) []string {
 	forwardedPorts := []string{}
 	forwardedPorts = append(forwardedPorts, forwardExtraPorts(ctx, p)...)
 	forwardedPorts = append(forwardedPorts, forwardAppPorts(ctx, p, result)...)
 	forwardedPorts = append(forwardedPorts, forwardConfigPorts(ctx, p, result)...)
 
-	return forwardedPorts, nil
+	return forwardedPorts
 }
 
 // getContainerResult retrieves and parses the container result.

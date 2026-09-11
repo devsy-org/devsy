@@ -43,6 +43,22 @@ func TestConnectionCounter_IdleTimeoutFires(t *testing.T) {
 	assert.Equal(t, 0, c.connections, "count must remain zero when the timeout fires")
 }
 
+func TestConnectionCounter_InitialZeroConnectionsStartsTimeout(t *testing.T) {
+	c, calls := newRecordingCounter(t, 10*time.Millisecond)
+	defer c.Close()
+
+	require.Eventually(t, func() bool { return calls.Load() == 1 },
+		time.Second, time.Millisecond, "an initially idle counter should time out")
+}
+
+func TestConnectionCounter_CloseStopsPendingTimeout(t *testing.T) {
+	c, calls := newRecordingCounter(t, 10*time.Millisecond)
+	c.Close()
+
+	time.Sleep(30 * time.Millisecond)
+	assert.Zero(t, calls.Load())
+}
+
 func TestConnectionCounter_NewConnectionBeforeTimeoutCancelsIt(t *testing.T) {
 	c, calls := newRecordingCounter(t, 50*time.Millisecond)
 
