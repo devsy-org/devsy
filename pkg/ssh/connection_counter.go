@@ -103,7 +103,7 @@ func (c *connectionCounter) armTimeoutLocked() {
 }
 
 func (c *connectionCounter) canArmTimeoutLocked() bool {
-	if c.closed || c.connections != 0 {
+	if c.closed || c.timingOut || c.connections != 0 {
 		return false
 	}
 	if c.timeout <= 0 {

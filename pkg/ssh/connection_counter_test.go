@@ -71,11 +71,11 @@ func TestConnectionCounter_TimeoutDispatchRejectsNewConnection(t *testing.T) {
 }
 
 func TestConnectionCounter_CloseStopsPendingTimeout(t *testing.T) {
-	c, calls := newRecordingCounter(t, time.Second)
+	c, calls := newRecordingCounter(t, 10*time.Millisecond)
 	c.Close()
 
-	time.Sleep(30 * time.Millisecond)
-	assert.Zero(t, calls.Load())
+	require.Never(t, func() bool { return calls.Load() > 0 },
+		50*time.Millisecond, time.Millisecond)
 }
 
 func TestConnectionCounter_NewConnectionBeforeTimeoutCancelsIt(t *testing.T) {
