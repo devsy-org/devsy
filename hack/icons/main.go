@@ -352,7 +352,8 @@ func docsWordmarkSVG(textColor string, iconPNG []byte) string {
   <image href="%s" x="40" y="40" width="249" height="249" clip-path="url(#app-icon)"/>
   <text x="340" y="215" font-family="Inter, 'Helvetica Neue', Arial, sans-serif"
         font-size="160" font-weight="600" letter-spacing="-6" fill="%s">devsy</text>
-</svg>`,
+</svg>
+`,
 		docsWordmarkWidth,
 		docsWordmarkHeight,
 		docsWordmarkWidth,
