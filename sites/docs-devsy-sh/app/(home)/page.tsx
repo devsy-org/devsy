@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import './home.css';
 
@@ -31,12 +32,7 @@ export default function HomePage() {
       <header>
         <div className="wrap nav">
           <a className="brand" href="/" aria-label="Devsy home">
-            <svg width="30" height="30" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <rect x="0" y="0" width="1024" height="1024" rx="200" ry="200" fill="#7C5CFF" />
-              <rect x="778" y="144" width="56" height="736" rx="12" fill="#fff" />
-              <rect x="778" y="496" width="24" height="192" fill="#fff" />
-              <circle cx="506" cy="592" r="288" fill="none" stroke="#fff" strokeWidth="56" />
-            </svg>
+            <Image src="/docs/media/devsy-icon.png" alt="" width={30} height={30} />
             devsy
           </a>
           <button
@@ -549,12 +545,7 @@ export default function HomePage() {
       <footer>
         <div className="wrap foot">
           <a className="brand" href="/" style={{ fontSize: 18 }} aria-label="Devsy home">
-            <svg width="24" height="24" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <rect x="0" y="0" width="1024" height="1024" rx="200" ry="200" fill="#7C5CFF" />
-              <rect x="778" y="144" width="56" height="736" rx="12" fill="#fff" />
-              <rect x="778" y="496" width="24" height="192" fill="#fff" />
-              <circle cx="506" cy="592" r="288" fill="none" stroke="#fff" strokeWidth="56" />
-            </svg>
+            <Image src="/docs/media/devsy-icon.png" alt="" width={24} height={24} />
             devsy
           </a>
           <nav className="foot-links">

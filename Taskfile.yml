@@ -233,6 +233,12 @@ tasks:
     dir: desktop
     cmd: npm run check
 
+  desktop:icons:
+    desc: generate application icon assets from canonical SVG source
+    preconditions:
+      - sh: go run ./hack/icons --check-dependencies
+        msg: install Chrome or Chromium and ffmpeg before generating application icons
+    cmd: go run ./hack/icons
   desktop:test:
     desc: run desktop unit tests
     dir: desktop
