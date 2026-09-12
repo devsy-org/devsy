@@ -4,9 +4,15 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"io"
 	"log"
+	"math"
 	"net/url"
 	"os"
 	"os/exec"
@@ -36,9 +42,10 @@ var (
 )
 
 const (
-	fileURLScheme      = "file"
-	docsWordmarkWidth  = 1000
-	docsWordmarkHeight = 329
+	fileURLScheme        = "file"
+	docsWordmarkWidth    = 1000
+	docsWordmarkHeight   = 329
+	docsIconCornerRadius = 180
 )
 
 func findChromeBinary() (string, error) {
@@ -62,16 +69,69 @@ func findChromeBinary() (string, error) {
 	return "", errors.New("chromium or chrome executable not found")
 }
 
+func validateRenderingDependencies() error {
+	if _, err := findChromeBinary(); err != nil {
+		return fmt.Errorf("%w; install Chrome or Chromium before generating icons", err)
+	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		return errors.New("ffmpeg executable not found; install ffmpeg before generating icons")
+	}
+	return nil
+}
+
 func validateSVG(svgPath string) error {
 	data, err := os.ReadFile(svgPath)
 	if err != nil {
 		return fmt.Errorf("read svg: %w", err)
 	}
-	content := string(data)
-	if !strings.Contains(content, "<svg") || !strings.Contains(content, "viewBox=") {
-		return fmt.Errorf("invalid SVG canvas: must contain <svg and viewBox attribute")
+	return validateSVGDocument(data)
+}
+
+func validateSVGDocument(data []byte) error {
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	start, err := firstSVGStartElement(decoder)
+	if err != nil {
+		return err
 	}
-	return nil
+	if err := validateSVGRoot(start); err != nil {
+		return err
+	}
+	for {
+		_, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("parse SVG: %w", err)
+		}
+	}
+}
+
+func firstSVGStartElement(decoder *xml.Decoder) (xml.StartElement, error) {
+	for {
+		token, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			return xml.StartElement{}, errors.New("invalid SVG: missing root element")
+		}
+		if err != nil {
+			return xml.StartElement{}, fmt.Errorf("parse SVG: %w", err)
+		}
+		if start, ok := token.(xml.StartElement); ok {
+			return start, nil
+		}
+	}
+}
+
+func validateSVGRoot(start xml.StartElement) error {
+	if start.Name.Local != "svg" {
+		return fmt.Errorf("invalid SVG root: expected svg, got %s", start.Name.Local)
+	}
+	for _, attribute := range start.Attr {
+		if attribute.Name.Local == "viewBox" && strings.TrimSpace(attribute.Value) != "" {
+			return nil
+		}
+	}
+	return errors.New("invalid SVG canvas: missing or empty viewBox attribute")
 }
 
 func renderPageContents(svgPath string, width, height int) string {
@@ -120,6 +180,48 @@ func renderSVGPNG(svgPath, outPNG string, width, height int) error {
 
 func renderMasterPNG(svgPath, outPNG string) error {
 	return renderSVGPNG(svgPath, outPNG, 1024, 1024)
+}
+
+func docsIconPNG(frame []byte) ([]byte, error) {
+	source, err := png.Decode(bytes.NewReader(frame))
+	if err != nil {
+		return nil, fmt.Errorf("decode docs icon: %w", err)
+	}
+	bounds := source.Bounds()
+	if bounds.Dx() != bounds.Dy() {
+		return nil, fmt.Errorf("docs icon must be square, got %dx%d", bounds.Dx(), bounds.Dy())
+	}
+
+	icon := image.NewNRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			pixel := color.NRGBAModel.Convert(source.At(x, y)).(color.NRGBA)
+			alpha := roundedSquareAlpha(
+				x-bounds.Min.X,
+				y-bounds.Min.Y,
+				bounds.Dx(),
+				docsIconCornerRadius,
+			)
+			pixel.A = uint8(float64(pixel.A) * alpha)
+			icon.SetNRGBA(x, y, pixel)
+		}
+	}
+
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, icon); err != nil {
+		return nil, fmt.Errorf("encode docs icon: %w", err)
+	}
+	return encoded.Bytes(), nil
+}
+
+func roundedSquareAlpha(x, y, size, radius int) float64 {
+	center := float64(radius) - 0.5
+	farCenter := float64(size-radius) - 0.5
+	px, py := float64(x), float64(y)
+	closestX := math.Max(center, math.Min(px, farCenter))
+	closestY := math.Max(center, math.Min(py, farCenter))
+	distance := math.Hypot(px-closestX, py-closestY)
+	return math.Max(0, math.Min(1, float64(radius)+0.5-distance))
 }
 
 func resizePNG(inPNG, outPNG string, size int) error {
@@ -323,26 +425,26 @@ func writeLinuxIcons(resourcesDir, repoRoot string, frames map[int][]byte) error
 	}
 	log.Println("✓ Updated Linux icons (32x32, 128x128) and icon.png")
 
-	docsMediaDir := filepath.Join(
-		repoRoot,
-		"sites",
-		"docs-devsy-sh",
-		"public",
-		"docs",
-		"media",
-	)
-	if _, err := os.Stat(docsMediaDir); err == nil {
-		docsIconPNG := filepath.Join(docsMediaDir, "devsy-icon.png")
-		if err := os.WriteFile(docsIconPNG, frames[1024], 0o644); err != nil {
-			return fmt.Errorf("write docs icon: %w", err)
-		}
-		if err := writeDocsWordmarks(docsMediaDir, frames[256]); err != nil {
-			return err
-		}
-	}
-	return nil
+	return writeDocsIcons(repoRoot, frames)
 }
 
+func writeDocsIcons(repoRoot string, frames map[int][]byte) error {
+	docsMediaDir := filepath.Join(repoRoot, "sites", "docs-devsy-sh", "public", "docs", "media")
+	if _, err := os.Stat(docsMediaDir); err != nil {
+		return nil
+	}
+	transparentDocsIcon, err := docsIconPNG(frames[1024])
+	if err != nil {
+		return err
+	}
+	docsIconPath := filepath.Join(docsMediaDir, "devsy-icon.png")
+	if err := os.WriteFile(docsIconPath, transparentDocsIcon, 0o644); err != nil {
+		return fmt.Errorf("write docs icon: %w", err)
+	}
+	return writeDocsWordmarks(docsMediaDir, frames[256])
+}
+
+//nolint:lll // The fixed vector path data must remain inline in the generated SVG.
 func docsWordmarkSVG(textColor string, iconPNG []byte) string {
 	iconDataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(iconPNG)
 	wordmark := fmt.Sprintf(`<svg width="%d" height="%d"
@@ -350,8 +452,13 @@ func docsWordmarkSVG(textColor string, iconPNG []byte) string {
   <title>Devsy</title>
   <defs><clipPath id="app-icon"><rect x="40" y="40" width="249" height="249" rx="56"/></clipPath></defs>
   <image href="%s" x="40" y="40" width="249" height="249" clip-path="url(#app-icon)"/>
-  <text x="340" y="215" font-family="Inter, 'Helvetica Neue', Arial, sans-serif"
-        font-size="160" font-weight="600" letter-spacing="-6" fill="%s">devsy</text>
+  <g fill="%s">
+    <path transform="translate(340 215) scale(0.078125 -0.078125)" d="M930 950L930 1556L1114 1556L1114 0L930 0L930 168Q872 68 783.5 19.5Q695 -29 571 -29Q368 -29 240.5 133Q113 295 113 559Q113 823 240.5 985Q368 1147 571 1147Q695 1147 783.5 1098.5Q872 1050 930 950ZM303 559Q303 356 386.5 240.5Q470 125 616 125Q762 125 846 240.5Q930 356 930 559Q930 762 846 877.5Q762 993 616 993Q470 993 386.5 877.5Q303 762 303 559Z"/>
+    <path transform="translate(438.563 215) scale(0.078125 -0.078125)" d="M1151 606L1151 516L305 516Q317 326 419.5 226.5Q522 127 705 127Q811 127 910.5 153Q1010 179 1108 231L1108 57Q1009 15 905 -7Q801 -29 694 -29Q426 -29 269.5 127Q113 283 113 549Q113 824 261.5 985.5Q410 1147 662 1147Q888 1147 1019.5 1001.5Q1151 856 1151 606ZM967 660Q965 811 882.5 901Q800 991 664 991Q510 991 417.5 904Q325 817 311 659Z"/>
+    <path transform="translate(534 215) scale(0.078125 -0.078125)" d="M61 1120L256 1120L606 180L956 1120L1151 1120L731 0L481 0Z"/>
+    <path transform="translate(625.688 215) scale(0.078125 -0.078125)" d="M907 1087L907 913Q829 953 745 973Q661 993 571 993Q434 993 365.5 951Q297 909 297 825Q297 761 346 724.5Q395 688 543 655L606 641Q802 599 884.5 522.5Q967 446 967 309Q967 153 843.5 62Q720 -29 504 -29Q414 -29 316.5 -11.5Q219 6 111 41L111 231Q213 178 312 151.5Q411 125 508 125Q638 125 708 169.5Q778 214 778 295Q778 370 727.5 410Q677 450 506 487L442 502Q271 538 195 612.5Q119 687 119 817Q119 975 231 1061Q343 1147 549 1147Q651 1147 741 1132Q831 1117 907 1087Z"/>
+    <path transform="translate(706.047 215) scale(0.078125 -0.078125)" d="M659 -104Q581 -304 507 -365Q433 -426 309 -426L162 -426L162 -272L270 -272Q346 -272 388 -236Q430 -200 481 -66L514 18L61 1120L256 1120L606 244L956 1120L1151 1120Z"/>
+  </g>
 </svg>
 `,
 		docsWordmarkWidth,
@@ -417,6 +524,9 @@ func writeAllAssets(resourcesDir, repoRoot, svgPath string, frames map[int][]byt
 }
 
 func run() error {
+	if err := validateRenderingDependencies(); err != nil {
+		return err
+	}
 	repoRoot, err := filepath.Abs(".")
 	if err != nil {
 		return err
@@ -448,6 +558,12 @@ func run() error {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--check-dependencies" {
+		if err := validateRenderingDependencies(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		log.Fatalf("Error: %v", err)
 	}

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"image/color"
+	"image/png"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -128,6 +130,27 @@ func TestValidateSVG(t *testing.T) {
 	if err := validateSVG(invalidSVG); err == nil {
 		t.Error("expected invalid SVG to fail")
 	}
+
+	for name, content := range map[string]string{
+		"missing-viewbox": `<svg xmlns="http://www.w3.org/2000/svg"></svg>`,
+		"empty-viewbox":   `<svg viewBox=" "></svg>`,
+		"wrong-root":      `<html viewBox="0 0 1 1"></html>`,
+		"malformed":       `<svg viewBox="0 0 1 1">`,
+	} {
+		path := filepath.Join(tmpDir, name+".svg")
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateSVG(path); err == nil {
+			t.Errorf("expected %s SVG to fail", name)
+		}
+	}
+}
+
+func TestValidateRenderingDependencies(t *testing.T) {
+	if err := validateRenderingDependencies(); err != nil {
+		t.Skipf("icon rendering dependencies are unavailable: %v", err)
+	}
 }
 
 func TestRenderPageContentsScalesSVGToCanvas(t *testing.T) {
@@ -150,5 +173,29 @@ func TestDocsWordmarkSVG(t *testing.T) {
 	}
 	if !strings.Contains(wordmark, `fill="#FFFFFF"`) {
 		t.Error("wordmark does not use its requested text color")
+	}
+	if strings.Contains(wordmark, "<text") || strings.Contains(wordmark, "font-family") {
+		t.Error("wordmark must use fixed vector paths instead of a system font")
+	}
+}
+
+func TestDocsIconPNGHasTransparentCorners(t *testing.T) {
+	frame, err := os.ReadFile(filepath.Join("..", "..", "desktop", "resources", "icon.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	transparentIcon, err := docsIconPNG(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(transparentIcon))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if color.NRGBAModel.Convert(decoded.At(0, 0)).(color.NRGBA).A != 0 {
+		t.Error("docs icon corner must be transparent")
+	}
+	if color.NRGBAModel.Convert(decoded.At(512, 512)).(color.NRGBA).A != 255 {
+		t.Error("docs icon center must remain opaque")
 	}
 }
