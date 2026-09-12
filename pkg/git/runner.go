@@ -98,7 +98,10 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	outBuf := subprocess.NewBuffer(stdoutRedactor)
 	var streamOut *subprocess.StreamingRedactingWriter
 	if opts.Stdout != nil {
-		streamOut = &subprocess.StreamingRedactingWriter{Next: opts.Stdout, Redactor: stdoutRedactor}
+		streamOut = &subprocess.StreamingRedactingWriter{
+			Next:     opts.Stdout,
+			Redactor: stdoutRedactor,
+		}
 		cmd.Stdout = io.MultiWriter(streamOut, outBuf)
 	} else {
 		cmd.Stdout = outBuf
