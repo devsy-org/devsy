@@ -72,9 +72,14 @@ func (r *runner) setupContainer(
 	ctx context.Context,
 	params *setupContainerParams,
 ) (*config.Result, error) {
-	if err := status.Run(ctx, r.reporter, status.Operation{Phase: status.PhaseInjectingAgent}, func(ctx context.Context) error {
-		return r.injectAgentIntoContainer(ctx, params.timeout)
-	}); err != nil {
+	if err := status.Run(
+		ctx,
+		r.reporter,
+		status.Operation{Phase: status.PhaseInjectingAgent},
+		func(ctx context.Context) error {
+			return r.injectAgentIntoContainer(ctx, params.timeout)
+		},
+	); err != nil {
 		return nil, err
 	}
 	log.Debugf("injected into container")
@@ -88,11 +93,16 @@ func (r *runner) setupContainer(
 	setupCommand := r.buildSetupCommand(info.compressed, info.workspaceConfigCompressed)
 
 	var result *config.Result
-	err = status.Run(ctx, r.reporter, status.Operation{Phase: status.PhaseRunningLifecycleHook}, func(ctx context.Context) error {
-		var executeErr error
-		result, executeErr = r.executeSetup(ctx, info.result, setupCommand)
-		return executeErr
-	})
+	err = status.Run(
+		ctx,
+		r.reporter,
+		status.Operation{Phase: status.PhaseRunningLifecycleHook},
+		func(ctx context.Context) error {
+			var executeErr error
+			result, executeErr = r.executeSetup(ctx, info.result, setupCommand)
+			return executeErr
+		},
+	)
 	return result, err
 }
 

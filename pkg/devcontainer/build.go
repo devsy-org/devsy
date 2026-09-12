@@ -468,11 +468,16 @@ func (r *runner) buildImage(
 	}
 
 	var buildInfo *config.BuildInfo
-	err = status.Run(ctx, r.reporter, status.Operation{Phase: status.PhaseBuildingImage}, func(ctx context.Context) error {
-		var buildErr error
-		buildInfo, buildErr = r.executeBuild(ctx, params, prebuildHash, targetArch)
-		return buildErr
-	})
+	err = status.Run(
+		ctx,
+		r.reporter,
+		status.Operation{Phase: status.PhaseBuildingImage},
+		func(ctx context.Context) error {
+			var buildErr error
+			buildInfo, buildErr = r.executeBuild(ctx, params, prebuildHash, targetArch)
+			return buildErr
+		},
+	)
 	return buildInfo, err
 }
 

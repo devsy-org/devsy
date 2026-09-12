@@ -39,7 +39,10 @@ func (r *runner) getRawConfig(options provider.CLIOptions) (*config.DevContainer
 	return r.getRawConfigWithContext(context.Background(), options)
 }
 
-func (r *runner) getRawConfigWithContext(ctx context.Context, options provider.CLIOptions) (*config.DevContainerConfig, error) {
+func (r *runner) getRawConfigWithContext(
+	ctx context.Context,
+	options provider.CLIOptions,
+) (*config.DevContainerConfig, error) {
 	source := options.DevContainerSource
 	if source == "" {
 		source = r.workspaceConfig.Workspace.DevContainerSource
@@ -107,7 +110,11 @@ func (r *runner) rawConfigFromCraneWithContext(
 	ctx context.Context,
 	options provider.CLIOptions,
 ) (*config.DevContainerConfig, error) {
-	localWorkspaceFolder, err := crane.PullConfigFromSourceWithContext(ctx, r.workspaceConfig, &options)
+	localWorkspaceFolder, err := crane.PullConfigFromSourceWithContext(
+		ctx,
+		r.workspaceConfig,
+		&options,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +255,10 @@ func (r *runner) importExternalDevContainer(srcPath string) (*config.DevContaine
 	return r.importExternalDevContainerWithContext(context.Background(), srcPath)
 }
 
-func (r *runner) importExternalDevContainerWithContext(ctx context.Context, srcPath string) (*config.DevContainerConfig, error) {
+func (r *runner) importExternalDevContainerWithContext(
+	ctx context.Context,
+	srcPath string,
+) (*config.DevContainerConfig, error) {
 	absPath, err := filepath.Abs(srcPath)
 	if err != nil {
 		return nil, fmt.Errorf("resolve devcontainer path %s: %w", srcPath, err)
