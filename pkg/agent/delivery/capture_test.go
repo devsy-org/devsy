@@ -14,11 +14,16 @@ func TestRunCapturedAssociatesActiveOperation(t *testing.T) {
 		t.Skip("test command uses sh")
 	}
 	var resultOperationID string
-	err := status.Run(context.Background(), status.Nop(), status.Operation{Phase: status.PhaseInjectingAgent}, func(ctx context.Context) error {
-		result, err := runCaptured(ctx, exec.CommandContext(ctx, "sh", "-c", "exit 0"))
-		resultOperationID = result.OperationID
-		return err
-	})
+	err := status.Run(
+		context.Background(),
+		status.Nop(),
+		status.Operation{Phase: status.PhaseInjectingAgent},
+		func(ctx context.Context) error {
+			result, err := runCaptured(ctx, exec.CommandContext(ctx, "sh", "-c", "exit 0"))
+			resultOperationID = result.OperationID
+			return err
+		},
+	)
 	if err != nil {
 		t.Fatalf("status.Run: %v", err)
 	}
