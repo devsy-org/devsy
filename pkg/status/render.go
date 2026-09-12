@@ -82,13 +82,22 @@ func newReporter(format string, opts ReporterOptions) (Reporter, error) {
 		}
 		return NewEnvelopeReporter(opts.Envelope), nil
 	case formatPlain:
-		config := reporterConfig{out: opts.Out, prefix: opts.Prefix, labels: opts.Labels, verbose: opts.Verbose, suppressFailureDetails: opts.SuppressFailureDetails}
+		config := reporterConfig{
+			out:                    opts.Out,
+			prefix:                 opts.Prefix,
+			labels:                 opts.Labels,
+			verbose:                opts.Verbose,
+			suppressFailureDetails: opts.SuppressFailureDetails,
+		}
 		if opts.Interactive {
 			return newHumanReporter(config), nil
 		}
 		return newPlainReporter(config), nil
 	default:
-		return nil, fmt.Errorf("unexpected status output format %q; choose json, plain, or auto", format)
+		return nil, fmt.Errorf(
+			"unexpected status output format %q; choose json, plain, or auto",
+			format,
+		)
 	}
 }
 
@@ -203,7 +212,12 @@ func (r PlainReporter) reportFailureDetails(info *ErrorInfo) {
 		}
 		sort.Strings(keys)
 		for _, key := range keys {
-			_, _ = fmt.Fprintf(r.out, "         %s: %s\n", r.redact(key), r.redact(info.Context[key]))
+			_, _ = fmt.Fprintf(
+				r.out,
+				"         %s: %s\n",
+				r.redact(key),
+				r.redact(info.Context[key]),
+			)
 		}
 	}
 	if hint := strings.TrimSpace(r.redact(info.Hint)); hint != "" {

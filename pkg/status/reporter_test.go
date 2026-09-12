@@ -64,7 +64,9 @@ func TestNewReporter_VerboseShowsShortDurations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verbose reporter: %v", err)
 	}
-	reporter.Report(Event{Phase: PhaseReady, State: StateSucceeded, Duration: 120 * time.Millisecond})
+	reporter.Report(
+		Event{Phase: PhaseReady, State: StateSucceeded, Duration: 120 * time.Millisecond},
+	)
 	if got := out.String(); got != "[OK]   ready (0.1s)\n" {
 		t.Fatalf("verbose output = %q", got)
 	}
