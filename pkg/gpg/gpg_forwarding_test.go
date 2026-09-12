@@ -107,7 +107,9 @@ func TestClaimForwardedSocket_StopsPollingAsSoonAsSocketAppears(t *testing.T) {
 	err := g.claimForwardedSocket(context.Background())
 	elapsed := time.Since(start)
 
-	assert.Less(t, elapsed, 2*time.Second, "must return shortly after the socket appears")
+	// macOS runners can spend several seconds on the first sudo invocation;
+	// retain a bounded guard without making the test depend on runner startup.
+	assert.Less(t, elapsed, 5*time.Second, "must return shortly after the socket appears")
 	if err != nil {
 		var exitErr *exec.ExitError
 		var execErr *exec.Error
