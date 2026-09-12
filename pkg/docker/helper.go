@@ -508,11 +508,15 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 			inspectCtx, cancel := inspectionDiagnosticContext(ctx)
 			details, err := r.InspectContainers(inspectCtx, []string{containerID})
 			cancel()
-			if err != nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded)) {
+			if err != nil &&
+				(errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded)) {
 				// The first inspect may have been killed exactly as the polling
 				// deadline fired. Retry once without that deadline so Docker's
 				// daemon error can still be captured for the final diagnostic.
-				diagnosticCtx, diagnosticCancel := context.WithTimeout(context.WithoutCancel(ctx), 250*time.Millisecond)
+				diagnosticCtx, diagnosticCancel := context.WithTimeout(
+					context.WithoutCancel(ctx),
+					250*time.Millisecond,
+				)
 				details, err = r.InspectContainers(diagnosticCtx, []string{containerID})
 				diagnosticCancel()
 			}
