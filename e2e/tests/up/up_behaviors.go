@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -262,13 +263,13 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			)
 			framework.ExpectNoError(err)
 
-			_, stderr, err := dtc.f.DevsyUpStreams(ctx, tempDir, "--result-format", "json")
+			stdout, _, err := dtc.f.DevsyUpStreams(ctx, tempDir, "--result-format", "json")
 			gomega.Expect(err).To(gomega.HaveOccurred())
 
-			cliError, ok := parseCLIErrorRecord(stderr)
+			envelope, ok := parseFailedStatus(stdout)
 			gomega.Expect(ok).
-				To(gomega.BeTrue(), "stderr should contain a structured cliError: %s", stderr)
-			gomega.Expect(cliError["message"]).
+				To(gomega.BeTrue(), "stdout should contain a failed status envelope: %s", stdout)
+			gomega.Expect(envelope.Error.Message).
 				To(gomega.ContainSubstring("bind mount source path does not exist"))
 		},
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
@@ -282,14 +283,14 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		_, stderr, err := dtc.f.DevsyUpStreams(ctx, tempDir, "--result-format", "json")
+		stdout, _, err := dtc.f.DevsyUpStreams(ctx, tempDir, "--result-format", "json")
 		gomega.Expect(err).To(gomega.HaveOccurred(),
 			"devsy up should fail when host requirements not met")
 
-		cliError, ok := parseCLIErrorRecord(stderr)
+		envelope, ok := parseFailedStatus(stdout)
 		gomega.Expect(ok).
-			To(gomega.BeTrue(), "stderr should contain a structured cliError: %s", stderr)
-		gomega.Expect(cliError["message"]).To(gomega.ContainSubstring("minimum requirements"))
+			To(gomega.BeTrue(), "stdout should contain a failed status envelope: %s", stdout)
+		gomega.Expect(envelope.Error.Message).To(gomega.ContainSubstring("minimum requirements"))
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("skip-host-requirements bypasses enforcement", func(ctx context.Context) {
@@ -429,14 +430,16 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })
 
-func parseCLIErrorRecord(stderr string) (map[string]any, bool) {
-	for line := range strings.SplitSeq(stderr, "\n") {
-		var record struct {
-			CLIError map[string]any `json:"cliError"`
-		}
-		if json.Unmarshal([]byte(line), &record) == nil && record.CLIError != nil {
-			return record.CLIError, true
+func parseFailedStatus(stdout string) (config.StatusEnvelope, bool) {
+	var envelope config.StatusEnvelope
+	for line := range strings.SplitSeq(stdout, "\n") {
+		var candidate config.StatusEnvelope
+		if json.Unmarshal([]byte(line), &candidate) == nil &&
+			candidate.Kind == config.KindStatus &&
+			candidate.State == status.StateFailed &&
+			candidate.Error != nil {
+			envelope = candidate
 		}
 	}
-	return nil, false
+	return envelope, envelope.Error != nil
 }
