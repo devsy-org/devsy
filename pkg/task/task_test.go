@@ -196,10 +196,13 @@ func TestReporterRedactsPersistedFailureMetadata(t *testing.T) {
 
 func assertCurrentStatusMetadata(t *testing.T, state *State) {
 	t.Helper()
-	if state.OperationID != "op-17" || state.ParentOperationID != "op-9" || state.DurationMs != 1500 {
+	if state.OperationID != "op-17" || state.ParentOperationID != "op-9" ||
+		state.DurationMs != 1500 {
 		t.Fatalf("status metadata was not persisted: %+v", state)
 	}
-	if state.ErrorCode != "docker_daemon_unreachable" || state.ErrorHint != "Start Docker and retry." || state.ErrorContext["context"] != "desktop-linux" {
+	if state.ErrorCode != "docker_daemon_unreachable" ||
+		state.ErrorHint != "Start Docker and retry." ||
+		state.ErrorContext["context"] != "desktop-linux" {
 		t.Fatalf("structured error metadata was not persisted: %+v", state)
 	}
 }
@@ -325,7 +328,11 @@ func TestCancelWithoutPIDMarksFailed(t *testing.T) {
 		t.Errorf("error = %q, want %q", state.Error, ErrCanceled.Error())
 	}
 	if state.ErrorCode != "canceled" || state.ErrorHint == "" {
-		t.Errorf("cancellation metadata = (%q, %q), want stable code and hint", state.ErrorCode, state.ErrorHint)
+		t.Errorf(
+			"cancellation metadata = (%q, %q), want stable code and hint",
+			state.ErrorCode,
+			state.ErrorHint,
+		)
 	}
 }
 
@@ -767,6 +774,10 @@ func TestReconcilePreservesCancellationReason(t *testing.T) {
 		t.Errorf("error = %q, want %q", reconciled.Error, ErrCanceled.Error())
 	}
 	if reconciled.ErrorCode != "canceled" || reconciled.ErrorHint == "" {
-		t.Errorf("cancellation metadata = (%q, %q), want stable code and hint", reconciled.ErrorCode, reconciled.ErrorHint)
+		t.Errorf(
+			"cancellation metadata = (%q, %q), want stable code and hint",
+			reconciled.ErrorCode,
+			reconciled.ErrorHint,
+		)
 	}
 }
