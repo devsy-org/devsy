@@ -293,7 +293,7 @@ func (s *localStore) persistValue(
 	idx *index, meta *SecretMeta, value string, wasSensitive bool,
 ) error {
 	if meta.Sensitive() {
-		return s.persistSensitive(idx, meta, value)
+		return s.persistSensitive(idx, meta, value, !wasSensitive)
 	}
 	if wasSensitive {
 		return s.removeSensitive(idx, meta)
@@ -301,7 +301,9 @@ func (s *localStore) persistValue(
 	return nil
 }
 
-func (s *localStore) persistSensitive(idx *index, meta *SecretMeta, value string) error {
+func (s *localStore) persistSensitive(
+	idx *index, meta *SecretMeta, value string, create bool,
+) error {
 	if meta.Backend == "" {
 		resolved, err := s.backends.ResolveForNewSecret(s.preference, idx)
 		if err != nil {
@@ -309,7 +311,7 @@ func (s *localStore) persistSensitive(idx *index, meta *SecretMeta, value string
 		}
 		meta.Backend = resolved
 	}
-	b, err := s.backends.Open(meta.Backend, idx, true)
+	b, err := s.backends.Open(meta.Backend, idx, create)
 	if err != nil {
 		return err
 	}
