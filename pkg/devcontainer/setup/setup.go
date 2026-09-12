@@ -404,7 +404,11 @@ func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	}
 
 	if recursive {
-		log.Debugf("chown workspace recursively: user=%s, workspaceFolder=%s", user, workspaceFolder)
+		log.Debugf(
+			"chown workspace recursively: user=%s, workspaceFolder=%s",
+			user,
+			workspaceFolder,
+		)
 		err := copy2.ChownR(workspaceFolder, user)
 		var failures copy2.ChownFailures
 		switch {

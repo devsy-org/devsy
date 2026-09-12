@@ -42,7 +42,11 @@ func Init(cfg Config) {
 	stderrCore := zapcore.NewCore(encoder, stderrWriter, level)
 	// A separate core writes to the fanout sink with the same level/encoder
 	// so AddSink consumers see the same output stderr does.
-	sinkCore := zapcore.NewCore(resolveEncoder(cfg.Format), &redactingWriter{next: extraSinks, redactor: cfg.Redactor}, level)
+	sinkCore := zapcore.NewCore(
+		resolveEncoder(cfg.Format),
+		&redactingWriter{next: extraSinks, redactor: cfg.Redactor},
+		level,
+	)
 	core := zapcore.NewTee(stderrCore, sinkCore)
 
 	logger := zap.New(core, zap.AddStacktrace(zapcore.FatalLevel))
