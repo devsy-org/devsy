@@ -144,7 +144,7 @@ var _ = ginkgo.Describe(
 						gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("updateContentDone"))
 
 						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
+							out, err := probeSSH(f,
 								ctx, tempDir, "cat $HOME/deferred.marker 2>/dev/null",
 							)
 							if err != nil {
@@ -165,7 +165,7 @@ var _ = ginkgo.Describe(
 						gomega.Expect(envPath).NotTo(gomega.ContainSubstring("${containerEnv:"))
 
 						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
+							out, err := probeSSH(f,
 								ctx,
 								tempDir,
 								"cat $HOME/post-start-deferred.out 2>/dev/null",
@@ -206,7 +206,7 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 
 						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
+							out, err := probeSSH(f,
 								ctx, tempDir, "cat $HOME/post-attach.out 2>/dev/null",
 							)
 							if err != nil {

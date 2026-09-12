@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -214,6 +215,23 @@ func (f *Framework) DevsySSH(
 	return out, nil
 }
 
+// DevsySSHOnce performs a single SSH attempt. It is intended for readiness
+// polling, where retrying inside the polling callback can outlive the polling
+// window and consume the enclosing spec's deadline.
+func (f *Framework) DevsySSHOnce(
+	ctx context.Context,
+	workspace string,
+	command string,
+) (string, error) {
+	out, _, err := f.ExecCommandCapture(ctx, []string{
+		cmdWorkspace, cmdSSH, workspace, flagCommand, command, flagDebug,
+	})
+	if err != nil {
+		return "", fmt.Errorf("devsy ssh failed: %w", err)
+	}
+	return out, nil
+}
+
 func (f *Framework) DevsySSHEchoTestString(ctx context.Context, workspace string) error {
 	err := f.ExecCommand(
 		ctx,
@@ -317,13 +335,7 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 	baseArgs = append(baseArgs, args...)
 	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
 	if err != nil {
-		// Skip "already exists" errors to make this idempotent
-		// This occurs when another test begins before ginkgo.DeferCleanup
-		// is called to delete the workspace. The workspace is linked to the
-		// provider and the provider cannot be deleted until the workspace is deleted.
-		if !strings.Contains(stderr, "already exists") {
-			return fmt.Errorf("devsy provider add failed: %s", stderr)
-		}
+		return fmt.Errorf("devsy provider add failed: %s", stderr)
 	}
 	return nil
 }
@@ -434,6 +446,15 @@ func (f *Framework) DevsyWorkspaceDelete(
 	baseArgs = append(baseArgs, extraArgs...)
 
 	return f.ExecCommand(ctx, false, true, fmt.Sprintf("deleted workspace %s", workspace), baseArgs)
+}
+
+// CleanupWorkspace gives cleanup a fresh, bounded context. Ginkgo cleanup may
+// run after the spec context has expired, so inheriting its cancellation can
+// silently skip the workspace deletion.
+func (f *Framework) CleanupWorkspace(ctx context.Context, workspace string) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	return f.DevsyWorkspaceDelete(cleanupCtx, workspace)
 }
 
 func (f *Framework) SetupGPG(tmpDir string) error {
