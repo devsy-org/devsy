@@ -335,9 +335,36 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 	baseArgs = append(baseArgs, args...)
 	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
 	if err != nil {
+		if strings.Contains(stderr, "already exists") {
+			providerName := providerNameFromAddArgs(args)
+			if deleteErr := f.DevsyProviderDelete(ctx, providerName); deleteErr != nil {
+				return fmt.Errorf(
+					"devsy provider add failed: existing provider %q could not be removed: %w",
+					providerName,
+					deleteErr,
+				)
+			}
+
+			_, stderr, err = f.ExecCommandCapture(ctx, baseArgs)
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("devsy provider add failed: %s", stderr)
 	}
 	return nil
+}
+
+func providerNameFromAddArgs(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	providerName := args[0]
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--name" {
+			return args[i+1]
+		}
+	}
+	return providerName
 }
 
 func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) error {
