@@ -266,8 +266,10 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			gomega.Expect(err).To(gomega.HaveOccurred())
 
 			cliError, ok := parseCLIErrorRecord(stderr)
-			gomega.Expect(ok).To(gomega.BeTrue(), "stderr should contain a structured cliError: %s", stderr)
-			gomega.Expect(cliError["message"]).To(gomega.ContainSubstring("bind mount source path does not exist"))
+			gomega.Expect(ok).
+				To(gomega.BeTrue(), "stderr should contain a structured cliError: %s", stderr)
+			gomega.Expect(cliError["message"]).
+				To(gomega.ContainSubstring("bind mount source path does not exist"))
 		},
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
@@ -285,7 +287,8 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			"devsy up should fail when host requirements not met")
 
 		cliError, ok := parseCLIErrorRecord(stderr)
-		gomega.Expect(ok).To(gomega.BeTrue(), "stderr should contain a structured cliError: %s", stderr)
+		gomega.Expect(ok).
+			To(gomega.BeTrue(), "stderr should contain a structured cliError: %s", stderr)
 		gomega.Expect(cliError["message"]).To(gomega.ContainSubstring("minimum requirements"))
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 

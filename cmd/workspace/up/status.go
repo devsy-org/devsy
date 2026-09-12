@@ -8,7 +8,11 @@ import (
 )
 
 // newStatusReporter drives `up`'s progress output.
-func newStatusReporter(resultFormat string, out io.Writer, verbose ...bool) (status.Reporter, error) {
+func newStatusReporter(
+	resultFormat string,
+	out io.Writer,
+	verbose ...bool,
+) (status.Reporter, error) {
 	showDurations := len(verbose) > 0 && verbose[0]
 	r, err := status.NewReporter(status.ReporterOptions{
 		Format:                 resultFormat,

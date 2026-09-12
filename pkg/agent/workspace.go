@@ -253,9 +253,14 @@ type CloneWorkspaceParams struct {
 }
 
 func CloneRepositoryForWorkspace(ctx context.Context, p CloneWorkspaceParams) error {
-	return status.Run(ctx, p.Reporter, status.Operation{Phase: status.PhaseCloningRepository}, func(ctx context.Context) error {
-		return cloneRepositoryForWorkspace(ctx, p)
-	})
+	return status.Run(
+		ctx,
+		p.Reporter,
+		status.Operation{Phase: status.PhaseCloningRepository},
+		func(ctx context.Context) error {
+			return cloneRepositoryForWorkspace(ctx, p)
+		},
+	)
 }
 
 func cloneRepositoryForWorkspace(ctx context.Context, p CloneWorkspaceParams) error {
