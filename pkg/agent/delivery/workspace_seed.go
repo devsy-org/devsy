@@ -129,7 +129,12 @@ func (d *LocalDockerDelivery) volumeSeedState(
 		name,
 	))
 	if err != nil {
-		return false, false, fmt.Errorf("inspect volume %s: %s: %w", name, capturedOutput(result), err)
+		return false, false, fmt.Errorf(
+			"inspect volume %s: %s: %w",
+			name,
+			capturedOutput(result),
+			err,
+		)
 	}
 	managedStr, seededStr, _ := strings.Cut(strings.TrimSpace(result.Stdout), ",")
 	return managedStr == pkgconfig.LabelValueTrue, seededStr == pkgconfig.LabelValueTrue, nil

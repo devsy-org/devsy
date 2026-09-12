@@ -448,8 +448,11 @@ func (t *tunnelServer) Status(
 	ctx context.Context,
 	update *tunnel.StatusUpdate,
 ) (*tunnel.Empty, error) {
-	if update == nil || update.Phase == "" || !status.ValidState(status.State(update.State)) || update.DurationMs < 0 {
-		return nil, fmt.Errorf("invalid status update: phase, duration, and recognized state are required")
+	if update == nil || update.Phase == "" || !status.ValidState(status.State(update.State)) ||
+		update.DurationMs < 0 {
+		return nil, fmt.Errorf(
+			"invalid status update: phase, duration, and recognized state are required",
+		)
 	}
 	if update.State == string(status.StateFailed) &&
 		(update.Error == nil || update.Error.Message == "") {
