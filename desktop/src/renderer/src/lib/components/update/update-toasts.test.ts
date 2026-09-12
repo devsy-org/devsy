@@ -156,6 +156,18 @@ describe("update-toasts", () => {
     expect(toastFns.success).toHaveBeenCalledWith("Devsy is up to date.")
   })
 
+  it("shows the packaged-build message for user-initiated dev-mode checks", async () => {
+    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    initUpdateToasts(() => true)
+    const emit = listeners[0]
+
+    markUserInitiated()
+    emit({ state: "up-to-date", currentVersion: "0.1.0", code: "dev-mode" })
+
+    expect(toastFns.info).toHaveBeenCalledWith("Updates run in packaged builds.")
+    expect(toastFns.success).not.toHaveBeenCalled()
+  })
+
   it("fires downloaded toast with Restart action", async () => {
     const { initUpdateToasts } = await import("./update-toasts.js")
     initUpdateToasts(() => true)
