@@ -13,8 +13,10 @@ export function buildUpdateMenuItems(
   onInstall: () => void,
 ): Electron.MenuItemConstructorOptions[] {
   if (status.state !== "downloaded") return []
+  const version = status.availableVersion
+  const label = version ? `Update to ${version}` : "Restart"
   return [
-    { label: `Install Update v${status.version ?? ""}`, click: onInstall },
+    { label, click: onInstall },
     { type: "separator" },
   ]
 }

@@ -35,13 +35,17 @@ describe("UpdateDialog", () => {
   })
 
   it("renders 'checking' state", () => {
-    __setForTest({ state: "checking" })
+    __setForTest({ state: "checking", currentVersion: "1.0.0" })
     render(UpdateDialog, { props: { open: true } })
     expect(bodyText()).toMatch(/checking for updates/i)
   })
 
   it("renders 'downloaded' state with restart CTA", () => {
-    __setForTest({ state: "downloaded", version: "9.9.9" })
+    __setForTest({
+      state: "downloaded",
+      currentVersion: "1.0.0",
+      availableVersion: "9.9.9",
+    })
     render(UpdateDialog, { props: { open: true } })
     expect(bodyText()).toMatch(/version 9\.9\.9/i)
     expect(queryButton(/restart/i)).toBeTruthy()
@@ -50,7 +54,8 @@ describe("UpdateDialog", () => {
   it("renders 'downloading' progress", () => {
     __setForTest({
       state: "downloading",
-      version: "9.9.9",
+      currentVersion: "1.0.0",
+      availableVersion: "9.9.9",
       progress: {
         percent: 42,
         bytesPerSecond: 1_500_000,
@@ -66,16 +71,17 @@ describe("UpdateDialog", () => {
   it("renders 'error' with retry", () => {
     __setForTest({
       state: "error",
+      currentVersion: "1.0.0",
       error: "404 from CDN",
       code: "feed-error",
     })
     render(UpdateDialog, { props: { open: true } })
     expect(bodyText()).toMatch(/404 from cdn/i)
-    expect(queryButton(/check again/i)).toBeTruthy()
+    expect(queryButton(/try again|check again/i)).toBeTruthy()
   })
 
   it("renders dev-mode hint in not-available + dev-mode", () => {
-    __setForTest({ state: "not-available", code: "dev-mode" })
+    __setForTest({ state: "not-available", currentVersion: "1.0.0", code: "dev-mode" })
     render(UpdateDialog, { props: { open: true } })
     expect(bodyText()).toMatch(/packaged builds/i)
   })

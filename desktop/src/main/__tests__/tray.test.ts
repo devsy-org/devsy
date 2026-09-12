@@ -9,19 +9,43 @@ vi.mock("../updater.js", () => ({
 
 describe("buildUpdateMenuItems", () => {
   it("returns nothing when no update is downloaded", () => {
-    expect(buildUpdateMenuItems({ state: "idle" }, () => {})).toEqual([])
-    expect(buildUpdateMenuItems({ state: "checking" }, () => {})).toEqual([])
-    expect(buildUpdateMenuItems({ state: "available", version: "1" }, () => {})).toEqual([])
-    expect(buildUpdateMenuItems({ state: "downloading", version: "1" }, () => {})).toEqual([])
-    expect(buildUpdateMenuItems({ state: "not-available" }, () => {})).toEqual([])
-    expect(buildUpdateMenuItems({ state: "error", error: "x" }, () => {})).toEqual([])
+    expect(buildUpdateMenuItems({ state: "idle", currentVersion: "1.0.0" }, () => {})).toEqual([])
+    expect(buildUpdateMenuItems({ state: "checking", currentVersion: "1.0.0" }, () => {})).toEqual([])
+    expect(
+      buildUpdateMenuItems(
+        { state: "available", currentVersion: "1.0.0", availableVersion: "1.1.0" },
+        () => {},
+      ),
+    ).toEqual([])
+    expect(
+      buildUpdateMenuItems(
+        {
+          state: "downloading",
+          currentVersion: "1.0.0",
+          availableVersion: "1.1.0",
+          progress: { percent: 50, bytesPerSecond: 1000, transferred: 50, total: 100 },
+        },
+        () => {},
+      ),
+    ).toEqual([])
+    expect(buildUpdateMenuItems({ state: "not-available", currentVersion: "1.0.0" }, () => {})).toEqual([])
+    expect(buildUpdateMenuItems({ state: "up-to-date", currentVersion: "1.0.0" }, () => {})).toEqual([])
+    expect(
+      buildUpdateMenuItems(
+        { state: "error", currentVersion: "1.0.0", error: "x", code: "network" },
+        () => {},
+      ),
+    ).toEqual([])
   })
 
-  it("adds Install Update item + separator when downloaded", () => {
+  it("adds Update item + separator when downloaded", () => {
     const onInstall = vi.fn()
-    const items = buildUpdateMenuItems({ state: "downloaded", version: "9.9.9" }, onInstall)
+    const items = buildUpdateMenuItems(
+      { state: "downloaded", currentVersion: "1.0.0", availableVersion: "9.9.9" },
+      onInstall,
+    )
     expect(items).toHaveLength(2)
-    expect(items[0]).toMatchObject({ label: "Install Update v9.9.9" })
+    expect(items[0]).toMatchObject({ label: "Update to 9.9.9" })
     expect(items[1]).toEqual({ type: "separator" })
 
     const click = (items[0] as { click?: () => void }).click
@@ -30,7 +54,10 @@ describe("buildUpdateMenuItems", () => {
   })
 
   it("handles missing version gracefully", () => {
-    const items = buildUpdateMenuItems({ state: "downloaded" }, () => {})
-    expect(items[0]).toMatchObject({ label: "Install Update v" })
+    const items = buildUpdateMenuItems(
+      { state: "downloaded", currentVersion: "1.0.0", availableVersion: "" },
+      () => {},
+    )
+    expect(items[0]).toMatchObject({ label: "Restart" })
   })
 })
