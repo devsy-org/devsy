@@ -75,6 +75,8 @@ function fireNotAvailable(
   if (!userInitiated) return
   if (s.code === "channel-missing") {
     toast.info("No releases are available on this channel yet.")
+  } else if (s.code === "dev-mode") {
+    toast.info("Updates run in packaged builds.")
   } else {
     toast.success("Devsy is up to date.")
   }

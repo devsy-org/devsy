@@ -567,6 +567,13 @@ describe("updater", () => {
         ),
       )
 
+      electronUpdaterMock.autoUpdater.emit("update-not-available", { version: "1.16.2" })
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /\[updater\] check result: current=1\.17\.0 feed=1\.16\.2 channel=stable result=feed-behind/,
+        ),
+      )
+
       infoSpy.mockRestore()
     })
   })

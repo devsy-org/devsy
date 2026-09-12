@@ -399,11 +399,18 @@ export async function initAutoUpdater(
 
   autoUpdater.on("update-not-available", (info) => {
     const currentVersion = getCurrentVersion() ?? ""
+    const candidate = classifyCandidate(currentVersion, info.version)
+    const result: UpdateDecisionResult =
+      candidate.kind === "older"
+        ? "feed-behind"
+        : candidate.kind === "same"
+          ? "same"
+          : "invalid-version"
     logUpdateDecision({
       currentVersion,
       feedVersion: info.version,
       channel: currentChannel,
-      result: "same",
+      result,
     })
     setStatus({
       state: "up-to-date",
