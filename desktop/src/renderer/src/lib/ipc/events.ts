@@ -27,6 +27,7 @@ export type UpdateErrorCode =
   | "feed-error"
   | "verification"
   | "channel-missing"
+  | "install-failed"
 
 export interface UpdateProgress {
   percent: number
@@ -46,6 +47,7 @@ export interface UpdateStatus {
 }
 
 export const EVENT_NAMES = {
+  NAVIGATE: "navigate",
   WORKSPACES_CHANGED: "workspaces-changed",
   PROVIDERS_CHANGED: "providers-changed",
   MACHINES_CHANGED: "machines-changed",
@@ -110,6 +112,14 @@ export function onCommandProgress(
   callback: (progress: CommandProgress) => void,
 ): Promise<UnlistenFn> {
   return listen<CommandProgress>(EVENT_NAMES.COMMAND_PROGRESS, (event) => {
+    callback(event.payload)
+  })
+}
+
+export function onNavigate(
+  callback: (route: string) => void,
+): Promise<UnlistenFn> {
+  return listen<string>(EVENT_NAMES.NAVIGATE, (event) => {
     callback(event.payload)
   })
 }

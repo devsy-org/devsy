@@ -32,6 +32,7 @@ import {
   setReleaseChannel,
 } from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
+import { normalizeWorkspaceStatus } from "./workspace-status.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
 
 const execFileAsync = promisify(execFile)
@@ -98,6 +99,7 @@ interface IpcDependencies {
   getMainWindow: () => BrowserWindow | null
   providerJobs: ProviderJobs
   workspaceJobs: WorkspaceJobs
+  onWorkspaceStopComplete?: (workspaceId: string) => Promise<void>
 }
 
 /** Format a line in zap console format so log-parser.ts can parse it. */
@@ -173,6 +175,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   tunnelProcesses: Map<string, import("node:child_process").ChildProcess>
   scheduleProviderUpdateCheck: () => void
   runInitialProviderUpdateCheck: () => void
+  workspaceActions: { stop: (workspaceId: string) => Promise<void> }
 } {
   const { cli, state, logStore, pty, providerJobs, workspaceJobs } = deps
   const tunnelProcesses = new Map<
@@ -431,7 +434,15 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "15s",
       ]
       if (args.recovery) cliArgs.push("--recovery")
-      return cli.runRaw(cliArgs)
+      const raw = await cli.runRaw(cliArgs)
+      if (!args.recovery) {
+        const status = normalizeWorkspaceStatus(raw)
+        if (status && state.updateWorkspaceStatus(args.workspaceId, status)) {
+          // The watcher owns renderer broadcasts; this update still keeps
+          // main-process consumers current for explicit status requests.
+        }
+      }
+      return raw
     },
   )
 
@@ -1113,45 +1124,87 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle(
-    "workspace_stop",
-    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
-      trackEvent("workspace_stop", {
-        workspace_ref: hashWorkspaceRef(args.workspaceId),
-      })
-      await quiesceWorkspace(args.workspaceId)
-      const cmdId = args.commandId ?? crypto.randomUUID()
-      const logPath = logStore.createLogFile(
-        state.workspaceContext(args.workspaceId),
-        args.workspaceId,
-      )
-      const sink = createLogSink(
-        deps.getMainWindow,
-        cmdId,
-        (line) => logStore.appendLog(logPath, line),
-        () => logStore.closeLog(logPath),
-      )
+  type WorkspaceActionSource = "renderer" | "tray"
+  type StopWorkspaceArgs = {
+    workspaceId: string
+    debug?: boolean
+    commandId?: string
+  }
 
+  async function startWorkspaceStop(
+    args: StopWorkspaceArgs,
+    source: WorkspaceActionSource,
+  ): Promise<{ commandId: string; completion: Promise<void> }> {
+    trackEvent("workspace_stop", {
+      workspace_ref: hashWorkspaceRef(args.workspaceId),
+      source,
+    })
+    await quiesceWorkspace(args.workspaceId)
+    const commandId = args.commandId ?? crypto.randomUUID()
+    const logPath = logStore.createLogFile(
+      state.workspaceContext(args.workspaceId),
+      args.workspaceId,
+    )
+    const sink = createLogSink(
+      deps.getMainWindow,
+      commandId,
+      (line) => logStore.appendLog(logPath, line),
+      () => logStore.closeLog(logPath),
+    )
+    const completion = new Promise<void>((resolve, reject) => {
       const cliArgs = ["workspace", "stop", args.workspaceId]
       if (args.debug) cliArgs.push("--debug")
 
-      cli.runStreaming(
-        cliArgs,
-        (line) => {
-          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
-        },
-        (code) => {
-          void sink.done(
-            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
-            { success: code === 0 },
-          )
-        },
-        args.workspaceId,
+      cli
+        .runStreaming(
+          cliArgs,
+          (line) => {
+            if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
+          },
+          (code, cliError) => {
+            void sink
+              .done(
+                formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
+                code === 0
+                  ? { success: true }
+                  : { level: "error", success: false, cliError },
+              )
+              .then(() => {
+                if (code === 0) resolve()
+                else reject(new Error(`workspace stop exited with ${code}`))
+              })
+              .catch(reject)
+          },
+          args.workspaceId,
+        )
+        .catch((error: unknown) => {
+          void sink
+            .done(formatLogLine(errorMessage(error), "ERROR"), {
+              success: false,
+            })
+            .catch(() => {})
+            .finally(() => reject(error))
+        })
+    })
+    void completion
+      .then(
+        () => deps.onWorkspaceStopComplete?.(args.workspaceId),
+        () => deps.onWorkspaceStopComplete?.(args.workspaceId),
       )
+      .catch((error) => {
+        console.warn(
+          `[ipc] failed to reconcile workspace ${args.workspaceId}:`,
+          error,
+        )
+      })
+    return { commandId, completion }
+  }
 
-      return cmdId
-    },
-  )
+  ipcMain.handle("workspace_stop", async (_event, args: StopWorkspaceArgs) => {
+    const { commandId, completion } = await startWorkspaceStop(args, "renderer")
+    void completion.catch(() => {})
+    return commandId
+  })
 
   ipcMain.handle(
     "workspace_delete",
@@ -1590,6 +1643,15 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     tunnelProcesses,
     scheduleProviderUpdateCheck: scheduleUpdates,
     runInitialProviderUpdateCheck: runUpdateCheck,
+    workspaceActions: {
+      async stop(workspaceId: string): Promise<void> {
+        const { completion } = await startWorkspaceStop(
+          { workspaceId },
+          "tray",
+        )
+        await completion
+      },
+    },
   }
 }
 
