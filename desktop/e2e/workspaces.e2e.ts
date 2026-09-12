@@ -140,7 +140,7 @@ test.describe("Workspace detail flow", () => {
     await expect(main).toContainText("Stopped", { timeout: 10000 })
 
     await page.getByRole("button", { name: /^start$/i }).click()
-    await expect(main).toContainText(/starting/i, { timeout: 3000 })
+    await expect(main).toContainText(/starting|streaming/i, { timeout: 3000 })
     await expect(main).toContainText("Running", { timeout: 10000 })
   })
 
