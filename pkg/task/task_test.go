@@ -128,6 +128,42 @@ func TestReporterRecordsFailureStateAndSanitizedMessage(t *testing.T) {
 	}
 }
 
+func TestReporterKeepsRecoverableSSHFailureNonTerminal(t *testing.T) {
+	store := newTestStore(t)
+	task, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	task.Reporter().Report(status.Event{
+		Phase: status.PhaseStartingSSHTunnel,
+		State: status.StateFailed,
+		Error: &status.ErrorInfo{Message: "tunnel unavailable"},
+	})
+
+	state, err := store.Get(task.ID())
+	if err != nil {
+		t.Fatalf("Get after recoverable failure: %v", err)
+	}
+	if state.Status != StatusRunning {
+		t.Fatalf("status = %q, want %q", state.Status, StatusRunning)
+	}
+	if state.Error != "tunnel unavailable" {
+		t.Fatalf("error = %q, want recoverable failure metadata", state.Error)
+	}
+
+	if err := task.Succeed(nil); err != nil {
+		t.Fatalf("Succeed: %v", err)
+	}
+	state, err = store.Get(task.ID())
+	if err != nil {
+		t.Fatalf("Get after success: %v", err)
+	}
+	if state.Status != StatusSucceeded {
+		t.Fatalf("status after fallback success = %q, want %q", state.Status, StatusSucceeded)
+	}
+}
+
 func TestReporterPersistsCurrentStatusMetadata(t *testing.T) {
 	store := newTestStore(t)
 	task, err := store.Create(CreateOptions{})

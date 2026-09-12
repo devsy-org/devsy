@@ -244,6 +244,12 @@ func (r taskReporter) Report(e status.Event) {
 				s.ErrorHint = redactor.Redact(e.Error.Hint)
 				s.ErrorContext = redactContext(e.Error.Context, redactor)
 			}
+			if recoverableFailure(e.Phase) {
+				if s.Status == StatusFailed {
+					s.Status = StatusRunning
+				}
+				return
+			}
 			return
 		}
 		if s.Status == StatusPending {
@@ -254,6 +260,19 @@ func (r taskReporter) Report(e status.Event) {
 		s.OperationID = redactor.Redact(e.OperationID)
 		s.ParentOperationID = redactor.Redact(e.ParentOperationID)
 	})
+}
+
+// recoverableFailure identifies optional workspace-up phases whose failures
+// are followed by a documented fallback path. They remain visible in status
+// output but must not prevent the detached task from recording eventual
+// success.
+func recoverableFailure(phase status.Phase) bool {
+	switch phase {
+	case status.PhaseStartingSSHTunnel, status.PhaseConfiguringSSH:
+		return true
+	default:
+		return false
+	}
 }
 
 func redactContext(values map[string]string, redactor *secrets.Redactor) map[string]string {
