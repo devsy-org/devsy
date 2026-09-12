@@ -349,32 +349,24 @@ func TestFileBackend_AutoKeyRoundTrip(t *testing.T) {
 	}
 }
 
-// An index entry with an unset Kind (e.g. written by an older layout) must be
-// read as a secret, never silently downgraded to a plaintext env var.
-func TestLoadIndex_UnsetKindNormalizesToSecret(t *testing.T) {
+func TestStore_RejectsMissingBackendOwnership(t *testing.T) {
 	path := filepath.Join(t.TempDir(), IndexFileName)
 	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n      context: default\n"
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	idx, err := loadIndex(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	meta, ok := idx.get("default", "LEGACY")
-	if !ok {
-		t.Fatal("expected entry to load")
-	}
-	if !meta.Sensitive() {
-		t.Fatalf("unset Kind must normalize to secret, got %q", meta.Kind)
+	s := newLocalStore(newMapBackend(), path)
+	if _, err := s.Get(
+		testContext,
+		"LEGACY",
+	); err == nil ||
+		!strings.Contains(err.Error(), "missing persisted backend ownership") {
+		t.Fatalf("expected missing backend ownership error, got %v", err)
 	}
 }
 
-// A blank-kind entry carrying an inline value (e.g. hand-edited) must be
-// normalized to a secret with the inline plaintext cleared, upholding the
-// invariant that sensitive values never persist inline.
-func TestLoadIndex_UnsetKindClearsInlineValue(t *testing.T) {
+func TestStore_RejectsLegacyInlineSecret(t *testing.T) {
 	path := filepath.Join(t.TempDir(), IndexFileName)
 	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n" +
 		"      context: default\n      value: leaked\n"
@@ -382,16 +374,13 @@ func TestLoadIndex_UnsetKindClearsInlineValue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	idx, err := loadIndex(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	meta, _ := idx.get("default", "LEGACY")
-	if !meta.Sensitive() {
-		t.Fatalf("unset Kind must normalize to secret, got %q", meta.Kind)
-	}
-	if meta.Value != "" {
-		t.Fatalf("inline value must be cleared on normalize, got %q", meta.Value)
+	s := newLocalStore(newMapBackend(), path)
+	if _, err := s.Get(
+		testContext,
+		"LEGACY",
+	); err == nil ||
+		!strings.Contains(err.Error(), "missing persisted backend ownership") {
+		t.Fatalf("expected missing backend ownership error, got %v", err)
 	}
 }
 
