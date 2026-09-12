@@ -9,8 +9,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/secrets"
 )
 
-const testFormatJSON = "json"
-const testFormatLogfmt = "logfmt"
+const (
+	testFormatJSON   = "json"
+	testFormatLogfmt = "logfmt"
+)
 
 func TestWriter_EmitsStructuredJSONLine(t *testing.T) {
 	Init(Config{Verbosity: 2, Format: testFormatJSON})
