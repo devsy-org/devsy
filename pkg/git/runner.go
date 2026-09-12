@@ -51,6 +51,9 @@ type RunOptions struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+	// UnredactedStdout preserves machine-readable output that may contain a
+	// credential, such as the response from `git credential fill`.
+	UnredactedStdout bool
 }
 
 // RunResult holds captured output.
@@ -88,10 +91,14 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	cmd.Stdin = opts.Stdin
 
 	redactor := secrets.NewEnvironmentRedactor(cmd.Env)
-	outBuf := subprocess.NewBuffer(redactor)
+	stdoutRedactor := redactor
+	if opts.UnredactedStdout {
+		stdoutRedactor = nil
+	}
+	outBuf := subprocess.NewBuffer(stdoutRedactor)
 	var streamOut *subprocess.StreamingRedactingWriter
 	if opts.Stdout != nil {
-		streamOut = &subprocess.StreamingRedactingWriter{Next: opts.Stdout, Redactor: redactor}
+		streamOut = &subprocess.StreamingRedactingWriter{Next: opts.Stdout, Redactor: stdoutRedactor}
 		cmd.Stdout = io.MultiWriter(streamOut, outBuf)
 	} else {
 		cmd.Stdout = outBuf
