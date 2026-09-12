@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/blang/semver/v4"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
@@ -207,13 +208,13 @@ func (d *dockerDriver) addWorkspaceMountArgs(
 	return args
 }
 
-// minBindCreateSrcMajor is the docker CLI major version that added the
-// bind-create-src mount option; older clients reject it at parse time.
-const minBindCreateSrcMajor = 29
+// minBindCreateSrcVersion is the first Docker CLI release that supports
+// bind-create-src on --mount. The option was introduced in Docker CLI 29.3.0.
+var minBindCreateSrcVersion = semver.MustParse("29.3.0")
 
 // shouldBustBindCache reports whether to add bind-create-src to the workspace
 // mount. Gated to Docker (Podman/nerdctl reject it), Docker Desktop
-// (GOOS != linux), and CLI >= v29.
+// (GOOS != linux), and CLI >= v29.3.0.
 func shouldBustBindCache(helper *docker.DockerHelper) bool {
 	if helper.GetRuntime().Name() != docker.RuntimeDocker {
 		return false
@@ -221,21 +222,15 @@ func shouldBustBindCache(helper *docker.DockerHelper) bool {
 	if runtime.GOOS == osLinux {
 		return false
 	}
-	return dockerMajorAtLeast(helper.ClientVersion(context.Background()), minBindCreateSrcMajor)
+	return dockerClientSupportsBindCreateSrc(helper.ClientVersion(context.Background()))
 }
 
-// dockerMajorAtLeast reports whether version's major component is >= minMajor.
-// An unparseable version returns false.
-func dockerMajorAtLeast(version string, minMajor int) bool {
-	major, _, ok := strings.Cut(version, ".")
-	if !ok {
-		return false
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(major))
+func dockerClientSupportsBindCreateSrc(version string) bool {
+	v, err := semver.ParseTolerant(strings.TrimSpace(version))
 	if err != nil {
 		return false
 	}
-	return n >= minMajor
+	return v.GTE(minBindCreateSrcVersion)
 }
 
 // withBindCreateSrc adds bind-create-src=true to a bind --mount whose source
