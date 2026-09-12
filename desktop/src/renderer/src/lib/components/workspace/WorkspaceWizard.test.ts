@@ -1,10 +1,11 @@
 import { fireEvent, render } from "@testing-library/svelte"
 import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { CommandProgress, Provider } from "$lib/types/index.js"
+import type { CommandProgress, Provider, WorkspaceStatus } from "$lib/types/index.js"
 
 const workspaceUp = vi.fn()
 const onCommandProgress = vi.fn()
+const onWorkspaceStatus = vi.fn()
 
 vi.mock("$lib/ipc/commands.js", () => ({
   workspaceUp: (...args: unknown[]) => workspaceUp(...args),
@@ -32,6 +33,7 @@ vi.mock("$lib/stores/imageCatalog.js", async () => {
 
 vi.mock("$lib/ipc/events.js", () => ({
   onCommandProgress: (...args: unknown[]) => onCommandProgress(...args),
+  onWorkspaceStatus: (...args: unknown[]) => onWorkspaceStatus(...args),
 }))
 
 vi.mock("$lib/stores/providers.js", async () => {
@@ -71,6 +73,7 @@ async function flushAsync() {
 }
 
 let progressCallback: ((progress: CommandProgress) => void) | null = null
+let statusCallback: ((status: WorkspaceStatus) => void) | null = null
 
 async function advanceToReview(getByText: (t: string) => HTMLElement) {
   // provider
@@ -111,15 +114,25 @@ describe("WorkspaceWizard", () => {
   beforeEach(() => {
     workspaceUp.mockReset()
     onCommandProgress.mockReset()
+    onWorkspaceStatus.mockReset()
     providers.set([])
     workspaces.set([])
     progressCallback = null
+    statusCallback = null
 
     onCommandProgress.mockImplementation(
       async (cb: (progress: CommandProgress) => void) => {
         progressCallback = cb
         return () => {
           progressCallback = null
+        }
+      },
+    )
+    onWorkspaceStatus.mockImplementation(
+      async (cb: (status: WorkspaceStatus) => void) => {
+        statusCallback = cb
+        return () => {
+          statusCallback = null
         }
       },
     )
@@ -380,6 +393,34 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
+  it("shows the current structured operation status while launching", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, queryByTestId, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
+    await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    statusCallback?.({
+      commandId: "cmd-1",
+      workspaceId: "python",
+      phase: "building_image",
+      state: "started",
+    })
+    await flushAsync()
+
+    expect(queryByTestId("operation-status")?.textContent).toContain(
+      "building image",
+    )
+    unmount()
+  })
+
   it("shows Open Workspace on success", async () => {
     providers.set([makeProvider("docker")])
     const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
@@ -398,6 +439,7 @@ describe("WorkspaceWizard", () => {
       commandId: "cmd-1",
       message: "Exit code: 0",
       done: true,
+      success: true,
     } as CommandProgress)
     await flushAsync()
 

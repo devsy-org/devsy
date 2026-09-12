@@ -29,7 +29,7 @@ func RunDotfiles(ctx context.Context, cfg DotfilesConfig) error {
 		return nil
 	}
 
-	log.Infof("Installing dotfiles from %s (user=%s)", cfg.Repository, cfg.RemoteUser)
+	log.Debugf("Installing dotfiles from %s (user=%s)", cfg.Repository, cfg.RemoteUser)
 
 	targetDir, err := dotfilesTargetDir(cfg.RemoteUser)
 	if err != nil {
@@ -61,11 +61,11 @@ func dotfilesTargetDir(remoteUser string) (string, error) {
 
 func cloneDotfiles(ctx context.Context, repo, targetDir string) error {
 	if _, err := os.Stat(targetDir); err == nil {
-		log.Info("dotfiles already cloned, skipping")
+		log.Debug("dotfiles already cloned, skipping")
 		return nil
 	}
 
-	log.Infof("Cloning dotfiles %s", repo)
+	log.Debugf("Cloning dotfiles %s", repo)
 	gitInfo := git.NormalizeRepository(repo)
 	return git.At(targetDir, git.WithStrictHostKeyChecking(false)).
 		CloneFromInfo(ctx, gitInfo, "")
@@ -88,7 +88,7 @@ func installDotfiles(
 }
 
 func runDotfilesScript(ctx context.Context, script, remoteUser string) error {
-	log.Infof("Executing dotfiles install script %s", script)
+	log.Debugf("Executing dotfiles install script %s", script)
 	p := "./" + strings.TrimPrefix(script, "./")
 
 	if err := ensureDotfileExecutable(ctx, p); err != nil {
@@ -135,7 +135,7 @@ func runKnownDotfilesScripts(ctx context.Context, remoteUser string) error {
 		return nil
 	}
 
-	log.Info("No install script found, linking dotfiles")
+	log.Debug("No install script found, linking dotfiles")
 	return linkAllDotfiles(remoteUser)
 }
 

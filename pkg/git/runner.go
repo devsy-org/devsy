@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
 // ErrGitNotFound is returned when the git binary is not available on PATH.
@@ -50,6 +51,9 @@ type RunOptions struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+	// UnredactedStdout preserves machine-readable output that may contain a
+	// credential, such as the response from `git credential fill`.
+	UnredactedStdout bool
 }
 
 // RunResult holds captured output.
@@ -86,20 +90,40 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	cmd.Dir = opts.Dir
 	cmd.Stdin = opts.Stdin
 
-	var outBuf, errBuf bytes.Buffer
-	if opts.Stdout != nil {
-		cmd.Stdout = opts.Stdout
-	} else {
-		cmd.Stdout = &outBuf
+	redactor := secrets.NewEnvironmentRedactor(cmd.Env)
+	stdoutRedactor := redactor
+	if opts.UnredactedStdout {
+		stdoutRedactor = nil
 	}
-	if opts.Stderr != nil {
-		cmd.Stderr = io.MultiWriter(opts.Stderr, &errBuf)
+	outBuf := subprocess.NewBuffer(stdoutRedactor)
+	var streamOut *subprocess.StreamingRedactingWriter
+	if opts.Stdout != nil {
+		streamOut = &subprocess.StreamingRedactingWriter{
+			Next:     opts.Stdout,
+			Redactor: stdoutRedactor,
+		}
+		cmd.Stdout = io.MultiWriter(streamOut, outBuf)
 	} else {
-		cmd.Stderr = &errBuf
+		cmd.Stdout = outBuf
+	}
+	errBuf := subprocess.NewBuffer(redactor)
+	var streamErr *subprocess.StreamingRedactingWriter
+	if opts.Stderr != nil {
+		streamErr = &subprocess.StreamingRedactingWriter{Next: opts.Stderr, Redactor: redactor}
+		cmd.Stderr = io.MultiWriter(streamErr, errBuf)
+	} else {
+		cmd.Stderr = errBuf
 	}
 
 	err := cmd.Run()
-	result := RunResult{Stdout: outBuf.Bytes(), Stderr: errBuf.Bytes()}
+	result := RunResult{Stdout: []byte(outBuf.String()), Stderr: []byte(errBuf.String())}
+	flushErr := errors.Join(flushStream(streamOut), flushStream(streamErr))
+	if err == nil && flushErr != nil {
+		return result, fmt.Errorf("flush git output: %w", flushErr)
+	}
+	if err != nil && flushErr != nil {
+		err = errors.Join(err, flushErr)
+	}
 	if err != nil {
 		cmdErr := &CommandError{
 			Args:     opts.Args,
@@ -113,6 +137,13 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 		return result, cmdErr
 	}
 	return result, nil
+}
+
+func flushStream(stream *subprocess.StreamingRedactingWriter) error {
+	if stream == nil {
+		return nil
+	}
+	return stream.Flush()
 }
 
 // defaultRunner is used by Repo when no runner is injected.

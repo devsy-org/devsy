@@ -150,7 +150,7 @@ func resolveURLProvider(
 		return nil, false, nil
 	}
 
-	log.Infof("downloading provider from %s", providerSource)
+	log.Debugf("downloading provider from %s", providerSource)
 	out, err := downloadProvider(ctx, providerSource)
 	if err != nil {
 		return nil, true, fmt.Errorf("download provider: %w", err)

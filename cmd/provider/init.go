@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/completion"
@@ -40,23 +41,29 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout)
+			reporter, err := newStatusReporter(
+				cmd.ResultFormat,
+				os.Stdout,
+				cmd.Verbosity > 0 || cmd.Debug,
+			)
 			if err != nil {
 				return err
 			}
-			if err := ConfigureProvider(cobraCmd.Context(), ProviderOptionsConfig{
-				Provider:           p.Config,
-				ContextName:        devsyConfig.DefaultContext,
-				UserOptions:        cmd.Options,
-				DiscardPriorValues: cmd.Reset,
-				SkipInit:           cmd.SkipInit,
-				SingleMachine:      &cmd.SingleMachine,
-				Reporter:           reporter,
-			}); err != nil {
-				return err
-			}
-			status.Leave(reporter, status.PhaseReady, name)
-			return nil
+			return status.Run(
+				cobraCmd.Context(), reporter,
+				status.Operation{Phase: status.PhaseReady, Step: name},
+				func(ctx context.Context) error {
+					return ConfigureProvider(ctx, ProviderOptionsConfig{
+						Provider:           p.Config,
+						ContextName:        devsyConfig.DefaultContext,
+						UserOptions:        cmd.Options,
+						DiscardPriorValues: cmd.Reset,
+						SkipInit:           cmd.SkipInit,
+						SingleMachine:      &cmd.SingleMachine,
+						Reporter:           reporter,
+					})
+				},
+			)
 		},
 		ValidArgsFunction: func(
 			rootCmd *cobra.Command,

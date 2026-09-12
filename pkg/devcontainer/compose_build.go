@@ -43,7 +43,7 @@ func (r *runner) prepareComposeBuildInfo(
 		return composeBuildInfo{imageBuildInfo: imageBuildInfo, buildTarget: buildTarget}, nil
 	}
 
-	return r.prepareComposeDockerfileBuildInfo(subCtx, composeService)
+	return r.prepareComposeDockerfileBuildInfo(ctx, subCtx, composeService)
 }
 
 // prepareComposeDockerfileBuildInfo handles the Build-backed branch of
@@ -51,6 +51,7 @@ func (r *runner) prepareComposeBuildInfo(
 // target (ensuring a final stage name for multi-stage builds), and extracts the
 // image build info.
 func (r *runner) prepareComposeDockerfileBuildInfo(
+	ctx context.Context,
 	subCtx *config.SubstitutionContext,
 	composeService *composetypes.ServiceConfig,
 ) (composeBuildInfo, error) {
@@ -94,6 +95,9 @@ func (r *runner) prepareComposeDockerfileBuildInfo(
 	}
 
 	imageBuildInfo, err := r.getImageBuildInfoFromDockerfile(
+		// The caller's context owns this build operation; preserve cancellation
+		// through Dockerfile base-image inspection.
+		ctx,
 		subCtx,
 		string(originalDockerfile),
 		mappingToMap(composeService.Build.Args),
@@ -259,6 +263,7 @@ func (r *runner) prepareExtendedComposeBuild(
 	}
 
 	extendImageBuildInfo, err := feature.GetExtendedBuildInfo(&feature.ExtendedBuildParams{
+		ExecutionContext:   ctx,
 		Ctx:                params.substitutionContext,
 		ImageBuildInfo:     buildInfo.imageBuildInfo,
 		Target:             buildInfo.buildTarget,

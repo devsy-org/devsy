@@ -28,6 +28,7 @@ import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import {
   workspaceJobs,
+  workspaceStatuses,
   workspaces,
   workspacesLoading,
 } from "$lib/stores/workspaces.js"
@@ -82,6 +83,14 @@ function statusVariant(status?: string): "default" | "secondary" | "outline" {
   if (s === "running") return "default"
   if (s === "busy") return "secondary"
   return "outline"
+}
+
+function operationLabel(ws: Workspace): string | undefined {
+  const operation = $workspaceStatuses[ws.id]
+  if (!operation) return undefined
+  if (operation.state === "failed") return "Failed"
+  if (operation.state === "succeeded" || operation.state === "skipped") return undefined
+  return operation.step || operation.phase.replaceAll("_", " ")
 }
 
 function isRunning(ws: Workspace) {
@@ -253,8 +262,12 @@ async function handleDelete() {
                     Delete failed
                   </span>
                 {:else}
-                  {@const statusLabel = ws.status ?? "Checking"}
-                  <span class={badgeVariants({ variant: statusVariant(statusLabel) })}>{statusLabel}</span>
+                  {@const operation = operationLabel(ws)}
+                  {@const statusLabel = operation ?? ws.status ?? "Checking"}
+                  <span
+                    class={badgeVariants({ variant: operation ? "secondary" : statusVariant(statusLabel) })}
+                    title={operation && ($workspaceStatuses[ws.id]?.error?.message ?? $workspaceStatuses[ws.id]?.error?.hint)}
+                  >{statusLabel}</span>
                 {/if}
               </Table.Cell>
               <Table.Cell class="text-sm text-muted-foreground">{timeAgo(ws.lastUsed)}</Table.Cell>

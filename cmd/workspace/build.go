@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -252,6 +253,14 @@ func (cmd *BuildCmd) build(
 		return err
 	}
 	emitJSON := mode == output.ModeJSON
+	reporter, err := newWorkspaceStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+	)
+	if err != nil {
+		return err
+	}
 
 	if err = workspaceClient.Lock(ctx); err != nil {
 		return err
@@ -262,24 +271,28 @@ func (cmd *BuildCmd) build(
 		return err
 	}
 
-	log.Infof("building devcontainer")
 	defer func() {
 		log.Debugf("done building devcontainer")
-		log.Infof("cleaning up temporary workspace")
+		log.Debugf("cleaning up temporary workspace")
 	}()
 
-	result, err := clientimplementation.BuildAgentClient(
-		ctx,
-		clientimplementation.BuildAgentClientOptions{
-			WorkspaceClient: workspaceClient,
-			CLIOptions:      cmd.CLIOptions,
-			AgentCommand:    "build",
-		},
-	)
+	var result *devcconfig.Result
+	err = status.Run(ctx, reporter, status.Operation{
+		Phase: status.PhaseBuildingImage,
+		Step:  "building devcontainer",
+	}, func(ctx context.Context) error {
+		var buildErr error
+		result, buildErr = clientimplementation.BuildAgentClient(
+			ctx,
+			clientimplementation.BuildAgentClientOptions{
+				WorkspaceClient: workspaceClient,
+				CLIOptions:      cmd.CLIOptions,
+				AgentCommand:    "build",
+			},
+		)
+		return buildErr
+	})
 	if err != nil {
-		if emitJSON {
-			_ = devcconfig.WriteErrorJSON(os.Stdout, err.Error())
-		}
 		return err
 	}
 

@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
+	"github.com/devsy-org/devsy/pkg/status"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -33,6 +34,7 @@ type ExecCmd struct {
 	IDLabels            []string
 	ContainerDataFolder string
 	SkipPostCreate      bool
+	statusReporter      status.Reporter
 }
 
 func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
@@ -101,6 +103,15 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 	if err := cmd.validateExecFlags(); err != nil {
 		return err
 	}
+	reporter, err := newWorkspaceStatusReporter(
+		cmd.ResultFormat,
+		os.Stderr,
+		cmd.Verbosity > 0 || cmd.Debug,
+	)
+	if err != nil {
+		return err
+	}
+	cmd.statusReporter = reporter
 
 	// Must run before the container-id branch below, else name+container-id would
 	// silently take the container path instead of erroring.
@@ -219,10 +230,12 @@ func (cmd *ExecCmd) execAndReport(
 	}
 	emitJSON := mode == output.ModeJSON
 
-	if err := cmd.execInContainer(ctx, opts, args); err != nil {
-		if emitJSON {
-			_ = devcconfig.WriteErrorJSON(os.Stderr, err.Error())
-		}
+	if err := status.Run(ctx, cmd.statusReporter, status.Operation{
+		Phase: status.PhaseRunningCommand,
+		Step:  "container command",
+	}, func(ctx context.Context) error {
+		return cmd.execInContainer(ctx, opts, args)
+	}); err != nil {
 		return err
 	}
 

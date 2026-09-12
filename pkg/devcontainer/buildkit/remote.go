@@ -229,7 +229,7 @@ func checkExistingImage(params checkExistingImageParams) *config.BuildInfo {
 		return nil
 	}
 
-	log.Infof("skipping build because an existing image was found %s", params.ImageName)
+	log.Debugf("skipping build because an existing image was found %s", params.ImageName)
 
 	var imageMetadata *config.ImageMetadataConfig
 	if params.Opts.ExtendedBuildInfo != nil {
@@ -466,7 +466,7 @@ type executeBuildParams struct {
 }
 
 func executeBuild(params executeBuildParams) error {
-	log.Infof(
+	log.Debugf(
 		"start building %s using platform builder (%s)",
 		params.SolveOpts.Exports[0].Attrs[string(exptypes.OptKeyName)],
 		params.Info.BuildkitVersion.Version,

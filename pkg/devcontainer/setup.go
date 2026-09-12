@@ -72,12 +72,16 @@ func (r *runner) setupContainer(
 	ctx context.Context,
 	params *setupContainerParams,
 ) (*config.Result, error) {
-	status.Enter(r.reporter, status.PhaseInjectingAgent, "")
-	if err := r.injectAgentIntoContainer(ctx, params.timeout); err != nil {
-		status.Fail(r.reporter, status.PhaseInjectingAgent, err)
+	if err := status.Run(
+		ctx,
+		r.reporter,
+		status.Operation{Phase: status.PhaseInjectingAgent},
+		func(ctx context.Context) error {
+			return r.injectAgentIntoContainer(ctx, params.timeout)
+		},
+	); err != nil {
 		return nil, err
 	}
-	status.Leave(r.reporter, status.PhaseInjectingAgent, "")
 	log.Debugf("injected into container")
 	defer log.Debugf("done setting up container")
 
@@ -88,14 +92,18 @@ func (r *runner) setupContainer(
 
 	setupCommand := r.buildSetupCommand(info.compressed, info.workspaceConfigCompressed)
 
-	status.Enter(r.reporter, status.PhaseRunningLifecycleHook, "")
-	result, err := r.executeSetup(ctx, info.result, setupCommand)
-	if err != nil {
-		status.Fail(r.reporter, status.PhaseRunningLifecycleHook, err)
-		return result, err
-	}
-	status.Leave(r.reporter, status.PhaseRunningLifecycleHook, "")
-	return result, nil
+	var result *config.Result
+	err = status.Run(
+		ctx,
+		r.reporter,
+		status.Operation{Phase: status.PhaseRunningLifecycleHook},
+		func(ctx context.Context) error {
+			var executeErr error
+			result, executeErr = r.executeSetup(ctx, info.result, setupCommand)
+			return executeErr
+		},
+	)
+	return result, err
 }
 
 func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Duration) error {
@@ -369,7 +377,7 @@ func (r *runner) compressWorkspaceConfig() (string, error) {
 }
 
 func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string) string {
-	log.Infof("setting up container")
+	log.Debugf("setting up container")
 	args := []string{
 		shellescape.Quote(r.agentContainerPath()),
 		"internal",
@@ -583,7 +591,7 @@ func filterWorkspaceMounts(
 	for _, mount := range mounts {
 		rel, err := filepath.Rel(baseFolder, mount.Source)
 		if err != nil || strings.Contains(rel, "..") {
-			log.Infof(
+			log.Debugf(
 				"dropping workspace mount %s because it possibly accesses data outside of its content directory",
 				mount.Source,
 			)

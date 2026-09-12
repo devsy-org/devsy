@@ -31,6 +31,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/spf13/cobra"
 )
@@ -491,6 +492,7 @@ func (w *workspaceInitializer) prepareWorkspaceContent(ctx context.Context) erro
 		client:        w.tunnelClient,
 		gitHelper:     w.gitCredentialsHelper,
 		logger:        w.logger,
+		reporter:      tunnelserver.NewTunnelStatusReporter(ctx, w.tunnelClient),
 	})
 }
 
@@ -529,6 +531,7 @@ type prepareWorkspaceParams struct {
 	client        tunnel.TunnelClient
 	gitHelper     string
 	logger        tunnelserver.Logger
+	reporter      status.Reporter
 }
 
 // prepareWorkspace initializes the workspace content folder and downloads/prepares the workspace source.
@@ -550,7 +553,22 @@ func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error 
 		return nil
 	}
 
-	return prepareWorkspaceSource(ctx, params, exists)
+	phase := status.Phase("")
+	switch {
+	case params.workspaceInfo.CLIOptions.Reset:
+		phase = status.PhaseResettingWorkspace
+	case params.workspaceInfo.CLIOptions.Recreate:
+		phase = status.PhaseRebuildingWorkspace
+	}
+	if phase == "" || params.reporter == nil {
+		return prepareWorkspaceSource(ctx, params, exists)
+	}
+
+	return status.Run(ctx, params.reporter, status.Operation{
+		Phase: phase,
+	}, func(ctx context.Context) error {
+		return prepareWorkspaceSource(ctx, params, exists)
+	})
 }
 
 // prepareWorkspaceSource dispatches on the workspace source type (git, local
@@ -564,6 +582,7 @@ func prepareWorkspaceSource(ctx context.Context, params prepareWorkspaceParams, 
 			gitHelper:     params.gitHelper,
 			exists:        exists,
 			logger:        params.logger,
+			reporter:      params.reporter,
 		})
 	case source.LocalFolder != "":
 		return prepareLocalWorkspace(ctx, params.workspaceInfo, params.client)
@@ -592,6 +611,7 @@ type prepareGitWorkspaceParams struct {
 	gitHelper     string
 	exists        bool
 	logger        tunnelserver.Logger
+	reporter      status.Reporter
 }
 
 func prepareGitWorkspace(ctx context.Context, params prepareGitWorkspaceParams) error {
@@ -624,6 +644,7 @@ func prepareGitWorkspace(ctx context.Context, params prepareGitWorkspaceParams) 
 		WorkspaceDir: params.workspaceInfo.ContentFolder,
 		Helper:       params.gitHelper,
 		Options:      params.workspaceInfo.CLIOptions,
+		Reporter:     params.reporter,
 	})
 }
 

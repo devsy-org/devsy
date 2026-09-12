@@ -488,7 +488,7 @@ func (k *KubernetesDriver) reconcileExistingPod(ctx context.Context, id string) 
 
 	// Nothing changed, can safely return
 	if optionsEqual(existingOptions, k.options) {
-		log.Infof(
+		log.Debugf(
 			"Pod %q already exists and nothing changed, skipping update",
 			existingPod.Name,
 		)
@@ -528,14 +528,14 @@ func (k *KubernetesDriver) runPod(ctx context.Context, id string, pod *corev1.Po
 	log.Debugf("Create pod with: %s", string(podRaw))
 
 	// create the pod
-	log.Infof("Create Pod %q", id)
+	log.Debugf("Create Pod %q", id)
 	_, err = k.client.Client().CoreV1().Pods(k.namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("create pod: %w", err)
 	}
 
 	// wait for pod running
-	log.Infof("Waiting for DevContainer Pod %q to come up", id)
+	log.Debugf("Waiting for DevContainer Pod %q to come up", id)
 	_, err = k.waitPodRunning(ctx, id)
 	if err != nil {
 		return err
@@ -727,7 +727,7 @@ func optionsEqual(a, b *provider2.ProviderKubernetesDriverConfig) bool {
 func (k *KubernetesDriver) createNamespace(ctx context.Context) error {
 	_, err := k.client.Client().CoreV1().Namespaces().Get(ctx, k.namespace, metav1.GetOptions{})
 	if kerrors.IsNotFound(err) || kerrors.IsForbidden(err) {
-		log.Infof("Create namespace %q", k.namespace)
+		log.Debugf("Create namespace %q", k.namespace)
 		_, err := k.client.Client().CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: k.namespace,

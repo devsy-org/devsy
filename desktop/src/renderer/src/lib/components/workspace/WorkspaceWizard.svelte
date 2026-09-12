@@ -41,8 +41,8 @@ import type {
   GitRefType,
   DevcontainerMode,
 } from "$lib/utils/workspace-source.js"
-import { onCommandProgress } from "$lib/ipc/events.js"
-import type { CommandProgress } from "$lib/types/index.js"
+import { onCommandProgress, onWorkspaceStatus } from "$lib/ipc/events.js"
+import type { CommandProgress, WorkspaceStatus } from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { isImageCompatible } from "$lib/stores/imageCatalog.js"
@@ -228,8 +228,10 @@ let launchIsRecovery = $state(false)
 let lastAttemptedId = $state("")
 let launchSuccess = $state(false)
 let launchedWorkspaceId = $state<string | null>(null)
+let operationStatus = $state<WorkspaceStatus | null>(null)
 let confirmCancelOpen = $state(false)
 let unlisten: UnlistenFn | null = null
+let unlistenStatus: UnlistenFn | null = null
 let watchdog: ReturnType<typeof setTimeout> | null = null
 let pendingLines: string[] = []
 let flushHandle: number | null = null
@@ -366,6 +368,7 @@ function reset() {
   launchError = ""
   launchSuccess = false
   launchedWorkspaceId = null
+  operationStatus = null
   confirmCancelOpen = false
   checkedRef = ""
   imagePlatforms = []
@@ -376,6 +379,8 @@ function reset() {
   clearWatchdog()
   unlisten?.()
   unlisten = null
+  unlistenStatus?.()
+  unlistenStatus = null
 }
 
 $effect(() => {
@@ -430,6 +435,7 @@ onMount(() => {
 
 onDestroy(() => {
   unlisten?.()
+  unlistenStatus?.()
   clearWatchdog()
   if (flushHandle !== null) {
     cancelAnimationFrame(flushHandle)
@@ -450,38 +456,55 @@ function flushLines() {
   }
 }
 
-function handleProgress(progress: CommandProgress, wsId: string | undefined) {
+function queueProgressLines(progress: CommandProgress) {
   const incoming = progress.lines ?? (progress.message ? [progress.message] : [])
-  if (incoming.length > 0) {
-    pendingLines.push(...incoming)
-    if (flushHandle === null) {
-      flushHandle = requestAnimationFrame(flushLines)
-    }
+  if (incoming.length === 0) return
+  pendingLines.push(...incoming)
+  if (flushHandle === null) {
+    flushHandle = requestAnimationFrame(flushLines)
   }
+}
+
+function finishProgress(progress: CommandProgress, wsId: string | undefined) {
+  if (flushHandle !== null) {
+    cancelAnimationFrame(flushHandle)
+  }
+  flushLines()
+  launchRunning = false
+  clearWatchdog()
+  if (isCommandSuccess(progress.success)) {
+    finishSuccessfulLaunch(wsId)
+    return
+  }
+  finishFailedLaunch(progress)
+}
+
+function finishSuccessfulLaunch(wsId: string | undefined) {
+  launchSuccess = true
+  launchedWorkspaceId = wsId ?? null
+  toasts.success(`Workspace ${wsId ?? "created"} is ready`)
+  if (wsId) oncomplete?.(wsId)
+}
+
+function finishFailedLaunch(progress: CommandProgress) {
+  const cliError = progress.cliError
+  launchError = cliError?.message
+    ? `${cliError.message}${cliError.hint ? ` Try: ${cliError.hint}` : ""}`
+    : "Workspace creation failed. Check output for details."
+  toasts.error(launchError)
+  if (!isRecoverableBuildFailure(progress.cliError)) return
+  const pref = loadLocalOptions().onBuildFailure
+  if (pref === "auto-recovery" && !launchIsRecovery) {
+    void handleLaunch(true)
+  } else if (pref !== "nothing") {
+    launchBuildFailed = true
+  }
+}
+
+function handleProgress(progress: CommandProgress, wsId: string | undefined) {
+  queueProgressLines(progress)
   if (progress.done) {
-    if (flushHandle !== null) {
-      cancelAnimationFrame(flushHandle)
-    }
-    flushLines()
-    launchRunning = false
-    clearWatchdog()
-    if (isCommandSuccess(progress.message, progress.success)) {
-      launchSuccess = true
-      launchedWorkspaceId = wsId ?? null
-      toasts.success(`Workspace ${wsId ?? "created"} is ready`)
-      if (wsId) oncomplete?.(wsId)
-    } else {
-      launchError = "Workspace creation failed. Check output for details."
-      toasts.error(launchError)
-      if (isRecoverableBuildFailure(progress.cliError)) {
-        const pref = loadLocalOptions().onBuildFailure
-        if (pref === "auto-recovery" && !launchIsRecovery) {
-          void handleLaunch(true)
-        } else if (pref !== "nothing") {
-          launchBuildFailed = true
-        }
-      }
-    }
+    finishProgress(progress, wsId)
   }
 }
 
@@ -505,6 +528,7 @@ async function handleLaunch(recovery = false) {
   }
   commandId = null
   launchedWorkspaceId = null
+  operationStatus = null
   clearWatchdog()
 
   const workspaceId = resolvedId
@@ -521,6 +545,17 @@ async function handleLaunch(recovery = false) {
         }
       } else {
         pendingEvents.push(progress)
+      }
+    })
+
+    const pendingStatuses: WorkspaceStatus[] = []
+    unlistenStatus?.()
+    unlistenStatus = await onWorkspaceStatus((status) => {
+      if (status.workspaceId !== workspaceId) return
+      if (resolvedCommandId === status.commandId) {
+        operationStatus = status
+      } else if (pendingStatuses.length < 100) {
+        pendingStatuses.push(status)
       }
     })
 
@@ -543,6 +578,10 @@ async function handleLaunch(recovery = false) {
 
     commandId = cmdId
     resolvedCommandId = cmdId
+
+    for (const status of pendingStatuses) {
+      if (status.commandId === cmdId) operationStatus = status
+    }
 
     for (const event of pendingEvents) {
       if (event.commandId === cmdId) {
@@ -1224,6 +1263,17 @@ function selectTemplate(t: { name: string; source: string }) {
               <AlertCircle class="h-4 w-4" />
               <Alert.Description>{launchError}</Alert.Description>
             </Alert.Root>
+          {/if}
+
+          {#if launchRunning && operationStatus}
+            <div class="rounded-md border bg-muted/30 px-3 py-2 text-sm" data-testid="operation-status">
+              <span class="font-medium capitalize">
+                {operationStatus.phase.replaceAll("_", " ")}
+              </span>
+              {#if operationStatus.step}
+                <span class="text-muted-foreground"> — {operationStatus.step}</span>
+              {/if}
+            </div>
           {/if}
 
           {#if outputLines.length > 0}

@@ -134,8 +134,9 @@ func ProcessFeatureID(
 	processor := &featureProcessor{
 		devContainerConfig: devContainerConfig,
 		forceBuild:         forceBuild,
+		ctx:                context.Background(),
 	}
-	res, err := processor.resolveFeatureSource(id)
+	res, err := processor.resolveFeatureSource(processor.ctx, id)
 	if err != nil {
 		return "", err
 	}
@@ -294,7 +295,7 @@ func pullOCIFeature(
 		saveAnnotations(featureFolder, annotations)
 	}
 
-	log.Infof(
+	log.Debugf(
 		"OCI feature processed successfully: featureId=%s, path=%s",
 		id,
 		featureExtractedFolder,
@@ -375,7 +376,7 @@ func logOCIAnnotations(id string, annotations map[string]string) {
 	version := annotations["org.opencontainers.image.version"]
 
 	if title != "" || description != "" {
-		log.Infof(
+		log.Debugf(
 			"Feature %q: title=%q, description=%q, version=%q",
 			id, title, description, version,
 		)
@@ -579,7 +580,7 @@ func storeIntegrityHash(featureFolder, tarballPath, id string) {
 		return
 	}
 
-	log.Infof("Feature tarball integrity: featureId=%s, sha256=%s", id, computed)
+	log.Debugf("Feature tarball integrity: featureId=%s, sha256=%s", id, computed)
 }
 
 func extractTarball(downloadFile, dest string) error {
@@ -600,6 +601,7 @@ func extractTarball(downloadFile, dest string) error {
 // processDirectTarFeature resolves an HTTP(S) tarball feature to a local folder
 // and returns its integrity digest (sha256:<hex> of the tarball).
 func processDirectTarFeature(
+	ctx context.Context,
 	id string,
 	httpHeaders map[string]string,
 	forceDownload bool,
@@ -636,7 +638,7 @@ func processDirectTarFeature(
 
 	// Download feature tarball.
 	downloadFile := filepath.Join(featureFolder, "feature.tgz")
-	err = downloadFeatureFromURL(id, downloadFile, httpHeaders)
+	err = downloadFeatureFromURL(ctx, id, downloadFile, httpHeaders)
 	if err != nil {
 		log.Debugf("failed to download feature tarball: error=%v, url=%s", err, id)
 		return "", "", err
@@ -653,7 +655,7 @@ func processDirectTarFeature(
 		return "", "", err
 	}
 
-	log.Infof(
+	log.Debugf(
 		"Direct tar feature processed successfully: featureId=%s, path=%s",
 		id,
 		featureExtractedFolder,
@@ -709,6 +711,7 @@ func tarballIntegrity(featureFolder string) string {
 }
 
 func downloadFeatureFromURL(
+	ctx context.Context,
 	url string,
 	destFile string,
 	httpHeaders map[string]string,
@@ -716,12 +719,12 @@ func downloadFeatureFromURL(
 	log.Debugf("starting feature download: url=%s, destFile=%s", url, destFile)
 
 	if err := devsyhttp.DownloadToFile(
-		context.Background(), url, destFile, devsyhttp.WithHeaders(httpHeaders),
+		ctx, url, destFile, devsyhttp.WithHeaders(httpHeaders),
 	); err != nil {
 		return err
 	}
 
-	log.Infof("Feature download completed successfully: url=%s, destFile=%s", url, destFile)
+	log.Debugf("Feature download completed successfully: url=%s, destFile=%s", url, destFile)
 	return nil
 }
 

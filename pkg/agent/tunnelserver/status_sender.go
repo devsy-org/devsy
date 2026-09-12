@@ -2,9 +2,11 @@ package tunnelserver
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
@@ -28,15 +30,40 @@ type tunnelStatusReporter struct {
 }
 
 func (r *tunnelStatusReporter) Report(e status.Event) {
+	redactor := secrets.NewEnvironmentRedactor(os.Environ())
 	select {
 	case r.events <- &tunnel.StatusUpdate{
-		Phase:   string(e.Phase),
-		Step:    e.Step,
-		Started: e.Started,
-		Error:   e.Err,
+		Phase:             redactor.Redact(string(e.Phase)),
+		Step:              redactor.Redact(e.Step),
+		State:             string(e.State),
+		DurationMs:        e.Duration.Milliseconds(),
+		OperationId:       redactor.Redact(e.OperationID),
+		ParentOperationId: redactor.Redact(e.ParentOperationID),
+		Error: func() *tunnel.StatusError {
+			if e.Error != nil {
+				return &tunnel.StatusError{
+					Code:    redactor.Redact(e.Error.Code),
+					Message: redactor.Redact(e.Error.Message),
+					Hint:    redactor.Redact(e.Error.Hint),
+					Context: redactContext(e.Error.Context, redactor),
+				}
+			}
+			return nil
+		}(),
 	}:
 	case <-r.ctx.Done():
 	}
+}
+
+func redactContext(values map[string]string, redactor *secrets.Redactor) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	redacted := make(map[string]string, len(values))
+	for key, value := range values {
+		redacted[redactor.Redact(key)] = redactor.Redact(value)
+	}
+	return redacted
 }
 
 func (r *tunnelStatusReporter) worker() {

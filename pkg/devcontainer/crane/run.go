@@ -1,7 +1,7 @@
 package crane
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +10,8 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
 var craneSigningKey string
@@ -50,17 +52,29 @@ func (c *command) WithArg(arg string) *command {
 }
 
 func (c *command) Run() (string, error) {
-	cmd := exec.Command(c.cmd, c.args...)
+	return c.RunContext(context.Background())
+}
 
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to execute command: %v, error: %w", errBuf.String(), err)
+func (c *command) RunContext(ctx context.Context) (string, error) {
+	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	if craneSigningKey != "" {
+		redactor = secrets.Combine(
+			redactor,
+			secrets.NewRedactor([]string{"CRANE_SIGNING_KEY=" + craneSigningKey}),
+		)
+	}
+	result, err := subprocess.Run(ctx, c.cmd, c.args, subprocess.Options{
+		Redactor: redactor,
+	})
+	if err != nil {
+		details := result.DiagnosticOutput()
+		if details != "" {
+			return "", fmt.Errorf("failed to execute command: %s: %w", details, err)
+		}
+		return "", fmt.Errorf("failed to execute command: %w", err)
 	}
 
-	return outBuf.String(), nil
+	return result.Stdout, nil
 }
 
 // ShouldUse takes CLIOptions and returns true if crane should be used.
@@ -79,6 +93,15 @@ func PullConfigFromSource(
 	workspaceInfo *provider2.AgentWorkspaceInfo,
 	options *provider2.CLIOptions,
 ) (string, error) {
+	return PullConfigFromSourceWithContext(context.Background(), workspaceInfo, options)
+}
+
+// PullConfigFromSourceWithContext pulls a config using the caller's context.
+func PullConfigFromSourceWithContext(
+	ctx context.Context,
+	workspaceInfo *provider2.AgentWorkspaceInfo,
+	options *provider2.CLIOptions,
+) (string, error) {
 	var data string
 	var err error
 	if options.Platform.EnvironmentTemplate == "" {
@@ -93,13 +116,17 @@ func PullConfigFromSource(
 		command = command.WithFlag("--version", options.Platform.EnvironmentTemplateVersion)
 	}
 
-	data, err = command.Run()
+	data, err = command.RunContext(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	if craneSigningKey != "" {
-		data, err = New(DecryptCommand).WithArg(data).WithFlag("--key", craneSigningKey).Run()
+		data, err = New(
+			DecryptCommand,
+		).WithArg(data).
+			WithFlag("--key", craneSigningKey).
+			RunContext(ctx)
 		if err != nil {
 			return "", err
 		}

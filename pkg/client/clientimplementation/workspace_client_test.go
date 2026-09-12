@@ -110,6 +110,27 @@ func TestRunCommand(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "emulated", strings.TrimSpace(stdout.String()))
 	})
+
+	t.Run("redacts environment secrets from both streams", func(t *testing.T) {
+		const secret = "run-command-secret-846307" //nolint:gosec // test credential fixture
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+		err := RunCommand(context.Background(), RunCommandOptions{
+			Command: types.StrArray{
+				"/bin/sh",
+				"-c",
+				`printf '%s' "$DEVSY_RUN_COMMAND_SECRET"; printf '%s' "$DEVSY_RUN_COMMAND_SECRET" >&2`,
+			},
+			Environ: []string{"DEVSY_RUN_COMMAND_SECRET=" + secret},
+			Stdout:  stdout,
+			Stderr:  stderr,
+		})
+		require.NoError(t, err)
+		assert.NotContains(t, stdout.String(), secret)
+		assert.NotContains(t, stderr.String(), secret)
+		assert.Contains(t, stdout.String(), "***")
+		assert.Contains(t, stderr.String(), "***")
+	})
 }
 
 func TestLogBusy(t *testing.T) {

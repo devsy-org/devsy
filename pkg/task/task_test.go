@@ -3,6 +3,7 @@ package task
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -95,6 +96,150 @@ func TestReporterRecordsFailure(t *testing.T) {
 	}
 	if !state.Status.Terminal() {
 		t.Error("a failed-phase report must leave the task in a terminal state")
+	}
+}
+
+func TestReporterRecordsFailureStateAndSanitizedMessage(t *testing.T) {
+	store := newTestStore(t)
+	task, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	task.Reporter().Report(status.Event{
+		Phase: status.PhaseBuildingImage,
+		State: status.StateFailed,
+		Step:  "image",
+		Error: &status.ErrorInfo{
+			Code:    "build_failed",
+			Message: "development image could not be built",
+		},
+	})
+
+	state, err := store.Get(task.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status != StatusFailed || state.Phase != string(status.PhaseBuildingImage) {
+		t.Fatalf("unexpected task state: %+v", state)
+	}
+	if state.Error != "development image could not be built" {
+		t.Fatalf("task retained raw error: %q", state.Error)
+	}
+}
+
+func TestReporterKeepsRecoverableSSHFailureNonTerminal(t *testing.T) {
+	store := newTestStore(t)
+	task, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	task.Reporter().Report(status.Event{
+		Phase: status.PhaseStartingSSHTunnel,
+		State: status.StateFailed,
+		Error: &status.ErrorInfo{Message: "tunnel unavailable"},
+	})
+
+	state, err := store.Get(task.ID())
+	if err != nil {
+		t.Fatalf("Get after recoverable failure: %v", err)
+	}
+	if state.Status != StatusRunning {
+		t.Fatalf("status = %q, want %q", state.Status, StatusRunning)
+	}
+	if state.Error != "tunnel unavailable" {
+		t.Fatalf("error = %q, want recoverable failure metadata", state.Error)
+	}
+
+	if err := task.Succeed(nil); err != nil {
+		t.Fatalf("Succeed: %v", err)
+	}
+	state, err = store.Get(task.ID())
+	if err != nil {
+		t.Fatalf("Get after success: %v", err)
+	}
+	if state.Status != StatusSucceeded {
+		t.Fatalf("status after fallback success = %q, want %q", state.Status, StatusSucceeded)
+	}
+}
+
+func TestReporterPersistsCurrentStatusMetadata(t *testing.T) {
+	store := newTestStore(t)
+	task, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	task.Reporter().Report(status.Event{
+		Phase:             status.PhaseBuildingImage,
+		Step:              "image",
+		State:             status.StateFailed,
+		OperationID:       "op-17",
+		ParentOperationID: "op-9",
+		Duration:          1500 * time.Millisecond,
+		Error: &status.ErrorInfo{
+			Code:    "docker_daemon_unreachable",
+			Message: "Docker daemon is unavailable.",
+			Hint:    "Start Docker and retry.",
+			Context: map[string]string{"context": "desktop-linux"},
+		},
+	})
+
+	state, err := store.Get(task.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	assertCurrentStatusMetadata(t, state)
+}
+
+func TestReporterRedactsPersistedFailureMetadata(t *testing.T) {
+	t.Setenv("DEVSY_TASK_SECRET", "task-secret-846297")
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	tk.Reporter().Report(status.Event{
+		Phase:             status.PhaseBuildingImage,
+		Step:              "build task-secret-846297",
+		State:             status.StateFailed,
+		OperationID:       "op-task-secret-846297",
+		ParentOperationID: "parent-task-secret-846297",
+		Error: &status.ErrorInfo{
+			Code:    "task-secret-846297",
+			Message: "failed with task-secret-846297",
+			Hint:    "retry task-secret-846297",
+			Context: map[string]string{"token": "task-secret-846297"},
+		},
+	})
+
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	values := []string{
+		state.Error, state.ErrorCode, state.ErrorHint, state.ErrorContext["token"],
+		state.Step, state.OperationID, state.ParentOperationID,
+	}
+	for _, value := range values {
+		if strings.Contains(value, "task-secret-846297") {
+			t.Fatalf("task state leaked secret: %+v", state)
+		}
+	}
+}
+
+func assertCurrentStatusMetadata(t *testing.T, state *State) {
+	t.Helper()
+	if state.OperationID != "op-17" || state.ParentOperationID != "op-9" ||
+		state.DurationMs != 1500 {
+		t.Fatalf("status metadata was not persisted: %+v", state)
+	}
+	if state.ErrorCode != "docker_daemon_unreachable" ||
+		state.ErrorHint != "Start Docker and retry." ||
+		state.ErrorContext["context"] != "desktop-linux" {
+		t.Fatalf("structured error metadata was not persisted: %+v", state)
 	}
 }
 
@@ -218,6 +363,13 @@ func TestCancelWithoutPIDMarksFailed(t *testing.T) {
 	if state.Error != ErrCanceled.Error() {
 		t.Errorf("error = %q, want %q", state.Error, ErrCanceled.Error())
 	}
+	if state.ErrorCode != "canceled" || state.ErrorHint == "" {
+		t.Errorf(
+			"cancellation metadata = (%q, %q), want stable code and hint",
+			state.ErrorCode,
+			state.ErrorHint,
+		)
+	}
 }
 
 func TestCancelOnTerminalTaskIsNoop(t *testing.T) {
@@ -254,7 +406,7 @@ func TestTerminalStateSurvivesLateWorkerReports(t *testing.T) {
 		{"succeed", func(tk *Task) error { return tk.Succeed(&config.Result{}) }},
 		{"fail", func(tk *Task) error { return tk.Fail(errors.New("worker exited")) }},
 		{"report", func(tk *Task) error {
-			tk.Reporter().Report(status.Event{Phase: status.PhaseReady, Started: true})
+			tk.Reporter().Report(status.Event{Phase: status.PhaseReady, State: status.StateStarted})
 			return nil
 		}},
 	} {
@@ -653,7 +805,15 @@ func TestReconcilePreservesCancellationReason(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 
-	if got := store.Reconcile(state).Error; got != ErrCanceled.Error() {
-		t.Errorf("error = %q, want %q", got, ErrCanceled.Error())
+	reconciled := store.Reconcile(state)
+	if reconciled.Error != ErrCanceled.Error() {
+		t.Errorf("error = %q, want %q", reconciled.Error, ErrCanceled.Error())
+	}
+	if reconciled.ErrorCode != "canceled" || reconciled.ErrorHint == "" {
+		t.Errorf(
+			"cancellation metadata = (%q, %q), want stable code and hint",
+			reconciled.ErrorCode,
+			reconciled.ErrorHint,
+		)
 	}
 }

@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -12,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/opener"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -70,6 +72,29 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *StopCmd) Run(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	reporter, err := newWorkspaceStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+	)
+	if err != nil {
+		return err
+	}
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseStoppingWorkspace},
+		func(ctx context.Context) error {
+			return cmd.run(ctx, devsyConfig, client)
+		},
+	)
+}
+
+func (cmd *StopCmd) run(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
@@ -151,7 +176,7 @@ func (cmd *StopCmd) stopSingleMachine(
 		return false, fmt.Errorf("delete machine: %w", err)
 	}
 
-	log.Infof("stopped workspace: workspace=%s", client.Workspace())
+	log.Debugf("stopped workspace: workspace=%s", client.Workspace())
 	return true, nil
 }
 

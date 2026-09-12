@@ -1,30 +1,33 @@
 package devsyconfig
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
 func AuthDevsyCliToPlatform(config *client.Config) error {
-	cmd := exec.Command( // #nosec G204 -- binary name is a compile-time constant
+	args := []string{"pro", "login", "--access-key", config.AccessKey, config.Host}
+	result, err := subprocess.Run(
+		context.Background(),
 		pkgconfig.BinaryName,
-		"pro",
-		"login",
-		"--access-key",
-		config.AccessKey,
-		config.Host,
+		args,
+		subprocess.Options{
+			Redactor: secrets.NewRedactor([]string{"ACCESS_KEY=" + config.AccessKey}),
+		},
 	)
-	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Debugf(
 			"Failed executing `%s pro login`: %v, output: %s",
 			pkgconfig.BinaryName,
 			err,
-			out,
+			result.Stderr,
 		)
 		return fmt.Errorf(
 			"error executing '%s pro login' command: %w, host: %v",
@@ -44,10 +47,13 @@ func AuthVClusterCliToPlatform(config *client.Config) error {
 		return nil
 	}
 
-	cmd := exec.Command("vcluster", "login", "--access-key", config.AccessKey, config.Host)
-	out, err := cmd.CombinedOutput()
+	result, err := subprocess.Run(context.Background(), "vcluster", []string{
+		"login", "--access-key", config.AccessKey, config.Host,
+	}, subprocess.Options{
+		Redactor: secrets.NewRedactor([]string{"ACCESS_KEY=" + config.AccessKey}),
+	})
 	if err != nil {
-		log.Debugf("Failed executing `vcluster login` : %v, output: %s", err, out)
+		log.Debugf("Failed executing `vcluster login` : %v, output: %s", err, result.Stderr)
 		return fmt.Errorf("error executing 'vcluster login' command: %w", err)
 	}
 

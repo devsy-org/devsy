@@ -102,17 +102,22 @@ func configureProviderOptions(
 
 	// fill defaults
 	reporter := cfg.reporter()
-	status.Enter(reporter, status.PhaseResolvingOptions, cfg.Provider.Name)
-	devsyConfig, err = options2.ResolveOptions(
-		ctx, devsyConfig, cfg.Provider, options,
-		cfg.SkipRequired, cfg.SkipSubOptions, cfg.SingleMachine,
+	err = status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseResolvingOptions, Step: cfg.Provider.Name},
+		func(ctx context.Context) error {
+			var resolveErr error
+			devsyConfig, resolveErr = options2.ResolveOptions(
+				ctx, devsyConfig, cfg.Provider, options,
+				cfg.SkipRequired, cfg.SkipSubOptions, cfg.SingleMachine,
+			)
+			return resolveErr
+		},
 	)
 	if err != nil {
-		err = fmt.Errorf("resolve options: %w", err)
-		status.Fail(reporter, status.PhaseResolvingOptions, err)
-		return nil, err
+		return nil, fmt.Errorf("resolve options: %w", err)
 	}
-	status.Leave(reporter, status.PhaseResolvingOptions, cfg.Provider.Name)
 
 	// run init command
 	if !cfg.SkipInit {
@@ -122,13 +127,22 @@ func configureProviderOptions(
 		stderr := log.Writer(log.LevelError)
 		defer func() { _ = stderr.Close() }()
 
-		status.Enter(reporter, status.PhaseRunningInit, cfg.Provider.Name)
-		err = initProvider(ctx, devsyConfig, cfg.Provider, initIO{stdout: stdout, stderr: stderr})
+		err = status.Run(
+			ctx,
+			reporter,
+			status.Operation{Phase: status.PhaseRunningInit, Step: cfg.Provider.Name},
+			func(ctx context.Context) error {
+				return initProvider(
+					ctx,
+					devsyConfig,
+					cfg.Provider,
+					initIO{stdout: stdout, stderr: stderr},
+				)
+			},
+		)
 		if err != nil {
-			status.Fail(reporter, status.PhaseRunningInit, err)
 			return nil, err
 		}
-		status.Leave(reporter, status.PhaseRunningInit, cfg.Provider.Name)
 	}
 
 	return devsyConfig, nil
@@ -166,8 +180,8 @@ func assertProviderMatchesGlobal(resolved, globalFlag string) error {
 	if resolved == "" || globalFlag == "" || resolved == globalFlag {
 		return nil
 	}
-	log.Infof("providerName=%+v", resolved)
-	log.Infof("globalFlags.provider=%+v", globalFlag)
+	log.Debugf("providerName=%+v", resolved)
+	log.Debugf("globalFlags.provider=%+v", globalFlag)
 	return fmt.Errorf("ambiguous provider configuration detected")
 }
 

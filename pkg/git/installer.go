@@ -84,7 +84,7 @@ func (i *Installer) ensure(ctx context.Context, t tool) error {
 			continue
 		}
 		if command.Exists(t.binary) {
-			log.Infof("installed %s via %s", t.binary, s.name())
+			log.Debugf("installed %s via %s", t.binary, s.name())
 			return nil
 		}
 		errs = append(
@@ -116,7 +116,7 @@ func (s *pkgManagerStrategy) usable() bool {
 }
 
 func (s *pkgManagerStrategy) install(ctx context.Context, t tool) error {
-	log.Infof("installing %s with %s", t.pkg, s.manager)
+	log.Debugf("installing %s with %s", t.pkg, s.manager)
 	w := log.Writer(log.LevelInfo)
 	defer func() { _ = w.Close() }()
 

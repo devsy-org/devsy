@@ -262,7 +262,7 @@ func runDockerlessBuild(ctx context.Context, args []string, debug bool) error {
 	cmd.Stderr = stderrWriter
 	cmd.Env = os.Environ()
 
-	log.Infof(
+	log.Debugf(
 		"starting dockerless build: %s %s",
 		"/.dockerless/dockerless",
 		strings.Join(args, " "),

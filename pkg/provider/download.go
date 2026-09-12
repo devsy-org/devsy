@@ -490,7 +490,7 @@ func downloadAndSaveFile(
 	binary *ProviderBinary,
 	targetPath string,
 ) (string, error) {
-	log.Infof("downloading binary %s from %s", binaryName, binary.Path)
+	log.Debugf("downloading binary %s from %s", binaryName, binary.Path)
 
 	body, err := download.File(
 		ctx,
@@ -548,7 +548,7 @@ type archiveDownloadParams struct {
 }
 
 func extractArchive(ctx context.Context, params archiveDownloadParams) (string, error) {
-	log.Infof("downloading binary %s from %s", params.binaryName, params.binary.Path)
+	log.Debugf("downloading binary %s from %s", params.binaryName, params.binary.Path)
 
 	body, err := download.File(
 		ctx,

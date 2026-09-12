@@ -115,10 +115,11 @@ function setup(
 function statusEnvelope(phase: string, step?: string) {
   return JSON.stringify({
     kind: "status",
+    schemaVersion: 1,
     pipeline: "workspace_up",
     phase,
     ...(step ? { step } : {}),
-    started: true,
+    state: "started",
   })
 }
 
@@ -136,6 +137,74 @@ describe("workspace_up detached task tracking", () => {
 
     const cancels = calls.filter((a) => a.includes("cancel"))
     expect(cancels).toEqual([["workspace", "task", "cancel", "task-1"]])
+  })
+
+  it("redacts sensitive CLI output before forwarding it to Desktop", async () => {
+    const secret = "desktop-ipc-secret-846303"
+    process.env.DEVSY_IPC_TOKEN = secret
+    try {
+      const { sent, stream } = setup()
+      await invokeStop("ws-1")
+      const active = stream()
+      if (!active) throw new Error("stream callback was not registered")
+      active.onLine(`token=${secret}`, "stderr")
+      active.onExit(0)
+      await Promise.resolve()
+
+      const payload = JSON.stringify(sent)
+      expect(payload).not.toContain(secret)
+      expect(payload).toContain("token=***")
+    } finally {
+      delete process.env.DEVSY_IPC_TOKEN
+    }
+  })
+
+  it("redacts credentials embedded in forwarded URLs and headers", async () => {
+    const { sent, stream } = setup()
+    await invokeStop("ws-1")
+    const active = stream()
+    if (!active) throw new Error("stream callback was not registered")
+    active.onLine(
+      "clone https://git-user:git-token@example.com/repo Authorization: Bearer api-token",
+      "stderr",
+    )
+    active.onExit(0)
+    await Promise.resolve()
+
+    const payload = JSON.stringify(sent)
+    expect(payload).not.toContain("git-token")
+    expect(payload).not.toContain("api-token")
+    expect(payload).toContain("https://***@example.com/repo")
+    expect(payload).toContain("Authorization: Bearer ***")
+  })
+
+  it("redacts sensitive status metadata before forwarding it", async () => {
+    const secret = "desktop-status-secret-846304"
+    process.env.DEVSY_STATUS_TOKEN = secret
+    try {
+      const { sent, stream } = setup()
+      await invokeUp("ws-1")
+      stream()?.onLine(
+        JSON.stringify({
+          kind: "status",
+          schemaVersion: 1,
+          pipeline: "workspace_up",
+          operationId: `op-${secret}`,
+          parentOperationId: `parent-${secret}`,
+          phase: "building_image",
+          step: `build ${secret}`,
+          state: "started",
+        }),
+        "stdout",
+      )
+
+      const payload = JSON.stringify(sent)
+      expect(payload).not.toContain(secret)
+      expect(payload).toContain("operationId")
+      expect(payload).toContain("***")
+    } finally {
+      delete process.env.DEVSY_STATUS_TOKEN
+    }
   })
 
   it("serializes concurrent submissions so neither task is left orphaned", async () => {
@@ -196,8 +265,52 @@ describe("workspace_up detached task tracking", () => {
     expect(statuses[0].payload).toMatchObject({
       workspaceId: "ws-1",
       phase: "building_image",
-      started: true,
+      state: "started",
     })
+  })
+
+  it("normalizes versioned lifecycle status events", async () => {
+    const { sent, stream } = setup()
+    await invokeUp("ws-1")
+
+    stream()?.onLine(
+      JSON.stringify({
+        kind: "status",
+        schemaVersion: 1,
+        pipeline: "workspace_up",
+        operationId: "op-17",
+        phase: "building_image",
+        state: "succeeded",
+        durationMs: 8214,
+        error: { code: "x", message: "unused" },
+      }),
+      "stdout",
+    )
+
+    expect(sent.filter((s) => s.channel === "workspace-status")[0].payload).toMatchObject({
+      workspaceId: "ws-1",
+      phase: "building_image",
+      state: "succeeded",
+      operationId: "op-17",
+      durationMs: 8214,
+    })
+  })
+
+  it("does not promote unknown status schema versions to application state", async () => {
+    const { sent, stream } = setup()
+    await invokeUp("ws-1")
+
+    stream()?.onLine(
+      JSON.stringify({
+        kind: "status",
+        schemaVersion: 2,
+        phase: "building_image",
+        state: "started",
+      }),
+      "stdout",
+    )
+
+    expect(sent.filter((s) => s.channel === "workspace-status")).toHaveLength(0)
   })
 
   it("does not treat stderr lines as envelopes", async () => {
@@ -251,10 +364,16 @@ describe("workspace_up detached task tracking", () => {
   })
 
   it("keeps the task registered when the follower exits without an envelope", async () => {
-    const { calls, stream } = setup()
+    const { calls, sent, stream } = setup()
     await invokeUp("ws-1")
 
     stream()?.onExit(1, { code: "boom", message: "follower died" })
+    expect(sent.filter((s) => s.channel === "workspace-status")[0].payload).toMatchObject({
+      workspaceId: "ws-1",
+      phase: "failed",
+      state: "failed",
+      error: { code: "boom", message: "follower died" },
+    })
     await invokeUp("ws-1")
 
     expect(calls.filter((a) => a.includes("cancel"))).toEqual([

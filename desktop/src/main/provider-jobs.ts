@@ -11,6 +11,8 @@
  * which is exactly when a multi-second install is still running.
  */
 
+import type { CLIError, OperationStatus } from "../shared/cli-error.js"
+
 /** Phases emitted by the Go provider pipeline. */
 export type ProviderPhase =
   | "installing_provider"
@@ -24,8 +26,15 @@ export type ProviderActivity = "installing" | "initializing" | "updating"
 export interface ProviderJob {
   activity: ProviderActivity
   phase?: ProviderPhase
+  state?: OperationStatus["state"]
+  operationId?: string
+  parentOperationId?: string
+  durationMs?: number
   /** Set when the job ended in failure; the job is retained so the UI can show why. */
   error?: string
+  errorCode?: string
+  errorHint?: string
+  errorContext?: Record<string, string>
 }
 
 export class ProviderJobs {
@@ -55,18 +64,32 @@ export class ProviderJobs {
     this.emit()
   }
 
-  /**
-   * Record a phase transition. Ignored when no job is active, so a stray
-   * event can't resurrect a provider the UI already considers settled.
-   */
-  report(name: string, phase: ProviderPhase, error?: string): void {
+  /** Record the complete current-protocol status event without losing metadata. */
+  reportStatus(name: string, status: OperationStatus): void {
     const job = this.jobs.get(name)
     if (!job) return
-    if (phase === "failed") {
-      this.jobs.set(name, { ...job, phase, error: error ?? "failed" })
-    } else {
-      this.jobs.set(name, { ...job, phase })
-    }
+    const error = status.error
+    this.jobs.set(name, {
+      ...job,
+      phase: status.phase as ProviderPhase,
+      state: status.state,
+      operationId: status.operationId,
+      parentOperationId: status.parentOperationId,
+      durationMs: status.durationMs,
+      ...(error
+        ? {
+            error: error.message,
+            errorCode: error.code,
+            errorHint: error.hint,
+            errorContext: error.context,
+          }
+        : {
+            error: undefined,
+            errorCode: undefined,
+            errorHint: undefined,
+            errorContext: undefined,
+          }),
+    })
     this.emit()
   }
 
@@ -85,14 +108,19 @@ export class ProviderJobs {
    * false` would expose the same red badge this class exists to prevent,
    * until the next poll caught up.
    */
-  async finish(name: string, error?: string): Promise<void> {
+  async finish(name: string, error?: CLIError | string): Promise<void> {
     if (error) {
       const job = this.jobs.get(name)
       if (!job) return
+      const structured = typeof error === "string" ? undefined : error
       this.jobs.set(name, {
-        activity: job.activity,
+        ...job,
         phase: "failed",
-        error,
+        state: "failed",
+        error: typeof error === "string" ? error : error.message,
+        errorCode: structured?.code,
+        errorHint: structured?.hint,
+        errorContext: structured?.context,
       })
       this.emit()
       return

@@ -91,7 +91,7 @@ func (d *LocalDockerDelivery) Cleanup(ctx context.Context, workspaceID string) e
 			errs = append(errs, err)
 			continue
 		}
-		log.Infof("removed devsy-managed volume: %s", name)
+		log.Debugf("removed devsy-managed volume: %s", name)
 	}
 	return errors.Join(errs...)
 }
@@ -114,7 +114,7 @@ func (d *LocalDockerDelivery) ensureCurrentBinary(
 	}
 
 	if actual != "" {
-		log.Infof("upgraded remote agent from %s to %s", actual, expected)
+		log.Debugf("upgraded remote agent from %s to %s", actual, expected)
 	}
 
 	if err := d.populateVolume(ctx, volumeName, binarySource, arch); err != nil {
@@ -133,9 +133,9 @@ func (d *LocalDockerDelivery) createVolume(
 ) error {
 	args := append([]string{"volume", "create"}, pkgconfig.LabelArgs(labels)...)
 	args = append(args, name)
-	out, err := d.cmd(ctx, args...).CombinedOutput()
+	result, err := runCaptured(ctx, d.cmd(ctx, args...))
 	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
+		return fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
 	return nil
 }
@@ -164,12 +164,12 @@ func (d *LocalDockerDelivery) detectVolumeVersion(ctx context.Context, volumeNam
 		"sh", "-c", script,
 	}
 
-	out, err := d.cmd(ctx, args...).Output()
+	result, err := runCaptured(ctx, d.cmd(ctx, args...))
 	if err != nil {
 		log.Debugf("failed to detect agent version in volume: %v", err)
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(result.Stdout)
 }
 
 func (d *LocalDockerDelivery) populateVolume(
@@ -220,9 +220,9 @@ func (d *LocalDockerDelivery) populateVolumeWithHelper(
 	cmd := d.cmd(ctx, args...)
 	cmd.Stdin = binary
 
-	out, err := cmd.CombinedOutput()
+	result, err := runCaptured(ctx, cmd)
 	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
+		return fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
 	return nil
 }
@@ -269,9 +269,9 @@ func (d *LocalDockerDelivery) populateVolumeViaUnshare(
 	cmd := d.cmd(ctx, "unshare", "sh", "-c", `cat > "$1" && chmod 755 "$1"`, "--", destPath)
 	cmd.Stdin = bytes.NewReader(data)
 
-	out, err := cmd.CombinedOutput()
+	result, err := runCaptured(ctx, cmd)
 	if err != nil {
-		return fmt.Errorf("podman unshare write failed: %s: %w", string(out), err)
+		return fmt.Errorf("podman unshare write failed: %s: %w", capturedOutput(result), err)
 	}
 	return nil
 }
@@ -284,23 +284,23 @@ func (d *LocalDockerDelivery) volumeMountpoint(
 	ctx context.Context,
 	volumeName string,
 ) (string, error) {
-	out, err := d.cmd(
+	result, err := runCaptured(ctx, d.cmd(
 		ctx, "volume", "inspect",
 		"--format", "{{.Mountpoint}}",
 		volumeName,
-	).CombinedOutput()
+	))
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", string(out), err)
+		return "", fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(result.Stdout), nil
 }
 
 // removeVolume force-removes a single named volume. It is safe to call for a
 // non-existent volume since removal is forced.
 func (d *LocalDockerDelivery) removeVolume(ctx context.Context, name string) error {
-	out, err := d.cmd(ctx, "volume", "rm", "-f", name).CombinedOutput()
+	result, err := runCaptured(ctx, d.cmd(ctx, "volume", "rm", "-f", name))
 	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
+		return fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
 	return nil
 }
@@ -312,16 +312,16 @@ func (d *LocalDockerDelivery) listManagedVolumes(
 	ctx context.Context,
 	workspaceID string,
 ) ([]string, error) {
-	out, err := d.cmd(ctx,
+	result, err := runCaptured(ctx, d.cmd(ctx,
 		"volume", "ls", "--quiet",
 		"--filter", "label="+pkgconfig.DockerManagedLabel+"="+pkgconfig.LabelValueTrue,
 		"--filter", "label="+pkgconfig.DockerWorkspaceIDLabel+"="+workspaceID,
-	).CombinedOutput()
+	))
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", string(out), err)
+		return nil, fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
 	var names []string
-	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(result.Stdout), "\n") {
 		if name := strings.TrimSpace(line); name != "" {
 			names = append(names, name)
 		}

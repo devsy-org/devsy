@@ -13,10 +13,14 @@ describe("ProviderJobs", () => {
     jobs.start("docker", "installing")
     expect(jobs.get("docker")).toEqual({ activity: "installing" })
 
-    jobs.report("docker", "installing_provider")
+    jobs.reportStatus("docker", {
+      phase: "installing_provider",
+      state: "started",
+    })
     expect(jobs.get("docker")).toEqual({
       activity: "installing",
       phase: "installing_provider",
+      state: "started",
     })
 
     await jobs.finish("docker")
@@ -24,8 +28,40 @@ describe("ProviderJobs", () => {
   })
 
   it("ignores phase reports for a provider with no active job", () => {
-    jobs.report("docker", "running_init")
+    jobs.reportStatus("docker", {
+      phase: "running_init",
+      state: "started",
+    })
     expect(jobs.get("docker")).toBeUndefined()
+  })
+
+  it("retains the complete structured status event", () => {
+    jobs.start("docker", "initializing")
+    jobs.reportStatus("docker", {
+      phase: "running_init",
+      state: "failed",
+      operationId: "op-17",
+      parentOperationId: "op-1",
+      durationMs: 312,
+      error: {
+        code: "docker_daemon_unreachable",
+        message: "Docker daemon is unavailable.",
+        hint: "Start Docker and retry.",
+        context: { context: "desktop-linux" },
+      },
+    })
+
+    expect(jobs.get("docker")).toMatchObject({
+      phase: "running_init",
+      state: "failed",
+      operationId: "op-17",
+      parentOperationId: "op-1",
+      durationMs: 312,
+      error: "Docker daemon is unavailable.",
+      errorCode: "docker_daemon_unreachable",
+      errorHint: "Start Docker and retry.",
+      errorContext: { context: "desktop-linux" },
+    })
   })
 
   it("retains the failure so the UI can explain it", async () => {
@@ -35,7 +71,29 @@ describe("ProviderJobs", () => {
     expect(jobs.get("docker")).toEqual({
       activity: "initializing",
       phase: "failed",
+      state: "failed",
       error: "init: boom",
+      errorCode: undefined,
+      errorHint: undefined,
+      errorContext: undefined,
+    })
+  })
+
+  it("retains structured error metadata when finishing", async () => {
+    jobs.start("docker", "initializing")
+    await jobs.finish("docker", {
+      code: "docker_daemon_unreachable",
+      message: "Docker is unavailable.",
+      hint: "Start Docker and retry.",
+      context: { socket: "desktop-linux" },
+    })
+
+    expect(jobs.get("docker")).toMatchObject({
+      state: "failed",
+      error: "Docker is unavailable.",
+      errorCode: "docker_daemon_unreachable",
+      errorHint: "Start Docker and retry.",
+      errorContext: { socket: "desktop-linux" },
     })
   })
 
@@ -97,7 +155,7 @@ describe("ProviderJobs", () => {
     releaseRefresh?.()
     await finishing
 
-    jobs.report("docker", "running_init")
+    jobs.reportStatus("docker", { phase: "running_init", state: "started" })
 
     expect(jobs.get("docker")?.phase).toBe("running_init")
   })
@@ -107,7 +165,10 @@ describe("ProviderJobs", () => {
     jobs.onChange(listener)
 
     jobs.start("docker", "installing")
-    jobs.report("docker", "installing_provider")
+    jobs.reportStatus("docker", {
+      phase: "installing_provider",
+      state: "started",
+    })
     jobs.clear("docker")
 
     expect(listener).toHaveBeenCalledTimes(3)
@@ -124,7 +185,11 @@ describe("ProviderJobs", () => {
 
   it("clears a retained failure so a re-added provider starts clean", () => {
     jobs.start("docker", "installing")
-    jobs.report("docker", "failed", "boom")
+    jobs.reportStatus("docker", {
+      phase: "failed",
+      state: "failed",
+      error: { message: "boom" },
+    })
     jobs.clear("docker")
 
     expect(jobs.get("docker")).toBeUndefined()

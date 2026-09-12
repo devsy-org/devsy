@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -159,6 +160,29 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		framework.ExpectNoError(err)
 
 		gomega.Expect(envelope.Outcome).To(gomega.Equal("success"))
+		statusCount := 0
+		for _, line := range lines[:len(lines)-1] {
+			var status struct {
+				Kind          string `json:"kind"`
+				SchemaVersion int    `json:"schemaVersion"`
+				Phase         string `json:"phase"`
+				State         string `json:"state"`
+				Started       *bool  `json:"started,omitempty"`
+			}
+			if json.Unmarshal([]byte(line), &status) != nil || status.Kind != "status" {
+				continue
+			}
+			statusCount++
+			gomega.Expect(status.SchemaVersion).To(gomega.Equal(1))
+			gomega.Expect(status.Phase).NotTo(gomega.BeEmpty())
+			gomega.Expect(status.State).To(gomega.BeElementOf(
+				"started", "succeeded", "failed", "skipped",
+			))
+			gomega.Expect(status.Started).To(gomega.BeNil(),
+				"legacy started field must not be emitted")
+		}
+		gomega.Expect(statusCount).To(gomega.BeNumerically(">", 0),
+			"expected status envelopes before the final result")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It(
@@ -242,16 +266,11 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			stdout, _, err := dtc.f.DevsyUpStreams(ctx, tempDir, "--result-format", "json")
 			gomega.Expect(err).To(gomega.HaveOccurred())
 
-			lines := strings.Split(strings.TrimSpace(stdout), "\n")
-			gomega.Expect(lines).NotTo(gomega.BeEmpty())
-
-			lastLine := lines[len(lines)-1]
-			var envelope config.ErrorEnvelope
-			err = json.Unmarshal([]byte(lastLine), &envelope)
-			framework.ExpectNoError(err)
-
-			gomega.Expect(envelope.Outcome).To(gomega.Equal("error"))
-			gomega.Expect(envelope.Message).NotTo(gomega.BeEmpty())
+			envelope, ok := parseFailedStatus(stdout)
+			gomega.Expect(ok).
+				To(gomega.BeTrue(), "stdout should contain a failed status envelope: %s", stdout)
+			gomega.Expect(envelope.Error.Message).
+				To(gomega.ContainSubstring("bind mount source path does not exist"))
 		},
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
@@ -268,15 +287,10 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		gomega.Expect(err).To(gomega.HaveOccurred(),
 			"devsy up should fail when host requirements not met")
 
-		lines := strings.Split(strings.TrimSpace(stdout), "\n")
-		gomega.Expect(lines).NotTo(gomega.BeEmpty())
-		lastLine := lines[len(lines)-1]
-
-		var envelope config.ErrorEnvelope
-		err = json.Unmarshal([]byte(lastLine), &envelope)
-		framework.ExpectNoError(err)
-		gomega.Expect(envelope.Outcome).To(gomega.Equal("error"))
-		gomega.Expect(envelope.Message).To(gomega.ContainSubstring("minimum requirements"))
+		envelope, ok := parseFailedStatus(stdout)
+		gomega.Expect(ok).
+			To(gomega.BeTrue(), "stdout should contain a failed status envelope: %s", stdout)
+		gomega.Expect(envelope.Error.Message).To(gomega.ContainSubstring("minimum requirements"))
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("skip-host-requirements bypasses enforcement", func(ctx context.Context) {
@@ -415,3 +429,17 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		}), "lifecycle ordering should be: postCreate -> dotfiles -> postStart")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })
+
+func parseFailedStatus(stdout string) (config.StatusEnvelope, bool) {
+	var envelope config.StatusEnvelope
+	for line := range strings.SplitSeq(stdout, "\n") {
+		var candidate config.StatusEnvelope
+		if json.Unmarshal([]byte(line), &candidate) == nil &&
+			candidate.Kind == config.KindStatus &&
+			candidate.State == status.StateFailed &&
+			candidate.Error != nil {
+			envelope = candidate
+		}
+	}
+	return envelope, envelope.Error != nil
+}

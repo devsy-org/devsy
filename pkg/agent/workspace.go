@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/moby/patternmatcher/ignorefile"
 	"google.golang.org/grpc"
@@ -248,9 +249,21 @@ type CloneWorkspaceParams struct {
 	Helper           string
 	Options          provider2.CLIOptions
 	OverwriteContent bool
+	Reporter         status.Reporter
 }
 
 func CloneRepositoryForWorkspace(ctx context.Context, p CloneWorkspaceParams) error {
+	return status.Run(
+		ctx,
+		p.Reporter,
+		status.Operation{Phase: status.PhaseCloningRepository},
+		func(ctx context.Context) error {
+			return cloneRepositoryForWorkspace(ctx, p)
+		},
+	)
+}
+
+func cloneRepositoryForWorkspace(ctx context.Context, p CloneWorkspaceParams) error {
 	logCloneSource(p.Source)
 	defer removeGitCredentialHelper(ctx, p.Helper, p.WorkspaceDir)
 
@@ -274,24 +287,24 @@ func CloneRepositoryForWorkspace(ctx context.Context, p CloneWorkspaceParams) er
 		return err
 	}
 
-	log.Info("cloned repository")
+	log.Debug("cloned repository")
 	return applyDevsyIgnore(p.WorkspaceDir)
 }
 
 func logCloneSource(source *provider2.WorkspaceSource) {
-	log.Info("cloning repository")
-	log.Infof("URL: %s", source.GitRepository)
+	log.Debug("cloning repository")
+	log.Debugf("URL: %s", source.GitRepository)
 	if source.GitBranch != "" {
-		log.Infof("branch: %s", source.GitBranch)
+		log.Debugf("branch: %s", source.GitBranch)
 	}
 	if source.GitCommit != "" {
-		log.Infof("commit: %s", source.GitCommit)
+		log.Debugf("commit: %s", source.GitCommit)
 	}
 	if source.GitSubPath != "" {
-		log.Infof("subpath: %s", source.GitSubPath)
+		log.Debugf("subpath: %s", source.GitSubPath)
 	}
 	if source.GitPRReference != "" {
-		log.Infof("PR: %s", source.GitPRReference)
+		log.Debugf("PR: %s", source.GitPRReference)
 	}
 }
 
@@ -396,7 +409,7 @@ func cloneViaPlatformGitcache(
 		return fmt.Errorf("marshal git options: %w", err)
 	}
 
-	log.Infof("cloning repository %s via platform gitcache", p.Source.GitRepository)
+	log.Debugf("cloning repository %s via platform gitcache", p.Source.GitRepository)
 	_, err = devsy.NewRunnerClient(grpcClient).Clone(ctx, &devsy.CloneRequest{
 		TargetPath: p.WorkspaceDir,
 		Options:    string(jsonOptions),
@@ -409,10 +422,10 @@ func cloneViaPlatformGitcache(
 
 func cloneViaGit(ctx context.Context, p CloneWorkspaceParams, extraEnv []string) error {
 	if p.Options.Platform.GitCloneStrategy != "" {
-		log.Infof("using %s clone strategy", p.Options.Platform.GitCloneStrategy)
+		log.Debugf("using %s clone strategy", p.Options.Platform.GitCloneStrategy)
 	}
 	if p.Options.Platform.GitSkipLFS {
-		log.Info("skipping Git LFS")
+		log.Debug("skipping Git LFS")
 	}
 
 	gitInfo := &git.GitInfo{

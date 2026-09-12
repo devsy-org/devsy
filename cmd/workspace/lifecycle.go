@@ -68,7 +68,7 @@ func ExecLifecycleHook(params *LifecycleExecParams, name string, hook types.Life
 		if len(command) == 0 {
 			continue
 		}
-		log.Infof("running %s: %s %v", name, key, command)
+		log.Debugf("running %s: %s %v", name, key, command)
 
 		args := BuildDockerExecArgs(DockerExecArgs{
 			Container:       params.ContainerID,

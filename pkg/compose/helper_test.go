@@ -12,11 +12,10 @@ import (
 )
 
 const (
-	testPodmanCmd        = "podman"
-	testDockerCmd        = "docker"
-	testDockerComposeCmd = "docker-compose"
-	testComposeArg       = "compose"
-	testPodmanVersion    = "2.32.4"
+	testPodmanCmd     = "podman"
+	testDockerCmd     = "docker"
+	testComposeArg    = "compose"
+	testPodmanVersion = "2.32.4"
 )
 
 type HelperTestSuite struct {
@@ -269,7 +268,7 @@ func (s *HelperTestSuite) TestNewComposeHelperNerdctlRuntimeFallsBackToDocker() 
 		s.T().Skipf("compose binary not available in test environment: %v", err)
 	}
 
-	s.Contains([]string{"nerdctl", testDockerCmd, testDockerComposeCmd, testPodmanCmd}, ch.Command)
+	s.Contains([]string{"nerdctl", testDockerCmd, testPodmanCmd}, ch.Command)
 }
 
 func (s *HelperTestSuite) TestTryComposeSubcommandUsesProvidedCommand() {
@@ -299,5 +298,5 @@ func (s *HelperTestSuite) TestNewComposeHelperNonPodmanFallbackUsesPodman() {
 		s.T().Skipf("no compose binary available in test environment: %v", err)
 	}
 
-	s.Contains([]string{testDockerCmd, testPodmanCmd, testDockerComposeCmd}, ch.Command)
+	s.Contains([]string{testDockerCmd, testPodmanCmd}, ch.Command)
 }
