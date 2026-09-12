@@ -137,7 +137,10 @@ func Run(ctx context.Context, binary string, args []string, options Options) (Re
 	if options.OperationID == "" {
 		options.OperationID = status.OperationID(ctx)
 	}
-	cmd := exec.CommandContext(ctx, binary, args...) // #nosec G204 -- caller controls the intended subprocess
+	cmd := exec.CommandContext(
+		ctx,
+		binary,
+		args...) // #nosec G204 -- caller controls the intended subprocess
 	cmd.Dir = options.Dir
 	if options.Env != nil {
 		cmd.Env = append(os.Environ(), options.Env...)
