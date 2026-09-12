@@ -89,17 +89,22 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	}
 	var deleteErr error
 	var devsyConfig *config.Config
-	deleteErr = status.Run(ctx, reporter, status.Operation{Phase: status.PhaseDeletingWorkspace}, func(context.Context) error {
-		var err error
-		devsyConfig, err = cmd.loadConfig()
-		if err != nil {
-			return err
-		}
-		if len(args) <= 1 {
-			return cmd.deleteSingle(ctx, devsyConfig, args)
-		}
-		return cmd.deleteMultiple(ctx, devsyConfig, args)
-	})
+	deleteErr = status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseDeletingWorkspace},
+		func(context.Context) error {
+			var err error
+			devsyConfig, err = cmd.loadConfig()
+			if err != nil {
+				return err
+			}
+			if len(args) <= 1 {
+				return cmd.deleteSingle(ctx, devsyConfig, args)
+			}
+			return cmd.deleteMultiple(ctx, devsyConfig, args)
+		},
+	)
 	if devsyConfig == nil {
 		return deleteErr
 	}

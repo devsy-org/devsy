@@ -84,9 +84,14 @@ func (cmd *StopCmd) Run(
 	if err != nil {
 		return err
 	}
-	return status.Run(ctx, reporter, status.Operation{Phase: status.PhaseStoppingWorkspace}, func(ctx context.Context) error {
-		return cmd.run(ctx, devsyConfig, client)
-	})
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseStoppingWorkspace},
+		func(ctx context.Context) error {
+			return cmd.run(ctx, devsyConfig, client)
+		},
+	)
 }
 
 func (cmd *StopCmd) run(

@@ -70,10 +70,12 @@ func TestTaskStatusEventPreservesTerminalStructuredState(t *testing.T) {
 		ErrorHint:         "Start Docker and retry.",
 		ErrorContext:      map[string]string{"context": "desktop-linux"},
 	})
-	if event.State != status.StateFailed || event.OperationID != "op-17" || event.Duration != 1200*time.Millisecond {
+	if event.State != status.StateFailed || event.OperationID != "op-17" ||
+		event.Duration != 1200*time.Millisecond {
 		t.Fatalf("unexpected task status event: %+v", event)
 	}
-	if event.Error == nil || event.Error.Code != "docker_daemon_unreachable" || event.Error.Context["context"] != "desktop-linux" {
+	if event.Error == nil || event.Error.Code != "docker_daemon_unreachable" ||
+		event.Error.Context["context"] != "desktop-linux" {
 		t.Fatalf("structured error was lost: %+v", event.Error)
 	}
 }

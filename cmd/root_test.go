@@ -37,8 +37,8 @@ func TestRenderCLIErrorRedactsEnvironmentSecrets(t *testing.T) {
 		Code:    clierr.CodeUnknown,
 		Message: "failed with root-error-secret-846302",
 		Hint:    "remove root-error-secret-846302 and retry",
-		Context: map[string]string{
-			"token": "root-error-secret-846302", //nolint:gosec // test credential fixture
+		Context: map[string]string{ //nolint:gosec // test credential fixture
+			"token": "root-error-secret-846302",
 		},
 	}, false)
 	require.NoError(t, w.Close())
