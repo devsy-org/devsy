@@ -314,7 +314,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 	ginkgo.It("should read configuration using custom id-label",
 		func(ctx context.Context) {
 			tempDir, err := framework.CopyToTempDirWithoutChdir(
-				"tests/configread/testdata",
+				"tests/configread/testdata-id-label",
 			)
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
