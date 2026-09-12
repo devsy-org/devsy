@@ -115,7 +115,8 @@ func execWithDockerRetry(
 		delay := nextBackoffDelay(dockerPullBackoff, attempt)
 		if !retryFitsBudget(ctx, delay) {
 			return lastStdout, lastStderr, fmt.Errorf(
-				"after %d attempts: retryable Docker error; retry not attempted because remaining deadline budget was insufficient (next retry delay: %s): %w",
+				"after %d attempts: retryable Docker error; retry not attempted because "+
+					"remaining deadline budget was insufficient (next retry delay: %s): %w",
 				attempt, delay, lastErr,
 			)
 		}
@@ -157,7 +158,8 @@ func execWithSSHRetry(
 		delay := nextBackoffDelay(sshBackoff, attempt)
 		if !retryFitsBudget(ctx, delay) {
 			return lastOut, fmt.Errorf(
-				"after %d attempts: retryable SSH error; retry not attempted because remaining deadline budget was insufficient (next retry delay: %s): %w",
+				"after %d attempts: retryable SSH error; retry not attempted because "+
+					"remaining deadline budget was insufficient (next retry delay: %s): %w",
 				attempt, delay, lastErr,
 			)
 		}
@@ -188,7 +190,7 @@ func retryFitsBudget(ctx context.Context, delay time.Duration) bool {
 func nextBackoffDelay(backoff wait.Backoff, retryNumber int) time.Duration {
 	delay := backoff.DelayFunc()
 	var next time.Duration
-	for i := 0; i < retryNumber; i++ {
+	for range retryNumber {
 		next = delay()
 	}
 	return next
