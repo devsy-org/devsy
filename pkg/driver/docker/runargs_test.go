@@ -73,22 +73,27 @@ func (s *DockerDriverTestSuite) TestWithBindCreateSrc() {
 	s.Equal(vol, withBindCreateSrc(vol))
 }
 
-func (s *DockerDriverTestSuite) TestDockerMajorAtLeast() {
+func (s *DockerDriverTestSuite) TestDockerClientSupportsBindCreateSrc() {
 	tests := []struct {
 		version string
 		want    bool
 	}{
-		{"29.5.3", true},
-		{"29.0.0", true},
-		{"30.1.0", true},
-		{"28.0.4", false},
-		{"20.10.21", false},
+		{"28.5.2", false},
+		{"29.0.0", false},
+		{"29.1.0", false},
+		{"29.2.1", false},
+		{"29.2.99", false},
+		{"29.3.0", true},
+		{"29.3.1", true},
+		{"29.7.2", true},
+		{"30.0.0", true},
+		{"v29.3.0", true},
 		{"", false},
 		{"garbage", false},
 	}
 	for _, tt := range tests {
-		s.Equalf(tt.want, dockerMajorAtLeast(tt.version, minBindCreateSrcMajor),
-			"dockerMajorAtLeast(%q)", tt.version)
+		s.Equalf(tt.want, dockerClientSupportsBindCreateSrc(tt.version),
+			"dockerClientSupportsBindCreateSrc(%q)", tt.version)
 	}
 }
 
