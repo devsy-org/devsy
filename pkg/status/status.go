@@ -131,7 +131,9 @@ func Fail(r Reporter, phase Phase, err error) {
 	if r == nil || err == nil {
 		return
 	}
-	r.Report(Event{Phase: PhaseFailed, Step: string(phase), State: StateFailed, Error: ErrorFrom(err)})
+	r.Report(
+		Event{Phase: PhaseFailed, Step: string(phase), State: StateFailed, Error: ErrorFrom(err)},
+	)
 }
 
 // ErrorFrom converts an implementation error into the stable status error
@@ -162,7 +164,12 @@ type Operation struct {
 
 // Run reports a complete operation lifecycle and returns the callback's
 // original error. Nested operations inherit their parent's operation ID.
-func Run(ctx context.Context, reporter Reporter, operation Operation, fn func(context.Context) error) error {
+func Run(
+	ctx context.Context,
+	reporter Reporter,
+	operation Operation,
+	fn func(context.Context) error,
+) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -171,7 +178,14 @@ func Run(ctx context.Context, reporter Reporter, operation Operation, fn func(co
 	}
 	id := fmt.Sprintf("op-%d", operationSequence.Add(1))
 	parent, _ := ctx.Value(operationContextKey{}).(string)
-	started := Event{Pipeline: operation.Pipeline, OperationID: id, ParentOperationID: parent, Phase: operation.Phase, Step: operation.Step, State: StateStarted}
+	started := Event{
+		Pipeline:          operation.Pipeline,
+		OperationID:       id,
+		ParentOperationID: parent,
+		Phase:             operation.Phase,
+		Step:              operation.Step,
+		State:             StateStarted,
+	}
 	reporter.Report(started)
 	childCtx := context.WithValue(ctx, operationContextKey{}, id)
 	start := time.Now()
@@ -187,7 +201,14 @@ func Run(ctx context.Context, reporter Reporter, operation Operation, fn func(co
 		}
 	}()
 	err := fn(childCtx)
-	done := Event{Pipeline: operation.Pipeline, OperationID: id, ParentOperationID: parent, Phase: operation.Phase, Step: operation.Step, Duration: time.Since(start)}
+	done := Event{
+		Pipeline:          operation.Pipeline,
+		OperationID:       id,
+		ParentOperationID: parent,
+		Phase:             operation.Phase,
+		Step:              operation.Step,
+		Duration:          time.Since(start),
+	}
 	if err != nil {
 		done.State = StateFailed
 		done.Error = ErrorFrom(err)
