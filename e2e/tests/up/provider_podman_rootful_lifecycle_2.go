@@ -83,7 +83,7 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 
 						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
+							out, err := probeSSH(f,
 								ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null",
 							)
 							if err != nil {
@@ -98,7 +98,7 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 
 						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
+							out, err := probeSSH(f,
 								ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null",
 							)
 							if err != nil {

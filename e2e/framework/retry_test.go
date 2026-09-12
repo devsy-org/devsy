@@ -305,8 +305,8 @@ func TestExecWithDockerRetry_ContextDeadlineExceeded(t *testing.T) {
 		},
 	)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
-	assert.NotContains(t, err.Error(), "after")
+	assert.Contains(t, err.Error(), "remaining deadline budget was insufficient")
+	assert.Contains(t, err.Error(), "next retry delay")
 }
 
 func TestExecWithSSHRetry_SuccessFirstTry(t *testing.T) {
@@ -402,6 +402,6 @@ func TestExecWithSSHRetry_ContextDeadlineExceeded(t *testing.T) {
 		},
 	)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
-	assert.NotContains(t, err.Error(), "after")
+	assert.Contains(t, err.Error(), "remaining deadline budget was insufficient")
+	assert.Contains(t, err.Error(), "next retry delay")
 }
