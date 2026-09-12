@@ -27,12 +27,12 @@ const (
 )
 
 type localStore struct {
-	backend   backend
-	indexPath string
-	now       func() time.Time
-
-	// keySource is empty for the keyring backend; checked against the index so a
-	// key-source change is a clear error rather than a decryption failure.
+	preference Backend
+	backends   backendRegistry
+	indexPath  string
+	now        func() time.Time
+	// Retained for compatibility with the file-backed test seam. System stores
+	// validate the source when opening the concrete file backend.
 	keySource keySource
 }
 
@@ -44,18 +44,8 @@ func NewStoreForConfig(devsyConfig *config.Config) (Store, error) {
 	dir := filepath.Dir(configPath)
 	indexPath := filepath.Join(dir, IndexFileName)
 
-	switch resolveBackend(devsyConfig) {
-	case BackendKeyring:
-		return newLocalStore(keyringBackend{}, indexPath), nil
-	case BackendFile:
-		return newFileStore(dir, indexPath)
-	default:
-		if keyringAvailable() {
-			return newLocalStore(keyringBackend{}, indexPath), nil
-		}
-
-		return newFileStore(dir, indexPath)
-	}
+	return newLocalStoreWithRegistry(resolveBackend(devsyConfig), indexPath,
+		newSystemBackendRegistry(dir)), nil
 }
 
 func resolveBackend(devsyConfig *config.Config) Backend {
@@ -81,21 +71,12 @@ func normalizeBackend(value string) Backend {
 	}
 }
 
-func newFileStore(dir, indexPath string) (Store, error) {
-	key, err := resolveFileKey(dir, os.Getenv(EnvPassphrase))
-	if err != nil {
-		return nil, err
-	}
-
-	fb := newFileBackend(filepath.Join(dir, EncryptedFileName), key)
-	s := newLocalStore(fb, indexPath)
-	s.keySource = key.source
-
-	return s, nil
+func newLocalStore(b backend, indexPath string) *localStore {
+	return newLocalStoreWithRegistry(BackendKeyring, indexPath, fixedBackendRegistry{b: b})
 }
 
-func newLocalStore(b backend, indexPath string) *localStore {
-	return &localStore{backend: b, indexPath: indexPath, now: time.Now}
+func newLocalStoreWithRegistry(preference Backend, indexPath string, backends backendRegistry) *localStore {
+	return &localStore{preference: preference, backends: backends, indexPath: indexPath, now: time.Now}
 }
 
 func (s *localStore) Set(context, name, value string, kind Kind) error {
@@ -119,6 +100,9 @@ func (s *localStore) Set(context, name, value string, kind Kind) error {
 		meta = SecretMeta{Name: name, Context: context, Created: s.now().UTC()}
 	}
 	wasSensitive := exists && meta.Sensitive()
+	if wasSensitive && meta.Backend == "" {
+		return fmt.Errorf("secret %q is missing persisted backend ownership", name)
+	}
 	meta.Kind = kind
 	meta.Value = value
 
@@ -126,7 +110,12 @@ func (s *localStore) Set(context, name, value string, kind Kind) error {
 		return err
 	}
 	if meta.Sensitive() {
+		if err := s.checkKeySource(idx); err != nil {
+			return err
+		}
 		meta.Value = ""
+	} else {
+		meta.Backend = ""
 	}
 
 	idx.put(meta)
@@ -153,7 +142,14 @@ func (s *localStore) Get(context, name string) (string, error) {
 		if err := s.checkKeySource(idx); err != nil {
 			return "", err
 		}
-		if value, err = s.backend.get(backendKey(context, name)); err != nil {
+		if meta.Backend == "" {
+			return "", fmt.Errorf("secret %q is missing persisted backend ownership", name)
+		}
+		b, err := s.backends.Open(meta.Backend, idx, false)
+		if err != nil {
+			return "", err
+		}
+		if value, err = b.get(backendKey(context, name)); err != nil {
 			return "", err
 		}
 	} else {
@@ -182,11 +178,17 @@ func (s *localStore) Delete(context, name string) error {
 	}
 
 	if meta, ok := idx.get(context, name); ok && meta.Sensitive() {
-		if err := s.checkKeySource(idx); err != nil {
-			return err
+		if meta.Backend == "" {
+			return fmt.Errorf("secret %q is missing persisted backend ownership", name)
 		}
-		if err := s.backend.remove(backendKey(context, name)); err != nil {
-			return err
+		if meta.Backend != "" {
+			b, openErr := s.backends.Open(meta.Backend, idx, false)
+			if openErr != nil {
+				return openErr
+			}
+			if err := b.remove(backendKey(context, name)); err != nil {
+				return err
+			}
 		}
 	}
 	idx.remove(context, name)
@@ -208,8 +210,8 @@ func (s *localStore) Meta(context, name string) (SecretMeta, error) {
 	return meta, nil
 }
 
-// List returns the context's entries, flagging any sensitive entry whose backend
-// value is missing (orphaned).
+// List returns the context's entries, flagging sensitive entries whose owned
+// backend value is missing.
 func (s *localStore) List(context string) ([]SecretMeta, error) {
 	idx, err := loadIndex(s.indexPath)
 	if err != nil {
@@ -220,19 +222,24 @@ func (s *localStore) List(context string) ([]SecretMeta, error) {
 	if !anySensitive(entries) {
 		return entries, nil
 	}
-	if err := s.checkKeySource(idx); err != nil {
-		return nil, err
-	}
-
 	for i := range entries {
 		if !entries[i].Sensitive() {
 			continue
 		}
-		orphaned, err := s.isOrphaned(context, entries[i].Name)
+		meta := entries[i]
+		if meta.Backend == "" {
+			return nil, fmt.Errorf("secret %q is missing persisted backend ownership", meta.Name)
+		}
+		b, err := s.backends.Open(meta.Backend, idx, false)
 		if err != nil {
 			return nil, err
 		}
-		entries[i].Orphaned = orphaned
+		_, err = b.get(backendKey(context, entries[i].Name))
+		if errors.Is(err, ErrSecretNotFound) {
+			entries[i].Orphaned = true
+		} else if err != nil {
+			return nil, err
+		}
 	}
 
 	return entries, nil
@@ -273,29 +280,22 @@ func anySensitive(entries []SecretMeta) bool {
 	return false
 }
 
-func (s *localStore) isOrphaned(context, name string) (bool, error) {
-	_, err := s.backend.get(backendKey(context, name))
-	switch {
-	case err == nil:
-		return false, nil
-	case errors.Is(err, ErrSecretNotFound):
-		return true, nil
-	default:
-		return false, fmt.Errorf("reconcile secret %q: %w", name, err)
-	}
-}
-
 func (s *localStore) persistValue(
 	idx *index, meta *SecretMeta, value string, wasSensitive bool,
 ) error {
-	key := backendKey(meta.Context, meta.Name)
-	if meta.Sensitive() || wasSensitive {
-		if err := s.checkKeySource(idx); err != nil {
+	if meta.Sensitive() {
+		if meta.Backend == "" {
+			resolved, err := s.backends.ResolveForNewSecret(s.preference, idx)
+			if err != nil {
+				return err
+			}
+			meta.Backend = resolved
+		}
+		b, err := s.backends.Open(meta.Backend, idx, true)
+		if err != nil {
 			return err
 		}
-	}
-	if meta.Sensitive() {
-		if err := s.backend.set(key, value); err != nil {
+		if err := b.set(backendKey(meta.Context, meta.Name), value); err != nil {
 			return err
 		}
 		if s.keySource != "" {
@@ -304,24 +304,21 @@ func (s *localStore) persistValue(
 		return nil
 	}
 	if wasSensitive {
-		return s.backend.remove(key)
+		if err := s.checkKeySource(idx); err != nil {
+			return err
+		}
+		b, err := s.backends.Open(meta.Backend, idx, false)
+		if err != nil {
+			return err
+		}
+		return b.remove(backendKey(meta.Context, meta.Name))
 	}
 	return nil
 }
 
-// checkKeySource rejects a key-source change with a clear error instead of a
-// downstream decryption failure.
 func (s *localStore) checkKeySource(idx *index) error {
-	if s.keySource == "" || idx.data.KeySource == "" {
+	if s.keySource == "" || idx.data.KeySource == "" || idx.data.KeySource == string(s.keySource) {
 		return nil
 	}
-	if idx.data.KeySource != string(s.keySource) {
-		return fmt.Errorf(
-			"secrets were encrypted with the %q key source but the current source is %q; "+
-				"restore the original DEVSY_SECRETS_PASSPHRASE (or unset it) or re-create the secrets",
-			idx.data.KeySource, s.keySource,
-		)
-	}
-
-	return nil
+	return fmt.Errorf("secrets were encrypted with the %q key source but the current source is %q; restore the original DEVSY_SECRETS_PASSPHRASE (or unset it) or re-create the secrets", idx.data.KeySource, s.keySource)
 }

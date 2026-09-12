@@ -151,6 +151,7 @@ export interface Secret {
   created?: string
   lastUsed?: string
   orphaned?: boolean
+  backend?: "keyring" | "file"
 }
 
 export interface EnvVar {

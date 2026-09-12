@@ -43,6 +43,7 @@ type SecretMeta struct {
 	Value    string    `json:"value,omitempty"`
 	Created  time.Time `json:"created"`
 	LastUsed time.Time `json:"lastUsed,omitzero"`
+	Backend  Backend   `json:"backend,omitempty"`
 
 	Orphaned bool `json:"-"`
 }
