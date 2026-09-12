@@ -29,7 +29,9 @@ import (
 )
 
 const (
-	DisableSSHKeepAlive time.Duration = 0 * time.Second
+	DisableSSHKeepAlive      time.Duration = 0 * time.Second
+	sshKeepAliveProbeTimeout               = 10 * time.Second
+	sshKeepAliveMaxFailures                = 3
 )
 
 // SSHCmd holds the ssh cmd flags.
@@ -685,24 +687,83 @@ func (cmd *SSHCmd) startServices(
 	}
 }
 
+type sshKeepAliveClient interface {
+	SendRequest(string, bool, []byte) (bool, []byte, error)
+	Close() error
+}
+
+type sshKeepAliveOptions struct {
+	interval     time.Duration
+	probeTimeout time.Duration
+	maxFailures  int
+}
+
 func startSSHKeepAlive(
 	ctx context.Context,
-	client *ssh.Client,
+	client sshKeepAliveClient,
 	interval time.Duration,
 ) {
-	ticker := time.NewTicker(interval)
+	startSSHKeepAliveWithOptions(ctx, client, sshKeepAliveOptions{
+		interval:     interval,
+		probeTimeout: sshKeepAliveProbeTimeout,
+		maxFailures:  sshKeepAliveMaxFailures,
+	})
+}
+
+func startSSHKeepAliveWithOptions(
+	ctx context.Context,
+	client sshKeepAliveClient,
+	opts sshKeepAliveOptions,
+) {
+	ticker := time.NewTicker(opts.interval)
 	defer ticker.Stop()
+	failures := 0
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			ok, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
-			if err := checkKeepAliveResponse(ok, err); err != nil {
+			if err := sendBoundedKeepAlive(ctx, client, opts.probeTimeout); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				log.Errorf("failed to send keepalive: %v", err)
+				failures++
+				if failures >= opts.maxFailures {
+					log.Errorf(
+						"SSH keepalive failed %d consecutive times; closing client",
+						failures,
+					)
+					_ = client.Close()
+					return
+				}
+				continue
 			}
+			failures = 0
 		}
+	}
+}
+
+func sendBoundedKeepAlive(
+	ctx context.Context,
+	client sshKeepAliveClient,
+	timeout time.Duration,
+) error {
+	result := make(chan error, 1)
+	go func() {
+		ok, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+		result <- checkKeepAliveResponse(ok, err)
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return fmt.Errorf("keepalive probe timed out after %s", timeout)
 	}
 }
 

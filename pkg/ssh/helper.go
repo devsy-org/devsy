@@ -136,6 +136,14 @@ type RunOptions struct {
 	EnvVars map[string]string
 }
 
+type RunSessionOptions struct {
+	Command string
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
+	EnvVars map[string]string
+}
+
 // ExitError wraps an SSH exit error with the exit code.
 type ExitError struct {
 	ExitCode int
@@ -173,7 +181,24 @@ func Run(ctx context.Context, opts RunOptions) error {
 		return fmt.Errorf("failed to create SSH session: %w", err)
 	}
 	defer func() { _ = sess.Close() }()
+	return RunSession(ctx, sess, RunSessionOptions{
+		Command: opts.Command,
+		Stdin:   opts.Stdin,
+		Stdout:  opts.Stdout,
+		Stderr:  opts.Stderr,
+		EnvVars: opts.EnvVars,
+	})
+}
 
+// RunSession executes a command on a caller-owned SSH session. It never closes
+// the session; callers retain ownership and are responsible for cleanup.
+func RunSession(ctx context.Context, sess *ssh.Session, opts RunSessionOptions) error {
+	if sess == nil {
+		return fmt.Errorf("SSH session is required")
+	}
+	if opts.Command == "" {
+		return fmt.Errorf("command is required")
+	}
 	// Set environment variables (best effort - SSH servers may reject env vars or not support them)
 	for k, v := range opts.EnvVars {
 		_ = sess.Setenv(k, v) // Ignore errors - command should work without env vars

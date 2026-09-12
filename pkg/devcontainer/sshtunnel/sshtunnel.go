@@ -153,8 +153,8 @@ func runSSHTunnel(ctx context.Context, p sshTunnelParams) (*config2.Result, erro
 	err = p.grpcBridge.RunPair(ctx,
 		func(ctx context.Context, stdin, stdout *os.File) error {
 			return runCommandInSSHTunnel(ctx, sshCommandParams{
-				sshClient: sshClient,
-				command:   p.opts.Command,
+				session: sess,
+				command: p.opts.Command,
 			}, stdin, stdout)
 		},
 		func(ctx context.Context, stdout, stdin *os.File) error {
@@ -231,8 +231,8 @@ func setupSSHAgentForwarding(sshClient *ssh.Client, sess *ssh.Session) {
 }
 
 type sshCommandParams struct {
-	sshClient *ssh.Client
-	command   string
+	session *ssh.Session
+	command string
 }
 
 func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdout *os.File) error {
@@ -240,8 +240,7 @@ func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdou
 	defer func() { _ = streamer.Close() }()
 
 	log.Debugf("running agent command in SSH tunnel: %q", p.command)
-	err := devssh.Run(ctx, devssh.RunOptions{
-		Client:  p.sshClient,
+	err := devssh.RunSession(ctx, p.session, devssh.RunSessionOptions{
 		Command: p.command,
 		Stdin:   stdin,
 		Stdout:  stdout,
@@ -257,12 +256,16 @@ func runCommandInSSHTunnel(ctx context.Context, p sshCommandParams, stdin, stdou
 	return nil
 }
 
-const maxLogLines = 1
+const (
+	maxLogLines = 25
+	maxLogBytes = 256 * 1024
+)
 
 func newSSHTunnelJSONLogStreamer() *log.JSONLogStreamer {
 	return log.NewJSONLogStreamer(log.StreamerOptions{
 		FallbackLevel:           log.LevelDebug,
 		CaptureLines:            maxLogLines,
+		CaptureBytes:            maxLogBytes,
 		DetectLevelPrefixes:     true,
 		TreatUnknownJSONAsDebug: true,
 	})

@@ -14,7 +14,7 @@ import (
 // noopForward is a ForwardingFunction that immediately closes the local
 // connection. This lets portForwarding exercise its idle/cancellation paths
 // without needing a real *ssh.Client.
-func noopForward(localConn net.Conn, _ *ssh.Client, _, _ string) {
+func noopForward(_ context.Context, localConn net.Conn, _ *ssh.Client, _ forwardTarget) {
 	_ = localConn.Close()
 }
 
