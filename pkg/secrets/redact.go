@@ -12,7 +12,9 @@ const redactMask = "***"
 
 var (
 	credentialURLPattern = regexp.MustCompile(`(?i)(https?://)[^\s/@]+@`)
-	authorizationPattern = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,]+`)
+	authorizationPattern = regexp.MustCompile(
+		`(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,]+`,
+	)
 )
 
 type Redactor struct {
@@ -167,7 +169,8 @@ func credentialURLStart(value, lower string) int {
 		return -1
 	}
 	suffix := value[start:]
-	if len(suffix) <= 512 && !strings.ContainsAny(suffix, " \t\r\n") && !strings.Contains(suffix, "@") {
+	if len(suffix) <= 512 && !strings.ContainsAny(suffix, " \t\r\n") &&
+		!strings.Contains(suffix, "@") {
 		return start
 	}
 	return -1

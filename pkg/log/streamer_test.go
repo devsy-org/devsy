@@ -38,7 +38,8 @@ func TestJSONLogStreamerCombinesConfiguredAndEnvironmentRedaction(t *testing.T) 
 	if err := streamer.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if got := streamer.ErrorOutput(); strings.Contains(got, "stream-env-secret-846299") || strings.Contains(got, "stream-config-secret-846300") {
+	if got := streamer.ErrorOutput(); strings.Contains(got, "stream-env-secret-846299") ||
+		strings.Contains(got, "stream-config-secret-846300") {
 		t.Fatalf("combined redaction leaked secret: %q", got)
 	}
 	if got := streamer.ErrorOutput(); !strings.Contains(got, "canary") {

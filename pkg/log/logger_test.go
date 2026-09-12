@@ -86,7 +86,12 @@ func TestAddSink_ConcurrentSinksAreIndependent(t *testing.T) {
 }
 
 func TestInitRedactsSecretsBeforeWritingSinks(t *testing.T) {
-	Init(Config{Verbosity: 2, Redactor: secrets.NewRedactor([]string{"TOKEN=DEVSY_SECRET_TEST_846297"})})
+	Init(
+		Config{
+			Verbosity: 2,
+			Redactor:  secrets.NewRedactor([]string{"TOKEN=DEVSY_SECRET_TEST_846297"}),
+		},
+	)
 
 	var sink syncBuffer
 	remove := AddSink(&sink)
