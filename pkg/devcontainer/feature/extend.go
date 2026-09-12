@@ -469,7 +469,10 @@ type featureResolution struct {
 
 // resolveFeatureSource resolves a feature identifier to a local folder, pinning
 // OCI and direct-tarball features to the loaded lockfile when present.
-func (p *featureProcessor) resolveFeatureSource(ctx context.Context, id string) (*featureResolution, error) {
+func (p *featureProcessor) resolveFeatureSource(
+	ctx context.Context,
+	id string,
+) (*featureResolution, error) {
 	if ctx == nil {
 		ctx = p.ctx
 	}
@@ -486,7 +489,10 @@ func (p *featureProcessor) resolveFeatureSource(ctx context.Context, id string) 
 	}
 }
 
-func (p *featureProcessor) resolveTarballFeature(ctx context.Context, id string) (*featureResolution, error) {
+func (p *featureProcessor) resolveTarballFeature(
+	ctx context.Context,
+	id string,
+) (*featureResolution, error) {
 	log.Debugf("process feature: type=%s, id=%s", "url", id)
 	_, pinnedIntegrity, _ := p.lock.pin(id)
 	headers := config.GetDevsyCustomizations(p.devContainerConfig).FeatureDownloadHTTPHeaders

@@ -104,11 +104,16 @@ func (r *runner) runSingleContainer(
 
 	// Resolve container: ensure we have a running container with merged config.
 	var resolved *resolvedContainer
-	err = status.Run(ctx, r.reporter, status.Operation{Phase: status.PhaseStartingContainer}, func(ctx context.Context) error {
-		var resolveErr error
-		resolved, resolveErr = r.resolveContainer(ctx, params, containerDetails)
-		return resolveErr
-	})
+	err = status.Run(
+		ctx,
+		r.reporter,
+		status.Operation{Phase: status.PhaseStartingContainer},
+		func(ctx context.Context) error {
+			var resolveErr error
+			resolved, resolveErr = r.resolveContainer(ctx, params, containerDetails)
+			return resolveErr
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

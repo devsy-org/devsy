@@ -122,7 +122,11 @@ func PullConfigFromSourceWithContext(
 	}
 
 	if craneSigningKey != "" {
-		data, err = New(DecryptCommand).WithArg(data).WithFlag("--key", craneSigningKey).RunContext(ctx)
+		data, err = New(
+			DecryptCommand,
+		).WithArg(data).
+			WithFlag("--key", craneSigningKey).
+			RunContext(ctx)
 		if err != nil {
 			return "", err
 		}
