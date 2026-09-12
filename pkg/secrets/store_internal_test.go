@@ -357,7 +357,11 @@ func TestStore_RejectsMissingBackendOwnership(t *testing.T) {
 	}
 
 	s := newLocalStore(newMapBackend(), path)
-	if _, err := s.Get(testContext, "LEGACY"); err == nil || !strings.Contains(err.Error(), "missing persisted backend ownership") {
+	if _, err := s.Get(
+		testContext,
+		"LEGACY",
+	); err == nil ||
+		!strings.Contains(err.Error(), "missing persisted backend ownership") {
 		t.Fatalf("expected missing backend ownership error, got %v", err)
 	}
 }
@@ -371,7 +375,11 @@ func TestStore_RejectsLegacyInlineSecret(t *testing.T) {
 	}
 
 	s := newLocalStore(newMapBackend(), path)
-	if _, err := s.Get(testContext, "LEGACY"); err == nil || !strings.Contains(err.Error(), "missing persisted backend ownership") {
+	if _, err := s.Get(
+		testContext,
+		"LEGACY",
+	); err == nil ||
+		!strings.Contains(err.Error(), "missing persisted backend ownership") {
 		t.Fatalf("expected missing backend ownership error, got %v", err)
 	}
 }

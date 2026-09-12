@@ -23,7 +23,11 @@ func (r fixedBackendRegistry) ResolveForNewSecret(_ Backend, _ *index) (Backend,
 
 type systemBackendRegistry struct{ dir string }
 
-func newSystemBackendRegistry(dir string) backendRegistry { return &systemBackendRegistry{dir: dir} }
+func newSystemBackendRegistry(
+	dir string,
+) backendRegistry {
+	return &systemBackendRegistry{dir: dir}
+}
 
 func (r *systemBackendRegistry) Open(kind Backend, idx *index, create bool) (backend, error) {
 	switch kind {
@@ -49,7 +53,10 @@ func (r *systemBackendRegistry) Open(kind Backend, idx *index, create bool) (bac
 	}
 }
 
-func (r *systemBackendRegistry) ResolveForNewSecret(preference Backend, idx *index) (Backend, error) {
+func (r *systemBackendRegistry) ResolveForNewSecret(
+	preference Backend,
+	idx *index,
+) (Backend, error) {
 	switch preference {
 	case BackendKeyring:
 		return BackendKeyring, nil
@@ -71,29 +78,34 @@ func openExistingFileKey(dir string, idx *index) (*fileKey, error) {
 		return nil, fmt.Errorf("encrypted secrets are missing their key source metadata")
 	}
 	if source == keySourcePassphrase {
-		passphrase := os.Getenv(EnvPassphrase)
-		if passphrase == "" {
-			return nil, fmt.Errorf("encrypted secrets require %s", EnvPassphrase)
-		}
-		recipient, err := age.NewScryptRecipient(passphrase)
-		if err != nil {
-			return nil, err
-		}
-		identity, err := age.NewScryptIdentity(passphrase)
-		if err != nil {
-			return nil, err
-		}
-		return &fileKey{recipient: recipient, identity: identity, source: source}, nil
+		return openPassphraseFileKey()
 	}
 	var store keyStore
-	if source == keySourceKeyring {
+	switch source {
+	case keySourceKeyring:
 		store = keyringKeyStore{}
-	} else if source == keySourceAutoFile {
+	case keySourceAutoFile:
 		store = fileKeyStore{path: filepath.Join(dir, KeyFileName)}
-	} else {
+	default:
 		return nil, fmt.Errorf("invalid secrets key source %q", source)
 	}
 	return keyFromStore(store, source)
+}
+
+func openPassphraseFileKey() (*fileKey, error) {
+	passphrase := os.Getenv(EnvPassphrase)
+	if passphrase == "" {
+		return nil, fmt.Errorf("encrypted secrets require %s", EnvPassphrase)
+	}
+	recipient, err := age.NewScryptRecipient(passphrase)
+	if err != nil {
+		return nil, err
+	}
+	identity, err := age.NewScryptIdentity(passphrase)
+	if err != nil {
+		return nil, err
+	}
+	return &fileKey{recipient: recipient, identity: identity, source: keySourcePassphrase}, nil
 }
 
 func keyFromStore(store keyStore, source keySource) (*fileKey, error) {

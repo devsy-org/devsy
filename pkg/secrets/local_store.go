@@ -75,8 +75,17 @@ func newLocalStore(b backend, indexPath string) *localStore {
 	return newLocalStoreWithRegistry(BackendKeyring, indexPath, fixedBackendRegistry{b: b})
 }
 
-func newLocalStoreWithRegistry(preference Backend, indexPath string, backends backendRegistry) *localStore {
-	return &localStore{preference: preference, backends: backends, indexPath: indexPath, now: time.Now}
+func newLocalStoreWithRegistry(
+	preference Backend,
+	indexPath string,
+	backends backendRegistry,
+) *localStore {
+	return &localStore{
+		preference: preference,
+		backends:   backends,
+		indexPath:  indexPath,
+		now:        time.Now,
+	}
 }
 
 func (s *localStore) Set(context, name, value string, kind Kind) error {
@@ -284,41 +293,54 @@ func (s *localStore) persistValue(
 	idx *index, meta *SecretMeta, value string, wasSensitive bool,
 ) error {
 	if meta.Sensitive() {
-		if meta.Backend == "" {
-			resolved, err := s.backends.ResolveForNewSecret(s.preference, idx)
-			if err != nil {
-				return err
-			}
-			meta.Backend = resolved
-		}
-		b, err := s.backends.Open(meta.Backend, idx, true)
-		if err != nil {
-			return err
-		}
-		if err := b.set(backendKey(meta.Context, meta.Name), value); err != nil {
-			return err
-		}
-		if s.keySource != "" {
-			idx.data.KeySource = string(s.keySource)
-		}
-		return nil
+		return s.persistSensitive(idx, meta, value)
 	}
 	if wasSensitive {
-		if err := s.checkKeySource(idx); err != nil {
-			return err
-		}
-		b, err := s.backends.Open(meta.Backend, idx, false)
+		return s.removeSensitive(idx, meta)
+	}
+	return nil
+}
+
+func (s *localStore) persistSensitive(idx *index, meta *SecretMeta, value string) error {
+	if meta.Backend == "" {
+		resolved, err := s.backends.ResolveForNewSecret(s.preference, idx)
 		if err != nil {
 			return err
 		}
-		return b.remove(backendKey(meta.Context, meta.Name))
+		meta.Backend = resolved
+	}
+	b, err := s.backends.Open(meta.Backend, idx, true)
+	if err != nil {
+		return err
+	}
+	if err := b.set(backendKey(meta.Context, meta.Name), value); err != nil {
+		return err
+	}
+	if s.keySource != "" {
+		idx.data.KeySource = string(s.keySource)
 	}
 	return nil
+}
+
+func (s *localStore) removeSensitive(idx *index, meta *SecretMeta) error {
+	if err := s.checkKeySource(idx); err != nil {
+		return err
+	}
+	b, err := s.backends.Open(meta.Backend, idx, false)
+	if err != nil {
+		return err
+	}
+	return b.remove(backendKey(meta.Context, meta.Name))
 }
 
 func (s *localStore) checkKeySource(idx *index) error {
 	if s.keySource == "" || idx.data.KeySource == "" || idx.data.KeySource == string(s.keySource) {
 		return nil
 	}
-	return fmt.Errorf("secrets were encrypted with the %q key source but the current source is %q; restore the original DEVSY_SECRETS_PASSPHRASE (or unset it) or re-create the secrets", idx.data.KeySource, s.keySource)
+	return fmt.Errorf(
+		"secrets were encrypted with the %q key source but the current source is %q; "+
+			"restore the original DEVSY_SECRETS_PASSPHRASE (or unset it) or re-create the secrets",
+		idx.data.KeySource,
+		s.keySource,
+	)
 }

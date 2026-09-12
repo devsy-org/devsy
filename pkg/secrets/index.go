@@ -66,12 +66,22 @@ func (i *index) validateBackends() error {
 		for name, meta := range entries {
 			if meta.Kind == KindEnv {
 				if meta.Backend != "" {
-					return fmt.Errorf("invalid backend %q for environment entry %s/%s", meta.Backend, context, name)
+					return fmt.Errorf(
+						"invalid backend %q for environment entry %s/%s",
+						meta.Backend,
+						context,
+						name,
+					)
 				}
 				continue
 			}
 			if meta.Backend != "" && meta.Backend != BackendKeyring && meta.Backend != BackendFile {
-				return fmt.Errorf("invalid secrets backend %q for %s/%s", meta.Backend, context, name)
+				return fmt.Errorf(
+					"invalid secrets backend %q for %s/%s",
+					meta.Backend,
+					context,
+					name,
+				)
 			}
 		}
 	}
