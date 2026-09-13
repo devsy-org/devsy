@@ -198,11 +198,22 @@ export class AppTray {
     this.rebuildMenu()
     try {
       await this.deps.stopWorkspace(workspaceId)
-      await this.deps.refreshWorkspace(workspaceId)
-      await this.deps.refreshWorkspaces()
     } catch (error) {
       console.warn(`[tray] failed to stop workspace ${workspaceId}:`, error)
     } finally {
+      try {
+        await this.deps.refreshWorkspace(workspaceId)
+      } catch (error) {
+        console.warn(
+          `[tray] failed to refresh workspace ${workspaceId}:`,
+          error,
+        )
+      }
+      try {
+        await this.deps.refreshWorkspaces()
+      } catch (error) {
+        console.warn("[tray] failed to refresh workspaces:", error)
+      }
       this.pendingStops.delete(workspaceId)
       this.rebuildMenu()
     }

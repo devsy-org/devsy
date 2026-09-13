@@ -3,8 +3,14 @@ export function normalizeWorkspaceStatus(raw: string): string | undefined {
   if (!text) return undefined
 
   try {
-    const parsed = JSON.parse(text) as { state?: unknown }
-    if (typeof parsed.state === "string" && parsed.state.trim()) {
+    const parsed: unknown = JSON.parse(text)
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "state" in parsed &&
+      typeof parsed.state === "string" &&
+      parsed.state.trim()
+    ) {
       return parsed.state.trim()
     }
     return undefined

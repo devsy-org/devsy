@@ -17,6 +17,8 @@ describe("workspace status", () => {
   it("ignores empty or JSON without a state", () => {
     expect(normalizeWorkspaceStatus("  ")).toBeUndefined()
     expect(normalizeWorkspaceStatus("{}")).toBeUndefined()
+    expect(normalizeWorkspaceStatus("null")).toBeUndefined()
+    expect(normalizeWorkspaceStatus("[]")).toBeUndefined()
   })
 
   it.each(["running", "RUNNING", "busy", "Busy"])(

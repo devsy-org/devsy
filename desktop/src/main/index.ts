@@ -20,6 +20,7 @@ const PROTOCOL = "devsy"
 let mainWindow: BrowserWindow | null = null
 let pendingDeepLink: string | null = null
 let pendingRoute: string | null = null
+let rendererReady = false
 let appTray: AppTray | null = null
 let watcher: Watcher | null = null
 const state = new DaemonState()
@@ -37,14 +38,17 @@ function handleDeepLink(url: string): void {
 
 function showDevsy(route?: string): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    pendingRoute = route ?? null
+    if (route) pendingRoute = route
     createWindow()
     return
   }
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
-  if (route) mainWindow.webContents.send("navigate", route)
+  if (route) {
+    if (rendererReady) mainWindow.webContents.send("navigate", route)
+    else pendingRoute = route
+  }
 }
 
 // Enforce single instance; forward deep links from second instances to the first.
@@ -71,6 +75,7 @@ app.on("open-url", (event, url) => {
 })
 
 function createWindow(): void {
+  rendererReady = false
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -94,6 +99,9 @@ function createWindow(): void {
       mainWindow.hide()
     }
   })
+  mainWindow.webContents.on("did-start-loading", () => {
+    rendererReady = false
+  })
 
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -103,10 +111,6 @@ function createWindow(): void {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show()
-    if (pendingRoute) {
-      mainWindow?.webContents.send("navigate", pendingRoute)
-      pendingRoute = null
-    }
     if (pendingDeepLink) {
       mainWindow?.webContents.send("deep-link", pendingDeepLink)
       pendingDeepLink = null
@@ -201,6 +205,20 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
     providerJobs,
     workspaceJobs,
+    onRendererReady: (sender) => {
+      if (
+        !mainWindow ||
+        mainWindow.isDestroyed() ||
+        mainWindow.webContents !== sender
+      ) {
+        return
+      }
+      rendererReady = true
+      if (pendingRoute) {
+        sender.send("navigate", pendingRoute)
+        pendingRoute = null
+      }
+    },
     onWorkspaceStopComplete: async (workspaceId) => {
       try {
         await watcher?.refreshWorkspaceStatus(workspaceId)

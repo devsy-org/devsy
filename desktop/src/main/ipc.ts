@@ -100,6 +100,7 @@ interface IpcDependencies {
   providerJobs: ProviderJobs
   workspaceJobs: WorkspaceJobs
   onWorkspaceStopComplete?: (workspaceId: string) => Promise<void>
+  onRendererReady?: (sender: Electron.WebContents) => void
 }
 
 /** Format a line in zap console format so log-parser.ts can parse it. */
@@ -1555,6 +1556,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   // Deferred so the renderer's update-status listener (registered after this
   // call resolves) is attached before the replay arrives.
   ipcMain.handle("app_ready", (event) => {
+    deps.onRendererReady?.(event.sender)
     setImmediate(() => {
       if (!event.sender.isDestroyed()) {
         event.sender.send("update-status", getLastStatus())
