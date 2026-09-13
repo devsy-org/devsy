@@ -373,10 +373,10 @@ func providerNameFromAddArgs(args []string) string {
 func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) error {
 	baseArgs := []string{cmdProvider, cmdDelete}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
 	if err != nil {
-		if strings.Contains(err.Error(), "because workspace") {
-			return fmt.Errorf("%w: %v", errProviderInUse, err)
+		if strings.Contains(stderr, "because workspace") {
+			return fmt.Errorf("%w: %s", errProviderInUse, stderr)
 		}
 		return err
 	}

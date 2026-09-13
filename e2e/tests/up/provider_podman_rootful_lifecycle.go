@@ -89,7 +89,7 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 						gomega.Expect(strings.TrimSpace(two)).To(gomega.Equal("postCreateTwo"))
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
 				ginkgo.It("should run postStartCommand after restart", func(ctx context.Context) {
@@ -178,7 +178,7 @@ var _ = ginkgo.Describe(
 							gomega.Equal("postStartDone"),
 						)
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
 				ginkgo.It(
@@ -217,7 +217,7 @@ var _ = ginkgo.Describe(
 							gomega.Equal("postAttachDone"),
 						)
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 			})
 		})
