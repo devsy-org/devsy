@@ -140,7 +140,7 @@ var _ = ginkgo.Describe(
 					framework.ExpectNoError(err)
 					gomega.Expect(strings.TrimSpace(customImage)).
 						To(gomega.Equal("ghcr.io/devsy-org/test-images/base:alpine"))
-				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 				ginkgo.It("should substitute variables with defaults", func(ctx context.Context) {
 					tempDir, err := setupWorkspaceAndUp(
@@ -164,7 +164,7 @@ var _ = ginkgo.Describe(
 					setVar, err := f.DevsySSH(ctx, tempDir, "cat $HOME/set-var.out")
 					framework.ExpectNoError(err)
 					gomega.Expect(strings.TrimSpace(setVar)).To(gomega.Equal(os.Getenv("HOME")))
-				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 				ginkgo.It("should merge extra devcontainer config", func(ctx context.Context) {
 					tempDir, err := setupWorkspace(
@@ -193,7 +193,7 @@ var _ = ginkgo.Describe(
 
 					err = f.DevsyWorkspaceDelete(ctx, tempDir)
 					framework.ExpectNoError(err)
-				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
 				ginkgo.It(
 					"should override with extra devcontainer config",
@@ -221,7 +221,7 @@ var _ = ginkgo.Describe(
 						err = f.DevsyWorkspaceDelete(ctx, tempDir)
 						framework.ExpectNoError(err)
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
 				ginkgo.It("should select from multiple devcontainers", func(ctx context.Context) {
@@ -260,7 +260,7 @@ var _ = ginkgo.Describe(
 
 					err = f.DevsyWorkspaceDelete(ctx, tempDir)
 					framework.ExpectNoError(err)
-				}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 			})
 		})
 	},

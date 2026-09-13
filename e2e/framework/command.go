@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,8 @@ var (
 	flagDebug        = names.Flag(names.Debug)
 	flagCommand      = names.Flag(names.Command)
 )
+
+var errProviderInUse = errors.New("provider is in use by a workspace")
 
 const (
 	formatJSON   = "json"
@@ -372,6 +375,9 @@ func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) err
 	baseArgs = append(baseArgs, args...)
 	err := f.ExecCommand(ctx, false, false, "", baseArgs)
 	if err != nil {
+		if strings.Contains(err.Error(), "because workspace") {
+			return fmt.Errorf("%w: %v", errProviderInUse, err)
+		}
 		return err
 	}
 
@@ -647,6 +653,12 @@ func SetupDockerProvider(binDir, dockerPath string) (*Framework, error) {
 		"-o",
 		"DOCKER_PATH="+dockerPath,
 	); err != nil {
+		// The shared default Docker provider may be referenced by an existing
+		// workspace. It is safe to reuse only for the standard Docker setup;
+		// custom runtime setups must still fail rather than inherit stale state.
+		if dockerPath == "docker" && errors.Is(err, errProviderInUse) {
+			return f, f.DevsyProviderUse(context.Background(), "docker")
+		}
 		return nil, fmt.Errorf("failed to add docker provider: %w", err)
 	}
 	return f, f.DevsyProviderUse(context.Background(), "docker")
