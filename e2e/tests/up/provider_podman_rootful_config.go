@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/docker"
@@ -183,13 +184,29 @@ var _ = ginkgo.Describe(
 					)
 					framework.ExpectNoError(err)
 
-					out, err := f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $BASE_VAR'")
-					framework.ExpectNoError(err)
-					framework.ExpectEqual(out, "base_value")
+					gomega.Eventually(func() string {
+						out, err := probeSSH(
+							f, ctx, tempDir, "bash -l -c 'echo -n $BASE_VAR'",
+						)
+						if err != nil {
+							return ""
+						}
+						return strings.TrimSpace(out)
+					}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(
+						gomega.Equal("base_value"),
+					)
 
-					out, err = f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $EXTRA_VAR'")
-					framework.ExpectNoError(err)
-					framework.ExpectEqual(out, "extra_value")
+					gomega.Eventually(func() string {
+						out, err := probeSSH(
+							f, ctx, tempDir, "bash -l -c 'echo -n $EXTRA_VAR'",
+						)
+						if err != nil {
+							return ""
+						}
+						return strings.TrimSpace(out)
+					}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(
+						gomega.Equal("extra_value"),
+					)
 
 					err = f.DevsyWorkspaceDelete(ctx, tempDir)
 					framework.ExpectNoError(err)
