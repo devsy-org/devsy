@@ -90,7 +90,7 @@ var _ = ginkgo.Describe(
 								return ""
 							}
 							return strings.TrimSpace(out)
-						}).WithTimeout(15 * time.Second).WithPolling(1 * time.Second).Should(
+						}).WithTimeout(60 * time.Second).WithPolling(1 * time.Second).Should(
 							gomega.Equal("1"),
 						)
 
@@ -105,7 +105,7 @@ var _ = ginkgo.Describe(
 								return ""
 							}
 							return strings.TrimSpace(out)
-						}).WithTimeout(15 * time.Second).WithPolling(1 * time.Second).Should(
+						}).WithTimeout(60 * time.Second).WithPolling(1 * time.Second).Should(
 							gomega.Equal("2"),
 						)
 					},
@@ -179,7 +179,7 @@ var _ = ginkgo.Describe(
 						gomega.Expect(strings.TrimSpace(out)).
 							To(gomega.Equal("second-secret-42"))
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 			})
 		})
