@@ -275,7 +275,9 @@ var _ = ginkgo.Describe(
 func eventuallySSH(f *framework.Framework, ctx context.Context, workspace, command string) string {
 	var output string
 	gomega.Eventually(func() bool {
-		out, err := probeSSH(f, ctx, workspace, command)
+		probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		out, err := f.DevsySSHOnce(probeCtx, workspace, command)
 		if err != nil {
 			return false
 		}
