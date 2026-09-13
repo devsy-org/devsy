@@ -179,7 +179,7 @@ func TestStore_ListSorted(t *testing.T) {
 	}
 }
 
-func TestStore_ReconcileFlagsOrphans(t *testing.T) {
+func TestStore_ListFlagsMissingValues(t *testing.T) {
 	mb := newMapBackend()
 	s := newTestStore(t, mb)
 
@@ -351,7 +351,7 @@ func TestFileBackend_AutoKeyRoundTrip(t *testing.T) {
 
 func TestStore_RejectsMissingBackendOwnership(t *testing.T) {
 	path := filepath.Join(t.TempDir(), IndexFileName)
-	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n      context: default\n"
+	raw := "contexts:\n  default:\n    UNOWNED:\n      name: UNOWNED\n      context: default\n"
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -359,16 +359,16 @@ func TestStore_RejectsMissingBackendOwnership(t *testing.T) {
 	s := newLocalStore(newMapBackend(), path)
 	if _, err := s.Get(
 		testContext,
-		"LEGACY",
+		"UNOWNED",
 	); err == nil ||
 		!strings.Contains(err.Error(), "missing persisted backend ownership") {
 		t.Fatalf("expected missing backend ownership error, got %v", err)
 	}
 }
 
-func TestStore_RejectsLegacyInlineSecret(t *testing.T) {
+func TestStore_RejectsInlineSecretWithoutOwnership(t *testing.T) {
 	path := filepath.Join(t.TempDir(), IndexFileName)
-	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n" +
+	raw := "contexts:\n  default:\n    UNOWNED:\n      name: UNOWNED\n" +
 		"      context: default\n      value: leaked\n"
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
@@ -377,7 +377,7 @@ func TestStore_RejectsLegacyInlineSecret(t *testing.T) {
 	s := newLocalStore(newMapBackend(), path)
 	if _, err := s.Get(
 		testContext,
-		"LEGACY",
+		"UNOWNED",
 	); err == nil ||
 		!strings.Contains(err.Error(), "missing persisted backend ownership") {
 		t.Fatalf("expected missing backend ownership error, got %v", err)
