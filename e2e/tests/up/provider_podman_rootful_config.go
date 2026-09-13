@@ -82,64 +82,53 @@ var _ = ginkgo.Describe(
 					)
 					framework.ExpectNoError(err)
 
-					devContainerID, err := f.DevsySSH(
-						ctx,
-						tempDir,
-						"cat $HOME/dev-container-id.out",
+					devContainerID := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/dev-container-id.out",
 					)
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(devContainerID)).NotTo(gomega.BeEmpty())
+					gomega.Expect(devContainerID).NotTo(gomega.BeEmpty())
 
-					containerEnvPath, err := f.DevsySSH(
-						ctx, tempDir, "cat $HOME/container-env-path.out",
+					containerEnvPath := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/container-env-path.out",
 					)
-					framework.ExpectNoError(err)
 					gomega.Expect(containerEnvPath).To(gomega.ContainSubstring("/usr/local/bin"))
 
-					localEnvHome, err := f.DevsySSH(ctx, tempDir, "cat $HOME/local-env-home.out")
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(localEnvHome)).
+					localEnvHome := eventuallySSH(f, ctx, tempDir, "cat $HOME/local-env-home.out")
+					gomega.Expect(localEnvHome).
 						To(gomega.Equal(os.Getenv("HOME")))
 
-					localWorkspaceFolder, err := f.DevsySSH(
-						ctx, tempDir, "cat $HOME/local-workspace-folder.out",
+					localWorkspaceFolder := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/local-workspace-folder.out",
 					)
-					framework.ExpectNoError(err)
 					gomega.Expect(
-						framework.CleanString(strings.TrimSpace(localWorkspaceFolder)),
+						framework.CleanString(localWorkspaceFolder),
 					).To(gomega.Equal(framework.CleanString(tempDir)))
 
-					localWorkspaceFolderBasename, err := f.DevsySSH(
-						ctx, tempDir, "cat $HOME/local-workspace-folder-basename.out",
+					localWorkspaceFolderBasename := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/local-workspace-folder-basename.out",
 					)
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(localWorkspaceFolderBasename)).
+					gomega.Expect(localWorkspaceFolderBasename).
 						To(gomega.Equal(filepath.Base(tempDir)))
 
-					containerWorkspaceFolder, err := f.DevsySSH(
-						ctx, tempDir, "cat $HOME/container-workspace-folder.out",
+					containerWorkspaceFolder := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/container-workspace-folder.out",
 					)
-					framework.ExpectNoError(err)
 					gomega.Expect(
-						framework.CleanString(strings.TrimSpace(containerWorkspaceFolder)),
+						framework.CleanString(containerWorkspaceFolder),
 					).To(gomega.Equal(
 						framework.CleanString(path.Join("/workspaces", filepath.Base(tempDir))),
 					))
 
-					containerWorkspaceFolderBasename, err := f.DevsySSH(
-						ctx, tempDir, "cat $HOME/container-workspace-folder-basename.out",
+					containerWorkspaceFolderBasename := eventuallySSH(
+						f, ctx, tempDir, "cat $HOME/container-workspace-folder-basename.out",
 					)
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(containerWorkspaceFolderBasename)).
+					gomega.Expect(containerWorkspaceFolderBasename).
 						To(gomega.Equal(filepath.Base(tempDir)))
 
-					customVar, err := f.DevsySSH(ctx, tempDir, "cat $HOME/custom-var.out")
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(customVar)).To(gomega.Equal("custom_value"))
+					customVar := eventuallySSH(f, ctx, tempDir, "cat $HOME/custom-var.out")
+					gomega.Expect(customVar).To(gomega.Equal("custom_value"))
 
-					customImage, err := f.DevsySSH(ctx, tempDir, "cat $HOME/custom-image.out")
-					framework.ExpectNoError(err)
-					gomega.Expect(strings.TrimSpace(customImage)).
+					customImage := eventuallySSH(f, ctx, tempDir, "cat $HOME/custom-image.out")
+					gomega.Expect(customImage).
 						To(gomega.Equal("ghcr.io/devsy-org/test-images/base:alpine"))
 				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
@@ -282,3 +271,16 @@ var _ = ginkgo.Describe(
 		})
 	},
 )
+
+func eventuallySSH(f *framework.Framework, ctx context.Context, workspace, command string) string {
+	var output string
+	gomega.Eventually(func() bool {
+		out, err := probeSSH(f, ctx, workspace, command)
+		if err != nil {
+			return false
+		}
+		output = strings.TrimSpace(out)
+		return true
+	}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(gomega.BeTrue())
+	return output
+}
