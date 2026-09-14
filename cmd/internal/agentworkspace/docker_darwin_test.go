@@ -9,65 +9,99 @@ import (
 	"testing"
 )
 
-func TestFindDarwinDocker_FoundAtKnownPath(t *testing.T) {
-	// Create a temp directory with a fake docker binary.
-	tmpDir := t.TempDir()
-	fakeBin := filepath.Join(tmpDir, "docker")
-	if err := os.WriteFile(fakeBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatalf("failed to create fake docker binary: %v", err)
+func writeExecutable(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
 	}
-
-	// Override the package-level path list so that our temp path is checked.
-	original := darwinDockerPaths
-	darwinDockerPaths = []string{fakeBin}
-	t.Cleanup(func() { darwinDockerPaths = original })
-
-	path, err := findDarwinDocker()
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
-	}
-	if path != fakeBin {
-		t.Fatalf("expected path %q, got %q", fakeBin, path)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestFindDarwinDocker_NotFound(t *testing.T) {
-	// Point at paths that definitely don't exist.
-	original := darwinDockerPaths
-	darwinDockerPaths = []string{"/nonexistent/path/docker"}
-	t.Cleanup(func() { darwinDockerPaths = original })
-
-	_, err := findDarwinDocker()
-	if err == nil {
-		t.Fatal("expected an error when no docker binary exists")
-	}
-	if !strings.Contains(err.Error(), "Docker Desktop") {
-		t.Fatalf("error should mention Docker Desktop, got: %v", err)
-	}
-	if strings.Contains(err.Error(), "unsupported OS") {
-		t.Fatalf("error must NOT mention unsupported OS, got: %v", err)
+func TestFindDarwinDockerCLIAtKnownPath(t *testing.T) {
+	fakeBin := filepath.Join(t.TempDir(), "docker")
+	writeExecutable(t, fakeBin)
+	path, err := findDarwinDockerCLIInPaths([]string{fakeBin})
+	if err != nil || path != fakeBin {
+		t.Fatalf("find docker CLI = %q, %v; want %q", path, err, fakeBin)
 	}
 }
 
-func TestFindDarwinDocker_PrefersFirstPath(t *testing.T) {
-	tmpDir := t.TempDir()
-	first := filepath.Join(tmpDir, "docker-first")
-	second := filepath.Join(tmpDir, "docker-second")
-	for _, p := range []string{first, second} {
-		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
-			t.Fatalf("failed to create fake binary: %v", err)
-		}
+func TestFindDarwinDockerCLIRancherDesktopPath(t *testing.T) {
+	home := t.TempDir()
+	rancher := filepath.Join(home, ".rd", "bin", "docker")
+	writeExecutable(t, rancher)
+	path, err := findDarwinDockerCLIInPaths(darwinDockerCandidatePaths(home))
+	if err != nil || path != rancher {
+		t.Fatalf("find docker CLI = %q, %v; want %q", path, err, rancher)
+	}
+}
+
+func TestFindDarwinDockerCLIPreservesPrecedence(t *testing.T) {
+	tmp := t.TempDir()
+	static, rancher := filepath.Join(
+		tmp,
+		"static",
+		"docker",
+	), filepath.Join(
+		tmp,
+		".rd",
+		"bin",
+		"docker",
+	)
+	writeExecutable(t, static)
+	writeExecutable(t, rancher)
+	path, err := findDarwinDockerCLIInPaths([]string{static, rancher})
+	if err != nil || path != static {
+		t.Fatalf("find docker CLI = %q, %v; want %q", path, err, static)
+	}
+}
+
+func TestFindDarwinDockerCLINotFound(t *testing.T) {
+	_, err := findDarwinDockerCLIInPaths([]string{filepath.Join(t.TempDir(), "docker")})
+	if err == nil || !strings.Contains(err.Error(), "docker CLI") ||
+		!strings.Contains(err.Error(), "DOCKER_PATH") {
+		t.Fatalf("expected actionable docker CLI error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "install Docker Desktop") {
+		t.Fatalf("error must not require Docker Desktop: %v", err)
+	}
+}
+
+func TestFindDarwinDockerCLIHomeFailureDoesNotBreakStaticDiscovery(t *testing.T) {
+	static := filepath.Join(t.TempDir(), "docker")
+	writeExecutable(t, static)
+	paths := append([]string{static}, darwinDockerCandidatePaths("")...)
+	path, err := findDarwinDockerCLIInPaths(paths)
+	if err != nil || path != static {
+		t.Fatalf("find docker CLI = %q, %v; want %q", path, err, static)
+	}
+}
+
+func TestFindDarwinDockerCLIRejectsNonExecutable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "docker")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := findDarwinDockerCLIInPaths([]string{path}); err == nil {
+		t.Fatal("expected non-executable candidate to be rejected")
+	}
+}
+
+func TestFindDarwinDockerCLIRejectsInaccessibleCandidate(t *testing.T) {
+	tmp := t.TempDir()
+	inaccessible := filepath.Join(tmp, "inaccessible", "docker")
+	writeExecutable(t, inaccessible)
+	if err := os.Chmod(inaccessible, 0o001); err != nil {
+		t.Fatal(err)
 	}
 
-	original := darwinDockerPaths
-	darwinDockerPaths = []string{first, second}
-	t.Cleanup(func() { darwinDockerPaths = original })
+	valid := filepath.Join(tmp, "valid", "docker")
+	writeExecutable(t, valid)
 
-	path, err := findDarwinDocker()
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
-	}
-	if path != first {
-		t.Fatalf("expected first path %q, got %q", first, path)
+	path, err := findDarwinDockerCLIInPaths([]string{inaccessible, valid})
+	if err != nil || path != valid {
+		t.Fatalf("expected fallback to valid candidate %q, got %q (err: %v)", valid, path, err)
 	}
 }
