@@ -115,10 +115,20 @@ var _ = ginkgo.Describe(
 					err = f.DevsyUp(ctx, tempDir)
 					framework.ExpectNoError(err)
 
-					out, err = f.DevsySSH(ctx, tempDir, "cat $HOME/post-start-count.log")
-					framework.ExpectNoError(err)
-					lines = strings.Count(strings.TrimSpace(out), "\n") + 1
-					gomega.Expect(lines).To(gomega.Equal(2),
+					gomega.Eventually(func() int {
+						out, err := probeSSH(
+							f, ctx, tempDir, "cat $HOME/post-start-count.log",
+						)
+						if err != nil {
+							return 0
+						}
+						trimmed := strings.TrimSpace(out)
+						if trimmed == "" {
+							return 0
+						}
+						return strings.Count(trimmed, "\n") + 1
+					}).WithTimeout(30*time.Second).WithPolling(2*time.Second).Should(
+						gomega.Equal(2),
 						"postStartCommand should have run again after restart")
 				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
