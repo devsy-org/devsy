@@ -89,7 +89,7 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 						gomega.Expect(strings.TrimSpace(two)).To(gomega.Equal("postCreateTwo"))
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
 				ginkgo.It("should run postStartCommand after restart", func(ctx context.Context) {
@@ -115,10 +115,20 @@ var _ = ginkgo.Describe(
 					err = f.DevsyUp(ctx, tempDir)
 					framework.ExpectNoError(err)
 
-					out, err = f.DevsySSH(ctx, tempDir, "cat $HOME/post-start-count.log")
-					framework.ExpectNoError(err)
-					lines = strings.Count(strings.TrimSpace(out), "\n") + 1
-					gomega.Expect(lines).To(gomega.Equal(2),
+					gomega.Eventually(func() int {
+						out, err := probeSSH(
+							f, ctx, tempDir, "cat $HOME/post-start-count.log",
+						)
+						if err != nil {
+							return 0
+						}
+						trimmed := strings.TrimSpace(out)
+						if trimmed == "" {
+							return 0
+						}
+						return strings.Count(trimmed, "\n") + 1
+					}).WithTimeout(30*time.Second).WithPolling(2*time.Second).Should(
+						gomega.Equal(2),
 						"postStartCommand should have run again after restart")
 				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 
@@ -144,7 +154,7 @@ var _ = ginkgo.Describe(
 						gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("updateContentDone"))
 
 						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
+							out, err := probeSSH(f,
 								ctx, tempDir, "cat $HOME/deferred.marker 2>/dev/null",
 							)
 							if err != nil {
@@ -165,7 +175,7 @@ var _ = ginkgo.Describe(
 						gomega.Expect(envPath).NotTo(gomega.ContainSubstring("${containerEnv:"))
 
 						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
+							out, err := probeSSH(f,
 								ctx,
 								tempDir,
 								"cat $HOME/post-start-deferred.out 2>/dev/null",
@@ -178,7 +188,7 @@ var _ = ginkgo.Describe(
 							gomega.Equal("postStartDone"),
 						)
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
 				ginkgo.It(
@@ -206,7 +216,7 @@ var _ = ginkgo.Describe(
 						framework.ExpectNoError(err)
 
 						gomega.Eventually(func() string {
-							out, err := f.DevsySSH(
+							out, err := probeSSH(f,
 								ctx, tempDir, "cat $HOME/post-attach.out 2>/dev/null",
 							)
 							if err != nil {
@@ -217,7 +227,7 @@ var _ = ginkgo.Describe(
 							gomega.Equal("postAttachDone"),
 						)
 					},
-					ginkgo.SpecTimeout(framework.TimeoutShort()),
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 			})
 		})

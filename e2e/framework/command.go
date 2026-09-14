@@ -1,12 +1,16 @@
 package framework
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -20,6 +24,8 @@ var (
 	flagDebug        = names.Flag(names.Debug)
 	flagCommand      = names.Flag(names.Command)
 )
+
+var errProviderInUse = errors.New("provider is in use by a workspace")
 
 const (
 	formatJSON   = "json"
@@ -214,6 +220,23 @@ func (f *Framework) DevsySSH(
 	return out, nil
 }
 
+// DevsySSHOnce performs a single SSH attempt. It is intended for readiness
+// polling, where retrying inside the polling callback can outlive the polling
+// window and consume the enclosing spec's deadline.
+func (f *Framework) DevsySSHOnce(
+	ctx context.Context,
+	workspace string,
+	command string,
+) (string, error) {
+	out, _, err := f.ExecCommandCapture(ctx, []string{
+		cmdWorkspace, cmdSSH, workspace, flagCommand, command, flagDebug,
+	})
+	if err != nil {
+		return "", fmt.Errorf("devsy ssh failed: %w", err)
+	}
+	return out, nil
+}
+
 func (f *Framework) DevsySSHEchoTestString(ctx context.Context, workspace string) error {
 	err := f.ExecCommand(
 		ctx,
@@ -317,22 +340,57 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 	baseArgs = append(baseArgs, args...)
 	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
 	if err != nil {
-		// Skip "already exists" errors to make this idempotent
-		// This occurs when another test begins before ginkgo.DeferCleanup
-		// is called to delete the workspace. The workspace is linked to the
-		// provider and the provider cannot be deleted until the workspace is deleted.
-		if !strings.Contains(stderr, "already exists") {
-			return fmt.Errorf("devsy provider add failed: %s", stderr)
+		if strings.Contains(stderr, "already exists") {
+			providerName := providerNameFromAddArgs(args)
+			if deleteErr := f.DevsyProviderDelete(ctx, providerName); deleteErr != nil {
+				return fmt.Errorf(
+					"devsy provider add failed: existing provider %q could not be removed: %w",
+					providerName,
+					deleteErr,
+				)
+			}
+
+			_, stderr, err = f.ExecCommandCapture(ctx, baseArgs)
 		}
 	}
+	if err != nil {
+		return fmt.Errorf("devsy provider add failed: %s", stderr)
+	}
 	return nil
+}
+
+func providerNameFromAddArgs(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--name" {
+			return args[i+1]
+		}
+	}
+
+	providerSource := args[0]
+	providerConfigRaw, err := os.ReadFile( // #nosec G304 -- test provider source path
+		providerSource,
+	)
+	if err == nil {
+		providerConfig, parseErr := provider2.ParseProvider(bytes.NewReader(providerConfigRaw))
+		if parseErr == nil {
+			return providerConfig.Name
+		}
+	}
+
+	return providerSource
 }
 
 func (f *Framework) DevsyProviderDelete(ctx context.Context, args ...string) error {
 	baseArgs := []string{cmdProvider, cmdDelete}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	_, stderr, err := f.ExecCommandCapture(ctx, baseArgs)
 	if err != nil {
+		if strings.Contains(stderr, "because workspace") {
+			return fmt.Errorf("%w: %s", errProviderInUse, stderr)
+		}
 		return err
 	}
 
@@ -434,6 +492,15 @@ func (f *Framework) DevsyWorkspaceDelete(
 	baseArgs = append(baseArgs, extraArgs...)
 
 	return f.ExecCommand(ctx, false, true, fmt.Sprintf("deleted workspace %s", workspace), baseArgs)
+}
+
+// CleanupWorkspace gives cleanup a fresh, bounded context. Ginkgo cleanup may
+// run after the spec context has expired, so inheriting its cancellation can
+// silently skip the workspace deletion.
+func (f *Framework) CleanupWorkspace(ctx context.Context, workspace string) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	return f.DevsyWorkspaceDelete(cleanupCtx, workspace)
 }
 
 func (f *Framework) SetupGPG(tmpDir string) error {
@@ -592,14 +659,23 @@ func (f *Framework) DevsyIDEList(ctx context.Context, extraArgs ...string) (stri
 // adds a fresh one with the given docker path, and sets it as the active provider.
 func SetupDockerProvider(binDir, dockerPath string) (*Framework, error) {
 	f := NewDefaultFramework(binDir)
-	_ = f.DevsyProviderDelete(context.Background(), "docker")
+	setupCtx, cancel := context.WithTimeout(context.Background(), TimeoutModerate())
+	defer cancel()
+
+	_ = f.DevsyProviderDelete(setupCtx, "docker")
 	if err := f.DevsyProviderAdd(
-		context.Background(),
+		setupCtx,
 		"docker",
 		"-o",
 		"DOCKER_PATH="+dockerPath,
 	); err != nil {
+		// The shared default Docker provider may be referenced by an existing
+		// workspace. It is safe to reuse only for the standard Docker setup;
+		// custom runtime setups must still fail rather than inherit stale state.
+		if dockerPath == "docker" && errors.Is(err, errProviderInUse) {
+			return f, f.DevsyProviderUse(setupCtx, "docker")
+		}
 		return nil, fmt.Errorf("failed to add docker provider: %w", err)
 	}
-	return f, f.DevsyProviderUse(context.Background(), "docker")
+	return f, f.DevsyProviderUse(setupCtx, "docker")
 }

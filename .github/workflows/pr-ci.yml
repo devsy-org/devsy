@@ -430,7 +430,7 @@ jobs:
             install-podman: rootless
             test-timeout: 600s
             job-timeout-minutes: 20
-            flake-attempts: 2
+            flake-attempts: 1
 
           - label: up-provider-podman-rootless-exec
             runner: ubuntu-24.04
@@ -440,7 +440,7 @@ jobs:
             install-podman: rootless
             test-timeout: 600s
             job-timeout-minutes: 20
-            flake-attempts: 2
+            flake-attempts: 1
 
           - label: up-provider-podman-rootless-lifecycle
             runner: ubuntu-24.04
@@ -450,7 +450,7 @@ jobs:
             install-podman: rootless
             test-timeout: 600s
             job-timeout-minutes: 20
-            flake-attempts: 2
+            flake-attempts: 1
 
           - label: up-provider-podman-rootless-config
             runner: ubuntu-24.04
@@ -460,7 +460,7 @@ jobs:
             install-podman: rootless
             test-timeout: 600s
             job-timeout-minutes: 20
-            flake-attempts: 2
+            flake-attempts: 1
 
           - label: up-provider-podman-rootless-features
             runner: ubuntu-24.04
@@ -470,7 +470,7 @@ jobs:
             install-podman: rootless
             test-timeout: 600s
             job-timeout-minutes: 20
-            flake-attempts: 2
+            flake-attempts: 1
 
           - label: up-provider-podman-rootful-basic
             runner: ubuntu-24.04
@@ -480,7 +480,7 @@ jobs:
             install-podman: rootful
             test-timeout: 600s
             job-timeout-minutes: 20
-            flake-attempts: 2
+            flake-attempts: 1
 
           - label: up-provider-podman-rootful-lifecycle
             runner: ubuntu-24.04
@@ -490,7 +490,7 @@ jobs:
             install-podman: rootful
             test-timeout: 600s
             job-timeout-minutes: 20
-            flake-attempts: 2
+            flake-attempts: 1
 
           - label: up-provider-podman-rootful-lifecycle-2
             runner: ubuntu-24.04
@@ -500,7 +500,7 @@ jobs:
             install-podman: rootful
             test-timeout: 600s
             job-timeout-minutes: 20
-            flake-attempts: 2
+            flake-attempts: 1
 
           - label: up-provider-podman-rootful-config
             runner: ubuntu-24.04
@@ -510,7 +510,7 @@ jobs:
             install-podman: rootful
             test-timeout: 600s
             job-timeout-minutes: 20
-            flake-attempts: 2
+            flake-attempts: 1
 
           - label: up-provider-podman-rootful-features
             runner: ubuntu-24.04
@@ -520,7 +520,7 @@ jobs:
             install-podman: rootful
             test-timeout: 600s
             job-timeout-minutes: 20
-            flake-attempts: 2
+            flake-attempts: 1
 
           - label: up-provider-docker
             runner: ubuntu-latest
@@ -863,14 +863,28 @@ jobs:
           FLAKE_ATTEMPTS: ${{ matrix.flake-attempts || '1' }}
         run: |
           if [ "${{ runner.os }}" == "Linux" ]; then
-            sudo \
+            if [ "${{ matrix.install-podman || '' }}" = "rootless" ]; then
+              echo "Podman rootless test identity:"
+              id
+              printf 'HOME=%s\n' "${HOME}"
+              printf 'XDG_RUNTIME_DIR=%s\n' "${XDG_RUNTIME_DIR:-}"
+              podman info
               GH_USERNAME="${GH_USERNAME}" \
-              GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
-              GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
-              KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
-              ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
-              PATH="${PATH}" \
-              ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
+                GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
+                GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
+                KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+                PATH="${PATH}" \
+                ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
+            else
+              sudo \
+                GH_USERNAME="${GH_USERNAME}" \
+                GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
+                GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
+                KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+                ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
+                PATH="${PATH}" \
+                ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
+            fi
           else
             GH_USERNAME="${GH_USERNAME}" \
               GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \

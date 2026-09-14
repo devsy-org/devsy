@@ -13,10 +13,11 @@ import (
 )
 
 // dockerPullBackoff defines retry timing for transient Docker registry errors.
-// 4 total attempts (1 initial + 3 retries) with waits of ~30s, ~60s, ~120s.
+// The waits are deliberately short so retries consume only a minority of a
+// short spec's deadline.
 var dockerPullBackoff = wait.Backoff{
 	Steps:    4,
-	Duration: 30 * time.Second,
+	Duration: 5 * time.Second,
 	Factor:   2.0,
 	Jitter:   0.1,
 }
@@ -100,30 +101,34 @@ func execWithDockerRetry(
 	var lastErr error
 	attempt := 0
 
-	err := wait.ExponentialBackoffWithContext(ctx, dockerPullBackoff,
-		func(ctx context.Context) (bool, error) {
-			attempt++
-			lastStdout, lastStderr, lastErr = fn(ctx)
-			if lastErr == nil {
-				return true, nil // success
-			}
-			if isRetryableDockerError(lastStderr) {
-				ginkgo.GinkgoWriter.Printf(
-					"[retry] attempt %d failed with transient Docker error, retrying: %s\n",
-					attempt, lastErr,
-				)
-				return false, nil // retry
-			}
-			return false, lastErr // non-retryable, stop immediately
-		},
-	)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return lastStdout, lastStderr, err
+	for attempt = 1; attempt <= dockerPullBackoff.Steps; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return lastStdout, lastStderr, err
+		}
+		lastStdout, lastStderr, lastErr = fn(ctx)
+		if lastErr == nil {
+			return lastStdout, lastStderr, nil
+		}
+		if !isRetryableDockerError(lastStderr) || attempt == dockerPullBackoff.Steps {
+			break
+		}
+		delay := nextBackoffDelay(dockerPullBackoff, attempt)
+		if !retryFitsBudget(ctx, delay) {
+			return lastStdout, lastStderr, fmt.Errorf(
+				"after %d attempts: retryable Docker error; retry not attempted because "+
+					"remaining deadline budget was insufficient (next retry delay: %s): %w",
+				attempt, delay, lastErr,
+			)
+		}
+		ginkgo.GinkgoWriter.Printf(
+			"[retry] attempt %d failed with transient Docker error, retrying after %s: %s\n",
+			attempt, delay, lastErr,
+		)
+		if err := waitForRetry(ctx, delay); err != nil {
+			return lastStdout, lastStderr, err
+		}
 	}
-	if err != nil && lastErr != nil {
-		return lastStdout, lastStderr, fmt.Errorf("after %d attempts: %w", attempt, lastErr)
-	}
-	return lastStdout, lastStderr, err
+	return lastStdout, lastStderr, fmt.Errorf("after %d attempts: %w", attempt, lastErr)
 }
 
 // execWithSSHRetry runs fn and retries if the error indicates a transient SSH
@@ -139,27 +144,34 @@ func execWithSSHRetry(
 	var lastErr error
 	attempt := 0
 
-	err := wait.ExponentialBackoffWithContext(ctx, sshBackoff,
-		func(ctx context.Context) (bool, error) {
-			attempt++
-			lastOut, lastStderr, lastErr = fn(ctx)
-			if lastErr == nil {
-				return true, nil // success
-			}
-			if isRetryableSSHError(lastErr, lastStderr) {
-				ginkgo.GinkgoWriter.Printf(
-					"[retry] ssh %s: attempt %d failed with transient error, retrying: %s\n",
-					workspace, attempt, lastErr,
-				)
-				return false, nil // retry
-			}
-			return false, lastErr // non-retryable, stop immediately
-		},
-	)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return lastOut, err
+	for attempt = 1; attempt <= sshBackoff.Steps; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return lastOut, err
+		}
+		lastOut, lastStderr, lastErr = fn(ctx)
+		if lastErr == nil {
+			return lastOut, nil
+		}
+		if !isRetryableSSHError(lastErr, lastStderr) || attempt == sshBackoff.Steps {
+			break
+		}
+		delay := nextBackoffDelay(sshBackoff, attempt)
+		if !retryFitsBudget(ctx, delay) {
+			return lastOut, fmt.Errorf(
+				"after %d attempts: retryable SSH error; retry not attempted because "+
+					"remaining deadline budget was insufficient (next retry delay: %s): %w",
+				attempt, delay, lastErr,
+			)
+		}
+		ginkgo.GinkgoWriter.Printf(
+			"[retry] ssh %s: attempt %d failed with transient error, retrying after %s: %s\n",
+			workspace, attempt, delay, lastErr,
+		)
+		if err := waitForRetry(ctx, delay); err != nil {
+			return lastOut, err
+		}
 	}
-	if err != nil && lastErr != nil {
+	if lastErr != nil {
 		if lastStderr != "" {
 			return lastOut, fmt.Errorf(
 				"after %d attempts: %w (stderr: %s)", attempt, lastErr, lastStderr,
@@ -167,5 +179,30 @@ func execWithSSHRetry(
 		}
 		return lastOut, fmt.Errorf("after %d attempts: %w", attempt, lastErr)
 	}
-	return lastOut, err
+	return lastOut, lastErr
+}
+
+func retryFitsBudget(ctx context.Context, delay time.Duration) bool {
+	deadline, ok := ctx.Deadline()
+	return !ok || time.Until(deadline) > delay
+}
+
+func nextBackoffDelay(backoff wait.Backoff, retryNumber int) time.Duration {
+	delay := backoff.DelayFunc()
+	var next time.Duration
+	for range retryNumber {
+		next = delay()
+	}
+	return next
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

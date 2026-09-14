@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
@@ -87,6 +88,19 @@ func (btc *baseTestContext) execSSH(ctx context.Context, tempDir, command string
 
 type dockerTestContext struct {
 	baseTestContext
+}
+
+// probeSSH bounds one readiness attempt. The polling window owns the overall
+// wait; a probe must not start the framework's multi-attempt SSH retry loop.
+func probeSSH(
+	f *framework.Framework,
+	ctx context.Context,
+	workspace string,
+	command string,
+) (string, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return f.DevsySSHOnce(probeCtx, workspace, command)
 }
 
 func (dtc *dockerTestContext) setupAndUp(
@@ -174,7 +188,7 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 		return "", err
 	}
 	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-	ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+	ginkgo.DeferCleanup(f.CleanupWorkspace, tempDir)
 	return tempDir, nil
 }
 
