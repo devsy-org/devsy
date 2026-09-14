@@ -31,9 +31,7 @@ type localStore struct {
 	backends   backendRegistry
 	indexPath  string
 	now        func() time.Time
-	// Retained for compatibility with the file-backed test seam. System stores
-	// validate the source when opening the concrete file backend.
-	keySource keySource
+	keySource  keySource
 }
 
 func NewStoreForConfig(devsyConfig *config.Config) (Store, error) {
