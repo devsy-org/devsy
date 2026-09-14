@@ -232,6 +232,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - label: docker-context
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            test-timeout: 300s
+            job-timeout-minutes: 10
+
           - label: ide
             runner: ubuntu-latest
             free-disk-space: false
