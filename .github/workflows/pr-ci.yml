@@ -757,8 +757,6 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/podman-linux-amd64.tar.gz
-          # Bump this key when the cached archive is found to be corrupted so
-          # rootless jobs download a fresh verified archive.
           key: ${{ runner.os }}-${{ runner.arch }}-podman-static-v5.8.4-sha256-v2
 
       - name: install podman (Linux)
