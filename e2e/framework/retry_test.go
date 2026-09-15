@@ -2,8 +2,11 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -404,4 +407,76 @@ func TestExecWithSSHRetry_ContextDeadlineExceeded(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "remaining deadline budget was insufficient")
 	assert.Contains(t, err.Error(), "next retry delay")
+}
+
+func TestDevsySSHOnce_DoesNotRetry(t *testing.T) {
+	// Verify that DevsySSHOnce invokes the underlying command exactly once,
+	// without entering the multi-attempt retry loop.
+	// Create a dummy mock script for the binary that increments an invocation counter file.
+	tempDir := t.TempDir()
+	counterFile := filepath.Join(tempDir, "invocations.txt")
+	scriptPath := filepath.Join(tempDir, "mock-devsy")
+
+	scriptContent := fmt.Sprintf(`#!/bin/sh
+echo "invocation" >> "%s"
+echo "Connection refused" >&2
+exit 1
+`, counterFile)
+
+	//nolint:gosec // G304, G306: test mock script requires execution permission
+	err := os.WriteFile(
+		scriptPath,
+		[]byte(scriptContent),
+		0o755,
+	)
+	require.NoError(t, err)
+
+	f := &Framework{
+		DevsyBinDir:  tempDir,
+		DevsyBinName: "mock-devsy",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = f.DevsySSHOnce(ctx, "test-ws", "echo test")
+	require.Error(t, err)
+
+	// Read invocation counter
+	data, readErr := os.ReadFile(counterFile) //nolint:gosec // G304
+	require.NoError(t, readErr)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	assert.Len(t, lines, 1, "DevsySSHOnce must execute exactly once without retrying")
+}
+
+func TestDevsySSHOnce_ReturnsContextDeadline(t *testing.T) {
+	tempDir := t.TempDir()
+	scriptPath := filepath.Join(tempDir, "mock-devsy-sleep")
+
+	scriptContent := `#!/bin/sh
+sleep 5
+exit 0
+`
+	//nolint:gosec // G304, G306: test mock script requires execution permission
+	err := os.WriteFile(
+		scriptPath,
+		[]byte(scriptContent),
+		0o755,
+	)
+	require.NoError(t, err)
+
+	f := &Framework{
+		DevsyBinDir:  tempDir,
+		DevsyBinName: "mock-devsy-sleep",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, err = f.DevsySSHOnce(ctx, "test-ws", "echo test")
+	require.Error(t, err)
+	assert.True(
+		t,
+		errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "signal: killed") ||
+			strings.Contains(err.Error(), "context deadline exceeded"),
+	)
 }

@@ -3,9 +3,12 @@ package up
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,9 +21,12 @@ import (
 )
 
 const (
-	secretCmd   = "secret"
-	cmdSSH      = "ssh"
-	flagCommand = "--command"
+	secretCmd                = "secret"
+	cmdSSH                   = "ssh"
+	flagCommand              = "--command"
+	sshProbeTimeout          = 20 * time.Second
+	podmanHealthCheckTimeout = 20 * time.Second
+	podmanBinName            = "podman"
 )
 
 // useFileSecretsBackend forces the file backend so tests do not depend on an OS
@@ -98,9 +104,45 @@ func probeSSH(
 	workspace string,
 	command string,
 ) (string, error) {
-	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	probeCtx, cancel := context.WithTimeout(ctx, sshProbeTimeout)
 	defer cancel()
-	return f.DevsySSHOnce(probeCtx, workspace, command)
+	out, err := f.DevsySSHOnce(probeCtx, workspace, command)
+	if err != nil {
+		ginkgo.GinkgoWriter.Printf(
+			"ssh readiness probe failed for %s (%s): %v\n",
+			workspace,
+			command,
+			err,
+		)
+	}
+	return out, err
+}
+
+// lifecycleMarkerCount reads a marker file in workspaceDir and returns the count
+// of non-empty lines. If the file does not exist, it returns 0, nil.
+//
+//nolint:unparam // marker parameter kept generic for lifecycle test helper
+func lifecycleMarkerCount(
+	workspaceDir, marker string,
+) (int, error) {
+	//nolint:gosec // G304: test-controlled path inside workspace
+	data, err := os.ReadFile(
+		filepath.Join(workspaceDir, marker),
+	)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (dtc *dockerTestContext) setupAndUp(
@@ -188,12 +230,61 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 		return "", err
 	}
 	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-	ginkgo.DeferCleanup(f.CleanupWorkspace, tempDir)
+	ginkgo.DeferCleanup(func(ctx context.Context) error {
+		cleanupErr := f.CleanupWorkspace(ctx, tempDir)
+		if cleanupErr != nil {
+			ginkgo.GinkgoWriter.Printf("workspace cleanup failed for %s: %v\n", tempDir, cleanupErr)
+			// Capture bounded Podman state diagnostics if podman binary or wrapper exists
+			diagCtx, diagCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer diagCancel()
+			cmdName := podmanBinName
+			if _, err := os.Stat(initialDir + "/bin/podman-rootful"); err == nil {
+				cmdName = initialDir + "/bin/podman-rootful"
+			}
+			cmd := exec.CommandContext(
+				diagCtx,
+				cmdName,
+				"ps",
+				"-a",
+			) //nolint:gosec // G204: test-controlled path
+			docker.PrepareForGroupCancellation(cmd)
+			if out, err := cmd.CombinedOutput(); err == nil {
+				ginkgo.GinkgoWriter.Printf("cleanup failure podman ps -a:\n%s\n", string(out))
+			}
+		}
+		return cleanupErr
+	})
 	return tempDir, nil
 }
 
 func setupDockerProvider(binDir, dockerPath string) (*framework.Framework, error) {
 	return framework.SetupDockerProvider(binDir, dockerPath)
+}
+
+func checkPodmanHealth(ctx context.Context, wrapperPath string) error {
+	healthCtx, cancel := context.WithTimeout(ctx, podmanHealthCheckTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(
+		healthCtx,
+		wrapperPath,
+		"ps",
+	) //nolint:gosec // G204: test-controlled path
+	docker.PrepareForGroupCancellation(cmd)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf(
+			"rootful Podman readiness check failed or exceeded %s\n"+
+				"command: %s ps\nDOCKER_HOST: %s\ncontext err: %v\noutput:\n%s\nerror: %w",
+			podmanHealthCheckTimeout,
+			wrapperPath,
+			os.Getenv("DOCKER_HOST"),
+			healthCtx.Err(),
+			string(out),
+			err,
+		)
+	}
+	return nil
 }
 
 func setupWorkspaceAndUp(

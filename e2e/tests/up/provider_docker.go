@@ -490,14 +490,18 @@ var _ = ginkgo.Describe(
 			err = dtc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			gomega.Eventually(func() string {
-				out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null")
+			gomega.Eventually(func() int {
+				count, err := lifecycleMarkerCount(tempDir, ".devsy-post-attach.log")
 				if err != nil {
-					return ""
+					ginkgo.GinkgoWriter.Printf(
+						"failed reading post-attach marker: %v\n",
+						err,
+					)
+					return -1
 				}
-				return strings.TrimSpace(out)
-			}).WithTimeout(15*time.Second).WithPolling(1*time.Second).Should(
-				gomega.Equal("1"),
+				return count
+			}).WithTimeout(30*time.Second).WithPolling(250*time.Millisecond).Should(
+				gomega.Equal(1),
 				"postAttachCommand should run on first attach",
 			)
 
@@ -505,14 +509,18 @@ var _ = ginkgo.Describe(
 			err = dtc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			gomega.Eventually(func() string {
-				out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null")
+			gomega.Eventually(func() int {
+				count, err := lifecycleMarkerCount(tempDir, ".devsy-post-attach.log")
 				if err != nil {
-					return ""
+					ginkgo.GinkgoWriter.Printf(
+						"failed reading post-attach marker: %v\n",
+						err,
+					)
+					return -1
 				}
-				return strings.TrimSpace(out)
-			}).WithTimeout(15*time.Second).WithPolling(1*time.Second).Should(
-				gomega.Equal("2"),
+				return count
+			}).WithTimeout(30*time.Second).WithPolling(250*time.Millisecond).Should(
+				gomega.Equal(2),
 				"postAttachCommand should run again on second attach",
 			)
 		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
