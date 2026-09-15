@@ -161,8 +161,10 @@ export class Watcher {
       if (changed) {
         this.broadcastWorkspaces()
       }
-    } catch {
-      // Silently ignore poll failures
+    } catch (error) {
+      // Polling is best-effort, but retain diagnostics so a broken CLI or
+      // daemon cannot make the desktop appear empty without explanation.
+      console.warn("[watcher] workspace poll failed", error)
     }
   }
 
@@ -207,8 +209,8 @@ export class Watcher {
       if (changed) {
         this.broadcastProviders()
       }
-    } catch {
-      // Silently ignore poll failures
+    } catch (error) {
+      console.warn("[watcher] provider poll failed", error)
     }
   }
 

@@ -8,6 +8,9 @@ formatters:
     - gofumpt
     - goimports
     - golines
+  exclusions:
+    paths:
+      - ".*\\.pb\\.go$"
 linters:
   enable:
     - cyclop
@@ -33,6 +36,9 @@ linters:
     - whitespace
   exclusions:
     rules:
+      - path: ".*\\.pb\\.go$"
+        linters:
+          - lll
       - linters:
           - gosec
         text: "G101"

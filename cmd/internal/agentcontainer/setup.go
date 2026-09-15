@@ -42,6 +42,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/ts"
 	"github.com/spf13/cobra"
 )
@@ -85,6 +86,7 @@ type containerState struct {
 	workspaceInfo *provider2.ContainerWorkspaceInfo
 	setupInfo     *config.Result
 	tunnelClient  tunnel.TunnelClient
+	reporter      status.Reporter
 	secretsEnv    []string
 }
 
@@ -104,6 +106,7 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 		workspaceInfo: workspaceInfo,
 		setupInfo:     setupInfo,
 		tunnelClient:  tunnelClient,
+		reporter:      tunnelserver.NewTunnelStatusReporter(ctx, tunnelClient),
 	}
 
 	_, err = tunnelserver.ReportResult(
@@ -236,6 +239,7 @@ func (cmd *SetupContainerCmd) prepareWorkspace(
 		ctx,
 		state.workspaceInfo,
 		state.setupInfo,
+		state.reporter,
 	)
 
 	if cleanupFunc != nil {
@@ -554,6 +558,7 @@ func (cmd *SetupContainerCmd) cloneRepositoryIfNeeded(
 	ctx context.Context,
 	workspaceInfo *provider2.ContainerWorkspaceInfo,
 	setupInfo *config.Result,
+	reporter status.Reporter,
 ) error {
 	b, err := workspaceInfo.PullFromInsideContainer.Bool()
 	if err != nil {
@@ -578,6 +583,7 @@ func (cmd *SetupContainerCmd) cloneRepositoryIfNeeded(
 		WorkspaceDir:     setupInfo.SubstitutionContext.ContainerWorkspaceFolder,
 		Options:          workspaceInfo.CLIOptions,
 		OverwriteContent: true,
+		Reporter:         reporter,
 	})
 }
 

@@ -92,7 +92,14 @@ export interface Provider {
 export interface ProviderJob {
   activity: "installing" | "initializing" | "updating"
   phase?: string
+  state?: "started" | "succeeded" | "failed" | "skipped"
+  operationId?: string
+  parentOperationId?: string
+  durationMs?: number
   error?: string
+  errorCode?: string
+  errorHint?: string
+  errorContext?: Record<string, string>
 }
 
 /**
@@ -184,8 +191,16 @@ export interface WorkspaceStatus {
   workspaceId: string
   phase: string
   step?: string
-  started: boolean
-  error?: string
+  state: "started" | "succeeded" | "failed" | "skipped"
+  operationId?: string
+  parentOperationId?: string
+  durationMs?: number
+  error?: {
+    code?: string
+    message: string
+    hint?: string
+    context?: Record<string, string>
+  }
 }
 
 export interface AuditEntry {

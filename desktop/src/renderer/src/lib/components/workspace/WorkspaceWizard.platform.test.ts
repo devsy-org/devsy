@@ -15,6 +15,7 @@ vi.mock("$lib/ipc/commands.js", () => ({
 }))
 vi.mock("$lib/ipc/events.js", () => ({
   onCommandProgress: vi.fn().mockResolvedValue(() => {}),
+  onWorkspaceStatus: vi.fn().mockResolvedValue(() => {}),
 }))
 
 vi.mock("$lib/stores/imageCatalog.js", async () => {

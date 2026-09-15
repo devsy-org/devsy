@@ -2,8 +2,10 @@ package workspace
 
 import (
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
 )
 
@@ -53,4 +55,27 @@ func TestTaskErrorMessage(t *testing.T) {
 			t.Error("got empty message, want a non-empty fallback")
 		}
 	})
+}
+
+func TestTaskStatusEventPreservesTerminalStructuredState(t *testing.T) {
+	event := taskStatusEvent(&task.State{
+		Phase:             string(status.PhaseBuildingImage),
+		Step:              "image",
+		Status:            task.StatusFailed,
+		OperationID:       "op-17",
+		ParentOperationID: "op-9",
+		DurationMs:        1200,
+		Error:             "Docker is unavailable.",
+		ErrorCode:         "docker_daemon_unreachable",
+		ErrorHint:         "Start Docker and retry.",
+		ErrorContext:      map[string]string{"context": "desktop-linux"},
+	})
+	if event.State != status.StateFailed || event.OperationID != "op-17" ||
+		event.Duration != 1200*time.Millisecond {
+		t.Fatalf("unexpected task status event: %+v", event)
+	}
+	if event.Error == nil || event.Error.Code != "docker_daemon_unreachable" ||
+		event.Error.Context["context"] != "desktop-linux" {
+		t.Fatalf("structured error was lost: %+v", event.Error)
+	}
 }

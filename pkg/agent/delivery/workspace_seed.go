@@ -70,7 +70,7 @@ func (d *LocalDockerDelivery) SeedWorkspaceVolume(
 		return fmt.Errorf("seed workspace volume: %w", err)
 	}
 
-	log.Infof("seeded workspace volume %s from %s", opts.VolumeName, opts.SourceDir)
+	log.Debugf("seeded workspace volume %s from %s", opts.VolumeName, opts.SourceDir)
 	return nil
 }
 
@@ -122,16 +122,21 @@ func (d *LocalDockerDelivery) volumeSeedState(
 		return false, false, nil
 	}
 
-	out, err := d.cmd(ctx,
+	result, err := runCaptured(ctx, d.cmd(ctx,
 		"volume", "inspect",
 		"--format", "{{index .Labels \""+pkgconfig.DockerManagedLabel+"\"}},"+
 			"{{index .Labels \""+pkgconfig.DockerSeededLabel+"\"}}",
 		name,
-	).CombinedOutput()
+	))
 	if err != nil {
-		return false, false, fmt.Errorf("inspect volume %s: %s: %w", name, string(out), err)
+		return false, false, fmt.Errorf(
+			"inspect volume %s: %s: %w",
+			name,
+			capturedOutput(result),
+			err,
+		)
 	}
-	managedStr, seededStr, _ := strings.Cut(strings.TrimSpace(string(out)), ",")
+	managedStr, seededStr, _ := strings.Cut(strings.TrimSpace(result.Stdout), ",")
 	return managedStr == pkgconfig.LabelValueTrue, seededStr == pkgconfig.LabelValueTrue, nil
 }
 
@@ -159,9 +164,9 @@ func (d *LocalDockerDelivery) copyDirIntoVolume(
 		d.helperImageName(),
 		"sh", "-c", script.String(),
 	}
-	out, err := d.cmd(ctx, args...).CombinedOutput()
+	result, err := runCaptured(ctx, d.cmd(ctx, args...))
 	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
+		return fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
 	return nil
 }

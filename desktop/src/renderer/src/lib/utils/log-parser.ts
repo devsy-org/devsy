@@ -15,28 +15,11 @@ export function isRecoverableBuildFailure(
   return cliError?.code === RECOVERABLE_BUILD_FAILURE_CODE
 }
 
-/**
- * Whether a finished command succeeded.
- *
- * Prefer `progress.success`, which the main process sets from the actual exit
- * code. The message-sniffing fallback only covers events emitted without it.
- */
+/** Whether a finished command succeeded according to the structured IPC result. */
 export function isCommandSuccess(
-  message: string | undefined | null,
   success?: boolean,
 ): boolean {
-  if (success !== undefined) return success
-  if (!message) return false
-  const { message: body } = parseLogLine(message)
-  if (body.startsWith("{")) {
-    try {
-      const envelope = JSON.parse(body)
-      if (envelope.outcome === "success") return true
-    } catch {
-      // not valid JSON, fall through
-    }
-  }
-  return body === "Exit code: 0"
+  return success === true
 }
 
 // Reads the container's actual recovery state from the success envelope, or
@@ -87,37 +70,14 @@ function tryParseInnerLog(
     }
   }
 
-  // Pattern: ISO8601 timestamp, then DEBUG/INFO/WARN/ERROR, then source.go:NNN, then optional JSON
-  const match = message.match(
-    /^\d{4}-\d{2}-\d{2}T[^\s]+\s+(DEBUG|INFO|WARN|ERROR)\s+\S+\.\w+:\d+\s*(.*)$/,
-  )
-  if (!match) return null
-
-  const level = match[1].toLowerCase() as ParsedLogLine["level"]
-  const rest = match[2].trim()
-
-  // Try to parse JSON payload
-  if (rest.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(rest)
-      if (parsed.msg) {
-        return { level, msg: parsed.msg }
-      }
-    } catch {
-      // Not valid JSON, use rest as message
-    }
-  }
-
-  // Non-JSON inner message
-  return { level, msg: rest || message }
+  return null
 }
 
 /**
  * Parse a Devsy CLI log line into structured fields.
  *
- * Supports two formats:
- * - Zap console (current): `2026-04-23T05:14:03.279-0500\tINFO\tmessage\tsource.go:NNN`
- * - Legacy: `HH:MM:SS level message source.go:NNN`
+ * Supports the current zap console format:
+ * `2026-04-23T05:14:03.279-0500\tINFO\tmessage\tsource.go:NNN`
  *
  * ANSI codes are stripped before parsing.
  */
@@ -169,20 +129,6 @@ function parseLogLineUncached(raw: string): ParsedLogLine {
       level: outerLevel,
       message: outerMessage,
       source: outerSource,
-      origin: "cli",
-    }
-  }
-
-  // Legacy format (space-separated): HH:MM:SS level message source.go:NNN
-  const legacyMatch = clean.match(
-    /^(\d{1,2}:\d{2}:\d{2})\s+(info|warn|fatal|debug|error)\s+(.*?)\s+(\S+\.\w+:\d+)\s*$/,
-  )
-  if (legacyMatch) {
-    return {
-      time: legacyMatch[1],
-      level: legacyMatch[2] as ParsedLogLine["level"],
-      message: legacyMatch[3],
-      source: legacyMatch[4],
       origin: "cli",
     }
   }

@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/gofrs/flock"
 )
@@ -43,17 +46,23 @@ func (s Status) Terminal() bool {
 // doing the work, distinct from whatever process is merely polling this
 // state.
 type State struct {
-	ID          string         `json:"id"`
-	Command     string         `json:"command,omitempty"`
-	WorkspaceID string         `json:"workspaceId,omitempty"`
-	Status      Status         `json:"status"`
-	Phase       string         `json:"phase,omitempty"`
-	Step        string         `json:"step,omitempty"`
-	Error       string         `json:"error,omitempty"`
-	Result      *config.Result `json:"result,omitempty"`
-	PID         int            `json:"pid,omitempty"`
-	StartedAt   time.Time      `json:"startedAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
+	ID                string            `json:"id"`
+	Command           string            `json:"command,omitempty"`
+	WorkspaceID       string            `json:"workspaceId,omitempty"`
+	Status            Status            `json:"status"`
+	Phase             string            `json:"phase,omitempty"`
+	Step              string            `json:"step,omitempty"`
+	OperationID       string            `json:"operationId,omitempty"`
+	ParentOperationID string            `json:"parentOperationId,omitempty"`
+	DurationMs        int64             `json:"durationMs,omitempty"`
+	Error             string            `json:"error,omitempty"`
+	ErrorCode         string            `json:"errorCode,omitempty"`
+	ErrorHint         string            `json:"errorHint,omitempty"`
+	ErrorContext      map[string]string `json:"errorContext,omitempty"`
+	Result            *config.Result    `json:"result,omitempty"`
+	PID               int               `json:"pid,omitempty"`
+	StartedAt         time.Time         `json:"startedAt"`
+	UpdatedAt         time.Time         `json:"updatedAt"`
 }
 
 // CreateOptions labels a task at creation time for later listing.
@@ -145,6 +154,9 @@ func (t *Task) Succeed(result *config.Result) error {
 		s.Status = StatusSucceeded
 		s.Result = result
 		s.Error = ""
+		s.ErrorCode = ""
+		s.ErrorHint = ""
+		s.ErrorContext = nil
 	})
 }
 
@@ -161,6 +173,9 @@ func (t *Task) Cancel() error {
 		pid = s.PID
 		s.Status = StatusFailed
 		s.Error = ErrCanceled.Error()
+		s.ErrorCode = string(clierr.CodeCanceled)
+		s.ErrorHint = "Retry the operation when ready."
+		s.ErrorContext = nil
 	})
 	if err != nil {
 		return err
@@ -174,13 +189,32 @@ func (t *Task) Cancel() error {
 // Fail preserves an existing terminal state, so the error a canceled worker
 // reports on its way out doesn't mask ErrCanceled as the reason it stopped.
 func (t *Task) Fail(err error) error {
+	message := ""
+	var classified *clierr.CLIError
+	if err != nil {
+		if errors.Is(err, ErrCanceled) {
+			classified = &clierr.CLIError{
+				Code:    clierr.CodeCanceled,
+				Message: ErrCanceled.Error(),
+				Hint:    "Retry the operation when ready.",
+			}
+		} else {
+			classified = clierr.Classify(err)
+		}
+		message = classified.Message
+	}
+	redactor := secrets.NewEnvironmentRedactor(os.Environ())
 	return t.store.update(t.id, func(s *State) {
 		if s.Status.Terminal() {
 			return
 		}
 		s.Status = StatusFailed
-		if err != nil {
-			s.Error = err.Error()
+		s.Error = message
+		if classified != nil {
+			s.Error = redactor.Redact(message)
+			s.ErrorCode = redactor.Redact(string(classified.Code))
+			s.ErrorHint = redactor.Redact(classified.Hint)
+			s.ErrorContext = redactContext(classified.Context, redactor)
 		}
 	})
 }
@@ -190,25 +224,66 @@ type taskReporter struct {
 }
 
 func (r taskReporter) Report(e status.Event) {
+	redactor := secrets.NewEnvironmentRedactor(os.Environ())
 	_ = r.task.store.update(r.task.id, func(s *State) {
 		// A terminal task is done being described; late events from a worker
 		// still unwinding must not resurrect it or rewrite its outcome.
 		if s.Status.Terminal() {
 			return
 		}
-		if e.Phase == status.PhaseFailed {
+		if e.State == status.StateFailed {
 			s.Status = StatusFailed
-			s.Phase = string(e.Phase)
-			s.Step = e.Step
-			s.Error = e.Err
+			s.Phase = redactor.Redact(string(e.Phase))
+			s.Step = redactor.Redact(e.Step)
+			s.OperationID = redactor.Redact(e.OperationID)
+			s.ParentOperationID = redactor.Redact(e.ParentOperationID)
+			s.DurationMs = e.Duration.Milliseconds()
+			if e.Error != nil {
+				s.Error = redactor.Redact(e.Error.Message)
+				s.ErrorCode = redactor.Redact(e.Error.Code)
+				s.ErrorHint = redactor.Redact(e.Error.Hint)
+				s.ErrorContext = redactContext(e.Error.Context, redactor)
+			}
+			if recoverableFailure(e.Phase) {
+				if s.Status == StatusFailed {
+					s.Status = StatusRunning
+				}
+				return
+			}
 			return
 		}
 		if s.Status == StatusPending {
 			s.Status = StatusRunning
 		}
-		s.Phase = string(e.Phase)
-		s.Step = e.Step
+		s.Phase = redactor.Redact(string(e.Phase))
+		s.Step = redactor.Redact(e.Step)
+		s.OperationID = redactor.Redact(e.OperationID)
+		s.ParentOperationID = redactor.Redact(e.ParentOperationID)
 	})
+}
+
+// recoverableFailure identifies optional workspace-up phases whose failures
+// are followed by a documented fallback path. They remain visible in status
+// output but must not prevent the detached task from recording eventual
+// success.
+func recoverableFailure(phase status.Phase) bool {
+	switch phase {
+	case status.PhaseStartingSSHTunnel, status.PhaseConfiguringSSH:
+		return true
+	default:
+		return false
+	}
+}
+
+func redactContext(values map[string]string, redactor *secrets.Redactor) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	redacted := make(map[string]string, len(values))
+	for key, value := range values {
+		redacted[redactor.Redact(key)] = redactor.Redact(value)
+	}
+	return redacted
 }
 
 func (s *State) touch() {

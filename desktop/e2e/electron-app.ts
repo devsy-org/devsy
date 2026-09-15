@@ -24,9 +24,14 @@ export async function launchApp(): Promise<{
     env: {
       ...process.env,
       NODE_ENV: "test",
+      DEVSY_DISABLE_DAEMON: "true",
       DEVSY_CLI_PATH: mockBinary,
     },
   })
+  if (process.env.DEBUG_E2E) {
+    app.process().stdout?.on("data", (data) => process.stdout.write(data))
+    app.process().stderr?.on("data", (data) => process.stderr.write(data))
+  }
 
   const page = await app.firstWindow()
   await page.waitForLoadState("domcontentloaded")

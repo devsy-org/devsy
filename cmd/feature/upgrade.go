@@ -53,8 +53,8 @@ features are upgraded. Otherwise, all outdated features are upgraded.`,
 }
 
 // Run runs the command logic.
-func (cmd *UpgradeCmd) Run(_ context.Context, targets []string) error {
-	parsedConfig, err := cmd.loadConfig()
+func (cmd *UpgradeCmd) Run(ctx context.Context, targets []string) error {
+	parsedConfig, err := cmd.loadConfig(ctx)
 	if err != nil {
 		return err
 	}
@@ -78,13 +78,13 @@ func (cmd *UpgradeCmd) Run(_ context.Context, targets []string) error {
 	return cmd.applyUpgrades(parsedConfig.Origin, outdated)
 }
 
-func (cmd *UpgradeCmd) loadConfig() (*devconfig.DevContainerConfig, error) {
+func (cmd *UpgradeCmd) loadConfig(ctx context.Context) (*devconfig.DevContainerConfig, error) {
 	loader := &OutdatedCmd{
 		GlobalFlags:     cmd.GlobalFlags,
 		WorkspaceFolder: cmd.WorkspaceFolder,
 		Config:          cmd.Config,
 	}
-	return loader.loadConfig()
+	return loader.loadConfig(ctx)
 }
 
 func (cmd *UpgradeCmd) findUpgradeable(features map[string]any, targets []string) []outdatedEntry {

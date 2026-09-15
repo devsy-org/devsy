@@ -41,7 +41,7 @@ func (cmd *UpCmd) configureWorkspace(
 			return err
 		}
 
-		log.Info("ssh configuration completed in workspace")
+		log.Debug("ssh configuration completed in workspace")
 	}
 
 	// Dotfiles are now installed in-container during the lifecycle

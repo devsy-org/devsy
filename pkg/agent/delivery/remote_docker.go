@@ -88,26 +88,26 @@ func (d *RemoteDockerDelivery) copyBinaryFromSource(
 	}
 
 	dest := fmt.Sprintf("%s:%s", d.ContainerID, destPath)
-	out, err := d.cmd(ctx, "cp", tmpPath, dest).CombinedOutput()
+	result, err := runCaptured(ctx, d.cmd(ctx, "cp", tmpPath, dest))
 	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
+		return fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
 	return nil
 }
 
 func (d *RemoteDockerDelivery) chmodBinary(ctx context.Context, destPath string) error {
-	out, err := d.cmd(ctx, "exec", d.ContainerID, "chmod", "755", destPath).CombinedOutput()
+	result, err := runCaptured(ctx, d.cmd(ctx, "exec", d.ContainerID, "chmod", "755", destPath))
 	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
+		return fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
 	return nil
 }
 
 func (d *RemoteDockerDelivery) ensureDir(ctx context.Context, filePath string) error {
 	dir := path.Dir(filePath)
-	out, err := d.cmd(ctx, "exec", d.ContainerID, "mkdir", "-p", dir).CombinedOutput()
+	result, err := runCaptured(ctx, d.cmd(ctx, "exec", d.ContainerID, "mkdir", "-p", dir))
 	if err != nil {
-		return fmt.Errorf("%s: %w", string(out), err)
+		return fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
 	return nil
 }

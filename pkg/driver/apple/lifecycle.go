@@ -159,7 +159,7 @@ func (d *appleDriver) RunImageDevContainer(
 }
 
 func (d *appleDriver) EnsureImage(ctx context.Context, options *driver.RunOptions) error {
-	log.Infof("inspecting image: image=%s", options.Image)
+	log.Debugf("inspecting image: image=%s", options.Image)
 	if details, err := d.Apple.InspectImage(
 		ctx,
 		options.Image,
@@ -169,7 +169,7 @@ func (d *appleDriver) EnsureImage(ctx context.Context, options *driver.RunOption
 		return nil
 	}
 
-	log.Infof("image not found, pulling image: image=%s", options.Image)
+	log.Debugf("image not found, pulling image: image=%s", options.Image)
 	writer := log.Writer(log.LevelDebug)
 	defer func() { _ = writer.Close() }()
 	return d.Apple.Pull(ctx, apple.PullOptions{

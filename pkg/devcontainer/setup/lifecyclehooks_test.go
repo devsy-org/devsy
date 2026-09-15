@@ -349,7 +349,7 @@ func (s *LifecycleHookTestSuite) TestParallelNamedCommandsTiming() {
 	envArr := buildEnvArr(p.env.remoteEnv)
 
 	start := time.Now()
-	err = executeHookCommands(p, envArr)
+	err = executeHookCommands(context.Background(), p, envArr)
 	elapsed := time.Since(start)
 
 	assert.NoError(t, err)
@@ -381,7 +381,7 @@ func (s *LifecycleHookTestSuite) TestParallelNamedCommandsErrorIsolation() {
 	}
 
 	envArr := buildEnvArr(p.env.remoteEnv)
-	err = executeHookCommands(p, envArr)
+	err = executeHookCommands(context.Background(), p, envArr)
 
 	// The combined error should mention which named command failed.
 	assert.Error(t, err)
@@ -415,7 +415,7 @@ func (s *LifecycleHookTestSuite) TestSingleStringCommandBackwardCompat() {
 	}
 
 	envArr := buildEnvArr(p.env.remoteEnv)
-	err = executeHookCommands(p, envArr)
+	err = executeHookCommands(context.Background(), p, envArr)
 
 	assert.NoError(t, err)
 	assertFileContains(t, dir, "out.txt", "hello")
@@ -446,7 +446,7 @@ func (s *LifecycleHookTestSuite) TestSingleNamedCommandNoGoroutine() {
 	}
 
 	envArr := buildEnvArr(p.env.remoteEnv)
-	err = executeHookCommands(p, envArr)
+	err = executeHookCommands(context.Background(), p, envArr)
 
 	assert.NoError(t, err)
 	assertFileContains(t, dir, "named.txt", "setup")
@@ -650,11 +650,12 @@ func (s *LifecycleHookTestSuite) TestWaitForEmptyPhaseLogsWarning() {
 func (s *LifecycleHookTestSuite) TestMergeSecretsEnv() {
 	env := map[string]string{"EXISTING": "keep"}
 
-	mergeSecretsEnv(env, []string{"SECRET_KEY=secret_val", "OTHER=data"}, nil)
+	redactor := mergeSecretsEnv(env, []string{"SECRET_KEY=secret_val", "OTHER=data"}, nil)
 
 	assert.Equal(s.T(), "keep", env["EXISTING"])
 	assert.Equal(s.T(), "secret_val", env["SECRET_KEY"])
 	assert.Equal(s.T(), "data", env["OTHER"])
+	assert.Equal(s.T(), "***", redactor.Redact("secret_val"))
 }
 
 func (s *LifecycleHookTestSuite) TestMergeSecretsEnvDoesNotOverride() {
@@ -686,10 +687,10 @@ func (s *LifecycleHookTestSuite) TestMergeSecretsEnvValueWithEquals() {
 func (s *LifecycleHookTestSuite) TestMergeSecretsEnvRedactsMountWithoutInjecting() {
 	env := map[string]string{}
 
-	mergeSecretsEnv(env, nil, []string{"tls.key=mount_secret_val"})
+	redactor := mergeSecretsEnv(env, nil, []string{"tls.key=mount_secret_val"})
 
 	assert.NotContains(s.T(), env, "tls.key", "mount secrets must not enter hook env")
-	assert.Equal(s.T(), "***", hookRedactor.Redact("mount_secret_val"))
+	assert.Equal(s.T(), "***", redactor.Redact("mount_secret_val"))
 }
 
 func (s *LifecycleHookTestSuite) TestPostAttachHooksRunEveryTime() {
@@ -760,7 +761,7 @@ func (s *LifecycleHookTestSuite) TestPostCreateHookUsesOnceSemantics() {
 		SubstitutionContext: &config.SubstitutionContext{ContainerWorkspaceFolder: "/tmp"},
 	}
 
-	hooks := preAttachPhaseParams(result, env, false)
+	hooks := preAttachPhaseParams(context.Background(), result, env, false)
 
 	// postCreateCommand should have content = Created (non-empty -> once semantics).
 	var postCreate, postStart hookRunParams

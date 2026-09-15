@@ -3,12 +3,18 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
-//nolint:goconst,cyclop,funlen // test table values
+const envelopeTestSecret = "status-secret"
+
 func TestWriteResultJSON(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -149,7 +155,7 @@ func TestWriteResultJSON(t *testing.T) {
 	}
 }
 
-func TestWriteErrorJSON(t *testing.T) {
+func TestWriteCLIErrorJSONMessages(t *testing.T) {
 	tests := []struct {
 		name    string
 		message string
@@ -170,33 +176,115 @@ func TestWriteErrorJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			err := WriteErrorJSON(&buf, tt.message)
-			if err != nil {
-				t.Fatalf("WriteErrorJSON returned error: %v", err)
-			}
-
-			output := buf.Bytes()
-			if output[len(output)-1] != '\n' {
-				t.Fatal("output must be newline-terminated")
-			}
-
-			var envelope ErrorEnvelope
-			if err := json.Unmarshal(output, &envelope); err != nil {
-				t.Fatalf("output is not valid JSON: %v", err)
-			}
-
-			if envelope.Outcome != "error" {
-				t.Errorf("outcome = %q, want %q", envelope.Outcome, "error")
-			}
-			if envelope.Message != tt.message {
-				t.Errorf("message = %q, want %q", envelope.Message, tt.message)
-			}
-
-			if bytes.Contains(output[:len(output)-1], []byte("\n")) {
-				t.Error("JSON must be single-line (no embedded newlines)")
-			}
+			assertCLIErrorJSONMessage(t, tt.message)
 		})
+	}
+}
+
+func assertCLIErrorJSONMessage(t *testing.T, message string) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := WriteCLIErrorJSON(&buf, errors.New(message)); err != nil {
+		t.Fatalf("WriteCLIErrorJSON returned error: %v", err)
+	}
+	output := buf.Bytes()
+	if output[len(output)-1] != '\n' {
+		t.Fatal("output must be newline-terminated")
+	}
+	var envelope ErrorEnvelope
+	if err := json.Unmarshal(output, &envelope); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if envelope.Outcome != KindError {
+		t.Errorf("outcome = %q, want %q", envelope.Outcome, "error")
+	}
+	if envelope.Code != string(clierr.CodeUnknown) {
+		t.Errorf("code = %q, want %q", envelope.Code, clierr.CodeUnknown)
+	}
+	if envelope.Message != message {
+		t.Errorf("message = %q, want %q", envelope.Message, message)
+	}
+	if bytes.Contains(output[:len(output)-1], []byte("\n")) {
+		t.Error("JSON must be single-line (no embedded newlines)")
+	}
+}
+
+func TestWriteCLIErrorJSONIncludesStructuredFields(t *testing.T) {
+	var buf bytes.Buffer
+	err := &clierr.CLIError{
+		Code:    clierr.CodeUnknown,
+		Message: "Docker is unavailable",
+		Hint:    "Start Docker and retry",
+		Context: map[string]string{"context": "desktop-linux"},
+	}
+	if writeErr := WriteCLIErrorJSON(&buf, err); writeErr != nil {
+		t.Fatalf("WriteCLIErrorJSON: %v", writeErr)
+	}
+	var got ErrorEnvelope
+	if unmarshalErr := json.Unmarshal(buf.Bytes(), &got); unmarshalErr != nil {
+		t.Fatalf("unmarshal: %v", unmarshalErr)
+	}
+	if got.Code != "UNKNOWN" || got.Hint == "" || got.Context["context"] != "desktop-linux" {
+		t.Fatalf("unexpected structured envelope: %+v", got)
+	}
+}
+
+func TestWriteStatusJSONRedactsStructuredErrorContext(t *testing.T) {
+	t.Setenv("DEVTestStatusSecret", envelopeTestSecret)
+	var buf bytes.Buffer
+	err := WriteStatusJSON(&buf, status.Event{
+		Phase: status.PhaseReady,
+		State: status.StateFailed,
+		Error: &status.ErrorInfo{
+			Code:    envelopeTestSecret,
+			Message: "failed with " + envelopeTestSecret,
+			Hint:    "retry with " + envelopeTestSecret,
+			Context: map[string]string{"token": envelopeTestSecret},
+		},
+	})
+	if err != nil {
+		t.Fatalf("WriteStatusJSON returned error: %v", err)
+	}
+	if strings.Contains(buf.String(), "status-secret") {
+		t.Fatalf("status output leaked secret: %s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "***") {
+		t.Fatalf("status output = %s, want redaction marker", buf.String())
+	}
+}
+
+func TestWriteStatusJSONRedactsMetadata(t *testing.T) {
+	t.Setenv("DEVTestStatusSecret", envelopeTestSecret)
+	var buf bytes.Buffer
+	if err := WriteStatusJSON(&buf, status.Event{
+		Pipeline:          "status-secret",
+		OperationID:       "op-status-secret",
+		ParentOperationID: "parent-status-secret",
+		Phase:             status.PhaseReady,
+		Step:              "working on status-secret",
+		State:             status.StateStarted,
+	}); err != nil {
+		t.Fatalf("WriteStatusJSON returned error: %v", err)
+	}
+	if strings.Contains(buf.String(), "status-secret") {
+		t.Fatalf("status metadata leaked secret: %s", buf.String())
+	}
+}
+
+func TestWriteCLIErrorJSONRedactsEnvironmentSecrets(t *testing.T) {
+	t.Setenv("DEVSY_TEST_TOKEN", "super-secret-token")
+	var buf bytes.Buffer
+	err := &clierr.CLIError{
+		Code:    clierr.CodeUnknown,
+		Message: "request failed with super-secret-token",
+		Hint:    "retry with super-secret-token",
+		Context: map[string]string{"token": "super-secret-token"},
+	}
+	if writeErr := WriteCLIErrorJSON(&buf, err); writeErr != nil {
+		t.Fatalf("WriteCLIErrorJSON: %v", writeErr)
+	}
+	if bytes.Contains(buf.Bytes(), []byte("super-secret-token")) {
+		t.Fatalf("secret escaped JSON error envelope: %s", buf.Bytes())
 	}
 }
 
@@ -220,22 +308,28 @@ func TestWriteStatusJSONRoundTrips(t *testing.T) {
 		name string
 		e    status.Event
 	}{
-		{name: "entering phase", e: status.Event{Phase: status.PhaseBuildingImage, Started: true}},
+		{
+			name: "entering phase",
+			e:    status.Event{Phase: status.PhaseBuildingImage, State: status.StateStarted},
+		},
 		{
 			name: "completed phase",
-			e:    status.Event{Phase: status.PhaseBuildingImage, Started: false},
+			e:    status.Event{Phase: status.PhaseBuildingImage, State: status.StateSucceeded},
 		},
 		{
 			name: "with step",
 			e: status.Event{
-				Phase:   status.PhaseRunningLifecycleHook,
-				Step:    "postCreate",
-				Started: true,
+				Phase: status.PhaseRunningLifecycleHook,
+				Step:  "postCreate",
+				State: status.StateStarted,
 			},
 		},
 		{
 			name: "failed phase",
-			e:    status.Event{Phase: status.PhaseFailed, Step: "building_image", Err: "boom"},
+			e: status.Event{
+				Phase: status.PhaseFailed, Step: "building_image", State: status.StateFailed,
+				Error: &status.ErrorInfo{Message: "build failed"},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -248,10 +342,21 @@ func TestWriteStatusJSONRoundTrips(t *testing.T) {
 			if !ok {
 				t.Fatalf("ParseStatusLine did not accept our own output: %q", buf.String())
 			}
-			if got != tt.e {
+			if !reflect.DeepEqual(got, tt.e) {
 				t.Errorf("round-tripped event = %+v, want %+v", got, tt.e)
 			}
 		})
+	}
+}
+
+func TestWriteStatusJSONRejectsNegativeDuration(t *testing.T) {
+	err := WriteStatusJSON(&bytes.Buffer{}, status.Event{
+		Phase:    status.PhaseReady,
+		State:    status.StateSucceeded,
+		Duration: -time.Millisecond,
+	})
+	if err == nil {
+		t.Fatal("WriteStatusJSON accepted a negative duration")
 	}
 }
 
@@ -261,10 +366,56 @@ func TestParseStatusLineRejectsIncompleteEnvelopes(t *testing.T) {
 		line string
 	}{
 		{name: "not JSON", line: "Pulling image..."},
-		{name: "wrong kind", line: `{"kind":"result","phase":"ready","started":true}`},
-		{name: "missing phase", line: `{"kind":"status","started":true}`},
-		{name: "empty phase", line: `{"kind":"status","phase":"","started":true}`},
-		{name: "missing started", line: `{"kind":"status","phase":"ready"}`},
+		{
+			name: "wrong kind",
+			line: `{"kind":"result","schemaVersion":1,"phase":"ready","state":"started"}`,
+		},
+		{
+			name: "missing schema version",
+			line: `{"kind":"status","phase":"ready","state":"started"}`,
+		},
+		{name: "missing phase", line: `{"kind":"status","schemaVersion":1,"state":"started"}`},
+		{
+			name: "empty phase",
+			line: `{"kind":"status","schemaVersion":1,"phase":"","state":"started"}`,
+		},
+		{name: "missing state", line: `{"kind":"status","schemaVersion":1,"phase":"ready"}`},
+		{
+			name: "legacy started field",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","started":true}`,
+		},
+		{
+			name: "legacy structured error field",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","errorInfo":{"message":"boom"}}`,
+		}, //nolint:lll // exact compatibility fixture
+		{
+			name: "legacy string error field",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":"boom"}`,
+		}, //nolint:lll // exact compatibility fixture
+		{
+			name: "error without message",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"code":"boom"}}`,
+		}, //nolint:lll // exact validation fixture
+		{
+			name: "error with unknown field",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed","error":{"message":"boom","details":"old"}}`, //nolint:lll // exact validation fixture
+		},
+		{
+			name: "failed without structured error",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"failed"}`,
+		}, //nolint:lll // exact validation fixture
+		{
+			name: "unknown state",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"running"}`,
+		},
+		{
+			name: "negative duration",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded","durationMs":-1}`,
+		}, //nolint:lll // exact validation fixture
+		{
+			name: "duration overflow",
+			line: `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded","durationMs":9223372036855}`,
+		}, //nolint:lll // exact validation fixture
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -275,13 +426,15 @@ func TestParseStatusLineRejectsIncompleteEnvelopes(t *testing.T) {
 	}
 }
 
-func TestParseStatusLineAcceptsExplicitStartedFalse(t *testing.T) {
-	event, ok := ParseStatusLine(`{"kind":"status","phase":"ready","started":false}`)
+func TestParseStatusLineAcceptsSucceededState(t *testing.T) {
+	event, ok := ParseStatusLine(
+		`{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded"}`,
+	)
 	if !ok {
 		t.Fatal("ParseStatusLine rejected a valid completed-phase envelope")
 	}
-	if event.Started {
-		t.Errorf("Started = true, want false")
+	if event.State != status.StateSucceeded {
+		t.Errorf("State = %q, want succeeded", event.State)
 	}
 }
 
@@ -291,7 +444,7 @@ func TestStatusLineRoundTripsPipeline(t *testing.T) {
 		Pipeline: status.PipelineProvider,
 		Phase:    status.Phase("downloading_binaries"),
 		Step:     "docker",
-		Started:  true,
+		State:    status.StateStarted,
 	}
 	if err := WriteStatusJSON(&buf, want); err != nil {
 		t.Fatalf("WriteStatusJSON: %v", err)
@@ -307,7 +460,7 @@ func TestStatusLineRoundTripsPipeline(t *testing.T) {
 }
 
 func TestParseStatusLineWithoutPipeline(t *testing.T) {
-	line := `{"kind":"status","phase":"ready","started":false}`
+	line := `{"kind":"status","schemaVersion":1,"phase":"ready","state":"succeeded"}`
 
 	got, ok := ParseStatusLine(line)
 	if !ok {
@@ -318,5 +471,61 @@ func TestParseStatusLineWithoutPipeline(t *testing.T) {
 	}
 	if got.Phase != status.PhaseReady {
 		t.Errorf("phase = %q, want %q", got.Phase, status.PhaseReady)
+	}
+}
+
+func TestParseStatusLineAcceptsVersionedLifecycleEvent(t *testing.T) {
+	line := `{"kind":"status","schemaVersion":1,"pipeline":"workspace_up","operationId":"op-17","phase":"building_image","state":"succeeded","durationMs":8214}` //nolint:lll // exact protocol fixture
+	event, ok := ParseStatusLine(line)
+	if !ok {
+		t.Fatal("ParseStatusLine rejected a versioned lifecycle event")
+	}
+	if event.State != status.StateSucceeded || event.OperationID != "op-17" {
+		t.Fatalf("unexpected event: %+v", event)
+	}
+	if event.Duration != 8214*time.Millisecond {
+		t.Errorf("duration = %v, want %v", event.Duration, 8214*time.Millisecond)
+	}
+}
+
+func TestWriteStatusJSONIncludesCurrentLifecycleFields(t *testing.T) {
+	assertStatusJSONLifecycleFields(t, status.Event{
+		Pipeline:          status.PipelineWorkspaceUp,
+		OperationID:       "op-17",
+		ParentOperationID: "op-1",
+		Phase:             status.PhaseBuildingImage,
+		State:             status.StateFailed,
+		Duration:          1500 * time.Millisecond,
+		Error: &status.ErrorInfo{
+			Code:    "docker_daemon_unreachable",
+			Message: "daemon unavailable",
+			Hint:    "Start Docker and retry.",
+		},
+	})
+}
+
+func assertStatusJSONLifecycleFields(t *testing.T, want status.Event) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := WriteStatusJSON(&buf, want); err != nil {
+		t.Fatalf("WriteStatusJSON: %v", err)
+	}
+	var got StatusEnvelope
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	assertStatusEnvelopeFields(t, got)
+}
+
+func assertStatusEnvelopeFields(t *testing.T, got StatusEnvelope) {
+	t.Helper()
+	if got.SchemaVersion != 1 || got.State != status.StateFailed || got.DurationMs != 1500 {
+		t.Fatalf("unexpected envelope: %+v", got)
+	}
+	if got.Error == nil || got.Error.Code != "docker_daemon_unreachable" {
+		t.Fatalf("unexpected error envelope: %+v", got)
+	}
+	if got.State != status.StateFailed {
+		t.Fatalf("current status fields missing: %+v", got)
 	}
 }

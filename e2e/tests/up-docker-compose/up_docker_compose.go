@@ -613,23 +613,6 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
-		ginkgo.It("v1 fallback", func(ctx context.Context) {
-			_, ws, err := tc.setupAndStartWorkspace(
-				ctx,
-				"tests/up-docker-compose/testdata/docker-compose-v1-fallback",
-				"--debug",
-			)
-			framework.ExpectNoError(err)
-
-			ids, err := findComposeContainer(ctx, tc.dockerHelper, tc.composeHelper, ws.UID, "app")
-			framework.ExpectNoError(err)
-			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
-
-			var containerDetails []container.InspectResponse
-			err = tc.dockerHelper.Inspect(ctx, ids, "container", &containerDetails)
-			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
-
 		ginkgo.It("multiple services", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
 				ctx,

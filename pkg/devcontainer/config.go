@@ -36,12 +36,19 @@ const (
 // each supported source in order and falling back to an auto-detected default
 // when none applies.
 func (r *runner) getRawConfig(options provider.CLIOptions) (*config.DevContainerConfig, error) {
+	return r.getRawConfigWithContext(context.Background(), options)
+}
+
+func (r *runner) getRawConfigWithContext(
+	ctx context.Context,
+	options provider.CLIOptions,
+) (*config.DevContainerConfig, error) {
 	source := options.DevContainerSource
 	if source == "" {
 		source = r.workspaceConfig.Workspace.DevContainerSource
 	}
 	if source != "" {
-		return r.rawConfigFromSource(source, options)
+		return r.rawConfigFromSourceWithContext(ctx, source, options)
 	}
 	if conf := r.rawConfigFromWorkspace(); conf != nil {
 		return conf, nil
@@ -50,9 +57,9 @@ func (r *runner) getRawConfig(options provider.CLIOptions) (*config.DevContainer
 		return conf, nil
 	}
 	if crane.ShouldUse(&options) {
-		return r.rawConfigFromCrane(options)
+		return r.rawConfigFromCraneWithContext(ctx, options)
 	}
-	return r.rawConfigFromFilesystem(options)
+	return r.rawConfigFromFilesystemWithContext(ctx, options)
 }
 
 // rawConfigFromWorkspace returns the config embedded in the workspace metadata,
@@ -96,12 +103,23 @@ func (r *runner) rawConfigFromContainer() *config.DevContainerConfig {
 func (r *runner) rawConfigFromCrane(
 	options provider.CLIOptions,
 ) (*config.DevContainerConfig, error) {
-	localWorkspaceFolder, err := crane.PullConfigFromSource(r.workspaceConfig, &options)
+	return r.rawConfigFromCraneWithContext(context.Background(), options)
+}
+
+func (r *runner) rawConfigFromCraneWithContext(
+	ctx context.Context,
+	options provider.CLIOptions,
+) (*config.DevContainerConfig, error) {
+	localWorkspaceFolder, err := crane.PullConfigFromSourceWithContext(
+		ctx,
+		r.workspaceConfig,
+		&options,
+	)
 	if err != nil {
 		return nil, err
 	}
 	return config.ParseDevContainerJSON(
-		context.Background(),
+		ctx,
 		localWorkspaceFolder,
 		r.workspaceConfig.Workspace.DevContainerPath,
 	)
@@ -110,6 +128,13 @@ func (r *runner) rawConfigFromCrane(
 // rawConfigFromFilesystem discovers and parses the devcontainer.json under the
 // workspace folder, falling back to an auto-detected default when none is found.
 func (r *runner) rawConfigFromFilesystem(
+	options provider.CLIOptions,
+) (*config.DevContainerConfig, error) {
+	return r.rawConfigFromFilesystemWithContext(context.Background(), options)
+}
+
+func (r *runner) rawConfigFromFilesystemWithContext(
+	ctx context.Context,
 	options provider.CLIOptions,
 ) (*config.DevContainerConfig, error) {
 	localWorkspaceFolder := r.localWorkspaceFolder
@@ -128,7 +153,7 @@ func (r *runner) rawConfigFromFilesystem(
 	}
 
 	rawConfig, err := config.ParseDevContainerJSONWithOptions(
-		context.Background(),
+		ctx,
 		localWorkspaceFolder,
 		r.workspaceConfig.Workspace.DevContainerPath,
 		opts,
@@ -138,7 +163,7 @@ func (r *runner) rawConfigFromFilesystem(
 		return nil, fmt.Errorf("parsing devcontainer.json: %w", err)
 	}
 	if rawConfig == nil {
-		log.Infof("Couldn't find a devcontainer.json")
+		log.Debugf("Couldn't find a devcontainer.json")
 		return r.getDefaultConfig(options)
 	}
 
@@ -176,6 +201,14 @@ func (r *runner) rawConfigFromSource(
 	source string,
 	options provider.CLIOptions,
 ) (*config.DevContainerConfig, error) {
+	return r.rawConfigFromSourceWithContext(context.Background(), source, options)
+}
+
+func (r *runner) rawConfigFromSourceWithContext(
+	ctx context.Context,
+	source string,
+	options provider.CLIOptions,
+) (*config.DevContainerConfig, error) {
 	spec, err := ParseSourceSpec(source)
 	if err != nil {
 		return nil, err
@@ -183,7 +216,7 @@ func (r *runner) rawConfigFromSource(
 
 	switch spec.Kind {
 	case SourceImage:
-		log.Infof("ignoring project devcontainer, using image %s", spec.Image)
+		log.Debugf("ignoring project devcontainer, using image %s", spec.Image)
 		return r.saveSynthesizedConfig(&config.DevContainerConfig{
 			ImageContainer: config.ImageContainer{Image: spec.Image},
 			DevContainerConfigBase: config.DevContainerConfigBase{
@@ -195,22 +228,22 @@ func (r *runner) rawConfigFromSource(
 			},
 		})
 	case SourceNone:
-		log.Infof("ignoring project devcontainer")
+		log.Debug("ignoring project devcontainer")
 		defaultConfig := &config.DevContainerConfig{}
 		if options.FallbackImage != "" {
-			log.Infof("Using fallback image %s", options.FallbackImage)
+			log.Debugf("Using fallback image %s", options.FallbackImage)
 			defaultConfig.ImageContainer = config.ImageContainer{Image: options.FallbackImage}
 			defaultConfig.NonComposeBase = config.NonComposeBase{
 				RunArgs:      options.RunArgs,
 				ContainerEnv: options.ContainerEnv,
 			}
 		} else {
-			log.Infof("Try detecting project programming language")
+			log.Debug("Try detecting project programming language")
 			defaultConfig = language.DefaultConfig(r.localWorkspaceFolder)
 		}
 		return r.saveSynthesizedConfig(defaultConfig)
 	case SourcePath:
-		return r.importExternalDevContainer(spec.Path)
+		return r.importExternalDevContainerWithContext(ctx, spec.Path)
 	case SourceID:
 		return nil, fmt.Errorf("devcontainer id source must be resolved before build")
 	default:
@@ -219,6 +252,13 @@ func (r *runner) rawConfigFromSource(
 }
 
 func (r *runner) importExternalDevContainer(srcPath string) (*config.DevContainerConfig, error) {
+	return r.importExternalDevContainerWithContext(context.Background(), srcPath)
+}
+
+func (r *runner) importExternalDevContainerWithContext(
+	ctx context.Context,
+	srcPath string,
+) (*config.DevContainerConfig, error) {
 	absPath, err := filepath.Abs(srcPath)
 	if err != nil {
 		return nil, fmt.Errorf("resolve devcontainer path %s: %w", srcPath, err)
@@ -241,7 +281,7 @@ func (r *runner) importExternalDevContainer(srcPath string) (*config.DevContaine
 	}
 
 	origin := filepath.Join(destDir, filepath.Base(srcPath))
-	rawConfig, err := config.ParseDevContainerJSONFile(context.Background(), origin)
+	rawConfig, err := config.ParseDevContainerJSONFile(ctx, origin)
 	if err != nil {
 		return nil, fmt.Errorf("parse imported devcontainer.json: %w", err)
 	}
@@ -371,10 +411,10 @@ func (r *runner) getDefaultConfig(
 ) (*config.DevContainerConfig, error) {
 	defaultConfig := &config.DevContainerConfig{}
 	if options.FallbackImage != "" {
-		log.Infof("Using fallback image %s", options.FallbackImage)
+		log.Debugf("Using fallback image %s", options.FallbackImage)
 		defaultConfig.ImageContainer = config.ImageContainer{Image: options.FallbackImage}
 	} else {
-		log.Infof("Try detecting project programming language")
+		log.Debug("Try detecting project programming language")
 		defaultConfig = language.DefaultConfig(r.localWorkspaceFolder)
 	}
 
@@ -392,7 +432,14 @@ func (r *runner) getDefaultConfig(
 func (r *runner) getSubstitutedConfig(
 	options provider.CLIOptions,
 ) (*config.SubstitutedConfig, *config.SubstitutionContext, error) {
-	rawConfig, err := r.getRawConfig(options)
+	return r.getSubstitutedConfigWithContext(context.Background(), options)
+}
+
+func (r *runner) getSubstitutedConfigWithContext(
+	ctx context.Context,
+	options provider.CLIOptions,
+) (*config.SubstitutedConfig, *config.SubstitutionContext, error) {
+	rawConfig, err := r.getRawConfigWithContext(ctx, options)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -537,7 +584,7 @@ func mergeAdditionalFeatures(parsedConfig *config.DevContainerConfig, raw string
 		parsedConfig.Features = make(map[string]any)
 	}
 	maps.Copy(parsedConfig.Features, additionalFeatures)
-	log.Infof(
+	log.Debugf(
 		"Merged %d additional feature(s): %v",
 		len(additionalFeatures),
 		slices.Collect(maps.Keys(additionalFeatures)),

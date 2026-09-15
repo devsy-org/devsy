@@ -70,18 +70,30 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		providerSource = args[1]
 	}
 
-	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout)
+	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug)
 	if err != nil {
 		return err
 	}
 
-	status.Enter(reporter, status.PhaseInstallingProvider, args[0])
-	providerConfig, err := workspace.UpdateProvider(ctx, devsyConfig, args[0], providerSource)
+	var providerConfig *provider.ProviderConfig
+	err = status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseInstallingProvider, Step: args[0]},
+		func(ctx context.Context) error {
+			var updateErr error
+			providerConfig, updateErr = workspace.UpdateProvider(
+				ctx,
+				devsyConfig,
+				args[0],
+				providerSource,
+			)
+			return updateErr
+		},
+	)
 	if err != nil {
-		status.Fail(reporter, status.PhaseInstallingProvider, err)
 		return err
 	}
-	status.Leave(reporter, status.PhaseInstallingProvider, providerConfig.Name)
 
 	log.Infof("updated provider: providerName=%s", providerConfig.Name)
 	if !cmd.Use {
@@ -101,20 +113,23 @@ func (cmd *SetSourceCmd) activateProvider(
 	providerConfig *provider.ProviderConfig,
 	reporter status.Reporter,
 ) error {
-	if err := ConfigureProvider(ctx, ProviderOptionsConfig{
-		Provider:    providerConfig,
-		ContextName: devsyConfig.DefaultContext,
-		UserOptions: cmd.Options,
-		Reporter:    reporter,
-	}); err != nil {
-		return fmt.Errorf("configure provider: %w", err)
-	}
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseReady, Step: providerConfig.Name},
+		func(ctx context.Context) error {
+			if err := ConfigureProvider(ctx, ProviderOptionsConfig{
+				Provider:    providerConfig,
+				ContextName: devsyConfig.DefaultContext,
+				UserOptions: cmd.Options,
+				Reporter:    reporter,
+			}); err != nil {
+				return fmt.Errorf("configure provider: %w", err)
+			}
 
-	if err := writeDefaultProvider(cmd.Context, providerConfig.Name); err != nil {
-		return err
-	}
-	status.Leave(reporter, status.PhaseReady, providerConfig.Name)
-	return nil
+			return writeDefaultProvider(cmd.Context, providerConfig.Name)
+		},
+	)
 }
 
 func (cmd *SetSourceCmd) runPinVersion(

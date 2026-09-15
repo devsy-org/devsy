@@ -147,7 +147,10 @@ app.whenReady().then(() => {
 
   // Start local daemon for efficient polling
   const daemonManager = new DaemonManager(binaryPath)
-  daemonManager.start()
+  const daemonDisabled = process.env.DEVSY_DISABLE_DAEMON === "true"
+  if (!daemonDisabled) {
+    daemonManager.start()
+  }
 
   app.on("before-quit", () => {
     ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
@@ -183,7 +186,7 @@ app.whenReady().then(() => {
   // Start state watcher
   const watcher = new Watcher({
     cli,
-    daemon: daemonManager.daemonClient,
+    daemon: daemonDisabled ? undefined : daemonManager.daemonClient,
     state,
     getMainWindow: () => mainWindow,
     providerJobs,

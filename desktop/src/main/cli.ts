@@ -65,6 +65,52 @@ function extractCliErrorFromStderr(stderr: string): CLIError | undefined {
 }
 
 /**
+ * Parse command stdout when a command emits a status stream followed by its
+ * result envelope. Commands that have no status events still take the fast
+ * path through JSON.parse, while NDJSON output is resolved to its final
+ * non-status value.
+ */
+function parseCommandResult<T>(stdout: string): T {
+  const trimmed = stdout.trim()
+  if (!trimmed) return JSON.parse(trimmed) as T
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      (parsed as { kind?: unknown }).kind === "status"
+    ) {
+      throw new SyntaxError("CLI returned no JSON result")
+    }
+    return parsed as T
+  } catch {
+    let result: unknown
+    for (const line of stdout.split(/\r?\n/)) {
+      const candidate = line.trim()
+      if (!candidate) continue
+      try {
+        const parsed = JSON.parse(candidate) as unknown
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          !Array.isArray(parsed) &&
+          (parsed as { kind?: unknown }).kind === "status"
+        ) {
+          continue
+        }
+        result = parsed
+      } catch {
+        // Keep scanning: diagnostic lines are not command results.
+      }
+    }
+    if (result !== undefined) return result as T
+    throw new SyntaxError("CLI returned invalid JSON result")
+  }
+}
+
+/**
  * Parse a single stderr line as a zap JSON record. Returns undefined when the
  * line is not valid JSON or not a plain object — callers should treat the line
  * as opaque text in that case.
@@ -104,12 +150,16 @@ function buildEnv(): NodeJS.ProcessEnv {
     "/opt/homebrew/bin",
     "/opt/homebrew/sbin",
   ]
-  const missing = extraDirs.filter((d) => !currentPath.split(":").includes(d))
-  if (missing.length === 0) return baseEnv
+  const extraSet = new Set(extraDirs)
+  const existingDirs = currentPath
+    .split(":")
+    .filter((directory) => directory !== "" && !extraSet.has(directory))
+  const mergedPath = [...extraDirs, ...existingDirs].join(":")
+  if (mergedPath === currentPath) return baseEnv
 
   return {
     ...baseEnv,
-    PATH: `${missing.join(":")}:${currentPath}`,
+    PATH: mergedPath,
   }
 }
 
@@ -164,7 +214,7 @@ export class CliRunner {
       const { stdout } = await execFile(this.execPath, fullArgs, {
         env: this.env,
       })
-      return JSON.parse(stdout) as T
+      return parseCommandResult<T>(stdout)
     } catch (error: unknown) {
       throw this.wrapError(error)
     } finally {

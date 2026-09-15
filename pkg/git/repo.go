@@ -182,10 +182,11 @@ func (r *Repo) CloneFromInfo(
 // returning git's response.
 func (r *Repo) CredentialFill(ctx context.Context, request string) (string, error) {
 	res, err := r.runner.Run(ctx, RunOptions{
-		Dir:   r.path,
-		Env:   r.env,
-		Args:  []string{"credential", "fill"},
-		Stdin: strings.NewReader(request),
+		Dir:              r.path,
+		Env:              r.env,
+		Args:             []string{"credential", "fill"},
+		Stdin:            strings.NewReader(request),
+		UnredactedStdout: true,
 	})
 	if err != nil {
 		return "", fmt.Errorf("git credential fill: %w", err)

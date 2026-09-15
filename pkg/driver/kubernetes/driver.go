@@ -108,7 +108,7 @@ func (k *KubernetesDriver) DeleteDevContainer(ctx context.Context, workspaceId s
 	workspaceId = getID(workspaceId)
 
 	// delete pod
-	log.Infof("Delete pod %q", workspaceId)
+	log.Debugf("Delete pod %q", workspaceId)
 	err := k.waitPodDeleted(ctx, workspaceId)
 	if err != nil {
 		return err
@@ -223,7 +223,7 @@ func (k *KubernetesDriver) deletePersistentVolumeClaim(
 	ctx context.Context,
 	workspaceId string,
 ) error {
-	log.Infof("Delete persistent volume claim %q", workspaceId)
+	log.Debugf("Delete persistent volume claim %q", workspaceId)
 	err := k.client.Client().
 		CoreV1().
 		PersistentVolumeClaims(k.namespace).
@@ -242,7 +242,7 @@ func (k *KubernetesDriver) deleteRoleBinding(ctx context.Context, workspaceId st
 		return nil
 	}
 
-	log.Infof("Delete role binding %q", workspaceId)
+	log.Debugf("Delete role binding %q", workspaceId)
 	err := k.client.Client().
 		RbacV1().
 		RoleBindings(k.namespace).
@@ -257,7 +257,7 @@ func (k *KubernetesDriver) deleteRoleBinding(ctx context.Context, workspaceId st
 func (k *KubernetesDriver) deleteWorkspaceSecrets(ctx context.Context, workspaceId string) error {
 	// delete daemon config secret
 	if k.secretExists(ctx, getDaemonSecretName(workspaceId)) {
-		log.Infof("Delete daemon config secret %q", workspaceId)
+		log.Debugf("Delete daemon config secret %q", workspaceId)
 		if err := k.DeleteSecret(ctx, getDaemonSecretName(workspaceId)); err != nil {
 			return err
 		}
@@ -265,7 +265,7 @@ func (k *KubernetesDriver) deleteWorkspaceSecrets(ctx context.Context, workspace
 
 	// delete pull secret
 	if k.options.KubernetesPullSecretsEnabled != "" {
-		log.Infof("Delete pull secret %q", workspaceId)
+		log.Debugf("Delete pull secret %q", workspaceId)
 		if err := k.DeleteSecret(ctx, getPullSecretsName(workspaceId)); err != nil {
 			return err
 		}
