@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"filippo.io/age"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/stretchr/testify/require"
 )
 
 const testContext = "default"
@@ -74,6 +76,25 @@ type mapBackend struct {
 }
 
 func newMapBackend() *mapBackend { return &mapBackend{values: map[string]string{}} }
+
+type mapBackendRegistry struct {
+	backends map[Backend]*mapBackend
+}
+
+func (r mapBackendRegistry) Open(kind Backend, _ *index, _ bool) (backend, error) {
+	b, ok := r.backends[kind]
+	if !ok {
+		return nil, fmt.Errorf("missing test backend %q", kind)
+	}
+	return b, nil
+}
+
+func (r mapBackendRegistry) ResolveForNewSecret(preference Backend, _ *index) (Backend, error) {
+	if _, ok := r.backends[preference]; !ok {
+		return "", fmt.Errorf("missing test backend %q", preference)
+	}
+	return preference, nil
+}
 
 func (m *mapBackend) set(key, value string) error {
 	m.values[key] = value
@@ -227,6 +248,39 @@ func TestStore_SetUpdatePreservesCreated(t *testing.T) {
 	if v, _ := s.Get("default", "K"); v != "v2" {
 		t.Errorf("value not updated: %q", v)
 	}
+}
+
+func TestStore_UsesRecordedBackendAfterPreferenceChanges(t *testing.T) {
+	keyring := newMapBackend()
+	file := newMapBackend()
+	indexPath := filepath.Join(t.TempDir(), IndexFileName)
+	s := newLocalStoreWithRegistry(BackendKeyring, indexPath, mapBackendRegistry{
+		backends: map[Backend]*mapBackend{
+			BackendKeyring: keyring,
+			BackendFile:    file,
+		},
+	})
+
+	require.NoError(t, s.Set(testContext, "TOKEN", "v1", KindSecret))
+	meta, err := s.Meta(testContext, "TOKEN")
+	require.NoError(t, err)
+	require.Equal(t, BackendKeyring, meta.Backend)
+
+	s.preference = BackendFile
+	got, err := s.Get(testContext, "TOKEN")
+	require.NoError(t, err)
+	require.Equal(t, "v1", got)
+	require.NoError(t, s.Set(testContext, "TOKEN", "v2", KindSecret))
+	list, err := s.List(testContext)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, BackendKeyring, list[0].Backend)
+	got, err = s.Get(testContext, "TOKEN")
+	require.NoError(t, err)
+	require.Equal(t, "v2", got)
+	require.NoError(t, s.Delete(testContext, "TOKEN"))
+	require.NotContains(t, keyring.values, backendKey(testContext, "TOKEN"))
+	require.NotContains(t, file.values, backendKey(testContext, "TOKEN"))
 }
 
 func TestValidateName(t *testing.T) {
