@@ -500,7 +500,17 @@ func (f *Framework) DevsyWorkspaceDelete(
 func (f *Framework) CleanupWorkspace(ctx context.Context, workspace string) error {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 	defer cancel()
-	return f.DevsyWorkspaceDelete(cleanupCtx, workspace)
+	err := f.DevsyWorkspaceDelete(cleanupCtx, workspace)
+	if err != nil {
+		fmt.Fprintf(
+			os.Stderr,
+			"CleanupWorkspace failed for %s: %v (cleanup context err: %v)\n",
+			workspace,
+			err,
+			cleanupCtx.Err(),
+		)
+	}
+	return err
 }
 
 func (f *Framework) SetupGPG(tmpDir string) error {
