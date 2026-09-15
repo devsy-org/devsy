@@ -366,6 +366,19 @@ func TestStore_RejectsMissingBackendOwnership(t *testing.T) {
 	}
 }
 
+func TestLoadIndex_RejectsMissingBackendOwnership(t *testing.T) {
+	path := filepath.Join(t.TempDir(), IndexFileName)
+	raw := "contexts:\n  default:\n    UNOWNED:\n      name: UNOWNED\n      context: default\n"
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := loadIndex(path); err == nil ||
+		!strings.Contains(err.Error(), "missing persisted backend ownership") {
+		t.Fatalf("expected missing backend ownership error, got %v", err)
+	}
+}
+
 func TestStore_RejectsInlineSecretWithoutOwnership(t *testing.T) {
 	path := filepath.Join(t.TempDir(), IndexFileName)
 	raw := "contexts:\n  default:\n    UNOWNED:\n      name: UNOWNED\n" +

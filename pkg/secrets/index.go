@@ -83,6 +83,13 @@ func (i *index) validateBackends() error {
 					name,
 				)
 			}
+			if meta.Backend == "" {
+				return fmt.Errorf(
+					"secret %s/%s is missing persisted backend ownership",
+					context,
+					name,
+				)
+			}
 		}
 	}
 	return nil
