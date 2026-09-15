@@ -6,6 +6,7 @@ import {
   initSecrets,
   refreshSecrets,
   secrets,
+  secretsError,
   secretsLoading,
 } from "./secrets.js"
 
@@ -13,6 +14,7 @@ describe("secrets store", () => {
   beforeEach(() => {
     resetTauriMocks()
     secrets.set([])
+    secretsError.set(null)
     secretsLoading.set(true)
   })
 
@@ -36,6 +38,19 @@ describe("secrets store", () => {
 
     expect(get(secretsLoading)).toBe(false)
     expect(get(secrets)).toEqual([])
+    expect(get(secretsError)).toBe("IPC not available")
+  })
+
+  it("clears the init error after a successful retry", async () => {
+    mockInvoke
+      .mockRejectedValueOnce(new Error("IPC not available"))
+      .mockResolvedValueOnce([{ name: "TOKEN", context: "default" }])
+
+    await initSecrets()
+    expect(get(secretsError)).toBe("IPC not available")
+
+    await initSecrets()
+    expect(get(secretsError)).toBeNull()
   })
 
   it("refreshSecrets updates the store", async () => {
@@ -45,5 +60,17 @@ describe("secrets store", () => {
 
     expect(get(secrets)).toHaveLength(1)
     expect(get(secrets)[0].name).toBe("TOKEN")
+  })
+
+  it("clears the refresh error after a successful retry", async () => {
+    mockInvoke
+      .mockRejectedValueOnce(new Error("IPC not available"))
+      .mockResolvedValueOnce([{ name: "TOKEN", context: "default" }])
+
+    await refreshSecrets()
+    expect(get(secretsError)).toBe("IPC not available")
+
+    await refreshSecrets()
+    expect(get(secretsError)).toBeNull()
   })
 })

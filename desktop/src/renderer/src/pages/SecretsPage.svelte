@@ -7,7 +7,7 @@ import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import * as Dialog from "$lib/components/ui/dialog/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
-import { secrets, secretsLoading, refreshSecrets } from "$lib/stores/secrets.js"
+import { secrets, secretsError, secretsLoading, refreshSecrets } from "$lib/stores/secrets.js"
 import { secretSet, secretDelete } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
@@ -102,7 +102,7 @@ async function confirmDelete() {
         <Dialog.Header>
           <Dialog.Title>{nameExists ? "Replace Secret" : "Add Secret"}</Dialog.Title>
           <Dialog.Description>
-            Stored in your OS keyring and injected into workspaces on demand.
+            Stored securely in your configured Devsy secrets backend and injected into workspaces on demand.
           </Dialog.Description>
         </Dialog.Header>
         <form onsubmit={(e) => { e.preventDefault(); handleCreate() }} class="space-y-4">
@@ -158,6 +158,10 @@ async function confirmDelete() {
         <CardSkeleton />
       {/each}
     </div>
+  {:else if $secretsError}
+    <div class="rounded-xl border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+      Unable to load secrets: {$secretsError}
+    </div>
   {:else if $secrets.length === 0}
     <div class="flex flex-col items-center justify-center gap-4 py-16 text-center">
       <KeyRound class="h-10 w-10 text-muted-foreground" />
@@ -189,7 +193,7 @@ async function confirmDelete() {
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
                 {#if secret.orphaned}
-                  <span class={badgeVariants({ variant: "destructive" })}>orphaned</span>
+                  <span class={badgeVariants({ variant: "destructive" })} title={`Devsy has metadata for this secret, but its value is missing from the ${secret.backend ?? "configured"} backend.`}>Missing value</span>
                 {/if}
                 <Button variant="ghost" size="icon" aria-label="Delete secret" onclick={(e) => requestDelete(e, secret.name)}>
                   <Trash2 class="h-4 w-4" />

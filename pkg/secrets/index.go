@@ -40,6 +40,9 @@ func loadIndex(path string) (*index, error) {
 		idx.data.Contexts = map[string]map[string]SecretMeta{}
 	}
 	idx.normalizeKinds()
+	if err := idx.validateBackends(); err != nil {
+		return nil, err
+	}
 
 	return idx, nil
 }
@@ -56,6 +59,47 @@ func (i *index) normalizeKinds() {
 			}
 		}
 	}
+}
+
+func (i *index) validateBackends() error {
+	for context, entries := range i.data.Contexts {
+		for name, meta := range entries {
+			if err := validateBackend(context, name, meta); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateBackend(context, name string, meta SecretMeta) error {
+	if meta.Kind == KindEnv {
+		if meta.Backend != "" {
+			return fmt.Errorf(
+				"invalid backend %q for environment entry %s/%s",
+				meta.Backend,
+				context,
+				name,
+			)
+		}
+		return nil
+	}
+	if meta.Backend == "" {
+		return fmt.Errorf(
+			"secret %s/%s is missing persisted backend ownership",
+			context,
+			name,
+		)
+	}
+	if meta.Backend != BackendKeyring && meta.Backend != BackendFile {
+		return fmt.Errorf(
+			"invalid secrets backend %q for %s/%s",
+			meta.Backend,
+			context,
+			name,
+		)
+	}
+	return nil
 }
 
 func (i *index) save() error {
