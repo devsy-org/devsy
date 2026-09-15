@@ -222,6 +222,28 @@ To direct Docker commands directly to a specific socket or remote daemon endpoin
 
 For remote TCP daemons, enable mutual TLS authentication by configuring `DOCKER_TLS_VERIFY=1` and pointing `DOCKER_CERT_PATH` to your client certificates.
 
+### Rancher Desktop
+
+Devsy supports Rancher Desktop through the Docker provider when Rancher Desktop uses the **Moby** container engine. It follows the same Docker context semantics described above; Rancher Desktop typically provides its CLI at `~/.rd/bin/docker` and uses the `rancher-desktop` context. On macOS, Devsy automatically checks that CLI location when `docker` is not available on the application `PATH`.
+
+You can configure both values explicitly:
+
+```sh
+devsy provider set docker -o DOCKER_PATH="$HOME/.rd/bin/docker"
+devsy provider set docker -o DOCKER_CONTEXT=rancher-desktop
+```
+
+For troubleshooting, verify the CLI and context directly, then inspect the Devsy provider configuration:
+
+```sh
+"$HOME/.rd/bin/docker" context ls
+"$HOME/.rd/bin/docker" context inspect rancher-desktop
+"$HOME/.rd/bin/docker" --context rancher-desktop info
+devsy provider get docker
+```
+
+If Rancher Desktop is configured for `containerd`, switch it to Moby before using Devsy's Docker provider. Rancher Desktop `containerd`/`nerdctl` parity is not yet validated by this release.
+
 ### Precedence
 
 Devsy resolves the active Docker connection in the same order as the Docker CLI:

@@ -434,7 +434,7 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 	}
 
 	if dockerCmd == "docker" && runtime.GOOS == "darwin" {
-		return findDarwinDocker()
+		return findDarwinDockerCLI()
 	}
 
 	if w.isDockerInstallDisabled() {
@@ -449,26 +449,36 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 	return dockerPath, err
 }
 
-// darwinDockerPaths are well-known locations where Docker Desktop installs
-// the docker CLI on macOS. Declared as a variable so tests can override.
+// darwinDockerPaths are existing, system-wide locations for the Docker CLI.
 var darwinDockerPaths = []string{
 	"/usr/local/bin/docker",
 	"/opt/homebrew/bin/docker",
 	"/Applications/Docker.app/Contents/Resources/bin/docker",
 }
 
-// findDarwinDocker checks well-known macOS Docker Desktop paths and returns
-// the first one that exists. If none are found it returns an error directing
-// the user to install Docker Desktop.
-func findDarwinDocker() (string, error) {
-	for _, path := range darwinDockerPaths {
-		if _, err := os.Stat(path); err == nil {
-			log.Debugf("found docker at %s", path)
-			return path, nil
+func findDarwinDockerCLI() (string, error) {
+	homeDir, _ := os.UserHomeDir()
+	return findDarwinDockerCLIInPaths(darwinDockerCandidatePaths(homeDir))
+}
+
+func darwinDockerCandidatePaths(homeDir string) []string {
+	paths := append([]string(nil), darwinDockerPaths...)
+	if homeDir != "" {
+		paths = append(paths, filepath.Join(homeDir, ".rd", "bin", "docker"))
+	}
+	return paths
+}
+
+func findDarwinDockerCLIInPaths(paths []string) (string, error) {
+	for _, path := range paths {
+		if resolved, err := exec.LookPath(path); err == nil {
+			log.Debugf("found docker at %s", resolved)
+			return resolved, nil
 		}
 	}
 	return "", fmt.Errorf(
-		"docker Desktop not found; on macOS, install Docker Desktop from https://www.docker.com/products/docker-desktop",
+		"docker CLI not found; configure DOCKER_PATH or install a supported " +
+			"Docker-compatible runtime such as Docker Desktop or Rancher Desktop",
 	)
 }
 
