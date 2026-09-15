@@ -1,6 +1,7 @@
 export interface Workspace {
   id: string
   lastUsed?: string
+  status?: string
   [key: string]: unknown
 }
 
@@ -25,6 +26,7 @@ export class DaemonState {
   private machines = new Map<string, Machine>()
   private contexts: Context[] = []
   private activeContext = ""
+  private workspaceListeners = new Set<() => void>()
 
   updateWorkspaces(list: Workspace[]): boolean {
     const merged = list.map((w) => {
@@ -41,7 +43,21 @@ export class DaemonState {
     const newMap = new Map(merged.map((w) => [w.id, w]))
     if (this.mapsEqual(this.workspaces, newMap)) return false
     this.workspaces = newMap
+    this.notifyWorkspaceListeners()
     return true
+  }
+
+  updateWorkspaceStatus(id: string, status: string): boolean {
+    const workspace = this.workspaces.get(id)
+    if (!workspace || workspace.status === status) return false
+    this.workspaces.set(id, { ...workspace, status })
+    this.notifyWorkspaceListeners()
+    return true
+  }
+
+  onWorkspacesChange(listener: () => void): () => void {
+    this.workspaceListeners.add(listener)
+    return () => this.workspaceListeners.delete(listener)
   }
 
   updateProviders(list: Provider[]): boolean {
@@ -128,5 +144,15 @@ export class DaemonState {
         return false
     }
     return true
+  }
+
+  private notifyWorkspaceListeners(): void {
+    for (const listener of this.workspaceListeners) {
+      try {
+        listener()
+      } catch (error) {
+        console.error("[state] workspace listener failed:", error)
+      }
+    }
   }
 }
