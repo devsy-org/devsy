@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -868,5 +869,60 @@ var _ = ginkgo.Describe(
 				NotTo(gomega.Equal(workspace.UID),
 					"workspace UID should not be used as label when --id-label is specified")
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
+		ginkgo.It(
+			"git safe.directory configured for non-root bind-mounted workspace",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-nonroot-user",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+
+				//nolint:gosec // G204: tempDir is an isolated test directory
+				cmd := exec.Command("git", "init", tempDir)
+				out, err := cmd.CombinedOutput()
+				framework.ExpectNoError(err, "git init failed: %s", string(out))
+
+				err = dtc.f.DevsyUp(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				whoami, err := dtc.execSSHCapture(ctx, workspace.ID, "whoami")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(whoami)).To(gomega.Equal("devsyuser"))
+				safeDirs, err := dtc.execSSHCapture(
+					ctx,
+					workspace.ID,
+					"git config --system --get-all safe.directory",
+				)
+				framework.ExpectNoError(err)
+
+				pwd, err := dtc.execSSHCapture(ctx, workspace.ID, "pwd")
+				framework.ExpectNoError(err)
+				cleanPWD := strings.TrimSpace(pwd)
+
+				lines := strings.Split(strings.TrimSpace(safeDirs), "\n")
+				gomega.Expect(lines).To(gomega.ContainElement(cleanPWD),
+					"exact workspace path must be in safe.directory")
+				for _, line := range lines {
+					gomega.Expect(line).NotTo(gomega.Equal("*"),
+						"safe.directory must not contain a wildcard entry")
+					gomega.Expect(line).NotTo(gomega.HavePrefix("/workspaces/*"),
+						"safe.directory must not contain a wildcard path")
+				}
+
+				status, err := dtc.execSSHCapture(ctx, workspace.ID, "git status --porcelain")
+				framework.ExpectNoError(err, "git status failed: %s", status)
+
+				loopCmd := "for i in $(seq 1 100); do git status --porcelain >/dev/null || exit 1; done"
+				_, err = dtc.execSSHCapture(ctx, workspace.ID, loopCmd)
+				framework.ExpectNoError(err, "repeated git status failed")
+			},
+			ginkgo.SpecTimeout(framework.TimeoutModerate()),
+		)
 	},
 )
