@@ -107,7 +107,7 @@ func TestClaimForwardedSocket_StopsPollingAsSoonAsSocketAppears(t *testing.T) {
 	err := g.claimForwardedSocket(context.Background())
 	elapsed := time.Since(start)
 
-	assert.Less(t, elapsed, 5*time.Second, "must return shortly after the socket appears")
+	assert.Less(t, elapsed, 2*time.Second, "must return shortly after the socket appears")
 	if err != nil {
 		var exitErr *exec.ExitError
 		var execErr *exec.Error
