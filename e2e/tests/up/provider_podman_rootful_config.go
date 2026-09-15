@@ -3,14 +3,12 @@ package up
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -51,12 +49,8 @@ var _ = ginkgo.Describe(
 				err = os.Chmod(initialDir+"/bin/podman-rootful", 0o755)
 				framework.ExpectNoError(err)
 
-				cmd := exec.CommandContext( //nolint:gosec // G204: test-controlled path
-					ctx, initialDir+"/bin/podman-rootful", "ps",
-				)
-				docker.PrepareForGroupCancellation(cmd)
-				out, err := cmd.CombinedOutput()
-				framework.ExpectNoError(err, string(out))
+				err = checkPodmanHealth(ctx, initialDir+"/bin/podman-rootful")
+				framework.ExpectNoError(err)
 
 				ginkgo.DeferCleanup(func() {
 					_ = os.Remove(initialDir + "/bin/podman-rootful")
