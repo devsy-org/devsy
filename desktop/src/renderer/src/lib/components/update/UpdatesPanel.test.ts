@@ -50,7 +50,7 @@ async function renderPanel(channel: "stable" | "beta") {
   getReleaseChannel.mockResolvedValue(channel)
   setReleaseChannel.mockResolvedValue(undefined)
   await initUpdateStore()
-  __setForTest({ state: "not-available", version: "1.2.3" })
+  __setForTest({ state: "not-available", currentVersion: "1.2.3" })
   render(UpdatesPanel)
   // Let onMount's async version/channel loads resolve.
   await tick()
@@ -107,5 +107,139 @@ describe("UpdatesPanel channel switching", () => {
     // Selection reverts to Stable.
     expect(cardButton(/Stable/)?.getAttribute("aria-checked")).toBe("true")
     expect(cardButton(/Preview/)?.getAttribute("aria-checked")).toBe("false")
+  })
+})
+
+describe("UpdatesPanel status display", () => {
+  beforeEach(() => {
+    getAppVersion.mockReset()
+    getReleaseChannel.mockReset()
+    setReleaseChannel.mockReset()
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ""
+  })
+
+  it("renders up-to-date state with installed version and channel", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("stable")
+    await initUpdateStore()
+    __setForTest({ state: "up-to-date", currentVersion: "1.17.0" })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/devsy is up to date/i)
+    expect(document.body.textContent).toMatch(/version 1\.17\.0/i)
+    expect(document.body.textContent).toMatch(/stable channel/i)
+  })
+
+  it("renders available update with both installed and available versions", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("stable")
+    await initUpdateStore()
+    __setForTest({
+      state: "available",
+      currentVersion: "1.17.0",
+      availableVersion: "1.18.0",
+    })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/devsy 1\.18\.0 is available/i)
+    expect(document.body.textContent).toMatch(/installed:\s*v1\.17\.0/i)
+    expect(document.body.textContent).toMatch(/available:\s*v1\.18\.0/i)
+    const btn = Array.from(document.querySelectorAll("button")).find((b) =>
+      /download update/i.test(b.textContent ?? ""),
+    )
+    expect(btn).toBeTruthy()
+  })
+
+  it("renders downloaded state with 'Restart' CTA", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("stable")
+    await initUpdateStore()
+    __setForTest({
+      state: "downloaded",
+      currentVersion: "1.17.0",
+      availableVersion: "1.18.0",
+    })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/devsy 1\.18\.0 is ready/i)
+    const btn = Array.from(document.querySelectorAll("button")).find((b) =>
+      /restart/i.test(b.textContent ?? ""),
+    )
+    expect(btn).toBeTruthy()
+  })
+
+  it("renders idle state when no check has run yet", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("stable")
+    await initUpdateStore()
+    __setForTest({ state: "idle", currentVersion: "1.17.0" })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/no update check has run yet/i)
+  })
+
+  it("renders dev-mode notice for unpackaged builds", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("stable")
+    await initUpdateStore()
+    __setForTest({ state: "up-to-date", currentVersion: "1.17.0", code: "dev-mode" })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/updates run in packaged builds/i)
+  })
+
+  it("renders channel-missing notice when channel has no releases", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("beta")
+    await initUpdateStore()
+    __setForTest({ state: "up-to-date", currentVersion: "1.17.0", code: "channel-missing" })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/no releases on this channel yet/i)
+  })
+
+  it("renders error notice for malformed-version failures and does not claim up to date", async () => {
+    getAppVersion.mockResolvedValue("1.17.0")
+    getReleaseChannel.mockResolvedValue("stable")
+    await initUpdateStore()
+    __setForTest({
+      state: "error",
+      currentVersion: "1.17.0",
+      code: "feed-error",
+      error: "Invalid version from update feed: not-a-version",
+    })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(document.body.textContent).toMatch(/couldn't check for updates/i)
+    expect(document.body.textContent).toMatch(/invalid version from update feed/i)
+    expect(document.body.textContent).not.toMatch(/devsy is up to date/i)
+    const retryBtn = Array.from(document.querySelectorAll("button")).find((b) =>
+      /try again/i.test(b.textContent ?? ""),
+    )
+    expect(retryBtn).toBeTruthy()
   })
 })

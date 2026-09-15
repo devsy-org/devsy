@@ -17,17 +17,20 @@ export function statusHeadline(s: UpdateStatus, currentVersion: string | null): 
     case "checking":
       return "Checking for updates…"
     case "available":
-      return `Version ${s.version ?? "unknown"} is available`
+      return `Version ${s.availableVersion} is available`
     case "downloading":
-      return `Downloading v${s.version ?? "?"} · ${(s.progress?.percent ?? 0).toFixed(0)}%`
+      return `Downloading v${s.availableVersion} · ${(s.progress?.percent ?? 0).toFixed(0)}%`
     case "downloaded":
-      return `Version ${s.version ?? "unknown"} is ready to install`
+      return `Version ${s.availableVersion} is ready to install`
     case "error":
       return "Update check failed"
-    case "not-available":
+    case "up-to-date":
+    case "not-available": {
       if (s.code === "dev-mode") return "Updates run in packaged builds"
       if (s.code === "channel-missing") return "No releases on this channel yet"
-      return currentVersion ? `Devsy is up to date · v${currentVersion}` : "Devsy is up to date"
+      const current = s.currentVersion || currentVersion
+      return current ? `Devsy is up to date · v${current}` : "Devsy is up to date"
+    }
     default:
       return currentVersion ? `Devsy v${currentVersion}` : "Devsy"
   }

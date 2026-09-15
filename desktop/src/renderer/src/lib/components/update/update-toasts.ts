@@ -8,9 +8,13 @@ let lastKey = ""
 let userInitiated = false
 
 function dedupeKey(s: UpdateStatus): string {
-  // Include error text and code so consecutive errors (or a retry after
-  // an error) are not suppressed.
-  return [s.state, s.version ?? "", s.code ?? "", s.error ?? ""].join("")
+  const version =
+    s.state === "available" || s.state === "downloading" || s.state === "downloaded"
+      ? s.availableVersion
+      : s.currentVersion
+  const code = "code" in s ? (s.code ?? "") : ""
+  const error = "error" in s ? (s.error ?? "") : ""
+  return [s.state, version, code, error].join("")
 }
 
 export function bindDialogOpener(fn: () => void): void {
@@ -25,19 +29,25 @@ export function markUserInitiated(): void {
   userInitiated = true
 }
 
-function fireAvailable(s: UpdateStatus, autoDownload: boolean): void {
+function fireAvailable(
+  s: Extract<UpdateStatus, { state: "available" }>,
+  autoDownload: boolean,
+): void {
+  userInitiated = false
+  const version = s.availableVersion
   if (autoDownload) {
-    toast.info(`Update v${s.version} found, downloading…`, { duration: 4000 })
+    toast.info(`Update v${version} found, downloading…`, { duration: 4000 })
     return
   }
-  toast(`Update v${s.version} available`, {
+  toast(`Update v${version} available`, {
     action: { label: "View", onClick: () => openDialog?.() },
     duration: 10000,
   })
 }
 
-function fireDownloaded(s: UpdateStatus): void {
-  toast.success(`Update v${s.version} ready`, {
+function fireDownloaded(s: Extract<UpdateStatus, { state: "downloaded" }>): void {
+  const version = s.availableVersion
+  toast.success(`Update v${version} ready`, {
     duration: Infinity,
     action: {
       label: "Restart",
@@ -50,7 +60,7 @@ function fireDownloaded(s: UpdateStatus): void {
   })
 }
 
-function fireError(s: UpdateStatus): void {
+function fireError(s: Extract<UpdateStatus, { state: "error" }>): void {
   if (!userInitiated) return
   if (s.code === "dev-mode") return
   toast.error(`Update check failed: ${s.error ?? "unknown error"}`, {
@@ -59,12 +69,16 @@ function fireError(s: UpdateStatus): void {
   userInitiated = false
 }
 
-function fireNotAvailable(s: UpdateStatus): void {
+function fireNotAvailable(
+  s: Extract<UpdateStatus, { state: "up-to-date" | "not-available" }>,
+): void {
   if (!userInitiated) return
   if (s.code === "channel-missing") {
     toast.info("No releases are available on this channel yet.")
+  } else if (s.code === "dev-mode") {
+    toast.info("Updates run in packaged builds.")
   } else {
-    toast.success("You're on the latest version.")
+    toast.success("Devsy is up to date.")
   }
   userInitiated = false
 }
@@ -78,6 +92,6 @@ export function initUpdateToasts(getAutoDownload: () => boolean): () => void {
     if (s.state === "available") fireAvailable(s, getAutoDownload())
     else if (s.state === "downloaded") fireDownloaded(s)
     else if (s.state === "error") fireError(s)
-    else if (s.state === "not-available") fireNotAvailable(s)
+    else if (s.state === "up-to-date" || s.state === "not-available") fireNotAvailable(s)
   })
 }
