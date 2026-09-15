@@ -3,13 +3,11 @@ package up
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -49,12 +47,8 @@ var _ = ginkgo.Describe(
 				err = os.Chmod(initialDir+"/bin/podman-rootful", 0o755)
 				framework.ExpectNoError(err)
 
-				cmd := exec.CommandContext( //nolint:gosec // G204: test-controlled path
-					ctx, initialDir+"/bin/podman-rootful", "ps",
-				)
-				docker.PrepareForGroupCancellation(cmd)
-				out, err := cmd.CombinedOutput()
-				framework.ExpectNoError(err, string(out))
+				err = checkPodmanHealth(ctx, initialDir+"/bin/podman-rootful")
+				framework.ExpectNoError(err)
 
 				ginkgo.DeferCleanup(func() {
 					_ = os.Remove(initialDir + "/bin/podman-rootful")
@@ -82,31 +76,35 @@ var _ = ginkgo.Describe(
 						err = f.DevsyUp(ctx, tempDir)
 						framework.ExpectNoError(err)
 
-						gomega.Eventually(func() string {
-							out, err := probeSSH(f,
-								ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null",
-							)
+						gomega.Eventually(func() int {
+							count, err := lifecycleMarkerCount(tempDir, ".devsy-post-attach.log")
 							if err != nil {
-								return ""
+								ginkgo.GinkgoWriter.Printf(
+									"failed reading post-attach marker: %v\n",
+									err,
+								)
+								return -1
 							}
-							return strings.TrimSpace(out)
-						}).WithTimeout(60 * time.Second).WithPolling(1 * time.Second).Should(
-							gomega.Equal("1"),
+							return count
+						}).WithTimeout(30 * time.Second).WithPolling(250 * time.Millisecond).Should(
+							gomega.Equal(1),
 						)
 
 						err = f.DevsyUp(ctx, tempDir)
 						framework.ExpectNoError(err)
 
-						gomega.Eventually(func() string {
-							out, err := probeSSH(f,
-								ctx, tempDir, "cat $HOME/attach-count.out 2>/dev/null",
-							)
+						gomega.Eventually(func() int {
+							count, err := lifecycleMarkerCount(tempDir, ".devsy-post-attach.log")
 							if err != nil {
-								return ""
+								ginkgo.GinkgoWriter.Printf(
+									"failed reading post-attach marker: %v\n",
+									err,
+								)
+								return -1
 							}
-							return strings.TrimSpace(out)
-						}).WithTimeout(60 * time.Second).WithPolling(1 * time.Second).Should(
-							gomega.Equal("2"),
+							return count
+						}).WithTimeout(30 * time.Second).WithPolling(250 * time.Millisecond).Should(
+							gomega.Equal(2),
 						)
 					},
 					ginkgo.SpecTimeout(
