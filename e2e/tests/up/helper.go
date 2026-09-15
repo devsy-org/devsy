@@ -26,6 +26,7 @@ const (
 	flagCommand              = "--command"
 	sshProbeTimeout          = 20 * time.Second
 	podmanHealthCheckTimeout = 20 * time.Second
+	podmanBinName            = "podman"
 )
 
 // useFileSecretsBackend forces the file backend so tests do not depend on an OS
@@ -119,10 +120,15 @@ func probeSSH(
 
 // lifecycleMarkerCount reads a marker file in workspaceDir and returns the count
 // of non-empty lines. If the file does not exist, it returns 0, nil.
-func lifecycleMarkerCount(workspaceDir, marker string) (int, error) {
+//
+//nolint:unparam // marker parameter kept generic for lifecycle test helper
+func lifecycleMarkerCount(
+	workspaceDir, marker string,
+) (int, error) {
+	//nolint:gosec // G304: test-controlled path inside workspace
 	data, err := os.ReadFile(
 		filepath.Join(workspaceDir, marker),
-	) //nolint:gosec // G304: test-controlled path
+	)
 	if errors.Is(err, os.ErrNotExist) {
 		return 0, nil
 	}
@@ -231,7 +237,7 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 			// Capture bounded Podman state diagnostics if podman binary or wrapper exists
 			diagCtx, diagCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer diagCancel()
-			cmdName := "podman"
+			cmdName := podmanBinName
 			if _, err := os.Stat(initialDir + "/bin/podman-rootful"); err == nil {
 				cmdName = initialDir + "/bin/podman-rootful"
 			}
@@ -268,7 +274,8 @@ func checkPodmanHealth(ctx context.Context, wrapperPath string) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf(
-			"rootful Podman readiness check failed or exceeded %s\ncommand: %s ps\nDOCKER_HOST: %s\ncontext err: %v\noutput:\n%s\nerror: %w",
+			"rootful Podman readiness check failed or exceeded %s\n"+
+				"command: %s ps\nDOCKER_HOST: %s\ncontext err: %v\noutput:\n%s\nerror: %w",
 			podmanHealthCheckTimeout,
 			wrapperPath,
 			os.Getenv("DOCKER_HOST"),

@@ -423,11 +423,12 @@ echo "Connection refused" >&2
 exit 1
 `, counterFile)
 
+	//nolint:gosec // G304, G306: test mock script requires execution permission
 	err := os.WriteFile(
 		scriptPath,
 		[]byte(scriptContent),
 		0o755,
-	) //nolint:gosec // G304: test-controlled path
+	)
 	require.NoError(t, err)
 
 	f := &Framework{
@@ -456,7 +457,12 @@ func TestDevsySSHOnce_ReturnsContextDeadline(t *testing.T) {
 sleep 5
 exit 0
 `
-	err := os.WriteFile(scriptPath, []byte(scriptContent), 0o755) //nolint:gosec // G304
+	//nolint:gosec // G304, G306: test mock script requires execution permission
+	err := os.WriteFile(
+		scriptPath,
+		[]byte(scriptContent),
+		0o755,
+	)
 	require.NoError(t, err)
 
 	f := &Framework{
@@ -466,7 +472,6 @@ exit 0
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-
 	_, err = f.DevsySSHOnce(ctx, "test-ws", "echo test")
 	require.Error(t, err)
 	assert.True(
