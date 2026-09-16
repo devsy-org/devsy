@@ -85,6 +85,7 @@ Devsy uses [Ginkgo](https://onsi.github.io/ginkgo/) for Go E2E and integration t
 
 - **Idiomatic**: Focus on simplicity, reliability, and efficiency when writing clear, idiomatic Go code.
 - **Style Guide**: Use the Uber style guide https://github.com/uber-go/guide/blob/master/style.md.
+- **Unit Testing**: Prefer using [testify suite](https://github.com/stretchr/testify#suite-package) (`testify/suite`) for writing unit tests.
 - **Linter**: `golangci-lint` via `task cli:lint` (or `task cli:lint:fix`). Run `task cli:lint:ci` before pushing changes.
 
 ### TypeScript / Svelte Code Style
