@@ -72,6 +72,10 @@ func SetupContainerPreAttach(
 		return DeferredHooks{}, err
 	}
 
+	if err := setupGitSafeDirectory(ctx, cfg.SetupInfo); err != nil {
+		log.Warnf("configure Git safe.directory: %v", err)
+	}
+
 	if err := setupEnvironment(cfg); err != nil {
 		return DeferredHooks{}, err
 	}
