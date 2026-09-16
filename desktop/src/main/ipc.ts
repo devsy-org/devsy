@@ -42,6 +42,7 @@ interface SecretEntry {
   created?: string
   lastUsed?: string
   orphaned?: boolean
+  backend?: "keyring" | "file"
 }
 
 interface EnvEntry {

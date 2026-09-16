@@ -37,6 +37,7 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 type secretEntry struct {
 	Name     string `json:"name"`
 	Context  string `json:"context"`
+	Backend  string `json:"backend,omitempty"`
 	Created  string `json:"created,omitempty"`
 	LastUsed string `json:"lastUsed,omitempty"`
 	Orphaned bool   `json:"orphaned,omitempty"`
@@ -93,6 +94,7 @@ func renderJSON(metas []secrets.SecretMeta) error {
 		entries = append(entries, secretEntry{
 			Name:     m.Name,
 			Context:  m.Context,
+			Backend:  string(m.Backend),
 			Created:  formatTime(m.Created),
 			LastUsed: formatTime(m.LastUsed),
 			Orphaned: m.Orphaned,
@@ -117,7 +119,7 @@ func formatTime(t time.Time) string {
 
 func orphanLabel(orphaned bool) string {
 	if orphaned {
-		return "orphaned"
+		return "missing value"
 	}
 	return "ok"
 }
