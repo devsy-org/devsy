@@ -4,7 +4,7 @@ import type { UnlistenFn } from "$lib/ipc/types.js"
 type Listener = (s: UpdateStatus) => void
 
 const state: { current: UpdateStatus; lastCheckedAt: number | null } = $state({
-  current: { state: "idle" },
+  current: { state: "idle", currentVersion: "" },
   lastCheckedAt: null,
 })
 
@@ -33,7 +33,10 @@ export function isChecking(): boolean {
 }
 
 export function isDevMode(): boolean {
-  return state.current.state === "not-available" && state.current.code === "dev-mode"
+  return (
+    (state.current.state === "up-to-date" || state.current.state === "not-available") &&
+    state.current.code === "dev-mode"
+  )
 }
 
 export function subscribe(fn: Listener): () => void {
@@ -46,7 +49,11 @@ export function subscribe(fn: Listener): () => void {
 
 function set(next: UpdateStatus): void {
   state.current = next
-  if (next.state === "not-available" || next.state === "available") {
+  if (
+    next.state === "up-to-date" ||
+    next.state === "not-available" ||
+    next.state === "available"
+  ) {
     state.lastCheckedAt = Date.now()
   }
   for (const fn of listeners) fn(next)

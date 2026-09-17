@@ -10,25 +10,43 @@ vi.mock("../updater.js", () => ({
 
 describe("buildUpdateMenuItems", () => {
   it("returns nothing when no update is downloaded", () => {
-    expect(buildUpdateMenuItems({ state: "idle" }, () => {})).toEqual([])
-    expect(buildUpdateMenuItems({ state: "checking" }, () => {})).toEqual([])
-    expect(buildUpdateMenuItems({ state: "available", version: "1" }, () => {})).toEqual([])
-    expect(buildUpdateMenuItems({ state: "downloading", version: "1" }, () => {})).toEqual([])
-    expect(buildUpdateMenuItems({ state: "not-available" }, () => {})).toEqual([])
-    expect(buildUpdateMenuItems({ state: "error", error: "x" }, () => {})).toEqual([])
+    expect(buildUpdateMenuItems({ state: "idle", currentVersion: "1.0.0" }, () => {})).toEqual([])
+    expect(buildUpdateMenuItems({ state: "checking", currentVersion: "1.0.0" }, () => {})).toEqual([])
     expect(
       buildUpdateMenuItems(
-        { state: "error", code: "install-failed", version: "1" },
+        { state: "available", currentVersion: "1.0.0", availableVersion: "1.1.0" },
         () => {},
       ),
-    ).toHaveLength(2)
+    ).toEqual([])
+    expect(
+      buildUpdateMenuItems(
+        {
+          state: "downloading",
+          currentVersion: "1.0.0",
+          availableVersion: "1.1.0",
+          progress: { percent: 50, bytesPerSecond: 1000, transferred: 50, total: 100 },
+        },
+        () => {},
+      ),
+    ).toEqual([])
+    expect(buildUpdateMenuItems({ state: "not-available", currentVersion: "1.0.0" }, () => {})).toEqual([])
+    expect(buildUpdateMenuItems({ state: "up-to-date", currentVersion: "1.0.0" }, () => {})).toEqual([])
+    expect(
+      buildUpdateMenuItems(
+        { state: "error", currentVersion: "1.0.0", error: "x", code: "network" },
+        () => {},
+      ),
+    ).toEqual([])
   })
 
-  it("adds Install Update item + separator when downloaded", () => {
+  it("adds Update item + separator when downloaded", () => {
     const onInstall = vi.fn()
-    const items = buildUpdateMenuItems({ state: "downloaded", version: "9.9.9" }, onInstall)
+    const items = buildUpdateMenuItems(
+      { state: "downloaded", currentVersion: "1.0.0", availableVersion: "9.9.9" },
+      onInstall,
+    )
     expect(items).toHaveLength(2)
-    expect(items[0]).toMatchObject({ label: "Install Update v9.9.9" })
+    expect(items[0]).toMatchObject({ label: "Update to 9.9.9" })
     expect(items[1]).toEqual({ type: "separator" })
 
     const click = (items[0] as { click?: () => void }).click
@@ -37,14 +55,23 @@ describe("buildUpdateMenuItems", () => {
   })
 
   it("handles missing version gracefully", () => {
-    const items = buildUpdateMenuItems({ state: "downloaded" }, () => {})
-    expect(items[0]).toMatchObject({ label: "Install Update v" })
+    const items = buildUpdateMenuItems(
+      { state: "downloaded", currentVersion: "1.0.0", availableVersion: "" },
+      () => {},
+    )
+    expect(items[0]).toMatchObject({ label: "Restart" })
   })
 
   it("offers retry after installation fails", () => {
     const onInstall = vi.fn()
     const items = buildUpdateMenuItems(
-      { state: "error", code: "install-failed", version: "9.9.9" },
+      {
+        state: "error",
+        currentVersion: "1.0.0",
+        code: "install-failed",
+        availableVersion: "9.9.9",
+        error: "install failed",
+      },
       onInstall,
     )
     expect(items[0]).toMatchObject({ label: "Retry Install Update v9.9.9" })
@@ -71,7 +98,7 @@ describe("buildTrayMenuTemplate", () => {
           { id: "busy", status: "busy" },
         ],
         pendingStops: new Set(),
-        updateStatus: { state: "idle" },
+        updateStatus: { state: "idle", currentVersion: "1.0.0" },
       },
       actions,
     )
@@ -91,7 +118,7 @@ describe("buildTrayMenuTemplate", () => {
       {
         activeWorkspaces: [],
         pendingStops: new Set(),
-        updateStatus: { state: "idle" },
+        updateStatus: { state: "idle", currentVersion: "1.0.0" },
       },
       actions,
     )
@@ -104,7 +131,7 @@ describe("buildTrayMenuTemplate", () => {
       {
         activeWorkspaces: [{ id: "ws-1", status: "running" }],
         pendingStops: new Set(["ws-1"]),
-        updateStatus: { state: "idle" },
+        updateStatus: { state: "idle", currentVersion: "1.0.0" },
       },
       actions,
     )
