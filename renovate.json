@@ -37,9 +37,9 @@
       "matchManagers": ["pre-commit"],
       "matchPackageNames": ["https://github.com/golangci/golangci-lint"],
       "matchFileNames": [".pre-commit-config.yaml"],
-      "allowedVersions": "v2.12.2",
+      "allowedVersions": "v2.13.2",
       "automerge": false,
-      "description": "keep golangci-lint aligned with the pinned Go 1.26.5 toolchain"
+      "description": "keep golangci-lint aligned with the pinned Go 1.26.6 toolchain"
     },
 
     {
