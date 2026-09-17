@@ -28,6 +28,7 @@ export type UpdateErrorCode =
   | "feed-error"
   | "verification"
   | "channel-missing"
+  | "not-eligible"
   | "install-failed"
 
 export interface UpdateProgress {
@@ -77,6 +78,7 @@ export type UpdateStatus =
   | {
       state: "error"
       currentVersion: string
+      availableVersion?: string
       code: UpdateErrorCode
       error: string
     }

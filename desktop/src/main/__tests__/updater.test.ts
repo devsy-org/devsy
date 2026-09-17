@@ -138,7 +138,7 @@ describe("updater", () => {
     ).toHaveBeenCalledTimes(1)
   })
   it("restores lifecycle state when quitAndInstall fails", async () => {
-    electronUpdaterMock.autoUpdater.quitAndInstall.mockImplementation(() => {
+    electronUpdaterMock.autoUpdater.quitAndInstall.mockImplementationOnce(() => {
       throw new Error("install failed")
     })
     const { getLastStatus, initAutoUpdater, installUpdate } = await import(
@@ -160,6 +160,10 @@ describe("updater", () => {
       code: "install-failed",
       availableVersion: "9.9.9",
     })
+
+    await installUpdate()
+    expect(electronUpdaterMock.autoUpdater.quitAndInstall).toHaveBeenCalledTimes(2)
+    expect(isAppQuitting()).toBe(true)
   })
 
   it("continues notifying update listeners after one throws", async () => {
@@ -580,7 +584,8 @@ describe("updater", () => {
       mockAppVersion = "1.17.0"
       const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
       const { initAutoUpdater } = await import("../updater.js")
-      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      const send = vi.fn()
+      const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
 
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.16.2" })
@@ -609,6 +614,21 @@ describe("updater", () => {
         expect.stringMatching(
           /\[updater\] check result: current=1\.17\.0 feed=1\.16\.2 channel=stable result=feed-behind/,
         ),
+      )
+
+      electronUpdaterMock.autoUpdater.emit("update-not-available", { version: "1.18.0" })
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /\[updater\] check result: current=1\.17\.0 feed=1\.18\.0 channel=stable result=not-eligible/,
+        ),
+      )
+      expect(send).toHaveBeenLastCalledWith(
+        "update-status",
+        expect.objectContaining({
+          state: "not-available",
+          code: "not-eligible",
+          feedVersion: "1.18.0",
+        }),
       )
 
       infoSpy.mockRestore()

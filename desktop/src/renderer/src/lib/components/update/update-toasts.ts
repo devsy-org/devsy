@@ -77,6 +77,8 @@ function fireNotAvailable(
     toast.info("No releases are available on this channel yet.")
   } else if (s.code === "dev-mode") {
     toast.info("Updates run in packaged builds.")
+  } else if (s.code === "not-eligible") {
+    toast.info("A newer update is not available for this device yet.")
   } else {
     toast.success("Devsy is up to date.")
   }

@@ -25,6 +25,7 @@ export type UpdateErrorCode =
   | "feed-error"
   | "verification"
   | "channel-missing"
+  | "not-eligible"
   | "install-failed"
 
 export type CandidateResult =
@@ -67,6 +68,7 @@ export type UpdateDecisionResult =
   | "newer"
   | "same"
   | "feed-behind"
+  | "not-eligible"
   | "invalid-version"
   | "download-started"
   | "downloaded"
@@ -419,11 +421,13 @@ export async function initAutoUpdater(
     const currentVersion = getCurrentVersion() ?? ""
     const candidate = classifyCandidate(currentVersion, info.version)
     const result: UpdateDecisionResult =
-      candidate.kind === "older"
-        ? "feed-behind"
-        : candidate.kind === "same"
-          ? "same"
-          : "invalid-version"
+      candidate.kind === "newer"
+        ? "not-eligible"
+        : candidate.kind === "older"
+          ? "feed-behind"
+          : candidate.kind === "same"
+            ? "same"
+            : "invalid-version"
     logUpdateDecision({
       currentVersion,
       feedVersion: info.version,
@@ -431,9 +435,10 @@ export async function initAutoUpdater(
       result,
     })
     setStatus({
-      state: "up-to-date",
+      state: candidate.kind === "newer" ? "not-available" : "up-to-date",
       currentVersion,
       feedVersion: info.version,
+      ...(candidate.kind === "newer" ? { code: "not-eligible" } : {}),
     })
   })
 
@@ -601,7 +606,10 @@ export async function downloadUpdate(): Promise<void> {
 }
 
 export async function installUpdate(): Promise<void> {
-  if (lastStatus.state !== "downloaded") return
+  const canInstall =
+    lastStatus.state === "downloaded" ||
+    (lastStatus.state === "error" && lastStatus.code === "install-failed")
+  if (!canInstall) return
   let markedQuitting = false
   try {
     const autoUpdater = await getUpdater()

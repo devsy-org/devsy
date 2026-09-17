@@ -103,6 +103,16 @@ async function onInstall() {
 						Check Again
 					</Button>
 				</div>
+			{:else if s.code === "not-eligible"}
+				<div class="space-y-2">
+					<p class="text-sm text-muted-foreground">A newer update is not available for this device yet.</p>
+					{#if lastChecked}
+						<p class="text-xs text-muted-foreground">Last checked at {fmtTime(lastChecked)}</p>
+					{/if}
+					<Button variant="outline" size="sm" onclick={onCheck} disabled={isChecking()}>
+						Check Again
+					</Button>
+				</div>
 			{:else}
 				<div class="space-y-2">
 					<p class="text-sm text-muted-foreground">Devsy is up to date.</p>

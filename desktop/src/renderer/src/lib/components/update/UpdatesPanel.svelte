@@ -175,6 +175,17 @@ onMount(async () => {
                 <span>Last checked at {fmtTime(lastChecked)}</span>
               {/if}
             </div>
+          {:else if s.code === "not-eligible"}
+            <p class="text-sm font-medium">A newer update is not available for this device yet</p>
+            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+              {#if installedVersion}
+                <span>Installed: v{installedVersion}</span>
+              {/if}
+              <span>{channelLabel(releaseChannel)} channel</span>
+              {#if lastChecked}
+                <span>Last checked at {fmtTime(lastChecked)}</span>
+              {/if}
+            </div>
           {:else}
             <p class="text-sm font-medium">Devsy is up to date</p>
             <div class="flex items-center gap-3 text-xs text-muted-foreground">

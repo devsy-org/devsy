@@ -168,6 +168,20 @@ describe("update-toasts", () => {
     expect(toastFns.success).not.toHaveBeenCalled()
   })
 
+  it("does not claim to be up to date for an ineligible newer update", async () => {
+    const { initUpdateToasts, markUserInitiated } = await import("./update-toasts.js")
+    initUpdateToasts(() => true)
+    const emit = listeners[0]
+
+    markUserInitiated()
+    emit({ state: "not-available", currentVersion: "1.0.0", code: "not-eligible" })
+
+    expect(toastFns.info).toHaveBeenCalledWith(
+      "A newer update is not available for this device yet.",
+    )
+    expect(toastFns.success).not.toHaveBeenCalled()
+  })
+
   it("fires downloaded toast with Restart action", async () => {
     const { initUpdateToasts } = await import("./update-toasts.js")
     initUpdateToasts(() => true)

@@ -67,5 +67,11 @@ describe("statusHeadline", () => {
         "1.2.3",
       ),
     ).toBe("No releases on this channel yet")
+    expect(
+      statusHeadline(
+        { state: "not-available", currentVersion: "1.2.3", code: "not-eligible" },
+        "1.2.3",
+      ),
+    ).toBe("A newer update is not available for this device yet")
   })
 })
