@@ -601,6 +601,7 @@ export async function downloadUpdate(): Promise<void> {
 }
 
 export async function installUpdate(): Promise<void> {
+  if (lastStatus.state !== "downloaded") return
   let markedQuitting = false
   try {
     const autoUpdater = await getUpdater()

@@ -124,8 +124,13 @@ describe("updater", () => {
   })
 
   it("marks the app as quitting before quitAndInstall", async () => {
-    const { installUpdate } = await import("../updater.js")
+    const { initAutoUpdater, installUpdate } = await import("../updater.js")
     const { isAppQuitting } = await import("../app-lifecycle.js")
+    const send = vi.fn()
+    const win = { isDestroyed: () => false, webContents: { send } } as never
+    await initAutoUpdater(() => win)
+    electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
+    electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "2.0.0" })
     await installUpdate()
     expect(isAppQuitting()).toBe(true)
     expect(
@@ -143,6 +148,7 @@ describe("updater", () => {
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
+    electronUpdaterMock.autoUpdater.emit("update-available", { version: "9.9.9" })
     electronUpdaterMock.autoUpdater.emit("update-downloaded", {
       version: "9.9.9",
     })
@@ -152,7 +158,7 @@ describe("updater", () => {
     expect(getLastStatus()).toMatchObject({
       state: "error",
       code: "install-failed",
-      version: "9.9.9",
+      availableVersion: "9.9.9",
     })
   })
 
