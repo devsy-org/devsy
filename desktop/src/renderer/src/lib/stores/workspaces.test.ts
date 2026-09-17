@@ -150,7 +150,7 @@ describe("workspaces store", () => {
     expect(mockUnlisten).toHaveBeenCalled()
   })
 
-  it("does not poll statuses in the renderer", async () => {
+  it("polls statuses in the renderer", async () => {
     const mockWorkspaces = [{ id: "ws-1", status: "Running" }]
     let statusCallCount = 0
     mockInvoke.mockImplementation((cmd: string) => {
@@ -164,7 +164,7 @@ describe("workspaces store", () => {
 
     await initWorkspaces()
     vi.advanceTimersByTime(30_000)
-    expect(statusCallCount).toBe(0)
+    expect(statusCallCount).toBeGreaterThan(0)
   })
 
   it("destroyWorkspaces stops polling", async () => {
