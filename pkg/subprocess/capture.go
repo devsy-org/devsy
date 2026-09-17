@@ -215,8 +215,7 @@ func RunCommand(cmd *exec.Cmd, redactor *secrets.Redactor) (Result, error) {
 	}
 	if err != nil {
 		result.ExitCode = -1
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			result.ExitCode = exitErr.ExitCode()
 			result.Signal = processSignal(exitErr.ProcessState)
 		}

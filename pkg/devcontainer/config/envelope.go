@@ -126,7 +126,7 @@ func ParseStatusLine(line string) (status.Event, bool) {
 	if err := json.Unmarshal([]byte(trimmed), &env); err != nil ||
 		env.Kind != KindStatus || env.SchemaVersion != 1 || env.Phase == "" ||
 		!validState(env.State) || env.DurationMs < 0 ||
-		env.DurationMs > int64((time.Duration(1<<63-1))/time.Millisecond) ||
+		env.DurationMs > int64(time.Duration(1<<63-1)/time.Millisecond) ||
 		(env.State == status.StateFailed && env.Error == nil) {
 		return status.Event{}, false
 	}
