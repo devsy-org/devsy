@@ -22,6 +22,23 @@ describe("DaemonState", () => {
     expect(state.updateWorkspaces(ws)).toBe(false)
   })
 
+  it("updates workspace status and notifies listeners only for changes", () => {
+    const state = new DaemonState()
+    const listener = vi.fn()
+    const unsubscribe = state.onWorkspacesChange(listener)
+    state.updateWorkspaces([makeWorkspace("ws1", "2024-01-01")])
+    listener.mockClear()
+
+    expect(state.updateWorkspaceStatus("ws1", "running")).toBe(true)
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(state.updateWorkspaceStatus("ws1", "running")).toBe(false)
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(state.updateWorkspaceStatus("missing", "running")).toBe(false)
+    unsubscribe()
+    expect(state.updateWorkspaceStatus("ws1", "stopped")).toBe(true)
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
   it("detects workspace removal", () => {
     const state = new DaemonState()
     expect(

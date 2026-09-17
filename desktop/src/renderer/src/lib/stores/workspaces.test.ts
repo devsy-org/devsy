@@ -72,16 +72,14 @@ describe("workspaces store", () => {
     )
   })
 
-  it("fetches status for each workspace after loading", async () => {
-    const mockWorkspaces = [{ id: "ws-1" }, { id: "ws-2" }]
+  it("uses status supplied by the main process", async () => {
+    const mockWorkspaces = [
+      { id: "ws-1", status: "Running" },
+      { id: "ws-2", status: "Stopped" },
+    ]
     mockInvoke.mockImplementation(
       (cmd: string, args?: Record<string, unknown>) => {
         if (cmd === "workspace_list") return Promise.resolve(mockWorkspaces)
-        if (cmd === "workspace_status") {
-          const wsId = args?.workspaceId as string
-          if (wsId === "ws-1") return Promise.resolve('{"state":"Running"}')
-          if (wsId === "ws-2") return Promise.resolve('{"state":"Stopped"}')
-        }
         return Promise.resolve(undefined)
       },
     )
@@ -152,8 +150,8 @@ describe("workspaces store", () => {
     expect(mockUnlisten).toHaveBeenCalled()
   })
 
-  it("polls statuses every 10 seconds", async () => {
-    const mockWorkspaces = [{ id: "ws-1" }]
+  it("does not poll statuses in the renderer", async () => {
+    const mockWorkspaces = [{ id: "ws-1", status: "Running" }]
     let statusCallCount = 0
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "workspace_list") return Promise.resolve(mockWorkspaces)
@@ -165,21 +163,13 @@ describe("workspaces store", () => {
     })
 
     await initWorkspaces()
-    // Initial fetch
-    const initialCalls = statusCallCount
-
-    // Advance past one poll interval
-    vi.advanceTimersByTime(10_000)
-    await vi.waitFor(() => {
-      expect(statusCallCount).toBeGreaterThan(initialCalls)
-    })
+    vi.advanceTimersByTime(30_000)
+    expect(statusCallCount).toBe(0)
   })
 
   it("destroyWorkspaces stops polling", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "workspace_list") return Promise.resolve([{ id: "ws-1" }])
-      if (cmd === "workspace_status")
-        return Promise.resolve('{"state":"Stopped"}')
       return Promise.resolve(undefined)
     })
 

@@ -2,6 +2,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { app, BrowserWindow, session } from "electron"
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics.js"
+import { isAppQuitting, markAppQuitting } from "./app-lifecycle.js"
 import { CliRunner } from "./cli.js"
 import { DaemonManager } from "./daemon-manager.js"
 import { registerIpcHandlers } from "./ipc.js"
@@ -18,16 +19,35 @@ const PROTOCOL = "devsy"
 
 let mainWindow: BrowserWindow | null = null
 let pendingDeepLink: string | null = null
+let pendingRoute: string | null = null
+let rendererReady = false
+let appTray: AppTray | null = null
+let watcher: Watcher | null = null
 const state = new DaemonState()
 
 function handleDeepLink(url: string): void {
-  if (mainWindow) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
     mainWindow.webContents.send("deep-link", url)
   } else {
     pendingDeepLink = url
+  }
+}
+
+function showDevsy(route?: string): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (route) pendingRoute = route
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  if (route) {
+    if (rendererReady) mainWindow.webContents.send("navigate", route)
+    else pendingRoute = route
   }
 }
 
@@ -41,7 +61,7 @@ app.on("second-instance", (_event, argv) => {
   const url = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`))
   if (url) {
     handleDeepLink(url)
-  } else if (mainWindow) {
+  } else if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
@@ -55,6 +75,7 @@ app.on("open-url", (event, url) => {
 })
 
 function createWindow(): void {
+  rendererReady = false
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -72,11 +93,14 @@ function createWindow(): void {
   mainWindow.on("close", (event) => {
     if (
       mainWindow &&
-      !(app as typeof app & { isQuitting?: boolean }).isQuitting
+      !isAppQuitting()
     ) {
       event.preventDefault()
       mainWindow.hide()
     }
+  })
+  mainWindow.webContents.on("did-start-loading", () => {
+    rendererReady = false
   })
 
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -150,7 +174,7 @@ app.whenReady().then(() => {
   daemonManager.start()
 
   app.on("before-quit", () => {
-    ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
+    markAppQuitting()
     trackEvent("app_close")
     shutdownAnalytics().catch(() => {})
     cli.killAll()
@@ -160,6 +184,8 @@ app.whenReady().then(() => {
     daemonManager.stop()
     ptyManager.destroyAll()
     stopAutoUpdater()
+    watcher?.stop()
+    appTray?.destroy()
   })
 
   const providerJobs = new ProviderJobs()
@@ -170,6 +196,7 @@ app.whenReady().then(() => {
     tunnelProcesses,
     scheduleProviderUpdateCheck,
     runInitialProviderUpdateCheck,
+    workspaceActions,
   } = registerIpcHandlers({
     cli,
     state,
@@ -178,10 +205,31 @@ app.whenReady().then(() => {
     getMainWindow: () => mainWindow,
     providerJobs,
     workspaceJobs,
+    onRendererReady: (sender) => {
+      if (
+        !mainWindow ||
+        mainWindow.isDestroyed() ||
+        mainWindow.webContents !== sender
+      ) {
+        return
+      }
+      rendererReady = true
+      if (pendingRoute) {
+        sender.send("navigate", pendingRoute)
+        pendingRoute = null
+      }
+    },
+    onWorkspaceStopComplete: async (workspaceId) => {
+      try {
+        await watcher?.refreshWorkspaceStatus(workspaceId)
+      } finally {
+        watcher?.broadcastWorkspaces()
+      }
+    },
   })
 
   // Start state watcher
-  const watcher = new Watcher({
+  watcher = new Watcher({
     cli,
     daemon: daemonManager.daemonClient,
     state,
@@ -189,18 +237,27 @@ app.whenReady().then(() => {
     providerJobs,
     workspaceJobs,
   })
-  providerJobs.onChange(() => watcher.broadcastProviders())
-  providerJobs.setRefresh(() => watcher.refreshProviders())
-  workspaceJobs.onChange(() => watcher.broadcastWorkspaces())
-  workspaceJobs.setRefresh(() => watcher.refreshWorkspaces())
+  providerJobs.onChange(() => watcher?.broadcastProviders())
+  providerJobs.setRefresh(() =>
+    watcher ? watcher.refreshProviders() : Promise.resolve(),
+  )
+  workspaceJobs.onChange(() => watcher?.broadcastWorkspaces())
+  workspaceJobs.setRefresh(() =>
+    watcher ? watcher.refreshWorkspaces() : Promise.resolve(),
+  )
 
   void watcher.start().then(runInitialProviderUpdateCheck)
   scheduleProviderUpdateCheck()
 
   // Set up system tray
-  const appTray = new AppTray({
+  appTray = new AppTray({
     state,
-    getMainWindow: () => mainWindow,
+    showDevsy,
+    stopWorkspace: workspaceActions.stop,
+    refreshWorkspace: (id) =>
+      watcher ? watcher.refreshWorkspaceStatus(id) : Promise.resolve(),
+    refreshWorkspaces: () =>
+      watcher ? watcher.refreshWorkspaces() : Promise.resolve(),
   })
   appTray.setup()
 

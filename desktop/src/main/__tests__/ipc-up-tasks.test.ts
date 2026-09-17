@@ -84,6 +84,7 @@ function setup(
     onExit: (code: number, cliError?: unknown) => void
   } | null = null
   const sent: Array<{ channel: string; payload: Record<string, unknown> }> = []
+  const onWorkspaceStopComplete = vi.fn(async () => undefined)
   const win = {
     webContents: {
       send: (channel: string, payload: Record<string, unknown>) => {
@@ -106,10 +107,18 @@ function setup(
     },
     pty: { cancelFor: vi.fn(async () => undefined) },
     getMainWindow: () => win,
+    onWorkspaceStopComplete,
   }
   // biome-ignore lint/suspicious/noExplicitAny: partial test doubles
   const api = registerIpcHandlers(deps as any)
-  return { cli, calls, api, sent, stream: () => stream }
+  return {
+    cli,
+    calls,
+    api,
+    sent,
+    stream: () => stream,
+    onWorkspaceStopComplete,
+  }
 }
 
 function statusEnvelope(phase: string, step?: string) {
@@ -260,5 +269,15 @@ describe("workspace_up detached task tracking", () => {
     expect(calls.filter((a) => a.includes("cancel"))).toEqual([
       ["workspace", "task", "cancel", "task-1"],
     ])
+  })
+
+  it("reconciles workspace state after a stop command fails", async () => {
+    const { onWorkspaceStopComplete, stream } = setup()
+
+    await invokeStop("ws-1")
+    stream()?.onExit(1)
+    await vi.waitFor(() =>
+      expect(onWorkspaceStopComplete).toHaveBeenCalledWith("ws-1"),
+    )
   })
 })

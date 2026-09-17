@@ -2,6 +2,7 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { app, type BrowserWindow } from "electron"
 import { trackEvent } from "./analytics.js"
+import { clearAppQuitting, markAppQuitting } from "./app-lifecycle.js"
 
 export type ReleaseChannel = "stable" | "beta"
 
@@ -21,6 +22,7 @@ export type UpdateErrorCode =
   | "feed-error"
   | "verification"
   | "channel-missing"
+  | "install-failed"
 
 export interface UpdateProgress {
   percent: number
@@ -80,6 +82,7 @@ let getMainWindowFn: (() => BrowserWindow | null) | null = null
 let lastStatus: UpdateStatus = { state: "idle" }
 let initialCheckTimer: ReturnType<typeof setTimeout> | null = null
 let recheckTimer: ReturnType<typeof setInterval> | null = null
+const statusListeners = new Set<(status: UpdateStatus) => void>()
 
 function sendUpdateStatus(status: UpdateStatus): void {
   const win = getMainWindowFn?.()
@@ -91,6 +94,20 @@ function sendUpdateStatus(status: UpdateStatus): void {
 function setStatus(status: UpdateStatus): void {
   lastStatus = status
   sendUpdateStatus(status)
+  for (const listener of statusListeners) {
+    try {
+      listener(status)
+    } catch (error) {
+      console.error("[updater] status listener failed:", error)
+    }
+  }
+}
+
+export function onUpdateStatusChanged(
+  listener: (status: UpdateStatus) => void,
+): () => void {
+  statusListeners.add(listener)
+  return () => statusListeners.delete(listener)
 }
 
 export function getLastStatus(): UpdateStatus {
@@ -333,8 +350,23 @@ export async function downloadUpdate(): Promise<void> {
 }
 
 export async function installUpdate(): Promise<void> {
-  const autoUpdater = await getUpdater()
-  if (!autoUpdater || typeof autoUpdater.quitAndInstall !== "function") return
-  ;(app as typeof app & { isQuitting?: boolean }).isQuitting = true
-  autoUpdater.quitAndInstall()
+  let markedQuitting = false
+  try {
+    const autoUpdater = await getUpdater()
+    if (!autoUpdater || typeof autoUpdater.quitAndInstall !== "function") return
+    markAppQuitting()
+    markedQuitting = true
+    autoUpdater.quitAndInstall()
+  } catch (error) {
+    if (markedQuitting) clearAppQuitting()
+    const message = error instanceof Error ? error.message : String(error)
+    setStatus({
+      ...lastStatus,
+      state: "error",
+      code: "install-failed",
+      error: message,
+    })
+    console.error("Update installation failed:", message)
+    throw error
+  }
 }
