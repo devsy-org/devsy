@@ -39,7 +39,7 @@ type CredentialsClient interface {
 	) (*tunnel.Message, error)
 }
 
-var _ CredentialsClient = (tunnel.TunnelClient)(nil)
+var _ CredentialsClient = tunnel.TunnelClient(nil)
 
 func RunCredentialsServer(
 	ctx context.Context,
