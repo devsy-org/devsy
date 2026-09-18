@@ -211,7 +211,9 @@ type UpdateCandidate = {
   state: "available" | "downloading" | "downloaded"
 }
 
-const autoUpdater = electronUpdater.autoUpdater
+function getAutoUpdater(): AppUpdater {
+  return electronUpdater.autoUpdater
+}
 
 function sendUpdateStatus(status: UpdateStatus): void {
   const win = getMainWindowFn?.()
@@ -274,7 +276,7 @@ export function setAutoDownloadEnabled(enabled: boolean): void {
   autoDownloadEnabled = enabled
   saveSettings({ autoDownload: enabled })
   if (app.isPackaged) {
-    autoUpdater.autoDownload = enabled
+    getAutoUpdater().autoDownload = enabled
   }
 }
 
@@ -318,6 +320,7 @@ export async function initAutoUpdater(
     return
   }
 
+  const autoUpdater = getAutoUpdater()
   if (typeof autoUpdater.checkForUpdates !== "function") {
     setStatus({
       state: "error",
@@ -562,6 +565,7 @@ function getUpdater(): AppUpdater | null {
     })
     return null
   }
+  const autoUpdater = getAutoUpdater()
   if (typeof autoUpdater.checkForUpdates !== "function") {
     setStatus({
       state: "error",
