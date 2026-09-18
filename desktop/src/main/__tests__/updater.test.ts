@@ -327,6 +327,84 @@ describe("updater", () => {
     expect(electronUpdaterMock.autoUpdater.quitAndInstall).not.toHaveBeenCalled()
   })
 
+  describe("release channel switching", () => {
+    it("rejects a channel switch while an update check is in flight", async () => {
+      let resolveCheck: (() => void) | undefined
+      electronUpdaterMock.autoUpdater.checkForUpdates.mockImplementationOnce(
+        () => new Promise<void>((resolve) => { resolveCheck = resolve }),
+      )
+      const { checkForUpdates, getReleaseChannel, initAutoUpdater, switchReleaseChannel } = await import(
+        "../updater.js"
+      )
+      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      await initAutoUpdater(() => win)
+
+      const checking = checkForUpdates()
+      await expect(switchReleaseChannel("beta")).rejects.toThrow("Cannot switch release channel")
+      expect(getReleaseChannel()).toBe("stable")
+      expect(electronUpdaterMock.autoUpdater.channel).toBe("latest")
+
+      resolveCheck?.()
+      await checking
+    })
+
+    it("rejects a channel switch during an automatic download", async () => {
+      const { getReleaseChannel, initAutoUpdater, switchReleaseChannel } = await import("../updater.js")
+      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      await initAutoUpdater(() => win)
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
+
+      await expect(switchReleaseChannel("beta")).rejects.toThrow("Cannot switch release channel")
+      expect(getReleaseChannel()).toBe("stable")
+      expect(electronUpdaterMock.autoUpdater.channel).toBe("latest")
+    })
+
+    it("rejects a channel switch after an update is staged", async () => {
+      const { getReleaseChannel, initAutoUpdater, switchReleaseChannel } = await import("../updater.js")
+      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      await initAutoUpdater(() => win)
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
+      electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "2.0.0" })
+
+      await expect(switchReleaseChannel("beta")).rejects.toThrow("Cannot switch release channel")
+      expect(getReleaseChannel()).toBe("stable")
+      expect(electronUpdaterMock.autoUpdater.channel).toBe("latest")
+    })
+
+    it("switches from an available manual update after clearing its candidate", async () => {
+      const { getLastStatus, getReleaseChannel, initAutoUpdater, setAutoDownloadEnabled, switchReleaseChannel } = await import("../updater.js")
+      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      await initAutoUpdater(() => win)
+      setAutoDownloadEnabled(false)
+      await Promise.resolve()
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
+      electronUpdaterMock.autoUpdater.checkForUpdates.mockImplementationOnce(() => {
+        electronUpdaterMock.autoUpdater.emit("checking-for-update")
+        return Promise.resolve()
+      })
+
+      await switchReleaseChannel("beta")
+
+      expect(getReleaseChannel()).toBe("beta")
+      expect(electronUpdaterMock.autoUpdater.channel).toBe("beta")
+      expect(getLastStatus()).toMatchObject({ state: "checking" })
+    })
+
+    it("ignores a stale completion and never makes it installable", async () => {
+      const { getLastStatus, initAutoUpdater, installUpdate, setAutoDownloadEnabled } = await import("../updater.js")
+      const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
+      await initAutoUpdater(() => win)
+      setAutoDownloadEnabled(false)
+      await Promise.resolve()
+      electronUpdaterMock.autoUpdater.emit("update-available", { version: "2.0.0" })
+      electronUpdaterMock.autoUpdater.emit("update-downloaded", { version: "3.0.0" })
+
+      expect(getLastStatus()).toMatchObject({ state: "available", availableVersion: "2.0.0" })
+      await installUpdate()
+      expect(electronUpdaterMock.autoUpdater.quitAndInstall).not.toHaveBeenCalled()
+    })
+  })
+
   describe("classifyCandidate", () => {
     it("classifies newer, same, older, and invalid correctly", async () => {
       const { classifyCandidate } = await import("../updater.js")
@@ -463,11 +541,11 @@ describe("updater", () => {
 
     it("accepts preview progression (1.18.0-beta.2 vs 1.18.0-beta.3) as available", async () => {
       mockAppVersion = "1.18.0-beta.2"
-      const { initAutoUpdater, checkForUpdatesWithChannel } = await import("../updater.js")
+      const { initAutoUpdater, switchReleaseChannel } = await import("../updater.js")
       const send = vi.fn()
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
-      await checkForUpdatesWithChannel("beta")
+      await switchReleaseChannel("beta")
 
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.18.0-beta.3" })
       expect(send).toHaveBeenCalledWith(
@@ -482,11 +560,11 @@ describe("updater", () => {
 
     it("rejects older stable feed after preview switch (1.18.0-beta.2 vs 1.17.0 on stable)", async () => {
       mockAppVersion = "1.18.0-beta.2"
-      const { initAutoUpdater, checkForUpdatesWithChannel } = await import("../updater.js")
+      const { initAutoUpdater, switchReleaseChannel } = await import("../updater.js")
       const send = vi.fn()
       const win = { isDestroyed: () => false, webContents: { send } } as never
       await initAutoUpdater(() => win)
-      await checkForUpdatesWithChannel("stable")
+      await switchReleaseChannel("stable")
 
       electronUpdaterMock.autoUpdater.emit("update-available", { version: "1.17.0" })
       expect(send).toHaveBeenCalledWith(
@@ -546,16 +624,16 @@ describe("updater", () => {
     })
 
     it("enforces allowDowngrade is false across channel configurations", async () => {
-      const { initAutoUpdater, checkForUpdatesWithChannel } = await import("../updater.js")
+      const { initAutoUpdater, switchReleaseChannel } = await import("../updater.js")
       const win = { isDestroyed: () => false, webContents: { send: vi.fn() } } as never
       await initAutoUpdater(() => win)
       expect(electronUpdaterMock.autoUpdater.allowDowngrade).toBe(false)
 
-      await checkForUpdatesWithChannel("beta")
+      await switchReleaseChannel("beta")
       expect(electronUpdaterMock.autoUpdater.allowPrerelease).toBe(true)
       expect(electronUpdaterMock.autoUpdater.allowDowngrade).toBe(false)
 
-      await checkForUpdatesWithChannel("stable")
+      await switchReleaseChannel("stable")
       expect(electronUpdaterMock.autoUpdater.allowPrerelease).toBe(false)
       expect(electronUpdaterMock.autoUpdater.allowDowngrade).toBe(false)
     })

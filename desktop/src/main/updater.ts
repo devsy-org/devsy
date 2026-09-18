@@ -199,9 +199,13 @@ function getCurrentVersion(): string | null {
 let currentChannel: ReleaseChannel = "stable"
 let autoDownloadEnabled = true
 let getMainWindowFn: (() => BrowserWindow | null) | null = null
+let initializedAutoUpdater: AppUpdater | null = null
 let lastStatus: UpdateStatus = { state: "idle", currentVersion: "" }
 let initialCheckTimer: ReturnType<typeof setTimeout> | null = null
 let recheckTimer: ReturnType<typeof setInterval> | null = null
+let checkInFlight = false
+let downloadInFlight = false
+let candidateVersion: string | null = null
 const statusListeners = new Set<(status: UpdateStatus) => void>()
 
 function sendUpdateStatus(status: UpdateStatus): void {
@@ -257,11 +261,6 @@ function classifyError(err: Error): UpdateErrorCode {
   return "feed-error"
 }
 
-export function setReleaseChannel(channel: ReleaseChannel): void {
-  currentChannel = channel
-  saveSettings({ channel })
-}
-
 export function getReleaseChannel(): ReleaseChannel {
   return currentChannel
 }
@@ -297,6 +296,27 @@ export function getAutoDownloadEnabled(): boolean {
   return autoDownloadEnabled
 }
 
+function clearCandidate(): void {
+  candidateVersion = null
+  downloadInFlight = false
+}
+
+function isChannelSwitchBlocked(): boolean {
+  return (
+    checkInFlight ||
+    downloadInFlight ||
+    lastStatus.state === "checking" ||
+    lastStatus.state === "downloading" ||
+    lastStatus.state === "downloaded"
+  )
+}
+
+function channelSwitchBlockedError(): Error {
+  return new Error(
+    "Cannot switch release channel while an update is being checked, downloaded, or ready to install",
+  )
+}
+
 export async function initAutoUpdater(
   getMainWindow: () => BrowserWindow | null,
 ): Promise<void> {
@@ -330,6 +350,7 @@ export async function initAutoUpdater(
   autoUpdater.autoDownload = autoDownloadEnabled
   autoUpdater.autoInstallOnAppQuit = true
   configureUpdaterChannel(autoUpdater, currentChannel)
+  initializedAutoUpdater = autoUpdater
 
   autoUpdater.on("checking-for-update", () => {
     trackEvent("update_check")
@@ -355,6 +376,7 @@ export async function initAutoUpdater(
         code: "unsupported",
         error: "Unable to determine current application version",
       })
+      clearCandidate()
       return
     }
 
@@ -374,6 +396,7 @@ export async function initAutoUpdater(
         code: "feed-error",
         error: `Invalid version from update feed: ${info.version}`,
       })
+      clearCandidate()
       return
     }
 
@@ -394,11 +417,17 @@ export async function initAutoUpdater(
         currentVersion,
         feedVersion: info.version,
       })
+      clearCandidate()
       return
     }
 
     // Restore user preference before a legitimate candidate downloads.
     autoUpdater.autoDownload = autoDownloadEnabled
+    candidateVersion = info.version
+    // electron-updater starts an automatic download immediately after this
+    // event. Track that interval before the first progress event so a channel
+    // switch cannot retarget a download that is already underway.
+    downloadInFlight = autoDownloadEnabled
 
     logUpdateDecision({
       currentVersion,
@@ -440,17 +469,21 @@ export async function initAutoUpdater(
       feedVersion: info.version,
       ...(candidate.kind === "newer" ? { code: "not-eligible" } : {}),
     })
+    clearCandidate()
   })
 
   autoUpdater.on("download-progress", (info) => {
-    if (lastStatus.state !== "available" && lastStatus.state !== "downloading") {
+    if (
+      !candidateVersion ||
+      (lastStatus.state !== "available" && lastStatus.state !== "downloading")
+    ) {
       return
     }
-    const availableVersion = lastStatus.availableVersion
+    downloadInFlight = true
     setStatus({
       state: "downloading",
       currentVersion: getCurrentVersion() ?? "",
-      availableVersion,
+      availableVersion: candidateVersion,
       progress: {
         percent: info.percent,
         bytesPerSecond: info.bytesPerSecond,
@@ -461,28 +494,33 @@ export async function initAutoUpdater(
   })
 
   autoUpdater.on("update-downloaded", (info) => {
-    if (lastStatus.state !== "available" && lastStatus.state !== "downloading") {
+    if (
+      !candidateVersion ||
+      info.version !== candidateVersion ||
+      (lastStatus.state !== "available" && lastStatus.state !== "downloading")
+    ) {
       return
     }
-    const availableVersion = lastStatus.availableVersion
-    trackEvent("update_downloaded", { version: availableVersion })
+    downloadInFlight = false
+    trackEvent("update_downloaded", { version: info.version })
     const currentVersion = getCurrentVersion() ?? ""
     logUpdateDecision({
       currentVersion,
-      availableVersion,
+      availableVersion: info.version,
       channel: currentChannel,
       result: "downloaded",
     })
     setStatus({
       state: "downloaded",
       currentVersion,
-      availableVersion,
+      availableVersion: info.version,
       releaseName: info.releaseName ?? undefined,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
     })
   })
 
   autoUpdater.on("error", (err) => {
+    clearCandidate()
     const code = classifyError(err)
     const currentVersion = getCurrentVersion() ?? ""
     logUpdateDecision({
@@ -514,12 +552,17 @@ export async function initAutoUpdater(
     // Skip while a download is already in flight or staged — re-fetching the
     // manifest would just churn state. autoUpdater.autoDownload is already set
     // from the user's preference, so a plain check honors that toggle.
-    if (lastStatus.state === "downloading" || lastStatus.state === "downloaded") {
+    if (isChannelSwitchBlocked()) {
       return
     }
-    autoUpdater.checkForUpdates().catch((err: Error) => {
-      console.error("Update check failed:", err.message)
-    })
+    checkInFlight = true
+    void runUpdateCheck(autoUpdater)
+      .catch((err: Error) => {
+        console.error("Update check failed:", err.message)
+      })
+      .finally(() => {
+        checkInFlight = false
+      })
   }
 
   initialCheckTimer = setTimeout(runBackgroundCheck, INITIAL_CHECK_DELAY_MS)
@@ -546,7 +589,7 @@ async function getUpdater() {
     })
     return null
   }
-  const autoUpdater = await loadAutoUpdater()
+  const autoUpdater = initializedAutoUpdater ?? (await loadAutoUpdater())
   if (!autoUpdater || typeof autoUpdater.checkForUpdates !== "function") {
     setStatus({
       state: "error",
@@ -571,19 +614,45 @@ async function runUpdateCheck(
 }
 
 export async function checkForUpdates(): Promise<void> {
-  const autoUpdater = await getUpdater()
-  if (!autoUpdater) return
-  await runUpdateCheck(autoUpdater)
+  checkInFlight = true
+  try {
+    const autoUpdater = await getUpdater()
+    if (!autoUpdater) return
+    await runUpdateCheck(autoUpdater)
+  } finally {
+    checkInFlight = false
+  }
 }
 
-export async function checkForUpdatesWithChannel(channel: ReleaseChannel): Promise<void> {
-  // Caller (set_release_channel IPC) already persisted the channel choice.
-  // Just reconfigure the running autoUpdater and kick off a check.
-  currentChannel = channel
-  const autoUpdater = await getUpdater()
-  if (!autoUpdater) return
-  configureUpdaterChannel(autoUpdater, channel)
-  await runUpdateCheck(autoUpdater)
+export async function switchReleaseChannel(channel: ReleaseChannel): Promise<void> {
+  if (channel !== currentChannel && isChannelSwitchBlocked()) {
+    throw channelSwitchBlockedError()
+  }
+  checkInFlight = true
+  try {
+    const autoUpdater = await getUpdater()
+    if (!autoUpdater) return
+
+    if (channel === currentChannel) {
+      await runUpdateCheck(autoUpdater)
+      return
+    }
+
+    const previousChannel = currentChannel
+    currentChannel = channel
+    clearCandidate()
+    configureUpdaterChannel(autoUpdater, channel)
+    try {
+      await runUpdateCheck(autoUpdater)
+      saveSettings({ channel })
+    } catch (error) {
+      currentChannel = previousChannel
+      configureUpdaterChannel(autoUpdater, previousChannel)
+      throw error
+    }
+  } finally {
+    checkInFlight = false
+  }
 }
 
 export async function downloadUpdate(): Promise<void> {
@@ -602,12 +671,19 @@ export async function downloadUpdate(): Promise<void> {
   })
   const autoUpdater = await getUpdater()
   if (!autoUpdater) return
-  await autoUpdater.downloadUpdate()
+  downloadInFlight = true
+  try {
+    await autoUpdater.downloadUpdate()
+  } catch (error) {
+    clearCandidate()
+    throw error
+  }
 }
 
 export async function installUpdate(): Promise<void> {
   const canInstall =
-    lastStatus.state === "downloaded" ||
+    (lastStatus.state === "downloaded" &&
+      candidateVersion === lastStatus.availableVersion) ||
     (lastStatus.state === "error" && lastStatus.code === "install-failed")
   if (!canInstall) return
   let markedQuitting = false

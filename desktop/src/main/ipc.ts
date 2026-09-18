@@ -23,7 +23,7 @@ import type { PtyManager } from "./pty.js"
 import type { DaemonState } from "./state.js"
 import {
   checkForUpdates,
-  checkForUpdatesWithChannel,
+  switchReleaseChannel,
   downloadUpdate,
   getAutoDownloadEnabled,
   getLastStatus,
@@ -31,7 +31,6 @@ import {
   installUpdate,
   type ReleaseChannel,
   setAutoDownloadEnabled,
-  setReleaseChannel,
 } from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
@@ -1802,16 +1801,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         throw new Error(`Invalid release channel: ${args.channel}`)
       }
       const channel: ReleaseChannel = args.channel
-      const previous = getReleaseChannel()
-      setReleaseChannel(channel)
-      try {
-        await checkForUpdatesWithChannel(channel)
-      } catch (err) {
-        // Rollback persisted choice so disk + renderer stay in sync if
-        // the renderer reverts its UI state.
-        setReleaseChannel(previous)
-        throw err
-      }
+      await switchReleaseChannel(channel)
     },
   )
 
