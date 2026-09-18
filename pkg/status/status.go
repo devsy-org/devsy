@@ -41,9 +41,7 @@ func ValidState(s State) bool {
 	}
 }
 
-// ErrorInfo is the stable, user-facing portion of an operation failure.
-// Implementation errors should not be serialized as part of the status
-// protocol; callers may retain them in the returned error instead.
+// ErrorInfo is the serializable, user-facing portion of an operation failure.
 type ErrorInfo struct {
 	Code    string            `json:"code,omitempty"`
 	Message string            `json:"message"`
@@ -78,9 +76,7 @@ const (
 	PhaseFailed               Phase = "failed"
 )
 
-// Provider phases. Installing covers source resolution and binary download;
-// ResolvingOptions and RunningInit are the two halves of provider init, split
-// because only the latter executes provider-supplied code.
+// Provider phases.
 const (
 	PhaseInstallingProvider Phase = "installing_provider"
 	PhaseResolvingOptions   Phase = "resolving_options"
@@ -162,8 +158,7 @@ type Operation struct {
 	Step     string
 }
 
-// Run reports a complete operation lifecycle and returns the callback's
-// original error. Nested operations inherit their parent's operation ID.
+// Run reports an operation lifecycle and returns the callback error.
 func Run(
 	ctx context.Context,
 	reporter Reporter,

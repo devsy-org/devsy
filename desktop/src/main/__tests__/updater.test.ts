@@ -301,10 +301,13 @@ describe("updater", () => {
   })
 
   it("guards downloadUpdate so it only runs when an update is available and newer", async () => {
-    const { initAutoUpdater, downloadUpdate } = await import("../updater.js")
+    const { initAutoUpdater, downloadUpdate, setAutoDownloadEnabled } = await import(
+      "../updater.js"
+    )
     const send = vi.fn()
     const win = { isDestroyed: () => false, webContents: { send } } as never
     await initAutoUpdater(() => win)
+    setAutoDownloadEnabled(false)
 
     // Initially idle
     await downloadUpdate()

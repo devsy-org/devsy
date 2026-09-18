@@ -13,9 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/terminal"
 )
 
-// ReporterOptions describes the presentation selected for a status stream.
-// Envelope is used only when Format resolves to JSON; keeping the encoder
-// callback here avoids coupling this package to a particular wire envelope.
+// ReporterOptions configures status presentation.
 type ReporterOptions struct {
 	Format      string
 	Out         io.Writer
@@ -24,10 +22,7 @@ type ReporterOptions struct {
 	Envelope    func(Event) error
 	Interactive bool
 	Verbose     bool
-	// SuppressFailureDetails leaves failure details to the command boundary,
-	// which prevents interactive CLI commands from rendering the same error
-	// once in the status stream and again in the root error renderer. Structured
-	// reporters still carry the complete error.
+	// SuppressFailureDetails leaves failure details to the command boundary.
 	SuppressFailureDetails bool
 }
 
@@ -37,9 +32,7 @@ const (
 	formatPlain = "plain"
 )
 
-// NewReporter selects one status presentation for a command. Selection is
-// deliberately centralized so command implementations do not each grow their
-// own terminal and machine-consumer rules.
+// NewReporter selects a status presentation.
 func NewReporter(opts ReporterOptions) (Reporter, error) {
 	return newReporter(resolveFormat(opts), opts)
 }
@@ -113,9 +106,7 @@ type PlainReporter struct {
 	redactor               *secrets.Redactor
 }
 
-// HumanReporter is the interactive human presentation. It deliberately uses
-// the same deterministic ASCII rendering as PlainReporter today; the distinct
-// type leaves room for TTY-only in-place updates without changing callers.
+// HumanReporter is the interactive human presentation.
 type HumanReporter struct {
 	PlainReporter
 }

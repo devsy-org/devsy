@@ -6,9 +6,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
-// newStatusReporter creates the deterministic CI progress stream. Progress
-// belongs on stderr so the command executed inside the container keeps stdout
-// safe for piping and artifact capture.
 func newStatusReporter(out io.Writer, verbose bool) (status.Reporter, error) {
 	reporter, err := status.NewReporter(status.ReporterOptions{
 		Format:                 "plain",
