@@ -8,6 +8,7 @@ import (
 
 type sandboxSpec struct {
 	Image       string
+	User        string
 	Entrypoint  string
 	Cmd         []string
 	Memory      uint32
@@ -29,6 +30,7 @@ type volumeMount struct {
 	Volume   string
 	Tmpfs    bool
 	ReadOnly bool
+	Policy   mountPolicy
 }
 
 type sandboxInfo struct {
@@ -52,6 +54,7 @@ type execRequest struct {
 // job, not the client's.
 type sandboxClient interface {
 	EnsureInstalled(ctx context.Context) error
+	Version(ctx context.Context) (string, error)
 	EnsureImage(ctx context.Context, image string) error
 	Create(ctx context.Context, name string, spec sandboxSpec) error
 	Find(ctx context.Context, name string) (*sandboxInfo, error)

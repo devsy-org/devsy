@@ -38,6 +38,18 @@ func (cliClient) EnsureInstalled(_ context.Context) error {
 	)
 }
 
+func (cliClient) Version(ctx context.Context) (string, error) {
+	// #nosec G204 -- args are a resolved binary path and fixed version command
+	out, err := exec.CommandContext(ctx, msbBinary(), "--version").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf(
+			"get microsandbox version: %s: %w",
+			strings.TrimSpace(string(out)), err,
+		)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func (cliClient) EnsureImage(ctx context.Context, imageRef string) error {
 	if dockerImageExists(ctx, imageRef) {
 		return loadFromDocker(ctx, imageRef)
@@ -178,6 +190,9 @@ func runArgs(sandbox string, spec sandboxSpec) []string {
 
 func runtimeArgs(spec sandboxSpec) []string {
 	var args []string
+	if spec.User != "" {
+		args = append(args, "--user", spec.User)
+	}
 	for k, v := range spec.Env {
 		args = append(args, names.Flag(names.Env), k+"="+v)
 	}
@@ -228,11 +243,7 @@ func mountArgs(mounts []volumeMount) []string {
 		case m.Volume != "":
 			args = append(args, "--mount-named", m.Volume+":"+m.Target)
 		case m.Source != "":
-			spec := m.Source + ":" + m.Target
-			if m.ReadOnly {
-				spec += ":ro"
-			}
-			args = append(args, "--mount-dir", spec)
+			args = append(args, "--mount-dir", bindMountSpec(m))
 		}
 	}
 	return args

@@ -21,6 +21,7 @@ const (
 	testUser    = "vscode"
 	imgX        = "x:1"
 	testImg     = "img:1"
+	testVersion = "0.7.2"
 	shPath      = "/bin/sh"
 	callFind    = "find:" + wsName
 	callRemove  = "remove:" + wsName
@@ -42,6 +43,7 @@ type fakeClient struct {
 	failCreat   error
 	failEnsure  error
 	failInstall error
+	version     string
 }
 
 func newFakeClient() *fakeClient {
@@ -49,6 +51,13 @@ func newFakeClient() *fakeClient {
 }
 
 func (f *fakeClient) EnsureInstalled(context.Context) error { return f.failInstall }
+
+func (f *fakeClient) Version(context.Context) (string, error) {
+	if f.version != "" {
+		return f.version, nil
+	}
+	return testVersion, nil
+}
 
 func (f *fakeClient) EnsureImage(_ context.Context, image string) error {
 	f.calls = append(f.calls, "ensure:"+image)
@@ -503,7 +512,16 @@ func TestBuildSpecMapsWorkspaceMount(t *testing.T) {
 			Target: testBindDst,
 		},
 	}, nil)
-	want := []volumeMount{{Target: testBindDst, Source: testBindSrc}}
+	want := []volumeMount{
+		{
+			Target: testBindDst,
+			Source: testBindSrc,
+			Policy: mountPolicy{
+				StatVirtualization: statVirtStrict,
+				HostPermissions:    hostPermissionsMirror,
+			},
+		},
+	}
 	if !slices.Equal(spec.Mounts, want) {
 		t.Errorf("mounts = %+v, want %+v", spec.Mounts, want)
 	}

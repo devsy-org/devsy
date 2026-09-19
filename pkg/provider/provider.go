@@ -355,6 +355,12 @@ type ProviderMicrosandboxDriverConfig struct {
 
 	// Storage is the OCI root disk size in GiB. Empty uses the runtime default.
 	Storage string `json:"storage,omitempty"`
+
+	// WorkspaceHostPermissions controls host permission mirroring for the primary workspace bind mount.
+	WorkspaceHostPermissions string `json:"workspaceHostPermissions,omitempty"`
+
+	// WorkspaceStatVirtualization controls stat virtualization for the primary workspace bind mount.
+	WorkspaceStatVirtualization string `json:"workspaceStatVirtualization,omitempty"`
 }
 
 type ProviderCustomDriverConfig struct {

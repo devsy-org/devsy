@@ -158,6 +158,22 @@ Available options:
 - **ephemeral**: if true, boot from a tmpfs root disk so the microVM's disk
   state is discarded when it stops. Sized by `storage`/`hostRequirements.storage`,
   or 8GiB if neither is set.
+- **workspaceHostPermissions**: controls chmod behavior for the primary workspace
+  bind mount. `mirror` (the default) mirrors guest rwx changes to the host;
+  `private` keeps them in MicroSandbox metadata.
+- **workspaceStatVirtualization**: controls workspace ownership and metadata
+  virtualization. `strict` (the default) requires compatible host metadata
+  support; `relaxed` tolerates filesystems without it; `off` exposes literal
+  host ownership and modes. `off` cannot be combined with `mirror`.
+
+The workspace mount uses `stat-virt=strict` and `host-perms=mirror` by default,
+while additional bind mounts retain MicroSandbox's safer defaults. Devsy passes
+the resolved devcontainer `containerUser` to the MicroSandbox runtime so files
+created on the host appear as the effective sandbox user in the guest. Install
+MicroSandbox v0.7.2 or newer; Devsy requires this version for workspace
+ownership synchronization and lifecycle operations. Apple Silicon macOS is the canonical supported
+integration-test host; use `relaxed` when a host filesystem cannot provide
+strict metadata virtualization.
 
 ```yaml
 agent:
@@ -167,6 +183,8 @@ agent:
     memory: "2048"
     blockEgress: "false"
     ephemeral: "false"
+    workspaceHostPermissions: "mirror"
+    workspaceStatVirtualization: "strict"
 ```
 
 ## Custom Driver
