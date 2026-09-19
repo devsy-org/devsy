@@ -1,16 +1,4 @@
 #!/bin/sh
-# Install the Devsy CLI.
-#
-#   curl -L https://devsy.sh/install.sh | sh
-#
-# Optional environment variables:
-#   DEVSY_VERSION           Release tag to install (for example v1.19.0)
-#                           instead of the latest release.
-#   DEVSY_INSTALL_DIR       Directory to install into. Defaults to
-#                           /usr/local/bin, or ~/.local/bin when /usr/local/bin
-#                           is not writable and sudo is unavailable.
-#   DEVSY_RELEASE_BASE_URL   Release download base URL, for mirrors or testing.
-#                           Defaults to https://github.com/devsy-org/devsy/releases.
 set -eu
 
 info() {
@@ -49,8 +37,6 @@ detect_arch() {
     esac
 }
 
-# sha256_of <file> prints the file's SHA-256 digest, or fails when no
-# SHA-256 tool is available.
 sha256_of() {
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum "$1" | awk '{print $1}'
@@ -61,9 +47,6 @@ sha256_of() {
     fi
 }
 
-# maybe_verify_checksum <file> <asset name> <checksums.txt path>
-# Verifies the download when the release publishes checksums; otherwise
-# continues with a note, matching the manual install commands in the docs.
 maybe_verify_checksum() {
     if [ ! -s "$3" ]; then
         info "This release does not publish checksums; skipping checksum verification."
@@ -84,7 +67,6 @@ maybe_verify_checksum() {
     info "Checksum verified."
 }
 
-# choose_install_dir prints the directory to install into.
 choose_install_dir() {
     if [ -n "${DEVSY_INSTALL_DIR:-}" ]; then
         printf '%s' "$DEVSY_INSTALL_DIR"
