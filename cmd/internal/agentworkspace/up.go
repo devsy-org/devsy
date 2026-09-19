@@ -506,12 +506,14 @@ func (w *workspaceInitializer) prepareWorkspaceContent(ctx context.Context) erro
 	})
 }
 
-// waitForDocker waits for the Docker installation to complete.
-// Note: This function modifies workspaceInfo.Agent.Docker.Path if Docker was installed.
+// waitForDocker waits for Docker discovery or installation to complete.
+// It replaces an unset path or the provider default with the resolved path while
+// preserving an explicitly configured custom Docker path.
 func (w *workspaceInitializer) waitForDocker(resultChan <-chan dockerInstallResult) error {
 	result := <-resultChan
 
-	if result.path != "" && w.workspaceInfo.Agent.Docker.Path == "" {
+	dockerPath := w.workspaceInfo.Agent.Docker.Path
+	if result.path != "" && (dockerPath == "" || dockerPath == "docker") {
 		w.workspaceInfo.Agent.Docker.Path = result.path
 		log.Debugf("set docker path to %s", result.path)
 	}
