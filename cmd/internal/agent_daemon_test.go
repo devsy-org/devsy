@@ -27,6 +27,7 @@ type recordingDiagnostics struct {
 func (r *recordingDiagnostics) Record(event machinediagnostics.Event) {
 	r.events = append(r.events, event)
 }
+
 func (r *recordingDiagnostics) Update(status machinediagnostics.Status) {
 	r.statuses = append(r.statuses, status)
 }
@@ -225,9 +226,25 @@ func TestDaemonWorkspaceConfigsSupportsBothLayouts(t *testing.T) {
 
 func TestDiagnosticsWorkspaceStatuses(t *testing.T) {
 	root := t.TempDir()
-	active := writeWorkspaceConfig(t, filepath.Join(root, "contexts", "default", "workspaces", "active", "agent"), types.StrArray{testEcho})
-	notConfigured := writeWorkspaceConfig(t, filepath.Join(root, "contexts", "default", "workspaces", "not-configured", "agent"), nil)
-	invalid := filepath.Join(root, "contexts", "default", "workspaces", "invalid", "agent", provider2.WorkspaceConfigFile)
+	active := writeWorkspaceConfig(
+		t,
+		filepath.Join(root, "contexts", "default", "workspaces", "active", "agent"),
+		types.StrArray{testEcho},
+	)
+	notConfigured := writeWorkspaceConfig(
+		t,
+		filepath.Join(root, "contexts", "default", "workspaces", "not-configured", "agent"),
+		nil,
+	)
+	invalid := filepath.Join(
+		root,
+		"contexts",
+		"default",
+		"workspaces",
+		"invalid",
+		"agent",
+		provider2.WorkspaceConfigFile,
+	)
 	require.NoError(t, os.MkdirAll(filepath.Dir(invalid), 0o750))
 	require.NoError(t, os.WriteFile(invalid, []byte("invalid"), 0o600))
 
@@ -256,7 +273,9 @@ func TestRecordWorkspaceTransitions(t *testing.T) {
 func TestRecordWorkspaceTransitionsReportsInvalidConfigOnce(t *testing.T) {
 	recorder := &recordingDiagnostics{}
 	cmd := &DaemonCmd{recorder: recorder}
-	invalid := []machinediagnostics.WorkspaceStatus{{ID: "broken", State: machinediagnostics.WorkspaceInvalidConfig}}
+	invalid := []machinediagnostics.WorkspaceStatus{
+		{ID: "broken", State: machinediagnostics.WorkspaceInvalidConfig},
+	}
 	cmd.recordWorkspaceTransitions(invalid)
 	cmd.recordWorkspaceTransitions(invalid)
 	require.Len(t, recorder.events, 2)
@@ -267,8 +286,20 @@ func TestRecordWorkspaceTransitionsReportsInvalidConfigOnce(t *testing.T) {
 func TestUpdateDiagnosticsPreservesLastSuccessfulPatrolAfterFailure(t *testing.T) {
 	recorder := &recordingDiagnostics{}
 	cmd := &DaemonCmd{recorder: recorder, startedAt: time.Now().UTC(), Interval: "1m"}
-	cmd.updateDiagnostics(machinediagnostics.DaemonRunning, machinediagnostics.DaemonHealthy, nil, nil, nil)
-	cmd.updateDiagnostics(machinediagnostics.DaemonRunning, machinediagnostics.DaemonDegraded, &machinediagnostics.DiagnosticError{Code: "patrol_failed"}, nil, nil)
+	cmd.updateDiagnostics(
+		machinediagnostics.DaemonRunning,
+		machinediagnostics.DaemonHealthy,
+		nil,
+		nil,
+		nil,
+	)
+	cmd.updateDiagnostics(
+		machinediagnostics.DaemonRunning,
+		machinediagnostics.DaemonDegraded,
+		&machinediagnostics.DiagnosticError{Code: "patrol_failed"},
+		nil,
+		nil,
+	)
 	require.Len(t, recorder.statuses, 2)
 	require.NotNil(t, recorder.statuses[0].LastSuccessAt)
 	require.NotNil(t, recorder.statuses[1].LastSuccessAt)
@@ -278,10 +309,28 @@ func TestUpdateDiagnosticsPreservesLastSuccessfulPatrolAfterFailure(t *testing.T
 func TestDiagnosticsRetainsErrorHistoryWithoutInventingStartupPatrol(t *testing.T) {
 	recorder := &recordingDiagnostics{}
 	cmd := &DaemonCmd{recorder: recorder}
-	cmd.updateDiagnostics(machinediagnostics.DaemonStarting, machinediagnostics.DaemonHealthy, nil, nil, nil)
+	cmd.updateDiagnostics(
+		machinediagnostics.DaemonStarting,
+		machinediagnostics.DaemonHealthy,
+		nil,
+		nil,
+		nil,
+	)
 	assert.Nil(t, recorder.statuses[0].LastPatrolAt)
-	cmd.updateDiagnostics(machinediagnostics.DaemonRunning, machinediagnostics.DaemonDegraded, &machinediagnostics.DiagnosticError{Code: "shutdown_failed"}, nil, nil)
-	cmd.updateDiagnostics(machinediagnostics.DaemonRunning, machinediagnostics.DaemonHealthy, nil, nil, nil)
+	cmd.updateDiagnostics(
+		machinediagnostics.DaemonRunning,
+		machinediagnostics.DaemonDegraded,
+		&machinediagnostics.DiagnosticError{Code: "shutdown_failed"},
+		nil,
+		nil,
+	)
+	cmd.updateDiagnostics(
+		machinediagnostics.DaemonRunning,
+		machinediagnostics.DaemonHealthy,
+		nil,
+		nil,
+		nil,
+	)
 	assert.Equal(t, "shutdown_failed", recorder.statuses[2].LastError.Code)
 	assert.Equal(t, machinediagnostics.DaemonHealthy, recorder.statuses[2].Health)
 }
@@ -296,7 +345,12 @@ func TestInvalidTimeoutBlocksShutdown(t *testing.T) {
 			data, err := json.Marshal(info)
 			require.NoError(t, err)
 			require.NoError(t, os.WriteFile(path, data, 0o600))
-			evaluation := evaluateMachineInactivity([]string{path}, time.Time{}, config.ShutdownActionStopContainer, time.Now().Add(24*time.Hour))
+			evaluation := evaluateMachineInactivity(
+				[]string{path},
+				time.Time{},
+				config.ShutdownActionStopContainer,
+				time.Now().Add(24*time.Hour),
+			)
 			assert.Nil(t, evaluation.candidate)
 			require.Len(t, evaluation.statuses, 1)
 			assert.Equal(t, machinediagnostics.WorkspaceInvalidConfig, evaluation.statuses[0].State)
@@ -314,13 +368,23 @@ func TestEvaluateMachineInactivityRequiresAllWorkspacesToBeIdle(t *testing.T) {
 	require.NoError(t, os.Chtimes(first, old, old))
 	require.NoError(t, os.Chtimes(second, old, old))
 
-	evaluation := evaluateMachineInactivity([]string{first, second}, time.Time{}, config.ShutdownActionStopContainer, now)
+	evaluation := evaluateMachineInactivity(
+		[]string{first, second},
+		time.Time{},
+		config.ShutdownActionStopContainer,
+		now,
+	)
 	require.NotNil(t, evaluation.workspace)
 	require.NotNil(t, evaluation.candidate)
 	assert.Equal(t, "all workspaces are idle", evaluation.reason)
 
 	require.NoError(t, os.Chtimes(second, now, now))
-	evaluation = evaluateMachineInactivity([]string{first, second}, time.Time{}, config.ShutdownActionStopContainer, now)
+	evaluation = evaluateMachineInactivity(
+		[]string{first, second},
+		time.Time{},
+		config.ShutdownActionStopContainer,
+		now,
+	)
 	assert.Nil(t, evaluation.workspace)
 	assert.Equal(t, "Waiting for inactivity deadline", evaluation.reason)
 	assert.Len(t, evaluation.statuses, 2)
@@ -332,21 +396,41 @@ func TestEvaluateMachineInactivityUsesHeartbeatAndBusyGrace(t *testing.T) {
 	old := now.Add(-2 * agent.DefaultInactivityTimeout)
 	require.NoError(t, os.Chtimes(configPath, old, old))
 	heartbeat := now.Add(-time.Minute)
-	evaluation := evaluateMachineInactivity([]string{configPath}, heartbeat, config.ShutdownActionStopContainer, now)
+	evaluation := evaluateMachineInactivity(
+		[]string{configPath},
+		heartbeat,
+		config.ShutdownActionStopContainer,
+		now,
+	)
 	require.Len(t, evaluation.statuses, 1)
 	assert.Equal(t, machinediagnostics.WorkspaceActive, evaluation.statuses[0].State)
 	assert.Equal(t, heartbeat, *evaluation.statuses[0].LastActivityAt)
 
 	agent.CreateWorkspaceBusyFile(filepath.Dir(configPath))
-	evaluation = evaluateMachineInactivity([]string{configPath}, time.Time{}, config.ShutdownActionStopContainer, now)
+	evaluation = evaluateMachineInactivity(
+		[]string{configPath},
+		time.Time{},
+		config.ShutdownActionStopContainer,
+		now,
+	)
 	assert.Equal(t, machinediagnostics.WorkspaceBusy, evaluation.statuses[0].State)
 	require.NotNil(t, evaluation.statuses[0].IdleDeadlineAt)
-	assert.WithinDuration(t, old.Add(busyGracePeriod).Add(agent.DefaultInactivityTimeout), *evaluation.statuses[0].IdleDeadlineAt, time.Second)
+	assert.WithinDuration(
+		t,
+		old.Add(busyGracePeriod).Add(agent.DefaultInactivityTimeout),
+		*evaluation.statuses[0].IdleDeadlineAt,
+		time.Second,
+	)
 }
 
 func TestEvaluateMachineInactivityBlocksDisabledWorkspace(t *testing.T) {
 	configPath := writeWorkspaceConfig(t, t.TempDir(), types.StrArray{testEcho})
-	evaluation := evaluateMachineInactivity([]string{configPath}, time.Time{}, config.ShutdownActionNone, time.Now())
+	evaluation := evaluateMachineInactivity(
+		[]string{configPath},
+		time.Time{},
+		config.ShutdownActionNone,
+		time.Now(),
+	)
 	assert.Nil(t, evaluation.workspace)
 	require.Len(t, evaluation.statuses, 1)
 	assert.True(t, evaluation.statuses[0].BlocksMachineShutdown)
