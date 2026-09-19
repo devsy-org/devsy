@@ -25,7 +25,11 @@ type fakeRelease struct {
 	requests *[]string
 }
 
-func newFakeRelease(t *testing.T, assets map[string]string, checksums map[string]string) *fakeRelease {
+func newFakeRelease(
+	t *testing.T,
+	assets map[string]string,
+	checksums map[string]string,
+) *fakeRelease {
 	t.Helper()
 	requests := &[]string{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +78,17 @@ func allAssets() map[string]string {
 	}
 }
 
+func hostAsset() string {
+	return fmt.Sprintf("devsy-%s-%s", runtime.GOOS, runtime.GOARCH)
+}
+
+func requireSingleRequest(t *testing.T, release *fakeRelease, want string) {
+	t.Helper()
+	if len(*release.requests) != 1 || (*release.requests)[0] != want {
+		t.Errorf("requests = %v, want [%s]", *release.requests, want)
+	}
+}
+
 // runInstall executes the install script with a clean DEVSY_*/FAKE_UNAME_*
 // environment plus the given extra variables, returning stdout and stderr.
 func runInstall(t *testing.T, extraEnv ...string) (string, string, error) {
@@ -90,7 +105,7 @@ func runInstall(t *testing.T, extraEnv ...string) (string, string, error) {
 
 	var env []string
 	for _, kv := range os.Environ() {
-		key := strings.SplitN(kv, "=", 2)[0]
+		key, _, _ := strings.Cut(kv, "=")
 		if strings.HasPrefix(key, "DEVSY_") || strings.HasPrefix(key, "FAKE_UNAME_") {
 			continue
 		}
@@ -124,10 +139,7 @@ func TestInstallsLatestForHostPlatform(t *testing.T) {
 		t.Fatalf("install failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
 	}
 
-	asset := fmt.Sprintf("devsy-%s-%s", runtime.GOOS, runtime.GOARCH)
-	if len(*release.requests) != 1 || (*release.requests)[0] != "/latest/download/"+asset {
-		t.Errorf("unexpected asset requests: %v", *release.requests)
-	}
+	requireSingleRequest(t, release, "/latest/download/"+hostAsset())
 
 	installed := filepath.Join(installDir, "devsy")
 	content, err := os.ReadFile(installed)
@@ -157,11 +169,7 @@ func TestInstallsPinnedVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
 	}
-	asset := fmt.Sprintf("devsy-%s-%s", runtime.GOOS, runtime.GOARCH)
-	want := "/download/v9.9.9/" + asset
-	if len(*release.requests) != 1 || (*release.requests)[0] != want {
-		t.Errorf("requests = %v, want [%s]", *release.requests, want)
-	}
+	requireSingleRequest(t, release, "/download/v9.9.9/"+hostAsset())
 }
 
 func TestVerifiesPublishedChecksum(t *testing.T) {
@@ -266,7 +274,8 @@ func TestPlatformDetection(t *testing.T) {
 			if err != nil {
 				t.Fatalf("install failed: %v\nstderr: %s", err, stderr)
 			}
-			if len(*release.requests) != 1 || (*release.requests)[0] != "/latest/download/"+tc.wantAsset {
+			if len(*release.requests) != 1 ||
+				(*release.requests)[0] != "/latest/download/"+tc.wantAsset {
 				t.Errorf("requests = %v, want asset %s", *release.requests, tc.wantAsset)
 			}
 		})
