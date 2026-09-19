@@ -390,7 +390,10 @@ func startFallbackDaemon(executable string, args []string, runtimeLockPath strin
 		//nolint:gosec // executable is from os.Executable()
 		cmd := exec.Command(executable, daemonArgs...)
 		if runtimeLockPath != machinediagnostics.DefaultRuntimeLockPath {
-			cmd.Env = append(os.Environ(), machinediagnostics.RuntimeLockPathEnv+"="+runtimeLockPath)
+			cmd.Env = append(
+				os.Environ(),
+				machinediagnostics.RuntimeLockPathEnv+"="+runtimeLockPath,
+			)
 		}
 		return cmd, nil
 	})
