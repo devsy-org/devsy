@@ -169,7 +169,6 @@ type InstallOptions struct {
 	DiagnosticsReader machinediagnostics.ReaderIdentity
 }
 
-//nolint:cyclop // installation steps must fail in order with precise cleanup.
 func InstallDaemon(
 	opts InstallOptions,
 ) error {
@@ -191,7 +190,10 @@ func InstallDaemon(
 		log.Warnf("systemd not available, falling back to background process")
 		return startFallbackDaemon(executable, args)
 	}
+	return installSystemdDaemon(opts, executable, args)
+}
 
+func installSystemdDaemon(opts InstallOptions, executable string, args []string) error {
 	quoted := make([]string, len(args))
 	for i, a := range args {
 		quoted[i] = quoteSystemdArg(a)

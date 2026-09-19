@@ -48,19 +48,20 @@ type CollectionSource struct {
 	Message      string `json:"message,omitempty"`
 }
 
-//nolint:revive // the nested machine shape matches the public JSON contract.
+type MachineInfo struct {
+	ID       string `json:"id"`
+	Context  string `json:"context"`
+	Provider string `json:"provider"`
+	State    string `json:"state"`
+}
+
 type MachineDiagnostics struct {
-	SchemaVersion int `json:"schemaVersion"`
-	Machine       struct {
-		ID       string `json:"id"`
-		Context  string `json:"context"`
-		Provider string `json:"provider"`
-		State    string `json:"state"`
-	} `json:"machine"`
-	Source CollectionSource              `json:"source"`
-	Daemon *machinediagnostics.Status    `json:"daemon,omitempty"`
-	Events []machinediagnostics.Event    `json:"events,omitempty"`
-	Cursor machinediagnostics.CursorInfo `json:"cursor"`
+	SchemaVersion int                           `json:"schemaVersion"`
+	Machine       MachineInfo                   `json:"machine"`
+	Source        CollectionSource              `json:"source"`
+	Daemon        *machinediagnostics.Status    `json:"daemon,omitempty"`
+	Events        []machinediagnostics.Event    `json:"events,omitempty"`
+	Cursor        machinediagnostics.CursorInfo `json:"cursor"`
 }
 
 type DiagnosticsCmd struct {
@@ -86,7 +87,6 @@ func NewDiagnosticsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return c
 }
 
-//nolint:revive // command arguments are part of the CLI contract.
 func (cmd *DiagnosticsCmd) Run(
 	ctx context.Context,
 	args []string,
@@ -108,20 +108,27 @@ func (cmd *DiagnosticsCmd) Run(
 	if err != nil {
 		return err
 	}
-	result, err := fetchDiagnostics(ctx, mc, cmd.After, cmd.Limit, !cmd.NoEvents)
+	result, err := fetchDiagnostics(ctx, mc, diagnosticsFetchOptions{
+		After:         cmd.After,
+		Limit:         cmd.Limit,
+		IncludeEvents: !cmd.NoEvents,
+	})
 	if err != nil {
 		return err
 	}
 	return renderDiagnostics(result, cmd.ResultFormat)
 }
 
-//nolint:cyclop,funlen,revive // the fetch API keeps cursor and output selection inputs together.
+type diagnosticsFetchOptions struct {
+	After         string
+	Limit         int
+	IncludeEvents bool
+}
+
 func fetchDiagnostics(
 	ctx context.Context,
 	mc client.MachineClient,
-	after string,
-	limit int,
-	includeEvents bool,
+	opts diagnosticsFetchOptions,
 ) (MachineDiagnostics, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -129,9 +136,11 @@ func fetchDiagnostics(
 		SchemaVersion: machinediagnostics.SchemaVersion,
 		Cursor:        machinediagnostics.CursorInfo{State: machinediagnostics.CursorNone},
 	}
-	result.Machine.ID = mc.Machine()
-	result.Machine.Context = mc.Context()
-	result.Machine.Provider = mc.Provider()
+	result.Machine = MachineInfo{
+		ID:       mc.Machine(),
+		Context:  mc.Context(),
+		Provider: mc.Provider(),
+	}
 	status, err := mc.Status(ctx, client.StatusOptions{})
 	if err != nil {
 		if ctx.Err() != nil && ctx.Err() != context.DeadlineExceeded {
@@ -164,17 +173,29 @@ func fetchDiagnostics(
 		}
 		return result, nil
 	}
+	return fetchRemoteDiagnostics(ctx, mc, opts, result)
+}
+
+func fetchRemoteDiagnostics(
+	ctx context.Context,
+	mc client.MachineClient,
+	opts diagnosticsFetchOptions,
+	result MachineDiagnostics,
+) (MachineDiagnostics, error) {
 	command := shellescape.Quote(
 		mc.AgentPath(),
 	) + " internal agent daemon-diagnostics --limit " + strconv.Itoa(
-		limit,
+		opts.Limit,
 	)
-	if after != "" {
-		command += " --after " + shellescape.Quote(after)
+	if opts.After != "" {
+		command += " --after " + shellescape.Quote(opts.After)
 	}
 	stdout := boundedDiagnosticsBuffer{max: maxRemoteDiagnosticsResponse}
 	stderr := boundedDiagnosticsBuffer{max: maxRemoteDiagnosticsResponse}
-	err = mc.Command(ctx, client.CommandOptions{Command: command, Stdout: &stdout, Stderr: &stderr})
+	err := mc.Command(
+		ctx,
+		client.CommandOptions{Command: command, Stdout: &stdout, Stderr: &stderr},
+	)
 	if err != nil {
 		result.Source = CollectionSource{
 			Availability: unavailableAvailability,
@@ -204,6 +225,14 @@ func fetchDiagnostics(
 		}
 		return result, nil
 	}
+	return applyRemoteDiagnostics(result, remote, opts.IncludeEvents), nil
+}
+
+func applyRemoteDiagnostics(
+	result MachineDiagnostics,
+	remote machinediagnostics.ReadResponse,
+	includeEvents bool,
+) MachineDiagnostics {
 	result.Source = CollectionSource{
 		Availability: string(remote.Availability),
 		Freshness:    string(remote.Freshness),
@@ -217,7 +246,7 @@ func fetchDiagnostics(
 		result.Events = remote.Events
 	}
 	result.Cursor = remote.Cursor
-	return result, nil
+	return result
 }
 
 func renderDiagnostics(result MachineDiagnostics, format string) error {
@@ -316,28 +345,37 @@ func renderWorkspaceDiagnostics(w io.Writer, workspaces []machinediagnostics.Wor
 	_ = tw.Flush()
 }
 
-//nolint:cyclop // status precedence is clearer as one ordered decision tree.
 func workspaceAutoStopDetail(
 	workspace machinediagnostics.WorkspaceStatus,
 ) string {
 	if workspace.BlocksMachineShutdown && workspace.BlockerReason != "" {
-		if workspace.State == machinediagnostics.WorkspaceActive &&
-			workspace.IdleDeadlineAt != nil {
-			return workspace.BlockerReason + " (" + workspace.IdleDeadlineAt.Local().
-				Format("2006-01-02 15:04:05") +
-				")"
-		}
-		return workspace.BlockerReason
+		return workspaceBlockerDetail(workspace)
 	}
 	if workspace.IdleDeadlineAt != nil {
-		if workspace.State == machinediagnostics.WorkspaceIdleDue {
-			return "Eligible now (" + workspace.IdleDeadlineAt.Local().
-				Format("2006-01-02 15:04:05") +
-				")"
-		}
-		return workspace.IdleDeadlineAt.Local().Format("2006-01-02 15:04:05")
+		return workspaceDeadlineDetail(workspace)
 	}
-	switch workspace.State {
+	return workspaceStateDetail(workspace.State)
+}
+
+func workspaceBlockerDetail(workspace machinediagnostics.WorkspaceStatus) string {
+	if workspace.State == machinediagnostics.WorkspaceActive && workspace.IdleDeadlineAt != nil {
+		return workspace.BlockerReason + " (" + workspace.IdleDeadlineAt.Local().
+			Format("2006-01-02 15:04:05") +
+			")"
+	}
+	return workspace.BlockerReason
+}
+
+func workspaceDeadlineDetail(workspace machinediagnostics.WorkspaceStatus) string {
+	deadline := workspace.IdleDeadlineAt.Local().Format("2006-01-02 15:04:05")
+	if workspace.State == machinediagnostics.WorkspaceIdleDue {
+		return "Eligible now (" + deadline + ")"
+	}
+	return deadline
+}
+
+func workspaceStateDetail(state machinediagnostics.WorkspaceEvaluationState) string {
+	switch state {
 	case machinediagnostics.WorkspaceBusy:
 		return "Delayed while workspace is busy"
 	case machinediagnostics.WorkspaceNotConfigured:

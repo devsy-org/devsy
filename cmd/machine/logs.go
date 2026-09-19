@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/machinediagnostics"
@@ -45,7 +46,6 @@ func NewLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return c
 }
 
-//nolint:cyclop,funlen // follow mode owns a single ordered polling loop.
 func (cmd *LogsCmd) Run(
 	ctx context.Context,
 	args []string,
@@ -71,62 +71,89 @@ func (cmd *LogsCmd) Run(
 	if err != nil {
 		return err
 	}
+	return cmd.runDiagnosticsLoop(ctx, mc, mode)
+}
+
+func (cmd *LogsCmd) runDiagnosticsLoop(
+	ctx context.Context,
+	mc client.MachineClient,
+	mode string,
+) error {
 	for {
-		result, err := fetchDiagnostics(ctx, mc, cmd.After, cmd.Limit, true)
+		result, err := fetchDiagnostics(ctx, mc, diagnosticsFetchOptions{
+			After:         cmd.After,
+			Limit:         cmd.Limit,
+			IncludeEvents: true,
+		})
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
 			return err
 		}
-		if mode == output.ModeJSON {
-			if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
-				return err
-			}
-		} else {
-			if result.Source.Availability != string(machinediagnostics.AvailabilityAvailable) {
-				_, _ = fmt.Fprintf(
-					os.Stderr,
-					"Diagnostics: %s %s\n",
-					result.Source.Availability,
-					result.Source.Message,
-				)
-			}
-			if result.Cursor.State == machinediagnostics.CursorGap ||
-				result.Cursor.State == machinediagnostics.CursorReset {
-				_, _ = fmt.Fprintf(
-					os.Stderr,
-					"Diagnostic history: %s (%s)\n",
-					result.Cursor.State,
-					result.Cursor.Reason,
-				)
-			}
-			for _, event := range result.Events {
-				_, _ = fmt.Fprintf(
-					os.Stdout,
-					"%s %-5s %-35s %s\n",
-					event.Timestamp.Format(time.RFC3339),
-					event.Level,
-					event.Type,
-					event.Message,
-				)
-			}
+		if err := renderLogResult(result, mode); err != nil {
+			return err
 		}
 		if !cmd.Follow {
 			return nil
 		}
-		if result.Cursor.State == machinediagnostics.CursorReset {
-			cmd.After = ""
-		}
-		if result.Cursor.Next != "" {
-			cmd.After = result.Cursor.Next
-		}
-		timer := time.NewTimer(5 * time.Second)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
+		cmd.advanceCursor(result.Cursor)
+		if !waitForNextLogPoll(ctx) {
 			return nil
-		case <-timer.C:
 		}
+	}
+}
+
+func renderLogResult(result MachineDiagnostics, mode string) error {
+	if mode == output.ModeJSON {
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	if result.Source.Availability != string(machinediagnostics.AvailabilityAvailable) {
+		_, _ = fmt.Fprintf(
+			os.Stderr,
+			"Diagnostics: %s %s\n",
+			result.Source.Availability,
+			result.Source.Message,
+		)
+	}
+	if result.Cursor.State == machinediagnostics.CursorGap ||
+		result.Cursor.State == machinediagnostics.CursorReset {
+		_, _ = fmt.Fprintf(
+			os.Stderr,
+			"Diagnostic history: %s (%s)\n",
+			result.Cursor.State,
+			result.Cursor.Reason,
+		)
+	}
+	for _, event := range result.Events {
+		_, _ = fmt.Fprintf(
+			os.Stdout,
+			"%s %-5s %-35s %s\n",
+			event.Timestamp.Format(time.RFC3339),
+			event.Level,
+			event.Type,
+			event.Message,
+		)
+	}
+	return nil
+}
+
+func (cmd *LogsCmd) advanceCursor(cursor machinediagnostics.CursorInfo) {
+	if cursor.State == machinediagnostics.CursorReset {
+		cmd.After = ""
+	}
+	if cursor.Next != "" {
+		cmd.After = cursor.Next
+	}
+}
+
+func waitForNextLogPoll(ctx context.Context) bool {
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }

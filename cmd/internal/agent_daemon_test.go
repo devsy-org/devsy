@@ -287,18 +287,17 @@ func TestUpdateDiagnosticsPreservesLastSuccessfulPatrolAfterFailure(t *testing.T
 	recorder := &recordingDiagnostics{}
 	cmd := &DaemonCmd{recorder: recorder, startedAt: time.Now().UTC(), Interval: "1m"}
 	cmd.updateDiagnostics(
-		machinediagnostics.DaemonRunning,
-		machinediagnostics.DaemonHealthy,
-		nil,
-		nil,
-		nil,
+		diagnosticsUpdate{
+			state:  machinediagnostics.DaemonRunning,
+			health: machinediagnostics.DaemonHealthy,
+		},
 	)
 	cmd.updateDiagnostics(
-		machinediagnostics.DaemonRunning,
-		machinediagnostics.DaemonDegraded,
-		&machinediagnostics.DiagnosticError{Code: "patrol_failed"},
-		nil,
-		nil,
+		diagnosticsUpdate{
+			state:         machinediagnostics.DaemonRunning,
+			health:        machinediagnostics.DaemonDegraded,
+			diagnosticErr: &machinediagnostics.DiagnosticError{Code: "patrol_failed"},
+		},
 	)
 	require.Len(t, recorder.statuses, 2)
 	require.NotNil(t, recorder.statuses[0].LastSuccessAt)
@@ -310,26 +309,24 @@ func TestDiagnosticsRetainsErrorHistoryWithoutInventingStartupPatrol(t *testing.
 	recorder := &recordingDiagnostics{}
 	cmd := &DaemonCmd{recorder: recorder}
 	cmd.updateDiagnostics(
-		machinediagnostics.DaemonStarting,
-		machinediagnostics.DaemonHealthy,
-		nil,
-		nil,
-		nil,
+		diagnosticsUpdate{
+			state:  machinediagnostics.DaemonStarting,
+			health: machinediagnostics.DaemonHealthy,
+		},
 	)
 	assert.Nil(t, recorder.statuses[0].LastPatrolAt)
 	cmd.updateDiagnostics(
-		machinediagnostics.DaemonRunning,
-		machinediagnostics.DaemonDegraded,
-		&machinediagnostics.DiagnosticError{Code: "shutdown_failed"},
-		nil,
-		nil,
+		diagnosticsUpdate{
+			state:         machinediagnostics.DaemonRunning,
+			health:        machinediagnostics.DaemonDegraded,
+			diagnosticErr: &machinediagnostics.DiagnosticError{Code: "shutdown_failed"},
+		},
 	)
 	cmd.updateDiagnostics(
-		machinediagnostics.DaemonRunning,
-		machinediagnostics.DaemonHealthy,
-		nil,
-		nil,
-		nil,
+		diagnosticsUpdate{
+			state:  machinediagnostics.DaemonRunning,
+			health: machinediagnostics.DaemonHealthy,
+		},
 	)
 	assert.Equal(t, "shutdown_failed", recorder.statuses[2].LastError.Code)
 	assert.Equal(t, machinediagnostics.DaemonHealthy, recorder.statuses[2].Health)

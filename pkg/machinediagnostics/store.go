@@ -86,10 +86,14 @@ func (s *Store) Record(event Event) {
 	}
 }
 
-//nolint:funcorder // kept next to the public Record wrapper.
-func (s *Store) record(
-	event Event,
-) error {
+func (s *Store) Update(status Status) {
+	if err := s.update(status); err != nil {
+		s.reportError(err)
+	}
+}
+func (s *Store) Close() error { return nil }
+
+func (s *Store) record(event Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sequence++
@@ -110,11 +114,7 @@ func (s *Store) record(
 		return err
 	}
 	//nolint:gosec // diagnostics are intentionally group-readable for the configured reader.
-	f, err := os.OpenFile(
-		path,
-		os.O_APPEND|os.O_WRONLY|os.O_CREATE,
-		0o640,
-	)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o640)
 	if err != nil {
 		return err
 	}
@@ -128,16 +128,7 @@ func (s *Store) record(
 	return s.prune()
 }
 
-func (s *Store) Update(status Status) {
-	if err := s.update(status); err != nil {
-		s.reportError(err)
-	}
-}
-
-//nolint:funcorder // kept next to the public Update wrapper.
-func (s *Store) update(
-	status Status,
-) error {
+func (s *Store) update(status Status) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	status.SchemaVersion = SchemaVersion
@@ -152,7 +143,7 @@ func (s *Store) update(
 	}
 	return s.writeAtomic(filepath.Join(s.dir, "status.json"), b)
 }
-func (s *Store) Close() error { return nil }
+
 func (s *Store) reportError(err error) {
 	if s.errorReporter == nil {
 		return
@@ -256,29 +247,10 @@ func (s *Store) segments() ([]string, error) {
 	return paths, nil
 }
 
-func (s *Store) prune() error { //nolint:cyclop // retention ordering is intentionally handled in one transaction.
-	entries, err := os.ReadDir(s.eventsDir)
+func (s *Store) prune() error {
+	all, total, err := s.prunableSegments()
 	if err != nil {
 		return err
-	}
-	type item struct {
-		path    string
-		size    int64
-		modTime time.Time
-	}
-	var all []item
-	var total int64
-	for _, e := range entries {
-		if !e.Type().IsRegular() || !strings.HasSuffix(e.Name(), ".ndjson") {
-			continue
-		}
-		fi, er := e.Info()
-		if er != nil {
-			return er
-		}
-		p := filepath.Join(s.eventsDir, e.Name())
-		all = append(all, item{path: p, size: fi.Size(), modTime: fi.ModTime()})
-		total += fi.Size()
 	}
 	sort.Slice(all, func(i, j int) bool {
 		if all[i].modTime.Equal(all[j].modTime) {
@@ -296,19 +268,50 @@ func (s *Store) prune() error { //nolint:cyclop // retention ordering is intenti
 	return nil
 }
 
+type prunableSegment struct {
+	path    string
+	size    int64
+	modTime time.Time
+}
+
+func (s *Store) prunableSegments() ([]prunableSegment, int64, error) {
+	entries, err := os.ReadDir(s.eventsDir)
+	if err != nil {
+		return nil, 0, err
+	}
+	var all []prunableSegment
+	var total int64
+	for _, e := range entries {
+		if !e.Type().IsRegular() || !strings.HasSuffix(e.Name(), ".ndjson") {
+			continue
+		}
+		fi, er := e.Info()
+		if er != nil {
+			return nil, 0, er
+		}
+		all = append(all, prunableSegment{
+			path: filepath.Join(s.eventsDir, e.Name()), size: fi.Size(), modTime: fi.ModTime(),
+		})
+		total += fi.Size()
+	}
+	return all, total, nil
+}
+
 func newSessionID() string {
 	b := make([]byte, 10)
 	_, _ = rand.Read(b)
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b))
 }
 
-//nolint:revive,cyclop,funlen // the public read API preserves cursor and freshness inputs.
-func Read(
-	dir, after string,
-	limit int,
-	interval time.Duration,
-	now time.Time,
-) ReadResponse {
+type ReadOptions struct {
+	After    string
+	Limit    int
+	Interval time.Duration
+	Now      time.Time
+}
+
+func Read(dir string, options ReadOptions) ReadResponse {
+	after, limit, interval, now := options.After, options.Limit, options.Interval, options.Now
 	r := ReadResponse{
 		SchemaVersion: SchemaVersion,
 		Availability:  AvailabilityAvailable,
@@ -324,82 +327,118 @@ func Read(
 	}
 	status, err := readStatus(filepath.Join(dir, "status.json"))
 	if err != nil {
-		switch {
-		case errors.Is(err, os.ErrNotExist):
-			r.Availability = AvailabilityNotInitialized
-		case errors.Is(err, os.ErrPermission):
-			r.Availability = AvailabilityPermissionDenied
-			r.Error = &DiagnosticError{
-				Code:      diagnosticsPermissionDenied,
-				Message:   "Access to the remote diagnostics snapshot was denied.",
-				Timestamp: now.UTC(),
-			}
-		default:
-			r.Availability = AvailabilityCorrupt
-			r.Error = &DiagnosticError{
-				Code:      diagnosticsCorrupt,
-				Message:   "Remote diagnostics could not be read.",
-				Timestamp: now.UTC(),
-			}
-		}
-		return r
+		return statusReadFailure(r, err, now)
 	}
 	r.Status = status
 	r.Freshness = freshness(status, interval, now)
 	events, err := readEvents(filepath.Join(dir, "events"))
 	if err != nil {
-		if errors.Is(err, os.ErrPermission) {
-			r.Availability = AvailabilityPermissionDenied
-			r.Error = &DiagnosticError{
-				Code:      diagnosticsPermissionDenied,
-				Message:   "Access to remote diagnostic events was denied.",
-				Timestamp: now.UTC(),
-			}
-		} else {
-			r.Availability = AvailabilityCorrupt
-			r.Error = &DiagnosticError{
-				Code:      diagnosticsCorrupt,
-				Message:   "Remote diagnostic events could not be read.",
-				Timestamp: now.UTC(),
-			}
-		}
-		return r
+		return eventsReadFailure(r, err, now)
 	}
-	c, err := decodeCursor(after)
-	if err != nil {
-		r.Cursor = CursorInfo{State: CursorReset, Reason: "invalid_cursor"}
-	}
-	if c.sessionID != "" && c.sessionID != status.SessionID {
-		r.Cursor = CursorInfo{State: CursorReset, Reason: "session_changed"}
-	}
-	currentEvents := make([]Event, 0, len(events))
-	for _, event := range events {
-		if event.SessionID == status.SessionID {
-			currentEvents = append(currentEvents, event)
-		}
-	}
-	start := uint64(0)
-	if c.sessionID == status.SessionID {
-		start = c.sequence
-		if len(currentEvents) > 0 && start < currentEvents[0].Sequence-1 {
-			r.Cursor = CursorInfo{State: CursorGap, Reason: "retention"}
-		}
-	}
-	for _, e := range currentEvents {
-		if e.Sequence > start {
-			r.Events = append(r.Events, e)
-			if len(r.Events) >= limit {
-				break
-			}
-		}
-	}
-	if len(r.Events) > 0 {
-		r.Cursor.Next = EncodeCursor(status.SessionID, r.Events[len(r.Events)-1].Sequence)
-		if r.Cursor.State == CursorNone {
-			r.Cursor.State = CursorOK
-		}
-	}
+	appendReadEvents(
+		&r,
+		events,
+		readEventsOptions{SessionID: status.SessionID, After: after, Limit: limit},
+	)
 	return r
+}
+
+func statusReadFailure(response ReadResponse, err error, now time.Time) ReadResponse {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		response.Availability = AvailabilityNotInitialized
+	case errors.Is(err, os.ErrPermission):
+		response.Availability = AvailabilityPermissionDenied
+		response.Error = &DiagnosticError{
+			Code:      diagnosticsPermissionDenied,
+			Message:   "Access to the remote diagnostics snapshot was denied.",
+			Timestamp: now.UTC(),
+		}
+	default:
+		response.Availability = AvailabilityCorrupt
+		response.Error = &DiagnosticError{
+			Code:      diagnosticsCorrupt,
+			Message:   "Remote diagnostics could not be read.",
+			Timestamp: now.UTC(),
+		}
+	}
+	return response
+}
+
+func eventsReadFailure(response ReadResponse, err error, now time.Time) ReadResponse {
+	response.Availability = AvailabilityCorrupt
+	response.Error = &DiagnosticError{
+		Code:      diagnosticsCorrupt,
+		Message:   "Remote diagnostic events could not be read.",
+		Timestamp: now.UTC(),
+	}
+	if errors.Is(err, os.ErrPermission) {
+		response.Availability = AvailabilityPermissionDenied
+		response.Error = &DiagnosticError{
+			Code:      diagnosticsPermissionDenied,
+			Message:   "Access to remote diagnostic events was denied.",
+			Timestamp: now.UTC(),
+		}
+	}
+	return response
+}
+
+type readEventsOptions struct {
+	SessionID string
+	After     string
+	Limit     int
+}
+
+func appendReadEvents(response *ReadResponse, events []Event, options readEventsOptions) {
+	start := readEventStart(response, events, options)
+	for _, event := range eventsForSession(events, options.SessionID) {
+		if event.Sequence > start {
+			response.Events = append(response.Events, event)
+		}
+		if len(response.Events) >= options.Limit {
+			break
+		}
+	}
+	if len(response.Events) > 0 {
+		response.Cursor.Next = EncodeCursor(
+			options.SessionID,
+			response.Events[len(response.Events)-1].Sequence,
+		)
+		if response.Cursor.State == CursorNone {
+			response.Cursor.State = CursorOK
+		}
+	}
+}
+
+func readEventStart(response *ReadResponse, events []Event, options readEventsOptions) uint64 {
+	cursor, err := decodeCursor(options.After)
+	if err != nil {
+		response.Cursor = CursorInfo{State: CursorReset, Reason: "invalid_cursor"}
+	}
+	if cursor.sessionID != "" && cursor.sessionID != options.SessionID {
+		response.Cursor = CursorInfo{State: CursorReset, Reason: "session_changed"}
+	}
+	if cursor.sessionID != options.SessionID {
+		return 0
+	}
+	if current := eventsForSession(
+		events,
+		options.SessionID,
+	); len(current) > 0 &&
+		cursor.sequence < current[0].Sequence-1 {
+		response.Cursor = CursorInfo{State: CursorGap, Reason: "retention"}
+	}
+	return cursor.sequence
+}
+
+func eventsForSession(events []Event, sessionID string) []Event {
+	current := make([]Event, 0, len(events))
+	for _, event := range events {
+		if event.SessionID == sessionID {
+			current = append(current, event)
+		}
+	}
+	return current
 }
 
 func readStatus(path string) (*Status, error) {
@@ -418,10 +457,29 @@ func readStatus(path string) (*Status, error) {
 	return &s, nil
 }
 
-//nolint:cyclop // malformed-record handling is deliberately explicit.
 func readEvents(
 	dir string,
 ) ([]Event, error) {
+	paths, err := diagnosticEventPaths(dir)
+	if err != nil {
+		return nil, err
+	}
+	var events []Event
+	for _, p := range paths {
+		fileEvents, err := readDiagnosticEventFile(p)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, err
+		}
+		events = append(events, fileEvents...)
+	}
+	sort.Slice(events, func(i, j int) bool { return events[i].Sequence < events[j].Sequence })
+	return events, nil
+}
+
+func diagnosticEventPaths(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -433,33 +491,29 @@ func readEvents(
 		}
 	}
 	sort.Strings(paths)
-	var events []Event
-	for _, p := range paths {
-		content, er := os.ReadFile(p) //nolint:gosec // paths come from the diagnostics directory.
-		if er != nil {
-			if errors.Is(er, os.ErrNotExist) {
-				continue
-			}
-			return nil, er
-		}
-		lines := bytes.Split(content, []byte{'\n'})
-		for index, line := range lines {
-			if len(line) == 0 {
-				continue
-			}
-			var e Event
-			if er := json.Unmarshal(line, &e); er != nil {
-				// An incomplete final append is the only malformed record that a
-				// reader may ignore. A newline makes every earlier record complete.
-				if index == len(lines)-1 && !bytes.HasSuffix(content, []byte{'\n'}) {
-					break
-				}
-				return nil, fmt.Errorf("decode diagnostic event %s record %d: %w", p, index+1, er)
-			}
-			events = append(events, e)
-		}
+	return paths, nil
+}
+
+func readDiagnosticEventFile(path string) ([]Event, error) {
+	content, err := os.ReadFile(path) //nolint:gosec // paths come from the diagnostics directory.
+	if err != nil {
+		return nil, err
 	}
-	sort.Slice(events, func(i, j int) bool { return events[i].Sequence < events[j].Sequence })
+	var events []Event
+	lines := bytes.Split(content, []byte{'\n'})
+	for index, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		var event Event
+		if err := json.Unmarshal(line, &event); err != nil {
+			if index == len(lines)-1 && !bytes.HasSuffix(content, []byte{'\n'}) {
+				break
+			}
+			return nil, fmt.Errorf("decode diagnostic event %s record %d: %w", path, index+1, err)
+		}
+		events = append(events, event)
+	}
 	return events, nil
 }
 

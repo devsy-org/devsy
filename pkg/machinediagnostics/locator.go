@@ -18,7 +18,6 @@ type Locator struct {
 	StartedAt      time.Time `json:"startedAt"`
 }
 
-//nolint:cyclop,revive // atomic locator writes must validate each step and preserve the five-field API.
 func WriteLocator(
 	path string,
 	locator Locator,
@@ -40,12 +39,7 @@ func WriteLocator(
 	}
 	tmp := f.Name()
 	defer func() { _ = os.Remove(tmp) }()
-	if _, err = f.Write(b); err == nil {
-		err = f.Chmod(0o644)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
+	err = writeLocatorContents(f, b)
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
@@ -53,6 +47,16 @@ func WriteLocator(
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func writeLocatorContents(f *os.File, b []byte) error {
+	if _, err := f.Write(b); err != nil {
+		return err
+	}
+	if err := f.Chmod(0o644); err != nil {
+		return err
+	}
+	return f.Sync()
 }
 
 func ReadLocator(path string) (Locator, error) {
@@ -72,14 +76,8 @@ func ReadLocator(path string) (Locator, error) {
 
 // ReadFromLocator reads the active daemon store without making callers infer
 // the service user's home directory or parse a systemd unit.
-//
-//nolint:revive // the reader API keeps cursor parameters together.
-func ReadFromLocator(
-	path, after string,
-	limit int,
-	interval time.Duration,
-	now time.Time,
-) ReadResponse {
+func ReadFromLocator(path string, options ReadOptions) ReadResponse {
+	now := options.Now
 	locator, err := ReadLocator(path)
 	if err != nil {
 		response := ReadResponse{
@@ -106,5 +104,5 @@ func ReadFromLocator(
 		}
 		return response
 	}
-	return Read(locator.DiagnosticsDir, after, limit, interval, now)
+	return Read(locator.DiagnosticsDir, options)
 }

@@ -42,10 +42,9 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context) error {
 	_ = ctx
 	response := machinediagnostics.ReadFromLocator(
 		machinediagnostics.DefaultLocatorPath,
-		"",
-		machinediagnostics.DefaultReadEvents,
-		0,
-		time.Now(),
+		machinediagnostics.ReadOptions{
+			Limit: machinediagnostics.DefaultReadEvents, Now: time.Now(),
+		},
 	)
 	return json.NewEncoder(os.Stdout).Encode(response)
 }

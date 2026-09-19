@@ -53,7 +53,11 @@ func TestBoundedDiagnosticsBuffer(t *testing.T) {
 
 func TestFetchDiagnosticsSkipsRemoteCommandForStoppedMachine(t *testing.T) {
 	machine := &fakeMachineClient{status: client.StatusStopped}
-	result, err := fetchDiagnostics(context.Background(), machine, "", 20, true)
+	result, err := fetchDiagnostics(
+		context.Background(),
+		machine,
+		diagnosticsFetchOptions{Limit: 20, IncludeEvents: true},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "machine_stopped", result.Source.Availability)
 	assert.Zero(t, machine.commandCalls)
@@ -82,7 +86,11 @@ func TestFetchDiagnosticsReadsRemoteResponse(t *testing.T) {
 	})
 	require.NoError(t, err)
 	machine := &fakeMachineClient{status: client.StatusRunning, response: string(response)}
-	result, err := fetchDiagnostics(context.Background(), machine, "", 20, true)
+	result, err := fetchDiagnostics(
+		context.Background(),
+		machine,
+		diagnosticsFetchOptions{Limit: 20, IncludeEvents: true},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "available", result.Source.Availability)
 	assert.Equal(t, machinediagnostics.DaemonHealthy, result.Daemon.Health)
@@ -92,7 +100,11 @@ func TestFetchDiagnosticsReadsRemoteResponse(t *testing.T) {
 
 func TestFetchDiagnosticsRetainsAvailabilityWhenRemoteCommandFails(t *testing.T) {
 	machine := &fakeMachineClient{status: client.StatusRunning, commandErr: errors.New("ssh lost")}
-	result, err := fetchDiagnostics(context.Background(), machine, "", 20, true)
+	result, err := fetchDiagnostics(
+		context.Background(),
+		machine,
+		diagnosticsFetchOptions{Limit: 20, IncludeEvents: true},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "unavailable", result.Source.Availability)
 	assert.Equal(t, "remote_diagnostics_command_failed", result.Source.ErrorCode)
@@ -100,7 +112,11 @@ func TestFetchDiagnosticsRetainsAvailabilityWhenRemoteCommandFails(t *testing.T)
 
 func TestFetchDiagnosticsRejectsIncompleteResponse(t *testing.T) {
 	machine := &fakeMachineClient{status: client.StatusRunning, response: `{}`}
-	result, err := fetchDiagnostics(context.Background(), machine, "", 20, true)
+	result, err := fetchDiagnostics(
+		context.Background(),
+		machine,
+		diagnosticsFetchOptions{Limit: 20, IncludeEvents: true},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "unavailable", result.Source.Availability)
 	assert.Equal(t, "invalid_diagnostics_response", result.Source.ErrorCode)
@@ -108,7 +124,11 @@ func TestFetchDiagnosticsRejectsIncompleteResponse(t *testing.T) {
 
 func TestFetchDiagnosticsReportsProviderFailureWithoutEndingCollection(t *testing.T) {
 	machine := &fakeMachineClient{statusErr: errors.New("provider connection lost")}
-	result, err := fetchDiagnostics(context.Background(), machine, "", 20, true)
+	result, err := fetchDiagnostics(
+		context.Background(),
+		machine,
+		diagnosticsFetchOptions{Limit: 20, IncludeEvents: true},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "unknown", result.Machine.State)
 	assert.Equal(t, "machine_status_unavailable", result.Source.ErrorCode)

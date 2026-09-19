@@ -140,11 +140,10 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 		},
 	)
 	cmd.updateDiagnostics(
-		machinediagnostics.DaemonStarting,
-		machinediagnostics.DaemonHealthy,
-		nil,
-		nil,
-		nil,
+		diagnosticsUpdate{
+			state:  machinediagnostics.DaemonStarting,
+			health: machinediagnostics.DaemonHealthy,
+		},
 	)
 	defer func() {
 		cmd.recordEvent(
@@ -155,11 +154,10 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 			},
 		)
 		cmd.updateDiagnostics(
-			machinediagnostics.DaemonStopping,
-			machinediagnostics.DaemonHealthy,
-			nil,
-			nil,
-			nil,
+			diagnosticsUpdate{
+				state:  machinediagnostics.DaemonStopping,
+				health: machinediagnostics.DaemonHealthy,
+			},
 		)
 		_ = cmd.recorder.Close()
 	}()
@@ -232,40 +230,42 @@ func (cmd *DaemonCmd) recordEvent(event machinediagnostics.Event) {
 	}
 }
 
-//nolint:revive // the diagnostics update API groups the complete machine snapshot.
-func (cmd *DaemonCmd) updateDiagnostics(
-	state machinediagnostics.DaemonState,
-	health machinediagnostics.DaemonHealth,
-	diagnosticErr *machinediagnostics.DiagnosticError,
-	workspaces []machinediagnostics.WorkspaceStatus,
-	candidate *machinediagnostics.ShutdownCandidate,
-) {
+type diagnosticsUpdate struct {
+	state         machinediagnostics.DaemonState
+	health        machinediagnostics.DaemonHealth
+	diagnosticErr *machinediagnostics.DiagnosticError
+	workspaces    []machinediagnostics.WorkspaceStatus
+	candidate     *machinediagnostics.ShutdownCandidate
+}
+
+func (cmd *DaemonCmd) updateDiagnostics(update diagnosticsUpdate) {
 	if cmd.recorder == nil {
 		return
 	}
 	now := time.Now().UTC()
-	if diagnosticErr != nil {
-		cmd.lastDiagnosticError = diagnosticErr
+	if update.diagnosticErr != nil {
+		cmd.lastDiagnosticError = update.diagnosticErr
 	}
-	if state == machinediagnostics.DaemonRunning {
+	if update.state == machinediagnostics.DaemonRunning {
 		cmd.lastPatrolAt = &now
 	}
-	if health == machinediagnostics.DaemonHealthy && state == machinediagnostics.DaemonRunning {
+	if update.health == machinediagnostics.DaemonHealthy &&
+		update.state == machinediagnostics.DaemonRunning {
 		cmd.lastSuccessfulPatrolAt = &now
 	}
 	cmd.recorder.Update(
 		machinediagnostics.Status{
 			StartedAt:         cmd.startedAt,
 			UpdatedAt:         now,
-			State:             state,
-			Health:            health,
+			State:             update.state,
+			Health:            update.health,
 			PatrolInterval:    cmd.pollInterval().String(),
 			LastPatrolAt:      cmd.lastPatrolAt,
 			LastSuccessAt:     cmd.lastSuccessfulPatrolAt,
 			LastError:         cmd.lastDiagnosticError,
-			WorkspaceCount:    len(workspaces),
-			Workspaces:        workspaces,
-			ShutdownCandidate: candidate,
+			WorkspaceCount:    len(update.workspaces),
+			Workspaces:        update.workspaces,
+			ShutdownCandidate: update.candidate,
 		},
 	)
 }
@@ -314,17 +314,15 @@ func (cmd *DaemonCmd) patrolOnce(ctx context.Context) {
 				ErrorCode: "patrol_failed",
 			},
 		)
-		cmd.updateDiagnostics(
-			machinediagnostics.DaemonRunning,
-			machinediagnostics.DaemonDegraded,
-			&machinediagnostics.DiagnosticError{
+		cmd.updateDiagnostics(diagnosticsUpdate{
+			state:  machinediagnostics.DaemonRunning,
+			health: machinediagnostics.DaemonDegraded,
+			diagnosticErr: &machinediagnostics.DiagnosticError{
 				Code:      "patrol_failed",
 				Message:   "Machine daemon could not discover workspace state.",
 				Timestamp: time.Now().UTC(),
 			},
-			nil,
-			nil,
-		)
+		})
 		return
 	}
 	evaluation := evaluateMachineInactivity(
@@ -335,28 +333,27 @@ func (cmd *DaemonCmd) patrolOnce(ctx context.Context) {
 	)
 	cmd.recordWorkspaceTransitions(evaluation.statuses)
 	cmd.updateDiagnostics(
-		machinediagnostics.DaemonRunning,
-		machinediagnostics.DaemonHealthy,
-		nil,
-		evaluation.statuses,
-		evaluation.candidate,
+		diagnosticsUpdate{
+			state:      machinediagnostics.DaemonRunning,
+			health:     machinediagnostics.DaemonHealthy,
+			workspaces: evaluation.statuses,
+			candidate:  evaluation.candidate,
+		},
 	)
 	if evaluation.workspace == nil {
 		log.Infof("no machine shutdown candidate in %q: %s", baseDir, evaluation.reason)
 		return
 	}
 	if err := cmd.shutdownWorkspace(ctx, evaluation.workspace); err != nil {
-		cmd.updateDiagnostics(
-			machinediagnostics.DaemonRunning,
-			machinediagnostics.DaemonDegraded,
-			&machinediagnostics.DiagnosticError{
+		cmd.updateDiagnostics(diagnosticsUpdate{
+			state:  machinediagnostics.DaemonRunning,
+			health: machinediagnostics.DaemonDegraded,
+			diagnosticErr: &machinediagnostics.DiagnosticError{
 				Code:      "shutdown_failed",
 				Message:   "Machine shutdown action failed.",
 				Timestamp: time.Now().UTC(),
 			},
-			evaluation.statuses,
-			evaluation.candidate,
-		)
+		})
 	}
 }
 
@@ -586,13 +583,33 @@ type evaluatedWorkspace struct {
 	workspace *provider2.AgentWorkspaceInfo
 }
 
-//nolint:cyclop // selection rules are kept together to preserve shutdown semantics.
 func evaluateMachineInactivity(
 	configs []string,
 	heartbeat time.Time,
 	fallbackAction string,
 	now time.Time,
 ) machineInactivityEvaluation {
+	evaluated := evaluateWorkspaces(configs, heartbeat, fallbackAction, now)
+	result := machineInactivityEvaluation{statuses: workspaceStatuses(evaluated)}
+	if blocker := firstWorkspaceBlocker(evaluated); blocker != "" {
+		result.reason = blocker
+		return result
+	}
+	if len(evaluated) == 0 {
+		result.reason = "no workspace state was discovered"
+		return result
+	}
+	result.workspace, result.candidate = latestEligibleWorkspace(evaluated)
+	result.reason = "all workspaces are idle"
+	return result
+}
+
+func evaluateWorkspaces(
+	configs []string,
+	heartbeat time.Time,
+	fallbackAction string,
+	now time.Time,
+) []evaluatedWorkspace {
 	evaluated := make([]evaluatedWorkspace, 0, len(configs))
 	for _, path := range configs {
 		evaluated = append(
@@ -600,103 +617,83 @@ func evaluateMachineInactivity(
 			evaluateWorkspaceInactivity(path, heartbeat, fallbackAction, now),
 		)
 	}
-	result := machineInactivityEvaluation{
-		statuses: make([]machinediagnostics.WorkspaceStatus, 0, len(evaluated)),
-	}
-	for _, item := range evaluated {
-		result.statuses = append(result.statuses, item.status)
-	}
-	for _, item := range evaluated {
-		if item.status.BlocksMachineShutdown {
-			result.reason = item.status.BlockerReason
-			return result
-		}
-	}
-	if len(evaluated) == 0 {
-		result.reason = "no workspace state was discovered"
-		return result
-	}
-	for _, item := range evaluated {
-		if result.workspace == nil ||
-			item.status.IdleDeadlineAt.After(*result.candidate.EligibleAt) ||
-			(item.status.IdleDeadlineAt.Equal(*result.candidate.EligibleAt) && item.status.ID < result.candidate.WorkspaceID) {
-			deadline := *item.status.IdleDeadlineAt
-			result.workspace = item.workspace
-			result.candidate = &machinediagnostics.ShutdownCandidate{
-				WorkspaceID: item.status.ID,
-				EligibleAt:  &deadline,
-			}
-		}
-	}
-	result.reason = "all workspaces are idle"
-	return result
+	return evaluated
 }
 
-//nolint:cyclop,funlen // workspace state transitions are evaluated in one ordered pass.
+func workspaceStatuses(evaluated []evaluatedWorkspace) []machinediagnostics.WorkspaceStatus {
+	statuses := make([]machinediagnostics.WorkspaceStatus, 0, len(evaluated))
+	for _, item := range evaluated {
+		statuses = append(statuses, item.status)
+	}
+	return statuses
+}
+
+func firstWorkspaceBlocker(evaluated []evaluatedWorkspace) string {
+	for _, item := range evaluated {
+		if item.status.BlocksMachineShutdown {
+			return item.status.BlockerReason
+		}
+	}
+	return ""
+}
+
+func latestEligibleWorkspace(
+	evaluated []evaluatedWorkspace,
+) (*provider2.AgentWorkspaceInfo, *machinediagnostics.ShutdownCandidate) {
+	var selected *evaluatedWorkspace
+	for index := range evaluated {
+		item := &evaluated[index]
+		if selected == nil || item.status.IdleDeadlineAt.After(*selected.status.IdleDeadlineAt) ||
+			(item.status.IdleDeadlineAt.Equal(*selected.status.IdleDeadlineAt) && item.status.ID < selected.status.ID) {
+			selected = item
+		}
+	}
+	deadline := *selected.status.IdleDeadlineAt
+	return selected.workspace, &machinediagnostics.ShutdownCandidate{
+		WorkspaceID: selected.status.ID,
+		EligibleAt:  &deadline,
+	}
+}
+
 func evaluateWorkspaceInactivity(
 	path string,
 	heartbeat time.Time,
 	fallbackAction string,
 	now time.Time,
 ) evaluatedWorkspace {
-	workspace, err := agent.ParseAgentWorkspaceInfo(path)
-	if err != nil || workspace.Workspace == nil {
-		return evaluatedWorkspace{
-			status: blockedWorkspaceStatus(
-				workspaceIDFromConfig(path),
-				machinediagnostics.WorkspaceInvalidConfig,
-				"Workspace configuration is invalid",
-			),
-		}
+	workspace, result := parseWorkspace(path)
+	if result.status.State != "" {
+		return result
 	}
 	status := machinediagnostics.WorkspaceStatus{ID: workspace.Workspace.ID}
 	stat, err := os.Stat(path)
 	if err != nil {
-		return evaluatedWorkspace{
-			status: blockedWorkspaceStatus(
-				status.ID,
-				machinediagnostics.WorkspaceNotRunning,
-				"Workspace state is unavailable",
-			),
-			workspace: workspace,
-		}
+		return blockedWorkspaceResult(
+			status.ID,
+			machinediagnostics.WorkspaceNotRunning,
+			"Workspace state is unavailable",
+			workspace,
+		)
 	}
-	action := fallbackAction
-	if workspace.LastDevContainerConfig != nil && workspace.LastDevContainerConfig.Config != nil &&
-		workspace.LastDevContainerConfig.Config.ShutdownAction != "" {
-		action = workspace.LastDevContainerConfig.Config.ShutdownAction
-	}
-	status.ShutdownActionEnabled = len(workspace.Agent.Exec.Shutdown) > 0 &&
-		action != config.ShutdownActionNone
+	status.ShutdownActionEnabled = shutdownActionEnabled(workspace, fallbackAction)
 	if !status.ShutdownActionEnabled {
-		return evaluatedWorkspace{
-			status: blockedWorkspaceStatus(
-				status.ID,
-				machinediagnostics.WorkspaceNotConfigured,
-				"Auto-stop is not configured",
-			),
-			workspace: workspace,
-		}
+		return blockedWorkspaceResult(
+			status.ID,
+			machinediagnostics.WorkspaceNotConfigured,
+			"Auto-stop is not configured",
+			workspace,
+		)
 	}
-	activity := stat.ModTime()
-	if heartbeat.After(activity) {
-		activity = heartbeat
-	}
+	activity := maxTime(stat.ModTime(), heartbeat)
 	status.LastActivityAt = &activity
-	timeout := agent.DefaultInactivityTimeout
-	if workspace.Agent.Timeout != "" {
-		parsed, parseErr := time.ParseDuration(workspace.Agent.Timeout)
-		if parseErr != nil || parsed <= 0 {
-			return evaluatedWorkspace{
-				status: blockedWorkspaceStatus(
-					status.ID,
-					machinediagnostics.WorkspaceInvalidConfig,
-					"Inactivity timeout must be a positive duration",
-				),
-				workspace: workspace,
-			}
-		}
-		timeout = parsed
+	timeout, valid := workspaceTimeout(workspace)
+	if !valid {
+		return blockedWorkspaceResult(
+			status.ID,
+			machinediagnostics.WorkspaceInvalidConfig,
+			"Inactivity timeout must be a positive duration",
+			workspace,
+		)
 	}
 	status.Timeout = timeout.String()
 	status.Busy = agent.HasWorkspaceBusyFile(filepath.Dir(path))
@@ -718,6 +715,56 @@ func evaluateWorkspaceInactivity(
 		status.State = machinediagnostics.WorkspaceIdleDue
 	}
 	return evaluatedWorkspace{status: status, workspace: workspace}
+}
+
+func parseWorkspace(path string) (*provider2.AgentWorkspaceInfo, evaluatedWorkspace) {
+	workspace, err := agent.ParseAgentWorkspaceInfo(path)
+	if err != nil || workspace.Workspace == nil {
+		return workspace, evaluatedWorkspace{
+			status: blockedWorkspaceStatus(
+				workspaceIDFromConfig(path),
+				machinediagnostics.WorkspaceInvalidConfig,
+				"Workspace configuration is invalid",
+			),
+		}
+	}
+	return workspace, evaluatedWorkspace{}
+}
+
+func blockedWorkspaceResult(
+	id string,
+	state machinediagnostics.WorkspaceEvaluationState,
+	reason string,
+	workspace *provider2.AgentWorkspaceInfo,
+) evaluatedWorkspace {
+	return evaluatedWorkspace{
+		status:    blockedWorkspaceStatus(id, state, reason),
+		workspace: workspace,
+	}
+}
+
+func shutdownActionEnabled(workspace *provider2.AgentWorkspaceInfo, fallback string) bool {
+	action := fallback
+	if workspace.LastDevContainerConfig != nil && workspace.LastDevContainerConfig.Config != nil &&
+		workspace.LastDevContainerConfig.Config.ShutdownAction != "" {
+		action = workspace.LastDevContainerConfig.Config.ShutdownAction
+	}
+	return len(workspace.Agent.Exec.Shutdown) > 0 && action != config.ShutdownActionNone
+}
+
+func maxTime(first, second time.Time) time.Time {
+	if second.After(first) {
+		return second
+	}
+	return first
+}
+
+func workspaceTimeout(workspace *provider2.AgentWorkspaceInfo) (time.Duration, bool) {
+	if workspace.Agent.Timeout == "" {
+		return agent.DefaultInactivityTimeout, true
+	}
+	parsed, err := time.ParseDuration(workspace.Agent.Timeout)
+	return parsed, err == nil && parsed > 0
 }
 
 func blockedWorkspaceStatus(

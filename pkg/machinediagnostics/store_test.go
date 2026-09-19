@@ -30,7 +30,10 @@ func TestStoreRecordsAndReadsEvents(t *testing.T) {
 		Status{StartedAt: now, State: DaemonRunning, Health: DaemonHealthy, PatrolInterval: "1m"},
 	)
 
-	response := Read(store.dir, "", 10, time.Minute, now.Add(time.Second))
+	response := Read(
+		store.dir,
+		ReadOptions{Limit: 10, Interval: time.Minute, Now: now.Add(time.Second)},
+	)
 	assert.Equal(t, AvailabilityAvailable, response.Availability)
 	assert.Equal(t, FreshnessFresh, response.Freshness)
 	require.Len(t, response.Events, 1)
@@ -45,7 +48,10 @@ func TestReadLocatorReportsPermissionDenied(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "locator.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{}`), 0o000))
-	response := ReadFromLocator(path, "", 10, time.Minute, time.Now())
+	response := ReadFromLocator(
+		path,
+		ReadOptions{Limit: 10, Interval: time.Minute, Now: time.Now()},
+	)
 	assert.Equal(t, AvailabilityPermissionDenied, response.Availability)
 	require.NotNil(t, response.Error)
 	assert.Equal(t, "diagnostics_permission_denied", response.Error.Code)
@@ -76,7 +82,15 @@ func TestStoreRetentionGap(t *testing.T) {
 	store.Update(
 		Status{StartedAt: now, State: DaemonRunning, Health: DaemonHealthy, PatrolInterval: "1m"},
 	)
-	response := Read(store.dir, EncodeCursor(store.SessionID(), 0), 10, time.Minute, now)
+	response := Read(
+		store.dir,
+		ReadOptions{
+			After:    EncodeCursor(store.SessionID(), 0),
+			Limit:    10,
+			Interval: time.Minute,
+			Now:      now,
+		},
+	)
 	assert.Equal(t, CursorGap, response.Cursor.State)
 	assert.NotEmpty(t, response.Events)
 }
@@ -167,7 +181,7 @@ func TestReaderIgnoresPartialFinalEvent(t *testing.T) {
 	_, err = f.WriteString(`{"schemaVersion":1`)
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
-	response := Read(store.dir, "", 10, time.Minute, now)
+	response := Read(store.dir, ReadOptions{Limit: 10, Interval: time.Minute, Now: now})
 	require.Len(t, response.Events, 1)
 }
 
@@ -191,7 +205,7 @@ func TestReaderReportsCompleteMalformedEventAsCorrupt(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
-	response := Read(store.dir, "", 10, time.Minute, now)
+	response := Read(store.dir, ReadOptions{Limit: 10, Interval: time.Minute, Now: now})
 	assert.Equal(t, AvailabilityCorrupt, response.Availability)
 	require.NotNil(t, response.Error)
 	assert.Equal(t, "diagnostics_corrupt", response.Error.Code)
@@ -244,7 +258,15 @@ func TestReadCalculatesRetentionGapFromCurrentSessionOnly(t *testing.T) {
 		),
 	)
 
-	response := Read(dir, EncodeCursor(currentSessionID, 0), 10, time.Minute, time.Now())
+	response := Read(
+		dir,
+		ReadOptions{
+			After:    EncodeCursor(currentSessionID, 0),
+			Limit:    10,
+			Interval: time.Minute,
+			Now:      time.Now(),
+		},
+	)
 	assert.Equal(t, CursorGap, response.Cursor.State)
 	require.Len(t, response.Events, 1)
 	assert.Equal(t, uint64(5), response.Events[0].Sequence)
@@ -260,7 +282,7 @@ func TestReadRejectsStatusWithoutCurrentSchemaAndSession(t *testing.T) {
 		t,
 		os.WriteFile(filepath.Join(dir, "status.json"), []byte(`{"schemaVersion":0}`), 0o600),
 	)
-	response := Read(dir, "", 10, time.Minute, time.Now())
+	response := Read(dir, ReadOptions{Limit: 10, Interval: time.Minute, Now: time.Now()})
 	assert.Equal(t, AvailabilityCorrupt, response.Availability)
 }
 

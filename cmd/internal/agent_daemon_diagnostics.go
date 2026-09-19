@@ -54,7 +54,6 @@ func NewDaemonDiagnosticsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return cobraCmd
 }
 
-//nolint:cyclop // CLI validation and locator selection are intentionally linear.
 func (cmd *DaemonDiagnosticsCmd) Run(
 	_ context.Context,
 ) error {
@@ -64,32 +63,37 @@ func (cmd *DaemonDiagnosticsCmd) Run(
 			machinediagnostics.MaxReadEvents,
 		)
 	}
-	dir := ""
-	if cmd.StateRoot != "" || cmd.StateLayout != "" {
-		if cmd.StateRoot == "" || cmd.StateLayout == "" {
-			return fmt.Errorf("daemon state root and state layout must be provided together")
-		}
-		location := agentdaemon.StateLocation{
-			Root:   cmd.StateRoot,
-			Layout: agentdaemon.StateLayout(cmd.StateLayout),
-		}
-		if err := location.Validate(); err != nil {
-			return err
-		}
-		dir = machinediagnostics.DiagnosticsDir(location.Root)
-	} else {
-		response := machinediagnostics.ReadFromLocator(
-			machinediagnostics.DefaultLocatorPath,
-			cmd.After,
-			cmd.Limit,
-			time.Minute,
-			time.Now(),
-		)
-		return json.NewEncoder(os.Stdout).Encode(response)
-	}
-	response := machinediagnostics.Read(dir, cmd.After, cmd.Limit, time.Minute, time.Now())
-	if dir == "" {
-		response.Availability = machinediagnostics.AvailabilityNotInitialized
+	response, err := cmd.readResponse()
+	if err != nil {
+		return err
 	}
 	return json.NewEncoder(os.Stdout).Encode(response)
+}
+
+func (cmd *DaemonDiagnosticsCmd) readResponse() (machinediagnostics.ReadResponse, error) {
+	options := machinediagnostics.ReadOptions{
+		After:    cmd.After,
+		Limit:    cmd.Limit,
+		Interval: time.Minute,
+		Now:      time.Now(),
+	}
+	if cmd.StateRoot == "" && cmd.StateLayout == "" {
+		return machinediagnostics.ReadFromLocator(
+			machinediagnostics.DefaultLocatorPath,
+			options,
+		), nil
+	}
+	if cmd.StateRoot == "" || cmd.StateLayout == "" {
+		return machinediagnostics.ReadResponse{}, fmt.Errorf(
+			"daemon state root and state layout must be provided together",
+		)
+	}
+	location := agentdaemon.StateLocation{
+		Root:   cmd.StateRoot,
+		Layout: agentdaemon.StateLayout(cmd.StateLayout),
+	}
+	if err := location.Validate(); err != nil {
+		return machinediagnostics.ReadResponse{}, err
+	}
+	return machinediagnostics.Read(machinediagnostics.DiagnosticsDir(location.Root), options), nil
 }
