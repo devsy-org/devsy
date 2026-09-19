@@ -134,9 +134,12 @@ func TestBuildDockerBuildxArgs_PullAndNoCache(t *testing.T) {
 			wantNoCach: true,
 		},
 	}
+	dockerRt, err := docker.RuntimeFromName(string(docker.RuntimeDocker))
+	require.NoError(t, err)
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := buildDockerBuildxArgs(tt.opts, "", docker.RuntimeDocker)
+			args := buildDockerBuildxArgs(tt.opts, "", dockerRt)
 			assert.Equal(t, tt.wantPull, slices.Contains(args, "--pull"), "args=%v", args)
 			assert.Equal(t, tt.wantNoCach, slices.Contains(args, "--no-cache"), "args=%v", args)
 		})
@@ -146,6 +149,9 @@ func TestBuildDockerBuildxArgs_PullAndNoCache(t *testing.T) {
 const devcontainerMetadataLabel = "devcontainer.metadata"
 
 func TestBuildDockerBuildxArgs_PodmanEscapesDollarInLabels(t *testing.T) {
+	podmanRt, err := docker.RuntimeFromName(string(docker.RuntimePodman))
+	require.NoError(t, err)
+
 	opts := &build.BuildOptions{
 		Labels: map[string]string{
 			devcontainerMetadataLabel: `[{"mounts":[{"source":"${localEnv:HOME}/.cache","target":"/cache","type":"bind"}]}]`,
@@ -155,11 +161,10 @@ func TestBuildDockerBuildxArgs_PodmanEscapesDollarInLabels(t *testing.T) {
 	args := buildDockerBuildxArgs(
 		opts,
 		"",
-		docker.RuntimePodman,
+		podmanRt,
 	)
-
 	expected := devcontainerMetadataLabel +
-		`=[{"mounts":[{"source":"\${localEnv:HOME}/.cache","target":"/cache","type":"bind"}]}]`
+		`=[{"mounts":[{"source":"${_:-$}{localEnv:HOME}/.cache","target":"/cache","type":"bind"}]}]`
 	var found string
 	for i := range len(args) - 1 {
 		if args[i] == "--label" {
@@ -171,6 +176,9 @@ func TestBuildDockerBuildxArgs_PodmanEscapesDollarInLabels(t *testing.T) {
 }
 
 func TestBuildDockerBuildxArgs_DockerPreservesDollarInLabels(t *testing.T) {
+	dockerRt, err := docker.RuntimeFromName(string(docker.RuntimeDocker))
+	require.NoError(t, err)
+
 	opts := &build.BuildOptions{
 		Labels: map[string]string{
 			devcontainerMetadataLabel: `[{"mounts":[{"source":"${localEnv:HOME}/.cache","target":"/cache","type":"bind"}]}]`,
@@ -180,9 +188,8 @@ func TestBuildDockerBuildxArgs_DockerPreservesDollarInLabels(t *testing.T) {
 	args := buildDockerBuildxArgs(
 		opts,
 		"",
-		docker.RuntimeDocker,
+		dockerRt,
 	)
-
 	expected := devcontainerMetadataLabel +
 		`=[{"mounts":[{"source":"${localEnv:HOME}/.cache","target":"/cache","type":"bind"}]}]`
 	var found string
@@ -196,6 +203,9 @@ func TestBuildDockerBuildxArgs_DockerPreservesDollarInLabels(t *testing.T) {
 }
 
 func TestBuildDockerBuildxArgs_PodmanDoesNotMutateLabels(t *testing.T) {
+	podmanRt, err := docker.RuntimeFromName(string(docker.RuntimePodman))
+	require.NoError(t, err)
+
 	const raw = `[{"mounts":[{"source":"${localEnv:HOME}/.cache","target":"/cache","type":"bind"}]}]`
 	opts := &build.BuildOptions{
 		Labels: map[string]string{
@@ -206,9 +216,8 @@ func TestBuildDockerBuildxArgs_PodmanDoesNotMutateLabels(t *testing.T) {
 	_ = buildDockerBuildxArgs(
 		opts,
 		"",
-		docker.RuntimePodman,
+		podmanRt,
 	)
-
 	assert.Equal(t, raw, opts.Labels[devcontainerMetadataLabel])
 }
 

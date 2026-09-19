@@ -75,8 +75,8 @@ func (s *dockerBuildxStrategy) build(
 	platform string,
 	options *build.BuildOptions,
 ) error {
-	runtimeName := s.driver.Docker.GetRuntime().Name()
-	args := buildDockerBuildxArgs(options, platform, runtimeName)
+	runtime := s.driver.Docker.GetRuntime()
+	args := buildDockerBuildxArgs(options, platform, runtime)
 	secretEnv, secretArgs, err := buildxSecretArgs(options.BuildSecrets)
 	if err != nil {
 		return err
@@ -135,7 +135,7 @@ func (c *tailBuffer) String() string { return string(c.buf) }
 func buildDockerBuildxArgs(
 	options *build.BuildOptions,
 	platform string,
-	runtimeName docker.RuntimeName,
+	runtime docker.ContainerRuntime,
 ) []string {
 	args := []string{"buildx", "build", "-f", options.Dockerfile}
 	args = appendBuildFlags(args, options.Load, options.Push)
@@ -147,7 +147,7 @@ func buildDockerBuildxArgs(
 	}
 	args = appendImageTags(args, options.Images)
 	args = appendBuildArgsAndContexts(args, options.BuildArgs, options.Contexts)
-	args = appendLabels(args, options.Labels, runtimeName)
+	args = appendLabels(args, options.Labels, runtime)
 	args = appendTargetAndPlatform(args, options.Target, platform)
 	args = appendCacheOptions(args, options.CacheFrom, options.CacheTo)
 	args = append(args, options.CliOpts...)
@@ -214,7 +214,7 @@ func appendBuildArgsAndContexts(args []string, buildArgs, contexts map[string]st
 func appendLabels(
 	args []string,
 	labels map[string]string,
-	runtimeName docker.RuntimeName,
+	runtime docker.ContainerRuntime,
 ) []string {
 	keys := make([]string, 0, len(labels))
 	for k := range labels {
@@ -223,21 +223,10 @@ func appendLabels(
 	sort.Strings(keys)
 
 	for _, k := range keys {
-		value := encodeBuildLabelValue(runtimeName, labels[k])
+		value := runtime.EncodeBuildLabelValue(labels[k])
 		args = append(args, "--label", k+"="+value)
 	}
 	return args
-}
-
-func encodeBuildLabelValue(
-	runtimeName docker.RuntimeName,
-	value string,
-) string {
-	if runtimeName != docker.RuntimePodman {
-		return value
-	}
-
-	return strings.ReplaceAll(value, "$", `\$`)
 }
 
 func appendTargetAndPlatform(args []string, target, platform string) []string {
