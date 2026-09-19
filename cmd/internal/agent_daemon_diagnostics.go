@@ -54,9 +54,10 @@ func NewDaemonDiagnosticsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return cobraCmd
 }
 
+//nolint:cyclop // CLI validation and locator selection are intentionally linear.
 func (cmd *DaemonDiagnosticsCmd) Run(
 	_ context.Context,
-) error { //nolint:cyclop // CLI validation and locator selection are intentionally linear.
+) error {
 	if cmd.Limit < 0 || cmd.Limit > machinediagnostics.MaxReadEvents {
 		return fmt.Errorf(
 			"diagnostics limit must be between 0 and %d",

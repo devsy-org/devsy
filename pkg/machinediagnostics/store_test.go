@@ -258,7 +258,7 @@ func TestReadRejectsStatusWithoutCurrentSchemaAndSession(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(
 		t,
-		os.WriteFile(filepath.Join(dir, "status.json"), []byte(`{"schemaVersion":0}`), 0o640),
+		os.WriteFile(filepath.Join(dir, "status.json"), []byte(`{"schemaVersion":0}`), 0o600),
 	)
 	response := Read(dir, "", 10, time.Minute, time.Now())
 	assert.Equal(t, AvailabilityCorrupt, response.Availability)

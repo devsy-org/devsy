@@ -585,12 +585,13 @@ type evaluatedWorkspace struct {
 	workspace *provider2.AgentWorkspaceInfo
 }
 
+//nolint:cyclop // selection rules are kept together to preserve shutdown semantics.
 func evaluateMachineInactivity(
 	configs []string,
 	heartbeat time.Time,
 	fallbackAction string,
 	now time.Time,
-) machineInactivityEvaluation { //nolint:cyclop // selection rules are kept together to preserve shutdown semantics.
+) machineInactivityEvaluation {
 	evaluated := make([]evaluatedWorkspace, 0, len(configs))
 	for _, path := range configs {
 		evaluated = append(
@@ -630,12 +631,13 @@ func evaluateMachineInactivity(
 	return result
 }
 
+//nolint:cyclop // workspace state transitions are evaluated in one ordered pass.
 func evaluateWorkspaceInactivity(
 	path string,
 	heartbeat time.Time,
 	fallbackAction string,
 	now time.Time,
-) evaluatedWorkspace { //nolint:cyclop // workspace state transitions are evaluated in one ordered pass.
+) evaluatedWorkspace {
 	workspace, err := agent.ParseAgentWorkspaceInfo(path)
 	if err != nil || workspace.Workspace == nil {
 		return evaluatedWorkspace{

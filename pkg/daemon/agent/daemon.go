@@ -169,9 +169,10 @@ type InstallOptions struct {
 	DiagnosticsReader machinediagnostics.ReaderIdentity
 }
 
+//nolint:cyclop // installation steps must fail in order with precise cleanup.
 func InstallDaemon(
 	opts InstallOptions,
-) error { //nolint:cyclop // installation steps must fail in order with precise cleanup.
+) error {
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		return fmt.Errorf("unsupported daemon os")
 	}
@@ -230,7 +231,8 @@ func rejectConflictingStateRoot(location StateLocation) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"Devsy machine daemon is already configured for a different state root; multiple machine state roots on one daemon are not supported",
+		"devsy machine daemon is already configured for a different state root; " +
+			"multiple machine state roots on one daemon are not supported",
 	)
 }
 

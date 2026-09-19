@@ -18,10 +18,11 @@ type Locator struct {
 	StartedAt      time.Time `json:"startedAt"`
 }
 
+//nolint:cyclop,revive // atomic locator writes must validate each step and preserve the five-field API.
 func WriteLocator(
 	path string,
 	locator Locator,
-) error { //nolint:cyclop // atomic locator writes must validate each step.
+) error {
 	if !filepath.IsAbs(path) || !filepath.IsAbs(locator.DiagnosticsDir) {
 		return fmt.Errorf("locator paths must be absolute")
 	}

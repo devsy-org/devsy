@@ -86,9 +86,10 @@ func (s *Store) Record(event Event) {
 	}
 }
 
+//nolint:funcorder // kept next to the public Record wrapper.
 func (s *Store) record(
 	event Event,
-) error { //nolint:funcorder // kept next to the public Record wrapper.
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sequence++
@@ -112,7 +113,7 @@ func (s *Store) record(
 		path,
 		os.O_APPEND|os.O_WRONLY|os.O_CREATE,
 		0o640,
-	) //nolint:gosec // path is derived from the store directory.
+	) //nolint:gosec // diagnostics are intentionally group-readable for the configured reader.
 	if err != nil {
 		return err
 	}
@@ -132,9 +133,10 @@ func (s *Store) Update(status Status) {
 	}
 }
 
+//nolint:funcorder // kept next to the public Update wrapper.
 func (s *Store) update(
 	status Status,
-) error { //nolint:funcorder // kept next to the public Update wrapper.
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	status.SchemaVersion = SchemaVersion
@@ -299,12 +301,13 @@ func newSessionID() string {
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b))
 }
 
+//nolint:revive,cyclop // the public read API preserves cursor and freshness inputs.
 func Read(
 	dir, after string,
 	limit int,
 	interval time.Duration,
 	now time.Time,
-) ReadResponse { //nolint:cyclop,revive // public read API preserves cursor and freshness inputs.
+) ReadResponse {
 	r := ReadResponse{
 		SchemaVersion: SchemaVersion,
 		Availability:  AvailabilityAvailable,
@@ -413,9 +416,10 @@ func readStatus(path string) (*Status, error) {
 	return &s, nil
 }
 
+//nolint:cyclop // malformed-record handling is deliberately explicit.
 func readEvents(
 	dir string,
-) ([]Event, error) { //nolint:cyclop // malformed-record handling is deliberately explicit.
+) ([]Event, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err

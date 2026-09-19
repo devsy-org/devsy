@@ -47,6 +47,8 @@ type CollectionSource struct {
 	ErrorCode    string `json:"errorCode,omitempty"`
 	Message      string `json:"message,omitempty"`
 }
+
+//nolint:revive // the nested machine shape matches the public JSON contract.
 type MachineDiagnostics struct {
 	SchemaVersion int `json:"schemaVersion"`
 	Machine       struct {
@@ -54,7 +56,7 @@ type MachineDiagnostics struct {
 		Context  string `json:"context"`
 		Provider string `json:"provider"`
 		State    string `json:"state"`
-	} `json:"machine"` //nolint:revive // nested shape matches the public JSON contract.
+	} `json:"machine"`
 	Source CollectionSource              `json:"source"`
 	Daemon *machinediagnostics.Status    `json:"daemon,omitempty"`
 	Events []machinediagnostics.Event    `json:"events,omitempty"`
@@ -84,10 +86,11 @@ func NewDiagnosticsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return c
 }
 
+//nolint:revive // command arguments are part of the CLI contract.
 func (cmd *DiagnosticsCmd) Run(
 	ctx context.Context,
 	args []string,
-) error { //nolint:revive // command arguments are part of the CLI contract.
+) error {
 	if cmd.Limit < 0 || cmd.Limit > machinediagnostics.MaxReadEvents {
 		return fmt.Errorf(
 			"diagnostics limit must be between 0 and %d",
@@ -138,7 +141,8 @@ func fetchDiagnostics(
 			Availability: unavailableAvailability,
 			Freshness:    unknownFreshness,
 			ErrorCode:    "machine_status_unavailable",
-			Message:      "Devsy could not read the provider's machine state. Try again when the provider connection is available.",
+			Message: "Devsy could not read the provider's machine state. Try again when the provider " +
+				"connection is available.",
 		}
 		return result, nil
 	}
@@ -311,9 +315,10 @@ func renderWorkspaceDiagnostics(w io.Writer, workspaces []machinediagnostics.Wor
 	_ = tw.Flush()
 }
 
+//nolint:cyclop // status precedence is clearer as one ordered decision tree.
 func workspaceAutoStopDetail(
 	workspace machinediagnostics.WorkspaceStatus,
-) string { //nolint:cyclop // status precedence is clearer as one ordered decision tree.
+) string {
 	if workspace.BlocksMachineShutdown && workspace.BlockerReason != "" {
 		if workspace.State == machinediagnostics.WorkspaceActive &&
 			workspace.IdleDeadlineAt != nil {

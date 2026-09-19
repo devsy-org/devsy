@@ -45,10 +45,11 @@ func NewLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return c
 }
 
+//nolint:cyclop // follow mode owns a single ordered polling loop.
 func (cmd *LogsCmd) Run(
 	ctx context.Context,
 	args []string,
-) error { //nolint:cyclop // follow mode owns a single ordered polling loop.
+) error {
 	if cmd.Limit < 0 || cmd.Limit > machinediagnostics.MaxReadEvents {
 		return fmt.Errorf(
 			"diagnostics limit must be between 0 and %d",
