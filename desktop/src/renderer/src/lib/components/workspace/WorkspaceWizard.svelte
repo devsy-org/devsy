@@ -1,4 +1,6 @@
 <script lang="ts">
+import WorkspaceOperation from "./WorkspaceOperation.svelte"
+import { workspaceJobs } from "$lib/stores/workspaces.js"
 import { onMount, onDestroy } from "svelte"
 import { MediaQuery } from "svelte/reactivity"
 import { goto } from "$lib/router.js"
@@ -229,6 +231,12 @@ let lastAttemptedId = $state("")
 let launchSuccess = $state(false)
 let launchedWorkspaceId = $state<string | null>(null)
 let operationStatus = $state<WorkspaceStatus | null>(null)
+$effect(() => {
+  const job = $workspaceJobs[lastAttemptedId ?? ""]
+  if (launchRunning && commandId && job?.commandId === commandId && (job.state === "failed" || job.state === "succeeded")) {
+    finishProgress({ commandId, done: true, success: !job.error, cliError: job.error ? { code: "workspace_operation_failed", message: job.error } : undefined }, lastAttemptedId ?? undefined)
+  }
+})
 let confirmCancelOpen = $state(false)
 let unlisten: UnlistenFn | null = null
 let unlistenStatus: UnlistenFn | null = null
@@ -482,7 +490,6 @@ function finishProgress(progress: CommandProgress, wsId: string | undefined) {
 function finishSuccessfulLaunch(wsId: string | undefined) {
   launchSuccess = true
   launchedWorkspaceId = wsId ?? null
-  toasts.success(`Workspace ${wsId ?? "created"} is ready`)
   if (wsId) oncomplete?.(wsId)
 }
 
@@ -491,7 +498,6 @@ function finishFailedLaunch(progress: CommandProgress) {
   launchError = cliError?.message
     ? `${cliError.message}${cliError.hint ? ` Try: ${cliError.hint}` : ""}`
     : "Workspace creation failed. Check output for details."
-  toasts.error(launchError)
   if (!isRecoverableBuildFailure(progress.cliError)) return
   const pref = loadLocalOptions().onBuildFailure
   if (pref === "auto-recovery" && !launchIsRecovery) {
@@ -503,7 +509,7 @@ function finishFailedLaunch(progress: CommandProgress) {
 
 function handleProgress(progress: CommandProgress, wsId: string | undefined) {
   queueProgressLines(progress)
-  if (progress.done) {
+  if (progress.done && launchRunning) {
     finishProgress(progress, wsId)
   }
 }
@@ -1249,7 +1255,7 @@ function selectTemplate(t: { name: string; source: string }) {
             </h2>
             <p class="text-sm text-muted-foreground">
               {#if launchRunning}
-                Running workspace up...
+                Preparing your workspace...
               {:else if launchSuccess}
                 {launchedWorkspaceId ?? resolvedId} is ready to use.
               {:else if launchError}
@@ -1265,7 +1271,9 @@ function selectTemplate(t: { name: string; source: string }) {
             </Alert.Root>
           {/if}
 
-          {#if launchRunning && operationStatus}
+          {#if commandId && $workspaceJobs[lastAttemptedId ?? ""]?.commandId === commandId}
+            <WorkspaceOperation id={lastAttemptedId ?? resolvedId} />
+          {:else if launchRunning && operationStatus}
             <div class="rounded-md border bg-muted/30 px-3 py-2 text-sm" data-testid="operation-status">
               <span class="font-medium capitalize">
                 {operationStatus.phase.replaceAll("_", " ")}

@@ -334,3 +334,16 @@ func (t teeReporter) Report(e Event) {
 func Tee(reporters ...Reporter) Reporter {
 	return teeReporter(reporters)
 }
+
+// WithReporter attaches a progress reporter to a workspace operation context.
+func WithReporter(ctx context.Context, reporter Reporter) context.Context {
+	return context.WithValue(ctx, reporterContextKey{}, reporter)
+}
+
+type reporterContextKey struct{}
+
+// RunStep reports a named child step when a caller supplied a reporter.
+func RunStep(ctx context.Context, phase Phase, step string, fn func(context.Context) error) error {
+	reporter, _ := ctx.Value(reporterContextKey{}).(Reporter)
+	return Run(ctx, reporter, Operation{Phase: phase, Step: step}, fn)
+}

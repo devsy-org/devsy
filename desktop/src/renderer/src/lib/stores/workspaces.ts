@@ -1,115 +1,93 @@
-import { get, writable } from "svelte/store"
-import { workspaceList, workspaceStatus } from "$lib/ipc/commands.js"
-import { onWorkspaceStatus, onWorkspacesChanged } from "$lib/ipc/events.js"
+import { derived, get, writable } from "svelte/store"
+import { workspaceSnapshot } from "$lib/ipc/commands.js"
+import { onWorkspacesChanged } from "$lib/ipc/events.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
-import type { Workspace, WorkspaceJob, WorkspaceStatus } from "$lib/types/index.js"
+import type {
+  Workspace,
+  WorkspaceJob,
+  WorkspaceStatus,
+} from "$lib/types/index.js"
+import { toasts } from "./toasts.js"
 
 export const workspaces = writable<Workspace[]>([])
 export const workspacesLoading = writable(true)
-
-// In-flight workspace deletes, keyed by workspace id. Owned by the main
-// process so it survives navigation and window reload.
 export const workspaceJobs = writable<Record<string, WorkspaceJob>>({})
-/** Latest structured operation status pushed by the main process per workspace. */
-export const workspaceStatuses = writable<Record<string, WorkspaceStatus>>({})
+export const workspaceStatuses = derived(workspaceJobs, ($jobs) => {
+  const statuses: Record<string, WorkspaceStatus> = {}
+  for (const [id, job] of Object.entries($jobs)) {
+    if (job.status)
+      statuses[id] = {
+        ...job.status,
+        workspaceId: id,
+        commandId: job.commandId,
+      }
+  }
+  return statuses
+})
 
 let unlisten: UnlistenFn | null = null
-let unlistenStatus: UnlistenFn | null = null
-let pollInterval: ReturnType<typeof setInterval> | null = null
+let lifecycle = 0
+let revision = -1
+const notified = new Set<string>()
 
-const STATUS_POLL_MS = 10_000
-
-function mergeWorkspaceStatuses(current: Workspace[], updated: Workspace[]) {
-  const statusMap = new Map(current.map((ws) => [ws.id, ws.status]))
-  return updated.map((ws) => ({
-    ...ws,
-    status: ws.status ?? statusMap.get(ws.id),
-  }))
+function apply(
+  updated: Workspace[],
+  jobs: Record<string, WorkspaceJob>,
+  nextRevision: number,
+  notify: boolean,
+) {
+  if (nextRevision <= revision) return
+  revision = nextRevision
+  const previous = get(workspaceJobs)
+  const pending = Object.entries(jobs).filter(
+    ([id, job]) =>
+      !updated.some((workspace) => workspace.id === id) &&
+      (job.state === "running" ||
+        (job.activity === "creating" && job.state !== "succeeded")),
+  )
+  workspaces.set([...updated, ...pending.map(([id]) => ({ id }))])
+  workspaceJobs.set(jobs)
+  for (const [id, job] of Object.entries(jobs)) {
+    if (job.state === "running") continue
+    if (!notify || !previous[id] || notified.has(job.commandId)) {
+      notified.add(job.commandId)
+      continue
+    }
+    notified.add(job.commandId)
+    if (job.error) toasts.error(`${id}: ${job.error}`)
+    else
+      toasts.success(
+        `${id}: ${job.activity === "deleting" ? "Deleted" : "Operation completed"}`,
+      )
+  }
 }
 
 export async function initWorkspaces() {
+  destroyWorkspaces()
+  const epoch = lifecycle
+  revision = -1
   workspacesLoading.set(true)
   try {
-    const list = await workspaceList()
-    workspaces.set(mergeWorkspaceStatuses(get(workspaces), list))
-    fetchStatuses(list)
-  } catch {
-    // IPC not available (e.g. during browser preview)
-  } finally {
-    workspacesLoading.set(false)
-  }
-
-  try {
-    unlisten = await onWorkspacesChanged((updated, jobs) => {
-      workspaces.update((current) => mergeWorkspaceStatuses(current, updated))
-      workspaceJobs.set(jobs)
-      fetchStatuses(updated)
+    const stop = await onWorkspacesChanged((updated, jobs, nextRevision) => {
+      if (epoch === lifecycle) apply(updated, jobs, nextRevision, true)
     })
-  } catch {
-    // Event listener setup failed
-  }
-  try {
-    unlistenStatus = await onWorkspaceStatus((status) => {
-      workspaceStatuses.update((current) => ({
-        ...current,
-        [status.workspaceId]: status,
-      }))
-    })
-  } catch {
-    // Event listener setup failed
-  }
-
-  // Poll statuses periodically to keep dashboard and badges fresh
-  pollInterval = setInterval(() => {
-    const current = get(workspaces)
-    if (current.length > 0) {
-      fetchStatuses(current)
+    if (epoch !== lifecycle) {
+      stop()
+      return
     }
-  }, STATUS_POLL_MS)
+    unlisten = stop
+    const snapshot = await workspaceSnapshot()
+    if (epoch === lifecycle)
+      apply(snapshot.workspaces, snapshot.jobs, snapshot.revision, false)
+  } catch {
+    // Main process may be unavailable during shutdown/browser preview.
+  } finally {
+    if (epoch === lifecycle) workspacesLoading.set(false)
+  }
 }
 
 export function destroyWorkspaces() {
-  if (unlisten) {
-    unlisten()
-    unlisten = null
-  }
-  if (unlistenStatus) {
-    unlistenStatus()
-    unlistenStatus = null
-  }
-  workspaceStatuses.set({})
-  if (pollInterval) {
-    clearInterval(pollInterval)
-    pollInterval = null
-  }
-}
-
-/** Fetch status for each workspace and merge into store */
-function fetchStatuses(list: Workspace[]) {
-  for (const ws of list) {
-    workspaceStatus(ws.id)
-      .then((raw) => {
-        try {
-          const parsed = JSON.parse(raw) as { state?: string }
-          if (parsed.state) {
-            workspaces.update((current) =>
-              current.map((w) =>
-                w.id === ws.id ? { ...w, status: parsed.state } : w,
-              ),
-            )
-          }
-        } catch {
-          // Status response wasn't valid JSON — use raw as status
-          const status = raw.trim()
-          if (status) {
-            workspaces.update((current) =>
-              current.map((w) => (w.id === ws.id ? { ...w, status } : w)),
-            )
-          }
-        }
-      })
-      .catch(() => {
-        // Status fetch failed — leave as-is
-      })
-  }
+  lifecycle++
+  unlisten?.()
+  unlisten = null
 }

@@ -178,6 +178,8 @@ type Handler = (args: Record<string, unknown>) => unknown
 const COMMANDS: Record<string, Handler> = {
   // Workspaces
   workspace_list: () => WORKSPACES,
+  workspace_snapshot: () => ({ revision: 0, workspaces: WORKSPACES, jobs: {} }),
+  workspace_refresh: () => undefined,
   workspace_up: () => nextId(),
   workspace_stop: () => nextId(),
   workspace_delete: () => nextId(),
@@ -208,6 +210,13 @@ const COMMANDS: Record<string, Handler> = {
     const m = MACHINES.find((machine) => machine.id === args.id)
     return m?.status ?? "Unknown"
   },
+  machine_diagnostics_get: () => null,
+  machine_diagnostics_refresh: () => ({
+    response: { schemaVersion: 1, machine: { id: "", context: "default", provider: "", state: "Running" }, source: { availability: "not_initialized", freshness: "unknown" }, cursor: { state: "none" } },
+    events: [],
+    lastAttemptAt: new Date().toISOString(),
+    historyGap: false,
+  }),
 
   // Contexts
   context_list: () => ({ contexts: CONTEXTS, activeContext: "default" }),

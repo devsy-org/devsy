@@ -12,7 +12,7 @@ Devsy will automatically determine what specific action to take when a workspace
 
 ### Devsy Desktop
 
-In the 'Workspaces' view, open the actions menu for a running workspace and choose 'Stop'. Once stopped, the menu will show a 'Start' option to resume the workspace.
+In the 'Workspaces' view, open the actions menu for a running workspace and choose 'Stop'. The workspace immediately shows **Stopping** and its current step, including closing connections before the stop command begins. Once stopped, the menu will show a 'Start' option to resume the workspace.
 
 ### Devsy CLI
 
@@ -40,7 +40,11 @@ Devsy will automatically determine what specific action to take when a workspace
 
 ### Devsy Desktop
 
-In the 'Workspaces' view, open the actions menu for the workspace and choose 'Delete', then confirm the deletion dialog.
+In the 'Workspaces' view, open the actions menu for the workspace and choose 'Delete', then confirm the deletion dialog. The workspace immediately shows **Deleting** and its current step. The row disappears after deletion finishes and the workspace list confirms removal.
+
+Progress for desktop actions stays available when you navigate between pages or reload the window. If the action fails, its error remains visible and you can open the workspace logs for details. If the action finishes but refreshing its status fails, use **Retry refresh**; this refreshes the observation without repeating the action. A **Deleted** label with **Refreshing list** means deletion completed and the list is still catching up.
+
+Live action progress covers commands initiated by the desktop. Commands launched in a separate terminal are reflected by periodic status refreshes. Progress recovery after fully quitting and restarting the desktop is not supported.
 
 ### Devsy CLI
 

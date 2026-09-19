@@ -107,6 +107,16 @@ task cli:build:dev
 
 ### Desktop Development
 
+In renderer code, use `$lib/...` for imports across renderer library modules and
+`$shared/...` for shared modules. Apply this to type imports, re-exports, and
+dynamic imports as well. Keep `./...` for sibling files and relative paths for
+renderer entry points without an existing alias. Avoid parent-directory imports
+(`../...`) when one of these aliases addresses the module.
+
+Main-process, preload, and shared code use relative imports: the renderer aliases
+are not configured in the main/preload bundlers. Preserve the existing `.js`
+extension on TypeScript module specifiers and `.svelte` on component imports.
+
 ```bash
 # Install dependencies
 cd desktop

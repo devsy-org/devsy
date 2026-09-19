@@ -7,6 +7,8 @@ import { CliRunner } from "./cli.js"
 import { DaemonManager } from "./daemon-manager.js"
 import { registerIpcHandlers } from "./ipc.js"
 import { LogStore } from "./log-store.js"
+import { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
+import { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
 import { ProviderJobs } from "./provider-jobs.js"
 import { PtyManager } from "./pty.js"
 import { DaemonState } from "./state.js"
@@ -156,6 +158,8 @@ app.whenReady().then(() => {
   // ~/.devsy/contexts/<ctx>/workspaces/<id>/ subtree that `workspace delete`
   // unlinks. That separation closes the file-deletion race by construction.
   const logStore = new LogStore(join(homedir(), ".devsy", "desktop", "logs"))
+	const machineDiagnosticsStore = new MachineDiagnosticsStore(join(homedir(), ".devsy", "desktop", "diagnostics"))
+	const machineDiagnosticsManager = new MachineDiagnosticsManager(cli, machineDiagnosticsStore)
   try {
     const pruned = logStore.prune(30)
     if (pruned > 0) console.log(`Pruned ${pruned} old log files`)
@@ -204,6 +208,8 @@ app.whenReady().then(() => {
     cli,
     state,
     logStore,
+		machineDiagnosticsStore,
+		machineDiagnosticsManager,
     pty: ptyManager,
     getMainWindow: () => mainWindow,
     providerJobs,
@@ -222,13 +228,7 @@ app.whenReady().then(() => {
         pendingRoute = null
       }
     },
-    onWorkspaceStopComplete: async (workspaceId) => {
-      try {
-        await watcher?.refreshWorkspaceStatus(workspaceId)
-      } finally {
-        watcher?.broadcastWorkspaces()
-      }
-    },
+    workspaceSnapshot: () => watcher?.workspaceSnapshot(),
   })
 
   // Start state watcher
@@ -245,9 +245,19 @@ app.whenReady().then(() => {
     watcher ? watcher.refreshProviders() : Promise.resolve(),
   )
   workspaceJobs.onChange(() => watcher?.broadcastWorkspaces())
-  workspaceJobs.setRefresh(() =>
-    watcher ? watcher.refreshWorkspaces() : Promise.resolve(),
-  )
+  workspaceJobs.setRefresh(async (id, job) => {
+    if (!watcher) throw new Error("Workspace watcher unavailable")
+    await watcher.refreshWorkspaces()
+    const exists = state.workspaceList().some((workspace) => workspace.id === id)
+    if (job.activity === "deleting" && !job.error) {
+      if (exists) throw new Error("Workspace list has not caught up yet")
+    } else if (exists) {
+      await watcher.refreshWorkspaceStatus(id)
+    } else if (!job.error) {
+      throw new Error("Workspace not yet present in the list")
+    }
+    watcher.broadcastWorkspaces()
+  })
 
   void watcher.start().then(runInitialProviderUpdateCheck)
   scheduleProviderUpdateCheck()
@@ -255,6 +265,7 @@ app.whenReady().then(() => {
   // Set up system tray
   appTray = new AppTray({
     state,
+    workspaceJobs,
     showDevsy,
     stopWorkspace: workspaceActions.stop,
     refreshWorkspace: (id) =>

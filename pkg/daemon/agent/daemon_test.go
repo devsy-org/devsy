@@ -6,7 +6,41 @@ import (
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestBuildDaemonArgs(t *testing.T) {
+	args := buildDaemonArgs("/usr/bin/devsy", InstallOptions{
+		StateLocation:  StateLocation{Root: "/state", Layout: StateLayoutCanonical},
+		Interval:       "30s",
+		ShutdownAction: config.ShutdownActionStopContainer,
+	})
+
+	assert.Equal(t, []string{
+		"/usr/bin/devsy", "internal", "agent", "daemon",
+		"--state-root", "/state", "--state-layout", "canonical",
+		"--diagnostics-reader-uid", "0", "--diagnostics-reader-gid", "0",
+		"--interval", "30s", "--shutdown-action", config.ShutdownActionStopContainer,
+	}, args)
+}
+
+func TestDaemonUnitStateLocationMatchesExactArgumentValues(t *testing.T) {
+	unit := systemdUnitContents("/usr/bin/devsy internal agent daemon --state-root /state/development --state-layout canonical")
+	location, configured, err := daemonUnitStateLocation(unit)
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(t, StateLocation{Root: "/state/development", Layout: StateLayoutCanonical}, location)
+	assert.NotEqual(t, StateLocation{Root: "/state/dev", Layout: StateLayoutCanonical}, location)
+}
+
+func TestDaemonUnitStateLocationSupportsQuotedRoot(t *testing.T) {
+	unit := systemdUnitContents(`/usr/bin/devsy internal agent daemon --state-root "/state/dev sy" --state-layout agent-home`)
+	location, configured, err := daemonUnitStateLocation(unit)
+	require.NoError(t, err)
+	assert.True(t, configured)
+	assert.Equal(t, StateLocation{Root: "/state/dev sy", Layout: StateLayoutAgentHome}, location)
+}
 
 func TestBuildWorkspaceDaemonConfig_ShutdownAction(t *testing.T) {
 	tests := []struct {

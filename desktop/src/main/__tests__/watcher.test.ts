@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { WorkspaceJobs } from "../workspace-jobs.js"
 import { Watcher } from "../watcher.js"
 
 function makeWatcher(
@@ -27,7 +28,7 @@ function makeWatcher(
     runRaw: vi.fn(runRaw),
   }
   const providerJobs = { snapshot: vi.fn().mockReturnValue({}) }
-  const workspaceJobs = { snapshot: vi.fn().mockReturnValue({}) }
+  const workspaceJobs = new WorkspaceJobs()
   const watcher = new Watcher({
     cli: cli as never,
     state: state as never,
@@ -35,7 +36,7 @@ function makeWatcher(
     providerJobs: providerJobs as never,
     workspaceJobs: workspaceJobs as never,
   })
-  return { watcher, cli, state }
+  return { watcher, cli, state, workspaceJobs }
 }
 
 describe("Watcher.refreshProviders", () => {
@@ -191,5 +192,39 @@ describe("Watcher.refreshWorkspaceStatuses", () => {
     expect(queried).toEqual(["ws-2"])
     expect(workspaces[0].status).toBe("running")
     expect(workspaces[1].status).toBe("stopped")
+  })
+})
+
+describe("workspace status ordering", () => {
+  it("discards an observation started before an operation", async () => {
+    let release!: (value: string) => void
+    const { watcher, state, workspaceJobs } = makeWatcher(
+      async () => ({}),
+      [{ id: "ws", status: "Running" }],
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve
+        }),
+    )
+    const polling = watcher.refreshWorkspaceStatuses()
+    await Promise.resolve()
+    workspaceJobs.start("ws", "stopping", "stop")
+    release('{"state":"Running"}')
+    await polling
+    expect(state.updateWorkspaceStatus).not.toHaveBeenCalled()
+  })
+  it("propagates targeted refresh failure without poisoning subsequent refreshes", async () => {
+    const { watcher, cli } = makeWatcher(
+      async () => ({}),
+      [{ id: "ws" }],
+      async () => {
+        throw new Error("offline")
+      },
+    )
+    await expect(watcher.refreshWorkspaceStatus("ws")).rejects.toThrow(
+      "offline",
+    )
+    cli.runRaw.mockResolvedValue('{"state":"Stopped"}')
+    await expect(watcher.refreshWorkspaceStatus("ws")).resolves.toBeUndefined()
   })
 })

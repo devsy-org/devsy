@@ -15,6 +15,8 @@ import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import type { CliRunner } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { LogStore } from "./log-store.js"
+import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
+import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
 import type {
   ProviderActivity,
   ProviderJobs,
@@ -34,6 +36,7 @@ import {
 } from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
+import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
 
 const execFileAsync = promisify(execFile)
@@ -97,11 +100,13 @@ interface IpcDependencies {
   cli: CliRunner
   state: DaemonState
   logStore: LogStore
+	 machineDiagnosticsStore?: MachineDiagnosticsStore
+	 machineDiagnosticsManager?: MachineDiagnosticsManager
   pty: PtyManager
   getMainWindow: () => BrowserWindow | null
   providerJobs: ProviderJobs
   workspaceJobs: WorkspaceJobs
-  onWorkspaceStopComplete?: (workspaceId: string) => Promise<void>
+  workspaceSnapshot?: () => unknown
   onRendererReady?: (sender: Electron.WebContents) => void
 }
 
@@ -191,6 +196,7 @@ function createLogSink(
   const FLUSH_MS = 64
   const MAX_BATCH = 250
   let buf: string[] = []
+  let finished = false
   let timer: ReturnType<typeof setTimeout> | null = null
 
   function post(
@@ -209,7 +215,9 @@ function createLogSink(
     if (!done && buf.length === 0) return
     const lines = buf
     buf = []
-    getWin()?.webContents.send("command-progress", {
+    const win = getWin()
+    if (!win || win.isDestroyed?.()) return
+    win.webContents.send("command-progress", {
       commandId,
       lines: lines.map(redactSensitiveText),
       done,
@@ -225,6 +233,7 @@ function createLogSink(
 
   return {
     line(formatted) {
+      if (finished) return true
       const safeLine = redactSensitiveText(formatted)
       const ok = appendLog?.(safeLine) ?? true
       buf.push(safeLine)
@@ -233,10 +242,17 @@ function createLogSink(
       return ok
     },
     async done(finalLine, extra) {
+      if (finished) return
+      finished = true
       const safeLine = redactSensitiveText(finalLine)
-      appendLog?.(safeLine)
       buf.push(safeLine)
-      await flush?.()
+      try {
+        appendLog?.(safeLine)
+        await flush?.()
+      } catch (error) {
+        // Log persistence must not change a command's actual outcome.
+        console.warn("[workspace-operation] log flush failed", error)
+      }
       post(true, { message: finalLine, ...extra })
     },
   }
@@ -248,7 +264,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   runInitialProviderUpdateCheck: () => void
   workspaceActions: { stop: (workspaceId: string) => Promise<void> }
 } {
-  const { cli, state, logStore, pty, providerJobs, workspaceJobs } = deps
+	const { cli, state, logStore, pty, providerJobs, workspaceJobs, machineDiagnosticsStore, machineDiagnosticsManager, getMainWindow } = deps
   const tunnelProcesses = new Map<
     string,
     import("node:child_process").ChildProcess
@@ -393,34 +409,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     if (stream !== "stdout") return false
     const envelope = parseCliEnvelope(line)
     if (envelope?.kind !== "status") return false
-    deps.getMainWindow()?.webContents.send("workspace-status", {
-      commandId,
-      workspaceId,
-      ...redactOperationStatus(normalizeOperationStatus(envelope)),
-    })
+    if (!workspaceJobs.owns(workspaceId, commandId)) return true
+    const status = redactOperationStatus(normalizeOperationStatus(envelope))
+    workspaceJobs.progress(workspaceId, commandId, status)
+    deps.getMainWindow()?.webContents.send("workspace-status", { commandId, workspaceId, ...status })
     return true
-  }
-
-  function emitWorkspaceStatus(
-    commandId: string,
-    workspaceId: string,
-    phase: string,
-    state: "started" | "succeeded" | "failed",
-    cliError?: CLIError,
-  ): void {
-    deps.getMainWindow()?.webContents.send("workspace-status", {
-      commandId,
-      workspaceId,
-      phase,
-      state,
-      ...(cliError
-        ? {
-            error: {
-              ...redactCLIError(cliError),
-            },
-          }
-        : {}),
-    })
   }
 
   /**
@@ -537,6 +530,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   // ── Workspaces ──
   ipcMain.handle("workspace_list", () => state.workspaceList())
+  ipcMain.handle("workspace_snapshot", () => deps.workspaceSnapshot?.() ?? {
+    workspaces: state.workspaceList(), jobs: workspaceJobs.snapshot(), revision: workspaceJobs.revision,
+  })
+  ipcMain.handle("workspace_refresh", (_event, args: { workspaceId: string }) => workspaceJobs.retryRefresh(args.workspaceId))
 
   ipcMain.handle(
     "workspace_status",
@@ -551,8 +548,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "15s",
       ]
       if (args.recovery) cliArgs.push("--recovery")
+      const generation = workspaceJobs.generation(args.workspaceId)
       const raw = await cli.runRaw(cliArgs)
-      if (!args.recovery) {
+      if (!args.recovery && generation === workspaceJobs.generation(args.workspaceId)) {
         const status = normalizeWorkspaceStatus(raw)
         if (status && state.updateWorkspaceStatus(args.workspaceId, status)) {
           // The watcher owns renderer broadcasts; this update still keeps
@@ -895,9 +893,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle(
     "machine_delete",
     async (_event, args: { id: string; force?: boolean }) => {
-      const cliArgs = ["machine", "delete", args.id]
+      const key = { context: state.currentContext(), machineId: args.id }
+      const cliArgs = ["machine", "delete", args.id, "--context", key.context]
       if (args.force) cliArgs.push("--force")
       await cli.runRaw(cliArgs)
+		machineDiagnosticsManager?.delete(key)
     },
   )
 
@@ -906,11 +906,25 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   })
 
   ipcMain.handle("machine_stop", async (_event, args: { id: string }) => {
-    await cli.runRaw(["machine", "stop", args.id])
+    const key = { context: state.currentContext(), machineId: args.id }
+    await cli.runRaw(["machine", "stop", args.id, "--context", key.context])
+		machineDiagnosticsManager?.markStopped(key)
   })
 
   ipcMain.handle("machine_status", async (_event, args: { id: string }) => {
     return cli.runRaw(["machine", "status", args.id, "--result-format", "json"])
+  })
+
+  ipcMain.handle("machine_diagnostics_get", (_event, args: { id: string }) => {
+		return machineDiagnosticsManager?.getCached({ context: state.currentContext(), machineId: args.id }) ?? null
+  })
+
+  ipcMain.handle("machine_diagnostics_refresh", async (_event, args: { id: string }) => {
+		if (!machineDiagnosticsManager) throw new Error("machine diagnostics manager is unavailable")
+		const key = { context: state.currentContext(), machineId: args.id }
+		const merged = await machineDiagnosticsManager.refresh(key)
+    getMainWindow()?.webContents.send("machine-diagnostics-changed", { machineId: args.id, context: key.context, diagnostics: merged })
+    return merged
   })
 
   // ── Contexts ──
@@ -1116,159 +1130,287 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
       const wsId = args.workspaceId ?? args.source
       const cmdId = args.commandId ?? crypto.randomUUID()
-      const logPath = logStore.createLogFile(state.workspaceContext(wsId), wsId)
-      const sink = createLogSink(
-        deps.getMainWindow,
-        cmdId,
-        (line) => logStore.appendLog(logPath, line),
-        () => logStore.closeLog(logPath),
-      )
+      const activity = args.workspaceId ? "creating" : "starting"
+      const generation = workspaceJobs.start(wsId, activity, cmdId)
+      const started = performance.now()
+      const timing = (stage: string) =>
+        console.debug(
+          `[workspace-operation] ${cmdId} ${stage} ${Math.round(performance.now() - started)}ms`,
+        )
+      timing("accepted")
+      void (async () => {
+        const logPath = logStore.createLogFile(
+          state.workspaceContext(wsId),
+          wsId,
+        )
+        const sink = createLogSink(
+          deps.getMainWindow,
+          cmdId,
+          (line) => logStore.appendLog(logPath, line),
+          () => logStore.closeLog(logPath),
+        )
 
-      return serializePerWorkspace(wsId, async () => {
-        // Tear down any prior run for this workspace before starting a new
-        // one.
-        let taskId: string
-        try {
-          await cancelActiveUp(wsId)
-          // Submit: returns immediately with the background task's id.
-          const submitted = await cli.run<{ kind: string; id: string }>([
-            ...cliArgs,
-            "--detach",
-          ])
-          if (!submitted?.id) {
-            throw new Error("workspace up --detach returned no task id")
+        await serializePerWorkspace(wsId, async () => {
+          // Tear down any prior run for this workspace before starting a new
+          // one.
+          let taskId: string
+          try {
+            workspaceJobs.phase(wsId, cmdId, "Closing connections")
+            await cancelActiveUp(wsId)
+            timing("shutdown-complete")
+            workspaceJobs.phase(wsId, cmdId, "Launching command")
+            timing("cli-launch")
+            // Submit: returns immediately with the background task's id.
+            const submitted = await cli.run<{ kind: string; id: string }>([
+              ...cliArgs,
+              "--detach",
+            ])
+            if (!submitted?.id) {
+              throw new Error("workspace up --detach returned no task id")
+            }
+            taskId = submitted.id
+          } catch (error) {
+            const err = error as Error & { cliError?: CLIError }
+            void sink.done(formatLogLine(err.message, "ERROR"), {
+              level: "error",
+              success: false,
+              cliError: err.cliError ?? {
+                code: "up_failed",
+                message: err.message,
+              },
+            })
+            await workspaceJobs.finish(
+              wsId,
+              generation,
+              redactCLIError(
+                err.cliError ?? { code: "up_failed", message: err.message },
+              ).message,
+            )
+            return cmdId
           }
-          taskId = submitted.id
-        } catch (error) {
-          const err = error as Error & { cliError?: CLIError }
-          void sink.done(formatLogLine(err.message, "ERROR"), {
-            level: "error",
-            success: false,
-            cliError: err.cliError ?? {
-              code: "up_failed",
-              message: err.message,
-            },
-          })
+          activeUpTasks.set(wsId, taskId)
+
+          // A newer submission may already own the entry and must stay cancellable.
+          const releaseTask = () => {
+            if (activeUpTasks.get(wsId) === taskId) {
+              activeUpTasks.delete(wsId)
+            }
+          }
+
+          let firstProgress = true
+          let signalledDone = false
+          let suppressCallbacks = false
+          let child: import("node:child_process").ChildProcess
+          try {
+            child = await cli.runStreaming(
+              ["workspace", "task", "logs", taskId, "--follow"],
+              (line, stream) => {
+                if (
+                  signalledDone ||
+                  suppressCallbacks ||
+                  !workspaceJobs.owns(wsId, cmdId)
+                )
+                  return
+
+                if (firstProgress) {
+                  timing("first-progress")
+                  firstProgress = false
+                }
+                // Structured NDJSON envelopes only ever appear on stdout; stderr
+                // carries freeform zap log lines.
+                const envelope =
+                  stream === "stdout" ? parseCliEnvelope(line) : undefined
+
+                if (envelope?.kind === "status") {
+                  const status = redactOperationStatus(
+                    normalizeOperationStatus(envelope),
+                  )
+                  workspaceJobs.progress(wsId, cmdId, status)
+                  deps.getMainWindow()?.webContents.send("workspace-status", {
+                    commandId: cmdId,
+                    workspaceId: wsId,
+                    ...status,
+                  })
+                  return
+                }
+
+                const formatted = formatLogLine(line)
+
+                if (envelope?.kind === "result") {
+                  signalledDone = true
+                  releaseTask()
+                  timing("completed")
+                  void workspaceJobs.finish(wsId, generation)
+                  void sink.done(formatted, { success: true })
+                  return
+                }
+
+                if (envelope?.kind === "error") {
+                  signalledDone = true
+                  releaseTask()
+                  void workspaceJobs.finish(
+                    wsId,
+                    generation,
+                    redactCLIError({
+                      code: envelope.code ?? "up_failed",
+                      message: envelope.message,
+                    }).message,
+                  )
+                  void sink.done(formatted, {
+                    level: "error",
+                    success: false,
+                    cliError: {
+                      code: envelope.code ?? "up_failed",
+                      message: envelope.message,
+                      hint: envelope.hint,
+                      context: envelope.context,
+                    },
+                  })
+                  return
+                }
+
+                if (!sink.line(formatted)) return logStore.onDrain(logPath)
+              },
+              (code, cliError) => {
+                // No releaseTask: the follower dying says nothing about the
+                // detached worker, and would orphan a still-running task.
+                if (tunnelProcesses.get(wsId) === child) {
+                  tunnelProcesses.delete(wsId)
+                }
+                if (
+                  signalledDone ||
+                  suppressCallbacks ||
+                  !workspaceJobs.owns(wsId, cmdId)
+                )
+                  return
+                // A follower exiting is not evidence that the detached task finished.
+                void reconcileDetachedTask(
+                  wsId,
+                  cmdId,
+                  generation,
+                  taskId,
+                  sink,
+                  releaseTask,
+                )
+              },
+              wsId,
+            )
+            // Expose a method to suppress callbacks from cancelActiveUp
+            ;(
+              child as unknown as { _suppressWorkspaceCallbacks?: () => void }
+            )._suppressWorkspaceCallbacks = () => {
+              suppressCallbacks = true
+            }
+          } catch (error) {
+            // A failed follower does not prove that the detached task failed.
+            // Keep its cancellation handle and reconcile from persisted task state.
+            void reconcileDetachedTask(
+              wsId,
+              cmdId,
+              generation,
+              taskId,
+              sink,
+              releaseTask,
+            )
+            return cmdId
+          }
+          tunnelProcesses.set(wsId, child)
+
           return cmdId
-        }
-        activeUpTasks.set(wsId, taskId)
-
-        // A newer submission may already own the entry and must stay cancellable.
-        const releaseTask = () => {
-          if (activeUpTasks.get(wsId) === taskId) {
-            activeUpTasks.delete(wsId)
-          }
-        }
-
-        let signalledDone = false
-        let suppressCallbacks = false
-        const sendWorkspaceFailureStatus = (cliError: CLIError | undefined) => {
-          const safeError = redactCLIError(
-            cliError ?? { code: "up_failed", message: "workspace up failed" },
-          )
-          deps.getMainWindow()?.webContents.send("workspace-status", {
-            commandId: cmdId,
-            workspaceId: wsId,
-            phase: "failed",
-            state: "failed",
-            error: safeError,
-          })
-        }
-        let child: import("node:child_process").ChildProcess
-        try {
-          child = await cli.runStreaming(
-            ["workspace", "task", "logs", taskId, "--follow"],
-            (line, stream) => {
-              if (signalledDone || suppressCallbacks) return
-
-              // Structured NDJSON envelopes only ever appear on stdout; stderr
-              // carries freeform zap log lines.
-              const envelope =
-                stream === "stdout" ? parseCliEnvelope(line) : undefined
-
-              if (envelope?.kind === "status") {
-                const status = redactOperationStatus(normalizeOperationStatus(envelope))
-                deps.getMainWindow()?.webContents.send("workspace-status", {
-                  commandId: cmdId,
-                  workspaceId: wsId,
-                  ...status,
-                })
-                return
-              }
-
-              const formatted = formatLogLine(line)
-
-              if (envelope?.kind === "result") {
-                signalledDone = true
-                releaseTask()
-                void sink.done(formatted, { success: true })
-                return
-              }
-
-              if (envelope?.kind === "error") {
-                signalledDone = true
-                releaseTask()
-                void sink.done(formatted, {
-                  level: "error",
-                  success: false,
-                  cliError: {
-                    code: envelope.code ?? "up_failed",
-                    message: envelope.message,
-                    hint: envelope.hint,
-                    context: envelope.context,
-                  },
-                })
-                return
-              }
-
-              if (!sink.line(formatted)) return logStore.onDrain(logPath)
-            },
-            (code, cliError) => {
-              // No releaseTask: the follower dying says nothing about the
-              // detached worker, and would orphan a still-running task.
-              if (tunnelProcesses.get(wsId) === child) {
-                tunnelProcesses.delete(wsId)
-              }
-              if (signalledDone || suppressCallbacks) return
-              if (code !== 0) sendWorkspaceFailureStatus(cliError)
-              void sink.done(
-                formatLogLine(
-                  `Exit code: ${code}`,
-                  code === 0 ? "INFO" : "ERROR",
-                ),
-                code === 0
-                  ? { success: true }
-                  : { level: "error", success: false, cliError },
-              )
-            },
-            wsId,
-          )
-          // Expose a method to suppress callbacks from cancelActiveUp
-          ;(child as unknown as { _suppressWorkspaceCallbacks?: () => void })._suppressWorkspaceCallbacks = () => {
-            suppressCallbacks = true
-          }
-        } catch (error) {
-          // The task is already submitted; keep it registered so a later
-          // cancel can still reach it, and close the sink so the UI isn't
-          // left waiting on a follower that never started.
-          const err = error as Error & { cliError?: CLIError }
-          sendWorkspaceFailureStatus(err.cliError)
-          void sink.done(formatLogLine(err.message, "ERROR"), {
-            level: "error",
-            success: false,
-            cliError: err.cliError ?? {
-              code: "up_follow_failed",
-              message: err.message,
-            },
-          })
-          return cmdId
-        }
-        tunnelProcesses.set(wsId, child)
-
-        return cmdId
+        })
+      })().catch(async (error) => {
+        await workspaceJobs.finish(
+          wsId,
+          generation,
+          redactCLIError(cliErrorOrFallback(error, "up_failed")).message,
+        )
       })
+      return cmdId
     },
   )
+
+  async function reconcileDetachedTask(
+    wsId: string,
+    commandId: string,
+    generation: number,
+    taskId: string,
+    sink: ProgressSink,
+    release: () => void,
+  ): Promise<void> {
+    while (
+      workspaceJobs.owns(wsId, commandId) &&
+      workspaceJobs.get(wsId)?.state === "running"
+    ) {
+      try {
+        const raw = await cli.runRaw([
+          "workspace",
+          "task",
+          "get",
+          taskId,
+          "--result-format",
+          "json",
+        ])
+        if (!workspaceJobs.owns(wsId, commandId)) return
+        for (const line of raw.split("\n")) {
+          const envelope = parseCliEnvelope(line)
+          if (envelope?.kind === "result") {
+            release()
+            await sink
+              .done(formatLogLine("Completed"), { success: true })
+              .catch((error) =>
+                console.warn("[workspace-operation] log flush failed", error),
+              )
+            await workspaceJobs.finish(wsId, generation)
+            return
+          }
+          if (envelope?.kind === "status")
+            workspaceJobs.progress(
+              wsId,
+              commandId,
+              redactOperationStatus(normalizeOperationStatus(envelope)),
+            )
+        }
+      } catch (error) {
+        // task get can also fail because the store/CLI is unavailable. Only a
+        // persisted terminal task state authorizes declaring the worker failed.
+        try {
+          const tasks = await cli.run<
+            Array<{
+              id: string
+              status: string
+              error?: string
+              errorCode?: string
+            }>
+          >(["workspace", "task", "list"])
+          const task = tasks.find((task) => task.id === taskId)
+          if (
+            task?.status === "failed" &&
+            workspaceJobs.owns(wsId, commandId)
+          ) {
+            release()
+            const safe = redactCLIError({
+              code: task.errorCode ?? "up_failed",
+              message: task.error || "Workspace task failed",
+            })
+            await sink.done(formatLogLine(safe.message, "ERROR"), {
+              success: false,
+              cliError: safe,
+            })
+            await workspaceJobs.finish(wsId, generation, safe.message)
+            return
+          }
+        } catch {
+          /* Keep the operation and cancellation handle while unavailable. */
+        }
+        workspaceJobs.phase(
+          wsId,
+          commandId,
+          "Progress unavailable · Checking task",
+        )
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000))
+    }
+  }
 
   type WorkspaceActionSource = "renderer" | "tray"
   type StopWorkspaceArgs = {
@@ -1277,337 +1419,164 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     commandId?: string
   }
 
-  async function startWorkspaceStop(
+  function startWorkspaceAction(
     args: StopWorkspaceArgs,
-    source: WorkspaceActionSource,
-  ): Promise<{ commandId: string; completion: Promise<void> }> {
-    trackEvent("workspace_stop", {
-      workspace_ref: hashWorkspaceRef(args.workspaceId),
-      source,
-    })
-    await quiesceWorkspace(args.workspaceId)
+    activity: WorkspaceActivity,
+    cliArgs: string[],
+    source: WorkspaceActionSource = "renderer",
+  ): { commandId: string; completion: Promise<void> } {
     const commandId = args.commandId ?? crypto.randomUUID()
-    const logPath = logStore.createLogFile(
-      state.workspaceContext(args.workspaceId),
+    const generation = workspaceJobs.start(
       args.workspaceId,
-    )
-    const sink = createLogSink(
-      deps.getMainWindow,
+      activity,
       commandId,
-      (line) => logStore.appendLog(logPath, line),
-      () => logStore.closeLog(logPath),
     )
-    const completion = new Promise<void>((resolve, reject) => {
-      const cliArgs = ["workspace", "stop", args.workspaceId]
-      if (args.debug) cliArgs.push("--debug")
-      emitWorkspaceStatus(commandId, args.workspaceId, "stopping_workspace", "started")
-      void cli.runStreaming(
-        cliArgs,
-        (line, stream) => {
-          if (forwardWorkspaceStatus(commandId, args.workspaceId, line, stream)) return
-          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
-        },
-        (code, cliError) => {
-          if (code === 0) {
-            emitWorkspaceStatus(commandId, args.workspaceId, "stopping_workspace", "succeeded")
-          } else {
-            emitWorkspaceStatus(
-              commandId,
-              args.workspaceId,
-              "stopping_workspace",
-              "failed",
-              cliError ?? {
-                code: "workspace_stop_failed",
-                message: `workspace stop exited with code ${code}`,
-              },
-            )
-          }
-          void sink
-            .done(
-              formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
-              { success: code === 0 },
-            )
-            .then(() => {
-              if (code === 0) resolve()
-              else reject(new Error(`workspace stop exited with code ${code}`))
-            })
-            .catch(reject)
-        },
-        args.workspaceId,
-      ).catch((error) => {
-        const cliError = cliErrorOrFallback(error, "workspace_stop_failed")
-        emitWorkspaceStatus(
-          commandId,
-          args.workspaceId,
-          "stopping_workspace",
-          "failed",
-          cliError,
-        )
-        void sink
-          .done(formatLogLine(cliError.message, "ERROR"), {
-            level: "error",
-            success: false,
-            cliError,
-          })
-          .catch(() => {})
-          .finally(() => reject(error))
-      })
-    })
-    void completion
-      .then(
-        () => deps.onWorkspaceStopComplete?.(args.workspaceId),
-        () => deps.onWorkspaceStopComplete?.(args.workspaceId),
+    const started = performance.now()
+    const timing = (stage: string) =>
+      console.debug(
+        `[workspace-operation] ${commandId} ${stage} ${Math.round(performance.now() - started)}ms`,
       )
-      .catch((error) => {
-        console.warn(
-          `[ipc] failed to reconcile workspace ${args.workspaceId}:`,
-          error,
+    trackEvent(
+      `workspace_${{ stopping: "stop", deleting: "delete", rebuilding: "rebuild", resetting: "reset", starting: "up", creating: "create" }[activity]}`,
+      { workspace_ref: hashWorkspaceRef(args.workspaceId), source },
+    )
+    timing("accepted")
+    const completion = (async () => {
+      let sink: ProgressSink | undefined
+      try {
+        workspaceJobs.phase(args.workspaceId, commandId, "Closing connections")
+        await quiesceWorkspace(args.workspaceId)
+        timing("shutdown-complete")
+        const logPath = logStore.createLogFile(
+          state.workspaceContext(args.workspaceId),
+          args.workspaceId,
         )
-      })
+        sink = createLogSink(
+          deps.getMainWindow,
+          commandId,
+          (line) => logStore.appendLog(logPath, line),
+          () => logStore.closeLog(logPath),
+        )
+        if (args.debug) cliArgs.push("--debug")
+        workspaceJobs.phase(args.workspaceId, commandId, "Launching command")
+        timing("cli-launch")
+        let firstProgress = true
+        await new Promise<void>((resolve, reject) => {
+          void cli
+            .runStreaming(
+              cliArgs,
+              (line, stream) => {
+                if (!workspaceJobs.owns(args.workspaceId, commandId)) return
+                if (firstProgress) {
+                  timing("first-progress")
+                  firstProgress = false
+                }
+                if (
+                  forwardWorkspaceStatus(
+                    commandId,
+                    args.workspaceId,
+                    line,
+                    stream,
+                  )
+                )
+                  return
+                if (!sink!.line(formatLogLine(line)))
+                  return logStore.onDrain(logPath)
+              },
+              (code, cliError) => {
+                if (code === 0) resolve()
+                else
+                  reject(
+                    Object.assign(
+                      new Error(
+                        cliError?.message ?? `Command exited with code ${code}`,
+                      ),
+                      { cliError },
+                    ),
+                  )
+              },
+              args.workspaceId,
+            )
+            .catch(reject)
+        })
+        timing("completed")
+        await sink
+          .done(formatLogLine("Completed"), { success: true })
+          .catch((error) =>
+            console.warn("[workspace-operation] log flush failed", error),
+          )
+        await workspaceJobs.finish(args.workspaceId, generation)
+        timing("reconciled")
+      } catch (error) {
+        const cliError = redactCLIError(
+          cliErrorOrFallback(error, "workspace_operation_failed"),
+        )
+        if (sink)
+          await sink
+            .done(formatLogLine(cliError.message, "ERROR"), {
+              success: false,
+              level: "error",
+              cliError,
+            })
+            .catch(() => {})
+        await workspaceJobs.finish(
+          args.workspaceId,
+          generation,
+          cliError.message,
+        )
+        throw error
+      }
+    })()
+    // IPC acknowledges acceptance. All subsequent errors live in the shared job.
+    void completion.catch(() => {})
     return { commandId, completion }
   }
 
-  ipcMain.handle("workspace_stop", async (_event, args: StopWorkspaceArgs) => {
-    const { commandId, completion } = await startWorkspaceStop(args, "renderer")
-    void completion.catch(() => {})
-    return commandId
-  })
-
+  function startWorkspaceStop(
+    args: StopWorkspaceArgs,
+    source: WorkspaceActionSource,
+  ) {
+    return startWorkspaceAction(
+      args,
+      "stopping",
+      ["workspace", "stop", args.workspaceId],
+      source,
+    )
+  }
+  ipcMain.handle(
+    "workspace_stop",
+    (_event, args: StopWorkspaceArgs) =>
+      startWorkspaceStop(args, "renderer").commandId,
+  )
   ipcMain.handle(
     "workspace_delete",
-    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
-      trackEvent("workspace_delete", {
-        workspace_ref: hashWorkspaceRef(args.workspaceId),
-      })
-      // Replaces the old `devsy down` command which the CLI overhaul removed:
-      // before invoking delete, terminate every desktop-spawned child tied to
-      // this workspace and wait for them to actually exit. Otherwise late
-      // stdout/stderr lands on a log file the CLI is about to unlink, causing
-      // an ENOENT crash in the main process.
-      await quiesceWorkspace(args.workspaceId)
-      const cmdId = args.commandId ?? crypto.randomUUID()
-      const logPath = logStore.createLogFile(
-        state.workspaceContext(args.workspaceId),
+    (_event, args: StopWorkspaceArgs) =>
+      startWorkspaceAction(args, "deleting", [
+        "workspace",
+        "delete",
         args.workspaceId,
-      )
-      const sink = createLogSink(
-        deps.getMainWindow,
-        cmdId,
-        (line) => logStore.appendLog(logPath, line),
-        () => logStore.closeLog(logPath),
-      )
-
-      const cliArgs = ["workspace", "delete", args.workspaceId]
-      if (args.debug) cliArgs.push("--debug")
-      cliArgs.push("--force")
-
-      // The card shows "Deleting" until finish() below
-      const jobGeneration = workspaceJobs.start(args.workspaceId)
-      emitWorkspaceStatus(cmdId, args.workspaceId, "deleting_workspace", "started")
-
-      void cli.runStreaming(
-        cliArgs,
-        (line, stream) => {
-          if (forwardWorkspaceStatus(cmdId, args.workspaceId, line, stream)) return
-          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
-        },
-        (code, cliError) => {
-          if (code === 0) {
-            emitWorkspaceStatus(cmdId, args.workspaceId, "deleting_workspace", "succeeded")
-          } else {
-            emitWorkspaceStatus(
-              cmdId,
-              args.workspaceId,
-              "deleting_workspace",
-              "failed",
-              cliError ?? {
-                code: "workspace_delete_failed",
-                message: `workspace delete exited with code ${code}`,
-              },
-            )
-          }
-          void sink.done(
-            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
-            { success: code === 0 },
-          )
-          void workspaceJobs.finish(
-            args.workspaceId,
-            jobGeneration,
-            code === 0
-              ? undefined
-              : cliError?.message ?? `delete exited with code ${code}`,
-          )
-        },
-        args.workspaceId,
-      ).catch((error) => {
-        const cliError = cliErrorOrFallback(error, "workspace_delete_failed")
-        emitWorkspaceStatus(
-          cmdId,
-          args.workspaceId,
-          "deleting_workspace",
-          "failed",
-          cliError,
-        )
-        void sink.done(formatLogLine(cliError.message, "ERROR"), {
-          level: "error",
-          success: false,
-          cliError,
-        })
-        void workspaceJobs.finish(args.workspaceId, jobGeneration, cliError.message)
-      })
-
-      return cmdId
-    },
+        "--force",
+      ]).commandId,
   )
-
   ipcMain.handle(
     "workspace_rebuild",
-    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
-      trackEvent("workspace_rebuild", {
-        workspace_ref: hashWorkspaceRef(args.workspaceId),
-      })
-      const cmdId = args.commandId ?? crypto.randomUUID()
-      const logPath = logStore.createLogFile(
-        state.workspaceContext(args.workspaceId),
+    (_event, args: StopWorkspaceArgs) =>
+      startWorkspaceAction(args, "rebuilding", [
+        "workspace",
+        "up",
         args.workspaceId,
-      )
-      const sink = createLogSink(
-        deps.getMainWindow,
-        cmdId,
-        (line) => logStore.appendLog(logPath, line),
-        () => logStore.closeLog(logPath),
-      )
-
-      const cliArgs = ["workspace", "up", args.workspaceId, "--recreate"]
-      if (args.debug) cliArgs.push("--debug")
-      let sawFailedStatus = false
-
-      void cli.runStreaming(
-        cliArgs,
-        (line, stream) => {
-          const envelope = stream === "stdout" ? parseCliEnvelope(line) : undefined
-          if (envelope?.kind === "status" && envelope.state === "failed") {
-            sawFailedStatus = true
-          }
-          if (forwardWorkspaceStatus(cmdId, args.workspaceId, line, stream)) {
-            return
-          }
-          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
-        },
-        (code, cliError) => {
-          if (code !== 0 && !sawFailedStatus) {
-            emitWorkspaceStatus(
-              cmdId,
-              args.workspaceId,
-              "rebuilding_workspace",
-              "failed",
-              cliError ?? {
-                code: "workspace_rebuild_failed",
-                message: `workspace rebuild exited with code ${code}`,
-              },
-            )
-          }
-          void sink.done(
-            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
-            code === 0
-              ? { success: true }
-              : { level: "error", success: false, cliError },
-          )
-        },
-        args.workspaceId,
-      ).catch((error) => {
-        const cliError = cliErrorOrFallback(error, "workspace_rebuild_failed")
-        emitWorkspaceStatus(
-          cmdId,
-          args.workspaceId,
-          "rebuilding_workspace",
-          "failed",
-          cliError,
-        )
-        void sink.done(formatLogLine(cliError.message, "ERROR"), {
-          level: "error",
-          success: false,
-          cliError,
-        })
-      })
-
-      return cmdId
-    },
+        "--recreate",
+      ]).commandId,
   )
-
   ipcMain.handle(
     "workspace_reset",
-    async (_event, args: { workspaceId: string; debug?: boolean; commandId?: string }) => {
-      trackEvent("workspace_reset", {
-        workspace_ref: hashWorkspaceRef(args.workspaceId),
-      })
-      const cmdId = args.commandId ?? crypto.randomUUID()
-      const logPath = logStore.createLogFile(
-        state.workspaceContext(args.workspaceId),
+    (_event, args: StopWorkspaceArgs) =>
+      startWorkspaceAction(args, "resetting", [
+        "workspace",
+        "up",
         args.workspaceId,
-      )
-      const sink = createLogSink(
-        deps.getMainWindow,
-        cmdId,
-        (line) => logStore.appendLog(logPath, line),
-        () => logStore.closeLog(logPath),
-      )
-
-      const cliArgs = ["workspace", "up", args.workspaceId, "--reset"]
-      if (args.debug) cliArgs.push("--debug")
-      let sawFailedStatus = false
-
-      void cli.runStreaming(
-        cliArgs,
-        (line, stream) => {
-          const envelope = stream === "stdout" ? parseCliEnvelope(line) : undefined
-          if (envelope?.kind === "status" && envelope.state === "failed") {
-            sawFailedStatus = true
-          }
-          if (forwardWorkspaceStatus(cmdId, args.workspaceId, line, stream)) {
-            return
-          }
-          if (!sink.line(formatLogLine(line))) return logStore.onDrain(logPath)
-        },
-        (code, cliError) => {
-          if (code !== 0 && !sawFailedStatus) {
-            emitWorkspaceStatus(
-              cmdId,
-              args.workspaceId,
-              "resetting_workspace",
-              "failed",
-              cliError ?? {
-                code: "workspace_reset_failed",
-                message: `workspace reset exited with code ${code}`,
-              },
-            )
-          }
-          void sink.done(
-            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
-            code === 0
-              ? { success: true }
-              : { level: "error", success: false, cliError },
-          )
-        },
-        args.workspaceId,
-      ).catch((error) => {
-        const cliError = cliErrorOrFallback(error, "workspace_reset_failed")
-        emitWorkspaceStatus(
-          cmdId,
-          args.workspaceId,
-          "resetting_workspace",
-          "failed",
-          cliError,
-        )
-        void sink.done(formatLogLine(cliError.message, "ERROR"), {
-          level: "error",
-          success: false,
-          cliError,
-        })
-      })
-
-      return cmdId
-    },
+        "--reset",
+      ]).commandId,
   )
 
   // ── Terminal ──

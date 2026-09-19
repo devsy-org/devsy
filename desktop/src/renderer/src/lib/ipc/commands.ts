@@ -15,6 +15,7 @@ import type {
   Workspace,
 } from "$lib/types/index.js"
 import { invoke } from "./bridge.js"
+import type { MachineDiagnosticsCache } from "$shared/machine-diagnostics-types.js"
 
 type CommandEnvelope =
   | { ok: true }
@@ -33,6 +34,18 @@ function unwrapEnvelope(result: CommandEnvelope): void {
 // Workspace commands
 export async function workspaceList(): Promise<Workspace[]> {
   return invoke<Workspace[]>("workspace_list")
+}
+
+export interface WorkspaceSnapshot {
+  revision: number
+  workspaces: Workspace[]
+  jobs: Record<string, import("$shared/workspace-operation.js").WorkspaceJob>
+}
+export function workspaceSnapshot(): Promise<WorkspaceSnapshot> {
+  return invoke<WorkspaceSnapshot>("workspace_snapshot")
+}
+export function workspaceRefresh(workspaceId: string): Promise<void> {
+  return invoke<void>("workspace_refresh", { workspaceId })
 }
 
 export async function workspaceUp(params: {
@@ -250,6 +263,14 @@ export async function machineStatus(id: string): Promise<string> {
   } catch {
     return raw.trim()
   }
+}
+
+export async function machineDiagnosticsGet(id: string): Promise<MachineDiagnosticsCache | null> {
+  return invoke<MachineDiagnosticsCache | null>("machine_diagnostics_get", { id })
+}
+
+export async function machineDiagnosticsRefresh(id: string): Promise<MachineDiagnosticsCache> {
+  return invoke<MachineDiagnosticsCache>("machine_diagnostics_refresh", { id })
 }
 
 // Context commands

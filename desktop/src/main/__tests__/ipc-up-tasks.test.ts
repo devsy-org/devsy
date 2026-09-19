@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { WorkspaceJobs } from "../workspace-jobs.js"
 import { EventEmitter } from "node:events"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -22,16 +23,20 @@ vi.mock("../analytics.js", () => ({
 
 const { registerIpcHandlers } = await import("../ipc.js")
 
-function invokeUp(workspaceId: string): Promise<string> {
+async function invokeUp(workspaceId: string): Promise<string> {
   const handler = handlers.get("workspace_up")
   if (!handler) throw new Error("workspace_up not registered")
-  return handler({}, { source: workspaceId, workspaceId }) as Promise<string>
+  const id = (await handler({}, { source: workspaceId, workspaceId })) as string
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  return id
 }
 
-function invokeStop(workspaceId: string): Promise<string> {
+async function invokeStop(workspaceId: string): Promise<string> {
   const handler = handlers.get("workspace_stop")
   if (!handler) throw new Error("workspace_stop not registered")
-  return handler({}, { workspaceId }) as Promise<string>
+  const id = (await handler({}, { workspaceId })) as string
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  return id
 }
 
 /** A child that reports itself still alive, so cancel must await its exit. */
@@ -78,6 +83,7 @@ function setup(
       },
     ),
     cancelFor: vi.fn(async () => undefined),
+    runRaw: vi.fn(async () => statusEnvelope("building_image")),
   }
   let stream: {
     onLine: (line: string, s: "stdout" | "stderr") => void
@@ -93,7 +99,10 @@ function setup(
     },
     isDestroyed: () => false,
   }
+  const jobs = new WorkspaceJobs()
+  jobs.setRefresh(onWorkspaceStopComplete)
   const deps = {
+    workspaceJobs: jobs,
     cli,
     state: {
       workspaceContext: () => "ctx",
@@ -114,6 +123,7 @@ function setup(
   return {
     cli,
     calls,
+    jobs,
     api,
     sent,
     stream: () => stream,
@@ -138,11 +148,11 @@ describe("workspace_up detached task tracking", () => {
     vi.clearAllMocks()
   })
 
-  it("cancels the prior task before submitting a replacement", async () => {
+  it("stop cancels an active start before launching", async () => {
     const { calls } = setup()
 
     await invokeUp("ws-1")
-    await invokeUp("ws-1")
+    await invokeStop("ws-1")
 
     const cancels = calls.filter((a) => a.includes("cancel"))
     expect(cancels).toEqual([["workspace", "task", "cancel", "task-1"]])
@@ -158,7 +168,7 @@ describe("workspace_up detached task tracking", () => {
       if (!active) throw new Error("stream callback was not registered")
       active.onLine(`token=${secret}`, "stderr")
       active.onExit(0)
-      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       const payload = JSON.stringify(sent)
       expect(payload).not.toContain(secret)
@@ -178,7 +188,7 @@ describe("workspace_up detached task tracking", () => {
       "stderr",
     )
     active.onExit(0)
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     const payload = JSON.stringify(sent)
     expect(payload).not.toContain("git-token")
@@ -216,7 +226,7 @@ describe("workspace_up detached task tracking", () => {
     }
   })
 
-  it("serializes concurrent submissions so neither task is left orphaned", async () => {
+  it("rejects concurrent submissions without orphaning a task", async () => {
     let seq = 0
     const { calls } = setup({
       run: async (args) => {
@@ -230,10 +240,17 @@ describe("workspace_up detached task tracking", () => {
       },
     })
 
-    await Promise.all([invokeUp("ws-1"), invokeUp("ws-1")])
+    const submissions = await Promise.allSettled([
+      invokeUp("ws-1"),
+      invokeUp("ws-1"),
+    ])
+    expect(
+      submissions.filter((result) => result.status === "rejected"),
+    ).toHaveLength(1)
 
     const cancels = calls.filter((a) => a.includes("cancel"))
-    expect(cancels).toEqual([["workspace", "task", "cancel", "task-1"]])
+    expect(cancels).toEqual([])
+    expect(calls.filter((args) => args.includes("--detach"))).toHaveLength(1)
   })
 
   it("keeps the task cancellable when cancellation fails", async () => {
@@ -251,7 +268,7 @@ describe("workspace_up detached task tracking", () => {
 
     await invokeUp("ws-1")
 
-    await invokeUp("ws-1")
+    await invokeStop("ws-1")
     expect(calls.filter((a) => a.includes("--detach"))).toHaveLength(1)
 
     failCancel = false
@@ -296,7 +313,9 @@ describe("workspace_up detached task tracking", () => {
       "stdout",
     )
 
-    expect(sent.filter((s) => s.channel === "workspace-status")[0].payload).toMatchObject({
+    expect(
+      sent.filter((s) => s.channel === "workspace-status")[0].payload,
+    ).toMatchObject({
       workspaceId: "ws-1",
       phase: "building_image",
       state: "succeeded",
@@ -340,6 +359,7 @@ describe("workspace_up detached task tracking", () => {
       "stdout",
     )
     stream()?.onExit(0)
+    await new Promise((resolve) => setTimeout(resolve, 10))
     await invokeUp("ws-1")
 
     expect(calls.filter((a) => a.includes("cancel"))).toEqual([])
@@ -354,6 +374,7 @@ describe("workspace_up detached task tracking", () => {
       "stdout",
     )
     stream()?.onExit(1)
+    await new Promise((resolve) => setTimeout(resolve, 10))
     await invokeUp("ws-1")
 
     expect(calls.filter((a) => a.includes("cancel"))).toEqual([])
@@ -377,13 +398,12 @@ describe("workspace_up detached task tracking", () => {
     await invokeUp("ws-1")
 
     stream()?.onExit(1, { code: "boom", message: "follower died" })
-    expect(sent.filter((s) => s.channel === "workspace-status")[0].payload).toMatchObject({
-      workspaceId: "ws-1",
-      phase: "failed",
-      state: "failed",
-      error: { code: "boom", message: "follower died" },
-    })
-    await invokeUp("ws-1")
+    expect(
+      sent
+        .filter((s) => s.channel === "workspace-status")
+        .some((s) => s.payload.state === "failed"),
+    ).toBe(false)
+    await invokeStop("ws-1")
 
     expect(calls.filter((a) => a.includes("cancel"))).toEqual([
       ["workspace", "task", "cancel", "task-1"],
@@ -396,7 +416,10 @@ describe("workspace_up detached task tracking", () => {
     await invokeStop("ws-1")
     stream()?.onExit(1)
     await vi.waitFor(() =>
-      expect(onWorkspaceStopComplete).toHaveBeenCalledWith("ws-1"),
+      expect(onWorkspaceStopComplete).toHaveBeenCalledWith(
+        "ws-1",
+        expect.objectContaining({ error: expect.any(String) }),
+      ),
     )
   })
 })

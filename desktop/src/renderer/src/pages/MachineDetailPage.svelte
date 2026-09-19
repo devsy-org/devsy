@@ -15,6 +15,8 @@ import {
   machineStop,
   machineDelete,
   machineStatus,
+	 machineDiagnosticsGet,
+	 machineDiagnosticsRefresh,
   auditByResource,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
@@ -22,6 +24,7 @@ import { Skeleton } from "$lib/components/ui/skeleton/index.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import type { AuditEntry } from "$lib/types/index.js"
 import { formatTimestamp } from "$lib/utils/time.js"
+import type { MachineDiagnosticsCache } from "$shared/machine-diagnostics-types.js"
 
 let { params = {} }: { params?: Record<string, string> } = $props()
 
@@ -31,10 +34,22 @@ let machine = $derived($machines.find((m) => m.id === id))
 let status = $state<string | null>(null)
 let polling = $state(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let diagnosticsTimer: ReturnType<typeof setInterval> | null = null
+let diagnostics = $state<MachineDiagnosticsCache | null>(null)
+let diagnosticsRefreshing = $state(false)
+const diagnosticLabels: Record<string, string> = {
+  available: "Available", machine_stopped: "Machine stopped", not_initialized: "Not initialized",
+  permission_denied: "Access denied", unavailable: "Unavailable", unsupported: "Unsupported agent",
+  corrupt: "Unreadable diagnostic data", fresh: "Recently updated", stale: "Out of date", unknown: "Freshness unknown",
+  healthy: "Healthy", degraded: "Needs attention", active: "Active", idle_due: "Idle; eligible",
+  busy: "Busy", not_configured: "Auto-stop disabled", invalid_config: "Invalid configuration", not_running: "State unavailable",
+}
+function diagnosticLabel(value: string): string { return diagnosticLabels[value] ?? value }
+let diagnosticsError = $state<string | null>(null)
+let disposed = false
 
 let isRunning = $derived(
-  status?.toLowerCase() === "running" ||
-    machine?.status?.toLowerCase() === "running",
+  (status ?? machine?.status)?.toLowerCase() === "running",
 )
 let isStopped = $derived.by(() => {
   const s = (status ?? machine?.status ?? "").toLowerCase()
@@ -54,14 +69,27 @@ let deleting = $state(false)
 
 onMount(async () => {
   await refreshStatus()
+  if (disposed) return
+  try {
+    diagnostics = await machineDiagnosticsGet(id)
+  } catch (error) {
+    diagnosticsError = error instanceof Error ? error.message : "Could not load cached diagnostics."
+  }
+	 await refreshDiagnostics()
   loadAudit()
+  if (disposed) return
 
   // Poll status every 5 seconds
   pollTimer = setInterval(refreshStatus, 5000)
+	 diagnosticsTimer = setInterval(refreshDiagnostics, 30000)
+  document.addEventListener("visibilitychange", refreshDiagnostics)
 })
 
 onDestroy(() => {
+  disposed = true
+  document.removeEventListener("visibilitychange", refreshDiagnostics)
   if (pollTimer) clearInterval(pollTimer)
+	 if (diagnosticsTimer) clearInterval(diagnosticsTimer)
 })
 
 async function refreshStatus() {
@@ -69,6 +97,19 @@ async function refreshStatus() {
     status = await machineStatus(id)
   } catch {
     // Status fetch failed
+  }
+}
+
+async function refreshDiagnostics() {
+  if (disposed || diagnosticsRefreshing || !isRunning || document.hidden) return
+  diagnosticsRefreshing = true
+  try {
+    diagnostics = await machineDiagnosticsRefresh(id)
+    diagnosticsError = null
+  } catch (error) {
+    diagnosticsError = error instanceof Error ? error.message : "Could not collect remote diagnostics."
+  } finally {
+    diagnosticsRefreshing = false
   }
 }
 
@@ -89,6 +130,7 @@ async function handleStart() {
     await machineStart(id)
     toasts.success(`Started ${id}`)
     await refreshStatus()
+	 await refreshDiagnostics()
   } catch (err) {
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   } finally {
@@ -102,6 +144,7 @@ async function handleStop() {
     await machineStop(id)
     toasts.success(`Stopped ${id}`)
     await refreshStatus()
+	 diagnostics = await machineDiagnosticsGet(id)
   } catch (err) {
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   } finally {
@@ -184,6 +227,7 @@ async function handleDelete(force = false) {
     <Tabs.Root value="details">
       <Tabs.List variant="line">
         <Tabs.Trigger value="details">Details</Tabs.Trigger>
+		<Tabs.Trigger value="diagnostics">Diagnostics</Tabs.Trigger>
         <Tabs.Trigger value="activity">Activity</Tabs.Trigger>
       </Tabs.List>
 
@@ -205,6 +249,91 @@ async function handleDelete(force = false) {
           <div>{machine.lastUsed ? formatTimestamp(machine.lastUsed) : "N/A"}</div>
         </div>
       </Tabs.Content>
+
+		<Tabs.Content value="diagnostics">
+          <div class="mt-4 flex items-center justify-between gap-4">
+            <p class="text-sm text-muted-foreground">Updates every 30 seconds while this page is visible and the machine is running.</p>
+            <Button variant="outline" size="sm" onclick={refreshDiagnostics} disabled={diagnosticsRefreshing || !isRunning}>{diagnosticsRefreshing ? "Refreshing…" : "Refresh diagnostics"}</Button>
+          </div>
+          {#if diagnosticsError}<p role="alert">{diagnosticsError}</p>{/if}
+		  <div class="mt-4 space-y-4 text-sm">
+			{#if !diagnostics}
+			  <p class="text-muted-foreground">Remote diagnostics are not available yet.</p>
+			{:else}
+			  <div class="grid grid-cols-2 gap-4">
+				<div class="text-muted-foreground">Devsy daemon</div>
+				<div>{diagnosticLabel(diagnostics.response.daemon?.health ?? "unavailable")}</div>
+				<div class="text-muted-foreground">Diagnostics</div>
+				<div>{diagnosticLabel(diagnostics.response.source.availability)} / {diagnosticLabel(diagnostics.response.source.freshness)}</div>
+				<div class="text-muted-foreground">Last successful collection</div>
+				<div>{diagnostics.lastSuccessfulCollectionAt ? formatTimestamp(diagnostics.lastSuccessfulCollectionAt) : "No successful collection yet"}</div>
+                <div class="text-muted-foreground">Last collection attempt</div>
+                <div>{formatTimestamp(diagnostics.lastAttemptAt)}</div>
+			  </div>
+			  {#if diagnostics.historyGap}
+				<p class="text-muted-foreground">Some older remote diagnostic events were rotated before Desktop collected them.</p>
+			  {/if}
+              {#if diagnostics.response.cursor.state === "reset"}
+                <p class="text-muted-foreground">The daemon session changed or the event cursor expired. Collection will resume from retained events; earlier collected history remains below.</p>
+              {/if}
+			  {#if diagnostics.lastCollectionError}
+				<p class="text-muted-foreground">
+				  The last refresh failed; showing the most recently collected diagnostics.
+				  {diagnostics.lastCollectionError}
+				</p>
+			  {/if}
+			  {#if !isRunning}
+				<p class="text-muted-foreground">This is a historic diagnostic snapshot because the machine is not running.</p>
+			  {/if}
+			  {#if diagnostics.response.source.message}
+				<p class="text-muted-foreground">Diagnostic detail: {diagnostics.response.source.message}</p>
+			  {/if}
+			  {#if diagnostics.response.daemon?.lastError}
+				<p class="text-muted-foreground">Last recorded daemon error ({formatTimestamp(diagnostics.response.daemon.lastError.timestamp)}): {diagnostics.response.daemon.lastError.message} · {diagnostics.response.daemon.lastError.code}</p>
+			  {/if}
+			  {#if diagnostics.response.daemon?.shutdownCandidate}
+				<p class="text-muted-foreground">Shutdown candidate: {diagnostics.response.daemon.shutdownCandidate.workspaceId} {diagnostics.response.daemon.shutdownCandidate.eligibleAt ? `(eligible ${formatTimestamp(diagnostics.response.daemon.shutdownCandidate.eligibleAt)})` : "(eligible now)"}</p>
+			  {/if}
+			  {#if diagnostics.response.daemon?.workspaces?.length}
+				<div class="rounded-md border overflow-x-auto">
+                  <table class="w-full text-left text-sm">
+                    <thead class="border-b text-muted-foreground"><tr><th class="p-3">Workspace</th><th class="p-3">State</th><th class="p-3">Last activity</th><th class="p-3">Machine shutdown status</th></tr></thead>
+                    <tbody>
+                      {#each diagnostics.response.daemon.workspaces as workspace}
+                        <tr class="border-b last:border-0">
+                          <td class="p-3">{workspace.id}</td>
+                          <td class="p-3">{diagnosticLabel(workspace.state)}</td>
+                          <td class="p-3">{workspace.lastActivityAt ? formatTimestamp(workspace.lastActivityAt) : "-"}</td>
+                          <td class="p-3">
+                            {workspace.blockerReason ?? (workspace.blocksMachineShutdown ? "Blocked" : "Eligible when all workspaces are idle")}
+                            {#if workspace.state === "active" && workspace.idleDeadlineAt}<div class="text-muted-foreground">Idle after {formatTimestamp(workspace.idleDeadlineAt)}</div>{/if}
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+				</div>
+			  {/if}
+			  {#if diagnostics.events.length === 0}
+				<p class="text-muted-foreground">No diagnostic events collected.</p>
+			  {:else}
+                <ScrollArea class="h-80 rounded-md border">
+                  <div class="divide-y">
+                    {#each diagnostics.events as event (`${event.sessionId}:${event.sequence}`)}
+                      <div class="px-4 py-3">
+                        <span class="font-medium" class:text-destructive={event.level === "error"}>{event.level.toUpperCase()} · {event.type}</span>
+                        {#if event.workspaceId}<span class="text-muted-foreground"> {event.workspaceId}</span>{/if}
+                        <div class="text-muted-foreground">{event.message}</div>
+                        {#if event.errorCode}<div class="text-xs">Error code: {event.errorCode}</div>{/if}
+                        <div class="text-xs text-muted-foreground">{formatTimestamp(event.timestamp)}</div>
+                      </div>
+                    {/each}
+                  </div>
+                </ScrollArea>
+			  {/if}
+			{/if}
+		  </div>
+		</Tabs.Content>
 
       <Tabs.Content value="activity">
         <div class="mt-4 space-y-4">

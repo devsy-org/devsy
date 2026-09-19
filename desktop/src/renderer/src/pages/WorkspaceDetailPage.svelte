@@ -31,7 +31,9 @@ import * as Tabs from "$lib/components/ui/tabs/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
 import TerminalComponent from "$lib/components/terminal/Terminal.svelte"
-import { workspaces } from "$lib/stores/workspaces.js"
+import WorkspaceOperation from "$lib/components/workspace/WorkspaceOperation.svelte"
+import { workspaceJobBusy, workspaceJobInterruptible } from "$shared/workspace-operation.js"
+import { workspaces, workspaceJobs } from "$lib/stores/workspaces.js"
 import { addTerminal, removeTerminal } from "$lib/stores/terminals.js"
 import { destroyTerminalInstance } from "$lib/stores/terminal-instances.js"
 import { terminalCreateSsh, terminalClose } from "$lib/ipc/terminal.js"
@@ -128,26 +130,25 @@ let isBusy = $derived.by(() => {
   )
 })
 
-function statusBadgeVariant(): "default" | "secondary" | "outline" {
-  if (isRunning) return "default"
-  if (isBusy) return "secondary"
-  return "outline"
-}
-
-function setWorkspaceStatus(status?: string) {
-  if (!id) return
-  workspaces.update((current) =>
-    current.map((ws) => (ws.id === id ? { ...ws, status } : ws)),
-  )
-}
-
 const BUILD_OPS = new Set(["Start", "Open IDE", "Recovery", "Rebuild", "Reset"])
 
 let activeTab = $state("overview")
 let outputLines = $state<string[]>([])
 let commandId = $state<string | null>(null)
 let operationLabel = $state("")
-let operationRunning = $state(false)
+let awaitingAcceptance = $state(false)
+let operationRunning = $derived(awaitingAcceptance || workspaceJobBusy($workspaceJobs[id]))
+$effect(() => {
+  const job = $workspaceJobs[id]
+  if (job && (!awaitingAcceptance || job.commandId === commandId)) {
+    awaitingAcceptance = false
+    if (commandId !== job.commandId) {
+      commandId = job.commandId
+      operationLabel = ({ creating: "Create", starting: "Start", stopping: "Stop", deleting: "Delete", rebuilding: "Rebuild", resetting: "Reset" })[job.activity]
+      outputLines = []
+    }
+  }
+})
 let buildFailed = $state(false)
 let inRecovery = $state(false)
 // True only for a buildFailed loaded from persistence, so the reconciliation
@@ -263,10 +264,9 @@ onMount(async () => {
             cancelAnimationFrame(flushHandle)
           }
           flushLines()
-          operationRunning = false
+          awaitingAcceptance = false
           const success = isCommandSuccess(progress.success)
           if (success) {
-            toasts.success(`${operationLabel} ${id} succeeded`)
             if (BUILD_OPS.has(operationLabel)) {
               buildFailed = false
               const recovered = parseRecoveryContainer(progress.message)
@@ -274,9 +274,6 @@ onMount(async () => {
               persistRecovery()
             }
           } else {
-            toasts.error(
-              `${operationLabel} ${id} failed. Check output for details.`,
-            )
             handleBuildFailure(progress)
           }
           if (operationLabel === "Delete" && success) {
@@ -425,11 +422,11 @@ function isDebug(): boolean {
   return loadLocalOptions().debugFlag
 }
 
-function startStreamingOp(label: string, pendingStatus?: string): string {
+function startStreamingOp(label: string): string {
   const newCmdId = crypto.randomUUID()
   commandId = newCmdId
   operationLabel = label
-  operationRunning = true
+  awaitingAcceptance = true
   buildFailed = false
   persistRecovery()
   outputLines = []
@@ -438,9 +435,6 @@ function startStreamingOp(label: string, pendingStatus?: string): string {
     cancelAnimationFrame(flushHandle)
     flushHandle = null
   }
-  if (pendingStatus) {
-    setWorkspaceStatus(pendingStatus)
-  }
   activeTab = "logs"
   return newCmdId
 }
@@ -448,8 +442,7 @@ function startStreamingOp(label: string, pendingStatus?: string): string {
 async function handleStart() {
   const ide = currentIde
   const folder = customFolder || undefined
-  const previousStatus = workspace?.status
-  const cmdId = startStreamingOp("Start", "starting")
+  const cmdId = startStreamingOp("Start")
   try {
     await workspaceUp({
       source: id,
@@ -459,8 +452,7 @@ async function handleStart() {
       commandId: cmdId,
     })
   } catch (err) {
-    operationRunning = false
-    setWorkspaceStatus(previousStatus)
+    awaitingAcceptance = false
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   }
 }
@@ -487,8 +479,7 @@ function handleBuildFailure(progress: CommandProgress) {
 async function handleRecovery() {
   const ide = currentIde
   const folder = customFolder || undefined
-  const previousStatus = workspace?.status
-  const cmdId = startStreamingOp("Recovery", "busy")
+  const cmdId = startStreamingOp("Recovery")
   try {
     await workspaceUp({
       source: id,
@@ -499,8 +490,7 @@ async function handleRecovery() {
       commandId: cmdId,
     })
   } catch (err) {
-    operationRunning = false
-    setWorkspaceStatus(previousStatus)
+    awaitingAcceptance = false
     toasts.error(
       `Failed to start recovery container: ${extractErrorMessage(err)}`,
     )
@@ -510,9 +500,8 @@ async function handleRecovery() {
 async function handleOpenIde() {
   const ide = currentIde
   const folder = customFolder || undefined
-  const previousStatus = workspace?.status
   trackEngagement("ide_open", { ide })
-  const cmdId = startStreamingOp("Open IDE", "busy")
+  const cmdId = startStreamingOp("Open IDE")
   try {
     await workspaceUp({
       source: id,
@@ -523,61 +512,52 @@ async function handleOpenIde() {
       commandId: cmdId,
     })
   } catch (err) {
-    operationRunning = false
-    setWorkspaceStatus(previousStatus)
+    awaitingAcceptance = false
     toasts.error(`Failed to open IDE: ${extractErrorMessage(err)}`)
   }
 }
 
 async function handleStop() {
-  const previousStatus = workspace?.status
-  const cmdId = startStreamingOp("Stop", "stopping")
+  const cmdId = startStreamingOp("Stop")
   try {
     await workspaceStop(id, isDebug(), cmdId)
   } catch (err) {
-    operationRunning = false
-    setWorkspaceStatus(previousStatus)
+    awaitingAcceptance = false
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   }
 }
 
 async function handleRebuild() {
   confirmRebuildOpen = false
-  const previousStatus = workspace?.status
-  const cmdId = startStreamingOp("Rebuild", "busy")
+  const cmdId = startStreamingOp("Rebuild")
   try {
     await workspaceRebuild(id, isDebug(), cmdId)
   } catch (err) {
-    operationRunning = false
-    setWorkspaceStatus(previousStatus)
+    awaitingAcceptance = false
     toasts.error(`Failed to rebuild: ${extractErrorMessage(err)}`)
   }
 }
 
 async function handleReset() {
   confirmResetOpen = false
-  const previousStatus = workspace?.status
-  const cmdId = startStreamingOp("Reset", "busy")
+  const cmdId = startStreamingOp("Reset")
   try {
     await workspaceReset(id, isDebug(), cmdId)
   } catch (err) {
-    operationRunning = false
-    setWorkspaceStatus(previousStatus)
+    awaitingAcceptance = false
     toasts.error(`Failed to reset: ${extractErrorMessage(err)}`)
   }
 }
 
 async function handleDelete() {
   confirmDeleteOpen = false
-  const previousStatus = workspace?.status
-  const cmdId = startStreamingOp("Delete", "deleting")
+  const cmdId = startStreamingOp("Delete")
   deleting = true
   try {
     await workspaceDelete(id, isDebug(), cmdId)
   } catch (err) {
-    operationRunning = false
+    awaitingAcceptance = false
     deleting = false
-    setWorkspaceStatus(previousStatus)
     toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   }
 }
@@ -657,9 +637,7 @@ async function handleRenameConfirmed() {
                 <span class="sr-only">Rename</span>
               </Button>
             {/if}
-            <span class={badgeVariants({ variant: statusBadgeVariant() })}>
-              {workspace.status ?? "Checking..."}
-            </span>
+            <WorkspaceOperation {id} status={workspace.status} />
             {#if operationRunning || isBusy}
               <Spinner class="size-3" />
             {/if}
@@ -698,7 +676,7 @@ async function handleRenameConfirmed() {
             variant="destructive"
             size="sm"
             onclick={handleStop}
-            disabled={operationRunning || (!isRunning && !isBusy)}
+            disabled={!workspaceJobInterruptible($workspaceJobs[id]) && (operationRunning || (!isRunning && !isBusy))}
           >
             {#if operationRunning && operationLabel === "Stop"}<Spinner />{:else}<Square class="h-4 w-4" />{/if}
             Stop
@@ -752,7 +730,7 @@ async function handleRenameConfirmed() {
               <DropdownMenu.Item
                 class="text-destructive data-[highlighted]:text-destructive"
                 onclick={() => (confirmDeleteOpen = true)}
-                disabled={operationRunning}
+                disabled={operationRunning && !workspaceJobInterruptible($workspaceJobs[id])}
               >
                 <Trash2 class="mr-2 h-4 w-4" />
                 Delete

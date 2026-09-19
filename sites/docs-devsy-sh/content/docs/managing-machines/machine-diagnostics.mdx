@@ -1,0 +1,102 @@
+---
+title: Machine Diagnostics
+sidebar_label: Machine Diagnostics
+---
+
+Devsy can report the health and recent activity of the inactivity daemon that
+runs on a machine. This is useful when a workspace did not stop as expected or
+when a machine's automatic shutdown needs investigation.
+
+```sh
+devsy machine diagnostics <machine-name>
+```
+
+The command reports the provider's machine state separately from the Devsy
+daemon state, its most recent patrol, and the configured workspaces. Use JSON
+when integrating diagnostics with another tool:
+
+```sh
+devsy machine diagnostics <machine-name> --result-format json
+```
+
+The plain-text workspace table shows the machine shutdown state for every
+workspace and identifies the current shutdown candidate. Devsy runs a
+machine-level inactivity action only when every discovered workspace is idle
+and none is busy, invalid, or configured without auto-stop. The candidate time
+is therefore an eligibility point, not a promise that a machine will stop at
+that exact second.
+
+## Recent diagnostic events
+
+Use `machine logs` to show the same structured diagnostic events in a compact
+log-style view:
+
+```sh
+devsy machine logs <machine-name>
+```
+
+Use `devsy machine logs <machine-name> --follow` to poll for new events every
+five seconds until interrupted. Collection has a 30-second timeout and resumes
+from the remote cursor, reporting session resets and retention gaps. With
+`--result-format json`, each poll writes one JSON response on its own line.
+Delivery depends on connectivity and remote retention; this is not an instant
+push stream. Desktop refreshes diagnostics every 30 seconds while the machine
+detail page is visible and the machine is running, preserving the last known
+snapshot through collection failures.
+
+Events cover daemon starts and stops, workspace discovery, inactivity deadlines,
+and shutdown outcomes. They are not an SSH shell, journald output, Docker logs,
+or provider control-plane logs.
+
+Diagnostic events are redacted before being written on the machine and retained
+within a fixed storage limit. Older events can therefore be rotated; the CLI
+and Desktop indicate when an event history gap is detected.
+
+If a machine is stopped, Devsy does not start it merely to collect diagnostics.
+Desktop keeps the last successfully collected snapshot and indicates that it is
+historic until the machine is running again.
+
+## Interpreting the snapshot
+
+Provider state, daemon health, and snapshot freshness answer different questions:
+
+| Field | What it tells you |
+| --- | --- |
+| Provider state | The provider's most recently reported machine state. |
+| Daemon health | Whether the daemon's most recently recorded operation succeeded. |
+| Snapshot freshness | Whether the remote daemon updated its snapshot recently; not proof of current connectivity. |
+| Last patrol | When the daemon last evaluated workspace inactivity. Startup alone does not count as a patrol. |
+| Last daemon error | The most recent recorded failure in this daemon session, retained after recovery. Its timestamp distinguishes it from a current failure. |
+| Shutdown candidate | All discovered workspace checks permit an inactivity action. Provider state still determines whether the machine actually stopped. |
+
+A busy workspace, disabled auto-stop, unavailable workspace state, or invalid
+timeout blocks automatic shutdown. An inactivity timeout must be a positive
+duration, such as `30m`. An active workspace shows its deadline, but that time
+is not a promise: subsequent activity can move it, and other workspaces can
+still block the machine action.
+
+## Event meanings and troubleshooting
+
+Event identifiers remain stable for integrations. Routine lifecycle transitions
+use `info`; an invalid workspace configuration uses `warn`; patrol and shutdown
+command failures use `error`. Workspace discovery/removal means the daemon found
+or lost configuration on disk, not that a provider created or deleted a machine.
+
+`shutdown.started` records an attempt. `shutdown.succeeded` means the configured
+command returned successfully, not that the provider confirmed shutdown.
+`shutdown.failed` records a failed command and makes the snapshot degraded.
+An abrupt shutdown may prevent a final event from being written; absence of a
+completion event does not prove failure. Repeated failures can represent retries
+on later patrols.
+
+If diagnostics are stale or unavailable, check the provider state and connection
+first. For permission errors, verify the installed daemon reader ownership. For
+invalid configuration, correct the workspace settings before expecting auto-stop.
+For a command failure, inspect the event's error code and the daemon's operator
+logs; user-facing events deliberately avoid raw command output and secrets.
+
+The host does not collect every machine continuously in the background. CLI
+follow and the visible Desktop machine page collect on demand. Remote retention
+is bounded, and Desktop keeps up to 2,000 collected events per machine and
+context. Gaps and session resets are possible; these views are diagnostic aids,
+not a durable audit log or an exactly-once event delivery system.

@@ -1,104 +1,101 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { WorkspaceJobs } from "../workspace-jobs.js"
 
 describe("WorkspaceJobs", () => {
-  let jobs: WorkspaceJobs
-
-  beforeEach(() => {
-    jobs = new WorkspaceJobs()
+  it("publishes action state independently of runtime status", async () => {
+    const jobs = new WorkspaceJobs()
+    const changed = vi.fn()
+    jobs.onChange(changed)
+    const generation = jobs.start("ws", "stopping", "command")
+    expect(jobs.get("ws")).toMatchObject({
+      commandId: "command",
+      activity: "stopping",
+      state: "running",
+    })
+    jobs.progress("ws", "command", {
+      phase: "stopping_workspace",
+      step: "Waiting for lock",
+      state: "started",
+    })
+    jobs.progress("ws", "command", {
+      phase: "stopping_workspace",
+      state: "succeeded",
+    })
+    expect(jobs.get("ws")).toMatchObject({
+      state: "running",
+      phase: "Waiting for lock",
+    })
+    await jobs.finish("ws", generation)
+    expect(jobs.get("ws")?.state).toBe("succeeded")
+    expect(changed).toHaveBeenCalled()
   })
 
-  it("tracks a delete until it finishes", async () => {
-    const generation = jobs.start("ws1")
-    expect(jobs.get("ws1")).toEqual({ activity: "deleting" })
-
-    await jobs.finish("ws1", generation)
-    expect(jobs.get("ws1")).toBeUndefined()
-  })
-
-  it("does not let a stale failure land on a newer job", async () => {
-    const first = jobs.start("ws1")
-    const second = jobs.start("ws1")
-
-    await jobs.finish("ws1", first, "boom")
-
-    expect(jobs.get("ws1")).toEqual({ activity: "deleting" })
-    expect(second).not.toBe(first)
-  })
-
-  it("retains the failure so the UI can explain it", async () => {
-    const generation = jobs.start("ws1")
-    await jobs.finish("ws1", generation, "delete exited with code 1")
-
-    expect(jobs.get("ws1")).toEqual({
-      activity: "deleting",
-      error: "delete exited with code 1",
+  it("rejects duplicates and allows delete to supersede a start", async () => {
+    const jobs = new WorkspaceJobs()
+    const first = jobs.start("ws", "starting", "first")
+    expect(() => jobs.start("ws", "rebuilding", "conflict")).toThrow(
+      "already in progress",
+    )
+    jobs.start("ws", "deleting", "delete")
+    jobs.progress("ws", "first", { phase: "ready", state: "succeeded" })
+    await jobs.finish("ws", first, "old failure")
+    expect(jobs.get("ws")).toMatchObject({
+      commandId: "delete",
+      state: "running",
     })
   })
 
-  it("does not let a later release erase a recorded failure", async () => {
-    const generation = jobs.start("ws1")
-    await jobs.finish("ws1", generation, "boom")
-
-    await jobs.finish("ws1", generation)
-
-    expect(jobs.get("ws1")?.error).toBe("boom")
-  })
-
-  it("ignores a failure for a workspace with no active job", async () => {
-    await jobs.finish("ws1", 1, "boom")
-    expect(jobs.get("ws1")).toBeUndefined()
-  })
-
-  it("refreshes the workspace list before clearing a finished job", async () => {
-    const order: string[] = []
-    jobs.setRefresh(async () => {
-      order.push(`refresh(job=${jobs.get("ws1") ? "present" : "gone"})`)
+  it("retains a completed delete on refresh failure and retries refresh only", async () => {
+    const jobs = new WorkspaceJobs()
+    const refresh = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(undefined)
+    jobs.setRefresh(refresh)
+    const generation = jobs.start("ws", "deleting", "delete")
+    await jobs.finish("ws", generation)
+    expect(jobs.get("ws")).toMatchObject({
+      state: "reconciling",
+      refreshError: "offline",
     })
-
-    const generation = jobs.start("ws1")
-    await jobs.finish("ws1", generation)
-
-    expect(order).toEqual(["refresh(job=present)"])
-    expect(jobs.get("ws1")).toBeUndefined()
+    expect(() => jobs.start("ws")).toThrow()
+    await jobs.retryRefresh("ws")
+    expect(jobs.get("ws")).toMatchObject({
+      state: "succeeded",
+      refreshError: undefined,
+    })
+    expect(refresh).toHaveBeenCalledTimes(2)
   })
 
-  it("does not clear a newer job started while refresh was in flight", async () => {
-    let releaseRefresh: (() => void) | undefined
+  it("keeps the action visible until reconciliation finishes and ignores duplicate completion", async () => {
+    const jobs = new WorkspaceJobs()
+    let release!: () => void
     jobs.setRefresh(
       () =>
         new Promise<void>((resolve) => {
-          releaseRefresh = resolve
+          release = resolve
         }),
     )
-
-    const generation = jobs.start("ws1")
-    const finishing = jobs.finish("ws1", generation)
-
-    jobs.start("ws1")
-    releaseRefresh?.()
+    const generation = jobs.start("ws")
+    const finishing = jobs.finish("ws", generation, "denied")
+    expect(jobs.get("ws")).toMatchObject({
+      state: "reconciling",
+      error: "denied",
+    })
+    await jobs.finish("ws", generation)
+    release()
     await finishing
-
-    expect(jobs.get("ws1")).toEqual({ activity: "deleting" })
+    expect(jobs.get("ws")).toMatchObject({ state: "failed", error: "denied" })
+    expect(() => jobs.start("ws")).not.toThrow()
   })
 
-  it("notifies listeners on every mutation", () => {
-    const listener = vi.fn()
-    jobs.onChange(listener)
-
-    jobs.start("ws1")
-    jobs.clear("ws1")
-
-    expect(listener).toHaveBeenCalledTimes(2)
-  })
-
-  it("does not notify when clearing an untracked workspace", () => {
-    const listener = vi.fn()
-    jobs.onChange(listener)
-
-    jobs.clear("nonexistent")
-
-    expect(listener).not.toHaveBeenCalled()
+  it("invalidates polls on acceptance and completion", async () => {
+    const jobs = new WorkspaceJobs()
+    const before = jobs.generation("ws")
+    const generation = jobs.start("ws")
+    expect(generation).not.toBe(before)
+    await jobs.finish("ws", generation)
+    expect(jobs.generation("ws")).not.toBe(generation)
   })
 })

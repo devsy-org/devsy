@@ -1,4 +1,6 @@
 <script lang="ts">
+import WorkspaceOperation from "$lib/components/workspace/WorkspaceOperation.svelte"
+import { workspaceJobBusy, workspaceJobInterruptible } from "$shared/workspace-operation.js"
 import {
   ArrowDownAZ,
   Box,
@@ -28,7 +30,6 @@ import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import {
   workspaceJobs,
-  workspaceStatuses,
   workspaces,
   workspacesLoading,
 } from "$lib/stores/workspaces.js"
@@ -78,21 +79,6 @@ let filtered = $derived.by(() => {
   return list
 })
 
-function statusVariant(status?: string): "default" | "secondary" | "outline" {
-  const s = status?.toLowerCase()
-  if (s === "running") return "default"
-  if (s === "busy") return "secondary"
-  return "outline"
-}
-
-function operationLabel(ws: Workspace): string | undefined {
-  const operation = $workspaceStatuses[ws.id]
-  if (!operation) return undefined
-  if (operation.state === "failed") return "Failed"
-  if (operation.state === "succeeded" || operation.state === "skipped") return undefined
-  return operation.step || operation.phase.replaceAll("_", " ")
-}
-
 function isRunning(ws: Workspace) {
   return ws.status?.toLowerCase() === "running"
 }
@@ -105,32 +91,11 @@ function isStopped(ws: Workspace) {
   )
 }
 
-function setWorkspaceStatus(id: string, status?: string) {
-  workspaces.update((current) =>
-    current.map((ws) => (ws.id === id ? { ...ws, status } : ws)),
-  )
-}
-
-// The delete job wins over the polled status until the next poll catches up.
-// A failed delete drops out of "deleting" so the row isn't stuck forever.
-function isDeleting(ws: Workspace): boolean {
-  const job = $workspaceJobs[ws.id]
-  return job?.activity === "deleting" && !job.error
-}
-
-function deleteError(ws: Workspace): string | undefined {
-  return $workspaceJobs[ws.id]?.error
-}
-
 async function handleStart(ws: Workspace) {
-  const previousStatus = ws.status
   actingOn = ws.id
-  setWorkspaceStatus(ws.id, "starting")
   try {
     await workspaceUp({ source: ws.id })
-    toasts.success(`Starting ${ws.id}`)
   } catch (err) {
-    setWorkspaceStatus(ws.id, previousStatus)
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   } finally {
     actingOn = null
@@ -138,14 +103,10 @@ async function handleStart(ws: Workspace) {
 }
 
 async function handleStop(ws: Workspace) {
-  const previousStatus = ws.status
   actingOn = ws.id
-  setWorkspaceStatus(ws.id, "stopping")
   try {
     await workspaceStop(ws.id)
-    toasts.success(`Stopping ${ws.id}`)
   } catch (err) {
-    setWorkspaceStatus(ws.id, previousStatus)
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   } finally {
     actingOn = null
@@ -154,16 +115,12 @@ async function handleStop(ws: Workspace) {
 
 async function handleDelete() {
   if (!confirmDeleteId) return
-  const previousStatus = $workspaces.find((ws) => ws.id === confirmDeleteId)?.status
   deleting = true
-  setWorkspaceStatus(confirmDeleteId, "deleting")
   try {
     await workspaceDelete(confirmDeleteId)
-    toasts.success(`Deleted ${confirmDeleteId}`)
     confirmDeleteOpen = false
     confirmDeleteId = null
   } catch (err) {
-    if (confirmDeleteId) setWorkspaceStatus(confirmDeleteId, previousStatus)
     toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
   } finally {
     deleting = false
@@ -238,7 +195,7 @@ async function handleDelete() {
         </Table.Header>
         <Table.Body>
           {#each filtered as ws (ws.id)}
-            {@const busy = actingOn === ws.id || isDeleting(ws)}
+            {@const busy = actingOn === ws.id || workspaceJobBusy($workspaceJobs[ws.id])}
             <Table.Row
               class="cursor-pointer"
               onclick={() => goto(`/workspaces/${ws.id}`)}
@@ -255,20 +212,7 @@ async function handleDelete() {
                 {/if}
               </Table.Cell>
               <Table.Cell>
-                {#if isDeleting(ws)}
-                  <span class={badgeVariants({ variant: "secondary" })}>Deleting</span>
-                {:else if deleteError(ws)}
-                  <span class={badgeVariants({ variant: "destructive" })} title={deleteError(ws)}>
-                    Delete failed
-                  </span>
-                {:else}
-                  {@const operation = operationLabel(ws)}
-                  {@const statusLabel = operation ?? ws.status ?? "Checking"}
-                  <span
-                    class={badgeVariants({ variant: operation ? "secondary" : statusVariant(statusLabel) })}
-                    title={operation && ($workspaceStatuses[ws.id]?.error?.message ?? $workspaceStatuses[ws.id]?.error?.hint)}
-                  >{statusLabel}</span>
-                {/if}
+                <WorkspaceOperation id={ws.id} status={ws.status} />
               </Table.Cell>
               <Table.Cell class="text-sm text-muted-foreground">{timeAgo(ws.lastUsed)}</Table.Cell>
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -283,12 +227,12 @@ async function handleDelete() {
                     {/snippet}
                   </DropdownMenu.Trigger>
                   <DropdownMenu.Content align="end">
-                    {#if isRunning(ws)}
-                      <DropdownMenu.Item onclick={() => goto(`/workspaces/${ws.id}?action=open-ide`)}>
+                    {#if isRunning(ws) || workspaceJobInterruptible($workspaceJobs[ws.id])}
+                      <DropdownMenu.Item disabled={busy} onclick={() => goto(`/workspaces/${ws.id}?action=open-ide`)}>
                         <Play class="mr-2 h-4 w-4" />
                         Open IDE
                       </DropdownMenu.Item>
-                      <DropdownMenu.Item onclick={() => handleStop(ws)} disabled={busy}>
+                      <DropdownMenu.Item onclick={() => handleStop(ws)} disabled={busy && !workspaceJobInterruptible($workspaceJobs[ws.id])}>
                         <Square class="mr-2 h-4 w-4" />
                         Stop
                       </DropdownMenu.Item>
@@ -302,7 +246,7 @@ async function handleDelete() {
                     <DropdownMenu.Item
                       class="text-destructive data-highlighted:text-destructive"
                       onclick={() => { confirmDeleteId = ws.id; confirmDeleteOpen = true }}
-                      disabled={busy}
+                      disabled={busy && !workspaceJobInterruptible($workspaceJobs[ws.id])}
                     >
                       <Trash2 class="mr-2 h-4 w-4" />
                       Delete

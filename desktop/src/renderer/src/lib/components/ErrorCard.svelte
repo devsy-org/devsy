@@ -1,6 +1,6 @@
 <script lang="ts">
 import { AlertCircle } from "@lucide/svelte"
-import type { CLIError } from "../../../../shared/cli-error.js"
+import type { CLIError } from "$shared/cli-error.js"
 
 let {
   cliError,
