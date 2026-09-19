@@ -411,6 +411,13 @@ func appendReadEvents(response *ReadResponse, events []Event, options readEvents
 }
 
 func readEventStart(response *ReadResponse, events []Event, options readEventsOptions) uint64 {
+	current := eventsForSession(events, options.SessionID)
+	if options.After == "" {
+		if len(current) <= options.Limit {
+			return 0
+		}
+		return current[len(current)-options.Limit-1].Sequence
+	}
 	cursor, err := decodeCursor(options.After)
 	if err != nil {
 		response.Cursor = CursorInfo{State: CursorReset, Reason: "invalid_cursor"}
@@ -421,10 +428,7 @@ func readEventStart(response *ReadResponse, events []Event, options readEventsOp
 	if cursor.sessionID != options.SessionID {
 		return 0
 	}
-	if current := eventsForSession(
-		events,
-		options.SessionID,
-	); len(current) > 0 &&
+	if len(current) > 0 &&
 		cursor.sequence < current[0].Sequence-1 {
 		response.Cursor = CursorInfo{State: CursorGap, Reason: "retention"}
 	}

@@ -332,6 +332,28 @@ func TestDiagnosticsRetainsErrorHistoryWithoutInventingStartupPatrol(t *testing.
 	assert.Equal(t, machinediagnostics.DaemonHealthy, recorder.statuses[2].Health)
 }
 
+func TestUpdateDiagnosticsRetainsWorkspaceContextAfterShutdownFailure(t *testing.T) {
+	recorder := &recordingDiagnostics{}
+	cmd := &DaemonCmd{recorder: recorder, startedAt: time.Now().UTC()}
+	workspaces := []machinediagnostics.WorkspaceStatus{{ID: "ws-test"}}
+	candidate := &machinediagnostics.ShutdownCandidate{WorkspaceID: "ws-test"}
+
+	cmd.updateDiagnostics(diagnosticsUpdate{
+		state:      machinediagnostics.DaemonRunning,
+		health:     machinediagnostics.DaemonDegraded,
+		workspaces: workspaces,
+		candidate:  candidate,
+		diagnosticErr: &machinediagnostics.DiagnosticError{
+			Code: "shutdown_failed",
+		},
+	})
+
+	require.Len(t, recorder.statuses, 1)
+	assert.Equal(t, workspaces, recorder.statuses[0].Workspaces)
+	assert.Equal(t, candidate, recorder.statuses[0].ShutdownCandidate)
+	assert.Equal(t, 1, recorder.statuses[0].WorkspaceCount)
+}
+
 func TestInvalidTimeoutBlocksShutdown(t *testing.T) {
 	for _, timeout := range []string{"invalid", "0s", "-1m"} {
 		t.Run(timeout, func(t *testing.T) {

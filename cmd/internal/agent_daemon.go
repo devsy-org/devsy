@@ -346,8 +346,10 @@ func (cmd *DaemonCmd) patrolOnce(ctx context.Context) {
 	}
 	if err := cmd.shutdownWorkspace(ctx, evaluation.workspace); err != nil {
 		cmd.updateDiagnostics(diagnosticsUpdate{
-			state:  machinediagnostics.DaemonRunning,
-			health: machinediagnostics.DaemonDegraded,
+			state:      machinediagnostics.DaemonRunning,
+			health:     machinediagnostics.DaemonDegraded,
+			workspaces: evaluation.statuses,
+			candidate:  evaluation.candidate,
 			diagnosticErr: &machinediagnostics.DiagnosticError{
 				Code:      "shutdown_failed",
 				Message:   "Machine shutdown action failed.",

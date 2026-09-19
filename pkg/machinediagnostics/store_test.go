@@ -42,6 +42,25 @@ func TestStoreRecordsAndReadsEvents(t *testing.T) {
 	assert.Equal(t, "token=secret-token", response.Events[0].Message)
 }
 
+func TestReadWithoutCursorReturnsMostRecentEvents(t *testing.T) {
+	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
+	store, err := NewRecorder(Options{
+		Dir:    filepath.Join(t.TempDir(), "diagnostics"),
+		Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()},
+		Now:    func() time.Time { return now },
+	})
+	require.NoError(t, err)
+	for range 3 {
+		store.Record(Event{Type: EventDaemonStarted, Level: LevelInfo, Message: "event"})
+	}
+	store.Update(Status{StartedAt: now, State: DaemonRunning, Health: DaemonHealthy})
+
+	response := Read(store.dir, ReadOptions{Limit: 2, Interval: time.Minute, Now: now})
+	require.Len(t, response.Events, 2)
+	assert.Equal(t, uint64(2), response.Events[0].Sequence)
+	assert.Equal(t, uint64(3), response.Events[1].Sequence)
+}
+
 func TestReadLocatorReportsPermissionDenied(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root bypasses file permissions")
