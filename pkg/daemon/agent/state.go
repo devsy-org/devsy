@@ -67,10 +67,15 @@ func ResolveStateLocation(opts ResolveStateLocationOptions) (StateLocation, erro
 	}
 
 	root, err := CanonicalStateRoot(opts.Origin, opts.Context, opts.WorkspaceID)
+	if err == nil {
+		return StateLocation{Root: root, Layout: StateLayoutCanonical}, nil
+	}
+
+	root, err = AgentHomeStateRoot(opts.Origin, opts.Context, opts.WorkspaceID)
 	if err != nil {
 		return StateLocation{}, err
 	}
-	return StateLocation{Root: root, Layout: StateLayoutCanonical}, nil
+	return StateLocation{Root: root, Layout: StateLayoutAgentHome}, nil
 }
 
 // CanonicalStateRoot derives the canonical data root from a persisted
@@ -79,15 +84,43 @@ func CanonicalStateRoot(origin, contextName, workspaceID string) (string, error)
 	if contextName == "" {
 		contextName = pkgconfig.DefaultContext
 	}
+	return stateRoot(
+		origin,
+		contextName,
+		workspaceID,
+		"canonical",
+		[]string{"agent", workspaceID, "workspaces", contextName, "contexts"},
+	)
+}
+
+// AgentHomeStateRoot derives the agent home from a workspace origin created by
+// a container-side agent invocation.
+func AgentHomeStateRoot(origin, contextName, workspaceID string) (string, error) {
+	if contextName == "" {
+		contextName = pkgconfig.DefaultContext
+	}
+	return stateRoot(
+		origin,
+		contextName,
+		workspaceID,
+		"agent home",
+		[]string{workspaceID, "workspaces", contextName, "contexts"},
+	)
+}
+
+func stateRoot(
+	origin, contextName, workspaceID, originType string, expectedParts []string,
+) (string, error) {
 	if workspaceID == "" {
 		return "", fmt.Errorf("workspace ID is required to resolve daemon state root")
 	}
 
 	current := filepath.Clean(origin)
-	for _, expected := range []string{"agent", workspaceID, "workspaces", contextName, "contexts"} {
+	for _, expected := range expectedParts {
 		if filepath.Base(current) != expected {
 			return "", fmt.Errorf(
-				"unexpected canonical workspace origin %q: expected %q",
+				"unexpected %s workspace origin %q: expected %q",
+				originType,
 				origin,
 				expected,
 			)
@@ -95,7 +128,7 @@ func CanonicalStateRoot(origin, contextName, workspaceID string) (string, error)
 		current = filepath.Dir(current)
 	}
 	if !filepath.IsAbs(current) {
-		return "", fmt.Errorf("canonical daemon state root must be absolute: %q", current)
+		return "", fmt.Errorf("%s daemon state root must be absolute: %q", originType, current)
 	}
 	return current, nil
 }

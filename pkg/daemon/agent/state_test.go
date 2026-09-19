@@ -79,12 +79,22 @@ func TestResolveStateLocation(t *testing.T) {
 		assert.Equal(t, StateLocation{Root: "/state", Layout: StateLayoutCanonical}, location)
 	})
 
-	t.Run("malformed origin", func(t *testing.T) {
-		_, err := ResolveStateLocation(ResolveStateLocationOptions{
-			Origin:      "/state/contexts/default/workspaces/workspace-id",
+	t.Run("agent home origin", func(t *testing.T) {
+		location, err := ResolveStateLocation(ResolveStateLocationOptions{
+			Origin:      "/state/agent/contexts/default/workspaces/workspace-id",
 			Context:     "default",
 			WorkspaceID: "workspace-id",
 		})
-		require.ErrorContains(t, err, "unexpected canonical workspace origin")
+		require.NoError(t, err)
+		assert.Equal(t, StateLocation{Root: "/state/agent", Layout: StateLayoutAgentHome}, location)
+	})
+
+	t.Run("malformed origin", func(t *testing.T) {
+		_, err := ResolveStateLocation(ResolveStateLocationOptions{
+			Origin:      "/state/agent/contexts/default/workspaces/other-id",
+			Context:     "default",
+			WorkspaceID: "workspace-id",
+		})
+		require.ErrorContains(t, err, "unexpected agent home workspace origin")
 	})
 }
