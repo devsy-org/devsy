@@ -18,8 +18,6 @@ var scriptPath = filepath.Join("..", "..", "sites", "docs-devsy-sh", "public", "
 
 const fakeBinary = "#!/bin/sh\necho 'devsy version v0.0.0-test'\n"
 
-// fakeRelease serves release assets and, optionally, a goreleaser-style
-// checksums.txt, recording the path of every asset request.
 type fakeRelease struct {
 	*httptest.Server
 	requests *[]string
@@ -89,8 +87,6 @@ func requireSingleRequest(t *testing.T, release *fakeRelease, want string) {
 	}
 }
 
-// runInstall executes the install script with a clean DEVSY_*/FAKE_UNAME_*
-// environment plus the given extra variables, returning stdout and stderr.
 func runInstall(t *testing.T, extraEnv ...string) (string, string, error) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -223,8 +219,6 @@ func TestMissingAssetFailsClearly(t *testing.T) {
 	}
 }
 
-// withFakeUname prepends a shimmed uname to PATH so platform detection can
-// be exercised for platforms other than the test host.
 func withFakeUname(t *testing.T, kernel, machine string) []string {
 	t.Helper()
 	dir := t.TempDir()
@@ -247,7 +241,7 @@ func TestPlatformDetection(t *testing.T) {
 		name      string
 		kernel    string
 		machine   string
-		wantAsset string // empty: expect a clear failure instead
+		wantAsset string
 		wantErr   string
 	}{
 		{"linux arm64", "Linux", "aarch64", "devsy-linux-arm64", ""},
