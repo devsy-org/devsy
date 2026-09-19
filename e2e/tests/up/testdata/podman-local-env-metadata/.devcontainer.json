@@ -1,0 +1,10 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
+  "mounts": [
+    {
+      "type": "bind",
+      "source": "${localEnv:HOME}/.devsy-e2e-local-env-metadata",
+      "target": "/tmp/devsy-local-env-metadata"
+    }
+  ]
+}

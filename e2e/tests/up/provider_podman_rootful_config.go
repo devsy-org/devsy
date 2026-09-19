@@ -261,6 +261,51 @@ var _ = ginkgo.Describe(
 					err = f.DevsyWorkspaceDelete(ctx, tempDir)
 					framework.ExpectNoError(err)
 				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+
+				ginkgo.It(
+					"should preserve localEnv expressions in build metadata",
+					func(ctx context.Context) {
+						homeDir, err := os.UserHomeDir()
+						framework.ExpectNoError(err)
+
+						sourceDir := filepath.Join(
+							homeDir,
+							".devsy-e2e-local-env-metadata",
+						)
+
+						err = os.MkdirAll(sourceDir, 0o750)
+						framework.ExpectNoError(err)
+
+						ginkgo.DeferCleanup(func() {
+							_ = os.RemoveAll(sourceDir)
+						})
+
+						err = os.WriteFile(
+							filepath.Join(sourceDir, "probe.txt"),
+							[]byte("devsy-local-env-metadata-ok\n"),
+							0o600,
+						)
+						framework.ExpectNoError(err)
+
+						tempDir, err := setupWorkspaceAndUp(
+							ctx,
+							"tests/up/testdata/podman-local-env-metadata",
+							initialDir,
+							f,
+						)
+						framework.ExpectNoError(err)
+
+						out := eventuallySSH(
+							f,
+							ctx,
+							tempDir,
+							"cat /tmp/devsy-local-env-metadata/probe.txt",
+						)
+
+						gomega.Expect(out).To(gomega.Equal("devsy-local-env-metadata-ok"))
+					},
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
+				)
 			})
 		})
 	},
