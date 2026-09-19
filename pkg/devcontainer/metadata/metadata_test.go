@@ -111,3 +111,63 @@ func TestMarshalImageMetadata_WarnsWhenLarge(t *testing.T) {
 		t.Fatalf("test data should exceed threshold, got %d bytes", len(data))
 	}
 }
+
+func TestGetDevContainerMetadata_PreservesRawLocalEnvMount(t *testing.T) {
+	raw := &config.DevContainerConfig{
+		NonComposeBase: config.NonComposeBase{
+			Mounts: []*config.Mount{
+				{
+					Type:   "bind",
+					Source: "${localEnv:HOME}/.cache/example",
+					Target: "/cache/example",
+				},
+			},
+		},
+	}
+
+	effective := &config.DevContainerConfig{
+		NonComposeBase: config.NonComposeBase{
+			Mounts: []*config.Mount{
+				{
+					Type:   "bind",
+					Source: "/home/test/.cache/example",
+					Target: "/cache/example",
+				},
+			},
+		},
+	}
+
+	substituted := &config.SubstitutedConfig{
+		Raw:    raw,
+		Config: effective,
+	}
+
+	got, err := GetDevContainerMetadata(
+		&config.SubstitutionContext{},
+		&config.ImageMetadataConfig{},
+		substituted,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(got.Raw) == 0 || len(got.Raw[len(got.Raw)-1].Mounts) == 0 {
+		t.Fatal("expected non-empty got.Raw mounts")
+	}
+	if len(got.Config) == 0 || len(got.Config[len(got.Config)-1].Mounts) == 0 {
+		t.Fatal("expected non-empty got.Config mounts")
+	}
+
+	rawSource := got.Raw[len(got.Raw)-1].Mounts[0].Source
+	expectedRaw := "${localEnv:HOME}/.cache/example"
+	if rawSource != expectedRaw {
+		t.Errorf("got raw source %q, want %q", rawSource, expectedRaw)
+	}
+
+	configSource := got.Config[len(got.Config)-1].Mounts[0].Source
+	expectedConfig := "/home/test/.cache/example"
+	if configSource != expectedConfig {
+		t.Errorf("got config source %q, want %q", configSource, expectedConfig)
+	}
+}

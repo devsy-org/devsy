@@ -362,6 +362,35 @@ func (s *SubstituteTestSuite) TestSubstitute_CLIMountsEmpty() {
 	s.Equal("/existing-target", substitutedConfig.Config.Mounts[0].Target)
 }
 
+func (s *SubstituteTestSuite) TestSubstitute_LocalEnvInMountSource() {
+	s.T().Setenv("HOME", "/home/test")
+
+	rawConfig := &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "alpine:latest"},
+		NonComposeBase: config.NonComposeBase{
+			Mounts: []*config.Mount{
+				{
+					Type:   mountTypeBind,
+					Source: "${localEnv:HOME}/.cache/example",
+					Target: "/cache/example",
+				},
+			},
+		},
+	}
+	options := provider2.CLIOptions{}
+
+	result, _, err := s.runner.substitute(options, rawConfig)
+
+	s.NoError(err)
+	s.Require().NotNil(result)
+	s.Require().NotNil(result.Raw)
+	s.Require().NotNil(result.Config)
+	s.Require().Len(result.Raw.Mounts, 1)
+	s.Require().Len(result.Config.Mounts, 1)
+	s.Equal("${localEnv:HOME}/.cache/example", result.Raw.Mounts[0].Source)
+	s.Equal("/home/test/.cache/example", result.Config.Mounts[0].Source)
+}
+
 func ptr(s string) *string { return new(s) }
 
 func TestWorkspaceMountFolderWarning(t *testing.T) {
