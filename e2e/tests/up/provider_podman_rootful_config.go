@@ -278,15 +278,12 @@ var _ = ginkgo.Describe(
 							".devsy-e2e-local-env-metadata",
 						)
 
-						if _, statErr := os.Stat(sourceDir); statErr == nil {
-							probePath := filepath.Join(sourceDir, "probe.txt")
-							_, probeErr := os.Stat(probePath)
-							gomega.Expect(probeErr).NotTo(
-								gomega.HaveOccurred(),
-								"fixture directory %s already exists without probe.txt; aborting to prevent data loss",
-								sourceDir,
-							)
-						}
+						_, statErr := os.Stat(sourceDir)
+						gomega.Expect(os.IsNotExist(statErr)).To(
+							gomega.BeTrue(),
+							"fixture directory %s already exists; aborting to prevent data loss",
+							sourceDir,
+						)
 						// #nosec G301 -- fixture must be traversable by container user
 						err = os.MkdirAll(
 							sourceDir,
