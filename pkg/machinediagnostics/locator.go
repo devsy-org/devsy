@@ -72,12 +72,14 @@ func ReadLocator(path string) (Locator, error) {
 
 // ReadFromLocator reads the active daemon store without making callers infer
 // the service user's home directory or parse a systemd unit.
+//
+//nolint:revive // the reader API keeps cursor parameters together.
 func ReadFromLocator(
 	path, after string,
 	limit int,
 	interval time.Duration,
 	now time.Time,
-) ReadResponse { //nolint:revive // the reader API keeps cursor parameters together.
+) ReadResponse {
 	locator, err := ReadLocator(path)
 	if err != nil {
 		response := ReadResponse{

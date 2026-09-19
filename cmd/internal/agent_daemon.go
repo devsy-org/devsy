@@ -232,6 +232,7 @@ func (cmd *DaemonCmd) recordEvent(event machinediagnostics.Event) {
 	}
 }
 
+//nolint:revive // the diagnostics update API groups the complete machine snapshot.
 func (cmd *DaemonCmd) updateDiagnostics(
 	state machinediagnostics.DaemonState,
 	health machinediagnostics.DaemonHealth,
@@ -631,7 +632,7 @@ func evaluateMachineInactivity(
 	return result
 }
 
-//nolint:cyclop // workspace state transitions are evaluated in one ordered pass.
+//nolint:cyclop,funlen // workspace state transitions are evaluated in one ordered pass.
 func evaluateWorkspaceInactivity(
 	path string,
 	heartbeat time.Time,

@@ -115,6 +115,7 @@ func (cmd *DiagnosticsCmd) Run(
 	return renderDiagnostics(result, cmd.ResultFormat)
 }
 
+//nolint:revive // the fetch API keeps cursor and output selection inputs together.
 func fetchDiagnostics(
 	ctx context.Context,
 	mc client.MachineClient,

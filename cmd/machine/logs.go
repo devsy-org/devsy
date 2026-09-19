@@ -45,7 +45,7 @@ func NewLogsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return c
 }
 
-//nolint:cyclop // follow mode owns a single ordered polling loop.
+//nolint:cyclop,funlen // follow mode owns a single ordered polling loop.
 func (cmd *LogsCmd) Run(
 	ctx context.Context,
 	args []string,

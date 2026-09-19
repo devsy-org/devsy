@@ -109,11 +109,12 @@ func (s *Store) record(
 	if err != nil {
 		return err
 	}
+	//nolint:gosec // diagnostics are intentionally group-readable for the configured reader.
 	f, err := os.OpenFile(
 		path,
 		os.O_APPEND|os.O_WRONLY|os.O_CREATE,
 		0o640,
-	) //nolint:gosec // diagnostics are intentionally group-readable for the configured reader.
+	)
 	if err != nil {
 		return err
 	}
@@ -301,7 +302,7 @@ func newSessionID() string {
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b))
 }
 
-//nolint:revive,cyclop // the public read API preserves cursor and freshness inputs.
+//nolint:revive,cyclop,funlen // the public read API preserves cursor and freshness inputs.
 func Read(
 	dir, after string,
 	limit int,
@@ -402,6 +403,7 @@ func Read(
 }
 
 func readStatus(path string) (*Status, error) {
+	//nolint:gosec // path is derived from the configured diagnostics directory.
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
