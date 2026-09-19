@@ -23,9 +23,11 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/options"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/types"
@@ -592,7 +594,7 @@ func (s *workspaceClient) deleteContainer(ctx context.Context, opt client.Delete
 		<-done
 	}()
 
-	log.Info("deleting workspace container")
+	log.Debug("deleting workspace container")
 	command, err := s.agentWorkspaceCommand("delete")
 	if err != nil {
 		return err
@@ -633,7 +635,7 @@ func (s *workspaceClient) stopContainer(ctx context.Context) error {
 		<-done
 	}()
 
-	log.Info("stopping container")
+	log.Debug("stopping container")
 	command, err := s.agentWorkspaceCommand("stop")
 	if err != nil {
 		return err
@@ -642,7 +644,7 @@ func (s *workspaceClient) stopContainer(ctx context.Context) error {
 	if err := s.runProviderCommand(ctx, command, writer, writer); err != nil {
 		return err
 	}
-	log.Info("stopped container")
+	log.Debug("stopped container")
 
 	return nil
 }
@@ -878,12 +880,20 @@ func RunCommand(ctx context.Context, opts RunCommandOptions) error {
 		opts.Environ = append(opts.Environ, config.EnvDebug+"="+config.BoolTrue)
 	}
 
+	redactor := secrets.NewEnvironmentRedactor(opts.Environ)
+	stdout := &subprocess.StreamingRedactingWriter{Next: opts.Stdout, Redactor: redactor}
+	stderr := &subprocess.StreamingRedactingWriter{Next: opts.Stderr, Redactor: redactor}
+	defer func() {
+		_ = stdout.Flush()
+		_ = stderr.Flush()
+	}()
+
 	if len(opts.Command) == 1 {
 		if err := shell.RunEmulatedShell(ctx, &shell.CommandRunner{
 			Command: opts.Command[0],
 			Stdin:   opts.Stdin,
-			Stdout:  opts.Stdout,
-			Stderr:  opts.Stderr,
+			Stdout:  stdout,
+			Stderr:  stderr,
 			Environ: opts.Environ,
 		}); err != nil {
 			return fmt.Errorf(
@@ -898,8 +908,8 @@ func RunCommand(ctx context.Context, opts RunCommandOptions) error {
 
 	cmd := exec.CommandContext(ctx, opts.Command[0], opts.Command[1:]...) // #nosec G204
 	cmd.Stdin = opts.Stdin
-	cmd.Stdout = opts.Stdout
-	cmd.Stderr = opts.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	cmd.Env = opts.Environ
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf(

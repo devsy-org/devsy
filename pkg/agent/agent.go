@@ -19,6 +19,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
 const DefaultInactivityTimeout = time.Minute * 20
@@ -244,7 +246,7 @@ func handleStaleWorkspace(
 		return workspaceDir, nil
 	}
 
-	log.Infof(
+	log.Debugf(
 		"delete old workspace: workspaceId=%s, oldUid=%s, newUid=%s",
 		oldWorkspaceInfo.Workspace.ID,
 		oldWorkspaceInfo.Workspace.UID,
@@ -498,17 +500,27 @@ func dockerReachable(dockerOverride string, envs map[string]string) (bool, error
 		return true, nil
 	}
 
-	cmd := exec.Command(docker, "ps")
-	applyDockerEnv(cmd, envs)
-
-	_, err := cmd.CombinedOutput()
+	args := []string{"ps"}
+	env := make([]string, 0, len(envs))
+	for key, value := range envs {
+		env = append(env, key+"="+value)
+	}
+	redactionEnv := append(os.Environ(), env...)
+	result, err := subprocess.Run(context.Background(), docker, args, subprocess.Options{
+		Env:      env,
+		Redactor: secrets.NewEnvironmentRedactor(redactionEnv),
+	})
 	if err != nil {
-		if strings.Contains(err.Error(), "permission denied") {
+		details := result.DiagnosticOutput()
+		if strings.Contains(strings.ToLower(details+" "+err.Error()), "permission denied") {
 			if dockerOverride == "" {
 				return true, nil
 			}
 		}
 
+		if details != "" {
+			return false, fmt.Errorf("%s ps: %s: %w", docker, details, err)
+		}
 		return false, fmt.Errorf("%s ps: %w", docker, err)
 	}
 

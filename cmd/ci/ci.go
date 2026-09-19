@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -207,6 +209,10 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	// workspace.
 	ctx, cancel := up.WithSignals(ctx)
 	defer cancel()
+	reporter, err := newStatusReporter(os.Stderr, cmd.Verbosity > 0 || cmd.Debug)
+	if err != nil {
+		return err
+	}
 
 	devsyConfig, cfgErr := config.LoadConfig(cmd.Context, cmd.Provider)
 	if cfgErr != nil {
@@ -216,12 +222,24 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 		cmd.StrictHostKeyChecking = true
 	}
 
-	workspaceClient, cleanup, resolveErr := cmd.resolveWorkspace(ctx, devsyConfig, source)
+	workspaceClient, cleanup, teardown, resolveErr := cmd.resolveWorkspace(ctx, devsyConfig, source)
 	if resolveErr != nil {
 		return resolveErr
 	}
 	// cleanup tears down the workspace; join error with the result.
-	defer func() { err = errors.Join(err, cleanup()) }()
+	defer func() {
+		var cleanupErr error
+		if teardown {
+			cleanupErr = status.Run(context.Background(), reporter, status.Operation{
+				Phase: status.PhaseDeletingWorkspace,
+			}, func(context.Context) error {
+				return cleanup()
+			})
+		} else {
+			cleanupErr = cleanup()
+		}
+		err = errors.Join(err, cleanupErr)
+	}()
 
 	if _, ok := workspaceClient.(client.WorkspaceClient); !ok {
 		return fmt.Errorf("ci is currently not supported for proxy providers")
@@ -233,6 +251,7 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 		GlobalFlags:        cmd.GlobalFlags,
 		DevsyConfig:        devsyConfig,
 		CLIOptions:         cmd.CLIOptions,
+		Reporter:           reporter,
 		ProviderOptions:    cmd.ProviderOptions,
 		SecretsFile:        cmd.SecretsFile,
 		FeatureSecretsFile: cmd.FeatureSecretsFile,
@@ -240,8 +259,13 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 		return fmt.Errorf("start devcontainer: %w", err)
 	}
 
-	log.Infof("running command in devcontainer: %s", strings.Join(cmd.RunCmd, " "))
-	return cmd.runInContainer(ctx, workspaceClient)
+	log.Debugf("running command in devcontainer: %s", strings.Join(cmd.RunCmd, " "))
+	return status.Run(ctx, reporter, status.Operation{
+		Phase: status.PhaseRunningCommand,
+		Step:  "CI command",
+	}, func(ctx context.Context) error {
+		return cmd.runInContainer(ctx, workspaceClient)
+	})
 }
 
 // resolveWorkspace resolves (creating if needed) the workspace to run in.
@@ -249,7 +273,7 @@ func (cmd *CICmd) resolveWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	source string,
-) (client.BaseWorkspaceClient, func() error, error) {
+) (client.BaseWorkspaceClient, func() error, bool, error) {
 	var args []string
 	if source != "" {
 		args = []string{source}
@@ -258,7 +282,7 @@ func (cmd *CICmd) resolveWorkspace(
 
 	sshConfigPath, cleanupSSH, err := workspacecmd.NewTempSSHConfig()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
 	workspaceClient, err := workspace2.Resolve(ctx, devsyConfig, workspace2.ResolveParams{
@@ -273,7 +297,7 @@ func (cmd *CICmd) resolveWorkspace(
 	})
 	if err != nil {
 		cleanupSSH()
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 
 	teardown := exists == "" && !cmd.Keep
@@ -284,7 +308,7 @@ func (cmd *CICmd) resolveWorkspace(
 		}
 		return nil
 	}
-	return workspaceClient, cleanup, nil
+	return workspaceClient, cleanup, teardown, nil
 }
 
 // runInContainer runs the command inside the started container.
@@ -298,7 +322,7 @@ func (cmd *CICmd) runInContainer(ctx context.Context, c client.BaseWorkspaceClie
 }
 
 func (cmd *CICmd) teardown(c client.BaseWorkspaceClient) error {
-	log.Infof("tearing down workspace")
+	log.Debugf("tearing down workspace")
 	ctx, cancel := context.WithTimeout(context.Background(), teardownTimeout)
 	defer cancel()
 	if err := c.Delete(ctx, client.DeleteOptions{Force: true}); err != nil {

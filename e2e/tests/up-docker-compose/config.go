@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/docker/docker/api/types/container"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -761,13 +762,18 @@ var _ = ginkgo.Describe(
 
 				lines := strings.Split(strings.TrimSpace(stdout), "\n")
 				gomega.Expect(lines).NotTo(gomega.BeEmpty())
-				lastLine := lines[len(lines)-1]
-
-				var envelope config.ErrorEnvelope
-				err = json.Unmarshal([]byte(lastLine), &envelope)
-				framework.ExpectNoError(err)
-				gomega.Expect(envelope.Outcome).To(gomega.Equal("error"))
-				gomega.Expect(envelope.Message).
+				var envelope config.StatusEnvelope
+				for _, line := range lines {
+					var candidate config.StatusEnvelope
+					if json.Unmarshal([]byte(line), &candidate) == nil &&
+						candidate.Kind == config.KindStatus &&
+						candidate.State == status.StateFailed &&
+						candidate.Error != nil {
+						envelope = candidate
+					}
+				}
+				gomega.Expect(envelope.Error).NotTo(gomega.BeNil())
+				gomega.Expect(envelope.Error.Message).
 					To(gomega.ContainSubstring("minimum requirements"))
 			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 

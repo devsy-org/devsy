@@ -140,7 +140,7 @@ test.describe("Workspace detail flow", () => {
     await expect(main).toContainText("Stopped", { timeout: 10000 })
 
     await page.getByRole("button", { name: /^start$/i }).click()
-    await expect(main).toContainText("Starting", { timeout: 3000 })
+    await expect(main).toContainText(/starting|streaming/i, { timeout: 3000 })
     await expect(main).toContainText("Running", { timeout: 10000 })
   })
 
@@ -323,5 +323,30 @@ test.describe.serial("Create Workspace Wizard", () => {
     await expect(
       dialog.getByRole("button", { name: /open workspace/i }),
     ).toBeVisible({ timeout: 15000 })
+    await dialog.getByRole("button", { name: /^close$/i }).first().click()
+  })
+
+  test("shows the structured failure message and hint", async () => {
+    const dialog = await openCreateWorkspaceWizard(page)
+
+    await dialog.getByRole("button", { name: /^continue$/i }).click()
+    await expect(
+      dialog.getByRole("heading", { name: /choose a source/i }),
+    ).toBeVisible()
+
+    const sourceInput = dialog.locator('input[placeholder*="github"]')
+    await sourceInput.fill("https://example.com/fail.git")
+    await dialog.getByRole("button", { name: /^continue$/i }).click()
+    await dialog.getByRole("button", { name: /^continue$/i }).click()
+    await expect(
+      dialog.getByRole("heading", { name: /^review$/i }),
+    ).toBeVisible()
+    await dialog.getByRole("button", { name: /^launch$/i }).click()
+
+    await expect(dialog).toContainText("Workspace Creation Failed", {
+      timeout: 15000,
+    })
+    await expect(dialog).toContainText("The mock image build failed.")
+    await expect(dialog).toContainText("Check the build output and retry.")
   })
 })

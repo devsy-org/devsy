@@ -41,8 +41,8 @@ func NewResolveDepsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 install order based on dependency declarations and install ordering.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return cmd.Run()
+		RunE: func(cobraCmd *cobra.Command, _ []string) error {
+			return cmd.runWithContext(cobraCmd.Context())
 		},
 	}
 
@@ -67,12 +67,16 @@ install order based on dependency declarations and install ordering.`,
 }
 
 func (cmd *ResolveDepsCmd) Run() error {
+	return cmd.runWithContext(context.Background())
+}
+
+func (cmd *ResolveDepsCmd) runWithContext(ctx context.Context) error {
 	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {
 		return err
 	}
 
-	devContainerConfig, err := cmd.loadConfig()
+	devContainerConfig, err := cmd.loadConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("load devcontainer config: %w", err)
 	}
@@ -87,7 +91,7 @@ func (cmd *ResolveDepsCmd) Run() error {
 		return cmd.printEmpty(mode)
 	}
 
-	sorted, err := feature.ResolveFeatureOrder(devContainerConfig)
+	sorted, err := feature.ResolveFeatureOrderWithContext(ctx, devContainerConfig)
 	if err != nil {
 		return fmt.Errorf("resolve feature order: %w", err)
 	}
@@ -130,9 +134,12 @@ func buildResolvedList(sorted []*config.FeatureSet) []resolvedFeature {
 	return resolved
 }
 
-func (cmd *ResolveDepsCmd) loadConfig() (*config.DevContainerConfig, error) {
+func (cmd *ResolveDepsCmd) loadConfig(ctx context.Context) (*config.DevContainerConfig, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if cmd.Config != "" {
-		return config.ParseDevContainerJSONFile(context.Background(), cmd.Config)
+		return config.ParseDevContainerJSONFile(ctx, cmd.Config)
 	}
 
 	absPath, err := filepath.Abs(cmd.WorkspaceFolder)
@@ -140,7 +147,7 @@ func (cmd *ResolveDepsCmd) loadConfig() (*config.DevContainerConfig, error) {
 		return nil, err
 	}
 
-	return config.ParseDevContainerJSON(context.Background(), absPath, "")
+	return config.ParseDevContainerJSON(ctx, absPath, "")
 }
 
 func (cmd *ResolveDepsCmd) printText(resolved []resolvedFeature) error {

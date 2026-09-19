@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/devsy-org/devsy/pkg/secrets"
 )
 
-const testFormatJSON = "json"
+const (
+	testFormatJSON   = "json"
+	testFormatLogfmt = "logfmt"
+)
 
 func TestWriter_EmitsStructuredJSONLine(t *testing.T) {
 	Init(Config{Verbosity: 2, Format: testFormatJSON})
@@ -32,6 +37,61 @@ func TestWriter_EmitsStructuredJSONLine(t *testing.T) {
 	}
 	if !strings.Contains(got, `"level":"info"`) {
 		t.Errorf("missing expected level field: %q", got)
+	}
+}
+
+func TestLoggerFormatsHaveStableRecords(t *testing.T) {
+	for _, format := range []string{"text", testFormatJSON, testFormatLogfmt} {
+		t.Run(format, func(t *testing.T) { assertStableLogFormat(t, format) })
+	}
+}
+
+func assertStableLogFormat(t *testing.T, format string) {
+	t.Helper()
+	Init(Config{Verbosity: 1, Format: format})
+	var sink syncBuffer
+	remove := AddSink(&sink)
+	defer remove()
+	Infof("format canary")
+	_ = Sync()
+	line := strings.TrimSpace(sink.String())
+	if strings.ContainsAny(line, "\x1b\r") {
+		t.Fatalf("format %q contains terminal control characters: %q", format, line)
+	}
+	assertFormatFields(t, format, line)
+}
+
+func assertFormatFields(t *testing.T, format, line string) {
+	t.Helper()
+	switch format {
+	case testFormatJSON:
+		assertJSONLog(t, line)
+	case testFormatLogfmt:
+		assertLogfmtLog(t, line)
+	default:
+		assertTextLog(t, line)
+	}
+}
+
+func assertJSONLog(t *testing.T, line string) {
+	t.Helper()
+	var record map[string]any
+	if err := json.Unmarshal([]byte(line), &record); err != nil {
+		t.Fatalf("JSON log is invalid: %v (%q)", err, line)
+	}
+}
+
+func assertLogfmtLog(t *testing.T, line string) {
+	t.Helper()
+	if !strings.Contains(line, "level=info") || !strings.Contains(line, "msg=") {
+		t.Fatalf("logfmt fields missing: %q", line)
+	}
+}
+
+func assertTextLog(t *testing.T, line string) {
+	t.Helper()
+	if !strings.Contains(line, "INFO") || !strings.Contains(line, "format canary") {
+		t.Fatalf("text fields missing: %q", line)
 	}
 }
 
@@ -147,6 +207,28 @@ func TestPassthroughWriter_WritesRawBytesUnformatted(t *testing.T) {
 
 	if got := sink.String(); got != "raw output\n" {
 		t.Errorf("got %q, want raw bytes with no structured formatting", got)
+	}
+}
+
+func TestPassthroughWriterRedactsSplitSecrets(t *testing.T) {
+	Init(Config{Quiet: true, Format: testFormatJSON})
+
+	var sink syncBuffer
+	remove := AddSink(&sink)
+	defer remove()
+
+	w := PassthroughWriterWithRedactor(secrets.NewRedactor([]string{
+		"TOKEN=DEVSY_PASSTHROUGH_SECRET_846301",
+	}))
+	_, _ = w.Write([]byte("token=DEVSY_PASSTHROUGH_"))
+	_, _ = w.Write([]byte("SECRET_846301\n"))
+	_ = w.Close()
+
+	if got := sink.String(); strings.Contains(got, "DEVSY_PASSTHROUGH_SECRET_846301") {
+		t.Fatalf("passthrough writer leaked secret: %q", got)
+	}
+	if !strings.Contains(sink.String(), "token=***") {
+		t.Fatalf("passthrough writer did not redact secret: %q", sink.String())
 	}
 }
 

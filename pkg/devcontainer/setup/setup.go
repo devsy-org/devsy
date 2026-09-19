@@ -64,7 +64,7 @@ func SetupContainerPreAttach(
 		return DeferredHooks{}, err
 	}
 
-	if err := writeResultFile(cfg); err != nil {
+	if err := writeResultFileWithContext(ctx, cfg); err != nil {
 		return DeferredHooks{}, fmt.Errorf("write container result: %w", err)
 	}
 
@@ -212,13 +212,17 @@ func secretMountPath(target string) (string, error) {
 }
 
 func writeResultFile(cfg *ContainerSetupConfig) error {
+	return writeResultFileWithContext(context.Background(), cfg)
+}
+
+func writeResultFileWithContext(ctx context.Context, cfg *ContainerSetupConfig) error {
 	rawBytes, err := json.Marshal(cfg.SetupInfo)
 	if err != nil {
 		return fmt.Errorf("marshal result: %w", err)
 	}
 
 	activePath := pkgconfig.DevContainerResultPath
-	if err := writeResultFileTo(activePath, rawBytes); err != nil {
+	if err := writeResultFileToWithContext(ctx, activePath, rawBytes); err != nil {
 		log.Debugf(
 			"%s is not writable (%v), falling back to %s",
 			activePath,
@@ -226,7 +230,7 @@ func writeResultFile(cfg *ContainerSetupConfig) error {
 			pkgconfig.DevContainerResultFallbackPath,
 		)
 		activePath = pkgconfig.DevContainerResultFallbackPath
-		if err := writeResultFileTo(activePath, rawBytes); err != nil {
+		if err := writeResultFileToWithContext(ctx, activePath, rawBytes); err != nil {
 			return fmt.Errorf("write result to %s: %w", activePath, err)
 		}
 	}
@@ -263,12 +267,16 @@ func writeResultPathSelector(activePath string) error {
 // rather than followed or hung on, matching the coordination files this
 // package's other callers protect the same way.
 func writeResultFileTo(path string, rawBytes []byte) error {
+	return writeResultFileToWithContext(context.Background(), path, rawBytes)
+}
+
+func writeResultFileToWithContext(ctx context.Context, path string, rawBytes []byte) error {
 	existing, _ := sharedfile.ReadFile(path)
 	if string(rawBytes) == string(existing) {
 		// Widen even when skipping the write: a stale file left at a
 		// restrictive mode by a pre-fix binary must still get readable by
 		// the other session's user, not just on the next content change.
-		return sharedfile.WidenWithSudoFallback(context.Background(), path, 0o644)
+		return sharedfile.WidenWithSudoFallback(ctx, path, 0o644)
 	}
 
 	dir := filepath.Dir(path)
@@ -388,7 +396,7 @@ func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 
 	workspaceRoot := filepath.Dir(workspaceFolder)
 	if workspaceRoot != "/" {
-		log.Infof("chown workspace: user=%s, workspaceRoot=%s", user, workspaceRoot)
+		log.Debugf("chown workspace: user=%s, workspaceRoot=%s", user, workspaceRoot)
 		if err := copy2.Chown(workspaceRoot, user); err != nil && !copy2.DeniedByFilesystem(err) {
 			return fmt.Errorf("chown %s: %w", workspaceRoot, err)
 		} else if err != nil {
@@ -400,7 +408,11 @@ func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	}
 
 	if recursive {
-		log.Infof("chown workspace recursively: user=%s, workspaceFolder=%s", user, workspaceFolder)
+		log.Debugf(
+			"chown workspace recursively: user=%s, workspaceFolder=%s",
+			user,
+			workspaceFolder,
+		)
 		err := copy2.ChownR(workspaceFolder, user)
 		var failures copy2.ChownFailures
 		switch {
@@ -555,7 +567,7 @@ func setupKubeConfig(
 		return nil
 	}
 
-	log.Info("setup KubeConfig")
+	log.Debug("setup KubeConfig")
 	if err := writeKubeConfig(setupInfo, kubeConfigRes.Message); err != nil {
 		return err
 	}
@@ -789,7 +801,7 @@ func setupPlatformGitUser(
 
 	gitUser, err := gitcredentials.GetUser(ctx, userName, "")
 	if err == nil && gitUser.Name == "" && gitUser.Email == "" {
-		log.Info("Setup workspace git user and email")
+		log.Debug("Setup workspace git user and email")
 		err := gitcredentials.SetUser(ctx, userName, &gitcredentials.GitUser{
 			Name:  platformOptions.UserCredentials.GitUser,
 			Email: platformOptions.UserCredentials.GitEmail,
@@ -811,7 +823,7 @@ func setupPlatformGitHTTPCredentials(
 		return nil
 	}
 
-	log.Info("Setup platform user git http credentials")
+	log.Debug("Setup platform user git http credentials")
 	binaryPath, err := os.Executable()
 	if err != nil {
 		return err
@@ -832,7 +844,7 @@ func setupPlatformGitSSHKeys(
 		return nil
 	}
 
-	log.Info("Setup platform user git ssh keys")
+	log.Debug("Setup platform user git ssh keys")
 	homeFolder, err := command.GetHome(userName)
 	if err != nil {
 		return err

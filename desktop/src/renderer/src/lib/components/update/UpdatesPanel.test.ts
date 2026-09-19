@@ -95,7 +95,11 @@ describe("UpdatesPanel channel switching", () => {
 
   it("reverts the selection and toasts on IPC failure", async () => {
     await renderPanel("stable")
-    setReleaseChannel.mockRejectedValueOnce(new Error("boom"))
+    setReleaseChannel.mockRejectedValueOnce(
+      new Error(
+        "Cannot switch release channel while an update is being checked, downloaded, or ready to install",
+      ),
+    )
 
     const preview = cardButton(/Preview/)
     preview?.click()
@@ -104,6 +108,9 @@ describe("UpdatesPanel channel switching", () => {
     await tick()
 
     expect(toastError).toHaveBeenCalled()
+    expect(toastError).toHaveBeenCalledWith(
+      expect.stringContaining("Cannot switch release channel"),
+    )
     // Selection reverts to Stable.
     expect(cardButton(/Stable/)?.getAttribute("aria-checked")).toBe("true")
     expect(cardButton(/Preview/)?.getAttribute("aria-checked")).toBe("false")

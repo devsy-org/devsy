@@ -62,8 +62,8 @@ func NewOutdatedCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run runs the command logic.
-func (cmd *OutdatedCmd) Run(_ context.Context) error {
-	parsedConfig, err := cmd.loadConfig()
+func (cmd *OutdatedCmd) Run(ctx context.Context) error {
+	parsedConfig, err := cmd.loadConfig(ctx)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,10 @@ func (cmd *OutdatedCmd) Run(_ context.Context) error {
 	return nil
 }
 
-func (cmd *OutdatedCmd) loadConfig() (*devconfig.DevContainerConfig, error) {
+func (cmd *OutdatedCmd) loadConfig(ctx context.Context) (*devconfig.DevContainerConfig, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	workspaceFolder := cmd.WorkspaceFolder
 	if workspaceFolder == "" {
 		cwd, err := os.Getwd()
@@ -100,10 +103,10 @@ func (cmd *OutdatedCmd) loadConfig() (*devconfig.DevContainerConfig, error) {
 
 	var parsedConfig *devconfig.DevContainerConfig
 	if cmd.Config != "" {
-		parsedConfig, err = devconfig.ParseDevContainerJSONFile(context.Background(), cmd.Config)
+		parsedConfig, err = devconfig.ParseDevContainerJSONFile(ctx, cmd.Config)
 	} else {
 		parsedConfig, err = devconfig.ParseDevContainerJSON(
-			context.Background(),
+			ctx,
 			workspaceFolder,
 			"",
 		)

@@ -89,7 +89,7 @@ function invoke(channel: string, args: Record<string, unknown>) {
 }
 
 function statusLine(phase: string) {
-  return JSON.stringify({ kind: "status", pipeline: "provider", phase })
+  return JSON.stringify({ kind: "status", schemaVersion: 1, pipeline: "provider", phase, state: "started" })
 }
 
 describe("provider job lifecycle over IPC", () => {

@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/joho/godotenv"
 )
 
@@ -490,7 +491,7 @@ func (r *runner) tryStartExistingProject(
 
 	existingProjectFiles, err := composeHelper.FindProjectFiles(ctx, project.Name)
 	if err != nil {
-		log.Errorf("Error finding project files: %s", err)
+		log.Debugf("could not find persisted compose project files: %v", err)
 		return containerDetails, false
 	}
 	if len(existingProjectFiles) == 0 || params.recreate {
@@ -533,18 +534,28 @@ func (r *runner) composeUpExistingProject(
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 	if err := params.composeHelper.Run(ctx, upArgs, nil, writer, writer); err != nil {
-		log.Errorf("Error starting project: %s", err)
+		log.Debugf("could not reuse persisted compose project: %v", err)
 		return nil, err
 	}
 
-	// wait for running and get container details
-	details, err := params.composeHelper.FindDevContainer(
-		ctx,
-		params.project.Name,
-		params.parsedConfig.Config.Service,
-	)
+	// Wait for the service to become discoverable after compose reports that it
+	// started. This is a distinct lifecycle phase because compose can return
+	// before the container is visible through the Docker API.
+	var details *config.ContainerDetails
+	err := status.Run(ctx, r.reporter, status.Operation{
+		Phase: status.PhaseWaitingFor,
+		Step:  "compose container",
+	}, func(ctx context.Context) error {
+		var findErr error
+		details, findErr = params.composeHelper.FindDevContainer(
+			ctx,
+			params.project.Name,
+			params.parsedConfig.Config.Service,
+		)
+		return findErr
+	})
 	if err != nil {
-		log.Errorf("Error finding dev container: %s", err)
+		log.Debugf("could not find dev container after reusing compose project: %v", err)
 		return nil, err
 	}
 
@@ -1019,12 +1030,19 @@ func (r *runner) composeUpAndFindContainer(
 		return nil, fmt.Errorf("docker-compose run: %w", err)
 	}
 
-	// TODO wait for started event?
-	containerDetails, err := params.composeHelper.FindDevContainer(
-		ctx,
-		params.project.Name,
-		params.composeService.Name,
-	)
+	var containerDetails *config.ContainerDetails
+	err := status.Run(ctx, r.reporter, status.Operation{
+		Phase: status.PhaseWaitingFor,
+		Step:  "compose container",
+	}, func(ctx context.Context) error {
+		var findErr error
+		containerDetails, findErr = params.composeHelper.FindDevContainer(
+			ctx,
+			params.project.Name,
+			params.composeService.Name,
+		)
+		return findErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("find dev container: %w", err)
 	}

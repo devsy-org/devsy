@@ -58,7 +58,7 @@ func appendBindSrc(dst []string, spec string) []string {
 func logBindSources(args []string) {
 	for _, src := range extractBindSources(args) {
 		_, err := os.Lstat(src)
-		log.Infof("docker bind: src=%s exists=%t", src, err == nil)
+		log.Debugf("docker bind: src=%s exists=%t", src, err == nil)
 	}
 }
 
@@ -66,7 +66,7 @@ var hostEnvOnce sync.Once
 
 func logHostEnvOnce(ctx context.Context, helper *docker.DockerHelper) {
 	hostEnvOnce.Do(func() {
-		log.Infof("docker host: %s", collectHostEnv(ctx, helper))
+		log.Debugf("docker host: %s", collectHostEnv(ctx, helper))
 	})
 }
 

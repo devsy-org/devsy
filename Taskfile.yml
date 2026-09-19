@@ -108,12 +108,20 @@ tasks:
 
   cli:test:e2e:build:
     desc: build devsy for e2e tests
-    status:
-      - test -f e2e/bin/devsy-linux-amd64
     cmds:
       - task: cli:build:dev
       - mkdir -p e2e/bin
       - cp dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64 e2e/bin/devsy-linux-amd64
+      - |
+        host_os="$(go env GOOS)"
+        host_arch="$(go env GOARCH)"
+        host_binary="devsy-${host_os}-${host_arch}"
+        host_dir="dist/devsy-dev_${host_os}_${host_arch}_v1"
+        if [ "$host_os" = "windows" ]; then
+          host_binary="${host_binary}.exe"
+        fi
+        test -f "${host_dir}/${host_binary}"
+        cp "${host_dir}/${host_binary}" "e2e/bin/${host_binary}"
 
   cli:test:e2e:
     desc: run e2e tests
@@ -125,12 +133,16 @@ tasks:
   cli:test:e2e:suite:
     # usage: task cli:test:e2e:suite -- "test suite name"
     desc: run e2e tests suite
+    deps:
+      - cli:test:e2e:build
     dir: e2e
     cmd: go tool ginkgo --label-filter {{ .CLI_ARGS }}
 
   cli:test:e2e:focus:
     # usage: task cli:test:e2e:focus -- "test suite pattern"
     desc: run focused e2e tests
+    deps:
+      - cli:test:e2e:build
     dir: e2e
     cmd: go tool ginkgo --focus {{ .CLI_ARGS }}
 

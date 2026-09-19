@@ -103,13 +103,20 @@ func (r *runner) runSingleContainer(
 	go r.prefetchAgentBinary(ctx)
 
 	// Resolve container: ensure we have a running container with merged config.
-	status.Enter(r.reporter, status.PhaseStartingContainer, "")
-	resolved, err := r.resolveContainer(ctx, params, containerDetails)
+	var resolved *resolvedContainer
+	err = status.Run(
+		ctx,
+		r.reporter,
+		status.Operation{Phase: status.PhaseStartingContainer},
+		func(ctx context.Context) error {
+			var resolveErr error
+			resolved, resolveErr = r.resolveContainer(ctx, params, containerDetails)
+			return resolveErr
+		},
+	)
 	if err != nil {
-		status.Fail(r.reporter, status.PhaseStartingContainer, err)
 		return nil, err
 	}
-	status.Leave(r.reporter, status.PhaseStartingContainer, "")
 
 	return r.setupContainer(ctx, &setupContainerParams{
 		rawConfig:           parsedConfig.Raw,
@@ -142,7 +149,7 @@ func (r *runner) resolveContainer(
 	substitutionContext := params.substitutionContext
 	if actual := workspaceMountDestination(containerDetails); actual != "" &&
 		actual != substitutionContext.ContainerWorkspaceFolder {
-		log.Infof(
+		log.Debugf(
 			"container workspace mount is %s, updating from computed %s",
 			actual, substitutionContext.ContainerWorkspaceFolder,
 		)
