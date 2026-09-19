@@ -8,7 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const stateTestRoot = "/state"
+const (
+	stateTestRoot        = "/state"
+	stateTestContext     = "default"
+	stateTestWorkspaceID = "workspace-id"
+)
 
 func TestStateLocationWorkspaceConfigPattern(t *testing.T) {
 	tests := []struct {
@@ -71,9 +75,16 @@ func TestResolveStateLocation(t *testing.T) {
 
 	t.Run("canonical origin", func(t *testing.T) {
 		location, err := ResolveStateLocation(ResolveStateLocationOptions{
-			Origin:      "/state/contexts/default/workspaces/workspace-id/agent",
-			Context:     "default",
-			WorkspaceID: "workspace-id",
+			Origin: filepath.Join(
+				stateTestRoot,
+				stateContextsDir,
+				stateTestContext,
+				stateWorkspacesDir,
+				stateTestWorkspaceID,
+				"agent",
+			),
+			Context:     stateTestContext,
+			WorkspaceID: stateTestWorkspaceID,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, StateLocation{Root: "/state", Layout: StateLayoutCanonical}, location)
@@ -81,9 +92,16 @@ func TestResolveStateLocation(t *testing.T) {
 
 	t.Run("agent home origin", func(t *testing.T) {
 		location, err := ResolveStateLocation(ResolveStateLocationOptions{
-			Origin:      "/state/agent/contexts/default/workspaces/workspace-id",
-			Context:     "default",
-			WorkspaceID: "workspace-id",
+			Origin: filepath.Join(
+				stateTestRoot,
+				"agent",
+				stateContextsDir,
+				stateTestContext,
+				stateWorkspacesDir,
+				stateTestWorkspaceID,
+			),
+			Context:     stateTestContext,
+			WorkspaceID: stateTestWorkspaceID,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, StateLocation{Root: "/state/agent", Layout: StateLayoutAgentHome}, location)
@@ -91,9 +109,16 @@ func TestResolveStateLocation(t *testing.T) {
 
 	t.Run("malformed origin", func(t *testing.T) {
 		_, err := ResolveStateLocation(ResolveStateLocationOptions{
-			Origin:      "/state/agent/contexts/default/workspaces/other-id",
-			Context:     "default",
-			WorkspaceID: "workspace-id",
+			Origin: filepath.Join(
+				stateTestRoot,
+				"agent",
+				stateContextsDir,
+				stateTestContext,
+				stateWorkspacesDir,
+				"other-id",
+			),
+			Context:     stateTestContext,
+			WorkspaceID: stateTestWorkspaceID,
 		})
 		require.ErrorContains(t, err, "unexpected agent home workspace origin")
 	})

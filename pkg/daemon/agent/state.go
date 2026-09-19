@@ -14,6 +14,8 @@ type StateLayout string
 const (
 	StateLayoutCanonical StateLayout = "canonical"
 	StateLayoutAgentHome StateLayout = "agent-home"
+	stateContextsDir                 = "contexts"
+	stateWorkspacesDir               = "workspaces"
 )
 
 // StateLocation identifies the workspace state that an inactivity daemon owns.
@@ -40,7 +42,7 @@ func (l StateLocation) WorkspaceConfigPattern() (string, error) {
 		return "", err
 	}
 
-	parts := []string{filepath.Clean(l.Root), "contexts", "*", "workspaces", "*"}
+	parts := []string{filepath.Clean(l.Root), stateContextsDir, "*", stateWorkspacesDir, "*"}
 	if l.Layout == StateLayoutCanonical {
 		parts = append(parts, "agent")
 	}
@@ -86,10 +88,9 @@ func CanonicalStateRoot(origin, contextName, workspaceID string) (string, error)
 	}
 	return stateRoot(
 		origin,
-		contextName,
 		workspaceID,
 		"canonical",
-		[]string{"agent", workspaceID, "workspaces", contextName, "contexts"},
+		[]string{"agent", workspaceID, stateWorkspacesDir, contextName, stateContextsDir},
 	)
 }
 
@@ -101,16 +102,13 @@ func AgentHomeStateRoot(origin, contextName, workspaceID string) (string, error)
 	}
 	return stateRoot(
 		origin,
-		contextName,
 		workspaceID,
 		"agent home",
-		[]string{workspaceID, "workspaces", contextName, "contexts"},
+		[]string{workspaceID, stateWorkspacesDir, contextName, stateContextsDir},
 	)
 }
 
-func stateRoot(
-	origin, contextName, workspaceID, originType string, expectedParts []string,
-) (string, error) {
+func stateRoot(origin, workspaceID, originType string, expectedParts []string) (string, error) {
 	if workspaceID == "" {
 		return "", fmt.Errorf("workspace ID is required to resolve daemon state root")
 	}
