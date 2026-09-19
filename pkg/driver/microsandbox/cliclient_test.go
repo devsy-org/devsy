@@ -77,6 +77,13 @@ func TestRunArgsMinimal(t *testing.T) {
 	}
 }
 
+func TestRunArgsPropagatesUser(t *testing.T) {
+	args := runArgs(wsName, sandboxSpec{Image: testImg, User: "vscode"})
+	if !hasFlagValue(args, "--user", "vscode") {
+		t.Fatalf("args = %v, want --user vscode", args)
+	}
+}
+
 func TestRunArgsCmdWithoutEntrypoint(t *testing.T) {
 	args := runArgs(wsName, sandboxSpec{Image: testImg, Cmd: []string{"python3", "worker.py"}})
 	if hasFlag(args, "--entrypoint") {
@@ -114,6 +121,32 @@ func TestMountArgsAndNamedVolumes(t *testing.T) {
 		!hasFlagValue(args, "--mount-dir", testBindSrc+":"+testBindDst) ||
 		!hasFlagValue(args, "--mount-dir", "/host/ro:/ro:ro") {
 		t.Errorf("mountArgs = %v", args)
+	}
+}
+
+func TestMountArgsWorkspacePolicyAndOwner(t *testing.T) {
+	args := mountArgs([]volumeMount{
+		{Target: testBindDst, Source: testBindSrc, Policy: mountPolicy{
+			StatVirtualization: statVirtStrict,
+			HostPermissions:    hostPermissionsMirror,
+			Owner:              &mountOwner{UID: 1000, GID: 1001},
+		}},
+	})
+	want := testBindSrc + ":" + testBindDst + ":stat-virt=strict,host-perms=mirror,uid=1000,gid=1001"
+	if !hasFlagValue(args, "--mount-dir", want) {
+		t.Fatalf("mountArgs = %v, want %q", args, want)
+	}
+}
+
+func TestParseMicrosandboxVersion(t *testing.T) {
+	for _, input := range []string{"microsandbox " + testVersion, "msb " + testVersion, "v" + testVersion, testVersion} {
+		version, err := parseMicrosandboxVersion(input)
+		if err != nil || version.String() != testVersion {
+			t.Errorf("parseMicrosandboxVersion(%q) = %v, %v", input, version, err)
+		}
+	}
+	if _, err := parseMicrosandboxVersion("not a version"); err == nil {
+		t.Error("malformed version should fail")
 	}
 }
 

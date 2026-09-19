@@ -398,6 +398,14 @@ func resolveAgentMicrosandboxConfig(
 	agentConfig.Microsandbox.BlockEgress = types.StrBool(
 		resolver.ResolveDefaultValue(string(agentConfig.Microsandbox.BlockEgress), options),
 	)
+	agentConfig.Microsandbox.WorkspaceHostPermissions = resolver.ResolveDefaultValue(
+		agentConfig.Microsandbox.WorkspaceHostPermissions,
+		options,
+	)
+	agentConfig.Microsandbox.WorkspaceStatVirtualization = resolver.ResolveDefaultValue(
+		agentConfig.Microsandbox.WorkspaceStatVirtualization,
+		options,
+	)
 	agentConfig.Microsandbox.Storage = resolver.ResolveDefaultValue(
 		agentConfig.Microsandbox.Storage,
 		options,

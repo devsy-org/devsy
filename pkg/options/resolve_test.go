@@ -807,14 +807,18 @@ func TestResolveAgentMicrosandboxConfig(t *testing.T) {
 	agentConfig.Microsandbox.MaxMemory = "${MICROSANDBOX_MAX_MEMORY}"
 	agentConfig.Microsandbox.BlockEgress = types.StrBool("${MICROSANDBOX_BLOCK_EGRESS}")
 	agentConfig.Microsandbox.Storage = "${MICROSANDBOX_STORAGE}"
+	agentConfig.Microsandbox.WorkspaceHostPermissions = "${MICROSANDBOX_WORKSPACE_HOST_PERMISSIONS}"
+	agentConfig.Microsandbox.WorkspaceStatVirtualization = "${MICROSANDBOX_WORKSPACE_STAT_VIRTUALIZATION}"
 
 	options := map[string]string{
-		"MICROSANDBOX_MEMORY":       "2048",
-		"MICROSANDBOX_CPUS":         "4",
-		"MICROSANDBOX_EPHEMERAL":    "true",
-		"MICROSANDBOX_MAX_MEMORY":   "8192",
-		"MICROSANDBOX_BLOCK_EGRESS": "true",
-		"MICROSANDBOX_STORAGE":      "32",
+		"MICROSANDBOX_MEMORY":                        "2048",
+		"MICROSANDBOX_CPUS":                          "4",
+		"MICROSANDBOX_EPHEMERAL":                     "true",
+		"MICROSANDBOX_MAX_MEMORY":                    "8192",
+		"MICROSANDBOX_BLOCK_EGRESS":                  "true",
+		"MICROSANDBOX_STORAGE":                       "32",
+		"MICROSANDBOX_WORKSPACE_HOST_PERMISSIONS":    "private",
+		"MICROSANDBOX_WORKSPACE_STAT_VIRTUALIZATION": "relaxed",
 	}
 
 	resolveAgentMicrosandboxConfig(agentConfig, options)
@@ -825,6 +829,8 @@ func TestResolveAgentMicrosandboxConfig(t *testing.T) {
 	assert.Equal(t, "8192", agentConfig.Microsandbox.MaxMemory)
 	assert.Equal(t, types.StrBool("true"), agentConfig.Microsandbox.BlockEgress)
 	assert.Equal(t, "32", agentConfig.Microsandbox.Storage)
+	assert.Equal(t, "private", agentConfig.Microsandbox.WorkspaceHostPermissions)
+	assert.Equal(t, "relaxed", agentConfig.Microsandbox.WorkspaceStatVirtualization)
 }
 
 func TestResolveAgentDownloadURL(t *testing.T) {

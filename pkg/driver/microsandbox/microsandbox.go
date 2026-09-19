@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/blang/semver/v4"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
@@ -38,11 +40,12 @@ type specDefaults struct {
 }
 
 type microsandboxDriver struct {
-	client        sandboxClient
-	idLabels      []string
-	defaults      specDefaults
-	workspaceInfo *provider.AgentWorkspaceInfo
-	docker        driver.ImageDriver
+	client               sandboxClient
+	idLabels             []string
+	defaults             specDefaults
+	workspaceInfo        *provider.AgentWorkspaceInfo
+	docker               driver.ImageDriver
+	workspaceMountPolicy workspaceMountPolicy
 }
 
 var (
@@ -52,11 +55,46 @@ var (
 	_ driver.Preflighter          = (*microsandboxDriver)(nil)
 )
 
+var minimumMicrosandboxVersion = semver.MustParse("0.7.2")
+
+var microsandboxVersionPattern = regexp.MustCompile(
+	`(?:^|[^0-9])v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)`,
+)
+
+func parseMicrosandboxVersion(output string) (semver.Version, error) {
+	matches := microsandboxVersionPattern.FindStringSubmatch(output)
+	if len(matches) != 2 {
+		return semver.Version{}, fmt.Errorf("unable to parse microsandbox version from %q", output)
+	}
+	version, err := semver.Parse(matches[1])
+	if err != nil {
+		return semver.Version{}, fmt.Errorf(
+			"unable to parse microsandbox version from %q: %w", output, err,
+		)
+	}
+	return version, nil
+}
+
 // Preflight checks the microsandbox runtime binary is installed. There is no
 // daemon to auto-start, so a missing binary is surfaced for the user.
 func (d *microsandboxDriver) Preflight(ctx context.Context, _ driver.PreflightOptions) error {
 	if err := d.client.EnsureInstalled(ctx); err != nil {
 		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: err}
+	}
+	rawVersion, err := d.client.Version(ctx)
+	if err != nil {
+		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: err}
+	}
+	version, err := parseMicrosandboxVersion(rawVersion)
+	if err != nil {
+		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: err}
+	}
+	if version.LT(minimumMicrosandboxVersion) {
+		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: fmt.Errorf(
+			"microsandbox %s is too old for Devsy workspace ownership synchronization; "+
+				"v%s or newer is required. Update with `msb self update`",
+			version, minimumMicrosandboxVersion,
+		)}
 	}
 	return nil
 }
@@ -84,18 +122,29 @@ func NewMicrosandboxDriver(
 		blockEgress: cfg.BlockEgress == pkgconfig.BoolTrue,
 		rootDiskGB:  parseUint32(cfg.Storage),
 	}
+	workspacePolicy, err := parseWorkspaceMountPolicy(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	log.Debugf(
 		"using microsandbox driver: memory=%dMiB cpus=%d ephemeral=%t idleTimeout=%s",
 		defaults.memory, defaults.cpus, defaults.ephemeral, defaults.idleTimeout,
 	)
 	d := newDriver(client, workspaceInfo.CLIOptions.IDLabels, defaults)
+	d.workspaceMountPolicy = workspacePolicy
 	d.workspaceInfo = workspaceInfo
 	return d, nil
 }
 
 func newDriver(client sandboxClient, idLabels []string, defaults specDefaults) *microsandboxDriver {
-	return &microsandboxDriver{client: client, idLabels: idLabels, defaults: defaults}
+	return &microsandboxDriver{
+		client: client, idLabels: idLabels, defaults: defaults,
+		workspaceMountPolicy: workspaceMountPolicy{
+			StatVirtualization: statVirtStrict,
+			HostPermissions:    hostPermissionsMirror,
+		},
+	}
 }
 
 func (d *microsandboxDriver) RunDevContainer(
@@ -254,6 +303,9 @@ func (d *microsandboxDriver) UpdateContainerUserUID(
 	_ *config.DevContainerConfig,
 	_ io.Writer,
 ) error {
+	// UpdateContainerUserUID is intentionally a no-op for MicroSandbox.
+	// Docker rewrites container identity to match the host for bind mounts;
+	// MicroSandbox virtualizes ownership on virtiofs mounts instead.
 	return nil
 }
 
@@ -381,6 +433,7 @@ func (d *microsandboxDriver) buildSpec(
 	}
 	return sandboxSpec{
 		Image:       options.Image,
+		User:        options.User,
 		Entrypoint:  options.Entrypoint,
 		Cmd:         options.Cmd,
 		Memory:      memory,
@@ -389,49 +442,12 @@ func (d *microsandboxDriver) buildSpec(
 		Labels:      labels,
 		Ephemeral:   d.defaults.ephemeral,
 		IdleTimeout: d.defaults.idleTimeout,
-		Mounts:      volumeMounts(options),
+		Mounts:      d.volumeMounts(options),
 		MaxMemory:   d.defaults.maxMemory,
 		MaxCPUs:     d.defaults.maxCPUs,
 		BlockEgress: d.defaults.blockEgress,
 		RootDiskGB:  rootDiskGB,
 	}
-}
-
-func volumeMounts(options *driver.RunOptions) []volumeMount {
-	var out []volumeMount
-	if b := bindMount(options.WorkspaceMount); b != nil {
-		out = append(out, *b)
-	}
-	for _, m := range options.Mounts {
-		if vm, ok := toVolumeMount(m); ok {
-			out = append(out, vm)
-		}
-	}
-	return out
-}
-
-func toVolumeMount(m *config.Mount) (volumeMount, bool) {
-	if m == nil || m.Target == "" {
-		return volumeMount{}, false
-	}
-	switch m.Type {
-	case driver.MountTypeBind:
-		if b := bindMount(m); b != nil {
-			return *b, true
-		}
-	case driver.MountTypeVolume:
-		return volumeMount{Target: m.Target, Volume: m.Source}, true
-	case driver.MountTypeTmpfs:
-		return volumeMount{Target: m.Target, Tmpfs: true}, true
-	}
-	return volumeMount{}, false
-}
-
-func bindMount(m *config.Mount) *volumeMount {
-	if m == nil || m.Source == "" || m.Target == "" {
-		return nil
-	}
-	return &volumeMount{Target: m.Target, Source: m.Source, ReadOnly: m.IsReadOnly()}
 }
 
 func warnUnsupportedOptions(options *driver.RunOptions) {
