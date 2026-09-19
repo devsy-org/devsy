@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const stateTestRoot = "/state"
+
 func TestStateLocationWorkspaceConfigPattern(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -17,12 +19,20 @@ func TestStateLocationWorkspaceConfigPattern(t *testing.T) {
 	}{
 		{
 			name:     "canonical",
-			location: StateLocation{Root: "/state", Layout: StateLayoutCanonical},
-			want:     filepath.Join("/state", "contexts", "*", "workspaces", "*", "agent", "workspace.json"),
+			location: StateLocation{Root: stateTestRoot, Layout: StateLayoutCanonical},
+			want: filepath.Join(
+				"/state",
+				"contexts",
+				"*",
+				"workspaces",
+				"*",
+				"agent",
+				"workspace.json",
+			),
 		},
 		{
 			name:     "agent home",
-			location: StateLocation{Root: "/state", Layout: StateLayoutAgentHome},
+			location: StateLocation{Root: stateTestRoot, Layout: StateLayoutAgentHome},
 			want:     filepath.Join("/state", "contexts", "*", "workspaces", "*", "workspace.json"),
 		},
 		{
@@ -32,7 +42,7 @@ func TestStateLocationWorkspaceConfigPattern(t *testing.T) {
 		},
 		{
 			name:     "unknown layout",
-			location: StateLocation{Root: "/state", Layout: "other"},
+			location: StateLocation{Root: stateTestRoot, Layout: "other"},
 			wantErr:  "unsupported",
 		},
 	}

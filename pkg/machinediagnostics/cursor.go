@@ -13,8 +13,11 @@ type cursor struct {
 }
 
 func EncodeCursor(sessionID string, sequence uint64) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("v1:%s:%d", sessionID, sequence)))
+	return base64.RawURLEncoding.EncodeToString(
+		[]byte(fmt.Sprintf("v1:%s:%d", sessionID, sequence)),
+	)
 }
+
 func decodeCursor(value string) (cursor, error) {
 	if value == "" {
 		return cursor{}, nil

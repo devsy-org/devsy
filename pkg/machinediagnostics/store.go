@@ -54,7 +54,16 @@ func NewRecorder(opts Options) (*Store, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	s := &Store{dir: filepath.Clean(opts.Dir), eventsDir: filepath.Join(opts.Dir, "events"), reader: opts.Reader, maxBytes: opts.MaxBytes, maxSegmentBytes: opts.MaxSegmentBytes, now: opts.Now, errorReporter: opts.ErrorReporter, sessionID: newSessionID()}
+	s := &Store{
+		dir:             filepath.Clean(opts.Dir),
+		eventsDir:       filepath.Join(opts.Dir, "events"),
+		reader:          opts.Reader,
+		maxBytes:        opts.MaxBytes,
+		maxSegmentBytes: opts.MaxSegmentBytes,
+		now:             opts.Now,
+		errorReporter:   opts.ErrorReporter,
+		sessionID:       newSessionID(),
+	}
 	if err := s.ensureDir(s.dir); err != nil {
 		return nil, err
 	}
@@ -76,7 +85,10 @@ func (s *Store) Record(event Event) {
 		s.reportError(err)
 	}
 }
-func (s *Store) record(event Event) error {
+
+func (s *Store) record(
+	event Event,
+) error { //nolint:funcorder // kept next to the public Record wrapper.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sequence++
@@ -96,11 +108,15 @@ func (s *Store) record(event Event) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o640)
+	f, err := os.OpenFile(
+		path,
+		os.O_APPEND|os.O_WRONLY|os.O_CREATE,
+		0o640,
+	) //nolint:gosec // path is derived from the store directory.
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := s.applyOwner(path); err != nil {
 		return err
 	}
@@ -109,12 +125,16 @@ func (s *Store) record(event Event) error {
 	}
 	return s.prune()
 }
+
 func (s *Store) Update(status Status) {
 	if err := s.update(status); err != nil {
 		s.reportError(err)
 	}
 }
-func (s *Store) update(status Status) error {
+
+func (s *Store) update(
+	status Status,
+) error { //nolint:funcorder // kept next to the public Update wrapper.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	status.SchemaVersion = SchemaVersion
@@ -145,17 +165,22 @@ func (s *Store) reportError(err error) {
 	// Operator callbacks must never run while holding the recorder lock.
 	s.errorReporter(err)
 }
+
 func (s *Store) ensureDir(path string) error {
 	if err := os.MkdirAll(path, 0o750); err != nil {
 		return err
 	}
 	return s.applyOwner(path)
 }
+
 func (s *Store) applyOwner(path string) error {
 	if s.reader.UID < 0 || s.reader.GID < 0 {
 		return nil
 	}
-	if err := os.Chmod(path, map[bool]os.FileMode{true: 0o750, false: 0o640}[isDir(path)]); err != nil {
+	if err := os.Chmod(
+		path,
+		map[bool]os.FileMode{true: 0o750, false: 0o640}[isDir(path)],
+	); err != nil {
 		return err
 	}
 	if err := os.Chown(path, s.reader.UID, s.reader.GID); err != nil {
@@ -170,7 +195,7 @@ func (s *Store) writeAtomic(path string, b []byte) error {
 		return err
 	}
 	tmp := f.Name()
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	if _, err = f.Write(b); err == nil {
 		err = f.Sync()
 	}
@@ -188,6 +213,7 @@ func (s *Store) writeAtomic(path string, b []byte) error {
 	}
 	return os.Rename(tmp, path)
 }
+
 func (s *Store) activeSegment(next int) (string, error) {
 	entries, err := s.segments()
 	if err != nil {
@@ -209,6 +235,7 @@ func (s *Store) activeSegment(next int) (string, error) {
 	}
 	return filepath.Join(s.eventsDir, fmt.Sprintf("%s-%06d.ndjson", s.sessionID, index)), nil
 }
+
 func (s *Store) segments() ([]string, error) {
 	entries, err := os.ReadDir(s.eventsDir)
 	if err != nil {
@@ -217,14 +244,16 @@ func (s *Store) segments() ([]string, error) {
 	var paths []string
 	prefix := s.sessionID + "-"
 	for _, e := range entries {
-		if e.Type().IsRegular() && strings.HasPrefix(e.Name(), prefix) && strings.HasSuffix(e.Name(), ".ndjson") {
+		if e.Type().IsRegular() && strings.HasPrefix(e.Name(), prefix) &&
+			strings.HasSuffix(e.Name(), ".ndjson") {
 			paths = append(paths, filepath.Join(s.eventsDir, e.Name()))
 		}
 	}
 	sort.Strings(paths)
 	return paths, nil
 }
-func (s *Store) prune() error {
+
+func (s *Store) prune() error { //nolint:cyclop // retention ordering is intentionally handled in one transaction.
 	entries, err := os.ReadDir(s.eventsDir)
 	if err != nil {
 		return err
@@ -263,14 +292,26 @@ func (s *Store) prune() error {
 	}
 	return nil
 }
+
 func newSessionID() string {
 	b := make([]byte, 10)
 	_, _ = rand.Read(b)
 	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b))
 }
 
-func Read(dir, after string, limit int, interval time.Duration, now time.Time) ReadResponse {
-	r := ReadResponse{SchemaVersion: SchemaVersion, Availability: AvailabilityAvailable, ObservedAt: now.UTC(), Freshness: FreshnessUnknown, Cursor: CursorInfo{State: CursorNone}}
+func Read(
+	dir, after string,
+	limit int,
+	interval time.Duration,
+	now time.Time,
+) ReadResponse { //nolint:cyclop,revive // public read API preserves cursor and freshness inputs.
+	r := ReadResponse{
+		SchemaVersion: SchemaVersion,
+		Availability:  AvailabilityAvailable,
+		ObservedAt:    now.UTC(),
+		Freshness:     FreshnessUnknown,
+		Cursor:        CursorInfo{State: CursorNone},
+	}
 	if limit <= 0 {
 		limit = DefaultReadEvents
 	}
@@ -279,14 +320,23 @@ func Read(dir, after string, limit int, interval time.Duration, now time.Time) R
 	}
 	status, err := readStatus(filepath.Join(dir, "status.json"))
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		switch {
+		case errors.Is(err, os.ErrNotExist):
 			r.Availability = AvailabilityNotInitialized
-		} else if errors.Is(err, os.ErrPermission) {
+		case errors.Is(err, os.ErrPermission):
 			r.Availability = AvailabilityPermissionDenied
-			r.Error = &DiagnosticError{Code: "diagnostics_permission_denied", Message: "Access to the remote diagnostics snapshot was denied.", Timestamp: now.UTC()}
-		} else {
+			r.Error = &DiagnosticError{
+				Code:      diagnosticsPermissionDenied,
+				Message:   "Access to the remote diagnostics snapshot was denied.",
+				Timestamp: now.UTC(),
+			}
+		default:
 			r.Availability = AvailabilityCorrupt
-			r.Error = &DiagnosticError{Code: "diagnostics_corrupt", Message: "Remote diagnostics could not be read.", Timestamp: now.UTC()}
+			r.Error = &DiagnosticError{
+				Code:      diagnosticsCorrupt,
+				Message:   "Remote diagnostics could not be read.",
+				Timestamp: now.UTC(),
+			}
 		}
 		return r
 	}
@@ -296,10 +346,18 @@ func Read(dir, after string, limit int, interval time.Duration, now time.Time) R
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			r.Availability = AvailabilityPermissionDenied
-			r.Error = &DiagnosticError{Code: "diagnostics_permission_denied", Message: "Access to remote diagnostic events was denied.", Timestamp: now.UTC()}
+			r.Error = &DiagnosticError{
+				Code:      diagnosticsPermissionDenied,
+				Message:   "Access to remote diagnostic events was denied.",
+				Timestamp: now.UTC(),
+			}
 		} else {
 			r.Availability = AvailabilityCorrupt
-			r.Error = &DiagnosticError{Code: "diagnostics_corrupt", Message: "Remote diagnostic events could not be read.", Timestamp: now.UTC()}
+			r.Error = &DiagnosticError{
+				Code:      diagnosticsCorrupt,
+				Message:   "Remote diagnostic events could not be read.",
+				Timestamp: now.UTC(),
+			}
 		}
 		return r
 	}
@@ -339,6 +397,7 @@ func Read(dir, after string, limit int, interval time.Duration, now time.Time) R
 	}
 	return r
 }
+
 func readStatus(path string) (*Status, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -353,7 +412,10 @@ func readStatus(path string) (*Status, error) {
 	}
 	return &s, nil
 }
-func readEvents(dir string) ([]Event, error) {
+
+func readEvents(
+	dir string,
+) ([]Event, error) { //nolint:cyclop // malformed-record handling is deliberately explicit.
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -367,7 +429,7 @@ func readEvents(dir string) ([]Event, error) {
 	sort.Strings(paths)
 	var events []Event
 	for _, p := range paths {
-		content, er := os.ReadFile(p)
+		content, er := os.ReadFile(p) //nolint:gosec // paths come from the diagnostics directory.
 		if er != nil {
 			if errors.Is(er, os.ErrNotExist) {
 				continue
@@ -394,14 +456,13 @@ func readEvents(dir string) ([]Event, error) {
 	sort.Slice(events, func(i, j int) bool { return events[i].Sequence < events[j].Sequence })
 	return events, nil
 }
+
 func freshness(status *Status, interval time.Duration, now time.Time) Freshness {
 	if status == nil || status.UpdatedAt.IsZero() {
 		return FreshnessUnknown
 	}
 	threshold := 3 * interval
-	if threshold < 90*time.Second {
-		threshold = 90 * time.Second
-	}
+	threshold = max(threshold, 90*time.Second)
 	if now.Sub(status.UpdatedAt) > threshold {
 		return FreshnessStale
 	}

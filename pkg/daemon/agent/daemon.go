@@ -169,7 +169,9 @@ type InstallOptions struct {
 	DiagnosticsReader machinediagnostics.ReaderIdentity
 }
 
-func InstallDaemon(opts InstallOptions) error {
+func InstallDaemon(
+	opts InstallOptions,
+) error { //nolint:cyclop // installation steps must fail in order with precise cleanup.
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		return fmt.Errorf("unsupported daemon os")
 	}
@@ -227,14 +229,16 @@ func rejectConflictingStateRoot(location StateLocation) error {
 	if existingLocation == location {
 		return nil
 	}
-	return fmt.Errorf("Devsy machine daemon is already configured for a different state root; multiple machine state roots on one daemon are not supported")
+	return fmt.Errorf(
+		"Devsy machine daemon is already configured for a different state root; multiple machine state roots on one daemon are not supported",
+	)
 }
 
 // daemonUnitStateLocation reads the generated daemon state flags from the
 // ExecStart command. It compares parsed arguments, not source substrings, so
 // roots such as /state/dev and /state/development remain distinct.
 func daemonUnitStateLocation(unit string) (StateLocation, bool, error) {
-	for _, line := range strings.Split(unit, "\n") {
+	for line := range strings.SplitSeq(unit, "\n") {
 		commandLine, found := strings.CutPrefix(line, "ExecStart=")
 		if !found {
 			continue

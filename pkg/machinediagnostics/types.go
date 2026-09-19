@@ -5,12 +5,14 @@ package machinediagnostics
 import "time"
 
 const (
-	SchemaVersion        = 1
-	MaxRemoteEventBytes  = 5 * 1024 * 1024
-	MaxSegmentBytes      = 512 * 1024
-	MaxEventMessageBytes = 4 * 1024
-	MaxReadEvents        = 1000
-	DefaultReadEvents    = 100
+	SchemaVersion               = 1
+	MaxRemoteEventBytes         = 5 * 1024 * 1024
+	MaxSegmentBytes             = 512 * 1024
+	MaxEventMessageBytes        = 4 * 1024
+	MaxReadEvents               = 1000
+	DefaultReadEvents           = 100
+	diagnosticsPermissionDenied = "diagnostics_permission_denied"
+	diagnosticsCorrupt          = "diagnostics_corrupt"
 )
 
 type Level string

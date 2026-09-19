@@ -10,32 +10,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testStateRoot = "/state"
+
 func TestBuildDaemonArgs(t *testing.T) {
 	args := buildDaemonArgs("/usr/bin/devsy", InstallOptions{
-		StateLocation:  StateLocation{Root: "/state", Layout: StateLayoutCanonical},
+		StateLocation:  StateLocation{Root: testStateRoot, Layout: StateLayoutCanonical},
 		Interval:       "30s",
 		ShutdownAction: config.ShutdownActionStopContainer,
 	})
 
 	assert.Equal(t, []string{
 		"/usr/bin/devsy", "internal", "agent", "daemon",
-		"--state-root", "/state", "--state-layout", "canonical",
+		"--state-root", testStateRoot, "--state-layout", "canonical",
 		"--diagnostics-reader-uid", "0", "--diagnostics-reader-gid", "0",
 		"--interval", "30s", "--shutdown-action", config.ShutdownActionStopContainer,
 	}, args)
 }
 
 func TestDaemonUnitStateLocationMatchesExactArgumentValues(t *testing.T) {
-	unit := systemdUnitContents("/usr/bin/devsy internal agent daemon --state-root /state/development --state-layout canonical")
+	unit := systemdUnitContents(
+		"/usr/bin/devsy internal agent daemon --state-root /state/development --state-layout canonical",
+	)
 	location, configured, err := daemonUnitStateLocation(unit)
 	require.NoError(t, err)
 	assert.True(t, configured)
-	assert.Equal(t, StateLocation{Root: "/state/development", Layout: StateLayoutCanonical}, location)
+	assert.Equal(
+		t,
+		StateLocation{Root: "/state/development", Layout: StateLayoutCanonical},
+		location,
+	)
 	assert.NotEqual(t, StateLocation{Root: "/state/dev", Layout: StateLayoutCanonical}, location)
 }
 
 func TestDaemonUnitStateLocationSupportsQuotedRoot(t *testing.T) {
-	unit := systemdUnitContents(`/usr/bin/devsy internal agent daemon --state-root "/state/dev sy" --state-layout agent-home`)
+	unit := systemdUnitContents(
+		`/usr/bin/devsy internal agent daemon --state-root "/state/dev sy" --state-layout agent-home`,
+	)
 	location, configured, err := daemonUnitStateLocation(unit)
 	require.NoError(t, err)
 	assert.True(t, configured)

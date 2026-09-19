@@ -12,6 +12,7 @@ type Sanitizer struct{ redactor *secrets.Redactor }
 func NewSanitizer(env []string) *Sanitizer {
 	return &Sanitizer{redactor: secrets.NewEnvironmentRedactor(env)}
 }
+
 func (s *Sanitizer) Message(value string) string {
 	value = s.redactor.Redact(value)
 	value = strings.Map(func(r rune) rune {

@@ -18,7 +18,7 @@ func AcquireRuntimeLock(path string) (*RuntimeLock, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("daemon runtime lock path must be absolute")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, fmt.Errorf("create daemon runtime directory: %w", err)
 	}
 	lock := flock.New(path)

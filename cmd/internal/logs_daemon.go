@@ -92,7 +92,14 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("decode remote daemon diagnostics: %w", err)
 	}
 	for _, event := range response.Events {
-		_, _ = fmt.Fprintf(os.Stdout, "%s %-5s %-35s %s\n", event.Timestamp.Format(time.RFC3339), event.Level, event.Type, event.Message)
+		_, _ = fmt.Fprintf(
+			os.Stdout,
+			"%s %-5s %-35s %s\n",
+			event.Timestamp.Format(time.RFC3339),
+			event.Level,
+			event.Type,
+			event.Message,
+		)
 	}
 	if response.Availability != machinediagnostics.AvailabilityAvailable {
 		_, _ = fmt.Fprintf(os.Stdout, "Daemon diagnostics: %s\n", response.Availability)

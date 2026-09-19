@@ -18,11 +18,14 @@ type Locator struct {
 	StartedAt      time.Time `json:"startedAt"`
 }
 
-func WriteLocator(path string, locator Locator) error {
+func WriteLocator(
+	path string,
+	locator Locator,
+) error { //nolint:cyclop // atomic locator writes must validate each step.
 	if !filepath.IsAbs(path) || !filepath.IsAbs(locator.DiagnosticsDir) {
 		return fmt.Errorf("locator paths must be absolute")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	locator.SchemaVersion = SchemaVersion
@@ -35,7 +38,7 @@ func WriteLocator(path string, locator Locator) error {
 		return err
 	}
 	tmp := f.Name()
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	if _, err = f.Write(b); err == nil {
 		err = f.Chmod(0o644)
 	}
@@ -52,7 +55,7 @@ func WriteLocator(path string, locator Locator) error {
 }
 
 func ReadLocator(path string) (Locator, error) {
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // path is the configured diagnostics locator.
 	if err != nil {
 		return Locator{}, err
 	}
@@ -68,16 +71,35 @@ func ReadLocator(path string) (Locator, error) {
 
 // ReadFromLocator reads the active daemon store without making callers infer
 // the service user's home directory or parse a systemd unit.
-func ReadFromLocator(path, after string, limit int, interval time.Duration, now time.Time) ReadResponse {
+func ReadFromLocator(
+	path, after string,
+	limit int,
+	interval time.Duration,
+	now time.Time,
+) ReadResponse { //nolint:revive // the reader API keeps cursor parameters together.
 	locator, err := ReadLocator(path)
 	if err != nil {
-		response := ReadResponse{SchemaVersion: SchemaVersion, Availability: AvailabilityNotInitialized, ObservedAt: now.UTC(), Freshness: FreshnessUnknown, Cursor: CursorInfo{State: CursorNone}}
+		response := ReadResponse{
+			SchemaVersion: SchemaVersion,
+			Availability:  AvailabilityNotInitialized,
+			ObservedAt:    now.UTC(),
+			Freshness:     FreshnessUnknown,
+			Cursor:        CursorInfo{State: CursorNone},
+		}
 		if os.IsPermission(err) {
 			response.Availability = AvailabilityPermissionDenied
-			response.Error = &DiagnosticError{Code: "diagnostics_permission_denied", Message: "Access to the remote diagnostics locator was denied.", Timestamp: now.UTC()}
+			response.Error = &DiagnosticError{
+				Code:      diagnosticsPermissionDenied,
+				Message:   "Access to the remote diagnostics locator was denied.",
+				Timestamp: now.UTC(),
+			}
 		} else if !os.IsNotExist(err) {
 			response.Availability = AvailabilityCorrupt
-			response.Error = &DiagnosticError{Code: "diagnostics_corrupt", Message: "Remote diagnostics locator could not be read.", Timestamp: now.UTC()}
+			response.Error = &DiagnosticError{
+				Code:      diagnosticsCorrupt,
+				Message:   "Remote diagnostics locator could not be read.",
+				Timestamp: now.UTC(),
+			}
 		}
 		return response
 	}

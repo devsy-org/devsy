@@ -12,12 +12,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const currentSessionID = "current"
+
 func TestStoreRecordsAndReadsEvents(t *testing.T) {
 	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
-	store, err := NewRecorder(Options{Dir: filepath.Join(t.TempDir(), "diagnostics"), Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()}, PatrolInterval: time.Minute, Now: func() time.Time { return now }})
+	store, err := NewRecorder(
+		Options{
+			Dir:            filepath.Join(t.TempDir(), "diagnostics"),
+			Reader:         ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()},
+			PatrolInterval: time.Minute,
+			Now:            func() time.Time { return now },
+		},
+	)
 	require.NoError(t, err)
 	store.Record(Event{Type: EventDaemonStarted, Level: LevelInfo, Message: "token=secret-token"})
-	store.Update(Status{StartedAt: now, State: DaemonRunning, Health: DaemonHealthy, PatrolInterval: "1m"})
+	store.Update(
+		Status{StartedAt: now, State: DaemonRunning, Health: DaemonHealthy, PatrolInterval: "1m"},
+	)
 
 	response := Read(store.dir, "", 10, time.Minute, now.Add(time.Second))
 	assert.Equal(t, AvailabilityAvailable, response.Availability)
@@ -42,12 +53,29 @@ func TestReadLocatorReportsPermissionDenied(t *testing.T) {
 
 func TestStoreRetentionGap(t *testing.T) {
 	now := time.Now().UTC()
-	store, err := NewRecorder(Options{Dir: filepath.Join(t.TempDir(), "diagnostics"), Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()}, PatrolInterval: time.Minute, MaxBytes: 100, MaxSegmentBytes: 60, Now: func() time.Time { return now }})
+	store, err := NewRecorder(
+		Options{
+			Dir:             filepath.Join(t.TempDir(), "diagnostics"),
+			Reader:          ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()},
+			PatrolInterval:  time.Minute,
+			MaxBytes:        100,
+			MaxSegmentBytes: 60,
+			Now:             func() time.Time { return now },
+		},
+	)
 	require.NoError(t, err)
 	for range 10 {
-		store.Record(Event{Type: EventDaemonStarted, Level: LevelInfo, Message: "a diagnostic event that requires retention rotation"})
+		store.Record(
+			Event{
+				Type:    EventDaemonStarted,
+				Level:   LevelInfo,
+				Message: "a diagnostic event that requires retention rotation",
+			},
+		)
 	}
-	store.Update(Status{StartedAt: now, State: DaemonRunning, Health: DaemonHealthy, PatrolInterval: "1m"})
+	store.Update(
+		Status{StartedAt: now, State: DaemonRunning, Health: DaemonHealthy, PatrolInterval: "1m"},
+	)
 	response := Read(store.dir, EncodeCursor(store.SessionID(), 0), 10, time.Minute, now)
 	assert.Equal(t, CursorGap, response.Cursor.State)
 	assert.NotEmpty(t, response.Events)
@@ -71,7 +99,11 @@ func TestReadFreshness(t *testing.T) {
 
 func TestLocatorRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "run", "agent-daemon.json")
-	want := Locator{SessionID: "session", DiagnosticsDir: "/tmp/diagnostics", StartedAt: time.Now().UTC()}
+	want := Locator{
+		SessionID:      "session",
+		DiagnosticsDir: "/tmp/diagnostics",
+		StartedAt:      time.Now().UTC(),
+	}
 	require.NoError(t, WriteLocator(path, want))
 	got, err := ReadLocator(path)
 	require.NoError(t, err)
@@ -96,17 +128,17 @@ func TestValidateCursor(t *testing.T) {
 
 func TestStatusAtomicityForConcurrentReaders(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "diagnostics")
-	store, err := NewRecorder(Options{Dir: dir, Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()}})
+	store, err := NewRecorder(
+		Options{Dir: dir, Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()}},
+	)
 	require.NoError(t, err)
 	var writers sync.WaitGroup
-	writers.Add(1)
-	go func() {
-		defer writers.Done()
-		for i := 0; i < 50; i++ {
+	writers.Go(func() {
+		for range 50 {
 			store.Update(Status{State: DaemonRunning, Health: DaemonHealthy})
 		}
-	}()
-	for i := 0; i < 50; i++ {
+	})
+	for range 50 {
 		_, err := readStatus(filepath.Join(dir, "status.json"))
 		if err != nil && !os.IsNotExist(err) {
 			require.NoError(t, err)
@@ -117,14 +149,20 @@ func TestStatusAtomicityForConcurrentReaders(t *testing.T) {
 
 func TestReaderIgnoresPartialFinalEvent(t *testing.T) {
 	now := time.Now().UTC()
-	store, err := NewRecorder(Options{Dir: filepath.Join(t.TempDir(), "diagnostics"), Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()}, Now: func() time.Time { return now }})
+	store, err := NewRecorder(
+		Options{
+			Dir:    filepath.Join(t.TempDir(), "diagnostics"),
+			Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()},
+			Now:    func() time.Time { return now },
+		},
+	)
 	require.NoError(t, err)
 	store.Record(Event{Type: EventDaemonStarted, Level: LevelInfo, Message: "started"})
 	store.Update(Status{StartedAt: now, State: DaemonRunning, Health: DaemonHealthy})
 	segments, err := store.segments()
 	require.NoError(t, err)
 	require.Len(t, segments, 1)
-	f, err := os.OpenFile(segments[0], os.O_APPEND|os.O_WRONLY, 0o640)
+	f, err := os.OpenFile(segments[0], os.O_APPEND|os.O_WRONLY, 0o600)
 	require.NoError(t, err)
 	_, err = f.WriteString(`{"schemaVersion":1`)
 	require.NoError(t, err)
@@ -135,13 +173,19 @@ func TestReaderIgnoresPartialFinalEvent(t *testing.T) {
 
 func TestReaderReportsCompleteMalformedEventAsCorrupt(t *testing.T) {
 	now := time.Now().UTC()
-	store, err := NewRecorder(Options{Dir: filepath.Join(t.TempDir(), "diagnostics"), Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()}, Now: func() time.Time { return now }})
+	store, err := NewRecorder(
+		Options{
+			Dir:    filepath.Join(t.TempDir(), "diagnostics"),
+			Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()},
+			Now:    func() time.Time { return now },
+		},
+	)
 	require.NoError(t, err)
 	store.Record(Event{Type: EventDaemonStarted, Level: LevelInfo, Message: "started"})
 	store.Update(Status{StartedAt: now, State: DaemonRunning, Health: DaemonHealthy})
 	segments, err := store.segments()
 	require.NoError(t, err)
-	f, err := os.OpenFile(segments[0], os.O_APPEND|os.O_WRONLY, 0o640)
+	f, err := os.OpenFile(segments[0], os.O_APPEND|os.O_WRONLY, 0o600)
 	require.NoError(t, err)
 	_, err = f.WriteString("{not-json}\n")
 	require.NoError(t, err)
@@ -155,20 +199,52 @@ func TestReaderReportsCompleteMalformedEventAsCorrupt(t *testing.T) {
 
 func TestReadCalculatesRetentionGapFromCurrentSessionOnly(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "diagnostics")
-	_, err := NewRecorder(Options{Dir: dir, Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()}})
+	_, err := NewRecorder(
+		Options{Dir: dir, Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()}},
+	)
 	require.NoError(t, err)
-	status := Status{SchemaVersion: SchemaVersion, SessionID: "current", UpdatedAt: time.Now().UTC()}
+	status := Status{
+		SchemaVersion: SchemaVersion,
+		SessionID:     currentSessionID,
+		UpdatedAt:     time.Now().UTC(),
+	}
 	statusBytes, err := json.Marshal(status)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "status.json"), statusBytes, 0o640))
-	oldEvent, err := json.Marshal(Event{SchemaVersion: SchemaVersion, SessionID: "older", Sequence: 1, Timestamp: time.Now().UTC(), Message: "old"})
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "status.json"), statusBytes, 0o600))
+	oldEvent, err := json.Marshal(
+		Event{
+			SchemaVersion: SchemaVersion,
+			SessionID:     "older",
+			Sequence:      1,
+			Timestamp:     time.Now().UTC(),
+			Message:       "old",
+		},
+	)
 	require.NoError(t, err)
-	currentEvent, err := json.Marshal(Event{SchemaVersion: SchemaVersion, SessionID: "current", Sequence: 5, Timestamp: time.Now().UTC(), Message: "current"})
+	currentEvent, err := json.Marshal(
+		Event{
+			SchemaVersion: SchemaVersion,
+			SessionID:     currentSessionID,
+			Sequence:      5,
+			Timestamp:     time.Now().UTC(),
+			Message:       currentSessionID,
+		},
+	)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "events", "a-old.ndjson"), append(oldEvent, '\n'), 0o640))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "events", "z-current.ndjson"), append(currentEvent, '\n'), 0o640))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(dir, "events", "a-old.ndjson"), append(oldEvent, '\n'), 0o600),
+	)
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(dir, "events", "z-current.ndjson"),
+			append(currentEvent, '\n'),
+			0o600,
+		),
+	)
 
-	response := Read(dir, EncodeCursor("current", 0), 10, time.Minute, time.Now())
+	response := Read(dir, EncodeCursor(currentSessionID, 0), 10, time.Minute, time.Now())
 	assert.Equal(t, CursorGap, response.Cursor.State)
 	require.Len(t, response.Events, 1)
 	assert.Equal(t, uint64(5), response.Events[0].Sequence)
@@ -176,9 +252,14 @@ func TestReadCalculatesRetentionGapFromCurrentSessionOnly(t *testing.T) {
 
 func TestReadRejectsStatusWithoutCurrentSchemaAndSession(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "diagnostics")
-	_, err := NewRecorder(Options{Dir: dir, Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()}})
+	_, err := NewRecorder(
+		Options{Dir: dir, Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()}},
+	)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "status.json"), []byte(`{"schemaVersion":0}`), 0o640))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(dir, "status.json"), []byte(`{"schemaVersion":0}`), 0o640),
+	)
 	response := Read(dir, "", 10, time.Minute, time.Now())
 	assert.Equal(t, AvailabilityCorrupt, response.Availability)
 }
@@ -187,8 +268,13 @@ func TestStoreRateLimitsWriteErrorReports(t *testing.T) {
 	now := time.Now().UTC()
 	var reports []error
 	store, err := NewRecorder(Options{
-		Dir: filepath.Join(t.TempDir(), "diagnostics"), Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()},
-		Now: func() time.Time { return now }, ErrorReporter: func(err error) { reports = append(reports, err) },
+		Dir: filepath.Join(
+			t.TempDir(),
+			"diagnostics",
+		),
+		Reader:        ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()},
+		Now:           func() time.Time { return now },
+		ErrorReporter: func(err error) { reports = append(reports, err) },
 	})
 	require.NoError(t, err)
 	require.NoError(t, os.RemoveAll(store.eventsDir))

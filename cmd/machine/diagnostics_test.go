@@ -31,6 +31,7 @@ func (f *fakeMachineClient) AgentPath() string { return "/usr/local/bin/devsy" }
 func (f *fakeMachineClient) Status(context.Context, client.StatusOptions) (client.Status, error) {
 	return f.status, f.statusErr
 }
+
 func (f *fakeMachineClient) Command(_ context.Context, options client.CommandOptions) error {
 	f.commandCalls++
 	f.command = options.Command
@@ -65,8 +66,19 @@ func TestFetchDiagnosticsReadsRemoteResponse(t *testing.T) {
 		Availability:  machinediagnostics.AvailabilityAvailable,
 		Freshness:     machinediagnostics.FreshnessFresh,
 		Status:        &machinediagnostics.Status{Health: machinediagnostics.DaemonHealthy},
-		Events:        []machinediagnostics.Event{{SessionID: "session", Sequence: 1, Timestamp: now, Type: machinediagnostics.EventDaemonReady, Message: "ready"}},
-		Cursor:        machinediagnostics.CursorInfo{State: machinediagnostics.CursorOK, Next: machinediagnostics.EncodeCursor("session", 1)},
+		Events: []machinediagnostics.Event{
+			{
+				SessionID: "session",
+				Sequence:  1,
+				Timestamp: now,
+				Type:      machinediagnostics.EventDaemonReady,
+				Message:   "ready",
+			},
+		},
+		Cursor: machinediagnostics.CursorInfo{
+			State: machinediagnostics.CursorOK,
+			Next:  machinediagnostics.EncodeCursor("session", 1),
+		},
 	})
 	require.NoError(t, err)
 	machine := &fakeMachineClient{status: client.StatusRunning, response: string(response)}
@@ -108,7 +120,12 @@ func TestRenderDiagnosticsTextIncludesWorkspaceInactivityDetails(t *testing.T) {
 	deadline := now.Add(30 * time.Minute)
 	var output bytes.Buffer
 	renderWorkspaceDiagnostics(&output, []machinediagnostics.WorkspaceStatus{
-		{ID: "api", State: machinediagnostics.WorkspaceActive, LastActivityAt: &now, IdleDeadlineAt: &deadline},
+		{
+			ID:             "api",
+			State:          machinediagnostics.WorkspaceActive,
+			LastActivityAt: &now,
+			IdleDeadlineAt: &deadline,
+		},
 		{ID: "docs", State: machinediagnostics.WorkspaceBusy},
 		{ID: "preview", State: machinediagnostics.WorkspaceNotConfigured},
 		{ID: "broken", State: machinediagnostics.WorkspaceInvalidConfig},

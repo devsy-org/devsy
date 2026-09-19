@@ -590,7 +590,7 @@ func evaluateMachineInactivity(
 	heartbeat time.Time,
 	fallbackAction string,
 	now time.Time,
-) machineInactivityEvaluation {
+) machineInactivityEvaluation { //nolint:cyclop // selection rules are kept together to preserve shutdown semantics.
 	evaluated := make([]evaluatedWorkspace, 0, len(configs))
 	for _, path := range configs {
 		evaluated = append(
@@ -635,7 +635,7 @@ func evaluateWorkspaceInactivity(
 	heartbeat time.Time,
 	fallbackAction string,
 	now time.Time,
-) evaluatedWorkspace {
+) evaluatedWorkspace { //nolint:cyclop // workspace state transitions are evaluated in one ordered pass.
 	workspace, err := agent.ParseAgentWorkspaceInfo(path)
 	if err != nil || workspace.Workspace == nil {
 		return evaluatedWorkspace{

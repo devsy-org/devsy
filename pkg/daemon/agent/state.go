@@ -86,7 +86,11 @@ func CanonicalStateRoot(origin, contextName, workspaceID string) (string, error)
 	current := filepath.Clean(origin)
 	for _, expected := range []string{"agent", workspaceID, "workspaces", contextName, "contexts"} {
 		if filepath.Base(current) != expected {
-			return "", fmt.Errorf("unexpected canonical workspace origin %q: expected %q", origin, expected)
+			return "", fmt.Errorf(
+				"unexpected canonical workspace origin %q: expected %q",
+				origin,
+				expected,
+			)
 		}
 		current = filepath.Dir(current)
 	}
