@@ -1,5 +1,7 @@
 {
-  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "mounts": [
     {
       "type": "bind",
