@@ -529,6 +529,9 @@ func freshness(status *Status, interval time.Duration, now time.Time) Freshness 
 	if status == nil || status.UpdatedAt.IsZero() {
 		return FreshnessUnknown
 	}
+	if parsed, err := time.ParseDuration(status.PatrolInterval); err == nil && parsed > 0 {
+		interval = parsed
+	}
 	threshold := 3 * interval
 	threshold = max(threshold, 90*time.Second)
 	if now.Sub(status.UpdatedAt) > threshold {

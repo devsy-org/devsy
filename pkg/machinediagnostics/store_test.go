@@ -127,6 +127,10 @@ func TestReadFreshness(t *testing.T) {
 	status := &Status{UpdatedAt: now.Add(-4 * time.Minute)}
 	assert.Equal(t, FreshnessStale, freshness(status, time.Minute, now))
 	assert.Equal(t, FreshnessFresh, freshness(status, 10*time.Minute, now))
+	status.PatrolInterval = "10m"
+	assert.Equal(t, FreshnessFresh, freshness(status, time.Minute, now))
+	status.PatrolInterval = "invalid"
+	assert.Equal(t, FreshnessStale, freshness(status, time.Minute, now))
 	assert.Equal(t, FreshnessUnknown, freshness(nil, time.Minute, now))
 }
 

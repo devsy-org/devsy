@@ -8,7 +8,10 @@ import (
 	"github.com/gofrs/flock"
 )
 
-const DefaultRuntimeLockPath = "/run/devsy/agent-daemon.lock"
+const (
+	DefaultRuntimeLockPath = "/run/devsy/agent-daemon.lock"
+	RuntimeLockPathEnv     = "DEVSY_DAEMON_RUNTIME_LOCK_PATH"
+)
 
 // RuntimeLock prevents two singleton machine daemons from supervising the
 // same host. Its lifetime is the daemon process lifetime.

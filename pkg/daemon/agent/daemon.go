@@ -188,7 +188,11 @@ func InstallDaemon(
 
 	if !isSystemdAvailable() {
 		log.Warnf("systemd not available, falling back to background process")
-		return startFallbackDaemon(executable, args)
+		lockPath, err := fallbackRuntimeLockPath(os.Geteuid(), os.UserCacheDir)
+		if err != nil {
+			return err
+		}
+		return startFallbackDaemon(executable, args, lockPath)
 	}
 	return installSystemdDaemon(opts, executable, args)
 }
@@ -363,7 +367,7 @@ func ensureServiceRunning(needsReload bool, executable string, args []string) er
 			"systemctl", "restart", pkgconfig.BinaryName,
 		).CombinedOutput(); err != nil {
 			log.Warnf("Error restarting service: %s: %v", string(out), err)
-			return startFallbackDaemon(executable, args)
+			return startFallbackDaemon(executable, args, machinediagnostics.DefaultRuntimeLockPath)
 		}
 		log.Infof("restarted Devsy daemon with updated config")
 	} else if !isServiceRunning() {
@@ -372,7 +376,7 @@ func ensureServiceRunning(needsReload bool, executable string, args []string) er
 			"systemctl", "start", pkgconfig.BinaryName,
 		).CombinedOutput(); err != nil {
 			log.Warnf("Error starting service: %s: %v", string(out), err)
-			return startFallbackDaemon(executable, args)
+			return startFallbackDaemon(executable, args, machinediagnostics.DefaultRuntimeLockPath)
 		}
 		log.Infof("installed Devsy daemon into server")
 	}
@@ -380,11 +384,14 @@ func ensureServiceRunning(needsReload bool, executable string, args []string) er
 	return nil
 }
 
-func startFallbackDaemon(executable string, args []string) error {
+func startFallbackDaemon(executable string, args []string, runtimeLockPath string) error {
 	daemonArgs := args[1:] // strip executable path
 	err := command.StartBackgroundOnce(pkgconfig.DaemonProcessName, func() (*exec.Cmd, error) {
 		//nolint:gosec // executable is from os.Executable()
 		cmd := exec.Command(executable, daemonArgs...)
+		if runtimeLockPath != machinediagnostics.DefaultRuntimeLockPath {
+			cmd.Env = append(os.Environ(), machinediagnostics.RuntimeLockPathEnv+"="+runtimeLockPath)
+		}
 		return cmd, nil
 	})
 	if err != nil {
@@ -392,6 +399,20 @@ func startFallbackDaemon(executable string, args []string) error {
 	}
 	log.Infof("started Devsy daemon into server")
 	return nil
+}
+
+func fallbackRuntimeLockPath(
+	uid int,
+	userCacheDir func() (string, error),
+) (string, error) {
+	if uid == 0 {
+		return machinediagnostics.DefaultRuntimeLockPath, nil
+	}
+	cacheDir, err := userCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("get user cache directory for daemon lock: %w", err)
+	}
+	return filepath.Join(cacheDir, "devsy", "agent-daemon.lock"), nil
 }
 
 func RemoveDaemon() error {

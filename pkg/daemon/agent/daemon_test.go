@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/devsy-org/api/pkg/devsy"
@@ -25,6 +26,23 @@ func TestBuildDaemonArgs(t *testing.T) {
 		"--diagnostics-reader-uid", "0", "--diagnostics-reader-gid", "0",
 		"--interval", "30s", "--shutdown-action", config.ShutdownActionStopContainer,
 	}, args)
+}
+
+func TestFallbackRuntimeLockPath(t *testing.T) {
+	cacheDir := func() (string, error) { return "/home/devsy/.cache", nil }
+
+	rootPath, err := fallbackRuntimeLockPath(0, cacheDir)
+	require.NoError(t, err)
+	assert.Equal(t, "/run/devsy/agent-daemon.lock", rootPath)
+
+	userPath, err := fallbackRuntimeLockPath(1000, cacheDir)
+	require.NoError(t, err)
+	assert.Equal(t, "/home/devsy/.cache/devsy/agent-daemon.lock", userPath)
+
+	_, err = fallbackRuntimeLockPath(1000, func() (string, error) {
+		return "", errors.New("unavailable")
+	})
+	require.ErrorContains(t, err, "get user cache directory for daemon lock")
 }
 
 func TestDaemonUnitStateLocationMatchesExactArgumentValues(t *testing.T) {

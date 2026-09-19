@@ -101,7 +101,11 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	runtimeLock, err := machinediagnostics.AcquireRuntimeLock(daemonRuntimeLockPath)
+	runtimeLockPath := daemonRuntimeLockPath
+	if fallbackPath := os.Getenv(machinediagnostics.RuntimeLockPathEnv); fallbackPath != "" {
+		runtimeLockPath = fallbackPath
+	}
+	runtimeLock, err := machinediagnostics.AcquireRuntimeLock(runtimeLockPath)
 	if err != nil {
 		return err
 	}
