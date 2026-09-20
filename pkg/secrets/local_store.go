@@ -295,8 +295,6 @@ func (s *localStore) persistSensitive(
 			return err
 		}
 		meta.Backend = resolved
-		// Fresh ownership means no reachable backend state to preserve, so the
-		// backend may initialize its key material.
 		create = true
 	}
 	b, err := s.backends.Open(meta.Backend, idx, create)
@@ -339,8 +337,6 @@ func (s *localStore) checkKeySource(idx *index) error {
 	)
 }
 
-// loadRepaired loads the index and repairs legacy entries written before
-// backend ownership was persisted, persisting proven repairs best-effort.
 func (s *localStore) loadRepaired() (*index, error) {
 	idx, err := loadIndex(s.indexPath)
 	if err != nil {
@@ -352,9 +348,6 @@ func (s *localStore) loadRepaired() (*index, error) {
 	return idx, nil
 }
 
-// persistRepairs rewrites the index under the store lock so ownership proven
-// during a lock-free read survives; failures only delay the repair to the
-// next operation.
 func (s *localStore) persistRepairs() {
 	unlock, err := s.lock()
 	if err != nil {
@@ -371,12 +364,6 @@ func (s *localStore) persistRepairs() {
 	}
 }
 
-// repairLegacyOwnership assigns a backend to sensitive entries that predate
-// persisted ownership. Ownership is assigned only when exactly one backend
-// proves it holds the value; an entry whose value is proven in both backends,
-// or in none, stays unowned rather than guessing and reading the wrong value
-// later. A backend that cannot answer does not block repair: it cannot serve
-// reads either, so the proven backend is the only usable source.
 func (s *localStore) repairLegacyOwnership(idx *index) bool {
 	repaired := false
 	for context, entries := range idx.data.Contexts {
@@ -391,8 +378,6 @@ func (s *localStore) repairLegacyOwnership(idx *index) bool {
 			meta.Backend = owner
 			entries[name] = meta
 			if owner == BackendFile && idx.data.KeySource == "" {
-				// The file probe could only succeed without persisted key-source
-				// metadata through the configured passphrase.
 				idx.data.KeySource = string(keySourcePassphrase)
 			}
 			repaired = true
@@ -415,8 +400,6 @@ func (s *localStore) provenOwner(idx *index, key string) (Backend, bool) {
 	return found[0], true
 }
 
-// removeFromProbeableBackends drops key from every backend that answers,
-// because an unowned entry cannot name the backend holding its value.
 func (s *localStore) removeFromProbeableBackends(idx *index, key string) {
 	for _, kind := range []Backend{BackendKeyring, BackendFile} {
 		b, err := s.backends.Open(kind, idx, false)
