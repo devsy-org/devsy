@@ -141,10 +141,11 @@ func checkPodmanHealth(ctx context.Context, wrapperPath string) (podmanHealthCla
 func runDiagCommand(name string, args ...string) string {
 	diagCtx, cancel := context.WithTimeout(context.Background(), podmanDiagCommandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(
+	cmd := exec.CommandContext( //nolint:gosec // G204: fixed diagnostic commands
 		diagCtx,
 		name,
-		args...) //nolint:gosec // G204: fixed diagnostic commands
+		args...,
+	)
 	docker.PrepareForGroupCancellation(cmd)
 	out, err := cmd.CombinedOutput()
 	text := string(out)
