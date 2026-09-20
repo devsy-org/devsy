@@ -732,15 +732,33 @@ func TestStore_RepairsOwnershipWhenOtherBackendUnprobeable(t *testing.T) {
 		mapBackendRegistry{backends: backends},
 	)
 
-	got, err := s.Get(testContext, "LEGACY")
-	require.NoError(t, err)
-	require.Equal(t, "recovered", got)
+	_, err := s.Get(testContext, "LEGACY")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no proven owning backend")
 	meta, err := s.Meta(testContext, "LEGACY")
 	require.NoError(t, err)
-	require.Equal(t, BackendFile, meta.Backend)
+	require.Equal(t, Backend(""), meta.Backend)
 }
 
-func TestStore_RepairsLegacyFileBackendWithPassphrase(t *testing.T) {
+func TestStore_DeleteUnownedFailsWhenBackendUnprobeable(t *testing.T) {
+	backends := map[Backend]*mapBackend{BackendFile: newMapBackend()}
+	backends[BackendFile].values[backendKey(testContext, "LEGACY")] = "sensitive"
+	s := newLocalStoreWithRegistry(
+		BackendFile,
+		writeLegacyIndex(
+			t,
+			"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+		),
+		mapBackendRegistry{backends: backends},
+	)
+
+	require.Error(t, s.Delete(testContext, "LEGACY"))
+	require.Equal(t, "sensitive", backends[BackendFile].values[backendKey(testContext, "LEGACY")])
+	_, err := s.Meta(testContext, "LEGACY")
+	require.NoError(t, err)
+}
+
+func TestProbeFileReadsLegacyPassphraseBackend(t *testing.T) {
 	t.Setenv(EnvPassphrase, "correct horse battery staple")
 	dir := t.TempDir()
 
@@ -751,20 +769,14 @@ func TestStore_RepairsLegacyFileBackendWithPassphrase(t *testing.T) {
 	indexPath := filepath.Join(dir, IndexFileName)
 	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n"
 	require.NoError(t, os.WriteFile(indexPath, []byte(raw), 0o600))
-
-	s := newLocalStoreWithRegistry(BackendAuto, indexPath, newSystemBackendRegistry(dir))
-	got, err := s.Get(testContext, "LEGACY")
+	idx, err := loadIndex(indexPath)
 	require.NoError(t, err)
-	require.Equal(t, "recovered", got)
 
-	stored, err := os.ReadFile(indexPath) // #nosec G304 -- test-owned temporary path.
-	require.NoError(t, err)
-	require.Contains(t, string(stored), "backend: file")
-
-	require.NoError(t, s.Set(testContext, "MY_VAR", "plain", KindEnv))
-	got, err = s.Get(testContext, "MY_VAR")
-	require.NoError(t, err)
-	require.Equal(t, "plain", got)
+	registry, ok := newSystemBackendRegistry(dir).(*systemBackendRegistry)
+	require.True(t, ok)
+	present, conclusive := registry.probeFile(idx, backendKey(testContext, "LEGACY"))
+	require.True(t, present)
+	require.True(t, conclusive)
 }
 
 func TestStore_UnownedWithoutBackendStateIsRecoverable(t *testing.T) {
