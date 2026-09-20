@@ -740,8 +740,6 @@ func TestStore_RepairsOwnershipWhenOtherBackendUnprobeable(t *testing.T) {
 	require.Equal(t, BackendFile, meta.Backend)
 }
 
-// Exercises the real registry against a legacy index and an age-encrypted
-// secrets.enc written before backend ownership and key source were persisted.
 func TestStore_RepairsLegacyFileBackendWithPassphrase(t *testing.T) {
 	t.Setenv(EnvPassphrase, "correct horse battery staple")
 	dir := t.TempDir()
@@ -769,8 +767,6 @@ func TestStore_RepairsLegacyFileBackendWithPassphrase(t *testing.T) {
 	require.Equal(t, "plain", got)
 }
 
-// With no encrypted file and no reachable keyring, a legacy entry's value is
-// nowhere; the user recovers by setting the secret again.
 func TestStore_UnownedWithoutBackendStateIsRecoverable(t *testing.T) {
 	dir := t.TempDir()
 	indexPath := filepath.Join(dir, IndexFileName)
