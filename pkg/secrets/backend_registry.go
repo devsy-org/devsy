@@ -13,9 +13,6 @@ import (
 type backendRegistry interface {
 	Open(kind Backend, idx *index, create bool) (backend, error)
 	ResolveForNewSecret(preference Backend, idx *index) (Backend, error)
-	// Probe reports whether kind's backend holds key. conclusive is false when
-	// the backend cannot answer (unavailable or unreadable), so callers never
-	// treat an unprobeable backend as empty.
 	Probe(kind Backend, idx *index, key string) (present, conclusive bool)
 }
 
@@ -74,13 +71,10 @@ func (r *systemBackendRegistry) Probe(kind Backend, idx *index, key string) (boo
 	case BackendFile:
 		path := filepath.Join(r.dir, EncryptedFileName)
 		if _, err := os.Stat(path); err != nil {
-			// No encrypted file means the file backend provably holds nothing.
 			return false, true
 		}
 		fk, err := openExistingFileKey(r.dir, idx)
 		if err != nil && idx.data.KeySource == "" {
-			// Legacy indexes may predate persisted key-source metadata; a
-			// configured passphrase still proves ownership read-only.
 			fk, err = openPassphraseFileKey()
 		}
 		if err != nil {
