@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 )
@@ -134,6 +135,14 @@ func (j *Journal) Append(workspaceID string, e status.Event) error {
 		return err
 	}
 	b = append(b, '\n')
+	if len(b) > j.maxSegmentBytes {
+		log.Debugf(
+			"workspace journal: skipping oversized event (%d bytes, segment limit %d)",
+			len(b),
+			j.maxSegmentBytes,
+		)
+		return nil
+	}
 	path, err := j.activeSegment(len(b))
 	if err != nil {
 		return err
