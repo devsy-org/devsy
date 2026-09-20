@@ -92,6 +92,7 @@ func (cmd *ImportCmd) execute(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	cmd.setDefaultIDs(exportConfig)
 
 	reporter, err := newWorkspaceStatusReporter(
 		cmd.ResultFormat,
