@@ -21,5 +21,7 @@ func NewMachineCmd(flags *flags.GlobalFlags) *cobra.Command {
 	machineCmd.AddCommand(NewCreateCmd(flags))
 	machineCmd.AddCommand(NewInspectCmd(flags))
 	machineCmd.AddCommand(NewDescribeCmd(flags))
+	machineCmd.AddCommand(NewDiagnosticsCmd(flags))
+	machineCmd.AddCommand(NewLogsCmd(flags))
 	return machineCmd
 }

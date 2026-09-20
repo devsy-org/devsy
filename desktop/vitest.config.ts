@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       $lib: resolve(__dirname, "src/renderer/src/lib"),
+      $shared: resolve(__dirname, "src/shared"),
     },
     conditions: ["browser"],
   },

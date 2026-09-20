@@ -1,3 +1,10 @@
+import {
+  workspaceJobBusy,
+  workspaceJobInterruptible,
+  workspaceJobLabel,
+  type WorkspaceJob,
+} from "../shared/workspace-operation.js"
+import type { WorkspaceJobs } from "./workspace-jobs.js"
 import { join } from "node:path"
 import { app, Menu, nativeImage, nativeTheme, Tray } from "electron"
 import type { DaemonState, Workspace } from "./state.js"
@@ -22,14 +29,12 @@ export function buildUpdateMenuItems(
     : version
       ? `Update to ${version}`
       : "Restart"
-  return [
-    { label, click: onInstall },
-    { type: "separator" },
-  ]
+  return [{ label, click: onInstall }, { type: "separator" }]
 }
 
 export interface TrayMenuModel {
   activeWorkspaces: Workspace[]
+  jobs?: Record<string, WorkspaceJob>
   pendingStops: ReadonlySet<string>
   updateStatus: UpdateStatus
 }
@@ -51,19 +56,25 @@ export function buildTrayMenuTemplate(
   const workspaceItems: Electron.MenuItemConstructorOptions[] = active
     .slice(0, 10)
     .map((workspace) => {
-      const pending = model.pendingStops.has(workspace.id)
+      const job = model.jobs?.[workspace.id]
+      const pending =
+        model.pendingStops.has(workspace.id) || workspaceJobBusy(job)
       const busy = workspace.status?.trim().toLowerCase() === "busy"
+      const disabled = pending && !workspaceJobInterruptible(job)
+      const label = workspaceJobLabel(job)
       return {
-        label: `${workspace.id}${busy && !pending ? " — Busy" : ""}`,
+        label: `${workspace.id}${label ? ` — ${label}` : busy && !pending ? " — Busy" : ""}`,
         submenu: [
           {
             label: "Open in Devsy",
             click: () => actions.showWorkspace(workspace.id),
           },
           {
-            label: pending ? "Stopping…" : "Stop Workspace",
-            enabled: !pending,
-            click: pending
+            label: disabled
+              ? `${workspaceJobLabel(job) ?? "Stopping"}…`
+              : "Stop Workspace",
+            enabled: !disabled,
+            click: disabled
               ? undefined
               : () => actions.stopWorkspace(workspace.id),
           },
@@ -101,6 +112,7 @@ export function buildTrayMenuTemplate(
 }
 
 interface TrayDeps {
+  workspaceJobs?: WorkspaceJobs
   state: DaemonState
   showDevsy: (route?: string) => void
   stopWorkspace: (workspaceId: string) => Promise<void>
@@ -112,6 +124,7 @@ export class AppTray {
   private tray: Tray | null = null
   private pendingStops = new Set<string>()
   private unsubscribeWorkspaceState: (() => void) | null = null
+  private unsubscribeWorkspaceJobs: (() => void) | null = null
   private unsubscribeUpdateStatus: (() => void) | null = null
   private readonly onThemeUpdated = (): void => {
     this.tray?.setImage(this.createTrayIcon())
@@ -126,6 +139,8 @@ export class AppTray {
     this.unsubscribeWorkspaceState = this.deps.state.onWorkspacesChange(() =>
       this.rebuildMenu(),
     )
+    this.unsubscribeWorkspaceJobs =
+      this.deps.workspaceJobs?.onChange(() => this.rebuildMenu()) ?? null
     this.unsubscribeUpdateStatus = onUpdateStatusChanged(() =>
       this.rebuildMenu(),
     )
@@ -136,6 +151,8 @@ export class AppTray {
   }
 
   destroy(): void {
+    this.unsubscribeWorkspaceJobs?.()
+    this.unsubscribeWorkspaceJobs = null
     this.unsubscribeWorkspaceState?.()
     this.unsubscribeWorkspaceState = null
     this.unsubscribeUpdateStatus?.()
@@ -158,21 +175,31 @@ export class AppTray {
       return icon
     }
     const variant = nativeTheme.shouldUseDarkColors ? "dark" : "light"
-    return nativeImage.createFromPath(
-      join(trayDir, `icon-tray-${variant}.png`),
-    )
+    return nativeImage.createFromPath(join(trayDir, `icon-tray-${variant}.png`))
   }
 
   private rebuildMenu(): void {
     if (!this.tray) return
-    const activeWorkspaces = this.deps.state
-      .workspaceList()
-      .filter((workspace) => isActiveWorkspaceStatus(workspace.status))
+    const jobs = this.deps.workspaceJobs?.snapshot() ?? {}
+    const workspaces = this.deps.state.workspaceList()
+    const activeWorkspaces = workspaces.filter(
+      (workspace) =>
+        isActiveWorkspaceStatus(workspace.status) ||
+        workspaceJobBusy(jobs[workspace.id]),
+    )
+    for (const [id, job] of Object.entries(jobs)) {
+      if (
+        workspaceJobBusy(job) &&
+        !workspaces.some((workspace) => workspace.id === id)
+      )
+        activeWorkspaces.push({ id })
+    }
 
     const template = buildTrayMenuTemplate(
       {
         activeWorkspaces,
         pendingStops: this.pendingStops,
+        jobs: this.deps.workspaceJobs?.snapshot(),
         updateStatus: getLastStatus(),
       },
       {

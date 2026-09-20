@@ -283,6 +283,8 @@ function handleUp(args) {
     return
   }
 
+  workspaceStatus("building_image", "started", "Building workspace")
+  const complete = () => {
   workspaceStatus("resolving_config", "started")
   workspaceStatus("resolving_config", "succeeded")
   workspaceStatus("building_image", "started")
@@ -292,6 +294,9 @@ function handleUp(args) {
   workspaceStatus("ready", "succeeded")
   materializeWorkspace(wsId, source, providerFlag, ideFlag, "Running")
   process.exit(0)
+  }
+  if (wsId === "lifecycleprobe") setTimeout(complete, 2000)
+  else complete()
 }
 
 // Handlers for `workspace task <verb>`, backing the up --detach flow above.
@@ -455,14 +460,16 @@ function handleTask(args) {
 function handleStop(args) {
   const { positional } = parseArgs(args)
   const wsId = positional[0]
-  out("Stopping workspace...")
-  out("Workspace stopped.")
-  const ws = state.workspaces.find((w) => w.id === wsId)
-  if (ws) {
-    ws.status = "Stopped"
-    saveState(state)
+  workspaceStatus("stopping_workspace", "started", "Stopping workspace resources")
+  const complete = () => {
+    const latest = loadState()
+    const ws = latest.workspaces.find((w) => w.id === wsId)
+    if (ws) { ws.status = "Stopped"; saveState(latest) }
+    workspaceStatus("stopping_workspace", "succeeded")
+    process.exit(0)
   }
-  process.exit(0)
+  if (wsId === "lifecycleprobe") setTimeout(complete, 2000)
+  else complete()
 }
 
 function handleStart(args) {
@@ -484,7 +491,8 @@ function handleDelete(args) {
   const { positional } = parseArgs(args)
   const wsId = positional[0]
   // *probe suffix delays deletion so lifecycle tests can observe in-flight state.
-  const deleteMs = /probe$/.test(wsId) ? 1500 : 0
+  const deleteMs = wsId === "lifecycleprobe" ? 8000 : /probe$/.test(wsId) ? 1500 : 0
+  workspaceStatus("deleting_workspace", "started", "Removing workspace resources")
   setTimeout(() => {
     out("Deleting workspace...")
     out("Workspace deleted.")

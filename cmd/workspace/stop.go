@@ -33,27 +33,7 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Use:   "stop [flags] [workspace-path|workspace-name]",
 		Short: "Stop a workspace",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			ctx := cobraCmd.Context()
-			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-			if err != nil {
-				return err
-			}
-
-			err = clientimplementation.DecodePlatformOptionsFromEnv(&cmd.Platform)
-			if err != nil {
-				return fmt.Errorf("decode platform options: %w", err)
-			}
-
-			client, err := workspace2.Get(ctx, workspace2.GetOptions{
-				DevsyConfig: devsyConfig,
-				Args:        args,
-				Owner:       cmd.Owner,
-			})
-			if err != nil {
-				return err
-			}
-
-			return cmd.Run(ctx, devsyConfig, client)
+			return cmd.runArgs(cobraCmd.Context(), args)
 		},
 		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
@@ -89,9 +69,46 @@ func (cmd *StopCmd) Run(
 		reporter,
 		status.Operation{Phase: status.PhaseStoppingWorkspace},
 		func(ctx context.Context) error {
-			return cmd.run(ctx, devsyConfig, client)
+			return cmd.run(status.WithReporter(ctx, reporter), devsyConfig, client)
 		},
 	)
+}
+
+func (cmd *StopCmd) runArgs(ctx context.Context, args []string) error {
+	reporter, err := newWorkspaceStatusReporter(
+		cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug,
+	)
+	if err != nil {
+		return err
+	}
+	return status.Run(status.WithReporter(ctx, reporter), reporter,
+		status.Operation{Phase: status.PhaseStoppingWorkspace}, func(ctx context.Context) error {
+			var devsyConfig *config.Config
+			var client client2.BaseWorkspaceClient
+			err := status.RunStep(
+				ctx, status.PhaseStoppingWorkspace, "Loading workspace",
+				func(ctx context.Context) error {
+					var err error
+					devsyConfig, err = config.LoadConfig(cmd.Context, cmd.Provider)
+					if err != nil {
+						return err
+					}
+					if err := clientimplementation.DecodePlatformOptionsFromEnv(
+						&cmd.Platform,
+					); err != nil {
+						return fmt.Errorf("decode platform options: %w", err)
+					}
+					client, err = workspace2.Get(ctx, workspace2.GetOptions{
+						DevsyConfig: devsyConfig, Args: args, Owner: cmd.Owner,
+					})
+					return err
+				},
+			)
+			if err != nil {
+				return err
+			}
+			return cmd.run(ctx, devsyConfig, client)
+		})
 }
 
 func (cmd *StopCmd) run(
@@ -101,7 +118,12 @@ func (cmd *StopCmd) run(
 ) error {
 	// lock workspace
 	if !cmd.Platform.Enabled {
-		err := client.Lock(ctx)
+		err := status.RunStep(
+			ctx,
+			status.PhaseStoppingWorkspace,
+			"Waiting for workspace lock",
+			client.Lock,
+		)
 		if err != nil {
 			return err
 		}
@@ -109,7 +131,17 @@ func (cmd *StopCmd) run(
 	}
 
 	// get instance status
-	instanceStatus, err := client.Status(ctx, client2.StatusOptions{})
+	var instanceStatus client2.Status
+	err := status.RunStep(
+		ctx,
+		status.PhaseStoppingWorkspace,
+		"Checking workspace status",
+		func(ctx context.Context) error {
+			var err error
+			instanceStatus, err = client.Status(ctx, client2.StatusOptions{})
+			return err
+		},
+	)
 	if err != nil {
 		return err
 	} else if instanceStatus != client2.StatusRunning {
@@ -117,7 +149,17 @@ func (cmd *StopCmd) run(
 	}
 
 	// stop if single machine provider
-	wasStopped, err := cmd.stopSingleMachine(ctx, client, devsyConfig)
+	var wasStopped bool
+	err = status.RunStep(
+		ctx,
+		status.PhaseStoppingWorkspace,
+		"Checking shared machine",
+		func(ctx context.Context) error {
+			var err error
+			wasStopped, err = cmd.stopSingleMachine(ctx, client, devsyConfig)
+			return err
+		},
+	)
 	if err != nil {
 		return err
 	} else if wasStopped {
@@ -126,7 +168,14 @@ func (cmd *StopCmd) run(
 	}
 
 	// stop environment
-	err = client.Stop(ctx, client2.StopOptions{})
+	err = status.RunStep(
+		ctx,
+		status.PhaseStoppingWorkspace,
+		"Stopping workspace resources",
+		func(ctx context.Context) error {
+			return client.Stop(ctx, client2.StopOptions{})
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -171,9 +220,16 @@ func (cmd *StopCmd) stopSingleMachine(
 	}
 
 	// stop the machine
-	err = machineClient.Stop(ctx, client2.StopOptions{})
+	err = status.RunStep(
+		ctx,
+		status.PhaseStoppingWorkspace,
+		"Stopping machine",
+		func(ctx context.Context) error {
+			return machineClient.Stop(ctx, client2.StopOptions{})
+		},
+	)
 	if err != nil {
-		return false, fmt.Errorf("delete machine: %w", err)
+		return false, fmt.Errorf("stop machine: %w", err)
 	}
 
 	log.Debugf("stopped workspace: workspace=%s", client.Workspace())

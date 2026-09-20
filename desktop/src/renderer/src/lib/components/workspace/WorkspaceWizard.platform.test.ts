@@ -37,7 +37,7 @@ vi.mock("$lib/stores/providers.js", async () => {
 })
 vi.mock("$lib/stores/workspaces.js", async () => {
   const { writable } = await import("svelte/store")
-  return { workspaces: writable<{ id: string }[]>([]) }
+  return { workspaces: writable<{ id: string }[]>([]), workspaceJobs: writable({}) }
 })
 vi.mock("$lib/stores/toasts.js", () => ({
   toasts: { success: vi.fn(), error: vi.fn(), info: vi.fn() },

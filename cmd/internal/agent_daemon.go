@@ -3,7 +3,6 @@ package cmdinternal
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,11 +13,13 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	agentconfig "github.com/devsy-org/devsy/pkg/config"
+	agentdaemon "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver/custom"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
 )
@@ -28,11 +29,25 @@ const (
 	busyGracePeriod       = 20 * time.Minute
 )
 
+var daemonRuntimeLockPath = machinediagnostics.DefaultRuntimeLockPath
+
 type DaemonCmd struct {
 	*flags.GlobalFlags
 
-	Interval       string
-	ShutdownAction string
+	Interval             string
+	ShutdownAction       string
+	StateRoot            string
+	StateLayout          string
+	DiagnosticsReaderUID int
+	DiagnosticsReaderGID int
+
+	recorder                 machinediagnostics.Recorder
+	startedAt                time.Time
+	lastSuccessfulPatrolAt   *time.Time
+	lastPatrolAt             *time.Time
+	lastDiagnosticError      *machinediagnostics.DiagnosticError
+	knownWorkspaceIDs        map[string]struct{}
+	knownInvalidWorkspaceIDs map[string]struct{}
 }
 
 func NewDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
@@ -54,30 +69,142 @@ func NewDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 			"",
 			"The shutdown action (none, stopContainer, or stopCompose)",
 		),
+		cliflags.String(&cmd.StateRoot, names.StateRoot, "", "The daemon workspace state root"),
+		cliflags.String(
+			&cmd.StateLayout,
+			names.StateLayout,
+			"",
+			"The daemon workspace state layout",
+		),
+		cliflags.Int(
+			&cmd.DiagnosticsReaderUID,
+			names.DiagnosticsReaderUID,
+			-1,
+			"The diagnostics reader UID",
+		),
+		cliflags.Int(
+			&cmd.DiagnosticsReaderGID,
+			names.DiagnosticsReaderGID,
+			-1,
+			"The diagnostics reader GID",
+		),
 	)
+	_ = daemonCmd.Flags().MarkHidden(names.StateRoot)
+	_ = daemonCmd.Flags().MarkHidden(names.StateLayout)
+	_ = daemonCmd.Flags().MarkHidden(names.DiagnosticsReaderUID)
+	_ = daemonCmd.Flags().MarkHidden(names.DiagnosticsReaderGID)
 	return daemonCmd
 }
 
 func (cmd *DaemonCmd) Run(ctx context.Context) error {
-	// The daemon runs only container/machine-side; the host never invokes it.
-	if agent.IsHostAgentInvocation(cmd.AgentDir) {
-		return errors.New(
-			"`devsy internal agent daemon` is only valid inside the workspace container or machine",
-		)
-	}
-
-	logDir, err := agent.GetAgentDaemonLogDir(cmd.AgentDir)
+	location, err := cmd.stateLocation()
 	if err != nil {
 		return err
 	}
+	runtimeLockPath := daemonRuntimeLockPath
+	if fallbackPath := os.Getenv(machinediagnostics.RuntimeLockPathEnv); fallbackPath != "" {
+		runtimeLockPath = fallbackPath
+	}
+	runtimeLock, err := machinediagnostics.AcquireRuntimeLock(runtimeLockPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = runtimeLock.Close() }()
+	cmd.startedAt = time.Now().UTC()
+	recorder, err := machinediagnostics.NewRecorder(machinediagnostics.Options{
+		Dir:            machinediagnostics.DiagnosticsDir(location.Root),
+		Reader:         cmd.diagnosticsReader(),
+		PatrolInterval: cmd.pollInterval(),
+		ErrorReporter: func(err error) {
+			log.Warnf("write machine diagnostics: %v", err)
+		},
+	})
+	if err != nil {
+		log.Warnf("initialize machine diagnostics: %v", err)
+		cmd.recorder = machinediagnostics.Nop()
+	} else {
+		cmd.recorder = recorder
+		if err := machinediagnostics.WriteLocator(
+			machinediagnostics.DefaultLocatorPath,
+			machinediagnostics.Locator{
+				SessionID:      recorder.SessionID(),
+				DiagnosticsDir: machinediagnostics.DiagnosticsDir(location.Root),
+				StateLayout:    string(location.Layout),
+				StartedAt:      cmd.startedAt,
+			},
+		); err != nil {
+			log.Warnf("write machine diagnostics locator: %v", err)
+		}
+	}
+	cmd.recordEvent(
+		machinediagnostics.Event{
+			Type:    machinediagnostics.EventDaemonStarted,
+			Level:   machinediagnostics.LevelInfo,
+			Message: "Devsy machine daemon started.",
+		},
+	)
+	cmd.updateDiagnostics(
+		diagnosticsUpdate{
+			state:  machinediagnostics.DaemonStarting,
+			health: machinediagnostics.DaemonHealthy,
+		},
+	)
+	defer func() {
+		cmd.recordEvent(
+			machinediagnostics.Event{
+				Type:    machinediagnostics.EventDaemonStopping,
+				Level:   machinediagnostics.LevelInfo,
+				Message: "Devsy machine daemon stopping.",
+			},
+		)
+		cmd.updateDiagnostics(
+			diagnosticsUpdate{
+				state:  machinediagnostics.DaemonStopping,
+				health: machinediagnostics.DaemonHealthy,
+			},
+		)
+		_ = cmd.recorder.Close()
+	}()
 
-	log.Infof("starting Devsy daemon patrol at %s", logDir)
+	log.Infof("starting Devsy daemon patrol at %s", location.Root)
 	cmd.patrol(ctx)
 	return nil
 }
 
+func (cmd *DaemonCmd) stateLocation() (agentdaemon.StateLocation, error) {
+	if cmd.StateRoot != "" || cmd.StateLayout != "" {
+		if cmd.StateRoot == "" || cmd.StateLayout == "" {
+			return agentdaemon.StateLocation{}, fmt.Errorf(
+				"daemon state root and state layout must be provided together",
+			)
+		}
+		location := agentdaemon.StateLocation{
+			Root:   filepath.Clean(cmd.StateRoot),
+			Layout: agentdaemon.StateLayout(cmd.StateLayout),
+		}
+		return location, location.Validate()
+	}
+
+	if cmd.AgentDir != "" {
+		location := agentdaemon.StateLocation{
+			Root:   filepath.Clean(cmd.AgentDir),
+			Layout: agentdaemon.StateLayoutAgentHome,
+		}
+		return location, location.Validate()
+	}
+
+	return agentdaemon.StateLocation{}, fmt.Errorf("daemon state location is missing")
+}
+
 func (cmd *DaemonCmd) patrol(ctx context.Context) {
 	cmd.initialTouch()
+	cmd.recordEvent(
+		machinediagnostics.Event{
+			Type:    machinediagnostics.EventDaemonReady,
+			Level:   machinediagnostics.LevelInfo,
+			Message: "Devsy machine daemon is ready.",
+		},
+	)
 
 	ticker := time.NewTicker(cmd.pollInterval())
 	defer ticker.Stop()
@@ -89,6 +216,62 @@ func (cmd *DaemonCmd) patrol(ctx context.Context) {
 			cmd.patrolOnce(ctx)
 		}
 	}
+}
+
+func (cmd *DaemonCmd) diagnosticsReader() machinediagnostics.ReaderIdentity {
+	if cmd.DiagnosticsReaderUID >= 0 && cmd.DiagnosticsReaderGID >= 0 {
+		return machinediagnostics.ReaderIdentity{
+			UID: cmd.DiagnosticsReaderUID,
+			GID: cmd.DiagnosticsReaderGID,
+		}
+	}
+	return agentdaemon.DiagnosticsReaderIdentity()
+}
+
+func (cmd *DaemonCmd) recordEvent(event machinediagnostics.Event) {
+	if cmd.recorder != nil {
+		cmd.recorder.Record(event)
+	}
+}
+
+type diagnosticsUpdate struct {
+	state         machinediagnostics.DaemonState
+	health        machinediagnostics.DaemonHealth
+	diagnosticErr *machinediagnostics.DiagnosticError
+	workspaces    []machinediagnostics.WorkspaceStatus
+	candidate     *machinediagnostics.ShutdownCandidate
+}
+
+func (cmd *DaemonCmd) updateDiagnostics(update diagnosticsUpdate) {
+	if cmd.recorder == nil {
+		return
+	}
+	now := time.Now().UTC()
+	if update.diagnosticErr != nil {
+		cmd.lastDiagnosticError = update.diagnosticErr
+	}
+	if update.state == machinediagnostics.DaemonRunning {
+		cmd.lastPatrolAt = &now
+	}
+	if update.health == machinediagnostics.DaemonHealthy &&
+		update.state == machinediagnostics.DaemonRunning {
+		cmd.lastSuccessfulPatrolAt = &now
+	}
+	cmd.recorder.Update(
+		machinediagnostics.Status{
+			StartedAt:         cmd.startedAt,
+			UpdatedAt:         now,
+			State:             update.state,
+			Health:            update.health,
+			PatrolInterval:    cmd.pollInterval().String(),
+			LastPatrolAt:      cmd.lastPatrolAt,
+			LastSuccessAt:     cmd.lastSuccessfulPatrolAt,
+			LastError:         cmd.lastDiagnosticError,
+			WorkspaceCount:    len(update.workspaces),
+			Workspaces:        update.workspaces,
+			ShutdownCandidate: update.candidate,
+		},
+	)
 }
 
 func (cmd *DaemonCmd) pollInterval() time.Duration {
@@ -108,47 +291,125 @@ func (cmd *DaemonCmd) pollInterval() time.Duration {
 }
 
 func (cmd *DaemonCmd) workspaceConfigs() (baseDir string, configs []string, err error) {
-	baseDir, err = agent.FindAgentHomeDir(cmd.AgentDir)
+	location, err := cmd.stateLocation()
 	if err != nil {
 		return "", nil, err
 	}
-	pattern := filepath.Join(
-		baseDir,
-		"contexts",
-		"*",
-		"workspaces",
-		"*",
-		provider2.WorkspaceConfigFile,
-	)
+	pattern, err := location.WorkspaceConfigPattern()
+	if err != nil {
+		return "", nil, err
+	}
 	configs, err = filepath.Glob(pattern)
 	if err != nil {
 		return "", nil, fmt.Errorf("glob %s: %w", pattern, err)
 	}
-	return baseDir, configs, nil
+	return location.Root, configs, nil
 }
 
 func (cmd *DaemonCmd) patrolOnce(ctx context.Context) {
 	baseDir, configs, err := cmd.workspaceConfigs()
 	if err != nil {
 		log.Errorf("list workspace configs: %v", err)
+		cmd.recordEvent(
+			machinediagnostics.Event{
+				Type:      machinediagnostics.EventPatrolFailed,
+				Level:     machinediagnostics.LevelError,
+				Message:   "Machine daemon could not discover workspace state.",
+				ErrorCode: "patrol_failed",
+			},
+		)
+		cmd.updateDiagnostics(diagnosticsUpdate{
+			state:  machinediagnostics.DaemonRunning,
+			health: machinediagnostics.DaemonDegraded,
+			diagnosticErr: &machinediagnostics.DiagnosticError{
+				Code:      "patrol_failed",
+				Message:   "Machine daemon could not discover workspace state.",
+				Timestamp: time.Now().UTC(),
+			},
+		})
 		return
 	}
+	evaluation := evaluateMachineInactivity(
+		configs,
+		activityHeartbeat(),
+		cmd.ShutdownAction,
+		time.Now(),
+	)
+	cmd.recordWorkspaceTransitions(evaluation.statuses)
+	cmd.updateDiagnostics(
+		diagnosticsUpdate{
+			state:      machinediagnostics.DaemonRunning,
+			health:     machinediagnostics.DaemonHealthy,
+			workspaces: evaluation.statuses,
+			candidate:  evaluation.candidate,
+		},
+	)
+	if evaluation.workspace == nil {
+		log.Infof("no machine shutdown candidate in %q: %s", baseDir, evaluation.reason)
+		return
+	}
+	if err := cmd.shutdownWorkspace(ctx, evaluation.workspace); err != nil {
+		cmd.updateDiagnostics(diagnosticsUpdate{
+			state:      machinediagnostics.DaemonRunning,
+			health:     machinediagnostics.DaemonDegraded,
+			workspaces: evaluation.statuses,
+			candidate:  evaluation.candidate,
+			diagnosticErr: &machinediagnostics.DiagnosticError{
+				Code:      "shutdown_failed",
+				Message:   "Machine shutdown action failed.",
+				Timestamp: time.Now().UTC(),
+			},
+		})
+	}
+}
 
-	latestActivity, workspace := findLatestActivity(configs)
-	if latestActivity == nil {
-		if len(configs) == 0 {
-			log.Infof("no workspaces found in %q", baseDir)
-		} else {
-			log.Infof(
-				"%d workspaces found in %q, but none had auto-stop configured or were still running",
-				len(configs),
-				baseDir,
+func (cmd *DaemonCmd) recordWorkspaceTransitions(statuses []machinediagnostics.WorkspaceStatus) {
+	current := make(map[string]struct{}, len(statuses))
+	invalid := make(map[string]struct{})
+	for _, status := range statuses {
+		if status.ID == "" {
+			continue
+		}
+		current[status.ID] = struct{}{}
+		if _, known := cmd.knownWorkspaceIDs[status.ID]; !known {
+			cmd.recordEvent(
+				machinediagnostics.Event{
+					Type:        machinediagnostics.EventWorkspaceDiscovered,
+					Level:       machinediagnostics.LevelInfo,
+					WorkspaceID: status.ID,
+					Message:     "Workspace state was discovered.",
+				},
 			)
 		}
-		return
+		if status.State == machinediagnostics.WorkspaceInvalidConfig {
+			invalid[status.ID] = struct{}{}
+			if _, alreadyReported := cmd.knownInvalidWorkspaceIDs[status.ID]; !alreadyReported {
+				cmd.recordEvent(
+					machinediagnostics.Event{
+						Type:        machinediagnostics.EventWorkspaceConfigErr,
+						Level:       machinediagnostics.LevelWarn,
+						WorkspaceID: status.ID,
+						Message:     "Workspace state could not be parsed.",
+						ErrorCode:   "workspace_config_invalid",
+					},
+				)
+			}
+		}
 	}
-
-	cmd.checkAndShutdown(ctx, effectiveActivity(*latestActivity), workspace)
+	for id := range cmd.knownWorkspaceIDs {
+		if _, stillPresent := current[id]; !stillPresent {
+			cmd.recordEvent(
+				machinediagnostics.Event{
+					Type:        machinediagnostics.EventWorkspaceRemoved,
+					Level:       machinediagnostics.LevelInfo,
+					WorkspaceID: id,
+					Message:     "Workspace state is no longer present.",
+				},
+			)
+		}
+	}
+	cmd.knownWorkspaceIDs = current
+	cmd.knownInvalidWorkspaceIDs = invalid
 }
 
 var activityFilePath = agentconfig.ContainerActivityFile
@@ -168,37 +429,47 @@ func activityHeartbeat() time.Time {
 	return stat.ModTime()
 }
 
-func (cmd *DaemonCmd) checkAndShutdown(
+func (cmd *DaemonCmd) shutdownWorkspace(
 	ctx context.Context,
-	latestActivity time.Time,
 	workspace *provider2.AgentWorkspaceInfo,
-) {
-	if cmd.effectiveShutdownAction(workspace) == config.ShutdownActionNone {
-		return
-	}
-
-	timeout := agent.DefaultInactivityTimeout
-	if workspace.Agent.Timeout != "" {
-		parsed, err := time.ParseDuration(workspace.Agent.Timeout)
-		if err != nil {
-			log.Errorf("parse inactivity timeout, using %s: %v", timeout, err)
-		} else {
-			timeout = parsed
-		}
-	}
-
-	deadline := latestActivity.Add(timeout)
-	if deadline.After(time.Now()) {
-		log.Infof(
-			"workspace %q last active %s, auto-stop in %s",
-			workspace.Workspace.ID,
-			latestActivity.Format(time.RFC3339),
-			time.Until(deadline).Round(time.Second),
+) error {
+	cmd.recordEvent(
+		machinediagnostics.Event{
+			Type:        machinediagnostics.EventIdleDeadline,
+			Level:       machinediagnostics.LevelInfo,
+			WorkspaceID: workspace.Workspace.ID,
+			Message:     "Workspace inactivity deadline was reached.",
+		},
+	)
+	cmd.recordEvent(
+		machinediagnostics.Event{
+			Type:        machinediagnostics.EventShutdownStarted,
+			Level:       machinediagnostics.LevelInfo,
+			WorkspaceID: workspace.Workspace.ID,
+			Message:     "Machine shutdown action started.",
+		},
+	)
+	if err := cmd.runShutdownCommand(ctx, workspace); err != nil {
+		cmd.recordEvent(
+			machinediagnostics.Event{
+				Type:        machinediagnostics.EventShutdownFailed,
+				Level:       machinediagnostics.LevelError,
+				WorkspaceID: workspace.Workspace.ID,
+				Message:     "Machine shutdown action failed.",
+				ErrorCode:   "shutdown_failed",
+			},
 		)
-		return
+		return err
 	}
-
-	cmd.runShutdownCommand(ctx, workspace)
+	cmd.recordEvent(
+		machinediagnostics.Event{
+			Type:        machinediagnostics.EventShutdownSucceeded,
+			Level:       machinediagnostics.LevelInfo,
+			WorkspaceID: workspace.Workspace.ID,
+			Message:     "Machine shutdown command completed; provider state confirms whether the machine stopped.",
+		},
+	)
+	return nil
 }
 
 // effectiveShutdownAction prefers the workspace's resolved config, falling back
@@ -218,11 +489,11 @@ func (cmd *DaemonCmd) effectiveShutdownAction(
 func (cmd *DaemonCmd) runShutdownCommand(
 	ctx context.Context,
 	workspace *provider2.AgentWorkspaceInfo,
-) {
+) error {
 	environ, err := custom.ToEnvironWithBinaries(ctx, workspace)
 	if err != nil {
 		log.Errorf("build shutdown environment: %v", err)
-		return
+		return err
 	}
 
 	shutdown := strings.Join(workspace.Agent.Exec.Shutdown, " ")
@@ -240,10 +511,11 @@ func (cmd *DaemonCmd) runShutdownCommand(
 			"run shutdown command %s: %v (stdout: %s, stderr: %s)",
 			shutdown, err, stdout.String(), stderr.String(),
 		)
-		return
+		return err
 	}
 
 	log.Infof("ran shutdown command (stdout: %s, stderr: %s)", stdout.String(), stderr.String())
+	return nil
 }
 
 func (cmd *DaemonCmd) initialTouch() {
@@ -300,4 +572,228 @@ func getActivity(workspaceConfig string) (*time.Time, *provider2.AgentWorkspaceI
 		activity = activity.Add(busyGracePeriod)
 	}
 	return &activity, workspace, nil
+}
+
+// diagnosticsWorkspaceStatuses observes every discovered configuration for the
+// status snapshot. It deliberately does not participate in selecting the one
+// latest workspace that controls existing shutdown semantics.
+type machineInactivityEvaluation struct {
+	statuses  []machinediagnostics.WorkspaceStatus
+	workspace *provider2.AgentWorkspaceInfo
+	candidate *machinediagnostics.ShutdownCandidate
+	reason    string
+}
+
+type evaluatedWorkspace struct {
+	status    machinediagnostics.WorkspaceStatus
+	workspace *provider2.AgentWorkspaceInfo
+}
+
+func evaluateMachineInactivity(
+	configs []string,
+	heartbeat time.Time,
+	fallbackAction string,
+	now time.Time,
+) machineInactivityEvaluation {
+	evaluated := evaluateWorkspaces(configs, heartbeat, fallbackAction, now)
+	result := machineInactivityEvaluation{statuses: workspaceStatuses(evaluated)}
+	if blocker := firstWorkspaceBlocker(evaluated); blocker != "" {
+		result.reason = blocker
+		return result
+	}
+	if len(evaluated) == 0 {
+		result.reason = "no workspace state was discovered"
+		return result
+	}
+	result.workspace, result.candidate = latestEligibleWorkspace(evaluated)
+	result.reason = "all workspaces are idle"
+	return result
+}
+
+func evaluateWorkspaces(
+	configs []string,
+	heartbeat time.Time,
+	fallbackAction string,
+	now time.Time,
+) []evaluatedWorkspace {
+	evaluated := make([]evaluatedWorkspace, 0, len(configs))
+	for _, path := range configs {
+		evaluated = append(
+			evaluated,
+			evaluateWorkspaceInactivity(path, heartbeat, fallbackAction, now),
+		)
+	}
+	return evaluated
+}
+
+func workspaceStatuses(evaluated []evaluatedWorkspace) []machinediagnostics.WorkspaceStatus {
+	statuses := make([]machinediagnostics.WorkspaceStatus, 0, len(evaluated))
+	for _, item := range evaluated {
+		statuses = append(statuses, item.status)
+	}
+	return statuses
+}
+
+func firstWorkspaceBlocker(evaluated []evaluatedWorkspace) string {
+	for _, item := range evaluated {
+		if item.status.BlocksMachineShutdown {
+			return item.status.BlockerReason
+		}
+	}
+	return ""
+}
+
+func latestEligibleWorkspace(
+	evaluated []evaluatedWorkspace,
+) (*provider2.AgentWorkspaceInfo, *machinediagnostics.ShutdownCandidate) {
+	var selected *evaluatedWorkspace
+	for index := range evaluated {
+		item := &evaluated[index]
+		if selected == nil || item.status.IdleDeadlineAt.After(*selected.status.IdleDeadlineAt) ||
+			(item.status.IdleDeadlineAt.Equal(*selected.status.IdleDeadlineAt) && item.status.ID < selected.status.ID) {
+			selected = item
+		}
+	}
+	deadline := *selected.status.IdleDeadlineAt
+	return selected.workspace, &machinediagnostics.ShutdownCandidate{
+		WorkspaceID: selected.status.ID,
+		EligibleAt:  &deadline,
+	}
+}
+
+func evaluateWorkspaceInactivity(
+	path string,
+	heartbeat time.Time,
+	fallbackAction string,
+	now time.Time,
+) evaluatedWorkspace {
+	workspace, result := parseWorkspace(path)
+	if result.status.State != "" {
+		return result
+	}
+	status := machinediagnostics.WorkspaceStatus{ID: workspace.Workspace.ID}
+	stat, err := os.Stat(path)
+	if err != nil {
+		return blockedWorkspaceResult(
+			status.ID,
+			machinediagnostics.WorkspaceNotRunning,
+			"Workspace state is unavailable",
+			workspace,
+		)
+	}
+	status.ShutdownActionEnabled = shutdownActionEnabled(workspace, fallbackAction)
+	if !status.ShutdownActionEnabled {
+		return blockedWorkspaceResult(
+			status.ID,
+			machinediagnostics.WorkspaceNotConfigured,
+			"Auto-stop is not configured",
+			workspace,
+		)
+	}
+	activity := maxTime(stat.ModTime(), heartbeat)
+	status.LastActivityAt = &activity
+	timeout, valid := workspaceTimeout(workspace)
+	if !valid {
+		return blockedWorkspaceResult(
+			status.ID,
+			machinediagnostics.WorkspaceInvalidConfig,
+			"Inactivity timeout must be a positive duration",
+			workspace,
+		)
+	}
+	status.Timeout = timeout.String()
+	status.Busy = agent.HasWorkspaceBusyFile(filepath.Dir(path))
+	if status.Busy {
+		deadline := activity.Add(busyGracePeriod).Add(timeout)
+		status.IdleDeadlineAt = &deadline
+		status.State = machinediagnostics.WorkspaceBusy
+		status.BlocksMachineShutdown = true
+		status.BlockerReason = "Workspace is busy"
+		return evaluatedWorkspace{status: status, workspace: workspace}
+	}
+	deadline := activity.Add(timeout)
+	status.IdleDeadlineAt = &deadline
+	if deadline.After(now) {
+		status.State = machinediagnostics.WorkspaceActive
+		status.BlocksMachineShutdown = true
+		status.BlockerReason = "Waiting for inactivity deadline"
+	} else {
+		status.State = machinediagnostics.WorkspaceIdleDue
+	}
+	return evaluatedWorkspace{status: status, workspace: workspace}
+}
+
+func parseWorkspace(path string) (*provider2.AgentWorkspaceInfo, evaluatedWorkspace) {
+	workspace, err := agent.ParseAgentWorkspaceInfo(path)
+	if err != nil || workspace.Workspace == nil {
+		return workspace, evaluatedWorkspace{
+			status: blockedWorkspaceStatus(
+				workspaceIDFromConfig(path),
+				machinediagnostics.WorkspaceInvalidConfig,
+				"Workspace configuration is invalid",
+			),
+		}
+	}
+	return workspace, evaluatedWorkspace{}
+}
+
+func blockedWorkspaceResult(
+	id string,
+	state machinediagnostics.WorkspaceEvaluationState,
+	reason string,
+	workspace *provider2.AgentWorkspaceInfo,
+) evaluatedWorkspace {
+	return evaluatedWorkspace{
+		status:    blockedWorkspaceStatus(id, state, reason),
+		workspace: workspace,
+	}
+}
+
+func shutdownActionEnabled(workspace *provider2.AgentWorkspaceInfo, fallback string) bool {
+	action := fallback
+	if workspace.LastDevContainerConfig != nil && workspace.LastDevContainerConfig.Config != nil &&
+		workspace.LastDevContainerConfig.Config.ShutdownAction != "" {
+		action = workspace.LastDevContainerConfig.Config.ShutdownAction
+	}
+	return len(workspace.Agent.Exec.Shutdown) > 0 && action != config.ShutdownActionNone
+}
+
+func maxTime(first, second time.Time) time.Time {
+	if second.After(first) {
+		return second
+	}
+	return first
+}
+
+func workspaceTimeout(workspace *provider2.AgentWorkspaceInfo) (time.Duration, bool) {
+	if workspace.Agent.Timeout == "" {
+		return agent.DefaultInactivityTimeout, true
+	}
+	parsed, err := time.ParseDuration(workspace.Agent.Timeout)
+	return parsed, err == nil && parsed > 0
+}
+
+func blockedWorkspaceStatus(
+	id string,
+	state machinediagnostics.WorkspaceEvaluationState,
+	reason string,
+) machinediagnostics.WorkspaceStatus {
+	return machinediagnostics.WorkspaceStatus{
+		ID:                    id,
+		State:                 state,
+		BlocksMachineShutdown: true,
+		BlockerReason:         reason,
+	}
+}
+
+func diagnosticsWorkspaceStatuses(configs []string) []machinediagnostics.WorkspaceStatus {
+	return evaluateMachineInactivity(configs, activityHeartbeat(), "", time.Now()).statuses
+}
+
+func workspaceIDFromConfig(path string) string {
+	parent := filepath.Dir(path)
+	if filepath.Base(parent) == "agent" {
+		parent = filepath.Dir(parent)
+	}
+	return filepath.Base(parent)
 }

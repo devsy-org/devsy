@@ -67,7 +67,11 @@ export interface ProviderOption {
   group?: string
 }
 
-export type ProviderStatus = "not_initialized" | "initializing" | "initialized" | "failed"
+export type ProviderStatus =
+  | "not_initialized"
+  | "initializing"
+  | "initialized"
+  | "failed"
 
 export interface Provider {
   name: string
@@ -102,15 +106,7 @@ export interface ProviderJob {
   errorContext?: Record<string, string>
 }
 
-/**
- * In-flight workspace delete, tracked by the main process for the same
- * reason as ProviderJob: workspace_delete returns as soon as the CLI
- * command is launched, so nothing else records that a delete is running.
- */
-export interface WorkspaceJob {
-  activity: "deleting"
-  error?: string
-}
+export type { WorkspaceJob } from "$shared/workspace-operation.js"
 
 export interface ProviderVersion {
   tag: string
@@ -133,7 +129,7 @@ export type {
   CatalogOrigin,
   ImageCatalog,
   LoadCatalogResult,
-} from "../../../../shared/image-catalog-types.js"
+} from "$shared/image-catalog-types.js"
 
 export interface MachineProviderConfig {
   name?: string
@@ -183,7 +179,7 @@ export interface CommandProgress {
    * Structured CLI error. Present only on the final (done: true) event when the
    * CLI emitted a `cliError` field on its zap JSON output.
    */
-  cliError?: import("../../../../shared/cli-error.js").CLIError
+  cliError?: import("$shared/cli-error.js").CLIError
 }
 
 /** A workspace phase transition, pushed as it happens. */

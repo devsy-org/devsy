@@ -1,13 +1,17 @@
 package cmdinternal
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -74,10 +78,31 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
 		command += fmt.Sprintf(" --agent-dir %q", agentInfo.Agent.DataPath)
 	}
 
-	// read daemon logs
-	return workspaceClient.Command(ctx, client.CommandOptions{
+	var stdout bytes.Buffer
+	if err := workspaceClient.Command(ctx, client.CommandOptions{
 		Command: command,
-		Stdout:  os.Stdout,
+		Stdout:  &stdout,
 		Stderr:  os.Stderr,
-	})
+	}); err != nil {
+		return err
+	}
+
+	var response machinediagnostics.ReadResponse
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		return fmt.Errorf("decode remote daemon diagnostics: %w", err)
+	}
+	for _, event := range response.Events {
+		_, _ = fmt.Fprintf(
+			os.Stdout,
+			"%s %-5s %-35s %s\n",
+			event.Timestamp.Format(time.RFC3339),
+			event.Level,
+			event.Type,
+			event.Message,
+		)
+	}
+	if response.Availability != machinediagnostics.AvailabilityAvailable {
+		_, _ = fmt.Fprintf(os.Stdout, "Daemon diagnostics: %s\n", response.Availability)
+	}
+	return nil
 }

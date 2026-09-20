@@ -2,15 +2,14 @@ package agentworkspace
 
 import (
 	"context"
-	"fmt"
-	"io"
+	"encoding/json"
 	"os"
-	"path/filepath"
+	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/pkg/agent"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	"github.com/spf13/cobra"
 )
 
@@ -40,39 +39,12 @@ func NewLogsDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *LogsDaemonCmd) Run(ctx context.Context) error {
-	// `agent workspace logs-daemon` reads agent-daemon.log, which only
-	// exists inside the workspace container or machine. Reject host
-	// invocations explicitly to surface misconfigurations early.
-	if agent.IsHostAgentInvocation(cmd.AgentDir) {
-		return fmt.Errorf(
-			"`devsy internal agent workspace logs-daemon` is only valid inside the workspace container or machine",
-		)
-	}
-
-	// get workspace
-	shouldExit, _, err := agent.ReadAgentWorkspaceInfo(
-		cmd.AgentDir,
-		cmd.Context,
-		cmd.ID,
+	_ = ctx
+	response := machinediagnostics.ReadFromLocator(
+		machinediagnostics.DefaultLocatorPath,
+		machinediagnostics.ReadOptions{
+			Limit: machinediagnostics.DefaultReadEvents, Now: time.Now(),
+		},
 	)
-	if err != nil {
-		return err
-	} else if shouldExit {
-		return nil
-	}
-
-	logDir, err := agent.GetAgentDaemonLogDir(cmd.AgentDir)
-	if err != nil {
-		return err
-	}
-
-	// #nosec G304 -- reads the agent's own daemon log at a derived path.
-	f, err := os.Open(filepath.Join(logDir, "agent-daemon.log"))
-	if err != nil {
-		return fmt.Errorf("open agent-daemon.log: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-
-	_, err = io.Copy(os.Stdout, f)
-	return err
+	return json.NewEncoder(os.Stdout).Encode(response)
 }

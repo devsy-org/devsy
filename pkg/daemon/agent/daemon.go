@@ -17,7 +17,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/google/shlex"
 )
 
 type SshConfig struct {
@@ -160,9 +162,21 @@ func quoteSystemdArg(arg string) string {
 	return arg
 }
 
-func InstallDaemon(agentDir, interval, shutdownAction string) error {
+type InstallOptions struct {
+	StateLocation     StateLocation
+	Interval          string
+	ShutdownAction    string
+	DiagnosticsReader machinediagnostics.ReaderIdentity
+}
+
+func InstallDaemon(
+	opts InstallOptions,
+) error {
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		return fmt.Errorf("unsupported daemon os")
+	}
+	if err := opts.StateLocation.Validate(); err != nil {
+		return fmt.Errorf("validate daemon state location: %w", err)
 	}
 
 	executable, err := os.Executable()
@@ -170,18 +184,28 @@ func InstallDaemon(agentDir, interval, shutdownAction string) error {
 		return fmt.Errorf("get executable path: %w", err)
 	}
 
-	args := buildDaemonArgs(executable, agentDir, interval, shutdownAction)
+	args := buildDaemonArgs(executable, opts)
 
 	if !isSystemdAvailable() {
 		log.Warnf("systemd not available, falling back to background process")
-		return startFallbackDaemon(executable, args)
+		lockPath, err := fallbackRuntimeLockPath(os.Geteuid(), os.UserCacheDir)
+		if err != nil {
+			return err
+		}
+		return startFallbackDaemon(executable, args, lockPath)
 	}
+	return installSystemdDaemon(opts, executable, args)
+}
 
+func installSystemdDaemon(opts InstallOptions, executable string, args []string) error {
 	quoted := make([]string, len(args))
 	for i, a := range args {
 		quoted[i] = quoteSystemdArg(a)
 	}
 	unitContent := systemdUnitContents(strings.Join(quoted, " "))
+	if err := rejectConflictingStateRoot(opts.StateLocation); err != nil {
+		return err
+	}
 
 	needsReload, err := installOrUpdateUnit(unitContent)
 	if err != nil {
@@ -191,18 +215,105 @@ func InstallDaemon(agentDir, interval, shutdownAction string) error {
 	return ensureServiceRunning(needsReload, executable, args)
 }
 
-func buildDaemonArgs(executable, agentDir, interval, shutdownAction string) []string {
-	args := []string{executable, "internal", "agent", "daemon"}
-	if agentDir != "" {
-		args = append(args, names.Flag(names.AgentDir), agentDir)
+// rejectConflictingStateRoot prevents a second machine lifecycle from silently
+// replacing the singleton service's configured state root. Legacy units have
+// no explicit root and remain upgradeable.
+func rejectConflictingStateRoot(location StateLocation) error {
+	if !isServiceInstalled() {
+		return nil
 	}
-	if interval != "" {
-		args = append(args, names.Flag(names.Interval), interval)
+	existing, err := os.ReadFile(serviceFilePath())
+	if err != nil {
+		return fmt.Errorf("read existing daemon service: %w", err)
 	}
-	if shutdownAction != "" {
-		args = append(args, names.Flag(names.ShutdownAction), shutdownAction)
+	existingLocation, configured, err := daemonUnitStateLocation(string(existing))
+	if err != nil {
+		return fmt.Errorf("read existing daemon service state location: %w", err)
+	}
+	if !configured {
+		return nil
+	}
+	if existingLocation == location {
+		return nil
+	}
+	return fmt.Errorf(
+		"devsy machine daemon is already configured for a different state root; " +
+			"multiple machine state roots on one daemon are not supported",
+	)
+}
+
+// daemonUnitStateLocation reads the generated daemon state flags from the
+// ExecStart command. It compares parsed arguments, not source substrings, so
+// roots such as /state/dev and /state/development remain distinct.
+func daemonUnitStateLocation(unit string) (StateLocation, bool, error) {
+	for line := range strings.SplitSeq(unit, "\n") {
+		commandLine, found := strings.CutPrefix(line, "ExecStart=")
+		if !found {
+			continue
+		}
+		args, err := shlex.Split(commandLine)
+		if err != nil {
+			return StateLocation{}, false, fmt.Errorf("parse ExecStart: %w", err)
+		}
+		root, rootFound := commandFlagValue(args, names.Flag(names.StateRoot))
+		if !rootFound {
+			return StateLocation{}, false, nil
+		}
+		layout, layoutFound := commandFlagValue(args, names.Flag(names.StateLayout))
+		if !layoutFound {
+			return StateLocation{}, true, fmt.Errorf("%s is missing", names.Flag(names.StateLayout))
+		}
+		return StateLocation{Root: root, Layout: StateLayout(layout)}, true, nil
+	}
+	return StateLocation{}, false, nil
+}
+
+func commandFlagValue(args []string, flag string) (string, bool) {
+	for index := 0; index+1 < len(args); index++ {
+		if args[index] == flag {
+			return strings.ReplaceAll(args[index+1], "%%", "%"), true
+		}
+	}
+	return "", false
+}
+
+func buildDaemonArgs(executable string, opts InstallOptions) []string {
+	args := []string{
+		executable,
+		"internal",
+		"agent",
+		"daemon",
+		names.Flag(names.StateRoot),
+		opts.StateLocation.Root,
+		names.Flag(names.StateLayout),
+		string(opts.StateLocation.Layout),
+		names.Flag(names.DiagnosticsReaderUID),
+		strconv.Itoa(opts.DiagnosticsReader.UID),
+		names.Flag(names.DiagnosticsReaderGID),
+		strconv.Itoa(opts.DiagnosticsReader.GID),
+	}
+	if opts.Interval != "" {
+		args = append(args, names.Flag(names.Interval), opts.Interval)
+	}
+	if opts.ShutdownAction != "" {
+		args = append(args, names.Flag(names.ShutdownAction), opts.ShutdownAction)
 	}
 	return args
+}
+
+// DiagnosticsReaderIdentity captures the invoking user before systemd starts
+// the daemon as root. SUDO_UID/GID identify the original user on sudo paths.
+func DiagnosticsReaderIdentity() machinediagnostics.ReaderIdentity {
+	uid, gid := os.Getuid(), os.Getgid()
+	if uid == 0 {
+		if parsedUID, err := strconv.Atoi(os.Getenv("SUDO_UID")); err == nil && parsedUID >= 0 {
+			uid = parsedUID
+		}
+		if parsedGID, err := strconv.Atoi(os.Getenv("SUDO_GID")); err == nil && parsedGID >= 0 {
+			gid = parsedGID
+		}
+	}
+	return machinediagnostics.ReaderIdentity{UID: uid, GID: gid}
 }
 
 // installOrUpdateUnit writes the systemd unit file and runs daemon-reload when
@@ -256,7 +367,7 @@ func ensureServiceRunning(needsReload bool, executable string, args []string) er
 			"systemctl", "restart", pkgconfig.BinaryName,
 		).CombinedOutput(); err != nil {
 			log.Warnf("Error restarting service: %s: %v", string(out), err)
-			return startFallbackDaemon(executable, args)
+			return startFallbackDaemon(executable, args, machinediagnostics.DefaultRuntimeLockPath)
 		}
 		log.Infof("restarted Devsy daemon with updated config")
 	} else if !isServiceRunning() {
@@ -265,7 +376,7 @@ func ensureServiceRunning(needsReload bool, executable string, args []string) er
 			"systemctl", "start", pkgconfig.BinaryName,
 		).CombinedOutput(); err != nil {
 			log.Warnf("Error starting service: %s: %v", string(out), err)
-			return startFallbackDaemon(executable, args)
+			return startFallbackDaemon(executable, args, machinediagnostics.DefaultRuntimeLockPath)
 		}
 		log.Infof("installed Devsy daemon into server")
 	}
@@ -273,11 +384,17 @@ func ensureServiceRunning(needsReload bool, executable string, args []string) er
 	return nil
 }
 
-func startFallbackDaemon(executable string, args []string) error {
+func startFallbackDaemon(executable string, args []string, runtimeLockPath string) error {
 	daemonArgs := args[1:] // strip executable path
 	err := command.StartBackgroundOnce(pkgconfig.DaemonProcessName, func() (*exec.Cmd, error) {
 		//nolint:gosec // executable is from os.Executable()
 		cmd := exec.Command(executable, daemonArgs...)
+		if runtimeLockPath != machinediagnostics.DefaultRuntimeLockPath {
+			cmd.Env = append(
+				os.Environ(),
+				machinediagnostics.RuntimeLockPathEnv+"="+runtimeLockPath,
+			)
+		}
 		return cmd, nil
 	})
 	if err != nil {
@@ -285,6 +402,20 @@ func startFallbackDaemon(executable string, args []string) error {
 	}
 	log.Infof("started Devsy daemon into server")
 	return nil
+}
+
+func fallbackRuntimeLockPath(
+	uid int,
+	userCacheDir func() (string, error),
+) (string, error) {
+	if uid == 0 {
+		return machinediagnostics.DefaultRuntimeLockPath, nil
+	}
+	cacheDir, err := userCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("get user cache directory for daemon lock: %w", err)
+	}
+	return filepath.Join(cacheDir, "devsy", "agent-daemon.lock"), nil
 }
 
 func RemoveDaemon() error {

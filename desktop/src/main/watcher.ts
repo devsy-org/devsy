@@ -61,6 +61,7 @@ export class Watcher {
   private pollTimer: ReturnType<typeof setInterval> | null = null
   private workspaceStatusTimer: ReturnType<typeof setInterval> | null = null
   private fsWatcher: ReturnType<typeof watch> | null = null
+  private workspaceRevision = 0
   private polling = false
   private pollQueued = false
   // Serializes pollProviders so a manual refreshProviders() can never
@@ -131,6 +132,12 @@ export class Watcher {
         this.pollMachines(),
         this.pollContexts(),
       ])
+      for (const [id, job] of Object.entries(
+        this.deps.workspaceJobs.snapshot(),
+      )) {
+        if (job.state === "reconciling" && job.refreshError)
+          void this.deps.workspaceJobs.retryRefresh(id)
+      }
     } finally {
       this.polling = false
       if (this.pollQueued) {
@@ -156,11 +163,11 @@ export class Watcher {
 
   /** Re-read the workspace list from disk now, without waiting for the next scheduled poll. */
   async refreshWorkspaces(): Promise<void> {
-    await this.queueWorkspacePoll()
+    await this.queueWorkspacePoll(true)
   }
 
   async refreshWorkspaceStatus(workspaceId: string): Promise<void> {
-    await this.queueWorkspaceStatusPoll([workspaceId])
+    await this.queueWorkspaceStatusPoll([workspaceId], true)
   }
 
   async refreshWorkspaceStatuses(): Promise<void> {
@@ -175,24 +182,32 @@ export class Watcher {
     void this.refreshWorkspaceStatuses()
   }
 
-  private queueWorkspaceStatusPoll(workspaceIds?: string[]): Promise<void> {
+  private queueWorkspaceStatusPoll(
+    workspaceIds?: string[],
+    strict = false,
+  ): Promise<void> {
     const run = this.workspaceStatusChain.then(() =>
-      this.pollWorkspaceStatuses(workspaceIds),
+      this.pollWorkspaceStatuses(workspaceIds, strict),
     )
-    this.workspaceStatusChain = run
+    this.workspaceStatusChain = run.catch(() => {})
     return run
   }
 
-  private async pollWorkspaceStatuses(workspaceIds?: string[]): Promise<void> {
+  private async pollWorkspaceStatuses(
+    workspaceIds?: string[],
+    strict = false,
+  ): Promise<void> {
     this.workspaceStatusPolling = true
     let changed = false
     try {
-      const ids = workspaceIds ?? this.deps.state.workspaceList().map((ws) => ws.id)
+      const ids =
+        workspaceIds ?? this.deps.state.workspaceList().map((ws) => ws.id)
       const concurrency = 6
       let next = 0
       const worker = async (): Promise<void> => {
         while (next < ids.length) {
           const id = ids[next++]
+          const generation = this.deps.workspaceJobs.generation(id)
           try {
             const raw = await this.deps.cli.runRaw([
               "workspace",
@@ -203,11 +218,19 @@ export class Watcher {
               "--timeout",
               "15s",
             ])
+            if (generation !== this.deps.workspaceJobs.generation(id)) {
+              if (strict)
+                throw new Error("Workspace operation changed during refresh")
+              continue
+            }
             const status = normalizeWorkspaceStatus(raw)
+            if (!status && strict)
+              throw new Error("Workspace status unavailable")
             if (status && this.deps.state.updateWorkspaceStatus(id, status)) {
               changed = true
             }
-          } catch {
+          } catch (error) {
+            if (strict) throw error
             // Preserve the last known status and retry on the next sweep.
           }
         }
@@ -225,13 +248,14 @@ export class Watcher {
     }
   }
 
-  private queueWorkspacePoll(): Promise<void> {
-    const run = this.workspacePollChain.then(() => this.pollWorkspaces())
-    this.workspacePollChain = run
+  private queueWorkspacePoll(strict = false): Promise<void> {
+    const run = this.workspacePollChain.then(() => this.pollWorkspaces(strict))
+    this.workspacePollChain = run.catch(() => {})
     return run
   }
 
-  private async pollWorkspaces(): Promise<void> {
+  private async pollWorkspaces(strict = false): Promise<void> {
+    const generation = this.deps.workspaceJobs.epoch
     try {
       const workspaces = await this.queryWithFallback(
         this.deps.daemon
@@ -239,6 +263,11 @@ export class Watcher {
           : undefined,
         () => this.deps.cli.run<unknown[]>(["workspace", "list", "--skip-pro"]),
       )
+      if (generation !== this.deps.workspaceJobs.epoch) {
+        if (strict)
+          throw new Error("Workspace operation changed during refresh")
+        return
+      }
       const changed = this.deps.state.updateWorkspaces(workspaces as any[])
       if (changed) {
         this.broadcastWorkspaces()
@@ -247,6 +276,7 @@ export class Watcher {
       // Polling is best-effort, but retain diagnostics so a broken CLI or
       // daemon cannot make the desktop appear empty without explanation.
       console.warn("[watcher] workspace poll failed", error)
+      if (strict) throw error
     }
   }
 
@@ -256,10 +286,15 @@ export class Watcher {
    * workspace as idle between the delete finishing and the list catching up.
    */
   broadcastWorkspaces(): void {
-    this.send("workspaces-changed", {
+    this.send("workspaces-changed", this.workspaceSnapshot())
+  }
+
+  workspaceSnapshot() {
+    return {
+      revision: ++this.workspaceRevision,
       workspaces: this.deps.state.workspaceList(),
       jobs: this.deps.workspaceJobs.snapshot(),
-    })
+    }
   }
 
   /** Re-read provider state from disk now, without waiting for the next scheduled poll. */

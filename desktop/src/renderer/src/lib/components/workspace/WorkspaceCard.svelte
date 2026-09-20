@@ -1,4 +1,7 @@
 <script lang="ts">
+import WorkspaceOperation from "./WorkspaceOperation.svelte"
+import { workspaceJobs } from "$lib/stores/workspaces.js"
+import { workspaceJobBusy, workspaceJobInterruptible } from "$shared/workspace-operation.js"
 import { goto } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
@@ -13,6 +16,7 @@ let { workspace }: { workspace: Workspace } = $props()
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
 let acting = $state(false)
+let busy = $derived(acting || workspaceJobBusy($workspaceJobs[workspace.id]))
 
 let isRunning = $derived(workspace.status?.toLowerCase() === "running")
 let isStopped = $derived(
@@ -44,7 +48,6 @@ async function handleStop(e: Event) {
   acting = true
   try {
     await workspaceStop(workspace.id)
-    toasts.success(`Stopping ${workspace.id}...`)
   } catch (err) {
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   } finally {
@@ -61,7 +64,6 @@ async function handleDelete() {
   deleting = true
   try {
     await workspaceDelete(workspace.id)
-    toasts.success(`Deleted ${workspace.id}`)
     confirmDeleteOpen = false
   } catch (err) {
     toasts.error(`Failed to delete: ${extractErrorMessage(err)}`)
@@ -98,34 +100,26 @@ async function handleDelete() {
         {workspace.ide.name}
       </span>
     {/if}
-    {#if workspace.status}
-      <span
-        class={badgeVariants({
-          variant: isRunning ? "default" : isBusy ? "secondary" : "outline",
-        })}
-      >
-        {workspace.status}
-      </span>
-    {/if}
+    <WorkspaceOperation id={workspace.id} status={workspace.status} />
   </div>
 
   <div class="mt-4 flex items-center gap-2">
     {#if isRunning}
-      <Button size="sm" onclick={handleOpen}>
+      <Button size="sm" disabled={busy} onclick={handleOpen}>
         Open
       </Button>
     {:else if isStopped}
-      <Button size="sm" onclick={handleStart}>Start</Button>
+      <Button size="sm" disabled={busy} onclick={handleStart}>Start</Button>
     {/if}
-    {#if isRunning || isBusy}
-      <Button variant="outline" size="sm" onclick={handleStop} disabled={acting}>
+    {#if isRunning || isBusy || workspaceJobInterruptible($workspaceJobs[workspace.id])}
+      <Button variant="outline" size="sm" onclick={handleStop} disabled={busy && !workspaceJobInterruptible($workspaceJobs[workspace.id])}>
         {acting ? "Stopping..." : "Stop"}
       </Button>
     {/if}
     <Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); goto(`/workspaces/${workspace.id}`) }}>
       Details
     </Button>
-    <Button variant="destructive" size="sm" onclick={openDeleteConfirm} disabled={acting}>Delete</Button>
+    <Button variant="destructive" size="sm" onclick={openDeleteConfirm} disabled={busy && !workspaceJobInterruptible($workspaceJobs[workspace.id])}>Delete</Button>
   </div>
 </button>
 

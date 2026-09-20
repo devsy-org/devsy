@@ -769,11 +769,21 @@ func installDaemon(workspaceInfo *provider.AgentWorkspaceInfo) error {
 	}
 
 	log.Debugf("installing Devsy daemon into server")
-	return agentdaemon.InstallDaemon(
-		workspaceInfo.Agent.DataPath,
-		workspaceInfo.CLIOptions.DaemonInterval,
-		shutdownAction,
-	)
+	location, err := agentdaemon.ResolveStateLocation(agentdaemon.ResolveStateLocationOptions{
+		AgentDataPath: workspaceInfo.Agent.DataPath,
+		Origin:        workspaceInfo.Origin,
+		Context:       workspaceInfo.Workspace.Context,
+		WorkspaceID:   workspaceInfo.Workspace.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("resolve daemon state location: %w", err)
+	}
+	return agentdaemon.InstallDaemon(agentdaemon.InstallOptions{
+		StateLocation:     location,
+		Interval:          workspaceInfo.CLIOptions.DaemonInterval,
+		ShutdownAction:    shutdownAction,
+		DiagnosticsReader: agentdaemon.DiagnosticsReaderIdentity(),
+	})
 }
 
 func persistResolvedConfig(

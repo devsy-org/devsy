@@ -95,6 +95,7 @@ export const EVENT_NAMES = {
 } as const
 
 interface WorkspacesPayload {
+  revision: number
   workspaces: Workspace[]
   jobs?: Record<string, WorkspaceJob>
 }
@@ -114,10 +115,15 @@ export function onWorkspacesChanged(
   callback: (
     workspaces: Workspace[],
     jobs: Record<string, WorkspaceJob>,
+    revision: number,
   ) => void,
 ): Promise<UnlistenFn> {
   return listen<WorkspacesPayload>(EVENT_NAMES.WORKSPACES_CHANGED, (event) => {
-    callback(event.payload.workspaces, event.payload.jobs ?? {})
+    callback(
+      event.payload.workspaces,
+      event.payload.jobs ?? {},
+      event.payload.revision,
+    )
   })
 }
 

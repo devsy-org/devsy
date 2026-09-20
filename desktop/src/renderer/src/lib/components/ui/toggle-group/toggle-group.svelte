@@ -1,6 +1,6 @@
 <script lang="ts" module>
 import type { VariantProps } from "tailwind-variants"
-import type { toggleVariants } from "../toggle/index.js"
+import type { toggleVariants } from "$lib/components/ui/toggle/index.js"
 
 export type ToggleGroupContext = VariantProps<typeof toggleVariants>
 
