@@ -42,7 +42,20 @@ Devsy Desktop needs [WebView 2](https://developer.microsoft.com/en-us/microsoft-
 
 ## Install Devsy CLI
 
-On macOS or Linux, install with [Homebrew](https://brew.sh):
+On macOS or Linux, the quickest option is the install script:
+
+```bash
+curl -L https://devsy.sh/install.sh | sh
+```
+
+The script detects your OS and CPU architecture, downloads the latest CLI build from [GitHub releases](https://github.com/devsy-org/devsy/releases), verifies its SHA-256 checksum when the release publishes one, and installs `devsy` into `/usr/local/bin` (or `~/.local/bin` when `/usr/local/bin` isn't writable). Re-run it any time to get the latest release. On Windows, use the PowerShell command in the Windows tab below.
+
+Two environment variables customize the script:
+
+- `DEVSY_VERSION` installs a specific release instead of the latest: `curl -L https://devsy.sh/install.sh | DEVSY_VERSION=v1.19.0 sh`
+- `DEVSY_INSTALL_DIR` installs somewhere other than the default: `curl -L https://devsy.sh/install.sh | DEVSY_INSTALL_DIR="$HOME/bin" sh`
+
+On macOS or Linux, you can also install with [Homebrew](https://brew.sh):
 
 ```bash
 brew install devsy-org/homebrew-tap/devsy
@@ -50,7 +63,7 @@ brew install devsy-org/homebrew-tap/devsy
 
 Upgrade later with `brew upgrade devsy`.
 
-Otherwise, run the command for your platform below. You can also install the CLI later from Devsy Desktop.
+To download a binary yourself, run the command for your platform below. You can also install the CLI later from Devsy Desktop.
 
 <Tabs items={['MacOS Silicon/ARM', 'MacOS Intel/AMD', 'Windows', 'Linux AMD', 'Linux ARM']}>
 <Tab value="MacOS Silicon/ARM">
