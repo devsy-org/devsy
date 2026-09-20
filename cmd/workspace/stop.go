@@ -82,35 +82,40 @@ func (cmd *StopCmd) runArgs(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return status.Run(status.WithReporter(ctx, reporter), reporter,
-		status.Operation{Phase: status.PhaseStoppingWorkspace}, func(ctx context.Context) error {
-			var devsyConfig *config.Config
-			var client client2.BaseWorkspaceClient
-			err := status.RunStep(
-				ctx, status.PhaseStoppingWorkspace, "Loading workspace",
-				func(ctx context.Context) error {
-					var err error
-					devsyConfig, err = config.LoadConfig(cmd.Context, cmd.Provider)
-					if err != nil {
-						return err
-					}
-					if err := clientimplementation.DecodePlatformOptionsFromEnv(
-						&cmd.Platform,
-					); err != nil {
-						return fmt.Errorf("decode platform options: %w", err)
-					}
-					client, err = workspace2.Get(ctx, workspace2.GetOptions{
-						DevsyConfig: devsyConfig, Args: args, Owner: cmd.Owner,
-					})
-					return err
-				},
-			)
+	ctx = status.WithReporter(ctx, reporter)
+	var devsyConfig *config.Config
+	var client client2.BaseWorkspaceClient
+	err = status.RunStep(
+		ctx, status.PhaseStoppingWorkspace, "Loading workspace",
+		func(ctx context.Context) error {
+			var err error
+			devsyConfig, err = config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
 			}
-			reporter = withWorkspaceJournal(reporter, client.Workspace())
+			if err := clientimplementation.DecodePlatformOptionsFromEnv(
+				&cmd.Platform,
+			); err != nil {
+				return fmt.Errorf("decode platform options: %w", err)
+			}
+			client, err = workspace2.Get(ctx, workspace2.GetOptions{
+				DevsyConfig: devsyConfig, Args: args, Owner: cmd.Owner,
+			})
+			return err
+		},
+	)
+	if err != nil {
+		return err
+	}
+	reporter = withWorkspaceJournal(reporter, client.Workspace())
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseStoppingWorkspace},
+		func(ctx context.Context) error {
 			return cmd.run(status.WithReporter(ctx, reporter), devsyConfig, client)
-		})
+		},
+	)
 }
 
 func (cmd *StopCmd) run(
