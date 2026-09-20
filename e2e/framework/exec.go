@@ -9,9 +9,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/docker"
 )
+
+// execWaitDelay bounds how long Wait may block on I/O after the process exits
+// or is killed for context cancellation. A grandchild that escapes the
+// process-group kill while holding the stdout/stderr pipes could otherwise
+// block Wait forever, letting a hung command outlive its spec timeout.
+const execWaitDelay = 30 * time.Second
 
 // ExecCommand executes the command string with the devsy test binary.
 func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (string, error) {
@@ -19,6 +26,7 @@ func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (strin
 
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
+	cmd.WaitDelay = execWaitDelay
 	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
 	cmd.Stderr = os.Stderr
 
@@ -33,6 +41,7 @@ func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (strin
 func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error {
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
+	cmd.WaitDelay = execWaitDelay
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -53,6 +62,7 @@ func (f *Framework) ExecCommand(
 
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
+	cmd.WaitDelay = execWaitDelay
 	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
 	cmd.Stderr = os.Stderr
 
@@ -78,6 +88,7 @@ func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (stri
 
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
+	cmd.WaitDelay = execWaitDelay
 	cmd.Stdout = io.MultiWriter(os.Stdout, &execOut)
 	cmd.Stderr = io.MultiWriter(os.Stderr, &execErr)
 
