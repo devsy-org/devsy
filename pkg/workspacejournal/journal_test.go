@@ -84,6 +84,43 @@ func TestJournalRotatesAndPrunes(t *testing.T) {
 	}
 }
 
+func TestAppendSkipsOversizedEvents(t *testing.T) {
+	dir := t.TempDir()
+	journal, err := New(Options{Dir: dir, MaxBytes: 1000, MaxSegmentBytes: 300})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.Reporter("demo").Report(status.Event{
+		Pipeline: status.PipelineWorkspaceUp,
+		Phase:    status.PhaseReady,
+		Step:     strings.Repeat("x", 500),
+		State:    status.StateSucceeded,
+	})
+	journal.Reporter("demo").Report(status.Event{
+		Pipeline: status.PipelineWorkspaceUp,
+		Phase:    status.PhaseReady,
+		Step:     "small",
+		State:    status.StateSucceeded,
+	})
+	events, err := Read(dir, "demo", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Step != "small" {
+		t.Fatalf("events=%+v", events)
+	}
+	paths, err := segmentPaths(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range paths {
+		info, _ := os.Stat(p)
+		if info.Size() > 300 {
+			t.Fatalf("segment %s exceeds limit: %d", p, info.Size())
+		}
+	}
+}
+
 func TestReadSkipsCorruptLines(t *testing.T) {
 	dir := t.TempDir()
 	contents := "not-json\n" +
@@ -138,7 +175,7 @@ func TestJournalRotatesFromHighestExistingSegment(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	journal, err := New(Options{Dir: dir, MaxSegmentBytes: 100})
+	journal, err := New(Options{Dir: dir, MaxSegmentBytes: 200})
 	if err != nil {
 		t.Fatal(err)
 	}
