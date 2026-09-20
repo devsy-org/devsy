@@ -158,8 +158,8 @@ describe("UpdatesPanel status display", () => {
     await tick()
 
     expect(document.body.textContent).toMatch(/devsy 1\.18\.0 is available/i)
-    expect(document.body.textContent).toMatch(/installed:\s*v1\.17\.0/i)
-    expect(document.body.textContent).toMatch(/available:\s*v1\.18\.0/i)
+    expect(document.body.textContent).toMatch(/installed v1\.17\.0/i)
+    expect(document.body.textContent).toMatch(/devsy 1\.18\.0 is available/i)
     const btn = Array.from(document.querySelectorAll("button")).find((b) =>
       /download update/i.test(b.textContent ?? ""),
     )
