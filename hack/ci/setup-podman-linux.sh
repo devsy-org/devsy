@@ -42,6 +42,15 @@ cat /etc/os-release
 uname -a
 
 if [[ "$mode" == "rootful" ]]; then
+    # Keep the API service resident for the whole shard. The stock unit runs
+    # `podman system service` with the default 5s idle timeout, so every test
+    # command pays a socket reactivation and can race a service mid-exit.
+    sudo mkdir -p /etc/systemd/system/podman.service.d
+    sudo tee /etc/systemd/system/podman.service.d/10-devsy-ci.conf >/dev/null <<'EOF'
+[Service]
+ExecStart=
+ExecStart=podman --log-level=info system service --time=0
+EOF
     sudo systemctl daemon-reload
     sudo systemctl enable --now podman.socket
     if ! timeout 30 bash -c \
