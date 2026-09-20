@@ -184,18 +184,8 @@ func (s *localStore) Delete(context, name string) error {
 	s.repairLegacyOwnership(idx)
 
 	if meta, ok := idx.get(context, name); ok && meta.Sensitive() {
-		if meta.Backend == "" {
-			if err := s.removeFromProbeableBackends(idx, backendKey(context, name)); err != nil {
-				return err
-			}
-		} else {
-			b, openErr := s.backends.Open(meta.Backend, idx, false)
-			if openErr != nil {
-				return openErr
-			}
-			if err := b.remove(backendKey(context, name)); err != nil {
-				return err
-			}
+		if err := s.removeSecretValue(idx, meta); err != nil {
+			return err
 		}
 	}
 	idx.remove(context, name)
@@ -402,6 +392,18 @@ func (s *localStore) provenOwner(idx *index, key string) (Backend, bool) {
 		return "", false
 	}
 	return found[0], true
+}
+
+func (s *localStore) removeSecretValue(idx *index, meta SecretMeta) error {
+	key := backendKey(meta.Context, meta.Name)
+	if meta.Backend == "" {
+		return s.removeFromProbeableBackends(idx, key)
+	}
+	b, err := s.backends.Open(meta.Backend, idx, false)
+	if err != nil {
+		return err
+	}
+	return b.remove(key)
 }
 
 func (s *localStore) removeFromProbeableBackends(idx *index, key string) error {
