@@ -231,7 +231,8 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 		cleanupErr := f.CleanupWorkspace(ctx, tempDir)
 		if cleanupErr != nil {
 			ginkgo.GinkgoWriter.Printf("workspace cleanup failed for %s: %v\n", tempDir, cleanupErr)
-			cleanupErr = recoverPodmanCleanup(ctx, f, initialDir, tempDir, cleanupErr)
+			dirs := podmanCleanupDirs{initialDir: initialDir, tempDir: tempDir}
+			cleanupErr = recoverPodmanCleanup(ctx, f, dirs, cleanupErr)
 		}
 		return cleanupErr
 	})
