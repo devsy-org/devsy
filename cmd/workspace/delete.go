@@ -87,34 +87,25 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(args) <= 1 {
-		workspaceID := ""
-		if len(args) == 1 {
-			workspaceID = args[0]
-		}
-		reporter = withWorkspaceJournal(reporter, workspaceID)
+	devsyConfig, err := cmd.loadConfig()
+	if err != nil {
+		return err
 	}
-	var deleteErr error
-	var devsyConfig *config.Config
-	deleteErr = status.Run(
+	workspaceIDs := resolveJournalWorkspaceIDs(ctx, devsyConfig, cmd.Owner, args)
+	if len(args) <= 1 {
+		reporter = withWorkspaceJournal(reporter, workspaceIDs[journalWorkspaceKey(args)])
+	}
+	deleteErr := status.Run(
 		ctx,
 		reporter,
 		status.Operation{Phase: status.PhaseDeletingWorkspace},
 		func(ctx context.Context) error {
-			var err error
-			devsyConfig, err = cmd.loadConfig()
-			if err != nil {
-				return err
-			}
 			if len(args) <= 1 {
 				return cmd.deleteSingle(status.WithReporter(ctx, reporter), devsyConfig, args)
 			}
-			return cmd.deleteMultiple(ctx, devsyConfig, reporter, args)
+			return cmd.deleteMultiple(ctx, devsyConfig, reporter, workspaceIDs, args)
 		},
 	)
-	if devsyConfig == nil {
-		return deleteErr
-	}
 
 	count, countErr := workspace.CountLocalWorkspaces(devsyConfig.DefaultContext)
 	if countErr != nil {
@@ -161,11 +152,12 @@ func (cmd *DeleteCmd) deleteMultiple(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	reporter status.Reporter,
+	workspaceIDs map[string]string,
 	args []string,
 ) error {
 	var errs []error
 	for _, arg := range args {
-		targetReporter := withWorkspaceJournal(reporter, arg)
+		targetReporter := withWorkspaceJournal(reporter, workspaceIDs[arg])
 		name, err := cmd.deleteWorkspace(
 			status.WithReporter(ctx, targetReporter),
 			devsyConfig,
