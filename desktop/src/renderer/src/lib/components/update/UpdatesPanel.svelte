@@ -99,11 +99,10 @@ onMount(async () => {
 })
 </script>
 
-<div class="space-y-8">
-  <!-- Status hero -->
-  <section class="space-y-3">
+<div class="space-y-6">
+  <section aria-label="Update status">
     <div class="rounded-lg border p-4">
-      <div class="flex items-start gap-3">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
         <div class="mt-0.5 shrink-0">
           {#if s.state === "checking"}
             <Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
@@ -131,20 +130,9 @@ onMount(async () => {
             </div>
           {:else if s.state === "available"}
             <p class="text-sm font-medium">Devsy {s.availableVersion} is available</p>
-            <div class="grid grid-cols-3 gap-2 rounded-md border bg-muted/40 p-2 text-xs">
-              <div>
-                <span class="text-muted-foreground">Installed:</span>
-                <span class="font-mono font-medium ml-1">v{installedVersion || "unknown"}</span>
-              </div>
-              <div>
-                <span class="text-muted-foreground">Available:</span>
-                <span class="font-mono font-medium text-primary ml-1">v{s.availableVersion}</span>
-              </div>
-              <div>
-                <span class="text-muted-foreground">Channel:</span>
-                <span class="font-medium ml-1">{channelLabel(releaseChannel)}</span>
-              </div>
-            </div>
+            <p class="text-xs text-muted-foreground">
+              Installed v{installedVersion || "unknown"} · {channelLabel(releaseChannel)} channel
+            </p>
           {:else if s.state === "downloading"}
             <p class="text-sm font-medium">Downloading Devsy {s.availableVersion}</p>
             <Progress value={s.progress.percent} max={100} />
@@ -206,7 +194,7 @@ onMount(async () => {
           {/if}
         </div>
 
-        <div class="shrink-0">
+        <div class="shrink-0 self-start">
           {#if s.state === "available"}
             <Button size="sm" onclick={() => downloadUpdate()}>Download update</Button>
           {:else if s.state === "downloaded"}
@@ -241,12 +229,8 @@ onMount(async () => {
 
   <Separator />
 
-  <!-- Release channel -->
   <section class="space-y-3">
-    <div>
-      <Label>Release Channel</Label>
-      <p class="text-xs text-muted-foreground">Choose how early you receive new versions</p>
-    </div>
+    <Label>Release channel</Label>
     <div class="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Release Channel">
       {#each CHANNELS as c (c.value)}
         <button
@@ -264,12 +248,7 @@ onMount(async () => {
               <CheckCircle2 class="h-3.5 w-3.5 text-primary" />
             {/if}
           </div>
-          <p class="mt-1 text-xs text-muted-foreground">{c.cadence}</p>
-          {#if c.unstable}
-            <p class="mt-1 text-xs text-yellow-600 dark:text-yellow-400">{c.description}</p>
-          {:else}
-            <p class="mt-1 text-xs text-muted-foreground">{c.description}</p>
-          {/if}
+          <p class="mt-1 text-xs {c.unstable ? 'text-yellow-600 dark:text-yellow-400' : 'text-muted-foreground'}">{c.cadence}</p>
         </button>
       {/each}
     </div>
@@ -277,10 +256,9 @@ onMount(async () => {
 
   <Separator />
 
-  <!-- Update behavior -->
   <section class="space-y-3">
     <Label>Update Behavior</Label>
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <p class="text-sm">Download updates automatically</p>
         <p class="text-xs text-muted-foreground">
@@ -291,19 +269,9 @@ onMount(async () => {
     </div>
   </section>
 
-  <Separator />
-
-  <!-- Version footer -->
-  <section class="flex items-center justify-between rounded-lg border p-3">
-    <div>
-      <p class="text-sm font-medium">Devsy</p>
-      {#if appVersion}
-        <p class="font-mono text-xs text-muted-foreground">v{appVersion}</p>
-      {:else}
-        <p class="text-xs text-muted-foreground">Version unavailable</p>
-      {/if}
-    </div>
-    <span class="text-xs text-muted-foreground">{channelLabel(releaseChannel)} channel</span>
+  <section class="flex items-center justify-between text-xs text-muted-foreground">
+    <span>Devsy {appVersion ? `v${appVersion}` : "version unavailable"}</span>
+    <span>{channelLabel(releaseChannel)} channel</span>
   </section>
 </div>
 
