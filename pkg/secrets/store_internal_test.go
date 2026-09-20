@@ -757,7 +757,7 @@ func TestStore_RepairsLegacyFileBackendWithPassphrase(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "recovered", got)
 
-	stored, err := os.ReadFile(indexPath)
+	stored, err := os.ReadFile(indexPath) // #nosec G304 -- test-owned temporary path.
 	require.NoError(t, err)
 	require.Contains(t, string(stored), "backend: file")
 
