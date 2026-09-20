@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,10 @@ import (
 type backendRegistry interface {
 	Open(kind Backend, idx *index, create bool) (backend, error)
 	ResolveForNewSecret(preference Backend, idx *index) (Backend, error)
+	// Probe reports whether kind's backend holds key. conclusive is false when
+	// the backend cannot answer (unavailable or unreadable), so callers never
+	// treat an unprobeable backend as empty.
+	Probe(kind Backend, idx *index, key string) (present, conclusive bool)
 }
 
 type fixedBackendRegistry struct{ b backend }
@@ -19,6 +24,12 @@ type fixedBackendRegistry struct{ b backend }
 func (r fixedBackendRegistry) Open(_ Backend, _ *index, _ bool) (backend, error) { return r.b, nil }
 func (r fixedBackendRegistry) ResolveForNewSecret(_ Backend, _ *index) (Backend, error) {
 	return BackendKeyring, nil
+}
+func (r fixedBackendRegistry) Probe(kind Backend, _ *index, key string) (bool, bool) {
+	if kind != BackendKeyring {
+		return false, false
+	}
+	return probePresence(r.b, key)
 }
 
 type systemBackendRegistry struct{ dir string }
@@ -50,6 +61,46 @@ func (r *systemBackendRegistry) Open(kind Backend, idx *index, create bool) (bac
 		return newFileBackend(filepath.Join(r.dir, EncryptedFileName), key), nil
 	default:
 		return nil, fmt.Errorf("invalid secrets backend %q", kind)
+	}
+}
+
+func (r *systemBackendRegistry) Probe(kind Backend, idx *index, key string) (bool, bool) {
+	switch kind {
+	case BackendKeyring:
+		if !keyringAvailable() {
+			return false, false
+		}
+		return probePresence(keyringBackend{}, key)
+	case BackendFile:
+		path := filepath.Join(r.dir, EncryptedFileName)
+		if _, err := os.Stat(path); err != nil {
+			// No encrypted file means the file backend provably holds nothing.
+			return false, true
+		}
+		fk, err := openExistingFileKey(r.dir, idx)
+		if err != nil && idx.data.KeySource == "" {
+			// Legacy indexes may predate persisted key-source metadata; a
+			// configured passphrase still proves ownership read-only.
+			fk, err = openPassphraseFileKey()
+		}
+		if err != nil {
+			return false, false
+		}
+		return probePresence(newFileBackend(path, fk), key)
+	default:
+		return false, false
+	}
+}
+
+func probePresence(b backend, key string) (present, conclusive bool) {
+	_, err := b.get(key)
+	switch {
+	case err == nil:
+		return true, true
+	case errors.Is(err, ErrSecretNotFound):
+		return false, true
+	default:
+		return false, false
 	}
 }
 
