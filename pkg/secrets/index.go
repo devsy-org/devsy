@@ -61,10 +61,6 @@ func (i *index) normalizeKinds() {
 	}
 }
 
-// validateBackends rejects structurally invalid entries. A sensitive entry
-// without a recorded backend is not invalid: indexes written before backend
-// ownership was persisted are repaired by the store, which proves ownership
-// from the backends themselves.
 func (i *index) validateBackends() error {
 	for context, entries := range i.data.Contexts {
 		for name, meta := range entries {
