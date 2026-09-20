@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 type backendRegistry interface {
 	Open(kind Backend, idx *index, create bool) (backend, error)
 	ResolveForNewSecret(preference Backend, idx *index) (Backend, error)
+	Probe(kind Backend, idx *index, key string) (present, conclusive bool)
 }
 
 type fixedBackendRegistry struct{ b backend }
@@ -19,6 +21,13 @@ type fixedBackendRegistry struct{ b backend }
 func (r fixedBackendRegistry) Open(_ Backend, _ *index, _ bool) (backend, error) { return r.b, nil }
 func (r fixedBackendRegistry) ResolveForNewSecret(_ Backend, _ *index) (Backend, error) {
 	return BackendKeyring, nil
+}
+
+func (r fixedBackendRegistry) Probe(kind Backend, _ *index, key string) (bool, bool) {
+	if kind != BackendKeyring {
+		return false, false
+	}
+	return probePresence(r.b, key)
 }
 
 type systemBackendRegistry struct{ dir string }
@@ -53,6 +62,36 @@ func (r *systemBackendRegistry) Open(kind Backend, idx *index, create bool) (bac
 	}
 }
 
+func (r *systemBackendRegistry) Probe(kind Backend, idx *index, key string) (bool, bool) {
+	switch kind {
+	case BackendKeyring:
+		return probeKeyring(key)
+	case BackendFile:
+		return r.probeFile(idx, key)
+	default:
+		return false, false
+	}
+}
+
+func probeKeyring(key string) (bool, bool) {
+	if !keyringAvailable() {
+		return false, false
+	}
+	return probePresence(keyringBackend{}, key)
+}
+
+func probePresence(b backend, key string) (present, conclusive bool) {
+	_, err := b.get(key)
+	switch {
+	case err == nil:
+		return true, true
+	case errors.Is(err, ErrSecretNotFound):
+		return false, true
+	default:
+		return false, false
+	}
+}
+
 func (r *systemBackendRegistry) ResolveForNewSecret(
 	preference Backend,
 	idx *index,
@@ -70,6 +109,21 @@ func (r *systemBackendRegistry) ResolveForNewSecret(
 	default:
 		return "", fmt.Errorf("invalid secrets backend %q", preference)
 	}
+}
+
+func (r *systemBackendRegistry) probeFile(idx *index, key string) (bool, bool) {
+	path := filepath.Join(r.dir, EncryptedFileName)
+	if _, err := os.Stat(path); err != nil {
+		return false, errors.Is(err, os.ErrNotExist)
+	}
+	fk, err := openExistingFileKey(r.dir, idx)
+	if err != nil && idx.data.KeySource == "" {
+		fk, err = openPassphraseFileKey()
+	}
+	if err != nil {
+		return false, false
+	}
+	return probePresence(newFileBackend(path, fk), key)
 }
 
 func openExistingFileKey(dir string, idx *index) (*fileKey, error) {

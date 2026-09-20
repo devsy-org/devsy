@@ -84,14 +84,7 @@ func validateBackend(context, name string, meta SecretMeta) error {
 		}
 		return nil
 	}
-	if meta.Backend == "" {
-		return fmt.Errorf(
-			"secret %s/%s is missing persisted backend ownership",
-			context,
-			name,
-		)
-	}
-	if meta.Backend != BackendKeyring && meta.Backend != BackendFile {
+	if meta.Backend != "" && meta.Backend != BackendKeyring && meta.Backend != BackendFile {
 		return fmt.Errorf(
 			"invalid secrets backend %q for %s/%s",
 			meta.Backend,
