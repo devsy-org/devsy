@@ -27,6 +27,9 @@ const (
 	DefaultMaxSegmentBytes = 512 * 1024
 	DefaultLimit           = 100
 	MaxLimit               = 1000
+	// maxRecordBytes bounds a single event so writes never persist a
+	// record the reader would discard.
+	maxRecordBytes = 64 * 1024
 )
 
 type Event struct {
@@ -135,11 +138,11 @@ func (j *Journal) Append(workspaceID string, e status.Event) error {
 		return err
 	}
 	b = append(b, '\n')
-	if len(b) > j.maxSegmentBytes {
+	if limit := min(j.maxSegmentBytes, maxRecordBytes); len(b) > limit {
 		log.Debugf(
-			"workspace journal: skipping oversized event (%d bytes, segment limit %d)",
+			"workspace journal: skipping oversized event (%d bytes, record limit %d)",
 			len(b),
-			j.maxSegmentBytes,
+			limit,
 		)
 		return nil
 	}
@@ -280,7 +283,7 @@ func readSegment(path, workspaceID string) ([]Event, error) {
 	defer func() { _ = file.Close() }()
 
 	var events []Event
-	reader := bufio.NewReaderSize(file, 64*1024)
+	reader := bufio.NewReaderSize(file, maxRecordBytes)
 	for {
 		line, readErr := readRecord(reader)
 		if len(line) > 0 {
