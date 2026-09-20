@@ -185,7 +185,9 @@ func (s *localStore) Delete(context, name string) error {
 
 	if meta, ok := idx.get(context, name); ok && meta.Sensitive() {
 		if meta.Backend == "" {
-			s.removeFromProbeableBackends(idx, backendKey(context, name))
+			if err := s.removeFromProbeableBackends(idx, backendKey(context, name)); err != nil {
+				return err
+			}
 		} else {
 			b, openErr := s.backends.Open(meta.Backend, idx, false)
 			if openErr != nil {
@@ -315,8 +317,7 @@ func (s *localStore) removeSensitive(idx *index, meta *SecretMeta) error {
 		return err
 	}
 	if meta.Backend == "" {
-		s.removeFromProbeableBackends(idx, backendKey(meta.Context, meta.Name))
-		return nil
+		return s.removeFromProbeableBackends(idx, backendKey(meta.Context, meta.Name))
 	}
 	b, err := s.backends.Open(meta.Backend, idx, false)
 	if err != nil {
@@ -389,7 +390,10 @@ func (s *localStore) repairLegacyOwnership(idx *index) bool {
 func (s *localStore) provenOwner(idx *index, key string) (Backend, bool) {
 	var found []Backend
 	for _, kind := range []Backend{BackendKeyring, BackendFile} {
-		present, _ := s.backends.Probe(kind, idx, key)
+		present, conclusive := s.backends.Probe(kind, idx, key)
+		if !conclusive {
+			return "", false
+		}
 		if present {
 			found = append(found, kind)
 		}
@@ -400,14 +404,27 @@ func (s *localStore) provenOwner(idx *index, key string) (Backend, bool) {
 	return found[0], true
 }
 
-func (s *localStore) removeFromProbeableBackends(idx *index, key string) {
+func (s *localStore) removeFromProbeableBackends(idx *index, key string) error {
+	var present []Backend
 	for _, kind := range []Backend{BackendKeyring, BackendFile} {
+		found, conclusive := s.backends.Probe(kind, idx, key)
+		if !conclusive {
+			return fmt.Errorf("cannot probe secrets backend %q", kind)
+		}
+		if found {
+			present = append(present, kind)
+		}
+	}
+	for _, kind := range present {
 		b, err := s.backends.Open(kind, idx, false)
 		if err != nil {
-			continue
+			return err
 		}
-		_ = b.remove(key)
+		if err := b.remove(key); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func unownedSecretError(context, name string) error {
