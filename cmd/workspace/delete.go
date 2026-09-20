@@ -89,7 +89,8 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	}
 	devsyConfig, err := cmd.loadConfig()
 	if err != nil {
-		return err
+		return status.Run(ctx, reporter, status.Operation{Phase: status.PhaseDeletingWorkspace},
+			func(context.Context) error { return err })
 	}
 	workspaceIDs := resolveJournalWorkspaceIDs(ctx, devsyConfig, cmd.Owner, args)
 	if len(args) <= 1 {
