@@ -2,6 +2,7 @@ package up
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -11,6 +12,8 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/language"
+	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/workspacejournal"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -167,6 +170,30 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		framework.ExpectNoError(err)
 
 		projectName := workspace.ID
+		eventsOutput, err := f.ExecCommandOutput(ctx, []string{
+			cmdWorkspace, "events", "--result-format", "json", projectName,
+		})
+		framework.ExpectNoError(err)
+		var eventEnvelope struct {
+			SchemaVersion int                      `json:"schemaVersion"`
+			Events        []workspacejournal.Event `json:"events"`
+		}
+		framework.ExpectNoError(json.Unmarshal([]byte(eventsOutput), &eventEnvelope))
+		gomega.Expect(eventEnvelope.SchemaVersion).To(gomega.Equal(workspacejournal.SchemaVersion))
+		gomega.Expect(eventEnvelope.Events).NotTo(gomega.BeEmpty())
+		gomega.Expect(eventEnvelope.Events[len(eventEnvelope.Events)-1]).To(gomega.SatisfyAll(
+			gomega.HaveField("WorkspaceID", projectName),
+			gomega.HaveField("Pipeline", status.PipelineWorkspaceUp),
+			gomega.HaveField("State", status.StateSucceeded),
+		))
+
+		workspaceStatus, err := f.DevsyStatus(ctx, projectName)
+		framework.ExpectNoError(err)
+		gomega.Expect(workspaceStatus.LastOperation).NotTo(gomega.BeNil())
+		gomega.Expect(workspaceStatus.LastOperation.Pipeline).
+			To(gomega.Equal(string(status.PipelineWorkspaceUp)))
+		gomega.Expect(workspaceStatus.LastOperation.State).
+			To(gomega.Equal(string(status.StateSucceeded)))
 		ids, err := dockerHelper.FindContainer(ctx, []string{
 			fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspace.UID),
 		})

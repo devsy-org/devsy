@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -243,11 +244,28 @@ const (
 )
 
 type WorkspaceStatus struct {
-	ID       string `json:"id,omitempty"`
-	Context  string `json:"context,omitempty"`
-	Provider string `json:"provider,omitempty"`
-	State    string `json:"state,omitempty"`
-	Recovery bool   `json:"recovery,omitempty"`
+	ID            string            `json:"id,omitempty"`
+	Context       string            `json:"context,omitempty"`
+	Provider      string            `json:"provider,omitempty"`
+	State         string            `json:"state,omitempty"`
+	Recovery      bool              `json:"recovery,omitempty"`
+	LastOperation *OperationSummary `json:"lastOperation,omitempty"`
+}
+
+type OperationSummary struct {
+	Timestamp      time.Time  `json:"timestamp"`
+	Pipeline       string     `json:"pipeline"`
+	Phase          string     `json:"phase"`
+	State          string     `json:"state"`
+	DurationMillis int64      `json:"durationMillis,omitempty"`
+	Error          *ErrorInfo `json:"error,omitempty"`
+}
+
+type ErrorInfo struct {
+	Code    string            `json:"code,omitempty"`
+	Message string            `json:"message"`
+	Hint    string            `json:"hint,omitempty"`
+	Context map[string]string `json:"context,omitempty"`
 }
 
 type User struct {

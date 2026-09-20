@@ -87,6 +87,13 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if len(args) <= 1 {
+		workspaceID := ""
+		if len(args) == 1 {
+			workspaceID = args[0]
+		}
+		reporter = withWorkspaceJournal(reporter, workspaceID)
+	}
 	var deleteErr error
 	var devsyConfig *config.Config
 	deleteErr = status.Run(
@@ -102,7 +109,7 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 			if len(args) <= 1 {
 				return cmd.deleteSingle(status.WithReporter(ctx, reporter), devsyConfig, args)
 			}
-			return cmd.deleteMultiple(status.WithReporter(ctx, reporter), devsyConfig, args)
+			return cmd.deleteMultiple(ctx, devsyConfig, reporter, args)
 		},
 	)
 	if devsyConfig == nil {
@@ -153,11 +160,17 @@ func (cmd *DeleteCmd) deleteSingle(
 func (cmd *DeleteCmd) deleteMultiple(
 	ctx context.Context,
 	devsyConfig *config.Config,
+	reporter status.Reporter,
 	args []string,
 ) error {
 	var errs []error
 	for _, arg := range args {
-		name, err := cmd.deleteWorkspace(ctx, devsyConfig, []string{arg})
+		targetReporter := withWorkspaceJournal(reporter, arg)
+		name, err := cmd.deleteWorkspace(
+			status.WithReporter(ctx, targetReporter),
+			devsyConfig,
+			[]string{arg},
+		)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to delete workspace %s: %w", arg, err))
 

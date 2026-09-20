@@ -64,6 +64,7 @@ func (cmd *StopCmd) Run(
 	if err != nil {
 		return err
 	}
+	reporter = withWorkspaceJournal(reporter, client.Workspace())
 	return status.Run(
 		ctx,
 		reporter,
@@ -107,7 +108,8 @@ func (cmd *StopCmd) runArgs(ctx context.Context, args []string) error {
 			if err != nil {
 				return err
 			}
-			return cmd.run(ctx, devsyConfig, client)
+			reporter = withWorkspaceJournal(reporter, client.Workspace())
+			return cmd.run(status.WithReporter(ctx, reporter), devsyConfig, client)
 		})
 }
 

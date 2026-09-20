@@ -72,6 +72,7 @@ const (
 	PhaseDeletingWorkspace    Phase = "deleting_workspace"
 	PhaseRebuildingWorkspace  Phase = "rebuilding_workspace"
 	PhaseResettingWorkspace   Phase = "resetting_workspace"
+	PhaseImportingWorkspace   Phase = "importing_workspace"
 	PhaseReady                Phase = "ready"
 	PhaseFailed               Phase = "failed"
 )

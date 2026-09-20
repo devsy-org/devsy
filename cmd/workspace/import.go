@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	snapshotpkg "github.com/devsy-org/devsy/pkg/snapshot"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -67,12 +68,8 @@ func NewImportCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 func (cmd *ImportCmd) Run(
 	ctx context.Context,
 	devsyConfig *config.Config,
+	exportConfig *provider.ExportConfig,
 ) error {
-	exportConfig, err := cmd.parseExportConfig()
-	if err != nil {
-		return err
-	}
-
 	cmd.setDefaultIDs(exportConfig)
 
 	if err := cmd.checkForConflictingIDs(ctx, exportConfig, devsyConfig); err != nil {
@@ -91,11 +88,32 @@ func (cmd *ImportCmd) Run(
 }
 
 func (cmd *ImportCmd) execute(ctx context.Context) error {
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	exportConfig, err := cmd.parseExportConfig()
 	if err != nil {
 		return err
 	}
-	return cmd.Run(ctx, devsyConfig)
+
+	reporter, err := newWorkspaceStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+	)
+	if err != nil {
+		return err
+	}
+	reporter = withWorkspaceJournal(reporter, cmd.WorkspaceID)
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseImportingWorkspace},
+		func(ctx context.Context) error {
+			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+			if err != nil {
+				return err
+			}
+			return cmd.Run(ctx, devsyConfig, exportConfig)
+		},
+	)
 }
 
 func (cmd *ImportCmd) parseExportConfig() (*provider.ExportConfig, error) {
