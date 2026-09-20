@@ -114,7 +114,7 @@ func (r *systemBackendRegistry) ResolveForNewSecret(
 func (r *systemBackendRegistry) probeFile(idx *index, key string) (bool, bool) {
 	path := filepath.Join(r.dir, EncryptedFileName)
 	if _, err := os.Stat(path); err != nil {
-		return false, true
+		return false, errors.Is(err, os.ErrNotExist)
 	}
 	fk, err := openExistingFileKey(r.dir, idx)
 	if err != nil && idx.data.KeySource == "" {
