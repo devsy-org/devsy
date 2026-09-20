@@ -64,26 +64,34 @@ func (r *systemBackendRegistry) Open(kind Backend, idx *index, create bool) (bac
 func (r *systemBackendRegistry) Probe(kind Backend, idx *index, key string) (bool, bool) {
 	switch kind {
 	case BackendKeyring:
-		if !keyringAvailable() {
-			return false, false
-		}
-		return probePresence(keyringBackend{}, key)
+		return probeKeyring(key)
 	case BackendFile:
-		path := filepath.Join(r.dir, EncryptedFileName)
-		if _, err := os.Stat(path); err != nil {
-			return false, true
-		}
-		fk, err := openExistingFileKey(r.dir, idx)
-		if err != nil && idx.data.KeySource == "" {
-			fk, err = openPassphraseFileKey()
-		}
-		if err != nil {
-			return false, false
-		}
-		return probePresence(newFileBackend(path, fk), key)
+		return r.probeFile(idx, key)
 	default:
 		return false, false
 	}
+}
+
+func probeKeyring(key string) (bool, bool) {
+	if !keyringAvailable() {
+		return false, false
+	}
+	return probePresence(keyringBackend{}, key)
+}
+
+func (r *systemBackendRegistry) probeFile(idx *index, key string) (bool, bool) {
+	path := filepath.Join(r.dir, EncryptedFileName)
+	if _, err := os.Stat(path); err != nil {
+		return false, true
+	}
+	fk, err := openExistingFileKey(r.dir, idx)
+	if err != nil && idx.data.KeySource == "" {
+		fk, err = openPassphraseFileKey()
+	}
+	if err != nil {
+		return false, false
+	}
+	return probePresence(newFileBackend(path, fk), key)
 }
 
 func probePresence(b backend, key string) (present, conclusive bool) {
