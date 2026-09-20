@@ -96,6 +96,14 @@ func (r mapBackendRegistry) ResolveForNewSecret(preference Backend, _ *index) (B
 	return preference, nil
 }
 
+func (r mapBackendRegistry) Probe(kind Backend, _ *index, key string) (bool, bool) {
+	b, ok := r.backends[kind]
+	if !ok {
+		return false, false
+	}
+	return probePresence(b, key)
+}
+
 func (m *mapBackend) set(key, value string) error {
 	m.values[key] = value
 	return nil
@@ -403,52 +411,169 @@ func TestFileBackend_AutoKeyRoundTrip(t *testing.T) {
 	}
 }
 
-func TestStore_RejectsMissingBackendOwnership(t *testing.T) {
+func legacyIndexYAML(entries string) string {
+	return "contexts:\n  default:\n" + entries
+}
+
+func writeLegacyIndex(t *testing.T, entries string) string {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), IndexFileName)
-	raw := "contexts:\n  default:\n    UNOWNED:\n      name: UNOWNED\n      context: default\n"
-	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(legacyIndexYAML(entries)), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	return path
+}
 
-	s := newLocalStore(newMapBackend(), path)
-	if _, err := s.Get(
-		testContext,
-		"UNOWNED",
-	); err == nil ||
-		!strings.Contains(err.Error(), "missing persisted backend ownership") {
-		t.Fatalf("expected missing backend ownership error, got %v", err)
+func newLegacyStore(t *testing.T, entries string) (*localStore, map[Backend]*mapBackend) {
+	t.Helper()
+	backends := map[Backend]*mapBackend{
+		BackendKeyring: newMapBackend(),
+		BackendFile:    newMapBackend(),
+	}
+	s := newLocalStoreWithRegistry(
+		BackendKeyring,
+		writeLegacyIndex(t, entries),
+		mapBackendRegistry{backends: backends},
+	)
+	return s, backends
+}
+
+func TestLoadIndex_ToleratesUnownedLegacySecret(t *testing.T) {
+	path := writeLegacyIndex(
+		t,
+		"    UNOWNED:\n      name: UNOWNED\n      context: default\n      kind: secret\n",
+	)
+
+	if _, err := loadIndex(path); err != nil {
+		t.Fatalf("loadIndex on legacy entry = %v, want nil", err)
 	}
 }
 
-func TestLoadIndex_RejectsMissingBackendOwnership(t *testing.T) {
-	path := filepath.Join(t.TempDir(), IndexFileName)
-	raw := "contexts:\n  default:\n    UNOWNED:\n      name: UNOWNED\n      context: default\n"
-	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
-		t.Fatal(err)
-	}
+func TestLoadIndex_RejectsInvalidBackend(t *testing.T) {
+	path := writeLegacyIndex(
+		t,
+		"    BAD:\n      name: BAD\n      context: default\n      kind: secret\n      backend: vault\n",
+	)
 
 	if _, err := loadIndex(path); err == nil ||
-		!strings.Contains(err.Error(), "missing persisted backend ownership") {
-		t.Fatalf("expected missing backend ownership error, got %v", err)
+		!strings.Contains(err.Error(), "invalid secrets backend") {
+		t.Fatalf("expected invalid backend error, got %v", err)
 	}
 }
 
-func TestStore_RejectsInlineSecretWithoutOwnership(t *testing.T) {
-	path := filepath.Join(t.TempDir(), IndexFileName)
-	raw := "contexts:\n  default:\n    UNOWNED:\n      name: UNOWNED\n" +
-		"      context: default\n      value: leaked\n"
-	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
-		t.Fatal(err)
+func TestStore_RepairsProvenLegacyOwnership(t *testing.T) {
+	s, backends := newLegacyStore(
+		t,
+		"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+	)
+	backends[BackendKeyring].values[backendKey(testContext, "LEGACY")] = "recovered"
+
+	got, err := s.Get(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, "recovered", got)
+
+	meta, err := s.Meta(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, BackendKeyring, meta.Backend)
+
+	stored, err := os.ReadFile(s.indexPath)
+	require.NoError(t, err)
+	require.Contains(t, string(stored), "backend: keyring")
+
+	list, err := s.List(testContext)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.False(t, list[0].Orphaned)
+
+	require.NoError(t, s.Set(testContext, "LEGACY", "updated", KindSecret))
+	got, err = s.Get(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, "updated", got)
+
+	require.NoError(t, s.Delete(testContext, "LEGACY"))
+	require.NotContains(t, backends[BackendKeyring].values, backendKey(testContext, "LEGACY"))
+}
+
+func TestStore_UnownedValueNotFoundIsRecoverable(t *testing.T) {
+	s, backends := newLegacyStore(
+		t,
+		"    GONE:\n      name: GONE\n      context: default\n      kind: secret\n",
+	)
+
+	if _, err := s.Get(testContext, "GONE"); err == nil ||
+		!strings.Contains(err.Error(), "no proven owning backend") {
+		t.Fatalf("expected actionable unowned error, got %v", err)
 	}
 
-	s := newLocalStore(newMapBackend(), path)
-	if _, err := s.Get(
-		testContext,
-		"UNOWNED",
-	); err == nil ||
-		!strings.Contains(err.Error(), "missing persisted backend ownership") {
-		t.Fatalf("expected missing backend ownership error, got %v", err)
+	list, err := s.List(testContext)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.True(t, list[0].Orphaned)
+
+	require.NoError(t, s.Set(testContext, "GONE", "fresh", KindSecret))
+	got, err := s.Get(testContext, "GONE")
+	require.NoError(t, err)
+	require.Equal(t, "fresh", got)
+	require.Equal(t, "fresh", backends[BackendKeyring].values[backendKey(testContext, "GONE")])
+
+	require.NoError(t, s.Delete(testContext, "GONE"))
+	_, err = s.Get(testContext, "GONE")
+	require.ErrorIs(t, err, ErrSecretNotFound)
+}
+
+func TestStore_NeverAssignsAmbiguousOwnership(t *testing.T) {
+	s, backends := newLegacyStore(
+		t,
+		"    BOTH:\n      name: BOTH\n      context: default\n      kind: secret\n",
+	)
+	backends[BackendKeyring].values[backendKey(testContext, "BOTH")] = "from-keyring"
+	backends[BackendFile].values[backendKey(testContext, "BOTH")] = "from-file"
+
+	if _, err := s.Get(testContext, "BOTH"); err == nil ||
+		!strings.Contains(err.Error(), "no proven owning backend") {
+		t.Fatalf("ambiguous ownership must not be guessed, got %v", err)
 	}
+	meta, err := s.Meta(testContext, "BOTH")
+	require.NoError(t, err)
+	require.Equal(t, Backend(""), meta.Backend)
+
+	require.NoError(t, s.Set(testContext, "BOTH", "explicit", KindSecret))
+	got, err := s.Get(testContext, "BOTH")
+	require.NoError(t, err)
+	require.Equal(t, "explicit", got)
+
+	require.NoError(t, s.Delete(testContext, "BOTH"))
+}
+
+func TestStore_UnownedLegacySecretDoesNotBlockEnvWrites(t *testing.T) {
+	s, _ := newLegacyStore(
+		t,
+		"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+	)
+
+	require.NoError(t, s.Set(testContext, "MY_VAR", "plain", KindEnv))
+	got, err := s.Get(testContext, "MY_VAR")
+	require.NoError(t, err)
+	require.Equal(t, "plain", got)
+
+	list, err := s.List(testContext)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+}
+
+func TestStore_DeleteUnownedRemovesFromEveryBackend(t *testing.T) {
+	s, backends := newLegacyStore(
+		t,
+		"    BOTH:\n      name: BOTH\n      context: default\n      kind: secret\n",
+	)
+	backends[BackendKeyring].values[backendKey(testContext, "BOTH")] = "from-keyring"
+	backends[BackendFile].values[backendKey(testContext, "BOTH")] = "from-file"
+
+	require.NoError(t, s.Delete(testContext, "BOTH"))
+	require.NotContains(t, backends[BackendKeyring].values, backendKey(testContext, "BOTH"))
+	require.NotContains(t, backends[BackendFile].values, backendKey(testContext, "BOTH"))
+	_, err := s.Get(testContext, "BOTH")
+	require.ErrorIs(t, err, ErrSecretNotFound)
 }
 
 // A key file that already exists must never be overwritten, so a second
@@ -593,4 +718,73 @@ func TestStore_MetaHidesValueAndReportsKind(t *testing.T) {
 	if meta.Value != "" {
 		t.Error("Meta must not return the value")
 	}
+}
+
+func TestStore_RepairsOwnershipWhenOtherBackendUnprobeable(t *testing.T) {
+	backends := map[Backend]*mapBackend{BackendFile: newMapBackend()}
+	backends[BackendFile].values[backendKey(testContext, "LEGACY")] = "recovered"
+	s := newLocalStoreWithRegistry(
+		BackendFile,
+		writeLegacyIndex(
+			t,
+			"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+		),
+		mapBackendRegistry{backends: backends},
+	)
+
+	got, err := s.Get(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, "recovered", got)
+	meta, err := s.Meta(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, BackendFile, meta.Backend)
+}
+
+// Exercises the real registry against a legacy index and an age-encrypted
+// secrets.enc written before backend ownership and key source were persisted.
+func TestStore_RepairsLegacyFileBackendWithPassphrase(t *testing.T) {
+	t.Setenv(EnvPassphrase, "correct horse battery staple")
+	dir := t.TempDir()
+
+	fk, err := openPassphraseFileKey()
+	require.NoError(t, err)
+	require.NoError(t, newFileBackend(filepath.Join(dir, EncryptedFileName), fk).
+		set(backendKey(testContext, "LEGACY"), "recovered"))
+	indexPath := filepath.Join(dir, IndexFileName)
+	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n"
+	require.NoError(t, os.WriteFile(indexPath, []byte(raw), 0o600))
+
+	s := newLocalStoreWithRegistry(BackendAuto, indexPath, newSystemBackendRegistry(dir))
+	got, err := s.Get(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, "recovered", got)
+
+	stored, err := os.ReadFile(indexPath)
+	require.NoError(t, err)
+	require.Contains(t, string(stored), "backend: file")
+
+	require.NoError(t, s.Set(testContext, "MY_VAR", "plain", KindEnv))
+	got, err = s.Get(testContext, "MY_VAR")
+	require.NoError(t, err)
+	require.Equal(t, "plain", got)
+}
+
+// With no encrypted file and no reachable keyring, a legacy entry's value is
+// nowhere; the user recovers by setting the secret again.
+func TestStore_UnownedWithoutBackendStateIsRecoverable(t *testing.T) {
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, IndexFileName)
+	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n"
+	require.NoError(t, os.WriteFile(indexPath, []byte(raw), 0o600))
+
+	s := newLocalStoreWithRegistry(BackendAuto, indexPath, newSystemBackendRegistry(dir))
+	if _, err := s.Get(testContext, "LEGACY"); err == nil ||
+		!strings.Contains(err.Error(), "no proven owning backend") {
+		t.Fatalf("expected actionable unowned error, got %v", err)
+	}
+
+	require.NoError(t, s.Set(testContext, "LEGACY", "fresh", KindSecret))
+	got, err := s.Get(testContext, "LEGACY")
+	require.NoError(t, err)
+	require.Equal(t, "fresh", got)
 }
