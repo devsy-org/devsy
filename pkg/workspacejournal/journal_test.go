@@ -121,6 +121,27 @@ func TestAppendSkipsOversizedEvents(t *testing.T) {
 	}
 }
 
+func TestAppendSkipsRecordsBeyondReadLimit(t *testing.T) {
+	dir := t.TempDir()
+	journal, err := New(Options{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.Reporter("demo").Report(status.Event{
+		Pipeline: status.PipelineWorkspaceUp,
+		Phase:    status.PhaseReady,
+		Step:     strings.Repeat("x", 100*1024),
+		State:    status.StateSucceeded,
+	})
+	paths, err := segmentPaths(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 0 {
+		t.Fatalf("oversized record persisted: %v", paths)
+	}
+}
+
 func TestReadSkipsCorruptLines(t *testing.T) {
 	dir := t.TempDir()
 	contents := "not-json\n" +
