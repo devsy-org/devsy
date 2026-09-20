@@ -79,21 +79,6 @@ func probeKeyring(key string) (bool, bool) {
 	return probePresence(keyringBackend{}, key)
 }
 
-func (r *systemBackendRegistry) probeFile(idx *index, key string) (bool, bool) {
-	path := filepath.Join(r.dir, EncryptedFileName)
-	if _, err := os.Stat(path); err != nil {
-		return false, true
-	}
-	fk, err := openExistingFileKey(r.dir, idx)
-	if err != nil && idx.data.KeySource == "" {
-		fk, err = openPassphraseFileKey()
-	}
-	if err != nil {
-		return false, false
-	}
-	return probePresence(newFileBackend(path, fk), key)
-}
-
 func probePresence(b backend, key string) (present, conclusive bool) {
 	_, err := b.get(key)
 	switch {
@@ -123,6 +108,21 @@ func (r *systemBackendRegistry) ResolveForNewSecret(
 	default:
 		return "", fmt.Errorf("invalid secrets backend %q", preference)
 	}
+}
+
+func (r *systemBackendRegistry) probeFile(idx *index, key string) (bool, bool) {
+	path := filepath.Join(r.dir, EncryptedFileName)
+	if _, err := os.Stat(path); err != nil {
+		return false, true
+	}
+	fk, err := openExistingFileKey(r.dir, idx)
+	if err != nil && idx.data.KeySource == "" {
+		fk, err = openPassphraseFileKey()
+	}
+	if err != nil {
+		return false, false
+	}
+	return probePresence(newFileBackend(path, fk), key)
 }
 
 func openExistingFileKey(dir string, idx *index) (*fileKey, error) {
