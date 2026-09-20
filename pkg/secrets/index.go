@@ -61,6 +61,10 @@ func (i *index) normalizeKinds() {
 	}
 }
 
+// validateBackends rejects structurally invalid entries. A sensitive entry
+// without a recorded backend is not invalid: indexes written before backend
+// ownership was persisted are repaired by the store, which proves ownership
+// from the backends themselves.
 func (i *index) validateBackends() error {
 	for context, entries := range i.data.Contexts {
 		for name, meta := range entries {
@@ -84,14 +88,7 @@ func validateBackend(context, name string, meta SecretMeta) error {
 		}
 		return nil
 	}
-	if meta.Backend == "" {
-		return fmt.Errorf(
-			"secret %s/%s is missing persisted backend ownership",
-			context,
-			name,
-		)
-	}
-	if meta.Backend != BackendKeyring && meta.Backend != BackendFile {
+	if meta.Backend != "" && meta.Backend != BackendKeyring && meta.Backend != BackendFile {
 		return fmt.Errorf(
 			"invalid secrets backend %q for %s/%s",
 			meta.Backend,
