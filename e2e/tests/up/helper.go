@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,12 +20,10 @@ import (
 )
 
 const (
-	secretCmd                = "secret"
-	cmdSSH                   = "ssh"
-	flagCommand              = "--command"
-	sshProbeTimeout          = 20 * time.Second
-	podmanHealthCheckTimeout = 20 * time.Second
-	podmanBinName            = "podman"
+	secretCmd       = "secret"
+	cmdSSH          = "ssh"
+	flagCommand     = "--command"
+	sshProbeTimeout = 20 * time.Second
 )
 
 // useFileSecretsBackend forces the file backend so tests do not depend on an OS
@@ -234,23 +231,7 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 		cleanupErr := f.CleanupWorkspace(ctx, tempDir)
 		if cleanupErr != nil {
 			ginkgo.GinkgoWriter.Printf("workspace cleanup failed for %s: %v\n", tempDir, cleanupErr)
-			// Capture bounded Podman state diagnostics if podman binary or wrapper exists
-			diagCtx, diagCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer diagCancel()
-			cmdName := podmanBinName
-			if _, err := os.Stat(initialDir + "/bin/podman-rootful"); err == nil {
-				cmdName = initialDir + "/bin/podman-rootful"
-			}
-			cmd := exec.CommandContext(
-				diagCtx,
-				cmdName,
-				"ps",
-				"-a",
-			) //nolint:gosec // G204: test-controlled path
-			docker.PrepareForGroupCancellation(cmd)
-			if out, err := cmd.CombinedOutput(); err == nil {
-				ginkgo.GinkgoWriter.Printf("cleanup failure podman ps -a:\n%s\n", string(out))
-			}
+			cleanupErr = recoverPodmanCleanup(ctx, f, initialDir, tempDir, cleanupErr)
 		}
 		return cleanupErr
 	})
@@ -259,32 +240,6 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 
 func setupDockerProvider(binDir, dockerPath string) (*framework.Framework, error) {
 	return framework.SetupDockerProvider(binDir, dockerPath)
-}
-
-func checkPodmanHealth(ctx context.Context, wrapperPath string) error {
-	healthCtx, cancel := context.WithTimeout(ctx, podmanHealthCheckTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(
-		healthCtx,
-		wrapperPath,
-		"ps",
-	) //nolint:gosec // G204: test-controlled path
-	docker.PrepareForGroupCancellation(cmd)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf(
-			"rootful Podman readiness check failed or exceeded %s\n"+
-				"command: %s ps\nDOCKER_HOST: %s\ncontext err: %v\noutput:\n%s\nerror: %w",
-			podmanHealthCheckTimeout,
-			wrapperPath,
-			os.Getenv("DOCKER_HOST"),
-			healthCtx.Err(),
-			string(out),
-			err,
-		)
-	}
-	return nil
 }
 
 func setupWorkspaceAndUp(
