@@ -27,6 +27,7 @@ type ContainerRuntime interface {
 	SupportsSignalProxy() bool
 	SupportsMountConsistency() bool
 	NeedsUserNamespaceArgs() bool
+	EncodeBuildLabelValue(value string) string
 	GPUAvailable(ctx context.Context, helper *DockerHelper) (bool, error)
 }
 
@@ -37,6 +38,8 @@ func (dockerRuntime) SupportsInternalBuildKit() bool { return true }
 func (dockerRuntime) SupportsSignalProxy() bool      { return true }
 func (dockerRuntime) SupportsMountConsistency() bool { return true }
 func (dockerRuntime) NeedsUserNamespaceArgs() bool   { return false }
+
+func (dockerRuntime) EncodeBuildLabelValue(value string) string { return value }
 
 func (dockerRuntime) GPUAvailable(ctx context.Context, h *DockerHelper) (bool, error) {
 	out, err := h.buildCmd(ctx, "info", "-f", "{{.Runtimes.nvidia}}").Output()
@@ -54,6 +57,10 @@ func (podmanRuntime) SupportsSignalProxy() bool      { return true }
 func (podmanRuntime) SupportsMountConsistency() bool { return true }
 func (podmanRuntime) NeedsUserNamespaceArgs() bool   { return true }
 
+func (podmanRuntime) EncodeBuildLabelValue(value string) string {
+	return strings.ReplaceAll(value, "$", `${_:-$}`)
+}
+
 func (podmanRuntime) GPUAvailable(ctx context.Context, h *DockerHelper) (bool, error) {
 	out, err := h.buildCmd(ctx, "info", "-f", "{{.Host.CDIDevices}}").Output()
 	if err != nil {
@@ -69,6 +76,8 @@ func (nerdctlRuntime) SupportsInternalBuildKit() bool { return true }
 func (nerdctlRuntime) SupportsSignalProxy() bool      { return false }
 func (nerdctlRuntime) SupportsMountConsistency() bool { return false }
 func (nerdctlRuntime) NeedsUserNamespaceArgs() bool   { return false }
+
+func (nerdctlRuntime) EncodeBuildLabelValue(value string) string { return value }
 
 func (nerdctlRuntime) GPUAvailable(ctx context.Context, h *DockerHelper) (bool, error) {
 	out, err := h.buildCmd(ctx, "info", "-f", "{{.Runtimes.nvidia}}").Output()

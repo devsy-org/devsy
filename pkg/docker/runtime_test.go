@@ -105,3 +105,65 @@ func TestDetectRuntimeCaching(t *testing.T) {
 	rt2 := DetectRuntime("nonexistent-binary-abc")
 	assert.Equal(t, rt1, rt2, "same binary should return same cached runtime")
 }
+
+func TestRuntimeEncodeBuildLabelValue(t *testing.T) {
+	dockerRt, err := RuntimeFromName(string(RuntimeDocker))
+	require.NoError(t, err)
+	nerdctlRt, err := RuntimeFromName(string(RuntimeNerdctl))
+	require.NoError(t, err)
+	podmanRt, err := RuntimeFromName(string(RuntimePodman))
+	require.NoError(t, err)
+
+	const localEnvInput = "${localEnv:HOME}/foo"
+
+	tests := []struct {
+		name    string
+		runtime ContainerRuntime
+		input   string
+		want    string
+	}{
+		{
+			name:    "docker preserves value",
+			runtime: dockerRt,
+			input:   localEnvInput,
+			want:    localEnvInput,
+		},
+		{
+			name:    "nerdctl preserves value",
+			runtime: nerdctlRt,
+			input:   localEnvInput,
+			want:    localEnvInput,
+		},
+		{
+			name:    "podman escapes dollar in localEnv expression",
+			runtime: podmanRt,
+			input:   localEnvInput,
+			want:    `${_:-$}{localEnv:HOME}/foo`,
+		},
+		{
+			name:    "podman preserves plain text",
+			runtime: podmanRt,
+			input:   "plain text",
+			want:    "plain text",
+		},
+		{
+			name:    "podman escapes bare dollar variable",
+			runtime: podmanRt,
+			input:   "$HOME",
+			want:    `${_:-$}HOME`,
+		},
+		{
+			name:    "podman escapes multiple variable expressions",
+			runtime: podmanRt,
+			input:   "${A}/$B/${C}",
+			want:    `${_:-$}{A}/${_:-$}B/${_:-$}{C}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.runtime.EncodeBuildLabelValue(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

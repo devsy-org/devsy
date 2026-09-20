@@ -2,12 +2,17 @@ package up
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -226,6 +231,131 @@ var _ = ginkgo.Describe(
 					err = f.DevsyWorkspaceDelete(ctx, tempDir)
 					framework.ExpectNoError(err)
 				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+
+				ginkgo.It(
+					"should preserve localEnv expressions in build metadata",
+					func(ctx context.Context) {
+						homeDir, err := os.UserHomeDir()
+						framework.ExpectNoError(err)
+
+						sourceDir := filepath.Join(
+							homeDir,
+							".devsy-e2e-local-env-metadata",
+						)
+						_, statErr := os.Stat(sourceDir)
+						gomega.Expect(os.IsNotExist(statErr)).To(
+							gomega.BeTrue(),
+							"fixture directory %s already exists; aborting to prevent data loss",
+							sourceDir,
+						)
+
+						// #nosec G301 -- fixture must be traversable by container user
+						err = os.MkdirAll(
+							sourceDir,
+							0o755,
+						)
+						framework.ExpectNoError(err)
+
+						ginkgo.DeferCleanup(func() {
+							_ = os.RemoveAll(sourceDir)
+						})
+
+						// #nosec G306 -- fixture must be readable by container user
+						err = os.WriteFile(
+							filepath.Join(sourceDir, "probe.txt"),
+							[]byte("devsy-local-env-metadata-ok\n"),
+							0o644,
+						)
+						framework.ExpectNoError(err)
+
+						tempDir, err := setupWorkspaceAndUp(
+							ctx,
+							"tests/up/testdata/podman-local-env-metadata",
+							initialDir,
+							f,
+						)
+						framework.ExpectNoError(err)
+
+						out, err := f.DevsySSH(
+							ctx,
+							tempDir,
+							"cat /tmp/devsy-local-env-metadata/probe.txt",
+						)
+						framework.ExpectNoError(err)
+
+						gomega.Expect(strings.TrimSpace(out)).
+							To(gomega.Equal("devsy-local-env-metadata-ok"))
+
+						workspace, err := f.FindWorkspace(ctx, tempDir)
+						framework.ExpectNoError(err)
+
+						dockerHelper := &docker.DockerHelper{DockerCommand: podmanBinName}
+
+						container, err := dockerHelper.FindDevContainer(ctx, []string{
+							fmt.Sprintf("%s=%s", pkgconfig.DevcontainerIDLabel, workspace.UID),
+						})
+						framework.ExpectNoError(err)
+						gomega.Expect(container).NotTo(gomega.BeNil())
+
+						imageRef := container.Config.LegacyImage
+						if imageRef == "" {
+							var rawInspect []struct {
+								Image string `json:"Image"`
+							}
+							inspectErr := dockerHelper.Inspect(
+								ctx,
+								[]string{container.ID},
+								"container",
+								&rawInspect,
+							)
+							framework.ExpectNoError(inspectErr)
+							if len(rawInspect) > 0 {
+								imageRef = rawInspect[0].Image
+							}
+						}
+						gomega.Expect(imageRef).NotTo(gomega.BeEmpty())
+
+						imageDetails, err := dockerHelper.InspectImage(ctx, imageRef, false)
+						framework.ExpectNoError(err)
+						gomega.Expect(imageDetails.Config.Labels).NotTo(gomega.BeNil())
+
+						metadataValue, ok := imageDetails.Config.Labels[pkgconfig.DevcontainerMetadataLabel]
+						gomega.Expect(ok).To(gomega.BeTrue())
+						gomega.Expect(metadataValue).NotTo(gomega.BeEmpty())
+
+						var metadataList []*config.ImageMetadata
+						err = json.Unmarshal([]byte(metadataValue), &metadataList)
+						framework.ExpectNoError(err)
+						gomega.Expect(metadataList).NotTo(gomega.BeEmpty())
+
+						var foundSource string
+						for _, item := range metadataList {
+							for _, m := range item.Mounts {
+								if strings.Contains(m.Source, ".devsy-e2e-local-env-metadata") {
+									foundSource = m.Source
+									break
+								}
+							}
+						}
+						gomega.Expect(foundSource).
+							To(gomega.Equal("${localEnv:HOME}/.devsy-e2e-local-env-metadata"))
+
+						gomega.Expect(metadataValue).To(
+							gomega.ContainSubstring(
+								"${localEnv:HOME}/.devsy-e2e-local-env-metadata",
+							),
+						)
+						gomega.Expect(metadataValue).NotTo(
+							gomega.ContainSubstring(
+								`\${localEnv:HOME}/.devsy-e2e-local-env-metadata`,
+							),
+						)
+						gomega.Expect(metadataValue).NotTo(
+							gomega.ContainSubstring(sourceDir),
+						)
+					},
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
+				)
 			})
 		})
 	},

@@ -197,11 +197,12 @@ type stubRuntime struct {
 	name docker.RuntimeName
 }
 
-func (r stubRuntime) Name() docker.RuntimeName       { return r.name }
-func (r stubRuntime) SupportsInternalBuildKit() bool { return false }
-func (r stubRuntime) SupportsSignalProxy() bool      { return false }
-func (r stubRuntime) SupportsMountConsistency() bool { return false }
-func (r stubRuntime) NeedsUserNamespaceArgs() bool   { return false }
+func (r stubRuntime) Name() docker.RuntimeName                  { return r.name }
+func (r stubRuntime) SupportsInternalBuildKit() bool            { return false }
+func (r stubRuntime) SupportsSignalProxy() bool                 { return false }
+func (r stubRuntime) SupportsMountConsistency() bool            { return false }
+func (r stubRuntime) NeedsUserNamespaceArgs() bool              { return false }
+func (r stubRuntime) EncodeBuildLabelValue(value string) string { return value }
 func (r stubRuntime) GPUAvailable(_ context.Context, _ *docker.DockerHelper) (bool, error) {
 	return false, nil
 }

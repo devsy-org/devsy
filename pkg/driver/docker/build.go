@@ -75,7 +75,8 @@ func (s *dockerBuildxStrategy) build(
 	platform string,
 	options *build.BuildOptions,
 ) error {
-	args := buildDockerBuildxArgs(options, platform)
+	runtime := s.driver.Docker.GetRuntime()
+	args := buildDockerBuildxArgs(options, platform, runtime)
 	secretEnv, secretArgs, err := buildxSecretArgs(options.BuildSecrets)
 	if err != nil {
 		return err
@@ -131,7 +132,11 @@ func (c *tailBuffer) Write(p []byte) (int, error) {
 func (c *tailBuffer) Len() int       { return len(c.buf) }
 func (c *tailBuffer) String() string { return string(c.buf) }
 
-func buildDockerBuildxArgs(options *build.BuildOptions, platform string) []string {
+func buildDockerBuildxArgs(
+	options *build.BuildOptions,
+	platform string,
+	runtime docker.ContainerRuntime,
+) []string {
 	args := []string{"buildx", "build", "-f", options.Dockerfile}
 	args = appendBuildFlags(args, options.Load, options.Push)
 	if options.NoCache {
@@ -142,7 +147,7 @@ func buildDockerBuildxArgs(options *build.BuildOptions, platform string) []strin
 	}
 	args = appendImageTags(args, options.Images)
 	args = appendBuildArgsAndContexts(args, options.BuildArgs, options.Contexts)
-	args = appendLabels(args, options.Labels)
+	args = appendLabels(args, options.Labels, runtime)
 	args = appendTargetAndPlatform(args, options.Target, platform)
 	args = appendCacheOptions(args, options.CacheFrom, options.CacheTo)
 	args = append(args, options.CliOpts...)
@@ -206,7 +211,11 @@ func appendBuildArgsAndContexts(args []string, buildArgs, contexts map[string]st
 	return args
 }
 
-func appendLabels(args []string, labels map[string]string) []string {
+func appendLabels(
+	args []string,
+	labels map[string]string,
+	runtime docker.ContainerRuntime,
+) []string {
 	keys := make([]string, 0, len(labels))
 	for k := range labels {
 		keys = append(keys, k)
@@ -214,7 +223,8 @@ func appendLabels(args []string, labels map[string]string) []string {
 	sort.Strings(keys)
 
 	for _, k := range keys {
-		args = append(args, "--label", k+"="+labels[k])
+		value := runtime.EncodeBuildLabelValue(labels[k])
+		args = append(args, "--label", k+"="+value)
 	}
 	return args
 }
