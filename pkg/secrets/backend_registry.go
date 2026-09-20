@@ -22,6 +22,7 @@ func (r fixedBackendRegistry) Open(_ Backend, _ *index, _ bool) (backend, error)
 func (r fixedBackendRegistry) ResolveForNewSecret(_ Backend, _ *index) (Backend, error) {
 	return BackendKeyring, nil
 }
+
 func (r fixedBackendRegistry) Probe(kind Backend, _ *index, key string) (bool, bool) {
 	if kind != BackendKeyring {
 		return false, false
