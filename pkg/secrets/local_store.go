@@ -101,15 +101,13 @@ func (s *localStore) Set(context, name, value string, kind Kind) error {
 	if err != nil {
 		return err
 	}
+	s.repairLegacyOwnership(idx)
 
 	meta, exists := idx.get(context, name)
 	if !exists {
 		meta = SecretMeta{Name: name, Context: context, Created: s.now().UTC()}
 	}
 	wasSensitive := exists && meta.Sensitive()
-	if wasSensitive && meta.Backend == "" {
-		return fmt.Errorf("secret %q is missing persisted backend ownership", name)
-	}
 	meta.Kind = kind
 	meta.Value = value
 
@@ -134,7 +132,7 @@ func (s *localStore) Get(context, name string) (string, error) {
 		return "", err
 	}
 
-	idx, err := loadIndex(s.indexPath)
+	idx, err := s.loadRepaired()
 	if err != nil {
 		return "", err
 	}
@@ -150,7 +148,7 @@ func (s *localStore) Get(context, name string) (string, error) {
 			return "", err
 		}
 		if meta.Backend == "" {
-			return "", fmt.Errorf("secret %q is missing persisted backend ownership", name)
+			return "", unownedSecretError(context, name)
 		}
 		b, err := s.backends.Open(meta.Backend, idx, false)
 		if err != nil {
@@ -183,12 +181,12 @@ func (s *localStore) Delete(context, name string) error {
 	if err != nil {
 		return err
 	}
+	s.repairLegacyOwnership(idx)
 
 	if meta, ok := idx.get(context, name); ok && meta.Sensitive() {
 		if meta.Backend == "" {
-			return fmt.Errorf("secret %q is missing persisted backend ownership", name)
-		}
-		if meta.Backend != "" {
+			s.removeFromProbeableBackends(idx, backendKey(context, name))
+		} else {
 			b, openErr := s.backends.Open(meta.Backend, idx, false)
 			if openErr != nil {
 				return openErr
@@ -204,7 +202,7 @@ func (s *localStore) Delete(context, name string) error {
 }
 
 func (s *localStore) Meta(context, name string) (SecretMeta, error) {
-	idx, err := loadIndex(s.indexPath)
+	idx, err := s.loadRepaired()
 	if err != nil {
 		return SecretMeta{}, err
 	}
@@ -220,22 +218,20 @@ func (s *localStore) Meta(context, name string) (SecretMeta, error) {
 // List returns the context's entries, flagging sensitive entries whose owned
 // backend value is missing.
 func (s *localStore) List(context string) ([]SecretMeta, error) {
-	idx, err := loadIndex(s.indexPath)
+	idx, err := s.loadRepaired()
 	if err != nil {
 		return nil, err
 	}
 
 	entries := idx.list(context)
-	if !anySensitive(entries) {
-		return entries, nil
-	}
 	for i := range entries {
 		if !entries[i].Sensitive() {
 			continue
 		}
 		meta := entries[i]
 		if meta.Backend == "" {
-			return nil, fmt.Errorf("secret %q is missing persisted backend ownership", meta.Name)
+			entries[i].Orphaned = true
+			continue
 		}
 		b, err := s.backends.Open(meta.Backend, idx, false)
 		if err != nil {
@@ -278,15 +274,6 @@ func (s *localStore) touchLastUsed(context, name string) {
 	_ = idx.save()
 }
 
-func anySensitive(entries []SecretMeta) bool {
-	for i := range entries {
-		if entries[i].Sensitive() {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *localStore) persistValue(
 	idx *index, meta *SecretMeta, value string, wasSensitive bool,
 ) error {
@@ -308,6 +295,9 @@ func (s *localStore) persistSensitive(
 			return err
 		}
 		meta.Backend = resolved
+		// Fresh ownership means no reachable backend state to preserve, so the
+		// backend may initialize its key material.
+		create = true
 	}
 	b, err := s.backends.Open(meta.Backend, idx, create)
 	if err != nil {
@@ -326,6 +316,10 @@ func (s *localStore) removeSensitive(idx *index, meta *SecretMeta) error {
 	if err := s.checkKeySource(idx); err != nil {
 		return err
 	}
+	if meta.Backend == "" {
+		s.removeFromProbeableBackends(idx, backendKey(meta.Context, meta.Name))
+		return nil
+	}
 	b, err := s.backends.Open(meta.Backend, idx, false)
 	if err != nil {
 		return err
@@ -342,5 +336,105 @@ func (s *localStore) checkKeySource(idx *index) error {
 			"restore the original DEVSY_SECRETS_PASSPHRASE (or unset it) or re-create the secrets",
 		idx.data.KeySource,
 		s.keySource,
+	)
+}
+
+// loadRepaired loads the index and repairs legacy entries written before
+// backend ownership was persisted, persisting proven repairs best-effort.
+func (s *localStore) loadRepaired() (*index, error) {
+	idx, err := loadIndex(s.indexPath)
+	if err != nil {
+		return nil, err
+	}
+	if s.repairLegacyOwnership(idx) {
+		s.persistRepairs()
+	}
+	return idx, nil
+}
+
+// persistRepairs rewrites the index under the store lock so ownership proven
+// during a lock-free read survives; failures only delay the repair to the
+// next operation.
+func (s *localStore) persistRepairs() {
+	unlock, err := s.lock()
+	if err != nil {
+		return
+	}
+	defer unlock()
+
+	idx, err := loadIndex(s.indexPath)
+	if err != nil {
+		return
+	}
+	if s.repairLegacyOwnership(idx) {
+		_ = idx.save()
+	}
+}
+
+// repairLegacyOwnership assigns a backend to sensitive entries that predate
+// persisted ownership. Ownership is assigned only when exactly one backend
+// proves it holds the value; an entry whose value is proven in both backends,
+// or in none, stays unowned rather than guessing and reading the wrong value
+// later. A backend that cannot answer does not block repair: it cannot serve
+// reads either, so the proven backend is the only usable source.
+func (s *localStore) repairLegacyOwnership(idx *index) bool {
+	repaired := false
+	for context, entries := range idx.data.Contexts {
+		for name, meta := range entries {
+			if !meta.Sensitive() || meta.Backend != "" {
+				continue
+			}
+			owner, proven := s.provenOwner(idx, backendKey(context, name))
+			if !proven {
+				continue
+			}
+			meta.Backend = owner
+			entries[name] = meta
+			if owner == BackendFile && idx.data.KeySource == "" {
+				// The file probe could only succeed without persisted key-source
+				// metadata through the configured passphrase.
+				idx.data.KeySource = string(keySourcePassphrase)
+			}
+			repaired = true
+		}
+	}
+	return repaired
+}
+
+func (s *localStore) provenOwner(idx *index, key string) (Backend, bool) {
+	var found []Backend
+	for _, kind := range []Backend{BackendKeyring, BackendFile} {
+		present, _ := s.backends.Probe(kind, idx, key)
+		if present {
+			found = append(found, kind)
+		}
+	}
+	if len(found) != 1 {
+		return "", false
+	}
+	return found[0], true
+}
+
+// removeFromProbeableBackends drops key from every backend that answers,
+// because an unowned entry cannot name the backend holding its value.
+func (s *localStore) removeFromProbeableBackends(idx *index, key string) {
+	for _, kind := range []Backend{BackendKeyring, BackendFile} {
+		b, err := s.backends.Open(kind, idx, false)
+		if err != nil {
+			continue
+		}
+		_ = b.remove(key)
+	}
+}
+
+func unownedSecretError(context, name string) error {
+	return fmt.Errorf(
+		"secret %s/%s has no proven owning backend and its value could not be "+
+			"located; set it again with `devsy secret set %s` or remove it with "+
+			"`devsy secret delete %s`",
+		context,
+		name,
+		name,
+		name,
 	)
 }
