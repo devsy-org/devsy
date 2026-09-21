@@ -2,6 +2,7 @@ package workspacejournal
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/gofrs/flock"
 )
 
 const (
@@ -28,6 +30,9 @@ const (
 	DefaultLimit           = 100
 	MaxLimit               = 1000
 	maxRecordBytes         = 64 * 1024
+	appendLockName         = "append.lock"
+	appendLockTimeout      = 15 * time.Second
+	appendLockRetryDelay   = 50 * time.Millisecond
 )
 
 type Event struct {
@@ -114,6 +119,11 @@ type reporter struct {
 	workspaceID string
 }
 
+// afterAppendLockAcquired, when set, runs at the start of the serialized
+// append transaction. Tests use it to hold one instance mid-transaction and
+// prove other instances block on the lock.
+var afterAppendLockAcquired func()
+
 func (r reporter) Report(e status.Event) { _ = r.journal.Append(r.workspaceID, e) }
 func (j *Journal) Append(workspaceID string, e status.Event) error {
 	j.mu.Lock()
@@ -144,6 +154,45 @@ func (j *Journal) Append(workspaceID string, e status.Event) error {
 		)
 		return nil
 	}
+	unlock, err := j.acquireAppendLock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if afterAppendLockAcquired != nil {
+		afterAppendLockAcquired()
+	}
+	return j.appendLocked(b)
+}
+
+// acquireAppendLock takes an exclusive cross-process lock on the journal
+// directory and returns a release func that is always safe to call. It
+// serializes the append transaction (segment selection, write, prune) across
+// Journal instances in every process, so concurrent appends cannot drop an
+// event to a prune race or exceed maxSegmentBytes. It gives up with a clear
+// error after appendLockTimeout rather than blocking forever behind a stuck
+// holder. j.mu still guards in-process goroutine safety and is always taken
+// before this lock.
+//
+// NOT reentrant: each call opens its own flock handle, so taking the lock
+// while already holding it on the same directory self-deadlocks.
+func (j *Journal) acquireAppendLock() (func(), error) {
+	l := flock.New(filepath.Join(j.dir, appendLockName))
+	ctx, cancel := context.WithTimeout(context.Background(), appendLockTimeout)
+	defer cancel()
+	locked, err := l.TryLockContext(ctx, appendLockRetryDelay)
+	if err != nil {
+		return nil, fmt.Errorf("lock %s: %w", appendLockName, err)
+	}
+	if !locked {
+		return nil, fmt.Errorf("lock %s: timed out after %s", appendLockName, appendLockTimeout)
+	}
+	return func() { _ = l.Unlock() }, nil
+}
+
+// appendLocked writes one event record and prunes. Callers must hold the
+// append lock.
+func (j *Journal) appendLocked(b []byte) error {
 	path, err := j.activeSegment(len(b))
 	if err != nil {
 		return err
