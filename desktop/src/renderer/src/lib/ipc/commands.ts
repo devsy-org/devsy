@@ -441,3 +441,21 @@ export function analyticsTrack(
 ): void {
   invoke("analytics_track", { name, properties }).catch(() => {})
 }
+
+// Desktop app settings (owned by the main process)
+export async function getAppSettings(): Promise<
+  import("$shared/app-settings.js").AppSettingsState
+> {
+  return invoke<import("$shared/app-settings.js").AppSettingsState>(
+    "get_app_settings",
+  )
+}
+
+export async function setAppSettings(
+  patch: Partial<import("$shared/app-settings.js").AppSettings>,
+): Promise<import("$shared/app-settings.js").AppSettingsState> {
+  return invoke<import("$shared/app-settings.js").AppSettingsState>(
+    "set_app_settings",
+    { patch },
+  )
+}
