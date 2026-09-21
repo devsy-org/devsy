@@ -73,6 +73,7 @@ let updateProviderName = $state<string | null>(null)
 let updateLines = $state<string[]>([])
 let updateError = $state<CLIError | null>(null)
 let updateStartError = $state("")
+let recoveredUpdateState = $state(false)
 let unlistenProgress: (() => void) | undefined
 let pendingUpdateProgress: CommandProgress[] = []
 let confirmSwitchOpen = $state(false)
@@ -85,7 +86,7 @@ let status = $derived(
     : { kind: "uninitialized" as const, label: "" },
 )
 let persistedUpdateError = $derived.by((): CLIError | null => {
-  if (providerJob?.activity !== "updating" || !providerJob.error) return null
+  if (recoveredUpdateState || providerJob?.activity !== "updating" || !providerJob.error) return null
   return {
     code: providerJob.errorCode ?? "provider_update_failed",
     message: providerJob.error,
@@ -261,6 +262,7 @@ async function runUpdate() {
   pendingUpdateProgress = []
   updateError = null
   updateStartError = ""
+  recoveredUpdateState = false
   updateLines = []
   confirmUpdateOpen = false
   try {
@@ -277,25 +279,33 @@ async function runUpdate() {
 }
 
 
+async function synchronizeProviderAfterUpdate(name: string) {
+  providers.set(await providerList())
+  await loadVersionsFor(name)
+  await refreshUpdates()
+}
+
 async function retryProviderStateRefresh() {
+  const name = provider.name
   refreshingProviderState = true
   updateStartError = ""
   try {
-    await providerRefreshState(provider.name)
-    providers.set(await providerList())
-    await loadVersionsFor(provider.name)
+    await providerRefreshState(name)
+    await synchronizeProviderAfterUpdate(name)
     updateError = null
+    recoveredUpdateState = true
   } catch (error) {
-    updateStartError = `Failed to refresh provider state: ${extractErrorMessage(error)}`
+    updateError = {
+      code: "provider_refresh_failed",
+      message: `DevSy could not refresh ${name}: ${extractErrorMessage(error)}`,
+    }
   } finally {
     refreshingProviderState = false
   }
 }
 
 async function finishUpdate(name: string) {
-  providers.set(await providerList())
-  await loadVersionsFor(name)
-  await refreshUpdates().catch(() => undefined)
+  await synchronizeProviderAfterUpdate(name)
   toasts.success(`Updated ${name}`)
 }
 
