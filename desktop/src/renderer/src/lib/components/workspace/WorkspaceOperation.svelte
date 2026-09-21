@@ -24,7 +24,7 @@ async function retryRefresh(event: MouseEvent) {
   }
 }
 </script>
-<div aria-live="polite" aria-busy={workspaceJobBusy(job)} class="flex flex-col gap-1">
+<div aria-live="polite" aria-busy={workspaceJobBusy(job)} class="flex flex-col items-start gap-1">
   <span class={badgeVariants({ variant: job?.error ? "destructive" : label ? "secondary" : status?.toLowerCase() === "running" ? "default" : "outline" })}>
     {#if workspaceJobBusy(job)}<Spinner class="size-3" />{/if}
     {label ?? status ?? "Checking"}
