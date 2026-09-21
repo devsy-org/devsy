@@ -16,7 +16,9 @@ import { initContexts, destroyContexts } from "$lib/stores/contexts.js"
 import { initSecrets } from "$lib/stores/secrets.js"
 import { initEnv } from "$lib/stores/env.js"
 import {
+  initDesktopSettingsListener,
   initSettings,
+  syncDesktopSettingsFromMain,
   syncAutoUpdateFromMain,
   autoUpdate,
 } from "$lib/stores/settings.js"
@@ -73,6 +75,7 @@ const routes = {
 }
 
 let destroySettings: (() => void) | undefined
+let unsubDesktopSettings: (() => void) | undefined
 
 let updateDialogOpen = $state(false)
 let unsubscribeToasts: (() => void) | null = null
@@ -175,6 +178,10 @@ onMount(async () => {
 
   await initUpdateStore()
   await syncAutoUpdateFromMain()
+  await syncDesktopSettingsFromMain()
+  const desktopSettingsUnlisten = await initDesktopSettingsListener()
+  if (destroyed) desktopSettingsUnlisten()
+  else unsubDesktopSettings = desktopSettingsUnlisten
   unsubscribeToasts = initUpdateToasts(() => {
     let value = true
     autoUpdate.subscribe((v) => (value = v))()
@@ -185,6 +192,7 @@ onMount(async () => {
 
 onDestroy(() => {
   destroyed = true
+  unsubDesktopSettings?.()
   unsubscribeToasts?.()
   disposeUpdateStore()
   stopSessionTracking?.()

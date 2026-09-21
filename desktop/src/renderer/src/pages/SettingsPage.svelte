@@ -19,6 +19,12 @@ import {
   localOptions as localOptionsStore,
   loadLocalOptions,
   saveLocalOption,
+  runAtStartup,
+  openToTrayOnStartup,
+  trayNotifications,
+  startupStatus,
+  syncDesktopSettingsFromMain,
+  updateDesktopSettings,
 } from "$lib/stores/settings.js"
 import type {
   Theme,
@@ -26,6 +32,7 @@ import type {
   LocalOptions,
   OnBuildFailure,
 } from "$lib/stores/settings.js"
+import type { TrayNotificationLevel } from "$shared/app-settings.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import UpdatesPanel from "$lib/components/update/UpdatesPanel.svelte"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
@@ -121,10 +128,17 @@ const shortcuts = [
   { keys: "Escape", action: "Close dialogs and palette" },
 ]
 
+const NOTIFICATION_OPTIONS: { value: TrayNotificationLevel; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "failures", label: "Failures only" },
+  { value: "all", label: "All terminal outcomes" },
+]
+
 onMount(() => {
   local = loadLocalOptions()
   localOptionsStore.set(local)
   loading = false
+  void syncDesktopSettingsFromMain()
 })
 
 function saveLocal(key: keyof LocalOptions, value: string | boolean) {
@@ -271,6 +285,68 @@ function toggleLocal(key: keyof LocalOptions) {
 
       </div>
       {/if}
+      </section>
+
+
+      <section id="startup" aria-labelledby="startup-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
+        <h2 id="startup-heading" class="text-lg font-semibold">Startup</h2>
+        <div class="mt-4 space-y-6">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Label>Run at Startup</Label>
+            <p class="text-xs text-muted-foreground">Launch Devsy automatically after you sign in</p>
+          </div>
+          <Switch
+            checked={$runAtStartup}
+            onCheckedChange={(v) => updateDesktopSettings({ runAtStartup: v })}
+            disabled={loading}
+          />
+        </div>
+
+        {#if $startupStatus?.status === "denied" || $startupStatus?.status === "error"}
+          <p class="text-xs text-yellow-600 dark:text-yellow-400">{$startupStatus.detail}</p>
+        {/if}
+
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Label>Open to Tray on Startup</Label>
+            <p class="text-xs text-muted-foreground">Start in the system tray without opening a window. Applies only when Devsy starts automatically; clicking Devsy yourself always opens the window.</p>
+          </div>
+          <Switch
+            checked={$openToTrayOnStartup}
+            onCheckedChange={(v) => updateDesktopSettings({ openToTrayOnStartup: v })}
+            disabled={loading || !$runAtStartup}
+          />
+        </div>
+        </div>
+      </section>
+
+      <section id="notifications" aria-labelledby="notifications-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
+        <h2 id="notifications-heading" class="text-lg font-semibold">Notifications</h2>
+        <div class="mt-4 space-y-6">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Label>Workspace Notifications</Label>
+            <p class="text-xs text-muted-foreground">System notifications when workspace start and stop operations finish</p>
+          </div>
+          <Select.Root
+            type="single"
+            value={$trayNotifications}
+            onValueChange={(v) => {
+              if (v) updateDesktopSettings({ trayNotifications: v as TrayNotificationLevel })
+            }}
+          >
+            <Select.Trigger class="h-9 w-full sm:w-[280px]">
+              <span>{NOTIFICATION_OPTIONS.find((o) => o.value === $trayNotifications)?.label ?? "Failures only"}</span>
+            </Select.Trigger>
+            <Select.Content>
+              {#each NOTIFICATION_OPTIONS as o (o.value)}
+                <Select.Item value={o.value} label={o.label} />
+              {/each}
+            </Select.Content>
+          </Select.Root>
+        </div>
+        </div>
       </section>
 
       <section id="appearance" aria-labelledby="appearance-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
