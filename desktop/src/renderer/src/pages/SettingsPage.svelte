@@ -142,15 +142,7 @@ function toggleLocal(key: keyof LocalOptions) {
 <div class="space-y-6">
   <h1 class="text-2xl font-bold">Settings</h1>
 
-  <div class="grid items-start gap-6 lg:grid-cols-[10rem_minmax(0,1fr)]">
-    <nav aria-label="Settings sections" class="flex gap-1 overflow-x-auto lg:sticky lg:top-0 lg:flex-col">
-      <a class="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground" href="#general">General</a>
-      <a class="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground" href="#appearance">Appearance</a>
-      <a class="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground" href="#updates">Updates</a>
-      <a class="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground" href="#advanced">Advanced</a>
-    </nav>
-
-    <div class="min-w-0 max-w-3xl space-y-6">
+  <div class="min-w-0 max-w-3xl space-y-6">
       <section id="general" aria-labelledby="general-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
         <h2 id="general-heading" class="text-lg font-semibold">General</h2>
       {#if loading}
@@ -370,6 +362,5 @@ function toggleLocal(key: keyof LocalOptions) {
         </div>
         </div>
       </section>
-    </div>
   </div>
 </div>
