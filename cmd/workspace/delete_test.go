@@ -91,10 +91,6 @@ func TestDeleteCmd_Completion(t *testing.T) {
 	assert.Contains(t, completionOutput, `"delete"`)
 }
 
-// TestDeleteCmd_DeleteResolvedJournalsUnderSelectedWorkspace is the regression
-// guard for journaling an interactive delete under a workspace other than the
-// one deleted: the resolved client drives both the deletion and the journal
-// key, so every recorded event must carry its workspace ID.
 func TestDeleteCmd_DeleteResolvedJournalsUnderSelectedWorkspace(t *testing.T) {
 	log.Init(log.Config{Verbosity: 0})
 
@@ -141,10 +137,6 @@ func TestDeleteCmd_DeleteResolvedJournalsUnderSelectedWorkspace(t *testing.T) {
 	assert.True(t, hasDeletePhase, "expected a delete-phase journal event, got %+v", events)
 }
 
-// TestDeleteCmd_DeleteMultipleReusesResolvedClients guards the multi-target
-// delete invariant: each pre-resolved client is deleted directly and every
-// operation is journaled under that client's workspace ID, never the raw
-// argument.
 func TestDeleteCmd_DeleteMultipleReusesResolvedClients(t *testing.T) {
 	log.Init(log.Config{Verbosity: 0})
 
@@ -202,9 +194,6 @@ func TestDeleteCmd_DeleteMultipleReusesResolvedClients(t *testing.T) {
 	}
 }
 
-// TestResolveDeleteTargets_FallsBackToRawArgument covers targets that cannot
-// be resolved, such as a broken workspace removed with --force: the journal
-// key falls back to the raw argument and no client is reused.
 func TestResolveDeleteTargets_FallsBackToRawArgument(t *testing.T) {
 	log.Init(log.Config{Verbosity: 0})
 
