@@ -95,9 +95,9 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return cmd.deleteInteractively(ctx, reporter, devsyConfig)
 	}
-	workspaceIDs := resolveJournalWorkspaceIDs(ctx, devsyConfig, cmd.Owner, args)
+	targets := resolveDeleteTargets(ctx, devsyConfig, cmd.Owner, args)
 	if len(args) <= 1 {
-		reporter = withWorkspaceJournal(reporter, workspaceIDs[journalWorkspaceKey(args)])
+		reporter = withWorkspaceJournal(reporter, targets[journalWorkspaceKey(args)].ID)
 	}
 	deleteErr := status.Run(
 		ctx,
@@ -105,9 +105,14 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 		status.Operation{Phase: status.PhaseDeletingWorkspace},
 		func(ctx context.Context) error {
 			if len(args) <= 1 {
-				return cmd.deleteSingle(status.WithReporter(ctx, reporter), devsyConfig, args)
+				return cmd.deleteSingle(
+					status.WithReporter(ctx, reporter),
+					devsyConfig,
+					targets[journalWorkspaceKey(args)],
+					args,
+				)
 			}
-			return cmd.deleteMultiple(ctx, devsyConfig, reporter, workspaceIDs, args)
+			return cmd.deleteMultiple(ctx, devsyConfig, reporter, targets, args)
 		},
 	)
 
@@ -207,9 +212,10 @@ func (cmd *DeleteCmd) loadConfig() (*config.Config, error) {
 func (cmd *DeleteCmd) deleteSingle(
 	ctx context.Context,
 	devsyConfig *config.Config,
+	target resolvedDeleteTarget,
 	args []string,
 ) error {
-	name, err := cmd.deleteWorkspace(ctx, devsyConfig, args)
+	name, err := cmd.deleteTarget(ctx, devsyConfig, target, args)
 	if err != nil {
 		return err
 	}
@@ -223,15 +229,17 @@ func (cmd *DeleteCmd) deleteMultiple(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	reporter status.Reporter,
-	workspaceIDs map[string]string,
+	targets map[string]resolvedDeleteTarget,
 	args []string,
 ) error {
 	var errs []error
 	for _, arg := range args {
-		targetReporter := withWorkspaceJournal(reporter, workspaceIDs[arg])
-		name, err := cmd.deleteWorkspace(
+		target := targets[arg]
+		targetReporter := withWorkspaceJournal(reporter, target.ID)
+		name, err := cmd.deleteTarget(
 			status.WithReporter(ctx, targetReporter),
 			devsyConfig,
+			target,
 			[]string{arg},
 		)
 		if err != nil {
@@ -252,6 +260,21 @@ func (cmd *DeleteCmd) deleteMultiple(
 	}
 
 	return nil
+}
+
+// deleteTarget deletes one workspace. When the target carries a pre-resolved
+// client, deletion reuses it so the deleted workspace and the journal key
+// cannot diverge; otherwise it resolves the raw arguments.
+func (cmd *DeleteCmd) deleteTarget(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	target resolvedDeleteTarget,
+	args []string,
+) (string, error) {
+	if target.Client != nil {
+		return cmd.deleteClient(ctx, devsyConfig, target.Client)
+	}
+	return cmd.deleteWorkspace(ctx, devsyConfig, args)
 }
 
 func (cmd *DeleteCmd) deleteWorkspace(
