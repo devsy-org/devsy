@@ -453,7 +453,6 @@ export function analyticsTrack(
   invoke("analytics_track", { name, properties }).catch(() => {})
 }
 
-// Desktop app settings (owned by the main process)
 export async function getAppSettings(): Promise<
   import("$shared/app-settings.js").AppSettingsState
 > {
