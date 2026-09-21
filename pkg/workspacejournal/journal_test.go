@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -301,5 +303,147 @@ func TestReadSkipsSegmentsRemovedByConcurrentPrune(t *testing.T) {
 	}
 	if len(events) != 1 {
 		t.Fatalf("events=%d", len(events))
+	}
+}
+
+func openTwoJournals(t *testing.T, dir string, opts Options) []*Journal {
+	t.Helper()
+	opts.Dir = dir
+	journals := make([]*Journal, 2)
+	for i := range journals {
+		journal, err := New(opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		journals[i] = journal
+	}
+	return journals
+}
+
+func runConcurrentAppends(t *testing.T, journals []*Journal, writers, appendsPerWriter int) {
+	t.Helper()
+	var wg sync.WaitGroup
+	errs := make([]error, writers)
+	for w := range writers {
+		wg.Go(func() {
+			journal := journals[w%len(journals)]
+			for range appendsPerWriter {
+				errs[w] = journal.Append("demo", status.Event{
+					Pipeline:    status.PipelineWorkspaceUp,
+					OperationID: "op-concurrent",
+					Phase:       status.PhaseReady,
+					Step:        strings.Repeat("x", 50),
+					State:       status.StateSucceeded,
+				})
+				if errs[w] != nil {
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	for w, err := range errs {
+		if err != nil {
+			t.Fatalf("writer %d: %v", w, err)
+		}
+	}
+}
+
+func assertSegmentsWithinLimit(t *testing.T, dir string, maxBytes int64) {
+	t.Helper()
+	paths, err := segmentPaths(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Size() > maxBytes {
+			t.Fatalf("segment %s exceeds maxSegmentBytes: %d", p, info.Size())
+		}
+	}
+}
+
+func TestAppendConcurrentInstancesDropNoEvents(t *testing.T) {
+	dir := t.TempDir()
+	journals := openTwoJournals(t, dir, Options{MaxSegmentBytes: 512})
+	runConcurrentAppends(t, journals, 8, 25)
+	events, err := Read(dir, "demo", MaxLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := 8 * 25; len(events) != want {
+		t.Fatalf("events=%d, want %d (events dropped under concurrent append)", len(events), want)
+	}
+	assertSegmentsWithinLimit(t, dir, 512)
+}
+
+func TestAppendConcurrentPruneReturnsNoRaceError(t *testing.T) {
+	dir := t.TempDir()
+	journals := openTwoJournals(t, dir, Options{MaxBytes: 2048, MaxSegmentBytes: 512})
+	runConcurrentAppends(t, journals, 8, 25)
+	events, err := Read(dir, "demo", MaxLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) == 0 {
+		t.Fatal("journal emptied despite the newest segment surviving prune")
+	}
+}
+
+func TestAppendLockSerializesInstances(t *testing.T) {
+	dir := t.TempDir()
+	journals := openTwoJournals(t, dir, Options{})
+	j1, j2 := journals[0], journals[1]
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var fired atomic.Bool
+	afterAppendLockAcquired = func() {
+		if fired.CompareAndSwap(false, true) {
+			close(entered)
+			<-release
+		}
+	}
+	defer func() { afterAppendLockAcquired = nil }()
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- j1.Append("demo", status.Event{
+			Pipeline: status.PipelineWorkspaceUp,
+			Phase:    status.PhaseReady,
+			State:    status.StateSucceeded,
+		})
+	}()
+	<-entered
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- j2.Append("demo", status.Event{
+			Pipeline: status.PipelineWorkspaceUp,
+			Phase:    status.PhaseReady,
+			State:    status.StateSucceeded,
+		})
+	}()
+	select {
+	case err := <-secondDone:
+		t.Fatalf("second append completed while the first held the append lock: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatal(err)
+	}
+	events, err := Read(dir, "demo", MaxLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("events=%d, want 2", len(events))
 	}
 }
