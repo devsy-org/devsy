@@ -785,7 +785,14 @@ func TestStore_UnownedWithoutBackendStateIsRecoverable(t *testing.T) {
 	raw := "contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n"
 	require.NoError(t, os.WriteFile(indexPath, []byte(raw), 0o600))
 
-	s := newLocalStoreWithRegistry(BackendAuto, indexPath, newSystemBackendRegistry(dir))
+	s := newLocalStoreWithRegistry(
+		BackendKeyring,
+		indexPath,
+		mapBackendRegistry{backends: map[Backend]*mapBackend{
+			BackendKeyring: newMapBackend(),
+			BackendFile:    newMapBackend(),
+		}},
+	)
 	if _, err := s.Get(testContext, "LEGACY"); err == nil ||
 		!strings.Contains(err.Error(), "no proven owning backend") {
 		t.Fatalf("expected actionable unowned error, got %v", err)
