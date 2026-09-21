@@ -389,7 +389,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -397,17 +397,35 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: download darwin CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - name: build Homebrew-managed CLI artifacts
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
-          name: devsy-darwin
-          path: ${{ runner.temp }}/devsy-bin/
+          distribution: goreleaser
+          version: "~> v2"
+          args: build --id devsy-homebrew --snapshot
+        env:
+          DEVSY_CLI_VERSION: ${{ inputs.tag || github.ref_name }}
+          DEVSY_POSTHOG_API_KEY: ${{ secrets.DEVSY_POSTHOG_API_KEY }}
 
-      - name: download linux CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - name: stage Homebrew-managed CLI artifacts
+        run: |
+          mkdir -p "${{ runner.temp }}/devsy-bin"
+          find dist -type f -name 'devsy-homebrew-*' -exec cp {} "${{ runner.temp }}/devsy-bin/" \;
+
+      - name: verify Homebrew-managed update guidance
+        run: |
+          set +e
+          output=$("${{ runner.temp }}/devsy-bin/devsy-homebrew-linux-amd64" update 2>&1)
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -F "brew upgrade devsy" <<<"$output"
+
+      - name: upload Homebrew-managed CLI release assets
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
-          name: devsy-linux
-          path: ${{ runner.temp }}/devsy-bin/
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: ${{ runner.temp }}/devsy-bin/devsy-homebrew-*
 
       - name: download macOS dmg artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
