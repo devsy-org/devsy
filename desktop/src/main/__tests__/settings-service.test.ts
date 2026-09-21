@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -72,6 +72,49 @@ describe("SettingsService", () => {
     const result = await svc.update({ runAtStartup: true, openToTrayOnStartup: true })
     expect(result.settings.runAtStartup).toBe(false)
     expect(store.get().runAtStartup).toBe(false)
+  })
+
+  it("restores the OS login item when persisting new settings fails", async () => {
+    const blocker = join(dir, "blocked")
+    writeFileSync(blocker, "x")
+    const badStore = new AppSettingsStore(join(blocker, "app-settings.json"))
+    badStore.load()
+    const applied: boolean[] = []
+    const onChanged = vi.fn()
+    const svc = new SettingsService({
+      store: badStore,
+      applyAutostart: async (s) => {
+        applied.push(s.runAtStartup)
+        return s.runAtStartup ? enabled : disabled
+      },
+      currentAutostartEnabled: () => false,
+      onChanged,
+    })
+    await expect(svc.update({ runAtStartup: true })).rejects.toThrow()
+    expect(applied).toEqual([true, false])
+    expect(badStore.get().runAtStartup).toBe(false)
+    expect(onChanged).not.toHaveBeenCalled()
+  })
+
+  it("reports both failures when the autostart rollback also fails", async () => {
+    const blocker = join(dir, "blocked")
+    writeFileSync(blocker, "x")
+    const badStore = new AppSettingsStore(join(blocker, "app-settings.json"))
+    badStore.load()
+    let calls = 0
+    const svc = new SettingsService({
+      store: badStore,
+      applyAutostart: async () => {
+        calls += 1
+        if (calls > 1) throw new Error("rollback boom")
+        return enabled
+      },
+      currentAutostartEnabled: () => false,
+      onChanged: () => {},
+    })
+    await expect(svc.update({ runAtStartup: true })).rejects.toThrow(
+      /autostart rollback also failed: rollback boom/,
+    )
   })
 
   it("reapplies autostart when the dependent toggle changes", async () => {
