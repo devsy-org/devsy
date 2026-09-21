@@ -507,11 +507,15 @@ describe("ProviderSheet", () => {
       .find((button) => button.textContent?.trim() === "Refresh status")?.click()
     await flushAsync()
     expect(providerRefreshState).toHaveBeenCalledWith("ssh")
+    expect(providerList).toHaveBeenCalled()
+    expect(loadVersionsFor).toHaveBeenCalledWith("ssh")
+    expect(refreshUpdates).toHaveBeenCalled()
     expect(providerUpdateStreaming).not.toHaveBeenCalled()
+    expect(document.body.textContent).not.toContain("Status may be out of date")
     unmount()
   })
 
-  it("keeps refresh recovery visible when version reload fails", async () => {
+  it("keeps refresh recovery visible when version synchronization still fails", async () => {
     providerJobsBox.store.set({
       ssh: {
         activity: "updating",
@@ -519,20 +523,24 @@ describe("ProviderSheet", () => {
         state: "failed",
         error: "The provider updated, but its current state could not be refreshed.",
         errorCode: "provider_refresh_failed",
+        logs: ["Provider update complete"],
       },
     })
-    loadVersionsFor.mockRejectedValueOnce(new Error("versions unavailable"))
     const { unmount } = render(ProviderSheet, {
       props: { provider: makeProvider("ssh"), open: true },
     })
     await flushAsync()
+    loadVersionsFor.mockRejectedValueOnce(new Error("versions unavailable"))
 
     Array.from(document.querySelectorAll("button"))
       .find((button) => button.textContent?.trim() === "Refresh status")?.click()
     await flushAsync()
 
+    expect(providerRefreshState).toHaveBeenCalledWith("ssh")
     expect(loadVersionsFor).toHaveBeenCalledWith("ssh")
     expect(document.body.textContent).toContain("Status may be out of date")
+    expect(document.body.textContent).toContain("versions unavailable")
+    expect(document.body.textContent).toContain("Refresh status")
     unmount()
   })
 
