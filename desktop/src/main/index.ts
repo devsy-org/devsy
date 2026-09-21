@@ -1,8 +1,17 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { app, BrowserWindow, session } from "electron"
+import { app, BrowserWindow, Notification, session } from "electron"
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics.js"
 import { isAppQuitting, markAppQuitting } from "./app-lifecycle.js"
+import { AppSettingsStore } from "./app-settings.js"
+import {
+  applyAutostart,
+  detectAutostartEnvironment,
+  readAutostartEnabled,
+} from "./autostart.js"
+import { isAutomaticLoginLaunch, shouldSuppressInitialWindow } from "./launch-context.js"
+import { SettingsService } from "./settings-service.js"
+import { TrayNotifier } from "./tray-notifications.js"
 import { CliRunner } from "./cli.js"
 import { DaemonManager } from "./daemon-manager.js"
 import { registerIpcHandlers } from "./ipc.js"
@@ -13,7 +22,11 @@ import { ProviderJobs } from "./provider-jobs.js"
 import { PtyManager } from "./pty.js"
 import { DaemonState } from "./state.js"
 import { AppTray } from "./tray.js"
-import { initAutoUpdater, stopAutoUpdater } from "./updater.js"
+import {
+  initAutoUpdater,
+  onUpdateStatusChanged,
+  stopAutoUpdater,
+} from "./updater.js"
 import { Watcher } from "./watcher.js"
 import { WorkspaceJobs } from "./workspace-jobs.js"
 
@@ -198,6 +211,47 @@ app.whenReady().then(() => {
   const providerJobs = new ProviderJobs()
   const workspaceJobs = new WorkspaceJobs()
 
+  const appSettingsStore = new AppSettingsStore(
+    join(app.getPath("userData"), "app-settings.json"),
+  )
+  appSettingsStore.load()
+  const autostartEnv = detectAutostartEnvironment()
+  const settingsService = new SettingsService({
+    store: appSettingsStore,
+    applyAutostart: (settings) => applyAutostart(settings, autostartEnv),
+    currentAutostartEnabled: () => readAutostartEnabled(autostartEnv),
+    onChanged: (result) => {
+      appTray?.rebuildMenu()
+      const win = mainWindow
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("app-settings-changed", result)
+      }
+    },
+  })
+
+  const notifier = new TrayNotifier({
+    getLevel: () => appSettingsStore.get().trayNotifications,
+    isAppFocused: () => {
+      const win = mainWindow
+      return Boolean(win && !win.isDestroyed() && win.isFocused())
+    },
+    sink: (request) => {
+      if (!Notification.isSupported()) return
+      const notification = new Notification({
+        title: request.title,
+        body: request.body,
+      })
+      notification.on("click", request.onClick)
+      notification.show()
+    },
+    openWorkspace: (id) => showDevsy(`/workspaces/${encodeURIComponent(id)}`),
+    openWorkspaceLogs: (id) =>
+      showDevsy(`/workspaces/${encodeURIComponent(id)}?tab=logs`),
+    openUpdates: () => showDevsy("/settings"),
+  })
+  workspaceJobs.onChange(() => notifier.onJobsChanged(workspaceJobs.snapshot()))
+  onUpdateStatusChanged((status) => notifier.onUpdateStatus(status))
+
   // Register IPC handlers
   const {
     tunnelProcesses,
@@ -229,6 +283,7 @@ app.whenReady().then(() => {
       }
     },
     workspaceSnapshot: () => watcher?.workspaceSnapshot(),
+    settingsService,
   })
 
   // Start state watcher
@@ -267,6 +322,16 @@ app.whenReady().then(() => {
     state,
     workspaceJobs,
     showDevsy,
+    getSettings: () => appSettingsStore.get(),
+    toggleRunAtStartup: () =>
+      void settingsService.update({
+        runAtStartup: !appSettingsStore.get().runAtStartup,
+      }),
+    toggleOpenToTray: () =>
+      void settingsService.update({
+        openToTrayOnStartup: !appSettingsStore.get().openToTrayOnStartup,
+      }),
+    startWorkspace: workspaceActions.start,
     stopWorkspace: workspaceActions.stop,
     refreshWorkspace: (id) =>
       watcher ? watcher.refreshWorkspaceStatus(id) : Promise.resolve(),
@@ -275,7 +340,21 @@ app.whenReady().then(() => {
   })
   appTray.setup()
 
-  createWindow()
+  // Open-to-tray suppresses the window only for automatic login launches; an
+  // explicit launch always shows the window.
+  const loginItems =
+    process.platform === "darwin" || process.platform === "win32"
+      ? app.getLoginItemSettings()
+      : undefined
+  const automaticLaunch = isAutomaticLoginLaunch({
+    argv: process.argv,
+    platform: process.platform,
+    wasOpenedAtLogin: loginItems?.wasOpenedAtLogin,
+    wasOpenedAsHidden: loginItems?.wasOpenedAsHidden,
+  })
+  if (!shouldSuppressInitialWindow(appSettingsStore.get(), automaticLaunch)) {
+    createWindow()
+  }
 
   if (app.isPackaged) {
     initAutoUpdater(() => mainWindow)
