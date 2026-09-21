@@ -107,6 +107,27 @@ const MACHINES: Machine[] = [
   },
 ]
 
+let MOCK_APP_SETTINGS = {
+  settings: {
+    runAtStartup: false,
+    openToTrayOnStartup: false,
+    trayNotifications: "failures",
+  },
+  startup: { applied: true, enabled: false, status: "disabled" },
+} as {
+  settings: {
+    runAtStartup: boolean
+    openToTrayOnStartup: boolean
+    trayNotifications: "off" | "failures" | "all"
+  }
+  startup: {
+    applied: boolean
+    enabled: boolean
+    status: "enabled" | "disabled" | "denied" | "unavailable" | "error"
+    detail?: string
+  }
+}
+
 const CONTEXTS: Context[] = [{ name: "default" }, { name: "staging" }]
 
 const SSH_KEYS: SshKeyInfo[] = [
@@ -282,6 +303,30 @@ const COMMANDS: Record<string, Handler> = {
   get_host_platform: () => "linux/amd64",
 
   image_inspect_platforms: () => ["linux/amd64", "linux/arm64"],
+
+  // App settings (startup + tray notifications)
+  get_app_settings: () => MOCK_APP_SETTINGS,
+  set_app_settings: (args) => {
+    const patch = (args?.patch ?? {}) as Partial<typeof MOCK_APP_SETTINGS.settings>
+    MOCK_APP_SETTINGS = {
+      settings: {
+        ...MOCK_APP_SETTINGS.settings,
+        ...patch,
+        openToTrayOnStartup:
+          (patch.runAtStartup ?? MOCK_APP_SETTINGS.settings.runAtStartup) === false
+            ? false
+            : (patch.openToTrayOnStartup ?? MOCK_APP_SETTINGS.settings.openToTrayOnStartup),
+      },
+      startup: {
+        applied: true,
+        enabled: patch.runAtStartup ?? MOCK_APP_SETTINGS.settings.runAtStartup,
+        status: (patch.runAtStartup ?? MOCK_APP_SETTINGS.settings.runAtStartup)
+          ? ("enabled" as const)
+          : ("disabled" as const),
+      },
+    }
+    return MOCK_APP_SETTINGS
+  },
 
   // Release channel
   get_release_channel: () => "stable",
