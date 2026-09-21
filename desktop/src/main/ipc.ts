@@ -1913,4 +1913,4 @@ function sanitizeAnalyticsProperties(
     out[k] = typeof v === "string" ? v.slice(0, 256) : v
   }
   return out
-		  }
+}
