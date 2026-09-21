@@ -3,6 +3,7 @@ package workspace
 import (
 	"testing"
 
+	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/provider"
 	snapshotpkg "github.com/devsy-org/devsy/pkg/snapshot"
 	"github.com/stretchr/testify/assert"
@@ -26,4 +27,18 @@ func TestImportWorkspace_SnapshotRefRestoresSourceAndDevContainerSource(t *testi
 func TestImportWorkspace_SnapshotRefBadRef(t *testing.T) {
 	_, _, err := snapshotpkg.RestoreComposition("invalid-ref")
 	require.Error(t, err)
+}
+
+func TestImportCmdExecuteParseFailureKeepsStatusEnvelope(t *testing.T) {
+	cmd := &ImportCmd{
+		GlobalFlags: &flags.GlobalFlags{ResultFormat: formatJSON},
+		Data:        "not json",
+	}
+	var execErr error
+	out := captureStdout(t, func() {
+		execErr = cmd.execute(t.Context())
+	})
+	require.Error(t, execErr)
+	require.Contains(t, out, `"kind":"status"`)
+	require.Contains(t, out, "decode workspace data")
 }
