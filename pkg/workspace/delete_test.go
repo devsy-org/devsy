@@ -74,10 +74,6 @@ func TestSweepOrphanContentDirs_MissingDirIsNoop(t *testing.T) {
 	SweepOrphanContentDirs(testDefaultContext)
 }
 
-// TestDeleteWithPreResolvedClientSkipsSelection is the regression guard for
-// the double interactive selection: when the caller already resolved the
-// deletion target, Delete must use that client directly. Tests run without a
-// terminal, so any attempt to resolve the empty args interactively would fail.
 func TestDeleteWithPreResolvedClientSkipsSelection(t *testing.T) {
 	setupTestPathManager(t)
 
