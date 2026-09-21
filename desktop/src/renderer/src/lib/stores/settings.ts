@@ -1,5 +1,17 @@
 import { writable } from "svelte/store"
-import { getAutoDownload, setAutoDownload } from "$lib/ipc/commands.js"
+import {
+  getAppSettings,
+  getAutoDownload,
+  setAppSettings,
+  setAutoDownload,
+} from "$lib/ipc/commands.js"
+import { onAppSettingsChanged } from "$lib/ipc/events.js"
+import type {
+  AppSettings,
+  AppSettingsState,
+  StartupStatus,
+  TrayNotificationLevel,
+} from "$shared/app-settings.js"
 
 const browser = typeof window !== "undefined"
 
@@ -345,6 +357,61 @@ export function parseContextOptions(
     sshConfigPath: str("SSH_CONFIG_PATH"),
     sshConfigIncludePath: str("SSH_CONFIG_INCLUDE_PATH"),
   }
+}
+
+// ── Desktop settings (main-process owned) ───────────────────────────
+// Startup and tray notification preferences live in the main process so the
+// tray and Settings always share one truth. Main pushes
+// app-settings-changed when the tray toggles them; stores apply the payload
+// unless a renderer write is in flight.
+export const runAtStartup = writable<boolean>(false)
+export const openToTrayOnStartup = writable<boolean>(false)
+export const trayNotifications = writable<TrayNotificationLevel>("failures")
+export const startupStatus = writable<StartupStatus | null>(null)
+
+let desktopSettingsWriteInFlight = false
+
+function applyAppSettingsState(state: AppSettingsState): void {
+  runAtStartup.set(state.settings.runAtStartup)
+  openToTrayOnStartup.set(state.settings.openToTrayOnStartup)
+  trayNotifications.set(state.settings.trayNotifications)
+  startupStatus.set(state.startup)
+}
+
+export async function syncDesktopSettingsFromMain(): Promise<void> {
+  try {
+    const state = await getAppSettings()
+    if (desktopSettingsWriteInFlight) return
+    applyAppSettingsState(state)
+  } catch (err) {
+    console.warn("[settings] getAppSettings failed:", err)
+  }
+}
+
+export async function updateDesktopSettings(
+  patch: Partial<AppSettings>,
+): Promise<void> {
+  desktopSettingsWriteInFlight = true
+  try {
+    applyAppSettingsState(await setAppSettings(patch))
+  } catch (err) {
+    console.warn("[settings] setAppSettings failed:", err)
+    try {
+      applyAppSettingsState(await getAppSettings())
+    } catch {
+      // Keep the previous store values.
+    }
+  } finally {
+    desktopSettingsWriteInFlight = false
+  }
+}
+
+export async function initDesktopSettingsListener(): Promise<() => void> {
+  const unlisten = await onAppSettingsChanged((state) => {
+    if (desktopSettingsWriteInFlight) return
+    applyAppSettingsState(state)
+  })
+  return unlisten
 }
 
 // ── Init ────────────────────────────────────────────────────────────
