@@ -3,9 +3,16 @@ package workspace
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/workspacejournal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -81,4 +88,54 @@ func TestDeleteCmd_Completion(t *testing.T) {
 	assert.Contains(t, completionOutput, fmt.Sprintf("%q", aliasDown))
 	assert.Contains(t, completionOutput, fmt.Sprintf("%q", aliasRm))
 	assert.Contains(t, completionOutput, `"delete"`)
+}
+
+// TestDeleteCmd_DeleteResolvedJournalsUnderSelectedWorkspace is the regression
+// guard for journaling an interactive delete under a workspace other than the
+// one deleted: the resolved client drives both the deletion and the journal
+// key, so every recorded event must carry its workspace ID.
+func TestDeleteCmd_DeleteResolvedJournalsUnderSelectedWorkspace(t *testing.T) {
+	log.Init(log.Config{Verbosity: 0})
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+
+	fake := &fakeWorkspaceClient{
+		workspace: "chosen",
+		context:   testContext,
+		provider:  testProvider,
+		config:    &provider.Workspace{ID: "chosen", Context: testContext},
+	}
+	cmd := &DeleteCmd{
+		GlobalFlags:   &flags.GlobalFlags{ResultFormat: formatPlain},
+		DeleteOptions: client2.DeleteOptions{Force: true},
+	}
+	devsyConfig := &config.Config{
+		DefaultContext: testContext,
+		Contexts:       map[string]*config.ContextConfig{testContext: {}},
+	}
+	reporter, err := newWorkspaceStatusReporter(formatPlain, os.Stdout, false)
+	require.NoError(t, err)
+
+	captureStdout(t, func() {
+		require.NoError(t, cmd.deleteResolved(t.Context(), reporter, devsyConfig, fake))
+	})
+	require.True(t, fake.deleted)
+
+	dir, err := workspacejournal.DefaultDir()
+	require.NoError(t, err)
+	events, err := workspacejournal.Read(dir, "chosen", workspacejournal.DefaultLimit)
+	require.NoError(t, err)
+	require.NotEmpty(t, events)
+
+	hasDeletePhase := false
+	for _, event := range events {
+		if event.Phase == status.PhaseDeletingWorkspace {
+			hasDeletePhase = true
+		}
+	}
+	assert.True(t, hasDeletePhase, "expected a delete-phase journal event, got %+v", events)
 }
