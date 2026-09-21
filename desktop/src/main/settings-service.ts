@@ -5,6 +5,10 @@ import {
 } from "./app-settings.js"
 import type { AutostartApplyResult } from "./autostart.js"
 
+function describe(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 export interface SettingsUpdateResult {
   settings: AppSettings
   startup: AutostartApplyResult
@@ -60,7 +64,22 @@ export class SettingsService {
         return result
       }
     }
-    this.deps.store.save(next)
+    try {
+      this.deps.store.save(next)
+    } catch (err) {
+      if (startupRelevant) {
+        // The OS login item already moved to the new value; restore it so a
+        // failed write never leaves the platform disagreeing with the store.
+        try {
+          await this.deps.applyAutostart(current)
+        } catch (compensationErr) {
+          throw new Error(
+            `failed to persist settings: ${describe(err)}; autostart rollback also failed: ${describe(compensationErr)}`,
+          )
+        }
+      }
+      throw err
+    }
     const result = { settings: next, startup }
     this.deps.onChanged(result)
     return result
