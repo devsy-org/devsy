@@ -92,6 +92,7 @@ export const EVENT_NAMES = {
   COMMAND_PROGRESS: "command-progress",
   WORKSPACE_STATUS: "workspace-status",
   UPDATE_STATUS: "update-status",
+  APP_SETTINGS_CHANGED: "app-settings-changed",
 } as const
 
 interface WorkspacesPayload {
@@ -181,4 +182,15 @@ export function onUpdateStatus(
   return listen<UpdateStatus>(EVENT_NAMES.UPDATE_STATUS, (event) => {
     callback(event.payload)
   })
+}
+
+export function onAppSettingsChanged(
+  callback: (state: import("$shared/app-settings.js").AppSettingsState) => void,
+): Promise<UnlistenFn> {
+  return listen<import("$shared/app-settings.js").AppSettingsState>(
+    EVENT_NAMES.APP_SETTINGS_CHANGED,
+    (event) => {
+      callback(event.payload)
+    },
+  )
 }
