@@ -273,3 +273,33 @@ func TestReadSkipsIncompleteRecords(t *testing.T) {
 		t.Fatalf("events=%d", len(events))
 	}
 }
+
+func TestReadSkipsSegmentsRemovedByConcurrentPrune(t *testing.T) {
+	dir := t.TempDir()
+	journal, err := New(Options{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.Reporter("demo").Report(status.Event{
+		Pipeline:    status.PipelineWorkspaceUp,
+		OperationID: "op-1",
+		Phase:       status.PhaseReady,
+		State:       status.StateSucceeded,
+	})
+	paths, err := segmentPaths(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("paths=%v", paths)
+	}
+	// A prune racing Read removes a listed segment before it is opened.
+	missing := filepath.Join(dir, "events-999999.ndjson")
+	events, err := readSegments([]string{missing, paths[0]}, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events=%d", len(events))
+	}
+}
