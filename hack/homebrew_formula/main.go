@@ -22,10 +22,10 @@ type platform struct {
 }
 
 var platforms = []platform{
-	{OS: "macos", Arch: "arm", Binary: "devsy-darwin-arm64"},
-	{OS: "macos", Arch: "intel", Binary: "devsy-darwin-amd64"},
-	{OS: "linux", Arch: "arm", Binary: "devsy-linux-arm64"},
-	{OS: "linux", Arch: "intel", Binary: "devsy-linux-amd64"},
+	{OS: "macos", Arch: "arm", Binary: "devsy-homebrew-darwin-arm64"},
+	{OS: "macos", Arch: "intel", Binary: "devsy-homebrew-darwin-amd64"},
+	{OS: "linux", Arch: "arm", Binary: "devsy-homebrew-linux-arm64"},
+	{OS: "linux", Arch: "intel", Binary: "devsy-homebrew-linux-amd64"},
 }
 
 const formulaTmpl = `class Devsy < Formula
@@ -57,7 +57,7 @@ const formulaTmpl = `class Devsy < Formula
   end
 
   def install
-    bin.install Dir["devsy-*"].first => "devsy"
+    bin.install Dir["devsy-homebrew-*"].first => "devsy"
   end
 
   test do
