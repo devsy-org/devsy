@@ -183,10 +183,22 @@ func TestLocalTunnel_ContextCancellation(t *testing.T) {
 	addr := tun.Addr()
 	cancel()
 
-	time.Sleep(100 * time.Millisecond)
-	_, err = net.DialTimeout("tcp", addr, 500*time.Millisecond)
-	if err == nil {
-		t.Error("expected connection to be refused after context cancellation")
+	// The listener is closed asynchronously after cancellation.
+	deadline := time.After(2 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+		if err != nil {
+			return
+		}
+		_ = conn.Close()
+		select {
+		case <-deadline:
+			t.Fatal("listener still accepting connections after context cancellation")
+		case <-ticker.C:
+		}
 	}
 }
 
