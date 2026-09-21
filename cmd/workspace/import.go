@@ -88,12 +88,6 @@ func (cmd *ImportCmd) Run(
 }
 
 func (cmd *ImportCmd) execute(ctx context.Context) error {
-	exportConfig, err := cmd.parseExportConfig()
-	if err != nil {
-		return err
-	}
-	cmd.setDefaultIDs(exportConfig)
-
 	reporter, err := newWorkspaceStatusReporter(
 		cmd.ResultFormat,
 		os.Stdout,
@@ -102,12 +96,19 @@ func (cmd *ImportCmd) execute(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	reporter = withWorkspaceJournal(reporter, cmd.WorkspaceID)
+	exportConfig, parseErr := cmd.parseExportConfig()
+	if parseErr == nil {
+		cmd.setDefaultIDs(exportConfig)
+		reporter = withWorkspaceJournal(reporter, cmd.WorkspaceID)
+	}
 	return status.Run(
 		ctx,
 		reporter,
 		status.Operation{Phase: status.PhaseImportingWorkspace},
 		func(ctx context.Context) error {
+			if parseErr != nil {
+				return parseErr
+			}
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
