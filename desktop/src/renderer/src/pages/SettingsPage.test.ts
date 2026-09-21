@@ -21,8 +21,6 @@ describe("SettingsPage layout", () => {
     expect(switches).toHaveLength(2)
     const [runAtStartup, openToTray] = switches
     expect(runAtStartup.hasAttribute("disabled")).toBe(false)
-    // The mock main process defaults to runAtStartup off, so the dependent
-    // toggle must be disabled.
     await vi.waitFor(() => {
       expect(openToTray.hasAttribute("disabled")).toBe(true)
     })
