@@ -30,15 +30,15 @@ let title = $derived.by(() => {
 
 let description = $derived.by(() => {
   if (alreadyLatest) {
-    return `${providerName} is already on ${currentVersion}. Updating will re-fetch the same version.`
+    return `${providerName} is already on ${currentVersion}. Updating will re-fetch and re-initialize the same version.`
   }
   if (currentVersion && latestVersion) {
-    return `This will update ${providerName} from ${currentVersion} to ${latestVersion}.`
+    return `This will update ${providerName} from ${currentVersion} to ${latestVersion}, then re-initialize it.`
   }
   if (currentVersion) {
-    return `Currently on ${currentVersion}. The latest version isn't available — this will run the provider's update command.`
+    return `Currently on ${currentVersion}. DevSy could not determine the latest version. This update will re-fetch and re-initialize the provider.`
   }
-  return "Check for and install the latest version."
+  return "Check for and install the latest version, then re-initialize the provider."
 })
 </script>
 

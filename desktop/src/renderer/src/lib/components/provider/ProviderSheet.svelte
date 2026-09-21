@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onMount } from "svelte"
+import { onDestroy, onMount } from "svelte"
 import { Star } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -14,20 +14,23 @@ import * as ButtonGroup from "$lib/components/ui/button-group/index.js"
 import { Spinner } from "$lib/components/ui/spinner/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import ErrorCard from "$lib/components/ErrorCard.svelte"
+import LogTable from "$lib/components/log/LogTable.svelte"
 import UpdateConfirmDialog from "./UpdateConfirmDialog.svelte"
 import type { CLIError } from "$shared/cli-error.js"
 import {
   providerUse,
-  providerUpdate,
+  providerUpdateStreaming,
   providerDelete,
   providerInit,
   providerList,
   providerOptions,
+  providerRefreshState,
   providerSetOptions,
   providerSetSingleMachine,
   providerRename,
   providerSetVersion,
 } from "$lib/ipc/commands.js"
+import { onCommandProgress } from "$lib/ipc/events.js"
 import { providers, providerJobs } from "$lib/stores/providers.js"
 import {
   providerVersions,
@@ -36,8 +39,9 @@ import {
 } from "$lib/stores/providerVersions.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+import { isCommandSuccess } from "$lib/utils/log-parser.js"
 import { providerStatus } from "$lib/utils/provider-status.js"
-import type { Provider, ProviderOption } from "$lib/types/index.js"
+import type { CommandProgress, Provider, ProviderOption } from "$lib/types/index.js"
 
 let {
   provider,
@@ -64,14 +68,80 @@ let initError = $state<CLIError | null>(null)
 let loadedFor = $state<string | null>(null)
 let confirmUpdateOpen = $state(false)
 let updating = $state(false)
+let updateCommandId = $state<string | null>(null)
+let updateProviderName = $state<string | null>(null)
+let updateLines = $state<string[]>([])
+let updateError = $state<CLIError | null>(null)
+let updateStartError = $state("")
+let unlistenProgress: (() => void) | undefined
+let pendingUpdateProgress: CommandProgress[] = []
 let confirmSwitchOpen = $state(false)
 let targetTag = $state("")
 let switching = $state(false)
+let providerJob = $derived(provider ? $providerJobs[provider.name] : undefined)
 let status = $derived(
   provider
-    ? providerStatus(provider, $providerJobs[provider.name])
+    ? providerStatus(provider, providerJob)
     : { kind: "uninitialized" as const, label: "" },
 )
+let persistedUpdateError = $derived.by((): CLIError | null => {
+  if (providerJob?.activity !== "updating" || !providerJob.error) return null
+  return {
+    code: providerJob.errorCode ?? "provider_update_failed",
+    message: providerJob.error,
+    hint: providerJob.errorHint,
+    context: providerJob.errorContext,
+  }
+})
+let visibleUpdateError = $derived(updateError ?? persistedUpdateError)
+let refreshRecovery = $derived(visibleUpdateError?.code === "provider_refresh_failed")
+let visibleUpdateLines = $derived(updateLines.length > 0 ? updateLines : providerJob?.logs ?? [])
+let refreshingProviderState = $state(false)
+let showingLocalUpdate = $derived(updateProviderName === provider.name)
+
+let updatePhase = $derived.by(() => {
+  if (!updating || !showingLocalUpdate) return ""
+  const phase = providerJob?.phase ?? ""
+  if (phase.includes("init")) return "Initializing provider"
+  return "Downloading provider"
+})
+
+function handleUpdateProgress(progress: CommandProgress) {
+  const targetName = updateProviderName
+  if (progress.message && targetName === provider.name) {
+    updateLines = [...updateLines, progress.message]
+  }
+  if (!progress.done) return
+  updating = false
+  if (isCommandSuccess(progress.success) && targetName) {
+    void finishUpdate(targetName).catch((error) => {
+      if (targetName !== provider.name) return
+      updateError = {
+        code: "provider_refresh_failed",
+        message: `The update completed, but DevSy could not refresh ${targetName}: ${extractErrorMessage(error)}`,
+      }
+    })
+  } else if (targetName === provider.name) {
+    updateError = progress.cliError ?? {
+      code: "provider_update_failed",
+      message: "Provider update failed.",
+    }
+  }
+}
+
+onMount(async () => {
+  unlistenProgress = await onCommandProgress((progress) => {
+    if (updating && !updateCommandId) {
+      pendingUpdateProgress = [...pendingUpdateProgress, progress]
+      return
+    }
+    if (progress.commandId === updateCommandId) handleUpdateProgress(progress)
+  })
+})
+
+onDestroy(() => {
+  unlistenProgress?.()
+})
 
 function openVersionSwitch(tag: string) {
   targetTag = tag
@@ -186,20 +256,47 @@ function handleUpdate() {
 async function runUpdate() {
   const name = provider.name
   updating = true
+  updateProviderName = name
+  updateCommandId = null
+  pendingUpdateProgress = []
+  updateError = null
+  updateStartError = ""
+  updateLines = []
+  confirmUpdateOpen = false
   try {
-    // Also re-initializes: the new binaries have not run their init, and
-    // set-source clears the initialized flag accordingly.
-    await providerUpdate(name)
-    toasts.success(`Updated ${name}`)
-    providers.set(await providerList())
-    await loadVersionsFor(name)
-    await refreshUpdates()
+    updateCommandId = await providerUpdateStreaming(name)
+    const matching = pendingUpdateProgress.filter(
+      (progress) => progress.commandId === updateCommandId,
+    )
+    pendingUpdateProgress = []
+    for (const progress of matching) handleUpdateProgress(progress)
   } catch (err) {
-    toasts.error(`Failed to update: ${extractErrorMessage(err)}`)
-  } finally {
     updating = false
-    confirmUpdateOpen = false
+    updateStartError = `Failed to start update: ${extractErrorMessage(err)}`
   }
+}
+
+
+async function retryProviderStateRefresh() {
+  refreshingProviderState = true
+  updateStartError = ""
+  try {
+    await providerRefreshState(provider.name)
+    providers.set(await providerList())
+    await loadVersionsFor(provider.name)
+    updateError = null
+  } catch (error) {
+    updateStartError = `Failed to refresh provider state: ${extractErrorMessage(error)}`
+  } finally {
+    refreshingProviderState = false
+  }
+}
+
+async function finishUpdate(name: string) {
+  providers.set(await providerList())
+  await loadVersionsFor(name)
+  await refreshUpdates().catch(() => undefined)
+  toasts.success(`Updated ${name}`)
 }
 
 async function runSwitch() {
@@ -453,6 +550,53 @@ async function handleSaveOptions() {
       </div>
     {/if}
 
+    {#if (showingLocalUpdate && (updating || updateError || updateStartError || updateLines.length > 0)) || persistedUpdateError || providerJob?.logs?.length}
+      <div class="space-y-3 px-6 pt-4">
+        <div
+          class="min-h-12 rounded-md border bg-muted/20 px-3 py-2"
+          role="status"
+          aria-live="polite"
+          aria-busy={updating}
+        >
+          <div class="flex items-center gap-2 text-sm font-semibold">
+            {#if updating}<Spinner class="size-4" aria-hidden="true" />{/if}
+            {updating ? "Updating" : refreshRecovery ? "Status may be out of date" : visibleUpdateError || updateStartError ? "Update failed" : "Updated"}
+          </div>
+          <p class="text-sm text-muted-foreground">
+            {#if updating}
+              {updatePhase}
+            {:else if refreshRecovery}
+              The update completed, but DevSy could not refresh the provider's current state.
+            {:else if visibleUpdateError || updateStartError}
+              The update did not complete. Review the error and try again.
+            {:else}
+              {provider.name} is ready to use.
+            {/if}
+          </p>
+        </div>
+        {#if visibleUpdateError}
+          <ErrorCard cliError={visibleUpdateError} />
+        {:else if updateStartError}
+          <Alert.Root variant="destructive"><Alert.Description>{updateStartError}</Alert.Description></Alert.Root>
+        {/if}
+        {#if visibleUpdateLines.length > 0}
+          <details open={updating} class="rounded-md border bg-muted/30">
+            <summary class="cursor-pointer select-none px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+              {updating ? "Update logs" : "Show logs"}
+            </summary>
+            <LogTable lines={visibleUpdateLines} maxHeightClass="max-h-48" follow={updating} class="border-x-0 border-b-0 rounded-none" />
+          </details>
+        {/if}
+        {#if refreshRecovery}
+          <Button variant="outline" size="sm" onclick={retryProviderStateRefresh} disabled={refreshingProviderState}>
+            {refreshingProviderState ? "Refreshing..." : "Refresh status"}
+          </Button>
+        {:else if visibleUpdateError || updateStartError}
+          <Button variant="outline" size="sm" onclick={runUpdate}>Retry update</Button>
+        {/if}
+      </div>
+    {/if}
+
     <div class="flex-1 overflow-y-auto space-y-4 px-6 pb-6">
       {#if loading}
         <p class="text-sm text-muted-foreground">Loading options...</p>
@@ -544,7 +688,7 @@ async function handleSaveOptions() {
 <ConfirmDialog
   bind:open={confirmSwitchOpen}
   title={`Switch '${provider.name}' from ${provider.version ?? ""} to ${targetTag}`}
-  description={`Workspaces created with ${provider.version ?? ""} may behave differently after this change. Existing workspaces will run against ${targetTag} the next time they're used.`}
+  description={`Workspaces created with ${provider.version ?? ""} may behave differently after this change. Existing workspaces will run against ${targetTag} the next time DevSy uses them.`}
   confirmLabel="Switch"
   loading={switching}
   onconfirm={runSwitch}

@@ -71,6 +71,7 @@ type UpdateInfo = {
 }
 
 let providerUpdateCache: Record<string, UpdateInfo> = {}
+let providerUpdateCacheCheckedAt: string | null = null
 
 const IMAGE_CATALOG_URL =
   process.env.DEVSY_IMAGE_CATALOG_URL ??
@@ -751,6 +752,113 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     })
   })
 
+  ipcMain.handle(
+    "provider_update_streaming",
+    async (_event, args: { name: string }) => {
+      const cmdId = crypto.randomUUID()
+      const win = deps.getMainWindow()
+      providerJobs.start(args.name, "updating")
+
+      const sendProgress = (message: string, level?: string) => {
+        const formatted = redactSensitiveText(formatLogLine(message))
+        providerJobs.appendLog(args.name, formatted)
+        win?.webContents.send("command-progress", {
+          commandId: cmdId,
+          message: formatted,
+          level,
+          done: false,
+        })
+      }
+
+      const runStep = (cliArgs: string[]): Promise<void> =>
+        new Promise((resolve, reject) => {
+          cli.runStreaming(
+            cliArgs,
+            (line, stream, meta) => {
+              if (stream === "stdout") {
+                const envelope = parseCliEnvelope(line)
+                if (envelope?.kind === "status") {
+                  providerJobs.reportStatus(
+                    args.name,
+                    redactOperationStatus(normalizeOperationStatus(envelope)),
+                  )
+                  return
+                }
+              }
+              sendProgress(line, meta?.level)
+            },
+            (code, cliError) => {
+              if (code === 0) {
+                resolve()
+                return
+              }
+              reject(
+                Object.assign(
+                  new Error(
+                    cliError?.message ?? `${cliArgs.join(" ")} exited with ${code}`,
+                  ),
+                  { cliError },
+                ),
+              )
+            },
+          ).catch(reject)
+        })
+
+      void (async () => {
+        let failure: CLIError | undefined
+        try {
+          sendProgress("Downloading provider update", "info")
+          await runStep(["provider", "set-source", args.name, "--use=false"])
+          sendProgress("Initializing updated provider", "info")
+          await runStep(["provider", "init", args.name])
+        } catch (error) {
+          failure = (error as { cliError?: CLIError }).cliError ?? {
+            code: "provider_update_failed",
+            message: errorMessage(error),
+          }
+        }
+        try {
+          await providerJobs.finish(
+            args.name,
+            failure ? redactCLIError(failure) : undefined,
+          )
+        } catch (error) {
+          failure = {
+            code: "provider_refresh_failed",
+            message: "The provider updated, but its current state could not be refreshed.",
+            hint: "Refresh provider status to try again.",
+            context: { cause: errorMessage(error) },
+          }
+          await providerJobs.finish(args.name, redactCLIError(failure))
+        }
+        win?.webContents.send("command-progress", {
+          commandId: cmdId,
+          message: redactSensitiveText(
+            formatLogLine(
+              failure ? "Provider update failed" : "Provider update complete",
+              failure ? "ERROR" : "INFO",
+            ),
+          ),
+          level: failure ? "error" : "info",
+          success: !failure,
+          cliError: failure ? redactCLIError(failure) : undefined,
+          done: true,
+        })
+      })()
+
+      return cmdId
+    },
+  )
+
+  ipcMain.handle("provider_refresh_state", async (_event, args: { name: string }) => {
+    try {
+      await providerJobs.retryRefresh(args.name)
+      return { ok: true } as const
+    } catch (error) {
+      return { ok: false, message: errorMessage(error) } as const
+    }
+  })
+
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
     return cli.run(["provider", "get", args.name])
   })
@@ -825,12 +933,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("provider_check_updates", async () => {
     const out = await computeUpdateChecks()
     providerUpdateCache = out
+    providerUpdateCacheCheckedAt = new Date().toISOString()
     return out
   })
 
-  ipcMain.handle("provider_get_update_cache", async () => {
-    return providerUpdateCache
-  })
+  ipcMain.handle("provider_get_update_cache", async () => ({
+    updates: providerUpdateCache,
+    lastCheckedAt: providerUpdateCacheCheckedAt,
+  }))
 
   ipcMain.handle("image_catalog_get", async () => {
     const { cachePath, seedPath } = imageCatalogPaths()
@@ -1856,6 +1966,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     void (async () => {
       try {
         providerUpdateCache = await computeUpdateChecks()
+        providerUpdateCacheCheckedAt = new Date().toISOString()
       } catch {
         // Silently swallow background errors.
       }

@@ -1,37 +1,51 @@
 import { render } from "@testing-library/svelte"
 import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { Provider } from "$lib/types/index.js"
+import type { CommandProgress, Provider, ProviderJob } from "$lib/types/index.js"
 
 const providerOptions = vi.fn()
 const providerUse = vi.fn()
-const providerUpdate = vi.fn()
+const providerUpdateStreaming = vi.fn()
 const providerDelete = vi.fn()
 const providerInit = vi.fn()
 const providerList = vi.fn()
+const providerRefreshState = vi.fn()
 const providerSetOptions = vi.fn()
 const providerRename = vi.fn()
 const providerSetVersion = vi.fn()
 const loadVersionsFor = vi.fn()
 const refreshUpdates = vi.fn()
+const providerJobsBox = vi.hoisted(() => ({
+  store: undefined as unknown as import("svelte/store").Writable<Record<string, ProviderJob>>,
+}))
+let progressCallback: ((progress: CommandProgress) => void) | null = null
 
 vi.mock("$lib/ipc/commands.js", () => ({
   providerOptions: (...args: unknown[]) => providerOptions(...args),
   providerUse: (...args: unknown[]) => providerUse(...args),
-  providerUpdate: (...args: unknown[]) => providerUpdate(...args),
+  providerUpdateStreaming: (...args: unknown[]) => providerUpdateStreaming(...args),
   providerDelete: (...args: unknown[]) => providerDelete(...args),
   providerInit: (...args: unknown[]) => providerInit(...args),
   providerList: (...args: unknown[]) => providerList(...args),
+  providerRefreshState: (...args: unknown[]) => providerRefreshState(...args),
   providerSetOptions: (...args: unknown[]) => providerSetOptions(...args),
   providerRename: (...args: unknown[]) => providerRename(...args),
   providerSetVersion: (...args: unknown[]) => providerSetVersion(...args),
 }))
 
+vi.mock("$lib/ipc/events.js", () => ({
+  onCommandProgress: vi.fn(async (callback: (progress: CommandProgress) => void) => {
+    progressCallback = callback
+    return () => { progressCallback = null }
+  }),
+}))
+
 vi.mock("$lib/stores/providers.js", async () => {
   const { writable } = await import("svelte/store")
+  providerJobsBox.store = writable({})
   return {
     providers: writable([]),
-    providerJobs: writable({}),
+    providerJobs: providerJobsBox.store,
   }
 })
 
@@ -89,6 +103,8 @@ async function flushAsync() {
 
 describe("ProviderSheet", () => {
   beforeEach(() => {
+    progressCallback = null
+    providerJobsBox.store.set({})
     providerOptions.mockReset()
     providerOptions.mockImplementation(async (name: string) => {
       await new Promise((r) => setTimeout(r, MOCK_IPC_DELAY_MS))
@@ -102,10 +118,11 @@ describe("ProviderSheet", () => {
       }
     })
     providerUse.mockResolvedValue(undefined)
-    providerUpdate.mockResolvedValue(undefined)
+    providerUpdateStreaming.mockResolvedValue("update-command-1")
     providerDelete.mockResolvedValue(undefined)
     providerInit.mockResolvedValue(undefined)
     providerList.mockResolvedValue([])
+    providerRefreshState.mockResolvedValue(undefined)
     providerSetOptions.mockResolvedValue(undefined)
     providerRename.mockResolvedValue(undefined)
     providerSetVersion.mockResolvedValue(undefined)
@@ -268,11 +285,11 @@ describe("ProviderSheet", () => {
       d.textContent?.includes("Update 'ssh' to 0.2.0"),
     )
     expect(confirmDialog).toBeDefined()
-    expect(providerUpdate).not.toHaveBeenCalled()
+    expect(providerUpdateStreaming).not.toHaveBeenCalled()
     unmount()
   })
 
-  it("confirming the update dialog calls providerUpdate exactly once", async () => {
+  it("confirming the update dialog starts one streaming provider update", async () => {
     const { unmount } = render(ProviderSheet, {
       props: { provider: makeProvider("ssh"), open: true },
     })
@@ -295,8 +312,228 @@ describe("ProviderSheet", () => {
     confirmBtn?.click()
     await flushAsync()
 
-    expect(providerUpdate).toHaveBeenCalledTimes(1)
-    expect(providerUpdate).toHaveBeenCalledWith("ssh")
+    expect(providerUpdateStreaming).toHaveBeenCalledTimes(1)
+    expect(providerUpdateStreaming).toHaveBeenCalledWith("ssh")
     unmount()
   })
+
+  it("keeps a failed update in the sheet and retries it", async () => {
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+
+    const updateBtn = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Update",
+    )
+    updateBtn?.click()
+    await tick()
+    const confirmDialog = Array.from(document.querySelectorAll("[role='dialog']")).find(
+      (dialog) => dialog.textContent?.includes("Update 'ssh' to 0.2.0"),
+    )
+    Array.from(confirmDialog?.querySelectorAll("button") ?? [])
+      .find((button) => button.textContent?.trim() === "Update")
+      ?.click()
+    await flushAsync()
+
+    progressCallback?.({
+      commandId: "update-command-1",
+      message: "download timed out",
+      success: false,
+      done: true,
+      cliError: { code: "NETWORK", message: "The download timed out." },
+    })
+    await tick()
+
+    expect(document.body.textContent).toContain("Update failed")
+    expect(document.body.textContent).toContain("The download timed out.")
+    const retry = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Retry update",
+    )
+    retry?.click()
+    await tick()
+    expect(providerUpdateStreaming).toHaveBeenCalledTimes(2)
+    unmount()
+  })
+
+
+  it("captures terminal progress emitted before a retry returns", async () => {
+    providerUpdateStreaming
+      .mockResolvedValueOnce("update-command-1")
+      .mockImplementationOnce(async () => {
+        progressCallback?.({
+          commandId: "update-command-2",
+          success: true,
+          done: true,
+        })
+        return "update-command-2"
+      })
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+    const updateBtn = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Update",
+    )
+    updateBtn?.click()
+    await tick()
+    const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find(
+      (node) => node.textContent?.includes("Update 'ssh' to 0.2.0"),
+    )
+    Array.from(dialog?.querySelectorAll("button") ?? [])
+      .find((button) => button.textContent?.trim() === "Update")?.click()
+    await flushAsync()
+    progressCallback?.({
+      commandId: "update-command-1",
+      success: false,
+      done: true,
+      cliError: { code: "NETWORK", message: "Network unavailable." },
+    })
+    await tick()
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Retry update")?.click()
+    await flushAsync()
+
+    expect(providerUpdateStreaming).toHaveBeenCalledTimes(2)
+    expect(providerList).toHaveBeenCalled()
+    expect(document.body.textContent).not.toContain("Update failed")
+    unmount()
+  })
+
+  it("finishes the provider that started the update after navigation", async () => {
+    const { rerender, unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Update")?.click()
+    await tick()
+    const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find(
+      (node) => node.textContent?.includes("Update 'ssh' to 0.2.0"),
+    )
+    Array.from(dialog?.querySelectorAll("button") ?? [])
+      .find((button) => button.textContent?.trim() === "Update")?.click()
+    await flushAsync()
+
+    await rerender({ provider: makeProvider("docker"), open: true })
+    await flushAsync()
+    progressCallback?.({
+      commandId: "update-command-1",
+      message: "ssh update complete",
+      success: true,
+      done: true,
+    })
+    await flushAsync()
+
+    expect(loadVersionsFor).toHaveBeenCalledWith("ssh")
+    expect(document.body.textContent).not.toContain("ssh update complete")
+    expect(document.body.textContent).not.toContain("Updated docker")
+    unmount()
+  })
+
+  it("shows refresh recovery when post-update synchronization fails", async () => {
+    providerList.mockRejectedValueOnce(new Error("list unavailable"))
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Update")?.click()
+    await tick()
+    const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find(
+      (node) => node.textContent?.includes("Update 'ssh' to 0.2.0"),
+    )
+    Array.from(dialog?.querySelectorAll("button") ?? [])
+      .find((button) => button.textContent?.trim() === "Update")?.click()
+    await flushAsync()
+    progressCallback?.({
+      commandId: "update-command-1",
+      success: true,
+      done: true,
+    })
+    await flushAsync()
+
+    expect(document.body.textContent).toContain("Status may be out of date")
+    expect(document.body.textContent).toContain("list unavailable")
+    expect(document.body.textContent).toContain("Refresh status")
+    expect(document.body.textContent).not.toContain("ssh is ready to use")
+    unmount()
+  })
+
+  it("hydrates update failure recovery from the provider job store", async () => {
+    providerJobsBox.store.set({
+      ssh: {
+        activity: "updating",
+        phase: "failed",
+        state: "failed",
+        error: "The download timed out.",
+        errorCode: "NETWORK",
+        logs: ["download: connection timed out"],
+      },
+    })
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+
+    expect(document.body.textContent).toContain("Update failed")
+    expect(document.body.textContent).toContain("The download timed out.")
+    expect(document.body.textContent).toContain("Retry update")
+    expect(document.body.textContent).toContain("download: connection timed out")
+    unmount()
+  })
+
+
+  it("refreshes provider state without repeating a completed update", async () => {
+    providerJobsBox.store.set({
+      ssh: {
+        activity: "updating",
+        phase: "failed",
+        state: "failed",
+        error: "The provider updated, but its current state could not be refreshed.",
+        errorCode: "provider_refresh_failed",
+        logs: ["Provider update complete"],
+      },
+    })
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+
+    expect(document.body.textContent).toContain("Status may be out of date")
+    expect(document.body.textContent).toContain("Provider update complete")
+    expect(document.body.textContent).not.toContain("Retry update")
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Refresh status")?.click()
+    await flushAsync()
+    expect(providerRefreshState).toHaveBeenCalledWith("ssh")
+    expect(providerUpdateStreaming).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it("keeps refresh recovery visible when version reload fails", async () => {
+    providerJobsBox.store.set({
+      ssh: {
+        activity: "updating",
+        phase: "failed",
+        state: "failed",
+        error: "The provider updated, but its current state could not be refreshed.",
+        errorCode: "provider_refresh_failed",
+      },
+    })
+    loadVersionsFor.mockRejectedValueOnce(new Error("versions unavailable"))
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Refresh status")?.click()
+    await flushAsync()
+
+    expect(loadVersionsFor).toHaveBeenCalledWith("ssh")
+    expect(document.body.textContent).toContain("Status may be out of date")
+    unmount()
+  })
+
 })

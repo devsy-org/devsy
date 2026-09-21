@@ -104,6 +104,7 @@ export interface ProviderJob {
   errorCode?: string
   errorHint?: string
   errorContext?: Record<string, string>
+  logs?: string[]
 }
 
 export type { WorkspaceJob } from "$shared/workspace-operation.js"

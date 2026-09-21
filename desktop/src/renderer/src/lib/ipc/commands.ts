@@ -166,8 +166,12 @@ export async function providerReleaseJob(name: string): Promise<void> {
   return invoke<void>("provider_release_job", { name })
 }
 
-export async function providerUpdate(name: string): Promise<void> {
-  return invoke("provider_update", { name })
+export async function providerUpdateStreaming(name: string): Promise<string> {
+  return invoke<string>("provider_update_streaming", { name })
+}
+
+export async function providerRefreshState(name: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("provider_refresh_state", { name }))
 }
 
 export async function providerOptions(
@@ -206,6 +210,13 @@ export async function providerSetVersion(name: string, tag: string): Promise<voi
 
 export async function providerCheckUpdates() {
   return invoke<Record<string, ProviderVersionCheckResult>>("provider_check_updates")
+}
+
+export async function providerGetUpdateCache() {
+  return invoke<{
+    updates: Record<string, ProviderVersionCheckResult>
+    lastCheckedAt: string | null
+  }>("provider_get_update_cache")
 }
 
 // Image catalog commands
