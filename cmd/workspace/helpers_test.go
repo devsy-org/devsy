@@ -33,6 +33,7 @@ type fakeWorkspaceClient struct {
 	config    *provider.Workspace
 	status    client.Status
 	statusErr error
+	deleted   bool
 }
 
 func (f *fakeWorkspaceClient) Provider() string { return f.provider }
@@ -44,8 +45,11 @@ func (f *fakeWorkspaceClient) RefreshOptions(context.Context, []string, bool) er
 func (f *fakeWorkspaceClient) Status(context.Context, client.StatusOptions) (client.Status, error) {
 	return f.status, f.statusErr
 }
-func (f *fakeWorkspaceClient) Stop(context.Context, client.StopOptions) error     { return nil }
-func (f *fakeWorkspaceClient) Delete(context.Context, client.DeleteOptions) error { return nil }
+func (f *fakeWorkspaceClient) Stop(context.Context, client.StopOptions) error { return nil }
+func (f *fakeWorkspaceClient) Delete(context.Context, client.DeleteOptions) error {
+	f.deleted = true
+	return nil
+}
 
 func (f *fakeWorkspaceClient) Workspace() string { return f.workspace }
 
