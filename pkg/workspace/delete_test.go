@@ -112,7 +112,7 @@ func (c *preResolvedDeleteClient) WorkspaceConfig() *provider.Workspace {
 	return c.config
 }
 func (c *preResolvedDeleteClient) Context() string  { return c.config.Context }
-func (c *preResolvedDeleteClient) Provider() string { return "docker" }
+func (c *preResolvedDeleteClient) Provider() string { return DefaultDockerCommand }
 func (c *preResolvedDeleteClient) Delete(context.Context, client.DeleteOptions) error {
 	c.deleted = true
 	return nil
