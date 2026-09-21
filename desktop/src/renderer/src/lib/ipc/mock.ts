@@ -307,7 +307,6 @@ const COMMANDS: Record<string, Handler> = {
 
   image_inspect_platforms: () => ["linux/amd64", "linux/arm64"],
 
-  // App settings (startup + tray notifications)
   get_app_settings: () => MOCK_APP_SETTINGS,
   set_app_settings: (args) => {
     const patch = (args?.patch ?? {}) as Partial<typeof MOCK_APP_SETTINGS.settings>
