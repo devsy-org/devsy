@@ -32,7 +32,10 @@ import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
 import TerminalComponent from "$lib/components/terminal/Terminal.svelte"
 import WorkspaceOperation from "$lib/components/workspace/WorkspaceOperation.svelte"
-import { workspaceJobBusy, workspaceJobInterruptible } from "$shared/workspace-operation.js"
+import {
+  workspaceJobBusy,
+  workspaceJobInterruptible,
+} from "$shared/workspace-operation.js"
 import { workspaces, workspaceJobs } from "$lib/stores/workspaces.js"
 import { addTerminal, removeTerminal } from "$lib/stores/terminals.js"
 import { destroyTerminalInstance } from "$lib/stores/terminal-instances.js"
@@ -133,18 +136,32 @@ let isBusy = $derived.by(() => {
 const BUILD_OPS = new Set(["Start", "Open IDE", "Recovery", "Rebuild", "Reset"])
 
 let activeTab = $state("overview")
+$effect(() => {
+  const tab = new URLSearchParams($querystring ?? "").get("tab")
+  if (tab === "overview" || tab === "logs" || tab === "terminal")
+    activeTab = tab
+})
 let outputLines = $state<string[]>([])
 let commandId = $state<string | null>(null)
 let operationLabel = $state("")
 let awaitingAcceptance = $state(false)
-let operationRunning = $derived(awaitingAcceptance || workspaceJobBusy($workspaceJobs[id]))
+let operationRunning = $derived(
+  awaitingAcceptance || workspaceJobBusy($workspaceJobs[id]),
+)
 $effect(() => {
   const job = $workspaceJobs[id]
   if (job && (!awaitingAcceptance || job.commandId === commandId)) {
     awaitingAcceptance = false
     if (commandId !== job.commandId) {
       commandId = job.commandId
-      operationLabel = ({ creating: "Create", starting: "Start", stopping: "Stop", deleting: "Delete", rebuilding: "Rebuild", resetting: "Reset" })[job.activity]
+      operationLabel = {
+        creating: "Create",
+        starting: "Start",
+        stopping: "Stop",
+        deleting: "Delete",
+        rebuilding: "Rebuild",
+        resetting: "Reset",
+      }[job.activity]
       outputLines = []
     }
   }
@@ -637,10 +654,7 @@ async function handleRenameConfirmed() {
                 <span class="sr-only">Rename</span>
               </Button>
             {/if}
-            <WorkspaceOperation {id} status={workspace.status} />
-            {#if operationRunning || isBusy}
-              <Spinner class="size-3" />
-            {/if}
+            <WorkspaceOperation {id} status={workspace.status} density="expanded" onViewLogs={() => (activeTab = "logs")} />
             {#if inRecovery}
               <span class="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
                 <LifeBuoy class="h-3 w-3" />

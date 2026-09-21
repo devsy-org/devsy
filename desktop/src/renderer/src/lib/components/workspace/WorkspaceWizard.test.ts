@@ -1,7 +1,11 @@
 import { fireEvent, render } from "@testing-library/svelte"
 import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { CommandProgress, Provider, WorkspaceStatus } from "$lib/types/index.js"
+import type {
+  CommandProgress,
+  Provider,
+  WorkspaceStatus,
+} from "$lib/types/index.js"
 
 const workspaceUp = vi.fn()
 const onCommandProgress = vi.fn()
@@ -43,7 +47,10 @@ vi.mock("$lib/stores/providers.js", async () => {
 
 vi.mock("$lib/stores/workspaces.js", async () => {
   const { writable } = await import("svelte/store")
-  return { workspaces: writable<{ id: string }[]>([]), workspaceJobs: writable({}) }
+  return {
+    workspaces: writable<{ id: string }[]>([]),
+    workspaceJobs: writable({}),
+  }
 })
 
 vi.mock("$lib/stores/toasts.js", () => ({
@@ -59,7 +66,7 @@ vi.mock("$lib/router.js", () => ({
 }))
 
 import { providers } from "$lib/stores/providers.js"
-import { workspaces } from "$lib/stores/workspaces.js"
+import { workspaceJobs, workspaces } from "$lib/stores/workspaces.js"
 import WorkspaceWizard from "./WorkspaceWizard.svelte"
 
 function makeProvider(name: string, initialized = true): Provider {
@@ -117,6 +124,7 @@ describe("WorkspaceWizard", () => {
     onWorkspaceStatus.mockReset()
     providers.set([])
     workspaces.set([])
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({})
     progressCallback = null
     statusCallback = null
 
@@ -167,9 +175,9 @@ describe("WorkspaceWizard", () => {
     expect(
       getByText(/At least one initialized provider is required/i),
     ).toBeTruthy()
-    const continueBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Continue") as HTMLButtonElement
+    const continueBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Continue",
+    ) as HTMLButtonElement
     expect(continueBtn).toBeTruthy()
     expect(continueBtn.disabled).toBe(true)
     unmount()
@@ -310,9 +318,9 @@ describe("WorkspaceWizard", () => {
     expect(nameInput.value).not.toBe("")
     expect(nameInput.value).not.toBe("python")
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     expect(launchBtn.disabled).toBe(false)
     unmount()
   })
@@ -333,9 +341,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
 
     expect(getByText(/already exists/i)).toBeTruthy()
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     expect(launchBtn.disabled).toBe(true)
     unmount()
   })
@@ -357,9 +365,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -376,9 +384,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -389,13 +397,48 @@ describe("WorkspaceWizard", () => {
     } as CommandProgress)
     await flushAsync()
 
+    await fireEvent.click(getByText("View details"))
+    await flushAsync()
     expect(queryByText(/Building workspace/)).not.toBeNull()
     unmount()
   })
 
   it("shows the current structured operation status while launching", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, queryByTestId, unmount } = render(WorkspaceWizard, {
+    const { getByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
+    await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    expect(document.querySelector('[role="status"]')?.textContent).toContain(
+      "Preparing workspace",
+    )
+
+    statusCallback?.({
+      commandId: "cmd-1",
+      workspaceId: "python",
+      phase: "building_image",
+      step: "Waiting for lock",
+      state: "started",
+    })
+    await flushAsync()
+
+    const region = document.querySelector('[role="status"]')
+    expect(region?.textContent).toContain("Creating")
+    expect(region?.textContent).toContain("Waiting for lock")
+    unmount()
+  })
+
+  it("shows exactly one failure surface when the job journal reports failure", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
       props: { open: true },
     })
     await flushAsync()
@@ -414,10 +457,44 @@ describe("WorkspaceWizard", () => {
       state: "started",
     })
     await flushAsync()
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "failed",
+        phase: "building_image",
+        error: "provider exploded",
+      },
+    })
+    await flushAsync()
 
-    expect(queryByTestId("operation-status")?.textContent).toContain(
-      "building image",
-    )
+    expect(queryByText(/provider exploded/)).not.toBeNull()
+    expect(document.querySelector('[role="status"]')).toBeNull()
+    unmount()
+  })
+
+  it("shows exactly one success headline when the job journal reports success", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
+    await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: { commandId: "cmd-1", activity: "creating", state: "succeeded" },
+    })
+    await flushAsync()
+
+    expect(queryByText(/is ready to use/)).not.toBeNull()
+    expect(queryByText("Checking")).toBeNull()
+    expect(document.querySelector('[role="status"]')).toBeNull()
     unmount()
   })
 
@@ -429,9 +506,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -455,9 +532,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -480,9 +557,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -524,9 +601,9 @@ describe("WorkspaceWizard", () => {
     })
     await flushAsync()
 
-    const advancedToggle = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => /advanced options/i.test(b.textContent ?? "")) as HTMLElement
+    const advancedToggle = Array.from(document.querySelectorAll("button")).find(
+      (b) => /advanced options/i.test(b.textContent ?? ""),
+    ) as HTMLElement
     await fireEvent.click(advancedToggle)
     await flushAsync()
 
@@ -537,7 +614,9 @@ describe("WorkspaceWizard", () => {
     const wsFolderInput = document.querySelector(
       'input[placeholder="/workspaces/app"]',
     ) as HTMLInputElement
-    await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
+    await fireEvent.input(wsFolderInput, {
+      target: { value: "/workspaces/app" },
+    })
     const prebuildInput = document.querySelector(
       'input[placeholder*="ghcr.io/org/prebuilds"]',
     ) as HTMLInputElement
@@ -551,9 +630,9 @@ describe("WorkspaceWizard", () => {
     await fireEvent.click(getActiveContinue(getByText))
     await flushAsync()
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -581,15 +660,17 @@ describe("WorkspaceWizard", () => {
 
     // Set a workspace folder via the git tab's advanced section; this state
     // persists when we switch source types.
-    const advancedToggle = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => /advanced options/i.test(b.textContent ?? "")) as HTMLElement
+    const advancedToggle = Array.from(document.querySelectorAll("button")).find(
+      (b) => /advanced options/i.test(b.textContent ?? ""),
+    ) as HTMLElement
     await fireEvent.click(advancedToggle)
     await flushAsync()
     const wsFolderInput = document.querySelector(
       'input[placeholder="/workspaces/app"]',
     ) as HTMLInputElement
-    await fireEvent.input(wsFolderInput, { target: { value: "/workspaces/app" } })
+    await fireEvent.input(wsFolderInput, {
+      target: { value: "/workspaces/app" },
+    })
     await flushAsync()
 
     // Switch to the Image tab and enter a custom image ref.
@@ -598,7 +679,9 @@ describe("WorkspaceWizard", () => {
     const customImageInput = document.querySelector(
       'input[placeholder*="registry/image:tag"]',
     ) as HTMLInputElement
-    await fireEvent.input(customImageInput, { target: { value: "ubuntu:22.04" } })
+    await fireEvent.input(customImageInput, {
+      target: { value: "ubuntu:22.04" },
+    })
     await flushAsync()
 
     await fireEvent.click(getActiveContinue(getByText))
@@ -606,9 +689,9 @@ describe("WorkspaceWizard", () => {
     await fireEvent.click(getActiveContinue(getByText))
     await flushAsync()
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -639,7 +722,9 @@ describe("WorkspaceWizard", () => {
     const customImageInput = document.querySelector(
       'input[placeholder*="registry/image:tag"]',
     ) as HTMLInputElement
-    await fireEvent.input(customImageInput, { target: { value: "ubuntu:22.04" } })
+    await fireEvent.input(customImageInput, {
+      target: { value: "ubuntu:22.04" },
+    })
     await flushAsync()
 
     await fireEvent.click(getActiveContinue(getByText))
@@ -654,9 +739,9 @@ describe("WorkspaceWizard", () => {
     ) as HTMLInputElement
     expect(nameInput.value).toBe("ubuntu-22.04")
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     expect(launchBtn.disabled).toBe(false)
     unmount()
   })
@@ -678,9 +763,9 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -704,6 +789,7 @@ describe("launch watchdog", () => {
     onCommandProgress.mockReset()
     providers.set([])
     workspaces.set([])
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({})
     progressCallback = null
 
     onCommandProgress.mockImplementation(
@@ -734,9 +820,9 @@ describe("launch watchdog", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
@@ -758,9 +844,9 @@ describe("launch watchdog", () => {
     await flushAsync()
     await advanceToReview(getByText)
 
-    const launchBtn = Array.from(
-      document.querySelectorAll("button"),
-    ).find((b) => b.textContent?.trim() === "Launch") as HTMLButtonElement
+    const launchBtn = Array.from(document.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Launch",
+    ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
     await flushAsync()
 
