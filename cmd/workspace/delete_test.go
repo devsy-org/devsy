@@ -10,6 +10,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspacejournal"
@@ -138,4 +139,94 @@ func TestDeleteCmd_DeleteResolvedJournalsUnderSelectedWorkspace(t *testing.T) {
 		}
 	}
 	assert.True(t, hasDeletePhase, "expected a delete-phase journal event, got %+v", events)
+}
+
+// TestDeleteCmd_DeleteMultipleReusesResolvedClients guards the multi-target
+// delete invariant: each pre-resolved client is deleted directly and every
+// operation is journaled under that client's workspace ID, never the raw
+// argument.
+func TestDeleteCmd_DeleteMultipleReusesResolvedClients(t *testing.T) {
+	log.Init(log.Config{Verbosity: 0})
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+
+	idA, idB := "chosen-a", "chosen-b"
+	argA, argB := "arg-a", "arg-b"
+	newFake := func(id string) *fakeWorkspaceClient {
+		return &fakeWorkspaceClient{
+			workspace: id,
+			context:   testContext,
+			provider:  testProvider,
+			config:    &provider.Workspace{ID: id, Context: testContext},
+		}
+	}
+	fakeA := newFake(idA)
+	fakeB := newFake(idB)
+	cmd := &DeleteCmd{
+		GlobalFlags:   &flags.GlobalFlags{ResultFormat: formatPlain},
+		DeleteOptions: client2.DeleteOptions{Force: true},
+	}
+	devsyConfig := &config.Config{
+		DefaultContext: testContext,
+		Contexts:       map[string]*config.ContextConfig{testContext: {}},
+	}
+	reporter, err := newWorkspaceStatusReporter(formatPlain, os.Stdout, false)
+	require.NoError(t, err)
+
+	targets := map[string]resolvedDeleteTarget{
+		argA: {ID: idA, Client: fakeA},
+		argB: {ID: idB, Client: fakeB},
+	}
+	captureStdout(t, func() {
+		require.NoError(t, cmd.deleteMultiple(
+			t.Context(),
+			devsyConfig,
+			reporter,
+			targets,
+			[]string{argA, argB},
+		))
+	})
+	require.True(t, fakeA.deleted)
+	require.True(t, fakeB.deleted)
+
+	dir, err := workspacejournal.DefaultDir()
+	require.NoError(t, err)
+	for _, id := range []string{idA, idB} {
+		events, err := workspacejournal.Read(dir, id, workspacejournal.DefaultLimit)
+		require.NoError(t, err)
+		assert.NotEmpty(t, events, "expected journaled events under %s", id)
+	}
+}
+
+// TestResolveDeleteTargets_FallsBackToRawArgument covers targets that cannot
+// be resolved, such as a broken workspace removed with --force: the journal
+// key falls back to the raw argument and no client is reused.
+func TestResolveDeleteTargets_FallsBackToRawArgument(t *testing.T) {
+	log.Init(log.Config{Verbosity: 0})
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+
+	missingArg := "missing"
+	devsyConfig := &config.Config{
+		DefaultContext: testContext,
+		Contexts:       map[string]*config.ContextConfig{testContext: {}},
+	}
+	targets := resolveDeleteTargets(
+		t.Context(),
+		devsyConfig,
+		platform.OwnerFilter(""),
+		[]string{missingArg},
+	)
+	target, ok := targets[missingArg]
+	require.True(t, ok)
+	assert.Equal(t, missingArg, target.ID)
+	assert.Nil(t, target.Client)
 }
