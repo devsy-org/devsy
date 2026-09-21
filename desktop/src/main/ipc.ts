@@ -22,6 +22,8 @@ import type {
   ProviderJobs,
 } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
+import { sanitizeAppSettingsPatch } from "./app-settings.js"
+import type { SettingsService } from "./settings-service.js"
 import type { DaemonState } from "./state.js"
 import {
   checkForUpdates,
@@ -108,6 +110,7 @@ interface IpcDependencies {
   workspaceJobs: WorkspaceJobs
   workspaceSnapshot?: () => unknown
   onRendererReady?: (sender: Electron.WebContents) => void
+  settingsService?: SettingsService
 }
 
 /** Format a line in zap console format so log-parser.ts can parse it. */
@@ -262,7 +265,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   tunnelProcesses: Map<string, import("node:child_process").ChildProcess>
   scheduleProviderUpdateCheck: () => void
   runInitialProviderUpdateCheck: () => void
-  workspaceActions: { stop: (workspaceId: string) => Promise<void> }
+  workspaceActions: {
+    stop: (workspaceId: string) => Promise<void>
+    start: (workspaceId: string) => Promise<void>
+  }
 } {
 	const { cli, state, logStore, pty, providerJobs, workspaceJobs, machineDiagnosticsStore, machineDiagnosticsManager, getMainWindow } = deps
   const tunnelProcesses = new Map<
@@ -1091,25 +1097,20 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle(
-    "workspace_up",
-    async (
-      _event,
-      args: {
-        source: string
-        workspaceId?: string
-        provider?: string
-        ide?: string
-        ideLaunch?: "auto" | "headless" | "skip"
-        debug?: boolean
-        workspaceFolder?: string
-        devcontainer?: string
-        prebuildRepository?: string
-        platform?: string
-        recovery?: boolean
-        commandId?: string
-      },
-    ) => {
+  const runWorkspaceUp = async (args: {
+    source: string
+    workspaceId?: string
+    provider?: string
+    ide?: string
+    ideLaunch?: "auto" | "headless" | "skip"
+    debug?: boolean
+    workspaceFolder?: string
+    devcontainer?: string
+    prebuildRepository?: string
+    platform?: string
+    recovery?: boolean
+    commandId?: string
+  }): Promise<string> => {
       trackEvent("workspace_create", {
         provider: args.provider,
         workspace_ref: hashWorkspaceRef(args.workspaceId ?? args.source),
@@ -1326,7 +1327,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         )
       })
       return cmdId
-    },
+    }
+
+  ipcMain.handle("workspace_up", (_event, args: Parameters<typeof runWorkspaceUp>[0]) =>
+    runWorkspaceUp(args),
   )
 
   async function reconcileDetachedTask(
@@ -1834,6 +1838,19 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
+  ipcMain.handle("get_app_settings", () => {
+    if (!deps.settingsService) throw new Error("Settings service unavailable")
+    return deps.settingsService.status()
+  })
+
+  ipcMain.handle(
+    "set_app_settings",
+    async (_event, args: { patch?: Record<string, unknown> }) => {
+      if (!deps.settingsService) throw new Error("Settings service unavailable")
+      return deps.settingsService.update(sanitizeAppSettingsPatch(args?.patch))
+    },
+  )
+
   // ── Analytics ──
   ipcMain.handle(
     "analytics_track",
@@ -1878,6 +1895,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         )
         await completion
       },
+      async start(workspaceId: string): Promise<void> {
+        await runWorkspaceUp({ source: workspaceId, commandId: crypto.randomUUID() })
+      },
     },
   }
 }
@@ -1893,4 +1913,4 @@ function sanitizeAnalyticsProperties(
     out[k] = typeof v === "string" ? v.slice(0, 256) : v
   }
   return out
-}
+		  }
