@@ -19,11 +19,8 @@ import (
 
 // DeleteOptions holds the parameters for deleting a workspace.
 type DeleteOptions struct {
-	DevsyConfig *config.Config
-	Args        []string
-	// Client, when set, is an already-resolved workspace client. Delete then
-	// skips workspace resolution entirely so interactive callers select the
-	// deletion target exactly once.
+	DevsyConfig    *config.Config
+	Args           []string
 	Client         client2.BaseWorkspaceClient
 	IgnoreNotFound bool
 	Force          bool
