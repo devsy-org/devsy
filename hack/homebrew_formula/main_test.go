@@ -25,16 +25,16 @@ func TestRender(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 
-	// sha256("content-devsy-darwin-arm64")
-	const wantARM = "9bc996e636ac5321e2aae6bd3fb421c5ea82b34a5b20e2c9fd65cc81b2f3753e"
+	// sha256("content-devsy-homebrew-darwin-arm64")
+	const wantARM = "8d309b67abfc5861b1bfb39ea9ed2eda8622eb3aa1f82131cbbefce2bb6ffad7"
 
 	for _, want := range []string{
 		`version "1.2.3"`, // leading v stripped
 		`license "MPL-2.0"`,
-		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-darwin-arm64",
-		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-linux-amd64",
+		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-homebrew-darwin-arm64",
+		"https://github.com/devsy-org/devsy/releases/download/v1.2.3/devsy-homebrew-linux-amd64",
 		`sha256 "` + wantARM + `"`,
-		`bin.install Dir["devsy-*"].first => "devsy"`,
+		`bin.install Dir["devsy-homebrew-*"].first => "devsy"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("formula missing %q\n---\n%s", want, out)
@@ -44,7 +44,7 @@ func TestRender(t *testing.T) {
 
 func TestRenderMissingBinary(t *testing.T) {
 	dir := writeBinaries(t)
-	if err := os.Remove(filepath.Join(dir, "devsy-linux-arm64")); err != nil {
+	if err := os.Remove(filepath.Join(dir, "devsy-homebrew-linux-arm64")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := render(dir, "devsy-org/devsy", "v1.2.3"); err == nil {
