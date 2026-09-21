@@ -27,9 +27,7 @@ const (
 	DefaultMaxSegmentBytes = 512 * 1024
 	DefaultLimit           = 100
 	MaxLimit               = 1000
-	// maxRecordBytes bounds a single event so writes never persist a
-	// record the reader would discard.
-	maxRecordBytes = 64 * 1024
+	maxRecordBytes         = 64 * 1024
 )
 
 type Event struct {
