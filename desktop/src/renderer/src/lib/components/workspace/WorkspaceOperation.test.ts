@@ -14,6 +14,13 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 describe("WorkspaceOperation", () => {
+  it("keeps the status pill at intrinsic width inside the live region", () => {
+    const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
+    const badge = ui.getByText("Running")
+    const liveRegion = badge.parentElement
+    expect(liveRegion?.classList.contains("flex-col")).toBe(true)
+    expect(liveRegion?.classList.contains("items-start")).toBe(true)
+  })
   it("keeps the action visible over a stale runtime observation", () => {
     workspaceJobs.set({
       ws: {
