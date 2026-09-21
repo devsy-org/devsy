@@ -19,8 +19,12 @@ import (
 
 // DeleteOptions holds the parameters for deleting a workspace.
 type DeleteOptions struct {
-	DevsyConfig    *config.Config
-	Args           []string
+	DevsyConfig *config.Config
+	Args        []string
+	// Client, when set, is an already-resolved workspace client. Delete then
+	// skips workspace resolution entirely so interactive callers select the
+	// deletion target exactly once.
+	Client         client2.BaseWorkspaceClient
 	IgnoreNotFound bool
 	Force          bool
 	ClientDelete   client2.DeleteOptions
@@ -33,22 +37,24 @@ type DeleteOptions struct {
 // running -> stopped -> deleted lifecycle, and any detached browser tunnel
 // helper is reaped so its host ports do not outlive the workspace.
 func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
-	var client client2.BaseWorkspaceClient
-	err := progress.RunStep(
-		ctx,
-		progress.PhaseDeletingWorkspace,
-		"Loading workspace",
-		func(ctx context.Context) error {
-			var err error
-			client, err = Get(
-				ctx,
-				GetOptions{DevsyConfig: opts.DevsyConfig, Args: opts.Args, Owner: opts.Owner},
-			)
-			return err
-		},
-	)
-	if err != nil {
-		return handleDeleteLoadError(ctx, opts, err)
+	client := opts.Client
+	if client == nil {
+		err := progress.RunStep(
+			ctx,
+			progress.PhaseDeletingWorkspace,
+			"Loading workspace",
+			func(ctx context.Context) error {
+				var err error
+				client, err = Get(
+					ctx,
+					GetOptions{DevsyConfig: opts.DevsyConfig, Args: opts.Args, Owner: opts.Owner},
+				)
+				return err
+			},
+		)
+		if err != nil {
+			return handleDeleteLoadError(ctx, opts, err)
+		}
 	}
 
 	defer opener.KillBrowserTunnel(client.Context(), client.Workspace())
