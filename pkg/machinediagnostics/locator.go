@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const DefaultLocatorPath = "/run/devsy/agent-daemon.json"
+const DefaultLocatorPath = DefaultRuntimeDir + "/" + RuntimeLocatorFileName
 
 type Locator struct {
 	SchemaVersion  int       `json:"schemaVersion"`
@@ -25,7 +25,7 @@ func WriteLocator(
 	if !filepath.IsAbs(path) || !filepath.IsAbs(locator.DiagnosticsDir) {
 		return fmt.Errorf("locator paths must be absolute")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	if err := ensureRuntimeDirForPath(path); err != nil {
 		return err
 	}
 	locator.SchemaVersion = SchemaVersion
@@ -105,4 +105,105 @@ func ReadFromLocator(path string, options ReadOptions) ReadResponse {
 		return response
 	}
 	return Read(locator.DiagnosticsDir, options)
+}
+
+// ReadActive reads the highest-priority active daemon locator. A missing or
+// inaccessible system locator permits trying the per-user fallback; a corrupt
+// system locator is authoritative and is never masked by stale fallback data.
+func ReadActive(options ReadOptions, userCacheDir func() (string, error)) (ReadResponse, error) {
+	paths, err := ActiveLocatorCandidates(userCacheDir)
+	if err != nil {
+		return ReadResponse{}, err
+	}
+	return readActiveFromCandidates(paths, options), nil
+}
+
+func ActiveLocatorCandidates(userCacheDir func() (string, error)) ([]string, error) {
+	paths := []string{DefaultLocatorPath}
+	userPaths, err := UserRuntimePaths(userCacheDir)
+	if err != nil {
+		return nil, err
+	}
+	if userPaths.LocatorPath != DefaultLocatorPath {
+		paths = append(paths, userPaths.LocatorPath)
+	}
+	return paths, nil
+}
+
+func readActiveFromCandidates(paths []string, options ReadOptions) ReadResponse {
+	var permissionResponse ReadResponse
+	for i, path := range paths {
+		candidate := readLocatorCandidate(path, options)
+		response, done, updatedPermission := applyLocatorCandidate(
+			candidate,
+			i,
+			permissionResponse,
+		)
+		if done {
+			return response
+		}
+		permissionResponse = updatedPermission
+	}
+	if permissionResponse.Availability != "" {
+		return permissionResponse
+	}
+	return ReadFromLocator(DefaultLocatorPath, options)
+}
+
+func applyLocatorCandidate(
+	candidate locatorCandidate,
+	index int,
+	permissionResponse ReadResponse,
+) (ReadResponse, bool, ReadResponse) {
+	switch candidate.state {
+	case locatorCandidateSuccess:
+		return candidate.response, true, permissionResponse
+	case locatorCandidateCorrupt:
+		if index == 0 || permissionResponse.Availability == "" {
+			return candidate.response, true, permissionResponse
+		}
+		return permissionResponse, true, permissionResponse
+	case locatorCandidatePermission:
+		if permissionResponse.Availability == "" {
+			permissionResponse = candidate.response
+		}
+	}
+	return ReadResponse{}, false, permissionResponse
+}
+
+type locatorCandidateState uint8
+
+const (
+	locatorCandidateMissing locatorCandidateState = iota
+	locatorCandidatePermission
+	locatorCandidateCorrupt
+	locatorCandidateSuccess
+)
+
+type locatorCandidate struct {
+	response ReadResponse
+	state    locatorCandidateState
+}
+
+func readLocatorCandidate(path string, options ReadOptions) locatorCandidate {
+	locator, err := ReadLocator(path)
+	if err == nil {
+		return locatorCandidate{
+			response: Read(locator.DiagnosticsDir, options),
+			state:    locatorCandidateSuccess,
+		}
+	}
+	if os.IsNotExist(err) {
+		return locatorCandidate{state: locatorCandidateMissing}
+	}
+	if os.IsPermission(err) {
+		return locatorCandidate{
+			response: ReadFromLocator(path, options),
+			state:    locatorCandidatePermission,
+		}
+	}
+	return locatorCandidate{
+		response: ReadFromLocator(path, options),
+		state:    locatorCandidateCorrupt,
+	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,21 +29,34 @@ func TestBuildDaemonArgs(t *testing.T) {
 	}, args)
 }
 
-func TestFallbackRuntimeLockPath(t *testing.T) {
+func TestFallbackRuntimePaths(t *testing.T) {
 	cacheDir := func() (string, error) { return "/home/devsy/.cache", nil }
 
-	rootPath, err := fallbackRuntimeLockPath(0, cacheDir)
+	rootPaths, err := fallbackRuntimePaths(0, cacheDir)
 	require.NoError(t, err)
-	assert.Equal(t, "/run/devsy/agent-daemon.lock", rootPath)
+	assert.Equal(t, "/run/devsy/agent-daemon.lock", rootPaths.LockPath)
+	assert.Equal(t, "/run/devsy/agent-daemon.json", rootPaths.LocatorPath)
 
-	userPath, err := fallbackRuntimeLockPath(1000, cacheDir)
+	userPaths, err := fallbackRuntimePaths(1000, cacheDir)
 	require.NoError(t, err)
-	assert.Equal(t, "/home/devsy/.cache/devsy/agent-daemon.lock", userPath)
+	assert.Equal(t, "/home/devsy/.cache/devsy/agent-daemon.lock", userPaths.LockPath)
+	assert.Equal(t, "/home/devsy/.cache/devsy/agent-daemon.json", userPaths.LocatorPath)
 
-	_, err = fallbackRuntimeLockPath(1000, func() (string, error) {
+	_, err = fallbackRuntimePaths(1000, func() (string, error) {
 		return "", errors.New("unavailable")
 	})
-	require.ErrorContains(t, err, "get user cache directory for daemon lock")
+	require.ErrorContains(t, err, "get user cache directory for daemon runtime")
+}
+
+func TestFallbackDaemonEnvPropagatesBothRuntimePaths(t *testing.T) {
+	env := fallbackDaemonEnv(machinediagnostics.RuntimePaths{
+		LockPath:    "/cache/devsy/agent-daemon.lock",
+		LocatorPath: "/cache/devsy/agent-daemon.json",
+	})
+	assert.Contains(t, env, "DEVSY_DAEMON_RUNTIME_LOCK_PATH=/cache/devsy/agent-daemon.lock")
+	assert.Contains(t, env, "DEVSY_DAEMON_LOCATOR_PATH=/cache/devsy/agent-daemon.json")
+
+	assert.Nil(t, fallbackDaemonEnv(machinediagnostics.SystemRuntimePaths()))
 }
 
 func TestDaemonUnitStateLocationMatchesExactArgumentValues(t *testing.T) {

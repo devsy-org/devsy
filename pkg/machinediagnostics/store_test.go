@@ -147,6 +147,92 @@ func TestLocatorRoundTrip(t *testing.T) {
 	assert.Equal(t, SchemaVersion, got.SchemaVersion)
 	assert.Equal(t, want.SessionID, got.SessionID)
 	assert.Equal(t, want.DiagnosticsDir, got.DiagnosticsDir)
+	want.SessionID = "replacement"
+	require.NoError(t, WriteLocator(path, want))
+	got, err = ReadLocator(path)
+	require.NoError(t, err)
+	assert.Equal(t, "replacement", got.SessionID)
+}
+
+func newTestDiagnosticsStore(t *testing.T, state DaemonState) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "diagnostics")
+	store, err := NewRecorder(Options{
+		Dir:    dir,
+		Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()},
+	})
+	require.NoError(t, err)
+	store.Update(Status{State: state, Health: DaemonHealthy})
+	return dir
+}
+
+func writeTestLocator(t *testing.T, dir, diagnosticsDir string) string {
+	t.Helper()
+	path := filepath.Join(dir, "locator.json")
+	require.NoError(t, WriteLocator(
+		path,
+		Locator{SessionID: dir, DiagnosticsDir: diagnosticsDir},
+	))
+	return path
+}
+
+func TestReadActiveLocatorCandidates(t *testing.T) {
+	options := ReadOptions{Limit: 10, Interval: time.Minute, Now: time.Now()}
+
+	t.Run("system wins", func(t *testing.T) {
+		systemDir := newTestDiagnosticsStore(t, DaemonRunning)
+		userDir := newTestDiagnosticsStore(t, DaemonStopping)
+		system := writeTestLocator(t, t.TempDir(), systemDir)
+		user := writeTestLocator(t, t.TempDir(), userDir)
+		response := readActiveFromCandidates([]string{system, user}, options)
+		assert.Equal(t, DaemonRunning, response.Status.State)
+	})
+
+	t.Run("user fallback", func(t *testing.T) {
+		userDir := newTestDiagnosticsStore(t, DaemonRunning)
+		user := writeTestLocator(t, t.TempDir(), userDir)
+		response := readActiveFromCandidates(
+			[]string{filepath.Join(t.TempDir(), "missing"), user},
+			options,
+		)
+		assert.Equal(t, DaemonRunning, response.Status.State)
+	})
+
+	t.Run("corrupt system is authoritative", func(t *testing.T) {
+		system := filepath.Join(t.TempDir(), "system.json")
+		require.NoError(t, os.WriteFile(system, []byte("{"), 0o600))
+		userDir := newTestDiagnosticsStore(t, DaemonRunning)
+		user := writeTestLocator(t, t.TempDir(), userDir)
+		response := readActiveFromCandidates([]string{system, user}, options)
+		assert.Equal(t, AvailabilityCorrupt, response.Availability)
+	})
+
+	t.Run("both missing", func(t *testing.T) {
+		response := readActiveFromCandidates([]string{
+			filepath.Join(t.TempDir(), "system.json"),
+			filepath.Join(t.TempDir(), "user.json"),
+		}, options)
+		assert.Equal(t, AvailabilityNotInitialized, response.Availability)
+	})
+
+	if os.Getuid() != 0 {
+		t.Run("permission system falls back", func(t *testing.T) {
+			systemDir := t.TempDir()
+			system := writeTestLocator(t, systemDir, newTestDiagnosticsStore(t, DaemonStopping))
+			require.NoError(t, os.Chmod(system, 0o000))
+			t.Cleanup(func() {
+				_ = os.Chmod(system, 0o600) //nolint:gosec // restore test fixture access.
+			})
+			if _, err := ReadLocator(system); !os.IsPermission(err) {
+				t.Skip("platform does not expose permission-denied file reads")
+			}
+			userDir := newTestDiagnosticsStore(t, DaemonRunning)
+			user := writeTestLocator(t, t.TempDir(), userDir)
+			response := readActiveFromCandidates([]string{system, user}, options)
+			require.NotNil(t, response.Status)
+			assert.Equal(t, DaemonRunning, response.Status.State)
+		})
+	}
 }
 
 func TestRuntimeLockIsExclusive(t *testing.T) {

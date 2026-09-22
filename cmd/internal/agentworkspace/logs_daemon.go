@@ -40,11 +40,14 @@ func NewLogsDaemonCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 func (cmd *LogsDaemonCmd) Run(ctx context.Context) error {
 	_ = ctx
-	response := machinediagnostics.ReadFromLocator(
-		machinediagnostics.DefaultLocatorPath,
+	response, err := machinediagnostics.ReadActive(
 		machinediagnostics.ReadOptions{
 			Limit: machinediagnostics.DefaultReadEvents, Now: time.Now(),
 		},
+		os.UserCacheDir,
 	)
+	if err != nil {
+		return err
+	}
 	return json.NewEncoder(os.Stdout).Encode(response)
 }
