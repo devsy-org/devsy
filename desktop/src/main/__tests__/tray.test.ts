@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest"
-import { buildTrayMenuTemplate, buildUpdateMenuItems } from "../tray.js"
+import {
+  buildTrayMenuTemplate,
+  buildUpdateMenuItems,
+  countRunningWorkspaces,
+} from "../tray.js"
+import type { WorkspaceJob } from "../../shared/workspace-operation.js"
 
 vi.mock("electron", () => ({}))
 vi.mock("../updater.js", () => ({
@@ -176,6 +181,27 @@ describe("buildTrayMenuTemplate", () => {
       label: "Devsy — 2 running workspaces",
       enabled: false,
     })
+  })
+
+  it("counts JSON-encoded statuses and jobs the same as tray rows", () => {
+    const job = (partial: Partial<WorkspaceJob>): WorkspaceJob => ({
+      commandId: "cmd-1",
+      activity: "starting",
+      state: "running",
+      phase: "Preparing",
+      ...partial,
+    })
+    expect(
+      countRunningWorkspaces(
+        [
+          { id: "a", status: '{"state":"running"}' },
+          { id: "b", status: "running" },
+          { id: "c", status: "stopped" },
+          { id: "d", status: "running" },
+        ],
+        { c: job({}), d: job({ state: "failed", error: "x" }) },
+      ),
+    ).toBe(3)
   })
 
   it("limits the list to five most recently used workspaces with an overflow link", () => {
