@@ -111,11 +111,25 @@ func ReadFromLocator(path string, options ReadOptions) ReadResponse {
 // inaccessible system locator permits trying the per-user fallback; a corrupt
 // system locator is authoritative and is never masked by stale fallback data.
 func ReadActive(options ReadOptions, userCacheDir func() (string, error)) (ReadResponse, error) {
-	paths, err := ActiveLocatorCandidates(userCacheDir)
+	system := readLocatorCandidate(DefaultLocatorPath, options)
+	if system.state == locatorCandidateSuccess || system.state == locatorCandidateCorrupt {
+		return system.response, nil
+	}
+	userPaths, err := UserRuntimePaths(userCacheDir)
 	if err != nil {
 		return ReadResponse{}, err
 	}
-	return readActiveFromCandidates(paths, options), nil
+	user := readLocatorCandidate(userPaths.LocatorPath, options)
+	if user.state == locatorCandidateSuccess {
+		return user.response, nil
+	}
+	if system.state == locatorCandidatePermission {
+		return ReadFromLocator(DefaultLocatorPath, options), nil
+	}
+	if user.state == locatorCandidateCorrupt {
+		return user.response, nil
+	}
+	return ReadFromLocator(DefaultLocatorPath, options), nil
 }
 
 func ActiveLocatorCandidates(userCacheDir func() (string, error)) ([]string, error) {

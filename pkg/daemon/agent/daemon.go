@@ -404,11 +404,20 @@ func startFallbackDaemon(
 }
 
 func fallbackDaemonEnv(runtimePaths machinediagnostics.RuntimePaths) []string {
+	baseEnv := os.Environ()
+	filteredEnv := baseEnv[:0]
+	for _, entry := range baseEnv {
+		if strings.HasPrefix(entry, machinediagnostics.RuntimeLockPathEnv+"=") ||
+			strings.HasPrefix(entry, machinediagnostics.RuntimeLocatorPathEnv+"=") {
+			continue
+		}
+		filteredEnv = append(filteredEnv, entry)
+	}
 	if runtimePaths.LockPath == machinediagnostics.DefaultRuntimeLockPath &&
 		runtimePaths.LocatorPath == machinediagnostics.DefaultLocatorPath {
-		return nil
+		return filteredEnv
 	}
-	return append(os.Environ(),
+	return append(filteredEnv,
 		machinediagnostics.RuntimeLockPathEnv+"="+runtimePaths.LockPath,
 		machinediagnostics.RuntimeLocatorPathEnv+"="+runtimePaths.LocatorPath,
 	)

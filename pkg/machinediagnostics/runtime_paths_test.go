@@ -28,7 +28,8 @@ func TestRuntimePaths(t *testing.T) {
 func TestEnsureRuntimeDirRepairsSharedPermissions(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "runtime")
 	require.NoError(t, os.MkdirAll(dir, 0o750))
-	require.NoError(t, os.Chmod(dir, 0o750))
+	err := os.Chmod(dir, 0o750) //nolint:gosec // regression fixture.
+	require.NoError(t, err)
 	require.NoError(t, EnsureRuntimeDir(dir, true))
 
 	info, err := os.Stat(dir)

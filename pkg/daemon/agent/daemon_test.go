@@ -49,6 +49,8 @@ func TestFallbackRuntimePaths(t *testing.T) {
 }
 
 func TestFallbackDaemonEnvPropagatesBothRuntimePaths(t *testing.T) {
+	t.Setenv(machinediagnostics.RuntimeLockPathEnv, "/inherited/lock")
+	t.Setenv(machinediagnostics.RuntimeLocatorPathEnv, "/inherited/locator")
 	env := fallbackDaemonEnv(machinediagnostics.RuntimePaths{
 		LockPath:    "/cache/devsy/agent-daemon.lock",
 		LocatorPath: "/cache/devsy/agent-daemon.json",
@@ -56,7 +58,9 @@ func TestFallbackDaemonEnvPropagatesBothRuntimePaths(t *testing.T) {
 	assert.Contains(t, env, "DEVSY_DAEMON_RUNTIME_LOCK_PATH=/cache/devsy/agent-daemon.lock")
 	assert.Contains(t, env, "DEVSY_DAEMON_LOCATOR_PATH=/cache/devsy/agent-daemon.json")
 
-	assert.Nil(t, fallbackDaemonEnv(machinediagnostics.SystemRuntimePaths()))
+	systemEnv := fallbackDaemonEnv(machinediagnostics.SystemRuntimePaths())
+	assert.NotContains(t, systemEnv, machinediagnostics.RuntimeLockPathEnv+"=/inherited/lock")
+	assert.NotContains(t, systemEnv, machinediagnostics.RuntimeLocatorPathEnv+"=/inherited/locator")
 }
 
 func TestDaemonUnitStateLocationMatchesExactArgumentValues(t *testing.T) {
