@@ -69,6 +69,32 @@ func sendAndReceive(t *testing.T, addr string, msg []byte) []byte {
 	return buf
 }
 
+func waitForListenerClosed(t *testing.T, addr string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	var lastErr error
+
+	for {
+		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+		} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+			return
+		} else {
+			lastErr = err
+		}
+
+		select {
+		case <-deadline.C:
+			t.Fatalf("listener did not close before deadline; last dial error: %v", lastErr)
+		case <-ticker.C:
+		}
+	}
+}
+
 func TestLocalTunnel_ListensOnPort(t *testing.T) {
 	ctx := t.Context()
 
@@ -158,12 +184,7 @@ func TestLocalTunnel_CloseStopsAccepting(t *testing.T) {
 
 	addr := tun.Addr()
 	_ = tun.Close()
-
-	time.Sleep(50 * time.Millisecond)
-	_, err = net.DialTimeout("tcp", addr, 500*time.Millisecond)
-	if err == nil {
-		t.Error("expected connection to be refused after Close()")
-	}
+	waitForListenerClosed(t, addr, 2*time.Second)
 }
 
 func TestLocalTunnel_ContextCancellation(t *testing.T) {
@@ -184,22 +205,7 @@ func TestLocalTunnel_ContextCancellation(t *testing.T) {
 	cancel()
 
 	// The listener is closed asynchronously after cancellation.
-	deadline := time.After(2 * time.Second)
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
-		if err != nil {
-			return
-		}
-		_ = conn.Close()
-		select {
-		case <-deadline:
-			t.Fatal("listener still accepting connections after context cancellation")
-		case <-ticker.C:
-		}
-	}
+	waitForListenerClosed(t, addr, 2*time.Second)
 }
 
 func TestLocalTunnel_HealthCheckShutdown(t *testing.T) {
@@ -217,22 +223,6 @@ func TestLocalTunnel_HealthCheckShutdown(t *testing.T) {
 	}
 	defer func() { _ = tun.Close() }()
 
-	// The health check should shut down the tunnel after 3 failures
-	// 3 * 50ms = 150ms, give generous timeout
-	deadline := time.After(2 * time.Second)
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-deadline:
-			t.Fatal("tunnel did not shut down after health check failures")
-		case <-ticker.C:
-			conn, err := net.DialTimeout("tcp", tun.Addr(), 50*time.Millisecond)
-			if err != nil {
-				return // tunnel shut down - test passes
-			}
-			_ = conn.Close()
-		}
-	}
+	// The health check should shut down the tunnel after 3 failures.
+	waitForListenerClosed(t, tun.Addr(), 2*time.Second)
 }
