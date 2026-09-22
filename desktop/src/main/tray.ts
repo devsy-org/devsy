@@ -15,10 +15,7 @@ import {
   onUpdateStatusChanged,
   type UpdateStatus,
 } from "./updater.js"
-import {
-  isActiveWorkspaceStatus,
-  normalizeWorkspaceStatus,
-} from "./workspace-status.js"
+import { normalizeWorkspaceStatus } from "./workspace-status.js"
 
 // Native menus do not scroll well, so the tray shows only the most recently
 // used workspaces and links into the app for the rest.
@@ -80,11 +77,10 @@ export function countRunningWorkspaces(
   workspaces: Workspace[],
   jobs: Record<string, WorkspaceJob>,
 ): number {
-  return workspaces.filter(
-    (workspace) =>
-      isActiveWorkspaceStatus(workspace.status) ||
-      workspaceJobBusy(jobs[workspace.id]),
-  ).length
+  return workspaces.filter((workspace) => {
+    const state = trayWorkspaceState(workspace, jobs[workspace.id])
+    return state === "running" || state === "busy"
+  }).length
 }
 
 export interface TrayMenuModel {
