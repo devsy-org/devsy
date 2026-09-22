@@ -64,6 +64,7 @@ function setup(
     ),
     cancelFor: vi.fn(async () => undefined),
   }
+  const send = vi.fn()
   const deps = {
     cli,
     state: { workspaceContext: () => "ctx", providerList: () => [] },
@@ -74,12 +75,12 @@ function setup(
       onDrain: async () => undefined,
     },
     pty: { cancelFor: vi.fn(async () => undefined) },
-    getMainWindow: () => null,
+    getMainWindow: () => ({ webContents: { send } }),
     providerJobs,
   }
   // biome-ignore lint/suspicious/noExplicitAny: partial test doubles
   registerIpcHandlers(deps as any)
-  return { providerJobs, cli }
+  return { providerJobs, cli, send }
 }
 
 function invoke(channel: string, args: Record<string, unknown>) {
@@ -154,7 +155,7 @@ describe("provider job lifecycle over IPC", () => {
 
   it("runs set-source then init on update, clearing the job once", async () => {
     const seen: string[][] = []
-    const { providerJobs } = setup((cliArgs) => {
+    const { providerJobs, send } = setup((cliArgs) => {
       seen.push(cliArgs)
       return { lines: [], code: 0 }
     })
@@ -178,6 +179,53 @@ describe("provider job lifecycle over IPC", () => {
     expect(providerJobs.get("docker")?.error).toBeTruthy()
   })
 
+
+  it("streams update phases and completes the provider job", async () => {
+    const seen: string[][] = []
+    const { providerJobs, send } = setup((cliArgs) => {
+      seen.push(cliArgs)
+      return { lines: [statusLine(cliArgs[1] === "init" ? "running_init" : "downloading")], code: 0 }
+    })
+
+    const commandId = await invoke("provider_update_streaming", { name: "docker" })
+    expect(commandId).toEqual(expect.any(String))
+    expect(providerJobs.get("docker")?.activity).toBe("updating")
+
+    await vi.waitFor(() => expect(providerJobs.get("docker")).toBeUndefined())
+    expect(seen.map((args) => args[1])).toEqual(["set-source", "init"])
+    expect(send).toHaveBeenCalledWith(
+      "command-progress",
+      expect.objectContaining({ commandId, success: true, done: true }),
+    )
+  })
+
+  it("retains update failure details after a streaming update", async () => {
+    const { providerJobs } = setup((cliArgs) => ({
+      lines: [],
+      code: cliArgs[1] === "init" ? 1 : 0,
+    }))
+
+    await invoke("provider_update_streaming", { name: "docker" })
+    await vi.waitFor(() => expect(providerJobs.get("docker")?.error).toBeTruthy())
+  })
+
+
+  it("terminates a streaming update when provider refresh fails", async () => {
+    const { providerJobs, send } = setup(() => ({ lines: [], code: 0 }))
+    providerJobs.setRefresh(() => Promise.reject(new Error("refresh boom")))
+
+    const commandId = await invoke("provider_update_streaming", { name: "docker" })
+
+    await vi.waitFor(() =>
+      expect(providerJobs.get("docker")?.errorCode).toBe("provider_refresh_failed"),
+    )
+    expect(send).toHaveBeenCalledWith(
+      "command-progress",
+      expect.objectContaining({ commandId, success: false, done: true }),
+    )
+  })
+
+
   it("does not blame a successful init for a refresh failure afterward", async () => {
     const { providerJobs } = setup(() => ({
       lines: [statusLine("running_init"), statusLine("ready")],
@@ -189,4 +237,37 @@ describe("provider job lifecycle over IPC", () => {
 
     expect(providerJobs.get("docker")?.error).not.toBe("refresh boom")
   })
+
+  it("refreshes and clears a retained provider refresh failure", async () => {
+    const { providerJobs } = setup(() => ({ lines: [], code: 0 }))
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    providerJobs.setRefresh(refresh)
+    providerJobs.start("docker", "updating")
+    await providerJobs.finish("docker", {
+      code: "provider_refresh_failed",
+      message: "status unavailable",
+    })
+
+    const result = await invoke("provider_refresh_state", { name: "docker" })
+
+    expect(result).toEqual({ ok: true })
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(providerJobs.get("docker")).toBeUndefined()
+  })
+
+  it("returns failure and retains recovery when provider refresh still fails", async () => {
+    const { providerJobs } = setup(() => ({ lines: [], code: 0 }))
+    providerJobs.setRefresh(() => Promise.reject(new Error("still unavailable")))
+    providerJobs.start("docker", "updating")
+    await providerJobs.finish("docker", {
+      code: "provider_refresh_failed",
+      message: "status unavailable",
+    })
+
+    const result = await invoke("provider_refresh_state", { name: "docker" })
+
+    expect(result).toEqual({ ok: false, message: "still unavailable" })
+    expect(providerJobs.get("docker")?.errorCode).toBe("provider_refresh_failed")
+  })
+
 })

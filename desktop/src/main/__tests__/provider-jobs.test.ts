@@ -194,4 +194,32 @@ describe("ProviderJobs", () => {
 
     expect(jobs.get("docker")).toBeUndefined()
   })
+
+  it("retries refresh for a retained refresh failure", async () => {
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    jobs.setRefresh(refresh)
+    jobs.start("docker", "updating")
+    await jobs.finish("docker", {
+      code: "provider_refresh_failed",
+      message: "status unavailable",
+    })
+
+    await jobs.retryRefresh("docker")
+
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(jobs.get("docker")).toBeUndefined()
+  })
+
+  it("keeps a refresh recovery job when retry fails", async () => {
+    jobs.setRefresh(() => Promise.reject(new Error("still unavailable")))
+    jobs.start("docker", "updating")
+    await jobs.finish("docker", {
+      code: "provider_refresh_failed",
+      message: "status unavailable",
+    })
+
+    await expect(jobs.retryRefresh("docker")).rejects.toThrow("still unavailable")
+    expect(jobs.get("docker")?.errorCode).toBe("provider_refresh_failed")
+  })
+
 })

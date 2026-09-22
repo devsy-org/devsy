@@ -35,6 +35,7 @@ export interface ProviderJob {
   errorCode?: string
   errorHint?: string
   errorContext?: Record<string, string>
+  logs?: string[]
 }
 
 export class ProviderJobs {
@@ -61,6 +62,15 @@ export class ProviderJobs {
   start(name: string, activity: ProviderActivity): void {
     this.jobs.set(name, { activity })
     this.generations.set(name, ++this.lastGeneration)
+    this.emit()
+  }
+
+
+  /** Retain recent operation output so failures remain diagnosable after navigation. */
+  appendLog(name: string, line: string): void {
+    const job = this.jobs.get(name)
+    if (!job) return
+    this.jobs.set(name, { ...job, logs: [...(job.logs ?? []), line].slice(-500) })
     this.emit()
   }
 
@@ -135,6 +145,19 @@ export class ProviderJobs {
     // refresh is a CLI round-trip; a newer job may own the entry by now.
     if (this.generations.get(name) !== generation) return
 
+    this.jobs.delete(name)
+    this.generations.delete(name)
+    this.emit()
+  }
+
+
+  /** Retry only the authoritative provider-state refresh after a completed operation. */
+  async retryRefresh(name: string): Promise<void> {
+    const job = this.jobs.get(name)
+    if (!job || job.errorCode !== "provider_refresh_failed") return
+    const generation = this.generations.get(name)
+    await this.refresh?.()
+    if (this.generations.get(name) !== generation) return
     this.jobs.delete(name)
     this.generations.delete(name)
     this.emit()
