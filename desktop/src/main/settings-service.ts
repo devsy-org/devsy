@@ -58,30 +58,51 @@ export class SettingsService {
         // Persist and broadcast the reverted state so Settings and the tray
         // converge on Run at startup off; the denial detail stays in startup.
         const reverted = { ...next, runAtStartup: false, openToTrayOnStartup: false }
-        this.deps.store.save(reverted)
+        await this.persistWithAutostartRollback(reverted, current)
         const result = { settings: reverted, startup }
         this.deps.onChanged(result)
         return result
       }
     }
+    await this.persistWithAutostartRollback(next, current, startupRelevant)
+    const result = { settings: next, startup }
+    this.deps.onChanged(result)
+    return result
+  }
+
+  private async persistWithAutostartRollback(
+    target: AppSettings,
+    current: AppSettings,
+    startupRelevant = true,
+  ): Promise<void> {
     try {
-      this.deps.store.save(next)
+      this.deps.store.save(target)
     } catch (err) {
       if (startupRelevant) {
-        // The OS login item already moved to the new value; restore it so a
-        // failed write never leaves the platform disagreeing with the store.
+        // The platform login item may already reflect the failed change, so
+        // reapply the previous settings to keep it agreeing with the store.
+        let rollback: AutostartApplyResult | undefined
+        let rollbackError: unknown
         try {
-          await this.deps.applyAutostart(current)
-        } catch (compensationErr) {
+          rollback = await this.deps.applyAutostart(current)
+        } catch (err2) {
+          rollbackError = err2
+        }
+        const restored =
+          rollbackError === undefined &&
+          rollback?.applied === true &&
+          rollback.enabled === current.runAtStartup
+        if (!restored) {
+          const reason =
+            rollbackError !== undefined
+              ? describe(rollbackError)
+              : `${rollback?.status}${rollback?.detail ? ` (${rollback.detail})` : ""}`
           throw new Error(
-            `failed to persist settings: ${describe(err)}; autostart rollback also failed: ${describe(compensationErr)}`,
+            `failed to persist settings: ${describe(err)}; autostart rollback also failed: ${reason}`,
           )
         }
       }
       throw err
     }
-    const result = { settings: next, startup }
-    this.deps.onChanged(result)
-    return result
   }
 }
