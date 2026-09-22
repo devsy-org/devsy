@@ -34,7 +34,7 @@ import { WorkspaceJobs } from "./workspace-jobs.js"
 const PROTOCOL = "devsy"
 
 let mainWindow: BrowserWindow | null = null
-let pendingDeepLink: string | null = null
+const pendingDeepLinks: string[] = []
 let pendingRoute: string | null = null
 let rendererReady = false
 let appTray: AppTray | null = null
@@ -46,9 +46,10 @@ function handleDeepLink(url: string): void {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
-    mainWindow.webContents.send("deep-link", url)
+    if (rendererReady) mainWindow.webContents.send("deep-link", url)
+    else pendingDeepLinks.push(url)
   } else {
-    pendingDeepLink = url
+    pendingDeepLinks.push(url)
   }
 }
 
@@ -127,10 +128,6 @@ function createWindow(): void {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show()
-    if (pendingDeepLink) {
-      mainWindow?.webContents.send("deep-link", pendingDeepLink)
-      pendingDeepLink = null
-    }
   })
 }
 
@@ -145,7 +142,7 @@ app.whenReady().then(async () => {
   const startupUrl = process.argv.find((arg) =>
     arg.startsWith(`${PROTOCOL}://`),
   )
-  if (startupUrl) pendingDeepLink = startupUrl
+  if (startupUrl) pendingDeepLinks.push(startupUrl)
 
   // Apply Content Security Policy to all web responses.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -282,6 +279,7 @@ app.whenReady().then(async () => {
         sender.send("navigate", pendingRoute)
         pendingRoute = null
       }
+      for (const url of pendingDeepLinks.splice(0)) sender.send("deep-link", url)
     },
     workspaceSnapshot: () => watcher?.workspaceSnapshot(),
     settingsService,
@@ -361,9 +359,8 @@ app.whenReady().then(async () => {
   }
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else showDevsy()
   })
 })
 

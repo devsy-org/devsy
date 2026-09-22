@@ -192,4 +192,53 @@ describe("SettingsService", () => {
     })
     expect(result.startup.status).toBe("disabled")
   })
+
+  it("preserves settings when disabling autostart fails", async () => {
+    let calls = 0
+    const { svc } = service(async () => {
+      calls++
+      return calls === 1
+        ? enabled
+        : {
+            applied: false,
+            enabled: true,
+            status: "error" as const,
+            detail: "remove failed",
+          }
+    })
+    await svc.update({ runAtStartup: true, openToTrayOnStartup: true })
+    const result = await svc.update({ runAtStartup: false })
+    expect(result.settings).toEqual({
+      runAtStartup: true,
+      openToTrayOnStartup: true,
+      trayNotifications: "failures",
+    })
+    expect(result.startup).toMatchObject({ applied: false, enabled: true })
+    expect(store.get().runAtStartup).toBe(true)
+  })
+
+  it("serializes transactions and continues after a rejected update", async () => {
+    let release!: () => void
+    let first = true
+    const applied: boolean[] = []
+    const { svc } = service(async (settings) => {
+      applied.push(settings.runAtStartup)
+      if (first) {
+        first = false
+        await new Promise<void>((resolve) => (release = resolve))
+        throw new Error("first failed")
+      }
+      return settings.runAtStartup ? enabled : disabled
+    })
+    const firstUpdate = svc.update({ runAtStartup: true })
+    const secondUpdate = svc.update({ trayNotifications: "all" })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    release()
+    await expect(firstUpdate).rejects.toThrow("first failed")
+    await expect(secondUpdate).resolves.toMatchObject({
+      settings: { trayNotifications: "all" },
+    })
+    expect(applied).toEqual([true])
+    expect(store.get().trayNotifications).toBe("all")
+  })
 })

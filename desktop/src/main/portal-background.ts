@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import type { Message } from "dbus-next"
 
 export interface PortalBackgroundResponse {
   background: boolean
@@ -9,15 +10,6 @@ export interface PortalBackgroundOptions {
   reason: string
   autostart: boolean
   commandline?: string[]
-}
-
-// The portal Response signal is delivered on a Request object whose path is
-// only known after the method returns. Precomputing the path from the
-// handle_token lets us subscribe before the call so an instant response
-// cannot race past the listener.
-export function portalRequestPath(senderUniqueName: string, token: string): string {
-  const sender = senderUniqueName.replace(/^:/, "").replace(/\./g, "_")
-  return `/org/freedesktop/portal/desktop/request/${sender}/${token}`
 }
 
 export function parsePortalResponse(
@@ -46,24 +38,31 @@ export async function requestPortalBackground(
     )
     const background = desktop.getInterface("org.freedesktop.portal.Background")
     const token = `devsy${randomUUID().replace(/-/g, "")}`
-    const path = portalRequestPath(bus.name, token)
-    const requestObject = await bus.getProxyObject(
-      "org.freedesktop.portal.Desktop",
-      path,
-    )
-    const request = requestObject.getInterface("org.freedesktop.portal.Request")
+    let requestPath: string | undefined
+    const pendingResponses = new Map<string, PortalBackgroundResponse>()
+    let resolveResponse: ((value: PortalBackgroundResponse) => void) | undefined
     const response = new Promise<PortalBackgroundResponse>((resolve) => {
-      const timer = setTimeout(() => {
-        resolve({ background: false, autostart: false })
-      }, PORTAL_TIMEOUT_MS)
-      request.on(
-        "Response",
-        (code: number, results: Record<string, { value: unknown }>) => {
-          clearTimeout(timer)
-          resolve(parsePortalResponse(code, results))
-        },
-      )
+      resolveResponse = resolve
     })
+    const onMessage = (message: Message) => {
+      if (
+        message.type !== 4 ||
+        message.interface !== "org.freedesktop.portal.Request" ||
+        message.member !== "Response" ||
+        !message.path || (requestPath !== undefined && message.path !== requestPath)
+      ) return
+      const [code, results] = message.body
+      const parsed = parsePortalResponse(
+        Number(code),
+        results as Record<string, { value: unknown }> | undefined,
+      )
+      if (requestPath === undefined) pendingResponses.set(message.path, parsed)
+      else resolveResponse?.(parsed)
+    }
+    bus.on("message", onMessage)
+    const timer = setTimeout(() => {
+      resolveResponse?.({ background: false, autostart: false })
+    }, PORTAL_TIMEOUT_MS)
     const methodOptions: Record<string, InstanceType<typeof Variant>> = {
       handle_token: new Variant("s", token),
       reason: new Variant("s", options.reason),
@@ -72,8 +71,15 @@ export async function requestPortalBackground(
     if (options.commandline) {
       methodOptions.commandline = new Variant("as", options.commandline)
     }
-    await background.RequestBackground("", methodOptions)
-    return await response
+    try {
+      requestPath = (await background.RequestBackground("", methodOptions)) as string
+      const pending = pendingResponses.get(requestPath)
+      if (pending) resolveResponse?.(pending)
+      return await response
+    } finally {
+      clearTimeout(timer)
+      bus.removeListener("message", onMessage)
+    }
   } finally {
     bus.disconnect()
   }

@@ -365,7 +365,8 @@ export const openToTrayOnStartup = writable<boolean>(false)
 export const trayNotifications = writable<TrayNotificationLevel>("failures")
 export const startupStatus = writable<StartupStatus | null>(null)
 
-let desktopSettingsWriteInFlight = false
+let desktopSettingsQueue: Promise<unknown> = Promise.resolve()
+let desktopSettingsRevision = 0
 
 function applyAppSettingsState(state: AppSettingsState): void {
   runAtStartup.set(state.settings.runAtStartup)
@@ -375,34 +376,40 @@ function applyAppSettingsState(state: AppSettingsState): void {
 }
 
 export async function syncDesktopSettingsFromMain(): Promise<void> {
-  try {
-    const state = await getAppSettings()
-    if (desktopSettingsWriteInFlight) return
-    applyAppSettingsState(state)
-  } catch (err) {
-    console.warn("[settings] getAppSettings failed:", err)
-  }
+  const revision = desktopSettingsRevision
+  const sync = desktopSettingsQueue.catch(() => {}).then(async () => {
+    try {
+      const state = await getAppSettings()
+      if (revision === desktopSettingsRevision) applyAppSettingsState(state)
+    } catch (err) {
+      console.warn("[settings] getAppSettings failed:", err)
+    }
+  })
+  desktopSettingsQueue = sync.catch(() => {})
+  await sync
 }
 
 export async function updateDesktopSettings(
   patch: Partial<AppSettings>,
 ): Promise<void> {
-  desktopSettingsWriteInFlight = true
-  try {
-    applyAppSettingsState(await setAppSettings(patch))
-  } catch (err) {
-    console.warn("[settings] setAppSettings failed:", err)
+  const update = desktopSettingsQueue.catch(() => {}).then(async () => {
     try {
-      applyAppSettingsState(await getAppSettings())
-    } catch {}
-  } finally {
-    desktopSettingsWriteInFlight = false
-  }
+      const state = await setAppSettings(patch)
+      applyAppSettingsState(state)
+    } catch (err) {
+      console.warn("[settings] setAppSettings failed:", err)
+      try {
+        applyAppSettingsState(await getAppSettings())
+      } catch {}
+    }
+  })
+  desktopSettingsQueue = update.catch(() => {})
+  await update
 }
 
 export async function initDesktopSettingsListener(): Promise<() => void> {
   const unlisten = await onAppSettingsChanged((state) => {
-    if (desktopSettingsWriteInFlight) return
+    desktopSettingsRevision++
     applyAppSettingsState(state)
   })
   return unlisten

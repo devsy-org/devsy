@@ -71,24 +71,31 @@ export function updateNotifies(
   status: UpdateStatus,
   level: TrayNotificationLevel,
   lastNotifiedVersion: string | undefined,
-): { notifies: boolean; version?: string; title: string; body: string } {
+): { notifies: boolean; version?: string; key?: string; title: string; body: string } {
   const none = { notifies: false, title: "", body: "" }
   if (level === "off") return none
-  const version = status.availableVersion ?? ""
-  if (!version || version === lastNotifiedVersion) return none
+  if (!("availableVersion" in status)) return none
+  const version = status.availableVersion
+  if (!version) return none
   if (status.state === "downloaded") {
     if (level !== "all") return none
+    const key = `downloaded:${version}`
+    if (lastNotifiedVersion === version || lastNotifiedVersion === key) return none
     return {
       notifies: true,
       version,
+      key,
       title: "Devsy update ready",
       body: `Version ${version} is ready to install.`,
     }
   }
   if (status.state === "error" && status.code === "install-failed") {
+    const key = `install-failed:${version}`
+    if (lastNotifiedVersion === key) return none
     return {
       notifies: true,
       version,
+      key,
       title: "Devsy update failed",
       body: `Version ${version} could not be installed.`,
     }
@@ -110,7 +117,7 @@ const NOTIFIED_CAP = 200
 export class TrayNotifier {
   private previous: Record<string, WorkspaceJob> | null = null
   private notified = new Set<string>()
-  private lastUpdateVersion: string | undefined
+  private lastUpdateNotification: string | undefined
 
   constructor(private deps: TrayNotifierDeps) {}
 
@@ -146,10 +153,10 @@ export class TrayNotifier {
     const decision = updateNotifies(
       status,
       this.deps.getLevel(),
-      this.lastUpdateVersion,
+      this.lastUpdateNotification,
     )
     if (!decision.notifies || !decision.version) return
-    this.lastUpdateVersion = decision.version
+    this.lastUpdateNotification = decision.key ?? decision.version
     if (this.deps.isAppFocused()) return
     this.deps.sink({
       title: decision.title,

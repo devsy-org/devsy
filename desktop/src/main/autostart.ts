@@ -20,6 +20,8 @@ export interface AutostartEnvironment {
   execPath: string
   homeDir: string
   packaged: boolean
+  appImagePath?: string
+  xdgConfigHome?: string
 }
 
 export function detectAutostartEnvironment(): AutostartEnvironment {
@@ -30,19 +32,25 @@ export function detectAutostartEnvironment(): AutostartEnvironment {
     execPath: process.execPath,
     homeDir: app.getPath("home"),
     packaged: app.isPackaged,
+    appImagePath: process.env.APPIMAGE,
+    xdgConfigHome: process.env.XDG_CONFIG_HOME,
   }
 }
 
-function autostartDir(homeDir: string): string {
-  return join(homeDir, ".config", "autostart")
+function autostartDir(env: AutostartEnvironment): string {
+  return join(env.xdgConfigHome || join(env.homeDir, ".config"), "autostart")
 }
 
 function xdgDesktopFilePath(env: AutostartEnvironment): string {
-  return join(autostartDir(env.homeDir), "devsy.desktop")
+  return join(autostartDir(env), "devsy.desktop")
 }
 
 function flatpakDesktopFilePath(env: AutostartEnvironment): string {
-  return join(autostartDir(env.homeDir), `${env.flatpakId}.desktop`)
+  return join(autostartDir(env), `${env.flatpakId}.desktop`)
+}
+
+function desktopExecArg(value: string): string {
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`
 }
 
 function xdgDesktopEntry(execPath: string): string {
@@ -50,7 +58,7 @@ function xdgDesktopEntry(execPath: string): string {
     "[Desktop Entry]",
     "Type=Application",
     "Name=Devsy",
-    `Exec="${execPath}" ${AUTO_LAUNCH_ARG}`,
+    `Exec=${desktopExecArg(execPath)} ${desktopExecArg(AUTO_LAUNCH_ARG)}`,
     "X-GNOME-Autostart-enabled=true",
     "",
   ].join("\n")
@@ -60,7 +68,7 @@ export function readAutostartEnabled(
   env: AutostartEnvironment,
 ): boolean | undefined {
   if (env.platform === "darwin" || env.platform === "win32") {
-    return app.getLoginItemSettings().openAtLogin
+    return app.getLoginItemSettings({ args: [AUTO_LAUNCH_ARG] }).openAtLogin
   }
   try {
     if (env.isFlatpak) {
@@ -130,8 +138,12 @@ async function applyXdgAutostart(
   const file = xdgDesktopFilePath(env)
   try {
     if (settings.runAtStartup) {
-      await mkdir(autostartDir(env.homeDir), { recursive: true })
-      await writeFile(file, xdgDesktopEntry(env.execPath), "utf-8")
+      await mkdir(autostartDir(env), { recursive: true })
+      await writeFile(
+        file,
+        xdgDesktopEntry(env.appImagePath || env.execPath),
+        "utf-8",
+      )
     } else {
       await rm(file, { force: true })
     }

@@ -15,36 +15,39 @@ export async function isTrayHostAvailable(
 ): Promise<boolean> {
   const platform = deps.platform ?? process.platform
   if (platform !== "linux") return true
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const getNameOwner = deps.getNameOwner ?? (await sessionNameOwner())
+    const operation = deps.getNameOwner
+      ? deps.getNameOwner(WATCHER_NAME)
+      : sessionNameOwner(WATCHER_NAME)
     const owner = await Promise.race([
-      getNameOwner(WATCHER_NAME),
-      new Promise<never>((_, reject) =>
-        setTimeout(
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
           () => reject(new Error("tray host probe timed out")),
           deps.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        ),
-      ),
+        )
+      }),
     ])
     return typeof owner === "string" && owner.length > 0
   } catch {
     return false
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
-async function sessionNameOwner(): Promise<(name: string) => Promise<string>> {
+async function sessionNameOwner(name: string): Promise<string> {
   const { sessionBus } = await import("dbus-next")
   const bus = sessionBus()
-  const dbus = await bus.getProxyObject(
-    "org.freedesktop.DBus",
-    "/org/freedesktop/DBus",
-  )
-  const iface = dbus.getInterface("org.freedesktop.DBus")
-  return async (name) => {
-    try {
-      return (await iface.GetNameOwner(name)) as string
-    } finally {
-      bus.disconnect()
-    }
+  try {
+    const dbus = await bus.getProxyObject(
+      "org.freedesktop.DBus",
+      "/org/freedesktop/DBus",
+    )
+    const iface = dbus.getInterface("org.freedesktop.DBus")
+    return (await iface.GetNameOwner(name)) as string
+  } finally {
+    bus.disconnect()
   }
 }

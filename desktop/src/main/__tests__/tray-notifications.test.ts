@@ -115,7 +115,22 @@ describe("updateNotifies", () => {
       error: "x",
     }
     expect(updateNotifies(failed, "failures", undefined).notifies).toBe(true)
-    expect(updateNotifies(failed, "failures", "1.1.0").notifies).toBe(false)
+    expect(updateNotifies(failed, "failures", "install-failed:1.1.0").notifies).toBe(false)
+  })
+
+  it("allows an install failure after the update-ready notification", () => {
+    const failed: UpdateStatus = {
+      state: "error",
+      currentVersion: "1.0.0",
+      availableVersion: "1.1.0",
+      code: "install-failed",
+      error: "x",
+    }
+    const ready = updateNotifies(downloaded, "all", undefined)
+    expect(updateNotifies(failed, "failures", ready.key).notifies).toBe(true)
+    expect(
+      updateNotifies(failed, "failures", "install-failed:1.1.0").notifies,
+    ).toBe(false)
   })
 
   it("ignores other update states", () => {

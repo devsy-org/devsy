@@ -22,6 +22,8 @@ export interface SettingsServiceDeps {
 }
 
 export class SettingsService {
+  private queue: Promise<unknown> = Promise.resolve()
+
   constructor(private deps: SettingsServiceDeps) {}
 
   get(): AppSettings {
@@ -46,6 +48,14 @@ export class SettingsService {
   }
 
   async update(patch: Partial<AppSettings>): Promise<SettingsUpdateResult> {
+    const update = this.queue.catch(() => {}).then(() => this.applyUpdate(patch))
+    this.queue = update.catch(() => {})
+    return update
+  }
+
+  private async applyUpdate(
+    patch: Partial<AppSettings>,
+  ): Promise<SettingsUpdateResult> {
     const current = this.deps.store.get()
     const next = patchAppSettings(current, patch)
     let startup: AutostartApplyResult = this.status().startup
@@ -57,9 +67,20 @@ export class SettingsService {
       if (next.runAtStartup && !startup.enabled) {
         // Persist and broadcast the reverted state so Settings and the tray
         // converge on Run at startup off; the denial detail stays in startup.
-        const reverted = { ...next, runAtStartup: false, openToTrayOnStartup: false }
+        const reverted = {
+          ...next,
+          runAtStartup: false,
+          openToTrayOnStartup: false,
+        }
         await this.persistWithAutostartRollback(reverted, current)
         const result = { settings: reverted, startup }
+        this.deps.onChanged(result)
+        return result
+      }
+      if (!startup.applied) {
+        // A failed removal leaves the OS login item enabled. Preserve both
+        // settings so the persisted state does not claim the removal applied.
+        const result = { settings: current, startup }
         this.deps.onChanged(result)
         return result
       }

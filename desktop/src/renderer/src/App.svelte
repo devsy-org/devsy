@@ -178,8 +178,8 @@ onMount(async () => {
 
   await initUpdateStore()
   await syncAutoUpdateFromMain()
-  await syncDesktopSettingsFromMain()
   const desktopSettingsUnlisten = await initDesktopSettingsListener()
+  await syncDesktopSettingsFromMain()
   if (destroyed) desktopSettingsUnlisten()
   else unsubDesktopSettings = desktopSettingsUnlisten
   unsubscribeToasts = initUpdateToasts(() => {

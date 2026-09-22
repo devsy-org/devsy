@@ -90,6 +90,24 @@ describe("WorkspaceJobs", () => {
     expect(() => jobs.start("ws")).not.toThrow()
   })
 
+  it("records a failed command even when refresh also fails", async () => {
+    const jobs = new WorkspaceJobs()
+    const refresh = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(undefined)
+    jobs.setRefresh(refresh)
+    const generation = jobs.start("ws", "stopping", "stop")
+    await jobs.finish("ws", generation, "command denied")
+    expect(jobs.get("ws")).toMatchObject({
+      state: "failed",
+      error: "command denied",
+      refreshError: "offline",
+    })
+    await jobs.retryRefresh("ws")
+    expect(jobs.get("ws")).toMatchObject({ state: "failed", error: "command denied" })
+  })
+
   it("invalidates polls on acceptance and completion", async () => {
     const jobs = new WorkspaceJobs()
     const before = jobs.generation("ws")
