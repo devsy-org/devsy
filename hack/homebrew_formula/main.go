@@ -36,22 +36,22 @@ const formulaTmpl = `class Devsy < Formula
 
   on_macos do
     on_arm do
-      url "{{ (index .Platforms "macos/arm").URL }}"
+      url "{{ (index .Platforms "macos/arm").URL }}" using: :nounzip
       sha256 "{{ (index .Platforms "macos/arm").SHA256 }}"
     end
     on_intel do
-      url "{{ (index .Platforms "macos/intel").URL }}"
+      url "{{ (index .Platforms "macos/intel").URL }}" using: :nounzip
       sha256 "{{ (index .Platforms "macos/intel").SHA256 }}"
     end
   end
 
   on_linux do
     on_arm do
-      url "{{ (index .Platforms "linux/arm").URL }}"
+      url "{{ (index .Platforms "linux/arm").URL }}" using: :nounzip
       sha256 "{{ (index .Platforms "linux/arm").SHA256 }}"
     end
     on_intel do
-      url "{{ (index .Platforms "linux/intel").URL }}"
+      url "{{ (index .Platforms "linux/intel").URL }}" using: :nounzip
       sha256 "{{ (index .Platforms "linux/intel").SHA256 }}"
     end
   end

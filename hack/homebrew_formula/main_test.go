@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,13 @@ func TestRender(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("formula missing %q\n---\n%s", want, out)
+		}
+	}
+
+	for _, p := range platforms {
+		want := fmt.Sprintf(`url "%s" using: :nounzip`, assetURL("devsy-org/devsy", "v1.2.3", p.Binary))
+		if !strings.Contains(out, want) {
+			t.Errorf("formula missing raw binary URL option for %s/%s: %q\n---\n%s", p.OS, p.Arch, want, out)
 		}
 	}
 }
