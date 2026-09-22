@@ -43,9 +43,18 @@ func TestRender(t *testing.T) {
 	}
 
 	for _, p := range platforms {
-		want := fmt.Sprintf(`url "%s" using: :nounzip`, assetURL("devsy-org/devsy", "v1.2.3", p.Binary))
+		want := fmt.Sprintf(
+			`url "%s" using: :nounzip`,
+			assetURL("devsy-org/devsy", "v1.2.3", p.Binary),
+		)
 		if !strings.Contains(out, want) {
-			t.Errorf("formula missing raw binary URL option for %s/%s: %q\n---\n%s", p.OS, p.Arch, want, out)
+			t.Errorf(
+				"formula missing raw binary URL option for %s/%s: %q\n---\n%s",
+				p.OS,
+				p.Arch,
+				want,
+				out,
+			)
 		}
 	}
 }
