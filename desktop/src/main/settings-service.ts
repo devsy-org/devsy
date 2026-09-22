@@ -64,6 +64,13 @@ export class SettingsService {
       next.openToTrayOnStartup !== current.openToTrayOnStartup
     if (startupRelevant) {
       startup = await this.deps.applyAutostart(next)
+      if (!startup.applied) {
+        // A failed platform application changes nothing: keep and broadcast
+        // the current settings; the error detail stays in startup.
+        const result = { settings: current, startup }
+        this.deps.onChanged(result)
+        return result
+      }
       if (next.runAtStartup && !startup.enabled) {
         // Persist and broadcast the reverted state so Settings and the tray
         // converge on Run at startup off; the denial detail stays in startup.
@@ -74,13 +81,6 @@ export class SettingsService {
         }
         await this.persistWithAutostartRollback(reverted, current)
         const result = { settings: reverted, startup }
-        this.deps.onChanged(result)
-        return result
-      }
-      if (!startup.applied) {
-        // A failed removal leaves the OS login item enabled. Preserve both
-        // settings so the persisted state does not claim the removal applied.
-        const result = { settings: current, startup }
         this.deps.onChanged(result)
         return result
       }
