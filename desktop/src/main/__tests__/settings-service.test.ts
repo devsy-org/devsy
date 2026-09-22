@@ -141,7 +141,7 @@ describe("SettingsService", () => {
         appliedTray.push(s.openToTrayOnStartup)
         if (appliedTray.length === 1)
           return {
-            applied: false,
+            applied: true,
             enabled: false,
             status: "denied",
             detail: "denied by the system",
@@ -191,6 +191,42 @@ describe("SettingsService", () => {
       trayNotifications: "failures",
     })
     expect(result.startup.status).toBe("disabled")
+  })
+
+  it("preserves current settings when a dependent-toggle application fails", async () => {
+    store.save({ ...DEFAULT_APP_SETTINGS, runAtStartup: true })
+    const onChanged = vi.fn()
+    const svc = new SettingsService({
+      store,
+      applyAutostart: async () => ({
+        applied: false,
+        enabled: false,
+        status: "error",
+        detail: "boom",
+      }),
+      currentAutostartEnabled: () => true,
+      onChanged,
+    })
+    const result = await svc.update({ openToTrayOnStartup: true })
+    expect(result.settings).toEqual({
+      runAtStartup: true,
+      openToTrayOnStartup: false,
+      trayNotifications: "failures",
+    })
+    expect(result.startup.status).toBe("error")
+    expect(store.get()).toEqual({
+      runAtStartup: true,
+      openToTrayOnStartup: false,
+      trayNotifications: "failures",
+    })
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(onChanged).toHaveBeenCalledWith({
+      settings: expect.objectContaining({
+        runAtStartup: true,
+        openToTrayOnStartup: false,
+      }),
+      startup: expect.objectContaining({ status: "error" }),
+    })
   })
 
   it("preserves settings when disabling autostart fails", async () => {
