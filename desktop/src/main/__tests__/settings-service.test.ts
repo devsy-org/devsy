@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -102,19 +102,63 @@ describe("SettingsService", () => {
     const badStore = new AppSettingsStore(join(blocker, "app-settings.json"))
     badStore.load()
     let calls = 0
+    const onChanged = vi.fn()
     const svc = new SettingsService({
       store: badStore,
       applyAutostart: async () => {
         calls += 1
-        if (calls > 1) throw new Error("rollback boom")
+        if (calls > 1)
+          return {
+            applied: false,
+            enabled: true,
+            status: "error",
+            detail: "rollback boom",
+          }
         return enabled
       },
       currentAutostartEnabled: () => false,
-      onChanged: () => {},
+      onChanged,
     })
     await expect(svc.update({ runAtStartup: true })).rejects.toThrow(
-      /autostart rollback also failed: rollback boom/,
+      /autostart rollback also failed: error \(rollback boom\)/,
     )
+    expect(onChanged).not.toHaveBeenCalled()
+  })
+
+  it("restores the previous autostart when reverted persistence fails", async () => {
+    const sub = join(dir, "sub")
+    mkdirSync(sub)
+    const flakyStore = new AppSettingsStore(join(sub, "app-settings.json"))
+    flakyStore.load()
+    flakyStore.save({ ...DEFAULT_APP_SETTINGS, runAtStartup: true })
+    rmSync(sub, { recursive: true, force: true })
+    writeFileSync(sub, "x")
+    const appliedTray: boolean[] = []
+    const onChanged = vi.fn()
+    const svc = new SettingsService({
+      store: flakyStore,
+      applyAutostart: async (s) => {
+        appliedTray.push(s.openToTrayOnStartup)
+        if (appliedTray.length === 1)
+          return {
+            applied: false,
+            enabled: false,
+            status: "denied",
+            detail: "denied by the system",
+          }
+        return s.runAtStartup ? enabled : disabled
+      },
+      currentAutostartEnabled: () => true,
+      onChanged,
+    })
+    await expect(svc.update({ openToTrayOnStartup: true })).rejects.toThrow()
+    expect(appliedTray).toEqual([true, false])
+    expect(flakyStore.get()).toEqual({
+      runAtStartup: true,
+      openToTrayOnStartup: false,
+      trayNotifications: "failures",
+    })
+    expect(onChanged).not.toHaveBeenCalled()
   })
 
   it("reapplies autostart when the dependent toggle changes", async () => {
