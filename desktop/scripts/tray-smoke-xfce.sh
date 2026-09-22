@@ -105,8 +105,8 @@ if [ -z "$APP_OK" ]; then
     exit 1
 fi
 if [ -z "$WATCHER" ]; then
-    echo "NOTE: xfce4-panel did not claim org.kde.StatusNotifierWatcher;"
-    echo "passing on app-side StatusNotifierItem registration alone."
+    echo "FAIL: xfce4-panel did not claim org.kde.StatusNotifierWatcher within 30s" >&2
+    exit 1
 fi
 echo "tray smoke check passed"
 INNER
