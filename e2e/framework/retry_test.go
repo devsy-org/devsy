@@ -256,6 +256,37 @@ func TestExecWithDockerRetry_RetryThenSuccess(t *testing.T) {
 	assert.Equal(t, "", stderr)
 }
 
+func TestExecWithDockerRetry_HandshakeStallRetried(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	stderrMsg := "start workspace: failed to create SSH client: ssh handshake made no progress for 15s"
+	out, _, err := execWithDockerRetry(context.Background(),
+		func(context.Context) (string, string, error) {
+			calls++
+			if calls == 1 {
+				return "", stderrMsg, transientExitErr(t)
+			}
+			return "ok", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "ok", out)
+}
+
+func TestExecWithDockerRetry_NonRetryableExitNotRetried(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	_, _, err := execWithDockerRetry(context.Background(),
+		func(context.Context) (string, string, error) {
+			calls++
+			return "", "provider \"docker123\" does not exist", transientExitErr(t)
+		},
+	)
+	require.Error(t, err)
+	assert.Equal(t, 1, calls)
+}
+
 func TestExecWithDockerRetry_RetryExhausted(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -354,6 +385,25 @@ func TestExecWithSSHRetry_RetryThenSuccess(t *testing.T) {
 			calls++
 			if calls == 1 {
 				return "", "ssh: connect to host 127.0.0.1 port 22: Connection refused", transientExitErr(
+					t,
+				)
+			}
+			return "ok", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "ok", out)
+}
+
+func TestExecWithSSHRetry_RetryHandshakeStallThenSuccess(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	out, err := execWithSSHRetry(context.Background(), "ws",
+		func(context.Context) (string, string, error) {
+			calls++
+			if calls == 1 {
+				return "", "run in container: ssh client: ssh handshake made no progress for 15s", transientExitErr(
 					t,
 				)
 			}

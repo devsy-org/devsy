@@ -2,9 +2,14 @@ package ssh
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"errors"
 	"io"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -122,4 +127,122 @@ func TestSetupContextCancellation_ReturnsCleanupThatStopsWatcher(t *testing.T) {
 	require.NotNil(t, cleanup)
 
 	assert.NotPanics(t, cleanup)
+}
+
+type deadlineRecorder struct {
+	net.Conn
+	deadlines []time.Time
+}
+
+func (d *deadlineRecorder) SetDeadline(t time.Time) error {
+	d.deadlines = append(d.deadlines, t)
+	return d.Conn.SetDeadline(t)
+}
+
+func TestClientFromConn_StalledHandshakeReturnsError(t *testing.T) {
+	clientEnd, serverEnd := net.Pipe()
+	defer func() { _ = serverEnd.Close() }()
+
+	conn := &deadlineRecorder{Conn: clientEnd}
+	start := time.Now()
+	client, err := clientFromConn(conn, "", nil, 50*time.Millisecond)
+
+	require.Error(t, err)
+	assert.Nil(t, client)
+	assert.Less(t, time.Since(start), 5*time.Second)
+	var netErr net.Error
+	require.ErrorAs(t, err, &netErr)
+	assert.True(t, netErr.Timeout())
+	assert.Empty(t, conn.deadlines, "handshake bound must not set conn deadlines")
+
+	// the stalled conn is closed so the peer and any blocked goroutine unwind
+	_, werr := clientEnd.Write([]byte("x"))
+	require.Error(t, werr)
+}
+
+func TestClientFromConn_SuccessfulHandshake(t *testing.T) {
+	// net.Pipe is unbuffered: both peers writing their version strings before
+	// reading deadlocks, so the successful-handshake case needs a real socket.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = listener.Close() }()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	signer, err := ssh.NewSignerFromKey(key)
+	require.NoError(t, err)
+	serverConfig := &ssh.ServerConfig{NoClientAuth: true}
+	serverConfig.AddHostKey(signer)
+	go func() {
+		serverEnd, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		_, chans, reqs, err := ssh.NewServerConn(serverEnd, serverConfig)
+		if err != nil {
+			return
+		}
+		go ssh.DiscardRequests(reqs)
+		for ch := range chans {
+			_ = ch.Reject(ssh.UnknownChannelType, "no channels in test")
+		}
+	}()
+
+	clientEnd, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	conn := &deadlineRecorder{Conn: clientEnd}
+	client, err := clientFromConn(conn, "test", nil, 5*time.Second)
+
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	defer func() { _ = client.Close() }()
+	assert.Empty(t, conn.deadlines, "established session must stay free of deadlines")
+}
+
+// slowReadConn adds one-way latency to reads, simulating a high-latency link
+// where the peer is alive but every message arrives late.
+type slowReadConn struct {
+	net.Conn
+	delay time.Duration
+}
+
+func (c *slowReadConn) Read(b []byte) (int, error) {
+	time.Sleep(c.delay)
+	return c.Conn.Read(b)
+}
+
+func TestClientFromConn_SlowPeerStillCompletes(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = listener.Close() }()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	signer, err := ssh.NewSignerFromKey(key)
+	require.NoError(t, err)
+	serverConfig := &ssh.ServerConfig{NoClientAuth: true}
+	serverConfig.AddHostKey(signer)
+	go func() {
+		serverEnd, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		_, chans, reqs, err := ssh.NewServerConn(serverEnd, serverConfig)
+		if err != nil {
+			return
+		}
+		go ssh.DiscardRequests(reqs)
+		for ch := range chans {
+			_ = ch.Reject(ssh.UnknownChannelType, "no channels in test")
+		}
+	}()
+
+	clientEnd, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	conn := &slowReadConn{Conn: clientEnd, delay: 30 * time.Millisecond}
+
+	client, err := clientFromConn(conn, "test", nil, 500*time.Millisecond)
+	require.NoError(t, err, "slow-but-alive peer must not trip the idle timeout")
+	require.NotNil(t, client)
+	defer func() { _ = client.Close() }()
 }

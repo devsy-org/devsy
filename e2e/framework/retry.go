@@ -53,6 +53,7 @@ var retryableSSHPatterns = []string{
 	"connection timed out",
 	"broken pipe",
 	"workspace not found",
+	"ssh handshake made no progress",
 }
 
 // isRetryableSSHError returns true when the error indicates a transient SSH
@@ -91,8 +92,10 @@ func isRetryableDockerError(stderr string) bool {
 	return false
 }
 
-// execWithDockerRetry runs fn and retries if stderr indicates a transient
-// Docker registry error. Returns the last stdout, stderr, and error.
+// execWithDockerRetry runs fn and retries if the failure looks transient:
+// either a Docker registry error or a retryable SSH setup error in stderr
+// (up commands build the tunnel before the workspace starts). Returns the
+// last stdout, stderr, and error.
 func execWithDockerRetry(
 	ctx context.Context,
 	fn func(ctx context.Context) (stdout, stderr string, err error),
@@ -109,19 +112,20 @@ func execWithDockerRetry(
 		if lastErr == nil {
 			return lastStdout, lastStderr, nil
 		}
-		if !isRetryableDockerError(lastStderr) || attempt == dockerPullBackoff.Steps {
+		retryable := isRetryableDockerError(lastStderr) || isRetryableSSHError(lastErr, lastStderr)
+		if !retryable || attempt == dockerPullBackoff.Steps {
 			break
 		}
 		delay := nextBackoffDelay(dockerPullBackoff, attempt)
 		if !retryFitsBudget(ctx, delay) {
 			return lastStdout, lastStderr, fmt.Errorf(
-				"after %d attempts: retryable Docker error; retry not attempted because "+
+				"after %d attempts: retryable transient error; retry not attempted because "+
 					"remaining deadline budget was insufficient (next retry delay: %s): %w",
 				attempt, delay, lastErr,
 			)
 		}
 		ginkgo.GinkgoWriter.Printf(
-			"[retry] attempt %d failed with transient Docker error, retrying after %s: %s\n",
+			"[retry] attempt %d failed with transient error, retrying after %s: %s\n",
 			attempt, delay, lastErr,
 		)
 		if err := waitForRetry(ctx, delay); err != nil {

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync/atomic"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/stdio"
 	"golang.org/x/crypto/ssh"
@@ -90,8 +92,83 @@ func StdioClientFromKeyBytesWithUser(
 	return ClientFromConn(conn, user, keyBytes)
 }
 
+// HandshakeIdleTimeout fails a handshake that makes no progress for this
+// long. Progress-based instead of absolute so slow-but-alive links (high
+// latency is the norm for tunneled handshakes) always complete while a peer
+// that stops sending entirely surfaces an error to callers. Zero disables.
+const HandshakeIdleTimeout = 15 * time.Second
+
+// handshakeMaxTimeout caps a handshake whose peer never goes silent, e.g.
+// one that dribbles a byte at a time.
+const handshakeMaxTimeout = 2 * time.Minute
+
+// HandshakeTimeoutError reports a handshake that stopped making progress.
+type HandshakeTimeoutError struct{ idle time.Duration }
+
+func (e *HandshakeTimeoutError) Error() string {
+	return fmt.Sprintf("ssh handshake made no progress for %s", e.idle)
+}
+
+func (e *HandshakeTimeoutError) Timeout() bool { return true }
+
+// Temporary reports the error as transient so callers with net.Error retry
+// handling treat it as worth retrying.
+func (e *HandshakeTimeoutError) Temporary() bool { return true }
+
 // ClientFromConn creates an SSH client over an existing network connection.
+// The handshake is bounded by HandshakeIdleTimeout so a stalled peer surfaces
+// an error instead of blocking the tunnel forever. No deadlines are set on
+// the conn, so the established session is unaffected.
 func ClientFromConn(conn net.Conn, user string, keyBytes []byte) (*ssh.Client, error) {
+	return clientFromConn(conn, user, keyBytes, HandshakeIdleTimeout)
+}
+
+// activityConn records the time of the last successful read or write. The
+// stored time keeps its monotonic reading so idle measurement is immune to
+// wall-clock corrections.
+type activityConn struct {
+	net.Conn
+	tracking     atomic.Bool
+	lastActivity atomic.Pointer[time.Time]
+}
+
+func (c *activityConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 {
+		c.recordActivity()
+	}
+	return n, err
+}
+
+func (c *activityConn) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if n > 0 {
+		c.recordActivity()
+	}
+	return n, err
+}
+
+func (c *activityConn) recordActivity() {
+	if !c.tracking.Load() {
+		return
+	}
+	now := time.Now()
+	c.lastActivity.Store(&now)
+}
+
+type handshakeResult struct {
+	c     ssh.Conn
+	chans <-chan ssh.NewChannel
+	reqs  <-chan *ssh.Request
+	err   error
+}
+
+func clientFromConn(
+	conn net.Conn,
+	user string,
+	keyBytes []byte,
+	handshakeIdleTimeout time.Duration,
+) (*ssh.Client, error) {
 	if conn == nil {
 		return nil, fmt.Errorf("connection is required")
 	}
@@ -101,12 +178,56 @@ func ClientFromConn(conn net.Conn, user string, keyBytes []byte) (*ssh.Client, e
 	}
 
 	clientConfig.User = user
+	if handshakeIdleTimeout > 0 {
+		return handshakeWithIdleTimeout(conn, clientConfig, handshakeIdleTimeout)
+	}
 	c, chans, req, err := ssh.NewClientConn(conn, "stdio", clientConfig)
 	if err != nil {
 		return nil, err
 	}
-
 	return ssh.NewClient(c, chans, handleKeepAliveRequests(req)), nil
+}
+
+// handshakeWithIdleTimeout runs the handshake in a goroutine and closes the
+// conn when it stops making progress, so stall detection works on conns that
+// do not support deadlines.
+func handshakeWithIdleTimeout(
+	conn net.Conn,
+	clientConfig *ssh.ClientConfig,
+	idle time.Duration,
+) (*ssh.Client, error) {
+	tracked := &activityConn{Conn: conn}
+	tracked.tracking.Store(true)
+	tracked.recordActivity()
+	result := make(chan handshakeResult, 1)
+	go func() {
+		c, chans, req, err := ssh.NewClientConn(tracked, "stdio", clientConfig)
+		result <- handshakeResult{c: c, chans: chans, reqs: req, err: err}
+	}()
+
+	ticker := time.NewTicker(idle / 4)
+	defer ticker.Stop()
+	deadline := time.After(handshakeMaxTimeout)
+	for {
+		select {
+		case res := <-result:
+			tracked.tracking.Store(false)
+			if res.err != nil {
+				return nil, res.err
+			}
+			return ssh.NewClient(res.c, res.chans, handleKeepAliveRequests(res.reqs)), nil
+		case <-ticker.C:
+			if time.Since(*tracked.lastActivity.Load()) > idle {
+				tracked.tracking.Store(false)
+				_ = conn.Close()
+				return nil, &HandshakeTimeoutError{idle: idle}
+			}
+		case <-deadline:
+			tracked.tracking.Store(false)
+			_ = conn.Close()
+			return nil, &HandshakeTimeoutError{idle: handshakeMaxTimeout}
+		}
+	}
 }
 
 func ConfigFromKeyBytes(keyBytes []byte) (*ssh.ClientConfig, error) {

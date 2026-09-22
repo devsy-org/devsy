@@ -87,6 +87,7 @@ func (cmd *sshServerCmd) run(ctx context.Context) error {
 	// internal SSH cleanup could run. Liveness is decided via a per-directory
 	// flock the owning process holds for its lifetime; the kernel releases
 	// the flock on any process exit (including SIGKILL).
+	log.Debugf("starting ssh server: stdio=%v", cmd.stdio)
 	sshserver.SweepStaleAgentSockets()
 
 	server, err := sshserver.NewServer(
@@ -95,6 +96,7 @@ func (cmd *sshServerCmd) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("create ssh server: %w", err)
 	}
+	log.Debug("ssh server initialized")
 
 	if cmd.stdio {
 		return cmd.serveStdio(ctx, server)
@@ -108,6 +110,7 @@ func (cmd *sshServerCmd) serveStdio(ctx context.Context, server sshserver.Server
 	}
 	go shutdownOnCancel(ctx, server) // #nosec G118 -- see shutdownOnCancel.
 	lis := stdio.NewStdioListener(os.Stdin, os.Stdout)
+	log.Debug("serving ssh on stdio")
 	return ignoreServerClosed(server.Serve(lis))
 }
 
