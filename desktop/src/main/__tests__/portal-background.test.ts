@@ -19,7 +19,10 @@ const { bus, requestBackground } = vi.hoisted(() => {
     disconnect: vi.fn(),
   } as {
     on: (event: string, listener: (message: unknown) => void) => typeof value
-    removeListener: (event: string, listener: (message: unknown) => void) => typeof value
+    removeListener: (
+      event: string,
+      listener: (message: unknown) => void,
+    ) => typeof value
     emit: (event: string, message: unknown) => void
     listenerCount: (event: string) => number
     getProxyObject: ReturnType<typeof vi.fn>
@@ -38,7 +41,10 @@ vi.mock("dbus-next", () => ({
   },
 }))
 
-import { parsePortalResponse, requestPortalBackground } from "../portal-background.js"
+import {
+  parsePortalResponse,
+  requestPortalBackground,
+} from "../portal-background.js"
 
 describe("portal background requests", () => {
   it("parses denial and cancellation responses as disabled", () => {
@@ -50,14 +56,16 @@ describe("portal background requests", () => {
 
   it("subscribes before RequestBackground and accepts its returned path", async () => {
     const requestPath = "/org/freedesktop/portal/desktop/request/actual"
-    bus.getProxyObject.mockImplementation(async (_name: string, path: string) => {
-      if (path.endsWith("/desktop")) {
-        return {
-          getInterface: () => ({ RequestBackground: requestBackground }),
+    bus.getProxyObject.mockImplementation(
+      async (_name: string, path: string) => {
+        if (path.endsWith("/desktop")) {
+          return {
+            getInterface: () => ({ RequestBackground: requestBackground }),
+          }
         }
-      }
-      throw new Error(`unexpected introspection: ${path}`)
-    })
+        throw new Error(`unexpected introspection: ${path}`)
+      },
+    )
     requestBackground.mockImplementationOnce(async () => {
       queueMicrotask(() =>
         bus.emit("message", {
@@ -65,7 +73,10 @@ describe("portal background requests", () => {
           interface: "org.freedesktop.portal.Request",
           member: "Response",
           path: requestPath,
-          body: [0, { background: { value: true }, autostart: { value: true } }],
+          body: [
+            0,
+            { background: { value: true }, autostart: { value: true } },
+          ],
         }),
       )
       return requestPath
@@ -80,7 +91,9 @@ describe("portal background requests", () => {
 
   it("rejects a failed method call and still cleans up the bus", async () => {
     bus.getProxyObject.mockImplementationOnce(async () => ({
-      getInterface: () => ({ RequestBackground: vi.fn().mockRejectedValue(new Error("denied")) }),
+      getInterface: () => ({
+        RequestBackground: vi.fn().mockRejectedValue(new Error("denied")),
+      }),
     }))
     await expect(
       requestPortalBackground({ reason: "test", autostart: true }),
