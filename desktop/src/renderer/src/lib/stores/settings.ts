@@ -393,13 +393,17 @@ export async function updateDesktopSettings(
   patch: Partial<AppSettings>,
 ): Promise<void> {
   const update = desktopSettingsQueue.catch(() => {}).then(async () => {
+    // A settings event that lands while the request is in flight is newer
+    // than its reply, so the reply must not overwrite it.
+    const revision = desktopSettingsRevision
     try {
       const state = await setAppSettings(patch)
-      applyAppSettingsState(state)
+      if (revision === desktopSettingsRevision) applyAppSettingsState(state)
     } catch (err) {
       console.warn("[settings] setAppSettings failed:", err)
       try {
-        applyAppSettingsState(await getAppSettings())
+        const state = await getAppSettings()
+        if (revision === desktopSettingsRevision) applyAppSettingsState(state)
       } catch {}
     }
   })
