@@ -73,7 +73,7 @@ export function readAutostartEnabled(
   try {
     if (env.isFlatpak) {
       const file = flatpakDesktopFilePath(env)
-      return existsSync(file) ? true : false
+      return existsSync(file)
     }
     return existsSync(xdgDesktopFilePath(env))
   } catch {
@@ -91,7 +91,11 @@ export async function applyAutostart(
         openAtLogin: settings.runAtStartup,
         openAsHidden: settings.openToTrayOnStartup,
       })
-      return { applied: true, enabled: settings.runAtStartup, status: settings.runAtStartup ? "enabled" : "disabled" }
+      return {
+        applied: true,
+        enabled: settings.runAtStartup,
+        status: settings.runAtStartup ? "enabled" : "disabled",
+      }
     } catch (error) {
       return {
         applied: false,
@@ -107,7 +111,11 @@ export async function applyAutostart(
         openAtLogin: settings.runAtStartup,
         args: [AUTO_LAUNCH_ARG],
       })
-      return { applied: true, enabled: settings.runAtStartup, status: settings.runAtStartup ? "enabled" : "disabled" }
+      return {
+        applied: true,
+        enabled: settings.runAtStartup,
+        status: settings.runAtStartup ? "enabled" : "disabled",
+      }
     } catch (error) {
       return {
         applied: false,
@@ -147,7 +155,11 @@ async function applyXdgAutostart(
     } else {
       await rm(file, { force: true })
     }
-    return { applied: true, enabled: settings.runAtStartup, status: settings.runAtStartup ? "enabled" : "disabled" }
+    return {
+      applied: true,
+      enabled: settings.runAtStartup,
+      status: settings.runAtStartup ? "enabled" : "disabled",
+    }
   } catch (error) {
     return {
       applied: false,
