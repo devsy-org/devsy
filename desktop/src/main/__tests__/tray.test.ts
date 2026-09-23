@@ -253,7 +253,7 @@ describe("buildTrayMenuTemplate", () => {
     expect(actions.startWorkspace).toHaveBeenCalledWith("api")
   })
 
-  it("offers View Logs for failed, busy, and unknown rows instead of lifecycle actions", () => {
+  it("offers View Logs for failed, busy, and unknown rows", () => {
     const items = buildTrayMenuTemplate(
       model({
         workspaces: [
@@ -288,6 +288,9 @@ describe("buildTrayMenuTemplate", () => {
     expect(
       row("failed-ws").some((item) => item.label === "Stop Workspace"),
     ).toBe(false)
+    expect(
+      row("failed-ws").some((item) => item.label === "Start Workspace"),
+    ).toBe(true)
     expect(row("busy-ws").some((item) => item.label === "View Logs")).toBe(true)
     expect(
       row("busy-ws").some((item) => item.label === "Start Workspace"),
@@ -295,6 +298,59 @@ describe("buildTrayMenuTemplate", () => {
     expect(row("unknown-ws").some((item) => item.label === "View Logs")).toBe(
       true,
     )
+  })
+
+  it("keeps lifecycle actions available after a failed job", () => {
+    const actions = makeActions()
+    const items = buildTrayMenuTemplate(
+      model({
+        workspaces: [
+          { id: "stop-failed", status: "running" },
+          { id: "start-failed", status: "stopped" },
+        ],
+        jobs: {
+          "stop-failed": {
+            commandId: "c1",
+            activity: "stopping",
+            state: "failed",
+            phase: "See workspace logs for details",
+            error: "boom",
+          },
+          "start-failed": {
+            commandId: "c2",
+            activity: "starting",
+            state: "failed",
+            phase: "See workspace logs for details",
+            error: "boom",
+          },
+        },
+      }),
+      actions,
+    )
+    const row = (name: string) =>
+      items.find((item) => item.label?.includes(name))
+    const submenu = (name: string) =>
+      row(name)?.submenu as Electron.MenuItemConstructorOptions[]
+
+    expect(row("stop-failed")?.label).toBe("✖ stop-failed — Stop failed")
+    const stop = submenu("stop-failed").find(
+      (item) => item.label === "Stop Workspace",
+    )
+    expect(stop?.enabled).not.toBe(false)
+    ;(stop as { click?: () => void }).click?.()
+    expect(actions.stopWorkspace).toHaveBeenCalledWith("stop-failed")
+    expect(
+      submenu("stop-failed").some((item) => item.label === "View Logs"),
+    ).toBe(true)
+
+    const start = submenu("start-failed").find(
+      (item) => item.label === "Start Workspace",
+    )
+    ;(start as { click?: () => void }).click?.()
+    expect(actions.startWorkspace).toHaveBeenCalledWith("start-failed")
+    expect(
+      submenu("start-failed").some((item) => item.label === "View Logs"),
+    ).toBe(true)
   })
 
   it("marks failed rows with a failed glyph and text", () => {
