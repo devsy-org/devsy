@@ -113,7 +113,14 @@ func ReadFromLocator(path string, options ReadOptions) ReadResponse {
 func ReadActive(options ReadOptions, userCacheDir func() (string, error)) (ReadResponse, error) {
 	paths, err := ActiveLocatorCandidates(userCacheDir)
 	if err != nil {
-		return readActiveFromCandidates([]string{DefaultLocatorPath}, options), nil
+		// The per-user fallback cannot be discovered. The system locator
+		// still answers when present; otherwise surface the discovery
+		// failure instead of reporting a bare NotInitialized.
+		response := readActiveFromCandidates([]string{DefaultLocatorPath}, options)
+		if response.Availability != AvailabilityNotInitialized {
+			return response, nil
+		}
+		return ReadResponse{}, err
 	}
 	return readActiveFromCandidates(paths, options), nil
 }
