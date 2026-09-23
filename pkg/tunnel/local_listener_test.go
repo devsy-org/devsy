@@ -71,6 +71,12 @@ func sendAndReceive(t *testing.T, addr string, msg []byte) []byte {
 	return buf
 }
 
+// listenerDialClosed reports whether a dial error means no live listener
+// remains: refused, or reset, which macOS returns during the shutdown race.
+func listenerDialClosed(err error) bool {
+	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET)
+}
+
 func waitForListenerClosed(t *testing.T, addr string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.NewTimer(timeout)
@@ -83,9 +89,7 @@ func waitForListenerClosed(t *testing.T, addr string, timeout time.Duration) {
 		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
-		} else if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) {
-			// Refused or reset both mean the dial never reached a live
-			// listener; macOS reports reset during the shutdown race.
+		} else if listenerDialClosed(err) {
 			return
 		} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			lastErr = err
