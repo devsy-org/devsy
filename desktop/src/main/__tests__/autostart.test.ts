@@ -1,4 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -46,6 +53,39 @@ describe("Linux autostart", () => {
     expect(
       readFileSync(join(dir, "autostart", "devsy.desktop"), "utf8"),
     ).toContain('Exec="/opt/Devsy.AppImage" "--opened-at-login"')
+  })
+
+  it("removes the Flatpak portal entry from the host autostart directory", async () => {
+    dir = mkdtempSync(join(tmpdir(), "devsy-autostart-"))
+    const hostConfig = join(dir, "host-config")
+    const sandboxConfig = join(dir, "sandbox-config")
+    const entry = join(hostConfig, "autostart", "sh.devsy.app.desktop")
+    mkdirSync(join(hostConfig, "autostart"), { recursive: true })
+    writeFileSync(entry, "[Desktop Entry]\n")
+    const env = {
+      platform: "linux",
+      isFlatpak: true,
+      flatpakId: "sh.devsy.app",
+      execPath: "/app/bin/devsy",
+      homeDir: dir,
+      xdgConfigHome: sandboxConfig,
+      hostXdgConfigHome: hostConfig,
+      packaged: true,
+    }
+    expect(readAutostartEnabled(env)).toBe(true)
+
+    const result = await applyAutostart(
+      {
+        runAtStartup: false,
+        openToTrayOnStartup: true,
+        trayNotifications: "all",
+      },
+      env,
+    )
+
+    expect(result.status).toBe("disabled")
+    expect(existsSync(entry)).toBe(false)
+    expect(readAutostartEnabled(env)).toBe(false)
   })
 
   it("passes the autostart argument when reading Windows login status", () => {
