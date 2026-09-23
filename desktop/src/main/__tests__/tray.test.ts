@@ -353,6 +353,55 @@ describe("buildTrayMenuTemplate", () => {
     ).toBe(true)
   })
 
+  it("keeps Stop available while a start can still be interrupted", () => {
+    const actions = makeActions()
+    const items = buildTrayMenuTemplate(
+      model({
+        workspaces: [
+          { id: "starting-ws", status: "stopped" },
+          { id: "stopping-ws", status: "running" },
+        ],
+        jobs: {
+          "starting-ws": {
+            commandId: "c1",
+            activity: "starting",
+            state: "running",
+            phase: "Building",
+          },
+          "stopping-ws": {
+            commandId: "c2",
+            activity: "stopping",
+            state: "running",
+            phase: "Stopping",
+          },
+        },
+      }),
+      actions,
+    )
+    const submenu = (name: string) =>
+      items.find((item) => item.label?.includes(name))
+        ?.submenu as Electron.MenuItemConstructorOptions[]
+
+    const stop = submenu("starting-ws").find(
+      (item) => item.label === "Stop Workspace",
+    )
+    expect(stop?.enabled).not.toBe(false)
+    ;(stop as { click?: () => void }).click?.()
+    expect(actions.stopWorkspace).toHaveBeenCalledWith("starting-ws")
+    expect(
+      submenu("starting-ws").some((item) => item.label === "Start Workspace"),
+    ).toBe(false)
+
+    expect(
+      submenu("stopping-ws").some(
+        (item) => item.label === "Stop Workspace" && item.enabled !== false,
+      ),
+    ).toBe(false)
+    expect(
+      submenu("stopping-ws").some((item) => item.label === "View Logs"),
+    ).toBe(true)
+  })
+
   it("marks failed rows with a failed glyph and text", () => {
     const items = buildTrayMenuTemplate(
       model({
