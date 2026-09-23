@@ -420,10 +420,15 @@ func isDockerRootRequired(workspaceInfo *provider2.AgentWorkspaceInfo) bool {
 	return rootRequired
 }
 
-type Exec func(
-	ctx context.Context, user string, command string,
-	stdin io.Reader, stdout io.Writer, stderr io.Writer,
-) error
+type ExecRequest struct {
+	User    string
+	Command string
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
+}
+
+type Exec func(ctx context.Context, req ExecRequest) error
 
 type TunnelOptions struct {
 	Exec            Exec
@@ -444,7 +449,13 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 
 	if err := InjectAgent(ctx, &InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-			return opts.Exec(ctx, "root", command, stdin, stdout, stderr)
+			return opts.Exec(ctx, ExecRequest{
+				User:    "root",
+				Command: command,
+				Stdin:   stdin,
+				Stdout:  stdout,
+				Stderr:  stderr,
+			})
 		},
 		IsLocal:                     false,
 		RemoteAgentPath:             remoteAgentPath,
@@ -461,7 +472,14 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 		user = "root"
 	}
 
-	return opts.Exec(ctx, user, command, opts.Stdin, opts.Stdout, opts.Stderr)
+	log.Debugf("starting ssh server exec: user=%s", user)
+	return execWithStartupWatchdog(ctx, opts.Exec, ExecRequest{
+		User:    user,
+		Command: command,
+		Stdin:   opts.Stdin,
+		Stdout:  opts.Stdout,
+		Stderr:  opts.Stderr,
+	})
 }
 
 // sshServerCommand builds the remote command that runs the ssh-server

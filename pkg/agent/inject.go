@@ -353,6 +353,7 @@ func (vc *versionChecker) detectRemoteAgentVersion(
 
 	checkCtx, cancel := context.WithTimeout(ctx, versionCheckTimeout)
 	defer cancel()
+	log.Debugf("checking remote agent version: %s", versionCmd)
 	err := exec(checkCtx, versionCmd, nil, buf, io.Discard)
 	if err != nil {
 		if errors.Is(checkCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {

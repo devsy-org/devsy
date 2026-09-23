@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -99,18 +98,13 @@ func (cmd *ContainerTunnelCmd) Run(cobraCtx context.Context) error {
 	}
 
 	return agent.Tunnel(ctx, agent.TunnelOptions{
-		Exec: func(
-			ctx context.Context,
-			user, command string,
-			stdin io.Reader,
-			stdout, stderr io.Writer,
-		) error {
+		Exec: func(ctx context.Context, req agent.ExecRequest) error {
 			return runner.Command(ctx, devcontainer.CommandParams{
-				User:    user,
-				Command: command,
-				Stdin:   stdin,
-				Stdout:  stdout,
-				Stderr:  stderr,
+				User:    req.User,
+				Command: req.Command,
+				Stdin:   req.Stdin,
+				Stdout:  req.Stdout,
+				Stderr:  req.Stderr,
 			})
 		},
 		User:            cmd.User,
