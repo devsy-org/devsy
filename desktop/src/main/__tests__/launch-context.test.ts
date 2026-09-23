@@ -5,7 +5,11 @@ import {
   shouldSuppressInitialWindow,
 } from "../launch-context.js"
 
-const base = { runAtStartup: true, openToTrayOnStartup: true, trayNotifications: "failures" as const }
+const base = {
+  runAtStartup: true,
+  openToTrayOnStartup: true,
+  trayNotifications: "failures" as const,
+}
 
 describe("isAutomaticLoginLaunch", () => {
   it("detects the launch argument on Windows and Linux", () => {
@@ -80,7 +84,11 @@ describe("shouldSuppressInitialWindow", () => {
 
   it("never suppresses when open-to-tray is off", () => {
     expect(
-      shouldSuppressInitialWindow({ ...base, openToTrayOnStartup: false }, true, true),
+      shouldSuppressInitialWindow(
+        { ...base, openToTrayOnStartup: false },
+        true,
+        true,
+      ),
     ).toBe(false)
   })
 
