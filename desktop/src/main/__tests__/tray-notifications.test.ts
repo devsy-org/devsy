@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from "vitest"
 import type { WorkspaceJob } from "../../shared/workspace-operation.js"
 import {
   collectTerminalOutcomes,
+  type NotificationRequest,
   outcomeNotificationBody,
   outcomeNotifies,
   TrayNotifier,
   updateNotifies,
-  type NotificationRequest,
 } from "../tray-notifications.js"
 import type { UpdateStatus } from "../updater.js"
 
@@ -25,7 +25,12 @@ describe("collectTerminalOutcomes", () => {
     const previous = { ws: job({ state: "running" }) }
     const current = { ws: job({ state: "succeeded" }) }
     expect(collectTerminalOutcomes(previous, current, new Set())).toEqual([
-      { workspaceId: "ws", commandId: "cmd-1", activity: "starting", state: "succeeded" },
+      {
+        workspaceId: "ws",
+        commandId: "cmd-1",
+        activity: "starting",
+        state: "succeeded",
+      },
     ])
   })
 
@@ -42,22 +47,31 @@ describe("collectTerminalOutcomes", () => {
 
   it("skips commands already notified", () => {
     const current = { ws: job({ state: "failed", error: "boom" }) }
-    expect(
-      collectTerminalOutcomes({}, current, new Set(["cmd-1"])),
-    ).toEqual([])
+    expect(collectTerminalOutcomes({}, current, new Set(["cmd-1"]))).toEqual([])
   })
 
   it("treats a new command id as a new outcome", () => {
     const previous = { ws: job({ state: "failed", error: "boom" }) }
-    const current = { ws: job({ commandId: "cmd-2", state: "failed", error: "boom" }) }
-    const outcomes = collectTerminalOutcomes(previous, current, new Set(["cmd-1"]))
+    const current = {
+      ws: job({ commandId: "cmd-2", state: "failed", error: "boom" }),
+    }
+    const outcomes = collectTerminalOutcomes(
+      previous,
+      current,
+      new Set(["cmd-1"]),
+    )
     expect(outcomes).toHaveLength(1)
     expect(outcomes[0].commandId).toBe("cmd-2")
   })
 })
 
 describe("outcomeNotifies", () => {
-  const failed = { workspaceId: "ws", commandId: "c", activity: "stopping" as const, state: "failed" as const }
+  const failed = {
+    workspaceId: "ws",
+    commandId: "c",
+    activity: "stopping" as const,
+    state: "failed" as const,
+  }
   const succeeded = { ...failed, state: "succeeded" as const }
 
   it("notifies nothing when off", () => {
@@ -79,10 +93,20 @@ describe("outcomeNotifies", () => {
 describe("outcomeNotificationBody", () => {
   it("uses text verbs", () => {
     expect(
-      outcomeNotificationBody({ workspaceId: "api", commandId: "c", activity: "stopping", state: "succeeded" }),
+      outcomeNotificationBody({
+        workspaceId: "api",
+        commandId: "c",
+        activity: "stopping",
+        state: "succeeded",
+      }),
     ).toBe("api: Stop completed")
     expect(
-      outcomeNotificationBody({ workspaceId: "api", commandId: "c", activity: "starting", state: "failed" }),
+      outcomeNotificationBody({
+        workspaceId: "api",
+        commandId: "c",
+        activity: "starting",
+        state: "failed",
+      }),
     ).toBe("api: Start failed")
   })
 })
@@ -99,7 +123,9 @@ describe("updateNotifies", () => {
     expect(first.notifies).toBe(true)
     expect(first.version).toBe("1.1.0")
     expect(updateNotifies(downloaded, "all", "1.1.0").notifies).toBe(false)
-    expect(updateNotifies(downloaded, "failures", undefined).notifies).toBe(false)
+    expect(updateNotifies(downloaded, "failures", undefined).notifies).toBe(
+      false,
+    )
   })
 
   it("never notifies when off", () => {
@@ -115,7 +141,9 @@ describe("updateNotifies", () => {
       error: "x",
     }
     expect(updateNotifies(failed, "failures", undefined).notifies).toBe(true)
-    expect(updateNotifies(failed, "failures", "install-failed:1.1.0").notifies).toBe(false)
+    expect(
+      updateNotifies(failed, "failures", "install-failed:1.1.0").notifies,
+    ).toBe(false)
   })
 
   it("allows an install failure after the update-ready notification", () => {
@@ -135,12 +163,19 @@ describe("updateNotifies", () => {
 
   it("ignores other update states", () => {
     expect(
-      updateNotifies({ state: "checking", currentVersion: "1.0.0" }, "all", undefined).notifies,
+      updateNotifies(
+        { state: "checking", currentVersion: "1.0.0" },
+        "all",
+        undefined,
+      ).notifies,
     ).toBe(false)
   })
 })
 
-function makeNotifier(level: () => "off" | "failures" | "all", focused: () => boolean) {
+function makeNotifier(
+  level: () => "off" | "failures" | "all",
+  focused: () => boolean,
+) {
   const sent: NotificationRequest[] = []
   const notifier = new TrayNotifier({
     getLevel: level,
@@ -155,7 +190,10 @@ function makeNotifier(level: () => "off" | "failures" | "all", focused: () => bo
 
 describe("TrayNotifier", () => {
   it("sends a notification for a failure under the default level", () => {
-    const { notifier, sent } = makeNotifier(() => "failures", () => false)
+    const { notifier, sent } = makeNotifier(
+      () => "failures",
+      () => false,
+    )
     notifier.onJobsChanged({ ws: job({ state: "running" }) })
     notifier.onJobsChanged({ ws: job({ state: "failed", error: "boom" }) })
     expect(sent).toHaveLength(1)
@@ -163,7 +201,10 @@ describe("TrayNotifier", () => {
   })
 
   it("never notifies for jobs recovered in the initial snapshot", () => {
-    const { notifier, sent } = makeNotifier(() => "all", () => false)
+    const { notifier, sent } = makeNotifier(
+      () => "all",
+      () => false,
+    )
     const terminal = { ws: job({ state: "failed", error: "boom" }) }
     notifier.onJobsChanged(terminal)
     notifier.onJobsChanged(terminal)
@@ -171,7 +212,10 @@ describe("TrayNotifier", () => {
   })
 
   it("deduplicates repeated snapshots of the same command after hydration", () => {
-    const { notifier, sent } = makeNotifier(() => "failures", () => false)
+    const { notifier, sent } = makeNotifier(
+      () => "failures",
+      () => false,
+    )
     const terminal = { ws: job({ state: "failed", error: "boom" }) }
     notifier.onJobsChanged({ ws: job({ state: "running" }) })
     notifier.onJobsChanged(terminal)
@@ -180,7 +224,10 @@ describe("TrayNotifier", () => {
   })
 
   it("suppresses notifications while the app is focused", () => {
-    const { notifier, sent } = makeNotifier(() => "failures", () => true)
+    const { notifier, sent } = makeNotifier(
+      () => "failures",
+      () => true,
+    )
     notifier.onJobsChanged({ ws: job({ state: "running" }) })
     notifier.onJobsChanged({ ws: job({ state: "failed", error: "boom" }) })
     expect(sent).toHaveLength(0)
@@ -202,7 +249,9 @@ describe("TrayNotifier", () => {
     notifier.onJobsChanged({ ws: job({ state: "failed", error: "boom" }) })
     sent[0].onClick()
     expect(openWorkspaceLogs).toHaveBeenCalledWith("ws")
-    notifier.onJobsChanged({ ws: job({ commandId: "cmd-2", state: "succeeded" }) })
+    notifier.onJobsChanged({
+      ws: job({ commandId: "cmd-2", state: "succeeded" }),
+    })
     sent[1].onClick()
     expect(openWorkspace).toHaveBeenCalledWith("ws")
   })
