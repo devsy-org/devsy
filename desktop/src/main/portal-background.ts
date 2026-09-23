@@ -49,8 +49,10 @@ export async function requestPortalBackground(
         message.type !== 4 ||
         message.interface !== "org.freedesktop.portal.Request" ||
         message.member !== "Response" ||
-        !message.path || (requestPath !== undefined && message.path !== requestPath)
-      ) return
+        !message.path ||
+        (requestPath !== undefined && message.path !== requestPath)
+      )
+        return
       const [code, results] = message.body
       const parsed = parsePortalResponse(
         Number(code),
@@ -72,7 +74,10 @@ export async function requestPortalBackground(
       methodOptions.commandline = new Variant("as", options.commandline)
     }
     try {
-      requestPath = (await background.RequestBackground("", methodOptions)) as string
+      requestPath = (await background.RequestBackground(
+        "",
+        methodOptions,
+      )) as string
       const pending = pendingResponses.get(requestPath)
       if (pending) resolveResponse?.(pending)
       return await response
