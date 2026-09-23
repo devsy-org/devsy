@@ -107,15 +107,12 @@ func ReadFromLocator(path string, options ReadOptions) ReadResponse {
 	return Read(locator.DiagnosticsDir, options)
 }
 
-// ReadActive reads the highest-priority active daemon locator. A missing or
-// inaccessible system locator permits trying the per-user fallback; a corrupt
-// system locator is authoritative and is never masked by stale fallback data.
+// ReadActive reads the highest-priority active daemon locator, falling
+// through to the per-user fallback unless the system locator is corrupt.
 func ReadActive(options ReadOptions, userCacheDir func() (string, error)) (ReadResponse, error) {
 	paths, err := ActiveLocatorCandidates(userCacheDir)
 	if err != nil {
-		// The per-user fallback cannot be discovered. The system locator
-		// still answers when present; otherwise surface the discovery
-		// failure instead of reporting a bare NotInitialized.
+		// Surface the discovery failure when no system locator exists.
 		response := readActiveFromCandidates([]string{DefaultLocatorPath}, options)
 		if response.Availability != AvailabilityNotInitialized {
 			return response, nil
