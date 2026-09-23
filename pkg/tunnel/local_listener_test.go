@@ -2,10 +2,12 @@ package tunnel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -81,10 +83,12 @@ func waitForListenerClosed(t *testing.T, addr string, timeout time.Duration) {
 		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
-		} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		} else if errors.Is(err, syscall.ECONNREFUSED) {
 			return
-		} else {
+		} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			lastErr = err
+		} else {
+			t.Fatalf("listener dial failed before closure: %v", err)
 		}
 
 		select {

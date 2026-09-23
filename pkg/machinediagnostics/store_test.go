@@ -190,7 +190,11 @@ func TestReadActiveLocatorCandidates(t *testing.T) {
 		system := writeTestLocator(t, t.TempDir(), systemDir)
 		user := writeTestLocator(t, t.TempDir(), userDir)
 		response := readActiveFromCandidates([]string{system, user}, options)
-		assert.Equal(t, DaemonRunning, response.Status.State)
+		systemResponse := Read(systemDir, options)
+		userResponse := Read(userDir, options)
+		require.NotNil(t, response.Status)
+		assert.Equal(t, systemResponse.Status.SessionID, response.Status.SessionID)
+		assert.NotEqual(t, userResponse.Status.SessionID, response.Status.SessionID)
 	})
 
 	t.Run("user fallback", func(t *testing.T) {
@@ -263,7 +267,9 @@ func TestReadActiveStaleSystemFallsBackToCurrentUser(t *testing.T) {
 
 	response := readActiveFromCandidates([]string{system, user}, options)
 	require.NotNil(t, response.Status)
-	assert.Equal(t, DaemonRunning, response.Status.State)
+	userResponse := Read(userDir, options)
+	assert.Equal(t, userResponse.Status.SessionID, response.Status.SessionID)
+	assert.Equal(t, FreshnessFresh, response.Freshness)
 }
 
 func TestReadActiveStaleSystemIsRetainedWithoutFreshFallback(t *testing.T) {

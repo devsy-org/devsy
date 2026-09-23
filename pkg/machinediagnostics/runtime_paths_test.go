@@ -43,5 +43,9 @@ func TestEnsureRuntimeDirKeepsUserRuntimePrivate(t *testing.T) {
 
 	info, err := os.Stat(dir)
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o750), info.Mode().Perm())
+	require.Zero(
+		t,
+		info.Mode().Perm()&^os.FileMode(0o750),
+		"user runtime dir must not be world-accessible",
+	)
 }
