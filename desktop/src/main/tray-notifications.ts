@@ -1,5 +1,5 @@
-import type { TrayNotificationLevel } from "./app-settings.js"
 import type { WorkspaceJob } from "../shared/workspace-operation.js"
+import type { TrayNotificationLevel } from "./app-settings.js"
 import type { UpdateStatus } from "./updater.js"
 
 export interface NotificationRequest {
@@ -71,7 +71,13 @@ export function updateNotifies(
   status: UpdateStatus,
   level: TrayNotificationLevel,
   lastNotifiedVersion: string | undefined,
-): { notifies: boolean; version?: string; key?: string; title: string; body: string } {
+): {
+  notifies: boolean
+  version?: string
+  key?: string
+  title: string
+  body: string
+} {
   const none = { notifies: false, title: "", body: "" }
   if (level === "off") return none
   if (!("availableVersion" in status)) return none
@@ -80,7 +86,8 @@ export function updateNotifies(
   if (status.state === "downloaded") {
     if (level !== "all") return none
     const key = `downloaded:${version}`
-    if (lastNotifiedVersion === version || lastNotifiedVersion === key) return none
+    if (lastNotifiedVersion === version || lastNotifiedVersion === key)
+      return none
     return {
       notifies: true,
       version,
@@ -132,7 +139,11 @@ export class TrayNotifier {
       }
       return
     }
-    const outcomes = collectTerminalOutcomes(this.previous, current, this.notified)
+    const outcomes = collectTerminalOutcomes(
+      this.previous,
+      current,
+      this.notified,
+    )
     this.previous = current
     for (const outcome of outcomes) {
       this.markNotified(outcome.commandId)
