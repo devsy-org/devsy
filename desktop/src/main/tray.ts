@@ -64,6 +64,19 @@ function workspaceStatusState(workspace: Workspace): TrayWorkspaceState {
   return "unknown"
 }
 
+// A failed start can leave the workspace stopped and a failed stop can leave it
+// running, so lifecycle actions follow the workspace status. Stop can
+// interrupt a start or create, so those busy rows keep it.
+function trayActionState(
+  state: TrayWorkspaceState,
+  workspace: Workspace,
+  job?: WorkspaceJob,
+): TrayWorkspaceState {
+  if (state === "failed") return workspaceStatusState(workspace)
+  if (state === "busy" && workspaceJobInterruptible(job)) return "running"
+  return state
+}
+
 const STATE_GLYPHS: Record<TrayWorkspaceState, string> = {
   running: "●",
   stopped: "○",
@@ -136,15 +149,7 @@ export function buildTrayMenuTemplate(
     (workspace) => {
       const job = jobs[workspace.id]
       const state = trayWorkspaceState(workspace, job)
-      // A failed start can leave the workspace stopped and a failed stop can
-      // leave it running, so lifecycle actions follow the workspace status.
-      // Stop can interrupt a start or create, so those busy rows keep it.
-      const actionState =
-        state === "failed"
-          ? workspaceStatusState(workspace)
-          : state === "busy" && workspaceJobInterruptible(job)
-            ? "running"
-            : state
+      const actionState = trayActionState(state, workspace, job)
       const jobLabel = workspaceJobLabel(job)
       const submenu: Electron.MenuItemConstructorOptions[] = [
         {
