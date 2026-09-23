@@ -59,7 +59,7 @@ describe("WorkspaceOperation", () => {
     expect(ui.queryByText("Deleted")).toBeNull()
     expect(ui.getByRole("status").getAttribute("aria-busy")).toBe("true")
   })
-  it("shows recovery wording with an inline Retry that only re-refreshes", async () => {
+  it("shows recovery wording with an expanded Retry that only re-refreshes", async () => {
     workspaceJobs.set({
       ws: {
         commandId: "delete",
@@ -70,7 +70,11 @@ describe("WorkspaceOperation", () => {
       },
     })
     mockInvoke.mockRejectedValue(new Error("IPC unavailable"))
-    const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
+    const ui = render(WorkspaceOperation, {
+      id: "ws",
+      status: "Running",
+      density: "expanded",
+    })
     expect(ui.getByText(/List may be out of date/)).toBeTruthy()
     expect(ui.queryByText("Deleted")).toBeNull()
     expect(ui.getByRole("status").getAttribute("aria-busy")).toBe("false")
@@ -125,5 +129,36 @@ describe("WorkspaceOperation", () => {
     const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
     expect(ui.getByText("Stop failed")).toBeTruthy()
     expect(ui.queryByRole("button", { name: "View logs for ws" })).toBeNull()
+  })
+
+  it("does not nest a Retry button in compact density", () => {
+    workspaceJobs.set({
+      ws: {
+        commandId: "delete",
+        activity: "deleting",
+        state: "reconciling",
+        phase: "Refreshing list",
+        refreshError: "offline",
+      },
+    })
+    const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
+
+    expect(ui.getByText(/List may be out of date/)).toBeTruthy()
+    expect(ui.queryByRole("button", { name: "Retry status for ws" })).toBeNull()
+  })
+
+  it("announces compact operation errors assertively", () => {
+    workspaceJobs.set({
+      ws: {
+        commandId: "stop",
+        activity: "stopping",
+        state: "failed",
+        phase: "stopping_workspace",
+        error: "provider unavailable",
+      },
+    })
+    const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
+
+    expect(ui.getByRole("status").getAttribute("aria-live")).toBe("assertive")
   })
 })

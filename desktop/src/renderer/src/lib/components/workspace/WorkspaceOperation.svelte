@@ -72,7 +72,7 @@ const badgeVariant = $derived(
         aria-label="View logs for {id}"
         onclick={viewLogs}>View logs</button>{/if}
     {:else if view.recovery}
-      &#9888; {view.recovery.message}{#if view.recovery.canRetry}{" · "}<button
+      &#9888; {view.recovery.message}{#if density === "expanded" && view.recovery.canRetry}{" · "}<button
           type="button"
           class="font-medium text-foreground underline underline-offset-2"
           aria-label="Retry status for {id}"
