@@ -235,6 +235,18 @@ func TestReadActiveLocatorCandidates(t *testing.T) {
 	}
 }
 
+func TestReadActiveStaleSystemFallsBackToCurrentUser(t *testing.T) {
+	options := ReadOptions{Limit: 10, Interval: time.Minute, Now: time.Now()}
+	systemDir := newTestDiagnosticsStore(t, DaemonStopping)
+	userDir := newTestDiagnosticsStore(t, DaemonRunning)
+	system := writeTestLocator(t, t.TempDir(), systemDir)
+	user := writeTestLocator(t, t.TempDir(), userDir)
+
+	response := readActiveFromCandidates([]string{system, user}, options)
+	require.NotNil(t, response.Status)
+	assert.Equal(t, DaemonRunning, response.Status.State)
+}
+
 func TestRuntimeLockIsExclusive(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "run", "daemon.lock")
 	first, err := AcquireRuntimeLock(path)

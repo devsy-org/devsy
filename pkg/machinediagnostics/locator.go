@@ -201,23 +201,37 @@ type locatorCandidate struct {
 
 func readLocatorCandidate(path string, options ReadOptions) locatorCandidate {
 	locator, err := ReadLocator(path)
-	if err == nil {
-		return locatorCandidate{
-			response: Read(locator.DiagnosticsDir, options),
-			state:    locatorCandidateSuccess,
+	if err != nil {
+		switch {
+		case os.IsNotExist(err):
+			return locatorCandidate{state: locatorCandidateMissing}
+		case os.IsPermission(err):
+			return locatorCandidate{
+				response: ReadFromLocator(path, options),
+				state:    locatorCandidatePermission,
+			}
+		default:
+			return locatorCandidate{
+				response: ReadFromLocator(path, options),
+				state:    locatorCandidateCorrupt,
+			}
 		}
 	}
-	if os.IsNotExist(err) {
+	return classifyLocatorResponse(Read(locator.DiagnosticsDir, options))
+}
+
+func classifyLocatorResponse(response ReadResponse) locatorCandidate {
+	if response.Availability == AvailabilityAvailable && response.Status != nil {
+		if response.Status.State == DaemonStopping {
+			return locatorCandidate{state: locatorCandidateMissing}
+		}
+		return locatorCandidate{response: response, state: locatorCandidateSuccess}
+	}
+	if response.Availability == AvailabilityNotInitialized {
 		return locatorCandidate{state: locatorCandidateMissing}
 	}
-	if os.IsPermission(err) {
-		return locatorCandidate{
-			response: ReadFromLocator(path, options),
-			state:    locatorCandidatePermission,
-		}
+	if response.Availability == AvailabilityPermissionDenied {
+		return locatorCandidate{response: response, state: locatorCandidatePermission}
 	}
-	return locatorCandidate{
-		response: ReadFromLocator(path, options),
-		state:    locatorCandidateCorrupt,
-	}
+	return locatorCandidate{response: response, state: locatorCandidateCorrupt}
 }

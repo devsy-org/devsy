@@ -29,8 +29,10 @@ const (
 	busyGracePeriod       = 20 * time.Minute
 )
 
-var daemonRuntimeLockPath = machinediagnostics.DefaultRuntimeLockPath
-var daemonLocatorPath = machinediagnostics.DefaultLocatorPath
+var (
+	daemonRuntimeLockPath = machinediagnostics.DefaultRuntimeLockPath
+	daemonLocatorPath     = machinediagnostics.DefaultLocatorPath
+)
 
 type DaemonCmd struct {
 	*flags.GlobalFlags
