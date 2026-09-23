@@ -94,6 +94,8 @@ app.on("open-url", (event, url) => {
 })
 
 function createWindow(): void {
+  // A deep link can open the window while startup is still probing the tray.
+  if (mainWindow && !mainWindow.isDestroyed()) return
   rendererReady = false
   mainWindow = new BrowserWindow({
     width: 1200,
