@@ -123,7 +123,7 @@ func TestAppendSkipsOversizedEvents(t *testing.T) {
 	}
 }
 
-func TestAppendSkipsRecordsBeyondReadLimit(t *testing.T) {
+func TestAppendAndReadAllowRecordsUpToSegmentLimit(t *testing.T) {
 	dir := t.TempDir()
 	journal, err := New(Options{Dir: dir})
 	if err != nil {
@@ -135,12 +135,12 @@ func TestAppendSkipsRecordsBeyondReadLimit(t *testing.T) {
 		Step:     strings.Repeat("x", 100*1024),
 		State:    status.StateSucceeded,
 	})
-	paths, err := segmentPaths(dir)
+	events, err := Read(dir, "demo", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(paths) != 0 {
-		t.Fatalf("oversized record persisted: %v", paths)
+	if len(events) != 1 || len(events[0].Step) != 100*1024 {
+		t.Fatalf("events=%+v", events)
 	}
 }
 
@@ -226,7 +226,7 @@ func TestReadSkipsOversizedRecords(t *testing.T) {
 		`"workspaceId":"demo","pipeline":"workspace_up","phase":"ready","state":"succeeded"}`
 	oversized := `{"schemaVersion":1,"timestamp":"2026-09-20T06:00:01Z",` +
 		`"workspaceId":"demo","pipeline":"workspace_up","phase":"ready","state":"succeeded","step":"` +
-		strings.Repeat("x", 128*1024) + `"}`
+		strings.Repeat("x", maxRecordBytes+1) + `"}`
 	contents := record + "\n" + oversized + "\n" + record + "\n"
 	if err := os.WriteFile(
 		filepath.Join(dir, "events-000001.ndjson"),
@@ -273,6 +273,39 @@ func TestReadSkipsIncompleteRecords(t *testing.T) {
 	}
 	if len(events) != 1 {
 		t.Fatalf("events=%d", len(events))
+	}
+}
+
+func TestReadSkipsSchemaInvalidRecords(t *testing.T) {
+	dir := t.TempDir()
+	record := func(pipeline, phase, state string) string {
+		return "{" + strings.Join([]string{
+			`"schemaVersion":1`,
+			`"timestamp":"2026-09-20T06:00:00Z"`,
+			`"workspaceId":"demo"`,
+			`"pipeline":"` + pipeline + `"`,
+			`"phase":"` + phase + `"`,
+			`"state":"` + state + `"`,
+		}, ",") + "}"
+	}
+	valid := record("workspace_up", "ready", "succeeded")
+	invalid := []string{
+		record("unknown", "ready", "succeeded"),
+		record("workspace_up", "unknown", "succeeded"),
+		record("workspace_up", "ready", "unknown"),
+	}
+	contents := valid + "\n" + strings.Join(invalid, "\n") + "\n"
+	if err := os.WriteFile(
+		filepath.Join(dir, "events-000001.ndjson"), []byte(contents), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	events, err := Read(dir, "demo", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events=%+v", events)
 	}
 }
 

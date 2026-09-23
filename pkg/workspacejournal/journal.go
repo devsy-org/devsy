@@ -29,10 +29,13 @@ const (
 	DefaultMaxSegmentBytes = 512 * 1024
 	DefaultLimit           = 100
 	MaxLimit               = 1000
-	maxRecordBytes         = 64 * 1024
-	appendLockName         = "append.lock"
-	appendLockTimeout      = 15 * time.Second
-	appendLockRetryDelay   = 50 * time.Millisecond
+	// Records may occupy a complete segment, but never more than the default
+	// segment size so readers can enforce a finite bound without journal
+	// configuration.
+	maxRecordBytes       = DefaultMaxSegmentBytes
+	appendLockName       = "append.lock"
+	appendLockTimeout    = 15 * time.Second
+	appendLockRetryDelay = 50 * time.Millisecond
 )
 
 type Event struct {
@@ -146,11 +149,11 @@ func (j *Journal) Append(workspaceID string, e status.Event) error {
 		return err
 	}
 	b = append(b, '\n')
-	if limit := min(j.maxSegmentBytes, maxRecordBytes); len(b) > limit {
+	limit := min(j.maxSegmentBytes, maxRecordBytes)
+	if len(b) > limit {
 		log.Debugf(
 			"workspace journal: skipping oversized event (%d bytes, record limit %d)",
-			len(b),
-			limit,
+			len(b), limit,
 		)
 		return nil
 	}
@@ -251,12 +254,15 @@ func nextSegmentNumber(paths []string) int {
 	if len(paths) == 0 {
 		return 1
 	}
-	name := filepath.Base(paths[len(paths)-1])
-	n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(name, "events-"), ".ndjson"))
-	if err != nil {
-		return len(paths) + 1
+	maxNumber := 0
+	for _, path := range paths {
+		name := filepath.Base(path)
+		n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(name, "events-"), ".ndjson"))
+		if err == nil && n > maxNumber {
+			maxNumber = n
+		}
 	}
-	return n + 1
+	return maxNumber + 1
 }
 
 func segmentPaths(dir string) ([]string, error) {
@@ -387,7 +393,50 @@ func decodeEvent(data []byte, workspaceID string) (Event, bool) {
 }
 
 func (e Event) complete() bool {
-	return !e.Timestamp.IsZero() && e.Pipeline != "" && e.Phase != "" && e.State != ""
+	return !e.Timestamp.IsZero() &&
+		validPipeline(e.Pipeline) &&
+		validPhase(e.Phase) &&
+		status.ValidState(e.State)
+}
+
+func validPipeline(pipeline status.Pipeline) bool {
+	switch pipeline {
+	case status.PipelineWorkspaceUp, status.PipelineProvider:
+		return true
+	default:
+		return false
+	}
+}
+
+func validPhase(phase status.Phase) bool {
+	switch phase {
+	case status.PhaseCloningRepository,
+		status.PhaseResolvingConfig,
+		status.PhaseInitializeCommand,
+		status.PhaseBuildingImage,
+		status.PhaseStartingContainer,
+		status.PhaseInjectingAgent,
+		status.PhaseRunningLifecycleHook,
+		status.PhaseWaitingFor,
+		status.PhaseRunningCommand,
+		status.PhaseConfiguringWorkspace,
+		status.PhaseConfiguringSSH,
+		status.PhaseStartingSSHTunnel,
+		status.PhaseLaunchingIDE,
+		status.PhaseStoppingWorkspace,
+		status.PhaseDeletingWorkspace,
+		status.PhaseRebuildingWorkspace,
+		status.PhaseResettingWorkspace,
+		status.PhaseImportingWorkspace,
+		status.PhaseReady,
+		status.PhaseFailed,
+		status.PhaseInstallingProvider,
+		status.PhaseResolvingOptions,
+		status.PhaseRunningInit:
+		return true
+	default:
+		return false
+	}
 }
 
 func recentEvents(events []Event, limit int) []Event {
