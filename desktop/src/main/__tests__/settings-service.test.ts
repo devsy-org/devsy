@@ -6,8 +6,16 @@ import { AppSettingsStore, DEFAULT_APP_SETTINGS } from "../app-settings.js"
 import type { AutostartApplyResult } from "../autostart.js"
 import { SettingsService } from "../settings-service.js"
 
-const enabled: AutostartApplyResult = { applied: true, enabled: true, status: "enabled" }
-const disabled: AutostartApplyResult = { applied: true, enabled: false, status: "disabled" }
+const enabled: AutostartApplyResult = {
+  applied: true,
+  enabled: true,
+  status: "enabled",
+}
+const disabled: AutostartApplyResult = {
+  applied: true,
+  enabled: false,
+  status: "disabled",
+}
 
 describe("SettingsService", () => {
   let dir: string
@@ -23,7 +31,11 @@ describe("SettingsService", () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  function service(applyAutostart: (s: typeof DEFAULT_APP_SETTINGS) => Promise<AutostartApplyResult>) {
+  function service(
+    applyAutostart: (
+      s: typeof DEFAULT_APP_SETTINGS,
+    ) => Promise<AutostartApplyResult>,
+  ) {
     const onChanged = vi.fn()
     const svc = new SettingsService({
       store,
@@ -69,7 +81,10 @@ describe("SettingsService", () => {
       status: "error",
       detail: "boom",
     }))
-    const result = await svc.update({ runAtStartup: true, openToTrayOnStartup: true })
+    const result = await svc.update({
+      runAtStartup: true,
+      openToTrayOnStartup: true,
+    })
     expect(result.settings.runAtStartup).toBe(false)
     expect(store.get().runAtStartup).toBe(false)
   })
