@@ -164,7 +164,10 @@ export async function syncAutoUpdateFromMain(): Promise<void> {
     if (browser) localStorage.setItem(AUTO_UPDATE_KEY, String(value))
     autoUpdate.set(value)
   } catch (err) {
-    console.warn("[settings] getAutoDownload failed; keeping cached value:", err)
+    console.warn(
+      "[settings] getAutoDownload failed; keeping cached value:",
+      err,
+    )
   }
 }
 
@@ -377,14 +380,16 @@ function applyAppSettingsState(state: AppSettingsState): void {
 
 export async function syncDesktopSettingsFromMain(): Promise<void> {
   const revision = desktopSettingsRevision
-  const sync = desktopSettingsQueue.catch(() => {}).then(async () => {
-    try {
-      const state = await getAppSettings()
-      if (revision === desktopSettingsRevision) applyAppSettingsState(state)
-    } catch (err) {
-      console.warn("[settings] getAppSettings failed:", err)
-    }
-  })
+  const sync = desktopSettingsQueue
+    .catch(() => {})
+    .then(async () => {
+      try {
+        const state = await getAppSettings()
+        if (revision === desktopSettingsRevision) applyAppSettingsState(state)
+      } catch (err) {
+        console.warn("[settings] getAppSettings failed:", err)
+      }
+    })
   desktopSettingsQueue = sync.catch(() => {})
   await sync
 }
@@ -392,21 +397,23 @@ export async function syncDesktopSettingsFromMain(): Promise<void> {
 export async function updateDesktopSettings(
   patch: Partial<AppSettings>,
 ): Promise<void> {
-  const update = desktopSettingsQueue.catch(() => {}).then(async () => {
-    // A settings event that lands while the request is in flight is newer
-    // than its reply, so the reply must not overwrite it.
-    const revision = desktopSettingsRevision
-    try {
-      const state = await setAppSettings(patch)
-      if (revision === desktopSettingsRevision) applyAppSettingsState(state)
-    } catch (err) {
-      console.warn("[settings] setAppSettings failed:", err)
+  const update = desktopSettingsQueue
+    .catch(() => {})
+    .then(async () => {
+      // A settings event that lands while the request is in flight is newer
+      // than its reply, so the reply must not overwrite it.
+      const revision = desktopSettingsRevision
       try {
-        const state = await getAppSettings()
+        const state = await setAppSettings(patch)
         if (revision === desktopSettingsRevision) applyAppSettingsState(state)
-      } catch {}
-    }
-  })
+      } catch (err) {
+        console.warn("[settings] setAppSettings failed:", err)
+        try {
+          const state = await getAppSettings()
+          if (revision === desktopSettingsRevision) applyAppSettingsState(state)
+        } catch {}
+      }
+    })
   desktopSettingsQueue = update.catch(() => {})
   await update
 }
@@ -474,10 +481,7 @@ export function getWorkspaceFolder(workspaceId: string): string {
   return ""
 }
 
-export function setWorkspaceFolder(
-  workspaceId: string,
-  folder: string,
-): void {
+export function setWorkspaceFolder(workspaceId: string, folder: string): void {
   if (!browser) return
   try {
     const stored = localStorage.getItem(WORKSPACE_FOLDERS_KEY)

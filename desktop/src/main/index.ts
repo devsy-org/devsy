@@ -9,20 +9,23 @@ import {
   detectAutostartEnvironment,
   readAutostartEnabled,
 } from "./autostart.js"
-import { isAutomaticLoginLaunch, shouldSuppressInitialWindow } from "./launch-context.js"
-import { isTrayHostAvailable } from "./tray-support.js"
-import { SettingsService } from "./settings-service.js"
-import { TrayNotifier } from "./tray-notifications.js"
 import { CliRunner } from "./cli.js"
 import { DaemonManager } from "./daemon-manager.js"
 import { registerIpcHandlers } from "./ipc.js"
+import {
+  isAutomaticLoginLaunch,
+  shouldSuppressInitialWindow,
+} from "./launch-context.js"
 import { LogStore } from "./log-store.js"
-import { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
+import { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import { ProviderJobs } from "./provider-jobs.js"
 import { PtyManager } from "./pty.js"
+import { SettingsService } from "./settings-service.js"
 import { DaemonState } from "./state.js"
 import { AppTray } from "./tray.js"
+import { TrayNotifier } from "./tray-notifications.js"
+import { isTrayHostAvailable } from "./tray-support.js"
 import {
   initAutoUpdater,
   onUpdateStatusChanged,
@@ -112,10 +115,7 @@ function createWindow(): void {
   })
 
   mainWindow.on("close", (event) => {
-    if (
-      mainWindow &&
-      !isAppQuitting()
-    ) {
+    if (mainWindow && !isAppQuitting()) {
       event.preventDefault()
       mainWindow.hide()
     }
@@ -173,8 +173,13 @@ app.whenReady().then(async () => {
   // ~/.devsy/contexts/<ctx>/workspaces/<id>/ subtree that `workspace delete`
   // unlinks. That separation closes the file-deletion race by construction.
   const logStore = new LogStore(join(homedir(), ".devsy", "desktop", "logs"))
-	const machineDiagnosticsStore = new MachineDiagnosticsStore(join(homedir(), ".devsy", "desktop", "diagnostics"))
-	const machineDiagnosticsManager = new MachineDiagnosticsManager(cli, machineDiagnosticsStore)
+  const machineDiagnosticsStore = new MachineDiagnosticsStore(
+    join(homedir(), ".devsy", "desktop", "diagnostics"),
+  )
+  const machineDiagnosticsManager = new MachineDiagnosticsManager(
+    cli,
+    machineDiagnosticsStore,
+  )
   try {
     const pruned = logStore.prune(30)
     if (pruned > 0) console.log(`Pruned ${pruned} old log files`)
@@ -264,8 +269,8 @@ app.whenReady().then(async () => {
     cli,
     state,
     logStore,
-		machineDiagnosticsStore,
-		machineDiagnosticsManager,
+    machineDiagnosticsStore,
+    machineDiagnosticsManager,
     pty: ptyManager,
     getMainWindow: () => mainWindow,
     providerJobs,
@@ -283,7 +288,8 @@ app.whenReady().then(async () => {
         sender.send("navigate", pendingRoute)
         pendingRoute = null
       }
-      for (const url of pendingDeepLinks.splice(0)) sender.send("deep-link", url)
+      for (const url of pendingDeepLinks.splice(0))
+        sender.send("deep-link", url)
     },
     workspaceSnapshot: () => watcher?.workspaceSnapshot(),
     settingsService,
@@ -306,7 +312,9 @@ app.whenReady().then(async () => {
   workspaceJobs.setRefresh(async (id, job) => {
     if (!watcher) throw new Error("Workspace watcher unavailable")
     await watcher.refreshWorkspaces()
-    const exists = state.workspaceList().some((workspace) => workspace.id === id)
+    const exists = state
+      .workspaceList()
+      .some((workspace) => workspace.id === id)
     if (job.activity === "deleting" && !job.error) {
       if (exists) throw new Error("Workspace list has not caught up yet")
     } else if (exists) {
@@ -354,7 +362,13 @@ app.whenReady().then(async () => {
     wasOpenedAsHidden: loginItems?.wasOpenedAsHidden,
   })
   const trayHostAvailable = await isTrayHostAvailable()
-  if (!shouldSuppressInitialWindow(appSettingsStore.get(), automaticLaunch, trayHostAvailable)) {
+  if (
+    !shouldSuppressInitialWindow(
+      appSettingsStore.get(),
+      automaticLaunch,
+      trayHostAvailable,
+    )
+  ) {
     createWindow()
   }
 
