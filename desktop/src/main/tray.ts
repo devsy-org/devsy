@@ -138,8 +138,13 @@ export function buildTrayMenuTemplate(
       const state = trayWorkspaceState(workspace, job)
       // A failed start can leave the workspace stopped and a failed stop can
       // leave it running, so lifecycle actions follow the workspace status.
+      // Stop can interrupt a start or create, so those busy rows keep it.
       const actionState =
-        state === "failed" ? workspaceStatusState(workspace) : state
+        state === "failed"
+          ? workspaceStatusState(workspace)
+          : state === "busy" && workspaceJobInterruptible(job)
+            ? "running"
+            : state
       const jobLabel = workspaceJobLabel(job)
       const submenu: Electron.MenuItemConstructorOptions[] = [
         {
