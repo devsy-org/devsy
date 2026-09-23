@@ -155,6 +155,10 @@ func TestLocatorRoundTrip(t *testing.T) {
 }
 
 func newTestDiagnosticsStore(t *testing.T, state DaemonState) string {
+	return newTestDiagnosticsStoreAt(t, state, time.Now().UTC())
+}
+
+func newTestDiagnosticsStoreAt(t *testing.T, state DaemonState, updatedAt time.Time) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "diagnostics")
 	store, err := NewRecorder(Options{
@@ -162,7 +166,7 @@ func newTestDiagnosticsStore(t *testing.T, state DaemonState) string {
 		Reader: ReaderIdentity{UID: os.Getuid(), GID: os.Getgid()},
 	})
 	require.NoError(t, err)
-	store.Update(Status{State: state, Health: DaemonHealthy})
+	store.Update(Status{State: state, Health: DaemonHealthy, UpdatedAt: updatedAt})
 	return dir
 }
 
@@ -177,11 +181,12 @@ func writeTestLocator(t *testing.T, dir, diagnosticsDir string) string {
 }
 
 func TestReadActiveLocatorCandidates(t *testing.T) {
-	options := ReadOptions{Limit: 10, Interval: time.Minute, Now: time.Now()}
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	options := ReadOptions{Limit: 10, Interval: time.Minute, Now: now}
 
 	t.Run("system wins", func(t *testing.T) {
-		systemDir := newTestDiagnosticsStore(t, DaemonRunning)
-		userDir := newTestDiagnosticsStore(t, DaemonStopping)
+		systemDir := newTestDiagnosticsStoreAt(t, DaemonRunning, now)
+		userDir := newTestDiagnosticsStoreAt(t, DaemonRunning, now)
 		system := writeTestLocator(t, t.TempDir(), systemDir)
 		user := writeTestLocator(t, t.TempDir(), userDir)
 		response := readActiveFromCandidates([]string{system, user}, options)
@@ -189,7 +194,7 @@ func TestReadActiveLocatorCandidates(t *testing.T) {
 	})
 
 	t.Run("user fallback", func(t *testing.T) {
-		userDir := newTestDiagnosticsStore(t, DaemonRunning)
+		userDir := newTestDiagnosticsStoreAt(t, DaemonRunning, now)
 		user := writeTestLocator(t, t.TempDir(), userDir)
 		response := readActiveFromCandidates(
 			[]string{filepath.Join(t.TempDir(), "missing"), user},
@@ -201,7 +206,7 @@ func TestReadActiveLocatorCandidates(t *testing.T) {
 	t.Run("corrupt system is authoritative", func(t *testing.T) {
 		system := filepath.Join(t.TempDir(), "system.json")
 		require.NoError(t, os.WriteFile(system, []byte("{"), 0o600))
-		userDir := newTestDiagnosticsStore(t, DaemonRunning)
+		userDir := newTestDiagnosticsStoreAt(t, DaemonRunning, now)
 		user := writeTestLocator(t, t.TempDir(), userDir)
 		response := readActiveFromCandidates([]string{system, user}, options)
 		assert.Equal(t, AvailabilityCorrupt, response.Availability)
@@ -226,7 +231,7 @@ func TestReadActiveLocatorCandidates(t *testing.T) {
 			if _, err := ReadLocator(system); !os.IsPermission(err) {
 				t.Skip("platform does not expose permission-denied file reads")
 			}
-			userDir := newTestDiagnosticsStore(t, DaemonRunning)
+			userDir := newTestDiagnosticsStoreAt(t, DaemonRunning, now)
 			user := writeTestLocator(t, t.TempDir(), userDir)
 			response := readActiveFromCandidates([]string{system, user}, options)
 			require.NotNil(t, response.Status)
@@ -235,16 +240,42 @@ func TestReadActiveLocatorCandidates(t *testing.T) {
 	}
 }
 
-func TestReadActiveStaleSystemFallsBackToCurrentUser(t *testing.T) {
-	options := ReadOptions{Limit: 10, Interval: time.Minute, Now: time.Now()}
-	systemDir := newTestDiagnosticsStore(t, DaemonStopping)
-	userDir := newTestDiagnosticsStore(t, DaemonRunning)
+func TestReadActiveStoppingSystemFallsBackToCurrentUser(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	options := ReadOptions{Limit: 10, Interval: time.Minute, Now: now}
+	systemDir := newTestDiagnosticsStoreAt(t, DaemonStopping, now)
+	userDir := newTestDiagnosticsStoreAt(t, DaemonRunning, now)
 	system := writeTestLocator(t, t.TempDir(), systemDir)
 	user := writeTestLocator(t, t.TempDir(), userDir)
 
 	response := readActiveFromCandidates([]string{system, user}, options)
 	require.NotNil(t, response.Status)
 	assert.Equal(t, DaemonRunning, response.Status.State)
+}
+
+func TestReadActiveStaleSystemFallsBackToCurrentUser(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	options := ReadOptions{Limit: 10, Interval: time.Minute, Now: now}
+	systemDir := newTestDiagnosticsStoreAt(t, DaemonRunning, now.Add(-5*time.Minute))
+	userDir := newTestDiagnosticsStoreAt(t, DaemonRunning, now)
+	system := writeTestLocator(t, t.TempDir(), systemDir)
+	user := writeTestLocator(t, t.TempDir(), userDir)
+
+	response := readActiveFromCandidates([]string{system, user}, options)
+	require.NotNil(t, response.Status)
+	assert.Equal(t, DaemonRunning, response.Status.State)
+}
+
+func TestReadActiveStaleSystemIsRetainedWithoutFreshFallback(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	options := ReadOptions{Limit: 10, Interval: time.Minute, Now: now}
+	systemDir := newTestDiagnosticsStoreAt(t, DaemonRunning, now.Add(-5*time.Minute))
+	system := writeTestLocator(t, t.TempDir(), systemDir)
+
+	response := readActiveFromCandidates([]string{system}, options)
+	require.NotNil(t, response.Status)
+	assert.Equal(t, DaemonRunning, response.Status.State)
+	assert.Equal(t, FreshnessStale, response.Freshness)
 }
 
 func TestRuntimeLockIsExclusive(t *testing.T) {

@@ -129,6 +129,9 @@ func ReadActive(options ReadOptions, userCacheDir func() (string, error)) (ReadR
 	if user.state == locatorCandidateCorrupt {
 		return user.response, nil
 	}
+	if system.state == locatorCandidateStale {
+		return system.response, nil
+	}
 	return ReadFromLocator(DefaultLocatorPath, options), nil
 }
 
@@ -146,6 +149,7 @@ func ActiveLocatorCandidates(userCacheDir func() (string, error)) ([]string, err
 
 func readActiveFromCandidates(paths []string, options ReadOptions) ReadResponse {
 	var permissionResponse ReadResponse
+	var staleResponse ReadResponse
 	for i, path := range paths {
 		candidate := readLocatorCandidate(path, options)
 		response, done, updatedPermission := applyLocatorCandidate(
@@ -157,9 +161,15 @@ func readActiveFromCandidates(paths []string, options ReadOptions) ReadResponse 
 			return response
 		}
 		permissionResponse = updatedPermission
+		if candidate.state == locatorCandidateStale && staleResponse.Availability == "" {
+			staleResponse = candidate.response
+		}
 	}
 	if permissionResponse.Availability != "" {
 		return permissionResponse
+	}
+	if staleResponse.Availability != "" {
+		return staleResponse
 	}
 	return ReadFromLocator(DefaultLocatorPath, options)
 }
@@ -181,6 +191,8 @@ func applyLocatorCandidate(
 		if permissionResponse.Availability == "" {
 			permissionResponse = candidate.response
 		}
+	case locatorCandidateStale:
+		return ReadResponse{}, false, permissionResponse
 	}
 	return ReadResponse{}, false, permissionResponse
 }
@@ -192,6 +204,7 @@ const (
 	locatorCandidatePermission
 	locatorCandidateCorrupt
 	locatorCandidateSuccess
+	locatorCandidateStale
 )
 
 type locatorCandidate struct {
@@ -222,8 +235,8 @@ func readLocatorCandidate(path string, options ReadOptions) locatorCandidate {
 
 func classifyLocatorResponse(response ReadResponse) locatorCandidate {
 	if response.Availability == AvailabilityAvailable && response.Status != nil {
-		if response.Status.State == DaemonStopping {
-			return locatorCandidate{state: locatorCandidateMissing}
+		if response.Status.State == DaemonStopping || response.Freshness == FreshnessStale {
+			return locatorCandidate{response: response, state: locatorCandidateStale}
 		}
 		return locatorCandidate{response: response, state: locatorCandidateSuccess}
 	}
