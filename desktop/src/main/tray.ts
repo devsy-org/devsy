@@ -53,6 +53,10 @@ export function trayWorkspaceState(
 ): TrayWorkspaceState {
   if (workspaceJobBusy(job)) return "busy"
   if (job?.error || job?.state === "failed") return "failed"
+  return workspaceStatusState(workspace)
+}
+
+function workspaceStatusState(workspace: Workspace): TrayWorkspaceState {
   const status = normalizeWorkspaceStatus(workspace.status ?? "")?.toLowerCase()
   if (status === "running" || status === "busy") return "running"
   if (status === "stopped") return "stopped"
@@ -132,6 +136,10 @@ export function buildTrayMenuTemplate(
     (workspace) => {
       const job = jobs[workspace.id]
       const state = trayWorkspaceState(workspace, job)
+      // A failed start can leave the workspace stopped and a failed stop can
+      // leave it running, so lifecycle actions follow the workspace status.
+      const actionState =
+        state === "failed" ? workspaceStatusState(workspace) : state
       const jobLabel = workspaceJobLabel(job)
       const submenu: Electron.MenuItemConstructorOptions[] = [
         {
@@ -139,7 +147,7 @@ export function buildTrayMenuTemplate(
           click: () => actions.showWorkspace(workspace.id),
         },
       ]
-      if (state === "running") {
+      if (actionState === "running") {
         const stopping =
           model.pendingStops.has(workspace.id) ||
           (workspaceJobBusy(job) && !workspaceJobInterruptible(job))
@@ -150,7 +158,7 @@ export function buildTrayMenuTemplate(
             ? undefined
             : () => actions.stopWorkspace(workspace.id),
         })
-      } else if (state === "stopped") {
+      } else if (actionState === "stopped") {
         submenu.push({
           label: model.pendingStarts.has(workspace.id)
             ? "Starting…"
