@@ -48,7 +48,9 @@ export class SettingsService {
   }
 
   async update(patch: Partial<AppSettings>): Promise<SettingsUpdateResult> {
-    const update = this.queue.catch(() => {}).then(() => this.applyUpdate(patch))
+    const update = this.queue
+      .catch(() => {})
+      .then(() => this.applyUpdate(patch))
     this.queue = update.catch(() => {})
     return update
   }
