@@ -22,6 +22,7 @@ export interface AutostartEnvironment {
   packaged: boolean
   appImagePath?: string
   xdgConfigHome?: string
+  hostXdgConfigHome?: string
 }
 
 export function detectAutostartEnvironment(): AutostartEnvironment {
@@ -34,6 +35,7 @@ export function detectAutostartEnvironment(): AutostartEnvironment {
     packaged: app.isPackaged,
     appImagePath: process.env.APPIMAGE,
     xdgConfigHome: process.env.XDG_CONFIG_HOME,
+    hostXdgConfigHome: process.env.HOST_XDG_CONFIG_HOME,
   }
 }
 
@@ -45,8 +47,11 @@ function xdgDesktopFilePath(env: AutostartEnvironment): string {
   return join(autostartDir(env), "devsy.desktop")
 }
 
+// Inside Flatpak, XDG_CONFIG_HOME points at the app sandbox, but the portal
+// writes the entry to the host autostart directory.
 function flatpakDesktopFilePath(env: AutostartEnvironment): string {
-  return join(autostartDir(env), `${env.flatpakId}.desktop`)
+  const configHome = env.hostXdgConfigHome || join(env.homeDir, ".config")
+  return join(configHome, "autostart", `${env.flatpakId}.desktop`)
 }
 
 function desktopExecArg(value: string): string {
