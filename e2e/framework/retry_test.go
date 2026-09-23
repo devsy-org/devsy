@@ -128,6 +128,13 @@ func TestIsRetryableSSHError_ExitCode1_EmptyStderr(t *testing.T) {
 	assert.False(t, isRetryableSSHError(exitError(t, "1"), ""))
 }
 
+func TestIsRetryableSSHError_ExecStartupSilence(t *testing.T) {
+	assert.True(t, isRetryableSSHError(
+		exitError(t, "1"),
+		"container exec session produced no output for 30s: remote process never started",
+	))
+}
+
 func TestIsRetryableSSHError_ExitStatus10(t *testing.T) {
 	assert.False(t, isRetryableSSHError(exitError(t, "10"), "connection refused"))
 }

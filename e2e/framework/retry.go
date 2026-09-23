@@ -53,6 +53,7 @@ var retryableSSHPatterns = []string{
 	"connection timed out",
 	"broken pipe",
 	"workspace not found",
+	"container exec session produced no output",
 	"ssh handshake made no progress",
 }
 
