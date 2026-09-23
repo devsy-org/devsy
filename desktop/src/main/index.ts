@@ -50,6 +50,8 @@ function handleDeepLink(url: string): void {
     else pendingDeepLinks.push(url)
   } else {
     pendingDeepLinks.push(url)
+    // A login launch can start without a window; open one to deliver the link.
+    if (app.isReady()) createWindow()
   }
 }
 
