@@ -3,13 +3,18 @@ import { isTrayHostAvailable } from "../tray-support.js"
 
 describe("isTrayHostAvailable", () => {
   it("treats non-Linux platforms as tray-capable", async () => {
-    await expect(isTrayHostAvailable({ platform: "darwin" })).resolves.toBe(true)
+    await expect(isTrayHostAvailable({ platform: "darwin" })).resolves.toBe(
+      true,
+    )
     await expect(isTrayHostAvailable({ platform: "win32" })).resolves.toBe(true)
   })
 
   it("detects a registered StatusNotifierWatcher", async () => {
     await expect(
-      isTrayHostAvailable({ platform: "linux", getNameOwner: async () => ":1.42" }),
+      isTrayHostAvailable({
+        platform: "linux",
+        getNameOwner: async () => ":1.42",
+      }),
     ).resolves.toBe(true)
   })
 
