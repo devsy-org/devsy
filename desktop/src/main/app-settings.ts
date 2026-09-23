@@ -1,5 +1,8 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs"
-import type { AppSettings, TrayNotificationLevel } from "../shared/app-settings.js"
+import type {
+  AppSettings,
+  TrayNotificationLevel,
+} from "../shared/app-settings.js"
 
 export type { AppSettings, TrayNotificationLevel }
 
@@ -12,9 +15,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 const LEVELS: readonly TrayNotificationLevel[] = ["off", "failures", "all"]
 
 export function normalizeAppSettings(raw: unknown): AppSettings {
-  const input = (
-    typeof raw === "object" && raw !== null ? raw : {}
-  ) as Record<string, unknown>
+  const input = (typeof raw === "object" && raw !== null ? raw : {}) as Record<
+    string,
+    unknown
+  >
   const runAtStartup = input.runAtStartup === true
   const openToTrayOnStartup = runAtStartup && input.openToTrayOnStartup === true
   const trayNotifications = LEVELS.includes(
