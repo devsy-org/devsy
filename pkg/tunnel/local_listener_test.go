@@ -83,7 +83,9 @@ func waitForListenerClosed(t *testing.T, addr string, timeout time.Duration) {
 		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
-		} else if errors.Is(err, syscall.ECONNREFUSED) {
+		} else if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) {
+			// Refused or reset both mean the dial never reached a live
+			// listener; macOS reports reset during the shutdown race.
 			return
 		} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			lastErr = err
