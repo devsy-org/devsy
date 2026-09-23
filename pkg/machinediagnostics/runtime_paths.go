@@ -38,8 +38,8 @@ func runtimePaths(dir string) RuntimePaths {
 	}
 }
 
-// EnsureRuntimeDir creates a runtime directory. Shared system runtime
-// directories are also repaired when they predate the current permissions.
+// EnsureRuntimeDir creates a runtime directory, repairing permissions on
+// shared system directories that predate them.
 func EnsureRuntimeDir(path string, shared bool) error {
 	mode := os.FileMode(0o750)
 	if shared {
