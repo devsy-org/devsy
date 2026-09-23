@@ -28,7 +28,11 @@ describe("Linux autostart", () => {
   it("uses APPIMAGE and XDG_CONFIG_HOME for the desktop entry", async () => {
     dir = mkdtempSync(join(tmpdir(), "devsy-autostart-"))
     await applyAutostart(
-      { runAtStartup: true, openToTrayOnStartup: true, trayNotifications: "all" },
+      {
+        runAtStartup: true,
+        openToTrayOnStartup: true,
+        trayNotifications: "all",
+      },
       {
         platform: "linux",
         isFlatpak: false,
@@ -39,9 +43,9 @@ describe("Linux autostart", () => {
         packaged: true,
       },
     )
-    expect(readFileSync(join(dir, "autostart", "devsy.desktop"), "utf8")).toContain(
-      'Exec="/opt/Devsy.AppImage" "--opened-at-login"',
-    )
+    expect(
+      readFileSync(join(dir, "autostart", "devsy.desktop"), "utf8"),
+    ).toContain('Exec="/opt/Devsy.AppImage" "--opened-at-login"')
   })
 
   it("passes the autostart argument when reading Windows login status", () => {
