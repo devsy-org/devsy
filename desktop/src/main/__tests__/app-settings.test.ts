@@ -49,9 +49,9 @@ describe("normalizeAppSettings", () => {
   })
 
   it("ignores non-boolean toggles", () => {
-    expect(
-      normalizeAppSettings({ runAtStartup: "yes" }).runAtStartup,
-    ).toBe(false)
+    expect(normalizeAppSettings({ runAtStartup: "yes" }).runAtStartup).toBe(
+      false,
+    )
   })
 })
 
@@ -75,9 +75,7 @@ describe("patchAppSettings", () => {
       openToTrayOnStartup: false,
       trayNotifications: "off" as const,
     }
-    expect(
-      patchAppSettings(current, { openToTrayOnStartup: true }),
-    ).toEqual({
+    expect(patchAppSettings(current, { openToTrayOnStartup: true })).toEqual({
       runAtStartup: true,
       openToTrayOnStartup: true,
       trayNotifications: "off",
@@ -88,7 +86,10 @@ describe("patchAppSettings", () => {
 describe("sanitizeAppSettingsPatch", () => {
   it("accepts a valid partial patch", () => {
     expect(
-      sanitizeAppSettingsPatch({ runAtStartup: true, trayNotifications: "all" }),
+      sanitizeAppSettingsPatch({
+        runAtStartup: true,
+        trayNotifications: "all",
+      }),
     ).toEqual({ runAtStartup: true, trayNotifications: "all" })
   })
 
@@ -161,7 +162,9 @@ describe("AppSettingsStore", () => {
   })
 
   it("propagates write failures and keeps the previous settings", () => {
-    const store = new AppSettingsStore(join(dir, "missing", "app-settings.json"))
+    const store = new AppSettingsStore(
+      join(dir, "missing", "app-settings.json"),
+    )
     store.load()
     let calls = 0
     store.onChange(() => calls++)
