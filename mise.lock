@@ -20,17 +20,17 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/542974295"
 provenance = "github-attestations"
 
 [[tools.go]]
-version = "1.26.8"
+version = "1.27.0"
 backend = "core:go"
-specifiers = ["1.26.8"]
+specifiers = ["1.27.0"]
 
 [tools.go."platforms.linux-x64"]
-checksum = "sha256:d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
-url = "https://dl.google.com/go/go1.26.8.linux-amd64.tar.gz"
+checksum = "sha256:675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685"
+url = "https://dl.google.com/go/go1.27.0.linux-amd64.tar.gz"
 
 [tools.go."platforms.macos-arm64"]
-checksum = "sha256:a012b25b571bd0138a03dcd25375ceba866fe5ca822f426d2c66a4de56fd3f4b"
-url = "https://dl.google.com/go/go1.26.8.darwin-arm64.tar.gz"
+checksum = "sha256:90493b3bbd5e10f91d12153198bf1994fd756399b4fec93b49b0c6e2acdeeb3e"
+url = "https://dl.google.com/go/go1.27.0.darwin-arm64.tar.gz"
 
 [[tools.golangci-lint]]
 version = "2.13.2"
