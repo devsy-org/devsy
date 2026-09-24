@@ -62,10 +62,10 @@ repos:
     rev: v2.13.2
     hooks:
       - id: golangci-lint
-        language_version: 1.26.6
+        language_version: 1.26.8
         args: ["--timeout=10m"]
       - id: golangci-lint-fmt
-        language_version: 1.26.6
+        language_version: 1.26.8
   - repo: local
     hooks:
       - id: golangci-lint-ci-parity
