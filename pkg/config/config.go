@@ -329,7 +329,8 @@ func SaveConfig(config *Config) error {
 
 	config = CloneConfig(config)
 	selectedContext := config.DefaultContext
-	if selected := config.Contexts[selectedContext]; selected != nil && selected.OriginalProvider != "" {
+	if selected := config.Contexts[selectedContext]; selected != nil &&
+		selected.OriginalProvider != "" {
 		selected.DefaultProvider = selected.OriginalProvider
 	}
 	if config.OriginalContext != "" {

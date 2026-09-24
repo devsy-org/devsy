@@ -85,7 +85,10 @@ func (cmd *SetCmd) Run(_ context.Context, name string) error {
 	if meta, metaErr := store.Meta(contextName, name); metaErr == nil {
 		ctxConfig := devsyConfig.Contexts[contextName]
 		if !meta.Sensitive() && ctxConfig != nil && slices.Contains(ctxConfig.EnvVars, name) {
-			return fmt.Errorf("%q is attached as an environment variable; detach it before converting it to a secret", name)
+			return fmt.Errorf(
+				"%q is attached as an environment variable; detach it before converting it to a secret",
+				name,
+			)
 		}
 	} else if !errors.Is(metaErr, secrets.ErrSecretNotFound) {
 		return metaErr

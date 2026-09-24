@@ -88,7 +88,10 @@ func TestSetRejectsConvertingAttachedSecretToEnvironment(t *testing.T) {
 func TestConcurrentAttachmentsPreserveBothChanges(t *testing.T) {
 	globalFlags := setupEnvCommandTest(t)
 	set := func(name string) {
-		require.NoError(t, (&SetCmd{GlobalFlags: globalFlags, Value: name}).Run(context.Background(), name))
+		require.NoError(
+			t,
+			(&SetCmd{GlobalFlags: globalFlags, Value: name}).Run(context.Background(), name),
+		)
 	}
 	set("FIRST")
 	set("SECOND")
@@ -98,7 +101,10 @@ func TestConcurrentAttachmentsPreserveBothChanges(t *testing.T) {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			require.NoError(t, (&AttachCmd{GlobalFlags: globalFlags}).Run(context.Background(), name))
+			require.NoError(
+				t,
+				(&AttachCmd{GlobalFlags: globalFlags}).Run(context.Background(), name),
+			)
 		}(name)
 	}
 	wg.Wait()
