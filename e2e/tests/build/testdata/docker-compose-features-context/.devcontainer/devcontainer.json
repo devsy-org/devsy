@@ -4,21 +4,10 @@
   "service": "example-dc",
   "workspaceFolder": "/workspace",
   "features": {
-    "ghcr.io/devcontainers/features/common-utils:2": {
-      "installZsh": true,
-      "configureZshAsDefaultShell": true,
-      "upgradePackages": false,
-      "installOhMyZsh": false,
-      "installOhMyZshConfig": false,
-      "username": "example",
-      "userUid": "automatic",
-      "userGid": "automatic"
-    }
+    "./features/context-build": {}
   },
   "containerEnv": {
     "LANG": "en_US.UTF-8",
     "LANGUAGE": "en_US:en"
-  },
-  "remoteUser": "example",
-  "containerUser": "example"
+  }
 }
