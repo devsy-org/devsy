@@ -2,6 +2,7 @@ package env
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -69,6 +70,42 @@ func TestDeleteUnbindsEnvironmentVariable(t *testing.T) {
 	cfg, err := config.LoadConfig("", "")
 	require.NoError(t, err)
 	require.Empty(t, cfg.Current().EnvVars)
+}
+
+func TestSetRejectsConvertingAttachedSecretToEnvironment(t *testing.T) {
+	globalFlags := setupEnvCommandTest(t)
+	cfg := mustLoadConfig(t)
+	store, err := secrets.NewStoreForConfig(cfg)
+	require.NoError(t, err)
+	require.NoError(t, store.Set(config.DefaultContext, "TOKEN", "secret", secrets.KindSecret))
+	cfg.Current().Secrets = []string{"TOKEN"}
+	require.NoError(t, config.SaveConfig(cfg))
+	err = (&SetCmd{GlobalFlags: globalFlags, Value: "plain"}).Run(context.Background(), "TOKEN")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "attached as a secret")
+}
+
+func TestConcurrentAttachmentsPreserveBothChanges(t *testing.T) {
+	globalFlags := setupEnvCommandTest(t)
+	set := func(name string) {
+		require.NoError(t, (&SetCmd{GlobalFlags: globalFlags, Value: name}).Run(context.Background(), name))
+	}
+	set("FIRST")
+	set("SECOND")
+
+	var wg sync.WaitGroup
+	for _, name := range []string{"FIRST", "SECOND"} {
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+			require.NoError(t, (&AttachCmd{GlobalFlags: globalFlags}).Run(context.Background(), name))
+		}(name)
+	}
+	wg.Wait()
+
+	cfg, err := config.LoadConfig("", "")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"FIRST", "SECOND"}, cfg.Current().EnvVars)
 }
 
 func mustLoadConfig(t *testing.T) *config.Config {

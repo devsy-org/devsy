@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	devsysecrets "github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +34,17 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
-	contextName, store, err := resolveContext(cmd.GlobalFlags)
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
+	if err != nil {
+		return err
+	}
+	contextName := devsyConfig.DefaultContext
+	store, err := devsysecrets.NewStoreForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
@@ -46,10 +57,10 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 		return fmt.Errorf("%q is an environment variable; use \"devsy env delete\"", name)
 	}
 
-	if err := store.Delete(contextName, name); err != nil {
+	if err := unbindFromConfig(devsyConfig, contextName, name); err != nil {
 		return err
 	}
-	if err := unbindFromContext(cmd.GlobalFlags, contextName, name); err != nil {
+	if err := store.Delete(contextName, name); err != nil {
 		return err
 	}
 
@@ -59,11 +70,7 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 
 // unbindFromContext removes a deleted secret from its context's attached list so
 // a stale binding is not left pointing at a now-missing secret.
-func unbindFromContext(globalFlags *flags.GlobalFlags, contextName, name string) error {
-	devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
-	if err != nil {
-		return err
-	}
+func unbindFromConfig(devsyConfig *config.Config, contextName, name string) error {
 	ctxConfig := devsyConfig.Contexts[contextName]
 	if ctxConfig == nil {
 		return nil

@@ -30,7 +30,12 @@ func (cmd *AttachCmd) Run(_ context.Context, name string) error {
 	if err := secrets.ValidateName(name); err != nil {
 		return err
 	}
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}
@@ -87,7 +92,12 @@ func (cmd *DetachCmd) Run(_ context.Context, name string) error {
 	if err := secrets.ValidateName(name); err != nil {
 		return err
 	}
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}
