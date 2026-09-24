@@ -118,7 +118,11 @@ func validateLogLevel(level string) error {
 		return nil
 	}
 	if _, ok := log.LevelFromString(level); !ok {
-		return fmt.Errorf("invalid log level %q, expected one of: %s", level, strings.Join(log.ValidLevels(), ", "))
+		return fmt.Errorf(
+			"invalid log level %q, expected one of: %s",
+			level,
+			strings.Join(log.ValidLevels(), ", "),
+		)
 	}
 	return nil
 }

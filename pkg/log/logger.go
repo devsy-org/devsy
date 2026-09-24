@@ -150,24 +150,33 @@ func (f *writerFanout) add(w io.Writer) (remove func()) {
 }
 
 func resolveLevel(cfg Config) zapcore.Level {
-	if cfg.QuietSet || cfg.Quiet {
-		return zapcore.FatalLevel
-	}
-	if cfg.DebugSet || cfg.Debug {
-		return zapcore.DebugLevel
-	}
-	if cfg.VerbositySet || cfg.Verbosity > 0 {
-		return VerbosityToLevel(cfg.Verbosity)
-	}
-	if cfg.Level != "" {
-		if level, ok := LevelFromString(cfg.Level); ok {
-			return level
-		}
-	}
-	if level, ok := LevelFromString(cfg.DefaultLevel); ok {
+	if level, ok := resolveExplicitLevel(cfg); ok {
 		return level
 	}
 	return VerbosityToLevel(cfg.Verbosity)
+}
+
+func resolveExplicitLevel(cfg Config) (zapcore.Level, bool) {
+	if cfg.QuietSet || cfg.Quiet {
+		return zapcore.FatalLevel, true
+	}
+	if cfg.DebugSet || cfg.Debug {
+		return zapcore.DebugLevel, true
+	}
+	if cfg.VerbositySet || cfg.Verbosity > 0 {
+		return VerbosityToLevel(cfg.Verbosity), true
+	}
+	return resolveConfiguredLevel(cfg.Level, cfg.DefaultLevel)
+}
+
+func resolveConfiguredLevel(explicit, fallback string) (zapcore.Level, bool) {
+	if explicit != "" {
+		return LevelFromString(explicit)
+	}
+	if fallback != "" {
+		return LevelFromString(fallback)
+	}
+	return zapcore.ErrorLevel, true
 }
 
 func resolveEncoder(format string) zapcore.Encoder {

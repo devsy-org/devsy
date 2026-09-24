@@ -4,20 +4,34 @@ import "go.uber.org/zap/zapcore"
 
 const DefaultLevel = "error"
 
-var validLevels = [...]string{"error", "warn", "info", "debug", "trace"}
+const (
+	LevelErrorName = "error"
+	LevelWarnName  = "warn"
+	LevelInfoName  = "info"
+	LevelDebugName = "debug"
+	LevelTraceName = "trace"
+)
+
+var validLevels = [...]string{
+	LevelErrorName,
+	LevelWarnName,
+	LevelInfoName,
+	LevelDebugName,
+	LevelTraceName,
+}
 
 // LevelFromString parses the user-facing finite log-level set.
 func LevelFromString(value string) (zapcore.Level, bool) {
 	switch value {
-	case "error":
+	case LevelErrorName:
 		return zapcore.ErrorLevel, true
-	case "warn":
+	case LevelWarnName:
 		return zapcore.WarnLevel, true
-	case "info":
+	case LevelInfoName:
 		return zapcore.InfoLevel, true
-	case "debug":
+	case LevelDebugName:
 		return zapcore.DebugLevel, true
-	case "trace":
+	case LevelTraceName:
 		return zapcore.DebugLevel - 1, true
 	default:
 		return zapcore.ErrorLevel, false
@@ -46,7 +60,7 @@ func DebugEnabled() bool {
 func LevelString() string {
 	core := sugar.Load().Desugar().Core()
 	if core.Enabled(zapcore.DebugLevel - 1) {
-		return "trace"
+		return LevelTraceName
 	}
 	for _, l := range []zapcore.Level{
 		zapcore.DebugLevel,

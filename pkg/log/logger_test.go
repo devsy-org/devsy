@@ -31,11 +31,27 @@ func TestResolveLevelPrecedence(t *testing.T) {
 		cfg  Config
 		want string
 	}{
-		{name: "persisted default", cfg: Config{DefaultLevel: "warn"}, want: "warn"},
-		{name: "explicit log level", cfg: Config{Level: "debug", DefaultLevel: "warn"}, want: "debug"},
-		{name: "verbosity beats log level", cfg: Config{Verbosity: 1, VerbositySet: true, Level: "debug"}, want: "info"},
-		{name: "debug beats verbosity", cfg: Config{Verbosity: 1, VerbositySet: true, Debug: true, DebugSet: true}, want: "debug"},
-		{name: "quiet beats debug", cfg: Config{Debug: true, DebugSet: true, Quiet: true, QuietSet: true}, want: "fatal"},
+		{name: "persisted default", cfg: Config{DefaultLevel: LevelWarnName}, want: LevelWarnName},
+		{
+			name: "explicit log level",
+			cfg:  Config{Level: LevelDebugName, DefaultLevel: LevelWarnName},
+			want: LevelDebugName,
+		},
+		{
+			name: "verbosity beats log level",
+			cfg:  Config{Verbosity: 1, VerbositySet: true, Level: LevelDebugName},
+			want: LevelInfoName,
+		},
+		{
+			name: "debug beats verbosity",
+			cfg:  Config{Verbosity: 1, VerbositySet: true, Debug: true, DebugSet: true},
+			want: LevelDebugName,
+		},
+		{
+			name: "quiet beats debug",
+			cfg:  Config{Debug: true, DebugSet: true, Quiet: true, QuietSet: true},
+			want: "fatal",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

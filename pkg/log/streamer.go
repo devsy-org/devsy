@@ -214,7 +214,7 @@ const infoLevelName = "info"
 
 func normalizeZapLevel(raw string) (zapcore.Level, bool) {
 	switch strings.ToLower(raw) {
-	case "trace", "debug":
+	case LevelTraceName, LevelDebugName:
 		return zapcore.DebugLevel, true
 	case infoLevelName:
 		return zapcore.InfoLevel, true

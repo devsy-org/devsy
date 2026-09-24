@@ -97,7 +97,9 @@ func TestLogLevelOption_DefaultAndEnum(t *testing.T) {
 
 	for _, option := range ContextOptions {
 		if option.Name == ContextOptionLogLevel {
-			require.Equal(t, []string{"error", "warn", "info", "debug", "trace"}, option.Enum)
+			require.Equal(t, []string{
+				"error", "warn", "info", "debug", "trace",
+			}, option.Enum)
 			return
 		}
 	}
