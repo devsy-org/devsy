@@ -31,6 +31,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/clihelp"
 	"github.com/devsy-org/devsy/pkg/config"
+	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/flatpak"
@@ -272,13 +273,25 @@ func exitCodeForError(err error, machineMode bool) int {
 func passthroughExitCode(err error, machineMode bool) (int, bool) {
 	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
 		if machineMode {
-			log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
+			renderCLIError(
+				clierr.Classify(fmt.Errorf(
+					"SSH command failed with exit code %d",
+					sshExitErr.ExitStatus(),
+				)),
+				true,
+			)
 		}
 		return sshExitErr.ExitStatus(), true
 	}
 	if execExitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		if machineMode {
-			log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
+			renderCLIError(
+				clierr.Classify(fmt.Errorf(
+					"command failed with exit code %d",
+					execExitErr.ExitCode(),
+				)),
+				true,
+			)
 		}
 		return execExitErr.ExitCode(), true
 	}
@@ -290,7 +303,9 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 		return
 	}
 	if machineMode {
-		log.JSONError(cliErr)
+		if err := devcconfig.WriteCLIErrorJSON(os.Stderr, cliErr); err != nil {
+			log.Errorf("failed to write CLI error envelope: %v", err)
+		}
 		return
 	}
 	redactor := secrets.NewEnvironmentRedactor(os.Environ())

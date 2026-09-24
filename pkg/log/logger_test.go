@@ -50,7 +50,7 @@ func TestResolveLevelPrecedence(t *testing.T) {
 		{
 			name: "quiet beats debug",
 			cfg:  Config{Debug: true, DebugSet: true, Quiet: true, QuietSet: true},
-			want: "fatal",
+			want: LevelErrorName,
 		},
 	}
 	for _, tt := range tests {
@@ -59,6 +59,12 @@ func TestResolveLevelPrecedence(t *testing.T) {
 				t.Fatalf("resolveLevel() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveLevelDefaultsToWarn(t *testing.T) {
+	if got := resolveLevel(Config{DefaultLevel: DefaultLevel}).String(); got != LevelWarnName {
+		t.Fatalf("resolveLevel() = %q, want %q", got, LevelWarnName)
 	}
 }
 

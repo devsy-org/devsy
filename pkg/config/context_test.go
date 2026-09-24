@@ -93,7 +93,7 @@ func TestSnapshotRegistryOption_Registered(t *testing.T) {
 
 func TestLogLevelOption_DefaultAndEnum(t *testing.T) {
 	c := &Config{Contexts: map[string]*ContextConfig{"default": {}}, DefaultContext: "default"}
-	require.Equal(t, "error", c.ContextOption(ContextOptionLogLevel))
+	require.Equal(t, "warn", c.ContextOption(ContextOptionLogLevel))
 
 	for _, option := range ContextOptions {
 		if option.Name == ContextOptionLogLevel {

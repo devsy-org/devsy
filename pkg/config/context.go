@@ -135,7 +135,7 @@ var ContextOptions = []ContextOption{
 	{
 		Name:        ContextOptionLogLevel,
 		Description: "Default log level for Devsy commands (error, warn, info, debug, or trace)",
-		Default:     "error",
+		Default:     "warn",
 		Enum:        []string{"error", "warn", "info", "debug", "trace"},
 	},
 }

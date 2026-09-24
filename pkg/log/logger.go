@@ -6,7 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -27,7 +26,7 @@ func init() {
 // Config holds logger configuration parsed from CLI flags.
 type Config struct {
 	Verbosity    int    // 0=error, 1=info+warn, 2=debug, 3=trace
-	Quiet        bool   // fatal only
+	Quiet        bool   // error only
 	Debug        bool   // backwards compat, equivalent to Verbosity=2
 	Level        string // explicit --log-level override
 	DefaultLevel string // persisted default when no explicit verbosity flag is set
@@ -158,7 +157,7 @@ func resolveLevel(cfg Config) zapcore.Level {
 
 func resolveExplicitLevel(cfg Config) (zapcore.Level, bool) {
 	if cfg.QuietSet || cfg.Quiet {
-		return zapcore.FatalLevel, true
+		return zapcore.ErrorLevel, true
 	}
 	if cfg.DebugSet || cfg.Debug {
 		return zapcore.DebugLevel, true
@@ -245,19 +244,6 @@ func Info(args ...any)  { sugar.Load().Info(args...) }
 func Warn(args ...any)  { sugar.Load().Warn(args...) }
 func Error(args ...any) { sugar.Load().Error(args...) }
 func Fatal(args ...any) { sugar.Load().Fatal(args...) }
-
-func JSONError(cliErr *clierr.CLIError) {
-	if cliErr == nil {
-		return
-	}
-	msg := cliErr.Message
-	if wrapped := cliErr.Unwrap(); wrapped != nil {
-		if s := wrapped.Error(); s != "" {
-			msg = s
-		}
-	}
-	sugar.Load().Desugar().Error(msg, zap.Object("cliError", cliErr))
-}
 
 func Debugw(msg string, keysAndValues ...any) { sugar.Load().Debugw(msg, keysAndValues...) }
 func Infow(msg string, keysAndValues ...any)  { sugar.Load().Infow(msg, keysAndValues...) }
