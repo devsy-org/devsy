@@ -101,10 +101,22 @@ describe("provider job lifecycle over IPC", () => {
 
   it("forwards managed environment attachment intent to the CLI", async () => {
     const { cli } = setup()
-    await invoke("env_attach", { name: "LOG_LEVEL" })
-    await invoke("env_detach", { name: "LOG_LEVEL" })
-    expect(cli.runRaw).toHaveBeenCalledWith(["env", "attach", "LOG_LEVEL"])
-    expect(cli.runRaw).toHaveBeenCalledWith(["env", "detach", "LOG_LEVEL"])
+    await invoke("env_attach", { name: "LOG_LEVEL", context: "staging" })
+    await invoke("env_detach", { name: "LOG_LEVEL", context: "staging" })
+    expect(cli.runRaw).toHaveBeenCalledWith([
+      "--context",
+      "staging",
+      "env",
+      "attach",
+      "LOG_LEVEL",
+    ])
+    expect(cli.runRaw).toHaveBeenCalledWith([
+      "--context",
+      "staging",
+      "env",
+      "detach",
+      "LOG_LEVEL",
+    ])
   })
 
   it("clears the job when init succeeds", async () => {

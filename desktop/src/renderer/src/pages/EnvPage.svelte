@@ -25,6 +25,7 @@ let confirmDeleteOpen = $state(false)
 let pendingDelete = $state("")
 let deleting = $state(false)
 let updatingAttachment = $state<Record<string, boolean>>({})
+let attachmentErrors = $state<Record<string, string>>({})
 
 let searchTerm = $state("")
 let filteredEnvVars = $derived.by(() => {
@@ -95,18 +96,18 @@ async function confirmDelete() {
 }
 
 async function setAttached(envVar: EnvVar, attached: boolean) {
-  if (updatingAttachment[envVar.name]) return
-  updatingAttachment = { ...updatingAttachment, [envVar.name]: true }
+  const key = `${envVar.context}\x00${envVar.name}`
+  if (updatingAttachment[key]) return
+  updatingAttachment = { ...updatingAttachment, [key]: true }
+  attachmentErrors = { ...attachmentErrors, [key]: "" }
   try {
-    if (attached) await envAttach(envVar.name)
-    else await envDetach(envVar.name)
+    if (attached) await envAttach(envVar.name, envVar.context)
+    else await envDetach(envVar.name, envVar.context)
     await refreshEnv()
   } catch (err) {
-    toasts.error(
-      `Failed to ${attached ? "attach" : "detach"} environment variable: ${extractErrorMessage(err)}`,
-    )
+    attachmentErrors = { ...attachmentErrors, [key]: extractErrorMessage(err) }
   } finally {
-    updatingAttachment = { ...updatingAttachment, [envVar.name]: false }
+    updatingAttachment = { ...updatingAttachment, [key]: false }
   }
 }
 
@@ -206,7 +207,7 @@ function toggleReveal(name: string) {
       </div>
     {:else}
       <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {#each filteredEnvVars as envVar (envVar.name)}
+        {#each filteredEnvVars as envVar (`${envVar.context}\x00${envVar.name}`)}
           <div class="rounded-xl border bg-card p-6 text-card-foreground shadow-sm">
             <div class="flex items-start justify-between gap-3">
               <div class="flex items-center gap-3 min-w-0">
@@ -241,11 +242,16 @@ function toggleReveal(name: string) {
               </div>
               <Switch
                 checked={envVar.attached}
-                disabled={updatingAttachment[envVar.name]}
+                disabled={updatingAttachment[`${envVar.context}\x00${envVar.name}`]}
                 aria-label={`Inject ${envVar.name} into workspaces`}
                 onCheckedChange={(checked) => setAttached(envVar, checked)}
               />
             </div>
+            {#if attachmentErrors[`${envVar.context}\x00${envVar.name}`]}
+              <p class="mt-2 text-sm text-destructive">
+                Failed to update attachment: {attachmentErrors[`${envVar.context}\x00${envVar.name}`]}
+              </p>
+            {/if}
           </div>
         {/each}
       </div>

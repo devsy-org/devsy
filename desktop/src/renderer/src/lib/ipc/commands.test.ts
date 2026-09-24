@@ -145,19 +145,21 @@ describe("IPC commands", () => {
   })
 
   describe("managed environment commands", () => {
-    it("envAttach sends only the variable name", async () => {
+    it("envAttach sends the variable name and context", async () => {
       mockInvoke.mockResolvedValue({ ok: true })
-      await envAttach("LOG_LEVEL")
+      await envAttach("LOG_LEVEL", "staging")
       expect(mockInvoke).toHaveBeenCalledWith("env_attach", {
         name: "LOG_LEVEL",
+        context: "staging",
       })
     })
 
-    it("envDetach sends only the variable name", async () => {
+    it("envDetach sends the variable name and context", async () => {
       mockInvoke.mockResolvedValue({ ok: true })
-      await envDetach("LOG_LEVEL")
+      await envDetach("LOG_LEVEL", "staging")
       expect(mockInvoke).toHaveBeenCalledWith("env_detach", {
         name: "LOG_LEVEL",
+        context: "staging",
       })
     })
   })

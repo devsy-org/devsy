@@ -19,6 +19,7 @@ vi.mock("$lib/stores/env.js", async () => {
     envVars: writable([
       { name: "ATTACHED", value: "one", context: "default", attached: true },
       { name: "DETACHED", value: "two", context: "default", attached: false },
+      { name: "STAGING_ONLY", value: "three", context: "staging", attached: false },
     ]),
     refreshEnv: mocks.refreshEnv,
   }
@@ -46,7 +47,7 @@ describe("EnvPage managed environment attachments", () => {
 
     await fireEvent.click(detached)
     await waitFor(() =>
-      expect(mocks.envAttach).toHaveBeenCalledWith("DETACHED"),
+      expect(mocks.envAttach).toHaveBeenCalledWith("DETACHED", "default"),
     )
     expect(mocks.refreshEnv).toHaveBeenCalled()
 
@@ -54,7 +55,18 @@ describe("EnvPage managed environment attachments", () => {
       screen.getByRole("switch", { name: "Inject ATTACHED into workspaces" }),
     )
     await waitFor(() =>
-      expect(mocks.envDetach).toHaveBeenCalledWith("ATTACHED"),
+      expect(mocks.envDetach).toHaveBeenCalledWith("ATTACHED", "default"),
+    )
+  })
+
+  it("uses the context displayed on a stale row", async () => {
+    render(EnvPage)
+
+    await fireEvent.click(
+      screen.getByRole("switch", { name: "Inject STAGING_ONLY into workspaces" }),
+    )
+    await waitFor(() =>
+      expect(mocks.envAttach).toHaveBeenCalledWith("STAGING_ONLY", "staging"),
     )
   })
 })
