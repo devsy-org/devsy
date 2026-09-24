@@ -33,6 +33,8 @@ function appState(enabled: boolean): AppSettingsState {
       runAtStartup: enabled,
       openToTrayOnStartup: true,
       trayNotifications: "failures",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     },
     startup: {
       applied: true,

@@ -17,7 +17,7 @@ import {
   shouldSuppressInitialWindow,
 } from "./launch-context.js"
 import { LogStore } from "./log-store.js"
-import { setMainLogLevel } from "./logging.js"
+import { mainLog, setMainLogLevel } from "./logging.js"
 import { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
 import { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import { ProviderJobs } from "./provider-jobs.js"
@@ -171,9 +171,9 @@ app.whenReady().then(async () => {
     join(app.getPath("userData"), "app-settings.json"),
   )
   appSettingsStore.load()
-  setMainLogLevel(appSettingsStore.get().logLevel)
+  setMainLogLevel(appSettingsStore.get().desktopLogLevel)
   const cli = new CliRunner(binaryPath)
-  cli.setLogLevel(appSettingsStore.get().logLevel ?? "info")
+  cli.setDiagnosticLogLevel(appSettingsStore.get().cliCaptureLogLevel)
 
   // Initialize log store. Logs live under ~/.devsy/desktop/logs/ — inside the
   // shared ~/.devsy root (no artifact sprawl) but outside the CLI-managed
@@ -189,9 +189,9 @@ app.whenReady().then(async () => {
   )
   try {
     const pruned = logStore.prune(30)
-    if (pruned > 0) console.log(`Pruned ${pruned} old log files`)
+    if (pruned > 0) mainLog.info(`Pruned ${pruned} old log files`)
   } catch (e) {
-    console.error("Failed to prune old logs:", e)
+    mainLog.error("Failed to prune old logs:", e)
   }
 
   // Initialize PTY manager
@@ -231,8 +231,8 @@ app.whenReady().then(async () => {
     applyAutostart: (settings) => applyAutostart(settings, autostartEnv),
     currentAutostartEnabled: () => readAutostartEnabled(autostartEnv),
     onChanged: (result) => {
-      setMainLogLevel(result.settings.logLevel)
-      cli.setLogLevel(result.settings.logLevel ?? "info")
+      setMainLogLevel(result.settings.desktopLogLevel)
+      cli.setDiagnosticLogLevel(result.settings.cliCaptureLogLevel)
       appTray?.rebuildMenu()
       const win = mainWindow
       if (win && !win.isDestroyed()) {

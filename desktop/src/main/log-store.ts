@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs"
 import { basename, join } from "node:path"
+import { mainLog } from "./logging.js"
 
 // safeLogFilename strips any directory components from filename so a caller
 // can't traverse out of the per-workspace logs dir with "../" segments.
@@ -76,7 +77,7 @@ export class LogStore {
       stream = createWriteStream(logPath, { flags: "a" })
       stream.on("error", (err) => {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-          console.error(`log write failed for ${logPath}:`, err)
+          mainLog.error(`log write failed for ${logPath}:`, err)
         }
       })
       this.streams.set(logPath, stream)

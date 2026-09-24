@@ -7,6 +7,7 @@ import {
   workspaceJobLabel,
 } from "../shared/workspace-operation.js"
 import type { AppSettings } from "./app-settings.js"
+import { mainLog } from "./logging.js"
 import type { DaemonState, Workspace } from "./state.js"
 import {
   getLastStatus,
@@ -320,7 +321,7 @@ export class AppTray {
         toggleOpenToTray: () => this.deps.toggleOpenToTray(),
         installUpdate: () =>
           void installUpdate().catch((error) =>
-            console.warn("[tray] failed to install update:", error),
+            mainLog.warn("[tray] failed to install update:", error),
           ),
         quit: () => app.quit(),
       },
@@ -341,7 +342,7 @@ export class AppTray {
     try {
       await this.deps.startWorkspace(workspaceId)
     } catch (error) {
-      console.warn(`[tray] failed to start workspace ${workspaceId}:`, error)
+      mainLog.warn(`[tray] failed to start workspace ${workspaceId}:`, error)
     } finally {
       await this.refreshAfterAction(workspaceId)
       this.pendingStarts.delete(workspaceId)
@@ -356,7 +357,7 @@ export class AppTray {
     try {
       await this.deps.stopWorkspace(workspaceId)
     } catch (error) {
-      console.warn(`[tray] failed to stop workspace ${workspaceId}:`, error)
+      mainLog.warn(`[tray] failed to stop workspace ${workspaceId}:`, error)
     } finally {
       await this.refreshAfterAction(workspaceId)
       this.pendingStops.delete(workspaceId)
@@ -368,12 +369,12 @@ export class AppTray {
     try {
       await this.deps.refreshWorkspace(workspaceId)
     } catch (error) {
-      console.warn(`[tray] failed to refresh workspace ${workspaceId}:`, error)
+      mainLog.warn(`[tray] failed to refresh workspace ${workspaceId}:`, error)
     }
     try {
       await this.deps.refreshWorkspaces()
     } catch (error) {
-      console.warn("[tray] failed to refresh workspaces:", error)
+      mainLog.warn("[tray] failed to refresh workspaces:", error)
     }
   }
 

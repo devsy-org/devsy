@@ -3,6 +3,10 @@ import { execFile as execFileCb, spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import type { Readable } from "node:stream"
 import { promisify } from "node:util"
+import {
+  cliErrorFromEnvelope,
+  cliErrorFromLegacy,
+} from "../shared/cli-error.js"
 import type { CLIError, CliLogLine } from "../shared/cli-error.js"
 import { getAnalyticsDistinctId } from "./analytics.js"
 
@@ -32,6 +36,10 @@ export interface StreamLine {
   level?: "info" | "warn" | "error"
 }
 
+export interface CliInvocationPolicy {
+  diagnosticLogLevel: import("../shared/app-settings.js").LogLevel
+}
+
 /**
  * Coerce an arbitrary zap level string into the narrow set the IPC payload uses.
  * Unknown levels map to "info".
@@ -59,7 +67,9 @@ function extractCliErrorFromStderr(stderr: string): CLIError | undefined {
   let found: CLIError | undefined
   for (const line of stderr.split(/\r?\n/)) {
     const parsed = parseStderrLine(line)
-    if (parsed?.cliError) found = parsed.cliError
+    const direct = cliErrorFromEnvelope(parsed)
+    const legacy = cliErrorFromLegacy(parsed)
+    if (direct ?? legacy) found = direct ?? legacy
   }
   return found
 }
@@ -169,7 +179,7 @@ export class CliRunner {
   private env: NodeJS.ProcessEnv
   private running = 0
   private queue: Array<() => void> = []
-  private logLevel: import("../shared/app-settings.js").LogLevel = "info"
+  private policy: CliInvocationPolicy = { diagnosticLogLevel: "info" }
 
   constructor(private binaryPath: string) {
     if (/\.[cm]?js$/.test(binaryPath)) {
@@ -182,8 +192,12 @@ export class CliRunner {
     this.env = buildEnv()
   }
 
+  setDiagnosticLogLevel(level: import("../shared/app-settings.js").LogLevel): void {
+    this.policy.diagnosticLogLevel = level
+  }
+
   setLogLevel(level: import("../shared/app-settings.js").LogLevel): void {
-    this.logLevel = level
+    this.setDiagnosticLogLevel(level)
   }
 
   private argsWithLogLevel(args: string[], suffix: string[] = []): string[] {
@@ -193,7 +207,7 @@ export class CliRunner {
     return [
       ...this.prefixArgs,
       ...args,
-      ...(explicit ? [] : ["--log-level", this.logLevel]),
+      ...(explicit ? [] : ["--log-level", this.policy.diagnosticLogLevel]),
       ...suffix,
     ]
   }
@@ -356,13 +370,13 @@ export class CliRunner {
       rl.on("line", (line) => {
         if (suppressCallbacks) return
         const parsed = parseStderrLine(line)
-        if (parsed?.cliError) {
-          lastCliError = parsed.cliError
-        }
+        const direct = cliErrorFromEnvelope(parsed)
+        const legacy = cliErrorFromLegacy(parsed)
+        if (direct ?? legacy) lastCliError = direct ?? legacy
         const meta: StreamLine = {
           raw: line,
           parsed,
-          cliError: parsed?.cliError,
+          cliError: direct ?? legacy,
           level: normalizeLevel(parsed?.level),
         }
         applyBackpressure(onLine(line, "stderr", meta))

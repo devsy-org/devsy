@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  cliErrorFromEnvelope,
   normalizeOperationStatus,
   parseCliEnvelope,
   type CliStatusEnvelope,
 } from "../../shared/cli-error"
 
 describe("CLI envelopes", () => {
+	it("validates direct error envelopes and rejects malformed fields", () => {
+    expect(cliErrorFromEnvelope({ kind: "error", outcome: "error", code: "X", message: "boom" })).toMatchObject({ code: "X", message: "boom" })
+    expect(cliErrorFromEnvelope({ kind: "error", outcome: "error", message: "" })).toBeUndefined()
+    expect(cliErrorFromEnvelope({ kind: "error", outcome: "error", message: "boom", context: { attempt: 1 } })).toBeUndefined()
+  })
 	it("parses and normalizes current status", () => {
 		const envelope = parseCliEnvelope(
 			JSON.stringify({ kind: "status", schemaVersion: 1, phase: "building_image", state: "started" }),

@@ -12,7 +12,7 @@ import {
   parseCliEnvelope,
 } from "../shared/cli-error.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
-import type { CliRunner } from "./cli.js"
+import type { CliRunner, StreamLine } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { LogStore } from "./log-store.js"
 import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
@@ -40,6 +40,7 @@ import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
 import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
+import { mainLog } from "./logging.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -119,6 +120,12 @@ interface IpcDependencies {
 /** Format a line in zap console format so log-parser.ts can parse it. */
 function formatLogLine(line: string, level: "INFO" | "ERROR" = "INFO"): string {
   return `${new Date().toISOString()}\t${level}\t${line}`
+}
+
+function displayCliLine(line: string, meta?: StreamLine): string {
+  return meta?.cliError
+    ? formatLogLine(meta.cliError.message, "ERROR")
+    : formatLogLine(line)
 }
 
 interface ProgressSink {
@@ -257,7 +264,7 @@ function createLogSink(
         await flush?.()
       } catch (error) {
         // Log persistence must not change a command's actual outcome.
-        console.warn("[workspace-operation] log flush failed", error)
+        mainLog.warn("[workspace-operation] log flush failed", error)
       }
       post(true, { message: finalLine, ...extra })
     },
@@ -704,7 +711,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
               return
             }
           }
-          const formatted = redactSensitiveText(formatLogLine(line))
+          const formatted = redactSensitiveText(displayCliLine(line, meta))
           win?.webContents.send("command-progress", {
             commandId: cmdId,
             message: formatted,
@@ -1277,7 +1284,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const generation = workspaceJobs.start(wsId, activity, cmdId)
       const started = performance.now()
       const timing = (stage: string) =>
-        console.debug(
+        mainLog.debug(
           `[workspace-operation] ${cmdId} ${stage} ${Math.round(performance.now() - started)}ms`,
         )
       timing("accepted")
@@ -1347,7 +1354,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           try {
             child = await cli.runStreaming(
               ["workspace", "task", "logs", taskId, "--follow"],
-              (line, stream) => {
+              (line, stream, meta) => {
                 if (
                   signalledDone ||
                   suppressCallbacks ||
@@ -1377,7 +1384,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                   return
                 }
 
-                const formatted = formatLogLine(line)
+                const formatted = displayCliLine(line, meta)
 
                 if (envelope?.kind === "result") {
                   signalledDone = true
@@ -1504,7 +1511,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             await sink
               .done(formatLogLine("Completed"), { success: true })
               .catch((error) =>
-                console.warn("[workspace-operation] log flush failed", error),
+                mainLog.warn("[workspace-operation] log flush failed", error),
               )
             await workspaceJobs.finish(wsId, generation)
             return
@@ -1579,7 +1586,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     )
     const started = performance.now()
     const timing = (stage: string) =>
-      console.debug(
+      mainLog.debug(
         `[workspace-operation] ${commandId} ${stage} ${Math.round(performance.now() - started)}ms`,
       )
     trackEvent(
@@ -1611,7 +1618,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           void cli
             .runStreaming(
               cliArgs,
-              (line, stream) => {
+              (line, stream, meta) => {
                 if (!workspaceJobs.owns(args.workspaceId, commandId)) return
                 if (firstProgress) {
                   timing("first-progress")
@@ -1626,7 +1633,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                   )
                 )
                   return
-                if (!sink!.line(formatLogLine(line)))
+                if (!sink!.line(displayCliLine(line, meta)))
                   return logStore.onDrain(logPath)
               },
               (code, cliError) => {
@@ -1649,7 +1656,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         await sink
           .done(formatLogLine("Completed"), { success: true })
           .catch((error) =>
-            console.warn("[workspace-operation] log flush failed", error),
+            mainLog.warn("[workspace-operation] log flush failed", error),
           )
         await workspaceJobs.finish(args.workspaceId, generation)
         timing("reconciled")

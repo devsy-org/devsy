@@ -368,6 +368,7 @@ export const runAtStartup = writable<boolean>(false)
 export const openToTrayOnStartup = writable<boolean>(false)
 export const trayNotifications = writable<TrayNotificationLevel>("failures")
 export const desktopLogLevel = writable<LogLevel>("info")
+export const cliCaptureLogLevel = writable<LogLevel>("info")
 export const startupStatus = writable<StartupStatus | null>(null)
 
 let desktopSettingsQueue: Promise<unknown> = Promise.resolve()
@@ -377,7 +378,8 @@ function applyAppSettingsState(state: AppSettingsState): void {
   runAtStartup.set(state.settings.runAtStartup)
   openToTrayOnStartup.set(state.settings.openToTrayOnStartup)
   trayNotifications.set(state.settings.trayNotifications)
-  desktopLogLevel.set(state.settings.logLevel ?? "info")
+  desktopLogLevel.set(state.settings.desktopLogLevel)
+  cliCaptureLogLevel.set(state.settings.cliCaptureLogLevel)
   startupStatus.set(state.startup)
 }
 

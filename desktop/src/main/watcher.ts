@@ -9,6 +9,7 @@ import type { ProviderJobs } from "./provider-jobs.js"
 import type { DaemonState } from "./state.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
+import { mainLog } from "./logging.js"
 
 interface WatcherDeps {
   cli: CliRunner
@@ -275,7 +276,7 @@ export class Watcher {
     } catch (error) {
       // Polling is best-effort, but retain diagnostics so a broken CLI or
       // daemon cannot make the desktop appear empty without explanation.
-      console.warn("[watcher] workspace poll failed", error)
+      mainLog.warn("[watcher] workspace poll failed", error)
       if (strict) throw error
     }
   }
@@ -327,7 +328,7 @@ export class Watcher {
         this.broadcastProviders()
       }
     } catch (error) {
-      console.warn("[watcher] provider poll failed", error)
+      mainLog.warn("[watcher] provider poll failed", error)
     }
   }
 

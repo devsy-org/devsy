@@ -5,6 +5,7 @@ import electronUpdater, { type AppUpdater } from "electron-updater"
 import semver from "semver"
 import { trackEvent } from "./analytics.js"
 import { clearAppQuitting, markAppQuitting } from "./app-lifecycle.js"
+import { mainLog } from "./logging.js"
 
 export type ReleaseChannel = "stable" | "beta"
 
@@ -93,7 +94,7 @@ export function logUpdateDecision(params: UpdateDecisionLog): void {
     `result=${params.result}`,
     params.error ? `error=${params.error}` : null,
   ].filter(Boolean)
-  console.info(parts.join(" "))
+  mainLog.info(parts.join(" "))
 }
 
 export interface UpdateProgress {
@@ -173,7 +174,7 @@ function saveSettings(patch: PersistedSettings): void {
     writeFileSync(tmp, JSON.stringify({ ...current, ...patch }))
     renameSync(tmp, target)
   } catch (err) {
-    console.warn("[updater] failed to persist settings:", err)
+    mainLog.warn("[updater] failed to persist settings:", err)
   }
 }
 
@@ -188,7 +189,7 @@ function getCurrentVersion(): string | null {
     const v = app.getVersion()
     return v || null
   } catch (err) {
-    console.error(
+      mainLog.error(
       "Auto-update: unable to read app version:",
       err instanceof Error ? err.message : String(err),
     )
@@ -229,7 +230,7 @@ function setStatus(status: UpdateStatus): void {
     try {
       listener(status)
     } catch (error) {
-      console.error("[updater] status listener failed:", error)
+      mainLog.error("[updater] status listener failed:", error)
     }
   }
 }
@@ -515,7 +516,7 @@ export async function initAutoUpdater(
         currentVersion,
         code,
       })
-      console.warn("Auto-update: channel manifest missing:", err.message)
+      mainLog.warn("Auto-update: channel manifest missing:", err.message)
       return
     }
     setStatus({
@@ -524,7 +525,7 @@ export async function initAutoUpdater(
       code,
       error: err.message,
     })
-    console.error("Auto-update error:", err.message)
+    mainLog.error("Auto-update error:", err.message)
   })
 
   const runBackgroundCheck = (): void => {
@@ -534,7 +535,7 @@ export async function initAutoUpdater(
     checkInFlight = true
     void runUpdateCheck(autoUpdater)
       .catch((err: Error) => {
-        console.error("Update check failed:", err.message)
+        mainLog.error("Update check failed:", err.message)
       })
       .finally(() => {
         checkInFlight = false
@@ -687,7 +688,7 @@ export async function installUpdate(): Promise<void> {
       code: "install-failed",
       error: message,
     })
-    console.error("Update installation failed:", message)
+    mainLog.error("Update installation failed:", message)
     throw error
   }
 }

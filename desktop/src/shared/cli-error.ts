@@ -62,6 +62,42 @@ export interface CliErrorEnvelope {
   context?: Record<string, string>
 }
 
+export function cliErrorFromEnvelope(value: unknown): CLIError | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const candidate = value as Record<string, unknown>
+  if (candidate.kind !== "error" || candidate.outcome !== "error") return undefined
+  if (typeof candidate.message !== "string" || candidate.message.length === 0) return undefined
+  if (candidate.code !== undefined && typeof candidate.code !== "string") return undefined
+  if (candidate.hint !== undefined && typeof candidate.hint !== "string") return undefined
+  if (candidate.context !== undefined && !isStringMap(candidate.context)) return undefined
+  return {
+    code: typeof candidate.code === "string" ? candidate.code : "UNKNOWN",
+    message: candidate.message,
+    hint: typeof candidate.hint === "string" ? candidate.hint : undefined,
+    context: candidate.context as Record<string, string> | undefined,
+  }
+}
+
+export function cliErrorFromLegacy(value: unknown): CLIError | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const candidate = value as Record<string, unknown>
+  if (candidate.level !== "error" && candidate.level !== "fatal" && candidate.level !== "panic") return undefined
+  return isCLIError(candidate.cliError) ? candidate.cliError : undefined
+}
+
+function isCLIError(value: unknown): value is CLIError {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const candidate = value as Record<string, unknown>
+  return typeof candidate.code === "string" && typeof candidate.message === "string" &&
+    (candidate.hint === undefined || typeof candidate.hint === "string") &&
+    (candidate.context === undefined || isStringMap(candidate.context))
+}
+
+function isStringMap(value: unknown): value is Record<string, string> {
+  return !!value && typeof value === "object" && !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === "string")
+}
+
 export type CliEnvelope =
   | CliStatusEnvelope
   | CliResultEnvelope
@@ -85,6 +121,7 @@ export function parseCliEnvelope(line: string): CliEnvelope | undefined {
           return undefined
         }
       }
+      if ((obj as { kind: string }).kind === "error" && !cliErrorFromEnvelope(obj)) return undefined
       return obj as CliEnvelope
     }
   } catch {

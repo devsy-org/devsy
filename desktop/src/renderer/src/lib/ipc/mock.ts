@@ -112,6 +112,8 @@ let MOCK_APP_SETTINGS = {
     runAtStartup: false,
     openToTrayOnStartup: false,
     trayNotifications: "failures",
+    desktopLogLevel: "info",
+    cliCaptureLogLevel: "info",
   },
   startup: { applied: true, enabled: false, status: "disabled" },
 } as {
@@ -119,6 +121,8 @@ let MOCK_APP_SETTINGS = {
     runAtStartup: boolean
     openToTrayOnStartup: boolean
     trayNotifications: "off" | "failures" | "all"
+    desktopLogLevel: "error" | "warn" | "info" | "debug" | "trace"
+    cliCaptureLogLevel: "error" | "warn" | "info" | "debug" | "trace"
   }
   startup: {
     applied: boolean

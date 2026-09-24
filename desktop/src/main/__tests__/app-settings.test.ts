@@ -29,6 +29,8 @@ describe("normalizeAppSettings", () => {
       runAtStartup: true,
       openToTrayOnStartup: true,
       trayNotifications: "all",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
   })
 
@@ -39,6 +41,8 @@ describe("normalizeAppSettings", () => {
       runAtStartup: false,
       openToTrayOnStartup: false,
       trayNotifications: "failures",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
   })
 
@@ -49,8 +53,8 @@ describe("normalizeAppSettings", () => {
   })
 
   it("accepts only the finite logging level set", () => {
-    expect(normalizeAppSettings({ logLevel: "trace" }).logLevel).toBe("trace")
-    expect(normalizeAppSettings({ logLevel: "verbose" }).logLevel).toBeUndefined()
+    expect(normalizeAppSettings({ logLevel: "trace" })).toMatchObject({ desktopLogLevel: "trace", cliCaptureLogLevel: "trace" })
+    expect(normalizeAppSettings({ logLevel: "verbose" })).toMatchObject({ desktopLogLevel: "info", cliCaptureLogLevel: "info" })
     expect(() => sanitizeAppSettingsPatch({ logLevel: "verbose" })).toThrow()
   })
 
@@ -67,11 +71,15 @@ describe("patchAppSettings", () => {
       runAtStartup: true,
       openToTrayOnStartup: true,
       trayNotifications: "all" as const,
+      desktopLogLevel: "info" as const,
+      cliCaptureLogLevel: "info" as const,
     }
     expect(patchAppSettings(current, { runAtStartup: false })).toEqual({
       runAtStartup: false,
       openToTrayOnStartup: false,
       trayNotifications: "all",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
   })
 
@@ -80,11 +88,15 @@ describe("patchAppSettings", () => {
       runAtStartup: true,
       openToTrayOnStartup: false,
       trayNotifications: "off" as const,
+      desktopLogLevel: "info" as const,
+      cliCaptureLogLevel: "info" as const,
     }
     expect(patchAppSettings(current, { openToTrayOnStartup: true })).toEqual({
       runAtStartup: true,
       openToTrayOnStartup: true,
       trayNotifications: "off",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
   })
 })
@@ -149,6 +161,8 @@ describe("AppSettingsStore", () => {
       runAtStartup: true,
       openToTrayOnStartup: true,
       trayNotifications: "off",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
   })
 
@@ -164,6 +178,8 @@ describe("AppSettingsStore", () => {
       runAtStartup: false,
       openToTrayOnStartup: false,
       trayNotifications: "failures",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
   })
 

@@ -23,6 +23,7 @@ import {
   openToTrayOnStartup,
   trayNotifications,
   desktopLogLevel,
+  cliCaptureLogLevel,
   startupStatus,
   syncDesktopSettingsFromMain,
   updateDesktopSettings,
@@ -207,15 +208,13 @@ function toggleLocal(key: keyof LocalOptions) {
 
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <Label>Logging Level</Label>
-            <p class="text-xs text-muted-foreground">Controls desktop and launched CLI diagnostic logs</p>
+            <Label>Desktop Application Logging</Label>
+            <p class="text-xs text-muted-foreground">Controls diagnostic detail emitted by the desktop application</p>
           </div>
           <Select.Root
             type="single"
             value={$desktopLogLevel}
-            onValueChange={(v) => {
-              if (v) updateDesktopSettings({ logLevel: v as LogLevel })
-            }}
+            onValueChange={(v) => { if (v) updateDesktopSettings({ desktopLogLevel: v as LogLevel }) }}
           >
             <Select.Trigger class="h-9 w-full sm:w-[280px]"><span>{LOG_LEVEL_OPTIONS.find((o) => o.value === $desktopLogLevel)?.label ?? "Info"}</span></Select.Trigger>
             <Select.Content>
@@ -225,6 +224,18 @@ function toggleLocal(key: keyof LocalOptions) {
             </Select.Content>
           </Select.Root>
         </div>
+
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Label>CLI Capture Logging</Label>
+            <p class="text-xs text-muted-foreground">Controls diagnostic detail captured from CLI commands launched by the desktop</p>
+          </div>
+          <Select.Root type="single" value={$cliCaptureLogLevel} onValueChange={(v) => { if (v) updateDesktopSettings({ cliCaptureLogLevel: v as LogLevel }) }}>
+            <Select.Trigger class="h-9 w-full sm:w-[280px]"><span>{LOG_LEVEL_OPTIONS.find((o) => o.value === $cliCaptureLogLevel)?.label ?? "Info"}</span></Select.Trigger>
+            <Select.Content>{#each LOG_LEVEL_OPTIONS as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}</Select.Content>
+          </Select.Root>
+        </div>
+        <p class="text-xs text-muted-foreground">Direct terminal CLI commands use their own context default, which is Warn unless overridden.</p>
 
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>

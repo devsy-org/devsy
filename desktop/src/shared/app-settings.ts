@@ -5,6 +5,9 @@ export interface AppSettings {
   runAtStartup: boolean
   openToTrayOnStartup: boolean
   trayNotifications: TrayNotificationLevel
+  desktopLogLevel: LogLevel
+  cliCaptureLogLevel: LogLevel
+  /** Removed after migration; accepted only when reading older settings files. */
   logLevel?: LogLevel
 }
 

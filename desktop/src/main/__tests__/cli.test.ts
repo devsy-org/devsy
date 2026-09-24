@@ -75,6 +75,15 @@ describe("CliRunner", () => {
     expect(explicitArgs).toContain("error")
   })
 
+  it("defaults desktop-launched CLI diagnostics to info", async () => {
+    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
+      callback(null, { stdout: "{}", stderr: "" })
+    })
+    await cli.run(["workspace", "list"])
+    expect(mockExecFile.mock.calls[0][1]).toContain("info")
+  })
+
   describe("run", () => {
     it("parses JSON stdout and returns typed result", async () => {
       const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
@@ -183,6 +192,21 @@ describe("CliRunner", () => {
       expect(rejection).toBeInstanceOf(Error)
       expect(rejection.cliError).toEqual(cliErrorPayload)
       expect(rejection.message).toBe(cliErrorPayload.message)
+    })
+
+    it("extracts a direct error envelope independently of diagnostic level", async () => {
+      const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+      const envelope = { kind: "error", outcome: "error", code: "BROKEN", message: "failure", hint: "retry" }
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
+        const error = new Error("Command failed") as Error & { code: number; stderr: string }
+        error.code = 1
+        error.stderr = JSON.stringify(envelope)
+        callback(error, { stdout: "", stderr: error.stderr })
+      })
+      cli.setDiagnosticLogLevel("error")
+      const rejection = await cli.run<never>(["workspace", "up", "."]).catch((e) => e as Error & { cliError?: unknown })
+      expect(rejection.message).toBe("failure")
+      expect(rejection.cliError).toEqual({ code: "BROKEN", message: "failure", hint: "retry", context: undefined })
     })
   })
 

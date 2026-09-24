@@ -11,6 +11,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   runAtStartup: false,
   openToTrayOnStartup: false,
   trayNotifications: "failures",
+  desktopLogLevel: "info",
+  cliCaptureLogLevel: "info",
 }
 
 const LEVELS: readonly TrayNotificationLevel[] = ["off", "failures", "all"]
@@ -28,11 +30,16 @@ export function normalizeAppSettings(raw: unknown): AppSettings {
   )
     ? (input.trayNotifications as TrayNotificationLevel)
     : DEFAULT_APP_SETTINGS.trayNotifications
-  const normalized = { runAtStartup, openToTrayOnStartup, trayNotifications }
-  if (LOG_LEVELS.includes(input.logLevel as LogLevel)) {
-    return { ...normalized, logLevel: input.logLevel as LogLevel }
-  }
-  return normalized
+  const legacy = LOG_LEVELS.includes(input.logLevel as LogLevel)
+    ? (input.logLevel as LogLevel)
+    : undefined
+  const desktopLogLevel = LOG_LEVELS.includes(input.desktopLogLevel as LogLevel)
+    ? (input.desktopLogLevel as LogLevel)
+    : (legacy ?? DEFAULT_APP_SETTINGS.desktopLogLevel)
+  const cliCaptureLogLevel = LOG_LEVELS.includes(input.cliCaptureLogLevel as LogLevel)
+    ? (input.cliCaptureLogLevel as LogLevel)
+    : (legacy ?? DEFAULT_APP_SETTINGS.cliCaptureLogLevel)
+  return { runAtStartup, openToTrayOnStartup, trayNotifications, desktopLogLevel, cliCaptureLogLevel }
 }
 
 export function patchAppSettings(
@@ -63,10 +70,15 @@ export function sanitizeAppSettingsPatch(raw: unknown): Partial<AppSettings> {
       throw new Error("trayNotifications must be off, failures, or all")
     patch.trayNotifications = input.trayNotifications as TrayNotificationLevel
   }
-  if ("logLevel" in input) {
-    if (!LOG_LEVELS.includes(input.logLevel as LogLevel))
-      throw new Error("logLevel must be error, warn, info, debug, or trace")
-    patch.logLevel = input.logLevel as LogLevel
+  for (const key of ["desktopLogLevel", "cliCaptureLogLevel", "logLevel"] as const) {
+    if (key in input) {
+      if (!LOG_LEVELS.includes(input[key] as LogLevel))
+        throw new Error(`${key} must be error, warn, info, debug, or trace`)
+      if (key === "logLevel") {
+        patch.desktopLogLevel = input[key] as LogLevel
+        patch.cliCaptureLogLevel = input[key] as LogLevel
+      } else patch[key] = input[key] as LogLevel
+    }
   }
   return patch
 }
