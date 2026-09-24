@@ -83,6 +83,50 @@ describe("presentWorkspaceStatus", () => {
     expect(view.recovery).toBeUndefined()
     expect(view.busy).toBe(true)
   })
+  it("surfaces a stopping failure while reconciliation is still pending", () => {
+    const view = presentWorkspaceStatus({
+      lifecycle: "Running",
+      job: job({
+        activity: "stopping",
+        state: "reconciling",
+        error: "provider unavailable",
+      }),
+    })
+    expect(view.headline).toBe("Stop failed")
+    expect(view.error).toBe("provider unavailable")
+    expect(view.tone).toBe("destructive")
+    expect(view.busy).toBe(false)
+    expect(view.detailsAvailable).toBe(true)
+    expect(view.phase).toBeUndefined()
+    expect(view.recovery).toBeUndefined()
+  })
+  it("uses the delete-specific failure headline while reconciling", () => {
+    const view = presentWorkspaceStatus({
+      job: job({
+        activity: "deleting",
+        state: "reconciling",
+        error: "delete command failed",
+      }),
+    })
+    expect(view.headline).toBe("Delete failed")
+    expect(view.error).toBe("delete command failed")
+  })
+  it("keeps refresh failure ahead of the operation failure", () => {
+    const view = presentWorkspaceStatus({
+      job: job({
+        activity: "stopping",
+        state: "reconciling",
+        error: "provider unavailable",
+        refreshError: "offline",
+      }),
+    })
+    expect(view.tone).toBe("warning")
+    expect(view.recovery).toEqual({
+      message: "Status may be out of date",
+      canRetry: true,
+    })
+    expect(view.error).toBeUndefined()
+  })
   it("never claims Deleted before confirmation", () => {
     for (const state of ["running", "reconciling"] as const) {
       const view = presentWorkspaceStatus({

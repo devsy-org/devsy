@@ -163,6 +163,17 @@ export function presentWorkspaceStatus(input: {
         detailsAvailable: true,
       }
     }
+    if (job.error) {
+      const failedHeadline = FAILED_HEADLINE[job.activity]
+      return {
+        headline: failedHeadline,
+        tone: "destructive",
+        busy: false,
+        announce: failedHeadline,
+        error: job.error,
+        detailsAvailable: true,
+      }
+    }
     const phase = confirmingPhase(job.activity)
     return {
       headline,
