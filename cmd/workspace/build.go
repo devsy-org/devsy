@@ -158,6 +158,7 @@ func (cmd *BuildCmd) execute(ctx context.Context, args []string) error {
 		ProviderUserOptions: cmd.ProviderOptions,
 		DevContainerImage:   cmd.DevContainerImage,
 		DevContainerPath:    cmd.DevContainerPath,
+		DevContainerID:      cmd.DevContainerID,
 		SSHConfigPath:       sshConfigPath,
 		UID:                 cmd.UID,
 		Owner:               cmd.Owner,

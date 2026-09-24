@@ -3,6 +3,7 @@ package devcontainer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -10,7 +11,10 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const testWorkspaceFolder = "/workspace"
+const (
+	testWorkspaceFolder     = "/workspace"
+	testDevContainerProfile = "max"
+)
 
 type SubstituteTestSuite struct {
 	suite.Suite
@@ -478,6 +482,20 @@ func seedAmbiguousProfiles(t *testing.T, folder string) {
 	}
 }
 
+func seedNamedProfiles(t *testing.T, folder string, ids ...string) {
+	t.Helper()
+	for _, id := range ids {
+		dir := filepath.Join(folder, ".devcontainer", id)
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		body := []byte(`{"image":"` + id + `"}`)
+		if err := os.WriteFile(filepath.Join(dir, "devcontainer.json"), body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestGetRawConfig_SourceImageBypassesDiscovery(t *testing.T) {
 	folder := t.TempDir()
 	seedAmbiguousProfiles(t, folder)
@@ -568,6 +586,85 @@ func TestGetRawConfig_CLISourceOverridesPersisted(t *testing.T) {
 	}
 	if conf.Image != "cli" {
 		t.Errorf("Image = %q, want %q (CLI option must win over persisted)", conf.Image, "cli")
+	}
+}
+
+func TestGetRawConfig_PersistedIDSelectsProfile(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile, "max-nvidia", "max-vaapi")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerID = testDevContainerProfile
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != testDevContainerProfile {
+		t.Errorf("Image = %q, want %s", conf.Image, testDevContainerProfile)
+	}
+}
+
+func TestGetRawConfig_ExplicitSelectorOverridesPersistedSelector(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile, "max-nvidia")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerSource = "image:persisted"
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{DevContainerID: "max-nvidia"})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != "max-nvidia" {
+		t.Errorf("Image = %q, want max-nvidia", conf.Image)
+	}
+}
+
+func TestGetRawConfig_ExplicitPathOverridesPersistedID(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile, "max-vaapi")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerID = testDevContainerProfile
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{
+		DevContainerPath: ".devcontainer/max-vaapi/devcontainer.json",
+	})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != "max-vaapi" {
+		t.Errorf("Image = %q, want max-vaapi", conf.Image)
+	}
+}
+
+func TestGetRawConfig_LastConfigPathCompatibilityFallback(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, "max", "max-nvidia")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: ".devcontainer/" + testDevContainerProfile + "/devcontainer.json",
+	}
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != testDevContainerProfile {
+		t.Errorf("Image = %q, want %s", conf.Image, testDevContainerProfile)
+	}
+}
+
+func TestGetRawConfig_InvalidPersistedID(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile, "max-nvidia")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerID = "missing"
+
+	_, err := r.getRawConfig(provider2.CLIOptions{})
+	if err == nil {
+		t.Fatal("expected invalid persisted ID to fail")
+	}
+	if !strings.Contains(err.Error(), `devcontainer with ID "missing" not found`) {
+		t.Fatalf("error = %q, want missing ID error", err)
 	}
 }
 

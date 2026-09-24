@@ -291,6 +291,8 @@ func (cmd *CICmd) resolveWorkspace(
 		ProviderUserOptions: cmd.ProviderOptions,
 		DevContainerImage:   cmd.DevContainerImage,
 		DevContainerPath:    cmd.DevContainerPath,
+		DevContainerID:      cmd.DevContainerID,
+		DevContainerSource:  cmd.DevContainerSource,
 		SSHConfigPath:       sshConfigPath,
 		UID:                 cmd.UID,
 		Owner:               cmd.Owner,

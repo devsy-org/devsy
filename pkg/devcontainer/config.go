@@ -43,15 +43,14 @@ func (r *runner) getRawConfigWithContext(
 	ctx context.Context,
 	options provider.CLIOptions,
 ) (*config.DevContainerConfig, error) {
-	source := options.DevContainerSource
-	if source == "" {
-		source = r.workspaceConfig.Workspace.DevContainerSource
+	selection := r.effectiveDevContainerSelection(options)
+	if selection.source != "" {
+		return r.rawConfigFromSourceWithContext(ctx, selection.source, options)
 	}
-	if source != "" {
-		return r.rawConfigFromSourceWithContext(ctx, source, options)
-	}
-	if conf := r.rawConfigFromWorkspace(); conf != nil {
-		return conf, nil
+	if selection.path == "" && selection.id == "" {
+		if conf := r.rawConfigFromWorkspace(); conf != nil {
+			return conf, nil
+		}
 	}
 	if conf := r.rawConfigFromContainer(); conf != nil {
 		return conf, nil
@@ -59,13 +58,67 @@ func (r *runner) getRawConfigWithContext(
 	if crane.ShouldUse(&options) {
 		return r.rawConfigFromCraneWithContext(ctx, options)
 	}
-	return r.rawConfigFromFilesystemWithContext(ctx, options)
+	return r.rawConfigFromFilesystemWithContext(ctx, options, selection)
+}
+
+type devContainerSelection struct {
+	source string
+	path   string
+	id     string
+}
+
+// effectiveDevContainerSelection returns the one effective selector for this
+// operation. Current CLI input wins over persisted workspace state, followed
+// by the last resolved path for compatibility with older workspaces.
+func (r *runner) effectiveDevContainerSelection(
+	options provider.CLIOptions,
+) devContainerSelection {
+	if selection, ok := newDevContainerSelection(
+		options.DevContainerSource,
+		options.DevContainerPath,
+		options.DevContainerID,
+	); ok {
+		return selection
+	}
+
+	if r.workspaceConfig != nil && r.workspaceConfig.Workspace != nil {
+		workspace := r.workspaceConfig.Workspace
+		if selection, ok := newDevContainerSelection(
+			workspace.DevContainerSource,
+			workspace.DevContainerPath,
+			workspace.DevContainerID,
+		); ok {
+			return selection
+		}
+	}
+
+	if r.workspaceConfig != nil && r.workspaceConfig.LastDevContainerConfig != nil {
+		if path := r.workspaceConfig.LastDevContainerConfig.Path; path != "" {
+			return devContainerSelection{path: path}
+		}
+	}
+
+	return devContainerSelection{}
+}
+
+func newDevContainerSelection(source, path, id string) (devContainerSelection, bool) {
+	switch {
+	case source != "":
+		return devContainerSelection{source: source}, true
+	case path != "":
+		return devContainerSelection{path: path}, true
+	case id != "":
+		return devContainerSelection{id: id}, true
+	default:
+		return devContainerSelection{}, false
+	}
 }
 
 // rawConfigFromWorkspace returns the config embedded in the workspace metadata,
 // or nil when none is present.
 func (r *runner) rawConfigFromWorkspace() *config.DevContainerConfig {
-	if r.workspaceConfig.Workspace.DevContainerConfig == nil {
+	if r.workspaceConfig == nil || r.workspaceConfig.Workspace == nil ||
+		r.workspaceConfig.Workspace.DevContainerConfig == nil {
 		return nil
 	}
 
@@ -130,12 +183,15 @@ func (r *runner) rawConfigFromCraneWithContext(
 func (r *runner) rawConfigFromFilesystem(
 	options provider.CLIOptions,
 ) (*config.DevContainerConfig, error) {
-	return r.rawConfigFromFilesystemWithContext(context.Background(), options)
+	return r.rawConfigFromFilesystemWithContext(
+		context.Background(), options, r.effectiveDevContainerSelection(options),
+	)
 }
 
 func (r *runner) rawConfigFromFilesystemWithContext(
 	ctx context.Context,
 	options provider.CLIOptions,
+	selection devContainerSelection,
 ) (*config.DevContainerConfig, error) {
 	localWorkspaceFolder := r.localWorkspaceFolder
 	if subPath := r.workspaceConfig.Workspace.Source.GitSubPath; subPath != "" {
@@ -143,11 +199,11 @@ func (r *runner) rawConfigFromFilesystemWithContext(
 	}
 
 	opts := config.ParseOptions{Selector: config.SelectSingle(localWorkspaceFolder)}
-	if options.DevContainerID != "" {
+	if selection.id != "" {
 		// An explicit id must not be shadowed by a root config, and a mismatch
 		// must error rather than silently fall back.
 		opts = config.ParseOptions{
-			Selector:    config.SelectByID(options.DevContainerID),
+			Selector:    config.SelectByID(selection.id),
 			ForceSelect: true,
 		}
 	}
@@ -155,7 +211,7 @@ func (r *runner) rawConfigFromFilesystemWithContext(
 	rawConfig, err := config.ParseDevContainerJSONWithOptions(
 		ctx,
 		localWorkspaceFolder,
-		r.workspaceConfig.Workspace.DevContainerPath,
+		selection.path,
 		opts,
 	)
 	// A missing devcontainer.json is not an error: fall back to auto-detection.

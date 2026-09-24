@@ -50,6 +50,10 @@ type Workspace struct {
 	// DevContainerPath is the relative path where the devcontainer.json is located.
 	DevContainerPath string `json:"devContainerPath,omitempty"`
 
+	// DevContainerID is the selected named devcontainer profile. It is persisted
+	// so lifecycle operations reuse the same profile instead of rediscovering it.
+	DevContainerID string `json:"devContainerID,omitempty"`
+
 	// DevContainerSource is the devcontainer source override (e.g. "image:<ref>"
 	// or "none") that ignores the project's devcontainer.json. It is persisted so
 	// restarts reuse the same override instead of falling back to discovery.

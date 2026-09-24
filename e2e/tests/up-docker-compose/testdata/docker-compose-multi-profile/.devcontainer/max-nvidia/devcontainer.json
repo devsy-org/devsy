@@ -1,0 +1,6 @@
+{
+  "name": "max-nvidia",
+  "dockerComposeFile": "../compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces"
+}
