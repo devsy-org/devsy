@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/svelte"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
   envAttach: vi.fn().mockResolvedValue(undefined),
@@ -30,6 +30,9 @@ import EnvPage from "./EnvPage.svelte"
 describe("EnvPage managed environment attachments", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+  afterEach(() => {
+    cleanup()
   })
 
   it("renders attachment state and sends attach/detach intent", async () => {
