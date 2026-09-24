@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/gofrs/flock"
 	"sigs.k8s.io/yaml"
 )
 
@@ -327,11 +328,12 @@ func SaveConfig(config *Config) error {
 	}
 
 	config = CloneConfig(config)
+	selectedContext := config.DefaultContext
+	if selected := config.Contexts[selectedContext]; selected != nil && selected.OriginalProvider != "" {
+		selected.DefaultProvider = selected.OriginalProvider
+	}
 	if config.OriginalContext != "" {
 		config.DefaultContext = config.OriginalContext
-	}
-	if config.Contexts[config.DefaultContext].OriginalProvider != "" {
-		config.Contexts[config.DefaultContext].DefaultProvider = config.Contexts[config.DefaultContext].OriginalProvider
 	}
 
 	out, err := yaml.Marshal(config)
@@ -344,11 +346,61 @@ func SaveConfig(config *Config) error {
 		return err
 	}
 
-	err = os.WriteFile(configOrigin, out, 0o600)
+	return writeConfigAtomic(configOrigin, out)
+}
+
+// LockConfig serializes read/modify/write mutations to config.yaml across
+// processes. Callers must acquire it before loading the config and hold it
+// until every related persistent operation is complete.
+func LockConfig() (func(), error) {
+	configPath, err := GetConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		return nil, err
+	}
+	lock := flock.New(configPath + ".lock")
+	if err := lock.Lock(); err != nil {
+		return nil, fmt.Errorf("lock config %q: %w", configPath+".lock", err)
+	}
+	return func() { _ = lock.Unlock() }, nil
+}
+
+func writeConfigAtomic(configOrigin string, data []byte) error {
+	dir := filepath.Dir(configOrigin)
+	tmp, err := os.CreateTemp(dir, filepath.Base(configOrigin)+".tmp-*")
 	if err != nil {
 		return err
 	}
-
+	tmpName := tmp.Name()
+	success := false
+	defer func() {
+		_ = tmp.Close()
+		if !success {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, configOrigin); err != nil {
+		return err
+	}
+	success = true
+	if dirFile, err := os.Open(dir); err == nil {
+		_ = dirFile.Sync()
+		_ = dirFile.Close()
+	}
 	return nil
 }
 
