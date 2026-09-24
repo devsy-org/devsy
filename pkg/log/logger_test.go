@@ -68,6 +68,24 @@ func TestResolveLevelDefaultsToWarn(t *testing.T) {
 	}
 }
 
+func TestQuietKeepsErrorsVisible(t *testing.T) {
+	Init(Config{Quiet: true, QuietSet: true})
+	var sink syncBuffer
+	remove := AddSink(&sink)
+	defer remove()
+
+	Warn("hidden warning")
+	Error("visible error")
+	_ = Sync()
+
+	if got := sink.String(); strings.Contains(got, "hidden warning") {
+		t.Fatalf("quiet logger emitted warning: %q", got)
+	}
+	if got := sink.String(); !strings.Contains(got, "visible error") {
+		t.Fatalf("quiet logger hid error: %q", got)
+	}
+}
+
 func TestLevelFromString(t *testing.T) {
 	for _, level := range ValidLevels() {
 		if _, ok := LevelFromString(level); !ok {

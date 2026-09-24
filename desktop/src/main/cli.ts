@@ -12,6 +12,8 @@ import { getAnalyticsDistinctId } from "./analytics.js"
 
 const execFile = promisify(execFileCb)
 const MAX_CONCURRENT = 50
+type CliLogOutput = "json" | "logfmt" | "text"
+type CliResultFormat = "auto" | "json" | "plain"
 
 function backpressureController(source: Readable): (r: void | Promise<void>) => void {
   let pending = 0
@@ -38,6 +40,8 @@ export interface StreamLine {
 
 export interface CliInvocationPolicy {
   diagnosticLogLevel: import("../shared/app-settings.js").LogLevel
+  logOutput: CliLogOutput
+  resultFormat: CliResultFormat
 }
 
 /**
@@ -179,7 +183,11 @@ export class CliRunner {
   private env: NodeJS.ProcessEnv
   private running = 0
   private queue: Array<() => void> = []
-  private policy: CliInvocationPolicy = { diagnosticLogLevel: "info" }
+  private policy: CliInvocationPolicy = {
+    diagnosticLogLevel: "info",
+    logOutput: "json",
+    resultFormat: "json",
+  }
 
   constructor(private binaryPath: string) {
     if (/\.[cm]?js$/.test(binaryPath)) {
@@ -200,7 +208,7 @@ export class CliRunner {
     this.setDiagnosticLogLevel(level)
   }
 
-  private argsWithLogLevel(args: string[], suffix: string[] = []): string[] {
+  private argsWithLogLevel(args: string[]): string[] {
     const explicit = args.some(
       (arg) => arg === "--log-level" || arg.startsWith("--log-level="),
     )
@@ -208,8 +216,20 @@ export class CliRunner {
       ...this.prefixArgs,
       ...args,
       ...(explicit ? [] : ["--log-level", this.policy.diagnosticLogLevel]),
-      ...suffix,
     ]
+  }
+
+  private argsWithProtocol(args: string[], includeResultFormat = false): string[] {
+    const fullArgs = this.argsWithLogLevel(args)
+    const hasFlag = (flag: string) =>
+      fullArgs.some((arg) => arg === flag || arg.startsWith(`${flag}=`))
+    if (includeResultFormat && !hasFlag("--result-format")) {
+      fullArgs.push("--result-format", this.policy.resultFormat)
+    }
+    if (!hasFlag("--log-output") && !hasFlag("--log-format")) {
+      fullArgs.push("--log-output", this.policy.logOutput)
+    }
+    return fullArgs
   }
 
   private acquire(): Promise<void> {
@@ -234,12 +254,7 @@ export class CliRunner {
   async run<T>(args: string[]): Promise<T> {
     await this.acquire()
     try {
-      const fullArgs = this.argsWithLogLevel(args, [
-        "--result-format",
-        "json",
-        "--log-output",
-        "json",
-      ])
+      const fullArgs = this.argsWithProtocol(args, true)
       const { stdout } = await execFile(this.execPath, fullArgs, {
         env: this.env,
       })
@@ -256,7 +271,7 @@ export class CliRunner {
     try {
       const { stdout } = await execFile(
         this.execPath,
-        this.argsWithLogLevel(args, ["--log-output", "json"]),
+        this.argsWithProtocol(args),
         { env: this.env },
       )
       return stdout
@@ -272,7 +287,7 @@ export class CliRunner {
     await this.acquire()
     try {
       return await this.spawnWithStdin(
-        this.argsWithLogLevel(args, ["--log-output", "json"]),
+        this.argsWithProtocol(args),
         input,
       )
     } catch (error: unknown) {
@@ -336,7 +351,7 @@ export class CliRunner {
     await this.acquire()
     const child = spawn(
       this.execPath,
-      this.argsWithLogLevel(args, ["--log-output", "json"]),
+      this.argsWithProtocol(args),
       { env: this.env },
     )
 

@@ -17,4 +17,15 @@ describe("main logger", () => {
     info.mockRestore()
     expect(console.info).toBe(originalInfo)
   })
+
+  it("emits trace diagnostics only at the trace level", () => {
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {})
+    setMainLogLevel("debug")
+    mainLog.trace("hidden")
+    setMainLogLevel("trace")
+    mainLog.trace("visible")
+    expect(debug).toHaveBeenCalledTimes(1)
+    expect(debug).toHaveBeenCalledWith("visible")
+    debug.mockRestore()
+  })
 })
