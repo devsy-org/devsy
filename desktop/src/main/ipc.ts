@@ -1136,17 +1136,21 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("env_delete", async (_event, args: { name: string }) => {
-    trackEvent("env_delete")
-    try {
-      await cli.runRaw(["env", "delete", args.name])
-      return { ok: true } as const
-    } catch (err) {
-      const cliError = (err as { cliError?: CLIError }).cliError
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, message, cliError } as const
-    }
-  })
+  ipcMain.handle(
+    "env_delete",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("env_delete")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw(["--context", args.context, "env", "delete", args.name])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
 
   ipcMain.handle("env_attach", async (_event, args: { name: string; context: string }) => {
     trackEvent("env_attach")

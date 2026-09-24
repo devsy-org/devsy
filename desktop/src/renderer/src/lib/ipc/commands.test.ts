@@ -7,6 +7,7 @@ import {
   auditRecent,
   contextUse,
   devsyVersion,
+  envDelete,
   envAttach,
   envDetach,
   machineCreate,
@@ -158,6 +159,15 @@ describe("IPC commands", () => {
       mockInvoke.mockResolvedValue({ ok: true })
       await envDetach("LOG_LEVEL", "staging")
       expect(mockInvoke).toHaveBeenCalledWith("env_detach", {
+        name: "LOG_LEVEL",
+        context: "staging",
+      })
+    })
+
+    it("envDelete sends the variable name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await envDelete("LOG_LEVEL", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("env_delete", {
         name: "LOG_LEVEL",
         context: "staging",
       })

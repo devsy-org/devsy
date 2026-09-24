@@ -4,11 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 const mocks = vi.hoisted(() => ({
   envAttach: vi.fn().mockResolvedValue(undefined),
   envDetach: vi.fn().mockResolvedValue(undefined),
+  envDelete: vi.fn().mockResolvedValue(undefined),
   refreshEnv: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock("$lib/ipc/commands.js", () => ({
   envAttach: mocks.envAttach,
-  envDelete: vi.fn(),
+  envDelete: mocks.envDelete,
   envDetach: mocks.envDetach,
   envSet: vi.fn(),
 }))
@@ -70,6 +71,21 @@ describe("EnvPage managed environment attachments", () => {
     )
     await waitFor(() =>
       expect(mocks.envAttach).toHaveBeenCalledWith("STAGING_ONLY", "staging"),
+    )
+  })
+
+  it("deletes using the context displayed on a stale row", async () => {
+    render(EnvPage)
+
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "Delete environment variable STAGING_ONLY",
+      }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: /^Delete$/ }))
+
+    await waitFor(() =>
+      expect(mocks.envDelete).toHaveBeenCalledWith("STAGING_ONLY", "staging"),
     )
   })
 })

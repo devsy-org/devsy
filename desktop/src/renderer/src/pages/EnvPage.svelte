@@ -22,7 +22,8 @@ let saving = $state(false)
 let revealed = $state<Record<string, boolean>>({})
 
 let confirmDeleteOpen = $state(false)
-let pendingDelete = $state("")
+type PendingEnvDelete = { name: string; context: string }
+let pendingDelete = $state<PendingEnvDelete | null>(null)
 let deleting = $state(false)
 let updatingAttachment = $state<Record<string, boolean>>({})
 let attachmentErrors = $state<Record<string, string>>({})
@@ -71,17 +72,18 @@ async function handleCreate() {
   await refreshEnv().catch(() => {})
 }
 
-function requestDelete(e: Event, name: string) {
+function requestDelete(e: Event, envVar: EnvVar) {
   e.stopPropagation()
-  pendingDelete = name
+  pendingDelete = { name: envVar.name, context: envVar.context }
   confirmDeleteOpen = true
 }
 
 async function confirmDelete() {
-  const name = pendingDelete
+  const target = pendingDelete
+  if (!target) return
   deleting = true
   try {
-    await envDelete(name)
+    await envDelete(target.name, target.context)
   } catch (err) {
     toasts.error(
       `Failed to delete environment variable: ${extractErrorMessage(err)}`,
@@ -90,7 +92,8 @@ async function confirmDelete() {
     return
   }
   confirmDeleteOpen = false
-  toasts.success(`Environment variable "${name}" deleted`)
+  pendingDelete = null
+  toasts.success(`Environment variable "${target.name}" deleted`)
   deleting = false
   await refreshEnv().catch(() => {})
 }
@@ -227,7 +230,7 @@ function toggleReveal(name: string) {
                     <Eye class="h-4 w-4" />
                   {/if}
                 </Button>
-                <Button variant="ghost" size="icon" aria-label="Delete environment variable" onclick={(e) => requestDelete(e, envVar.name)}>
+                <Button variant="ghost" size="icon" aria-label={`Delete environment variable ${envVar.name}`} onclick={(e) => requestDelete(e, envVar)}>
                   <Trash2 class="h-4 w-4" />
                 </Button>
               </div>
@@ -262,7 +265,7 @@ function toggleReveal(name: string) {
 <ConfirmDialog
   bind:open={confirmDeleteOpen}
   title="Delete environment variable"
-  description="This deletes environment variable '{pendingDelete}'. Workspaces that inject it will no longer receive it."
+  description="This deletes environment variable '{pendingDelete?.name ?? ""}'. Workspaces that inject it will no longer receive it."
   confirmLabel="Delete"
   loading={deleting}
   onconfirm={confirmDelete}

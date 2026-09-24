@@ -119,6 +119,32 @@ describe("provider job lifecycle over IPC", () => {
     ])
   })
 
+  it("deletes managed environment values in the displayed context", async () => {
+    const { cli } = setup()
+    await invoke("env_delete", { name: "LOG_LEVEL", context: "staging" })
+    expect(cli.runRaw).toHaveBeenCalledWith([
+      "--context",
+      "staging",
+      "env",
+      "delete",
+      "LOG_LEVEL",
+    ])
+  })
+
+  it("rejects managed environment deletion without a context", async () => {
+    const { cli } = setup()
+    const result = (await invoke("env_delete", {
+      name: "LOG_LEVEL",
+      context: "",
+    })) as { ok: boolean; message: string; cliError?: unknown }
+    expect(result).toEqual({
+      ok: false,
+      message: "context is required",
+      cliError: undefined,
+    })
+    expect(cli.runRaw).not.toHaveBeenCalled()
+  })
+
   it("clears the job when init succeeds", async () => {
     const { providerJobs } = setup(() => ({
       lines: [statusLine("running_init"), statusLine("ready")],
