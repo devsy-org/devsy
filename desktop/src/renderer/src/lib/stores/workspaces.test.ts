@@ -38,9 +38,10 @@ beforeEach(() => {
 })
 afterEach(() => destroyWorkspaces())
 function event(payload: unknown) {
-  const call = mockListen.mock.calls.find(
-    (call) => call[0] === "workspaces-changed",
-  )!
+  const call = [...mockListen.mock.calls]
+    .reverse()
+    .find((call) => call[0] === "workspaces-changed")
+  if (!call) throw new Error("workspaces-changed listener was not registered")
   call[1]({ payload })
 }
 describe("workspace snapshot store", () => {
@@ -77,6 +78,55 @@ describe("workspace snapshot store", () => {
     expect(get(workspaceJobs).ws).toEqual(job)
     event({ revision: 1, workspaces: [], jobs: {} })
     expect(get(workspaces)).toHaveLength(1)
+  })
+  it("does not replay a retained terminal success from an early event", async () => {
+    mockInvoke.mockImplementation(async () => {
+      event({
+        revision: 3,
+        workspaces: [{ id: "ws", status: "Stopped" }],
+        jobs: { ws: { ...job, state: "succeeded", commandId: "old-stop" } },
+      })
+      return {
+        revision: 2,
+        workspaces: [{ id: "ws", status: "Running" }],
+        jobs: {},
+      }
+    })
+
+    await initWorkspaces()
+
+    expect(get(workspaces)[0].status).toBe("Stopped")
+    expect(get(workspaceJobs).ws.state).toBe("succeeded")
+    expect(toasts.success).not.toHaveBeenCalled()
+    expect(toasts.error).not.toHaveBeenCalled()
+  })
+  it("does not replay a retained terminal failure from an early event", async () => {
+    mockInvoke.mockImplementation(async () => {
+      event({
+        revision: 3,
+        workspaces: [{ id: "ws", status: "Running" }],
+        jobs: {
+          ws: {
+            ...job,
+            activity: "stopping",
+            commandId: "old-stop",
+            state: "failed",
+            error: "provider unavailable",
+          },
+        },
+      })
+      return {
+        revision: 2,
+        workspaces: [{ id: "ws", status: "Running" }],
+        jobs: {},
+      }
+    })
+
+    await initWorkspaces()
+
+    expect(get(workspaceJobs).ws.error).toBe("provider unavailable")
+    expect(toasts.success).not.toHaveBeenCalled()
+    expect(toasts.error).not.toHaveBeenCalled()
   })
   it("disposes listeners that resolve after destruction", async () => {
     let resolve!: (unlisten: () => void) => void
@@ -187,6 +237,89 @@ describe("workspace snapshot store", () => {
     })
     expect(toasts.success).toHaveBeenCalledTimes(1)
     expect(toasts.success).toHaveBeenCalledWith("ws: Workspace stopped")
+  })
+  it("resets seed semantics after destroy and re-initialization", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      revision: 1,
+      workspaces: [{ id: "ws", status: "Stopped" }],
+      jobs: {
+        ws: {
+          ...job,
+          state: "succeeded",
+          commandId: "old-stop",
+        },
+      },
+    })
+    await initWorkspaces()
+    expect(toasts.success).not.toHaveBeenCalled()
+
+    destroyWorkspaces()
+    mockInvoke.mockResolvedValueOnce({
+      revision: 1,
+      workspaces: [{ id: "ws", status: "Stopped" }],
+      jobs: {
+        ws: {
+          ...job,
+          state: "succeeded",
+          commandId: "retained-stop",
+        },
+      },
+    })
+    await initWorkspaces()
+    expect(toasts.success).not.toHaveBeenCalled()
+
+    event({
+      revision: 2,
+      workspaces: [{ id: "ws", status: "Running" }],
+      jobs: {
+        ws: {
+          ...job,
+          state: "succeeded",
+          commandId: "new-start",
+          activity: "starting",
+        },
+      },
+    })
+    expect(toasts.success).toHaveBeenCalledTimes(1)
+    expect(toasts.success).toHaveBeenCalledWith("ws: Workspace running")
+  })
+  it("waits for terminal state before toasting a reconciling failure", async () => {
+    mockInvoke.mockResolvedValue({
+      revision: 1,
+      workspaces: [{ id: "ws", status: "Running" }],
+      jobs: { ws: { ...job, activity: "stopping", commandId: "stop" } },
+    })
+    await initWorkspaces()
+
+    event({
+      revision: 2,
+      workspaces: [{ id: "ws", status: "Running" }],
+      jobs: {
+        ws: {
+          ...job,
+          activity: "stopping",
+          commandId: "stop",
+          state: "reconciling",
+          error: "provider unavailable",
+        },
+      },
+    })
+    expect(toasts.error).not.toHaveBeenCalled()
+
+    event({
+      revision: 3,
+      workspaces: [{ id: "ws", status: "Running" }],
+      jobs: {
+        ws: {
+          ...job,
+          activity: "stopping",
+          commandId: "stop",
+          state: "failed",
+          error: "provider unavailable",
+        },
+      },
+    })
+    expect(toasts.error).toHaveBeenCalledTimes(1)
   })
   it("does not toast while a refresh is stalled", async () => {
     mockInvoke.mockResolvedValue({

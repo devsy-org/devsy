@@ -33,6 +33,7 @@ export const workspaceStatuses = derived(workspaceJobs, ($jobs) => {
 let unlisten: UnlistenFn | null = null
 let lifecycle = 0
 let revision = -1
+let seeded = false
 const notified = new Set<string>()
 
 function apply(
@@ -43,6 +44,8 @@ function apply(
 ) {
   if (nextRevision <= revision) return
   revision = nextRevision
+  const shouldNotify = notify && seeded
+  seeded = true
   const pending = Object.entries(jobs).filter(
     ([id, job]) =>
       !updated.some((workspace) => workspace.id === id) &&
@@ -53,7 +56,7 @@ function apply(
   workspaceJobs.set(jobs)
   for (const [id, job] of Object.entries(jobs)) {
     if (job.state === "running" || job.state === "reconciling") continue
-    if (!notify || notified.has(job.commandId)) {
+    if (!shouldNotify || notified.has(job.commandId)) {
       notified.add(job.commandId)
       continue
     }
@@ -100,6 +103,7 @@ export async function initWorkspaces() {
 export function destroyWorkspaces() {
   lifecycle++
   notified.clear()
+  seeded = false
   unlisten?.()
   unlisten = null
 }
