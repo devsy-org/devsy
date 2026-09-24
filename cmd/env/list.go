@@ -53,6 +53,10 @@ func (cmd *ListCmd) Run(_ context.Context) error {
 	if err != nil {
 		return err
 	}
+	var attachedNames []string
+	if ctxConfig := devsyConfig.Contexts[contextName]; ctxConfig != nil {
+		attachedNames = ctxConfig.EnvVars
+	}
 
 	entries := make([]envEntry, 0, len(metas))
 	for _, m := range metas {
@@ -65,7 +69,7 @@ func (cmd *ListCmd) Run(_ context.Context) error {
 				Name:     m.Name,
 				Value:    m.Value,
 				Context:  contextName,
-				Attached: slices.Contains(devsyConfig.Contexts[contextName].EnvVars, m.Name),
+				Attached: slices.Contains(attachedNames, m.Name),
 			},
 		)
 	}
