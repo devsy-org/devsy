@@ -781,6 +781,44 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
+		ginkgo.It(
+			"context-attached managed env var injects without --env and is removed after detach",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+				contextName := fmt.Sprintf("managed-env-%d", time.Now().UnixNano())
+				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = dtc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-env-attached",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+				dtc.storeEnv(ctx, "ATTACHED_ENV", "expected-value")
+				_, err = dtc.f.ExecCommandOutput(ctx, []string{envCmd, "attach", "ATTACHED_ENV"})
+				framework.ExpectNoError(err)
+
+				// Intentionally no --env argument: the context binding is the source.
+				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
+				out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/attached-env-check.out")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("expected-value"))
+
+				_, err = dtc.f.ExecCommandOutput(ctx, []string{envCmd, "detach", "ATTACHED_ENV"})
+				framework.ExpectNoError(err)
+				framework.ExpectNoError(dtc.f.DevsyUpRecreate(ctx, tempDir))
+				out, err = dtc.execSSH(ctx, tempDir, "cat /tmp/attached-env-check.out")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.BeEmpty())
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
 		ginkgo.It("multi devcontainer selection", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-multi-devcontainer",

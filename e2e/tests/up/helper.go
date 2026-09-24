@@ -21,6 +21,7 @@ import (
 
 const (
 	secretCmd       = "secret"
+	envCmd          = "env"
 	cmdSSH          = "ssh"
 	flagCommand     = "--command"
 	sshProbeTimeout = 20 * time.Second
@@ -54,7 +55,7 @@ func (dtc *dockerTestContext) storeSecret(ctx context.Context, name, value strin
 }
 
 func (dtc *dockerTestContext) storeEnv(ctx context.Context, name, value string) {
-	_, err := dtc.f.ExecCommandOutput(ctx, []string{"env", "set", name, "--value", value})
+	_, err := dtc.f.ExecCommandOutput(ctx, []string{envCmd, "set", name, "--value", value})
 	framework.ExpectNoError(err)
 	ginkgo.DeferCleanup(func() {
 		_, _ = dtc.f.ExecCommandOutput(ctx, []string{"env", "delete", name})
