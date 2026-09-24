@@ -752,9 +752,12 @@ func TestStore_DeleteUnownedFailsWhenBackendUnprobeable(t *testing.T) {
 		mapBackendRegistry{backends: backends},
 	)
 
-	require.Error(t, s.Delete(testContext, "LEGACY"))
+	err := s.Delete(testContext, "LEGACY")
+	require.Error(t, err)
+	require.ErrorContains(t, err, `backend "keyring" could not be probed`)
+	require.ErrorContains(t, err, "restore access")
 	require.Equal(t, "sensitive", backends[BackendFile].values[backendKey(testContext, "LEGACY")])
-	_, err := s.Meta(testContext, "LEGACY")
+	_, err = s.Meta(testContext, "LEGACY")
 	require.NoError(t, err)
 }
 

@@ -29,7 +29,10 @@ const (
 	busyGracePeriod       = 20 * time.Minute
 )
 
-var daemonRuntimeLockPath = machinediagnostics.DefaultRuntimeLockPath
+var (
+	daemonRuntimeLockPath = machinediagnostics.DefaultRuntimeLockPath
+	daemonLocatorPath     = machinediagnostics.DefaultLocatorPath
+)
 
 type DaemonCmd struct {
 	*flags.GlobalFlags
@@ -105,6 +108,10 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 	if fallbackPath := os.Getenv(machinediagnostics.RuntimeLockPathEnv); fallbackPath != "" {
 		runtimeLockPath = fallbackPath
 	}
+	locatorPath := daemonLocatorPath
+	if fallbackPath := os.Getenv(machinediagnostics.RuntimeLocatorPathEnv); fallbackPath != "" {
+		locatorPath = fallbackPath
+	}
 	runtimeLock, err := machinediagnostics.AcquireRuntimeLock(runtimeLockPath)
 	if err != nil {
 		return err
@@ -125,7 +132,7 @@ func (cmd *DaemonCmd) Run(ctx context.Context) error {
 	} else {
 		cmd.recorder = recorder
 		if err := machinediagnostics.WriteLocator(
-			machinediagnostics.DefaultLocatorPath,
+			locatorPath,
 			machinediagnostics.Locator{
 				SessionID:      recorder.SessionID(),
 				DiagnosticsDir: machinediagnostics.DiagnosticsDir(location.Root),

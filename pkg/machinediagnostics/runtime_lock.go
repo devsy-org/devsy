@@ -2,15 +2,15 @@ package machinediagnostics
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/gofrs/flock"
 )
 
 const (
-	DefaultRuntimeLockPath = "/run/devsy/agent-daemon.lock"
+	DefaultRuntimeLockPath = DefaultRuntimeDir + "/" + RuntimeLockFileName
 	RuntimeLockPathEnv     = "DEVSY_DAEMON_RUNTIME_LOCK_PATH"
+	RuntimeLocatorPathEnv  = "DEVSY_DAEMON_LOCATOR_PATH"
 )
 
 // RuntimeLock prevents two singleton machine daemons from supervising the
@@ -21,7 +21,7 @@ func AcquireRuntimeLock(path string) (*RuntimeLock, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("daemon runtime lock path must be absolute")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	if err := ensureRuntimeDirForPath(path); err != nil {
 		return nil, fmt.Errorf("create daemon runtime directory: %w", err)
 	}
 	lock := flock.New(path)

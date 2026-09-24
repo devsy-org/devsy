@@ -411,7 +411,11 @@ func (s *localStore) removeFromProbeableBackends(idx *index, key string) error {
 	for _, kind := range []Backend{BackendKeyring, BackendFile} {
 		found, conclusive := s.backends.Probe(kind, idx, key)
 		if !conclusive {
-			return fmt.Errorf("cannot probe secrets backend %q", kind)
+			return fmt.Errorf(
+				"cannot safely delete unowned secret because secrets backend %q could not be probed; "+
+					"restore access to that backend or set the secret again",
+				kind,
+			)
 		}
 		if found {
 			present = append(present, kind)
@@ -432,7 +436,8 @@ func (s *localStore) removeFromProbeableBackends(idx *index, key string) error {
 func unownedSecretError(context, name string) error {
 	return fmt.Errorf(
 		"secret %s/%s has no proven owning backend and its value could not be "+
-			"located; set it again with `devsy secret set %s` or remove it with "+
+			"located; set it again with `devsy secret set %s`; if you intend to "+
+			"delete it, first ensure all secret backends are available, then run "+
 			"`devsy secret delete %s`",
 		context,
 		name,
