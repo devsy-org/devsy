@@ -38,6 +38,9 @@ func IsEOF(err error) bool {
 
 func ClassifyTunnelErrors(tunnelErr, handlerErr error) error {
 	if handlerErr == nil {
+		if ClassifyError(tunnelErr) == ErrorPermanent {
+			return fmt.Errorf("agent command: %w", tunnelErr)
+		}
 		return nil
 	}
 	if IsEOF(handlerErr) {
