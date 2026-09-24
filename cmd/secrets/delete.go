@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -57,10 +58,13 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 		return fmt.Errorf("%q is an environment variable; use \"devsy env delete\"", name)
 	}
 
-	if err := unbindFromConfig(devsyConfig, contextName, name); err != nil {
-		return err
-	}
-	if err := store.Delete(contextName, name); err != nil {
+	if err := deleteSecretValue(deleteSecretRequest{
+		config:  devsyConfig,
+		store:   store,
+		context: contextName,
+		name:    name,
+		save:    config.SaveConfig,
+	}); err != nil {
 		return err
 	}
 
@@ -68,18 +72,55 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 	return nil
 }
 
-// unbindFromContext removes a deleted secret from its context's attached list so
-// a stale binding is not left pointing at a now-missing secret.
-func unbindFromConfig(devsyConfig *config.Config, contextName, name string) error {
-	ctxConfig := devsyConfig.Contexts[contextName]
-	if ctxConfig == nil {
-		return nil
-	}
-	idx := slices.Index(ctxConfig.Secrets, name)
-	if idx < 0 {
-		return nil
-	}
-	ctxConfig.Secrets = slices.Delete(ctxConfig.Secrets, idx, idx+1)
+type deleteSecretRequest struct {
+	config  *config.Config
+	store   devsysecrets.Store
+	context string
+	name    string
+	save    func(*config.Config) error
+}
 
-	return config.SaveConfig(devsyConfig)
+type removedSecretBinding struct {
+	attached bool
+	index    int
+}
+
+func deleteSecretValue(request deleteSecretRequest) error {
+	devsyConfig := request.config
+	store := request.store
+	contextName := request.context
+	name := request.name
+	saveConfig := request.save
+	var binding removedSecretBinding
+	if ctxConfig := devsyConfig.Contexts[contextName]; ctxConfig != nil {
+		if idx := slices.Index(ctxConfig.Secrets, name); idx >= 0 {
+			binding = removedSecretBinding{attached: true, index: idx}
+			ctxConfig.Secrets = slices.Delete(ctxConfig.Secrets, idx, idx+1)
+			if err := saveConfig(devsyConfig); err != nil {
+				return err
+			}
+		}
+	}
+
+	deleteErr := store.Delete(contextName, name)
+	if deleteErr == nil || !binding.attached {
+		return deleteErr
+	}
+
+	if _, err := store.Get(contextName, name); err != nil {
+		return deleteErr
+	}
+
+	ctxConfig := devsyConfig.Contexts[contextName]
+	ctxConfig.Secrets = append(ctxConfig.Secrets, "")
+	copy(ctxConfig.Secrets[binding.index+1:], ctxConfig.Secrets[binding.index:])
+	ctxConfig.Secrets[binding.index] = name
+	if rollbackErr := saveConfig(devsyConfig); rollbackErr != nil {
+		return errors.Join(
+			deleteErr,
+			fmt.Errorf("restore secret attachment after failed delete: %w", rollbackErr),
+		)
+	}
+
+	return deleteErr
 }
