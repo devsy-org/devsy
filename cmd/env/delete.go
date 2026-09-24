@@ -2,6 +2,7 @@ package env
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -55,17 +56,69 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 	if meta.Sensitive() {
 		return fmt.Errorf("%q is a secret; use \"devsy secret delete\"", name)
 	}
-	if ctxConfig := devsyConfig.Contexts[contextName]; ctxConfig != nil {
-		if idx := slices.Index(ctxConfig.EnvVars, name); idx >= 0 {
-			ctxConfig.EnvVars = slices.Delete(ctxConfig.EnvVars, idx, idx+1)
-			if err := config.SaveConfig(devsyConfig); err != nil {
-				return err
-			}
-		}
-	}
-	if err := store.Delete(contextName, name); err != nil {
+	if err := deleteEnvironmentValue(deleteEnvRequest{
+		config:  devsyConfig,
+		store:   store,
+		context: contextName,
+		name:    name,
+		save:    config.SaveConfig,
+	}); err != nil {
 		return err
 	}
 	log.Infof("env var %q deleted from context %q", name, contextName)
 	return nil
+}
+
+type deleteEnvRequest struct {
+	config  *config.Config
+	store   secrets.Store
+	context string
+	name    string
+	save    func(*config.Config) error
+}
+
+type removedEnvBinding struct {
+	attached bool
+	index    int
+}
+
+func deleteEnvironmentValue(request deleteEnvRequest) error {
+	devsyConfig := request.config
+	store := request.store
+	contextName := request.context
+	name := request.name
+	saveConfig := request.save
+	var binding removedEnvBinding
+	if ctxConfig := devsyConfig.Contexts[contextName]; ctxConfig != nil {
+		if idx := slices.Index(ctxConfig.EnvVars, name); idx >= 0 {
+			binding = removedEnvBinding{attached: true, index: idx}
+			ctxConfig.EnvVars = slices.Delete(ctxConfig.EnvVars, idx, idx+1)
+			if err := saveConfig(devsyConfig); err != nil {
+				return err
+			}
+		}
+	}
+
+	deleteErr := store.Delete(contextName, name)
+	if deleteErr == nil || !binding.attached {
+		return deleteErr
+	}
+
+	if _, err := store.Get(contextName, name); err != nil {
+		return deleteErr
+	}
+
+	ctxConfig := devsyConfig.Contexts[contextName]
+	ctxConfig.EnvVars = append(ctxConfig.EnvVars, "")
+	copy(ctxConfig.EnvVars[binding.index+1:], ctxConfig.EnvVars[binding.index:])
+	ctxConfig.EnvVars[binding.index] = name
+	if rollbackErr := saveConfig(devsyConfig); rollbackErr != nil {
+		rollbackMessage := "restore environment variable attachment after failed delete: %w"
+		return errors.Join(
+			deleteErr,
+			fmt.Errorf(rollbackMessage, rollbackErr),
+		)
+	}
+
+	return deleteErr
 }
