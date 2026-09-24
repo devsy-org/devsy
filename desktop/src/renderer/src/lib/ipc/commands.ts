@@ -341,6 +341,14 @@ export async function envDelete(name: string): Promise<void> {
   unwrapEnvelope(await invoke<CommandEnvelope>("env_delete", { name }))
 }
 
+export async function envAttach(name: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("env_attach", { name }))
+}
+
+export async function envDetach(name: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("env_detach", { name }))
+}
+
 // Audit commands
 export async function auditRecent(limit?: number): Promise<AuditEntry[]> {
   return invoke<AuditEntry[]>("audit_recent", { limit })

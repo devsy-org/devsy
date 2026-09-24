@@ -161,6 +161,8 @@ export interface Secret {
 export interface EnvVar {
   name: string
   value: string
+  context: string
+  attached: boolean
 }
 
 export interface CommandProgress {

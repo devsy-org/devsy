@@ -99,6 +99,14 @@ describe("provider job lifecycle over IPC", () => {
     vi.clearAllMocks()
   })
 
+  it("forwards managed environment attachment intent to the CLI", async () => {
+    const { cli } = setup()
+    await invoke("env_attach", { name: "LOG_LEVEL" })
+    await invoke("env_detach", { name: "LOG_LEVEL" })
+    expect(cli.runRaw).toHaveBeenCalledWith(["env", "attach", "LOG_LEVEL"])
+    expect(cli.runRaw).toHaveBeenCalledWith(["env", "detach", "LOG_LEVEL"])
+  })
+
   it("clears the job when init succeeds", async () => {
     const { providerJobs } = setup(() => ({
       lines: [statusLine("running_init"), statusLine("ready")],

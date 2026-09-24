@@ -53,6 +53,8 @@ interface SecretEntry {
 interface EnvEntry {
   name: string
   value: string
+  context: string
+  attached: boolean
 }
 
 function dockerArch(nodeArch: string): string {
@@ -1138,6 +1140,30 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     trackEvent("env_delete")
     try {
       await cli.runRaw(["env", "delete", args.name])
+      return { ok: true } as const
+    } catch (err) {
+      const cliError = (err as { cliError?: CLIError }).cliError
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, message, cliError } as const
+    }
+  })
+
+  ipcMain.handle("env_attach", async (_event, args: { name: string }) => {
+    trackEvent("env_attach")
+    try {
+      await cli.runRaw(["env", "attach", args.name])
+      return { ok: true } as const
+    } catch (err) {
+      const cliError = (err as { cliError?: CLIError }).cliError
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, message, cliError } as const
+    }
+  })
+
+  ipcMain.handle("env_detach", async (_event, args: { name: string }) => {
+    trackEvent("env_detach")
+    try {
+      await cli.runRaw(["env", "detach", args.name])
       return { ok: true } as const
     } catch (err) {
       const cliError = (err as { cliError?: CLIError }).cliError

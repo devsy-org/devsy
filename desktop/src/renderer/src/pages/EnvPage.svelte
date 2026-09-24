@@ -3,13 +3,15 @@ import { Braces, Eye, EyeOff, Plus, Search, Trash2 } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
+import { Switch } from "$lib/components/ui/switch/index.js"
 import * as Dialog from "$lib/components/ui/dialog/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
 import { envVars, envLoading, refreshEnv } from "$lib/stores/env.js"
-import { envSet, envDelete } from "$lib/ipc/commands.js"
+import { envSet, envDelete, envAttach, envDetach } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+import type { EnvVar } from "$lib/types/index.js"
 
 const NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
@@ -22,6 +24,7 @@ let revealed = $state<Record<string, boolean>>({})
 let confirmDeleteOpen = $state(false)
 let pendingDelete = $state("")
 let deleting = $state(false)
+let updatingAttachment = $state<Record<string, boolean>>({})
 
 let searchTerm = $state("")
 let filteredEnvVars = $derived.by(() => {
@@ -51,7 +54,9 @@ async function handleCreate() {
   try {
     await envSet(name, newValue)
   } catch (err) {
-    toasts.error(`Failed to save environment variable: ${extractErrorMessage(err)}`)
+    toasts.error(
+      `Failed to save environment variable: ${extractErrorMessage(err)}`,
+    )
     saving = false
     return
   }
@@ -77,7 +82,9 @@ async function confirmDelete() {
   try {
     await envDelete(name)
   } catch (err) {
-    toasts.error(`Failed to delete environment variable: ${extractErrorMessage(err)}`)
+    toasts.error(
+      `Failed to delete environment variable: ${extractErrorMessage(err)}`,
+    )
     deleting = false
     return
   }
@@ -85,6 +92,22 @@ async function confirmDelete() {
   toasts.success(`Environment variable "${name}" deleted`)
   deleting = false
   await refreshEnv().catch(() => {})
+}
+
+async function setAttached(envVar: EnvVar, attached: boolean) {
+  if (updatingAttachment[envVar.name]) return
+  updatingAttachment = { ...updatingAttachment, [envVar.name]: true }
+  try {
+    if (attached) await envAttach(envVar.name)
+    else await envDetach(envVar.name)
+    await refreshEnv()
+  } catch (err) {
+    toasts.error(
+      `Failed to ${attached ? "attach" : "detach"} environment variable: ${extractErrorMessage(err)}`,
+    )
+  } finally {
+    updatingAttachment = { ...updatingAttachment, [envVar.name]: false }
+  }
 }
 
 function toggleReveal(name: string) {
@@ -110,7 +133,7 @@ function toggleReveal(name: string) {
             {nameExists ? "Update Environment Variable" : "Add Environment Variable"}
           </Dialog.Title>
           <Dialog.Description>
-            Stored in plaintext in your Devsy config and injected into workspaces.
+            Stored in plaintext in your current Devsy context. Enable "Inject into workspaces" to add it automatically when workspaces start.
           </Dialog.Description>
         </Dialog.Header>
         <form onsubmit={(e) => { e.preventDefault(); handleCreate() }} class="space-y-4">
@@ -211,6 +234,18 @@ function toggleReveal(name: string) {
             <p class="mt-2 font-mono text-sm text-muted-foreground break-all">
               {revealed[envVar.name] ? envVar.value : "••••••••"}
             </p>
+            <div class="mt-4 flex items-center justify-between gap-3 border-t pt-4">
+              <div>
+                <p class="text-sm font-medium">Inject into workspaces</p>
+                <p class="text-xs text-muted-foreground">Context: {envVar.context}. Applies when a workspace starts or is recreated.</p>
+              </div>
+              <Switch
+                checked={envVar.attached}
+                disabled={updatingAttachment[envVar.name]}
+                aria-label={`Inject ${envVar.name} into workspaces`}
+                onCheckedChange={(checked) => setAttached(envVar, checked)}
+              />
+            </div>
           </div>
         {/each}
       </div>
