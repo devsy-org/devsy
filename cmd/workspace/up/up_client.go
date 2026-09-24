@@ -356,7 +356,17 @@ type envVarRequest struct {
 }
 
 func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVarRequest, error) {
-	byRef := map[string]envVarRequest{}
+	explicit := make([]envVarRequest, 0, len(flags))
+	explicitRefs := map[string]struct{}{}
+	for _, entry := range flags {
+		req, err := parseEnvVarRequest(entry)
+		if err != nil {
+			return nil, err
+		}
+		explicit = append(explicit, req)
+		explicitRefs[req.ref.String()] = struct{}{}
+	}
+	implicit := make([]envVarRequest, 0)
 	if current := devsyConfig.Current(); current != nil {
 		for _, name := range current.EnvVars {
 			ref, err := secrets.ParseRef(name)
@@ -369,25 +379,17 @@ func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVar
 					name,
 				)
 			}
-			byRef[ref.String()] = envVarRequest{ref: ref, target: ref.Name}
+			if _, overridden := explicitRefs[ref.String()]; overridden {
+				continue
+			}
+			implicit = append(implicit, envVarRequest{ref: ref, target: ref.Name})
 		}
-	}
-	for _, entry := range flags {
-		req, err := parseEnvVarRequest(entry)
-		if err != nil {
-			return nil, err
-		}
-		byRef[req.ref.String()] = req
-	}
-	requests := make([]envVarRequest, 0, len(byRef))
-	for _, req := range byRef {
-		requests = append(requests, req)
 	}
 	sort.Slice(
-		requests,
-		func(i, j int) bool { return requests[i].ref.String() < requests[j].ref.String() },
+		implicit,
+		func(i, j int) bool { return implicit[i].ref.String() < implicit[j].ref.String() },
 	)
-	return requests, nil
+	return append(implicit, explicit...), nil
 }
 
 func parseEnvVarRequest(entry string) (envVarRequest, error) {

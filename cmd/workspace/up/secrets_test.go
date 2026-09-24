@@ -151,6 +151,30 @@ func TestCollectEnvVarRequests_ExplicitOverridesAttachment(t *testing.T) {
 	assert.Equal(t, []envVarRequest{{ref: localRef("LOG_LEVEL"), target: "APP_LOG"}}, got)
 }
 
+func TestCollectEnvVarRequests_PreservesRepeatedExplicitSource(t *testing.T) {
+	got, err := collectEnvVarRequests(
+		[]string{"LOG_LEVEL=FIRST", "LOG_LEVEL=SECOND"},
+		testEnvConfig(),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []envVarRequest{
+		{ref: localRef("LOG_LEVEL"), target: "FIRST"},
+		{ref: localRef("LOG_LEVEL"), target: "SECOND"},
+	}, got)
+}
+
+func TestCollectEnvVarRequests_ExplicitRepeatedSourceSuppressesImplicit(t *testing.T) {
+	got, err := collectEnvVarRequests(
+		[]string{"LOG_LEVEL=FIRST", "LOG_LEVEL=SECOND"},
+		testEnvConfig("LOG_LEVEL"),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []envVarRequest{
+		{ref: localRef("LOG_LEVEL"), target: "FIRST"},
+		{ref: localRef("LOG_LEVEL"), target: "SECOND"},
+	}, got)
+}
+
 func TestCollectEnvVarRequests_DuplicateTargetRejected(t *testing.T) {
 	requests, err := collectEnvVarRequests(
 		[]string{"FOO=APP_MODE", "BAR=APP_MODE"},
