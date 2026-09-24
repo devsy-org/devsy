@@ -328,7 +328,7 @@ func ensureContextMaps(ctx *ContextConfig) {
 }
 
 func SaveConfig(config *Config) error {
-	configOrigin, err := GetConfigPath()
+	configOrigin, err := getConfigMutationPath()
 	if err != nil {
 		return err
 	}
@@ -362,7 +362,7 @@ func SaveConfig(config *Config) error {
 // processes. Callers must acquire it before loading the config and hold it
 // until every related persistent operation is complete.
 func LockConfig() (func(), error) {
-	configPath, err := GetConfigPath()
+	configPath, err := getConfigMutationPath()
 	if err != nil {
 		return nil, err
 	}
@@ -374,6 +374,32 @@ func LockConfig() (func(), error) {
 		return nil, fmt.Errorf("lock config %q: %w", configPath+".lock", err)
 	}
 	return func() { _ = lock.Unlock() }, nil
+}
+
+// getConfigMutationPath resolves the configured config file to the path that
+// will actually be replaced by an atomic save. A dangling configured symlink
+// must fail rather than being replaced by a regular file.
+func getConfigMutationPath() (string, error) {
+	configPath, err := GetConfigPath()
+	if err != nil {
+		return "", err
+	}
+
+	info, err := os.Lstat(configPath)
+	switch {
+	case err == nil && info.Mode()&os.ModeSymlink != 0:
+		resolved, resolveErr := filepath.EvalSymlinks(configPath)
+		if resolveErr != nil {
+			return "", fmt.Errorf("resolve config symlink %q: %w", configPath, resolveErr)
+		}
+		return resolved, nil
+	case err == nil:
+		return configPath, nil
+	case os.IsNotExist(err):
+		return configPath, nil
+	default:
+		return "", err
+	}
 }
 
 func writeConfigAtomic(configOrigin string, data []byte) error {

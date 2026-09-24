@@ -1,6 +1,12 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 const testEnvName = "LOG_LEVEL"
 
@@ -156,4 +162,80 @@ func TestSaveConfigRestoresEmptyTemporaryProviderOverride(t *testing.T) {
 	if got.Current().DefaultProvider != "" {
 		t.Fatalf("provider = %q, want empty", got.Current().DefaultProvider)
 	}
+}
+
+func TestSaveConfigPreservesAbsoluteConfigSymlink(t *testing.T) {
+	ResetPathManager()
+	t.Cleanup(ResetPathManager)
+	root := t.TempDir()
+	targetDir := filepath.Join(root, "target")
+	linkDir := filepath.Join(root, "link")
+	require.NoError(t, os.MkdirAll(targetDir, 0o700))
+	require.NoError(t, os.MkdirAll(linkDir, 0o700))
+	targetPath := filepath.Join(targetDir, ConfigFile)
+	linkPath := filepath.Join(linkDir, ConfigFile)
+	require.NoError(t, os.WriteFile(targetPath, []byte("{}\n"), 0o600))
+	require.NoError(t, os.Symlink(targetPath, linkPath))
+	t.Setenv(EnvConfig, linkPath)
+
+	require.NoError(t, SaveConfig(&Config{
+		DefaultContext: DefaultContext,
+		Contexts:       map[string]*ContextConfig{DefaultContext: {EnvVars: []string{testEnvName}}},
+	}))
+
+	info, err := os.Lstat(linkPath)
+	require.NoError(t, err)
+	require.NotZero(t, info.Mode()&os.ModeSymlink)
+	got, err := LoadConfig("", "")
+	require.NoError(t, err)
+	require.Equal(t, []string{testEnvName}, got.Current().EnvVars)
+}
+
+func TestSaveConfigPreservesRelativeConfigSymlink(t *testing.T) {
+	ResetPathManager()
+	t.Cleanup(ResetPathManager)
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	sharedDir := filepath.Join(root, "shared")
+	require.NoError(t, os.MkdirAll(configDir, 0o700))
+	require.NoError(t, os.MkdirAll(sharedDir, 0o700))
+	targetPath := filepath.Join(sharedDir, ConfigFile)
+	linkPath := filepath.Join(configDir, ConfigFile)
+	require.NoError(t, os.WriteFile(targetPath, []byte("{}\n"), 0o600))
+	const linkTarget = "../shared/config.yaml"
+	require.NoError(t, os.Symlink(linkTarget, linkPath))
+	t.Setenv(EnvConfig, linkPath)
+
+	require.NoError(t, SaveConfig(&Config{
+		DefaultContext: DefaultContext,
+		Contexts:       map[string]*ContextConfig{DefaultContext: {EnvVars: []string{testEnvName}}},
+	}))
+
+	info, err := os.Lstat(linkPath)
+	require.NoError(t, err)
+	require.NotZero(t, info.Mode()&os.ModeSymlink)
+	gotTarget, err := os.Readlink(linkPath)
+	require.NoError(t, err)
+	require.Equal(t, linkTarget, gotTarget)
+	got, err := LoadConfig("", "")
+	require.NoError(t, err)
+	require.Equal(t, []string{testEnvName}, got.Current().EnvVars)
+}
+
+func TestSaveConfigDoesNotReplaceDanglingConfigSymlink(t *testing.T) {
+	ResetPathManager()
+	t.Cleanup(ResetPathManager)
+	root := t.TempDir()
+	linkPath := filepath.Join(root, ConfigFile)
+	require.NoError(t, os.Symlink("missing.yaml", linkPath))
+	t.Setenv(EnvConfig, linkPath)
+
+	err := SaveConfig(&Config{
+		DefaultContext: DefaultContext,
+		Contexts:       map[string]*ContextConfig{DefaultContext: {}},
+	})
+	require.Error(t, err)
+	info, statErr := os.Lstat(linkPath)
+	require.NoError(t, statErr)
+	require.NotZero(t, info.Mode()&os.ModeSymlink)
 }
