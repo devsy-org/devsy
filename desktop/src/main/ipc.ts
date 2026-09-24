@@ -76,8 +76,7 @@ let providerUpdateCache: Record<string, UpdateInfo> = {}
 let providerUpdateCacheCheckedAt: string | null = null
 
 const IMAGE_CATALOG_URL =
-  process.env.DEVSY_IMAGE_CATALOG_URL ??
-  "https://raw.githubusercontent.com/devsy-org/devsy/main/desktop/resources/image-catalog-seed.json"
+  process.env.DEVSY_IMAGE_CATALOG_URL ?? "https://images.devsy.sh/catalog.json"
 const IMAGE_CATALOG_TTL_MS = 24 * 60 * 60 * 1000
 
 function imageCatalogPaths(): { cachePath: string; seedPath: string } {
