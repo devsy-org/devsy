@@ -6,6 +6,7 @@ import { MediaQuery } from "svelte/reactivity"
 import { goto } from "$lib/router.js"
 import {
   Check,
+  ChevronRight,
   ChevronsUpDown,
   AlertCircle,
   TriangleAlert,
@@ -30,7 +31,11 @@ import LanguageIcon from "$lib/components/workspace/LanguageIcon.svelte"
 import ImagePicker from "$lib/components/workspace/ImagePicker.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
-import { uniqueNamesGenerator, adjectives, animals } from "unique-names-generator"
+import {
+  uniqueNamesGenerator,
+  adjectives,
+  animals,
+} from "unique-names-generator"
 import {
   workspaceUp,
   openDirectoryDialog,
@@ -82,7 +87,8 @@ const IDE_ICON_DARK_VARIANTS = new Set([
 ])
 
 const ideIcon = (name: string) => {
-  const variant = darkMode.current && IDE_ICON_DARK_VARIANTS.has(name) ? `${name}_dark` : name
+  const variant =
+    darkMode.current && IDE_ICON_DARK_VARIANTS.has(name) ? `${name}_dark` : name
   return `./icons/ides/${variant}.svg`
 }
 
@@ -92,14 +98,26 @@ const IDE_GROUPS = [
     options: [
       { value: "none", label: "None", iconName: "none" },
       { value: "vscode", label: "VS Code", iconName: "vscode" },
-      { value: "openvscode", label: "OpenVSCode Server", iconName: "vscodebrowser" },
-      { value: "vscode-web", label: "VS Code for the Web", iconName: "vscode-web" },
+      {
+        value: "openvscode",
+        label: "OpenVSCode Server",
+        iconName: "vscodebrowser",
+      },
+      {
+        value: "vscode-web",
+        label: "VS Code for the Web",
+        iconName: "vscode-web",
+      },
       { value: "code-server", label: "code-server", iconName: "code-server" },
       { value: "cursor", label: "Cursor", iconName: "cursor" },
       { value: "zed", label: "Zed", iconName: "zed" },
       { value: "codium", label: "VSCodium", iconName: "codium" },
       { value: "windsurf", label: "Windsurf Editor", iconName: "windsurf" },
-      { value: "antigravity", label: "Google Antigravity", iconName: "antigravity" },
+      {
+        value: "antigravity",
+        label: "Google Antigravity",
+        iconName: "antigravity",
+      },
       { value: "bob", label: "IBM Bob", iconName: "bob" },
     ],
   },
@@ -122,9 +140,17 @@ const IDE_GROUPS = [
   {
     label: "Other",
     options: [
-      { value: "jupyternotebook", label: "Jupyter Notebook", iconName: "jupyter" },
+      {
+        value: "jupyternotebook",
+        label: "Jupyter Notebook",
+        iconName: "jupyter",
+      },
       { value: "marimo", label: "marimo", iconName: "marimo" },
-      { value: "vscode-insiders", label: "VS Code Insiders", iconName: "vscode_insiders" },
+      {
+        value: "vscode-insiders",
+        label: "VS Code Insiders",
+        iconName: "vscode_insiders",
+      },
       { value: "positron", label: "Positron", iconName: "positron" },
       { value: "rstudio", label: "RStudio Server", iconName: "rstudio" },
     ],
@@ -134,15 +160,33 @@ const IDE_GROUPS = [
 const ALL_IDES = IDE_GROUPS.flatMap((g) => g.options)
 
 const TEMPLATES = [
-  { name: "Python", source: "https://github.com/microsoft/vscode-remote-try-python" },
-  { name: "Node.js", source: "https://github.com/microsoft/vscode-remote-try-node" },
+  {
+    name: "Python",
+    source: "https://github.com/microsoft/vscode-remote-try-python",
+  },
+  {
+    name: "Node.js",
+    source: "https://github.com/microsoft/vscode-remote-try-node",
+  },
   { name: "Go", source: "https://github.com/microsoft/vscode-remote-try-go" },
-  { name: "Rust", source: "https://github.com/microsoft/vscode-remote-try-rust" },
-  { name: "Java", source: "https://github.com/microsoft/vscode-remote-try-java" },
+  {
+    name: "Rust",
+    source: "https://github.com/microsoft/vscode-remote-try-rust",
+  },
+  {
+    name: "Java",
+    source: "https://github.com/microsoft/vscode-remote-try-java",
+  },
   { name: "PHP", source: "https://github.com/microsoft/vscode-remote-try-php" },
   { name: "C++", source: "https://github.com/microsoft/vscode-remote-try-cpp" },
-  { name: ".NET", source: "https://github.com/microsoft/vscode-remote-try-dotnet" },
-  { name: "Ruby", source: "https://github.com/skevetter/devsy-quickstart-ruby" },
+  {
+    name: ".NET",
+    source: "https://github.com/microsoft/vscode-remote-try-dotnet",
+  },
+  {
+    name: "Ruby",
+    source: "https://github.com/skevetter/devsy-quickstart-ruby",
+  },
 ]
 
 const SOURCE_TYPES: {
@@ -151,9 +195,24 @@ const SOURCE_TYPES: {
   hint: string
   icon: typeof GitBranch
 }[] = [
-  { value: "git", label: "Git Repo", hint: "Clone a repository", icon: GitBranch },
-  { value: "local", label: "Local Directory", hint: "Use a folder on this machine", icon: FolderOpen },
-  { value: "image", label: "Image", hint: "Start from a container image", icon: Container },
+  {
+    value: "git",
+    label: "Git Repo",
+    hint: "Clone a repository",
+    icon: GitBranch,
+  },
+  {
+    value: "local",
+    label: "Local Directory",
+    hint: "Use a folder on this machine",
+    icon: FolderOpen,
+  },
+  {
+    value: "image",
+    label: "Image",
+    hint: "Start from a container image",
+    icon: Container,
+  },
 ]
 
 const LAUNCH_TIMEOUT_MS = 10 * 60 * 1000
@@ -170,7 +229,7 @@ let currentStep = $state<Step>("provider")
 
 // Form state
 let selectedProvider = $state(
-  $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
+  $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? "",
 )
 let sourceType = $state<WorkspaceSourceType>("git")
 let repoUrl = $state("")
@@ -229,12 +288,35 @@ let launchBuildFailed = $state(false)
 let launchIsRecovery = $state(false)
 let lastAttemptedId = $state("")
 let launchSuccess = $state(false)
+let showLogs = $state(false)
 let launchedWorkspaceId = $state<string | null>(null)
 let operationStatus = $state<WorkspaceStatus | null>(null)
+let launchJob = $derived($workspaceJobs[lastAttemptedId ?? ""])
+$effect(() => {
+  if (launchError) showLogs = true
+})
 $effect(() => {
   const job = $workspaceJobs[lastAttemptedId ?? ""]
-  if (launchRunning && commandId && job?.commandId === commandId && (job.state === "failed" || job.state === "succeeded")) {
-    finishProgress({ commandId, done: true, success: !job.error, cliError: job.error ? { code: "workspace_operation_failed", message: job.error } : undefined }, lastAttemptedId ?? undefined)
+  if (
+    launchRunning &&
+    commandId &&
+    job?.commandId === commandId &&
+    (job.state === "failed" || job.state === "succeeded")
+  ) {
+    finishProgress(
+      {
+        commandId,
+        done: true,
+        success: job.state !== "failed",
+        cliError: job.state === "failed"
+          ? {
+              code: "workspace_operation_failed",
+              message: job.error ?? "Workspace operation failed",
+            }
+          : undefined,
+      },
+      lastAttemptedId ?? undefined,
+    )
   }
 })
 let confirmCancelOpen = $state(false)
@@ -259,7 +341,9 @@ let initializedProviders = $derived(
 
 const selectedIdeEntry = $derived(ALL_IDES.find((i) => i.value === selectedIde))
 const ideLabel = $derived(selectedIdeEntry?.label ?? "Select an IDE...")
-const ideIconSrc = $derived(selectedIdeEntry ? ideIcon(selectedIdeEntry.iconName) : undefined)
+const ideIconSrc = $derived(
+  selectedIdeEntry ? ideIcon(selectedIdeEntry.iconName) : undefined,
+)
 
 let filteredIdes = $derived(
   ideSearch
@@ -282,9 +366,7 @@ let resolvedIdInvalid = $derived(
 
 let nameConflict = $derived(
   resolvedId !== "" &&
-    $workspaces.some(
-      (ws) => ws.id.toLowerCase() === resolvedId.toLowerCase(),
-    ),
+    $workspaces.some((ws) => ws.id.toLowerCase() === resolvedId.toLowerCase()),
 )
 
 let imageIncompatible = $derived(
@@ -297,7 +379,9 @@ let imageIncompatible = $derived(
 // Prefer linux/amd64 if the image offers it; otherwise the first listed
 // platform. This is what we run under emulation.
 let emulationTarget = $derived(
-  imagePlatforms.includes("linux/amd64") ? "linux/amd64" : imagePlatforms[0] ?? "",
+  imagePlatforms.includes("linux/amd64")
+    ? "linux/amd64"
+    : (imagePlatforms[0] ?? ""),
 )
 
 let imageCompatible = $derived(
@@ -348,7 +432,8 @@ function clearWatchdog() {
 
 function reset() {
   currentStep = "provider"
-  selectedProvider = $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
+  selectedProvider =
+    $providers.find((p) => p.isDefault && p.state?.initialized)?.name ?? ""
   sourceType = "git"
   repoUrl = ""
   localPath = ""
@@ -375,6 +460,7 @@ function reset() {
   launchRunning = false
   launchError = ""
   launchSuccess = false
+  showLogs = false
   launchedWorkspaceId = null
   operationStatus = null
   confirmCancelOpen = false
@@ -465,7 +551,8 @@ function flushLines() {
 }
 
 function queueProgressLines(progress: CommandProgress) {
-  const incoming = progress.lines ?? (progress.message ? [progress.message] : [])
+  const incoming =
+    progress.lines ?? (progress.message ? [progress.message] : [])
   if (incoming.length === 0) return
   pendingLines.push(...incoming)
   if (flushHandle === null) {
@@ -1193,7 +1280,7 @@ function selectTemplate(t: { name: string; source: string }) {
 
           {#if compatUnknown}
             <p class="text-sm text-muted-foreground">
-              Couldn't verify compatibility for your machine ({hostPlatform ||
+              Could not verify compatibility for your machine ({hostPlatform ||
                 "unknown"}); the image will be pulled as-is.
             </p>
           {/if}
@@ -1241,28 +1328,26 @@ function selectTemplate(t: { name: string; source: string }) {
 
       {:else if currentStep === "launch"}
         <div class="space-y-4">
-          <div>
-            <h2 class="text-lg font-semibold">
-              {#if launchRunning}
-                Creating Workspace
-              {:else if launchSuccess}
-                Workspace Ready
-              {:else if launchError}
-                Workspace Creation Failed
-              {:else}
-                Launching...
-              {/if}
-            </h2>
-            <p class="text-sm text-muted-foreground">
-              {#if launchRunning}
-                Preparing your workspace...
-              {:else if launchSuccess}
-                {launchedWorkspaceId ?? resolvedId} is ready to use.
-              {:else if launchError}
-                Something went wrong while creating the workspace.
-              {/if}
-            </p>
-          </div>
+          {#if !launchRunning}
+            <div>
+              <h2 class="text-lg font-semibold">
+                {#if launchSuccess}
+                  Workspace Ready
+                {:else if launchError}
+                  Workspace Creation Failed
+                {:else}
+                  Launching...
+                {/if}
+              </h2>
+              <p class="text-sm text-muted-foreground">
+                {#if launchSuccess}
+                  {launchedWorkspaceId ?? resolvedId} is ready to use.
+                {:else if launchError}
+                  Something went wrong while creating the workspace.
+                {/if}
+              </p>
+            </div>
+          {/if}
 
           {#if launchError}
             <Alert.Root variant="destructive">
@@ -1271,43 +1356,53 @@ function selectTemplate(t: { name: string; source: string }) {
             </Alert.Root>
           {/if}
 
-          {#if commandId && $workspaceJobs[lastAttemptedId ?? ""]?.commandId === commandId}
-            <WorkspaceOperation id={lastAttemptedId ?? resolvedId} />
-          {:else if launchRunning && operationStatus}
-            <div class="rounded-md border bg-muted/30 px-3 py-2 text-sm" data-testid="operation-status">
-              <span class="font-medium capitalize">
-                {operationStatus.phase.replaceAll("_", " ")}
-              </span>
-              {#if operationStatus.step}
-                <span class="text-muted-foreground"> — {operationStatus.step}</span>
-              {/if}
-            </div>
+          {#if commandId && launchJob?.commandId === commandId && (launchJob.state === "running" || launchJob.state === "reconciling")}
+            <WorkspaceOperation id={lastAttemptedId ?? resolvedId} density="expanded" />
+          {:else if launchRunning}
+            <WorkspaceOperation
+              id={lastAttemptedId ?? resolvedId}
+              density="expanded"
+              job={{
+                commandId: commandId ?? "launch",
+                activity: "creating",
+                state: "running",
+                phase: operationStatus?.step ?? operationStatus?.phase ?? "preparing_workspace",
+              }}
+            />
           {/if}
 
           {#if outputLines.length > 0}
             <div class="space-y-2">
-              <div class="flex items-center justify-between">
-                <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Output</h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onclick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(outputLines.map(stripAnsi).join("\n"))
-                      toasts.success("Copied to clipboard")
-                    } catch {
-                      toasts.error("Failed to copy")
-                    }
-                  }}
-                >
-                  Copy
-                </Button>
-              </div>
-              <LogTable lines={outputLines} maxHeightClass="max-h-80" follow />
-            </div>
-          {:else if launchRunning}
-            <div class="flex items-center justify-center py-8">
-              <Loader2 class="h-6 w-6 animate-spin text-muted-foreground" />
+              <button
+                type="button"
+                class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+                aria-expanded={showLogs}
+                onclick={() => (showLogs = !showLogs)}
+              >
+                <ChevronRight class="h-3 w-3 transition-transform {showLogs ? 'rotate-90' : ''}" />
+                View details
+              </button>
+              {#if showLogs}
+                <div class="space-y-2">
+                  <div class="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onclick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(outputLines.map(stripAnsi).join("\n"))
+                          toasts.success("Copied to clipboard")
+                        } catch {
+                          toasts.error("Failed to copy")
+                        }
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  <LogTable lines={outputLines} maxHeightClass="max-h-80" follow />
+                </div>
+              {/if}
             </div>
           {/if}
 

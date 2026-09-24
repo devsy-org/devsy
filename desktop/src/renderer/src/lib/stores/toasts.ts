@@ -21,19 +21,32 @@ const historyStore = writable<Toast[]>([])
 
 let nextId = 0
 
-function add(message: string, variant: Toast["variant"] = "default") {
+export interface ToastOptions {
+  sticky?: boolean
+  action?: { label: string; onClick: () => void }
+}
+
+function add(
+  message: string,
+  variant: Toast["variant"] = "default",
+  options?: ToastOptions,
+) {
   const id = String(++nextId)
-  const duration = DURATION_MS[variant]
+  const duration = options?.sticky ? Infinity : DURATION_MS[variant]
   const toast: Toast = { id, message, variant, timestamp: Date.now(), duration }
 
   historyStore.update((list) => [toast, ...list].slice(0, MAX_HISTORY))
 
+  const sonnerOptions = {
+    duration,
+    ...(options?.action ? { action: options.action } : {}),
+  }
   if (variant === "success") {
-    sonnerToast.success(message, { duration })
+    sonnerToast.success(message, sonnerOptions)
   } else if (variant === "error") {
-    sonnerToast.error(message, { duration })
+    sonnerToast.error(message, sonnerOptions)
   } else {
-    sonnerToast.info(message, { duration })
+    sonnerToast.info(message, sonnerOptions)
   }
 
   return id
@@ -53,9 +66,12 @@ const unreadCount = derived(historyStore, ($history) => {
 })
 
 export const toasts = {
-  success: (message: string) => add(message, "success"),
-  error: (message: string) => add(message, "error"),
-  info: (message: string) => add(message, "default"),
+  success: (message: string, options?: ToastOptions) =>
+    add(message, "success", options),
+  error: (message: string, options?: ToastOptions) =>
+    add(message, "error", options),
+  info: (message: string, options?: ToastOptions) =>
+    add(message, "default", options),
   dismiss: (id?: string | number) => sonnerToast.dismiss(id),
 }
 
