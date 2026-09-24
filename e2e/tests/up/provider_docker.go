@@ -792,6 +792,15 @@ var _ = ginkgo.Describe(
 					_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
 				})
 				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(
+					dtc.f.DevsyProviderAdd(
+						ctx,
+						"docker",
+						"-o",
+						"DOCKER_PATH=docker",
+					),
+				)
+				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
 
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-env-attached",
