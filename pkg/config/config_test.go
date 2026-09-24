@@ -2,6 +2,8 @@ package config
 
 import "testing"
 
+const testEnvName = "LOG_LEVEL"
+
 func TestLoadConfig_StampsCurrentSchemaVersion(t *testing.T) {
 	ResetPathManager()
 	t.Cleanup(ResetPathManager)
@@ -73,7 +75,7 @@ func TestContextConfigEnvVarsRoundTrip(t *testing.T) {
 	want := &Config{
 		DefaultContext: DefaultContext,
 		Contexts: map[string]*ContextConfig{
-			DefaultContext: {EnvVars: []string{"LOG_LEVEL"}},
+			DefaultContext: {EnvVars: []string{testEnvName}},
 		},
 	}
 	if err := SaveConfig(want); err != nil {
@@ -107,7 +109,7 @@ func TestSaveConfigRestoresTemporaryContextAndProviderOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded.Current().EnvVars = []string{"LOG_LEVEL"}
+	loaded.Current().EnvVars = []string{testEnvName}
 	if err := SaveConfig(loaded); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +124,7 @@ func TestSaveConfigRestoresTemporaryContextAndProviderOverrides(t *testing.T) {
 	if got.Contexts["staging"].DefaultProvider != "kubernetes" {
 		t.Fatalf("staging provider = %q, want kubernetes", got.Contexts["staging"].DefaultProvider)
 	}
-	if got.Contexts["staging"].EnvVars[0] != "LOG_LEVEL" {
+	if got.Contexts["staging"].EnvVars[0] != testEnvName {
 		t.Fatalf("staging EnvVars = %#v", got.Contexts["staging"].EnvVars)
 	}
 }

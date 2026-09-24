@@ -370,9 +370,17 @@ func LockConfig() (func(), error) {
 
 func writeConfigAtomic(configOrigin string, data []byte) error {
 	dir := filepath.Dir(configOrigin)
-	tmp, err := os.CreateTemp(dir, filepath.Base(configOrigin)+".tmp-*")
+	tmpName, err := createTempConfig(dir, filepath.Base(configOrigin), data)
 	if err != nil {
 		return err
+	}
+	return replaceConfig(tmpName, configOrigin, dir)
+}
+
+func createTempConfig(dir, base string, data []byte) (string, error) {
+	tmp, err := os.CreateTemp(dir, base+".tmp-*")
+	if err != nil {
+		return "", err
 	}
 	tmpName := tmp.Name()
 	success := false
@@ -383,21 +391,27 @@ func writeConfigAtomic(configOrigin string, data []byte) error {
 		}
 	}()
 	if err := tmp.Chmod(0o600); err != nil {
-		return err
+		return "", err
 	}
 	if _, err := tmp.Write(data); err != nil {
-		return err
+		return "", err
 	}
 	if err := tmp.Sync(); err != nil {
-		return err
+		return "", err
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return "", err
 	}
+	success = true
+	return tmpName, nil
+}
+
+func replaceConfig(tmpName, configOrigin, dir string) error {
+	defer func() { _ = os.Remove(tmpName) }()
 	if err := os.Rename(tmpName, configOrigin); err != nil {
 		return err
 	}
-	success = true
+	// #nosec G304 -- dir is derived from the managed config path.
 	if dirFile, err := os.Open(dir); err == nil {
 		_ = dirFile.Sync()
 		_ = dirFile.Close()
