@@ -212,7 +212,7 @@ async function handleDelete() {
                 {/if}
               </Table.Cell>
               <Table.Cell>
-                <WorkspaceOperation id={ws.id} status={ws.status} />
+                <WorkspaceOperation id={ws.id} status={ws.status} density="compact" />
               </Table.Cell>
               <Table.Cell class="text-sm text-muted-foreground">{timeAgo(ws.lastUsed)}</Table.Cell>
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->

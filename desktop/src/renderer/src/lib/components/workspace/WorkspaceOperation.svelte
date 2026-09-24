@@ -52,37 +52,44 @@ const badgeVariant = $derived(
 )
 </script>
 
-<div role="status" aria-live={view.error ? "assertive" : "polite"} aria-busy={view.busy} class="flex min-h-10 flex-col items-start gap-1">
+<div
+  role="status"
+  aria-live={view.error ? "assertive" : "polite"}
+  aria-busy={view.busy}
+  class={density === "compact" ? "flex items-center" : "flex min-h-10 flex-col items-start gap-1"}
+>
   <span class={badgeVariants({ variant: badgeVariant })}>
     {#if view.busy}<Loader2 class="size-3 animate-spin" aria-hidden="true" />{/if}
     {view.headline}
   </span>
-  <span
-    class="max-w-full truncate text-xs {view.error
-      ? 'text-destructive'
-      : view.recovery
-        ? 'text-amber-600 dark:text-amber-400'
-        : 'text-muted-foreground'}"
-    title={view.error ?? view.recovery?.message ?? view.phase ?? undefined}
-  >
-    {#if view.error}
-      {view.error}{#if density === "expanded"}{" · "}<button
-        type="button"
-        class="font-medium text-foreground underline underline-offset-2"
-        aria-label="View logs for {id}"
-        onclick={viewLogs}>View logs</button>{/if}
-    {:else if view.recovery}
-      &#9888; {view.recovery.message}{#if density === "expanded" && view.recovery.canRetry}{" · "}<button
+  {#if density === "expanded" && (view.error || view.recovery || view.phase)}
+    <span
+      data-slot="workspace-operation-detail"
+      class="max-w-full truncate text-xs {view.error
+        ? 'text-destructive'
+        : view.recovery
+          ? 'text-amber-600 dark:text-amber-400'
+          : 'text-muted-foreground'}"
+      title={view.error ?? view.recovery?.message ?? view.phase ?? undefined}
+    >
+      {#if view.error}
+        {view.error}{" · "}<button
           type="button"
           class="font-medium text-foreground underline underline-offset-2"
-          aria-label="Retry status for {id}"
-          disabled={refreshing}
-          onclick={retryRefresh}>Retry</button
-        >{/if}
-    {:else if view.phase}
-      {view.phase}
-    {:else}
-      <span aria-hidden="true">&nbsp;</span>
-    {/if}
-  </span>
+          aria-label="View logs for {id}"
+          onclick={viewLogs}>View logs</button
+        >
+      {:else if view.recovery}
+        &#9888; {view.recovery.message}{#if view.recovery.canRetry}{" · "}<button
+            type="button"
+            class="font-medium text-foreground underline underline-offset-2"
+            aria-label="Retry status for {id}"
+            disabled={refreshing}
+            onclick={retryRefresh}>Retry</button
+          >{/if}
+      {:else if view.phase}
+        {view.phase}
+      {/if}
+    </span>
+  {/if}
 </div>

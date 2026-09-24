@@ -23,12 +23,20 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 describe("WorkspaceOperation", () => {
-  it("shows the observed lifecycle with the phase line reserved", () => {
-    const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
+  it("renders compact lifecycle status as a single-line badge", () => {
+    const ui = render(WorkspaceOperation, {
+      id: "ws",
+      status: "Running",
+      density: "compact",
+    })
     expect(ui.getByText("Running")).toBeTruthy()
     const region = ui.getByRole("status")
     expect(region.getAttribute("aria-busy")).toBe("false")
-    expect(region.querySelector('[aria-hidden="true"]')).toBeTruthy()
+    expect(region.querySelector('[aria-hidden="true"]')).toBeNull()
+    expect(
+      region.querySelector('[data-slot="workspace-operation-detail"]'),
+    ).toBeNull()
+    expect(region.classList.contains("min-h-10")).toBe(false)
   })
   it("keeps the active command ahead of a stale runtime observation", () => {
     workspaceJobs.set({
@@ -39,12 +47,16 @@ describe("WorkspaceOperation", () => {
         phase: "closing_connections",
       },
     })
-    const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
+    const ui = render(WorkspaceOperation, {
+      id: "ws",
+      status: "Running",
+      density: "compact",
+    })
     expect(ui.getByText("Deleting")).toBeTruthy()
-    expect(ui.getByText("Closing connections")).toBeTruthy()
+    expect(ui.queryByText("Closing connections")).toBeNull()
     expect(ui.queryByText("Running")).toBeNull()
   })
-  it("says Confirming removal while a delete awaits confirmation, never Deleted", () => {
+  it("shows the delete headline without confirmation details in compact density", () => {
     workspaceJobs.set({
       ws: {
         commandId: "delete",
@@ -53,11 +65,35 @@ describe("WorkspaceOperation", () => {
         phase: "Refreshing list",
       },
     })
-    const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
+    const ui = render(WorkspaceOperation, {
+      id: "ws",
+      status: "Running",
+      density: "compact",
+    })
     expect(ui.getByText("Deleting")).toBeTruthy()
-    expect(ui.getByText("Confirming removal")).toBeTruthy()
+    expect(ui.queryByText("Confirming removal")).toBeNull()
     expect(ui.queryByText("Deleted")).toBeNull()
     expect(ui.getByRole("status").getAttribute("aria-busy")).toBe("true")
+  })
+  it("retains the operation phase in expanded density", () => {
+    workspaceJobs.set({
+      ws: {
+        commandId: "delete",
+        activity: "deleting",
+        state: "reconciling",
+        phase: "Refreshing list",
+      },
+    })
+    const ui = render(WorkspaceOperation, {
+      id: "ws",
+      status: "Running",
+      density: "expanded",
+    })
+    expect(ui.getByText("Deleting")).toBeTruthy()
+    expect(ui.getByText("Confirming removal")).toBeTruthy()
+    expect(
+      ui.getByRole("status").querySelector('[data-slot="workspace-operation-detail"]'),
+    ).toBeTruthy()
   })
   it("shows recovery wording with an expanded Retry that only re-refreshes", async () => {
     workspaceJobs.set({
@@ -128,6 +164,7 @@ describe("WorkspaceOperation", () => {
     })
     const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
     expect(ui.getByText("Stop failed")).toBeTruthy()
+    expect(ui.queryByText(/provider unavailable/)).toBeNull()
     expect(ui.queryByRole("button", { name: "View logs for ws" })).toBeNull()
   })
 
@@ -143,7 +180,8 @@ describe("WorkspaceOperation", () => {
     })
     const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
 
-    expect(ui.getByText(/List may be out of date/)).toBeTruthy()
+    expect(ui.getByText("Deleting")).toBeTruthy()
+    expect(ui.queryByText(/List may be out of date/)).toBeNull()
     expect(ui.queryByRole("button", { name: "Retry status for ws" })).toBeNull()
   })
 
