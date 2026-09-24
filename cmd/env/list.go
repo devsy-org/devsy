@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/output"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
@@ -30,12 +33,19 @@ func NewListCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 type envEntry struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	Context  string `json:"context"`
+	Attached bool   `json:"attached"`
 }
 
 func (cmd *ListCmd) Run(_ context.Context) error {
-	contextName, store, err := resolveContext(cmd.GlobalFlags)
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return err
+	}
+	contextName := devsyConfig.DefaultContext
+	store, err := secrets.NewStoreForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
@@ -49,7 +59,15 @@ func (cmd *ListCmd) Run(_ context.Context) error {
 		if m.Sensitive() {
 			continue
 		}
-		entries = append(entries, envEntry{Name: m.Name, Value: m.Value})
+		entries = append(
+			entries,
+			envEntry{
+				Name:     m.Name,
+				Value:    m.Value,
+				Context:  contextName,
+				Attached: slices.Contains(devsyConfig.Contexts[contextName].EnvVars, m.Name),
+			},
+		)
 	}
 
 	mode, err := output.ResolveMode(cmd.ResultFormat)
@@ -76,7 +94,7 @@ func renderJSON(entries []envEntry) error {
 func renderPlain(entries []envEntry) {
 	rows := make([][]string, 0, len(entries))
 	for _, e := range entries {
-		rows = append(rows, []string{e.Name, e.Value})
+		rows = append(rows, []string{e.Name, e.Value, e.Context, fmt.Sprint(e.Attached)})
 	}
-	table.Print([]string{"Name", "Value"}, rows)
+	table.Print([]string{"Name", "Value", "Context", "Attached"}, rows)
 }

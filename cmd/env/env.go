@@ -19,6 +19,8 @@ use "devsy secret" for sensitive values.`,
 	envCmd.AddCommand(NewListCmd(globalFlags))
 	envCmd.AddCommand(NewGetCmd(globalFlags))
 	envCmd.AddCommand(NewDeleteCmd(globalFlags))
+	envCmd.AddCommand(NewAttachCmd(globalFlags))
+	envCmd.AddCommand(NewDetachCmd(globalFlags))
 	return envCmd
 }
 

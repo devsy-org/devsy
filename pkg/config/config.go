@@ -50,6 +50,10 @@ type ContextConfig struct {
 	// Secrets are names of stored secrets bound to this context, injected on `up`. Names only, no values.
 	Secrets []string `json:"secrets,omitempty"`
 
+	// EnvVars are names of stored non-sensitive environment variables bound to
+	// this context, injected on `up`. Names only, no values.
+	EnvVars []string `json:"envVars,omitempty"`
+
 	// OriginalProvider is the original default provider
 	OriginalProvider string `json:"-"`
 }

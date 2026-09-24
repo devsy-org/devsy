@@ -3,8 +3,10 @@ package env
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 )
@@ -41,6 +43,18 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 	}
 	if err := store.Delete(contextName, name); err != nil {
 		return err
+	}
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return err
+	}
+	if ctxConfig := devsyConfig.Contexts[contextName]; ctxConfig != nil {
+		if idx := slices.Index(ctxConfig.EnvVars, name); idx >= 0 {
+			ctxConfig.EnvVars = slices.Delete(ctxConfig.EnvVars, idx, idx+1)
+			if err := config.SaveConfig(devsyConfig); err != nil {
+				return err
+			}
+		}
 	}
 	log.Infof("env var %q deleted from context %q", name, contextName)
 	return nil

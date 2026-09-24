@@ -65,3 +65,25 @@ func TestLoadConfig_StampsMissingSchemaVersionOnExistingConfig(t *testing.T) {
 		)
 	}
 }
+
+func TestContextConfigEnvVarsRoundTrip(t *testing.T) {
+	ResetPathManager()
+	t.Cleanup(ResetPathManager)
+	t.Setenv(EnvHome, t.TempDir())
+	want := &Config{
+		DefaultContext: DefaultContext,
+		Contexts: map[string]*ContextConfig{
+			DefaultContext: {EnvVars: []string{"LOG_LEVEL"}},
+		},
+	}
+	if err := SaveConfig(want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadConfig("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Current().EnvVars) != 1 || got.Current().EnvVars[0] != "LOG_LEVEL" {
+		t.Fatalf("EnvVars = %#v, want [LOG_LEVEL]", got.Current().EnvVars)
+	}
+}
