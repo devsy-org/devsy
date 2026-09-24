@@ -261,7 +261,7 @@ func (cmd *UpCmd) Run(
 ) error {
 	cmd.prepareWorkspace(client)
 
-	emitJSON, out, err := cmd.configureRun()
+	emitJSON, out, err := cmd.configureRun(client.Workspace())
 	if err != nil {
 		return err
 	}
@@ -295,7 +295,7 @@ func (cmd *UpCmd) Run(
 	return nil
 }
 
-func (cmd *UpCmd) configureRun() (bool, io.Writer, error) {
+func (cmd *UpCmd) configureRun(workspaceID string) (bool, io.Writer, error) {
 	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {
 		return false, nil, err
@@ -306,6 +306,9 @@ func (cmd *UpCmd) configureRun() (bool, io.Writer, error) {
 		out,
 		cmd.Verbosity > 0 || cmd.Debug,
 	)
+	if err == nil {
+		cmd.statusReporter = withJournal(cmd.statusReporter, workspaceID)
+	}
 	return mode == output.ModeJSON, out, err
 }
 

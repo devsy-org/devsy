@@ -87,36 +87,110 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	var deleteErr error
-	var devsyConfig *config.Config
-	deleteErr = status.Run(
+	devsyConfig, err := cmd.loadConfig()
+	if err != nil {
+		return status.Run(ctx, reporter, status.Operation{Phase: status.PhaseDeletingWorkspace},
+			func(context.Context) error { return err })
+	}
+	if len(args) == 0 {
+		return cmd.deleteInteractively(ctx, reporter, devsyConfig)
+	}
+	targets := resolveDeleteTargets(ctx, devsyConfig, cmd.Owner, args)
+	if len(args) <= 1 {
+		reporter = withWorkspaceJournal(reporter, targets[journalWorkspaceKey(args)].ID)
+	}
+	deleteErr := status.Run(
 		ctx,
 		reporter,
 		status.Operation{Phase: status.PhaseDeletingWorkspace},
 		func(ctx context.Context) error {
-			var err error
-			devsyConfig, err = cmd.loadConfig()
-			if err != nil {
-				return err
-			}
 			if len(args) <= 1 {
-				return cmd.deleteSingle(status.WithReporter(ctx, reporter), devsyConfig, args)
+				return cmd.deleteSingle(
+					status.WithReporter(ctx, reporter),
+					devsyConfig,
+					targets[journalWorkspaceKey(args)],
+					args,
+				)
 			}
-			return cmd.deleteMultiple(status.WithReporter(ctx, reporter), devsyConfig, args)
+			return cmd.deleteMultiple(ctx, devsyConfig, reporter, targets, args)
 		},
 	)
-	if devsyConfig == nil {
-		return deleteErr
-	}
 
-	count, countErr := workspace.CountLocalWorkspaces(devsyConfig.DefaultContext)
-	if countErr != nil {
-		log.Debugf("skipping workspace count gauge: %v", countErr)
-	} else {
-		telemetry.FromContext(ctx).RecordWorkspaceGauge(count)
-	}
+	recordWorkspaceCount(ctx, devsyConfig)
 
 	return deleteErr
+}
+
+// deleteInteractively resolves the deletion target with a single interactive
+// selection and deletes that same client, so the operation is journaled under
+// the workspace that is actually deleted.
+func (cmd *DeleteCmd) deleteInteractively(
+	ctx context.Context,
+	reporter status.Reporter,
+	devsyConfig *config.Config,
+) error {
+	client, err := workspace.Get(ctx, workspace.GetOptions{
+		DevsyConfig: devsyConfig,
+		Owner:       cmd.Owner,
+	})
+	if err != nil {
+		return status.Run(
+			ctx,
+			reporter,
+			status.Operation{Phase: status.PhaseDeletingWorkspace},
+			func(context.Context) error { return err },
+		)
+	}
+
+	deleteErr := cmd.deleteResolved(ctx, reporter, devsyConfig, client)
+	recordWorkspaceCount(ctx, devsyConfig)
+
+	return deleteErr
+}
+
+// deleteResolved deletes an already-resolved workspace client and journals
+// the operation under the client's workspace ID.
+func (cmd *DeleteCmd) deleteResolved(
+	ctx context.Context,
+	reporter status.Reporter,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	reporter = withWorkspaceJournal(reporter, client.Workspace())
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseDeletingWorkspace},
+		func(ctx context.Context) error {
+			_, err := cmd.deleteClient(status.WithReporter(ctx, reporter), devsyConfig, client)
+			return err
+		},
+	)
+}
+
+func (cmd *DeleteCmd) deleteClient(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) (string, error) {
+	return workspace.Delete(ctx, workspace.DeleteOptions{
+		DevsyConfig:    devsyConfig,
+		Client:         client,
+		IgnoreNotFound: cmd.IgnoreNotFound,
+		Force:          cmd.Force,
+		ClientDelete:   cmd.DeleteOptions,
+		Owner:          cmd.Owner,
+	})
+}
+
+// recordWorkspaceCount reports the remaining local workspace count as a gauge.
+func recordWorkspaceCount(ctx context.Context, devsyConfig *config.Config) {
+	count, err := workspace.CountLocalWorkspaces(devsyConfig.DefaultContext)
+	if err != nil {
+		log.Debugf("skipping workspace count gauge: %v", err)
+		return
+	}
+	telemetry.FromContext(ctx).RecordWorkspaceGauge(count)
 }
 
 func (cmd *DeleteCmd) loadConfig() (*config.Config, error) {
@@ -138,9 +212,10 @@ func (cmd *DeleteCmd) loadConfig() (*config.Config, error) {
 func (cmd *DeleteCmd) deleteSingle(
 	ctx context.Context,
 	devsyConfig *config.Config,
+	target resolvedDeleteTarget,
 	args []string,
 ) error {
-	name, err := cmd.deleteWorkspace(ctx, devsyConfig, args)
+	name, err := cmd.deleteTarget(ctx, devsyConfig, target, args)
 	if err != nil {
 		return err
 	}
@@ -153,11 +228,20 @@ func (cmd *DeleteCmd) deleteSingle(
 func (cmd *DeleteCmd) deleteMultiple(
 	ctx context.Context,
 	devsyConfig *config.Config,
+	reporter status.Reporter,
+	targets map[string]resolvedDeleteTarget,
 	args []string,
 ) error {
 	var errs []error
 	for _, arg := range args {
-		name, err := cmd.deleteWorkspace(ctx, devsyConfig, []string{arg})
+		target := targets[arg]
+		targetReporter := withWorkspaceJournal(reporter, target.ID)
+		name, err := cmd.deleteTarget(
+			status.WithReporter(ctx, targetReporter),
+			devsyConfig,
+			target,
+			[]string{arg},
+		)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to delete workspace %s: %w", arg, err))
 
@@ -176,6 +260,21 @@ func (cmd *DeleteCmd) deleteMultiple(
 	}
 
 	return nil
+}
+
+// deleteTarget deletes one workspace. When the target carries a pre-resolved
+// client, deletion reuses it so the deleted workspace and the journal key
+// cannot diverge; otherwise it resolves the raw arguments.
+func (cmd *DeleteCmd) deleteTarget(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	target resolvedDeleteTarget,
+	args []string,
+) (string, error) {
+	if target.Client != nil {
+		return cmd.deleteClient(ctx, devsyConfig, target.Client)
+	}
+	return cmd.deleteWorkspace(ctx, devsyConfig, args)
 }
 
 func (cmd *DeleteCmd) deleteWorkspace(

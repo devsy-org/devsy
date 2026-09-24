@@ -29,6 +29,7 @@ func newWorkspaceStatusReporter(
 			status.PhaseDeletingWorkspace:   "deleting workspace",
 			status.PhaseRebuildingWorkspace: "rebuilding workspace",
 			status.PhaseResettingWorkspace:  "resetting workspace",
+			status.PhaseImportingWorkspace:  "importing workspace",
 			status.PhaseReady:               "ready",
 		},
 		Envelope: func(e status.Event) error {

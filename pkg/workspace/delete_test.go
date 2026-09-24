@@ -1,10 +1,13 @@
 package workspace
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/require"
 )
@@ -69,4 +72,44 @@ func TestSweepOrphanContentDirs_RemovesContentWithNoMatchingWorkspace(t *testing
 func TestSweepOrphanContentDirs_MissingDirIsNoop(t *testing.T) {
 	setupTestPathManager(t)
 	SweepOrphanContentDirs(testDefaultContext)
+}
+
+func TestDeleteWithPreResolvedClientSkipsSelection(t *testing.T) {
+	setupTestPathManager(t)
+
+	fake := &preResolvedDeleteClient{
+		workspaceID: "chosen",
+		config:      &provider.Workspace{ID: "chosen", Context: testDefaultContext},
+	}
+	devsyConfig := &config.Config{
+		DefaultContext: testDefaultContext,
+		Contexts:       map[string]*config.ContextConfig{testDefaultContext: {}},
+	}
+
+	id, err := Delete(t.Context(), DeleteOptions{
+		DevsyConfig: devsyConfig,
+		Client:      fake,
+		Force:       true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "chosen", id)
+	require.True(t, fake.deleted)
+}
+
+type preResolvedDeleteClient struct {
+	client.BaseWorkspaceClient
+	workspaceID string
+	config      *provider.Workspace
+	deleted     bool
+}
+
+func (c *preResolvedDeleteClient) Workspace() string { return c.workspaceID }
+func (c *preResolvedDeleteClient) WorkspaceConfig() *provider.Workspace {
+	return c.config
+}
+func (c *preResolvedDeleteClient) Context() string  { return c.config.Context }
+func (c *preResolvedDeleteClient) Provider() string { return DefaultDockerCommand }
+func (c *preResolvedDeleteClient) Delete(context.Context, client.DeleteOptions) error {
+	c.deleted = true
+	return nil
 }
