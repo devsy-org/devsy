@@ -61,8 +61,27 @@ test.describe("Workspace lifecycle badges", () => {
       [channel, args] as const,
     )
 
+  const workspaceSnapshot = async () =>
+    (await api("workspace_snapshot", {})) as {
+      workspaces: Array<{ id: string }>
+      jobs: Record<string, { state: string }>
+    }
+
+  const waitForDeleteToSettle = async () => {
+    await expect
+      .poll(
+        async () => {
+          const snapshot = await workspaceSnapshot()
+          return snapshot.jobs.deleteprobe?.state ?? "missing"
+        },
+        { timeout: 10000 },
+      )
+      .toMatch(/^(succeeded|failed|missing)$/)
+  }
+
   test("shows a Deleting badge while removal is in flight, then removes the row", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
+    let deleteAccepted = false
 
     try {
       await api("workspace_up", {
@@ -73,18 +92,26 @@ test.describe("Workspace lifecycle badges", () => {
         timeout: 5000,
       })
 
-      // Not awaited: the assertions below run while the delete is in flight.
-      void api("workspace_delete", { workspaceId: "deleteprobe" }).catch(
-        () => undefined,
-      )
+      // Await IPC acceptance only; the returned command ID does not wait for
+      // the CLI operation, so the assertions still run while deletion is in flight.
+      await api("workspace_delete", { workspaceId: "deleteprobe" })
+      deleteAccepted = true
 
       await expect(main).toContainText("Deleting", { timeout: 3000 })
       await expect(main.locator("text=deleteprobe")).not.toBeVisible({
         timeout: 5000,
       })
+      await waitForDeleteToSettle()
     } finally {
-      // Mock CLI state is shared across specs, so don't leave this behind.
-      await api("workspace_delete", { workspaceId: "deleteprobe" })
+      // The IPC call acknowledges acceptance before the CLI operation settles.
+      // Wait for that operation before attempting fixture cleanup so cleanup
+      // does not race the serialization guard.
+      if (deleteAccepted) await waitForDeleteToSettle()
+      const snapshot = await workspaceSnapshot()
+      if (snapshot.workspaces.some(({ id }) => id === "deleteprobe")) {
+        await api("workspace_delete", { workspaceId: "deleteprobe" })
+        await waitForDeleteToSettle()
+      }
     }
   })
 })
