@@ -128,3 +128,32 @@ func TestSaveConfigRestoresTemporaryContextAndProviderOverrides(t *testing.T) {
 		t.Fatalf("staging EnvVars = %#v", got.Contexts["staging"].EnvVars)
 	}
 }
+
+func TestSaveConfigRestoresEmptyTemporaryProviderOverride(t *testing.T) {
+	ResetPathManager()
+	t.Cleanup(ResetPathManager)
+	t.Setenv(EnvHome, t.TempDir())
+	want := &Config{
+		DefaultContext: DefaultContext,
+		Contexts:       map[string]*ContextConfig{DefaultContext: {}},
+	}
+	if err := SaveConfig(want); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadConfig("", "ssh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveConfig(loaded); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := LoadConfig("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Current().DefaultProvider != "" {
+		t.Fatalf("provider = %q, want empty", got.Current().DefaultProvider)
+	}
+}

@@ -57,6 +57,10 @@ type ContextConfig struct {
 
 	// OriginalProvider is the original default provider
 	OriginalProvider string `json:"-"`
+
+	// OriginalProviderSet records that a transient provider override was applied,
+	// including when the original provider was empty.
+	OriginalProviderSet bool `json:"-"`
 }
 
 type ContextOption struct {
@@ -230,6 +234,7 @@ func CloneConfig(config *Config) *Config {
 			ctx.IDEs = map[string]*IDEConfig{}
 		}
 		ctx.OriginalProvider = config.Contexts[ctxName].OriginalProvider
+		ctx.OriginalProviderSet = config.Contexts[ctxName].OriginalProviderSet
 	}
 	ret.Origin = config.Origin
 	ret.OriginalContext = config.OriginalContext
@@ -305,6 +310,7 @@ func normalizeConfig(config *Config, contextOverride, providerOverride string) {
 	ensureContextMaps(ctx)
 	if providerOverride != "" {
 		ctx.OriginalProvider = ctx.DefaultProvider
+		ctx.OriginalProviderSet = true
 		ctx.DefaultProvider = providerOverride
 	}
 }
@@ -330,8 +336,10 @@ func SaveConfig(config *Config) error {
 	config = CloneConfig(config)
 	selectedContext := config.DefaultContext
 	if selected := config.Contexts[selectedContext]; selected != nil &&
-		selected.OriginalProvider != "" {
+		selected.OriginalProviderSet {
 		selected.DefaultProvider = selected.OriginalProvider
+		selected.OriginalProvider = ""
+		selected.OriginalProviderSet = false
 	}
 	if config.OriginalContext != "" {
 		config.DefaultContext = config.OriginalContext
