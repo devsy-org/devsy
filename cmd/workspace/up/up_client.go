@@ -399,6 +399,13 @@ func parseEnvVarRequest(entry string) (envVarRequest, error) {
 			name,
 		)
 	}
+	if hasTarget && strings.Contains(target, "=") {
+		return envVarRequest{}, fmt.Errorf(
+			"invalid --env %q: target %q must not contain =",
+			entry,
+			target,
+		)
+	}
 	ref, err := secrets.ParseRef(name)
 	if err != nil {
 		return envVarRequest{}, err

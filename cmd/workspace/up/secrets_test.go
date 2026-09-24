@@ -169,6 +169,12 @@ func TestCollectEnvVarRequests_InvalidAttachedReference(t *testing.T) {
 	assert.Contains(t, err.Error(), "must use the local Devsy store")
 }
 
+func TestCollectEnvVarRequests_RejectsEqualsInTarget(t *testing.T) {
+	_, err := collectEnvVarRequests([]string{"FOO=APP=MODE"}, testEnvConfig())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must not contain =")
+}
+
 func TestApplyEnvVars_ContextAttachedNonSensitive(t *testing.T) {
 	cmd := &UpCmd{}
 	resolver := secretspkg.NewResolver()
