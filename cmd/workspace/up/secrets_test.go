@@ -27,6 +27,13 @@ func testConfig(bound ...string) *config.Config {
 	}
 }
 
+func testEnvConfig(bound ...string) *config.Config {
+	return &config.Config{
+		DefaultContext: "default",
+		Contexts:       map[string]*config.ContextConfig{"default": {EnvVars: bound}},
+	}
+}
+
 func localRef(name string) secretspkg.SecretRef {
 	return secretspkg.SecretRef{
 		Type:   secretspkg.LocalSourceName,
@@ -129,6 +136,56 @@ func TestCollectSecretRequests_DuplicateMountTargetRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "both mount to target")
 }
 
+func TestCollectEnvVarRequests_ContextAttachment(t *testing.T) {
+	got, err := collectEnvVarRequests(nil, testEnvConfig("ZED", "ALPHA"))
+	require.NoError(t, err)
+	assert.Equal(t, []envVarRequest{
+		{ref: localRef("ALPHA"), target: "ALPHA"},
+		{ref: localRef("ZED"), target: "ZED"},
+	}, got)
+}
+
+func TestCollectEnvVarRequests_ExplicitOverridesAttachment(t *testing.T) {
+	got, err := collectEnvVarRequests([]string{"LOG_LEVEL=APP_LOG"}, testEnvConfig("LOG_LEVEL"))
+	require.NoError(t, err)
+	assert.Equal(t, []envVarRequest{{ref: localRef("LOG_LEVEL"), target: "APP_LOG"}}, got)
+}
+
+func TestCollectEnvVarRequests_DuplicateTargetRejected(t *testing.T) {
+	requests, err := collectEnvVarRequests(
+		[]string{"FOO=APP_MODE", "BAR=APP_MODE"},
+		testEnvConfig(),
+	)
+	if err == nil {
+		err = checkDuplicateEnvTargets(requests)
+	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `both target "APP_MODE"`)
+}
+
+func TestCollectEnvVarRequests_InvalidAttachedReference(t *testing.T) {
+	_, err := collectEnvVarRequests(nil, testEnvConfig("sops:project/FOO"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must use the local Devsy store")
+}
+
+func TestApplyEnvVars_ContextAttachedNonSensitive(t *testing.T) {
+	cmd := &UpCmd{}
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.Register("local", "local", fixedSource{
+		values: map[string]string{"LOG_LEVEL": "debug"}, sensitive: false,
+	}))
+
+	err := cmd.applyEnvVars(context.Background(), testEnvConfig("LOG_LEVEL"), resolver)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"LOG_LEVEL=debug"}, cmd.WorkspaceEnv)
+}
+
+func TestHasStoredValues_AttachedEnvVars(t *testing.T) {
+	cmd := &UpCmd{}
+	assert.True(t, cmd.hasStoredValues(nil, testEnvConfig("LOG_LEVEL")))
+}
+
 type fixedSource struct {
 	values    map[string]string
 	sensitive bool
@@ -146,7 +203,7 @@ func TestApplyEnvVars_RejectsSensitiveSecret(t *testing.T) {
 		values: map[string]string{secretAPIKey: "plaintext"}, sensitive: true,
 	}))
 
-	err := cmd.applyEnvVars(context.Background(), resolver)
+	err := cmd.applyEnvVars(context.Background(), testConfig(), resolver)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "is a secret and cannot be passed with --env")
 	assert.Empty(t, cmd.WorkspaceEnv, "no value must reach the ps-visible WorkspaceEnv")
@@ -160,7 +217,7 @@ func TestApplyEnvVars_AllowsNonSensitive(t *testing.T) {
 		values: map[string]string{"LOG_LEVEL": "debug"}, sensitive: false,
 	}))
 
-	err := cmd.applyEnvVars(context.Background(), resolver)
+	err := cmd.applyEnvVars(context.Background(), testConfig(), resolver)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"DEBUG_TARGET=debug"}, cmd.WorkspaceEnv)
 }
