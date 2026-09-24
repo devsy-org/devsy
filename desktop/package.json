@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "chokidar": "^5.0.0",
+    "dbus-next": "^0.10.2",
     "dompurify": "^3.4.7",
     "electron-updater": "^6.8.3",
     "node-pty": "^1.0.0",
@@ -61,5 +62,8 @@
     "vaul-svelte": "1.0.0-next.7",
     "vite": "7.3.6",
     "vitest": "4.1.11"
+  },
+  "overrides": {
+    "form-data@>=2.0.0 <3.0.0": "2.5.4"
   }
 }

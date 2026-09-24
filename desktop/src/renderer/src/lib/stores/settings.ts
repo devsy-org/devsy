@@ -1,5 +1,17 @@
 import { writable } from "svelte/store"
-import { getAutoDownload, setAutoDownload } from "$lib/ipc/commands.js"
+import {
+  getAppSettings,
+  getAutoDownload,
+  setAppSettings,
+  setAutoDownload,
+} from "$lib/ipc/commands.js"
+import { onAppSettingsChanged } from "$lib/ipc/events.js"
+import type {
+  AppSettings,
+  AppSettingsState,
+  StartupStatus,
+  TrayNotificationLevel,
+} from "$shared/app-settings.js"
 
 const browser = typeof window !== "undefined"
 
@@ -152,7 +164,10 @@ export async function syncAutoUpdateFromMain(): Promise<void> {
     if (browser) localStorage.setItem(AUTO_UPDATE_KEY, String(value))
     autoUpdate.set(value)
   } catch (err) {
-    console.warn("[settings] getAutoDownload failed; keeping cached value:", err)
+    console.warn(
+      "[settings] getAutoDownload failed; keeping cached value:",
+      err,
+    )
   }
 }
 
@@ -347,6 +362,70 @@ export function parseContextOptions(
   }
 }
 
+// Main owns these settings; a renderer write in flight wins over inbound updates.
+export const runAtStartup = writable<boolean>(false)
+export const openToTrayOnStartup = writable<boolean>(false)
+export const trayNotifications = writable<TrayNotificationLevel>("failures")
+export const startupStatus = writable<StartupStatus | null>(null)
+
+let desktopSettingsQueue: Promise<unknown> = Promise.resolve()
+let desktopSettingsRevision = 0
+
+function applyAppSettingsState(state: AppSettingsState): void {
+  runAtStartup.set(state.settings.runAtStartup)
+  openToTrayOnStartup.set(state.settings.openToTrayOnStartup)
+  trayNotifications.set(state.settings.trayNotifications)
+  startupStatus.set(state.startup)
+}
+
+export async function syncDesktopSettingsFromMain(): Promise<void> {
+  const revision = desktopSettingsRevision
+  const sync = desktopSettingsQueue
+    .catch(() => {})
+    .then(async () => {
+      try {
+        const state = await getAppSettings()
+        if (revision === desktopSettingsRevision) applyAppSettingsState(state)
+      } catch (err) {
+        console.warn("[settings] getAppSettings failed:", err)
+      }
+    })
+  desktopSettingsQueue = sync.catch(() => {})
+  await sync
+}
+
+export async function updateDesktopSettings(
+  patch: Partial<AppSettings>,
+): Promise<void> {
+  const update = desktopSettingsQueue
+    .catch(() => {})
+    .then(async () => {
+      // A settings event that lands while the request is in flight is newer
+      // than its reply, so the reply must not overwrite it.
+      const revision = desktopSettingsRevision
+      try {
+        const state = await setAppSettings(patch)
+        if (revision === desktopSettingsRevision) applyAppSettingsState(state)
+      } catch (err) {
+        console.warn("[settings] setAppSettings failed:", err)
+        try {
+          const state = await getAppSettings()
+          if (revision === desktopSettingsRevision) applyAppSettingsState(state)
+        } catch {}
+      }
+    })
+  desktopSettingsQueue = update.catch(() => {})
+  await update
+}
+
+export async function initDesktopSettingsListener(): Promise<() => void> {
+  const unlisten = await onAppSettingsChanged((state) => {
+    desktopSettingsRevision++
+    applyAppSettingsState(state)
+  })
+  return unlisten
+}
+
 // ── Init ────────────────────────────────────────────────────────────
 
 export function initSettings() {
@@ -402,10 +481,7 @@ export function getWorkspaceFolder(workspaceId: string): string {
   return ""
 }
 
-export function setWorkspaceFolder(
-  workspaceId: string,
-  folder: string,
-): void {
+export function setWorkspaceFolder(workspaceId: string, folder: string): void {
   if (!browser) return
   try {
     const stored = localStorage.getItem(WORKSPACE_FOLDERS_KEY)

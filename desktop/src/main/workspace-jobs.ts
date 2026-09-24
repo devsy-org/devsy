@@ -97,7 +97,8 @@ export class WorkspaceJobs {
     const job = this.jobs.get(id)
     if (
       !job ||
-      job.state !== "reconciling" ||
+      (job.state !== "reconciling" &&
+        !(job.state === "failed" && job.refreshError)) ||
       this.refreshing.has(job.commandId)
     )
       return
@@ -115,6 +116,7 @@ export class WorkspaceJobs {
       if (this.jobs.get(id) !== job) return
       this.jobs.set(id, {
         ...job,
+        state: job.error ? "failed" : "reconciling",
         refreshError: error instanceof Error ? error.message : String(error),
       })
     } finally {

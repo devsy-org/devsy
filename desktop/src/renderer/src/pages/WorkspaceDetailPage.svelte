@@ -314,6 +314,10 @@ onMount(async () => {
   void reconcileRecoveryFromStatus()
 
   const qs = new URLSearchParams($querystring ?? "")
+  const tab = qs.get("tab")
+  if (tab === "logs" || tab === "terminal" || tab === "overview") {
+    activeTab = tab
+  }
   const action = qs.get("action")
   if (action === "open-ide" || action === "start") {
     // Clear query param so refresh doesn't re-trigger
