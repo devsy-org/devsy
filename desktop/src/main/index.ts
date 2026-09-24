@@ -17,6 +17,7 @@ import {
   shouldSuppressInitialWindow,
 } from "./launch-context.js"
 import { LogStore } from "./log-store.js"
+import { setMainLogLevel } from "./logging.js"
 import { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
 import { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import { ProviderJobs } from "./provider-jobs.js"
@@ -166,7 +167,13 @@ app.whenReady().then(async () => {
     (app.isPackaged
       ? CliRunner.resolveBinaryPath(process.resourcesPath)
       : CliRunner.resolveBinaryPath(join(__dirname, "../../resources")))
+  const appSettingsStore = new AppSettingsStore(
+    join(app.getPath("userData"), "app-settings.json"),
+  )
+  appSettingsStore.load()
+  setMainLogLevel(appSettingsStore.get().logLevel)
   const cli = new CliRunner(binaryPath)
+  cli.setLogLevel(appSettingsStore.get().logLevel ?? "info")
 
   // Initialize log store. Logs live under ~/.devsy/desktop/logs/ — inside the
   // shared ~/.devsy root (no artifact sprawl) but outside the CLI-managed
@@ -218,16 +225,14 @@ app.whenReady().then(async () => {
   const providerJobs = new ProviderJobs()
   const workspaceJobs = new WorkspaceJobs()
 
-  const appSettingsStore = new AppSettingsStore(
-    join(app.getPath("userData"), "app-settings.json"),
-  )
-  appSettingsStore.load()
   const autostartEnv = detectAutostartEnvironment()
   const settingsService = new SettingsService({
     store: appSettingsStore,
     applyAutostart: (settings) => applyAutostart(settings, autostartEnv),
     currentAutostartEnabled: () => readAutostartEnabled(autostartEnv),
     onChanged: (result) => {
+      setMainLogLevel(result.settings.logLevel)
+      cli.setLogLevel(result.settings.logLevel ?? "info")
       appTray?.rebuildMenu()
       const win = mainWindow
       if (win && !win.isDestroyed()) {

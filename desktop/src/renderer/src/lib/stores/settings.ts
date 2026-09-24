@@ -9,6 +9,7 @@ import { onAppSettingsChanged } from "$lib/ipc/events.js"
 import type {
   AppSettings,
   AppSettingsState,
+  LogLevel,
   StartupStatus,
   TrayNotificationLevel,
 } from "$shared/app-settings.js"
@@ -366,6 +367,7 @@ export function parseContextOptions(
 export const runAtStartup = writable<boolean>(false)
 export const openToTrayOnStartup = writable<boolean>(false)
 export const trayNotifications = writable<TrayNotificationLevel>("failures")
+export const desktopLogLevel = writable<LogLevel>("info")
 export const startupStatus = writable<StartupStatus | null>(null)
 
 let desktopSettingsQueue: Promise<unknown> = Promise.resolve()
@@ -375,6 +377,7 @@ function applyAppSettingsState(state: AppSettingsState): void {
   runAtStartup.set(state.settings.runAtStartup)
   openToTrayOnStartup.set(state.settings.openToTrayOnStartup)
   trayNotifications.set(state.settings.trayNotifications)
+  desktopLogLevel.set(state.settings.logLevel ?? "info")
   startupStatus.set(state.startup)
 }
 

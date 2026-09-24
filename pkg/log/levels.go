@@ -2,6 +2,30 @@ package log
 
 import "go.uber.org/zap/zapcore"
 
+const DefaultLevel = "error"
+
+var validLevels = [...]string{"error", "warn", "info", "debug", "trace"}
+
+// LevelFromString parses the user-facing finite log-level set.
+func LevelFromString(value string) (zapcore.Level, bool) {
+	switch value {
+	case "error":
+		return zapcore.ErrorLevel, true
+	case "warn":
+		return zapcore.WarnLevel, true
+	case "info":
+		return zapcore.InfoLevel, true
+	case "debug":
+		return zapcore.DebugLevel, true
+	case "trace":
+		return zapcore.DebugLevel - 1, true
+	default:
+		return zapcore.ErrorLevel, false
+	}
+}
+
+func ValidLevels() []string { return append([]string(nil), validLevels[:]...) }
+
 // Verbosity levels mapped from CLI flags.
 const (
 	LevelTrace = 3
@@ -21,6 +45,9 @@ func DebugEnabled() bool {
 // (e.g. "debug", "info", "warn", "error", "fatal").
 func LevelString() string {
 	core := sugar.Load().Desugar().Core()
+	if core.Enabled(zapcore.DebugLevel - 1) {
+		return "trace"
+	}
 	for _, l := range []zapcore.Level{
 		zapcore.DebugLevel,
 		zapcore.InfoLevel,

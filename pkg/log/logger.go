@@ -26,11 +26,16 @@ func init() {
 
 // Config holds logger configuration parsed from CLI flags.
 type Config struct {
-	Verbosity int    // 0=error, 1=info+warn, 2=debug, 3=trace
-	Quiet     bool   // fatal only
-	Debug     bool   // backwards compat, equivalent to Verbosity=2
-	Format    string // "text", "json", "logfmt"
-	Redactor  *secrets.Redactor
+	Verbosity    int    // 0=error, 1=info+warn, 2=debug, 3=trace
+	Quiet        bool   // fatal only
+	Debug        bool   // backwards compat, equivalent to Verbosity=2
+	Level        string // explicit --log-level override
+	DefaultLevel string // persisted default when no explicit verbosity flag is set
+	VerbositySet bool
+	QuietSet     bool
+	DebugSet     bool
+	Format       string // "text", "json", "logfmt"
+	Redactor     *secrets.Redactor
 }
 
 // Init configures the global logger. Called once in root command PersistentPreRunE.
@@ -145,11 +150,22 @@ func (f *writerFanout) add(w io.Writer) (remove func()) {
 }
 
 func resolveLevel(cfg Config) zapcore.Level {
-	if cfg.Quiet {
+	if cfg.QuietSet || cfg.Quiet {
 		return zapcore.FatalLevel
 	}
-	if cfg.Debug {
+	if cfg.DebugSet || cfg.Debug {
 		return zapcore.DebugLevel
+	}
+	if cfg.VerbositySet || cfg.Verbosity > 0 {
+		return VerbosityToLevel(cfg.Verbosity)
+	}
+	if cfg.Level != "" {
+		if level, ok := LevelFromString(cfg.Level); ok {
+			return level
+		}
+	}
+	if level, ok := LevelFromString(cfg.DefaultLevel); ok {
+		return level
 	}
 	return VerbosityToLevel(cfg.Verbosity)
 }

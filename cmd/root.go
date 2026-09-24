@@ -102,6 +102,27 @@ func logOutputFromArgs(args []string) string {
 	return ""
 }
 
+func defaultLogLevel(globalFlags *flags.GlobalFlags) string {
+	devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
+	if err != nil {
+		return log.DefaultLevel
+	}
+	if level := devsyConfig.ContextOption(config.ContextOptionLogLevel); level != "" {
+		return level
+	}
+	return log.DefaultLevel
+}
+
+func validateLogLevel(level string) error {
+	if level == "" {
+		return nil
+	}
+	if _, ok := log.LevelFromString(level); !ok {
+		return fmt.Errorf("invalid log level %q, expected one of: %s", level, strings.Join(log.ValidLevels(), ", "))
+	}
+	return nil
+}
+
 func isMachineConsumer(logOutput string, isInternal bool) bool {
 	switch {
 	case isInternal:
@@ -133,6 +154,9 @@ func run() (code int) {
 	}()
 
 	rootCmd, globalFlags := BuildRoot()
+	if globalFlags.DevsyHome != "" {
+		_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
+	}
 	target := resolveTarget(rootCmd)
 	collector = telemetry.BootstrapCLI(target)
 	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
@@ -190,11 +214,16 @@ func configureOutput(
 		}
 	}
 	log.Init(log.Config{
-		Verbosity: globalFlags.Verbosity,
-		Quiet:     globalFlags.Quiet,
-		Debug:     globalFlags.Debug,
-		Format:    format,
-		Redactor:  secrets.NewEnvironmentRedactor(os.Environ()),
+		Verbosity:    globalFlags.Verbosity,
+		Quiet:        globalFlags.Quiet,
+		Debug:        globalFlags.Debug,
+		Level:        globalFlags.LogLevel,
+		DefaultLevel: defaultLogLevel(globalFlags),
+		VerbositySet: rootCmd.PersistentFlags().Changed(names.Verbose),
+		QuietSet:     rootCmd.PersistentFlags().Changed(names.Quiet),
+		DebugSet:     rootCmd.PersistentFlags().Changed(names.Debug),
+		Format:       format,
+		Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
 	})
 	return machineMode
 }
@@ -307,6 +336,9 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
 
 	rootCmd.PersistentPreRunE = func(cobraCmd *cobra.Command, _ []string) error {
+		if err := validateLogLevel(globalFlags.LogLevel); err != nil {
+			return err
+		}
 		cobraCmd.SilenceUsage = true
 		logFormat := globalFlags.LogOutput
 		if logFormat == "" {
@@ -318,11 +350,16 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		}
 
 		log.Init(log.Config{
-			Verbosity: globalFlags.Verbosity,
-			Quiet:     globalFlags.Quiet,
-			Debug:     globalFlags.Debug,
-			Format:    logFormat,
-			Redactor:  secrets.NewEnvironmentRedactor(os.Environ()),
+			Verbosity:    globalFlags.Verbosity,
+			Quiet:        globalFlags.Quiet,
+			Debug:        globalFlags.Debug,
+			Level:        globalFlags.LogLevel,
+			DefaultLevel: defaultLogLevel(globalFlags),
+			VerbositySet: persistentFlags.Changed(names.Verbose),
+			QuietSet:     persistentFlags.Changed(names.Quiet),
+			DebugSet:     persistentFlags.Changed(names.Debug),
+			Format:       logFormat,
+			Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
 		})
 		klog.SetLogger(logr.New(log.LogrSink()))
 

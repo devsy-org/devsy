@@ -58,6 +58,23 @@ describe("CliRunner", () => {
     cli = new CliRunner("/usr/local/bin/devsy")
   })
 
+  it("passes the configured level without overriding explicit CLI levels", async () => {
+    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    mockExecFile.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
+        callback(null, { stdout: "{}", stderr: "" })
+      },
+    )
+    cli.setLogLevel("debug")
+    await cli.run(["workspace", "list"])
+    expect(mockExecFile.mock.calls[0][1]).toContain("--log-level")
+    expect(mockExecFile.mock.calls[0][1]).toContain("debug")
+    await cli.run(["--log-level", "error", "workspace", "list"])
+    const explicitArgs = mockExecFile.mock.calls[1][1] as string[]
+    expect(explicitArgs.filter((arg) => arg === "--log-level")).toHaveLength(1)
+    expect(explicitArgs).toContain("error")
+  })
+
   describe("run", () => {
     it("parses JSON stdout and returns typed result", async () => {
       const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
@@ -81,6 +98,8 @@ describe("CliRunner", () => {
           "workspace",
           "list",
           "--skip-pro",
+          "--log-level",
+          "info",
           "--result-format",
           "json",
           "--log-output",
@@ -202,7 +221,7 @@ describe("CliRunner", () => {
       await expect(promise).resolves.toBe("ok\n")
       expect(mockSpawn).toHaveBeenCalledWith(
         "/usr/local/bin/devsy",
-        ["secret", "set", "FOO", "--stdin", "--log-output", "json"],
+        ["secret", "set", "FOO", "--stdin", "--log-level", "info", "--log-output", "json"],
         expect.objectContaining({ env: expect.any(Object) }),
       )
     })
@@ -239,6 +258,8 @@ describe("CliRunner", () => {
         [
           "/tmp/mock.cjs",
           "list",
+          "--log-level",
+          "info",
           "--result-format",
           "json",
           "--log-output",

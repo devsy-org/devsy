@@ -16,6 +16,7 @@ type GlobalFlags struct {
 	Owner     platform.OwnerFilter
 
 	LogOutput    string
+	LogLevel     string
 	ResultFormat string
 	Verbosity    int
 	Quiet        bool
@@ -42,6 +43,7 @@ func registerCoreFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 		"",
 		"If defined will override the default devsy home",
 	)
+	flags.StringVar(&globalFlags.LogLevel, names.LogLevel, "", "The log level override. Can be error, warn, info, debug, or trace")
 	flags.StringVar(&globalFlags.Context, names.Context, "", "The context to use")
 	flags.StringVar(
 		&globalFlags.Provider,

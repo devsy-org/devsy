@@ -169,6 +169,7 @@ export class CliRunner {
   private env: NodeJS.ProcessEnv
   private running = 0
   private queue: Array<() => void> = []
+  private logLevel: import("../shared/app-settings.js").LogLevel = "info"
 
   constructor(private binaryPath: string) {
     if (/\.[cm]?js$/.test(binaryPath)) {
@@ -179,6 +180,22 @@ export class CliRunner {
       this.prefixArgs = []
     }
     this.env = buildEnv()
+  }
+
+  setLogLevel(level: import("../shared/app-settings.js").LogLevel): void {
+    this.logLevel = level
+  }
+
+  private argsWithLogLevel(args: string[], suffix: string[] = []): string[] {
+    const explicit = args.some(
+      (arg) => arg === "--log-level" || arg.startsWith("--log-level="),
+    )
+    return [
+      ...this.prefixArgs,
+      ...args,
+      ...(explicit ? [] : ["--log-level", this.logLevel]),
+      ...suffix,
+    ]
   }
 
   private acquire(): Promise<void> {
@@ -203,14 +220,12 @@ export class CliRunner {
   async run<T>(args: string[]): Promise<T> {
     await this.acquire()
     try {
-      const fullArgs = [
-        ...this.prefixArgs,
-        ...args,
+      const fullArgs = this.argsWithLogLevel(args, [
         "--result-format",
         "json",
         "--log-output",
         "json",
-      ]
+      ])
       const { stdout } = await execFile(this.execPath, fullArgs, {
         env: this.env,
       })
@@ -227,7 +242,7 @@ export class CliRunner {
     try {
       const { stdout } = await execFile(
         this.execPath,
-        [...this.prefixArgs, ...args, "--log-output", "json"],
+        this.argsWithLogLevel(args, ["--log-output", "json"]),
         { env: this.env },
       )
       return stdout
@@ -243,7 +258,7 @@ export class CliRunner {
     await this.acquire()
     try {
       return await this.spawnWithStdin(
-        [...this.prefixArgs, ...args, "--log-output", "json"],
+        this.argsWithLogLevel(args, ["--log-output", "json"]),
         input,
       )
     } catch (error: unknown) {
@@ -307,7 +322,7 @@ export class CliRunner {
     await this.acquire()
     const child = spawn(
       this.execPath,
-      [...this.prefixArgs, ...args, "--log-output", "json"],
+      this.argsWithLogLevel(args, ["--log-output", "json"]),
       { env: this.env },
     )
 

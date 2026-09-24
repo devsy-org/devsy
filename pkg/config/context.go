@@ -26,6 +26,7 @@ const (
 	ContextOptionSSHTunnelMode              = "SSH_TUNNEL_MODE"
 	ContextOptionSecretsBackend             = "SECRETS_BACKEND"
 	ContextOptionSnapshotRegistry           = "SNAPSHOT_REGISTRY"
+	ContextOptionLogLevel                   = "LOG_LEVEL"
 )
 
 var ContextOptions = []ContextOption{
@@ -130,6 +131,12 @@ var ContextOptions = []ContextOption{
 		Name:        ContextOptionSnapshotRegistry,
 		Description: "Specifies the default registry to push/pull workspace snapshots to, e.g. ghcr.io/acme/snapshots",
 		Default:     "",
+	},
+	{
+		Name:        ContextOptionLogLevel,
+		Description: "Default log level for Devsy commands (error, warn, info, debug, or trace)",
+		Default:     "error",
+		Enum:        []string{"error", "warn", "info", "debug", "trace"},
 	},
 }
 

@@ -48,6 +48,12 @@ describe("normalizeAppSettings", () => {
     ).toBe("failures")
   })
 
+  it("accepts only the finite logging level set", () => {
+    expect(normalizeAppSettings({ logLevel: "trace" }).logLevel).toBe("trace")
+    expect(normalizeAppSettings({ logLevel: "verbose" }).logLevel).toBeUndefined()
+    expect(() => sanitizeAppSettingsPatch({ logLevel: "verbose" })).toThrow()
+  })
+
   it("ignores non-boolean toggles", () => {
     expect(normalizeAppSettings({ runAtStartup: "yes" }).runAtStartup).toBe(
       false,

@@ -22,6 +22,7 @@ import {
   runAtStartup,
   openToTrayOnStartup,
   trayNotifications,
+  desktopLogLevel,
   startupStatus,
   syncDesktopSettingsFromMain,
   updateDesktopSettings,
@@ -32,7 +33,7 @@ import type {
   LocalOptions,
   OnBuildFailure,
 } from "$lib/stores/settings.js"
-import type { TrayNotificationLevel } from "$shared/app-settings.js"
+import type { LogLevel, TrayNotificationLevel } from "$shared/app-settings.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import UpdatesPanel from "$lib/components/update/UpdatesPanel.svelte"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
@@ -135,6 +136,14 @@ const NOTIFICATION_OPTIONS: { value: TrayNotificationLevel; label: string }[] =
     { value: "all", label: "All terminal outcomes" },
   ]
 
+const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
+  { value: "error", label: "Error" },
+  { value: "warn", label: "Warn" },
+  { value: "info", label: "Info" },
+  { value: "debug", label: "Debug" },
+  { value: "trace", label: "Trace" },
+]
+
 onMount(() => {
   local = loadLocalOptions()
   localOptionsStore.set(local)
@@ -194,6 +203,27 @@ function toggleLocal(key: keyof LocalOptions) {
             <p class="text-xs text-muted-foreground">Run all commands with --debug flag</p>
           </div>
           <Switch checked={local.debugFlag} onCheckedChange={() => toggleLocal("debugFlag")} disabled={loading || saving} />
+        </div>
+
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Label>Logging Level</Label>
+            <p class="text-xs text-muted-foreground">Controls desktop and launched CLI diagnostic logs</p>
+          </div>
+          <Select.Root
+            type="single"
+            value={$desktopLogLevel}
+            onValueChange={(v) => {
+              if (v) updateDesktopSettings({ logLevel: v as LogLevel })
+            }}
+          >
+            <Select.Trigger class="h-9 w-full sm:w-[280px]"><span>{LOG_LEVEL_OPTIONS.find((o) => o.value === $desktopLogLevel)?.label ?? "Info"}</span></Select.Trigger>
+            <Select.Content>
+              {#each LOG_LEVEL_OPTIONS as o (o.value)}
+                <Select.Item value={o.value} label={o.label} />
+              {/each}
+            </Select.Content>
+          </Select.Root>
         </div>
 
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

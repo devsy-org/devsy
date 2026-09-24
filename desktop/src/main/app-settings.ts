@@ -1,10 +1,11 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs"
 import type {
   AppSettings,
+  LogLevel,
   TrayNotificationLevel,
 } from "../shared/app-settings.js"
 
-export type { AppSettings, TrayNotificationLevel }
+export type { AppSettings, LogLevel, TrayNotificationLevel }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   runAtStartup: false,
@@ -13,6 +14,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 }
 
 const LEVELS: readonly TrayNotificationLevel[] = ["off", "failures", "all"]
+const LOG_LEVELS: readonly LogLevel[] = ["error", "warn", "info", "debug", "trace"]
 
 export function normalizeAppSettings(raw: unknown): AppSettings {
   const input = (typeof raw === "object" && raw !== null ? raw : {}) as Record<
@@ -26,7 +28,11 @@ export function normalizeAppSettings(raw: unknown): AppSettings {
   )
     ? (input.trayNotifications as TrayNotificationLevel)
     : DEFAULT_APP_SETTINGS.trayNotifications
-  return { runAtStartup, openToTrayOnStartup, trayNotifications }
+  const normalized = { runAtStartup, openToTrayOnStartup, trayNotifications }
+  if (LOG_LEVELS.includes(input.logLevel as LogLevel)) {
+    return { ...normalized, logLevel: input.logLevel as LogLevel }
+  }
+  return normalized
 }
 
 export function patchAppSettings(
@@ -56,6 +62,11 @@ export function sanitizeAppSettingsPatch(raw: unknown): Partial<AppSettings> {
     if (!LEVELS.includes(input.trayNotifications as TrayNotificationLevel))
       throw new Error("trayNotifications must be off, failures, or all")
     patch.trayNotifications = input.trayNotifications as TrayNotificationLevel
+  }
+  if ("logLevel" in input) {
+    if (!LOG_LEVELS.includes(input.logLevel as LogLevel))
+      throw new Error("logLevel must be error, warn, info, debug, or trace")
+    patch.logLevel = input.logLevel as LogLevel
   }
   return patch
 }

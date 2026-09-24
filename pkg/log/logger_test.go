@@ -25,6 +25,38 @@ func TestColorEnabledHonorsNoColor(t *testing.T) {
 	}
 }
 
+func TestResolveLevelPrecedence(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{name: "persisted default", cfg: Config{DefaultLevel: "warn"}, want: "warn"},
+		{name: "explicit log level", cfg: Config{Level: "debug", DefaultLevel: "warn"}, want: "debug"},
+		{name: "verbosity beats log level", cfg: Config{Verbosity: 1, VerbositySet: true, Level: "debug"}, want: "info"},
+		{name: "debug beats verbosity", cfg: Config{Verbosity: 1, VerbositySet: true, Debug: true, DebugSet: true}, want: "debug"},
+		{name: "quiet beats debug", cfg: Config{Debug: true, DebugSet: true, Quiet: true, QuietSet: true}, want: "fatal"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveLevel(tt.cfg).String(); got != tt.want {
+				t.Fatalf("resolveLevel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLevelFromString(t *testing.T) {
+	for _, level := range ValidLevels() {
+		if _, ok := LevelFromString(level); !ok {
+			t.Errorf("LevelFromString(%q) rejected valid level", level)
+		}
+	}
+	if _, ok := LevelFromString("verbose"); ok {
+		t.Fatal("LevelFromString accepted invalid level")
+	}
+}
+
 func TestAddSink_ForwardsLogLines(t *testing.T) {
 	Init(Config{Verbosity: 2}) // info+
 

@@ -203,6 +203,7 @@ const (
 	Workdir              = "workdir"
 	Home                 = "home"
 	LogOutput            = "log-output"
+	LogLevel             = "log-level"
 	LogFormat            = "log-format"
 	ResultFormat         = "result-format"
 	SetupInfo            = "setup-info"
