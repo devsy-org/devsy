@@ -39,7 +39,16 @@
       "matchFileNames": [".pre-commit-config.yaml"],
       "allowedVersions": "v2.13.2",
       "automerge": false,
-      "description": "keep golangci-lint aligned with the pinned Go 1.26.6 toolchain"
+      "description": "keep golangci-lint aligned with the pinned Go 1.26.8 toolchain"
+    },
+    {
+      "matchManagers": ["mise"],
+      "matchDatasources": ["go"],
+      "matchDepNames": ["go"],
+      "matchFileNames": ["mise.toml"],
+      "allowedVersions": "<1.27.0",
+      "automerge": false,
+      "description": "keep the mise Go toolchain on the Go 1.26 major line"
     },
 
     {
