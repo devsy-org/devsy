@@ -35,6 +35,7 @@ let confirmDeleteOpen = $state(false)
 let pendingDelete = $state("")
 let deleting = $state(false)
 let updatingAttachment = $state<Record<string, boolean>>({})
+let attachmentResets = $state<Record<string, number>>({})
 let attachmentErrors = $state<Record<string, string>>({})
 
 let searchTerm = $state("")
@@ -88,6 +89,7 @@ async function setAttached(secret: Secret, attached: boolean) {
     await refreshSecrets()
   } catch (err) {
     attachmentErrors = { ...attachmentErrors, [key]: extractErrorMessage(err) }
+    attachmentResets = { ...attachmentResets, [key]: (attachmentResets[key] ?? 0) + 1 }
   } finally {
     updatingAttachment = { ...updatingAttachment, [key]: false }
   }
@@ -235,12 +237,14 @@ async function confirmDelete() {
                 <p class="text-sm font-medium">Inject into workspaces</p>
                 <p class="text-xs text-muted-foreground">Context: {secret.context}. Delivered through the protected secret path when a workspace starts or is recreated.</p>
               </div>
+              {#key attachmentResets[`${secret.context}\x00${secret.name}`] ?? 0}
               <Switch
                 checked={secret.attached ?? false}
                 disabled={updatingAttachment[`${secret.context}\x00${secret.name}`]}
                 aria-label={`Inject ${secret.name} into workspaces`}
                 onCheckedChange={(checked) => setAttached(secret, checked)}
               />
+              {/key}
             </div>
             {#if attachmentErrors[`${secret.context}\x00${secret.name}`]}
               <p class="mt-2 text-sm text-destructive">

@@ -109,6 +109,23 @@ func applyProviderUpdate(
 		return err
 	}
 
+	// Another command may have updated the provider while this one waited on
+	// the lock; never replace an equal or newer version with this one.
+	currentSource, err := ResolveProviderSource(devsyConfig, providerName)
+	if err != nil {
+		return fmt.Errorf("resolve provider source %s: %w", providerName, err)
+	}
+	currentVersion := ""
+	if parts := strings.Split(currentSource, "@"); len(parts) == 2 {
+		currentVersion = parts[1]
+	}
+	newV, newErr := semver.Parse(strings.TrimPrefix(newVersion, "v"))
+	currentV, currentErr := semver.Parse(strings.TrimPrefix(currentVersion, "v"))
+	if newErr == nil && currentErr == nil && currentV.GTE(newV) {
+		log.Infof("provider already up to date, skipping update: provider=%s", providerName)
+		return nil
+	}
+
 	_, err = UpdateProvider(ctx, devsyConfig, providerName, providerSource)
 	if err != nil {
 		return fmt.Errorf("update provider %s: %w", providerName, err)
