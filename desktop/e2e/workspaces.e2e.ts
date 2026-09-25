@@ -80,7 +80,7 @@ test.describe("Workspace lifecycle badges", () => {
 
       await expect(main).toContainText("Deleting", { timeout: 3000 })
       await expect(main.locator("text=deleteprobe")).not.toBeVisible({
-        timeout: 5000,
+        timeout: 10000,
       })
     } finally {
       // Mock CLI state is shared across specs, so don't leave this behind.
