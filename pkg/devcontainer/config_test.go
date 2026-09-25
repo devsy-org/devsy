@@ -483,8 +483,6 @@ func seedAmbiguousProfiles(t *testing.T, folder string) {
 	}
 }
 
-// seedConfigAt writes a minimal devcontainer.json at the content-root-relative
-// path, so tests exercising the last-path fallback have a real file on disk.
 func seedConfigAt(t *testing.T, folder, relativePath string) {
 	t.Helper()
 	file := filepath.Join(folder, filepath.FromSlash(relativePath))
@@ -682,8 +680,7 @@ func TestEffectiveDevContainerSelection_LastPathStripsGitSubPath(t *testing.T) {
 	}
 }
 
-// The last resolved path is content-root-relative, so a real nested path
-// whose first segment matches the subpath converts exactly once.
+// Last-path conversion must strip only the applied subpath.
 func TestEffectiveDevContainerSelection_LastPathRepeatedSubPathSegment(t *testing.T) {
 	folder := t.TempDir()
 	seedConfigAt(t, folder, testNestedSubPath+"/app/.devcontainer/devcontainer.json")
@@ -702,9 +699,7 @@ func TestEffectiveDevContainerSelection_LastPathRepeatedSubPathSegment(t *testin
 	}
 }
 
-// The stored git subpath can carry a leading slash (@subpath:/x/y); the
-// conversion must still strip it from the content-root-relative last path,
-// which never has one.
+// Stored git subpaths may have a leading slash, while last paths do not.
 func TestEffectiveDevContainerSelection_LastPathLeadingSlashSubPath(t *testing.T) {
 	folder := t.TempDir()
 	seedConfigAt(t, folder, "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json")
@@ -720,11 +715,7 @@ func TestEffectiveDevContainerSelection_LastPathLeadingSlashSubPath(t *testing.T
 	}
 }
 
-// A recorded last path whose file no longer exists must not be selected.
-// `devsy up --reset` deletes and re-clones the content folder, so a
-// synthesized default config recorded by the previous up is gone; resolution
-// must fall back to discovery and the auto-detected default, exactly as it
-// did before the last-path fallback existed.
+// Reset removes the recorded file, so resolution must return to discovery.
 func TestGetRawConfig_LastPathFallbackSkipsMissingFile(t *testing.T) {
 	r := newRunnerAt(t.TempDir())
 	r.workspaceConfig.Workspace.Source.GitSubPath = "devsy/jupyter-notebook-hello-world"
@@ -742,10 +733,7 @@ func TestGetRawConfig_LastPathFallbackSkipsMissingFile(t *testing.T) {
 	}
 }
 
-// A workspace that carries an embedded config (from the provider protocol)
-// and a legacy last-resolved path must keep using the embedded config, as it
-// did before profile selection was persisted: the last-path fallback exists
-// only for workspaces with no other config source.
+// Embedded provider config must retain precedence over the legacy fallback.
 func TestGetRawConfig_EmbeddedConfigWinsOverLastPathFallback(t *testing.T) {
 	folder := t.TempDir()
 	seedNamedProfiles(t, folder, testDevContainerProfile)
@@ -769,9 +757,7 @@ func TestGetRawConfig_EmbeddedConfigWinsOverLastPathFallback(t *testing.T) {
 	}
 }
 
-// A persisted --devcontainer-path is relative to the workspace folder (the
-// content root including the git subpath), so a leading segment that matches
-// the subpath is part of the real path and must not be stripped.
+// Persisted paths are workspace-folder-relative and must not be stripped.
 func TestGetRawConfig_PersistedPathRepeatedSubPathSegment(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, testNestedSubPath, testNestedSubPath, ".devcontainer")

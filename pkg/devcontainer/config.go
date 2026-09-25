@@ -94,13 +94,9 @@ func (r *runner) effectiveDevContainerSelection(
 	return devContainerSelection{}
 }
 
-// lastConfigPathSelection falls back to the last resolved path for workspaces
-// created before the selection was persisted. A workspace with an embedded
-// config keeps using it, as it did before profile selection existed. The
-// fallback applies only while the recorded file exists: `devsy up --reset`
-// deletes and re-clones the content folder, so a synthesized default recorded
-// by the previous up is gone, and resolution must fall back to discovery
-// exactly as it did before this fallback existed.
+// lastConfigPathSelection supports workspaces created before selection was
+// persisted. Embedded configs take precedence, and reset-created stale paths
+// fall back to discovery when their recorded file no longer exists.
 func (r *runner) lastConfigPathSelection() (devContainerSelection, bool) {
 	if r.workspaceConfig == nil || r.workspaceConfig.LastDevContainerConfig == nil {
 		return devContainerSelection{}, false
@@ -120,8 +116,6 @@ func (r *runner) lastConfigPathSelection() (devContainerSelection, bool) {
 	return devContainerSelection{path: relativePath}, true
 }
 
-// devContainerConfigExists reports whether the workspace-folder-relative
-// devcontainer path exists on disk.
 func devContainerConfigExists(workspaceFolder, relativePath string) bool {
 	_, err := os.Stat(filepath.Join(workspaceFolder, filepath.FromSlash(relativePath)))
 	return err == nil
@@ -141,13 +135,9 @@ func (r *runner) persistedDevContainerSelection() (devContainerSelection, bool) 
 	}
 }
 
-// workspaceRelativeLastConfigPath converts the last resolved path, which is
-// stored relative to the content root (see DevContainerConfigWithPath.Path),
-// to the workspace folder the resolver runs against: the content root plus
-// the git subpath. Remote workspaces with a subpath otherwise apply the
-// subpath twice during a later lifecycle operation. A path outside the
-// subpath cannot be expressed relative to the workspace folder and is
-// returned unchanged, matching the previous discovery behavior.
+// workspaceRelativeLastConfigPath converts a content-root-relative last path
+// to the workspace folder (the content root plus the git subpath). Paths
+// outside the subpath remain unchanged.
 func (r *runner) workspaceRelativeLastConfigPath(lastPath string) string {
 	if r.workspaceConfig == nil || r.workspaceConfig.Workspace == nil {
 		return lastPath
@@ -169,9 +159,8 @@ func (r *runner) workspaceRelativeLastConfigPath(lastPath string) string {
 	return filepath.ToSlash(relativePath)
 }
 
-// workspaceFolder returns the folder the devcontainer resolver runs against:
-// the content root plus the git subpath, when any. Workspace.DevContainerPath
-// and CLI-provided devcontainer paths are relative to this folder.
+// workspaceFolder is the content root plus the git subpath, when present.
+// Workspace.DevContainerPath and CLI paths are relative to this folder.
 func (r *runner) workspaceFolder() string {
 	if r.workspaceConfig == nil || r.workspaceConfig.Workspace == nil {
 		return r.localWorkspaceFolder
