@@ -768,46 +768,29 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"context-attached managed env var injects without --env and is removed after detach",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
-				contextName := fmt.Sprintf("managed-env-%d", time.Now().UnixNano())
-				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
-				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					_ = dtc.f.DevsyContextUse(cleanupCtx, "default")
-					_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
+				dtc.verifyContextAttachment(ctx, contextAttachmentCase{
+					contextPrefix: "managed-env",
+					testdataDir:   "tests/up/testdata/docker-managed-env-attached",
+					store:         dtc.storeEnv,
+					command:       envCmd,
+					name:          "ATTACHED_ENV",
+					checkFile:     "/tmp/attached-env-check.out",
 				})
-				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
-				framework.ExpectNoError(
-					dtc.f.DevsyProviderAdd(
-						ctx,
-						"docker",
-						"-o",
-						"DOCKER_PATH=docker",
-					),
-				)
-				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
 
-				tempDir, err := setupWorkspace(
-					"tests/up/testdata/docker-managed-env-attached",
-					dtc.initialDir,
-					dtc.f,
-				)
-				framework.ExpectNoError(err)
-				dtc.storeEnv(ctx, "ATTACHED_ENV", "expected-value")
-				_, err = dtc.f.ExecCommandOutput(ctx, []string{envCmd, "attach", "ATTACHED_ENV"})
-				framework.ExpectNoError(err)
-
-				// Intentionally no --env argument: the context binding is the source.
-				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
-				out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/attached-env-check.out")
-				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("expected-value"))
-
-				_, err = dtc.f.ExecCommandOutput(ctx, []string{envCmd, "detach", "ATTACHED_ENV"})
-				framework.ExpectNoError(err)
-				framework.ExpectNoError(dtc.f.DevsyUpRecreate(ctx, tempDir))
-				out, err = dtc.execSSH(ctx, tempDir, "cat /tmp/attached-env-check.out")
-				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(out)).To(gomega.BeEmpty())
+		ginkgo.It(
+			"context-attached managed secret injects without --secret and is removed after detach",
+			func(ctx context.Context) {
+				dtc.verifyContextAttachment(ctx, contextAttachmentCase{
+					contextPrefix: "managed-secret",
+					testdataDir:   "tests/up/testdata/docker-managed-secret-attached",
+					store:         dtc.storeSecret,
+					command:       secretCmd,
+					name:          "ATTACHED_SECRET",
+					checkFile:     "/tmp/attached-secret-check.out",
+				})
 			},
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)

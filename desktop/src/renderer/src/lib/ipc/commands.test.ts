@@ -10,6 +10,8 @@ import {
   envDelete,
   envAttach,
   envDetach,
+  secretAttach,
+  secretDetach,
   machineCreate,
   machineDelete,
   machineStatus,
@@ -142,6 +144,26 @@ describe("IPC commands", () => {
       const result = await openDirectoryDialog()
       expect(mockInvoke).toHaveBeenCalledWith("dialog_open_directory")
       expect(result).toBe("/home/me/proj")
+    })
+  })
+
+  describe("managed secret commands", () => {
+    it("secretAttach sends the secret name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await secretAttach("DB_PASSWORD", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("secret_attach", {
+        name: "DB_PASSWORD",
+        context: "staging",
+      })
+    })
+
+    it("secretDetach sends the secret name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await secretDetach("DB_PASSWORD", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("secret_detach", {
+        name: "DB_PASSWORD",
+        context: "staging",
+      })
     })
   })
 

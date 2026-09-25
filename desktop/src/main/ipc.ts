@@ -17,10 +17,7 @@ import { loadCatalog } from "./image-catalog.js"
 import type { LogStore } from "./log-store.js"
 import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
-import type {
-  ProviderActivity,
-  ProviderJobs,
-} from "./provider-jobs.js"
+import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
 import { sanitizeAppSettingsPatch } from "./app-settings.js"
 import type { SettingsService } from "./settings-service.js"
@@ -51,6 +48,7 @@ interface SecretEntry {
   lastUsed?: string
   orphaned?: boolean
   backend?: "keyring" | "file"
+  attached?: boolean
 }
 
 interface EnvEntry {
@@ -106,8 +104,8 @@ interface IpcDependencies {
   cli: CliRunner
   state: DaemonState
   logStore: LogStore
-	 machineDiagnosticsStore?: MachineDiagnosticsStore
-	 machineDiagnosticsManager?: MachineDiagnosticsManager
+  machineDiagnosticsStore?: MachineDiagnosticsStore
+  machineDiagnosticsManager?: MachineDiagnosticsManager
   pty: PtyManager
   getMainWindow: () => BrowserWindow | null
   providerJobs: ProviderJobs
@@ -142,13 +140,19 @@ interface ProgressSink {
 
 function redactSensitiveText(value: string): string {
   const secrets = Object.entries(process.env)
-    .filter(([name, secret]) =>
-      secret &&
-      /(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|APIKEY|AUTH|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)/i.test(name),
+    .filter(
+      ([name, secret]) =>
+        secret &&
+        /(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|APIKEY|AUTH|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)/i.test(
+          name,
+        ),
     )
     .map(([, secret]) => secret as string)
     .sort((a, b) => b.length - a.length)
-  const redacted = secrets.reduce((text, secret) => text.split(secret).join("***"), value)
+  const redacted = secrets.reduce(
+    (text, secret) => text.split(secret).join("***"),
+    value,
+  )
   return redacted
     .replace(/(https?:\/\/)[^\s/@]+@/gi, "$1***@")
     .replace(/(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,]+/gi, "$1***")
@@ -184,9 +188,13 @@ function redactOperationStatus(value: OperationStatus): OperationStatus {
     error: value.error
       ? {
           ...value.error,
-          code: value.error.code ? redactSensitiveText(value.error.code) : undefined,
+          code: value.error.code
+            ? redactSensitiveText(value.error.code)
+            : undefined,
           message: redactSensitiveText(value.error.message),
-          hint: value.error.hint ? redactSensitiveText(value.error.hint) : undefined,
+          hint: value.error.hint
+            ? redactSensitiveText(value.error.hint)
+            : undefined,
           context: value.error.context
             ? Object.fromEntries(
                 Object.entries(value.error.context).map(([key, text]) => [
@@ -237,8 +245,12 @@ function createLogSink(
       ...(extra
         ? {
             ...extra,
-            message: extra.message ? redactSensitiveText(extra.message) : undefined,
-            cliError: extra.cliError ? redactCLIError(extra.cliError) : undefined,
+            message: extra.message
+              ? redactSensitiveText(extra.message)
+              : undefined,
+            cliError: extra.cliError
+              ? redactCLIError(extra.cliError)
+              : undefined,
           }
         : {}),
     })
@@ -280,7 +292,17 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     start: (workspaceId: string) => Promise<void>
   }
 } {
-	const { cli, state, logStore, pty, providerJobs, workspaceJobs, machineDiagnosticsStore, machineDiagnosticsManager, getMainWindow } = deps
+  const {
+    cli,
+    state,
+    logStore,
+    pty,
+    providerJobs,
+    workspaceJobs,
+    machineDiagnosticsStore,
+    machineDiagnosticsManager,
+    getMainWindow,
+  } = deps
   const tunnelProcesses = new Map<
     string,
     import("node:child_process").ChildProcess
@@ -360,18 +382,29 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       tunnelProc.kill("SIGTERM")
       await tunnelExit
       // If process did not close in time, forcefully kill and suppress any late callbacks
-      if (!settled || (tunnelProc.exitCode === null && tunnelProc.signalCode === null)) {
+      if (
+        !settled ||
+        (tunnelProc.exitCode === null && tunnelProc.signalCode === null)
+      ) {
         // Suppress workspace callbacks from the onLine handler
-        const suppressWorkspaceFn = (tunnelProc as unknown as { _suppressWorkspaceCallbacks?: () => void })._suppressWorkspaceCallbacks
+        const suppressWorkspaceFn = (
+          tunnelProc as unknown as { _suppressWorkspaceCallbacks?: () => void }
+        )._suppressWorkspaceCallbacks
         if (suppressWorkspaceFn) suppressWorkspaceFn()
 
         // Suppress callbacks at the readline level
-        const suppressFn = (tunnelProc as unknown as { _suppressCallbacks?: () => void })._suppressCallbacks
+        const suppressFn = (
+          tunnelProc as unknown as { _suppressCallbacks?: () => void }
+        )._suppressCallbacks
         if (suppressFn) suppressFn()
 
         // Close readline interfaces
-        const rlStdout = (tunnelProc as unknown as { _rlStdout?: { close: () => void } })._rlStdout
-        const rlStderr = (tunnelProc as unknown as { _rlStderr?: { close: () => void } })._rlStderr
+        const rlStdout = (
+          tunnelProc as unknown as { _rlStdout?: { close: () => void } }
+        )._rlStdout
+        const rlStderr = (
+          tunnelProc as unknown as { _rlStderr?: { close: () => void } }
+        )._rlStderr
         if (rlStdout) rlStdout.close()
         if (rlStderr) rlStderr.close()
 
@@ -428,7 +461,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     if (!workspaceJobs.owns(workspaceId, commandId)) return true
     const status = redactOperationStatus(normalizeOperationStatus(envelope))
     workspaceJobs.progress(workspaceId, commandId, status)
-    deps.getMainWindow()?.webContents.send("workspace-status", { commandId, workspaceId, ...status })
+    deps
+      .getMainWindow()
+      ?.webContents.send("workspace-status", {
+        commandId,
+        workspaceId,
+        ...status,
+      })
     return true
   }
 
@@ -455,7 +494,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         : undefined
       await providerJobs.finish(
         name,
-        cliError ?? redactCLIError({ code: "provider_failed", message: errorMessage(error) }),
+        cliError ??
+          redactCLIError({
+            code: "provider_failed",
+            message: errorMessage(error),
+          }),
       )
       throw error
     }
@@ -480,7 +523,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             if (stream !== "stdout") return
             const envelope = parseCliEnvelope(line)
             if (envelope?.kind === "status") {
-              const status = redactOperationStatus(normalizeOperationStatus(envelope))
+              const status = redactOperationStatus(
+                normalizeOperationStatus(envelope),
+              )
               providerJobs.reportStatus(name, status)
             }
           },
@@ -546,10 +591,18 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   // ── Workspaces ──
   ipcMain.handle("workspace_list", () => state.workspaceList())
-  ipcMain.handle("workspace_snapshot", () => deps.workspaceSnapshot?.() ?? {
-    workspaces: state.workspaceList(), jobs: workspaceJobs.snapshot(), revision: workspaceJobs.revision,
-  })
-  ipcMain.handle("workspace_refresh", (_event, args: { workspaceId: string }) => workspaceJobs.retryRefresh(args.workspaceId))
+  ipcMain.handle(
+    "workspace_snapshot",
+    () =>
+      deps.workspaceSnapshot?.() ?? {
+        workspaces: state.workspaceList(),
+        jobs: workspaceJobs.snapshot(),
+        revision: workspaceJobs.revision,
+      },
+  )
+  ipcMain.handle("workspace_refresh", (_event, args: { workspaceId: string }) =>
+    workspaceJobs.retryRefresh(args.workspaceId),
+  )
 
   ipcMain.handle(
     "workspace_status",
@@ -566,7 +619,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.recovery) cliArgs.push("--recovery")
       const generation = workspaceJobs.generation(args.workspaceId)
       const raw = await cli.runRaw(cliArgs)
-      if (!args.recovery && generation === workspaceJobs.generation(args.workspaceId)) {
+      if (
+        !args.recovery &&
+        generation === workspaceJobs.generation(args.workspaceId)
+      ) {
         const status = normalizeWorkspaceStatus(raw)
         if (status && state.updateWorkspaceStatus(args.workspaceId, status)) {
           // The watcher owns renderer broadcasts; this update still keeps
@@ -641,7 +697,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         await providerJobs.finish(
           args.name,
           redactCLIError(
-            cliError ?? { code: "provider_failed", message: errorMessage(error) },
+            cliError ?? {
+              code: "provider_failed",
+              message: errorMessage(error),
+            },
           ),
         )
         throw error
@@ -706,7 +765,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           if (stream === "stdout") {
             const envelope = parseCliEnvelope(line)
             if (envelope?.kind === "status") {
-              const status = redactOperationStatus(normalizeOperationStatus(envelope))
+              const status = redactOperationStatus(
+                normalizeOperationStatus(envelope),
+              )
               providerJobs.reportStatus(args.name, status)
               return
             }
@@ -733,10 +794,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                   },
                 ),
           )
-          const exitMsg = redactSensitiveText(formatLogLine(
-            `Exit code: ${code}`,
-            code === 0 ? "INFO" : "ERROR",
-          ))
+          const exitMsg = redactSensitiveText(
+            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
+          )
           win?.webContents.send("command-progress", {
             commandId: cmdId,
             message: exitMsg,
@@ -787,36 +847,39 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
       const runStep = (cliArgs: string[]): Promise<void> =>
         new Promise((resolve, reject) => {
-          cli.runStreaming(
-            cliArgs,
-            (line, stream, meta) => {
-              if (stream === "stdout") {
-                const envelope = parseCliEnvelope(line)
-                if (envelope?.kind === "status") {
-                  providerJobs.reportStatus(
-                    args.name,
-                    redactOperationStatus(normalizeOperationStatus(envelope)),
-                  )
+          cli
+            .runStreaming(
+              cliArgs,
+              (line, stream, meta) => {
+                if (stream === "stdout") {
+                  const envelope = parseCliEnvelope(line)
+                  if (envelope?.kind === "status") {
+                    providerJobs.reportStatus(
+                      args.name,
+                      redactOperationStatus(normalizeOperationStatus(envelope)),
+                    )
+                    return
+                  }
+                }
+                sendProgress(line, meta?.level)
+              },
+              (code, cliError) => {
+                if (code === 0) {
+                  resolve()
                   return
                 }
-              }
-              sendProgress(line, meta?.level)
-            },
-            (code, cliError) => {
-              if (code === 0) {
-                resolve()
-                return
-              }
-              reject(
-                Object.assign(
-                  new Error(
-                    cliError?.message ?? `${cliArgs.join(" ")} exited with ${code}`,
+                reject(
+                  Object.assign(
+                    new Error(
+                      cliError?.message ??
+                        `${cliArgs.join(" ")} exited with ${code}`,
+                    ),
+                    { cliError },
                   ),
-                  { cliError },
-                ),
-              )
-            },
-          ).catch(reject)
+                )
+              },
+            )
+            .catch(reject)
         })
 
       void (async () => {
@@ -840,7 +903,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         } catch (error) {
           failure = {
             code: "provider_refresh_failed",
-            message: "The provider updated, but its current state could not be refreshed.",
+            message:
+              "The provider updated, but its current state could not be refreshed.",
             hint: "Refresh provider status to try again.",
             context: { cause: errorMessage(error) },
           }
@@ -865,14 +929,17 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("provider_refresh_state", async (_event, args: { name: string }) => {
-    try {
-      await providerJobs.retryRefresh(args.name)
-      return { ok: true } as const
-    } catch (error) {
-      return { ok: false, message: errorMessage(error) } as const
-    }
-  })
+  ipcMain.handle(
+    "provider_refresh_state",
+    async (_event, args: { name: string }) => {
+      try {
+        await providerJobs.retryRefresh(args.name)
+        return { ok: true } as const
+      } catch (error) {
+        return { ok: false, message: errorMessage(error) } as const
+      }
+    },
+  )
 
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
     return cli.run(["provider", "get", args.name])
@@ -1022,7 +1089,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const cliArgs = ["machine", "delete", args.id, "--context", key.context]
       if (args.force) cliArgs.push("--force")
       await cli.runRaw(cliArgs)
-		machineDiagnosticsManager?.delete(key)
+      machineDiagnosticsManager?.delete(key)
     },
   )
 
@@ -1033,7 +1100,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("machine_stop", async (_event, args: { id: string }) => {
     const key = { context: state.currentContext(), machineId: args.id }
     await cli.runRaw(["machine", "stop", args.id, "--context", key.context])
-		machineDiagnosticsManager?.markStopped(key)
+    machineDiagnosticsManager?.markStopped(key)
   })
 
   ipcMain.handle("machine_status", async (_event, args: { id: string }) => {
@@ -1041,16 +1108,29 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   })
 
   ipcMain.handle("machine_diagnostics_get", (_event, args: { id: string }) => {
-		return machineDiagnosticsManager?.getCached({ context: state.currentContext(), machineId: args.id }) ?? null
+    return (
+      machineDiagnosticsManager?.getCached({
+        context: state.currentContext(),
+        machineId: args.id,
+      }) ?? null
+    )
   })
 
-  ipcMain.handle("machine_diagnostics_refresh", async (_event, args: { id: string }) => {
-		if (!machineDiagnosticsManager) throw new Error("machine diagnostics manager is unavailable")
-		const key = { context: state.currentContext(), machineId: args.id }
-		const merged = await machineDiagnosticsManager.refresh(key)
-    getMainWindow()?.webContents.send("machine-diagnostics-changed", { machineId: args.id, context: key.context, diagnostics: merged })
-    return merged
-  })
+  ipcMain.handle(
+    "machine_diagnostics_refresh",
+    async (_event, args: { id: string }) => {
+      if (!machineDiagnosticsManager)
+        throw new Error("machine diagnostics manager is unavailable")
+      const key = { context: state.currentContext(), machineId: args.id }
+      const merged = await machineDiagnosticsManager.refresh(key)
+      getMainWindow()?.webContents.send("machine-diagnostics-changed", {
+        machineId: args.id,
+        context: key.context,
+        diagnostics: merged,
+      })
+      return merged
+    },
+  )
 
   // ── Contexts ──
   ipcMain.handle("context_list", () => state.contextList())
@@ -1130,6 +1210,50 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     }
   })
 
+  ipcMain.handle(
+    "secret_attach",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("secret_attach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "secret",
+          "attach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "secret_detach",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("secret_detach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "secret",
+          "detach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
   ipcMain.handle("env_list", async () => cli.run<EnvEntry[]>(["env", "list"]))
 
   // Returns an envelope rather than throwing so a structured cliError survives
@@ -1155,7 +1279,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       trackEvent("env_delete")
       try {
         if (!args.context) throw new Error("context is required")
-        await cli.runRaw(["--context", args.context, "env", "delete", args.name])
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "env",
+          "delete",
+          args.name,
+        ])
         return { ok: true } as const
       } catch (err) {
         const cliError = (err as { cliError?: CLIError }).cliError
@@ -1165,31 +1295,49 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("env_attach", async (_event, args: { name: string; context: string }) => {
-    trackEvent("env_attach")
-    try {
-      if (!args.context) throw new Error("context is required")
-      await cli.runRaw(["--context", args.context, "env", "attach", args.name])
-      return { ok: true } as const
-    } catch (err) {
-      const cliError = (err as { cliError?: CLIError }).cliError
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, message, cliError } as const
-    }
-  })
+  ipcMain.handle(
+    "env_attach",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("env_attach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "env",
+          "attach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
 
-  ipcMain.handle("env_detach", async (_event, args: { name: string; context: string }) => {
-    trackEvent("env_detach")
-    try {
-      if (!args.context) throw new Error("context is required")
-      await cli.runRaw(["--context", args.context, "env", "detach", args.name])
-      return { ok: true } as const
-    } catch (err) {
-      const cliError = (err as { cliError?: CLIError }).cliError
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, message, cliError } as const
-    }
-  })
+  ipcMain.handle(
+    "env_detach",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("env_detach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "env",
+          "detach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
 
   // ── System ──
   ipcMain.handle("devsy_version", async () => {
@@ -1475,9 +1623,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       })
       return { commandId: cmdId, completion }
     }
-
-  ipcMain.handle("workspace_up", (_event, args: Parameters<typeof runWorkspaceUp>[0]) =>
-    runWorkspaceUp(args).commandId,
+  ipcMain.handle(
+    "workspace_up",
+    (_event, args: Parameters<typeof runWorkspaceUp>[0]) =>
+      runWorkspaceUp(args).commandId,
   )
 
   async function reconcileDetachedTask(
@@ -2035,14 +2184,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     runInitialProviderUpdateCheck: runUpdateCheck,
     workspaceActions: {
       async stop(workspaceId: string): Promise<void> {
-        const { completion } = await startWorkspaceStop(
-          { workspaceId },
-          "tray",
-        )
+        const { completion } = await startWorkspaceStop({ workspaceId }, "tray")
         await completion
       },
       async start(workspaceId: string): Promise<void> {
-        await runWorkspaceUp({ source: workspaceId, commandId: crypto.randomUUID() }).completion
+        await runWorkspaceUp({
+          source: workspaceId,
+          commandId: crypto.randomUUID(),
+        }).completion
       },
     },
   }
