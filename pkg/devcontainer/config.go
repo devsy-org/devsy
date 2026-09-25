@@ -56,7 +56,7 @@ func (r *runner) getRawConfigWithContext(
 		return conf, nil
 	}
 	if crane.ShouldUse(&options) {
-		return r.rawConfigFromCraneWithContext(ctx, options)
+		return r.rawConfigFromCraneWithContext(ctx, options, selection)
 	}
 	return r.rawConfigFromFilesystemWithContext(ctx, options, selection)
 }
@@ -231,12 +231,15 @@ func (r *runner) rawConfigFromContainer() *config.DevContainerConfig {
 func (r *runner) rawConfigFromCrane(
 	options provider.CLIOptions,
 ) (*config.DevContainerConfig, error) {
-	return r.rawConfigFromCraneWithContext(context.Background(), options)
+	return r.rawConfigFromCraneWithContext(
+		context.Background(), options, r.effectiveDevContainerSelection(options),
+	)
 }
 
 func (r *runner) rawConfigFromCraneWithContext(
 	ctx context.Context,
 	options provider.CLIOptions,
+	selection devContainerSelection,
 ) (*config.DevContainerConfig, error) {
 	localWorkspaceFolder, err := crane.PullConfigFromSourceWithContext(
 		ctx,
@@ -246,10 +249,20 @@ func (r *runner) rawConfigFromCraneWithContext(
 	if err != nil {
 		return nil, err
 	}
-	return config.ParseDevContainerJSON(
+	opts := config.ParseOptions{}
+	if selection.id != "" {
+		// As on the filesystem path, an explicit id must not be shadowed by a
+		// root config, and a mismatch must error rather than fall back.
+		opts = config.ParseOptions{
+			Selector:    config.SelectByID(selection.id),
+			ForceSelect: true,
+		}
+	}
+	return config.ParseDevContainerJSONWithOptions(
 		ctx,
 		localWorkspaceFolder,
-		r.workspaceConfig.Workspace.DevContainerPath,
+		selection.path,
+		opts,
 	)
 }
 
