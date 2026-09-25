@@ -31,8 +31,6 @@ type Config struct {
 	Level        string // explicit --log-level override
 	DefaultLevel string // persisted default when no explicit verbosity flag is set
 	VerbositySet bool
-	QuietSet     bool
-	DebugSet     bool
 	Format       string // "text", "json", "logfmt"
 	Redactor     *secrets.Redactor
 }
@@ -155,11 +153,14 @@ func resolveLevel(cfg Config) zapcore.Level {
 	return VerbosityToLevel(cfg.Verbosity)
 }
 
+// Precedence: --quiet > --debug > explicitly supplied -v > --log-level > persisted default.
+// This ordering is compatibility-sensitive: earlier flags must keep winning over
+// later configuration, so do not reorder it.
 func resolveExplicitLevel(cfg Config) (zapcore.Level, bool) {
-	if cfg.QuietSet || cfg.Quiet {
+	if cfg.Quiet {
 		return zapcore.ErrorLevel, true
 	}
-	if cfg.DebugSet || cfg.Debug {
+	if cfg.Debug {
 		return zapcore.DebugLevel, true
 	}
 	if cfg.VerbositySet || cfg.Verbosity > 0 {

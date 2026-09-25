@@ -44,13 +44,43 @@ func TestResolveLevelPrecedence(t *testing.T) {
 		},
 		{
 			name: "debug beats verbosity",
-			cfg:  Config{Verbosity: 1, VerbositySet: true, Debug: true, DebugSet: true},
+			cfg:  Config{Verbosity: 1, VerbositySet: true, Debug: true},
 			want: LevelDebugName,
 		},
 		{
 			name: "quiet beats debug",
-			cfg:  Config{Debug: true, DebugSet: true, Quiet: true, QuietSet: true},
+			cfg:  Config{Debug: true, Quiet: true},
 			want: LevelErrorName,
+		},
+		{
+			name: "log level beats persisted default",
+			cfg:  Config{Level: LevelWarnName, DefaultLevel: LevelInfoName},
+			want: LevelWarnName,
+		},
+		{
+			name: "explicit verbosity beats log level",
+			cfg:  Config{Verbosity: 1, VerbositySet: true, Level: LevelErrorName},
+			want: LevelInfoName,
+		},
+		{
+			name: "debug beats log level",
+			cfg:  Config{Debug: true, Level: LevelErrorName},
+			want: LevelDebugName,
+		},
+		{
+			name: "quiet beats log level",
+			cfg:  Config{Quiet: true, Level: LevelTraceName},
+			want: LevelErrorName,
+		},
+		{
+			name: "explicit debug=false falls through to log level",
+			cfg:  Config{Debug: false, Level: LevelDebugName, DefaultLevel: LevelWarnName},
+			want: LevelDebugName,
+		},
+		{
+			name: "explicit quiet=false falls through to log level",
+			cfg:  Config{Quiet: false, Level: LevelInfoName, DefaultLevel: LevelWarnName},
+			want: LevelInfoName,
 		},
 	}
 	for _, tt := range tests {
@@ -69,7 +99,7 @@ func TestResolveLevelDefaultsToWarn(t *testing.T) {
 }
 
 func TestQuietKeepsErrorsVisible(t *testing.T) {
-	Init(Config{Quiet: true, QuietSet: true})
+	Init(Config{Quiet: true})
 	var sink syncBuffer
 	remove := AddSink(&sink)
 	defer remove()

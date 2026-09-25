@@ -159,9 +159,6 @@ func run() (code int) {
 	}()
 
 	rootCmd, globalFlags := BuildRoot()
-	if globalFlags.DevsyHome != "" {
-		_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
-	}
 	target := resolveTarget(rootCmd)
 	collector = telemetry.BootstrapCLI(target)
 	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
@@ -225,8 +222,6 @@ func configureOutput(
 		Level:        globalFlags.LogLevel,
 		DefaultLevel: defaultLogLevel(globalFlags),
 		VerbositySet: rootCmd.PersistentFlags().Changed(names.Verbose),
-		QuietSet:     rootCmd.PersistentFlags().Changed(names.Quiet),
-		DebugSet:     rootCmd.PersistentFlags().Changed(names.Debug),
 		Format:       format,
 		Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
 	})
@@ -358,6 +353,9 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		if err := validateLogLevel(globalFlags.LogLevel); err != nil {
 			return err
 		}
+		if globalFlags.DevsyHome != "" {
+			_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
+		}
 		cobraCmd.SilenceUsage = true
 		logFormat := globalFlags.LogOutput
 		if logFormat == "" {
@@ -375,16 +373,10 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 			Level:        globalFlags.LogLevel,
 			DefaultLevel: defaultLogLevel(globalFlags),
 			VerbositySet: persistentFlags.Changed(names.Verbose),
-			QuietSet:     persistentFlags.Changed(names.Quiet),
-			DebugSet:     persistentFlags.Changed(names.Debug),
 			Format:       logFormat,
 			Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
 		})
 		klog.SetLogger(logr.New(log.LogrSink()))
-
-		if globalFlags.DevsyHome != "" {
-			_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
-		}
 
 		devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
 		if err == nil {

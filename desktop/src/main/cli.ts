@@ -204,10 +204,6 @@ export class CliRunner {
     this.policy.diagnosticLogLevel = level
   }
 
-  setLogLevel(level: import("../shared/app-settings.js").LogLevel): void {
-    this.setDiagnosticLogLevel(level)
-  }
-
   private argsWithLogLevel(args: string[]): string[] {
     const explicit = args.some(
       (arg) => arg === "--log-level" || arg.startsWith("--log-level="),

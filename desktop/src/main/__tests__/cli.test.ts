@@ -65,7 +65,7 @@ describe("CliRunner", () => {
         callback(null, { stdout: "{}", stderr: "" })
       },
     )
-    cli.setLogLevel("debug")
+    cli.setDiagnosticLogLevel("debug")
     await cli.run(["workspace", "list"])
     expect(mockExecFile.mock.calls[0][1]).toContain("--log-level")
     expect(mockExecFile.mock.calls[0][1]).toContain("debug")
