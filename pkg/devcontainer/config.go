@@ -82,12 +82,7 @@ func (r *runner) effectiveDevContainerSelection(
 	}
 
 	if r.workspaceConfig != nil && r.workspaceConfig.Workspace != nil {
-		workspace := r.workspaceConfig.Workspace
-		if selection, ok := newDevContainerSelection(
-			workspace.DevContainerSource,
-			workspace.DevContainerPath,
-			workspace.DevContainerID,
-		); ok {
+		if selection, ok := r.persistedDevContainerSelection(); ok {
 			return selection
 		}
 	}
@@ -99,6 +94,22 @@ func (r *runner) effectiveDevContainerSelection(
 	}
 
 	return devContainerSelection{}
+}
+
+func (r *runner) persistedDevContainerSelection() (devContainerSelection, bool) {
+	workspace := r.workspaceConfig.Workspace
+	switch {
+	case workspace.DevContainerSource != "":
+		return devContainerSelection{source: workspace.DevContainerSource}, true
+	case workspace.DevContainerPath != "":
+		return devContainerSelection{
+			path: r.compatibilityDevContainerPath(workspace.DevContainerPath),
+		}, true
+	case workspace.DevContainerID != "":
+		return devContainerSelection{id: workspace.DevContainerID}, true
+	default:
+		return devContainerSelection{}, false
+	}
 }
 
 // compatibilityDevContainerPath converts the last resolved path, which is
