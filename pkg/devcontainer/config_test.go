@@ -14,9 +14,8 @@ import (
 const (
 	testWorkspaceFolder     = "/workspace"
 	testDevContainerProfile = "max"
-	// testEmbeddedImage marks the config embedded in workspace metadata.
-	testEmbeddedImage = "embedded"
-	testNestedSubPath = "app"
+	testEmbeddedImage       = "embedded"
+	testNestedSubPath       = "app"
 )
 
 type SubstituteTestSuite struct {
@@ -717,11 +716,8 @@ func TestEffectiveDevContainerSelection_LastPathLeadingSlashSubPath(t *testing.T
 	}
 }
 
-// Reset removes the recorded file, so resolution must return to discovery.
 // An embedded config (from the provider protocol) outranks a persisted
-// path or id, exactly as it did before the selection was persisted: on main,
-// rawConfigFromWorkspace was checked before the filesystem path, so the
-// embedded config won.
+// path or id to preserve pre-persistence behavior.
 func TestGetRawConfig_EmbeddedConfigWinsOverPersistedPath(t *testing.T) {
 	folder := t.TempDir()
 	seedNamedProfiles(t, folder, testDevContainerProfile)
@@ -801,7 +797,6 @@ func TestGetRawConfig_LastPathFallbackSkipsMissingFile(t *testing.T) {
 	}
 }
 
-// Embedded provider config must retain precedence over the legacy fallback.
 func TestGetRawConfig_EmbeddedConfigWinsOverLastPathFallback(t *testing.T) {
 	folder := t.TempDir()
 	seedNamedProfiles(t, folder, testDevContainerProfile)
