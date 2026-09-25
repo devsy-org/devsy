@@ -117,6 +117,15 @@ func startDetached(cmd *exec.Cmd, pidFile, streamsFile string) error {
 	}
 	closeFile(streamsF)
 
+	if err := ownProcessTree(cmd.Process.Pid); err != nil {
+		fmt.Fprintf(
+			os.Stderr,
+			"warning: process tree ownership unavailable for pid %d: %v\n",
+			cmd.Process.Pid,
+			err,
+		)
+	}
+
 	if pidFile != "" {
 		if err := os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
 			_ = cmd.Process.Kill()

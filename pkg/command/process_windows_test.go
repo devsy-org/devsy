@@ -13,8 +13,11 @@ import (
 )
 
 const (
-	helperEnvMarker  = "DEVSY_TEST_HELPER_PROCESS"
-	helperEnvPIDFile = "DEVSY_TEST_HELPER_PIDFILE"
+	helperEnvMarker         = "DEVSY_TEST_HELPER_PROCESS"
+	helperEnvPIDFile        = "DEVSY_TEST_HELPER_PIDFILE"
+	helperEnvChildPIDFile   = "DEVSY_TEST_HELPER_CHILD_PIDFILE"
+	helperEnvWaitFile       = "DEVSY_TEST_HELPER_WAIT_FILE"
+	helperEnvExitAfterSpawn = "DEVSY_TEST_HELPER_EXIT_AFTER_SPAWN"
 )
 
 // TestHelperProcess is not a test; every helper process re-executes the test
@@ -24,9 +27,23 @@ func TestHelperProcess(t *testing.T) {
 	if os.Getenv(helperEnvMarker) != "1" {
 		return
 	}
+	if waitFile := os.Getenv(helperEnvWaitFile); waitFile != "" {
+		for {
+			if _, err := os.Stat(waitFile); err == nil {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
 	if pidFile := os.Getenv(helperEnvPIDFile); pidFile != "" {
 		child := exec.Command(os.Args[0], "-test.run", "TestHelperProcess")
-		child.Env = helperEnv()
+		child.Env = helperEnv(helperEnvMarker + "=1")
+		if grandchildPIDFile := os.Getenv(helperEnvChildPIDFile); grandchildPIDFile != "" {
+			child.Env = append(child.Env,
+				helperEnvPIDFile+"="+grandchildPIDFile,
+				helperEnvExitAfterSpawn+"=1",
+			)
+		}
 		if err := child.Start(); err != nil {
 			os.Exit(1)
 		}
@@ -36,6 +53,9 @@ func TestHelperProcess(t *testing.T) {
 			0o600,
 		); err != nil {
 			os.Exit(1)
+		}
+		if os.Getenv(helperEnvExitAfterSpawn) == "1" {
+			os.Exit(0)
 		}
 	}
 	for {
@@ -107,25 +127,28 @@ func TestIsRunningDetectsLiveAndExitedProcess(t *testing.T) {
 	assertNotRunningEventually(t, cmd.Process.Pid)
 }
 
-func TestKillTerminatesProcessTree(t *testing.T) {
-	pidFile := filepath.Join(t.TempDir(), "child.pid")
-	parent := startHelper(t, helperEnvPIDFile+"="+pidFile)
-
-	var childPID int
+func waitForPIDFile(t *testing.T, pidFile string) int {
+	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(pidFile) // #nosec G304 -- test-controlled path
 		if err == nil {
-			childPID, err = strconv.Atoi(strings.TrimSpace(string(data)))
-			if err == nil {
-				break
+			pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+			if err == nil && pid > 0 {
+				return pid
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if childPID == 0 {
-		t.Fatal("helper parent never reported its child PID")
-	}
+	t.Fatalf("no PID reported in %s", pidFile)
+	return 0
+}
+
+func TestKillTerminatesProcessTree(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	parent := startHelper(t, helperEnvPIDFile+"="+pidFile)
+
+	childPID := waitForPIDFile(t, pidFile)
 
 	assertRunning(t, parent.Process.Pid)
 	assertRunning(t, childPID)
@@ -172,4 +195,39 @@ func TestInvalidPIDReturnsError(t *testing.T) {
 			t.Errorf("kill(%q) = nil, want error", pid)
 		}
 	}
+}
+
+func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
+	dir := t.TempDir()
+	waitFile := filepath.Join(dir, "go")
+	childPIDFile := filepath.Join(dir, "child.pid")
+	grandchildPIDFile := filepath.Join(dir, "grandchild.pid")
+
+	// The parent waits so the job can own it before it spawns anything; the
+	// child then spawns the grandchild and exits, orphaning the grandchild
+	// from the perspective of parent-based termination.
+	parent := startHelper(t,
+		helperEnvWaitFile+"="+waitFile,
+		helperEnvPIDFile+"="+childPIDFile,
+		helperEnvChildPIDFile+"="+grandchildPIDFile,
+	)
+	if err := ownProcessTree(parent.Process.Pid); err != nil {
+		t.Skipf("job assignment unavailable in this environment: %v", err)
+	}
+	if err := os.WriteFile(waitFile, []byte("go"), 0o600); err != nil {
+		t.Fatalf("signal helper: %v", err)
+	}
+
+	childPID := waitForPIDFile(t, childPIDFile)
+	grandchildPID := waitForPIDFile(t, grandchildPIDFile)
+	assertNotRunningEventually(t, childPID)
+	assertRunning(t, parent.Process.Pid)
+	assertRunning(t, grandchildPID)
+
+	if err := Kill(strconv.Itoa(parent.Process.Pid)); err != nil {
+		t.Fatalf("Kill(parent): %v", err)
+	}
+
+	assertNotRunningEventually(t, parent.Process.Pid)
+	assertNotRunningEventually(t, grandchildPID)
 }

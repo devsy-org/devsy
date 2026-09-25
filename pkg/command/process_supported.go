@@ -48,3 +48,9 @@ func kill(pid string) error {
 	}
 	return nil
 }
+
+// ownProcessTree is a no-op on Unix: process-group termination via the
+// worker's PID already covers the tree, and Job Objects are Windows-only.
+func ownProcessTree(pid int) error {
+	return nil
+}

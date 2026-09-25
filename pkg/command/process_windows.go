@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -56,6 +57,13 @@ func kill(pid string) error {
 		return nil
 	}
 
+	// Job Object termination tears down the whole tree, including orphans
+	// that parent-based termination cannot reach. Workers launched before
+	// job ownership existed fall through to taskkill.
+	if terminated, jobErr := terminateJob(parsed); jobErr == nil && terminated {
+		return verifyTerminated(parsed)
+	}
+
 	// /T takes down the worker's descendants as well: a detached up worker
 	// can spawn children (e.g. devsy workspace ssh --stdio) that keep owning
 	// transport resources. /F stands in for SIGKILL; Windows has no SIGTERM
@@ -76,14 +84,27 @@ func kill(pid string) error {
 		)
 	}
 
-	stillRunning, err := isRunning(pid)
-	if err != nil {
-		return err
+	return verifyTerminated(parsed)
+}
+
+// verifyTerminated confirms the process is gone, allowing a brief window for
+// the exit to become visible after the termination call reported success.
+func verifyTerminated(parsed int) error {
+	pid := strconv.Itoa(parsed)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		stillRunning, err := isRunning(pid)
+		if err != nil {
+			return err
+		}
+		if !stillRunning {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("process %d is still running after termination", parsed)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	if stillRunning {
-		return fmt.Errorf("taskkill /PID %d /T /F reported success but the process is still running", parsed)
-	}
-	return nil
 }
 
 func parsePID(pid string) (int, error) {
