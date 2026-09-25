@@ -116,6 +116,15 @@ func probeSSH(
 	return out, err
 }
 
+func readLifecycleFile(workspaceDir, name string) (string, error) {
+	//nolint:gosec // G304: test-controlled path inside workspace
+	data, err := os.ReadFile(filepath.Join(workspaceDir, name))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
 // lifecycleMarkerCount reads a marker file in workspaceDir and returns the count
 // of non-empty lines. If the file does not exist, it returns 0, nil.
 //

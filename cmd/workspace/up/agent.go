@@ -146,8 +146,6 @@ func (cmd *UpCmd) buildWorkspaceOptions(workspace *provider2.Workspace) provider
 	baseOptions := cmd.CLIOptions
 	baseOptions.ID = workspace.ID
 	if workspace.DevContainerConfig == nil {
-		// An embedded config outranks a persisted path or id, so do not
-		// carry those into the CLI options.
 		baseOptions.DevContainerPath = workspace.DevContainerPath
 		baseOptions.DevContainerID = workspace.DevContainerID
 	}
