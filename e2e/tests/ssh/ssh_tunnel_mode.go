@@ -1,111 +1,19 @@
 package ssh
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
 
-const tunnelActiveMarker = "waiting for shutdown signal"
-
 const tunnelActiveTimeout = 4 * time.Minute
-
-type safeBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *safeBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *safeBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
-type tunnelUpProcess struct {
-	cmd     *exec.Cmd
-	output  *safeBuffer
-	exited  chan struct{}
-	exitErr error
-}
-
-func startTunnelUp(
-	f *framework.Framework, workspace string, extraArgs ...string,
-) (*tunnelUpProcess, error) {
-	args := []string{
-		cmdWorkspace, "up",
-		names.Flag(names.Debug),
-		names.Flag(names.IDE), "none",
-		names.Flag(names.SSHTunnel),
-	}
-	args = append(args, extraArgs...)
-	args = append(args, workspace)
-
-	// #nosec G204 -- test binary with controlled arguments
-	cmd := exec.Command(filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
-	out := &safeBuffer{}
-	cmd.Stdout = out
-	cmd.Stderr = out
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start devsy up --ssh-tunnel: %w", err)
-	}
-
-	p := &tunnelUpProcess{cmd: cmd, output: out, exited: make(chan struct{})}
-	go func() {
-		p.exitErr = cmd.Wait()
-		close(p.exited)
-	}()
-	return p, nil
-}
-
-func (p *tunnelUpProcess) waitUntilActive(ctx context.Context) {
-	gomega.Eventually(func() (string, error) {
-		out := p.output.String()
-		select {
-		case <-p.exited:
-			return out, gomega.StopTrying(
-				"devsy up exited before the tunnel became active",
-			).Wrap(p.exitErr)
-		default:
-			return out, nil
-		}
-	}).WithContext(ctx).WithTimeout(tunnelActiveTimeout).WithPolling(100 * time.Millisecond).
-		Should(gomega.ContainSubstring(tunnelActiveMarker))
-}
-
-func (p *tunnelUpProcess) stop() {
-	select {
-	case <-p.exited:
-		return
-	default:
-	}
-	_ = p.cmd.Process.Signal(syscall.SIGINT)
-	select {
-	case <-p.exited:
-	case <-time.After(15 * time.Second):
-		_ = p.cmd.Process.Kill()
-		<-p.exited
-	}
-}
 
 var _ = ginkgo.Describe(
 	"devsy ssh tunnel mode",
@@ -123,28 +31,23 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should start workspace with --ssh-tunnel and SSH into it",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
-
 				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
 				framework.ExpectNoError(err)
 
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
-				framework.ExpectNoError(err)
+				f := setupTunnelProvider(ctx, initialDir)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
 					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
-				proc, err := startTunnelUp(f, tempDir)
+				taskID, err := startDetachedTunnelUp(ctx, f, tempDir)
 				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(proc.stop)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceTaskCancel(cleanupCtx, taskID)
+				})
 
-				proc.waitUntilActive(ctx)
+				waitDetachedTunnelReady(ctx, f, taskID)
 
 				devsySSHCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(20*time.Second))
 				defer cancelSSH()
@@ -156,31 +59,26 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should write SSH config with Hostname and Port instead of ProxyCommand",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
-
 				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
 				framework.ExpectNoError(err)
 
 				sshConfigDir := ginkgo.GinkgoT().TempDir()
 				sshConfigPath := filepath.Join(sshConfigDir, "config")
 
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
-				framework.ExpectNoError(err)
+				f := setupTunnelProvider(ctx, initialDir)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
 					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
-				proc, err := startTunnelUp(f, tempDir, "--ssh-config", sshConfigPath)
+				taskID, err := startDetachedTunnelUp(ctx, f, tempDir, "--ssh-config", sshConfigPath)
 				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(proc.stop)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceTaskCancel(cleanupCtx, taskID)
+				})
 
-				proc.waitUntilActive(ctx)
+				waitDetachedTunnelReady(ctx, f, taskID)
 
 				configBytes, err := os.ReadFile(filepath.Clean(sshConfigPath))
 				framework.ExpectNoError(err)
@@ -204,31 +102,26 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should establish a working local TCP tunnel listener",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
-
 				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
 				framework.ExpectNoError(err)
 
 				sshConfigDir := ginkgo.GinkgoT().TempDir()
 				sshConfigPath := filepath.Join(sshConfigDir, "config")
 
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
-				framework.ExpectNoError(err)
+				f := setupTunnelProvider(ctx, initialDir)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
 					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
-				proc, err := startTunnelUp(f, tempDir, "--ssh-config", sshConfigPath)
+				taskID, err := startDetachedTunnelUp(ctx, f, tempDir, "--ssh-config", sshConfigPath)
 				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(proc.stop)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceTaskCancel(cleanupCtx, taskID)
+				})
 
-				proc.waitUntilActive(ctx)
+				waitDetachedTunnelReady(ctx, f, taskID)
 
 				configBytes, err := os.ReadFile(filepath.Clean(sshConfigPath))
 				framework.ExpectNoError(err)
@@ -256,28 +149,23 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should handle multiple sequential SSH commands via tunnel",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
-
 				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
 				framework.ExpectNoError(err)
 
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
-				framework.ExpectNoError(err)
+				f := setupTunnelProvider(ctx, initialDir)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
 					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
-				proc, err := startTunnelUp(f, tempDir)
+				taskID, err := startDetachedTunnelUp(ctx, f, tempDir)
 				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(proc.stop)
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = f.DevsyWorkspaceTaskCancel(cleanupCtx, taskID)
+				})
 
-				proc.waitUntilActive(ctx)
+				waitDetachedTunnelReady(ctx, f, taskID)
 
 				for i := range 3 {
 					sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(20*time.Second))
@@ -299,20 +187,13 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should fall back to ProxyCommand when tunnel mode is not enabled",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
-
 				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
 				framework.ExpectNoError(err)
 
 				sshConfigDir := ginkgo.GinkgoT().TempDir()
 				sshConfigPath := filepath.Join(sshConfigDir, "config")
 
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
-				framework.ExpectNoError(err)
+				f := setupTunnelProvider(ctx, initialDir)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)

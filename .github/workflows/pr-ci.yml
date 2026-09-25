@@ -302,6 +302,12 @@ jobs:
             install-kind: false
             requires-secret: false
 
+          - label: task-cancel
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+
           - label: ssh-credentials-server-race
             runner: ubuntu-latest
             free-disk-space: false
@@ -588,6 +594,17 @@ jobs:
             install-kind: true
             requires-secret: false
           - label: ssh-proxy-command
+            runner: windows-latest
+            free-disk-space: false
+            install-kind: true
+            requires-secret: false
+          - label: ssh-tunnel-mode
+            runner: windows-latest
+            free-disk-space: false
+            install-kind: true
+            requires-secret: false
+
+          - label: task-cancel
             runner: windows-latest
             free-disk-space: false
             install-kind: true
