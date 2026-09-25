@@ -63,6 +63,12 @@ func NewSetCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	devsyConfig, providerWithOptions, err := cmd.loadProvider(args)
 	if err != nil {
 		return err

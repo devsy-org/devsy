@@ -118,8 +118,17 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 		}
 	}
 
-	// delete the provider config
-	err = providercmd.DeleteProviderConfig(devsyConfig, proInstanceConfig.Provider, true)
+	// delete the provider config, reloading it under the config lock: the
+	// earlier load in this flow predates the daemon shutdown above
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	freshConfig, err := config.LoadConfig(devsyConfig.DefaultContext, "")
+	if err == nil {
+		err = providercmd.DeleteProviderConfig(freshConfig, proInstanceConfig.Provider, true)
+	}
+	unlock()
 	if err != nil {
 		return err
 	}
