@@ -114,3 +114,57 @@ func TestProviderVersionNeedsUpdate(t *testing.T) {
 		})
 	}
 }
+
+func TestProviderUpdateSkipReason(t *testing.T) {
+	const (
+		originalSource = "github.com/org/provider@v1.0.0"
+		updatedPin     = "github.com/org/provider@v1.1.0"
+		otherSource    = "github.com/other/provider@v1.0.0"
+	)
+
+	tests := []struct {
+		name           string
+		originalSource string
+		currentSource  string
+		newVersion     string
+		wantReason     string
+	}{
+		{
+			name:           "unchanged source",
+			originalSource: originalSource,
+			currentSource:  originalSource,
+			newVersion:     "v1.1.0",
+		},
+		{
+			name:           "pin changed on same repository",
+			originalSource: originalSource,
+			currentSource:  updatedPin,
+			newVersion:     "v1.2.0",
+			wantReason:     "provider source changed",
+		},
+		{
+			name:           "repository changed",
+			originalSource: originalSource,
+			currentSource:  otherSource,
+			newVersion:     "v1.2.0",
+			wantReason:     "provider source changed",
+		},
+		{
+			name:           "current version is newer",
+			originalSource: updatedPin,
+			currentSource:  updatedPin,
+			newVersion:     "v1.0.0",
+			wantReason:     "provider already up to date",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(
+				t,
+				tt.wantReason,
+				providerUpdateSkipReason(tt.originalSource, tt.currentSource, tt.newVersion),
+			)
+		})
+	}
+}

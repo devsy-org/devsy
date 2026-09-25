@@ -91,11 +91,12 @@ func applyProviderUpdate(
 		return fmt.Errorf("resolve provider source %s: %w", providerName, err)
 	}
 
-	splitted := strings.Split(providerSource, "@")
-	if len(splitted) == 0 {
+	originalSource := providerSource
+	sourceBase, _ := provider2.SplitSourceAndTag(providerSource)
+	if sourceBase == "" {
 		return fmt.Errorf("no provider source found %s", providerSource)
 	}
-	providerSource = splitted[0] + "@" + newVersion
+	providerSource = sourceBase + "@" + newVersion
 
 	// The caller's config predates the update check; reload it under the
 	// config lock so the update cannot lose a concurrent mutation.
@@ -116,18 +117,8 @@ func applyProviderUpdate(
 	if err != nil {
 		return fmt.Errorf("resolve provider source %s: %w", providerName, err)
 	}
-	if strings.Split(currentSource, "@")[0] != splitted[0] {
-		log.Infof("provider source changed, skipping update: provider=%s", providerName)
-		return nil
-	}
-	currentVersion := ""
-	if parts := strings.Split(currentSource, "@"); len(parts) == 2 {
-		currentVersion = parts[1]
-	}
-	newV, newErr := semver.Parse(strings.TrimPrefix(newVersion, "v"))
-	currentV, currentErr := semver.Parse(strings.TrimPrefix(currentVersion, "v"))
-	if newErr == nil && currentErr == nil && currentV.GTE(newV) {
-		log.Infof("provider already up to date, skipping update: provider=%s", providerName)
+	if reason := providerUpdateSkipReason(originalSource, currentSource, newVersion); reason != "" {
+		log.Infof("%s, skipping update: provider=%s", reason, providerName)
 		return nil
 	}
 
@@ -138,6 +129,19 @@ func applyProviderUpdate(
 
 	log.Infof("updated provider: provider=%s", providerName)
 	return nil
+}
+
+func providerUpdateSkipReason(originalSource, currentSource, newVersion string) string {
+	if originalSource != currentSource {
+		return "provider source changed"
+	}
+	_, currentVersion := provider2.SplitSourceAndTag(currentSource)
+	newV, newErr := semver.Parse(strings.TrimPrefix(newVersion, "v"))
+	currentV, currentErr := semver.Parse(strings.TrimPrefix(currentVersion, "v"))
+	if newErr == nil && currentErr == nil && currentV.GTE(newV) {
+		return "provider already up to date"
+	}
+	return ""
 }
 
 // GetProInstance returns the ProInstance associated with the given provider name, or nil if not found.
