@@ -439,10 +439,6 @@ function handleGpgForwardFailed(reason: string) {
   )
 }
 
-function isDebug(): boolean {
-  return loadLocalOptions().debugFlag
-}
-
 function startStreamingOp(label: string): string {
   const newCmdId = crypto.randomUUID()
   commandId = newCmdId
@@ -468,7 +464,6 @@ async function handleStart() {
     await workspaceUp({
       source: id,
       ide,
-      debug: isDebug(),
       workspaceFolder: folder,
       commandId: cmdId,
     })
@@ -506,7 +501,6 @@ async function handleRecovery() {
       source: id,
       ide,
       recovery: true,
-      debug: isDebug(),
       workspaceFolder: folder,
       commandId: cmdId,
     })
@@ -528,7 +522,6 @@ async function handleOpenIde() {
       source: id,
       ide,
       ideLaunch: "auto",
-      debug: isDebug(),
       workspaceFolder: folder,
       commandId: cmdId,
     })
@@ -541,7 +534,7 @@ async function handleOpenIde() {
 async function handleStop() {
   const cmdId = startStreamingOp("Stop")
   try {
-    await workspaceStop(id, isDebug(), cmdId)
+    await workspaceStop(id, cmdId)
   } catch (err) {
     awaitingAcceptance = false
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
@@ -552,7 +545,7 @@ async function handleRebuild() {
   confirmRebuildOpen = false
   const cmdId = startStreamingOp("Rebuild")
   try {
-    await workspaceRebuild(id, isDebug(), cmdId)
+    await workspaceRebuild(id, cmdId)
   } catch (err) {
     awaitingAcceptance = false
     toasts.error(`Failed to rebuild: ${extractErrorMessage(err)}`)
@@ -563,7 +556,7 @@ async function handleReset() {
   confirmResetOpen = false
   const cmdId = startStreamingOp("Reset")
   try {
-    await workspaceReset(id, isDebug(), cmdId)
+    await workspaceReset(id, cmdId)
   } catch (err) {
     awaitingAcceptance = false
     toasts.error(`Failed to reset: ${extractErrorMessage(err)}`)
@@ -575,7 +568,7 @@ async function handleDelete() {
   const cmdId = startStreamingOp("Delete")
   deleting = true
   try {
-    await workspaceDelete(id, isDebug(), cmdId)
+    await workspaceDelete(id, cmdId)
   } catch (err) {
     awaitingAcceptance = false
     deleting = false

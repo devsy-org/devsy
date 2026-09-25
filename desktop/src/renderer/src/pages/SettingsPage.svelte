@@ -106,7 +106,6 @@ let filteredIdes = $derived(
 )
 
 let local = $state<LocalOptions>({
-  debugFlag: false,
   sshKeyPath: "",
   httpProxy: "",
   httpsProxy: "",
@@ -198,14 +197,6 @@ function toggleLocal(key: keyof LocalOptions) {
         </div>
       {:else}
       <div class="mt-4 space-y-6">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <Label>Debug Mode</Label>
-            <p class="text-xs text-muted-foreground">Run all commands with --debug flag</p>
-          </div>
-          <Switch checked={local.debugFlag} onCheckedChange={() => toggleLocal("debugFlag")} disabled={loading || saving} />
-        </div>
-
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <Label>Desktop Application Logging</Label>

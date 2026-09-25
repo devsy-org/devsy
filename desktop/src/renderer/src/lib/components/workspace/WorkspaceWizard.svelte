@@ -665,7 +665,6 @@ async function handleLaunch(recovery = false) {
         imageIncompatible && emulationEnabled && emulationTarget
           ? emulationTarget
           : undefined,
-      debug: loadLocalOptions().debugFlag,
       recovery,
     })
 

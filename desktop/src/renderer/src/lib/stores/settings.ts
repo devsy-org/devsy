@@ -232,7 +232,6 @@ export interface ContextOptions {
 export type OnBuildFailure = "prompt" | "auto-recovery" | "nothing"
 
 export interface LocalOptions {
-  debugFlag: boolean
   sshKeyPath: string
   httpProxy: string
   httpsProxy: string
@@ -264,7 +263,6 @@ export const DEFAULT_CONTEXT_OPTIONS: ContextOptions = {
 }
 
 export const DEFAULT_LOCAL_OPTIONS: LocalOptions = {
-  debugFlag: false,
   sshKeyPath: "",
   httpProxy: "",
   httpsProxy: "",

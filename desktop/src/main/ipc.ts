@@ -1252,7 +1252,6 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     provider?: string
     ide?: string
     ideLaunch?: "auto" | "headless" | "skip"
-    debug?: boolean
     workspaceFolder?: string
     devcontainer?: string
     prebuildRepository?: string
@@ -1269,7 +1268,6 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.provider) cliArgs.push("--provider", args.provider)
       if (args.ide) cliArgs.push("--ide", args.ide)
       if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)
-      if (args.debug) cliArgs.push("--debug")
       if (args.workspaceFolder)
         cliArgs.push("--workspace-folder", args.workspaceFolder)
       if (args.devcontainer) cliArgs.push("--devcontainer", args.devcontainer)
@@ -1568,7 +1566,6 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   type WorkspaceActionSource = "renderer" | "tray"
   type StopWorkspaceArgs = {
     workspaceId: string
-    debug?: boolean
     commandId?: string
   }
 
@@ -1610,7 +1607,6 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           (line) => logStore.appendLog(logPath, line),
           () => logStore.closeLog(logPath),
         )
-        if (args.debug) cliArgs.push("--debug")
         workspaceJobs.phase(args.workspaceId, commandId, "Launching command")
         timing("cli-launch")
         let firstProgress = true

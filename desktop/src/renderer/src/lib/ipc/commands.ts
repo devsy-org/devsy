@@ -54,7 +54,6 @@ export async function workspaceUp(params: {
   provider?: string
   ide?: string
   ideLaunch?: "auto" | "headless" | "skip"
-  debug?: boolean
   workspaceFolder?: string
   devcontainer?: string
   prebuildRepository?: string
@@ -67,34 +66,30 @@ export async function workspaceUp(params: {
 
 export async function workspaceStop(
   workspaceId: string,
-  debug?: boolean,
   commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_stop", { workspaceId, debug, commandId })
+  return invoke<string>("workspace_stop", { workspaceId, commandId })
 }
 
 export async function workspaceDelete(
   workspaceId: string,
-  debug?: boolean,
   commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_delete", { workspaceId, debug, commandId })
+  return invoke<string>("workspace_delete", { workspaceId, commandId })
 }
 
 export async function workspaceRebuild(
   workspaceId: string,
-  debug?: boolean,
   commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_rebuild", { workspaceId, debug, commandId })
+  return invoke<string>("workspace_rebuild", { workspaceId, commandId })
 }
 
 export async function workspaceReset(
   workspaceId: string,
-  debug?: boolean,
   commandId?: string,
 ): Promise<string> {
-  return invoke<string>("workspace_reset", { workspaceId, debug, commandId })
+  return invoke<string>("workspace_reset", { workspaceId, commandId })
 }
 
 export async function workspaceStatus(
