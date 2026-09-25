@@ -12,6 +12,19 @@ async function invoke(channel: string, args?: Record<string, unknown>) {
   )
 }
 
+async function readLatestLog(workspaceId: string): Promise<string> {
+  const logs = (await invoke("workspace_logs_list", { workspaceId })) as Array<{
+    filename: string
+  }>
+  const latest = logs[0]
+  return latest
+    ? ((await invoke("workspace_log_read", {
+        workspaceId,
+        filename: latest.filename,
+      })) as string)
+    : ""
+}
+
 test.beforeAll(async () => {
   resetMockState()
   ;({ app, page } = await launchApp())
@@ -38,6 +51,18 @@ test("status and result protocols are independent of CLI diagnostic level", asyn
         return snapshot.jobs[workspaceId]?.state
       }, { timeout: 30000 })
       .toBe("succeeded")
+    await expect
+      .poll(
+        async () => {
+          const log = await readLatestLog(workspaceId)
+          return (
+            log.includes("INFO diagnostic line") === (level === "info") &&
+            log.includes("WARN diagnostic line") === (level !== "error")
+          )
+        },
+        { timeout: 10000 },
+      )
+      .toBe(true)
     const workspaces = (await invoke("workspace_list")) as Array<{ id: string; status: string }>
     expect(workspaces.find((workspace) => workspace.id === workspaceId)?.status).toBe("Running")
   }
