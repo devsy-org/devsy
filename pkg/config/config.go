@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/gofrs/flock"
 	"sigs.k8s.io/yaml"
 )
 
@@ -50,8 +51,16 @@ type ContextConfig struct {
 	// Secrets are names of stored secrets bound to this context, injected on `up`. Names only, no values.
 	Secrets []string `json:"secrets,omitempty"`
 
+	// EnvVars are names of stored non-sensitive environment variables bound to
+	// this context, injected on `up`. Names only, no values.
+	EnvVars []string `json:"envVars,omitempty"`
+
 	// OriginalProvider is the original default provider
 	OriginalProvider string `json:"-"`
+
+	// OriginalProviderSet records that a transient provider override was applied,
+	// including when the original provider was empty.
+	OriginalProviderSet bool `json:"-"`
 }
 
 type ContextOption struct {
@@ -225,6 +234,7 @@ func CloneConfig(config *Config) *Config {
 			ctx.IDEs = map[string]*IDEConfig{}
 		}
 		ctx.OriginalProvider = config.Contexts[ctxName].OriginalProvider
+		ctx.OriginalProviderSet = config.Contexts[ctxName].OriginalProviderSet
 	}
 	ret.Origin = config.Origin
 	ret.OriginalContext = config.OriginalContext
@@ -300,6 +310,7 @@ func normalizeConfig(config *Config, contextOverride, providerOverride string) {
 	ensureContextMaps(ctx)
 	if providerOverride != "" {
 		ctx.OriginalProvider = ctx.DefaultProvider
+		ctx.OriginalProviderSet = true
 		ctx.DefaultProvider = providerOverride
 	}
 }
@@ -317,17 +328,21 @@ func ensureContextMaps(ctx *ContextConfig) {
 }
 
 func SaveConfig(config *Config) error {
-	configOrigin, err := GetConfigPath()
+	configOrigin, err := getConfigMutationPath()
 	if err != nil {
 		return err
 	}
 
 	config = CloneConfig(config)
+	selectedContext := config.DefaultContext
+	if selected := config.Contexts[selectedContext]; selected != nil &&
+		selected.OriginalProviderSet {
+		selected.DefaultProvider = selected.OriginalProvider
+		selected.OriginalProvider = ""
+		selected.OriginalProviderSet = false
+	}
 	if config.OriginalContext != "" {
 		config.DefaultContext = config.OriginalContext
-	}
-	if config.Contexts[config.DefaultContext].OriginalProvider != "" {
-		config.Contexts[config.DefaultContext].DefaultProvider = config.Contexts[config.DefaultContext].OriginalProvider
 	}
 
 	out, err := yaml.Marshal(config)
@@ -340,11 +355,101 @@ func SaveConfig(config *Config) error {
 		return err
 	}
 
-	err = os.WriteFile(configOrigin, out, 0o600)
+	return writeConfigAtomic(configOrigin, out)
+}
+
+// LockConfig serializes read/modify/write mutations to config.yaml across
+// processes. Callers must acquire it before loading the config and hold it
+// until every related persistent operation is complete.
+func LockConfig() (func(), error) {
+	configPath, err := getConfigMutationPath()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		return nil, err
+	}
+	lock := flock.New(configPath + ".lock")
+	if err := lock.Lock(); err != nil {
+		return nil, fmt.Errorf("lock config %q: %w", configPath+".lock", err)
+	}
+	return func() { _ = lock.Unlock() }, nil
+}
+
+// getConfigMutationPath resolves the configured config file to the path that
+// will actually be replaced by an atomic save. A dangling configured symlink
+// must fail rather than being replaced by a regular file.
+func getConfigMutationPath() (string, error) {
+	configPath, err := GetConfigPath()
+	if err != nil {
+		return "", err
+	}
+
+	info, err := os.Lstat(configPath)
+	switch {
+	case err == nil && info.Mode()&os.ModeSymlink != 0:
+		resolved, resolveErr := filepath.EvalSymlinks(configPath)
+		if resolveErr != nil {
+			return "", fmt.Errorf("resolve config symlink %q: %w", configPath, resolveErr)
+		}
+		return resolved, nil
+	case err == nil:
+		return configPath, nil
+	case os.IsNotExist(err):
+		return configPath, nil
+	default:
+		return "", err
+	}
+}
+
+func writeConfigAtomic(configOrigin string, data []byte) error {
+	dir := filepath.Dir(configOrigin)
+	tmpName, err := createTempConfig(dir, filepath.Base(configOrigin), data)
 	if err != nil {
 		return err
 	}
+	return replaceConfig(tmpName, configOrigin, dir)
+}
 
+func createTempConfig(dir, base string, data []byte) (string, error) {
+	tmp, err := os.CreateTemp(dir, base+".tmp-*")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	success := false
+	defer func() {
+		_ = tmp.Close()
+		if !success {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		return "", err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	success = true
+	return tmpName, nil
+}
+
+func replaceConfig(tmpName, configOrigin, dir string) error {
+	defer func() { _ = os.Remove(tmpName) }()
+	if err := os.Rename(tmpName, configOrigin); err != nil {
+		return err
+	}
+	// #nosec G304 -- dir is derived from the managed config path.
+	if dirFile, err := os.Open(dir); err == nil {
+		_ = dirFile.Sync()
+		_ = dirFile.Close()
+	}
 	return nil
 }
 

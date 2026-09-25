@@ -337,8 +337,18 @@ export async function envSet(name: string, value: string): Promise<void> {
   unwrapEnvelope(await invoke<CommandEnvelope>("env_set", { name, value }))
 }
 
-export async function envDelete(name: string): Promise<void> {
-  unwrapEnvelope(await invoke<CommandEnvelope>("env_delete", { name }))
+export async function envDelete(name: string, context: string): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("env_delete", { name, context }),
+  )
+}
+
+export async function envAttach(name: string, context: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("env_attach", { name, context }))
+}
+
+export async function envDetach(name: string, context: string): Promise<void> {
+  unwrapEnvelope(await invoke<CommandEnvelope>("env_detach", { name, context }))
 }
 
 // Audit commands

@@ -301,7 +301,7 @@ func (cmd *UpCmd) resolveStoredSecrets(
 	if err != nil {
 		return err
 	}
-	if !cmd.hasStoredValues(requests) {
+	if !cmd.hasStoredValues(requests, devsyConfig) {
 		return nil
 	}
 
@@ -316,14 +316,19 @@ func (cmd *UpCmd) resolveStoredSecrets(
 	if err := cmd.applyLifecycleSecrets(ctx, requests, resolver); err != nil {
 		return err
 	}
-	if err := cmd.applyEnvVars(ctx, resolver); err != nil {
+	if err := cmd.applyEnvVars(ctx, devsyConfig, resolver); err != nil {
 		return err
 	}
 	return cmd.applyBuildSecrets(ctx, resolver)
 }
 
-func (cmd *UpCmd) hasStoredValues(requests []secretRequest) bool {
-	return len(requests) > 0 || len(cmd.EnvVars) > 0 || len(cmd.BuildSecretNames) > 0
+func (cmd *UpCmd) hasStoredValues(requests []secretRequest, devsyConfig *config.Config) bool {
+	attachedEnvCount := 0
+	if current := devsyConfig.Current(); current != nil {
+		attachedEnvCount = len(current.EnvVars)
+	}
+	return len(requests) > 0 || len(cmd.EnvVars) > 0 || attachedEnvCount > 0 ||
+		len(cmd.BuildSecretNames) > 0
 }
 
 func (cmd *UpCmd) applyLifecycleSecrets(
@@ -345,12 +350,113 @@ func (cmd *UpCmd) applyLifecycleSecrets(
 	return nil
 }
 
-// applyEnvVars resolves --env entries from the local store. External
+type envVarRequest struct {
+	ref    secrets.SecretRef
+	target string
+}
+
+func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVarRequest, error) {
+	explicit := make([]envVarRequest, 0, len(flags))
+	explicitRefs := map[string]struct{}{}
+	for _, entry := range flags {
+		req, err := parseEnvVarRequest(entry)
+		if err != nil {
+			return nil, err
+		}
+		explicit = append(explicit, req)
+		explicitRefs[req.ref.String()] = struct{}{}
+	}
+	implicit := make([]envVarRequest, 0)
+	if current := devsyConfig.Current(); current != nil {
+		for _, name := range current.EnvVars {
+			ref, err := secrets.ParseRef(name)
+			if err != nil {
+				return nil, fmt.Errorf("invalid attached environment variable %q: %w", name, err)
+			}
+			if ref.Source != secrets.LocalSourceName {
+				return nil, fmt.Errorf(
+					"attached environment variable %q must use the local Devsy store",
+					name,
+				)
+			}
+			if _, overridden := explicitRefs[ref.String()]; overridden {
+				continue
+			}
+			implicit = append(implicit, envVarRequest{ref: ref, target: ref.Name})
+		}
+	}
+	sort.Slice(
+		implicit,
+		func(i, j int) bool { return implicit[i].ref.String() < implicit[j].ref.String() },
+	)
+	return append(implicit, explicit...), nil
+}
+
+func parseEnvVarRequest(entry string) (envVarRequest, error) {
+	name, target, hasTarget := strings.Cut(entry, "=")
+	if hasTarget && target == "" {
+		return envVarRequest{}, fmt.Errorf(
+			"invalid --env %q: target after %q= must not be empty",
+			entry,
+			name,
+		)
+	}
+	if hasTarget && strings.Contains(target, "=") {
+		return envVarRequest{}, fmt.Errorf(
+			"invalid --env %q: target %q must not contain =",
+			entry,
+			target,
+		)
+	}
+	ref, err := secrets.ParseRef(name)
+	if err != nil {
+		return envVarRequest{}, err
+	}
+	if ref.Source != secrets.LocalSourceName {
+		return envVarRequest{}, fmt.Errorf(
+			"--env only accepts Devsy-managed values; use --secret %s instead",
+			name,
+		)
+	}
+	if !hasTarget {
+		target = ref.Name
+	}
+	return envVarRequest{ref: ref, target: target}, nil
+}
+
+func checkDuplicateEnvTargets(requests []envVarRequest) error {
+	targets := map[string]secrets.SecretRef{}
+	for _, req := range requests {
+		if previous, ok := targets[req.target]; ok && previous.String() != req.ref.String() {
+			return fmt.Errorf(
+				"environment variables %q and %q both target %q",
+				previous.Name,
+				req.ref.Name,
+				req.target,
+			)
+		}
+		targets[req.target] = req.ref
+	}
+	return nil
+}
+
+// applyEnvVars resolves attached and explicit entries from the local store. External
 // sensitive sources intentionally use --secret instead: WorkspaceEnv rides in
 // the setup argv and is process-list visible.
-func (cmd *UpCmd) applyEnvVars(ctx context.Context, resolver *secrets.Resolver) error {
-	for _, entry := range cmd.EnvVars {
-		envVar, err := resolveEnvVarEntry(ctx, resolver, entry)
+func (cmd *UpCmd) applyEnvVars(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	resolver *secrets.Resolver,
+) error {
+	requests, err := collectEnvVarRequests(cmd.EnvVars, devsyConfig)
+	if err != nil {
+		return err
+	}
+	if err := checkDuplicateEnvTargets(requests); err != nil {
+		return err
+	}
+	for _, req := range requests {
+		envVar, err := resolveEnvVarRequest(ctx, resolver, req)
 		if err != nil {
 			return err
 		}
@@ -359,41 +465,23 @@ func (cmd *UpCmd) applyEnvVars(ctx context.Context, resolver *secrets.Resolver) 
 	return nil
 }
 
-func resolveEnvVarEntry(
+func resolveEnvVarRequest(
 	ctx context.Context,
 	resolver *secrets.Resolver,
-	entry string,
+	req envVarRequest,
 ) (string, error) {
-	name, explicitTarget, hasTarget := strings.Cut(entry, "=")
-	if hasTarget && explicitTarget == "" {
-		return "", fmt.Errorf("invalid --env %q: target after %q= must not be empty", entry, name)
-	}
-	ref, err := secrets.ParseRef(name)
-	if err != nil {
-		return "", err
-	}
-	target := ref.Name
-	if hasTarget {
-		target = explicitTarget
-	}
-	if ref.Source != secrets.LocalSourceName {
-		return "", fmt.Errorf(
-			"--env only accepts Devsy-managed values; use --secret %s instead",
-			name,
-		)
-	}
-	resolved, err := resolver.Resolve(ctx, ref)
+	resolved, err := resolver.Resolve(ctx, req.ref)
 	if err != nil {
 		return "", err
 	}
 	if resolved.Sensitive {
 		return "", fmt.Errorf(
 			"%q is a secret and cannot be passed with --env (it would be visible in the process list); use --secret %s instead",
-			name,
-			name,
+			req.ref.Name,
+			req.ref.Name,
 		)
 	}
-	return target + "=" + resolved.Value, nil
+	return req.target + "=" + resolved.Value, nil
 }
 
 func (cmd *UpCmd) applyBuildSecrets(ctx context.Context, resolver *secrets.Resolver) error {

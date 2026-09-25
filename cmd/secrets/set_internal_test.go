@@ -1,9 +1,15 @@
 package secrets
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
+	devsysecrets "github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/stretchr/testify/require"
 )
 
 func withStdin(t *testing.T, input string, fn func()) {
@@ -23,6 +29,36 @@ func withStdin(t *testing.T, input string, fn func()) {
 
 	fn()
 	_ = r.Close()
+}
+
+func TestSetRejectsConvertingAttachedEnvironmentToSecret(t *testing.T) {
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+	t.Setenv(config.EnvHome, t.TempDir())
+	t.Setenv("DEVSY_SECRETS_BACKEND", "file")
+	t.Setenv("DEVSY_SECRETS_PASSPHRASE", "test-passphrase")
+	require.NoError(t, config.SaveConfig(&config.Config{
+		DefaultContext: config.DefaultContext,
+		Contexts: map[string]*config.ContextConfig{config.DefaultContext: {
+			EnvVars: []string{"TOKEN"},
+		}},
+	}))
+	cfg, err := config.LoadConfig("", "")
+	require.NoError(t, err)
+	store, err := devsysecrets.NewStoreForConfig(cfg)
+	require.NoError(t, err)
+	require.NoError(t, store.Set(config.DefaultContext, "TOKEN", "plain", devsysecrets.KindEnv))
+
+	err = (&SetCmd{
+		GlobalFlags: &flags.GlobalFlags{},
+		Value:       "secret",
+		valueSet:    true,
+	}).Run(context.Background(), "TOKEN")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "attached as an environment variable")
+	meta, err := store.Meta(config.DefaultContext, "TOKEN")
+	require.NoError(t, err)
+	require.Equal(t, devsysecrets.KindEnv, meta.Kind)
 }
 
 func TestResolveValue_Stdin(t *testing.T) {

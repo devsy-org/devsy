@@ -75,7 +75,12 @@ func (cmd *AttachCmd) Run(ctx context.Context, name string) error {
 	}
 	canonical := ref.String()
 
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}
@@ -127,7 +132,12 @@ func (cmd *DetachCmd) Run(_ context.Context, name string) error {
 		return err
 	}
 	canonical := ref.String()
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
 	}

@@ -2,10 +2,13 @@ package env
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -50,9 +53,30 @@ func (cmd *SetCmd) Run(_ context.Context, arg string) error {
 		return err
 	}
 
-	contextName, store, err := resolveContext(cmd.GlobalFlags)
+	unlock, err := config.LockConfig()
 	if err != nil {
 		return err
+	}
+	defer unlock()
+	devsyConfig, err := config.LoadConfig(cmd.Context, "")
+	if err != nil {
+		return err
+	}
+	contextName := devsyConfig.DefaultContext
+	store, err := secrets.NewStoreForConfig(devsyConfig)
+	if err != nil {
+		return err
+	}
+	if meta, metaErr := store.Meta(contextName, name); metaErr == nil {
+		ctxConfig := devsyConfig.Contexts[contextName]
+		if meta.Sensitive() && ctxConfig != nil && slices.Contains(ctxConfig.Secrets, name) {
+			return fmt.Errorf(
+				"%q is attached as a secret; detach it before converting it to an environment variable",
+				name,
+			)
+		}
+	} else if !errors.Is(metaErr, secrets.ErrSecretNotFound) {
+		return metaErr
 	}
 	if err := store.Set(contextName, name, value, secrets.KindEnv); err != nil {
 		return err

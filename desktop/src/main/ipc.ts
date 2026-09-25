@@ -55,6 +55,8 @@ interface SecretEntry {
 interface EnvEntry {
   name: string
   value: string
+  context: string
+  attached: boolean
 }
 
 function dockerArch(nodeArch: string): string {
@@ -1140,10 +1142,40 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("env_delete", async (_event, args: { name: string }) => {
-    trackEvent("env_delete")
+  ipcMain.handle(
+    "env_delete",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("env_delete")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw(["--context", args.context, "env", "delete", args.name])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
+  ipcMain.handle("env_attach", async (_event, args: { name: string; context: string }) => {
+    trackEvent("env_attach")
     try {
-      await cli.runRaw(["env", "delete", args.name])
+      if (!args.context) throw new Error("context is required")
+      await cli.runRaw(["--context", args.context, "env", "attach", args.name])
+      return { ok: true } as const
+    } catch (err) {
+      const cliError = (err as { cliError?: CLIError }).cliError
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, message, cliError } as const
+    }
+  })
+
+  ipcMain.handle("env_detach", async (_event, args: { name: string; context: string }) => {
+    trackEvent("env_detach")
+    try {
+      if (!args.context) throw new Error("context is required")
+      await cli.runRaw(["--context", args.context, "env", "detach", args.name])
       return { ok: true } as const
     } catch (err) {
       const cliError = (err as { cliError?: CLIError }).cliError

@@ -7,6 +7,9 @@ import {
   auditRecent,
   contextUse,
   devsyVersion,
+  envDelete,
+  envAttach,
+  envDetach,
   machineCreate,
   machineDelete,
   machineStatus,
@@ -139,6 +142,35 @@ describe("IPC commands", () => {
       const result = await openDirectoryDialog()
       expect(mockInvoke).toHaveBeenCalledWith("dialog_open_directory")
       expect(result).toBe("/home/me/proj")
+    })
+  })
+
+  describe("managed environment commands", () => {
+    it("envAttach sends the variable name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await envAttach("LOG_LEVEL", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("env_attach", {
+        name: "LOG_LEVEL",
+        context: "staging",
+      })
+    })
+
+    it("envDetach sends the variable name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await envDetach("LOG_LEVEL", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("env_detach", {
+        name: "LOG_LEVEL",
+        context: "staging",
+      })
+    })
+
+    it("envDelete sends the variable name and context", async () => {
+      mockInvoke.mockResolvedValue({ ok: true })
+      await envDelete("LOG_LEVEL", "staging")
+      expect(mockInvoke).toHaveBeenCalledWith("env_delete", {
+        name: "LOG_LEVEL",
+        context: "staging",
+      })
     })
   })
 
