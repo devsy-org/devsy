@@ -163,9 +163,7 @@ var _ = ginkgo.Describe(
 			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			// The selector-free restart must reuse the persisted profile, not
-			// fall back to another config: the profiles set distinguishable
-			// container env markers.
+			// Distinct markers verify the persisted selector survived restart.
 			err = tc.f.ExecCommand(
 				ctx,
 				true,
