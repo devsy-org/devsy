@@ -34,52 +34,78 @@ func TestResolveLevelPrecedence(t *testing.T) {
 		{name: "persisted default", cfg: Config{DefaultLevel: LevelWarnName}, want: LevelWarnName},
 		{
 			name: "explicit log level",
-			cfg:  Config{Level: LevelDebugName, DefaultLevel: LevelWarnName},
-			want: LevelDebugName,
+			cfg:  Config{Level: LevelDebugName, DefaultLevel: LevelWarnName}, want: LevelDebugName,
 		},
 		{
 			name: "verbosity beats log level",
-			cfg:  Config{Verbosity: 1, VerbositySet: true, Level: LevelDebugName},
+			cfg: Config{
+				Verbosity:    1,
+				VerbositySet: true,
+				Level:        LevelDebugName,
+			},
 			want: LevelInfoName,
 		},
 		{
 			name: "debug beats verbosity",
-			cfg:  Config{Verbosity: 1, VerbositySet: true, Debug: true},
-			want: LevelDebugName,
+			cfg:  Config{Verbosity: 1, VerbositySet: true, Debug: true}, want: LevelDebugName,
 		},
 		{
 			name: "quiet beats debug",
-			cfg:  Config{Debug: true, Quiet: true},
-			want: LevelErrorName,
+			cfg:  Config{Debug: true, Quiet: true}, want: LevelErrorName,
 		},
 		{
 			name: "log level beats persisted default",
-			cfg:  Config{Level: LevelWarnName, DefaultLevel: LevelInfoName},
-			want: LevelWarnName,
+			cfg:  Config{Level: LevelWarnName, DefaultLevel: LevelInfoName}, want: LevelWarnName,
 		},
 		{
 			name: "explicit verbosity beats log level",
-			cfg:  Config{Verbosity: 1, VerbositySet: true, Level: LevelErrorName},
+			cfg: Config{
+				Verbosity:    1,
+				VerbositySet: true,
+				Level:        LevelErrorName,
+			},
 			want: LevelInfoName,
 		},
 		{
 			name: "debug beats log level",
-			cfg:  Config{Debug: true, Level: LevelErrorName},
-			want: LevelDebugName,
+			cfg:  Config{Debug: true, Level: LevelErrorName}, want: LevelDebugName,
 		},
 		{
 			name: "quiet beats log level",
-			cfg:  Config{Quiet: true, Level: LevelTraceName},
-			want: LevelErrorName,
+			cfg:  Config{Quiet: true, Level: LevelTraceName}, want: LevelErrorName,
 		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveLevel(tt.cfg).String(); got != tt.want {
+				t.Fatalf("resolveLevel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveLevelExplicitFalseValues(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
 		{
 			name: "explicit debug=false falls through to log level",
-			cfg:  Config{Debug: false, Level: LevelDebugName, DefaultLevel: LevelWarnName},
+			cfg: Config{
+				Debug:        false,
+				Level:        LevelDebugName,
+				DefaultLevel: LevelWarnName,
+			},
 			want: LevelDebugName,
 		},
 		{
 			name: "explicit quiet=false falls through to log level",
-			cfg:  Config{Quiet: false, Level: LevelInfoName, DefaultLevel: LevelWarnName},
+			cfg: Config{
+				Quiet:        false,
+				Level:        LevelInfoName,
+				DefaultLevel: LevelWarnName,
+			},
 			want: LevelInfoName,
 		},
 	}
