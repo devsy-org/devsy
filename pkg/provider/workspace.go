@@ -47,7 +47,8 @@ type Workspace struct {
 	// DevContainerImage is the container image to use, overriding whatever is in the devcontainer.json
 	DevContainerImage string `json:"devContainerImage,omitempty"`
 
-	// DevContainerPath is the relative path where the devcontainer.json is located.
+	// DevContainerPath is the path to the devcontainer.json relative to the
+	// workspace folder: the content root including the git subpath, if any.
 	DevContainerPath string `json:"devContainerPath,omitempty"`
 
 	// DevContainerID is the selected named devcontainer profile. It is persisted

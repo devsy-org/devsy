@@ -87,9 +87,14 @@ func (r *runner) effectiveDevContainerSelection(
 		}
 	}
 
-	if r.workspaceConfig != nil && r.workspaceConfig.LastDevContainerConfig != nil {
+	// The last resolved path is a fallback for workspaces created before the
+	// selection was persisted. A workspace with an embedded config keeps using
+	// it, as it did before profile selection existed.
+	hasEmbeddedConfig := r.workspaceConfig != nil && r.workspaceConfig.Workspace != nil &&
+		r.workspaceConfig.Workspace.DevContainerConfig != nil
+	if !hasEmbeddedConfig && r.workspaceConfig != nil && r.workspaceConfig.LastDevContainerConfig != nil {
 		if path := r.workspaceConfig.LastDevContainerConfig.Path; path != "" {
-			return devContainerSelection{path: r.compatibilityDevContainerPath(path)}
+			return devContainerSelection{path: r.workspaceRelativeLastConfigPath(path)}
 		}
 	}
 
@@ -102,9 +107,7 @@ func (r *runner) persistedDevContainerSelection() (devContainerSelection, bool) 
 	case workspace.DevContainerSource != "":
 		return devContainerSelection{source: workspace.DevContainerSource}, true
 	case workspace.DevContainerPath != "":
-		return devContainerSelection{
-			path: r.compatibilityDevContainerPath(workspace.DevContainerPath),
-		}, true
+		return devContainerSelection{path: workspace.DevContainerPath}, true
 	case workspace.DevContainerID != "":
 		return devContainerSelection{id: workspace.DevContainerID}, true
 	default:
@@ -112,11 +115,14 @@ func (r *runner) persistedDevContainerSelection() (devContainerSelection, bool) 
 	}
 }
 
-// compatibilityDevContainerPath converts the last resolved path, which is
-// stored relative to the content root, to the workspace folder used by the
-// resolver. Remote workspaces with a git subpath otherwise apply the subpath
-// twice during a later lifecycle operation.
-func (r *runner) compatibilityDevContainerPath(lastPath string) string {
+// workspaceRelativeLastConfigPath converts the last resolved path, which is
+// stored relative to the content root (see DevContainerConfigWithPath.Path),
+// to the workspace folder the resolver runs against: the content root plus
+// the git subpath. Remote workspaces with a subpath otherwise apply the
+// subpath twice during a later lifecycle operation. A path outside the
+// subpath cannot be expressed relative to the workspace folder and is
+// returned unchanged, matching the previous discovery behavior.
+func (r *runner) workspaceRelativeLastConfigPath(lastPath string) string {
 	if r.workspaceConfig == nil || r.workspaceConfig.Workspace == nil {
 		return lastPath
 	}
@@ -132,6 +138,20 @@ func (r *runner) compatibilityDevContainerPath(lastPath string) string {
 		return lastPath
 	}
 	return filepath.ToSlash(relativePath)
+}
+
+// workspaceFolder returns the folder the devcontainer resolver runs against:
+// the content root plus the git subpath, when any. Workspace.DevContainerPath
+// and CLI-provided devcontainer paths are relative to this folder.
+func (r *runner) workspaceFolder() string {
+	if r.workspaceConfig == nil || r.workspaceConfig.Workspace == nil {
+		return r.localWorkspaceFolder
+	}
+	subPath := r.workspaceConfig.Workspace.Source.GitSubPath
+	if subPath == "" {
+		return r.localWorkspaceFolder
+	}
+	return filepath.Join(r.localWorkspaceFolder, filepath.FromSlash(subPath))
 }
 
 func newDevContainerSelection(source, path, id string) (devContainerSelection, bool) {
@@ -157,7 +177,7 @@ func (r *runner) rawConfigFromWorkspace() *config.DevContainerConfig {
 
 	rawConfig := config.CloneDevContainerConfig(r.workspaceConfig.Workspace.DevContainerConfig)
 	if devContainerPath := r.workspaceConfig.Workspace.DevContainerPath; devContainerPath != "" {
-		rawConfig.Origin = path.Join(filepath.ToSlash(r.localWorkspaceFolder), devContainerPath)
+		rawConfig.Origin = path.Join(filepath.ToSlash(r.workspaceFolder()), devContainerPath)
 	} else {
 		rawConfig.Origin = path.Join(
 			filepath.ToSlash(r.localWorkspaceFolder),
@@ -226,10 +246,7 @@ func (r *runner) rawConfigFromFilesystemWithContext(
 	options provider.CLIOptions,
 	selection devContainerSelection,
 ) (*config.DevContainerConfig, error) {
-	localWorkspaceFolder := r.localWorkspaceFolder
-	if subPath := r.workspaceConfig.Workspace.Source.GitSubPath; subPath != "" {
-		localWorkspaceFolder = filepath.Join(localWorkspaceFolder, subPath)
-	}
+	localWorkspaceFolder := r.workspaceFolder()
 
 	opts := config.ParseOptions{Selector: config.SelectSingle(localWorkspaceFolder)}
 	if selection.id != "" {

@@ -666,14 +666,67 @@ func TestEffectiveDevContainerSelection_LastPathStripsGitSubPath(t *testing.T) {
 	}
 }
 
-func TestEffectiveDevContainerSelection_PersistedPathStripsGitSubPath(t *testing.T) {
+// The last resolved path is content-root-relative, so a real nested path
+// whose first segment matches the subpath converts exactly once.
+func TestEffectiveDevContainerSelection_LastPathRepeatedSubPathSegment(t *testing.T) {
 	r := newRunnerAt(t.TempDir())
-	r.workspaceConfig.Workspace.Source.GitSubPath = "devsy/jupyter-notebook-hello-world"
-	r.workspaceConfig.Workspace.DevContainerPath = "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json"
+	r.workspaceConfig.Workspace.Source.GitSubPath = "app"
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: "app/app/.devcontainer/devcontainer.json",
+	}
 
 	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
-	if selection.path != ".devcontainer/devcontainer.json" {
-		t.Fatalf("selection path = %q, want .devcontainer/devcontainer.json", selection.path)
+	if selection.path != "app/.devcontainer/devcontainer.json" {
+		t.Fatalf("selection path = %q, want app/.devcontainer/devcontainer.json", selection.path)
+	}
+}
+
+// A workspace that carries an embedded config (from the provider protocol)
+// and a legacy last-resolved path must keep using the embedded config, as it
+// did before profile selection was persisted: the last-path fallback exists
+// only for workspaces with no other config source.
+func TestGetRawConfig_EmbeddedConfigWinsOverLastPathFallback(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "embedded"},
+	}
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: ".devcontainer/" + testDevContainerProfile + "/devcontainer.json",
+	}
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != "embedded" {
+		t.Errorf("Image = %q, want embedded (legacy last path must not override the embedded config)", conf.Image)
+	}
+}
+
+// A persisted --devcontainer-path is relative to the workspace folder (the
+// content root including the git subpath), so a leading segment that matches
+// the subpath is part of the real path and must not be stripped.
+func TestGetRawConfig_PersistedPathRepeatedSubPathSegment(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "app", "app", ".devcontainer")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "devcontainer.json"), []byte(`{"image":"nested"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := newRunnerAt(root)
+	r.workspaceConfig.Workspace.Source.GitSubPath = "app"
+	r.workspaceConfig.Workspace.DevContainerPath = "app/.devcontainer/devcontainer.json"
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != "nested" {
+		t.Errorf("Image = %q, want nested", conf.Image)
 	}
 }
 
