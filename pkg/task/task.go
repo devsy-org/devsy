@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/clierr"
-	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
@@ -160,30 +159,50 @@ func (t *Task) Succeed(result *config.Result) error {
 	})
 }
 
-// Cancel is safe to call even if the process already exited on its own. The
-// terminal check and state transition happen atomically under the same
-// lock, so a concurrent report from the task's own worker can't race with
-// marking it canceled here.
+// Cancel terminates the task's worker before recording the task as canceled:
+// the persisted terminal state must never claim the operation is gone while
+// the worker that performs it is still alive. A kill failure leaves the task
+// nonterminal so a later Cancel retries. Cancellation is idempotent: a task
+// already terminal, or whose worker already exited, only (re)finalizes the
+// canceled state.
 func (t *Task) Cancel() error {
 	var pid int
+	observedNonterminal := false
 	err := t.store.update(t.id, func(s *State) {
 		if s.Status.Terminal() {
 			return
 		}
+		observedNonterminal = true
 		pid = s.PID
-		s.Status = StatusFailed
-		s.Error = ErrCanceled.Error()
-		s.ErrorCode = string(clierr.CodeCanceled)
-		s.ErrorHint = "Retry the operation when ready."
-		s.ErrorContext = nil
 	})
 	if err != nil {
 		return err
 	}
-	if pid == 0 || !t.store.workerAlive(t.id) {
+	if !observedNonterminal {
 		return nil
 	}
-	return command.Kill(strconv.Itoa(pid))
+
+	if pid != 0 && t.store.workerAlive(t.id) {
+		if err := t.store.killProcess(strconv.Itoa(pid)); err != nil {
+			if !t.store.workerAlive(t.id) {
+				// The worker exited during the kill attempt, so termination
+				// is satisfied even though the kill itself reported an error.
+				return t.store.update(t.id, markCanceled)
+			}
+			return fmt.Errorf("cancel task %s: terminate worker pid %d: %w", t.id, pid, err)
+		}
+	}
+	// This invocation observed the task as nonterminal, so a result the worker
+	// committed while unwinding does not win over the accepted cancellation.
+	return t.store.update(t.id, markCanceled)
+}
+
+func markCanceled(s *State) {
+	s.Status = StatusFailed
+	s.Error = ErrCanceled.Error()
+	s.ErrorCode = string(clierr.CodeCanceled)
+	s.ErrorHint = "Retry the operation when ready."
+	s.ErrorContext = nil
 }
 
 // Fail preserves an existing terminal state, so the error a canceled worker

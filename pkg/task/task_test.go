@@ -817,3 +817,144 @@ func TestReconcilePreservesCancellationReason(t *testing.T) {
 		)
 	}
 }
+
+func TestCancelKillFailureRemainsRetryable(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	holdWorkerLock(t, tk)
+	if err := tk.SetPID(4242); err != nil {
+		t.Fatalf("SetPID: %v", err)
+	}
+
+	killCalls := 0
+	store.SetKillProcessForTest(func(string) error {
+		killCalls++
+		if killCalls == 1 {
+			return errors.New("boom")
+		}
+		return nil
+	})
+
+	if err := tk.Cancel(); err == nil {
+		t.Fatal("first Cancel = nil, want kill failure")
+	}
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status.Terminal() {
+		t.Fatalf("task recorded terminal %q while its worker survived the failed kill", state.Status)
+	}
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("retry Cancel: %v", err)
+	}
+	if killCalls != 2 {
+		t.Errorf("kill invoked %d times, want 2 (one per Cancel)", killCalls)
+	}
+	state, err = store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status != StatusFailed || state.Error != ErrCanceled.Error() || state.ErrorCode != "canceled" {
+		t.Errorf("unexpected final state: %+v", state)
+	}
+}
+
+func TestCancelSuccessfulKillCommitsCanceled(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	holdWorkerLock(t, tk)
+	if err := tk.SetPID(4242); err != nil {
+		t.Fatalf("SetPID: %v", err)
+	}
+
+	store.SetKillProcessForTest(func(string) error {
+		state, err := store.Get(tk.ID())
+		if err != nil {
+			t.Errorf("Get during kill: %v", err)
+		}
+		if state.Status.Terminal() {
+			t.Errorf("task recorded %q before its worker was terminated", state.Status)
+		}
+		return nil
+	})
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status != StatusFailed || state.Error != ErrCanceled.Error() {
+		t.Errorf("unexpected final state: %+v", state)
+	}
+}
+
+func TestCancelDeadWorkerDoesNotInvokeKill(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := tk.HoldWorkerLock(); err != nil {
+		t.Fatalf("HoldWorkerLock: %v", err)
+	}
+	if err := tk.ReleaseWorkerLockForTest(); err != nil {
+		t.Fatalf("ReleaseWorkerLockForTest: %v", err)
+	}
+	if err := tk.SetPID(4242); err != nil {
+		t.Fatalf("SetPID: %v", err)
+	}
+
+	store.SetKillProcessForTest(func(string) error {
+		t.Error("kill invoked for a task whose worker lock is dead")
+		return nil
+	})
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status != StatusFailed || state.Error != ErrCanceled.Error() {
+		t.Errorf("unexpected final state: %+v", state)
+	}
+}
+
+func TestCancelRacingLateSuccessStillWinsAfterSuccessfulTermination(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	holdWorkerLock(t, tk)
+	if err := tk.SetPID(4242); err != nil {
+		t.Fatalf("SetPID: %v", err)
+	}
+
+	store.SetKillProcessForTest(func(string) error {
+		// The worker reports its own success while the kill unwinds it.
+		return tk.Succeed(&config.Result{})
+	})
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status != StatusFailed || state.Error != ErrCanceled.Error() {
+		t.Errorf("late worker success overwrote the accepted cancellation: %+v", state)
+	}
+}

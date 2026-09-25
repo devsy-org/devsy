@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/random"
 	"github.com/gofrs/flock"
@@ -20,6 +21,8 @@ const lockTimeout = 5 * time.Second
 // Store persists task state as one JSON file per task under dir.
 type Store struct {
 	dir string
+	// Test seam; see Store.SetKillProcessForTest.
+	killProcess func(string) error
 	// Test seam; see Store.SetAfterClaimForTest.
 	afterClaimForTest func()
 }
@@ -36,7 +39,7 @@ func NewStoreAt(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create task dir: %w", err)
 	}
-	return &Store{dir: dir}, nil
+	return &Store{dir: dir, killProcess: command.Kill}, nil
 }
 
 func (s *Store) Create(opts CreateOptions) (*Task, error) {
