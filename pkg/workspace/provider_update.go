@@ -110,10 +110,15 @@ func applyProviderUpdate(
 	}
 
 	// Another command may have updated the provider while this one waited on
-	// the lock; never replace an equal or newer version with this one.
+	// the lock; never replace an equal or newer version with this one, and
+	// never undo a source change made in the meantime.
 	currentSource, err := ResolveProviderSource(devsyConfig, providerName)
 	if err != nil {
 		return fmt.Errorf("resolve provider source %s: %w", providerName, err)
+	}
+	if strings.Split(currentSource, "@")[0] != splitted[0] {
+		log.Infof("provider source changed, skipping update: provider=%s", providerName)
+		return nil
 	}
 	currentVersion := ""
 	if parts := strings.Split(currentSource, "@"); len(parts) == 2 {
