@@ -182,7 +182,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-				// create provider (same 5s inactivity timeout as machineprovider2)
+				// create provider with a short timeout while leaving startup headroom
 				_ = f.DevsyProviderDelete(ctx, "docker123")
 				err = f.DevsyProviderAdd(ctx, filepath.Join(tempDir, "provider.yaml"))
 				framework.ExpectNoError(err)
@@ -213,14 +213,12 @@ var _ = ginkgo.Describe(
 				err = f.DevsyUp(ctx, tempDir, "--daemon-interval=3s")
 				framework.ExpectNoError(err)
 
-				// verify workspace stays running well past the 5s timeout.
-				// The timeout would fire within ~15s (5s timeout + 10s ticker).
-				// We assert RUNNING for 30s to give ample margin.
+				// Verify workspace stays running past the 30s timeout and its 10s ticker.
 				gomega.Consistently(func() string {
 					status, err := f.DevsyStatus(ctx, tempDir, "--container-status=false")
 					framework.ExpectNoError(err)
 					return strings.ToUpper(status.State)
-				}, 30*time.Second, 2*time.Second).Should(
+				}, 50*time.Second, 2*time.Second).Should(
 					gomega.Equal("RUNNING"),
 					"workspace should stay running when shutdownAction is none",
 				)
