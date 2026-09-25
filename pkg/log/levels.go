@@ -20,7 +20,6 @@ var validLevels = [...]string{
 	LevelTraceName,
 }
 
-// LevelFromString parses the user-facing finite log-level set.
 func LevelFromString(value string) (zapcore.Level, bool) {
 	switch value {
 	case LevelErrorName:
