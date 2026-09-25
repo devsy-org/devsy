@@ -63,6 +63,18 @@ test.describe("Workspace lifecycle badges", () => {
 
   test("shows a Deleting badge while removal is in flight, then removes the row", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
+    const workspaceJobState = async (): Promise<string | undefined> => {
+      const snapshot = (await api("workspace_snapshot", {})) as {
+        jobs?: Record<string, { state: string }>
+      }
+      return snapshot.jobs?.deleteprobe?.state
+    }
+    const waitForDeletionToFinish = async () => {
+      await expect
+        .poll(workspaceJobState, { timeout: 10000 })
+        .toMatch(/^(succeeded|failed)$/)
+    }
+    let deletionStarted = false
 
     try {
       await api("workspace_up", {
@@ -73,18 +85,22 @@ test.describe("Workspace lifecycle badges", () => {
         timeout: 5000,
       })
 
-      // Not awaited: the assertions below run while the delete is in flight.
-      void api("workspace_delete", { workspaceId: "deleteprobe" }).catch(
-        () => undefined,
-      )
+      // The IPC call acknowledges acceptance; the job remains in flight.
+      await api("workspace_delete", { workspaceId: "deleteprobe" })
+      deletionStarted = true
 
       await expect(main).toContainText("Deleting", { timeout: 3000 })
       await expect(main.locator("text=deleteprobe")).not.toBeVisible({
         timeout: 10000,
       })
     } finally {
+      if (deletionStarted) await waitForDeletionToFinish()
+
       // Mock CLI state is shared across specs, so don't leave this behind.
-      await api("workspace_delete", { workspaceId: "deleteprobe" })
+      if ((await workspaceJobState()) !== "succeeded") {
+        await api("workspace_delete", { workspaceId: "deleteprobe" })
+        await waitForDeletionToFinish()
+      }
     }
   })
 })
