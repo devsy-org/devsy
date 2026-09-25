@@ -2,5 +2,8 @@
   "name": "max",
   "dockerComposeFile": "../compose.yaml",
   "service": "app",
-  "workspaceFolder": "/workspaces"
+  "workspaceFolder": "/workspaces",
+  "containerEnv": {
+    "SELECTED_PROFILE": "max"
+  }
 }

@@ -160,6 +160,24 @@ var _ = ginkgo.Describe(
 			err = tc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
+			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			// The selector-free restart must reuse the persisted profile, not
+			// fall back to another config: the profiles set distinguishable
+			// container env markers.
+			err = tc.f.ExecCommand(
+				ctx,
+				true,
+				true,
+				"max",
+				[]string{
+					cmdWorkspace, cmdSSH, flagCommand,
+					"echo $SELECTED_PROFILE", workspace.ID,
+				},
+			)
+			framework.ExpectNoError(err)
+
 			err = tc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
