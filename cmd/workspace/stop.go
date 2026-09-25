@@ -22,6 +22,10 @@ import (
 type StopCmd struct {
 	*flags.GlobalFlags
 	client2.StopOptions
+	// quiesceUpTasks cancels the workspace's persisted detached up tasks;
+	// nil resolves the default task store. Tests inject it to drive
+	// cancellation outcomes without real worker processes.
+	quiesceUpTasks func(workspaceID string) error
 }
 
 // NewStopCmd creates a new destroy command.
@@ -123,6 +127,12 @@ func (cmd *StopCmd) run(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 ) error {
+	// Quiesce before waiting for the workspace lock: a still-provisioning up
+	// worker can be the one holding it.
+	if err := cmd.quiesce(client.Workspace()); err != nil {
+		return err
+	}
+
 	// lock workspace
 	if !cmd.Platform.Enabled {
 		err := status.RunStep(
@@ -135,6 +145,14 @@ func (cmd *StopCmd) run(
 			return err
 		}
 		defer client.Unlock()
+	}
+
+	// Quiesce again under the lock: task submission and lock acquisition are
+	// not atomic, so a task may have become visible while the lock wait
+	// blocked. A surviving up worker can restart the workspace after the
+	// stop, so failing here must fail the stop.
+	if err := cmd.quiesce(client.Workspace()); err != nil {
+		return err
 	}
 
 	// get instance status
@@ -254,4 +272,19 @@ func otherWorkspaceUsesMachine(
 		return true
 	}
 	return false
+}
+
+func (cmd *StopCmd) quiesce(workspaceID string) error {
+	quiesce := cmd.quiesceUpTasks
+	if quiesce == nil {
+		quiesce = workspace2.QuiesceUpTasksForWorkspace
+	}
+	if err := quiesce(workspaceID); err != nil {
+		return fmt.Errorf(
+			"cancel detached up tasks for workspace %s: %w",
+			workspaceID,
+			err,
+		)
+	}
+	return nil
 }
