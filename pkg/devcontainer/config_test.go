@@ -765,6 +765,25 @@ func TestGetRawConfig_EmbeddedConfigWinsOverPersistedID(t *testing.T) {
 	}
 }
 
+func TestDevContainerConfigExists_TreatsOnlyNotExistAsAbsent(t *testing.T) {
+	folder := t.TempDir()
+	// A regular file where a directory should be makes stat fail with
+	// ENOTDIR. That must count as present so the parse step surfaces the
+	// real filesystem error instead of silently skipping the recorded path.
+	if err := os.WriteFile(filepath.Join(folder, "cfg"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !devContainerConfigExists(folder, "cfg/devcontainer.json") {
+		t.Error("ENOTDIR stat error treated as absent; want present")
+	}
+	if devContainerConfigExists(folder, "missing/devcontainer.json") {
+		t.Error("missing file treated as present; want absent")
+	}
+	if !devContainerConfigExists(folder, "cfg") {
+		t.Error("existing file treated as absent; want present")
+	}
+}
+
 func TestGetRawConfig_LastPathFallbackSkipsMissingFile(t *testing.T) {
 	r := newRunnerAt(t.TempDir())
 	r.workspaceConfig.Workspace.Source.GitSubPath = "devsy/jupyter-notebook-hello-world"

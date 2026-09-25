@@ -118,7 +118,11 @@ func (r *runner) lastConfigPathSelection() (devContainerSelection, bool) {
 
 func devContainerConfigExists(workspaceFolder, relativePath string) bool {
 	_, err := os.Stat(filepath.Join(workspaceFolder, filepath.FromSlash(relativePath)))
-	return err == nil
+	// Only a missing file means absent. Other stat errors (permissions, a
+	// file where a directory should be, ...) count as present so the parse
+	// step surfaces the real filesystem error instead of silently skipping
+	// the recorded path.
+	return err == nil || !os.IsNotExist(err)
 }
 
 func (r *runner) persistedDevContainerSelection() (devContainerSelection, bool) {
