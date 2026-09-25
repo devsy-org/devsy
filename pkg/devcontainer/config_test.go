@@ -653,6 +653,19 @@ func TestGetRawConfig_LastConfigPathCompatibilityFallback(t *testing.T) {
 	}
 }
 
+func TestEffectiveDevContainerSelection_LastPathStripsGitSubPath(t *testing.T) {
+	r := newRunnerAt(t.TempDir())
+	r.workspaceConfig.Workspace.Source.GitSubPath = "devsy/jupyter-notebook-hello-world"
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json",
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.path != ".devcontainer/devcontainer.json" {
+		t.Fatalf("selection path = %q, want .devcontainer/devcontainer.json", selection.path)
+	}
+}
+
 func TestGetRawConfig_InvalidPersistedID(t *testing.T) {
 	folder := t.TempDir()
 	seedNamedProfiles(t, folder, testDevContainerProfile, "max-nvidia")

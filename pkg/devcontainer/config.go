@@ -94,11 +94,33 @@ func (r *runner) effectiveDevContainerSelection(
 
 	if r.workspaceConfig != nil && r.workspaceConfig.LastDevContainerConfig != nil {
 		if path := r.workspaceConfig.LastDevContainerConfig.Path; path != "" {
-			return devContainerSelection{path: path}
+			return devContainerSelection{path: r.compatibilityDevContainerPath(path)}
 		}
 	}
 
 	return devContainerSelection{}
+}
+
+// compatibilityDevContainerPath converts the last resolved path, which is
+// stored relative to the content root, to the workspace folder used by the
+// resolver. Remote workspaces with a git subpath otherwise apply the subpath
+// twice during a later lifecycle operation.
+func (r *runner) compatibilityDevContainerPath(lastPath string) string {
+	if r.workspaceConfig == nil || r.workspaceConfig.Workspace == nil {
+		return lastPath
+	}
+
+	subPath := filepath.Clean(filepath.FromSlash(r.workspaceConfig.Workspace.Source.GitSubPath))
+	if subPath == "." || subPath == "" {
+		return lastPath
+	}
+
+	relativePath, err := filepath.Rel(subPath, filepath.FromSlash(lastPath))
+	if err != nil || relativePath == ".." ||
+		strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
+		return lastPath
+	}
+	return filepath.ToSlash(relativePath)
 }
 
 func newDevContainerSelection(source, path, id string) (devContainerSelection, bool) {
