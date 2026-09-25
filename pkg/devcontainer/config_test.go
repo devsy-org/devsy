@@ -14,7 +14,9 @@ import (
 const (
 	testWorkspaceFolder     = "/workspace"
 	testDevContainerProfile = "max"
-	testNestedSubPath       = "app"
+	// testEmbeddedImage marks the config embedded in workspace metadata.
+	testEmbeddedImage = "embedded"
+	testNestedSubPath = "app"
 )
 
 type SubstituteTestSuite struct {
@@ -725,7 +727,7 @@ func TestGetRawConfig_EmbeddedConfigWinsOverPersistedPath(t *testing.T) {
 	seedNamedProfiles(t, folder, testDevContainerProfile)
 	r := newRunnerAt(folder)
 	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "embedded"},
+		ImageContainer: config.ImageContainer{Image: testEmbeddedImage},
 	}
 	r.workspaceConfig.Workspace.DevContainerPath =
 		".devcontainer/" + testDevContainerProfile + "/devcontainer.json"
@@ -734,7 +736,7 @@ func TestGetRawConfig_EmbeddedConfigWinsOverPersistedPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getRawConfig: %v", err)
 	}
-	if conf.Image != "embedded" {
+	if conf.Image != testEmbeddedImage {
 		t.Errorf(
 			"Image = %q, want embedded (persisted path must not override the embedded config)",
 			conf.Image,
@@ -747,7 +749,7 @@ func TestGetRawConfig_EmbeddedConfigWinsOverPersistedID(t *testing.T) {
 	seedNamedProfiles(t, folder, testDevContainerProfile)
 	r := newRunnerAt(folder)
 	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "embedded"},
+		ImageContainer: config.ImageContainer{Image: testEmbeddedImage},
 	}
 	r.workspaceConfig.Workspace.DevContainerID = testDevContainerProfile
 
@@ -755,7 +757,7 @@ func TestGetRawConfig_EmbeddedConfigWinsOverPersistedID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getRawConfig: %v", err)
 	}
-	if conf.Image != "embedded" {
+	if conf.Image != testEmbeddedImage {
 		t.Errorf(
 			"Image = %q, want embedded (persisted id must not override the embedded config)",
 			conf.Image,
@@ -786,7 +788,7 @@ func TestGetRawConfig_EmbeddedConfigWinsOverLastPathFallback(t *testing.T) {
 	seedNamedProfiles(t, folder, testDevContainerProfile)
 	r := newRunnerAt(folder)
 	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{
-		ImageContainer: config.ImageContainer{Image: "embedded"},
+		ImageContainer: config.ImageContainer{Image: testEmbeddedImage},
 	}
 	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
 		Path: ".devcontainer/" + testDevContainerProfile + "/devcontainer.json",
@@ -796,7 +798,7 @@ func TestGetRawConfig_EmbeddedConfigWinsOverLastPathFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getRawConfig: %v", err)
 	}
-	if conf.Image != "embedded" {
+	if conf.Image != testEmbeddedImage {
 		t.Errorf(
 			"Image = %q, want embedded (last path must not override the embedded config)",
 			conf.Image,
