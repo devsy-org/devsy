@@ -50,7 +50,6 @@ func (cmd *UseCmd) Run(ctx context.Context, context string) error {
 			return fmt.Errorf("context %q doesn't exist", context)
 		}
 
-		// check if there are use options set
 		if len(cmd.Options) > 0 {
 			if err := setOptions(devsyConfig, context, cmd.Options); err != nil {
 				return err

@@ -58,7 +58,6 @@ func (cmd *UseCmd) Run(ctx context.Context, ide string) error {
 	}
 
 	err = config.UpdateConfig(cmd.Context, cmd.Provider, func(devsyConfig *config.Config) error {
-		// check if there are user options set
 		if len(cmd.Options) > 0 {
 			if err := setOptions(devsyConfig, ide, cmd.Options, ideOptions); err != nil {
 				return err
