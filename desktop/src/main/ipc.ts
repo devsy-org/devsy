@@ -1591,8 +1591,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
               },
               wsId,
             )
-            // Expose a method to suppress callbacks from cancelActiveUp
-            ;(
+          ;(
               child as unknown as { _suppressWorkspaceCallbacks?: () => void }
             )._suppressWorkspaceCallbacks = () => {
               suppressCallbacks = true

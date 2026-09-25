@@ -51,14 +51,12 @@ func NewSetOptionsCmd(flags *flags.GlobalFlags) *cobra.Command {
 // Run runs the command logic.
 func (cmd *SetOptionsCmd) Run(ctx context.Context, context string) error {
 	return config.UpdateConfig("", cmd.Provider, func(devsyConfig *config.Config) error {
-		// check for context
 		if context == "" {
 			context = devsyConfig.DefaultContext
 		} else if devsyConfig.Contexts[context] == nil {
 			return fmt.Errorf("context %q doesn't exist", context)
 		}
 
-		// check if there are setOptions options set
 		if len(cmd.Options) > 0 {
 			if err := setOptions(devsyConfig, context, cmd.Options); err != nil {
 				return err

@@ -51,7 +51,6 @@ func (cmd *CreateCmd) Run(ctx context.Context, context string) error {
 			return fmt.Errorf("context %q already exists", context)
 		}
 
-		// verify name
 		if provider2.ProviderNameRegEx.MatchString(context) {
 			return fmt.Errorf("context name can only include lower case letters, numbers or dashes")
 		} else if len(context) > 48 {
@@ -59,7 +58,6 @@ func (cmd *CreateCmd) Run(ctx context.Context, context string) error {
 		}
 		devsyConfig.Contexts[context] = &config.ContextConfig{}
 
-		// check if there are create options set
 		if len(cmd.Options) > 0 {
 			if err := setOptions(devsyConfig, context, cmd.Options); err != nil {
 				return err
