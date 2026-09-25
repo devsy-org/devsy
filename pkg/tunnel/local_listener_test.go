@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -226,6 +227,9 @@ func TestLocalTunnel_HealthCheckShutdown(t *testing.T) {
 		DialFunc: func(ctx context.Context) (io.ReadWriteCloser, error) {
 			return nil, fmt.Errorf("workspace gone")
 		},
+		HealthCheckFunc: func(context.Context) error {
+			return fmt.Errorf("workspace gone")
+		},
 		HealthCheckInterval: 50 * time.Millisecond,
 	})
 	if err != nil {
@@ -235,4 +239,93 @@ func TestLocalTunnel_HealthCheckShutdown(t *testing.T) {
 
 	// The health check should shut down the tunnel after 3 failures.
 	waitForListenerClosed(t, tun.Addr(), 2*time.Second)
+}
+
+func TestLocalTunnel_HealthCheckUsesHealthFuncNotDialFunc(t *testing.T) {
+	ctx := t.Context()
+
+	// DialFunc always succeeds: if the health loop still probed through the
+	// data path, failures would never accumulate and the tunnel would stay
+	// alive. Only a health loop driven by the failing HealthCheckFunc shuts
+	// the listener down.
+	var healthCalls int32
+	tun, err := NewLocalTunnel(ctx, LocalTunnelOptions{
+		BasePort: 18600,
+		DialFunc: func(ctx context.Context) (io.ReadWriteCloser, error) {
+			local, remote := net.Pipe()
+			_ = local.Close()
+			return remote, nil
+		},
+		HealthCheckFunc: func(context.Context) error {
+			atomic.AddInt32(&healthCalls, 1)
+			return fmt.Errorf("workspace gone")
+		},
+		HealthCheckInterval: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewLocalTunnel: %v", err)
+	}
+	defer func() { _ = tun.Close() }()
+
+	waitForListenerClosed(t, tun.Addr(), 2*time.Second)
+	if got := atomic.LoadInt32(&healthCalls); got < 3 {
+		t.Errorf("health probe invoked %d times, want at least 3", got)
+	}
+}
+
+func TestLocalTunnel_AcceptedConnectionStillUsesDialFunc(t *testing.T) {
+	ctx := t.Context()
+	echoServer := newEchoServer(t)
+
+	var dialCalls int32
+	tun, err := NewLocalTunnel(ctx, LocalTunnelOptions{
+		BasePort: 18700,
+		DialFunc: func(ctx context.Context) (io.ReadWriteCloser, error) {
+			atomic.AddInt32(&dialCalls, 1)
+			return net.Dial("tcp", echoServer.Addr().String())
+		},
+		HealthCheckFunc: func(context.Context) error {
+			return nil
+		},
+		HealthCheckInterval: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewLocalTunnel: %v", err)
+	}
+	defer func() { _ = tun.Close() }()
+
+	msg := []byte("data plane")
+	if buf := sendAndReceive(t, tun.Addr(), msg); string(buf) != string(msg) {
+		t.Errorf("expected %q, got %q", msg, buf)
+	}
+	if got := atomic.LoadInt32(&dialCalls); got == 0 {
+		t.Error("accepted connection did not invoke DialFunc")
+	}
+}
+
+func TestLocalTunnel_HealthyStatusKeepsTunnelAlive(t *testing.T) {
+	ctx := t.Context()
+
+	tun, err := NewLocalTunnel(ctx, LocalTunnelOptions{
+		BasePort: 18800,
+		DialFunc: func(ctx context.Context) (io.ReadWriteCloser, error) {
+			return nil, io.EOF
+		},
+		HealthCheckFunc: func(context.Context) error {
+			return nil
+		},
+		HealthCheckInterval: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewLocalTunnel: %v", err)
+	}
+	defer func() { _ = tun.Close() }()
+
+	// Well past the failure window, a healthy probe keeps the listener up.
+	time.Sleep(200 * time.Millisecond)
+	conn, err := net.DialTimeout("tcp", tun.Addr(), time.Second)
+	if err != nil {
+		t.Fatalf("listener closed despite healthy probes: %v", err)
+	}
+	_ = conn.Close()
 }
