@@ -87,18 +87,29 @@ func (r *runner) effectiveDevContainerSelection(
 		}
 	}
 
-	// The last resolved path is a fallback for workspaces created before the
-	// selection was persisted. A workspace with an embedded config keeps using
-	// it, as it did before profile selection existed.
-	hasEmbeddedConfig := r.workspaceConfig != nil && r.workspaceConfig.Workspace != nil &&
-		r.workspaceConfig.Workspace.DevContainerConfig != nil
-	if !hasEmbeddedConfig && r.workspaceConfig != nil && r.workspaceConfig.LastDevContainerConfig != nil {
-		if path := r.workspaceConfig.LastDevContainerConfig.Path; path != "" {
-			return devContainerSelection{path: r.workspaceRelativeLastConfigPath(path)}
-		}
+	if selection, ok := r.lastConfigPathSelection(); ok {
+		return selection
 	}
 
 	return devContainerSelection{}
+}
+
+// lastConfigPathSelection falls back to the last resolved path for workspaces
+// created before the selection was persisted. A workspace with an embedded
+// config keeps using it, as it did before profile selection existed.
+func (r *runner) lastConfigPathSelection() (devContainerSelection, bool) {
+	if r.workspaceConfig == nil || r.workspaceConfig.LastDevContainerConfig == nil {
+		return devContainerSelection{}, false
+	}
+	workspace := r.workspaceConfig.Workspace
+	if workspace != nil && workspace.DevContainerConfig != nil {
+		return devContainerSelection{}, false
+	}
+	path := r.workspaceConfig.LastDevContainerConfig.Path
+	if path == "" {
+		return devContainerSelection{}, false
+	}
+	return devContainerSelection{path: r.workspaceRelativeLastConfigPath(path)}, true
 }
 
 func (r *runner) persistedDevContainerSelection() (devContainerSelection, bool) {

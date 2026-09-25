@@ -14,6 +14,7 @@ import (
 const (
 	testWorkspaceFolder     = "/workspace"
 	testDevContainerProfile = "max"
+	testNestedSubPath       = "app"
 )
 
 type SubstituteTestSuite struct {
@@ -670,14 +671,17 @@ func TestEffectiveDevContainerSelection_LastPathStripsGitSubPath(t *testing.T) {
 // whose first segment matches the subpath converts exactly once.
 func TestEffectiveDevContainerSelection_LastPathRepeatedSubPathSegment(t *testing.T) {
 	r := newRunnerAt(t.TempDir())
-	r.workspaceConfig.Workspace.Source.GitSubPath = "app"
+	r.workspaceConfig.Workspace.Source.GitSubPath = testNestedSubPath
 	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
-		Path: "app/app/.devcontainer/devcontainer.json",
+		Path: testNestedSubPath + "/app/.devcontainer/devcontainer.json",
 	}
 
 	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
 	if selection.path != "app/.devcontainer/devcontainer.json" {
-		t.Fatalf("selection path = %q, want app/.devcontainer/devcontainer.json", selection.path)
+		t.Fatalf(
+			"selection path = %q, want app/.devcontainer/devcontainer.json",
+			selection.path,
+		)
 	}
 }
 
@@ -701,7 +705,10 @@ func TestGetRawConfig_EmbeddedConfigWinsOverLastPathFallback(t *testing.T) {
 		t.Fatalf("getRawConfig: %v", err)
 	}
 	if conf.Image != "embedded" {
-		t.Errorf("Image = %q, want embedded (legacy last path must not override the embedded config)", conf.Image)
+		t.Errorf(
+			"Image = %q, want embedded (last path must not override the embedded config)",
+			conf.Image,
+		)
 	}
 }
 
@@ -710,15 +717,16 @@ func TestGetRawConfig_EmbeddedConfigWinsOverLastPathFallback(t *testing.T) {
 // the subpath is part of the real path and must not be stripped.
 func TestGetRawConfig_PersistedPathRepeatedSubPathSegment(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "app", "app", ".devcontainer")
+	dir := filepath.Join(root, testNestedSubPath, testNestedSubPath, ".devcontainer")
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "devcontainer.json"), []byte(`{"image":"nested"}`), 0o600); err != nil {
+	configFile := filepath.Join(dir, "devcontainer.json")
+	if err := os.WriteFile(configFile, []byte(`{"image":"nested"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	r := newRunnerAt(root)
-	r.workspaceConfig.Workspace.Source.GitSubPath = "app"
+	r.workspaceConfig.Workspace.Source.GitSubPath = testNestedSubPath
 	r.workspaceConfig.Workspace.DevContainerPath = "app/.devcontainer/devcontainer.json"
 
 	conf, err := r.getRawConfig(provider2.CLIOptions{})
