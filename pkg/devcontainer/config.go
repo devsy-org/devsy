@@ -138,7 +138,10 @@ func (r *runner) workspaceRelativeLastConfigPath(lastPath string) string {
 		return lastPath
 	}
 
+	// The stored subpath can carry a leading slash (@subpath:/x/y); the last
+	// path never does, so the comparison needs the repo-relative form.
 	subPath := filepath.Clean(filepath.FromSlash(r.workspaceConfig.Workspace.Source.GitSubPath))
+	subPath = strings.TrimPrefix(subPath, string(filepath.Separator))
 	if subPath == "." || subPath == "" {
 		return lastPath
 	}

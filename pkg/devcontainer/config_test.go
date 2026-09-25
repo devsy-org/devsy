@@ -685,6 +685,22 @@ func TestEffectiveDevContainerSelection_LastPathRepeatedSubPathSegment(t *testin
 	}
 }
 
+// The stored git subpath can carry a leading slash (@subpath:/x/y); the
+// conversion must still strip it from the content-root-relative last path,
+// which never has one.
+func TestEffectiveDevContainerSelection_LastPathLeadingSlashSubPath(t *testing.T) {
+	r := newRunnerAt(t.TempDir())
+	r.workspaceConfig.Workspace.Source.GitSubPath = "/devsy/jupyter-notebook-hello-world"
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json",
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.path != ".devcontainer/devcontainer.json" {
+		t.Fatalf("selection path = %q, want .devcontainer/devcontainer.json", selection.path)
+	}
+}
+
 // A workspace that carries an embedded config (from the provider protocol)
 // and a legacy last-resolved path must keep using the embedded config, as it
 // did before profile selection was persisted: the last-path fallback exists
