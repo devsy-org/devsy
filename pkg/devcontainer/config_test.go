@@ -483,6 +483,19 @@ func seedAmbiguousProfiles(t *testing.T, folder string) {
 	}
 }
 
+// seedConfigAt writes a minimal devcontainer.json at the content-root-relative
+// path, so tests exercising the last-path fallback have a real file on disk.
+func seedConfigAt(t *testing.T, folder, relativePath string) {
+	t.Helper()
+	file := filepath.Join(folder, filepath.FromSlash(relativePath))
+	if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(`{"image":"seed"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func seedNamedProfiles(t *testing.T, folder string, ids ...string) {
 	t.Helper()
 	for _, id := range ids {
@@ -655,7 +668,9 @@ func TestGetRawConfig_LastConfigPathCompatibilityFallback(t *testing.T) {
 }
 
 func TestEffectiveDevContainerSelection_LastPathStripsGitSubPath(t *testing.T) {
-	r := newRunnerAt(t.TempDir())
+	folder := t.TempDir()
+	seedConfigAt(t, folder, "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json")
+	r := newRunnerAt(folder)
 	r.workspaceConfig.Workspace.Source.GitSubPath = "devsy/jupyter-notebook-hello-world"
 	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
 		Path: "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json",
@@ -670,7 +685,9 @@ func TestEffectiveDevContainerSelection_LastPathStripsGitSubPath(t *testing.T) {
 // The last resolved path is content-root-relative, so a real nested path
 // whose first segment matches the subpath converts exactly once.
 func TestEffectiveDevContainerSelection_LastPathRepeatedSubPathSegment(t *testing.T) {
-	r := newRunnerAt(t.TempDir())
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testNestedSubPath+"/app/.devcontainer/devcontainer.json")
+	r := newRunnerAt(folder)
 	r.workspaceConfig.Workspace.Source.GitSubPath = testNestedSubPath
 	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
 		Path: testNestedSubPath + "/app/.devcontainer/devcontainer.json",
@@ -689,7 +706,9 @@ func TestEffectiveDevContainerSelection_LastPathRepeatedSubPathSegment(t *testin
 // conversion must still strip it from the content-root-relative last path,
 // which never has one.
 func TestEffectiveDevContainerSelection_LastPathLeadingSlashSubPath(t *testing.T) {
-	r := newRunnerAt(t.TempDir())
+	folder := t.TempDir()
+	seedConfigAt(t, folder, "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json")
+	r := newRunnerAt(folder)
 	r.workspaceConfig.Workspace.Source.GitSubPath = "/devsy/jupyter-notebook-hello-world"
 	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
 		Path: "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json",
@@ -698,6 +717,28 @@ func TestEffectiveDevContainerSelection_LastPathLeadingSlashSubPath(t *testing.T
 	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
 	if selection.path != ".devcontainer/devcontainer.json" {
 		t.Fatalf("selection path = %q, want .devcontainer/devcontainer.json", selection.path)
+	}
+}
+
+// A recorded last path whose file no longer exists must not be selected.
+// `devsy up --reset` deletes and re-clones the content folder, so a
+// synthesized default config recorded by the previous up is gone; resolution
+// must fall back to discovery and the auto-detected default, exactly as it
+// did before the last-path fallback existed.
+func TestGetRawConfig_LastPathFallbackSkipsMissingFile(t *testing.T) {
+	r := newRunnerAt(t.TempDir())
+	r.workspaceConfig.Workspace.Source.GitSubPath = "devsy/jupyter-notebook-hello-world"
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: "devsy/jupyter-notebook-hello-world/.devcontainer.json",
+	}
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	const defaultImage = "mcr.microsoft.com/devcontainers/base:ubuntu"
+	if conf.Image != defaultImage {
+		t.Errorf("Image = %q, want auto-detected default %s", conf.Image, defaultImage)
 	}
 }
 

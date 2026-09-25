@@ -96,7 +96,11 @@ func (r *runner) effectiveDevContainerSelection(
 
 // lastConfigPathSelection falls back to the last resolved path for workspaces
 // created before the selection was persisted. A workspace with an embedded
-// config keeps using it, as it did before profile selection existed.
+// config keeps using it, as it did before profile selection existed. The
+// fallback applies only while the recorded file exists: `devsy up --reset`
+// deletes and re-clones the content folder, so a synthesized default recorded
+// by the previous up is gone, and resolution must fall back to discovery
+// exactly as it did before this fallback existed.
 func (r *runner) lastConfigPathSelection() (devContainerSelection, bool) {
 	if r.workspaceConfig == nil || r.workspaceConfig.LastDevContainerConfig == nil {
 		return devContainerSelection{}, false
@@ -109,7 +113,18 @@ func (r *runner) lastConfigPathSelection() (devContainerSelection, bool) {
 	if path == "" {
 		return devContainerSelection{}, false
 	}
-	return devContainerSelection{path: r.workspaceRelativeLastConfigPath(path)}, true
+	relativePath := r.workspaceRelativeLastConfigPath(path)
+	if !devContainerConfigExists(r.workspaceFolder(), relativePath) {
+		return devContainerSelection{}, false
+	}
+	return devContainerSelection{path: relativePath}, true
+}
+
+// devContainerConfigExists reports whether the workspace-folder-relative
+// devcontainer path exists on disk.
+func devContainerConfigExists(workspaceFolder, relativePath string) bool {
+	_, err := os.Stat(filepath.Join(workspaceFolder, filepath.FromSlash(relativePath)))
+	return err == nil
 }
 
 func (r *runner) persistedDevContainerSelection() (devContainerSelection, bool) {
