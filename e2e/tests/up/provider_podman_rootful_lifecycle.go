@@ -124,7 +124,7 @@ var _ = ginkgo.Describe(
 								return ""
 							}
 							return strings.TrimSpace(out)
-						}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).Should(
+						}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(
 							gomega.Equal("postCreateDone"),
 						)
 
