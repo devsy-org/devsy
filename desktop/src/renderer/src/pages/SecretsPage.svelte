@@ -3,14 +3,26 @@ import { KeyRound, Plus, Search, Trash2 } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
+import { Switch } from "$lib/components/ui/switch/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
 import * as Dialog from "$lib/components/ui/dialog/index.js"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import CardSkeleton from "$lib/components/ui/skeleton/CardSkeleton.svelte"
-import { secrets, secretsError, secretsLoading, refreshSecrets } from "$lib/stores/secrets.js"
-import { secretSet, secretDelete } from "$lib/ipc/commands.js"
+import {
+  secrets,
+  secretsError,
+  secretsLoading,
+  refreshSecrets,
+} from "$lib/stores/secrets.js"
+import {
+  secretSet,
+  secretDelete,
+  secretAttach,
+  secretDetach,
+} from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+import type { Secret } from "$lib/types/index.js"
 
 const NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
@@ -22,6 +34,8 @@ let saving = $state(false)
 let confirmDeleteOpen = $state(false)
 let pendingDelete = $state("")
 let deleting = $state(false)
+let updatingAttachment = $state<Record<string, boolean>>({})
+let attachmentErrors = $state<Record<string, string>>({})
 
 let searchTerm = $state("")
 let filteredSecrets = $derived.by(() => {
@@ -34,9 +48,7 @@ let filteredSecrets = $derived.by(() => {
 })
 
 let nameValid = $derived(NAME_PATTERN.test(newName))
-let nameExists = $derived(
-  $secrets.some((s) => s.name === newName.trim()),
-)
+let nameExists = $derived($secrets.some((s) => s.name === newName.trim()))
 
 $effect(() => {
   if (!createDialogOpen) {
@@ -58,9 +70,27 @@ async function handleCreate() {
     return
   }
   createDialogOpen = false
-  toasts.success(replacing ? `Secret "${name}" replaced` : `Secret "${name}" saved`)
+  toasts.success(
+    replacing ? `Secret "${name}" replaced` : `Secret "${name}" saved`,
+  )
   saving = false
   await refreshSecrets().catch(() => {})
+}
+
+async function setAttached(secret: Secret, attached: boolean) {
+  const key = `${secret.context}\x00${secret.name}`
+  if (updatingAttachment[key]) return
+  updatingAttachment = { ...updatingAttachment, [key]: true }
+  attachmentErrors = { ...attachmentErrors, [key]: "" }
+  try {
+    if (attached) await secretAttach(secret.name, secret.context)
+    else await secretDetach(secret.name, secret.context)
+    await refreshSecrets()
+  } catch (err) {
+    attachmentErrors = { ...attachmentErrors, [key]: extractErrorMessage(err) }
+  } finally {
+    updatingAttachment = { ...updatingAttachment, [key]: false }
+  }
 }
 
 function requestDelete(e: Event, name: string) {
@@ -184,7 +214,7 @@ async function confirmDelete() {
       </div>
     {:else}
       <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {#each filteredSecrets as secret (secret.name)}
+        {#each filteredSecrets as secret (`${secret.context}\x00${secret.name}`)}
           <div class="rounded-xl border bg-card p-6 text-card-foreground shadow-sm">
             <div class="flex items-start justify-between gap-3">
               <div class="flex items-center gap-3 min-w-0">
@@ -200,9 +230,23 @@ async function confirmDelete() {
                 </Button>
               </div>
             </div>
-            <p class="mt-2 text-sm text-muted-foreground">
-              Context: {secret.context}
-            </p>
+            <div class="mt-4 flex items-center justify-between gap-3 border-t pt-4">
+              <div>
+                <p class="text-sm font-medium">Inject into workspaces</p>
+                <p class="text-xs text-muted-foreground">Context: {secret.context}. Delivered through the protected secret path when a workspace starts or is recreated.</p>
+              </div>
+              <Switch
+                checked={secret.attached ?? false}
+                disabled={updatingAttachment[`${secret.context}\x00${secret.name}`]}
+                aria-label={`Inject ${secret.name} into workspaces`}
+                onCheckedChange={(checked) => setAttached(secret, checked)}
+              />
+            </div>
+            {#if attachmentErrors[`${secret.context}\x00${secret.name}`]}
+              <p class="mt-2 text-sm text-destructive">
+                Failed to update attachment: {attachmentErrors[`${secret.context}\x00${secret.name}`]}
+              </p>
+            {/if}
           </div>
         {/each}
       </div>

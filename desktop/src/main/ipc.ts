@@ -17,10 +17,7 @@ import { loadCatalog } from "./image-catalog.js"
 import type { LogStore } from "./log-store.js"
 import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
-import type {
-  ProviderActivity,
-  ProviderJobs,
-} from "./provider-jobs.js"
+import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
 import { sanitizeAppSettingsPatch } from "./app-settings.js"
 import type { SettingsService } from "./settings-service.js"
@@ -50,6 +47,7 @@ interface SecretEntry {
   lastUsed?: string
   orphaned?: boolean
   backend?: "keyring" | "file"
+  attached?: boolean
 }
 
 interface EnvEntry {
@@ -105,8 +103,8 @@ interface IpcDependencies {
   cli: CliRunner
   state: DaemonState
   logStore: LogStore
-	 machineDiagnosticsStore?: MachineDiagnosticsStore
-	 machineDiagnosticsManager?: MachineDiagnosticsManager
+  machineDiagnosticsStore?: MachineDiagnosticsStore
+  machineDiagnosticsManager?: MachineDiagnosticsManager
   pty: PtyManager
   getMainWindow: () => BrowserWindow | null
   providerJobs: ProviderJobs
@@ -135,13 +133,19 @@ interface ProgressSink {
 
 function redactSensitiveText(value: string): string {
   const secrets = Object.entries(process.env)
-    .filter(([name, secret]) =>
-      secret &&
-      /(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|APIKEY|AUTH|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)/i.test(name),
+    .filter(
+      ([name, secret]) =>
+        secret &&
+        /(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|APIKEY|AUTH|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)/i.test(
+          name,
+        ),
     )
     .map(([, secret]) => secret as string)
     .sort((a, b) => b.length - a.length)
-  const redacted = secrets.reduce((text, secret) => text.split(secret).join("***"), value)
+  const redacted = secrets.reduce(
+    (text, secret) => text.split(secret).join("***"),
+    value,
+  )
   return redacted
     .replace(/(https?:\/\/)[^\s/@]+@/gi, "$1***@")
     .replace(/(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,]+/gi, "$1***")
@@ -177,9 +181,13 @@ function redactOperationStatus(value: OperationStatus): OperationStatus {
     error: value.error
       ? {
           ...value.error,
-          code: value.error.code ? redactSensitiveText(value.error.code) : undefined,
+          code: value.error.code
+            ? redactSensitiveText(value.error.code)
+            : undefined,
           message: redactSensitiveText(value.error.message),
-          hint: value.error.hint ? redactSensitiveText(value.error.hint) : undefined,
+          hint: value.error.hint
+            ? redactSensitiveText(value.error.hint)
+            : undefined,
           context: value.error.context
             ? Object.fromEntries(
                 Object.entries(value.error.context).map(([key, text]) => [
@@ -230,8 +238,12 @@ function createLogSink(
       ...(extra
         ? {
             ...extra,
-            message: extra.message ? redactSensitiveText(extra.message) : undefined,
-            cliError: extra.cliError ? redactCLIError(extra.cliError) : undefined,
+            message: extra.message
+              ? redactSensitiveText(extra.message)
+              : undefined,
+            cliError: extra.cliError
+              ? redactCLIError(extra.cliError)
+              : undefined,
           }
         : {}),
     })
@@ -273,7 +285,17 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     start: (workspaceId: string) => Promise<void>
   }
 } {
-	const { cli, state, logStore, pty, providerJobs, workspaceJobs, machineDiagnosticsStore, machineDiagnosticsManager, getMainWindow } = deps
+  const {
+    cli,
+    state,
+    logStore,
+    pty,
+    providerJobs,
+    workspaceJobs,
+    machineDiagnosticsStore,
+    machineDiagnosticsManager,
+    getMainWindow,
+  } = deps
   const tunnelProcesses = new Map<
     string,
     import("node:child_process").ChildProcess
@@ -353,18 +375,29 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       tunnelProc.kill("SIGTERM")
       await tunnelExit
       // If process did not close in time, forcefully kill and suppress any late callbacks
-      if (!settled || (tunnelProc.exitCode === null && tunnelProc.signalCode === null)) {
+      if (
+        !settled ||
+        (tunnelProc.exitCode === null && tunnelProc.signalCode === null)
+      ) {
         // Suppress workspace callbacks from the onLine handler
-        const suppressWorkspaceFn = (tunnelProc as unknown as { _suppressWorkspaceCallbacks?: () => void })._suppressWorkspaceCallbacks
+        const suppressWorkspaceFn = (
+          tunnelProc as unknown as { _suppressWorkspaceCallbacks?: () => void }
+        )._suppressWorkspaceCallbacks
         if (suppressWorkspaceFn) suppressWorkspaceFn()
 
         // Suppress callbacks at the readline level
-        const suppressFn = (tunnelProc as unknown as { _suppressCallbacks?: () => void })._suppressCallbacks
+        const suppressFn = (
+          tunnelProc as unknown as { _suppressCallbacks?: () => void }
+        )._suppressCallbacks
         if (suppressFn) suppressFn()
 
         // Close readline interfaces
-        const rlStdout = (tunnelProc as unknown as { _rlStdout?: { close: () => void } })._rlStdout
-        const rlStderr = (tunnelProc as unknown as { _rlStderr?: { close: () => void } })._rlStderr
+        const rlStdout = (
+          tunnelProc as unknown as { _rlStdout?: { close: () => void } }
+        )._rlStdout
+        const rlStderr = (
+          tunnelProc as unknown as { _rlStderr?: { close: () => void } }
+        )._rlStderr
         if (rlStdout) rlStdout.close()
         if (rlStderr) rlStderr.close()
 
@@ -421,7 +454,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     if (!workspaceJobs.owns(workspaceId, commandId)) return true
     const status = redactOperationStatus(normalizeOperationStatus(envelope))
     workspaceJobs.progress(workspaceId, commandId, status)
-    deps.getMainWindow()?.webContents.send("workspace-status", { commandId, workspaceId, ...status })
+    deps
+      .getMainWindow()
+      ?.webContents.send("workspace-status", {
+        commandId,
+        workspaceId,
+        ...status,
+      })
     return true
   }
 
@@ -448,7 +487,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         : undefined
       await providerJobs.finish(
         name,
-        cliError ?? redactCLIError({ code: "provider_failed", message: errorMessage(error) }),
+        cliError ??
+          redactCLIError({
+            code: "provider_failed",
+            message: errorMessage(error),
+          }),
       )
       throw error
     }
@@ -473,7 +516,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             if (stream !== "stdout") return
             const envelope = parseCliEnvelope(line)
             if (envelope?.kind === "status") {
-              const status = redactOperationStatus(normalizeOperationStatus(envelope))
+              const status = redactOperationStatus(
+                normalizeOperationStatus(envelope),
+              )
               providerJobs.reportStatus(name, status)
             }
           },
@@ -539,10 +584,18 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   // ── Workspaces ──
   ipcMain.handle("workspace_list", () => state.workspaceList())
-  ipcMain.handle("workspace_snapshot", () => deps.workspaceSnapshot?.() ?? {
-    workspaces: state.workspaceList(), jobs: workspaceJobs.snapshot(), revision: workspaceJobs.revision,
-  })
-  ipcMain.handle("workspace_refresh", (_event, args: { workspaceId: string }) => workspaceJobs.retryRefresh(args.workspaceId))
+  ipcMain.handle(
+    "workspace_snapshot",
+    () =>
+      deps.workspaceSnapshot?.() ?? {
+        workspaces: state.workspaceList(),
+        jobs: workspaceJobs.snapshot(),
+        revision: workspaceJobs.revision,
+      },
+  )
+  ipcMain.handle("workspace_refresh", (_event, args: { workspaceId: string }) =>
+    workspaceJobs.retryRefresh(args.workspaceId),
+  )
 
   ipcMain.handle(
     "workspace_status",
@@ -559,7 +612,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (args.recovery) cliArgs.push("--recovery")
       const generation = workspaceJobs.generation(args.workspaceId)
       const raw = await cli.runRaw(cliArgs)
-      if (!args.recovery && generation === workspaceJobs.generation(args.workspaceId)) {
+      if (
+        !args.recovery &&
+        generation === workspaceJobs.generation(args.workspaceId)
+      ) {
         const status = normalizeWorkspaceStatus(raw)
         if (status && state.updateWorkspaceStatus(args.workspaceId, status)) {
           // The watcher owns renderer broadcasts; this update still keeps
@@ -634,7 +690,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         await providerJobs.finish(
           args.name,
           redactCLIError(
-            cliError ?? { code: "provider_failed", message: errorMessage(error) },
+            cliError ?? {
+              code: "provider_failed",
+              message: errorMessage(error),
+            },
           ),
         )
         throw error
@@ -699,7 +758,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           if (stream === "stdout") {
             const envelope = parseCliEnvelope(line)
             if (envelope?.kind === "status") {
-              const status = redactOperationStatus(normalizeOperationStatus(envelope))
+              const status = redactOperationStatus(
+                normalizeOperationStatus(envelope),
+              )
               providerJobs.reportStatus(args.name, status)
               return
             }
@@ -726,10 +787,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                   },
                 ),
           )
-          const exitMsg = redactSensitiveText(formatLogLine(
-            `Exit code: ${code}`,
-            code === 0 ? "INFO" : "ERROR",
-          ))
+          const exitMsg = redactSensitiveText(
+            formatLogLine(`Exit code: ${code}`, code === 0 ? "INFO" : "ERROR"),
+          )
           win?.webContents.send("command-progress", {
             commandId: cmdId,
             message: exitMsg,
@@ -780,36 +840,39 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
       const runStep = (cliArgs: string[]): Promise<void> =>
         new Promise((resolve, reject) => {
-          cli.runStreaming(
-            cliArgs,
-            (line, stream, meta) => {
-              if (stream === "stdout") {
-                const envelope = parseCliEnvelope(line)
-                if (envelope?.kind === "status") {
-                  providerJobs.reportStatus(
-                    args.name,
-                    redactOperationStatus(normalizeOperationStatus(envelope)),
-                  )
+          cli
+            .runStreaming(
+              cliArgs,
+              (line, stream, meta) => {
+                if (stream === "stdout") {
+                  const envelope = parseCliEnvelope(line)
+                  if (envelope?.kind === "status") {
+                    providerJobs.reportStatus(
+                      args.name,
+                      redactOperationStatus(normalizeOperationStatus(envelope)),
+                    )
+                    return
+                  }
+                }
+                sendProgress(line, meta?.level)
+              },
+              (code, cliError) => {
+                if (code === 0) {
+                  resolve()
                   return
                 }
-              }
-              sendProgress(line, meta?.level)
-            },
-            (code, cliError) => {
-              if (code === 0) {
-                resolve()
-                return
-              }
-              reject(
-                Object.assign(
-                  new Error(
-                    cliError?.message ?? `${cliArgs.join(" ")} exited with ${code}`,
+                reject(
+                  Object.assign(
+                    new Error(
+                      cliError?.message ??
+                        `${cliArgs.join(" ")} exited with ${code}`,
+                    ),
+                    { cliError },
                   ),
-                  { cliError },
-                ),
-              )
-            },
-          ).catch(reject)
+                )
+              },
+            )
+            .catch(reject)
         })
 
       void (async () => {
@@ -833,7 +896,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         } catch (error) {
           failure = {
             code: "provider_refresh_failed",
-            message: "The provider updated, but its current state could not be refreshed.",
+            message:
+              "The provider updated, but its current state could not be refreshed.",
             hint: "Refresh provider status to try again.",
             context: { cause: errorMessage(error) },
           }
@@ -858,14 +922,17 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("provider_refresh_state", async (_event, args: { name: string }) => {
-    try {
-      await providerJobs.retryRefresh(args.name)
-      return { ok: true } as const
-    } catch (error) {
-      return { ok: false, message: errorMessage(error) } as const
-    }
-  })
+  ipcMain.handle(
+    "provider_refresh_state",
+    async (_event, args: { name: string }) => {
+      try {
+        await providerJobs.retryRefresh(args.name)
+        return { ok: true } as const
+      } catch (error) {
+        return { ok: false, message: errorMessage(error) } as const
+      }
+    },
+  )
 
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
     return cli.run(["provider", "get", args.name])
@@ -1015,7 +1082,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       const cliArgs = ["machine", "delete", args.id, "--context", key.context]
       if (args.force) cliArgs.push("--force")
       await cli.runRaw(cliArgs)
-		machineDiagnosticsManager?.delete(key)
+      machineDiagnosticsManager?.delete(key)
     },
   )
 
@@ -1026,7 +1093,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("machine_stop", async (_event, args: { id: string }) => {
     const key = { context: state.currentContext(), machineId: args.id }
     await cli.runRaw(["machine", "stop", args.id, "--context", key.context])
-		machineDiagnosticsManager?.markStopped(key)
+    machineDiagnosticsManager?.markStopped(key)
   })
 
   ipcMain.handle("machine_status", async (_event, args: { id: string }) => {
@@ -1034,16 +1101,29 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   })
 
   ipcMain.handle("machine_diagnostics_get", (_event, args: { id: string }) => {
-		return machineDiagnosticsManager?.getCached({ context: state.currentContext(), machineId: args.id }) ?? null
+    return (
+      machineDiagnosticsManager?.getCached({
+        context: state.currentContext(),
+        machineId: args.id,
+      }) ?? null
+    )
   })
 
-  ipcMain.handle("machine_diagnostics_refresh", async (_event, args: { id: string }) => {
-		if (!machineDiagnosticsManager) throw new Error("machine diagnostics manager is unavailable")
-		const key = { context: state.currentContext(), machineId: args.id }
-		const merged = await machineDiagnosticsManager.refresh(key)
-    getMainWindow()?.webContents.send("machine-diagnostics-changed", { machineId: args.id, context: key.context, diagnostics: merged })
-    return merged
-  })
+  ipcMain.handle(
+    "machine_diagnostics_refresh",
+    async (_event, args: { id: string }) => {
+      if (!machineDiagnosticsManager)
+        throw new Error("machine diagnostics manager is unavailable")
+      const key = { context: state.currentContext(), machineId: args.id }
+      const merged = await machineDiagnosticsManager.refresh(key)
+      getMainWindow()?.webContents.send("machine-diagnostics-changed", {
+        machineId: args.id,
+        context: key.context,
+        diagnostics: merged,
+      })
+      return merged
+    },
+  )
 
   // ── Contexts ──
   ipcMain.handle("context_list", () => state.contextList())
@@ -1123,6 +1203,50 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     }
   })
 
+  ipcMain.handle(
+    "secret_attach",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("secret_attach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "secret",
+          "attach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "secret_detach",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("secret_detach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "secret",
+          "detach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
+
   ipcMain.handle("env_list", async () => cli.run<EnvEntry[]>(["env", "list"]))
 
   // Returns an envelope rather than throwing so a structured cliError survives
@@ -1148,7 +1272,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       trackEvent("env_delete")
       try {
         if (!args.context) throw new Error("context is required")
-        await cli.runRaw(["--context", args.context, "env", "delete", args.name])
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "env",
+          "delete",
+          args.name,
+        ])
         return { ok: true } as const
       } catch (err) {
         const cliError = (err as { cliError?: CLIError }).cliError
@@ -1158,31 +1288,49 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("env_attach", async (_event, args: { name: string; context: string }) => {
-    trackEvent("env_attach")
-    try {
-      if (!args.context) throw new Error("context is required")
-      await cli.runRaw(["--context", args.context, "env", "attach", args.name])
-      return { ok: true } as const
-    } catch (err) {
-      const cliError = (err as { cliError?: CLIError }).cliError
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, message, cliError } as const
-    }
-  })
+  ipcMain.handle(
+    "env_attach",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("env_attach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "env",
+          "attach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
 
-  ipcMain.handle("env_detach", async (_event, args: { name: string; context: string }) => {
-    trackEvent("env_detach")
-    try {
-      if (!args.context) throw new Error("context is required")
-      await cli.runRaw(["--context", args.context, "env", "detach", args.name])
-      return { ok: true } as const
-    } catch (err) {
-      const cliError = (err as { cliError?: CLIError }).cliError
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, message, cliError } as const
-    }
-  })
+  ipcMain.handle(
+    "env_detach",
+    async (_event, args: { name: string; context: string }) => {
+      trackEvent("env_detach")
+      try {
+        if (!args.context) throw new Error("context is required")
+        await cli.runRaw([
+          "--context",
+          args.context,
+          "env",
+          "detach",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
 
   // ── System ──
   ipcMain.handle("devsy_version", async () => {
@@ -1253,226 +1401,225 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     recovery?: boolean
     commandId?: string
   }): { commandId: string; completion: Promise<void> } => {
-      trackEvent("workspace_create", {
-        provider: args.provider,
-        workspace_ref: hashWorkspaceRef(args.workspaceId ?? args.source),
-      })
-      const cliArgs = ["workspace", "up", args.source]
-      if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
-      if (args.provider) cliArgs.push("--provider", args.provider)
-      if (args.ide) cliArgs.push("--ide", args.ide)
-      if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)
-      if (args.debug) cliArgs.push("--debug")
-      if (args.workspaceFolder)
-        cliArgs.push("--workspace-folder", args.workspaceFolder)
-      if (args.devcontainer) cliArgs.push("--devcontainer", args.devcontainer)
-      if (args.prebuildRepository)
-        cliArgs.push("--prebuild-repo", args.prebuildRepository)
-      if (args.platform) cliArgs.push("--platform", args.platform)
-      if (args.recovery) cliArgs.push("--recovery")
+    trackEvent("workspace_create", {
+      provider: args.provider,
+      workspace_ref: hashWorkspaceRef(args.workspaceId ?? args.source),
+    })
+    const cliArgs = ["workspace", "up", args.source]
+    if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
+    if (args.provider) cliArgs.push("--provider", args.provider)
+    if (args.ide) cliArgs.push("--ide", args.ide)
+    if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)
+    if (args.debug) cliArgs.push("--debug")
+    if (args.workspaceFolder)
+      cliArgs.push("--workspace-folder", args.workspaceFolder)
+    if (args.devcontainer) cliArgs.push("--devcontainer", args.devcontainer)
+    if (args.prebuildRepository)
+      cliArgs.push("--prebuild-repo", args.prebuildRepository)
+    if (args.platform) cliArgs.push("--platform", args.platform)
+    if (args.recovery) cliArgs.push("--recovery")
 
-      const wsId = args.workspaceId ?? args.source
-      const cmdId = args.commandId ?? crypto.randomUUID()
-      const activity = args.workspaceId ? "creating" : "starting"
-      const generation = workspaceJobs.start(wsId, activity, cmdId)
-      const started = performance.now()
-      const timing = (stage: string) =>
-        console.debug(
-          `[workspace-operation] ${cmdId} ${stage} ${Math.round(performance.now() - started)}ms`,
-        )
-      timing("accepted")
-      const completion = (async () => {
-        const logPath = logStore.createLogFile(
-          state.workspaceContext(wsId),
-          wsId,
-        )
-        const sink = createLogSink(
-          deps.getMainWindow,
-          cmdId,
-          (line) => logStore.appendLog(logPath, line),
-          () => logStore.closeLog(logPath),
-        )
+    const wsId = args.workspaceId ?? args.source
+    const cmdId = args.commandId ?? crypto.randomUUID()
+    const activity = args.workspaceId ? "creating" : "starting"
+    const generation = workspaceJobs.start(wsId, activity, cmdId)
+    const started = performance.now()
+    const timing = (stage: string) =>
+      console.debug(
+        `[workspace-operation] ${cmdId} ${stage} ${Math.round(performance.now() - started)}ms`,
+      )
+    timing("accepted")
+    const completion = (async () => {
+      const logPath = logStore.createLogFile(state.workspaceContext(wsId), wsId)
+      const sink = createLogSink(
+        deps.getMainWindow,
+        cmdId,
+        (line) => logStore.appendLog(logPath, line),
+        () => logStore.closeLog(logPath),
+      )
 
-        await serializePerWorkspace(wsId, async () => {
-          // Tear down any prior run for this workspace before starting a new
-          // one.
-          let taskId: string
-          try {
-            workspaceJobs.phase(wsId, cmdId, "Closing connections")
-            await cancelActiveUp(wsId)
-            timing("shutdown-complete")
-            workspaceJobs.phase(wsId, cmdId, "Launching command")
-            timing("cli-launch")
-            // Submit: returns immediately with the background task's id.
-            const submitted = await cli.run<{ kind: string; id: string }>([
-              ...cliArgs,
-              "--detach",
-            ])
-            if (!submitted?.id) {
-              throw new Error("workspace up --detach returned no task id")
-            }
-            taskId = submitted.id
-          } catch (error) {
-            const err = error as Error & { cliError?: CLIError }
-            void sink.done(formatLogLine(err.message, "ERROR"), {
-              level: "error",
-              success: false,
-              cliError: err.cliError ?? {
-                code: "up_failed",
-                message: err.message,
-              },
-            })
-            await workspaceJobs.finish(
-              wsId,
-              generation,
-              redactCLIError(
-                err.cliError ?? { code: "up_failed", message: err.message },
-              ).message,
-            )
-            return cmdId
+      await serializePerWorkspace(wsId, async () => {
+        // Tear down any prior run for this workspace before starting a new
+        // one.
+        let taskId: string
+        try {
+          workspaceJobs.phase(wsId, cmdId, "Closing connections")
+          await cancelActiveUp(wsId)
+          timing("shutdown-complete")
+          workspaceJobs.phase(wsId, cmdId, "Launching command")
+          timing("cli-launch")
+          // Submit: returns immediately with the background task's id.
+          const submitted = await cli.run<{ kind: string; id: string }>([
+            ...cliArgs,
+            "--detach",
+          ])
+          if (!submitted?.id) {
+            throw new Error("workspace up --detach returned no task id")
           }
-          activeUpTasks.set(wsId, taskId)
-
-          // A newer submission may already own the entry and must stay cancellable.
-          const releaseTask = () => {
-            if (activeUpTasks.get(wsId) === taskId) {
-              activeUpTasks.delete(wsId)
-            }
-          }
-
-          let firstProgress = true
-          let signalledDone = false
-          let suppressCallbacks = false
-          let child: import("node:child_process").ChildProcess
-          try {
-            child = await cli.runStreaming(
-              ["workspace", "task", "logs", taskId, "--follow"],
-              (line, stream) => {
-                if (
-                  signalledDone ||
-                  suppressCallbacks ||
-                  !workspaceJobs.owns(wsId, cmdId)
-                )
-                  return
-
-                if (firstProgress) {
-                  timing("first-progress")
-                  firstProgress = false
-                }
-                // Structured NDJSON envelopes only ever appear on stdout; stderr
-                // carries freeform zap log lines.
-                const envelope =
-                  stream === "stdout" ? parseCliEnvelope(line) : undefined
-
-                if (envelope?.kind === "status") {
-                  const status = redactOperationStatus(
-                    normalizeOperationStatus(envelope),
-                  )
-                  workspaceJobs.progress(wsId, cmdId, status)
-                  deps.getMainWindow()?.webContents.send("workspace-status", {
-                    commandId: cmdId,
-                    workspaceId: wsId,
-                    ...status,
-                  })
-                  return
-                }
-
-                const formatted = formatLogLine(line)
-
-                if (envelope?.kind === "result") {
-                  signalledDone = true
-                  releaseTask()
-                  timing("completed")
-                  void workspaceJobs.finish(wsId, generation)
-                  void sink.done(formatted, { success: true })
-                  return
-                }
-
-                if (envelope?.kind === "error") {
-                  signalledDone = true
-                  releaseTask()
-                  void workspaceJobs.finish(
-                    wsId,
-                    generation,
-                    redactCLIError({
-                      code: envelope.code ?? "up_failed",
-                      message: envelope.message,
-                    }).message,
-                  )
-                  void sink.done(formatted, {
-                    level: "error",
-                    success: false,
-                    cliError: {
-                      code: envelope.code ?? "up_failed",
-                      message: envelope.message,
-                      hint: envelope.hint,
-                      context: envelope.context,
-                    },
-                  })
-                  return
-                }
-
-                if (!sink.line(formatted)) return logStore.onDrain(logPath)
-              },
-              (code, cliError) => {
-                // No releaseTask: the follower dying says nothing about the
-                // detached worker, and would orphan a still-running task.
-                if (tunnelProcesses.get(wsId) === child) {
-                  tunnelProcesses.delete(wsId)
-                }
-                if (
-                  signalledDone ||
-                  suppressCallbacks ||
-                  !workspaceJobs.owns(wsId, cmdId)
-                )
-                  return
-                // A follower exiting is not evidence that the detached task finished.
-                void reconcileDetachedTask(
-                  wsId,
-                  cmdId,
-                  generation,
-                  taskId,
-                  sink,
-                  releaseTask,
-                )
-              },
-              wsId,
-            )
-            // Expose a method to suppress callbacks from cancelActiveUp
-            ;(
-              child as unknown as { _suppressWorkspaceCallbacks?: () => void }
-            )._suppressWorkspaceCallbacks = () => {
-              suppressCallbacks = true
-            }
-          } catch (error) {
-            // A failed follower does not prove that the detached task failed.
-            // Keep its cancellation handle and reconcile from persisted task state.
-            void reconcileDetachedTask(
-              wsId,
-              cmdId,
-              generation,
-              taskId,
-              sink,
-              releaseTask,
-            )
-            return cmdId
-          }
-          tunnelProcesses.set(wsId, child)
-
+          taskId = submitted.id
+        } catch (error) {
+          const err = error as Error & { cliError?: CLIError }
+          void sink.done(formatLogLine(err.message, "ERROR"), {
+            level: "error",
+            success: false,
+            cliError: err.cliError ?? {
+              code: "up_failed",
+              message: err.message,
+            },
+          })
+          await workspaceJobs.finish(
+            wsId,
+            generation,
+            redactCLIError(
+              err.cliError ?? { code: "up_failed", message: err.message },
+            ).message,
+          )
           return cmdId
-        })
-      })().catch(async (error) => {
-        await workspaceJobs.finish(
-          wsId,
-          generation,
-          redactCLIError(cliErrorOrFallback(error, "up_failed")).message,
-        )
-      })
-      return { commandId: cmdId, completion }
-    }
+        }
+        activeUpTasks.set(wsId, taskId)
 
-  ipcMain.handle("workspace_up", (_event, args: Parameters<typeof runWorkspaceUp>[0]) =>
-    runWorkspaceUp(args).commandId,
+        // A newer submission may already own the entry and must stay cancellable.
+        const releaseTask = () => {
+          if (activeUpTasks.get(wsId) === taskId) {
+            activeUpTasks.delete(wsId)
+          }
+        }
+
+        let firstProgress = true
+        let signalledDone = false
+        let suppressCallbacks = false
+        let child: import("node:child_process").ChildProcess
+        try {
+          child = await cli.runStreaming(
+            ["workspace", "task", "logs", taskId, "--follow"],
+            (line, stream) => {
+              if (
+                signalledDone ||
+                suppressCallbacks ||
+                !workspaceJobs.owns(wsId, cmdId)
+              )
+                return
+
+              if (firstProgress) {
+                timing("first-progress")
+                firstProgress = false
+              }
+              // Structured NDJSON envelopes only ever appear on stdout; stderr
+              // carries freeform zap log lines.
+              const envelope =
+                stream === "stdout" ? parseCliEnvelope(line) : undefined
+
+              if (envelope?.kind === "status") {
+                const status = redactOperationStatus(
+                  normalizeOperationStatus(envelope),
+                )
+                workspaceJobs.progress(wsId, cmdId, status)
+                deps.getMainWindow()?.webContents.send("workspace-status", {
+                  commandId: cmdId,
+                  workspaceId: wsId,
+                  ...status,
+                })
+                return
+              }
+
+              const formatted = formatLogLine(line)
+
+              if (envelope?.kind === "result") {
+                signalledDone = true
+                releaseTask()
+                timing("completed")
+                void workspaceJobs.finish(wsId, generation)
+                void sink.done(formatted, { success: true })
+                return
+              }
+
+              if (envelope?.kind === "error") {
+                signalledDone = true
+                releaseTask()
+                void workspaceJobs.finish(
+                  wsId,
+                  generation,
+                  redactCLIError({
+                    code: envelope.code ?? "up_failed",
+                    message: envelope.message,
+                  }).message,
+                )
+                void sink.done(formatted, {
+                  level: "error",
+                  success: false,
+                  cliError: {
+                    code: envelope.code ?? "up_failed",
+                    message: envelope.message,
+                    hint: envelope.hint,
+                    context: envelope.context,
+                  },
+                })
+                return
+              }
+
+              if (!sink.line(formatted)) return logStore.onDrain(logPath)
+            },
+            (code, cliError) => {
+              // No releaseTask: the follower dying says nothing about the
+              // detached worker, and would orphan a still-running task.
+              if (tunnelProcesses.get(wsId) === child) {
+                tunnelProcesses.delete(wsId)
+              }
+              if (
+                signalledDone ||
+                suppressCallbacks ||
+                !workspaceJobs.owns(wsId, cmdId)
+              )
+                return
+              // A follower exiting is not evidence that the detached task finished.
+              void reconcileDetachedTask(
+                wsId,
+                cmdId,
+                generation,
+                taskId,
+                sink,
+                releaseTask,
+              )
+            },
+            wsId,
+          )
+          // Expose a method to suppress callbacks from cancelActiveUp
+          ;(
+            child as unknown as { _suppressWorkspaceCallbacks?: () => void }
+          )._suppressWorkspaceCallbacks = () => {
+            suppressCallbacks = true
+          }
+        } catch (error) {
+          // A failed follower does not prove that the detached task failed.
+          // Keep its cancellation handle and reconcile from persisted task state.
+          void reconcileDetachedTask(
+            wsId,
+            cmdId,
+            generation,
+            taskId,
+            sink,
+            releaseTask,
+          )
+          return cmdId
+        }
+        tunnelProcesses.set(wsId, child)
+
+        return cmdId
+      })
+    })().catch(async (error) => {
+      await workspaceJobs.finish(
+        wsId,
+        generation,
+        redactCLIError(cliErrorOrFallback(error, "up_failed")).message,
+      )
+    })
+    return { commandId: cmdId, completion }
+  }
+
+  ipcMain.handle(
+    "workspace_up",
+    (_event, args: Parameters<typeof runWorkspaceUp>[0]) =>
+      runWorkspaceUp(args).commandId,
   )
 
   async function reconcileDetachedTask(
@@ -2032,14 +2179,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     runInitialProviderUpdateCheck: runUpdateCheck,
     workspaceActions: {
       async stop(workspaceId: string): Promise<void> {
-        const { completion } = await startWorkspaceStop(
-          { workspaceId },
-          "tray",
-        )
+        const { completion } = await startWorkspaceStop({ workspaceId }, "tray")
         await completion
       },
       async start(workspaceId: string): Promise<void> {
-        await runWorkspaceUp({ source: workspaceId, commandId: crypto.randomUUID() }).completion
+        await runWorkspaceUp({
+          source: workspaceId,
+          commandId: crypto.randomUUID(),
+        }).completion
       },
     },
   }

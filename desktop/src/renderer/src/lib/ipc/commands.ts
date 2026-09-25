@@ -19,7 +19,11 @@ import type { MachineDiagnosticsCache } from "$shared/machine-diagnostics-types.
 
 type CommandEnvelope =
   | { ok: true }
-  | { ok: false; message: string; cliError?: import("$shared/cli-error.js").CLIError }
+  | {
+      ok: false
+      message: string
+      cliError?: import("$shared/cli-error.js").CLIError
+    }
 
 /** Unwrap a structured command envelope, rethrowing failures as an Error with .cliError attached. */
 function unwrapEnvelope(result: CommandEnvelope): void {
@@ -171,7 +175,9 @@ export async function providerUpdateStreaming(name: string): Promise<string> {
 }
 
 export async function providerRefreshState(name: string): Promise<void> {
-  unwrapEnvelope(await invoke<CommandEnvelope>("provider_refresh_state", { name }))
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("provider_refresh_state", { name }),
+  )
 }
 
 export async function providerOptions(
@@ -198,18 +204,24 @@ export async function providerRename(
 }
 
 export async function providerListVersions(name: string, noCache?: boolean) {
-  return invoke<{ versions: ProviderVersion[]; unsupported: boolean; error?: string }>(
-    "provider_list_versions",
-    { name, noCache },
-  )
+  return invoke<{
+    versions: ProviderVersion[]
+    unsupported: boolean
+    error?: string
+  }>("provider_list_versions", { name, noCache })
 }
 
-export async function providerSetVersion(name: string, tag: string): Promise<void> {
+export async function providerSetVersion(
+  name: string,
+  tag: string,
+): Promise<void> {
   return invoke("provider_set_version", { name, tag })
 }
 
 export async function providerCheckUpdates() {
-  return invoke<Record<string, ProviderVersionCheckResult>>("provider_check_updates")
+  return invoke<Record<string, ProviderVersionCheckResult>>(
+    "provider_check_updates",
+  )
 }
 
 export async function providerGetUpdateCache() {
@@ -276,11 +288,17 @@ export async function machineStatus(id: string): Promise<string> {
   }
 }
 
-export async function machineDiagnosticsGet(id: string): Promise<MachineDiagnosticsCache | null> {
-  return invoke<MachineDiagnosticsCache | null>("machine_diagnostics_get", { id })
+export async function machineDiagnosticsGet(
+  id: string,
+): Promise<MachineDiagnosticsCache | null> {
+  return invoke<MachineDiagnosticsCache | null>("machine_diagnostics_get", {
+    id,
+  })
 }
 
-export async function machineDiagnosticsRefresh(id: string): Promise<MachineDiagnosticsCache> {
+export async function machineDiagnosticsRefresh(
+  id: string,
+): Promise<MachineDiagnosticsCache> {
   return invoke<MachineDiagnosticsCache>("machine_diagnostics_refresh", { id })
 }
 
@@ -329,6 +347,24 @@ export async function secretDelete(name: string): Promise<void> {
   unwrapEnvelope(await invoke<CommandEnvelope>("secret_delete", { name }))
 }
 
+export async function secretAttach(
+  name: string,
+  context: string,
+): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("secret_attach", { name, context }),
+  )
+}
+
+export async function secretDetach(
+  name: string,
+  context: string,
+): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("secret_detach", { name, context }),
+  )
+}
+
 export async function envList(): Promise<EnvVar[]> {
   return invoke<EnvVar[]>("env_list")
 }
@@ -338,9 +374,7 @@ export async function envSet(name: string, value: string): Promise<void> {
 }
 
 export async function envDelete(name: string, context: string): Promise<void> {
-  unwrapEnvelope(
-    await invoke<CommandEnvelope>("env_delete", { name, context }),
-  )
+  unwrapEnvelope(await invoke<CommandEnvelope>("env_delete", { name, context }))
 }
 
 export async function envAttach(name: string, context: string): Promise<void> {
@@ -427,7 +461,9 @@ export async function getReleaseChannel(): Promise<ReleaseChannel> {
   return invoke<ReleaseChannel>("get_release_channel")
 }
 
-export async function setReleaseChannel(channel: ReleaseChannel): Promise<void> {
+export async function setReleaseChannel(
+  channel: ReleaseChannel,
+): Promise<void> {
   return invoke("set_release_channel", { channel })
 }
 

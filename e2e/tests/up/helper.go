@@ -17,6 +17,7 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 )
 
 const (
@@ -264,4 +265,52 @@ func setupWorkspaceAndUp(
 		return "", err
 	}
 	return tempDir, f.DevsyUp(ctx, append([]string{tempDir}, args...)...)
+}
+
+type contextAttachmentCase struct {
+	contextPrefix string
+	testdataDir   string
+	store         func(context.Context, string, string)
+	command       string
+	name          string
+	checkFile     string
+}
+
+// verifyContextAttachment proves a context-attached managed value reaches the
+// workspace at up and is gone after detach and recreate.
+func (dtc *dockerTestContext) verifyContextAttachment(
+	ctx context.Context,
+	tc contextAttachmentCase,
+) {
+	useFileSecretsBackend()
+	contextName := fmt.Sprintf("%s-%d", tc.contextPrefix, time.Now().UnixNano())
+	framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
+	ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+		_ = dtc.f.DevsyContextUse(cleanupCtx, "default")
+		_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
+	})
+	framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+	framework.ExpectNoError(
+		dtc.f.DevsyProviderAdd(ctx, "docker", "-o", "DOCKER_PATH=docker"),
+	)
+	framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+
+	tempDir, err := setupWorkspace(tc.testdataDir, dtc.initialDir, dtc.f)
+	framework.ExpectNoError(err)
+	tc.store(ctx, tc.name, "expected-value")
+	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, "attach", tc.name})
+	framework.ExpectNoError(err)
+
+	// Intentionally no --env/--secret argument: the context binding is the source.
+	framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
+	out, err := dtc.execSSH(ctx, tempDir, "cat "+tc.checkFile)
+	framework.ExpectNoError(err)
+	gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("expected-value"))
+
+	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, "detach", tc.name})
+	framework.ExpectNoError(err)
+	framework.ExpectNoError(dtc.f.DevsyUpRecreate(ctx, tempDir))
+	out, err = dtc.execSSH(ctx, tempDir, "cat "+tc.checkFile)
+	framework.ExpectNoError(err)
+	gomega.Expect(strings.TrimSpace(out)).To(gomega.BeEmpty())
 }
