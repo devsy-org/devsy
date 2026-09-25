@@ -716,6 +716,53 @@ func TestEffectiveDevContainerSelection_LastPathLeadingSlashSubPath(t *testing.T
 }
 
 // Reset removes the recorded file, so resolution must return to discovery.
+// An embedded config (from the provider protocol) outranks a persisted
+// path or id, exactly as it did before the selection was persisted: on main,
+// rawConfigFromWorkspace was checked before the filesystem path, so the
+// embedded config won.
+func TestGetRawConfig_EmbeddedConfigWinsOverPersistedPath(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "embedded"},
+	}
+	r.workspaceConfig.Workspace.DevContainerPath =
+		".devcontainer/" + testDevContainerProfile + "/devcontainer.json"
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != "embedded" {
+		t.Errorf(
+			"Image = %q, want embedded (persisted path must not override the embedded config)",
+			conf.Image,
+		)
+	}
+}
+
+func TestGetRawConfig_EmbeddedConfigWinsOverPersistedID(t *testing.T) {
+	folder := t.TempDir()
+	seedNamedProfiles(t, folder, testDevContainerProfile)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{
+		ImageContainer: config.ImageContainer{Image: "embedded"},
+	}
+	r.workspaceConfig.Workspace.DevContainerID = testDevContainerProfile
+
+	conf, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig: %v", err)
+	}
+	if conf.Image != "embedded" {
+		t.Errorf(
+			"Image = %q, want embedded (persisted id must not override the embedded config)",
+			conf.Image,
+		)
+	}
+}
+
 func TestGetRawConfig_LastPathFallbackSkipsMissingFile(t *testing.T) {
 	r := newRunnerAt(t.TempDir())
 	r.workspaceConfig.Workspace.Source.GitSubPath = "devsy/jupyter-notebook-hello-world"

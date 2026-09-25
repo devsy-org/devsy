@@ -126,6 +126,10 @@ func (r *runner) persistedDevContainerSelection() (devContainerSelection, bool) 
 	switch {
 	case workspace.DevContainerSource != "":
 		return devContainerSelection{source: workspace.DevContainerSource}, true
+	case workspace.DevContainerConfig != nil:
+		// An embedded config outranks a persisted path or id, exactly as it
+		// did before the selection was persisted.
+		return devContainerSelection{}, false
 	case workspace.DevContainerPath != "":
 		return devContainerSelection{path: workspace.DevContainerPath}, true
 	case workspace.DevContainerID != "":

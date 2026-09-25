@@ -168,10 +168,10 @@ var _ = ginkgo.Describe(
 				ctx,
 				true,
 				true,
-				"max",
+				"[max]",
 				[]string{
 					cmdWorkspace, cmdSSH, flagCommand,
-					"echo $SELECTED_PROFILE", workspace.ID,
+					"echo \"[$SELECTED_PROFILE]\"", workspace.ID,
 				},
 			)
 			framework.ExpectNoError(err)
