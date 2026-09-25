@@ -109,6 +109,12 @@ func (cmd *ImportCmd) execute(ctx context.Context) error {
 			if parseErr != nil {
 				return parseErr
 			}
+			unlock, err := config.LockConfig()
+			if err != nil {
+				return err
+			}
+			defer unlock()
+
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err

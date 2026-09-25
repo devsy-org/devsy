@@ -48,6 +48,14 @@ func (cmd *RenameCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	// The rename rewrites provider, workspace, and machine state across several
+	// config saves with rollback, so the whole transaction runs under the lock.
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err

@@ -97,6 +97,18 @@ func applyProviderUpdate(
 	}
 	providerSource = splitted[0] + "@" + newVersion
 
+	// The caller's config predates the update check; reload it under the
+	// config lock so the update cannot lose a concurrent mutation.
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, "")
+	if err != nil {
+		return err
+	}
+
 	_, err = UpdateProvider(ctx, devsyConfig, providerName, providerSource)
 	if err != nil {
 		return fmt.Errorf("update provider %s: %w", providerName, err)

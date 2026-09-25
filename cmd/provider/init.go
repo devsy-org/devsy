@@ -29,6 +29,12 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 		Short: "Run or re-run init and option resolution for an existing provider",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
+			unlock, err := config.LockConfig()
+			if err != nil {
+				return err
+			}
+			defer unlock()
+
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err

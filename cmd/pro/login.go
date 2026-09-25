@@ -108,6 +108,12 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string) error {
 		return err
 	}
 
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	devsyConfig, currentInstance, err := cmd.resolveInstance(fullURL)
 	if err != nil {
 		return err

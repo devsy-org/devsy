@@ -142,6 +142,11 @@ func runProviderAdd(ctx context.Context, g *flags.GlobalFlags, in providerAddInp
 }
 
 func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) error {
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
 	if err != nil {
 		return err
@@ -150,9 +155,5 @@ func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) e
 }
 
 func runProviderUse(_ context.Context, g *flags.GlobalFlags, name string) error {
-	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
-	if err != nil {
-		return err
-	}
-	return cmdprovider.UseProvider(devsyConfig, name)
+	return cmdprovider.UseProvider(g.Context, g.Provider, name)
 }
