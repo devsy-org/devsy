@@ -82,7 +82,10 @@ export function cliErrorFromLegacy(value: unknown): CLIError | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const candidate = value as Record<string, unknown>
   if (candidate.level !== "error" && candidate.level !== "fatal" && candidate.level !== "panic") return undefined
-  return isCLIError(candidate.cliError) ? candidate.cliError : undefined
+  if (!isCLIError(candidate.cliError)) return undefined
+  // Legacy zap encoding flattens context to a string; drop it rather than discard the error.
+  const err = candidate.cliError
+  return isStringMap(err.context) || err.context === undefined ? err : { ...err, context: undefined }
 }
 
 function isCLIError(value: unknown): value is CLIError {
@@ -90,7 +93,8 @@ function isCLIError(value: unknown): value is CLIError {
   const candidate = value as Record<string, unknown>
   return typeof candidate.code === "string" && typeof candidate.message === "string" &&
     (candidate.hint === undefined || typeof candidate.hint === "string") &&
-    (candidate.context === undefined || isStringMap(candidate.context))
+    (candidate.context === undefined || typeof candidate.context === "string" ||
+    isStringMap(candidate.context))
 }
 
 function isStringMap(value: unknown): value is Record<string, string> {

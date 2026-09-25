@@ -137,6 +137,12 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  const appSettingsStore = new AppSettingsStore(
+    join(app.getPath("userData"), "app-settings.json"),
+  )
+  appSettingsStore.load()
+  setMainLogLevel(appSettingsStore.get().desktopLogLevel)
+
   initAnalytics()
   trackEvent("app_open")
 
@@ -167,11 +173,6 @@ app.whenReady().then(async () => {
     (app.isPackaged
       ? CliRunner.resolveBinaryPath(process.resourcesPath)
       : CliRunner.resolveBinaryPath(join(__dirname, "../../resources")))
-  const appSettingsStore = new AppSettingsStore(
-    join(app.getPath("userData"), "app-settings.json"),
-  )
-  appSettingsStore.load()
-  setMainLogLevel(appSettingsStore.get().desktopLogLevel)
   const cli = new CliRunner(binaryPath)
   cli.setDiagnosticLogLevel(appSettingsStore.get().cliCaptureLogLevel)
 

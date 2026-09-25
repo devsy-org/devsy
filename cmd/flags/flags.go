@@ -87,7 +87,7 @@ func registerVerbosityFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 		names.Quiet,
 		"q",
 		false,
-		"Suppress all log output except fatal errors",
+		"Suppress all log output except errors",
 	)
 	flags.BoolVar(
 		&globalFlags.Debug,
