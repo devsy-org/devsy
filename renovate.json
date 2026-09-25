@@ -43,8 +43,8 @@
     },
     {
       "matchManagers": ["mise"],
-      "matchDatasources": ["go"],
-      "matchDepNames": ["go"],
+      "matchDatasources": ["github-tags"],
+      "matchPackageNames": ["golang/go"],
       "matchFileNames": ["mise.toml"],
       "allowedVersions": "<1.27.0",
       "automerge": false,

@@ -7,7 +7,7 @@ lockfile_platforms = ["linux-x64", "macos-arm64"]
 locked = true
 
 [tools]
-go = "1.27.0"
+go = "1.26.8"
 node = "24"
 task = "3.53.1"
 golangci-lint = "2.13.2"
