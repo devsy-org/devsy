@@ -177,6 +177,15 @@ function buildEnv(): NodeJS.ProcessEnv {
   }
 }
 
+function requestedResultFormat(args: string[]): string | undefined {
+  const index = args.findIndex(
+    (arg) => arg === "--result-format" || arg.startsWith("--result-format="),
+  )
+  if (index === -1) return undefined
+  const arg = args[index]
+  return arg.includes("=") ? arg.split("=", 2)[1] : args[index + 1]
+}
+
 export class CliRunner {
   private execPath: string
   private prefixArgs: string[]
@@ -248,6 +257,12 @@ export class CliRunner {
   }
 
   async run<T>(args: string[]): Promise<T> {
+    const requestedFormat = requestedResultFormat(args) ?? this.policy.resultFormat
+    if (requestedFormat !== "json") {
+      throw new Error(
+        `run() parses JSON results; got --result-format=${requestedFormat}. Use runRaw() for non-JSON output`,
+      )
+    }
     await this.acquire()
     try {
       const fullArgs = this.argsWithProtocol(args, true)

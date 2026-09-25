@@ -82,13 +82,22 @@ describe("CliRunner", () => {
         callback(null, { stdout: "{}", stderr: "" })
       },
     )
-    await cli.run(["workspace", "list", "--result-format=plain", "--log-output", "text"])
+    await cli.run(["workspace", "list", "--log-output", "text"])
     const args = mockExecFile.mock.calls[0][1] as string[]
-    expect(args).toContain("--result-format=plain")
+    expect(args).toContain("--result-format")
+    expect(args).toContain("json")
     expect(args).toContain("--log-output")
     expect(args).toContain("text")
-    expect(args.filter((arg) => arg === "--result-format")).toHaveLength(0)
+    expect(args.filter((arg) => arg === "--result-format")).toHaveLength(1)
     expect(args.filter((arg) => arg === "--log-output")).toHaveLength(1)
+  })
+
+  it("rejects non-JSON result formats on run before executing", async () => {
+    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    await expect(
+      cli.run(["workspace", "list", "--result-format=plain"]),
+    ).rejects.toThrow("Use runRaw() for non-JSON output")
+    expect(mockExecFile).not.toHaveBeenCalled()
   })
 
   it("recognizes the legacy log-format alias as an explicit protocol argument", async () => {

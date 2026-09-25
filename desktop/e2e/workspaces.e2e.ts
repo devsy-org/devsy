@@ -111,6 +111,12 @@ test.describe("Workspace lifecycle badges", () => {
       if (snapshot.workspaces.some(({ id }) => id === "deleteprobe")) {
         await api("workspace_delete", { workspaceId: "deleteprobe" })
         await waitForDeleteToSettle()
+        // A settled-but-failed retry leaves the workspace behind for later
+        // tests that share this app; fail loudly instead of leaking it.
+        const finalSnapshot = await workspaceSnapshot()
+        if (finalSnapshot.workspaces.some(({ id }) => id === "deleteprobe")) {
+          throw new Error("deleteprobe workspace still present after delete retry")
+        }
       }
     }
   })

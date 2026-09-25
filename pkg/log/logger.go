@@ -174,9 +174,12 @@ func resolveConfiguredLevel(explicit, fallback string) (zapcore.Level, bool) {
 		return LevelFromString(explicit)
 	}
 	if fallback != "" {
-		return LevelFromString(fallback)
+		if level, ok := LevelFromString(fallback); ok {
+			return level, true
+		}
 	}
-	return zapcore.ErrorLevel, true
+	level, _ := LevelFromString(DefaultLevel)
+	return level, true
 }
 
 func resolveEncoder(format string) zapcore.Encoder {

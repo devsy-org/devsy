@@ -124,6 +124,12 @@ func TestResolveLevelDefaultsToWarn(t *testing.T) {
 	}
 }
 
+func TestResolveLevelInvalidPersistedDefaultFallsBackToWarn(t *testing.T) {
+	if got := resolveLevel(Config{DefaultLevel: "verbose"}).String(); got != LevelWarnName {
+		t.Fatalf("resolveLevel() = %q, want %q", got, LevelWarnName)
+	}
+}
+
 func TestQuietKeepsErrorsVisible(t *testing.T) {
 	Init(Config{Quiet: true})
 	var sink syncBuffer
