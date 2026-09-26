@@ -96,8 +96,8 @@ func TestStopFindsTaskWithoutDesktopState(t *testing.T) {
 	config.ResetPathManager()
 	t.Cleanup(config.ResetPathManager)
 
-	// A persisted detached up task with no live worker, as left behind after
-	// a Desktop restart: nothing in memory references it.
+	// A persisted up task with no live worker, as a Desktop restart leaves
+	// behind.
 	store, err := task.NewStore()
 	require.NoError(t, err)
 	tk, err := store.Create(task.CreateOptions{Command: "up", WorkspaceID: testWorkspaceName})

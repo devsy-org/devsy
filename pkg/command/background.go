@@ -59,7 +59,7 @@ func StartBackgroundOnce(commandName string, createCommand CreateCommand) error 
 		return err
 	}
 
-	return startCommand(cmd, paths.pidFile, paths.streamsFile)
+	return startCommand(cmd, commandName, paths.pidFile, paths.streamsFile)
 }
 
 type processPaths struct {
@@ -98,26 +98,27 @@ func StartBackground(commandName string, createCommand CreateCommand) error {
 		return err
 	}
 
-	return startDetached(cmd, "", streamsFile)
+	return startDetached(cmd, commandName, "", streamsFile)
 }
 
-func startCommand(cmd *exec.Cmd, pidFile, streamsFile string) error {
-	return startDetached(cmd, pidFile, streamsFile)
+func startCommand(cmd *exec.Cmd, commandName, pidFile, streamsFile string) error {
+	return startDetached(cmd, commandName, pidFile, streamsFile)
 }
 
-func startDetached(cmd *exec.Cmd, pidFile, streamsFile string) error {
+func startDetached(cmd *exec.Cmd, commandName, pidFile, streamsFile string) error {
 	streamsF, err := openStreamsFile(cmd, streamsFile)
 	if err != nil {
 		return err
 	}
 
+	prepareBackgroundTree(cmd)
 	if err := cmd.Start(); err != nil {
 		closeFile(streamsF)
 		return fmt.Errorf("start process: %w", err)
 	}
 	closeFile(streamsF)
 
-	if err := ownProcessTree(cmd.Process.Pid); err != nil {
+	if err := ownProcessTree(cmd.Process.Pid, commandName); err != nil {
 		fmt.Fprintf(
 			os.Stderr,
 			"warning: process tree ownership unavailable for pid %d: %v\n",

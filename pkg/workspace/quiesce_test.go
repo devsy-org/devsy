@@ -65,7 +65,7 @@ func TestQuiesceUpTasksAttemptsEveryTaskAndAggregatesFailures(t *testing.T) {
 	}
 	require.NoError(t, failing.SetPID(1111))
 	require.NoError(t, succeeding.SetPID(2222))
-	store.SetKillProcessForTest(func(pid string) error {
+	store.SetKillProcessForTest(func(pid, treeName string) error {
 		if pid == "1111" {
 			return errors.New("boom")
 		}

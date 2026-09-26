@@ -22,9 +22,8 @@ import (
 type StopCmd struct {
 	*flags.GlobalFlags
 	client2.StopOptions
-	// quiesceUpTasks cancels the workspace's persisted detached up tasks;
-	// nil resolves the default task store. Tests inject it to drive
-	// cancellation outcomes without real worker processes.
+	// Test seam; see task.Store.SetKillProcessForTest. nil resolves the
+	// default store.
 	quiesceUpTasks func(workspaceID string) error
 }
 
@@ -147,10 +146,9 @@ func (cmd *StopCmd) run(
 		defer client.Unlock()
 	}
 
-	// Quiesce again under the lock: task submission and lock acquisition are
-	// not atomic, so a task may have become visible while the lock wait
-	// blocked. A surviving up worker can restart the workspace after the
-	// stop, so failing here must fail the stop.
+	// Quiesce again under the lock: a task may have become visible while
+	// the lock wait blocked, and a surviving up worker can restart the
+	// workspace after the stop.
 	if err := cmd.quiesce(client.Workspace()); err != nil {
 		return err
 	}

@@ -11,9 +11,8 @@ import (
 )
 
 // workspaceTunnelHealth probes whether the workspace behind the tunnel is
-// still running. It is strictly observational: it must never dial the SSH
-// path or otherwise start the workspace, because a background health check
-// that can revive a stopped workspace reverses deliberate stops.
+// still running. It must stay observational: a health check that dials the
+// SSH path can revive a stopped workspace, reversing deliberate stops.
 func workspaceTunnelHealth(
 	client client2.BaseWorkspaceClient,
 ) func(ctx context.Context) error {

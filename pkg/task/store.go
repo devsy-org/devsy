@@ -18,11 +18,15 @@ import (
 // lockTimeout bounds how long update waits to acquire a task's file lock.
 const lockTimeout = 5 * time.Second
 
+// pidPublishTimeout bounds Cancel's wait for a starting worker to publish
+// its PID.
+const pidPublishTimeout = 5 * time.Second
+
 // Store persists task state as one JSON file per task under dir.
 type Store struct {
 	dir string
 	// Test seam; see Store.SetKillProcessForTest.
-	killProcess func(string) error
+	killProcess func(pid, treeName string) error
 	// Test seam; see Store.SetAfterClaimForTest.
 	afterClaimForTest func()
 }
@@ -39,7 +43,7 @@ func NewStoreAt(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create task dir: %w", err)
 	}
-	return &Store{dir: dir, killProcess: command.Kill}, nil
+	return &Store{dir: dir, killProcess: command.KillTree}, nil
 }
 
 func (s *Store) Create(opts CreateOptions) (*Task, error) {
@@ -173,8 +177,7 @@ func (s *Store) List() ([]*State, error) {
 // ActiveForWorkspace returns the non-terminal tasks labeled with the exact
 // workspace ID, newest first, reconciling stale workers first so an
 // abandoned task does not read as live. A non-empty command restricts the
-// match to that command. The store only answers which persisted operations
-// are still active; callers decide what to do with them.
+// match.
 func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error) {
 	states, err := s.List()
 	if err != nil {
@@ -198,13 +201,28 @@ func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error
 	return active, nil
 }
 
+// awaitPID polls for the worker to publish its PID, which it does right
+// after claiming the worker lock.
+func (s *Store) awaitPID(id string, timeout time.Duration) int {
+	deadline := time.Now().Add(timeout)
+	for {
+		state, err := s.Get(id)
+		if err == nil && state.PID != 0 {
+			return state.PID
+		}
+		if time.Now().After(deadline) {
+			return 0
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // SetKillProcessForTest replaces this store's process termination hook, so a
 // test can drive cancellation outcomes deterministically without real PIDs.
-// Production code must never call it.
 //
-// Not in export_test.go: other packages' tests need it, and a _test.go file is
-// only compiled into its own package's test binary.
-func (s *Store) SetKillProcessForTest(fn func(string) error) {
+// Not in export_test.go: other packages' tests need it, and a _test.go file
+// compiles only into its own package's test binary.
+func (s *Store) SetKillProcessForTest(fn func(pid, treeName string) error) {
 	s.killProcess = fn
 }
 
@@ -237,6 +255,29 @@ func (s *Store) workerAlive(id string) bool {
 	}
 	_ = lock.Unlock()
 	return false
+}
+
+// workerStarting reports whether a live worker holds the task's worker lock
+// without having published its PID yet: Cancel then has nothing to signal
+// until the worker publishes.
+func (s *Store) workerStarting(id string) bool {
+	path, err := s.workerLockPath(id)
+	if err != nil {
+		return false
+	}
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	lock := flock.New(path)
+	locked, err := lock.TryLock()
+	if err != nil {
+		return false
+	}
+	if locked {
+		_ = lock.Unlock()
+		return false
+	}
+	return true
 }
 
 // claimDeadWorkerLock acquires the task's worker lock, which only succeeds when

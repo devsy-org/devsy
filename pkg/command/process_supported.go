@@ -5,6 +5,7 @@ package command
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"strconv"
 	"syscall"
 	"time"
@@ -29,28 +30,42 @@ func isRunning(pid string) (bool, error) {
 	return true, nil
 }
 
-func kill(pid string) error {
+// A background process that leads its own group (prepareBackgroundTree) is
+// signaled group-wide so descendants that outlive it still die with it.
+func killTree(pid, _ string) error {
 	parsedPid, err := strconv.Atoi(pid)
 	if err != nil {
 		return err
 	}
 
-	if err := syscall.Kill(parsedPid, syscall.SIGTERM); err != nil {
+	target := parsedPid
+	if pgid, err := syscall.Getpgid(parsedPid); err == nil && pgid == parsedPid {
+		target = -parsedPid
+	}
+
+	if err := syscall.Kill(target, syscall.SIGTERM); err != nil {
 		if errors.Is(err, syscall.ESRCH) {
 			return nil // already exited
 		}
 		return err
 	}
 	time.Sleep(2 * time.Second)
-	err = syscall.Kill(parsedPid, syscall.SIGKILL)
+	err = syscall.Kill(target, syscall.SIGKILL)
 	if err != nil && !errors.Is(err, syscall.ESRCH) {
 		return err
 	}
 	return nil
 }
 
-// ownProcessTree is a no-op on Unix: process-group termination via the
-// worker's PID already covers the tree, and Job Objects are Windows-only.
-func ownProcessTree(pid int) error {
+// ownProcessTree is a no-op on Unix: the process group created by
+// prepareBackgroundTree already scopes the tree.
+func ownProcessTree(pid int, name string) error {
 	return nil
+}
+
+func prepareBackgroundTree(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setpgid = true
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/task"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 )
 
 // runDetached submits this invocation as a background task and returns
@@ -76,13 +77,15 @@ func detachedArgs(args []string) []string {
 	return out
 }
 
-// detachWorkspaceLabel is a best-effort label for task list.
+// detachWorkspaceLabel resolves the workspace ID at submission so stop and
+// delete can match the task before the worker starts and records the
+// authoritative ID.
 func (cmd *UpCmd) detachWorkspaceLabel(args []string) string {
 	if cmd.ID != "" {
 		return cmd.ID
 	}
 	if len(args) > 0 {
-		return args[0]
+		return workspace2.ToID(args[0])
 	}
 	return ""
 }

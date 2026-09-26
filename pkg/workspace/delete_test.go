@@ -109,8 +109,10 @@ func (c *preResolvedDeleteClient) Workspace() string { return c.workspaceID }
 func (c *preResolvedDeleteClient) WorkspaceConfig() *provider.Workspace {
 	return c.config
 }
-func (c *preResolvedDeleteClient) Context() string  { return c.config.Context }
-func (c *preResolvedDeleteClient) Provider() string { return DefaultDockerCommand }
+func (c *preResolvedDeleteClient) Context() string            { return c.config.Context }
+func (c *preResolvedDeleteClient) Lock(context.Context) error { return nil }
+func (c *preResolvedDeleteClient) Unlock()                    {}
+func (c *preResolvedDeleteClient) Provider() string           { return DefaultDockerCommand }
 func (c *preResolvedDeleteClient) Delete(context.Context, client.DeleteOptions) error {
 	c.deleted = true
 	return nil

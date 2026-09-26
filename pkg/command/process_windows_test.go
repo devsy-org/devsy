@@ -21,8 +21,7 @@ const (
 )
 
 // TestHelperProcess is not a test; every helper process re-executes the test
-// binary into it. The sleep loop keeps Go's deadlock detector quiet while the
-// helper waits to be killed.
+// binary into it.
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv(helperEnvMarker) != "1" {
 		return
@@ -63,9 +62,8 @@ func TestHelperProcess(t *testing.T) {
 	}
 }
 
-// helperEnv strips helper markers from the inherited environment so only the
-// process being launched gets them. Windows process creation needs the rest
-// of the environment (e.g. SYSTEMROOT) intact.
+// helperEnv strips helper markers from the inherited environment; Windows
+// process creation needs the rest (e.g. SYSTEMROOT) intact.
 func helperEnv(extra ...string) []string {
 	env := []string{}
 	for _, kv := range os.Environ() {
@@ -191,7 +189,7 @@ func TestInvalidPIDReturnsError(t *testing.T) {
 		if _, err := isRunning(pid); err == nil {
 			t.Errorf("isRunning(%q) = nil error, want rejection", pid)
 		}
-		if err := kill(pid); err == nil {
+		if err := killTree(pid, ""); err == nil {
 			t.Errorf("kill(%q) = nil, want error", pid)
 		}
 	}
@@ -203,15 +201,14 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 	childPIDFile := filepath.Join(dir, "child.pid")
 	grandchildPIDFile := filepath.Join(dir, "grandchild.pid")
 
-	// The parent waits so the job can own it before it spawns anything; the
-	// child then spawns the grandchild and exits, orphaning the grandchild
+	// The child spawns the grandchild and exits, orphaning the grandchild
 	// from the perspective of parent-based termination.
 	parent := startHelper(t,
 		helperEnvWaitFile+"="+waitFile,
 		helperEnvPIDFile+"="+childPIDFile,
 		helperEnvChildPIDFile+"="+grandchildPIDFile,
 	)
-	if err := ownProcessTree(parent.Process.Pid); err != nil {
+	if err := ownProcessTree(parent.Process.Pid, "devsy-test-worker"); err != nil {
 		t.Skipf("job assignment unavailable in this environment: %v", err)
 	}
 	if err := os.WriteFile(waitFile, []byte("go"), 0o600); err != nil {
@@ -224,7 +221,7 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 	assertRunning(t, parent.Process.Pid)
 	assertRunning(t, grandchildPID)
 
-	if err := Kill(strconv.Itoa(parent.Process.Pid)); err != nil {
+	if err := KillTree(strconv.Itoa(parent.Process.Pid), "devsy-test-worker"); err != nil {
 		t.Fatalf("Kill(parent): %v", err)
 	}
 

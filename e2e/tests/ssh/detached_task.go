@@ -39,8 +39,6 @@ func setupTunnelProvider(ctx context.Context, initialDir string) *framework.Fram
 	return f
 }
 
-// startDetachedTunnelUp submits `workspace up --detach --ssh-tunnel` and
-// returns the task ID from the envelope on stdout.
 func startDetachedTunnelUp(
 	ctx context.Context,
 	f *framework.Framework,
@@ -97,8 +95,6 @@ func findDetachedUpTask(
 	return detachedUpState{}, fmt.Errorf("task %s not in task list", taskID)
 }
 
-// waitDetachedTunnelReady polls the task until the up pipeline reports the
-// ready phase, which it reaches only with the tunnel active.
 func waitDetachedTunnelReady(
 	ctx context.Context,
 	f *framework.Framework,
@@ -120,8 +116,6 @@ func waitDetachedTunnelReady(
 	return state
 }
 
-// waitDetachedTaskCanceled polls until the task records the canceled error
-// code and returns the final state.
 func waitDetachedTaskCanceled(
 	ctx context.Context,
 	f *framework.Framework,

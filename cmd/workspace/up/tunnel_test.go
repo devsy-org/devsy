@@ -8,9 +8,8 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 )
 
-// statusOnlyClient answers Status and panics on any other method through the
-// embedded nil interface, so a health probe that reaches for a mutating path
-// fails the test.
+// statusOnlyClient panics on any method but Status, so a health probe that
+// reaches for a mutating path fails the test.
 type statusOnlyClient struct {
 	client2.BaseWorkspaceClient
 	status client2.Status

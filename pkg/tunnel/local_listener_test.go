@@ -244,10 +244,8 @@ func TestLocalTunnel_HealthCheckShutdown(t *testing.T) {
 func TestLocalTunnel_HealthCheckUsesHealthFuncNotDialFunc(t *testing.T) {
 	ctx := t.Context()
 
-	// DialFunc always succeeds: if the health loop still probed through the
-	// data path, failures would never accumulate and the tunnel would stay
-	// alive. Only a health loop driven by the failing HealthCheckFunc shuts
-	// the listener down.
+	// DialFunc always succeeds: only a health loop driven by the failing
+	// HealthCheckFunc may shut the listener down.
 	var healthCalls atomic.Int32
 	tun, err := NewLocalTunnel(ctx, LocalTunnelOptions{
 		BasePort: 18600,

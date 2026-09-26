@@ -43,7 +43,7 @@ func isRunning(pid string) (bool, error) {
 	return exitCode == stillActive, nil
 }
 
-func kill(pid string) error {
+func killTree(pid, treeName string) error {
 	parsed, err := parsePID(pid)
 	if err != nil {
 		return err
@@ -57,17 +57,16 @@ func kill(pid string) error {
 		return nil
 	}
 
-	// Job Object termination tears down the whole tree, including orphans
-	// that parent-based termination cannot reach. Workers launched before
-	// job ownership existed fall through to taskkill.
-	if terminated, jobErr := terminateJob(parsed); jobErr == nil && terminated {
-		return verifyTerminated(parsed)
+	// Job Object termination reaches orphaned descendants; workers launched
+	// before job ownership existed fall through to taskkill.
+	if treeName != "" {
+		if terminated, jobErr := terminateJob(treeName); jobErr == nil && terminated {
+			return verifyTerminated(parsed)
+		}
 	}
 
-	// /T takes down the worker's descendants as well: a detached up worker
-	// can spawn children (e.g. devsy workspace ssh --stdio) that keep owning
-	// transport resources. /F stands in for SIGKILL; Windows has no SIGTERM
-	// equivalent for arbitrary processes.
+	// /T takes down the worker's descendants; /F stands in for SIGKILL,
+	// which Windows lacks for arbitrary processes.
 	cmd := exec.Command("taskkill", "/PID", strconv.Itoa(parsed), "/T", "/F")
 	output, runErr := cmd.CombinedOutput()
 	if runErr != nil {
@@ -87,8 +86,10 @@ func kill(pid string) error {
 	return verifyTerminated(parsed)
 }
 
-// verifyTerminated confirms the process is gone, allowing a brief window for
-// the exit to become visible after the termination call reported success.
+func prepareBackgroundTree(*exec.Cmd) {}
+
+// verifyTerminated allows a brief window for the exit to become visible
+// after the termination call reported success.
 func verifyTerminated(parsed int) error {
 	pid := strconv.Itoa(parsed)
 	deadline := time.Now().Add(5 * time.Second)
@@ -118,8 +119,8 @@ func parsePID(pid string) (int, error) {
 	return parsed, nil
 }
 
-// truncateOutput bounds taskkill's captured output; the text itself is
-// localized and never parsed.
+// truncateOutput bounds captured taskkill output, which is localized and
+// never parsed.
 func truncateOutput(output string) string {
 	const maxOutput = 256
 	if len(output) > maxOutput {

@@ -54,8 +54,7 @@ var _ = ginkgo.Describe(
 				gomega.Expect(active.PID).NotTo(gomega.BeZero(),
 					"detached up worker should publish its pid")
 
-				// Cancellation goes through the product task API; on Windows
-				// this used to panic with "unsupported".
+				// On Windows this used to panic with "unsupported".
 				framework.ExpectNoError(f.DevsyWorkspaceTaskCancel(ctx, taskID))
 
 				canceled := waitDetachedTaskCanceled(ctx, f, taskID)

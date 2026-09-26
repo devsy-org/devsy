@@ -850,7 +850,7 @@ func TestCancelKillFailureRemainsRetryable(t *testing.T) {
 	tk := newLiveWorkerTask(t, store)
 
 	killCalls := 0
-	store.SetKillProcessForTest(func(string) error {
+	store.SetKillProcessForTest(func(pid, treeName string) error {
 		killCalls++
 		if killCalls == 1 {
 			return errors.New("boom")
@@ -885,7 +885,7 @@ func TestCancelSuccessfulKillCommitsCanceled(t *testing.T) {
 	store := newTestStore(t)
 	tk := newLiveWorkerTask(t, store)
 
-	store.SetKillProcessForTest(func(string) error {
+	store.SetKillProcessForTest(func(pid, treeName string) error {
 		state, err := store.Get(tk.ID())
 		if err != nil {
 			t.Errorf("Get during kill: %v", err)
@@ -900,6 +900,64 @@ func TestCancelSuccessfulKillCommitsCanceled(t *testing.T) {
 		t.Fatalf("Cancel: %v", err)
 	}
 	requireCanceledState(t, store, tk.ID())
+}
+
+func TestCancelAwaitsPIDPublication(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	holdWorkerLock(t, tk)
+
+	var killedPID, killedTree string
+	store.SetKillProcessForTest(func(pid, treeName string) error {
+		killedPID, killedTree = pid, treeName
+		return nil
+	})
+
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		if err := tk.SetPID(4242); err != nil {
+			t.Errorf("SetPID: %v", err)
+		}
+	}()
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if killedPID != "4242" {
+		t.Errorf("kill pid = %q, want 4242", killedPID)
+	}
+	if killedTree != WorkerProcessName(tk.ID()) {
+		t.Errorf("kill tree = %q, want %q", killedTree, WorkerProcessName(tk.ID()))
+	}
+	requireCanceledState(t, store, tk.ID())
+}
+
+func TestCancelUnpublishedPIDStaysRetryable(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	holdWorkerLock(t, tk)
+
+	store.SetKillProcessForTest(func(pid, treeName string) error {
+		t.Error("kill invoked before the worker published a pid")
+		return nil
+	})
+
+	if err := tk.Cancel(); err == nil {
+		t.Fatal("Cancel = nil, want unpublished-pid error")
+	}
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status.Terminal() {
+		t.Fatalf("task recorded terminal %q with no killed worker", state.Status)
+	}
 }
 
 func TestCancelDeadWorkerDoesNotInvokeKill(t *testing.T) {
@@ -918,7 +976,7 @@ func TestCancelDeadWorkerDoesNotInvokeKill(t *testing.T) {
 		t.Fatalf("SetPID: %v", err)
 	}
 
-	store.SetKillProcessForTest(func(string) error {
+	store.SetKillProcessForTest(func(pid, treeName string) error {
 		t.Error("kill invoked for a task whose worker lock is dead")
 		return nil
 	})
@@ -940,7 +998,7 @@ func TestCancelRacingLateSuccessStillWinsAfterSuccessfulTermination(t *testing.T
 		t.Fatalf("SetPID: %v", err)
 	}
 
-	store.SetKillProcessForTest(func(string) error {
+	store.SetKillProcessForTest(func(pid, treeName string) error {
 		// The worker reports its own success while the kill unwinds it.
 		return tk.Succeed(&config.Result{})
 	})

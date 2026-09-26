@@ -5,7 +5,6 @@ package command
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -15,21 +14,18 @@ const jobObjectTerminateAccess = 0x0008
 
 var procOpenJobObjectW = windows.NewLazySystemDLL("kernel32.dll").NewProc("OpenJobObjectW")
 
-// jobNameForPID names the Job Object owning the process tree rooted at pid,
-// so cancellation can recover the job from the persisted PID alone.
-func jobNameForPID(pid int) string {
-	return "devsy-worker-" + strconv.Itoa(pid)
+// jobNameFor names the Job Object after the worker (e.g. devsy-up-<taskID>)
+// rather than its PID: a reused PID must never inherit a predecessor's job.
+func jobNameFor(name string) string {
+	return name
 }
 
-// ownProcessTree assigns the process to a Job Object named after its PID.
-// Parent-based termination (taskkill /T) loses track of descendants whose
-// intermediate parent already exited; job membership survives that, so tree
-// teardown stays complete. The launcher closes its handle right away: the
-// job lives as long as it has member processes, which is what keeps the
-// detached worker alive after the launcher exits. Assignment failure is
-// non-fatal; termination then falls back to taskkill /T /F.
-func ownProcessTree(pid int) error {
-	name, err := windows.UTF16PtrFromString(jobNameForPID(pid))
+// ownProcessTree assigns the process to a Job Object named for the worker.
+// Job membership outlives intermediate parents, so tree teardown stays
+// complete where taskkill /T loses track. Assignment failure is non-fatal;
+// termination then falls back to taskkill /T /F.
+func ownProcessTree(pid int, workerName string) error {
+	name, err := windows.UTF16PtrFromString(jobNameFor(workerName))
 	if err != nil {
 		return err
 	}
@@ -55,11 +51,11 @@ func ownProcessTree(pid int) error {
 	return nil
 }
 
-// terminateJob kills the process tree owned by the Job Object named for pid.
-// The bool reports whether a job existed; without one the caller falls back
-// to taskkill, e.g. for workers launched before job ownership existed.
-func terminateJob(pid int) (bool, error) {
-	name, err := windows.UTF16PtrFromString(jobNameForPID(pid))
+// terminateJob kills the tree owned by the worker's Job Object. The bool
+// reports whether a job existed; without one the caller falls back to
+// taskkill, e.g. for workers launched before job ownership existed.
+func terminateJob(workerName string) (bool, error) {
+	name, err := windows.UTF16PtrFromString(jobNameFor(workerName))
 	if err != nil {
 		return false, err
 	}
@@ -72,13 +68,13 @@ func terminateJob(pid int) (bool, error) {
 		if errors.Is(callErr, windows.ERROR_FILE_NOT_FOUND) {
 			return false, nil
 		}
-		return false, fmt.Errorf("open job for pid %d: %w", pid, callErr)
+		return false, fmt.Errorf("open job %s: %w", workerName, callErr)
 	}
 	job := windows.Handle(handle)
 	defer func() { _ = windows.CloseHandle(job) }()
 
 	if err := windows.TerminateJobObject(job, 1); err != nil {
-		return false, fmt.Errorf("terminate job for pid %d: %w", pid, err)
+		return false, fmt.Errorf("terminate job %s: %w", workerName, err)
 	}
 	return true, nil
 }

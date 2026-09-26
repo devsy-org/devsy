@@ -26,9 +26,8 @@ type DeleteOptions struct {
 	Force          bool
 	ClientDelete   client2.DeleteOptions
 	Owner          platform.OwnerFilter
-	// quiesceUpTasks cancels the workspace's persisted detached up tasks;
-	// nil resolves the default task store. Tests inject it to drive
-	// cancellation outcomes without real worker processes.
+	// Test seam; see task.Store.SetKillProcessForTest. nil resolves the
+	// default store.
 	quiesceUpTasks func(workspaceID string) error
 }
 
@@ -148,8 +147,10 @@ func stopIfRunning(
 	}
 }
 
-// checkBeforeDelete acquires the lock and verifies the workspace exists
-// unless force-deletion is requested. It returns an unlock function that
+// checkBeforeDelete acquires the lock and verifies the workspace exists;
+// force-deletion skips only the status check, never the lock, so the
+// quiescence rescan stays serialized with the delete. It returns an unlock
+// function that
 // must be called by the caller (typically deferred) to release the lock,
 // and the resolved workspace status so the caller can decide whether a
 // stop is required before delete.
@@ -158,14 +159,14 @@ func checkBeforeDelete(
 	client client2.BaseWorkspaceClient,
 	opts DeleteOptions,
 ) (func(), client2.Status, error) {
-	force := opts.Force || opts.ClientDelete.Force
-	if force {
-		return func() {}, "", nil
-	}
-
 	unlock, err := lockIfNeeded(ctx, client, opts)
 	if err != nil {
 		return nil, "", err
+	}
+
+	force := opts.Force || opts.ClientDelete.Force
+	if force {
+		return unlock, "", nil
 	}
 
 	var status client2.Status

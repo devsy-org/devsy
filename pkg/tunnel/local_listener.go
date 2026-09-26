@@ -32,13 +32,12 @@ type DialFunc func(ctx context.Context) (io.ReadWriteCloser, error)
 type LocalTunnelOptions struct {
 	// BasePort is the starting port to search from (default: 10800)
 	BasePort int
-	// DialFunc creates a connection to the remote SSH endpoint. It is the
-	// data path and runs only for real accepted local connections.
+	// DialFunc is the data path: it connects to the remote SSH endpoint
+	// for accepted local connections.
 	DialFunc DialFunc
-	// HealthCheckFunc is the control-plane liveness probe. It must be
-	// observational: it must never start, restart, or otherwise mutate the
-	// resource it probes. When nil, no periodic probe runs and the listener
-	// lifetime follows its context.
+	// HealthCheckFunc is the control-plane liveness probe. It must stay
+	// observational: never start, restart, or otherwise mutate the resource
+	// it probes. When nil, the listener lifetime follows its context.
 	HealthCheckFunc func(ctx context.Context) error
 	// HealthCheckInterval overrides the default health check interval (for testing).
 	// If zero, defaults to healthCheckInterval (30s).

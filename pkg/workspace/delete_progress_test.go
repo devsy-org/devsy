@@ -12,10 +12,11 @@ import (
 
 type progressDeleteClient struct {
 	client.BaseWorkspaceClient
-	lock     func(context.Context) error
-	state    client.Status
-	stopErr  error
-	unlocked bool
+	lock         func(context.Context) error
+	state        client.Status
+	statusCalled bool
+	stopErr      error
+	unlocked     bool
 }
 
 func (c *progressDeleteClient) Lock(ctx context.Context) error { return c.lock(ctx) }
@@ -25,6 +26,7 @@ func (c *progressDeleteClient) Status(
 	context.Context,
 	client.StatusOptions,
 ) (client.Status, error) {
+	c.statusCalled = true
 	return c.state, nil
 }
 func (c *progressDeleteClient) Stop(context.Context, client.StopOptions) error { return c.stopErr }
@@ -83,12 +85,15 @@ func TestDeleteProgressPreservesBestEffortStop(t *testing.T) {
 	require.Equal(t, events[0].OperationID, events[1].ParentOperationID)
 }
 
-func TestDeleteForceSkipsLockAndStatus(t *testing.T) {
-	c := &progressDeleteClient{}
+func TestDeleteForceLocksButSkipsStatus(t *testing.T) {
+	c := &progressDeleteClient{
+		lock: func(context.Context) error { return nil },
+	}
 	unlock, _, err := checkBeforeDelete(context.Background(), c, DeleteOptions{Force: true})
 	require.NoError(t, err)
 	unlock()
-	require.False(t, c.unlocked)
+	require.True(t, c.unlocked, "forced delete must still release the workspace lock")
+	require.False(t, c.statusCalled, "forced delete skips only the status check")
 }
 
 func TestDeleteLockFailureReportsFailure(t *testing.T) {

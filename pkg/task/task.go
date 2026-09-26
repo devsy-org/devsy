@@ -160,11 +160,11 @@ func (t *Task) Succeed(result *config.Result) error {
 }
 
 // Cancel terminates the task's worker before recording the task as canceled:
-// the persisted terminal state must never claim the operation is gone while
-// the worker that performs it is still alive. A kill failure leaves the task
-// nonterminal so a later Cancel retries. Cancellation is idempotent: a task
-// already terminal, or whose worker already exited, only (re)finalizes the
-// canceled state.
+// the persisted state must never claim the operation is gone while the worker
+// performing it is still alive. A kill failure leaves the task nonterminal so
+// a later Cancel retries. Cancellation is idempotent: a task already
+// terminal, or whose worker already exited, only (re)finalizes the canceled
+// state.
 func (t *Task) Cancel() error {
 	var pid int
 	observedNonterminal := false
@@ -182,8 +182,18 @@ func (t *Task) Cancel() error {
 		return nil
 	}
 
+	if pid == 0 && t.store.workerStarting(t.id) {
+		pid = t.store.awaitPID(t.id, pidPublishTimeout)
+		if pid == 0 {
+			return fmt.Errorf(
+				"cancel task %s: worker has not published its pid yet, retry",
+				t.id,
+			)
+		}
+	}
+
 	if pid != 0 && t.store.workerAlive(t.id) {
-		if err := t.store.killProcess(strconv.Itoa(pid)); err != nil {
+		if err := t.store.killProcess(strconv.Itoa(pid), WorkerProcessName(t.id)); err != nil {
 			if !t.store.workerAlive(t.id) {
 				// The worker exited during the kill attempt, so termination
 				// is satisfied even though the kill itself reported an error.
