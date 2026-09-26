@@ -15,6 +15,19 @@ import (
 
 const tunnelActiveTimeout = 4 * time.Minute
 
+// readTunnelSSHConfig waits for the worker to write the SSH config: the
+// ready phase can win the race against the config write on slower runners.
+func readTunnelSSHConfig(ctx context.Context, path string) string {
+	var configBytes []byte
+	gomega.Eventually(func() error {
+		var err error
+		configBytes, err = os.ReadFile(filepath.Clean(path))
+		return err
+	}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(2 * time.Second).
+		Should(gomega.Succeed())
+	return string(configBytes)
+}
+
 var _ = ginkgo.Describe(
 	"devsy ssh tunnel mode",
 	ginkgo.Label("ssh-tunnel-mode"),
@@ -80,9 +93,7 @@ var _ = ginkgo.Describe(
 
 				waitDetachedTunnelReady(ctx, f, taskID)
 
-				configBytes, err := os.ReadFile(filepath.Clean(sshConfigPath))
-				framework.ExpectNoError(err)
-				config := string(configBytes)
+				config := readTunnelSSHConfig(ctx, sshConfigPath)
 
 				gomega.Expect(config).To(
 					gomega.ContainSubstring("Hostname 127.0.0.1"),
@@ -123,9 +134,7 @@ var _ = ginkgo.Describe(
 
 				waitDetachedTunnelReady(ctx, f, taskID)
 
-				configBytes, err := os.ReadFile(filepath.Clean(sshConfigPath))
-				framework.ExpectNoError(err)
-				config := string(configBytes)
+				config := readTunnelSSHConfig(ctx, sshConfigPath)
 
 				var port string
 				for line := range strings.SplitSeq(config, "\n") {
