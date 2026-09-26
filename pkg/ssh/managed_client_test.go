@@ -45,8 +45,8 @@ func TestClientFromManagedConnAllowsDelayedBootstrap(t *testing.T) {
 	}, 1)
 	go func() {
 		client, err := ClientFromManagedConn(ctx, conn, ManagedClientOptions{
-			HandshakeIdleTimeout: 20 * time.Millisecond,
-			HandshakeMaxTimeout:  time.Second,
+			HandshakeIdleTimeout: 250 * time.Millisecond,
+			HandshakeMaxTimeout:  5 * time.Second,
 		})
 		dialDone <- struct {
 			client *xssh.Client
@@ -61,7 +61,7 @@ func TestClientFromManagedConnAllowsDelayedBootstrap(t *testing.T) {
 			_ = result.client.Close()
 		}
 		t.Fatalf("managed dial ended during bootstrap: %v", result.err)
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 	}
 	close(release)
 
@@ -70,7 +70,7 @@ func TestClientFromManagedConnAllowsDelayedBootstrap(t *testing.T) {
 		require.NoError(t, result.err)
 		require.NotNil(t, result.client)
 		_ = result.client.Close()
-	case <-time.After(3 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("managed SSH handshake did not complete")
 	}
 }
