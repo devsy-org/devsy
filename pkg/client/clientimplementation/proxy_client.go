@@ -64,11 +64,12 @@ type proxyExecutor struct {
 }
 
 type execParams struct {
-	command  types.StrArray
-	extraEnv map[string]string
-	stdin    io.Reader
-	stdout   io.Writer
-	stderr   io.Writer
+	command   types.StrArray
+	extraEnv  map[string]string
+	stdin     io.Reader
+	stdout    io.Writer
+	stderr    io.Writer
+	rawStdout bool
 }
 
 // execute runs a proxy command with common settings.
@@ -83,6 +84,7 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 		Stdin:                params.stdin,
 		Stdout:               params.stdout,
 		Stderr:               params.stderr,
+		RawStdout:            params.rawStdout,
 	})
 }
 
@@ -241,10 +243,11 @@ func (s *proxyClient) Create(
 
 func (s *proxyClient) Ssh(ctx context.Context, opt client.SshOptions) error {
 	return s.executor.executeWithJSONLog(ctx, execParams{
-		command:  s.config.Exec.Proxy.Ssh,
-		extraEnv: EncodeOptions(opt, config.EnvFlagsSSH),
-		stdin:    opt.Stdin,
-		stdout:   opt.Stdout,
+		command:   s.config.Exec.Proxy.Ssh,
+		extraEnv:  EncodeOptions(opt, config.EnvFlagsSSH),
+		stdin:     opt.Stdin,
+		stdout:    opt.Stdout,
+		rawStdout: true,
 	})
 }
 
@@ -256,10 +259,11 @@ func (s *proxyClient) OpenSSHTransport(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			return s.executor.executeWithJSONLog(ctx, execParams{
-				command:  s.config.Exec.Proxy.Ssh,
-				extraEnv: EncodeOptions(client.SshOptions{User: opt.User}, config.EnvFlagsSSH),
-				stdin:    stdin,
-				stdout:   stdout,
+				command:   s.config.Exec.Proxy.Ssh,
+				extraEnv:  EncodeOptions(client.SshOptions{User: opt.User}, config.EnvFlagsSSH),
+				stdin:     stdin,
+				stdout:    stdout,
+				rawStdout: true,
 			})
 		},
 		transport.CallbackConnOptions{
@@ -291,10 +295,11 @@ func (s *proxyClient) Up(ctx context.Context, opt client.UpOptions) error {
 	}
 
 	return s.executor.executeWithJSONLog(ctx, execParams{
-		command:  s.config.Exec.Proxy.Up,
-		extraEnv: opts,
-		stdin:    opt.Stdin,
-		stdout:   opt.Stdout,
+		command:   s.config.Exec.Proxy.Up,
+		extraEnv:  opts,
+		stdin:     opt.Stdin,
+		stdout:    opt.Stdout,
+		rawStdout: true,
 	})
 }
 

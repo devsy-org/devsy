@@ -97,6 +97,9 @@ type CommandParams struct {
 	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer
+	// RawStdout preserves protocol bytes; text commands keep stdout redacted.
+	// Protocol consumers must not log the unredacted stream.
+	RawStdout bool
 }
 
 // Streams bundles the standard IO streams for an exec.

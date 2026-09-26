@@ -260,6 +260,7 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 				Stdin:       stdin,
 				Stdout:      stdout,
 				Stderr:      stderr,
+				RawStdout:   true,
 			})
 		},
 		IsLocal:                     false,
@@ -543,6 +544,7 @@ func (r *runner) executeSetup(
 			Stdin:       sshTunnelStdinReader,
 			Stdout:      sshTunnelStdoutWriter,
 			Stderr:      writer,
+			RawStdout:   true,
 		})
 	}
 

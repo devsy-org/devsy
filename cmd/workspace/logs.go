@@ -127,10 +127,11 @@ func injectLogsAgent(ctx context.Context, params injectLogsAgentParams) error {
 	return agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec: func(ctx context.Context, command string, stdinR io.Reader, stdoutW io.Writer, stderrW io.Writer) error {
 			return params.client.Command(ctx, clientpkg.CommandOptions{
-				Command: command,
-				Stdin:   stdinR,
-				Stdout:  stdoutW,
-				Stderr:  stderrW,
+				Command:   command,
+				Stdin:     stdinR,
+				Stdout:    stdoutW,
+				Stderr:    stderrW,
+				RawStdout: true,
 			})
 		},
 		IsLocal:         params.client.AgentLocal(),

@@ -73,6 +73,7 @@ func (c *customDriver) CommandDevContainer(
 		stdin:       params.Stdin,
 		stdout:      params.Stdout,
 		stderr:      params.Stderr,
+		rawStdout:   params.RawStdout,
 		extraEnv: []string{
 			"DEVCONTAINER_USER=" + params.User,
 			"DEVCONTAINER_COMMAND=" + params.Command,
@@ -244,6 +245,7 @@ type runCommandOptions struct {
 	stdin       io.Reader
 	stdout      io.Writer
 	stderr      io.Writer
+	rawStdout   bool
 	extraEnv    []string
 }
 
@@ -268,11 +270,12 @@ func (c *customDriver) runCommand(
 	}
 
 	return clientimplementation.RunCommand(ctx, clientimplementation.RunCommandOptions{
-		Command: runOpts.command,
-		Environ: environ,
-		Stdin:   runOpts.stdin,
-		Stdout:  runOpts.stdout,
-		Stderr:  runOpts.stderr,
+		Command:   runOpts.command,
+		Environ:   environ,
+		Stdin:     runOpts.stdin,
+		Stdout:    runOpts.stdout,
+		Stderr:    runOpts.stderr,
+		RawStdout: runOpts.rawStdout,
 	})
 }
 

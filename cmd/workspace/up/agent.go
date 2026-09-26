@@ -255,10 +255,11 @@ func newAgentInjectFunc(
 		return agent.InjectAgent(cancelCtx, &agent.InjectOptions{
 			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 				return client.Command(ctx, client2.CommandOptions{
-					Command: command,
-					Stdin:   stdin,
-					Stdout:  stdout,
-					Stderr:  stderr,
+					Command:   command,
+					Stdin:     stdin,
+					Stdout:    stdout,
+					Stderr:    stderr,
+					RawStdout: true,
 				})
 			},
 			IsLocal:         client.AgentLocal(),

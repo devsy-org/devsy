@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"runtime"
 	"strings"
 	"testing"
@@ -81,6 +82,65 @@ func TestRedactingWriterRedactsSecretSplitAcrossWrites(t *testing.T) {
 	_ = w.Flush()
 	if got := out.String(); strings.Contains(got, secret) || got != "token=***" {
 		t.Errorf("split streamed output = %q, want %q", got, "token=***")
+	}
+}
+
+type shortWriter struct{}
+
+func (shortWriter) Write([]byte) (int, error) { return 0, nil }
+
+type countingWriter struct{ writes int }
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.writes++
+	return len(p), nil
+}
+
+func TestRedactingWritersReportShortWrites(t *testing.T) {
+	redactor := secrets.NewRedactor(nil)
+	writers := []struct {
+		name   string
+		writer io.Writer
+	}{
+		{"redacting", RedactingWriter{Next: shortWriter{}, Redactor: redactor}},
+		{"streaming", &StreamingRedactingWriter{Next: shortWriter{}, Redactor: redactor}},
+	}
+	for _, tt := range writers {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := tt.writer.Write([]byte("plain text"))
+			if !errors.Is(err, io.ErrShortWrite) {
+				t.Fatalf("Write error = %v, want ErrShortWrite", err)
+			}
+		})
+	}
+}
+
+func TestStreamingRedactingWriterFlushOnlyWritesPendingBytes(t *testing.T) {
+	var next countingWriter
+	w := &StreamingRedactingWriter{Next: &next, Redactor: secrets.NewRedactor(nil)}
+	_, err := w.Write([]byte("plain text"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if next.writes != 1 {
+		t.Fatalf("downstream writes = %d, want 1", next.writes)
+	}
+}
+
+func TestStreamingRedactingWriterFlushReportsShortWrite(t *testing.T) {
+	w := &StreamingRedactingWriter{
+		Next:     shortWriter{},
+		Redactor: secrets.NewRedactor([]string{"hidden"}),
+	}
+	_, err := w.Write([]byte("h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Flush(); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("Flush error = %v, want ErrShortWrite", err)
 	}
 }
 

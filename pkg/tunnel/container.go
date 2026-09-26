@@ -132,10 +132,11 @@ func (c *ContainerTunnel) runHostTunnel(
 	return agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			return c.client.Command(ctx, client.CommandOptions{
-				Command: command,
-				Stdin:   stdin,
-				Stdout:  stdout,
-				Stderr:  stderr,
+				Command:   command,
+				Stdin:     stdin,
+				Stdout:    stdout,
+				Stderr:    stderr,
+				RawStdout: true,
 			})
 		},
 		IsLocal:         c.client.AgentLocal(),

@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -131,6 +135,166 @@ func TestRunCommand(t *testing.T) {
 		assert.Contains(t, stdout.String(), "***")
 		assert.Contains(t, stderr.String(), "***")
 	})
+}
+
+func TestRunCommand_RawStdoutDoesNotHoldProtocolBytes(t *testing.T) {
+	requireProtocolByteRoundTrip(
+		t,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return RunCommand(ctx, RunCommandOptions{
+				Command:   types.StrArray{"/bin/sh", "-c", "printf h; read ack"},
+				Environ:   []string{"DEVSY_RUN_COMMAND_SECRET=hidden"},
+				Stdin:     stdin,
+				Stdout:    stdout,
+				RawStdout: true,
+			})
+		},
+	)
+}
+
+func TestRunCommand_RawStdoutStillRedactsStderr(t *testing.T) {
+	requirePOSIXShell(t)
+	const secret = "protocol-test-secret-846307" //nolint:gosec // test credential fixture
+	var stdout, stderr bytes.Buffer
+	err := RunCommand(context.Background(), RunCommandOptions{
+		Command: types.StrArray{
+			"/bin/sh",
+			"-c",
+			`printf '%s' "$DEVSY_RUN_COMMAND_SECRET"; printf '%s' "$DEVSY_RUN_COMMAND_SECRET" >&2`,
+		},
+		Environ:   []string{"DEVSY_RUN_COMMAND_SECRET=" + secret},
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+		RawStdout: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, secret, stdout.String())
+	assert.NotContains(t, stderr.String(), secret)
+	assert.Contains(t, stderr.String(), "***")
+}
+
+type failingWriter struct{ err error }
+
+func (w failingWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestRunCommand_ReportsFlushFailureWithoutReplacingCommandError(t *testing.T) {
+	requirePOSIXShell(t)
+	const secret = "hidden-flush-secret-846307" //nolint:gosec // test credential fixture
+	flushErr := errors.New("flush failed")
+	tests := []struct {
+		name       string
+		command    string
+		stdout     io.Writer
+		stderr     io.Writer
+		commandErr bool
+	}{
+		{
+			name:    "stdout flush",
+			command: "printf h",
+			stdout:  failingWriter{flushErr},
+		},
+		{
+			name:    "stderr flush",
+			command: "printf h >&2",
+			stderr:  failingWriter{flushErr},
+		},
+		{
+			name:       "command failure takes precedence",
+			command:    "printf h; exit 7",
+			stdout:     failingWriter{flushErr},
+			commandErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := RunCommand(context.Background(), RunCommandOptions{
+				Command: types.StrArray{"/bin/sh", "-c", tt.command},
+				Environ: []string{"DEVSY_RUN_COMMAND_SECRET=" + secret},
+				Stdout:  tt.stdout,
+				Stderr:  tt.stderr,
+			})
+			if tt.commandErr {
+				require.ErrorContains(t, err, "exit status 7")
+				assert.NotErrorIs(t, err, flushErr)
+				return
+			}
+			require.ErrorIs(t, err, flushErr)
+		})
+	}
+}
+
+func TestProxyUp_PreservesProtocolStdout(t *testing.T) {
+	const contextName = "default"
+	proxy := &proxyClient{
+		devsyConfig: &config.Config{
+			DefaultContext: contextName,
+			Contexts: map[string]*config.ContextConfig{
+				contextName: {},
+			},
+		},
+		config: &provider.ProviderConfig{
+			Name: "test",
+			Exec: provider.ProviderCommands{
+				Proxy: &provider.ProxyCommands{
+					Up: types.StrArray{"/bin/sh", "-c", "printf h; read ack"},
+				},
+			},
+		},
+		workspace: &provider.Workspace{ID: "test", Context: contextName},
+	}
+	proxy.executor = &proxyExecutor{client: proxy}
+	requireProtocolByteRoundTrip(
+		t,
+		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
+			return proxy.Up(ctx, client.UpOptions{Stdin: stdin, Stdout: stdout})
+		},
+	)
+}
+
+func requireProtocolByteRoundTrip(
+	t *testing.T,
+	run func(context.Context, io.Reader, io.Writer) error,
+) {
+	t.Helper()
+	requirePOSIXShell(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	stdinReader, stdinWriter := io.Pipe()
+	stdoutReader, stdoutWriter := io.Pipe()
+	defer func() { _ = stdinReader.Close() }()
+	defer func() { _ = stdinWriter.Close() }()
+	defer func() { _ = stdoutReader.Close() }()
+	defer func() { _ = stdoutWriter.Close() }()
+	stopClosingPipes := context.AfterFunc(ctx, func() {
+		_ = stdinReader.Close()
+		_ = stdinWriter.Close()
+		_ = stdoutReader.Close()
+		_ = stdoutWriter.Close()
+	})
+	defer stopClosingPipes()
+
+	done := make(chan error, 1)
+	go func() {
+		defer func() { _ = stdoutWriter.Close() }()
+		done <- run(ctx, stdinReader, stdoutWriter)
+	}()
+
+	got := make([]byte, 1)
+	_, err := io.ReadFull(stdoutReader, got)
+	require.NoError(t, err)
+	require.Equal(t, []byte("h"), got)
+	_, err = io.WriteString(stdinWriter, "ack\n")
+	require.NoError(t, err)
+	require.NoError(t, stdinWriter.Close())
+	require.NoError(t, <-done)
+}
+
+func requirePOSIXShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX shell")
+	}
 }
 
 func TestLogBusy(t *testing.T) {

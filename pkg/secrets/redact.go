@@ -104,9 +104,8 @@ func (r *Redactor) Redact(s string) string {
 	return authorizationPattern.ReplaceAllString(s, "$1***")
 }
 
-// StreamingRedactor preserves a short suffix between writes so secrets split
-// across subprocess or logger chunks are still masked before they are
-// forwarded. Call Flush when the stream ends to release the final suffix.
+// StreamingRedactor masks secrets split across text writes, buffering a short
+// suffix until the next write or Flush.
 type StreamingRedactor struct {
 	mu      sync.Mutex
 	base    *Redactor

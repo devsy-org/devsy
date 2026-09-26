@@ -61,6 +61,7 @@ type execConfig struct {
 	stderr       io.Writer
 	extraEnv     map[string]string
 	stdin        io.Reader
+	rawStdout    bool
 	withProgress bool
 	startMsg     string
 	doneMsg      string
@@ -87,6 +88,7 @@ func (e *machineExecutor) execute(ctx context.Context, cfg execConfig) error {
 		Stderr:               cfg.stderr,
 		ExtraEnv:             cfg.extraEnv,
 		Stdin:                cfg.stdin,
+		RawStdout:            cfg.rawStdout,
 	})
 	if err != nil {
 		return err
@@ -192,11 +194,12 @@ func (s *machineClient) Stop(ctx context.Context, options client.StopOptions) er
 
 func (s *machineClient) Command(ctx context.Context, commandOptions client.CommandOptions) error {
 	return s.executor.execute(ctx, execConfig{
-		name:    "command",
-		command: s.config.Exec.Command,
-		stdout:  commandOptions.Stdout,
-		stderr:  commandOptions.Stderr,
-		stdin:   commandOptions.Stdin,
+		name:      "command",
+		command:   s.config.Exec.Command,
+		stdout:    commandOptions.Stdout,
+		stderr:    commandOptions.Stderr,
+		stdin:     commandOptions.Stdin,
+		rawStdout: commandOptions.RawStdout,
 		extraEnv: map[string]string{
 			provider.CommandEnv: commandOptions.Command,
 		},
@@ -212,6 +215,7 @@ func (s *machineClient) OpenCommandTransport(
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			return s.Command(ctx, client.CommandOptions{
 				Command: opt.Command, Stdin: stdin, Stdout: stdout, Stderr: opt.Stderr,
+				RawStdout: true,
 			})
 		},
 		transport.CallbackConnOptions{
