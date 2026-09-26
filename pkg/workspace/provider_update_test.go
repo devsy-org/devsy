@@ -137,6 +137,8 @@ func TestProviderUpdateSkipReason(t *testing.T) {
 		originalSource = "github.com/org/provider@v1.0.0"
 		updatedPin     = "github.com/org/provider@v1.1.0"
 		otherSource    = "github.com/other/provider@v1.0.0"
+		version100     = "v1.0.0"
+		version110     = "v1.1.0"
 	)
 	tests := []struct {
 		name           string
@@ -150,14 +152,14 @@ func TestProviderUpdateSkipReason(t *testing.T) {
 			name:           "unchanged source",
 			originalSource: provider.ProviderSource{Raw: originalSource},
 			currentSource:  provider.ProviderSource{Raw: originalSource},
-			currentVersion: "v1.0.0",
-			newVersion:     "v1.1.0",
+			currentVersion: version100,
+			newVersion:     version110,
 		},
 		{
 			name:           "pin changed on same repository",
 			originalSource: provider.ProviderSource{Raw: originalSource},
 			currentSource:  provider.ProviderSource{Raw: updatedPin},
-			currentVersion: "v1.1.0",
+			currentVersion: version110,
 			newVersion:     "v1.2.0",
 			wantReason:     "provider source changed",
 		},
@@ -165,7 +167,7 @@ func TestProviderUpdateSkipReason(t *testing.T) {
 			name:           "repository changed",
 			originalSource: provider.ProviderSource{Raw: originalSource},
 			currentSource:  provider.ProviderSource{Raw: otherSource},
-			currentVersion: "v1.0.0",
+			currentVersion: version100,
 			newVersion:     "v1.2.0",
 			wantReason:     "provider source changed",
 		},
@@ -173,8 +175,8 @@ func TestProviderUpdateSkipReason(t *testing.T) {
 			name:           "current version is newer",
 			originalSource: provider.ProviderSource{Raw: updatedPin},
 			currentSource:  provider.ProviderSource{Raw: updatedPin},
-			currentVersion: "v1.1.0",
-			newVersion:     "v1.0.0",
+			currentVersion: version110,
+			newVersion:     version100,
 			wantReason:     "provider already up to date",
 		},
 	}
