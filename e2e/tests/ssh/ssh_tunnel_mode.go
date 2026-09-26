@@ -147,11 +147,14 @@ var _ = ginkgo.Describe(
 				gomega.Expect(port).NotTo(gomega.BeEmpty(), "should find Port in SSH config")
 
 				addr := net.JoinHostPort("127.0.0.1", port)
-				conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
-				gomega.Expect(err).NotTo(gomega.HaveOccurred(),
-					"should be able to connect to local tunnel port",
-				)
-				_ = conn.Close()
+				gomega.Eventually(func() error {
+					conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+					if err != nil {
+						return err
+					}
+					return conn.Close()
+				}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(2*time.Second).
+					Should(gomega.Succeed(), "should be able to connect to local tunnel port")
 			},
 		)
 
@@ -176,14 +179,28 @@ var _ = ginkgo.Describe(
 
 				waitDetachedTunnelReady(ctx, f, taskID)
 
-				for i := range 3 {
-					sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(20*time.Second))
-					out, err := f.DevsySSH(
-						sshCtx,
-						tempDir,
-						"echo iteration-"+strings.Repeat("x", i),
-					)
-					cancelSSH()
+				runSSH := func(i int, budget time.Duration) (string, error) {
+					sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(budget))
+					defer cancelSSH()
+					return f.DevsySSH(sshCtx, tempDir, "echo iteration-"+strings.Repeat("x", i))
+				}
+
+				// The task phase mixes sub-pipeline events, so the first
+				// command can still race the tunnel listener on a cold
+				// container; later commands then exercise the warm path.
+				var out string
+				gomega.Eventually(func() error {
+					var err error
+					out, err = runSSH(0, time.Minute)
+					return err
+				}).WithContext(ctx).WithTimeout(3 * time.Minute).WithPolling(10 * time.Second).
+					Should(gomega.Succeed())
+				gomega.Expect(out).To(
+					gomega.ContainSubstring("iteration-"),
+					"sequential SSH command should succeed",
+				)
+				for i := 1; i < 3; i++ {
+					out, err := runSSH(i, 20*time.Second)
 					framework.ExpectNoError(err)
 					gomega.Expect(out).To(
 						gomega.ContainSubstring("iteration-"),
