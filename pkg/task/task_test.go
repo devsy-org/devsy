@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/gofrs/flock"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -363,13 +365,92 @@ func TestCancelWithoutPIDMarksFailed(t *testing.T) {
 	if state.Error != ErrCanceled.Error() {
 		t.Errorf("error = %q, want %q", state.Error, ErrCanceled.Error())
 	}
-	if state.ErrorCode != "canceled" || state.ErrorHint == "" {
+	if state.ErrorCode != string(clierr.CodeCanceled) || state.ErrorHint == "" {
 		t.Errorf(
 			"cancellation metadata = (%q, %q), want stable code and hint",
 			state.ErrorCode,
 			state.ErrorHint,
 		)
 	}
+}
+
+func TestCancelHoldsWorkerLockThroughCancellationCommit(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	lockClaimed := make(chan struct{})
+	continueCancel := make(chan struct{})
+	store.SetAfterCancelLockClaimedForTest(func() {
+		close(lockClaimed)
+		<-continueCancel
+	})
+	cancelDone := make(chan error, 1)
+	go func() { cancelDone <- tk.Cancel() }()
+	<-lockClaimed
+
+	path, err := store.workerLockPath(tk.ID())
+	if err != nil {
+		t.Fatalf("workerLockPath: %v", err)
+	}
+	workerLock := flock.New(path)
+	assertWorkerLock(t, workerLock, false, "while Cancel owns worker lock")
+
+	close(continueCancel)
+	if err := <-cancelDone; err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	assertWorkerLock(t, workerLock, true, "after Cancel")
+	defer func() { _ = workerLock.Unlock() }()
+
+	requireCanceledState(t, store, tk.ID())
+}
+
+func assertWorkerLock(t *testing.T, lock *flock.Flock, wantLocked bool, when string) {
+	t.Helper()
+	locked, err := lock.TryLock()
+	if err != nil {
+		t.Fatalf("TryLock %s: %v", when, err)
+	}
+	if locked != wantLocked {
+		if locked {
+			_ = lock.Unlock()
+		}
+		t.Fatalf("worker lock held %t %s, want %t", locked, when, wantLocked)
+	}
+}
+
+func TestOverlappingCancelsBeforePIDBothSucceed(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	lockClaimed := make(chan struct{})
+	continueCancel := make(chan struct{})
+	store.SetAfterCancelLockClaimedForTest(func() {
+		close(lockClaimed)
+		<-continueCancel
+	})
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- tk.Cancel() }()
+	<-lockClaimed
+
+	secondDone := make(chan error, 1)
+	go func() { secondDone <- tk.Cancel() }()
+	time.Sleep(200 * time.Millisecond)
+	close(continueCancel)
+
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first Cancel: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second Cancel: %v", err)
+	}
+	requireCanceledState(t, store, tk.ID())
 }
 
 func TestCancelOnTerminalTaskIsNoop(t *testing.T) {
@@ -809,11 +890,207 @@ func TestReconcilePreservesCancellationReason(t *testing.T) {
 	if reconciled.Error != ErrCanceled.Error() {
 		t.Errorf("error = %q, want %q", reconciled.Error, ErrCanceled.Error())
 	}
-	if reconciled.ErrorCode != "canceled" || reconciled.ErrorHint == "" {
+	if reconciled.ErrorCode != string(clierr.CodeCanceled) || reconciled.ErrorHint == "" {
 		t.Errorf(
 			"cancellation metadata = (%q, %q), want stable code and hint",
 			reconciled.ErrorCode,
 			reconciled.ErrorHint,
 		)
+	}
+}
+
+func newLiveWorkerTask(t *testing.T, store *Store) *Task {
+	t.Helper()
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	holdWorkerLock(t, tk)
+	if err := tk.SetPID(4242); err != nil {
+		t.Fatalf("SetPID: %v", err)
+	}
+	return tk
+}
+
+func requireCanceledState(t *testing.T, store *Store, id string) {
+	t.Helper()
+	state, err := store.Get(id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status != StatusFailed ||
+		state.Error != ErrCanceled.Error() ||
+		state.ErrorCode != string(clierr.CodeCanceled) {
+		t.Errorf("unexpected final state: %+v", state)
+	}
+}
+
+func TestCancelKillFailureRemainsRetryable(t *testing.T) {
+	store := newTestStore(t)
+	tk := newLiveWorkerTask(t, store)
+
+	killCalls := 0
+	store.SetKillProcessForTest(func(pid, treeName string) error {
+		killCalls++
+		if killCalls == 1 {
+			return errors.New("boom")
+		}
+		return nil
+	})
+
+	if err := tk.Cancel(); err == nil {
+		t.Fatal("first Cancel = nil, want kill failure")
+	}
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status.Terminal() {
+		t.Fatalf(
+			"task recorded terminal %q while its worker survived the failed kill",
+			state.Status,
+		)
+	}
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("retry Cancel: %v", err)
+	}
+	if killCalls != 2 {
+		t.Errorf("kill invoked %d times, want 2 (one per Cancel)", killCalls)
+	}
+	requireCanceledState(t, store, tk.ID())
+}
+
+func TestCancelSuccessfulKillCommitsCanceled(t *testing.T) {
+	store := newTestStore(t)
+	tk := newLiveWorkerTask(t, store)
+
+	store.SetKillProcessForTest(func(pid, treeName string) error {
+		state, err := store.Get(tk.ID())
+		if err != nil {
+			t.Errorf("Get during kill: %v", err)
+		}
+		if state.Status.Terminal() {
+			t.Errorf("task recorded %q before its worker was terminated", state.Status)
+		}
+		return nil
+	})
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	requireCanceledState(t, store, tk.ID())
+}
+
+func TestCancelAwaitsPIDPublication(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	holdWorkerLock(t, tk)
+
+	var killedPID, killedTree string
+	store.SetKillProcessForTest(func(pid, treeName string) error {
+		killedPID, killedTree = pid, treeName
+		return nil
+	})
+
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		if err := tk.SetPID(4242); err != nil {
+			t.Errorf("SetPID: %v", err)
+		}
+	}()
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if killedPID != "4242" {
+		t.Errorf("kill pid = %q, want 4242", killedPID)
+	}
+	if killedTree != WorkerProcessName(tk.ID()) {
+		t.Errorf("kill tree = %q, want %q", killedTree, WorkerProcessName(tk.ID()))
+	}
+	requireCanceledState(t, store, tk.ID())
+}
+
+func TestCancelUnpublishedPIDStaysRetryable(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	holdWorkerLock(t, tk)
+
+	store.SetKillProcessForTest(func(pid, treeName string) error {
+		t.Error("kill invoked before the worker published a pid")
+		return nil
+	})
+
+	if err := tk.Cancel(); err == nil {
+		t.Fatal("Cancel = nil, want unpublished-pid error")
+	}
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status.Terminal() {
+		t.Fatalf("task recorded terminal %q with no killed worker", state.Status)
+	}
+}
+
+func TestCancelDeadWorkerDoesNotInvokeKill(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := tk.HoldWorkerLock(); err != nil {
+		t.Fatalf("HoldWorkerLock: %v", err)
+	}
+	if err := tk.ReleaseWorkerLockForTest(); err != nil {
+		t.Fatalf("ReleaseWorkerLockForTest: %v", err)
+	}
+	if err := tk.SetPID(4242); err != nil {
+		t.Fatalf("SetPID: %v", err)
+	}
+
+	store.SetKillProcessForTest(func(pid, treeName string) error {
+		t.Error("kill invoked for a task whose worker lock is dead")
+		return nil
+	})
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	requireCanceledState(t, store, tk.ID())
+}
+
+func TestCancelRacingLateSuccessStillWinsAfterSuccessfulTermination(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	holdWorkerLock(t, tk)
+	if err := tk.SetPID(4242); err != nil {
+		t.Fatalf("SetPID: %v", err)
+	}
+
+	store.SetKillProcessForTest(func(pid, treeName string) error {
+		// The worker reports its own success while the kill unwinds it.
+		return tk.Succeed(&config.Result{})
+	})
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status != StatusFailed || state.Error != ErrCanceled.Error() {
+		t.Errorf("late worker success overwrote the accepted cancellation: %+v", state)
 	}
 }

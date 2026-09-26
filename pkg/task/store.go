@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/random"
 	"github.com/gofrs/flock"
@@ -17,11 +18,19 @@ import (
 // lockTimeout bounds how long update waits to acquire a task's file lock.
 const lockTimeout = 5 * time.Second
 
+// pidPublishTimeout bounds Cancel's wait for a starting worker to publish
+// its PID.
+const pidPublishTimeout = 5 * time.Second
+
 // Store persists task state as one JSON file per task under dir.
 type Store struct {
 	dir string
+	// Test seam; see Store.SetKillProcessForTest.
+	killProcess func(pid, treeName string) error
 	// Test seam; see Store.SetAfterClaimForTest.
 	afterClaimForTest func()
+	// Test seam for the cancellation/worker-start lock handoff.
+	afterCancelLockClaimedForTest func()
 }
 
 func NewStore() (*Store, error) {
@@ -36,7 +45,7 @@ func NewStoreAt(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create task dir: %w", err)
 	}
-	return &Store{dir: dir}, nil
+	return &Store{dir: dir, killProcess: command.KillTree}, nil
 }
 
 func (s *Store) Create(opts CreateOptions) (*Task, error) {
@@ -167,6 +176,73 @@ func (s *Store) List() ([]*State, error) {
 	return states, nil
 }
 
+// ActiveForWorkspace returns the non-terminal tasks labeled with the exact
+// workspace ID, newest first, reconciling stale workers first so an
+// abandoned task does not read as live. A non-empty command restricts the
+// match.
+func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error) {
+	states, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+
+	active := make([]*State, 0, len(states))
+	for _, state := range states {
+		if state.WorkspaceID != workspaceID {
+			continue
+		}
+		if command != "" && state.Command != command {
+			continue
+		}
+		state = s.Reconcile(state)
+		if state.Status.Terminal() {
+			continue
+		}
+		active = append(active, state)
+	}
+	return active, nil
+}
+
+// SetKillProcessForTest replaces this store's process termination hook, so a
+// test can drive cancellation outcomes deterministically without real PIDs.
+//
+// Not in export_test.go: other packages' tests need it, and a _test.go file
+// compiles only into its own package's test binary.
+func (s *Store) SetKillProcessForTest(fn func(pid, treeName string) error) {
+	s.killProcess = fn
+}
+
+// SetAfterCancelLockClaimedForTest pauses Cancel while it owns the worker
+// lock, allowing tests to verify that a starting worker cannot pass it.
+//
+// Not in export_test.go: other packages' tests need it, and a _test.go file
+// compiles only into its own package's test binary.
+func (s *Store) SetAfterCancelLockClaimedForTest(fn func()) {
+	s.afterCancelLockClaimedForTest = fn
+}
+
+// awaitPID polls for the worker to publish its PID, which it does right
+// after claiming the worker lock. A concurrent cancellation can commit the
+// terminal state first, leaving nothing to wait for.
+func (s *Store) awaitPID(id string, timeout time.Duration) (int, bool) {
+	deadline := time.Now().Add(timeout)
+	for {
+		state, err := s.Get(id)
+		if err == nil {
+			if state.PID != 0 {
+				return state.PID, false
+			}
+			if state.Status.Terminal() {
+				return 0, true
+			}
+		}
+		if time.Now().After(deadline) {
+			return 0, false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // failAbandoned records ErrAbandoned for a task whose worker is confirmed gone.
 // Must be called with the worker lock held.
 func (s *Store) failAbandoned(state *State) *State {
@@ -196,6 +272,24 @@ func (s *Store) workerAlive(id string) bool {
 	}
 	_ = lock.Unlock()
 	return false
+}
+
+// tryWorkerLock claims the task's worker lock when no worker owns it. Unlike
+// claimDeadWorkerLock, it creates the lock file if the worker has not started.
+func (s *Store) tryWorkerLock(id string) (*flock.Flock, bool, error) {
+	path, err := s.workerLockPath(id)
+	if err != nil {
+		return nil, false, err
+	}
+	lock := flock.New(path)
+	locked, err := lock.TryLock()
+	if err != nil {
+		return nil, false, err
+	}
+	if !locked {
+		return nil, false, nil
+	}
+	return lock, true, nil
 }
 
 // claimDeadWorkerLock acquires the task's worker lock, which only succeeds when

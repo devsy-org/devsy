@@ -32,6 +32,7 @@ const (
 	cmdList      = "list"
 	cmdGet       = "get"
 	cmdDelete    = "delete"
+	cmdCancel    = "cancel"
 	cmdSSH       = "ssh"
 	cmdProvider  = "provider"
 	cmdWorkspace = "workspace"
@@ -476,6 +477,17 @@ func (f *Framework) DevsyWorkspaceStop(ctx context.Context, extraArgs ...string)
 	baseArgs := []string{cmdWorkspace, "stop"}
 	baseArgs = append(baseArgs, extraArgs...)
 	return f.ExecCommandStdout(ctx, baseArgs)
+}
+
+// DevsyWorkspaceTaskCancel cancels a detached workspace task.
+func (f *Framework) DevsyWorkspaceTaskCancel(ctx context.Context, taskID string) error {
+	return f.ExecCommandStdout(ctx, []string{cmdWorkspace, "task", cmdCancel, taskID})
+}
+
+// DevsyWorkspaceTaskList returns the raw `workspace task list` JSON states.
+func (f *Framework) DevsyWorkspaceTaskList(ctx context.Context) (string, error) {
+	return f.ExecCommandOutput(ctx,
+		[]string{cmdWorkspace, "task", cmdList, flagResultFormat, formatJSON})
 }
 
 func (f *Framework) DevsyWorkspaceDelete(

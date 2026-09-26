@@ -59,7 +59,7 @@ func StartBackgroundOnce(commandName string, createCommand CreateCommand) error 
 		return err
 	}
 
-	return startCommand(cmd, paths.pidFile, paths.streamsFile)
+	return startCommand(cmd, commandName, paths.pidFile, paths.streamsFile)
 }
 
 type processPaths struct {
@@ -98,24 +98,31 @@ func StartBackground(commandName string, createCommand CreateCommand) error {
 		return err
 	}
 
-	return startDetached(cmd, "", streamsFile)
+	return startDetached(cmd, commandName, "", streamsFile)
 }
 
-func startCommand(cmd *exec.Cmd, pidFile, streamsFile string) error {
-	return startDetached(cmd, pidFile, streamsFile)
+func startCommand(cmd *exec.Cmd, commandName, pidFile, streamsFile string) error {
+	return startDetached(cmd, commandName, pidFile, streamsFile)
 }
 
-func startDetached(cmd *exec.Cmd, pidFile, streamsFile string) error {
+func startDetached(cmd *exec.Cmd, commandName, pidFile, streamsFile string) error {
 	streamsF, err := openStreamsFile(cmd, streamsFile)
 	if err != nil {
 		return err
 	}
 
+	prepareBackgroundTree(cmd)
 	if err := cmd.Start(); err != nil {
 		closeFile(streamsF)
 		return fmt.Errorf("start process: %w", err)
 	}
 	closeFile(streamsF)
+
+	if err := ownProcessTree(cmd.Process.Pid, commandName); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return fmt.Errorf("assign process tree ownership for pid %d: %w", cmd.Process.Pid, err)
+	}
 
 	if pidFile != "" {
 		if err := os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
@@ -123,6 +130,15 @@ func startDetached(cmd *exec.Cmd, pidFile, streamsFile string) error {
 			_ = cmd.Wait()
 			return fmt.Errorf("write pid file (process killed to prevent orphan): %w", err)
 		}
+	}
+
+	if err := resumeBackgroundTree(cmd.Process.Pid); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		if pidFile != "" {
+			_ = os.Remove(pidFile)
+		}
+		return fmt.Errorf("resume process %d: %w", cmd.Process.Pid, err)
 	}
 
 	_ = cmd.Process.Release()

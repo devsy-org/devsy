@@ -8,9 +8,11 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/command"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/task"
+	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 )
 
 // runDetached submits this invocation as a background task and returns
@@ -76,13 +78,16 @@ func detachedArgs(args []string) []string {
 	return out
 }
 
-// detachWorkspaceLabel is a best-effort label for task list.
+// detachWorkspaceLabel resolves the workspace ID at submission so stop and
+// delete can match the task before the worker starts and records the
+// authoritative ID.
 func (cmd *UpCmd) detachWorkspaceLabel(args []string) string {
 	if cmd.ID != "" {
 		return cmd.ID
 	}
 	if len(args) > 0 {
-		return args[0]
+		_, source := file.IsLocalDir(args[0])
+		return workspace2.ToID(source)
 	}
 	return ""
 }
@@ -113,6 +118,16 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 	if err := t.SetPID(os.Getpid()); err != nil {
 		failTask(t, err)
 		return nil, err
+	}
+	state, err := store.Get(cmd.taskID)
+	if err != nil {
+		failTask(t, err)
+		return nil, err
+	}
+	// Canceled before this worker claimed its lock: the canceled state is
+	// already recorded and this worker must not overwrite it or run up.
+	if state.Status.Terminal() {
+		return nil, task.ErrCanceled
 	}
 	return t, nil
 }

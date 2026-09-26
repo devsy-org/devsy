@@ -20,6 +20,7 @@ type LocalTunnel struct {
 	cancel              context.CancelFunc
 	wg                  sync.WaitGroup
 	dialFunc            DialFunc
+	healthCheckFunc     func(ctx context.Context) error
 	healthCheckInterval time.Duration
 }
 
@@ -31,8 +32,13 @@ type DialFunc func(ctx context.Context) (io.ReadWriteCloser, error)
 type LocalTunnelOptions struct {
 	// BasePort is the starting port to search from (default: 10800)
 	BasePort int
-	// DialFunc creates a connection to the remote SSH endpoint
+	// DialFunc is the data path: it connects to the remote SSH endpoint
+	// for accepted local connections.
 	DialFunc DialFunc
+	// HealthCheckFunc is the control-plane liveness probe. It must stay
+	// observational: never start, restart, or otherwise mutate the resource
+	// it probes. When nil, the listener lifetime follows its context.
+	HealthCheckFunc func(ctx context.Context) error
 	// HealthCheckInterval overrides the default health check interval (for testing).
 	// If zero, defaults to healthCheckInterval (30s).
 	HealthCheckInterval time.Duration
@@ -76,8 +82,11 @@ func NewLocalTunnel(ctx context.Context, opts LocalTunnelOptions) (*LocalTunnel,
 		_ = listener.Close()
 	}()
 
-	t.wg.Add(1)
-	go t.healthCheck()
+	if opts.HealthCheckFunc != nil {
+		t.healthCheckFunc = opts.HealthCheckFunc
+		t.wg.Add(1)
+		go t.healthCheck()
+	}
 
 	return t, nil
 }
@@ -112,8 +121,7 @@ func (t *LocalTunnel) healthCheck() {
 		case <-t.ctx.Done():
 			return
 		case <-ticker.C:
-			conn, err := t.dialFunc(t.ctx)
-			if err != nil {
+			if err := t.healthCheckFunc(t.ctx); err != nil {
 				failures++
 				log.Debugf(
 					"tunnel health check failed (%d/%d): %v",
@@ -130,7 +138,6 @@ func (t *LocalTunnel) healthCheck() {
 					return
 				}
 			} else {
-				_ = conn.Close()
 				failures = 0
 			}
 		}
