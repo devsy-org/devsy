@@ -22,10 +22,10 @@ type platform struct {
 }
 
 var platforms = []platform{
-	{OS: "macos", Arch: "arm", Binary: "devsy-darwin-arm64"},
-	{OS: "macos", Arch: "intel", Binary: "devsy-darwin-amd64"},
-	{OS: "linux", Arch: "arm", Binary: "devsy-linux-arm64"},
-	{OS: "linux", Arch: "intel", Binary: "devsy-linux-amd64"},
+	{OS: "macos", Arch: "arm", Binary: "devsy-homebrew-darwin-arm64"},
+	{OS: "macos", Arch: "intel", Binary: "devsy-homebrew-darwin-amd64"},
+	{OS: "linux", Arch: "arm", Binary: "devsy-homebrew-linux-arm64"},
+	{OS: "linux", Arch: "intel", Binary: "devsy-homebrew-linux-amd64"},
 }
 
 const formulaTmpl = `class Devsy < Formula
@@ -36,28 +36,28 @@ const formulaTmpl = `class Devsy < Formula
 
   on_macos do
     on_arm do
-      url "{{ (index .Platforms "macos/arm").URL }}"
+      url "{{ (index .Platforms "macos/arm").URL }}" using: :nounzip
       sha256 "{{ (index .Platforms "macos/arm").SHA256 }}"
     end
     on_intel do
-      url "{{ (index .Platforms "macos/intel").URL }}"
+      url "{{ (index .Platforms "macos/intel").URL }}" using: :nounzip
       sha256 "{{ (index .Platforms "macos/intel").SHA256 }}"
     end
   end
 
   on_linux do
     on_arm do
-      url "{{ (index .Platforms "linux/arm").URL }}"
+      url "{{ (index .Platforms "linux/arm").URL }}" using: :nounzip
       sha256 "{{ (index .Platforms "linux/arm").SHA256 }}"
     end
     on_intel do
-      url "{{ (index .Platforms "linux/intel").URL }}"
+      url "{{ (index .Platforms "linux/intel").URL }}" using: :nounzip
       sha256 "{{ (index .Platforms "linux/intel").SHA256 }}"
     end
   end
 
   def install
-    bin.install Dir["devsy-*"].first => "devsy"
+    bin.install Dir["devsy-homebrew-*"].first => "devsy"
   end
 
   test do

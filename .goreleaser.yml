@@ -62,6 +62,14 @@ builds:
     env:
       - CGO_ENABLED=0
 
+  - id: devsy-homebrew
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    binary: devsy-homebrew-{{ .Os }}-{{ .Arch }}
+    ldflags: -s -w -X main.build={{ .Env.DEVSY_CLI_VERSION }} -X main.commit={{ .Commit }} -X main.date={{ .Date }} -X github.com/devsy-org/devsy/pkg/version.version={{ .Env.DEVSY_CLI_VERSION }} -X github.com/devsy-org/devsy/pkg/version.packageManager=homebrew -X github.com/devsy-org/devsy/pkg/telemetry/analytics.posthogAPIKey={{ envOrDefault "DEVSY_POSTHOG_API_KEY" "" }}
+    env:
+      - CGO_ENABLED=0
+
   - id: devsy-dev
     goos: [linux, darwin]
     goarch: [amd64, arm64]
