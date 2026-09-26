@@ -358,6 +358,25 @@ func SaveConfig(config *Config) error {
 	return writeConfigAtomic(configOrigin, out)
 }
 
+// UpdateConfig runs a read/modify/write cycle on config.yaml under LockConfig:
+// the config is loaded after the lock is acquired and saved before it is
+// released, so concurrent mutations cannot lose each other's changes.
+func UpdateConfig(contextOverride, providerOverride string, mutate func(*Config) error) error {
+	unlock, err := LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err := LoadConfig(contextOverride, providerOverride)
+	if err != nil {
+		return err
+	}
+	if err := mutate(devsyConfig); err != nil {
+		return err
+	}
+	return SaveConfig(devsyConfig)
+}
+
 // LockConfig serializes read/modify/write mutations to config.yaml across
 // processes. Callers must acquire it before loading the config and hold it
 // until every related persistent operation is complete.

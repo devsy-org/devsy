@@ -44,31 +44,27 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
-	devsyConfig, err := config.LoadConfig(context, cmd.Provider)
+	err := config.UpdateConfig(context, cmd.Provider, func(devsyConfig *config.Config) error {
+		if context == "" {
+			context = devsyConfig.DefaultContext
+		} else if devsyConfig.Contexts[context] == nil {
+			return fmt.Errorf("context %q doesn't exist", context)
+		}
+
+		if context == config.DefaultContext {
+			return fmt.Errorf("cannot delete 'default' context")
+		}
+
+		if err := deleteContextSecrets(devsyConfig, context); err != nil {
+			return err
+		}
+
+		delete(devsyConfig.Contexts, context)
+		resetContextReferences(devsyConfig, context)
+		return nil
+	})
 	if err != nil {
 		return err
-	}
-
-	if context == "" {
-		context = devsyConfig.DefaultContext
-	} else if devsyConfig.Contexts[context] == nil {
-		return fmt.Errorf("context %q doesn't exist", context)
-	}
-
-	if context == "default" {
-		return fmt.Errorf("cannot delete 'default' context")
-	}
-
-	if err := deleteContextSecrets(devsyConfig, context); err != nil {
-		return err
-	}
-
-	delete(devsyConfig.Contexts, context)
-	resetContextReferences(devsyConfig, context)
-
-	err = config.SaveConfig(devsyConfig)
-	if err != nil {
-		return fmt.Errorf("save config: %w", err)
 	}
 
 	return removeContextDir(context)
@@ -91,10 +87,10 @@ func removeContextDir(contextName string) error {
 
 func resetContextReferences(devsyConfig *config.Config, context string) {
 	if devsyConfig.DefaultContext == context {
-		devsyConfig.DefaultContext = "default"
+		devsyConfig.DefaultContext = config.DefaultContext
 	}
 	if devsyConfig.OriginalContext == context {
-		devsyConfig.OriginalContext = "default"
+		devsyConfig.OriginalContext = config.DefaultContext
 	}
 }
 

@@ -55,23 +55,13 @@ with 'devsy ide list'.`,
 
 // Run runs the command logic.
 func (cmd *SetCmd) Run(_ context.Context, ideName string) error {
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
-	if err != nil {
-		return err
-	}
-
 	ideName = strings.ToLower(ideName)
 	ideOptions, err := ideparse.GetIDEOptions(ideName)
 	if err != nil {
 		return err
 	}
 
-	if err := setOptions(devsyConfig, ideName, cmd.Options, ideOptions); err != nil {
-		return err
-	}
-
-	if err := config.SaveConfig(devsyConfig); err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
-	return nil
+	return config.UpdateConfig(cmd.Context, cmd.Provider, func(devsyConfig *config.Config) error {
+		return setOptions(devsyConfig, ideName, cmd.Options, ideOptions)
+	})
 }

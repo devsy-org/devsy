@@ -35,6 +35,12 @@ func NewSetSourceCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Short: "Set or change a provider's source (replaces the registered name, repo, URL, or path)",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
+			unlock, err := config.LockConfig()
+			if err != nil {
+				return err
+			}
+			defer unlock()
+
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err

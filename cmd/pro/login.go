@@ -108,17 +108,29 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string) error {
 		return err
 	}
 
-	devsyConfig, currentInstance, err := cmd.resolveInstance(fullURL)
-	if err != nil {
-		return err
-	}
-
-	devsyConfig, err = cmd.ensureProvider(ctx, devsyConfig, currentInstance, fullURL)
+	devsyConfig, err := cmd.prepareProvider(ctx, fullURL)
 	if err != nil {
 		return err
 	}
 
 	return cmd.loginAndConfigure(ctx, devsyConfig, fullURL)
+}
+
+// prepareProvider applies the login-related config changes under the config
+// lock; the interactive browser login itself runs unlocked.
+func (cmd *LoginCmd) prepareProvider(ctx context.Context, fullURL string) (*config.Config, error) {
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	devsyConfig, currentInstance, err := cmd.resolveInstance(fullURL)
+	if err != nil {
+		return nil, err
+	}
+
+	return cmd.ensureProvider(ctx, devsyConfig, currentInstance, fullURL)
 }
 
 func (cmd *LoginCmd) normalizeURL(fullURL string) (string, error) {
@@ -279,8 +291,14 @@ func (cmd *LoginCmd) loginAndConfigure(
 	}
 
 	if cmd.Use {
+		unlock, err := config.LockConfig()
+		if err != nil {
+			return err
+		}
+		defer unlock()
+
 		// Post-login: preserve user values; resolver prunes anything stale.
-		err := providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
+		err = providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
 			Provider:    providerConfig,
 			ContextName: devsyConfig.DefaultContext,
 			UserOptions: cmd.Options,

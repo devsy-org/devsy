@@ -86,16 +86,46 @@ func applyProviderUpdate(
 	devsyConfig *config.Config,
 	providerName, newVersion string,
 ) error {
-	providerSource, err := ResolveProviderSource(devsyConfig, providerName)
+	originalProvider, err := FindProvider(devsyConfig, providerName)
 	if err != nil {
-		return fmt.Errorf("resolve provider source %s: %w", providerName, err)
+		return fmt.Errorf("find provider %s: %w", providerName, err)
 	}
-
-	splitted := strings.Split(providerSource, "@")
-	if len(splitted) == 0 {
+	originalSource := originalProvider.Config.Source
+	providerSource := provider2.GetProviderSource(originalSource, originalProvider.Config.Name)
+	sourceBase, _ := provider2.SplitSourceAndTag(providerSource)
+	if sourceBase == "" {
 		return fmt.Errorf("no provider source found %s", providerSource)
 	}
-	providerSource = splitted[0] + "@" + newVersion
+	providerSource = sourceBase + "@" + newVersion
+
+	// The caller's config predates the update check; reload it under the
+	// config lock so the update cannot lose a concurrent mutation.
+	unlock, err := config.LockConfig()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, "")
+	if err != nil {
+		return err
+	}
+
+	// Another command may have updated the provider while this one waited on
+	// the lock; never replace an equal or newer version with this one, and
+	// never undo a source change made in the meantime.
+	currentProvider, err := FindProvider(devsyConfig, providerName)
+	if err != nil {
+		return fmt.Errorf("find provider %s: %w", providerName, err)
+	}
+	if reason := providerUpdateSkipReason(
+		originalSource,
+		currentProvider.Config.Source,
+		currentProvider.Config.Version,
+		newVersion,
+	); reason != "" {
+		log.Infof("%s, skipping update: provider=%s", reason, providerName)
+		return nil
+	}
 
 	_, err = UpdateProvider(ctx, devsyConfig, providerName, providerSource)
 	if err != nil {
@@ -104,6 +134,21 @@ func applyProviderUpdate(
 
 	log.Infof("updated provider: provider=%s", providerName)
 	return nil
+}
+
+func providerUpdateSkipReason(
+	originalSource, currentSource provider2.ProviderSource,
+	currentVersion, newVersion string,
+) string {
+	if originalSource != currentSource {
+		return "provider source changed"
+	}
+	newV, newErr := semver.Parse(strings.TrimPrefix(newVersion, "v"))
+	currentV, currentErr := semver.Parse(strings.TrimPrefix(currentVersion, "v"))
+	if newErr == nil && currentErr == nil && currentV.GTE(newV) {
+		return "provider already up to date"
+	}
+	return ""
 }
 
 // GetProInstance returns the ProInstance associated with the given provider name, or nil if not found.
