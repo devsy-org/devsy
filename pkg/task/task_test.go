@@ -11,6 +11,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/gofrs/flock"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -370,6 +371,54 @@ func TestCancelWithoutPIDMarksFailed(t *testing.T) {
 			state.ErrorCode,
 			state.ErrorHint,
 		)
+	}
+}
+
+func TestCancelHoldsWorkerLockThroughCancellationCommit(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	lockClaimed := make(chan struct{})
+	continueCancel := make(chan struct{})
+	store.SetAfterCancelLockClaimedForTest(func() {
+		close(lockClaimed)
+		<-continueCancel
+	})
+	cancelDone := make(chan error, 1)
+	go func() { cancelDone <- tk.Cancel() }()
+	<-lockClaimed
+
+	path, err := store.workerLockPath(tk.ID())
+	if err != nil {
+		t.Fatalf("workerLockPath: %v", err)
+	}
+	workerLock := flock.New(path)
+	assertWorkerLock(t, workerLock, false, "while Cancel owns worker lock")
+
+	close(continueCancel)
+	if err := <-cancelDone; err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	assertWorkerLock(t, workerLock, true, "after Cancel")
+	defer func() { _ = workerLock.Unlock() }()
+
+	requireCanceledState(t, store, tk.ID())
+}
+
+func assertWorkerLock(t *testing.T, lock *flock.Flock, wantLocked bool, when string) {
+	t.Helper()
+	locked, err := lock.TryLock()
+	if err != nil {
+		t.Fatalf("TryLock %s: %v", when, err)
+	}
+	if locked != wantLocked {
+		if locked {
+			_ = lock.Unlock()
+		}
+		t.Fatalf("worker lock held %t %s, want %t", locked, when, wantLocked)
 	}
 }
 

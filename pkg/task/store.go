@@ -29,6 +29,8 @@ type Store struct {
 	killProcess func(pid, treeName string) error
 	// Test seam; see Store.SetAfterClaimForTest.
 	afterClaimForTest func()
+	// Test seam for the cancellation/worker-start lock handoff.
+	afterCancelLockClaimedForTest func()
 }
 
 func NewStore() (*Store, error) {
@@ -210,6 +212,15 @@ func (s *Store) SetKillProcessForTest(fn func(pid, treeName string) error) {
 	s.killProcess = fn
 }
 
+// SetAfterCancelLockClaimedForTest pauses Cancel while it owns the worker
+// lock, allowing tests to verify that a starting worker cannot pass it.
+//
+// Not in export_test.go: other packages' tests need it, and a _test.go file
+// compiles only into its own package's test binary.
+func (s *Store) SetAfterCancelLockClaimedForTest(fn func()) {
+	s.afterCancelLockClaimedForTest = fn
+}
+
 // awaitPID polls for the worker to publish its PID, which it does right
 // after claiming the worker lock.
 func (s *Store) awaitPID(id string, timeout time.Duration) int {
@@ -257,27 +268,22 @@ func (s *Store) workerAlive(id string) bool {
 	return false
 }
 
-// workerStarting reports whether a live worker holds the task's worker lock
-// without having published its PID yet: Cancel then has nothing to signal
-// until the worker publishes.
-func (s *Store) workerStarting(id string) bool {
+// tryWorkerLock claims the task's worker lock when no worker owns it. Unlike
+// claimDeadWorkerLock, it creates the lock file if the worker has not started.
+func (s *Store) tryWorkerLock(id string) (*flock.Flock, bool, error) {
 	path, err := s.workerLockPath(id)
 	if err != nil {
-		return false
-	}
-	if _, err := os.Stat(path); err != nil {
-		return false
+		return nil, false, err
 	}
 	lock := flock.New(path)
 	locked, err := lock.TryLock()
 	if err != nil {
-		return false
+		return nil, false, err
 	}
-	if locked {
-		_ = lock.Unlock()
-		return false
+	if !locked {
+		return nil, false, nil
 	}
-	return true
+	return lock, true, nil
 }
 
 // claimDeadWorkerLock acquires the task's worker lock, which only succeeds when

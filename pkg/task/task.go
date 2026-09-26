@@ -182,13 +182,14 @@ func (t *Task) Cancel() error {
 		return nil
 	}
 
-	if pid == 0 && t.store.workerStarting(t.id) {
-		pid = t.store.awaitPID(t.id, pidPublishTimeout)
-		if pid == 0 {
-			return fmt.Errorf(
-				"cancel task %s: worker has not published its pid yet, retry",
-				t.id,
-			)
+	if pid == 0 {
+		var finalized bool
+		pid, finalized, err = t.cancelWithoutPublishedPID()
+		if err != nil {
+			return err
+		}
+		if finalized {
+			return nil
 		}
 	}
 
@@ -246,6 +247,32 @@ func (t *Task) Fail(err error) error {
 			s.ErrorContext = redactContext(classified.Context, redactor)
 		}
 	})
+}
+
+func (t *Task) cancelWithoutPublishedPID() (int, bool, error) {
+	workerLock, locked, err := t.store.tryWorkerLock(t.id)
+	if err != nil {
+		return 0, false, fmt.Errorf("cancel task %s: claim worker lock: %w", t.id, err)
+	}
+	if locked {
+		defer func() { _ = workerLock.Unlock() }()
+		if t.store.afterCancelLockClaimedForTest != nil {
+			t.store.afterCancelLockClaimedForTest()
+		}
+		// Holding the worker lock through the state update prevents a
+		// not-yet-started worker from passing its terminal-state check
+		// between our liveness check and cancellation commit.
+		return 0, true, t.store.update(t.id, markCanceled)
+	}
+
+	pid := t.store.awaitPID(t.id, pidPublishTimeout)
+	if pid == 0 {
+		return 0, false, fmt.Errorf(
+			"cancel task %s: worker has not published its pid yet, retry",
+			t.id,
+		)
+	}
+	return pid, false, nil
 }
 
 type taskReporter struct {
