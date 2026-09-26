@@ -82,6 +82,7 @@ test.describe("Workspace lifecycle badges", () => {
   test("shows a Deleting badge while removal is in flight, then removes the row", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
     let deleteAccepted = false
+    let testError: unknown
 
     try {
       await api("workspace_up", {
@@ -92,8 +93,7 @@ test.describe("Workspace lifecycle badges", () => {
         timeout: 5000,
       })
 
-      // Await IPC acceptance only; the returned command ID does not wait for
-      // the CLI operation, so the assertions still run while deletion is in flight.
+      // IPC acceptance is immediate; keep these assertions ahead of CLI completion.
       await api("workspace_delete", { workspaceId: "deleteprobe" })
       deleteAccepted = true
 
@@ -102,23 +102,26 @@ test.describe("Workspace lifecycle badges", () => {
         timeout: 5000,
       })
       await waitForDeleteToSettle()
-    } finally {
-      // The IPC call acknowledges acceptance before the CLI operation settles.
-      // Wait for that operation before attempting fixture cleanup so cleanup
-      // does not race the serialization guard.
+    } catch (error) {
+      testError = error
+    }
+    // Let an accepted delete finish before retrying cleanup.
+    try {
       if (deleteAccepted) await waitForDeleteToSettle()
       const snapshot = await workspaceSnapshot()
       if (snapshot.workspaces.some(({ id }) => id === "deleteprobe")) {
         await api("workspace_delete", { workspaceId: "deleteprobe" })
         await waitForDeleteToSettle()
-        // A settled-but-failed retry leaves the workspace behind for later
-        // tests that share this app; fail loudly instead of leaking it.
+        // Avoid leaking this fixture into later tests.
         const finalSnapshot = await workspaceSnapshot()
         if (finalSnapshot.workspaces.some(({ id }) => id === "deleteprobe")) {
           throw new Error("deleteprobe workspace still present after delete retry")
         }
       }
+    } catch (cleanupError) {
+      if (!testError) throw cleanupError
     }
+    if (testError) throw testError
   })
 })
 
