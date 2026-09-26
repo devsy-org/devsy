@@ -169,10 +169,11 @@ type StatusOptions struct {
 }
 
 type CommandOptions struct {
-	Command string
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
+	Command   string
+	Stdin     io.Reader
+	Stdout    io.Writer
+	Stderr    io.Writer
+	RawStdout bool
 }
 
 type CommandTransportOptions struct {

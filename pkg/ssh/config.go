@@ -278,40 +278,50 @@ func buildTunnelConfigLines(params addHostParams) []string {
 		build()
 }
 
-// findInsertPosition finds where to insert new SSH config entry.
-func findInsertPosition(config string) (int, []string, error) {
-	lineNumber := 0
-	found := false
-	lines := []string{}
-	commentLines := 0
-
-	scanner := bufio.NewScanner(strings.NewReader(config))
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if strings.HasPrefix(strings.TrimSpace(line), "Host") && !found {
-			found = true
-			lineNumber = max(lineNumber-commentLines, 0)
-		}
-
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			commentLines++
-		} else {
-			commentLines = 0
-		}
-
-		if !found {
-			lineNumber++
-		}
-
-		lines = append(lines, line)
+func sshConfigKeyword(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return ""
 	}
 
+	if separator := strings.IndexAny(trimmed, " \t="); separator >= 0 {
+		return trimmed[:separator]
+	}
+
+	return trimmed
+}
+
+func isSSHSectionStart(line string) bool {
+	keyword := sshConfigKeyword(line)
+
+	return strings.EqualFold(keyword, "host") || strings.EqualFold(keyword, "match")
+}
+
+// findInsertPosition finds where to insert new SSH config entry.
+func findInsertPosition(config string) (int, []string, error) {
+	lines := make([]string, 0)
+	scanner := bufio.NewScanner(strings.NewReader(config))
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
 	if err := scanner.Err(); err != nil {
 		return 0, nil, err
 	}
 
-	return lineNumber, lines, nil
+	position := len(lines)
+	for i, line := range lines {
+		if !isSSHSectionStart(line) {
+			continue
+		}
+
+		position = i
+		for position > 0 && strings.HasPrefix(strings.TrimSpace(lines[position-1]), "#") {
+			position--
+		}
+		break
+	}
+
+	return position, lines, nil
 }
 
 // mergeSSHConfig inserts new lines into existing config.

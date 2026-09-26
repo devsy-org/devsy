@@ -14,6 +14,21 @@ import (
 
 const testKubernetesInstallPath = "/home/vscode/.local/bin/devsy"
 
+func TestCommandFuncPreservesProtocolStdout(t *testing.T) {
+	var got *driver.CommandParams
+	execFn := CommandFunc(func(_ context.Context, params *driver.CommandParams) error {
+		got = params
+		return nil
+	}, "workspace-id")
+
+	err := execFn(context.Background(), "test-command", nil, io.Discard, io.Discard)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "workspace-id", got.WorkspaceID)
+	assert.Equal(t, "test-command", got.Command)
+	assert.True(t, got.RawStdout)
+}
+
 func TestNewAgentDelivery_LocalDocker(t *testing.T) {
 	opts := FactoryOptions{
 		WorkspaceConfig: &provider.AgentWorkspaceInfo{

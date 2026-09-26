@@ -141,6 +141,7 @@ func CommandFunc(
 			Stdin:       stdin,
 			Stdout:      stdout,
 			Stderr:      stderr,
+			RawStdout:   true,
 		})
 	}
 }

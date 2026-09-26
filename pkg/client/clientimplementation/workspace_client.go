@@ -280,11 +280,12 @@ func (s *workspaceClient) Command(ctx context.Context, opt client.CommandOptions
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command: s.providerConfig.Exec.Command,
-		Environ: environ,
-		Stdin:   opt.Stdin,
-		Stdout:  opt.Stdout,
-		Stderr:  opt.Stderr,
+		Command:   s.providerConfig.Exec.Command,
+		Environ:   environ,
+		Stdin:     opt.Stdin,
+		Stdout:    opt.Stdout,
+		Stderr:    opt.Stderr,
+		RawStdout: opt.RawStdout,
 	})
 }
 
@@ -303,6 +304,7 @@ func (s *workspaceClient) OpenCommandTransport(
 				Command: s.providerConfig.Exec.Command,
 				Environ: environ,
 				Stdin:   stdin, Stdout: stdout, Stderr: opt.Stderr,
+				RawStdout: true,
 			})
 		},
 		transport.CallbackConnOptions{
@@ -835,6 +837,7 @@ type WorkspaceCommandConfig struct {
 	Stdin                io.Reader
 	Stdout               io.Writer
 	Stderr               io.Writer
+	RawStdout            bool
 	Command              types.StrArray
 	Workspace            *provider.Workspace
 	Machine              *provider.Machine
@@ -855,23 +858,25 @@ func RunCommandWithBinaries(ctx context.Context, cfg WorkspaceCommandConfig) err
 	}
 
 	return RunCommand(ctx, RunCommandOptions{
-		Command: cfg.Command,
-		Environ: environ,
-		Stdin:   cfg.Stdin,
-		Stdout:  cfg.Stdout,
-		Stderr:  cfg.Stderr,
+		Command:   cfg.Command,
+		Environ:   environ,
+		Stdin:     cfg.Stdin,
+		Stdout:    cfg.Stdout,
+		Stderr:    cfg.Stderr,
+		RawStdout: cfg.RawStdout,
 	})
 }
 
 type RunCommandOptions struct {
-	Command types.StrArray
-	Environ []string
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
+	Command   types.StrArray
+	Environ   []string
+	Stdin     io.Reader
+	Stdout    io.Writer
+	Stderr    io.Writer
+	RawStdout bool
 }
 
-func RunCommand(ctx context.Context, opts RunCommandOptions) error {
+func RunCommand(ctx context.Context, opts RunCommandOptions) (retErr error) {
 	if len(opts.Command) == 0 {
 		return nil
 	}
@@ -881,11 +886,21 @@ func RunCommand(ctx context.Context, opts RunCommandOptions) error {
 	}
 
 	redactor := secrets.NewEnvironmentRedactor(opts.Environ)
-	stdout := &subprocess.StreamingRedactingWriter{Next: opts.Stdout, Redactor: redactor}
+	stdout := opts.Stdout
+	var redactingStdout *subprocess.StreamingRedactingWriter
+	if !opts.RawStdout {
+		redactingStdout = &subprocess.StreamingRedactingWriter{
+			Next:     opts.Stdout,
+			Redactor: redactor,
+		}
+		stdout = redactingStdout
+	}
 	stderr := &subprocess.StreamingRedactingWriter{Next: opts.Stderr, Redactor: redactor}
 	defer func() {
-		_ = stdout.Flush()
-		_ = stderr.Flush()
+		flushErr := flushCommandOutput(redactingStdout, stderr)
+		if retErr == nil {
+			retErr = flushErr
+		}
 	}()
 
 	if len(opts.Command) == 1 {
@@ -918,6 +933,20 @@ func RunCommand(ctx context.Context, opts RunCommandOptions) error {
 		)
 	}
 	return nil
+}
+
+func flushCommandOutput(stdout, stderr *subprocess.StreamingRedactingWriter) error {
+	var stdoutErr error
+	if stdout != nil {
+		if err := stdout.Flush(); err != nil {
+			stdoutErr = fmt.Errorf("flush provider stdout: %w", err)
+		}
+	}
+	var stderrErr error
+	if err := stderr.Flush(); err != nil {
+		stderrErr = fmt.Errorf("flush provider stderr: %w", err)
+	}
+	return errors.Join(stdoutErr, stderrErr)
 }
 
 // providerAction extracts the provider action from the environment variables.
@@ -1202,10 +1231,11 @@ func runAgentInjection(ctx context.Context, cfg workspaceInjectionConfig) chan e
 		errChan <- agent.InjectAgent(ctx, &agent.InjectOptions{
 			Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 				return cfg.workspaceClient.Command(ctx, client.CommandOptions{
-					Command: command,
-					Stdin:   stdin,
-					Stdout:  stdout,
-					Stderr:  stderr,
+					Command:   command,
+					Stdin:     stdin,
+					Stdout:    stdout,
+					Stderr:    stderr,
+					RawStdout: true,
 				})
 			},
 			IsLocal:         cfg.workspaceClient.AgentLocal(),

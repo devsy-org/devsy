@@ -54,9 +54,12 @@ func (w RedactingWriter) Write(p []byte) (int, error) {
 		return w.Next.Write(p)
 	}
 	redacted := []byte(w.Redactor.Redact(string(p)))
-	_, err := w.Next.Write(redacted)
+	n, err := w.Next.Write(redacted)
 	if err != nil {
 		return 0, err
+	}
+	if n != len(redacted) {
+		return 0, io.ErrShortWrite
 	}
 	return len(p), nil
 }
@@ -80,9 +83,12 @@ func (w *StreamingRedactingWriter) Write(p []byte) (int, error) {
 	if len(redacted) == 0 {
 		return len(p), nil
 	}
-	_, err := w.Next.Write(redacted)
+	n, err := w.Next.Write(redacted)
 	if err != nil {
 		return 0, err
+	}
+	if n != len(redacted) {
+		return 0, io.ErrShortWrite
 	}
 	return len(p), nil
 }
@@ -93,8 +99,18 @@ func (w *StreamingRedactingWriter) Flush() error {
 	if w == nil || w.Next == nil || w.stream == nil {
 		return nil
 	}
-	_, err := w.Next.Write([]byte(w.stream.Flush()))
-	return err
+	pending := w.stream.Flush()
+	if pending == "" {
+		return nil
+	}
+	n, err := w.Next.Write([]byte(pending))
+	if err != nil {
+		return err
+	}
+	if n != len(pending) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 // Result contains bounded diagnostic output and execution metadata.
