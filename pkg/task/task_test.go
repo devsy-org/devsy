@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/status"
 )
@@ -363,7 +364,7 @@ func TestCancelWithoutPIDMarksFailed(t *testing.T) {
 	if state.Error != ErrCanceled.Error() {
 		t.Errorf("error = %q, want %q", state.Error, ErrCanceled.Error())
 	}
-	if state.ErrorCode != "canceled" || state.ErrorHint == "" {
+	if state.ErrorCode != string(clierr.CodeCanceled) || state.ErrorHint == "" {
 		t.Errorf(
 			"cancellation metadata = (%q, %q), want stable code and hint",
 			state.ErrorCode,
@@ -809,7 +810,7 @@ func TestReconcilePreservesCancellationReason(t *testing.T) {
 	if reconciled.Error != ErrCanceled.Error() {
 		t.Errorf("error = %q, want %q", reconciled.Error, ErrCanceled.Error())
 	}
-	if reconciled.ErrorCode != "canceled" || reconciled.ErrorHint == "" {
+	if reconciled.ErrorCode != string(clierr.CodeCanceled) || reconciled.ErrorHint == "" {
 		t.Errorf(
 			"cancellation metadata = (%q, %q), want stable code and hint",
 			reconciled.ErrorCode,
@@ -818,8 +819,8 @@ func TestReconcilePreservesCancellationReason(t *testing.T) {
 	}
 }
 
-func TestCancelKillFailureRemainsRetryable(t *testing.T) {
-	store := newTestStore(t)
+func newLiveWorkerTask(t *testing.T, store *Store) *Task {
+	t.Helper()
 	tk, err := store.Create(CreateOptions{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -828,6 +829,25 @@ func TestCancelKillFailureRemainsRetryable(t *testing.T) {
 	if err := tk.SetPID(4242); err != nil {
 		t.Fatalf("SetPID: %v", err)
 	}
+	return tk
+}
+
+func requireCanceledState(t *testing.T, store *Store, id string) {
+	t.Helper()
+	state, err := store.Get(id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status != StatusFailed ||
+		state.Error != ErrCanceled.Error() ||
+		state.ErrorCode != string(clierr.CodeCanceled) {
+		t.Errorf("unexpected final state: %+v", state)
+	}
+}
+
+func TestCancelKillFailureRemainsRetryable(t *testing.T) {
+	store := newTestStore(t)
+	tk := newLiveWorkerTask(t, store)
 
 	killCalls := 0
 	store.SetKillProcessForTest(func(string) error {
@@ -846,7 +866,10 @@ func TestCancelKillFailureRemainsRetryable(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 	if state.Status.Terminal() {
-		t.Fatalf("task recorded terminal %q while its worker survived the failed kill", state.Status)
+		t.Fatalf(
+			"task recorded terminal %q while its worker survived the failed kill",
+			state.Status,
+		)
 	}
 
 	if err := tk.Cancel(); err != nil {
@@ -855,25 +878,12 @@ func TestCancelKillFailureRemainsRetryable(t *testing.T) {
 	if killCalls != 2 {
 		t.Errorf("kill invoked %d times, want 2 (one per Cancel)", killCalls)
 	}
-	state, err = store.Get(tk.ID())
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if state.Status != StatusFailed || state.Error != ErrCanceled.Error() || state.ErrorCode != "canceled" {
-		t.Errorf("unexpected final state: %+v", state)
-	}
+	requireCanceledState(t, store, tk.ID())
 }
 
 func TestCancelSuccessfulKillCommitsCanceled(t *testing.T) {
 	store := newTestStore(t)
-	tk, err := store.Create(CreateOptions{})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	holdWorkerLock(t, tk)
-	if err := tk.SetPID(4242); err != nil {
-		t.Fatalf("SetPID: %v", err)
-	}
+	tk := newLiveWorkerTask(t, store)
 
 	store.SetKillProcessForTest(func(string) error {
 		state, err := store.Get(tk.ID())
@@ -889,13 +899,7 @@ func TestCancelSuccessfulKillCommitsCanceled(t *testing.T) {
 	if err := tk.Cancel(); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
-	state, err := store.Get(tk.ID())
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if state.Status != StatusFailed || state.Error != ErrCanceled.Error() {
-		t.Errorf("unexpected final state: %+v", state)
-	}
+	requireCanceledState(t, store, tk.ID())
 }
 
 func TestCancelDeadWorkerDoesNotInvokeKill(t *testing.T) {
@@ -922,13 +926,7 @@ func TestCancelDeadWorkerDoesNotInvokeKill(t *testing.T) {
 	if err := tk.Cancel(); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
-	state, err := store.Get(tk.ID())
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if state.Status != StatusFailed || state.Error != ErrCanceled.Error() {
-		t.Errorf("unexpected final state: %+v", state)
-	}
+	requireCanceledState(t, store, tk.ID())
 }
 
 func TestCancelRacingLateSuccessStillWinsAfterSuccessfulTermination(t *testing.T) {

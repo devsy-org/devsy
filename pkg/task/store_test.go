@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const workspaceOne = "ws-1"
+
 func createTaskWith(t *testing.T, store *Store, opts CreateOptions) *Task {
 	t.Helper()
 	tk, err := store.Create(opts)
@@ -14,54 +16,62 @@ func createTaskWith(t *testing.T, store *Store, opts CreateOptions) *Task {
 	return tk
 }
 
-func TestActiveForWorkspaceFiltersAndOrders(t *testing.T) {
+func queryActive(t *testing.T, store *Store, workspaceID, command string) []*State {
+	t.Helper()
+	active, err := store.ActiveForWorkspace(workspaceID, command)
+	if err != nil {
+		t.Fatalf("ActiveForWorkspace: %v", err)
+	}
+	return active
+}
+
+func TestActiveForWorkspaceFilters(t *testing.T) {
 	store := newTestStore(t)
 
-	older := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: "ws-1"})
+	up := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: workspaceOne})
+	_ = createTaskWith(t, store, CreateOptions{Command: "build", WorkspaceID: workspaceOne})
+	otherWorkspace := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: "ws-2"})
+	terminal := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: workspaceOne})
+	if err := terminal.Succeed(nil); err != nil {
+		t.Fatalf("Succeed: %v", err)
+	}
+
+	// The command filter keeps only live up tasks for the workspace.
+	active := queryActive(t, store, workspaceOne, "up")
+	if len(active) != 1 || active[0].ID != up.ID() {
+		t.Errorf("command-filtered match = %+v, want only the live up task", active)
+	}
+	if all := queryActive(t, store, workspaceOne, ""); len(all) != 2 {
+		t.Errorf("unfiltered match = %d, want 2", len(all))
+	}
+	if none := queryActive(t, store, otherWorkspace.ID(), "up"); len(none) != 0 {
+		t.Errorf("task id used as workspace id matched %d tasks, want 0", len(none))
+	}
+}
+
+func TestActiveForWorkspaceOrdersNewestFirst(t *testing.T) {
+	store := newTestStore(t)
+
+	older := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: workspaceOne})
 	if err := store.update(older.ID(), func(s *State) {
 		s.StartedAt = s.StartedAt.Add(-time.Hour)
 	}); err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
-	newer := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: "ws-1"})
-	otherCommand := createTaskWith(t, store, CreateOptions{Command: "build", WorkspaceID: "ws-1"})
-	otherWorkspace := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: "ws-2"})
-	terminal := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: "ws-1"})
-	if err := terminal.Succeed(nil); err != nil {
-		t.Fatalf("Succeed: %v", err)
-	}
+	newer := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: workspaceOne})
 
-	active, err := store.ActiveForWorkspace("ws-1", "up")
+	active, err := store.ActiveForWorkspace(workspaceOne, "up")
 	if err != nil {
 		t.Fatalf("ActiveForWorkspace: %v", err)
 	}
-	if len(active) != 2 {
-		t.Fatalf("got %d active tasks, want 2: %+v", len(active), active)
-	}
-	if active[0].ID != newer.ID() || active[1].ID != older.ID() {
-		t.Errorf("unexpected order/contents: %s, %s", active[0].ID, active[1].ID)
-	}
-
-	all, err := store.ActiveForWorkspace("ws-1", "")
-	if err != nil {
-		t.Fatalf("ActiveForWorkspace: %v", err)
-	}
-	if len(all) != 3 {
-		t.Errorf("unfiltered match = %d, want 3 (includes %s)", len(all), otherCommand.ID())
-	}
-
-	none, err := store.ActiveForWorkspace(otherWorkspace.ID(), "up")
-	if err != nil {
-		t.Fatalf("ActiveForWorkspace: %v", err)
-	}
-	if len(none) != 0 {
-		t.Errorf("task id used as workspace id matched %d tasks, want 0", len(none))
+	if len(active) != 2 || active[0].ID != newer.ID() || active[1].ID != older.ID() {
+		t.Errorf("unexpected order/contents: %+v", active)
 	}
 }
 
 func TestActiveForWorkspaceReconcilesAbandonedWorkers(t *testing.T) {
 	store := newTestStore(t)
-	tk := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: "ws-1"})
+	tk := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: workspaceOne})
 
 	// A worker that claimed then lost its lock died without recording a
 	// result; the query must reconcile it instead of reporting it active.
@@ -72,7 +82,7 @@ func TestActiveForWorkspaceReconcilesAbandonedWorkers(t *testing.T) {
 		t.Fatalf("ReleaseWorkerLockForTest: %v", err)
 	}
 
-	active, err := store.ActiveForWorkspace("ws-1", "up")
+	active, err := store.ActiveForWorkspace(workspaceOne, "up")
 	if err != nil {
 		t.Fatalf("ActiveForWorkspace: %v", err)
 	}
@@ -91,10 +101,10 @@ func TestActiveForWorkspaceReconcilesAbandonedWorkers(t *testing.T) {
 
 func TestActiveForWorkspaceTreatsLiveWorkerAsActive(t *testing.T) {
 	store := newTestStore(t)
-	tk := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: "ws-1"})
+	tk := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: workspaceOne})
 	holdWorkerLock(t, tk)
 
-	active, err := store.ActiveForWorkspace("ws-1", "up")
+	active, err := store.ActiveForWorkspace(workspaceOne, "up")
 	if err != nil {
 		t.Fatalf("ActiveForWorkspace: %v", err)
 	}

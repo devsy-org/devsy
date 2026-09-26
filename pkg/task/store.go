@@ -170,6 +170,44 @@ func (s *Store) List() ([]*State, error) {
 	return states, nil
 }
 
+// ActiveForWorkspace returns the non-terminal tasks labeled with the exact
+// workspace ID, newest first, reconciling stale workers first so an
+// abandoned task does not read as live. A non-empty command restricts the
+// match to that command. The store only answers which persisted operations
+// are still active; callers decide what to do with them.
+func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error) {
+	states, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+
+	active := make([]*State, 0, len(states))
+	for _, state := range states {
+		if state.WorkspaceID != workspaceID {
+			continue
+		}
+		if command != "" && state.Command != command {
+			continue
+		}
+		state = s.Reconcile(state)
+		if state.Status.Terminal() {
+			continue
+		}
+		active = append(active, state)
+	}
+	return active, nil
+}
+
+// SetKillProcessForTest replaces this store's process termination hook, so a
+// test can drive cancellation outcomes deterministically without real PIDs.
+// Production code must never call it.
+//
+// Not in export_test.go: other packages' tests need it, and a _test.go file is
+// only compiled into its own package's test binary.
+func (s *Store) SetKillProcessForTest(fn func(string) error) {
+	s.killProcess = fn
+}
+
 // failAbandoned records ErrAbandoned for a task whose worker is confirmed gone.
 // Must be called with the worker lock held.
 func (s *Store) failAbandoned(state *State) *State {
@@ -322,42 +360,4 @@ func syncDir(dir string) {
 	}
 	defer func() { _ = d.Close() }()
 	_ = d.Sync()
-}
-
-// SetKillProcessForTest replaces this store's process termination hook, so a
-// test can drive cancellation outcomes deterministically without real PIDs.
-// Production code must never call it.
-//
-// Not in export_test.go: other packages' tests need it, and a _test.go file is
-// only compiled into its own package's test binary.
-func (s *Store) SetKillProcessForTest(fn func(string) error) {
-	s.killProcess = fn
-}
-
-// ActiveForWorkspace returns the non-terminal tasks labeled with the exact
-// workspace ID, newest first, reconciling stale workers first so an
-// abandoned task does not read as live. A non-empty command restricts the
-// match to that command. The store only answers which persisted operations
-// are still active; callers decide what to do with them.
-func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error) {
-	states, err := s.List()
-	if err != nil {
-		return nil, err
-	}
-
-	active := make([]*State, 0, len(states))
-	for _, state := range states {
-		if state.WorkspaceID != workspaceID {
-			continue
-		}
-		if command != "" && state.Command != command {
-			continue
-		}
-		state = s.Reconcile(state)
-		if state.Status.Terminal() {
-			continue
-		}
-		active = append(active, state)
-	}
-	return active, nil
 }
