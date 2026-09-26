@@ -39,7 +39,11 @@ func isRunning(pid string) (bool, error) {
 	case uint32(windows.WAIT_TIMEOUT):
 		return true, nil
 	default:
-		return false, fmt.Errorf("wait for process %d returned unexpected result %#x", parsed, event)
+		return false, fmt.Errorf(
+			"wait for process %d returned unexpected result %#x",
+			parsed,
+			event,
+		)
 	}
 }
 

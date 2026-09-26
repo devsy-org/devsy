@@ -316,7 +316,12 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 		helperEnvPIDFile+"="+childPIDFile,
 		helperEnvChildPIDFile+"="+grandchildPIDFile,
 	)
-	if err := startDetached(parent, "devsy-test-worker", parentPIDFile, filepath.Join(dir, "streams")); err != nil {
+	if err := startDetached(
+		parent,
+		"devsy-test-worker",
+		parentPIDFile,
+		filepath.Join(dir, "streams"),
+	); err != nil {
 		t.Fatalf("startDetached: %v", err)
 	}
 	parentPID := waitForPIDFile(t, parentPIDFile)

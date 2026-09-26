@@ -56,7 +56,11 @@ func resumeBackgroundTree(pid int) error {
 				return fmt.Errorf("resume primary thread %d: %w", entry.ThreadID, err)
 			}
 			if previous != 1 {
-				return fmt.Errorf("primary thread %d suspend count was %d, want 1", entry.ThreadID, previous)
+				return fmt.Errorf(
+					"primary thread %d suspend count was %d, want 1",
+					entry.ThreadID,
+					previous,
+				)
 			}
 			return nil
 		}
