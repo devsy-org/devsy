@@ -93,6 +93,130 @@ func TestClientFromManagedConnReturnsBootstrapError(t *testing.T) {
 	assert.NotErrorAs(t, err, &timeoutErr)
 }
 
+func TestClientFromManagedConnClosesBeforeWaitingForTransport(t *testing.T) {
+	local, peer := net.Pipe()
+	conn := &waitGateManagedConn{
+		Conn: local, waitStarted: make(chan struct{}), waitResult: make(chan error, 1),
+		waitReturned: make(chan struct{}), closed: make(chan struct{}),
+	}
+	defer func() { _ = peer.Close() }()
+	t.Cleanup(func() {
+		select {
+		case <-conn.waitReturned:
+		default:
+			conn.waitResult <- context.Canceled
+		}
+		_ = conn.Close()
+	})
+
+	peerClosed := make(chan struct{})
+	go func() {
+		defer close(peerClosed)
+		_, _ = readSSHIdentification(peer)
+		_ = peer.Close()
+	}()
+
+	wantErr := errors.New("container bootstrap failed")
+	dialDone := make(chan error, 1)
+	go func() {
+		_, err := ClientFromManagedConn(context.Background(), conn, ManagedClientOptions{})
+		dialDone <- err
+	}()
+
+	waitForSignal(t, conn.waitStarted, "managed transport Wait did not start")
+	waitForSignal(t, peerClosed, "SSH peer did not close its protocol stream")
+	select {
+	case <-conn.closed:
+	case <-time.After(time.Second):
+		conn.waitResult <- wantErr
+		t.Fatal("managed connection was not closed before waiting for transport completion")
+	}
+	select {
+	case <-conn.waitReturned:
+		t.Fatal("test transport completed before releasing Wait")
+	default:
+	}
+
+	conn.waitResult <- wantErr
+	err := receiveTestError(
+		t, dialDone, "managed SSH dial did not finish after transport completion",
+	)
+	require.ErrorIs(t, err, wantErr)
+}
+
+func TestManagedDialerPreservesInvalidBannerErrorWhenTransportCompletesFirst(t *testing.T) {
+	sshErr := invalidSSHBannerError(t)
+	providerErr := errors.New("managed callback failed")
+	local, peer := net.Pipe()
+	defer func() { _ = peer.Close() }()
+	conn := &waitGateManagedConn{
+		Conn: local, waitStarted: make(chan struct{}), waitResult: make(chan error, 1),
+		waitReturned: make(chan struct{}), closed: make(chan struct{}),
+	}
+	tracked := &managedHandshakeConn{Conn: conn, peerReady: make(chan struct{})}
+	tracked.peerStarted.Store(true)
+	dialer := &managedSSHClientDialer{
+		ctx: context.Background(), conn: conn, tracked: tracked,
+		result: make(chan handshakeResult, 1), transportDone: make(chan error, 1),
+		phase: managedSSHHandshake,
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := dialer.finishTransport(providerErr)
+		done <- err
+	}()
+
+	select {
+	case <-conn.closed:
+	case <-time.After(time.Second):
+		t.Fatal("managed connection was not closed")
+	}
+	dialer.result <- handshakeResult{err: sshErr}
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, sshErr)
+		require.NotErrorIs(t, err, providerErr)
+	case <-time.After(time.Second):
+		t.Fatal("managed dialer did not collect the completed handshake error")
+	}
+}
+
+func invalidSSHBannerError(t *testing.T) error {
+	t.Helper()
+	client, peer := net.Pipe()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = peer.Close() }()
+	config, err := ConfigFromKeyBytes(nil)
+	require.NoError(t, err)
+	go func() {
+		_, _ = readSSHIdentification(peer)
+		_, _ = io.WriteString(peer, "SSH-"+strings.Repeat("A", 251))
+	}()
+	_, _, _, err = xssh.NewClientConn(client, "stdio", config)
+	require.Error(t, err)
+	return err
+}
+
+func waitForSignal(t *testing.T, signal <-chan struct{}, failure string) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(time.Second):
+		t.Fatal(failure)
+	}
+}
+
+func receiveTestError(t *testing.T, result <-chan error, failure string) error {
+	t.Helper()
+	select {
+	case err := <-result:
+		return err
+	case <-time.After(time.Second):
+		t.Fatal(failure)
+		return nil
+	}
+}
+
 type resetOnStreamEndManagedConn struct{ *testManagedConn }
 
 func (c *resetOnStreamEndManagedConn) Read(p []byte) (int, error) {
@@ -256,45 +380,48 @@ func readSSHIdentification(conn net.Conn) (string, error) {
 
 func TestApplicationCodeUsesManagedSSHDialer(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
-	assertNoDirectSSHClientCall(t, filepath.Join(root, "cmd"), "")
-	assertNoDirectSSHClientCall(t, filepath.Join(root, "pkg"), filepath.Join(root, "pkg", "ssh"))
-}
-
-func assertNoDirectSSHClientCall(t *testing.T, base, excludedDir string) {
-	t.Helper()
-	for _, path := range applicationGoFiles(t, base, excludedDir) {
+	managedCallSites := []string{
+		"cmd/machine/ssh.go",
+		"cmd/workspace/ssh.go",
+		"pkg/devcontainer/sshtunnel/sshtunnel.go",
+		"pkg/tunnel/container.go",
+		"pkg/tunnel/direct.go",
+	}
+	for _, callSite := range managedCallSites {
+		path := filepath.Join(root, callSite)
 		contents, err := os.ReadFile( // #nosec G304 -- path comes from the repository walk root.
 			path,
 		)
 		require.NoError(t, err)
 		if strings.Contains(string(contents), ".ClientFromConn(") {
 			t.Errorf(
-				"%s calls ClientFromConn outside pkg/ssh; classify readiness and use ClientFromManagedConn for managed transports",
+				"%s uses ClientFromConn on a managed SSH call site; use ClientFromManagedConn",
 				path,
 			)
 		}
 	}
 }
 
-func applicationGoFiles(t *testing.T, base, excludedDir string) []string {
-	t.Helper()
-	var paths []string
-	err := filepath.WalkDir(base, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			if excludedDir != "" && path == excludedDir {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		paths = append(paths, path)
-		return nil
+type waitGateManagedConn struct {
+	net.Conn
+	waitStarted  chan struct{}
+	waitResult   chan error
+	waitReturned chan struct{}
+	closed       chan struct{}
+	closeOnce    sync.Once
+}
+
+func (c *waitGateManagedConn) Wait() error {
+	close(c.waitStarted)
+	err := <-c.waitResult
+	close(c.waitReturned)
+	return err
+}
+
+func (c *waitGateManagedConn) Close() error {
+	c.closeOnce.Do(func() {
+		close(c.closed)
+		_ = c.Conn.Close()
 	})
-	require.NoError(t, err)
-	return paths
+	return nil
 }

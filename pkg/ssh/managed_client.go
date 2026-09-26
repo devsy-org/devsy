@@ -207,7 +207,7 @@ func (d *managedSSHClientDialer) finishHandshake(res handshakeResult) (*xssh.Cli
 	if !d.tracked.peerStarted.Load() || isManagedStreamEnd(res.err) {
 		// A read reset before peer output can race the callback's terminal
 		// bootstrap error. The managed result is authoritative in this phase.
-		res.err = managedTerminalError(d.ctx, d.transportDone)
+		res.err = d.managedStreamEndError(res.err)
 	}
 	d.closeConn()
 	return nil, res.err
@@ -216,19 +216,18 @@ func (d *managedSSHClientDialer) finishHandshake(res handshakeResult) (*xssh.Cli
 func (d *managedSSHClientDialer) finishTransport(transportErr error) (*xssh.Client, error) {
 	if d.tracked.peerStarted.Load() {
 		d.phase = managedSSHHandshake
-	}
-	// A completed launcher cannot produce more protocol bytes. Check a
-	// completed handshake first so a concrete SSH error is preserved.
-	select {
-	case res := <-d.result:
+		// Once peer bytes are observed, a completed callback cannot produce
+		// more protocol data. Closing unblocks the handshake goroutine; its
+		// concrete negotiation error takes precedence over the callback result.
+		d.closeConn()
+		res := <-d.result
 		if res.err == nil {
 			return d.newClient(res)
 		}
-		if d.phase == managedSSHHandshake && !isManagedStreamEnd(res.err) {
-			d.closeConn()
+		if !isManagedStreamEnd(res.err) {
 			return nil, res.err
 		}
-	default:
+		return nil, managedErrorOrFallback(d.ctx, transportErr, res.err)
 	}
 	d.closeConn()
 	if transportErr == nil {
@@ -298,7 +297,7 @@ func (d *managedSSHClientDialer) finishTimeout(timeout time.Duration) (*xssh.Cli
 			return d.newClient(res)
 		}
 		if isManagedStreamEnd(res.err) {
-			res.err = managedTerminalError(d.ctx, d.transportDone)
+			res.err = d.managedStreamEndError(res.err)
 		}
 		d.closeConn()
 		return nil, res.err
@@ -324,6 +323,30 @@ func (d *managedSSHClientDialer) newClient(res handshakeResult) (*xssh.Client, e
 
 func (d *managedSSHClientDialer) closeConn() {
 	_ = d.conn.Close()
+}
+
+func (d *managedSSHClientDialer) managedStreamEndError(streamErr error) error {
+	select {
+	case terminalErr := <-d.transportDone:
+		return managedErrorOrFallback(d.ctx, terminalErr, streamErr)
+	default:
+	}
+
+	// Closing first lets a blocked callback/process finish before Wait is joined.
+	d.closeConn()
+	terminalErr := managedTerminalError(d.ctx, d.transportDone)
+	return managedErrorOrFallback(d.ctx, terminalErr, streamErr)
+}
+
+func managedErrorOrFallback(ctx context.Context, managedErr, fallback error) error {
+	if managedErr != nil && !errors.Is(managedErr, io.EOF) &&
+		!errors.Is(managedErr, context.Canceled) && !errors.Is(managedErr, net.ErrClosed) {
+		return managedErr
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return fallback
 }
 
 func managedTerminalError(ctx context.Context, transportDone <-chan error) error {
