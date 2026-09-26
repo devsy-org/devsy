@@ -119,7 +119,13 @@ test.describe("Workspace lifecycle badges", () => {
         }
       }
     } catch (cleanupError) {
-      if (!testError) throw cleanupError
+      if (testError) {
+        throw new AggregateError(
+          [testError, cleanupError],
+          "Test and cleanup failed",
+        )
+      }
+      throw cleanupError
     }
     if (testError) throw testError
   })
