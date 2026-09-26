@@ -77,7 +77,7 @@ func (c *ContainerTunnel) Run(
 			Workspace: c.client.Workspace(), TransportImpl: "callback",
 		},
 		Handler: func(ctx context.Context) error {
-			sshClient, err := devssh.ClientFromConn(conn, "", nil)
+			sshClient, err := devssh.ClientFromManagedConn(ctx, conn, devssh.ManagedClientOptions{})
 			if err != nil {
 				return fmt.Errorf("create ssh client: %w", err)
 			}
@@ -241,7 +241,9 @@ func (c *ContainerTunnel) runInContainer(
 			TransportImpl: "ssh_session",
 		},
 		Handler: func(ctx context.Context) error {
-			containerClient, err := devssh.ClientFromConn(containerConn, "", nil)
+			containerClient, err := devssh.ClientFromManagedConn(
+				ctx, containerConn, devssh.ManagedClientOptions{},
+			)
 			if err != nil {
 				return fmt.Errorf("ssh client: %w", err)
 			}

@@ -370,7 +370,9 @@ func (cmd *SSHCmd) startProxyTunnel(
 			Workspace: client.Workspace(), TransportImpl: "callback",
 		},
 		Handler: func(ctx context.Context) error {
-			containerClient, err := devssh.ClientFromConn(conn, cmd.User, nil)
+			containerClient, err := devssh.ClientFromManagedConn(
+				ctx, conn, devssh.ManagedClientOptions{User: cmd.User},
+			)
 			if err != nil {
 				return err
 			}
