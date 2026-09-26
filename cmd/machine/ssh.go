@@ -210,7 +210,9 @@ func StartSSHSession(ctx context.Context, options StartSSHSessionOptions) error 
 		TransportSide: transport.SideProvider,
 		Metadata:      transport.LogMetadata{Mode: "machine", TransportImpl: "callback"},
 		Handler: func(ctx context.Context) error {
-			sshClient, err := devssh.ClientFromConn(conn, options.User, nil)
+			sshClient, err := devssh.ClientFromManagedConn(ctx, conn, devssh.ManagedClientOptions{
+				User: options.User,
+			})
 			if err != nil {
 				return err
 			}

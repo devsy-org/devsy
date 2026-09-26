@@ -66,7 +66,7 @@ func StartBrowserTunnel(ctx context.Context, p BrowserTunnelParams) error {
 }
 
 func startBrowserTunnelSSH(ctx context.Context, p BrowserTunnelParams) error {
-	return NewTunnel(
+	return NewManagedSSHTunnel(
 		ctx,
 		func(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 			writer := log.Writer(log.LevelDebug)

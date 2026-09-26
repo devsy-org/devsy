@@ -79,8 +79,8 @@ type ProxyClient interface {
 	// Ssh starts an ssh tunnel to the workspace container
 	Ssh(ctx context.Context, options SshOptions) error
 
-	// OpenSSHTransport starts an SSH transport whose stdin/stdout carry the
-	// persistent SSH protocol.
+	// OpenSSHTransport starts a managed SSH transport whose peer may still be
+	// bootstrapping when the connection is returned. Use the managed SSH dialer.
 	OpenSSHTransport(
 		ctx context.Context,
 		options SSHTransportOptions,

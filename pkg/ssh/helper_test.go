@@ -191,7 +191,7 @@ func TestClientFromConn_SuccessfulHandshake(t *testing.T) {
 	clientEnd, err := net.Dial("tcp", listener.Addr().String())
 	require.NoError(t, err)
 	conn := &deadlineRecorder{Conn: clientEnd}
-	client, err := clientFromConn(conn, "test", nil, 5*time.Second)
+	client, err := ClientFromConn(conn, "test", nil)
 
 	require.NoError(t, err)
 	require.NotNil(t, client)

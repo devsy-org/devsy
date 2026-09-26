@@ -126,7 +126,7 @@ func runSSHTunnel(ctx context.Context, p sshTunnelParams) (*config2.Result, erro
 	defer func() { log.Debugf("tunnel: setup complete elapsed=%s", time.Since(start)) }()
 
 	log.Debug("creating SSH client")
-	sshClient, err := devssh.ClientFromConn(p.conn, "", nil)
+	sshClient, err := devssh.ClientFromManagedConn(ctx, p.conn, devssh.ManagedClientOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SSH client: %w", err)
 	}
