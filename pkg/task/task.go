@@ -265,7 +265,10 @@ func (t *Task) cancelWithoutPublishedPID() (int, bool, error) {
 		return 0, true, t.store.update(t.id, markCanceled)
 	}
 
-	pid := t.store.awaitPID(t.id, pidPublishTimeout)
+	pid, terminal := t.store.awaitPID(t.id, pidPublishTimeout)
+	if terminal {
+		return 0, true, nil
+	}
 	if pid == 0 {
 		return 0, false, fmt.Errorf(
 			"cancel task %s: worker has not published its pid yet, retry",

@@ -422,6 +422,37 @@ func assertWorkerLock(t *testing.T, lock *flock.Flock, wantLocked bool, when str
 	}
 }
 
+func TestOverlappingCancelsBeforePIDBothSucceed(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	lockClaimed := make(chan struct{})
+	continueCancel := make(chan struct{})
+	store.SetAfterCancelLockClaimedForTest(func() {
+		close(lockClaimed)
+		<-continueCancel
+	})
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- tk.Cancel() }()
+	<-lockClaimed
+
+	secondDone := make(chan error, 1)
+	go func() { secondDone <- tk.Cancel() }()
+	time.Sleep(200 * time.Millisecond)
+	close(continueCancel)
+
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first Cancel: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second Cancel: %v", err)
+	}
+	requireCanceledState(t, store, tk.ID())
+}
+
 func TestCancelOnTerminalTaskIsNoop(t *testing.T) {
 	store := newTestStore(t)
 	task, err := store.Create(CreateOptions{})

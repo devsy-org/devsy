@@ -222,16 +222,22 @@ func (s *Store) SetAfterCancelLockClaimedForTest(fn func()) {
 }
 
 // awaitPID polls for the worker to publish its PID, which it does right
-// after claiming the worker lock.
-func (s *Store) awaitPID(id string, timeout time.Duration) int {
+// after claiming the worker lock. A concurrent cancellation can commit the
+// terminal state first, leaving nothing to wait for.
+func (s *Store) awaitPID(id string, timeout time.Duration) (int, bool) {
 	deadline := time.Now().Add(timeout)
 	for {
 		state, err := s.Get(id)
-		if err == nil && state.PID != 0 {
-			return state.PID
+		if err == nil {
+			if state.PID != 0 {
+				return state.PID, false
+			}
+			if state.Status.Terminal() {
+				return 0, true
+			}
 		}
 		if time.Now().After(deadline) {
-			return 0
+			return 0, false
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
