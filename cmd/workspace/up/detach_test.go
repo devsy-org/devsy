@@ -53,6 +53,9 @@ func TestDetachWorkspaceLabelNormalizesPath(t *testing.T) {
 }
 
 func TestOpenTaskExitsWhenAlreadyCanceled(t *testing.T) {
+	// DEVSY_HOME redirects the task store on every platform; $HOME alone
+	// misses the Windows path manager, which reads %LOCALAPPDATA%.
+	t.Setenv("DEVSY_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	config.ResetPathManager()
 	t.Cleanup(config.ResetPathManager)
