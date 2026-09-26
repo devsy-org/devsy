@@ -50,6 +50,14 @@
       "automerge": false,
       "description": "keep the mise Go toolchain on the Go 1.26 major line"
     },
+    {
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["github.com/goreleaser/goreleaser/v2"],
+      "matchFileNames": ["go.mod"],
+      "allowedVersions": "<2.18.0",
+      "automerge": false,
+      "description": "keep GoReleaser compatible with the pinned Go 1.26 toolchain"
+    },
 
     {
       "matchManagers": ["gomod"],
