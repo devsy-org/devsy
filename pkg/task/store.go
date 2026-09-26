@@ -201,6 +201,15 @@ func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error
 	return active, nil
 }
 
+// SetKillProcessForTest replaces this store's process termination hook, so a
+// test can drive cancellation outcomes deterministically without real PIDs.
+//
+// Not in export_test.go: other packages' tests need it, and a _test.go file
+// compiles only into its own package's test binary.
+func (s *Store) SetKillProcessForTest(fn func(pid, treeName string) error) {
+	s.killProcess = fn
+}
+
 // awaitPID polls for the worker to publish its PID, which it does right
 // after claiming the worker lock.
 func (s *Store) awaitPID(id string, timeout time.Duration) int {
@@ -215,15 +224,6 @@ func (s *Store) awaitPID(id string, timeout time.Duration) int {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-}
-
-// SetKillProcessForTest replaces this store's process termination hook, so a
-// test can drive cancellation outcomes deterministically without real PIDs.
-//
-// Not in export_test.go: other packages' tests need it, and a _test.go file
-// compiles only into its own package's test binary.
-func (s *Store) SetKillProcessForTest(fn func(pid, treeName string) error) {
-	s.killProcess = fn
 }
 
 // failAbandoned records ErrAbandoned for a task whose worker is confirmed gone.

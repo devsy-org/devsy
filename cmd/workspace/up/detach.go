@@ -117,6 +117,16 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 		failTask(t, err)
 		return nil, err
 	}
+	state, err := store.Get(cmd.taskID)
+	if err != nil {
+		failTask(t, err)
+		return nil, err
+	}
+	// Canceled before this worker claimed its lock: the canceled state is
+	// already recorded and this worker must not overwrite it or run up.
+	if state.Status.Terminal() {
+		return nil, task.ErrCanceled
+	}
 	return t, nil
 }
 

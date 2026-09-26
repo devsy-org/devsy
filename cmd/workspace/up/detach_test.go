@@ -1,9 +1,12 @@
 package up
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/task"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 )
 
@@ -46,5 +49,37 @@ func TestDetachWorkspaceLabelNormalizesPath(t *testing.T) {
 	}
 	if got == raw {
 		t.Error("label must be the workspace ID, not the raw path")
+	}
+}
+
+func TestOpenTaskExitsWhenAlreadyCanceled(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+
+	store, err := task.NewStore()
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	tk, err := store.Create(task.CreateOptions{Command: "up"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+
+	cmd := &UpCmd{taskID: tk.ID()}
+	got, err := cmd.openTask()
+	if got != nil || !errors.Is(err, task.ErrCanceled) {
+		t.Fatalf("openTask() = (%v, %v), want (nil, ErrCanceled)", got, err)
+	}
+
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Error != task.ErrCanceled.Error() {
+		t.Errorf("openTask overwrote the canceled state: %+v", state)
 	}
 }
