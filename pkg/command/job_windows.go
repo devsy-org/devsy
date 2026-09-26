@@ -5,6 +5,8 @@ package command
 import (
 	"errors"
 	"fmt"
+	"os/exec"
+	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -20,10 +22,54 @@ func jobNameFor(name string) string {
 	return name
 }
 
+func prepareBackgroundTree(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
+}
+
+// resumeBackgroundTree resumes the primary thread of a process created with
+// CREATE_SUSPENDED. That process cannot spawn descendants until it has been
+// assigned to its Job Object.
+func resumeBackgroundTree(pid int) error {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
+	if err != nil {
+		return fmt.Errorf("snapshot process threads: %w", err)
+	}
+	defer func() { _ = windows.CloseHandle(snapshot) }()
+
+	entry := windows.ThreadEntry32{Size: uint32(unsafe.Sizeof(windows.ThreadEntry32{}))}
+	if err := windows.Thread32First(snapshot, &entry); err != nil {
+		return fmt.Errorf("find primary thread for process %d: %w", pid, err)
+	}
+	for {
+		if entry.OwnerProcessID == uint32(pid) {
+			thread, err := windows.OpenThread(windows.THREAD_SUSPEND_RESUME, false, entry.ThreadID)
+			if err != nil {
+				return fmt.Errorf("open primary thread %d: %w", entry.ThreadID, err)
+			}
+			defer func() { _ = windows.CloseHandle(thread) }()
+
+			previous, err := windows.ResumeThread(thread)
+			if err != nil {
+				return fmt.Errorf("resume primary thread %d: %w", entry.ThreadID, err)
+			}
+			if previous != 1 {
+				return fmt.Errorf("primary thread %d suspend count was %d, want 1", entry.ThreadID, previous)
+			}
+			return nil
+		}
+		if err := windows.Thread32Next(snapshot, &entry); err != nil {
+			return fmt.Errorf("find primary thread for process %d: %w", pid, err)
+		}
+	}
+}
+
 // ownProcessTree assigns the process to a Job Object named for the worker.
 // Job membership outlives intermediate parents, so tree teardown stays
-// complete where taskkill /T loses track. Assignment failure is non-fatal;
-// termination then falls back to taskkill /T /F.
+// complete where taskkill /T loses track. Assignment must succeed before the
+// suspended worker is resumed so descendants cannot escape the job.
 func ownProcessTree(pid int, workerName string) error {
 	name, err := windows.UTF16PtrFromString(jobNameFor(workerName))
 	if err != nil {

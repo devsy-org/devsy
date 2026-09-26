@@ -119,12 +119,9 @@ func startDetached(cmd *exec.Cmd, commandName, pidFile, streamsFile string) erro
 	closeFile(streamsF)
 
 	if err := ownProcessTree(cmd.Process.Pid, commandName); err != nil {
-		fmt.Fprintf(
-			os.Stderr,
-			"warning: process tree ownership unavailable for pid %d: %v\n",
-			cmd.Process.Pid,
-			err,
-		)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return fmt.Errorf("assign process tree ownership for pid %d: %w", cmd.Process.Pid, err)
 	}
 
 	if pidFile != "" {
@@ -133,6 +130,15 @@ func startDetached(cmd *exec.Cmd, commandName, pidFile, streamsFile string) erro
 			_ = cmd.Wait()
 			return fmt.Errorf("write pid file (process killed to prevent orphan): %w", err)
 		}
+	}
+
+	if err := resumeBackgroundTree(cmd.Process.Pid); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		if pidFile != "" {
+			_ = os.Remove(pidFile)
+		}
+		return fmt.Errorf("resume process %d: %w", cmd.Process.Pid, err)
 	}
 
 	_ = cmd.Process.Release()

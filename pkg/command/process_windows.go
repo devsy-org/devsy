@@ -12,20 +12,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// stillActive is the exit code GetExitCodeProcess reports for a live process.
-const stillActive uint32 = 259
-
 func isRunning(pid string) (bool, error) {
 	parsed, err := parsePID(pid)
 	if err != nil {
 		return false, err
 	}
 
-	handle, err := windows.OpenProcess(
-		windows.PROCESS_QUERY_LIMITED_INFORMATION,
-		false,
-		uint32(parsed),
-	)
+	handle, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(parsed))
 	if err != nil {
 		// OpenProcess reports a nonexistent PID as ERROR_INVALID_PARAMETER;
 		// anything else (e.g. access denied) is a real query failure.
@@ -36,11 +29,18 @@ func isRunning(pid string) (bool, error) {
 	}
 	defer func() { _ = windows.CloseHandle(handle) }()
 
-	var exitCode uint32
-	if err := windows.GetExitCodeProcess(handle, &exitCode); err != nil {
-		return false, fmt.Errorf("query process %d: %w", parsed, err)
+	event, err := windows.WaitForSingleObject(handle, 0)
+	if err != nil {
+		return false, fmt.Errorf("wait for process %d: %w", parsed, err)
 	}
-	return exitCode == stillActive, nil
+	switch event {
+	case windows.WAIT_OBJECT_0:
+		return false, nil
+	case uint32(windows.WAIT_TIMEOUT):
+		return true, nil
+	default:
+		return false, fmt.Errorf("wait for process %d returned unexpected result %#x", parsed, event)
+	}
 }
 
 func killTree(pid, treeName string) error {
@@ -85,8 +85,6 @@ func killTree(pid, treeName string) error {
 
 	return verifyTerminated(parsed)
 }
-
-func prepareBackgroundTree(*exec.Cmd) {}
 
 // verifyTerminated allows a brief window for the exit to become visible
 // after the termination call reported success.

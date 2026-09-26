@@ -63,6 +63,10 @@ func ownProcessTree(pid int, name string) error {
 	return nil
 }
 
+func resumeBackgroundTree(pid int) error {
+	return nil
+}
+
 func prepareBackgroundTree(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}

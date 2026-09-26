@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -18,13 +21,33 @@ const (
 	helperEnvChildPIDFile   = "DEVSY_TEST_HELPER_CHILD_PIDFILE"
 	helperEnvWaitFile       = "DEVSY_TEST_HELPER_WAIT_FILE"
 	helperEnvExitAfterSpawn = "DEVSY_TEST_HELPER_EXIT_AFTER_SPAWN"
+	helperEnvExitCode       = "DEVSY_TEST_HELPER_EXIT_CODE"
+	helperEnvCheckJob       = "DEVSY_TEST_HELPER_CHECK_JOB"
 )
+
+var procIsProcessInJob = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
 
 // TestHelperProcess is not a test; every helper process re-executes the test
 // binary into it.
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv(helperEnvMarker) != "1" {
 		return
+	}
+	if exitCode := os.Getenv(helperEnvExitCode); exitCode != "" {
+		code, err := strconv.Atoi(exitCode)
+		if err != nil {
+			os.Exit(2)
+		}
+		os.Exit(code)
+	}
+	if jobResult := os.Getenv(helperEnvCheckJob); jobResult != "" {
+		inJob, err := currentProcessInJob()
+		if err != nil {
+			os.Exit(3)
+		}
+		if err := os.WriteFile(jobResult, []byte(strconv.FormatBool(inJob)), 0o600); err != nil {
+			os.Exit(4)
+		}
 	}
 	if waitFile := os.Getenv(helperEnvWaitFile); waitFile != "" {
 		for {
@@ -125,6 +148,88 @@ func TestIsRunningDetectsLiveAndExitedProcess(t *testing.T) {
 	assertNotRunningEventually(t, cmd.Process.Pid)
 }
 
+func TestIsRunningRecognizesExitCode259AsExited(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run", "TestHelperProcess")
+	cmd.Env = helperEnv(helperEnvMarker+"=1", helperEnvExitCode+"=259")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start helper: %v", err)
+	}
+	processHandle, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(cmd.Process.Pid))
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("open helper process: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(processHandle) }()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	result, err := windows.WaitForSingleObject(processHandle, 10_000)
+	if err != nil {
+		t.Fatalf("wait for helper: %v", err)
+	}
+	if result != windows.WAIT_OBJECT_0 {
+		t.Fatalf("wait result = %#x, want WAIT_OBJECT_0", result)
+	}
+
+	running, err := isRunning(strconv.Itoa(cmd.Process.Pid))
+	if err != nil {
+		t.Fatalf("isRunning(%d): %v", cmd.Process.Pid, err)
+	}
+	if running {
+		t.Fatal("isRunning returned true for exited process with exit code 259")
+	}
+
+	if err := cmd.Wait(); err == nil || cmd.ProcessState.ExitCode() != 259 {
+		t.Fatalf("helper exit = %v (%v), want exit code 259", err, cmd.ProcessState)
+	}
+}
+
+func TestStartDetachedAssignsWorkerToJobBeforeItRuns(t *testing.T) {
+	dir := t.TempDir()
+	jobName := "devsy-test-suspended-worker"
+	jobResult := filepath.Join(dir, "in-job")
+	pidFile := filepath.Join(dir, "worker.pid")
+	cmd := exec.Command(os.Args[0], "-test.run", "TestHelperProcess")
+	cmd.Env = helperEnv(helperEnvMarker+"=1", helperEnvCheckJob+"="+jobResult)
+
+	if err := startDetached(cmd, jobName, pidFile, filepath.Join(dir, "streams")); err != nil {
+		t.Fatalf("startDetached: %v", err)
+	}
+	pid := waitForPIDFile(t, pidFile)
+	t.Cleanup(func() { _ = KillTree(strconv.Itoa(pid), jobName) })
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(jobResult); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	data, err := os.ReadFile(jobResult) // #nosec G304 -- test-controlled path
+	if err != nil {
+		t.Fatalf("read job membership result: %v", err)
+	}
+	if strings.TrimSpace(string(data)) != "true" {
+		t.Fatalf("worker job membership = %q, want true", data)
+	}
+}
+
+func currentProcessInJob() (bool, error) {
+	var inJob int32
+	result, _, callErr := procIsProcessInJob.Call(
+		uintptr(windows.CurrentProcess()),
+		0,
+		uintptr(unsafe.Pointer(&inJob)),
+	)
+	if result == 0 {
+		return false, callErr
+	}
+	return inJob != 0, nil
+}
+
 func waitForPIDFile(t *testing.T, pidFile string) int {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -203,14 +308,19 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 
 	// The child spawns the grandchild and exits, orphaning the grandchild
 	// from the perspective of parent-based termination.
-	parent := startHelper(t,
+	parentPIDFile := filepath.Join(dir, "parent.pid")
+	parent := exec.Command(os.Args[0], "-test.run", "TestHelperProcess")
+	parent.Env = helperEnv(
+		helperEnvMarker+"=1",
 		helperEnvWaitFile+"="+waitFile,
 		helperEnvPIDFile+"="+childPIDFile,
 		helperEnvChildPIDFile+"="+grandchildPIDFile,
 	)
-	if err := ownProcessTree(parent.Process.Pid, "devsy-test-worker"); err != nil {
-		t.Skipf("job assignment unavailable in this environment: %v", err)
+	if err := startDetached(parent, "devsy-test-worker", parentPIDFile, filepath.Join(dir, "streams")); err != nil {
+		t.Fatalf("startDetached: %v", err)
 	}
+	parentPID := waitForPIDFile(t, parentPIDFile)
+	t.Cleanup(func() { _ = KillTree(strconv.Itoa(parentPID), "devsy-test-worker") })
 	if err := os.WriteFile(waitFile, []byte("go"), 0o600); err != nil {
 		t.Fatalf("signal helper: %v", err)
 	}
@@ -218,13 +328,13 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 	childPID := waitForPIDFile(t, childPIDFile)
 	grandchildPID := waitForPIDFile(t, grandchildPIDFile)
 	assertNotRunningEventually(t, childPID)
-	assertRunning(t, parent.Process.Pid)
+	assertRunning(t, parentPID)
 	assertRunning(t, grandchildPID)
 
-	if err := KillTree(strconv.Itoa(parent.Process.Pid), "devsy-test-worker"); err != nil {
+	if err := KillTree(strconv.Itoa(parentPID), "devsy-test-worker"); err != nil {
 		t.Fatalf("Kill(parent): %v", err)
 	}
 
-	assertNotRunningEventually(t, parent.Process.Pid)
+	assertNotRunningEventually(t, parentPID)
 	assertNotRunningEventually(t, grandchildPID)
 }

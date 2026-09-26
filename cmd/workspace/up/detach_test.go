@@ -2,6 +2,7 @@ package up
 
 import (
 	"errors"
+	"os"
 	"reflect"
 	"testing"
 
@@ -49,6 +50,19 @@ func TestDetachWorkspaceLabelNormalizesPath(t *testing.T) {
 	}
 	if got == raw {
 		t.Error("label must be the workspace ID, not the raw path")
+	}
+}
+
+func TestDetachWorkspaceLabelResolvesCurrentDirectory(t *testing.T) {
+	cmd := &UpCmd{}
+	got := cmd.detachWorkspaceLabel([]string{"."})
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	want := workspace2.ToID(cwd)
+	if got != want {
+		t.Fatalf("detachWorkspaceLabel(.) = %q, want %q", got, want)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/command"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/task"
@@ -85,7 +86,8 @@ func (cmd *UpCmd) detachWorkspaceLabel(args []string) string {
 		return cmd.ID
 	}
 	if len(args) > 0 {
-		return workspace2.ToID(args[0])
+		_, source := file.IsLocalDir(args[0])
+		return workspace2.ToID(source)
 	}
 	return ""
 }

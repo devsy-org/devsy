@@ -91,6 +91,7 @@ func TestStopDoesNotProceedWhenActiveTaskCannotBeKilled(t *testing.T) {
 
 func TestStopFindsTaskWithoutDesktopState(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("DEVSY_HOME", home)
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	config.ResetPathManager()
