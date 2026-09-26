@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -115,56 +116,73 @@ func TestProviderVersionNeedsUpdate(t *testing.T) {
 	}
 }
 
+func TestProviderUpdateSkipReasonResolvedGitHubSource(t *testing.T) {
+	original := provider.ProviderSource{Github: "org/provider", Raw: "org/provider@v1.0.0"}
+	changed := provider.ProviderSource{Github: "org/provider", Raw: "org/provider@v1.1.0"}
+	assert.Equal(
+		t,
+		provider.GetProviderSource(original, "provider"),
+		provider.GetProviderSource(changed, "provider"),
+	)
+	assert.Equal(t, "provider source changed", providerUpdateSkipReason(
+		original, changed, "v1.0.0", "v1.2.0",
+	))
+	assert.Equal(t, "provider already up to date", providerUpdateSkipReason(
+		original, original, "v1.3.0", "v1.2.0",
+	))
+}
+
 func TestProviderUpdateSkipReason(t *testing.T) {
 	const (
 		originalSource = "github.com/org/provider@v1.0.0"
 		updatedPin     = "github.com/org/provider@v1.1.0"
 		otherSource    = "github.com/other/provider@v1.0.0"
 	)
-
 	tests := []struct {
 		name           string
-		originalSource string
-		currentSource  string
+		originalSource provider.ProviderSource
+		currentSource  provider.ProviderSource
+		currentVersion string
 		newVersion     string
 		wantReason     string
 	}{
 		{
 			name:           "unchanged source",
-			originalSource: originalSource,
-			currentSource:  originalSource,
+			originalSource: provider.ProviderSource{Raw: originalSource},
+			currentSource:  provider.ProviderSource{Raw: originalSource},
+			currentVersion: "v1.0.0",
 			newVersion:     "v1.1.0",
 		},
 		{
 			name:           "pin changed on same repository",
-			originalSource: originalSource,
-			currentSource:  updatedPin,
+			originalSource: provider.ProviderSource{Raw: originalSource},
+			currentSource:  provider.ProviderSource{Raw: updatedPin},
+			currentVersion: "v1.1.0",
 			newVersion:     "v1.2.0",
 			wantReason:     "provider source changed",
 		},
 		{
 			name:           "repository changed",
-			originalSource: originalSource,
-			currentSource:  otherSource,
+			originalSource: provider.ProviderSource{Raw: originalSource},
+			currentSource:  provider.ProviderSource{Raw: otherSource},
+			currentVersion: "v1.0.0",
 			newVersion:     "v1.2.0",
 			wantReason:     "provider source changed",
 		},
 		{
 			name:           "current version is newer",
-			originalSource: updatedPin,
-			currentSource:  updatedPin,
+			originalSource: provider.ProviderSource{Raw: updatedPin},
+			currentSource:  provider.ProviderSource{Raw: updatedPin},
+			currentVersion: "v1.1.0",
 			newVersion:     "v1.0.0",
 			wantReason:     "provider already up to date",
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(
-				t,
-				tt.wantReason,
-				providerUpdateSkipReason(tt.originalSource, tt.currentSource, tt.newVersion),
-			)
+			assert.Equal(t, tt.wantReason, providerUpdateSkipReason(
+				tt.originalSource, tt.currentSource, tt.currentVersion, tt.newVersion,
+			))
 		})
 	}
 }

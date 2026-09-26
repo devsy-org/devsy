@@ -86,12 +86,12 @@ func applyProviderUpdate(
 	devsyConfig *config.Config,
 	providerName, newVersion string,
 ) error {
-	providerSource, err := ResolveProviderSource(devsyConfig, providerName)
+	originalProvider, err := FindProvider(devsyConfig, providerName)
 	if err != nil {
-		return fmt.Errorf("resolve provider source %s: %w", providerName, err)
+		return fmt.Errorf("find provider %s: %w", providerName, err)
 	}
-
-	originalSource := providerSource
+	originalSource := originalProvider.Config.Source
+	providerSource := provider2.GetProviderSource(originalSource, originalProvider.Config.Name)
 	sourceBase, _ := provider2.SplitSourceAndTag(providerSource)
 	if sourceBase == "" {
 		return fmt.Errorf("no provider source found %s", providerSource)
@@ -113,11 +113,16 @@ func applyProviderUpdate(
 	// Another command may have updated the provider while this one waited on
 	// the lock; never replace an equal or newer version with this one, and
 	// never undo a source change made in the meantime.
-	currentSource, err := ResolveProviderSource(devsyConfig, providerName)
+	currentProvider, err := FindProvider(devsyConfig, providerName)
 	if err != nil {
-		return fmt.Errorf("resolve provider source %s: %w", providerName, err)
+		return fmt.Errorf("find provider %s: %w", providerName, err)
 	}
-	if reason := providerUpdateSkipReason(originalSource, currentSource, newVersion); reason != "" {
+	if reason := providerUpdateSkipReason(
+		originalSource,
+		currentProvider.Config.Source,
+		currentProvider.Config.Version,
+		newVersion,
+	); reason != "" {
 		log.Infof("%s, skipping update: provider=%s", reason, providerName)
 		return nil
 	}
@@ -131,11 +136,13 @@ func applyProviderUpdate(
 	return nil
 }
 
-func providerUpdateSkipReason(originalSource, currentSource, newVersion string) string {
+func providerUpdateSkipReason(
+	originalSource, currentSource provider2.ProviderSource,
+	currentVersion, newVersion string,
+) string {
 	if originalSource != currentSource {
 		return "provider source changed"
 	}
-	_, currentVersion := provider2.SplitSourceAndTag(currentSource)
 	newV, newErr := semver.Parse(strings.TrimPrefix(newVersion, "v"))
 	currentV, currentErr := semver.Parse(strings.TrimPrefix(currentVersion, "v"))
 	if newErr == nil && currentErr == nil && currentV.GTE(newV) {
