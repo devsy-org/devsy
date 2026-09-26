@@ -6,6 +6,7 @@ import type {
   ImageCatalog,
   LoadCatalogResult,
 } from "../shared/image-catalog-types.js"
+import { mainLog } from "./logging.js"
 
 const FETCH_TIMEOUT_MS = 10_000
 
@@ -67,7 +68,7 @@ async function readCache(cachePath: string): Promise<CatalogCacheFile | null> {
     raw = await readFile(cachePath, "utf8")
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.warn("[image-catalog] failed to read cache:", err)
+      mainLog.warn("[image-catalog] failed to read cache:", err)
     }
     return null
   }
@@ -77,7 +78,7 @@ async function readCache(cachePath: string): Promise<CatalogCacheFile | null> {
       ? parsed
       : null
   } catch (err) {
-    console.warn("[image-catalog] corrupt cache file, ignoring:", err)
+    mainLog.warn("[image-catalog] corrupt cache file, ignoring:", err)
     return null
   }
 }
@@ -89,7 +90,7 @@ async function readSeed(seedPath: string): Promise<ImageCatalog> {
     if (!isImageCatalog(seed)) throw new Error("seed malformed")
     return seed
   } catch (err) {
-    console.error(
+    mainLog.error(
       "[image-catalog] bundled seed unreadable/corrupt (packaging bug):",
       err,
     )
@@ -122,14 +123,14 @@ export async function loadCatalog(
       const toWrite: CatalogCacheFile = { fetchedAt: Date.now(), catalog }
       await writeFile(opts.cachePath, JSON.stringify(toWrite))
     } catch (err) {
-      console.warn(
+      mainLog.warn(
         "[image-catalog] failed to write cache (continuing with remote):",
         err,
       )
     }
     return { catalog, origin: "remote" }
   } catch (err) {
-    console.warn("[image-catalog] remote fetch failed, using fallback:", err)
+      mainLog.warn("[image-catalog] remote fetch failed, using fallback:", err)
     if (cache) return { catalog: cache.catalog, origin: "cache" }
     return { catalog: await readSeed(opts.seedPath), origin: "seed" }
   }

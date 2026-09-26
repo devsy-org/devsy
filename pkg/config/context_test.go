@@ -90,3 +90,18 @@ func TestSnapshotRegistryOption_Registered(t *testing.T) {
 	}
 	require.True(t, found, "SNAPSHOT_REGISTRY must be a registered context option")
 }
+
+func TestLogLevelOption_DefaultAndEnum(t *testing.T) {
+	c := &Config{Contexts: map[string]*ContextConfig{"default": {}}, DefaultContext: "default"}
+	require.Equal(t, "warn", c.ContextOption(ContextOptionLogLevel))
+
+	for _, option := range ContextOptions {
+		if option.Name == ContextOptionLogLevel {
+			require.Equal(t, []string{
+				"error", "warn", "info", "debug", "trace",
+			}, option.Enum)
+			return
+		}
+	}
+	t.Fatal("LOG_LEVEL must be a registered context option")
+}

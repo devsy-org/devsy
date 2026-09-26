@@ -31,6 +31,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/clihelp"
 	"github.com/devsy-org/devsy/pkg/config"
+	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/flatpak"
@@ -100,6 +101,31 @@ func logOutputFromArgs(args []string) string {
 		}
 	}
 	return ""
+}
+
+func defaultLogLevel(globalFlags *flags.GlobalFlags) string {
+	devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
+	if err != nil {
+		return log.DefaultLevel
+	}
+	if level := devsyConfig.ContextOption(config.ContextOptionLogLevel); level != "" {
+		return level
+	}
+	return log.DefaultLevel
+}
+
+func validateLogLevel(level string) error {
+	if level == "" {
+		return nil
+	}
+	if _, ok := log.LevelFromString(level); !ok {
+		return fmt.Errorf(
+			"invalid log level %q, expected one of: %s",
+			level,
+			strings.Join(log.ValidLevels(), ", "),
+		)
+	}
+	return nil
 }
 
 func isMachineConsumer(logOutput string, isInternal bool) bool {
@@ -190,11 +216,14 @@ func configureOutput(
 		}
 	}
 	log.Init(log.Config{
-		Verbosity: globalFlags.Verbosity,
-		Quiet:     globalFlags.Quiet,
-		Debug:     globalFlags.Debug,
-		Format:    format,
-		Redactor:  secrets.NewEnvironmentRedactor(os.Environ()),
+		Verbosity:    globalFlags.Verbosity,
+		Quiet:        globalFlags.Quiet,
+		Debug:        globalFlags.Debug,
+		Level:        globalFlags.LogLevel,
+		DefaultLevel: defaultLogLevel(globalFlags),
+		VerbositySet: rootCmd.PersistentFlags().Changed(names.Verbose),
+		Format:       format,
+		Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
 	})
 	return machineMode
 }
@@ -239,13 +268,25 @@ func exitCodeForError(err error, machineMode bool) int {
 func passthroughExitCode(err error, machineMode bool) (int, bool) {
 	if sshExitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
 		if machineMode {
-			log.Errorf("SSH command failed with exit code %d", sshExitErr.ExitStatus())
+			renderCLIError(
+				clierr.Classify(fmt.Errorf(
+					"SSH command failed with exit code %d",
+					sshExitErr.ExitStatus(),
+				)),
+				true,
+			)
 		}
 		return sshExitErr.ExitStatus(), true
 	}
 	if execExitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		if machineMode {
-			log.Errorf("Command failed with exit code %d", execExitErr.ExitCode())
+			renderCLIError(
+				clierr.Classify(fmt.Errorf(
+					"command failed with exit code %d",
+					execExitErr.ExitCode(),
+				)),
+				true,
+			)
 		}
 		return execExitErr.ExitCode(), true
 	}
@@ -257,7 +298,9 @@ func renderCLIError(cliErr *clierr.CLIError, machineMode bool) {
 		return
 	}
 	if machineMode {
-		log.JSONError(cliErr)
+		if err := devcconfig.WriteCLIErrorJSON(os.Stderr, cliErr); err != nil {
+			log.Errorf("failed to write CLI error envelope: %v", err)
+		}
 		return
 	}
 	redactor := secrets.NewEnvironmentRedactor(os.Environ())
@@ -307,6 +350,12 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
 
 	rootCmd.PersistentPreRunE = func(cobraCmd *cobra.Command, _ []string) error {
+		if err := validateLogLevel(globalFlags.LogLevel); err != nil {
+			return err
+		}
+		if globalFlags.DevsyHome != "" {
+			_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
+		}
 		cobraCmd.SilenceUsage = true
 		logFormat := globalFlags.LogOutput
 		if logFormat == "" {
@@ -318,17 +367,16 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		}
 
 		log.Init(log.Config{
-			Verbosity: globalFlags.Verbosity,
-			Quiet:     globalFlags.Quiet,
-			Debug:     globalFlags.Debug,
-			Format:    logFormat,
-			Redactor:  secrets.NewEnvironmentRedactor(os.Environ()),
+			Verbosity:    globalFlags.Verbosity,
+			Quiet:        globalFlags.Quiet,
+			Debug:        globalFlags.Debug,
+			Level:        globalFlags.LogLevel,
+			DefaultLevel: defaultLogLevel(globalFlags),
+			VerbositySet: persistentFlags.Changed(names.Verbose),
+			Format:       logFormat,
+			Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
 		})
 		klog.SetLogger(logr.New(log.LogrSink()))
-
-		if globalFlags.DevsyHome != "" {
-			_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
-		}
 
 		devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
 		if err == nil {

@@ -17,6 +17,7 @@ import {
   shouldSuppressInitialWindow,
 } from "./launch-context.js"
 import { LogStore } from "./log-store.js"
+import { mainLog, setMainLogLevel } from "./logging.js"
 import { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
 import { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import { ProviderJobs } from "./provider-jobs.js"
@@ -136,6 +137,12 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  const appSettingsStore = new AppSettingsStore(
+    join(app.getPath("userData"), "app-settings.json"),
+  )
+  appSettingsStore.load()
+  setMainLogLevel(appSettingsStore.get().desktopLogLevel)
+
   initAnalytics()
   trackEvent("app_open")
 
@@ -167,6 +174,7 @@ app.whenReady().then(async () => {
       ? CliRunner.resolveBinaryPath(process.resourcesPath)
       : CliRunner.resolveBinaryPath(join(__dirname, "../../resources")))
   const cli = new CliRunner(binaryPath)
+  cli.setDiagnosticLogLevel(appSettingsStore.get().cliCaptureLogLevel)
 
   // Initialize log store. Logs live under ~/.devsy/desktop/logs/ — inside the
   // shared ~/.devsy root (no artifact sprawl) but outside the CLI-managed
@@ -182,9 +190,9 @@ app.whenReady().then(async () => {
   )
   try {
     const pruned = logStore.prune(30)
-    if (pruned > 0) console.log(`Pruned ${pruned} old log files`)
+    if (pruned > 0) mainLog.info(`Pruned ${pruned} old log files`)
   } catch (e) {
-    console.error("Failed to prune old logs:", e)
+    mainLog.error("Failed to prune old logs:", e)
   }
 
   // Initialize PTY manager
@@ -218,16 +226,14 @@ app.whenReady().then(async () => {
   const providerJobs = new ProviderJobs()
   const workspaceJobs = new WorkspaceJobs()
 
-  const appSettingsStore = new AppSettingsStore(
-    join(app.getPath("userData"), "app-settings.json"),
-  )
-  appSettingsStore.load()
   const autostartEnv = detectAutostartEnvironment()
   const settingsService = new SettingsService({
     store: appSettingsStore,
     applyAutostart: (settings) => applyAutostart(settings, autostartEnv),
     currentAutostartEnabled: () => readAutostartEnabled(autostartEnv),
     onChanged: (result) => {
+      setMainLogLevel(result.settings.desktopLogLevel)
+      cli.setDiagnosticLogLevel(result.settings.cliCaptureLogLevel)
       appTray?.rebuildMenu()
       const win = mainWindow
       if (win && !win.isDestroyed()) {

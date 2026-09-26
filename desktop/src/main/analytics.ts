@@ -3,6 +3,7 @@ import { arch, homedir, platform } from "node:os"
 import { app } from "electron"
 import { PostHog } from "posthog-node"
 import { machineIdSync } from "./machine-id.js"
+import { mainLog } from "./logging.js"
 
 declare const __DEVSY_POSTHOG_API_KEY__: string | undefined
 // `typeof` guard keeps the module loadable under vitest, which doesn't
@@ -46,7 +47,7 @@ function isTelemetryDisabled(): boolean {
 export function initAnalytics(): void {
   if (isTelemetryDisabled()) return
   if (!DEVSY_POSTHOG_API_KEY) {
-    console.warn("[telemetry] analytics disabled: API key not configured")
+    mainLog.warn("[telemetry] analytics disabled: API key not configured")
     return
   }
 

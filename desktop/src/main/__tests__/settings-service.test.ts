@@ -172,6 +172,8 @@ describe("SettingsService", () => {
       runAtStartup: true,
       openToTrayOnStartup: false,
       trayNotifications: "failures",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
     expect(onChanged).not.toHaveBeenCalled()
   })
@@ -204,6 +206,8 @@ describe("SettingsService", () => {
       runAtStartup: false,
       openToTrayOnStartup: false,
       trayNotifications: "failures",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
     expect(result.startup.status).toBe("disabled")
   })
@@ -227,12 +231,16 @@ describe("SettingsService", () => {
       runAtStartup: true,
       openToTrayOnStartup: false,
       trayNotifications: "failures",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
     expect(result.startup.status).toBe("error")
     expect(store.get()).toEqual({
       runAtStartup: true,
       openToTrayOnStartup: false,
       trayNotifications: "failures",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
     expect(onChanged).toHaveBeenCalledTimes(1)
     expect(onChanged).toHaveBeenCalledWith({
@@ -263,6 +271,8 @@ describe("SettingsService", () => {
       runAtStartup: true,
       openToTrayOnStartup: true,
       trayNotifications: "failures",
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
     })
     expect(result.startup).toMatchObject({ applied: false, enabled: true })
     expect(store.get().runAtStartup).toBe(true)

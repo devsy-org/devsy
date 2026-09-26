@@ -144,9 +144,20 @@ function parseArgs(args) {
   let providerFlag = ""
   let ideFlag = ""
   let nameFlag = ""
+  let logLevel = "warn"
   let i = 0
   while (i < args.length) {
     const arg = args[i]
+    if (arg === "--log-level") {
+      logLevel = args[i + 1] || "warn"
+      i += 2
+      continue
+    }
+    if (arg.startsWith("--log-level=")) {
+      logLevel = arg.slice("--log-level=".length)
+      i++
+      continue
+    }
     if (arg === "--result-format") {
       i += 2
       continue
@@ -194,7 +205,14 @@ function parseArgs(args) {
     positional.push(arg)
     i++
   }
-  return { positional, idFlag, providerFlag, ideFlag, nameFlag }
+  return { positional, idFlag, providerFlag, ideFlag, nameFlag, logLevel }
+}
+
+function emitDiagnostics(logLevel) {
+  const levels = { error: 0, warn: 1, info: 2, debug: 3, trace: 4 }
+  const selected = levels[logLevel] ?? levels.warn
+  if (selected >= levels.info) process.stderr.write("INFO diagnostic line\n")
+  if (selected >= levels.warn) process.stderr.write("WARN diagnostic line\n")
 }
 
 // Workspace verb handlers. Each accepts the slice of args AFTER its verb,
@@ -570,6 +588,7 @@ const featureHandlers = {
 }
 
 const cmd = rawArgs[0] || ""
+emitDiagnostics(parseArgs(rawArgs).logLevel)
 
 // Canonical form: `devsy feature <verb> ...`
 if (cmd === "feature") {

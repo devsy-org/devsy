@@ -1,3 +1,5 @@
+import { mainLog } from "./logging.js"
+
 export interface Workspace {
   id: string
   lastUsed?: string
@@ -115,12 +117,12 @@ export class DaemonState {
   // watcher's first poll picks up the new workspace) the active context is
   // used instead of a hard-coded "default", so creation logs land alongside
   // the workspace they're describing rather than orphaned under `default/`.
-  // Both fallback branches emit a console.warn so log misrouting is visible.
+  // Both fallback branches emit a main warning so log misrouting is visible.
   workspaceContext(workspaceId: string): string {
     const ws = this.workspaces.get(workspaceId)
     if (!ws) {
       const active = this.currentContext()
-      console.warn(
+      mainLog.warn(
         `[state] workspaceContext: workspace ${workspaceId} not found in state; falling back to active context %q`,
         active,
       )
@@ -128,7 +130,7 @@ export class DaemonState {
     }
     if (typeof ws.context !== "string" || ws.context === "") {
       const active = this.currentContext()
-      console.warn(
+      mainLog.warn(
         `[state] workspaceContext: workspace ${workspaceId} has no context field; falling back to active context %q`,
         active,
       )
@@ -151,7 +153,7 @@ export class DaemonState {
       try {
         listener()
       } catch (error) {
-        console.error("[state] workspace listener failed:", error)
+        mainLog.error("[state] workspace listener failed:", error)
       }
     }
   }

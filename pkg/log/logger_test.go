@@ -25,6 +25,140 @@ func TestColorEnabledHonorsNoColor(t *testing.T) {
 	}
 }
 
+func TestResolveLevelPrecedence(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{name: "persisted default", cfg: Config{DefaultLevel: LevelWarnName}, want: LevelWarnName},
+		{
+			name: "explicit log level",
+			cfg:  Config{Level: LevelDebugName, DefaultLevel: LevelWarnName}, want: LevelDebugName,
+		},
+		{
+			name: "verbosity beats log level",
+			cfg: Config{
+				Verbosity:    1,
+				VerbositySet: true,
+				Level:        LevelDebugName,
+			},
+			want: LevelInfoName,
+		},
+		{
+			name: "debug beats verbosity",
+			cfg:  Config{Verbosity: 1, VerbositySet: true, Debug: true}, want: LevelDebugName,
+		},
+		{
+			name: "quiet beats debug",
+			cfg:  Config{Debug: true, Quiet: true}, want: LevelErrorName,
+		},
+		{
+			name: "log level beats persisted default",
+			cfg:  Config{Level: LevelWarnName, DefaultLevel: LevelInfoName}, want: LevelWarnName,
+		},
+		{
+			name: "explicit verbosity beats log level",
+			cfg: Config{
+				Verbosity:    1,
+				VerbositySet: true,
+				Level:        LevelErrorName,
+			},
+			want: LevelInfoName,
+		},
+		{
+			name: "debug beats log level",
+			cfg:  Config{Debug: true, Level: LevelErrorName}, want: LevelDebugName,
+		},
+		{
+			name: "quiet beats log level",
+			cfg:  Config{Quiet: true, Level: LevelTraceName}, want: LevelErrorName,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveLevel(tt.cfg).String(); got != tt.want {
+				t.Fatalf("resolveLevel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveLevelExplicitFalseValues(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{
+			name: "explicit debug=false falls through to log level",
+			cfg: Config{
+				Debug:        false,
+				Level:        LevelDebugName,
+				DefaultLevel: LevelWarnName,
+			},
+			want: LevelDebugName,
+		},
+		{
+			name: "explicit quiet=false falls through to log level",
+			cfg: Config{
+				Quiet:        false,
+				Level:        LevelInfoName,
+				DefaultLevel: LevelWarnName,
+			},
+			want: LevelInfoName,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveLevel(tt.cfg).String(); got != tt.want {
+				t.Fatalf("resolveLevel() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveLevelDefaultsToWarn(t *testing.T) {
+	if got := resolveLevel(Config{DefaultLevel: DefaultLevel}).String(); got != LevelWarnName {
+		t.Fatalf("resolveLevel() = %q, want %q", got, LevelWarnName)
+	}
+}
+
+func TestResolveLevelInvalidPersistedDefaultFallsBackToWarn(t *testing.T) {
+	if got := resolveLevel(Config{DefaultLevel: "verbose"}).String(); got != LevelWarnName {
+		t.Fatalf("resolveLevel() = %q, want %q", got, LevelWarnName)
+	}
+}
+
+func TestQuietKeepsErrorsVisible(t *testing.T) {
+	Init(Config{Quiet: true})
+	var sink syncBuffer
+	remove := AddSink(&sink)
+	defer remove()
+
+	Warn("hidden warning")
+	Error("visible error")
+	_ = Sync()
+
+	if got := sink.String(); strings.Contains(got, "hidden warning") {
+		t.Fatalf("quiet logger emitted warning: %q", got)
+	}
+	if got := sink.String(); !strings.Contains(got, "visible error") {
+		t.Fatalf("quiet logger hid error: %q", got)
+	}
+}
+
+func TestLevelFromString(t *testing.T) {
+	for _, level := range ValidLevels() {
+		if _, ok := LevelFromString(level); !ok {
+			t.Errorf("LevelFromString(%q) rejected valid level", level)
+		}
+	}
+	if _, ok := LevelFromString("verbose"); ok {
+		t.Fatal("LevelFromString accepted invalid level")
+	}
+}
+
 func TestAddSink_ForwardsLogLines(t *testing.T) {
 	Init(Config{Verbosity: 2}) // info+
 

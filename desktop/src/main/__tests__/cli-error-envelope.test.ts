@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  cliErrorFromEnvelope,
+  cliErrorFromLegacy,
   normalizeOperationStatus,
   parseCliEnvelope,
   type CliStatusEnvelope,
 } from "../../shared/cli-error"
 
 describe("CLI envelopes", () => {
+	it("validates direct error envelopes and rejects malformed fields", () => {
+    expect(cliErrorFromEnvelope({ kind: "error", outcome: "error", code: "X", message: "boom" })).toMatchObject({ code: "X", message: "boom" })
+    expect(cliErrorFromEnvelope({ kind: "error", outcome: "error", message: "" })).toBeUndefined()
+    expect(cliErrorFromEnvelope({ kind: "error", outcome: "error", message: "boom", context: { attempt: 1 } })).toBeUndefined()
+  })
 	it("parses and normalizes current status", () => {
 		const envelope = parseCliEnvelope(
 			JSON.stringify({ kind: "status", schemaVersion: 1, phase: "building_image", state: "started" }),
@@ -56,5 +63,19 @@ describe("CLI envelopes", () => {
     expect(parseCliEnvelope(JSON.stringify({ kind: "status", schemaVersion: 1, phase: "ready", state: "started", durationMs: "17" }))).toBeUndefined()
     expect(parseCliEnvelope(JSON.stringify({ kind: "status", schemaVersion: 1, phase: "ready", state: "started", error: { message: "x", context: { attempt: 1 } } }))).toBeUndefined()
     expect(parseCliEnvelope(JSON.stringify({ kind: "diagnostic", message: "raw" }))).toBeUndefined()
+  })
+
+  it("keeps legacy zap errors when context is a flattened string", () => {
+    const legacy = {
+      level: "error",
+      cliError: { code: "BUILD_FAILED", message: "build failed", context: "map[attempt:1]" },
+    }
+    expect(cliErrorFromLegacy(legacy)).toMatchObject({ code: "BUILD_FAILED", message: "build failed" })
+    expect(cliErrorFromLegacy(legacy)?.context).toBeUndefined()
+    const structured = {
+      level: "error",
+      cliError: { code: "BUILD_FAILED", message: "build failed", context: { attempt: "1" } },
+    }
+    expect(cliErrorFromLegacy(structured)?.context).toEqual({ attempt: "1" })
   })
 })

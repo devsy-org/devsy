@@ -1,7 +1,4 @@
-FROM ghcr.io/devsy-org/test-images/python:latest
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+FROM ghcr.io/devsy-org/test-images/base:alpine
 
 WORKDIR /example
 

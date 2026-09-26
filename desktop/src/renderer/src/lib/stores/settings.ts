@@ -9,6 +9,7 @@ import { onAppSettingsChanged } from "$lib/ipc/events.js"
 import type {
   AppSettings,
   AppSettingsState,
+  LogLevel,
   StartupStatus,
   TrayNotificationLevel,
 } from "$shared/app-settings.js"
@@ -231,7 +232,6 @@ export interface ContextOptions {
 export type OnBuildFailure = "prompt" | "auto-recovery" | "nothing"
 
 export interface LocalOptions {
-  debugFlag: boolean
   sshKeyPath: string
   httpProxy: string
   httpsProxy: string
@@ -263,7 +263,6 @@ export const DEFAULT_CONTEXT_OPTIONS: ContextOptions = {
 }
 
 export const DEFAULT_LOCAL_OPTIONS: LocalOptions = {
-  debugFlag: false,
   sshKeyPath: "",
   httpProxy: "",
   httpsProxy: "",
@@ -366,6 +365,8 @@ export function parseContextOptions(
 export const runAtStartup = writable<boolean>(false)
 export const openToTrayOnStartup = writable<boolean>(false)
 export const trayNotifications = writable<TrayNotificationLevel>("failures")
+export const desktopLogLevel = writable<LogLevel>("info")
+export const cliCaptureLogLevel = writable<LogLevel>("info")
 export const startupStatus = writable<StartupStatus | null>(null)
 
 let desktopSettingsQueue: Promise<unknown> = Promise.resolve()
@@ -375,6 +376,8 @@ function applyAppSettingsState(state: AppSettingsState): void {
   runAtStartup.set(state.settings.runAtStartup)
   openToTrayOnStartup.set(state.settings.openToTrayOnStartup)
   trayNotifications.set(state.settings.trayNotifications)
+  desktopLogLevel.set(state.settings.desktopLogLevel)
+  cliCaptureLogLevel.set(state.settings.cliCaptureLogLevel)
   startupStatus.set(state.startup)
 }
 

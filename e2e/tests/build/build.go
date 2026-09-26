@@ -223,6 +223,9 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
+			// This fixture uses a local no-op feature so it exercises feature
+			// installation without depending on distro package mirrors. Package
+			// upgrades are unrelated to the compose build-context behavior here.
 			tempDir, err := framework.CopyToTempDir(
 				"tests/build/testdata/docker-compose-features-context",
 			)

@@ -61,8 +61,28 @@ test.describe("Workspace lifecycle badges", () => {
       [channel, args] as const,
     )
 
+  const workspaceSnapshot = async () =>
+    (await api("workspace_snapshot", {})) as {
+      workspaces: Array<{ id: string }>
+      jobs: Record<string, { state: string }>
+    }
+
+  const waitForDeleteToSettle = async () => {
+    await expect
+      .poll(
+        async () => {
+          const snapshot = await workspaceSnapshot()
+          return snapshot.jobs.deleteprobe?.state ?? "missing"
+        },
+        { timeout: 10000 },
+      )
+      .toMatch(/^(succeeded|failed|missing)$/)
+  }
+
   test("shows a Deleting badge while removal is in flight, then removes the row", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
+    let deleteAccepted = false
+    let testError: unknown
 
     try {
       await api("workspace_up", {
@@ -73,19 +93,41 @@ test.describe("Workspace lifecycle badges", () => {
         timeout: 5000,
       })
 
-      // Not awaited: the assertions below run while the delete is in flight.
-      void api("workspace_delete", { workspaceId: "deleteprobe" }).catch(
-        () => undefined,
-      )
+      // IPC acceptance is immediate; keep these assertions ahead of CLI completion.
+      await api("workspace_delete", { workspaceId: "deleteprobe" })
+      deleteAccepted = true
 
       await expect(main).toContainText("Deleting", { timeout: 3000 })
       await expect(main.locator("text=deleteprobe")).not.toBeVisible({
         timeout: 5000,
       })
-    } finally {
-      // Mock CLI state is shared across specs, so don't leave this behind.
-      await api("workspace_delete", { workspaceId: "deleteprobe" })
+      await waitForDeleteToSettle()
+    } catch (error) {
+      testError = error
     }
+    // Let an accepted delete finish before retrying cleanup.
+    try {
+      if (deleteAccepted) await waitForDeleteToSettle()
+      const snapshot = await workspaceSnapshot()
+      if (snapshot.workspaces.some(({ id }) => id === "deleteprobe")) {
+        await api("workspace_delete", { workspaceId: "deleteprobe" })
+        await waitForDeleteToSettle()
+        // Avoid leaking this fixture into later tests.
+        const finalSnapshot = await workspaceSnapshot()
+        if (finalSnapshot.workspaces.some(({ id }) => id === "deleteprobe")) {
+          throw new Error("deleteprobe workspace still present after delete retry")
+        }
+      }
+    } catch (cleanupError) {
+      if (testError) {
+        throw new AggregateError(
+          [testError, cleanupError],
+          "Test and cleanup failed",
+        )
+      }
+      throw cleanupError
+    }
+    if (testError) throw testError
   })
 })
 

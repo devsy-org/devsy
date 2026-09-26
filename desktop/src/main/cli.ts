@@ -3,11 +3,17 @@ import { execFile as execFileCb, spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import type { Readable } from "node:stream"
 import { promisify } from "node:util"
+import {
+  cliErrorFromEnvelope,
+  cliErrorFromLegacy,
+} from "../shared/cli-error.js"
 import type { CLIError, CliLogLine } from "../shared/cli-error.js"
 import { getAnalyticsDistinctId } from "./analytics.js"
 
 const execFile = promisify(execFileCb)
 const MAX_CONCURRENT = 50
+type CliLogOutput = "json" | "logfmt" | "text"
+type CliResultFormat = "auto" | "json" | "plain"
 
 function backpressureController(source: Readable): (r: void | Promise<void>) => void {
   let pending = 0
@@ -30,6 +36,12 @@ export interface StreamLine {
   cliError?: CLIError
   /** Log level from the parsed line, if available. */
   level?: "info" | "warn" | "error"
+}
+
+export interface CliInvocationPolicy {
+  diagnosticLogLevel: import("../shared/app-settings.js").LogLevel
+  logOutput: CliLogOutput
+  resultFormat: CliResultFormat
 }
 
 /**
@@ -59,7 +71,9 @@ function extractCliErrorFromStderr(stderr: string): CLIError | undefined {
   let found: CLIError | undefined
   for (const line of stderr.split(/\r?\n/)) {
     const parsed = parseStderrLine(line)
-    if (parsed?.cliError) found = parsed.cliError
+    const direct = cliErrorFromEnvelope(parsed)
+    const legacy = cliErrorFromLegacy(parsed)
+    if (direct ?? legacy) found = direct ?? legacy
   }
   return found
 }
@@ -163,12 +177,26 @@ function buildEnv(): NodeJS.ProcessEnv {
   }
 }
 
+function requestedResultFormat(args: string[]): string | undefined {
+  const index = args.findIndex(
+    (arg) => arg === "--result-format" || arg.startsWith("--result-format="),
+  )
+  if (index === -1) return undefined
+  const arg = args[index]
+  return arg.includes("=") ? arg.split("=", 2)[1] : args[index + 1]
+}
+
 export class CliRunner {
   private execPath: string
   private prefixArgs: string[]
   private env: NodeJS.ProcessEnv
   private running = 0
   private queue: Array<() => void> = []
+  private policy: CliInvocationPolicy = {
+    diagnosticLogLevel: "info",
+    logOutput: "json",
+    resultFormat: "json",
+  }
 
   constructor(private binaryPath: string) {
     if (/\.[cm]?js$/.test(binaryPath)) {
@@ -179,6 +207,34 @@ export class CliRunner {
       this.prefixArgs = []
     }
     this.env = buildEnv()
+  }
+
+  setDiagnosticLogLevel(level: import("../shared/app-settings.js").LogLevel): void {
+    this.policy.diagnosticLogLevel = level
+  }
+
+  private argsWithLogLevel(args: string[]): string[] {
+    const explicit = args.some(
+      (arg) => arg === "--log-level" || arg.startsWith("--log-level="),
+    )
+    return [
+      ...this.prefixArgs,
+      ...args,
+      ...(explicit ? [] : ["--log-level", this.policy.diagnosticLogLevel]),
+    ]
+  }
+
+  private argsWithProtocol(args: string[], includeResultFormat = false): string[] {
+    const fullArgs = this.argsWithLogLevel(args)
+    const hasFlag = (flag: string) =>
+      fullArgs.some((arg) => arg === flag || arg.startsWith(`${flag}=`))
+    if (includeResultFormat && !hasFlag("--result-format")) {
+      fullArgs.push("--result-format", this.policy.resultFormat)
+    }
+    if (!hasFlag("--log-output") && !hasFlag("--log-format")) {
+      fullArgs.push("--log-output", this.policy.logOutput)
+    }
+    return fullArgs
   }
 
   private acquire(): Promise<void> {
@@ -201,16 +257,15 @@ export class CliRunner {
   }
 
   async run<T>(args: string[]): Promise<T> {
+    const requestedFormat = requestedResultFormat(args) ?? this.policy.resultFormat
+    if (requestedFormat !== "json") {
+      throw new Error(
+        `run() parses JSON results; got --result-format=${requestedFormat}. Use runRaw() for non-JSON output`,
+      )
+    }
     await this.acquire()
     try {
-      const fullArgs = [
-        ...this.prefixArgs,
-        ...args,
-        "--result-format",
-        "json",
-        "--log-output",
-        "json",
-      ]
+      const fullArgs = this.argsWithProtocol(args, true)
       const { stdout } = await execFile(this.execPath, fullArgs, {
         env: this.env,
       })
@@ -227,7 +282,7 @@ export class CliRunner {
     try {
       const { stdout } = await execFile(
         this.execPath,
-        [...this.prefixArgs, ...args, "--log-output", "json"],
+        this.argsWithProtocol(args),
         { env: this.env },
       )
       return stdout
@@ -243,7 +298,7 @@ export class CliRunner {
     await this.acquire()
     try {
       return await this.spawnWithStdin(
-        [...this.prefixArgs, ...args, "--log-output", "json"],
+        this.argsWithProtocol(args),
         input,
       )
     } catch (error: unknown) {
@@ -307,7 +362,7 @@ export class CliRunner {
     await this.acquire()
     const child = spawn(
       this.execPath,
-      [...this.prefixArgs, ...args, "--log-output", "json"],
+      this.argsWithProtocol(args),
       { env: this.env },
     )
 
@@ -341,13 +396,13 @@ export class CliRunner {
       rl.on("line", (line) => {
         if (suppressCallbacks) return
         const parsed = parseStderrLine(line)
-        if (parsed?.cliError) {
-          lastCliError = parsed.cliError
-        }
+        const direct = cliErrorFromEnvelope(parsed)
+        const legacy = cliErrorFromLegacy(parsed)
+        if (direct ?? legacy) lastCliError = direct ?? legacy
         const meta: StreamLine = {
           raw: line,
           parsed,
-          cliError: parsed?.cliError,
+          cliError: direct ?? legacy,
           level: normalizeLevel(parsed?.level),
         }
         applyBackpressure(onLine(line, "stderr", meta))

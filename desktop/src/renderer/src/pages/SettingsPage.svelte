@@ -22,6 +22,8 @@ import {
   runAtStartup,
   openToTrayOnStartup,
   trayNotifications,
+  desktopLogLevel,
+  cliCaptureLogLevel,
   startupStatus,
   syncDesktopSettingsFromMain,
   updateDesktopSettings,
@@ -32,7 +34,7 @@ import type {
   LocalOptions,
   OnBuildFailure,
 } from "$lib/stores/settings.js"
-import type { TrayNotificationLevel } from "$shared/app-settings.js"
+import type { LogLevel, TrayNotificationLevel } from "$shared/app-settings.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import UpdatesPanel from "$lib/components/update/UpdatesPanel.svelte"
 import { Skeleton } from "$lib/components/ui/skeleton/index.js"
@@ -104,7 +106,6 @@ let filteredIdes = $derived(
 )
 
 let local = $state<LocalOptions>({
-  debugFlag: false,
   sshKeyPath: "",
   httpProxy: "",
   httpsProxy: "",
@@ -134,6 +135,14 @@ const NOTIFICATION_OPTIONS: { value: TrayNotificationLevel; label: string }[] =
     { value: "failures", label: "Failures only" },
     { value: "all", label: "All terminal outcomes" },
   ]
+
+const LOG_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
+  { value: "error", label: "Error" },
+  { value: "warn", label: "Warn" },
+  { value: "info", label: "Info" },
+  { value: "debug", label: "Debug" },
+  { value: "trace", label: "Trace" },
+]
 
 onMount(() => {
   local = loadLocalOptions()
@@ -190,11 +199,34 @@ function toggleLocal(key: keyof LocalOptions) {
       <div class="mt-4 space-y-6">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <Label>Debug Mode</Label>
-            <p class="text-xs text-muted-foreground">Run all commands with --debug flag</p>
+            <Label>Desktop Application Logging</Label>
+            <p class="text-xs text-muted-foreground">Controls diagnostic detail emitted by the desktop application</p>
           </div>
-          <Switch checked={local.debugFlag} onCheckedChange={() => toggleLocal("debugFlag")} disabled={loading || saving} />
+          <Select.Root
+            type="single"
+            value={$desktopLogLevel}
+            onValueChange={(v) => { if (v) updateDesktopSettings({ desktopLogLevel: v as LogLevel }) }}
+          >
+            <Select.Trigger class="h-9 w-full sm:w-[280px]"><span>{LOG_LEVEL_OPTIONS.find((o) => o.value === $desktopLogLevel)?.label ?? "Info"}</span></Select.Trigger>
+            <Select.Content>
+              {#each LOG_LEVEL_OPTIONS as o (o.value)}
+                <Select.Item value={o.value} label={o.label} />
+              {/each}
+            </Select.Content>
+          </Select.Root>
         </div>
+
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Label>CLI Capture Logging</Label>
+            <p class="text-xs text-muted-foreground">Controls diagnostic detail captured from CLI commands launched by the desktop</p>
+          </div>
+          <Select.Root type="single" value={$cliCaptureLogLevel} onValueChange={(v) => { if (v) updateDesktopSettings({ cliCaptureLogLevel: v as LogLevel }) }}>
+            <Select.Trigger class="h-9 w-full sm:w-[280px]"><span>{LOG_LEVEL_OPTIONS.find((o) => o.value === $cliCaptureLogLevel)?.label ?? "Info"}</span></Select.Trigger>
+            <Select.Content>{#each LOG_LEVEL_OPTIONS as o (o.value)}<Select.Item value={o.value} label={o.label} />{/each}</Select.Content>
+          </Select.Root>
+        </div>
+        <p class="text-xs text-muted-foreground">Direct terminal CLI commands use their own context default, which is Warn unless overridden.</p>
 
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>

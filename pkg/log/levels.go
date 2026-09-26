@@ -2,6 +2,43 @@ package log
 
 import "go.uber.org/zap/zapcore"
 
+const DefaultLevel = LevelWarnName
+
+const (
+	LevelErrorName = "error"
+	LevelWarnName  = "warn"
+	LevelInfoName  = "info"
+	LevelDebugName = "debug"
+	LevelTraceName = "trace"
+)
+
+var validLevels = [...]string{
+	LevelErrorName,
+	LevelWarnName,
+	LevelInfoName,
+	LevelDebugName,
+	LevelTraceName,
+}
+
+func LevelFromString(value string) (zapcore.Level, bool) {
+	switch value {
+	case LevelErrorName:
+		return zapcore.ErrorLevel, true
+	case LevelWarnName:
+		return zapcore.WarnLevel, true
+	case LevelInfoName:
+		return zapcore.InfoLevel, true
+	case LevelDebugName:
+		return zapcore.DebugLevel, true
+	case LevelTraceName:
+		return zapcore.DebugLevel - 1, true
+	default:
+		return zapcore.ErrorLevel, false
+	}
+}
+
+func ValidLevels() []string { return append([]string(nil), validLevels[:]...) }
+
 // Verbosity levels mapped from CLI flags.
 const (
 	LevelTrace = 3
@@ -21,6 +58,9 @@ func DebugEnabled() bool {
 // (e.g. "debug", "info", "warn", "error", "fatal").
 func LevelString() string {
 	core := sugar.Load().Desugar().Core()
+	if core.Enabled(zapcore.DebugLevel - 1) {
+		return LevelTraceName
+	}
 	for _, l := range []zapcore.Level{
 		zapcore.DebugLevel,
 		zapcore.InfoLevel,

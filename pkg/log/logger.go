@@ -6,7 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -26,11 +25,14 @@ func init() {
 
 // Config holds logger configuration parsed from CLI flags.
 type Config struct {
-	Verbosity int    // 0=error, 1=info+warn, 2=debug, 3=trace
-	Quiet     bool   // fatal only
-	Debug     bool   // backwards compat, equivalent to Verbosity=2
-	Format    string // "text", "json", "logfmt"
-	Redactor  *secrets.Redactor
+	Verbosity    int    // 0=error, 1=info+warn, 2=debug, 3=trace
+	Quiet        bool   // error only
+	Debug        bool   // backwards compat, equivalent to Verbosity=2
+	Level        string // explicit --log-level override
+	DefaultLevel string // persisted default when no explicit verbosity flag is set
+	VerbositySet bool
+	Format       string // "text", "json", "logfmt"
+	Redactor     *secrets.Redactor
 }
 
 // Init configures the global logger. Called once in root command PersistentPreRunE.
@@ -145,13 +147,39 @@ func (f *writerFanout) add(w io.Writer) (remove func()) {
 }
 
 func resolveLevel(cfg Config) zapcore.Level {
-	if cfg.Quiet {
-		return zapcore.FatalLevel
-	}
-	if cfg.Debug {
-		return zapcore.DebugLevel
+	if level, ok := resolveExplicitLevel(cfg); ok {
+		return level
 	}
 	return VerbosityToLevel(cfg.Verbosity)
+}
+
+// Precedence: --quiet > --debug > explicitly supplied -v > --log-level > persisted default.
+// This ordering is compatibility-sensitive: earlier flags must keep winning over
+// later configuration, so do not reorder it.
+func resolveExplicitLevel(cfg Config) (zapcore.Level, bool) {
+	if cfg.Quiet {
+		return zapcore.ErrorLevel, true
+	}
+	if cfg.Debug {
+		return zapcore.DebugLevel, true
+	}
+	if cfg.VerbositySet || cfg.Verbosity > 0 {
+		return VerbosityToLevel(cfg.Verbosity), true
+	}
+	return resolveConfiguredLevel(cfg.Level, cfg.DefaultLevel)
+}
+
+func resolveConfiguredLevel(explicit, fallback string) (zapcore.Level, bool) {
+	if explicit != "" {
+		return LevelFromString(explicit)
+	}
+	if fallback != "" {
+		if level, ok := LevelFromString(fallback); ok {
+			return level, true
+		}
+	}
+	level, _ := LevelFromString(DefaultLevel)
+	return level, true
 }
 
 func resolveEncoder(format string) zapcore.Encoder {
@@ -220,19 +248,6 @@ func Info(args ...any)  { sugar.Load().Info(args...) }
 func Warn(args ...any)  { sugar.Load().Warn(args...) }
 func Error(args ...any) { sugar.Load().Error(args...) }
 func Fatal(args ...any) { sugar.Load().Fatal(args...) }
-
-func JSONError(cliErr *clierr.CLIError) {
-	if cliErr == nil {
-		return
-	}
-	msg := cliErr.Message
-	if wrapped := cliErr.Unwrap(); wrapped != nil {
-		if s := wrapped.Error(); s != "" {
-			msg = s
-		}
-	}
-	sugar.Load().Desugar().Error(msg, zap.Object("cliError", cliErr))
-}
 
 func Debugw(msg string, keysAndValues ...any) { sugar.Load().Debugw(msg, keysAndValues...) }
 func Infow(msg string, keysAndValues ...any)  { sugar.Load().Infow(msg, keysAndValues...) }
