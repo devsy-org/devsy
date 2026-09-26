@@ -145,7 +145,10 @@ func (cmd *UpCmd) devsyUpDaemon(
 func (cmd *UpCmd) buildWorkspaceOptions(workspace *provider2.Workspace) provider2.CLIOptions {
 	baseOptions := cmd.CLIOptions
 	baseOptions.ID = workspace.ID
-	baseOptions.DevContainerPath = workspace.DevContainerPath
+	if workspace.DevContainerConfig == nil {
+		baseOptions.DevContainerPath = workspace.DevContainerPath
+		baseOptions.DevContainerID = workspace.DevContainerID
+	}
 	baseOptions.DevContainerImage = workspace.DevContainerImage
 	baseOptions.DevContainerSource = workspace.DevContainerSource
 	baseOptions.IDE = workspace.IDE.Name

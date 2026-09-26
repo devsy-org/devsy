@@ -202,6 +202,7 @@ func TestApplyDevContainerOverrides_NoOp(t *testing.T) {
 	require.NoError(t, applyDevContainerOverrides(ws, ResolveParams{}))
 	assert.Empty(t, ws.DevContainerImage)
 	assert.Empty(t, ws.DevContainerPath)
+	assert.Empty(t, ws.DevContainerID)
 }
 
 func TestApplyDevContainerOverrides_SetsImageAndPath(t *testing.T) {
@@ -238,4 +239,42 @@ func TestApplyDevContainerOverrides_PersistsSource(t *testing.T) {
 	loaded, err := providerpkg.LoadWorkspaceConfig(testDefaultContext, ws.ID)
 	require.NoError(t, err)
 	assert.Equal(t, source, loaded.DevContainerSource)
+}
+
+func TestApplyDevContainerOverrides_PersistsIDAndClearsOtherSelectors(t *testing.T) {
+	setupTestPathManager(t)
+
+	ws := &providerpkg.Workspace{
+		ID:                 "ws-id",
+		Context:            testDefaultContext,
+		DevContainerPath:   ".devcontainer/old/devcontainer.json",
+		DevContainerSource: "image:old",
+	}
+	require.NoError(t, applyDevContainerOverrides(ws, ResolveParams{DevContainerID: "max"}))
+
+	assert.Equal(t, "max", ws.DevContainerID)
+	assert.Empty(t, ws.DevContainerPath)
+	assert.Empty(t, ws.DevContainerSource)
+
+	loaded, err := providerpkg.LoadWorkspaceConfig(testDefaultContext, ws.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "max", loaded.DevContainerID)
+	assert.Empty(t, loaded.DevContainerPath)
+	assert.Empty(t, loaded.DevContainerSource)
+}
+
+func TestApplyDevContainerOverrides_SelectorReplacement(t *testing.T) {
+	ws := &providerpkg.Workspace{DevContainerID: "max"}
+
+	changed := applyDevContainerFields(ws, ResolveParams{DevContainerPath: testDevContainerPath})
+	assert.True(t, changed)
+	assert.Empty(t, ws.DevContainerID)
+	assert.Equal(t, testDevContainerPath, ws.DevContainerPath)
+	assert.Empty(t, ws.DevContainerSource)
+
+	changed = applyDevContainerFields(ws, ResolveParams{DevContainerSource: "image:python"})
+	assert.True(t, changed)
+	assert.Empty(t, ws.DevContainerID)
+	assert.Empty(t, ws.DevContainerPath)
+	assert.Equal(t, "image:python", ws.DevContainerSource)
 }

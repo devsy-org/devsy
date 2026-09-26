@@ -42,7 +42,7 @@ type DevContainerConfigWithPath struct {
 	// Config is the devcontainer.json config
 	Config *DevContainerConfig `json:"config,omitempty"`
 
-	// Path is the relative path to the devcontainer.json from the workspace folder
+	// Path is relative to the content root, before any Git subpath.
 	Path string `json:"path,omitempty"`
 }
 

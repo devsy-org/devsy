@@ -17,6 +17,7 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/docker/docker/api/types/container"
@@ -140,6 +141,43 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 			gomega.Expect(restartIds).To(gomega.HaveLen(1), "1 compose container after restart")
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+		ginkgo.It("multi-profile lifecycle retains selected profile", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up-docker-compose/testdata/docker-compose-multi-profile",
+				tc.initialDir,
+				tc.f,
+			)
+			framework.ExpectNoError(err)
+
+			err = tc.f.DevsyUp(ctx, names.Flag(names.DevContainer), "id:max", tempDir)
+			framework.ExpectNoError(err)
+
+			err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			err = tc.f.DevsyUp(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			workspace, err := tc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+
+			// Distinct markers verify the persisted selector survived restart.
+			err = tc.f.ExecCommand(
+				ctx,
+				true,
+				true,
+				"[max]",
+				[]string{
+					cmdWorkspace, cmdSSH, flagCommand,
+					"echo \"[$SELECTED_PROFILE]\"", workspace.ID,
+				},
+			)
+			framework.ExpectNoError(err)
+
+			err = tc.f.DevsyWorkspaceDelete(ctx, tempDir)
+			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("environment variables", func(ctx context.Context) {

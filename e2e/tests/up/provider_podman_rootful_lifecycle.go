@@ -108,45 +108,29 @@ var _ = ginkgo.Describe(
 						err = f.DevsyUp(ctx, tempDir)
 						framework.ExpectNoError(err)
 
-						out, err := f.DevsySSH(ctx, tempDir, "cat $HOME/on-create.out")
+						out, err := readLifecycleFile(tempDir, "on-create.out")
 						framework.ExpectNoError(err)
-						gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("onCreateDone"))
+						gomega.Expect(out).To(gomega.Equal("onCreateDone"))
 
-						out, err = f.DevsySSH(ctx, tempDir, "cat $HOME/update-content.out")
+						out, err = readLifecycleFile(tempDir, "update-content.out")
 						framework.ExpectNoError(err)
-						gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("updateContentDone"))
+						gomega.Expect(out).To(gomega.Equal("updateContentDone"))
 
-						gomega.Eventually(func() string {
-							out, err := probeSSH(f,
-								ctx, tempDir, "cat $HOME/deferred.marker 2>/dev/null",
-							)
-							if err != nil {
-								return ""
-							}
-							return strings.TrimSpace(out)
+						gomega.Eventually(func() (string, error) {
+							return readLifecycleFile(tempDir, "deferred.marker")
 						}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).Should(
 							gomega.Equal("postCreateDone"),
 						)
 
-						envPath, err := f.DevsySSH(
-							ctx, tempDir, "cat $HOME/deferred-env-path.out",
-						)
+						envPath, err := readLifecycleFile(tempDir, "deferred-env-path.out")
 						framework.ExpectNoError(err)
 						gomega.Expect(envPath).To(
 							gomega.ContainSubstring("/usr/local/bin"),
 						)
 						gomega.Expect(envPath).NotTo(gomega.ContainSubstring("${containerEnv:"))
 
-						gomega.Eventually(func() string {
-							out, err := probeSSH(f,
-								ctx,
-								tempDir,
-								"cat $HOME/post-start-deferred.out 2>/dev/null",
-							)
-							if err != nil {
-								return ""
-							}
-							return strings.TrimSpace(out)
+						gomega.Eventually(func() (string, error) {
+							return readLifecycleFile(tempDir, "post-start-deferred.out")
 						}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).Should(
 							gomega.Equal("postStartDone"),
 						)

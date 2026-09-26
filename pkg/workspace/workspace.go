@@ -54,6 +54,7 @@ type ResolveParams struct {
 	ReconfigureProvider  bool
 	DevContainerImage    string
 	DevContainerPath     string
+	DevContainerID       string
 	DevContainerSource   string
 	SSHConfigPath        string
 	SSHConfigIncludePath string
@@ -142,20 +143,37 @@ func applyDevContainerOverrides(workspace *providerpkg.Workspace, params Resolve
 }
 
 func applyDevContainerFields(workspace *providerpkg.Workspace, params ResolveParams) bool {
-	changed := false
+	changed := applyDevContainerSelection(workspace, params)
 	if params.DevContainerImage != "" && workspace.DevContainerImage != params.DevContainerImage {
 		workspace.DevContainerImage = params.DevContainerImage
 		changed = true
 	}
-	if params.DevContainerPath != "" && workspace.DevContainerPath != params.DevContainerPath {
-		workspace.DevContainerPath = params.DevContainerPath
-		changed = true
+	return changed
+}
+
+func applyDevContainerSelection(workspace *providerpkg.Workspace, params ResolveParams) bool {
+	switch {
+	case params.DevContainerSource != "":
+		return setDevContainerSelection(workspace, params.DevContainerSource, "", "")
+	case params.DevContainerPath != "":
+		return setDevContainerSelection(workspace, "", params.DevContainerPath, "")
+	case params.DevContainerID != "":
+		return setDevContainerSelection(workspace, "", "", params.DevContainerID)
+	default:
+		return false
 	}
-	if params.DevContainerSource != "" &&
-		workspace.DevContainerSource != params.DevContainerSource {
-		workspace.DevContainerSource = params.DevContainerSource
-		changed = true
-	}
+}
+
+func setDevContainerSelection(
+	workspace *providerpkg.Workspace,
+	source, path, id string,
+) bool {
+	changed := workspace.DevContainerSource != source ||
+		workspace.DevContainerPath != path ||
+		workspace.DevContainerID != id
+	workspace.DevContainerSource = source
+	workspace.DevContainerPath = path
+	workspace.DevContainerID = id
 	return changed
 }
 
