@@ -813,7 +813,12 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("custom-value"))
 
-				framework.ExpectNoError(dtc.f.DevsyUpRecreate(ctx, tempDir))
+				framework.ExpectNoError(dtc.f.DevsyUpRecreate(
+					ctx,
+					tempDir,
+					"--workspace-env",
+					"ATTACHED_ENV=custom-value",
+				))
 				out, err = dtc.execSSH(ctx, tempDir, `bash -l -c 'printf %s "$ATTACHED_ENV"'`)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("custom-value"))
