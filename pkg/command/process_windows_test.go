@@ -244,6 +244,24 @@ func TestKillTreeWithIdentityDoesNotFallbackToUnverifiedPID(t *testing.T) {
 	}
 }
 
+func TestOwnProcessTreeRejectsExistingJobObject(t *testing.T) {
+	workerName := "devsy-test-existing-job-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	name, err := windows.UTF16PtrFromString(jobNameFor(workerName))
+	if err != nil {
+		t.Fatalf("convert job name: %v", err)
+	}
+	existingJob, err := windows.CreateJobObject(nil, name)
+	if err != nil {
+		t.Fatalf("create existing job object: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(existingJob) }()
+
+	err = ownProcessTree(0, workerName)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("ownProcessTree with an existing job = %v, want already-exists error", err)
+	}
+}
+
 func currentProcessInJob() (bool, error) {
 	var inJob int32
 	result, _, callErr := procIsProcessInJob.Call(

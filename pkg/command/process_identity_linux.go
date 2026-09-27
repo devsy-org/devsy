@@ -3,23 +3,21 @@
 package command
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 func processTreeIdentity(pid int) (string, error) {
-	stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	fields, ok, err := linuxProcessStat(pid)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
-		}
 		return "", err
 	}
-	fields, ok := linuxProcessStatFields(stat)
 	if !ok || len(fields) < 20 {
 		return "", fmt.Errorf("read session identity for process %d", pid)
 	}
@@ -120,14 +118,18 @@ func linuxProcessGroupEntryMatches(
 
 func linuxProcessStat(pid int) ([]string, bool, error) {
 	stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
-	if os.IsNotExist(err) {
-		return nil, false, nil
-	}
 	if err != nil {
+		if linuxProcessStatErrorIsAbsent(err) {
+			return nil, false, nil
+		}
 		return nil, false, err
 	}
 	fields, ok := linuxProcessStatFields(stat)
 	return fields, ok, nil
+}
+
+func linuxProcessStatErrorIsAbsent(err error) bool {
+	return errors.Is(err, syscall.ESRCH) || os.IsNotExist(err)
 }
 
 func linuxProcessLeaderMatches(

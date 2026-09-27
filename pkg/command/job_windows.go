@@ -31,6 +31,8 @@ type jobAccountingInfo struct {
 }
 
 var (
+	procCreateJobObjectForWorker = windows.NewLazySystemDLL("kernel32.dll").
+					NewProc("CreateJobObjectW")
 	procOpenJobObjectW = windows.NewLazySystemDLL("kernel32.dll").
 				NewProc("OpenJobObjectW")
 	procIsProcessInJobForTermination = windows.NewLazySystemDLL("kernel32.dll").
@@ -100,9 +102,9 @@ func ownProcessTree(pid int, workerName string) error {
 	if err != nil {
 		return err
 	}
-	job, err := windows.CreateJobObject(nil, name)
+	job, err := createWorkerJobObject(name)
 	if err != nil {
-		return fmt.Errorf("create job object: %w", err)
+		return err
 	}
 	defer func() { _ = windows.CloseHandle(job) }()
 
@@ -145,6 +147,22 @@ func ownProcessTree(pid int, workerName string) error {
 		return fmt.Errorf("keep worker job open in process %d: %w", pid, err)
 	}
 	return nil
+}
+
+func createWorkerJobObject(name *uint16) (windows.Handle, error) {
+	rawHandle, _, callErr := procCreateJobObjectForWorker.Call(
+		0,
+		uintptr(unsafe.Pointer(name)),
+	)
+	job := windows.Handle(rawHandle)
+	if job == 0 {
+		return 0, fmt.Errorf("create job object: %w", callErr)
+	}
+	if errors.Is(callErr, windows.ERROR_ALREADY_EXISTS) {
+		_ = windows.CloseHandle(job)
+		return 0, fmt.Errorf("job object %q already exists", windows.UTF16PtrToString(name))
+	}
+	return job, nil
 }
 
 // terminateJob kills the tree owned by the worker's Job Object. The bool
