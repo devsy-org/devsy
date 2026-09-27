@@ -65,7 +65,17 @@ type devContainerSelection struct {
 	source string
 	path   string
 	id     string
+	origin devContainerSelectionOrigin
 }
+
+type devContainerSelectionOrigin uint8
+
+const (
+	selectionNone devContainerSelectionOrigin = iota
+	selectionCLI
+	selectionPersistedWorkspace
+	selectionLastResolvedCompatibility
+)
 
 // effectiveDevContainerSelection returns the one effective selector for this
 // operation. Current CLI input wins over persisted workspace state, followed
@@ -113,7 +123,10 @@ func (r *runner) lastConfigPathSelection() (devContainerSelection, bool) {
 	if !devContainerConfigExists(r.workspaceFolder(), relativePath) {
 		return devContainerSelection{}, false
 	}
-	return devContainerSelection{path: relativePath}, true
+	return devContainerSelection{
+		path:   relativePath,
+		origin: selectionLastResolvedCompatibility,
+	}, true
 }
 
 func devContainerConfigExists(workspaceFolder, relativePath string) bool {
@@ -129,14 +142,23 @@ func (r *runner) persistedDevContainerSelection() (devContainerSelection, bool) 
 	workspace := r.workspaceConfig.Workspace
 	switch {
 	case workspace.DevContainerSource != "":
-		return devContainerSelection{source: workspace.DevContainerSource}, true
+		return devContainerSelection{
+			source: workspace.DevContainerSource,
+			origin: selectionPersistedWorkspace,
+		}, true
 	case workspace.DevContainerConfig != nil:
 		// Preserve pre-persistence precedence for embedded configs.
 		return devContainerSelection{}, false
 	case workspace.DevContainerPath != "":
-		return devContainerSelection{path: workspace.DevContainerPath}, true
+		return devContainerSelection{
+			path:   workspace.DevContainerPath,
+			origin: selectionPersistedWorkspace,
+		}, true
 	case workspace.DevContainerID != "":
-		return devContainerSelection{id: workspace.DevContainerID}, true
+		return devContainerSelection{
+			id:     workspace.DevContainerID,
+			origin: selectionPersistedWorkspace,
+		}, true
 	default:
 		return devContainerSelection{}, false
 	}
@@ -182,11 +204,11 @@ func (r *runner) workspaceFolder() string {
 func newDevContainerSelection(source, path, id string) (devContainerSelection, bool) {
 	switch {
 	case source != "":
-		return devContainerSelection{source: source}, true
+		return devContainerSelection{source: source, origin: selectionCLI}, true
 	case path != "":
-		return devContainerSelection{path: path}, true
+		return devContainerSelection{path: path, origin: selectionCLI}, true
 	case id != "":
-		return devContainerSelection{id: id}, true
+		return devContainerSelection{id: id, origin: selectionCLI}, true
 	default:
 		return devContainerSelection{}, false
 	}

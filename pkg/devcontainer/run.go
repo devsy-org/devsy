@@ -139,6 +139,9 @@ func (r *runner) Up(
 		reporter = status.Nop()
 	}
 	r.reporter = reporter
+	selectionWarning := r.compatibilitySelectionWarning(
+		r.effectiveDevContainerSelection(options.CLIOptions),
+	)
 
 	log.Debugf(
 		"Up devcontainer for workspace %q with timeout %s",
@@ -216,6 +219,9 @@ func (r *runner) Up(
 	)
 	if result != nil {
 		result.RecoveryContainer = r.recovering
+		if selectionWarning != "" {
+			result.HostWarnings = append(result.HostWarnings, selectionWarning)
+		}
 	}
 	return result, err
 }

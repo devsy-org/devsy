@@ -18,6 +18,12 @@ const devcontainerDirName = ".devcontainer"
 // contains more than one configuration (or when selection is forced).
 type ConfigSelector func(candidates []string) (string, error)
 
+// DiscoverDevContainerPath returns the config a new workspace would select.
+// It returns an empty path when no config exists.
+func DiscoverDevContainerPath(folder string) (string, error) {
+	return resolveDevContainerPath(folder, "", SelectSingle(folder), false)
+}
+
 // SelectByID returns a selector that picks the config whose parent directory
 // name matches id (the devcontainer id, e.g. ".devcontainer/<id>/devcontainer.json").
 func SelectByID(id string) ConfigSelector {

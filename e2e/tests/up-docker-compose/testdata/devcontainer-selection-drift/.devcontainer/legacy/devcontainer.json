@@ -1,0 +1,7 @@
+{
+  "name": "legacy",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "containerEnv": {
+    "SELECTION_MARKER": "legacy"
+  }
+}

@@ -41,6 +41,12 @@ You can specify a specific file to use via the `--devcontainer-path` CLI flag:
 devsy workspace up github.com/my-org/my-repo --devcontainer-path ./my-git-path-to/a-devcontainer-json-file.json
 ```
 
+### Existing workspace selection
+
+Devsy remembers the effective devcontainer configuration for an existing workspace so that restart and other lifecycle operations keep the same environment. If fresh project discovery later prefers a different config, a legacy workspace warns about the selection drift and continues using its previously resolved config. Devsy does not switch the workspace implicitly.
+
+To adopt another config intentionally, run `devsy workspace up <workspace> --devcontainer <relative-path>` or select a named profile with `--devcontainer id:<name>`. The choice is persisted for subsequent lifecycle operations.
+
 A `devcontainer.json` is not able to import or inherit any settings from other `devcontainer.json` files, so make sure all dependent files and folders are available within the configuration subdirectory.
 
 ### Using a Dockerfile

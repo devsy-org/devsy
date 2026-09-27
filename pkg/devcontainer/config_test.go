@@ -16,6 +16,8 @@ const (
 	testDevContainerProfile = "max"
 	testEmbeddedImage       = "embedded"
 	testNestedSubPath       = "app"
+	testLegacyConfigPath    = ".devcontainer/legacy/devcontainer.json"
+	testRootConfigPath      = ".devcontainer/devcontainer.json"
 )
 
 type SubstituteTestSuite struct {
@@ -666,6 +668,209 @@ func TestGetRawConfig_LastConfigPathCompatibilityFallback(t *testing.T) {
 	}
 }
 
+func TestEffectiveDevContainerSelection_Origins(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(*runner)
+		options    provider2.CLIOptions
+		wantOrigin devContainerSelectionOrigin
+	}{
+		{
+			name:       "CLI",
+			options:    provider2.CLIOptions{DevContainerPath: testRootConfigPath},
+			wantOrigin: selectionCLI,
+		},
+		{
+			name: "persisted workspace",
+			setup: func(r *runner) {
+				r.workspaceConfig.Workspace.DevContainerPath = testRootConfigPath
+			},
+			wantOrigin: selectionPersistedWorkspace,
+		},
+		{
+			name: "last resolved compatibility",
+			setup: func(r *runner) {
+				seedConfigAt(t, r.localWorkspaceFolder, testRootConfigPath)
+				r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+					Path: testRootConfigPath,
+				}
+			},
+			wantOrigin: selectionLastResolvedCompatibility,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newRunnerAt(t.TempDir())
+			if tt.setup != nil {
+				tt.setup(r)
+			}
+			selection := r.effectiveDevContainerSelection(tt.options)
+			if selection.origin != tt.wantOrigin {
+				t.Fatalf("selection origin = %v, want %v", selection.origin, tt.wantOrigin)
+			}
+		})
+	}
+}
+
+func TestCompatibilitySelectionWarning_NewRootConfigDetected(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testLegacyConfigPath)
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testLegacyConfigPath,
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.path != testLegacyConfigPath {
+		t.Fatalf("pinned selection path = %q, want %q", selection.path, testLegacyConfigPath)
+	}
+	warning := r.compatibilitySelectionWarning(selection)
+	for _, want := range []string{
+		testLegacyConfigPath,
+		testRootConfigPath,
+		"--devcontainer " + testRootConfigPath,
+	} {
+		if !strings.Contains(warning, want) {
+			t.Errorf("warning %q does not contain %q", warning, want)
+		}
+	}
+	if strings.Contains(warning, folder) {
+		t.Errorf("warning contains absolute workspace path: %q", warning)
+	}
+}
+
+func TestCompatibilitySelectionWarning_SamePathNoWarning(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testRootConfigPath,
+	}
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
+func TestCompatibilitySelectionWarning_ExplicitSelectionsNoWarning(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testLegacyConfigPath)
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testLegacyConfigPath,
+	}
+	for _, selection := range []devContainerSelection{
+		{path: testRootConfigPath, origin: selectionCLI},
+		{path: testLegacyConfigPath, origin: selectionPersistedWorkspace},
+		{},
+	} {
+		if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+			t.Errorf("warning for origin %v = %q, want empty", selection.origin, warning)
+		}
+	}
+}
+
+func TestCompatibilitySelectionWarning_AmbiguousDiscoveryNoWarning(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testLegacyConfigPath)
+	seedConfigAt(t, folder, ".devcontainer/other/devcontainer.json")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testLegacyConfigPath,
+	}
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.path != testLegacyConfigPath {
+		t.Fatalf("pinned selection path = %q, want %q", selection.path, testLegacyConfigPath)
+	}
+	if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
+func TestCompatibilitySelectionWarning_GitSubpathUsesWorkspaceRelativePaths(t *testing.T) {
+	folder := t.TempDir()
+	subPath := filepath.Join("app", "app")
+	pinnedPath := filepath.ToSlash(filepath.Join(subPath, testLegacyConfigPath))
+	rootPath := filepath.ToSlash(filepath.Join(subPath, testRootConfigPath))
+	seedConfigAt(t, folder, pinnedPath)
+	seedConfigAt(t, folder, rootPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.Source.GitSubPath = subPath
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: pinnedPath,
+	}
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	warning := r.compatibilitySelectionWarning(selection)
+	if !strings.Contains(warning, testLegacyConfigPath) ||
+		!strings.Contains(warning, testRootConfigPath) || strings.Contains(warning, folder) {
+		t.Fatalf("unexpected workspace-relative warning: %q", warning)
+	}
+}
+
+func TestCompatibilitySelectionWarning_MissingPathFallsBackToDiscovery(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: ".devcontainer/removed/devcontainer.json",
+	}
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.origin != selectionNone {
+		t.Fatalf("selection origin = %v, want none", selection.origin)
+	}
+	if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+	resolved, err := r.getRawConfig(provider2.CLIOptions{})
+	if err != nil {
+		t.Fatalf("getRawConfig(): %v", err)
+	}
+	if resolved.Image != "seed" {
+		t.Fatalf("resolved image = %q, want discovered root config", resolved.Image)
+	}
+}
+
+func TestCompatibilitySelectionDrift_EmbeddedConfigNoWarning(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testLegacyConfigPath)
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerConfig = &config.DevContainerConfig{}
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testLegacyConfigPath,
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.origin != selectionNone {
+		t.Fatalf("selection origin = %v, want none", selection.origin)
+	}
+	if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
+func TestCompatibilitySelectionDrift_PersistedExplicitSelectionNoWarning(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, testLegacyConfigPath)
+	seedConfigAt(t, folder, testRootConfigPath)
+	r := newRunnerAt(folder)
+	r.workspaceConfig.Workspace.DevContainerID = "legacy"
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: testLegacyConfigPath,
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	if selection.origin != selectionPersistedWorkspace {
+		t.Fatalf("selection origin = %v, want persisted workspace", selection.origin)
+	}
+	if warning := r.compatibilitySelectionWarning(selection); warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
 func TestEffectiveDevContainerSelection_LastPathStripsGitSubPath(t *testing.T) {
 	folder := t.TempDir()
 	seedConfigAt(t, folder, "devsy/jupyter-notebook-hello-world/.devcontainer/devcontainer.json")
@@ -676,7 +881,7 @@ func TestEffectiveDevContainerSelection_LastPathStripsGitSubPath(t *testing.T) {
 	}
 
 	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
-	if selection.path != ".devcontainer/devcontainer.json" {
+	if selection.path != testRootConfigPath {
 		t.Fatalf("selection path = %q, want .devcontainer/devcontainer.json", selection.path)
 	}
 }
@@ -711,7 +916,7 @@ func TestEffectiveDevContainerSelection_LastPathLeadingSlashSubPath(t *testing.T
 	}
 
 	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
-	if selection.path != ".devcontainer/devcontainer.json" {
+	if selection.path != testRootConfigPath {
 		t.Fatalf("selection path = %q, want .devcontainer/devcontainer.json", selection.path)
 	}
 }

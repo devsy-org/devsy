@@ -180,6 +180,85 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
+		ginkgo.It(
+			"legacy devcontainer selection drift warns and supports explicit adoption",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up-docker-compose/testdata/devcontainer-selection-drift",
+					tc.initialDir,
+					tc.f,
+				)
+				framework.ExpectNoError(err)
+
+				err = tc.f.DevsyUp(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				workspace, err := tc.f.FindWorkspace(ctx, tempDir)
+				framework.ExpectNoError(err)
+				err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
+				framework.ExpectNoError(err)
+
+				rootConfig := filepath.Join(tempDir, ".devcontainer", "devcontainer.json")
+				err = os.WriteFile(rootConfig, []byte(`{
+  "name": "root",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "containerEnv": {"SELECTION_MARKER": "root"}
+}`), 0o600)
+				framework.ExpectNoError(err)
+
+				stdout, _, err := tc.f.ExecCommandCapture(ctx, []string{
+					cmdWorkspace, "up", flagDebug, flagIDE, ideNone, tempDir,
+				})
+				framework.ExpectNoError(err)
+				gomega.Expect(stdout).To(
+					gomega.ContainSubstring(
+						`"warnings":["This existing workspace is continuing to use \".devcontainer/legacy/devcontainer.json\"`,
+					),
+				)
+				gomega.Expect(stdout).To(
+					gomega.ContainSubstring(
+						`Current project discovery would select \".devcontainer/devcontainer.json\"`,
+					),
+				)
+
+				assertSelectionMarker := func(want string) {
+					err := tc.f.ExecCommand(
+						ctx,
+						true,
+						true,
+						"["+want+"]",
+						[]string{
+							cmdWorkspace, cmdSSH, flagCommand,
+							"echo \"[$SELECTION_MARKER]\"", workspace.ID,
+						},
+					)
+					framework.ExpectNoError(err)
+				}
+				assertSelectionMarker("legacy")
+
+				err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
+				framework.ExpectNoError(err)
+				err = tc.f.DevsyUpRecreate(
+					ctx,
+					names.Flag(names.DevContainer),
+					".devcontainer/devcontainer.json",
+					tempDir,
+				)
+				framework.ExpectNoError(err)
+				assertSelectionMarker("root")
+
+				err = tc.f.DevsyWorkspaceStop(ctx, tempDir)
+				framework.ExpectNoError(err)
+				err = tc.f.DevsyUp(ctx, tempDir)
+				framework.ExpectNoError(err)
+				assertSelectionMarker("root")
+
+				err = tc.f.DevsyWorkspaceDelete(ctx, tempDir)
+				framework.ExpectNoError(err)
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
 		ginkgo.It("environment variables", func(ctx context.Context) {
 			_, workspace, err := tc.setupAndStartWorkspace(
 				ctx,
