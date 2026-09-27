@@ -614,13 +614,15 @@ func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient) {
 		targetIDE = cmd.IDE
 	}
 
-	if !cmd.Platform.Enabled && ide.ReusesAuthSock(targetIDE) {
-		cmd.SSHAuthSockID = util.RandStringBytes(10)
-		log.Debug("reusing SSH_AUTH_SOCK", cmd.SSHAuthSockID)
-	} else if cmd.Platform.Enabled && ide.ReusesAuthSock(targetIDE) {
-		log.Debug(
-			"reusing SSH_AUTH_SOCK is not supported with platform mode, consider launching the IDE from the platform UI",
-		)
+	if ide.ReusesAuthSock(targetIDE) {
+		if cmd.Platform.Enabled {
+			log.Debug(
+				"reusing SSH_AUTH_SOCK is not supported with platform mode, consider launching the IDE from the platform UI",
+			)
+		} else {
+			cmd.SSHAuthSockID = util.RandStringBytes(10)
+			log.Debug("reusing SSH_AUTH_SOCK", cmd.SSHAuthSockID)
+		}
 	}
 }
 

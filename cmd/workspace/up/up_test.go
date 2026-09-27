@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/opener"
@@ -454,6 +455,50 @@ func mustBuildManifest(t *testing.T, remoteUser string) *snapshotpkg.Manifest {
 	})
 	require.NoError(t, err)
 	return manifest
+}
+
+type prepareWorkspaceClient struct {
+	client2.BaseWorkspaceClient
+	workspaceConfig *provider2.Workspace
+}
+
+func (c prepareWorkspaceClient) WorkspaceConfig() *provider2.Workspace {
+	return c.workspaceConfig
+}
+
+func TestUpCmd_PrepareWorkspaceSSHAuthSock(t *testing.T) {
+	tests := []struct {
+		name         string
+		ide          string
+		platformMode bool
+		wantAuthSock bool
+	}{
+		{name: "browser IDE", ide: string(config.IDEOpenVSCode), wantAuthSock: true},
+		{
+			name:         "browser IDE in platform mode",
+			ide:          string(config.IDEOpenVSCode),
+			platformMode: true,
+		},
+		{name: "IDE without auth socket reuse", ide: "none"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &UpCmd{}
+			cmd.Platform.Enabled = tt.platformMode
+			cmd.prepareWorkspace(prepareWorkspaceClient{
+				workspaceConfig: &provider2.Workspace{
+					IDE: provider2.WorkspaceIDEConfig{Name: tt.ide},
+				},
+			})
+
+			if tt.wantAuthSock {
+				assert.Len(t, cmd.SSHAuthSockID, 10)
+			} else {
+				assert.Empty(t, cmd.SSHAuthSockID)
+			}
+		})
+	}
 }
 
 func TestBuildUpCmd_DoesNotMutateCallerGlobalFlags(t *testing.T) {
