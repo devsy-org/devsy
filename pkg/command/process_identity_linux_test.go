@@ -67,7 +67,13 @@ func TestLinuxCanSkipUnrelatedUnreadableProcess(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := linuxCanSkipProcessStatError(test.pid, test.pgid, test.leaderMatches, permissionErr); got != test.want {
+			got := linuxCanSkipProcessStatError(
+				test.pid,
+				test.pgid,
+				test.leaderMatches,
+				permissionErr,
+			)
+			if got != test.want {
 				t.Fatalf("linuxCanSkipProcessStatError() = %t, want %t", got, test.want)
 			}
 		})

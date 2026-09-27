@@ -47,7 +47,7 @@ func processGroupMatchesIdentity(pgid int, identity string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	foundMember, leaderMismatch, skippedStatErr, err := linuxProcessGroupEntriesMatch(
+	scan, err := linuxProcessGroupEntriesMatch(
 		entries,
 		pgid,
 		wanted,
@@ -56,10 +56,16 @@ func processGroupMatchesIdentity(pgid int, identity string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if leaderMismatch {
+	if scan.leaderMismatch {
 		return false, nil
 	}
-	return linuxProcessGroupMatchResult(pgid, foundMember, skippedStatErr)
+	return linuxProcessGroupMatchResult(pgid, scan.foundMember, scan.skippedStatErr)
+}
+
+type linuxProcessGroupScan struct {
+	foundMember    bool
+	leaderMismatch bool
+	skippedStatErr error
 }
 
 func linuxProcessGroupEntriesMatch(
@@ -67,22 +73,24 @@ func linuxProcessGroupEntriesMatch(
 	pgid int,
 	wanted linuxProcessTreeIdentity,
 	leaderMatches bool,
-) (foundMember, leaderMismatch bool, skippedStatErr, scanErr error) {
+) (linuxProcessGroupScan, error) {
+	var scan linuxProcessGroupScan
 	for _, entry := range entries {
 		member, mismatchedLeader, err := linuxProcessGroupEntryMatches(entry, pgid, wanted)
 		if err != nil {
 			if linuxProcessGroupEntryErrorCanBeSkipped(entry, pgid, leaderMatches, err) {
-				skippedStatErr = err
+				scan.skippedStatErr = err
 				continue
 			}
-			return false, false, skippedStatErr, err
+			return scan, err
 		}
 		if mismatchedLeader {
-			return false, true, skippedStatErr, nil
+			scan.leaderMismatch = true
+			return scan, nil
 		}
-		foundMember = foundMember || member
+		scan.foundMember = scan.foundMember || member
 	}
-	return foundMember, false, skippedStatErr, nil
+	return scan, nil
 }
 
 func linuxProcessGroupEntryErrorCanBeSkipped(
