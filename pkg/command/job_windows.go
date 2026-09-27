@@ -102,8 +102,21 @@ func ownProcessTree(pid int, workerName string) error {
 	}
 	defer func() { _ = windows.CloseHandle(job) }()
 
+	// The worker keeps the name open for cancellation; its exit also closes
+	// the last handle, which terminates any descendants it leaves behind.
+	var limits windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	limits.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+	if _, err := windows.SetInformationJobObject(
+		job,
+		windows.JobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&limits)),
+		uint32(unsafe.Sizeof(limits)),
+	); err != nil {
+		return fmt.Errorf("configure worker job %s: %w", workerName, err)
+	}
+
 	handle, err := windows.OpenProcess(
-		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE,
+		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|windows.PROCESS_DUP_HANDLE,
 		false,
 		uint32(pid),
 	)
@@ -114,6 +127,18 @@ func ownProcessTree(pid int, workerName string) error {
 
 	if err := windows.AssignProcessToJobObject(job, handle); err != nil {
 		return fmt.Errorf("assign process %d to job: %w", pid, err)
+	}
+	var workerJob windows.Handle
+	if err := windows.DuplicateHandle(
+		windows.CurrentProcess(),
+		job,
+		handle,
+		&workerJob,
+		0,
+		false,
+		windows.DUPLICATE_SAME_ACCESS,
+	); err != nil {
+		return fmt.Errorf("keep worker job open in process %d: %w", pid, err)
 	}
 	return nil
 }

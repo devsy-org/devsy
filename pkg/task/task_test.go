@@ -3,6 +3,7 @@ package task
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -331,7 +332,7 @@ func TestSetPIDPersists(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := task.SetPID(4242); err != nil {
+	if err := task.SetPID(os.Getpid()); err != nil {
 		t.Fatalf("SetPID: %v", err)
 	}
 
@@ -339,8 +340,8 @@ func TestSetPIDPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if state.PID != 4242 {
-		t.Errorf("PID = %d, want 4242", state.PID)
+	if state.PID != os.Getpid() {
+		t.Errorf("PID = %d, want %d", state.PID, os.Getpid())
 	}
 }
 
@@ -906,10 +907,17 @@ func newLiveWorkerTask(t *testing.T, store *Store) *Task {
 		t.Fatalf("Create: %v", err)
 	}
 	holdWorkerLock(t, tk)
-	if err := tk.SetPID(4242); err != nil {
-		t.Fatalf("SetPID: %v", err)
+	if err := setPIDForTest(tk); err != nil {
+		t.Fatalf("setPIDForTest: %v", err)
 	}
 	return tk
+}
+
+func setPIDForTest(tk *Task) error {
+	return tk.store.update(tk.id, func(s *State) {
+		s.PID = 4242
+		s.ProcessTreeIdentity = "test-process-tree-identity"
+	})
 }
 
 func requireCanceledState(t *testing.T, store *Store, id string) {
@@ -961,6 +969,19 @@ func TestCancelKillFailureRemainsRetryable(t *testing.T) {
 	requireCanceledState(t, store, tk.ID())
 }
 
+func TestCancelLegacyWorkerRequiresManualTermination(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	err = tk.cancelLiveWorker(4242, "")
+	if err == nil || !strings.Contains(err.Error(), "terminate the legacy worker manually") {
+		t.Fatalf("cancelLiveWorker error = %v, want actionable legacy-worker error", err)
+	}
+}
+
 func TestCancelSuccessfulKillCommitsCanceled(t *testing.T) {
 	store := newTestStore(t)
 	tk := newLiveWorkerTask(t, store)
@@ -998,8 +1019,8 @@ func TestCancelAwaitsPIDPublication(t *testing.T) {
 
 	go func() {
 		time.Sleep(200 * time.Millisecond)
-		if err := tk.SetPID(4242); err != nil {
-			t.Errorf("SetPID: %v", err)
+		if err := setPIDForTest(tk); err != nil {
+			t.Errorf("setPIDForTest: %v", err)
 		}
 	}()
 
@@ -1052,8 +1073,8 @@ func TestCancelDeadWorkerStillCleansUpProcessTree(t *testing.T) {
 	if err := tk.ReleaseWorkerLockForTest(); err != nil {
 		t.Fatalf("ReleaseWorkerLockForTest: %v", err)
 	}
-	if err := tk.SetPID(4242); err != nil {
-		t.Fatalf("SetPID: %v", err)
+	if err := setPIDForTest(tk); err != nil {
+		t.Fatalf("setPIDForTest: %v", err)
 	}
 
 	var actualKill killCall
@@ -1102,8 +1123,8 @@ func TestCancelDeadWorkerCleanupFailureRemainsRetryable(t *testing.T) {
 	if err := tk.ReleaseWorkerLockForTest(); err != nil {
 		t.Fatalf("ReleaseWorkerLockForTest: %v", err)
 	}
-	if err := tk.SetPID(4242); err != nil {
-		t.Fatalf("SetPID: %v", err)
+	if err := setPIDForTest(tk); err != nil {
+		t.Fatalf("setPIDForTest: %v", err)
 	}
 	store.SetKillProcessForTest(func(string, string) error {
 		return errors.New("descendant cleanup failed")
@@ -1152,8 +1173,8 @@ func TestCancelRacingLateSuccessStillWinsAfterSuccessfulTermination(t *testing.T
 		t.Fatalf("Create: %v", err)
 	}
 	holdWorkerLock(t, tk)
-	if err := tk.SetPID(4242); err != nil {
-		t.Fatalf("SetPID: %v", err)
+	if err := setPIDForTest(tk); err != nil {
+		t.Fatalf("setPIDForTest: %v", err)
 	}
 
 	store.SetKillProcessForTest(func(pid, treeName string) error {

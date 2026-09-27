@@ -106,7 +106,7 @@ func TestActiveForWorkspaceCleansAbandonedProcessTreeBeforeExcluding(t *testing.
 	if err := store.Open(state.ID).SetWorkspaceID(workspaceOne); err != nil {
 		t.Fatalf("SetWorkspaceID: %v", err)
 	}
-	if err := store.Open(state.ID).SetPID(4242); err != nil {
+	if err := setPIDForTest(store.Open(state.ID)); err != nil {
 		t.Fatalf("SetPID: %v", err)
 	}
 
@@ -140,7 +140,7 @@ func TestActiveForWorkspaceKeepsAbandonedTaskActiveWhenTreeCleanupFails(t *testi
 	if err := store.Open(state.ID).SetWorkspaceID(workspaceOne); err != nil {
 		t.Fatalf("SetWorkspaceID: %v", err)
 	}
-	if err := store.Open(state.ID).SetPID(4242); err != nil {
+	if err := setPIDForTest(store.Open(state.ID)); err != nil {
 		t.Fatalf("SetPID: %v", err)
 	}
 	store.SetKillProcessForTest(func(string, string) error {

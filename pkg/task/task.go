@@ -284,6 +284,13 @@ func (t *Task) cancelExitedWorkerTree(pid int) error {
 }
 
 func (t *Task) cancelLiveWorker(pid int, identity string) error {
+	if identity == "" {
+		return fmt.Errorf(
+			"cancel task %s: worker pid %d has no saved process identity; terminate the legacy worker manually and retry",
+			t.id,
+			pid,
+		)
+	}
 	if err := t.store.killProcessWithIdentity(
 		strconv.Itoa(pid),
 		WorkerProcessName(t.id),

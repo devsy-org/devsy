@@ -200,6 +200,11 @@ func TestStartDetachedAssignsWorkerToJobBeforeItRuns(t *testing.T) {
 	}
 	pid := waitForPIDFile(t, pidFile)
 	t.Cleanup(func() { _ = KillTree(strconv.Itoa(pid), jobName) })
+	job, found, err := openWorkerJob(jobName)
+	if err != nil || !found {
+		t.Fatalf("open worker job after launcher exit: found=%t, err=%v", found, err)
+	}
+	_ = windows.CloseHandle(job)
 
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
@@ -355,9 +360,6 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 	grandchildPID := waitForPIDFile(t, grandchildPIDFile)
 	assertNotRunningEventually(t, childPID)
 	assertNotRunningEventually(t, parentPID)
-	assertNotRunningEventually(t, childPID)
-	assertRunning(t, grandchildPID)
-
 	if err := killTreeAfterWorkerExit(
 		strconv.Itoa(parentPID),
 		"devsy-test-worker",

@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"errors"
+	"os"
+	"strconv"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/task"
@@ -63,10 +65,13 @@ func TestQuiesceUpTasksAttemptsEveryTaskAndAggregatesFailures(t *testing.T) {
 		tk := tk
 		t.Cleanup(func() { _ = tk.ReleaseWorkerLockForTest() })
 	}
-	require.NoError(t, failing.SetPID(1111))
-	require.NoError(t, succeeding.SetPID(2222))
+	require.NoError(t, failing.SetPID(os.Getpid()))
+	require.NoError(t, succeeding.SetPID(os.Getpid()))
 	store.SetKillProcessForTest(func(pid, treeName string) error {
-		if pid == "1111" {
+		if pid != strconv.Itoa(os.Getpid()) {
+			t.Errorf("kill pid = %q, want current process %d", pid, os.Getpid())
+		}
+		if treeName == task.WorkerProcessName(failing.ID()) {
 			return errors.New("boom")
 		}
 		return nil
