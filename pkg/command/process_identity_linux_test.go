@@ -82,10 +82,16 @@ func TestLinuxCanSkipUnrelatedUnreadableProcess(t *testing.T) {
 
 func TestLinuxProcessGroupMatchRequiresAMemberWhenStatsAreUnreadable(t *testing.T) {
 	permissionErr := &os.PathError{Op: processStatOpenOperation, Err: os.ErrPermission}
-	if matched, err := linuxProcessGroupMatchResult(7, true, permissionErr); err != nil || !matched {
-		t.Fatalf("verified group with unreadable unrelated process = (%t, %v), want (true, nil)", matched, err)
+	matched, err := linuxProcessGroupMatchResult(7, true, permissionErr)
+	if err != nil || !matched {
+		t.Fatalf(
+			"verified group with unreadable unrelated process = (%t, %v), want (true, nil)",
+			matched,
+			err,
+		)
 	}
-	if matched, err := linuxProcessGroupMatchResult(7, false, permissionErr); err == nil || matched {
+	matched, err = linuxProcessGroupMatchResult(7, false, permissionErr)
+	if err == nil || matched {
 		t.Fatalf("unverified group with unreadable process = (%t, %v), want error", matched, err)
 	}
 }
