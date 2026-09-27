@@ -71,6 +71,18 @@ func TestTaskStatusOverride_FailedTaskReportsFailed(t *testing.T) {
 	assertOverride(t, s, true, client.StatusFailed)
 }
 
+func TestTaskStatusOverride_CanceledTaskDefersToWorkspaceStatus(t *testing.T) {
+	useTempTaskDir(t)
+	store, err := task.NewStore()
+	require.NoError(t, err)
+	tsk, err := store.Create(task.CreateOptions{Command: "up", WorkspaceID: testWorkspaceID})
+	require.NoError(t, err)
+	require.NoError(t, tsk.Cancel())
+
+	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
+	assertOverride(t, s, false, "")
+}
+
 func TestTaskStatusOverride_SucceededTaskDefersToContainerStatus(t *testing.T) {
 	useTempTaskDir(t)
 	store, err := task.NewStore()

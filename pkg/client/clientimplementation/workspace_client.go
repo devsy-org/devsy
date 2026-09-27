@@ -17,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -371,7 +372,7 @@ func (s *workspaceClient) taskStatusOverride() (client.Status, bool) {
 	switch {
 	case !latest.Status.Terminal():
 		return client.StatusProvisioning, true
-	case latest.Status == task.StatusFailed:
+	case latest.Status == task.StatusFailed && latest.ErrorCode != string(clierr.CodeCanceled):
 		return client.StatusFailed, true
 	default:
 		return "", false
