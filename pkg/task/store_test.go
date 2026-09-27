@@ -37,7 +37,6 @@ func TestActiveForWorkspaceFilters(t *testing.T) {
 		t.Fatalf("Succeed: %v", err)
 	}
 
-	// The command filter keeps only live up tasks for the workspace.
 	active := queryActive(t, store, workspaceOne, "up")
 	if len(active) != 1 || active[0].ID != up.ID() {
 		t.Errorf("command-filtered match = %+v, want only the live up task", active)

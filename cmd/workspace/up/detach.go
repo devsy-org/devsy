@@ -121,7 +121,6 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 		return nil, err
 	}
 	t := store.Open(cmd.taskID)
-	// obtain the worker lock first.
 	if err := t.HoldWorkerLock(); err != nil {
 		failTask(t, err)
 		return nil, err
