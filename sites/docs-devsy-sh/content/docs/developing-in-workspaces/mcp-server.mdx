@@ -5,7 +5,7 @@ sidebar_label: Agent Control (MCP)
 
 # Agent Control via MCP
 
-`devsy mcp serve` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. MCP-compatible AI clients can connect to it and drive Devsy — listing, creating, and executing inside workspaces — without shelling out to the CLI themselves.
+`devsy mcp serve` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. MCP-compatible AI clients can connect to it and drive Devsy - listing, creating, and executing inside workspaces - without shelling out to the CLI themselves.
 
 ```sh
 devsy mcp serve
@@ -33,9 +33,9 @@ The server registers 11 tools across workspace and provider domains:
 
 `workspace_exec` is bounded by three server flags:
 
-- `--exec-timeout-default` (default `5m`) — default per-call timeout.
-- `--exec-timeout-max` (default `30m`) — caller-supplied timeouts are clamped to this.
-- `--exec-output-cap` (default `100 KiB`) — per-stream byte cap; excess is replaced with a truncation marker.
+- `--exec-timeout-default` (default `5m`) - default per-call timeout.
+- `--exec-timeout-max` (default `30m`) - caller-supplied timeouts are clamped to this.
+- `--exec-output-cap` (default `100 KiB`) - per-stream byte cap; excess is replaced with a truncation marker.
 
 ## Example client config
 

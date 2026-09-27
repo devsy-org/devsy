@@ -88,7 +88,7 @@ describe("UpdatesPanel channel switching", () => {
     cardButton(/Stable/)?.click()
     await tick()
 
-    // Downgrade must wait for confirmation — no IPC call yet.
+    // Downgrade must wait for confirmation - no IPC call yet.
     expect(setReleaseChannel).not.toHaveBeenCalled()
     expect(document.body.textContent).toMatch(/switch to the stable channel\?/i)
   })

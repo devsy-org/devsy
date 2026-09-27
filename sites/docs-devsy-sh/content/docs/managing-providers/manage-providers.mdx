@@ -36,10 +36,10 @@ devsy provider list --available
 
 Open the Providers view and click **Add**. The provider wizard has four steps:
 
-1. **Select** — pick a built-in preset, or enter a GitHub link, `provider.yaml` URL, or local file path in the **Provider Source** field below the presets.
-2. **Configure** — fill in provider-specific options (the form is generated from the provider's schema).
-3. **Initialize** — Devsy runs the provider init and streams logs.
-4. **Done** — review the result. Failures show the underlying error.
+1. **Select** - pick a built-in preset, or enter a GitHub link, `provider.yaml` URL, or local file path in the **Provider Source** field below the presets.
+2. **Configure** - fill in provider-specific options (the form is generated from the provider's schema).
+3. **Initialize** - Devsy runs the provider init and streams logs.
+4. **Done** - review the result. Failures show the underlying error.
 
 The ProviderSheet (click any provider in the list) exposes edit settings, switch version, update, delete, rename, set as default, and re-initialize.
 
@@ -181,7 +181,7 @@ For example, to change the disk size from 40GB to 120GB:
 devsy provider set aws --option AWS_DISK_SIZE=120
 ```
 
-Run `devsy provider get aws` again to confirm — the `VALUE` column for `AWS_DISK_SIZE` now reads `120`.
+Run `devsy provider get aws` again to confirm - the `VALUE` column for `AWS_DISK_SIZE` now reads `120`.
 
 
 ## Docker Provider: Contexts and Daemon Endpoints
@@ -190,7 +190,7 @@ Devsy follows standard Docker CLI context and endpoint semantics when running wo
 
 ### Context Preservation
 
-When Devsy configures credentials for Docker, it automatically preserves your existing Docker client configuration (`config.json`) and stored context metadata (`contexts/`). This ensures that non-default Docker contexts—such as those managed by Docker Desktop (`desktop-linux`), OrbStack (`orbstack`), or custom remote endpoints—remain active and accessible during workspace creation and execution.
+When Devsy configures credentials for Docker, it automatically preserves your existing Docker client configuration (`config.json`) and stored context metadata (`contexts/`). This ensures that non-default Docker contexts-such as those managed by Docker Desktop (`desktop-linux`), OrbStack (`orbstack`), or custom remote endpoints-remain active and accessible during workspace creation and execution.
 
 ### Explicit Context Selection (`DOCKER_CONTEXT`)
 
@@ -295,7 +295,7 @@ The table shows the published tag, date, and whether it's the currently-installe
 devsy provider set-source <name>
 ```
 
-Re-resolves the provider's existing source. If the source is a registry entry or a GitHub repo without a pinned tag, this pulls the latest release. If the source is already pinned (e.g. `github.com/org/repo@v0.1.0`), it re-fetches that same version — use `--version` to move to a different one.
+Re-resolves the provider's existing source. If the source is a registry entry or a GitHub repo without a pinned tag, this pulls the latest release. If the source is already pinned (e.g. `github.com/org/repo@v0.1.0`), it re-fetches that same version - use `--version` to move to a different one.
 
 ### Pin to a specific version
 
@@ -311,7 +311,7 @@ devsy provider set-source <name> github.com/my-org/my-repo@v0.2.0
 
 ### Point at a different source
 
-The `set-source` command also replaces the provider's source entirely — registry name, GitHub repo, URL, or local path:
+The `set-source` command also replaces the provider's source entirely - registry name, GitHub repo, URL, or local path:
 
 ```sh
 devsy provider set-source <name> my-org/my-repo
@@ -323,9 +323,9 @@ devsy provider set-source <name> ../path-to/provider.yaml
 
 Open the Providers sidebar, select a provider, and use the ProviderSheet:
 
-- **Select version** — pick a tag from the versions dropdown to switch versions.
-- **Update** — jump to the latest release. The button surfaces an "Update available" banner when one is detected.
-- **Initialize** — re-run provider init (handy after upgrades).
+- **Select version** - pick a tag from the versions dropdown to switch versions.
+- **Update** - jump to the latest release. The button surfaces an "Update available" banner when one is detected.
+- **Initialize** - re-run provider init (handy after upgrades).
 
 Existing workspaces continue to use the version they were created with. Rebuild a workspace (`devsy workspace up <name> --recreate`) to pick up the new provider.
 
@@ -371,7 +371,7 @@ devsy provider rename my-docker local-docker
 
 ### Constraints
 
-- The new name must be unique — it cannot match an existing provider.
+- The new name must be unique - it cannot match an existing provider.
 - Provider names can only contain lowercase letters, numbers, and dashes, up to 32 characters.
 - Pro providers (proxy/daemon) cannot be renamed. They are managed by the platform.
 - Workspaces bound to the provider must be stopped before renaming.

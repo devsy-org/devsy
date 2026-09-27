@@ -372,6 +372,6 @@ export async function listen<T>(
   _event: string,
   _callback: (event: { payload: T }) => void,
 ): Promise<UnlistenFn> {
-  // No-op in mock mode — events would come from the Rust backend
+  // No-op in mock mode - events would come from the Rust backend
   return () => {}
 }

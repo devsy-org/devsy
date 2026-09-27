@@ -213,7 +213,7 @@ func (cmd *CreateCmd) commitAndPushImage(
 	// tag right after create, and would otherwise have to re-fetch it
 	// remotely (pkg/image.GetImage), which doesn't honor this package's
 	// dockerInternalHost insecure-registry override the way pkg/snapshot's
-	// own parseReference does — breaking against any plain-HTTP registry
+	// own parseReference does - breaking against any plain-HTTP registry
 	// (e.g. the e2e registry:2 fixture). Leaving the local image in place
 	// avoids that remote round-trip entirely for the common case.
 	return img, nil
@@ -307,7 +307,7 @@ type pushedVolumes struct {
 
 // The volumes RPC (StreamSnapshotVolumes) is served by a tunnelServer reading
 // directly off local disk, so this only works when the CLI process is
-// co-located with those mount source paths — true for the docker driver's
+// co-located with those mount source paths - true for the docker driver's
 // local bind mounts, the only driver CommitContainer currently supports.
 func (cmd *CreateCmd) pushVolumes(
 	ctx context.Context, workspaceConfig *provider.Workspace, repository string,
@@ -349,7 +349,7 @@ func (cmd *CreateCmd) pushVolumes(
 
 // credentialKeyPattern matches containerEnv key names that conventionally
 // carry a secret value, so they're dropped by redactedContainerEnv even if
-// nothing in this codebase injects them today — devcontainer.json's
+// nothing in this codebase injects them today - devcontainer.json's
 // containerEnv is user-authored and this manifest is pushed to a shared
 // registry, so a future entry named e.g. API_TOKEN shouldn't round-trip
 // through restore just because dropping it wasn't specifically taught.
@@ -431,7 +431,7 @@ func newLocalTunnelClient(
 // It also re-pushes the same manifest bytes as a plain blob into repository:
 // registries store manifests and blobs in separate content stores, and the
 // snapshot manifest built in Run references this digest as one of its
-// layers[] — a manifest-push validates every layer digest exists as a blob,
+// layers[] - a manifest-push validates every layer digest exists as a blob,
 // which fails with MANIFEST_BLOB_UNKNOWN without this re-push.
 func pushedImageDigestAndSize(
 	ctx context.Context,

@@ -246,7 +246,7 @@ func (s *LifecycleHookTestSuite) TestPrebuildIgnoresWaitFor() {
 	result := &config.Result{
 		MergedConfig: &config.MergedDevContainerConfig{
 			DevContainerConfigBase: config.DevContainerConfigBase{
-				// Set waitFor to onCreateCommand — prebuild should ignore this.
+				// Set waitFor to onCreateCommand - prebuild should ignore this.
 				WaitFor: "onCreateCommand",
 			},
 		},
@@ -491,7 +491,7 @@ func (s *LifecycleHookTestSuite) TestInsertDotfilesPhaseSkippedWhenEmpty() {
 
 	result := insertDotfilesPhase(ctx, all, DotfilesConfig{}, "test-created")
 
-	// No dotfiles repo — phase list unchanged.
+	// No dotfiles repo - phase list unchanged.
 	assert.Len(t, result, 4)
 	for i, ph := range result {
 		assert.Equal(t, all[i].phase, ph.phase)
@@ -597,7 +597,7 @@ func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForInitializeCommandNotP
 func (s *LifecycleHookTestSuite) TestPromoteDotfilesWaitForNoDotfiles() {
 	t := s.T()
 
-	// No dotfiles configured — no promotion regardless of waitFor.
+	// No dotfiles configured - no promotion regardless of waitFor.
 	result := promoteDotfilesWaitFor(DefaultWaitFor, DotfilesConfig{})
 	assert.Equal(t, DefaultWaitFor, result)
 }
@@ -723,7 +723,7 @@ func (s *LifecycleHookTestSuite) TestPostAttachHooksRunEveryTime() {
 		},
 	}
 
-	// Run postAttachCommand multiple times — it must execute every time.
+	// Run postAttachCommand multiple times - it must execute every time.
 	for i := 1; i <= 3; i++ {
 		err := RunPostAttachHooks(context.Background(), result, nil, nil)
 		assert.NoError(t, err)
@@ -783,12 +783,12 @@ func (s *LifecycleHookTestSuite) TestPostAttachHookHasNoOnceGuard() {
 	t := s.T()
 
 	// RunPostAttachHooks passes content="" which means shouldSkipHook always
-	// returns false — the hook runs every time. Verify the contract.
+	// returns false - the hook runs every time. Verify the contract.
 	skip, err := shouldSkipHook("postAttachCommands", "")
 	assert.NoError(t, err)
 	assert.False(t, skip, "postAttachCommand must never be skipped (content is always empty)")
 
-	// Call shouldSkipHook multiple times with empty content — must never skip.
+	// Call shouldSkipHook multiple times with empty content - must never skip.
 	for i := range 5 {
 		skip, err := shouldSkipHook("postAttachCommands", "")
 		assert.NoError(t, err)

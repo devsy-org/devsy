@@ -823,7 +823,7 @@ function selectTemplate(t: { name: string; source: string }) {
                 {refType === "branch" ? "Branch name" : refType === "commit" ? "Commit SHA" : "PR / MR number"}
               </Label>
               <Input
-                placeholder={refType === "branch" ? "main" : refType === "commit" ? "abc123…" : "42"}
+                placeholder={refType === "branch" ? "main" : refType === "commit" ? "abc123..." : "42"}
                 value={refValue}
                 oninput={(e) => (refValue = e.currentTarget.value)}
               />
@@ -1088,7 +1088,7 @@ function selectTemplate(t: { name: string; source: string }) {
                     value={localPath}
                     oninput={(e) => (localPath = e.currentTarget.value)}
                   />
-                  <Button variant="outline" onclick={handleBrowse}>Browse…</Button>
+                  <Button variant="outline" onclick={handleBrowse}>Browse...</Button>
                 </div>
                 <p class="text-xs text-muted-foreground">
                   Local sources require a provider running on this machine.
@@ -1261,7 +1261,7 @@ function selectTemplate(t: { name: string; source: string }) {
           {#if sourceType === "image" && compatLoading}
             <p class="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 class="h-4 w-4 animate-spin" />
-              Checking image compatibility…
+              Checking image compatibility...
             </p>
           {/if}
 

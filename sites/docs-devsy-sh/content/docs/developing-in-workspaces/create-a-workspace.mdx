@@ -3,7 +3,7 @@ title: Create a Workspace
 sidebar_label: Create a Workspace
 ---
 
-A workspace in Devsy is a containerized development environment that holds a project's source code along with the dependencies needed to work on it, such as a compiler and debugger. The underlying environment where the container runs is created and managed through a Devsy provider. This gives every engineer a consistent development experience wherever the container runs — a remote machine in a public cloud, localhost, or a Kubernetes cluster.
+A workspace in Devsy is a containerized development environment that holds a project's source code along with the dependencies needed to work on it, such as a compiler and debugger. The underlying environment where the container runs is created and managed through a Devsy provider. This gives every engineer a consistent development experience wherever the container runs - a remote machine in a public cloud, localhost, or a Kubernetes cluster.
 
 To configure the development container, Devsy reuses the [devcontainer.json](https://containers.dev/) specification, which is also used by other popular tools such as [VS Code dev containers](https://code.visualstudio.com/docs/devcontainers/containers) and [GitHub Codespaces](https://github.com/features/codespaces). This means any project that already uses this configuration can spin up a workspace in Devsy with no extra setup. If no configuration is found, Devsy detects the project's programming language and provides an appropriate template.
 
@@ -23,16 +23,16 @@ A workspace is defined by a `devcontainer.json`. If none exists, Devsy detects t
 
 Open the Workspaces view and click **Create** to launch the wizard. It walks through five steps:
 
-1. **Provider** — pick an initialized provider. Cannot be changed later. If none exists, the wizard offers to add one.
-2. **Source** — choose a Quick Start template, browse the image catalog, or enter a custom Git URL / image / local path. **Show advanced options** reveals:
+1. **Provider** - pick an initialized provider. Cannot be changed later. If none exists, the wizard offers to add one.
+2. **Source** - choose a Quick Start template, browse the image catalog, or enter a custom Git URL / image / local path. **Show advanced options** reveals:
    - Ref Type and value (branch, commit, or PR number) for Git sources.
    - Project subfolder within the repo.
    - Open folder in container (where the editor opens).
    - Dev container config path (override `.devcontainer/devcontainer.json` location).
    - Prebuild repository for cached images.
-3. **IDE** — pick one or more IDEs to open the workspace with. Optional; defaults to none.
-4. **Review** — adjust the auto-derived workspace name and confirm the configuration. If the chosen image has no build for your machine architecture, the Review step shows a compatibility warning and a **Run under emulation** toggle.
-5. **Launch** — Devsy creates the workspace and streams progress. A 10-minute watchdog cancels the launch if it stalls. The chosen IDE opens on success.
+3. **IDE** - pick one or more IDEs to open the workspace with. Optional; defaults to none.
+4. **Review** - adjust the auto-derived workspace name and confirm the configuration. If the chosen image has no build for your machine architecture, the Review step shows a compatibility warning and a **Run under emulation** toggle.
+5. **Launch** - Devsy creates the workspace and streams progress. A 10-minute watchdog cancels the launch if it stalls. The chosen IDE opens on success.
 
 <Callout>
 Under the hood, the Desktop Application will call the CLI command `devsy workspace up REPOSITORY`
@@ -147,10 +147,10 @@ devsy workspace describe my-workspace --result-format json
 
 Other useful inspection commands:
 
-- `devsy workspace status <name>` — quick state check (`Running`, `Stopped`, `NotFound`).
-- `devsy workspace logs <name>` — stream the agent logs from the container.
-- `devsy workspace ping <name>` — verify the agent is reachable through the tunnel.
-- `devsy workspace troubleshoot <name>` — bundle diagnostics for issue reports.
+- `devsy workspace status <name>` - quick state check (`Running`, `Stopped`, `NotFound`).
+- `devsy workspace logs <name>` - stream the agent logs from the container.
+- `devsy workspace ping <name>` - verify the agent is reachable through the tunnel.
+- `devsy workspace troubleshoot <name>` - bundle diagnostics for issue reports.
 
 ## Recreating a workspace
 
@@ -167,7 +167,7 @@ devsy workspace up my-workspace --recreate
 
 ## Resetting a workspace
 
-Reset rebuilds the workspace from a clean slate — it pulls the latest Git changes or re-uploads your local folder. Use it instead of `--recreate` when you need a full restart.
+Reset rebuilds the workspace from a clean slate - it pulls the latest Git changes or re-uploads your local folder. Use it instead of `--recreate` when you need a full restart.
 
 **A reset preserves nothing.**
 

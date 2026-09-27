@@ -84,7 +84,7 @@ func (cmd *TroubleshootCmd) Run(ctx context.Context, args []string) {
 	// Print on every exit path, including panics.
 	defer printTroubleshootInfo(info)
 
-	// Collect as much as possible — partial info beats no info, so do not
+	// Collect as much as possible - partial info beats no info, so do not
 	// return early on errors except where downstream steps require the result.
 	var err error
 	info.Config, err = config.LoadConfig(cmd.Context, cmd.Provider)

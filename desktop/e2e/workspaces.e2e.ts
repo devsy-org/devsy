@@ -250,7 +250,7 @@ test.describe.serial("Create Workspace Wizard", () => {
   test("should open the wizard and show step 1 (provider)", async () => {
     const dialog = await openCreateWorkspaceWizard(page)
 
-    // Step indicator labels — all 5 steps present
+    // Step indicator labels - all 5 steps present
     for (const label of ["Provider", "Source", "IDE", "Review", "Launch"]) {
       await expect(dialog).toContainText(label)
     }

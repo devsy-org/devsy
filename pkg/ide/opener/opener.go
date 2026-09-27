@@ -54,7 +54,7 @@ func IsBrowserIDE(ideName string) bool {
 }
 
 // Open dispatches to the correct IDE opener based on ideName. It returns the
-// IDE URL (when meaningful — see per-IDE openers) along with any error.
+// IDE URL (when meaningful - see per-IDE openers) along with any error.
 func Open(
 	ctx context.Context,
 	ideName string,

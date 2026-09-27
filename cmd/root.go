@@ -62,7 +62,7 @@ const (
 
 	internalCommand = "internal"
 
-	rootLong = "Devsy — standardized development workspaces built on devcontainers, " +
+	rootLong = "Devsy - standardized development workspaces built on devcontainers, " +
 		"running on Docker, Kubernetes, cloud providers, and SSH remote hosts."
 
 	rootExample = `- Start a workspace from the current directory:

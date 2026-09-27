@@ -26,7 +26,7 @@ import type { Component } from "svelte"
 
 let { terminalCount = 0 }: { terminalCount?: number } = $props()
 
-// Matches NAV_KEYS in App.svelte — maps shortcut number to route
+// Matches NAV_KEYS in App.svelte - maps shortcut number to route
 const SHORTCUT_BY_HREF: Record<string, string> = {
   "/": "1",
   "/workspaces": "2",

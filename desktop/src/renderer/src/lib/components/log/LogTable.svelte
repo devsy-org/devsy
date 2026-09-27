@@ -64,7 +64,7 @@ $effect(() => {
 
   {#if hiddenCount > 0}
     <div class="border-b bg-muted/40 px-2 py-1 text-center text-xs text-muted-foreground">
-      {hiddenCount.toLocaleString()} earlier {hiddenCount === 1 ? "line" : "lines"} hidden — open the full log to see everything
+      {hiddenCount.toLocaleString()} earlier {hiddenCount === 1 ? "line" : "lines"} hidden - open the full log to see everything
     </div>
   {/if}
 

@@ -493,7 +493,7 @@ async function handleSaveOptions() {
         {:else if status.kind === "failed"}
           <span
             class={badgeVariants({ variant: "destructive" })}
-            title={[status.error, status.errorCode, status.errorHint].filter(Boolean).join(" — ")}
+            title={[status.error, status.errorCode, status.errorHint].filter(Boolean).join(" - ")}
           >
             {status.label}
           </span>

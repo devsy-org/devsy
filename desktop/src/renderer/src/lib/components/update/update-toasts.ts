@@ -36,7 +36,7 @@ function fireAvailable(
   userInitiated = false
   const version = s.availableVersion
   if (autoDownload) {
-    toast.info(`Update v${version} found, downloading…`, { duration: 4000 })
+    toast.info(`Update v${version} found, downloading...`, { duration: 4000 })
     return
   }
   toast(`Update v${version} available`, {

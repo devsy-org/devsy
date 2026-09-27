@@ -639,7 +639,7 @@ func (cmd *UpCmd) executeDevsyUp(
 	if cmd.Platform.Enabled {
 		return nil, nil
 	}
-	// Guard against a result that lacks the substitution context — that
+	// Guard against a result that lacks the substitution context - that
 	// indicates the agent returned a half-populated result (e.g. an inner
 	// container-setup failure that didn't carry through as result.Error).
 	// Without this, downstream openIDE would nil-deref on
@@ -740,7 +740,7 @@ func watchForForceShutdown(ctx context.Context, done <-chan struct{}) {
 	signal.Notify(signals, shutdownSignals...)
 	select {
 	case <-signals:
-		os.Exit(1) // second signal — force shutdown
+		os.Exit(1) // second signal - force shutdown
 	case <-done:
 		signal.Stop(signals)
 	}

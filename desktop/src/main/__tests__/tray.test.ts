@@ -181,7 +181,7 @@ describe("buildTrayMenuTemplate", () => {
       makeActions(),
     )
     expect(items[0]).toMatchObject({
-      label: "Devsy — 2 running workspaces",
+      label: "Devsy - 2 running workspaces",
       enabled: false,
     })
   })
@@ -229,7 +229,7 @@ describe("buildTrayMenuTemplate", () => {
       model({ workspaces: [{ id: "api", status: "running" }] }),
       actions,
     )
-    const row = items.find((item) => item.label === "● api — Running")
+    const row = items.find((item) => item.label === "● api - Running")
     expect(row).toBeDefined()
     const submenu = row?.submenu as Electron.MenuItemConstructorOptions[]
     const stop = submenu.find((item) => item.label === "Stop Workspace")
@@ -245,7 +245,7 @@ describe("buildTrayMenuTemplate", () => {
       model({ workspaces: [{ id: "api", status: "stopped" }] }),
       actions,
     )
-    const row = items.find((item) => item.label === "○ api — Stopped")
+    const row = items.find((item) => item.label === "○ api - Stopped")
     const submenu = row?.submenu as Electron.MenuItemConstructorOptions[]
     const start = submenu.find((item) => item.label === "Start Workspace")
     expect(start).toBeDefined()
@@ -332,7 +332,7 @@ describe("buildTrayMenuTemplate", () => {
     const submenu = (name: string) =>
       row(name)?.submenu as Electron.MenuItemConstructorOptions[]
 
-    expect(row("stop-failed")?.label).toBe("✖ stop-failed — Stop failed")
+    expect(row("stop-failed")?.label).toBe("✖ stop-failed - Stop failed")
     const stop = submenu("stop-failed").find(
       (item) => item.label === "Stop Workspace",
     )
@@ -418,7 +418,7 @@ describe("buildTrayMenuTemplate", () => {
       }),
       makeActions(),
     )
-    expect(items.some((item) => item.label === "✖ api — Stop failed")).toBe(
+    expect(items.some((item) => item.label === "✖ api - Stop failed")).toBe(
       true,
     )
   })
@@ -445,7 +445,7 @@ describe("buildTrayMenuTemplate", () => {
       }),
       makeActions(),
     )
-    const row = items.find((item) => item.label === "○ api — Stopped")
+    const row = items.find((item) => item.label === "○ api - Stopped")
     const submenu = row?.submenu as Electron.MenuItemConstructorOptions[]
     const start = submenu.find((item) => item.label?.includes("Start"))
     expect(start?.enabled).toBe(false)
@@ -505,7 +505,7 @@ describe("buildTrayMenuTemplate", () => {
     const items = buildTrayMenuTemplate(model({}), actions)
     const prefs = items.find((item) => item.label === "Preferences")
     const submenu = prefs?.submenu as Electron.MenuItemConstructorOptions[]
-    const openSettings = submenu.find((item) => item.label === "Open Settings…")
+    const openSettings = submenu.find((item) => item.label === "Open Settings...")
     ;(openSettings as { click?: () => void }).click?.()
     expect(actions.showSettings).toHaveBeenCalledTimes(1)
   })

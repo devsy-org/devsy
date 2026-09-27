@@ -3,7 +3,7 @@
 !theme cloudscape-design
 skinparam BackgroundColor lightgray
 
-title devsy workspace up — sequence
+title devsy workspace up - sequence
 
 participant "Devsy CLI" as Devsy
 participant "Machine Provider" as Provider

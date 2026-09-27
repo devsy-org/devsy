@@ -136,7 +136,7 @@ test.describe("Provider lifecycle badges", () => {
   })
 
   // An abandoned wizard (skip init, or close mid-flow) leaves the install's
-  // job open. Without an explicit release the card spins on "installing…"
+  // job open. Without an explicit release the card spins on "installing..."
   // forever, since nothing else will ever finish that job.
   test("releases the job when a provider is added but never initialized", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')

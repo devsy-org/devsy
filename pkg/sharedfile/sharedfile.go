@@ -1,6 +1,6 @@
 // Package sharedfile hardens the standard Unix pattern of coordinating
 // between processes running as different users through a world-writable
-// file in a shared, trusted location (e.g. /tmp) — the same idea behind
+// file in a shared, trusted location (e.g. /tmp) - the same idea behind
 // /tmp/.X11-unix or /var/run/utmp. A devsy container runs commands over SSH
 // sessions authenticated as either root or the workspace's remoteUser
 // (pkg/ssh/server/ssh_container.go sets the process credential directly
@@ -11,7 +11,7 @@
 //   - Whichever process creates the file first can lock every other user
 //     out, because file creation is subject to the process umask.
 //   - A symlink planted at the file's path redirects Chmod onto an
-//     arbitrary target, since Chmod follows symlinks — dangerous for a
+//     arbitrary target, since Chmod follows symlinks - dangerous for a
 //     fixed, predictable, world-writable path any container user can
 //     pre-create.
 package sharedfile
@@ -106,7 +106,7 @@ func WriteFile(path string, data []byte, mode os.FileMode) (err error) {
 
 // openNoFollowRegular opens path with flag (plus the no-follow/non-blocking
 // guards openNoFollow always adds) and rejects the result if it is not a
-// regular file — a FIFO would otherwise pass the open (O_NONBLOCK just
+// regular file - a FIFO would otherwise pass the open (O_NONBLOCK just
 // keeps that from hanging) and reach a caller expecting file content.
 // createMode is only used when flag includes os.O_CREATE.
 func openNoFollowRegular(path string, flag int, createMode os.FileMode) (*os.File, error) {

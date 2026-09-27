@@ -105,7 +105,7 @@ func (w *redactingWriter) Sync() error {
 // duration of the returned remove func. Each line of log output is written to
 // w in addition to stderr. Multiple concurrent sinks are supported.
 //
-// w must be safe for concurrent Write calls — AddSink does not serialize
+// w must be safe for concurrent Write calls - AddSink does not serialize
 // writes to a single sink. io.Pipe writers and io.MultiWriter wrapping
 // pre-serialized destinations are both fine; bare bytes.Buffer is not.
 func AddSink(w io.Writer) (remove func()) {
@@ -189,7 +189,7 @@ func resolveEncoder(format string) zapcore.Encoder {
 	case "logfmt":
 		return newLogfmtEncoder()
 	default:
-		// "text" — use console encoder, with color if stderr is a terminal
+		// "text" - use console encoder, with color if stderr is a terminal
 		if colorEnabled() {
 			return zapcore.NewConsoleEncoder(colorEncoderConfig())
 		}

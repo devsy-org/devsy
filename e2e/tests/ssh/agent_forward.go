@@ -125,7 +125,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err, "session B: socket from session A must still work")
 				gomega.Expect(outAddB).To(gomega.ContainSubstring(strings.Fields(pubKey)[1]))
 
-				// Session B's reported SSH_AUTH_SOCK should equal S1 too — the
+				// Session B's reported SSH_AUTH_SOCK should equal S1 too - the
 				// regression is that this used to differ session-to-session.
 				outBSock, _, err := framework.SSHMultiplexedExec(
 					controlPath, host, env,
@@ -137,7 +137,7 @@ var _ = ginkgo.Describe(
 					"SSH_AUTH_SOCK must be identical across sessions on one connection",
 				)
 
-				// Session C: open-remote-ssh style use-after-session pattern —
+				// Session C: open-remote-ssh style use-after-session pattern -
 				// reuse S1 in yet another session.
 				outAddC, _, err := framework.SSHMultiplexedExec(
 					controlPath, host, env,
@@ -186,7 +186,7 @@ var _ = ginkgo.Describe(
 					"two independent connections must each get their own agent socket",
 				)
 
-				// Close connection 1 — connection 2 must still work.
+				// Close connection 1 - connection 2 must still work.
 				close1()
 				closed1 = true
 

@@ -405,7 +405,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			err = f.DevsyUp(ctx, tempDir, "--git-ssh-signing-key", keyPath+".pub")
 			framework.ExpectNoError(err)
 
-			// Attempt a signed commit — this should fail because the key
+			// Attempt a signed commit - this should fail because the key
 			// is not in the agent, but the error must be human-readable.
 			commitCmd := strings.Join([]string{
 				"cd /tmp",
@@ -439,7 +439,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			// The error must NOT contain JSON decode artifacts
 			gomega.Expect(combined).NotTo(
 				gomega.ContainSubstring("invalid character"),
-				"error should not contain JSON parse errors — error messages must be human-readable",
+				"error should not contain JSON parse errors - error messages must be human-readable",
 			)
 		},
 	)

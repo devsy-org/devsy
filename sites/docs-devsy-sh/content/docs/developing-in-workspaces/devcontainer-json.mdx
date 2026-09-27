@@ -81,12 +81,12 @@ To use Docker Compose for your configuration, reference one or more compose file
 Devsy resolves the Docker Compose project name using the same precedence Docker Compose itself uses, so `devsy workspace up` reuses an already-running compose project instead of spawning a separate one:
 
 1. `COMPOSE_PROJECT_NAME` set in the current shell session.
-2. `COMPOSE_PROJECT_NAME` from an `.env` file — checked in the devcontainer config directory (e.g. `.devcontainer/.env`), the workspace root, and each resolved compose file's own directory.
+2. `COMPOSE_PROJECT_NAME` from an `.env` file - checked in the devcontainer config directory (e.g. `.devcontainer/.env`), the workspace root, and each resolved compose file's own directory.
 3. The top-level `name:` field in the compose files (when multiple files are given, the last one that declares it wins).
 4. Otherwise, a name derived from the workspace, sanitized for Docker Compose.
 
 <Callout title="devcontainer.json name is not a compose project name">
-`devcontainer.json`'s `name` field is a display name for the UI (per the [Dev Containers spec](https://containers.dev/implementors/json_reference/#general-fields)) and is never used to name the Docker Compose project. To reuse an existing compose project, set `COMPOSE_PROJECT_NAME` (shell or `.env`) or a top-level `name:` in your compose file — the same options [VS Code documents](https://code.visualstudio.com/remote/advancedcontainers/set-docker-compose-project-name) for this purpose.
+`devcontainer.json`'s `name` field is a display name for the UI (per the [Dev Containers spec](https://containers.dev/implementors/json_reference/#general-fields)) and is never used to name the Docker Compose project. To reuse an existing compose project, set `COMPOSE_PROJECT_NAME` (shell or `.env`) or a top-level `name:` in your compose file - the same options [VS Code documents](https://code.visualstudio.com/remote/advancedcontainers/set-docker-compose-project-name) for this purpose.
 </Callout>
 
 <Callout title="Multi-arch builds in compose-based devcontainers">

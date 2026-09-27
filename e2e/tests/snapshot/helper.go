@@ -41,7 +41,7 @@ const (
 //   - snapshot.go's BeforeEach sets DEVSY_INSECURE_DOCKER_INTERNAL=true on
 //     this process, inherited by the devsy CLI subprocesses it spawns, so
 //     pkg/snapshot's reference parsing marks host.docker.internal refs as
-//     name.Insecure (plain HTTP instead of HTTPS) for this suite only —
+//     name.Insecure (plain HTTP instead of HTTPS) for this suite only -
 //     off by default everywhere else, since a hostname alone isn't proof a
 //     registry is actually local.
 //   - the Docker *daemon* itself must also be configured to allow plain HTTP
@@ -51,7 +51,7 @@ const (
 //     ["host.docker.internal:15500"]}, followed by a daemon restart. This is
 //     an environment/CI prerequisite this fixture cannot configure for
 //     itself (it would need root and to restart the daemon out from under
-//     any other running containers) — the CI workflow must set this up
+//     any other running containers) - the CI workflow must set this up
 //     before running this suite, alongside the /etc/hosts entry above.
 var registryHost = "host.docker.internal:" + registryHostPort
 

@@ -126,7 +126,7 @@ function parseCommandResult<T>(stdout: string): T {
 
 /**
  * Parse a single stderr line as a zap JSON record. Returns undefined when the
- * line is not valid JSON or not a plain object — callers should treat the line
+ * line is not valid JSON or not a plain object - callers should treat the line
  * as opaque text in that case.
  */
 function parseStderrLine(line: string): CliLogLine | undefined {
@@ -138,7 +138,7 @@ function parseStderrLine(line: string): CliLogLine | undefined {
       return obj as CliLogLine
     }
   } catch {
-    // not JSON — fall through
+    // not JSON - fall through
   }
   return undefined
 }

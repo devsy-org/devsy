@@ -66,7 +66,7 @@ function pick(ref: string) {
   </div>
 
   {#if $imageCatalog.loading}
-    <p class="text-sm text-muted-foreground">Loading catalog…</p>
+    <p class="text-sm text-muted-foreground">Loading catalog...</p>
   {:else if $imageCatalog.error}
     <p class="text-sm text-destructive">Failed to load catalog: {$imageCatalog.error}</p>
   {/if}

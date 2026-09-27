@@ -15,7 +15,7 @@ export function fmtTime(ts: number | null): string {
 export function statusHeadline(s: UpdateStatus, currentVersion: string | null): string {
   switch (s.state) {
     case "checking":
-      return "Checking for updates…"
+      return "Checking for updates..."
     case "available":
       return `Version ${s.availableVersion} is available`
     case "downloading":

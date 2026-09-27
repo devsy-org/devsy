@@ -330,7 +330,7 @@ func TestBuildUpCmd_DefaultsIDEToNone(t *testing.T) {
 		t,
 		"none",
 		cmd.IDE,
-		"MCP path must default IDE to none — there's no human to attach an IDE to",
+		"MCP path must default IDE to none - there's no human to attach an IDE to",
 	)
 }
 

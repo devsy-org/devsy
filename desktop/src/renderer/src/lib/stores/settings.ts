@@ -97,7 +97,7 @@ export function cycleTheme() {
   })
 }
 
-// Color scheme (accent) — picker is hidden in Settings; force purple for all
+// Color scheme (accent) - picker is hidden in Settings; force purple for all
 // users regardless of any previously persisted value.
 export const colorScheme = writable<ColorScheme>("purple")
 
@@ -146,7 +146,7 @@ export function setSidebarPosition(value: SidebarPosition) {
   sidebarPosition.set(value)
 }
 
-// Auto-update — main process owns the persistent value. localStorage
+// Auto-update - main process owns the persistent value. localStorage
 // is a cache for instant first paint; `syncAutoUpdateFromMain` reconciles
 // it with the main-process truth at app boot.
 export const autoUpdate = writable<boolean>(

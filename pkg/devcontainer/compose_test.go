@@ -590,7 +590,7 @@ func TestEscapeComposeLabelValue(t *testing.T) {
 		{name: "backslash preserved", in: `a\b`, want: `a\b`},
 		{name: "backtick preserved", in: "a`b", want: "a`b"},
 		{name: "newline preserved", in: "line1\nline2", want: "line1\nline2"},
-		{name: "unicode preserved", in: "café—naïve 🚀", want: "café—naïve 🚀"},
+		{name: "unicode preserved", in: "café-naïve 🚀", want: "café-naïve 🚀"},
 
 		// Realistic metadata: JSON containing an apostrophe must survive so it
 		// can be json.Unmarshal'd back on read. Only "$" is altered.

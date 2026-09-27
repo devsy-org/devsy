@@ -175,7 +175,7 @@ func GetImagePlatforms(ctx context.Context, image string) ([]string, error) {
 		return platforms, nil
 	}
 
-	// Not an index — fall back to single-image config OS/Arch.
+	// Not an index - fall back to single-image config OS/Arch.
 	log.Debugf("Image %q is not an index (%v); falling back to single-image config", image, err)
 	configFile, _, cErr := GetImageConfig(ctx, image)
 	if cErr != nil {

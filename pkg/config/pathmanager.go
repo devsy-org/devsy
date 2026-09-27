@@ -41,7 +41,7 @@ func homeOverrideDir(sub ...string) (string, bool, error) {
 //	├── config.yaml                        (ConfigFilePath, stamped with Config.SchemaVersion)
 //	└── contexts/<context>/                (ContextDir)
 //	    ├── workspaces/<id>/{agent,logs}    (WorkspaceDir, WorkspaceAgentDir, WorkspaceLogDir)
-//	    ├── contents/<id>                   (WorkspaceContentsDir/WorkspaceContentDir — parent never removed)
+//	    ├── contents/<id>                   (WorkspaceContentsDir/WorkspaceContentDir - parent never removed)
 //	    ├── machines/<id>                   (MachineDir)
 //	    ├── providers/<name>/{binaries,daemon} (ProviderDir)
 //	    ├── pro_instances/<id>              (ProInstanceDir)

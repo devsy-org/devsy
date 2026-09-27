@@ -50,7 +50,7 @@ func TestRunInitializeCommand_ParallelErrorCollection(t *testing.T) {
 		t.Fatalf("error should mention 'will-fail', got: %v", err)
 	}
 
-	data, readErr := os.ReadFile(markerFile) //nolint:gosec // G304 — test temp file
+	data, readErr := os.ReadFile(markerFile) //nolint:gosec // G304 - test temp file
 	if readErr != nil {
 		t.Fatalf("success marker not written; parallel commands should all run: %v", readErr)
 	}
@@ -73,7 +73,7 @@ func TestRunInitializeCommand_SingleKey(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, err := os.ReadFile(outFile) //nolint:gosec // G304 — test temp file
+	data, err := os.ReadFile(outFile) //nolint:gosec // G304 - test temp file
 	if err != nil {
 		t.Fatalf("output file not created: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestRunInitializeCommand_StringFormat(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, err := os.ReadFile(outFile) //nolint:gosec // G304 — test temp file
+	data, err := os.ReadFile(outFile) //nolint:gosec // G304 - test temp file
 	if err != nil {
 		t.Fatalf("output file not created: %v", err)
 	}

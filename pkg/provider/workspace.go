@@ -540,7 +540,7 @@ func isPlausibleGitSource(s string) bool {
 	if !gitURLSchemes[u.Scheme] || u.Host == "" {
 		return false
 	}
-	// Catch nested schemes like "https://git:https://host/repo" — Host would
+	// Catch nested schemes like "https://git:https://host/repo" - Host would
 	// be "git" and a real port would be missing.
 	return !strings.Contains(u.Host, ":") || u.Port() != ""
 }

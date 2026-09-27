@@ -231,7 +231,7 @@ func (c *CodeServer) installExtensions() error {
 		}
 	}
 
-	// Escalate only on total failure — partial failures stay as logged
+	// Escalate only on total failure - partial failures stay as logged
 	// warnings to match openvscode's behavior.
 	if len(failed) == len(c.extensions) {
 		return fmt.Errorf("all %d extensions failed to install: %v", len(failed), failed)
@@ -273,7 +273,7 @@ func (c *CodeServer) installSettings() error {
 
 // suOrSh builds an *exec.Cmd that runs runCommand either as the unprivileged
 // user (via `su <user> -c`) or as the current user (via `sh -c`). All arg
-// elements are constants from this package — runCommand itself is built from
+// elements are constants from this package - runCommand itself is built from
 // constants plus internal values, not user-controlled binary paths.
 func suOrSh(userName, runCommand, workingDir string) *exec.Cmd {
 	var cmd *exec.Cmd

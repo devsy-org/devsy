@@ -127,7 +127,7 @@ func (r *pathReplacer) applyToMergedConfig(mc *devcontainerconfig.MergedDevConta
 
 // updateWorkspaceResult rewrites workspace_result.json to replace host-side
 // references to the old workspace name with the new one. Only LocalWorkspaceFolder
-// and WorkspaceMount are updated — ContainerWorkspaceFolder is an in-container
+// and WorkspaceMount are updated - ContainerWorkspaceFolder is an in-container
 // path that does not change when the host workspace is renamed.
 func updateWorkspaceResult(devsyConfig *config.Config, oldName, newName string) {
 	context := devsyConfig.DefaultContext

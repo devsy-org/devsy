@@ -13,15 +13,15 @@ export interface ProviderStatus {
 }
 
 const PHASE_LABELS: Record<string, string> = {
-  installing_provider: "installing…",
-  resolving_options: "resolving options…",
-  running_init: "initializing…",
+  installing_provider: "installing...",
+  resolving_options: "resolving options...",
+  running_init: "initializing...",
 }
 
 const ACTIVITY_LABELS: Record<ProviderJob["activity"], string> = {
-  installing: "installing…",
-  initializing: "initializing…",
-  updating: "updating…",
+  installing: "installing...",
+  initializing: "initializing...",
+  updating: "updating...",
 }
 
 /**

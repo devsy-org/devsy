@@ -90,7 +90,7 @@ type DockerHelperProvider interface {
 // can commit a running container's filesystem to a new image. Not every
 // ImageDriver can do this (e.g. Apple's `container`), so callers detect
 // support via a type assertion rather than forcing every ImageDriver to stub
-// the method — the same pattern ComposeDriver and DockerHelperProvider
+// the method - the same pattern ComposeDriver and DockerHelperProvider
 // already establish in this file.
 type SnapshotCapableDriver interface {
 	Driver

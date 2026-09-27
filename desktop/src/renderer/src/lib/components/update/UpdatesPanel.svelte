@@ -94,7 +94,7 @@ onMount(async () => {
   try {
     releaseChannel = await getReleaseChannel()
   } catch {
-    // Ignore — defaults to stable
+    // Ignore - defaults to stable
   }
 })
 </script>
@@ -121,7 +121,7 @@ onMount(async () => {
 
         <div class="min-w-0 flex-1 space-y-2">
           {#if s.state === "checking"}
-            <p class="text-sm font-medium">Checking for updates…</p>
+            <p class="text-sm font-medium">Checking for updates...</p>
             <div class="flex items-center gap-3 text-xs text-muted-foreground">
               {#if installedVersion}
                 <span>Installed: v{installedVersion}</span>
@@ -219,7 +219,7 @@ onMount(async () => {
               class="gap-2"
             >
               <RefreshCw class="h-3.5 w-3.5 {isChecking() ? 'animate-spin' : ''}" />
-              {isChecking() ? "Checking…" : "Check now"}
+              {isChecking() ? "Checking..." : "Check now"}
             </Button>
           {/if}
         </div>
@@ -278,7 +278,7 @@ onMount(async () => {
 <ConfirmDialog
   bind:open={confirmOpen}
   title="Switch to the Stable channel?"
-  description="You may currently be on a newer Preview build than the latest Stable release. You'll stay on your current version until Stable catches up — no downgrade happens automatically."
+  description="You may currently be on a newer Preview build than the latest Stable release. You'll stay on your current version until Stable catches up - no downgrade happens automatically."
   confirmLabel="Switch to Stable"
   cancelLabel="Stay on Preview"
   variant="default"

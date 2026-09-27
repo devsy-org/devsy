@@ -12,7 +12,7 @@ import (
 
 // TestWriteResultFileTo_RejectsSymlinkWithoutFollowing guards against a
 // symlink planted at DevContainerResultPath's fixed, predictable path
-// redirecting the write onto an arbitrary target — the same class of
+// redirecting the write onto an arbitrary target - the same class of
 // attack pkg/sharedfile's other callers (the GPG lock, the activity file)
 // already defend against.
 func TestWriteResultFileTo_RejectsSymlinkWithoutFollowing(t *testing.T) {

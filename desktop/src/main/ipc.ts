@@ -715,9 +715,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     providerJobs.clear(args.name)
   })
 
-  // Releases a job the caller opened but will not finish — e.g. the wizard
+  // Releases a job the caller opened but will not finish - e.g. the wizard
   // installs a provider, then the user skips initialization or closes the
-  // dialog. Without this the card would spin on "installing…" indefinitely.
+  // dialog. Without this the card would spin on "installing..." indefinitely.
   ipcMain.handle(
     "provider_release_job",
     async (_event, args: { name: string }) => {

@@ -225,7 +225,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 			err = f.DevsyUp(ctx, tempDir2)
 			framework.ExpectNoError(err)
 
-			// Only one HTTP request was made — proves cache was reused with passing integrity
+			// Only one HTTP request was made - proves cache was reused with passing integrity
 			gomega.Expect(server.ReceivedRequests()).To(gomega.HaveLen(1))
 		},
 		ginkgo.SpecTimeout(framework.TimeoutLong()),

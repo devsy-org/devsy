@@ -14,7 +14,7 @@ where registry follows the syntax "\{domain\}/\{project\}/\{repo\}", such as gcr
 
 If using the docker provider, ensure your docker environment has the image snapshotter enabled in your daemon (https://docs.docker.com/engine/storage/containerd/)
 
-Merge the `containerd-snapshotter` setting into your existing `/etc/docker/daemon.json` (or the platform-equivalent path, e.g. via Docker Desktop's Settings > Docker Engine on macOS/Windows) — do not overwrite the whole file, since it may already contain other settings such as registry mirrors or proxy configuration:
+Merge the `containerd-snapshotter` setting into your existing `/etc/docker/daemon.json` (or the platform-equivalent path, e.g. via Docker Desktop's Settings > Docker Engine on macOS/Windows) - do not overwrite the whole file, since it may already contain other settings such as registry mirrors or proxy configuration:
 
 ```
 cat /etc/docker/daemon.json

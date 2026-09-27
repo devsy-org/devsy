@@ -90,7 +90,7 @@ func setupConnectionAgentListener(connID string) (net.Listener, string, error) {
 	// Hold an exclusive flock on a per-directory lockfile for the lifetime
 	// of this process. The kernel releases the lock on any exit (including
 	// SIGKILL by docker exec when the proxy chain tears down). This is the
-	// only cleanup signal that survives external process termination — the
+	// only cleanup signal that survives external process termination - the
 	// connection-level ConnectionClosingCallback never fires in that case
 	// because the in-container helper is killed by signal, not via SSH
 	// disconnect. The startup janitor (SweepStaleAgentSockets) uses this

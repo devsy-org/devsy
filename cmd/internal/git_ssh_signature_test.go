@@ -42,7 +42,7 @@ func (s *GitSSHSignatureTestSuite) TestParseNonSignCommand() {
 }
 
 func (s *GitSSHSignatureTestSuite) TestParseMissingBufferFile() {
-	// All args end in a flag — no buffer file present.
+	// All args end in a flag - no buffer file present.
 	args := []string{"-Y", "sign", "-n", "git", "-f", "/path/to/key.pub", "-U"}
 	result := parseSSHKeygenArgs(args)
 	assert.Equal(s.T(), "", result.bufferFile)

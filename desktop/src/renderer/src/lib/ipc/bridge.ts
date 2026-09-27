@@ -1,5 +1,5 @@
 /**
- * IPC bridge — uses Electron's contextBridge API when running in Electron,
+ * IPC bridge - uses Electron's contextBridge API when running in Electron,
  * falls back to mock implementations for browser-only development.
  */
 

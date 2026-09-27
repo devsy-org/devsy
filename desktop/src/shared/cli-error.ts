@@ -129,7 +129,7 @@ export function parseCliEnvelope(line: string): CliEnvelope | undefined {
       return obj as CliEnvelope
     }
   } catch {
-    // not JSON — fall through
+    // not JSON - fall through
   }
   return undefined
 }

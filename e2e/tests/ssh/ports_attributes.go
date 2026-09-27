@@ -284,7 +284,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 					n, readErr := conn.Read(buf)
 					_ = conn.Close()
 					// The host listener doesn't write anything, so we should get
-					// a timeout or EOF — not "PONG\n" from the container
+					// a timeout or EOF - not "PONG\n" from the container
 					if readErr == nil && n > 0 && string(buf[:n]) == "PONG\n" {
 						return true
 					}

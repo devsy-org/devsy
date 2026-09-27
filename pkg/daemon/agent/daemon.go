@@ -505,7 +505,7 @@ func stopFallbackDaemon() error {
 
 	pid := strings.TrimSpace(string(pidData))
 	if _, err := strconv.Atoi(pid); err != nil {
-		// Corrupt PID file — clean up and move on
+		// Corrupt PID file - clean up and move on
 		_ = os.Remove(pidFile)
 		return nil
 	}
@@ -516,7 +516,7 @@ func stopFallbackDaemon() error {
 func killDaemonIfOurs(pidFile, pid string) error {
 	running, err := command.IsRunning(pid)
 	if err != nil || !running {
-		// Process gone or check failed — stale PID file
+		// Process gone or check failed - stale PID file
 		_ = os.Remove(pidFile)
 		return nil
 	}
@@ -541,7 +541,7 @@ func killDaemonIfOurs(pidFile, pid string) error {
 func isDaemonProcess(pid string) bool {
 	exePath, err := os.Readlink("/proc/" + pid + "/exe")
 	if err != nil {
-		// Can't verify — assume it's not ours to be safe
+		// Can't verify - assume it's not ours to be safe
 		return false
 	}
 	baseName := filepath.Base(exePath)

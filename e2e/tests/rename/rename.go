@@ -147,7 +147,7 @@ var _ = ginkgo.Describe(
 					WithPolling(1 * time.Second).
 					Should(gomega.Equal("Running"))
 
-				// Rename while running — should auto-stop
+				// Rename while running - should auto-stop
 				err = f.DevsyRename(ctx, workspaceName, renamedWorkspaceName)
 				framework.ExpectNoError(err)
 

@@ -493,7 +493,7 @@ func TestDeleteTerminalTask(t *testing.T) {
 // TestConcurrentUpdatesAcrossStoreInstancesAreSerialized simulates two
 // separate processes (each with its own Store instance, as they would be in
 // practice) racing to update the same task: a worker reporting progress and
-// a canceller. Every individual update must be applied atomically — no
+// a canceller. Every individual update must be applied atomically - no
 // update should be silently lost or the file left corrupt.
 func TestConcurrentUpdatesAcrossStoreInstancesAreSerialized(t *testing.T) {
 	dir := t.TempDir()

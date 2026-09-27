@@ -130,7 +130,7 @@ func writeCommands(b *strings.Builder, cmd *cobra.Command, width int) {
 			b.WriteString("\n")
 			continue
 		}
-		// Pad from the plain name — the styled string carries escape bytes
+		// Pad from the plain name - the styled string carries escape bytes
 		// that would otherwise be counted as visible columns.
 		b.WriteString(strings.Repeat(" ", max(1, nameColumn-len(name))))
 		descCol := len(indent) + nameColumn

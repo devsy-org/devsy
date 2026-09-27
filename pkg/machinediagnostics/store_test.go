@@ -119,7 +119,7 @@ func TestSanitizerBoundsAndNormalizes(t *testing.T) {
 	message := s.Message("top-secret\n" + string(make([]byte, MaxEventMessageBytes+20)))
 	assert.NotContains(t, message, "top-secret")
 	assert.NotContains(t, message, "\n")
-	assert.LessOrEqual(t, len(message), MaxEventMessageBytes+len("…"))
+	assert.LessOrEqual(t, len(message), MaxEventMessageBytes+len("..."))
 }
 
 func TestReadFreshness(t *testing.T) {

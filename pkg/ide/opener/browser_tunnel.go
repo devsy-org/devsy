@@ -43,7 +43,7 @@ func KillBrowserTunnel(contextName, workspaceID string) {
 		return
 	}
 	// If the workspace dir is already gone, there's nothing to lock on and
-	// nothing to kill — skip silently rather than recreating the dir just
+	// nothing to kill - skip silently rather than recreating the dir just
 	// for a lock file.
 	if _, statErr := os.Stat(filepath.Dir(statePath)); statErr != nil {
 		return
@@ -157,7 +157,7 @@ type inheritedListenerSetup struct {
 // browserIDEInvocation bundles the per-call IDE-specific knobs that aren't
 // part of the lower-level tunnel parameters.
 type browserIDEInvocation struct {
-	Label       string // e.g. "vscode", "jupyter", "rstudio" — used in user-facing log lines
+	Label       string // e.g. "vscode", "jupyter", "rstudio" - used in user-facing log lines
 	OpenBrowser bool   // whether to launch a host browser pointing at TargetURL
 }
 
@@ -523,7 +523,7 @@ func runDaemonBrowserTunnel(ctx context.Context, a daemonTunnelArgs) (string, er
 
 // OpenBrowserWhenReachable polls the target URL's TCP port until it accepts
 // connections, then opens the browser. Exits silently when ctx is cancelled
-// (the caller already gave up — warning would duplicate the underlying
+// (the caller already gave up - warning would duplicate the underlying
 // error); emits a "didn't come up" warning only when the budget expires.
 //
 // Exported so the long-lived browser-tunnel helper can own the probe-then-

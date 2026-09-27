@@ -175,7 +175,7 @@ var _ = ginkgo.Describe(
 			func(ctx context.Context) {
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 
-				// copy test dir — uses devcontainer.json with shutdownAction: "none"
+				// copy test dir - uses devcontainer.json with shutdownAction: "none"
 				tempDir, err := framework.CopyToTempDirWithoutChdir(
 					initialDir + "/tests/machineprovider/testdata/machineprovider3",
 				)

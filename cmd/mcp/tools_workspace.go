@@ -204,7 +204,7 @@ func registerWorkspaceCreateTool(s *sdkmcp.Server, g *flags.GlobalFlags, sem *op
 		Name: "workspace_create",
 		Description: "Create and start a new workspace. May take several minutes on " +
 			"first use (image pull, git clone, post-create commands); if the call " +
-			"times out client-side, the server-side operation likely continued — " +
+			"times out client-side, the server-side operation likely continued - " +
 			"poll workspace_status to check.\n" +
 			"\n" +
 			"source: a git URL (https://, git@host:repo, ssh://, or git:https://... " +

@@ -151,7 +151,7 @@ onMount(async () => {
       return
     }
 
-    // Now safely do async imports — listeners are active, so no events are lost
+    // Now safely do async imports - listeners are active, so no events are lost
     const [{ Terminal: XTerm }, { FitAddon: XFitAddon }] = await Promise.all([
       import("@xterm/xterm"),
       import("@xterm/addon-fit"),
@@ -230,7 +230,7 @@ $effect(() => {
 })
 
 onDestroy(() => {
-  // Only disconnect the observer — keep the terminal instance alive
+  // Only disconnect the observer - keep the terminal instance alive
   resizeObserver?.disconnect()
 })
 </script>

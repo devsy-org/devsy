@@ -138,8 +138,8 @@ export function buildTrayMenuTemplate(
     {
       label:
         running === 0
-          ? "Devsy — No running workspaces"
-          : `Devsy — ${running} running workspace${running === 1 ? "" : "s"}`,
+          ? "Devsy - No running workspaces"
+          : `Devsy - ${running} running workspace${running === 1 ? "" : "s"}`,
       enabled: false,
     },
     { type: "separator" },
@@ -163,7 +163,7 @@ export function buildTrayMenuTemplate(
           model.pendingStops.has(workspace.id) ||
           (workspaceJobBusy(job) && !workspaceJobInterruptible(job))
         submenu.push({
-          label: stopping ? `${jobLabel ?? "Stopping"}…` : "Stop Workspace",
+          label: stopping ? `${jobLabel ?? "Stopping"}...` : "Stop Workspace",
           enabled: !stopping,
           click: stopping
             ? undefined
@@ -172,7 +172,7 @@ export function buildTrayMenuTemplate(
       } else if (actionState === "stopped") {
         submenu.push({
           label: model.pendingStarts.has(workspace.id)
-            ? "Starting…"
+            ? "Starting..."
             : "Start Workspace",
           enabled: !model.pendingStarts.has(workspace.id),
           click: model.pendingStarts.has(workspace.id)
@@ -187,7 +187,7 @@ export function buildTrayMenuTemplate(
         })
       }
       return {
-        label: `${STATE_GLYPHS[state]} ${workspace.id} — ${jobLabel && (state === "busy" || state === "failed") ? jobLabel : STATE_TEXT[state]}`,
+        label: `${STATE_GLYPHS[state]} ${workspace.id} - ${jobLabel && (state === "busy" || state === "failed") ? jobLabel : STATE_TEXT[state]}`,
         submenu,
       }
     },
@@ -226,7 +226,7 @@ export function buildTrayMenuTemplate(
           click: actions.toggleOpenToTray,
         },
         { type: "separator" },
-        { label: "Open Settings…", click: actions.showSettings },
+        { label: "Open Settings...", click: actions.showSettings },
       ],
     },
     ...buildUpdateMenuItems(model.updateStatus, actions.installUpdate),
@@ -264,7 +264,7 @@ export class AppTray {
   setup(): void {
     if (this.tray) return
     this.tray = new Tray(this.createTrayIcon())
-    this.tray.setToolTip("Devsy — No running workspaces")
+    this.tray.setToolTip("Devsy - No running workspaces")
     this.unsubscribeWorkspaceState = this.deps.state.onWorkspacesChange(() =>
       this.rebuildMenu(),
     )
@@ -330,8 +330,8 @@ export class AppTray {
     const running = countRunningWorkspaces(this.deps.state.workspaceList())
     this.tray.setToolTip(
       running === 0
-        ? "Devsy — No running workspaces"
-        : `Devsy — ${running} running workspace${running === 1 ? "" : "s"}`,
+        ? "Devsy - No running workspaces"
+        : `Devsy - ${running} running workspace${running === 1 ? "" : "s"}`,
     )
   }
 

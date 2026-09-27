@@ -85,7 +85,7 @@ func quoteLogfmt(s string) string {
 	return s
 }
 
-// Required interface methods — delegate to buffer for simple types.
+// Required interface methods - delegate to buffer for simple types.
 func (e *logfmtEncoder) AddArray(key string, arr zapcore.ArrayMarshaler) error   { return nil }
 func (e *logfmtEncoder) AddObject(key string, obj zapcore.ObjectMarshaler) error { return nil }
 func (e *logfmtEncoder) AddBinary(key string, val []byte)                        {}

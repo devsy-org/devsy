@@ -36,7 +36,7 @@ func TestIDEParams_Launch_OpenBrowser(t *testing.T) {
 // TestOpenDesktopIDE_HeadlessShortCircuits verifies that LaunchHeadless makes
 // openDesktopIDE return nil without dispatching to any per-IDE handler for
 // non-Fleet desktop IDEs. Each chosen IDE name matches an explicit switch
-// case in openDesktopIDE — if the headless guard were ever removed, dispatch
+// case in openDesktopIDE - if the headless guard were ever removed, dispatch
 // would deref nil params.Client / params.Result and panic, failing the test.
 // Fleet is excluded because it intentionally runs even under headless (to
 // retrieve the workspace-side URL).

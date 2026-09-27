@@ -226,7 +226,7 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			gomega.Expect(opa["label"]).To(gomega.Equal("default"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
-	// Size-limit warning tested via unit test in metadata_test.go — impractical to generate >100KB metadata in E2E.
+	// Size-limit warning tested via unit test in metadata_test.go - impractical to generate >100KB metadata in E2E.
 
 	ginkgo.It("preserves containerEnv in configuration output", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")

@@ -691,7 +691,7 @@ func mergePATH(
 	if !remoteOk {
 		return
 	}
-	// nil PATH means unset — already handled by the delete above.
+	// nil PATH means unset - already handled by the delete above.
 	if remotePath == nil {
 		return
 	}

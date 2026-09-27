@@ -40,7 +40,7 @@ test.describe("Sidebar Navigation", () => {
 
   test("should navigate to Terminals page", async () => {
     await page.click('[data-sidebar="sidebar"] a[href="#/terminals"]')
-    // Terminals page doesn't have an h1 — it shows "No active terminals" or the terminal tabs
+    // Terminals page doesn't have an h1 - it shows "No active terminals" or the terminal tabs
     const main = page.locator('[data-slot="sidebar-inset"]')
     await expect(main).toContainText(/no active terminals|new shell/i, {
       timeout: 5000,

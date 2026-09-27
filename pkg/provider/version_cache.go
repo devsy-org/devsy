@@ -141,7 +141,7 @@ func ListVersionsForSourceCached(
 }
 
 // storeVersionCacheEntry persists the given versions under the provider name.
-// Errors are intentionally swallowed — cache write failure should not block the lister.
+// Errors are intentionally swallowed - cache write failure should not block the lister.
 func storeVersionCacheEntry(name, sourceHash string, versions []ProviderVersion) {
 	cache, err := LoadProviderVersionCache()
 	if err != nil || cache == nil {

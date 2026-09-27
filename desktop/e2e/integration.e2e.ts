@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test"
 import { launchApp, resetMockState } from "./electron-app.js"
 
 // ---------------------------------------------------------------------------
-// Flow 1 — Provider CRUD
+// Flow 1 - Provider CRUD
 // ---------------------------------------------------------------------------
 test.describe
   .serial("Provider CRUD", () => {
@@ -46,7 +46,7 @@ test.describe
       // Click Delete in the sheet
       await sheet.getByRole("button", { name: "Delete" }).click()
 
-      // ConfirmDialog appears — click its destructive Delete button
+      // ConfirmDialog appears - click its destructive Delete button
       const confirmDialog = page.locator('[data-slot="dialog-content"]')
       await confirmDialog.waitFor({ timeout: 5000 })
       await confirmDialog.getByRole("button", { name: "Delete" }).click()
@@ -197,7 +197,7 @@ test.describe
   })
 
 // ---------------------------------------------------------------------------
-// Flow 2 — Workspace lifecycle (Node.js)
+// Flow 2 - Workspace lifecycle (Node.js)
 // ---------------------------------------------------------------------------
 test.describe
   .serial("Workspace lifecycle - Node.js", () => {
@@ -228,11 +228,11 @@ test.describe
       const dialog = page.locator('[role="dialog"]').first()
       await dialog.waitFor({ timeout: 5000 })
 
-      // Step 1 — Provider: select docker, continue
+      // Step 1 - Provider: select docker, continue
       await dialog.locator("button", { hasText: "docker" }).first().click()
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 2 — Source: click Node.js template. Scope to the active source
+      // Step 2 - Source: click Node.js template. Scope to the active source
       // panel (Git) so the template button doesn't collide with the Image
       // catalog's "Node.js 20" card.
       await dialog
@@ -246,13 +246,13 @@ test.describe
       )
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 3 — IDE: default "None", continue
+      // Step 3 - IDE: default "None", continue
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 4 — Review: Launch
+      // Step 4 - Review: Launch
       await dialog.getByRole("button", { name: /^launch$/i }).click()
 
-      // Step 5 — Launch: wait for streaming output and success
+      // Step 5 - Launch: wait for streaming output and success
       await expect(dialog).toContainText(/resolving|pulling|starting|ready/i, {
         timeout: 15000,
       })
@@ -291,7 +291,7 @@ test.describe
       await page.waitForTimeout(5000)
 
       // Verify the status badge in the header shows "Stopped"
-      // The header has: h1, provider badge, status badge — target the status badge near h1
+      // The header has: h1, provider badge, status badge - target the status badge near h1
       const headerArea = page
         .locator("h1", { hasText: "node-js" })
         .locator("..")
@@ -330,12 +330,12 @@ test.describe
       await page.getByRole("button", { name: "More actions" }).click()
       await page.getByRole("menuitem", { name: "Delete" }).click()
 
-      // ConfirmDialog appears — click the confirm Delete in the dialog
+      // ConfirmDialog appears - click the confirm Delete in the dialog
       const confirmDialog = page.locator('[data-slot="dialog-content"]')
       await confirmDialog.waitFor({ timeout: 5000 })
       await confirmDialog.getByRole("button", { name: "Delete" }).click()
 
-      // Navigates to /workspaces on success — wait for table
+      // Navigates to /workspaces on success - wait for table
       await page.locator("table").waitFor({ timeout: 15000 })
 
       // Verify renamed workspace is gone
@@ -347,7 +347,7 @@ test.describe
   })
 
 // ---------------------------------------------------------------------------
-// Flow 3 — Workspace lifecycle (Python)
+// Flow 3 - Workspace lifecycle (Python)
 // ---------------------------------------------------------------------------
 test.describe
   .serial("Workspace lifecycle - Python", () => {
@@ -372,11 +372,11 @@ test.describe
       const dialog = page.locator('[role="dialog"]').first()
       await dialog.waitFor({ timeout: 5000 })
 
-      // Step 1 — Provider: select docker, continue
+      // Step 1 - Provider: select docker, continue
       await dialog.locator("button", { hasText: "docker" }).first().click()
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 2 — Source: click Python template (scope to the active Git source
+      // Step 2 - Source: click Python template (scope to the active Git source
       // panel so it doesn't match the Image catalog's "Python 3.12" entry)
       await dialog
         .getByTestId("source-panel")
@@ -389,13 +389,13 @@ test.describe
       )
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 3 — IDE: default "None", continue
+      // Step 3 - IDE: default "None", continue
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 4 — Review: Launch
+      // Step 4 - Review: Launch
       await dialog.getByRole("button", { name: /^launch$/i }).click()
 
-      // Step 5 — Launch: wait for success
+      // Step 5 - Launch: wait for success
       await dialog
         .getByRole("button", { name: /open workspace/i })
         .waitFor({ timeout: 15000 })

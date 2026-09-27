@@ -206,7 +206,7 @@ func TestExtract_HardLinkResolvesFromArchiveRootWhenNested(t *testing.T) {
 	}
 
 	linkPath := filepath.Join(dest, "dir", "sub", "link")
-	content, err := os.ReadFile(linkPath) //nolint:gosec // G304 — test temp file
+	content, err := os.ReadFile(linkPath) //nolint:gosec // G304 - test temp file
 	if err != nil {
 		t.Fatalf("read hard link: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestExtract_PreserveHeaderOwnership(t *testing.T) {
 		t.Fatalf("extracted entry is not a directory: %v", info.Mode())
 	}
 	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		//nolint:gosec // G115 — uid/gid are uint32 on every supported platform
+		//nolint:gosec // G115 - uid/gid are uint32 on every supported platform
 		if stat.Uid != uint32(os.Getuid()) || stat.Gid != uint32(os.Getgid()) {
 			t.Fatalf(
 				"dir owner = %d:%d, want %d:%d",
@@ -291,7 +291,7 @@ func TestExtract_PreserveHeaderOwnershipUnprivilegedDegrades(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	path := filepath.Join(dest, "hello.txt")
-	content, err := os.ReadFile(path) //nolint:gosec // G304 — test temp file
+	content, err := os.ReadFile(path) //nolint:gosec // G304 - test temp file
 	if err != nil {
 		t.Fatalf("read extracted file: %v", err)
 	}

@@ -226,7 +226,7 @@ func TestParseUserSpecStripsGroup(t *testing.T) {
 
 func mustReadFile(t *testing.T, path string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(path) //nolint:gosec // G304 — test temp file
+	b, err := os.ReadFile(path) //nolint:gosec // G304 - test temp file
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
@@ -239,7 +239,7 @@ func TestChownRDeniedFailuresAreTyped(t *testing.T) {
 	}
 	root := t.TempDir()
 	file := filepath.Join(root, "f.txt")
-	//nolint:gosec // G306 — test temp file
+	//nolint:gosec // G306 - test temp file
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestChownRDeniedFailuresAreTyped(t *testing.T) {
 func TestChownRSameOwnerSucceeds(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "f.txt")
-	//nolint:gosec // G306 — test temp file
+	//nolint:gosec // G306 - test temp file
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}

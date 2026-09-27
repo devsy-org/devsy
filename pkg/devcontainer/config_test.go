@@ -897,7 +897,7 @@ func TestGetRawConfig_SourcePreservesRootDevcontainerJSON(t *testing.T) {
 		t.Fatalf("getRawConfig: %v", err)
 	}
 
-	got, err := os.ReadFile(rootConfig) //nolint:gosec // G304 — test temp file
+	got, err := os.ReadFile(rootConfig) //nolint:gosec // G304 - test temp file
 	if err != nil {
 		t.Fatal(err)
 	}

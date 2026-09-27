@@ -208,7 +208,7 @@ func establishSSHSession(
 //   - clientloop.c: client_request_agent() returns NULL on failure,
 //     sending SSH2_MSG_CHANNEL_OPEN_FAILURE without terminating the session.
 //   - ssh_config(5) ExitOnForwardFailure only covers "dynamic, tunnel,
-//     local, and remote port forwardings" — agent forwarding is excluded.
+//     local, and remote port forwardings" - agent forwarding is excluded.
 //
 // Stale SSH_AUTH_SOCK is common in practice (tmux, screen, reconnected
 // terminals), so a fatal error here would break devsy up for many users.

@@ -47,7 +47,7 @@ func TestImportExternalDevContainer_SelfContainedFolder(t *testing.T) {
 
 func TestImportExternalDevContainer_ProjectRootCopiesOnlyConfig(t *testing.T) {
 	// A config that lives at a project root (parent is NOT .devcontainer) must
-	// copy only the config file — never the surrounding tree (secrets, .git,
+	// copy only the config file - never the surrounding tree (secrets, .git,
 	// node_modules, ...).
 	external := t.TempDir()
 	writeFile(t, filepath.Join(external, "devcontainer.json"), `{"image":"alpine"}`)

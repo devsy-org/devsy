@@ -106,12 +106,12 @@ func TestSelectStrategy_DockerRuntime_BuildxWhenAvailable(t *testing.T) {
 	strategy := o.selectStrategy(provider.BuildOptions{})
 
 	// With real Docker, buildx is typically available, so expect buildx strategy.
-	// If buildx isn't installed, it falls back to buildkit — both are valid for Docker.
+	// If buildx isn't installed, it falls back to buildkit - both are valid for Docker.
 	switch strategy.(type) {
 	case *dockerBuildxStrategy:
 		// Docker with buildx available
 	case *buildkitStrategy:
-		// Docker without buildx — still valid, not Podman
+		// Docker without buildx - still valid, not Podman
 	default:
 		t.Fatalf("unexpected strategy type: %T", strategy)
 	}

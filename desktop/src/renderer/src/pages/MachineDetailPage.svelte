@@ -253,7 +253,7 @@ async function handleDelete(force = false) {
 		<Tabs.Content value="diagnostics">
           <div class="mt-4 flex items-center justify-between gap-4">
             <p class="text-sm text-muted-foreground">Updates every 30 seconds while this page is visible and the machine is running.</p>
-            <Button variant="outline" size="sm" onclick={refreshDiagnostics} disabled={diagnosticsRefreshing || !isRunning}>{diagnosticsRefreshing ? "Refreshing…" : "Refresh diagnostics"}</Button>
+            <Button variant="outline" size="sm" onclick={refreshDiagnostics} disabled={diagnosticsRefreshing || !isRunning}>{diagnosticsRefreshing ? "Refreshing..." : "Refresh diagnostics"}</Button>
           </div>
           {#if diagnosticsError}<p role="alert">{diagnosticsError}</p>{/if}
 		  <div class="mt-4 space-y-4 text-sm">

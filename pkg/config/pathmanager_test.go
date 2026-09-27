@@ -44,7 +44,7 @@ func TestResetPathManager(t *testing.T) {
 	pm2 := DefaultPathManager()
 
 	if pm1 == pm2 {
-		t.Error("ResetPathManager did not clear the singleton — same instance returned")
+		t.Error("ResetPathManager did not clear the singleton - same instance returned")
 	}
 }
 

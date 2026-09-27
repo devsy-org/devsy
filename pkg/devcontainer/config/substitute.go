@@ -56,7 +56,7 @@ type SubstitutionContext struct {
 // SubstituteContainerEnv pass for remoteEnv.
 //
 // remoteEnv is included here for parity with containerEnv per the
-// devcontainers spec — the reference implementation
+// devcontainers spec - the reference implementation
 // (devcontainers/cli src/spec-common/variableSubstitution.ts) treats
 // ${containerWorkspaceFolder} the same in both fields, while
 // ${containerEnv:VAR} stays unresolved until the container env is known.
@@ -209,7 +209,7 @@ func baseOrMatch(value, match string) string {
 // shells and the container runtime do not perform devcontainer variable
 // expansion on env-var values.
 //
-// Only ${containerEnv:VAR} refs remain literal here — those depend on the
+// Only ${containerEnv:VAR} refs remain literal here - those depend on the
 // running container's environment and are resolved later, either host-side
 // from the image's inspected env (see ResolveContainerEnvFromImage) or
 // inside the container via SubstituteContainerEnv.

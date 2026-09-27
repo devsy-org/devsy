@@ -19,7 +19,7 @@ type githubRelease struct {
 	Draft       bool      `json:"draft"`
 }
 
-// ListGitHubReleases calls the GitHub Releases API (rooted at baseURL — pass "https://api.github.com" in production)
+// ListGitHubReleases calls the GitHub Releases API (rooted at baseURL - pass "https://api.github.com" in production)
 // and returns versions newest first. Drafts are always filtered out; prereleases only when includePrerelease is true.
 func ListGitHubReleases(
 	baseURL, org, repo string,

@@ -222,7 +222,7 @@ func TestComputeDevContainerIDDeterministic(t *testing.T) {
 }
 
 func TestComputeDevContainerIDSortedKeys(t *testing.T) {
-	// Keys must be sorted — order of insertion should not matter.
+	// Keys must be sorted - order of insertion should not matter.
 	labels1 := map[string]string{
 		"a": "1",
 		"b": "2",

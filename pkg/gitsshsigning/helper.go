@@ -219,7 +219,7 @@ func (f *gitConfigFilter) flush() {
 		})...)
 	case sectionUser:
 		// Only strip [user] sections that contain nothing but signingkey
-		// entries — these are the ones appended by GitConfigTemplate.
+		// entries - these are the ones appended by GitConfigTemplate.
 		// Sections with other entries (name, email, etc.) are user-owned
 		// and must be preserved intact to avoid data loss.
 		if !isDevsyOnlyUserSection(f.buf) {

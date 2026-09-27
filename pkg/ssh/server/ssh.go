@@ -266,7 +266,7 @@ func makePublicKeyHandler(keys []ssh.PublicKey) func(ctx ssh.Context, key ssh.Pu
 
 // cleanupAgentOnConnClosing tears down the per-connection agent state when
 // HandleConn observes the inbound channels stream close. Runs synchronously
-// in HandleConn's defer chain before sshConn.Wait() — so it fires reliably
+// in HandleConn's defer chain before sshConn.Wait() - so it fires reliably
 // even when the underlying transport is stuck (e.g. in stdio mode where EOF
 // on stdin can be delayed by the proxy chain).
 func cleanupAgentOnConnClosing(ctx ssh.Context, _ *gossh.ServerConn) {

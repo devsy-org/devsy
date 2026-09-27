@@ -69,6 +69,6 @@ func (s *IntegrityTestSuite) TestVerifyCacheIntegrity_MissingHashFile() {
 	_, err := createTestTarball(dir)
 	s.Require().NoError(err)
 
-	// No .sha256 file — backward compat: should return true.
+	// No .sha256 file - backward compat: should return true.
 	s.True(verifyCacheIntegrity(dir, "test-feature"))
 }

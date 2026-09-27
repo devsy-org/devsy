@@ -205,7 +205,7 @@ func TestExecuteCommand_PipeBridgeIntegration(t *testing.T) {
 			},
 		})
 
-		// Context cancellation is an expected error — RunPair classifies it
+		// Context cancellation is an expected error - RunPair classifies it
 		// and may return nil or a wrapped error. Either way, no hang.
 		_ = err
 	})

@@ -16,7 +16,7 @@ import (
 // successful, but truncated, transfer to whatever is consuming the reader
 // (extract.Extract for StreamWorkspace/StreamMount, and the snapshot
 // volumes blob push). This is shared by every Tunnel_StreamWorkspaceClient
-// consumer, not just snapshots — see stream_test.go for coverage of both.
+// consumer, not just snapshots - see stream_test.go for coverage of both.
 func NewStreamReader(stream tunnel.Tunnel_StreamWorkspaceClient) io.Reader {
 	reader, writer := io.Pipe()
 

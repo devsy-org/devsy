@@ -93,7 +93,7 @@ func (e *proxyExecutor) execute(ctx context.Context, params execParams) error {
 // so every buffered log line is forwarded through zap before the caller
 // can observe completion. Without this drain, callers that propagate the
 // error and exit (e.g. cmd/root.go calls os.Exit on failure) race the
-// goroutine and can lose the tail of the sub-process stderr — which is
+// goroutine and can lose the tail of the sub-process stderr - which is
 // where the actionable error message usually lives.
 func (e *proxyExecutor) executeWithJSONLog(ctx context.Context, params execParams) error {
 	writer, done := log.PipeJSONStream()

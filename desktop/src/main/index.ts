@@ -176,7 +176,7 @@ app.whenReady().then(async () => {
   const cli = new CliRunner(binaryPath)
   cli.setDiagnosticLogLevel(appSettingsStore.get().cliCaptureLogLevel)
 
-  // Initialize log store. Logs live under ~/.devsy/desktop/logs/ — inside the
+  // Initialize log store. Logs live under ~/.devsy/desktop/logs/ - inside the
   // shared ~/.devsy root (no artifact sprawl) but outside the CLI-managed
   // ~/.devsy/contexts/<ctx>/workspaces/<id>/ subtree that `workspace delete`
   // unlinks. That separation closes the file-deletion race by construction.

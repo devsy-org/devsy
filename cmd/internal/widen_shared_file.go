@@ -13,7 +13,7 @@ import (
 // NewWidenSharedFileCmd returns a internal command that runs
 // sharedfile.WidenIfNeeded. sharedfile.WidenWithSudoFallback re-execs this
 // (via sudo) so the actual mode change still goes through WidenIfNeeded's
-// open-with-O_NOFOLLOW-then-fchmod, even when it needs root — `sudo chmod
+// open-with-O_NOFOLLOW-then-fchmod, even when it needs root - `sudo chmod
 // <path>` has no way to refuse following a symlink at path, so re-execing
 // into this process is what keeps the escalated path symlink-safe.
 func NewWidenSharedFileCmd(globalFlags *flags.GlobalFlags) *cobra.Command {

@@ -177,7 +177,7 @@ In VS Code / VSCodium with the [Open Remote - SSH](https://marketplace.visualstu
 
 <Callout type="info" title="WSL host key and SSH agent">
 
-The Devsy tunnel reuses your local SSH keys and SSH agent. If you set up key authentication in Step 5, the same key works for the editor connection. If you see `write EPIPE` in the editor's remote-SSH log, run `devsy up` with `DEVSY_DEBUG=true` so the structured tunnel logs are surfaced — the underlying cause (for example the WSL SSH server not running, or the host key not yet trusted) is otherwise hidden behind the editor's generic pipe error.
+The Devsy tunnel reuses your local SSH keys and SSH agent. If you set up key authentication in Step 5, the same key works for the editor connection. If you see `write EPIPE` in the editor's remote-SSH log, run `devsy up` with `DEVSY_DEBUG=true` so the structured tunnel logs are surfaced - the underlying cause (for example the WSL SSH server not running, or the host key not yet trusted) is otherwise hidden behind the editor's generic pipe error.
 </Callout>
 
 ## Next steps
