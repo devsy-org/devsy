@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -14,7 +15,23 @@ import (
 
 const jobObjectTerminateAccess = 0x0008
 
+const jobObjectQueryAccess = 0x0004
+
+const jobTerminationTimeout = 5 * time.Second
+
+type jobAccountingInfo struct {
+	totalUserTime             int64
+	totalKernelTime           int64
+	thisPeriodTotalUserTime   int64
+	thisPeriodTotalKernelTime int64
+	totalPageFaultCount       uint32
+	totalProcesses            uint32
+	activeProcesses           uint32
+	totalTerminatedProcesses  uint32
+}
+
 var procOpenJobObjectW = windows.NewLazySystemDLL("kernel32.dll").NewProc("OpenJobObjectW")
+var procIsProcessInJobForTermination = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
 
 // jobNameFor names the Job Object after the worker (e.g. devsy-up-<taskID>)
 // rather than its PID: a reused PID must never inherit a predecessor's job.
@@ -105,26 +122,97 @@ func ownProcessTree(pid int, workerName string) error {
 // reports whether a job existed; without one the caller falls back to
 // taskkill, e.g. for workers launched before job ownership existed.
 func terminateJob(workerName string) (bool, error) {
-	name, err := windows.UTF16PtrFromString(jobNameFor(workerName))
+	job, found, err := openWorkerJob(workerName)
+	if err != nil || !found {
+		return found, err
+	}
+	defer func() { _ = windows.CloseHandle(job) }()
+	return terminateJobHandle(job, workerName)
+}
+
+func terminateJobForPID(workerName string, pid int) (bool, error) {
+	job, found, err := openWorkerJob(workerName)
+	if err != nil || !found {
+		return found, err
+	}
+	defer func() { _ = windows.CloseHandle(job) }()
+
+	inJob, err := processBelongsToJob(pid, job)
+	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return false, fmt.Errorf("worker process %d exited before job membership was verified", pid)
+	}
 	if err != nil {
 		return false, err
 	}
+	if !inJob {
+		return false, fmt.Errorf("process %d does not belong to worker job %s", pid, workerName)
+	}
+	return terminateJobHandle(job, workerName)
+}
+
+func processBelongsToJob(pid int, job windows.Handle) (bool, error) {
+	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return false, fmt.Errorf("open worker process %d: %w", pid, err)
+	}
+	defer func() { _ = windows.CloseHandle(process) }()
+	var inJob int32
+	result, _, callErr := procIsProcessInJobForTermination.Call(
+		uintptr(process),
+		uintptr(job),
+		uintptr(unsafe.Pointer(&inJob)),
+	)
+	if result == 0 {
+		return false, fmt.Errorf("verify process %d in job: %w", pid, callErr)
+	}
+	return inJob != 0, nil
+}
+
+func openWorkerJob(workerName string) (windows.Handle, bool, error) {
+	name, err := windows.UTF16PtrFromString(jobNameFor(workerName))
+	if err != nil {
+		return 0, false, err
+	}
 	handle, _, callErr := procOpenJobObjectW.Call(
-		uintptr(jobObjectTerminateAccess),
+		uintptr(jobObjectTerminateAccess|jobObjectQueryAccess),
 		0,
 		uintptr(unsafe.Pointer(name)),
 	)
 	if handle == 0 {
 		if errors.Is(callErr, windows.ERROR_FILE_NOT_FOUND) {
-			return false, nil
+			return 0, false, nil
 		}
-		return false, fmt.Errorf("open job %s: %w", workerName, callErr)
+		return 0, false, fmt.Errorf("open job %s: %w", workerName, callErr)
 	}
-	job := windows.Handle(handle)
-	defer func() { _ = windows.CloseHandle(job) }()
+	return windows.Handle(handle), true, nil
+}
 
+func terminateJobHandle(job windows.Handle, workerName string) (bool, error) {
 	if err := windows.TerminateJobObject(job, 1); err != nil {
 		return false, fmt.Errorf("terminate job %s: %w", workerName, err)
 	}
-	return true, nil
+	deadline := time.Now().Add(jobTerminationTimeout)
+	for {
+		var info jobAccountingInfo
+		if err := windows.QueryInformationJobObject(
+			job,
+			windows.JobObjectBasicAccountingInformation,
+			uintptr(unsafe.Pointer(&info)),
+			uint32(unsafe.Sizeof(info)),
+			nil,
+		); err != nil {
+			return false, fmt.Errorf("query job %s processes: %w", workerName, err)
+		}
+		if info.activeProcesses == 0 {
+			return true, nil
+		}
+		if time.Now().After(deadline) {
+			return false, fmt.Errorf(
+				"job %s still has %d active processes after termination",
+				workerName,
+				info.activeProcesses,
+			)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

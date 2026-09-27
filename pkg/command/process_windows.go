@@ -53,20 +53,24 @@ func killTree(pid, treeName string) error {
 		return err
 	}
 
+	var jobErr error
+	if treeName != "" {
+		if terminated, err := terminateJob(treeName); err == nil && terminated {
+			return nil
+		} else if err != nil {
+			jobErr = err
+		}
+	}
+
 	running, err := isRunning(pid)
 	if err != nil {
 		return err
 	}
 	if !running {
-		return nil
-	}
-
-	// Job Object termination reaches orphaned descendants; workers launched
-	// before job ownership existed fall through to taskkill.
-	if treeName != "" {
-		if terminated, jobErr := terminateJob(treeName); jobErr == nil && terminated {
-			return verifyTerminated(parsed)
+		if jobErr != nil {
+			return fmt.Errorf("terminate process tree %s: %w", treeName, jobErr)
 		}
+		return nil
 	}
 
 	// /T takes down the worker's descendants; /F stands in for SIGKILL,
@@ -87,7 +91,76 @@ func killTree(pid, treeName string) error {
 		)
 	}
 
+	if jobErr != nil {
+		return fmt.Errorf("terminate process tree %s: %w", treeName, jobErr)
+	}
 	return verifyTerminated(parsed)
+}
+
+func killTreeWithIdentity(pid, treeName, identity string) error {
+	parsed, err := parsePID(pid)
+	if err != nil {
+		return err
+	}
+	if identity == "" {
+		return fmt.Errorf("process identity is required to terminate worker %d", parsed)
+	}
+	if treeName == "" {
+		return fmt.Errorf("worker job identity is required")
+	}
+	currentIdentity, err := processTreeIdentity(parsed)
+	if err != nil {
+		return fmt.Errorf("read process identity for worker %d: %w", parsed, err)
+	}
+	if currentIdentity == "" {
+		return fmt.Errorf("process %d exited before its identity was verified", parsed)
+	}
+	if currentIdentity != identity {
+		return fmt.Errorf("process %d identity does not match the saved worker", parsed)
+	}
+	terminated, err := terminateJobForPID(treeName, parsed)
+	if err != nil {
+		return err
+	}
+	if terminated {
+		return nil
+	}
+	running, err := isRunning(pid)
+	if err != nil {
+		return err
+	}
+	if !running {
+		return nil
+	}
+	return fmt.Errorf("worker job %s is unavailable while process %d is still running", treeName, parsed)
+}
+
+func killTreeAfterWorkerExit(pid, treeName, _ string) error {
+	if _, err := parsePID(pid); err != nil {
+		return err
+	}
+	if treeName == "" {
+		return fmt.Errorf("process tree name is required after worker exit")
+	}
+	_, err := terminateJob(treeName)
+	return err
+}
+
+func processTreeIdentity(pid int) (string, error) {
+	process, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION, false, uint32(pid))
+	if err != nil {
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+			return "", nil
+		}
+		return "", fmt.Errorf("open process %d for identity: %w", pid, err)
+	}
+	defer func() { _ = windows.CloseHandle(process) }()
+
+	var created, exited, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(process, &created, &exited, &kernel, &user); err != nil {
+		return "", fmt.Errorf("read process %d creation time: %w", pid, err)
+	}
+	return strconv.FormatInt(created.Nanoseconds(), 10), nil
 }
 
 // verifyTerminated allows a brief window for the exit to become visible

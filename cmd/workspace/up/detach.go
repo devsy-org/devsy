@@ -117,16 +117,21 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 	}
 	if err := t.SetPID(os.Getpid()); err != nil {
 		failTask(t, err)
+		_ = t.ReleaseWorkerLock()
 		return nil, err
 	}
 	state, err := store.Get(cmd.taskID)
 	if err != nil {
 		failTask(t, err)
+		_ = t.ReleaseWorkerLock()
 		return nil, err
 	}
 	// Canceled before this worker claimed its lock: the canceled state is
 	// already recorded and this worker must not overwrite it or run up.
 	if state.Status.Terminal() {
+		if err := t.ReleaseWorkerLock(); err != nil {
+			return nil, fmt.Errorf("release canceled worker lock: %w", err)
+		}
 		return nil, task.ErrCanceled
 	}
 	return t, nil

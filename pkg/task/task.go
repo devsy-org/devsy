@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/clierr"
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
@@ -45,23 +46,24 @@ func (s Status) Terminal() bool {
 // doing the work, distinct from whatever process is merely polling this
 // state.
 type State struct {
-	ID                string            `json:"id"`
-	Command           string            `json:"command,omitempty"`
-	WorkspaceID       string            `json:"workspaceId,omitempty"`
-	Status            Status            `json:"status"`
-	Phase             string            `json:"phase,omitempty"`
-	Step              string            `json:"step,omitempty"`
-	OperationID       string            `json:"operationId,omitempty"`
-	ParentOperationID string            `json:"parentOperationId,omitempty"`
-	DurationMs        int64             `json:"durationMs,omitempty"`
-	Error             string            `json:"error,omitempty"`
-	ErrorCode         string            `json:"errorCode,omitempty"`
-	ErrorHint         string            `json:"errorHint,omitempty"`
-	ErrorContext      map[string]string `json:"errorContext,omitempty"`
-	Result            *config.Result    `json:"result,omitempty"`
-	PID               int               `json:"pid,omitempty"`
-	StartedAt         time.Time         `json:"startedAt"`
-	UpdatedAt         time.Time         `json:"updatedAt"`
+	ID                  string            `json:"id"`
+	Command             string            `json:"command,omitempty"`
+	WorkspaceID         string            `json:"workspaceId,omitempty"`
+	Status              Status            `json:"status"`
+	Phase               string            `json:"phase,omitempty"`
+	Step                string            `json:"step,omitempty"`
+	OperationID         string            `json:"operationId,omitempty"`
+	ParentOperationID   string            `json:"parentOperationId,omitempty"`
+	DurationMs          int64             `json:"durationMs,omitempty"`
+	Error               string            `json:"error,omitempty"`
+	ErrorCode           string            `json:"errorCode,omitempty"`
+	ErrorHint           string            `json:"errorHint,omitempty"`
+	ErrorContext        map[string]string `json:"errorContext,omitempty"`
+	Result              *config.Result    `json:"result,omitempty"`
+	PID                 int               `json:"pid,omitempty"`
+	ProcessTreeIdentity string            `json:"processTreeIdentity,omitempty"`
+	StartedAt           time.Time         `json:"startedAt"`
+	UpdatedAt           time.Time         `json:"updatedAt"`
 }
 
 // CreateOptions labels a task at creation time for later listing.
@@ -83,14 +85,18 @@ type Task struct {
 func (t *Task) ID() string { return t.id }
 
 func (t *Task) SetPID(pid int) error {
+	identity, err := command.ProcessTreeIdentity(pid)
+	if err != nil {
+		return fmt.Errorf("identify process tree for pid %d: %w", pid, err)
+	}
 	return t.store.update(t.id, func(s *State) {
 		s.PID = pid
+		s.ProcessTreeIdentity = identity
 	})
 }
 
-// HoldWorkerLock claims this task's worker lock for the rest of the process's
-// life, marking it as actively being worked on. Callers must not release it:
-// the kernel does so when the process exits, crashes, or is killed.
+// HoldWorkerLock claims this task's worker lock while its worker is active.
+// Release it only when startup aborts before work begins.
 //
 // Returns an error if another process already holds the lock, since that means
 // a worker for this task is already running.
@@ -112,12 +118,8 @@ func (t *Task) HoldWorkerLock() error {
 	return nil
 }
 
-// ReleaseWorkerLockForTest drops the lock HoldWorkerLock acquired, letting a
-// test simulate a dead worker. Production code must never call it.
-//
-// Not in export_test.go: other packages' tests need it, and a _test.go file is
-// only compiled into its own package's test binary.
-func (t *Task) ReleaseWorkerLockForTest() error {
+// ReleaseWorkerLock releases the worker claim when startup aborts before work begins.
+func (t *Task) ReleaseWorkerLock() error {
 	if t.workerLock == nil {
 		return nil
 	}
@@ -127,6 +129,11 @@ func (t *Task) ReleaseWorkerLockForTest() error {
 		return fmt.Errorf("unlock task %s worker: %w", t.id, err)
 	}
 	return nil
+}
+
+// ReleaseWorkerLockForTest simulates a dead worker in tests.
+func (t *Task) ReleaseWorkerLockForTest() error {
+	return t.ReleaseWorkerLock()
 }
 
 // SetWorkspaceID corrects the task's workspace label to the resolved ID,
@@ -167,6 +174,7 @@ func (t *Task) Succeed(result *config.Result) error {
 // state.
 func (t *Task) Cancel() error {
 	var pid int
+	var identity string
 	observedNonterminal := false
 	err := t.store.update(t.id, func(s *State) {
 		if s.Status.Terminal() {
@@ -174,6 +182,7 @@ func (t *Task) Cancel() error {
 		}
 		observedNonterminal = true
 		pid = s.PID
+		identity = s.ProcessTreeIdentity
 	})
 	if err != nil {
 		return err
@@ -191,17 +200,15 @@ func (t *Task) Cancel() error {
 		if finalized {
 			return nil
 		}
+		state, err := t.store.Get(t.id)
+		if err != nil {
+			return fmt.Errorf("cancel task %s: read process tree identity: %w", t.id, err)
+		}
+		identity = state.ProcessTreeIdentity
 	}
 
-	if pid != 0 && t.store.workerAlive(t.id) {
-		if err := t.store.killProcess(strconv.Itoa(pid), WorkerProcessName(t.id)); err != nil {
-			if !t.store.workerAlive(t.id) {
-				// The worker exited during the kill attempt, so termination
-				// is satisfied even though the kill itself reported an error.
-				return t.store.update(t.id, markCanceled)
-			}
-			return fmt.Errorf("cancel task %s: terminate worker pid %d: %w", t.id, pid, err)
-		}
+	if pid != 0 {
+		return t.cancelPublishedPID(pid, identity)
 	}
 	// This invocation observed the task as nonterminal, so a result the worker
 	// committed while unwinding does not win over the accepted cancellation.
@@ -247,6 +254,58 @@ func (t *Task) Fail(err error) error {
 			s.ErrorContext = redactContext(classified.Context, redactor)
 		}
 	})
+}
+
+func (t *Task) cancelPublishedPID(pid int, identity string) error {
+	workerLock, locked, err := t.store.tryWorkerLock(t.id)
+	if err != nil {
+		return fmt.Errorf("cancel task %s: claim worker lock: %w", t.id, err)
+	}
+	if locked {
+		defer func() { _ = workerLock.Unlock() }()
+		return t.cancelExitedWorkerTree(pid)
+	}
+	return t.cancelLiveWorker(pid, identity)
+}
+
+func (t *Task) cancelExitedWorkerTree(pid int) error {
+	state, err := t.store.Get(t.id)
+	if err != nil {
+		return fmt.Errorf("cancel task %s: read process tree identity: %w", t.id, err)
+	}
+	if err := t.store.killExitedWorkerTree(
+		strconv.Itoa(pid),
+		WorkerProcessName(t.id),
+		state.ProcessTreeIdentity,
+	); err != nil {
+		return fmt.Errorf("cancel task %s: terminate worker tree: %w", t.id, err)
+	}
+	return t.store.update(t.id, markCanceled)
+}
+
+func (t *Task) cancelLiveWorker(pid int, identity string) error {
+	if err := t.store.killProcessWithIdentity(
+		strconv.Itoa(pid),
+		WorkerProcessName(t.id),
+		identity,
+	); err != nil {
+		workerLock, locked, lockErr := t.store.tryWorkerLock(t.id)
+		if lockErr != nil {
+			return fmt.Errorf(
+				"cancel task %s: terminate worker pid %d: %w (recheck worker lock: %v)",
+				t.id,
+				pid,
+				err,
+				lockErr,
+			)
+		}
+		if !locked {
+			return fmt.Errorf("cancel task %s: terminate worker pid %d: %w", t.id, pid, err)
+		}
+		defer func() { _ = workerLock.Unlock() }()
+		return t.cancelExitedWorkerTree(pid)
+	}
+	return t.store.update(t.id, markCanceled)
 }
 
 func (t *Task) cancelWithoutPublishedPID() (int, bool, error) {

@@ -1040,7 +1040,7 @@ func TestCancelUnpublishedPIDStaysRetryable(t *testing.T) {
 	}
 }
 
-func TestCancelDeadWorkerDoesNotInvokeKill(t *testing.T) {
+func TestCancelDeadWorkerStillCleansUpProcessTree(t *testing.T) {
 	store := newTestStore(t)
 	tk, err := store.Create(CreateOptions{})
 	if err != nil {
@@ -1056,13 +1056,91 @@ func TestCancelDeadWorkerDoesNotInvokeKill(t *testing.T) {
 		t.Fatalf("SetPID: %v", err)
 	}
 
+	var actualKill killCall
 	store.SetKillProcessForTest(func(pid, treeName string) error {
-		t.Error("kill invoked for a task whose worker lock is dead")
+		actualKill.calls++
+		actualKill.pid, actualKill.tree = pid, treeName
 		return nil
 	})
 
 	if err := tk.Cancel(); err != nil {
 		t.Fatalf("Cancel: %v", err)
+	}
+	assertKilledTree(t, actualKill, "4242", WorkerProcessName(tk.ID()))
+	requireCanceledState(t, store, tk.ID())
+}
+
+type killCall struct {
+	calls int
+	pid   string
+	tree  string
+}
+
+func assertKilledTree(t *testing.T, actual killCall, wantPID, wantTree string) {
+	t.Helper()
+	if actual.calls != 1 || actual.pid != wantPID || actual.tree != wantTree {
+		t.Errorf(
+			"kill calls=(%d, %q, %q), want (1, %q, %q)",
+			actual.calls,
+			actual.pid,
+			actual.tree,
+			wantPID,
+			wantTree,
+		)
+	}
+}
+
+func TestCancelDeadWorkerCleanupFailureRemainsRetryable(t *testing.T) {
+	store := newTestStore(t)
+	tk, err := store.Create(CreateOptions{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := tk.HoldWorkerLock(); err != nil {
+		t.Fatalf("HoldWorkerLock: %v", err)
+	}
+	if err := tk.ReleaseWorkerLockForTest(); err != nil {
+		t.Fatalf("ReleaseWorkerLockForTest: %v", err)
+	}
+	if err := tk.SetPID(4242); err != nil {
+		t.Fatalf("SetPID: %v", err)
+	}
+	store.SetKillProcessForTest(func(string, string) error {
+		return errors.New("descendant cleanup failed")
+	})
+
+	if err := tk.Cancel(); err == nil {
+		t.Fatal("Cancel = nil, want process-tree cleanup error")
+	}
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if state.Status.Terminal() {
+		t.Fatalf("task recorded terminal %q despite failed tree cleanup", state.Status)
+	}
+}
+
+func TestCancelUsesIdentityCleanupWhenWorkerExitsDuringKill(t *testing.T) {
+	store := newTestStore(t)
+	tk := newLiveWorkerTask(t, store)
+	killCalls := 0
+	store.SetKillProcessForTest(func(string, string) error {
+		killCalls++
+		if killCalls == 1 {
+			if err := tk.ReleaseWorkerLockForTest(); err != nil {
+				t.Errorf("ReleaseWorkerLockForTest: %v", err)
+			}
+			return errors.New("worker exited before tree lookup")
+		}
+		return nil
+	})
+
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if killCalls != 2 {
+		t.Errorf("kill calls = %d, want 2 (live attempt and identity cleanup)", killCalls)
 	}
 	requireCanceledState(t, store, tk.ID())
 }

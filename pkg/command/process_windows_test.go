@@ -217,6 +217,24 @@ func TestStartDetachedAssignsWorkerToJobBeforeItRuns(t *testing.T) {
 	}
 }
 
+func TestKillTreeWithIdentityDoesNotFallbackToUnverifiedPID(t *testing.T) {
+	worker := startHelper(t)
+	jobName := "devsy-test-no-job-" + strconv.Itoa(worker.Process.Pid)
+	identity, err := ProcessTreeIdentity(worker.Process.Pid)
+	if err != nil {
+		t.Fatalf("ProcessTreeIdentity: %v", err)
+	}
+	if identity == "" {
+		t.Fatal("ProcessTreeIdentity returned empty identity for live worker")
+	}
+	if err := killTreeWithIdentity(strconv.Itoa(worker.Process.Pid), jobName, identity); err == nil {
+		t.Fatal("killTreeWithIdentity without a job object = nil for a live worker")
+	}
+	if running, err := isRunning(strconv.Itoa(worker.Process.Pid)); err != nil || !running {
+		t.Fatalf("worker running=%t, err=%v", running, err)
+	}
+}
+
 func currentProcessInJob() (bool, error) {
 	var inJob int32
 	result, _, callErr := procIsProcessInJob.Call(
@@ -315,6 +333,7 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 		helperEnvWaitFile+"="+waitFile,
 		helperEnvPIDFile+"="+childPIDFile,
 		helperEnvChildPIDFile+"="+grandchildPIDFile,
+		helperEnvExitAfterSpawn+"=1",
 	)
 	if err := startDetached(
 		parent,
@@ -325,7 +344,9 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 		t.Fatalf("startDetached: %v", err)
 	}
 	parentPID := waitForPIDFile(t, parentPIDFile)
-	t.Cleanup(func() { _ = KillTree(strconv.Itoa(parentPID), "devsy-test-worker") })
+	t.Cleanup(
+		func() { _ = KillTreeAfterWorkerExit(strconv.Itoa(parentPID), "devsy-test-worker", "") },
+	)
 	if err := os.WriteFile(waitFile, []byte("go"), 0o600); err != nil {
 		t.Fatalf("signal helper: %v", err)
 	}
@@ -333,11 +354,16 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 	childPID := waitForPIDFile(t, childPIDFile)
 	grandchildPID := waitForPIDFile(t, grandchildPIDFile)
 	assertNotRunningEventually(t, childPID)
-	assertRunning(t, parentPID)
+	assertNotRunningEventually(t, parentPID)
+	assertNotRunningEventually(t, childPID)
 	assertRunning(t, grandchildPID)
 
-	if err := KillTree(strconv.Itoa(parentPID), "devsy-test-worker"); err != nil {
-		t.Fatalf("Kill(parent): %v", err)
+	if err := killTreeAfterWorkerExit(
+		strconv.Itoa(parentPID),
+		"devsy-test-worker",
+		"",
+	); err != nil {
+		t.Fatalf("KillTreeAfterWorkerExit(parent): %v", err)
 	}
 
 	assertNotRunningEventually(t, parentPID)

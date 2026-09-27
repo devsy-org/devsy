@@ -99,4 +99,16 @@ func TestOpenTaskExitsWhenAlreadyCanceled(t *testing.T) {
 	if state.Error != task.ErrCanceled.Error() {
 		t.Errorf("openTask overwrote the canceled state: %+v", state)
 	}
+	assertWorkerLockReleased(t, store, tk.ID())
+}
+
+func assertWorkerLockReleased(t *testing.T, store *task.Store, id string) {
+	t.Helper()
+	lockHolder := store.Open(id)
+	if err := lockHolder.HoldWorkerLock(); err != nil {
+		t.Fatalf("worker lock remained held after canceled startup: %v", err)
+	}
+	if err := lockHolder.ReleaseWorkerLockForTest(); err != nil {
+		t.Fatalf("release worker lock: %v", err)
+	}
 }

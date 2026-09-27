@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
@@ -26,7 +27,8 @@ const pidPublishTimeout = 5 * time.Second
 type Store struct {
 	dir string
 	// Test seam; see Store.SetKillProcessForTest.
-	killProcess func(pid, treeName string) error
+	killProcessWithIdentity func(pid, treeName, identity string) error
+	killExitedWorkerTree    func(pid, treeName, identity string) error
 	// Test seam; see Store.SetAfterClaimForTest.
 	afterClaimForTest func()
 	// Test seam for the cancellation/worker-start lock handoff.
@@ -45,7 +47,11 @@ func NewStoreAt(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create task dir: %w", err)
 	}
-	return &Store{dir: dir, killProcess: command.KillTree}, nil
+	return &Store{
+		dir:                     dir,
+		killProcessWithIdentity: command.KillTreeWithIdentity,
+		killExitedWorkerTree:    command.KillTreeAfterWorkerExit,
+	}, nil
 }
 
 func (s *Store) Create(opts CreateOptions) (*Task, error) {
@@ -147,7 +153,23 @@ func (s *Store) Reconcile(state *State) *State {
 		s.afterClaimForTest()
 	}
 
-	return s.failAbandoned(state)
+	current, err := s.Get(state.ID)
+	if err != nil {
+		return state
+	}
+	if current.Status.Terminal() {
+		return current
+	}
+	if current.PID != 0 {
+		if err := s.killExitedWorkerTree(
+			strconv.Itoa(current.PID),
+			WorkerProcessName(current.ID),
+			current.ProcessTreeIdentity,
+		); err != nil {
+			return current
+		}
+	}
+	return s.failAbandoned(current)
 }
 
 // List returns every known task, most recently started first.
@@ -209,7 +231,19 @@ func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error
 // Not in export_test.go: other packages' tests need it, and a _test.go file
 // compiles only into its own package's test binary.
 func (s *Store) SetKillProcessForTest(fn func(pid, treeName string) error) {
-	s.killProcess = fn
+	s.killProcessWithIdentity = func(pid, treeName, _ string) error {
+		return fn(pid, treeName)
+	}
+	s.killExitedWorkerTree = func(pid, treeName, _ string) error {
+		return fn(pid, treeName)
+	}
+}
+
+// SetKillProcessWithIdentityForTest replaces cancellation hooks with an
+// identity-aware test implementation.
+func (s *Store) SetKillProcessWithIdentityForTest(fn func(pid, treeName, identity string) error) {
+	s.killProcessWithIdentity = fn
+	s.killExitedWorkerTree = fn
 }
 
 // SetAfterCancelLockClaimedForTest pauses Cancel while it owns the worker
@@ -261,17 +295,6 @@ func (s *Store) failAbandoned(state *State) *State {
 		return current
 	}
 	return reconciled
-}
-
-// workerAlive guards against signaling a PID whose original worker already
-// exited and got recycled to an unrelated process.
-func (s *Store) workerAlive(id string) bool {
-	lock, ok := s.claimDeadWorkerLock(id)
-	if !ok {
-		return true
-	}
-	_ = lock.Unlock()
-	return false
 }
 
 // tryWorkerLock claims the task's worker lock when no worker owns it. Unlike

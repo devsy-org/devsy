@@ -13,3 +13,18 @@ func Kill(pid string) error {
 func KillTree(pid, treeName string) error {
 	return killTree(pid, treeName)
 }
+
+// KillTreeWithIdentity terminates a worker tree using its saved platform identity.
+func KillTreeWithIdentity(pid, treeName, identity string) error {
+	return killTreeWithIdentity(pid, treeName, identity)
+}
+
+// KillTreeAfterWorkerExit terminates descendants using the worker's saved session identity.
+func KillTreeAfterWorkerExit(pid, treeName, identity string) error {
+	return killTreeAfterWorkerExit(pid, treeName, identity)
+}
+
+// ProcessTreeIdentity returns the kernel identity used to distinguish a reused process ID.
+func ProcessTreeIdentity(pid int) (string, error) {
+	return processTreeIdentity(pid)
+}

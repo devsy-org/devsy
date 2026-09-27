@@ -1,6 +1,7 @@
 package task
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -96,6 +97,65 @@ func TestActiveForWorkspaceReconcilesAbandonedWorkers(t *testing.T) {
 	}
 	if !state.Status.Terminal() {
 		t.Errorf("reconciled task status = %q, want terminal", state.Status)
+	}
+}
+
+func TestActiveForWorkspaceCleansAbandonedProcessTreeBeforeExcluding(t *testing.T) {
+	store := newTestStore(t)
+	state := abandonTask(t, store)
+	if err := store.Open(state.ID).SetWorkspaceID(workspaceOne); err != nil {
+		t.Fatalf("SetWorkspaceID: %v", err)
+	}
+	if err := store.Open(state.ID).SetPID(4242); err != nil {
+		t.Fatalf("SetPID: %v", err)
+	}
+
+	killCalls := 0
+	store.SetKillProcessForTest(func(pid, treeName string) error {
+		killCalls++
+		if pid != "4242" {
+			t.Errorf("kill pid = %q, want 4242", pid)
+		}
+		if treeName != WorkerProcessName(state.ID) {
+			t.Errorf("kill tree = %q, want %q", treeName, WorkerProcessName(state.ID))
+		}
+		return nil
+	})
+
+	active, err := store.ActiveForWorkspace(workspaceOne, "up")
+	if err != nil {
+		t.Fatalf("ActiveForWorkspace: %v", err)
+	}
+	if len(active) != 0 {
+		t.Fatalf("abandoned task remains active after cleanup: %+v", active)
+	}
+	if killCalls != 1 {
+		t.Errorf("process-tree cleanup called %d times, want 1", killCalls)
+	}
+}
+
+func TestActiveForWorkspaceKeepsAbandonedTaskActiveWhenTreeCleanupFails(t *testing.T) {
+	store := newTestStore(t)
+	state := abandonTask(t, store)
+	if err := store.Open(state.ID).SetWorkspaceID(workspaceOne); err != nil {
+		t.Fatalf("SetWorkspaceID: %v", err)
+	}
+	if err := store.Open(state.ID).SetPID(4242); err != nil {
+		t.Fatalf("SetPID: %v", err)
+	}
+	store.SetKillProcessForTest(func(string, string) error {
+		return errors.New("descendant cleanup failed")
+	})
+
+	active, err := store.ActiveForWorkspace(workspaceOne, "up")
+	if err != nil {
+		t.Fatalf("ActiveForWorkspace: %v", err)
+	}
+	if len(active) != 1 || active[0].ID != state.ID {
+		t.Fatalf("task was excluded after failed tree cleanup: %+v", active)
+	}
+	if active[0].Status.Terminal() {
+		t.Fatalf("task marked terminal %q after failed tree cleanup", active[0].Status)
 	}
 }
 
