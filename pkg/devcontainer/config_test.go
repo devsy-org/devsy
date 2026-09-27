@@ -730,7 +730,7 @@ func TestCompatibilitySelectionWarning_NewRootConfigDetected(t *testing.T) {
 	for _, want := range []string{
 		testLegacyConfigPath,
 		testRootConfigPath,
-		"--devcontainer " + testRootConfigPath,
+		"--recreate --devcontainer \"" + testRootConfigPath + "\"",
 	} {
 		if !strings.Contains(warning, want) {
 			t.Errorf("warning %q does not contain %q", warning, want)
@@ -738,6 +738,25 @@ func TestCompatibilitySelectionWarning_NewRootConfigDetected(t *testing.T) {
 	}
 	if strings.Contains(warning, folder) {
 		t.Errorf("warning contains absolute workspace path: %q", warning)
+	}
+}
+
+func TestCompatibilitySelectionWarning_QuotesDiscoveredPathWithSpaces(t *testing.T) {
+	folder := t.TempDir()
+	seedConfigAt(t, folder, "custom/devcontainer.json")
+	seedConfigAt(t, folder, ".devcontainer/my profile/devcontainer.json")
+	r := newRunnerAt(folder)
+	r.workspaceConfig.LastDevContainerConfig = &config.DevContainerConfigWithPath{
+		Path: "custom/devcontainer.json",
+	}
+
+	selection := r.effectiveDevContainerSelection(provider2.CLIOptions{})
+	warning := r.compatibilitySelectionWarning(selection)
+	if !strings.Contains(
+		warning,
+		`--recreate --devcontainer ".devcontainer/my profile/devcontainer.json"`,
+	) {
+		t.Errorf("warning %q does not quote the suggested path", warning)
 	}
 }
 

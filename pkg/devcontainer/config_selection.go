@@ -28,7 +28,7 @@ func (r *runner) compatibilitySelectionWarning(
 	return fmt.Sprintf(
 		"This existing workspace is continuing to use %q, its previously resolved devcontainer configuration. "+
 			"Current project discovery would select %q. Devsy does not switch an existing workspace implicitly; "+
-			"run workspace up with --devcontainer %s to adopt it explicitly.",
+			"run workspace up --recreate --devcontainer %q to adopt it explicitly.",
 		drift.pinnedPath,
 		drift.discoveredPath,
 		drift.discoveredPath,
