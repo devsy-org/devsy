@@ -96,6 +96,14 @@ func linuxProcessGroupEntryMatches(
 	if !ok || len(fields) < 4 {
 		return false, false, nil
 	}
+	return linuxProcessGroupFieldsMatch(pid, pgid, wanted, fields)
+}
+
+func linuxProcessGroupFieldsMatch(
+	pid, pgid int,
+	wanted linuxProcessTreeIdentity,
+	fields []string,
+) (member, leaderMismatch bool, err error) {
 	processGroup, err := strconv.Atoi(fields[2])
 	if err != nil || processGroup != pgid {
 		return false, false, nil

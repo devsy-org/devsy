@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+const processStatOpenOperation = "open"
+
 func TestLinuxProcessStatErrorIsAbsent(t *testing.T) {
 	tests := []struct {
 		name string
@@ -16,15 +18,18 @@ func TestLinuxProcessStatErrorIsAbsent(t *testing.T) {
 	}{
 		{
 			name: "process disappeared",
-			err:  &os.PathError{Op: "open", Err: syscall.ESRCH},
+			err:  &os.PathError{Op: processStatOpenOperation, Err: syscall.ESRCH},
 			want: true,
 		},
 		{
 			name: "missing proc entry",
-			err:  &os.PathError{Op: "open", Err: os.ErrNotExist},
+			err:  &os.PathError{Op: processStatOpenOperation, Err: os.ErrNotExist},
 			want: true,
 		},
-		{name: "permission denied", err: &os.PathError{Op: "open", Err: os.ErrPermission}},
+		{
+			name: "permission denied",
+			err:  &os.PathError{Op: processStatOpenOperation, Err: os.ErrPermission},
+		},
 	}
 
 	for _, test := range tests {
