@@ -36,11 +36,18 @@ func processGroupMatchesIdentity(pgid int, identity string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	leaderMatches := false
 	if leaderFound {
-		leaderMatches, _, err = linuxProcessGroupFieldsMatch(pgid, pgid, wanted, leaderFields)
+		_, leaderMismatch, err := linuxProcessGroupFieldsMatch(
+			pgid,
+			pgid,
+			wanted,
+			leaderFields,
+		)
 		if err != nil {
 			return false, err
+		}
+		if leaderMismatch {
+			return false, nil
 		}
 	}
 	entries, err := os.ReadDir("/proc")
@@ -51,7 +58,6 @@ func processGroupMatchesIdentity(pgid int, identity string) (bool, error) {
 		entries,
 		pgid,
 		wanted,
-		leaderMatches,
 	)
 	if err != nil {
 		return false, err
@@ -72,13 +78,12 @@ func linuxProcessGroupEntriesMatch(
 	entries []os.DirEntry,
 	pgid int,
 	wanted linuxProcessTreeIdentity,
-	leaderMatches bool,
 ) (linuxProcessGroupScan, error) {
 	var scan linuxProcessGroupScan
 	for _, entry := range entries {
 		member, mismatchedLeader, err := linuxProcessGroupEntryMatches(entry, pgid, wanted)
 		if err != nil {
-			if linuxProcessGroupEntryErrorCanBeSkipped(entry, pgid, leaderMatches, err) {
+			if linuxProcessGroupEntryErrorCanBeSkipped(entry, pgid, err) {
 				scan.skippedStatErr = err
 				continue
 			}
@@ -96,19 +101,21 @@ func linuxProcessGroupEntriesMatch(
 func linuxProcessGroupEntryErrorCanBeSkipped(
 	entry os.DirEntry,
 	pgid int,
-	leaderMatches bool,
 	err error,
 ) bool {
 	pid, parseErr := strconv.Atoi(entry.Name())
-	return parseErr == nil && linuxCanSkipProcessStatError(pid, pgid, leaderMatches, err)
+	return parseErr == nil && linuxCanSkipProcessStatError(pid, pgid, err)
 }
 
-func linuxCanSkipProcessStatError(pid, pgid int, leaderMatches bool, err error) bool {
-	return pid != pgid && leaderMatches && errors.Is(err, fs.ErrPermission)
+func linuxCanSkipProcessStatError(pid, pgid int, err error) bool {
+	return pid != pgid && errors.Is(err, fs.ErrPermission)
 }
 
 func linuxProcessGroupMatchResult(pgid int, foundMember bool, skippedStatErr error) (bool, error) {
 	if skippedStatErr != nil && !foundMember {
+		if errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH) {
+			return false, nil
+		}
 		return false, fmt.Errorf(
 			"verify process group %d after unreadable process stats: %w",
 			pgid,
