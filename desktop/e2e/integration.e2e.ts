@@ -2,9 +2,6 @@ import type { ElectronApplication, Page } from "@playwright/test"
 import { expect, test } from "@playwright/test"
 import { launchApp, resetMockState } from "./electron-app.js"
 
-// ---------------------------------------------------------------------------
-// Flow 1 - Provider CRUD
-// ---------------------------------------------------------------------------
 test.describe
   .serial("Provider CRUD", () => {
     let app: ElectronApplication
@@ -43,21 +40,17 @@ test.describe
       const sheet = page.locator('[data-slot="sheet-content"]')
       await sheet.waitFor({ timeout: 5000 })
 
-      // Click Delete in the sheet
       await sheet.getByRole("button", { name: "Delete" }).click()
 
-      // ConfirmDialog appears - click its destructive Delete button
       const confirmDialog = page.locator('[data-slot="dialog-content"]')
       await confirmDialog.waitFor({ timeout: 5000 })
       await confirmDialog.getByRole("button", { name: "Delete" }).click()
 
-      // Wait for both dialogs to close
       await sheet.waitFor({ state: "hidden", timeout: 10000 })
 
       // Wait for watcher to poll updated state
       await page.waitForTimeout(4000)
 
-      // Verify docker is gone
       await expect(main).not.toContainText("docker", { timeout: 10000 })
       await expect(main).toContainText("kubernetes", { timeout: 10000 })
     })
@@ -91,32 +84,26 @@ test.describe
         .getByRole("button", { name: /add your first provider/i })
         .click()
 
-      // The provider wizard opens as a Dialog
       const wizard = page.locator('[data-slot="dialog-content"]')
       await wizard.waitFor({ timeout: 5000 })
       await expect(wizard).toContainText("Select a Provider")
 
-      // Click the docker preset card to select it
       await wizard
         .locator("button", { hasText: "docker" })
         .filter({ hasText: "Local Docker containers" })
         .click()
 
-      // Click Continue to add the provider
       await wizard.getByRole("button", { name: /^Continue$/ }).click()
 
-      // Docker mock has no required options -> wizard jumps to init then complete.
-      // Wait for the "Done" button on the Complete step.
+      // The mock provider has no required options, so the wizard advances to Complete.
       await wizard
         .getByRole("button", { name: "Done" })
         .waitFor({ timeout: 15000 })
       await wizard.getByRole("button", { name: "Done" }).click()
 
-      // Wizard closes, ProviderAddPage redirects to /providers
       await wizard.waitFor({ state: "hidden", timeout: 10000 })
       await page.waitForTimeout(4000)
 
-      // Verify docker appears in provider cards
       const main = page.locator('[data-slot="sidebar-inset"] main')
       await expect(main).toContainText("docker", { timeout: 10000 })
     })
@@ -128,23 +115,18 @@ test.describe
       const sheet = page.locator('[data-slot="sheet-content"]')
       await sheet.waitFor({ timeout: 5000 })
 
-      // Click Rename button in the sheet header
       await sheet.getByRole("button", { name: "Rename" }).click()
 
-      // Fill the rename input
       const renameInput = sheet.locator("input").first()
       await renameInput.fill("my-docker")
 
-      // Click Save in the rename form (the first Save button in the sheet header)
       await sheet.getByRole("button", { name: "Save" }).first().click()
 
-      // Sheet closes after successful rename
       await sheet.waitFor({ state: "hidden", timeout: 10000 })
 
       // Wait for watcher
       await page.waitForTimeout(4000)
 
-      // Verify 'my-docker' appears
       await expect(main).toContainText("my-docker", { timeout: 10000 })
     })
 
@@ -196,9 +178,6 @@ test.describe
     })
   })
 
-// ---------------------------------------------------------------------------
-// Flow 2 - Workspace lifecycle (Node.js)
-// ---------------------------------------------------------------------------
 test.describe
   .serial("Workspace lifecycle - Node.js", () => {
     let app: ElectronApplication
@@ -228,13 +207,10 @@ test.describe
       const dialog = page.locator('[role="dialog"]').first()
       await dialog.waitFor({ timeout: 5000 })
 
-      // Step 1 - Provider: select docker, continue
       await dialog.locator("button", { hasText: "docker" }).first().click()
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 2 - Source: click Node.js template. Scope to the active source
-      // panel (Git) so the template button doesn't collide with the Image
-      // catalog's "Node.js 20" card.
+      // Scope to the Git panel because the image catalog also has a Node.js card.
       await dialog
         .getByTestId("source-panel")
         .locator("button", { hasText: "Node.js" })
@@ -246,13 +222,10 @@ test.describe
       )
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 3 - IDE: default "None", continue
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 4 - Review: Launch
       await dialog.getByRole("button", { name: /^launch$/i }).click()
 
-      // Step 5 - Launch: wait for streaming output and success
       await expect(dialog).toContainText(/resolving|pulling|starting|ready/i, {
         timeout: 15000,
       })
@@ -260,7 +233,6 @@ test.describe
         .getByRole("button", { name: /open workspace/i })
         .waitFor({ timeout: 15000 })
 
-      // Close the dialog
       await page.keyboard.press("Escape")
       await dialog.waitFor({ state: "hidden", timeout: 5000 })
 
@@ -276,21 +248,16 @@ test.describe
     })
 
     test("should navigate to workspace detail and stop it", async () => {
-      // Click the workspace row
       await page.locator("table tr", { hasText: "node-js" }).click()
 
-      // Wait for detail page
       await page
         .locator("h1", { hasText: "node-js" })
         .waitFor({ timeout: 10000 })
 
-      // Click Stop
       await page.getByRole("button", { name: "Stop" }).click()
 
-      // Wait for stop operation to complete
       await page.waitForTimeout(5000)
 
-      // Verify the status badge in the header shows "Stopped"
       // The header has: h1, provider badge, status badge - target the status badge near h1
       const headerArea = page
         .locator("h1", { hasText: "node-js" })
@@ -301,15 +268,12 @@ test.describe
     test("can rename a workspace", async () => {
       // We're on the node-js detail page after stopping it
 
-      // Click the rename (pencil) button
       await page.locator('[data-slot="workspace-rename-btn"]').click()
 
-      // Fill the rename input with new name
       const renameInput = page.locator('[data-slot="workspace-rename-input"]')
       await renameInput.waitFor({ timeout: 5000 })
       await renameInput.fill("node-js-renamed")
 
-      // Click Save
       await page.locator('[data-slot="workspace-rename-save"]').click()
 
       // ConfirmDialog warns that the existing container will be reset.
@@ -320,25 +284,20 @@ test.describe
       // Wait for rename to complete and navigation to new URL
       await page.waitForTimeout(4000)
 
-      // Verify the new name appears in the header
       const headerArea = page.locator("h1", { hasText: "node-js-renamed" })
       await expect(headerArea).toBeVisible({ timeout: 10000 })
     })
 
     test("should delete workspace from detail page", async () => {
-      // Open the More actions dropdown, then click Delete
       await page.getByRole("button", { name: "More actions" }).click()
       await page.getByRole("menuitem", { name: "Delete" }).click()
 
-      // ConfirmDialog appears - click the confirm Delete in the dialog
       const confirmDialog = page.locator('[data-slot="dialog-content"]')
       await confirmDialog.waitFor({ timeout: 5000 })
       await confirmDialog.getByRole("button", { name: "Delete" }).click()
 
-      // Navigates to /workspaces on success - wait for table
       await page.locator("table").waitFor({ timeout: 15000 })
 
-      // Verify renamed workspace is gone
       await expect(page.locator("table")).not.toContainText(
         "node-js-renamed",
         { timeout: 10000 },
@@ -346,9 +305,6 @@ test.describe
     })
   })
 
-// ---------------------------------------------------------------------------
-// Flow 3 - Workspace lifecycle (Python)
-// ---------------------------------------------------------------------------
 test.describe
   .serial("Workspace lifecycle - Python", () => {
     let app: ElectronApplication
@@ -372,12 +328,10 @@ test.describe
       const dialog = page.locator('[role="dialog"]').first()
       await dialog.waitFor({ timeout: 5000 })
 
-      // Step 1 - Provider: select docker, continue
       await dialog.locator("button", { hasText: "docker" }).first().click()
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 2 - Source: click Python template (scope to the active Git source
-      // panel so it doesn't match the Image catalog's "Python 3.12" entry)
+      // Scope to the Git panel because the image catalog also has a Python card.
       await dialog
         .getByTestId("source-panel")
         .locator("button", { hasText: "Python" })
@@ -389,18 +343,14 @@ test.describe
       )
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 3 - IDE: default "None", continue
       await dialog.getByRole("button", { name: /^continue$/i }).click()
 
-      // Step 4 - Review: Launch
       await dialog.getByRole("button", { name: /^launch$/i }).click()
 
-      // Step 5 - Launch: wait for success
       await dialog
         .getByRole("button", { name: /open workspace/i })
         .waitFor({ timeout: 15000 })
 
-      // Close the dialog
       await page.keyboard.press("Escape")
       await dialog.waitFor({ state: "hidden", timeout: 5000 })
 
@@ -415,19 +365,15 @@ test.describe
     })
 
     test("should delete python workspace", async () => {
-      // Click workspace row
       await page.locator("table tr", { hasText: "python" }).click()
 
-      // Wait for detail page
       await page
         .locator("h1", { hasText: "python" })
         .waitFor({ timeout: 10000 })
 
-      // Open the More actions dropdown, then click Delete
       await page.getByRole("button", { name: "More actions" }).click()
       await page.getByRole("menuitem", { name: "Delete" }).click()
 
-      // Confirm in the dialog
       const confirmDialog = page.locator('[data-slot="dialog-content"]')
       await confirmDialog.waitFor({ timeout: 5000 })
       await confirmDialog.getByRole("button", { name: "Delete" }).click()

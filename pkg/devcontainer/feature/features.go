@@ -624,7 +624,6 @@ func processDirectTarFeature(
 
 	featureExtractedFolder := filepath.Join(featureFolder, "extracted")
 
-	// Check cache - verify integrity if present.
 	cached, err := checkDirectTarCache(checkDirectTarCacheParams{
 		featureFolder:   featureFolder,
 		extractedFolder: featureExtractedFolder,
