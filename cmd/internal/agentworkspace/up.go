@@ -572,15 +572,22 @@ func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error 
 	case params.workspaceInfo.CLIOptions.Recreate:
 		phase = status.PhaseRebuildingWorkspace
 	}
-	if phase == "" || params.reporter == nil {
-		return prepareWorkspaceSource(ctx, params, exists)
-	}
-
-	return status.Run(ctx, params.reporter, status.Operation{
-		Phase: phase,
-	}, func(ctx context.Context) error {
+	return prepareWorkspaceWithStatus(ctx, params.reporter, phase, func(ctx context.Context) error {
 		return prepareWorkspaceSource(ctx, params, exists)
 	})
+}
+
+func prepareWorkspaceWithStatus(
+	ctx context.Context,
+	reporter status.Reporter,
+	phase status.Phase,
+	prepare func(context.Context) error,
+) error {
+	if phase == "" || reporter == nil {
+		return prepare(ctx)
+	}
+
+	return status.Run(ctx, reporter, status.Operation{Phase: phase}, prepare)
 }
 
 // prepareWorkspaceSource dispatches on the workspace source type (git, local
