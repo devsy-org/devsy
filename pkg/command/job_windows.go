@@ -52,7 +52,9 @@ func jobNameFor(name string) (string, error) {
 	if dataDir == "" {
 		localAppData := os.Getenv("LOCALAPPDATA")
 		if localAppData == "" {
-			return "", errors.New("resolve Devsy data directory for job object: LOCALAPPDATA is not set")
+			return "", errors.New(
+				"resolve Devsy data directory for job object: LOCALAPPDATA is not set",
+			)
 		}
 		dataDir = filepath.Join(localAppData, config.RepoName)
 	}
@@ -83,7 +85,8 @@ func canonicalDirectoryPath(path string) (string, error) {
 		0,
 	)
 	if err != nil {
-		if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
+		if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) ||
+			errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
 			return normalizedWindowsPath(absPath), nil
 		}
 		return "", err
@@ -275,7 +278,8 @@ func isDetachedTaskWorkerName(workerName string) bool {
 		return false
 	}
 	for _, char := range taskID {
-		if !(char >= 'a' && char <= 'z') && !(char >= 'A' && char <= 'Z') && !(char >= '0' && char <= '9') {
+		if !(char >= 'a' && char <= 'z') && !(char >= 'A' && char <= 'Z') &&
+			!(char >= '0' && char <= '9') {
 			return false
 		}
 	}
@@ -292,7 +296,10 @@ func terminateJobForPID(workerName string, pid int) (bool, error) {
 		if verifyErr != nil {
 			_ = windows.CloseHandle(job)
 			if errors.Is(verifyErr, windows.ERROR_INVALID_PARAMETER) {
-				return false, fmt.Errorf("worker process %d exited before job membership was verified", pid)
+				return false, fmt.Errorf(
+					"worker process %d exited before job membership was verified",
+					pid,
+				)
 			}
 			return false, verifyErr
 		}

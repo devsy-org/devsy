@@ -253,7 +253,8 @@ func TestKillTreeAfterWorkerExitWithoutIdentityFailsClosedWhenJobIsMissing(t *te
 	_ = worker.Wait()
 
 	err := killTreeAfterWorkerExit(strconv.Itoa(worker.Process.Pid), "devsy-up-abcdefghijkl", "")
-	if err == nil || !strings.Contains(err.Error(), "cannot verify descendants without process identity") {
+	if err == nil ||
+		!strings.Contains(err.Error(), "cannot verify descendants without process identity") {
 		t.Fatalf("killTreeAfterWorkerExit error = %v, want fail-closed identity error", err)
 	}
 }
@@ -309,7 +310,11 @@ func TestKillTreeWithIdentityFindsLegacyJobObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProcessTreeIdentity: %v", err)
 	}
-	if err := killTreeWithIdentity(strconv.Itoa(worker.Process.Pid), workerName, identity); err != nil {
+	if err := killTreeWithIdentity(
+		strconv.Itoa(worker.Process.Pid),
+		workerName,
+		identity,
+	); err != nil {
 		t.Fatalf("killTreeWithIdentity: %v", err)
 	}
 	assertNotRunningEventually(t, worker.Process.Pid)
