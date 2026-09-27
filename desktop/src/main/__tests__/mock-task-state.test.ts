@@ -96,7 +96,7 @@ describe("mock detached task persistence", () => {
             if (output.includes(line)) resolve()
           }
           child.stdout?.on("data", check)
-          child.once("exit", (code) => {
+          child.once("close", (code) => {
             if (!output.includes(line))
               reject(new Error(`child exited with ${code} before ${line}`))
           })
@@ -136,7 +136,21 @@ describe("mock detached task persistence", () => {
         withFileLock(process.env.LOCK_PATH, () => process.stdout.write("entered\\n"))
       `)
       await second.waitFor("waiting")
-      expect(output).not.toContain("entered")
+      await new Promise<void>((resolve, reject) => {
+        let timer: ReturnType<typeof setTimeout>
+        const check = () => {
+          if (!output.includes("entered")) return
+          clearTimeout(timer)
+          second.child.stdout?.off("data", check)
+          reject(new Error("entered before release"))
+        }
+        timer = setTimeout(() => {
+          second.child.stdout?.off("data", check)
+          resolve()
+        }, 100)
+        second.child.stdout?.on("data", check)
+        check()
+      })
 
       writeFileSync(releasePath, "")
       await second.waitFor("entered")
