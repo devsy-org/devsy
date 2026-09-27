@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -138,9 +139,6 @@ func runProviderInit(
 		return nil
 	}
 
-	stdout := log.Writer(log.LevelInfo)
-	defer func() { _ = stdout.Close() }()
-
 	stderr := log.Writer(log.LevelError)
 	defer func() { _ = stderr.Close() }()
 
@@ -154,7 +152,7 @@ func runProviderInit(
 				devsyConfig.DefaultContext,
 				cfg.Provider,
 				devsyConfig.ProviderOptions(cfg.Provider.Name),
-				initIO{stdout: stdout, stderr: stderr},
+				initIO{stdout: os.Stdout, stderr: stderr},
 			)
 		},
 	)
