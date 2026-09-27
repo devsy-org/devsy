@@ -83,13 +83,9 @@ func configureProviderOptions(
 		config.EnvProviderPrefix+cfg.Provider.Name+"_",
 	)
 
-	options, err := provider2.ParseOptions(cfg.UserOptions)
+	options, err := parseAndMergeOptions(cfg, devsyConfig)
 	if err != nil {
-		return nil, fmt.Errorf("parse options: %w", err)
-	}
-
-	if !cfg.DiscardPriorValues {
-		mergeExistingOptions(options, devsyConfig.ProviderOptions(cfg.Provider.Name))
+		return nil, err
 	}
 
 	reporter := cfg.reporter()
@@ -175,6 +171,21 @@ func applyResolvedOptions(contextName, providerName string, resolvedConfig *conf
 		providerCfg.SingleMachine = resolvedProviderCfg.SingleMachine
 		return nil
 	})
+}
+
+func parseAndMergeOptions(
+	cfg ProviderOptionsConfig,
+	devsyConfig *config.Config,
+) (map[string]string, error) {
+	options, err := provider2.ParseOptions(cfg.UserOptions)
+	if err != nil {
+		return nil, fmt.Errorf("parse options: %w", err)
+	}
+
+	if !cfg.DiscardPriorValues {
+		mergeExistingOptions(options, devsyConfig.ProviderOptions(cfg.Provider.Name))
+	}
+	return options, nil
 }
 
 // writeDefaultProvider reloads the config for the given context and writes providerName
