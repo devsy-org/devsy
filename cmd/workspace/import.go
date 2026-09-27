@@ -326,6 +326,7 @@ func (cmd *ImportCmd) applyProviderOptions(
 	}
 
 	devsyConfig.Current().Providers[cmd.ProviderID] = exportConfig.Provider.Config
+	// Safe: The caller explicitly owns LockConfig().
 	if err := config.SaveConfig(devsyConfig); err != nil {
 		return fmt.Errorf("save devsy config: %w", err)
 	}

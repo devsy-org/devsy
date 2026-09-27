@@ -143,16 +143,18 @@ func AddProviderRaw(ctx context.Context, p ProviderParams) (*provider.ProviderCo
 		return nil, err
 	}
 
-	if p.DevsyConfig.Current().Providers == nil {
-		p.DevsyConfig.Current().Providers = map[string]*config.ProviderConfig{}
-	}
-	if p.DevsyConfig.Current().Providers[providerConfig.Name] == nil {
-		p.DevsyConfig.Current().Providers[providerConfig.Name] = &config.ProviderConfig{
-			CreationTimestamp: types.Now(),
+	err = config.UpdateConfig(p.DevsyConfig.DefaultContext, "", func(c *config.Config) error {
+		if c.Current().Providers == nil {
+			c.Current().Providers = map[string]*config.ProviderConfig{}
 		}
-	}
-
-	if err := config.SaveConfig(p.DevsyConfig); err != nil {
+		if c.Current().Providers[providerConfig.Name] == nil {
+			c.Current().Providers[providerConfig.Name] = &config.ProviderConfig{
+				CreationTimestamp: types.Now(),
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, fmt.Errorf("save config: %w", err)
 	}
 

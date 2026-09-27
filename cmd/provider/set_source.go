@@ -10,7 +10,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/provider"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -57,6 +57,25 @@ func NewSetSourceCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("provider name is required")
+	}
+	providerName := args[0]
+
+	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, providerName)
+	if err != nil {
+		return fmt.Errorf("get operation lock: %w", err)
+	}
+	if err := opLock.Lock(); err != nil {
+		return fmt.Errorf("acquire operation lock: %w", err)
+	}
+	defer func() { _ = opLock.Unlock() }()
+
+	devsyConfig, err = config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return err
+	}
+
 	if cmd.Version != "" {
 		return cmd.runPinVersion(ctx, devsyConfig, args)
 	}
@@ -76,7 +95,7 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		return err
 	}
 
-	var providerConfig *provider.ProviderConfig
+	var providerConfig *provider2.ProviderConfig
 	err = status.Run(
 		ctx,
 		reporter,
@@ -111,7 +130,7 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 func (cmd *SetSourceCmd) activateProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	providerConfig *provider.ProviderConfig,
+	providerConfig *provider2.ProviderConfig,
 	reporter status.Reporter,
 ) error {
 	return status.Run(

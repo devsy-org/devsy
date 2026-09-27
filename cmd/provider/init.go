@@ -2,11 +2,13 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -37,10 +39,26 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, name)
+			if err != nil {
+				return fmt.Errorf("get operation lock: %w", err)
+			}
+			if err := opLock.Lock(); err != nil {
+				return fmt.Errorf("acquire operation lock: %w", err)
+			}
+			defer func() { _ = opLock.Unlock() }()
+
+			// Reload config and provider state under the operation lock
+			devsyConfig, err = config.LoadConfig(cmd.Context, cmd.Provider)
+			if err != nil {
+				return err
+			}
 			p, err := workspace.FindProvider(devsyConfig, name)
 			if err != nil {
 				return err
 			}
+
 			reporter, err := newStatusReporter(
 				cmd.ResultFormat,
 				os.Stdout,

@@ -100,6 +100,7 @@ func (cmd *AttachCmd) Run(ctx context.Context, name string) error {
 	}
 	ctxConfig.Secrets = append(ctxConfig.Secrets, canonical)
 
+	// Safe: The caller explicitly owns LockConfig().
 	if err := config.SaveConfig(devsyConfig); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
@@ -155,6 +156,7 @@ func (cmd *DetachCmd) Run(_ context.Context, name string) error {
 	}
 	ctxConfig.Secrets = slices.Delete(ctxConfig.Secrets, idx, idx+1)
 
+	// Safe: The caller explicitly owns LockConfig().
 	if err := config.SaveConfig(devsyConfig); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}

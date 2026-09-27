@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -135,7 +134,16 @@ func runProviderInit(
 		return nil
 	}
 
-	stderr := log.Writer(log.LevelError)
+	stdout := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.LevelInfo,
+		DetectLevelPrefixes: true,
+	})
+	defer func() { _ = stdout.Close() }()
+
+	stderr := log.NewJSONLogStreamer(log.StreamerOptions{
+		FallbackLevel:       log.LevelError,
+		DetectLevelPrefixes: true,
+	})
 	defer func() { _ = stderr.Close() }()
 
 	return status.Run(
@@ -148,7 +156,7 @@ func runProviderInit(
 				devsyConfig.DefaultContext,
 				cfg.Provider,
 				devsyConfig.ProviderOptions(cfg.Provider.Name),
-				initIO{stdout: os.Stdout, stderr: stderr},
+				initIO{stdout: stdout, stderr: stderr},
 			)
 		},
 	)
@@ -156,11 +164,8 @@ func runProviderInit(
 
 func applyResolvedOptions(contextName, providerName string, resolvedConfig *config.Config) error {
 	return config.UpdateConfig(contextName, "", func(c *config.Config) error {
-		if c.Current().Providers == nil {
-			c.Current().Providers = map[string]*config.ProviderConfig{}
-		}
-		if c.Current().Providers[providerName] == nil {
-			c.Current().Providers[providerName] = &config.ProviderConfig{}
+		if c.Current().Providers == nil || c.Current().Providers[providerName] == nil {
+			return fmt.Errorf("provider %q no longer exists", providerName)
 		}
 
 		providerCfg := c.Current().Providers[providerName]
@@ -191,15 +196,14 @@ func parseAndMergeOptions(
 // writeDefaultProvider reloads the config for the given context and writes providerName
 // as the active context's DefaultProvider.
 func writeDefaultProvider(contextName, providerName string) error {
-	cfg, err := config.LoadConfig(contextName, "")
-	if err != nil {
-		return fmt.Errorf("reload config: %w", err)
-	}
-	cfg.Current().DefaultProvider = providerName
-	if err := config.SaveConfig(cfg); err != nil {
-		return fmt.Errorf("save default provider: %w", err)
-	}
-	return nil
+	return config.UpdateConfig(contextName, "", func(c *config.Config) error {
+		if c.Current().Providers == nil || c.Current().Providers[providerName] == nil {
+			return fmt.Errorf("provider %q no longer exists", providerName)
+		}
+
+		c.Current().DefaultProvider = providerName
+		return nil
+	})
 }
 
 // resolveProviderName returns the provider name from args[0] if present, else the fallback

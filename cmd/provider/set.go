@@ -11,6 +11,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -67,7 +68,19 @@ func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, providerWithOptions.Config.Name)
+	if err != nil {
+		return fmt.Errorf("get operation lock: %w", err)
+	}
+	if err := opLock.Lock(); err != nil {
+		return fmt.Errorf("acquire operation lock: %w", err)
+	}
+	defer func() { _ = opLock.Unlock() }()
 
+	devsyConfig, providerWithOptions, err = cmd.loadProvider(args)
+	if err != nil {
+		return err
+	}
 	devsyConfig, err = configureProviderOptions(ctx, ProviderOptionsConfig{
 		Provider:      providerWithOptions.Config,
 		ContextName:   devsyConfig.DefaultContext,

@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -61,6 +62,15 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	if provider.Source.Internal {
 		return nil
 	}
+	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, provider.Name)
+	if err != nil {
+		return fmt.Errorf("get operation lock: %w", err)
+	}
+	if err := opLock.Lock(); err != nil {
+		return fmt.Errorf("acquire operation lock: %w", err)
+	}
+	defer func() { _ = opLock.Unlock() }()
+
 	providerSource, err := resolveNewProviderSource(devsyConfig, provider.Name, newVersion)
 	if err != nil {
 		return err
