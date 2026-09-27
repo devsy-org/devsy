@@ -121,33 +121,43 @@ func configureProviderOptions(
 	if err != nil {
 		return nil, err
 	}
-	if !cfg.SkipInit {
-		stdout := log.Writer(log.LevelInfo)
-		defer func() { _ = stdout.Close() }()
-
-		stderr := log.Writer(log.LevelError)
-		defer func() { _ = stderr.Close() }()
-
-		err = status.Run(
-			ctx,
-			reporter,
-			status.Operation{Phase: status.PhaseRunningInit, Step: cfg.Provider.Name},
-			func(ctx context.Context) error {
-				return initProvider(
-					ctx,
-					devsyConfig.DefaultContext,
-					cfg.Provider,
-					devsyConfig.ProviderOptions(cfg.Provider.Name),
-					initIO{stdout: stdout, stderr: stderr},
-				)
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
+	if err := runProviderInit(ctx, cfg, devsyConfig, reporter); err != nil {
+		return nil, err
 	}
 
 	return devsyConfig, nil
+}
+
+func runProviderInit(
+	ctx context.Context,
+	cfg ProviderOptionsConfig,
+	devsyConfig *config.Config,
+	reporter status.Reporter,
+) error {
+	if cfg.SkipInit {
+		return nil
+	}
+
+	stdout := log.Writer(log.LevelInfo)
+	defer func() { _ = stdout.Close() }()
+
+	stderr := log.Writer(log.LevelError)
+	defer func() { _ = stderr.Close() }()
+
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseRunningInit, Step: cfg.Provider.Name},
+		func(ctx context.Context) error {
+			return initProvider(
+				ctx,
+				devsyConfig.DefaultContext,
+				cfg.Provider,
+				devsyConfig.ProviderOptions(cfg.Provider.Name),
+				initIO{stdout: stdout, stderr: stderr},
+			)
+		},
+	)
 }
 
 func applyResolvedOptions(contextName, providerName string, resolvedConfig *config.Config) error {
