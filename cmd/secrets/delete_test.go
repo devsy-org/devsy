@@ -20,6 +20,7 @@ func (*deleteTestStore) Set(string, string, string, devsysecrets.Kind) error { r
 func (*deleteTestStore) Get(string, string) (string, error) {
 	panic("delete rollback must not call Get")
 }
+
 func (*deleteTestStore) Meta(string, string) (devsysecrets.SecretMeta, error) {
 	return devsysecrets.SecretMeta{}, nil
 }

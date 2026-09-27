@@ -20,6 +20,7 @@ func (*deleteTestStore) Set(string, string, string, secrets.Kind) error { return
 func (*deleteTestStore) Get(string, string) (string, error) {
 	panic("delete rollback must not call Get")
 }
+
 func (*deleteTestStore) Meta(string, string) (secrets.SecretMeta, error) {
 	return secrets.SecretMeta{}, nil
 }
