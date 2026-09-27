@@ -48,11 +48,6 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
-			unlock, err := config.LockConfig()
-			if err != nil {
-				return err
-			}
-			defer unlock()
 
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {

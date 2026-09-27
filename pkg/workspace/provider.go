@@ -351,10 +351,12 @@ func updateProvider(ctx context.Context, p ProviderParams) (*provider.ProviderCo
 		return nil, err
 	}
 
-	cleanupOldOptions(p.DevsyConfig, providerConfig)
-	clearInitialized(p.DevsyConfig, providerConfig.Name)
-
-	if err := config.SaveConfig(p.DevsyConfig); err != nil {
+	err = config.UpdateConfig(p.DevsyConfig.DefaultContext, "", func(c *config.Config) error {
+		cleanupOldOptions(c, providerConfig)
+		clearInitialized(c, providerConfig.Name)
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 

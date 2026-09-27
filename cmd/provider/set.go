@@ -63,11 +63,6 @@ func NewSetCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
-	unlock, err := config.LockConfig()
-	if err != nil {
-		return err
-	}
-	defer unlock()
 
 	devsyConfig, providerWithOptions, err := cmd.loadProvider(args)
 	if err != nil {
@@ -81,13 +76,16 @@ func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
 		SkipRequired:  cmd.Dry,
 		SkipInit:      cmd.Dry || cmd.SkipInit,
 		SingleMachine: &cmd.SingleMachine,
+		Dry:           cmd.Dry,
 	})
 	if err != nil {
 		return err
 	}
 
-	if err := cmd.saveOrPrintConfig(devsyConfig, providerWithOptions); err != nil {
-		return err
+	if cmd.Dry {
+		if err := cmd.saveOrPrintConfig(devsyConfig, providerWithOptions); err != nil {
+			return err
+		}
 	}
 
 	log.Infof("set options for provider: providerName=%s", providerWithOptions.Config.Name)

@@ -116,14 +116,9 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string) error {
 	return cmd.loginAndConfigure(ctx, devsyConfig, fullURL)
 }
 
-// prepareProvider applies the login-related config changes under the config
-// lock; the interactive browser login itself runs unlocked.
+// prepareProvider applies the login-related config changes.
+// The interactive browser login itself runs unlocked.
 func (cmd *LoginCmd) prepareProvider(ctx context.Context, fullURL string) (*config.Config, error) {
-	unlock, err := config.LockConfig()
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
 
 	devsyConfig, currentInstance, err := cmd.resolveInstance(fullURL)
 	if err != nil {
@@ -291,11 +286,6 @@ func (cmd *LoginCmd) loginAndConfigure(
 	}
 
 	if cmd.Use {
-		unlock, err := config.LockConfig()
-		if err != nil {
-			return err
-		}
-		defer unlock()
 
 		// Post-login: preserve user values; resolver prunes anything stale.
 		err = providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
