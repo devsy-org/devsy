@@ -13,9 +13,7 @@ import (
 	"github.com/onsi/gomega"
 )
 
-// stoppedHoldWindow outlasts the tunnel health-check interval and failure
-// threshold (30s x 3), so a workspace still Stopped after the window was not
-// restarted by the health loop.
+// stoppedHoldWindow spans the health loop's 30-second, three-failure threshold.
 const stoppedHoldWindow = 100 * time.Second
 
 var _ = ginkgo.Describe(
@@ -54,7 +52,6 @@ var _ = ginkgo.Describe(
 				gomega.Expect(active.PID).NotTo(gomega.BeZero(),
 					"detached up worker should publish its pid")
 
-				// On Windows this used to panic with "unsupported".
 				framework.ExpectNoError(f.DevsyWorkspaceTaskCancel(ctx, taskID))
 
 				canceled := waitDetachedTaskCanceled(ctx, f, taskID)
@@ -94,7 +91,6 @@ var _ = ginkgo.Describe(
 
 				waitDetachedTunnelReady(ctx, f, taskID)
 
-				// Stop discovers the persisted task on its own and cancels it.
 				framework.ExpectNoError(f.DevsyStop(ctx, tempDir))
 
 				canceled := waitDetachedTaskCanceled(ctx, f, taskID)

@@ -43,7 +43,10 @@ func TestDetachedArgs_NoDetachFlagIsUnchanged(t *testing.T) {
 func TestDetachWorkspaceLabelNormalizesPath(t *testing.T) {
 	cmd := &UpCmd{}
 	raw := "/tmp/some workspace dir"
-	got := cmd.detachWorkspaceLabel([]string{raw})
+	got, err := cmd.detachWorkspaceLabel([]string{raw})
+	if err != nil {
+		t.Fatalf("detachWorkspaceLabel: %v", err)
+	}
 	want := workspace2.ToID(raw)
 	if got != want {
 		t.Errorf("detachWorkspaceLabel() = %q, want %q", got, want)
@@ -55,7 +58,10 @@ func TestDetachWorkspaceLabelNormalizesPath(t *testing.T) {
 
 func TestDetachWorkspaceLabelResolvesCurrentDirectory(t *testing.T) {
 	cmd := &UpCmd{}
-	got := cmd.detachWorkspaceLabel([]string{"."})
+	got, err := cmd.detachWorkspaceLabel([]string{"."})
+	if err != nil {
+		t.Fatalf("detachWorkspaceLabel: %v", err)
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
@@ -63,6 +69,29 @@ func TestDetachWorkspaceLabelResolvesCurrentDirectory(t *testing.T) {
 	want := workspace2.ToID(cwd)
 	if got != want {
 		t.Fatalf("detachWorkspaceLabel(.) = %q, want %q", got, want)
+	}
+}
+
+func TestDetachWorkspaceLabelUsesSourceFlag(t *testing.T) {
+	cmd := &UpCmd{}
+	cmd.Source = "/tmp/source workspace"
+	got, err := cmd.detachWorkspaceLabel(nil)
+	if err != nil {
+		t.Fatalf("detachWorkspaceLabel: %v", err)
+	}
+	if want := workspace2.ToID(cmd.Source); got != want {
+		t.Fatalf("detachWorkspaceLabel() = %q, want %q", got, want)
+	}
+}
+
+func TestDetachWorkspaceLabelUsesSnapshotWorkspaceID(t *testing.T) {
+	cmd := &UpCmd{FromSnapshot: testSnapshotRef}
+	got, err := cmd.detachWorkspaceLabel(nil)
+	if err != nil {
+		t.Fatalf("detachWorkspaceLabel: %v", err)
+	}
+	if got != "my-ws" {
+		t.Fatalf("detachWorkspaceLabel() = %q, want my-ws", got)
 	}
 }
 

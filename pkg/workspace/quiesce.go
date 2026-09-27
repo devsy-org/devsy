@@ -11,11 +11,8 @@ import (
 // upTaskCommand is the command label detached up workers are created with.
 const upTaskCommand = "up"
 
-// QuiesceUpTasks cancels every persisted, still-active detached up task for
-// the workspace so no surviving worker can mutate or restart it during
-// stop/delete. Every matching task is attempted even when one fails;
-// failures are aggregated, since a surviving worker can reverse the
-// lifecycle change.
+// QuiesceUpTasks cancels active detached up tasks for the workspace. It tries
+// every match and returns all failures because a survivor can restart it.
 func QuiesceUpTasks(store *task.Store, workspaceID string) error {
 	return quiesceUpTasks(store, workspaceID, func(id string) error {
 		return store.Open(id).Cancel()

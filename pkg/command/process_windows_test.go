@@ -12,6 +12,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"golang.org/x/sys/windows"
 )
 
@@ -246,7 +247,11 @@ func TestKillTreeWithIdentityDoesNotFallbackToUnverifiedPID(t *testing.T) {
 
 func TestOwnProcessTreeRejectsExistingJobObject(t *testing.T) {
 	workerName := "devsy-test-existing-job-" + strconv.FormatInt(time.Now().UnixNano(), 10)
-	name, err := windows.UTF16PtrFromString(jobNameFor(workerName))
+	jobName, err := jobNameFor(workerName)
+	if err != nil {
+		t.Fatalf("resolve job name: %v", err)
+	}
+	name, err := windows.UTF16PtrFromString(jobName)
 	if err != nil {
 		t.Fatalf("convert job name: %v", err)
 	}
@@ -260,6 +265,216 @@ func TestOwnProcessTreeRejectsExistingJobObject(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("ownProcessTree with an existing job = %v, want already-exists error", err)
 	}
+}
+
+func TestKillTreeWithIdentityFindsLegacyJobObject(t *testing.T) {
+	worker := startHelper(t)
+	workerName := "devsy-test-legacy-job-" + strconv.Itoa(worker.Process.Pid)
+	name, err := windows.UTF16PtrFromString(workerName)
+	if err != nil {
+		t.Fatalf("convert legacy job name: %v", err)
+	}
+	job, err := windows.CreateJobObject(nil, name)
+	if err != nil {
+		t.Fatalf("create legacy job: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(job) }()
+
+	process, err := windows.OpenProcess(
+		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE,
+		false,
+		uint32(worker.Process.Pid),
+	)
+	if err != nil {
+		t.Fatalf("open helper process: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(process) }()
+	if err := windows.AssignProcessToJobObject(job, process); err != nil {
+		t.Fatalf("assign helper to legacy job: %v", err)
+	}
+	identity, err := ProcessTreeIdentity(worker.Process.Pid)
+	if err != nil {
+		t.Fatalf("ProcessTreeIdentity: %v", err)
+	}
+	if err := killTreeWithIdentity(strconv.Itoa(worker.Process.Pid), workerName, identity); err != nil {
+		t.Fatalf("killTreeWithIdentity: %v", err)
+	}
+	assertNotRunningEventually(t, worker.Process.Pid)
+}
+
+func TestKillTreeFindsLegacyJobObject(t *testing.T) {
+	worker := startHelper(t)
+	workerName := "devsy-test-legacy-cancel-" + strconv.Itoa(worker.Process.Pid)
+	name, err := windows.UTF16PtrFromString(workerName)
+	if err != nil {
+		t.Fatalf("convert legacy job name: %v", err)
+	}
+	job, err := windows.CreateJobObject(nil, name)
+	if err != nil {
+		t.Fatalf("create legacy job: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(job) }()
+	process, err := windows.OpenProcess(
+		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE,
+		false,
+		uint32(worker.Process.Pid),
+	)
+	if err != nil {
+		t.Fatalf("open helper process: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(process) }()
+	if err := windows.AssignProcessToJobObject(job, process); err != nil {
+		t.Fatalf("assign helper to legacy job: %v", err)
+	}
+
+	if err := KillTree(strconv.Itoa(worker.Process.Pid), workerName); err != nil {
+		t.Fatalf("KillTree: %v", err)
+	}
+	assertNotRunningEventually(t, worker.Process.Pid)
+}
+
+func TestKillTreeAfterWorkerExitFindsLegacyDetachedJob(t *testing.T) {
+	worker := startHelper(t)
+	workerName := "devsy-up-abcdefghijkl"
+	name, err := windows.UTF16PtrFromString(workerName)
+	if err != nil {
+		t.Fatalf("convert legacy job name: %v", err)
+	}
+	job, err := windows.CreateJobObject(nil, name)
+	if err != nil {
+		t.Fatalf("create legacy job: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(job) }()
+
+	process, err := windows.OpenProcess(
+		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE,
+		false,
+		uint32(worker.Process.Pid),
+	)
+	if err != nil {
+		t.Fatalf("open helper process: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(process) }()
+	if err := windows.AssignProcessToJobObject(job, process); err != nil {
+		t.Fatalf("assign helper to legacy job: %v", err)
+	}
+	terminated, err := terminateJobAfterWorkerExit(workerName)
+	if err != nil {
+		t.Fatalf("terminateJobAfterWorkerExit: %v", err)
+	}
+	if !terminated {
+		t.Fatal("terminateJobAfterWorkerExit found no legacy job")
+	}
+	assertNotRunningEventually(t, worker.Process.Pid)
+}
+
+func TestJobNameForSeparatesDevsyHomes(t *testing.T) {
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+
+	t.Setenv(config.EnvHome, t.TempDir())
+	first, err := jobNameFor("jupyter")
+	if err != nil {
+		t.Fatalf("jobNameFor first home: %v", err)
+	}
+
+	t.Setenv(config.EnvHome, t.TempDir())
+	second, err := jobNameFor("jupyter")
+	if err != nil {
+		t.Fatalf("jobNameFor second home: %v", err)
+	}
+	if first == second {
+		t.Fatalf("job names collide across Devsy homes: %q", first)
+	}
+}
+
+func TestJobNameForCanonicalizesEquivalentHomePaths(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(config.EnvHome, home)
+	first, err := jobNameFor("jupyter")
+	if err != nil {
+		t.Fatalf("jobNameFor first path: %v", err)
+	}
+
+	t.Setenv(config.EnvHome, strings.ToUpper(home))
+	second, err := jobNameFor("jupyter")
+	if err != nil {
+		t.Fatalf("jobNameFor second path: %v", err)
+	}
+	if first != second {
+		t.Fatalf("equivalent home paths have different job names: %q != %q", first, second)
+	}
+}
+
+func TestJobNameForDoesNotRequireHomeDirectoryAtCancellation(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatalf("create home: %v", err)
+	}
+	t.Setenv(config.EnvHome, home)
+	first, err := jobNameFor("jupyter")
+	if err != nil {
+		t.Fatalf("jobNameFor first call: %v", err)
+	}
+	if err := os.Remove(home); err != nil {
+		t.Fatalf("remove home: %v", err)
+	}
+	second, err := jobNameFor("jupyter")
+	if err != nil {
+		t.Fatalf("jobNameFor second call: %v", err)
+	}
+	if first != second {
+		t.Fatalf("missing home produced different job names: %q != %q", first, second)
+	}
+}
+
+func TestTerminateJobForPIDFindsLegacyJobWhenScopedJobIsUnrelated(t *testing.T) {
+	worker := startHelper(t)
+	workerName := "devsy-test-legacy-fallback-" + strconv.Itoa(worker.Process.Pid)
+	scopedName, err := jobNameFor(workerName)
+	if err != nil {
+		t.Fatalf("resolve scoped job name: %v", err)
+	}
+	scopedNamePtr, err := windows.UTF16PtrFromString(scopedName)
+	if err != nil {
+		t.Fatalf("convert scoped job name: %v", err)
+	}
+	scopedJob, err := windows.CreateJobObject(nil, scopedNamePtr)
+	if err != nil {
+		t.Fatalf("create scoped job: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(scopedJob) }()
+
+	legacyNamePtr, err := windows.UTF16PtrFromString(workerName)
+	if err != nil {
+		t.Fatalf("convert legacy job name: %v", err)
+	}
+	legacyJob, err := windows.CreateJobObject(nil, legacyNamePtr)
+	if err != nil {
+		t.Fatalf("create legacy job: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(legacyJob) }()
+	process, err := windows.OpenProcess(
+		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE,
+		false,
+		uint32(worker.Process.Pid),
+	)
+	if err != nil {
+		t.Fatalf("open helper process: %v", err)
+	}
+	defer func() { _ = windows.CloseHandle(process) }()
+	if err := windows.AssignProcessToJobObject(legacyJob, process); err != nil {
+		t.Fatalf("assign helper to legacy job: %v", err)
+	}
+
+	terminated, err := terminateJobForPID(workerName, worker.Process.Pid)
+	if err != nil {
+		t.Fatalf("terminateJobForPID: %v", err)
+	}
+	if !terminated {
+		t.Fatal("terminateJobForPID found no matching job")
+	}
+	assertNotRunningEventually(t, worker.Process.Pid)
 }
 
 func currentProcessInJob() (bool, error) {

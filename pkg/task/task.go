@@ -161,12 +161,8 @@ func (t *Task) Succeed(result *config.Result) error {
 	})
 }
 
-// Cancel terminates the task's worker before recording the task as canceled:
-// the persisted state must never claim the operation is gone while the worker
-// performing it is still alive. A kill failure leaves the task nonterminal so
-// a later Cancel retries. Cancellation is idempotent: a task already
-// terminal, or whose worker already exited, only (re)finalizes the canceled
-// state.
+// Cancel terminates the worker before recording cancellation. A termination
+// failure leaves the task retryable.
 func (t *Task) Cancel() error {
 	var pid int
 	var identity string
@@ -279,18 +275,16 @@ func (t *Task) cancelExitedWorkerTree(pid int) error {
 }
 
 func (t *Task) cancelLiveWorker(pid int, identity string) error {
+	// The held worker lock ties a legacy PID to its active worker.
+	pidString := strconv.Itoa(pid)
+	workerName := WorkerProcessName(t.id)
+	var err error
 	if identity == "" {
-		return fmt.Errorf(
-			"cancel task %s: worker pid %d has no saved process identity; terminate the legacy worker manually and retry",
-			t.id,
-			pid,
-		)
+		err = t.store.killLegacyWorkerTree(pidString, workerName)
+	} else {
+		err = t.store.killProcessWithIdentity(pidString, workerName, identity)
 	}
-	if err := t.store.killProcessWithIdentity(
-		strconv.Itoa(pid),
-		WorkerProcessName(t.id),
-		identity,
-	); err != nil {
+	if err != nil {
 		workerLock, locked, lockErr := t.store.tryWorkerLock(t.id)
 		if lockErr != nil {
 			return fmt.Errorf(

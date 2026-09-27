@@ -55,7 +55,7 @@ func killTree(pid, treeName string) error {
 
 	var jobErr error
 	if treeName != "" {
-		if terminated, err := terminateJob(treeName); err == nil && terminated {
+		if terminated, err := terminateJobForPID(treeName, parsed); err == nil && terminated {
 			return nil
 		} else if err != nil {
 			jobErr = err
@@ -139,15 +139,21 @@ func killTreeWithIdentity(pid, treeName, identity string) error {
 	)
 }
 
-func killTreeAfterWorkerExit(pid, treeName, _ string) error {
+func killTreeAfterWorkerExit(pid, treeName, identity string) error {
 	if _, err := parsePID(pid); err != nil {
 		return err
 	}
 	if treeName == "" {
 		return fmt.Errorf("process tree name is required after worker exit")
 	}
-	_, err := terminateJob(treeName)
-	return err
+	terminated, err := terminateJobAfterWorkerExit(treeName)
+	if err != nil {
+		return err
+	}
+	if !terminated && identity == "" {
+		return fmt.Errorf("worker job %s is unavailable for legacy task cleanup", treeName)
+	}
+	return nil
 }
 
 func processTreeIdentity(pid int) (string, error) {

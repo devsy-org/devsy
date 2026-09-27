@@ -26,7 +26,6 @@ type DeleteOptions struct {
 	Force          bool
 	ClientDelete   client2.DeleteOptions
 	Owner          platform.OwnerFilter
-	// Optional quiescence override for focused deletion tests.
 	quiesceUpTasks func(workspaceID string) error
 }
 
@@ -146,13 +145,8 @@ func stopIfRunning(
 	}
 }
 
-// checkBeforeDelete acquires the lock and verifies the workspace exists;
-// force-deletion skips only the status check, never the lock, so the
-// quiescence rescan stays serialized with the delete. It returns an unlock
-// function that
-// must be called by the caller (typically deferred) to release the lock,
-// and the resolved workspace status so the caller can decide whether a
-// stop is required before delete.
+// checkBeforeDelete acquires the workspace lock and returns its status and an
+// unlock function. Force skips the status check, not the lock.
 func checkBeforeDelete(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,

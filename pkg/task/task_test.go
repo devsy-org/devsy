@@ -927,6 +927,7 @@ func setKillProcessForTest(store *Store, fn func(pid, treeName string) error) {
 	store.killExitedWorkerTree = func(pid, treeName, _ string) error {
 		return fn(pid, treeName)
 	}
+	store.killLegacyWorkerTree = fn
 }
 
 func setKillProcessWithIdentityForTest(
@@ -986,17 +987,26 @@ func TestCancelKillFailureRemainsRetryable(t *testing.T) {
 	requireCanceledState(t, store, tk.ID())
 }
 
-func TestCancelLegacyWorkerRequiresManualTermination(t *testing.T) {
+func TestCancelLegacyLiveWorkerUsesPIDBoundTreeTermination(t *testing.T) {
 	store := newTestStore(t)
 	tk, err := store.Create(CreateOptions{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-
-	err = tk.cancelLiveWorker(4242, "")
-	if err == nil || !strings.Contains(err.Error(), "terminate the legacy worker manually") {
-		t.Fatalf("cancelLiveWorker error = %v, want actionable legacy-worker error", err)
+	holdWorkerLock(t, tk)
+	if err := store.update(tk.ID(), func(state *State) { state.PID = 4242 }); err != nil {
+		t.Fatalf("set legacy PID: %v", err)
 	}
+	var actual killCall
+	store.killLegacyWorkerTree = func(pid, tree string) error {
+		actual = killCall{calls: actual.calls + 1, pid: pid, tree: tree}
+		return nil
+	}
+	if err := tk.Cancel(); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	assertKilledTree(t, actual, "4242", WorkerProcessName(tk.ID()))
+	requireCanceledState(t, store, tk.ID())
 }
 
 func TestCancelSuccessfulKillCommitsCanceled(t *testing.T) {

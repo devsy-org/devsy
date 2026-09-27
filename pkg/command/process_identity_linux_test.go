@@ -46,6 +46,38 @@ func TestLinuxProcessStatErrorIsAbsent(t *testing.T) {
 	}
 }
 
+func TestLinuxCanSkipUnrelatedUnreadableProcess(t *testing.T) {
+	permissionErr := &os.PathError{Op: processStatOpenOperation, Err: os.ErrPermission}
+	tests := []struct {
+		name          string
+		pid           int
+		pgid          int
+		leaderMatches bool
+		want          bool
+	}{
+		{name: "unrelated process with verified leader", pid: 12, pgid: 7, leaderMatches: true, want: true},
+		{name: "worker leader is unreadable", pid: 7, pgid: 7, leaderMatches: true},
+		{name: "leader exited", pid: 12, pgid: 7},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := linuxCanSkipProcessStatError(test.pid, test.pgid, test.leaderMatches, permissionErr); got != test.want {
+				t.Fatalf("linuxCanSkipProcessStatError() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestLinuxProcessGroupMatchRequiresAMemberWhenStatsAreUnreadable(t *testing.T) {
+	permissionErr := &os.PathError{Op: processStatOpenOperation, Err: os.ErrPermission}
+	if matched, err := linuxProcessGroupMatchResult(7, true, permissionErr); err != nil || !matched {
+		t.Fatalf("verified group with unreadable unrelated process = (%t, %v), want (true, nil)", matched, err)
+	}
+	if matched, err := linuxProcessGroupMatchResult(7, false, permissionErr); err == nil || matched {
+		t.Fatalf("unverified group with unreadable process = (%t, %v), want error", matched, err)
+	}
+}
+
 func TestProcessTreeIdentityForMissingProcess(t *testing.T) {
 	identity, err := processTreeIdentity(int(^uint(0) >> 1))
 	if err != nil {

@@ -10,9 +10,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/tunnel"
 )
 
-// workspaceTunnelHealth probes whether the workspace behind the tunnel is
-// still running. It must stay observational: a health check that dials the
-// SSH path can revive a stopped workspace, reversing deliberate stops.
+// workspaceTunnelHealth must stay observational; dialing SSH can revive a
+// stopped workspace.
 func workspaceTunnelHealth(
 	client client2.BaseWorkspaceClient,
 ) func(ctx context.Context) error {

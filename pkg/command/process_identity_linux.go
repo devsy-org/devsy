@@ -32,21 +32,53 @@ func processGroupMatchesIdentity(pgid int, identity string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	leaderFields, leaderFound, err := linuxProcessStat(pgid)
+	if err != nil {
+		return false, err
+	}
+	leaderMatches := false
+	if leaderFound {
+		leaderMatches, _, err = linuxProcessGroupFieldsMatch(pgid, pgid, wanted, leaderFields)
+		if err != nil {
+			return false, err
+		}
+	}
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return false, err
 	}
 
 	foundMember := false
+	var skippedStatErr error
 	for _, entry := range entries {
 		member, leaderMismatch, err := linuxProcessGroupEntryMatches(entry, pgid, wanted)
 		if err != nil {
+			pid, parseErr := strconv.Atoi(entry.Name())
+			if parseErr == nil && linuxCanSkipProcessStatError(pid, pgid, leaderMatches, err) {
+				skippedStatErr = err
+				continue
+			}
 			return false, err
 		}
 		if leaderMismatch {
 			return false, nil
 		}
 		foundMember = foundMember || member
+	}
+	return linuxProcessGroupMatchResult(pgid, foundMember, skippedStatErr)
+}
+
+func linuxCanSkipProcessStatError(pid, pgid int, leaderMatches bool, err error) bool {
+	return pid != pgid && leaderMatches && errors.Is(err, fs.ErrPermission)
+}
+
+func linuxProcessGroupMatchResult(pgid int, foundMember bool, skippedStatErr error) (bool, error) {
+	if skippedStatErr != nil && !foundMember {
+		return false, fmt.Errorf(
+			"verify process group %d after unreadable process stats: %w",
+			pgid,
+			skippedStatErr,
+		)
 	}
 	return foundMember, nil
 }

@@ -185,9 +185,7 @@ var _ = ginkgo.Describe(
 					return f.DevsySSH(sshCtx, tempDir, "echo iteration-"+strings.Repeat("x", i))
 				}
 
-				// The task phase mixes sub-pipeline events, so the first
-				// command can still race the tunnel listener on a cold
-				// container; later commands then exercise the warm path.
+				// The SSH listener can lag the task's ready phase.
 				var out string
 				gomega.Eventually(func() error {
 					var err error

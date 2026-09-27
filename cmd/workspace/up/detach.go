@@ -18,13 +18,20 @@ import (
 // runDetached submits this invocation as a background task and returns
 // immediately.
 func (cmd *UpCmd) runDetached(args []string) error {
+	if _, err := command.ProcessTreeIdentity(os.Getpid()); err != nil {
+		return fmt.Errorf("detached up is unsupported on this platform: %w", err)
+	}
 	store, err := task.NewStore()
+	if err != nil {
+		return err
+	}
+	workspaceID, err := cmd.detachWorkspaceLabel(args)
 	if err != nil {
 		return err
 	}
 	t, err := store.Create(task.CreateOptions{
 		Command:     "up",
-		WorkspaceID: cmd.detachWorkspaceLabel(args),
+		WorkspaceID: workspaceID,
 	})
 	if err != nil {
 		return err
@@ -78,18 +85,22 @@ func detachedArgs(args []string) []string {
 	return out
 }
 
-// detachWorkspaceLabel resolves the workspace ID at submission so stop and
-// delete can match the task before the worker starts and records the
-// authoritative ID.
-func (cmd *UpCmd) detachWorkspaceLabel(args []string) string {
-	if cmd.ID != "" {
-		return cmd.ID
+// detachWorkspaceLabel derives the ID stop and delete use before worker startup.
+func (cmd *UpCmd) detachWorkspaceLabel(args []string) (string, error) {
+	if cmd.FromSnapshot != "" {
+		if _, err := cmd.resolveExplicitSource(); err != nil {
+			return "", err
+		}
 	}
+	if cmd.ID != "" {
+		return cmd.ID, nil
+	}
+	args = cmd.ensureArgs(args)
 	if len(args) > 0 {
 		_, source := file.IsLocalDir(args[0])
-		return workspace2.ToID(source)
+		return workspace2.ToID(source), nil
 	}
-	return ""
+	return "", nil
 }
 
 func wd() string {

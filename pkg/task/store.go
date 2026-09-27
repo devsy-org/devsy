@@ -28,6 +28,7 @@ type Store struct {
 	dir                        string
 	killProcessWithIdentity    func(pid, treeName, identity string) error
 	killExitedWorkerTree       func(pid, treeName, identity string) error
+	killLegacyWorkerTree       func(pid, treeName string) error
 	afterClaimHook             func()
 	afterCancelLockClaimedHook func()
 }
@@ -48,6 +49,7 @@ func NewStoreAt(dir string) (*Store, error) {
 		dir:                     dir,
 		killProcessWithIdentity: command.KillTreeWithIdentity,
 		killExitedWorkerTree:    command.KillTreeAfterWorkerExit,
+		killLegacyWorkerTree:    command.KillTree,
 	}, nil
 }
 
@@ -195,10 +197,8 @@ func (s *Store) List() ([]*State, error) {
 	return states, nil
 }
 
-// ActiveForWorkspace returns the non-terminal tasks labeled with the exact
-// workspace ID, newest first, reconciling stale workers first so an
-// abandoned task does not read as live. A non-empty command restricts the
-// match.
+// ActiveForWorkspace returns non-terminal tasks for a workspace, newest first.
+// A non-empty command restricts the match.
 func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error) {
 	states, err := s.List()
 	if err != nil {

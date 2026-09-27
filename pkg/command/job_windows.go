@@ -3,13 +3,19 @@
 package command
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"golang.org/x/sys/windows"
 )
 
@@ -18,6 +24,8 @@ const jobObjectTerminateAccess = 0x0008
 const jobObjectQueryAccess = 0x0004
 
 const jobTerminationTimeout = 5 * time.Second
+
+const detachedTaskWorkerPrefix = "devsy-up-"
 
 type jobAccountingInfo struct {
 	totalUserTime             int64
@@ -39,10 +47,70 @@ var (
 						NewProc("IsProcessInJob")
 )
 
-// jobNameFor names the Job Object after the worker (e.g. devsy-up-<taskID>)
-// rather than its PID: a reused PID must never inherit a predecessor's job.
-func jobNameFor(name string) string {
-	return name
+func jobNameFor(name string) (string, error) {
+	dataDir := os.Getenv(config.EnvHome)
+	if dataDir == "" {
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData == "" {
+			return "", errors.New("resolve Devsy data directory for job object: LOCALAPPDATA is not set")
+		}
+		dataDir = filepath.Join(localAppData, config.RepoName)
+	}
+	canonicalDir, err := canonicalDirectoryPath(dataDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve Devsy data directory for job object: %w", err)
+	}
+	dataDirHash := sha256.Sum256([]byte(canonicalDir))
+	return "devsy-" + hex.EncodeToString(dataDirHash[:8]) + "-" + name, nil
+}
+
+func canonicalDirectoryPath(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	pathPtr, err := windows.UTF16PtrFromString(absPath)
+	if err != nil {
+		return "", err
+	}
+	handle, err := windows.CreateFile(
+		pathPtr,
+		windows.FILE_READ_ATTRIBUTES,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS,
+		0,
+	)
+	if err != nil {
+		if errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND) {
+			return normalizedWindowsPath(absPath), nil
+		}
+		return "", err
+	}
+	defer func() { _ = windows.CloseHandle(handle) }()
+
+	const maxPath = 32768
+	buffer := make([]uint16, maxPath)
+	length, err := windows.GetFinalPathNameByHandle(handle, &buffer[0], uint32(len(buffer)), 0)
+	if err != nil {
+		return "", err
+	}
+	if length >= uint32(len(buffer)) {
+		return "", fmt.Errorf("canonical directory path exceeds %d UTF-16 code units", len(buffer))
+	}
+	return windows.UTF16ToString(buffer[:length]), nil
+}
+
+func normalizedWindowsPath(path string) string {
+	path = filepath.Clean(path)
+	if strings.HasPrefix(path, `\\?\`) {
+		return path
+	}
+	if strings.HasPrefix(path, `\\`) {
+		return `\\?\UNC\` + strings.TrimPrefix(path, `\\`)
+	}
+	return `\\?\` + path
 }
 
 func prepareBackgroundTree(cmd *exec.Cmd) {
@@ -52,9 +120,7 @@ func prepareBackgroundTree(cmd *exec.Cmd) {
 	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED
 }
 
-// resumeBackgroundTree resumes the primary thread of a process created with
-// CREATE_SUSPENDED. That process cannot spawn descendants until it has been
-// assigned to its Job Object.
+// resumeBackgroundTree lets the suspended worker run after job assignment.
 func resumeBackgroundTree(pid int) error {
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
 	if err != nil {
@@ -93,12 +159,17 @@ func resumeBackgroundTree(pid int) error {
 	}
 }
 
-// ownProcessTree assigns the process to a Job Object named for the worker.
-// Job membership outlives intermediate parents, so tree teardown stays
-// complete where taskkill /T loses track. Assignment must succeed before the
-// suspended worker is resumed so descendants cannot escape the job.
+// ownProcessTree assigns the suspended worker before it can spawn descendants,
+// keeping the whole tree in the Job Object.
 func ownProcessTree(pid int, workerName string) error {
-	name, err := windows.UTF16PtrFromString(jobNameFor(workerName))
+	if _, err := config.DefaultPathManager().DataDir(); err != nil {
+		return fmt.Errorf("resolve Devsy data directory for job object: %w", err)
+	}
+	jobName, err := jobNameFor(workerName)
+	if err != nil {
+		return err
+	}
+	name, err := windows.UTF16PtrFromString(jobName)
 	if err != nil {
 		return err
 	}
@@ -177,13 +248,65 @@ func terminateJob(workerName string) (bool, error) {
 	return terminateJobHandle(job, workerName)
 }
 
+func terminateJobAfterWorkerExit(workerName string) (bool, error) {
+	job, found, err := openWorkerJob(workerName)
+	if err != nil {
+		return false, err
+	}
+	if !found && isDetachedTaskWorkerName(workerName) {
+		job, found, err = openLegacyWorkerJob(workerName)
+		if err != nil {
+			return false, err
+		}
+	}
+	if !found {
+		return false, nil
+	}
+	defer func() { _ = windows.CloseHandle(job) }()
+	return terminateJobHandle(job, workerName)
+}
+
+func isDetachedTaskWorkerName(workerName string) bool {
+	if !strings.HasPrefix(workerName, detachedTaskWorkerPrefix) {
+		return false
+	}
+	taskID := strings.TrimPrefix(workerName, detachedTaskWorkerPrefix)
+	if len(taskID) != 12 {
+		return false
+	}
+	for _, char := range taskID {
+		if !(char >= 'a' && char <= 'z') && !(char >= 'A' && char <= 'Z') && !(char >= '0' && char <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
 func terminateJobForPID(workerName string, pid int) (bool, error) {
 	job, found, err := openWorkerJob(workerName)
+	if err != nil {
+		return false, err
+	}
+	if found {
+		inJob, verifyErr := processBelongsToJob(pid, job)
+		if verifyErr != nil {
+			_ = windows.CloseHandle(job)
+			if errors.Is(verifyErr, windows.ERROR_INVALID_PARAMETER) {
+				return false, fmt.Errorf("worker process %d exited before job membership was verified", pid)
+			}
+			return false, verifyErr
+		}
+		if inJob {
+			defer func() { _ = windows.CloseHandle(job) }()
+			return terminateJobHandle(job, workerName)
+		}
+		_ = windows.CloseHandle(job)
+	}
+	job, found, err = openLegacyWorkerJob(workerName)
 	if err != nil || !found {
 		return found, err
 	}
 	defer func() { _ = windows.CloseHandle(job) }()
-
 	inJob, err := processBelongsToJob(pid, job)
 	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 		return false, fmt.Errorf("worker process %d exited before job membership was verified", pid)
@@ -220,7 +343,19 @@ func processBelongsToJob(pid int, job windows.Handle) (bool, error) {
 }
 
 func openWorkerJob(workerName string) (windows.Handle, bool, error) {
-	name, err := windows.UTF16PtrFromString(jobNameFor(workerName))
+	jobName, err := jobNameFor(workerName)
+	if err != nil {
+		return 0, false, err
+	}
+	return openNamedJob(jobName, workerName)
+}
+
+func openLegacyWorkerJob(workerName string) (windows.Handle, bool, error) {
+	return openNamedJob(workerName, workerName)
+}
+
+func openNamedJob(jobName, workerName string) (windows.Handle, bool, error) {
+	name, err := windows.UTF16PtrFromString(jobName)
 	if err != nil {
 		return 0, false, err
 	}
