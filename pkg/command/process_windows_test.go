@@ -232,7 +232,11 @@ func TestKillTreeWithIdentityDoesNotFallbackToUnverifiedPID(t *testing.T) {
 	if identity == "" {
 		t.Fatal("ProcessTreeIdentity returned empty identity for live worker")
 	}
-	if err := killTreeWithIdentity(strconv.Itoa(worker.Process.Pid), jobName, identity); err == nil {
+	if err := killTreeWithIdentity(
+		strconv.Itoa(worker.Process.Pid),
+		jobName,
+		identity,
+	); err == nil {
 		t.Fatal("killTreeWithIdentity without a job object = nil for a live worker")
 	}
 	if running, err := isRunning(strconv.Itoa(worker.Process.Pid)); err != nil || !running {

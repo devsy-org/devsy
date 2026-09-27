@@ -132,7 +132,11 @@ func killTreeWithIdentity(pid, treeName, identity string) error {
 	if !running {
 		return nil
 	}
-	return fmt.Errorf("worker job %s is unavailable while process %d is still running", treeName, parsed)
+	return fmt.Errorf(
+		"worker job %s is unavailable while process %d is still running",
+		treeName,
+		parsed,
+	)
 }
 
 func killTreeAfterWorkerExit(pid, treeName, _ string) error {

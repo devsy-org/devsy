@@ -30,8 +30,12 @@ type jobAccountingInfo struct {
 	totalTerminatedProcesses  uint32
 }
 
-var procOpenJobObjectW = windows.NewLazySystemDLL("kernel32.dll").NewProc("OpenJobObjectW")
-var procIsProcessInJobForTermination = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
+var (
+	procOpenJobObjectW = windows.NewLazySystemDLL("kernel32.dll").
+				NewProc("OpenJobObjectW")
+	procIsProcessInJobForTermination = windows.NewLazySystemDLL("kernel32.dll").
+						NewProc("IsProcessInJob")
+)
 
 // jobNameFor names the Job Object after the worker (e.g. devsy-up-<taskID>)
 // rather than its PID: a reused PID must never inherit a predecessor's job.
@@ -176,7 +180,11 @@ func terminateJobForPID(workerName string, pid int) (bool, error) {
 }
 
 func processBelongsToJob(pid int, job windows.Handle) (bool, error) {
-	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	process, err := windows.OpenProcess(
+		windows.PROCESS_QUERY_LIMITED_INFORMATION,
+		false,
+		uint32(pid),
+	)
 	if err != nil {
 		return false, fmt.Errorf("open worker process %d: %w", pid, err)
 	}

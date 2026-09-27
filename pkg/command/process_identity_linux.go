@@ -64,11 +64,19 @@ func parseLinuxProcessTreeIdentity(identity string) (linuxProcessTreeIdentity, e
 	var err error
 	wanted.sessionID, err = strconv.Atoi(identityParts[0])
 	if err != nil {
-		return linuxProcessTreeIdentity{}, fmt.Errorf("parse session identity %q: %w", identity, err)
+		return linuxProcessTreeIdentity{}, fmt.Errorf(
+			"parse session identity %q: %w",
+			identity,
+			err,
+		)
 	}
 	wanted.startTime, err = strconv.ParseUint(identityParts[1], 10, 64)
 	if err != nil {
-		return linuxProcessTreeIdentity{}, fmt.Errorf("parse process start identity %q: %w", identity, err)
+		return linuxProcessTreeIdentity{}, fmt.Errorf(
+			"parse process start identity %q: %w",
+			identity,
+			err,
+		)
 	}
 	return wanted, nil
 }
@@ -83,14 +91,10 @@ func linuxProcessGroupEntryMatches(
 	if err != nil {
 		return false, false, nil
 	}
-	stat, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "stat"))
+	fields, ok, err := linuxProcessStat(pid)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return false, false, nil
-		}
 		return false, false, err
 	}
-	fields, ok := linuxProcessStatFields(stat)
 	if !ok || len(fields) < 4 {
 		return false, false, nil
 	}
@@ -103,18 +107,42 @@ func linuxProcessGroupEntryMatches(
 		return false, false, nil
 	}
 	if pid == pgid {
-		if len(fields) < 20 {
-			return false, false, fmt.Errorf("read process start time for process %d", pid)
-		}
-		leaderStart, err := strconv.ParseUint(fields[19], 10, 64)
+		matches, err := linuxProcessLeaderMatches(pid, sessionID, fields, wanted)
 		if err != nil {
-			return false, false, fmt.Errorf("parse process start time for process %d: %w", pid, err)
+			return false, false, err
 		}
-		if sessionID != wanted.sessionID || leaderStart != wanted.startTime {
+		if !matches {
 			return false, true, nil
 		}
 	}
 	return sessionID == wanted.sessionID, false, nil
+}
+
+func linuxProcessStat(pid int) ([]string, bool, error) {
+	stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	fields, ok := linuxProcessStatFields(stat)
+	return fields, ok, nil
+}
+
+func linuxProcessLeaderMatches(
+	pid, sessionID int,
+	fields []string,
+	wanted linuxProcessTreeIdentity,
+) (bool, error) {
+	if len(fields) < 20 {
+		return false, fmt.Errorf("read process start time for process %d", pid)
+	}
+	leaderStart, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return false, fmt.Errorf("parse process start time for process %d: %w", pid, err)
+	}
+	return sessionID == wanted.sessionID && leaderStart == wanted.startTime, nil
 }
 
 func linuxProcessStatFields(stat []byte) ([]string, bool) {
