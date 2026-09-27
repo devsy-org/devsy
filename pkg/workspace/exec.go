@@ -351,7 +351,8 @@ func execWithRunner(ctx context.Context, req ExecRequest, run containerRunFunc) 
 	if err == nil {
 		return 0, nil
 	}
-	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
 		return exitErr.ExitCode(), nil
 	}
 	return -1, fmt.Errorf("exec in container %s: %w", req.Target.ContainerID, err)
