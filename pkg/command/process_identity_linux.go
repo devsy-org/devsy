@@ -18,7 +18,10 @@ func processTreeIdentity(pid int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !ok || len(fields) < 20 {
+	if !ok {
+		return "", nil
+	}
+	if len(fields) < 20 {
 		return "", fmt.Errorf("read session identity for process %d", pid)
 	}
 	return fields[3] + ":" + fields[19], nil
@@ -133,7 +136,10 @@ func linuxProcessStat(pid int) ([]string, bool, error) {
 		return nil, false, err
 	}
 	fields, ok := linuxProcessStatFields(stat)
-	return fields, ok, nil
+	if !ok {
+		return nil, true, fmt.Errorf("parse process stat for process %d", pid)
+	}
+	return fields, true, nil
 }
 
 func linuxProcessStatErrorIsAbsent(err error) bool {

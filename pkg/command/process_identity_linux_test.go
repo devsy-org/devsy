@@ -45,3 +45,13 @@ func TestLinuxProcessStatErrorIsAbsent(t *testing.T) {
 		})
 	}
 }
+
+func TestProcessTreeIdentityForMissingProcess(t *testing.T) {
+	identity, err := processTreeIdentity(int(^uint(0) >> 1))
+	if err != nil {
+		t.Fatalf("processTreeIdentity for missing PID: %v", err)
+	}
+	if identity != "" {
+		t.Fatalf("processTreeIdentity for missing PID = %q, want empty identity", identity)
+	}
+}
