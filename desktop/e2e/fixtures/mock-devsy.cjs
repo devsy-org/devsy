@@ -8,7 +8,8 @@
 const fs = require("node:fs")
 const path = require("node:path")
 const os = require("node:os")
-const { mergeTasks } = require("./mock-task-state.cjs")
+const { randomUUID } = require("node:crypto")
+const { mergeTasks, withFileLock } = require("./mock-task-state.cjs")
 
 const STATE_FILE = path.join(os.tmpdir(), "devsy-mock-state.json")
 
@@ -77,31 +78,47 @@ function defaultState() {
       },
     ],
     tasks: {},
+    deletedTasks: {},
   }
 }
 
 function loadState() {
   try {
     const data = fs.readFileSync(STATE_FILE, "utf8")
-    return JSON.parse(data)
+    const state = JSON.parse(data)
+    state.tasks = state.tasks || {}
+    state.deletedTasks = state.deletedTasks || {}
+    return state
   } catch {
     return defaultState()
   }
 }
 
 function saveState(state, deletedTaskIds = []) {
-  const latest = loadState()
-  const updated = {
-    ...state,
-    tasks: mergeTasks(latest.tasks || {}, state.tasks || {}, deletedTaskIds),
-  }
-  const temporaryFile = `${STATE_FILE}.${process.pid}.tmp`
-  fs.writeFileSync(temporaryFile, JSON.stringify(updated, null, 2), "utf8")
-  fs.renameSync(temporaryFile, STATE_FILE)
+  withFileLock(`${STATE_FILE}.lock`, () => {
+    const latest = loadState()
+    const deletedTasks = {
+      ...(latest.deletedTasks || {}),
+      ...(state.deletedTasks || {}),
+      ...Object.fromEntries(deletedTaskIds.map((id) => [id, true])),
+    }
+    const updated = {
+      ...state,
+      deletedTasks,
+      tasks: mergeTasks(
+        latest.tasks || {},
+        state.tasks || {},
+        deletedTaskIds,
+        deletedTasks,
+      ),
+    }
+    const temporaryFile = `${STATE_FILE}.${process.pid}.tmp`
+    fs.writeFileSync(temporaryFile, JSON.stringify(updated, null, 2), "utf8")
+    fs.renameSync(temporaryFile, STATE_FILE)
+  })
 }
 
 const state = loadState()
-state.tasks = state.tasks || {}
 
 const rawArgs = process.argv.slice(2)
 
@@ -294,7 +311,7 @@ function handleUp(args) {
       a === "-d=true",
   )
   if (isDetach) {
-    const taskId = `task-${Date.now()}`
+    const taskId = `task-${randomUUID()}`
     state.tasks[taskId] = {
       id: taskId,
       status: "pending",
