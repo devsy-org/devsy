@@ -252,7 +252,7 @@ func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Frame
 	wrapper, err := os.Create(wrapperPath) //nolint:gosec // G304: test-controlled path
 	framework.ExpectNoError(err)
 
-	_, err = wrapper.WriteString("#!/bin/sh\nsudo podman \"$@\"\n")
+	_, err = wrapper.WriteString("#!/bin/sh\nsudo -E podman \"$@\"\n")
 	if err != nil {
 		_ = wrapper.Close()
 	}
