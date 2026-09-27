@@ -245,6 +245,19 @@ func TestKillTreeWithIdentityDoesNotFallbackToUnverifiedPID(t *testing.T) {
 	}
 }
 
+func TestKillTreeAfterWorkerExitWithoutIdentityFailsClosedWhenJobIsMissing(t *testing.T) {
+	worker := startHelper(t)
+	if err := worker.Process.Kill(); err != nil {
+		t.Fatalf("kill helper: %v", err)
+	}
+	_ = worker.Wait()
+
+	err := killTreeAfterWorkerExit(strconv.Itoa(worker.Process.Pid), "devsy-up-abcdefghijkl", "")
+	if err == nil || !strings.Contains(err.Error(), "cannot verify descendants without process identity") {
+		t.Fatalf("killTreeAfterWorkerExit error = %v, want fail-closed identity error", err)
+	}
+}
+
 func TestOwnProcessTreeRejectsExistingJobObject(t *testing.T) {
 	workerName := "devsy-test-existing-job-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	jobName, err := jobNameFor(workerName)
@@ -586,8 +599,15 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 		t.Fatalf("startDetached: %v", err)
 	}
 	parentPID := waitForPIDFile(t, parentPIDFile)
+	identity, err := ProcessTreeIdentity(parentPID)
+	if err != nil {
+		t.Fatalf("ProcessTreeIdentity: %v", err)
+	}
+	if identity == "" {
+		t.Fatalf("ProcessTreeIdentity(%d) returned an empty identity", parentPID)
+	}
 	t.Cleanup(
-		func() { _ = KillTreeAfterWorkerExit(strconv.Itoa(parentPID), "devsy-test-worker", "") },
+		func() { _ = KillTreeAfterWorkerExit(strconv.Itoa(parentPID), "devsy-test-worker", identity) },
 	)
 	if err := os.WriteFile(waitFile, []byte("go"), 0o600); err != nil {
 		t.Fatalf("signal helper: %v", err)
@@ -597,14 +617,12 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 	grandchildPID := waitForPIDFile(t, grandchildPIDFile)
 	assertNotRunningEventually(t, childPID)
 	assertNotRunningEventually(t, parentPID)
+	assertNotRunningEventually(t, grandchildPID)
 	if err := killTreeAfterWorkerExit(
 		strconv.Itoa(parentPID),
 		"devsy-test-worker",
-		"",
+		identity,
 	); err != nil {
-		t.Fatalf("KillTreeAfterWorkerExit(parent): %v", err)
+		t.Fatalf("KillTreeAfterWorkerExit after natural tree cleanup: %v", err)
 	}
-
-	assertNotRunningEventually(t, parentPID)
-	assertNotRunningEventually(t, grandchildPID)
 }

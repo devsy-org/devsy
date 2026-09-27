@@ -86,8 +86,12 @@ func TestKillTreeTerminatesGroupAfterWorkerExits(t *testing.T) {
 func TestKillTreeAfterWorkerExitWithoutIdentityDoesNotSignalUnrelatedGroup(t *testing.T) {
 	worker := startUnixTestProcess(t, &syscall.SysProcAttr{Setpgid: true})
 	pid := strconv.Itoa(worker.Process.Pid)
-	if err := killTreeAfterWorkerExit(pid, "stale-task", ""); err == nil {
+	err := killTreeAfterWorkerExit(pid, "stale-task", "")
+	if err == nil {
 		t.Fatal("killTreeAfterWorkerExit without identity = nil for a live process group")
+	}
+	if !strings.Contains(err.Error(), "saved process identity is unavailable") {
+		t.Fatalf("killTreeAfterWorkerExit error = %v, want missing-identity context", err)
 	}
 	if running, err := isRunning(pid); err != nil || !running {
 		t.Fatalf("unidentified process running=%t, err=%v", running, err)

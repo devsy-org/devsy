@@ -150,8 +150,14 @@ func killTreeAfterWorkerExit(pid, treeName, identity string) error {
 	if err != nil {
 		return err
 	}
-	if !terminated && identity == "" {
-		return fmt.Errorf("worker job %s is unavailable for legacy task cleanup", treeName)
+	if !terminated {
+		if identity == "" {
+			return fmt.Errorf(
+				"worker job %s is unavailable; cannot verify descendants without process identity",
+				treeName,
+			)
+		}
+		// SetPID runs only after launch assigns the worker to a kill-on-close job.
 	}
 	return nil
 }

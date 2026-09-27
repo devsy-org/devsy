@@ -4,8 +4,12 @@ package task
 
 import (
 	"os/exec"
+	"strconv"
 	"testing"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
 )
 
 // sleepWorker returns a long-running process using only tools a Windows
@@ -15,6 +19,7 @@ func sleepWorker() *exec.Cmd {
 }
 
 func TestCancelSignalsALiveWorkersPID(t *testing.T) {
+	t.Setenv(config.EnvHome, t.TempDir())
 	store := newTestStore(t)
 	tk, err := store.Create(CreateOptions{})
 	if err != nil {
@@ -23,11 +28,15 @@ func TestCancelSignalsALiveWorkersPID(t *testing.T) {
 	holdWorkerLock(t, tk)
 
 	worker := sleepWorker()
-	if err := worker.Start(); err != nil {
-		t.Fatalf("start: %v", err)
+	workerName := WorkerProcessName(tk.ID())
+	if err := command.StartBackground(workerName, func() (*exec.Cmd, error) {
+		return worker, nil
+	}); err != nil {
+		t.Fatalf("start background worker: %v", err)
 	}
-	defer func() { _ = worker.Process.Kill() }()
-	if err := tk.SetPID(worker.Process.Pid); err != nil {
+	pid := worker.Process.Pid
+	t.Cleanup(func() { _ = command.KillTree(strconv.Itoa(pid), workerName) })
+	if err := tk.SetPID(pid); err != nil {
 		t.Fatalf("SetPID: %v", err)
 	}
 
@@ -35,9 +44,12 @@ func TestCancelSignalsALiveWorkersPID(t *testing.T) {
 		t.Fatalf("Cancel: %v", err)
 	}
 
-	waitErr := worker.Wait()
-	if waitErr == nil {
-		t.Fatal("worker process exited cleanly, want it terminated by Cancel")
+	running, err := command.IsRunning(strconv.Itoa(pid))
+	if err != nil {
+		t.Fatalf("IsRunning: %v", err)
+	}
+	if running {
+		t.Fatalf("worker process %d is still running after Cancel", pid)
 	}
 }
 

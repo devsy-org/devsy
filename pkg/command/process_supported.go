@@ -142,10 +142,18 @@ func killTreeAfterWorkerExit(pid, treeName, identity string) error {
 }
 
 func checkUnidentifiedProcessGroup(pid int, treeName string) error {
-	if err := syscall.Kill(-pid, 0); errors.Is(err, syscall.ESRCH) {
+	err := syscall.Kill(-pid, 0)
+	if errors.Is(err, syscall.ESRCH) {
 		return nil
 	}
-	return fmt.Errorf("verify process group %d for worker tree %s", pid, treeName)
+	if err != nil {
+		return fmt.Errorf("verify process group %d for worker tree %s: %w", pid, treeName, err)
+	}
+	return fmt.Errorf(
+		"verify process group %d for worker tree %s: saved process identity is unavailable",
+		pid,
+		treeName,
+	)
 }
 
 func signalProcessTree(target int, graceful bool, identity string) error {
