@@ -8,6 +8,7 @@
 const fs = require("node:fs")
 const path = require("node:path")
 const os = require("node:os")
+const { mergeTasks } = require("./mock-task-state.cjs")
 
 const STATE_FILE = path.join(os.tmpdir(), "devsy-mock-state.json")
 
@@ -88,8 +89,15 @@ function loadState() {
   }
 }
 
-function saveState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf8")
+function saveState(state, deletedTaskIds = []) {
+  const latest = loadState()
+  const updated = {
+    ...state,
+    tasks: mergeTasks(latest.tasks || {}, state.tasks || {}, deletedTaskIds),
+  }
+  const temporaryFile = `${STATE_FILE}.${process.pid}.tmp`
+  fs.writeFileSync(temporaryFile, JSON.stringify(updated, null, 2), "utf8")
+  fs.renameSync(temporaryFile, STATE_FILE)
 }
 
 const state = loadState()
@@ -445,7 +453,7 @@ function handleTaskRm(args) {
     return
   }
   delete state.tasks[id]
-  saveState(state)
+  saveState(state, [id])
   out({})
 }
 
