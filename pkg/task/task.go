@@ -131,11 +131,6 @@ func (t *Task) ReleaseWorkerLock() error {
 	return nil
 }
 
-// ReleaseWorkerLockForTest simulates a dead worker in tests.
-func (t *Task) ReleaseWorkerLockForTest() error {
-	return t.ReleaseWorkerLock()
-}
-
 // SetWorkspaceID corrects the task's workspace label to the resolved ID,
 // which may differ from whatever label it was created with (e.g. a raw
 // source string guessed before workspace resolution ran). client.Status
@@ -322,8 +317,8 @@ func (t *Task) cancelWithoutPublishedPID() (int, bool, error) {
 	}
 	if locked {
 		defer func() { _ = workerLock.Unlock() }()
-		if t.store.afterCancelLockClaimedForTest != nil {
-			t.store.afterCancelLockClaimedForTest()
+		if t.store.afterCancelLockClaimedHook != nil {
+			t.store.afterCancelLockClaimedHook()
 		}
 		// Holding the worker lock through the state update prevents a
 		// not-yet-started worker from passing its terminal-state check

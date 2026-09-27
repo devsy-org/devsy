@@ -25,14 +25,11 @@ const pidPublishTimeout = 5 * time.Second
 
 // Store persists task state as one JSON file per task under dir.
 type Store struct {
-	dir string
-	// Test seam; see Store.SetKillProcessForTest.
-	killProcessWithIdentity func(pid, treeName, identity string) error
-	killExitedWorkerTree    func(pid, treeName, identity string) error
-	// Test seam; see Store.SetAfterClaimForTest.
-	afterClaimForTest func()
-	// Test seam for the cancellation/worker-start lock handoff.
-	afterCancelLockClaimedForTest func()
+	dir                        string
+	killProcessWithIdentity    func(pid, treeName, identity string) error
+	killExitedWorkerTree       func(pid, treeName, identity string) error
+	afterClaimHook             func()
+	afterCancelLockClaimedHook func()
 }
 
 func NewStore() (*Store, error) {
@@ -149,8 +146,8 @@ func (s *Store) Reconcile(state *State) *State {
 	}
 	defer func() { _ = lock.Unlock() }()
 
-	if s.afterClaimForTest != nil {
-		s.afterClaimForTest()
+	if s.afterClaimHook != nil {
+		s.afterClaimHook()
 	}
 
 	current, err := s.Get(state.ID)
@@ -223,36 +220,6 @@ func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error
 		active = append(active, state)
 	}
 	return active, nil
-}
-
-// SetKillProcessForTest replaces this store's process termination hook, so a
-// test can drive cancellation outcomes deterministically without real PIDs.
-//
-// Not in export_test.go: other packages' tests need it, and a _test.go file
-// compiles only into its own package's test binary.
-func (s *Store) SetKillProcessForTest(fn func(pid, treeName string) error) {
-	s.killProcessWithIdentity = func(pid, treeName, _ string) error {
-		return fn(pid, treeName)
-	}
-	s.killExitedWorkerTree = func(pid, treeName, _ string) error {
-		return fn(pid, treeName)
-	}
-}
-
-// SetKillProcessWithIdentityForTest replaces cancellation hooks with an
-// identity-aware test implementation.
-func (s *Store) SetKillProcessWithIdentityForTest(fn func(pid, treeName, identity string) error) {
-	s.killProcessWithIdentity = fn
-	s.killExitedWorkerTree = fn
-}
-
-// SetAfterCancelLockClaimedForTest pauses Cancel while it owns the worker
-// lock, allowing tests to verify that a starting worker cannot pass it.
-//
-// Not in export_test.go: other packages' tests need it, and a _test.go file
-// compiles only into its own package's test binary.
-func (s *Store) SetAfterCancelLockClaimedForTest(fn func()) {
-	s.afterCancelLockClaimedForTest = fn
 }
 
 // awaitPID polls for the worker to publish its PID, which it does right

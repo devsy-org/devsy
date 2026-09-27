@@ -131,7 +131,7 @@ func TestTaskStatusOverride_AbandonedTaskReportsFailed(t *testing.T) {
 	// Claim then release the worker lock: the kernel frees a dead worker's
 	// lock the same way, which is what marks the task abandoned.
 	require.NoError(t, tk.HoldWorkerLock())
-	require.NoError(t, tk.ReleaseWorkerLockForTest())
+	require.NoError(t, tk.ReleaseWorkerLock())
 
 	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, true, client.StatusFailed)
@@ -151,7 +151,7 @@ func TestTaskStatusOverride_LiveWorkerStillReportsProvisioning(t *testing.T) {
 	require.NoError(t, tk.HoldWorkerLock())
 	// Released on cleanup so the fd closes even if an assertion fails; an open
 	// file can block TempDir removal on some platforms.
-	t.Cleanup(func() { require.NoError(t, tk.ReleaseWorkerLockForTest()) })
+	t.Cleanup(func() { require.NoError(t, tk.ReleaseWorkerLock()) })
 
 	s := &workspaceClient{providerWorkspace: &provider.Workspace{ID: testWorkspaceID}}
 	assertOverride(t, s, true, client.StatusProvisioning)

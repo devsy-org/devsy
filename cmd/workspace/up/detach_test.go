@@ -108,7 +108,7 @@ func assertWorkerLockReleased(t *testing.T, store *task.Store, id string) {
 	if err := lockHolder.HoldWorkerLock(); err != nil {
 		t.Fatalf("worker lock remained held after canceled startup: %v", err)
 	}
-	if err := lockHolder.ReleaseWorkerLockForTest(); err != nil {
+	if err := lockHolder.ReleaseWorkerLock(); err != nil {
 		t.Fatalf("release worker lock: %v", err)
 	}
 }

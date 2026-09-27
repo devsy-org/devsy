@@ -26,8 +26,7 @@ type DeleteOptions struct {
 	Force          bool
 	ClientDelete   client2.DeleteOptions
 	Owner          platform.OwnerFilter
-	// Test seam; see task.Store.SetKillProcessForTest. nil resolves the
-	// default store.
+	// Optional quiescence override for focused deletion tests.
 	quiesceUpTasks func(workspaceID string) error
 }
 

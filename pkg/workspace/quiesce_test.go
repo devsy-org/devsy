@@ -2,8 +2,6 @@ package workspace
 
 import (
 	"errors"
-	"os"
-	"strconv"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/task"
@@ -59,25 +57,19 @@ func TestQuiesceUpTasksAttemptsEveryTaskAndAggregatesFailures(t *testing.T) {
 	failing := createUpTask(t, store, "ws-1")
 	succeeding := createUpTask(t, store, "ws-1")
 
-	// Both workers read as live; one kill keeps failing.
+	// Both workers stay active; cancellation of one task fails.
 	for _, tk := range []*task.Task{failing, succeeding} {
 		require.NoError(t, tk.HoldWorkerLock())
 		tk := tk
-		t.Cleanup(func() { _ = tk.ReleaseWorkerLockForTest() })
+		t.Cleanup(func() { _ = tk.ReleaseWorkerLock() })
 	}
-	require.NoError(t, failing.SetPID(os.Getpid()))
-	require.NoError(t, succeeding.SetPID(os.Getpid()))
-	store.SetKillProcessForTest(func(pid, treeName string) error {
-		if pid != strconv.Itoa(os.Getpid()) {
-			t.Errorf("kill pid = %q, want current process %d", pid, os.Getpid())
-		}
-		if treeName == task.WorkerProcessName(failing.ID()) {
+	err := quiesceUpTasks(store, "ws-1", func(id string) error {
+		if id == failing.ID() {
 			return errors.New("boom")
 		}
-		return nil
+		return store.Open(id).Fail(task.ErrCanceled)
 	})
 
-	err := QuiesceUpTasks(store, "ws-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), failing.ID())
 

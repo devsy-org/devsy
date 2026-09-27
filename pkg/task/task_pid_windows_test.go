@@ -53,8 +53,8 @@ func TestCancelDoesNotSignalAProcessThatReusedThePID(t *testing.T) {
 	if err := tk.HoldWorkerLock(); err != nil {
 		t.Fatalf("HoldWorkerLock: %v", err)
 	}
-	if err := tk.ReleaseWorkerLockForTest(); err != nil {
-		t.Fatalf("ReleaseWorkerLockForTest: %v", err)
+	if err := tk.ReleaseWorkerLock(); err != nil {
+		t.Fatalf("ReleaseWorkerLock: %v", err)
 	}
 
 	innocent := sleepWorker()

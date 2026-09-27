@@ -79,8 +79,8 @@ func TestActiveForWorkspaceReconcilesAbandonedWorkers(t *testing.T) {
 	if err := tk.HoldWorkerLock(); err != nil {
 		t.Fatalf("HoldWorkerLock: %v", err)
 	}
-	if err := tk.ReleaseWorkerLockForTest(); err != nil {
-		t.Fatalf("ReleaseWorkerLockForTest: %v", err)
+	if err := tk.ReleaseWorkerLock(); err != nil {
+		t.Fatalf("ReleaseWorkerLock: %v", err)
 	}
 
 	active, err := store.ActiveForWorkspace(workspaceOne, "up")
@@ -111,7 +111,7 @@ func TestActiveForWorkspaceCleansAbandonedProcessTreeBeforeExcluding(t *testing.
 	}
 
 	killCalls := 0
-	store.SetKillProcessForTest(func(pid, treeName string) error {
+	setKillProcessForTest(store, func(pid, treeName string) error {
 		killCalls++
 		if pid != "4242" {
 			t.Errorf("kill pid = %q, want 4242", pid)
@@ -143,7 +143,7 @@ func TestActiveForWorkspaceKeepsAbandonedTaskActiveWhenTreeCleanupFails(t *testi
 	if err := setPIDForTest(store.Open(state.ID)); err != nil {
 		t.Fatalf("SetPID: %v", err)
 	}
-	store.SetKillProcessForTest(func(string, string) error {
+	setKillProcessForTest(store, func(string, string) error {
 		return errors.New("descendant cleanup failed")
 	})
 

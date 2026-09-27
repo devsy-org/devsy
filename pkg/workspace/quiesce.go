@@ -17,6 +17,16 @@ const upTaskCommand = "up"
 // failures are aggregated, since a surviving worker can reverse the
 // lifecycle change.
 func QuiesceUpTasks(store *task.Store, workspaceID string) error {
+	return quiesceUpTasks(store, workspaceID, func(id string) error {
+		return store.Open(id).Cancel()
+	})
+}
+
+func quiesceUpTasks(
+	store *task.Store,
+	workspaceID string,
+	cancelTask func(id string) error,
+) error {
 	active, err := store.ActiveForWorkspace(workspaceID, upTaskCommand)
 	if err != nil {
 		return fmt.Errorf("list active up tasks for workspace %s: %w", workspaceID, err)
@@ -24,7 +34,7 @@ func QuiesceUpTasks(store *task.Store, workspaceID string) error {
 
 	var errs []error
 	for _, state := range active {
-		if err := store.Open(state.ID).Cancel(); err != nil {
+		if err := cancelTask(state.ID); err != nil {
 			errs = append(errs, fmt.Errorf("cancel up task %s: %w", state.ID, err))
 		}
 	}

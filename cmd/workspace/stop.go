@@ -22,8 +22,7 @@ import (
 type StopCmd struct {
 	*flags.GlobalFlags
 	client2.StopOptions
-	// Test seam; see task.Store.SetKillProcessForTest. nil resolves the
-	// default store.
+	// Optional quiescence override for focused command tests.
 	quiesceUpTasks func(workspaceID string) error
 }
 

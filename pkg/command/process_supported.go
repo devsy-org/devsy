@@ -17,6 +17,9 @@ func isRunning(pid string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if parsedPid <= 0 {
+		return false, fmt.Errorf("invalid PID %d: must be positive", parsedPid)
+	}
 
 	process, err := os.FindProcess(parsedPid)
 	if err != nil {
@@ -25,7 +28,13 @@ func isRunning(pid string) (bool, error) {
 
 	err = process.Signal(syscall.Signal(0))
 	if err != nil {
-		return false, nil
+		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
+			return false, nil
+		}
+		if errors.Is(err, syscall.EPERM) {
+			return true, nil
+		}
+		return false, fmt.Errorf("check process %d: %w", parsedPid, err)
 	}
 
 	return true, nil
@@ -36,6 +45,9 @@ func killTree(pid, treeName string) error {
 	parsedPid, err := strconv.Atoi(pid)
 	if err != nil {
 		return err
+	}
+	if parsedPid <= 0 {
+		return fmt.Errorf("invalid PID %d: must be positive", parsedPid)
 	}
 	identity, err := processTreeIdentity(parsedPid)
 	if err != nil {

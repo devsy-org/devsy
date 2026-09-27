@@ -254,7 +254,12 @@ func waitForTestProcess(t *testing.T, pid string, wantRunning bool) {
 }
 
 func TestKillInvalidPIDReturnsError(t *testing.T) {
-	if err := Kill("not-a-pid"); err == nil {
-		t.Error("Kill(\"not-a-pid\") = nil, want error")
+	for _, pid := range []string{"not-a-pid", "0", "-5"} {
+		if _, err := IsRunning(pid); err == nil {
+			t.Errorf("IsRunning(%q) = nil error, want rejection", pid)
+		}
+		if err := Kill(pid); err == nil {
+			t.Errorf("Kill(%q) = nil, want error", pid)
+		}
 	}
 }
