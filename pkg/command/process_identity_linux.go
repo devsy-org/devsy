@@ -32,23 +32,12 @@ func processGroupMatchesIdentity(pgid int, identity string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	leaderFields, leaderFound, err := linuxProcessStat(pgid)
+	leaderMismatch, err := linuxProcessGroupLeaderMismatch(pgid, wanted)
 	if err != nil {
 		return false, err
 	}
-	if leaderFound {
-		_, leaderMismatch, err := linuxProcessGroupFieldsMatch(
-			pgid,
-			pgid,
-			wanted,
-			leaderFields,
-		)
-		if err != nil {
-			return false, err
-		}
-		if leaderMismatch {
-			return false, nil
-		}
+	if leaderMismatch {
+		return false, nil
 	}
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -66,6 +55,18 @@ func processGroupMatchesIdentity(pgid int, identity string) (bool, error) {
 		return false, nil
 	}
 	return linuxProcessGroupMatchResult(pgid, scan.foundMember, scan.skippedStatErr)
+}
+
+func linuxProcessGroupLeaderMismatch(
+	pgid int,
+	wanted linuxProcessTreeIdentity,
+) (bool, error) {
+	fields, found, err := linuxProcessStat(pgid)
+	if err != nil || !found {
+		return false, err
+	}
+	_, mismatch, err := linuxProcessGroupFieldsMatch(pgid, pgid, wanted, fields)
+	return mismatch, err
 }
 
 type linuxProcessGroupScan struct {

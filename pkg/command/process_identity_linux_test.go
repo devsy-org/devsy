@@ -114,6 +114,7 @@ func TestLinuxProcessGroupProbeHelper(t *testing.T) {
 
 func startLinuxProcessGroupHelper(t *testing.T) int {
 	t.Helper()
+	// #nosec G204,G702 -- run this test binary with a fixed test selector.
 	cmd := exec.Command(os.Args[0], "-test.run=^TestLinuxProcessGroupProbeHelper$")
 	cmd.Env = append(os.Environ(), "DEVSY_PROCESS_GROUP_HELPER=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
