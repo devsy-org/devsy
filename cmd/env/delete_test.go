@@ -9,119 +9,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type deleteTestStore struct {
-	value     string
-	deleteErr error
-	getErr    error
-}
+type deleteTestStore struct{ deleteErr error }
 
 const (
-	deleteEnvName   = "FOO"
-	deleteTestValue = "delete-value"
+	firstBinding = "FIRST"
+	lastBinding  = "LAST"
 )
 
-func (s *deleteTestStore) Set(string, string, string, secrets.Kind) error { return nil }
-func (s *deleteTestStore) Get(string, string) (string, error) {
-	if s.getErr != nil {
-		return "", s.getErr
-	}
-	return s.value, nil
+func (*deleteTestStore) Set(string, string, string, secrets.Kind) error { return nil }
+func (*deleteTestStore) Get(string, string) (string, error) {
+	panic("delete rollback must not call Get")
 }
-
-func (s *deleteTestStore) Meta(string, string) (secrets.SecretMeta, error) {
+func (*deleteTestStore) Meta(string, string) (secrets.SecretMeta, error) {
 	return secrets.SecretMeta{}, nil
 }
+func (*deleteTestStore) List(string) ([]secrets.SecretMeta, error) { return nil, nil }
+func (s *deleteTestStore) Delete(string, string) error             { return s.deleteErr }
 
-func (s *deleteTestStore) List(string) ([]secrets.SecretMeta, error) { return nil, nil }
-func (s *deleteTestStore) Delete(string, string) error               { return s.deleteErr }
-
-func TestDeleteEnvironmentValueRestoresAttachedBindingWhenDeleteFails(t *testing.T) {
-	cfg := deleteTestConfig([]string{"DELETE_FIRST", deleteEnvName, "DELETE_LAST"})
-	deleteErr := errors.New("delete failed")
-	store := &deleteTestStore{value: deleteTestValue, deleteErr: deleteErr}
-
-	err := deleteEnvironmentValue(deleteEnvRequest{
-		config:  cfg,
-		store:   store,
-		context: config.DefaultContext,
-		name:    deleteEnvName,
-		save: func(*config.Config) error {
-			return nil
-		},
-	})
-
-	require.ErrorIs(t, err, deleteErr)
-	require.Equal(t, []string{"DELETE_FIRST", deleteEnvName, "DELETE_LAST"}, cfg.Current().EnvVars)
-}
-
-func TestDeleteEnvironmentValueLeavesBindingRemovedWhenValueUnavailable(t *testing.T) {
-	cfg := deleteTestConfig([]string{deleteEnvName})
-	deleteErr := errors.New("delete failed")
-	store := &deleteTestStore{deleteErr: deleteErr, getErr: secrets.ErrSecretNotFound}
-
-	err := deleteEnvironmentValue(deleteEnvRequest{
-		config:  cfg,
-		store:   store,
-		context: config.DefaultContext,
-		name:    deleteEnvName,
-		save: func(*config.Config) error {
-			return nil
-		},
-	})
-
-	require.ErrorIs(t, err, deleteErr)
-	require.Empty(t, cfg.Current().EnvVars)
-}
-
-func TestDeleteEnvironmentValueJoinsRollbackFailure(t *testing.T) {
-	cfg := deleteTestConfig([]string{deleteEnvName})
-	deleteErr := errors.New("delete failed")
-	rollbackErr := errors.New("rollback failed")
-	store := &deleteTestStore{value: deleteTestValue, deleteErr: deleteErr}
-	saves := 0
-
-	err := deleteEnvironmentValue(deleteEnvRequest{
-		config:  cfg,
-		store:   store,
-		context: config.DefaultContext,
-		name:    deleteEnvName,
-		save: func(*config.Config) error {
-			saves++
-			if saves == 2 {
-				return rollbackErr
-			}
-			return nil
-		},
-	})
-
-	require.ErrorIs(t, err, deleteErr)
-	require.ErrorIs(t, err, rollbackErr)
-	require.Equal(t, []string{deleteEnvName}, cfg.Current().EnvVars)
-}
-
-func TestDeleteEnvironmentValueDoesNotSaveForUnattachedValue(t *testing.T) {
-	cfg := deleteTestConfig(nil)
-	saves := 0
-	store := &deleteTestStore{value: deleteTestValue}
-
-	require.NoError(t, deleteEnvironmentValue(deleteEnvRequest{
-		config:  cfg,
-		store:   store,
-		context: config.DefaultContext,
-		name:    deleteEnvName,
-		save: func(*config.Config) error {
-			saves++
-			return nil
-		},
-	}))
-	require.Zero(t, saves)
-}
-
-func deleteTestConfig(envVars []string) *config.Config {
-	return &config.Config{
+func TestDeleteEnvironmentValueRestoresPersistedAttachmentAfterOrdinaryFailure(t *testing.T) {
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+	t.Setenv(config.EnvHome, t.TempDir())
+	const name = "LOG_LEVEL"
+	cfg := &config.Config{
 		DefaultContext: config.DefaultContext,
 		Contexts: map[string]*config.ContextConfig{
-			config.DefaultContext: {EnvVars: envVars},
+			config.DefaultContext: {EnvVars: []string{firstBinding, name, lastBinding}},
 		},
 	}
+	require.NoError(t, config.SaveConfig(cfg))
+	deleteErr := errors.New("delete failed")
+	err := deleteEnvironmentValue(deleteEnvRequest{
+		config: cfg, store: &deleteTestStore{deleteErr: deleteErr}, context: config.DefaultContext,
+		name: name, save: config.SaveConfig,
+	})
+	require.ErrorIs(t, err, deleteErr)
+	reloaded, loadErr := config.LoadConfig("", "")
+	require.NoError(t, loadErr)
+	require.Equal(t, []string{firstBinding, name, lastBinding}, reloaded.Current().EnvVars)
 }

@@ -72,7 +72,10 @@ func TestResolveBackend_IgnoresGarbageEnv(t *testing.T) {
 }
 
 type mapBackend struct {
-	values map[string]string
+	values       map[string]string
+	removeCalls  int
+	removeErrors map[int]error
+	setError     error
 }
 
 func newMapBackend() *mapBackend { return &mapBackend{values: map[string]string{}} }
@@ -105,6 +108,9 @@ func (r mapBackendRegistry) Probe(kind Backend, _ *index, key string) (bool, boo
 }
 
 func (m *mapBackend) set(key, value string) error {
+	if m.setError != nil {
+		return m.setError
+	}
 	m.values[key] = value
 	return nil
 }
@@ -118,8 +124,84 @@ func (m *mapBackend) get(key string) (string, error) {
 }
 
 func (m *mapBackend) remove(key string) error {
+	m.removeCalls++
+	if err := m.removeErrors[m.removeCalls]; err != nil {
+		return err
+	}
 	delete(m.values, key)
 	return nil
+}
+
+func TestLocalStoreDelete_EnvIndexSaveFailurePreservesEntry(t *testing.T) {
+	s := newTestStore(t, newMapBackend())
+	require.NoError(t, s.Set(testContext, "INLINE", "plain", KindEnv))
+	s.saveIndex = func(*index) error { return errors.New("index save failed") }
+
+	err := s.Delete(testContext, "INLINE")
+	require.ErrorContains(t, err, "index save failed")
+	value, err := s.Get(testContext, "INLINE")
+	require.NoError(t, err)
+	require.Equal(t, "plain", value)
+}
+
+func TestLocalStoreDelete_SecretIndexSaveFailureRestoresBackendValue(t *testing.T) {
+	backend := newMapBackend()
+	s := newTestStore(t, backend)
+	require.NoError(t, s.Set(testContext, "TOKEN", "private payload", KindSecret))
+	indexBytes, err := os.ReadFile(s.indexPath)
+	require.NoError(t, err)
+	s.saveIndex = func(*index) error { return errors.New("index save failed") }
+
+	err = s.Delete(testContext, "TOKEN")
+	require.ErrorContains(t, err, "index save failed")
+	require.Equal(t, "private payload", backend.values[backendKey(testContext, "TOKEN")])
+	currentIndex, err := os.ReadFile(s.indexPath)
+	require.NoError(t, err)
+	require.Equal(t, indexBytes, currentIndex)
+}
+
+func TestLocalStoreDelete_BackendFailureAfterPartialRemovalRestoresEarlierValues(t *testing.T) {
+	keyring := newMapBackend()
+	file := newMapBackend()
+	key := backendKey(testContext, "LEGACY")
+	keyring.values[key] = "first payload"
+	file.values[key] = "second payload"
+	file.removeErrors = map[int]error{1: errors.New("backend removal failed")}
+	indexPath := writeLegacyIndex(t,
+		"    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+	)
+	backends := map[Backend]*mapBackend{
+		BackendKeyring: keyring,
+		BackendFile:    file,
+	}
+	registry := mapBackendRegistry{backends: backends}
+	s := newLocalStoreWithRegistry(BackendKeyring, indexPath, registry)
+
+	err := s.Delete(testContext, "LEGACY")
+	require.ErrorContains(t, err, "backend removal failed")
+	require.NotErrorIs(t, err, ErrStateIndeterminate)
+	require.Equal(t, "first payload", keyring.values[key])
+	require.Equal(t, "second payload", file.values[key])
+	_, metaErr := s.Meta(testContext, "LEGACY")
+	require.NoError(t, metaErr)
+}
+
+func TestLocalStoreDelete_CompensationFailureReturnsIndeterminateError(t *testing.T) {
+	backend := newMapBackend()
+	backend.values[backendKey(testContext, "TOKEN")] = "private payload"
+	s := newTestStore(t, backend)
+	require.NoError(t, s.Set(testContext, "TOKEN", "private payload", KindSecret))
+	backend.removeErrors = map[int]error{1: errors.New("backend removal failed")}
+	backend.setError = errors.New("backend restoration failed")
+
+	err := s.Delete(testContext, "TOKEN")
+	require.ErrorIs(t, err, ErrStateIndeterminate)
+	var mutationErr *MutationError
+	require.ErrorAs(t, err, &mutationErr)
+	require.ErrorContains(t, err, "default/TOKEN")
+	require.NotContains(t, err.Error(), "private payload")
+	require.ErrorContains(t, mutationErr.Cause, "backend removal failed")
+	require.ErrorContains(t, mutationErr.Rollback, "backend restoration failed")
 }
 
 func newTestStore(t *testing.T, b backend) *localStore {

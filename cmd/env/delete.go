@@ -2,11 +2,10 @@ package env
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/internal/managedvalue"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/secrets"
@@ -77,48 +76,9 @@ type deleteEnvRequest struct {
 	save    func(*config.Config) error
 }
 
-type removedEnvBinding struct {
-	attached bool
-	index    int
-}
-
 func deleteEnvironmentValue(request deleteEnvRequest) error {
-	devsyConfig := request.config
-	store := request.store
-	contextName := request.context
-	name := request.name
-	saveConfig := request.save
-	var binding removedEnvBinding
-	if ctxConfig := devsyConfig.Contexts[contextName]; ctxConfig != nil {
-		if idx := slices.Index(ctxConfig.EnvVars, name); idx >= 0 {
-			binding = removedEnvBinding{attached: true, index: idx}
-			ctxConfig.EnvVars = slices.Delete(ctxConfig.EnvVars, idx, idx+1)
-			if err := saveConfig(devsyConfig); err != nil {
-				return err
-			}
-		}
-	}
-
-	deleteErr := store.Delete(contextName, name)
-	if deleteErr == nil || !binding.attached {
-		return deleteErr
-	}
-
-	if _, err := store.Get(contextName, name); err != nil {
-		return deleteErr
-	}
-
-	ctxConfig := devsyConfig.Contexts[contextName]
-	ctxConfig.EnvVars = append(ctxConfig.EnvVars, "")
-	copy(ctxConfig.EnvVars[binding.index+1:], ctxConfig.EnvVars[binding.index:])
-	ctxConfig.EnvVars[binding.index] = name
-	if rollbackErr := saveConfig(devsyConfig); rollbackErr != nil {
-		rollbackMessage := "restore environment variable attachment after failed delete: %w"
-		return errors.Join(
-			deleteErr,
-			fmt.Errorf(rollbackMessage, rollbackErr),
-		)
-	}
-
-	return deleteErr
+	return managedvalue.Delete(managedvalue.DeleteRequest{
+		Config: request.config, Store: request.store, Context: request.context,
+		Name: request.name, Binding: managedvalue.EnvBinding, Save: request.save,
+	})
 }

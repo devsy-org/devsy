@@ -32,6 +32,7 @@ type localStore struct {
 	indexPath  string
 	now        func() time.Time
 	keySource  keySource
+	saveIndex  func(*index) error
 }
 
 func NewStoreForConfig(devsyConfig *config.Config) (Store, error) {
@@ -83,6 +84,7 @@ func newLocalStoreWithRegistry(
 		backends:   backends,
 		indexPath:  indexPath,
 		now:        time.Now,
+		saveIndex:  func(idx *index) error { return idx.save() },
 	}
 }
 
@@ -182,15 +184,131 @@ func (s *localStore) Delete(context, name string) error {
 		return err
 	}
 	s.repairLegacyOwnership(idx)
+	return deleteIndexEntry(s, idx, context, name)
+}
 
-	if meta, ok := idx.get(context, name); ok && meta.Sensitive() {
-		if err := s.removeSecretValue(idx, meta); err != nil {
+func deleteIndexEntry(s *localStore, idx *index, context, name string) error {
+	meta, exists := idx.get(context, name)
+	if !exists {
+		return nil
+	}
+	if !meta.Sensitive() {
+		idx.remove(context, name)
+		return s.saveIndex(idx)
+	}
+	return deleteSecretEntry(s, idx, meta)
+}
+
+func deleteSecretEntry(s *localStore, idx *index, meta SecretMeta) error {
+	context := meta.Context
+	name := meta.Name
+	snapshots, err := snapshotSecretValues(s, idx, meta)
+	if err != nil {
+		return err
+	}
+	if err := removeSnapshots(snapshots); err != nil {
+		return compensateDelete(context, name, err, snapshots)
+	}
+
+	idx.remove(context, name)
+	if err := s.saveIndex(idx); err != nil {
+		return compensateDelete(context, name, err, snapshots)
+	}
+
+	return nil
+}
+
+func compensateDelete(context, name string, cause error, snapshots []backendValueSnapshot) error {
+	if rollbackErr := restoreSnapshots(snapshots); rollbackErr != nil {
+		return &MutationError{
+			Operation: "delete",
+			Context:   context,
+			Name:      name,
+			Cause:     cause,
+			Rollback:  rollbackErr,
+		}
+	}
+	return cause
+}
+
+type backendValueSnapshot struct {
+	backend backend
+	key     string
+	value   string
+}
+
+func snapshotSecretValues(
+	s *localStore,
+	idx *index,
+	meta SecretMeta,
+) ([]backendValueSnapshot, error) {
+	key := backendKey(meta.Context, meta.Name)
+	kinds, err := deletionBackendKinds(s, idx, meta, key)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make([]backendValueSnapshot, 0, len(kinds))
+	for _, kind := range kinds {
+		b, err := s.backends.Open(kind, idx, false)
+		if err != nil {
+			return nil, err
+		}
+		value, err := b.get(key)
+		if errors.Is(err, ErrSecretNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, backendValueSnapshot{backend: b, key: key, value: value})
+	}
+	return snapshots, nil
+}
+
+func deletionBackendKinds(
+	s *localStore,
+	idx *index,
+	meta SecretMeta,
+	key string,
+) ([]Backend, error) {
+	if meta.Backend != "" {
+		return []Backend{meta.Backend}, nil
+	}
+
+	var kinds []Backend
+	for _, kind := range []Backend{BackendKeyring, BackendFile} {
+		present, conclusive := s.backends.Probe(kind, idx, key)
+		if !conclusive {
+			return nil, fmt.Errorf(
+				"cannot safely delete unowned secret because secrets backend %q could not be probed; "+
+					"restore access to that backend or set the secret again",
+				kind,
+			)
+		}
+		if present {
+			kinds = append(kinds, kind)
+		}
+	}
+	return kinds, nil
+}
+
+func removeSnapshots(snapshots []backendValueSnapshot) error {
+	for _, snapshot := range snapshots {
+		if err := snapshot.backend.remove(snapshot.key); err != nil {
 			return err
 		}
 	}
-	idx.remove(context, name)
+	return nil
+}
 
-	return idx.save()
+func restoreSnapshots(snapshots []backendValueSnapshot) error {
+	var rollbackErr error
+	for _, snapshot := range snapshots {
+		if err := snapshot.backend.set(snapshot.key, snapshot.value); err != nil {
+			rollbackErr = errors.Join(rollbackErr, err)
+		}
+	}
+	return rollbackErr
 }
 
 func (s *localStore) Meta(context, name string) (SecretMeta, error) {
@@ -392,18 +510,6 @@ func (s *localStore) provenOwner(idx *index, key string) (Backend, bool) {
 		return "", false
 	}
 	return found[0], true
-}
-
-func (s *localStore) removeSecretValue(idx *index, meta SecretMeta) error {
-	key := backendKey(meta.Context, meta.Name)
-	if meta.Backend == "" {
-		return s.removeFromProbeableBackends(idx, key)
-	}
-	b, err := s.backends.Open(meta.Backend, idx, false)
-	if err != nil {
-		return err
-	}
-	return b.remove(key)
 }
 
 func (s *localStore) removeFromProbeableBackends(idx *index, key string) error {
