@@ -238,6 +238,9 @@ func (cmd *UpCmd) prepareSecretsWithProject(
 	if err := mergeEnvFromFiles(&cmd.CLIOptions); err != nil {
 		return err
 	}
+	if _, err := indexWorkspaceEnv(cmd.WorkspaceEnv); err != nil {
+		return err
+	}
 
 	if cmd.SecretsFile != "" {
 		parsed, err := secrets.ParseSecretsFile(cmd.SecretsFile)
@@ -354,7 +357,15 @@ func (cmd *UpCmd) applyLifecycleSecrets(
 type envVarRequest struct {
 	ref    secrets.SecretRef
 	target string
+	origin envVarRequestOrigin
 }
+
+type envVarRequestOrigin uint8
+
+const (
+	envVarAttached envVarRequestOrigin = iota
+	envVarExplicit
+)
 
 func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVarRequest, error) {
 	explicit := make([]envVarRequest, 0, len(flags))
@@ -364,6 +375,7 @@ func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVar
 		if err != nil {
 			return nil, err
 		}
+		req.origin = envVarExplicit
 		explicit = append(explicit, req)
 		explicitRefs[req.ref.String()] = struct{}{}
 	}
@@ -383,7 +395,9 @@ func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVar
 			if _, overridden := explicitRefs[ref.String()]; overridden {
 				continue
 			}
-			implicit = append(implicit, envVarRequest{ref: ref, target: ref.Name})
+			implicit = append(implicit, envVarRequest{
+				ref: ref, target: ref.Name, origin: envVarAttached,
+			})
 		}
 	}
 	sort.Slice(
@@ -428,11 +442,17 @@ func parseEnvVarRequest(entry string) (envVarRequest, error) {
 func checkDuplicateEnvTargets(requests []envVarRequest) error {
 	targets := map[string]secrets.SecretRef{}
 	for _, req := range requests {
-		if previous, ok := targets[req.target]; ok && previous.String() != req.ref.String() {
+		if previous, ok := targets[req.target]; ok {
+			if previous.String() != req.ref.String() {
+				return fmt.Errorf(
+					"environment variables %q and %q both target %q",
+					previous.Name,
+					req.ref.Name,
+					req.target,
+				)
+			}
 			return fmt.Errorf(
-				"environment variables %q and %q both target %q",
-				previous.Name,
-				req.ref.Name,
+				"workspace environment variable %q is assigned more than once",
 				req.target,
 			)
 		}
@@ -456,12 +476,25 @@ func (cmd *UpCmd) applyEnvVars(
 	if err := checkDuplicateEnvTargets(requests); err != nil {
 		return err
 	}
+	base, err := indexWorkspaceEnv(cmd.WorkspaceEnv)
+	if err != nil {
+		return err
+	}
+	requests, err = filterWorkspaceEnvRequests(base, requests)
+	if err != nil {
+		return err
+	}
+	resolvedEnv := make([]resolvedEnvVar, 0, len(requests))
 	for _, req := range requests {
 		envVar, err := resolveEnvVarRequest(ctx, resolver, req)
 		if err != nil {
 			return err
 		}
-		cmd.WorkspaceEnv = append(cmd.WorkspaceEnv, envVar)
+		resolvedEnv = append(resolvedEnv, resolvedEnvVar{assignment: envVar})
+	}
+	cmd.WorkspaceEnv, err = composeWorkspaceEnv(base, resolvedEnv)
+	if err != nil {
+		return err
 	}
 	return nil
 }

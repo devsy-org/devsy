@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
@@ -13,6 +15,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
+)
+
+const (
+	workspaceEnvAlphaAssignment = "ALPHA=first"
+	workspaceEnvTokenAssignment = "TOKEN=one=two"
+	workspaceEnvZedAssignment   = "ZED=last"
 )
 
 // TestSecretMountPath_RejectsEscapes ensures only a plain filename is accepted:
@@ -149,6 +157,63 @@ func TestWriteResultFileTo_SkipsWriteWhenContentUnchanged(t *testing.T) {
 			"mtime changed on unchanged content: first=%v second=%v",
 			first.ModTime(), second.ModTime(),
 		)
+	}
+}
+
+func TestParseWorkspaceEnvironment_RejectsDuplicateTarget(t *testing.T) {
+	_, _, err := parseWorkspaceEnvironment([]string{"MODE=one", "MODE=two"})
+	if err == nil || !strings.Contains(err.Error(), `"MODE"`) {
+		t.Fatalf("expected duplicate MODE error, got %v", err)
+	}
+}
+
+func TestParseWorkspaceEnvironment_CanonicalizesWithoutChangingInput(t *testing.T) {
+	assignments := []string{
+		workspaceEnvZedAssignment,
+		workspaceEnvAlphaAssignment,
+		workspaceEnvTokenAssignment,
+	}
+	original := slices.Clone(assignments)
+
+	got, canonical, err := parseWorkspaceEnvironment(assignments)
+	if err != nil {
+		t.Fatalf("parseWorkspaceEnvironment: %v", err)
+	}
+	if !slices.Equal(assignments, original) {
+		t.Fatalf("input changed: got %v, want %v", assignments, original)
+	}
+	wantCanonical := []string{
+		workspaceEnvAlphaAssignment,
+		workspaceEnvTokenAssignment,
+		workspaceEnvZedAssignment,
+	}
+	if !slices.Equal(canonical, wantCanonical) {
+		t.Fatalf("canonical = %v, want %v", canonical, wantCanonical)
+	}
+	if got["TOKEN"] != "one=two" {
+		t.Fatalf("TOKEN = %q, want %q", got["TOKEN"], "one=two")
+	}
+	_, reorderedCanonical, err := parseWorkspaceEnvironment([]string{
+		workspaceEnvTokenAssignment,
+		workspaceEnvAlphaAssignment,
+		workspaceEnvZedAssignment,
+	})
+	if err != nil {
+		t.Fatalf("parse reordered workspace environment: %v", err)
+	}
+	if !slices.Equal(canonical, reorderedCanonical) {
+		t.Fatalf("reordered canonical = %v, want %v", reorderedCanonical, canonical)
+	}
+}
+
+func TestPatchEtcEnvironmentFlagsRejectsDuplicatesWithoutMutatingInput(t *testing.T) {
+	assignments := []string{"MODE=one", "MODE=two"}
+	original := slices.Clone(assignments)
+	if err := patchEtcEnvironmentFlags(assignments); err == nil {
+		t.Fatal("expected duplicate target error")
+	}
+	if !slices.Equal(assignments, original) {
+		t.Fatalf("input changed: got %v, want %v", assignments, original)
 	}
 }
 

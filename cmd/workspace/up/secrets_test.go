@@ -140,15 +140,17 @@ func TestCollectEnvVarRequests_ContextAttachment(t *testing.T) {
 	got, err := collectEnvVarRequests(nil, testEnvConfig("ZED", "ALPHA"))
 	require.NoError(t, err)
 	assert.Equal(t, []envVarRequest{
-		{ref: localRef("ALPHA"), target: "ALPHA"},
-		{ref: localRef("ZED"), target: "ZED"},
+		{ref: localRef("ALPHA"), target: "ALPHA", origin: envVarAttached},
+		{ref: localRef("ZED"), target: "ZED", origin: envVarAttached},
 	}, got)
 }
 
 func TestCollectEnvVarRequests_ExplicitOverridesAttachment(t *testing.T) {
 	got, err := collectEnvVarRequests([]string{"LOG_LEVEL=APP_LOG"}, testEnvConfig("LOG_LEVEL"))
 	require.NoError(t, err)
-	assert.Equal(t, []envVarRequest{{ref: localRef("LOG_LEVEL"), target: "APP_LOG"}}, got)
+	assert.Equal(t, []envVarRequest{{
+		ref: localRef("LOG_LEVEL"), target: "APP_LOG", origin: envVarExplicit,
+	}}, got)
 }
 
 func TestCollectEnvVarRequests_PreservesRepeatedExplicitSource(t *testing.T) {
@@ -158,8 +160,8 @@ func TestCollectEnvVarRequests_PreservesRepeatedExplicitSource(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, []envVarRequest{
-		{ref: localRef("LOG_LEVEL"), target: "FIRST"},
-		{ref: localRef("LOG_LEVEL"), target: "SECOND"},
+		{ref: localRef("LOG_LEVEL"), target: "FIRST", origin: envVarExplicit},
+		{ref: localRef("LOG_LEVEL"), target: "SECOND", origin: envVarExplicit},
 	}, got)
 }
 
@@ -170,8 +172,8 @@ func TestCollectEnvVarRequests_ExplicitRepeatedSourceSuppressesImplicit(t *testi
 	)
 	require.NoError(t, err)
 	assert.Equal(t, []envVarRequest{
-		{ref: localRef("LOG_LEVEL"), target: "FIRST"},
-		{ref: localRef("LOG_LEVEL"), target: "SECOND"},
+		{ref: localRef("LOG_LEVEL"), target: "FIRST", origin: envVarExplicit},
+		{ref: localRef("LOG_LEVEL"), target: "SECOND", origin: envVarExplicit},
 	}, got)
 }
 

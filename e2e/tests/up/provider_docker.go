@@ -781,6 +781,47 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.It(
+			"workspace environment overrides a context-attached managed environment value",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+				contextName := fmt.Sprintf("managed-env-override-%d", time.Now().UnixNano())
+				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = dtc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(
+					dtc.f.DevsyProviderAdd(ctx, "docker", "-o", "DOCKER_PATH=docker"),
+				)
+				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-env-attached",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+				dtc.storeEnv(ctx, "ATTACHED_ENV", "stored-value")
+				_, err = dtc.f.ExecCommandOutput(ctx, []string{envCmd, "attach", "ATTACHED_ENV"})
+				framework.ExpectNoError(err)
+
+				framework.ExpectNoError(dtc.f.DevsyUp(
+					ctx, tempDir, "--workspace-env", "ATTACHED_ENV=custom-value",
+				))
+				out, err := dtc.execSSH(ctx, tempDir, `bash -l -c 'printf %s "$ATTACHED_ENV"'`)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("custom-value"))
+
+				framework.ExpectNoError(dtc.f.DevsyUpRecreate(ctx, tempDir))
+				out, err = dtc.execSSH(ctx, tempDir, `bash -l -c 'printf %s "$ATTACHED_ENV"'`)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("custom-value"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
+		ginkgo.It(
 			"context-attached managed secret injects without --secret and is removed after detach",
 			func(ctx context.Context) {
 				dtc.verifyContextAttachment(ctx, contextAttachmentCase{

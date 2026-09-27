@@ -457,20 +457,45 @@ func patchEtcEnvironmentFlags(workspaceEnv []string) error {
 		return nil
 	}
 
-	// make sure we sort the strings
-	sort.Strings(workspaceEnv)
+	environment, canonical, err := parseWorkspaceEnvironment(workspaceEnv)
+	if err != nil {
+		return err
+	}
 
-	// check if we need to update env
-	exists, err := markerFileExists("patchEtcEnvironmentFlags", strings.Join(workspaceEnv, "\n"))
+	exists, err := markerFileExists("patchEtcEnvironmentFlags", strings.Join(canonical, "\n"))
 	if err != nil {
 		return err
 	} else if exists {
 		return nil
 	}
 
-	// update env
-	envfile.MergeAndApply(config.ListToObject(workspaceEnv))
+	envfile.MergeAndApply(environment)
 	return nil
+}
+
+func parseWorkspaceEnvironment(assignments []string) (map[string]string, []string, error) {
+	environment := make(map[string]string, len(assignments))
+	keys := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		name, value, ok := strings.Cut(assignment, "=")
+		if !ok || name == "" {
+			return nil, nil, fmt.Errorf("invalid workspace environment assignment")
+		}
+		if _, exists := environment[name]; exists {
+			return nil, nil, fmt.Errorf(
+				"workspace environment variable %q is assigned more than once",
+				name,
+			)
+		}
+		environment[name] = value
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	canonical := make([]string, 0, len(keys))
+	for _, name := range keys {
+		canonical = append(canonical, name+"="+environment[name])
+	}
+	return environment, canonical, nil
 }
 
 func patchEtcEnvironment(mergedConfig *config.MergedDevContainerConfig) error {

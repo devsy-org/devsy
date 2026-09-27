@@ -99,6 +99,16 @@ func TestInheritFromEnvironment(t *testing.T) {
 	}
 }
 
+func TestInheritFromEnvironment_PreservesWorkspaceAssignment(t *testing.T) {
+	t.Setenv("GIT_AUTHOR_NAME", "host")
+	got := InheritFromEnvironment(
+		[]string{"GIT_AUTHOR_NAME=workspace"},
+		GitIdentityEnvVars,
+		"",
+	)
+	assert.DeepEqual(t, got, []string{"GIT_AUTHOR_NAME=workspace"})
+}
+
 func runInheritFromEnvironmentTestCase(t *testing.T, testCase assignmentTestCase) {
 	for _, k := range testCase.NotInEnvironment {
 		err := os.Unsetenv(k)
