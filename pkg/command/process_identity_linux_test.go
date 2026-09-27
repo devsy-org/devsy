@@ -55,7 +55,13 @@ func TestLinuxCanSkipUnrelatedUnreadableProcess(t *testing.T) {
 		leaderMatches bool
 		want          bool
 	}{
-		{name: "unrelated process with verified leader", pid: 12, pgid: 7, leaderMatches: true, want: true},
+		{
+			name:          "unrelated process with verified leader",
+			pid:           12,
+			pgid:          7,
+			leaderMatches: true,
+			want:          true,
+		},
 		{name: "worker leader is unreadable", pid: 7, pgid: 7, leaderMatches: true},
 		{name: "leader exited", pid: 12, pgid: 7},
 	}
