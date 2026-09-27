@@ -22,7 +22,7 @@ require (
 	github.com/creativeprojects/go-selfupdate v1.6.0
 	github.com/devsy-org/agentapi v1.0.1
 	github.com/devsy-org/api v1.1.0
-	github.com/devsy-org/apiserver v1.5.3
+	github.com/devsy-org/apiserver v1.5.4
 	github.com/devsy-org/ssh v1.2.9
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.7.2+incompatible
@@ -74,13 +74,13 @@ require (
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools v2.2.0+incompatible
-	k8s.io/api v0.37.0
-	k8s.io/apimachinery v0.37.0
-	k8s.io/client-go v0.37.0
+	k8s.io/api v0.37.1
+	k8s.io/apimachinery v0.37.1
+	k8s.io/client-go v0.37.1
 	k8s.io/klog/v2 v2.140.0
-	k8s.io/kube-aggregator v0.37.0
+	k8s.io/kube-aggregator v0.37.1
 	k8s.io/kubectl v0.37.0
-	k8s.io/streaming v0.37.0
+	k8s.io/streaming v0.37.1
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	mvdan.cc/sh/v3 v3.13.1
 	sigs.k8s.io/controller-runtime v0.24.1
@@ -530,9 +530,9 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gvisor.dev/gvisor v0.0.0-20260224225140-573d5e7127a8 // indirect
 	k8s.io/apiextensions-apiserver v0.36.2 // indirect
-	k8s.io/apiserver v0.37.0 // indirect
+	k8s.io/apiserver v0.37.1 // indirect
 	k8s.io/cli-runtime v0.37.0 // indirect
-	k8s.io/component-base v0.37.0 // indirect
+	k8s.io/component-base v0.37.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/metrics v0.37.0 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
