@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -20,22 +21,15 @@ func TestNewStallTransportPassthroughWhenDisabled(t *testing.T) {
 }
 
 func TestStallTransportAbortsIdleBody(t *testing.T) {
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.(http.Flusher).Flush()
-		_, _ = w.Write([]byte("partial"))
-		w.(http.Flusher).Flush()
-		select {
-		case <-r.Context().Done():
-		case <-release:
-		}
-	}))
-	defer srv.Close()
-	defer close(release)
-
-	client := &http.Client{Transport: NewStallTransport(http.DefaultTransport, 50*time.Millisecond)}
-	resp, err := client.Get(srv.URL)
+	base := stallTestRoundTripper(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       &stallTestBody{ctx: req.Context()},
+			Request:    req,
+		}, nil
+	})
+	client := &http.Client{Transport: NewStallTransport(base, 50*time.Millisecond)}
+	resp, err := client.Get("http://stall.test")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -46,6 +40,28 @@ func TestStallTransportAbortsIdleBody(t *testing.T) {
 		t.Fatalf("expected ErrStalled reading a stalled body, got %v", err)
 	}
 }
+
+type stallTestRoundTripper func(*http.Request) (*http.Response, error)
+
+func (fn stallTestRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+type stallTestBody struct {
+	ctx  context.Context
+	sent bool
+}
+
+func (b *stallTestBody) Read(p []byte) (int, error) {
+	if !b.sent {
+		b.sent = true
+		return copy(p, "partial"), nil
+	}
+	<-b.ctx.Done()
+	return 0, b.ctx.Err()
+}
+
+func (b *stallTestBody) Close() error { return nil }
 
 func TestStallTransportAllowsProgressingBody(t *testing.T) {
 	const body = "steadily-delivered-payload"
