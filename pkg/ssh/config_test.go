@@ -268,6 +268,92 @@ Host existinghost
   User existinguser`,
 	},
 	{
+		name: "Host addition with lowercase host entries",
+		config: `host 192.168.1.1
+  User alice
+  Port 22
+
+host myserver
+  User bob`,
+		execPath:        testExecPath,
+		host:            testHostBasic,
+		user:            testUser,
+		context:         testContextAlt,
+		workspace:       testWorkspaceAlt,
+		workdir:         "",
+		command:         "",
+		gpgagent:        false,
+		agentForwarding: true,
+		devsyHome:       "",
+		provider:        "",
+		expected: `# Devsy Start testhost
+Host testhost
+  ForwardAgent yes
+  LogLevel error
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace
+  User testuser
+# Devsy End testhost
+host 192.168.1.1
+  User alice
+  Port 22
+
+host myserver
+  User bob`,
+	},
+	{
+		name: "Host addition does not corrupt existing Devsy block followed by plain host",
+		config: `host plain-host
+  User alice
+
+# Devsy Start existing.devsy
+Host existing.devsy
+  ForwardAgent yes
+  LogLevel error
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context ctx --user user existing
+  User user
+# Devsy End existing.devsy`,
+		execPath:        testExecPath,
+		host:            testHostBasic,
+		user:            testUser,
+		context:         testContextAlt,
+		workspace:       testWorkspaceAlt,
+		workdir:         "",
+		command:         "",
+		gpgagent:        false,
+		agentForwarding: true,
+		devsyHome:       "",
+		provider:        "",
+		expected: `# Devsy Start testhost
+Host testhost
+  ForwardAgent yes
+  LogLevel error
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context testcontext --user testuser testworkspace
+  User testuser
+# Devsy End testhost
+host plain-host
+  User alice
+
+# Devsy Start existing.devsy
+Host existing.devsy
+  ForwardAgent yes
+  LogLevel error
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context ctx --user user existing
+  User user
+# Devsy End existing.devsy`,
+	},
+	{
 		name: "Host addition after top level includes",
 		config: `Include ~/config1
 
