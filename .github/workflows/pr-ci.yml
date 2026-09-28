@@ -151,6 +151,39 @@ jobs:
       - name: Check license policy and attribution
         run: go run ./hack/licenses --check
 
+  unit-tests:
+    name: Unit Tests
+    # Report-only, and one line from required. The suite's intermittent
+    # failures were a poll defect, now fixed; the one remaining wall-clock
+    # test, TestWaitContainerRunningFailsFastOnExit, has a wide margin.
+    # Promoting it means a slow runner can block an unrelated pull.
+    needs: [changes, precommit, lint]
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: Create coverage output directory
+        run: mkdir -p dist
+
+      # Mirrors `task cli:test`. -p 4 caps parallelism because the wall-clock
+      # assertions are exceeded at full parallelism on a busy runner.
+      - name: Run unit tests
+        run: go test $(go list ./... | grep -v -e /test -e /e2e) -race -p 4 -coverprofile=dist/profile.out -covermode=atomic
+
+      - name: Upload coverage profile
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unit-coverage-profile
+          path: dist/profile.out
+          if-no-files-found: warn
+
   integration-tests-unprivileged:
     name: Test ${{ matrix.label }} on ${{ matrix.runner }}
     needs: [changes, build-cli]
