@@ -192,13 +192,9 @@ func linuxProcessGroupFieldsMatch(
 	if err != nil {
 		return false, false, nil
 	}
-	leaderMismatch, err = linuxProcessGroupFieldsLeaderMismatch(
-		pid,
-		pgid,
-		sessionID,
-		fields,
-		wanted,
-	)
+	if pid == pgid {
+		leaderMismatch, err = linuxProcessGroupFieldsLeaderMismatch(pid, sessionID, fields, wanted)
+	}
 	if err != nil || leaderMismatch {
 		return false, leaderMismatch, err
 	}
@@ -209,13 +205,10 @@ func linuxProcessGroupFieldsMatch(
 }
 
 func linuxProcessGroupFieldsLeaderMismatch(
-	pid, pgid, sessionID int,
+	pid, sessionID int,
 	fields []string,
 	wanted linuxProcessTreeIdentity,
 ) (bool, error) {
-	if pid != pgid {
-		return false, nil
-	}
 	matches, err := linuxProcessLeaderMatches(pid, sessionID, fields, wanted)
 	return !matches, err
 }
