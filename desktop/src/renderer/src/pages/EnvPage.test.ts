@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
@@ -20,7 +26,12 @@ vi.mock("$lib/stores/env.js", async () => {
     envVars: writable([
       { name: "ATTACHED", value: "one", context: "default", attached: true },
       { name: "DETACHED", value: "two", context: "default", attached: false },
-      { name: "STAGING_ONLY", value: "three", context: "staging", attached: false },
+      {
+        name: "STAGING_ONLY",
+        value: "three",
+        context: "staging",
+        attached: false,
+      },
     ]),
     refreshEnv: mocks.refreshEnv,
   }
@@ -67,7 +78,9 @@ describe("EnvPage managed environment attachments", () => {
     render(EnvPage)
 
     await fireEvent.click(
-      screen.getByRole("switch", { name: "Inject STAGING_ONLY into workspaces" }),
+      screen.getByRole("switch", {
+        name: "Inject STAGING_ONLY into workspaces",
+      }),
     )
     await waitFor(() =>
       expect(mocks.envAttach).toHaveBeenCalledWith("STAGING_ONLY", "staging"),

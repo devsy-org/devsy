@@ -1,7 +1,11 @@
 import { render } from "@testing-library/svelte"
 import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { CommandProgress, Provider, ProviderJob } from "$lib/types/index.js"
+import type {
+  CommandProgress,
+  Provider,
+  ProviderJob,
+} from "$lib/types/index.js"
 
 const providerOptions = vi.fn()
 const providerUse = vi.fn()
@@ -16,14 +20,17 @@ const providerSetVersion = vi.fn()
 const loadVersionsFor = vi.fn()
 const refreshUpdates = vi.fn()
 const providerJobsBox = vi.hoisted(() => ({
-  store: undefined as unknown as import("svelte/store").Writable<Record<string, ProviderJob>>,
+  store: undefined as unknown as import("svelte/store").Writable<
+    Record<string, ProviderJob>
+  >,
 }))
 let progressCallback: ((progress: CommandProgress) => void) | null = null
 
 vi.mock("$lib/ipc/commands.js", () => ({
   providerOptions: (...args: unknown[]) => providerOptions(...args),
   providerUse: (...args: unknown[]) => providerUse(...args),
-  providerUpdateStreaming: (...args: unknown[]) => providerUpdateStreaming(...args),
+  providerUpdateStreaming: (...args: unknown[]) =>
+    providerUpdateStreaming(...args),
   providerDelete: (...args: unknown[]) => providerDelete(...args),
   providerInit: (...args: unknown[]) => providerInit(...args),
   providerList: (...args: unknown[]) => providerList(...args),
@@ -34,10 +41,14 @@ vi.mock("$lib/ipc/commands.js", () => ({
 }))
 
 vi.mock("$lib/ipc/events.js", () => ({
-  onCommandProgress: vi.fn(async (callback: (progress: CommandProgress) => void) => {
-    progressCallback = callback
-    return () => { progressCallback = null }
-  }),
+  onCommandProgress: vi.fn(
+    async (callback: (progress: CommandProgress) => void) => {
+      progressCallback = callback
+      return () => {
+        progressCallback = null
+      }
+    },
+  ),
 }))
 
 vi.mock("$lib/stores/providers.js", async () => {
@@ -233,7 +244,9 @@ describe("ProviderSheet", () => {
 
     // Find the "Set Default" button by exact text match
     const buttons = Array.from(document.querySelectorAll("button"))
-    const setDefaultButton = buttons.find((btn) => btn.textContent?.trim() === "Set Default")
+    const setDefaultButton = buttons.find(
+      (btn) => btn.textContent?.trim() === "Set Default",
+    )
     expect(setDefaultButton).toBeUndefined()
     unmount()
   })
@@ -247,7 +260,9 @@ describe("ProviderSheet", () => {
 
     // Find the "Set Default" button by exact text match
     const buttons = Array.from(document.querySelectorAll("button"))
-    const setDefaultButton = buttons.find((btn) => btn.textContent?.trim() === "Set Default")
+    const setDefaultButton = buttons.find(
+      (btn) => btn.textContent?.trim() === "Set Default",
+    )
     expect(setDefaultButton).toBeDefined()
     unmount()
   })
@@ -261,7 +276,9 @@ describe("ProviderSheet", () => {
 
     // Select trigger contains the current tag.
     const triggers = Array.from(document.querySelectorAll("button"))
-    const versionTrigger = triggers.find((b) => b.textContent?.includes("0.1.0"))
+    const versionTrigger = triggers.find((b) =>
+      b.textContent?.includes("0.1.0"),
+    )
     expect(versionTrigger).toBeDefined()
     unmount()
   })
@@ -328,9 +345,9 @@ describe("ProviderSheet", () => {
     )
     updateBtn?.click()
     await tick()
-    const confirmDialog = Array.from(document.querySelectorAll("[role='dialog']")).find(
-      (dialog) => dialog.textContent?.includes("Update 'ssh' to 0.2.0"),
-    )
+    const confirmDialog = Array.from(
+      document.querySelectorAll("[role='dialog']"),
+    ).find((dialog) => dialog.textContent?.includes("Update 'ssh' to 0.2.0"))
     Array.from(confirmDialog?.querySelectorAll("button") ?? [])
       .find((button) => button.textContent?.trim() === "Update")
       ?.click()
@@ -356,7 +373,6 @@ describe("ProviderSheet", () => {
     unmount()
   })
 
-
   it("captures terminal progress emitted before a retry returns", async () => {
     providerUpdateStreaming
       .mockResolvedValueOnce("update-command-1")
@@ -377,11 +393,12 @@ describe("ProviderSheet", () => {
     )
     updateBtn?.click()
     await tick()
-    const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find(
-      (node) => node.textContent?.includes("Update 'ssh' to 0.2.0"),
-    )
+    const dialog = Array.from(
+      document.querySelectorAll("[role='dialog']"),
+    ).find((node) => node.textContent?.includes("Update 'ssh' to 0.2.0"))
     Array.from(dialog?.querySelectorAll("button") ?? [])
-      .find((button) => button.textContent?.trim() === "Update")?.click()
+      .find((button) => button.textContent?.trim() === "Update")
+      ?.click()
     await flushAsync()
     progressCallback?.({
       commandId: "update-command-1",
@@ -391,7 +408,8 @@ describe("ProviderSheet", () => {
     })
     await tick()
     Array.from(document.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Retry update")?.click()
+      .find((button) => button.textContent?.trim() === "Retry update")
+      ?.click()
     await flushAsync()
 
     expect(providerUpdateStreaming).toHaveBeenCalledTimes(2)
@@ -406,13 +424,15 @@ describe("ProviderSheet", () => {
     })
     await flushAsync()
     Array.from(document.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Update")?.click()
+      .find((button) => button.textContent?.trim() === "Update")
+      ?.click()
     await tick()
-    const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find(
-      (node) => node.textContent?.includes("Update 'ssh' to 0.2.0"),
-    )
+    const dialog = Array.from(
+      document.querySelectorAll("[role='dialog']"),
+    ).find((node) => node.textContent?.includes("Update 'ssh' to 0.2.0"))
     Array.from(dialog?.querySelectorAll("button") ?? [])
-      .find((button) => button.textContent?.trim() === "Update")?.click()
+      .find((button) => button.textContent?.trim() === "Update")
+      ?.click()
     await flushAsync()
 
     await rerender({ provider: makeProvider("docker"), open: true })
@@ -438,13 +458,15 @@ describe("ProviderSheet", () => {
     })
     await flushAsync()
     Array.from(document.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Update")?.click()
+      .find((button) => button.textContent?.trim() === "Update")
+      ?.click()
     await tick()
-    const dialog = Array.from(document.querySelectorAll("[role='dialog']")).find(
-      (node) => node.textContent?.includes("Update 'ssh' to 0.2.0"),
-    )
+    const dialog = Array.from(
+      document.querySelectorAll("[role='dialog']"),
+    ).find((node) => node.textContent?.includes("Update 'ssh' to 0.2.0"))
     Array.from(dialog?.querySelectorAll("button") ?? [])
-      .find((button) => button.textContent?.trim() === "Update")?.click()
+      .find((button) => button.textContent?.trim() === "Update")
+      ?.click()
     await flushAsync()
     progressCallback?.({
       commandId: "update-command-1",
@@ -479,10 +501,11 @@ describe("ProviderSheet", () => {
     expect(document.body.textContent).toContain("Update failed")
     expect(document.body.textContent).toContain("The download timed out.")
     expect(document.body.textContent).toContain("Retry update")
-    expect(document.body.textContent).toContain("download: connection timed out")
+    expect(document.body.textContent).toContain(
+      "download: connection timed out",
+    )
     unmount()
   })
-
 
   it("refreshes provider state without repeating a completed update", async () => {
     providerJobsBox.store.set({
@@ -490,7 +513,8 @@ describe("ProviderSheet", () => {
         activity: "updating",
         phase: "failed",
         state: "failed",
-        error: "The provider updated, but its current state could not be refreshed.",
+        error:
+          "The provider updated, but its current state could not be refreshed.",
         errorCode: "provider_refresh_failed",
         logs: ["Provider update complete"],
       },
@@ -504,7 +528,8 @@ describe("ProviderSheet", () => {
     expect(document.body.textContent).toContain("Provider update complete")
     expect(document.body.textContent).not.toContain("Retry update")
     Array.from(document.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Refresh status")?.click()
+      .find((button) => button.textContent?.trim() === "Refresh status")
+      ?.click()
     await flushAsync()
     expect(providerRefreshState).toHaveBeenCalledWith("ssh")
     expect(providerList).toHaveBeenCalled()
@@ -521,7 +546,8 @@ describe("ProviderSheet", () => {
         activity: "updating",
         phase: "failed",
         state: "failed",
-        error: "The provider updated, but its current state could not be refreshed.",
+        error:
+          "The provider updated, but its current state could not be refreshed.",
         errorCode: "provider_refresh_failed",
         logs: ["Provider update complete"],
       },
@@ -533,7 +559,8 @@ describe("ProviderSheet", () => {
     loadVersionsFor.mockRejectedValueOnce(new Error("versions unavailable"))
 
     Array.from(document.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Refresh status")?.click()
+      .find((button) => button.textContent?.trim() === "Refresh status")
+      ?.click()
     await flushAsync()
 
     expect(providerRefreshState).toHaveBeenCalledWith("ssh")
@@ -543,5 +570,4 @@ describe("ProviderSheet", () => {
     expect(document.body.textContent).toContain("Refresh status")
     unmount()
   })
-
 })

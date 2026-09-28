@@ -125,14 +125,20 @@ export class LogStore {
 
   readLog(context: string, workspaceId: string, filename: string): string {
     return readFileSync(
-      join(this.workspaceLogDir(context, workspaceId), safeLogFilename(filename)),
+      join(
+        this.workspaceLogDir(context, workspaceId),
+        safeLogFilename(filename),
+      ),
       "utf-8",
     )
   }
 
   deleteLog(context: string, workspaceId: string, filename: string): void {
     unlinkSync(
-      join(this.workspaceLogDir(context, workspaceId), safeLogFilename(filename)),
+      join(
+        this.workspaceLogDir(context, workspaceId),
+        safeLogFilename(filename),
+      ),
     )
   }
 

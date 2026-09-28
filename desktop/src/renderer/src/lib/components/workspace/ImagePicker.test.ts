@@ -9,7 +9,13 @@ vi.mock("$lib/stores/imageCatalog.js", async () => {
   return {
     imageCatalog: writable({
       images: [
-        { id: "py", ref: "py:1", name: "Python", categories: ["lang"], featured: true },
+        {
+          id: "py",
+          ref: "py:1",
+          name: "Python",
+          categories: ["lang"],
+          featured: true,
+        },
         { id: "tf", ref: "tf:1", name: "Terraform", categories: ["tools"] },
       ],
       categories: [
@@ -48,7 +54,9 @@ describe("ImagePicker", () => {
 
   it("selecting an image emits the ref", async () => {
     const onselect = vi.fn()
-    const { getByText } = render(ImagePicker, { props: { value: "", onselect } })
+    const { getByText } = render(ImagePicker, {
+      props: { value: "", onselect },
+    })
     await fireEvent.click(getByText("Python"))
     expect(onselect).toHaveBeenCalledWith("py:1")
   })

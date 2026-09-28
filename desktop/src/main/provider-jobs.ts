@@ -65,12 +65,14 @@ export class ProviderJobs {
     this.emit()
   }
 
-
   /** Retain recent operation output so failures remain diagnosable after navigation. */
   appendLog(name: string, line: string): void {
     const job = this.jobs.get(name)
     if (!job) return
-    this.jobs.set(name, { ...job, logs: [...(job.logs ?? []), line].slice(-500) })
+    this.jobs.set(name, {
+      ...job,
+      logs: [...(job.logs ?? []), line].slice(-500),
+    })
     this.emit()
   }
 
@@ -149,7 +151,6 @@ export class ProviderJobs {
     this.generations.delete(name)
     this.emit()
   }
-
 
   /** Retry only the authoritative provider-state refresh after a completed operation. */
   async retryRefresh(name: string): Promise<void> {

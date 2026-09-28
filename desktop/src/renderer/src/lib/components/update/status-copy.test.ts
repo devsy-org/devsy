@@ -18,14 +18,21 @@ describe("statusHeadline", () => {
       statusHeadline({ state: "up-to-date", currentVersion: "1.2.3" }, "1.2.3"),
     ).toBe("Devsy is up to date · v1.2.3")
     expect(
-      statusHeadline({ state: "not-available", currentVersion: "1.2.3" }, "1.2.3"),
+      statusHeadline(
+        { state: "not-available", currentVersion: "1.2.3" },
+        "1.2.3",
+      ),
     ).toBe("Devsy is up to date · v1.2.3")
   })
 
   it("announces an available version", () => {
     expect(
       statusHeadline(
-        { state: "available", currentVersion: "1.2.3", availableVersion: "2.0.0" },
+        {
+          state: "available",
+          currentVersion: "1.2.3",
+          availableVersion: "2.0.0",
+        },
         "1.2.3",
       ),
     ).toBe("Version 2.0.0 is available")
@@ -38,7 +45,12 @@ describe("statusHeadline", () => {
           state: "downloading",
           currentVersion: "1.2.3",
           availableVersion: "2.0.0",
-          progress: { percent: 42, bytesPerSecond: 0, transferred: 0, total: 0 },
+          progress: {
+            percent: 42,
+            bytesPerSecond: 0,
+            transferred: 0,
+            total: 0,
+          },
         },
         "1.2.3",
       ),
@@ -48,7 +60,11 @@ describe("statusHeadline", () => {
   it("announces ready-to-install", () => {
     expect(
       statusHeadline(
-        { state: "downloaded", currentVersion: "1.2.3", availableVersion: "2.0.0" },
+        {
+          state: "downloaded",
+          currentVersion: "1.2.3",
+          availableVersion: "2.0.0",
+        },
         "1.2.3",
       ),
     ).toBe("Version 2.0.0 is ready to install")
@@ -63,13 +79,21 @@ describe("statusHeadline", () => {
     ).toBe("Updates run in packaged builds")
     expect(
       statusHeadline(
-        { state: "up-to-date", currentVersion: "1.2.3", code: "channel-missing" },
+        {
+          state: "up-to-date",
+          currentVersion: "1.2.3",
+          code: "channel-missing",
+        },
         "1.2.3",
       ),
     ).toBe("No releases on this channel yet")
     expect(
       statusHeadline(
-        { state: "not-available", currentVersion: "1.2.3", code: "not-eligible" },
+        {
+          state: "not-available",
+          currentVersion: "1.2.3",
+          code: "not-eligible",
+        },
         "1.2.3",
       ),
     ).toBe("A newer update is not available for this device yet")

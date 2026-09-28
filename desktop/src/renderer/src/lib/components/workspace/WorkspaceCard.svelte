@@ -1,7 +1,10 @@
 <script lang="ts">
 import WorkspaceOperation from "./WorkspaceOperation.svelte"
 import { workspaceJobs } from "$lib/stores/workspaces.js"
-import { workspaceJobBusy, workspaceJobInterruptible } from "$shared/workspace-operation.js"
+import {
+  workspaceJobBusy,
+  workspaceJobInterruptible,
+} from "$shared/workspace-operation.js"
 import { goto } from "$lib/router.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"

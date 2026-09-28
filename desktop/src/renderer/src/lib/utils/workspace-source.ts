@@ -74,7 +74,9 @@ function hostFromUrl(repoUrl: string): string {
 // GitLab exposes merge requests at merge-requests/N/head; every other host
 // uses pull/N/head.
 function prRefspec(repoUrl: string, number: string): string {
-  const segment = /gitlab/i.test(hostFromUrl(repoUrl)) ? "merge-requests" : "pull"
+  const segment = /gitlab/i.test(hostFromUrl(repoUrl))
+    ? "merge-requests"
+    : "pull"
   return `@${segment}/${number}/head`
 }
 

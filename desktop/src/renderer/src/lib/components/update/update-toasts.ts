@@ -9,7 +9,9 @@ let userInitiated = false
 
 function dedupeKey(s: UpdateStatus): string {
   const version =
-    s.state === "available" || s.state === "downloading" || s.state === "downloaded"
+    s.state === "available" ||
+    s.state === "downloading" ||
+    s.state === "downloaded"
       ? s.availableVersion
       : s.currentVersion
   const code = "code" in s ? (s.code ?? "") : ""
@@ -45,7 +47,9 @@ function fireAvailable(
   })
 }
 
-function fireDownloaded(s: Extract<UpdateStatus, { state: "downloaded" }>): void {
+function fireDownloaded(
+  s: Extract<UpdateStatus, { state: "downloaded" }>,
+): void {
   const version = s.availableVersion
   toast.success(`Update v${version} ready`, {
     duration: Infinity,
@@ -53,7 +57,9 @@ function fireDownloaded(s: Extract<UpdateStatus, { state: "downloaded" }>): void
       label: "Restart",
       onClick: () => {
         installUpdate().catch(() => {
-          toast.error("Failed to start update. Try restarting the app manually.")
+          toast.error(
+            "Failed to start update. Try restarting the app manually.",
+          )
         })
       },
     },
@@ -94,6 +100,7 @@ export function initUpdateToasts(getAutoDownload: () => boolean): () => void {
     if (s.state === "available") fireAvailable(s, getAutoDownload())
     else if (s.state === "downloaded") fireDownloaded(s)
     else if (s.state === "error") fireError(s)
-    else if (s.state === "up-to-date" || s.state === "not-available") fireNotAvailable(s)
+    else if (s.state === "up-to-date" || s.state === "not-available")
+      fireNotAvailable(s)
   })
 }

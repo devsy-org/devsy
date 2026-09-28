@@ -15,8 +15,8 @@ import {
   machineStop,
   machineDelete,
   machineStatus,
-	 machineDiagnosticsGet,
-	 machineDiagnosticsRefresh,
+  machineDiagnosticsGet,
+  machineDiagnosticsRefresh,
   auditByResource,
 } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
@@ -38,13 +38,28 @@ let diagnosticsTimer: ReturnType<typeof setInterval> | null = null
 let diagnostics = $state<MachineDiagnosticsCache | null>(null)
 let diagnosticsRefreshing = $state(false)
 const diagnosticLabels: Record<string, string> = {
-  available: "Available", machine_stopped: "Machine stopped", not_initialized: "Not initialized",
-  permission_denied: "Access denied", unavailable: "Unavailable", unsupported: "Unsupported agent",
-  corrupt: "Unreadable diagnostic data", fresh: "Recently updated", stale: "Out of date", unknown: "Freshness unknown",
-  healthy: "Healthy", degraded: "Needs attention", active: "Active", idle_due: "Idle; eligible",
-  busy: "Busy", not_configured: "Auto-stop disabled", invalid_config: "Invalid configuration", not_running: "State unavailable",
+  available: "Available",
+  machine_stopped: "Machine stopped",
+  not_initialized: "Not initialized",
+  permission_denied: "Access denied",
+  unavailable: "Unavailable",
+  unsupported: "Unsupported agent",
+  corrupt: "Unreadable diagnostic data",
+  fresh: "Recently updated",
+  stale: "Out of date",
+  unknown: "Freshness unknown",
+  healthy: "Healthy",
+  degraded: "Needs attention",
+  active: "Active",
+  idle_due: "Idle; eligible",
+  busy: "Busy",
+  not_configured: "Auto-stop disabled",
+  invalid_config: "Invalid configuration",
+  not_running: "State unavailable",
 }
-function diagnosticLabel(value: string): string { return diagnosticLabels[value] ?? value }
+function diagnosticLabel(value: string): string {
+  return diagnosticLabels[value] ?? value
+}
 let diagnosticsError = $state<string | null>(null)
 let disposed = false
 
@@ -73,15 +88,18 @@ onMount(async () => {
   try {
     diagnostics = await machineDiagnosticsGet(id)
   } catch (error) {
-    diagnosticsError = error instanceof Error ? error.message : "Could not load cached diagnostics."
+    diagnosticsError =
+      error instanceof Error
+        ? error.message
+        : "Could not load cached diagnostics."
   }
-	 await refreshDiagnostics()
+  await refreshDiagnostics()
   loadAudit()
   if (disposed) return
 
   // Poll status every 5 seconds
   pollTimer = setInterval(refreshStatus, 5000)
-	 diagnosticsTimer = setInterval(refreshDiagnostics, 30000)
+  diagnosticsTimer = setInterval(refreshDiagnostics, 30000)
   document.addEventListener("visibilitychange", refreshDiagnostics)
 })
 
@@ -89,7 +107,7 @@ onDestroy(() => {
   disposed = true
   document.removeEventListener("visibilitychange", refreshDiagnostics)
   if (pollTimer) clearInterval(pollTimer)
-	 if (diagnosticsTimer) clearInterval(diagnosticsTimer)
+  if (diagnosticsTimer) clearInterval(diagnosticsTimer)
 })
 
 async function refreshStatus() {
@@ -107,7 +125,10 @@ async function refreshDiagnostics() {
     diagnostics = await machineDiagnosticsRefresh(id)
     diagnosticsError = null
   } catch (error) {
-    diagnosticsError = error instanceof Error ? error.message : "Could not collect remote diagnostics."
+    diagnosticsError =
+      error instanceof Error
+        ? error.message
+        : "Could not collect remote diagnostics."
   } finally {
     diagnosticsRefreshing = false
   }
@@ -130,7 +151,7 @@ async function handleStart() {
     await machineStart(id)
     toasts.success(`Started ${id}`)
     await refreshStatus()
-	 await refreshDiagnostics()
+    await refreshDiagnostics()
   } catch (err) {
     toasts.error(`Failed to start: ${extractErrorMessage(err)}`)
   } finally {
@@ -144,7 +165,7 @@ async function handleStop() {
     await machineStop(id)
     toasts.success(`Stopped ${id}`)
     await refreshStatus()
-	 diagnostics = await machineDiagnosticsGet(id)
+    diagnostics = await machineDiagnosticsGet(id)
   } catch (err) {
     toasts.error(`Failed to stop: ${extractErrorMessage(err)}`)
   } finally {

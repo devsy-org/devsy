@@ -308,12 +308,13 @@ $effect(() => {
         commandId,
         done: true,
         success: job.state !== "failed",
-        cliError: job.state === "failed"
-          ? {
-              code: "workspace_operation_failed",
-              message: job.error ?? "Workspace operation failed",
-            }
-          : undefined,
+        cliError:
+          job.state === "failed"
+            ? {
+                code: "workspace_operation_failed",
+                message: job.error ?? "Workspace operation failed",
+              }
+            : undefined,
       },
       lastAttemptedId ?? undefined,
     )

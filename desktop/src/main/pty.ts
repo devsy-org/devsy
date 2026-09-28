@@ -79,12 +79,16 @@ export class PtyManager {
   createSshSession(workspaceId: string, cols: number, rows: number): string {
     const pty = requirePty()
     const sessionId = crypto.randomUUID()
-    const proc = pty.spawn(this.deps.binaryPath, ["workspace", "ssh", workspaceId], {
-      name: "xterm-256color",
-      cols,
-      rows,
-      env: this.env,
-    })
+    const proc = pty.spawn(
+      this.deps.binaryPath,
+      ["workspace", "ssh", workspaceId],
+      {
+        name: "xterm-256color",
+        cols,
+        rows,
+        env: this.env,
+      },
+    )
 
     this.wire(sessionId, proc, workspaceId)
     return sessionId
@@ -135,15 +139,22 @@ export class PtyManager {
                 const bucket = this.sessionsByWorkspace.get(workspaceId)
                 if (bucket) {
                   bucket.delete(id)
-                  if (bucket.size === 0) this.sessionsByWorkspace.delete(workspaceId)
+                  if (bucket.size === 0)
+                    this.sessionsByWorkspace.delete(workspaceId)
                 }
               }
-              this.send("terminal:exit", { sessionId: id, exitCode: -1, signal: "SIGKILL" })
+              this.send("terminal:exit", {
+                sessionId: id,
+                exitCode: -1,
+                signal: "SIGKILL",
+              })
             }
 
             proc.kill("SIGKILL")
             // Remove all event handlers to suppress late data/exit callbacks
-            ;(proc as unknown as { removeAllListeners?: () => void }).removeAllListeners?.()
+            ;(
+              proc as unknown as { removeAllListeners?: () => void }
+            ).removeAllListeners?.()
           } catch {
             // Process may have already exited
           }

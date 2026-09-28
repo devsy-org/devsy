@@ -24,7 +24,11 @@ import {
   installUpdate,
   type ReleaseChannel,
 } from "$lib/ipc/commands.js"
-import { updateStatus, lastCheckedAt, isChecking } from "$lib/stores/updates.svelte.js"
+import {
+  updateStatus,
+  lastCheckedAt,
+  isChecking,
+} from "$lib/stores/updates.svelte.js"
 import { markUserInitiated } from "./update-toasts.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"

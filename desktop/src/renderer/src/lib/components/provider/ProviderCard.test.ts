@@ -52,9 +52,13 @@ describe("ProviderCard", () => {
   })
 
   it("shows the initializing badge while an uninitialized provider is in flight", () => {
-    providerJobs.set({ ssh: { activity: "initializing", phase: "running_init" } })
+    providerJobs.set({
+      ssh: { activity: "initializing", phase: "running_init" },
+    })
     const { container, unmount } = render(ProviderCard, {
-      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+      props: {
+        provider: makeProvider("ssh", { state: { initialized: false } }),
+      },
     })
 
     const text = container.textContent ?? ""
@@ -69,7 +73,9 @@ describe("ProviderCard", () => {
       ssh: { activity: "installing", phase: "installing_provider" },
     })
     const { container, unmount } = render(ProviderCard, {
-      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+      props: {
+        provider: makeProvider("ssh", { state: { initialized: false } }),
+      },
     })
 
     const text = (container.textContent ?? "").toLowerCase()
@@ -84,7 +90,9 @@ describe("ProviderCard", () => {
       ssh: { activity: "initializing", phase: "failed", error: "init: boom" },
     })
     const { container, unmount } = render(ProviderCard, {
-      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+      props: {
+        provider: makeProvider("ssh", { state: { initialized: false } }),
+      },
     })
 
     const text = (container.textContent ?? "").toLowerCase()
@@ -97,7 +105,9 @@ describe("ProviderCard", () => {
   it("shows not initialized when no job is in flight", () => {
     providerJobs.set({})
     const { container, unmount } = render(ProviderCard, {
-      props: { provider: makeProvider("ssh", { state: { initialized: false } }) },
+      props: {
+        provider: makeProvider("ssh", { state: { initialized: false } }),
+      },
     })
 
     expect((container.textContent ?? "").toLowerCase()).toContain(

@@ -74,7 +74,8 @@ async function readCache(cachePath: string): Promise<CatalogCacheFile | null> {
   }
   try {
     const parsed = JSON.parse(raw) as CatalogCacheFile
-    return typeof parsed?.fetchedAt === "number" && isImageCatalog(parsed.catalog)
+    return typeof parsed?.fetchedAt === "number" &&
+      isImageCatalog(parsed.catalog)
       ? parsed
       : null
   } catch (err) {
@@ -130,7 +131,7 @@ export async function loadCatalog(
     }
     return { catalog, origin: "remote" }
   } catch (err) {
-      mainLog.warn("[image-catalog] remote fetch failed, using fallback:", err)
+    mainLog.warn("[image-catalog] remote fetch failed, using fallback:", err)
     if (cache) return { catalog: cache.catalog, origin: "cache" }
     return { catalog: await readSeed(opts.seedPath), origin: "seed" }
   }

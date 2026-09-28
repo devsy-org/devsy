@@ -44,12 +44,15 @@ test("status and result protocols are independent of CLI diagnostic level", asyn
       workspaceId,
     })
     await expect
-      .poll(async () => {
-        const snapshot = (await invoke("workspace_snapshot")) as {
-          jobs: Record<string, { state: string }>
-        }
-        return snapshot.jobs[workspaceId]?.state
-      }, { timeout: 30000 })
+      .poll(
+        async () => {
+          const snapshot = (await invoke("workspace_snapshot")) as {
+            jobs: Record<string, { state: string }>
+          }
+          return snapshot.jobs[workspaceId]?.state
+        },
+        { timeout: 30000 },
+      )
       .toBe("succeeded")
     await expect
       .poll(
@@ -63,7 +66,12 @@ test("status and result protocols are independent of CLI diagnostic level", asyn
         { timeout: 10000 },
       )
       .toBe(true)
-    const workspaces = (await invoke("workspace_list")) as Array<{ id: string; status: string }>
-    expect(workspaces.find((workspace) => workspace.id === workspaceId)?.status).toBe("Running")
+    const workspaces = (await invoke("workspace_list")) as Array<{
+      id: string
+      status: string
+    }>
+    expect(
+      workspaces.find((workspace) => workspace.id === workspaceId)?.status,
+    ).toBe("Running")
   }
 })

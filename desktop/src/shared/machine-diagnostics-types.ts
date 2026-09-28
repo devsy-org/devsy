@@ -35,7 +35,13 @@ export interface MachineDaemonStatus {
 
 export interface MachineWorkspaceDiagnostics {
   id: string
-  state: "active" | "idle_due" | "busy" | "not_configured" | "invalid_config" | "not_running"
+  state:
+    | "active"
+    | "idle_due"
+    | "busy"
+    | "not_configured"
+    | "invalid_config"
+    | "not_running"
   lastActivityAt?: string
   inactivityTimeout?: string
   idleDeadlineAt?: string
@@ -48,10 +54,19 @@ export interface MachineWorkspaceDiagnostics {
 export interface MachineDiagnosticsResponse {
   schemaVersion: number
   machine: { id: string; context: string; provider: string; state: string }
-  source: { availability: DiagnosticAvailability; freshness: "fresh" | "stale" | "unknown"; errorCode?: string; message?: string }
+  source: {
+    availability: DiagnosticAvailability
+    freshness: "fresh" | "stale" | "unknown"
+    errorCode?: string
+    message?: string
+  }
   daemon?: MachineDaemonStatus
   events?: MachineDiagnosticEvent[]
-  cursor: { next?: string; state: "ok" | "gap" | "reset" | "none"; reason?: string }
+  cursor: {
+    next?: string
+    state: "ok" | "gap" | "reset" | "none"
+    reason?: string
+  }
 }
 
 export interface MachineDiagnosticsCache {

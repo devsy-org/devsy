@@ -37,7 +37,10 @@ const PRESETS = [
   { name: "apple", description: "Apple containers (macOS 26+, Apple silicon)" },
   { name: "microsandbox", description: "Hardware-isolated microVMs" },
   { name: "lima", description: "Linux VMs via Lima (macOS)" },
-  { name: "orbstack", description: "Fast containers and VMs via OrbStack (macOS)" },
+  {
+    name: "orbstack",
+    description: "Fast containers and VMs via OrbStack (macOS)",
+  },
   { name: "ssh", description: "Remote SSH machines" },
   { name: "kubernetes", description: "Kubernetes clusters" },
   { name: "aws", description: "Amazon Web Services" },
@@ -169,11 +172,10 @@ onMount(async () => {
         if (isCommandSuccess(progress.success)) {
           refreshAndComplete()
         } else {
-          initError =
-            progress.cliError ?? {
-              code: "UNKNOWN",
-              message: "Provider initialization failed.",
-            }
+          initError = progress.cliError ?? {
+            code: "UNKNOWN",
+            message: "Provider initialization failed.",
+          }
         }
       }
     }

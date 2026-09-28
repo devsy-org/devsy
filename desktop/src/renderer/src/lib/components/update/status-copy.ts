@@ -12,7 +12,10 @@ export function fmtTime(ts: number | null): string {
 
 // One-line summary of the update state, shared by the settings hero and the
 // standalone dialog so both surfaces read identically.
-export function statusHeadline(s: UpdateStatus, currentVersion: string | null): string {
+export function statusHeadline(
+  s: UpdateStatus,
+  currentVersion: string | null,
+): string {
   switch (s.state) {
     case "checking":
       return "Checking for updates..."
@@ -28,9 +31,12 @@ export function statusHeadline(s: UpdateStatus, currentVersion: string | null): 
     case "not-available": {
       if (s.code === "dev-mode") return "Updates run in packaged builds"
       if (s.code === "channel-missing") return "No releases on this channel yet"
-      if (s.code === "not-eligible") return "A newer update is not available for this device yet"
+      if (s.code === "not-eligible")
+        return "A newer update is not available for this device yet"
       const current = s.currentVersion || currentVersion
-      return current ? `Devsy is up to date · v${current}` : "Devsy is up to date"
+      return current
+        ? `Devsy is up to date · v${current}`
+        : "Devsy is up to date"
     }
     default:
       return currentVersion ? `Devsy v${currentVersion}` : "Devsy"

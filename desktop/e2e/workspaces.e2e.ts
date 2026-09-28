@@ -115,7 +115,9 @@ test.describe("Workspace lifecycle badges", () => {
         // Avoid leaking this fixture into later tests.
         const finalSnapshot = await workspaceSnapshot()
         if (finalSnapshot.workspaces.some(({ id }) => id === "deleteprobe")) {
-          throw new Error("deleteprobe workspace still present after delete retry")
+          throw new Error(
+            "deleteprobe workspace still present after delete retry",
+          )
         }
       }
     } catch (cleanupError) {
@@ -211,7 +213,10 @@ test.describe("Workspace detail flow", () => {
     await page.getByRole("button", { name: /more actions/i }).click()
     await page.getByRole("menuitem", { name: /rebuild/i }).click()
 
-    const rebuildDialog = page.locator('[role="dialog"]').filter({ hasText: /rebuild workspace/i }).first()
+    const rebuildDialog = page
+      .locator('[role="dialog"]')
+      .filter({ hasText: /rebuild workspace/i })
+      .first()
     await expect(rebuildDialog).toBeVisible({ timeout: 5000 })
     await expect(rebuildDialog).toContainText("Rebuild workspace")
     await rebuildDialog.getByRole("button", { name: /^cancel$/i }).click()
@@ -219,175 +224,189 @@ test.describe("Workspace detail flow", () => {
     await page.getByRole("button", { name: /more actions/i }).click()
     await page.getByRole("menuitem", { name: /delete/i }).click()
 
-    const deleteDialog = page.locator('[role="dialog"]').filter({ hasText: /delete workspace/i }).first()
+    const deleteDialog = page
+      .locator('[role="dialog"]')
+      .filter({ hasText: /delete workspace/i })
+      .first()
     await expect(deleteDialog).toBeVisible({ timeout: 5000 })
     await expect(deleteDialog).toContainText("Delete workspace")
     await deleteDialog.getByRole("button", { name: /^cancel$/i }).click()
   })
 })
 
-test.describe.serial("Create Workspace Wizard", () => {
-  async function openCreateWorkspaceWizard(page: Page) {
-    await page.click('[data-sidebar="sidebar"] a[href="#/workspaces"]')
-    await page.locator('[data-slot="sidebar-inset"] main').first().waitFor({
-      timeout: 30_000,
-    })
+test.describe
+  .serial("Create Workspace Wizard", () => {
+    async function openCreateWorkspaceWizard(page: Page) {
+      await page.click('[data-sidebar="sidebar"] a[href="#/workspaces"]')
+      await page.locator('[data-slot="sidebar-inset"] main').first().waitFor({
+        timeout: 30_000,
+      })
 
-    // Support both old/new CTA labels.
-    const createWorkspaceButton = page
-      .getByRole("button", { name: /create workspace|new workspace/i })
-      .first()
+      // Support both old/new CTA labels.
+      const createWorkspaceButton = page
+        .getByRole("button", { name: /create workspace|new workspace/i })
+        .first()
 
-    await expect(createWorkspaceButton).toBeVisible({ timeout: 30_000 })
-    await expect(createWorkspaceButton).toBeEnabled({ timeout: 30_000 })
-    await createWorkspaceButton.click()
+      await expect(createWorkspaceButton).toBeVisible({ timeout: 30_000 })
+      await expect(createWorkspaceButton).toBeEnabled({ timeout: 30_000 })
+      await createWorkspaceButton.click()
 
-    const dialog = page.locator('[role="dialog"]').first()
-    await expect(dialog).toBeVisible({ timeout: 10_000 })
-    return dialog
-  }
-
-  test("should open the wizard and show step 1 (provider)", async () => {
-    const dialog = await openCreateWorkspaceWizard(page)
-
-    for (const label of ["Provider", "Source", "IDE", "Review", "Launch"]) {
-      await expect(dialog).toContainText(label)
+      const dialog = page.locator('[role="dialog"]').first()
+      await expect(dialog).toBeVisible({ timeout: 10_000 })
+      return dialog
     }
 
-    // Provider step heading visible
-    await expect(
-      dialog.getByRole("heading", { name: /choose a provider/i }),
-    ).toBeVisible()
+    test("should open the wizard and show step 1 (provider)", async () => {
+      const dialog = await openCreateWorkspaceWizard(page)
 
-    // Mock CLI exposes "docker" as the only initialized provider; ensure it is listed
-    await expect(dialog.locator("button", { hasText: "docker" })).toBeVisible({
-      timeout: 10000,
+      for (const label of ["Provider", "Source", "IDE", "Review", "Launch"]) {
+        await expect(dialog).toContainText(label)
+      }
+
+      // Provider step heading visible
+      await expect(
+        dialog.getByRole("heading", { name: /choose a provider/i }),
+      ).toBeVisible()
+
+      // Mock CLI exposes "docker" as the only initialized provider; ensure it is listed
+      await expect(dialog.locator("button", { hasText: "docker" })).toBeVisible(
+        {
+          timeout: 10000,
+        },
+      )
+
+      // The default provider is pre-selected, so Continue is enabled
+      const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
+      await expect(continueBtn).toBeEnabled()
     })
 
-    // The default provider is pre-selected, so Continue is enabled
-    const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
-    await expect(continueBtn).toBeEnabled()
-  })
+    test("should advance to source step with templates", async () => {
+      const dialog = page.locator('[role="dialog"]').first()
+      // Default provider (docker) is already pre-selected; just continue
+      const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
+      await expect(continueBtn).toBeEnabled()
+      await continueBtn.click()
 
-  test("should advance to source step with templates", async () => {
-    const dialog = page.locator('[role="dialog"]').first()
-    // Default provider (docker) is already pre-selected; just continue
-    const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
-    await expect(continueBtn).toBeEnabled()
-    await continueBtn.click()
+      await expect(
+        dialog.getByRole("heading", { name: /choose a source/i }),
+      ).toBeVisible()
 
-    await expect(
-      dialog.getByRole("heading", { name: /choose a source/i }),
-    ).toBeVisible()
+      // Quick Start Templates section + 5 core templates. Scope to the active
+      // source panel (Git) so the template buttons don't collide with the Image
+      // source's catalog entries (e.g. "Python 3.12"), which share language names.
+      await expect(dialog).toContainText("Quick Start Templates")
+      const gitPanel = dialog.getByTestId("source-panel")
+      for (const lang of ["Python", "Node.js", "Go", "Rust", "Java"]) {
+        await expect(
+          gitPanel.locator("button", { hasText: lang }),
+        ).toBeVisible()
+      }
 
-    // Quick Start Templates section + 5 core templates. Scope to the active
-    // source panel (Git) so the template buttons don't collide with the Image
-    // source's catalog entries (e.g. "Python 3.12"), which share language names.
-    await expect(dialog).toContainText("Quick Start Templates")
-    const gitPanel = dialog.getByTestId("source-panel")
-    for (const lang of ["Python", "Node.js", "Go", "Rust", "Java"]) {
-      await expect(gitPanel.locator("button", { hasText: lang })).toBeVisible()
-    }
-
-    // Language icons render
-    const icons = gitPanel.locator("button img")
-    expect(await icons.count()).toBeGreaterThan(0)
-    const firstIcon = icons.first()
-    await expect(firstIcon).toBeVisible()
-    const naturalWidth = await firstIcon.evaluate(
-      (el: HTMLImageElement) => el.naturalWidth,
-    )
-    expect(naturalWidth).toBeGreaterThan(0)
-  })
-
-  test("should select a template and populate the source field", async () => {
-    const dialog = page.locator('[role="dialog"]').first()
-    await dialog.getByTestId("source-panel").locator("button", { hasText: "Python" }).click()
-
-    const sourceInput = dialog.locator('input[placeholder*="github"]')
-    await expect(sourceInput).toHaveValue(
-      "https://github.com/microsoft/vscode-remote-try-python",
-    )
-  })
-
-  test("should walk through IDE step", async () => {
-    const dialog = page.locator('[role="dialog"]').first()
-    // Continue from source -> IDE
-    const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
-    await expect(continueBtn).toBeEnabled()
-    await continueBtn.click()
-
-    await expect(
-      dialog.getByRole("heading", { name: /choose an ide/i }),
-    ).toBeVisible()
-
-    // IDE combobox trigger (the popover button) defaults to "Select an IDE..." or "None"
-    // Since the default state has selectedIde = "none", the label should be "None".
-    await expect(dialog).toContainText("None")
-
-    // Continue is always enabled here (IDE is optional); advance to Review
-    await dialog.getByRole("button", { name: /^continue$/i }).click()
-  })
-
-  test("should show review summary", async () => {
-    const dialog = page.locator('[role="dialog"]').first()
-    await expect(
-      dialog.getByRole("heading", { name: /^review$/i }),
-    ).toBeVisible()
-
-    // Summary card shows chosen provider, source, ide label, workspace id
-    await expect(dialog).toContainText("docker")
-    await expect(dialog).toContainText(
-      "https://github.com/microsoft/vscode-remote-try-python",
-    )
-    await expect(dialog).toContainText("None")
-
-    // Workspace name was populated by selectTemplate("Python") -> "python"
-    const nameInput = dialog.locator(
-      'input[placeholder*="derived from source"]',
-    )
-    await expect(nameInput).toHaveValue("python")
-  })
-
-  test("should launch workspace and stream output", async () => {
-    const dialog = page.locator('[role="dialog"]').first()
-    // The review step's primary button is labeled "Launch"
-    await dialog.getByRole("button", { name: /^launch$/i }).click()
-
-    // Mock CLI streams: "Resolving source", "Pulling image",
-    // "Starting workspace", "Workspace ready."
-    await expect(dialog).toContainText(/resolving|pulling|starting|ready/i, {
-      timeout: 10000,
+      // Language icons render
+      const icons = gitPanel.locator("button img")
+      expect(await icons.count()).toBeGreaterThan(0)
+      const firstIcon = icons.first()
+      await expect(firstIcon).toBeVisible()
+      const naturalWidth = await firstIcon.evaluate(
+        (el: HTMLImageElement) => el.naturalWidth,
+      )
+      expect(naturalWidth).toBeGreaterThan(0)
     })
 
-    // On success the "Open Workspace" button appears
-    await expect(
-      dialog.getByRole("button", { name: /open workspace/i }),
-    ).toBeVisible({ timeout: 15000 })
-    await dialog.getByRole("button", { name: /^close$/i }).first().click()
-  })
+    test("should select a template and populate the source field", async () => {
+      const dialog = page.locator('[role="dialog"]').first()
+      await dialog
+        .getByTestId("source-panel")
+        .locator("button", { hasText: "Python" })
+        .click()
 
-  test("shows the structured failure message and hint", async () => {
-    const dialog = await openCreateWorkspaceWizard(page)
-
-    await dialog.getByRole("button", { name: /^continue$/i }).click()
-    await expect(
-      dialog.getByRole("heading", { name: /choose a source/i }),
-    ).toBeVisible()
-
-    const sourceInput = dialog.locator('input[placeholder*="github"]')
-    await sourceInput.fill("https://example.com/fail.git")
-    await dialog.getByRole("button", { name: /^continue$/i }).click()
-    await dialog.getByRole("button", { name: /^continue$/i }).click()
-    await expect(
-      dialog.getByRole("heading", { name: /^review$/i }),
-    ).toBeVisible()
-    await dialog.getByRole("button", { name: /^launch$/i }).click()
-
-    await expect(dialog).toContainText("Workspace Creation Failed", {
-      timeout: 15000,
+      const sourceInput = dialog.locator('input[placeholder*="github"]')
+      await expect(sourceInput).toHaveValue(
+        "https://github.com/microsoft/vscode-remote-try-python",
+      )
     })
-    await expect(dialog).toContainText("The mock image build failed.")
-    await expect(dialog).toContainText("Check the build output and retry.")
+
+    test("should walk through IDE step", async () => {
+      const dialog = page.locator('[role="dialog"]').first()
+      // Continue from source -> IDE
+      const continueBtn = dialog.getByRole("button", { name: /^continue$/i })
+      await expect(continueBtn).toBeEnabled()
+      await continueBtn.click()
+
+      await expect(
+        dialog.getByRole("heading", { name: /choose an ide/i }),
+      ).toBeVisible()
+
+      // IDE combobox trigger (the popover button) defaults to "Select an IDE..." or "None"
+      // Since the default state has selectedIde = "none", the label should be "None".
+      await expect(dialog).toContainText("None")
+
+      // Continue is always enabled here (IDE is optional); advance to Review
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
+    })
+
+    test("should show review summary", async () => {
+      const dialog = page.locator('[role="dialog"]').first()
+      await expect(
+        dialog.getByRole("heading", { name: /^review$/i }),
+      ).toBeVisible()
+
+      // Summary card shows chosen provider, source, ide label, workspace id
+      await expect(dialog).toContainText("docker")
+      await expect(dialog).toContainText(
+        "https://github.com/microsoft/vscode-remote-try-python",
+      )
+      await expect(dialog).toContainText("None")
+
+      // Workspace name was populated by selectTemplate("Python") -> "python"
+      const nameInput = dialog.locator(
+        'input[placeholder*="derived from source"]',
+      )
+      await expect(nameInput).toHaveValue("python")
+    })
+
+    test("should launch workspace and stream output", async () => {
+      const dialog = page.locator('[role="dialog"]').first()
+      // The review step's primary button is labeled "Launch"
+      await dialog.getByRole("button", { name: /^launch$/i }).click()
+
+      // Mock CLI streams: "Resolving source", "Pulling image",
+      // "Starting workspace", "Workspace ready."
+      await expect(dialog).toContainText(/resolving|pulling|starting|ready/i, {
+        timeout: 10000,
+      })
+
+      // On success the "Open Workspace" button appears
+      await expect(
+        dialog.getByRole("button", { name: /open workspace/i }),
+      ).toBeVisible({ timeout: 15000 })
+      await dialog
+        .getByRole("button", { name: /^close$/i })
+        .first()
+        .click()
+    })
+
+    test("shows the structured failure message and hint", async () => {
+      const dialog = await openCreateWorkspaceWizard(page)
+
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
+      await expect(
+        dialog.getByRole("heading", { name: /choose a source/i }),
+      ).toBeVisible()
+
+      const sourceInput = dialog.locator('input[placeholder*="github"]')
+      await sourceInput.fill("https://example.com/fail.git")
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
+      await dialog.getByRole("button", { name: /^continue$/i }).click()
+      await expect(
+        dialog.getByRole("heading", { name: /^review$/i }),
+      ).toBeVisible()
+      await dialog.getByRole("button", { name: /^launch$/i }).click()
+
+      await expect(dialog).toContainText("Workspace Creation Failed", {
+        timeout: 15000,
+      })
+      await expect(dialog).toContainText("The mock image build failed.")
+      await expect(dialog).toContainText("Check the build output and retry.")
+    })
   })
-})

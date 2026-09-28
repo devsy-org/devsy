@@ -92,7 +92,9 @@ describe("WorkspaceOperation", () => {
     expect(ui.getByText("Deleting")).toBeTruthy()
     expect(ui.getByText("Confirming removal")).toBeTruthy()
     expect(
-      ui.getByRole("status").querySelector('[data-slot="workspace-operation-detail"]'),
+      ui
+        .getByRole("status")
+        .querySelector('[data-slot="workspace-operation-detail"]'),
     ).toBeTruthy()
   })
   it("shows recovery wording with an expanded Retry that only re-refreshes", async () => {

@@ -45,13 +45,16 @@ export async function refreshUpdates(): Promise<void> {
   internal.update((s) => ({ ...s, refreshing: true, refreshError: null }))
   try {
     const updates = await providerCheckUpdates()
-    const failed = Object.values(updates).filter((result) => result.error).length
+    const failed = Object.values(updates).filter(
+      (result) => result.error,
+    ).length
     internal.update((s) => {
       const merged = { ...s.updates }
       for (const [name, result] of Object.entries(updates)) {
-        merged[name] = result.error && s.updates[name]
-          ? { ...s.updates[name], error: result.error }
-          : result
+        merged[name] =
+          result.error && s.updates[name]
+            ? { ...s.updates[name], error: result.error }
+            : result
       }
       return {
         ...s,

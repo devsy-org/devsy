@@ -41,7 +41,11 @@ import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import { isCommandSuccess } from "$lib/utils/log-parser.js"
 import { providerStatus } from "$lib/utils/provider-status.js"
-import type { CommandProgress, Provider, ProviderOption } from "$lib/types/index.js"
+import type {
+  CommandProgress,
+  Provider,
+  ProviderOption,
+} from "$lib/types/index.js"
 
 let {
   provider,
@@ -86,7 +90,12 @@ let status = $derived(
     : { kind: "uninitialized" as const, label: "" },
 )
 let persistedUpdateError = $derived.by((): CLIError | null => {
-  if (recoveredUpdateState || providerJob?.activity !== "updating" || !providerJob.error) return null
+  if (
+    recoveredUpdateState ||
+    providerJob?.activity !== "updating" ||
+    !providerJob.error
+  )
+    return null
   return {
     code: providerJob.errorCode ?? "provider_update_failed",
     message: providerJob.error,
@@ -95,8 +104,12 @@ let persistedUpdateError = $derived.by((): CLIError | null => {
   }
 })
 let visibleUpdateError = $derived(updateError ?? persistedUpdateError)
-let refreshRecovery = $derived(visibleUpdateError?.code === "provider_refresh_failed")
-let visibleUpdateLines = $derived(updateLines.length > 0 ? updateLines : providerJob?.logs ?? [])
+let refreshRecovery = $derived(
+  visibleUpdateError?.code === "provider_refresh_failed",
+)
+let visibleUpdateLines = $derived(
+  updateLines.length > 0 ? updateLines : (providerJob?.logs ?? []),
+)
 let refreshingProviderState = $state(false)
 let showingLocalUpdate = $derived(updateProviderName === provider.name)
 
@@ -240,9 +253,7 @@ async function handleToggleSingleMachine(enabled: boolean) {
   try {
     await providerSetSingleMachine(provider.name, enabled)
     providers.set(await providerList())
-    toasts.success(
-      enabled ? "Reuse machine enabled" : "Reuse machine disabled",
-    )
+    toasts.success(enabled ? "Reuse machine enabled" : "Reuse machine disabled")
   } catch (err) {
     toasts.error(`Failed to update reuse machine: ${extractErrorMessage(err)}`)
   } finally {
@@ -277,7 +288,6 @@ async function runUpdate() {
     updateStartError = `Failed to start update: ${extractErrorMessage(err)}`
   }
 }
-
 
 async function synchronizeProviderAfterUpdate(name: string) {
   providers.set(await providerList())
@@ -335,7 +345,12 @@ async function runSwitch() {
 function extractCliError(err: unknown): CLIError | null {
   if (err && typeof err === "object" && "cliError" in err) {
     const candidate = (err as { cliError?: unknown }).cliError
-    if (candidate && typeof candidate === "object" && "code" in candidate && "message" in candidate) {
+    if (
+      candidate &&
+      typeof candidate === "object" &&
+      "code" in candidate &&
+      "message" in candidate
+    ) {
       return candidate as CLIError
     }
   }
@@ -358,7 +373,8 @@ async function handleInitialize() {
     } else {
       initError = {
         code: "UNKNOWN",
-        message: err instanceof Error ? err.message : `Failed to initialize ${name}.`,
+        message:
+          err instanceof Error ? err.message : `Failed to initialize ${name}.`,
       }
     }
   } finally {
