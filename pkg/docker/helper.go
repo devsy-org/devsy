@@ -22,6 +22,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
+// postDeadlineDiagnosticTimeout bounds the un-deadlined inspect after a poll
+// deadline fires; too small a budget loses the daemon error to a killed child.
+const postDeadlineDiagnosticTimeout = 2 * time.Second
+
 // DockerBuilder represents the Docker builder types.
 type DockerBuilder int
 
@@ -515,7 +519,7 @@ func (r *DockerHelper) WaitContainerRunning(ctx context.Context, containerID str
 				// daemon error can still be captured for the final diagnostic.
 				diagnosticCtx, diagnosticCancel := context.WithTimeout(
 					context.WithoutCancel(ctx),
-					250*time.Millisecond,
+					postDeadlineDiagnosticTimeout,
 				)
 				details, err = r.InspectContainers(diagnosticCtx, []string{containerID})
 				diagnosticCancel()
