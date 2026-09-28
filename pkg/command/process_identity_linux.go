@@ -192,7 +192,7 @@ func linuxProcessGroupFieldsMatch(
 	if err != nil {
 		return false, false, nil
 	}
-	leaderMismatch, err := linuxProcessGroupFieldsLeaderMismatch(
+	leaderMismatch, err = linuxProcessGroupFieldsLeaderMismatch(
 		pid,
 		pgid,
 		sessionID,
