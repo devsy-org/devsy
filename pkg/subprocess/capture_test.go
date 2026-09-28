@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -226,6 +227,80 @@ func TestRunCapturesSignal(t *testing.T) {
 	}
 	if result.Signal == "" {
 		t.Fatalf("missing signal in result: %+v", result)
+	}
+}
+
+// Machine-readable stdout must be reproducible verbatim: a docker volume
+// mountpoint containing digit runs must not be mangled by redaction, while the
+// display channels stay masked.
+func TestRunUnredactedStdoutKeepsMachineReadableOutputVerbatim(t *testing.T) {
+	if runtime.GOOS == testWindows {
+		t.Skip("test command uses sh")
+	}
+	secret := "sk-live-abcdef123456" //nolint:gosec // test-only redaction fixture
+	mountpoint := "/var/lib/docker/volumes/devsy-ws-001/_data"
+	result, err := Run(
+		context.Background(),
+		"sh",
+		[]string{"-c", `printf '%s %s' "$TOKEN" "$1"`, "sh", mountpoint},
+		Options{
+			Env:              []string{"TOKEN=" + secret},
+			UnredactedStdout: true,
+		},
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(result.RawStdout, mountpoint) {
+		t.Fatalf("RawStdout = %q, want mountpoint %q preserved", result.RawStdout, mountpoint)
+	}
+	if strings.Contains(result.Stdout, secret) {
+		t.Fatalf("secret escaped display stdout: %q", result.Stdout)
+	}
+	if !strings.Contains(result.Stdout, "***") {
+		t.Fatalf("Stdout = %q, want secret masked for display", result.Stdout)
+	}
+}
+
+// Diagnostics must not leak the raw output back into user-facing messages.
+func TestRunUnredactedStdoutKeepsDiagnosticsRedacted(t *testing.T) {
+	if runtime.GOOS == testWindows {
+		t.Skip("test command uses sh")
+	}
+	secret := "sk-live-abcdef123456" //nolint:gosec // test-only redaction fixture
+	result, err := Run(
+		context.Background(),
+		"sh",
+		[]string{"-c", `printf '%s' "$TOKEN" >&2; exit 3`, "sh"},
+		Options{
+			Env:              []string{"TOKEN=" + secret},
+			UnredactedStdout: true,
+		},
+	)
+	if err == nil {
+		t.Fatal("Run succeeded, want failure")
+	}
+	if strings.Contains(result.DiagnosticOutput(), secret) {
+		t.Fatalf("secret escaped diagnostic output: %q", result.DiagnosticOutput())
+	}
+}
+
+// Without the opt-in, no raw copy is retained, so a redactor can never
+// accidentally influence machine-readable output.
+func TestRunCommandLeavesRawStdoutEmptyByDefault(t *testing.T) {
+	if runtime.GOOS == testWindows {
+		t.Skip("test command uses sh")
+	}
+	cmd := exec.Command("sh", "-c", "printf 'v1.2.3'") // #nosec G204 -- test-only command
+	result, err := RunCommand(cmd, secrets.NewRedactor([]string{captureToken + captureTestSecret}))
+	if err != nil {
+		t.Fatalf("RunCommand: %v", err)
+	}
+	if result.RawStdout != "" {
+		t.Fatalf("RawStdout = %q, want empty when not requested", result.RawStdout)
+	}
+	if result.Stdout != "v1.2.3" {
+		t.Fatalf("Stdout = %q, want v1.2.3", result.Stdout)
 	}
 }
 

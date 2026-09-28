@@ -136,7 +136,7 @@ func (d *LocalDockerDelivery) volumeSeedState(
 			err,
 		)
 	}
-	managedStr, seededStr, _ := strings.Cut(strings.TrimSpace(result.Stdout), ",")
+	managedStr, seededStr, _ := strings.Cut(strings.TrimSpace(result.RawStdout), ",")
 	return managedStr == pkgconfig.LabelValueTrue, seededStr == pkgconfig.LabelValueTrue, nil
 }
 

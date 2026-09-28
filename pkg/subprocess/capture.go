@@ -33,6 +33,10 @@ type Options struct {
 	// subprocess output but are not represented by a sensitive environment
 	// variable. Values are masked before capture and command rendering.
 	SensitiveValues []string
+	// UnredactedStdout preserves machine-readable stdout in Result.RawStdout.
+	// Redaction still applies to the captured Stdout and Stderr, so rendered
+	// commands and diagnostic messages remain safe to display.
+	UnredactedStdout bool
 	// OperationID links diagnostics to the semantic operation that spawned
 	// the command. When empty, Run derives it from ctx.
 	OperationID string
@@ -120,10 +124,16 @@ type Result struct {
 	OperationID    string
 	Stdout         string
 	Stderr         string
-	ExitCode       int
-	Signal         string
-	Duration       time.Duration
-	Truncated      bool
+	// RawStdout holds unredacted stdout, populated only when the caller asked
+	// for machine-readable output that must be used verbatim rather than only
+	// shown to a user, such as a Docker volume mountpoint. It is empty
+	// otherwise, so Stdout remains the sole populated stdout field by default
+	// and diagnostics stay redacted.
+	RawStdout string
+	ExitCode  int
+	Signal    string
+	Duration  time.Duration
+	Truncated bool
 }
 
 // DiagnosticOutput returns the useful captured tail for a failed command.
@@ -163,7 +173,7 @@ func Run(ctx context.Context, binary string, args []string, options Options) (Re
 	}
 	cmd.Stdin = options.Stdin
 	redactor := commandRedactor(options)
-	result, err := RunCommand(cmd, redactor)
+	result, err := runCommand(cmd, redactor, options.UnredactedStdout)
 	err = withContextError(ctx, err)
 	result.OperationID = options.OperationID
 	return result, err
@@ -202,12 +212,22 @@ func withContextError(ctx context.Context, err error) error {
 // stdout and stderr capture. Existing command setup such as an explicit
 // environment, working directory, or stdin is preserved.
 func RunCommand(cmd *exec.Cmd, redactor *secrets.Redactor) (Result, error) {
+	return runCommand(cmd, redactor, false)
+}
+
+// RunCommandUnredactedStdout behaves like RunCommand but additionally preserves
+// the unredacted stdout in Result.RawStdout for callers that parse the output
+// rather than display it.
+func RunCommandUnredactedStdout(cmd *exec.Cmd, redactor *secrets.Redactor) (Result, error) {
+	return runCommand(cmd, redactor, true)
+}
+
+func runCommand(cmd *exec.Cmd, redactor *secrets.Redactor, unredactedStdout bool) (Result, error) {
 	if cmd == nil {
 		return Result{}, errors.New("subprocess command is nil")
 	}
-	out := NewBuffer(redactor)
+	out, rawOut := captureStdout(cmd, redactor, unredactedStdout)
 	errOut := NewBuffer(redactor)
-	cmd.Stdout = out
 	cmd.Stderr = errOut
 	binary := cmd.Path
 	args := []string(nil)
@@ -229,15 +249,43 @@ func RunCommand(cmd *exec.Cmd, redactor *secrets.Redactor) (Result, error) {
 		Truncated:      out.Truncated() || errOut.Truncated(),
 		ExitCode:       0,
 	}
+	if rawOut != nil {
+		result.RawStdout = rawOut.String()
+		result.Truncated = result.Truncated || rawOut.Truncated()
+	}
 	if err != nil {
-		result.ExitCode = -1
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			result.ExitCode = exitErr.ExitCode()
-			result.Signal = processSignal(exitErr.ProcessState)
-		}
+		applyExitFailure(&result, err)
 		return result, fmt.Errorf("run %s: %w", result.DisplayCommand, err)
 	}
 	return result, nil
+}
+
+// applyExitFailure records the exit code and terminating signal of a failed
+// command on the result.
+func applyExitFailure(result *Result, err error) {
+	result.ExitCode = -1
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		result.ExitCode = exitErr.ExitCode()
+		result.Signal = processSignal(exitErr.ProcessState)
+	}
+}
+
+// captureStdout wires the redacting display buffer to cmd, and returns it
+// alongside a second unredacted buffer when the caller needs the stdout
+// verbatim. A buffer built without a redactor still bounds the copy.
+func captureStdout(
+	cmd *exec.Cmd,
+	redactor *secrets.Redactor,
+	unredacted bool,
+) (display, raw *Buffer) {
+	display = NewBuffer(redactor)
+	if !unredacted {
+		cmd.Stdout = display
+		return display, nil
+	}
+	raw = NewBuffer(nil)
+	cmd.Stdout = io.MultiWriter(display, raw)
+	return display, raw
 }
 
 func processSignal(state *os.ProcessState) string {

@@ -65,6 +65,10 @@ func (c *command) RunContext(ctx context.Context) (string, error) {
 	}
 	result, err := subprocess.Run(ctx, c.cmd, c.args, subprocess.Options{
 		Redactor: redactor,
+		// The rendered environment template is written to disk and must be
+		// reproduced verbatim, so capture it unredacted. Diagnostics above
+		// still use the redacted output.
+		UnredactedStdout: true,
 	})
 	if err != nil {
 		details := result.DiagnosticOutput()
@@ -74,7 +78,7 @@ func (c *command) RunContext(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to execute command: %w", err)
 	}
 
-	return result.Stdout, nil
+	return result.RawStdout, nil
 }
 
 // ShouldUse takes CLIOptions and returns true if crane should be used.
