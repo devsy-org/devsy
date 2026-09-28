@@ -297,6 +297,12 @@ func renameProvider(
 		return fmt.Errorf("moving provider: %w", err)
 	}
 
+	// reload config so switchWorkspaces sees the newly mapped provider name
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, "")
+	if err != nil {
+		return fmt.Errorf("reload config after move: %w", err)
+	}
+
 	rb := &renameState{devsyConfig: devsyConfig, oldName: oldName, newName: newName}
 
 	rb.switchedWorkspaces, err = switchWorkspaces(ctx, devsyConfig, workspaces, newName)
