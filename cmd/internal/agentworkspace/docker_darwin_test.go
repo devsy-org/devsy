@@ -5,6 +5,7 @@ package agentworkspace
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -28,11 +29,19 @@ func TestFindDarwinDockerCLIAtKnownPath(t *testing.T) {
 	}
 }
 
+// The full candidate list also contains machine-wide docker paths, so the
+// result is not asserted against it; that depends on the host.
 func TestFindDarwinDockerCLIRancherDesktopPath(t *testing.T) {
 	home := t.TempDir()
 	rancher := filepath.Join(home, ".rd", "bin", "docker")
 	writeExecutable(t, rancher)
-	path, err := findDarwinDockerCLIInPaths(darwinDockerCandidatePaths(home))
+
+	candidates := darwinDockerCandidatePaths(home)
+	if !slices.Contains(candidates, rancher) {
+		t.Fatalf("candidate paths %v missing rancher path %q", candidates, rancher)
+	}
+
+	path, err := findDarwinDockerCLIInPaths([]string{rancher})
 	if err != nil || path != rancher {
 		t.Fatalf("find docker CLI = %q, %v; want %q", path, err, rancher)
 	}

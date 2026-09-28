@@ -405,6 +405,8 @@ func TestChangedFilesDetectsWorkingTree(t *testing.T) {
 	gitRun(t, dir, "init", "--quiet")
 	gitRun(t, dir, "config", "user.email", "t@t.com")
 	gitRun(t, dir, "config", "user.name", "test")
+	// Contributors of this project commonly sign globally, which breaks this.
+	gitRun(t, dir, "config", "commit.gpgsign", "false")
 	gitRun(t, dir, "checkout", "-b", testMainBranch)
 	writeFile(t, filepath.Join(dir, "committed.txt"), "x")
 	writeFile(t, filepath.Join(dir, "staged.txt"), "s")
