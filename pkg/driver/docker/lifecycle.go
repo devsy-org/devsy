@@ -391,6 +391,15 @@ func (d *dockerDriver) waitForLocalImage(ctx context.Context, image string) erro
 				lastErr = err
 				return false, nil
 			}
+			// A deadline that fires mid-inspect kills the subprocess, so the
+			// failure arrives as "signal: killed". That is the poll timing
+			// out, not the daemon failing, so let the deadline decide.
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				if lastErr == nil {
+					lastErr = docker.ErrImageNotFound
+				}
+				return false, nil
+			}
 			return false, err
 		},
 	)

@@ -87,6 +87,36 @@ func withShortImageInspectPoll(t *testing.T) {
 	})
 }
 
+// A deadline firing mid-inspect must still report the image missing: callers
+// branch on that to avoid pulling a locally-built image.
+func TestEnsureImage_PollDeadlineDuringInspectReportsNotFound(t *testing.T) {
+	withShortImageInspectPoll(t)
+	imageInspectPollTimeout = 200 * time.Millisecond
+
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "pulled")
+	bin := filepath.Join(dir, "docker-fake")
+	// The inspect outlives the poll deadline, so it is always killed.
+	script := `#!/bin/sh
+case "$1" in
+  inspect) sleep 5 ;;
+  pull) echo pulled > "` + marker + `" ;;
+esac
+`
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755)) //nolint:gosec
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+
+	err := d.EnsureImage(
+		context.Background(),
+		&driver.RunOptions{Image: testImageRef, ImageBuilt: true},
+	)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, docker.ErrImageNotFound)
+	assert.NoFileExists(t, marker)
+}
+
 func TestEnsureImage_BuiltImageNeverFoundDoesNotPull(t *testing.T) {
 	withShortImageInspectPoll(t)
 	marker := filepath.Join(t.TempDir(), "pulled")
@@ -308,7 +338,9 @@ esac
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		deadline := time.Now().Add(time.Second)
+		// Cancelling before exec starts kills the preceding inspect instead,
+		// losing the context error. The deadline is only a backstop.
+		deadline := time.Now().Add(30 * time.Second)
 		for time.Now().Before(deadline) {
 			if _, err := os.Stat(ready); err == nil {
 				break
