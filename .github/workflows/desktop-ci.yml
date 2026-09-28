@@ -53,6 +53,11 @@ jobs:
         working-directory: desktop
         run: npm run check
 
+      - name: Check formatting
+        if: needs.changes.outputs.desktop == 'true'
+        working-directory: desktop
+        run: npm run format:check
+
       - name: Unit tests
         if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop
