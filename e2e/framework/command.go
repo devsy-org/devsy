@@ -229,10 +229,13 @@ func (f *Framework) DevsySSHOnce(
 	workspace string,
 	command string,
 ) (string, error) {
-	out, _, err := f.ExecCommandCapture(ctx, []string{
+	out, stderr, err := f.ExecCommandCapture(ctx, []string{
 		cmdWorkspace, cmdSSH, workspace, flagCommand, command, flagDebug,
 	})
 	if err != nil {
+		if stderr != "" {
+			return "", fmt.Errorf("devsy ssh failed: %w (stderr: %s)", err, stderr)
+		}
 		return "", fmt.Errorf("devsy ssh failed: %w", err)
 	}
 	return out, nil

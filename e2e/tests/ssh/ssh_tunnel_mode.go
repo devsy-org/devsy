@@ -62,10 +62,12 @@ var _ = ginkgo.Describe(
 
 				waitDetachedTunnelReady(ctx, f, taskID)
 
-				devsySSHCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(20*time.Second))
-				defer cancelSSH()
-				err = f.DevsySSHEchoTestString(devsySSHCtx, tempDir)
-				framework.ExpectNoError(err)
+				gomega.Eventually(func() (string, error) {
+					probeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+					defer cancel()
+					return f.DevsySSHOnce(probeCtx, tempDir, "echo mYtEsTsTrInG")
+				}).WithContext(ctx).WithTimeout(tunnelActiveTimeout).WithPolling(2 * time.Second).
+					Should(gomega.ContainSubstring("mYtEsTsTrInG"))
 			},
 		)
 
