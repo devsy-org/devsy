@@ -3,6 +3,7 @@
 package task
 
 import (
+	"errors"
 	"os/exec"
 	"strconv"
 	"testing"
@@ -24,6 +25,14 @@ func TestCancelSignalsALiveWorkersPID(t *testing.T) {
 	tk, err := store.Create(CreateOptions{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
+	}
+	holdWorkerLock(t, tk)
+	controller := command.DefaultProcessController()
+	store.processController = fakeProcessController{
+		terminate: func(ref command.ProcessRef) error {
+			return errors.Join(controller.Terminate(ref), tk.ReleaseWorkerLock())
+		},
+		cleanup: controller.CleanupAfterExit,
 	}
 	worker := sleepWorker()
 	workerName := WorkerProcessName(tk.ID())

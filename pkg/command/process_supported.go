@@ -28,7 +28,10 @@ func isRunning(pid string) (bool, error) {
 
 	err = process.Signal(syscall.Signal(0))
 	if err != nil {
-		if isExitOrPerm(err) || errors.Is(err, os.ErrProcessDone) {
+		if errors.Is(err, syscall.EPERM) {
+			return true, nil
+		}
+		if isProcessGone(err) || errors.Is(err, os.ErrProcessDone) {
 			return false, nil
 		}
 		return false, fmt.Errorf("check process %d: %w", parsedPid, err)
@@ -82,7 +85,7 @@ func terminateWeakProcessGroup(pid int) error {
 	if err != nil || !running {
 		return err
 	}
-	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil && !isExitOrPerm(err) {
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil && !isProcessGone(err) {
 		return fmt.Errorf("send SIGTERM to worker group %d: %w", pid, err)
 	}
 	return nil
@@ -108,7 +111,7 @@ func cleanupExitedProcessRef(ref ProcessRef) error {
 func abortSupervisedLaunch(pid int, _ string) error {
 	for _, target := range []int{-pid, pid} {
 		if err := syscall.Kill(target, syscall.SIGKILL); err != nil &&
-			!isExitOrPerm(err) {
+			!isProcessGone(err) {
 			return fmt.Errorf("terminate uncommitted worker %d: %w", pid, err)
 		}
 	}
@@ -231,13 +234,13 @@ func checkUnidentifiedProcessGroup(pid int, treeName string) error {
 	)
 }
 
-func isExitOrPerm(err error) bool {
-	return err != nil && (errors.Is(err, syscall.ESRCH) || errors.Is(err, syscall.EPERM))
+func isProcessGone(err error) bool {
+	return err != nil && errors.Is(err, syscall.ESRCH)
 }
 
 func signalProcessTree(target int, graceful bool, identity string) error {
 	if err := syscall.Kill(target, syscall.SIGTERM); err != nil {
-		if isExitOrPerm(err) {
+		if isProcessGone(err) {
 			return nil // already exited
 		}
 		return fmt.Errorf("send SIGTERM to process target %d: %w", target, err)
@@ -253,7 +256,7 @@ func signalProcessTree(target int, graceful bool, identity string) error {
 		return nil
 	}
 	err = syscall.Kill(target, syscall.SIGKILL)
-	if err != nil && !isExitOrPerm(err) {
+	if err != nil && !isProcessGone(err) {
 		return fmt.Errorf("send SIGKILL to process target %d: %w", target, err)
 	}
 	return nil
