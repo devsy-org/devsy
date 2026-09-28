@@ -6,9 +6,12 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/stretchr/testify/require"
 )
 
 const workspaceOne = "ws-1"
+
+const testProcessIdentity = "sess-1"
 
 func createTaskWith(t *testing.T, store *Store, opts CreateOptions) *Task {
 	t.Helper()
@@ -26,6 +29,145 @@ func queryActive(t *testing.T, store *Store, workspaceID, command string) []*Sta
 		t.Fatalf("ActiveForWorkspace: %v", err)
 	}
 	return active
+}
+
+func deadWorkerWithProcess(
+	t *testing.T,
+	store *Store,
+	opts CreateOptions,
+	ref command.ProcessRef,
+) *Task {
+	t.Helper()
+	tk := createTaskWith(t, store, opts)
+	if err := tk.SetProcess(ref); err != nil {
+		t.Fatalf("SetProcess: %v", err)
+	}
+	if err := tk.HoldWorkerLock(); err != nil {
+		t.Fatalf("HoldWorkerLock: %v", err)
+	}
+	if err := tk.ReleaseWorkerLock(); err != nil {
+		t.Fatalf("ReleaseWorkerLock: %v", err)
+	}
+	return tk
+}
+
+func TestReconcileStateMarksCrashedWorkerAbandoned(t *testing.T) {
+	store := newTestStore(t)
+	tk := deadWorkerWithProcess(
+		t,
+		store,
+		CreateOptions{Command: "up", WorkspaceID: workspaceOne},
+		command.ProcessRef{
+			PID:      4242,
+			TreeKind: command.ProcessTreeUnixGroup,
+			Identity: testProcessIdentity,
+		},
+	)
+
+	state, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if reconciled := store.ReconcileState(state); !reconciled.Status.Terminal() {
+		t.Fatalf("ReconcileState status = %q, want terminal", reconciled.Status)
+	}
+
+	persisted, err := store.Get(tk.ID())
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !persisted.Status.Terminal() {
+		t.Fatalf("persisted status = %q, want terminal", persisted.Status)
+	}
+}
+
+func TestCleanupExitedWorkerTreeTerminatesCrashedWorkerTree(t *testing.T) {
+	store := newTestStore(t)
+	ref := command.ProcessRef{
+		PID:      4242,
+		TreeKind: command.ProcessTreeUnixGroup,
+		Identity: testProcessIdentity,
+	}
+	tk := deadWorkerWithProcess(
+		t,
+		store,
+		CreateOptions{Command: "up", WorkspaceID: workspaceOne},
+		ref,
+	)
+	if err := tk.Fail(ErrAbandoned); err != nil {
+		t.Fatalf("Fail: %v", err)
+	}
+
+	var cleaned []command.ProcessRef
+	store.processController = fakeProcessController{
+		cleanup: func(got command.ProcessRef) error {
+			cleaned = append(cleaned, got)
+			return nil
+		},
+	}
+	if err := store.CleanupExitedWorkerTree(tk.ID()); err != nil {
+		t.Fatalf("CleanupExitedWorkerTree: %v", err)
+	}
+	if len(cleaned) != 1 || cleaned[0] != ref {
+		t.Fatalf("cleaned = %+v, want the saved reference", cleaned)
+	}
+	if err := store.CleanupExitedWorkerTree(tk.ID()); err != nil {
+		t.Fatalf("repeat CleanupExitedWorkerTree: %v", err)
+	}
+	if len(cleaned) != 1 {
+		t.Fatalf("cleaned = %+v after repeat, want one cleanup", cleaned)
+	}
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.True(t, state.ProcessCleanupComplete, "successful cleanup was not persisted")
+}
+
+func TestCleanupExitedWorkerTreeSkipsLiveWorker(t *testing.T) {
+	store := newTestStore(t)
+	tk := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: workspaceOne})
+	if err := tk.SetProcess(
+		command.ProcessRef{
+			PID:      4242,
+			TreeKind: command.ProcessTreeUnixGroup,
+			Identity: testProcessIdentity,
+		},
+	); err != nil {
+		t.Fatalf("SetProcess: %v", err)
+	}
+	if err := tk.HoldWorkerLock(); err != nil {
+		t.Fatalf("HoldWorkerLock: %v", err)
+	}
+	t.Cleanup(func() { _ = tk.ReleaseWorkerLock() })
+
+	store.processController = fakeProcessController{
+		cleanup: func(command.ProcessRef) error {
+			t.Error("cleaned up a live worker's tree")
+			return nil
+		},
+	}
+	if err := store.CleanupExitedWorkerTree(tk.ID()); err != nil {
+		t.Fatalf("CleanupExitedWorkerTree: %v", err)
+	}
+}
+
+func TestCleanupExitedWorkerTreeDoesNotReportSuccessWhileLockHeld(t *testing.T) {
+	store := newTestStore(t)
+	tk := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: workspaceOne})
+	if err := tk.SetProcess(command.ProcessRef{
+		PID: 4242, TreeKind: command.ProcessTreeUnixGroup, Identity: testProcessIdentity,
+	}); err != nil {
+		t.Fatalf("SetProcess: %v", err)
+	}
+	if err := tk.HoldWorkerLock(); err != nil {
+		t.Fatalf("HoldWorkerLock: %v", err)
+	}
+	t.Cleanup(func() { _ = tk.ReleaseWorkerLock() })
+	if err := tk.Fail(ErrAbandoned); err != nil {
+		t.Fatalf("Fail: %v", err)
+	}
+	if err := store.CleanupExitedWorkerTree(tk.ID()); err == nil {
+		t.Fatal("cleanup reported success while worker lock was held")
+	}
 }
 
 func TestActiveForWorkspaceFilters(t *testing.T) {

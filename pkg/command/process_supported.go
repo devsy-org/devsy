@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+const (
+	weakGroupGracePeriod  = 2 * time.Second
+	weakGroupExitTimeout  = 5 * time.Second
+	weakGroupPollInterval = 100 * time.Millisecond
+)
+
 func isRunning(pid string) (bool, error) {
 	parsedPid, err := strconv.Atoi(pid)
 	if err != nil {
@@ -81,12 +87,44 @@ func terminateProcessRef(ref ProcessRef) error {
 }
 
 func terminateWeakProcessGroup(pid int) error {
-	running, err := isRunning(strconv.Itoa(pid))
-	if err != nil || !running {
+	if err := signalWeakProcessGroup(pid, syscall.SIGTERM); err != nil {
 		return err
 	}
-	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil && !isProcessGone(err) {
-		return fmt.Errorf("send SIGTERM to worker group %d: %w", pid, err)
+	if processGroupExists(pid) {
+		time.Sleep(weakGroupGracePeriod)
+	}
+	if processGroupExists(pid) {
+		if err := signalWeakProcessGroup(pid, syscall.SIGKILL); err != nil {
+			return err
+		}
+	}
+	return waitForProcessGroupExit(pid)
+}
+
+func signalWeakProcessGroup(pid int, signal syscall.Signal) error {
+	if err := syscall.Kill(-pid, signal); err != nil && !isProcessGone(err) {
+		return fmt.Errorf("send %s to worker group %d: %w", signal, pid, err)
+	}
+	return nil
+}
+
+// A worker whose leader exited may still leave members behind.
+func processGroupExists(pid int) bool {
+	err := syscall.Kill(-pid, 0)
+	if isProcessGone(err) {
+		return false
+	}
+	// EPERM means the group exists but belongs to another user.
+	return true
+}
+
+func waitForProcessGroupExit(pid int) error {
+	deadline := time.Now().Add(weakGroupExitTimeout)
+	for processGroupExists(pid) {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("worker group %d still has processes after termination", pid)
+		}
+		time.Sleep(weakGroupPollInterval)
 	}
 	return nil
 }
@@ -94,18 +132,35 @@ func terminateWeakProcessGroup(pid int) error {
 func cleanupExitedProcessRef(ref ProcessRef) error {
 	if ref.TreeKind == ProcessTreeLegacyPID {
 		if ref.Identity == "" {
-			return nil
+			return terminateUnidentifiedExitedGroup(ref.PID)
 		}
 		return killTreeAfterWorkerExit(strconv.Itoa(ref.PID), ref.TreeID, ref.Identity)
 	}
-	if ref.TreeKind != ProcessTreeUnixGroup || ref.Identity == "" {
+	if ref.TreeKind != ProcessTreeUnixGroup {
 		return nil
 	}
 	groupID := ref.TreeID
 	if groupID == "" {
 		groupID = strconv.Itoa(ref.PID)
 	}
+	if ref.Identity == "" {
+		return terminateUnidentifiedExitedGroup(ref.PID)
+	}
 	return killTreeAfterWorkerExit(groupID, "detached-task", ref.Identity)
+}
+
+// Never signals the group: after the leader exits the PGID may be reused.
+func terminateUnidentifiedExitedGroup(pid int) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid worker PID %d", pid)
+	}
+	if processGroupExists(pid) {
+		return fmt.Errorf(
+			"worker group %d still has processes and no saved identity identifies them",
+			pid,
+		)
+	}
+	return nil
 }
 
 func abortSupervisedLaunch(pid int, _ string) error {

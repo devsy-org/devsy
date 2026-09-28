@@ -153,7 +153,8 @@ func needsReconciliation(state *State) bool {
 }
 
 // ReconcileState marks a task failed after its worker exits without a result.
-// It never terminates processes and is safe to use from workspace status.
+// It never terminates processes, so the tree is cleaned up by the next
+// workspace stop or delete.
 func (s *Store) ReconcileState(state *State) *State {
 	if !needsStateReconciliation(state) {
 		return state
@@ -170,10 +171,37 @@ func (s *Store) ReconcileState(state *State) *State {
 		}
 		return state
 	}
-	if hasProcessReference(current) {
-		return current
-	}
 	return s.failAbandoned(current)
+}
+
+// CleanupExitedWorkerTree tears down any descendants a dead worker left behind.
+// Claiming the worker lock proves no worker is running, so a saved reference
+// that still points at live processes belongs to a crashed worker's tree.
+func (s *Store) CleanupExitedWorkerTree(id string) error {
+	state, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	if !state.NeedsExitedWorkerCleanup() {
+		return nil
+	}
+	lock, ok := s.claimDeadWorkerLock(id)
+	if !ok {
+		return fmt.Errorf("cannot claim dead worker lock for abandoned task %s", id)
+	}
+	defer func() { _ = lock.Unlock() }()
+	state, err = s.Get(id)
+	if err != nil {
+		return err
+	}
+	if !state.NeedsExitedWorkerCleanup() {
+		return nil
+	}
+	ref, _ := state.ProcessReference()
+	if err := s.processController.CleanupAfterExit(ref); err != nil {
+		return fmt.Errorf("clean up task %s process tree: %w", id, err)
+	}
+	return s.markProcessCleanupComplete(id)
 }
 
 func needsStateReconciliation(state *State) bool {
@@ -273,6 +301,12 @@ func (s *Store) WaitForWorkerObservation(
 	}
 }
 
+func (s *Store) markProcessCleanupComplete(id string) error {
+	return s.update(id, func(state *State) {
+		state.ProcessCleanupComplete = true
+	})
+}
+
 func (s *Store) workerObservation(id string) (WorkerObservation, bool, error) {
 	state, err := s.Get(id)
 	if err != nil {
@@ -297,6 +331,7 @@ func (s *Store) reconcileClaimedTask(ctx context.Context, id string) (*State, er
 	if err != nil || !needsReconciliation(current) {
 		return current, err
 	}
+	cleaned := false
 	if ref, ok := current.ProcessReference(); ok {
 		if err := ctx.Err(); err != nil {
 			return current, err
@@ -304,8 +339,20 @@ func (s *Store) reconcileClaimedTask(ctx context.Context, id string) (*State, er
 		if err := s.processController.CleanupAfterExit(ref); err != nil {
 			return current, fmt.Errorf("clean up task %s process tree: %w", id, err)
 		}
+		cleaned = true
 	}
-	return s.failAbandoned(current), nil
+	return s.finishClaimedReconciliation(current, cleaned)
+}
+
+func (s *Store) finishClaimedReconciliation(current *State, cleaned bool) (*State, error) {
+	current = s.failAbandoned(current)
+	if cleaned && current.Status == StatusFailed && current.Error == ErrAbandoned.Error() {
+		if err := s.markProcessCleanupComplete(current.ID); err != nil {
+			return current, err
+		}
+		return s.Get(current.ID)
+	}
+	return current, nil
 }
 
 // failAbandoned records ErrAbandoned for a task whose worker is confirmed gone.

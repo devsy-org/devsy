@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,6 +37,9 @@ func TestQuiesceUpTasksCancelsOnlyActiveUpTasksForWorkspace(t *testing.T) {
 	targetA := createUpTask(t, store, "ws-1")
 	targetB := createUpTask(t, store, "ws-1")
 	terminal := createUpTask(t, store, "ws-1")
+	require.NoError(t, terminal.SetProcess(command.ProcessRef{
+		PID: 4242, TreeKind: command.ProcessTreeUnixGroup, TreeID: "4242",
+	}))
 	require.NoError(t, terminal.Succeed(nil))
 	otherWorkspace := createUpTask(t, store, "ws-2")
 	otherCommand, err := store.Create(task.CreateOptions{Command: "build", WorkspaceID: "ws-1"})
@@ -49,6 +53,7 @@ func TestQuiesceUpTasksCancelsOnlyActiveUpTasksForWorkspace(t *testing.T) {
 		assert.Equal(t, task.ErrCanceled.Error(), state.Error, "task %s", id)
 	}
 	assert.Equal(t, task.StatusSucceeded, taskState(t, store, terminal.ID()).Status)
+	assert.False(t, taskState(t, store, terminal.ID()).ProcessCleanupComplete)
 	assert.Equal(t, task.StatusPending, taskState(t, store, otherWorkspace.ID()).Status)
 	assert.Equal(t, task.StatusPending, taskState(t, store, otherCommand.ID()).Status)
 }
@@ -85,6 +90,32 @@ func TestQuiesceUpTasksAttemptsEveryTaskAndAggregatesFailures(t *testing.T) {
 	state := taskState(t, store, succeeding.ID())
 	assert.Equal(t, task.StatusFailed, state.Status)
 	assert.Equal(t, task.ErrCanceled.Error(), state.Error)
+}
+
+func TestQuiesceUpTasksCleansTerminalTaskTreeInsteadOfCancelling(t *testing.T) {
+	store := newTaskStore(t)
+	crashed := createUpTask(t, store, "ws-1")
+	require.NoError(t, crashed.SetProcess(command.ProcessRef{
+		PID:      4242,
+		TreeKind: command.ProcessTreeUnixGroup,
+		TreeID:   "4242",
+	}))
+	require.NoError(t, crashed.HoldWorkerLock())
+	require.NoError(t, crashed.ReleaseWorkerLock())
+	require.NoError(t, crashed.Fail(task.ErrAbandoned))
+
+	var cancelled []string
+	require.NoError(t, quiesceUpTasks(
+		context.Background(),
+		store,
+		"ws-1",
+		func(_ context.Context, id string) error {
+			cancelled = append(cancelled, id)
+			return nil
+		},
+	))
+
+	assert.Empty(t, cancelled, "a terminal task must not be cancelled again")
 }
 
 func TestQuiesceUpTasksBoundsEachCancellation(t *testing.T) {

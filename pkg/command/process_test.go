@@ -267,3 +267,56 @@ func TestKillInvalidPIDReturnsError(t *testing.T) {
 		}
 	}
 }
+
+func TestTerminateWeakProcessGroupEndsSigtermIgnoringGroup(t *testing.T) {
+	cmd := startSigtermIgnoringGroup(t)
+	pid := cmd.Process.Pid
+	if err := terminateWeakProcessGroup(pid); err != nil {
+		t.Fatalf("terminateWeakProcessGroup: %v", err)
+	}
+	if processGroupExists(pid) {
+		t.Errorf("worker group %d still has processes after termination", pid)
+	}
+}
+
+func TestCleanupExitedIdentitylessGroupReportsSurvivingDescendants(t *testing.T) {
+	pid := startUnixTestProcess(t, &syscall.SysProcAttr{Setpgid: true}).Process.Pid
+	ref := ProcessRef{
+		PID:      pid,
+		TreeKind: ProcessTreeUnixGroup,
+		TreeID:   strconv.Itoa(pid),
+	}
+
+	err := cleanupExitedProcessRef(ref)
+	if err == nil {
+		t.Fatal("cleanupExitedProcessRef = nil for an identityless group with survivors")
+	}
+	if !strings.Contains(err.Error(), "no saved identity") {
+		t.Fatalf("cleanupExitedProcessRef error = %v, want missing-identity context", err)
+	}
+	if running, _ := isRunning(strconv.Itoa(pid)); !running {
+		t.Fatal("cleanupExitedProcessRef terminated an unidentified group")
+	}
+}
+
+// startSigtermIgnoringGroup starts a group leader that outlives SIGTERM. The
+// child is reaped as soon as it exits, the way a supervising process does, so
+// an unreaped zombie does not keep the group looking populated.
+func startSigtermIgnoringGroup(t *testing.T) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", `trap "" TERM; sleep 30`)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start SIGTERM-ignoring group: %v", err)
+	}
+	reaped := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(reaped)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-reaped
+	})
+	return cmd
+}

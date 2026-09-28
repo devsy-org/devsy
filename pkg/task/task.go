@@ -46,27 +46,28 @@ func (s Status) Terminal() bool {
 // doing the work, distinct from whatever process is merely polling this
 // state.
 type State struct {
-	ID                  string              `json:"id"`
-	Command             string              `json:"command,omitempty"`
-	WorkspaceID         string              `json:"workspaceId,omitempty"`
-	Status              Status              `json:"status"`
-	Phase               string              `json:"phase,omitempty"`
-	Step                string              `json:"step,omitempty"`
-	OperationID         string              `json:"operationId,omitempty"`
-	ParentOperationID   string              `json:"parentOperationId,omitempty"`
-	DurationMs          int64               `json:"durationMs,omitempty"`
-	Error               string              `json:"error,omitempty"`
-	ErrorCode           string              `json:"errorCode,omitempty"`
-	ErrorHint           string              `json:"errorHint,omitempty"`
-	ErrorContext        map[string]string   `json:"errorContext,omitempty"`
-	Result              *config.Result      `json:"result,omitempty"`
-	PID                 int                 `json:"pid,omitempty"`
-	ProcessTreeIdentity string              `json:"processTreeIdentity,omitempty"`
-	Process             *command.ProcessRef `json:"process,omitempty"`
-	CancelRequested     bool                `json:"cancelRequested,omitempty"`
-	LaunchPending       bool                `json:"launchPending,omitempty"`
-	StartedAt           time.Time           `json:"startedAt"`
-	UpdatedAt           time.Time           `json:"updatedAt"`
+	ID                     string              `json:"id"`
+	Command                string              `json:"command,omitempty"`
+	WorkspaceID            string              `json:"workspaceId,omitempty"`
+	Status                 Status              `json:"status"`
+	Phase                  string              `json:"phase,omitempty"`
+	Step                   string              `json:"step,omitempty"`
+	OperationID            string              `json:"operationId,omitempty"`
+	ParentOperationID      string              `json:"parentOperationId,omitempty"`
+	DurationMs             int64               `json:"durationMs,omitempty"`
+	Error                  string              `json:"error,omitempty"`
+	ErrorCode              string              `json:"errorCode,omitempty"`
+	ErrorHint              string              `json:"errorHint,omitempty"`
+	ErrorContext           map[string]string   `json:"errorContext,omitempty"`
+	Result                 *config.Result      `json:"result,omitempty"`
+	PID                    int                 `json:"pid,omitempty"`
+	ProcessTreeIdentity    string              `json:"processTreeIdentity,omitempty"`
+	Process                *command.ProcessRef `json:"process,omitempty"`
+	ProcessCleanupComplete bool                `json:"processCleanupComplete,omitempty"`
+	CancelRequested        bool                `json:"cancelRequested,omitempty"`
+	LaunchPending          bool                `json:"launchPending,omitempty"`
+	StartedAt              time.Time           `json:"startedAt"`
+	UpdatedAt              time.Time           `json:"updatedAt"`
 }
 
 // CreateOptions labels a task at creation time for later listing.
@@ -110,6 +111,17 @@ func (s *State) ProcessReference() (command.ProcessRef, bool) {
 		TreeID:   WorkerProcessName(s.ID),
 		Identity: s.ProcessTreeIdentity,
 	}, true
+}
+
+// NeedsExitedWorkerCleanup identifies abandoned tasks whose saved tree has
+// not yet been checked. Other terminal tasks completed their own teardown.
+func (s *State) NeedsExitedWorkerCleanup() bool {
+	if s == nil || s.Status != StatusFailed || s.Error != ErrAbandoned.Error() ||
+		s.ProcessCleanupComplete {
+		return false
+	}
+	_, ok := s.ProcessReference()
+	return ok
 }
 
 func (t *Task) BeginLaunch() error {

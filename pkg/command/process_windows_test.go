@@ -125,6 +125,35 @@ func assertRunning(t *testing.T, pid int) {
 	}
 }
 
+func TestIsDevsyImage(t *testing.T) {
+	for image, want := range map[string]bool{
+		`C:\Program Files\Devsy\devsy.exe`:               true,
+		`C:\Program Files\Devsy\devsy.EXE`:               true,
+		`C:\Users\me\bin\devsy-1.19.0-windows-amd64.exe`: true,
+		`C:\Windows\System32\notepad.exe`:                false,
+		`C:\Users\me\devsync.exe`:                        false,
+		"":                                               false,
+	} {
+		if got := isDevsyImage(image); got != want {
+			t.Errorf("isDevsyImage(%q) = %t, want %t", image, got, want)
+		}
+	}
+}
+
+func TestTerminateLegacyRefWithoutIdentityRefusesForeignProcess(t *testing.T) {
+	helper := startHelper(t)
+	ref := ProcessRef{PID: helper.Process.Pid, TreeKind: ProcessTreeLegacyPID}
+
+	err := terminateLegacyRefWithoutIdentity(ref)
+	if err == nil {
+		t.Fatal("terminateLegacyRefWithoutIdentity = nil for a non-Devsy process")
+	}
+	if !strings.Contains(err.Error(), "refusing to terminate") {
+		t.Fatalf("terminateLegacyRefWithoutIdentity error = %v, want a refusal", err)
+	}
+	assertRunning(t, helper.Process.Pid)
+}
+
 func assertNotRunningEventually(t *testing.T, pid int) {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)

@@ -33,29 +33,52 @@ func quiesceUpTasks(
 	workspaceID string,
 	cancelTask func(ctx context.Context, id string) error,
 ) error {
-	active, err := store.ActiveForWorkspace(workspaceID, upTaskCommand)
+	states, err := store.ForWorkspace(workspaceID, upTaskCommand)
 	if err != nil {
-		return fmt.Errorf("list active up tasks for workspace %s: %w", workspaceID, err)
+		return fmt.Errorf("list up tasks for workspace %s: %w", workspaceID, err)
 	}
 
 	var errs []error
-	for _, state := range active {
+	handled := 0
+	for _, state := range states {
+		if state.Status.Terminal() && !state.NeedsExitedWorkerCleanup() {
+			continue
+		}
 		taskCtx, cancel := context.WithTimeout(ctx, upTaskCancellationTimeout)
-		err := cancelTask(taskCtx, state.ID)
+		err := quiesceTask(taskCtx, store, state, cancelTask)
 		cancel()
 		if err != nil {
-			errs = append(errs, fmt.Errorf("cancel up task %s: %w", state.ID, err))
+			errs = append(errs, fmt.Errorf("quiesce up task %s: %w", state.ID, err))
+			continue
 		}
+		handled++
 	}
-	if len(active) > 0 {
+	if handled > 0 {
 		log.Debugf(
 			"quiesced up tasks for workspace %s: tasks=%d failures=%d",
 			workspaceID,
-			len(active),
+			handled,
 			len(errs),
 		)
 	}
 	return errors.Join(errs...)
+}
+
+// A reconciled task is terminal, so cancelling it is a no-op, yet its crashed
+// worker may have left descendants that would restart the workspace.
+func quiesceTask(
+	ctx context.Context,
+	store *task.Store,
+	state *task.State,
+	cancelTask func(ctx context.Context, id string) error,
+) error {
+	if !state.Status.Terminal() {
+		return cancelTask(ctx, state.ID)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return store.CleanupExitedWorkerTree(state.ID)
 }
 
 type UpTaskQuiescer interface {

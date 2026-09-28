@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/config"
 	"golang.org/x/sys/windows"
 )
 
@@ -93,9 +96,61 @@ func terminateProcessRef(ref ProcessRef) error {
 		if ref.Identity != "" {
 			return killTreeWithIdentity(pid, ref.TreeID, ref.Identity)
 		}
-		return killTree(pid, ref.TreeID)
+		return terminateLegacyRefWithoutIdentity(ref)
 	}
 	return fmt.Errorf("unsupported Windows process tree kind %q", ref.TreeKind)
+}
+
+// A record written before process identities existed has nothing to compare a
+// reused PID against, so require a Devsy executable before taskkill takes down
+// a whole tree.
+func terminateLegacyRefWithoutIdentity(ref ProcessRef) error {
+	image, err := processImageName(ref.PID)
+	if err != nil {
+		return err
+	}
+	if image == "" {
+		return nil
+	}
+	if !isDevsyImage(image) {
+		return fmt.Errorf(
+			"refusing to terminate process %d: %q is not a %s worker",
+			ref.PID,
+			filepath.Base(image),
+			config.RepoName,
+		)
+	}
+	return killTree(strconv.Itoa(ref.PID), ref.TreeID)
+}
+
+func isDevsyImage(image string) bool {
+	name := strings.ToLower(filepath.Base(image))
+	name = strings.TrimSuffix(name, filepath.Ext(name))
+	return name == config.RepoName || strings.HasPrefix(name, config.RepoName+"-")
+}
+
+// processImageName returns an empty string when the process no longer exists.
+func processImageName(pid int) (string, error) {
+	handle, err := windows.OpenProcess(
+		windows.PROCESS_QUERY_LIMITED_INFORMATION,
+		false,
+		uint32(pid),
+	)
+	if err != nil {
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+			return "", nil
+		}
+		return "", fmt.Errorf("open process %d for image name: %w", pid, err)
+	}
+	defer func() { _ = windows.CloseHandle(handle) }()
+
+	const maxPath = 32768
+	buffer := make([]uint16, maxPath)
+	size := uint32(len(buffer))
+	if err := windows.QueryFullProcessImageName(handle, 0, &buffer[0], &size); err != nil {
+		return "", fmt.Errorf("read image name for process %d: %w", pid, err)
+	}
+	return windows.UTF16ToString(buffer[:size]), nil
 }
 
 func savedWorkerRunning(ref ProcessRef) (bool, error) {
