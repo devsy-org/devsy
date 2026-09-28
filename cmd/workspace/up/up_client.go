@@ -473,15 +473,15 @@ func (cmd *UpCmd) applyEnvVars(
 	if err != nil {
 		return err
 	}
-	if err := checkDuplicateEnvTargets(requests); err != nil {
-		return err
-	}
 	base, err := indexWorkspaceEnv(cmd.WorkspaceEnv)
 	if err != nil {
 		return err
 	}
 	requests, err = filterWorkspaceEnvRequests(base, requests)
 	if err != nil {
+		return err
+	}
+	if err := checkDuplicateEnvTargets(requests); err != nil {
 		return err
 	}
 	resolvedEnv := make([]resolvedEnvVar, 0, len(requests))

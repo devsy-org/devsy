@@ -78,6 +78,18 @@ func (s *WorkspaceEnvTestSuite) TestShadowedAttachmentIsNotResolved() {
 	s.Assert().Equal([]string{workspaceEnvLogLevel + "=local"}, cmd.WorkspaceEnv)
 }
 
+func (s *WorkspaceEnvTestSuite) TestDuplicateShadowedAttachmentsAreIgnored() {
+	cmd := &UpCmd{}
+	cmd.WorkspaceEnv = []string{workspaceEnvLogLevel + "=local"}
+	err := cmd.applyEnvVars(
+		s.T().Context(),
+		testEnvConfig(workspaceEnvLogLevel, workspaceEnvLogLevel),
+		secretspkg.NewResolver(),
+	)
+	s.Require().NoError(err)
+	s.Assert().Equal([]string{workspaceEnvLogLevel + "=local"}, cmd.WorkspaceEnv)
+}
+
 func (s *WorkspaceEnvTestSuite) TestExplicitManagedTargetConflictsWithLiteralTarget() {
 	cmd := &UpCmd{}
 	cmd.WorkspaceEnv = []string{"APP_MODE=local"}
