@@ -10,6 +10,14 @@ import (
 
 const redactMask = "***"
 
+// minRedactableValueLength is the shortest value that can be masked safely.
+// Masking replaces the value as a literal substring, so a very short value
+// matches unrelated text everywhere it appears: a single-character secret
+// would corrupt every version string, path, and port number in captured
+// output rather than protect anything. Values below this length are left
+// unmasked; SkippedValueCount reports them so callers can surface the gap.
+const minRedactableValueLength = 8
+
 var (
 	credentialURLPattern = regexp.MustCompile(`(?i)(https?://)[^\s/@]+@`)
 	authorizationPattern = regexp.MustCompile(
@@ -18,23 +26,31 @@ var (
 )
 
 type Redactor struct {
-	replacer  *strings.Replacer
-	values    []string
-	maxLength int
+	replacer *strings.Replacer
+	values   []string
+	// skipped counts sensitive values too short to mask without corrupting
+	// unrelated text.
+	skipped int
 }
 
-// NewRedactor masks the values (not keys) of KEY=VALUE entries; empty values are ignored.
+// NewRedactor masks the values (not keys) of KEY=VALUE entries; empty values
+// are ignored, as are values shorter than minRedactableValueLength.
 func NewRedactor(secretsEnv []string) *Redactor {
 	values := make([]string, 0, len(secretsEnv))
+	skipped := 0
 	for _, entry := range secretsEnv {
 		_, value, ok := strings.Cut(entry, "=")
 		if !ok || value == "" {
 			continue
 		}
+		if len(value) < minRedactableValueLength {
+			skipped++
+			continue
+		}
 		values = append(values, value)
 	}
 	if len(values) == 0 {
-		return &Redactor{}
+		return &Redactor{skipped: skipped}
 	}
 
 	// Mask longer values first so an overlapping prefix (e.g. "sec" of "secret")
@@ -46,9 +62,9 @@ func NewRedactor(secretsEnv []string) *Redactor {
 	}
 
 	return &Redactor{
-		replacer:  strings.NewReplacer(pairs...),
-		values:    values,
-		maxLength: len(values[0]),
+		replacer: strings.NewReplacer(pairs...),
+		values:   values,
+		skipped:  skipped,
 	}
 }
 
@@ -79,6 +95,17 @@ func NewEnvironmentRedactor(env []string) *Redactor {
 		}
 	}
 	return NewRedactor(sensitive)
+}
+
+// SkippedValueCount reports how many sensitive values were too short to mask.
+// A non-zero count means at least one credential-bearing value is present in
+// the environment but is not being redacted, so callers that emit captured
+// output may want to warn about it.
+func (r *Redactor) SkippedValueCount() int {
+	if r == nil {
+		return 0
+	}
+	return r.skipped
 }
 
 func isSensitiveEnvironmentKey(key string) bool {
