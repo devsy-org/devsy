@@ -557,3 +557,63 @@ func TestLocalDockerDelivery_Seed_CopyAndCleanupFailureJoined(t *testing.T) {
 	assert.Contains(t, err.Error(), "seed workspace volume")
 	assert.Contains(t, err.Error(), "remove partial volume")
 }
+
+// lowEntropySecretEnv is a credential-bearing variable whose value is a single
+// character. Masking it as a literal substring would rewrite every occurrence
+// of that character in captured output, corrupting machine-readable values such
+// as volume mountpoints. It is injected explicitly so this regression is
+// deterministic rather than dependent on the ambient environment.
+var lowEntropySecretEnv = []string{"DEVSY_DEFERRED_AUTH_BOOTSTRAP=1"} //nolint:gosec // test fixture
+
+// writeFakeVolumeInspectScript writes a stand-in for `docker volume inspect`
+// that reports mountDir, and returns the script path.
+func writeFakeVolumeInspectScript(t *testing.T, mountDir string) string {
+	t.Helper()
+
+	scriptPath := filepath.Join(t.TempDir(), "fake-docker.sh")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  volume) echo \"" + mountDir + "\" ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+	return scriptPath
+}
+
+// The mountpoint is used as a filesystem path, so redaction must not reach it.
+func TestVolumeMountpoint_UnaffectedByLowEntropySecretInEnv(t *testing.T) {
+	// The "001" segment is what a single-character mask would corrupt.
+	mountDir := filepath.Join(t.TempDir(), "001", "mount")
+	require.NoError(t, os.MkdirAll(mountDir, 0o750))
+
+	d := &LocalDockerDelivery{
+		DockerCommand: writeFakeVolumeInspectScript(t, mountDir),
+		Environment:   lowEntropySecretEnv,
+	}
+
+	got, err := d.volumeMountpoint(context.Background(), "test-vol")
+	require.NoError(t, err)
+	assert.Equal(t, mountDir, got)
+}
+
+// The detected version is compared verbatim, so it must survive capture intact.
+func TestDetectVolumeVersion_UnaffectedByLowEntropySecretInEnv(t *testing.T) {
+	scriptPath := filepath.Join(t.TempDir(), "fake-docker.sh")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"  run) echo \"v1.2.3\" ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o600))
+	// #nosec G302 -- test script must be executable
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	d := &LocalDockerDelivery{
+		DockerCommand: scriptPath,
+		Environment:   lowEntropySecretEnv,
+	}
+
+	assert.Equal(t, "v1.2.3", d.detectVolumeVersion(context.Background(), "test-vol"))
+}
