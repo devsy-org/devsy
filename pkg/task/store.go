@@ -135,8 +135,8 @@ func (s *Store) Abandoned(state *State) bool {
 	return true
 }
 
-// ReconcileTask cleans up a task whose worker exited without recording a
-// result, then records it as abandoned.
+// ReconcileTask cleans up a task whose worker exited before recording its
+// result, then records it as canceled or abandoned.
 func (s *Store) ReconcileTask(ctx context.Context, id string) (*State, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -160,13 +160,13 @@ func (s *Store) ReconcileTask(ctx context.Context, id string) (*State, error) {
 }
 
 func needsReconciliation(state *State) bool {
-	return state != nil && !state.Status.Terminal() && !state.CancelRequested &&
+	return state != nil && !state.Status.Terminal() &&
 		!state.LaunchPending
 }
 
-// ReconcileState marks a task failed after its worker exits without a result.
-// It never terminates processes, so the tree is cleaned up by the next
-// workspace stop or delete.
+// ReconcileState marks a task after its worker exits without a result. A
+// requested cancellation completes cleanup here; an abandoned task's tree is
+// cleaned up by the next workspace stop or delete.
 func (s *Store) ReconcileState(state *State) *State {
 	if !needsStateReconciliation(state) {
 		return state
@@ -182,6 +182,13 @@ func (s *Store) ReconcileState(state *State) *State {
 			return current
 		}
 		return state
+	}
+	if current.CancelRequested {
+		reconciled, err := s.reconcileClaimedCancellation(context.Background(), current)
+		if err == nil {
+			return reconciled
+		}
+		return current
 	}
 	return s.failAbandoned(current)
 }
@@ -235,7 +242,7 @@ func (s *Store) CleanupCanceledWorkerTree(ctx context.Context, id string) error 
 }
 
 func needsStateReconciliation(state *State) bool {
-	return state != nil && !state.Status.Terminal() && !state.CancelRequested &&
+	return state != nil && !state.Status.Terminal() &&
 		!state.LaunchPending
 }
 
@@ -425,6 +432,9 @@ func (s *Store) reconcileClaimedTask(ctx context.Context, id string) (*State, er
 	if err != nil || !needsReconciliation(current) {
 		return current, err
 	}
+	if current.CancelRequested {
+		return s.reconcileClaimedCancellation(ctx, current)
+	}
 	cleaned := false
 	if ref, ok := current.ProcessReference(); ok {
 		if err := ctx.Err(); err != nil {
@@ -436,6 +446,23 @@ func (s *Store) reconcileClaimedTask(ctx context.Context, id string) (*State, er
 		cleaned = true
 	}
 	return s.finishClaimedReconciliation(current, cleaned)
+}
+
+func (s *Store) reconcileClaimedCancellation(ctx context.Context, current *State) (*State, error) {
+	if err := ctx.Err(); err != nil {
+		return current, err
+	}
+	if ref, ok := current.ProcessReference(); ok {
+		if err := s.processController.CleanupAfterExit(ref); err != nil {
+			return current, fmt.Errorf(
+				"clean up canceled task %s process tree: %w", current.ID, err,
+			)
+		}
+	}
+	if err := s.Open(current.ID).finalizeCanceled(); err != nil {
+		return current, err
+	}
+	return s.Get(current.ID)
 }
 
 func (s *Store) finishClaimedReconciliation(current *State, cleaned bool) (*State, error) {

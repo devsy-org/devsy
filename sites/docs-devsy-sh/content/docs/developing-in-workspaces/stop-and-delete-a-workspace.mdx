@@ -35,7 +35,7 @@ This means you need to start the workspace after it has been stopped when you wa
 ### Background up tasks
 
 Stopping or deleting a workspace first cancels any active detached `devsy workspace up --detach` task for that workspace, so a background up cannot keep recreating or restarting a workspace you asked to stop.
-Detached task cancellation is supported on all platforms, including Windows: `devsy workspace task cancel <task-id>` terminates the task's process tree and records the task as canceled.
+For current detached workers on Linux, macOS, and Windows, `devsy workspace task cancel <task-id>` terminates the task's process tree and records the task as canceled. On other Unix systems, or for older task records without a saved process identity, cancellation can fail when Devsy cannot safely identify surviving processes.
 While an SSH tunnel is attached, its health checks observe the workspace but never start a stopped one.
 
 ## Delete a Workspace

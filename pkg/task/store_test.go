@@ -82,6 +82,62 @@ func TestReconcileStateMarksCrashedWorkerAbandoned(t *testing.T) {
 	}
 }
 
+func TestReconcileTaskFinalizesCanceledWorkerAfterCancellationError(t *testing.T) {
+	store := newTestStore(t)
+	ref := command.ProcessRef{
+		PID: 4242, TreeKind: command.ProcessTreeUnixGroup, Identity: testProcessIdentity,
+	}
+	tk := deadWorkerWithProcess(t, store,
+		CreateOptions{Command: "up", WorkspaceID: workspaceOne}, ref,
+	)
+	_, err := tk.requestCancel()
+	require.NoError(t, err)
+	cleaned := 0
+	store.processController = fakeProcessController{
+		cleanup: func(got command.ProcessRef) error {
+			require.Equal(t, ref, got)
+			cleaned++
+			if cleaned == 1 {
+				return errors.New("cleanup unavailable")
+			}
+			return nil
+		},
+	}
+	_, err = store.ReconcileTask(context.Background(), tk.ID())
+	require.ErrorContains(t, err, "cleanup unavailable")
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.False(t, state.Status.Terminal())
+	require.True(t, state.CancelRequested)
+
+	state, err = store.ReconcileTask(context.Background(), tk.ID())
+	require.NoError(t, err)
+	require.True(t, state.Canceled())
+	require.True(t, state.ProcessCleanupComplete)
+	require.Equal(t, 2, cleaned)
+}
+
+func TestReconcileStateFinalizesCanceledWorkerAfterExit(t *testing.T) {
+	store := newTestStore(t)
+	ref := command.ProcessRef{
+		PID: 4242, TreeKind: command.ProcessTreeUnixGroup, Identity: testProcessIdentity,
+	}
+	tk := deadWorkerWithProcess(t, store,
+		CreateOptions{Command: "up", WorkspaceID: workspaceOne}, ref,
+	)
+	state, err := tk.requestCancel()
+	require.NoError(t, err)
+	store.processController = fakeProcessController{
+		cleanup: func(got command.ProcessRef) error {
+			require.Equal(t, ref, got)
+			return nil
+		},
+	}
+	reconciled := store.ReconcileState(state)
+	require.True(t, reconciled.Canceled())
+	require.True(t, reconciled.ProcessCleanupComplete)
+}
+
 func TestCleanupExitedWorkerTreeTerminatesCrashedWorkerTree(t *testing.T) {
 	store := newTestStore(t)
 	ref := command.ProcessRef{
