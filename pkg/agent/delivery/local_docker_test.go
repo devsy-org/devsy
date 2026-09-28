@@ -558,15 +558,10 @@ func TestLocalDockerDelivery_Seed_CopyAndCleanupFailureJoined(t *testing.T) {
 	assert.Contains(t, err.Error(), "remove partial volume")
 }
 
-// lowEntropySecretEnv is a credential-bearing variable whose value is a single
-// character. Masking it as a literal substring would rewrite every occurrence
-// of that character in captured output, corrupting machine-readable values such
-// as volume mountpoints. It is injected explicitly so this regression is
-// deterministic rather than dependent on the ambient environment.
+// lowEntropySecretEnv is a credential-bearing variable with a one-character
+// value: masking it as a literal substring corrupts captured paths and versions.
 var lowEntropySecretEnv = []string{"DEVSY_DEFERRED_AUTH_BOOTSTRAP=1"} //nolint:gosec // test fixture
 
-// writeFakeVolumeInspectScript writes a stand-in for `docker volume inspect`
-// that reports mountDir, and returns the script path.
 func writeFakeVolumeInspectScript(t *testing.T, mountDir string) string {
 	t.Helper()
 
@@ -582,9 +577,9 @@ func writeFakeVolumeInspectScript(t *testing.T, mountDir string) string {
 	return scriptPath
 }
 
-// The mountpoint is used as a filesystem path, so redaction must not reach it.
+// The mountpoint is used as a filesystem path, and "001" is what a
+// single-character mask would corrupt.
 func TestVolumeMountpoint_UnaffectedByLowEntropySecretInEnv(t *testing.T) {
-	// The "001" segment is what a single-character mask would corrupt.
 	mountDir := filepath.Join(t.TempDir(), "001", "mount")
 	require.NoError(t, os.MkdirAll(mountDir, 0o750))
 

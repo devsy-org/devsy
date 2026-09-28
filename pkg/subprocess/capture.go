@@ -34,8 +34,7 @@ type Options struct {
 	// variable. Values are masked before capture and command rendering.
 	SensitiveValues []string
 	// UnredactedStdout preserves machine-readable stdout in Result.RawStdout.
-	// Redaction still applies to the captured Stdout and Stderr, so rendered
-	// commands and diagnostic messages remain safe to display.
+	// Display channels stay redacted.
 	UnredactedStdout bool
 	// OperationID links diagnostics to the semantic operation that spawned
 	// the command. When empty, Run derives it from ctx.
@@ -124,11 +123,8 @@ type Result struct {
 	OperationID    string
 	Stdout         string
 	Stderr         string
-	// RawStdout holds unredacted stdout, populated only when the caller asked
-	// for machine-readable output that must be used verbatim rather than only
-	// shown to a user, such as a Docker volume mountpoint. It is empty
-	// otherwise, so Stdout remains the sole populated stdout field by default
-	// and diagnostics stay redacted.
+	// RawStdout holds unredacted stdout when the caller asked for
+	// machine-readable output, such as a volume mountpoint. Empty otherwise.
 	RawStdout string
 	ExitCode  int
 	Signal    string
@@ -215,9 +211,8 @@ func RunCommand(cmd *exec.Cmd, redactor *secrets.Redactor) (Result, error) {
 	return runCommand(cmd, redactor, false)
 }
 
-// RunCommandUnredactedStdout behaves like RunCommand but additionally preserves
-// the unredacted stdout in Result.RawStdout for callers that parse the output
-// rather than display it.
+// RunCommandUnredactedStdout is RunCommand with the stdout also preserved
+// unredacted in Result.RawStdout.
 func RunCommandUnredactedStdout(cmd *exec.Cmd, redactor *secrets.Redactor) (Result, error) {
 	return runCommand(cmd, redactor, true)
 }
@@ -260,8 +255,6 @@ func runCommand(cmd *exec.Cmd, redactor *secrets.Redactor, unredactedStdout bool
 	return result, nil
 }
 
-// applyExitFailure records the exit code and terminating signal of a failed
-// command on the result.
 func applyExitFailure(result *Result, err error) {
 	result.ExitCode = -1
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
@@ -270,9 +263,9 @@ func applyExitFailure(result *Result, err error) {
 	}
 }
 
-// captureStdout wires the redacting display buffer to cmd, and returns it
-// alongside a second unredacted buffer when the caller needs the stdout
-// verbatim. A buffer built without a redactor still bounds the copy.
+// captureStdout wires the redacting buffer to cmd and, when the caller needs
+// the stdout verbatim, a second buffer alongside it. A buffer with no redactor
+// still bounds the copy.
 func captureStdout(
 	cmd *exec.Cmd,
 	redactor *secrets.Redactor,

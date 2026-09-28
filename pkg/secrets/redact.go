@@ -10,12 +10,9 @@ import (
 
 const redactMask = "***"
 
-// minRedactableValueLength is the shortest value that can be masked safely.
-// Masking replaces the value as a literal substring, so a very short value
-// matches unrelated text everywhere it appears: a single-character secret
-// would corrupt every version string, path, and port number in captured
-// output rather than protect anything. Values below this length are left
-// unmasked; SkippedValueCount reports them so callers can surface the gap.
+// minRedactableValueLength is the shortest value worth masking. Masking is
+// literal substring replacement, so a shorter value corrupts unrelated output
+// (paths, versions) instead of protecting anything.
 const minRedactableValueLength = 8
 
 var (
@@ -28,13 +25,11 @@ var (
 type Redactor struct {
 	replacer *strings.Replacer
 	values   []string
-	// skipped counts sensitive values too short to mask without corrupting
-	// unrelated text.
-	skipped int
+	skipped  int
 }
 
-// NewRedactor masks the values (not keys) of KEY=VALUE entries; empty values
-// are ignored, as are values shorter than minRedactableValueLength.
+// NewRedactor masks the values (not keys) of KEY=VALUE entries, skipping empty
+// values and those too short to mask safely.
 func NewRedactor(secretsEnv []string) *Redactor {
 	values := make([]string, 0, len(secretsEnv))
 	skipped := 0
@@ -97,10 +92,8 @@ func NewEnvironmentRedactor(env []string) *Redactor {
 	return NewRedactor(sensitive)
 }
 
-// SkippedValueCount reports how many sensitive values were too short to mask.
-// A non-zero count means at least one credential-bearing value is present in
-// the environment but is not being redacted, so callers that emit captured
-// output may want to warn about it.
+// SkippedValueCount reports sensitive values left unmasked for being too
+// short, so callers emitting captured output can surface the gap.
 func (r *Redactor) SkippedValueCount() int {
 	if r == nil {
 		return 0

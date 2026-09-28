@@ -10,10 +10,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/subprocess"
 )
 
-// runCaptured executes cmd with bounded, redacted diagnostics. The unredacted
-// stdout is also preserved on the result for the callers that parse docker
-// output, such as volume mountpoints, where a masked character would corrupt
-// the value. Diagnostics built from the result stay redacted.
+// runCaptured captures with redacted diagnostics, keeping the unredacted
+// stdout for the callers that parse docker output such as volume mountpoints,
+// where a masked character would corrupt the path.
 func runCaptured(ctx context.Context, cmd *exec.Cmd) (subprocess.Result, error) {
 	env := cmd.Env
 	if env == nil {

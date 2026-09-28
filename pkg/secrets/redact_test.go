@@ -25,9 +25,6 @@ func TestRedactor_MasksValues(t *testing.T) {
 	}
 }
 
-// A value too short to mask safely is left alone rather than applied as a
-// literal substring, because masking it would corrupt unrelated text
-// everywhere it appears.
 func TestRedactor_SkipsTooShortValues(t *testing.T) {
 	r := secrets.NewRedactor([]string{"DEVSY_AUTH_BOOTSTRAP=1"})
 
@@ -69,8 +66,7 @@ func TestRedactor_SkippedValueCountIsZeroWhenAllMaskable(t *testing.T) {
 	}
 }
 
-// The environment redactor is the path that selects sensitive keys, so a short
-// value under such a key must not corrupt machine-readable output.
+// The environment redactor is the path that selects sensitive keys.
 func TestEnvironmentRedactor_ShortSensitiveValueDoesNotCorruptOutput(t *testing.T) {
 	r := secrets.NewEnvironmentRedactor([]string{
 		"DEVSY_DEFERRED_AUTH_BOOTSTRAP=1",

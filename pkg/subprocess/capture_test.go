@@ -230,9 +230,6 @@ func TestRunCapturesSignal(t *testing.T) {
 	}
 }
 
-// Machine-readable stdout must be reproducible verbatim: a docker volume
-// mountpoint containing digit runs must not be mangled by redaction, while the
-// display channels stay masked.
 func TestRunUnredactedStdoutKeepsMachineReadableOutputVerbatim(t *testing.T) {
 	if runtime.GOOS == testWindows {
 		t.Skip("test command uses sh")
@@ -262,7 +259,6 @@ func TestRunUnredactedStdoutKeepsMachineReadableOutputVerbatim(t *testing.T) {
 	}
 }
 
-// Diagnostics must not leak the raw output back into user-facing messages.
 func TestRunUnredactedStdoutKeepsDiagnosticsRedacted(t *testing.T) {
 	if runtime.GOOS == testWindows {
 		t.Skip("test command uses sh")
@@ -285,8 +281,6 @@ func TestRunUnredactedStdoutKeepsDiagnosticsRedacted(t *testing.T) {
 	}
 }
 
-// Without the opt-in, no raw copy is retained, so a redactor can never
-// accidentally influence machine-readable output.
 func TestRunCommandLeavesRawStdoutEmptyByDefault(t *testing.T) {
 	if runtime.GOOS == testWindows {
 		t.Skip("test command uses sh")

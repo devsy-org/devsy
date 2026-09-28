@@ -65,9 +65,7 @@ func (c *command) RunContext(ctx context.Context) (string, error) {
 	}
 	result, err := subprocess.Run(ctx, c.cmd, c.args, subprocess.Options{
 		Redactor: redactor,
-		// The rendered environment template is written to disk and must be
-		// reproduced verbatim, so capture it unredacted. Diagnostics above
-		// still use the redacted output.
+		// The template is written to disk and must be reproduced verbatim.
 		UnredactedStdout: true,
 	})
 	if err != nil {
