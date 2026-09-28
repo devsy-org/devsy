@@ -184,12 +184,8 @@ func linuxProcessGroupFieldsMatch(
 	wanted linuxProcessTreeIdentity,
 	fields []string,
 ) (member, leaderMismatch bool, err error) {
-	processGroup, err := strconv.Atoi(fields[2])
-	if err != nil || processGroup != pgid {
-		return false, false, nil
-	}
-	sessionID, err := strconv.Atoi(fields[3])
-	if err != nil {
+	processGroup, sessionID, ok := linuxProcessGroupIDs(fields)
+	if !ok || processGroup != pgid {
 		return false, false, nil
 	}
 	if pid == pgid {
@@ -202,6 +198,18 @@ func linuxProcessGroupFieldsMatch(
 		return false, false, nil
 	}
 	return sessionID == wanted.sessionID, false, nil
+}
+
+func linuxProcessGroupIDs(fields []string) (processGroup, sessionID int, ok bool) {
+	if len(fields) < 4 {
+		return 0, 0, false
+	}
+	processGroup, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return 0, 0, false
+	}
+	sessionID, err = strconv.Atoi(fields[3])
+	return processGroup, sessionID, err == nil
 }
 
 func linuxProcessGroupFieldsLeaderMismatch(
