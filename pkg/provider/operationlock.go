@@ -16,8 +16,7 @@ func GetProviderOperationLock(contextName, providerName string) (*flock.Flock, e
 	if err != nil {
 		return nil, fmt.Errorf("get locks dir: %w", err)
 	}
-
-	if err := os.MkdirAll(locksDir, 0o755); err != nil {
+	if err := os.MkdirAll(locksDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create locks dir: %w", err)
 	}
 

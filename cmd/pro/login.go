@@ -285,7 +285,10 @@ func (cmd *LoginCmd) loginAndConfigure(
 	}
 
 	if cmd.Use {
-		opLock, err := provider.GetProviderOperationLock(devsyConfig.DefaultContext, providerConfig.Name)
+		opLock, err := provider.GetProviderOperationLock(
+			devsyConfig.DefaultContext,
+			providerConfig.Name,
+		)
 		if err != nil {
 			return fmt.Errorf("get operation lock: %w", err)
 		}

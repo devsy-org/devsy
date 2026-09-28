@@ -145,7 +145,11 @@ func DeleteProvider(
 	return DeleteProviderConfig(devsyConfig, provider, ignoreNotFound)
 }
 
-func DeleteProviderConfig(devsyConfig *config.Config, providerName string, ignoreNotFound bool) error {
+func DeleteProviderConfig(
+	devsyConfig *config.Config,
+	providerName string,
+	ignoreNotFound bool,
+) error {
 	err := config.UpdateConfig(devsyConfig.DefaultContext, "", func(c *config.Config) error {
 		if c.Current().DefaultProvider == providerName {
 			c.Current().DefaultProvider = ""

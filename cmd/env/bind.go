@@ -52,7 +52,6 @@ func (cmd *AttachCmd) Run(_ context.Context, name string) error {
 		return nil
 	}
 	ctxConfig.EnvVars = append(ctxConfig.EnvVars, name)
-	// Safe: The caller explicitly owns LockConfig().
 	if err := config.SaveConfig(devsyConfig); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
@@ -113,7 +112,6 @@ func (cmd *DetachCmd) Run(_ context.Context, name string) error {
 		return nil
 	}
 	ctxConfig.EnvVars = slices.Delete(ctxConfig.EnvVars, idx, idx+1)
-	// Safe: The caller explicitly owns LockConfig().
 	if err := config.SaveConfig(devsyConfig); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}

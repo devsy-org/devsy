@@ -68,7 +68,10 @@ func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, providerWithOptions.Config.Name)
+	opLock, err := provider2.GetProviderOperationLock(
+		devsyConfig.DefaultContext,
+		providerWithOptions.Config.Name,
+	)
 	if err != nil {
 		return fmt.Errorf("get operation lock: %w", err)
 	}
