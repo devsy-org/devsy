@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
 	"gotest.tools/assert"
 )
 
@@ -99,14 +100,22 @@ func TestInheritFromEnvironment(t *testing.T) {
 	}
 }
 
-func TestInheritFromEnvironment_PreservesWorkspaceAssignment(t *testing.T) {
-	t.Setenv("GIT_AUTHOR_NAME", "host")
+type InheritFromEnvironmentTestSuite struct {
+	suite.Suite
+}
+
+func TestInheritFromEnvironmentTestSuite(t *testing.T) {
+	suite.Run(t, new(InheritFromEnvironmentTestSuite))
+}
+
+func (s *InheritFromEnvironmentTestSuite) TestPreservesWorkspaceAssignment() {
+	s.T().Setenv("GIT_AUTHOR_NAME", "host")
 	got := InheritFromEnvironment(
 		[]string{"GIT_AUTHOR_NAME=workspace"},
 		GitIdentityEnvVars,
 		"",
 	)
-	assert.DeepEqual(t, got, []string{"GIT_AUTHOR_NAME=workspace"})
+	s.Assert().Equal([]string{"GIT_AUTHOR_NAME=workspace"}, got)
 }
 
 func runInheritFromEnvironmentTestCase(t *testing.T, testCase assignmentTestCase) {

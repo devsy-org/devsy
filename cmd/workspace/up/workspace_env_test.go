@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	secretspkg "github.com/devsy-org/devsy/pkg/secrets"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
 const (
@@ -15,96 +14,109 @@ const (
 	workspaceEnvLiteralAssignment = "LOG_LEVEL=custom-value"
 )
 
-func TestComposeWorkspaceEnv_AttachmentFillsMissingTarget(t *testing.T) {
+type WorkspaceEnvTestSuite struct {
+	suite.Suite
+}
+
+func TestWorkspaceEnvTestSuite(t *testing.T) {
+	suite.Run(t, new(WorkspaceEnvTestSuite))
+}
+
+func (s *WorkspaceEnvTestSuite) TestAttachmentFillsMissingTarget() {
 	base, err := indexWorkspaceEnv([]string{"LOCAL=value"})
-	require.NoError(t, err)
+	s.Require().NoError(err)
 	requests, err := filterWorkspaceEnvRequests(base, []envVarRequest{{
 		ref: localRef("ATTACHED"), target: "ATTACHED", origin: envVarAttached,
 	}})
-	require.NoError(t, err)
-	require.Len(t, requests, 1)
+	s.Require().NoError(err)
+	s.Require().Len(requests, 1)
 	got, err := composeWorkspaceEnv(base, []resolvedEnvVar{{
 		assignment: "ATTACHED=managed",
 	}})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"ATTACHED=managed", "LOCAL=value"}, got)
+	s.Require().NoError(err)
+	s.Assert().Equal([]string{"ATTACHED=managed", "LOCAL=value"}, got)
 }
 
-func TestComposeWorkspaceEnv_LiteralWorkspaceEnvShadowsAttachment(t *testing.T) {
+func (s *WorkspaceEnvTestSuite) TestLiteralWorkspaceEnvShadowsAttachment() {
 	cmd := &UpCmd{}
 	cmd.WorkspaceEnv = []string{workspaceEnvLiteralAssignment}
 	resolver := secretspkg.NewResolver()
-	require.NoError(t, resolver.Register("local", "local", fixedSource{
+	s.Require().NoError(resolver.Register("local", "local", fixedSource{
 		values: map[string]string{workspaceEnvLogLevel: "stored-value"},
 	}))
 
-	err := cmd.applyEnvVars(t.Context(), testEnvConfig(workspaceEnvLogLevel), resolver)
-	require.NoError(t, err)
-	assert.Equal(t, []string{workspaceEnvLiteralAssignment}, cmd.WorkspaceEnv)
+	err := cmd.applyEnvVars(s.T().Context(), testEnvConfig(workspaceEnvLogLevel), resolver)
+	s.Require().NoError(err)
+	s.Assert().Equal([]string{workspaceEnvLiteralAssignment}, cmd.WorkspaceEnv)
 }
 
-func TestComposeWorkspaceEnv_ShadowingDoesNotDependOnValueLexicalOrder(t *testing.T) {
+func (s *WorkspaceEnvTestSuite) TestShadowingDoesNotDependOnValueLexicalOrder() {
 	cmd := &UpCmd{}
-	cmd.WorkspaceEnv = []string{workspaceEnvLiteralAssignment}
+	cmd.WorkspaceEnv = []string{workspaceEnvLogLevel + "=stored-value"}
 	resolver := secretspkg.NewResolver()
-	require.NoError(t, resolver.Register("local", "local", fixedSource{
-		values: map[string]string{workspaceEnvLogLevel: "stored-value"},
+	s.Require().NoError(resolver.Register("local", "local", fixedSource{
+		values: map[string]string{workspaceEnvLogLevel: "custom-value"},
 	}))
 
-	require.NoError(t, cmd.applyEnvVars(t.Context(), testEnvConfig(workspaceEnvLogLevel), resolver))
-	assert.Equal(t, workspaceEnvLiteralAssignment, cmd.WorkspaceEnv[0])
+	err := cmd.applyEnvVars(
+		s.T().Context(),
+		testEnvConfig(workspaceEnvLogLevel),
+		resolver,
+	)
+	s.Require().NoError(err)
+	s.Assert().Equal([]string{workspaceEnvLogLevel + "=stored-value"}, cmd.WorkspaceEnv)
 }
 
-func TestComposeWorkspaceEnv_ShadowedAttachmentIsNotResolved(t *testing.T) {
+func (s *WorkspaceEnvTestSuite) TestShadowedAttachmentIsNotResolved() {
 	cmd := &UpCmd{}
 	cmd.WorkspaceEnv = []string{workspaceEnvLogLevel + "=local"}
 	resolver := secretspkg.NewResolver()
-	require.NoError(t, resolver.Register("local", "local", unavailableEnvSource{}))
+	s.Require().NoError(resolver.Register("local", "local", unavailableEnvSource{}))
 
-	err := cmd.applyEnvVars(t.Context(), testEnvConfig(workspaceEnvLogLevel), resolver)
-	require.NoError(t, err)
-	assert.Equal(t, []string{workspaceEnvLogLevel + "=local"}, cmd.WorkspaceEnv)
+	err := cmd.applyEnvVars(s.T().Context(), testEnvConfig(workspaceEnvLogLevel), resolver)
+	s.Require().NoError(err)
+	s.Assert().Equal([]string{workspaceEnvLogLevel + "=local"}, cmd.WorkspaceEnv)
 }
 
-func TestComposeWorkspaceEnv_ExplicitManagedTargetConflictsWithLiteralTarget(t *testing.T) {
+func (s *WorkspaceEnvTestSuite) TestExplicitManagedTargetConflictsWithLiteralTarget() {
 	cmd := &UpCmd{}
 	cmd.WorkspaceEnv = []string{"APP_MODE=local"}
 	cmd.EnvVars = []string{"STORED_MODE=APP_MODE"}
-	err := cmd.applyEnvVars(t.Context(), testEnvConfig(), secretspkg.NewResolver())
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "APP_MODE")
-	assert.Contains(t, err.Error(), "both --workspace-env and --env")
-	assert.NotContains(t, err.Error(), "local")
-	assert.Equal(t, []string{"APP_MODE=local"}, cmd.WorkspaceEnv)
+	err := cmd.applyEnvVars(s.T().Context(), testEnvConfig(), secretspkg.NewResolver())
+	s.Require().Error(err)
+	s.Assert().Contains(err.Error(), "APP_MODE")
+	s.Assert().Contains(err.Error(), "both --workspace-env and --env")
+	s.Assert().NotContains(err.Error(), "local")
+	s.Assert().Equal([]string{"APP_MODE=local"}, cmd.WorkspaceEnv)
 }
 
-func TestComposeWorkspaceEnv_DuplicateLiteralTargetRejected(t *testing.T) {
+func (s *WorkspaceEnvTestSuite) TestDuplicateLiteralTargetRejected() {
 	cmd := &UpCmd{}
 	cmd.WorkspaceEnv = []string{"APP_MODE=a", "APP_MODE=b"}
-	err := cmd.applyEnvVars(t.Context(), testEnvConfig(), secretspkg.NewResolver())
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `"APP_MODE"`)
-	assert.NotContains(t, err.Error(), "=a")
-	assert.NotContains(t, err.Error(), "=b")
+	err := cmd.applyEnvVars(s.T().Context(), testEnvConfig(), secretspkg.NewResolver())
+	s.Require().Error(err)
+	s.Assert().Contains(err.Error(), `"APP_MODE"`)
+	s.Assert().NotContains(err.Error(), "=a")
+	s.Assert().NotContains(err.Error(), "=b")
 }
 
-func TestComposeWorkspaceEnv_ValueMayContainEquals(t *testing.T) {
+func (s *WorkspaceEnvTestSuite) TestValueMayContainEquals() {
 	assignment, err := parseWorkspaceEnvAssignment("TOKEN=one=two")
-	require.NoError(t, err)
-	assert.Equal(t, workspaceEnvAssignment{name: "TOKEN", value: "one=two"}, assignment)
+	s.Require().NoError(err)
+	s.Assert().Equal(workspaceEnvAssignment{name: "TOKEN", value: "one=two"}, assignment)
 }
 
-func TestComposeWorkspaceEnv_OutputHasUniqueTargets(t *testing.T) {
+func (s *WorkspaceEnvTestSuite) TestOutputHasUniqueTargets() {
 	base, err := indexWorkspaceEnv([]string{"A=one"})
-	require.NoError(t, err)
+	s.Require().NoError(err)
 	got, err := composeWorkspaceEnv(base, []resolvedEnvVar{{
 		assignment: "B=two",
 	}})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"A=one", "B=two"}, got)
+	s.Require().NoError(err)
+	s.Assert().Equal([]string{"A=one", "B=two"}, got)
 	indexed, err := indexWorkspaceEnv(got)
-	require.NoError(t, err)
-	assert.Len(t, indexed, 2)
+	s.Require().NoError(err)
+	s.Assert().Len(indexed, 2)
 }
 
 type unavailableEnvSource struct{}

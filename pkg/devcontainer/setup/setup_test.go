@@ -6,13 +6,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 )
@@ -160,14 +160,20 @@ func TestWriteResultFileTo_SkipsWriteWhenContentUnchanged(t *testing.T) {
 	}
 }
 
-func TestParseWorkspaceEnvironment_RejectsDuplicateTarget(t *testing.T) {
-	_, _, err := parseWorkspaceEnvironment([]string{"MODE=one", "MODE=two"})
-	if err == nil || !strings.Contains(err.Error(), `"MODE"`) {
-		t.Fatalf("expected duplicate MODE error, got %v", err)
-	}
+type WorkspaceEnvironmentTestSuite struct {
+	suite.Suite
 }
 
-func TestParseWorkspaceEnvironment_CanonicalizesWithoutChangingInput(t *testing.T) {
+func TestWorkspaceEnvironmentTestSuite(t *testing.T) {
+	suite.Run(t, new(WorkspaceEnvironmentTestSuite))
+}
+
+func (s *WorkspaceEnvironmentTestSuite) TestParseRejectsDuplicateTarget() {
+	_, _, err := parseWorkspaceEnvironment([]string{"MODE=one", "MODE=two"})
+	s.Require().ErrorContains(err, `"MODE"`)
+}
+
+func (s *WorkspaceEnvironmentTestSuite) TestParseCanonicalizesWithoutChangingInput() {
 	assignments := []string{
 		workspaceEnvZedAssignment,
 		workspaceEnvAlphaAssignment,
@@ -176,45 +182,29 @@ func TestParseWorkspaceEnvironment_CanonicalizesWithoutChangingInput(t *testing.
 	original := slices.Clone(assignments)
 
 	got, canonical, err := parseWorkspaceEnvironment(assignments)
-	if err != nil {
-		t.Fatalf("parseWorkspaceEnvironment: %v", err)
-	}
-	if !slices.Equal(assignments, original) {
-		t.Fatalf("input changed: got %v, want %v", assignments, original)
-	}
+	s.Require().NoError(err)
+	s.Assert().Equal(original, assignments)
 	wantCanonical := []string{
 		workspaceEnvAlphaAssignment,
 		workspaceEnvTokenAssignment,
 		workspaceEnvZedAssignment,
 	}
-	if !slices.Equal(canonical, wantCanonical) {
-		t.Fatalf("canonical = %v, want %v", canonical, wantCanonical)
-	}
-	if got["TOKEN"] != "one=two" {
-		t.Fatalf("TOKEN = %q, want %q", got["TOKEN"], "one=two")
-	}
+	s.Assert().Equal(wantCanonical, canonical)
+	s.Assert().Equal("one=two", got["TOKEN"])
 	_, reorderedCanonical, err := parseWorkspaceEnvironment([]string{
 		workspaceEnvTokenAssignment,
 		workspaceEnvAlphaAssignment,
 		workspaceEnvZedAssignment,
 	})
-	if err != nil {
-		t.Fatalf("parse reordered workspace environment: %v", err)
-	}
-	if !slices.Equal(canonical, reorderedCanonical) {
-		t.Fatalf("reordered canonical = %v, want %v", reorderedCanonical, canonical)
-	}
+	s.Require().NoError(err)
+	s.Assert().Equal(canonical, reorderedCanonical)
 }
 
-func TestPatchEtcEnvironmentFlagsRejectsDuplicatesWithoutMutatingInput(t *testing.T) {
+func (s *WorkspaceEnvironmentTestSuite) TestPatchRejectsDuplicatesWithoutMutatingInput() {
 	assignments := []string{"MODE=one", "MODE=two"}
 	original := slices.Clone(assignments)
-	if err := patchEtcEnvironmentFlags(assignments); err == nil {
-		t.Fatal("expected duplicate target error")
-	}
-	if !slices.Equal(assignments, original) {
-		t.Fatalf("input changed: got %v, want %v", assignments, original)
-	}
+	s.Require().Error(patchEtcEnvironmentFlags(assignments))
+	s.Assert().Equal(original, assignments)
 }
 
 func TestWriteResultFileTo_WidensExistingRestrictiveMode(t *testing.T) {
