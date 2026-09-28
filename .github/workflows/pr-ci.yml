@@ -174,7 +174,9 @@ jobs:
       # Mirrors `task cli:test`. -p 4 caps parallelism because the wall-clock
       # assertions are exceeded at full parallelism on a busy runner.
       - name: Run unit tests
-        run: go test $(go list ./... | grep -v -e /test -e /e2e) -race -p 4 -coverprofile=dist/profile.out -covermode=atomic
+        run: |
+          # shellcheck disable=SC2046  # the package list is meant to become arguments
+          go test $(go list ./... | grep -v -e /test -e /e2e) -race -p 4 -coverprofile=dist/profile.out -covermode=atomic
 
       - name: Upload coverage profile
         if: always()
