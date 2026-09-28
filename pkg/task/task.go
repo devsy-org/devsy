@@ -514,8 +514,8 @@ func (t *Task) requestCancel() (*State, error) {
 		if !state.Status.Terminal() {
 			state.CancelRequested = true
 		}
-		copy := *state
-		snapshot = &copy
+		stateSnapshot := *state
+		snapshot = &stateSnapshot
 	})
 	if err != nil {
 		return nil, err
