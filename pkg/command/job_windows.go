@@ -269,6 +269,18 @@ func terminateJobAfterWorkerExit(workerName string) (bool, error) {
 	return terminateJobHandle(job, workerName)
 }
 
+func terminateNamedJob(jobID string) (bool, error) {
+	if jobID == "" {
+		return false, errors.New("worker job reference is empty")
+	}
+	job, found, err := openNamedJob(jobID, jobID)
+	if err != nil || !found {
+		return found, err
+	}
+	defer func() { _ = windows.CloseHandle(job) }()
+	return terminateJobHandle(job, jobID)
+}
+
 func isDetachedTaskWorkerName(workerName string) bool {
 	if !strings.HasPrefix(workerName, detachedTaskWorkerPrefix) {
 		return false

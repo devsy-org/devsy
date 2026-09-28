@@ -14,6 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type testQuiescer func(context.Context, string) error
+
+func (f testQuiescer) Quiesce(ctx context.Context, workspaceID string) error {
+	return f(ctx, workspaceID)
+}
+
 func TestSweepOrphanWorkspaceDirs(t *testing.T) {
 	setupTestPathManager(t)
 
@@ -166,9 +172,9 @@ func TestDeleteBlockedWhenActiveUpTaskCannotBeQuiesced(t *testing.T) {
 		DevsyConfig: devsyConfig,
 		Client:      fake,
 		Force:       true,
-		quiesceUpTasks: func(string) error {
+		quiescer: testQuiescer(func(context.Context, string) error {
 			return errors.New("boom")
-		},
+		}),
 	})
 	require.Error(t, err)
 	require.False(t, fake.deleted, "delete must not proceed while a live up task survives")

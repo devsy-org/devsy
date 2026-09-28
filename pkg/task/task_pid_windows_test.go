@@ -25,20 +25,20 @@ func TestCancelSignalsALiveWorkersPID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	holdWorkerLock(t, tk)
-
 	worker := sleepWorker()
 	workerName := WorkerProcessName(tk.ID())
-	if err := command.StartBackground(workerName, func() (*exec.Cmd, error) {
+	if err := command.StartSupervisedBackground(command.SupervisedStartOptions{
+		Name: workerName,
+		OnStarted: func(ref command.ProcessRef) error {
+			return tk.SetProcess(ref)
+		},
+	}, func() (*exec.Cmd, error) {
 		return worker, nil
 	}); err != nil {
-		t.Fatalf("start background worker: %v", err)
+		t.Fatalf("start supervised worker: %v", err)
 	}
 	pid := worker.Process.Pid
 	t.Cleanup(func() { _ = command.KillTree(strconv.Itoa(pid), workerName) })
-	if err := tk.SetPID(pid); err != nil {
-		t.Fatalf("SetPID: %v", err)
-	}
 
 	if err := tk.Cancel(); err != nil {
 		t.Fatalf("Cancel: %v", err)

@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -63,12 +64,17 @@ func TestQuiesceUpTasksAttemptsEveryTaskAndAggregatesFailures(t *testing.T) {
 		tk := tk
 		t.Cleanup(func() { _ = tk.ReleaseWorkerLock() })
 	}
-	err := quiesceUpTasks(store, "ws-1", func(id string) error {
-		if id == failing.ID() {
-			return errors.New("boom")
-		}
-		return store.Open(id).Fail(task.ErrCanceled)
-	})
+	err := quiesceUpTasks(
+		context.Background(),
+		store,
+		"ws-1",
+		func(_ context.Context, id string) error {
+			if id == failing.ID() {
+				return errors.New("boom")
+			}
+			return store.Open(id).Fail(task.ErrCanceled)
+		},
+	)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), failing.ID())
@@ -79,4 +85,22 @@ func TestQuiesceUpTasksAttemptsEveryTaskAndAggregatesFailures(t *testing.T) {
 	state := taskState(t, store, succeeding.ID())
 	assert.Equal(t, task.StatusFailed, state.Status)
 	assert.Equal(t, task.ErrCanceled.Error(), state.Error)
+}
+
+func TestQuiesceUpTasksBoundsEachCancellation(t *testing.T) {
+	store := newTaskStore(t)
+	createUpTask(t, store, "ws-1")
+
+	err := quiesceUpTasks(
+		context.Background(),
+		store,
+		"ws-1",
+		func(ctx context.Context, _ string) error {
+			if _, ok := ctx.Deadline(); !ok {
+				return errors.New("task cancellation has no deadline")
+			}
+			return nil
+		},
+	)
+	require.NoError(t, err)
 }

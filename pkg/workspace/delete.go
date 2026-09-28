@@ -26,7 +26,7 @@ type DeleteOptions struct {
 	Force          bool
 	ClientDelete   client2.DeleteOptions
 	Owner          platform.OwnerFilter
-	quiesceUpTasks func(workspaceID string) error
+	quiescer       UpTaskQuiescer
 }
 
 // Delete deletes a workspace, handling imported workspaces, single-machine
@@ -59,7 +59,7 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 
 	// A surviving detached up worker can recreate resources during or after
 	// the delete, so quiescence failure blocks even a forced delete.
-	if err := opts.quiesce(client.Workspace()); err != nil {
+	if err := opts.quiesce(ctx, client.Workspace()); err != nil {
 		return "", err
 	}
 
@@ -86,7 +86,7 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 
 	// Re-scan under the lock: a task may have become visible while lock
 	// acquisition waited.
-	if err := opts.quiesce(client.Workspace()); err != nil {
+	if err := opts.quiesce(ctx, client.Workspace()); err != nil {
 		return "", err
 	}
 
@@ -245,15 +245,19 @@ func handleDeleteLoadError(
 		return "", loadErr
 	}
 
-	return forceDeleteFolder(opts, workspaceID)
+	return forceDeleteFolder(ctx, opts, workspaceID)
 }
 
 // forceDeleteFolder removes the workspace folder when the workspace client
 // cannot be loaded and --force is set.
-func forceDeleteFolder(opts DeleteOptions, workspaceID string) (string, error) {
+func forceDeleteFolder(
+	ctx context.Context,
+	opts DeleteOptions,
+	workspaceID string,
+) (string, error) {
 	log.Errorf("error retrieving workspace, force-deleting folder")
 
-	if err := opts.quiesce(workspaceID); err != nil {
+	if err := opts.quiesce(ctx, workspaceID); err != nil {
 		return "", err
 	}
 
@@ -480,12 +484,12 @@ func removeIfContentOrphan(contextName, contentsDir string, entry os.DirEntry) {
 	log.Debugf("removed orphan content dir with no matching workspace: workspace=%s", entry.Name())
 }
 
-func (opts DeleteOptions) quiesce(workspaceID string) error {
-	quiesce := opts.quiesceUpTasks
-	if quiesce == nil {
-		quiesce = QuiesceUpTasksForWorkspace
+func (opts DeleteOptions) quiesce(ctx context.Context, workspaceID string) error {
+	quiescer := opts.quiescer
+	if quiescer == nil {
+		quiescer = StoreUpTaskQuiescer{}
 	}
-	if err := quiesce(workspaceID); err != nil {
+	if err := quiescer.Quiesce(ctx, workspaceID); err != nil {
 		return fmt.Errorf(
 			"cancel detached up tasks for workspace %s: %w",
 			workspaceID,

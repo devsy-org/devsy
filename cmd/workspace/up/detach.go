@@ -1,10 +1,12 @@
 package up
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -18,9 +20,6 @@ import (
 // runDetached submits this invocation as a background task and returns
 // immediately.
 func (cmd *UpCmd) runDetached(args []string) error {
-	if _, err := command.ProcessTreeIdentity(os.Getpid()); err != nil {
-		return fmt.Errorf("detached up is unsupported on this platform: %w", err)
-	}
 	store, err := task.NewStore()
 	if err != nil {
 		return err
@@ -37,7 +36,12 @@ func (cmd *UpCmd) runDetached(args []string) error {
 		return err
 	}
 
-	if err := launchDetached(t.ID()); err != nil {
+	if err := t.BeginLaunch(); err != nil {
+		_ = t.Fail(err)
+		return fmt.Errorf("prepare detached up: %w", err)
+	}
+	if err := launchDetached(t); err != nil {
+		_ = t.FinishLaunch()
 		_ = t.Fail(err)
 		return fmt.Errorf("launch detached up: %w", err)
 	}
@@ -55,14 +59,19 @@ func (cmd *UpCmd) runDetached(args []string) error {
 	return err
 }
 
-func launchDetached(taskID string) error {
+func launchDetached(t *task.Task) error {
 	execPath, err := os.Executable()
 	if err != nil {
 		return err
 	}
 
-	args := append(detachedArgs(os.Args[1:]), names.Flag(names.TaskID), taskID)
-	return command.StartBackground(task.WorkerProcessName(taskID), func() (*exec.Cmd, error) {
+	args := append(detachedArgs(os.Args[1:]), names.Flag(names.TaskID), t.ID())
+	return command.StartSupervisedBackground(command.SupervisedStartOptions{
+		Name: task.WorkerProcessName(t.ID()),
+		OnStarted: func(ref command.ProcessRef) error {
+			return t.SetProcess(ref)
+		},
+	}, func() (*exec.Cmd, error) {
 		return &exec.Cmd{
 			Path: execPath,
 			Args: append([]string{execPath}, args...),
@@ -125,26 +134,41 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 		failTask(t, err)
 		return nil, err
 	}
-	if err := t.SetPID(os.Getpid()); err != nil {
-		failTask(t, err)
-		_ = t.ReleaseWorkerLock()
-		return nil, err
-	}
-	state, err := store.Get(cmd.taskID)
-	if err != nil {
-		failTask(t, err)
-		_ = t.ReleaseWorkerLock()
-		return nil, err
-	}
-	// Canceled before this worker claimed its lock: the canceled state is
-	// already recorded and this worker must not overwrite it or run up.
-	if state.Status.Terminal() {
-		if err := t.ReleaseWorkerLock(); err != nil {
-			return nil, fmt.Errorf("release canceled worker lock: %w", err)
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		state, err := store.Get(cmd.taskID)
+		if err != nil {
+			failTask(t, err)
+			_ = t.ReleaseWorkerLock()
+			return nil, err
 		}
-		return nil, task.ErrCanceled
+		if state.Status.Terminal() || state.CancelRequested {
+			if err := t.ReleaseWorkerLock(); err != nil {
+				return nil, fmt.Errorf("release canceled worker lock: %w", err)
+			}
+			return nil, task.ErrCanceled
+		}
+		if !state.LaunchPending {
+			if _, ok := state.ProcessReference(); !ok {
+				err := errors.New("detached worker launch did not publish process metadata")
+				failTask(t, err)
+				_ = t.ReleaseWorkerLock()
+				return nil, err
+			}
+			return t, nil
+		}
+		select {
+		case <-deadline.C:
+			err := errors.New("timed out waiting for detached worker launch metadata")
+			failTask(t, err)
+			_ = t.ReleaseWorkerLock()
+			return nil, err
+		case <-ticker.C:
+		}
 	}
-	return t, nil
 }
 
 func failTask(t *task.Task, err error) {

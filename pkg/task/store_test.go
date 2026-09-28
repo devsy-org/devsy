@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/command"
 )
 
 const workspaceOne = "ws-1"
@@ -69,7 +71,7 @@ func TestActiveForWorkspaceOrdersNewestFirst(t *testing.T) {
 	}
 }
 
-func TestActiveForWorkspaceReconcilesAbandonedWorkers(t *testing.T) {
+func TestActiveForWorkspaceDoesNotReconcileAbandonedWorkers(t *testing.T) {
 	store := newTestStore(t)
 	tk := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: workspaceOne})
 
@@ -86,20 +88,20 @@ func TestActiveForWorkspaceReconcilesAbandonedWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ActiveForWorkspace: %v", err)
 	}
-	if len(active) != 0 {
-		t.Errorf("abandoned task reported active: %+v", active)
+	if len(active) != 1 || active[0].ID != tk.ID() {
+		t.Errorf("query omitted unreconciled task: %+v", active)
 	}
 
 	state, err := store.Get(tk.ID())
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if !state.Status.Terminal() {
-		t.Errorf("reconciled task status = %q, want terminal", state.Status)
+	if state.Status.Terminal() {
+		t.Errorf("query changed task status to %q", state.Status)
 	}
 }
 
-func TestActiveForWorkspaceCleansAbandonedProcessTreeBeforeExcluding(t *testing.T) {
+func TestActiveForWorkspaceDoesNotCleanAbandonedProcessTree(t *testing.T) {
 	store := newTestStore(t)
 	state := abandonTask(t, store)
 	if err := store.Open(state.ID).SetWorkspaceID(workspaceOne); err != nil {
@@ -110,30 +112,24 @@ func TestActiveForWorkspaceCleansAbandonedProcessTreeBeforeExcluding(t *testing.
 	}
 
 	killCalls := 0
-	setKillProcessForTest(store, func(pid, treeName string) error {
-		killCalls++
-		if pid != "4242" {
-			t.Errorf("kill pid = %q, want 4242", pid)
-		}
-		if treeName != WorkerProcessName(state.ID) {
-			t.Errorf("kill tree = %q, want %q", treeName, WorkerProcessName(state.ID))
-		}
-		return nil
-	})
+	store.processController = fakeProcessController{
+		terminate: func(command.ProcessRef) error { killCalls++; return nil },
+		cleanup:   func(command.ProcessRef) error { killCalls++; return nil },
+	}
 
 	active, err := store.ActiveForWorkspace(workspaceOne, "up")
 	if err != nil {
 		t.Fatalf("ActiveForWorkspace: %v", err)
 	}
-	if len(active) != 0 {
-		t.Fatalf("abandoned task remains active after cleanup: %+v", active)
+	if len(active) != 1 || active[0].ID != state.ID {
+		t.Fatalf("query omitted an unreconciled task: %+v", active)
 	}
-	if killCalls != 1 {
-		t.Errorf("process-tree cleanup called %d times, want 1", killCalls)
+	if killCalls != 0 {
+		t.Errorf("query invoked process cleanup %d times", killCalls)
 	}
 }
 
-func TestActiveForWorkspaceKeepsAbandonedTaskActiveWhenTreeCleanupFails(t *testing.T) {
+func TestActiveForWorkspaceDoesNotMutateTaskWhenTreeCleanupWouldFail(t *testing.T) {
 	store := newTestStore(t)
 	state := abandonTask(t, store)
 	if err := store.Open(state.ID).SetWorkspaceID(workspaceOne); err != nil {
@@ -142,9 +138,10 @@ func TestActiveForWorkspaceKeepsAbandonedTaskActiveWhenTreeCleanupFails(t *testi
 	if err := setPIDForTest(store.Open(state.ID)); err != nil {
 		t.Fatalf("SetPID: %v", err)
 	}
-	setKillProcessForTest(store, func(string, string) error {
-		return errors.New("descendant cleanup failed")
-	})
+	store.processController = fakeProcessController{
+		terminate: func(command.ProcessRef) error { return errors.New("unexpected terminate") },
+		cleanup:   func(command.ProcessRef) error { return errors.New("descendant cleanup failed") },
+	}
 
 	active, err := store.ActiveForWorkspace(workspaceOne, "up")
 	if err != nil {

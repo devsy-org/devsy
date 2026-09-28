@@ -22,7 +22,17 @@ func TestCancelSignalsALiveWorkersPID(t *testing.T) {
 	if err := worker.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	defer func() { _ = worker.Process.Kill() }()
+	workerExited := make(chan struct{})
+	var workerWaitErr error
+	go func() {
+		workerWaitErr = worker.Wait()
+		_ = tk.ReleaseWorkerLock()
+		close(workerExited)
+	}()
+	t.Cleanup(func() {
+		_ = worker.Process.Kill()
+		<-workerExited
+	})
 	if err := tk.SetPID(worker.Process.Pid); err != nil {
 		t.Fatalf("SetPID: %v", err)
 	}
@@ -31,8 +41,8 @@ func TestCancelSignalsALiveWorkersPID(t *testing.T) {
 		t.Fatalf("Cancel: %v", err)
 	}
 
-	waitErr := worker.Wait()
-	if waitErr == nil {
+	<-workerExited
+	if workerWaitErr == nil {
 		t.Fatal("worker process exited cleanly, want it signaled by Cancel")
 	}
 }
@@ -45,7 +55,7 @@ func TestCancelUsesPublishedProcessIdentity(t *testing.T) {
 	}
 
 	var gotIdentity string
-	setKillProcessWithIdentityForTest(store, func(_, _, identity string) error {
+	setKillProcessWithIdentityForTest(store, tk, func(_, _, identity string) error {
 		gotIdentity = identity
 		return nil
 	})

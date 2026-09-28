@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
@@ -19,16 +18,10 @@ import (
 // lockTimeout bounds how long update waits to acquire a task's file lock.
 const lockTimeout = 5 * time.Second
 
-// pidPublishTimeout bounds Cancel's wait for a starting worker to publish
-// its PID.
-const pidPublishTimeout = 5 * time.Second
-
 // Store persists task state as one JSON file per task under dir.
 type Store struct {
 	dir                        string
-	killProcessWithIdentity    func(pid, treeName, identity string) error
-	killExitedWorkerTree       func(pid, treeName, identity string) error
-	killLegacyWorkerTree       func(pid, treeName string) error
+	processController          command.ProcessController
 	afterClaimHook             func()
 	afterCancelLockClaimedHook func()
 }
@@ -46,10 +39,8 @@ func NewStoreAt(dir string) (*Store, error) {
 		return nil, fmt.Errorf("create task dir: %w", err)
 	}
 	return &Store{
-		dir:                     dir,
-		killProcessWithIdentity: command.KillTreeWithIdentity,
-		killExitedWorkerTree:    command.KillTreeAfterWorkerExit,
-		killLegacyWorkerTree:    command.KillTree,
+		dir:               dir,
+		processController: command.DefaultProcessController(),
 	}, nil
 }
 
@@ -132,43 +123,67 @@ func (s *Store) Abandoned(state *State) bool {
 	return true
 }
 
-// Reconcile marks a task failed when its worker died without recording a
-// result, so it stops being reported as still running. Returns the effective
-// state, which is unchanged for live and already-terminal tasks.
-func (s *Store) Reconcile(state *State) *State {
-	if state == nil || state.Status.Terminal() {
+// ReconcileTask cleans up a task whose worker exited without recording a
+// result, then records it as abandoned.
+func (s *Store) ReconcileTask(ctx context.Context, id string) (*State, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	current, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if !needsReconciliation(current) {
+		return current, nil
+	}
+	lock, ok := s.claimDeadWorkerLock(id)
+	if !ok {
+		return current, nil
+	}
+	defer func() { _ = lock.Unlock() }()
+	if s.afterClaimHook != nil {
+		s.afterClaimHook()
+	}
+	return s.reconcileClaimedTask(ctx, id)
+}
+
+func needsReconciliation(state *State) bool {
+	return state != nil && !state.Status.Terminal() && !state.CancelRequested &&
+		!state.LaunchPending
+}
+
+// ReconcileState marks a task failed after its worker exits without a result.
+// It never terminates processes and is safe to use from workspace status.
+func (s *Store) ReconcileState(state *State) *State {
+	if !needsStateReconciliation(state) {
 		return state
 	}
-
-	// Held across the whole transition: releasing before the write would let a
-	// new worker claim the lock and then be marked failed while running.
 	lock, ok := s.claimDeadWorkerLock(state.ID)
 	if !ok {
 		return state
 	}
 	defer func() { _ = lock.Unlock() }()
-
-	if s.afterClaimHook != nil {
-		s.afterClaimHook()
-	}
-
 	current, err := s.Get(state.ID)
-	if err != nil {
-		return state
-	}
-	if current.Status.Terminal() {
-		return current
-	}
-	if current.PID != 0 {
-		if err := s.killExitedWorkerTree(
-			strconv.Itoa(current.PID),
-			WorkerProcessName(current.ID),
-			current.ProcessTreeIdentity,
-		); err != nil {
+	if err != nil || !needsStateReconciliation(current) {
+		if err == nil {
 			return current
 		}
+		return state
+	}
+	if hasProcessReference(current) {
+		return current
 	}
 	return s.failAbandoned(current)
+}
+
+func needsStateReconciliation(state *State) bool {
+	return state != nil && !state.Status.Terminal() && !state.CancelRequested &&
+		!state.LaunchPending
+}
+
+func hasProcessReference(state *State) bool {
+	_, ok := state.ProcessReference()
+	return ok
 }
 
 // List returns every known task, most recently started first.
@@ -197,23 +212,30 @@ func (s *Store) List() ([]*State, error) {
 	return states, nil
 }
 
-// ActiveForWorkspace returns non-terminal tasks for a workspace, newest first.
-// A non-empty command restricts the match.
-func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error) {
+// ForWorkspace returns matching tasks, newest first, without changing state.
+func (s *Store) ForWorkspace(workspaceID, command string) ([]*State, error) {
 	states, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	matching := make([]*State, 0, len(states))
+	for _, state := range states {
+		if state.WorkspaceID == workspaceID && (command == "" || state.Command == command) {
+			matching = append(matching, state)
+		}
+	}
+	return matching, nil
+}
+
+// ActiveForWorkspace returns non-terminal tasks for a workspace, newest first.
+func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error) {
+	states, err := s.ForWorkspace(workspaceID, command)
 	if err != nil {
 		return nil, err
 	}
 
 	active := make([]*State, 0, len(states))
 	for _, state := range states {
-		if state.WorkspaceID != workspaceID {
-			continue
-		}
-		if command != "" && state.Command != command {
-			continue
-		}
-		state = s.Reconcile(state)
 		if state.Status.Terminal() {
 			continue
 		}
@@ -222,26 +244,68 @@ func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error
 	return active, nil
 }
 
-// awaitPID polls for the worker to publish its PID, which it does right
-// after claiming the worker lock. A concurrent cancellation can commit the
-// terminal state first, leaving nothing to wait for.
-func (s *Store) awaitPID(id string, timeout time.Duration) (int, bool) {
-	deadline := time.Now().Add(timeout)
+type WorkerObservation struct {
+	State      *State
+	WorkerGone bool
+}
+
+// WaitForWorkerObservation waits until process metadata is published, the
+// task becomes terminal, or its worker lock becomes available.
+func (s *Store) WaitForWorkerObservation(
+	ctx context.Context,
+	id string,
+) (WorkerObservation, error) {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
 	for {
-		state, err := s.Get(id)
-		if err == nil {
-			if state.PID != 0 {
-				return state.PID, false
-			}
-			if state.Status.Terminal() {
-				return 0, true
-			}
+		observation, ready, err := s.workerObservation(id)
+		if err != nil {
+			return WorkerObservation{}, err
 		}
-		if time.Now().After(deadline) {
-			return 0, false
+		if ready {
+			return observation, nil
 		}
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return WorkerObservation{}, ctx.Err()
+		case <-ticker.C:
+		}
 	}
+}
+
+func (s *Store) workerObservation(id string) (WorkerObservation, bool, error) {
+	state, err := s.Get(id)
+	if err != nil {
+		return WorkerObservation{}, false, err
+	}
+	if state.Status.Terminal() || hasProcessReference(state) {
+		return WorkerObservation{State: state}, true, nil
+	}
+	lock, available, err := s.tryWorkerLock(id)
+	if err != nil {
+		return WorkerObservation{}, false, err
+	}
+	if !available {
+		return WorkerObservation{}, false, nil
+	}
+	_ = lock.Unlock()
+	return WorkerObservation{State: state, WorkerGone: true}, true, nil
+}
+
+func (s *Store) reconcileClaimedTask(ctx context.Context, id string) (*State, error) {
+	current, err := s.Get(id)
+	if err != nil || !needsReconciliation(current) {
+		return current, err
+	}
+	if ref, ok := current.ProcessReference(); ok {
+		if err := ctx.Err(); err != nil {
+			return current, err
+		}
+		if err := s.processController.CleanupAfterExit(ref); err != nil {
+			return current, fmt.Errorf("clean up task %s process tree: %w", id, err)
+		}
+	}
+	return s.failAbandoned(current), nil
 }
 
 // failAbandoned records ErrAbandoned for a task whose worker is confirmed gone.
@@ -268,6 +332,22 @@ func (s *Store) failAbandoned(state *State) *State {
 // claimDeadWorkerLock, it creates the lock file if the worker has not started.
 func (s *Store) tryWorkerLock(id string) (*flock.Flock, bool, error) {
 	path, err := s.workerLockPath(id)
+	if err != nil {
+		return nil, false, err
+	}
+	lock := flock.New(path)
+	locked, err := lock.TryLock()
+	if err != nil {
+		return nil, false, err
+	}
+	if !locked {
+		return nil, false, nil
+	}
+	return lock, true, nil
+}
+
+func (s *Store) tryLauncherLock(id string) (*flock.Flock, bool, error) {
+	path, err := s.launcherLockPath(id)
 	if err != nil {
 		return nil, false, err
 	}
@@ -311,6 +391,14 @@ func (s *Store) workerLockPath(id string) (string, error) {
 		return "", err
 	}
 	return path + ".worker.lock", nil
+}
+
+func (s *Store) launcherLockPath(id string) (string, error) {
+	path, err := s.path(id)
+	if err != nil {
+		return "", err
+	}
+	return path + ".launcher.lock", nil
 }
 
 func (s *Store) update(id string, mutate func(*State)) error {

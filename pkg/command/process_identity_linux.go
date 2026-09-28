@@ -13,6 +13,8 @@ import (
 	"syscall"
 )
 
+const strongProcessIdentitySupported = true
+
 func processTreeIdentity(pid int) (string, error) {
 	fields, ok, err := linuxProcessStat(pid)
 	if err != nil {

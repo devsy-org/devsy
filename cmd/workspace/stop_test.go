@@ -19,6 +19,12 @@ type stopRecordingClient struct {
 	calls *[]string
 }
 
+type quiescerFunc func(context.Context, string) error
+
+func (f quiescerFunc) Quiesce(ctx context.Context, workspaceID string) error {
+	return f(ctx, workspaceID)
+}
+
 func (c *stopRecordingClient) Stop(ctx context.Context, opts client2.StopOptions) error {
 	*c.calls = append(*c.calls, "stop")
 	return c.fakeWorkspaceClient.Stop(ctx, opts)
@@ -42,11 +48,11 @@ func TestStopCancelsPersistedUpTaskBeforeProviderStop(t *testing.T) {
 	}
 	client := &stopRecordingClient{fakeWorkspaceClient: fake, calls: &calls}
 	cmd := &StopCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: formatPlain}}
-	cmd.quiesceUpTasks = func(workspaceID string) error {
+	cmd.quiescer = quiescerFunc(func(_ context.Context, workspaceID string) error {
 		assert.Equal(t, testWorkspaceName, workspaceID)
 		calls = append(calls, "quiesce")
 		return nil
-	}
+	})
 
 	require.NoError(t, cmd.run(t.Context(), newStopTestConfig(), client))
 
@@ -80,9 +86,9 @@ func TestStopDoesNotProceedWhenActiveTaskCannotBeKilled(t *testing.T) {
 	var calls []string
 	client := &stopRecordingClient{fakeWorkspaceClient: fake, calls: &calls}
 	cmd := &StopCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: formatPlain}}
-	cmd.quiesceUpTasks = func(string) error {
+	cmd.quiescer = quiescerFunc(func(context.Context, string) error {
 		return errors.New("boom")
-	}
+	})
 
 	err := cmd.run(t.Context(), newStopTestConfig(), client)
 	require.Error(t, err)

@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const strongProcessIdentitySupported = true
+
 func processTreeIdentity(pid int) (string, error) {
 	sessionID, err := darwinSessionID(pid)
 	if err != nil {

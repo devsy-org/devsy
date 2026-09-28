@@ -22,8 +22,7 @@ import (
 type StopCmd struct {
 	*flags.GlobalFlags
 	client2.StopOptions
-	// Optional quiescence override for focused command tests.
-	quiesceUpTasks func(workspaceID string) error
+	quiescer workspace2.UpTaskQuiescer
 }
 
 // NewStopCmd creates a new destroy command.
@@ -127,7 +126,7 @@ func (cmd *StopCmd) run(
 ) error {
 	// Quiesce before waiting for the workspace lock: a still-provisioning up
 	// worker can be the one holding it.
-	if err := cmd.quiesce(client.Workspace()); err != nil {
+	if err := cmd.quiesce(ctx, client.Workspace()); err != nil {
 		return err
 	}
 
@@ -148,7 +147,7 @@ func (cmd *StopCmd) run(
 	// Quiesce again under the lock: a task may have become visible while
 	// the lock wait blocked, and a surviving up worker can restart the
 	// workspace after the stop.
-	if err := cmd.quiesce(client.Workspace()); err != nil {
+	if err := cmd.quiesce(ctx, client.Workspace()); err != nil {
 		return err
 	}
 
@@ -271,12 +270,12 @@ func otherWorkspaceUsesMachine(
 	return false
 }
 
-func (cmd *StopCmd) quiesce(workspaceID string) error {
-	quiesce := cmd.quiesceUpTasks
-	if quiesce == nil {
-		quiesce = workspace2.QuiesceUpTasksForWorkspace
+func (cmd *StopCmd) quiesce(ctx context.Context, workspaceID string) error {
+	quiescer := cmd.quiescer
+	if quiescer == nil {
+		quiescer = workspace2.StoreUpTaskQuiescer{}
 	}
-	if err := quiesce(workspaceID); err != nil {
+	if err := quiescer.Quiesce(ctx, workspaceID); err != nil {
 		return fmt.Errorf(
 			"cancel detached up tasks for workspace %s: %w",
 			workspaceID,

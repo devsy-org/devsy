@@ -13,6 +13,11 @@ import (
 
 type CreateCommand func() (*exec.Cmd, error)
 
+type SupervisedStartOptions struct {
+	Name      string
+	OnStarted func(ProcessRef) error
+}
+
 // StartBackgroundOnce starts a background process, ensuring only one instance
 // with the given commandName runs at a time. If a process is already running
 // (determined by PID file), or the lock cannot be acquired, it returns nil.
@@ -59,7 +64,7 @@ func StartBackgroundOnce(commandName string, createCommand CreateCommand) error 
 		return err
 	}
 
-	return startCommand(cmd, commandName, paths.pidFile, paths.streamsFile)
+	return startCommand(cmd, paths.pidFile, paths.streamsFile)
 }
 
 type processPaths struct {
@@ -98,31 +103,44 @@ func StartBackground(commandName string, createCommand CreateCommand) error {
 		return err
 	}
 
-	return startDetached(cmd, commandName, "", streamsFile)
+	return startDetached(cmd, "", streamsFile)
 }
 
-func startCommand(cmd *exec.Cmd, commandName, pidFile, streamsFile string) error {
-	return startDetached(cmd, commandName, pidFile, streamsFile)
+// StartSupervisedBackground starts a detached worker with an owned process
+// tree and publishes its reference before the launch is considered complete.
+func StartSupervisedBackground(opts SupervisedStartOptions, createCommand CreateCommand) error {
+	if opts.Name == "" {
+		return errors.New("supervised process name is required")
+	}
+	if opts.OnStarted == nil {
+		return errors.New("supervised process publication callback is required")
+	}
+	streamsFile, err := config.DefaultPathManager().ProcessStreamsFile(opts.Name)
+	if err != nil {
+		return fmt.Errorf("process streams file: %w", err)
+	}
+	cmd, err := createCommand()
+	if err != nil {
+		return err
+	}
+	return startSupervisedDetached(cmd, opts, streamsFile)
 }
 
-func startDetached(cmd *exec.Cmd, commandName, pidFile, streamsFile string) error {
+func startCommand(cmd *exec.Cmd, pidFile, streamsFile string) error {
+	return startDetached(cmd, pidFile, streamsFile)
+}
+
+func startDetached(cmd *exec.Cmd, pidFile, streamsFile string) error {
 	streamsF, err := openStreamsFile(cmd, streamsFile)
 	if err != nil {
 		return err
 	}
 
-	prepareBackgroundTree(cmd)
 	if err := cmd.Start(); err != nil {
 		closeFile(streamsF)
 		return fmt.Errorf("start process: %w", err)
 	}
 	closeFile(streamsF)
-
-	if err := ownProcessTree(cmd.Process.Pid, commandName); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return fmt.Errorf("assign process tree ownership for pid %d: %w", cmd.Process.Pid, err)
-	}
 
 	if pidFile != "" {
 		if err := os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
@@ -132,17 +150,47 @@ func startDetached(cmd *exec.Cmd, commandName, pidFile, streamsFile string) erro
 		}
 	}
 
-	if err := resumeBackgroundTree(cmd.Process.Pid); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		if pidFile != "" {
-			_ = os.Remove(pidFile)
-		}
-		return fmt.Errorf("resume process %d: %w", cmd.Process.Pid, err)
-	}
-
 	_ = cmd.Process.Release()
 
+	return nil
+}
+
+func startSupervisedDetached(cmd *exec.Cmd, opts SupervisedStartOptions, streamsFile string) error {
+	streamsF, err := openStreamsFile(cmd, streamsFile)
+	if err != nil {
+		return err
+	}
+	prepareBackgroundTree(cmd)
+	if err := cmd.Start(); err != nil {
+		closeFile(streamsF)
+		return fmt.Errorf("start process: %w", err)
+	}
+	closeFile(streamsF)
+	pid := cmd.Process.Pid
+	cleanup := func() {
+		_ = abortSupervisedLaunch(pid, opts.Name)
+		_ = cmd.Wait()
+	}
+	if err := ownProcessTree(pid, opts.Name); err != nil {
+		cleanup()
+		return fmt.Errorf("assign process tree ownership for pid %d: %w", pid, err)
+	}
+	ref, err := processRefForStartedProcess(pid, opts.Name)
+	if err != nil {
+		cleanup()
+		return fmt.Errorf("capture process reference for pid %d: %w", pid, err)
+	}
+	if err := opts.OnStarted(ref); err != nil {
+		_ = terminateProcessRef(ref)
+		cleanup()
+		return fmt.Errorf("publish process reference for pid %d: %w", pid, err)
+	}
+	if err := resumeBackgroundTree(pid); err != nil {
+		_ = terminateProcessRef(ref)
+		cleanup()
+		return fmt.Errorf("resume process %d: %w", pid, err)
+	}
+	_ = cmd.Process.Release()
 	return nil
 }
 

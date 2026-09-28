@@ -188,19 +188,26 @@ func TestIsRunningRecognizesExitCode259AsExited(t *testing.T) {
 	}
 }
 
-func TestStartDetachedAssignsWorkerToJobBeforeItRuns(t *testing.T) {
+func TestStartSupervisedBackgroundAssignsWorkerToJobBeforeItRuns(t *testing.T) {
 	dir := t.TempDir()
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+	t.Setenv(config.EnvHome, dir)
 	jobName := "devsy-test-suspended-worker"
 	jobResult := filepath.Join(dir, "in-job")
-	pidFile := filepath.Join(dir, "worker.pid")
 	cmd := exec.Command(os.Args[0], "-test.run", "TestHelperProcess")
 	cmd.Env = helperEnv(helperEnvMarker+"=1", helperEnvCheckJob+"="+jobResult)
-
-	if err := startDetached(cmd, jobName, pidFile, filepath.Join(dir, "streams")); err != nil {
-		t.Fatalf("startDetached: %v", err)
+	var ref ProcessRef
+	if err := startSupervisedDetached(cmd, SupervisedStartOptions{
+		Name: jobName,
+		OnStarted: func(process ProcessRef) error {
+			ref = process
+			return nil
+		},
+	}, filepath.Join(dir, "streams")); err != nil {
+		t.Fatalf("startSupervisedDetached: %v", err)
 	}
-	pid := waitForPIDFile(t, pidFile)
-	t.Cleanup(func() { _ = KillTree(strconv.Itoa(pid), jobName) })
+	t.Cleanup(func() { _ = DefaultProcessController().Terminate(ref) })
 	job, found, err := openWorkerJob(jobName)
 	if err != nil || !found {
 		t.Fatalf("open worker job after launcher exit: found=%t, err=%v", found, err)
@@ -595,15 +602,21 @@ func TestKillTerminatesOrphanedGrandchildViaJobObject(t *testing.T) {
 		helperEnvChildPIDFile+"="+grandchildPIDFile,
 		helperEnvExitAfterSpawn+"=1",
 	)
-	if err := startDetached(
+	var ref ProcessRef
+	if err := startSupervisedDetached(
 		parent,
-		"devsy-test-worker",
-		parentPIDFile,
+		SupervisedStartOptions{
+			Name: "devsy-test-worker",
+			OnStarted: func(process ProcessRef) error {
+				ref = process
+				return os.WriteFile(parentPIDFile, []byte(strconv.Itoa(process.PID)), 0o600)
+			},
+		},
 		filepath.Join(dir, "streams"),
 	); err != nil {
-		t.Fatalf("startDetached: %v", err)
+		t.Fatalf("startSupervisedDetached: %v", err)
 	}
-	parentPID := waitForPIDFile(t, parentPIDFile)
+	parentPID := ref.PID
 	identity, err := ProcessTreeIdentity(parentPID)
 	if err != nil {
 		t.Fatalf("ProcessTreeIdentity: %v", err)

@@ -116,10 +116,20 @@ tasks:
         host_os="$(go env GOOS)"
         host_arch="$(go env GOARCH)"
         host_binary="devsy-${host_os}-${host_arch}"
-        host_dir="dist/devsy-dev_${host_os}_${host_arch}_v1"
         if [ "$host_os" = "windows" ]; then
           host_binary="${host_binary}.exe"
         fi
+        host_dir=""
+        for candidate in dist/devsy-dev_${host_os}_${host_arch}_*; do
+          if [ -d "$candidate" ]; then
+            if [ -n "$host_dir" ]; then
+              echo "multiple host build directories match ${host_os}/${host_arch}" >&2
+              exit 1
+            fi
+            host_dir="$candidate"
+          fi
+        done
+        test -n "$host_dir"
         test -f "${host_dir}/${host_binary}"
         cp "${host_dir}/${host_binary}" "e2e/bin/${host_binary}"
 

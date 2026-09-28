@@ -28,16 +28,91 @@ func isRunning(pid string) (bool, error) {
 
 	err = process.Signal(syscall.Signal(0))
 	if err != nil {
-		if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
+		if isExitOrPerm(err) || errors.Is(err, os.ErrProcessDone) {
 			return false, nil
-		}
-		if errors.Is(err, syscall.EPERM) {
-			return true, nil
 		}
 		return false, fmt.Errorf("check process %d: %w", parsedPid, err)
 	}
 
 	return true, nil
+}
+
+func processRefForStartedProcess(pid int, _ string) (ProcessRef, error) {
+	identity, err := processTreeIdentity(pid)
+	if err != nil {
+		if !strongProcessIdentitySupported {
+			identity = ""
+		} else {
+			return ProcessRef{}, err
+		}
+	}
+	return ProcessRef{
+		PID:      pid,
+		TreeKind: ProcessTreeUnixGroup,
+		TreeID:   strconv.Itoa(pid),
+		Identity: identity,
+	}, nil
+}
+
+func terminateProcessRef(ref ProcessRef) error {
+	if ref.PID <= 0 {
+		return fmt.Errorf("invalid worker PID %d", ref.PID)
+	}
+	if ref.TreeKind == ProcessTreeLegacyPID {
+		if ref.Identity != "" {
+			return killTreeWithIdentity(strconv.Itoa(ref.PID), ref.TreeID, ref.Identity)
+		}
+		return terminateWeakProcessGroup(ref.PID)
+	}
+	if ref.TreeKind != ProcessTreeUnixGroup {
+		return fmt.Errorf("unsupported Unix process tree kind %q", ref.TreeKind)
+	}
+	groupID := ref.TreeID
+	if groupID == "" {
+		groupID = strconv.Itoa(ref.PID)
+	}
+	if ref.Identity != "" {
+		return killTreeWithIdentity(groupID, "detached-task", ref.Identity)
+	}
+	return terminateWeakProcessGroup(ref.PID)
+}
+
+func terminateWeakProcessGroup(pid int) error {
+	running, err := isRunning(strconv.Itoa(pid))
+	if err != nil || !running {
+		return err
+	}
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil && !isExitOrPerm(err) {
+		return fmt.Errorf("send SIGTERM to worker group %d: %w", pid, err)
+	}
+	return nil
+}
+
+func cleanupExitedProcessRef(ref ProcessRef) error {
+	if ref.TreeKind == ProcessTreeLegacyPID {
+		if ref.Identity == "" {
+			return nil
+		}
+		return killTreeAfterWorkerExit(strconv.Itoa(ref.PID), ref.TreeID, ref.Identity)
+	}
+	if ref.TreeKind != ProcessTreeUnixGroup || ref.Identity == "" {
+		return nil
+	}
+	groupID := ref.TreeID
+	if groupID == "" {
+		groupID = strconv.Itoa(ref.PID)
+	}
+	return killTreeAfterWorkerExit(groupID, "detached-task", ref.Identity)
+}
+
+func abortSupervisedLaunch(pid int, _ string) error {
+	for _, target := range []int{-pid, pid} {
+		if err := syscall.Kill(target, syscall.SIGKILL); err != nil &&
+			!isExitOrPerm(err) {
+			return fmt.Errorf("terminate uncommitted worker %d: %w", pid, err)
+		}
+	}
+	return nil
 }
 
 // Detached workers use a session identity to distinguish their group after the leader exits.
@@ -156,9 +231,13 @@ func checkUnidentifiedProcessGroup(pid int, treeName string) error {
 	)
 }
 
+func isExitOrPerm(err error) bool {
+	return err != nil && (errors.Is(err, syscall.ESRCH) || errors.Is(err, syscall.EPERM))
+}
+
 func signalProcessTree(target int, graceful bool, identity string) error {
 	if err := syscall.Kill(target, syscall.SIGTERM); err != nil {
-		if errors.Is(err, syscall.ESRCH) {
+		if isExitOrPerm(err) {
 			return nil // already exited
 		}
 		return fmt.Errorf("send SIGTERM to process target %d: %w", target, err)
@@ -174,7 +253,7 @@ func signalProcessTree(target int, graceful bool, identity string) error {
 		return nil
 	}
 	err = syscall.Kill(target, syscall.SIGKILL)
-	if err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err != nil && !isExitOrPerm(err) {
 		return fmt.Errorf("send SIGKILL to process target %d: %w", target, err)
 	}
 	return nil

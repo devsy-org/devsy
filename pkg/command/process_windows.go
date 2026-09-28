@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const strongProcessIdentitySupported = true
+
 func isRunning(pid string) (bool, error) {
 	parsed, err := parsePID(pid)
 	if err != nil {
@@ -45,6 +47,91 @@ func isRunning(pid string) (bool, error) {
 			event,
 		)
 	}
+}
+
+func processRefForStartedProcess(pid int, workerName string) (ProcessRef, error) {
+	jobID, err := jobNameFor(workerName)
+	if err != nil {
+		return ProcessRef{}, err
+	}
+	identity, err := processTreeIdentity(pid)
+	if err != nil {
+		return ProcessRef{}, err
+	}
+	return ProcessRef{
+		PID:      pid,
+		TreeKind: ProcessTreeWindowsJob,
+		TreeID:   jobID,
+		Identity: identity,
+	}, nil
+}
+
+func terminateProcessRef(ref ProcessRef) error {
+	if ref.TreeKind == ProcessTreeWindowsJob {
+		terminated, err := terminateNamedJob(ref.TreeID)
+		if err != nil {
+			return err
+		}
+		if terminated {
+			return nil
+		}
+		running, err := isRunning(strconv.Itoa(ref.PID))
+		if err != nil {
+			return err
+		}
+		if !running {
+			return nil
+		}
+		return fmt.Errorf(
+			"worker job %s is unavailable while process %d is running",
+			ref.TreeID,
+			ref.PID,
+		)
+	}
+	if ref.TreeKind == ProcessTreeLegacyPID {
+		pid := strconv.Itoa(ref.PID)
+		if ref.Identity != "" {
+			return killTreeWithIdentity(pid, ref.TreeID, ref.Identity)
+		}
+		return killTree(pid, ref.TreeID)
+	}
+	return fmt.Errorf("unsupported Windows process tree kind %q", ref.TreeKind)
+}
+
+func cleanupExitedProcessRef(ref ProcessRef) error {
+	if ref.TreeKind == ProcessTreeWindowsJob {
+		terminated, err := terminateNamedJob(ref.TreeID)
+		if err != nil || terminated {
+			return err
+		}
+		running, err := isRunning(strconv.Itoa(ref.PID))
+		if err != nil {
+			return err
+		}
+		if running {
+			return fmt.Errorf(
+				"worker job %s is unavailable while process %d is running",
+				ref.TreeID,
+				ref.PID,
+			)
+		}
+		return nil
+	}
+	if ref.TreeKind == ProcessTreeLegacyPID && ref.Identity != "" {
+		return killTreeAfterWorkerExit(strconv.Itoa(ref.PID), ref.TreeID, ref.Identity)
+	}
+	return nil
+}
+
+func abortSupervisedLaunch(pid int, workerName string) error {
+	terminated, err := terminateJobForPID(workerName, pid)
+	if err != nil {
+		return err
+	}
+	if terminated {
+		return nil
+	}
+	return killTree(strconv.Itoa(pid), "")
 }
 
 func killTree(pid, treeName string) error {

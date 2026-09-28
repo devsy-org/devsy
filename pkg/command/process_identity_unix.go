@@ -4,8 +4,10 @@ package command
 
 import "errors"
 
+const strongProcessIdentitySupported = false
+
 func processTreeIdentity(_ int) (string, error) {
-	return "", errors.New("process tree identity is implemented on Linux, macOS, and Windows")
+	return "", nil
 }
 
 func processGroupMatchesIdentity(_ int, _ string) (bool, error) {
