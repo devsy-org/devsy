@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -189,6 +190,53 @@ func TestDeleteKeepsAbandonedTaskWhenTreeCleanupFails(t *testing.T) {
 		_, err := store.Get(tk.ID())
 		require.NoError(t, err)
 	}
+}
+
+func TestCleanupCanceledWorkerTreeReapsLegacyLiveWorker(t *testing.T) {
+	store := newTestStore(t)
+	tk := createTaskWith(t, store, CreateOptions{Command: "up", WorkspaceID: workspaceOne})
+	ref := command.ProcessRef{PID: 4242, TreeKind: command.ProcessTreeLegacyPID}
+	require.NoError(t, tk.SetProcess(ref))
+	require.NoError(t, tk.HoldWorkerLock())
+	t.Cleanup(func() { _ = tk.ReleaseWorkerLock() })
+	require.NoError(t, tk.Fail(ErrCanceled))
+	terminated := 0
+	store.processController = fakeProcessController{
+		terminate: func(got command.ProcessRef) error {
+			require.Equal(t, ref, got)
+			terminated++
+			return tk.ReleaseWorkerLock()
+		},
+		cleanup: func(command.ProcessRef) error {
+			t.Fatal("identityless live tree was cleaned without a verified termination")
+			return nil
+		},
+	}
+	require.NoError(t, store.CleanupCanceledWorkerTree(context.Background(), tk.ID()))
+	require.NoError(t, store.CleanupCanceledWorkerTree(context.Background(), tk.ID()))
+	require.Equal(t, 1, terminated)
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.True(t, state.ProcessCleanupComplete)
+}
+
+func TestCleanupCanceledWorkerTreeDoesNotClearUnverifiedLegacyRecord(t *testing.T) {
+	store := newTestStore(t)
+	tk := deadWorkerWithProcess(t, store,
+		CreateOptions{Command: "up", WorkspaceID: workspaceOne},
+		command.ProcessRef{PID: 4242, TreeKind: command.ProcessTreeLegacyPID},
+	)
+	require.NoError(t, tk.Fail(ErrCanceled))
+	store.processController = fakeProcessController{
+		cleanup: func(command.ProcessRef) error { return errors.New("cannot verify descendants") },
+	}
+	require.ErrorContains(t,
+		store.CleanupCanceledWorkerTree(context.Background(), tk.ID()),
+		"cannot verify descendants",
+	)
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.False(t, state.ProcessCleanupComplete)
 }
 
 func TestActiveForWorkspaceFilters(t *testing.T) {

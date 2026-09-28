@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/command"
@@ -116,6 +117,24 @@ func TestQuiesceUpTasksCleansTerminalTaskTreeInsteadOfCancelling(t *testing.T) {
 	))
 
 	assert.Empty(t, cancelled, "a terminal task must not be cancelled again")
+}
+
+func TestQuiesceUpTasksCleansWorkerThatBecomesAbandonedDuringCancel(t *testing.T) {
+	store := newTaskStore(t)
+	tk := createUpTask(t, store, "ws-1")
+	ref := command.ProcessRef{PID: 99999999, TreeKind: command.ProcessTreeUnixGroup}
+	if runtime.GOOS == "windows" {
+		ref.TreeKind = command.ProcessTreeWindowsJob
+		ref.TreeID = "devsy-test-missing-job"
+	}
+	require.NoError(t, tk.SetProcess(ref))
+	require.NoError(t, tk.HoldWorkerLock())
+	require.NoError(t, tk.ReleaseWorkerLock())
+	require.NoError(t, quiesceUpTasks(
+		context.Background(), store, "ws-1",
+		func(context.Context, string) error { return tk.Fail(task.ErrAbandoned) },
+	))
+	assert.True(t, taskState(t, store, tk.ID()).ProcessCleanupComplete)
 }
 
 func TestQuiesceUpTasksBoundsEachCancellation(t *testing.T) {

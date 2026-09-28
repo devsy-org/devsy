@@ -268,14 +268,29 @@ func TestKillInvalidPIDReturnsError(t *testing.T) {
 	}
 }
 
-func TestTerminateWeakProcessGroupEndsSigtermIgnoringGroup(t *testing.T) {
+func TestTerminateUnidentifiedProcessGroup(t *testing.T) {
 	cmd := startSigtermIgnoringGroup(t)
 	pid := cmd.Process.Pid
-	if err := terminateWeakProcessGroup(pid); err != nil {
-		t.Fatalf("terminateWeakProcessGroup: %v", err)
+	ref := ProcessRef{PID: pid, TreeKind: ProcessTreeLegacyPID}
+	err := terminateProcessRef(ref)
+	if !strongProcessIdentitySupported {
+		if err == nil {
+			t.Fatal("identityless platform signaled a group it could not verify")
+		}
+		if running, _ := isRunning(strconv.Itoa(pid)); !running {
+			t.Fatal("identityless platform terminated an unidentified worker")
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("terminateProcessRef: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for processGroupExists(pid) && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
 	}
 	if processGroupExists(pid) {
-		t.Errorf("worker group %d still has processes after termination", pid)
+		t.Fatalf("worker group %d still has processes after termination", pid)
 	}
 }
 

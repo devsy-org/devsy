@@ -124,6 +124,16 @@ func (s *State) NeedsExitedWorkerCleanup() bool {
 	return ok
 }
 
+// NeedsCanceledWorkerCleanup includes records written by versions that marked
+// cancellation complete before the worker tree was actually terminated.
+func (s *State) NeedsCanceledWorkerCleanup() bool {
+	if !s.Canceled() || s.ProcessCleanupComplete {
+		return false
+	}
+	_, ok := s.ProcessReference()
+	return ok
+}
+
 func (t *Task) BeginLaunch() error {
 	launcherLock, available, err := t.store.tryLauncherLock(t.id)
 	if err != nil {
@@ -281,10 +291,15 @@ func (t *Task) CancelContext(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if state.Status.Terminal() {
-		return nil
+	if !state.Status.Terminal() {
+		if err := quiesceCancellation(t, ctx); err != nil {
+			return err
+		}
 	}
-	return quiesceCancellation(t, ctx)
+	if err := t.store.CleanupCanceledWorkerTree(ctx, t.id); err != nil {
+		return err
+	}
+	return t.store.CleanupExitedWorkerTree(t.id)
 }
 
 func quiesceCancellation(t *Task, ctx context.Context) error {
@@ -540,6 +555,7 @@ func (t *Task) finalizeCanceled() error {
 		if !state.Status.Terminal() && state.CancelRequested {
 			markCanceled(state)
 			state.LaunchPending = false
+			state.ProcessCleanupComplete = true
 		}
 	})
 }

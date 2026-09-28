@@ -41,7 +41,8 @@ func quiesceUpTasks(
 	var errs []error
 	handled := 0
 	for _, state := range states {
-		if state.Status.Terminal() && !state.NeedsExitedWorkerCleanup() {
+		if state.Status.Terminal() && !state.NeedsExitedWorkerCleanup() &&
+			!state.NeedsCanceledWorkerCleanup() {
 			continue
 		}
 		taskCtx, cancel := context.WithTimeout(ctx, upTaskCancellationTimeout)
@@ -73,9 +74,14 @@ func quiesceTask(
 	cancelTask func(ctx context.Context, id string) error,
 ) error {
 	if !state.Status.Terminal() {
-		return cancelTask(ctx, state.ID)
+		if err := cancelTask(ctx, state.ID); err != nil {
+			return err
+		}
 	}
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := store.CleanupCanceledWorkerTree(ctx, state.ID); err != nil {
 		return err
 	}
 	return store.CleanupExitedWorkerTree(state.ID)

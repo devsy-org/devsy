@@ -12,12 +12,6 @@ import (
 	"time"
 )
 
-const (
-	weakGroupGracePeriod  = 2 * time.Second
-	weakGroupExitTimeout  = 5 * time.Second
-	weakGroupPollInterval = 100 * time.Millisecond
-)
-
 func isRunning(pid string) (bool, error) {
 	parsedPid, err := strconv.Atoi(pid)
 	if err != nil {
@@ -71,7 +65,7 @@ func terminateProcessRef(ref ProcessRef) error {
 		if ref.Identity != "" {
 			return killTreeWithIdentity(strconv.Itoa(ref.PID), ref.TreeID, ref.Identity)
 		}
-		return terminateWeakProcessGroup(ref.PID)
+		return terminateUnidentifiedProcessGroup(ref.PID, strconv.Itoa(ref.PID))
 	}
 	if ref.TreeKind != ProcessTreeUnixGroup {
 		return fmt.Errorf("unsupported Unix process tree kind %q", ref.TreeKind)
@@ -83,29 +77,41 @@ func terminateProcessRef(ref ProcessRef) error {
 	if ref.Identity != "" {
 		return killTreeWithIdentity(groupID, "detached-task", ref.Identity)
 	}
-	return terminateWeakProcessGroup(ref.PID)
+	return terminateUnidentifiedProcessGroup(ref.PID, groupID)
 }
 
-func terminateWeakProcessGroup(pid int) error {
-	if err := signalWeakProcessGroup(pid, syscall.SIGTERM); err != nil {
+func terminateUnidentifiedProcessGroup(pid int, groupID string) error {
+	if !strongProcessIdentitySupported {
+		return fmt.Errorf("cannot terminate worker group %d without process identity", pid)
+	}
+	identity, err := processTreeIdentity(pid)
+	if err != nil {
+		return fmt.Errorf("read process identity for worker %d: %w", pid, err)
+	}
+	if identity == "" {
+		return terminateUnidentifiedExitedGroup(pid)
+	}
+	if err := killTreeWithIdentity(groupID, "detached-task", identity); err != nil {
 		return err
 	}
-	if processGroupExists(pid) {
-		time.Sleep(weakGroupGracePeriod)
-	}
-	if processGroupExists(pid) {
-		if err := signalWeakProcessGroup(pid, syscall.SIGKILL); err != nil {
-			return err
-		}
-	}
-	return waitForProcessGroupExit(pid)
+	return waitForUnidentifiedGroupExit(pid, identity)
 }
 
-func signalWeakProcessGroup(pid int, signal syscall.Signal) error {
-	if err := syscall.Kill(-pid, signal); err != nil && !isProcessGone(err) {
-		return fmt.Errorf("send %s to worker group %d: %w", signal, pid, err)
+func waitForUnidentifiedGroupExit(pid int, identity string) error {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		matches, err := processGroupMatchesIdentity(pid, identity)
+		if err != nil {
+			return fmt.Errorf("verify worker group %d after termination: %w", pid, err)
+		}
+		if !matches {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("worker group %d still has processes after termination", pid)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	return nil
 }
 
 // A worker whose leader exited may still leave members behind.
@@ -116,17 +122,6 @@ func processGroupExists(pid int) bool {
 	}
 	// EPERM means the group exists but belongs to another user.
 	return true
-}
-
-func waitForProcessGroupExit(pid int) error {
-	deadline := time.Now().Add(weakGroupExitTimeout)
-	for processGroupExists(pid) {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("worker group %d still has processes after termination", pid)
-		}
-		time.Sleep(weakGroupPollInterval)
-	}
-	return nil
 }
 
 func cleanupExitedProcessRef(ref ProcessRef) error {

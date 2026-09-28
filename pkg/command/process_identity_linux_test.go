@@ -105,6 +105,18 @@ func TestLinuxProcessGroupMatchTreatsMissingGroupAsGone(t *testing.T) {
 	}
 }
 
+func TestLinuxProcessGroupFieldsIgnoreExitedMembers(t *testing.T) {
+	wanted := linuxProcessTreeIdentity{sessionID: 7, startTime: 42}
+	for _, state := range []string{"Z", "X"} {
+		member, mismatch, err := linuxProcessGroupFieldsMatch(
+			12, 10, wanted, []string{state, "1", "10", "7"},
+		)
+		if err != nil || member || mismatch {
+			t.Fatalf("state %s = (%t, %t, %v), want no live member", state, member, mismatch, err)
+		}
+	}
+}
+
 func TestLinuxProcessGroupProbeHelper(t *testing.T) {
 	if os.Getenv("DEVSY_PROCESS_GROUP_HELPER") != "1" {
 		return

@@ -66,10 +66,16 @@ func (s *Store) Open(id string) *Task {
 	return &Task{store: s, id: id}
 }
 
-// Delete errors if the task is still pending or running unless force is set.
+// Delete cleans any unfinished terminal process tree before removing its
+// record. It rejects a non-terminal task unless force is set.
 func (s *Store) Delete(id string, force bool) error {
 	path, err := s.path(id)
 	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.CleanupCanceledWorkerTree(ctx, id); err != nil {
 		return err
 	}
 	if err := s.CleanupExitedWorkerTree(id); err != nil {
@@ -82,7 +88,7 @@ func (s *Store) Delete(id string, force bool) error {
 		if err != nil {
 			return err
 		}
-		if state.NeedsExitedWorkerCleanup() {
+		if state.NeedsExitedWorkerCleanup() || state.NeedsCanceledWorkerCleanup() {
 			return fmt.Errorf("task %s still needs process tree cleanup", id)
 		}
 		if !force {
@@ -210,6 +216,24 @@ func (s *Store) CleanupExitedWorkerTree(id string) error {
 	return s.markProcessCleanupComplete(id)
 }
 
+// CleanupCanceledWorkerTree handles records that were marked canceled before
+// their worker tree was terminated. A successful termination of an identityless
+// tree is sufficient only while the worker lock proves it was still live.
+func (s *Store) CleanupCanceledWorkerTree(ctx context.Context, id string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	state, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	if !state.NeedsCanceledWorkerCleanup() {
+		return nil
+	}
+	ref, _ := state.ProcessReference()
+	return s.waitCanceledWorkerCleanup(ctx, id, ref)
+}
+
 func needsStateReconciliation(state *State) bool {
 	return state != nil && !state.Status.Terminal() && !state.CancelRequested &&
 		!state.LaunchPending
@@ -311,6 +335,70 @@ func (s *Store) markProcessCleanupComplete(id string) error {
 	return s.update(id, func(state *State) {
 		state.ProcessCleanupComplete = true
 	})
+}
+
+func (s *Store) waitCanceledWorkerCleanup(
+	ctx context.Context,
+	id string,
+	ref command.ProcessRef,
+) error {
+	terminated := false
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		complete, nowTerminated, err := s.cleanupCanceledWorkerTreeStep(id, ref, terminated)
+		if err != nil || complete {
+			return err
+		}
+		terminated = nowTerminated
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Store) cleanupCanceledWorkerTreeStep(
+	id string,
+	ref command.ProcessRef,
+	terminated bool,
+) (complete, nowTerminated bool, err error) {
+	lock, available, err := s.tryWorkerLock(id)
+	if err != nil {
+		return false, terminated, fmt.Errorf("inspect canceled task %s worker lock: %w", id, err)
+	}
+	if available {
+		defer func() { _ = lock.Unlock() }()
+		return true, terminated, s.finishCanceledWorkerCleanup(id, ref, terminated)
+	}
+	if !terminated {
+		if err := s.processController.Terminate(ref); err != nil {
+			return false, false, fmt.Errorf("terminate canceled task %s process tree: %w", id, err)
+		}
+		terminated = true
+	}
+	return false, terminated, nil
+}
+
+func (s *Store) finishCanceledWorkerCleanup(
+	id string,
+	ref command.ProcessRef,
+	terminated bool,
+) error {
+	current, err := s.Get(id)
+	if err != nil || !current.NeedsCanceledWorkerCleanup() {
+		return err
+	}
+	if !terminated || ref.Identity != "" {
+		if err := s.processController.CleanupAfterExit(ref); err != nil {
+			return fmt.Errorf("clean up canceled task %s process tree: %w", id, err)
+		}
+	}
+	return s.markProcessCleanupComplete(id)
 }
 
 func (s *Store) workerObservation(id string) (WorkerObservation, bool, error) {

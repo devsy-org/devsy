@@ -3,6 +3,7 @@
 package command
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,6 +153,48 @@ func TestTerminateLegacyRefWithoutIdentityRefusesForeignProcess(t *testing.T) {
 		t.Fatalf("terminateLegacyRefWithoutIdentity error = %v, want a refusal", err)
 	}
 	assertRunning(t, helper.Process.Pid)
+}
+
+func TestTerminateLegacyRefWithoutIdentityEndsDevsyTree(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(config.EnvHome, dir)
+	source, err := os.Open(os.Args[0]) // #nosec G304 -- current test binary
+	if err != nil {
+		t.Fatalf("open test binary: %v", err)
+	}
+	defer func() { _ = source.Close() }()
+	path := filepath.Join(dir, "devsy.exe")
+	target, err := os.Create(path) // #nosec G304 -- test-controlled path
+	if err != nil {
+		t.Fatalf("create Devsy test binary: %v", err)
+	}
+	if _, err := io.Copy(target, source); err != nil {
+		t.Fatalf("copy Devsy test binary: %v", err)
+	}
+	if err := target.Close(); err != nil {
+		t.Fatalf("close Devsy test binary: %v", err)
+	}
+	childPIDFile := filepath.Join(dir, "child.pid")
+	worker := exec.Command(path, "-test.run", "TestHelperProcess")
+	worker.Env = helperEnv(helperEnvMarker+"=1", helperEnvPIDFile+"="+childPIDFile)
+	if err := worker.Start(); err != nil {
+		t.Fatalf("start legacy Devsy worker: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = worker.Process.Kill()
+		_ = worker.Wait()
+	})
+	childPID := waitForPIDFile(t, childPIDFile)
+	ref := ProcessRef{
+		PID:      worker.Process.Pid,
+		TreeKind: ProcessTreeLegacyPID,
+		TreeID:   "devsy-up-abcdefghijkl",
+	}
+	if err := terminateLegacyRefWithoutIdentity(ref); err != nil {
+		t.Fatalf("terminate legacy Devsy worker: %v", err)
+	}
+	assertNotRunningEventually(t, worker.Process.Pid)
+	assertNotRunningEventually(t, childPID)
 }
 
 func TestCleanupExitedLegacyRefWithoutIdentityFailsClosed(t *testing.T) {

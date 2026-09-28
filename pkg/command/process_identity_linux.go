@@ -201,6 +201,9 @@ func linuxProcessGroupFieldsMatch(
 			return false, true, nil
 		}
 	}
+	if fields[0] == "Z" || fields[0] == "X" {
+		return false, false, nil
+	}
 	return sessionID == wanted.sessionID, false, nil
 }
 

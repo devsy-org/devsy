@@ -144,7 +144,22 @@ func terminateLegacyRefWithoutIdentity(ref ProcessRef) error {
 			config.RepoName,
 		)
 	}
-	return killTree(strconv.Itoa(ref.PID), ref.TreeID)
+	terminated, err := terminateJobForPID(ref.TreeID, ref.PID)
+	if err != nil {
+		return err
+	}
+	if terminated {
+		return nil
+	}
+	cmd := exec.Command("taskkill", "/PID", strconv.Itoa(ref.PID), "/T", "/F")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf(
+			"taskkill /PID %d /T /F: %w: %s",
+			ref.PID, err, truncateOutput(string(output)),
+		)
+	}
+	return verifyTerminated(ref.PID)
 }
 
 func isDevsyImage(image string) bool {
