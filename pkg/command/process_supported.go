@@ -132,12 +132,23 @@ func killTree(pid, treeName string) error {
 		return fmt.Errorf("read process tree identity for worker %d: %w", parsedPid, err)
 	}
 	if identity == "" {
-		if treeName == "" {
-			return nil
-		}
-		return checkUnidentifiedProcessGroup(parsedPid, treeName)
+		return killUnidentifiedTree(parsedPid, treeName)
 	}
+
 	return killTreeWithIdentity(pid, treeName, identity)
+}
+
+func killUnidentifiedTree(parsedPid int, treeName string) error {
+	if !strongProcessIdentitySupported && treeName == "" {
+		if err := syscall.Kill(parsedPid, syscall.SIGTERM); err != nil && !isProcessGone(err) {
+			return fmt.Errorf("send SIGTERM to process %d: %w", parsedPid, err)
+		}
+		return nil
+	}
+	if treeName == "" {
+		return nil
+	}
+	return checkUnidentifiedProcessGroup(parsedPid, treeName)
 }
 
 func killTreeWithIdentity(pid, treeName, identity string) error {

@@ -75,7 +75,7 @@ func terminateProcessRef(ref ProcessRef) error {
 		if terminated {
 			return nil
 		}
-		running, err := isRunning(strconv.Itoa(ref.PID))
+		running, err := savedWorkerRunning(ref)
 		if err != nil {
 			return err
 		}
@@ -98,13 +98,24 @@ func terminateProcessRef(ref ProcessRef) error {
 	return fmt.Errorf("unsupported Windows process tree kind %q", ref.TreeKind)
 }
 
+func savedWorkerRunning(ref ProcessRef) (bool, error) {
+	current, err := processTreeIdentity(ref.PID)
+	if err != nil {
+		return false, err
+	}
+	if current == "" || (ref.Identity != "" && current != ref.Identity) {
+		return false, nil
+	}
+	return isRunning(strconv.Itoa(ref.PID))
+}
+
 func cleanupExitedProcessRef(ref ProcessRef) error {
 	if ref.TreeKind == ProcessTreeWindowsJob {
 		terminated, err := terminateNamedJob(ref.TreeID)
 		if err != nil || terminated {
 			return err
 		}
-		running, err := isRunning(strconv.Itoa(ref.PID))
+		running, err := savedWorkerRunning(ref)
 		if err != nil {
 			return err
 		}
