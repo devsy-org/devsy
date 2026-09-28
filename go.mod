@@ -51,7 +51,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.43.0
 	github.com/pkg/sftp v1.13.11
-	github.com/posthog/posthog-go v1.22.0
+	github.com/posthog/posthog-go v1.24.3
 	github.com/shirou/gopsutil/v4 v4.26.7
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/spf13/cobra v1.10.2
