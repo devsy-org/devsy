@@ -23,12 +23,10 @@ func TestStartSuite(t *testing.T) {
 	suite.Run(t, new(startSuite))
 }
 
-// hasArg reports whether args contains the exact value.
 func hasArg(args []string, want string) bool {
 	return slices.Contains(args, want)
 }
 
-// hasFlagValue reports whether args contains want immediately after flag.
 func hasFlagValue(args []string, flag, want string) bool {
 	for i, arg := range args {
 		if arg == flag && i+1 < len(args) && args[i+1] == want {
@@ -38,7 +36,6 @@ func hasFlagValue(args []string, flag, want string) bool {
 	return false
 }
 
-// hasSet reports whether args contains "--set" followed by want.
 func hasSet(args []string, want string) bool {
 	return hasFlagValue(args, "--set", want)
 }
@@ -59,7 +56,6 @@ func (s *startSuite) TestAppendHostArgsNoTunnelDisablesRouter() {
 	s.False(hasSet(args, "ingress.enabled=true"), "args: %v", args)
 }
 
-// A host enables ingress, pins the apex domain, and routes subdomains.
 func (s *startSuite) TestAppendHostArgsConfiguresIngress() {
 	cmd := &StartCmd{Host: startTestHost}
 	args := cmd.appendHostArgs(nil)
@@ -99,8 +95,7 @@ func (s *startSuite) TestAppendReleaseArgsVersionAndProduct() {
 	s.True(hasSet(args, "product=loft"), "args: %v", args)
 }
 
-// Reuse-values is only meaningful when not resetting, since a reset discards
-// the previous release values.
+// A reset discards previous release values, so reuse-values is meaningless.
 func (s *startSuite) TestAppendReleaseArgsReuseValuesRespectsReset() {
 	reusing := &StartCmd{ReuseValues: true}
 	s.True(hasArg(reusing.appendReleaseArgs(nil), "--reuse-values"))
@@ -119,7 +114,7 @@ func (s *startSuite) TestWritePasswordValuesFileContents() {
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = os.Remove(name) })
 
-	data, err := os.ReadFile(name) //nolint:gosec // test reads a temp file it just created
+	data, err := os.ReadFile(name) //nolint:gosec // test temp file
 	s.Require().NoError(err)
 	s.Equal("admin:\n  password: \"s3cret\"\n", string(data))
 }
@@ -129,7 +124,7 @@ func (s *startSuite) TestWritePasswordValuesFileQuotesAwkwardPasswords() {
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = os.Remove(name) })
 
-	data, err := os.ReadFile(name) //nolint:gosec // test reads a temp file it just created
+	data, err := os.ReadFile(name) //nolint:gosec // test temp file
 	s.Require().NoError(err)
 	// %q escaping keeps the value a single valid YAML scalar.
 	s.Contains(string(data), `password: "a\"b"`)
@@ -170,8 +165,7 @@ func (s *startSuite) TestBuildUpgradeArgsNoPasswordMeansNoValuesFile() {
 	s.False(hasArg(args, "--values"), "args: %v", args)
 }
 
-// A caller-supplied values file is passed as an absolute path, since helm runs
-// with its own working directory.
+// Helm runs with its own working directory, hence the absolute path.
 func (s *startSuite) TestBuildUpgradeArgsAbsolutizesValuesPath() {
 	dir := s.T().TempDir()
 	relative := filepath.Join(dir, "values.yaml")
@@ -259,13 +253,13 @@ func (s *startSuite) TestDeleteIgnoreNotFoundWithNoDeletes() {
 	s.NoError(deleteIgnoreNotFound())
 }
 
-// Guard the shape of the generated values document, since helm consumes it.
+// Helm parses this document, so its exact shape matters.
 func (s *startSuite) TestWritePasswordValuesFileIsValidYAMLShape() {
 	name, err := writePasswordValuesFile("s3cret")
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = os.Remove(name) })
 
-	data, err := os.ReadFile(name) //nolint:gosec // test reads a temp file it just created
+	data, err := os.ReadFile(name) //nolint:gosec // test temp file
 	s.Require().NoError(err)
 
 	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
