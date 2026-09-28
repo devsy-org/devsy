@@ -51,7 +51,6 @@ func (s *versionSuite) TestGetPlatformVersionRejectsMalformedJSON() {
 	s.Contains(err.Error(), "parse")
 }
 
-// The devsy version is normalized to always carry a leading "v".
 func (s *versionSuite) TestGetDevsyVersionAddsMissingVPrefix() {
 	url := s.serve(http.StatusOK, `{"devsyVersion":"0.4.5"}`)
 
@@ -68,8 +67,8 @@ func (s *versionSuite) TestGetDevsyVersionKeepsExistingVPrefix() {
 	s.Equal("v0.4.5", got)
 }
 
-// A platform that reports no devsy version is a provider-version problem, and
-// the error must point the user at --version rather than failing obscurely.
+// The error must point at --version, since a missing devsyVersion is a
+// provider-version problem.
 func (s *versionSuite) TestGetDevsyVersionRequiresDevsyVersion() {
 	url := s.serve(http.StatusOK, `{"version":"1.2.3"}`)
 
@@ -88,8 +87,6 @@ func (s *versionSuite) TestGetDevsyVersionPropagatesFetchError() {
 	s.Contains(err.Error(), "get")
 }
 
-// serve starts a test server that answers /version with the given status and
-// body, and returns its base URL.
 func (s *versionSuite) serve(status int, body string) string {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/version" {

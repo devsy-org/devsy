@@ -16,7 +16,6 @@ func TestProtocolSuite(t *testing.T) {
 	suite.Run(t, new(protocolSuite))
 }
 
-// A data message carries its type byte followed by the payload.
 func (s *protocolSuite) TestDataMessageRoundTrip() {
 	original := newDataMessage(StdoutData, []byte("hello"))
 	encoded := original.Bytes()
@@ -64,7 +63,7 @@ func (s *protocolSuite) TestExitCodeRoundTripNegative() {
 func (s *protocolSuite) TestParseRejectsUnknownMessageType() {
 	_, err := ParseMessage(bytes.NewReader([]byte{99}))
 	s.Require().Error(err)
-	// The type is rendered in binary, matching the production error.
+	// Rendered in binary, matching the production error.
 	s.Contains(err.Error(), "1100011")
 }
 

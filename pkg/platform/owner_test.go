@@ -31,14 +31,13 @@ func (s *ownerSuite) TestIsOwnerRejectsDifferentUser() {
 	s.False(IsOwner(self, &storagev1.UserOrTeam{User: "bob"}))
 }
 
-// Membership in a team the user belongs to grants ownership of that team.
 func (s *ownerSuite) TestIsOwnerMatchesTeamMembership() {
 	self := s.self(s.userInfo(ownerTestUser, ownerTestTeam), nil)
 	s.True(IsOwner(self, &storagev1.UserOrTeam{Team: ownerTestTeam}))
 	s.False(IsOwner(self, &storagev1.UserOrTeam{Team: "other"}))
 }
 
-// The acting team owns its own resources even when the user is not a member.
+// The acting team owns its resources even when the user is not a member.
 func (s *ownerSuite) TestIsOwnerMatchesActingTeam() {
 	self := s.self(
 		s.userInfo(ownerTestUser),
@@ -55,18 +54,14 @@ func (s *ownerSuite) TestIsOwnerHandlesNilInputs() {
 	s.False(IsOwner(nil, nil))
 }
 
-// An empty user name currently matches an empty UserOrTeam, because the
-// comparison is a plain string equality of two empty strings. This is
-// documented rather than asserted as correct: it means a Self that carries no
-// resolved user is treated as owning a subject with no user set. Tightening it
-// is an authorization change and needs its own decision, so this test pins the
-// present behavior to make any change visible.
+// An empty user name matches an empty UserOrTeam, since both sides are empty
+// strings. Tightening this is an authorization change, so the test pins the
+// present behavior rather than asserting it is correct.
 func (s *ownerSuite) TestIsOwnerEmptyNamesCurrentlyMatch() {
 	self := s.self(&managementv1.UserInfo{}, &storagev1.EntityInfo{})
 	s.True(IsOwner(self, &storagev1.UserOrTeam{}))
 
-	// A resolved user name does not match an empty subject, so the match above
-	// is specifically the both-sides-empty case.
+	// A resolved name does not match, so the match above is the both-empty case.
 	named := s.self(s.userInfo(ownerTestUser), nil)
 	s.False(IsOwner(named, &storagev1.UserOrTeam{}))
 }
