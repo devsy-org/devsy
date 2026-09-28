@@ -154,6 +154,25 @@ func TestTerminateLegacyRefWithoutIdentityRefusesForeignProcess(t *testing.T) {
 	assertRunning(t, helper.Process.Pid)
 }
 
+func TestCleanupExitedLegacyRefWithoutIdentityFailsClosed(t *testing.T) {
+	err := cleanupExitedProcessRef(ProcessRef{
+		PID: 4242, TreeKind: ProcessTreeLegacyPID,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot verify descendants") {
+		t.Fatalf("cleanupExitedProcessRef error = %v, want unverifiable descendants", err)
+	}
+}
+
+func TestProcessRefRejectsInvalidPID(t *testing.T) {
+	ref := ProcessRef{TreeKind: ProcessTreeLegacyPID}
+	if err := terminateProcessRef(ref); err == nil {
+		t.Fatal("terminateProcessRef accepted PID zero")
+	}
+	if err := cleanupExitedProcessRef(ref); err == nil {
+		t.Fatal("cleanupExitedProcessRef accepted PID zero")
+	}
+}
+
 func assertNotRunningEventually(t *testing.T, pid int) {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)

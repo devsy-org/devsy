@@ -170,6 +170,27 @@ func TestCleanupExitedWorkerTreeDoesNotReportSuccessWhileLockHeld(t *testing.T) 
 	}
 }
 
+func TestDeleteKeepsAbandonedTaskWhenTreeCleanupFails(t *testing.T) {
+	store := newTestStore(t)
+	tk := deadWorkerWithProcess(t, store,
+		CreateOptions{Command: "up", WorkspaceID: workspaceOne},
+		command.ProcessRef{
+			PID:      4242,
+			TreeKind: command.ProcessTreeUnixGroup,
+			Identity: testProcessIdentity,
+		},
+	)
+	require.NoError(t, tk.Fail(ErrAbandoned))
+	store.processController = fakeProcessController{
+		cleanup: func(command.ProcessRef) error { return errors.New("cleanup failed") },
+	}
+	for _, force := range []bool{false, true} {
+		require.ErrorContains(t, store.Delete(tk.ID(), force), "cleanup failed")
+		_, err := store.Get(tk.ID())
+		require.NoError(t, err)
+	}
+}
+
 func TestActiveForWorkspaceFilters(t *testing.T) {
 	store := newTestStore(t)
 

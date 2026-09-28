@@ -70,6 +70,9 @@ func processRefForStartedProcess(pid int, workerName string) (ProcessRef, error)
 }
 
 func terminateProcessRef(ref ProcessRef) error {
+	if ref.PID <= 0 {
+		return fmt.Errorf("invalid worker PID %d", ref.PID)
+	}
 	if ref.TreeKind == ProcessTreeWindowsJob {
 		terminated, err := terminateNamedJob(ref.TreeID)
 		if err != nil {
@@ -105,12 +108,33 @@ func terminateProcessRef(ref ProcessRef) error {
 // reused PID against, so require a Devsy executable before taskkill takes down
 // a whole tree.
 func terminateLegacyRefWithoutIdentity(ref ProcessRef) error {
-	image, err := processImageName(ref.PID)
+	// Keep the process object open until taskkill returns. Windows cannot reuse
+	// its PID while this handle exists, even if the worker exits meanwhile.
+	handle, err := windows.OpenProcess(
+		windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE,
+		false,
+		uint32(ref.PID),
+	)
+	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("open legacy worker %d: %w", ref.PID, err)
+	}
+	defer func() { _ = windows.CloseHandle(handle) }()
+	result, err := windows.WaitForSingleObject(handle, 0)
+	if err != nil {
+		return fmt.Errorf("check legacy worker %d: %w", ref.PID, err)
+	}
+	if result == windows.WAIT_OBJECT_0 {
+		return nil
+	}
+	if result != uint32(windows.WAIT_TIMEOUT) {
+		return fmt.Errorf("check legacy worker %d: unexpected wait result %#x", ref.PID, result)
+	}
+	image, err := processImageName(handle, ref.PID)
 	if err != nil {
 		return err
-	}
-	if image == "" {
-		return nil
 	}
 	if !isDevsyImage(image) {
 		return fmt.Errorf(
@@ -129,21 +153,7 @@ func isDevsyImage(image string) bool {
 	return name == config.RepoName || strings.HasPrefix(name, config.RepoName+"-")
 }
 
-// processImageName returns an empty string when the process no longer exists.
-func processImageName(pid int) (string, error) {
-	handle, err := windows.OpenProcess(
-		windows.PROCESS_QUERY_LIMITED_INFORMATION,
-		false,
-		uint32(pid),
-	)
-	if err != nil {
-		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
-			return "", nil
-		}
-		return "", fmt.Errorf("open process %d for image name: %w", pid, err)
-	}
-	defer func() { _ = windows.CloseHandle(handle) }()
-
+func processImageName(handle windows.Handle, pid int) (string, error) {
 	const maxPath = 32768
 	buffer := make([]uint16, maxPath)
 	size := uint32(len(buffer))
@@ -165,6 +175,9 @@ func savedWorkerRunning(ref ProcessRef) (bool, error) {
 }
 
 func cleanupExitedProcessRef(ref ProcessRef) error {
+	if ref.PID <= 0 {
+		return fmt.Errorf("invalid worker PID %d", ref.PID)
+	}
 	if ref.TreeKind == ProcessTreeWindowsJob {
 		terminated, err := terminateNamedJob(ref.TreeID)
 		if err != nil || terminated {
@@ -185,6 +198,12 @@ func cleanupExitedProcessRef(ref ProcessRef) error {
 	}
 	if ref.TreeKind == ProcessTreeLegacyPID && ref.Identity != "" {
 		return killTreeAfterWorkerExit(strconv.Itoa(ref.PID), ref.TreeID, ref.Identity)
+	}
+	if ref.TreeKind == ProcessTreeLegacyPID {
+		return fmt.Errorf(
+			"cannot verify descendants of exited legacy worker %d without a saved process identity",
+			ref.PID,
+		)
 	}
 	return nil
 }

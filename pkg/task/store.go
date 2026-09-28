@@ -72,14 +72,20 @@ func (s *Store) Delete(id string, force bool) error {
 	if err != nil {
 		return err
 	}
+	if err := s.CleanupExitedWorkerTree(id); err != nil {
+		return err
+	}
 	// Locked across the check and the removal so a concurrent update can't
 	// commit its atomic rename after the check and recreate the task.
 	return s.withLock(id, func() error {
+		state, err := s.Get(id)
+		if err != nil {
+			return err
+		}
+		if state.NeedsExitedWorkerCleanup() {
+			return fmt.Errorf("task %s still needs process tree cleanup", id)
+		}
 		if !force {
-			state, err := s.Get(id)
-			if err != nil {
-				return err
-			}
 			if !state.Status.Terminal() {
 				return fmt.Errorf(
 					"task %s is still %s; cancel it first or delete with force",
