@@ -1,9 +1,11 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -92,6 +94,31 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 	if err != nil {
 		return err
 	}
+	resolved, err := cmd.resolveAddSource(ctx, args, providerName)
+	if err != nil {
+		return err
+	}
+	providerName = resolved.name
+
+	names := []string{providerName}
+	if cmd.FromExisting != "" && cmd.FromExisting != providerName {
+		names = append(names, cmd.FromExisting)
+		sort.Strings(names)
+	}
+	for _, name := range names {
+		opLock, lockErr := provider.GetProviderOperationLock(devsyConfig.DefaultContext, name)
+		if lockErr != nil {
+			return fmt.Errorf("get operation lock for %s: %w", name, lockErr)
+		}
+		if lockErr := opLock.Lock(); lockErr != nil {
+			return fmt.Errorf("acquire operation lock for %s: %w", name, lockErr)
+		}
+		defer func() { _ = opLock.Unlock() }()
+	}
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
+	if err != nil {
+		return err
+	}
 
 	var providerConfig *provider.ProviderConfig
 	var options []string
@@ -105,7 +132,8 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 				ctx,
 				devsyConfig,
 				providerName,
-				args,
+				resolved.raw,
+				resolved.source,
 			)
 			return resolveErr
 		},
@@ -131,6 +159,38 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 	)
 }
 
+type resolvedAddSource struct {
+	raw    []byte
+	source *provider.ProviderSource
+	name   string
+}
+
+func (cmd *AddCmd) resolveAddSource(
+	ctx context.Context,
+	args []string,
+	providerName string,
+) (resolvedAddSource, error) {
+	if cmd.FromExisting != "" {
+		return resolvedAddSource{name: providerName}, nil
+	}
+	if len(args) != 1 {
+		return resolvedAddSource{}, fmt.Errorf("specify either a URL or path, " +
+			"e.g. devsy provider add https://path/to/my/provider.yaml")
+	}
+	raw, source, err := provider.ResolveProvider(ctx, args[0])
+	if err != nil {
+		return resolvedAddSource{}, err
+	}
+	if providerName != "" {
+		return resolvedAddSource{raw: raw, source: source, name: providerName}, nil
+	}
+	parsed, err := provider.ParseProvider(bytes.NewReader(raw))
+	if err != nil {
+		return resolvedAddSource{}, err
+	}
+	return resolvedAddSource{raw: raw, source: source, name: parsed.Name}, nil
+}
+
 func validateOptionalProviderName(providerName string) error {
 	if providerName == "" {
 		return nil
@@ -150,7 +210,8 @@ func (cmd *AddCmd) resolveProviderConfig(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	providerName string,
-	args []string,
+	raw []byte,
+	source *provider.ProviderSource,
 ) (*provider.ProviderConfig, []string, error) {
 	if cmd.FromExisting != "" {
 		if devsyConfig.Current() == nil ||
@@ -174,11 +235,12 @@ func (cmd *AddCmd) resolveProviderConfig(
 		), nil
 	}
 
-	if len(args) != 1 {
-		return nil, nil, fmt.Errorf("specify either a URL or path, " +
-			"e.g. devsy provider add https://path/to/my/provider.yaml")
-	}
-	c, err := workspace.AddProvider(ctx, devsyConfig, providerName, args[0])
+	c, err := workspace.AddProviderRaw(ctx, workspace.ProviderParams{
+		DevsyConfig:  devsyConfig,
+		ProviderName: providerName,
+		Raw:          raw,
+		Source:       source,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -192,9 +254,6 @@ func (cmd *AddCmd) useProvider(
 	options []string,
 	reporter status.Reporter,
 ) error {
-	// First add: there are no prior user values to merge, so
-	// DiscardPriorValues is moot. Set it explicitly so future readers
-	// don't wonder whether merging matters here.
 	configureErr := ConfigureProvider(ctx, ProviderOptionsConfig{
 		Provider:           providerConfig,
 		ContextName:        devsyConfig.DefaultContext,
@@ -204,7 +263,7 @@ func (cmd *AddCmd) useProvider(
 		Reporter:           reporter,
 	})
 	if configureErr != nil {
-		devsyConfig, err := config.LoadConfig(cmd.Context, "")
+		devsyConfig, err := config.LoadConfig(devsyConfig.DefaultContext, "")
 		if err != nil {
 			return err
 		}
@@ -217,7 +276,7 @@ func (cmd *AddCmd) useProvider(
 		return fmt.Errorf("configure provider: %w", configureErr)
 	}
 
-	return writeDefaultProvider(cmd.Context, providerConfig.Name)
+	return writeDefaultProvider(devsyConfig.DefaultContext, providerConfig.Name)
 }
 
 // mergeOptions combines user options with existing options, user provided options take precedence.

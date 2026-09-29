@@ -49,8 +49,7 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 			}
 			defer func() { _ = opLock.Unlock() }()
 
-			// Reload config and provider state under the operation lock
-			devsyConfig, err = config.LoadConfig(cmd.Context, cmd.Provider)
+			devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 			if err != nil {
 				return err
 			}

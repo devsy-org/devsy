@@ -80,7 +80,10 @@ func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
 	}
 	defer func() { _ = opLock.Unlock() }()
 
-	devsyConfig, providerWithOptions, err = cmd.loadProvider(args)
+	devsyConfig, providerWithOptions, err = cmd.loadProviderInContext(
+		devsyConfig.DefaultContext,
+		args,
+	)
 	if err != nil {
 		return err
 	}
@@ -110,7 +113,14 @@ func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
 func (cmd *SetCmd) loadProvider(
 	args []string,
 ) (*config.Config, *workspace.ProviderWithOptions, error) {
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	return cmd.loadProviderInContext(cmd.Context, args)
+}
+
+func (cmd *SetCmd) loadProviderInContext(
+	contextName string,
+	args []string,
+) (*config.Config, *workspace.ProviderWithOptions, error) {
+	devsyConfig, err := config.LoadConfig(contextName, cmd.Provider)
 	if err != nil {
 		return nil, nil, err
 	}

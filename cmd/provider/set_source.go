@@ -71,7 +71,7 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 	}
 	defer func() { _ = opLock.Unlock() }()
 
-	devsyConfig, err = config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
 		return err
 	}
@@ -147,7 +147,7 @@ func (cmd *SetSourceCmd) activateProvider(
 				return fmt.Errorf("configure provider: %w", err)
 			}
 
-			return writeDefaultProvider(cmd.Context, providerConfig.Name)
+			return writeDefaultProvider(devsyConfig.DefaultContext, providerConfig.Name)
 		},
 	)
 }

@@ -213,6 +213,18 @@ func CloneProvider(
 		return nil, err
 	}
 	sourceProvider.Config = providerConfig
+	err = config.UpdateConfig(devsyConfig.DefaultContext, "", func(c *config.Config) error {
+		if c.Current().Providers == nil {
+			c.Current().Providers = map[string]*config.ProviderConfig{}
+		}
+		c.Current().Providers[providerConfig.Name] = &config.ProviderConfig{
+			CreationTimestamp: types.Now(),
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("save config: %w", err)
+	}
 
 	return sourceProvider, nil
 }

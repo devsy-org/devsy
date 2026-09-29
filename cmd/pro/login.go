@@ -22,9 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	PROVIDER_BINARY = "PRO_PROVIDER"
-)
+const PROVIDER_BINARY = "PRO_PROVIDER"
 
 // LoginCmd holds the login cmd flags.
 type LoginCmd struct {
@@ -119,12 +117,58 @@ func (cmd *LoginCmd) Run(ctx context.Context, fullURL string) error {
 // prepareProvider applies the login-related config changes.
 // The interactive browser login itself runs unlocked.
 func (cmd *LoginCmd) prepareProvider(ctx context.Context, fullURL string) (*config.Config, error) {
-	devsyConfig, currentInstance, err := cmd.resolveInstance(fullURL)
+	initial, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return nil, err
 	}
+	parsedURL, err := url.Parse(fullURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid url %s: %w", fullURL, err)
+	}
+	loginLock, err := provider.GetProInstanceOperationLock(initial.DefaultContext, parsedURL.Host)
+	if err != nil {
+		return nil, fmt.Errorf("get Pro login lock: %w", err)
+	}
+	if err := loginLock.Lock(); err != nil {
+		return nil, fmt.Errorf("acquire Pro login lock: %w", err)
+	}
+	defer func() { _ = loginLock.Unlock() }()
 
-	return cmd.ensureProvider(ctx, devsyConfig, currentInstance, fullURL)
+	for {
+		devsyConfig, currentInstance, resolveErr := cmd.resolveInstance(
+			fullURL,
+			initial.DefaultContext,
+		)
+		if resolveErr != nil || currentInstance != nil {
+			return devsyConfig, resolveErr
+		}
+		providerName := cmd.Provider
+		opLock, lockErr := provider.GetProviderOperationLock(
+			devsyConfig.DefaultContext,
+			providerName,
+		)
+		if lockErr != nil {
+			return nil, fmt.Errorf("get operation lock: %w", lockErr)
+		}
+		if lockErr := opLock.Lock(); lockErr != nil {
+			return nil, fmt.Errorf("acquire operation lock: %w", lockErr)
+		}
+
+		devsyConfig, currentInstance, resolveErr = cmd.resolveInstance(
+			fullURL,
+			initial.DefaultContext,
+		)
+		if resolveErr != nil || currentInstance != nil || cmd.Provider != providerName {
+			_ = opLock.Unlock()
+			if resolveErr != nil || currentInstance != nil {
+				return devsyConfig, resolveErr
+			}
+			continue
+		}
+		configured, configureErr := cmd.ensureProvider(ctx, devsyConfig, nil, fullURL)
+		_ = opLock.Unlock()
+		return configured, configureErr
+	}
 }
 
 func (cmd *LoginCmd) normalizeURL(fullURL string) (string, error) {
@@ -142,6 +186,7 @@ func (cmd *LoginCmd) normalizeURL(fullURL string) (string, error) {
 
 func (cmd *LoginCmd) resolveInstance(
 	fullURL string,
+	contextName string,
 ) (*config.Config, *provider.ProInstance, error) {
 	parsedURL, err := url.Parse(fullURL)
 	if err != nil {
@@ -149,7 +194,7 @@ func (cmd *LoginCmd) resolveInstance(
 	}
 	host := parsedURL.Host
 
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err := config.LoadConfig(contextName, cmd.Provider)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -159,7 +204,10 @@ func (cmd *LoginCmd) resolveInstance(
 		return nil, nil, err
 	}
 
-	currentInstance := findInstance(proInstances, host)
+	currentInstance, err := findInstance(proInstances, host)
+	if err != nil {
+		return nil, nil, err
+	}
 	if currentInstance != nil {
 		cmd.Provider = currentInstance.Provider
 		return devsyConfig, currentInstance, nil
@@ -172,13 +220,21 @@ func (cmd *LoginCmd) resolveInstance(
 	return devsyConfig, nil, nil
 }
 
-func findInstance(instances []*provider.ProInstance, host string) *provider.ProInstance {
+func findInstance(instances []*provider.ProInstance, host string) (*provider.ProInstance, error) {
+	instanceID := provider.ToProInstanceID(host)
 	for _, inst := range instances {
-		if inst.Host == host {
-			return inst
+		if strings.EqualFold(inst.Host, host) {
+			return inst, nil
+		}
+		if provider.ToProInstanceID(inst.Host) == instanceID {
+			return nil, fmt.Errorf(
+				"pro instance host %q conflicts with existing host %q after normalization",
+				host,
+				inst.Host,
+			)
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (cmd *LoginCmd) resolveNewProviderName(devsyConfig *config.Config, host string) error {

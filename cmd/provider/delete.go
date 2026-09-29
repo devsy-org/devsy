@@ -82,8 +82,7 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 	}
 	defer func() { _ = opLock.Unlock() }()
 
-	// reload config under lock
-	devsyConfig, err = config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
 		return err
 	}

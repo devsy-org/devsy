@@ -70,15 +70,27 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("acquire operation lock: %w", err)
 	}
 	defer func() { _ = opLock.Unlock() }()
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
+	if err != nil {
+		return err
+	}
+	provider, err = workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host)
+	if err != nil {
+		return fmt.Errorf("reload provider: %w", err)
+	}
+	if provider.Source.Internal {
+		return nil
+	}
 
 	providerSource, err := resolveNewProviderSource(devsyConfig, provider.Name, newVersion)
 	if err != nil {
 		return err
 	}
 
-	_, err = workspace.UpdateProvider(ctx, devsyConfig, provider.Name, providerSource)
+	providerName := provider.Name
+	provider, err = workspace.UpdateProvider(ctx, devsyConfig, providerName, providerSource)
 	if err != nil {
-		return fmt.Errorf("update provider %s: %w", provider.Name, err)
+		return fmt.Errorf("update provider %s: %w", providerName, err)
 	}
 
 	// Automated version bump: re-resolve from the new schema's defaults
