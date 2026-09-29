@@ -352,6 +352,13 @@ func (cmd *LoginCmd) loginAndConfigure(
 			return fmt.Errorf("acquire operation lock: %w", err)
 		}
 		defer func() { _ = opLock.Unlock() }()
+		providerConfig, err = provider.LoadProviderConfig(
+			devsyConfig.DefaultContext,
+			cmd.Provider,
+		)
+		if err != nil {
+			return fmt.Errorf("reload provider: %w", err)
+		}
 
 		// Post-login: preserve user values; resolver prunes anything stale.
 		err = providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
