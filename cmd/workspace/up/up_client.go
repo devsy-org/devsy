@@ -349,6 +349,7 @@ func (cmd *UpCmd) applyLifecycleSecrets(
 			cmd.SecretsMount = append(cmd.SecretsMount, req.target+"="+resolved.Value)
 		} else {
 			cmd.SecretsEnv = append(cmd.SecretsEnv, req.target+"="+resolved.Value)
+			cmd.TerminalSecretEnvNames = append(cmd.TerminalSecretEnvNames, req.target)
 		}
 	}
 	return nil

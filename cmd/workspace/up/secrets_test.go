@@ -116,6 +116,21 @@ func TestCollectSecretRequests_Empty(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+func TestApplyLifecycleSecretsMarksEnvTargetsForTerminalSessions(t *testing.T) {
+	cmd := &UpCmd{}
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.Register("local", "local", fixedSource{
+		values:    map[string]string{secretToken: "sentinel-value", secretTLSKey: "mount-sentinel"},
+		sensitive: true,
+	}))
+	err := cmd.applyLifecycleSecrets(context.Background(), []secretRequest{
+		{ref: localRef(secretToken), target: secretToken},
+		{ref: localRef(secretTLSKey), target: secretTLSKey, mount: true},
+	}, resolver)
+	require.NoError(t, err)
+	assert.Equal(t, []string{secretToken}, cmd.TerminalSecretEnvNames)
+}
+
 func TestCollectSecretRequests_InvalidType(t *testing.T) {
 	_, err := collectSecretRequests([]string{"A,type=bogus"}, testConfig(), nil)
 	require.Error(t, err)

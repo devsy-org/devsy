@@ -902,11 +902,17 @@ func (r *runner) withSecretsMount(mounts []*config.Mount) ([]*config.Mount, erro
 	if err != nil {
 		return nil, err
 	}
-	if mount == nil {
-		return mounts, nil
+	if mount != nil {
+		mounts = append(mounts, mount)
 	}
-
-	return append(mounts, mount), nil
+	envMount, err := r.secretsEnvironmentMount()
+	if err != nil {
+		return nil, err
+	}
+	if envMount != nil {
+		mounts = append(mounts, envMount)
+	}
+	return mounts, nil
 }
 
 // Values must never touch a persistent layer, so an unsupported driver is an
@@ -927,6 +933,32 @@ func (r *runner) secretsMount() (*config.Mount, error) {
 		Type:   driver.MountTypeTmpfs,
 		Target: config.SecretsMountDir,
 		Other:  []string{"tmpfs-mode=0755"},
+	}, nil
+}
+
+func (r *runner) secretsEnvironmentMount() (*config.Mount, error) {
+	if r.workspaceConfig == nil || len(r.workspaceConfig.CLIOptions.TerminalSecretEnvNames) == 0 {
+		return nil, nil
+	}
+	return secretsEnvironmentTmpfsMount(
+		true,
+		driver.DriverSupportsMountType(r.driver, driver.MountTypeTmpfs),
+	)
+}
+
+func secretsEnvironmentTmpfsMount(enabled, supported bool) (*config.Mount, error) {
+	if !enabled {
+		return nil, nil
+	}
+	if !supported {
+		return nil, fmt.Errorf(
+			"the current provider does not support securely injecting workspace secrets into terminal sessions",
+		)
+	}
+	return &config.Mount{
+		Type:   driver.MountTypeTmpfs,
+		Target: config.SecretsEnvDir,
+		Other:  []string{"tmpfs-mode=0700"},
 	}, nil
 }
 

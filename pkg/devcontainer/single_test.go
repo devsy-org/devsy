@@ -95,6 +95,22 @@ func TestWorkspaceMountDestination(t *testing.T) { //nolint:funlen // table-driv
 	}
 }
 
+func TestSecretsEnvironmentTmpfsMount(t *testing.T) {
+	mount, err := secretsEnvironmentTmpfsMount(true, true)
+	if err != nil {
+		t.Fatal("create secret environment mount")
+	}
+	if mount == nil || mount.Type != "tmpfs" || mount.Target != config.SecretsEnvDir {
+		t.Error("secret environment mount is not configured for the protected directory")
+	}
+	if _, err := secretsEnvironmentTmpfsMount(true, false); err == nil {
+		t.Error("unsupported tmpfs provider was allowed to store workspace secrets")
+	}
+	if mount, err := secretsEnvironmentTmpfsMount(false, false); err != nil || mount != nil {
+		t.Error("secret-free workspace unexpectedly received a tmpfs mount")
+	}
+}
+
 func TestWithResolvedUser(t *testing.T) {
 	parsed := &config.DevContainerConfig{}
 	parsed.RunArgs = []string{"--cap-add=SYS_PTRACE"}
