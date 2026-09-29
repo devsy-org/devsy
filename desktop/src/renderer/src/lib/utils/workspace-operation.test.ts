@@ -196,6 +196,7 @@ describe("humanPhase", () => {
   it("maps known CLI phases to customer language", () => {
     expect(humanPhase("cloning_repository")).toBe("Cloning repository")
     expect(humanPhase("building_image")).toBe("Building image")
+    expect(humanPhase("preparing_devcontainer")).toBe("Preparing dev container")
     expect(humanPhase("starting_container")).toBe("Starting container")
     expect(humanPhase("injecting_agent")).toBe("Connecting agent")
     expect(humanPhase("stopping_workspace")).toBe("Stopping resources")

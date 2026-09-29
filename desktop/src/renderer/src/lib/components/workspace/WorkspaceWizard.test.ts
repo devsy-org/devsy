@@ -397,13 +397,13 @@ describe("WorkspaceWizard", () => {
     } as CommandProgress)
     await flushAsync()
 
-    await fireEvent.click(getByText("View details"))
+    await fireEvent.click(getByText("View logs"))
     await flushAsync()
     expect(queryByText(/Building workspace/)).not.toBeNull()
     unmount()
   })
 
-  it("shows the current structured operation status while launching", async () => {
+  it("retains structured lifecycle history while launching", async () => {
     providers.set([makeProvider("docker")])
     const { getByText, unmount } = render(WorkspaceWizard, {
       props: { open: true },
@@ -417,22 +417,43 @@ describe("WorkspaceWizard", () => {
     await fireEvent.click(launchBtn)
     await flushAsync()
 
-    expect(document.querySelector('[role="status"]')?.textContent).toContain(
-      "Preparing workspace",
-    )
-
+    statusCallback?.({
+      commandId: "cmd-1",
+      workspaceId: "python",
+      phase: "resolving_config",
+      operationId: "op-1",
+      state: "started",
+    })
+    await flushAsync()
+    statusCallback?.({
+      commandId: "cmd-1",
+      workspaceId: "python",
+      phase: "resolving_config",
+      operationId: "op-1",
+      state: "succeeded",
+      durationMs: 200,
+    })
+    statusCallback?.({
+      commandId: "cmd-1",
+      workspaceId: "python",
+      phase: "preparing_devcontainer",
+      operationId: "op-2",
+      state: "started",
+    })
     statusCallback?.({
       commandId: "cmd-1",
       workspaceId: "python",
       phase: "building_image",
-      step: "Waiting for lock",
+      operationId: "op-3",
+      parentOperationId: "op-2",
       state: "started",
     })
     await flushAsync()
 
-    const region = document.querySelector('[role="status"]')
-    expect(region?.textContent).toContain("Creating")
-    expect(region?.textContent).toContain("Waiting for lock")
+    expect(document.body.textContent).toContain("Resolving configuration")
+    expect(document.body.textContent).toContain("Preparing dev container")
+    expect(document.body.textContent).toContain("Building image")
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull()
     unmount()
   })
 
@@ -492,7 +513,7 @@ describe("WorkspaceWizard", () => {
     })
     await flushAsync()
 
-    expect(queryByText(/is ready to use/)).not.toBeNull()
+    expect(queryByText("Workspace ready")).not.toBeNull()
     expect(queryByText("Checking")).toBeNull()
     expect(document.querySelector('[role="status"]')).toBeNull()
     unmount()
@@ -774,7 +795,7 @@ describe("WorkspaceWizard", () => {
     await fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" })
     await flushAsync()
 
-    expect(queryByText(/Cancel workspace creation/i)).not.toBeNull()
+    expect(queryByText(/Close workspace creation/i)).not.toBeNull()
 
     // Tidy up: resolve the pending promise so the component finishes.
     resolveUp?.("cmd-1")

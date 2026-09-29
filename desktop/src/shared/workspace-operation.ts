@@ -87,6 +87,7 @@ const PHASE_LABELS: Record<string, string> = {
   cloning_repository: "Cloning repository",
   resolving_config: "Resolving configuration",
   initialize_command: "Running initialize command",
+  preparing_devcontainer: "Preparing dev container",
   building_image: "Building image",
   starting_container: "Starting container",
   injecting_agent: "Connecting agent",

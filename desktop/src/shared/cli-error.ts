@@ -19,6 +19,7 @@ export interface CliStatusEnvelope {
   kind: "status"
   schemaVersion: 1
   phase: string
+  pipeline?: string
   step?: string
   operationId?: string
   parentOperationId?: string
@@ -34,6 +35,7 @@ export interface CliStatusEnvelope {
 
 export interface OperationStatus {
   phase: string
+  pipeline?: string
   step?: string
   state: "started" | "succeeded" | "failed" | "skipped"
   operationId?: string
@@ -184,6 +186,7 @@ export function normalizeOperationStatus(
 ): OperationStatus {
   return {
     phase: envelope.phase,
+    pipeline: envelope.pipeline,
     step: envelope.step,
     state: envelope.state,
     operationId: envelope.operationId,

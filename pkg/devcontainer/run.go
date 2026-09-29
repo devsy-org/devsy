@@ -210,7 +210,7 @@ func (r *runner) Up(
 	err = status.Run(
 		ctx,
 		reporter,
-		status.Operation{Phase: status.PhaseReady},
+		status.Operation{Phase: status.PhasePreparingDevContainer},
 		func(ctx context.Context) error {
 			var dispatchErr error
 			result, dispatchErr = r.dispatchByConfigKind(ctx, substitutedConfig, params)

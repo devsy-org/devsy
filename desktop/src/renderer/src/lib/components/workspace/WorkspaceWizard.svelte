@@ -1,12 +1,11 @@
 <script lang="ts">
-import WorkspaceOperation from "./WorkspaceOperation.svelte"
+import WorkspaceLaunchProgress from "./WorkspaceLaunchProgress.svelte"
 import { workspaceJobs } from "$lib/stores/workspaces.js"
 import { onMount, onDestroy } from "svelte"
 import { MediaQuery } from "svelte/reactivity"
 import { goto } from "$lib/router.js"
 import {
   Check,
-  ChevronRight,
   ChevronsUpDown,
   AlertCircle,
   TriangleAlert,
@@ -31,6 +30,10 @@ import LanguageIcon from "$lib/components/workspace/LanguageIcon.svelte"
 import ImagePicker from "$lib/components/workspace/ImagePicker.svelte"
 import ConfirmDialog from "$lib/components/layout/ConfirmDialog.svelte"
 import LogTable from "$lib/components/log/LogTable.svelte"
+import {
+  createWorkspaceLaunchTimeline,
+  reduceWorkspaceLaunchTimeline,
+} from "$lib/utils/workspace-launch-timeline.js"
 import {
   uniqueNamesGenerator,
   adjectives,
@@ -290,8 +293,10 @@ let lastAttemptedId = $state("")
 let launchSuccess = $state(false)
 let showLogs = $state(false)
 let launchedWorkspaceId = $state<string | null>(null)
-let operationStatus = $state<WorkspaceStatus | null>(null)
-let launchJob = $derived($workspaceJobs[lastAttemptedId ?? ""])
+let launchTimeline = $state(createWorkspaceLaunchTimeline())
+let launchElapsedMs = $state(0)
+let launchStartedAtMs = 0
+let launchTimer: ReturnType<typeof setInterval> | undefined
 $effect(() => {
   if (launchError) showLogs = true
 })
@@ -459,10 +464,16 @@ function reset() {
   }
   launchRunning = false
   launchError = ""
+  launchBuildFailed = false
+  launchIsRecovery = false
   launchSuccess = false
   showLogs = false
   launchedWorkspaceId = null
-  operationStatus = null
+  lastAttemptedId = ""
+  launchTimeline = createWorkspaceLaunchTimeline()
+  launchElapsedMs = 0
+  clearInterval(launchTimer)
+  launchTimer = undefined
   confirmCancelOpen = false
   checkedRef = ""
   imagePlatforms = []
@@ -531,6 +542,7 @@ onDestroy(() => {
   unlisten?.()
   unlistenStatus?.()
   clearWatchdog()
+  clearInterval(launchTimer)
   if (flushHandle !== null) {
     cancelAnimationFrame(flushHandle)
     flushHandle = null
@@ -566,6 +578,9 @@ function finishProgress(progress: CommandProgress, wsId: string | undefined) {
   }
   flushLines()
   launchRunning = false
+  launchElapsedMs = performance.now() - launchStartedAtMs
+  clearInterval(launchTimer)
+  launchTimer = undefined
   clearWatchdog()
   if (isCommandSuccess(progress.success)) {
     finishSuccessfulLaunch(wsId)
@@ -610,9 +625,17 @@ async function handleLaunch(recovery = false) {
   lastAttemptedId = resolvedId
   launchIsRecovery = recovery
   launchRunning = true
+  launchTimeline = createWorkspaceLaunchTimeline()
+  launchStartedAtMs = performance.now()
+  launchElapsedMs = 0
+  clearInterval(launchTimer)
+  launchTimer = setInterval(() => {
+    if (launchRunning) launchElapsedMs = performance.now() - launchStartedAtMs
+  }, 1000)
   launchError = ""
   launchBuildFailed = false
   launchSuccess = false
+  showLogs = false
   outputLines = []
   pendingLines = []
   if (flushHandle !== null) {
@@ -621,7 +644,6 @@ async function handleLaunch(recovery = false) {
   }
   commandId = null
   launchedWorkspaceId = null
-  operationStatus = null
   clearWatchdog()
 
   const workspaceId = resolvedId
@@ -646,7 +668,7 @@ async function handleLaunch(recovery = false) {
     unlistenStatus = await onWorkspaceStatus((status) => {
       if (status.workspaceId !== workspaceId) return
       if (resolvedCommandId === status.commandId) {
-        operationStatus = status
+        launchTimeline = reduceWorkspaceLaunchTimeline(launchTimeline, status, performance.now())
       } else if (pendingStatuses.length < 100) {
         pendingStatuses.push(status)
       }
@@ -672,7 +694,9 @@ async function handleLaunch(recovery = false) {
     resolvedCommandId = cmdId
 
     for (const status of pendingStatuses) {
-      if (status.commandId === cmdId) operationStatus = status
+      if (status.commandId === cmdId) {
+        launchTimeline = reduceWorkspaceLaunchTimeline(launchTimeline, status, performance.now())
+      }
     }
 
     for (const event of pendingEvents) {
@@ -684,6 +708,9 @@ async function handleLaunch(recovery = false) {
     watchdog = setTimeout(() => {
       if (launchRunning) {
         launchRunning = false
+        launchElapsedMs = performance.now() - launchStartedAtMs
+        clearInterval(launchTimer)
+        launchTimer = undefined
         launchError =
           "Workspace creation timed out after 10 minutes. The process may still be running in the background."
         toasts.error(launchError)
@@ -695,6 +722,9 @@ async function handleLaunch(recovery = false) {
     }, LAUNCH_TIMEOUT_MS)
   } catch (err) {
     launchRunning = false
+    launchElapsedMs = performance.now() - launchStartedAtMs
+    clearInterval(launchTimer)
+    launchTimer = undefined
     launchError = `Failed to create workspace: ${extractErrorMessage(err)}`
     toasts.error(launchError)
     unlisten?.()
@@ -925,12 +955,14 @@ function selectTemplate(t: { name: string; source: string }) {
       </Dialog.Description>
     </Dialog.Header>
 
-    <!-- Progress bar -->
-    <div class="px-6 pt-5">
-      <Progress value={progressValue} max={100} class="h-1" />
-    </div>
+    {#if currentStep !== "launch"}
+      <div class="px-6 pt-5">
+        <Progress value={progressValue} max={100} class="h-1" />
+      </div>
+    {/if}
 
     <!-- Step indicator -->
+    {#if currentStep !== "launch"}
     <div class="flex items-center justify-between px-6 pt-4 pb-2">
       {#each STEPS as step, i (step.id)}
         <div class="flex items-center gap-1.5">
@@ -958,6 +990,7 @@ function selectTemplate(t: { name: string; source: string }) {
         {/if}
       {/each}
     </div>
+    {/if}
 
     <!-- Step content -->
     <div class="flex-1 overflow-y-auto px-6 pb-6 pt-2">
@@ -1327,60 +1360,22 @@ function selectTemplate(t: { name: string; source: string }) {
 
       {:else if currentStep === "launch"}
         <div class="space-y-4">
-          {#if !launchRunning}
-            <div>
-              <h2 class="text-lg font-semibold">
-                {#if launchSuccess}
-                  Workspace Ready
-                {:else if launchError}
-                  Workspace Creation Failed
-                {:else}
-                  Launching...
-                {/if}
-              </h2>
-              <p class="text-sm text-muted-foreground">
-                {#if launchSuccess}
-                  {launchedWorkspaceId ?? resolvedId} is ready to use.
-                {:else if launchError}
-                  Something went wrong while creating the workspace.
-                {/if}
-              </p>
-            </div>
-          {/if}
-
-          {#if launchError}
-            <Alert.Root variant="destructive">
-              <AlertCircle class="h-4 w-4" />
-              <Alert.Description>{launchError}</Alert.Description>
-            </Alert.Root>
-          {/if}
-
-          {#if commandId && launchJob?.commandId === commandId && (launchJob.state === "running" || launchJob.state === "reconciling")}
-            <WorkspaceOperation id={lastAttemptedId ?? resolvedId} density="expanded" />
-          {:else if launchRunning}
-            <WorkspaceOperation
-              id={lastAttemptedId ?? resolvedId}
-              density="expanded"
-              job={{
-                commandId: commandId ?? "launch",
-                activity: "creating",
-                state: "running",
-                phase: operationStatus?.step ?? operationStatus?.phase ?? "preparing_workspace",
-              }}
-            />
-          {/if}
+          <WorkspaceLaunchProgress
+            workspaceId={launchedWorkspaceId ?? lastAttemptedId ?? resolvedId}
+            provider={selectedProvider || undefined}
+            ideLabel={selectedIde === "none" ? "No IDE" : (selectedIdeEntry?.label ?? selectedIde)}
+            timeline={launchTimeline}
+            running={launchRunning}
+            success={launchSuccess}
+            error={launchError || undefined}
+            elapsedMs={launchElapsedMs}
+            logsAvailable={outputLines.length > 0}
+            logsOpen={showLogs}
+            onToggleLogs={() => (showLogs = !showLogs)}
+          />
 
           {#if outputLines.length > 0}
             <div class="space-y-2">
-              <button
-                type="button"
-                class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-                aria-expanded={showLogs}
-                onclick={() => (showLogs = !showLogs)}
-              >
-                <ChevronRight class="h-3 w-3 transition-transform {showLogs ? 'rotate-90' : ''}" />
-                View details
-              </button>
               {#if showLogs}
                 <div class="space-y-2">
                   <div class="flex justify-end">
@@ -1436,10 +1431,9 @@ function selectTemplate(t: { name: string; source: string }) {
 
 <ConfirmDialog
   bind:open={confirmCancelOpen}
-  title="Cancel workspace creation?"
-  description="A workspace is currently being created. Closing this dialog will not stop the process, but you will lose visibility of the progress."
-  confirmLabel="Close Anyway"
-  variant="destructive"
+  title="Close workspace creation?"
+  description="Workspace creation will continue in the background. You can monitor it from Task Monitor."
+  confirmLabel="Close"
   onconfirm={() => {
     open = false
     confirmCancelOpen = false

@@ -351,6 +351,15 @@ test.describe.serial("Create Workspace Wizard", () => {
 
   test("should launch workspace and stream output", async () => {
     const dialog = page.locator('[role="dialog"]').first()
+    await page.evaluate(() => {
+      const target = window as typeof window & {
+        workspaceStatusEvents: Record<string, unknown>[]
+      }
+      target.workspaceStatusEvents = []
+      window.electronAPI?.on("workspace-status", (payload) =>
+        target.workspaceStatusEvents.push(payload as Record<string, unknown>),
+      )
+    })
     // The review step's primary button is labeled "Launch"
     await dialog.getByRole("button", { name: /^launch$/i }).click()
 
@@ -359,6 +368,12 @@ test.describe.serial("Create Workspace Wizard", () => {
     await expect(dialog).toContainText(/resolving|pulling|starting|ready/i, {
       timeout: 10000,
     })
+    const statuses = await page.evaluate(
+      () => (window as typeof window & { workspaceStatusEvents: Record<string, unknown>[] }).workspaceStatusEvents,
+    )
+    expect(statuses.map((status) => status.phase)).toContain("preparing_devcontainer")
+    await expect(dialog).toContainText("Preparing dev container")
+    await expect(dialog.getByText("Review", { exact: true })).toHaveCount(0)
 
     // On success the "Open Workspace" button appears
     await expect(
@@ -384,7 +399,7 @@ test.describe.serial("Create Workspace Wizard", () => {
     ).toBeVisible()
     await dialog.getByRole("button", { name: /^launch$/i }).click()
 
-    await expect(dialog).toContainText("Workspace Creation Failed", {
+    await expect(dialog).toContainText("Workspace creation failed", {
       timeout: 15000,
     })
     await expect(dialog).toContainText("The mock image build failed.")

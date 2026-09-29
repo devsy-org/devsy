@@ -413,6 +413,7 @@ func validPhase(phase status.Phase) bool {
 	case status.PhaseCloningRepository,
 		status.PhaseResolvingConfig,
 		status.PhaseInitializeCommand,
+		status.PhasePreparingDevContainer,
 		status.PhaseBuildingImage,
 		status.PhaseStartingContainer,
 		status.PhaseInjectingAgent,

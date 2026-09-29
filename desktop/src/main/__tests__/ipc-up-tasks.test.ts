@@ -305,6 +305,7 @@ describe("workspace_up detached task tracking", () => {
         schemaVersion: 1,
         pipeline: "workspace_up",
         operationId: "op-17",
+        parentOperationId: "op-3",
         phase: "building_image",
         state: "succeeded",
         durationMs: 8214,
@@ -318,8 +319,10 @@ describe("workspace_up detached task tracking", () => {
     ).toMatchObject({
       workspaceId: "ws-1",
       phase: "building_image",
+      pipeline: "workspace_up",
       state: "succeeded",
       operationId: "op-17",
+      parentOperationId: "op-3",
       durationMs: 8214,
     })
   })
