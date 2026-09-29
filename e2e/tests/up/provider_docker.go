@@ -836,7 +836,44 @@ var _ = ginkgo.Describe(
 					command:       secretCmd,
 					name:          "ATTACHED_SECRET",
 					checkFile:     "/tmp/attached-secret-check.out",
+					sessionCheck:  `if [ "$ATTACHED_SECRET" = expected-value ]; then printf present; else printf absent; fi`,
+					sessionFile:   "ATTACHED_SECRET",
 				})
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
+		ginkgo.It(
+			"explicit lifecycle secret and secrets file do not reach terminal sessions",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-secret-attached", dtc.initialDir, dtc.f,
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
+
+				dtc.storeSecret(ctx, "SESSION_SCOPE_SECRET", "sentinel-explicit-secret")
+				secretsFile := filepath.Join(tempDir, "session-scope.secrets.json")
+				framework.ExpectNoError(os.WriteFile(
+					secretsFile, []byte(`{"SESSION_FILE_SECRET":"sentinel-file-secret"}`), 0o600,
+				))
+
+				framework.ExpectNoError(dtc.f.DevsyUp(
+					ctx, tempDir, "--secret", "SESSION_SCOPE_SECRET",
+				))
+				checkExplicitAbsent := `if [ -z "$SESSION_SCOPE_SECRET" ]; then printf absent; else printf present; fi`
+				out, err := dtc.execSSH(ctx, tempDir, checkExplicitAbsent)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
+
+				framework.ExpectNoError(dtc.f.DevsyUpRecreate(
+					ctx, tempDir, "--secrets-file", secretsFile,
+				))
+				checkFileAbsent := `if [ -z "$SESSION_FILE_SECRET" ]; then printf absent; else printf present; fi`
+				out, err = dtc.execSSH(ctx, tempDir, checkFileAbsent)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
 			},
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)

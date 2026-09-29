@@ -16,6 +16,7 @@ const (
 	secretToken  = "TOKEN"
 	secretTLSKey = "TLS_KEY"
 	testNPMToken = "NPM_TOKEN"
+	projectToken = "PROJECT_TOKEN"
 )
 
 func testConfig(bound ...string) *config.Config {
@@ -93,8 +94,8 @@ func TestCollectSecretRequests_ContextBindings(t *testing.T) {
 	got, err := collectSecretRequests(nil, testConfig(secretToken, "SECRET_TWO"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, []secretRequest{
-		{ref: localRef("SECRET_TWO"), target: "SECRET_TWO", mount: false},
-		{ref: localRef(secretToken), target: secretToken, mount: false},
+		{ref: localRef("SECRET_TWO"), target: "SECRET_TWO", session: true},
+		{ref: localRef(secretToken), target: secretToken, session: true},
 	}, sortedRequests(got))
 }
 
@@ -106,8 +107,38 @@ func TestCollectSecretRequests_FlagOverridesBinding(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, []secretRequest{
-		{ref: localRef(secretToken), target: "CI_TOKEN", mount: false},
+		{ref: localRef(secretToken), target: "CI_TOKEN", session: true},
 	}, got)
+}
+
+func TestCollectSecretRequestsOnlyAttachedEnvironmentSecretsReachSessions(t *testing.T) {
+	got, err := collectSecretRequests(
+		[]string{secretToken, projectToken},
+		testConfig(secretToken),
+		[]string{projectToken},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []secretRequest{
+		{ref: localRef(projectToken), target: projectToken},
+		{ref: localRef(secretToken), target: secretToken, session: true},
+	}, sortedRequests(got))
+
+	cmd := &UpCmd{}
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.Register("local", "local", fixedSource{
+		values: map[string]string{
+			secretToken:  "sentinel-attached",
+			projectToken: "sentinel-project",
+		},
+	}))
+	require.NoError(t, cmd.applyLifecycleSecrets(context.Background(), got, resolver))
+	assert.Equal(t, []string{secretToken}, cmd.TerminalSecretEnvNames)
+}
+
+func TestCollectSecretRequestsExplicitEnvironmentSecretStaysLifecycleOnly(t *testing.T) {
+	got, err := collectSecretRequests([]string{secretToken}, testConfig(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, []secretRequest{{ref: localRef(secretToken), target: secretToken}}, got)
 }
 
 func TestCollectSecretRequests_Empty(t *testing.T) {
@@ -124,7 +155,7 @@ func TestApplyLifecycleSecretsMarksEnvTargetsForTerminalSessions(t *testing.T) {
 		sensitive: true,
 	}))
 	err := cmd.applyLifecycleSecrets(context.Background(), []secretRequest{
-		{ref: localRef(secretToken), target: secretToken},
+		{ref: localRef(secretToken), target: secretToken, session: true},
 		{ref: localRef(secretTLSKey), target: secretTLSKey, mount: true},
 	}, resolver)
 	require.NoError(t, err)

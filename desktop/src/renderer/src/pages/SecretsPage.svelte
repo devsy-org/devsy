@@ -235,7 +235,7 @@ async function confirmDelete() {
             <div class="mt-4 flex items-center justify-between gap-3 border-t pt-4">
               <div>
                 <p class="text-sm font-medium">Inject into workspaces</p>
-                <p class="text-xs text-muted-foreground">Context: {secret.context}. Delivered through the protected secret path when a workspace starts or is recreated.</p>
+                <p class="text-xs text-muted-foreground">Context: {secret.context}. Available to lifecycle commands and new Devsy terminal/SSH sessions after workspace setup or recreation.</p>
               </div>
               {#key attachmentResets[`${secret.context}\x00${secret.name}`] ?? 0}
               <Switch

@@ -235,6 +235,7 @@ func TestWriteSecretEnvironmentAtUsesProtectedFilesAndClearsStaleValues(t *testi
 		dir,
 		[]string{"SUPERFOO=sentinel-value", "LIFECYCLE_ONLY=other-sentinel"},
 		[]string{"SUPERFOO"},
+		"",
 	))
 	dirInfo, err := os.Stat(dir)
 	require.NoError(t, err)
@@ -249,7 +250,7 @@ func TestWriteSecretEnvironmentAtUsesProtectedFilesAndClearsStaleValues(t *testi
 	assert.True(t, string(contents) == "sentinel-value", "secret environment content changed")
 	_, err = os.Stat(filepath.Join(dir, "LIFECYCLE_ONLY"))
 	assert.True(t, os.IsNotExist(err))
-	require.NoError(t, writeSecretEnvironmentAt(dir, nil, nil))
+	require.NoError(t, writeSecretEnvironmentAt(dir, nil, nil, ""))
 	_, err = os.Stat(path)
 	assert.True(t, os.IsNotExist(err))
 }

@@ -20,9 +20,29 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
+
+const composeSecretCommand = "secret"
+
+func useComposeFileSecretsBackend() {
+	for name, value := range map[string]string{
+		"DEVSY_SECRETS_BACKEND":    "file",
+		"DEVSY_SECRETS_PASSPHRASE": "e2e-passphrase",
+	} {
+		previous, hadPrevious := os.LookupEnv(name)
+		framework.ExpectNoError(os.Setenv(name, value))
+		ginkgo.DeferCleanup(func() {
+			if hadPrevious {
+				_ = os.Setenv(name, previous)
+			} else {
+				_ = os.Unsetenv(name)
+			}
+		})
+	}
+}
 
 var _ = ginkgo.Describe(
 	"devsy up docker compose test suite",
@@ -43,6 +63,77 @@ var _ = ginkgo.Describe(
 			tc.f, err = setupDockerProvider(tc.initialDir + "/bin")
 			framework.ExpectNoError(err)
 		})
+
+		ginkgo.It(
+			"injects attached terminal secrets through a tmpfs mount",
+			func(ctx context.Context) {
+				useComposeFileSecretsBackend()
+				contextName := fmt.Sprintf("compose-secret-%d", time.Now().UnixNano())
+				framework.ExpectNoError(tc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = tc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = tc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(tc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(tc.f.DevsyProviderAdd(
+					ctx, "docker", "-o", "DOCKER_PATH=docker",
+				))
+				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, "docker"))
+
+				secretName := "COMPOSE_SESSION_SECRET"
+				_, err := tc.f.ExecCommandOutput(ctx, []string{
+					composeSecretCommand, "set", secretName, "--value", "sentinel-compose-secret",
+				})
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func() {
+					_, _ = tc.f.ExecCommandOutput(
+						context.Background(), []string{composeSecretCommand, "delete", secretName},
+					)
+				})
+				_, err = tc.f.ExecCommandOutput(
+					ctx, []string{composeSecretCommand, "attach", secretName},
+				)
+				framework.ExpectNoError(err)
+
+				tempDir, workspace, err := tc.setupAndStartWorkspace(
+					ctx, "tests/up-docker-compose/testdata/docker-compose",
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(tc.f.DevsyWorkspaceDelete, tempDir)
+
+				checkPresent := `if [ "$COMPOSE_SESSION_SECRET" = sentinel-compose-secret ]; ` +
+					`then printf present; else printf absent; fi`
+				out, err := tc.execSSH(ctx, tempDir, checkPresent)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+
+				containerDetails, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				var sessionMount *container.MountPoint
+				for i := range containerDetails.Mounts {
+					if containerDetails.Mounts[i].Destination == "/run/devsy/secrets-env" {
+						sessionMount = &containerDetails.Mounts[i]
+						break
+					}
+				}
+				gomega.Expect(sessionMount).NotTo(gomega.BeNil())
+				gomega.Expect(sessionMount.Type).To(gomega.Equal(mount.TypeTmpfs))
+				mode, err := tc.execSSH(ctx, tempDir, "stat -c %a /run/devsy/secrets-env")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(mode)).To(gomega.Equal("700"))
+
+				_, err = tc.f.ExecCommandOutput(
+					ctx, []string{composeSecretCommand, "detach", secretName},
+				)
+				framework.ExpectNoError(err)
+				framework.ExpectNoError(tc.f.DevsyUpRecreate(ctx, tempDir))
+				checkAbsent := `if [ -z "$COMPOSE_SESSION_SECRET" ]; then printf absent; else printf present; fi`
+				out, err = tc.execSSH(ctx, tempDir, checkAbsent)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
 
 		ginkgo.It("mounts", func(ctx context.Context) {
 			tempDir, workspace, err := tc.setupAndStartWorkspace(

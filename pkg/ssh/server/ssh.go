@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/ssh"
@@ -338,7 +339,11 @@ func (s *server) Shutdown(ctx context.Context) error {
 func (s *server) handler(sess ssh.Session) {
 	var err error
 	ptyReq, winCh, isPty := sess.Pty()
-	cmd := s.getCommand(sess, isPty)
+	cmd, err := s.getCommand(sess, isPty)
+	if err != nil {
+		exitWithError(sess, err)
+		return
+	}
 
 	if ssh.AgentRequested(sess) {
 		cleanup, exit, aErr := s.configureAgent(sess, cmd)
@@ -367,7 +372,7 @@ func (s *server) handler(sess ssh.Session) {
 	exitWithError(sess, err)
 }
 
-func (s *server) getCommand(sess ssh.Session, isPty bool) *exec.Cmd {
+func (s *server) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, error) {
 	var cmd *exec.Cmd
 	user := sess.User()
 	if user == s.currentUser {
@@ -383,9 +388,12 @@ func (s *server) getCommand(sess ssh.Session, isPty bool) *exec.Cmd {
 	}
 
 	cmd.Dir = findWorkdir(s.workdir, user)
-	cmd.Env = append(cmd.Env, os.Environ()...)
-	cmd.Env = append(cmd.Env, sess.Environ()...)
-	return cmd
+	secretEnv, err := readSessionSecretEnvironment(config.SecretsEnvDir)
+	if err != nil {
+		return nil, fmt.Errorf("prepare session secret environment: %w", err)
+	}
+	cmd.Env = mergeSessionEnvironment(os.Environ(), sess.Environ(), secretEnv)
+	return cmd, nil
 }
 
 // buildSuArgs builds the "su" argv for running sess's command as sess.User().

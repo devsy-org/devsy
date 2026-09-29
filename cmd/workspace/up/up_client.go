@@ -349,7 +349,9 @@ func (cmd *UpCmd) applyLifecycleSecrets(
 			cmd.SecretsMount = append(cmd.SecretsMount, req.target+"="+resolved.Value)
 		} else {
 			cmd.SecretsEnv = append(cmd.SecretsEnv, req.target+"="+resolved.Value)
-			cmd.TerminalSecretEnvNames = append(cmd.TerminalSecretEnvNames, req.target)
+			if req.session {
+				cmd.TerminalSecretEnvNames = append(cmd.TerminalSecretEnvNames, req.target)
+			}
 		}
 	}
 	return nil
@@ -600,9 +602,10 @@ func gitTokenUsernameForHost(host string) string {
 }
 
 type secretRequest struct {
-	ref    secrets.SecretRef
-	target string
-	mount  bool
+	ref     secrets.SecretRef
+	target  string
+	mount   bool
+	session bool
 }
 
 // collectSecretRequests merges context/project bindings with secret flags;
@@ -645,7 +648,11 @@ func addSecretBindings(
 		if err != nil {
 			return fmt.Errorf("invalid %s secret %q: %w", kind, value, err)
 		}
-		byName[ref.String()] = secretRequest{ref: ref, target: ref.Name}
+		existing := byName[ref.String()]
+		byName[ref.String()] = secretRequest{
+			ref: ref, target: ref.Name,
+			session: kind == "attached" || existing.session,
+		}
 	}
 	return nil
 }
@@ -655,6 +662,9 @@ func addSecretFlags(byName map[string]secretRequest, values []string) error {
 		req, err := parseSecretFlag(value)
 		if err != nil {
 			return err
+		}
+		if attached, ok := byName[req.ref.String()]; ok && !req.mount {
+			req.session = attached.session
 		}
 		byName[req.ref.String()] = req
 	}

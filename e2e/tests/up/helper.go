@@ -274,6 +274,8 @@ type contextAttachmentCase struct {
 	command       string
 	name          string
 	checkFile     string
+	sessionCheck  string
+	sessionFile   string
 }
 
 // verifyContextAttachment proves a context-attached managed value reaches the
@@ -303,14 +305,38 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 
 	// Intentionally no --env/--secret argument: the context binding is the source.
 	framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
-	out, err := dtc.execSSH(ctx, tempDir, "cat "+tc.checkFile)
+	out, err := dtc.execSSH(
+		ctx,
+		tempDir,
+		`if [ "$(cat `+tc.checkFile+`)" = expected-value ]; then printf present; else printf absent; fi`,
+	)
 	framework.ExpectNoError(err)
-	gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("expected-value"))
+	gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+	if tc.sessionCheck != "" {
+		fileCheck := `if [ -e /run/devsy/secrets-env/` + tc.sessionFile + ` ]; then ` +
+			`stat -c '%U:%a' /run/devsy/secrets-env/` + tc.sessionFile +
+			`; else printf missing; fi`
+		out, err = dtc.execSSH(ctx, tempDir, fileCheck)
+		framework.ExpectNoError(err)
+		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("vscode:600"))
+		out, err = dtc.execSSH(ctx, tempDir, tc.sessionCheck)
+		framework.ExpectNoError(err)
+		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+	}
 
 	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, "detach", tc.name})
 	framework.ExpectNoError(err)
 	framework.ExpectNoError(dtc.f.DevsyUpRecreate(ctx, tempDir))
-	out, err = dtc.execSSH(ctx, tempDir, "cat "+tc.checkFile)
+	out, err = dtc.execSSH(
+		ctx,
+		tempDir,
+		`if [ -s `+tc.checkFile+` ]; then printf present; else printf absent; fi`,
+	)
 	framework.ExpectNoError(err)
-	gomega.Expect(strings.TrimSpace(out)).To(gomega.BeEmpty())
+	gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
+	if tc.sessionCheck != "" {
+		out, err = dtc.execSSH(ctx, tempDir, tc.sessionCheck)
+		framework.ExpectNoError(err)
+		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
+	}
 }

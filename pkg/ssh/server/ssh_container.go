@@ -7,12 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 
 	copypkg "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	shellpkg "github.com/devsy-org/devsy/pkg/shell"
 	"github.com/devsy-org/ssh"
 )
@@ -156,37 +154,13 @@ func (s *containerServer) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, e
 		return cmd, fmt.Errorf("prepare cmd env: %w", err)
 	}
 	cmd.Dir = findWorkdir(s.workdir, user)
-	cmd.Env = append(cmd.Env, sess.Environ()...)
+	baseEnv := cmd.Env
 	secretEnv, err := readSessionSecretEnvironment(config.SecretsEnvDir)
 	if err != nil {
 		return cmd, fmt.Errorf("prepare session secret environment: %w", err)
 	}
-	cmd.Env = append(cmd.Env, secretEnv...)
+	cmd.Env = mergeSessionEnvironment(baseEnv, sess.Environ(), secretEnv)
 	return cmd, nil
-}
-
-func readSessionSecretEnvironment(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	env := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.Type().IsRegular() || secrets.ValidateName(entry.Name()) != nil {
-			continue
-		}
-		// #nosec G304 -- fixed secret directory and validated name.
-		value, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			return nil, fmt.Errorf("read secret environment variable %s: %w", entry.Name(), err)
-		}
-		env = append(env, entry.Name()+"="+string(value))
-	}
-	return env, nil
 }
 
 func chownListener(listenerPath string, user string) error {

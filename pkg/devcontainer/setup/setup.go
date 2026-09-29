@@ -85,7 +85,11 @@ func SetupContainerPreAttach(
 	if err := writeSecretFiles(cfg); err != nil {
 		return DeferredHooks{}, err
 	}
-	if err := writeSecretEnvironment(cfg.SecretsEnv, cfg.TerminalSecretEnvNames); err != nil {
+	if err := writeSecretEnvironment(
+		cfg.SecretsEnv,
+		cfg.TerminalSecretEnvNames,
+		config.GetRemoteUser(cfg.SetupInfo),
+	); err != nil {
 		return DeferredHooks{}, err
 	}
 
@@ -168,11 +172,11 @@ func writeSecretFiles(cfg *ContainerSetupConfig) error {
 	return nil
 }
 
-func writeSecretEnvironment(entries, names []string) error {
-	return writeSecretEnvironmentAt(config.SecretsEnvDir, entries, names)
+func writeSecretEnvironment(entries, names []string, user string) error {
+	return writeSecretEnvironmentAt(config.SecretsEnvDir, entries, names, user)
 }
 
-func writeSecretEnvironmentAt(dir string, entries, names []string) error {
+func writeSecretEnvironmentAt(dir string, entries, names []string, user string) error {
 	if err := clearSecretEnvironmentDir(dir); err != nil {
 		return err
 	}
@@ -182,11 +186,26 @@ func writeSecretEnvironmentAt(dir string, entries, names []string) error {
 	if err := createSecretEnvironmentDir(dir); err != nil {
 		return err
 	}
+	if err := copy2.Chown(dir, user); err != nil {
+		return fmt.Errorf("set secret environment directory owner: %w", err)
+	}
 	if err := writeSecretEnvironmentEntries(dir, entries, names); err != nil {
 		if cleanupErr := clearSecretEnvironmentDir(dir); cleanupErr != nil {
 			return errors.Join(err, fmt.Errorf("clear partial secret environment: %w", cleanupErr))
 		}
 		return err
+	}
+	if err := chownSecretEnvironmentFiles(dir, names, user); err != nil {
+		return err
+	}
+	return nil
+}
+
+func chownSecretEnvironmentFiles(dir string, names []string, user string) error {
+	for _, name := range names {
+		if err := copy2.Chown(filepath.Join(dir, name), user); err != nil {
+			return fmt.Errorf("set secret environment owner for %s: %w", name, err)
+		}
 	}
 	return nil
 }
