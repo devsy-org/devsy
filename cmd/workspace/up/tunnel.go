@@ -10,6 +10,23 @@ import (
 	"github.com/devsy-org/devsy/pkg/tunnel"
 )
 
+// workspaceTunnelHealth must stay observational; dialing SSH can revive a
+// stopped workspace.
+func workspaceTunnelHealth(
+	client client2.BaseWorkspaceClient,
+) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		status, err := client.Status(ctx, client2.StatusOptions{ContainerStatus: true})
+		if err != nil {
+			return fmt.Errorf("workspace status: %w", err)
+		}
+		if status != client2.StatusRunning {
+			return fmt.Errorf("workspace is %q", status)
+		}
+		return nil
+	}
+}
+
 // startTunnel creates a local TCP tunnel that forwards connections to the
 // container SSH server. The returned cleanup function must be called when
 // the tunnel is no longer needed (typically via defer).
@@ -30,8 +47,9 @@ func (cmd *UpCmd) startTunnel(
 	}
 
 	localTunnel, err := tunnel.NewLocalTunnel(ctx, tunnel.LocalTunnelOptions{
-		BasePort: 10800,
-		DialFunc: dialer.Dial,
+		BasePort:        10800,
+		DialFunc:        dialer.Dial,
+		HealthCheckFunc: workspaceTunnelHealth(client),
 	})
 	if err != nil {
 		return 0, nil, fmt.Errorf("create local tunnel: %w", err)

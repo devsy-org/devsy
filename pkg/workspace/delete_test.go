@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,8 +10,15 @@ import (
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/stretchr/testify/require"
 )
+
+type testQuiescer func(context.Context, string) error
+
+func (f testQuiescer) Quiesce(ctx context.Context, workspaceID string) error {
+	return f(ctx, workspaceID)
+}
 
 func TestSweepOrphanWorkspaceDirs(t *testing.T) {
 	setupTestPathManager(t)
@@ -107,9 +115,67 @@ func (c *preResolvedDeleteClient) Workspace() string { return c.workspaceID }
 func (c *preResolvedDeleteClient) WorkspaceConfig() *provider.Workspace {
 	return c.config
 }
-func (c *preResolvedDeleteClient) Context() string  { return c.config.Context }
-func (c *preResolvedDeleteClient) Provider() string { return DefaultDockerCommand }
+func (c *preResolvedDeleteClient) Context() string            { return c.config.Context }
+func (c *preResolvedDeleteClient) Lock(context.Context) error { return nil }
+func (c *preResolvedDeleteClient) Unlock()                    {}
+func (c *preResolvedDeleteClient) Provider() string           { return DefaultDockerCommand }
 func (c *preResolvedDeleteClient) Delete(context.Context, client.DeleteOptions) error {
 	c.deleted = true
 	return nil
+}
+
+func TestDeleteQuiescesPersistedUpTaskBeforeDeleting(t *testing.T) {
+	setupTestPathManager(t)
+
+	store, err := task.NewStore()
+	require.NoError(t, err)
+	tk, err := store.Create(task.CreateOptions{Command: "up", WorkspaceID: "chosen"})
+	require.NoError(t, err)
+
+	fake := &preResolvedDeleteClient{
+		workspaceID: "chosen",
+		config:      &provider.Workspace{ID: "chosen", Context: testDefaultContext},
+	}
+	devsyConfig := &config.Config{
+		DefaultContext: testDefaultContext,
+		Contexts:       map[string]*config.ContextConfig{testDefaultContext: {}},
+	}
+
+	id, err := Delete(t.Context(), DeleteOptions{
+		DevsyConfig: devsyConfig,
+		Client:      fake,
+		Force:       true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "chosen", id)
+	require.True(t, fake.deleted)
+
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.Equal(t, task.StatusFailed, state.Status)
+	require.Equal(t, task.ErrCanceled.Error(), state.Error)
+}
+
+func TestDeleteBlockedWhenActiveUpTaskCannotBeQuiesced(t *testing.T) {
+	setupTestPathManager(t)
+
+	fake := &preResolvedDeleteClient{
+		workspaceID: "chosen",
+		config:      &provider.Workspace{ID: "chosen", Context: testDefaultContext},
+	}
+	devsyConfig := &config.Config{
+		DefaultContext: testDefaultContext,
+		Contexts:       map[string]*config.ContextConfig{testDefaultContext: {}},
+	}
+
+	_, err := Delete(t.Context(), DeleteOptions{
+		DevsyConfig: devsyConfig,
+		Client:      fake,
+		Force:       true,
+		quiescer: testQuiescer(func(context.Context, string) error {
+			return errors.New("boom")
+		}),
+	})
+	require.Error(t, err)
+	require.False(t, fake.deleted, "delete must not proceed while a live up task survives")
 }

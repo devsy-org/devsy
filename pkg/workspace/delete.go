@@ -26,6 +26,7 @@ type DeleteOptions struct {
 	Force          bool
 	ClientDelete   client2.DeleteOptions
 	Owner          platform.OwnerFilter
+	quiescer       UpTaskQuiescer
 }
 
 // Delete deletes a workspace, handling imported workspaces, single-machine
@@ -56,6 +57,12 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 
 	defer opener.KillBrowserTunnel(client.Context(), client.Workspace())
 
+	// A surviving detached up worker can recreate resources during or after
+	// the delete, so quiescence failure blocks even a forced delete.
+	if err := opts.quiesce(ctx, client.Workspace()); err != nil {
+		return "", err
+	}
+
 	if !opts.Force && client.WorkspaceConfig().Imported {
 		var id string
 		err := progress.RunStep(
@@ -76,6 +83,12 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 		return "", err
 	}
 	defer unlock()
+
+	// Re-scan under the lock: a task may have become visible while lock
+	// acquisition waited.
+	if err := opts.quiesce(ctx, client.Workspace()); err != nil {
+		return "", err
+	}
 
 	stopIfRunning(ctx, client, status)
 
@@ -132,24 +145,21 @@ func stopIfRunning(
 	}
 }
 
-// checkBeforeDelete acquires the lock and verifies the workspace exists
-// unless force-deletion is requested. It returns an unlock function that
-// must be called by the caller (typically deferred) to release the lock,
-// and the resolved workspace status so the caller can decide whether a
-// stop is required before delete.
+// checkBeforeDelete acquires the workspace lock and returns its status and an
+// unlock function. Force skips the status check, not the lock.
 func checkBeforeDelete(
 	ctx context.Context,
 	client client2.BaseWorkspaceClient,
 	opts DeleteOptions,
 ) (func(), client2.Status, error) {
-	force := opts.Force || opts.ClientDelete.Force
-	if force {
-		return func() {}, "", nil
-	}
-
 	unlock, err := lockIfNeeded(ctx, client, opts)
 	if err != nil {
 		return nil, "", err
+	}
+
+	force := opts.Force || opts.ClientDelete.Force
+	if force {
+		return unlock, "", nil
 	}
 
 	var status client2.Status
@@ -235,13 +245,21 @@ func handleDeleteLoadError(
 		return "", loadErr
 	}
 
-	return forceDeleteFolder(opts, workspaceID)
+	return forceDeleteFolder(ctx, opts, workspaceID)
 }
 
 // forceDeleteFolder removes the workspace folder when the workspace client
 // cannot be loaded and --force is set.
-func forceDeleteFolder(opts DeleteOptions, workspaceID string) (string, error) {
+func forceDeleteFolder(
+	ctx context.Context,
+	opts DeleteOptions,
+	workspaceID string,
+) (string, error) {
 	log.Errorf("error retrieving workspace, force-deleting folder")
+
+	if err := opts.quiesce(ctx, workspaceID); err != nil {
+		return "", err
+	}
 
 	err := clientimplementation.DeleteWorkspaceFolder(
 		clientimplementation.DeleteWorkspaceFolderParams{
@@ -464,4 +482,19 @@ func removeIfContentOrphan(contextName, contentsDir string, entry os.DirEntry) {
 		return
 	}
 	log.Debugf("removed orphan content dir with no matching workspace: workspace=%s", entry.Name())
+}
+
+func (opts DeleteOptions) quiesce(ctx context.Context, workspaceID string) error {
+	quiescer := opts.quiescer
+	if quiescer == nil {
+		quiescer = StoreUpTaskQuiescer{}
+	}
+	if err := quiescer.Quiesce(ctx, workspaceID); err != nil {
+		return fmt.Errorf(
+			"cancel detached up tasks for workspace %s: %w",
+			workspaceID,
+			err,
+		)
+	}
+	return nil
 }

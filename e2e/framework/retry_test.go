@@ -498,6 +498,7 @@ exit 1
 
 	_, err = f.DevsySSHOnce(ctx, "test-ws", "echo test")
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Connection refused")
 
 	// Read invocation counter
 	data, readErr := os.ReadFile(counterFile) //nolint:gosec // G304
