@@ -181,7 +181,7 @@ func writeSecretEnvironmentAt(dir string, entries, names []string, user string) 
 		return err
 	}
 	if len(names) == 0 {
-		return nil
+		return secureEmptySecretEnvironmentDir(dir, user)
 	}
 	if err := createSecretEnvironmentDir(dir); err != nil {
 		return err
@@ -197,6 +197,21 @@ func writeSecretEnvironmentAt(dir string, entries, names []string, user string) 
 	}
 	if err := chownSecretEnvironmentFiles(dir, names, user); err != nil {
 		return err
+	}
+	return nil
+}
+
+func secureEmptySecretEnvironmentDir(dir, user string) error {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("inspect secret environment directory: %w", err)
+	}
+	if err := createSecretEnvironmentDir(dir); err != nil {
+		return err
+	}
+	if err := copy2.Chown(dir, user); err != nil {
+		return fmt.Errorf("set secret environment directory owner: %w", err)
 	}
 	return nil
 }

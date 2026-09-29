@@ -253,6 +253,9 @@ func TestWriteSecretEnvironmentAtUsesProtectedFilesAndClearsStaleValues(t *testi
 	require.NoError(t, writeSecretEnvironmentAt(dir, nil, nil, ""))
 	_, err = os.Stat(path)
 	assert.True(t, os.IsNotExist(err))
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
 }
 
 func TestWriteResultFileTo_WidensStaleModeEvenWhenContentUnchanged(t *testing.T) {
