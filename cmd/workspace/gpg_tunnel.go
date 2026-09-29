@@ -134,10 +134,10 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) bool {
 		log.Debugf("gpg tunnel setup aborted by context cancellation: %v", err)
 		return false
 	}
-	log.Warnf("gpg agent forwarding failed (continuing without it): %v", err)
 	if t.failureReported {
 		return false
 	}
+	log.Warnf("gpg agent forwarding failed (continuing without it): %v", err)
 	t.failureReported = true
 	// Emit OSC code for UI to detect.
 	writeGPGForwardFailedOSC(os.Stderr, "check logs for details")
