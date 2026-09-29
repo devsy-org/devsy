@@ -62,6 +62,40 @@ func TestCompressSetupInfoPreservesSubstitutedValues(t *testing.T) {
 	assert.Equal(t, "/home/testuser", *gotHome)
 }
 
+func TestFormatVSCodeSettings(t *testing.T) {
+	settings := map[string]any{
+		"python": map[string]any{
+			"editor.defaultFormatter": "ms-python.autopep8",
+		},
+		"editor": map[string]any{
+			"codeActionsOnSave": []any{"source.organizeImports", "source.fixAll"},
+		},
+	}
+
+	formatted, err := formatVSCodeSettings(settings)
+	require.NoError(t, err)
+	assert.Equal(t, `{
+  "editor": {
+    "codeActionsOnSave": [
+      "source.organizeImports",
+      "source.fixAll"
+    ]
+  },
+  "python": {
+    "editor.defaultFormatter": "ms-python.autopep8"
+  }
+}`, formatted)
+
+	repeated, err := formatVSCodeSettings(settings)
+	require.NoError(t, err)
+	assert.Equal(t, formatted, repeated)
+}
+
+func TestFormatVSCodeSettingsReturnsSerializationError(t *testing.T) {
+	_, err := formatVSCodeSettings(map[string]any{"unsupported": func() {}})
+	require.Error(t, err)
+}
+
 func TestSecretsEnvRoundTripPreservesMultilineValues(t *testing.T) {
 	entries := []string{
 		"TLS_KEY=-----BEGIN KEY-----\nline1\nline2\n-----END KEY-----",
