@@ -1,4 +1,4 @@
-import { platform } from "node:os"
+import { homedir, platform } from "node:os"
 import { dirname } from "node:path"
 import type { BrowserWindow } from "electron"
 import type { IPty } from "node-pty"
@@ -25,6 +25,7 @@ function requirePty(): typeof import("node-pty") {
 interface PtyDeps {
   binaryPath: string
   getMainWindow: () => BrowserWindow | null
+  spawnPty?: typeof import("node-pty").spawn
 }
 
 export class PtyManager {
@@ -60,15 +61,16 @@ export class PtyManager {
   }
 
   createSession(cols: number, rows: number): string {
-    const pty = requirePty()
+    const spawn = this.deps.spawnPty ?? requirePty().spawn
     const shell =
       platform() === "win32" ? "powershell.exe" : process.env.SHELL || "/bin/sh"
 
     const sessionId = crypto.randomUUID()
-    const proc = pty.spawn(shell, [], {
+    const proc = spawn(shell, [], {
       name: "xterm-256color",
       cols,
       rows,
+      cwd: homedir(),
       env: this.env,
     })
 
