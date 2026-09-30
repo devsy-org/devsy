@@ -7,6 +7,7 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/stretchr/testify/require"
 )
 
 const mountTypeVolume = "volume"
@@ -109,6 +110,19 @@ func TestSecretsEnvironmentTmpfsMount(t *testing.T) {
 	if mount, err := secretsEnvironmentTmpfsMount(false, false); err != nil || mount != nil {
 		t.Error("secret-free workspace unexpectedly received a tmpfs mount")
 	}
+}
+
+func TestWithSecretsMountUsesCurrentUpRequest(t *testing.T) {
+	r := &runner{driver: terminalSecretMountDriver{supported: true}}
+	mounts, err := r.withSecretsMount(nil, true)
+	require.NoError(t, err)
+	require.Len(t, mounts, 1)
+	require.Equal(t, config.SecretsMountDir, mounts[0].Target)
+	require.Equal(t, "tmpfs", mounts[0].Type)
+
+	mounts, err = r.withSecretsMount(nil, false)
+	require.NoError(t, err)
+	require.Empty(t, mounts)
 }
 
 func TestWithResolvedUser(t *testing.T) {

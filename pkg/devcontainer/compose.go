@@ -85,14 +85,15 @@ type buildAndExtendParams struct {
 // composeUpParams groups the inputs shared by extendedDockerComposeUp and
 // generateDockerComposeUpProject for producing the compose "up" override.
 type composeUpParams struct {
-	parsedConfig      *config.SubstitutedConfig
-	mergedConfig      *config.MergedDevContainerConfig
-	composeHelper     *compose.ComposeHelper
-	composeService    *composetypes.ServiceConfig
-	originalImageName string
-	overrideImageName string
-	imageDetails      *config.ImageDetails
-	additionalLabels  map[string]string
+	parsedConfig         *config.SubstitutedConfig
+	mergedConfig         *config.MergedDevContainerConfig
+	composeHelper        *compose.ComposeHelper
+	composeService       *composetypes.ServiceConfig
+	secretsMountRequired bool
+	originalImageName    string
+	overrideImageName    string
+	imageDetails         *config.ImageDetails
+	additionalLabels     map[string]string
 }
 
 func (r *runner) composeHelper() (*compose.ComposeHelper, error) {
@@ -336,7 +337,7 @@ func (r *runner) ensureComposeContainer(
 	}
 	if forceSecretRuntimeRefresh {
 		log.Info(
-			"recreating workspace because attached terminal secrets require the secure runtime mount",
+			"recreating workspace because workspace secrets require secure runtime mounts",
 		)
 	}
 
@@ -381,11 +382,23 @@ func (r *runner) composeSecretRuntimeOptions(
 	details *config.ContainerDetails,
 	options UpOptions,
 ) (UpOptions, bool, error) {
-	if details == nil || !r.needsTerminalSecretEnvironmentMigration(details) {
+	if details == nil {
 		return options, false, nil
 	}
-	if err := r.validateTerminalSecretEnvironmentSupport(); err != nil {
-		return options, false, err
+	terminalMountMissing := r.needsTerminalSecretEnvironmentMigration(details)
+	fileMountMissing := needsSecretFileMountMigration(details, options.SecretsMount)
+	if !terminalMountMissing && !fileMountMissing {
+		return options, false, nil
+	}
+	if terminalMountMissing {
+		if err := r.validateTerminalSecretEnvironmentSupport(); err != nil {
+			return options, false, err
+		}
+	}
+	if fileMountMissing && !driver.DriverSupportsMountType(r.driver, driver.MountTypeTmpfs) {
+		return options, false, fmt.Errorf(
+			"the current provider does not support securely mounting workspace file secrets",
+		)
 	}
 	options.Recreate = true
 	return options, true, nil
@@ -972,14 +985,15 @@ func (r *runner) generateComposeUpOverride(
 		config.UserLabel:            imageDetails.Config.User,
 	}
 	overrideComposeUpFilePath, err := r.extendedDockerComposeUp(&composeUpParams{
-		parsedConfig:      start.parsedConfig,
-		mergedConfig:      mergedConfig,
-		composeHelper:     start.composeHelper,
-		composeService:    params.composeService,
-		originalImageName: params.originalImageName,
-		overrideImageName: extendResult.buildImageName,
-		imageDetails:      imageDetails,
-		additionalLabels:  additionalLabels,
+		parsedConfig:         start.parsedConfig,
+		mergedConfig:         mergedConfig,
+		composeHelper:        start.composeHelper,
+		composeService:       params.composeService,
+		originalImageName:    params.originalImageName,
+		overrideImageName:    extendResult.buildImageName,
+		imageDetails:         imageDetails,
+		additionalLabels:     additionalLabels,
+		secretsMountRequired: len(start.options.SecretsMount) > 0,
 	})
 	if err != nil {
 		return "", fmt.Errorf("extend docker-compose up: %w", err)

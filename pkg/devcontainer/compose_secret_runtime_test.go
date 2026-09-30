@@ -41,6 +41,36 @@ func TestComposeSecretRuntimeOptions(t *testing.T) {
 	require.False(t, refresh)
 }
 
+func TestComposeFileSecretRuntimeOptions(t *testing.T) {
+	r := &runner{driver: terminalSecretMountDriver{supported: true}}
+	options := UpOptions{CLIOptions: provider.CLIOptions{
+		SecretsMount: []string{secretFileMountRequestSentinel},
+	}}
+	details := &config.ContainerDetails{
+		State: config.ContainerDetailsState{Status: config.ContainerStatusRunning},
+	}
+
+	effective, refresh, err := r.composeSecretRuntimeOptions(details, options)
+	require.NoError(t, err)
+	require.True(t, effective.Recreate)
+	require.True(t, refresh)
+
+	details.Mounts = []config.ContainerMount{{
+		Type: driver.MountTypeTmpfs, Destination: config.SecretsMountDir,
+	}}
+	effective, refresh, err = r.composeSecretRuntimeOptions(details, options)
+	require.NoError(t, err)
+	require.False(t, effective.Recreate)
+	require.False(t, refresh)
+
+	r.driver = terminalSecretMountDriver{}
+	details.Mounts = nil
+	effective, refresh, err = r.composeSecretRuntimeOptions(details, options)
+	require.Error(t, err)
+	require.False(t, effective.Recreate)
+	require.False(t, refresh)
+}
+
 func TestRestorePersistedComposeArgsForStartSkipsStaleOverrides(t *testing.T) {
 	staleOverride := filepath.Join(t.TempDir(), FeaturesStartOverrideFilePrefix+"-stale.yml")
 	require.NoError(t, os.WriteFile(staleOverride, []byte("stale"), 0o600))

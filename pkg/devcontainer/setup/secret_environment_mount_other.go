@@ -9,3 +9,9 @@ func validateSecretEnvironmentMount(string) error {
 		"attached terminal secret injection requires a verifiable tmpfs runtime mount on this platform",
 	)
 }
+
+func validateSecretFileMount(string) error {
+	return fmt.Errorf(
+		"file-mounted secret injection requires a verifiable tmpfs runtime mount on this platform",
+	)
+}

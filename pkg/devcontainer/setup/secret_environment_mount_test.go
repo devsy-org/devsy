@@ -54,3 +54,21 @@ func TestValidateSecretEnvironmentMountInfo(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSecretFileMountInfo(t *testing.T) {
+	mounts, err := mountinfo.GetMountsFromReader(
+		strings.NewReader(
+			"36 35 0:32 / "+config.SecretsMountDir+" rw,nosuid,nodev - tmpfs tmpfs rw\n",
+		),
+		mountinfo.SingleEntryFilter(config.SecretsMountDir),
+	)
+	require.NoError(t, err)
+	require.NoError(t, validateSecretFileMountInfo(mounts, config.SecretsMountDir))
+
+	mounts, err = mountinfo.GetMountsFromReader(
+		strings.NewReader("36 35 0:32 / "+config.SecretsMountDir+" rw - ext4 /dev/root rw\n"),
+		mountinfo.SingleEntryFilter(config.SecretsMountDir),
+	)
+	require.NoError(t, err)
+	require.Error(t, validateSecretFileMountInfo(mounts, config.SecretsMountDir))
+}

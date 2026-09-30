@@ -25,7 +25,12 @@ import (
 	"github.com/onsi/gomega"
 )
 
-const composeSecretCommand = "secret"
+const (
+	composeSecretCommand       = "secret"
+	composeSecretSetCommand    = "set"
+	composeSecretDeleteCommand = "delete"
+	composeSecretValueFlag     = "--value"
+)
 
 func useComposeFileSecretsBackend() {
 	for name, value := range map[string]string{
@@ -91,15 +96,16 @@ var _ = ginkgo.Describe(
 				secretName := "COMPOSE_SESSION_SECRET"
 				_, err = tc.f.ExecCommandOutput(ctx, []string{
 					composeSecretCommand,
-					"set",
+					composeSecretSetCommand,
 					secretName,
-					"--value",
+					composeSecretValueFlag,
 					"sentinel-compose-late-secret",
 				})
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func() {
 					_, _ = tc.f.ExecCommandOutput(
-						context.Background(), []string{composeSecretCommand, "delete", secretName},
+						context.Background(),
+						[]string{composeSecretCommand, composeSecretDeleteCommand, secretName},
 					)
 				})
 				_, err = tc.f.ExecCommandOutput(
@@ -172,12 +178,17 @@ var _ = ginkgo.Describe(
 
 				secretName := "COMPOSE_SESSION_SECRET"
 				_, err := tc.f.ExecCommandOutput(ctx, []string{
-					composeSecretCommand, "set", secretName, "--value", "sentinel-compose-secret",
+					composeSecretCommand,
+					composeSecretSetCommand,
+					secretName,
+					composeSecretValueFlag,
+					"sentinel-compose-secret",
 				})
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func() {
 					_, _ = tc.f.ExecCommandOutput(
-						context.Background(), []string{composeSecretCommand, "delete", secretName},
+						context.Background(),
+						[]string{composeSecretCommand, composeSecretDeleteCommand, secretName},
 					)
 				})
 				_, err = tc.f.ExecCommandOutput(
@@ -191,9 +202,16 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(tc.f.DevsyWorkspaceDelete, tempDir)
 
+				checkStored := `if [ -f /run/devsy/secrets-env/COMPOSE_SESSION_SECRET ] && ` +
+					`[ "$(cat /run/devsy/secrets-env/COMPOSE_SESSION_SECRET)" = sentinel-compose-secret ]; ` +
+					`then printf present; else printf absent; fi`
+				out, err := tc.execSSH(ctx, tempDir, checkStored)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+
 				checkPresent := `if [ "$COMPOSE_SESSION_SECRET" = sentinel-compose-secret ]; ` +
 					`then printf present; else printf absent; fi`
-				out, err := tc.execSSH(ctx, tempDir, checkPresent)
+				out, err = tc.execSSH(ctx, tempDir, checkPresent)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
 
@@ -223,6 +241,47 @@ var _ = ginkgo.Describe(
 				out, err = tc.execSSH(ctx, tempDir, checkDetached)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("base"))
+
+				mountSentinelName := "COMPOSE_MOUNT_SENTINEL_VALUE"
+				_, err = tc.f.ExecCommandOutput(ctx, []string{
+					composeSecretCommand,
+					composeSecretSetCommand,
+					mountSentinelName,
+					composeSecretValueFlag,
+					"sentinel-compose-file-secret",
+				})
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func() {
+					_, _ = tc.f.ExecCommandOutput(
+						context.Background(),
+						[]string{
+							composeSecretCommand,
+							composeSecretDeleteCommand,
+							mountSentinelName,
+						},
+					)
+				})
+				framework.ExpectNoError(tc.f.DevsyUp(
+					ctx,
+					tempDir,
+					"--secret",
+					mountSentinelName+",type=mount,target=compose_file_secret",
+				))
+				containerDetails, err = tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(containerDetails.Mounts).To(gomega.ContainElement(gomega.Satisfy(
+					func(mount container.MountPoint) bool {
+						return mount.Destination == "/run/secrets" && mount.Type == "tmpfs"
+					},
+				)))
+				out, err = tc.execSSH(
+					ctx,
+					tempDir,
+					`if [ "$(cat /run/secrets/compose_file_secret)" = sentinel-compose-file-secret ]; `+
+						`then printf present; else printf absent; fi`,
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
 			},
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)

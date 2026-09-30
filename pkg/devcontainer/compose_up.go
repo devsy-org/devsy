@@ -23,7 +23,7 @@ func escapeComposeLabelValue(value string) string {
 }
 
 func (r *runner) extendedDockerComposeUp(params *composeUpParams) (string, error) {
-	mounts, err := r.withSecretsMount(params.mergedConfig.Mounts)
+	mounts, err := r.withSecretsMount(params.mergedConfig.Mounts, params.secretsMountRequired)
 	if err != nil {
 		return "", err
 	}

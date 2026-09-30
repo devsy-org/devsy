@@ -743,6 +743,73 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.It(
+			"adds a tmpfs before delivering a file secret to an existing workspace",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+				contextName := fmt.Sprintf("late-file-secret-%d", time.Now().UnixNano())
+				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = dtc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(dtc.f.DevsyProviderAdd(
+					ctx, "docker", "-o", "DOCKER_PATH=docker",
+				))
+				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-secret-runtime-mount",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
+				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
+
+				uid, err := dtc.execSSH(ctx, tempDir, `printf %s "$DEVSY_WORKSPACE_UID"`)
+				framework.ExpectNoError(err)
+				workspace := &provider2.Workspace{UID: strings.TrimSpace(uid)}
+				ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1))
+				var beforeDetails []container.InspectResponse
+				framework.ExpectNoError(
+					dtc.dockerHelper.Inspect(ctx, ids, "container", &beforeDetails),
+				)
+
+				dtc.storeSecret(ctx, "LATE_FILE_SECRET", "sentinel-late-file-secret")
+				framework.ExpectNoError(dtc.f.DevsyUp(
+					ctx,
+					tempDir,
+					"--secret",
+					"LATE_FILE_SECRET,type=mount,target=late_file_secret",
+				))
+
+				ids, err = dtc.findWorkspaceContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1))
+				var afterDetails []container.InspectResponse
+				framework.ExpectNoError(
+					dtc.dockerHelper.Inspect(ctx, ids, "container", &afterDetails),
+				)
+				gomega.Expect(afterDetails[0].ID).NotTo(gomega.Equal(beforeDetails[0].ID))
+				gomega.Expect(afterDetails[0].Mounts).To(gomega.ContainElement(gomega.Satisfy(
+					func(mount container.MountPoint) bool {
+						return mount.Destination == "/run/secrets" && mount.Type == "tmpfs"
+					},
+				)))
+
+				out, err := dtc.execSSH(ctx, tempDir,
+					`if [ "$(cat /run/secrets/late_file_secret)" = sentinel-late-file-secret ]; `+
+						`then printf present; else printf absent; fi`)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It(
 			"managed env var injects into the workspace via --env",
 			func(ctx context.Context) {
 				useFileSecretsBackend()

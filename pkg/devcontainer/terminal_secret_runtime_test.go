@@ -9,7 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const terminalSecretSentinelName = "SENTINEL_NAME"
+const (
+	terminalSecretSentinelName     = "SENTINEL_NAME"
+	secretFileMountRequestSentinel = "FILE_SECRET=sentinel"
+)
 
 type terminalSecretMountDriver struct {
 	driver.Driver
@@ -77,6 +80,29 @@ func TestTerminalSecretEnvironmentMigrationRequiresTmpfsSupport(t *testing.T) {
 
 	r.driver = terminalSecretMountDriver{supported: true}
 	require.NoError(t, r.validateTerminalSecretEnvironmentSupport())
+}
+
+func TestNeedsSecretFileMountMigration(t *testing.T) {
+	details := &config.ContainerDetails{}
+	require.True(
+		t,
+		needsSecretFileMountMigration(details, []string{secretFileMountRequestSentinel}),
+	)
+	require.False(t, needsSecretFileMountMigration(details, nil))
+
+	details.Mounts = []config.ContainerMount{{
+		Type: driver.MountTypeTmpfs, Destination: config.SecretsMountDir,
+	}}
+	require.False(
+		t,
+		needsSecretFileMountMigration(details, []string{secretFileMountRequestSentinel}),
+	)
+
+	details.Mounts[0].Type = mountTypeBind
+	require.True(
+		t,
+		needsSecretFileMountMigration(details, []string{secretFileMountRequestSentinel}),
+	)
 }
 
 func TestResolveContainerFailsClosedForSecretMountMigration(t *testing.T) {

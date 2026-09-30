@@ -152,6 +152,9 @@ func writeSecretFiles(cfg *ContainerSetupConfig) error {
 	if len(cfg.SecretsMount) == 0 {
 		return nil
 	}
+	if err := validateSecretFileRuntime(config.SecretsMountDir); err != nil {
+		return err
+	}
 
 	// #nosec G301 -- dir must be traversable by the non-root remote user; per-file 0600 enforces secrecy.
 	if err := os.MkdirAll(config.SecretsMountDir, 0o755); err != nil {
@@ -181,7 +184,10 @@ func writeSecretEnvironment(entries, names []string, user string) error {
 	return writeSecretEnvironmentAt(config.SecretsEnvDir, entries, names, user)
 }
 
-var validateSecretEnvironmentRuntime = validateSecretEnvironmentMount
+var (
+	validateSecretEnvironmentRuntime = validateSecretEnvironmentMount
+	validateSecretFileRuntime        = validateSecretFileMount
+)
 
 func writeSecretEnvironmentAt(dir string, entries, names []string, user string) error {
 	if err := clearSecretEnvironmentDir(dir); err != nil {

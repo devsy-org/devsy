@@ -373,6 +373,18 @@ func (s *server) handler(sess ssh.Session) {
 }
 
 func (s *server) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, error) {
+	secretEnv, err := readSessionSecretEnvironment(config.SecretsEnvDir)
+	if err != nil {
+		return nil, fmt.Errorf("prepare session secret environment: %w", err)
+	}
+	return s.getCommandWithSecretEnvironment(sess, isPty, secretEnv)
+}
+
+func (s *server) getCommandWithSecretEnvironment(
+	sess ssh.Session,
+	isPty bool,
+	secretEnv []string,
+) (*exec.Cmd, error) {
 	var cmd *exec.Cmd
 	user := sess.User()
 	if user == s.currentUser {
@@ -388,11 +400,7 @@ func (s *server) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, error) {
 	}
 
 	cmd.Dir = findWorkdir(s.workdir, user)
-	secretEnv, err := readSessionSecretEnvironment(config.SecretsEnvDir)
-	if err != nil {
-		return nil, fmt.Errorf("prepare session secret environment: %w", err)
-	}
-	cmd.Env = mergeSessionEnvironment(os.Environ(), sess.Environ(), secretEnv)
+	cmd.Env = mergeSessionEnvironment(os.Environ(), secretEnv, sess.Environ())
 	return cmd, nil
 }
 
