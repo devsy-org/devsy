@@ -141,10 +141,8 @@ func (r *runner) resolveContainer(
 	if options.Recreate && params.parsedConfig.Config.ContainerID != "" {
 		return nil, fmt.Errorf("cannot recreate container not created by Devsy")
 	}
-	if options.Recreate {
-		if err := driver.DriverProvisioningPreflight(ctx, r.driver); err != nil {
-			return nil, err
-		}
+	if err := r.provisioningPreflightForRecreate(ctx, options); err != nil {
+		return nil, err
 	}
 
 	if options.Recreate || containerDetails == nil {
@@ -161,6 +159,13 @@ func (r *runner) resolveContainer(
 		substitutionContext.ContainerWorkspaceFolder = actual
 	}
 	return r.resolveExistingContainer(ctx, containerDetails, params)
+}
+
+func (r *runner) provisioningPreflightForRecreate(ctx context.Context, options UpOptions) error {
+	if !options.Recreate {
+		return nil
+	}
+	return driver.DriverProvisioningPreflight(ctx, r.driver)
 }
 
 // findExistingDevContainer looks up the dev container, first checking that the
