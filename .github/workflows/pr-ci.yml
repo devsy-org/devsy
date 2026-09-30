@@ -59,6 +59,50 @@ jobs:
           version: v2.13.2
           only-new-issues: true
 
+  unit-tests:
+    name: Unit Tests (${{ matrix.runner }})
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: run unit tests with race detector
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          packages="$(go list -f '{{.ImportPath}}|{{.Dir}}' ./... | awk -F '|' -v root="$PWD" '
+            {
+              if (index($2, root) != 1 || (length($2) > length(root) && substr($2, length(root) + 1, 1) != "/")) {
+                print "Package directory is outside the repository: " $2 > "/dev/stderr"
+                exit 1
+              }
+
+              relative = substr($2, length(root) + 1)
+              if (relative !~ /(^|\/)(test|e2e)(\/|$)/) print $1
+            }
+          ')"
+
+          if [[ -z "$packages" ]]; then
+            echo "No unit-test packages found"
+            exit 1
+          fi
+
+          printf '%s\n' "$packages" | xargs go test -race -short
+
   can-read-secret:
     name: Can Read Secret
     runs-on: ubuntu-latest
@@ -85,6 +129,7 @@ jobs:
           - runner: macos-latest
           - runner: windows-latest
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -932,6 +977,7 @@ jobs:
       - changes
       - precommit
       - lint
+      - unit-tests
       - licenses
       - build-cli
       - integration-tests-unprivileged
@@ -943,6 +989,7 @@ jobs:
           if [[ "${{ needs.changes.result }}" == "failure" ]] || \
              [[ "${{ needs.precommit.result }}" == "failure" ]] || \
              [[ "${{ needs.lint.result }}" == "failure" ]] || \
+             [[ "${{ needs.unit-tests.result }}" == "failure" ]] || \
              [[ "${{ needs.licenses.result }}" == "failure" ]] || \
              [[ "${{ needs.build-cli.result }}" == "failure" ]] || \
              [[ "${{ needs.integration-tests-unprivileged.result }}" == "failure" ]] || \
