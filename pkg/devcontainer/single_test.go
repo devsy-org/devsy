@@ -70,6 +70,33 @@ func TestResolveContainerExternalRecreateRejectsBeforeProvisioningPreflight(t *t
 	}
 }
 
+func TestStartComposeContainerRecreateProvisioningFailurePreservesExistingContainer(t *testing.T) {
+	sentinel := errors.New("unsupported provisioning runtime")
+	base := &mockDriver{}
+	d := &provisioningPreflightMockDriver{
+		mockDriver:      base,
+		provisioningErr: sentinel,
+	}
+	r := newTestRunner(d)
+
+	_, err := r.startContainer(context.Background(), &startContainerParams{
+		container: runningContainerDetails(),
+		options:   UpOptions{CLIOptions: provider.CLIOptions{Recreate: true}},
+	})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("startContainer error = %v, want %v", err, sentinel)
+	}
+	if !d.provisioningCalled {
+		t.Fatal("expected provisioning preflight before compose recreate")
+	}
+	if base.stopCalled {
+		t.Fatal("existing container was stopped before provisioning validation")
+	}
+	if base.deleteCalled {
+		t.Fatal("existing container was deleted before provisioning validation")
+	}
+}
+
 func recreateResolveParams() *resolveParams {
 	return &resolveParams{
 		parsedConfig: &config.SubstitutedConfig{

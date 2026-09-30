@@ -760,6 +760,9 @@ func (r *runner) startContainer(
 	composeGlobalArgs := params.composeGlobalArgs
 	container := params.container
 	options := params.options
+	if err := r.provisioningPreflightForRecreate(ctx, options); err != nil {
+		return nil, err
+	}
 
 	composeService, originalImageName, err := resolveComposeServiceImage(
 		project,
