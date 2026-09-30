@@ -1,7 +1,13 @@
 <script lang="ts">
   import { Check, Loader2, Minus, X } from "@lucide/svelte"
+  import { Button } from "$lib/components/ui/button/index.js"
   import { humanPhase } from "$shared/workspace-operation.js"
-  import type { WorkspaceLaunchTimeline, LaunchOperation } from "$lib/utils/workspace-launch-timeline.js"
+  import type { WorkspaceLaunchTimeline } from "$lib/utils/workspace-launch-timeline.js"
+  import type { LaunchConfirmationState } from "$lib/utils/workspace-launch-presentation.js"
+  import {
+    presentLaunchOperation,
+    topLevelLaunchOperations,
+  } from "$lib/utils/workspace-launch-presentation.js"
 
   interface Props {
     workspaceId: string
@@ -9,8 +15,11 @@
     ideLabel?: string
     timeline: WorkspaceLaunchTimeline
     running: boolean
-    success: boolean
     error?: string
+    confirmationState: LaunchConfirmationState
+    refreshError?: string
+    refreshRetrying?: boolean
+    onRetryStatus?: () => void
     elapsedMs: number
     logsAvailable: boolean
     logsOpen: boolean
@@ -23,40 +32,58 @@
     ideLabel,
     timeline,
     running,
-    success,
     error,
+    confirmationState,
+    refreshError,
+    refreshRetrying = false,
+    onRetryStatus,
     elapsedMs,
     logsAvailable,
     logsOpen,
     onToggleLogs,
   }: Props = $props()
 
-  const parentOf = (operation: LaunchOperation) =>
-    operation.parentOperationId
-      ? timeline.operations.find((candidate) => candidate.operationId === operation.parentOperationId)
-      : undefined
-
-  const visibleOperations = $derived(
-    timeline.operations.filter((operation) => !parentOf(operation)),
-  )
+  const visibleOperations = $derived(topLevelLaunchOperations(timeline))
+  const operationRows = $derived.by(() => {
+    const shownErrors = new Set<string>()
+    return visibleOperations.map((operation) => {
+      const presentation = presentLaunchOperation(operation, timeline, error)
+      const hasFailure =
+        operation.state === "failed" || presentation.hasFailedDescendant
+      if (
+        hasFailure &&
+        presentation.errorMessage &&
+        shownErrors.has(presentation.errorMessage)
+      ) {
+        return {
+          operation,
+          presentation: { ...presentation, errorMessage: undefined },
+        }
+      }
+      if (hasFailure && presentation.errorMessage) {
+        shownErrors.add(presentation.errorMessage)
+      }
+      return { operation, presentation }
+    })
+  })
   const visibleFailure = $derived(
-    visibleOperations.some((operation) =>
-      operation.state === "failed" || timeline.operations.some(
-        (child) => child.parentOperationId === operation.operationId && child.state === "failed",
-      ),
+    operationRows.some(
+      ({ operation, presentation }) =>
+        operation.state === "failed" || presentation.hasFailedDescendant,
     ),
   )
 
-  function activeChild(parent: LaunchOperation): LaunchOperation | undefined {
-    if (!parent.operationId) return undefined
-    const children = timeline.operations.filter(
-      (operation) =>
-        operation.parentOperationId === parent.operationId &&
-        (operation.state === "running" || operation.state === "failed"),
-    )
-    const child = children.at(-1)
-    return child?.state === "running" ? activeChild(child) ?? child : child
-  }
+  const headline = $derived(
+    confirmationState === "confirmed"
+      ? "Workspace ready"
+      : confirmationState === "confirming"
+        ? "Confirming workspace status"
+        : confirmationState === "stale"
+          ? "Workspace created"
+          : confirmationState === "failed"
+            ? "Workspace creation failed"
+            : "Launching workspace",
+  )
 
   function duration(value?: number): string | undefined {
     if (value === undefined) return undefined
@@ -70,11 +97,14 @@
   }
 </script>
 
-<section class="space-y-5" aria-busy={running} aria-label="Workspace launch activity">
+<section class="space-y-5" aria-busy={running || refreshRetrying} aria-label="Workspace launch activity">
   <header class="flex items-start justify-between gap-4">
     <div>
-      <h2 class="text-lg font-semibold">
-        {success ? "Workspace ready" : error ? "Workspace creation failed" : "Launching workspace"}
+      <h2
+        class="text-lg font-semibold"
+        aria-live={confirmationState === "confirming" ? "polite" : undefined}
+      >
+        {headline}
       </h2>
       <p class="text-sm text-muted-foreground">{workspaceId}</p>
       {#if provider || ideLabel}
@@ -84,10 +114,28 @@
     <span class="shrink-0 text-sm tabular-nums text-muted-foreground" aria-label="Elapsed time">{elapsed(elapsedMs)}</span>
   </header>
 
-  {#if visibleOperations.length}
+  {#if confirmationState === "stale"}
+    <div class="space-y-2" role="status" aria-live="polite">
+      <p class="text-sm font-medium text-amber-700 dark:text-amber-400">Status may be out of date</p>
+      {#if refreshError}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={refreshRetrying}
+          onclick={onRetryStatus}
+        >
+          {refreshRetrying ? "Retrying status…" : "Retry status"}
+        </Button>
+      {/if}
+    </div>
+  {/if}
+
+  {#if operationRows.length}
     <ol class="space-y-3" aria-label="Workspace lifecycle">
-      {#each visibleOperations as operation (operation.key)}
-        {@const child = activeChild(operation)}
+      {#each operationRows as row (row.operation.key)}
+        {@const operation = row.operation}
+        {@const presentation = row.presentation}
+        {@const child = presentation.detail}
         <li class="flex gap-3">
           <span class="mt-0.5 shrink-0" aria-hidden="true">
             {#if operation.state === "running"}
@@ -118,12 +166,12 @@
               <p class="text-sm {child.state === 'failed' ? 'text-destructive' : 'text-muted-foreground'}" aria-live={child.state === "running" ? "polite" : undefined}>
                 {child.state === "failed" ? "Failed: " : ""}{humanPhase(child.phase) ?? child.phase}{child.step ? ` · ${child.step}` : child.state === "running" ? "…" : ""}
               </p>
-              {#if child.state === "failed" && (error || child.error?.message)}
-                <p class="text-sm text-destructive" aria-live="assertive">{error ?? child.error?.message}</p>
+              {#if child.state === "failed" && presentation.errorMessage}
+                <p class="text-sm text-destructive" aria-live="assertive">{presentation.errorMessage}</p>
               {/if}
             {/if}
-            {#if operation.state === "failed" && (operation.operationId === undefined || !timeline.operations.some((childOperation) => childOperation.parentOperationId === operation.operationId && childOperation.state === "failed")) && (error || operation.error?.message)}
-              <p class="text-sm text-destructive" aria-live="assertive">{error ?? operation.error?.message}</p>
+            {#if operation.state === "failed" && !presentation.hasFailedDescendant && presentation.errorMessage}
+              <p class="text-sm text-destructive" aria-live="assertive">{presentation.errorMessage}</p>
             {/if}
             {#if operation.state === "skipped" && operation.step}
               <p class="text-sm text-muted-foreground">{operation.step}</p>
@@ -137,6 +185,7 @@
   {:else if running}
     <p class="sr-only" aria-live="polite">Launching workspace {workspaceId}</p>
   {/if}
+
   {#if error && !visibleFailure && visibleOperations.length > 0}
     <p class="text-sm text-destructive" aria-live="assertive">{error}</p>
   {/if}

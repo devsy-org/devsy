@@ -34,6 +34,7 @@ import {
   createWorkspaceLaunchTimeline,
   reduceWorkspaceLaunchTimeline,
 } from "$lib/utils/workspace-launch-timeline.js"
+import type { LaunchConfirmationState } from "$lib/utils/workspace-launch-presentation.js"
 import {
   uniqueNamesGenerator,
   adjectives,
@@ -41,6 +42,7 @@ import {
 } from "unique-names-generator"
 import {
   workspaceUp,
+  workspaceRefresh,
   openDirectoryDialog,
   getHostPlatform,
   getImagePlatforms,
@@ -52,7 +54,11 @@ import type {
   DevcontainerMode,
 } from "$lib/utils/workspace-source.js"
 import { onCommandProgress, onWorkspaceStatus } from "$lib/ipc/events.js"
-import type { CommandProgress, WorkspaceStatus } from "$lib/types/index.js"
+import type {
+  CommandProgress,
+  WorkspaceJob,
+  WorkspaceStatus,
+} from "$lib/types/index.js"
 import { providers } from "$lib/stores/providers.js"
 import { workspaces } from "$lib/stores/workspaces.js"
 import { isImageCompatible } from "$lib/stores/imageCatalog.js"
@@ -290,39 +296,54 @@ let launchError = $state("")
 let launchBuildFailed = $state(false)
 let launchIsRecovery = $state(false)
 let lastAttemptedId = $state("")
+let launchCommandSucceeded = $state(false)
 let launchSuccess = $state(false)
+let launchStatusRefreshError = $state<string | null>(null)
+let launchRefreshRetrying = $state(false)
 let showLogs = $state(false)
 let launchedWorkspaceId = $state<string | null>(null)
 let launchTimeline = $state(createWorkspaceLaunchTimeline())
 let launchElapsedMs = $state(0)
 let launchStartedAtMs = 0
 let launchTimer: ReturnType<typeof setInterval> | undefined
+let launchJob = $derived(
+  lastAttemptedId ? $workspaceJobs[lastAttemptedId] : undefined,
+)
+let jobMatchesAttempt = $derived(
+  !!commandId && launchJob?.commandId === commandId,
+)
+let launchConfirmationState: LaunchConfirmationState = $derived(
+  launchSuccess
+    ? "confirmed"
+    : launchError
+        ? "failed"
+        : launchRefreshRetrying
+          ? "confirming"
+          : launchStatusRefreshError
+            ? "stale"
+            : launchCommandSucceeded
+              ? "confirming"
+              : "running",
+)
 $effect(() => {
   if (launchError) showLogs = true
 })
 $effect(() => {
-  const job = $workspaceJobs[lastAttemptedId ?? ""]
-  if (
-    launchRunning &&
-    commandId &&
-    job?.commandId === commandId &&
-    (job.state === "failed" || job.state === "succeeded")
-  ) {
-    finishProgress(
-      {
-        commandId,
-        done: true,
-        success: job.state !== "failed",
-        cliError: job.state === "failed"
-          ? {
-              code: "workspace_operation_failed",
-              message: job.error ?? "Workspace operation failed",
-            }
-          : undefined,
-      },
-      lastAttemptedId ?? undefined,
-    )
+  const job = launchJob
+  if (!jobMatchesAttempt || !job || launchSuccess) return
+
+  if (job.state === "running") return
+  if (job.state === "reconciling") {
+    finishSuccessfulCommand(lastAttemptedId)
+    if (job.refreshError) finishUnconfirmedLaunch(job.refreshError)
+    else launchStatusRefreshError = null
+    return
   }
+  if (job.state === "succeeded") {
+    finishConfirmedLaunch()
+    return
+  }
+  if (!launchError) finishJobFailure(job)
 })
 let confirmCancelOpen = $state(false)
 let unlisten: UnlistenFn | null = null
@@ -466,7 +487,10 @@ function reset() {
   launchError = ""
   launchBuildFailed = false
   launchIsRecovery = false
+  launchCommandSucceeded = false
   launchSuccess = false
+  launchStatusRefreshError = null
+  launchRefreshRetrying = false
   showLogs = false
   launchedWorkspaceId = null
   lastAttemptedId = ""
@@ -572,30 +596,80 @@ function queueProgressLines(progress: CommandProgress) {
   }
 }
 
-function finishProgress(progress: CommandProgress, wsId: string | undefined) {
+function flushProgressOutput() {
   if (flushHandle !== null) {
     cancelAnimationFrame(flushHandle)
   }
   flushLines()
-  launchRunning = false
+}
+
+function stopLaunchTimer() {
   launchElapsedMs = performance.now() - launchStartedAtMs
   clearInterval(launchTimer)
   launchTimer = undefined
+}
+
+function finishProgress(progress: CommandProgress, wsId: string | undefined) {
+  flushProgressOutput()
+  launchRunning = false
   clearWatchdog()
   if (isCommandSuccess(progress.success)) {
-    finishSuccessfulLaunch(wsId)
+    finishSuccessfulCommand(wsId)
     return
   }
+  stopLaunchTimer()
   finishFailedLaunch(progress)
 }
 
-function finishSuccessfulLaunch(wsId: string | undefined) {
+function finishSuccessfulCommand(wsId: string | undefined) {
+  if (!launchCommandSucceeded) flushProgressOutput()
+  launchRunning = false
+  launchCommandSucceeded = true
+  launchedWorkspaceId = wsId || lastAttemptedId || null
+  clearWatchdog()
+}
+
+function finishUnconfirmedLaunch(refreshError: string) {
+  finishSuccessfulCommand(launchedWorkspaceId ?? lastAttemptedId)
+  launchStatusRefreshError = refreshError
+  stopLaunchTimer()
+}
+
+function finishConfirmedLaunch() {
+  if (launchSuccess) return
+  finishSuccessfulCommand(launchedWorkspaceId ?? lastAttemptedId)
+  launchStatusRefreshError = null
+  stopLaunchTimer()
   launchSuccess = true
-  launchedWorkspaceId = wsId ?? null
-  if (wsId) oncomplete?.(wsId)
+  if (launchedWorkspaceId) oncomplete?.(launchedWorkspaceId)
+}
+
+function finishJobFailure(job: WorkspaceJob) {
+  launchStatusRefreshError = null
+  finishFailedLaunch({
+    commandId: job.commandId,
+    done: true,
+    success: false,
+    cliError: job.status?.error
+      ? {
+          code: job.status.error.code ?? "workspace_operation_failed",
+          message: job.status.error.message,
+          hint: job.status.error.hint,
+          context: job.status.error.context,
+        }
+      : job.error
+        ? { code: "workspace_operation_failed", message: job.error }
+        : undefined,
+  })
 }
 
 function finishFailedLaunch(progress: CommandProgress) {
+  flushProgressOutput()
+  launchRunning = false
+  launchCommandSucceeded = false
+  launchSuccess = false
+  clearWatchdog()
+  stopLaunchTimer()
   const cliError = progress.cliError
   launchError = cliError?.message
     ? `${cliError.message}${cliError.hint ? ` Try: ${cliError.hint}` : ""}`
@@ -624,13 +698,19 @@ async function handleLaunch(recovery = false) {
   }
   lastAttemptedId = resolvedId
   launchIsRecovery = recovery
+  launchCommandSucceeded = false
+  launchSuccess = false
+  launchStatusRefreshError = null
+  launchRefreshRetrying = false
   launchRunning = true
   launchTimeline = createWorkspaceLaunchTimeline()
   launchStartedAtMs = performance.now()
   launchElapsedMs = 0
   clearInterval(launchTimer)
   launchTimer = setInterval(() => {
-    if (launchRunning) launchElapsedMs = performance.now() - launchStartedAtMs
+    if (launchRunning || launchCommandSucceeded) {
+      launchElapsedMs = performance.now() - launchStartedAtMs
+    }
   }, 1000)
   launchError = ""
   launchBuildFailed = false
@@ -708,9 +788,8 @@ async function handleLaunch(recovery = false) {
     watchdog = setTimeout(() => {
       if (launchRunning) {
         launchRunning = false
-        launchElapsedMs = performance.now() - launchStartedAtMs
-        clearInterval(launchTimer)
-        launchTimer = undefined
+        launchCommandSucceeded = false
+        stopLaunchTimer()
         launchError =
           "Workspace creation timed out after 10 minutes. The process may still be running in the background."
         toasts.error(launchError)
@@ -722,14 +801,28 @@ async function handleLaunch(recovery = false) {
     }, LAUNCH_TIMEOUT_MS)
   } catch (err) {
     launchRunning = false
-    launchElapsedMs = performance.now() - launchStartedAtMs
-    clearInterval(launchTimer)
-    launchTimer = undefined
+    stopLaunchTimer()
     launchError = `Failed to create workspace: ${extractErrorMessage(err)}`
     toasts.error(launchError)
     unlisten?.()
     unlisten = null
     commandId = null
+  }
+}
+
+async function retryLaunchStatus() {
+  const id = launchedWorkspaceId ?? lastAttemptedId
+  if (!id || launchRefreshRetrying) return
+
+  launchRefreshRetrying = true
+  try {
+    await workspaceRefresh(id)
+  } catch (error) {
+    toasts.error(
+      `Could not refresh workspace status: ${extractErrorMessage(error)}`,
+    )
+  } finally {
+    launchRefreshRetrying = false
   }
 }
 
@@ -1365,9 +1458,12 @@ function selectTemplate(t: { name: string; source: string }) {
             provider={selectedProvider || undefined}
             ideLabel={selectedIde === "none" ? "No IDE" : (selectedIdeEntry?.label ?? selectedIde)}
             timeline={launchTimeline}
-            running={launchRunning}
-            success={launchSuccess}
+            running={launchRunning || launchConfirmationState === "confirming"}
             error={launchError || undefined}
+            confirmationState={launchConfirmationState}
+            refreshError={launchStatusRefreshError ?? undefined}
+            refreshRetrying={launchRefreshRetrying}
+            onRetryStatus={retryLaunchStatus}
             elapsedMs={launchElapsedMs}
             logsAvailable={outputLines.length > 0}
             logsOpen={showLogs}
@@ -1401,7 +1497,7 @@ function selectTemplate(t: { name: string; source: string }) {
           {/if}
 
           <div class="flex justify-end gap-2 pt-2">
-            {#if launchSuccess}
+            {#if !launchError && (launchSuccess || launchStatusRefreshError)}
               <Button variant="outline" onclick={() => (open = false)}>Close</Button>
               <Button
                 onclick={() => {

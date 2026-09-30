@@ -29,7 +29,7 @@ describe("WorkspaceLaunchProgress", () => {
           operation({ key: "nested", operationId: "nested", parentOperationId: "child", phase: "starting_container" }),
         ] },
         running: true,
-        success: false,
+        confirmationState: "running",
         elapsedMs: 38000,
         logsAvailable: false,
         logsOpen: false,
@@ -52,7 +52,7 @@ describe("WorkspaceLaunchProgress", () => {
           operation({ key: "child", operationId: "child", parentOperationId: "parent", phase: "building_image", state: "failed", error: { message: "daemon unavailable" } }),
         ] },
         running: false,
-        success: false,
+        confirmationState: "failed",
         error: "daemon unavailable",
         elapsedMs: 1000,
         logsAvailable: true,
@@ -75,7 +75,7 @@ describe("WorkspaceLaunchProgress", () => {
           operation({ key: "skip", operationId: "skip", phase: "unknown_future_phase", state: "skipped", step: "not required" }),
         ] },
         running: false,
-        success: true,
+        confirmationState: "confirmed",
         elapsedMs: 0,
         logsAvailable: false,
         logsOpen: false,
@@ -97,7 +97,7 @@ describe("WorkspaceLaunchProgress", () => {
           operation({ key: "legacy", operationId: undefined, phase: "starting_container", state: "succeeded" }),
         ] },
         running: false,
-        success: false,
+        confirmationState: "running",
         elapsedMs: 0,
         logsAvailable: false,
         logsOpen: false,
@@ -116,7 +116,7 @@ describe("WorkspaceLaunchProgress", () => {
           operation({ key: "legacy-failure", operationId: undefined, state: "failed", error: { message: "legacy failure" } }),
         ] },
         running: false,
-        success: false,
+        confirmationState: "failed",
         elapsedMs: 0,
         logsAvailable: false,
         logsOpen: false,
@@ -124,5 +124,72 @@ describe("WorkspaceLaunchProgress", () => {
       },
     })
     expect(getByText("legacy failure")).toBeTruthy()
+  })
+
+  it("shows the deepest failed descendant and its error once", () => {
+    const { getByText, getAllByText, queryByText } = render(WorkspaceLaunchProgress, {
+      props: {
+        workspaceId: "demo",
+        timeline: { operations: [
+          operation({ state: "failed", error: { message: "parent failure" } }),
+          operation({ key: "start", operationId: "start", parentOperationId: "parent", phase: "starting_container", state: "failed" }),
+          operation({ key: "build", operationId: "build", parentOperationId: "start", phase: "building_image", state: "failed", error: { message: "image build failed" } }),
+        ] },
+        running: false,
+        confirmationState: "failed",
+        error: "overall failure",
+        elapsedMs: 0,
+        logsAvailable: false,
+        logsOpen: false,
+        onToggleLogs: vi.fn(),
+      },
+    })
+
+    expect(getByText(/Failed: Building image/)).toBeTruthy()
+    expect(getAllByText("image build failed")).toHaveLength(1)
+    expect(queryByText("parent failure")).toBeNull()
+    expect(queryByText("overall failure")).toBeNull()
+  })
+
+  it("shows the deepest running descendant and keeps completed children collapsed", () => {
+    const { getByText } = render(WorkspaceLaunchProgress, {
+      props: {
+        workspaceId: "demo",
+        timeline: { operations: [
+          operation({}),
+          operation({ key: "start", operationId: "start", parentOperationId: "parent", phase: "starting_container", state: "running" }),
+          operation({ key: "build", operationId: "build", parentOperationId: "start", phase: "building_image", state: "running" }),
+        ] },
+        running: true,
+        confirmationState: "running",
+        elapsedMs: 0,
+        logsAvailable: false,
+        logsOpen: false,
+        onToggleLogs: vi.fn(),
+      },
+    })
+    expect(getByText("Building image…")).toBeTruthy()
+  })
+
+  it("keeps completed nested operations collapsed", () => {
+    const { getByText, queryByText } = render(WorkspaceLaunchProgress, {
+      props: {
+        workspaceId: "demo",
+        timeline: { operations: [
+          operation({ state: "succeeded" }),
+          operation({ key: "start", operationId: "start", parentOperationId: "parent", phase: "starting_container", state: "succeeded" }),
+          operation({ key: "build", operationId: "build", parentOperationId: "start", phase: "building_image", state: "succeeded" }),
+        ] },
+        running: false,
+        confirmationState: "confirmed",
+        elapsedMs: 0,
+        logsAvailable: false,
+        logsOpen: false,
+        onToggleLogs: vi.fn(),
+      },
+    })
+    expect(getByText("Preparing dev container")).toBeTruthy()
+    expect(queryByText("Starting container")).toBeNull()
+    expect(queryByText("Building image")).toBeNull()
   })
 })

@@ -8,11 +8,13 @@ import type {
 } from "$lib/types/index.js"
 
 const workspaceUp = vi.fn()
+const workspaceRefresh = vi.fn()
 const onCommandProgress = vi.fn()
 const onWorkspaceStatus = vi.fn()
 
 vi.mock("$lib/ipc/commands.js", () => ({
   workspaceUp: (...args: unknown[]) => workspaceUp(...args),
+  workspaceRefresh: (...args: unknown[]) => workspaceRefresh(...args),
   openDirectoryDialog: vi.fn(),
   getHostPlatform: vi.fn().mockResolvedValue("linux/arm64"),
   getImagePlatforms: vi.fn().mockResolvedValue(["linux/amd64", "linux/arm64"]),
@@ -117,9 +119,16 @@ function getActiveContinue(_: (t: string) => HTMLElement): HTMLElement {
   return candidates[0]
 }
 
+function getLaunchButton(): HTMLButtonElement {
+  return Array.from(document.querySelectorAll("button")).find(
+    (button) => button.textContent?.trim() === "Launch",
+  ) as HTMLButtonElement
+}
+
 describe("WorkspaceWizard", () => {
   beforeEach(() => {
     workspaceUp.mockReset()
+    workspaceRefresh.mockReset().mockResolvedValue(undefined)
     onCommandProgress.mockReset()
     onWorkspaceStatus.mockReset()
     providers.set([])
@@ -494,9 +503,9 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
-  it("shows exactly one success headline when the job journal reports success", async () => {
+  it("does not report readiness from command success before reconciliation", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
+    const { getByText, getByRole, queryByText, unmount } = render(WorkspaceWizard, {
       props: { open: true },
     })
     await flushAsync()
@@ -506,6 +515,161 @@ describe("WorkspaceWizard", () => {
       (b) => b.textContent?.trim() === "Launch",
     ) as HTMLButtonElement
     await fireEvent.click(launchBtn)
+    await flushAsync()
+
+    progressCallback?.({
+      commandId: "cmd-1",
+      done: true,
+      success: true,
+    })
+    await flushAsync()
+
+    expect(
+      getByRole("heading", { name: "Confirming workspace status" }),
+    ).toBeTruthy()
+    expect(queryByText("Workspace ready")).toBeNull()
+    expect(queryByText("Open Workspace")).toBeNull()
+    unmount()
+  })
+
+  it("ignores a terminal job from a different launch command", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "previous-command",
+        activity: "creating",
+        state: "succeeded",
+      },
+    })
+    await flushAsync()
+
+    expect(queryByText("Workspace ready")).toBeNull()
+    expect(document.querySelector('[aria-busy="true"]')).not.toBeNull()
+    unmount()
+  })
+
+  it("shows confirmation while the matching job is reconciling", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, getByRole, queryByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "reconciling",
+        phase: "Refreshing status",
+      },
+    })
+    await flushAsync()
+
+    expect(
+      getByRole("heading", { name: "Confirming workspace status" }),
+    ).toBeTruthy()
+    expect(queryByText("Workspace ready")).toBeNull()
+    unmount()
+  })
+
+  it("keeps a refresh-only failure stale until Retry status confirms the workspace", async () => {
+    providers.set([makeProvider("docker")])
+    const oncomplete = vi.fn()
+    const { getByText, queryByText, getByRole, getAllByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true, oncomplete },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+
+    progressCallback?.({
+      commandId: "cmd-1",
+      done: true,
+      success: true,
+    })
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "reconciling",
+        phase: "Refreshing status",
+        refreshError: "provider temporarily unavailable",
+      },
+    })
+    await flushAsync()
+
+    expect(queryByText("Workspace ready")).toBeNull()
+    expect(getByText("Workspace created")).toBeTruthy()
+    expect(getByText("Status may be out of date")).toBeTruthy()
+    expect(getAllByText("Status may be out of date")).toHaveLength(1)
+    expect(getByRole("button", { name: "Retry status" })).toBeTruthy()
+    expect(queryByText("Retry", { exact: true })).toBeNull()
+    expect(getByText("Open Workspace")).toBeTruthy()
+    expect(oncomplete).not.toHaveBeenCalled()
+
+    let resolveRefresh: (() => void) | undefined
+    workspaceRefresh.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRefresh = resolve
+        }),
+    )
+    await fireEvent.click(getByRole("button", { name: "Retry status" }))
+    await flushAsync()
+    expect(workspaceRefresh).toHaveBeenCalledTimes(1)
+    expect(workspaceRefresh).toHaveBeenCalledWith("python")
+    expect(
+      getByRole("heading", { name: "Confirming workspace status" }),
+    ).toBeTruthy()
+    expect(queryByText("Status may be out of date")).toBeNull()
+
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "succeeded",
+        phase: "",
+      },
+    })
+    await flushAsync()
+    resolveRefresh?.()
+    await flushAsync()
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "succeeded",
+        phase: "",
+      },
+    })
+    await flushAsync()
+
+    expect(getByText("Workspace ready")).toBeTruthy()
+    expect(oncomplete).toHaveBeenCalledTimes(1)
+    expect(oncomplete).toHaveBeenCalledWith("python")
+    unmount()
+  })
+
+  it("shows exactly one success headline when the matching job reports success", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, queryByText, unmount } = render(WorkspaceWizard, {
+      props: { open: true },
+    })
+    await flushAsync()
+    await advanceToReview(getByText)
+    await fireEvent.click(getLaunchButton())
     await flushAsync()
 
     ;(workspaceJobs as { set: (v: unknown) => void }).set({
@@ -539,6 +703,12 @@ describe("WorkspaceWizard", () => {
       done: true,
       success: true,
     } as CommandProgress)
+    await flushAsync()
+
+    expect(queryByText("Workspace ready")).toBeNull()
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: { commandId: "cmd-1", activity: "creating", state: "succeeded" },
+    })
     await flushAsync()
 
     expect(queryByText("Open Workspace")).not.toBeNull()
