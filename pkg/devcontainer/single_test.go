@@ -27,7 +27,8 @@ func (d *provisioningPreflightMockDriver) ProvisioningPreflight(context.Context)
 
 func TestResolveContainerRecreateProvisioningFailurePreservesExistingContainer(t *testing.T) {
 	sentinel := errors.New("unsupported provisioning runtime")
-	base := &mockDriver{}
+	existing := runningContainerDetails()
+	base := &mockDriver{findResult: existing}
 	d := &provisioningPreflightMockDriver{
 		mockDriver:      base,
 		provisioningErr: sentinel,
@@ -35,7 +36,7 @@ func TestResolveContainerRecreateProvisioningFailurePreservesExistingContainer(t
 	r := newTestRunner(d)
 
 	_, err := r.resolveContainer(
-		context.Background(), recreateResolveParams(), runningContainerDetails(),
+		context.Background(), recreateResolveParams(), existing,
 	)
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("resolveContainer error = %v, want %v", err, sentinel)
