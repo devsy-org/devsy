@@ -281,6 +281,26 @@ func TestExecWithDockerRetry_HandshakeStallRetried(t *testing.T) {
 	assert.Equal(t, "ok", out)
 }
 
+func TestExecWithDockerRetry_ExecStartupSilenceRetried(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	out, stderr, err := execWithDockerRetry(context.Background(),
+		func(context.Context) (string, string, error) {
+			calls++
+			if calls == 1 {
+				return "",
+					"container exec session produced no output for 30s: remote process never started",
+					transientExitErr(t)
+			}
+			return "ok", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "ok", out)
+	assert.Empty(t, stderr)
+}
+
 func TestExecWithDockerRetry_NonRetryableExitNotRetried(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0

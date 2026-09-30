@@ -1,18 +1,109 @@
 package devcontainer
 
 import (
+	"bytes"
+	"context"
+	"io"
 	"reflect"
 	"testing"
+	"time"
 
+	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/delivery"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/driver"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const testDockerHostEnvKey = "DOCKER_HOST"
+
+type setupSSHDriver struct {
+	mockDriver
+	command func(context.Context, *driver.CommandParams) error
+}
+
+func (d *setupSSHDriver) CommandDevContainer(
+	ctx context.Context,
+	params *driver.CommandParams,
+) error {
+	return d.command(ctx, params)
+}
+
+type writeCloser struct{ io.Writer }
+
+func (writeCloser) Close() error { return nil }
+
+func TestExecSetupSSHServer_SilentExecReturnsStartupSilence(t *testing.T) {
+	stdin := bytes.NewBufferString("input")
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	var got *driver.CommandParams
+	d := &setupSSHDriver{command: func(ctx context.Context, params *driver.CommandParams) error {
+		got = params
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	r := newTestRunner(d)
+
+	err := r.execSetupSSHServer(
+		context.Background(), agent.ExecRequest{
+			Command: "ssh-server --stdio", Stdin: stdin, Stdout: stdout, Stderr: stderr,
+		},
+		agent.ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond},
+	)
+	var silenceErr *agent.ExecStartupSilenceError
+	require.ErrorAs(t, err, &silenceErr)
+	require.NotNil(t, got)
+	assert.Equal(t, r.id, got.WorkspaceID)
+	assert.Equal(t, "root", got.User)
+	assert.Equal(t, "ssh-server --stdio", got.Command)
+	assert.Same(t, stdin, got.Stdin)
+	assert.NotNil(t, got.Stdout)
+	assert.NotNil(t, got.Stderr)
+	assert.True(t, got.RawStdout)
+}
+
+func TestExecSetupSSHServer_OutputDisarmsWatchdog(t *testing.T) {
+	for _, stream := range []string{"stdout", "stderr"} {
+		t.Run(stream, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			wrote := make(chan struct{})
+			d := &setupSSHDriver{command: func(
+				ctx context.Context,
+				params *driver.CommandParams,
+			) error {
+				output := params.Stdout
+				if stream == "stderr" {
+					output = params.Stderr
+				}
+				_, _ = io.WriteString(output, "SSH activity")
+				close(wrote)
+				<-ctx.Done()
+				return ctx.Err()
+			}}
+			r := newTestRunner(d)
+			result := make(chan error, 1)
+			go func() {
+				result <- r.execSetupSSHServer(ctx, agent.ExecRequest{
+					Command: "ssh-server --stdio", Stdout: io.Discard, Stderr: writeCloser{io.Discard},
+				}, agent.ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond})
+			}()
+			<-wrote
+			time.Sleep(100 * time.Millisecond)
+			cancel()
+			err := <-result
+			assert.ErrorIs(t, err, context.Canceled)
+			var silenceErr *agent.ExecStartupSilenceError
+			assert.NotErrorAs(t, err, &silenceErr)
+		})
+	}
+}
 
 func TestNewAgentDelivery_RemoteDockerHostWiring(t *testing.T) {
 	cases := []struct {
