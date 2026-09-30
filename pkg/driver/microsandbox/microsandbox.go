@@ -49,10 +49,11 @@ type microsandboxDriver struct {
 }
 
 var (
-	_ driver.RunOptionsDriver     = (*microsandboxDriver)(nil)
-	_ driver.ReprovisioningDriver = (*microsandboxDriver)(nil)
-	_ driver.ImageDriver          = (*microsandboxDriver)(nil)
-	_ driver.Preflighter          = (*microsandboxDriver)(nil)
+	_ driver.RunOptionsDriver        = (*microsandboxDriver)(nil)
+	_ driver.ReprovisioningDriver    = (*microsandboxDriver)(nil)
+	_ driver.ImageDriver             = (*microsandboxDriver)(nil)
+	_ driver.Preflighter             = (*microsandboxDriver)(nil)
+	_ driver.ProvisioningPreflighter = (*microsandboxDriver)(nil)
 )
 
 var minimumMicrosandboxVersion = semver.MustParse("0.7.2")
@@ -345,7 +346,7 @@ func (d *microsandboxDriver) GetDevContainerLogs(
 	return d.client.Logs(ctx, sandboxName(workspaceID), stdout)
 }
 
-func (d *microsandboxDriver) requireProvisioningRuntime(ctx context.Context) error {
+func (d *microsandboxDriver) ProvisioningPreflight(ctx context.Context) error {
 	rawVersion, err := d.client.Version(ctx)
 	if err != nil {
 		return &driver.PreflightError{
@@ -382,7 +383,7 @@ func (d *microsandboxDriver) runFromOptions(
 	if options.Image == "" {
 		return fmt.Errorf("microsandbox driver requires an image to run")
 	}
-	if err := d.requireProvisioningRuntime(ctx); err != nil {
+	if err := d.ProvisioningPreflight(ctx); err != nil {
 		return err
 	}
 	warnUnsupportedOptions(options)

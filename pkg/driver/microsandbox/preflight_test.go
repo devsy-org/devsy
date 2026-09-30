@@ -38,4 +38,7 @@ func TestPreflightAllowsOldRuntime(t *testing.T) {
 	if err := d.Preflight(context.Background(), driver.PreflightOptions{}); err != nil {
 		t.Fatalf("Preflight with old runtime = %v, want nil", err)
 	}
+	if c.versionCalls != 0 {
+		t.Fatalf("Preflight version probes = %d, want 0", c.versionCalls)
+	}
 }

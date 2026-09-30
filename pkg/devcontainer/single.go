@@ -141,6 +141,11 @@ func (r *runner) resolveContainer(
 	if options.Recreate && params.parsedConfig.Config.ContainerID != "" {
 		return nil, fmt.Errorf("cannot recreate container not created by Devsy")
 	}
+	if options.Recreate {
+		if err := driver.DriverProvisioningPreflight(ctx, r.driver); err != nil {
+			return nil, err
+		}
+	}
 
 	if options.Recreate || containerDetails == nil {
 		return r.resolveNewContainer(ctx, params)

@@ -102,3 +102,33 @@ func TestDriverPreflightForwardsOptions(t *testing.T) {
 		t.Error("DriverPreflight did not forward DisableAutoStart to the driver")
 	}
 }
+
+func TestDriverProvisioningPreflightNoOpWithoutCapability(t *testing.T) {
+	if err := DriverProvisioningPreflight(context.Background(), noPreflightDriver{}); err != nil {
+		t.Fatalf("DriverProvisioningPreflight without capability = %v, want nil", err)
+	}
+}
+
+type provisioningPreflightSpy struct {
+	noPreflightDriver
+	called bool
+	err    error
+}
+
+func (s *provisioningPreflightSpy) ProvisioningPreflight(context.Context) error {
+	s.called = true
+	return s.err
+}
+
+func TestDriverProvisioningPreflightInvokesCapability(t *testing.T) {
+	sentinel := errors.New("unsupported provisioning runtime")
+	spy := &provisioningPreflightSpy{err: sentinel}
+
+	err := DriverProvisioningPreflight(context.Background(), spy)
+	if !spy.called {
+		t.Fatal("DriverProvisioningPreflight did not call the driver")
+	}
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("DriverProvisioningPreflight error = %v, want %v", err, sentinel)
+	}
+}
