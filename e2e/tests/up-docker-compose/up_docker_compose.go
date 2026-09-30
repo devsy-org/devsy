@@ -217,10 +217,12 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 				framework.ExpectNoError(tc.f.DevsyUpRecreate(ctx, tempDir))
-				checkAbsent := `if [ -z "$COMPOSE_SESSION_SECRET" ]; then printf absent; else printf present; fi`
-				out, err = tc.execSSH(ctx, tempDir, checkAbsent)
+				checkDetached := `case "$COMPOSE_SESSION_SECRET" in ` +
+					`sentinel-compose-secret) printf attached;; base-value) printf base;; ` +
+					`'') printf absent;; *) printf other;; esac`
+				out, err = tc.execSSH(ctx, tempDir, checkDetached)
 				framework.ExpectNoError(err)
-				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("base"))
 			},
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
