@@ -3,6 +3,7 @@ package ssh
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -558,6 +559,81 @@ const (
 	testSSHContext = "context"
 )
 
+const testAddHostSectionBoundaryBlock = `# Devsy Start newhost
+Host newhost
+  ForwardAgent no
+  LogLevel error
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+  HostKeyAlgorithms rsa-sha2-256,rsa-sha2-512,ssh-rsa
+  ProxyCommand "/path/to/exec" workspace ssh --stdio --context context --user devsy workspace
+  User devsy
+# Devsy End newhost`
+
+const testExistingManagedHostBlock = `# Devsy Start existing.devsy
+Host existing.devsy
+  User existing
+# Devsy End existing.devsy`
+
+var addHostSectionInsertionBoundaryCases = []struct {
+	name           string
+	config         string
+	insertionIndex int
+	expected       string
+}{
+	{
+		name:           "lowercase Host section starts at beginning",
+		config:         "host server\n  User alice",
+		insertionIndex: 0,
+	},
+	{
+		name: "Devsy end marker immediately before plain Host",
+		config: testExistingManagedHostBlock + `
+Host plain
+  User alice`,
+		insertionIndex: 0,
+		expected: testAddHostSectionBoundaryBlock + `
+# Devsy Start existing.devsy
+Host existing.devsy
+  User existing
+# Devsy End existing.devsy
+Host plain
+  User alice`,
+	},
+	{
+		name: "comments immediately before Host stay with the section",
+		config: `# production
+# managed by operations
+Host server
+  User alice`,
+		insertionIndex: 0,
+	},
+	{
+		name: "blank line separates comments from Host",
+		config: `# preamble
+
+# server notes
+Host server
+  User alice`,
+		insertionIndex: 2,
+	},
+	{
+		name:           "whitespace-only lines do not start a section",
+		config:         "  \t\nInclude ~/.ssh/common.conf\n \nHoSt server\n  User alice",
+		insertionIndex: 3,
+	},
+	{
+		name:           "Match is a section boundary",
+		config:         "Include ~/.ssh/common.conf\n\n# conditional\nMaTcH exec \"true\"\n  User alice",
+		insertionIndex: 2,
+	},
+	{
+		name:           "empty and whitespace-only configs append",
+		config:         " \t\n\n",
+		insertionIndex: 2,
+	},
+}
+
 func TestAddHostSectionSectionSyntaxVariants(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -610,6 +686,33 @@ Host existing.devsy
 	assert.NotEqual(t, -1, newStart)
 	assert.NotEqual(t, -1, existingStart)
 	assert.Less(t, newStart, existingStart)
+}
+
+func TestAddHostSectionInsertionBoundaries(t *testing.T) {
+	for _, tt := range addHostSectionInsertionBoundaryCases {
+		t.Run(tt.name, func(t *testing.T) {
+			position, lines, err := findInsertPosition(tt.config)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.insertionIndex, position)
+
+			result, err := addHostSection(tt.config, testExecPath, addHostParams{
+				host:      "newhost",
+				user:      testSSHUser,
+				context:   testSSHContext,
+				workspace: "workspace",
+			})
+			assert.NoError(t, err)
+
+			if tt.expected != "" {
+				assert.Equal(t, tt.expected, result)
+				return
+			}
+
+			hostLines := strings.Split(testAddHostSectionBoundaryBlock, "\n")
+			expectedLines := slices.Insert(slices.Clone(lines), position, hostLines...)
+			assert.Equal(t, strings.Join(expectedLines, "\n"), result)
+		})
+	}
 }
 
 func TestConfigureSSHConfig(t *testing.T) {
