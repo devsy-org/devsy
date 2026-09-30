@@ -7,6 +7,12 @@ import (
 	"testing"
 )
 
+const (
+	tokenBase     = "TOKEN=base"
+	tokenAttached = "TOKEN=attached"
+	tokenExplicit = "TOKEN=explicit"
+)
+
 func TestReadSessionSecretEnvironment(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(
@@ -24,14 +30,41 @@ func TestReadSessionSecretEnvironment(t *testing.T) {
 	}
 }
 
-func TestMergeSessionEnvironmentAttachedDefaults(t *testing.T) {
-	got := mergeSessionEnvironment(
-		[]string{"PATH=/usr/bin", "TOKEN=base"},
-		[]string{"TOKEN=explicit"},
-		[]string{"TOKEN=attached", "OTHER=attached"},
-	)
-	want := []string{"PATH=/usr/bin", "TOKEN=explicit", "OTHER=attached"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatal("merged environment does not preserve explicit values")
+func TestMergeSessionEnvironmentPrecedence(t *testing.T) {
+	tests := []struct {
+		name             string
+		base             []string
+		attached         []string
+		sessionOverrides []string
+		want             []string
+	}{
+		{
+			name:     "attached overrides base",
+			base:     []string{"PATH=/usr/bin", tokenBase},
+			attached: []string{tokenAttached},
+			want:     []string{"PATH=/usr/bin", tokenAttached},
+		},
+		{
+			name:             "session overrides attached",
+			base:             []string{tokenBase},
+			attached:         []string{tokenAttached},
+			sessionOverrides: []string{tokenExplicit},
+			want:             []string{tokenExplicit},
+		},
+		{
+			name:             "three levels preserve unrelated variables",
+			base:             []string{"A=base", tokenBase},
+			attached:         []string{tokenAttached, "B=secret"},
+			sessionOverrides: []string{tokenExplicit, "C=session"},
+			want:             []string{"A=base", tokenExplicit, "B=secret", "C=session"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := mergeSessionEnvironment(test.base, test.attached, test.sessionOverrides)
+			if !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("merged environment = %q, want %q", got, test.want)
+			}
+		})
 	}
 }

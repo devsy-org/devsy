@@ -125,6 +125,8 @@ func (r *runner) runSingleContainer(
 		substitutionContext: substitutionContext,
 		timeout:             timeout,
 		hostWarnings:        resolved.hostWarnings,
+		secretsEnv:          params.options.SecretsEnv,
+		secretsMount:        params.options.SecretsMount,
 	})
 }
 
@@ -137,6 +139,24 @@ func (r *runner) resolveContainer(
 	containerDetails *config.ContainerDetails,
 ) (*resolvedContainer, error) {
 	options := params.options
+	if containerDetails != nil && !options.Recreate &&
+		r.needsTerminalSecretEnvironmentMigration(containerDetails) {
+		if err := r.validateTerminalSecretEnvironmentSupport(); err != nil {
+			return nil, err
+		}
+		if params.parsedConfig.Config.ContainerID != "" {
+			return nil, fmt.Errorf(
+				"cannot inject attached terminal secrets into externally managed container: "+
+					"the container does not have the required %s tmpfs mount",
+				config.SecretsEnvDir,
+			)
+		}
+		log.Info(
+			"recreating workspace because attached terminal secrets require the secure runtime mount",
+		)
+		options.Recreate = true
+		params.options.Recreate = true
+	}
 
 	if options.Recreate && params.parsedConfig.Config.ContainerID != "" {
 		return nil, fmt.Errorf("cannot recreate container not created by Devsy")
@@ -951,9 +971,7 @@ func secretsEnvironmentTmpfsMount(enabled, supported bool) (*config.Mount, error
 		return nil, nil
 	}
 	if !supported {
-		return nil, fmt.Errorf(
-			"the current provider does not support securely injecting workspace secrets into terminal sessions",
-		)
+		return nil, terminalSecretEnvironmentUnsupportedError()
 	}
 	return &config.Mount{
 		Type:   driver.MountTypeTmpfs,

@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/stretchr/testify/assert"
 )
 
 type workspaceTestLogger struct{}
@@ -20,6 +22,15 @@ func (workspaceTestLogger) Infof(string, ...any)  {}
 func (workspaceTestLogger) Warnf(string, ...any)  {}
 
 var _ tunnelserver.Logger = workspaceTestLogger{}
+
+func TestSplitSecrets(t *testing.T) {
+	env, mount := splitSecrets([]*tunnel.Secret{
+		{Name: "SESSION_SENTINEL", Value: "sentinel-value"},
+		{Name: "MOUNT_SENTINEL", Value: "mount-value", Mount: true},
+	})
+	assert.Equal(t, []string{"SESSION_SENTINEL=sentinel-value"}, env)
+	assert.Equal(t, []string{"MOUNT_SENTINEL=mount-value"}, mount)
+}
 
 func TestPrepareWorkspaceWithStatusCallsPreparationDirectly(t *testing.T) {
 	assertWorkspacePreparationRunsDirectly(t, status.NewMemoryReporter(), "")

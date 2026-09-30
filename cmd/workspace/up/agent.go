@@ -178,14 +178,16 @@ func (cmd *UpCmd) devsyUpMachine(
 	defer log.Debug("done creating devcontainer")
 
 	if cmd.Platform.Enabled {
+		cliOptions := withoutSecretValues(cmd.CLIOptions)
 		return clientimplementation.BuildAgentClient(
 			ctx,
 			clientimplementation.BuildAgentClientOptions{
 				WorkspaceClient: client,
-				CLIOptions:      cmd.CLIOptions,
+				CLIOptions:      cliOptions,
 				AgentCommand:    "up",
 				TunnelOptions: []tunnelserver.Option{
 					tunnelserver.WithPlatformOptions(&cmd.Platform),
+					tunnelserver.WithSecrets(cmd.SecretsEnv, cmd.SecretsMount),
 					tunnelserver.WithStatusReporter(cmd.reporter()),
 				},
 			},
@@ -200,7 +202,7 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 	devsyConfig *config.Config,
 	client client2.WorkspaceClient,
 ) (*config2.Result, error) {
-	workspaceInfo, wInfo, err := client.AgentInfo(cmd.CLIOptions)
+	workspaceInfo, wInfo, err := client.AgentInfo(withoutSecretValues(cmd.CLIOptions))
 	if err != nil {
 		return nil, fmt.Errorf("get agent info: %w", err)
 	}
@@ -235,11 +237,18 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 				client.AgentInjectGitCredentials(cmd.CLIOptions),
 				client.AgentInjectDockerCredentials(cmd.CLIOptions),
 				client.WorkspaceConfig(),
+				tunnelserver.WithSecrets(cmd.SecretsEnv, cmd.SecretsMount),
 				tunnelserver.WithGitToken(cmd.GitToken),
 				tunnelserver.WithStatusReporter(cmd.reporter()),
 			)
 		},
 	})
+}
+
+func withoutSecretValues(options provider2.CLIOptions) provider2.CLIOptions {
+	options.SecretsEnv = nil
+	options.SecretsMount = nil
+	return options
 }
 
 func newAgentInjectFunc(

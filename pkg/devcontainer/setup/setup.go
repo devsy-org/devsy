@@ -173,8 +173,15 @@ func writeSecretFiles(cfg *ContainerSetupConfig) error {
 }
 
 func writeSecretEnvironment(entries, names []string, user string) error {
+	if len(names) > 0 {
+		if err := validateSecretEnvironmentRuntime(config.SecretsEnvDir); err != nil {
+			return err
+		}
+	}
 	return writeSecretEnvironmentAt(config.SecretsEnvDir, entries, names, user)
 }
+
+var validateSecretEnvironmentRuntime = validateSecretEnvironmentMount
 
 func writeSecretEnvironmentAt(dir string, entries, names []string, user string) error {
 	if err := clearSecretEnvironmentDir(dir); err != nil {

@@ -10,17 +10,21 @@ import (
 	"github.com/devsy-org/devsy/pkg/secrets"
 )
 
-func mergeSessionEnvironment(base, overrides, defaults []string) []string {
-	values := make(map[string]string, len(base)+len(overrides)+len(defaults))
-	order := make([]string, 0, len(base)+len(overrides)+len(defaults))
-	for _, assignment := range base {
+func mergeSessionEnvironment(
+	baseEnv []string,
+	attachedSecretEnv []string,
+	sessionOverrides []string,
+) []string {
+	values := make(map[string]string, len(baseEnv)+len(attachedSecretEnv)+len(sessionOverrides))
+	order := make([]string, 0, len(baseEnv)+len(attachedSecretEnv)+len(sessionOverrides))
+	for _, assignment := range baseEnv {
 		setEnvironmentAssignment(values, &order, assignment, false)
 	}
-	for _, assignment := range overrides {
+	for _, assignment := range attachedSecretEnv {
 		setEnvironmentAssignment(values, &order, assignment, true)
 	}
-	for _, assignment := range defaults {
-		setEnvironmentAssignment(values, &order, assignment, false)
+	for _, assignment := range sessionOverrides {
+		setEnvironmentAssignment(values, &order, assignment, true)
 	}
 	env := make([]string, 0, len(order))
 	for _, name := range order {

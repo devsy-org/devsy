@@ -2,6 +2,7 @@ package setup
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -256,6 +257,21 @@ func TestWriteSecretEnvironmentAtUsesProtectedFilesAndClearsStaleValues(t *testi
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	assert.Empty(t, entries)
+}
+
+func TestWriteSecretEnvironmentRequiresSecureRuntimeMount(t *testing.T) {
+	originalValidator := validateSecretEnvironmentRuntime
+	validateSecretEnvironmentRuntime = func(string) error {
+		return errors.New("runtime mount unavailable")
+	}
+	t.Cleanup(func() { validateSecretEnvironmentRuntime = originalValidator })
+
+	err := writeSecretEnvironment(
+		[]string{"SENTINEL_SECRET=redacted"},
+		[]string{"SENTINEL_SECRET"},
+		"",
+	)
+	require.EqualError(t, err, "runtime mount unavailable")
 }
 
 func TestWriteResultFileTo_WidensStaleModeEvenWhenContentUnchanged(t *testing.T) {

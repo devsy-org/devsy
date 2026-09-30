@@ -56,13 +56,14 @@ type persistedFileResult struct {
 // startContainerParams groups the inputs for starting (or recreating) the
 // compose dev container.
 type startContainerParams struct {
-	parsedConfig        *config.SubstitutedConfig
-	substitutionContext *config.SubstitutionContext
-	project             *composetypes.Project
-	composeHelper       *compose.ComposeHelper
-	composeGlobalArgs   []string
-	container           *config.ContainerDetails
-	options             UpOptions
+	parsedConfig         *config.SubstitutedConfig
+	substitutionContext  *config.SubstitutionContext
+	project              *composetypes.Project
+	composeHelper        *compose.ComposeHelper
+	composeGlobalArgs    []string
+	container            *config.ContainerDetails
+	options              UpOptions
+	forceOverrideRefresh bool
 }
 
 // buildAndExtendParams groups the inputs for building and feature-extending a
@@ -326,10 +327,22 @@ func (r *runner) ensureComposeContainer(
 	if err != nil {
 		return nil, fmt.Errorf("find dev container: %w", err)
 	}
+	effectiveOptions, forceSecretRuntimeRefresh, err := r.composeSecretRuntimeOptions(
+		containerDetails,
+		options,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if forceSecretRuntimeRefresh {
+		log.Info(
+			"recreating workspace because attached terminal secrets require the secure runtime mount",
+		)
+	}
 
 	// container already exists and is running, nothing to do
 	if containerDetails != nil && containerDetails.State.Status == config.ContainerStatusRunning &&
-		!options.Recreate {
+		!effectiveOptions.Recreate {
 		return containerDetails, nil
 	}
 
@@ -338,20 +351,21 @@ func (r *runner) ensureComposeContainer(
 		composeHelper: composeHelper,
 		project:       project,
 		container:     containerDetails,
-		recreate:      options.Recreate,
+		recreate:      effectiveOptions.Recreate,
 	})
 	if didStartProject {
 		return containerDetails, nil
 	}
 
 	containerDetails, err = r.startContainer(ctx, &startContainerParams{
-		parsedConfig:        parsedConfig,
-		substitutionContext: params.runParams.substitutionContext,
-		project:             project,
-		composeHelper:       composeHelper,
-		composeGlobalArgs:   params.composeGlobalArgs,
-		container:           containerDetails,
-		options:             options,
+		parsedConfig:         parsedConfig,
+		substitutionContext:  params.runParams.substitutionContext,
+		project:              project,
+		composeHelper:        composeHelper,
+		composeGlobalArgs:    params.composeGlobalArgs,
+		container:            containerDetails,
+		options:              effectiveOptions,
+		forceOverrideRefresh: forceSecretRuntimeRefresh,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start container: %w", err)
@@ -361,6 +375,20 @@ func (r *runner) ensureComposeContainer(
 	}
 
 	return containerDetails, nil
+}
+
+func (r *runner) composeSecretRuntimeOptions(
+	details *config.ContainerDetails,
+	options UpOptions,
+) (UpOptions, bool, error) {
+	if details == nil || !r.needsTerminalSecretEnvironmentMigration(details) {
+		return options, false, nil
+	}
+	if err := r.validateTerminalSecretEnvironmentSupport(); err != nil {
+		return options, false, err
+	}
+	options.Recreate = true
+	return options, true, nil
 }
 
 // finalizeComposeContainer merges the container's metadata config and sets up
@@ -419,6 +447,8 @@ func (r *runner) finalizeComposeContainer(
 		substitutionContext: substitutionContext,
 		timeout:             runParams.timeout,
 		hostWarnings:        hostWarnings,
+		secretsEnv:          options.SecretsEnv,
+		secretsMount:        options.SecretsMount,
 	})
 }
 
@@ -770,12 +800,13 @@ func (r *runner) startContainer(
 		return nil, err
 	}
 
-	composeGlobalArgs, didRestoreFromPersistedShare := restorePersistedComposeArgs(
+	composeGlobalArgs, didRestoreFromPersistedShare := restorePersistedComposeArgsForStart(
 		container,
 		composeGlobalArgs,
+		params.forceOverrideRefresh,
 	)
 
-	if container == nil || !didRestoreFromPersistedShare {
+	if container == nil || !didRestoreFromPersistedShare || params.forceOverrideRefresh {
 		composeGlobalArgs, err = r.buildComposeOverrideArgs(ctx, &composeOverrideParams{
 			startParams:       params,
 			composeService:    &composeService,
@@ -801,6 +832,17 @@ func (r *runner) startContainer(
 		parsedConfig:         parsedConfig,
 		hasExistingContainer: container != nil,
 	})
+}
+
+func restorePersistedComposeArgsForStart(
+	container *config.ContainerDetails,
+	composeGlobalArgs []string,
+	forceOverrideRefresh bool,
+) ([]string, bool) {
+	if forceOverrideRefresh {
+		return composeGlobalArgs, false
+	}
+	return restorePersistedComposeArgs(container, composeGlobalArgs)
 }
 
 // restorePersistedComposeArgs detects persisted feature override files recorded

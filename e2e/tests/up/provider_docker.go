@@ -14,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/onsi/ginkgo/v2"
@@ -841,6 +842,95 @@ var _ = ginkgo.Describe(
 				})
 			},
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
+		ginkgo.It(
+			"migrates an existing workspace when a terminal secret is attached later",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+				contextName := fmt.Sprintf("late-secret-%d", time.Now().UnixNano())
+				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = dtc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(dtc.f.DevsyProviderAdd(
+					ctx, "docker", "-o", "DOCKER_PATH=docker",
+				))
+				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-secret-collision", dtc.initialDir, dtc.f,
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
+				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
+
+				uid, err := dtc.execSSH(ctx, tempDir, `printf %s "$DEVSY_WORKSPACE_UID"`)
+				framework.ExpectNoError(err)
+				workspace := &provider2.Workspace{UID: strings.TrimSpace(uid)}
+				ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1))
+				var beforeDetails []container.InspectResponse
+				framework.ExpectNoError(
+					dtc.dockerHelper.Inspect(ctx, ids, "container", &beforeDetails),
+				)
+
+				dtc.storeSecret(ctx, "ATTACHED_SECRET", "sentinel-late-secret")
+				_, err = dtc.f.ExecCommandOutput(
+					ctx,
+					[]string{secretCmd, "attach", "ATTACHED_SECRET"},
+				)
+				framework.ExpectNoError(err)
+				secretList, _, err := dtc.f.ExecCommandCapture(ctx,
+					[]string{secretCmd, "list", "--result-format", "json"})
+				framework.ExpectNoError(err)
+				gomega.Expect(secretList).To(gomega.ContainSubstring(`"name": "ATTACHED_SECRET"`))
+				gomega.Expect(secretList).To(gomega.ContainSubstring(`"attached": true`))
+				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
+
+				ids, err = dtc.findWorkspaceContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1))
+				var afterDetails []container.InspectResponse
+				framework.ExpectNoError(
+					dtc.dockerHelper.Inspect(ctx, ids, "container", &afterDetails),
+				)
+				gomega.Expect(afterDetails[0].ID).NotTo(gomega.Equal(beforeDetails[0].ID))
+				gomega.Expect(afterDetails[0].Mounts).To(gomega.ContainElement(gomega.Satisfy(
+					func(mount container.MountPoint) bool {
+						return mount.Destination == "/run/devsy/secrets-env" &&
+							mount.Type == "tmpfs"
+					},
+				)))
+
+				out, err := dtc.execSSH(ctx, tempDir,
+					`if [ -f /run/devsy/secrets-env/ATTACHED_SECRET ]; then `+
+						`if [ "$(cat /run/devsy/secrets-env/ATTACHED_SECRET)" = `+
+						`sentinel-late-secret ]; then printf file-attached; else printf file-other; fi; `+
+						`else printf file-absent; fi`)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("file-attached"))
+				out, err = dtc.execSSH(
+					ctx,
+					tempDir,
+					`case "$ATTACHED_SECRET" in `+
+						`sentinel-late-secret) printf attached;; base-value) printf base;; `+
+						`'') printf absent;; *) printf other;; esac`,
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("attached"))
+				mode, err := dtc.execSSH(
+					ctx,
+					tempDir,
+					"stat -c %a /run/devsy/secrets-env/ATTACHED_SECRET",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(mode)).To(gomega.Equal("600"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
 
 		ginkgo.It(

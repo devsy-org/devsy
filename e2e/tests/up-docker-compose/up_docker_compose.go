@@ -65,6 +65,96 @@ var _ = ginkgo.Describe(
 		})
 
 		ginkgo.It(
+			"migrates an existing Compose workspace when a terminal secret is attached later",
+			func(ctx context.Context) {
+				useComposeFileSecretsBackend()
+				contextName := fmt.Sprintf("compose-late-secret-%d", time.Now().UnixNano())
+				framework.ExpectNoError(tc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = tc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = tc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(tc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(tc.f.DevsyProviderAdd(
+					ctx, "docker", "-o", "DOCKER_PATH=docker",
+				))
+				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, "docker"))
+
+				tempDir, workspace, err := tc.setupAndStartWorkspace(
+					ctx, "tests/up-docker-compose/testdata/docker-compose",
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(tc.f.DevsyWorkspaceDelete, tempDir)
+				before, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+
+				secretName := "COMPOSE_SESSION_SECRET"
+				_, err = tc.f.ExecCommandOutput(ctx, []string{
+					composeSecretCommand,
+					"set",
+					secretName,
+					"--value",
+					"sentinel-compose-late-secret",
+				})
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func() {
+					_, _ = tc.f.ExecCommandOutput(
+						context.Background(), []string{composeSecretCommand, "delete", secretName},
+					)
+				})
+				_, err = tc.f.ExecCommandOutput(
+					ctx, []string{composeSecretCommand, "attach", secretName},
+				)
+				framework.ExpectNoError(err)
+				secretList, _, err := tc.f.ExecCommandCapture(
+					ctx, []string{composeSecretCommand, "list", "--result-format", "json"},
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(secretList).
+					To(gomega.ContainSubstring(`"name": "COMPOSE_SESSION_SECRET"`))
+				gomega.Expect(secretList).To(gomega.ContainSubstring(`"attached": true`))
+
+				framework.ExpectNoError(tc.f.DevsyUp(ctx, tempDir))
+				after, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(after.ID).NotTo(gomega.Equal(before.ID))
+				var sessionMount *container.MountPoint
+				for i := range after.Mounts {
+					if after.Mounts[i].Destination == "/run/devsy/secrets-env" {
+						sessionMount = &after.Mounts[i]
+						break
+					}
+				}
+				gomega.Expect(sessionMount).NotTo(gomega.BeNil())
+				gomega.Expect(sessionMount.Type).To(gomega.Equal(mount.TypeTmpfs))
+
+				checkFile := `if [ -f /run/devsy/secrets-env/COMPOSE_SESSION_SECRET ]; then ` +
+					`if [ "$(cat /run/devsy/secrets-env/COMPOSE_SESSION_SECRET)" = sentinel-compose-late-secret ]; ` +
+					`then printf file-attached; else printf file-other; fi; else printf file-absent; fi`
+				out, err := tc.execSSH(ctx, tempDir, checkFile)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("file-attached"))
+				out, err = tc.execSSH(
+					ctx,
+					tempDir,
+					`case "$COMPOSE_SESSION_SECRET" in `+
+						`sentinel-compose-late-secret) printf attached;; base-value) printf base;; `+
+						`'') printf absent;; *) printf other;; esac`,
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("attached"))
+				mode, err := tc.execSSH(
+					ctx,
+					tempDir,
+					"stat -c %a /run/devsy/secrets-env/COMPOSE_SESSION_SECRET",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(mode)).To(gomega.Equal("600"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It(
 			"injects attached terminal secrets through a tmpfs mount",
 			func(ctx context.Context) {
 				useComposeFileSecretsBackend()

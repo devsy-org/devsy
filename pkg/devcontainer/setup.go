@@ -60,6 +60,8 @@ type setupContainerParams struct {
 	substitutionContext *config.SubstitutionContext
 	timeout             time.Duration
 	hostWarnings        []string
+	secretsEnv          []string
+	secretsMount        []string
 }
 
 type setupInfo struct {
@@ -99,7 +101,13 @@ func (r *runner) setupContainer(
 		status.Operation{Phase: status.PhaseRunningLifecycleHook},
 		func(ctx context.Context) error {
 			var executeErr error
-			result, executeErr = r.executeSetup(ctx, info.result, setupCommand)
+			result, executeErr = r.executeSetup(
+				ctx,
+				info.result,
+				setupCommand,
+				params.secretsEnv,
+				params.secretsMount,
+			)
 			return executeErr
 		},
 	)
@@ -510,6 +518,7 @@ func (r *runner) executeSetup(
 	ctx context.Context,
 	result *config.Result,
 	setupCommand string,
+	secretsEnv, secretsMount []string,
 ) (*config.Result, error) {
 	runSetupServer := func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config.Result, error) {
 		return tunnelserver.RunSetupServer(
@@ -521,8 +530,8 @@ func (r *runner) executeSetup(
 			config.GetMounts(result),
 			tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
 			tunnelserver.WithSecrets(
-				r.workspaceConfig.CLIOptions.SecretsEnv,
-				r.workspaceConfig.CLIOptions.SecretsMount,
+				secretsEnv,
+				secretsMount,
 			),
 			tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
 			tunnelserver.WithStatusReporter(r.reporter),

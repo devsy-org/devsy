@@ -155,11 +155,11 @@ func (s *containerServer) getCommand(sess ssh.Session, isPty bool) (*exec.Cmd, e
 	}
 	cmd.Dir = findWorkdir(s.workdir, user)
 	baseEnv := cmd.Env
-	secretEnv, err := readSessionSecretEnvironment(config.SecretsEnvDir)
+	attachedSecretEnv, err := readSessionSecretEnvironment(config.SecretsEnvDir)
 	if err != nil {
 		return cmd, fmt.Errorf("prepare session secret environment: %w", err)
 	}
-	cmd.Env = mergeSessionEnvironment(baseEnv, sess.Environ(), secretEnv)
+	cmd.Env = mergeSessionEnvironment(baseEnv, attachedSecretEnv, sess.Environ())
 	return cmd, nil
 }
 
