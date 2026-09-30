@@ -22,6 +22,7 @@ const (
 	imgX        = "x:1"
 	testImg     = "img:1"
 	testVersion = "0.7.2"
+	oldVersion  = "microsandbox 0.7.1"
 	shPath      = "/bin/sh"
 	callFind    = "find:" + wsName
 	callRemove  = "remove:" + wsName
@@ -33,17 +34,19 @@ const (
 // fakeClient is an in-memory sandboxClient that records calls, so the driver's
 // lifecycle logic can be tested without a live runtime.
 type fakeClient struct {
-	created     map[string]sandboxSpec
-	info        map[string]*sandboxInfo
-	calls       []string
-	execReq     execRequest
-	execName    string
-	failFind    error
-	failStop    error
-	failCreat   error
-	failEnsure  error
-	failInstall error
-	version     string
+	created      map[string]sandboxSpec
+	info         map[string]*sandboxInfo
+	calls        []string
+	execReq      execRequest
+	execName     string
+	failFind     error
+	failStop     error
+	failCreat    error
+	failEnsure   error
+	failInstall  error
+	failVersion  error
+	version      string
+	versionCalls int
 }
 
 func newFakeClient() *fakeClient {
@@ -53,6 +56,10 @@ func newFakeClient() *fakeClient {
 func (f *fakeClient) EnsureInstalled(context.Context) error { return f.failInstall }
 
 func (f *fakeClient) Version(context.Context) (string, error) {
+	f.versionCalls++
+	if f.failVersion != nil {
+		return "", f.failVersion
+	}
 	if f.version != "" {
 		return f.version, nil
 	}
@@ -181,6 +188,108 @@ func TestRunDevContainerReplacesStaleSandbox(t *testing.T) {
 	}
 	if !slices.Equal(f.calls, want) {
 		t.Errorf("call order = %v, want %v", f.calls, want)
+	}
+}
+
+func TestRunDevContainerRejectsOldRuntimeBeforeMutation(t *testing.T) {
+	f := newFakeClient()
+	f.version = oldVersion
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
+	d := newDriver(f, nil, specDefaults{})
+
+	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
+	if err == nil || !strings.Contains(
+		err.Error(), "v0.7.2 or newer is required to create or recreate",
+	) {
+		t.Fatalf("RunDevContainer error = %v, want provisioning version error", err)
+	}
+	assertProvisioningUnchanged(t, f)
+}
+
+func TestRunDevContainerAcceptsProvisioningRuntimeVersions(t *testing.T) {
+	for _, version := range []string{"0.7.2", "0.7.3", "0.8.0", "1.0.0"} {
+		t.Run(version, func(t *testing.T) {
+			f := newFakeClient()
+			f.version = "microsandbox " + version
+			d := newDriver(f, nil, specDefaults{})
+			err := d.RunDevContainer(
+				context.Background(), wsID, &driver.RunOptions{Image: imgX},
+			)
+			if err != nil {
+				t.Fatalf("RunDevContainer: %v", err)
+			}
+			want := []string{callFind, "ensure:x:1", "create:" + wsName}
+			if !slices.Equal(f.calls, want) {
+				t.Fatalf("calls = %v, want %v", f.calls, want)
+			}
+		})
+	}
+}
+
+func TestRunDevContainerVersionFailureDoesNotMutateSandbox(t *testing.T) {
+	f := newFakeClient()
+	f.failVersion = errors.New("version probe failed")
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
+	d := newDriver(f, nil, specDefaults{})
+
+	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
+	if err == nil || !strings.Contains(err.Error(), "version probe failed") {
+		t.Fatalf("RunDevContainer error = %v, want version probe failure", err)
+	}
+	assertProvisioningUnchanged(t, f)
+}
+
+func TestRunDevContainerMalformedVersionDoesNotMutateSandbox(t *testing.T) {
+	f := newFakeClient()
+	f.version = "unexpected output"
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
+	d := newDriver(f, nil, specDefaults{})
+
+	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
+	if err == nil || !strings.Contains(err.Error(), "unable to parse microsandbox version") {
+		t.Fatalf("RunDevContainer error = %v, want version parse failure", err)
+	}
+	assertProvisioningUnchanged(t, f)
+}
+
+func TestOldRuntimeDoesNotBlockExistingSandboxLifecycle(t *testing.T) {
+	f := newFakeClient()
+	f.version = oldVersion
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
+	d := newDriver(f, nil, specDefaults{})
+	ctx := context.Background()
+
+	if err := d.Preflight(ctx, driver.PreflightOptions{}); err != nil {
+		t.Fatalf("Preflight: %v", err)
+	}
+	if _, err := d.FindDevContainer(ctx, wsID); err != nil {
+		t.Fatalf("FindDevContainer: %v", err)
+	}
+	if err := d.GetDevContainerLogs(ctx, wsID, io.Discard, io.Discard); err != nil {
+		t.Fatalf("GetDevContainerLogs: %v", err)
+	}
+	if err := d.StopDevContainer(ctx, wsID); err != nil {
+		t.Fatalf("StopDevContainer: %v", err)
+	}
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: false}
+	if err := d.DeleteDevContainer(ctx, wsID); err != nil {
+		t.Fatalf("DeleteDevContainer: %v", err)
+	}
+	if f.versionCalls != 0 {
+		t.Fatalf("version probes = %d, want no lifecycle version probes", f.versionCalls)
+	}
+}
+
+func assertProvisioningUnchanged(t *testing.T, f *fakeClient) {
+	t.Helper()
+	if f.info[wsName] == nil {
+		t.Fatal("existing sandbox was removed before version validation")
+	}
+	for _, call := range f.calls {
+		if strings.HasPrefix(call, "stop:") || strings.HasPrefix(call, "remove:") ||
+			strings.HasPrefix(call, "create:") || strings.HasPrefix(call, "ensure:") {
+			t.Fatalf("version validation mutated sandbox state: %v", f.calls)
+		}
 	}
 }
 
