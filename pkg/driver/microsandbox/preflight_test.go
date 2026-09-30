@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/devsy-org/devsy/pkg/provider"
 )
 
 func TestPreflightInstalled(t *testing.T) {
@@ -40,5 +41,29 @@ func TestPreflightAllowsOldRuntime(t *testing.T) {
 	}
 	if c.versionCalls != 0 {
 		t.Fatalf("Preflight version probes = %d, want 0", c.versionCalls)
+	}
+}
+
+func TestProvisioningPreflightAllowsOldRuntimeWhenStatVirtualizationOff(t *testing.T) {
+	c := newFakeClient()
+	c.version = oldVersion
+	policy, err := parseWorkspaceMountPolicy(provider.ProviderMicrosandboxDriverConfig{
+		WorkspaceHostPermissions:    string(hostPermissionsPrivate),
+		WorkspaceStatVirtualization: string(statVirtOff),
+	})
+	if err != nil {
+		t.Fatalf("parseWorkspaceMountPolicy: %v", err)
+	}
+	d := newDriver(c, nil, specDefaults{})
+	d.workspaceMountPolicy = policy
+
+	if err := d.ProvisioningPreflight(context.Background()); err != nil {
+		t.Fatalf("ProvisioningPreflight with stat virtualization off = %v, want nil", err)
+	}
+	if c.versionCalls != 0 {
+		t.Fatalf(
+			"version probes = %d, want 0 when ownership synchronization is off",
+			c.versionCalls,
+		)
 	}
 }

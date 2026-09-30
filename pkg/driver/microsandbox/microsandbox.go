@@ -347,6 +347,9 @@ func (d *microsandboxDriver) GetDevContainerLogs(
 }
 
 func (d *microsandboxDriver) ProvisioningPreflight(ctx context.Context) error {
+	if d.workspaceMountPolicy.StatVirtualization == statVirtOff {
+		return nil
+	}
 	rawVersion, err := d.client.Version(ctx)
 	if err != nil {
 		return &driver.PreflightError{
