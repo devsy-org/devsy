@@ -8,10 +8,15 @@ import (
 	"time"
 )
 
-const defaultExecStartupSilenceTimeout = 30 * time.Second
+const (
+	defaultExecStartupSilenceTimeout  = 30 * time.Second
+	defaultExecTerminationWaitTimeout = 5 * time.Second
+)
 
 type ExecStartupWatchdogOptions struct {
-	Timeout time.Duration
+	Timeout                time.Duration
+	TerminationWaitTimeout time.Duration
+	OnStartupSilence       func()
 }
 
 type ExecStartupSilenceError struct {
@@ -50,14 +55,22 @@ func ExecWithStartupWatchdog(
 	if timeout <= 0 {
 		timeout = defaultExecStartupSilenceTimeout
 	}
-	return execWithStartupWatchdog(ctx, exec, req, timeout)
+	terminationWaitTimeout := opts.TerminationWaitTimeout
+	if terminationWaitTimeout <= 0 {
+		terminationWaitTimeout = defaultExecTerminationWaitTimeout
+	}
+	return execWithStartupWatchdog(ctx, exec, req, ExecStartupWatchdogOptions{
+		Timeout:                timeout,
+		TerminationWaitTimeout: terminationWaitTimeout,
+		OnStartupSilence:       opts.OnStartupSilence,
+	})
 }
 
 func execWithStartupWatchdog(
 	ctx context.Context,
 	exec Exec,
 	req ExecRequest,
-	timeout time.Duration,
+	opts ExecStartupWatchdogOptions,
 ) error {
 	if req.Stdout == nil {
 		req.Stdout = io.Discard
@@ -77,7 +90,7 @@ func execWithStartupWatchdog(
 		execDone <- exec(watchCtx, req)
 	}()
 
-	timer := time.NewTimer(timeout)
+	timer := time.NewTimer(opts.Timeout)
 	defer timer.Stop()
 	timerC := timer.C
 
@@ -95,9 +108,34 @@ func execWithStartupWatchdog(
 				timerC = nil
 				continue
 			}
-			cancel()
-			<-execDone
-			return &ExecStartupSilenceError{timeout: timeout}
+			stopExecAfterStartupSilence(cancel, execDone, opts)
+			return &ExecStartupSilenceError{timeout: opts.Timeout}
 		}
+	}
+}
+
+func stopExecAfterStartupSilence(
+	cancel context.CancelFunc,
+	execDone <-chan error,
+	opts ExecStartupWatchdogOptions,
+) {
+	cancel()
+	waitTimer := time.NewTimer(opts.TerminationWaitTimeout)
+	defer waitTimer.Stop()
+	if opts.OnStartupSilence != nil {
+		interruptDone := make(chan struct{})
+		go func() {
+			opts.OnStartupSilence()
+			close(interruptDone)
+		}()
+		select {
+		case <-interruptDone:
+		case <-waitTimer.C:
+			return
+		}
+	}
+	select {
+	case <-execDone:
+	case <-waitTimer.C:
 	}
 }

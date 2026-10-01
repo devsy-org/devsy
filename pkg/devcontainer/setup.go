@@ -564,6 +564,15 @@ func (r *runner) execSetupSSHServer(
 	req agent.ExecRequest,
 	watchdogOpts agent.ExecStartupWatchdogOptions,
 ) error {
+	onStartupSilence := watchdogOpts.OnStartupSilence
+	watchdogOpts.OnStartupSilence = func() {
+		if stdin, ok := req.Stdin.(io.Closer); ok {
+			_ = stdin.Close()
+		}
+		if onStartupSilence != nil {
+			onStartupSilence()
+		}
+	}
 	return agent.ExecWithStartupWatchdog(
 		ctx,
 		func(ctx context.Context, req agent.ExecRequest) error {

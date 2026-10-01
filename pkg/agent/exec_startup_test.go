@@ -134,3 +134,47 @@ func TestExecWithStartupWatchdog_SilenceWaitsForExecTermination(t *testing.T) {
 		t.Fatal("startup silence error returned before exec termination")
 	}
 }
+
+func TestExecWithStartupWatchdog_SilenceWaitIsBounded(t *testing.T) {
+	releaseExec := make(chan struct{})
+	releaseCallback := make(chan struct{})
+	callbackStarted := make(chan struct{})
+	t.Cleanup(func() {
+		close(releaseExec)
+		close(releaseCallback)
+	})
+	exec := func(ctx context.Context, _ ExecRequest) error {
+		<-ctx.Done()
+		<-releaseExec
+		return ctx.Err()
+	}
+	result := make(chan error, 1)
+	go func() {
+		result <- ExecWithStartupWatchdog(
+			context.Background(),
+			exec,
+			watchdogOp(),
+			ExecStartupWatchdogOptions{
+				Timeout:                25 * time.Millisecond,
+				TerminationWaitTimeout: 25 * time.Millisecond,
+				OnStartupSilence: func() {
+					close(callbackStarted)
+					<-releaseCallback
+				},
+			},
+		)
+	}()
+
+	select {
+	case err := <-result:
+		var silenceErr *ExecStartupSilenceError
+		require.ErrorAs(t, err, &silenceErr)
+	case <-time.After(time.Second):
+		t.Fatal("startup silence waited indefinitely for exec termination")
+	}
+	select {
+	case <-callbackStarted:
+	case <-time.After(time.Second):
+		t.Fatal("startup silence did not start the interrupt callback")
+	}
+}

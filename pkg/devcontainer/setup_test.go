@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"reflect"
 	"testing"
 	"time"
@@ -20,7 +21,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testDockerHostEnvKey = "DOCKER_HOST"
+const (
+	testDockerHostEnvKey      = "DOCKER_HOST"
+	testSetupSSHServerCommand = "ssh-server --stdio"
+)
 
 type setupSSHDriver struct {
 	mockDriver
@@ -52,7 +56,7 @@ func TestExecSetupSSHServer_SilentExecReturnsStartupSilence(t *testing.T) {
 
 	err := r.execSetupSSHServer(
 		context.Background(), agent.ExecRequest{
-			Command: "ssh-server --stdio", Stdin: stdin, Stdout: stdout, Stderr: stderr,
+			Command: testSetupSSHServerCommand, Stdin: stdin, Stdout: stdout, Stderr: stderr,
 		},
 		agent.ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond},
 	)
@@ -61,11 +65,42 @@ func TestExecSetupSSHServer_SilentExecReturnsStartupSilence(t *testing.T) {
 	require.NotNil(t, got)
 	assert.Equal(t, r.id, got.WorkspaceID)
 	assert.Equal(t, "root", got.User)
-	assert.Equal(t, "ssh-server --stdio", got.Command)
+	assert.Equal(t, testSetupSSHServerCommand, got.Command)
 	assert.Same(t, stdin, got.Stdin)
 	assert.NotNil(t, got.Stdout)
 	assert.NotNil(t, got.Stderr)
 	assert.True(t, got.RawStdout)
+}
+
+func TestExecSetupSSHServer_SilentExecClosesStdin(t *testing.T) {
+	stdin, stdinPeer := net.Pipe()
+	defer func() { _ = stdinPeer.Close() }()
+	copyDone := make(chan struct{})
+	d := &setupSSHDriver{command: func(ctx context.Context, params *driver.CommandParams) error {
+		go func() {
+			_, _ = io.Copy(io.Discard, params.Stdin)
+			close(copyDone)
+		}()
+		<-ctx.Done()
+		<-copyDone
+		return ctx.Err()
+	}}
+	r := newTestRunner(d)
+
+	err := r.execSetupSSHServer(
+		context.Background(), agent.ExecRequest{Command: testSetupSSHServerCommand, Stdin: stdin},
+		agent.ExecStartupWatchdogOptions{
+			Timeout:                50 * time.Millisecond,
+			TerminationWaitTimeout: time.Second,
+		},
+	)
+	var silenceErr *agent.ExecStartupSilenceError
+	require.ErrorAs(t, err, &silenceErr)
+	select {
+	case <-copyDone:
+	default:
+		t.Fatal("closing setup stdin did not unblock the command input copy")
+	}
 }
 
 func TestExecSetupSSHServer_OutputDisarmsWatchdog(t *testing.T) {
@@ -91,7 +126,7 @@ func TestExecSetupSSHServer_OutputDisarmsWatchdog(t *testing.T) {
 			result := make(chan error, 1)
 			go func() {
 				result <- r.execSetupSSHServer(ctx, agent.ExecRequest{
-					Command: "ssh-server --stdio", Stdout: io.Discard, Stderr: writeCloser{io.Discard},
+					Command: testSetupSSHServerCommand, Stdout: io.Discard, Stderr: writeCloser{io.Discard},
 				}, agent.ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond})
 			}()
 			<-wrote
