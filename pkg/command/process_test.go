@@ -55,7 +55,7 @@ func TestKillTreeTerminatesGroupAfterWorkerExits(t *testing.T) {
 	cmd := exec.Command(
 		"sh",
 		"-c",
-		`sleep 60 >/dev/null 2>&1 & echo $! > "$1"; exit 0`,
+		`trap '' TERM; sleep 60 >/dev/null 2>&1 & echo $! > "$1"; exit 0`,
 		"sh",
 		childPIDFile,
 	)
