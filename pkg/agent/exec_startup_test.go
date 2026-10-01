@@ -11,13 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func shrinkStartupTimeout(t *testing.T, d time.Duration) {
-	t.Helper()
-	orig := execStartupSilenceTimeout
-	execStartupSilenceTimeout = d
-	t.Cleanup(func() { execStartupSilenceTimeout = orig })
-}
-
 func blockingExec(ctx context.Context, _ ExecRequest) error {
 	<-ctx.Done()
 	return ctx.Err()
@@ -28,10 +21,11 @@ func watchdogOp() ExecRequest {
 }
 
 func TestExecWithStartupWatchdog_SilentExecIsWedged(t *testing.T) {
-	shrinkStartupTimeout(t, 50*time.Millisecond)
-
 	start := time.Now()
-	err := execWithStartupWatchdog(context.Background(), blockingExec, watchdogOp())
+	err := ExecWithStartupWatchdog(
+		context.Background(), blockingExec, watchdogOp(),
+		ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond},
+	)
 
 	var silenceErr *ExecStartupSilenceError
 	require.ErrorAs(t, err, &silenceErr)
@@ -41,8 +35,6 @@ func TestExecWithStartupWatchdog_SilentExecIsWedged(t *testing.T) {
 }
 
 func TestExecWithStartupWatchdog_OutputDisarmsWatchdog(t *testing.T) {
-	shrinkStartupTimeout(t, 100*time.Millisecond)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	wrote := make(chan struct{})
 	exec := func(ctx context.Context, req ExecRequest) error {
@@ -54,19 +46,19 @@ func TestExecWithStartupWatchdog_OutputDisarmsWatchdog(t *testing.T) {
 
 	go func() {
 		<-wrote
-		time.Sleep(3 * execStartupSilenceTimeout)
+		time.Sleep(150 * time.Millisecond)
 		cancel()
 	}()
 
-	err := execWithStartupWatchdog(ctx, exec, watchdogOp())
+	err := ExecWithStartupWatchdog(
+		ctx, exec, watchdogOp(), ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond},
+	)
 	require.ErrorIs(t, err, context.Canceled)
 	var silenceErr *ExecStartupSilenceError
 	assert.NotErrorAs(t, err, &silenceErr)
 }
 
 func TestExecWithStartupWatchdog_OutputThenCancellationIsPrompt(t *testing.T) {
-	shrinkStartupTimeout(t, 50*time.Millisecond)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	started := make(chan struct{})
 	exec := func(_ context.Context, req ExecRequest) error {
@@ -76,9 +68,11 @@ func TestExecWithStartupWatchdog_OutputThenCancellationIsPrompt(t *testing.T) {
 	}
 
 	result := make(chan error, 1)
-	go func() { result <- execWithStartupWatchdog(ctx, exec, watchdogOp()) }()
+	go func() {
+		result <- ExecWithStartupWatchdog(ctx, exec, watchdogOp(), ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond})
+	}()
 	<-started
-	time.Sleep(2 * execStartupSilenceTimeout)
+	time.Sleep(100 * time.Millisecond)
 	cancel()
 
 	select {
@@ -90,35 +84,33 @@ func TestExecWithStartupWatchdog_OutputThenCancellationIsPrompt(t *testing.T) {
 }
 
 func TestExecWithStartupWatchdog_PropagatesExecError(t *testing.T) {
-	shrinkStartupTimeout(t, time.Hour)
-
 	sentinel := errors.New("exec failed")
 	exec := func(context.Context, ExecRequest) error {
 		return sentinel
 	}
 
-	err := execWithStartupWatchdog(context.Background(), exec, watchdogOp())
+	err := ExecWithStartupWatchdog(
+		context.Background(), exec, watchdogOp(), ExecStartupWatchdogOptions{Timeout: time.Hour},
+	)
 	require.ErrorIs(t, err, sentinel)
 }
 
 func TestExecWithStartupWatchdog_ParentCancelIsNotWedged(t *testing.T) {
-	shrinkStartupTimeout(t, time.Hour)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(20 * time.Millisecond)
 		cancel()
 	}()
 
-	err := execWithStartupWatchdog(ctx, blockingExec, watchdogOp())
+	err := ExecWithStartupWatchdog(
+		ctx, blockingExec, watchdogOp(), ExecStartupWatchdogOptions{Timeout: time.Hour},
+	)
 	require.ErrorIs(t, err, context.Canceled)
 	var silenceErr *ExecStartupSilenceError
 	assert.NotErrorAs(t, err, &silenceErr)
 }
 
 func TestExecWithStartupWatchdog_SilenceWaitsForExecTermination(t *testing.T) {
-	shrinkStartupTimeout(t, 50*time.Millisecond)
-
 	terminated := make(chan struct{})
 	exec := func(ctx context.Context, _ ExecRequest) error {
 		<-ctx.Done()
@@ -126,7 +118,13 @@ func TestExecWithStartupWatchdog_SilenceWaitsForExecTermination(t *testing.T) {
 		return ctx.Err()
 	}
 
-	err := execWithStartupWatchdog(context.Background(), exec, watchdogOp())
+	opts := ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond}
+	err := ExecWithStartupWatchdog(
+		context.Background(),
+		exec,
+		watchdogOp(),
+		opts,
+	)
 
 	var silenceErr *ExecStartupSilenceError
 	require.ErrorAs(t, err, &silenceErr)
@@ -134,5 +132,49 @@ func TestExecWithStartupWatchdog_SilenceWaitsForExecTermination(t *testing.T) {
 	case <-terminated:
 	default:
 		t.Fatal("startup silence error returned before exec termination")
+	}
+}
+
+func TestExecWithStartupWatchdog_SilenceWaitIsBounded(t *testing.T) {
+	releaseExec := make(chan struct{})
+	releaseCallback := make(chan struct{})
+	callbackStarted := make(chan struct{})
+	t.Cleanup(func() {
+		close(releaseExec)
+		close(releaseCallback)
+	})
+	exec := func(ctx context.Context, _ ExecRequest) error {
+		<-ctx.Done()
+		<-releaseExec
+		return ctx.Err()
+	}
+	result := make(chan error, 1)
+	go func() {
+		result <- ExecWithStartupWatchdog(
+			context.Background(),
+			exec,
+			watchdogOp(),
+			ExecStartupWatchdogOptions{
+				Timeout:                25 * time.Millisecond,
+				TerminationWaitTimeout: 25 * time.Millisecond,
+				OnStartupSilence: func() {
+					close(callbackStarted)
+					<-releaseCallback
+				},
+			},
+		)
+	}()
+
+	select {
+	case err := <-result:
+		var silenceErr *ExecStartupSilenceError
+		require.ErrorAs(t, err, &silenceErr)
+	case <-time.After(time.Second):
+		t.Fatal("startup silence waited indefinitely for exec termination")
+	}
+	select {
+	case <-callbackStarted:
+	case <-time.After(time.Second):
+		t.Fatal("startup silence did not start the interrupt callback")
 	}
 }

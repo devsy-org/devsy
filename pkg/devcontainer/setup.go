@@ -537,15 +537,16 @@ func (r *runner) executeSetup(
 		sshTunnelStdinReader io.Reader, sshTunnelStdoutWriter io.Writer,
 		writer io.WriteCloser,
 	) error {
-		return r.driver.CommandDevContainer(cancelCtx, &driver.CommandParams{
-			WorkspaceID: r.id,
-			User:        containerRootUser,
-			Command:     sshCmd,
-			Stdin:       sshTunnelStdinReader,
-			Stdout:      sshTunnelStdoutWriter,
-			Stderr:      writer,
-			RawStdout:   true,
-		})
+		return r.execSetupSSHServer(
+			cancelCtx,
+			agent.ExecRequest{
+				Command: sshCmd,
+				Stdin:   sshTunnelStdinReader,
+				Stdout:  sshTunnelStdoutWriter,
+				Stderr:  writer,
+			},
+			agent.ExecStartupWatchdogOptions{},
+		)
 	}
 
 	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{
@@ -556,6 +557,38 @@ func (r *runner) executeSetup(
 		Command:          setupCommand,
 		TunnelServerFunc: runSetupServer,
 	})
+}
+
+func (r *runner) execSetupSSHServer(
+	ctx context.Context,
+	req agent.ExecRequest,
+	watchdogOpts agent.ExecStartupWatchdogOptions,
+) error {
+	onStartupSilence := watchdogOpts.OnStartupSilence
+	watchdogOpts.OnStartupSilence = func() {
+		if stdin, ok := req.Stdin.(io.Closer); ok {
+			_ = stdin.Close()
+		}
+		if onStartupSilence != nil {
+			onStartupSilence()
+		}
+	}
+	return agent.ExecWithStartupWatchdog(
+		ctx,
+		func(ctx context.Context, req agent.ExecRequest) error {
+			return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
+				WorkspaceID: r.id,
+				User:        containerRootUser,
+				Command:     req.Command,
+				Stdin:       req.Stdin,
+				Stdout:      req.Stdout,
+				Stderr:      req.Stderr,
+				RawStdout:   true,
+			})
+		},
+		req,
+		watchdogOpts,
+	)
 }
 
 func (r *runner) buildSSHTunnelCommand() string {

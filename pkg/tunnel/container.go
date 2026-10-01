@@ -118,11 +118,8 @@ func (c *ContainerTunnel) runHostTunnel(
 	stdinReader io.Reader, stdoutWriter io.Writer,
 	timeout time.Duration,
 ) error {
-	writer, done := log.PipeJSONStreamWithFallback(log.PassthroughWriter())
-	defer func() {
-		_ = writer.Close()
-		<-done
-	}()
+	writer, closeAndDrain := internalProcessStderr(log.PassthroughWriter())
+	defer closeAndDrain()
 	defer log.Debugf("Tunnel to host closed")
 
 	command := fmt.Sprintf("'%s' internal ssh-server --stdio", c.client.AgentPath())
@@ -148,6 +145,15 @@ func (c *ContainerTunnel) runHostTunnel(
 		Stderr:          writer,
 		Timeout:         timeout,
 	})
+}
+
+func internalProcessStderr(fallback io.WriteCloser) (io.WriteCloser, func()) {
+	writer, done := log.PipeJSONStreamWithFallback(fallback)
+	return writer, func() {
+		_ = writer.Close()
+		<-done
+		_ = fallback.Close()
+	}
 }
 
 // updateConfig is called periodically to keep the workspace agent config up to date.
@@ -209,11 +215,8 @@ func (c *ContainerTunnel) runInContainer(
 		return err
 	}
 
-	writer, writerDone := log.PipeJSONStream()
-	defer func() {
-		_ = writer.Close()
-		<-writerDone
-	}()
+	writer, closeAndDrain := internalProcessStderr(log.PassthroughWriter())
+	defer closeAndDrain()
 
 	command := fmt.Sprintf(
 		"%q internal agent container-tunnel --workspace-info %q",

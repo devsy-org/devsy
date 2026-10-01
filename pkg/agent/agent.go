@@ -473,13 +473,13 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 	}
 
 	log.Debugf("starting ssh server exec: user=%s", user)
-	return execWithStartupWatchdog(ctx, opts.Exec, ExecRequest{
+	return ExecWithStartupWatchdog(ctx, opts.Exec, ExecRequest{
 		User:    user,
 		Command: command,
 		Stdin:   opts.Stdin,
 		Stdout:  opts.Stdout,
 		Stderr:  opts.Stderr,
-	})
+	}, ExecStartupWatchdogOptions{})
 }
 
 // sshServerCommand builds the remote command that runs the ssh-server

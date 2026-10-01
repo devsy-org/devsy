@@ -33,6 +33,23 @@ func DriverPreflight(ctx context.Context, d Driver, opts PreflightOptions) error
 	return nil
 }
 
+// ProvisioningPreflighter is implemented by drivers that need a compatibility
+// check before Devsy creates or recreates a devcontainer. It is separate from
+// Preflighter because ordinary preflight also runs for lifecycle operations.
+type ProvisioningPreflighter interface {
+	Driver
+
+	ProvisioningPreflight(ctx context.Context) error
+}
+
+// DriverProvisioningPreflight runs a driver's provisioning check when supported.
+func DriverProvisioningPreflight(ctx context.Context, d Driver) error {
+	if p, ok := d.(ProvisioningPreflighter); ok {
+		return p.ProvisioningPreflight(ctx)
+	}
+	return nil
+}
+
 // AutoStartDisabledByEnv reports whether NoAutoStartEnv opts out of auto-start.
 func AutoStartDisabledByEnv() bool {
 	v, err := strconv.ParseBool(os.Getenv(NoAutoStartEnv))

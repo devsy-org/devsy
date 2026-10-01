@@ -2,11 +2,13 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -29,12 +31,6 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 		Short: "Run or re-run init and option resolution for an existing provider",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			unlock, err := config.LockConfig()
-			if err != nil {
-				return err
-			}
-			defer unlock()
-
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
@@ -43,10 +39,25 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, name)
+			if err != nil {
+				return fmt.Errorf("get operation lock: %w", err)
+			}
+			if err := opLock.Lock(); err != nil {
+				return fmt.Errorf("acquire operation lock: %w", err)
+			}
+			defer func() { _ = opLock.Unlock() }()
+
+			devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
+			if err != nil {
+				return err
+			}
 			p, err := workspace.FindProvider(devsyConfig, name)
 			if err != nil {
 				return err
 			}
+
 			reporter, err := newStatusReporter(
 				cmd.ResultFormat,
 				os.Stdout,

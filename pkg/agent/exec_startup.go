@@ -8,7 +8,16 @@ import (
 	"time"
 )
 
-var execStartupSilenceTimeout = 30 * time.Second
+const (
+	defaultExecStartupSilenceTimeout  = 30 * time.Second
+	defaultExecTerminationWaitTimeout = 5 * time.Second
+)
+
+type ExecStartupWatchdogOptions struct {
+	Timeout                time.Duration
+	TerminationWaitTimeout time.Duration
+	OnStartupSilence       func()
+}
 
 type ExecStartupSilenceError struct {
 	timeout time.Duration
@@ -30,11 +39,39 @@ type startupActivityWriter struct {
 }
 
 func (s *startupActivityWriter) Write(p []byte) (int, error) {
-	s.active.Store(true)
+	if len(p) > 0 {
+		s.active.Store(true)
+	}
 	return s.w.Write(p)
 }
 
-func execWithStartupWatchdog(ctx context.Context, exec Exec, req ExecRequest) error {
+func ExecWithStartupWatchdog(
+	ctx context.Context,
+	exec Exec,
+	req ExecRequest,
+	opts ExecStartupWatchdogOptions,
+) error {
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = defaultExecStartupSilenceTimeout
+	}
+	terminationWaitTimeout := opts.TerminationWaitTimeout
+	if terminationWaitTimeout <= 0 {
+		terminationWaitTimeout = defaultExecTerminationWaitTimeout
+	}
+	return execWithStartupWatchdog(ctx, exec, req, ExecStartupWatchdogOptions{
+		Timeout:                timeout,
+		TerminationWaitTimeout: terminationWaitTimeout,
+		OnStartupSilence:       opts.OnStartupSilence,
+	})
+}
+
+func execWithStartupWatchdog(
+	ctx context.Context,
+	exec Exec,
+	req ExecRequest,
+	opts ExecStartupWatchdogOptions,
+) error {
 	if req.Stdout == nil {
 		req.Stdout = io.Discard
 	}
@@ -53,7 +90,7 @@ func execWithStartupWatchdog(ctx context.Context, exec Exec, req ExecRequest) er
 		execDone <- exec(watchCtx, req)
 	}()
 
-	timer := time.NewTimer(execStartupSilenceTimeout)
+	timer := time.NewTimer(opts.Timeout)
 	defer timer.Stop()
 	timerC := timer.C
 
@@ -71,9 +108,34 @@ func execWithStartupWatchdog(ctx context.Context, exec Exec, req ExecRequest) er
 				timerC = nil
 				continue
 			}
-			cancel()
-			<-execDone
-			return &ExecStartupSilenceError{timeout: execStartupSilenceTimeout}
+			stopExecAfterStartupSilence(cancel, execDone, opts)
+			return &ExecStartupSilenceError{timeout: opts.Timeout}
 		}
+	}
+}
+
+func stopExecAfterStartupSilence(
+	cancel context.CancelFunc,
+	execDone <-chan error,
+	opts ExecStartupWatchdogOptions,
+) {
+	cancel()
+	waitTimer := time.NewTimer(opts.TerminationWaitTimeout)
+	defer waitTimer.Stop()
+	if opts.OnStartupSilence != nil {
+		interruptDone := make(chan struct{})
+		go func() {
+			opts.OnStartupSilence()
+			close(interruptDone)
+		}()
+		select {
+		case <-interruptDone:
+		case <-waitTimer.C:
+			return
+		}
+	}
+	select {
+	case <-execDone:
+	case <-waitTimer.C:
 	}
 }

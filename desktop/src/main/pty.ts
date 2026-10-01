@@ -28,6 +28,10 @@ interface PtyDeps {
   spawnPty?: typeof import("node-pty").spawn
 }
 
+export function sshTerminalArgs(workspaceId: string): string[] {
+  return ["--log-level=error", "workspace", "ssh", workspaceId]
+}
+
 export class PtyManager {
   private sessions = new Map<string, IPty>()
   /**
@@ -81,7 +85,7 @@ export class PtyManager {
   createSshSession(workspaceId: string, cols: number, rows: number): string {
     const pty = requirePty()
     const sessionId = crypto.randomUUID()
-    const proc = pty.spawn(this.deps.binaryPath, ["workspace", "ssh", workspaceId], {
+    const proc = pty.spawn(this.deps.binaryPath, sshTerminalArgs(workspaceId), {
       name: "xterm-256color",
       cols,
       rows,

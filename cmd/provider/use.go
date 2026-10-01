@@ -1,10 +1,13 @@
 package provider
 
 import (
+	"fmt"
+
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -12,9 +15,22 @@ import (
 // UseProvider sets the named provider as the default for the addressed config
 // context, loading and saving config.yaml under the config lock.
 func UseProvider(contextOverride, providerOverride, name string) error {
+	initial, err := config.LoadConfig(contextOverride, providerOverride)
+	if err != nil {
+		return err
+	}
+	opLock, err := provider.GetProviderOperationLock(initial.DefaultContext, name)
+	if err != nil {
+		return fmt.Errorf("get operation lock: %w", err)
+	}
+	if err := opLock.Lock(); err != nil {
+		return fmt.Errorf("acquire operation lock: %w", err)
+	}
+	defer func() { _ = opLock.Unlock() }()
+
 	var resolved string
-	err := config.UpdateConfig(
-		contextOverride,
+	err = config.UpdateConfig(
+		initial.DefaultContext,
 		providerOverride,
 		func(devsyConfig *config.Config) error {
 			p, err := workspace.FindProvider(devsyConfig, name)

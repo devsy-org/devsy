@@ -750,7 +750,11 @@ func (cmd *SetupContainerCmd) setupVSCode(
 ) error {
 	log.Debugf("setup %s", flavor.DisplayName())
 	vsCodeConfiguration := config.GetVSCodeConfiguration(setupInfo.MergedConfig)
-	log.Debugf("vscode settings: %v", vsCodeConfiguration.Settings)
+	formattedSettings, err := formatVSCodeSettings(vsCodeConfiguration.Settings)
+	if err != nil {
+		return err
+	}
+	log.Debugf("vscode settings:\n%s", formattedSettings)
 	settings := ""
 	if len(vsCodeConfiguration.Settings) > 0 {
 		out, err := json.Marshal(vsCodeConfiguration.Settings)
@@ -762,7 +766,7 @@ func (cmd *SetupContainerCmd) setupVSCode(
 	}
 
 	user := config.GetRemoteUser(setupInfo)
-	err := vscode.NewVSCodeServer(vscode.ServerOptions{
+	err = vscode.NewVSCodeServer(vscode.ServerOptions{
 		Extensions: vsCodeConfiguration.Extensions,
 		Settings:   settings,
 		UserName:   user,
@@ -803,6 +807,15 @@ func (cmd *SetupContainerCmd) setupVSCode(
 			//nolint:gosec // binaryPath is from os.Executable(), not user input
 			return exec.Command(binaryPath, args...), nil
 		})
+}
+
+func formatVSCodeSettings(settings map[string]any) (string, error) {
+	formatted, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return "", err
+	}
+
+	return string(formatted), nil
 }
 
 // setupBrowserIDE installs and starts any of the browser-based IDEs

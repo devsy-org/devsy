@@ -49,10 +49,11 @@ type microsandboxDriver struct {
 }
 
 var (
-	_ driver.RunOptionsDriver     = (*microsandboxDriver)(nil)
-	_ driver.ReprovisioningDriver = (*microsandboxDriver)(nil)
-	_ driver.ImageDriver          = (*microsandboxDriver)(nil)
-	_ driver.Preflighter          = (*microsandboxDriver)(nil)
+	_ driver.RunOptionsDriver        = (*microsandboxDriver)(nil)
+	_ driver.ReprovisioningDriver    = (*microsandboxDriver)(nil)
+	_ driver.ImageDriver             = (*microsandboxDriver)(nil)
+	_ driver.Preflighter             = (*microsandboxDriver)(nil)
+	_ driver.ProvisioningPreflighter = (*microsandboxDriver)(nil)
 )
 
 var minimumMicrosandboxVersion = semver.MustParse("0.7.2")
@@ -75,26 +76,11 @@ func parseMicrosandboxVersion(output string) (semver.Version, error) {
 	return version, nil
 }
 
-// Preflight checks the microsandbox runtime binary is installed. There is no
-// daemon to auto-start, so a missing binary is surfaced for the user.
+// Preflight verifies the runtime is installed. Provisioning compatibility is
+// checked when creating a sandbox so older runtimes can manage existing ones.
 func (d *microsandboxDriver) Preflight(ctx context.Context, _ driver.PreflightOptions) error {
 	if err := d.client.EnsureInstalled(ctx); err != nil {
 		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: err}
-	}
-	rawVersion, err := d.client.Version(ctx)
-	if err != nil {
-		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: err}
-	}
-	version, err := parseMicrosandboxVersion(rawVersion)
-	if err != nil {
-		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: err}
-	}
-	if version.LT(minimumMicrosandboxVersion) {
-		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: fmt.Errorf(
-			"microsandbox %s is too old for Devsy workspace ownership synchronization; "+
-				"v%s or newer is required. Update with `msb self update`",
-			version, minimumMicrosandboxVersion,
-		)}
 	}
 	return nil
 }
@@ -360,6 +346,32 @@ func (d *microsandboxDriver) GetDevContainerLogs(
 	return d.client.Logs(ctx, sandboxName(workspaceID), stdout)
 }
 
+func (d *microsandboxDriver) ProvisioningPreflight(ctx context.Context) error {
+	if d.workspaceMountPolicy.StatVirtualization == statVirtOff {
+		return nil
+	}
+	rawVersion, err := d.client.Version(ctx)
+	if err != nil {
+		return &driver.PreflightError{
+			Provider: provider.MicrosandboxDriver,
+			Err:      fmt.Errorf("get microsandbox version: %w", err),
+		}
+	}
+	version, err := parseMicrosandboxVersion(rawVersion)
+	if err != nil {
+		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: err}
+	}
+	if version.LT(minimumMicrosandboxVersion) {
+		return &driver.PreflightError{Provider: provider.MicrosandboxDriver, Err: fmt.Errorf(
+			"microsandbox %s is too old for Devsy workspace ownership synchronization; "+
+				"v%s or newer is required to create or recreate a workspace. "+
+				"Update with `msb self update`",
+			version, minimumMicrosandboxVersion,
+		)}
+	}
+	return nil
+}
+
 func (d *microsandboxDriver) runFromOptions(
 	ctx context.Context,
 	workspaceID string,
@@ -373,6 +385,9 @@ func (d *microsandboxDriver) runFromOptions(
 	}
 	if options.Image == "" {
 		return fmt.Errorf("microsandbox driver requires an image to run")
+	}
+	if err := d.ProvisioningPreflight(ctx); err != nil {
+		return err
 	}
 	warnUnsupportedOptions(options)
 	if err := d.DeleteDevContainer(ctx, workspaceID); err != nil {

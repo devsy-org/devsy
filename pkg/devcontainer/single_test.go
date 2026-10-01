@@ -1,15 +1,118 @@
 package devcontainer
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
 const mountTypeVolume = "volume"
+
+type provisioningPreflightMockDriver struct {
+	*mockDriver
+	provisioningCalled bool
+	provisioningErr    error
+}
+
+func (d *provisioningPreflightMockDriver) ProvisioningPreflight(context.Context) error {
+	d.provisioningCalled = true
+	return d.provisioningErr
+}
+
+func TestResolveContainerRecreateProvisioningFailurePreservesExistingContainer(t *testing.T) {
+	sentinel := errors.New("unsupported provisioning runtime")
+	existing := runningContainerDetails()
+	base := &mockDriver{findResult: existing}
+	d := &provisioningPreflightMockDriver{
+		mockDriver:      base,
+		provisioningErr: sentinel,
+	}
+	r := newTestRunner(d)
+
+	_, err := r.resolveContainer(
+		context.Background(), recreateResolveParams(), existing,
+	)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("resolveContainer error = %v, want %v", err, sentinel)
+	}
+	if !d.provisioningCalled {
+		t.Fatal("expected provisioning preflight before recreate")
+	}
+	if base.stopCalled {
+		t.Fatal("existing container was stopped before provisioning validation")
+	}
+	if base.deleteCalled {
+		t.Fatal("existing container was deleted before provisioning validation")
+	}
+}
+
+func TestResolveContainerExternalRecreateRejectsBeforeProvisioningPreflight(t *testing.T) {
+	d := &provisioningPreflightMockDriver{mockDriver: &mockDriver{}}
+	r := newTestRunner(d)
+	params := recreateResolveParams()
+	params.parsedConfig.Config.ContainerID = testContainerID
+
+	_, err := r.resolveContainer(context.Background(), params, runningContainerDetails())
+	if err == nil || err.Error() != "cannot recreate container not created by Devsy" {
+		t.Fatalf("resolveContainer error = %v, want external-container recreate error", err)
+	}
+	if d.provisioningCalled {
+		t.Fatal("provisioning preflight ran for an invalid external-container recreate")
+	}
+	if d.stopCalled || d.deleteCalled {
+		t.Fatal("invalid external-container recreate changed container state")
+	}
+}
+
+func TestStartComposeContainerRecreateProvisioningFailurePreservesExistingContainer(t *testing.T) {
+	sentinel := errors.New("unsupported provisioning runtime")
+	base := &mockDriver{}
+	d := &provisioningPreflightMockDriver{
+		mockDriver:      base,
+		provisioningErr: sentinel,
+	}
+	r := newTestRunner(d)
+
+	_, err := r.startContainer(context.Background(), &startContainerParams{
+		container: runningContainerDetails(),
+		options:   UpOptions{CLIOptions: provider.CLIOptions{Recreate: true}},
+	})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("startContainer error = %v, want %v", err, sentinel)
+	}
+	if !d.provisioningCalled {
+		t.Fatal("expected provisioning preflight before compose recreate")
+	}
+	if base.stopCalled {
+		t.Fatal("existing container was stopped before provisioning validation")
+	}
+	if base.deleteCalled {
+		t.Fatal("existing container was deleted before provisioning validation")
+	}
+}
+
+func recreateResolveParams() *resolveParams {
+	return &resolveParams{
+		parsedConfig: &config.SubstitutedConfig{
+			Config: &config.DevContainerConfig{},
+		},
+		options: UpOptions{CLIOptions: provider.CLIOptions{Recreate: true}},
+	}
+}
+
+func runningContainerDetails() *config.ContainerDetails {
+	return &config.ContainerDetails{
+		ID:     testContainerID,
+		State:  config.ContainerDetailsState{Status: testStatusRunning},
+		Config: config.ContainerDetailsConfig{Labels: map[string]string{}},
+	}
+}
 
 func TestWorkspaceMountDestination(t *testing.T) { //nolint:funlen // table-driven test
 	tests := []struct {

@@ -14,8 +14,9 @@ import type {
   SshKeyInfo,
   Workspace,
 } from "$lib/types/index.js"
-import { invoke } from "./bridge.js"
+import type { AppNavigationAcknowledgment } from "$shared/app-route.js"
 import type { MachineDiagnosticsCache } from "$shared/machine-diagnostics-types.js"
+import { invoke } from "./bridge.js"
 
 type CommandEnvelope =
   | { ok: true }
@@ -400,6 +401,12 @@ export async function auditByResource(
 // App lifecycle
 export async function appReady(): Promise<void> {
   return invoke<void>("app_ready")
+}
+
+export function appNavigationApplied(
+  request: AppNavigationAcknowledgment,
+): Promise<void> {
+  return invoke<void>("app_navigation_applied", { ...request })
 }
 
 // System commands

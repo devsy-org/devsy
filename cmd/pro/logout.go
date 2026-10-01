@@ -118,26 +118,33 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 		}
 	}
 
-	// delete the provider config, reloading it under the config lock: the
-	// earlier load in this flow predates the daemon shutdown above
-	unlock, err := config.LockConfig()
-	if err != nil {
-		return err
-	}
-	freshConfig, err := config.LoadConfig(devsyConfig.DefaultContext, "")
-	if err == nil {
-		err = providercmd.DeleteProviderConfig(freshConfig, proInstanceConfig.Provider, true)
-	}
-	unlock()
-	if err != nil {
+	if err := deleteProInstanceFiles(devsyConfig.DefaultContext, proInstanceConfig); err != nil {
 		return err
 	}
 
-	// delete the pro instance dir itself
-	proInstanceDir, err := provider.GetProInstanceDir(
-		devsyConfig.DefaultContext,
-		proInstanceConfig.Host,
-	)
+	log.Infof("logged out of pro instance: proInstanceName=%s", proInstanceName)
+	return nil
+}
+
+func deleteProInstanceFiles(contextName string, instance *provider.ProInstance) error {
+	opLock, err := provider.GetProviderOperationLock(contextName, instance.Provider)
+	if err != nil {
+		return err
+	}
+	if err := opLock.Lock(); err != nil {
+		return fmt.Errorf("acquire operation lock: %w", err)
+	}
+	defer func() { _ = opLock.Unlock() }()
+
+	freshConfig, err := config.LoadConfig(contextName, "")
+	if err != nil {
+		return err
+	}
+	if err := providercmd.DeleteProviderConfig(freshConfig, instance.Provider, true); err != nil {
+		return err
+	}
+
+	proInstanceDir, err := provider.GetProInstanceDir(contextName, instance.Host)
 	if err != nil {
 		return err
 	}
@@ -147,7 +154,6 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("delete pro instance dir: %w", err)
 	}
 
-	log.Infof("logged out of pro instance: proInstanceName=%s", proInstanceName)
 	return nil
 }
 
