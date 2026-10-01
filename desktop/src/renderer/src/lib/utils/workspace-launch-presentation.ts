@@ -17,6 +17,7 @@ export type LaunchConfirmationState =
   | "failed"
 
 export interface LaunchOperationPresentation {
+  descendants: Array<{ operation: LaunchOperation; depth: number }>
   detail?: LaunchOperation
   hasFailedDescendant: boolean
   errorMessage?: string
@@ -99,6 +100,10 @@ export function presentLaunchOperation(
   const detail = failure ?? deepestMostRecent(running)
 
   return {
+    descendants: descendants.map(({ operation: child, depth }) => ({
+      operation: child,
+      depth,
+    })),
     detail: detail?.operation,
     hasFailedDescendant: failure !== undefined,
     errorMessage:

@@ -316,14 +316,14 @@ let launchConfirmationState: LaunchConfirmationState = $derived(
   launchSuccess
     ? "confirmed"
     : launchError
-        ? "failed"
-        : launchRefreshRetrying
-          ? "confirming"
-          : launchStatusRefreshError
-            ? "stale"
-            : launchCommandSucceeded
-              ? "confirming"
-              : "running",
+      ? "failed"
+      : launchRefreshRetrying
+        ? "confirming"
+        : launchStatusRefreshError
+          ? "stale"
+          : launchCommandSucceeded
+            ? "confirming"
+            : "running",
 )
 $effect(() => {
   if (launchError) showLogs = true
@@ -748,7 +748,11 @@ async function handleLaunch(recovery = false) {
     unlistenStatus = await onWorkspaceStatus((status) => {
       if (status.workspaceId !== workspaceId) return
       if (resolvedCommandId === status.commandId) {
-        launchTimeline = reduceWorkspaceLaunchTimeline(launchTimeline, status, performance.now())
+        launchTimeline = reduceWorkspaceLaunchTimeline(
+          launchTimeline,
+          status,
+          performance.now(),
+        )
       } else if (pendingStatuses.length < 100) {
         pendingStatuses.push(status)
       }
@@ -775,7 +779,11 @@ async function handleLaunch(recovery = false) {
 
     for (const status of pendingStatuses) {
       if (status.commandId === cmdId) {
-        launchTimeline = reduceWorkspaceLaunchTimeline(launchTimeline, status, performance.now())
+        launchTimeline = reduceWorkspaceLaunchTimeline(
+          launchTimeline,
+          status,
+          performance.now(),
+        )
       }
     }
 

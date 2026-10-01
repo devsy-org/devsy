@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest"
-import type { LaunchOperation } from "./workspace-launch-timeline.js"
 import {
   presentLaunchOperation,
   topLevelLaunchOperations,
 } from "./workspace-launch-presentation.js"
+import type { LaunchOperation } from "./workspace-launch-timeline.js"
 
-function operation(
-  overrides: Partial<LaunchOperation> = {},
-): LaunchOperation {
+function operation(overrides: Partial<LaunchOperation> = {}): LaunchOperation {
   return {
     key: "prepare",
     operationId: "prepare",
@@ -52,9 +50,9 @@ describe("workspace launch presentation", () => {
     expect(presentLaunchOperation(parent, timeline).detail?.phase).toBe(
       "building_image",
     )
-    expect(
-      presentLaunchOperation(parent, timeline).errorMessage,
-    ).toBe("image build failed")
+    expect(presentLaunchOperation(parent, timeline).errorMessage).toBe(
+      "image build failed",
+    )
   })
 
   it("prefers depth and then the most recently observed descendant", () => {
@@ -92,6 +90,31 @@ describe("workspace launch presentation", () => {
     expect(presentLaunchOperation(parent, timeline).detail?.phase).toBe(
       "running_command",
     )
+  })
+
+  it("retains completed nested operations for presentation", () => {
+    const parent = operation({ state: "succeeded" })
+    const child = operation({
+      key: "start",
+      operationId: "start",
+      parentOperationId: "prepare",
+      phase: "starting_container",
+      state: "succeeded",
+    })
+    const nested = operation({
+      key: "build",
+      operationId: "build",
+      parentOperationId: "start",
+      phase: "building_image",
+      state: "failed",
+    })
+    const timeline = { operations: [parent, child, nested] }
+
+    expect(
+      presentLaunchOperation(parent, timeline).descendants.map(
+        ({ operation: item }) => item.phase,
+      ),
+    ).toEqual(["starting_container", "building_image"])
   })
 
   it("keeps orphan operations visible and terminates on malformed cycles", () => {

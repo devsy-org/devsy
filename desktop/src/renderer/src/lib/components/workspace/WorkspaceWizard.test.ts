@@ -88,7 +88,7 @@ async function advanceToReview(getByText: (t: string) => HTMLElement) {
   // provider
   await fireEvent.click(getByText("docker"))
   await flushAsync()
-  await fireEvent.click(getAllContinue(getByText)[0])
+  await fireEvent.click(getAllContinue()[0])
   await flushAsync()
   // source: choose template (sets source)
   await fireEvent.click(getByText("Python"))
@@ -101,7 +101,7 @@ async function advanceToReview(getByText: (t: string) => HTMLElement) {
 }
 
 // Helpers
-function getAllContinue(getByText: (t: string) => HTMLElement): HTMLElement[] {
+function getAllContinue(): HTMLElement[] {
   // Multiple "Continue" buttons can exist (advanced toggle text differs);
   // return a list and pick the first enabled non-disabled one.
   const all = Array.from(document.querySelectorAll("button")).filter(
@@ -505,9 +505,12 @@ describe("WorkspaceWizard", () => {
 
   it("does not report readiness from command success before reconciliation", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, getByRole, queryByText, unmount } = render(WorkspaceWizard, {
-      props: { open: true },
-    })
+    const { getByText, getByRole, queryByText, unmount } = render(
+      WorkspaceWizard,
+      {
+        props: { open: true },
+      },
+    )
     await flushAsync()
     await advanceToReview(getByText)
 
@@ -558,9 +561,12 @@ describe("WorkspaceWizard", () => {
 
   it("shows confirmation while the matching job is reconciling", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, getByRole, queryByText, unmount } = render(WorkspaceWizard, {
-      props: { open: true },
-    })
+    const { getByText, getByRole, queryByText, unmount } = render(
+      WorkspaceWizard,
+      {
+        props: { open: true },
+      },
+    )
     await flushAsync()
     await advanceToReview(getByText)
     await fireEvent.click(getLaunchButton())
@@ -586,9 +592,12 @@ describe("WorkspaceWizard", () => {
   it("keeps a refresh-only failure stale until Retry status confirms the workspace", async () => {
     providers.set([makeProvider("docker")])
     const oncomplete = vi.fn()
-    const { getByText, queryByText, getByRole, getAllByText, unmount } = render(WorkspaceWizard, {
-      props: { open: true, oncomplete },
-    })
+    const { getByText, queryByText, getByRole, getAllByText, unmount } = render(
+      WorkspaceWizard,
+      {
+        props: { open: true, oncomplete },
+      },
+    )
     await flushAsync()
     await advanceToReview(getByText)
     await fireEvent.click(getLaunchButton())

@@ -1,6 +1,10 @@
 import type { WorkspaceStatus } from "$lib/types/index.js"
 
-export type LaunchOperationState = "running" | "succeeded" | "failed" | "skipped"
+export type LaunchOperationState =
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
 
 export interface LaunchOperation {
   key: string
@@ -28,13 +32,16 @@ function findOperationIndex(
   state: LaunchOperationState,
 ): number {
   if (event.operationId) {
-    return operations.findIndex((operation) => operation.operationId === event.operationId)
+    return operations.findIndex(
+      (operation) => operation.operationId === event.operationId,
+    )
   }
 
   for (let index = operations.length - 1; index >= 0; index -= 1) {
     const operation = operations[index]
     if (operation.phase === event.phase && operation.step === event.step) {
-      if (operation.state === "running" || operation.state === state) return index
+      if (operation.state === "running" || operation.state === state)
+        return index
     }
   }
 
@@ -71,7 +78,10 @@ function updateOperation(
     parentOperationId: event.parentOperationId ?? existing.parentOperationId,
     phase: event.phase,
     step: event.step ?? existing.step,
-    state: state === "running" && existing.state !== "running" ? existing.state : state,
+    state:
+      state === "running" && existing.state !== "running"
+        ? existing.state
+        : state,
     durationMs: event.durationMs ?? existing.durationMs,
     error: event.error ?? existing.error,
   }
@@ -83,11 +93,19 @@ export function reduceWorkspaceLaunchTimeline(
   nowMs: number,
 ): WorkspaceLaunchTimeline {
   const operations = [...timeline.operations]
-  const state: LaunchOperationState = event.state === "started" ? "running" : event.state
+  const state: LaunchOperationState =
+    event.state === "started" ? "running" : event.state
   const index = findOperationIndex(operations, event, state)
 
   if (index < 0) {
-    operations.push(createOperation(event, state, event.operationId ?? `synthetic-${operations.length + 1}`, nowMs))
+    operations.push(
+      createOperation(
+        event,
+        state,
+        event.operationId ?? `synthetic-${operations.length + 1}`,
+        nowMs,
+      ),
+    )
     return { operations }
   }
 
