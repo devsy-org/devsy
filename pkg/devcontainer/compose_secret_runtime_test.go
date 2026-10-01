@@ -5,11 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/require"
 )
+
+const composeSecretTestServiceName = "app"
 
 func TestComposeSecretRuntimeOptions(t *testing.T) {
 	workspace := &provider.AgentWorkspaceInfo{}
@@ -96,4 +99,31 @@ func TestRestorePersistedComposeArgsForStartSkipsStaleOverrides(t *testing.T) {
 	args, restored = restorePersistedComposeArgsForStart(container, baseArgs, false)
 	require.True(t, restored)
 	require.Equal(t, append(baseArgs, "-f", staleOverride), args)
+}
+
+func TestGenerateDockerComposeUpProjectAddsFileSecretTmpfs(t *testing.T) {
+	r := &runner{
+		driver: terminalSecretMountDriver{supported: true},
+		workspaceConfig: &provider.AgentWorkspaceInfo{
+			Origin:     t.TempDir(),
+			CLIOptions: provider.CLIOptions{GPUAvailability: "false"},
+		},
+	}
+
+	path, err := r.extendedDockerComposeUp(&composeUpParams{
+		parsedConfig: &config.SubstitutedConfig{
+			Config: &config.DevContainerConfig{},
+		},
+		mergedConfig:         &config.MergedDevContainerConfig{},
+		composeService:       &composetypes.ServiceConfig{Name: composeSecretTestServiceName},
+		imageDetails:         &config.ImageDetails{},
+		secretsMountRequired: true,
+	})
+	require.NoError(t, err)
+
+	// #nosec G304 -- path is generated in this test's temporary directory.
+	override, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(override), config.SecretsMountDir)
+	require.Contains(t, string(override), string(composetypes.VolumeTypeTmpfs))
 }
