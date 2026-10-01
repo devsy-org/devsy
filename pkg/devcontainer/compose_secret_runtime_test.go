@@ -16,11 +16,16 @@ func TestComposeSecretRuntimeOptions(t *testing.T) {
 	workspace.CLIOptions.TerminalSecretEnvNames = []string{terminalSecretSentinelName}
 	r := &runner{workspaceConfig: workspace, driver: terminalSecretMountDriver{supported: true}}
 	options := UpOptions{}
+	effective, refresh, err := r.composeSecretRuntimeOptions(nil, options)
+	require.NoError(t, err)
+	require.True(t, effective.Recreate)
+	require.True(t, refresh)
+
 	details := &config.ContainerDetails{
 		State: config.ContainerDetailsState{Status: config.ContainerStatusRunning},
 	}
 
-	effective, refresh, err := r.composeSecretRuntimeOptions(details, options)
+	effective, refresh, err = r.composeSecretRuntimeOptions(details, options)
 	require.NoError(t, err)
 	require.True(t, effective.Recreate)
 	require.True(t, refresh)
@@ -46,11 +51,16 @@ func TestComposeFileSecretRuntimeOptions(t *testing.T) {
 	options := UpOptions{CLIOptions: provider.CLIOptions{
 		SecretsMount: []string{secretFileMountRequestSentinel},
 	}}
+	effective, refresh, err := r.composeSecretRuntimeOptions(nil, options)
+	require.NoError(t, err)
+	require.True(t, effective.Recreate)
+	require.True(t, refresh)
+
 	details := &config.ContainerDetails{
 		State: config.ContainerDetailsState{Status: config.ContainerStatusRunning},
 	}
 
-	effective, refresh, err := r.composeSecretRuntimeOptions(details, options)
+	effective, refresh, err = r.composeSecretRuntimeOptions(details, options)
 	require.NoError(t, err)
 	require.True(t, effective.Recreate)
 	require.True(t, refresh)

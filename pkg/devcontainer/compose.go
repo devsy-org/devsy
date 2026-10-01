@@ -336,9 +336,7 @@ func (r *runner) ensureComposeContainer(
 		return nil, err
 	}
 	if forceSecretRuntimeRefresh {
-		log.Info(
-			"recreating workspace because workspace secrets require secure runtime mounts",
-		)
+		log.Info("workspace secrets require secure runtime mounts")
 	}
 
 	// container already exists and is running, nothing to do
@@ -382,9 +380,6 @@ func (r *runner) composeSecretRuntimeOptions(
 	details *config.ContainerDetails,
 	options UpOptions,
 ) (UpOptions, bool, error) {
-	if details == nil {
-		return options, false, nil
-	}
 	terminalMountMissing := r.needsTerminalSecretEnvironmentMigration(details)
 	fileMountMissing := needsSecretFileMountMigration(details, options.SecretsMount)
 	if !terminalMountMissing && !fileMountMissing {

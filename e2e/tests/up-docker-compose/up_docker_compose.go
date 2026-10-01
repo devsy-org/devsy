@@ -30,6 +30,7 @@ const (
 	composeSecretSetCommand    = "set"
 	composeSecretDeleteCommand = "delete"
 	composeSecretValueFlag     = "--value"
+	composeFileSecretsDir      = "/run/secrets"
 )
 
 func useComposeFileSecretsBackend() {
@@ -161,6 +162,73 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.It(
+			"refreshes saved Compose files for a new file secret after the app container is removed",
+			func(ctx context.Context) {
+				useComposeFileSecretsBackend()
+				tempDir, workspace, err := tc.setupAndStartWorkspace(
+					ctx,
+					"tests/up-docker-compose/testdata/docker-compose-shutdown-action-container",
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(tc.f.DevsyWorkspaceDelete, tempDir)
+
+				before, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(before.Mounts).NotTo(gomega.ContainElement(gomega.Satisfy(
+					func(mount container.MountPoint) bool {
+						return mount.Destination == composeFileSecretsDir
+					},
+				)))
+				projectName, err := composeProjectForWorkspace(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID,
+				)
+				framework.ExpectNoError(err)
+				appIDs, _ := tc.findAppAndSidecar(ctx, workspace.UID)
+				framework.ExpectNoError(tc.dockerHelper.Stop(ctx, appIDs[0]))
+				framework.ExpectNoError(tc.dockerHelper.Remove(ctx, appIDs[0]))
+				projectFiles, err := tc.composeHelper.FindProjectFiles(ctx, projectName)
+				framework.ExpectNoError(err)
+				gomega.Expect(projectFiles).NotTo(gomega.BeEmpty())
+
+				secretName := "COMPOSE_MISSING_APP_FILE_SECRET"
+				_, err = tc.f.ExecCommandOutput(ctx, []string{
+					composeSecretCommand,
+					composeSecretSetCommand,
+					secretName,
+					composeSecretValueFlag,
+					"sentinel-compose-missing-app",
+				})
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(func() {
+					_, _ = tc.f.ExecCommandOutput(
+						context.Background(),
+						[]string{composeSecretCommand, composeSecretDeleteCommand, secretName},
+					)
+				})
+				framework.ExpectNoError(tc.f.DevsyUp(
+					ctx, tempDir, "--secret", secretName+",type=mount,target=missing_app_secret",
+				))
+
+				after, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(after.ID).NotTo(gomega.Equal(before.ID))
+				gomega.Expect(after.Mounts).To(gomega.ContainElement(gomega.Satisfy(
+					func(mount container.MountPoint) bool {
+						return mount.Destination == composeFileSecretsDir && mount.Type == "tmpfs"
+					},
+				)))
+				out, err := tc.execSSH(
+					ctx,
+					tempDir,
+					"if [ -s /run/secrets/missing_app_secret ]; then printf present; else printf absent; fi",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It(
 			"injects attached terminal secrets through a tmpfs mount",
 			func(ctx context.Context) {
 				useComposeFileSecretsBackend()
@@ -271,7 +339,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				gomega.Expect(containerDetails.Mounts).To(gomega.ContainElement(gomega.Satisfy(
 					func(mount container.MountPoint) bool {
-						return mount.Destination == "/run/secrets" && mount.Type == "tmpfs"
+						return mount.Destination == composeFileSecretsDir && mount.Type == "tmpfs"
 					},
 				)))
 				out, err = tc.execSSH(
