@@ -14,7 +14,10 @@ const (
 )
 
 type ExecStartupWatchdogOptions struct {
-	Timeout                time.Duration
+	Timeout time.Duration
+	// TerminationWaitTimeout bounds the total wait for OnStartupSilence and the
+	// exec callback to return after cancellation. It does not guarantee either
+	// has stopped when the watchdog returns.
 	TerminationWaitTimeout time.Duration
 	OnStartupSilence       func()
 }
