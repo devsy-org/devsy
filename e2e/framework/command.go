@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
@@ -233,6 +234,14 @@ func (f *Framework) DevsySSHOnce(
 		cmdWorkspace, cmdSSH, workspace, flagCommand, command, flagDebug,
 	})
 	if err != nil {
+		if strings.Contains(stderr, "AGENT_INJECTION_RUNTIME_UNAVAILABLE") ||
+			strings.Contains(stderr, "PODMAN_ROOTFUL_RUNTIME_POISONED") {
+			return "", fmt.Errorf(
+				"SSH_RUNTIME_UNAVAILABLE: %w (stderr: %s)",
+				errors.Join(docker.ErrRuntimeUnavailable, err),
+				stderr,
+			)
+		}
 		if stderr != "" {
 			return "", fmt.Errorf("devsy ssh failed: %w (stderr: %s)", err, stderr)
 		}

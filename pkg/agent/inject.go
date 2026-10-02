@@ -67,6 +67,9 @@ type InjectOptions struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
+	// RuntimeHealthCheck is optional. Container-backed callers use it to
+	// distinguish a stalled runtime from a transient remote startup failure.
+	RuntimeHealthCheck func(context.Context) error
 }
 
 func (o *InjectOptions) ApplyDefaults() {
@@ -177,23 +180,80 @@ func InjectAgent(ctx context.Context, opts *InjectOptions) error {
 	}
 
 	log.Debug("starting agent injection")
+	guard := injectionRuntimeGuard{check: opts.RuntimeHealthCheck}
 	return retry.OnError(backoff, func(err error) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		if errors.Is(err, docker.ErrContainerTerminal) {
-			log.Errorf("container entered a terminal state, not retrying: %v", err)
+		if errors.Is(err, docker.ErrContainerTerminal) ||
+			errors.Is(err, docker.ErrRuntimeUnavailable) {
+			log.Errorf("agent injection cannot continue: %v", err)
 			return false
 		}
 		log.Debugf("retrying injection: %v", err)
 		return true
 	}, func() error {
-		return injectAgent(ctx, &injectConfig{
+		err := injectAgent(ctx, &injectConfig{
 			opts: opts,
 			bm:   bm,
 			vc:   vc,
 		})
+		return guard.handle(ctx, err)
 	})
+}
+
+type injectionRuntimeGuard struct {
+	check               func(context.Context) error
+	consecutiveTimeouts int
+}
+
+func (g *injectionRuntimeGuard) handle(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if !isInjectionTimeout(err) {
+		g.consecutiveTimeouts = 0
+		return err
+	}
+	g.consecutiveTimeouts++
+	log.Debugf("[agent-injection] timeout consecutive=%d", g.consecutiveTimeouts)
+	if g.consecutiveTimeouts < 2 || g.check == nil {
+		return err
+	}
+	return g.checkAfterRepeatedTimeout(ctx, err)
+}
+
+func (g *injectionRuntimeGuard) checkAfterRepeatedTimeout(ctx context.Context, err error) error {
+	log.Debug("[agent-injection] escalating to runtime health check")
+	healthCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if healthErr := g.check(healthCtx); healthErr != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !errors.Is(healthErr, docker.ErrRuntimeUnavailable) &&
+			!errors.Is(healthCtx.Err(), context.DeadlineExceeded) {
+			log.Warnf("[agent-injection] runtime health inconclusive: %v", healthErr)
+			return err
+		}
+		log.Errorf(
+			"[agent-injection] runtime unavailable; aborting injection retries: %v",
+			healthErr,
+		)
+		return fmt.Errorf(
+			"AGENT_INJECTION_RUNTIME_UNAVAILABLE: %w",
+			errors.Join(docker.ErrRuntimeUnavailable, healthErr, err),
+		)
+	}
+	return err
+}
+
+func isInjectionTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var timeout interface{ Timeout() bool }
+	return errors.As(err, &timeout) && timeout.Timeout()
 }
 
 func injectLocally(ctx context.Context, opts *InjectOptions) error {
@@ -357,7 +417,10 @@ func (vc *versionChecker) detectRemoteAgentVersion(
 	err := exec(checkCtx, versionCmd, nil, buf, io.Discard)
 	if err != nil {
 		if errors.Is(checkCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-			return "", fmt.Errorf("get remote agent version timed out: %w", err)
+			return "", fmt.Errorf(
+				"get remote agent version timed out: %w",
+				errors.Join(err, context.DeadlineExceeded),
+			)
 		}
 		return "", fmt.Errorf("failed to get remote agent version: %w", err)
 	}

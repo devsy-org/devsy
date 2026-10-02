@@ -2,16 +2,47 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/stretchr/testify/suite"
 )
 
 type InjectTestSuite struct {
 	suite.Suite
 	ctx context.Context
+}
+
+func (s *InjectTestSuite) TestInjectionRuntimeGuard() {
+	timeoutErr := context.DeadlineExceeded
+	checks := 0
+	guard := injectionRuntimeGuard{check: func(context.Context) error {
+		checks++
+		return docker.ErrRuntimeUnavailable
+	}}
+	s.ErrorIs(guard.handle(s.ctx, timeoutErr), context.DeadlineExceeded)
+	s.Zero(checks)
+	s.ErrorIs(guard.handle(s.ctx, timeoutErr), docker.ErrRuntimeUnavailable)
+	s.Equal(1, checks)
+
+	guard = injectionRuntimeGuard{check: func(context.Context) error { checks++; return nil }}
+	s.ErrorIs(guard.handle(s.ctx, timeoutErr), context.DeadlineExceeded)
+	s.ErrorIs(guard.handle(s.ctx, timeoutErr), context.DeadlineExceeded)
+	s.Equal(2, checks)
+	s.Equal(2, guard.consecutiveTimeouts)
+
+	commandErr := errors.New("command exited 1")
+	s.ErrorIs(guard.handle(s.ctx, commandErr), commandErr)
+	s.Zero(guard.consecutiveTimeouts)
+	s.Equal(2, checks)
+
+	canceled, cancel := context.WithCancel(s.ctx)
+	cancel()
+	s.ErrorIs(guard.handle(canceled, timeoutErr), context.Canceled)
+	s.Equal(2, checks)
 }
 
 func TestInjectTestSuite(t *testing.T) {

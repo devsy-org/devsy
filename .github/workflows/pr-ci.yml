@@ -744,9 +744,16 @@ jobs:
           path: ${{ runner.temp }}/podman.msi
           key: ${{ runner.os }}-${{ runner.arch }}-podman-v5.8.2
 
+      - name: test Podman bootstrap helper (Windows)
+        if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        shell: pwsh
+        timeout-minutes: 1
+        run: .\hack\ci\setup-podman-windows.Tests.ps1
+
       - name: install and start podman (Windows)
         if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: pwsh
+        timeout-minutes: 5
         run: |
           $msiPath = "$env:RUNNER_TEMP\podman.msi"
           if ("${{ steps.podman-cache-windows.outputs.cache-hit }}" -ne "true") {
@@ -776,10 +783,7 @@ jobs:
 
           echo "$installDir" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
 
-          wsl --set-default-version 2
-          & "$installDir\podman.exe" machine init
-          & "$installDir\podman.exe" machine set --rootful
-          & "$installDir\podman.exe" machine start
+          .\hack\ci\setup-podman-windows.ps1 -PodmanPath "$installDir\podman.exe"
 
       - name: cache kind.exe (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')

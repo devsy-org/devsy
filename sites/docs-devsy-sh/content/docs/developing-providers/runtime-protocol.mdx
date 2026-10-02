@@ -1,0 +1,46 @@
+---
+title: Runtime Protocol v1
+description: Contract for external runtime driver authors using the Devsy Runtime SDK.
+---
+
+<Callout type="info">
+The SDK foundation is available. Devsy host integration and the full runtime conformance suite are still in development. This guide does not describe an available `agent.driver: external` configuration.
+</Callout>
+
+The canonical [protobuf schema](https://github.com/devsy-org/devsy-runtime-sdk/blob/main/proto/devsy/runtime/v1/runtime.proto) is maintained in the [Devsy Runtime SDK](https://github.com/devsy-org/devsy-runtime-sdk). The module path is `github.com/devsy-org/devsy-runtime-sdk`; the logical plugin name is `devsy-runtime`. HashiCorp application protocol 1 and Info API major 1/minor 0 are separate version checks. Same-major newer minor versions are accepted. Unknown mount/recreate enum values are rejected because they control host behavior.
+
+## Runtime boundary
+
+Info, Preflight, ProvisioningPreflight, Find, TargetArchitecture, RunImage, Start, Stop, Delete, Exec, and Logs are the v1 RPC surface. Runtime state persists in the backend across plugin processes. Plugins do not own image build/tag/push, registry credentials, Compose, IDE configuration, snapshots, provider machine lifecycle, or updates.
+
+RunImage receives resolved intent. Its empty response acknowledges completion; Find queries state. `image_built_locally` is an image-origin hint, not permission to build. Optional privileged/init flags distinguish absent from explicit false. Environment and mounts may contain secrets and must not appear in diagnostic logs.
+
+Runtime name, driver name/version, and capabilities are required in Info. Runtime version may be empty when a backend cannot report it without expensive setup. An empty mount list means no supported mount types. ProvisioningPreflight may be a no-op when its capability is false. Logs may return Unimplemented when its capability is false. Reprovision means RunImage can update an existing workspace with complete resolved intent; it does not imply that an empty request is safe. The host adapter must reconcile Devsy's existing nil-options reprovision path before enabling that capability.
+
+TargetArchitecture returns canonical `amd64` or `arm64`. A runtime may require an existing workspace to answer; hosts must not require pre-start architecture discovery from such runtimes.
+
+## Lifecycle
+
+Find returns `found=false` for ordinary absence, without a NotFound RPC error. A found response includes container details with normalized state `running` or `stopped`. Transport, permission, and backend errors remain errors.
+
+Start on an already running workspace succeeds; missing returns NotFound. Stop on an already stopped workspace succeeds; missing may return NotFound. Delete normalizes missing state to success for cleanup. Provisioning compatibility checks must precede destructive teardown.
+
+## Exec and Logs
+
+The first client frame is exactly one ExecStart containing argv. Later frames contain stdin bytes or exactly one CloseStdin; the client then closes its send side. Data after CloseStdin, repeated Start, unset payloads and empty stdin data frames, and unexpected EOF before CloseStdin are InvalidArgument. v1 Devsy callers use `tty=false`; runtimes reject unsupported TTY requests.
+
+Each side uses one send pump and one receive loop. Data chunks should be at most 32 KiB. Empty input is represented by CloseStdin with no preceding data frames. Stdout/stderr are separate byte streams, with no text decoding or PTY. The receiver drains output before exactly one terminal ExecExit. Command success requires `exit_code == 0` and an empty `signal`. A nonempty `signal` means command failure regardless of `exit_code`, including its protobuf default of zero. Ordinary nonzero or signal-terminated command exit is carried in ExecExit and the RPC succeeds. Setup/transport/backend failures are RPC errors; stream EOF without an exit is not command success. Context cancellation/deadlines terminate the operation and release its resources. Plugins that launch children must ensure child cleanup; the SDK bootstrap does not implement an OS process-tree manager.
+
+Logs uses merged binary OutputChunk frames. Output buffering must remain bounded. Do not call Send concurrently from stdout and stderr copiers.
+
+## Errors and trust
+
+Use canonical gRPC status and attach RuntimeError details for stable categories, actionable messages, optional backend diagnostics, retryability, and structured context. Raw backend diagnostics must be redacted before display. Unknown detail fields remain forward-compatible; callers must not parse messages to classify errors.
+
+The plugin binary is trusted provider code. The future host resolves it from checksum-verified Agent.Binaries, rather than PATH discovery. The magic cookie is not a security boundary. Process lifetime and environment policies remain subject to the planned host hardening spikes.
+
+## Current implementation
+
+The SDK provides generated Go bindings, the shared plugin handshake, server helpers, and Info validation. Its real executable fixture tests transport behavior. Full fake-runtime lifecycle conformance, host integration, process-tree stress, and runtime cutover remain later stages.
+
+For SDK development commands and package usage, see the [SDK README](https://github.com/devsy-org/devsy-runtime-sdk#readme).
