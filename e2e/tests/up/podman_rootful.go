@@ -16,11 +16,10 @@ import (
 )
 
 const (
-	podmanHealthCheckTimeout = 20 * time.Second
-	podmanRecoveryTimeout    = 90 * time.Second
-	// podmanDiagCommandTimeout keeps a wedged daemon from stalling diagnostic
-	// collection itself.
-	podmanDiagCommandTimeout = 10 * time.Second
+	podmanHealthCheckTimeout = 10 * time.Second
+	podmanRecoveryTimeout    = 30 * time.Second
+	podmanDiagnosticsBudget  = 25 * time.Second
+	podmanDiagCommandTimeout = 5 * time.Second
 	// podmanDiagMaxOutput caps each diagnostic section so CI logs stay readable.
 	podmanDiagMaxOutput = 8 * 1024
 	// podmanBinName is the fallback binary when the rootful wrapper is absent.
@@ -41,6 +40,7 @@ const (
 	// podmanHealthError: the daemon answered with an error, which points at
 	// product or configuration state rather than a wedged service.
 	podmanHealthError
+	podmanHealthPoisoned
 )
 
 func (c podmanHealthClass) String() string {
@@ -53,6 +53,8 @@ func (c podmanHealthClass) String() string {
 		return "unavailable"
 	case podmanHealthError:
 		return "error"
+	case podmanHealthPoisoned:
+		return "poisoned"
 	}
 	return "unknown"
 }
@@ -90,6 +92,17 @@ func shouldAttemptPodmanRecovery(class podmanHealthClass) bool {
 type podmanDaemonGate struct {
 	mu             sync.Mutex
 	unhealthySince string
+	recoveryUsed   bool
+}
+
+func (g *podmanDaemonGate) claimRecovery() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.recoveryUsed {
+		return false
+	}
+	g.recoveryUsed = true
+	return true
 }
 
 var rootfulDaemonGate = &podmanDaemonGate{}
@@ -138,8 +151,8 @@ func checkPodmanHealth(ctx context.Context, wrapperPath string) (podmanHealthCla
 
 // runDiagCommand never fails the caller: diagnostics are best-effort so a
 // broken host tool cannot hide the failure they are meant to explain.
-func runDiagCommand(name string, args ...string) string {
-	diagCtx, cancel := context.WithTimeout(context.Background(), podmanDiagCommandTimeout)
+func runDiagCommand(ctx context.Context, name string, args ...string) string {
+	diagCtx, cancel := context.WithTimeout(ctx, podmanDiagCommandTimeout)
 	defer cancel()
 	cmd := exec.CommandContext( //nolint:gosec // G204: fixed diagnostic commands
 		diagCtx,
@@ -161,18 +174,26 @@ func runDiagCommand(name string, args ...string) string {
 // collectPodmanDiagnostics prints bounded daemon state so the first failure
 // in a shard carries the evidence needed to debug a wedge without a rerun.
 func collectPodmanDiagnostics(wrapperPath string) {
+	diagCtx, cancel := context.WithTimeout(context.Background(), podmanDiagnosticsBudget)
+	defer cancel()
 	ginkgo.GinkgoWriter.Printf(
-		"[podman-diagnostics] collecting bounded daemon state (each command capped at %s)\n",
-		podmanDiagCommandTimeout,
+		"[podman-diagnostics] total budget=%s\n", podmanDiagnosticsBudget,
 	)
-	sections := []struct {
-		title string
-		name  string
-		args  []string
-	}{
-		{"podman version", wrapperPath, []string{"version"}},
-		{"podman info", wrapperPath, []string{"info"}},
-		{"podman ps -a", wrapperPath, []string{"ps", "-a"}},
+	sections := []podmanDiagSection{
+		{
+			"podman-related processes",
+			"sh",
+			[]string{
+				"-c",
+				"ps -eo pid,ppid,stat,wchan:32,etime,cmd | " +
+					"grep -E 'podman|crun|conmon|fuse-overlayfs|netavark' | grep -v grep || true",
+			},
+		},
+		{"stuck process details", "sh", []string{
+			"-c", "for pid in $(ps -eo pid=,comm= | " +
+				"awk '$2 ~ /^(podman|conmon|crun|fuse-overlayfs|netavark)$/ {print $1}'); " +
+				"do echo PID=$pid; cat /proc/$pid/status /proc/$pid/wchan /proc/$pid/stack 2>&1; done",
+		}},
 		{
 			"systemctl status podman.socket podman.service",
 			"sudo",
@@ -185,32 +206,42 @@ func collectPodmanDiagnostics(wrapperPath string) {
 			"sudo",
 			[]string{
 				"journalctl", "-u", "podman.socket", "-u", "podman.service",
-				"-n", "100", "--no-pager",
-			},
-		},
-		{
-			"podman-related processes",
-			"sh",
-			[]string{
-				"-c",
-				"ps -eo pid,ppid,stat,etime,cmd | grep -E 'podman|crun|conmon' | grep -v grep || true",
+				"-n", "150", "--no-pager",
 			},
 		},
 		{"disk usage", "df", []string{"-h", "/", "/var/lib/containers"}},
 		{"memory", "free", []string{"-m"}},
+		{"podman ps -a", wrapperPath, []string{"ps", "-a"}},
 	}
+	runPodmanDiagnostics(diagCtx, sections, runDiagCommand, func(title, output string) {
+		ginkgo.GinkgoWriter.Printf("[podman-diagnostics] --- %s ---\n%s\n", title, output)
+	})
+}
+
+type podmanDiagSection struct {
+	title string
+	name  string
+	args  []string
+}
+
+func runPodmanDiagnostics(
+	ctx context.Context,
+	sections []podmanDiagSection,
+	run func(context.Context, string, ...string) string,
+	write func(string, string),
+) {
 	for _, section := range sections {
-		ginkgo.GinkgoWriter.Printf(
-			"[podman-diagnostics] --- %s ---\n%s\n",
-			section.title,
-			runDiagCommand(section.name, section.args...),
-		)
+		if ctx.Err() != nil {
+			write("budget exhausted", ctx.Err().Error())
+			break
+		}
+		write(section.title, run(ctx, section.name, section.args...))
 	}
 }
 
 // attemptPodmanRecovery performs the shard's one bounded restart of the
 // rootful Podman socket and service, then re-probes health.
-func attemptPodmanRecovery(ctx context.Context, wrapperPath string) error {
+func attemptPodmanRecovery(ctx context.Context, wrapperPath string) (podmanHealthClass, error) {
 	ginkgo.GinkgoWriter.Println(
 		"[podman-recovery] attempting single bounded restart of podman.socket and podman.service",
 	)
@@ -225,14 +256,26 @@ func attemptPodmanRecovery(ctx context.Context, wrapperPath string) error {
 		"podman.service",
 	)
 	docker.PrepareForGroupCancellation(cmd)
+	started := time.Now()
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("systemctl restart failed: %w\noutput:\n%s", err, string(out))
+		return podmanHealthPoisoned, fmt.Errorf(
+			"PODMAN_ROOTFUL_RECOVERY_FAILED: systemctl restart failed after %s: %w\noutput:\n%s",
+			time.Since(started),
+			err,
+			string(out),
+		)
 	}
+	ginkgo.GinkgoWriter.Printf("[podman-recovery] restart elapsed=%s\n", time.Since(started))
 	class, err := checkPodmanHealth(ctx, wrapperPath)
+	ginkgo.GinkgoWriter.Printf("[podman-health] post-recovery class=%s\n", class)
 	if err != nil {
-		return fmt.Errorf("daemon still unhealthy after restart (class: %s): %w", class, err)
+		return podmanHealthPoisoned, fmt.Errorf(
+			"PODMAN_ROOTFUL_RUNTIME_POISONED: daemon still unhealthy after restart (class: %s): %w",
+			class,
+			err,
+		)
 	}
-	return nil
+	return podmanHealthOK, nil
 }
 
 // setupRootfulPodman prepares the rootful Podman wrapper and docker provider
@@ -265,17 +308,34 @@ func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Frame
 		_ = os.Remove(wrapperPath)
 	})
 
+	ginkgo.GinkgoWriter.Println("[podman-health] probe start")
+	started := time.Now()
 	class, healthErr := checkPodmanHealth(ctx, wrapperPath)
+	ginkgo.GinkgoWriter.Printf("[podman-health] class=%s elapsed=%s\n", class, time.Since(started))
 	if healthErr != nil {
-		ginkgo.GinkgoWriter.Printf("[podman-health] readiness check failed: %v\n", healthErr)
+		ginkgo.GinkgoWriter.Printf(
+			"[podman-health] PODMAN_ROOTFUL_HEALTH_%s: %v\n",
+			strings.ToUpper(class.String()),
+			healthErr,
+		)
 		collectPodmanDiagnostics(wrapperPath)
 		if shouldAttemptPodmanRecovery(class) {
-			if recErr := attemptPodmanRecovery(ctx, wrapperPath); recErr != nil {
+			if !rootfulDaemonGate.claimRecovery() {
 				rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
-				collectPodmanDiagnostics(wrapperPath)
+				framework.ExpectNoError(
+					fmt.Errorf(
+						"PODMAN_ROOTFUL_RUNTIME_POISONED: recovery already used: %w",
+						healthErr,
+					),
+				)
+			}
+			if postClass, recErr := attemptPodmanRecovery(ctx, wrapperPath); recErr != nil {
+				rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
 				framework.ExpectNoError(fmt.Errorf(
-					"rootful Podman daemon unhealthy and single recovery attempt failed: %w "+
+					"PODMAN_ROOTFUL_RUNTIME_POISONED: rootful Podman daemon unhealthy; "+
+						"single recovery attempt failed (class: %s): %w "+
 						"(initial check: %v)",
+					postClass,
 					recErr,
 					healthErr,
 				))
@@ -316,7 +376,7 @@ func recoverPodmanCleanup(
 		// Not a rootful shard: keep the previous minimal diagnostic.
 		ginkgo.GinkgoWriter.Printf(
 			"cleanup failure podman ps -a:\n%s\n",
-			runDiagCommand(podmanBinName, "ps", "-a"),
+			runDiagCommand(context.Background(), podmanBinName, "ps", "-a"),
 		)
 		return cleanupErr
 	}
@@ -331,12 +391,32 @@ func recoverPodmanCleanup(
 	if healthErr == nil || !shouldAttemptPodmanRecovery(class) {
 		return cleanupErr
 	}
-	if recErr := attemptPodmanRecovery(recoveryCtx, wrapperPath); recErr != nil {
-		ginkgo.GinkgoWriter.Printf("[podman-recovery] cleanup recovery failed: %v\n", recErr)
-		return cleanupErr
+	if !rootfulDaemonGate.claimRecovery() {
+		rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
+		return fmt.Errorf("PODMAN_ROOTFUL_RUNTIME_POISONED: recovery already used: %w", cleanupErr)
+	}
+	if postClass, recErr := attemptPodmanRecovery(recoveryCtx, wrapperPath); recErr != nil {
+		rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
+		ginkgo.GinkgoWriter.Printf(
+			"[podman-recovery] cleanup recovery failed (class: %s): %v\n",
+			postClass,
+			recErr,
+		)
+		return fmt.Errorf("%w: cleanup failed: %w", recErr, cleanupErr)
 	}
 	retryErr := f.CleanupWorkspace(ctx, dirs.tempDir)
 	if retryErr != nil {
+		if class, healthErr := checkPodmanHealth(
+			recoveryCtx,
+			wrapperPath,
+		); healthErr != nil &&
+			shouldAttemptPodmanRecovery(class) {
+			rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
+			ginkgo.GinkgoWriter.Printf(
+				"[podman-health] PODMAN_ROOTFUL_RUNTIME_POISONED after cleanup retry: %v\n",
+				healthErr,
+			)
+		}
 		ginkgo.GinkgoWriter.Printf(
 			"[podman-recovery] cleanup retry after daemon restart still failed for %s: %v\n",
 			dirs.tempDir,

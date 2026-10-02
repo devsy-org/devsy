@@ -259,6 +259,16 @@ func (r *runner) newBinarySource() (delivery.BinarySourceFunc, error) {
 }
 
 func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error {
+	var runtimeHealthCheck func(context.Context) error
+	if helperProvider, ok := r.driver.(driver.DockerHelperProvider); ok {
+		runtimeHealthCheck = func(ctx context.Context) error {
+			helper, err := helperProvider.DockerHelper()
+			if err != nil {
+				return err
+			}
+			return helper.CheckRuntimeHealth(ctx)
+		}
+	}
 	err := agent.InjectAgent(ctx, &agent.InjectOptions{
 		Exec: func(ctx context.Context, command string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 			return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
@@ -276,6 +286,7 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 		DownloadURL:                 r.resolvedAgentDownloadURL(),
 		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     timeout,
+		RuntimeHealthCheck:          runtimeHealthCheck,
 	})
 	if err != nil {
 		return fmt.Errorf("inject agent: %w", err)

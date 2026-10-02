@@ -4,14 +4,39 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 )
+
+func TestContainerRuntimeHealthCheck(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime-fake")
+	//nolint:gosec // G306: test executable
+	if err := os.WriteFile(
+		path,
+		[]byte("#!/bin/sh\necho 'Cannot connect to Podman' >&2\nexit 1\n"),
+		0o755,
+	); err != nil {
+		t.Fatal(err)
+	}
+	info := &provider2.AgentWorkspaceInfo{}
+	info.Agent.Docker.Path = path
+	check := containerRuntimeHealthCheck(info)
+	if check == nil || !errors.Is(check(context.Background()), docker.ErrRuntimeUnavailable) {
+		t.Fatal("Docker control-plane failure must be classified as runtime unavailable")
+	}
+	info.Agent.Driver = provider2.KubernetesDriver
+	if containerRuntimeHealthCheck(info) != nil {
+		t.Fatal("non-Docker driver must not probe Docker")
+	}
+}
 
 type blockingFindRunner struct{}
 

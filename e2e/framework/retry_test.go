@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -576,4 +577,22 @@ exit 0
 		errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "signal: killed") ||
 			strings.Contains(err.Error(), "context deadline exceeded"),
 	)
+}
+
+func TestDevsySSHOnce_RuntimeUnavailableFromCLI(t *testing.T) {
+	tempDir := t.TempDir()
+	scriptPath := filepath.Join(tempDir, "mock-devsy-runtime")
+	//nolint:gosec // G306: test mock script requires execution permission
+	require.NoError(
+		t,
+		os.WriteFile(
+			scriptPath,
+			[]byte("#!/bin/sh\necho AGENT_INJECTION_RUNTIME_UNAVAILABLE >&2\nexit 1\n"),
+			0o755,
+		),
+	)
+	f := &Framework{DevsyBinDir: tempDir, DevsyBinName: "mock-devsy-runtime"}
+	_, err := f.DevsySSHOnce(context.Background(), "test-ws", "echo test")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, docker.ErrRuntimeUnavailable)
 }

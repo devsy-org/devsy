@@ -73,6 +73,8 @@ func TestPodmanDaemonGateRecordsFirstFailure(t *testing.T) {
 	gate.markUnhealthy("first spec")
 	gate.markUnhealthy("second spec")
 	assert.Equal(t, "first spec", gate.unhealthy())
+	assert.True(t, gate.claimRecovery())
+	assert.False(t, gate.claimRecovery())
 }
 
 func TestPodmanHealthClassString(t *testing.T) {
@@ -80,5 +82,27 @@ func TestPodmanHealthClassString(t *testing.T) {
 	assert.Equal(t, "timeout", podmanHealthTimeout.String())
 	assert.Equal(t, "unavailable", podmanHealthUnavailable.String())
 	assert.Equal(t, "error", podmanHealthError.String())
+	assert.Equal(t, "poisoned", podmanHealthPoisoned.String())
 	assert.Equal(t, "unknown", podmanHealthClass(99).String())
+}
+
+func TestRunDiagCommandRespectsParentBudget(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	assert.Contains(t, runDiagCommand(ctx, "sh", "-c", "sleep 10"), "command failed")
+}
+
+func TestRunPodmanDiagnosticsStopsAtBudget(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var commands []string
+	runPodmanDiagnostics(ctx, []podmanDiagSection{
+		{"processes", "ps", nil},
+		{"podman", "podman", nil},
+	}, func(_ context.Context, name string, _ ...string) string {
+		commands = append(commands, name)
+		cancel()
+		return "diagnostic failed"
+	}, func(_, _ string) {})
+	assert.Equal(t, []string{"ps"}, commands)
 }
