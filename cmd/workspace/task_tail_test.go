@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
+	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestTailer(t *testing.T, taskID string) (*logTailer, string) {
@@ -202,4 +205,88 @@ func TestLogTailerToleratesMissingRuntimeDir(t *testing.T) {
 	if out.Len() != 0 {
 		t.Errorf("expected no output when the streams file never appears, got %q", out.String())
 	}
+}
+
+func TestLogTailerStreamsStatusLifecyclesSeparatelyFromLogs(t *testing.T) {
+	tailer, path := newTestTailer(t, "timeline")
+	var statuses, logs, worker bytes.Buffer
+	tailer.statusOut = &statuses
+	const parentID = "parent"
+	events := []status.Event{
+		{
+			Phase:       status.PhasePreparingDevContainer,
+			OperationID: parentID,
+			State:       status.StateStarted,
+		},
+		{
+			Phase: status.PhaseStartingContainer, OperationID: "child",
+			ParentOperationID: parentID, State: status.StateStarted,
+		},
+		{
+			Phase: status.PhaseStartingContainer, OperationID: "child",
+			ParentOperationID: parentID, State: status.StateSucceeded, Duration: 2 * time.Second,
+		},
+		{
+			Phase: status.PhasePreparingDevContainer, OperationID: parentID,
+			State: status.StateSucceeded, Duration: 3 * time.Second,
+		},
+	}
+	for _, event := range events {
+		require.NoError(t, devcconfig.WriteStatusJSON(&worker, event))
+	}
+	worker.WriteString("worker log\n{\"kind\":\"result\",\"outcome\":\"success\"}\n")
+	require.NoError(t, os.WriteFile(path, worker.Bytes(), 0o600))
+	tailer.poll(&logs)
+	tailer.flush(&logs)
+	tailer.flush(&logs)
+	lines := strings.Split(strings.TrimSpace(statuses.String()), "\n")
+	require.Len(t, lines, len(events))
+	for i, line := range lines {
+		got, ok := devcconfig.ParseStatusLine(line)
+		require.True(t, ok)
+		require.Equal(t, events[i], got)
+	}
+	require.Equal(t, "worker log\n", logs.String())
+}
+
+func TestFollowTaskDrainsStatusBeforeResult(t *testing.T) {
+	dir := t.TempDir()
+	config.SetPathManager(fakeRuntimeDirPathManager{dir: dir})
+	t.Cleanup(config.ResetPathManager)
+	store, err := task.NewStoreAt(t.TempDir())
+	require.NoError(t, err)
+	tk, err := store.Create(task.CreateOptions{Command: "up"})
+	require.NoError(t, err)
+	path, err := config.DefaultPathManager().ProcessStreamsFile(task.WorkerProcessName(tk.ID()))
+	require.NoError(t, err)
+	var worker bytes.Buffer
+	for _, state := range []status.State{status.StateStarted, status.StateSucceeded} {
+		require.NoError(t, devcconfig.WriteStatusJSON(&worker, status.Event{
+			Phase: status.PhaseLaunchingIDE, OperationID: "ide", State: state,
+		}))
+	}
+	// The final status line may still be buffered when the terminal task is read.
+	require.NoError(t, os.WriteFile(path, bytes.TrimSuffix(worker.Bytes(), []byte("\n")), 0o600))
+	require.NoError(t, tk.Succeed(nil))
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = reader.Close() })
+	original := os.Stdout
+	os.Stdout = writer
+	t.Cleanup(func() { os.Stdout = original; _ = writer.Close() })
+	followErr := followTask(context.Background(), store, followTaskOptions{
+		id: tk.ID(), interval: time.Millisecond, emitJSON: true,
+	})
+	os.Stdout = original
+	require.NoError(t, writer.Close())
+	output, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.NoError(t, followErr)
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	require.Len(t, lines, 3)
+	completion, ok := devcconfig.ParseStatusLine(lines[1])
+	require.True(t, ok)
+	require.Equal(t, status.StateSucceeded, completion.State)
+	require.Equal(t, "ide", completion.OperationID)
+	require.Contains(t, lines[2], `"kind":"result"`)
 }

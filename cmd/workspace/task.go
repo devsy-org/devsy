@@ -187,6 +187,9 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 	defer ticker.Stop()
 
 	tailer := newLogTailer(opts.id)
+	if opts.emitJSON {
+		tailer.statusOut = os.Stdout
+	}
 	defer tailer.flush(os.Stderr)
 
 	for {
@@ -200,6 +203,8 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 		last = state
 
 		if state.Status.Terminal() {
+			// Drain completion events before the result ends the consumer's stream.
+			tailer.flush(os.Stderr)
 			return reportTaskState(state, opts.emitJSON)
 		}
 
