@@ -95,8 +95,8 @@ func TestManagedHandshakeConnTracksActivityAfterPeerStarts(t *testing.T) {
 	require.NoError(t, err)
 	<-clientRead
 
-	assert.False(t, tracked.peerStarted.Load())
-	assert.Nil(t, tracked.activity.Load())
+	assert.False(t, tracked.peerStarted.Load() || tracked.activity.Load() != nil,
+		"bootstrap write started peer tracking or recorded activity")
 	select {
 	case <-tracked.peerReady:
 		t.Fatal("peerReady closed before peer sent protocol data")
