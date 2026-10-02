@@ -750,7 +750,7 @@ jobs:
         timeout-minutes: 1
         run: .\hack\ci\setup-podman-windows.Tests.ps1
 
-      - name: install and start podman (Windows)
+      - name: install podman (Windows)
         if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: pwsh
         timeout-minutes: 5
@@ -783,7 +783,11 @@ jobs:
 
           echo "$installDir" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
 
-          .\hack\ci\setup-podman-windows.ps1 -PodmanPath "$installDir\podman.exe"
+      - name: start podman (Windows)
+        if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        shell: pwsh
+        timeout-minutes: 5
+        run: .\hack\ci\setup-podman-windows.ps1 -PodmanPath "C:\Program Files\RedHat\Podman\podman.exe"
 
       - name: cache kind.exe (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')

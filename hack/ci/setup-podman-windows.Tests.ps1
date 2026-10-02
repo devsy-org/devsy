@@ -1,123 +1,163 @@
 $ErrorActionPreference = 'Stop'
-$pwshPath = Join-Path $PSHOME 'pwsh.exe'
+$pwshPath = if ($IsWindows) { Join-Path $PSHOME 'pwsh.exe' } else { Join-Path $PSHOME 'pwsh' }
 . "$PSScriptRoot/setup-podman-windows.ps1" -PodmanPath $pwshPath -FunctionsOnly
 
 function Assert-Equal($actual, $expected, $label) {
     if ($actual -ne $expected) { throw "$label expected=$expected actual=$actual" }
 }
 
-$realRunner = ${function:Invoke-BoundedCommand}
-$started = Get-Date
-$timedOut = & $realRunner $pwshPath @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') ([TimeSpan]::FromMilliseconds(200))
-if (-not $timedOut.TimedOut -or ((Get-Date) - $started).TotalSeconds -gt 8) {
-    throw 'hung child process did not stop within the test bound'
+function Assert-True($condition, $label) {
+    if (-not $condition) { throw $label }
 }
+
+$realRunner = ${function:Invoke-BoundedCommand}
+$completed = & $realRunner $pwshPath @('-NoProfile', '-Command', 'Write-Output short-command-complete') ([TimeSpan]::FromSeconds(4))
+Assert-True (-not $completed.TimedOut -and $completed.ExitCode -eq 0 -and $completed.Output -match 'short-command-complete') 'short command did not complete inside its timeout'
+
+$started = Get-Date
+$timedOut = & $realRunner $pwshPath @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') ([TimeSpan]::FromMilliseconds(500))
+Assert-True ($timedOut.TimedOut -and ((Get-Date) - $started).TotalSeconds -lt 1) 'process termination exceeded the command budget'
 
 function Invoke-BoundedCommand {
     param([string]$Path, [string[]]$Arguments, [TimeSpan]$Timeout)
+
     $command = $Arguments -join ' '
     $script:calls.Add($command)
-    if ($command -eq 'machine init') {
-        $script:initTimeouts.Add($Timeout.TotalSeconds)
-        if ($script:initResults.Count -gt 0) { return $script:initResults.Dequeue() }
+    $script:timeouts.Add($Timeout.TotalMilliseconds)
+    if ($script:durations.ContainsKey($command)) {
+        $duration = $script:durations[$command]
+        $script:elapsedMilliseconds += [Math]::Min($duration, $Timeout.TotalMilliseconds)
+        if ($duration -gt $Timeout.TotalMilliseconds) {
+            return @{ TimedOut = $true; ExitCode = $null; Output = 'timed out' }
+        }
     }
-    if ($command -eq 'machine inspect' -and $script:inspectResults.Count -gt 0) { return $script:inspectResults.Dequeue() }
+    if ($script:results.ContainsKey($command) -and $script:results[$command].Count -gt 0) {
+        return $script:results[$command].Dequeue()
+    }
     if ($command -eq '--list --quiet') {
         return @{ TimedOut = $false; ExitCode = 0; Output = $script:distributionList }
     }
-    if ($command -eq 'machine start') { return $script:startResults.Dequeue() }
-    if ($command -eq 'info' -and $script:readinessFailsFirstAttempt -and
-        ($script:calls | Where-Object { $_ -eq 'machine start' }).Count -eq 1) {
-        return @{ TimedOut = $false; ExitCode = 1; Output = 'not ready' }
-    }
-    if ($command -eq 'info' -and $script:infoResults.Count -gt 0) { return $script:infoResults.Dequeue() }
     return @{ TimedOut = $false; ExitCode = 0; Output = '' }
 }
 
-function Write-MachineDiagnostics {
-    $script:diagnostics++
-    if ($script:diagnosticsFail) { throw 'diagnostic tool unavailable' }
+function Start-Sleep {
+    param([int]$Milliseconds)
+    $script:elapsedMilliseconds += $Milliseconds
 }
 
-function Set-Scenario($starts, $infos, $diagnosticsFail = $false) {
+function New-TestBudget([double]$milliseconds = 270000) {
+    return New-BootstrapBudget ([TimeSpan]::FromMilliseconds($milliseconds)) { [TimeSpan]::FromMilliseconds($script:elapsedMilliseconds) }
+}
+
+function Set-Scenario {
     $script:calls = [Collections.Generic.List[string]]::new()
-    $script:startResults = [Collections.Generic.Queue[hashtable]]::new()
-    $script:infoResults = [Collections.Generic.Queue[hashtable]]::new()
-    $script:initResults = [Collections.Generic.Queue[hashtable]]::new()
-    $script:inspectResults = [Collections.Generic.Queue[hashtable]]::new()
-    $script:initTimeouts = [Collections.Generic.List[double]]::new()
-    foreach ($result in $starts) { $script:startResults.Enqueue($result) }
-    foreach ($result in $infos) { $script:infoResults.Enqueue($result) }
-    $script:diagnostics = 0
-    $script:diagnosticsFail = $diagnosticsFail
-    $script:readinessFailsFirstAttempt = $false
+    $script:timeouts = [Collections.Generic.List[double]]::new()
+    $script:durations = @{}
+    $script:results = @{}
+    $script:elapsedMilliseconds = 0
     $script:distributionList = ''
+}
+
+function Add-Result([string]$command, [hashtable]$result) {
+    if (-not $script:results.ContainsKey($command)) {
+        $script:results[$command] = [Collections.Generic.Queue[hashtable]]::new()
+    }
+    $script:results[$command].Enqueue($result)
 }
 
 $ok = @{ TimedOut = $false; ExitCode = 0; Output = '' }
 $failed = @{ TimedOut = $false; ExitCode = 1; Output = 'pipe busy' }
-$hung = @{ TimedOut = $true; ExitCode = $null; Output = 'timed out' }
 
-Set-Scenario -starts @($ok) -infos @($ok)
-Invoke-PodmanBootstrap
+Set-Scenario
+Invoke-PodmanBootstrap (New-TestBudget)
 Assert-Equal ($calls | Where-Object { $_ -eq 'machine start' }).Count 1 'healthy starts'
-Assert-Equal $diagnostics 0 'healthy diagnostics'
-Assert-Equal $initTimeouts[0] 90 'machine init budget'
+Assert-Equal ($calls | Where-Object { $_ -eq 'version' }).Count 0 'healthy diagnostics'
 
-Set-Scenario -starts @($ok) -infos @($ok)
-$script:initResults.Enqueue(@{ TimedOut = $false; ExitCode = 125; Output = 'machine already exists' })
-Invoke-PodmanBootstrap
+Set-Scenario
+Add-Result 'machine init' @{ TimedOut = $false; ExitCode = 125; Output = 'machine already exists' }
+Invoke-PodmanBootstrap (New-TestBudget)
+Assert-Equal ($calls | Where-Object { $_ -eq 'machine inspect' }).Count 1 'existing machine inspect'
 Assert-Equal ($calls | Where-Object { $_ -eq 'machine set --rootful' }).Count 1 'existing machine rootful setup'
 
-Set-Scenario -starts @($ok) -infos @($ok)
-$script:initResults.Enqueue(@{ TimedOut = $false; ExitCode = 125; Output = 'machine already exists' })
-$script:inspectResults.Enqueue(@{ TimedOut = $false; ExitCode = 125; Output = 'VM does not exist' })
-Invoke-PodmanBootstrap
-Assert-Equal ($calls | Where-Object { $_ -eq 'machine set --rootful' }).Count 1 'partial machine record reset before rootful setup'
+Set-Scenario
+Add-Result 'machine start' $failed
+Add-Result 'machine start' $ok
+$script:distributionList = "Ubuntu`npodman-machine-default"
+Invoke-PodmanBootstrap (New-TestBudget)
+Assert-Equal ($calls | Where-Object { $_ -eq 'machine start' }).Count 2 'recovery starts'
+Assert-Equal ($calls | Where-Object { $_ -eq 'machine rm -f' }).Count 1 'recovery reset'
+Assert-Equal ($calls | Where-Object { $_ -eq '--unregister podman-machine-default' }).Count 1 'exact stale distribution cleanup'
 
-Set-Scenario -starts @($ok) -infos @($ok)
-$script:initResults.Enqueue($hung)
-$script:distributionList = "Ubuntu`n" + ('podman-machine-default'.ToCharArray() -join "`0")
-Invoke-PodmanBootstrap
-Assert-Equal ($calls | Where-Object { $_ -eq '--unregister podman-machine-default' }).Count 1 'stale Podman distribution removed'
-Assert-Equal ($calls | Where-Object { $_ -eq 'machine init' }).Count 2 'init retried after timeout'
-
-Set-Scenario -starts @() -infos @()
-$script:initResults.Enqueue($hung)
-if ((Start-MachineAttempt 1) -notmatch '^PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT') {
-    throw 'machine init timeout was not classified'
-}
-
-Set-Scenario -starts @($failed, $ok) -infos @($ok)
+Set-Scenario
+Add-Result 'machine start' $failed
+Add-Result 'machine start' $ok
 $script:distributionList = 'Ubuntu'
-Invoke-PodmanBootstrap
-Assert-Equal ($calls | Where-Object { $_ -like '--unregister*' }).Count 0 'unrelated WSL distribution preserved'
+Invoke-PodmanBootstrap (New-TestBudget)
+Assert-Equal ($calls | Where-Object { $_ -like '--unregister*' }).Count 0 'unrelated distribution preserved'
 
-Set-Scenario -starts @($failed, $ok) -infos @($ok)
-Invoke-PodmanBootstrap
-Assert-Equal ($calls | Where-Object { $_ -eq 'machine start' }).Count 2 'recovered starts'
-Assert-Equal ($calls | Where-Object { $_ -eq 'machine rm -f' }).Count 1 'resets'
-Assert-Equal $diagnostics 1 'first failure diagnostics'
-
-Set-Scenario -starts @($hung, $ok) -infos @($ok)
-Invoke-PodmanBootstrap
-Assert-Equal ($calls | Where-Object { $_ -eq 'machine start' }).Count 2 'hung start retry'
-
-Set-Scenario -starts @($failed, $failed) -infos @() -diagnosticsFail $true
+Set-Scenario
+$script:durations['--set-default-version 2'] = 11000
 try {
-    Invoke-PodmanBootstrap
-    throw 'expected bootstrap failure'
+    Invoke-PodmanBootstrap (New-TestBudget 35000)
+    throw 'expected exhausted budget failure'
 } catch {
-    if ($_.Exception.Message -notmatch 'PODMAN_WINDOWS_RECOVERY_FAILED.*pipe busy') { throw }
+    Assert-True ($_.Exception.Message -match '^PODMAN_WINDOWS_RECOVERY_FAILED: WSL2 setup failed') 'exhausted budget marker missing'
 }
-Assert-Equal ($calls | Where-Object { $_ -eq 'machine start' }).Count 2 'terminal starts'
-Assert-Equal ($calls | Where-Object { $_ -eq 'machine rm -f' }).Count 1 'terminal resets'
-Assert-Equal $diagnostics 2 'terminal diagnostics'
+Assert-Equal $timeouts[0] 10000 'command did not preserve terminal diagnostic budget'
+Assert-True (($calls | Where-Object { $_ -eq 'version' }).Count -eq 1) 'exhausted-budget diagnostics missing'
 
-$readinessTimeout = [TimeSpan]::FromMilliseconds(200)
-Set-Scenario -starts @($ok, $ok) -infos @($ok)
-$script:readinessFailsFirstAttempt = $true
-Invoke-PodmanBootstrap
-Assert-Equal ($calls | Where-Object { $_ -eq 'machine start' }).Count 2 'readiness retry'
+Set-Scenario
+$script:durations['machine init'] = 100000
+try {
+    Invoke-PodmanBootstrap (New-TestBudget 75000)
+    throw 'expected near-deadline failure'
+} catch {
+    Assert-True ($_.Exception.Message -match '^PODMAN_WINDOWS_RECOVERY_FAILED: PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT') 'near-deadline marker missing'
+}
+Assert-Equal $timeouts[1] 50000 'near-deadline command was not capped by remaining budget'
+Assert-True (($calls | Where-Object { $_ -eq 'version' }).Count -eq 1) 'terminal diagnostics did not run'
+Assert-True (($calls | Where-Object { $_ -eq 'machine stop' }).Count -eq 0) 'recovery ran without enough time'
+
+Set-Scenario
+Add-Result 'machine start' $failed
+$script:elapsedMilliseconds = 155000
+$script:durations['machine start'] = 100000
+try {
+    Invoke-PodmanBootstrap (New-TestBudget)
+    throw 'expected insufficient retry budget failure'
+} catch {
+    Assert-True ($_.Exception.Message -match '^PODMAN_WINDOWS_RECOVERY_FAILED:') 'insufficient retry marker missing'
+}
+Assert-Equal ($calls | Where-Object { $_ -eq 'machine start' }).Count 1 'insufficient-budget retry'
+Assert-True (($calls | Where-Object { $_ -eq 'version' }).Count -eq 1) 'insufficient-budget diagnostics missing'
+$versionIndex = $calls.IndexOf('version')
+Assert-Equal $timeouts[$versionIndex] 3000 'terminal diagnostics did not use the reserved budget'
+
+Set-Scenario
+Add-Result 'machine start' $failed
+$script:elapsedMilliseconds = 170000
+$script:durations['machine stop'] = 20000
+$script:durations['machine rm -f'] = 20000
+$script:durations['--shutdown'] = 20000
+$script:durations['--list --quiet'] = 20000
+try {
+    Invoke-PodmanBootstrap (New-TestBudget)
+    throw 'expected cleanup budget failure'
+} catch {
+    Assert-True ($_.Exception.Message -match '^PODMAN_WINDOWS_RECOVERY_FAILED:') 'post-cleanup marker missing'
+}
+Assert-Equal ($calls | Where-Object { $_ -eq 'machine start' }).Count 1 'second attempt began after cleanup consumed its budget'
+Assert-Equal ($calls | Where-Object { $_ -eq 'version' }).Count 2 'post-cleanup terminal diagnostics missing'
+
+Set-Scenario
+Add-Result 'machine start' $failed
+Add-Result 'machine start' $failed
+try {
+    Invoke-PodmanBootstrap (New-TestBudget)
+    throw 'expected recovery failure'
+} catch {
+    Assert-True ($_.Exception.Message -match '^PODMAN_WINDOWS_RECOVERY_FAILED:.*pipe busy') 'terminal recovery marker missing'
+}
+Assert-Equal ($calls | Where-Object { $_ -eq 'version' }).Count 2 'terminal diagnostics count'
 
 Write-Host '[podman-windows] bootstrap helper tests passed'
