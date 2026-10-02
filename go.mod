@@ -3,7 +3,7 @@ module github.com/devsy-org/devsy
 go 1.26.8
 
 require (
-	al.essio.dev/pkg/shellescape v1.6.0
+	al.essio.dev/pkg/shellescape v1.6.1
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.6
 	filippo.io/age v1.3.2
