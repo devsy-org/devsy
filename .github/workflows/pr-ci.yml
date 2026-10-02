@@ -271,7 +271,7 @@ jobs:
           ./e2e.test -test.v -ginkgo.v -test.timeout 1500s -ginkgo.fail-on-empty --ginkgo.label-filter="${{ matrix.label }}"
 
   integration-tests:
-    name: Test ${{ matrix.label }}${{ matrix.install-podman && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
+    name: Test ${{ matrix.label }}${{ (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
     needs: [changes, can-read-secret, build-cli]
     if: needs.changes.outputs.go == 'true'
     strategy:
@@ -654,6 +654,7 @@ jobs:
             runner: windows-latest
             free-disk-space: false
             install-kind: false
+            install-podman: true
             requires-secret: false
 
 
@@ -736,7 +737,7 @@ jobs:
           echo "result=$UUID" >> "$GITHUB_OUTPUT"
 
       - name: cache podman installer (Windows)
-        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         id: podman-cache-windows
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -744,7 +745,7 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-podman-v5.8.2
 
       - name: install and start podman (Windows)
-        if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: pwsh
         run: |
           $msiPath = "$env:RUNNER_TEMP\podman.msi"
