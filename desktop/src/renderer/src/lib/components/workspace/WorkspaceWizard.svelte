@@ -1048,7 +1048,7 @@ function selectTemplate(t: { name: string; source: string }) {
 {/snippet}
 
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
-  <Dialog.Content class="sm:max-w-4xl max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden">
+  <Dialog.Content class="{currentStep === 'launch' ? 'sm:max-w-2xl' : 'sm:max-w-4xl'} max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden">
     <Dialog.Header class="sr-only">
       <Dialog.Title>Create Workspace</Dialog.Title>
       <Dialog.Description>
@@ -1094,7 +1094,7 @@ function selectTemplate(t: { name: string; source: string }) {
     {/if}
 
     <!-- Step content -->
-    <div class="flex-1 overflow-y-auto px-6 pb-6 pt-2">
+    <div class="flex-1 overflow-y-auto px-6 pb-6 {currentStep === 'launch' ? 'pt-6' : 'pt-2'}">
       {#if currentStep === "provider"}
         <div class="space-y-4">
           <div>
@@ -1504,29 +1504,31 @@ function selectTemplate(t: { name: string; source: string }) {
             </div>
           {/if}
 
-          <div class="flex justify-end gap-2 pt-2">
-            {#if !launchError && (launchSuccess || launchStatusRefreshError)}
-              <Button variant="outline" onclick={() => (open = false)}>Close</Button>
-              <Button
-                onclick={() => {
-                  const id = launchedWorkspaceId ?? resolvedId
-                  open = false
-                  if (id) goto(`/workspaces/${id}`)
-                }}
-              >
-                Open Workspace
-              </Button>
-            {:else if launchError}
-              <Button variant="outline" onclick={() => (open = false)}>Close</Button>
-              {#if launchBuildFailed && !launchIsRecovery}
-                <Button variant="secondary" onclick={() => handleLaunch(true)}>
-                  <LifeBuoy class="h-4 w-4" />
-                  Reopen in Recovery Container
+          {#if launchError || launchSuccess || launchStatusRefreshError}
+            <div class="flex flex-wrap justify-end gap-2 border-t pt-4">
+              {#if !launchError && (launchSuccess || launchStatusRefreshError)}
+                <Button variant="outline" onclick={() => (open = false)}>Close</Button>
+                <Button
+                  onclick={() => {
+                    const id = launchedWorkspaceId ?? resolvedId
+                    open = false
+                    if (id) goto(`/workspaces/${id}`)
+                  }}
+                >
+                  Open Workspace
                 </Button>
+              {:else if launchError}
+                <Button variant="outline" onclick={() => (open = false)}>Close</Button>
+                {#if launchBuildFailed && !launchIsRecovery}
+                  <Button variant="secondary" onclick={() => handleLaunch(true)}>
+                    <LifeBuoy class="h-4 w-4" />
+                    Reopen in Recovery Container
+                  </Button>
+                {/if}
+                <Button onclick={() => handleLaunch()}>Retry</Button>
               {/if}
-              <Button onclick={() => handleLaunch()}>Retry</Button>
-            {/if}
-          </div>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
