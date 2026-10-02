@@ -314,10 +314,12 @@ test.describe
       expect(await icons.count()).toBeGreaterThan(0)
       const firstIcon = icons.first()
       await expect(firstIcon).toBeVisible()
-      const naturalWidth = await firstIcon.evaluate(
-        (el: HTMLImageElement) => el.naturalWidth,
-      )
-      expect(naturalWidth).toBeGreaterThan(0)
+      await expect
+        .poll(
+          () => firstIcon.evaluate((el: HTMLImageElement) => el.naturalWidth),
+          { timeout: 10000 },
+        )
+        .toBeGreaterThan(0)
     })
 
     test("should select a template and populate the source field", async () => {
