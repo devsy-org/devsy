@@ -415,3 +415,64 @@ func TestAgentContainerPath(t *testing.T) {
 		})
 	}
 }
+
+type capturePostStartDelivery struct {
+	delivery.AgentDelivery
+	usesBinarySource bool
+	called           bool
+	opts             delivery.PostStartOptions
+	err              error
+}
+
+func (d *capturePostStartDelivery) UsesBinarySource() bool { return d.usesBinarySource }
+
+func (d *capturePostStartDelivery) DeliverPostStart(
+	_ context.Context,
+	opts delivery.PostStartOptions,
+) error {
+	d.called = true
+	d.opts = opts
+	return d.err
+}
+
+func TestShellPrefetchSkipsArchitectureLookup(t *testing.T) {
+	for _, name := range []string{provider2.CustomDriver, provider2.AppleDriver} {
+		t.Run(name, func(t *testing.T) {
+			d := &architectureDriver{err: context.Canceled}
+			r := newTestRunner(d)
+			r.workspaceConfig.Agent.Driver = name
+			require.IsType(t, &delivery.LegacyShellDelivery{}, r.newAgentDelivery())
+			r.prefetchAgentBinary(context.Background())
+			assert.Zero(t, d.architectureCalls)
+		})
+	}
+}
+
+func TestPostStartDeliverySkipsUnusedBinarySource(t *testing.T) {
+	d := &architectureDriver{err: context.Canceled}
+	r := newTestRunner(d)
+	strategy := &capturePostStartDelivery{}
+	require.NoError(t, r.deliverPostStart(context.Background(), strategy))
+	assert.True(t, strategy.called)
+	assert.Zero(t, d.architectureCalls)
+	assert.Nil(t, strategy.opts.BinarySource)
+	assert.Empty(t, strategy.opts.Arch)
+	assert.Equal(t, r.id, strategy.opts.WorkspaceID)
+	strategy.err = context.DeadlineExceeded
+	assert.ErrorIs(t, r.deliverPostStart(context.Background(), strategy), strategy.err)
+}
+
+func TestPostStartDeliveryRetainsArchitectureForBinarySource(t *testing.T) {
+	d := &architectureDriver{arch: "arm64"}
+	r := newTestRunner(d)
+	strategy := &capturePostStartDelivery{usesBinarySource: true}
+	require.NoError(t, r.deliverPostStart(context.Background(), strategy))
+	assert.True(t, strategy.called)
+	assert.Equal(t, 1, d.architectureCalls)
+	assert.Equal(t, "arm64", strategy.opts.Arch)
+	assert.NotNil(t, strategy.opts.BinarySource)
+	strategy.called = false
+	d.err = context.Canceled
+	assert.ErrorIs(t, r.deliverPostStart(context.Background(), strategy), d.err)
+	assert.False(t, strategy.called)
+}

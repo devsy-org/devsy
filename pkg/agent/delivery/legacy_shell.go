@@ -51,6 +51,10 @@ func (d *LegacyShellDelivery) Cleanup(_ context.Context, _ string) error {
 	return nil
 }
 
+func (d *LegacyShellDelivery) UsesBinarySource() bool {
+	return false
+}
+
 func (d *LegacyShellDelivery) timeout() time.Duration {
 	if d.Timeout == nil {
 		return 0

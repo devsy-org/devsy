@@ -259,3 +259,22 @@ func TestNewAgentDelivery_UnnamedRuntimeWithArgvExec(t *testing.T) {
 	assert.NotNil(t, native.Exec)
 	assert.Empty(t, native.InstallPath)
 }
+
+func TestDeliveryBinarySourcePolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		strategy AgentDelivery
+		want     bool
+	}{
+		{name: "shell detects architecture in container", strategy: &LegacyShellDelivery{}, want: false},
+		{name: "local docker", strategy: &LocalDockerDelivery{}, want: true},
+		{name: "remote docker", strategy: &RemoteDockerDelivery{}, want: true},
+		{name: "exec stream", strategy: &KubernetesDelivery{}, want: true},
+		{name: "unknown strategy retains binary source", strategy: &mockDelivery{}, want: true},
+	} {
+		t.Run(
+			tc.name,
+			func(t *testing.T) { assert.Equal(t, tc.want, UsesBinarySource(tc.strategy)) },
+		)
+	}
+}

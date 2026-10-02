@@ -92,13 +92,15 @@ func TestSeparateImageBackend(t *testing.T) {
 
 type architectureDriver struct {
 	mockDriver
-	arch        string
-	err         error
-	workspaceID string
+	arch              string
+	err               error
+	workspaceID       string
+	architectureCalls int
 }
 
 func (d *architectureDriver) TargetArchitecture(_ context.Context, id string) (string, error) {
 	d.workspaceID = id
+	d.architectureCalls++
 	return d.arch, d.err
 }
 

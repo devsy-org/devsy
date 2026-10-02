@@ -174,24 +174,24 @@ func (r *runner) deliveryArch(ctx context.Context) (string, error) {
 }
 
 func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDelivery) error {
-	mgr, err := agent.NewBinaryManager(r.resolvedAgentDownloadURL())
-	if err != nil {
-		return fmt.Errorf("create binary source: %w", err)
+	opts := delivery.PostStartOptions{
+		WorkspaceID: r.id,
+		DownloadURL: r.resolvedAgentDownloadURL(),
 	}
-
-	arch, err := r.deliveryArch(ctx)
-	if err != nil {
-		return err
+	if delivery.UsesBinarySource(strategy) {
+		mgr, err := agent.NewBinaryManager(opts.DownloadURL)
+		if err != nil {
+			return fmt.Errorf("create binary source: %w", err)
+		}
+		arch, err := r.deliveryArch(ctx)
+		if err != nil {
+			return err
+		}
+		opts.BinarySource = mgr.AcquireBinary
+		opts.Arch = arch
+		opts.PreferInContainerDownload = !mgr.HasLocalOverride(arch)
 	}
-
-	err = strategy.DeliverPostStart(ctx, delivery.PostStartOptions{
-		WorkspaceID:               r.id,
-		BinarySource:              mgr.AcquireBinary,
-		Arch:                      arch,
-		DownloadURL:               r.resolvedAgentDownloadURL(),
-		PreferInContainerDownload: !mgr.HasLocalOverride(arch),
-	})
-	if err != nil {
+	if err := strategy.DeliverPostStart(ctx, opts); err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)
 	}
 	return nil
@@ -199,6 +199,9 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 
 // prefetchAgentBinary warms the binary cache while the container builds.
 func (r *runner) prefetchAgentBinary(ctx context.Context) {
+	if !delivery.UsesBinarySource(r.newAgentDelivery()) {
+		return
+	}
 	arch, err := r.deliveryArch(ctx)
 	if err != nil {
 		return

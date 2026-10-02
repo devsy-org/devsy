@@ -57,3 +57,17 @@ type AgentDelivery interface {
 	DeliverPreStart(ctx context.Context, opts PreStartOptions) error
 	DeliverPostStart(ctx context.Context, opts PostStartOptions) error
 }
+
+// BinarySourcePolicy reports whether delivery consumes the supplied binary source
+// and architecture. Shell injection resolves architecture inside the container.
+type BinarySourcePolicy interface {
+	UsesBinarySource() bool
+}
+
+// UsesBinarySource preserves binary streaming for strategies without an explicit policy.
+func UsesBinarySource(strategy AgentDelivery) bool {
+	if policy, ok := strategy.(BinarySourcePolicy); ok {
+		return policy.UsesBinarySource()
+	}
+	return true
+}
