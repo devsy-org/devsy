@@ -3,13 +3,15 @@ import { EventEmitter } from "node:events"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ProviderJobs } from "../provider-jobs.js"
 import { WorkspaceJobs } from "../workspace-jobs.js"
-const handlers = new Map<string, (...args: any[]) => any>()
+
+type Handler = (...args: unknown[]) => unknown
+
+const handlers = new Map<string, Handler>()
 vi.mock("electron", () => ({
   app: { getPath: () => "/tmp", getVersion: () => "0.0.0" },
   dialog: {},
   ipcMain: {
-    handle: (channel: string, fn: (...args: any[]) => any) =>
-      handlers.set(channel, fn),
+    handle: (channel: string, fn: Handler) => handlers.set(channel, fn),
     on: () => undefined,
   },
 }))
@@ -57,7 +59,7 @@ function setup() {
     getMainWindow: () => ({ webContents: { send } }),
     providerJobs: new ProviderJobs(),
     workspaceJobs: jobs,
-  } as any)
+  } as unknown as Parameters<typeof registerIpcHandlers>[0])
   return {
     jobs,
     cli,
@@ -67,8 +69,10 @@ function setup() {
     line: (text: string) => line(text, "stdout"),
   }
 }
-function invoke(channel: string, args = { workspaceId: "ws" }) {
-  return handlers.get(channel)!({}, args)
+function invoke(channel: string, args: unknown = { workspaceId: "ws" }) {
+  const handler = handlers.get(channel)
+  if (!handler) throw new Error(`No handler registered for ${channel}`)
+  return handler({}, args)
 }
 async function flush() {
   for (let i = 0; i < 20; i++) await Promise.resolve()
@@ -148,7 +152,7 @@ describe("workspace lifecycle IPC", () => {
   })
   it("checks the detached task when its follower exits cleanly", async () => {
     const ctx = setup()
-    await handlers.get("workspace_up")!({}, { source: "ws", commandId: "up" })
+    await invoke("workspace_up", { source: "ws", commandId: "up" })
     await flush()
     ctx.exit(0)
     await flush()

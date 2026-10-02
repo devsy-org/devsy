@@ -16,8 +16,8 @@ describe("SettingsPage layout", () => {
     render(SettingsPage)
 
     const section = document.querySelector("#startup")
-    expect(section).toBeTruthy()
-    const switches = section!.querySelectorAll('[role="switch"]')
+    if (!section) throw new Error("Startup section was not rendered")
+    const switches = section.querySelectorAll('[role="switch"]')
     expect(switches).toHaveLength(2)
     const [runAtStartup, openToTray] = switches
     expect(runAtStartup.hasAttribute("disabled")).toBe(false)

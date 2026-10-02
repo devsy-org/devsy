@@ -30,7 +30,8 @@ let _invoke: InvokeFn
 let _listen: ListenFn
 
 if (isElectron()) {
-  const api = window.electronAPI!
+  const api = window.electronAPI
+  if (!api) throw new Error("Electron API is unavailable")
 
   _invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
     api.invoke(cmd, args) as Promise<T>

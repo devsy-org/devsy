@@ -58,6 +58,11 @@ jobs:
         working-directory: desktop
         run: npm run format:check
 
+      - name: Check lint
+        if: needs.changes.outputs.desktop == 'true'
+        working-directory: desktop
+        run: npm run lint:check
+
       - name: Unit tests
         if: needs.changes.outputs.desktop == 'true'
         working-directory: desktop

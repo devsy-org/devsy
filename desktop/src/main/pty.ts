@@ -111,10 +111,8 @@ export class PtyManager {
       let timedOut = false
       waits.push(
         new Promise<void>((resolve) => {
-          let settled = false
           let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
             timer = null
-            settled = true
             timedOut = true
             disposable.dispose()
             resolve()
@@ -125,7 +123,6 @@ export class PtyManager {
               clearTimeout(timer)
               timer = null
             }
-            settled = true
             disposable.dispose()
             resolve()
           })

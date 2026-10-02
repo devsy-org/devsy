@@ -3,11 +3,11 @@ import { execFile as execFileCb, spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import type { Readable } from "node:stream"
 import { promisify } from "node:util"
+import type { CLIError, CliLogLine } from "../shared/cli-error.js"
 import {
   cliErrorFromEnvelope,
   cliErrorFromLegacy,
 } from "../shared/cli-error.js"
-import type { CLIError, CliLogLine } from "../shared/cli-error.js"
 import { getAnalyticsDistinctId } from "./analytics.js"
 
 const execFile = promisify(execFileCb)
@@ -474,17 +474,14 @@ export class CliRunner {
       let timedOut = false
       waits.push(
         new Promise<void>((resolve) => {
-          let settled = false
           let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
             timer = null
-            settled = true
             timedOut = true
             resolve()
           }, 2000)
 
           if (child.exitCode !== null || child.signalCode !== null) {
             if (timer) clearTimeout(timer)
-            settled = true
             resolve()
             return
           }
@@ -493,7 +490,6 @@ export class CliRunner {
               clearTimeout(timer)
               timer = null
             }
-            settled = true
             resolve()
           })
         }).then(() => {

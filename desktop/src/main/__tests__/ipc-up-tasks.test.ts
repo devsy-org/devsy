@@ -1,7 +1,8 @@
 // @vitest-environment node
-import { WorkspaceJobs } from "../workspace-jobs.js"
+
 import { EventEmitter } from "node:events"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { WorkspaceJobs } from "../workspace-jobs.js"
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 

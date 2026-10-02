@@ -223,7 +223,11 @@ describe("ProviderSheet", () => {
     while (providerOptions.mock.results.length === 0) {
       await new Promise((r) => setTimeout(r, 1))
     }
-    await providerOptions.mock.results[0]!.value
+    const firstResult = providerOptions.mock.results[0]
+    if (firstResult?.type !== "return") {
+      throw new Error("Provider options request did not return a promise")
+    }
+    await firstResult.value
     await tick()
     await tick()
 

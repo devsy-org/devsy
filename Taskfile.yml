@@ -253,7 +253,9 @@ tasks:
   desktop:check:
     desc: check desktop application
     dir: desktop
-    cmd: npm run check
+    cmds:
+      - cmd: npm run check
+      - cmd: npm run lint:check
 
   desktop:test:
     desc: run desktop unit tests

@@ -2,8 +2,8 @@ import { createHmac } from "node:crypto"
 import { arch, homedir, platform } from "node:os"
 import { app } from "electron"
 import { PostHog } from "posthog-node"
-import { machineIdSync } from "./machine-id.js"
 import { mainLog } from "./logging.js"
+import { machineIdSync } from "./machine-id.js"
 
 declare const __DEVSY_POSTHOG_API_KEY__: string | undefined
 // `typeof` guard keeps the module loadable under vitest, which doesn't

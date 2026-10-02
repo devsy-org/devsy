@@ -3,9 +3,9 @@ import type {
   MachineDiagnosticsResponse,
 } from "../shared/machine-diagnostics-types.js"
 import type { CliRunner } from "./cli.js"
-import {
+import type {
+  MachineDiagnosticsKey,
   MachineDiagnosticsStore,
-  type MachineDiagnosticsKey,
 } from "./machine-diagnostics-store.js"
 
 function keyOf(key: MachineDiagnosticsKey): string {

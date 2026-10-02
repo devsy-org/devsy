@@ -112,10 +112,11 @@ onMount(async () => {
     existing.onGpgForwardFailed = onGpgForwardFailed
     const el = term.element?.parentElement ?? term.element
     if (el) containerEl.appendChild(el)
+    const currentTerm = term
     requestAnimationFrame(() => {
       fitAddon?.fit()
-      term?.refresh(0, term!.rows - 1)
-      term?.focus()
+      currentTerm?.refresh(0, currentTerm.rows - 1)
+      currentTerm?.focus()
     })
   } else {
     // Register exit listener BEFORE async imports to avoid losing early exit events.
@@ -221,10 +222,11 @@ onMount(async () => {
 // Refit and focus when tab becomes active
 $effect(() => {
   if (active && fitAddon && term) {
+    const currentTerm = term
     requestAnimationFrame(() => {
       fitAddon?.fit()
-      term?.refresh(0, term!.rows - 1)
-      term?.focus()
+      currentTerm.refresh(0, currentTerm.rows - 1)
+      currentTerm.focus()
     })
   }
 })

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="128" height="128" version="1.0" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" zoomAndPan="magnify">
+ <title>Google Antigravity</title>
  <defs>
   <clipPath id="clipPath1200">
    <path d="m89.699 93.695c4.6667 3.5 11.667 1.1667 5.25-5.25-19.25-18.667-15.167-70-39.083-70-23.917 0-19.833 51.333-39.083 70-7 7 0.5833 8.75 5.25 5.25 18.083-12.25 16.917-33.833 33.833-33.833 16.917 0 15.75 21.583 33.833 33.833z" fill="#fff"/>

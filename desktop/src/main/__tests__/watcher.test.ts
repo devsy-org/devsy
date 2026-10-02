@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { WorkspaceJobs } from "../workspace-jobs.js"
 import { Watcher } from "../watcher.js"
+import { WorkspaceJobs } from "../workspace-jobs.js"
 
 function makeWatcher(
   runProviderList: () => Promise<Record<string, unknown>>,

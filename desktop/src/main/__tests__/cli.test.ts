@@ -417,12 +417,12 @@ describe("CliRunner", () => {
       const onLine = vi.fn()
       await cli.runStreaming(["workspace", "up", "."], onLine, onExit)
       child.stderr.push(
-        JSON.stringify({
+        `${JSON.stringify({
           kind: "error",
           outcome: "error",
           code: "BROKEN",
           message: "build failed",
-        }) + "\n",
+        })}\n`,
       )
       child.stderr.push(null)
       await vi.waitFor(() => expect(onLine).toHaveBeenCalledTimes(1))

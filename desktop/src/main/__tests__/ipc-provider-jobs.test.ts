@@ -241,7 +241,7 @@ describe("provider job lifecycle over IPC", () => {
 
   it("runs set-source then init on update, clearing the job once", async () => {
     const seen: string[][] = []
-    const { providerJobs, send } = setup((cliArgs) => {
+    const { providerJobs } = setup((cliArgs) => {
       seen.push(cliArgs)
       return { lines: [], code: 0 }
     })

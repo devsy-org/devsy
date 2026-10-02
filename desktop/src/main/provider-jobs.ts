@@ -155,7 +155,7 @@ export class ProviderJobs {
   /** Retry only the authoritative provider-state refresh after a completed operation. */
   async retryRefresh(name: string): Promise<void> {
     const job = this.jobs.get(name)
-    if (!job || job.errorCode !== "provider_refresh_failed") return
+    if (job?.errorCode !== "provider_refresh_failed") return
     const generation = this.generations.get(name)
     await this.refresh?.()
     if (this.generations.get(name) !== generation) return

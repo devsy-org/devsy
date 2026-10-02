@@ -6,26 +6,28 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { app, dialog, ipcMain } from "electron"
+import { isAppNavigationRequest } from "../shared/app-route.js"
 import type { CLIError, OperationStatus } from "../shared/cli-error.js"
 import {
   normalizeOperationStatus,
   parseCliEnvelope,
 } from "../shared/cli-error.js"
+import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import type { AppNavigationController } from "./app-navigation.js"
+import { sanitizeAppSettingsPatch } from "./app-settings.js"
 import type { CliRunner, StreamLine } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { LogStore } from "./log-store.js"
-import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
+import { mainLog } from "./logging.js"
 import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
+import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
-import { sanitizeAppSettingsPatch } from "./app-settings.js"
 import type { SettingsService } from "./settings-service.js"
 import type { DaemonState } from "./state.js"
 import {
   checkForUpdates,
-  switchReleaseChannel,
   downloadUpdate,
   getAutoDownloadEnabled,
   getLastStatus,
@@ -33,13 +35,11 @@ import {
   installUpdate,
   type ReleaseChannel,
   setAutoDownloadEnabled,
+  switchReleaseChannel,
 } from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
-import { normalizeWorkspaceStatus } from "./workspace-status.js"
-import { isAppNavigationRequest } from "../shared/app-route.js"
-import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
-import { mainLog } from "./logging.js"
+import { normalizeWorkspaceStatus } from "./workspace-status.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -302,7 +302,6 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     pty,
     providerJobs,
     workspaceJobs,
-    machineDiagnosticsStore,
     machineDiagnosticsManager,
     getMainWindow,
   } = deps
@@ -667,7 +666,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       "list",
     ])
     const providers = parseProviderEntries(raw)
-    state.updateProviders(providers as any[])
+    state.updateProviders(providers)
     return state.providerList()
   })
 
@@ -1565,7 +1564,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
               if (!sink.line(formatted)) return logStore.onDrain(logPath)
             },
-            (code, cliError) => {
+            (_code, _cliError) => {
               // No releaseTask: the follower dying says nothing about the
               // detached worker, and would orphan a still-running task.
               if (tunnelProcesses.get(wsId) === child) {
@@ -1594,7 +1593,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           )._suppressWorkspaceCallbacks = () => {
             suppressCallbacks = true
           }
-        } catch (error) {
+        } catch {
           // A failed follower does not prove that the detached task failed.
           // Keep its cancellation handle and reconcile from persisted task state.
           void reconcileDetachedTask(
@@ -1667,7 +1666,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
               redactOperationStatus(normalizeOperationStatus(envelope)),
             )
         }
-      } catch (error) {
+      } catch {
         // task get can also fail because the store/CLI is unavailable. Only a
         // persisted terminal task state authorizes declaring the worker failed.
         try {
@@ -1753,6 +1752,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           (line) => logStore.appendLog(logPath, line),
           () => logStore.closeLog(logPath),
         )
+        const progressSink = sink
         workspaceJobs.phase(args.workspaceId, commandId, "Launching command")
         timing("cli-launch")
         let firstProgress = true
@@ -1775,7 +1775,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                   )
                 )
                   return
-                if (!sink!.line(displayCliLine(line, meta)))
+                if (!progressSink.line(displayCliLine(line, meta)))
                   return logStore.onDrain(logPath)
               },
               (code, cliError) => {

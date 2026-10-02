@@ -20,6 +20,7 @@
     "check": "svelte-check --tsconfig src/renderer/tsconfig.json",
     "format": "biome format --write .",
     "format:check": "biome format .",
+    "lint:check": "biome check .",
     "postinstall": "electron-rebuild -f -w node-pty"
   },
   "dependencies": {

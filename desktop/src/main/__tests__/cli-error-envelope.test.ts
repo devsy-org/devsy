@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  type CliStatusEnvelope,
   cliErrorFromEnvelope,
   cliErrorFromLegacy,
   normalizeOperationStatus,
   parseCliEnvelope,
-  type CliStatusEnvelope,
 } from "../../shared/cli-error"
 
 describe("CLI envelopes", () => {

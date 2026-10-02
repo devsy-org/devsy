@@ -646,8 +646,7 @@ export async function downloadUpdate(): Promise<void> {
   if (!currentVersion) return
   const candidate = activeCandidate
   if (
-    !candidate ||
-    candidate.state !== "available" ||
+    candidate?.state !== "available" ||
     candidate.version !== lastStatus.availableVersion ||
     classifyCandidate(currentVersion, candidate.version).kind !== "newer"
   ) {
