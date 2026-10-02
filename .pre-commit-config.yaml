@@ -7,7 +7,7 @@ repos:
       - id: check-yaml
         args: ["--allow-multiple-documents"]
       - id: check-added-large-files
-        exclude: "^(sites/docs-devsy-sh/)"
+        exclude: "^(sites/docs-devsy-sh/|desktop/resources/)"
       - id: check-merge-conflict
   - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
     rev: v9.26.0

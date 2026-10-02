@@ -133,7 +133,7 @@ html:has(.home-page) {
   letter-spacing: -0.02em;
 }
 
-.home-page .brand svg {
+.home-page .brand img {
   display: block;
 }
 
