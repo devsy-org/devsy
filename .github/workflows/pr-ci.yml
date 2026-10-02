@@ -653,7 +653,7 @@ jobs:
           - label: task-cancel
             runner: windows-latest
             free-disk-space: false
-            install-kind: true
+            install-kind: false
             requires-secret: false
 
 
