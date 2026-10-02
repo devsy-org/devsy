@@ -60,6 +60,8 @@ type setupContainerParams struct {
 	substitutionContext *config.SubstitutionContext
 	timeout             time.Duration
 	hostWarnings        []string
+	secretsEnv          []string
+	secretsMount        []string
 }
 
 type setupInfo struct {
@@ -99,7 +101,13 @@ func (r *runner) setupContainer(
 		status.Operation{Phase: status.PhaseRunningLifecycleHook},
 		func(ctx context.Context) error {
 			var executeErr error
-			result, executeErr = r.executeSetup(ctx, info.result, setupCommand)
+			result, executeErr = r.executeSetup(
+				ctx,
+				info.result,
+				setupCommand,
+				params.secretsEnv,
+				params.secretsMount,
+			)
 			return executeErr
 		},
 	)
@@ -120,17 +128,6 @@ func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Dura
 	return r.legacyInject(ctx, timeout)
 }
 
-// podExecCapableDriver is implemented by the kubernetes driver, decoupling
-// delivery wiring from the driver package.
-type podExecCapableDriver interface {
-	CommandContainerArgv(
-		ctx context.Context,
-		workspaceID string,
-		argv []string,
-		streams driver.Streams,
-	) error
-}
-
 func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 	dockerCmd := "docker"
 	var dockerEnv []string
@@ -143,9 +140,9 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 
 	execFn := delivery.CommandFunc(r.driver.CommandDevContainer, r.id)
 
-	var podExec delivery.PodExecFunc
-	if d, ok := r.driver.(podExecCapableDriver); ok {
-		podExec = func(ctx context.Context, argv []string, streams driver.Streams) error {
+	var argvExec delivery.ArgvExecFunc
+	if d, ok := r.driver.(driver.ArgvExecDriver); ok {
+		argvExec = func(ctx context.Context, argv []string, streams driver.Streams) error {
 			return d.CommandContainerArgv(ctx, r.id, argv, streams)
 		}
 	}
@@ -160,48 +157,41 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 		ContainerID:                r.id,
 		DownloadURL:                r.resolvedAgentDownloadURL(),
 		ExecFunc:                   execFn,
-		PodExec:                    podExec,
+		ArgvExec:                   argvExec,
 		KubernetesAgentInstallPath: r.workspaceConfig.Agent.Kubernetes.AgentInstallPath,
 	})
 }
 
-// deliveryArch returns the target arch for the agent binary. For kubernetes the
-// cluster arch can differ from the host, so a lookup failure is surfaced rather
-// than guessing the host arch: streaming a wrong-arch binary would succeed here
-// but fail when the agent starts, after the legacy fallback can no longer run.
 func (r *runner) deliveryArch(ctx context.Context) (string, error) {
-	if r.workspaceConfig.Agent.Driver != provider2.KubernetesDriver {
-		return runtime.GOARCH, nil
-	}
 	arch, err := r.driver.TargetArchitecture(ctx, r.id)
 	if err != nil {
-		return "", fmt.Errorf("resolve cluster architecture: %w", err)
+		return "", fmt.Errorf("resolve target architecture: %w", err)
 	}
 	if arch == "" {
-		return "", fmt.Errorf("cluster architecture is empty")
+		return "", fmt.Errorf("target architecture is empty")
 	}
 	return arch, nil
 }
 
 func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDelivery) error {
-	mgr, err := agent.NewBinaryManager(r.resolvedAgentDownloadURL())
-	if err != nil {
-		return fmt.Errorf("create binary source: %w", err)
+	opts := delivery.PostStartOptions{
+		WorkspaceID: r.id,
+		DownloadURL: r.resolvedAgentDownloadURL(),
 	}
-
-	arch, err := r.deliveryArch(ctx)
-	if err != nil {
-		return err
+	if delivery.UsesBinarySource(strategy) {
+		mgr, err := agent.NewBinaryManager(opts.DownloadURL)
+		if err != nil {
+			return fmt.Errorf("create binary source: %w", err)
+		}
+		arch, err := r.deliveryArch(ctx)
+		if err != nil {
+			return err
+		}
+		opts.BinarySource = mgr.AcquireBinary
+		opts.Arch = arch
+		opts.PreferInContainerDownload = !mgr.HasLocalOverride(arch)
 	}
-
-	err = strategy.DeliverPostStart(ctx, delivery.PostStartOptions{
-		WorkspaceID:               r.id,
-		BinarySource:              mgr.AcquireBinary,
-		Arch:                      arch,
-		DownloadURL:               r.resolvedAgentDownloadURL(),
-		PreferInContainerDownload: !mgr.HasLocalOverride(arch),
-	})
-	if err != nil {
+	if err := strategy.DeliverPostStart(ctx, opts); err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)
 	}
 	return nil
@@ -209,6 +199,9 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 
 // prefetchAgentBinary warms the binary cache while the container builds.
 func (r *runner) prefetchAgentBinary(ctx context.Context) {
+	if !delivery.UsesBinarySource(r.newAgentDelivery()) {
+		return
+	}
 	arch, err := r.deliveryArch(ctx)
 	if err != nil {
 		return
@@ -398,20 +391,17 @@ func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string)
 }
 
 func (r *runner) addSetupFlags(args *[]string) {
-	_, isDockerDriver := r.driver.(driver.ImageDriver)
-
-	r.addChownFlag(args, isDockerDriver)
-	r.addDriverFlags(args, isDockerDriver)
+	r.addChownFlag(args)
+	r.addDriverFlags(args)
 	r.addPlatformFlags(args)
 	r.addDotfilesFlags(args)
 	r.addPrebuildFlag(args)
 	r.addDebugFlag(args)
 }
 
-func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
+func (r *runner) addChownFlag(args *[]string) {
 	if shouldChownWorkspace(
 		runtime.GOOS,
-		isDockerDriver,
 		r.isPodmanRuntime(),
 		r.driverRequiresWorkspaceChown(),
 	) {
@@ -423,13 +413,12 @@ func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
 // folder to the remote user during setup. Podman and drivers reporting
 // driverNeedsChown expose bind mounts as root-owned in the guest, so a non-root
 // remote user can't enter the workspace folder otherwise.
-func shouldChownWorkspace(goos string, isDockerDriver, isPodman, driverNeedsChown bool) bool {
-	return goos == goosLinux || !isDockerDriver || isPodman || driverNeedsChown
+func shouldChownWorkspace(goos string, isPodman, driverNeedsChown bool) bool {
+	return goos == goosLinux || isPodman || driverNeedsChown
 }
 
 func (r *runner) driverRequiresWorkspaceChown() bool {
-	c, ok := r.driver.(driver.WorkspaceChowner)
-	return ok && c.RequiresWorkspaceChown()
+	return driver.DriverRequiresWorkspaceChown(r.driver)
 }
 
 // isPodmanRuntime reports whether the docker driver is backed by the Podman
@@ -438,8 +427,8 @@ func (r *runner) isPodmanRuntime() bool {
 	return strings.EqualFold(r.workspaceConfig.Agent.Docker.Runtime, string(docker.RuntimePodman))
 }
 
-func (r *runner) addDriverFlags(args *[]string, isDockerDriver bool) {
-	if !isDockerDriver {
+func (r *runner) addDriverFlags(args *[]string) {
+	if driver.DriverRequiresMountStreaming(r.driver) {
 		*args = append(*args, names.Flag(names.StreamMounts))
 	}
 	if r.workspaceConfig.Agent.InjectGitCredentials != stringFalse {
@@ -510,6 +499,7 @@ func (r *runner) executeSetup(
 	ctx context.Context,
 	result *config.Result,
 	setupCommand string,
+	secretsEnv, secretsMount []string,
 ) (*config.Result, error) {
 	runSetupServer := func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config.Result, error) {
 		return tunnelserver.RunSetupServer(
@@ -521,8 +511,8 @@ func (r *runner) executeSetup(
 			config.GetMounts(result),
 			tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
 			tunnelserver.WithSecrets(
-				r.workspaceConfig.CLIOptions.SecretsEnv,
-				r.workspaceConfig.CLIOptions.SecretsMount,
+				secretsEnv,
+				secretsMount,
 			),
 			tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
 			tunnelserver.WithStatusReporter(r.reporter),
@@ -537,15 +527,16 @@ func (r *runner) executeSetup(
 		sshTunnelStdinReader io.Reader, sshTunnelStdoutWriter io.Writer,
 		writer io.WriteCloser,
 	) error {
-		return r.driver.CommandDevContainer(cancelCtx, &driver.CommandParams{
-			WorkspaceID: r.id,
-			User:        containerRootUser,
-			Command:     sshCmd,
-			Stdin:       sshTunnelStdinReader,
-			Stdout:      sshTunnelStdoutWriter,
-			Stderr:      writer,
-			RawStdout:   true,
-		})
+		return r.execSetupSSHServer(
+			cancelCtx,
+			agent.ExecRequest{
+				Command: sshCmd,
+				Stdin:   sshTunnelStdinReader,
+				Stdout:  sshTunnelStdoutWriter,
+				Stderr:  writer,
+			},
+			agent.ExecStartupWatchdogOptions{},
+		)
 	}
 
 	return sshtunnel.ExecuteCommand(ctx, sshtunnel.ExecuteCommandOptions{
@@ -556,6 +547,38 @@ func (r *runner) executeSetup(
 		Command:          setupCommand,
 		TunnelServerFunc: runSetupServer,
 	})
+}
+
+func (r *runner) execSetupSSHServer(
+	ctx context.Context,
+	req agent.ExecRequest,
+	watchdogOpts agent.ExecStartupWatchdogOptions,
+) error {
+	onStartupSilence := watchdogOpts.OnStartupSilence
+	watchdogOpts.OnStartupSilence = func() {
+		if stdin, ok := req.Stdin.(io.Closer); ok {
+			_ = stdin.Close()
+		}
+		if onStartupSilence != nil {
+			onStartupSilence()
+		}
+	}
+	return agent.ExecWithStartupWatchdog(
+		ctx,
+		func(ctx context.Context, req agent.ExecRequest) error {
+			return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
+				WorkspaceID: r.id,
+				User:        containerRootUser,
+				Command:     req.Command,
+				Stdin:       req.Stdin,
+				Stdout:      req.Stdout,
+				Stderr:      req.Stderr,
+				RawStdout:   true,
+			})
+		},
+		req,
+		watchdogOpts,
+	)
 }
 
 func (r *runner) buildSSHTunnelCommand() string {

@@ -1,18 +1,144 @@
 package devcontainer
 
 import (
+	"bytes"
+	"context"
+	"io"
+	"net"
 	"reflect"
 	"testing"
+	"time"
 
+	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/delivery"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/driver"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-const testDockerHostEnvKey = "DOCKER_HOST"
+const (
+	testDockerHostEnvKey      = "DOCKER_HOST"
+	testSetupSSHServerCommand = "ssh-server --stdio"
+)
+
+type setupSSHDriver struct {
+	mockDriver
+	command func(context.Context, *driver.CommandParams) error
+}
+
+func (d *setupSSHDriver) CommandDevContainer(
+	ctx context.Context,
+	params *driver.CommandParams,
+) error {
+	return d.command(ctx, params)
+}
+
+type writeCloser struct{ io.Writer }
+
+func (writeCloser) Close() error { return nil }
+
+func TestExecSetupSSHServer_SilentExecReturnsStartupSilence(t *testing.T) {
+	stdin := bytes.NewBufferString("input")
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	var got *driver.CommandParams
+	d := &setupSSHDriver{command: func(ctx context.Context, params *driver.CommandParams) error {
+		got = params
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	r := newTestRunner(d)
+
+	err := r.execSetupSSHServer(
+		context.Background(), agent.ExecRequest{
+			Command: testSetupSSHServerCommand, Stdin: stdin, Stdout: stdout, Stderr: stderr,
+		},
+		agent.ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond},
+	)
+	var silenceErr *agent.ExecStartupSilenceError
+	require.ErrorAs(t, err, &silenceErr)
+	require.NotNil(t, got)
+	assert.Equal(t, r.id, got.WorkspaceID)
+	assert.Equal(t, "root", got.User)
+	assert.Equal(t, testSetupSSHServerCommand, got.Command)
+	assert.Same(t, stdin, got.Stdin)
+	assert.NotNil(t, got.Stdout)
+	assert.NotNil(t, got.Stderr)
+	assert.True(t, got.RawStdout)
+}
+
+func TestExecSetupSSHServer_SilentExecClosesStdin(t *testing.T) {
+	stdin, stdinPeer := net.Pipe()
+	defer func() { _ = stdinPeer.Close() }()
+	copyDone := make(chan struct{})
+	d := &setupSSHDriver{command: func(ctx context.Context, params *driver.CommandParams) error {
+		go func() {
+			_, _ = io.Copy(io.Discard, params.Stdin)
+			close(copyDone)
+		}()
+		<-ctx.Done()
+		<-copyDone
+		return ctx.Err()
+	}}
+	r := newTestRunner(d)
+
+	err := r.execSetupSSHServer(
+		context.Background(), agent.ExecRequest{Command: testSetupSSHServerCommand, Stdin: stdin},
+		agent.ExecStartupWatchdogOptions{
+			Timeout:                50 * time.Millisecond,
+			TerminationWaitTimeout: time.Second,
+		},
+	)
+	var silenceErr *agent.ExecStartupSilenceError
+	require.ErrorAs(t, err, &silenceErr)
+	select {
+	case <-copyDone:
+	default:
+		t.Fatal("closing setup stdin did not unblock the command input copy")
+	}
+}
+
+func TestExecSetupSSHServer_OutputDisarmsWatchdog(t *testing.T) {
+	for _, stream := range []string{"stdout", "stderr"} {
+		t.Run(stream, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			wrote := make(chan struct{})
+			d := &setupSSHDriver{command: func(
+				ctx context.Context,
+				params *driver.CommandParams,
+			) error {
+				output := params.Stdout
+				if stream == "stderr" {
+					output = params.Stderr
+				}
+				_, _ = io.WriteString(output, "SSH activity")
+				close(wrote)
+				<-ctx.Done()
+				return ctx.Err()
+			}}
+			r := newTestRunner(d)
+			result := make(chan error, 1)
+			go func() {
+				result <- r.execSetupSSHServer(ctx, agent.ExecRequest{
+					Command: testSetupSSHServerCommand, Stdout: io.Discard, Stderr: writeCloser{io.Discard},
+				}, agent.ExecStartupWatchdogOptions{Timeout: 50 * time.Millisecond})
+			}()
+			<-wrote
+			time.Sleep(100 * time.Millisecond)
+			cancel()
+			err := <-result
+			assert.ErrorIs(t, err, context.Canceled)
+			var silenceErr *agent.ExecStartupSilenceError
+			assert.NotErrorAs(t, err, &silenceErr)
+		})
+	}
+}
 
 func TestNewAgentDelivery_RemoteDockerHostWiring(t *testing.T) {
 	cases := []struct {
@@ -108,10 +234,10 @@ func TestShouldChownWorkspace(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := shouldChownWorkspace(c.goos, c.isDockerDriver, c.isPodman, c.driverNeedsChown)
+			got := shouldChownWorkspace(c.goos, c.isPodman, !c.isDockerDriver || c.driverNeedsChown)
 			if got != c.want {
-				t.Errorf("shouldChownWorkspace(%q, %v, %v, %v) = %v, want %v",
-					c.goos, c.isDockerDriver, c.isPodman, c.driverNeedsChown, got, c.want)
+				t.Errorf("shouldChownWorkspace(%q, %v, %v) = %v, want %v",
+					c.goos, c.isPodman, !c.isDockerDriver || c.driverNeedsChown, got, c.want)
 			}
 		})
 	}
@@ -288,4 +414,65 @@ func TestAgentContainerPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+type capturePostStartDelivery struct {
+	delivery.AgentDelivery
+	usesBinarySource bool
+	called           bool
+	opts             delivery.PostStartOptions
+	err              error
+}
+
+func (d *capturePostStartDelivery) UsesBinarySource() bool { return d.usesBinarySource }
+
+func (d *capturePostStartDelivery) DeliverPostStart(
+	_ context.Context,
+	opts delivery.PostStartOptions,
+) error {
+	d.called = true
+	d.opts = opts
+	return d.err
+}
+
+func TestShellPrefetchSkipsArchitectureLookup(t *testing.T) {
+	for _, name := range []string{provider2.CustomDriver, provider2.AppleDriver} {
+		t.Run(name, func(t *testing.T) {
+			d := &architectureDriver{err: context.Canceled}
+			r := newTestRunner(d)
+			r.workspaceConfig.Agent.Driver = name
+			require.IsType(t, &delivery.LegacyShellDelivery{}, r.newAgentDelivery())
+			r.prefetchAgentBinary(context.Background())
+			assert.Zero(t, d.architectureCalls)
+		})
+	}
+}
+
+func TestPostStartDeliverySkipsUnusedBinarySource(t *testing.T) {
+	d := &architectureDriver{err: context.Canceled}
+	r := newTestRunner(d)
+	strategy := &capturePostStartDelivery{}
+	require.NoError(t, r.deliverPostStart(context.Background(), strategy))
+	assert.True(t, strategy.called)
+	assert.Zero(t, d.architectureCalls)
+	assert.Nil(t, strategy.opts.BinarySource)
+	assert.Empty(t, strategy.opts.Arch)
+	assert.Equal(t, r.id, strategy.opts.WorkspaceID)
+	strategy.err = context.DeadlineExceeded
+	assert.ErrorIs(t, r.deliverPostStart(context.Background(), strategy), strategy.err)
+}
+
+func TestPostStartDeliveryRetainsArchitectureForBinarySource(t *testing.T) {
+	d := &architectureDriver{arch: "arm64"}
+	r := newTestRunner(d)
+	strategy := &capturePostStartDelivery{usesBinarySource: true}
+	require.NoError(t, r.deliverPostStart(context.Background(), strategy))
+	assert.True(t, strategy.called)
+	assert.Equal(t, 1, d.architectureCalls)
+	assert.Equal(t, "arm64", strategy.opts.Arch)
+	assert.NotNil(t, strategy.opts.BinarySource)
+	strategy.called = false
+	d.err = context.Canceled
+	assert.ErrorIs(t, r.deliverPostStart(context.Background(), strategy), d.err)
+	assert.False(t, strategy.called)
 }

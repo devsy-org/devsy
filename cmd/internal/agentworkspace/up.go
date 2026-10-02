@@ -186,6 +186,17 @@ func (cmd *UpCmd) devsyUp(
 	workspaceInfo *provider.AgentWorkspaceInfo,
 	tunnelClient tunnel.TunnelClient,
 ) (*config2.Result, error) {
+	secretResponse, err := tunnelClient.Secrets(ctx, &tunnel.Empty{})
+	if err != nil {
+		return nil, fmt.Errorf("fetch workspace secrets: %w", err)
+	}
+	secretsEnv, secretsMount := splitSecrets(secretResponse.GetSecrets())
+	cliOptions := workspaceInfo.CLIOptions
+	cliOptions.SecretsEnv = secretsEnv
+	cliOptions.SecretsMount = secretsMount
+	workspaceInfo.CLIOptions.SecretsEnv = nil
+	workspaceInfo.CLIOptions.SecretsMount = nil
+
 	runner, err := CreateRunner(ctx, workspaceInfo)
 	if err != nil {
 		return nil, err
@@ -193,9 +204,21 @@ func (cmd *UpCmd) devsyUp(
 
 	reporter := tunnelserver.NewTunnelStatusReporter(ctx, tunnelClient)
 	return runner.Up(ctx, devcontainer.UpOptions{
-		CLIOptions:    workspaceInfo.CLIOptions,
+		CLIOptions:    cliOptions,
 		RegistryCache: workspaceInfo.RegistryCache,
 	}, workspaceInfo.InjectTimeout, reporter)
+}
+
+func splitSecrets(secrets []*tunnel.Secret) (env, mount []string) {
+	for _, secret := range secrets {
+		entry := secret.GetName() + "=" + secret.GetValue()
+		if secret.GetMount() {
+			mount = append(mount, entry)
+		} else {
+			env = append(env, entry)
+		}
+	}
+	return env, mount
 }
 
 func CreateRunner(

@@ -241,6 +241,7 @@ type CLIOptions struct {
 	WorkspaceEnv                []string          `json:"workspaceEnv,omitempty"`
 	WorkspaceEnvFile            []string          `json:"workspaceEnvFile,omitempty"`
 	SecretsEnv                  []string          `json:"secretsEnv,omitempty"`
+	TerminalSecretEnvNames      []string          `json:"terminalSecretEnvNames,omitempty"`
 	SecretsMount                []string          `json:"secretsMount,omitempty"`
 	BuildSecrets                []string          `json:"buildSecrets,omitempty"`
 	GitToken                    *GitToken         `json:"gitToken,omitempty"`

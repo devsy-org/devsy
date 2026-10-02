@@ -16,6 +16,7 @@ const (
 	secretToken  = "TOKEN"
 	secretTLSKey = "TLS_KEY"
 	testNPMToken = "NPM_TOKEN"
+	projectToken = "PROJECT_TOKEN"
 )
 
 func testConfig(bound ...string) *config.Config {
@@ -93,8 +94,8 @@ func TestCollectSecretRequests_ContextBindings(t *testing.T) {
 	got, err := collectSecretRequests(nil, testConfig(secretToken, "SECRET_TWO"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, []secretRequest{
-		{ref: localRef("SECRET_TWO"), target: "SECRET_TWO", mount: false},
-		{ref: localRef(secretToken), target: secretToken, mount: false},
+		{ref: localRef("SECRET_TWO"), target: "SECRET_TWO", session: true},
+		{ref: localRef(secretToken), target: secretToken, session: true},
 	}, sortedRequests(got))
 }
 
@@ -106,14 +107,59 @@ func TestCollectSecretRequests_FlagOverridesBinding(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, []secretRequest{
-		{ref: localRef(secretToken), target: "CI_TOKEN", mount: false},
+		{ref: localRef(secretToken), target: "CI_TOKEN", session: true},
 	}, got)
+}
+
+func TestCollectSecretRequestsOnlyAttachedEnvironmentSecretsReachSessions(t *testing.T) {
+	got, err := collectSecretRequests(
+		[]string{secretToken, projectToken},
+		testConfig(secretToken),
+		[]string{projectToken},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []secretRequest{
+		{ref: localRef(projectToken), target: projectToken},
+		{ref: localRef(secretToken), target: secretToken, session: true},
+	}, sortedRequests(got))
+
+	cmd := &UpCmd{}
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.Register("local", "local", fixedSource{
+		values: map[string]string{
+			secretToken:  "sentinel-attached",
+			projectToken: "sentinel-project",
+		},
+	}))
+	require.NoError(t, cmd.applyLifecycleSecrets(context.Background(), got, resolver))
+	assert.Equal(t, []string{secretToken}, cmd.TerminalSecretEnvNames)
+}
+
+func TestCollectSecretRequestsExplicitEnvironmentSecretStaysLifecycleOnly(t *testing.T) {
+	got, err := collectSecretRequests([]string{secretToken}, testConfig(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, []secretRequest{{ref: localRef(secretToken), target: secretToken}}, got)
 }
 
 func TestCollectSecretRequests_Empty(t *testing.T) {
 	got, err := collectSecretRequests(nil, testConfig(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, got)
+}
+
+func TestApplyLifecycleSecretsMarksEnvTargetsForTerminalSessions(t *testing.T) {
+	cmd := &UpCmd{}
+	resolver := secretspkg.NewResolver()
+	require.NoError(t, resolver.Register("local", "local", fixedSource{
+		values:    map[string]string{secretToken: "sentinel-value", secretTLSKey: "mount-sentinel"},
+		sensitive: true,
+	}))
+	err := cmd.applyLifecycleSecrets(context.Background(), []secretRequest{
+		{ref: localRef(secretToken), target: secretToken, session: true},
+		{ref: localRef(secretTLSKey), target: secretTLSKey, mount: true},
+	}, resolver)
+	require.NoError(t, err)
+	assert.Equal(t, []string{secretToken}, cmd.TerminalSecretEnvNames)
 }
 
 func TestCollectSecretRequests_InvalidType(t *testing.T) {
@@ -140,15 +186,17 @@ func TestCollectEnvVarRequests_ContextAttachment(t *testing.T) {
 	got, err := collectEnvVarRequests(nil, testEnvConfig("ZED", "ALPHA"))
 	require.NoError(t, err)
 	assert.Equal(t, []envVarRequest{
-		{ref: localRef("ALPHA"), target: "ALPHA"},
-		{ref: localRef("ZED"), target: "ZED"},
+		{ref: localRef("ALPHA"), target: "ALPHA", origin: envVarAttached},
+		{ref: localRef("ZED"), target: "ZED", origin: envVarAttached},
 	}, got)
 }
 
 func TestCollectEnvVarRequests_ExplicitOverridesAttachment(t *testing.T) {
 	got, err := collectEnvVarRequests([]string{"LOG_LEVEL=APP_LOG"}, testEnvConfig("LOG_LEVEL"))
 	require.NoError(t, err)
-	assert.Equal(t, []envVarRequest{{ref: localRef("LOG_LEVEL"), target: "APP_LOG"}}, got)
+	assert.Equal(t, []envVarRequest{{
+		ref: localRef("LOG_LEVEL"), target: "APP_LOG", origin: envVarExplicit,
+	}}, got)
 }
 
 func TestCollectEnvVarRequests_PreservesRepeatedExplicitSource(t *testing.T) {
@@ -158,8 +206,8 @@ func TestCollectEnvVarRequests_PreservesRepeatedExplicitSource(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, []envVarRequest{
-		{ref: localRef("LOG_LEVEL"), target: "FIRST"},
-		{ref: localRef("LOG_LEVEL"), target: "SECOND"},
+		{ref: localRef("LOG_LEVEL"), target: "FIRST", origin: envVarExplicit},
+		{ref: localRef("LOG_LEVEL"), target: "SECOND", origin: envVarExplicit},
 	}, got)
 }
 
@@ -170,8 +218,8 @@ func TestCollectEnvVarRequests_ExplicitRepeatedSourceSuppressesImplicit(t *testi
 	)
 	require.NoError(t, err)
 	assert.Equal(t, []envVarRequest{
-		{ref: localRef("LOG_LEVEL"), target: "FIRST"},
-		{ref: localRef("LOG_LEVEL"), target: "SECOND"},
+		{ref: localRef("LOG_LEVEL"), target: "FIRST", origin: envVarExplicit},
+		{ref: localRef("LOG_LEVEL"), target: "SECOND", origin: envVarExplicit},
 	}, got)
 }
 

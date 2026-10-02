@@ -98,13 +98,15 @@ func applyProviderUpdate(
 	}
 	providerSource = sourceBase + "@" + newVersion
 
-	// The caller's config predates the update check; reload it under the
-	// config lock so the update cannot lose a concurrent mutation.
-	unlock, err := config.LockConfig()
+	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, providerName)
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	if err := opLock.Lock(); err != nil {
+		return fmt.Errorf("acquire operation lock: %w", err)
+	}
+	defer func() { _ = opLock.Unlock() }()
+
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, "")
 	if err != nil {
 		return err

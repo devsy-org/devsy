@@ -6,12 +6,18 @@ export { push, replace, router }
 /**
  * Navigate to a path using the hash router.
  */
-export function goto(path: string, opts?: { replaceState?: boolean }) {
+export function goto(
+  path: string,
+  opts?: { replaceState?: boolean },
+): Promise<void> {
   if (opts?.replaceState) {
-    replace(path)
-  } else {
-    push(path)
+    return replace(path)
   }
+  return push(path)
+}
+
+export function currentRoute(): string {
+  return window.location.hash.slice(1) || "/"
 }
 
 /**

@@ -19,7 +19,7 @@ jobs:
           - runner: macos-latest
           - runner: windows-latest
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -222,7 +222,7 @@ jobs:
             --goos "$MATRIX_GO_OS" --goarch "$MATRIX_GO_ARCH"
 
       - name: upload desktop artifacts to release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
@@ -261,7 +261,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: upload cli assets
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         if: matrix.name == 'linux-x64'
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
@@ -367,7 +367,7 @@ jobs:
           fi
 
       - name: build flatpak
-        uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb # v6
+        uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
         with:
           bundle: Devsy.flatpak
           manifest-path: desktop/flatpak/sh.devsy.app.yml
@@ -375,7 +375,7 @@ jobs:
           upload-artifact: true
 
       - name: upload flatpak bundle
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           draft: true
@@ -477,7 +477,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           prerelease: true

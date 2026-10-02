@@ -35,6 +35,7 @@ describe("CLI envelopes", () => {
       JSON.stringify({
         kind: "status",
         schemaVersion: 1,
+        pipeline: "workspace_up",
         phase: "building_image",
         state: "started",
       }),
@@ -42,6 +43,7 @@ describe("CLI envelopes", () => {
 
     expect(normalizeOperationStatus(envelope)).toMatchObject({
       phase: "building_image",
+      pipeline: "workspace_up",
       state: "started",
     })
   })
@@ -51,6 +53,7 @@ describe("CLI envelopes", () => {
       JSON.stringify({
         kind: "status",
         schemaVersion: 1,
+        pipeline: "workspace_up",
         phase: "starting_container",
         operationId: "op-7",
         parentOperationId: "op-2",
@@ -65,6 +68,7 @@ describe("CLI envelopes", () => {
 
     expect(normalizeOperationStatus(envelope)).toEqual({
       phase: "starting_container",
+      pipeline: "workspace_up",
       step: undefined,
       state: "failed",
       operationId: "op-7",

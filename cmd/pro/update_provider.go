@@ -10,6 +10,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -49,12 +50,6 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	}
 	newVersion := args[0]
 
-	unlock, err := config.LockConfig()
-	if err != nil {
-		return err
-	}
-	defer unlock()
-
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return err
@@ -67,14 +62,35 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	if provider.Source.Internal {
 		return nil
 	}
+	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, provider.Name)
+	if err != nil {
+		return fmt.Errorf("get operation lock: %w", err)
+	}
+	if err := opLock.Lock(); err != nil {
+		return fmt.Errorf("acquire operation lock: %w", err)
+	}
+	defer func() { _ = opLock.Unlock() }()
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
+	if err != nil {
+		return err
+	}
+	provider, err = workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host)
+	if err != nil {
+		return fmt.Errorf("reload provider: %w", err)
+	}
+	if provider.Source.Internal {
+		return nil
+	}
+
 	providerSource, err := resolveNewProviderSource(devsyConfig, provider.Name, newVersion)
 	if err != nil {
 		return err
 	}
 
-	_, err = workspace.UpdateProvider(ctx, devsyConfig, provider.Name, providerSource)
+	providerName := provider.Name
+	provider, err = workspace.UpdateProvider(ctx, devsyConfig, providerName, providerSource)
 	if err != nil {
-		return fmt.Errorf("update provider %s: %w", provider.Name, err)
+		return fmt.Errorf("update provider %s: %w", providerName, err)
 	}
 
 	// Automated version bump: re-resolve from the new schema's defaults

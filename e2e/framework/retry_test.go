@@ -281,6 +281,26 @@ func TestExecWithDockerRetry_HandshakeStallRetried(t *testing.T) {
 	assert.Equal(t, "ok", out)
 }
 
+func TestExecWithDockerRetry_ExecStartupSilenceRetried(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	out, stderr, err := execWithDockerRetry(context.Background(),
+		func(context.Context) (string, string, error) {
+			calls++
+			if calls == 1 {
+				return "",
+					"container exec session produced no output for 30s: remote process never started",
+					transientExitErr(t)
+			}
+			return "ok", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "ok", out)
+	assert.Empty(t, stderr)
+}
+
 func TestExecWithDockerRetry_NonRetryableExitNotRetried(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -422,6 +442,25 @@ func TestExecWithSSHRetry_RetryHandshakeStallThenSuccess(t *testing.T) {
 	assert.Equal(t, "ok", out)
 }
 
+func TestExecWithSSHRetry_RetryStartupSilenceEnvelopeThenSuccess(t *testing.T) {
+	withFastBackoffs(t)
+	calls := 0
+	envelope := `{"kind":"error","outcome":"error","code":"UNKNOWN","message":` +
+		`"container exec session produced no output for 30s: remote process never started"}`
+	out, err := execWithSSHRetry(context.Background(), "ws",
+		func(context.Context) (string, string, error) {
+			calls++
+			if calls == 1 {
+				return "", envelope, transientExitErr(t)
+			}
+			return "ok", "", nil
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "ok", out)
+}
+
 func TestExecWithSSHRetry_RetryExhausted(t *testing.T) {
 	withFastBackoffs(t)
 	calls := 0
@@ -498,6 +537,7 @@ exit 1
 
 	_, err = f.DevsySSHOnce(ctx, "test-ws", "echo test")
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Connection refused")
 
 	// Read invocation counter
 	data, readErr := os.ReadFile(counterFile) //nolint:gosec // G304

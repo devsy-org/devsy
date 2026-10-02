@@ -27,6 +27,18 @@ const (
 	emptyIsValidName = "empty is valid"
 )
 
+func TestWithoutSecretValues(t *testing.T) {
+	options := withoutSecretValues(provider2.CLIOptions{
+		SecretsEnv:             []string{"SESSION_SENTINEL=sentinel-value"},
+		SecretsMount:           []string{"MOUNT_SENTINEL=mount-value"},
+		TerminalSecretEnvNames: []string{"SESSION_SENTINEL"},
+	})
+
+	assert.Empty(t, options.SecretsEnv)
+	assert.Empty(t, options.SecretsMount)
+	assert.Equal(t, []string{"SESSION_SENTINEL"}, options.TerminalSecretEnvNames)
+}
+
 func TestUpCmd_NoLockfileAndFrozenLockfileMutuallyExclusive(t *testing.T) {
 	upCmd := NewUpCmd(&flags.GlobalFlags{})
 	require.NoError(t, upCmd.Flags().Parse(

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/random"
 	"github.com/gofrs/flock"
@@ -19,9 +20,10 @@ const lockTimeout = 5 * time.Second
 
 // Store persists task state as one JSON file per task under dir.
 type Store struct {
-	dir string
-	// Test seam; see Store.SetAfterClaimForTest.
-	afterClaimForTest func()
+	dir                        string
+	processController          command.ProcessController
+	afterClaimHook             func()
+	afterCancelLockClaimedHook func()
 }
 
 func NewStore() (*Store, error) {
@@ -36,7 +38,10 @@ func NewStoreAt(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create task dir: %w", err)
 	}
-	return &Store{dir: dir}, nil
+	return &Store{
+		dir:               dir,
+		processController: command.DefaultProcessController(),
+	}, nil
 }
 
 func (s *Store) Create(opts CreateOptions) (*Task, error) {
@@ -61,20 +66,32 @@ func (s *Store) Open(id string) *Task {
 	return &Task{store: s, id: id}
 }
 
-// Delete errors if the task is still pending or running unless force is set.
+// Delete cleans any unfinished terminal process tree before removing its
+// record. It rejects a non-terminal task unless force is set.
 func (s *Store) Delete(id string, force bool) error {
 	path, err := s.path(id)
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.CleanupCanceledWorkerTree(ctx, id); err != nil {
+		return err
+	}
+	if err := s.CleanupExitedWorkerTree(id); err != nil {
+		return err
+	}
 	// Locked across the check and the removal so a concurrent update can't
 	// commit its atomic rename after the check and recreate the task.
 	return s.withLock(id, func() error {
+		state, err := s.Get(id)
+		if err != nil {
+			return err
+		}
+		if state.NeedsExitedWorkerCleanup() || state.NeedsCanceledWorkerCleanup() {
+			return fmt.Errorf("task %s still needs process tree cleanup", id)
+		}
 		if !force {
-			state, err := s.Get(id)
-			if err != nil {
-				return err
-			}
 			if !state.Status.Terminal() {
 				return fmt.Errorf(
 					"task %s is still %s; cancel it first or delete with force",
@@ -118,27 +135,120 @@ func (s *Store) Abandoned(state *State) bool {
 	return true
 }
 
-// Reconcile marks a task failed when its worker died without recording a
-// result, so it stops being reported as still running. Returns the effective
-// state, which is unchanged for live and already-terminal tasks.
-func (s *Store) Reconcile(state *State) *State {
-	if state == nil || state.Status.Terminal() {
+// ReconcileTask cleans up a task whose worker exited before recording its
+// result, then records it as canceled or abandoned.
+func (s *Store) ReconcileTask(ctx context.Context, id string) (*State, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	current, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if !needsReconciliation(current) {
+		return current, nil
+	}
+	lock, ok := s.claimDeadWorkerLock(id)
+	if !ok {
+		return current, nil
+	}
+	defer func() { _ = lock.Unlock() }()
+	if s.afterClaimHook != nil {
+		s.afterClaimHook()
+	}
+	return s.reconcileClaimedTask(ctx, id)
+}
+
+func needsReconciliation(state *State) bool {
+	return state != nil && !state.Status.Terminal() &&
+		!state.LaunchPending
+}
+
+// ReconcileState marks a task after its worker exits without a result. A
+// requested cancellation completes cleanup here; an abandoned task's tree is
+// cleaned up by the next workspace stop or delete.
+func (s *Store) ReconcileState(state *State) *State {
+	if !needsStateReconciliation(state) {
 		return state
 	}
-
-	// Held across the whole transition: releasing before the write would let a
-	// new worker claim the lock and then be marked failed while running.
 	lock, ok := s.claimDeadWorkerLock(state.ID)
 	if !ok {
 		return state
 	}
 	defer func() { _ = lock.Unlock() }()
-
-	if s.afterClaimForTest != nil {
-		s.afterClaimForTest()
+	current, err := s.Get(state.ID)
+	if err != nil || !needsStateReconciliation(current) {
+		if err == nil {
+			return current
+		}
+		return state
 	}
+	if current.CancelRequested {
+		reconciled, err := s.reconcileClaimedCancellation(context.Background(), current)
+		if err == nil {
+			return reconciled
+		}
+		return current
+	}
+	return s.failAbandoned(current)
+}
 
-	return s.failAbandoned(state)
+// CleanupExitedWorkerTree tears down any descendants a dead worker left behind.
+// Claiming the worker lock proves no worker is running, so a saved reference
+// that still points at live processes belongs to a crashed worker's tree.
+func (s *Store) CleanupExitedWorkerTree(id string) error {
+	state, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	if !state.NeedsExitedWorkerCleanup() {
+		return nil
+	}
+	lock, ok := s.claimDeadWorkerLock(id)
+	if !ok {
+		return fmt.Errorf("cannot claim dead worker lock for abandoned task %s", id)
+	}
+	defer func() { _ = lock.Unlock() }()
+	state, err = s.Get(id)
+	if err != nil {
+		return err
+	}
+	if !state.NeedsExitedWorkerCleanup() {
+		return nil
+	}
+	ref, _ := state.ProcessReference()
+	if err := s.processController.CleanupAfterExit(ref); err != nil {
+		return fmt.Errorf("clean up task %s process tree: %w", id, err)
+	}
+	return s.markProcessCleanupComplete(id)
+}
+
+// CleanupCanceledWorkerTree handles records that were marked canceled before
+// their worker tree was terminated. A successful termination of an identityless
+// tree is sufficient only while the worker lock proves it was still live.
+func (s *Store) CleanupCanceledWorkerTree(ctx context.Context, id string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	state, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	if !state.NeedsCanceledWorkerCleanup() {
+		return nil
+	}
+	ref, _ := state.ProcessReference()
+	return s.waitCanceledWorkerCleanup(ctx, id, ref)
+}
+
+func needsStateReconciliation(state *State) bool {
+	return state != nil && !state.Status.Terminal() &&
+		!state.LaunchPending
+}
+
+func hasProcessReference(state *State) bool {
+	_, ok := state.ProcessReference()
+	return ok
 }
 
 // List returns every known task, most recently started first.
@@ -167,6 +277,205 @@ func (s *Store) List() ([]*State, error) {
 	return states, nil
 }
 
+// ForWorkspace returns matching tasks, newest first, without changing state.
+func (s *Store) ForWorkspace(workspaceID, command string) ([]*State, error) {
+	states, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	matching := make([]*State, 0, len(states))
+	for _, state := range states {
+		if state.WorkspaceID == workspaceID && (command == "" || state.Command == command) {
+			matching = append(matching, state)
+		}
+	}
+	return matching, nil
+}
+
+// ActiveForWorkspace returns non-terminal tasks for a workspace, newest first.
+func (s *Store) ActiveForWorkspace(workspaceID, command string) ([]*State, error) {
+	states, err := s.ForWorkspace(workspaceID, command)
+	if err != nil {
+		return nil, err
+	}
+
+	active := make([]*State, 0, len(states))
+	for _, state := range states {
+		if state.Status.Terminal() {
+			continue
+		}
+		active = append(active, state)
+	}
+	return active, nil
+}
+
+type WorkerObservation struct {
+	State      *State
+	WorkerGone bool
+}
+
+// WaitForWorkerObservation waits until process metadata is published, the
+// task becomes terminal, or its worker lock becomes available.
+func (s *Store) WaitForWorkerObservation(
+	ctx context.Context,
+	id string,
+) (WorkerObservation, error) {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		observation, ready, err := s.workerObservation(id)
+		if err != nil {
+			return WorkerObservation{}, err
+		}
+		if ready {
+			return observation, nil
+		}
+		select {
+		case <-ctx.Done():
+			return WorkerObservation{}, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Store) markProcessCleanupComplete(id string) error {
+	return s.update(id, func(state *State) {
+		state.ProcessCleanupComplete = true
+	})
+}
+
+func (s *Store) waitCanceledWorkerCleanup(
+	ctx context.Context,
+	id string,
+	ref command.ProcessRef,
+) error {
+	terminated := false
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		complete, nowTerminated, err := s.cleanupCanceledWorkerTreeStep(id, ref, terminated)
+		if err != nil || complete {
+			return err
+		}
+		terminated = nowTerminated
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Store) cleanupCanceledWorkerTreeStep(
+	id string,
+	ref command.ProcessRef,
+	terminated bool,
+) (complete, nowTerminated bool, err error) {
+	lock, available, err := s.tryWorkerLock(id)
+	if err != nil {
+		return false, terminated, fmt.Errorf("inspect canceled task %s worker lock: %w", id, err)
+	}
+	if available {
+		defer func() { _ = lock.Unlock() }()
+		return true, terminated, s.finishCanceledWorkerCleanup(id, ref, terminated)
+	}
+	if !terminated {
+		if err := s.processController.Terminate(ref); err != nil {
+			return false, false, fmt.Errorf("terminate canceled task %s process tree: %w", id, err)
+		}
+		terminated = true
+	}
+	return false, terminated, nil
+}
+
+func (s *Store) finishCanceledWorkerCleanup(
+	id string,
+	ref command.ProcessRef,
+	terminated bool,
+) error {
+	current, err := s.Get(id)
+	if err != nil || !current.NeedsCanceledWorkerCleanup() {
+		return err
+	}
+	if !terminated || ref.Identity != "" {
+		if err := s.processController.CleanupAfterExit(ref); err != nil {
+			return fmt.Errorf("clean up canceled task %s process tree: %w", id, err)
+		}
+	}
+	return s.markProcessCleanupComplete(id)
+}
+
+func (s *Store) workerObservation(id string) (WorkerObservation, bool, error) {
+	state, err := s.Get(id)
+	if err != nil {
+		return WorkerObservation{}, false, err
+	}
+	if state.Status.Terminal() || hasProcessReference(state) {
+		return WorkerObservation{State: state}, true, nil
+	}
+	lock, available, err := s.tryWorkerLock(id)
+	if err != nil {
+		return WorkerObservation{}, false, err
+	}
+	if !available {
+		return WorkerObservation{}, false, nil
+	}
+	_ = lock.Unlock()
+	return WorkerObservation{State: state, WorkerGone: true}, true, nil
+}
+
+func (s *Store) reconcileClaimedTask(ctx context.Context, id string) (*State, error) {
+	current, err := s.Get(id)
+	if err != nil || !needsReconciliation(current) {
+		return current, err
+	}
+	if current.CancelRequested {
+		return s.reconcileClaimedCancellation(ctx, current)
+	}
+	cleaned := false
+	if ref, ok := current.ProcessReference(); ok {
+		if err := ctx.Err(); err != nil {
+			return current, err
+		}
+		if err := s.processController.CleanupAfterExit(ref); err != nil {
+			return current, fmt.Errorf("clean up task %s process tree: %w", id, err)
+		}
+		cleaned = true
+	}
+	return s.finishClaimedReconciliation(current, cleaned)
+}
+
+func (s *Store) reconcileClaimedCancellation(ctx context.Context, current *State) (*State, error) {
+	if err := ctx.Err(); err != nil {
+		return current, err
+	}
+	if ref, ok := current.ProcessReference(); ok {
+		if err := s.processController.CleanupAfterExit(ref); err != nil {
+			return current, fmt.Errorf(
+				"clean up canceled task %s process tree: %w", current.ID, err,
+			)
+		}
+	}
+	if err := s.Open(current.ID).finalizeCanceled(); err != nil {
+		return current, err
+	}
+	return s.Get(current.ID)
+}
+
+func (s *Store) finishClaimedReconciliation(current *State, cleaned bool) (*State, error) {
+	current = s.failAbandoned(current)
+	if cleaned && current.Status == StatusFailed && current.Error == ErrAbandoned.Error() {
+		if err := s.markProcessCleanupComplete(current.ID); err != nil {
+			return current, err
+		}
+		return s.Get(current.ID)
+	}
+	return current, nil
+}
+
 // failAbandoned records ErrAbandoned for a task whose worker is confirmed gone.
 // Must be called with the worker lock held.
 func (s *Store) failAbandoned(state *State) *State {
@@ -187,15 +496,38 @@ func (s *Store) failAbandoned(state *State) *State {
 	return reconciled
 }
 
-// workerAlive guards against signaling a PID whose original worker already
-// exited and got recycled to an unrelated process.
-func (s *Store) workerAlive(id string) bool {
-	lock, ok := s.claimDeadWorkerLock(id)
-	if !ok {
-		return true
+// tryWorkerLock claims the task's worker lock when no worker owns it. Unlike
+// claimDeadWorkerLock, it creates the lock file if the worker has not started.
+func (s *Store) tryWorkerLock(id string) (*flock.Flock, bool, error) {
+	path, err := s.workerLockPath(id)
+	if err != nil {
+		return nil, false, err
 	}
-	_ = lock.Unlock()
-	return false
+	lock := flock.New(path)
+	locked, err := lock.TryLock()
+	if err != nil {
+		return nil, false, err
+	}
+	if !locked {
+		return nil, false, nil
+	}
+	return lock, true, nil
+}
+
+func (s *Store) tryLauncherLock(id string) (*flock.Flock, bool, error) {
+	path, err := s.launcherLockPath(id)
+	if err != nil {
+		return nil, false, err
+	}
+	lock := flock.New(path)
+	locked, err := lock.TryLock()
+	if err != nil {
+		return nil, false, err
+	}
+	if !locked {
+		return nil, false, nil
+	}
+	return lock, true, nil
 }
 
 // claimDeadWorkerLock acquires the task's worker lock, which only succeeds when
@@ -227,6 +559,14 @@ func (s *Store) workerLockPath(id string) (string, error) {
 		return "", err
 	}
 	return path + ".worker.lock", nil
+}
+
+func (s *Store) launcherLockPath(id string) (string, error) {
+	path, err := s.path(id)
+	if err != nil {
+		return "", err
+	}
+	return path + ".launcher.lock", nil
 }
 
 func (s *Store) update(id string, mutate func(*State)) error {

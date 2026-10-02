@@ -2,10 +2,12 @@ package sshtunnel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/agent"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/tunnel"
@@ -13,6 +15,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 )
+
+func TestExecuteSSHServerHelperPreservesStartupSilenceError(t *testing.T) {
+	opts := ExecuteCommandOptions{
+		SSHCommand: "ssh-server --stdio",
+		AgentInject: func(context.Context, string, io.Reader, io.Writer, io.WriteCloser) error {
+			return &agent.ExecStartupSilenceError{}
+		},
+	}
+
+	err := executeSSHServerHelper(context.Background(), opts, nil, io.Discard)
+	var silenceErr *agent.ExecStartupSilenceError
+	require.True(t, errors.As(err, &silenceErr))
+}
 
 func TestLogLine_JSONPassthrough(t *testing.T) {
 	tests := []struct {

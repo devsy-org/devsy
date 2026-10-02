@@ -9,7 +9,7 @@ import { Toaster } from "$lib/components/ui/sonner/index.js"
 import CommandPalette from "$lib/components/layout/CommandPalette.svelte"
 import Breadcrumbs from "$lib/components/layout/Breadcrumbs.svelte"
 import * as SidebarUI from "$lib/components/ui/sidebar/index.js"
-import { initWorkspaces, destroyWorkspaces } from "$lib/stores/workspaces.js"
+import { destroyWorkspaces, initWorkspaces } from "$lib/stores/workspaces.js"
 import { initProviders, destroyProviders } from "$lib/stores/providers.js"
 import { initMachines, destroyMachines } from "$lib/stores/machines.js"
 import { initContexts, destroyContexts } from "$lib/stores/contexts.js"
@@ -25,7 +25,9 @@ import {
 import { terminalCount } from "$lib/stores/terminals.js"
 import { togglePalette } from "$lib/stores/command-palette.js"
 import { appReady, analyticsTrack } from "$lib/ipc/commands.js"
-import { onNavigate } from "$lib/ipc/events.js"
+import { onAppNavigationRequest } from "$lib/ipc/events.js"
+import { applyAppNavigationRequest } from "$lib/app-navigation.js"
+import { newWorkspaceRoute } from "$shared/app-route.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 import { initSessionTracking } from "$lib/analytics.js"
 import { location } from "$lib/router.js"
@@ -58,7 +60,7 @@ import NotFoundPage from "./pages/NotFoundPage.svelte"
 const routes = {
   "/": DashboardPage,
   "/workspaces": WorkspacesPage,
-  "/workspaces/new": WorkspacesPage,
+  "/workspace/new": WorkspacesPage,
   "/workspaces/:id": WorkspaceDetailPage,
   "/providers": ProvidersPage,
   "/providers/add": ProviderAddPage,
@@ -101,7 +103,7 @@ function handleKeydown(e: KeyboardEvent) {
   }
   if ((e.metaKey || e.ctrlKey) && e.key === "n") {
     e.preventDefault()
-    push("/workspaces/new")
+    push(newWorkspaceRoute())
     return
   }
   if ((e.metaKey || e.ctrlKey) && NAV_KEYS[e.key]) {
@@ -116,9 +118,7 @@ let stopSessionTracking: (() => void) | undefined
 let destroyed = false
 
 function normalizeAnalyticsPath(path: string): string {
-  // Match id segments but not the static sub-routes that share the prefix.
-  if (path !== "/workspaces/new" && /^\/workspaces\/[^/]+$/.test(path))
-    return "/workspaces/:id"
+  if (/^\/workspaces\/[^/]+$/.test(path)) return "/workspaces/:id"
   if (path !== "/providers/add" && /^\/providers\/[^/]+$/.test(path))
     return "/providers/:id"
   if (/^\/machines\/[^/]+$/.test(path)) return "/machines/:id"
@@ -129,7 +129,7 @@ function screenName(path: string): string {
   const names: Record<string, string> = {
     "/": "dashboard",
     "/workspaces": "workspaces",
-    "/workspaces/new": "workspace_new",
+    "/workspace/new": "workspace_new",
     "/workspaces/:id": "workspace_detail",
     "/providers": "providers",
     "/providers/add": "provider_add",
@@ -165,9 +165,9 @@ onMount(async () => {
     })
   })
 
-  const navigateUnlisten = await onNavigate((route) => {
-    if (typeof route === "string" && route.startsWith("/")) push(route)
-  })
+  const navigateUnlisten = await onAppNavigationRequest(
+    applyAppNavigationRequest,
+  )
   if (destroyed) navigateUnlisten()
   else unsubNavigate = navigateUnlisten
 

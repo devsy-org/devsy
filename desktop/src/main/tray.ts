@@ -1,6 +1,11 @@
 import { join } from "node:path"
 import { app, Menu, nativeImage, nativeTheme, Tray } from "electron"
 import {
+  settingsRoute,
+  workspaceRoute,
+  workspacesRoute,
+} from "../shared/app-route.js"
+import {
   type WorkspaceJob,
   workspaceJobBusy,
   workspaceJobInterruptible,
@@ -113,7 +118,7 @@ export interface TrayMenuModel {
 }
 
 export interface TrayMenuActions {
-  showDevsy: () => void
+  showDevsy: (route?: string) => void
   showWorkspace: (id: string) => void
   showWorkspaceLogs: (id: string) => void
   showAllWorkspaces: () => void
@@ -309,12 +314,11 @@ export class AppTray {
       },
       {
         showDevsy: () => this.deps.showDevsy(),
-        showWorkspace: (id) =>
-          this.deps.showDevsy(`/workspaces/${encodeURIComponent(id)}`),
+        showWorkspace: (id) => this.deps.showDevsy(workspaceRoute(id)),
         showWorkspaceLogs: (id) =>
-          this.deps.showDevsy(`/workspaces/${encodeURIComponent(id)}?tab=logs`),
-        showAllWorkspaces: () => this.deps.showDevsy("/workspaces"),
-        showSettings: () => this.deps.showDevsy("/settings"),
+          this.deps.showDevsy(workspaceRoute(id, "logs")),
+        showAllWorkspaces: () => this.deps.showDevsy(workspacesRoute()),
+        showSettings: () => this.deps.showDevsy(settingsRoute()),
         startWorkspace: (id) => void this.startFromTray(id),
         stopWorkspace: (id) => void this.stopFromTray(id),
         toggleRunAtStartup: () => this.deps.toggleRunAtStartup(),

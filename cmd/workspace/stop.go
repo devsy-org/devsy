@@ -22,6 +22,7 @@ import (
 type StopCmd struct {
 	*flags.GlobalFlags
 	client2.StopOptions
+	quiescer workspace2.UpTaskQuiescer
 }
 
 // NewStopCmd creates a new destroy command.
@@ -123,6 +124,12 @@ func (cmd *StopCmd) run(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 ) error {
+	// Quiesce before waiting for the workspace lock: a still-provisioning up
+	// worker can be the one holding it.
+	if err := cmd.quiesce(ctx, client.Workspace()); err != nil {
+		return err
+	}
+
 	// lock workspace
 	if !cmd.Platform.Enabled {
 		err := status.RunStep(
@@ -135,6 +142,13 @@ func (cmd *StopCmd) run(
 			return err
 		}
 		defer client.Unlock()
+	}
+
+	// Quiesce again under the lock: a task may have become visible while
+	// the lock wait blocked, and a surviving up worker can restart the
+	// workspace after the stop.
+	if err := cmd.quiesce(ctx, client.Workspace()); err != nil {
+		return err
 	}
 
 	// get instance status
@@ -254,4 +268,19 @@ func otherWorkspaceUsesMachine(
 		return true
 	}
 	return false
+}
+
+func (cmd *StopCmd) quiesce(ctx context.Context, workspaceID string) error {
+	quiescer := cmd.quiescer
+	if quiescer == nil {
+		quiescer = workspace2.StoreUpTaskQuiescer{}
+	}
+	if err := quiescer.Quiesce(ctx, workspaceID); err != nil {
+		return fmt.Errorf(
+			"cancel detached up tasks for workspace %s: %w",
+			workspaceID,
+			err,
+		)
+	}
+	return nil
 }

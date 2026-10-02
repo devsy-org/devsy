@@ -13,9 +13,10 @@ import (
 
 // logTailer streams a detached worker's captured stdout/stderr as it's written.
 type logTailer struct {
-	path string
-	file *os.File
-	buf  []byte
+	path      string
+	file      *os.File
+	buf       []byte
+	statusOut io.Writer
 }
 
 func newLogTailer(taskID string) *logTailer {
@@ -56,6 +57,7 @@ func (t *logTailer) poll(w io.Writer) {
 // releases the file handle. Call once the task has reached a terminal state.
 func (t *logTailer) flush(w io.Writer) {
 	t.poll(w)
+	t.path = ""
 	if len(t.buf) > 0 {
 		t.writeLine(w, t.buf)
 		t.buf = nil
@@ -80,6 +82,12 @@ func (t *logTailer) emit(w io.Writer, chunk []byte) {
 }
 
 func (t *logTailer) writeLine(w io.Writer, line []byte) {
+	if t.statusOut != nil {
+		if event, ok := devcconfig.ParseStatusLine(string(line)); ok {
+			_ = devcconfig.WriteStatusJSON(t.statusOut, event)
+			return
+		}
+	}
 	if isEnvelopeLine(line) {
 		return
 	}

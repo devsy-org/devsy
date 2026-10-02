@@ -169,11 +169,12 @@ Available options:
 The workspace mount uses `stat-virt=strict` and `host-perms=mirror` by default,
 while additional bind mounts retain MicroSandbox's safer defaults. Devsy passes
 the resolved devcontainer `containerUser` to the MicroSandbox runtime so files
-created on the host appear as the effective sandbox user in the guest. Install
-MicroSandbox v0.7.2 or newer; Devsy requires this version for workspace
-ownership synchronization and lifecycle operations. Apple Silicon macOS is the canonical supported
-integration-test host; use `relaxed` when a host filesystem cannot provide
-strict metadata virtualization.
+created on the host appear as the effective sandbox user in the guest. Devsy
+requires MicroSandbox v0.7.2 or newer when creating or recreating workspaces
+that use workspace ownership synchronization. This provisioning version check
+does not block inspection, logs, stop, or deletion of an existing sandbox.
+Apple Silicon macOS is the canonical supported integration-test host; use
+`relaxed` when a host filesystem cannot provide strict metadata virtualization.
 
 ```yaml
 agent:

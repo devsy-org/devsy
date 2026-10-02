@@ -5,6 +5,13 @@ import { launchApp, resetMockState } from "./electron-app.js"
 let app: ElectronApplication
 let page: Page
 
+interface CapturedWorkspaceStatus {
+  phase?: string
+  state?: string
+  commandId?: string
+  workspaceId?: string
+}
+
 test.beforeAll(async () => {
   resetMockState()
   ;({ app, page } = await launchApp())
@@ -307,10 +314,12 @@ test.describe
       expect(await icons.count()).toBeGreaterThan(0)
       const firstIcon = icons.first()
       await expect(firstIcon).toBeVisible()
-      const naturalWidth = await firstIcon.evaluate(
-        (el: HTMLImageElement) => el.naturalWidth,
-      )
-      expect(naturalWidth).toBeGreaterThan(0)
+      await expect
+        .poll(
+          () => firstIcon.evaluate((el: HTMLImageElement) => el.naturalWidth),
+          { timeout: 10000 },
+        )
+        .toBeGreaterThan(0)
     })
 
     test("should select a template and populate the source field", async () => {
@@ -367,16 +376,51 @@ test.describe
 
     test("should launch workspace and stream output", async () => {
       const dialog = page.locator('[role="dialog"]').first()
+      await page.evaluate(() => {
+        const target = window as typeof window & {
+          workspaceStatusEvents: CapturedWorkspaceStatus[]
+        }
+        target.workspaceStatusEvents = []
+        window.electronAPI?.on("workspace-status", (payload) =>
+          target.workspaceStatusEvents.push(payload as CapturedWorkspaceStatus),
+        )
+      })
       // The review step's primary button is labeled "Launch"
       await dialog.getByRole("button", { name: /^launch$/i }).click()
 
-      // Mock CLI streams: "Resolving source", "Pulling image",
-      // "Starting workspace", "Workspace ready."
-      await expect(dialog).toContainText(/resolving|pulling|starting|ready/i, {
-        timeout: 10000,
-      })
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() =>
+              (
+                window as typeof window & {
+                  workspaceStatusEvents: CapturedWorkspaceStatus[]
+                }
+              ).workspaceStatusEvents.some(
+                (status) => status.phase === "preparing_devcontainer",
+              ),
+            ),
+          { timeout: 10000 },
+        )
+        .toBe(true)
+      const statuses = await page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              workspaceStatusEvents: CapturedWorkspaceStatus[]
+            }
+          ).workspaceStatusEvents,
+      )
+      expect(statuses.map((status) => status.phase)).toContain(
+        "preparing_devcontainer",
+      )
+      await expect(dialog).toContainText("Preparing dev container")
+      await expect(dialog.getByText("Review", { exact: true })).toHaveCount(0)
 
       // On success the "Open Workspace" button appears
+      await expect(
+        dialog.getByRole("heading", { name: "Workspace ready" }),
+      ).toBeVisible({ timeout: 15000 })
       await expect(
         dialog.getByRole("button", { name: /open workspace/i }),
       ).toBeVisible({ timeout: 15000 })
@@ -403,7 +447,7 @@ test.describe
       ).toBeVisible()
       await dialog.getByRole("button", { name: /^launch$/i }).click()
 
-      await expect(dialog).toContainText("Workspace Creation Failed", {
+      await expect(dialog).toContainText("Workspace creation failed", {
         timeout: 15000,
       })
       await expect(dialog).toContainText("The mock image build failed.")

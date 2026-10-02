@@ -27,7 +27,11 @@ func NewCustomDriver(workspaceInfo *provider.AgentWorkspaceInfo) driver.Driver {
 	}
 }
 
-var _ driver.Driver = (*customDriver)(nil)
+var (
+	_ driver.MountDeliveryDriver  = (*customDriver)(nil)
+	_ driver.RecreatePolicyDriver = (*customDriver)(nil)
+	_ driver.WorkspaceChowner     = (*customDriver)(nil)
+)
 
 type customDriver struct {
 	workspaceInfo *provider.AgentWorkspaceInfo
@@ -313,3 +317,9 @@ func ToEnvironWithBinaries(
 
 	return environ, nil
 }
+
+func (d *customDriver) RequiresMountStreaming() bool { return true }
+
+func (d *customDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
+
+func (d *customDriver) RequiresWorkspaceChown() bool { return true }

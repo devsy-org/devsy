@@ -191,6 +191,7 @@ export interface WorkspaceStatus {
   commandId: string
   workspaceId: string
   phase: string
+  pipeline?: string
   step?: string
   state: "started" | "succeeded" | "failed" | "skipped"
   operationId?: string

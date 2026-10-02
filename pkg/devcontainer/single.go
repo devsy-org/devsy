@@ -125,6 +125,8 @@ func (r *runner) runSingleContainer(
 		substitutionContext: substitutionContext,
 		timeout:             timeout,
 		hostWarnings:        resolved.hostWarnings,
+		secretsEnv:          params.options.SecretsEnv,
+		secretsMount:        params.options.SecretsMount,
 	})
 }
 
@@ -137,9 +139,48 @@ func (r *runner) resolveContainer(
 	containerDetails *config.ContainerDetails,
 ) (*resolvedContainer, error) {
 	options := params.options
+	if containerDetails != nil && !options.Recreate &&
+		r.needsTerminalSecretEnvironmentMigration(containerDetails) {
+		if err := r.validateTerminalSecretEnvironmentSupport(); err != nil {
+			return nil, err
+		}
+		if params.parsedConfig.Config.ContainerID != "" {
+			return nil, fmt.Errorf(
+				"cannot inject attached terminal secrets into externally managed container: "+
+					"the container does not have the required %s tmpfs mount",
+				config.SecretsEnvDir,
+			)
+		}
+		log.Info(
+			"recreating workspace because attached terminal secrets require the secure runtime mount",
+		)
+		options.Recreate = true
+		params.options.Recreate = true
+	}
+	if containerDetails != nil && !options.Recreate &&
+		needsSecretFileMountMigration(containerDetails, options.SecretsMount) {
+		if !driver.DriverSupportsMountType(r.driver, driver.MountTypeTmpfs) {
+			return nil, fmt.Errorf(
+				"the current provider does not support securely mounting workspace file secrets",
+			)
+		}
+		if params.parsedConfig.Config.ContainerID != "" {
+			return nil, fmt.Errorf(
+				"cannot inject file secrets into externally managed container: "+
+					"the container does not have the required %s tmpfs mount",
+				config.SecretsMountDir,
+			)
+		}
+		log.Info("recreating workspace because file secrets require the secure runtime mount")
+		options.Recreate = true
+		params.options.Recreate = true
+	}
 
 	if options.Recreate && params.parsedConfig.Config.ContainerID != "" {
 		return nil, fmt.Errorf("cannot recreate container not created by Devsy")
+	}
+	if err := r.provisioningPreflightForRecreate(ctx, options); err != nil {
+		return nil, err
 	}
 
 	if options.Recreate || containerDetails == nil {
@@ -156,6 +197,13 @@ func (r *runner) resolveContainer(
 		substitutionContext.ContainerWorkspaceFolder = actual
 	}
 	return r.resolveExistingContainer(ctx, containerDetails, params)
+}
+
+func (r *runner) provisioningPreflightForRecreate(ctx context.Context, options UpOptions) error {
+	if !options.Recreate {
+		return nil
+	}
+	return driver.DriverProvisioningPreflight(ctx, r.driver)
 }
 
 // findExistingDevContainer looks up the dev container, first checking that the
@@ -351,7 +399,12 @@ func (r *runner) attemptPreStartDelivery(
 	p *resolveParams,
 	buildInfo *config.BuildInfo,
 ) {
-	runOptions, err := r.buildRunOptionsForDelivery(mergedConfig, p.substitutionContext, buildInfo)
+	runOptions, err := r.buildRunOptionsForDelivery(
+		mergedConfig,
+		p.substitutionContext,
+		buildInfo,
+		len(p.options.SecretsMount) > 0,
+	)
 	if err != nil {
 		return
 	}
@@ -499,19 +552,23 @@ func (r *runner) newContainerHostWarnings(p *resolveParams) ([]string, error) {
 }
 
 // deleteForRecreate removes the existing container before recreating it.
-// Docker containers are fully deleted; other drivers stop the container.
+// The runtime policy selects deletion or stopping.
 func (r *runner) deleteForRecreate(ctx context.Context) error {
-	if _, ok := r.driver.(driver.ImageDriver); ok {
+	switch driver.DriverRecreateMode(r.driver) {
+	case driver.RecreateDelete:
 		if err := r.Delete(ctx, DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete devcontainer: %w", err)
 		}
 		return nil
-	}
 
-	if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
-		return fmt.Errorf("stop devcontainer: %w", err)
+	case driver.RecreateStop:
+		if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
+			return fmt.Errorf("stop devcontainer: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported recreate mode %q", driver.DriverRecreateMode(r.driver))
 	}
-	return nil
 }
 
 // injectDaemonEntrypoint adds the workspace daemon config to the container
@@ -577,11 +634,14 @@ func (r *runner) buildRunOptionsForDelivery(
 	mergedConfig *config.MergedDevContainerConfig,
 	substitutionContext *config.SubstitutionContext,
 	buildInfo *config.BuildInfo,
+	secretsMountRequired bool,
 ) (*driver.RunOptions, error) {
 	if buildInfo.Dockerless != nil {
-		return r.getDockerlessRunOptions(mergedConfig, substitutionContext, buildInfo)
+		return r.getDockerlessRunOptions(
+			mergedConfig, substitutionContext, buildInfo, secretsMountRequired,
+		)
 	}
-	return r.getRunOptions(mergedConfig, substitutionContext, buildInfo)
+	return r.getRunOptions(mergedConfig, substitutionContext, buildInfo, secretsMountRequired)
 }
 
 func (r *runner) deliverPreStart(ctx context.Context, runOptions *driver.RunOptions) error {
@@ -651,13 +711,23 @@ func (r *runner) runContainer(
 	// build run options for dockerless mode
 	var runOptions *driver.RunOptions
 	if buildInfo.Dockerless != nil {
-		runOptions, err = r.getDockerlessRunOptions(mergedConfig, p.substitutionContext, buildInfo)
+		runOptions, err = r.getDockerlessRunOptions(
+			mergedConfig,
+			p.substitutionContext,
+			buildInfo,
+			len(p.options.SecretsMount) > 0,
+		)
 		if err != nil {
 			return fmt.Errorf("build dockerless run options: %w", err)
 		}
 	} else {
 		// build run options
-		runOptions, err = r.getRunOptions(mergedConfig, p.substitutionContext, buildInfo)
+		runOptions, err = r.getRunOptions(
+			mergedConfig,
+			p.substitutionContext,
+			buildInfo,
+			len(p.options.SecretsMount) > 0,
+		)
 		if err != nil {
 			return fmt.Errorf("build run options: %w", err)
 		}
@@ -666,7 +736,7 @@ func (r *runner) runContainer(
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
 
 	// Image drivers (Docker, Apple) build and run a local OCI image.
-	if imageDriver, ok := r.driver.(driver.ImageDriver); ok {
+	if imageDriver, ok := r.driver.(driver.ImageRunner); ok {
 		return imageDriver.RunImageDevContainer(ctx, &driver.RunImageDevContainerParams{
 			WorkspaceID:          r.id,
 			Options:              runOptions,
@@ -749,6 +819,7 @@ func (r *runner) getDockerlessRunOptions(
 	mergedConfig *config.MergedDevContainerConfig,
 	substitutionContext *config.SubstitutionContext,
 	buildInfo *config.BuildInfo,
+	secretsMountRequired bool,
 ) (*driver.RunOptions, error) {
 	workspaceMountPtr := parseWorkspaceMount(substitutionContext)
 
@@ -775,7 +846,7 @@ func (r *runner) getDockerlessRunOptions(
 		Source: "dockerless-" + r.id,
 		Target: "/workspaces/.dockerless",
 	})
-	mounts, err = r.withSecretsMount(mounts)
+	mounts, err = r.withSecretsMount(mounts, secretsMountRequired)
 	if err != nil {
 		return nil, err
 	}
@@ -815,6 +886,7 @@ func (r *runner) getRunOptions(
 	mergedConfig *config.MergedDevContainerConfig,
 	substitutionContext *config.SubstitutionContext,
 	buildInfo *config.BuildInfo,
+	secretsMountRequired bool,
 ) (*driver.RunOptions, error) {
 	workspaceMountPtr := parseWorkspaceMount(substitutionContext)
 
@@ -850,7 +922,7 @@ func (r *runner) getRunOptions(
 		return nil, err
 	}
 
-	mounts, err := r.withSecretsMount(mergedConfig.Mounts)
+	mounts, err := r.withSecretsMount(mergedConfig.Mounts, secretsMountRequired)
 	if err != nil {
 		return nil, err
 	}
@@ -897,26 +969,38 @@ func resolveContainerEnv(
 	return nil
 }
 
-func (r *runner) withSecretsMount(mounts []*config.Mount) ([]*config.Mount, error) {
-	mount, err := r.secretsMount()
+func (r *runner) withSecretsMount(
+	mounts []*config.Mount,
+	secretsMountRequired bool,
+) ([]*config.Mount, error) {
+	mount, err := secretsMount(
+		secretsMountRequired,
+		driver.DriverSupportsMountType(r.driver, driver.MountTypeTmpfs),
+	)
 	if err != nil {
 		return nil, err
 	}
-	if mount == nil {
-		return mounts, nil
+	if mount != nil {
+		mounts = append(mounts, mount)
 	}
-
-	return append(mounts, mount), nil
+	envMount, err := r.secretsEnvironmentMount()
+	if err != nil {
+		return nil, err
+	}
+	if envMount != nil {
+		mounts = append(mounts, envMount)
+	}
+	return mounts, nil
 }
 
 // Values must never touch a persistent layer, so an unsupported driver is an
 // error rather than a silent skip.
-func (r *runner) secretsMount() (*config.Mount, error) {
-	if r.workspaceConfig == nil || len(r.workspaceConfig.CLIOptions.SecretsMount) == 0 {
+func secretsMount(required, supported bool) (*config.Mount, error) {
+	if !required {
 		return nil, nil
 	}
 
-	if !driver.DriverSupportsMountType(r.driver, driver.MountTypeTmpfs) {
+	if !supported {
 		return nil, fmt.Errorf(
 			"the current provider does not support mounting secrets as files (--secret type=mount); " +
 				"use type=env instead",
@@ -927,6 +1011,30 @@ func (r *runner) secretsMount() (*config.Mount, error) {
 		Type:   driver.MountTypeTmpfs,
 		Target: config.SecretsMountDir,
 		Other:  []string{"tmpfs-mode=0755"},
+	}, nil
+}
+
+func (r *runner) secretsEnvironmentMount() (*config.Mount, error) {
+	if r.workspaceConfig == nil || len(r.workspaceConfig.CLIOptions.TerminalSecretEnvNames) == 0 {
+		return nil, nil
+	}
+	return secretsEnvironmentTmpfsMount(
+		true,
+		driver.DriverSupportsMountType(r.driver, driver.MountTypeTmpfs),
+	)
+}
+
+func secretsEnvironmentTmpfsMount(enabled, supported bool) (*config.Mount, error) {
+	if !enabled {
+		return nil, nil
+	}
+	if !supported {
+		return nil, terminalSecretEnvironmentUnsupportedError()
+	}
+	return &config.Mount{
+		Type:   driver.MountTypeTmpfs,
+		Target: config.SecretsEnvDir,
+		Other:  []string{"tmpfs-mode=0700"},
 	}, nil
 }
 

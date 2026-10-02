@@ -433,6 +433,8 @@ const (
 // secrets are written, matching the Docker/Podman convention.
 const SecretsMountDir = "/run/secrets"
 
+const SecretsEnvDir = "/run/devsy/secrets-env" // #nosec G101 -- this is a mount path, not a credential.
+
 const (
 	AutoForwardIgnore          = "ignore"
 	AutoForwardNotify          = "notify"

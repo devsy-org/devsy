@@ -14,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/onsi/ginkgo/v2"
@@ -742,6 +743,73 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.It(
+			"adds a tmpfs before delivering a file secret to an existing workspace",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+				contextName := fmt.Sprintf("late-file-secret-%d", time.Now().UnixNano())
+				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = dtc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(dtc.f.DevsyProviderAdd(
+					ctx, "docker", "-o", "DOCKER_PATH=docker",
+				))
+				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-secret-runtime-mount",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
+				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
+
+				uid, err := dtc.execSSH(ctx, tempDir, `printf %s "$DEVSY_WORKSPACE_UID"`)
+				framework.ExpectNoError(err)
+				workspace := &provider2.Workspace{UID: strings.TrimSpace(uid)}
+				ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1))
+				var beforeDetails []container.InspectResponse
+				framework.ExpectNoError(
+					dtc.dockerHelper.Inspect(ctx, ids, "container", &beforeDetails),
+				)
+
+				dtc.storeSecret(ctx, "LATE_FILE_SECRET", "sentinel-late-file-secret")
+				framework.ExpectNoError(dtc.f.DevsyUp(
+					ctx,
+					tempDir,
+					"--secret",
+					"LATE_FILE_SECRET,type=mount,target=late_file_secret",
+				))
+
+				ids, err = dtc.findWorkspaceContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1))
+				var afterDetails []container.InspectResponse
+				framework.ExpectNoError(
+					dtc.dockerHelper.Inspect(ctx, ids, "container", &afterDetails),
+				)
+				gomega.Expect(afterDetails[0].ID).NotTo(gomega.Equal(beforeDetails[0].ID))
+				gomega.Expect(afterDetails[0].Mounts).To(gomega.ContainElement(gomega.Satisfy(
+					func(mount container.MountPoint) bool {
+						return mount.Destination == "/run/secrets" && mount.Type == "tmpfs"
+					},
+				)))
+
+				out, err := dtc.execSSH(ctx, tempDir,
+					`if [ "$(cat /run/secrets/late_file_secret)" = sentinel-late-file-secret ]; `+
+						`then printf present; else printf absent; fi`)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It(
 			"managed env var injects into the workspace via --env",
 			func(ctx context.Context) {
 				useFileSecretsBackend()
@@ -781,6 +849,52 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.It(
+			"workspace environment overrides a context-attached managed environment value",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+				contextName := fmt.Sprintf("managed-env-override-%d", time.Now().UnixNano())
+				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = dtc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(
+					dtc.f.DevsyProviderAdd(ctx, "docker", "-o", "DOCKER_PATH=docker"),
+				)
+				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-env-attached",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+				dtc.storeEnv(ctx, "ATTACHED_ENV", "stored-value")
+				_, err = dtc.f.ExecCommandOutput(ctx, []string{envCmd, "attach", "ATTACHED_ENV"})
+				framework.ExpectNoError(err)
+
+				framework.ExpectNoError(dtc.f.DevsyUp(
+					ctx, tempDir, "--workspace-env", "ATTACHED_ENV=custom-value",
+				))
+				out, err := dtc.execSSH(ctx, tempDir, `bash -l -c 'printf %s "$ATTACHED_ENV"'`)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("custom-value"))
+
+				framework.ExpectNoError(dtc.f.DevsyUpRecreate(
+					ctx,
+					tempDir,
+					"--workspace-env",
+					"ATTACHED_ENV=custom-value",
+				))
+				out, err = dtc.execSSH(ctx, tempDir, `bash -l -c 'printf %s "$ATTACHED_ENV"'`)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("custom-value"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
+		ginkgo.It(
 			"context-attached managed secret injects without --secret and is removed after detach",
 			func(ctx context.Context) {
 				dtc.verifyContextAttachment(ctx, contextAttachmentCase{
@@ -790,7 +904,133 @@ var _ = ginkgo.Describe(
 					command:       secretCmd,
 					name:          "ATTACHED_SECRET",
 					checkFile:     "/tmp/attached-secret-check.out",
+					sessionCheck:  `if [ "$ATTACHED_SECRET" = expected-value ]; then printf present; else printf absent; fi`,
+					sessionFile:   "ATTACHED_SECRET",
 				})
+			},
+			ginkgo.SpecTimeout(framework.TimeoutShort()),
+		)
+
+		ginkgo.It(
+			"migrates an existing workspace when a terminal secret is attached later",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+				contextName := fmt.Sprintf("late-secret-%d", time.Now().UnixNano())
+				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					_ = dtc.f.DevsyContextUse(cleanupCtx, "default")
+					_ = dtc.f.DevsyContextDelete(cleanupCtx, contextName)
+				})
+				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(dtc.f.DevsyProviderAdd(
+					ctx, "docker", "-o", "DOCKER_PATH=docker",
+				))
+				framework.ExpectNoError(dtc.f.DevsyProviderUse(ctx, "docker"))
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-secret-collision", dtc.initialDir, dtc.f,
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
+				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
+
+				uid, err := dtc.execSSH(ctx, tempDir, `printf %s "$DEVSY_WORKSPACE_UID"`)
+				framework.ExpectNoError(err)
+				workspace := &provider2.Workspace{UID: strings.TrimSpace(uid)}
+				ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1))
+				var beforeDetails []container.InspectResponse
+				framework.ExpectNoError(
+					dtc.dockerHelper.Inspect(ctx, ids, "container", &beforeDetails),
+				)
+
+				dtc.storeSecret(ctx, "ATTACHED_SECRET", "sentinel-late-secret")
+				_, err = dtc.f.ExecCommandOutput(
+					ctx,
+					[]string{secretCmd, "attach", "ATTACHED_SECRET"},
+				)
+				framework.ExpectNoError(err)
+				secretList, _, err := dtc.f.ExecCommandCapture(ctx,
+					[]string{secretCmd, "list", "--result-format", "json"})
+				framework.ExpectNoError(err)
+				gomega.Expect(secretList).To(gomega.ContainSubstring(`"name": "ATTACHED_SECRET"`))
+				gomega.Expect(secretList).To(gomega.ContainSubstring(`"attached": true`))
+				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
+
+				ids, err = dtc.findWorkspaceContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				gomega.Expect(ids).To(gomega.HaveLen(1))
+				var afterDetails []container.InspectResponse
+				framework.ExpectNoError(
+					dtc.dockerHelper.Inspect(ctx, ids, "container", &afterDetails),
+				)
+				gomega.Expect(afterDetails[0].ID).NotTo(gomega.Equal(beforeDetails[0].ID))
+				gomega.Expect(afterDetails[0].Mounts).To(gomega.ContainElement(gomega.Satisfy(
+					func(mount container.MountPoint) bool {
+						return mount.Destination == "/run/devsy/secrets-env" &&
+							mount.Type == "tmpfs"
+					},
+				)))
+
+				out, err := dtc.execSSH(ctx, tempDir,
+					`if [ -f /run/devsy/secrets-env/ATTACHED_SECRET ]; then `+
+						`if [ "$(cat /run/devsy/secrets-env/ATTACHED_SECRET)" = `+
+						`sentinel-late-secret ]; then printf file-attached; else printf file-other; fi; `+
+						`else printf file-absent; fi`)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("file-attached"))
+				out, err = dtc.execSSH(
+					ctx,
+					tempDir,
+					`case "$ATTACHED_SECRET" in `+
+						`sentinel-late-secret) printf attached;; base-value) printf base;; `+
+						`'') printf absent;; *) printf other;; esac`,
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("attached"))
+				mode, err := dtc.execSSH(
+					ctx,
+					tempDir,
+					"stat -c %a /run/devsy/secrets-env/ATTACHED_SECRET",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(mode)).To(gomega.Equal("600"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It(
+			"explicit lifecycle secret and secrets file do not reach terminal sessions",
+			func(ctx context.Context) {
+				useFileSecretsBackend()
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-managed-secret-attached", dtc.initialDir, dtc.f,
+				)
+				framework.ExpectNoError(err)
+				ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
+
+				dtc.storeSecret(ctx, "SESSION_SCOPE_SECRET", "sentinel-explicit-secret")
+				secretsFile := filepath.Join(tempDir, "session-scope.secrets.json")
+				framework.ExpectNoError(os.WriteFile(
+					secretsFile, []byte(`{"SESSION_FILE_SECRET":"sentinel-file-secret"}`), 0o600,
+				))
+
+				framework.ExpectNoError(dtc.f.DevsyUp(
+					ctx, tempDir, "--secret", "SESSION_SCOPE_SECRET",
+				))
+				checkExplicitAbsent := `if [ -z "$SESSION_SCOPE_SECRET" ]; then printf absent; else printf present; fi`
+				out, err := dtc.execSSH(ctx, tempDir, checkExplicitAbsent)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
+
+				framework.ExpectNoError(dtc.f.DevsyUpRecreate(
+					ctx, tempDir, "--secrets-file", secretsFile,
+				))
+				checkFileAbsent := `if [ -z "$SESSION_FILE_SECRET" ]; then printf absent; else printf present; fi`
+				out, err = dtc.execSSH(ctx, tempDir, checkFileAbsent)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
 			},
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)

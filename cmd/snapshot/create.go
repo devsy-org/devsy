@@ -255,13 +255,9 @@ func checkSingleMount(mounts []*devcontainerconfig.Mount) error {
 	return nil
 }
 
-// snapshotDriver bundles the two capabilities snapshot create needs: pushing
-// the committed image (ImageDriver) and committing the container filesystem
-// (SnapshotCapableDriver). Drivers that delegate to an external orchestrator
-// (Kubernetes, custom drivers) or that can't commit a container filesystem
-// (Apple's `container`) are rejected here via the type assertions.
+// snapshotDriver separates runtime filesystem commit from image publication.
 type snapshotDriver struct {
-	driver.ImageDriver
+	driver.ImagePublisher
 	driver.SnapshotCapableDriver
 }
 
@@ -273,26 +269,26 @@ func (cmd *CreateCmd) imageDriver(
 		return nil, fmt.Errorf("read workspace agent info: %w", err)
 	}
 
-	d, err := drivercreate.NewDriver(ctx, workspaceInfo)
+	bundle, err := drivercreate.New(ctx, workspaceInfo)
 	if err != nil {
 		return nil, fmt.Errorf("create driver: %w", err)
 	}
 
-	imgDriver, ok := d.(driver.ImageDriver)
-	if !ok {
+	imgDriver := bundle.Images
+	if imgDriver == nil {
 		return nil, fmt.Errorf(
-			"provider %s cannot create snapshots (no image driver support)",
+			"provider %s cannot create snapshots (no image publication support)",
 			workspaceInfo.Agent.Driver,
 		)
 	}
-	snapshotCapable, ok := d.(driver.SnapshotCapableDriver)
+	snapshotCapable, ok := bundle.Runtime.(driver.SnapshotCapableDriver)
 	if !ok {
 		return nil, fmt.Errorf(
 			"provider %s cannot create snapshots (no container commit support)",
 			workspaceInfo.Agent.Driver,
 		)
 	}
-	return &snapshotDriver{ImageDriver: imgDriver, SnapshotCapableDriver: snapshotCapable}, nil
+	return &snapshotDriver{ImagePublisher: imgDriver, SnapshotCapableDriver: snapshotCapable}, nil
 }
 
 // pushedVolumes describes a successfully-pushed volumes blob.

@@ -24,6 +24,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/envfile"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/sharedfile"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -38,19 +39,20 @@ type DotfilesConfig struct {
 }
 
 type ContainerSetupConfig struct {
-	SetupInfo         *config.Result
-	ExtraWorkspaceEnv []string
-	SecretsEnv        []string
-	SecretsMount      []string
-	ChownProjects     bool
-	Prebuild          bool
-	PlatformOptions   *devsy.PlatformOptions
-	TunnelClient      tunnel.TunnelClient
-	Dotfiles          DotfilesConfig
-	SkipPostCreate    bool
-	SkipPostStart     bool
-	SkipPostAttach    bool
-	WaitFor           LifecyclePhase
+	SetupInfo              *config.Result
+	ExtraWorkspaceEnv      []string
+	SecretsEnv             []string
+	TerminalSecretEnvNames []string
+	SecretsMount           []string
+	ChownProjects          bool
+	Prebuild               bool
+	PlatformOptions        *devsy.PlatformOptions
+	TunnelClient           tunnel.TunnelClient
+	Dotfiles               DotfilesConfig
+	SkipPostCreate         bool
+	SkipPostStart          bool
+	SkipPostAttach         bool
+	WaitFor                LifecyclePhase
 }
 
 // SetupContainerPreAttach runs container setup up to and including the waitFor
@@ -81,6 +83,13 @@ func SetupContainerPreAttach(
 	}
 
 	if err := writeSecretFiles(cfg); err != nil {
+		return DeferredHooks{}, err
+	}
+	if err := writeSecretEnvironment(
+		cfg.SecretsEnv,
+		cfg.TerminalSecretEnvNames,
+		config.GetRemoteUser(cfg.SetupInfo),
+	); err != nil {
 		return DeferredHooks{}, err
 	}
 
@@ -143,6 +152,9 @@ func writeSecretFiles(cfg *ContainerSetupConfig) error {
 	if len(cfg.SecretsMount) == 0 {
 		return nil
 	}
+	if err := validateSecretFileRuntime(config.SecretsMountDir); err != nil {
+		return err
+	}
 
 	// #nosec G301 -- dir must be traversable by the non-root remote user; per-file 0600 enforces secrecy.
 	if err := os.MkdirAll(config.SecretsMountDir, 0o755); err != nil {
@@ -160,6 +172,163 @@ func writeSecretFiles(cfg *ContainerSetupConfig) error {
 		}
 	}
 
+	return nil
+}
+
+func writeSecretEnvironment(entries, names []string, user string) error {
+	if len(names) > 0 {
+		if err := validateSecretEnvironmentRuntime(config.SecretsEnvDir); err != nil {
+			return err
+		}
+	}
+	return writeSecretEnvironmentAt(config.SecretsEnvDir, entries, names, user)
+}
+
+var (
+	validateSecretEnvironmentRuntime = validateSecretEnvironmentMount
+	validateSecretFileRuntime        = validateSecretFileMount
+)
+
+func writeSecretEnvironmentAt(dir string, entries, names []string, user string) error {
+	if err := clearSecretEnvironmentDir(dir); err != nil {
+		return err
+	}
+	if len(names) == 0 {
+		return secureEmptySecretEnvironmentDir(dir, user)
+	}
+	if err := createSecretEnvironmentDir(dir); err != nil {
+		return err
+	}
+	if err := copy2.Chown(dir, user); err != nil {
+		return fmt.Errorf("set secret environment directory owner: %w", err)
+	}
+	if err := writeSecretEnvironmentEntries(dir, entries, names); err != nil {
+		if cleanupErr := clearSecretEnvironmentDir(dir); cleanupErr != nil {
+			return errors.Join(err, fmt.Errorf("clear partial secret environment: %w", cleanupErr))
+		}
+		return err
+	}
+	if err := chownSecretEnvironmentFiles(dir, names, user); err != nil {
+		return err
+	}
+	return nil
+}
+
+func secureEmptySecretEnvironmentDir(dir, user string) error {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("inspect secret environment directory: %w", err)
+	}
+	if err := createSecretEnvironmentDir(dir); err != nil {
+		return err
+	}
+	if err := copy2.Chown(dir, user); err != nil {
+		return fmt.Errorf("set secret environment directory owner: %w", err)
+	}
+	return nil
+}
+
+func chownSecretEnvironmentFiles(dir string, names []string, user string) error {
+	for _, name := range names {
+		if err := copy2.Chown(filepath.Join(dir, name), user); err != nil {
+			return fmt.Errorf("set secret environment owner for %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func clearSecretEnvironmentDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read secret environment directory: %w", err)
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+			return fmt.Errorf("clear secret environment entry: %w", err)
+		}
+	}
+	return nil
+}
+
+func writeSecretEnvironmentEntries(dir string, entries, names []string) error {
+	wanted := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		wanted[name] = struct{}{}
+	}
+	found, err := writeSelectedSecretEnvironmentEntries(dir, entries, wanted)
+	if err != nil {
+		return err
+	}
+	for name := range wanted {
+		if _, ok := found[name]; !ok {
+			return fmt.Errorf("terminal secret environment variable %s was not resolved", name)
+		}
+	}
+	return nil
+}
+
+func writeSelectedSecretEnvironmentEntries(
+	dir string,
+	entries []string,
+	wanted map[string]struct{},
+) (map[string]struct{}, error) {
+	found := make(map[string]struct{}, len(wanted))
+	for _, entry := range entries {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok || name == "" {
+			return nil, fmt.Errorf("invalid secret environment assignment")
+		}
+		if _, ok := wanted[name]; !ok {
+			continue
+		}
+		if err := secrets.ValidateName(name); err != nil {
+			return nil, err
+		}
+		if strings.ContainsRune(value, '\x00') {
+			return nil, fmt.Errorf("secret environment value for %s contains a NUL byte", name)
+		}
+		if err := writeSecretEnvironmentFile(dir, name, value); err != nil {
+			return nil, err
+		}
+		found[name] = struct{}{}
+	}
+	return found, nil
+}
+
+func createSecretEnvironmentDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create secret environment directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil { // #nosec G302 -- directory is owner-only.
+		return fmt.Errorf("secure secret environment directory: %w", err)
+	}
+	return nil
+}
+
+func writeSecretEnvironmentFile(dir, name, value string) error {
+	path := filepath.Join(dir, name)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("prepare secret environment variable %s: %w", name, err)
+	}
+	f, err := os.OpenFile(
+		path,
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+		0o600,
+	) // #nosec G304 -- path uses a validated environment name in the fixed secret directory.
+	if err != nil {
+		return fmt.Errorf("write secret environment variable %s: %w", name, err)
+	}
+	if _, err := f.WriteString(value); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("write secret environment variable %s: %w", name, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("write secret environment variable %s: %w", name, err)
+	}
 	return nil
 }
 
@@ -457,20 +626,45 @@ func patchEtcEnvironmentFlags(workspaceEnv []string) error {
 		return nil
 	}
 
-	// make sure we sort the strings
-	sort.Strings(workspaceEnv)
+	environment, canonical, err := parseWorkspaceEnvironment(workspaceEnv)
+	if err != nil {
+		return err
+	}
 
-	// check if we need to update env
-	exists, err := markerFileExists("patchEtcEnvironmentFlags", strings.Join(workspaceEnv, "\n"))
+	exists, err := markerFileExists("patchEtcEnvironmentFlags", strings.Join(canonical, "\n"))
 	if err != nil {
 		return err
 	} else if exists {
 		return nil
 	}
 
-	// update env
-	envfile.MergeAndApply(config.ListToObject(workspaceEnv))
+	envfile.MergeAndApply(environment)
 	return nil
+}
+
+func parseWorkspaceEnvironment(assignments []string) (map[string]string, []string, error) {
+	environment := make(map[string]string, len(assignments))
+	keys := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		name, value, ok := strings.Cut(assignment, "=")
+		if !ok || name == "" {
+			return nil, nil, fmt.Errorf("invalid workspace environment assignment")
+		}
+		if _, exists := environment[name]; exists {
+			return nil, nil, fmt.Errorf(
+				"workspace environment variable %q is assigned more than once",
+				name,
+			)
+		}
+		environment[name] = value
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	canonical := make([]string, 0, len(keys))
+	for _, name := range keys {
+		canonical = append(canonical, name+"="+environment[name])
+	}
+	return environment, canonical, nil
 }
 
 func patchEtcEnvironment(mergedConfig *config.MergedDevContainerConfig) error {

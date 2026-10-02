@@ -1,4 +1,4 @@
-import { platform } from "node:os"
+import { homedir, platform } from "node:os"
 import { dirname } from "node:path"
 import type { BrowserWindow } from "electron"
 import type { IPty } from "node-pty"
@@ -25,6 +25,11 @@ function requirePty(): typeof import("node-pty") {
 interface PtyDeps {
   binaryPath: string
   getMainWindow: () => BrowserWindow | null
+  spawnPty?: typeof import("node-pty").spawn
+}
+
+export function sshTerminalArgs(workspaceId: string): string[] {
+  return ["--log-level=error", "workspace", "ssh", workspaceId]
 }
 
 export class PtyManager {
@@ -60,15 +65,16 @@ export class PtyManager {
   }
 
   createSession(cols: number, rows: number): string {
-    const pty = requirePty()
+    const spawn = this.deps.spawnPty ?? requirePty().spawn
     const shell =
       platform() === "win32" ? "powershell.exe" : process.env.SHELL || "/bin/sh"
 
     const sessionId = crypto.randomUUID()
-    const proc = pty.spawn(shell, [], {
+    const proc = spawn(shell, [], {
       name: "xterm-256color",
       cols,
       rows,
+      cwd: homedir(),
       env: this.env,
     })
 
@@ -79,16 +85,12 @@ export class PtyManager {
   createSshSession(workspaceId: string, cols: number, rows: number): string {
     const pty = requirePty()
     const sessionId = crypto.randomUUID()
-    const proc = pty.spawn(
-      this.deps.binaryPath,
-      ["workspace", "ssh", workspaceId],
-      {
-        name: "xterm-256color",
-        cols,
-        rows,
-        env: this.env,
-      },
-    )
+    const proc = pty.spawn(this.deps.binaryPath, sshTerminalArgs(workspaceId), {
+      name: "xterm-256color",
+      cols,
+      rows,
+      env: this.env,
+    })
 
     this.wire(sessionId, proc, workspaceId)
     return sessionId

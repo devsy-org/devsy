@@ -77,7 +77,8 @@ type runContainerParams struct {
 }
 
 type runner struct {
-	driver driver.Driver
+	driver       driver.Driver
+	imageBackend driver.ImageBackend
 
 	workspaceConfig  *provider.AgentWorkspaceInfo
 	agentPath        string
@@ -98,7 +99,7 @@ func NewRunner(
 	agentPath, agentDownloadURL string,
 	workspaceConfig *provider.AgentWorkspaceInfo,
 ) (Runner, error) {
-	drv, err := drivercreate.NewDriver(ctx, workspaceConfig)
+	bundle, err := drivercreate.New(ctx, workspaceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -106,12 +107,13 @@ func NewRunner(
 	preflightOpts := driver.PreflightOptions{
 		DisableAutoStart: workspaceConfig.CLIOptions.NoAutoStart || driver.AutoStartDisabledByEnv(),
 	}
-	if err := driver.DriverPreflight(ctx, drv, preflightOpts); err != nil {
+	if err := driver.DriverPreflight(ctx, bundle.Runtime, preflightOpts); err != nil {
 		return nil, err
 	}
 
 	return &runner{
-		driver:               drv,
+		driver:               bundle.Runtime,
+		imageBackend:         bundle.Images,
 		agentPath:            agentPath,
 		agentDownloadURL:     agentDownloadURL,
 		localWorkspaceFolder: workspaceConfig.ContentFolder,
@@ -210,7 +212,7 @@ func (r *runner) Up(
 	err = status.Run(
 		ctx,
 		reporter,
-		status.Operation{Phase: status.PhaseReady},
+		status.Operation{Phase: status.PhasePreparingDevContainer},
 		func(ctx context.Context) error {
 			var dispatchErr error
 			result, dispatchErr = r.dispatchByConfigKind(ctx, substitutedConfig, params)

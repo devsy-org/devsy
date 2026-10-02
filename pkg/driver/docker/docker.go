@@ -100,6 +100,10 @@ type dockerDriver struct {
 // The docker driver supports the full image, compose, docker-helper, and
 // snapshot-commit capabilities.
 var (
+	_ driver.MountDeliveryDriver  = (*dockerDriver)(nil)
+	_ driver.RecreatePolicyDriver = (*dockerDriver)(nil)
+	_ driver.WorkspaceChowner     = (*dockerDriver)(nil)
+
 	_ driver.ImageDriver           = (*dockerDriver)(nil)
 	_ driver.ComposeDriver         = (*dockerDriver)(nil)
 	_ driver.DockerHelperProvider  = (*dockerDriver)(nil)
@@ -415,3 +419,9 @@ func (d *dockerDriver) FindDevContainer(
 
 	return containerDetails, nil
 }
+
+func (d *dockerDriver) RequiresMountStreaming() bool { return false }
+
+func (d *dockerDriver) RecreateMode() driver.RecreateMode { return driver.RecreateDelete }
+
+func (d *dockerDriver) RequiresWorkspaceChown() bool { return false }

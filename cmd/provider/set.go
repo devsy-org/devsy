@@ -11,6 +11,7 @@ import (
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
+	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
 )
@@ -63,17 +64,29 @@ func NewSetCmd(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
-	unlock, err := config.LockConfig()
-	if err != nil {
-		return err
-	}
-	defer unlock()
-
 	devsyConfig, providerWithOptions, err := cmd.loadProvider(args)
 	if err != nil {
 		return err
 	}
+	opLock, err := provider2.GetProviderOperationLock(
+		devsyConfig.DefaultContext,
+		providerWithOptions.Config.Name,
+	)
+	if err != nil {
+		return fmt.Errorf("get operation lock: %w", err)
+	}
+	if err := opLock.Lock(); err != nil {
+		return fmt.Errorf("acquire operation lock: %w", err)
+	}
+	defer func() { _ = opLock.Unlock() }()
 
+	devsyConfig, providerWithOptions, err = cmd.loadProviderInContext(
+		devsyConfig.DefaultContext,
+		args,
+	)
+	if err != nil {
+		return err
+	}
 	devsyConfig, err = configureProviderOptions(ctx, ProviderOptionsConfig{
 		Provider:      providerWithOptions.Config,
 		ContextName:   devsyConfig.DefaultContext,
@@ -81,13 +94,16 @@ func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
 		SkipRequired:  cmd.Dry,
 		SkipInit:      cmd.Dry || cmd.SkipInit,
 		SingleMachine: &cmd.SingleMachine,
+		Dry:           cmd.Dry,
 	})
 	if err != nil {
 		return err
 	}
 
-	if err := cmd.saveOrPrintConfig(devsyConfig, providerWithOptions); err != nil {
-		return err
+	if cmd.Dry {
+		if err := cmd.saveOrPrintConfig(devsyConfig, providerWithOptions); err != nil {
+			return err
+		}
 	}
 
 	log.Infof("set options for provider: providerName=%s", providerWithOptions.Config.Name)
@@ -97,7 +113,14 @@ func (cmd *SetCmd) Run(ctx context.Context, args []string) error {
 func (cmd *SetCmd) loadProvider(
 	args []string,
 ) (*config.Config, *workspace.ProviderWithOptions, error) {
-	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	return cmd.loadProviderInContext(cmd.Context, args)
+}
+
+func (cmd *SetCmd) loadProviderInContext(
+	contextName string,
+	args []string,
+) (*config.Config, *workspace.ProviderWithOptions, error) {
+	devsyConfig, err := config.LoadConfig(contextName, cmd.Provider)
 	if err != nil {
 		return nil, nil, err
 	}

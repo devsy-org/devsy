@@ -8,6 +8,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 )
 
+const testTerminalSecretName = "API_KEY"
+
 // Secret values must never ride in the compressed CLIOptions embedded in the
 // setup command's arguments; the container pulls them over the tunnel instead.
 func TestCompressWorkspaceConfig_StripsSecretValues(t *testing.T) {
@@ -15,15 +17,16 @@ func TestCompressWorkspaceConfig_StripsSecretValues(t *testing.T) {
 		workspaceConfig: &provider.AgentWorkspaceInfo{
 			Workspace: &provider.Workspace{},
 			CLIOptions: provider.CLIOptions{
-				SecretsEnv:       []string{"API_KEY=super-secret"},
-				SecretsMount:     []string{"tls.key=key-material"},
-				BuildSecrets:     []string{"NPM_TOKEN=npm-secret"},
-				GitToken:         &provider.GitToken{Host: "github.com", Token: "ghp_secret"},
-				Secrets:          []string{"API_KEY"},
-				EnvVars:          []string{"LOG_LEVEL"},
-				BuildSecretNames: []string{"NPM_TOKEN"},
-				GitTokenSecret:   "GH_TOKEN",
-				GitTokenUsername: "x-access-token",
+				SecretsEnv:             []string{"API_KEY=super-secret"},
+				TerminalSecretEnvNames: []string{testTerminalSecretName},
+				SecretsMount:           []string{"tls.key=key-material"},
+				BuildSecrets:           []string{"NPM_TOKEN=npm-secret"},
+				GitToken:               &provider.GitToken{Host: "github.com", Token: "ghp_secret"},
+				Secrets:                []string{"API_KEY"},
+				EnvVars:                []string{"LOG_LEVEL"},
+				BuildSecretNames:       []string{"NPM_TOKEN"},
+				GitTokenSecret:         "GH_TOKEN",
+				GitTokenUsername:       "x-access-token",
 			},
 		},
 	}
@@ -44,7 +47,9 @@ func TestCompressWorkspaceConfig_StripsSecretValues(t *testing.T) {
 
 	o := info.CLIOptions
 	stripped := map[string]bool{
-		"SecretsEnv":       o.SecretsEnv == nil,
+		"SecretsEnv": o.SecretsEnv == nil,
+		"TerminalSecretEnvNames": len(o.TerminalSecretEnvNames) == 1 &&
+			o.TerminalSecretEnvNames[0] == testTerminalSecretName,
 		"SecretsMount":     o.SecretsMount == nil,
 		"BuildSecrets":     o.BuildSecrets == nil,
 		"GitToken":         o.GitToken == nil,

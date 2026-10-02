@@ -12,6 +12,7 @@ import {
   parseCliEnvelope,
 } from "../shared/cli-error.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
+import type { AppNavigationController } from "./app-navigation.js"
 import type { CliRunner, StreamLine } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { LogStore } from "./log-store.js"
@@ -35,6 +36,7 @@ import {
 } from "./updater.js"
 import { type ProviderEntry, parseProviderEntries } from "./watcher.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
+import { isAppNavigationRequest } from "../shared/app-route.js"
 import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
 import { mainLog } from "./logging.js"
@@ -112,6 +114,7 @@ interface IpcDependencies {
   workspaceJobs: WorkspaceJobs
   workspaceSnapshot?: () => unknown
   onRendererReady?: (sender: Electron.WebContents) => void
+  appNavigation?: AppNavigationController
   settingsService?: SettingsService
 }
 
@@ -2079,6 +2082,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         event.sender.send("update-status", getLastStatus())
       }
     })
+  })
+
+  ipcMain.handle("app_navigation_applied", (event, value: unknown) => {
+    if (!isAppNavigationRequest(value)) return
+    const win = deps.getMainWindow()
+    if (!win || win.isDestroyed() || win.webContents !== event.sender) return
+    deps.appNavigation?.navigationApplied(value)
   })
 
   ipcMain.handle("install_update", async () => {

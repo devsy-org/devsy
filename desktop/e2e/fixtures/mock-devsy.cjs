@@ -148,12 +148,14 @@ function providerStatus(phase, state, step) {
   )
 }
 
-function workspaceStatus(phase, state, step, error) {
+function workspaceStatus(phase, state, step, error, operationId, parentOperationId) {
   out(
     JSON.stringify({
       kind: "status",
       schemaVersion: 1,
       pipeline: "workspace_up",
+      ...(operationId ? { operationId } : {}),
+      ...(parentOperationId ? { parentOperationId } : {}),
       phase,
       ...(step ? { step } : {}),
       state,
@@ -328,10 +330,12 @@ function handleUp(args) {
 
   workspaceStatus("building_image", "started", "Building workspace")
   const complete = () => {
-  workspaceStatus("resolving_config", "started")
-  workspaceStatus("resolving_config", "succeeded")
-  workspaceStatus("building_image", "started")
-  workspaceStatus("building_image", "succeeded")
+  workspaceStatus("resolving_config", "started", undefined, undefined, "resolve")
+  workspaceStatus("resolving_config", "succeeded", undefined, undefined, "resolve")
+  workspaceStatus("preparing_devcontainer", "started", undefined, undefined, "prepare")
+  workspaceStatus("building_image", "started", undefined, undefined, "build", "prepare")
+  workspaceStatus("building_image", "succeeded", undefined, undefined, "build", "prepare")
+  workspaceStatus("preparing_devcontainer", "succeeded", undefined, undefined, "prepare")
   workspaceStatus("starting_container", "started")
   workspaceStatus("starting_container", "succeeded")
   workspaceStatus("ready", "succeeded")
@@ -393,15 +397,21 @@ function handleTaskLogs(args) {
   }
 
   if (t.source && /fail/i.test(t.source)) {
-    workspaceStatus("resolving_config", "started")
-    workspaceStatus("resolving_config", "succeeded")
-    workspaceStatus("building_image", "started")
+    workspaceStatus("resolving_config", "started", undefined, undefined, "resolve")
+    workspaceStatus("resolving_config", "succeeded", undefined, undefined, "resolve")
+    workspaceStatus("preparing_devcontainer", "started", undefined, undefined, "prepare")
+    workspaceStatus("building_image", "started", undefined, undefined, "build", "prepare")
     workspaceStatus("building_image", "failed", undefined, {
       code: "build_failed",
       message: "The mock image build failed.",
       hint: "Check the build output and retry.",
-    })
+    }, "build", "prepare")
     t.status = "failed"
+    workspaceStatus("preparing_devcontainer", "failed", undefined, {
+      code: "build_failed",
+      message: "The mock image build failed.",
+      hint: "Check the build output and retry.",
+    }, "prepare")
     saveState(state)
     out(
       JSON.stringify({
@@ -416,10 +426,12 @@ function handleTaskLogs(args) {
     return
   }
 
-  workspaceStatus("resolving_config", "started")
-  workspaceStatus("resolving_config", "succeeded")
-  workspaceStatus("building_image", "started")
-  workspaceStatus("building_image", "succeeded")
+  workspaceStatus("resolving_config", "started", undefined, undefined, "resolve")
+  workspaceStatus("resolving_config", "succeeded", undefined, undefined, "resolve")
+  workspaceStatus("preparing_devcontainer", "started", undefined, undefined, "prepare")
+  workspaceStatus("building_image", "started", undefined, undefined, "build", "prepare")
+  workspaceStatus("building_image", "succeeded", undefined, undefined, "build", "prepare")
+  workspaceStatus("preparing_devcontainer", "succeeded", undefined, undefined, "prepare")
   workspaceStatus("starting_container", "started")
   workspaceStatus("starting_container", "succeeded")
   workspaceStatus("ready", "succeeded")

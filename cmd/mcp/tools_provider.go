@@ -8,6 +8,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	cmdprovider "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -142,12 +143,21 @@ func runProviderAdd(ctx context.Context, g *flags.GlobalFlags, in providerAddInp
 }
 
 func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) error {
-	unlock, err := config.LockConfig()
+	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
 	if err != nil {
 		return err
 	}
-	defer unlock()
-	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
+
+	opLock, err := provider.GetProviderOperationLock(devsyConfig.DefaultContext, name)
+	if err != nil {
+		return fmt.Errorf("get operation lock: %w", err)
+	}
+	if err := opLock.Lock(); err != nil {
+		return fmt.Errorf("acquire operation lock: %w", err)
+	}
+	defer func() { _ = opLock.Unlock() }()
+
+	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, g.Provider)
 	if err != nil {
 		return err
 	}

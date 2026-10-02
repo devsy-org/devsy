@@ -5,6 +5,7 @@ package gpg
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -40,6 +41,36 @@ func TestSetupGpgConf_WritesRequiredDirectives(t *testing.T) {
 		assert.Contains(t, got, d, "gpg.conf must enable %q for forwarding", d)
 	}
 	assert.Contains(t, gpgConfDirectives, "no-autostart")
+}
+
+func TestGpgTunnelProbeFiltersExpectedNoAgentDiagnostics(t *testing.T) {
+	var stdout strings.Builder
+	var stderr strings.Builder
+	err := runGpgTunnelProbe(
+		"vscode",
+		func(command string, out, stderr io.Writer) error {
+			assert.Contains(t, command, "gpg-connect-agent --no-autostart")
+			assert.Contains(t, command, "su -c")
+			_, writeErr := io.WriteString(
+				stderr,
+				"gpg-connect-agent: no gpg-agent running in this session\n",
+			)
+			require.NoError(t, writeErr)
+			_, writeErr = io.WriteString(out, "D 2.4.5\nOK\n")
+			return writeErr
+		},
+		&stdout,
+		&stderr,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, "D 2.4.5\nOK\n", stdout.String())
+	assert.Empty(t, unexpectedGpgProbeDiagnostics(stderr.String()))
+	assert.Equal(
+		t,
+		"unexpected diagnostic",
+		unexpectedGpgProbeDiagnostics("unexpected diagnostic\n"),
+	)
 }
 
 func TestSetupGpgConf_Idempotent(t *testing.T) {

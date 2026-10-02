@@ -373,7 +373,7 @@ func (s *workspaceClient) taskStatusOverride() (client.Status, bool) {
 	switch {
 	case !latest.Status.Terminal():
 		return client.StatusProvisioning, true
-	case latest.Status == task.StatusFailed:
+	case latest.Status == task.StatusFailed && !latest.Canceled():
 		return client.StatusFailed, true
 	default:
 		return "", false
@@ -396,7 +396,7 @@ func (s *workspaceClient) latestUpTask() *task.State {
 	if latest == nil {
 		return nil
 	}
-	return store.Reconcile(latest)
+	return store.ReconcileState(latest)
 }
 
 // newestUpTask picks the most recently started `up` task for workspaceID.

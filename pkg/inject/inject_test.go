@@ -837,6 +837,14 @@ func TestInjectScript_RealShellRejectsInvalidBinarySize(t *testing.T) {
 	tmp := t.TempDir()
 	installPath := filepath.Join(tmp, "bin", "agent")
 	require.NoError(t, os.MkdirAll(filepath.Dir(installPath), 0o750))
+	toolsDir := filepath.Join(tmp, "tools")
+	require.NoError(t, os.Mkdir(toolsDir, 0o700))
+	curlPath := filepath.Join(toolsDir, "curl")
+	require.NoError(t, os.WriteFile(curlPath, []byte("#!/bin/sh\nexit 1\n"), 0o600))
+	require.NoError(t, os.Chmod(curlPath, 0o700)) //nolint:gosec // fake curl must be executable
+	sleepPath := filepath.Join(toolsDir, "sleep")
+	require.NoError(t, os.WriteFile(sleepPath, []byte("#!/bin/sh\nexit 0\n"), 0o600))
+	require.NoError(t, os.Chmod(sleepPath, 0o700)) //nolint:gosec // fake sleep must be executable
 
 	rendered, err := GenerateScript(Script, &Params{
 		Command:             "echo should-not-run",
@@ -856,14 +864,25 @@ func TestInjectScript_RealShellRejectsInvalidBinarySize(t *testing.T) {
 		"-c",
 		rendered,
 	)
+	cmd.Env = append(
+		os.Environ(),
+		"PATH="+toolsDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
 	cmd.Stdin = stdinR
 	cmd.Stdout = stdoutW
 	cmd.Stderr = stderrW
 	require.NoError(t, cmd.Start())
 	waitDone := make(chan struct{})
 	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		<-waitDone
+		_ = stdinW.Close()
+		_ = stdoutW.Close()
+		_ = stderrW.Close()
+		select {
+		case <-waitDone:
+		case <-time.After(5 * time.Second):
+			_ = cmd.Process.Kill()
+			<-waitDone
+		}
 	})
 	go func() {
 		_ = cmd.Wait()
@@ -888,6 +907,11 @@ func TestInjectScript_RealShellRejectsInvalidBinarySize(t *testing.T) {
 	_ = stdinW.Close()
 	_ = stdoutW.Close()
 	_ = stderrW.Close()
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("inject.sh did not finish the failed-download fallback")
+	}
 }
 
 func requireWrite(t *testing.T, w io.Writer, s string) {

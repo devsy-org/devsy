@@ -1,8 +1,10 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { app, BrowserWindow, Notification, session } from "electron"
+import { app, BrowserWindow, ipcMain, Notification, session } from "electron"
+import { settingsRoute, workspaceRoute } from "../shared/app-route.js"
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics.js"
 import { isAppQuitting, markAppQuitting } from "./app-lifecycle.js"
+import { AppNavigationController } from "./app-navigation.js"
 import { AppSettingsStore } from "./app-settings.js"
 import {
   applyAutostart,
@@ -39,11 +41,14 @@ const PROTOCOL = "devsy"
 
 let mainWindow: BrowserWindow | null = null
 const pendingDeepLinks: string[] = []
-let pendingRoute: string | null = null
 let rendererReady = false
 let appTray: AppTray | null = null
 let watcher: Watcher | null = null
 const state = new DaemonState()
+const appNavigation = new AppNavigationController({
+  getWindow: () => mainWindow,
+  createWindow: () => createWindow(),
+})
 
 function handleDeepLink(url: string): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -60,18 +65,7 @@ function handleDeepLink(url: string): void {
 }
 
 function showDevsy(route?: string): void {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    if (route) pendingRoute = route
-    createWindow()
-    return
-  }
-  if (mainWindow.isMinimized()) mainWindow.restore()
-  mainWindow.show()
-  mainWindow.focus()
-  if (route) {
-    if (rendererReady) mainWindow.webContents.send("navigate", route)
-    else pendingRoute = route
-  }
+  appNavigation.open(route)
 }
 
 // Enforce single instance; forward deep links from second instances to the first.
@@ -121,9 +115,14 @@ function createWindow(): void {
       mainWindow.hide()
     }
   })
-  mainWindow.webContents.on("did-start-loading", () => {
-    rendererReady = false
-  })
+  mainWindow.webContents.on(
+    "did-start-navigation",
+    (_event, _url, isInPlace, isMainFrame) => {
+      if (isInPlace || !isMainFrame) return
+      rendererReady = false
+      appNavigation.rendererDidStartLoading()
+    },
+  )
 
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -257,10 +256,9 @@ app.whenReady().then(async () => {
       notification.on("click", request.onClick)
       notification.show()
     },
-    openWorkspace: (id) => showDevsy(`/workspaces/${encodeURIComponent(id)}`),
-    openWorkspaceLogs: (id) =>
-      showDevsy(`/workspaces/${encodeURIComponent(id)}?tab=logs`),
-    openUpdates: () => showDevsy("/settings"),
+    openWorkspace: (id) => showDevsy(workspaceRoute(id)),
+    openWorkspaceLogs: (id) => showDevsy(workspaceRoute(id, "logs")),
+    openUpdates: () => showDevsy(settingsRoute()),
   })
   workspaceJobs.onChange(() => notifier.onJobsChanged(workspaceJobs.snapshot()))
   onUpdateStatusChanged((status) => notifier.onUpdateStatus(status))
@@ -290,14 +288,12 @@ app.whenReady().then(async () => {
         return
       }
       rendererReady = true
-      if (pendingRoute) {
-        sender.send("navigate", pendingRoute)
-        pendingRoute = null
-      }
+      appNavigation.rendererDidBecomeReady()
       for (const url of pendingDeepLinks.splice(0))
         sender.send("deep-link", url)
     },
     workspaceSnapshot: () => watcher?.workspaceSnapshot(),
+    appNavigation,
     settingsService,
   })
 
@@ -387,6 +383,20 @@ app.whenReady().then(async () => {
     else showDevsy()
   })
 })
+
+if (process.env.NODE_ENV === "test") {
+  ipcMain.handle("test_app_navigation", (_event, args: unknown) => {
+    if (!args || typeof args !== "object") return
+    const request = args as { route?: unknown; hide?: unknown }
+    if (typeof request.hide === "boolean") {
+      if (request.hide) mainWindow?.hide()
+      else mainWindow?.show()
+    }
+    if (request.route !== undefined && typeof request.route !== "string") return
+    if (request.route === undefined) return
+    appNavigation.open(request.route)
+  })
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

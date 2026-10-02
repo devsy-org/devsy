@@ -39,7 +39,7 @@ type Driver interface {
 // RunOptionsDriver is a capability interface for drivers that run a devcontainer
 // directly from RunOptions. These drivers delegate container management to an
 // external orchestrator (e.g. a Kubernetes pod or a custom command) rather than
-// building and running a local OCI image; image drivers use ImageDriver instead.
+// building and running a local OCI image; image runtimes use ImageRunner instead.
 type RunOptionsDriver interface {
 	Driver
 
@@ -62,6 +62,56 @@ type ReprovisioningDriver interface {
 
 	// CanReprovision returns true if the driver can reprovision the devcontainer
 	CanReprovision() bool
+}
+
+type ArgvExecDriver interface {
+	Driver
+	CommandContainerArgv(
+		ctx context.Context,
+		workspaceID string,
+		argv []string,
+		streams Streams,
+	) error
+}
+
+type MountDeliveryDriver interface {
+	Driver
+	RequiresMountStreaming() bool
+}
+
+// Drivers without an explicit mount policy retain streamed delivery.
+func DriverRequiresMountStreaming(d Driver) bool {
+	if policy, ok := d.(MountDeliveryDriver); ok {
+		return policy.RequiresMountStreaming()
+	}
+	return true
+}
+
+type RecreateMode string
+
+const (
+	RecreateDelete RecreateMode = "delete"
+	RecreateStop   RecreateMode = "stop"
+)
+
+type RecreatePolicyDriver interface {
+	Driver
+	RecreateMode() RecreateMode
+}
+
+func DriverRecreateMode(d Driver) RecreateMode {
+	if policy, ok := d.(RecreatePolicyDriver); ok {
+		return policy.RecreateMode()
+	}
+	return RecreateStop
+}
+
+// Drivers without an explicit ownership policy retain workspace chown.
+func DriverRequiresWorkspaceChown(d Driver) bool {
+	if policy, ok := d.(WorkspaceChowner); ok {
+		return policy.RequiresWorkspaceChown()
+	}
+	return true
 }
 
 const (

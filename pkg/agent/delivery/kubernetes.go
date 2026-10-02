@@ -23,13 +23,13 @@ import (
 
 var _ AgentDelivery = (*KubernetesDelivery)(nil)
 
-// PodExecFunc runs argv in the workspace pod's dev container with the given streams.
-type PodExecFunc func(ctx context.Context, argv []string, streams driver.Streams) error
+// ArgvExecFunc runs argv in a dev container with the given streams.
+type ArgvExecFunc func(ctx context.Context, argv []string, streams driver.Streams) error
 
 // KubernetesDelivery gets the agent binary into the pod over the cluster's
 // exec API.
 type KubernetesDelivery struct {
-	Exec PodExecFunc
+	Exec ArgvExecFunc
 
 	// ExpectedVersion defaults to version.GetVersion() when empty.
 	ExpectedVersion string
@@ -258,3 +258,6 @@ func (d *KubernetesDelivery) detectVersion(ctx context.Context, destPath string)
 	}
 	return strings.TrimSpace(stdout.String())
 }
+
+// PodExecFunc is retained for callers using the original pod-specific name.
+type PodExecFunc = ArgvExecFunc

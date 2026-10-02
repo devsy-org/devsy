@@ -86,6 +86,31 @@ func TestJournalRotatesAndPrunes(t *testing.T) {
 	}
 }
 
+func TestJournalAcceptsPreparingDevContainerPhase(t *testing.T) {
+	dir := t.TempDir()
+	journal, err := New(Options{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.Reporter("demo").Report(status.Event{
+		Pipeline:    status.PipelineWorkspaceUp,
+		OperationID: "parent-op",
+		Phase:       status.PhasePreparingDevContainer,
+		State:       status.StateStarted,
+	})
+	events, err := Read(dir, "demo", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events = %+v", events)
+	}
+	if events[0].Phase != status.PhasePreparingDevContainer ||
+		events[0].OperationID != "parent-op" {
+		t.Fatalf("events = %+v", events)
+	}
+}
+
 func TestAppendSkipsOversizedEvents(t *testing.T) {
 	dir := t.TempDir()
 	journal, err := New(Options{Dir: dir, MaxBytes: 1000, MaxSegmentBytes: 300})

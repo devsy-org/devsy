@@ -2,17 +2,28 @@ package setup
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
+)
+
+const (
+	workspaceEnvAlphaAssignment = "ALPHA=first"
+	workspaceEnvTokenAssignment = "TOKEN=one=two"
+	workspaceEnvZedAssignment   = "ZED=last"
 )
 
 // TestSecretMountPath_RejectsEscapes ensures only a plain filename is accepted:
@@ -152,6 +163,53 @@ func TestWriteResultFileTo_SkipsWriteWhenContentUnchanged(t *testing.T) {
 	}
 }
 
+type WorkspaceEnvironmentTestSuite struct {
+	suite.Suite
+}
+
+func TestWorkspaceEnvironmentTestSuite(t *testing.T) {
+	suite.Run(t, new(WorkspaceEnvironmentTestSuite))
+}
+
+func (s *WorkspaceEnvironmentTestSuite) TestParseRejectsDuplicateTarget() {
+	_, _, err := parseWorkspaceEnvironment([]string{"MODE=one", "MODE=two"})
+	s.Require().ErrorContains(err, `"MODE"`)
+}
+
+func (s *WorkspaceEnvironmentTestSuite) TestParseCanonicalizesWithoutChangingInput() {
+	assignments := []string{
+		workspaceEnvZedAssignment,
+		workspaceEnvAlphaAssignment,
+		workspaceEnvTokenAssignment,
+	}
+	original := slices.Clone(assignments)
+
+	got, canonical, err := parseWorkspaceEnvironment(assignments)
+	s.Require().NoError(err)
+	s.Assert().Equal(original, assignments)
+	wantCanonical := []string{
+		workspaceEnvAlphaAssignment,
+		workspaceEnvTokenAssignment,
+		workspaceEnvZedAssignment,
+	}
+	s.Assert().Equal(wantCanonical, canonical)
+	s.Assert().Equal("one=two", got["TOKEN"])
+	_, reorderedCanonical, err := parseWorkspaceEnvironment([]string{
+		workspaceEnvTokenAssignment,
+		workspaceEnvAlphaAssignment,
+		workspaceEnvZedAssignment,
+	})
+	s.Require().NoError(err)
+	s.Assert().Equal(canonical, reorderedCanonical)
+}
+
+func (s *WorkspaceEnvironmentTestSuite) TestPatchRejectsDuplicatesWithoutMutatingInput() {
+	assignments := []string{"MODE=one", "MODE=two"}
+	original := slices.Clone(assignments)
+	s.Require().Error(patchEtcEnvironmentFlags(assignments))
+	s.Assert().Equal(original, assignments)
+}
+
 func TestWriteResultFileTo_WidensExistingRestrictiveMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "result.json")
 	// #nosec G306 -- intentional: simulating a pre-fix file left at 0600
@@ -170,6 +228,50 @@ func TestWriteResultFileTo_WidensExistingRestrictiveMode(t *testing.T) {
 	if got := info.Mode().Perm(); got != 0o644 {
 		t.Errorf("mode = %o, want 0644 (a stale 0600 file must be widened)", got)
 	}
+}
+
+func TestWriteSecretEnvironmentAtUsesProtectedFilesAndClearsStaleValues(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "secret-env")
+	require.NoError(t, writeSecretEnvironmentAt(
+		dir,
+		[]string{"SUPERFOO=sentinel-value", "LIFECYCLE_ONLY=other-sentinel"},
+		[]string{"SUPERFOO"},
+		"",
+	))
+	dirInfo, err := os.Stat(dir)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
+	path := filepath.Join(dir, "SUPERFOO")
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	// #nosec G304 -- test path is a fixed child of t.TempDir().
+	contents, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.True(t, string(contents) == "sentinel-value", "secret environment content changed")
+	_, err = os.Stat(filepath.Join(dir, "LIFECYCLE_ONLY"))
+	assert.True(t, os.IsNotExist(err))
+	require.NoError(t, writeSecretEnvironmentAt(dir, nil, nil, ""))
+	_, err = os.Stat(path)
+	assert.True(t, os.IsNotExist(err))
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
+func TestWriteSecretEnvironmentRequiresSecureRuntimeMount(t *testing.T) {
+	originalValidator := validateSecretEnvironmentRuntime
+	validateSecretEnvironmentRuntime = func(string) error {
+		return errors.New("runtime mount unavailable")
+	}
+	t.Cleanup(func() { validateSecretEnvironmentRuntime = originalValidator })
+
+	err := writeSecretEnvironment(
+		[]string{"SENTINEL_SECRET=redacted"},
+		[]string{"SENTINEL_SECRET"},
+		"",
+	)
+	require.EqualError(t, err, "runtime mount unavailable")
 }
 
 func TestWriteResultFileTo_WidensStaleModeEvenWhenContentUnchanged(t *testing.T) {

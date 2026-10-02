@@ -2,7 +2,6 @@ package driver
 
 import (
 	"context"
-	"io"
 
 	"github.com/devsy-org/devsy/pkg/compose"
 	config2 "github.com/devsy-org/devsy/pkg/config"
@@ -32,37 +31,12 @@ type BuildRequest struct {
 	Options              provider.BuildOptions
 }
 
-// ImageDriver is a capability interface for drivers that build and run a local
-// OCI image directly (e.g. Docker/Podman and Apple's `container`). It is named
-// for the behavior, not a concrete runtime, since multiple runtimes implement it.
+// ImageDriver is the legacy aggregate of runtime and image capabilities.
+// New callers should use the individual capabilities or an ImageBackend.
 type ImageDriver interface {
-	Driver
-
-	// InspectImage inspects the given image name
-	InspectImage(ctx context.Context, imageName string) (*config.ImageDetails, error)
-
-	// GetImageTag returns latest tag for input image id
-	GetImageTag(ctx context.Context, imageName string) (string, error)
-
-	// RunImageDevContainer runs an image-based devcontainer
-	RunImageDevContainer(ctx context.Context, params *RunImageDevContainerParams) error
-
-	// BuildDevContainer builds a devcontainer
-	BuildDevContainer(ctx context.Context, req BuildRequest) (*config.BuildInfo, error)
-
-	// PushDevContainer pushes the given image to a registry
-	PushDevContainer(ctx context.Context, image string) error
-
-	// TagDevContainer tags the given image with the given tag
-	TagDevContainer(ctx context.Context, image, tag string) error
-
-	// UpdateContainerUserUID updates the container user UID/GID to match local user
-	UpdateContainerUserUID(
-		ctx context.Context,
-		workspaceId string,
-		parsedConfig *config.DevContainerConfig,
-		writer io.Writer,
-	) error
+	ImageRunner
+	ImageBackend
+	ContainerUserUpdater
 }
 
 // ComposeDriver is a capability interface implemented by drivers that can run

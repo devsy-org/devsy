@@ -33,6 +33,10 @@ type appleDriver struct {
 }
 
 var (
+	_ driver.MountDeliveryDriver  = (*appleDriver)(nil)
+	_ driver.RecreatePolicyDriver = (*appleDriver)(nil)
+	_ driver.WorkspaceChowner     = (*appleDriver)(nil)
+
 	_ driver.ImageDriver = (*appleDriver)(nil)
 	_ driver.Preflighter = (*appleDriver)(nil)
 )
@@ -147,3 +151,9 @@ func (d *appleDriver) FindDevContainer(
 
 	return containerDetails, nil
 }
+
+func (d *appleDriver) RequiresMountStreaming() bool { return false }
+
+func (d *appleDriver) RecreateMode() driver.RecreateMode { return driver.RecreateDelete }
+
+func (d *appleDriver) RequiresWorkspaceChown() bool { return false }
