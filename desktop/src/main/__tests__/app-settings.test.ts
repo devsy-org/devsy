@@ -53,8 +53,14 @@ describe("normalizeAppSettings", () => {
   })
 
   it("accepts only the finite logging level set", () => {
-    expect(normalizeAppSettings({ logLevel: "trace" })).toMatchObject({ desktopLogLevel: "trace", cliCaptureLogLevel: "trace" })
-    expect(normalizeAppSettings({ logLevel: "verbose" })).toMatchObject({ desktopLogLevel: "info", cliCaptureLogLevel: "info" })
+    expect(normalizeAppSettings({ logLevel: "trace" })).toMatchObject({
+      desktopLogLevel: "trace",
+      cliCaptureLogLevel: "trace",
+    })
+    expect(normalizeAppSettings({ logLevel: "verbose" })).toMatchObject({
+      desktopLogLevel: "info",
+      cliCaptureLogLevel: "info",
+    })
     expect(() => sanitizeAppSettingsPatch({ logLevel: "verbose" })).toThrow()
   })
 

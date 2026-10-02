@@ -218,8 +218,9 @@ describe("ProviderJobs", () => {
       message: "status unavailable",
     })
 
-    await expect(jobs.retryRefresh("docker")).rejects.toThrow("still unavailable")
+    await expect(jobs.retryRefresh("docker")).rejects.toThrow(
+      "still unavailable",
+    )
     expect(jobs.get("docker")?.errorCode).toBe("provider_refresh_failed")
   })
-
 })

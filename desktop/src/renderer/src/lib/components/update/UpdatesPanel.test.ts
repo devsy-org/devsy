@@ -39,9 +39,9 @@ import UpdatesPanel from "./UpdatesPanel.svelte"
 
 function cardButton(label: RegExp): HTMLButtonElement | null {
   return (
-    Array.from(document.querySelectorAll<HTMLButtonElement>('button[role="radio"]')).find(
-      (b) => label.test(b.textContent ?? ""),
-    ) ?? null
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>('button[role="radio"]'),
+    ).find((b) => label.test(b.textContent ?? "")) ?? null
   )
 }
 
@@ -204,7 +204,11 @@ describe("UpdatesPanel status display", () => {
     getAppVersion.mockResolvedValue("1.17.0")
     getReleaseChannel.mockResolvedValue("stable")
     await initUpdateStore()
-    __setForTest({ state: "up-to-date", currentVersion: "1.17.0", code: "dev-mode" })
+    __setForTest({
+      state: "up-to-date",
+      currentVersion: "1.17.0",
+      code: "dev-mode",
+    })
     render(UpdatesPanel)
     await tick()
     await Promise.resolve()
@@ -217,13 +221,19 @@ describe("UpdatesPanel status display", () => {
     getAppVersion.mockResolvedValue("1.17.0")
     getReleaseChannel.mockResolvedValue("beta")
     await initUpdateStore()
-    __setForTest({ state: "up-to-date", currentVersion: "1.17.0", code: "channel-missing" })
+    __setForTest({
+      state: "up-to-date",
+      currentVersion: "1.17.0",
+      code: "channel-missing",
+    })
     render(UpdatesPanel)
     await tick()
     await Promise.resolve()
     await tick()
 
-    expect(document.body.textContent).toMatch(/no releases on this channel yet/i)
+    expect(document.body.textContent).toMatch(
+      /no releases on this channel yet/i,
+    )
   })
 
   it("renders error notice for malformed-version failures and does not claim up to date", async () => {
@@ -242,7 +252,9 @@ describe("UpdatesPanel status display", () => {
     await tick()
 
     expect(document.body.textContent).toMatch(/couldn't check for updates/i)
-    expect(document.body.textContent).toMatch(/invalid version from update feed/i)
+    expect(document.body.textContent).toMatch(
+      /invalid version from update feed/i,
+    )
     expect(document.body.textContent).not.toMatch(/devsy is up to date/i)
     const retryBtn = Array.from(document.querySelectorAll("button")).find((b) =>
       /try again/i.test(b.textContent ?? ""),

@@ -24,7 +24,8 @@ let alreadyLatest = $derived(
 let title = $derived.by(() => {
   if (alreadyLatest) return `'${providerName}' is already up to date`
   if (latestVersion) return `Update '${providerName}' to ${latestVersion}?`
-  if (currentVersion) return `Update '${providerName}' (currently ${currentVersion})?`
+  if (currentVersion)
+    return `Update '${providerName}' (currently ${currentVersion})?`
   return `Update '${providerName}'?`
 })
 

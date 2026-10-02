@@ -103,9 +103,7 @@ describe("LogStore", () => {
   it("confines traversal-shaped .log filenames to the workspace dir", () => {
     const outside = join(tempDir, "sibling.log")
     writeFileSync(outside, "outside-content")
-    expect(() => store.readLog(CTX, "ws-1", "../sibling.log")).toThrow(
-      /ENOENT/,
-    )
+    expect(() => store.readLog(CTX, "ws-1", "../sibling.log")).toThrow(/ENOENT/)
   })
 
   it("prune skips non-directory entries without aborting", () => {

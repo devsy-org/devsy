@@ -56,7 +56,9 @@ describe("DaemonState", () => {
   it("preserves a cached workspace status when later updates omit it", () => {
     const state = new DaemonState()
     expect(
-      state.updateWorkspaces([{ id: "ws1", lastUsed: "2024-01-01", status: "Running" }]),
+      state.updateWorkspaces([
+        { id: "ws1", lastUsed: "2024-01-01", status: "Running" },
+      ]),
     ).toBe(true)
     expect(
       state.updateWorkspaces([{ id: "ws1", lastUsed: "2024-01-02" }]),

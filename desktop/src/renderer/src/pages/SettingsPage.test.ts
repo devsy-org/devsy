@@ -36,10 +36,19 @@ describe("SettingsPage layout", () => {
   it("renders all settings sections as one page without section navigation links", () => {
     render(SettingsPage)
 
-    expect(screen.queryByRole("navigation", { name: "Settings sections" })).toBeNull()
+    expect(
+      screen.queryByRole("navigation", { name: "Settings sections" }),
+    ).toBeNull()
     expect(document.querySelectorAll('a[href^="#"]')).toHaveLength(0)
 
-    for (const name of ["General", "Startup", "Notifications", "Appearance", "Updates", "Advanced"]) {
+    for (const name of [
+      "General",
+      "Startup",
+      "Notifications",
+      "Appearance",
+      "Updates",
+      "Advanced",
+    ]) {
       expect(screen.getByRole("heading", { name, level: 2 })).toBeTruthy()
     }
   })

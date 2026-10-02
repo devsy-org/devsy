@@ -34,7 +34,8 @@ export function isChecking(): boolean {
 
 export function isDevMode(): boolean {
   return (
-    (state.current.state === "up-to-date" || state.current.state === "not-available") &&
+    (state.current.state === "up-to-date" ||
+      state.current.state === "not-available") &&
     state.current.code === "dev-mode"
   )
 }

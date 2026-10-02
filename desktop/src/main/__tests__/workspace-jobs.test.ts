@@ -105,7 +105,10 @@ describe("WorkspaceJobs", () => {
       refreshError: "offline",
     })
     await jobs.retryRefresh("ws")
-    expect(jobs.get("ws")).toMatchObject({ state: "failed", error: "command denied" })
+    expect(jobs.get("ws")).toMatchObject({
+      state: "failed",
+      error: "command denied",
+    })
   })
 
   it("invalidates polls on acceptance and completion", async () => {

@@ -15,7 +15,9 @@ const MAX_CONCURRENT = 50
 type CliLogOutput = "json" | "logfmt" | "text"
 type CliResultFormat = "auto" | "json" | "plain"
 
-function backpressureController(source: Readable): (r: void | Promise<void>) => void {
+function backpressureController(
+  source: Readable,
+): (r: void | Promise<void>) => void {
   let pending = 0
   return (result) => {
     if (!result || typeof (result as Promise<void>).then !== "function") return
@@ -209,7 +211,9 @@ export class CliRunner {
     this.env = buildEnv()
   }
 
-  setDiagnosticLogLevel(level: import("../shared/app-settings.js").LogLevel): void {
+  setDiagnosticLogLevel(
+    level: import("../shared/app-settings.js").LogLevel,
+  ): void {
     this.policy.diagnosticLogLevel = level
   }
 
@@ -224,7 +228,10 @@ export class CliRunner {
     ]
   }
 
-  private argsWithProtocol(args: string[], includeResultFormat = false): string[] {
+  private argsWithProtocol(
+    args: string[],
+    includeResultFormat = false,
+  ): string[] {
     const fullArgs = this.argsWithLogLevel(args)
     const hasFlag = (flag: string) =>
       fullArgs.some((arg) => arg === flag || arg.startsWith(`${flag}=`))
@@ -257,7 +264,8 @@ export class CliRunner {
   }
 
   async run<T>(args: string[]): Promise<T> {
-    const requestedFormat = requestedResultFormat(args) ?? this.policy.resultFormat
+    const requestedFormat =
+      requestedResultFormat(args) ?? this.policy.resultFormat
     if (requestedFormat !== "json") {
       throw new Error(
         `run() parses JSON results; got --result-format=${requestedFormat}. Use runRaw() for non-JSON output`,
@@ -297,10 +305,7 @@ export class CliRunner {
   async runRawStdin(args: string[], input: string): Promise<string> {
     await this.acquire()
     try {
-      return await this.spawnWithStdin(
-        this.argsWithProtocol(args),
-        input,
-      )
+      return await this.spawnWithStdin(this.argsWithProtocol(args), input)
     } catch (error: unknown) {
       throw this.wrapError(error)
     } finally {
@@ -360,11 +365,9 @@ export class CliRunner {
     workspaceId?: string,
   ): Promise<ChildProcess> {
     await this.acquire()
-    const child = spawn(
-      this.execPath,
-      this.argsWithProtocol(args),
-      { env: this.env },
-    )
+    const child = spawn(this.execPath, this.argsWithProtocol(args), {
+      env: this.env,
+    })
 
     this.activeChildren.add(child)
     if (workspaceId) {
@@ -410,9 +413,10 @@ export class CliRunner {
       // Store readline interface for cleanup
       ;(child as unknown as { _rlStderr?: typeof rl })._rlStderr = rl
     }
-
     // Expose a method to suppress callbacks (used by cancelFor timeout)
-    ;(child as unknown as { _suppressCallbacks?: () => void })._suppressCallbacks = () => {
+    ;(
+      child as unknown as { _suppressCallbacks?: () => void }
+    )._suppressCallbacks = () => {
       suppressCallbacks = true
     }
 
@@ -498,19 +502,32 @@ export class CliRunner {
             // Run lifecycle cleanup BEFORE suppressing callbacks/removing listeners
             // so finish(...) can properly clean up sessions and call onExit
             if (timedOut) {
-              const finishFn = (child as unknown as { _finish?: (code: number, cliError?: CLIError) => void })._finish
+              const finishFn = (
+                child as unknown as {
+                  _finish?: (code: number, cliError?: CLIError) => void
+                }
+              )._finish
               if (finishFn) {
-                finishFn(-1, { code: "timeout", message: "Process did not exit in time" })
+                finishFn(-1, {
+                  code: "timeout",
+                  message: "Process did not exit in time",
+                })
               }
             }
 
             // Now suppress callbacks at the source
-            const suppressFn = (child as unknown as { _suppressCallbacks?: () => void })._suppressCallbacks
+            const suppressFn = (
+              child as unknown as { _suppressCallbacks?: () => void }
+            )._suppressCallbacks
             if (suppressFn) suppressFn()
 
             // Close readline interfaces
-            const rlStdout = (child as unknown as { _rlStdout?: { close: () => void } })._rlStdout
-            const rlStderr = (child as unknown as { _rlStderr?: { close: () => void } })._rlStderr
+            const rlStdout = (
+              child as unknown as { _rlStdout?: { close: () => void } }
+            )._rlStdout
+            const rlStderr = (
+              child as unknown as { _rlStderr?: { close: () => void } }
+            )._rlStderr
             if (rlStdout) rlStdout.close()
             if (rlStderr) rlStderr.close()
 

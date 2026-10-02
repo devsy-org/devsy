@@ -240,7 +240,12 @@ const COMMANDS: Record<string, Handler> = {
   },
   machine_diagnostics_get: () => null,
   machine_diagnostics_refresh: () => ({
-    response: { schemaVersion: 1, machine: { id: "", context: "default", provider: "", state: "Running" }, source: { availability: "not_initialized", freshness: "unknown" }, cursor: { state: "none" } },
+    response: {
+      schemaVersion: 1,
+      machine: { id: "", context: "default", provider: "", state: "Running" },
+      source: { availability: "not_initialized", freshness: "unknown" },
+      cursor: { state: "none" },
+    },
     events: [],
     lastAttemptAt: new Date().toISOString(),
     historyGap: false,
@@ -313,22 +318,27 @@ const COMMANDS: Record<string, Handler> = {
 
   get_app_settings: () => MOCK_APP_SETTINGS,
   set_app_settings: (args) => {
-    const patch = (args?.patch ?? {}) as Partial<typeof MOCK_APP_SETTINGS.settings>
+    const patch = (args?.patch ?? {}) as Partial<
+      typeof MOCK_APP_SETTINGS.settings
+    >
     MOCK_APP_SETTINGS = {
       settings: {
         ...MOCK_APP_SETTINGS.settings,
         ...patch,
         openToTrayOnStartup:
-          (patch.runAtStartup ?? MOCK_APP_SETTINGS.settings.runAtStartup) === false
+          (patch.runAtStartup ?? MOCK_APP_SETTINGS.settings.runAtStartup) ===
+          false
             ? false
-            : (patch.openToTrayOnStartup ?? MOCK_APP_SETTINGS.settings.openToTrayOnStartup),
+            : (patch.openToTrayOnStartup ??
+              MOCK_APP_SETTINGS.settings.openToTrayOnStartup),
       },
       startup: {
         applied: true,
         enabled: patch.runAtStartup ?? MOCK_APP_SETTINGS.settings.runAtStartup,
-        status: (patch.runAtStartup ?? MOCK_APP_SETTINGS.settings.runAtStartup)
-          ? ("enabled" as const)
-          : ("disabled" as const),
+        status:
+          (patch.runAtStartup ?? MOCK_APP_SETTINGS.settings.runAtStartup)
+            ? ("enabled" as const)
+            : ("disabled" as const),
       },
     }
     return MOCK_APP_SETTINGS

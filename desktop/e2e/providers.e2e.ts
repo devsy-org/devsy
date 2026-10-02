@@ -127,7 +127,10 @@ test.describe("Provider lifecycle badges", () => {
         await (
           window as unknown as {
             electronAPI: {
-              invoke: (c: string, a?: Record<string, unknown>) => Promise<unknown>
+              invoke: (
+                c: string,
+                a?: Record<string, unknown>,
+              ) => Promise<unknown>
             }
           }
         ).electronAPI.invoke("provider_delete", { name: "lifecycleprobe" })

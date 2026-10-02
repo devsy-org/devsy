@@ -40,7 +40,8 @@ export function classifyCandidate(
   candidateVersion: string,
 ): CandidateResult {
   const current = semver.clean(currentVersion) ?? semver.valid(currentVersion)
-  const candidate = semver.clean(candidateVersion) ?? semver.valid(candidateVersion)
+  const candidate =
+    semver.clean(candidateVersion) ?? semver.valid(candidateVersion)
 
   if (!current || !candidate) {
     return { kind: "invalid", version: candidateVersion }
@@ -160,7 +161,9 @@ function settingsPath(): string {
 
 function loadSettings(): PersistedSettings {
   try {
-    return JSON.parse(readFileSync(settingsPath(), "utf-8")) as PersistedSettings
+    return JSON.parse(
+      readFileSync(settingsPath(), "utf-8"),
+    ) as PersistedSettings
   } catch {
     return {}
   }
@@ -189,7 +192,7 @@ function getCurrentVersion(): string | null {
     const v = app.getVersion()
     return v || null
   } catch (err) {
-      mainLog.error(
+    mainLog.error(
       "Auto-update: unable to read app version:",
       err instanceof Error ? err.message : String(err),
     )
@@ -261,11 +264,16 @@ function normalizeReleaseNotes(
 
 function classifyError(err: Error): UpdateErrorCode {
   const m = err.message.toLowerCase()
-  if (m.includes("cannot find channel") || (m.includes("404") && m.includes(".yml"))) {
+  if (
+    m.includes("cannot find channel") ||
+    (m.includes("404") && m.includes(".yml"))
+  ) {
     return "channel-missing"
   }
-  if (m.includes("net::") || m.includes("network") || m.includes("enotfound")) return "network"
-  if (m.includes("sha512") || m.includes("checksum") || m.includes("integrity")) return "verification"
+  if (m.includes("net::") || m.includes("network") || m.includes("enotfound"))
+    return "network"
+  if (m.includes("sha512") || m.includes("checksum") || m.includes("integrity"))
+    return "verification"
   return "feed-error"
 }
 
@@ -579,9 +587,7 @@ function getUpdater(): AppUpdater | null {
   return autoUpdater
 }
 
-async function runUpdateCheck(
-  autoUpdater: AppUpdater,
-): Promise<void> {
+async function runUpdateCheck(autoUpdater: AppUpdater): Promise<void> {
   try {
     await autoUpdater.checkForUpdates()
   } catch (err) {
@@ -601,7 +607,9 @@ export async function checkForUpdates(): Promise<void> {
   }
 }
 
-export async function switchReleaseChannel(channel: ReleaseChannel): Promise<void> {
+export async function switchReleaseChannel(
+  channel: ReleaseChannel,
+): Promise<void> {
   if (channel !== currentChannel && isChannelSwitchBlocked()) {
     throw channelSwitchBlockedError()
   }

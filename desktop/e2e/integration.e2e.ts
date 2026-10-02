@@ -298,10 +298,9 @@ test.describe
 
       await page.locator("table").waitFor({ timeout: 15000 })
 
-      await expect(page.locator("table")).not.toContainText(
-        "node-js-renamed",
-        { timeout: 10000 },
-      )
+      await expect(page.locator("table")).not.toContainText("node-js-renamed", {
+        timeout: 10000,
+      })
     })
   })
 

@@ -505,7 +505,9 @@ describe("buildTrayMenuTemplate", () => {
     const items = buildTrayMenuTemplate(model({}), actions)
     const prefs = items.find((item) => item.label === "Preferences")
     const submenu = prefs?.submenu as Electron.MenuItemConstructorOptions[]
-    const openSettings = submenu.find((item) => item.label === "Open Settings...")
+    const openSettings = submenu.find(
+      (item) => item.label === "Open Settings...",
+    )
     ;(openSettings as { click?: () => void }).click?.()
     expect(actions.showSettings).toHaveBeenCalledTimes(1)
   })

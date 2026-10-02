@@ -59,7 +59,9 @@ describe("CliRunner", () => {
   })
 
   it("passes the configured level without overriding explicit CLI levels", async () => {
-    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
+      typeof vi.fn
+    >
     mockExecFile.mockImplementation(
       (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
         callback(null, { stdout: "{}", stderr: "" })
@@ -76,7 +78,9 @@ describe("CliRunner", () => {
   })
 
   it("owns protocol defaults and preserves explicit protocol arguments", async () => {
-    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
+      typeof vi.fn
+    >
     mockExecFile.mockImplementation(
       (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
         callback(null, { stdout: "{}", stderr: "" })
@@ -93,7 +97,9 @@ describe("CliRunner", () => {
   })
 
   it("rejects non-JSON result formats on run before executing", async () => {
-    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
+      typeof vi.fn
+    >
     await expect(
       cli.run(["workspace", "list", "--result-format=plain"]),
     ).rejects.toThrow("Use runRaw() for non-JSON output")
@@ -101,7 +107,9 @@ describe("CliRunner", () => {
   })
 
   it("recognizes the legacy log-format alias as an explicit protocol argument", async () => {
-    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
+      typeof vi.fn
+    >
     mockExecFile.mockImplementation(
       (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
         callback(null, { stdout: "{}", stderr: "" })
@@ -114,10 +122,14 @@ describe("CliRunner", () => {
   })
 
   it("defaults desktop-launched CLI diagnostics to info", async () => {
-    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
-    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
-      callback(null, { stdout: "{}", stderr: "" })
-    })
+    const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
+      typeof vi.fn
+    >
+    mockExecFile.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
+        callback(null, { stdout: "{}", stderr: "" })
+      },
+    )
     await cli.run(["workspace", "list"])
     expect(mockExecFile.mock.calls[0][1]).toContain("info")
   })
@@ -173,8 +185,9 @@ describe("CliRunner", () => {
         },
       )
 
-      await expect(cli.run<{ id: string }>(["workspace", "list"]))
-        .resolves.toEqual({ id: "ws-1" })
+      await expect(
+        cli.run<{ id: string }>(["workspace", "list"]),
+      ).resolves.toEqual({ id: "ws-1" })
     })
 
     it("throws on non-zero exit code with stripped ANSI stderr", async () => {
@@ -204,7 +217,8 @@ describe("CliRunner", () => {
       >
       const cliErrorPayload = {
         code: "RATE_LIMITED",
-        message: "Rate limited by an upstream API. Wait and retry, or authenticate for a higher limit.",
+        message:
+          "Rate limited by an upstream API. Wait and retry, or authenticate for a higher limit.",
       }
       const stderrLine = JSON.stringify({
         level: "error",
@@ -233,18 +247,38 @@ describe("CliRunner", () => {
     })
 
     it("extracts a direct error envelope independently of diagnostic level", async () => {
-      const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
-      const envelope = { kind: "error", outcome: "error", code: "BROKEN", message: "failure", hint: "retry" }
-      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
-        const error = new Error("Command failed") as Error & { code: number; stderr: string }
-        error.code = 1
-        error.stderr = JSON.stringify(envelope)
-        callback(error, { stdout: "", stderr: error.stderr })
-      })
+      const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
+        typeof vi.fn
+      >
+      const envelope = {
+        kind: "error",
+        outcome: "error",
+        code: "BROKEN",
+        message: "failure",
+        hint: "retry",
+      }
+      mockExecFile.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
+          const error = new Error("Command failed") as Error & {
+            code: number
+            stderr: string
+          }
+          error.code = 1
+          error.stderr = JSON.stringify(envelope)
+          callback(error, { stdout: "", stderr: error.stderr })
+        },
+      )
       cli.setDiagnosticLogLevel("error")
-      const rejection = await cli.run<never>(["workspace", "up", "."]).catch((e) => e as Error & { cliError?: unknown })
+      const rejection = await cli
+        .run<never>(["workspace", "up", "."])
+        .catch((e) => e as Error & { cliError?: unknown })
       expect(rejection.message).toBe("failure")
-      expect(rejection.cliError).toEqual({ code: "BROKEN", message: "failure", hint: "retry", context: undefined })
+      expect(rejection.cliError).toEqual({
+        code: "BROKEN",
+        message: "failure",
+        hint: "retry",
+        context: undefined,
+      })
     })
   })
 
@@ -270,7 +304,10 @@ describe("CliRunner", () => {
       const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
       mockSpawn.mockReturnValue(child)
 
-      const promise = cli.runRawStdin(["secret", "set", "FOO", "--stdin"], "bar")
+      const promise = cli.runRawStdin(
+        ["secret", "set", "FOO", "--stdin"],
+        "bar",
+      )
       await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalled())
 
       // Regression guard: execFile's async { input } is a no-op, so the value must
@@ -283,7 +320,16 @@ describe("CliRunner", () => {
       await expect(promise).resolves.toBe("ok\n")
       expect(mockSpawn).toHaveBeenCalledWith(
         "/usr/local/bin/devsy",
-        ["secret", "set", "FOO", "--stdin", "--log-level", "info", "--log-output", "json"],
+        [
+          "secret",
+          "set",
+          "FOO",
+          "--stdin",
+          "--log-level",
+          "info",
+          "--log-output",
+          "json",
+        ],
         expect.objectContaining({ env: expect.any(Object) }),
       )
     })
@@ -370,12 +416,14 @@ describe("CliRunner", () => {
       const onExit = vi.fn()
       const onLine = vi.fn()
       await cli.runStreaming(["workspace", "up", "."], onLine, onExit)
-      child.stderr.push(JSON.stringify({
-        kind: "error",
-        outcome: "error",
-        code: "BROKEN",
-        message: "build failed",
-      }) + "\n")
+      child.stderr.push(
+        JSON.stringify({
+          kind: "error",
+          outcome: "error",
+          code: "BROKEN",
+          message: "build failed",
+        }) + "\n",
+      )
       child.stderr.push(null)
       await vi.waitFor(() => expect(onLine).toHaveBeenCalledTimes(1))
       child.emit("close", 1)
@@ -383,7 +431,12 @@ describe("CliRunner", () => {
       await vi.waitFor(() => expect(onExit).toHaveBeenCalledTimes(1))
       expect(onExit.mock.calls[0]).toEqual([
         1,
-        { code: "BROKEN", message: "build failed", hint: undefined, context: undefined },
+        {
+          code: "BROKEN",
+          message: "build failed",
+          hint: undefined,
+          context: undefined,
+        },
       ])
     })
   })

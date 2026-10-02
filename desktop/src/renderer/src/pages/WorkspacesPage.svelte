@@ -1,6 +1,9 @@
 <script lang="ts">
 import WorkspaceOperation from "$lib/components/workspace/WorkspaceOperation.svelte"
-import { workspaceJobBusy, workspaceJobInterruptible } from "$shared/workspace-operation.js"
+import {
+  workspaceJobBusy,
+  workspaceJobInterruptible,
+} from "$shared/workspace-operation.js"
 import {
   ArrowDownAZ,
   Box,

@@ -18,6 +18,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "check": "svelte-check --tsconfig src/renderer/tsconfig.json",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
     "postinstall": "electron-rebuild -f -w node-pty"
   },
   "dependencies": {
@@ -32,6 +34,7 @@
     "unique-names-generator": "^4.7.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.11",
     "@electron/rebuild": "4.2.0",
     "@internationalized/date": "3.12.4",
     "@lucide/svelte": "1.38.0",

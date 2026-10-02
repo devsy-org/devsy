@@ -11,10 +11,7 @@ vi.mock("$lib/ipc/events.js", async (importOriginal) => {
   return { ...mod, onUpdateStatus: async () => () => {} }
 })
 
-import {
-  __setForTest,
-  initUpdateStore,
-} from "$lib/stores/updates.svelte.js"
+import { __setForTest, initUpdateStore } from "$lib/stores/updates.svelte.js"
 import UpdateDialog from "./UpdateDialog.svelte"
 
 function bodyText(): string {
@@ -81,7 +78,11 @@ describe("UpdateDialog", () => {
   })
 
   it("renders dev-mode hint in not-available + dev-mode", () => {
-    __setForTest({ state: "not-available", currentVersion: "1.0.0", code: "dev-mode" })
+    __setForTest({
+      state: "not-available",
+      currentVersion: "1.0.0",
+      code: "dev-mode",
+    })
     render(UpdateDialog, { props: { open: true } })
     expect(bodyText()).toMatch(/packaged builds/i)
   })

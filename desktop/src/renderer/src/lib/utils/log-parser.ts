@@ -16,9 +16,7 @@ export function isRecoverableBuildFailure(
 }
 
 /** Whether a finished command succeeded according to the structured IPC result. */
-export function isCommandSuccess(
-  success?: boolean,
-): boolean {
+export function isCommandSuccess(success?: boolean): boolean {
   return success === true
 }
 

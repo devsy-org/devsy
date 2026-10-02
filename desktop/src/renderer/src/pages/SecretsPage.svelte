@@ -89,7 +89,10 @@ async function setAttached(secret: Secret, attached: boolean) {
     await refreshSecrets()
   } catch (err) {
     attachmentErrors = { ...attachmentErrors, [key]: extractErrorMessage(err) }
-    attachmentResets = { ...attachmentResets, [key]: (attachmentResets[key] ?? 0) + 1 }
+    attachmentResets = {
+      ...attachmentResets,
+      [key]: (attachmentResets[key] ?? 0) + 1,
+    }
   } finally {
     updatingAttachment = { ...updatingAttachment, [key]: false }
   }

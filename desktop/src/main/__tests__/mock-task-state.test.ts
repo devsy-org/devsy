@@ -47,22 +47,15 @@ describe("mock detached task persistence", () => {
 
   it("applies explicit task removal", () => {
     expect(
-      mergeTasks(
-        { "task-1": { status: "succeeded" } },
-        {},
-        ["task-1"],
-      ),
+      mergeTasks({ "task-1": { status: "succeeded" } }, {}, ["task-1"]),
     ).toEqual({})
   })
 
   it("does not recreate a task covered by a deletion tombstone", () => {
     expect(
-      mergeTasks(
-        {},
-        { "task-1": { status: "pending" } },
-        [],
-        { "task-1": true },
-      ),
+      mergeTasks({}, { "task-1": { status: "pending" } }, [], {
+        "task-1": true,
+      }),
     ).toEqual({})
   })
 
