@@ -234,10 +234,10 @@ func TestShouldChownWorkspace(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := shouldChownWorkspace(c.goos, c.isDockerDriver, c.isPodman, c.driverNeedsChown)
+			got := shouldChownWorkspace(c.goos, c.isPodman, !c.isDockerDriver || c.driverNeedsChown)
 			if got != c.want {
-				t.Errorf("shouldChownWorkspace(%q, %v, %v, %v) = %v, want %v",
-					c.goos, c.isDockerDriver, c.isPodman, c.driverNeedsChown, got, c.want)
+				t.Errorf("shouldChownWorkspace(%q, %v, %v) = %v, want %v",
+					c.goos, c.isPodman, !c.isDockerDriver || c.driverNeedsChown, got, c.want)
 			}
 		})
 	}

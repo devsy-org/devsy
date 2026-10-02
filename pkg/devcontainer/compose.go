@@ -465,7 +465,7 @@ func (r *runner) updateContainerUserUID(
 	ctx context.Context,
 	parsedConfig *config.DevContainerConfig,
 ) error {
-	dockerDriver, ok := r.driver.(driver.ImageDriver)
+	dockerDriver, ok := r.driver.(driver.ContainerUserUpdater)
 	if !ok {
 		return nil
 	}

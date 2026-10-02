@@ -552,19 +552,23 @@ func (r *runner) newContainerHostWarnings(p *resolveParams) ([]string, error) {
 }
 
 // deleteForRecreate removes the existing container before recreating it.
-// Docker containers are fully deleted; other drivers stop the container.
+// The runtime policy selects deletion or stopping.
 func (r *runner) deleteForRecreate(ctx context.Context) error {
-	if _, ok := r.driver.(driver.ImageDriver); ok {
+	switch driver.DriverRecreateMode(r.driver) {
+	case driver.RecreateDelete:
 		if err := r.Delete(ctx, DeleteOptions{}); err != nil {
 			return fmt.Errorf("delete devcontainer: %w", err)
 		}
 		return nil
-	}
 
-	if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
-		return fmt.Errorf("stop devcontainer: %w", err)
+	case driver.RecreateStop:
+		if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
+			return fmt.Errorf("stop devcontainer: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported recreate mode %q", driver.DriverRecreateMode(r.driver))
 	}
-	return nil
 }
 
 // injectDaemonEntrypoint adds the workspace daemon config to the container
@@ -732,7 +736,7 @@ func (r *runner) runContainer(
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
 
 	// Image drivers (Docker, Apple) build and run a local OCI image.
-	if imageDriver, ok := r.driver.(driver.ImageDriver); ok {
+	if imageDriver, ok := r.driver.(driver.ImageRunner); ok {
 		return imageDriver.RunImageDevContainer(ctx, &driver.RunImageDevContainerParams{
 			WorkspaceID:          r.id,
 			Options:              runOptions,

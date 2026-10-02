@@ -509,10 +509,8 @@ func (r *runner) executeBuild(
 		return buildInfo, nil
 	}
 
-	// check if we should fallback to dockerless.
-	// This should only be OSS kubernetes as of March 06, 2025.
-	dockerDriver, ok := r.driver.(driver.ImageDriver)
-	if options.ForceDockerless || !ok {
+	// Without an image backend, builds use the existing dockerless fallback.
+	if options.ForceDockerless || r.imageBackend == nil {
 		if r.workspaceConfig.Agent.Dockerless.Disabled == pkgconfig.BoolTrue {
 			return nil, fmt.Errorf(
 				"cannot build devcontainer because driver is non-docker and dockerless fallback is disabled",
@@ -530,7 +528,7 @@ func (r *runner) executeBuild(
 		})
 	}
 
-	return dockerDriver.BuildDevContainer(ctx, driver.BuildRequest{
+	return r.imageBackend.BuildDevContainer(ctx, driver.BuildRequest{
 		PrebuildHash:         prebuildHash,
 		ParsedConfig:         params.parsedConfig,
 		ExtendedBuildInfo:    params.extendedBuildInfo,

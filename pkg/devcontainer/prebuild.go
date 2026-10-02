@@ -13,9 +13,8 @@ import (
 )
 
 func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (string, error) {
-	dockerDriver, ok := r.driver.(driver.ImageDriver)
-	if !ok {
-		return "", fmt.Errorf("building only supported with docker driver")
+	if r.imageBackend == nil {
+		return "", fmt.Errorf("building requires an image backend")
 	}
 
 	substitutedConfig, substitutionContext, err := r.getSubstitutedConfig(options.CLIOptions)
@@ -53,7 +52,7 @@ func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (stri
 	}
 
 	if err := r.pushPrebuildImage(ctx, pushPrebuildImageParams{
-		dockerDriver:      dockerDriver,
+		imagePublisher:    r.imageBackend,
 		substitutedConfig: substitutedConfig,
 		buildInfo:         buildInfo,
 		prebuildImage:     prebuildImage,
@@ -88,7 +87,7 @@ func (r *runner) determinePrebuildImage(
 }
 
 type pushPrebuildImageParams struct {
-	dockerDriver      driver.ImageDriver
+	imagePublisher    driver.ImagePublisher
 	substitutedConfig *config.SubstitutedConfig
 	buildInfo         *config.BuildInfo
 	prebuildImage     string
@@ -98,7 +97,7 @@ type pushPrebuildImageParams struct {
 
 func (r *runner) pushPrebuildImage(ctx context.Context, params pushPrebuildImageParams) error {
 	if isDockerComposeConfig(params.substitutedConfig.Config) {
-		if err := params.dockerDriver.TagDevContainer(
+		if err := params.imagePublisher.TagDevContainer(
 			ctx,
 			params.buildInfo.ImageName,
 			params.prebuildImage,
@@ -122,12 +121,12 @@ func (r *runner) pushPrebuildImage(ctx context.Context, params pushPrebuildImage
 		)
 	}
 
-	return tagAndPushImages(ctx, params.dockerDriver, params.prebuildImage, params.buildInfo.Tags)
+	return tagAndPushImages(ctx, params.imagePublisher, params.prebuildImage, params.buildInfo.Tags)
 }
 
 func tagAndPushImages(
 	ctx context.Context,
-	dockerDriver driver.ImageDriver,
+	imagePublisher driver.ImagePublisher,
 	prebuildImage string,
 	tags []string,
 ) error {
@@ -141,14 +140,14 @@ func tagAndPushImages(
 
 	// tag the image
 	for _, imageRef := range imageRefs {
-		if err := dockerDriver.TagDevContainer(ctx, prebuildImage, imageRef); err != nil {
+		if err := imagePublisher.TagDevContainer(ctx, prebuildImage, imageRef); err != nil {
 			return fmt.Errorf("tag image: %w", err)
 		}
 	}
 
 	// push the image to the registry
 	for _, imageRef := range imageRefs {
-		if err := dockerDriver.PushDevContainer(ctx, imageRef); err != nil {
+		if err := imagePublisher.PushDevContainer(ctx, imageRef); err != nil {
 			return fmt.Errorf("push image: %w", err)
 		}
 	}

@@ -243,3 +243,19 @@ func TestNewAgentDelivery_MicrosandboxUsesShellDelivery(t *testing.T) {
 		t.Fatalf("microsandbox driver must use shell delivery, got %T", d)
 	}
 }
+
+func TestNewAgentDelivery_UnnamedRuntimeWithArgvExec(t *testing.T) {
+	opts := FactoryOptions{
+		WorkspaceConfig: &provider.AgentWorkspaceInfo{
+			Agent: provider.ProviderAgentConfig{Driver: "external-test"},
+		},
+		ArgvExec:                   func(_ context.Context, _ []string, _ driver.Streams) error { return nil },
+		IsRemoteDocker:             true,
+		KubernetesAgentInstallPath: testKubernetesInstallPath,
+	}
+	d := NewAgentDelivery(opts)
+	native, ok := d.(*KubernetesDelivery)
+	require.True(t, ok)
+	assert.NotNil(t, native.Exec)
+	assert.Empty(t, native.InstallPath)
+}

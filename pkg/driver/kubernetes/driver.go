@@ -48,6 +48,11 @@ func NewKubernetesDriver(
 
 // The kubernetes driver runs devcontainers as pods and can reprovision them.
 var (
+	_ driver.MountDeliveryDriver  = (*KubernetesDriver)(nil)
+	_ driver.RecreatePolicyDriver = (*KubernetesDriver)(nil)
+	_ driver.WorkspaceChowner     = (*KubernetesDriver)(nil)
+	_ driver.ArgvExecDriver       = (*KubernetesDriver)(nil)
+
 	_ driver.ReprovisioningDriver = (*KubernetesDriver)(nil)
 	_ driver.Preflighter          = (*KubernetesDriver)(nil)
 )
@@ -273,3 +278,9 @@ func (k *KubernetesDriver) deleteWorkspaceSecrets(ctx context.Context, workspace
 
 	return nil
 }
+
+func (d *KubernetesDriver) RequiresMountStreaming() bool { return true }
+
+func (d *KubernetesDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
+
+func (d *KubernetesDriver) RequiresWorkspaceChown() bool { return true }

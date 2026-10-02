@@ -18,7 +18,6 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
-	dockerdriver "github.com/devsy-org/devsy/pkg/driver/docker"
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -43,15 +42,19 @@ type microsandboxDriver struct {
 	client               sandboxClient
 	idLabels             []string
 	defaults             specDefaults
-	workspaceInfo        *provider.AgentWorkspaceInfo
-	docker               driver.ImageDriver
 	workspaceMountPolicy workspaceMountPolicy
 }
 
 var (
+	_ driver.MountDeliveryDriver  = (*microsandboxDriver)(nil)
+	_ driver.RecreatePolicyDriver = (*microsandboxDriver)(nil)
+	_ driver.WorkspaceChowner     = (*microsandboxDriver)(nil)
+	_ driver.ArgvExecDriver       = (*microsandboxDriver)(nil)
+
 	_ driver.RunOptionsDriver        = (*microsandboxDriver)(nil)
 	_ driver.ReprovisioningDriver    = (*microsandboxDriver)(nil)
-	_ driver.ImageDriver             = (*microsandboxDriver)(nil)
+	_ driver.ImageRunner             = (*microsandboxDriver)(nil)
+	_ driver.ImageInspector          = (*microsandboxDriver)(nil)
 	_ driver.Preflighter             = (*microsandboxDriver)(nil)
 	_ driver.ProvisioningPreflighter = (*microsandboxDriver)(nil)
 )
@@ -119,7 +122,6 @@ func NewMicrosandboxDriver(
 	)
 	d := newDriver(client, workspaceInfo.CLIOptions.IDLabels, defaults)
 	d.workspaceMountPolicy = workspacePolicy
-	d.workspaceInfo = workspaceInfo
 	return d, nil
 }
 
@@ -199,7 +201,7 @@ func (d *microsandboxDriver) CommandDevContainer(
 	})
 }
 
-// CommandContainerArgv satisfies the podExecCapableDriver interface that
+// CommandContainerArgv satisfies the ArgvExecDriver interface that
 // pkg/devcontainer detects to stream the agent binary in over stdin.
 func (d *microsandboxDriver) CommandContainerArgv(
 	ctx context.Context,
@@ -254,33 +256,6 @@ func (d *microsandboxDriver) InspectImage(
 
 func (d *microsandboxDriver) GetImageTag(_ context.Context, imageName string) (string, error) {
 	return imageName, nil
-}
-
-func (d *microsandboxDriver) BuildDevContainer(
-	ctx context.Context,
-	req driver.BuildRequest,
-) (*config.BuildInfo, error) {
-	dockerDriver, err := d.dockerImageDriver()
-	if err != nil {
-		return nil, err
-	}
-	return dockerDriver.BuildDevContainer(ctx, req)
-}
-
-func (d *microsandboxDriver) PushDevContainer(ctx context.Context, image string) error {
-	dockerDriver, err := d.dockerImageDriver()
-	if err != nil {
-		return err
-	}
-	return dockerDriver.PushDevContainer(ctx, image)
-}
-
-func (d *microsandboxDriver) TagDevContainer(ctx context.Context, image, tag string) error {
-	dockerDriver, err := d.dockerImageDriver()
-	if err != nil {
-		return err
-	}
-	return dockerDriver.TagDevContainer(ctx, image, tag)
 }
 
 func (d *microsandboxDriver) UpdateContainerUserUID(
@@ -404,21 +379,6 @@ func (d *microsandboxDriver) runFromOptions(
 		return fmt.Errorf("create microsandbox VM: %w", err)
 	}
 	return nil
-}
-
-func (d *microsandboxDriver) dockerImageDriver() (driver.ImageDriver, error) {
-	if d.docker != nil {
-		return d.docker, nil
-	}
-	if d.workspaceInfo == nil {
-		return nil, fmt.Errorf("microsandbox build requires workspace info")
-	}
-	dd, err := dockerdriver.NewDockerDriver(d.workspaceInfo)
-	if err != nil {
-		return nil, fmt.Errorf("microsandbox needs docker to build this devcontainer: %w", err)
-	}
-	d.docker = dd
-	return dd, nil
 }
 
 // buildSpec resolves sizing from, in priority order, the operator-configured
@@ -627,3 +587,7 @@ func ceilBytesToUint32(bytes, unit uint64) uint32 {
 	}
 	return clampUint64ToUint32(value)
 }
+
+func (d *microsandboxDriver) RequiresMountStreaming() bool { return false }
+
+func (d *microsandboxDriver) RecreateMode() driver.RecreateMode { return driver.RecreateDelete }

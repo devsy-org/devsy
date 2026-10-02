@@ -128,17 +128,6 @@ func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Dura
 	return r.legacyInject(ctx, timeout)
 }
 
-// podExecCapableDriver is implemented by the kubernetes driver, decoupling
-// delivery wiring from the driver package.
-type podExecCapableDriver interface {
-	CommandContainerArgv(
-		ctx context.Context,
-		workspaceID string,
-		argv []string,
-		streams driver.Streams,
-	) error
-}
-
 func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 	dockerCmd := "docker"
 	var dockerEnv []string
@@ -151,9 +140,9 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 
 	execFn := delivery.CommandFunc(r.driver.CommandDevContainer, r.id)
 
-	var podExec delivery.PodExecFunc
-	if d, ok := r.driver.(podExecCapableDriver); ok {
-		podExec = func(ctx context.Context, argv []string, streams driver.Streams) error {
+	var argvExec delivery.ArgvExecFunc
+	if d, ok := r.driver.(driver.ArgvExecDriver); ok {
+		argvExec = func(ctx context.Context, argv []string, streams driver.Streams) error {
 			return d.CommandContainerArgv(ctx, r.id, argv, streams)
 		}
 	}
@@ -168,25 +157,18 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 		ContainerID:                r.id,
 		DownloadURL:                r.resolvedAgentDownloadURL(),
 		ExecFunc:                   execFn,
-		PodExec:                    podExec,
+		ArgvExec:                   argvExec,
 		KubernetesAgentInstallPath: r.workspaceConfig.Agent.Kubernetes.AgentInstallPath,
 	})
 }
 
-// deliveryArch returns the target arch for the agent binary. For kubernetes the
-// cluster arch can differ from the host, so a lookup failure is surfaced rather
-// than guessing the host arch: streaming a wrong-arch binary would succeed here
-// but fail when the agent starts, after the legacy fallback can no longer run.
 func (r *runner) deliveryArch(ctx context.Context) (string, error) {
-	if r.workspaceConfig.Agent.Driver != provider2.KubernetesDriver {
-		return runtime.GOARCH, nil
-	}
 	arch, err := r.driver.TargetArchitecture(ctx, r.id)
 	if err != nil {
-		return "", fmt.Errorf("resolve cluster architecture: %w", err)
+		return "", fmt.Errorf("resolve target architecture: %w", err)
 	}
 	if arch == "" {
-		return "", fmt.Errorf("cluster architecture is empty")
+		return "", fmt.Errorf("target architecture is empty")
 	}
 	return arch, nil
 }
@@ -406,20 +388,17 @@ func (r *runner) buildSetupCommand(compressed, workspaceConfigCompressed string)
 }
 
 func (r *runner) addSetupFlags(args *[]string) {
-	_, isDockerDriver := r.driver.(driver.ImageDriver)
-
-	r.addChownFlag(args, isDockerDriver)
-	r.addDriverFlags(args, isDockerDriver)
+	r.addChownFlag(args)
+	r.addDriverFlags(args)
 	r.addPlatformFlags(args)
 	r.addDotfilesFlags(args)
 	r.addPrebuildFlag(args)
 	r.addDebugFlag(args)
 }
 
-func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
+func (r *runner) addChownFlag(args *[]string) {
 	if shouldChownWorkspace(
 		runtime.GOOS,
-		isDockerDriver,
 		r.isPodmanRuntime(),
 		r.driverRequiresWorkspaceChown(),
 	) {
@@ -431,13 +410,12 @@ func (r *runner) addChownFlag(args *[]string, isDockerDriver bool) {
 // folder to the remote user during setup. Podman and drivers reporting
 // driverNeedsChown expose bind mounts as root-owned in the guest, so a non-root
 // remote user can't enter the workspace folder otherwise.
-func shouldChownWorkspace(goos string, isDockerDriver, isPodman, driverNeedsChown bool) bool {
-	return goos == goosLinux || !isDockerDriver || isPodman || driverNeedsChown
+func shouldChownWorkspace(goos string, isPodman, driverNeedsChown bool) bool {
+	return goos == goosLinux || isPodman || driverNeedsChown
 }
 
 func (r *runner) driverRequiresWorkspaceChown() bool {
-	c, ok := r.driver.(driver.WorkspaceChowner)
-	return ok && c.RequiresWorkspaceChown()
+	return driver.DriverRequiresWorkspaceChown(r.driver)
 }
 
 // isPodmanRuntime reports whether the docker driver is backed by the Podman
@@ -446,8 +424,8 @@ func (r *runner) isPodmanRuntime() bool {
 	return strings.EqualFold(r.workspaceConfig.Agent.Docker.Runtime, string(docker.RuntimePodman))
 }
 
-func (r *runner) addDriverFlags(args *[]string, isDockerDriver bool) {
-	if !isDockerDriver {
+func (r *runner) addDriverFlags(args *[]string) {
+	if driver.DriverRequiresMountStreaming(r.driver) {
 		*args = append(*args, names.Flag(names.StreamMounts))
 	}
 	if r.workspaceConfig.Agent.InjectGitCredentials != stringFalse {
