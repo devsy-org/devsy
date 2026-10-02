@@ -46,9 +46,10 @@ var (
 
 // Sentinels for container lifecycle failures; match with errors.Is.
 var (
-	ErrContainerTerminal = errors.New("container in terminal state")
-	ErrContainerExited   = errors.New("container exited after start")
-	ErrImageNotFound     = errors.New("image not found")
+	ErrContainerTerminal  = errors.New("container in terminal state")
+	ErrContainerExited    = errors.New("container exited after start")
+	ErrImageNotFound      = errors.New("image not found")
+	ErrRuntimeUnavailable = errors.New("container runtime unavailable")
 )
 
 var imageNotFoundMarkers = []string{
@@ -234,7 +235,28 @@ func (r *DockerHelper) Ping(ctx context.Context) error {
 	cctx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
 
-	return runCmdCombined(cctx, r.buildCmd(cctx, "info"))
+	err := runCmdCombined(cctx, r.buildCmd(cctx, "info"))
+	if err != nil && cctx.Err() != nil {
+		return errors.Join(err, cctx.Err())
+	}
+	return err
+}
+
+// CheckRuntimeHealth reports only control-plane availability failures. A
+// responsive runtime error must not end an injection retry as a daemon outage.
+func (r *DockerHelper) CheckRuntimeHealth(ctx context.Context) error {
+	err := r.Ping(ctx)
+	if err == nil {
+		return nil
+	}
+	lower := strings.ToLower(err.Error())
+	if errors.Is(err, context.DeadlineExceeded) ||
+		strings.Contains(lower, "cannot connect") ||
+		strings.Contains(lower, "connection refused") ||
+		strings.Contains(lower, "no such file or directory") {
+		return fmt.Errorf("%w: %v", ErrRuntimeUnavailable, err)
+	}
+	return nil
 }
 
 // StartPodmanMachine starts the default Podman machine, which must already exist.

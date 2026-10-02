@@ -2,6 +2,7 @@ package up
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -236,16 +238,42 @@ var _ = ginkgo.Describe(
 )
 
 func eventuallySSH(f *framework.Framework, ctx context.Context, workspace, command string) string {
+	const (
+		sshReadinessProbeTimeout   = 8 * time.Second
+		sshReadinessOverallTimeout = 60 * time.Second
+		sshReadinessPollInterval   = 2 * time.Second
+	)
 	var output string
-	gomega.Eventually(func() bool {
-		probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	consecutiveTimeouts := 0
+	gomega.Eventually(func() (bool, error) {
+		probeCtx, cancel := context.WithTimeout(ctx, sshReadinessProbeTimeout)
 		defer cancel()
 		out, err := f.DevsySSHOnce(probeCtx, workspace, command)
 		if err != nil {
-			return false
+			if errors.Is(err, docker.ErrRuntimeUnavailable) {
+				return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(err)
+			}
+			if errors.Is(probeCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+				consecutiveTimeouts++
+				if consecutiveTimeouts == 2 {
+					healthCtx, healthCancel := context.WithTimeout(ctx, 10*time.Second)
+					helper := &docker.DockerHelper{
+						DockerCommand: filepath.Join(f.DevsyBinDir, podmanRootfulWrapperName),
+					}
+					healthErr := helper.CheckRuntimeHealth(healthCtx)
+					healthCancel()
+					consecutiveTimeouts = 0
+					if errors.Is(healthErr, docker.ErrRuntimeUnavailable) {
+						return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(healthErr)
+					}
+				}
+			} else {
+				consecutiveTimeouts = 0
+			}
+			return false, nil
 		}
 		output = strings.TrimSpace(out)
-		return true
-	}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(gomega.BeTrue())
+		return true, nil
+	}).WithTimeout(sshReadinessOverallTimeout).WithPolling(sshReadinessPollInterval).Should(gomega.BeTrue())
 	return output
 }

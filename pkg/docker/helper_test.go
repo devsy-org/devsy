@@ -484,6 +484,37 @@ exit 1
 		"a fast, native refusal must not look like our own timeout")
 }
 
+func TestCheckRuntimeHealthClassifiesControlPlaneFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{"unavailable", "Cannot connect to the Podman socket", true},
+		{"responsive error", "permission denied for image", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := writeScript(
+				t,
+				t.TempDir(),
+				"runtime-fake",
+				"#!/bin/sh\necho '"+tc.output+"' >&2\nexit 1\n",
+			)
+			h := &DockerHelper{DockerCommand: bin}
+			err := h.CheckRuntimeHealth(context.Background())
+			assert.Equal(t, tc.want, errors.Is(err, ErrRuntimeUnavailable))
+		})
+	}
+}
+
+func TestCheckRuntimeHealthClassifiesPingTimeout(t *testing.T) {
+	withPingTimeout(t, 20*time.Millisecond)
+	bin := writeScript(t, t.TempDir(), "runtime-fake", "#!/bin/sh\nsleep 30\n")
+	h := &DockerHelper{DockerCommand: bin}
+	err := h.CheckRuntimeHealth(context.Background())
+	require.ErrorIs(t, err, ErrRuntimeUnavailable)
+}
+
 func TestPing_SelfInflictedTimeoutIsDistinguishableFromDaemonDown(t *testing.T) {
 	withPingTimeout(t, 50*time.Millisecond)
 

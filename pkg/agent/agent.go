@@ -431,14 +431,15 @@ type ExecRequest struct {
 type Exec func(ctx context.Context, req ExecRequest) error
 
 type TunnelOptions struct {
-	Exec            Exec
-	User            string
-	Stdin           io.Reader
-	Stdout          io.Writer
-	Stderr          io.Writer
-	Timeout         time.Duration
-	RemoteAgentPath string
-	DownloadURL     string
+	Exec               Exec
+	RuntimeHealthCheck func(context.Context) error
+	User               string
+	Stdin              io.Reader
+	Stdout             io.Writer
+	Stderr             io.Writer
+	Timeout            time.Duration
+	RemoteAgentPath    string
+	DownloadURL        string
 }
 
 func Tunnel(ctx context.Context, opts TunnelOptions) error {
@@ -462,6 +463,7 @@ func Tunnel(ctx context.Context, opts TunnelOptions) error {
 		DownloadURL:                 opts.DownloadURL,
 		PreferDownloadFromRemoteUrl: new(false),
 		Timeout:                     opts.Timeout,
+		RuntimeHealthCheck:          opts.RuntimeHealthCheck,
 	}); err != nil {
 		return err
 	}
