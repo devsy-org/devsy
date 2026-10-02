@@ -4,6 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$initTimeout = [TimeSpan]::FromSeconds(90)
 $startTimeout = [TimeSpan]::FromSeconds(90)
 $readinessTimeout = [TimeSpan]::FromSeconds(45)
 $probeTimeout = [TimeSpan]::FromSeconds(7)
@@ -19,7 +20,8 @@ function Invoke-BoundedCommand {
             # Podman can spawn forwarding processes. Kill the child tree before returning.
             try { $process.Kill($true) } catch { Write-Host "[podman-windows] kill child tree: $($_.Exception.Message)" }
             $null = $process.WaitForExit(5000)
-            return @{ TimedOut = $true; ExitCode = $null; Output = 'command timed out' }
+            $output = (Get-Content $stdout -Raw -ErrorAction SilentlyContinue) + (Get-Content $stderr -Raw -ErrorAction SilentlyContinue)
+            return @{ TimedOut = $true; ExitCode = $null; Output = "command timed out: $output" }
         }
         return @{ TimedOut = $false; ExitCode = $process.ExitCode; Output = ((Get-Content $stdout -Raw -ErrorAction SilentlyContinue) + (Get-Content $stderr -Raw -ErrorAction SilentlyContinue)) }
     } catch {
@@ -53,10 +55,20 @@ function Start-MachineAttempt {
     param([int]$Attempt)
     foreach ($entry in @(@{ Args = @('machine', 'init') }, @{ Args = @('machine', 'set', '--rootful') })) {
         $machineArgs = $entry.Args
-        $result = Invoke-BoundedCommand $PodmanPath $machineArgs ([TimeSpan]::FromSeconds(20))
+        $timeout = if ($machineArgs[1] -eq 'init') { $initTimeout } else { [TimeSpan]::FromSeconds(20) }
+        $started = Get-Date
+        $result = Invoke-BoundedCommand $PodmanPath $machineArgs $timeout
+        Write-Host "[podman-windows] $($machineArgs -join ' ') attempt=$Attempt elapsed=$((Get-Date) - $started)"
+        if ($machineArgs[1] -eq 'init' -and $result.TimedOut) {
+            return "PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT attempt=$Attempt output=$($result.Output)"
+        }
         if ($machineArgs[1] -eq 'init' -and -not $result.TimedOut -and
             $result.ExitCode -ne 0 -and $result.Output -match 'already exists') {
-            Write-Host "[podman-windows] machine already exists; continuing to rootful setup"
+            $existing = Invoke-BoundedCommand $PodmanPath @('machine', 'inspect') ([TimeSpan]::FromSeconds(5))
+            if ($existing.TimedOut -or $existing.ExitCode -ne 0) {
+                return "PODMAN_WINDOWS_MACHINE_START_FAILED attempt=$Attempt machine exists without a usable record: $($existing.Output)"
+            }
+            Write-Host '[podman-windows] machine already exists; continuing to rootful setup'
             continue
         }
         if ($result.TimedOut -or $result.ExitCode -ne 0) {
@@ -88,6 +100,19 @@ function Start-MachineAttempt {
     return "PODMAN_WINDOWS_READINESS_TIMEOUT attempt=$Attempt last=$($result.Output)"
 }
 
+function Remove-StalePodmanDistribution {
+    $distributions = Invoke-BoundedCommand 'wsl.exe' @('--list', '--quiet') ([TimeSpan]::FromSeconds(5))
+    if ($distributions.TimedOut -or $distributions.ExitCode -ne 0) {
+        Write-Host "[podman-windows] WSL distribution list unavailable: $($distributions.Output)"
+        return
+    }
+    $names = ($distributions.Output -replace "`0", '') -split "`r?`n" | ForEach-Object { $_.Trim().Trim([char]0xFEFF) }
+    if ($names -contains 'podman-machine-default') {
+        $result = Invoke-BoundedCommand 'wsl.exe' @('--unregister', 'podman-machine-default') ([TimeSpan]::FromSeconds(15))
+        Write-Host "[podman-windows] unregister exact Podman distribution: exit=$($result.ExitCode) timeout=$($result.TimedOut) $($result.Output)"
+    }
+}
+
 function Invoke-PodmanBootstrap {
     if (-not (Test-Path $PodmanPath)) { throw "podman.exe not found: $PodmanPath" }
     $result = Invoke-BoundedCommand 'wsl.exe' @('--set-default-version', '2') ([TimeSpan]::FromSeconds(15))
@@ -108,6 +133,7 @@ function Invoke-PodmanBootstrap {
             $result = Invoke-BoundedCommand $entry.Path $entry.Args ([TimeSpan]::FromSeconds(10))
             Write-Host "[podman-windows] reset $($entry.Path) $($entry.Args -join ' '): exit=$($result.ExitCode) timeout=$($result.TimedOut) $($result.Output)"
         }
+        Remove-StalePodmanDistribution
     }
 }
 
