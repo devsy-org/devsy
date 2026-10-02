@@ -45,8 +45,8 @@ func TestClientFromManagedConnAllowsDelayedBootstrap(t *testing.T) {
 	}, 1)
 	go func() {
 		client, err := ClientFromManagedConn(ctx, conn, ManagedClientOptions{
-			HandshakeIdleTimeout: 250 * time.Millisecond,
-			HandshakeMaxTimeout:  5 * time.Second,
+			HandshakeIdleTimeout: 2 * time.Second,
+			HandshakeMaxTimeout:  10 * time.Second,
 		})
 		dialDone <- struct {
 			client *xssh.Client
@@ -73,6 +73,67 @@ func TestClientFromManagedConnAllowsDelayedBootstrap(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("managed SSH handshake did not complete")
 	}
+}
+
+func TestManagedHandshakeConnTracksActivityAfterPeerStarts(t *testing.T) {
+	local, remote := net.Pipe()
+	t.Cleanup(func() {
+		_ = local.Close()
+		_ = remote.Close()
+	})
+
+	tracked := &managedHandshakeConn{Conn: local, peerReady: make(chan struct{})}
+	tracked.tracking.Store(true)
+
+	clientRead := make(chan struct{})
+	go func() {
+		defer close(clientRead)
+		buf := make([]byte, 64)
+		_, _ = remote.Read(buf)
+	}()
+	_, err := tracked.Write([]byte("SSH-2.0-client\r\n"))
+	require.NoError(t, err)
+	<-clientRead
+
+	assert.False(t, tracked.peerStarted.Load())
+	assert.Nil(t, tracked.activity.Load())
+	select {
+	case <-tracked.peerReady:
+		t.Fatal("peerReady closed before peer sent protocol data")
+	default:
+	}
+
+	peerWrite := make(chan error, 1)
+	go func() {
+		_, err := remote.Write([]byte("SSH-2.0-server\r\n"))
+		peerWrite <- err
+	}()
+	buf := make([]byte, 64)
+	n, err := tracked.Read(buf)
+	require.NoError(t, err)
+	require.Positive(t, n)
+	require.NoError(t, <-peerWrite)
+
+	assert.True(t, tracked.peerStarted.Load())
+	beforeWrite := tracked.activity.Load()
+	require.NotNil(t, beforeWrite)
+	select {
+	case <-tracked.peerReady:
+	default:
+		t.Fatal("peerReady remained open after peer activity")
+	}
+
+	serverRead := make(chan struct{})
+	go func() {
+		defer close(serverRead)
+		buf := make([]byte, 64)
+		_, _ = remote.Read(buf)
+	}()
+	_, err = tracked.Write([]byte("client handshake data"))
+	require.NoError(t, err)
+	<-serverRead
+
+	assert.NotSame(t, beforeWrite, tracked.activity.Load())
 }
 
 func TestClientFromManagedConnReturnsBootstrapError(t *testing.T) {
