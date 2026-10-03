@@ -16,7 +16,9 @@ const (
 )
 
 func TestStartupFencesInterruptedContextDeletion(t *testing.T) {
-	t.Setenv(config.EnvHome, t.TempDir())
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	t.Setenv(config.EnvHome, home)
 	t.Setenv(config.EnvConfig, "")
 	configPath, err := config.GetConfigPath()
 	require.NoError(t, err)
