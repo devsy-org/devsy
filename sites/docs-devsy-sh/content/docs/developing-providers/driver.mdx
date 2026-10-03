@@ -7,13 +7,16 @@ In Devsy you can specify a **Driver** in the [Agent's configuration](./agent.mdx
 
 A Driver indicates how Devsy deploys the workspace container.
 
-There are five types of drivers:
+Devsy currently supports five built-in driver types:
 
 - Docker driver
 - Kubernetes driver
 - Apple driver
 - Microsandbox driver
 - Custom driver
+
+The provider schema also accepts [external runtime declarations](#external-runtime-declarations-under-development).
+Their host adapter is under development.
 
 <Callout>
 If no driver is specified, the default is **Docker**

@@ -202,14 +202,20 @@ func (s *externalConfigSuite) TestExecutablePermissions() {
 	if runtime.GOOS == "windows" {
 		s.T().Skip("Windows execution does not use Unix permission bits")
 	}
-	root := s.T().TempDir()
-	agent := externalAgentFixture()
-	path := filepath.Join(root, "runtime")
-	agent.Binaries["RUNTIME"][0].Path = path
-	s.Require().NoError(os.WriteFile(path, []byte(externalFixturePayload), 0o600))
-	_, err := ResolveExternalRuntimeBinary(agent, root)
-	s.Require().ErrorContains(err, "executable permissions")
-	s.FileExists(path)
+	if os.Geteuid() == 0 {
+		s.T().Skip("Root can execute files with any execute bit")
+	}
+	for _, mode := range []os.FileMode{0o600, 0o411} {
+		root := s.T().TempDir()
+		agent := externalAgentFixture()
+		path := filepath.Join(root, "runtime")
+		agent.Binaries["RUNTIME"][0].Path = path
+		s.Require().NoError(os.WriteFile(path, []byte(externalFixturePayload), 0o600))
+		s.Require().NoError(os.Chmod(path, mode))
+		_, err := ResolveExternalRuntimeBinary(agent, root)
+		s.Require().ErrorContains(err, "executable permissions")
+		s.FileExists(path)
+	}
 }
 
 func (s *externalConfigSuite) checkManifests(cases []externalValidationCase) {

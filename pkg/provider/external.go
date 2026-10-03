@@ -115,8 +115,11 @@ func verifyExternalExecutable(path, expected string) (string, error) {
 	if !metadata.Mode().IsRegular() {
 		return "", errors.New("external runtime executable must be a regular file")
 	}
-	if runtime.GOOS != "windows" && metadata.Mode().Perm()&0o111 == 0 {
-		return "", errors.New("external runtime executable must have executable permissions")
+	if err := checkExternalExecuteAccess(path); err != nil {
+		return "", fmt.Errorf(
+			"external runtime executable must have executable permissions: %w",
+			err,
+		)
 	}
 	actual, err := hash.File(path)
 	if err != nil {

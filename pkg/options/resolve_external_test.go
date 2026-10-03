@@ -6,12 +6,16 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
-func TestResolveExternalAgentConfig(t *testing.T) {
+type externalAgentConfigSuite struct{ suite.Suite }
+
+func TestResolveExternalAgentConfig(t *testing.T) { suite.Run(t, new(externalAgentConfigSuite)) }
+
+func (s *externalAgentConfigSuite) TestResolution() {
 	for _, backend := range []string{"", "docker", "none"} {
-		t.Run(backend, func(t *testing.T) {
+		s.Run(backend, func() {
 			source := &provider.ProviderConfig{
 				Name: "external-fixture",
 				Agent: provider.ProviderAgentConfig{
@@ -42,10 +46,10 @@ func TestResolveExternalAgentConfig(t *testing.T) {
 			if expected == "" {
 				expected = provider.DockerDriver
 			}
-			require.Equal(t, expected, resolved.External.ImageBackend)
-			require.Equal(t, "RUNTIME", resolved.External.Binary)
-			require.Equal(t, source.Agent.External.Args, resolved.External.Args)
-			require.Equal(t, backend, source.Agent.External.ImageBackend)
+			s.Require().Equal(expected, resolved.External.ImageBackend)
+			s.Require().Equal("RUNTIME", resolved.External.Binary)
+			s.Require().Equal(source.Agent.External.Args, resolved.External.Args)
+			s.Require().Equal(backend, source.Agent.External.ImageBackend)
 		})
 	}
 }
