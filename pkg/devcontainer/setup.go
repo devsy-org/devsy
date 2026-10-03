@@ -134,6 +134,12 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 	if r.workspaceConfig.Agent.Docker.Path != "" {
 		dockerCmd = r.workspaceConfig.Agent.Docker.Path
 	}
+	runtimeName := docker.DetectRuntime(dockerCmd).Name()
+	if configured := r.workspaceConfig.Agent.Docker.Runtime; configured != "" {
+		if runtime, err := docker.RuntimeFromName(configured); err == nil {
+			runtimeName = runtime.Name()
+		}
+	}
 	for k, v := range r.workspaceConfig.Agent.Docker.Env {
 		dockerEnv = append(dockerEnv, k+"="+v)
 	}
@@ -151,6 +157,7 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 		WorkspaceConfig:            r.workspaceConfig,
 		WorkspaceID:                r.id,
 		DockerCommand:              dockerCmd,
+		Runtime:                    runtimeName,
 		DockerEnv:                  dockerEnv,
 		IsRemoteDocker:             docker.RemoteDockerHost(dockerEnv),
 		HelperImage:                r.workspaceConfig.Agent.Docker.HelperImage,

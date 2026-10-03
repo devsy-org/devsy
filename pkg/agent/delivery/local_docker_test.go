@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
@@ -135,23 +136,61 @@ func TestPopulateVolume_FallbackToDirectCopy(t *testing.T) {
 }
 
 func TestIsPodman(t *testing.T) {
-	tests := []struct {
-		name string
-		cmd  string
-		want bool
-	}{
-		{"default docker", "", false},
-		{"explicit docker", "docker", false},
-		{"explicit podman", podmanCmd, true},
-		{"full path podman", "/usr/bin/podman", true},
-		{"full path docker", "/usr/bin/docker", false},
+	wrapper := filepath.Join(t.TempDir(), "podman-rootful")
+	require.NoError(t, os.WriteFile(
+		wrapper,
+		[]byte("#!/bin/sh\necho 'podman version 5.8.4'\n"),
+		0o600,
+	))
+	// #nosec G302 -- test wrapper must be executable
+	require.NoError(t, os.Chmod(wrapper, 0o700))
+	d := &LocalDockerDelivery{DockerCommand: wrapper}
+	assert.True(t, d.isPodman(), "wrapper names must be classified through runtime detection")
+	d.Runtime = docker.RuntimeDocker
+	assert.False(t, d.isPodman(), "explicit resolved runtime takes precedence")
+}
+
+func TestPodmanDeliveryUsesMountpointWithoutRunHelpers(t *testing.T) {
+	tmpDir := t.TempDir()
+	mountDir := filepath.Join(tmpDir, "mount")
+	require.NoError(t, os.MkdirAll(mountDir, 0o750))
+
+	logPath := filepath.Join(tmpDir, "calls")
+	runtimePath := filepath.Join(tmpDir, "podman-rootful")
+	runtimeScript := "#!/bin/sh\necho \"$*\" >> \"" + logPath + "\"\n" +
+		"if [ \"$1 $2\" = 'volume inspect' ]; then echo '" + mountDir + "'; exit 0; fi\n" +
+		"if [ \"$1\" = 'unshare' ]; then shift; exec \"$@\"; fi\n" +
+		"if [ \"$1\" = 'run' ]; then echo unexpected-helper >&2; exit 99; fi\n" +
+		"exit 0\n"
+	require.NoError(t, os.WriteFile(runtimePath, []byte(runtimeScript), 0o600))
+	// #nosec G302 -- fake runtime must be executable
+	require.NoError(t, os.Chmod(runtimePath, 0o700))
+
+	agentPath := filepath.Join(mountDir, binaryName())
+	require.NoError(t, os.WriteFile(agentPath, []byte("#!/bin/sh\necho v1.2.3\n"), 0o600))
+	// #nosec G302 -- fake agent must be executable
+	require.NoError(t, os.Chmod(agentPath, 0o700))
+	d := &LocalDockerDelivery{DockerCommand: runtimePath, Runtime: docker.RuntimePodman}
+	assert.Equal(t, "v1.2.3", d.detectVolumeVersion(context.Background(), "test-vol"))
+
+	content := []byte("agent-binary")
+	sourceCalls := 0
+	source := func(context.Context, string) (io.ReadCloser, error) {
+		sourceCalls++
+		return io.NopCloser(bytes.NewReader(content)), nil
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := &LocalDockerDelivery{DockerCommand: tt.cmd}
-			assert.Equal(t, tt.want, d.isPodman())
-		})
-	}
+	require.NoError(t, d.populateVolume(context.Background(), "test-vol", source, testArch))
+	got, err := os.ReadFile(agentPath) //nolint:gosec // temporary test mountpoint
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
+	info, err := os.Stat(agentPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+	calls, err := os.ReadFile(logPath) //nolint:gosec // temporary test log
+	require.NoError(t, err)
+	assert.NotContains(t, string(calls), "run --rm")
+	assert.NotContains(t, string(calls), "devsy-agent-init-")
+	assert.Equal(t, 1, sourceCalls)
 }
 
 func TestPopulateVolumeDirectCopy_PodmanWritesDirectlyWhenWritable(t *testing.T) {
@@ -173,7 +212,7 @@ func TestPopulateVolumeDirectCopy_PodmanWritesDirectlyWhenWritable(t *testing.T)
 	// #nosec G302 -- test script must be executable
 	require.NoError(t, os.Chmod(scriptPath, 0o755))
 
-	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	d := &LocalDockerDelivery{DockerCommand: scriptPath, Runtime: docker.RuntimePodman}
 	err := d.populateVolumeDirectCopy(context.Background(), "test-vol", binaryContent)
 	require.NoError(t, err)
 
@@ -212,7 +251,7 @@ func TestPopulateVolumeDirectCopy_PodmanFallsBackToUnshareOnPermission(t *testin
 	// #nosec G302 -- test script must be executable
 	require.NoError(t, os.Chmod(scriptPath, 0o755))
 
-	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	d := &LocalDockerDelivery{DockerCommand: scriptPath, Runtime: docker.RuntimePodman}
 	err := d.populateVolumeDirectCopy(context.Background(), "test-vol", binaryContent)
 	require.NoError(t, err)
 

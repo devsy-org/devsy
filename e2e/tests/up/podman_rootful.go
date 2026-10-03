@@ -20,11 +20,14 @@ const (
 	podmanRecoveryTimeout    = 30 * time.Second
 	podmanDiagnosticsBudget  = 25 * time.Second
 	podmanDiagCommandTimeout = 5 * time.Second
-	// podmanDiagMaxOutput caps each diagnostic section so CI logs stay readable.
+	// podmanDiagMaxOutput caps ordinary diagnostic sections.
 	podmanDiagMaxOutput = 8 * 1024
+	// podmanProcessLockDiagMaxOutput preserves the complete process/lock inventory.
+	podmanProcessLockDiagMaxOutput = 32 * 1024
 	// podmanBinName is the fallback binary when the rootful wrapper is absent.
 	podmanBinName            = "podman"
 	podmanRootfulWrapperName = "podman-rootful"
+	podmanSudoCommand        = "sudo"
 )
 
 type podmanHealthClass int
@@ -165,8 +168,13 @@ func runDiagCommand(ctx context.Context, name string, args ...string) string {
 	if err != nil {
 		text += fmt.Sprintf("\n(command failed: %v; context err: %v)", err, diagCtx.Err())
 	}
-	if len(text) > podmanDiagMaxOutput {
-		text = text[:podmanDiagMaxOutput] + "\n... (truncated)"
+	limit := podmanDiagMaxOutput
+	if name == "ps" || name == "lslocks" || name == "sh" ||
+		strings.Contains(strings.Join(args, " "), "lslocks") {
+		limit = podmanProcessLockDiagMaxOutput
+	}
+	if len(text) > limit {
+		text = text[:limit] + "\n... (truncated)"
 	}
 	return text
 }
@@ -189,6 +197,14 @@ func collectPodmanDiagnostics(wrapperPath string) {
 					"grep -E 'podman|crun|conmon|fuse-overlayfs|netavark' | grep -v grep || true",
 			},
 		},
+		{
+			"container storage locks",
+			podmanSudoCommand,
+			[]string{"sh", "-c", "if command -v lslocks >/dev/null 2>&1; then " +
+				"lslocks | grep -E '/var/lib/containers/storage|/run/containers/storage|" +
+				"storage\\.lock|userns\\.lock|layers\\.lock|images\\.lock|db\\.sql' || true; " +
+				"else cat /proc/locks; fi"},
+		},
 		{"stuck process details", "sh", []string{
 			"-c", "for pid in $(ps -eo pid=,comm= | " +
 				"awk '$2 ~ /^(podman|conmon|crun|fuse-overlayfs|netavark)$/ {print $1}'); " +
@@ -196,14 +212,14 @@ func collectPodmanDiagnostics(wrapperPath string) {
 		}},
 		{
 			"systemctl status podman.socket podman.service",
-			"sudo",
+			podmanSudoCommand,
 			[]string{
 				"systemctl", "status", "podman.socket", "podman.service", "--no-pager", "-l",
 			},
 		},
 		{
 			"journalctl podman units (last 100 lines)",
-			"sudo",
+			podmanSudoCommand,
 			[]string{
 				"journalctl", "-u", "podman.socket", "-u", "podman.service",
 				"-n", "150", "--no-pager",
@@ -249,7 +265,7 @@ func attemptPodmanRecovery(ctx context.Context, wrapperPath string) (podmanHealt
 	defer cancel()
 	cmd := exec.CommandContext( //nolint:gosec // G204: fixed recovery command
 		restartCtx,
-		"sudo",
+		podmanSudoCommand,
 		"systemctl",
 		"restart",
 		"podman.socket",
