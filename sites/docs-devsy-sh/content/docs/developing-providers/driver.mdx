@@ -19,7 +19,40 @@ There are five types of drivers:
 If no driver is specified, the default is **Docker**
 </Callout>
 
-For the external runtime SDK under development, see [Runtime Protocol v1](./runtime-protocol.mdx).
+## External runtime declarations (under development)
+
+The provider schema accepts `agent.driver: external` and validates the configuration
+when the provider is installed. Runtime launching and workspace integration are
+not implemented yet; this declaration is preparation for the external host adapter.
+
+```yaml
+agent:
+  driver: external
+  external:
+    binary: RUNTIME_DRIVER
+    args: ["serve"]
+    imageBackend: docker
+  binaries:
+    RUNTIME_DRIVER:
+      - os: linux
+        arch: amd64
+        path: https://example.com/runtime-driver
+        checksum: "<64 hexadecimal characters: SHA-256 of the extracted executable>"
+```
+
+`binary` is the exact key in `agent.binaries`, not an executable path or a name to
+search on `PATH`. Each declared platform requires a SHA-256 checksum and must
+appear only once. Declare the agent's OS and architecture, which may differ from
+the desktop's platform. The runtime must already be prepared in the agent binary
+directory; the resolver verifies its checksum and never downloads or removes files.
+A declared local absolute path is also verified.
+
+`args` is a static argument array, with no shell or option substitution. Its first
+entry cannot be empty; later empty arguments are preserved. `imageBackend` accepts
+`docker` (the default) or `none`; it selects the future Devsy-side image backend,
+not an image-building capability in the runtime plugin.
+
+For the protocol and SDK contract, see [Runtime Protocol v1](./runtime-protocol.mdx).
 
 ## Docker Driver
 
