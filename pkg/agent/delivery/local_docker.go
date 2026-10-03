@@ -184,7 +184,10 @@ func (d *LocalDockerDelivery) detectVolumeVersionFromMount(
 	return d.detectBinaryVersion(ctx, binaryPath)
 }
 
-func (d *LocalDockerDelivery) detectBinaryVersion(ctx context.Context, binaryPath string) (string, error) {
+func (d *LocalDockerDelivery) detectBinaryVersion(
+	ctx context.Context,
+	binaryPath string,
+) (string, error) {
 	cmd := exec.CommandContext(
 		ctx,
 		binaryPath,
@@ -211,7 +214,10 @@ func (d *LocalDockerDelivery) detectVolumeVersionViaUnshare(
 	return strings.TrimSpace(result.Stdout), nil
 }
 
-func (d *LocalDockerDelivery) detectVolumeVersionWithHelper(ctx context.Context, volumeName string) string {
+func (d *LocalDockerDelivery) detectVolumeVersionWithHelper(
+	ctx context.Context,
+	volumeName string,
+) string {
 	binaryPath := volumeMountPath + "/" + binaryName()
 	script := fmt.Sprintf(
 		`[ -x "%s" ] && "%s" --version 2>/dev/null || true`,
@@ -275,7 +281,11 @@ func (d *LocalDockerDelivery) populatePodmanVolume(
 	if helperErr == nil {
 		return nil
 	}
-	return fmt.Errorf("Podman direct copy failed: %w; helper fallback failed: %v", directErr, helperErr)
+	return fmt.Errorf(
+		"Podman direct copy failed: %w; helper fallback failed: %v",
+		directErr,
+		helperErr,
+	)
 }
 
 func (d *LocalDockerDelivery) populateVolumeWithHelper(
