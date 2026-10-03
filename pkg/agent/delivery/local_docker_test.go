@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -140,8 +140,10 @@ func TestIsPodman(t *testing.T) {
 	require.NoError(t, os.WriteFile(
 		wrapper,
 		[]byte("#!/bin/sh\necho 'podman version 5.8.4'\n"),
-		0o700,
+		0o600,
 	))
+	// #nosec G302 -- test wrapper must be executable
+	require.NoError(t, os.Chmod(wrapper, 0o700))
 	d := &LocalDockerDelivery{DockerCommand: wrapper}
 	assert.True(t, d.isPodman(), "wrapper names must be classified through runtime detection")
 	d.Runtime = docker.RuntimeDocker
@@ -160,10 +162,14 @@ func TestPodmanDeliveryUsesMountpointWithoutRunHelpers(t *testing.T) {
 		"if [ \"$1\" = 'unshare' ]; then shift; exec \"$@\"; fi\n" +
 		"if [ \"$1\" = 'run' ]; then echo unexpected-helper >&2; exit 99; fi\n" +
 		"exit 0\n"
-	require.NoError(t, os.WriteFile(runtimePath, []byte(runtimeScript), 0o700))
+	require.NoError(t, os.WriteFile(runtimePath, []byte(runtimeScript), 0o600))
+	// #nosec G302 -- fake runtime must be executable
+	require.NoError(t, os.Chmod(runtimePath, 0o700))
 
 	agentPath := filepath.Join(mountDir, binaryName())
-	require.NoError(t, os.WriteFile(agentPath, []byte("#!/bin/sh\necho v1.2.3\n"), 0o700))
+	require.NoError(t, os.WriteFile(agentPath, []byte("#!/bin/sh\necho v1.2.3\n"), 0o600))
+	// #nosec G302 -- fake agent must be executable
+	require.NoError(t, os.Chmod(agentPath, 0o700))
 	d := &LocalDockerDelivery{DockerCommand: runtimePath, Runtime: docker.RuntimePodman}
 	assert.Equal(t, "v1.2.3", d.detectVolumeVersion(context.Background(), "test-vol"))
 

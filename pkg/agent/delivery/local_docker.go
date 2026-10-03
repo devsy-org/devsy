@@ -164,10 +164,7 @@ func (d *LocalDockerDelivery) detectVolumeVersion(ctx context.Context, volumeNam
 	return d.detectVolumeVersionWithHelper(ctx, volumeName)
 }
 
-func (d *LocalDockerDelivery) detectVolumeVersionFromMount(
-	ctx context.Context,
-	volumeName string,
-) (string, error) {
+func (d *LocalDockerDelivery) detectVolumeVersionFromMount(ctx context.Context, volumeName string) (string, error) {
 	mountpoint, err := d.volumeMountpoint(ctx, volumeName)
 	if err != nil {
 		return "", err
@@ -177,26 +174,38 @@ func (d *LocalDockerDelivery) detectVolumeVersionFromMount(
 		return "", nil
 	} else if err != nil {
 		if errors.Is(err, os.ErrPermission) {
-			out, unshareErr := runCaptured(ctx, d.cmd(ctx, "unshare", binaryPath, "--version"))
-			if unshareErr == nil {
-				return strings.TrimSpace(out.Stdout), nil
-			}
+			return d.detectVolumeVersionViaUnshare(ctx, binaryPath)
 		}
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, binaryPath, "--version") // #nosec G204 -- path comes from inspected volume
+	return d.detectBinaryVersion(ctx, binaryPath)
+}
+
+func (d *LocalDockerDelivery) detectBinaryVersion(ctx context.Context, binaryPath string) (string, error) {
+	cmd := exec.CommandContext(
+		ctx,
+		binaryPath,
+		"--version",
+	) // #nosec G204 -- path comes from inspected volume
 	out, err := cmd.Output()
 	if err == nil {
 		return strings.TrimSpace(string(out)), nil
 	}
 	if errors.Is(err, os.ErrPermission) {
-		result, unshareErr := runCaptured(ctx, d.cmd(ctx, "unshare", binaryPath, "--version"))
-		if unshareErr == nil {
-			return strings.TrimSpace(result.Stdout), nil
-		}
-		return "", unshareErr
+		return d.detectVolumeVersionViaUnshare(ctx, binaryPath)
 	}
 	return "", err
+}
+
+func (d *LocalDockerDelivery) detectVolumeVersionViaUnshare(
+	ctx context.Context,
+	binaryPath string,
+) (string, error) {
+	result, err := runCaptured(ctx, d.cmd(ctx, "unshare", binaryPath, "--version"))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(result.Stdout), nil
 }
 
 func (d *LocalDockerDelivery) detectVolumeVersionWithHelper(ctx context.Context, volumeName string) string {
@@ -238,18 +247,7 @@ func (d *LocalDockerDelivery) populateVolume(
 	}
 
 	if d.isPodman() {
-		if err := d.populateVolumeDirectCopy(ctx, volumeName, data); err == nil {
-			return nil
-		} else {
-			log.Debugf("containerless Podman agent population failed; trying helper: %v", err)
-			if helperErr := d.populateVolumeWithHelper(
-				ctx, volumeName, bytes.NewReader(data),
-			); helperErr == nil {
-				return nil
-			} else {
-				return fmt.Errorf("Podman direct copy failed: %w; helper fallback failed: %v", err, helperErr)
-			}
-		}
+		return d.populatePodmanVolume(ctx, volumeName, data)
 	}
 	err = d.populateVolumeWithHelper(ctx, volumeName, bytes.NewReader(data))
 	if err == nil {
@@ -258,6 +256,23 @@ func (d *LocalDockerDelivery) populateVolume(
 	log.Debugf("helper container populate failed, trying direct copy: %v", err)
 
 	return d.populateVolumeDirectCopy(ctx, volumeName, data)
+}
+
+func (d *LocalDockerDelivery) populatePodmanVolume(
+	ctx context.Context,
+	volumeName string,
+	data []byte,
+) error {
+	directErr := d.populateVolumeDirectCopy(ctx, volumeName, data)
+	if directErr == nil {
+		return nil
+	}
+	log.Debugf("containerless Podman agent population failed; trying helper: %v", directErr)
+	helperErr := d.populateVolumeWithHelper(ctx, volumeName, bytes.NewReader(data))
+	if helperErr == nil {
+		return nil
+	}
+	return fmt.Errorf("Podman direct copy failed: %w; helper fallback failed: %v", directErr, helperErr)
 }
 
 func (d *LocalDockerDelivery) populateVolumeWithHelper(

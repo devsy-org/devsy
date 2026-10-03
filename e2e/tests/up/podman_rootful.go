@@ -27,6 +27,7 @@ const (
 	// podmanBinName is the fallback binary when the rootful wrapper is absent.
 	podmanBinName            = "podman"
 	podmanRootfulWrapperName = "podman-rootful"
+	podmanSudoCommand        = "sudo"
 )
 
 type podmanHealthClass int
@@ -198,7 +199,7 @@ func collectPodmanDiagnostics(wrapperPath string) {
 		},
 		{
 			"container storage locks",
-			"sudo",
+			podmanSudoCommand,
 			[]string{"sh", "-c", "if command -v lslocks >/dev/null 2>&1; then " +
 				"lslocks | grep -E '/var/lib/containers/storage|/run/containers/storage|" +
 				"storage\\.lock|userns\\.lock|layers\\.lock|images\\.lock|db\\.sql' || true; " +
@@ -211,14 +212,14 @@ func collectPodmanDiagnostics(wrapperPath string) {
 		}},
 		{
 			"systemctl status podman.socket podman.service",
-			"sudo",
+			podmanSudoCommand,
 			[]string{
 				"systemctl", "status", "podman.socket", "podman.service", "--no-pager", "-l",
 			},
 		},
 		{
 			"journalctl podman units (last 100 lines)",
-			"sudo",
+			podmanSudoCommand,
 			[]string{
 				"journalctl", "-u", "podman.socket", "-u", "podman.service",
 				"-n", "150", "--no-pager",
@@ -264,7 +265,7 @@ func attemptPodmanRecovery(ctx context.Context, wrapperPath string) (podmanHealt
 	defer cancel()
 	cmd := exec.CommandContext( //nolint:gosec // G204: fixed recovery command
 		restartCtx,
-		"sudo",
+		podmanSudoCommand,
 		"systemctl",
 		"restart",
 		"podman.socket",
