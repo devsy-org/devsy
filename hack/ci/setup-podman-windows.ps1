@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][string]$PodmanPath,
-    [TimeSpan]$BootstrapTimeout = ([TimeSpan]::FromSeconds(270)),
+    [ValidateRange(1, 270)][int]$BootstrapTimeoutSeconds = 270,
     [switch]$FunctionsOnly
 )
 
@@ -32,6 +32,32 @@ function Get-BudgetRemaining {
     return $remaining
 }
 
+function Stop-TimedOutProcess {
+    param(
+        [Diagnostics.Process]$Process,
+        [TimeSpan]$Grace = ([TimeSpan]::FromSeconds(2))
+    )
+
+    if ($Process.HasExited) { return $true }
+
+    try {
+        # Kill only the process started by this helper. Descendant cleanup is
+        # handled later by the bounded Podman recovery path.
+        $Process.Kill()
+    } catch {
+        Write-Host "PODMAN_WINDOWS_TERMINATION_FAILED [podman-windows] direct kill failed pid=$($Process.Id): $($_.Exception.Message)"
+        return $false
+    }
+
+    $waitMs = [Math]::Max(0, [Math]::Min(2000, [int]$Grace.TotalMilliseconds))
+    if ($waitMs -gt 0) { $null = $Process.WaitForExit($waitMs) }
+    $stopped = $Process.HasExited
+    if (-not $stopped) {
+        Write-Host "PODMAN_WINDOWS_TERMINATION_FAILED [podman-windows] process did not exit after direct kill pid=$($Process.Id)"
+    }
+    return $stopped
+}
+
 function Invoke-BoundedCommand {
     param([string]$Path, [string[]]$Arguments, [TimeSpan]$Timeout)
 
@@ -43,16 +69,21 @@ function Invoke-BoundedCommand {
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()
     try {
         $process = Start-Process -FilePath $Path -ArgumentList $Arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        Write-Host "[podman-windows] process_started pid=$($process.Id) command=$Path $($Arguments -join ' ')"
         $terminationWait = [Math]::Min($maximumTerminationReserve.TotalMilliseconds, $Timeout.TotalMilliseconds * 0.2)
         $commandWait = [Math]::Max(0, $Timeout.TotalMilliseconds - $terminationWait - $stopwatch.Elapsed.TotalMilliseconds)
         if (-not $process.WaitForExit([int]$commandWait)) {
-            try { $process.Kill($true) } catch { Write-Host "[podman-windows] kill child tree: $($_.Exception.Message)" }
-            $remaining = [Math]::Max(0, $Timeout.TotalMilliseconds - $stopwatch.Elapsed.TotalMilliseconds)
-            if ($remaining -gt 0) { $null = $process.WaitForExit([int]$remaining) }
+            $grace = [TimeSpan]::FromMilliseconds([Math]::Max(0, [Math]::Min(2000, $Timeout.TotalMilliseconds - $stopwatch.Elapsed.TotalMilliseconds)))
+            try {
+                $stopped = Stop-TimedOutProcess -Process $process -Grace $grace
+            } catch {
+                Write-Host "PODMAN_WINDOWS_TERMINATION_FAILED [podman-windows] termination helper failed pid=$($process.Id): $($_.Exception.Message)"
+                $stopped = $false
+            }
             $output = (Get-Content $stdout -Raw -ErrorAction SilentlyContinue) + (Get-Content $stderr -Raw -ErrorAction SilentlyContinue)
-            return @{ TimedOut = $true; ExitCode = $null; Output = "command timed out: $output" }
+            return @{ TimedOut = $true; ExitCode = $null; ProcessId = $process.Id; Output = "PODMAN_WINDOWS_COMMAND_TIMEOUT command timed out; direct_process_stopped=$stopped; $output" }
         }
-        return @{ TimedOut = $false; ExitCode = $process.ExitCode; Output = ((Get-Content $stdout -Raw -ErrorAction SilentlyContinue) + (Get-Content $stderr -Raw -ErrorAction SilentlyContinue)) }
+        return @{ TimedOut = $false; ExitCode = $process.ExitCode; ProcessId = $process.Id; Output = ((Get-Content $stdout -Raw -ErrorAction SilentlyContinue) + (Get-Content $stderr -Raw -ErrorAction SilentlyContinue)) }
     } catch {
         return @{ TimedOut = $false; ExitCode = -1; Output = $_.Exception.Message }
     } finally {
@@ -71,7 +102,26 @@ function Invoke-BudgetedCommand {
 
     $remaining = Get-BudgetRemaining $Budget $Reserve
     $boundedTimeout = if ($remaining -lt $Timeout) { $remaining } else { $Timeout }
-    return Invoke-BoundedCommand $Path $Arguments $boundedTimeout
+    $command = if ($Arguments.Count -gt 0) { $Arguments -join ' ' } else { '' }
+    Write-Host "[podman-windows] command_start path=$Path args='$command' timeout_ms=$([int]$boundedTimeout.TotalMilliseconds) remaining_ms=$([int]$remaining.TotalMilliseconds)"
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $result = Invoke-BoundedCommand $Path $Arguments $boundedTimeout
+    $remainingAfter = Get-BudgetRemaining $Budget $Reserve
+    $elapsedMs = [int]$stopwatch.Elapsed.TotalMilliseconds
+    $timedOut = $result.TimedOut
+    if ($remainingAfter.TotalMilliseconds -le 0) {
+        $timedOut = $true
+        $result = @{
+            TimedOut = $true
+            ExitCode = $null
+            ProcessId = $result.ProcessId
+            Output = "PODMAN_WINDOWS_BOOTSTRAP_BUDGET_EXHAUSTED: $($result.Output)"
+        }
+    } elseif ($result.TimedOut -and $result.Output -notmatch 'PODMAN_WINDOWS_COMMAND_TIMEOUT') {
+        $result.Output = "PODMAN_WINDOWS_COMMAND_TIMEOUT: $($result.Output)"
+    }
+    Write-Host "[podman-windows] command_end path=$Path args='$command' elapsed_ms=$elapsedMs exit_code=$($result.ExitCode) timed_out=$timedOut remaining_ms=$([int]$remainingAfter.TotalMilliseconds)"
+    return $result
 }
 
 function Write-MachineDiagnostics {
@@ -123,7 +173,7 @@ function Start-MachineAttempt {
 
     Write-Host "[podman-windows] machine start attempt=$Attempt"
     $result = Invoke-BudgetedCommand $Budget $PodmanPath @('machine', 'start') $startTimeout $diagnosticReserve
-    if ($result.TimedOut) { return "PODMAN_WINDOWS_MACHINE_START_TIMEOUT attempt=$Attempt" }
+    if ($result.TimedOut) { return "PODMAN_WINDOWS_MACHINE_START_TIMEOUT attempt=$Attempt output=$($result.Output)" }
     if ($result.ExitCode -ne 0) { return "PODMAN_WINDOWS_MACHINE_START_FAILED attempt=$Attempt output=$($result.Output)" }
 
     $readinessStarted = & $Budget.Elapsed
@@ -148,17 +198,19 @@ function Remove-StalePodmanDistribution {
     $distributions = Invoke-BudgetedCommand $Budget 'wsl.exe' @('--list', '--quiet') ([TimeSpan]::FromSeconds(5)) $diagnosticReserve
     if ($distributions.TimedOut -or $distributions.ExitCode -ne 0) {
         Write-Host "[podman-windows] WSL distribution list unavailable: $($distributions.Output)"
-        return
+        return $false
     }
     $names = ($distributions.Output -replace "`0", '') -split "`r?`n" | ForEach-Object { $_.Trim().Trim([char]0xFEFF) }
     if ($names -contains 'podman-machine-default') {
         $result = Invoke-BudgetedCommand $Budget 'wsl.exe' @('--unregister', 'podman-machine-default') ([TimeSpan]::FromSeconds(15)) $diagnosticReserve
         Write-Host "[podman-windows] unregister exact Podman distribution: exit=$($result.ExitCode) timeout=$($result.TimedOut) $($result.Output)"
+        if ($result.TimedOut -or $result.ExitCode -ne 0) { return $false }
     }
+    return $true
 }
 
 function Invoke-PodmanBootstrap {
-    param([hashtable]$Budget = (New-BootstrapBudget $BootstrapTimeout))
+    param([hashtable]$Budget = (New-BootstrapBudget ([TimeSpan]::FromSeconds($BootstrapTimeoutSeconds))))
 
     if (-not (Test-Path $PodmanPath)) { throw "podman.exe not found: $PodmanPath" }
     $result = Invoke-BudgetedCommand $Budget 'wsl.exe' @('--set-default-version', '2') ([TimeSpan]::FromSeconds(15)) $diagnosticReserve
@@ -183,6 +235,7 @@ function Invoke-PodmanBootstrap {
         }
 
         Write-Host '[podman-windows] recovery start'
+        $recoveryFailed = $false
         foreach ($entry in @(
             @{ Path = $PodmanPath; Args = @('machine', 'stop') },
             @{ Path = $PodmanPath; Args = @('machine', 'rm', '-f') },
@@ -190,8 +243,13 @@ function Invoke-PodmanBootstrap {
         )) {
             $result = Invoke-BudgetedCommand $Budget $entry.Path $entry.Args ([TimeSpan]::FromSeconds(10)) $diagnosticReserve
             Write-Host "[podman-windows] reset $($entry.Path) $($entry.Args -join ' '): exit=$($result.ExitCode) timeout=$($result.TimedOut) $($result.Output)"
+            if ($result.TimedOut -or $result.ExitCode -ne 0) { $recoveryFailed = $true }
         }
-        Remove-StalePodmanDistribution $Budget
+        if (-not (Remove-StalePodmanDistribution $Budget)) { $recoveryFailed = $true }
+        if ($recoveryFailed) {
+            try { Write-MachineDiagnostics $Budget } catch { Write-Host "[podman-windows] diagnostics failed: $($_.Exception.Message)" }
+            throw "PODMAN_WINDOWS_RECOVERY_FAILED: recovery cleanup command failed after $failure"
+        }
         if ((Get-BudgetRemaining $Budget $diagnosticReserve) -lt $minimumRecoveryTime) {
             try { Write-MachineDiagnostics $Budget } catch { Write-Host "[podman-windows] diagnostics failed: $($_.Exception.Message)" }
             throw "PODMAN_WINDOWS_RECOVERY_FAILED: $failure"

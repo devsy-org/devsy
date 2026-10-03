@@ -16,7 +16,49 @@ Assert-True (-not $completed.TimedOut -and $completed.ExitCode -eq 0 -and $compl
 
 $started = Get-Date
 $timedOut = & $realRunner $pwshPath @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') ([TimeSpan]::FromMilliseconds(500))
-Assert-True ($timedOut.TimedOut -and ((Get-Date) - $started).TotalSeconds -lt 1) 'process termination exceeded the command budget'
+Assert-True ($timedOut.TimedOut -and ((Get-Date) - $started).TotalSeconds -lt 5) 'process termination exceeded the command budget'
+Assert-True ($null -eq (Get-Process -Id $timedOut.ProcessId -ErrorAction SilentlyContinue)) 'timed-out process remained alive'
+
+$descendantTemp = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString('N'))
+$null = New-Item -ItemType Directory -Path $descendantTemp
+$parentScript = Join-Path $descendantTemp 'parent.ps1'
+$childPidFile = Join-Path $descendantTemp 'child.pid'
+@'
+$child = Start-Process -FilePath (Join-Path $PSHOME 'pwsh.exe') -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -PassThru
+$child.Id | Set-Content -Path $args[0]
+Start-Sleep -Seconds 30
+'@ | Set-Content -Path $parentScript
+$descendantResult = $null
+$childPid = $null
+try {
+    $started = Get-Date
+    $descendantResult = & $realRunner $pwshPath @('-NoProfile', '-File', $parentScript, $childPidFile) ([TimeSpan]::FromMilliseconds(750))
+    $elapsedSeconds = ((Get-Date) - $started).TotalSeconds
+    Assert-True ($descendantResult.TimedOut -and $elapsedSeconds -lt 5) 'parent with a sleeping descendant exceeded the timeout ceiling'
+    Assert-True ($null -eq (Get-Process -Id $descendantResult.ProcessId -ErrorAction SilentlyContinue)) 'timed-out parent process remained alive'
+    $deadline = (Get-Date).AddSeconds(2)
+    while (-not (Test-Path $childPidFile) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 50 }
+    Assert-True (Test-Path $childPidFile) 'descendant did not record its process id'
+    $childPid = [int](Get-Content $childPidFile -Raw)
+    Assert-True ($null -ne (Get-Process -Id $childPid -ErrorAction SilentlyContinue)) 'timeout handler synchronously killed the descendant'
+} finally {
+    if ($childPid -and (Get-Process -Id $childPid -ErrorAction SilentlyContinue)) {
+        Stop-Process -Id $childPid -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item $descendantTemp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$realStopper = ${function:Stop-TimedOutProcess}
+function Stop-TimedOutProcess {
+    param([Diagnostics.Process]$Process, [TimeSpan]$Grace)
+    throw 'simulated termination failure'
+}
+$terminationFailure = & $realRunner $pwshPath @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') ([TimeSpan]::FromMilliseconds(500))
+Assert-True ($terminationFailure.TimedOut -and $terminationFailure.Output -match 'direct_process_stopped=False') 'termination failure did not return a timeout result'
+if (Get-Process -Id $terminationFailure.ProcessId -ErrorAction SilentlyContinue) {
+    Stop-Process -Id $terminationFailure.ProcessId -Force -ErrorAction SilentlyContinue
+}
+Set-Item Function:Stop-TimedOutProcess $realStopper
 
 function Invoke-BoundedCommand {
     param([string]$Path, [string[]]$Arguments, [TimeSpan]$Timeout)
@@ -30,6 +72,10 @@ function Invoke-BoundedCommand {
         if ($duration -gt $Timeout.TotalMilliseconds) {
             return @{ TimedOut = $true; ExitCode = $null; Output = 'timed out' }
         }
+    }
+    if ($script:overruns.ContainsKey($command)) {
+        $script:elapsedMilliseconds = $script:overruns[$command]
+        return @{ TimedOut = $false; ExitCode = 0; Output = 'completed after deadline' }
     }
     if ($script:results.ContainsKey($command) -and $script:results[$command].Count -gt 0) {
         return $script:results[$command].Dequeue()
@@ -53,6 +99,7 @@ function Set-Scenario {
     $script:calls = [Collections.Generic.List[string]]::new()
     $script:timeouts = [Collections.Generic.List[double]]::new()
     $script:durations = @{}
+    $script:overruns = @{}
     $script:results = @{}
     $script:elapsedMilliseconds = 0
     $script:distributionList = ''
@@ -67,6 +114,12 @@ function Add-Result([string]$command, [hashtable]$result) {
 
 $ok = @{ TimedOut = $false; ExitCode = 0; Output = '' }
 $failed = @{ TimedOut = $false; ExitCode = 1; Output = 'pipe busy' }
+
+Set-Scenario
+$script:overruns['--set-default-version 2'] = 1000
+$budgetExpired = Invoke-BudgetedCommand (New-TestBudget 500) 'wsl.exe' @('--set-default-version', '2') ([TimeSpan]::FromSeconds(5))
+Assert-True ($budgetExpired.TimedOut -and $null -eq $budgetExpired.ExitCode) 'command success after the shared deadline was accepted'
+Assert-True ($budgetExpired.Output -match 'PODMAN_WINDOWS_BOOTSTRAP_BUDGET_EXHAUSTED') 'post-command budget exhaustion marker missing'
 
 Set-Scenario
 Invoke-PodmanBootstrap (New-TestBudget)

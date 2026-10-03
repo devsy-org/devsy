@@ -627,28 +627,38 @@ jobs:
             free-disk-space: false
             install-kind: true
             requires-secret: false
+            test-timeout: 900s
+            job-timeout-minutes: 20
 
           - label: up-docker-wsl
             runner: windows-latest
             free-disk-space: false
             install-kind: true
             requires-secret: false
+            test-timeout: 900s
+            job-timeout-minutes: 20
 
           - label: up-features
             runner: windows-latest
             free-disk-space: false
             install-kind: true
             requires-secret: false
+            test-timeout: 900s
+            job-timeout-minutes: 20
           - label: ssh-proxy-command
             runner: windows-latest
             free-disk-space: false
             install-kind: true
             requires-secret: false
+            test-timeout: 900s
+            job-timeout-minutes: 20
           - label: ssh-tunnel-mode
             runner: windows-latest
             free-disk-space: false
             install-kind: true
             requires-secret: false
+            test-timeout: 900s
+            job-timeout-minutes: 20
 
           - label: task-cancel
             runner: windows-latest
@@ -656,6 +666,8 @@ jobs:
             install-kind: false
             install-podman: true
             requires-secret: false
+            test-timeout: 900s
+            job-timeout-minutes: 20
 
 
     runs-on: ${{ matrix.runner }}
@@ -787,7 +799,10 @@ jobs:
         if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: pwsh
         timeout-minutes: 5
-        run: .\hack\ci\setup-podman-windows.ps1 -PodmanPath "C:\Program Files\RedHat\Podman\podman.exe"
+        run: >
+          .\hack\ci\setup-podman-windows.ps1
+          -PodmanPath "C:\Program Files\RedHat\Podman\podman.exe"
+          -BootstrapTimeoutSeconds 270
 
       - name: cache kind.exe (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
@@ -995,16 +1010,39 @@ jobs:
     steps:
       - name: Check required jobs
         run: |
-          # Fail if any required job failed (not skipped)
-          if [[ "${{ needs.changes.result }}" == "failure" ]] || \
-             [[ "${{ needs.precommit.result }}" == "failure" ]] || \
-             [[ "${{ needs.lint.result }}" == "failure" ]] || \
-             [[ "${{ needs.unit-tests.result }}" == "failure" ]] || \
-             [[ "${{ needs.licenses.result }}" == "failure" ]] || \
-             [[ "${{ needs.build-cli.result }}" == "failure" ]] || \
-             [[ "${{ needs.integration-tests-unprivileged.result }}" == "failure" ]] || \
-             [[ "${{ needs.integration-tests.result }}" == "failure" ]]; then
-            echo "One or more required jobs failed"
-            exit 1
-          fi
-          echo "All required jobs passed or were skipped"
+          go_changes="${{ needs.changes.outputs.go }}"
+
+          check_result() {
+            local name="$1"
+            local result="$2"
+            local skip_when_no_go_changes="$3"
+
+            case "$result" in
+              success)
+                ;;
+              skipped)
+                if [[ "$skip_when_no_go_changes" == "true" && "$go_changes" != "true" ]]; then
+                  ;;
+                else
+                  echo "::error::$name ended with result=skipped unexpectedly"
+                  return 1
+                fi
+                ;;
+              *)
+                echo "::error::$name ended with result=$result"
+                return 1
+                ;;
+            esac
+          }
+
+          status=0
+          check_result "changes" "${{ needs.changes.result }}" false || status=1
+          check_result "precommit" "${{ needs.precommit.result }}" false || status=1
+          check_result "lint" "${{ needs.lint.result }}" false || status=1
+          check_result "unit-tests" "${{ needs.unit-tests.result }}" true || status=1
+          check_result "licenses" "${{ needs.licenses.result }}" true || status=1
+          check_result "build-cli" "${{ needs.build-cli.result }}" true || status=1
+          check_result "integration-tests-unprivileged" "${{ needs.integration-tests-unprivileged.result }}" true || status=1
+          check_result "integration-tests" "${{ needs.integration-tests.result }}" true || status=1
+
+          exit "$status"
