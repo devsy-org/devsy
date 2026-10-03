@@ -164,7 +164,10 @@ func (d *LocalDockerDelivery) detectVolumeVersion(ctx context.Context, volumeNam
 	return d.detectVolumeVersionWithHelper(ctx, volumeName)
 }
 
-func (d *LocalDockerDelivery) detectVolumeVersionFromMount(ctx context.Context, volumeName string) (string, error) {
+func (d *LocalDockerDelivery) detectVolumeVersionFromMount(
+	ctx context.Context,
+	volumeName string,
+) (string, error) {
 	mountpoint, err := d.volumeMountpoint(ctx, volumeName)
 	if err != nil {
 		return "", err
