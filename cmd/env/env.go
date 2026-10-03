@@ -3,7 +3,7 @@ package env
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	"github.com/spf13/cobra"
 )
 
@@ -24,12 +24,12 @@ use "devsy secret" for sensitive values.`,
 	return envCmd
 }
 
-func resolveContext(globalFlags *flags.GlobalFlags) (string, secrets.Store, error) {
+func resolveContext(globalFlags *flags.GlobalFlags) (string, envstore.EnvStore, error) {
 	devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
 	if err != nil {
 		return "", nil, err
 	}
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	store, err := envstore.NewStoreForConfig(devsyConfig)
 	if err != nil {
 		return "", nil, err
 	}

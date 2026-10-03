@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -22,6 +23,11 @@ const (
 	CodeDockerDaemonUnreachable    Code = "docker_daemon_unreachable"
 	CodeCanceled                   Code = "canceled"
 	CodeDeadlineExceeded           Code = "deadline_exceeded"
+	CodeUnlockRequired             Code = "unlock_required"
+	CodeUnlockFailed               Code = "unlock_failed"
+	CodeSecretBackendUnavailable   Code = "secret_backend_unavailable"
+	CodeSecretStoreCorrupt         Code = "secret_store_corrupt"
+	CodeSecretNotFound             Code = "secret_not_found"
 )
 
 type CLIError struct {
@@ -108,6 +114,10 @@ func Classify(err error) *CLIError {
 		return cliErr
 	}
 
+	if classified := classifySecretError(err); classified != nil {
+		return classified
+	}
+
 	if errors.Is(err, ErrBuildFailedRecoverable) {
 		return &CLIError{
 			Code:    CodeBuildFailedRecoverable,
@@ -155,4 +165,29 @@ func Classify(err error) *CLIError {
 	}
 
 	return &CLIError{Code: CodeUnknown, Message: message, wrapped: err}
+}
+
+func classifySecretError(err error) *CLIError {
+	for _, state := range []struct {
+		target error
+		code   Code
+		hint   string
+	}{
+		{
+			secrets.ErrUnlockRequired,
+			CodeUnlockRequired,
+			"Supply DEVSY_SECRETS_PASSPHRASE, DEVSY_SECRETS_PASSPHRASE_FILE, " +
+				"a remembered credential, or run interactively.",
+		},
+		{secrets.ErrUnlockFailed, CodeUnlockFailed, "Verify the passphrase and encrypted store, then retry."},
+		{secrets.ErrBackendUnavailable, CodeSecretBackendUnavailable, "Restore access to the secret backend and retry."},
+		{secrets.ErrStoreCorrupt, CodeSecretStoreCorrupt, "Restore a valid encrypted store backup."},
+		{secrets.ErrSecretNotFound, CodeSecretNotFound, "Create or repair the required secret and retry."},
+	} {
+		if errors.Is(err, state.target) {
+			return &CLIError{Code: state.code, Message: err.Error(), Hint: state.hint, wrapped: err}
+		}
+	}
+
+	return nil
 }

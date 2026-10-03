@@ -28,6 +28,24 @@ vi.mock("$lib/stores/secrets.js", async () => {
       { name: "ATTACHED", context: "default", attached: true },
       { name: "DETACHED", context: "default", attached: false },
       { name: "STAGING_ONLY", context: "staging", attached: false },
+      {
+        name: "LOCKED_KEY",
+        context: "default",
+        attached: true,
+        availability: "locked",
+      },
+      {
+        name: "MISSING_KEY",
+        context: "default",
+        attached: false,
+        availability: "missing",
+      },
+      {
+        name: "BACKEND_KEY",
+        context: "default",
+        attached: false,
+        availability: "backend_unavailable",
+      },
     ]),
     refreshSecrets: mocks.refreshSecrets,
   }
@@ -84,5 +102,19 @@ describe("SecretsPage managed secret attachments", () => {
         "staging",
       ),
     )
+  })
+
+  it("shows availability states while keeping locked secret metadata usable", () => {
+    render(SecretsPage)
+
+    expect(screen.getByRole("status").textContent).toContain(
+      "One secret value is locked",
+    )
+    expect(screen.getByText("Locked")).toBeTruthy()
+    expect(screen.getByText("Missing value")).toBeTruthy()
+    expect(screen.getByText("Backend unavailable")).toBeTruthy()
+    expect(
+      screen.getByRole("switch", { name: "Inject LOCKED_KEY into workspaces" }),
+    ).toBeTruthy()
   })
 })

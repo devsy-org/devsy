@@ -33,17 +33,17 @@ func (f *fileBackend) load() (map[string]string, error) {
 
 	reader, err := age.Decrypt(bytes.NewReader(raw), f.key.identity)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt secrets file: %w", err)
+		return nil, &UnlockFailedError{Backend: BackendFile, Cause: err}
 	}
 
 	plaintext, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("read decrypted secrets: %w", err)
+		return nil, &UnlockFailedError{Backend: BackendFile, Cause: err}
 	}
 
 	values := map[string]string{}
 	if err := json.Unmarshal(plaintext, &values); err != nil {
-		return nil, fmt.Errorf("parse secrets file: %w", err)
+		return nil, &StoreCorruptError{Cause: err}
 	}
 
 	return values, nil

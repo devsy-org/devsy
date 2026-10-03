@@ -18,7 +18,7 @@ const (
 
 type DeleteRequest struct {
 	Config  *config.Config
-	Store   secrets.Store
+	Store   interface{ Delete(string, string) error }
 	Context string
 	Name    string
 	Binding BindingKind

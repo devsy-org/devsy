@@ -84,7 +84,7 @@ type mapBackendRegistry struct {
 	backends map[Backend]*mapBackend
 }
 
-func (r mapBackendRegistry) Open(kind Backend, _ *index, _ bool) (backend, error) {
+func (r mapBackendRegistry) Open(kind Backend, _ *index, _ BackendOpenIntent) (backend, error) {
 	b, ok := r.backends[kind]
 	if !ok {
 		return nil, fmt.Errorf("missing test backend %q", kind)

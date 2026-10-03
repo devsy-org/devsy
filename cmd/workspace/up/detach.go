@@ -9,17 +9,25 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/output"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/task"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
 )
 
 // runDetached submits this invocation as a background task and returns
 // immediately.
-func (cmd *UpCmd) runDetached(args []string) error {
+func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
+	// Return unlock failures to the submitting process before creating a task.
+	// Desktop can then prompt and retry the submission with scoped credentials.
+	if err := cmd.prepareDetached(cfg); err != nil {
+		return err
+	}
+
 	store, err := task.NewStore()
 	if err != nil {
 		return err
@@ -40,12 +48,15 @@ func (cmd *UpCmd) runDetached(args []string) error {
 		_ = t.Fail(err)
 		return fmt.Errorf("prepare detached up: %w", err)
 	}
-	if err := launchDetached(t); err != nil {
+	if err := launchDetached(t, cmd.detachedInvocationEnvironment()); err != nil {
 		_ = t.FinishLaunch()
 		_ = t.Fail(err)
 		return fmt.Errorf("launch detached up: %w", err)
 	}
+	return cmd.renderDetachedTask(t)
+}
 
+func (cmd *UpCmd) renderDetachedTask(t *task.Task) error {
 	mode, err := output.ResolveMode(cmd.ResultFormat)
 	if err != nil {
 		return err
@@ -59,7 +70,14 @@ func (cmd *UpCmd) runDetached(args []string) error {
 	return err
 }
 
-func launchDetached(t *task.Task) error {
+func (cmd *UpCmd) prepareDetached(cfg *config.Config) error {
+	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
+		return err
+	}
+	return cmd.preflightLocalValues(cfg)
+}
+
+func launchDetached(t *task.Task, invocationEnv []string) error {
 	execPath, err := os.Executable()
 	if err != nil {
 		return err
@@ -75,7 +93,7 @@ func launchDetached(t *task.Task) error {
 		return &exec.Cmd{
 			Path: execPath,
 			Args: append([]string{execPath}, args...),
-			Env:  os.Environ(),
+			Env:  invocationEnv,
 			Dir:  wd(),
 		}, nil
 	})
@@ -183,4 +201,29 @@ func succeedTask(t *task.Task, result *config2.Result) {
 		return
 	}
 	_ = t.Succeed(result)
+}
+
+func (cmd *UpCmd) detachedInvocationEnvironment() []string {
+	env := os.Environ()
+	if cmd.secretOptions == nil {
+		return env
+	}
+	cache, ok := cmd.secretOptions.UnlockResolver.(interface {
+		Material() (secrets.UnlockMaterial, bool)
+	})
+	if !ok {
+		return env
+	}
+	material, ok := cache.Material()
+	if !ok {
+		return env
+	}
+	scoped := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		if name != secrets.EnvPassphrase && name != secrets.EnvPassphraseFile {
+			scoped = append(scoped, entry)
+		}
+	}
+	return append(scoped, secrets.EnvPassphrase+"="+material.Passphrase)
 }

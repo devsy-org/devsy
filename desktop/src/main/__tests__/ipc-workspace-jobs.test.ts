@@ -25,6 +25,7 @@ function setup() {
   let exit!: (code: number) => void
   let line!: (line: string, stream: "stdout") => void
   const cli = {
+    setUnlockHandler: vi.fn(),
     run: vi.fn(async () => ({ id: "task-1" })),
     runRaw: vi.fn(
       async () =>

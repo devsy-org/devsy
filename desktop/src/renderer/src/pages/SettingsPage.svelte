@@ -1,4 +1,5 @@
 <script lang="ts">
+import SecretProtectionPanel from "$lib/components/layout/SecretProtectionPanel.svelte"
 import { onMount } from "svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -418,6 +419,8 @@ function toggleLocal(key: keyof LocalOptions) {
 
       </div>
       </section>
+
+      <SecretProtectionPanel />
 
       <section id="updates" aria-labelledby="updates-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
         <h2 id="updates-heading" class="text-lg font-semibold">Updates</h2>

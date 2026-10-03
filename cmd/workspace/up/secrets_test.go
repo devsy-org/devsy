@@ -250,7 +250,7 @@ func TestCollectEnvVarRequests_RejectsEqualsInTarget(t *testing.T) {
 func TestApplyEnvVars_ContextAttachedNonSensitive(t *testing.T) {
 	cmd := &UpCmd{}
 	resolver := secretspkg.NewResolver()
-	require.NoError(t, resolver.Register("local", "local", fixedSource{
+	require.NoError(t, resolver.RegisterEnvironmentSource(fixedSource{
 		values: map[string]string{"LOG_LEVEL": "debug"}, sensitive: false,
 	}))
 
@@ -277,7 +277,7 @@ func TestApplyEnvVars_RejectsSensitiveSecret(t *testing.T) {
 	cmd := &UpCmd{}
 	cmd.EnvVars = []string{secretAPIKey}
 	resolver := secretspkg.NewResolver()
-	require.NoError(t, resolver.Register("local", "local", fixedSource{
+	require.NoError(t, resolver.RegisterEnvironmentSource(fixedSource{
 		values: map[string]string{secretAPIKey: "plaintext"}, sensitive: true,
 	}))
 
@@ -291,7 +291,7 @@ func TestApplyEnvVars_AllowsNonSensitive(t *testing.T) {
 	cmd := &UpCmd{}
 	cmd.EnvVars = []string{"LOG_LEVEL=DEBUG_TARGET"}
 	resolver := secretspkg.NewResolver()
-	require.NoError(t, resolver.Register("local", "local", fixedSource{
+	require.NoError(t, resolver.RegisterEnvironmentSource(fixedSource{
 		values: map[string]string{"LOG_LEVEL": "debug"}, sensitive: false,
 	}))
 

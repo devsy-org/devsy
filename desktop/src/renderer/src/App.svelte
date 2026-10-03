@@ -2,6 +2,7 @@
 import "./app.css"
 import Router, { push } from "svelte-spa-router"
 import { onMount, onDestroy } from "svelte"
+import SecretUnlockDialog from "$lib/components/layout/SecretUnlockDialog.svelte"
 import Sidebar from "$lib/components/layout/Sidebar.svelte"
 import ThemeSwitcher from "$lib/components/layout/ThemeSwitcher.svelte"
 import NotificationHistory from "$lib/components/layout/NotificationHistory.svelte"
@@ -232,4 +233,5 @@ onDestroy(() => {
   <Toaster richColors closeButton position="bottom-right" />
   <UpdateDialog bind:open={updateDialogOpen} autoDownloadEnabled={$autoUpdate} />
   <CommandPalette />
+  <SecretUnlockDialog />
 </SidebarUI.Provider>

@@ -24,6 +24,7 @@ import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js
 import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
+import { SecretSession } from "./secret-session.js"
 import type { SettingsService } from "./settings-service.js"
 import type { DaemonState } from "./state.js"
 import {
@@ -49,6 +50,12 @@ interface SecretEntry {
   created?: string
   lastUsed?: string
   orphaned?: boolean
+  availability?:
+    | "available"
+    | "locked"
+    | "missing"
+    | "backend_unavailable"
+    | "unknown"
   backend?: "keyring" | "file"
   attached?: boolean
 }
@@ -305,6 +312,95 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     machineDiagnosticsManager,
     getMainWindow,
   } = deps
+  const secretSession = new SecretSession()
+  cli.setUnlockHandler(async () => {
+    const win = getMainWindow()
+    let onClose: (() => void) | undefined
+    try {
+      return await secretSession.request(() => {
+        if (!win || win.isDestroyed()) return false
+        win.webContents.send("secret_unlock_required", {})
+        onClose = () => secretSession.submit(undefined)
+        win.once("closed", onClose)
+        return true
+      })
+    } finally {
+      if (win && onClose) win.removeListener("closed", onClose)
+    }
+  })
+  ipcMain.handle(
+    "secret_unlock_submit",
+    async (_event, args: { passphrase?: string; remember?: boolean }) => {
+      if (
+        args.passphrase !== undefined &&
+        (typeof args.passphrase !== "string" || !args.passphrase.trim())
+      ) {
+        return { ok: false, message: "Enter a non-empty passphrase." }
+      }
+      if (args.passphrase !== undefined && args.remember) {
+        try {
+          await cli.runRaw(["secret", "protection", "remember"], {
+            env: { DEVSY_SECRETS_PASSPHRASE: args.passphrase },
+            unlockRetried: true,
+          })
+        } catch {
+          return {
+            ok: false,
+            message: "The passphrase could not be verified and remembered.",
+          }
+        }
+      }
+      secretSession.submit(args.passphrase)
+      return { ok: true }
+    },
+  )
+  ipcMain.handle("secret_protection_status", async () => ({
+    ...(await cli.run<Record<string, unknown>>([
+      "secret",
+      "protection",
+      "status",
+    ])),
+    sessionUnlocked: cli.hasSessionPassphrase(),
+  }))
+  ipcMain.handle("secret_session_clear", async () => {
+    cli.setSessionPassphrase(undefined)
+    secretSession.submit(undefined)
+  })
+  ipcMain.handle(
+    "secret_protection_action",
+    async (_event, args: { action: string; passphrase?: string }) => {
+      const allowed = [
+        "set-passphrase",
+        "change-passphrase",
+        "remove-passphrase",
+        "remember",
+        "forget",
+      ]
+      if (!allowed.includes(args.action))
+        return { ok: false, message: "Unknown protection action." }
+      try {
+        const command = ["secret", "protection", args.action]
+        if (["set-passphrase", "change-passphrase"].includes(args.action)) {
+          if (!args.passphrase?.trim())
+            return { ok: false, message: "Enter a non-empty passphrase." }
+          await cli.runRawStdin([...command, "--stdin"], args.passphrase)
+          cli.setSessionPassphrase(args.passphrase)
+        } else {
+          await cli.runRaw(command)
+          if (args.action === "remove-passphrase")
+            cli.setSessionPassphrase(undefined)
+        }
+        return { ok: true }
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        return {
+          ok: false,
+          message: cliError?.message ?? "Secret protection operation failed.",
+          cliError,
+        }
+      }
+    },
+  )
   const tunnelProcesses = new Map<
     string,
     import("node:child_process").ChildProcess

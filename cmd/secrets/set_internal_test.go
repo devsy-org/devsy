@@ -8,6 +8,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	devsysecrets "github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/stretchr/testify/require"
 )
@@ -128,4 +129,40 @@ func TestResolveValue_RejectsMultipleSources(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "only one of") {
 		t.Fatalf("expected mutual-exclusion error, got %v", err)
 	}
+}
+
+func TestSetSecretRemovesDetachedPlaintextEnvironmentValue(t *testing.T) {
+	config.ResetPathManager()
+	t.Cleanup(config.ResetPathManager)
+	t.Setenv(config.EnvHome, t.TempDir())
+	t.Setenv(devsysecrets.EnvBackend, "file")
+	t.Setenv(devsysecrets.EnvPassphrase, "conversion-long-passphrase")
+	require.NoError(
+		t,
+		config.SaveConfig(
+			&config.Config{
+				DefaultContext: config.DefaultContext,
+				Contexts:       map[string]*config.ContextConfig{config.DefaultContext: {}},
+			},
+		),
+	)
+	cfg, err := config.LoadConfig("", "")
+	require.NoError(t, err)
+	envs, err := envstore.NewStoreForConfig(cfg)
+	require.NoError(t, err)
+	require.NoError(t, envs.Set(cfg.DefaultContext, "CONVERTED", "plaintext value"))
+	require.NoError(
+		t,
+		(&SetCmd{GlobalFlags: &flags.GlobalFlags{}, Value: "protected value", valueSet: true}).Run(
+			t.Context(),
+			"CONVERTED",
+		),
+	)
+	_, err = envs.Get(cfg.DefaultContext, "CONVERTED")
+	require.ErrorIs(t, err, envstore.ErrNotFound)
+	store, err := devsysecrets.NewSecretStoreForConfig(cfg)
+	require.NoError(t, err)
+	value, err := store.Get(cfg.DefaultContext, "CONVERTED")
+	require.NoError(t, err)
+	require.Equal(t, "protected value", value)
 }

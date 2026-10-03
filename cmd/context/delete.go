@@ -7,6 +7,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +60,10 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 			return err
 		}
 
+		if err := deleteContextEnvironment(devsyConfig, context); err != nil {
+			return err
+		}
+
 		delete(devsyConfig.Contexts, context)
 		resetContextReferences(devsyConfig, context)
 		return nil
@@ -102,13 +107,37 @@ func deleteContextSecrets(devsyConfig *config.Config, contextName string) error 
 		return nil
 	}
 
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	store, err := secrets.NewSecretStoreForConfig(devsyConfig)
 	if err != nil {
 		return fmt.Errorf("open secrets store for context %q: %w", contextName, err)
 	}
 	for _, name := range ctxConfig.Secrets {
 		if err := store.Delete(contextName, name); err != nil {
 			return fmt.Errorf("delete secret %q for context %q: %w", name, contextName, err)
+		}
+	}
+	return nil
+}
+
+// deleteContextEnvironment removes every managed env value, including detached
+// values. Listing the dedicated plaintext store never opens secret backends.
+func deleteContextEnvironment(devsyConfig *config.Config, contextName string) error {
+	store, err := envstore.NewStoreForConfig(devsyConfig)
+	if err != nil {
+		return fmt.Errorf("open environment store for context %q: %w", contextName, err)
+	}
+	values, err := store.List(contextName)
+	if err != nil {
+		return fmt.Errorf("list environment values for context %q: %w", contextName, err)
+	}
+	for _, value := range values {
+		if err := store.Delete(contextName, value.Name); err != nil {
+			return fmt.Errorf(
+				"delete environment variable %q for context %q: %w",
+				value.Name,
+				contextName,
+				err,
+			)
 		}
 	}
 	return nil
