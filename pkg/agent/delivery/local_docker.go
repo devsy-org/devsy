@@ -282,7 +282,7 @@ func (d *LocalDockerDelivery) populatePodmanVolume(
 		return nil
 	}
 	return fmt.Errorf(
-		"Podman direct copy failed: %w; helper fallback failed: %v",
+		"podman direct copy failed: %w; helper fallback failed: %v",
 		directErr,
 		helperErr,
 	)
