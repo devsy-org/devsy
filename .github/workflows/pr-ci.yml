@@ -1021,9 +1021,7 @@ jobs:
               success)
                 ;;
               skipped)
-                if [[ "$skip_when_no_go_changes" == "true" && "$go_changes" != "true" ]]; then
-                  ;;
-                else
+                if [[ "$skip_when_no_go_changes" != "true" || "$go_changes" == "true" ]]; then
                   echo "::error::$name ended with result=skipped unexpectedly"
                   return 1
                 fi
