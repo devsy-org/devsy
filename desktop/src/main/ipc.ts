@@ -123,6 +123,7 @@ interface IpcDependencies {
   onRendererReady?: (sender: Electron.WebContents) => void
   appNavigation?: AppNavigationController
   settingsService?: SettingsService
+  secretSessionTimeoutMs?: number
 }
 
 /** Format a line in zap console format so log-parser.ts can parse it. */
@@ -312,21 +313,49 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     machineDiagnosticsManager,
     getMainWindow,
   } = deps
-  const secretSession = new SecretSession()
+  const secretSession = new SecretSession(deps.secretSessionTimeoutMs)
   cli.setUnlockHandler(async () => {
     const win = getMainWindow()
-    let onClose: (() => void) | undefined
-    try {
-      return await secretSession.request(() => {
+    return secretSession.request(
+      () => {
         if (!win || win.isDestroyed()) return false
+        if (win.isMinimized()) win.restore()
+        if (!win.isVisible()) win.show()
+        win.focus()
         win.webContents.send("secret_unlock_required", {})
-        onClose = () => secretSession.submit(undefined)
-        win.once("closed", onClose)
         return true
-      })
-    } finally {
-      if (win && onClose) win.removeListener("closed", onClose)
-    }
+      },
+      win
+        ? (cancel) => {
+            const onNavigation = (
+              _event: Electron.Event,
+              _url: string,
+              isInPlace: boolean,
+              isMainFrame: boolean,
+            ) => {
+              if (!isInPlace && isMainFrame) cancel()
+            }
+            const onRendererGone = () => cancel()
+            const onClosed = () => cancel()
+            win.webContents.on("did-start-navigation", onNavigation)
+            win.webContents.on("render-process-gone", onRendererGone)
+            win.webContents.on("destroyed", onRendererGone)
+            win.on("closed", onClosed)
+            return () => {
+              win.webContents.removeListener(
+                "did-start-navigation",
+                onNavigation,
+              )
+              win.webContents.removeListener(
+                "render-process-gone",
+                onRendererGone,
+              )
+              win.webContents.removeListener("destroyed", onRendererGone)
+              win.removeListener("closed", onClosed)
+            }
+          }
+        : undefined,
+    )
   })
   ipcMain.handle(
     "secret_unlock_submit",
@@ -2174,6 +2203,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("app_ready", (event) => {
     deps.onRendererReady?.(event.sender)
     setImmediate(() => {
+      secretSession.notifyPending()
       if (!event.sender.isDestroyed()) {
         event.sender.send("update-status", getLastStatus())
       }

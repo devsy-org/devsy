@@ -136,13 +136,15 @@ func (r *systemBackendRegistry) openFileBackend(
 	return newFileBackend(filepath.Join(r.dir, EncryptedFileName), key), nil
 }
 
-func (r *systemBackendRegistry) initializeFileKey() (*fileKey, error) {
+func (r *systemBackendRegistry) initializeFileKey(
+	resolver UnlockMaterialResolver,
+) (*fileKey, error) {
 	if _, statErr := os.Stat(filepath.Join(r.dir, EncryptedFileName)); statErr == nil {
-		return nil, &StoreCorruptError{}
+		return r.recoverLegacyFileKey(resolver)
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return nil, statErr
 	}
-	material, resolveErr := r.resolver.ResolvePassphrase(
+	material, resolveErr := resolver.ResolvePassphrase(
 		context.Background(),
 		UnlockRequest{Purpose: "initialize"},
 	)
@@ -150,6 +152,21 @@ func (r *systemBackendRegistry) initializeFileKey() (*fileKey, error) {
 		return nil, resolveErr
 	}
 	return resolveFileKey(r.dir, material.Passphrase)
+}
+
+// Recover only file protection, after verifying the complete legacy payload.
+// Secret ownership remains unknown when the other backend cannot be probed.
+func (r *systemBackendRegistry) recoverLegacyFileKey(
+	resolver UnlockMaterialResolver,
+) (*fileKey, error) {
+	key, err := openPassphraseFileKeyWithResolver(resolver)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := newFileBackend(filepath.Join(r.dir, EncryptedFileName), key).load(); err != nil {
+		return nil, err
+	}
+	return key, nil
 }
 
 func (r *systemBackendRegistry) probeFile(idx *index, key string) (bool, bool) {
@@ -270,7 +287,7 @@ func (r *systemBackendRegistry) openFileKey(
 			resolver,
 		)
 	case intent == BackendInitializeNew:
-		return r.initializeFileKey()
+		return r.initializeFileKey(resolver)
 	default:
 		return openExistingFileKeyWithResolver(
 			r.dir,
