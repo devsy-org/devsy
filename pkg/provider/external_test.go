@@ -161,6 +161,44 @@ func (s *externalConfigSuite) TestPreparedPaths() {
 	}
 }
 
+func (s *externalConfigSuite) TestRelativeLocalPreparedPaths() {
+	for _, name := range []string{"", filepath.Join("nested", "runtime")} {
+		s.Run(name, func() {
+			root := s.T().TempDir()
+			agent := externalAgentFixture()
+			binary := agent.Binaries["RUNTIME"][0]
+			binary.Path = "relative-runtime"
+			binary.Name = name
+			expected := filepath.Join(root, "runtime", binary.Path)
+			if name != "" {
+				expected = filepath.Join(root, "runtime", name)
+			}
+			s.Require().NoError(os.MkdirAll(filepath.Dir(expected), 0o750))
+			s.writeExecutable(expected, externalFixturePayload)
+			resolved, err := ResolveExternalRuntimeBinary(agent, root)
+			s.Require().NoError(err)
+			s.Equal(expected, resolved)
+		})
+	}
+}
+
+func (s *externalConfigSuite) TestRelativePathCannotEscape() {
+	root := s.T().TempDir()
+	agent := externalAgentFixture()
+	binary := agent.Binaries["RUNTIME"][0]
+	binary.Path = "relative-runtime"
+	binary.Name = filepath.Join("..", "outside-runtime")
+	outside := filepath.Join(root, "outside-runtime")
+	s.writeExecutable(outside, externalFixturePayload)
+	resolved, err := ResolveExternalRuntimeBinary(agent, root)
+	s.Require().ErrorContains(err, "escapes base directory")
+	s.Empty(resolved)
+	// #nosec G304 -- This fixture is inside the test temporary directory.
+	contents, err := os.ReadFile(outside)
+	s.Require().NoError(err)
+	s.Equal(externalFixturePayload, string(contents))
+}
+
 func (s *externalConfigSuite) TestVerificationPreservesFiles() {
 	root := s.T().TempDir()
 	agent := externalAgentFixture()

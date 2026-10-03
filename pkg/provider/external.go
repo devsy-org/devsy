@@ -92,7 +92,11 @@ func ResolveExternalRuntimeBinary(agent ProviderAgentConfig, binariesDir string)
 	key := agent.External.Binary
 	for _, binary := range agent.Binaries[key] {
 		if binary.OS == runtime.GOOS && binary.Arch == runtime.GOARCH {
-			resolved := getBinaryPath(binary, filepath.Join(binariesDir, strings.ToLower(key)))
+			targetFolder := filepath.Join(binariesDir, strings.ToLower(key))
+			resolved, err := externalBinaryPath(binary, targetFolder)
+			if err != nil {
+				return "", fmt.Errorf("resolve external runtime executable: %w", err)
+			}
 			return verifyExternalExecutable(resolved, binary.Checksum)
 		}
 	}
@@ -102,6 +106,18 @@ func ResolveExternalRuntimeBinary(agent ProviderAgentConfig, binariesDir string)
 		runtime.GOOS,
 		runtime.GOARCH,
 	)
+}
+
+func externalBinaryPath(binary *ProviderBinary, targetFolder string) (string, error) {
+	resolved := getBinaryPath(binary, targetFolder)
+	if filepath.IsAbs(binary.Path) {
+		return resolved, nil
+	}
+	relative, err := filepath.Rel(targetFolder, resolved)
+	if err != nil {
+		return "", fmt.Errorf("resolve relative binary path: %w", err)
+	}
+	return securePath(targetFolder, relative)
 }
 
 func verifyExternalExecutable(path, expected string) (string, error) {
