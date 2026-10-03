@@ -36,6 +36,9 @@ func (p *ProtectionManager) prepareReset(
 	idx *index,
 	expected []SecretMeta,
 ) (*protectionTransaction, error) {
+	if err := p.ensureKnownFileOwnership(idx); err != nil {
+		return nil, err
+	}
 	entries := fileEntries(idx)
 	if expected != nil && !sameFileEntries(entries, expected) {
 		return nil, errors.New(
@@ -163,4 +166,36 @@ func validateResetJournal(j rekeyJournal) error {
 		}
 	}
 	return nil
+}
+
+// A legacy unowned secret may reside inside the indivisible encrypted blob.
+// Never omit it from confirmation or assume that it belongs to the keyring.
+func (p *ProtectionManager) ensureKnownFileOwnership(idx *index) error {
+	if !hasUnownedSecrets(idx) {
+		return nil
+	}
+	// #nosec G703 -- fixed ciphertext filename in the selected config directory.
+	_, err := os.Stat(filepath.Join(p.dir, EncryptedFileName))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf(
+		"cannot identify all file-backed secrets while ownership remains unknown; "+
+			"restore backend access and repair secret ownership before resetting: %w",
+		ErrStateIndeterminate,
+	)
+}
+
+func hasUnownedSecrets(idx *index) bool {
+	for _, entries := range idx.data.Contexts {
+		for _, meta := range entries {
+			if meta.Sensitive() && meta.Backend == "" {
+				return true
+			}
+		}
+	}
+	return false
 }

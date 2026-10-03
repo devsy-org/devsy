@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -16,6 +17,11 @@ import (
 type DeleteCmd struct {
 	*flags.GlobalFlags
 }
+
+const (
+	environmentStoreUnavailable = "environment store is unavailable"
+	environmentStoreNotWritable = "environment store is not writable"
+)
 
 // NewDeleteCmd creates a new command.
 func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
@@ -56,6 +62,13 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 			return fmt.Errorf("cannot delete 'default' context")
 		}
 
+		// Read and validate environment state before deleting any secrets. A
+		// corrupt environment store must not leave the context's secrets gone
+		// while the context itself remains registered.
+		if err := preflightContextEnvironment(devsyConfig, context); err != nil {
+			return err
+		}
+
 		if err := deleteContextSecrets(devsyConfig, context); err != nil {
 			return err
 		}
@@ -73,6 +86,40 @@ func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
 	}
 
 	return removeContextDir(context)
+}
+
+func preflightContextEnvironment(devsyConfig *config.Config, contextName string) error {
+	store, err := envstore.NewStoreForConfig(devsyConfig)
+	if err != nil {
+		return environmentPreflightError(contextName, environmentStoreUnavailable)
+	}
+	if _, err := store.List(contextName); err != nil {
+		// Do not include parser or store errors here: they may contain
+		// environment values from the plaintext file.
+		return environmentPreflightError(contextName, environmentStoreUnavailable)
+	}
+
+	path, err := config.GetConfigPath()
+	if err != nil {
+		return environmentPreflightError(contextName, environmentStoreUnavailable)
+	}
+	probe, err := os.CreateTemp(filepath.Dir(path), ".devsy-env-delete-check-*")
+	if err != nil {
+		return environmentPreflightError(contextName, environmentStoreNotWritable)
+	}
+	probePath := probe.Name()
+	if err := probe.Close(); err != nil {
+		_ = os.Remove(probePath)
+		return environmentPreflightError(contextName, environmentStoreNotWritable)
+	}
+	if err := os.Remove(probePath); err != nil {
+		return environmentPreflightError(contextName, environmentStoreNotWritable)
+	}
+	return nil
+}
+
+func environmentPreflightError(contextName, detail string) error {
+	return fmt.Errorf("preflight environment cleanup for context %q: %s", contextName, detail)
 }
 
 // removeContextDir removes the directory for a deleted context.

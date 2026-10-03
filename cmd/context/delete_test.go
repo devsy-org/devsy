@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/flags"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/envstore"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/stretchr/testify/require"
 )
 
@@ -128,14 +129,26 @@ func TestDeleteContextMigratesAndRemovesLegacyEnvironmentValues(t *testing.T) {
 }
 
 func TestDeleteContextRetainsConfigIfEnvironmentStoreUnreadable(t *testing.T) {
-	_, home := setupDeleteContextTest(t)
+	cfg, home := setupDeleteContextTest(t)
+	cfg.Contexts["staging"].Secrets = []string{"STAGING_TOKEN"}
+	require.NoError(t, pkgconfig.SaveConfig(cfg))
+	t.Setenv(secrets.EnvBackend, "file")
+	t.Setenv(secrets.EnvPassphrase, "")
+	t.Setenv(secrets.EnvPassphraseFile, "")
+	secretStore, err := secrets.NewSecretStoreForConfig(cfg)
+	require.NoError(t, err)
+	require.NoError(t, secretStore.Set("staging", "STAGING_TOKEN", "private-staging-token"))
 	require.NoError(
 		t,
 		os.WriteFile(filepath.Join(home, envstore.FileName), []byte("schemaVersion: 999"), 0o600),
 	)
-	err := (&DeleteCmd{GlobalFlags: &flags.GlobalFlags{}}).Run(context.Background(), "staging")
-	require.ErrorContains(t, err, "unsupported environment schema version")
-	cfg, err := pkgconfig.LoadConfig("", "")
+	err = (&DeleteCmd{GlobalFlags: &flags.GlobalFlags{}}).Run(context.Background(), "staging")
+	require.ErrorContains(t, err, "environment store is unavailable")
+	require.NotContains(t, err.Error(), "private-staging-token")
+	cfg, err = pkgconfig.LoadConfig("", "")
 	require.NoError(t, err)
 	require.Contains(t, cfg.Contexts, "staging")
+	value, err := secretStore.Get("staging", "STAGING_TOKEN")
+	require.NoError(t, err)
+	require.Equal(t, "private-staging-token", value)
 }

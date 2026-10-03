@@ -99,16 +99,10 @@ func (cmd *SetCmd) Run(_ context.Context, name string) error {
 	if _, err := envs.List(contextName); err != nil {
 		return err
 	}
-	if err := store.Set(contextName, name, value); err != nil {
+	if err := setSecretValue(store, envs, secretSetTarget{
+		context: contextName, name: name, value: value,
+	}); err != nil {
 		return err
-	}
-
-	if err := envs.Delete(contextName, name); err != nil {
-		return fmt.Errorf(
-			"secret %q was stored but its previous plaintext environment value could not be removed: %w",
-			name,
-			err,
-		)
 	}
 
 	log.Infof("secret %q set in context %q", name, contextName)

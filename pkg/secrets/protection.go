@@ -198,6 +198,17 @@ func (p *ProtectionManager) status(inspect bool) (ProtectionStatus, error) {
 		FileEntries:  fileEntries(idx),
 		Availability: SecretStateUnknown,
 	}
+	// Keep protection metadata visible when a legacy owner cannot be proven.
+	// Reset applies the same ownership check as a hard failure under its lock.
+	ownershipErr := p.ensureKnownFileOwnership(idx)
+	if errors.Is(ownershipErr, ErrStateIndeterminate) {
+		result.ReasonCode = "ownership_unknown"
+		return result, nil
+	}
+	if ownershipErr != nil {
+		result.Availability, result.ReasonCode = inspectionAvailability(ownershipErr)
+		return result, nil
+	}
 	if inspect {
 		value, rememberErr := p.readRemembered()
 		result.Remembered = value != ""
