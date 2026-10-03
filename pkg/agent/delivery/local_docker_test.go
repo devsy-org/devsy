@@ -212,7 +212,7 @@ func TestPopulateVolumeDirectCopy_PodmanWritesDirectlyWhenWritable(t *testing.T)
 	// #nosec G302 -- test script must be executable
 	require.NoError(t, os.Chmod(scriptPath, 0o755))
 
-	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	d := &LocalDockerDelivery{DockerCommand: scriptPath, Runtime: docker.RuntimePodman}
 	err := d.populateVolumeDirectCopy(context.Background(), "test-vol", binaryContent)
 	require.NoError(t, err)
 
@@ -251,7 +251,7 @@ func TestPopulateVolumeDirectCopy_PodmanFallsBackToUnshareOnPermission(t *testin
 	// #nosec G302 -- test script must be executable
 	require.NoError(t, os.Chmod(scriptPath, 0o755))
 
-	d := &LocalDockerDelivery{DockerCommand: scriptPath}
+	d := &LocalDockerDelivery{DockerCommand: scriptPath, Runtime: docker.RuntimePodman}
 	err := d.populateVolumeDirectCopy(context.Background(), "test-vol", binaryContent)
 	require.NoError(t, err)
 
