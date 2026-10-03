@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/inject"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -15,6 +16,7 @@ type FactoryOptions struct {
 	IsRemoteDocker             bool
 	WorkspaceID                string
 	DockerCommand              string
+	Runtime                    docker.RuntimeName
 	HelperImage                string
 	KubernetesAgentInstallPath string
 	ContainerID                string
@@ -66,6 +68,7 @@ func dockerDelivery(opts FactoryOptions) AgentDelivery {
 	log.Debugf("using local docker delivery (named volume)")
 	return &LocalDockerDelivery{
 		DockerCommand: opts.DockerCommand,
+		Runtime:       opts.Runtime,
 		Environment:   opts.DockerEnv,
 		HelperImage:   opts.HelperImage,
 	}
