@@ -12,16 +12,17 @@ import (
 )
 
 const (
-	cleanupFirstSecret   = "FIRST"
-	cleanupSecondSecret  = "SECOND"
-	cleanupOtherContext  = "other"
-	cleanupKeepName      = "KEEP"
-	cleanupKeepValue     = "keep"
-	cleanupOtherKey      = "other/KEEP"
-	cleanupFirstKey      = "staging/FIRST"
-	cleanupEncryptedName = "TOKEN"
-	cleanupSecret        = "private-secret"
-	cleanupEnv           = "private-env"
+	cleanupFirstSecret    = "FIRST"
+	cleanupSecondSecret   = "SECOND"
+	cleanupOtherContext   = "other"
+	cleanupKeepName       = "KEEP"
+	cleanupKeepValue      = "keep"
+	cleanupOtherKey       = "other/KEEP"
+	cleanupFirstKey       = "staging/FIRST"
+	cleanupEncryptedName  = "TOKEN"
+	cleanupDetachedSecret = "DETACHED_SECRET"
+	cleanupSecret         = "private-secret"
+	cleanupEnv            = "private-env"
 )
 
 const (
@@ -132,7 +133,7 @@ func cleanupFixture(t *testing.T) (contextDeleteRequest, *cleanupEnvStore, *clea
 	}))
 	require.NoError(t, envs.Set(cleanupOtherContext, cleanupKeepName, cleanupKeepValue))
 	secretStore := &cleanupSecretStore{values: map[string]cleanupSecretValue{}}
-	for _, name := range []string{cleanupFirstSecret, cleanupSecondSecret, "DETACHED_SECRET"} {
+	for _, name := range []string{cleanupFirstSecret, cleanupSecondSecret, cleanupDetachedSecret} {
 		meta := secrets.SecretMeta{
 			Name:    name,
 			Context: cleanupContext,
@@ -167,7 +168,7 @@ func assertCleanupValuesPreserved(
 	after, err := envs.List(cleanupContext)
 	require.NoError(t, err)
 	require.Equal(t, original, after)
-	for _, name := range []string{cleanupFirstSecret, cleanupSecondSecret, "DETACHED_SECRET"} {
+	for _, name := range []string{cleanupFirstSecret, cleanupSecondSecret, cleanupDetachedSecret} {
 		require.Equal(t, cleanupSecret, secretStore.values["staging/"+name].value)
 	}
 	require.Equal(t, cleanupKeepValue, secretStore.values[cleanupOtherKey].value)

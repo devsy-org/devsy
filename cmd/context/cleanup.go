@@ -21,11 +21,13 @@ type contextSecretStore interface {
 }
 
 type contextDeleteRequest struct {
-	config  *config.Config
-	context string
-	envs    envstore.BatchStore
-	secrets contextSecretStore
-	save    func(*config.Config) error
+	config     *config.Config
+	context    string
+	envs       envstore.BatchStore
+	secrets    contextSecretStore
+	save       func(*config.Config) error
+	intent     *contextDeletionPersistence
+	checkpoint func(string)
 }
 
 type contextRollback struct {
@@ -76,6 +78,8 @@ func (e *ContextCleanupError) Unwrap() []error {
 
 func newContextDeleteRequest(cfg *config.Config, contextName string) (contextDeleteRequest, error) {
 	request := contextDeleteRequest{config: cfg, context: contextName, save: config.SaveConfig}
+	persistence := newContextDeletionPersistence(cfg, contextName)
+	request.intent = &persistence
 	envs, err := envstore.NewStoreForConfig(cfg)
 	if err != nil {
 		return request, cleanupError(contextName, "environment store is unavailable", err)
@@ -104,6 +108,10 @@ func deleteContextValues(request contextDeleteRequest) error {
 	if err != nil {
 		return err
 	}
+	if err := beginContextDeletion(request, snapshot); err != nil {
+		return cleanupError(request.context, "deletion intent persistence", err)
+	}
+	checkpointContextDeletion(request, "intent")
 	attempted := 0
 	for _, secret := range snapshot.secrets {
 		attempted++
@@ -114,6 +122,7 @@ func deleteContextValues(request contextDeleteRequest) error {
 				contextRollback{attempted: attempted, phase: "secret deletion", cause: err},
 			)
 		}
+		checkpointContextDeletion(request, "secret")
 	}
 	if err := request.envs.DeleteValues(
 		request.context,
@@ -125,6 +134,7 @@ func deleteContextValues(request contextDeleteRequest) error {
 			contextRollback{attempted: attempted, phase: "environment deletion", cause: err},
 		)
 	}
+	checkpointContextDeletion(request, "environment")
 	candidate := config.CloneConfig(request.config)
 	delete(candidate.Contexts, request.context)
 	resetContextReferences(candidate, request.context)
@@ -142,7 +152,8 @@ func deleteContextValues(request contextDeleteRequest) error {
 			},
 		)
 	}
-	return nil
+	checkpointContextDeletion(request, "config")
+	return finishContextDeletion(request)
 }
 
 func snapshotContextValues(request contextDeleteRequest) (contextSnapshot, error) {
@@ -221,6 +232,11 @@ func rollbackContextValues(
 	for _, secret := range slices.Backward(snapshot.secrets[:failure.attempted]) {
 		if err := request.secrets.Restore(secret.meta, secret.value); err != nil {
 			failures = append(failures, err)
+		}
+	}
+	if len(failures) == 0 {
+		if err := clearContextDeletion(request); err != nil {
+			return deletionRecoveryError(request.context, err)
 		}
 	}
 	result := cleanupError(request.context, failure.phase, failure.cause)

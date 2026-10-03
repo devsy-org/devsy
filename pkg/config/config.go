@@ -381,6 +381,16 @@ func UpdateConfig(contextOverride, providerOverride string, mutate func(*Config)
 // processes. Callers must acquire it before loading the config and hold it
 // until every related persistent operation is complete.
 func LockConfig() (func(), error) {
+	return lockConfigWithDeletionTarget("")
+}
+
+// LockConfigForContextDeletion permits recovery only for the explicitly named
+// pending deletion. Every other mutation remains fenced under the same lock.
+func LockConfigForContextDeletion(target string) (func(), error) {
+	return lockConfigWithDeletionTarget(target)
+}
+
+func lockConfigWithDeletionTarget(target string) (func(), error) {
 	configPath, err := getConfigMutationPath()
 	if err != nil {
 		return nil, err
@@ -391,6 +401,15 @@ func LockConfig() (func(), error) {
 	lock := flock.New(configPath + ".lock")
 	if err := lock.Lock(); err != nil {
 		return nil, fmt.Errorf("lock config %q: %w", configPath+".lock", err)
+	}
+	intent, intentErr := ReadContextDeletionIntent()
+	if intentErr != nil {
+		_ = lock.Unlock()
+		return nil, intentErr
+	}
+	if intent != nil && (target == "" || target != intent.Context) {
+		_ = lock.Unlock()
+		return nil, &ContextDeletionPendingError{Context: intent.Context}
 	}
 	return func() { _ = lock.Unlock() }, nil
 }

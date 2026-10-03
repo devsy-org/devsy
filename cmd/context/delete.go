@@ -43,15 +43,29 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run runs the command logic.
 func (cmd *DeleteCmd) Run(_ context.Context, contextName string) error {
-	unlock, err := config.LockConfig()
+	if contextName == "" && cmd.GlobalFlags != nil {
+		contextName = cmd.Context
+	}
+	unlock, err := config.LockConfigForContextDeletion(contextName)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	cfg, err := config.LoadConfig(contextName, cmd.Provider)
+	cfg, err := config.LoadConfig("", "")
 	if err != nil {
 		return err
 	}
+	intent, err := config.ReadContextDeletionIntent()
+	if err != nil {
+		return err
+	}
+	if intent != nil {
+		return resumeContextDeletion(cfg, intent)
+	}
+	return deleteRegisteredContext(cfg, contextName)
+}
+
+func deleteRegisteredContext(cfg *config.Config, contextName string) error {
 	if contextName == "" {
 		contextName = cfg.DefaultContext
 	}
@@ -65,10 +79,7 @@ func (cmd *DeleteCmd) Run(_ context.Context, contextName string) error {
 	if err != nil {
 		return err
 	}
-	if err := deleteContextValues(request); err != nil {
-		return err
-	}
-	return removeContextDir(contextName)
+	return deleteContextValues(request)
 }
 
 // removeContextDir removes the directory for a deleted context.
