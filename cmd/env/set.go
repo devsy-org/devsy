@@ -2,17 +2,15 @@ package env
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +47,7 @@ func (cmd *SetCmd) Run(_ context.Context, arg string) error {
 		}
 		name, value = k, v
 	}
-	if err := secrets.ValidateName(name); err != nil {
+	if err := envstore.ValidateName(name); err != nil {
 		return err
 	}
 
@@ -63,22 +61,18 @@ func (cmd *SetCmd) Run(_ context.Context, arg string) error {
 		return err
 	}
 	contextName := devsyConfig.DefaultContext
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	ctxConfig := devsyConfig.Contexts[contextName]
+	if attachedLocalSecret(ctxConfig, name) {
+		return fmt.Errorf(
+			"%q is attached as a secret; detach it before converting it to an environment variable",
+			name,
+		)
+	}
+	store, err := envstore.NewStoreForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
-	if meta, metaErr := store.Meta(contextName, name); metaErr == nil {
-		ctxConfig := devsyConfig.Contexts[contextName]
-		if meta.Sensitive() && ctxConfig != nil && slices.Contains(ctxConfig.Secrets, name) {
-			return fmt.Errorf(
-				"%q is attached as a secret; detach it before converting it to an environment variable",
-				name,
-			)
-		}
-	} else if !errors.Is(metaErr, secrets.ErrSecretNotFound) {
-		return metaErr
-	}
-	if err := store.Set(contextName, name, value, secrets.KindEnv); err != nil {
+	if err := store.Set(contextName, name, value); err != nil {
 		return err
 	}
 

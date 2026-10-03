@@ -5,6 +5,8 @@ import { Readable } from "node:stream"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { CliRunner } from "../cli.js"
 
+vi.mock("../analytics.js", () => ({ getAnalyticsDistinctId: () => "test-id" }))
+
 type ExecCb = (
   error: Error | null,
   result: { stdout: string; stderr: string },
@@ -56,6 +58,87 @@ describe("CliRunner", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     cli = new CliRunner("/usr/local/bin/devsy")
+  })
+
+  it("scopes session credentials and strips inherited unlock environment from env commands", async () => {
+    vi.stubEnv("DEVSY_SECRETS_PASSPHRASE", "inherited-passphrase")
+    vi.stubEnv("DEVSY_SECRETS_PASSPHRASE_FILE", "/private/passphrase")
+    try {
+      cli = new CliRunner("/usr/local/bin/devsy")
+      cli.setSessionPassphrase("session-passphrase")
+      const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+      mock.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) =>
+          callback(null, { stdout: "[]", stderr: "" }),
+      )
+      await cli.run(["secret", "list"])
+      await cli.run(["env", "list"], {
+        env: { DEVSY_SECRETS_PASSPHRASE: "explicit-env" },
+      })
+      await cli.run(["workspace", "list"])
+      await cli.run(["context", "delete", "old-context"])
+      await cli.runRaw([
+        "--context",
+        "secret",
+        "env",
+        "set",
+        "workspace",
+        "--value",
+        "up",
+      ])
+      expect(mock.mock.calls[0][2].env.DEVSY_SECRETS_PASSPHRASE).toBe(
+        "session-passphrase",
+      )
+      expect(mock.mock.calls[3][2].env.DEVSY_SECRETS_PASSPHRASE).toBe(
+        "session-passphrase",
+      )
+      for (const call of [...mock.mock.calls.slice(1, 3), mock.mock.calls[4]]) {
+        expect(call[2].env.DEVSY_SECRETS_PASSPHRASE).toBeUndefined()
+        expect(call[2].env.DEVSY_SECRETS_PASSPHRASE_FILE).toBeUndefined()
+      }
+      expect(process.env.DEVSY_SECRETS_PASSPHRASE).toBe("inherited-passphrase")
+      cli.setSessionPassphrase(undefined)
+      expect(cli.hasSessionPassphrase()).toBe(false)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it("prompts on a structured unlock requirement and retries exactly once without leaking credentials", async () => {
+    const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    let attempts = 0
+    mock.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
+        attempts++
+        const code = attempts === 1 ? "unlock_required" : "unlock_failed"
+        callback(
+          Object.assign(new Error("failed"), {
+            stderr: JSON.stringify({
+              kind: "error",
+              outcome: "error",
+              code,
+              message:
+                attempts === 1
+                  ? "Unlock required"
+                  : "Unable to unlock session-private",
+            }),
+          }),
+          { stdout: "", stderr: "" },
+        )
+      },
+    )
+    const unlock = vi.fn(async () => "session-private")
+    cli.setUnlockHandler(unlock)
+    await expect(cli.runRaw(["secret", "delete", "TOKEN"])).rejects.toThrow(
+      "Unable to unlock ***",
+    )
+    expect(mock).toHaveBeenCalledTimes(2)
+    expect(unlock).toHaveBeenCalledOnce()
+    expect(cli.hasSessionPassphrase()).toBe(false)
+    expect(mock.mock.calls[1][1]).not.toContain("session-private")
+    expect(mock.mock.calls[1][2].env.DEVSY_SECRETS_PASSPHRASE).toBe(
+      "session-private",
+    )
   })
 
   it("passes the configured level without overriding explicit CLI levels", async () => {
@@ -380,6 +463,184 @@ describe("CliRunner", () => {
   })
 
   describe("runStreaming", () => {
+    it("redacts scoped credentials before delivering stdout, stderr, and structured errors", async () => {
+      const child = fakeStreamingChild()
+      vi.mocked(spawn).mockReturnValue(
+        child as unknown as ReturnType<typeof spawn>,
+      )
+      cli.setSessionPassphrase("private-session-value")
+      const onLine = vi.fn()
+      const onExit = vi.fn()
+      await cli.runStreaming(["workspace", "up", "."], onLine, onExit)
+      child.stdout.push("echo private-session-value\n")
+      child.stderr.push(
+        `${JSON.stringify({ kind: "error", outcome: "error", code: "unlock_failed", message: "failed private-session-value" })}\n`,
+      )
+      await vi.waitFor(() => expect(onLine).toHaveBeenCalledTimes(2))
+      child.emit("close", 1)
+      expect(JSON.stringify(onLine.mock.calls)).not.toContain(
+        "private-session-value",
+      )
+      expect(JSON.stringify(onExit.mock.calls)).not.toContain(
+        "private-session-value",
+      )
+      expect(cli.hasSessionPassphrase()).toBe(false)
+    })
+
+    it("keeps streaming jobs active while unlocking and reports only the retry result", async () => {
+      const first = fakeStreamingChild()
+      const second = fakeStreamingChild()
+      const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
+      mockSpawn.mockReturnValueOnce(first).mockReturnValueOnce(second)
+      let unlock!: (value: string | undefined) => void
+      cli.setUnlockHandler(
+        () =>
+          new Promise((resolve) => {
+            unlock = resolve
+          }),
+      )
+      const onLine = vi.fn()
+      const onExit = vi.fn()
+      await cli.runStreaming(
+        ["workspace", "up", "."],
+        onLine,
+        onExit,
+        "workspace-one",
+      )
+      first.stderr.push(
+        `${JSON.stringify({ kind: "error", outcome: "error", code: "unlock_required", message: "Unlock required" })}\n`,
+      )
+      await new Promise((resolve) => setImmediate(resolve))
+      first.emit("close", 1)
+      await vi.waitFor(() => expect(unlock).toBeDefined())
+      expect(onLine).not.toHaveBeenCalled()
+      expect(onExit).not.toHaveBeenCalled()
+      unlock("private-session")
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
+      second.stdout.push("workspace ready\n")
+      await vi.waitFor(() => expect(onLine).toHaveBeenCalledOnce())
+      second.emit("close", 0)
+      expect(onExit).toHaveBeenCalledExactlyOnceWith(0, undefined)
+      expect(mockSpawn.mock.calls[1][2].env.DEVSY_SECRETS_PASSPHRASE).toBe(
+        "private-session",
+      )
+    })
+
+    it("does not restart a workspace cancelled while the unlock dialog is pending", async () => {
+      const first = fakeStreamingChild()
+      const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
+      mockSpawn.mockReturnValue(first)
+      let unlock!: (value: string | undefined) => void
+      cli.setUnlockHandler(
+        () =>
+          new Promise((resolve) => {
+            unlock = resolve
+          }),
+      )
+      const onExit = vi.fn()
+      await cli.runStreaming(
+        ["workspace", "up", "."],
+        () => undefined,
+        onExit,
+        "cancelled-workspace",
+      )
+      first.stderr.push(
+        `${JSON.stringify({ kind: "error", outcome: "error", code: "unlock_required", message: "Unlock required" })}\n`,
+      )
+      await new Promise((resolve) => setImmediate(resolve))
+      first.emit("close", 1)
+      await vi.waitFor(() => expect(unlock).toBeDefined())
+      await cli.cancelFor("cancelled-workspace")
+      unlock("private-session")
+      await vi.waitFor(() => expect(onExit).toHaveBeenCalledOnce())
+      expect(mockSpawn).toHaveBeenCalledOnce()
+    })
+
+    it("keeps an old unlock retry cancelled when a new workspace stream starts", async () => {
+      const first = fakeStreamingChild()
+      const nextAction = fakeStreamingChild()
+      const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
+      mockSpawn.mockReturnValueOnce(first).mockReturnValueOnce(nextAction)
+      let unlock!: (value: string | undefined) => void
+      cli.setUnlockHandler(
+        () =>
+          new Promise((resolve) => {
+            unlock = resolve
+          }),
+      )
+
+      const oldExit = vi.fn()
+      await cli.runStreaming(
+        ["workspace", "up", "workspace-id", "--recreate"],
+        () => undefined,
+        oldExit,
+        "same-workspace",
+      )
+      first.stderr.push(
+        `${JSON.stringify({ kind: "error", outcome: "error", code: "unlock_required", message: "Unlock required" })}\n`,
+      )
+      await new Promise((resolve) => setImmediate(resolve))
+      first.emit("close", 1)
+      await vi.waitFor(() => expect(unlock).toBeDefined())
+
+      await cli.cancelFor("same-workspace")
+      const newExit = vi.fn()
+      await cli.runStreaming(
+        ["workspace", "up", "workspace-id", "--reset"],
+        () => undefined,
+        newExit,
+        "same-workspace",
+      )
+      unlock("private-session")
+
+      await vi.waitFor(() => expect(oldExit).toHaveBeenCalledOnce())
+      expect(mockSpawn).toHaveBeenCalledTimes(2)
+      nextAction.emit("close", 0)
+      expect(newExit).toHaveBeenCalledOnce()
+    })
+
+    it("does not spawn a queued unlock retry after workspace cancellation", async () => {
+      const first = fakeStreamingChild()
+      const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
+      mockSpawn.mockReturnValue(first)
+      let unlock!: (value: string | undefined) => void
+      cli.setUnlockHandler(
+        () =>
+          new Promise((resolve) => {
+            unlock = resolve
+          }),
+      )
+      const onExit = vi.fn()
+      await cli.runStreaming(
+        ["workspace", "task", "logs", "old-task", "--follow"],
+        () => undefined,
+        onExit,
+        "queued-workspace",
+      )
+      first.stderr.push(
+        `${JSON.stringify({ kind: "error", outcome: "error", code: "unlock_required", message: "Unlock required" })}\n`,
+      )
+      await new Promise((resolve) => setImmediate(resolve))
+      first.emit("close", 1)
+      await vi.waitFor(() => expect(unlock).toBeDefined())
+
+      const internal = cli as unknown as {
+        acquire: () => Promise<void>
+        release: () => void
+        queue: Array<() => void>
+      }
+      for (let i = 0; i < 50; i++) await internal.acquire()
+      unlock("private-session")
+      await vi.waitFor(() => expect(internal.queue).toHaveLength(1))
+
+      await cli.cancelFor("queued-workspace")
+      internal.release()
+      await vi.waitFor(() => expect(onExit).toHaveBeenCalledOnce())
+      expect(mockSpawn).toHaveBeenCalledOnce()
+
+      for (let i = 0; i < 49; i++) internal.release()
+    })
+
     it("reports an exit when the child fails to spawn", async () => {
       const child = fakeStreamingChild()
       const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>

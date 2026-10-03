@@ -8,8 +8,8 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	"github.com/devsy-org/devsy/pkg/output"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/table"
 	"github.com/spf13/cobra"
 )
@@ -45,7 +45,7 @@ func (cmd *ListCmd) Run(_ context.Context) error {
 		return err
 	}
 	contextName := devsyConfig.DefaultContext
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	store, err := envstore.NewStoreForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
@@ -60,9 +60,6 @@ func (cmd *ListCmd) Run(_ context.Context) error {
 
 	entries := make([]envEntry, 0, len(metas))
 	for _, m := range metas {
-		if m.Sensitive() {
-			continue
-		}
 		entries = append(
 			entries,
 			envEntry{

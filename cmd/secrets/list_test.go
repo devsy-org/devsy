@@ -1,6 +1,9 @@
 package secrets
 
 import (
+	"encoding/json"
+	"io"
+	"os"
 	"testing"
 	"time"
 
@@ -18,7 +21,8 @@ func TestListSuite(t *testing.T) {
 }
 
 type listTestStore struct {
-	metas []devsysecrets.SecretMeta
+	metas       []devsysecrets.SecretMeta
+	inspections []devsysecrets.SecretInspection
 }
 
 func (s *listTestStore) Set(string, string, string, devsysecrets.Kind) error { return nil }
@@ -63,4 +67,97 @@ func (s *ListTestSuite) TestListEntriesDetachedWhenContextHasNoBindings() {
 	s.Require().NoError(err)
 	s.Require().Len(entries, 1)
 	s.Require().False(entries[0].Attached)
+}
+
+func (s *listTestStore) Inspect(string) ([]devsysecrets.SecretInspection, error) {
+	if s.inspections != nil {
+		return s.inspections, nil
+	}
+	result := make([]devsysecrets.SecretInspection, 0, len(s.metas))
+	for _, meta := range s.metas {
+		result = append(
+			result,
+			devsysecrets.SecretInspection{Meta: meta, Availability: devsysecrets.SecretAvailable},
+		)
+	}
+	return result, nil
+}
+
+func (s *ListTestSuite) TestListEntriesReportsAvailabilityInJSONAndPlainOutput() {
+	store := &listTestStore{inspections: []devsysecrets.SecretInspection{
+		{
+			Meta: devsysecrets.SecretMeta{
+				Name:    "LOCKED_FILE",
+				Context: config.DefaultContext,
+				Kind:    devsysecrets.KindSecret,
+				Backend: devsysecrets.BackendFile,
+			},
+			Availability: devsysecrets.SecretLocked,
+			ReasonCode:   "unlock_required",
+		},
+		{
+			Meta: devsysecrets.SecretMeta{
+				Name:    "AVAILABLE_KEYRING",
+				Context: config.DefaultContext,
+				Kind:    devsysecrets.KindSecret,
+				Backend: devsysecrets.BackendKeyring,
+			},
+			Availability: devsysecrets.SecretAvailable,
+		},
+		{
+			Meta: devsysecrets.SecretMeta{
+				Name:    "MISSING_KEYRING",
+				Context: config.DefaultContext,
+				Kind:    devsysecrets.KindSecret,
+				Backend: devsysecrets.BackendKeyring,
+			},
+			Availability: devsysecrets.SecretMissing,
+			ReasonCode:   "secret_not_found",
+		},
+	}}
+	entries, err := listEntries(deleteTestConfig(nil), store, config.DefaultContext)
+	s.Require().NoError(err)
+	s.Require().Len(entries, 3)
+	s.Equal(devsysecrets.SecretLocked, entries[0].Availability)
+	s.Equal(devsysecrets.SecretAvailable, entries[1].Availability)
+	s.Equal(devsysecrets.SecretMissing, entries[2].Availability)
+
+	jsonOutput := captureListOutput(s.T(), func() { s.Require().NoError(renderJSON(entries)) })
+	var decoded []map[string]any
+	s.Require().NoError(json.Unmarshal([]byte(jsonOutput), &decoded))
+	s.Require().Len(decoded, 3)
+	s.Equal("locked", decoded[0]["availability"])
+	s.Equal("file", decoded[0]["backend"])
+	s.Equal("unlock_required", decoded[0]["reasonCode"])
+	s.Equal("available", decoded[1]["availability"])
+	s.Equal("keyring", decoded[1]["backend"])
+	s.Equal("missing", decoded[2]["availability"])
+
+	plainOutput := captureListOutput(s.T(), func() { renderPlain(entries) })
+	s.Contains(plainOutput, "Locked")
+	s.Contains(plainOutput, "Available")
+	s.Contains(plainOutput, "Missing")
+}
+
+func captureListOutput(t *testing.T, render func()) string {
+	t.Helper()
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := os.Stdout
+	os.Stdout = write
+	render()
+	if err := write.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = previous
+	output, err := io.ReadAll(read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := read.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return string(output)
 }

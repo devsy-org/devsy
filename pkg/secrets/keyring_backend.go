@@ -2,7 +2,6 @@ package secrets
 
 import (
 	"errors"
-	"fmt"
 
 	keyring "github.com/zalando/go-keyring"
 )
@@ -13,7 +12,7 @@ type keyringBackend struct{}
 
 func (keyringBackend) set(key, value string) error {
 	if err := keyring.Set(keyringService, key, value); err != nil {
-		return fmt.Errorf("write to keyring: %w", err)
+		return &BackendUnavailableError{Backend: BackendKeyring, Cause: err}
 	}
 
 	return nil
@@ -26,7 +25,7 @@ func (keyringBackend) get(key string) (string, error) {
 			return "", ErrSecretNotFound
 		}
 
-		return "", fmt.Errorf("read from keyring: %w", err)
+		return "", &BackendUnavailableError{Backend: BackendKeyring, Cause: err}
 	}
 
 	return value, nil
@@ -38,7 +37,7 @@ func (keyringBackend) remove(key string) error {
 			return nil
 		}
 
-		return fmt.Errorf("delete from keyring: %w", err)
+		return &BackendUnavailableError{Backend: BackendKeyring, Cause: err}
 	}
 
 	return nil

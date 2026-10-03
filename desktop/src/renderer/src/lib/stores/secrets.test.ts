@@ -22,13 +22,16 @@ describe("secrets store", () => {
     mockInvoke.mockResolvedValue([
       { name: "API_KEY", context: "default" },
       { name: "DB_PW", context: "default", orphaned: true },
+      { name: "LOCKED", context: "default", availability: "locked" },
     ])
 
     await initSecrets()
 
     expect(get(secretsLoading)).toBe(false)
-    expect(get(secrets)).toHaveLength(2)
+    expect(get(secrets)).toHaveLength(3)
     expect(get(secrets)[1].orphaned).toBe(true)
+    expect(get(secrets)[1].availability).toBe("missing")
+    expect(get(secrets)[2].availability).toBe("locked")
   })
 
   it("sets loading false even on error", async () => {

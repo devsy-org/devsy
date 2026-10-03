@@ -155,6 +155,13 @@ export interface Secret {
   created?: string
   lastUsed?: string
   orphaned?: boolean
+  /** Whether Devsy can currently read this secret's value. */
+  availability?:
+    | "available"
+    | "locked"
+    | "missing"
+    | "backend_unavailable"
+    | "unknown"
   backend?: "keyring" | "file"
   attached?: boolean
 }

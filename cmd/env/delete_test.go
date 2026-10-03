@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,16 +15,7 @@ const (
 	lastBinding  = "LAST"
 )
 
-func (*deleteTestStore) Set(string, string, string, secrets.Kind) error { return nil }
-func (*deleteTestStore) Get(string, string) (string, error) {
-	panic("delete rollback must not call Get")
-}
-
-func (*deleteTestStore) Meta(string, string) (secrets.SecretMeta, error) {
-	return secrets.SecretMeta{}, nil
-}
-func (*deleteTestStore) List(string) ([]secrets.SecretMeta, error) { return nil, nil }
-func (s *deleteTestStore) Delete(string, string) error             { return s.deleteErr }
+func (s *deleteTestStore) Delete(string, string) error { return s.deleteErr }
 
 func TestDeleteEnvironmentValueRestoresPersistedAttachmentAfterOrdinaryFailure(t *testing.T) {
 	config.ResetPathManager()

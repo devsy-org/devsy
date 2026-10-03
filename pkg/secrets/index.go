@@ -8,8 +8,14 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+type fileStoreMetadata struct {
+	KeySource string `json:"keySource,omitempty"`
+}
+
 type indexData struct {
-	Contexts map[string]map[string]SecretMeta `json:"contexts"`
+	SchemaVersion int                              `json:"schemaVersion,omitempty"`
+	FileStore     fileStoreMetadata                `json:"fileStore,omitzero"`
+	Contexts      map[string]map[string]SecretMeta `json:"contexts"`
 
 	KeySource string `json:"keySource,omitempty"`
 }
@@ -34,7 +40,10 @@ func loadIndex(path string) (*index, error) {
 	}
 
 	if err := yaml.Unmarshal(raw, &idx.data); err != nil {
-		return nil, fmt.Errorf("parse secrets index: %w", err)
+		return nil, &StoreCorruptError{Cause: err}
+	}
+	if err := idx.normalizeSchema(); err != nil {
+		return nil, err
 	}
 	if idx.data.Contexts == nil {
 		idx.data.Contexts = map[string]map[string]SecretMeta{}
@@ -50,8 +59,14 @@ func loadIndex(path string) (*index, error) {
 // normalizeKinds fails safe on an unset Kind by treating the entry as a secret,
 // so an older/hand-edited entry is never read as a plaintext env var.
 func (i *index) normalizeKinds() {
-	for _, entries := range i.data.Contexts {
+	for contextName, entries := range i.data.Contexts {
 		for name, meta := range entries {
+			meta.Name = name
+			meta.Context = contextName
+			if meta.Kind == KindSecret {
+				meta.Value = ""
+			}
+			entries[name] = meta
 			if meta.Kind != KindSecret && meta.Kind != KindEnv {
 				meta.Kind = KindSecret
 				meta.Value = ""
@@ -96,7 +111,11 @@ func validateBackend(context, name string, meta SecretMeta) error {
 }
 
 func (i *index) save() error {
-	out, err := yaml.Marshal(i.data)
+	data := i.data
+	data.SchemaVersion = 2
+	data.FileStore.KeySource = data.KeySource
+	data.KeySource = ""
+	out, err := yaml.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("marshal secrets index: %w", err)
 	}
@@ -138,4 +157,17 @@ func (i *index) list(context string) []SecretMeta {
 	})
 
 	return entries
+}
+
+func (idx *index) normalizeSchema() error {
+	if idx.data.SchemaVersion > 2 {
+		return &StoreCorruptError{Cause: fmt.Errorf("unsupported secret catalog schema version")}
+	}
+	if idx.data.FileStore.KeySource != "" {
+		if idx.data.KeySource != "" && idx.data.KeySource != idx.data.FileStore.KeySource {
+			return &StoreCorruptError{}
+		}
+		idx.data.KeySource = idx.data.FileStore.KeySource
+	}
+	return nil
 }

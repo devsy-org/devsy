@@ -356,6 +356,17 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 		if globalFlags.DevsyHome != "" {
 			_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
 		}
+		// A crashed deletion must be resumed before using or mutating its
+		// partially cleaned stores. This check reads only recovery metadata;
+		// the matching delete command validates and resumes under the config lock.
+		parent := cobraCmd.Parent()
+		isContextDelete := cobraCmd.Name() == "delete" && parent != nil &&
+			parent.Name() == "context"
+		if !isContextDelete {
+			if err := config.CheckPendingContextDeletion(); err != nil {
+				return err
+			}
+		}
 		cobraCmd.SilenceUsage = true
 		logFormat := globalFlags.LogOutput
 		if logFormat == "" {

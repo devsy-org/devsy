@@ -44,6 +44,7 @@ function setup(
 ) {
   const providerJobs = new ProviderJobs()
   const cli = {
+    setUnlockHandler: vi.fn(),
     run: vi.fn(async () => ({})),
     runRaw: vi.fn(async () => ""),
     runStreaming: vi.fn(

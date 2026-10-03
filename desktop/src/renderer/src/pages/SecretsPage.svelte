@@ -47,6 +47,9 @@ let filteredSecrets = $derived.by(() => {
   list.sort((a, b) => a.name.localeCompare(b.name))
   return list
 })
+let lockedSecretCount = $derived(
+  $secrets.filter((secret) => secret.availability === "locked").length,
+)
 
 let nameValid = $derived(NAME_PATTERN.test(newName))
 let nameExists = $derived($secrets.some((s) => s.name === newName.trim()))
@@ -203,6 +206,11 @@ async function confirmDelete() {
       <p class="text-muted-foreground">No secrets stored.</p>
     </div>
   {:else}
+    {#if lockedSecretCount > 0}
+      <div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-foreground" role="status">
+        {lockedSecretCount === 1 ? "One secret value is locked" : `${lockedSecretCount} secret values are locked`}. Secret names, contexts, and attachment settings are still available. Unlock the configured secrets backend to use these values in workspaces.
+      </div>
+    {/if}
     <div class="relative">
       <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input
@@ -227,8 +235,14 @@ async function confirmDelete() {
                 <h3 class="text-lg font-semibold truncate">{secret.name}</h3>
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
-                {#if secret.orphaned}
+                {#if secret.availability === "locked"}
+                  <span class={badgeVariants({ variant: "secondary" })} title="The value is stored in the encrypted secrets backend, which is currently locked.">Locked</span>
+                {:else if secret.availability === "missing" || (secret.availability === undefined && secret.orphaned)}
                   <span class={badgeVariants({ variant: "destructive" })} title={`Devsy has metadata for this secret, but its value is missing from the ${secret.backend ?? "configured"} backend.`}>Missing value</span>
+                {:else if secret.availability === "backend_unavailable"}
+                  <span class={badgeVariants({ variant: "destructive" })} title={`The ${secret.backend ?? "configured"} secrets backend is unavailable.`}>Backend unavailable</span>
+                {:else if secret.availability === "unknown"}
+                  <span class={badgeVariants({ variant: "outline" })} title="Devsy could not determine whether this secret value is available.">Availability unknown</span>
                 {/if}
                 <Button variant="ghost" size="icon" aria-label="Delete secret" onclick={(e) => requestDelete(e, secret.name)}>
                   <Trash2 class="h-4 w-4" />

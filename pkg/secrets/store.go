@@ -69,8 +69,12 @@ type SecretMeta struct {
 	Orphaned bool `json:"-"`
 }
 
-func (m SecretMeta) Sensitive() bool { return m.Kind == KindSecret }
+// An unspecified kind is secret metadata; only explicit legacy env entries are plaintext.
+func (m SecretMeta) Sensitive() bool { return m.Kind != KindEnv }
 
+// Store is the legacy mixed managed-value API retained for compatibility.
+//
+// Deprecated: use SecretStore for secrets and envstore.EnvStore for environment values.
 type Store interface {
 	Set(context, name, value string, kind Kind) error
 	Get(context, name string) (string, error)

@@ -66,6 +66,7 @@ function setup(
 ) {
   const calls: string[][] = []
   const cli = {
+    setUnlockHandler: vi.fn(),
     run: vi.fn(async (args: string[]) => {
       calls.push(args)
       if (overrides.run) return overrides.run(args)

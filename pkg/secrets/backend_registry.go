@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,15 +11,26 @@ import (
 	"filippo.io/age"
 )
 
+type BackendOpenIntent string
+
+const (
+	BackendOpenExisting  BackendOpenIntent = "open_existing"
+	BackendInspect       BackendOpenIntent = "inspect"
+	BackendInitializeNew BackendOpenIntent = "initialize_new"
+)
+
 type backendRegistry interface {
-	Open(kind Backend, idx *index, create bool) (backend, error)
+	Open(kind Backend, idx *index, intent BackendOpenIntent) (backend, error)
 	ResolveForNewSecret(preference Backend, idx *index) (Backend, error)
 	Probe(kind Backend, idx *index, key string) (present, conclusive bool)
 }
 
 type fixedBackendRegistry struct{ b backend }
 
-func (r fixedBackendRegistry) Open(_ Backend, _ *index, _ bool) (backend, error) { return r.b, nil }
+func (r fixedBackendRegistry) Open(_ Backend, _ *index, _ BackendOpenIntent) (backend, error) {
+	return r.b, nil
+}
+
 func (r fixedBackendRegistry) ResolveForNewSecret(_ Backend, _ *index) (Backend, error) {
 	return BackendKeyring, nil
 }
@@ -30,33 +42,32 @@ func (r fixedBackendRegistry) Probe(kind Backend, _ *index, key string) (bool, b
 	return probePresence(r.b, key)
 }
 
-type systemBackendRegistry struct{ dir string }
-
-func newSystemBackendRegistry(
-	dir string,
-) backendRegistry {
-	return &systemBackendRegistry{dir: dir}
+type systemBackendRegistry struct {
+	dir         string
+	resolver    UnlockMaterialResolver
+	allowPrompt bool
 }
 
-func (r *systemBackendRegistry) Open(kind Backend, idx *index, create bool) (backend, error) {
+func newSystemBackendRegistry(
+	dir string, resolvers ...UnlockMaterialResolver,
+) backendRegistry {
+	resolver := UnlockMaterialResolver(DefaultUnlockResolver{})
+	if len(resolvers) > 0 && resolvers[0] != nil {
+		resolver = resolvers[0]
+	}
+	return &systemBackendRegistry{dir: dir, resolver: resolver}
+}
+
+func (r *systemBackendRegistry) Open(
+	kind Backend,
+	idx *index,
+	intent BackendOpenIntent,
+) (backend, error) {
 	switch kind {
 	case BackendKeyring:
 		return keyringBackend{}, nil
 	case BackendFile:
-		var key *fileKey
-		var err error
-		if create {
-			key, err = resolveFileKey(r.dir, os.Getenv(EnvPassphrase))
-		} else {
-			key, err = openExistingFileKey(r.dir, idx)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if create && idx != nil {
-			idx.data.KeySource = string(key.source)
-		}
-		return newFileBackend(filepath.Join(r.dir, EncryptedFileName), key), nil
+		return r.openFileBackend(idx, intent)
 	default:
 		return nil, fmt.Errorf("invalid secrets backend %q", kind)
 	}
@@ -111,14 +122,61 @@ func (r *systemBackendRegistry) ResolveForNewSecret(
 	}
 }
 
+func (r *systemBackendRegistry) openFileBackend(
+	idx *index,
+	intent BackendOpenIntent,
+) (backend, error) {
+	key, err := r.openFileKey(idx, intent)
+	if err != nil {
+		return nil, err
+	}
+	if intent == BackendInitializeNew && idx != nil {
+		idx.data.KeySource = string(key.source)
+	}
+	return newFileBackend(filepath.Join(r.dir, EncryptedFileName), key), nil
+}
+
+func (r *systemBackendRegistry) initializeFileKey(
+	resolver UnlockMaterialResolver,
+) (*fileKey, error) {
+	if _, statErr := os.Stat(filepath.Join(r.dir, EncryptedFileName)); statErr == nil {
+		return r.recoverLegacyFileKey(resolver)
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return nil, statErr
+	}
+	material, resolveErr := resolver.ResolvePassphrase(
+		context.Background(),
+		UnlockRequest{Purpose: "initialize"},
+	)
+	if resolveErr != nil && !errors.Is(resolveErr, ErrUnlockRequired) {
+		return nil, resolveErr
+	}
+	return resolveFileKey(r.dir, material.Passphrase)
+}
+
+// Recover only file protection, after verifying the complete legacy payload.
+// Secret ownership remains unknown when the other backend cannot be probed.
+func (r *systemBackendRegistry) recoverLegacyFileKey(
+	resolver UnlockMaterialResolver,
+) (*fileKey, error) {
+	key, err := openPassphraseFileKeyWithResolver(resolver)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := newFileBackend(filepath.Join(r.dir, EncryptedFileName), key).load(); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
 func (r *systemBackendRegistry) probeFile(idx *index, key string) (bool, bool) {
 	path := filepath.Join(r.dir, EncryptedFileName)
 	if _, err := os.Stat(path); err != nil {
 		return false, errors.Is(err, os.ErrNotExist)
 	}
-	fk, err := openExistingFileKey(r.dir, idx)
+	fk, err := openExistingFileKeyWithResolver(r.dir, idx, r.resolver)
 	if err != nil && idx.data.KeySource == "" {
-		fk, err = openPassphraseFileKey()
+		fk, err = openPassphraseFileKeyWithResolver(r.resolver)
 	}
 	if err != nil {
 		return false, false
@@ -126,13 +184,17 @@ func (r *systemBackendRegistry) probeFile(idx *index, key string) (bool, bool) {
 	return probePresence(newFileBackend(path, fk), key)
 }
 
-func openExistingFileKey(dir string, idx *index) (*fileKey, error) {
+func openExistingFileKeyWithResolver(
+	dir string,
+	idx *index,
+	resolver UnlockMaterialResolver,
+) (*fileKey, error) {
 	source := keySource(idx.data.KeySource)
 	if source == "" {
-		return nil, fmt.Errorf("encrypted secrets are missing their key source metadata")
+		return nil, &StoreCorruptError{}
 	}
 	if source == keySourcePassphrase {
-		return openPassphraseFileKey()
+		return openPassphraseFileKeyWithResolver(resolver)
 	}
 	var store keyStore
 	switch source {
@@ -143,13 +205,31 @@ func openExistingFileKey(dir string, idx *index) (*fileKey, error) {
 	default:
 		return nil, fmt.Errorf("invalid secrets key source %q", source)
 	}
-	return keyFromStore(store, source)
+	key, err := keyFromStore(store, source)
+	if err != nil {
+		return nil, &BackendUnavailableError{Backend: BackendFile, Cause: err}
+	}
+	return key, nil
 }
 
 func openPassphraseFileKey() (*fileKey, error) {
-	passphrase := os.Getenv(EnvPassphrase)
+	return openPassphraseFileKeyWithResolver(DefaultUnlockResolver{})
+}
+
+func openPassphraseFileKeyWithResolver(resolver UnlockMaterialResolver) (*fileKey, error) {
+	material, err := resolver.ResolvePassphrase(
+		context.Background(),
+		UnlockRequest{AllowPrompt: true, Purpose: "open"},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return passphraseFileKey(material.Passphrase)
+}
+
+func passphraseFileKey(passphrase string) (*fileKey, error) {
 	if passphrase == "" {
-		return nil, fmt.Errorf("encrypted secrets require %s", EnvPassphrase)
+		return nil, &UnlockRequiredError{Backend: BackendFile}
 	}
 	recipient, err := age.NewScryptRecipient(passphrase)
 	if err != nil {
@@ -175,4 +255,44 @@ func keyFromStore(store keyStore, source keySource) (*fileKey, error) {
 		return nil, fmt.Errorf("parse stored secrets key: %w", err)
 	}
 	return &fileKey{recipient: identity.Recipient(), identity: identity, source: source}, nil
+}
+
+type promptPolicyResolver struct {
+	resolver UnlockMaterialResolver
+	allow    bool
+}
+
+func (r promptPolicyResolver) ResolvePassphrase(
+	ctx context.Context,
+	request UnlockRequest,
+) (UnlockMaterial, error) {
+	request.AllowPrompt = request.AllowPrompt && r.allow
+	return r.resolver.ResolvePassphrase(ctx, request)
+}
+
+func (r *systemBackendRegistry) openFileKey(
+	idx *index,
+	intent BackendOpenIntent,
+) (*fileKey, error) {
+	resolver := promptPolicyResolver{
+		resolver: r.resolver,
+		allow:    r.allowPrompt && intent != BackendInspect,
+	}
+	// Persisted protection always wins over invocation credentials.
+	switch {
+	case idx != nil && idx.data.KeySource != "":
+		return openExistingFileKeyWithResolver(
+			r.dir,
+			idx,
+			resolver,
+		)
+	case intent == BackendInitializeNew:
+		return r.initializeFileKey(resolver)
+	default:
+		return openExistingFileKeyWithResolver(
+			r.dir,
+			idx,
+			resolver,
+		)
+	}
 }

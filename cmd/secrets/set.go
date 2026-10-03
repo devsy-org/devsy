@@ -2,7 +2,6 @@ package secrets
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/internal/secretstore"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -78,23 +79,29 @@ func (cmd *SetCmd) Run(_ context.Context, name string) error {
 		return err
 	}
 	contextName := devsyConfig.DefaultContext
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	store, err := secrets.NewSecretStoreForConfig(devsyConfig, secretstore.Options())
 	if err != nil {
 		return err
 	}
-	if meta, metaErr := store.Meta(contextName, name); metaErr == nil {
-		ctxConfig := devsyConfig.Contexts[contextName]
-		if !meta.Sensitive() && ctxConfig != nil && slices.Contains(ctxConfig.EnvVars, name) {
-			return fmt.Errorf(
-				"%q is attached as an environment variable; detach it before converting it to a secret",
-				name,
-			)
-		}
-	} else if !errors.Is(metaErr, secrets.ErrSecretNotFound) {
-		return metaErr
+	if current := devsyConfig.Contexts[contextName]; current != nil &&
+		slices.Contains(current.EnvVars, name) {
+		return fmt.Errorf(
+			"%q is attached as an environment variable; detach it before converting it to a secret",
+			name,
+		)
 	}
 
-	if err := store.Set(contextName, name, value, secrets.KindSecret); err != nil {
+	envs, err := envstore.NewStoreForConfig(devsyConfig)
+	if err != nil {
+		return err
+	}
+	// Complete any legacy plaintext migration before entering the secret domain.
+	if _, err := envs.List(contextName); err != nil {
+		return err
+	}
+	if err := setSecretValue(store, envs, secretSetTarget{
+		context: contextName, name: name, value: value,
+	}); err != nil {
 		return err
 	}
 
