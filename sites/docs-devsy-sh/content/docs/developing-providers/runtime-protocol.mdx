@@ -29,7 +29,7 @@ Start on an already running workspace succeeds; missing returns NotFound. Stop o
 
 The first client frame is exactly one ExecStart containing argv. Later frames contain stdin bytes or exactly one CloseStdin; the client then closes its send side. Data after CloseStdin, repeated Start, unset payloads and empty stdin data frames, and unexpected EOF before CloseStdin are InvalidArgument. v1 Devsy callers use `tty=false`; runtimes reject unsupported TTY requests.
 
-Each side uses one send pump and one receive loop. Data chunks should be at most 32 KiB. Empty input is represented by CloseStdin with no preceding data frames. Stdout/stderr are separate byte streams, with no text decoding or PTY. The receiver drains output before exactly one terminal ExecExit. Command success requires `exit_code == 0` and an empty `signal`. A nonempty `signal` means command failure regardless of `exit_code`, including its protobuf default of zero. Ordinary nonzero or signal-terminated command exit is carried in ExecExit and the RPC succeeds. Setup/transport/backend failures are RPC errors; stream EOF without an exit is not command success. Context cancellation/deadlines terminate the operation and release its resources. Plugins that launch children must ensure child cleanup; the SDK bootstrap does not implement an OS process-tree manager.
+Each side uses one send pump and one receive loop. Data chunks should be at most 32 KiB. Empty input is represented by CloseStdin with no preceding data frames. Stdout/stderr are separate byte streams, with no text decoding or PTY. The receiver drains output before exactly one terminal ExecExit. Command success requires `exit_code == 0` and an empty `signal`. A nonempty `signal` means command failure regardless of `exit_code`, including its protobuf default of zero. Ordinary nonzero or signal-terminated command exit is carried in ExecExit and the RPC succeeds. Setup/transport/backend failures are RPC errors; stream EOF without an exit is not command success. Context cancellation/deadlines terminate the operation and release its resources. Plugins that launch children must ensure child cleanup. The SDK server bootstrap does not own those children; hosts can opt into the SDK supervisor to own a leased plugin process tree. Unix descendants must remain in its process group and retain signalable privileges. Detached sessions, elevated commands, and independently managed runtime services require a separate owner.
 
 Logs uses merged binary OutputChunk frames. Output buffering must remain bounded. Do not call Send concurrently from stdout and stderr copiers.
 
@@ -37,10 +37,31 @@ Logs uses merged binary OutputChunk frames. Output buffering must remain bounded
 
 Use canonical gRPC status and attach RuntimeError details for stable categories, actionable messages, optional backend diagnostics, retryability, and structured context. Raw backend diagnostics must be redacted before display. Unknown detail fields remain forward-compatible; callers must not parse messages to classify errors.
 
-The plugin binary is trusted provider code. The future host resolves it from checksum-verified Agent.Binaries, rather than PATH discovery. The magic cookie is not a security boundary. Process lifetime and environment policies remain subject to the planned host hardening spikes.
+The plugin binary is trusted provider code. The future host resolves it from checksum-verified Agent.Binaries, rather than PATH discovery. The host also verifies a separately distributed supervisor executable, or runs the helper entry point in its own trusted executable. The SDK runner requires absolute executable paths, but it does not download binaries or establish checksum trust. Before creating the client, the future host must require a nonempty expected checksum for each provider-distributed runtime or supervisor and verify the resolved executable against it, including cached and local absolute paths. The existing provider downloader supports optional checksums, so a successful `DownloadBinaries` call or an `Agent.Binaries` path alone does not establish this trust. Reject missing checksums and failed verification; enforcing this requirement is a host-integration prerequisite. Reuse successful checksum verification from the distribution path when it covers the executable being launched; a redundant second pass immediately after that verified download is not required. The magic cookie is an identity check, not authentication or sandboxing. go-plugin's `SecureConfig` verifies a `Cmd` path and cannot be used with the supervisor's custom `RunnerFunc`.
+
+## Plugin process environment
+
+The default policy is to inherit the host environment when starting a trusted runtime plugin. This preserves the built-in MicroSandbox client's behavior rather than introducing a hidden allowlist during externalization. This is the environment of the plugin and its runtime CLI children, separate from the workspace environment carried in RunImage or ExecStart.
+
+Hosts must preserve settings used by the existing runtime and image clients:
+
+| Settings | Compatibility requirement |
+| --- | --- |
+| HTTP(S) proxy and `NO_PROXY` | Preserve proxy configuration, credentials, and bypass rules |
+| Custom CA bundle/directory | Preserve certificate locations for runtime HTTPS clients |
+| `HOME` and XDG directories | Preserve access to existing user and runtime configuration |
+| Docker context, endpoint, and config | Preserve daemon selection and credential/config locations |
+| Temporary directories | Preserve platform temp-directory settings |
+| `PATH` and runtime-specific variables | Preserve child CLI resolution and settings not known to the host |
+
+SDK `supervisor.Options.Env` supplies overrides on top of the environment selected by the go-plugin client. Merely listing a few variables there does not remove other inherited values. A standalone SDK consumer can deliberately disable host inheritance with `ClientConfig.SkipHostEnv = true` and then supply its chosen variables through `Options.Env`. That is an explicit compatibility change, not the default Devsy policy or a sandbox: the trusted supervisor itself still inherits the host environment, and the OS may require additional variables such as Windows `SYSTEMROOT`.
+
+Client-assigned handshake cookie, protocol versions, port range, certificate, broker multiplexing, and socket metadata take precedence over provider overrides. Preserve empty overrides as empty values. Never log the full environment or secret-bearing runtime arguments; redact backend diagnostics before exposing them to users.
+
+The SDK's real-transport regression probes check inherited settings and explicit overrides in both the plugin and an absolute-path child executable. They also check deliberate reduced inheritance, protected transport metadata, and secret canaries in diagnostics. These probes validate forwarding, not whether a real runtime correctly uses a corporate proxy, custom CA, Docker credentials, or XDG config. Before external MicroSandbox cutover, exercise those behaviors with the extracted runtime under inherited and deliberately reduced environments. That runtime experiment and the supervisor startup comparison remain integration gates; the probes do not select session reuse.
 
 ## Current implementation
 
-The SDK provides generated Go bindings, the shared plugin handshake, server helpers, and Info validation. Its real executable fixture tests transport behavior. Full fake-runtime lifecycle conformance, host integration, process-tree stress, and runtime cutover remain later stages.
+The SDK provides generated Go bindings, the shared plugin handshake, server helpers, Info validation, a fake runtime with reusable lifecycle conformance, and an opt-in process supervisor. Its executable probes cover process ownership and 100 MiB duplex streaming on Linux, macOS, and Windows. Devsy host integration, real-runtime compatibility, and runtime cutover remain later stages.
 
 For SDK development commands and package usage, see the [SDK README](https://github.com/devsy-org/devsy-runtime-sdk#readme).
