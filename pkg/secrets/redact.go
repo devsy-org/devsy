@@ -10,6 +10,11 @@ import (
 
 const redactMask = "***"
 
+// minRedactableValueLength is the shortest value worth masking. Masking is
+// literal substring replacement, so a shorter value corrupts unrelated output
+// (paths, versions) instead of protecting anything.
+const minRedactableValueLength = 8
+
 var (
 	credentialURLPattern = regexp.MustCompile(`(?i)(https?://)[^\s/@]+@`)
 	authorizationPattern = regexp.MustCompile(
@@ -18,23 +23,29 @@ var (
 )
 
 type Redactor struct {
-	replacer  *strings.Replacer
-	values    []string
-	maxLength int
+	replacer *strings.Replacer
+	values   []string
+	skipped  int
 }
 
-// NewRedactor masks the values (not keys) of KEY=VALUE entries; empty values are ignored.
+// NewRedactor masks the values (not keys) of KEY=VALUE entries, skipping empty
+// values and those too short to mask safely.
 func NewRedactor(secretsEnv []string) *Redactor {
 	values := make([]string, 0, len(secretsEnv))
+	skipped := 0
 	for _, entry := range secretsEnv {
 		_, value, ok := strings.Cut(entry, "=")
 		if !ok || value == "" {
 			continue
 		}
+		if len(value) < minRedactableValueLength {
+			skipped++
+			continue
+		}
 		values = append(values, value)
 	}
 	if len(values) == 0 {
-		return &Redactor{}
+		return &Redactor{skipped: skipped}
 	}
 
 	// Mask longer values first so an overlapping prefix (e.g. "sec" of "secret")
@@ -46,9 +57,9 @@ func NewRedactor(secretsEnv []string) *Redactor {
 	}
 
 	return &Redactor{
-		replacer:  strings.NewReplacer(pairs...),
-		values:    values,
-		maxLength: len(values[0]),
+		replacer: strings.NewReplacer(pairs...),
+		values:   values,
+		skipped:  skipped,
 	}
 }
 
@@ -79,6 +90,15 @@ func NewEnvironmentRedactor(env []string) *Redactor {
 		}
 	}
 	return NewRedactor(sensitive)
+}
+
+// SkippedValueCount reports sensitive values left unmasked for being too
+// short, so callers emitting captured output can surface the gap.
+func (r *Redactor) SkippedValueCount() int {
+	if r == nil {
+		return 0
+	}
+	return r.skipped
 }
 
 func isSensitiveEnvironmentKey(key string) bool {

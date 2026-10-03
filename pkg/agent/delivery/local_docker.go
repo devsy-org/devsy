@@ -169,7 +169,7 @@ func (d *LocalDockerDelivery) detectVolumeVersion(ctx context.Context, volumeNam
 		log.Debugf("failed to detect agent version in volume: %v", err)
 		return ""
 	}
-	return strings.TrimSpace(result.Stdout)
+	return strings.TrimSpace(result.RawStdout)
 }
 
 func (d *LocalDockerDelivery) populateVolume(
@@ -292,7 +292,7 @@ func (d *LocalDockerDelivery) volumeMountpoint(
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
-	return strings.TrimSpace(result.Stdout), nil
+	return strings.TrimSpace(result.RawStdout), nil
 }
 
 // removeVolume force-removes a single named volume. It is safe to call for a
@@ -321,7 +321,7 @@ func (d *LocalDockerDelivery) listManagedVolumes(
 		return nil, fmt.Errorf("%s: %w", capturedOutput(result), err)
 	}
 	var names []string
-	for line := range strings.SplitSeq(strings.TrimSpace(result.Stdout), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(result.RawStdout), "\n") {
 		if name := strings.TrimSpace(line); name != "" {
 			names = append(names, name)
 		}

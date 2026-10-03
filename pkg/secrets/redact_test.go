@@ -7,11 +7,74 @@ import (
 	"github.com/devsy-org/devsy/pkg/secrets"
 )
 
-func TestRedactor_MasksValues(t *testing.T) {
-	r := secrets.NewRedactor([]string{"DB_PASSWORD=hunter2", "TOKEN=abc123"})
+const (
+	redactTestSecret = "sk-live-abcdef123456"
+	redactTestKey    = "DEVSY_API_KEY=" + redactTestSecret
+)
 
-	got := r.Redact("connecting with hunter2 and token abc123")
+func TestRedactor_MasksValues(t *testing.T) {
+	r := secrets.NewRedactor([]string{
+		"DB_PASSWORD=hunter2-correct-horse",
+		"TOKEN=abc123def456",
+	})
+
+	got := r.Redact("connecting with hunter2-correct-horse and token abc123def456")
 	want := "connecting with *** and token ***"
+	if got != want {
+		t.Errorf("Redact = %q, want %q", got, want)
+	}
+}
+
+func TestRedactor_SkipsTooShortValues(t *testing.T) {
+	r := secrets.NewRedactor([]string{"DEVSY_AUTH_BOOTSTRAP=1"})
+
+	got := r.Redact("version v1.2.3 in /var/run/001/mount")
+	if want := "version v1.2.3 in /var/run/001/mount"; got != want {
+		t.Errorf("Redact = %q, want short value left unmasked (%q)", got, want)
+	}
+	if got := r.SkippedValueCount(); got != 1 {
+		t.Errorf("SkippedValueCount = %d, want 1", got)
+	}
+}
+
+// Maskable values alongside a too-short one are still masked, and only the
+// short value is reported as skipped.
+func TestRedactor_MasksLongValuesAlongsideShortOnes(t *testing.T) {
+	r := secrets.NewRedactor([]string{
+		"DEVSY_AUTH_BOOTSTRAP=1",
+		redactTestKey,
+	})
+
+	got := r.Redact("key=sk-live-abcdef123456 bootstrap=1")
+	if want := "key=*** bootstrap=1"; got != want {
+		t.Errorf("Redact = %q, want %q", got, want)
+	}
+	if got := r.SkippedValueCount(); got != 1 {
+		t.Errorf("SkippedValueCount = %d, want 1", got)
+	}
+}
+
+func TestRedactor_SkippedValueCountIsZeroWhenAllMaskable(t *testing.T) {
+	r := secrets.NewRedactor([]string{redactTestKey})
+	if got := r.SkippedValueCount(); got != 0 {
+		t.Errorf("SkippedValueCount = %d, want 0", got)
+	}
+
+	var nilRedactor *secrets.Redactor
+	if got := nilRedactor.SkippedValueCount(); got != 0 {
+		t.Errorf("nil SkippedValueCount = %d, want 0", got)
+	}
+}
+
+// The environment redactor is the path that selects sensitive keys.
+func TestEnvironmentRedactor_ShortSensitiveValueDoesNotCorruptOutput(t *testing.T) {
+	r := secrets.NewEnvironmentRedactor([]string{
+		"DEVSY_DEFERRED_AUTH_BOOTSTRAP=1",
+		redactTestKey,
+	})
+
+	got := r.Redact("agent version v1.2.3 at /volumes/ws-001/_data key sk-live-abcdef123456")
+	want := "agent version v1.2.3 at /volumes/ws-001/_data key ***"
 	if got != want {
 		t.Errorf("Redact = %q, want %q", got, want)
 	}
@@ -51,11 +114,11 @@ func TestRedactor_ValueWithEquals(t *testing.T) {
 // longer value, regardless of input order.
 func TestRedactor_PrefixOverlap(t *testing.T) {
 	for _, order := range [][]string{
-		{"A=sec", "B=secret"},
-		{"B=secret", "A=sec"},
+		{"A=sec-abcd", "B=sec-abcd-efgh"},
+		{"B=sec-abcd-efgh", "A=sec-abcd"},
 	} {
 		r := secrets.NewRedactor(order)
-		got := r.Redact("value is secret here")
+		got := r.Redact("value is sec-abcd-efgh here")
 		if got != "value is *** here" {
 			t.Errorf("order %v: Redact = %q, want longer value fully masked", order, got)
 		}
