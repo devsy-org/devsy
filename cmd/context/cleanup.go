@@ -57,6 +57,14 @@ type ContextCleanupError struct {
 }
 
 func (e *ContextCleanupError) Error() string {
+	if errors.Is(e.Cause, config.ErrContextDeletionPending) {
+		return fmt.Sprintf(
+			"context %q cleanup could not be durably canceled; a deletion intent may remain; "+
+				"retry devsy context delete %q to complete deletion",
+			e.Context,
+			e.Context,
+		)
+	}
 	if e.Rollback != nil {
 		return fmt.Sprintf("context %q cleanup failed during %s and rollback is incomplete; "+
 			"keep the context registered, restore store access, verify its managed values, "+

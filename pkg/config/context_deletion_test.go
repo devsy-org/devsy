@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -166,6 +167,73 @@ func TestContextDeletionIntentWriteRejectsOversizedMetadataBeforeMutation(t *tes
 	_, err := os.Stat(path)
 	require.True(t, os.IsNotExist(err))
 	require.NoError(t, CheckPendingContextDeletion())
+}
+
+func TestContextDeletionIntentWriteCancelsInstalledMarkerAfterSyncFailure(t *testing.T) {
+	intent := contextDeletionConfigFixture(t)
+	calls := 0
+	err := writeContextDeletionIntent(intent, func(string) error {
+		calls++
+		if calls == 1 {
+			return errors.New("injected sync failure")
+		}
+		return nil
+	})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrContextDeletionPending)
+	require.Equal(t, 2, calls)
+	require.NoError(t, CheckPendingContextDeletion())
+}
+
+func TestContextDeletionIntentWriteRetainsPendingMarkerWhenCancellationSyncFails(t *testing.T) {
+	intent := contextDeletionConfigFixture(t)
+	err := writeContextDeletionIntent(intent, func(string) error {
+		return errors.New("injected persistent sync failure")
+	})
+	require.ErrorIs(t, err, ErrContextDeletionPending)
+	require.ErrorContains(t, err, "intent could not be durably canceled")
+	require.ErrorIs(t, CheckPendingContextDeletion(), ErrContextDeletionPending)
+}
+
+func TestContextDeletionIntentPreRenameFailureDoesNotInstallMarker(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "not-a-directory")
+	require.NoError(t, os.WriteFile(parent, []byte("fixture"), 0o600))
+	path := filepath.Join(parent, ContextDeletionIntentFile)
+	err := writeContextDeletionAtomicWithSync(
+		path,
+		[]byte(`{"schemaVersion":1}`),
+		func(string) error {
+			t.Fatal("directory sync must not run before rename")
+			return nil
+		},
+	)
+	require.Error(t, err)
+	var writeErr *contextDeletionWriteError
+	require.ErrorAs(t, err, &writeErr)
+	require.False(t, writeErr.installed)
+	_, statErr := os.Lstat(path)
+	require.Error(t, statErr)
+}
+
+func TestContextDeletionCancellationReportsUncertaintyIfMarkerRestoreFails(t *testing.T) {
+	intent := contextDeletionConfigFixture(t)
+	path, _, err := contextDeletionPaths()
+	require.NoError(t, err)
+	calls := 0
+	err = writeContextDeletionIntent(intent, func(string) error {
+		calls++
+		if calls == 2 {
+			// Block the best-effort marker rewrite after its cancellation failed.
+			require.NoError(t, os.Mkdir(path, 0o700))
+		}
+		return errors.New("injected sync failure: private-secret")
+	})
+	require.ErrorIs(t, err, ErrContextDeletionPending)
+	require.ErrorContains(t, err, "could not be durably canceled")
+	require.ErrorContains(t, err, "to complete deletion")
+	require.NotContains(t, err.Error(), "remains installed")
+	require.NotContains(t, err.Error(), "private-secret")
+	require.ErrorIs(t, CheckPendingContextDeletion(), ErrContextDeletionIntentInvalid)
 }
 
 func TestContextDeletionIntentAcceptsOrdinaryPortableNames(t *testing.T) {

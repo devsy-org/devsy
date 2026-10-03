@@ -47,9 +47,15 @@ type ContextDeletionIntent struct {
 	EnvNames       []string                `json:"envNames"`
 }
 
-type ContextDeletionPendingError struct{ Context string }
+type ContextDeletionPendingError struct {
+	Context string
+	Message string
+}
 
 func (e *ContextDeletionPendingError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
 	return fmt.Sprintf(
 		"context %q deletion is incomplete; retry devsy context delete %q with access to its original secret backends",
 		e.Context,
@@ -132,6 +138,13 @@ func decodeContextDeletionIntent(raw []byte) (*ContextDeletionIntent, error) {
 }
 
 func WriteContextDeletionIntent(intent *ContextDeletionIntent) error {
+	return writeContextDeletionIntent(intent, syncContextDeletionDirectory)
+}
+
+func writeContextDeletionIntent(
+	intent *ContextDeletionIntent,
+	syncDirectory func(string) error,
+) error {
 	if err := validateContextDeletionIntent(intent); err != nil {
 		return err
 	}
@@ -143,8 +156,57 @@ func WriteContextDeletionIntent(intent *ContextDeletionIntent) error {
 	if err != nil || len(encoded) > maxContextDeletionIntentSize {
 		return ErrContextDeletionIntentInvalid
 	}
-	if err := writeContextDeletionAtomic(path, encoded); err != nil {
-		return errors.New("could not durably write context deletion intent; no values were deleted")
+	if err := writeContextDeletionAtomicWithSync(path, encoded, syncDirectory); err != nil {
+		err = contextDeletionWriteFailure(path, encoded, syncDirectory, err)
+		if errors.Is(err, ErrContextDeletionPending) {
+			return &ContextDeletionPendingError{
+				Context: intent.Context,
+				Message: fmt.Sprintf(
+					"context %q deletion intent could not be durably canceled; retry devsy context delete %q to complete deletion",
+					intent.Context,
+					intent.Context,
+				),
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func contextDeletionWriteFailure(
+	path string,
+	encoded []byte,
+	syncDirectory func(string) error,
+	err error,
+) error {
+	var writeErr *contextDeletionWriteError
+	if errors.As(err, &writeErr) && writeErr.installed {
+		if cancelErr := cancelContextDeletionIntent(
+			path,
+			encoded,
+			syncDirectory,
+		); cancelErr != nil {
+			return ErrContextDeletionPending
+		}
+	}
+	return errors.New("could not durably write context deletion intent; no values were deleted")
+}
+
+type contextDeletionWriteError struct {
+	installed bool
+	cause     error
+}
+
+func (e *contextDeletionWriteError) Error() string { return "context deletion intent write failed" }
+func (e *contextDeletionWriteError) Unwrap() error { return e.cause }
+
+func cancelContextDeletionIntent(path string, raw []byte, syncDirectory func(string) error) error {
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		_ = writeContextDeletionAtomicWithSync(path, raw, syncDirectory)
+		return err
 	}
 	return nil
 }
@@ -305,21 +367,32 @@ func validDeletionNames(intent *ContextDeletionIntent) bool {
 }
 
 func writeContextDeletionAtomic(path string, raw []byte) error {
+	return writeContextDeletionAtomicWithSync(path, raw, syncContextDeletionDirectory)
+}
+
+func writeContextDeletionAtomicWithSync(
+	path string,
+	raw []byte,
+	syncDirectory func(string) error,
+) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
+		return &contextDeletionWriteError{cause: err}
 	}
 	temp, err := createTempConfig(dir, ContextDeletionIntentFile, raw)
 	if err != nil {
-		return err
+		return &contextDeletionWriteError{cause: err}
 	}
 	// #nosec G703 -- temp was created beside the validated current config file.
 	defer func() { _ = os.Remove(temp) }()
 	// #nosec G703 -- fixed intent filename and temp under the current config directory.
 	if err := os.Rename(temp, path); err != nil {
-		return err
+		return &contextDeletionWriteError{cause: err}
 	}
-	return syncContextDeletionDirectory(dir)
+	if err := syncDirectory(dir); err != nil {
+		return &contextDeletionWriteError{installed: true, cause: err}
+	}
+	return nil
 }
 
 func syncContextDeletionDirectory(dir string) error {

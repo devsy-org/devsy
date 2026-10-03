@@ -140,6 +140,24 @@ func TestContextDeletionIntentFailurePrecedesEveryMutation(t *testing.T) {
 	require.Contains(t, request.config.Contexts, cleanupContext)
 }
 
+func TestContextDeletionUncanceledIntentWarnsBeforeEveryMutation(t *testing.T) {
+	request, envs, store := cleanupFixture(t)
+	request.intent = &contextDeletionPersistence{
+		begin: func(contextSnapshot) error {
+			return errors.Join(config.ErrContextDeletionPending, errors.New("private-secret"))
+		},
+	}
+	err := deleteContextValues(request)
+	require.ErrorIs(t, err, config.ErrContextDeletionPending)
+	require.ErrorContains(t, err, "a deletion intent may remain")
+	require.ErrorContains(t, err, "to complete deletion")
+	require.NotContains(t, err.Error(), "existing managed values were preserved")
+	require.NotContains(t, err.Error(), cleanupSecret)
+	require.Empty(t, store.deleted)
+	require.Zero(t, envs.deleteCalls)
+	require.Contains(t, request.config.Contexts, cleanupContext)
+}
+
 func TestContextDeletionClearFailureLeavesRecoverableIntent(t *testing.T) {
 	cfg, envs, store := deletionRecoveryFixture(t)
 	request, err := newContextDeleteRequest(cfg, cleanupContext)
