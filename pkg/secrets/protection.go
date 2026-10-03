@@ -198,6 +198,13 @@ func (p *ProtectionManager) status(inspect bool) (ProtectionStatus, error) {
 		FileEntries:  fileEntries(idx),
 		Availability: SecretStateUnknown,
 	}
+	// Credential readiness is independent of legacy file ownership and I/O.
+	// Metadata-only confirmation lists never inspect the credential service.
+	if inspect {
+		value, rememberErr := p.readRemembered()
+		result.Remembered = value != ""
+		result.RememberedAvailable = rememberErr == nil
+	}
 	// Keep protection metadata visible when a legacy owner cannot be proven.
 	// Reset applies the same ownership check as a hard failure under its lock.
 	ownershipErr := p.ensureKnownFileOwnership(idx)
@@ -210,9 +217,6 @@ func (p *ProtectionManager) status(inspect bool) (ProtectionStatus, error) {
 		return result, nil
 	}
 	if inspect {
-		value, rememberErr := p.readRemembered()
-		result.Remembered = value != ""
-		result.RememberedAvailable = rememberErr == nil
 		result.Availability, result.ReasonCode = p.fileAvailability(idx)
 	}
 	return result, nil

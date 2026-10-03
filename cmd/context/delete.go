@@ -4,12 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/envstore"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -17,11 +14,6 @@ import (
 type DeleteCmd struct {
 	*flags.GlobalFlags
 }
-
-const (
-	environmentStoreUnavailable = "environment store is unavailable"
-	environmentStoreNotWritable = "environment store is not writable"
-)
 
 // NewDeleteCmd creates a new command.
 func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
@@ -50,76 +42,33 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run runs the command logic.
-func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
-	err := config.UpdateConfig(context, cmd.Provider, func(devsyConfig *config.Config) error {
-		if context == "" {
-			context = devsyConfig.DefaultContext
-		} else if devsyConfig.Contexts[context] == nil {
-			return fmt.Errorf("context %q doesn't exist", context)
-		}
-
-		if context == config.DefaultContext {
-			return fmt.Errorf("cannot delete 'default' context")
-		}
-
-		// Read and validate environment state before deleting any secrets. A
-		// corrupt environment store must not leave the context's secrets gone
-		// while the context itself remains registered.
-		if err := preflightContextEnvironment(devsyConfig, context); err != nil {
-			return err
-		}
-
-		if err := deleteContextSecrets(devsyConfig, context); err != nil {
-			return err
-		}
-
-		if err := deleteContextEnvironment(devsyConfig, context); err != nil {
-			return err
-		}
-
-		delete(devsyConfig.Contexts, context)
-		resetContextReferences(devsyConfig, context)
-		return nil
-	})
+func (cmd *DeleteCmd) Run(_ context.Context, contextName string) error {
+	unlock, err := config.LockConfig()
 	if err != nil {
 		return err
 	}
-
-	return removeContextDir(context)
-}
-
-func preflightContextEnvironment(devsyConfig *config.Config, contextName string) error {
-	store, err := envstore.NewStoreForConfig(devsyConfig)
+	defer unlock()
+	cfg, err := config.LoadConfig(contextName, cmd.Provider)
 	if err != nil {
-		return environmentPreflightError(contextName, environmentStoreUnavailable)
+		return err
 	}
-	if _, err := store.List(contextName); err != nil {
-		// Do not include parser or store errors here: they may contain
-		// environment values from the plaintext file.
-		return environmentPreflightError(contextName, environmentStoreUnavailable)
+	if contextName == "" {
+		contextName = cfg.DefaultContext
 	}
-
-	path, err := config.GetConfigPath()
+	if cfg.Contexts[contextName] == nil {
+		return fmt.Errorf("context %q doesn't exist", contextName)
+	}
+	if contextName == config.DefaultContext {
+		return fmt.Errorf("cannot delete 'default' context")
+	}
+	request, err := newContextDeleteRequest(cfg, contextName)
 	if err != nil {
-		return environmentPreflightError(contextName, environmentStoreUnavailable)
+		return err
 	}
-	probe, err := os.CreateTemp(filepath.Dir(path), ".devsy-env-delete-check-*")
-	if err != nil {
-		return environmentPreflightError(contextName, environmentStoreNotWritable)
+	if err := deleteContextValues(request); err != nil {
+		return err
 	}
-	probePath := probe.Name()
-	if err := probe.Close(); err != nil {
-		_ = os.Remove(probePath)
-		return environmentPreflightError(contextName, environmentStoreNotWritable)
-	}
-	if err := os.Remove(probePath); err != nil {
-		return environmentPreflightError(contextName, environmentStoreNotWritable)
-	}
-	return nil
-}
-
-func environmentPreflightError(contextName, detail string) error {
-	return fmt.Errorf("preflight environment cleanup for context %q: %s", contextName, detail)
+	return removeContextDir(contextName)
 }
 
 // removeContextDir removes the directory for a deleted context.
@@ -144,48 +93,4 @@ func resetContextReferences(devsyConfig *config.Config, context string) {
 	if devsyConfig.OriginalContext == context {
 		devsyConfig.OriginalContext = config.DefaultContext
 	}
-}
-
-// deleteContextSecrets aborts (rather than orphaning stored values) if the store
-// is unavailable or a delete fails, so the deletion can be retried intact.
-func deleteContextSecrets(devsyConfig *config.Config, contextName string) error {
-	ctxConfig := devsyConfig.Contexts[contextName]
-	if ctxConfig == nil || len(ctxConfig.Secrets) == 0 {
-		return nil
-	}
-
-	store, err := secrets.NewSecretStoreForConfig(devsyConfig)
-	if err != nil {
-		return fmt.Errorf("open secrets store for context %q: %w", contextName, err)
-	}
-	for _, name := range ctxConfig.Secrets {
-		if err := store.Delete(contextName, name); err != nil {
-			return fmt.Errorf("delete secret %q for context %q: %w", name, contextName, err)
-		}
-	}
-	return nil
-}
-
-// deleteContextEnvironment removes every managed env value, including detached
-// values. Listing the dedicated plaintext store never opens secret backends.
-func deleteContextEnvironment(devsyConfig *config.Config, contextName string) error {
-	store, err := envstore.NewStoreForConfig(devsyConfig)
-	if err != nil {
-		return fmt.Errorf("open environment store for context %q: %w", contextName, err)
-	}
-	values, err := store.List(contextName)
-	if err != nil {
-		return fmt.Errorf("list environment values for context %q: %w", contextName, err)
-	}
-	for _, value := range values {
-		if err := store.Delete(contextName, value.Name); err != nil {
-			return fmt.Errorf(
-				"delete environment variable %q for context %q: %w",
-				value.Name,
-				contextName,
-				err,
-			)
-		}
-	}
-	return nil
 }

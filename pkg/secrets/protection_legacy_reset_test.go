@@ -19,6 +19,8 @@ func TestProtectionRefusesResetWithUnownedSecretsAndCiphertext(t *testing.T) {
 	for _, kind := range []Kind{KindSecret, ""} {
 		t.Run(string(kind), func(t *testing.T) {
 			p, idx := newLegacyResetFixture(t, kind, true)
+			rememberedReads := 0
+			p.readRemembered = func() (string, error) { rememberedReads++; return "", nil }
 			beforeIndex, err := os.ReadFile(idx.path) // #nosec G304 -- test config fixture.
 			require.NoError(t, err)
 			for _, inspect := range []func() (ProtectionStatus, error){p.CatalogStatus, p.Status} {
@@ -29,10 +31,17 @@ func TestProtectionRefusesResetWithUnownedSecretsAndCiphertext(t *testing.T) {
 				require.Equal(t, "ownership_unknown", status.ReasonCode)
 				require.Len(t, status.FileEntries, 1)
 			}
+			require.Equal(t, 1, rememberedReads, "only Status inspects remembered credentials")
 			_, err = p.ResetFileStore()
 			require.ErrorIs(t, err, ErrStateIndeterminate)
 			_, err = p.ResetFileStoreIfUnchanged(fileEntries(idx))
 			require.ErrorIs(t, err, ErrStateIndeterminate)
+			require.Equal(
+				t,
+				1,
+				rememberedReads,
+				"refused resets must not inspect the credential service",
+			)
 			afterIndex, err := os.ReadFile(idx.path) // #nosec G304 -- test config fixture.
 			require.NoError(t, err)
 			require.Equal(t, beforeIndex, afterIndex, "refused reset mutated metadata")

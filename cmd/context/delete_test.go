@@ -64,7 +64,7 @@ func setupDeleteContextTest(t *testing.T) (*pkgconfig.Config, string) {
 		DefaultContext: pkgconfig.DefaultContext,
 		Contexts: map[string]*pkgconfig.ContextConfig{
 			pkgconfig.DefaultContext: {},
-			"staging":                {EnvVars: []string{"ATTACHED"}},
+			"staging":                {EnvVars: []string{cleanupAttached}},
 		},
 	}
 	require.NoError(t, pkgconfig.SaveConfig(cfg))
@@ -75,7 +75,7 @@ func TestDeleteContextRemovesAttachedAndDetachedEnvironmentValues(t *testing.T) 
 	cfg, home := setupDeleteContextTest(t)
 	store, err := envstore.NewStoreForConfig(cfg)
 	require.NoError(t, err)
-	require.NoError(t, store.Set("staging", "ATTACHED", "attached"))
+	require.NoError(t, store.Set("staging", cleanupAttached, "attached"))
 	require.NoError(t, store.Set("staging", "DETACHED", "detached"))
 	require.NoError(t, store.Set(pkgconfig.DefaultContext, "PRESERVED", "default"))
 	// An inaccessible secret store cannot affect cleanup of plaintext env values.

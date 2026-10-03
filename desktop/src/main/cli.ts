@@ -260,6 +260,7 @@ export class CliRunner {
     const needsSecret =
       (rootCommand === "secret" &&
         ["set", "get", "delete", "list", "protection"].includes(command)) ||
+      (rootCommand === "context" && ["delete", "rm"].includes(command)) ||
       (rootCommand === "workspace" && command === "up") ||
       rootCommand === "up"
     if (!needsSecret) {
@@ -488,7 +489,12 @@ export class CliRunner {
    * the workspace's log directory, causing ENOENT crashes in appendLog.
    */
   private childrenByWorkspace = new Map<string, Set<ChildProcess>>()
-  private cancelledUnlocks = new Set<string>()
+  /** Invalidates unlock retries without letting newer calls erase cancellation. */
+  private workspaceCancellationGenerations = new Map<string, number>()
+
+  private workspaceCancellationGeneration(workspaceId: string): number {
+    return this.workspaceCancellationGenerations.get(workspaceId) ?? 0
+  }
 
   async runStreaming(
     args: string[],
@@ -500,10 +506,23 @@ export class CliRunner {
     onExit: (code: number, cliError?: CLIError) => void,
     workspaceId?: string,
     options: CliInvocationOptions = {},
+    retryCancellationGeneration?: number,
   ): Promise<ChildProcess> {
-    if (workspaceId && !options.unlockRetried)
-      this.cancelledUnlocks.delete(workspaceId)
+    // A retry keeps its originating generation. A new call captures the
+    // latest generation, so it remains valid after an older call is canceled.
+    const cancellationGeneration = workspaceId
+      ? (retryCancellationGeneration ??
+        this.workspaceCancellationGeneration(workspaceId))
+      : undefined
     await this.acquire()
+    if (
+      workspaceId &&
+      cancellationGeneration !==
+        this.workspaceCancellationGeneration(workspaceId)
+    ) {
+      this.release()
+      throw new Error("Workspace CLI invocation was cancelled")
+    }
     const invocationEnv = this.invocationEnv(args, options)
     const credentials = [
       invocationEnv.DEVSY_SECRETS_PASSPHRASE,
@@ -621,12 +640,18 @@ export class CliRunner {
           .then(async (retry) => {
             if (
               retry &&
-              (!workspaceId || !this.cancelledUnlocks.has(workspaceId))
+              (!workspaceId ||
+                cancellationGeneration ===
+                  this.workspaceCancellationGeneration(workspaceId))
             )
-              await this.runStreaming(args, onLine, onExit, workspaceId, {
-                ...options,
-                unlockRetried: true,
-              })
+              await this.runStreaming(
+                args,
+                onLine,
+                onExit,
+                workspaceId,
+                { ...options, unlockRetried: true },
+                cancellationGeneration,
+              )
             else onExit(code, cliError)
           })
           .catch(() => onExit(code, cliError))
@@ -663,7 +688,10 @@ export class CliRunner {
    * already-unlinked log file.
    */
   async cancelFor(workspaceId: string): Promise<void> {
-    this.cancelledUnlocks.add(workspaceId)
+    this.workspaceCancellationGenerations.set(
+      workspaceId,
+      this.workspaceCancellationGeneration(workspaceId) + 1,
+    )
     const bucket = this.childrenByWorkspace.get(workspaceId)
     if (!bucket || bucket.size === 0) return
 
