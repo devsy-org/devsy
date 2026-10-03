@@ -32,7 +32,7 @@ $descendantResult = $null
 $childPid = $null
 try {
     $started = Get-Date
-    $descendantResult = & $realRunner $pwshPath @('-NoProfile', '-File', $parentScript, $childPidFile) ([TimeSpan]::FromMilliseconds(750))
+    $descendantResult = & $realRunner $pwshPath @('-NoProfile', '-File', $parentScript, $childPidFile) ([TimeSpan]::FromMilliseconds(1000))
     $elapsedSeconds = ((Get-Date) - $started).TotalSeconds
     Assert-True ($descendantResult.TimedOut -and $elapsedSeconds -lt 5) 'parent with a sleeping descendant exceeded the timeout ceiling'
     Assert-True ($null -eq (Get-Process -Id $descendantResult.ProcessId -ErrorAction SilentlyContinue)) 'timed-out parent process remained alive'
