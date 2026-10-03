@@ -482,6 +482,11 @@ func (s *workspaceClient) compressedAgentInfo(
 	cliOptions provider.CLIOptions,
 ) (string, *provider.AgentWorkspaceInfo, error) {
 	agentInfo := s.agentInfo(cliOptions)
+	if agentInfo.Agent.Driver == provider.ExternalDriver {
+		if err := provider.ValidateExternalDriverConfig(agentInfo.Agent); err != nil {
+			return "", nil, fmt.Errorf("validate external runtime configuration: %w", err)
+		}
+	}
 
 	out, err := json.Marshal(agentInfo)
 	if err != nil {

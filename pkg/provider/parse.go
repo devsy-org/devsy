@@ -279,6 +279,7 @@ var validAgentDrivers = map[string]bool{
 	KubernetesDriver:   true,
 	AppleDriver:        true,
 	MicrosandboxDriver: true,
+	ExternalDriver:     true,
 }
 
 func validateAgentDriver(config *ProviderConfig) error {
@@ -288,8 +289,12 @@ func validateAgentDriver(config *ProviderConfig) error {
 
 	if !validAgentDrivers[config.Agent.Driver] {
 		return fmt.Errorf(
-			"agent.driver can only be docker, kubernetes, apple, microsandbox or custom",
+			"agent.driver can only be docker, kubernetes, apple, microsandbox, custom or external",
 		)
+	}
+
+	if config.Agent.Driver == ExternalDriver {
+		return ValidateExternalDriverConfig(config.Agent)
 	}
 
 	if config.Agent.Driver == CustomDriver {
