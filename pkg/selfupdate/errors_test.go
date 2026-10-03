@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/clierr"
-	"github.com/google/go-github/v90/github"
+	"github.com/google/go-github/v91/github"
 )
 
 func TestClassifyGitHubError_RateLimit(t *testing.T) {

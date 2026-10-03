@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/creativeprojects/go-selfupdate"
-	"github.com/google/go-github/v90/github"
+	"github.com/google/go-github/v91/github"
 )
 
 const releasesPerPage = 100
