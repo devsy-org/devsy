@@ -141,6 +141,77 @@ describe("CliRunner", () => {
     )
   })
 
+  it.each(["run", "runRaw"] as const)(
+    "does not prompt or retry replayed task errors through %s",
+    async (method) => {
+      const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+      mock.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) => {
+          callback(
+            Object.assign(new Error("failed"), {
+              stderr: JSON.stringify({
+                kind: "error",
+                outcome: "error",
+                code: "unlock_required",
+                message: "Recorded task requires unlock",
+              }),
+            }),
+            { stdout: "", stderr: "" },
+          )
+        },
+      )
+      const unlock = vi.fn(async () => "session-private")
+      cli.setUnlockHandler(unlock)
+      await expect(
+        cli[method]([
+          "--context",
+          "secret",
+          "workspace",
+          "task",
+          "get",
+          "old-task",
+        ]),
+      ).rejects.toMatchObject({
+        cliError: {
+          code: "unlock_required",
+          message: "Recorded task requires unlock",
+        },
+      })
+      expect(mock).toHaveBeenCalledOnce()
+      expect(unlock).not.toHaveBeenCalled()
+    },
+  )
+
+  it("does not prompt or retry nonsecret stdin commands on unlock_required", async () => {
+    const child = fakeChild()
+    const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
+    mockSpawn.mockReturnValue(child)
+    const unlock = vi.fn(async () => "session-private")
+    cli.setUnlockHandler(unlock)
+    const promise = cli.runRawStdin(
+      ["env", "set", "VALUE", "--stdin"],
+      "plaintext-value",
+    )
+    const rejected = expect(promise).rejects.toMatchObject({
+      cliError: { code: "unlock_required" },
+    })
+    await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledOnce())
+    child.stderr.emit(
+      "data",
+      JSON.stringify({
+        kind: "error",
+        outcome: "error",
+        code: "unlock_required",
+        message: "Unlock required",
+      }),
+    )
+    child.emit("close", 1)
+    await rejected
+    expect(mockSpawn).toHaveBeenCalledOnce()
+    expect(unlock).not.toHaveBeenCalled()
+    expect(child.stdin.written).toBe("plaintext-value")
+  })
+
   it("passes the configured level without overriding explicit CLI levels", async () => {
     const mockExecFile = vi.mocked(execFile) as unknown as ReturnType<
       typeof vi.fn
@@ -463,6 +534,50 @@ describe("CliRunner", () => {
   })
 
   describe("runStreaming", () => {
+    it.each(["logs", "get"])(
+      "preserves replayed unlock errors in streaming task %s without prompting or retrying",
+      async (operation) => {
+        const child = fakeStreamingChild()
+        const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<
+          typeof vi.fn
+        >
+        mockSpawn.mockReturnValue(child)
+        const unlock = vi.fn(async () => "session-private")
+        cli.setUnlockHandler(unlock)
+        const onLine = vi.fn()
+        const onExit = vi.fn()
+        await cli.runStreaming(
+          ["workspace", "task", operation, "old-task"],
+          onLine,
+          onExit,
+        )
+        const envelope = JSON.stringify({
+          kind: "error",
+          outcome: "error",
+          code: "unlock_required",
+          message: "Recorded task requires unlock",
+        })
+        child.stdout.push(`${envelope}\n`)
+        child.stderr.push(`${envelope}\n`)
+        await vi.waitFor(() => expect(onLine).toHaveBeenCalledTimes(2))
+        expect(onLine).toHaveBeenCalledWith(envelope, "stdout")
+        expect(onLine).toHaveBeenCalledWith(
+          envelope,
+          "stderr",
+          expect.objectContaining({
+            cliError: expect.objectContaining({ code: "unlock_required" }),
+          }),
+        )
+        child.emit("close", 1)
+        expect(onExit).toHaveBeenCalledExactlyOnceWith(
+          1,
+          expect.objectContaining({ code: "unlock_required" }),
+        )
+        expect(mockSpawn).toHaveBeenCalledOnce()
+        expect(unlock).not.toHaveBeenCalled()
+      },
+    )
+
     it("redacts scoped credentials before delivering stdout, stderr, and structured errors", async () => {
       const child = fakeStreamingChild()
       vi.mocked(spawn).mockReturnValue(
@@ -612,7 +727,7 @@ describe("CliRunner", () => {
       )
       const onExit = vi.fn()
       await cli.runStreaming(
-        ["workspace", "task", "logs", "old-task", "--follow"],
+        ["workspace", "up", "queued-workspace"],
         () => undefined,
         onExit,
         "queued-workspace",

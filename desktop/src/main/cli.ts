@@ -233,13 +233,7 @@ export class CliRunner {
     return this.sessionPassphrase !== undefined
   }
 
-  private invocationEnv(
-    args: string[],
-    options: CliInvocationOptions,
-  ): NodeJS.ProcessEnv {
-    const env = { ...this.env, ...options.env }
-    // Unlock material is deliberately withheld from unrelated child processes,
-    // including env CRUD and metadata/attachment operations.
+  private commandNeedsSecret(args: string[]): boolean {
     const valueFlags = new Set([
       "--context",
       "-c",
@@ -257,13 +251,22 @@ export class CliRunner {
     }
     const rootCommand = args[commandIndex]
     const command = args[commandIndex + 1]
-    const needsSecret =
+    return (
       (rootCommand === "secret" &&
         ["set", "get", "delete", "list", "protection"].includes(command)) ||
       (rootCommand === "context" && ["delete", "rm"].includes(command)) ||
       (rootCommand === "workspace" && command === "up") ||
       rootCommand === "up"
-    if (!needsSecret) {
+    )
+  }
+
+  private invocationEnv(
+    args: string[],
+    options: CliInvocationOptions,
+  ): NodeJS.ProcessEnv {
+    const env = { ...this.env, ...options.env }
+    // Unlock material is withheld from unrelated commands.
+    if (!this.commandNeedsSecret(args)) {
       delete env.DEVSY_SECRETS_PASSPHRASE
       delete env.DEVSY_SECRETS_PASSPHRASE_FILE
     } else if (
@@ -277,10 +280,12 @@ export class CliRunner {
   }
 
   private async unlockForRetry(
+    args: string[],
     error: unknown,
     options: CliInvocationOptions,
   ): Promise<boolean> {
     if (
+      !this.commandNeedsSecret(args) ||
       options.unlockRetried ||
       (error as { cliError?: CLIError })?.cliError?.code !==
         "unlock_required" ||
@@ -374,7 +379,7 @@ export class CliRunner {
       const wrapped = this.wrapError(error, options)
       this.release()
       released = true
-      if (await this.unlockForRetry(wrapped, options)) {
+      if (await this.unlockForRetry(args, wrapped, options)) {
         return this.run<T>(args, { ...options, unlockRetried: true })
       }
       throw wrapped
@@ -406,7 +411,7 @@ export class CliRunner {
       const wrapped = this.wrapError(error, options)
       this.release()
       released = true
-      if (await this.unlockForRetry(wrapped, options)) {
+      if (await this.unlockForRetry(args, wrapped, options)) {
         return this.runRaw(args, { ...options, unlockRetried: true })
       }
       throw wrapped
@@ -433,7 +438,7 @@ export class CliRunner {
       const wrapped = this.wrapError(error, { ...options, stdin: input })
       this.release()
       released = true
-      if (await this.unlockForRetry(wrapped, options)) {
+      if (await this.unlockForRetry(args, wrapped, options)) {
         return this.runRawStdin(args, input, {
           ...options,
           unlockRetried: true,
@@ -573,6 +578,7 @@ export class CliRunner {
         if (
           cliError?.code === "unlock_required" &&
           !options.unlockRetried &&
+          this.commandNeedsSecret(args) &&
           this.unlockHandler
         )
           return
@@ -595,6 +601,7 @@ export class CliRunner {
         if (
           (direct ?? legacy)?.code === "unlock_required" &&
           !options.unlockRetried &&
+          this.commandNeedsSecret(args) &&
           this.unlockHandler
         )
           return
@@ -634,9 +641,10 @@ export class CliRunner {
         code !== 0 &&
         cliError?.code === "unlock_required" &&
         !options.unlockRetried &&
+        this.commandNeedsSecret(args) &&
         this.unlockHandler
       ) {
-        void this.unlockForRetry({ cliError }, options)
+        void this.unlockForRetry(args, { cliError }, options)
           .then(async (retry) => {
             if (
               retry &&
