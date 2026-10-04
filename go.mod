@@ -16,7 +16,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.8
-	github.com/compose-spec/compose-go/v2 v2.14.0
+	github.com/compose-spec/compose-go/v2 v2.15.0
 	github.com/containers/image/v5 v5.36.2
 	github.com/creack/pty v1.1.24
 	github.com/creativeprojects/go-selfupdate v1.6.0
@@ -38,7 +38,6 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.22.0
 	github.com/google/go-containerregistry/pkg/authn/kubernetes v0.0.0-20260731170845-2ea098f4b134
-	github.com/google/go-github/v91 v91.0.0
 	github.com/google/go-github/v91 v91.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
