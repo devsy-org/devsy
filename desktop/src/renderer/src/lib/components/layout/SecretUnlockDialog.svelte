@@ -4,6 +4,7 @@ import * as Dialog from "$lib/components/ui/dialog/index.js"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { refreshSecrets } from "$lib/stores/secrets.js"
+import { toasts } from "$lib/stores/toasts.js"
 import { invoke, listen } from "$lib/ipc/bridge.js"
 let open = $state(false)
 let passphrase = $state("")
@@ -40,17 +41,28 @@ async function submit() {
   const submittedRemember = remember
   busy = true
   try {
-    const result = await invoke<{ ok: boolean; message?: string }>(
-      "secret_unlock_submit",
-      {
-        requestId: submittedRequestId,
-        passphrase: submittedPassphrase,
-        remember: submittedRemember,
-      },
-    )
+    const result = await invoke<{
+      ok: boolean
+      remembered?: boolean
+      message?: string
+    }>("secret_unlock_submit", {
+      requestId: submittedRequestId,
+      passphrase: submittedPassphrase,
+      remember: submittedRemember,
+    })
+    if (
+      result.remembered === true &&
+      (!result.ok || requestId !== submittedRequestId)
+    ) {
+      toasts.info(
+        result.message ??
+          "The passphrase was saved in your OS keychain. Use Forget in Settings to remove it.",
+        { sticky: true },
+      )
+    }
     if (requestId !== submittedRequestId) return
     passphrase = ""
-    if (result.ok) {
+    if (result.ok || result.remembered === true) {
       requestId = ""
       open = false
       remember = false
@@ -88,10 +100,10 @@ function cancel() {
     <form onsubmit={(event) => { event.preventDefault(); void submit() }} class="space-y-4">
       <Input type="password" aria-label="Secrets passphrase" autocomplete="off" bind:value={passphrase} disabled={busy} />
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={remember} disabled={busy} />Remember in OS keychain</label>
-      <p class="text-xs text-muted-foreground">Remembering allows Devsy CLI and Desktop to recover the credential through your OS credential store.</p>
+      <p class="text-xs text-muted-foreground">Once approved, remembering may finish even if you cancel unlocking. Use Forget in Settings to remove the saved credential.</p>
       {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
       <Dialog.Footer>
-        <Button type="button" variant="outline" disabled={busy} onclick={() => { cancel(); open = false }}>Cancel</Button>
+        <Button type="button" variant="outline" onclick={() => { cancel(); open = false }}>Cancel</Button>
         <Button type="submit" disabled={busy || !passphrase.trim()}>{busy ? "Unlocking…" : "Unlock and retry"}</Button>
       </Dialog.Footer>
     </form>
