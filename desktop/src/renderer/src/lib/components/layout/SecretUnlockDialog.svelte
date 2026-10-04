@@ -15,6 +15,48 @@ let requestId = $state("")
 onMount(() => {
   let destroyed = false
   let unlisten: (() => void) | undefined
+  let unlistenNotices: (() => void) | undefined
+  let readingNotices = false
+  let readRequested = false
+  const shownNotices = new Set<string>()
+  async function reportRememberedNotices() {
+    readRequested = true
+    if (readingNotices) return
+    readingNotices = true
+    try {
+      while (readRequested && !destroyed) {
+        readRequested = false
+        const result = await invoke<{
+          ok: boolean
+          notices?: { requestId: string; message: string }[]
+        }>("secret_unlock_notices")
+        if (destroyed || !result.ok) return
+        for (const notice of result.notices ?? []) {
+          if (destroyed) return
+          if (!shownNotices.has(notice.requestId)) {
+            toasts.info(notice.message, { sticky: true })
+            shownNotices.add(notice.requestId)
+          }
+          await invoke("secret_unlock_notice_ack", {
+            requestId: notice.requestId,
+          })
+        }
+      }
+    } catch {
+      // Main retains unacknowledged outcomes for the next event or page mount.
+    } finally {
+      readingNotices = false
+    }
+  }
+  void listen("secret_unlock_notice", () => {
+    void reportRememberedNotices()
+  }).then((off) => {
+    if (destroyed) off()
+    else {
+      unlistenNotices = off
+      void reportRememberedNotices()
+    }
+  })
   void listen<{ requestId?: unknown }>("secret_unlock_required", (event) => {
     const nextRequestId = event.payload?.requestId
     if (typeof nextRequestId !== "string" || !nextRequestId.trim()) return
@@ -32,6 +74,7 @@ onMount(() => {
   return () => {
     destroyed = true
     unlisten?.()
+    unlistenNotices?.()
   }
 })
 async function submit() {
@@ -50,16 +93,6 @@ async function submit() {
       passphrase: submittedPassphrase,
       remember: submittedRemember,
     })
-    if (
-      result.remembered === true &&
-      (!result.ok || requestId !== submittedRequestId)
-    ) {
-      toasts.info(
-        result.message ??
-          "The passphrase was saved in your OS keychain. Use Forget in Settings to remove it.",
-        { sticky: true },
-      )
-    }
     if (requestId !== submittedRequestId) return
     passphrase = ""
     if (result.ok || result.remembered === true) {

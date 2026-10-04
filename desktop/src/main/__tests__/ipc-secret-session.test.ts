@@ -633,6 +633,203 @@ describe("secret unlock IPC lifecycle", () => {
     })
   })
 
+  it("keeps a late saved-credential notice through navigation until a trusted replacement renderer acknowledges it", async () => {
+    const { cli, event, unlock, webContents, requestId } = setup()
+    const pending = unlock()
+    const id = requestId()
+    cli.runRaw.mockImplementation(async () => {
+      webContents.emit("did-start-navigation", {}, "app://reload", false, true)
+      return ""
+    })
+    const result = await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: id,
+      passphrase: "secret-value",
+      remember: true,
+    })
+    expect(result).toMatchObject({ ok: false, remembered: true })
+    await expect(pending).resolves.toBeUndefined()
+
+    const replacementFrame = {
+      url: pathToFileURL(join(__dirname, "../../renderer/index.html")).href,
+      isDestroyed: () => false,
+    }
+    webContents.mainFrame = replacementFrame
+    const replacementEvent = {
+      sender: webContents,
+      senderFrame: replacementFrame,
+    }
+    const notices = handlers.get("secret_unlock_notices")
+    const noticeResult = {
+      ok: true,
+      notices: [{ requestId: id, message: expect.any(String) }],
+    }
+    expect(await notices?.(replacementEvent)).toEqual(noticeResult)
+    expect(await notices?.(replacementEvent)).toEqual(noticeResult)
+    expect(webContents.send).toHaveBeenCalledWith("secret_unlock_notice")
+    expect(JSON.stringify(await notices?.(replacementEvent))).not.toContain(
+      "secret-value",
+    )
+    expect(
+      await handlers.get("secret_unlock_notice_ack")?.(replacementEvent, {
+        requestId: id,
+      }),
+    ).toEqual({ ok: true })
+    expect(await notices?.(replacementEvent)).toEqual({
+      ok: true,
+      notices: [],
+    })
+  })
+
+  it("rejects untrusted notice reads and acknowledgements without consuming the notice", async () => {
+    const { cli, event, unlock, webContents, requestId } = setup()
+    const pending = unlock()
+    const id = requestId()
+    cli.runRaw.mockImplementation(async () => {
+      webContents.emit("did-start-navigation", {}, "app://reload", false, true)
+      return ""
+    })
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: id,
+      passphrase: "private",
+      remember: true,
+    })
+    await expect(pending).resolves.toBeUndefined()
+    webContents.mainFrame.url = "https://untrusted.example/"
+    const untrusted = {
+      sender: webContents,
+      senderFrame: webContents.mainFrame,
+    }
+    const denied = {
+      ok: false,
+      message: "Secret operations require the main application window.",
+    }
+    expect(await handlers.get("secret_unlock_notices")?.(untrusted)).toEqual(
+      denied,
+    )
+    expect(
+      await handlers.get("secret_unlock_notice_ack")?.(untrusted, {
+        requestId: id,
+      }),
+    ).toEqual(denied)
+    const trustedFrame = {
+      url: pathToFileURL(join(__dirname, "../../renderer/index.html")).href,
+      isDestroyed: () => false,
+    }
+    webContents.mainFrame = trustedFrame
+    const trusted = { sender: webContents, senderFrame: trustedFrame }
+    expect(
+      await handlers.get("secret_unlock_notices")?.(trusted),
+    ).toMatchObject({
+      ok: true,
+      notices: [{ requestId: id }],
+    })
+  })
+
+  it("rejects invalid notice acknowledgements and treats unknown IDs as successful", async () => {
+    const { event } = setup()
+    const ack = handlers.get("secret_unlock_notice_ack")
+    expect(await ack?.(event, {})).toEqual({
+      ok: false,
+      message: "A valid unlock request ID is required.",
+    })
+    expect(await ack?.(event, { requestId: "unknown" })).toEqual({
+      ok: true,
+    })
+  })
+
+  it("does not queue notices for declined or failed saves or for a normal unlock", async () => {
+    const { cli, event, unlock, requestId } = setup()
+    const notices = handlers.get("secret_unlock_notices")
+    const declinedPending = unlock()
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({
+      response: 0,
+      checkboxChecked: false,
+    })
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+      passphrase: "private",
+      remember: true,
+    })
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+    })
+    await expect(declinedPending).resolves.toBeUndefined()
+    expect(await notices?.(event)).toEqual({ ok: true, notices: [] })
+
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({
+      response: 1,
+      checkboxChecked: false,
+    })
+    const failedPending = unlock()
+    cli.runRaw.mockRejectedValueOnce(new Error("keychain unavailable"))
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+      passphrase: "private",
+      remember: true,
+    })
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+    })
+    await expect(failedPending).resolves.toBeUndefined()
+    expect(await notices?.(event)).toEqual({ ok: true, notices: [] })
+
+    const normalPending = unlock()
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+      passphrase: "private",
+      remember: true,
+    })
+    await expect(normalPending).resolves.toBe("private")
+    expect(await notices?.(event)).toEqual({ ok: true, notices: [] })
+  })
+
+  it.each(["throw", "destroy"] as const)(
+    "keeps the notice queued if the wakeup send %s",
+    async (failure) => {
+      const { cli, event, unlock, webContents, requestId } = setup()
+      const pending = unlock()
+      const id = requestId()
+      cli.runRaw.mockImplementation(async () => {
+        webContents.emit(
+          "did-start-navigation",
+          {},
+          "app://reload",
+          false,
+          true,
+        )
+        if (failure === "destroy") webContents.isDestroyed = () => true
+        return ""
+      })
+      if (failure === "throw") {
+        // Fail the next send (the canceled unlock wakeup) after the initial prompt.
+        webContents.send.mockImplementation((channel: string) => {
+          if (channel === "secret_unlock_notice") throw new Error("closed")
+        })
+      }
+      const result = await handlers.get("secret_unlock_submit")?.(event, {
+        requestId: id,
+        passphrase: "private",
+        remember: true,
+      })
+      await expect(pending).resolves.toBeUndefined()
+      expect(result).toMatchObject({ ok: false, remembered: true })
+
+      webContents.isDestroyed = () => false
+      const frame = {
+        url: pathToFileURL(join(__dirname, "../../renderer/index.html")).href,
+        isDestroyed: () => false,
+      }
+      webContents.mainFrame = frame
+      const replacement = { sender: webContents, senderFrame: frame }
+      expect(
+        await handlers.get("secret_unlock_notices")?.(replacement),
+      ).toMatchObject({
+        ok: true,
+        notices: [{ requestId: id }],
+      })
+    },
+  )
+
   it.each(["dialog", "cli"] as const)(
     "cannot settle a replacement request after navigation during %s",
     async (stage) => {

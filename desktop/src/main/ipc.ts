@@ -409,13 +409,55 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     message: "Unlock request is no longer active.",
   }
 
-  const rememberedUnlockCanceled: SecretUnlockResult = {
+  const rememberedUnlockCanceled = {
     ok: false,
     remembered: true,
     message:
       "The passphrase was saved in the OS keychain, but unlocking was canceled. Use Forget to remove the remembered credential.",
-  }
+  } satisfies SecretUnlockResult
   const credentialSubmissions = new Set<string>()
+  const secretUnlockNotices = new Map<
+    string,
+    { requestId: string; message: string }
+  >()
+
+  function retainRememberedUnlockNotice(requestId: string): SecretUnlockResult {
+    if (!secretUnlockNotices.has(requestId)) {
+      secretUnlockNotices.set(requestId, {
+        requestId,
+        message: rememberedUnlockCanceled.message,
+      })
+      try {
+        const win = getMainWindow()
+        if (win && !win.isDestroyed() && !win.webContents.isDestroyed())
+          win.webContents.send("secret_unlock_notice")
+      } catch {
+        // The replacement renderer can fetch retained notices after mounting.
+      }
+    }
+    return rememberedUnlockCanceled
+  }
+
+  ipcMain.handle("secret_unlock_notices", (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return { ok: true, notices: [...secretUnlockNotices.values()] }
+  })
+  ipcMain.handle("secret_unlock_notice_ack", (event, args: unknown) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    const requestId =
+      args &&
+      typeof args === "object" &&
+      !Array.isArray(args) &&
+      "requestId" in args
+        ? args.requestId
+        : undefined
+    if (typeof requestId !== "string" || !requestId.trim())
+      return { ok: false, message: "A valid unlock request ID is required." }
+    secretUnlockNotices.delete(requestId)
+    return { ok: true }
+  })
 
   function pendingSecretUnlockFailure(
     event: Electron.IpcMainInvokeEvent,
@@ -490,10 +532,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       requestId,
       passphrase,
     )
-    if (!remembered.ok) return remembered
+    if (!remembered.ok)
+      return remembered.remembered
+        ? retainRememberedUnlockNotice(requestId)
+        : remembered
     // Approval authorizes persistence, but stale completion must not settle a newer unlock.
     const completed = completeSecretUnlock(event, requestId, passphrase)
-    if (!completed.ok) return rememberedUnlockCanceled
+    if (!completed.ok) return retainRememberedUnlockNotice(requestId)
     return { ok: true, remembered: true }
   }
 

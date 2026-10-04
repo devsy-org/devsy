@@ -12,13 +12,37 @@ vi.mock("$lib/stores/toasts.js", () => ({ toasts: { info: vi.fn() } }))
 
 describe("SecretUnlockDialog", () => {
   let request: (requestId?: unknown) => void
+  let notify: () => void
+  let notices: { requestId: string; message: string }[]
+  let submit: () => Promise<{
+    ok: boolean
+    remembered?: boolean
+    message?: string
+  }>
   beforeEach(() => {
-    vi.clearAllMocks()
-    vi.mocked(listen).mockImplementation(async (_name, callback) => {
-      request = (requestId) => callback({ payload: { requestId } })
+    vi.resetAllMocks()
+    notices = []
+    submit = async () => ({ ok: true })
+    vi.mocked(listen).mockImplementation(async (name, callback) => {
+      if (name === "secret_unlock_required")
+        request = (requestId) => callback({ payload: { requestId } })
+      else if (name === "secret_unlock_notice")
+        notify = () => callback({ payload: undefined })
       return vi.fn<() => void>()
     })
-    vi.mocked(invoke).mockResolvedValue({ ok: true })
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "secret_unlock_notices")
+        return { ok: true, notices: [...notices] }
+      if (command === "secret_unlock_notice_ack") {
+        notices = notices.filter(
+          (notice) => notice.requestId !== args?.requestId,
+        )
+        return { ok: true }
+      }
+      if (command === "secret_unlock_submit" && args?.passphrase !== undefined)
+        return submit()
+      return { ok: true }
+    })
   })
   it("opens on a main-process unlock request and submits only with explicit remember selection", async () => {
     const { unmount } = render(SecretUnlockDialog)
@@ -66,9 +90,7 @@ describe("SecretUnlockDialog", () => {
 
   it("keeps a newer request intact when an older submit resolves later", async () => {
     let resolveOld!: (value: { ok: boolean }) => void
-    vi.mocked(invoke).mockImplementationOnce(
-      () => new Promise((resolve) => (resolveOld = resolve)),
-    )
+    submit = () => new Promise((resolve) => (resolveOld = resolve))
     const { unmount } = render(SecretUnlockDialog)
     await waitFor(() => expect(listen).toHaveBeenCalled())
 
@@ -101,7 +123,7 @@ describe("SecretUnlockDialog", () => {
   })
 
   it("does not reset typing or busy state when the same request is re-notified", async () => {
-    vi.mocked(invoke).mockImplementationOnce(() => new Promise(() => {}))
+    submit = () => new Promise(() => {})
     const { unmount } = render(SecretUnlockDialog)
     await waitFor(() => expect(listen).toHaveBeenCalled())
     request("request-same")
@@ -120,12 +142,10 @@ describe("SecretUnlockDialog", () => {
       remembered: boolean
       message: string
     }) => void
-    vi.mocked(invoke).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve
-        }),
-    )
+    submit = () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
     const { unmount } = render(SecretUnlockDialog)
     await waitFor(() => expect(listen).toHaveBeenCalled())
     request("remember-request")
@@ -139,6 +159,8 @@ describe("SecretUnlockDialog", () => {
     })
     const message =
       "The passphrase was saved in the OS keychain, but unlocking was canceled. Use Forget to remove the remembered credential."
+    notices = [{ requestId: "remember-request", message }]
+    notify()
     finish({ ok: false, remembered: true, message })
     await waitFor(() =>
       expect(toasts.info).toHaveBeenCalledWith(message, { sticky: true }),
@@ -152,12 +174,10 @@ describe("SecretUnlockDialog", () => {
 
   it("reports an older remembered outcome without changing the replacement dialog", async () => {
     let finish!: (result: { ok: boolean; remembered: boolean }) => void
-    vi.mocked(invoke).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve
-        }),
-    )
+    submit = () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
     const { unmount } = render(SecretUnlockDialog)
     await waitFor(() => expect(listen).toHaveBeenCalled())
     request("old-remember")
@@ -166,6 +186,13 @@ describe("SecretUnlockDialog", () => {
     await fireEvent.click(screen.getByText("Unlock and retry"))
     request("new-unlock")
     await fireEvent.input(input, { target: { value: "new credential" } })
+    notices = [
+      {
+        requestId: "old-remember",
+        message: "Saved credential; use Forget to remove it.",
+      },
+    ]
+    notify()
     finish({ ok: false, remembered: true })
     await waitFor(() => expect(toasts.info).toHaveBeenCalledOnce())
     expect(
@@ -179,7 +206,7 @@ describe("SecretUnlockDialog", () => {
   })
 
   it("does not report remembered success for a failed save", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({
+    submit = async () => ({
       ok: false,
       message: "Could not save the credential.",
     })
@@ -192,5 +219,79 @@ describe("SecretUnlockDialog", () => {
     await screen.findByText("Could not save the credential.")
     expect(toasts.info).not.toHaveBeenCalled()
     unmount()
+  })
+
+  it("replays a late saved notice on the replacement page and acknowledges it after display", async () => {
+    let finish!: (result: { ok: boolean; remembered: boolean }) => void
+    submit = () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+    const oldPage = render(SecretUnlockDialog)
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("secret_unlock_notices"),
+    )
+    request("reloaded-request")
+    const input = await screen.findByLabelText("Secrets passphrase")
+    await fireEvent.input(input, { target: { value: "private credential" } })
+    await fireEvent.click(screen.getByLabelText("Remember in OS keychain"))
+    await fireEvent.click(screen.getByText("Unlock and retry"))
+    oldPage.unmount()
+    notices = [
+      {
+        requestId: "reloaded-request",
+        message: "Saved in OS keychain; use Forget to remove it.",
+      },
+    ]
+    finish({ ok: false, remembered: true })
+    await Promise.resolve()
+    expect(toasts.info).not.toHaveBeenCalled()
+    const newPage = render(SecretUnlockDialog)
+    await waitFor(() =>
+      expect(toasts.info).toHaveBeenCalledExactlyOnceWith(
+        "Saved in OS keychain; use Forget to remove it.",
+        { sticky: true },
+      ),
+    )
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("secret_unlock_notice_ack", {
+        requestId: "reloaded-request",
+      }),
+    )
+    expect(notices).toEqual([])
+    notify()
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("secret_unlock_notices"),
+    )
+    expect(toasts.info).toHaveBeenCalledOnce()
+    newPage.unmount()
+  })
+
+  it("does not display or acknowledge a fetched notice after its page is destroyed", async () => {
+    let finish!: (result: {
+      ok: boolean
+      notices: { requestId: string; message: string }[]
+    }) => void
+    vi.mocked(invoke).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const oldPage = render(SecretUnlockDialog)
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("secret_unlock_notices"),
+    )
+    oldPage.unmount()
+    finish({
+      ok: true,
+      notices: [{ requestId: "old-page", message: "Saved credential" }],
+    })
+    await Promise.resolve()
+    expect(toasts.info).not.toHaveBeenCalled()
+    expect(invoke).not.toHaveBeenCalledWith(
+      "secret_unlock_notice_ack",
+      expect.anything(),
+    )
   })
 })
