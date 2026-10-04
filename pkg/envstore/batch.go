@@ -19,12 +19,12 @@ func (s *localStore) DeleteValues(contextName string, names []string) error {
 			return err
 		}
 	}
-	unlock, err := s.locked()
+	unlock, catalog, err := s.locked()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d, err := s.load()
+	d, err := s.load(catalog)
 	if err != nil {
 		return err
 	}
@@ -47,12 +47,12 @@ func (s *localStore) RestoreValues(contextName string, values []EnvValue) error 
 			return err
 		}
 	}
-	unlock, err := s.locked()
+	unlock, catalog, err := s.locked()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d, err := s.load()
+	d, err := s.load(catalog)
 	if err != nil {
 		return err
 	}

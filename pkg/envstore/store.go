@@ -79,12 +79,12 @@ func (s *localStore) Set(contextName, name, value string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
-	unlock, err := s.locked()
+	unlock, catalog, err := s.locked()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d, err := s.load()
+	d, err := s.load(catalog)
 	if err != nil {
 		return err
 	}
@@ -104,12 +104,12 @@ func (s *localStore) Meta(contextName, name string) (EnvValue, error) {
 	if err := ValidateName(name); err != nil {
 		return EnvValue{}, err
 	}
-	unlock, err := s.locked()
+	unlock, catalog, err := s.locked()
 	if err != nil {
 		return EnvValue{}, err
 	}
 	defer unlock()
-	d, err := s.load()
+	d, err := s.load(catalog)
 	if err != nil {
 		return EnvValue{}, err
 	}
@@ -126,12 +126,12 @@ func (s *localStore) Get(contextName, name string) (string, error) {
 	if err := ValidateName(name); err != nil {
 		return "", err
 	}
-	unlock, err := s.locked()
+	unlock, catalog, err := s.locked()
 	if err != nil {
 		return "", err
 	}
 	defer unlock()
-	d, err := s.load()
+	d, err := s.load(catalog)
 	if err != nil {
 		return "", err
 	}
@@ -148,12 +148,12 @@ func (s *localStore) Get(contextName, name string) (string, error) {
 }
 
 func (s *localStore) List(contextName string) ([]EnvValue, error) {
-	unlock, err := s.locked()
+	unlock, catalog, err := s.locked()
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	d, err := s.load()
+	d, err := s.load(catalog)
 	if err != nil {
 		return nil, err
 	}
@@ -171,12 +171,12 @@ func (s *localStore) Delete(contextName, name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
-	unlock, err := s.locked()
+	unlock, catalog, err := s.locked()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d, err := s.load()
+	d, err := s.load(catalog)
 	if err != nil {
 		return err
 	}
@@ -187,38 +187,83 @@ func (s *localStore) Delete(contextName, name string) error {
 	return s.save(d)
 }
 
-// Lock order is config lock -> secrets.yaml.lock -> env.yaml.lock. The shared
-// catalog lock prevents migration overwriting concurrent secret mutations.
-func (s *localStore) locked() (func(), error) {
+// Lock order is config lock -> secrets.yaml.lock -> env.yaml.lock. Ordinary
+// environment operations need only the env lock. The catalog is read while
+// holding that lock; only a catalog containing legacy env entries requires
+// reacquiring both locks in the established order.
+func (s *localStore) locked() (func(), map[string]any, error) {
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	releases := make([]func(), 0, 2)
-	for _, name := range []string{"secrets.yaml.lock", FileName + ".lock"} {
-		l := flock.New(filepath.Join(s.dir, name))
+	envReleases, err := acquireLocks(s.dir, FileName+".lock")
+	if err != nil {
+		return nil, nil, err
+	}
+	catalog, err := loadMigrationCatalog(filepath.Join(s.dir, "secrets.yaml"))
+	if err != nil {
+		releaseLocks(envReleases)
+		return nil, nil, err
+	}
+	if !hasLegacyEnv(catalog) {
+		return lockRelease(envReleases), catalog, nil
+	}
+	releaseLocks(envReleases)
+	releases, err := acquireLocks(s.dir, "secrets.yaml.lock", FileName+".lock")
+	if err != nil {
+		return nil, nil, err
+	}
+	// Reload only after both locks are held. A concurrent secret writer may
+	// have changed the catalog since the initial env-locked snapshot.
+	catalog, err = loadMigrationCatalog(filepath.Join(s.dir, "secrets.yaml"))
+	if err != nil {
+		releaseLocks(releases)
+		return nil, nil, err
+	}
+	return lockRelease(releases), catalog, nil
+}
+
+func acquireLocks(dir string, names ...string) ([]func(), error) {
+	releases := make([]func(), 0, len(names))
+	for _, name := range names {
+		l := flock.New(filepath.Join(dir, name))
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		ok, err := l.TryLockContext(ctx, 50*time.Millisecond)
 		cancel()
 		if err != nil || !ok {
-			for _, release := range slices.Backward(releases) {
-				release()
-			}
-			return nil, fmt.Errorf(
-				"lock %s: %w",
-				name,
-				errors.Join(err, errors.New("environment store lock unavailable")),
-			)
+			releaseLocks(releases)
+			return nil, fmt.Errorf("lock %s: %w", name,
+				errors.Join(err, errors.New("environment store lock unavailable")))
 		}
 		releases = append(releases, func() { _ = l.Unlock() })
 	}
-	return func() {
-		for _, release := range slices.Backward(releases) {
-			release()
-		}
-	}, nil
+	return releases, nil
 }
 
-func (s *localStore) load() (*data, error) {
+func releaseLocks(releases []func()) {
+	for _, release := range slices.Backward(releases) {
+		release()
+	}
+}
+
+func lockRelease(releases []func()) func() {
+	return func() { releaseLocks(releases) }
+}
+
+func hasLegacyEnv(catalog map[string]any) bool {
+	contexts, _ := catalog["contexts"].(map[string]any)
+	for _, raw := range contexts {
+		entries, _ := raw.(map[string]any)
+		for _, entryRaw := range entries {
+			entry, _ := entryRaw.(map[string]any)
+			if entry["kind"] == "env" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *localStore) load(catalog map[string]any) (*data, error) {
 	d := &data{SchemaVersion: 1, Contexts: map[string]map[string]EnvValue{}}
 	// #nosec G304 -- path is under the selected config directory.
 	raw, err := os.ReadFile(filepath.Join(s.dir, FileName))
@@ -236,7 +281,7 @@ func (s *localStore) load() (*data, error) {
 			d.Contexts = map[string]map[string]EnvValue{}
 		}
 	}
-	if err := s.migrate(d); err != nil {
+	if err := s.migrate(d, catalog); err != nil {
 		return nil, err
 	}
 	return d, nil
@@ -253,12 +298,11 @@ func (s *localStore) save(d *data) error {
 // migrate retains arbitrary catalog metadata and moves only explicitly tagged
 // legacy env records. The env file is committed first: retries preserve newer
 // env values if interruption leaves a legacy duplicate behind.
-func (s *localStore) migrate(d *data) error {
-	path := filepath.Join(s.dir, "secrets.yaml")
-	catalog, err := loadMigrationCatalog(path)
-	if err != nil {
-		return err
+func (s *localStore) migrate(d *data, catalog map[string]any) error {
+	if !hasLegacyEnv(catalog) {
+		return nil
 	}
+	path := filepath.Join(s.dir, "secrets.yaml")
 	contexts, _ := catalog["contexts"].(map[string]any)
 	removed, err := migrateEnvContexts(d, contexts)
 	if err != nil {
