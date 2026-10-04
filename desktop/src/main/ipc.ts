@@ -392,7 +392,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   const secretDocumentURL =
     !app.isPackaged && process.env.ELECTRON_RENDERER_URL
       ? process.env.ELECTRON_RENDERER_URL
-      : pathToFileURL(join(app.getAppPath(), "dist/renderer/index.html")).href
+      : pathToFileURL(join(__dirname, "../renderer/index.html")).href
   const secretRequestDenied: SecretIpcFailure = {
     ok: false,
     message: "Secret operations require the main application window.",

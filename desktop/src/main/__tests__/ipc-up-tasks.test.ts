@@ -106,7 +106,7 @@ function setup(
   const win = {
     webContents: {
       mainFrame: {
-        url: pathToFileURL(join("/tmp", "dist/renderer/index.html")).href,
+        url: pathToFileURL(join(__dirname, "../../renderer/index.html")).href,
         isDestroyed: () => false,
       },
       isDestroyed: () => false,

@@ -12,7 +12,7 @@ const handlers = new Map<string, Handler>()
 vi.mock("electron", () => ({
   app: {
     getPath: () => "/tmp",
-    getAppPath: () => "/tmp",
+    getAppPath: vi.fn(() => "/tmp"),
     getVersion: () => "0.0.0",
     isPackaged: false,
   },
@@ -35,7 +35,7 @@ vi.mock("../analytics.js", () => ({
 }))
 
 const { registerIpcHandlers } = await import("../ipc.js")
-const { dialog } = await import("electron")
+const { app, dialog } = await import("electron")
 const { trackEvent } = await import("../analytics.js")
 
 function setup(timeoutMs = 5 * 60 * 1000) {
@@ -47,7 +47,7 @@ function setup(timeoutMs = 5 * 60 * 1000) {
   webContents.send = vi.fn()
   webContents.isDestroyed = () => false
   webContents.mainFrame = {
-    url: pathToFileURL(join("/tmp", "dist/renderer/index.html")).href,
+    url: pathToFileURL(join(__dirname, "../../renderer/index.html")).href,
     isDestroyed: () => false,
   }
   const event = { sender: webContents, senderFrame: webContents.mainFrame }
@@ -115,10 +115,32 @@ describe("secret unlock IPC lifecycle", () => {
     handlers.clear()
     vi.clearAllMocks()
     vi.stubEnv("ELECTRON_RENDERER_URL", "")
+    vi.mocked(app.getAppPath).mockReturnValue("/tmp")
     vi.mocked(dialog.showMessageBox).mockResolvedValue({
       response: 1,
       checkboxChecked: false,
     })
+  })
+
+  it("trusts the bootstrap sibling renderer when Electron's app path is the main entrypoint directory", async () => {
+    vi.mocked(app.getAppPath).mockReturnValue(join(__dirname, ".."))
+    const { cli, event } = setup()
+    expect(await handlers.get("secret_protection_status")?.(event)).toEqual({
+      sessionUnlocked: false,
+    })
+    expect(cli.run).toHaveBeenCalledExactlyOnceWith([
+      "secret",
+      "protection",
+      "status",
+    ])
+    event.senderFrame.url = pathToFileURL(
+      join(__dirname, "../dist/renderer/index.html"),
+    ).href
+    expect(await handlers.get("secret_protection_status")?.(event)).toEqual({
+      ok: false,
+      message: "Secret operations require the main application window.",
+    })
+    expect(cli.run).toHaveBeenCalledOnce()
   })
 
   it.each([{}, 123, true, [], undefined, null, "   "])(

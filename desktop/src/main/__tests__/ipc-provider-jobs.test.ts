@@ -74,7 +74,7 @@ function setup(
   }
   const send = vi.fn()
   const mainFrame = {
-    url: pathToFileURL(join("/tmp", "dist/renderer/index.html")).href,
+    url: pathToFileURL(join(__dirname, "../../renderer/index.html")).href,
     isDestroyed: () => false,
   }
   const webContents = { send, mainFrame, isDestroyed: () => false }
