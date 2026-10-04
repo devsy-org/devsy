@@ -12,6 +12,7 @@ let remember = $state(false)
 let busy = $state(false)
 let error = $state("")
 let requestId = $state("")
+let readRememberedNotices: () => void = () => {}
 onMount(() => {
   let destroyed = false
   let unlisten: (() => void) | undefined
@@ -48,13 +49,14 @@ onMount(() => {
       readingNotices = false
     }
   }
-  void listen("secret_unlock_notice", () => {
+  readRememberedNotices = () => {
     void reportRememberedNotices()
-  }).then((off) => {
+  }
+  void listen("secret_unlock_notice", readRememberedNotices).then((off) => {
     if (destroyed) off()
     else {
       unlistenNotices = off
-      void reportRememberedNotices()
+      readRememberedNotices()
     }
   })
   void listen<{ requestId?: unknown }>("secret_unlock_required", (event) => {
@@ -73,6 +75,7 @@ onMount(() => {
   })
   return () => {
     destroyed = true
+    readRememberedNotices = () => {}
     unlisten?.()
     unlistenNotices?.()
   }
@@ -93,6 +96,7 @@ async function submit() {
       passphrase: submittedPassphrase,
       remember: submittedRemember,
     })
+    if (!result.ok && result.remembered === true) readRememberedNotices()
     if (requestId !== submittedRequestId) return
     passphrase = ""
     if (result.ok || result.remembered === true) {

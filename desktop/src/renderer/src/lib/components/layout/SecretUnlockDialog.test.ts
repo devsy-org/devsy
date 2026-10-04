@@ -294,4 +294,49 @@ describe("SecretUnlockDialog", () => {
       expect.anything(),
     )
   })
+
+  it("reports a retained saved outcome from submission completion when its wakeup is lost", async () => {
+    let finish!: (result: { ok: boolean; remembered: boolean }) => void
+    submit = () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+    const page = render(SecretUnlockDialog)
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("secret_unlock_notices"),
+    )
+    request("timed-out-save")
+    const input = await screen.findByLabelText("Secrets passphrase")
+    await fireEvent.input(input, { target: { value: "private credential" } })
+    await fireEvent.click(screen.getByLabelText("Remember in OS keychain"))
+    await fireEvent.click(screen.getByText("Unlock and retry"))
+    notices = [
+      {
+        requestId: "timed-out-save",
+        message:
+          "Saved credential after unlock timeout; use Forget to remove it.",
+      },
+    ]
+    // Main timed out the unlock; the live page receives the result but no wakeup.
+    finish({ ok: false, remembered: true })
+    await waitFor(() =>
+      expect(toasts.info).toHaveBeenCalledExactlyOnceWith(
+        "Saved credential after unlock timeout; use Forget to remove it.",
+        { sticky: true },
+      ),
+    )
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("secret_unlock_notice_ack", {
+        requestId: "timed-out-save",
+      }),
+    )
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Secrets passphrase")).toBeNull(),
+    )
+    notify()
+    await Promise.resolve()
+    expect(toasts.info).toHaveBeenCalledOnce()
+    expect(notices).toEqual([])
+    page.unmount()
+  })
 })
