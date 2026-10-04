@@ -6,7 +6,11 @@ import { ProviderJobs } from "../provider-jobs.js"
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 
 vi.mock("electron", () => ({
-  app: { getPath: () => "/tmp", getVersion: () => "0.0.0" },
+  app: {
+    getPath: () => "/tmp",
+    getAppPath: () => "/tmp",
+    getVersion: () => "0.0.0",
+  },
   dialog: {},
   ipcMain: {
     handle: (channel: string, fn: (...args: unknown[]) => unknown) => {

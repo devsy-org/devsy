@@ -147,11 +147,11 @@ func captureListOutput(t *testing.T, render func()) string {
 	}
 	previous := os.Stdout
 	os.Stdout = write
+	defer func() { os.Stdout = previous }()
 	render()
 	if err := write.Close(); err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout = previous
 	output, err := io.ReadAll(read)
 	if err != nil {
 		t.Fatal(err)

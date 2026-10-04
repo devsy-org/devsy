@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import { mkdir, readdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { app, dialog, ipcMain } from "electron"
@@ -24,6 +25,7 @@ import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js
 import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
+import { isTrustedSecretIpcSender } from "./secret-ipc-policy.js"
 import { SecretSession } from "./secret-session.js"
 import type { SettingsService } from "./settings-service.js"
 import type { DaemonState } from "./state.js"
@@ -357,9 +359,22 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         : undefined,
     )
   })
+  const secretDocumentURL =
+    !app.isPackaged && process.env.ELECTRON_RENDERER_URL
+      ? process.env.ELECTRON_RENDERER_URL
+      : pathToFileURL(join(app.getAppPath(), "dist/renderer/index.html")).href
+  const secretRequestDenied = {
+    ok: false,
+    message: "Secret operations require the main application window.",
+  }
+
   ipcMain.handle(
     "secret_unlock_submit",
-    async (_event, args: { passphrase?: string; remember?: boolean }) => {
+    async (event, args: { passphrase?: string; remember?: boolean }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      if (!args || typeof args !== "object")
+        return { ok: false, message: "Invalid unlock request." }
       if (
         args.passphrase !== undefined &&
         (typeof args.passphrase !== "string" || !args.passphrase.trim())
@@ -383,21 +398,30 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       return { ok: true }
     },
   )
-  ipcMain.handle("secret_protection_status", async () => ({
-    ...(await cli.run<Record<string, unknown>>([
-      "secret",
-      "protection",
-      "status",
-    ])),
-    sessionUnlocked: cli.hasSessionPassphrase(),
-  }))
-  ipcMain.handle("secret_session_clear", async () => {
+  ipcMain.handle("secret_protection_status", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return {
+      ...(await cli.run<Record<string, unknown>>([
+        "secret",
+        "protection",
+        "status",
+      ])),
+      sessionUnlocked: cli.hasSessionPassphrase(),
+    }
+  })
+  ipcMain.handle("secret_session_clear", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
     cli.setSessionPassphrase(undefined)
     secretSession.submit(undefined)
   })
   ipcMain.handle(
     "secret_protection_action",
-    async (_event, args: { action: string; passphrase?: string }) => {
+    async (event, args: { action: string; passphrase?: string }) => {
+      const win = getMainWindow()
+      if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
+        return secretRequestDenied
       const allowed = [
         "set-passphrase",
         "change-passphrase",
@@ -405,18 +429,51 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "remember",
         "forget",
       ]
-      if (!allowed.includes(args.action))
+      if (!args || typeof args !== "object" || !allowed.includes(args.action))
         return { ok: false, message: "Unknown protection action." }
+      const action = args.action
+      const passphrase = args.passphrase
+      const changesPassphrase = [
+        "set-passphrase",
+        "change-passphrase",
+      ].includes(action)
       try {
-        const command = ["secret", "protection", args.action]
-        if (["set-passphrase", "change-passphrase"].includes(args.action)) {
-          if (!args.passphrase?.trim())
+        const command = ["secret", "protection", action]
+        if (changesPassphrase) {
+          if (typeof passphrase !== "string" || !passphrase.trim())
             return { ok: false, message: "Enter a non-empty passphrase." }
-          await cli.runRawStdin([...command, "--stdin"], args.passphrase)
-          cli.setSessionPassphrase(args.passphrase)
+        }
+        const descriptions: Record<string, string> = {
+          "set-passphrase": "Set a passphrase for all file-backed secrets?",
+          "change-passphrase":
+            "Change the passphrase for all file-backed secrets?",
+          "remove-passphrase":
+            "Remove passphrase protection from all file-backed secrets?",
+          remember: "Remember the secrets passphrase in your OS keychain?",
+          forget: "Forget the secrets passphrase stored in your OS keychain?",
+        }
+        const confirmation = await dialog.showMessageBox(win, {
+          type: "warning",
+          title: "Secret protection",
+          message: descriptions[action],
+          detail: "This changes the shared secret store across all contexts.",
+          buttons: ["Cancel", "Continue"],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        })
+        if (
+          !isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL)
+        )
+          return secretRequestDenied
+        if (confirmation.response !== 1)
+          return { ok: false, message: "Secret protection change canceled." }
+        if (changesPassphrase && typeof passphrase === "string") {
+          await cli.runRawStdin([...command, "--stdin"], passphrase)
+          cli.setSessionPassphrase(passphrase)
         } else {
           await cli.runRaw(command)
-          if (args.action === "remove-passphrase")
+          if (action === "remove-passphrase")
             cli.setSessionPassphrase(undefined)
         }
         return { ok: true }

@@ -8,7 +8,11 @@ type Handler = (...args: unknown[]) => unknown
 
 const handlers = new Map<string, Handler>()
 vi.mock("electron", () => ({
-  app: { getPath: () => "/tmp", getVersion: () => "0.0.0" },
+  app: {
+    getPath: () => "/tmp",
+    getAppPath: () => "/tmp",
+    getVersion: () => "0.0.0",
+  },
   dialog: {},
   ipcMain: {
     handle: (channel: string, fn: Handler) => handlers.set(channel, fn),

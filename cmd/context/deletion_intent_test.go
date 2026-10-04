@@ -191,6 +191,33 @@ func TestContextDeletionSynchronousRollbackClearsIntent(t *testing.T) {
 	require.Contains(t, persisted.Contexts, cleanupContext)
 }
 
+func TestContextDeletionIncompleteRollbackReportsPendingRecovery(t *testing.T) {
+	cfg, _, store := deletionRecoveryFixture(t)
+	request, err := newContextDeleteRequest(cfg, cleanupContext)
+	require.NoError(t, err)
+	fake := &cleanupSecretStore{
+		values:      map[string]cleanupSecretValue{},
+		failDelete:  cleanupSecondSecret,
+		failRestore: cleanupSecondSecret,
+	}
+	for _, name := range []string{cleanupFirstSecret, cleanupSecondSecret} {
+		meta, err := store.Meta(cleanupContext, name)
+		require.NoError(t, err)
+		value, err := store.Get(cleanupContext, name)
+		require.NoError(t, err)
+		fake.values[cleanupContext+"/"+name] = cleanupSecretValue{meta: meta, value: value}
+	}
+	request.secrets = fake
+
+	err = deleteContextValues(request)
+	require.ErrorIs(t, err, ErrContextCleanupIndeterminate)
+	require.ErrorIs(t, err, config.ErrContextDeletionPending)
+	require.ErrorContains(t, err, "retry devsy context delete")
+	require.NotContains(t, err.Error(), cleanupSecret)
+	require.ErrorIs(t, config.CheckPendingContextDeletion(), config.ErrContextDeletionPending)
+	require.Contains(t, cfg.Contexts, cleanupContext)
+}
+
 func TestContextDeletionRecoveryRefusesRecreatedContext(t *testing.T) {
 	cfg, envs, store := deletionRecoveryFixture(t)
 	crashContextDeletion(t, cfg, "intent")

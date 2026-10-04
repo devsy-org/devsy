@@ -236,6 +236,7 @@ func TestContextCleanupReportsRedactedIndeterminateRollback(t *testing.T) {
 	secretStore.failRestore = cleanupSecondSecret
 	err := deleteContextValues(request)
 	require.ErrorIs(t, err, ErrContextCleanupIndeterminate)
+	require.NotErrorIs(t, err, config.ErrContextDeletionPending)
 	require.ErrorContains(t, err, "rollback is incomplete")
 	require.NotContains(t, err.Error(), cleanupSecret)
 	require.Equal(

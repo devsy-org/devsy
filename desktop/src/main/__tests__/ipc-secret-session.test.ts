@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { EventEmitter } from "node:events"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ProviderJobs } from "../provider-jobs.js"
 import { WorkspaceJobs } from "../workspace-jobs.js"
@@ -14,7 +16,12 @@ vi.mock("electron", () => ({
     getVersion: () => "0.0.0",
     isPackaged: false,
   },
-  dialog: {},
+  dialog: {
+    showMessageBox: vi.fn(async () => ({
+      response: 1,
+      checkboxChecked: false,
+    })),
+  },
   ipcMain: {
     handle: (channel: string, handler: Handler) =>
       handlers.set(channel, handler),
@@ -28,14 +35,21 @@ vi.mock("../analytics.js", () => ({
 }))
 
 const { registerIpcHandlers } = await import("../ipc.js")
+const { dialog } = await import("electron")
 
 function setup(timeoutMs = 5 * 60 * 1000) {
   const webContents = new EventEmitter() as EventEmitter & {
     send: ReturnType<typeof vi.fn>
     isDestroyed: () => boolean
+    mainFrame: { url: string; isDestroyed: () => boolean }
   }
   webContents.send = vi.fn()
   webContents.isDestroyed = () => false
+  webContents.mainFrame = {
+    url: pathToFileURL(join("/tmp", "dist/renderer/index.html")).href,
+    isDestroyed: () => false,
+  }
+  const event = { sender: webContents, senderFrame: webContents.mainFrame }
 
   const win = new EventEmitter() as EventEmitter & {
     webContents: typeof webContents
@@ -67,6 +81,8 @@ function setup(timeoutMs = 5 * 60 * 1000) {
     },
     run: vi.fn(async () => ({})),
     runRaw: vi.fn(async () => ""),
+    runRawStdin: vi.fn(async () => ""),
+    setSessionPassphrase: vi.fn(),
     hasSessionPassphrase: () => false,
   }
   registerIpcHandlers({
@@ -84,14 +100,133 @@ function setup(timeoutMs = 5 * 60 * 1000) {
     workspaceJobs: new WorkspaceJobs(),
     secretSessionTimeoutMs: timeoutMs,
   } as unknown as Parameters<typeof registerIpcHandlers>[0])
-  return { win, webContents, unlock }
+  return { win, webContents, unlock, cli, event }
 }
 
 describe("secret unlock IPC lifecycle", () => {
-  beforeEach(() => handlers.clear())
+  beforeEach(() => {
+    handlers.clear()
+    vi.clearAllMocks()
+    vi.stubEnv("ELECTRON_RENDERER_URL", "")
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({
+      response: 1,
+      checkboxChecked: false,
+    })
+  })
+
+  it.each([{}, 123, true, [], undefined, null, "   "])(
+    "rejects invalid protection passphrase %j without running the CLI",
+    async (passphrase) => {
+      const { cli, event } = setup()
+      const result = await handlers.get("secret_protection_action")?.(event, {
+        action: "change-passphrase",
+        passphrase,
+      })
+      expect(result).toEqual({
+        ok: false,
+        message: "Enter a non-empty passphrase.",
+      })
+      expect(cli.runRawStdin).not.toHaveBeenCalled()
+      expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+      expect(dialog.showMessageBox).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    "set-passphrase",
+    "change-passphrase",
+    "remove-passphrase",
+    "remember",
+    "forget",
+  ])(
+    "requires native confirmation before %s can use the session credential",
+    async (action) => {
+      const { cli, event, win } = setup()
+      vi.mocked(dialog.showMessageBox).mockResolvedValue({
+        response: 0,
+        checkboxChecked: false,
+      })
+      const result = await handlers.get("secret_protection_action")?.(event, {
+        action,
+        passphrase: "private",
+      })
+      expect(result).toEqual({
+        ok: false,
+        message: "Secret protection change canceled.",
+      })
+      expect(dialog.showMessageBox).toHaveBeenCalledWith(
+        win,
+        expect.objectContaining({ defaultId: 0, cancelId: 0 }),
+      )
+      expect(cli.runRaw).not.toHaveBeenCalled()
+      expect(cli.runRawStdin).not.toHaveBeenCalled()
+      expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+    },
+  )
+
+  it("changes protection only after native approval and preserves stdin-only passphrase transport", async () => {
+    const { cli, event } = setup()
+    expect(
+      await handlers.get("secret_protection_action")?.(event, {
+        action: "change-passphrase",
+        passphrase: "private",
+      }),
+    ).toEqual({ ok: true })
+    expect(cli.runRawStdin).toHaveBeenCalledWith(
+      ["secret", "protection", "change-passphrase", "--stdin"],
+      "private",
+    )
+    expect(cli.setSessionPassphrase).toHaveBeenCalledWith("private")
+    expect(
+      JSON.stringify(vi.mocked(dialog.showMessageBox).mock.calls),
+    ).not.toContain("private")
+  })
+
+  it("rejects an untrusted sender on every secret channel before accessing the CLI or session", async () => {
+    const { cli } = setup()
+    for (const name of [
+      "secret_protection_action",
+      "secret_protection_status",
+      "secret_session_clear",
+      "secret_unlock_submit",
+    ]) {
+      expect(
+        await handlers.get(name)?.(
+          {},
+          { action: "remove-passphrase", passphrase: "private" },
+        ),
+      ).toEqual({
+        ok: false,
+        message: "Secret operations require the main application window.",
+      })
+    }
+    expect(dialog.showMessageBox).not.toHaveBeenCalled()
+    expect(cli.run).not.toHaveBeenCalled()
+    expect(cli.runRaw).not.toHaveBeenCalled()
+    expect(cli.runRawStdin).not.toHaveBeenCalled()
+    expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+  })
+
+  it("rechecks the trusted document after native approval before mutating protection", async () => {
+    const { cli, event, webContents } = setup()
+    vi.mocked(dialog.showMessageBox).mockImplementation(async () => {
+      webContents.mainFrame.url = "https://untrusted.example/"
+      return { response: 1, checkboxChecked: false }
+    })
+    expect(
+      await handlers.get("secret_protection_action")?.(event, {
+        action: "remove-passphrase",
+      }),
+    ).toEqual({
+      ok: false,
+      message: "Secret operations require the main application window.",
+    })
+    expect(cli.runRaw).not.toHaveBeenCalled()
+    expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+  })
 
   it("shows and focuses a hidden window, re-notifies joiners, and replays when the renderer is ready", async () => {
-    const { win, webContents, unlock } = setup()
+    const { win, webContents, unlock, event } = setup()
     const first = unlock()
     const second = unlock()
     expect(webContents.send).toHaveBeenCalledTimes(2)
@@ -110,7 +245,7 @@ describe("secret unlock IPC lifecycle", () => {
     ).toHaveLength(3)
 
     const submitted = handlers.get("secret_unlock_submit")
-    await submitted?.({}, { passphrase: "private" })
+    await submitted?.(event, { passphrase: "private" })
     await expect(first).resolves.toBe("private")
     await expect(second).resolves.toBe("private")
     expect(webContents.listenerCount("did-start-navigation")).toBe(0)

@@ -3,6 +3,7 @@ package secrets
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -33,12 +34,15 @@ func (f *fileBackend) load() (map[string]string, error) {
 
 	reader, err := age.Decrypt(bytes.NewReader(raw), f.key.identity)
 	if err != nil {
-		return nil, &UnlockFailedError{Backend: BackendFile, Cause: err}
+		if _, ok := errors.AsType[*age.NoIdentityMatchError](err); ok {
+			return nil, &UnlockFailedError{Backend: BackendFile, Cause: err}
+		}
+		return nil, &StoreCorruptError{Cause: err}
 	}
 
 	plaintext, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, &UnlockFailedError{Backend: BackendFile, Cause: err}
+		return nil, &StoreCorruptError{Cause: err}
 	}
 
 	values := map[string]string{}

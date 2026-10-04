@@ -50,13 +50,22 @@ type contextSecretSnapshot struct {
 // ContextCleanupError reports safe action metadata without backend/parser text,
 // which may include a value. Causes remain available for errors.Is/errors.As.
 type ContextCleanupError struct {
-	Context  string
-	Phase    string
-	Cause    error
-	Rollback error
+	Context         string
+	Phase           string
+	Cause           error
+	Rollback        error
+	RecoveryPending bool
 }
 
 func (e *ContextCleanupError) Error() string {
+	if e.RecoveryPending {
+		return fmt.Sprintf(
+			"context %q cleanup rollback is incomplete; commands are blocked until recovery; "+
+				"restore store access and retry devsy context delete %q to complete deletion",
+			e.Context,
+			e.Context,
+		)
+	}
 	if errors.Is(e.Cause, config.ErrContextDeletionPending) {
 		return fmt.Sprintf(
 			"context %q cleanup could not be durably canceled; a deletion intent may remain; "+
@@ -79,7 +88,11 @@ func (e *ContextCleanupError) Error() string {
 
 func (e *ContextCleanupError) Unwrap() []error {
 	if e.Rollback != nil {
-		return []error{ErrContextCleanupIndeterminate, e.Cause, e.Rollback}
+		causes := []error{ErrContextCleanupIndeterminate, e.Cause, e.Rollback}
+		if e.RecoveryPending {
+			causes = append(causes, config.ErrContextDeletionPending)
+		}
+		return causes
 	}
 	return []error{e.Cause}
 }
@@ -249,5 +262,6 @@ func rollbackContextValues(
 	}
 	result := cleanupError(request.context, failure.phase, failure.cause)
 	result.Rollback = errors.Join(failures...)
+	result.RecoveryPending = result.Rollback != nil && request.intent != nil
 	return result
 }
