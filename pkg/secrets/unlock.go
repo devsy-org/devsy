@@ -108,6 +108,7 @@ func (r DefaultUnlockResolver) resolveFallback(
 }
 
 func preflightPassphraseFile(path string) error {
+	// #nosec G703 -- caller explicitly selects this credential file; type, permissions and size are validated below.
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("inspect passphrase file: %w", err)

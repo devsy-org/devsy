@@ -211,6 +211,112 @@ describe("secret unlock IPC lifecycle", () => {
     ).not.toContain("private")
   })
 
+  it.each(["set-passphrase", "change-passphrase"])(
+    "does not restore a cleared credential when an in-flight %s finishes",
+    async (action) => {
+      const { cli, event } = setup()
+      let finishCli!: (value: string) => void
+      cli.runRawStdin.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishCli = resolve
+          }),
+      )
+      const operation = handlers.get("secret_protection_action")?.(event, {
+        action,
+        passphrase: "private",
+      })
+      await vi.waitFor(() => expect(cli.runRawStdin).toHaveBeenCalledOnce())
+      await handlers.get("secret_session_clear")?.(event)
+      finishCli("")
+      await expect(operation).resolves.toEqual({ ok: true })
+      expect(cli.setSessionPassphrase).toHaveBeenCalledExactlyOnceWith(
+        undefined,
+      )
+    },
+  )
+
+  it("captures cache authority before delayed native approval so a clear remains effective", async () => {
+    const { cli, event } = setup()
+    let approve!: (value: {
+      response: number
+      checkboxChecked: boolean
+    }) => void
+    vi.mocked(dialog.showMessageBox).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          approve = resolve
+        }),
+    )
+    const operation = handlers.get("secret_protection_action")?.(event, {
+      action: "change-passphrase",
+      passphrase: "private",
+    })
+    expect(cli.runRawStdin).not.toHaveBeenCalled()
+    await handlers.get("secret_session_clear")?.(event)
+    approve({ response: 1, checkboxChecked: false })
+    await expect(operation).resolves.toEqual({
+      ok: false,
+      message: "Secret protection change canceled.",
+    })
+    expect(cli.runRawStdin).not.toHaveBeenCalled()
+    expect(cli.setSessionPassphrase).toHaveBeenCalledExactlyOnceWith(undefined)
+  })
+
+  it("does not let an older removal clear a newly supplied session after an explicit clear", async () => {
+    const { cli, event, unlock, requestId } = setup()
+    let finishCli!: (value: string) => void
+    cli.runRaw.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCli = resolve
+        }),
+    )
+    const operation = handlers.get("secret_protection_action")?.(event, {
+      action: "remove-passphrase",
+    })
+    await vi.waitFor(() => expect(cli.runRaw).toHaveBeenCalledOnce())
+    await handlers.get("secret_session_clear")?.(event)
+    const pending = unlock()
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+      passphrase: "new-private",
+    })
+    await expect(pending).resolves.toBe("new-private")
+    // The real runner caches the result of its main-process unlock handler.
+    cli.setSessionPassphrase("new-private")
+    finishCli("")
+    await expect(operation).resolves.toEqual({ ok: true })
+    expect(cli.setSessionPassphrase.mock.calls).toEqual([
+      [undefined],
+      ["new-private"],
+    ])
+  })
+
+  it.each(["change-passphrase", "remove-passphrase"])(
+    "does not mutate the cache if the sender navigates during the %s CLI operation",
+    async (action) => {
+      const { cli, event, webContents } = setup()
+      let finishCli!: (value: string) => void
+      const run = action === "change-passphrase" ? cli.runRawStdin : cli.runRaw
+      run.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finishCli = resolve
+          }),
+      )
+      const operation = handlers.get("secret_protection_action")?.(event, {
+        action,
+        passphrase: "private",
+      })
+      await vi.waitFor(() => expect(run).toHaveBeenCalledOnce())
+      webContents.mainFrame.url = "https://untrusted.example/"
+      finishCli("")
+      await expect(operation).resolves.toEqual({ ok: true })
+      expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+    },
+  )
+
   it("rejects an untrusted sender on every secret channel before accessing the CLI or session", async () => {
     const { cli } = setup()
     for (const name of [

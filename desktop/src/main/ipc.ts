@@ -346,6 +346,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     getMainWindow,
   } = deps
   const secretSession = new SecretSession(deps.secretSessionTimeoutMs)
+  // Clearing the session revokes cache updates from protection operations already in flight.
+  let secretCacheGeneration = 0
   cli.setUnlockHandler(async () => {
     const win = getMainWindow()
     return secretSession.request(
@@ -494,9 +496,33 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("secret_session_clear", async (event) => {
     if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
       return secretRequestDenied
+    secretCacheGeneration++
     cli.setSessionPassphrase(undefined)
     secretSession.cancelCurrent()
   })
+  function protectionApprovalFailure(
+    event: Electron.IpcMainInvokeEvent,
+    generation: number,
+    response: number,
+  ): SecretIpcFailure | undefined {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    if (generation !== secretCacheGeneration || response !== 1)
+      return { ok: false, message: "Secret protection change canceled." }
+    return undefined
+  }
+
+  function updateProtectedSessionCredential(
+    event: Electron.IpcMainInvokeEvent,
+    generation: number,
+    value: string | undefined,
+  ): void {
+    if (generation !== secretCacheGeneration) return
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return
+    cli.setSessionPassphrase(value)
+  }
+
   ipcMain.handle(
     "secret_protection_action",
     async (event, args: { action: string; passphrase?: string }) => {
@@ -514,6 +540,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         return { ok: false, message: "Unknown protection action." }
       const action = args.action
       const passphrase = args.passphrase
+      const cacheGeneration = secretCacheGeneration
       const changesPassphrase = [
         "set-passphrase",
         "change-passphrase",
@@ -543,19 +570,19 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           cancelId: 0,
           noLink: true,
         })
-        if (
-          !isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL)
+        const approvalFailure = protectionApprovalFailure(
+          event,
+          cacheGeneration,
+          confirmation.response,
         )
-          return secretRequestDenied
-        if (confirmation.response !== 1)
-          return { ok: false, message: "Secret protection change canceled." }
+        if (approvalFailure) return approvalFailure
         if (changesPassphrase && typeof passphrase === "string") {
           await cli.runRawStdin([...command, "--stdin"], passphrase)
-          cli.setSessionPassphrase(passphrase)
+          updateProtectedSessionCredential(event, cacheGeneration, passphrase)
         } else {
           await cli.runRaw(command)
           if (action === "remove-passphrase")
-            cli.setSessionPassphrase(undefined)
+            updateProtectedSessionCredential(event, cacheGeneration, undefined)
         }
         return { ok: true }
       } catch (err) {

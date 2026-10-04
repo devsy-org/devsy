@@ -3,17 +3,20 @@ package secrets
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"filippo.io/age"
 	"github.com/stretchr/testify/require"
 )
 
 const (
 	testRekeyBackendKey     = testContext + "/" + testResolverToken
 	testRekeyProtectedValue = "protected-value"
+	testRekeyCommittedPhase = "committed"
 )
 
 func testProtectionManager(t *testing.T, dir, passphrase string) *ProtectionManager {
@@ -25,7 +28,9 @@ func testProtectionManager(t *testing.T, dir, passphrase string) *ProtectionMana
 }
 
 func TestRekeyCrashRecovery(t *testing.T) {
-	for _, phase := range []string{"encrypted", "journal", "swapped", "metadata", "verified", "committed", "cleanup"} {
+	for _, phase := range []string{
+		"encrypted", "journal", "swapped", "metadata", "verified", testRekeyCommittedPhase, "cleanup",
+	} {
 		t.Run(phase, func(t *testing.T) {
 			oldPassphrase := "old-long-test-passphrase"
 			newPassphrase := "new-long-test-passphrase"
@@ -58,7 +63,7 @@ func TestRekeyCrashRecovery(t *testing.T) {
 			require.NoError(t, RecoverRekey(dir))
 			unlock()
 			passphrase := oldPassphrase
-			if phase == "committed" || phase == "cleanup" {
+			if phase == testRekeyCommittedPhase || phase == "cleanup" {
 				passphrase = newPassphrase
 			} else {
 				after, err := os.ReadFile(
@@ -79,6 +84,224 @@ func TestRekeyCrashRecovery(t *testing.T) {
 			)
 		})
 	}
+}
+
+func TestRekeyCleanupCrashRecoveryKeepsFinalizedOutcome(t *testing.T) {
+	for _, scenario := range []struct {
+		name     string
+		rollback bool
+	}{
+		{name: "committed rekey"},
+		{name: "completed rollback", rollback: true},
+	} {
+		for cleanupStep := 1; cleanupStep <= 4; cleanupStep++ {
+			t.Run(
+				fmt.Sprintf("%s/cleanup-step-%d", scenario.name, cleanupStep),
+				func(t *testing.T) {
+					dir, activeBlob, oldSource := finalizedCleanupFixture(t, scenario.rollback)
+					requireCleanupInterruptionRecovery(t, dir, cleanupStep)
+					// #nosec G304 -- fixed ciphertext fixture in a temporary directory.
+					got, err := os.ReadFile(filepath.Join(dir, EncryptedFileName))
+					require.NoError(t, err)
+					require.Equal(t, activeBlob, got, "recovery changed the finalized blob")
+					idx, err := loadIndex(filepath.Join(dir, IndexFileName))
+					require.NoError(t, err)
+					require.Equal(
+						t,
+						oldSource,
+						idx.data.KeySource,
+						"recovery changed finalized metadata",
+					)
+				},
+			)
+		}
+	}
+}
+
+func finalizedCleanupFixture(t *testing.T, rollback bool) (string, []byte, string) {
+	t.Helper()
+	dir := t.TempDir()
+	active, previous, oldSource := []byte(
+		"new ciphertext",
+	), []byte(
+		"old ciphertext",
+	), string(
+		keySourceAutoFile,
+	)
+	if rollback {
+		active, previous = previous, active
+	}
+	for name, data := range map[string][]byte{
+		EncryptedFileName: active,
+		rekeyBlobBackup:   previous,
+		rekeyIndexBackup:  []byte("old index"),
+		rekeyNextName:     []byte("next ciphertext"),
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), data, 0o600))
+	}
+	idx, err := loadIndex(filepath.Join(dir, IndexFileName))
+	require.NoError(t, err)
+	if !rollback {
+		oldSource = string(keySourcePassphrase)
+	}
+	idx.data.KeySource = oldSource
+	require.NoError(t, idx.save())
+	j := rekeyJournal{
+		Version:   1,
+		OldSource: string(keySourceAutoFile),
+		NewSource: string(keySourcePassphrase),
+		HadBlob:   true,
+		Committed: true,
+	}
+	require.NoError(t, writeRekeyJournal(dir, j))
+	return dir, active, oldSource
+}
+
+func requireCleanupInterruptionRecovery(t *testing.T, dir string, stopAt int) {
+	t.Helper()
+	removeCalls := 0
+	interrupt := errors.New("crash during cleanup")
+	err := cleanupRekeyFiles(dir, func(path string) error {
+		removeCalls++
+		if removeCalls == stopAt {
+			return interrupt
+		}
+		return removeRekeyFile(path)
+	})
+	require.ErrorIs(t, err, interrupt)
+	require.FileExists(
+		t,
+		filepath.Join(dir, rekeyJournalName),
+		"journal must remain until backups are gone",
+	)
+	unlock, err := acquireFlock(dir, IndexFileName+".lock")
+	require.NoError(t, err)
+	require.NoError(t, RecoverRekey(dir))
+	require.NoError(t, RecoverRekey(dir))
+	unlock()
+	for _, artifact := range []string{rekeyJournalName, rekeyBlobBackup, rekeyIndexBackup, rekeyNextName} {
+		require.NoFileExists(t, filepath.Join(dir, artifact))
+	}
+}
+
+func TestRecoverRekeyCleansOwnedArtifacts(t *testing.T) {
+	for _, journal := range []bool{false, true} {
+		t.Run(fmt.Sprintf("journal-%t", journal), func(t *testing.T) {
+			dir := t.TempDir()
+			names := rekeyArtifactFixtures()
+			preserved := []string{
+				EncryptedFileName,
+				"env.yaml",
+				"secrets.enc.quarantine-123",
+				"user.tmp-copy",
+			}
+			for _, name := range append(append([]string{}, names...), preserved...) {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("fixture"), 0o600))
+			}
+			if journal {
+				require.NoError(t, writeRekeyJournal(dir, rekeyJournal{
+					Version: 1, NewSource: string(keySourcePassphrase), Committed: true,
+				}))
+			}
+			unlock, err := acquireFlock(dir, IndexFileName+".lock")
+			require.NoError(t, err)
+			require.NoError(t, RecoverRekey(dir))
+			require.NoError(t, RecoverRekey(dir))
+			unlock()
+			for _, name := range append(names, rekeyJournalName) {
+				require.NoFileExists(t, filepath.Join(dir, name))
+			}
+			for _, name := range preserved {
+				require.FileExists(t, filepath.Join(dir, name))
+			}
+		})
+	}
+}
+
+func rekeyArtifactFixtures() []string {
+	names := []string{rekeyBlobBackup, rekeyIndexBackup, rekeyNextName}
+	for _, target := range []string{
+		rekeyBlobBackup, rekeyIndexBackup, rekeyNextName, rekeyJournalName,
+		EncryptedFileName, IndexFileName,
+	} {
+		names = append(names, target+".tmp-interrupted")
+	}
+	return names
+}
+
+func TestRecoverRekeyFinalizesRollbackBeforeCleanup(t *testing.T) {
+	dir := t.TempDir()
+	active := filepath.Join(dir, EncryptedFileName)
+	backup := filepath.Join(dir, rekeyBlobBackup)
+	require.NoError(t, os.WriteFile(active, []byte("new ciphertext"), 0o600))
+	require.NoError(t, os.WriteFile(backup, []byte("old ciphertext"), 0o600))
+	blockedBackup := filepath.Join(dir, rekeyIndexBackup)
+	require.NoError(t, os.Mkdir(blockedBackup, 0o700))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(blockedBackup, "child"), []byte("block removal"), 0o600),
+	)
+	idx, err := loadIndex(filepath.Join(dir, IndexFileName))
+	require.NoError(t, err)
+	idx.data.KeySource = string(keySourcePassphrase)
+	require.NoError(t, idx.save())
+	require.NoError(t, writeRekeyJournal(dir, rekeyJournal{
+		Version:   1,
+		OldSource: string(keySourceAutoFile),
+		NewSource: string(keySourcePassphrase),
+		HadBlob:   true,
+	}))
+
+	unlock, err := acquireFlock(dir, IndexFileName+".lock")
+	require.NoError(t, err)
+	require.Error(t, RecoverRekey(dir), "cleanup should stop at the blocked index backup")
+	j, err := readRekeyJournal(dir)
+	require.NoError(t, err)
+	require.True(t, j.Committed, "rollback outcome must be durable before backup cleanup")
+	require.NoFileExists(
+		t,
+		backup,
+		"blob backup should have been deleted before the blocked artifact",
+	)
+	require.NoError(t, os.Remove(filepath.Join(blockedBackup, "child")))
+	require.NoError(t, os.Remove(blockedBackup))
+	require.NoError(t, RecoverRekey(dir))
+	unlock()
+
+	// #nosec G304 -- fixed ciphertext fixture in a temporary directory.
+	got, err := os.ReadFile(active)
+	require.NoError(t, err)
+	require.Equal(t, []byte("old ciphertext"), got, "retry must preserve the completed rollback")
+	idx, err = loadIndex(filepath.Join(dir, IndexFileName))
+	require.NoError(t, err)
+	require.Equal(t, string(keySourceAutoFile), idx.data.KeySource)
+	require.NoFileExists(t, filepath.Join(dir, rekeyJournalName))
+}
+
+func TestCleanupRecoveryRemovesOldAutomaticKeyBackup(t *testing.T) {
+	p := testAutomaticProtectionFixture(t)
+	dir := p.dir
+	// #nosec G304 -- generated automatic key fixture in a temporary directory.
+	oldKey, err := os.ReadFile(filepath.Join(dir, KeyFileName))
+	require.NoError(t, err)
+	p.phase = func(at string) error {
+		if at == testRekeyCommittedPhase {
+			return errors.New("interrupt after commit")
+		}
+		return nil
+	}
+	require.Error(t, p.SetPassphrase("cleanup-new-passphrase"))
+
+	oldIdentity, err := age.ParseX25519Identity(strings.TrimSpace(string(oldKey)))
+	require.NoError(t, err)
+	oldKeyFile := &fileKey{identity: oldIdentity, source: keySourceAutoFile}
+	values, err := newFileBackend(filepath.Join(dir, rekeyBlobBackup), oldKeyFile).load()
+	require.NoError(t, err, "old automatic key must expose stale backup before recovery")
+	require.Equal(t, "keep-after-rollback", values[testRekeyBackendKey])
+
+	requireCleanupInterruptionRecovery(t, dir, 2)
+	_, err = os.Stat(filepath.Join(dir, rekeyBlobBackup))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestRekeyAutomaticTransitionAndReset(t *testing.T) {

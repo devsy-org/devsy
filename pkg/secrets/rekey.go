@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 const (
@@ -29,12 +30,15 @@ type rekeyJournal struct {
 }
 
 // RecoverRekey must run under secrets.yaml.lock. An uncommitted transaction
-// rolls back without needing either credential. Verified transactions finish
-// cleanup. Backups remain until the journal has been removed durably.
+// rolls back without needing either credential. Committed records the chosen
+// terminal outcome (the new state or a completed rollback), so cleanup can
+// safely remove backups before removing the journal.
 func RecoverRekey(dir string) error {
 	j, err := readRekeyJournal(dir)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		// A crash may happen before the journal is written, after backups or
+		// secrets.enc.next were created. No active files have been swapped yet.
+		return cleanupOrphanRekeyFiles(dir)
 	}
 	if err != nil {
 		return err
@@ -44,6 +48,9 @@ func RecoverRekey(dir string) error {
 	}
 	if !j.Committed {
 		if err = rollbackRekey(dir, *j); err != nil {
+			return err
+		}
+		if err = markRekeyFinalized(dir, j); err != nil {
 			return err
 		}
 	}
@@ -114,20 +121,93 @@ func removeRekeyFile(path string) error {
 }
 
 func cleanupRekey(dir string) error {
-	// Journal first: a crash during backup cleanup must not request rollback
-	// using backups that have already been deleted.
-	if err := removeRekeyFile(filepath.Join(dir, rekeyJournalName)); err != nil {
+	return cleanupRekeyFiles(dir, removeRekeyFile)
+}
+
+// cleanupRekeyFiles retains the finalized journal while deleting backups. If
+// interrupted, recovery sees the terminal outcome and safely repeats cleanup.
+func cleanupRekeyFiles(dir string, remove func(string) error) error {
+	for _, name := range []string{rekeyBlobBackup, rekeyIndexBackup, rekeyNextName} {
+		if err := remove(filepath.Join(dir, name)); err != nil {
+			return err
+		}
+	}
+	names, err := rekeyTempNames(dir)
+	if err != nil {
 		return err
+	}
+	for _, name := range names {
+		if err := remove(filepath.Join(dir, name)); err != nil {
+			return err
+		}
 	}
 	if err := syncRekeyDir(dir); err != nil {
 		return err
 	}
-	for _, name := range []string{rekeyBlobBackup, rekeyIndexBackup, rekeyNextName} {
-		if err := removeRekeyFile(filepath.Join(dir, name)); err != nil {
-			return err
-		}
+	if err := remove(filepath.Join(dir, rekeyJournalName)); err != nil {
+		return err
 	}
 	return syncRekeyDir(dir)
+}
+
+// No journal means any transaction stopped before swapping active files, or
+// cleanup had already reached its journal-last final step. Known artifacts
+// are therefore safe to remove while the caller holds the store lock.
+func cleanupOrphanRekeyFiles(dir string) error {
+	names, err := rekeyTempNames(dir)
+	if err != nil {
+		return err
+	}
+	changed := false
+	for _, name := range append(names, rekeyBlobBackup, rekeyIndexBackup, rekeyNextName) {
+		removed, err := removeRekeyFileIfPresent(filepath.Join(dir, name))
+		if err != nil {
+			return err
+		}
+		changed = changed || removed
+	}
+	if changed {
+		return syncRekeyDir(dir)
+	}
+	return nil
+}
+
+func removeRekeyFileIfPresent(path string) (bool, error) {
+	// #nosec G703 -- only fixed artifact names or validated internal temp basenames under the store lock.
+	if err := os.Remove(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// Atomic writes can leave a temp file on process death, before their rename.
+// The store lock excludes active writers for these reserved filename prefixes.
+func rekeyTempNames(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, entry := range entries {
+		for _, target := range []string{
+			rekeyBlobBackup, rekeyIndexBackup, rekeyNextName, rekeyJournalName,
+			EncryptedFileName, IndexFileName,
+		} {
+			if strings.HasPrefix(entry.Name(), target+".tmp-") {
+				names = append(names, entry.Name())
+				break
+			}
+		}
+	}
+	return names, nil
+}
+
+func markRekeyFinalized(dir string, j *rekeyJournal) error {
+	j.Committed = true
+	return writeRekeyJournal(dir, *j)
 }
 
 func syncRekeyDir(dir string) error {
@@ -150,7 +230,10 @@ func writeRekeyJournal(dir string, j rekeyJournal) error {
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(filepath.Join(dir, rekeyJournalName), raw, 0o600)
+	if err := atomicWriteFile(filepath.Join(dir, rekeyJournalName), raw, 0o600); err != nil {
+		return err
+	}
+	return syncRekeyDir(dir)
 }
 
 func backupRekeyFile(dir, target, backup string) (bool, error) {

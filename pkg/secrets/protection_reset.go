@@ -103,6 +103,9 @@ func recoverReset(dir string, j rekeyJournal) error {
 		if err := restoreResetMetadata(dir, j); err != nil {
 			return err
 		}
+		if err := markRekeyFinalized(dir, &j); err != nil {
+			return err
+		}
 	}
 	return cleanupRekey(dir)
 }
