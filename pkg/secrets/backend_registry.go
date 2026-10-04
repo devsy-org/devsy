@@ -174,9 +174,10 @@ func (r *systemBackendRegistry) probeFile(idx *index, key string) (bool, bool) {
 	if _, err := os.Stat(path); err != nil {
 		return false, errors.Is(err, os.ErrNotExist)
 	}
-	fk, err := openExistingFileKeyWithResolver(r.dir, idx, r.resolver)
+	resolver := promptPolicyResolver{resolver: r.resolver, allow: r.allowPrompt}
+	fk, err := openExistingFileKeyWithResolver(r.dir, idx, resolver)
 	if err != nil && idx.data.KeySource == "" {
-		fk, err = openPassphraseFileKeyWithResolver(r.resolver)
+		fk, err = openPassphraseFileKeyWithResolver(resolver)
 	}
 	if err != nil {
 		return false, false
@@ -205,8 +206,15 @@ func openExistingFileKeyWithResolver(
 	default:
 		return nil, fmt.Errorf("invalid secrets key source %q", source)
 	}
+	return openKeyFromStore(store, source)
+}
+
+func openKeyFromStore(store keyStore, source keySource) (*fileKey, error) {
 	key, err := keyFromStore(store, source)
 	if err != nil {
+		if errors.Is(err, ErrSecretNotFound) {
+			err = errors.New("stored secrets key is missing")
+		}
 		return nil, &BackendUnavailableError{Backend: BackendFile, Cause: err}
 	}
 	return key, nil

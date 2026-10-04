@@ -11,7 +11,13 @@ import (
 	"github.com/devsy-org/devsy/pkg/secrets"
 )
 
-var ErrContextCleanupIndeterminate = errors.New("context cleanup rollback incomplete")
+var (
+	ErrContextCleanupIndeterminate   = errors.New("context cleanup rollback incomplete")
+	errEnvironmentCleanupUnsupported = errors.New(
+		"environment store does not support batch cleanup",
+	)
+	errSecretCleanupUnsupported = errors.New("secret store does not support cleanup")
+)
 
 type contextSecretStore interface {
 	Meta(string, string) (secrets.SecretMeta, error)
@@ -105,7 +111,15 @@ func newContextDeleteRequest(cfg *config.Config, contextName string) (contextDel
 	if err != nil {
 		return request, cleanupError(contextName, "environment store is unavailable", err)
 	}
-	request.envs = envs.(envstore.BatchStore)
+	batch, ok := envs.(envstore.BatchStore)
+	if !ok {
+		return request, cleanupError(
+			contextName,
+			"environment cleanup is unavailable",
+			errEnvironmentCleanupUnsupported,
+		)
+	}
+	request.envs = batch
 	if len(cfg.Contexts[contextName].Secrets) == 0 {
 		return request, nil
 	}
@@ -113,7 +127,15 @@ func newContextDeleteRequest(cfg *config.Config, contextName string) (contextDel
 	if err != nil {
 		return request, cleanupError(contextName, "secret store is unavailable", err)
 	}
-	request.secrets = store.(contextSecretStore)
+	cleanup, ok := store.(contextSecretStore)
+	if !ok {
+		return request, cleanupError(
+			contextName,
+			"secret cleanup is unavailable",
+			errSecretCleanupUnsupported,
+		)
+	}
+	request.secrets = cleanup
 	return request, nil
 }
 

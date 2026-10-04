@@ -69,7 +69,6 @@ func TestContextDeletionIntentRejectsUnsafeNamesAndWrongRoot(t *testing.T) {
 		change func(*ContextDeletionIntent)
 	}{
 		{"traversal", func(i *ContextDeletionIntent) { i.Context = "../private-fixture" }},
-		{"windows alias", func(i *ContextDeletionIntent) { i.Context = "NUL" }},
 		{"windows drive", func(i *ContextDeletionIntent) { i.Context = "C:private-fixture" }},
 		{"trailing dot", func(i *ContextDeletionIntent) { i.Context = "staging." }},
 		{"wrong root", func(i *ContextDeletionIntent) { i.ConfigFile = filepath.Join(t.TempDir(), "config.yaml") }},
@@ -241,4 +240,23 @@ func TestContextDeletionIntentAcceptsOrdinaryPortableNames(t *testing.T) {
 	intent.Context = "first-stage_1"
 	require.NoError(t, WriteContextDeletionIntent(intent))
 	require.ErrorIs(t, CheckPendingContextDeletion(), ErrContextDeletionPending)
+}
+
+func TestContextDeletionIntentKeepsPreviouslySafeLegacyNames(t *testing.T) {
+	intent := contextDeletionConfigFixture(t)
+	intent.Context = "Legacy.Context_Name_That_Is_Over_48_Characters_Long"
+	require.NoError(t, WriteContextDeletionIntent(intent))
+	require.ErrorIs(t, CheckPendingContextDeletion(), ErrContextDeletionPending)
+	require.NoError(t, ClearContextDeletionIntent())
+}
+
+func TestContextDeletionIntentAllowsLegacyWindowsReservedNameOnPosix(t *testing.T) {
+	intent := contextDeletionConfigFixture(t)
+	intent.Context = "con"
+	if runtime.GOOS == localContextDeletionTestWindows {
+		require.ErrorIs(t, WriteContextDeletionIntent(intent), ErrContextDeletionIntentInvalid)
+		return
+	}
+	require.NoError(t, WriteContextDeletionIntent(intent))
+	require.NoError(t, ClearContextDeletionIntent())
 }

@@ -113,8 +113,8 @@ func validateBackend(context, name string, meta SecretMeta) error {
 func (i *index) save() error {
 	data := i.data
 	data.SchemaVersion = 2
+	// Keep the legacy field synchronized for older installed CLI readers.
 	data.FileStore.KeySource = data.KeySource
-	data.KeySource = ""
 	out, err := yaml.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("marshal secrets index: %w", err)

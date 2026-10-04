@@ -191,7 +191,11 @@ func newContextRecoveryRequest(
 	if err != nil {
 		return request, err
 	}
-	request.envs = envs.(envstore.BatchStore)
+	batch, ok := envs.(envstore.BatchStore)
+	if !ok {
+		return request, errEnvironmentCleanupUnsupported
+	}
+	request.envs = batch
 	if len(intent.Secrets) == 0 {
 		return request, nil
 	}
@@ -199,7 +203,11 @@ func newContextRecoveryRequest(
 	if err != nil {
 		return request, err
 	}
-	request.secrets = store.(contextSecretStore)
+	cleanup, ok := store.(contextSecretStore)
+	if !ok {
+		return request, errSecretCleanupUnsupported
+	}
+	request.secrets = cleanup
 	return request, nil
 }
 

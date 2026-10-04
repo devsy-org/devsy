@@ -11,7 +11,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
-	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
 )
 
@@ -51,10 +50,8 @@ func (cmd *CreateCmd) Run(ctx context.Context, context string) error {
 			return fmt.Errorf("context %q already exists", context)
 		}
 
-		if provider2.ProviderNameRegEx.MatchString(context) {
-			return fmt.Errorf("context name can only include lower case letters, numbers or dashes")
-		} else if len(context) > 48 {
-			return fmt.Errorf("context name cannot be longer than 48 characters")
+		if err := config.ValidateContextName(context); err != nil {
+			return err
 		}
 		devsyConfig.Contexts[context] = &config.ContextConfig{}
 

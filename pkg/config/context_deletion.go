@@ -27,6 +27,7 @@ var (
 	deletionValueName            = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	contextDeletionControlName   = regexp.MustCompile(`[\x00-\x1f\x7f]`)
 	contextDeletionWindowsDevice = regexp.MustCompile(`^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$`)
+	contextNamePattern           = regexp.MustCompile(`^[a-z0-9-]+$`)
 )
 
 type ContextDeletionSecret struct {
@@ -332,9 +333,25 @@ func validateContextDeletionRoots(intent *ContextDeletionIntent) error {
 	return nil
 }
 
+// Keep safe legacy names recoverable, including device names on POSIX.
 func validDeletionContextName(name string) bool {
 	return name != DefaultContext && !invalidContextPathName(name) &&
-		!reservedWindowsContextName(name)
+		(runtime.GOOS != "windows" || !reservedWindowsContextName(name))
+}
+
+// ValidateContextName applies portable creation rules so a new context can be
+// deleted safely on every supported platform.
+func ValidateContextName(name string) error {
+	if !contextNamePattern.MatchString(name) {
+		return errors.New("context name can only include lower case letters, numbers or dashes")
+	}
+	if len(name) > 48 {
+		return errors.New("context name cannot be longer than 48 characters")
+	}
+	if reservedWindowsContextName(name) {
+		return errors.New("context name cannot be a reserved Windows device name")
+	}
+	return nil
 }
 
 func invalidContextPathName(name string) bool {
