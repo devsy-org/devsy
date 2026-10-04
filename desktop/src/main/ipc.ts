@@ -46,6 +46,36 @@ import { normalizeWorkspaceStatus } from "./workspace-status.js"
 
 const execFileAsync = promisify(execFile)
 
+interface SecretIpcFailure {
+  ok: false
+  message: string
+}
+
+type SecretUnlockInput =
+  | SecretIpcFailure
+  | { ok: true; requestId?: string; passphrase?: string; remember: boolean }
+
+/** Validate and snapshot renderer input before any asynchronous approval. */
+function validateSecretUnlockInput(args: unknown): SecretUnlockInput {
+  if (!args || typeof args !== "object")
+    return { ok: false, message: "Invalid unlock request." }
+  const input = args as {
+    requestId?: string
+    passphrase?: unknown
+    remember?: unknown
+  }
+  const passphrase = input.passphrase
+  const remember = input.remember === undefined ? false : input.remember
+  if (typeof remember !== "boolean")
+    return { ok: false, message: "Invalid remember preference." }
+  if (
+    passphrase !== undefined &&
+    (typeof passphrase !== "string" || !passphrase.trim())
+  )
+    return { ok: false, message: "Enter a non-empty passphrase." }
+  return { ok: true, requestId: input.requestId, passphrase, remember }
+}
+
 interface SecretEntry {
   name: string
   context: string
@@ -363,76 +393,92 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     !app.isPackaged && process.env.ELECTRON_RENDERER_URL
       ? process.env.ELECTRON_RENDERER_URL
       : pathToFileURL(join(app.getAppPath(), "dist/renderer/index.html")).href
-  const secretRequestDenied = {
+  const secretRequestDenied: SecretIpcFailure = {
     ok: false,
     message: "Secret operations require the main application window.",
   }
 
-  ipcMain.handle(
-    "secret_unlock_submit",
-    async (
-      event,
-      args: { requestId?: string; passphrase?: string; remember?: boolean },
-    ) => {
-      const win = getMainWindow()
-      if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
-        return secretRequestDenied
-      if (!args || typeof args !== "object")
-        return { ok: false, message: "Invalid unlock request." }
-      const passphrase = args.passphrase
-      const remember = args.remember === undefined ? false : args.remember
-      if (typeof remember !== "boolean")
-        return { ok: false, message: "Invalid remember preference." }
-      if (
-        passphrase !== undefined &&
-        (typeof passphrase !== "string" || !passphrase.trim())
-      )
-        return { ok: false, message: "Enter a non-empty passphrase." }
-      const requestId = args.requestId
-      const staleRequest = {
+  const staleSecretUnlockRequest: SecretIpcFailure = {
+    ok: false,
+    message: "Unlock request is no longer active.",
+  }
+
+  function pendingSecretUnlockFailure(
+    event: Electron.IpcMainInvokeEvent,
+    requestId: string | undefined,
+  ): SecretIpcFailure | undefined {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    if (!secretSession.isPending(requestId)) return staleSecretUnlockRequest
+    return undefined
+  }
+
+  async function rememberUnlockCredential(
+    event: Electron.IpcMainInvokeEvent,
+    win: BrowserWindow,
+    requestId: string | undefined,
+    passphrase: string,
+  ): Promise<SecretIpcFailure | undefined> {
+    try {
+      const confirmation = await dialog.showMessageBox(win, {
+        type: "warning",
+        title: "Secret protection",
+        message: "Remember the secrets passphrase in your OS keychain?",
+        detail: "This changes the shared secret store across all contexts.",
+        buttons: ["Cancel", "Continue"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      const approvalFailure = pendingSecretUnlockFailure(event, requestId)
+      if (approvalFailure) return approvalFailure
+      if (confirmation.response !== 1)
+        return { ok: false, message: "Secret protection change canceled." }
+      await cli.runRaw(["secret", "protection", "remember"], {
+        env: { DEVSY_SECRETS_PASSPHRASE: passphrase },
+        unlockRetried: true,
+      })
+      return pendingSecretUnlockFailure(event, requestId)
+    } catch {
+      return {
         ok: false,
-        message: "Unlock request is no longer active.",
+        message: "The passphrase could not be verified and remembered.",
       }
-      if (!secretSession.isPending(requestId)) return staleRequest
-      if (passphrase !== undefined && remember) {
-        try {
-          const confirmation = await dialog.showMessageBox(win, {
-            type: "warning",
-            title: "Secret protection",
-            message: "Remember the secrets passphrase in your OS keychain?",
-            detail: "This changes the shared secret store across all contexts.",
-            buttons: ["Cancel", "Continue"],
-            defaultId: 0,
-            cancelId: 0,
-            noLink: true,
-          })
-          if (
-            !isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL)
-          )
-            return secretRequestDenied
-          if (!secretSession.isPending(requestId)) return staleRequest
-          if (confirmation.response !== 1)
-            return { ok: false, message: "Secret protection change canceled." }
-          await cli.runRaw(["secret", "protection", "remember"], {
-            env: { DEVSY_SECRETS_PASSPHRASE: passphrase },
-            unlockRetried: true,
-          })
-          if (
-            !isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL)
-          )
-            return secretRequestDenied
-          if (!secretSession.isPending(requestId)) return staleRequest
-        } catch {
-          return {
-            ok: false,
-            message: "The passphrase could not be verified and remembered.",
-          }
-        }
-      }
-      if (!secretSession.submit(requestId, passphrase)) return staleRequest
-      return { ok: true }
-    },
-  )
+    }
+  }
+
+  function completeSecretUnlock(
+    event: Electron.IpcMainInvokeEvent,
+    requestId: string | undefined,
+    passphrase: string | undefined,
+  ): SecretIpcFailure | { ok: true } {
+    const failure = pendingSecretUnlockFailure(event, requestId)
+    if (failure) return failure
+    if (!secretSession.submit(requestId, passphrase))
+      return staleSecretUnlockRequest
+    return { ok: true }
+  }
+
+  ipcMain.handle("secret_unlock_submit", async (event, args: unknown) => {
+    const win = getMainWindow()
+    if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
+      return secretRequestDenied
+    const input = validateSecretUnlockInput(args)
+    if (!input.ok) return input
+    const { requestId, passphrase, remember } = input
+    if (!secretSession.isPending(requestId)) return staleSecretUnlockRequest
+    if (passphrase !== undefined && remember) {
+      const failure = await rememberUnlockCredential(
+        event,
+        win,
+        requestId,
+        passphrase,
+      )
+      if (failure) return failure
+    }
+    // Revalidate after the optional asynchronous remember helper before settling.
+    return completeSecretUnlock(event, requestId, passphrase)
+  })
   ipcMain.handle("secret_protection_status", async (event) => {
     if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
       return secretRequestDenied
