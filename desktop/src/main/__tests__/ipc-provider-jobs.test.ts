@@ -1,9 +1,12 @@
 // @vitest-environment node
 import { EventEmitter } from "node:events"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ProviderJobs } from "../provider-jobs.js"
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
+let trustedEvent: unknown
 
 vi.mock("electron", () => ({
   app: {
@@ -70,6 +73,13 @@ function setup(
     cancelFor: vi.fn(async () => undefined),
   }
   const send = vi.fn()
+  const mainFrame = {
+    url: pathToFileURL(join("/tmp", "dist/renderer/index.html")).href,
+    isDestroyed: () => false,
+  }
+  const webContents = { send, mainFrame, isDestroyed: () => false }
+  const win = { webContents, isDestroyed: () => false }
+  trustedEvent = { sender: webContents, senderFrame: mainFrame }
   const deps = {
     cli,
     state: { workspaceContext: () => "ctx", providerList: () => [] },
@@ -80,7 +90,7 @@ function setup(
       onDrain: async () => undefined,
     },
     pty: { cancelFor: vi.fn(async () => undefined) },
-    getMainWindow: () => ({ webContents: { send } }),
+    getMainWindow: () => win,
     providerJobs,
   }
   // biome-ignore lint/suspicious/noExplicitAny: partial test doubles
@@ -91,7 +101,7 @@ function setup(
 function invoke(channel: string, args: Record<string, unknown>) {
   const handler = handlers.get(channel)
   if (!handler) throw new Error(`${channel} not registered`)
-  return handler({}, args)
+  return handler(trustedEvent, args)
 }
 
 function statusLine(phase: string) {
@@ -106,6 +116,7 @@ function statusLine(phase: string) {
 
 describe("provider job lifecycle over IPC", () => {
   beforeEach(() => {
+    vi.stubEnv("ELECTRON_RENDERER_URL", "")
     handlers.clear()
     vi.clearAllMocks()
   })

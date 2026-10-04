@@ -31,11 +31,12 @@ vi.mock("electron", () => ({
 
 vi.mock("../analytics.js", () => ({
   hashWorkspaceRef: (value: string) => value,
-  trackEvent: () => undefined,
+  trackEvent: vi.fn(),
 }))
 
 const { registerIpcHandlers } = await import("../ipc.js")
 const { dialog } = await import("electron")
+const { trackEvent } = await import("../analytics.js")
 
 function setup(timeoutMs = 5 * 60 * 1000) {
   const webContents = new EventEmitter() as EventEmitter & {
@@ -100,7 +101,13 @@ function setup(timeoutMs = 5 * 60 * 1000) {
     workspaceJobs: new WorkspaceJobs(),
     secretSessionTimeoutMs: timeoutMs,
   } as unknown as Parameters<typeof registerIpcHandlers>[0])
-  return { win, webContents, unlock, cli, event }
+  const requestId = () =>
+    (
+      webContents.send.mock.calls
+        .filter(([channel]) => channel === "secret_unlock_required")
+        .at(-1)?.[1] as { requestId: string } | undefined
+    )?.requestId
+  return { win, webContents, unlock, cli, event, requestId }
 }
 
 describe("secret unlock IPC lifecycle", () => {
@@ -189,6 +196,15 @@ describe("secret unlock IPC lifecycle", () => {
       "secret_protection_status",
       "secret_session_clear",
       "secret_unlock_submit",
+      "secret_set",
+      "secret_delete",
+      "secret_list",
+      "secret_attach",
+      "secret_detach",
+      "context_delete",
+      "workspace_up",
+      "workspace_rebuild",
+      "workspace_reset",
     ]) {
       expect(
         await handlers.get(name)?.(
@@ -205,6 +221,7 @@ describe("secret unlock IPC lifecycle", () => {
     expect(cli.runRaw).not.toHaveBeenCalled()
     expect(cli.runRawStdin).not.toHaveBeenCalled()
     expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+    expect(trackEvent).not.toHaveBeenCalled()
   })
 
   it("rechecks the trusted document after native approval before mutating protection", async () => {
@@ -225,8 +242,232 @@ describe("secret unlock IPC lifecycle", () => {
     expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
   })
 
+  it("rejects remembering without a pending matching request before dialog or CLI access", async () => {
+    const { cli, event } = setup()
+    expect(
+      await handlers.get("secret_unlock_submit")?.(event, {
+        requestId: "absent",
+        passphrase: "private",
+        remember: true,
+      }),
+    ).toEqual({ ok: false, message: "Unlock request is no longer active." })
+    expect(dialog.showMessageBox).not.toHaveBeenCalled()
+    expect(cli.runRaw).not.toHaveBeenCalled()
+    expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+  })
+
+  it.each([null, "true", 1, {}, []])(
+    "rejects invalid remember preference %j",
+    async (remember) => {
+      const { cli, event, unlock, requestId } = setup()
+      const pending = unlock()
+      expect(
+        await handlers.get("secret_unlock_submit")?.(event, {
+          requestId: requestId(),
+          passphrase: "private",
+          remember,
+        }),
+      ).toEqual({ ok: false, message: "Invalid remember preference." })
+      expect(dialog.showMessageBox).not.toHaveBeenCalled()
+      expect(cli.runRaw).not.toHaveBeenCalled()
+      await handlers.get("secret_session_clear")?.(event)
+      await expect(pending).resolves.toBeUndefined()
+    },
+  )
+
+  it("native cancellation neither remembers nor caches and leaves its request unsettled", async () => {
+    const { cli, event, unlock, win, requestId } = setup()
+    const pending = unlock()
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({
+      response: 0,
+      checkboxChecked: false,
+    })
+    expect(
+      await handlers.get("secret_unlock_submit")?.(event, {
+        requestId: requestId(),
+        passphrase: "private",
+        remember: true,
+      }),
+    ).toEqual({ ok: false, message: "Secret protection change canceled." })
+    expect(dialog.showMessageBox).toHaveBeenCalledWith(
+      win,
+      expect.objectContaining({
+        message: "Remember the secrets passphrase in your OS keychain?",
+        defaultId: 0,
+        cancelId: 0,
+      }),
+    )
+    expect(
+      JSON.stringify(vi.mocked(dialog.showMessageBox).mock.calls),
+    ).not.toContain("private")
+    expect(cli.runRaw).not.toHaveBeenCalled()
+    expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+    })
+    await expect(pending).resolves.toBeUndefined()
+  })
+
+  it("requires native approval before remembering the captured credential and settling its request", async () => {
+    const { cli, event, unlock, requestId } = setup()
+    const pending = unlock()
+    let approve!: (value: {
+      response: number
+      checkboxChecked: boolean
+    }) => void
+    vi.mocked(dialog.showMessageBox).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          approve = resolve
+        }),
+    )
+    const args = {
+      requestId: requestId(),
+      passphrase: "original-private",
+      remember: true,
+    }
+    const submission = handlers.get("secret_unlock_submit")?.(event, args)
+    expect(cli.runRaw).not.toHaveBeenCalled()
+    args.passphrase = "changed-private"
+    args.remember = false
+    args.requestId = "changed-request"
+    approve({ response: 1, checkboxChecked: false })
+    await expect(submission).resolves.toEqual({ ok: true })
+    expect(cli.runRaw).toHaveBeenCalledExactlyOnceWith(
+      ["secret", "protection", "remember"],
+      {
+        env: { DEVSY_SECRETS_PASSPHRASE: "original-private" },
+        unlockRetried: true,
+      },
+    )
+    await expect(pending).resolves.toBe("original-private")
+    expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+  })
+
+  it.each(["dialog", "cli"] as const)(
+    "cannot settle a replacement request after navigation during %s",
+    async (stage) => {
+      const { cli, event, unlock, webContents, requestId } = setup()
+      const first = unlock()
+      const oldId = requestId()
+      let finishDialog!: (value: {
+        response: number
+        checkboxChecked: boolean
+      }) => void
+      let finishCli!: (value: string) => void
+      if (stage === "dialog")
+        vi.mocked(dialog.showMessageBox).mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              finishDialog = resolve
+            }),
+        )
+      else
+        cli.runRaw.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              finishCli = resolve
+            }),
+        )
+      const submission = handlers.get("secret_unlock_submit")?.(event, {
+        requestId: oldId,
+        passphrase: "stale-private",
+        remember: true,
+      })
+      if (stage === "cli")
+        await vi.waitFor(() => expect(cli.runRaw).toHaveBeenCalledOnce())
+      webContents.emit(
+        "did-start-navigation",
+        {},
+        webContents.mainFrame.url,
+        false,
+        true,
+      )
+      await expect(first).resolves.toBeUndefined()
+      let newSettled = false
+      const second = unlock().then((value) => {
+        newSettled = true
+        return value
+      })
+      expect(requestId()).not.toBe(oldId)
+      if (stage === "dialog")
+        finishDialog({ response: 1, checkboxChecked: false })
+      else finishCli("")
+      await expect(submission).resolves.toEqual({
+        ok: false,
+        message: "Unlock request is no longer active.",
+      })
+      expect(newSettled).toBe(false)
+      expect(cli.runRaw).toHaveBeenCalledTimes(stage === "dialog" ? 0 : 1)
+      expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+      await handlers.get("secret_unlock_submit")?.(event, {
+        requestId: requestId(),
+        passphrase: "new-private",
+        remember: false,
+      })
+      await expect(second).resolves.toBe("new-private")
+    },
+  )
+
+  it.each(["dialog", "cli"] as const)(
+    "revalidates the trusted sender after %s before settling",
+    async (stage) => {
+      const { cli, event, unlock, webContents, requestId } = setup()
+      const pending = unlock()
+      if (stage === "dialog")
+        vi.mocked(dialog.showMessageBox).mockImplementation(async () => {
+          webContents.mainFrame.url = "https://untrusted.example/"
+          return { response: 1, checkboxChecked: false }
+        })
+      else
+        cli.runRaw.mockImplementation(async () => {
+          webContents.mainFrame.url = "https://untrusted.example/"
+          return ""
+        })
+      expect(
+        await handlers.get("secret_unlock_submit")?.(event, {
+          requestId: requestId(),
+          passphrase: "private",
+          remember: true,
+        }),
+      ).toEqual({
+        ok: false,
+        message: "Secret operations require the main application window.",
+      })
+      expect(cli.runRaw).toHaveBeenCalledTimes(stage === "dialog" ? 0 : 1)
+      expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+      webContents.emit("render-process-gone")
+      await expect(pending).resolves.toBeUndefined()
+    },
+  )
+
+  it("rejects a late renderer submission for an expired request even when a new prompt is active", async () => {
+    const { cli, event, unlock, requestId } = setup()
+    const first = unlock()
+    const oldId = requestId()
+    await handlers.get("secret_session_clear")?.(event)
+    await expect(first).resolves.toBeUndefined()
+    const second = unlock()
+    for (const id of [oldId, undefined, 42]) {
+      expect(
+        await handlers.get("secret_unlock_submit")?.(event, {
+          requestId: id,
+          passphrase: "stale-private",
+          remember: true,
+        }),
+      ).toEqual({ ok: false, message: "Unlock request is no longer active." })
+    }
+    expect(dialog.showMessageBox).not.toHaveBeenCalled()
+    expect(cli.runRaw).not.toHaveBeenCalled()
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+      passphrase: "new-private",
+    })
+    await expect(second).resolves.toBe("new-private")
+  })
+
   it("shows and focuses a hidden window, re-notifies joiners, and replays when the renderer is ready", async () => {
-    const { win, webContents, unlock, event } = setup()
+    const { win, webContents, unlock, event, requestId } = setup()
     const first = unlock()
     const second = unlock()
     expect(webContents.send).toHaveBeenCalledTimes(2)
@@ -245,9 +486,10 @@ describe("secret unlock IPC lifecycle", () => {
     ).toHaveLength(3)
 
     const submitted = handlers.get("secret_unlock_submit")
-    await submitted?.(event, { passphrase: "private" })
+    await submitted?.(event, { requestId: requestId(), passphrase: "private" })
     await expect(first).resolves.toBe("private")
     await expect(second).resolves.toBe("private")
+    expect(dialog.showMessageBox).not.toHaveBeenCalled()
     expect(webContents.listenerCount("did-start-navigation")).toBe(0)
     expect(webContents.listenerCount("render-process-gone")).toBe(0)
     expect(webContents.listenerCount("destroyed")).toBe(0)

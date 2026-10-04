@@ -12,7 +12,7 @@ describe("SecretSession", () => {
     const second = session.request(() => true)
     expect(first).toBe(second)
     expect(notify).toHaveBeenCalledTimes(2)
-    session.submit("private credential")
+    session.submit(session.capturePendingId(), "private credential")
     await expect(first).resolves.toBe("private credential")
   })
 
@@ -25,7 +25,7 @@ describe("SecretSession", () => {
     expect(vi.getTimerCount()).toBe(0)
 
     const second = session.request(() => true)
-    session.submit("next credential")
+    session.submit(session.capturePendingId(), "next credential")
     await expect(second).resolves.toBe("next credential")
   })
 
@@ -39,12 +39,28 @@ describe("SecretSession", () => {
         return () => undefined
       },
     )
-    session.submit(undefined)
+    session.submit(session.capturePendingId(), undefined)
     await expect(first).resolves.toBeUndefined()
 
     const second = session.request(() => true)
     cancelFirst()
-    session.submit("new credential")
+    session.submit(session.capturePendingId(), "new credential")
+    await expect(second).resolves.toBe("new credential")
+  })
+
+  it("rejects stale submissions without settling a replacement request", async () => {
+    const session = new SecretSession()
+    const first = session.request(() => true)
+    const firstId = session.capturePendingId()
+    session.cancelCurrent()
+    await expect(first).resolves.toBeUndefined()
+    const second = session.request(() => true)
+    expect(session.isPending(firstId)).toBe(false)
+    expect(session.submit(firstId, "stale credential")).toBe(false)
+    expect(session.isPending(session.capturePendingId())).toBe(true)
+    expect(session.submit(session.capturePendingId(), "new credential")).toBe(
+      true,
+    )
     await expect(second).resolves.toBe("new credential")
   })
 
@@ -94,7 +110,7 @@ describe("SecretSession", () => {
         throw new Error("listener cleanup failed")
       },
     )
-    session.submit(undefined)
+    session.submit(session.capturePendingId(), undefined)
     await expect(pending).resolves.toBeUndefined()
   })
 

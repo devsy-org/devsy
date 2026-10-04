@@ -10,12 +10,20 @@ let passphrase = $state("")
 let remember = $state(false)
 let busy = $state(false)
 let error = $state("")
+let requestId = $state("")
 onMount(() => {
   let destroyed = false
   let unlisten: (() => void) | undefined
-  void listen("secret_unlock_required", () => {
+  void listen<{ requestId?: unknown }>("secret_unlock_required", (event) => {
+    const nextRequestId = event.payload?.requestId
+    if (typeof nextRequestId !== "string" || !nextRequestId.trim()) return
+    if (requestId === nextRequestId) return
+    requestId = nextRequestId
+    passphrase = ""
+    remember = false
     open = true
     error = ""
+    busy = false
   }).then((off) => {
     if (destroyed) off()
     else unlisten = off
@@ -26,29 +34,49 @@ onMount(() => {
   }
 })
 async function submit() {
+  const submittedRequestId = requestId
+  if (!submittedRequestId || busy) return
+  const submittedPassphrase = passphrase
+  const submittedRemember = remember
   busy = true
   try {
     const result = await invoke<{ ok: boolean; message?: string }>(
       "secret_unlock_submit",
-      { passphrase, remember },
+      {
+        requestId: submittedRequestId,
+        passphrase: submittedPassphrase,
+        remember: submittedRemember,
+      },
     )
+    if (requestId !== submittedRequestId) return
     passphrase = ""
     if (result.ok) {
+      requestId = ""
       open = false
       remember = false
       await refreshSecrets()
     } else error = result.message ?? "Unable to unlock secrets."
   } catch {
-    error = "Unable to submit the unlock credential."
+    if (requestId === submittedRequestId)
+      error = "Unable to submit the unlock credential."
   } finally {
-    passphrase = ""
-    busy = false
+    if (requestId === submittedRequestId) {
+      passphrase = ""
+      busy = false
+    }
   }
 }
 function cancel() {
+  const canceledRequestId = requestId
+  requestId = ""
   passphrase = ""
   remember = false
-  void invoke("secret_unlock_submit", {}).catch(() => undefined)
+  busy = false
+  if (canceledRequestId) {
+    void invoke("secret_unlock_submit", {
+      requestId: canceledRequestId,
+    }).catch(() => undefined)
+  }
 }
 </script>
 <Dialog.Root bind:open onOpenChange={(value) => { if (!value) cancel() }}>

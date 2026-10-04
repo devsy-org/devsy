@@ -319,12 +319,12 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   cli.setUnlockHandler(async () => {
     const win = getMainWindow()
     return secretSession.request(
-      () => {
+      (requestId) => {
         if (!win || win.isDestroyed()) return false
         if (win.isMinimized()) win.restore()
         if (!win.isVisible()) win.show()
         win.focus()
-        win.webContents.send("secret_unlock_required", {})
+        win.webContents.send("secret_unlock_required", { requestId })
         return true
       },
       win
@@ -370,23 +370,58 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "secret_unlock_submit",
-    async (event, args: { passphrase?: string; remember?: boolean }) => {
-      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+    async (
+      event,
+      args: { requestId?: string; passphrase?: string; remember?: boolean },
+    ) => {
+      const win = getMainWindow()
+      if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
         return secretRequestDenied
       if (!args || typeof args !== "object")
         return { ok: false, message: "Invalid unlock request." }
+      const passphrase = args.passphrase
+      const remember = args.remember === undefined ? false : args.remember
+      if (typeof remember !== "boolean")
+        return { ok: false, message: "Invalid remember preference." }
       if (
-        args.passphrase !== undefined &&
-        (typeof args.passphrase !== "string" || !args.passphrase.trim())
-      ) {
+        passphrase !== undefined &&
+        (typeof passphrase !== "string" || !passphrase.trim())
+      )
         return { ok: false, message: "Enter a non-empty passphrase." }
+      const requestId = args.requestId
+      const staleRequest = {
+        ok: false,
+        message: "Unlock request is no longer active.",
       }
-      if (args.passphrase !== undefined && args.remember) {
+      if (!secretSession.isPending(requestId)) return staleRequest
+      if (passphrase !== undefined && remember) {
         try {
+          const confirmation = await dialog.showMessageBox(win, {
+            type: "warning",
+            title: "Secret protection",
+            message: "Remember the secrets passphrase in your OS keychain?",
+            detail: "This changes the shared secret store across all contexts.",
+            buttons: ["Cancel", "Continue"],
+            defaultId: 0,
+            cancelId: 0,
+            noLink: true,
+          })
+          if (
+            !isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL)
+          )
+            return secretRequestDenied
+          if (!secretSession.isPending(requestId)) return staleRequest
+          if (confirmation.response !== 1)
+            return { ok: false, message: "Secret protection change canceled." }
           await cli.runRaw(["secret", "protection", "remember"], {
-            env: { DEVSY_SECRETS_PASSPHRASE: args.passphrase },
+            env: { DEVSY_SECRETS_PASSPHRASE: passphrase },
             unlockRetried: true,
           })
+          if (
+            !isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL)
+          )
+            return secretRequestDenied
+          if (!secretSession.isPending(requestId)) return staleRequest
         } catch {
           return {
             ok: false,
@@ -394,7 +429,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           }
         }
       }
-      secretSession.submit(args.passphrase)
+      if (!secretSession.submit(requestId, passphrase)) return staleRequest
       return { ok: true }
     },
   )
@@ -414,7 +449,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
       return secretRequestDenied
     cli.setSessionPassphrase(undefined)
-    secretSession.submit(undefined)
+    secretSession.cancelCurrent()
   })
   ipcMain.handle(
     "secret_protection_action",
@@ -1352,19 +1387,25 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     }
   })
 
-  ipcMain.handle("context_delete", async (_event, args: { name: string }) => {
+  ipcMain.handle("context_delete", async (event, args: { name: string }) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
     await cli.runRaw(["context", "delete", args.name])
   })
 
-  ipcMain.handle("secret_list", async () =>
-    cli.run<SecretEntry[]>(["secret", "list"]),
-  )
+  ipcMain.handle("secret_list", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return cli.run<SecretEntry[]>(["secret", "list"])
+  })
 
   // Returns an envelope rather than throwing so a structured cliError survives
   // the IPC boundary (see provider_init above).
   ipcMain.handle(
     "secret_set",
-    async (_event, args: { name: string; value: string }) => {
+    async (event, args: { name: string; value: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
       trackEvent("secret_set")
       try {
         await cli.runRawStdin(
@@ -1380,7 +1421,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("secret_delete", async (_event, args: { name: string }) => {
+  ipcMain.handle("secret_delete", async (event, args: { name: string }) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
     trackEvent("secret_delete")
     try {
       await cli.runRaw(["secret", "delete", args.name])
@@ -1394,7 +1437,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "secret_attach",
-    async (_event, args: { name: string; context: string }) => {
+    async (event, args: { name: string; context: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
       trackEvent("secret_attach")
       try {
         if (!args.context) throw new Error("context is required")
@@ -1416,7 +1461,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "secret_detach",
-    async (_event, args: { name: string; context: string }) => {
+    async (event, args: { name: string; context: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
       trackEvent("secret_detach")
       try {
         if (!args.context) throw new Error("context is required")
@@ -1803,8 +1850,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   }
   ipcMain.handle(
     "workspace_up",
-    (_event, args: Parameters<typeof runWorkspaceUp>[0]) =>
-      runWorkspaceUp(args).commandId,
+    (event, args: Parameters<typeof runWorkspaceUp>[0]) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      return runWorkspaceUp(args).commandId
+    },
   )
 
   async function reconcileDetachedTask(
@@ -2035,26 +2085,26 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "--force",
       ]).commandId,
   )
-  ipcMain.handle(
-    "workspace_rebuild",
-    (_event, args: StopWorkspaceArgs) =>
-      startWorkspaceAction(args, "rebuilding", [
-        "workspace",
-        "up",
-        args.workspaceId,
-        "--recreate",
-      ]).commandId,
-  )
-  ipcMain.handle(
-    "workspace_reset",
-    (_event, args: StopWorkspaceArgs) =>
-      startWorkspaceAction(args, "resetting", [
-        "workspace",
-        "up",
-        args.workspaceId,
-        "--reset",
-      ]).commandId,
-  )
+  ipcMain.handle("workspace_rebuild", (event, args: StopWorkspaceArgs) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return startWorkspaceAction(args, "rebuilding", [
+      "workspace",
+      "up",
+      args.workspaceId,
+      "--recreate",
+    ]).commandId
+  })
+  ipcMain.handle("workspace_reset", (event, args: StopWorkspaceArgs) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return startWorkspaceAction(args, "resetting", [
+      "workspace",
+      "up",
+      args.workspaceId,
+      "--reset",
+    ]).commandId
+  })
 
   // ── Terminal ──
   ipcMain.handle(

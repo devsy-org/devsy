@@ -1,11 +1,13 @@
+import { randomUUID } from "node:crypto"
+
 /** Main-process-only unlock coordination. Credentials are never returned to the renderer. */
 interface PendingSecretSession {
-  id: symbol
+  id: string
   promise: Promise<string | undefined>
   resolve: (value: string | undefined) => void
   timer: ReturnType<typeof setTimeout>
   cleanup?: () => void
-  notify: () => boolean
+  notify: (id: string) => boolean
 }
 
 export class SecretSession {
@@ -14,7 +16,7 @@ export class SecretSession {
   constructor(private readonly timeoutMs = 5 * 60 * 1000) {}
 
   request(
-    notify: () => boolean,
+    notify: (id: string) => boolean,
     registerCancellation?: (cancel: () => void) => () => void,
   ): Promise<string | undefined> {
     if (this.pending) {
@@ -27,7 +29,7 @@ export class SecretSession {
     const promise = new Promise<string | undefined>((done) => {
       resolve = done
     })
-    const id = Symbol("secret unlock request")
+    const id = randomUUID()
     const timer = setTimeout(() => this.settle(id, undefined), this.timeoutMs)
     const pending: PendingSecretSession = {
       id,
@@ -56,17 +58,31 @@ export class SecretSession {
     const pending = this.pending
     if (!pending) return
     try {
-      if (!pending.notify()) this.settle(pending.id, undefined)
+      if (!pending.notify(pending.id)) this.settle(pending.id, undefined)
     } catch {
       this.settle(pending.id, undefined)
     }
   }
 
-  submit(value: string | undefined): void {
-    if (this.pending) this.settle(this.pending.id, value)
+  capturePendingId(): string | undefined {
+    return this.pending?.id
   }
 
-  private settle(id: symbol, value: string | undefined): void {
+  isPending(id: string | undefined): id is string {
+    return id !== undefined && this.pending?.id === id
+  }
+
+  submit(id: string | undefined, value: string | undefined): boolean {
+    if (!this.isPending(id)) return false
+    this.settle(id, value)
+    return true
+  }
+
+  cancelCurrent(): void {
+    if (this.pending) this.settle(this.pending.id, undefined)
+  }
+
+  private settle(id: string, value: string | undefined): void {
     const pending = this.pending
     if (!pending || pending.id !== id) return
     this.pending = undefined
