@@ -169,11 +169,6 @@ function saveLocal(key: keyof LocalOptions, value: string | boolean) {
   ;(local as unknown as Record<string, string | boolean>)[key] = value
   trackEngagement("settings_changed", { setting: key })
 }
-
-function toggleLocal(key: keyof LocalOptions) {
-  const current = local[key]
-  saveLocal(key, !current)
-}
 </script>
 
 <div class="space-y-6">
@@ -448,51 +443,6 @@ function toggleLocal(key: keyof LocalOptions) {
         <h2 id="updates-heading" class="text-lg font-semibold">Updates</h2>
         <div class="mt-4">
           <UpdatesPanel />
-        </div>
-      </section>
-
-      <section id="advanced" aria-labelledby="advanced-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
-        <h2 id="advanced-heading" class="text-lg font-semibold">Advanced</h2>
-        <div class="mt-4 space-y-6">
-        <div class="rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
-          <p class="text-sm text-yellow-600 dark:text-yellow-400">
-            Experimental features may be unstable. Use at your own risk.
-          </p>
-        </div>
-
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <Label>Multiple Devcontainer Detection</Label>
-            <p class="text-xs text-muted-foreground">Check for multiple devcontainers when creating workspaces. May take longer for larger repos.</p>
-          </div>
-          <Switch checked={local.experimentalMultiDevcontainer} onCheckedChange={() => toggleLocal("experimentalMultiDevcontainer")} disabled={loading || saving} />
-        </div>
-
-        <Separator />
-
-        <div class="space-y-2">
-          <Label>Additional CLI Flags</Label>
-          <p class="text-xs text-muted-foreground">Append custom flags to all Devsy CLI commands</p>
-          <Input
-            value={local.additionalCliFlags}
-            placeholder="--flag1 --flag2=value"
-            oninput={(e) => (local.additionalCliFlags = e.currentTarget.value)}
-            onblur={() => saveLocal("additionalCliFlags", local.additionalCliFlags)}
-            disabled={loading || saving}
-          />
-        </div>
-
-        <div class="space-y-2">
-          <Label>Additional Environment Variables</Label>
-          <p class="text-xs text-muted-foreground">Comma-separated environment variables passed to Devsy commands</p>
-          <Input
-            value={local.additionalEnvVars}
-            placeholder="FOO=bar,BAZ=false"
-            oninput={(e) => (local.additionalEnvVars = e.currentTarget.value)}
-            onblur={() => saveLocal("additionalEnvVars", local.additionalEnvVars)}
-            disabled={loading || saving}
-          />
-        </div>
         </div>
       </section>
   </div>

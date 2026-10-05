@@ -33,7 +33,7 @@ describe("SettingsPage layout", () => {
     expect(screen.getByText("Failures only")).toBeTruthy()
   })
 
-  it("renders all settings sections as one page without section navigation links", () => {
+  it("renders supported settings sections as one page without section navigation links", () => {
     render(SettingsPage)
 
     expect(
@@ -53,9 +53,23 @@ describe("SettingsPage layout", () => {
       "Appearance",
       "Updates",
       "Secret security",
-      "Advanced",
     ]) {
       expect(screen.getByRole("heading", { name, level: 2 })).toBeTruthy()
+    }
+  })
+
+  it("omits legacy Advanced controls that have no runtime consumers", () => {
+    render(SettingsPage)
+
+    expect(screen.queryByRole("heading", { name: "Advanced" })).toBeNull()
+    expect(document.querySelector("#advanced")).toBeNull()
+    for (const label of [
+      /experimental features may be unstable/i,
+      /multiple devcontainer detection/i,
+      /additional cli flags/i,
+      /additional environment variables/i,
+    ]) {
+      expect(screen.queryByText(label)).toBeNull()
     }
   })
 })
