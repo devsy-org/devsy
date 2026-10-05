@@ -35,7 +35,7 @@
     "unique-names-generator": "^4.7.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
+    "@biomejs/biome": "2.5.15",
     "@electron/rebuild": "4.2.0",
     "@internationalized/date": "3.12.4",
     "@lucide/svelte": "1.38.0",
