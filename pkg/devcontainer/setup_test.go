@@ -3,6 +3,7 @@ package devcontainer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"reflect"
@@ -475,4 +476,40 @@ func TestPostStartDeliveryRetainsArchitectureForBinarySource(t *testing.T) {
 	d.err = context.Canceled
 	assert.ErrorIs(t, r.deliverPostStart(context.Background(), strategy), d.err)
 	assert.False(t, strategy.called)
+}
+
+func TestFallbackAgentDeliveryPreservesBothErrors(t *testing.T) {
+	nativeErr := errors.New("exec-stream delivery stalled")
+	legacyErr := errors.New("read ping: EOF")
+
+	err := fallbackAgentDelivery(
+		func() error { return nativeErr },
+		func() error { return legacyErr },
+	)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, nativeErr)
+	assert.ErrorIs(t, err, legacyErr)
+	assert.Contains(t, err.Error(), "platform-native agent delivery failed")
+	assert.Contains(t, err.Error(), "legacy agent injection failed")
+}
+
+func TestFallbackAgentDeliverySuccessfulPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		nativeErr  error
+		wantLegacy bool
+	}{
+		{name: "native success"},
+		{name: "legacy recovery", nativeErr: errors.New("native failed"), wantLegacy: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			legacyCalled := false
+			err := fallbackAgentDelivery(
+				func() error { return tc.nativeErr },
+				func() error { legacyCalled = true; return nil },
+			)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantLegacy, legacyCalled)
+		})
+	}
 }

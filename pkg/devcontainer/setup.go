@@ -3,6 +3,7 @@ package devcontainer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -118,14 +119,29 @@ func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Dura
 	strategy := r.newAgentDelivery()
 
 	if strategy.Phase() == delivery.PhasePostStart {
-		if err := r.deliverPostStart(ctx, strategy); err != nil {
-			log.Warnf("platform-native delivery failed, falling back to legacy inject: %v", err)
-			return r.legacyInject(ctx, timeout)
-		}
-		return nil
+		return fallbackAgentDelivery(
+			func() error { return r.deliverPostStart(ctx, strategy) },
+			func() error { return r.legacyInject(ctx, timeout) },
+		)
 	}
 
 	return r.legacyInject(ctx, timeout)
+}
+
+func fallbackAgentDelivery(native, legacy func() error) error {
+	nativeErr := native()
+	if nativeErr == nil {
+		return nil
+	}
+	log.Warnf("platform-native delivery failed, falling back to legacy inject: %v", nativeErr)
+	legacyErr := legacy()
+	if legacyErr == nil {
+		return nil
+	}
+	return errors.Join(
+		fmt.Errorf("platform-native agent delivery failed: %w", nativeErr),
+		fmt.Errorf("legacy agent injection failed: %w", legacyErr),
+	)
 }
 
 func (r *runner) newAgentDelivery() delivery.AgentDelivery {

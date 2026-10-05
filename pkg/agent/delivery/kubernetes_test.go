@@ -3,11 +3,18 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"testing/iotest"
+	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/stretchr/testify/assert"
@@ -94,7 +101,7 @@ func TestKubernetesDelivery_DeliverPostStart_WritesBinary(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Len(t, exec.calls, 2)
+	require.Len(t, exec.calls, 3)
 	destPath := pkgconfig.ContainerDevsyHelperLocation
 
 	probeScript := strings.Join(exec.calls[0].argv, " ")
@@ -102,11 +109,16 @@ func TestKubernetesDelivery_DeliverPostStart_WritesBinary(t *testing.T) {
 	assert.Contains(t, probeScript, destPath)
 
 	writeScript := strings.Join(exec.calls[1].argv, " ")
-	assert.Contains(t, writeScript, "mktemp")
-	assert.Contains(t, writeScript, "chmod 0755")
-	assert.Contains(t, writeScript, "mv -f")
-	assert.Contains(t, writeScript, destPath)
+	assert.Contains(t, writeScript, ".devsy-transfer-")
+	assert.NotContains(t, writeScript, "chmod 0755")
+	assert.NotContains(t, writeScript, "mv -f")
+	assert.Contains(t, writeScript, filepath.Dir(destPath))
 	assert.Equal(t, binaryData, exec.calls[1].stdin)
+	commitScript := strings.Join(exec.calls[2].argv, " ")
+	assert.Contains(t, commitScript, "--version")
+	assert.Contains(t, commitScript, testVersion)
+	assert.Contains(t, commitScript, "mv -f")
+	assert.Contains(t, commitScript, destPath)
 }
 
 func TestKubernetesDelivery_DeliverPostStart_SkipsWhenVersionMatches(t *testing.T) {
@@ -135,7 +147,7 @@ func TestKubernetesDelivery_DeliverPostStart_DeliversWhenProbeErrors(t *testing.
 		Arch:         testArch,
 	})
 	require.NoError(t, err)
-	assert.Len(t, probeErr.calls, 2)
+	assert.Len(t, probeErr.calls, 3)
 }
 
 func TestKubernetesDelivery_DeliverPostStart_BinarySourceError(t *testing.T) {
@@ -197,7 +209,7 @@ func TestKubernetesDelivery_DeliverPostStart_FallsBackToExecStreamWhenNoDownload
 	})
 	require.NoError(t, err)
 
-	require.Len(t, exec.calls, 3, "probe, failed download, then exec-stream fallback")
+	require.Len(t, exec.calls, 4, "probe, failed download, stage, then validation and commit")
 	assert.Equal(t, binaryData, exec.calls[2].stdin)
 }
 
@@ -212,13 +224,18 @@ func TestKubernetesDelivery_DeliverPostStart_SkipsDownloadWhenNoURLConfigured(t 
 	})
 	require.NoError(t, err)
 
-	require.Len(t, exec.calls, 2, "probe, then exec-stream (no download attempted)")
+	require.Len(t, exec.calls, 3, "probe, stage, then validation and commit")
 	assert.Equal(t, binaryData, exec.calls[1].stdin)
 }
 
 func TestKubernetesDelivery_DeliverViaExecStream_RetriesTransientFailureOnce(t *testing.T) {
 	exec := &recordingExec{
-		errs: []error{fmt.Errorf("write binary to container: %w", context.DeadlineExceeded), nil},
+		errs: []error{
+			fmt.Errorf("write binary to container: %w", context.DeadlineExceeded),
+			nil, // cleanup
+			nil, // retry stage
+			nil, // retry validation and commit
+		},
 	}
 	d := &KubernetesDelivery{Exec: exec.fn}
 
@@ -227,7 +244,10 @@ func TestKubernetesDelivery_DeliverViaExecStream_RetriesTransientFailureOnce(t *
 		Arch:         testArch,
 	})
 	require.NoError(t, err)
-	assert.Len(t, exec.calls, execStreamMaxAttempts, "one stalled attempt, one successful retry")
+	assert.Len(t, exec.calls, 4, "failed stage, cleanup, retry stage, and commit")
+	firstTemp := stagedPath(t, exec.calls[0])
+	secondTemp := stagedPath(t, exec.calls[2])
+	assert.NotEqual(t, firstTemp, secondTemp, "every retry must use an independent staging path")
 }
 
 func TestKubernetesDelivery_DeliverViaExecStream_DoesNotRetryPermanentFailure(t *testing.T) {
@@ -240,7 +260,142 @@ func TestKubernetesDelivery_DeliverViaExecStream_DoesNotRetryPermanentFailure(t 
 		Arch:         testArch,
 	})
 	require.Error(t, err)
-	assert.Len(t, exec.calls, 1, "a permanent failure must not be retried")
+	assert.Len(t, exec.calls, 2, "a permanent failure is cleaned up but not retried")
+}
+
+func TestKubernetesDelivery_InterruptedStageNeverCommits(t *testing.T) {
+	var calls []recordedCall
+	attempt := 0
+	d := &KubernetesDelivery{ExpectedVersion: testVersion}
+	d.Exec = func(_ context.Context, argv []string, streams driver.Streams) error {
+		call := recordedCall{argv: argv}
+		if streams.Stdin != nil {
+			attempt++
+			if attempt == 1 {
+				buf := make([]byte, 4)
+				n, _ := streams.Stdin.Read(buf)
+				call.stdin = string(buf[:n])
+			} else {
+				data, err := io.ReadAll(streams.Stdin)
+				require.NoError(t, err)
+				call.stdin = string(data)
+			}
+		}
+		calls = append(calls, call)
+		if streams.Stdin != nil && attempt == 1 {
+			return fmt.Errorf("stream interrupted: unexpected EOF")
+		}
+		return nil
+	}
+
+	err := d.deliverViaExecStream(context.Background(), "/usr/local/bin/devsy", PostStartOptions{
+		BinarySource: binarySourceFrom("complete-binary"),
+		Arch:         testArch,
+	})
+	require.NoError(t, err)
+	require.Len(t, calls, 4)
+	assert.NotContains(t, strings.Join(calls[0].argv, " "), "mv -f")
+	assert.Contains(t, strings.Join(calls[1].argv, " "), "rm -f")
+	assert.NotEqual(t, stagedPath(t, calls[0]), stagedPath(t, calls[2]))
+	assert.Contains(t, strings.Join(calls[3].argv, " "), "mv -f")
+}
+
+func TestKubernetesDelivery_ValidationFailureCleansUpWithoutPromotion(t *testing.T) {
+	exec := &recordingExec{
+		errs: []error{
+			nil,
+			execerr.CodeExitError{Code: 1, Err: fmt.Errorf("wrong version")},
+			nil,
+		},
+	}
+	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
+
+	err := d.deliverViaExecStream(context.Background(), "/usr/local/bin/devsy", PostStartOptions{
+		BinarySource: binarySourceFrom("invalid-binary"),
+		Arch:         testArch,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "validate staged agent")
+	require.Len(t, exec.calls, 3)
+	assert.NotContains(t, strings.Join(exec.calls[0].argv, " "), "mv -f")
+	assert.Contains(t, strings.Join(exec.calls[2].argv, " "), "rm -f")
+}
+
+type delayedReader struct {
+	chunks int
+	delay  time.Duration
+}
+
+func (r *delayedReader) Read(p []byte) (int, error) {
+	if r.chunks == 0 {
+		return 0, io.EOF
+	}
+	time.Sleep(r.delay)
+	r.chunks--
+	p[0] = 'x'
+	return 1, nil
+}
+
+func TestKubernetesDelivery_LongProgressingTransferSucceeds(t *testing.T) {
+	exec := &recordingExec{}
+	d := &KubernetesDelivery{
+		Exec:                  exec.fn,
+		ExpectedVersion:       testVersion,
+		execStreamIdleTimeout: 200 * time.Millisecond,
+	}
+	start := time.Now()
+	err := d.execStreamOnce(context.Background(), "/usr/local/bin/devsy", &delayedReader{
+		chunks: 12,
+		delay:  30 * time.Millisecond,
+	})
+	require.NoError(t, err)
+	assert.Greater(t, time.Since(start), 300*time.Millisecond)
+	assert.Len(t, exec.calls, 2)
+}
+
+func TestKubernetesDelivery_StalledTransferCancelsWithoutCommit(t *testing.T) {
+	var calls []recordedCall
+	d := &KubernetesDelivery{
+		ExpectedVersion:       testVersion,
+		execStreamIdleTimeout: 20 * time.Millisecond,
+	}
+	d.Exec = func(ctx context.Context, argv []string, streams driver.Streams) error {
+		calls = append(calls, recordedCall{argv: argv})
+		if streams.Stdin == nil {
+			return nil
+		}
+		buf := make([]byte, 1)
+		_, _ = streams.Stdin.Read(buf)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	err := d.execStreamOnce(context.Background(), "/usr/local/bin/devsy", strings.NewReader("x"))
+	require.ErrorIs(t, err, errExecStreamIdleTimeout)
+	require.Len(t, calls, 2, "stage and cleanup only")
+	assert.NotContains(t, strings.Join(calls[0].argv, " "), "mv -f")
+	assert.Contains(t, strings.Join(calls[1].argv, " "), "rm -f")
+}
+
+func TestKubernetesDelivery_PreservesDownloadAndStreamErrors(t *testing.T) {
+	exec := &recordingExec{errs: []error{
+		nil,
+		fmt.Errorf("egress blocked"),
+		fmt.Errorf("stream broken"),
+		nil,
+	}}
+	d := &KubernetesDelivery{Exec: exec.fn, ExpectedVersion: testVersion}
+	err := d.DeliverPostStart(context.Background(), PostStartOptions{
+		BinarySource:              binarySourceFrom("binary"),
+		Arch:                      testArch,
+		DownloadURL:               "https://example.com/releases",
+		PreferInContainerDownload: true,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "in-container download failed")
+	assert.Contains(t, err.Error(), "egress blocked")
+	assert.Contains(t, err.Error(), "exec-stream delivery failed")
+	assert.Contains(t, err.Error(), "stream broken")
 }
 
 func TestIsTransientDeliveryError(t *testing.T) {
@@ -291,15 +446,190 @@ func TestKubernetesDelivery_DeliverPostStart_UsesInstallPathOverride(t *testing.
 	})
 	require.NoError(t, err)
 
-	require.Len(t, exec.calls, 2)
+	require.Len(t, exec.calls, 3)
 	probeScript := strings.Join(exec.calls[0].argv, " ")
 	assert.Contains(t, probeScript, installPath)
 	writeScript := strings.Join(exec.calls[1].argv, " ")
-	assert.Contains(t, writeScript, installPath)
+	assert.Contains(t, writeScript, filepath.Dir(installPath))
 	assert.NotContains(t, writeScript, pkgconfig.ContainerDevsyHelperLocation)
+	assert.Contains(t, strings.Join(exec.calls[2].argv, " "), installPath)
+}
+
+func stagedPath(t *testing.T, call recordedCall) string {
+	t.Helper()
+	for field := range strings.FieldsSeq(strings.Join(call.argv, " ")) {
+		field = strings.Trim(field, "';")
+		if strings.Contains(field, ".devsy-transfer-") {
+			return field
+		}
+	}
+	t.Fatal("staging path not found")
+	return ""
 }
 
 func TestKubernetesDelivery_DestPath_DefaultsWhenInstallPathUnset(t *testing.T) {
 	d := &KubernetesDelivery{}
 	assert.Equal(t, pkgconfig.ContainerDevsyHelperLocation, d.destPath())
+}
+
+func TestKubernetesDelivery_ExecStreamPreservesInstalledAgent(t *testing.T) {
+	sourceErr := errors.New("binary source failed")
+	for _, tc := range []struct {
+		name         string
+		version      string
+		truncate     bool
+		cancel       bool
+		sourceError  bool
+		incomplete   bool
+		wantExecuted bool
+		wantError    string
+	}{
+		{name: "complete transfer", version: testVersion, wantExecuted: true},
+		{name: "truncated but executable", version: testVersion, truncate: true, wantError: "size mismatch"},
+		{name: "wrong version", version: "v0.0.1", wantExecuted: true, wantError: "version mismatch"},
+		{name: "cancelled stage", version: testVersion, cancel: true, wantError: "context canceled"},
+		{name: "source read error", version: testVersion, sourceError: true, wantError: "binary source failed"},
+		{name: "remote success before EOF", version: testVersion, incomplete: true, wantError: "incomplete agent stream"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dest, marker := installedAgentFixture(t)
+			dir := filepath.Dir(dest)
+			binary := fmt.Sprintf(
+				"#!/bin/sh\necho executed > %s\necho %s\n# trailing bytes\n",
+				shellescape.Quote(marker),
+				tc.version,
+			)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			d := &KubernetesDelivery{ExpectedVersion: testVersion}
+			var cancelStage func()
+			if tc.cancel {
+				cancelStage = cancel
+			}
+			d.Exec = shellAgentExec(tc.truncate, tc.incomplete, cancelStage)
+			var reader io.Reader = strings.NewReader(binary)
+			if tc.sourceError {
+				reader = io.MultiReader(reader, iotest.ErrReader(sourceErr))
+			}
+			err := d.execStreamOnce(ctx, dest, reader)
+			installed, readErr := os.ReadFile(dest) // #nosec G304 -- reads an owned test fixture
+			require.NoError(t, readErr)
+			if tc.wantError == "" {
+				require.NoError(t, err)
+				assert.Equal(t, binary, string(installed))
+			} else {
+				require.ErrorContains(t, err, tc.wantError)
+				assert.Equal(t, "installed agent", string(installed))
+			}
+			assertAgentStagingClean(t, dir, marker, tc.wantExecuted)
+		})
+	}
+}
+
+func TestKubernetesDelivery_ValidationIsBounded(t *testing.T) {
+	calls := 0
+	d := &KubernetesDelivery{
+		ExpectedVersion:       testVersion,
+		execStreamIdleTimeout: 50 * time.Millisecond,
+	}
+	d.Exec = func(ctx context.Context, _ []string, streams driver.Streams) error {
+		calls++
+		switch calls {
+		case 1:
+			_, err := io.Copy(io.Discard, streams.Stdin)
+			return err
+		case 2:
+			_, hasDeadline := ctx.Deadline()
+			require.True(t, hasDeadline)
+			<-ctx.Done()
+			return ctx.Err()
+		default:
+			require.NoError(t, ctx.Err(), "cleanup must have an independent context")
+			return nil
+		}
+	}
+	err := d.execStreamOnce(
+		context.Background(),
+		"/usr/local/bin/devsy",
+		strings.NewReader("binary"),
+	)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Equal(t, 3, calls)
+}
+
+func shellAgentExec(truncate, incomplete bool, cancelStage func()) ArgvExecFunc {
+	return func(ctx context.Context, argv []string, streams driver.Streams) error {
+		if streams.Stdin != nil && incomplete {
+			_, err := io.CopyN(io.Discard, streams.Stdin, 1)
+			return err
+		}
+		if streams.Stdin != nil && truncate {
+			data, err := io.ReadAll(streams.Stdin)
+			if err != nil {
+				return err
+			}
+			streams.Stdin = bytes.NewReader(data[:len(data)-len("# trailing bytes\n")])
+		}
+		cmd := exec.CommandContext(
+			ctx,
+			argv[0],
+			argv[1:]...) // #nosec G204 -- executes delivery-generated scripts in a test directory
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = streams.Stdin, streams.Stdout, streams.Stderr
+		err := cmd.Run()
+		if streams.Stdin != nil && cancelStage != nil {
+			cancelStage()
+		}
+		return err
+	}
+}
+
+func installedAgentFixture(t *testing.T) (string, string) {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "agent directory's")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	dest := filepath.Join(dir, "devsy")
+	require.NoError(t, os.WriteFile(dest, []byte("installed agent"), 0o600))
+	return dest, filepath.Join(dir, "executed")
+}
+
+func assertAgentStagingClean(t *testing.T, dir, marker string, wantExecuted bool) {
+	t.Helper()
+	_, err := os.Stat(marker)
+	if wantExecuted {
+		require.NoError(t, err)
+	} else {
+		require.ErrorIs(
+			t,
+			err,
+			os.ErrNotExist,
+			"invalid transfers must not execute the staged binary",
+		)
+	}
+	staged, err := filepath.Glob(filepath.Join(dir, ".devsy-transfer-*"))
+	require.NoError(t, err)
+	assert.Empty(t, staged)
+}
+
+func TestKubernetesDelivery_RetriesValidationTimeout(t *testing.T) {
+	recorder := &recordingExec{errs: []error{nil, context.DeadlineExceeded, nil, nil, nil}}
+	d := &KubernetesDelivery{Exec: recorder.fn, ExpectedVersion: testVersion}
+	err := d.deliverViaExecStream(context.Background(), "/usr/local/bin/devsy", PostStartOptions{
+		BinarySource: binarySourceFrom("binary"),
+	})
+	require.NoError(t, err)
+	require.Len(t, recorder.calls, 5)
+	assert.NotEqual(t, stagedPath(t, recorder.calls[0]), stagedPath(t, recorder.calls[3]))
+}
+
+func TestKubernetesDelivery_CancelledContextDoesNotAcquireBinary(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	d := &KubernetesDelivery{}
+	err := d.deliverViaExecStream(ctx, "/usr/local/bin/devsy", PostStartOptions{
+		BinarySource: func(context.Context, string) (io.ReadCloser, error) {
+			t.Fatal("cancelled delivery must not acquire a binary")
+			return nil, nil
+		},
+	})
+	require.ErrorIs(t, err, context.Canceled)
 }
