@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "cnfast": "^0.1.0",
-    "fumadocs-core": "16.15.17",
+    "fumadocs-core": "16.15.18",
     "fumadocs-mdx": "15.4.5",
     "fumadocs-ui": "npm:@fumadocs/base-ui@16.15.17",
     "next": "16.3.7",
