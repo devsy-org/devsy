@@ -204,6 +204,30 @@ describe("environment table value workflows", () => {
     expect(mocks.envSet).not.toHaveBeenCalled()
     expect(mocks.envAttach).not.toHaveBeenCalled()
   })
+  it("checks duplicates in the captured context after switching active context", async () => {
+    envVars.set([])
+    activeContext.set("context-a")
+    mocks.envList.mockImplementationOnce(async (context) =>
+      context === "context-a"
+        ? [{ name: "EXISTING", value: "keep-me", context: "context-a" }]
+        : [],
+    )
+    render(AddDialog, { open: true })
+    await fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "EXISTING" },
+    })
+    await fireEvent.input(screen.getByLabelText("Value"), {
+      target: { value: "overwrite" },
+    })
+    activeContext.set("context-b")
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain("already exists"),
+    )
+    expect(mocks.envList).toHaveBeenCalledWith("context-a")
+    expect(mocks.envSet).not.toHaveBeenCalled()
+    expect(mocks.envAttach).not.toHaveBeenCalled()
+  })
   it("fails closed when a fresh duplicate check is unavailable", async () => {
     mocks.envList.mockRejectedValueOnce(new Error("offline"))
     render(AddDialog, { open: true })

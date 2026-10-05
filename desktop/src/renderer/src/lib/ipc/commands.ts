@@ -412,8 +412,10 @@ export async function secretDetach(
   )
 }
 
-export async function envList(): Promise<EnvVar[]> {
-  return invoke<EnvVar[]>("env_list")
+export async function envList(context?: string): Promise<EnvVar[]> {
+  return context === undefined
+    ? invoke<EnvVar[]>("env_list")
+    : invoke<EnvVar[]>("env_list", { context })
 }
 
 export async function envSet(

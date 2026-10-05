@@ -1767,7 +1767,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("env_list", async () => cli.run<EnvEntry[]>(["env", "list"]))
+  ipcMain.handle("env_list", async (_event, args?: { context?: string }) =>
+    cli.run<EnvEntry[]>([...variableContextArgs(args?.context), "env", "list"]),
+  )
 
   // Returns an envelope rather than throwing so a structured cliError survives
   // the IPC boundary (see provider_init above).

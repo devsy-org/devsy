@@ -316,6 +316,36 @@ describe("secret unlock IPC lifecycle", () => {
     expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
   })
 
+  it("lists environment variables in an explicit captured context", async () => {
+    const { cli, event } = setup()
+    const rows = [{ name: "PORT", value: "8080", context: "captured" }]
+    cli.run.mockResolvedValueOnce(rows)
+    expect(
+      await handlers.get("env_list")?.(event, { context: "captured" }),
+    ).toEqual(rows)
+    expect(cli.run).toHaveBeenCalledWith([
+      "--context",
+      "captured",
+      "env",
+      "list",
+    ])
+  })
+  it("preserves default environment listing with missing arguments", async () => {
+    const { cli, event } = setup()
+    await handlers.get("env_list")?.(event)
+    expect(cli.run).toHaveBeenLastCalledWith(["env", "list"])
+    await handlers.get("env_list")?.(event, {})
+    expect(cli.run).toHaveBeenLastCalledWith(["env", "list"])
+  })
+  it("rejects an empty environment listing context before executing CLI", async () => {
+    const { cli, event } = setup()
+    for (const context of ["", "   ", null, 23, {}]) {
+      await expect(
+        handlers.get("env_list")?.(event, { context }),
+      ).rejects.toThrow("A valid context is required.")
+    }
+    expect(cli.run).not.toHaveBeenCalled()
+  })
   it.each(["env_set", "secret_set", "secret_delete"])(
     "%s routes an explicit row context to the CLI and preserves omitted context",
     async (channel) => {

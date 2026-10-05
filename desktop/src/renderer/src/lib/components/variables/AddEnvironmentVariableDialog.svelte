@@ -56,7 +56,7 @@ async function save() {
   saving = true
   error = ""
   try {
-    const currentVariables = await envList()
+    const currentVariables = await envList(targetContext)
     if (
       currentVariables.some(
         (row) => row.name === target && row.context === targetContext,

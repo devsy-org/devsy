@@ -10,6 +10,7 @@ import {
   envAttach,
   envDelete,
   envDetach,
+  envList,
   envSet,
   machineCreate,
   machineDelete,
@@ -425,6 +426,19 @@ describe("typed variable and protection commands", () => {
       value: "",
       context: "other",
     })
+  })
+  it("transports explicit context for environment listing", async () => {
+    const rows = [{ name: "PORT", value: "8080", context: "other" }]
+    mockInvoke.mockResolvedValue(rows)
+    expect(await envList("other")).toEqual(rows)
+    expect(mockInvoke).toHaveBeenLastCalledWith("env_list", {
+      context: "other",
+    })
+  })
+  it("preserves the default environment listing invocation", async () => {
+    mockInvoke.mockResolvedValue([])
+    expect(await envList()).toEqual([])
+    expect(mockInvoke).toHaveBeenLastCalledWith("env_list")
   })
   it("preserves omitted context payloads", async () => {
     await secretSet("TOKEN", "value")
