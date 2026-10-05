@@ -13,12 +13,14 @@ const mocks = vi.hoisted(() => ({
   envDelete: vi.fn().mockResolvedValue(undefined),
   refreshEnv: vi.fn().mockResolvedValue(undefined),
   envSet: vi.fn().mockResolvedValue(undefined),
+  envList: vi.fn().mockResolvedValue([]),
 }))
 vi.mock("$lib/ipc/commands.js", () => ({
   envAttach: mocks.envAttach,
   envDelete: mocks.envDelete,
   envDetach: mocks.envDetach,
   envSet: mocks.envSet,
+  envList: mocks.envList,
 }))
 vi.mock("$lib/stores/env.js", async () => {
   const { writable } = await import("svelte/store")
@@ -182,6 +184,78 @@ describe("environment table value workflows", () => {
     ).toBe(true)
     expect(mocks.envSet).not.toHaveBeenCalled()
   })
+  it("rejects a duplicate discovered in the fresh list without overwriting", async () => {
+    mocks.envList.mockResolvedValueOnce([
+      { name: "NEW", value: "existing", context: "default" },
+    ])
+    render(AddDialog, { open: true })
+    await fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "NEW" },
+    })
+    await fireEvent.input(screen.getByLabelText("Value"), {
+      target: { value: "replacement" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain("already exists"),
+    )
+    expect(mocks.envList).toHaveBeenCalledOnce()
+    expect(mocks.refreshEnv).toHaveBeenCalledOnce()
+    expect(mocks.envSet).not.toHaveBeenCalled()
+    expect(mocks.envAttach).not.toHaveBeenCalled()
+  })
+  it("fails closed when a fresh duplicate check is unavailable", async () => {
+    mocks.envList.mockRejectedValueOnce(new Error("offline"))
+    render(AddDialog, { open: true })
+    await fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "NEW" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Unable to check existing variables",
+      ),
+    )
+    expect(mocks.envSet).not.toHaveBeenCalled()
+    expect(mocks.envAttach).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
+    ).toBe(false)
+  })
+  it("allows the same name in another context", async () => {
+    mocks.envList.mockResolvedValueOnce([
+      { name: "NEW", value: "staging-only", context: "staging" },
+    ])
+    render(AddDialog, { open: true })
+    await fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "NEW" },
+    })
+    await fireEvent.input(screen.getByLabelText("Value"), {
+      target: { value: "default-value" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() =>
+      expect(mocks.envSet).toHaveBeenCalledWith(
+        "NEW",
+        "default-value",
+        "default",
+      ),
+    )
+  })
+  it("creates an empty value after a successful fresh duplicate check", async () => {
+    render(AddDialog, { open: true })
+    await fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "EMPTY" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() =>
+      expect(mocks.envSet).toHaveBeenCalledWith("EMPTY", "", "default"),
+    )
+    expect(mocks.envList).toHaveBeenCalledOnce()
+    expect(mocks.envList.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.envSet.mock.invocationCallOrder[0],
+    )
+  })
   it("reports saved variable with failed attachment and prevents duplicate resubmit", async () => {
     mocks.envAttach.mockRejectedValueOnce(new Error("offline"))
     render(AddDialog, { open: true })
@@ -238,6 +312,9 @@ it("keeps create and attachment in the context captured when add opened", async 
   )
   await fireEvent.click(screen.getByRole("button", { name: "Save" }))
   activeContext.set("production")
+  await waitFor(() =>
+    expect(mocks.envSet).toHaveBeenCalledWith("CAPTURED", "", "default"),
+  )
   complete()
   await waitFor(() =>
     expect(mocks.envAttach).toHaveBeenCalledWith("CAPTURED", "default"),

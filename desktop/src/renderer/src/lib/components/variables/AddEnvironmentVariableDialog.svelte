@@ -6,7 +6,7 @@ import { Switch } from "$lib/components/ui/switch/index.js"
 import * as Dialog from "$lib/components/ui/dialog/index.js"
 import { activeContext } from "$lib/stores/contexts.js"
 import { envVars, refreshEnv } from "$lib/stores/env.js"
-import { envSet, envAttach } from "$lib/ipc/commands.js"
+import { envList, envSet, envAttach } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 
 let { open = $bindable(false) }: { open?: boolean } = $props()
@@ -47,6 +47,25 @@ async function save() {
   const targetInject = inject
   saving = true
   error = ""
+  try {
+    const currentVariables = await envList()
+    if (
+      currentVariables.some(
+        (row) => row.name === target && row.context === targetContext,
+      )
+    ) {
+      error =
+        "A variable with this name already exists in this context. Edit the existing row."
+      await refreshEnv()
+      saving = false
+      return
+    }
+  } catch {
+    error =
+      "Unable to check existing variables. Check your connection and try again."
+    saving = false
+    return
+  }
   try {
     await envSet(target, targetValue, targetContext)
     saved = true
