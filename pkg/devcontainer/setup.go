@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -213,6 +214,8 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 		opts.BinarySource = mgr.AcquireBinary
 		opts.Arch = arch
 		opts.PreferInContainerDownload = !mgr.HasLocalOverride(arch)
+		opts.SkipVersionCheck = strings.TrimSpace(os.Getenv(pkgconfig.EnvAgentBinary)) != "" ||
+			opts.DownloadURL != pkgconfig.DefaultAgentDownloadURL()
 	}
 	if err := strategy.DeliverPostStart(ctx, opts); err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)

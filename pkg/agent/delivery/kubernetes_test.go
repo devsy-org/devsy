@@ -348,7 +348,7 @@ func TestKubernetesDelivery_LongProgressingTransferSucceeds(t *testing.T) {
 	err := d.execStreamOnce(context.Background(), "/usr/local/bin/devsy", &delayedReader{
 		chunks: 12,
 		delay:  30 * time.Millisecond,
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.Greater(t, time.Since(start), 300*time.Millisecond)
 	assert.Len(t, exec.calls, 2)
@@ -371,7 +371,9 @@ func TestKubernetesDelivery_StalledTransferCancelsWithoutCommit(t *testing.T) {
 		return ctx.Err()
 	}
 
-	err := d.execStreamOnce(context.Background(), "/usr/local/bin/devsy", strings.NewReader("x"))
+	err := d.execStreamOnce(
+		context.Background(), "/usr/local/bin/devsy", strings.NewReader("x"), false,
+	)
 	require.ErrorIs(t, err, errExecStreamIdleTimeout)
 	require.Len(t, calls, 2, "stage and cleanup only")
 	assert.NotContains(t, strings.Join(calls[0].argv, " "), "mv -f")
@@ -512,7 +514,7 @@ func TestKubernetesDelivery_ExecStreamPreservesInstalledAgent(t *testing.T) {
 			if tc.sourceError {
 				reader = io.MultiReader(reader, iotest.ErrReader(sourceErr))
 			}
-			err := d.execStreamOnce(ctx, dest, reader)
+			err := d.execStreamOnce(ctx, dest, reader, false)
 			installed, readErr := os.ReadFile(dest) // #nosec G304 -- reads an owned test fixture
 			require.NoError(t, readErr)
 			if tc.wantError == "" {
@@ -523,6 +525,63 @@ func TestKubernetesDelivery_ExecStreamPreservesInstalledAgent(t *testing.T) {
 				assert.Equal(t, "installed agent", string(installed))
 			}
 			assertAgentStagingClean(t, dir, marker, tc.wantExecuted)
+		})
+	}
+}
+
+func TestKubernetesDelivery_CustomAgentSkipsVersionChecks(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		truncate bool
+		badCLI   bool
+		wantErr  string
+	}{
+		{name: "complete transfer replaces matching installed agent"},
+		{name: "truncated transfer is rejected", truncate: true, wantErr: "size mismatch"},
+		{name: "version command failure is rejected", badCLI: true, wantErr: "not executable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dest, marker := installedAgentFixture(t)
+			installed := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo " + testVersion + "; exit 0; fi\n"
+			require.NoError(t, os.WriteFile(dest, []byte(installed), 0o600))
+			chmodErr := os.Chmod(dest, 0o700) // #nosec G302 -- owned executable fixture
+			require.NoError(t, chmodErr)
+
+			cliCommand := "echo custom-agent-version; exit 0"
+			if tc.badCLI {
+				cliCommand = "exit 1"
+			}
+			binary := fmt.Sprintf(
+				"#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then %s; fi\necho executed > %s\n# trailing bytes\n",
+				cliCommand,
+				shellescape.Quote(marker),
+			)
+			d := &KubernetesDelivery{
+				Exec:            shellAgentExec(tc.truncate, false, nil),
+				ExpectedVersion: testVersion,
+				InstallPath:     dest,
+			}
+			err := d.DeliverPostStart(context.Background(), PostStartOptions{
+				BinarySource:     binarySourceFrom(binary),
+				Arch:             testArch,
+				SkipVersionCheck: true,
+			})
+
+			actual, readErr := os.ReadFile(dest) // #nosec G304 -- reads an owned test fixture
+			require.NoError(t, readErr)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				assert.Equal(t, binary, string(actual))
+			} else {
+				require.ErrorContains(t, err, tc.wantErr)
+				assert.Equal(
+					t,
+					installed,
+					string(actual),
+					"failed custom delivery must preserve the installed agent",
+				)
+			}
+			assertAgentStagingClean(t, filepath.Dir(dest), marker, false)
 		})
 	}
 }
@@ -553,6 +612,7 @@ func TestKubernetesDelivery_ValidationIsBounded(t *testing.T) {
 		context.Background(),
 		"/usr/local/bin/devsy",
 		strings.NewReader("binary"),
+		false,
 	)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Equal(t, 3, calls)
@@ -691,6 +751,7 @@ func TestKubernetesDelivery_SlowCompletionAfterEOFSucceeds(t *testing.T) {
 		context.Background(),
 		"/usr/local/bin/devsy",
 		strings.NewReader("binary"),
+		false,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 2, calls, "stage completion must be followed by validation and promotion")
@@ -719,6 +780,7 @@ func TestKubernetesDelivery_StalledCompletionAfterEOFCancels(t *testing.T) {
 		context.Background(),
 		"/usr/local/bin/devsy",
 		strings.NewReader("binary"),
+		false,
 	)
 	require.ErrorIs(t, err, errExecStreamCompletionTimeout)
 	assert.True(t, isTransientDeliveryError(err))

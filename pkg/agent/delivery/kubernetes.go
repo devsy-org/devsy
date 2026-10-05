@@ -82,7 +82,8 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 
 	// Skip delivery when the in-pod binary already matches.
 	expected := d.expectedVersion()
-	if actual := d.detectVersion(ctx, destPath); actual != "" && actual == expected {
+	actual := d.detectVersion(ctx, destPath)
+	if !opts.SkipVersionCheck && actual != "" && actual == expected {
 		log.Debugf("remote agent version matches expected version %s, skipping delivery", expected)
 		return nil
 	}
@@ -200,7 +201,7 @@ func (d *KubernetesDelivery) deliverViaExecStream(
 			}
 			defer func() { _ = binary.Close() }()
 
-			streamErr := d.execStreamOnce(ctx, destPath, binary)
+			streamErr := d.execStreamOnce(ctx, destPath, binary, opts.SkipVersionCheck)
 			if streamErr != nil && isTransientDeliveryError(streamErr) &&
 				attempt < execStreamMaxAttempts {
 				log.Warnf(
@@ -227,6 +228,7 @@ func (d *KubernetesDelivery) execStreamOnce(
 	ctx context.Context,
 	destPath string,
 	binary io.Reader,
+	skipVersionCheck bool,
 ) error {
 	tempPath, err := transferTempPath(destPath)
 	if err != nil {
@@ -274,7 +276,11 @@ func (d *KubernetesDelivery) execStreamOnce(
 
 	commitCtx, commitCancel := context.WithTimeout(ctx, d.idleTimeout())
 	defer commitCancel()
-	commitScript := validationCommitScript(tempPath, destPath, d.expectedVersion(), progress.size())
+	expectedVersion := d.expectedVersion()
+	if skipVersionCheck {
+		expectedVersion = ""
+	}
+	commitScript := validationCommitScript(tempPath, destPath, expectedVersion, progress.size())
 	var stderr bytes.Buffer
 	if err := d.Exec(
 		commitCtx,
@@ -334,14 +340,14 @@ actual="$(%s --version 2>/dev/null)" || {
   echo "staged Devsy agent is not executable" >&2
   exit 1
 }
-if [ "$actual" != %s ]; then
+if [ -n %s ] && [ "$actual" != %s ]; then
   rm -f %s
   echo "staged Devsy agent version mismatch" >&2
   exit 1
 fi
 mv -f %s %s`,
 		quotedTemp, expectedSize, quotedTemp, quotedTemp, quotedTemp,
-		quotedTemp, quotedExpected, quotedTemp, quotedTemp, quotedDest,
+		quotedTemp, quotedExpected, quotedExpected, quotedTemp, quotedTemp, quotedDest,
 	)
 }
 

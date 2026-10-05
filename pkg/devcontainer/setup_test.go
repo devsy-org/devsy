@@ -478,6 +478,29 @@ func TestPostStartDeliveryRetainsArchitectureForBinarySource(t *testing.T) {
 	assert.False(t, strategy.called)
 }
 
+func TestPostStartDeliveryCustomAgentVersionPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		binaryPath  string
+		downloadURL string
+		wantSkip    bool
+	}{
+		{name: "release agent"},
+		{name: "empty local override", binaryPath: "  "},
+		{name: "local override", binaryPath: "/custom/devsy", wantSkip: true},
+		{name: "custom download", downloadURL: "http://localhost:8080/", wantSkip: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(pkgconfig.EnvAgentBinary, tc.binaryPath)
+			r := newTestRunner(&architectureDriver{arch: "arm64"})
+			r.agentDownloadURL = tc.downloadURL
+			strategy := &capturePostStartDelivery{usesBinarySource: true}
+			require.NoError(t, r.deliverPostStart(context.Background(), strategy))
+			assert.Equal(t, tc.wantSkip, strategy.opts.SkipVersionCheck)
+		})
+	}
+}
+
 func TestFallbackAgentDeliveryPreservesBothErrors(t *testing.T) {
 	nativeErr := errors.New("exec-stream delivery stalled")
 	legacyErr := errors.New("read ping: EOF")
