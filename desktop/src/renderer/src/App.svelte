@@ -53,6 +53,7 @@ import MachineDetailPage from "./pages/MachineDetailPage.svelte"
 import ContextsPage from "./pages/ContextsPage.svelte"
 import SecretsPage from "./pages/SecretsPage.svelte"
 import EnvPage from "./pages/EnvPage.svelte"
+import VariablesPage from "./pages/VariablesPage.svelte"
 import SettingsPage from "./pages/SettingsPage.svelte"
 import SshKeysPage from "./pages/SshKeysPage.svelte"
 import TerminalsPage from "./pages/TerminalsPage.svelte"
@@ -69,6 +70,7 @@ const routes = {
   "/machines": MachinesPage,
   "/machines/:id": MachineDetailPage,
   "/contexts": ContextsPage,
+  "/variables": VariablesPage,
   "/secrets": SecretsPage,
   "/env": EnvPage,
   "/settings": SettingsPage,
@@ -89,8 +91,8 @@ const NAV_KEYS: Record<string, string> = {
   3: "/providers",
   4: "/machines",
   5: "/contexts",
-  6: "/secrets",
-  7: "/env",
+  6: "/variables?tab=secrets",
+  7: "/variables?tab=env",
   8: "/terminals",
   9: "/ssh-keys",
   0: "/settings",
@@ -138,6 +140,7 @@ function screenName(path: string): string {
     "/machines": "machines",
     "/machines/:id": "machine_detail",
     "/contexts": "contexts",
+    "/variables": "workspace_variables",
     "/secrets": "secrets",
     "/env": "env",
     "/settings": "settings",

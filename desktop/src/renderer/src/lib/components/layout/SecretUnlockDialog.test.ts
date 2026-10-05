@@ -151,7 +151,7 @@ describe("SecretUnlockDialog", () => {
     request("remember-request")
     const input = await screen.findByLabelText("Secrets passphrase")
     await fireEvent.input(input, { target: { value: "private credential" } })
-    await fireEvent.click(screen.getByLabelText("Remember in OS keychain"))
+    await fireEvent.click(screen.getByLabelText("Remember on this device"))
     await fireEvent.click(screen.getByText("Unlock and retry"))
     await fireEvent.click(screen.getByText("Cancel"))
     expect(invoke).toHaveBeenLastCalledWith("secret_unlock_submit", {
@@ -234,7 +234,7 @@ describe("SecretUnlockDialog", () => {
     request("reloaded-request")
     const input = await screen.findByLabelText("Secrets passphrase")
     await fireEvent.input(input, { target: { value: "private credential" } })
-    await fireEvent.click(screen.getByLabelText("Remember in OS keychain"))
+    await fireEvent.click(screen.getByLabelText("Remember on this device"))
     await fireEvent.click(screen.getByText("Unlock and retry"))
     oldPage.unmount()
     notices = [
@@ -308,7 +308,7 @@ describe("SecretUnlockDialog", () => {
     request("timed-out-save")
     const input = await screen.findByLabelText("Secrets passphrase")
     await fireEvent.input(input, { target: { value: "private credential" } })
-    await fireEvent.click(screen.getByLabelText("Remember in OS keychain"))
+    await fireEvent.click(screen.getByLabelText("Remember on this device"))
     await fireEvent.click(screen.getByText("Unlock and retry"))
     notices = [
       {

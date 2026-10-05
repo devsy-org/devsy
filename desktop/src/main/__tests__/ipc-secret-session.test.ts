@@ -81,8 +81,8 @@ function setup(timeoutMs = 5 * 60 * 1000) {
       unlock = handler
     },
     run: vi.fn(async () => ({})),
-    runRaw: vi.fn(async () => ""),
-    runRawStdin: vi.fn(async () => ""),
+    runRaw: vi.fn(async (..._args: unknown[]) => ""),
+    runRawStdin: vi.fn(async (..._args: unknown[]) => ""),
     setSessionPassphrase: vi.fn(),
     hasSessionPassphrase: () => false,
   }
@@ -143,13 +143,231 @@ describe("secret unlock IPC lifecycle", () => {
     expect(cli.run).toHaveBeenCalledOnce()
   })
 
+  it("explicit unlock uses the shared prompt, verifies availability, and never returns credentials", async () => {
+    const { cli, event, requestId } = setup()
+    cli.run.mockResolvedValueOnce({ availability: "available" })
+    const operation = handlers.get("secret_unlock_request")?.(event)
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+      passphrase: "unlock-private",
+    })
+    await expect(operation).resolves.toEqual({ ok: true })
+    expect(cli.run).toHaveBeenCalledExactlyOnceWith(
+      ["secret", "protection", "status"],
+      {
+        env: { DEVSY_SECRETS_PASSPHRASE: "unlock-private" },
+        allowUnlockPrompt: false,
+      },
+    )
+    expect(cli.setSessionPassphrase).toHaveBeenCalledExactlyOnceWith(
+      "unlock-private",
+    )
+  })
+
+  it("explicit unlock refuses unavailable credentials without caching or exposing them", async () => {
+    const { cli, event, requestId } = setup()
+    cli.run.mockResolvedValueOnce({
+      availability: "locked",
+      reasonCode: "unlock_failed",
+    })
+    const operation = handlers.get("secret_unlock_request")?.(event)
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+      passphrase: "unlock-private",
+    })
+    await expect(operation).resolves.toMatchObject({
+      ok: false,
+      cliError: { code: "unlock_failed" },
+    })
+    expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+  })
+
+  it("explicit unlock cannot restore a credential cleared during availability verification", async () => {
+    const { cli, event, requestId } = setup()
+    let finish!: (status: object) => void
+    cli.run.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const operation = handlers.get("secret_unlock_request")?.(event)
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+      passphrase: "unlock-private",
+    })
+    await vi.waitFor(() => expect(cli.run).toHaveBeenCalledOnce())
+    await handlers.get("secret_session_clear")?.(event)
+    finish({ availability: "available" })
+    await expect(operation).resolves.toEqual({
+      ok: false,
+      message: "Secret unlock canceled.",
+    })
+    expect(cli.setSessionPassphrase).toHaveBeenCalledExactlyOnceWith(undefined)
+  })
+
+  it("explicit unlock cancellation skips verification and session changes", async () => {
+    const { cli, event, requestId } = setup()
+    const operation = handlers.get("secret_unlock_request")?.(event)
+    await handlers.get("secret_unlock_submit")?.(event, {
+      requestId: requestId(),
+    })
+    await expect(operation).resolves.toEqual({
+      ok: false,
+      message: "Secret unlock canceled.",
+    })
+    expect(cli.run).not.toHaveBeenCalled()
+    expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+  })
+
+  it.each([null, 123, true, {}, []])(
+    "rejects invalid current passphrase %j before confirmation",
+    async (currentPassphrase) => {
+      const { cli, event } = setup()
+      expect(
+        await handlers.get("secret_protection_action")?.(event, {
+          action: "remove-passphrase",
+          currentPassphrase,
+        }),
+      ).toEqual({ ok: false, message: "Enter a valid current passphrase." })
+      expect(dialog.showMessageBox).not.toHaveBeenCalled()
+      expect(cli.runRaw).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(["set-passphrase", "change-passphrase"])(
+    "%s sends current credential only through env and new credential only through stdin",
+    async (action) => {
+      const { cli, event } = setup()
+      expect(
+        await handlers.get("secret_protection_action")?.(event, {
+          action,
+          currentPassphrase: "old-private",
+          newPassphrase: "new-private",
+        }),
+      ).toEqual({ ok: true })
+      expect(cli.runRawStdin).toHaveBeenCalledExactlyOnceWith(
+        ["secret", "protection", action, "--stdin"],
+        "new-private",
+        {
+          env: { DEVSY_SECRETS_PASSPHRASE: "old-private" },
+          allowUnlockPrompt: false,
+        },
+      )
+      expect(cli.setSessionPassphrase).toHaveBeenCalledExactlyOnceWith(
+        "new-private",
+      )
+    },
+  )
+
+  it.each(["remove-passphrase", "remember", "forget"])(
+    "%s uses explicit credential env and suppresses global unlock",
+    async (action) => {
+      const { cli, event } = setup()
+      expect(
+        await handlers.get("secret_protection_action")?.(event, {
+          action,
+          currentPassphrase: "old-private",
+        }),
+      ).toEqual({ ok: true })
+      expect(cli.runRaw).toHaveBeenCalledExactlyOnceWith(
+        ["secret", "protection", action],
+        {
+          env: { DEVSY_SECRETS_PASSPHRASE: "old-private" },
+          allowUnlockPrompt: false,
+        },
+      )
+      if (action === "remove-passphrase")
+        expect(cli.setSessionPassphrase).toHaveBeenCalledExactlyOnceWith(
+          undefined,
+        )
+      else expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+    },
+  )
+
+  it("preserves structured errors while redacting both credentials and leaving session state alone", async () => {
+    const { cli, event } = setup()
+    cli.runRawStdin.mockRejectedValueOnce(
+      Object.assign(new Error("new-private"), {
+        cliError: {
+          code: "unlock_failed",
+          message: "Unable to unlock old-private",
+          hint: "Do not reuse new-private",
+          context: { "old-private": "new-private" },
+        },
+      }),
+    )
+    const result = await handlers.get("secret_protection_action")?.(event, {
+      action: "change-passphrase",
+      currentPassphrase: "old-private",
+      newPassphrase: "new-private",
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      message: "Unable to unlock ***",
+      cliError: {
+        code: "unlock_failed",
+        hint: "Do not reuse ***",
+        context: { "***": "***" },
+      },
+    })
+    expect(JSON.stringify(result)).not.toContain("old-private")
+    expect(JSON.stringify(result)).not.toContain("new-private")
+    expect(cli.setSessionPassphrase).not.toHaveBeenCalled()
+  })
+
+  it.each(["env_set", "secret_set", "secret_delete"])(
+    "%s routes an explicit row context to the CLI and preserves omitted context",
+    async (channel) => {
+      const { cli, event } = setup()
+      const args = { name: "TOKEN", value: "private", context: "row-context" }
+      const command =
+        channel === "env_set"
+          ? ["env", "set", "TOKEN", "--value", "private"]
+          : channel === "secret_set"
+            ? ["secret", "set", "TOKEN", "--stdin"]
+            : ["secret", "delete", "TOKEN"]
+      expect(await handlers.get(channel)?.(event, args)).toEqual({ ok: true })
+      const run = channel === "secret_set" ? cli.runRawStdin : cli.runRaw
+      expect(run.mock.calls[0][0]).toEqual([
+        "--context",
+        "row-context",
+        ...command,
+      ])
+      expect(
+        await handlers.get(channel)?.(event, {
+          name: "TOKEN",
+          value: "private",
+        }),
+      ).toEqual({ ok: true })
+      expect(run.mock.calls[1][0]).toEqual(command)
+    },
+  )
+
+  it.each(["env_set", "secret_set", "secret_delete"])(
+    "%s rejects an invalid supplied context before CLI execution",
+    async (channel) => {
+      const { cli, event } = setup()
+      for (const context of [null, 23, {}, "", "   "])
+        expect(
+          await handlers.get(channel)?.(event, {
+            name: "TOKEN",
+            value: "private",
+            context,
+          }),
+        ).toMatchObject({ ok: false, message: "A valid context is required." })
+      expect(cli.runRaw).not.toHaveBeenCalled()
+      expect(cli.runRawStdin).not.toHaveBeenCalled()
+    },
+  )
+
   it.each([{}, 123, true, [], undefined, null, "   "])(
     "rejects invalid protection passphrase %j without running the CLI",
     async (passphrase) => {
       const { cli, event } = setup()
       const result = await handlers.get("secret_protection_action")?.(event, {
         action: "change-passphrase",
-        passphrase,
+        newPassphrase: passphrase,
       })
       expect(result).toEqual({
         ok: false,
@@ -177,7 +395,7 @@ describe("secret unlock IPC lifecycle", () => {
       })
       const result = await handlers.get("secret_protection_action")?.(event, {
         action,
-        passphrase: "private",
+        newPassphrase: "private",
       })
       expect(result).toEqual({
         ok: false,
@@ -198,12 +416,13 @@ describe("secret unlock IPC lifecycle", () => {
     expect(
       await handlers.get("secret_protection_action")?.(event, {
         action: "change-passphrase",
-        passphrase: "private",
+        newPassphrase: "private",
       }),
     ).toEqual({ ok: true })
     expect(cli.runRawStdin).toHaveBeenCalledWith(
       ["secret", "protection", "change-passphrase", "--stdin"],
       "private",
+      { allowUnlockPrompt: false },
     )
     expect(cli.setSessionPassphrase).toHaveBeenCalledWith("private")
     expect(
@@ -224,7 +443,7 @@ describe("secret unlock IPC lifecycle", () => {
       )
       const operation = handlers.get("secret_protection_action")?.(event, {
         action,
-        passphrase: "private",
+        newPassphrase: "private",
       })
       await vi.waitFor(() => expect(cli.runRawStdin).toHaveBeenCalledOnce())
       await handlers.get("secret_session_clear")?.(event)
@@ -250,7 +469,7 @@ describe("secret unlock IPC lifecycle", () => {
     )
     const operation = handlers.get("secret_protection_action")?.(event, {
       action: "change-passphrase",
-      passphrase: "private",
+      newPassphrase: "private",
     })
     expect(cli.runRawStdin).not.toHaveBeenCalled()
     await handlers.get("secret_session_clear")?.(event)
@@ -307,7 +526,7 @@ describe("secret unlock IPC lifecycle", () => {
       )
       const operation = handlers.get("secret_protection_action")?.(event, {
         action,
-        passphrase: "private",
+        newPassphrase: "private",
       })
       await vi.waitFor(() => expect(run).toHaveBeenCalledOnce())
       webContents.mainFrame.url = "https://untrusted.example/"
@@ -321,6 +540,7 @@ describe("secret unlock IPC lifecycle", () => {
     const { cli } = setup()
     for (const name of [
       "secret_protection_action",
+      "secret_unlock_request",
       "secret_protection_status",
       "secret_session_clear",
       "secret_unlock_submit",
@@ -337,7 +557,7 @@ describe("secret unlock IPC lifecycle", () => {
       expect(
         await handlers.get(name)?.(
           {},
-          { action: "remove-passphrase", passphrase: "private" },
+          { action: "remove-passphrase", newPassphrase: "private" },
         ),
       ).toEqual({
         ok: false,

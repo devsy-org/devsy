@@ -41,12 +41,18 @@ describe("SettingsPage layout", () => {
     ).toBeNull()
     expect(document.querySelectorAll('a[href^="#"]')).toHaveLength(0)
 
+    expect(
+      screen.getByRole("button", { name: "Manage secret security" }),
+    ).toBeTruthy()
+    expect(document.querySelectorAll('input[type="password"]')).toHaveLength(0)
+
     for (const name of [
       "General",
       "Startup",
       "Notifications",
       "Appearance",
       "Updates",
+      "Secret security",
       "Advanced",
     ]) {
       expect(screen.getByRole("heading", { name, level: 2 })).toBeTruthy()

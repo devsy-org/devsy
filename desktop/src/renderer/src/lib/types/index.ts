@@ -149,6 +149,49 @@ export interface Context {
   options?: Record<string, OptionValue>
 }
 
+export type SecretAvailability =
+  | "available"
+  | "locked"
+  | "missing"
+  | "backend_unavailable"
+  | "unknown"
+
+export interface SecretProtectionFileEntry {
+  name: string
+  context: string
+  backend?: "file"
+}
+
+export interface SecretProtectionStatus {
+  availability: SecretAvailability
+  reasonCode?: string
+  /** Exact Go file-key source values; keyring/file are automatic modes. */
+  keySource: "" | "passphrase" | "keyring" | "file"
+  remembered: boolean
+  rememberedAvailable: boolean
+  fileEntries: SecretProtectionFileEntry[]
+  sessionUnlocked: boolean
+}
+
+export type SecretProtectionAction =
+  | "set-passphrase"
+  | "change-passphrase"
+  | "remove-passphrase"
+  | "remember"
+  | "forget"
+
+export interface SecretProtectionActionInput {
+  action: SecretProtectionAction
+  newPassphrase?: string
+  currentPassphrase?: string
+}
+
+export interface SecretProtectionActionResult {
+  ok: boolean
+  message?: string
+  cliError?: import("$shared/cli-error.js").CLIError
+}
+
 export interface Secret {
   name: string
   context: string
@@ -156,12 +199,7 @@ export interface Secret {
   lastUsed?: string
   orphaned?: boolean
   /** Whether Devsy can currently read this secret's value. */
-  availability?:
-    | "available"
-    | "locked"
-    | "missing"
-    | "backend_unavailable"
-    | "unknown"
+  availability?: SecretAvailability
   backend?: "keyring" | "file"
   attached?: boolean
 }

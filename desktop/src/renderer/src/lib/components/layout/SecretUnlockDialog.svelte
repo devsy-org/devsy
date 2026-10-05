@@ -136,8 +136,8 @@ function cancel() {
     </Dialog.Header>
     <form onsubmit={(event) => { event.preventDefault(); void submit() }} class="space-y-4">
       <Input type="password" aria-label="Secrets passphrase" autocomplete="off" bind:value={passphrase} disabled={busy} />
-      <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={remember} disabled={busy} />Remember in OS keychain</label>
-      <p class="text-xs text-muted-foreground">Once approved, remembering may finish even if you cancel unlocking. Use Forget in Settings to remove the saved credential.</p>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={remember} disabled={busy} />Remember on this device</label>
+      <p class="text-xs text-muted-foreground">Once approved, remembering may finish even if you cancel unlocking. Use Forget this device in Secret security to remove the saved passphrase.</p>
       {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
       <Dialog.Footer>
         <Button type="button" variant="outline" onclick={() => { cancel(); open = false }}>Cancel</Button>

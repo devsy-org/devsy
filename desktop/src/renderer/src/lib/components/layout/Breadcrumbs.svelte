@@ -12,6 +12,7 @@ const LABELS: Record<string, string> = {
   providers: "Providers",
   machines: "Machines",
   contexts: "Contexts",
+  variables: "Workspace Variables",
   secrets: "Secrets",
   env: "Env Vars",
   terminals: "Terminals",

@@ -104,6 +104,103 @@ describe("CliRunner", () => {
     }
   })
 
+  it("prefers an invocation credential over the session without changing either source", async () => {
+    const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+    mock.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) =>
+        callback(null, { stdout: "", stderr: "" }),
+    )
+    cli.setSessionPassphrase("session-private")
+    const env = { DEVSY_SECRETS_PASSPHRASE: "explicit-private" }
+    await cli.runRaw(["secret", "protection", "remove-passphrase"], { env })
+    expect(mock.mock.calls[0][2].env.DEVSY_SECRETS_PASSPHRASE).toBe(
+      "explicit-private",
+    )
+    expect(mock.mock.calls[0][1]).not.toContain("explicit-private")
+    expect(env.DEVSY_SECRETS_PASSPHRASE).toBe("explicit-private")
+    await cli.runRaw(["secret", "list"])
+    expect(mock.mock.calls[1][2].env.DEVSY_SECRETS_PASSPHRASE).toBe(
+      "session-private",
+    )
+  })
+
+  it.each(["run", "runRaw"] as const)(
+    "%s preserves unlock errors without invoking the handler when prompting is disabled",
+    async (method) => {
+      const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+      mock.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) =>
+          callback(
+            Object.assign(new Error("failed"), {
+              stderr: JSON.stringify({
+                kind: "error",
+                outcome: "error",
+                code: "unlock_required",
+                message: "Unlock required",
+              }),
+            }),
+            { stdout: "", stderr: "" },
+          ),
+      )
+      const unlock = vi.fn(async () => "private")
+      cli.setUnlockHandler(unlock)
+      await expect(
+        cli[method](["secret", "protection", "remember"], {
+          allowUnlockPrompt: false,
+        }),
+      ).rejects.toMatchObject({ cliError: { code: "unlock_required" } })
+      expect(mock).toHaveBeenCalledOnce()
+      expect(unlock).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(["unlock_required", "unlock_failed"])(
+    "stdin protection preserves session state on %s and never opens a global prompt",
+    async (code) => {
+      const child = fakeChild()
+      const mockSpawn = vi.mocked(spawn) as unknown as ReturnType<typeof vi.fn>
+      mockSpawn.mockReturnValue(child)
+      const unlock = vi.fn(async () => "private")
+      cli.setUnlockHandler(unlock)
+      cli.setSessionPassphrase("session-private")
+      const operation = cli.runRawStdin(
+        ["secret", "protection", "change-passphrase", "--stdin"],
+        "new-private",
+        {
+          allowUnlockPrompt: false,
+          env: { DEVSY_SECRETS_PASSPHRASE: "old-private" },
+        },
+      )
+      const rejected = expect(operation).rejects.toMatchObject({
+        cliError: {
+          code,
+          message: "Failed *** with ***",
+          hint: "***",
+          context: { "***": "***" },
+        },
+      })
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledOnce())
+      child.stderr.emit(
+        "data",
+        JSON.stringify({
+          kind: "error",
+          outcome: "error",
+          code,
+          message: "Failed old-private with new-private",
+          hint: "old-private",
+          context: { "new-private": "old-private" },
+        }),
+      )
+      child.emit("close", 1)
+      await rejected
+      expect(unlock).not.toHaveBeenCalled()
+      expect(cli.hasSessionPassphrase()).toBe(true)
+      expect(mockSpawn.mock.calls[0][1]).not.toContain("old-private")
+      expect(mockSpawn.mock.calls[0][1]).not.toContain("new-private")
+      expect(child.stdin.written).toBe("new-private")
+    },
+  )
+
   it("prompts on a structured unlock requirement and retries exactly once without leaking credentials", async () => {
     const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
     let attempts = 0

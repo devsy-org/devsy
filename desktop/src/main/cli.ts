@@ -43,6 +43,8 @@ export interface StreamLine {
 export interface CliInvocationOptions {
   env?: NodeJS.ProcessEnv
   stdin?: string
+  /** Explicit credential workflows handle unlock errors in their own dialog. */
+  allowUnlockPrompt?: boolean
   /** Internal retry guard: never repeatedly prompt for one invocation. */
   unlockRetried?: boolean
 }
@@ -285,6 +287,7 @@ export class CliRunner {
     options: CliInvocationOptions,
   ): Promise<boolean> {
     if (
+      options.allowUnlockPrompt === false ||
       !this.commandNeedsSecret(args) ||
       options.unlockRetried ||
       (error as { cliError?: CLIError })?.cliError?.code !==
@@ -636,7 +639,11 @@ export class CliRunner {
         }
       }
       this.release()
-      if (cliError?.code === "unlock_failed") this.sessionPassphrase = undefined
+      if (
+        cliError?.code === "unlock_failed" &&
+        options.allowUnlockPrompt !== false
+      )
+        this.sessionPassphrase = undefined
       if (
         code !== 0 &&
         cliError?.code === "unlock_required" &&
@@ -828,7 +835,11 @@ export class CliRunner {
               : undefined,
           }
         : undefined
-      if (cliError?.code === "unlock_failed") this.sessionPassphrase = undefined
+      if (
+        cliError?.code === "unlock_failed" &&
+        options.allowUnlockPrompt !== false
+      )
+        this.sessionPassphrase = undefined
       const message = cliError
         ? cliError.message
         : this.sanitizeMessage(stderr || error.message)

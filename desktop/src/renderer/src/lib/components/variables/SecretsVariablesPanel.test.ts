@@ -51,7 +51,7 @@ vi.mock("$lib/stores/secrets.js", async () => {
   }
 })
 
-import SecretsPage from "./SecretsPage.svelte"
+import SecretsPage from "$lib/components/variables/SecretsVariablesPanel.svelte"
 
 describe("SecretsPage managed secret attachments", () => {
   beforeEach(() => {
@@ -107,14 +107,70 @@ describe("SecretsPage managed secret attachments", () => {
   it("shows availability states while keeping locked secret metadata usable", () => {
     render(SecretsPage)
 
-    expect(screen.getByRole("status").textContent).toContain(
-      "One secret value is locked",
-    )
+    expect(screen.getByRole("table")).toBeTruthy()
     expect(screen.getByText("Locked")).toBeTruthy()
     expect(screen.getByText("Missing value")).toBeTruthy()
-    expect(screen.getByText("Backend unavailable")).toBeTruthy()
+    expect(screen.getByText("Unavailable")).toBeTruthy()
     expect(
       screen.getByRole("switch", { name: "Inject LOCKED_KEY into workspaces" }),
     ).toBeTruthy()
+  })
+  it("sorts rows by name and searches context", async () => {
+    render(SecretsPage)
+    const names = Array.from(
+      screen.getByRole("table").querySelectorAll("tbody tr"),
+    ).map((row) => row.querySelector("button")?.textContent?.trim())
+    expect(names).toEqual([
+      "ATTACHED",
+      "BACKEND_KEY",
+      "DETACHED",
+      "LOCKED_KEY",
+      "MISSING_KEY",
+      "STAGING_ONLY",
+    ])
+    await fireEvent.input(
+      screen.getByRole("textbox", { name: "Search secrets" }),
+      { target: { value: "staging" } },
+    )
+    expect(screen.getByRole("button", { name: "STAGING_ONLY" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "ATTACHED" })).toBeNull()
+  })
+
+  it("restores the switch after an attachment failure", async () => {
+    mocks.secretAttach.mockRejectedValueOnce(new Error("Failed request"))
+    render(SecretsPage)
+    await fireEvent.click(
+      screen.getByRole("switch", { name: "Inject DETACHED into workspaces" }),
+    )
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Unable to update workspace injection. Try again.",
+      ),
+    )
+    expect(
+      screen
+        .getByRole("switch", { name: "Inject DETACHED into workspaces" })
+        .getAttribute("aria-checked"),
+    ).toBe("false")
+    expect(screen.queryByText("Secret details")).toBeNull()
+  })
+
+  it("deletes the exact row context after explicit confirmation", async () => {
+    render(SecretsPage)
+    const actions = screen.getByRole("button", {
+      name: "Actions for STAGING_ONLY",
+    })
+    await fireEvent.click(actions)
+    const menuItem = await screen.findByRole("menuitem", {
+      name: "Delete",
+    })
+    await fireEvent.click(menuItem)
+    await fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+    await waitFor(() =>
+      expect(mocks.secretDelete).toHaveBeenCalledWith(
+        "STAGING_ONLY",
+        "staging",
+      ),
+    )
   })
 })

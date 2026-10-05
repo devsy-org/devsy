@@ -25,7 +25,7 @@ const CATEGORY_ICONS: Record<string, typeof LayoutDashboard> = {
   Providers: Plug,
   Machines: Server,
   Secrets: Lock,
-  "Env Vars": Braces,
+  "Environment Variables": Braces,
   "SSH Keys": KeyRound,
 }
 
@@ -86,14 +86,14 @@ let allItems = $derived.by(() => {
       label: "Secrets",
       description: "Manage secrets",
       category: "Navigation",
-      href: "/secrets",
+      href: "/variables?tab=secrets",
     },
     {
       id: "nav-env",
-      label: "Env Vars",
+      label: "Environment Variables",
       description: "Manage environment variables",
       category: "Navigation",
-      href: "/env",
+      href: "/variables?tab=env",
     },
     {
       id: "nav-terminals",
@@ -150,21 +150,21 @@ let allItems = $derived.by(() => {
 
   for (const s of $secrets) {
     items.push({
-      id: `secret-${s.name}`,
+      id: `secret-${s.context}-${s.name}`,
       label: s.name,
       description: "Secret",
       category: "Secrets",
-      href: "/secrets",
+      href: "/variables?tab=secrets",
     })
   }
 
   for (const e of $envVars) {
     items.push({
-      id: `env-${e.name}`,
+      id: `env-${e.context}-${e.name}`,
       label: e.name,
       description: "Environment variable",
-      category: "Env Vars",
-      href: "/env",
+      category: "Environment Variables",
+      href: "/variables?tab=env",
     })
   }
 

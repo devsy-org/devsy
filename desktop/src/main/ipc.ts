@@ -17,7 +17,7 @@ import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import type { AppNavigationController } from "./app-navigation.js"
 import { sanitizeAppSettingsPatch } from "./app-settings.js"
-import type { CliRunner, StreamLine } from "./cli.js"
+import type { CliInvocationOptions, CliRunner, StreamLine } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { LogStore } from "./log-store.js"
 import { mainLog } from "./logging.js"
@@ -352,7 +352,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   const secretSession = new SecretSession(deps.secretSessionTimeoutMs)
   // Clearing the session revokes cache updates from protection operations already in flight.
   let secretCacheGeneration = 0
-  cli.setUnlockHandler(async () => {
+  const requestSecretUnlock = async () => {
     const win = getMainWindow()
     return secretSession.request(
       (requestId) => {
@@ -394,7 +394,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           }
         : undefined,
     )
-  })
+  }
+  cli.setUnlockHandler(requestSecretUnlock)
   const secretDocumentURL =
     !app.isPackaged && process.env.ELECTRON_RENDERER_URL
       ? process.env.ELECTRON_RENDERER_URL
@@ -571,6 +572,58 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       credentialSubmissions.delete(requestId)
     }
   })
+  ipcMain.handle("secret_unlock_request", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    const generation = secretCacheGeneration
+    const passphrase = await requestSecretUnlock()
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    if (passphrase === undefined || generation !== secretCacheGeneration)
+      return { ok: false, message: "Secret unlock canceled." }
+    try {
+      const status = await cli.run<{
+        availability: string
+        reasonCode?: string
+      }>(["secret", "protection", "status"], {
+        env: { DEVSY_SECRETS_PASSPHRASE: passphrase },
+        allowUnlockPrompt: false,
+      })
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      if (generation !== secretCacheGeneration)
+        return { ok: false, message: "Secret unlock canceled." }
+      if (status.availability !== "available") {
+        const message = "The secret store could not be unlocked."
+        return {
+          ok: false,
+          message,
+          cliError: {
+            code: (status.reasonCode ?? "unlock_failed").replaceAll(
+              passphrase,
+              "***",
+            ),
+            message,
+          },
+        }
+      }
+      updateProtectedSessionCredential(event, generation, passphrase)
+      return { ok: true }
+    } catch (err) {
+      const error = (err as { cliError?: CLIError } | null)?.cliError
+      const message = "The secret store could not be unlocked."
+      return {
+        ok: false,
+        message,
+        cliError: error
+          ? {
+              code: error.code.replaceAll(passphrase, "***"),
+              message,
+            }
+          : undefined,
+      }
+    }
+  })
   ipcMain.handle("secret_protection_status", async (event) => {
     if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
       return secretRequestDenied
@@ -615,7 +668,14 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "secret_protection_action",
-    async (event, args: { action: string; passphrase?: string }) => {
+    async (
+      event,
+      args: {
+        action: string
+        newPassphrase?: string
+        currentPassphrase?: string
+      },
+    ) => {
       const win = getMainWindow()
       if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
         return secretRequestDenied
@@ -629,7 +689,20 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       if (!args || typeof args !== "object" || !allowed.includes(args.action))
         return { ok: false, message: "Unknown protection action." }
       const action = args.action
-      const passphrase = args.passphrase
+      const { newPassphrase, currentPassphrase } = args
+      if (
+        currentPassphrase !== undefined &&
+        typeof currentPassphrase !== "string"
+      )
+        return { ok: false, message: "Enter a valid current passphrase." }
+      if (newPassphrase !== undefined && typeof newPassphrase !== "string")
+        return { ok: false, message: "Enter a non-empty passphrase." }
+      const options: CliInvocationOptions = {
+        allowUnlockPrompt: false,
+        ...(currentPassphrase !== undefined
+          ? { env: { DEVSY_SECRETS_PASSPHRASE: currentPassphrase } }
+          : {}),
+      }
       const cacheGeneration = secretCacheGeneration
       const changesPassphrase = [
         "set-passphrase",
@@ -638,7 +711,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       try {
         const command = ["secret", "protection", action]
         if (changesPassphrase) {
-          if (typeof passphrase !== "string" || !passphrase.trim())
+          if (typeof newPassphrase !== "string" || !newPassphrase.trim())
             return { ok: false, message: "Enter a non-empty passphrase." }
         }
         const descriptions: Record<string, string> = {
@@ -666,17 +739,44 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           confirmation.response,
         )
         if (approvalFailure) return approvalFailure
-        if (changesPassphrase && typeof passphrase === "string") {
-          await cli.runRawStdin([...command, "--stdin"], passphrase)
-          updateProtectedSessionCredential(event, cacheGeneration, passphrase)
+        if (changesPassphrase && typeof newPassphrase === "string") {
+          await cli.runRawStdin([...command, "--stdin"], newPassphrase, options)
+          updateProtectedSessionCredential(
+            event,
+            cacheGeneration,
+            newPassphrase,
+          )
         } else {
-          await cli.runRaw(command)
+          await cli.runRaw(command, options)
           if (action === "remove-passphrase")
             updateProtectedSessionCredential(event, cacheGeneration, undefined)
         }
         return { ok: true }
       } catch (err) {
-        const cliError = (err as { cliError?: CLIError }).cliError
+        // Preserve structured recovery information without sending credential
+        // material (or arbitrary error properties) back across the IPC boundary.
+        const redact = (value: string) =>
+          [currentPassphrase, newPassphrase].reduce<string>(
+            (text, credential) =>
+              credential ? text.replaceAll(credential, "***") : text,
+            value,
+          )
+        const error = (err as { cliError?: CLIError } | null)?.cliError
+        const cliError = error
+          ? {
+              code: redact(error.code),
+              message: redact(error.message),
+              hint: error.hint ? redact(error.hint) : undefined,
+              context: error.context
+                ? Object.fromEntries(
+                    Object.entries(error.context).map(([key, value]) => [
+                      redact(key),
+                      redact(value),
+                    ]),
+                  )
+                : undefined,
+            }
+          : undefined
         return {
           ok: false,
           message: cliError?.message ?? "Secret protection operation failed.",
@@ -1556,6 +1656,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     await cli.runRaw(["context", "delete", args.name])
   })
 
+  function variableContextArgs(context: string | undefined): string[] {
+    if (context === undefined) return []
+    if (typeof context !== "string" || !context.trim())
+      throw new Error("A valid context is required.")
+    return ["--context", context]
+  }
+
   ipcMain.handle("secret_list", async (event) => {
     if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
       return secretRequestDenied
@@ -1566,13 +1673,19 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   // the IPC boundary (see provider_init above).
   ipcMain.handle(
     "secret_set",
-    async (event, args: { name: string; value: string }) => {
+    async (event, args: { name: string; value: string; context?: string }) => {
       if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
         return secretRequestDenied
       trackEvent("secret_set")
       try {
         await cli.runRawStdin(
-          ["secret", "set", args.name, "--stdin"],
+          [
+            ...variableContextArgs(args.context),
+            "secret",
+            "set",
+            args.name,
+            "--stdin",
+          ],
           args.value,
         )
         return { ok: true } as const
@@ -1584,19 +1697,27 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("secret_delete", async (event, args: { name: string }) => {
-    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
-      return secretRequestDenied
-    trackEvent("secret_delete")
-    try {
-      await cli.runRaw(["secret", "delete", args.name])
-      return { ok: true } as const
-    } catch (err) {
-      const cliError = (err as { cliError?: CLIError }).cliError
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, message, cliError } as const
-    }
-  })
+  ipcMain.handle(
+    "secret_delete",
+    async (event, args: { name: string; context?: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      trackEvent("secret_delete")
+      try {
+        await cli.runRaw([
+          ...variableContextArgs(args.context),
+          "secret",
+          "delete",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
 
   ipcMain.handle(
     "secret_attach",
@@ -1652,10 +1773,17 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   // the IPC boundary (see provider_init above).
   ipcMain.handle(
     "env_set",
-    async (_event, args: { name: string; value: string }) => {
+    async (_event, args: { name: string; value: string; context?: string }) => {
       trackEvent("env_set")
       try {
-        await cli.runRaw(["env", "set", args.name, "--value", args.value])
+        await cli.runRaw([
+          ...variableContextArgs(args.context),
+          "env",
+          "set",
+          args.name,
+          "--value",
+          args.value,
+        ])
         return { ok: true } as const
       } catch (err) {
         const cliError = (err as { cliError?: CLIError }).cliError
