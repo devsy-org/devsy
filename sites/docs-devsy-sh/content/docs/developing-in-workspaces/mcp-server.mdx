@@ -20,7 +20,7 @@ The server registers 11 tools across workspace and provider domains:
 | Tool | Purpose |
 |---|---|
 | `workspace_list` | List all workspaces with provider, IDE, and source. |
-| `workspace_status` | Get detailed status for a workspace. |
+| `workspace_status` | Get saved workspace configuration (not live running state). |
 | `workspace_create` | Create and start a new workspace. |
 | `workspace_start` | Start (or resume) an existing workspace. |
 | `workspace_stop` | Stop a running workspace. |
@@ -53,6 +53,57 @@ The exact format depends on your MCP client, but every client needs the command 
 ```
 
 Check your client's documentation for where this config lives (e.g. `claude_desktop_config.json` for Claude Desktop). Refer to the [MCP specification](https://modelcontextprotocol.io/specification) for transport and tool semantics.
+
+## Install the Devsy Agent Skill
+
+MCP provides the tools to control Devsy. The first-party Agent Skill teaches
+an agent how to select workspaces and providers, execute commands, recover from
+timeouts, and use CLI diagnostics when needed. It is for using Devsy, rather
+than contributing to the Devsy source repository.
+
+After installing Devsy, configure your agent's MCP client to launch
+`devsy mcp serve`, then install the skill:
+
+```sh
+npx skills add devsy-org/devsy --skill devsy
+```
+
+For use across projects, add `-g`. To target a particular agent, use `--agent`:
+
+```sh
+npx skills add devsy-org/devsy --skill devsy -g
+npx skills add devsy-org/devsy --skill devsy --agent codex
+npx skills add devsy-org/devsy --skill devsy --agent claude-code
+```
+
+The Agent Skill and MCP configuration are separate. Installing the skill does
+not install Devsy, configure MCP, or set up a provider. The installer requires
+Node.js/`npx`; Devsy itself does not depend on it. See the
+[skills installer](https://github.com/vercel-labs/skills) for supported clients
+and updates. Follow your agent's instructions for reloading newly installed
+skills or MCP configuration.
+
+### Hand this to your agent
+
+Copy this prompt into the agent you want to use with Devsy:
+
+```text
+Set up the published first-party Devsy skill for this agent so you can operate
+Devsy workspaces for me. Check whether Devsy is installed and supports
+`devsy mcp serve`. Install the devsy skill from devsy-org/devsy for this agent;
+use a project installation unless I ask for global installation. Follow this
+agent's current MCP setup instructions to configure Devsy, preserving existing
+MCP entries. If installation or configuration cannot be completed, tell me
+which prerequisite is missing and the exact next step. Verify the integration
+by listing my Devsy workspaces without creating or changing any. Report what
+was installed/configured and whether the connection worked.
+```
+
+After setup, try: "Create a Devsy workspace for this repository and run its
+tests," or "Stop my example workspace." The skill prefers MCP tools and uses
+the CLI for operations the connected server does not expose. For live running
+state, the current MCP `workspace_status` result is only saved configuration;
+`devsy workspace status <name> --result-format json` probes live state.
 
 ## Security
 

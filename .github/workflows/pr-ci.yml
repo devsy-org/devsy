@@ -43,6 +43,23 @@ jobs:
 
       - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
 
+  agent-skill:
+    name: Agent Skill
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+      - name: Validate skill and installer compatibility
+        run: ./hack/ci/validate-agent-skill.sh
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -1003,6 +1020,7 @@ jobs:
       - changes
       - precommit
       - lint
+      - agent-skill
       - unit-tests
       - licenses
       - build-cli
@@ -1038,6 +1056,7 @@ jobs:
           check_result "changes" "${{ needs.changes.result }}" false || status=1
           check_result "precommit" "${{ needs.precommit.result }}" false || status=1
           check_result "lint" "${{ needs.lint.result }}" false || status=1
+          check_result "agent-skill" "${{ needs.agent-skill.result }}" false || status=1
           check_result "unit-tests" "${{ needs.unit-tests.result }}" true || status=1
           check_result "licenses" "${{ needs.licenses.result }}" true || status=1
           check_result "build-cli" "${{ needs.build-cli.result }}" true || status=1
