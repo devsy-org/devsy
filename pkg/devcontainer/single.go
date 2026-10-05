@@ -138,6 +138,9 @@ func (r *runner) resolveContainer(
 	params *resolveParams,
 	containerDetails *config.ContainerDetails,
 ) (*resolvedContainer, error) {
+	if err := r.applyDriverRecreateRequirement(containerDetails, params); err != nil {
+		return nil, err
+	}
 	options := params.options
 	if containerDetails != nil && !options.Recreate &&
 		r.needsTerminalSecretEnvironmentMigration(containerDetails) {
@@ -425,9 +428,8 @@ func (r *runner) lingerWarning(ctx context.Context) string {
 	return helper.LingerWarning(ctx)
 }
 
-// buildNewContainerConfig builds the image (deleting the existing container
-// first when recreating) and produces the merged devcontainer config from the
-// build's image metadata.
+// buildNewContainerConfig builds the image and merges its metadata. Drivers
+// with runner-managed recreation are torn down after the build succeeds.
 func (r *runner) buildNewContainerConfig(
 	ctx context.Context,
 	p *resolveParams,
@@ -561,6 +563,8 @@ func (r *runner) deleteForRecreate(ctx context.Context) error {
 		}
 		return nil
 
+	case driver.RecreateOnRun:
+		return nil
 	case driver.RecreateStop:
 		if err := r.driver.StopDevContainer(ctx, r.id); err != nil {
 			return fmt.Errorf("stop devcontainer: %w", err)
@@ -856,6 +860,7 @@ func (r *runner) getDockerlessRunOptions(
 		UID:        r.workspaceUID(),
 		Image:      image,
 		User:       containerRootUser,
+		RemoteUser: effectiveRemoteUser(mergedConfig, buildInfo.Dockerless.User),
 		Entrypoint: "/.dockerless/dockerless",
 		Cmd: []string{
 			"start",
@@ -932,6 +937,7 @@ func (r *runner) getRunOptions(
 		Image:          buildInfo.ImageName,
 		ImageBuilt:     buildInfo.BuiltLocally,
 		User:           user,
+		RemoteUser:     effectiveRemoteUser(mergedConfig, user),
 		Entrypoint:     entrypoint,
 		Cmd:            cmd,
 		Env:            mergedConfig.ContainerEnv,
@@ -1096,4 +1102,33 @@ func GetContainerEntrypointAndArgs(
 		cmd = append(cmd, imageDetails.Config.Cmd...)
 	}
 	return shShellPath, cmd
+}
+
+func effectiveRemoteUser(merged *config.MergedDevContainerConfig, containerUser string) string {
+	if merged.RemoteUser != "" {
+		return merged.RemoteUser
+	}
+	if containerUser != "" {
+		return containerUser
+	}
+	return containerRootUser
+}
+
+func (r *runner) applyDriverRecreateRequirement(
+	details *config.ContainerDetails,
+	p *resolveParams,
+) error {
+	if details == nil || p.options.Recreate {
+		return nil
+	}
+	required, reason := driver.DriverRequiresRecreate(r.driver, details)
+	if !required {
+		return nil
+	}
+	if p.parsedConfig.Config.ContainerID != "" {
+		return fmt.Errorf("cannot migrate externally managed container: %s", reason)
+	}
+	log.Infof("recreating workspace because %s", reason)
+	p.options.Recreate = true
+	return nil
 }

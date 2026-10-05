@@ -92,6 +92,8 @@ type RecreateMode string
 const (
 	RecreateDelete RecreateMode = "delete"
 	RecreateStop   RecreateMode = "stop"
+	// RecreateOnRun lets the driver validate final run options before replacing the container.
+	RecreateOnRun RecreateMode = "on-run"
 )
 
 type RecreatePolicyDriver interface {
@@ -170,6 +172,9 @@ type RunOptions struct {
 	// User is the user to run the container as
 	User string `json:"user,omitempty"`
 
+	// RemoteUser is the developer identity for remote tooling and workspace ownership.
+	RemoteUser string `json:"remoteUser,omitempty"`
+
 	// Entrypoint is the entrypoint of the container
 	Entrypoint string `json:"entrypoint,omitempty"`
 
@@ -218,4 +223,16 @@ type RunOptions struct {
 	// ImageBuilt is true if the image was built locally and is not expected to be
 	// pullable from a registry. False for a devcontainer.json "image:" reference.
 	ImageBuilt bool `json:"imageBuilt,omitempty"`
+}
+
+// RecreateRequiredDriver detects incompatible creation-time container contracts.
+type RecreateRequiredDriver interface {
+	RequiresRecreate(details *config.ContainerDetails) (bool, string)
+}
+
+func DriverRequiresRecreate(d Driver, details *config.ContainerDetails) (bool, string) {
+	if migration, ok := d.(RecreateRequiredDriver); ok {
+		return migration.RequiresRecreate(details)
+	}
+	return false, ""
 }

@@ -425,3 +425,105 @@ func TestIsRecoveryContainer(t *testing.T) {
 		t.Error("container with the recovery label must be flagged")
 	}
 }
+
+type migrationMockDriver struct {
+	*provisioningPreflightMockDriver
+	required       bool
+	migrationCalls int
+}
+
+func (d *migrationMockDriver) RequiresRecreate(*config.ContainerDetails) (bool, string) {
+	d.migrationCalls++
+	return d.required, "workspace mount contract changed"
+}
+
+func TestDriverMountContractMigration(t *testing.T) {
+	for _, tt := range []struct {
+		name                                                  string
+		required, explicit, external, wantRecreate, wantError bool
+		calls                                                 int
+	}{
+		{"incompatible", true, false, false, true, false, 1},
+		{"compatible", false, false, false, false, false, 1},
+		{"explicit", true, true, false, true, false, 0},
+		{"external", true, false, true, false, true, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &migrationMockDriver{
+				provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+					mockDriver: &mockDriver{},
+				},
+				required: tt.required,
+			}
+			r := newTestRunner(d)
+			params := recreateResolveParams()
+			params.options.Recreate = tt.explicit
+			if tt.external {
+				params.parsedConfig.Config.ContainerID = testContainerID
+			}
+			err := r.applyDriverRecreateRequirement(runningContainerDetails(), params)
+			if tt.wantError {
+				require.ErrorContains(t, err, "cannot migrate externally managed container")
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.wantRecreate, params.options.Recreate)
+			require.Equal(t, tt.calls, d.migrationCalls)
+			require.False(t, d.stopCalled)
+			require.False(t, d.deleteCalled)
+		})
+	}
+}
+
+func TestAutomaticMigrationPreflightFailurePreservesExisting(t *testing.T) {
+	sentinel := errors.New("unsupported provisioning runtime")
+	d := &migrationMockDriver{
+		provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+			mockDriver:      &mockDriver{},
+			provisioningErr: sentinel,
+		},
+		required: true,
+	}
+	params := recreateResolveParams()
+	params.options.Recreate = false
+	_, err := newTestRunner(
+		d,
+	).resolveContainer(context.Background(), params, runningContainerDetails())
+	require.ErrorIs(t, err, sentinel)
+	require.True(t, d.provisioningCalled)
+	require.True(t, params.options.Recreate)
+	require.False(t, d.stopCalled)
+	require.False(t, d.deleteCalled)
+}
+
+func TestEffectiveRemoteUser(t *testing.T) {
+	for _, tt := range []struct{ remote, container, want string }{
+		{"vscode", containerRootUser, "vscode"}, {"", "node", "node"}, {"", "", containerRootUser},
+	} {
+		cfg := &config.MergedDevContainerConfig{}
+		cfg.RemoteUser = tt.remote
+		require.Equal(t, tt.want, effectiveRemoteUser(cfg, tt.container))
+	}
+}
+
+func TestRunOptionsSeparateDeveloperIdentity(t *testing.T) {
+	r := newTestRunner(&mockDriver{})
+	cfg := &config.MergedDevContainerConfig{}
+	cfg.ContainerUser = containerRootUser
+	cfg.RemoteUser = "vscode"
+	info := &config.BuildInfo{
+		ImageName:     "final-image",
+		ImageMetadata: &config.ImageMetadataConfig{},
+		ImageDetails:  &config.ImageDetails{},
+	}
+	info.ImageDetails.Config.User = "node"
+	options, err := r.getRunOptions(cfg, &config.SubstitutionContext{}, info, false)
+	require.NoError(t, err)
+	require.Equal(t, containerRootUser, options.User)
+	require.Equal(t, "vscode", options.RemoteUser)
+	info.Dockerless = &config.BuildInfoDockerless{User: "node"}
+	options, err = r.getDockerlessRunOptions(cfg, &config.SubstitutionContext{}, info, false)
+	require.NoError(t, err)
+	require.Equal(t, containerRootUser, options.User)
+	require.Equal(t, "vscode", options.RemoteUser)
+}

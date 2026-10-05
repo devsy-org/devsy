@@ -54,6 +54,7 @@ func GetImageForArch(ctx context.Context, image, arch string) (v1.Image, error) 
 	}
 
 	remoteOptions := []remote.Option{
+		remote.WithContext(ctx),
 		remote.WithAuthFromKeychain(keychain),
 		remote.WithPlatform(v1.Platform{Architecture: arch, OS: osLinux}),
 	}

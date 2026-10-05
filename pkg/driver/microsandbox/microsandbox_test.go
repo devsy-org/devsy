@@ -24,6 +24,7 @@ const (
 	testVersion = "0.7.2"
 	oldVersion  = "microsandbox 0.7.1"
 	shPath      = "/bin/sh"
+	callEnsure  = "ensure:x:1"
 	callFind    = "find:" + wsName
 	callRemove  = "remove:" + wsName
 	testBindSrc = "/host/proj"
@@ -66,7 +67,7 @@ func (f *fakeClient) Version(context.Context) (string, error) {
 	return testVersion, nil
 }
 
-func (f *fakeClient) EnsureImage(_ context.Context, image string) error {
+func (f *fakeClient) EnsureImage(_ context.Context, image string, _ bool) error {
 	f.calls = append(f.calls, "ensure:"+image)
 	return f.failEnsure
 }
@@ -180,10 +181,10 @@ func TestRunDevContainerReplacesStaleSandbox(t *testing.T) {
 		t.Fatalf("RunDevContainer: %v", err)
 	}
 	want := []string{
+		callEnsure,
 		callFind,
 		"stop:devsy-ws1",
 		callRemove,
-		"ensure:x:1",
 		"create:devsy-ws1",
 	}
 	if !slices.Equal(f.calls, want) {
@@ -218,7 +219,7 @@ func TestRunDevContainerAcceptsProvisioningRuntimeVersions(t *testing.T) {
 			if err != nil {
 				t.Fatalf("RunDevContainer: %v", err)
 			}
-			want := []string{callFind, "ensure:x:1", "create:" + wsName}
+			want := []string{callEnsure, callFind, "create:" + wsName}
 			if !slices.Equal(f.calls, want) {
 				t.Fatalf("calls = %v, want %v", f.calls, want)
 			}
@@ -293,21 +294,17 @@ func assertProvisioningUnchanged(t *testing.T, f *fakeClient) {
 	}
 }
 
-func TestRunDevContainerContinuesWhenPrePullFails(t *testing.T) {
+func TestRunDevContainerImageFailurePreservesExisting(t *testing.T) {
 	f := newFakeClient()
-	f.failEnsure = errors.New("registry hiccup")
+	f.failEnsure = errors.New("image unavailable")
+	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
 	d := newDriver(f, nil, specDefaults{})
-
-	// Pre-pull failure must not abort the run; create should still be attempted.
-	if err := d.RunDevContainer(
-		context.Background(),
-		wsID,
-		&driver.RunOptions{Image: imgX},
-	); err != nil {
-		t.Fatalf("RunDevContainer should proceed despite pull failure: %v", err)
+	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
+	if err == nil || !strings.Contains(err.Error(), "image unavailable") {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := f.created[wsName]; !ok {
-		t.Error("expected create to run even though pre-pull failed")
+	if !slices.Equal(f.calls, []string{callEnsure}) || !f.info[wsName].Running {
+		t.Fatalf("image failure changed sandbox: %v", f.calls)
 	}
 }
 
@@ -322,7 +319,7 @@ func TestRunImageDevContainerRunsFromParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunImageDevContainer: %v", err)
 	}
-	want := []string{callFind, "ensure:built-local:latest", "create:devsy-ws1"}
+	want := []string{"ensure:built-local:latest", callFind, "create:devsy-ws1"}
 	if !slices.Equal(f.calls, want) {
 		t.Errorf("call order = %v, want %v", f.calls, want)
 	}
@@ -600,7 +597,7 @@ func TestBuildSpecMapsAllMountTypes(t *testing.T) {
 			{Type: driver.MountTypeBind, Source: testBindSrc, Target: "/mnt"},
 			nil,
 		},
-	}, nil)
+	}, nil, nil)
 	want := []volumeMount{
 		{Target: "/data", Volume: "vol1"},
 		{Target: "/scratch", Tmpfs: true},
@@ -620,7 +617,7 @@ func TestBuildSpecMapsWorkspaceMount(t *testing.T) {
 			Source: testBindSrc,
 			Target: testBindDst,
 		},
-	}, nil)
+	}, nil, nil)
 	want := []volumeMount{
 		{
 			Target: testBindDst,
@@ -638,7 +635,7 @@ func TestBuildSpecMapsWorkspaceMount(t *testing.T) {
 
 func TestBuildSpecCarriesIdleTimeout(t *testing.T) {
 	d := newDriver(newFakeClient(), nil, specDefaults{idleTimeout: 90 * time.Second})
-	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil)
+	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil, nil)
 	if spec.IdleTimeout != 90*time.Second {
 		t.Errorf("idle timeout = %s, want 90s", spec.IdleTimeout)
 	}
@@ -650,7 +647,7 @@ func TestBuildSpecCarriesCeilingsAndEgress(t *testing.T) {
 		nil,
 		specDefaults{maxMemory: 4096, maxCPUs: 4, blockEgress: true},
 	)
-	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil)
+	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil, nil)
 	if spec.MaxMemory != 4096 || spec.MaxCPUs != 4 || !spec.BlockEgress {
 		t.Errorf("unexpected spec ceilings/egress: %+v", spec)
 	}
@@ -659,7 +656,7 @@ func TestBuildSpecCarriesCeilingsAndEgress(t *testing.T) {
 func TestBuildSpecUsesHostRequirementsWhenDefaultsUnset(t *testing.T) {
 	d := newDriver(newFakeClient(), nil, specDefaults{})
 	hostReqs := &config.HostRequirements{CPUs: 4, Memory: "8gb", Storage: size32GB}
-	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, hostReqs)
+	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, hostReqs, nil)
 	if spec.CPUs != 4 {
 		t.Errorf("CPUs = %d, want 4", spec.CPUs)
 	}
@@ -678,7 +675,7 @@ func TestBuildSpecPrefersConfiguredDefaultsOverHostRequirements(t *testing.T) {
 		specDefaults{memory: 2048, cpus: 2, rootDiskGB: 16},
 	)
 	hostReqs := &config.HostRequirements{CPUs: 8, Memory: size32GB, Storage: "64gb"}
-	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, hostReqs)
+	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, hostReqs, nil)
 	if spec.CPUs != 2 || spec.Memory != 2048 || spec.RootDiskGB != 16 {
 		t.Errorf("configured defaults should win, got %+v", spec)
 	}
@@ -686,7 +683,7 @@ func TestBuildSpecPrefersConfiguredDefaultsOverHostRequirements(t *testing.T) {
 
 func TestBuildSpecIgnoresNilHostRequirements(t *testing.T) {
 	d := newDriver(newFakeClient(), nil, specDefaults{})
-	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil)
+	spec := d.buildSpec(wsID, &driver.RunOptions{Image: imgX}, nil, nil)
 	if spec.CPUs != 0 || spec.Memory != 0 || spec.RootDiskGB != 0 {
 		t.Errorf("nil hostRequirements with no defaults should leave sizing zero, got %+v", spec)
 	}

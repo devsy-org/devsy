@@ -14,13 +14,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
-type cliClient struct{}
+type cliClient struct{ dockerPath string }
 
 var _ sandboxClient = cliClient{}
 
@@ -50,9 +52,9 @@ func (cliClient) Version(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func (cliClient) EnsureImage(ctx context.Context, imageRef string) error {
-	if dockerImageExists(ctx, imageRef) {
-		return loadFromDocker(ctx, imageRef)
+func (c cliClient) EnsureImage(ctx context.Context, imageRef string, builtLocally bool) error {
+	if builtLocally {
+		return loadFromDocker(ctx, imageRef, c.dockerPath)
 	}
 	// #nosec G204 -- args are a resolved binary path and a validated image ref
 	out, err := exec.CommandContext(ctx, msbBinary(), "pull", imageRef).CombinedOutput()
@@ -89,24 +91,41 @@ func (cliClient) Find(ctx context.Context, sandbox string) (*sandboxInfo, error)
 		}
 		return nil, fmt.Errorf("inspect microsandbox VM %q: %w", sandbox, err)
 	}
+	return parseSandboxInfo(out)
+}
+
+func parseSandboxInfo(out []byte) (*sandboxInfo, error) {
 	type activeConfig struct {
 		Labels map[string]string `json:"labels"`
+		Mounts []inspectedMount  `json:"mounts"`
 	}
 	var raw struct {
-		Name         string       `json:"name"`
-		Status       string       `json:"status"`
-		CreatedAt    string       `json:"created_at"`
-		ActiveConfig activeConfig `json:"active_config"`
+		Name         string        `json:"name"`
+		Status       string        `json:"status"`
+		CreatedAt    string        `json:"created_at"`
+		ActiveConfig *activeConfig `json:"active_config"`
+		Config       *activeConfig `json:"config"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil, fmt.Errorf("parse microsandbox inspect output: %w", err)
+	}
+	current := raw.ActiveConfig
+	if current == nil {
+		current = raw.Config
+	}
+	var labels map[string]string
+	var mounts []config.ContainerMount
+	if current != nil {
+		labels = current.Labels
+		mounts = inspectedMountDetails(current.Mounts)
 	}
 	created, _ := time.Parse(time.RFC3339Nano, raw.CreatedAt)
 	return &sandboxInfo{
 		Name:      raw.Name,
 		Running:   strings.EqualFold(raw.Status, "running"),
 		CreatedAt: created,
-		Labels:    raw.ActiveConfig.Labels,
+		Labels:    labels,
+		Mounts:    mounts,
 	}, nil
 }
 
@@ -290,17 +309,11 @@ func redactArgs(args []string) string {
 	return strings.Join(out, " ")
 }
 
-func dockerImageExists(ctx context.Context, image string) bool {
-	docker, err := exec.LookPath("docker")
-	if err != nil {
-		return false
+func loadFromDocker(ctx context.Context, image, dockerPath string) error {
+	if dockerPath == "" {
+		dockerPath = "docker"
 	}
-	// #nosec G204 -- docker path is resolved and the image ref is validated
-	return exec.CommandContext(ctx, docker, "image", "inspect", image).Run() == nil
-}
-
-func loadFromDocker(ctx context.Context, image string) error {
-	docker, err := exec.LookPath("docker")
+	docker, err := exec.LookPath(dockerPath)
 	if err != nil {
 		return fmt.Errorf("docker not found to load built image %q: %w", image, err)
 	}
@@ -308,22 +321,29 @@ func loadFromDocker(ctx context.Context, image string) error {
 	save := exec.CommandContext(ctx, docker, "save", image)
 	// #nosec G204 -- docker/msb paths are resolved and the image ref is validated
 	load := exec.CommandContext(ctx, msbBinary(), "load", "-t", image)
-	pipe, err := save.StdoutPipe()
+	reader, writer, err := os.Pipe()
 	if err != nil {
 		return fmt.Errorf("pipe docker save: %w", err)
 	}
-	load.Stdin = pipe
+	defer func() { _ = reader.Close() }()
+	defer func() { _ = writer.Close() }()
+	save.Stdout = writer
+	load.Stdin = reader
+	var saveErr strings.Builder
+	save.Stderr = &saveErr
 	var loadErr strings.Builder
 	load.Stderr = &loadErr
 	if err := load.Start(); err != nil {
 		return fmt.Errorf("start msb load: %w", err)
 	}
+	_ = reader.Close()
 	if err := save.Run(); err != nil {
 		// load is still running on the broken pipe; kill and reap it.
 		_ = load.Process.Kill()
 		_ = load.Wait()
-		return fmt.Errorf("docker save %q: %w", image, err)
+		return fmt.Errorf("docker save %q: %s: %w", image, saveErr.String(), err)
 	}
+	_ = writer.Close()
 	if err := load.Wait(); err != nil {
 		return fmt.Errorf("msb load %q: %s: %w", image, loadErr.String(), err)
 	}
@@ -375,4 +395,30 @@ func msbBinary() string {
 		}
 	}
 	return "msb"
+}
+
+type inspectedMount struct {
+	Type  string `json:"type"`
+	Host  string `json:"host"`
+	Guest string `json:"guest"`
+}
+
+func inspectedMountDetails(mounts []inspectedMount) []config.ContainerMount {
+	var details []config.ContainerMount
+	for _, mount := range mounts {
+		var mountType string
+		switch mount.Type {
+		case "Bind":
+			mountType = driver.MountTypeBind
+		case "Tmpfs":
+			mountType = driver.MountTypeTmpfs
+		default:
+			continue
+		}
+		details = append(
+			details,
+			config.ContainerMount{Type: mountType, Source: mount.Host, Destination: mount.Guest},
+		)
+	}
+	return details
 }

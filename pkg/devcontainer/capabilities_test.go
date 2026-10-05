@@ -135,7 +135,9 @@ type recreateDriver struct {
 func (d *recreateDriver) RecreateMode() driver.RecreateMode { return d.mode }
 
 func TestRecreatePolicy(t *testing.T) {
-	for _, mode := range []driver.RecreateMode{driver.RecreateDelete, driver.RecreateStop, "invalid"} {
+	for _, mode := range []driver.RecreateMode{
+		driver.RecreateDelete, driver.RecreateStop, driver.RecreateOnRun, "invalid",
+	} {
 		t.Run(string(mode), func(t *testing.T) {
 			d := &recreateDriver{
 				mode: mode,

@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 )
 
 type sandboxSpec struct {
@@ -38,6 +40,7 @@ type sandboxInfo struct {
 	Running   bool
 	CreatedAt time.Time
 	Labels    map[string]string
+	Mounts    []config.ContainerMount
 }
 
 type execRequest struct {
@@ -55,7 +58,7 @@ type execRequest struct {
 type sandboxClient interface {
 	EnsureInstalled(ctx context.Context) error
 	Version(ctx context.Context) (string, error)
-	EnsureImage(ctx context.Context, image string) error
+	EnsureImage(ctx context.Context, image string, builtLocally bool) error
 	Create(ctx context.Context, name string, spec sandboxSpec) error
 	Find(ctx context.Context, name string) (*sandboxInfo, error)
 	Start(ctx context.Context, name string) error

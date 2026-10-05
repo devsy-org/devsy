@@ -85,9 +85,12 @@ func parseHostPermissions(value string) (hostPermissions, error) {
 	}
 }
 
-func (d *microsandboxDriver) volumeMounts(options *driver.RunOptions) []volumeMount {
+func (d *microsandboxDriver) volumeMounts(
+	options *driver.RunOptions,
+	owner *mountOwner,
+) []volumeMount {
 	var out []volumeMount
-	if m := d.workspaceMount(options.WorkspaceMount); m != nil {
+	if m := d.workspaceMount(options.WorkspaceMount, owner); m != nil {
 		out = append(out, *m)
 	}
 	for _, m := range options.Mounts {
@@ -98,14 +101,21 @@ func (d *microsandboxDriver) volumeMounts(options *driver.RunOptions) []volumeMo
 	return out
 }
 
-func (d *microsandboxDriver) workspaceMount(m *devcontainerconfig.Mount) *volumeMount {
+func (d *microsandboxDriver) workspaceMount(
+	m *devcontainerconfig.Mount,
+	owner *mountOwner,
+) *volumeMount {
 	b := bindMount(m)
 	if b == nil {
 		return nil
 	}
+	if d.workspaceMountPolicy.StatVirtualization == statVirtOff {
+		owner = nil
+	}
 	b.Policy = mountPolicy{
 		StatVirtualization: d.workspaceMountPolicy.StatVirtualization,
 		HostPermissions:    d.workspaceMountPolicy.HostPermissions,
+		Owner:              owner,
 	}
 	return b
 }

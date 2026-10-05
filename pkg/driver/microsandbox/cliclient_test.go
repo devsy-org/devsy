@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/stretchr/testify/require"
 )
 
 func runPrefix() []string {
@@ -227,4 +230,71 @@ func hasFlagValue(args []string, flag, value string) bool {
 		}
 	}
 	return false
+}
+
+func TestInspectStoppedSandboxRetainsMountContract(t *testing.T) {
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	output := fmt.Sprintf(
+		`{"name":"%s","status":"Stopped","active_config":null,"config":{"labels":{"%s":"%s","%s":"root"}}}`,
+		wsName,
+		workspaceMountContractLabel,
+		d.workspaceMountContract(),
+		userLabel,
+	)
+	info, err := parseSandboxInfo([]byte(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	details := toContainerDetails(info)
+	required, _ := d.RequiresRecreate(details)
+	if required {
+		t.Fatal("stopped sandbox lost persisted contract")
+	}
+	if details.Config.User != "root" {
+		t.Fatal("stopped sandbox lost container identity")
+	}
+}
+
+func TestInspectUsesActiveContractWhenConfigHasPendingChanges(t *testing.T) {
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	output := fmt.Sprintf(
+		`{"name":"%s","status":"Running","active_config":{"labels":{"%s":"%s"}},"config":{"labels":{"%s":"pending"}}}`,
+		wsName,
+		workspaceMountContractLabel,
+		d.workspaceMountContract(),
+		workspaceMountContractLabel,
+	)
+	info, err := parseSandboxInfo([]byte(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	required, _ := d.RequiresRecreate(toContainerDetails(info))
+	if required {
+		t.Fatal("pending configuration replaced active mount contract")
+	}
+}
+
+func TestInspectReportsPersistedMounts(t *testing.T) {
+	for _, field := range []string{"config", "active_config"} {
+		t.Run(field, func(t *testing.T) {
+			output := fmt.Sprintf(
+				`{"name":"%s","%s":{"mounts":[`+
+					`{"type":"Bind","host":"/host/project","guest":"/workspaces/project"},`+
+					`{"type":"Tmpfs","guest":"%s"}]}}`,
+				wsName,
+				field,
+				config.SecretsEnvDir,
+			)
+			info, err := parseSandboxInfo([]byte(output))
+			require.NoError(t, err)
+			require.Equal(t, []config.ContainerMount{
+				{
+					Type:        driver.MountTypeBind,
+					Source:      "/host/project",
+					Destination: "/workspaces/project",
+				},
+				{Type: driver.MountTypeTmpfs, Destination: config.SecretsEnvDir},
+			}, toContainerDetails(info).Mounts)
+		})
+	}
 }

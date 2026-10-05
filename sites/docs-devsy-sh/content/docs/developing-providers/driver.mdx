@@ -204,13 +204,30 @@ Available options:
   support; `relaxed` tolerates filesystems without it; `off` exposes literal
   host ownership and modes. `off` cannot be combined with `mirror`.
 
-The workspace mount uses `stat-virt=strict` and `host-perms=mirror` by default,
-while additional bind mounts retain MicroSandbox's safer defaults. Devsy passes
-the resolved devcontainer `containerUser` to the MicroSandbox runtime so files
-created on the host appear as the effective sandbox user in the guest. Devsy
-requires MicroSandbox v0.7.2 or newer when creating or recreating workspaces
-that use workspace ownership synchronization. This provisioning version check
-does not block inspection, logs, stop, or deletion of an existing sandbox.
+The primary workspace bind mount uses `stat-virt=strict` and `host-perms=mirror`
+by default, while additional bind mounts retain MicroSandbox's defaults.
+`containerUser` controls the workload execution user; `remoteUser` controls the
+workspace developer identity, falling back to `containerUser`, the image user,
+and then root. Devsy resolves the developer's numeric UID and primary GID from
+the final image's account files and sets them as the mount's guest-visible
+fallback owner. These IDs apply to host-created entries without per-file guest
+metadata; they do not change host inode ownership. Account resolution does not
+execute image code. An unresolvable user fails provisioning before replacement
+of the existing VM. With `workspaceStatVirtualization: "off"`, Devsy omits the
+owner override.
+
+Devsy-managed workspaces with an incompatible persisted workspace mount contract
+are automatically recreated once on `devsy up`, including workspaces created
+before the contract label existed. Changing either workspace permission policy
+also requires recreation. The host workspace and named volumes persist, but
+changes stored only on the VM's root disk are lost, as with `--recreate`.
+Externally managed containers are never automatically replaced.
+
+Devsy requires MicroSandbox v0.7.2 or newer when creating or recreating workspaces
+that use workspace ownership synchronization. Runtime compatibility, account
+resolution, and final image import are checked before removing an existing VM.
+The provisioning version check does not block inspection, logs, stop, or deletion
+of an existing sandbox.
 Apple Silicon macOS is the canonical supported integration-test host; use
 `relaxed` when a host filesystem cannot provide strict metadata virtualization.
 
