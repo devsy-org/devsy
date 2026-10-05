@@ -29,6 +29,7 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/version"
 )
 
 const (
@@ -215,7 +216,9 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 		opts.Arch = arch
 		opts.PreferInContainerDownload = !mgr.HasLocalOverride(arch)
 		opts.SkipVersionCheck = strings.TrimSpace(os.Getenv(pkgconfig.EnvAgentBinary)) != "" ||
-			opts.DownloadURL != pkgconfig.DefaultAgentDownloadURL()
+			os.Getenv(pkgconfig.EnvAgentURL) != "" ||
+			opts.DownloadURL != pkgconfig.DefaultAgentDownloadURL() ||
+			version.GetVersion() == version.DevVersion
 	}
 	if err := strategy.DeliverPostStart(ctx, opts); err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)

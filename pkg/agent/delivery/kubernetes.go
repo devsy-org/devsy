@@ -81,11 +81,15 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 	destPath := d.destPath()
 
 	// Skip delivery when the in-pod binary already matches.
-	expected := d.expectedVersion()
-	actual := d.detectVersion(ctx, destPath)
-	if !opts.SkipVersionCheck && actual != "" && actual == expected {
-		log.Debugf("remote agent version matches expected version %s, skipping delivery", expected)
-		return nil
+	if !opts.SkipVersionCheck {
+		expected := d.expectedVersion()
+		if actual := d.detectVersion(ctx, destPath); actual != "" && actual == expected {
+			log.Debugf(
+				"remote agent version matches expected version %s, skipping delivery",
+				expected,
+			)
+			return nil
+		}
 	}
 
 	var downloadErr error

@@ -18,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -482,6 +483,7 @@ func TestPostStartDeliveryCustomAgentVersionPolicy(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		binaryPath  string
+		envURL      string
 		downloadURL string
 		wantSkip    bool
 	}{
@@ -489,14 +491,17 @@ func TestPostStartDeliveryCustomAgentVersionPolicy(t *testing.T) {
 		{name: "empty local override", binaryPath: "  "},
 		{name: "local override", binaryPath: "/custom/devsy", wantSkip: true},
 		{name: "custom download", downloadURL: "http://localhost:8080/", wantSkip: true},
+		{name: "environment download override", envURL: "http://localhost:8080", wantSkip: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(pkgconfig.EnvAgentBinary, tc.binaryPath)
+			t.Setenv(pkgconfig.EnvAgentURL, tc.envURL)
 			r := newTestRunner(&architectureDriver{arch: "arm64"})
 			r.agentDownloadURL = tc.downloadURL
 			strategy := &capturePostStartDelivery{usesBinarySource: true}
 			require.NoError(t, r.deliverPostStart(context.Background(), strategy))
-			assert.Equal(t, tc.wantSkip, strategy.opts.SkipVersionCheck)
+			wantSkip := tc.wantSkip || version.GetVersion() == version.DevVersion
+			assert.Equal(t, wantSkip, strategy.opts.SkipVersionCheck)
 		})
 	}
 }
