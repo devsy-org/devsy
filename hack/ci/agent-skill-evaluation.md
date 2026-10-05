@@ -36,8 +36,13 @@ cross-client testing. Public `devsy-org/devsy` installation can only be verified
 against the default branch after publication; before merge, use local-path
 installation for packaging validation.
 
-Validation tooling is pinned in `validate-agent-skill.sh`: Vercel `skills` by
-package version and the Agent Skills reference validator by source commit.
+The helper delegates format and naming validation to the upstream Agent Skills
+`skills-ref validate` command and exercises discovery through actual Vercel
+`skills` installations. Its repository-specific checks require the reference
+files and compare installed copies with the source; it does not implement a
+separate skill schema or parse installer display output. Both tools are pinned
+in `validate-agent-skill.sh`: `skills` by package version and `skills-ref` by
+source commit.
 The helper requires Node.js 22.20+ and Python 3.11+ (set `PYTHON` if the default
 Python is older). It creates temporary virtualenv/install directories, removes
 them on exit, disables installer telemetry, and requires network access to fetch

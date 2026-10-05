@@ -209,18 +209,3 @@ No environment drift between agent runs. Every workspace starts from the same re
 </td>
 </tr>
 </table>
-
-### Use Devsy from AI agents
-
-Install Devsy, configure your agent's MCP client to launch `devsy mcp serve`,
-then install the first-party skill for operating workspaces and providers:
-
-```sh
-npx skills add devsy-org/devsy --skill devsy
-```
-
-Add `-g` for use across projects. Skill installation and MCP setup are separate;
-the skill teaches operating workflows and CLI fallbacks. Ask your agent to
-create a workspace, run tests, or stop an existing workspace. See
-[Agent Control via MCP](https://devsy.sh/docs/developing-in-workspaces/mcp-server)
-for setup and a copyable agent onboarding prompt.
