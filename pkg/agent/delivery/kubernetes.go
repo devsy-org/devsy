@@ -42,18 +42,25 @@ type KubernetesDelivery struct {
 	InstallPath string
 
 	// execStreamIdleTimeout overrides the idle timeout in tests.
-	execStreamIdleTimeout time.Duration
+	execStreamIdleTimeout       time.Duration
+	execStreamCompletionTimeout time.Duration
 }
 
 const (
-	noDownloadToolExitCode   = 127
-	downloadTimeoutSeconds   = 25
-	execStreamIdleTimeout    = 30 * time.Second
-	execStreamMaxAttempts    = 2
-	execStreamCleanupTimeout = 5 * time.Second
+	noDownloadToolExitCode      = 127
+	downloadTimeoutSeconds      = 25
+	execStreamIdleTimeout       = 30 * time.Second
+	execStreamMaxAttempts       = 2
+	execStreamCleanupTimeout    = 5 * time.Second
+	execStreamCompletionTimeout = 2 * time.Minute
 )
 
-var errExecStreamIdleTimeout = errors.New("exec-stream delivery stalled")
+var (
+	errExecStreamIdleTimeout       = errors.New("exec-stream delivery stalled")
+	errExecStreamCompletionTimeout = errors.New(
+		"exec-stream delivery did not complete after source EOF",
+	)
+)
 
 func (d *KubernetesDelivery) Phase() DeliveryPhase {
 	return PhasePostStart
@@ -232,12 +239,13 @@ func (d *KubernetesDelivery) execStreamOnce(
 	monitorDone := make(chan struct{})
 	monitorStop := make(chan struct{})
 	monitor := execStreamProgressMonitor{
-		ctx:         attemptCtx,
-		cancel:      cancel,
-		progress:    progress,
-		idleTimeout: d.idleTimeout(),
-		stop:        monitorStop,
-		done:        monitorDone,
+		ctx:               attemptCtx,
+		cancel:            cancel,
+		progress:          progress,
+		idleTimeout:       d.idleTimeout(),
+		completionTimeout: d.completionTimeout(),
+		stop:              monitorStop,
+		done:              monitorDone,
 	}
 	go monitor.run()
 
@@ -292,6 +300,13 @@ func (d *KubernetesDelivery) idleTimeout() time.Duration {
 		return d.execStreamIdleTimeout
 	}
 	return execStreamIdleTimeout
+}
+
+func (d *KubernetesDelivery) completionTimeout() time.Duration {
+	if d.execStreamCompletionTimeout > 0 {
+		return d.execStreamCompletionTimeout
+	}
+	return execStreamCompletionTimeout
 }
 
 func transferTempPath(destPath string) (string, error) {
@@ -351,6 +366,7 @@ type progressReader struct {
 	lastProgress time.Time
 	bytesRead    int64
 	readErr      error
+	eofAt        time.Time
 }
 
 func newProgressReader(reader io.Reader) *progressReader {
@@ -367,6 +383,9 @@ func (r *progressReader) Read(p []byte) (int, error) {
 	}
 	if err != nil {
 		r.readErr = err
+		if errors.Is(err, io.EOF) && r.eofAt.IsZero() {
+			r.eofAt = time.Now()
+		}
 	}
 	return n, err
 }
@@ -389,19 +408,32 @@ func (r *progressReader) size() int64 {
 	return r.bytesRead
 }
 
-func (r *progressReader) idleFor(now time.Time) time.Duration {
+func (r *progressReader) timeoutError(
+	now time.Time,
+	idleTimeout, completionTimeout time.Duration,
+) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return now.Sub(r.lastProgress)
+	if !r.eofAt.IsZero() {
+		if now.Sub(r.eofAt) >= completionTimeout {
+			return errExecStreamCompletionTimeout
+		}
+		return nil
+	}
+	if now.Sub(r.lastProgress) >= idleTimeout {
+		return errExecStreamIdleTimeout
+	}
+	return nil
 }
 
 type execStreamProgressMonitor struct {
-	ctx         context.Context
-	cancel      context.CancelCauseFunc
-	progress    *progressReader
-	idleTimeout time.Duration
-	stop        <-chan struct{}
-	done        chan<- struct{}
+	ctx               context.Context
+	cancel            context.CancelCauseFunc
+	progress          *progressReader
+	idleTimeout       time.Duration
+	completionTimeout time.Duration
+	stop              <-chan struct{}
+	done              chan<- struct{}
 }
 
 func (m *execStreamProgressMonitor) run() {
@@ -415,8 +447,8 @@ func (m *execStreamProgressMonitor) run() {
 		case <-m.stop:
 			return
 		case now := <-ticker.C:
-			if m.progress.idleFor(now) >= m.idleTimeout {
-				m.cancel(errExecStreamIdleTimeout)
+			if err := m.progress.timeoutError(now, m.idleTimeout, m.completionTimeout); err != nil {
+				m.cancel(err)
 				return
 			}
 		}
@@ -433,7 +465,7 @@ func isTransientDeliveryError(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
-	if errors.Is(err, errExecStreamIdleTimeout) {
+	if errors.Is(err, errExecStreamIdleTimeout) || errors.Is(err, errExecStreamCompletionTimeout) {
 		return true
 	}
 	if _, ok := errors.AsType[net.Error](err); ok {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -112,7 +113,7 @@ func TestKubernetesDelivery_DeliverPostStart_WritesBinary(t *testing.T) {
 	assert.Contains(t, writeScript, ".devsy-transfer-")
 	assert.NotContains(t, writeScript, "chmod 0755")
 	assert.NotContains(t, writeScript, "mv -f")
-	assert.Contains(t, writeScript, filepath.Dir(destPath))
+	assert.Contains(t, writeScript, path.Dir(destPath))
 	assert.Equal(t, binaryData, exec.calls[1].stdin)
 	commitScript := strings.Join(exec.calls[2].argv, " ")
 	assert.Contains(t, commitScript, "--version")
@@ -450,7 +451,7 @@ func TestKubernetesDelivery_DeliverPostStart_UsesInstallPathOverride(t *testing.
 	probeScript := strings.Join(exec.calls[0].argv, " ")
 	assert.Contains(t, probeScript, installPath)
 	writeScript := strings.Join(exec.calls[1].argv, " ")
-	assert.Contains(t, writeScript, filepath.Dir(installPath))
+	assert.Contains(t, writeScript, path.Dir(installPath))
 	assert.NotContains(t, writeScript, pkgconfig.ContainerDevsyHelperLocation)
 	assert.Contains(t, strings.Join(exec.calls[2].argv, " "), installPath)
 }
@@ -632,4 +633,96 @@ func TestKubernetesDelivery_CancelledContextDoesNotAcquireBinary(t *testing.T) {
 		},
 	})
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestProgressReaderTimeoutBoundaries(t *testing.T) {
+	now := time.Unix(1000, 0)
+	idleTimeout := time.Second
+	completionTimeout := time.Minute
+	for _, tc := range []struct {
+		name         string
+		lastProgress time.Time
+		eofAt        time.Time
+		want         error
+	}{
+		{name: "active source", lastProgress: now.Add(-idleTimeout / 2)},
+		{name: "idle source", lastProgress: now.Add(-idleTimeout), want: errExecStreamIdleTimeout},
+		{name: "draining after EOF", lastProgress: now.Add(-completionTimeout), eofAt: now.Add(-2 * idleTimeout)},
+		{name: "completion deadline", eofAt: now.Add(-completionTimeout), want: errExecStreamCompletionTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := &progressReader{lastProgress: tc.lastProgress, eofAt: tc.eofAt}
+			err := reader.timeoutError(now, idleTimeout, completionTimeout)
+			if tc.want == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestKubernetesDelivery_SlowCompletionAfterEOFSucceeds(t *testing.T) {
+	calls := 0
+	d := &KubernetesDelivery{
+		ExpectedVersion:             testVersion,
+		execStreamIdleTimeout:       20 * time.Millisecond,
+		execStreamCompletionTimeout: time.Second,
+	}
+	d.Exec = func(ctx context.Context, _ []string, streams driver.Streams) error {
+		calls++
+		if streams.Stdin == nil {
+			return nil
+		}
+		_, err := io.Copy(io.Discard, streams.Stdin)
+		if err != nil {
+			return err
+		}
+		timer := time.NewTimer(3 * d.idleTimeout())
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+			return nil
+		}
+	}
+	err := d.execStreamOnce(
+		context.Background(),
+		"/usr/local/bin/devsy",
+		strings.NewReader("binary"),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls, "stage completion must be followed by validation and promotion")
+}
+
+func TestKubernetesDelivery_StalledCompletionAfterEOFCancels(t *testing.T) {
+	var calls []recordedCall
+	d := &KubernetesDelivery{
+		ExpectedVersion:             testVersion,
+		execStreamIdleTimeout:       10 * time.Millisecond,
+		execStreamCompletionTimeout: 30 * time.Millisecond,
+	}
+	d.Exec = func(ctx context.Context, argv []string, streams driver.Streams) error {
+		calls = append(calls, recordedCall{argv: argv})
+		if streams.Stdin == nil {
+			return nil
+		}
+		_, err := io.Copy(io.Discard, streams.Stdin)
+		if err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	err := d.execStreamOnce(
+		context.Background(),
+		"/usr/local/bin/devsy",
+		strings.NewReader("binary"),
+	)
+	require.ErrorIs(t, err, errExecStreamCompletionTimeout)
+	assert.True(t, isTransientDeliveryError(err))
+	require.Len(t, calls, 2, "stage and cleanup only")
+	assert.NotContains(t, strings.Join(calls[0].argv, " "), "mv -f")
+	assert.Contains(t, strings.Join(calls[1].argv, " "), "rm -f")
 }
