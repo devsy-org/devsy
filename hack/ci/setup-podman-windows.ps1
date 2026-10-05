@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$initTimeout = [TimeSpan]::FromSeconds(90)
+$initTimeout = [TimeSpan]::FromSeconds(150)
 $startTimeout = [TimeSpan]::FromSeconds(90)
 $readinessTimeout = [TimeSpan]::FromSeconds(45)
 $probeTimeout = [TimeSpan]::FromSeconds(7)
@@ -149,12 +149,19 @@ function Write-MachineDiagnostics {
 function Start-MachineAttempt {
     param([int]$Attempt, [hashtable]$Budget)
 
+    $initReserve = $diagnosticReserve
+    if ($Attempt -eq 1) { $initReserve += $minimumRecoveryTime }
+    $initRemaining = Get-BudgetRemaining $Budget $initReserve
+    if ($initRemaining.TotalMilliseconds -le 0) {
+        return "PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT attempt=$Attempt output=PODMAN_WINDOWS_BOOTSTRAP_BUDGET_EXHAUSTED: insufficient initialization budget"
+    }
+    $effectiveInitTimeout = if ($initRemaining -lt $initTimeout) { $initRemaining } else { $initTimeout }
     foreach ($entry in @(
-        @{ Args = @('machine', 'init'); Timeout = $initTimeout },
-        @{ Args = @('machine', 'set', '--rootful'); Timeout = [TimeSpan]::FromSeconds(20) }
+        @{ Args = @('machine', 'init'); Timeout = $effectiveInitTimeout; Reserve = $initReserve },
+        @{ Args = @('machine', 'set', '--rootful'); Timeout = [TimeSpan]::FromSeconds(20); Reserve = $diagnosticReserve }
     )) {
         $machineArgs = $entry.Args
-        $result = Invoke-BudgetedCommand $Budget $PodmanPath $machineArgs $entry.Timeout $diagnosticReserve
+        $result = Invoke-BudgetedCommand $Budget $PodmanPath $machineArgs $entry.Timeout $entry.Reserve
         if ($machineArgs[1] -eq 'init' -and $result.TimedOut) {
             return "PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT attempt=$Attempt output=$($result.Output)"
         }
@@ -190,6 +197,12 @@ function Start-MachineAttempt {
         if ($sleepMilliseconds -gt 0) { Start-Sleep -Milliseconds ([int]$sleepMilliseconds) }
     } while ($true)
     return "PODMAN_WINDOWS_READINESS_TIMEOUT attempt=$Attempt last=$($result.Output)"
+}
+
+function Test-MachineAbsentResult {
+    param([hashtable]$Result)
+
+    return (-not $Result.TimedOut -and $Result.ExitCode -ne 0 -and $Result.Output -match '^\s*(?:Error:\s*)?podman-machine-default: VM does not exist\s*$')
 }
 
 function Remove-StalePodmanDistribution {
@@ -243,7 +256,8 @@ function Invoke-PodmanBootstrap {
         )) {
             $result = Invoke-BudgetedCommand $Budget $entry.Path $entry.Args ([TimeSpan]::FromSeconds(10)) $diagnosticReserve
             Write-Host "[podman-windows] reset $($entry.Path) $($entry.Args -join ' '): exit=$($result.ExitCode) timeout=$($result.TimedOut) $($result.Output)"
-            if ($result.TimedOut -or $result.ExitCode -ne 0) { $recoveryFailed = $true }
+            $machineAbsent = $entry.Path -eq $PodmanPath -and (Test-MachineAbsentResult $result)
+            if (($result.TimedOut -or $result.ExitCode -ne 0) -and -not $machineAbsent) { $recoveryFailed = $true }
         }
         if (-not (Remove-StalePodmanDistribution $Budget)) { $recoveryFailed = $true }
         if ($recoveryFailed) {

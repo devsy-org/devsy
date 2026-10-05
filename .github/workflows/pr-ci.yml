@@ -32,6 +32,7 @@ jobs:
               - 'e2e/**'
               - '.github/workflows/pr-ci.yml'
               - 'hack/licenses/**'
+              - 'hack/ci/setup-podman-windows*.ps1'
               - 'THIRD_PARTY_LICENSES.md'
 
   precommit:
