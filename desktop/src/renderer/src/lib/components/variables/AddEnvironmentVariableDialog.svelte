@@ -30,6 +30,7 @@ $effect(() => {
     inject = false
     error = ""
     saved = false
+    context = ""
   } else if (!wasOpen) {
     context = $activeContext
     initiatingControl =
@@ -37,10 +38,17 @@ $effect(() => {
         ? document.activeElement
         : null
   }
+  if (open && !context && $activeContext) context = $activeContext
   wasOpen = open
 })
 async function save() {
-  if (!valid || duplicate || saving || saved) return
+  if (!valid || saving || saved) return
+  if (!context) {
+    error =
+      "No active context is available yet. Wait for contexts to load and try again."
+    return
+  }
+  if (duplicate) return
   const target = name.trim()
   const targetContext = context
   const targetValue = value

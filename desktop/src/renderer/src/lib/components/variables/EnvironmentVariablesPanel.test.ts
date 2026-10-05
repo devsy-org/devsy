@@ -256,6 +256,39 @@ describe("environment table value workflows", () => {
       mocks.envSet.mock.invocationCallOrder[0],
     )
   })
+  it("adopts a late-loaded context once and keeps it for creation and attachment", async () => {
+    activeContext.set("")
+    envVars.set([])
+    render(AddDialog, { open: true })
+    await fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "LATE" },
+    })
+    activeContext.set("staging")
+    await fireEvent.click(
+      screen.getByRole("switch", { name: "Inject into workspaces" }),
+    )
+    activeContext.set("production")
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() =>
+      expect(mocks.envSet).toHaveBeenCalledWith("LATE", "", "staging"),
+    )
+    expect(mocks.envAttach).toHaveBeenCalledWith("LATE", "staging")
+  })
+  it("rejects creation while the active context is still missing", async () => {
+    activeContext.set("")
+    envVars.set([])
+    render(AddDialog, { open: true })
+    await fireEvent.input(screen.getByLabelText("Name"), {
+      target: { value: "WAITING" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    expect(screen.getByRole("alert").textContent).toContain(
+      "No active context is available yet",
+    )
+    expect(mocks.envList).not.toHaveBeenCalled()
+    expect(mocks.envSet).not.toHaveBeenCalled()
+    expect(mocks.envAttach).not.toHaveBeenCalled()
+  })
   it("reports saved variable with failed attachment and prevents duplicate resubmit", async () => {
     mocks.envAttach.mockRejectedValueOnce(new Error("offline"))
     render(AddDialog, { open: true })
