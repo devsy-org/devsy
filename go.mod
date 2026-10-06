@@ -23,6 +23,7 @@ require (
 	github.com/devsy-org/agentapi v1.0.1
 	github.com/devsy-org/api v1.1.0
 	github.com/devsy-org/apiserver v1.5.4
+	github.com/devsy-org/devsy-runtime-sdk v1.2.0
 	github.com/devsy-org/ssh v1.2.9
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.8.0+incompatible
@@ -43,6 +44,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
+	github.com/hashicorp/go-hclog v1.6.3
+	github.com/hashicorp/go-plugin v1.8.0
 	github.com/joho/godotenv v1.5.1
 	github.com/moby/buildkit v0.33.0
 	github.com/moby/patternmatcher v0.6.1
@@ -322,6 +325,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
 	github.com/hashicorp/vault/api v1.23.0 // indirect
+	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/hdevalence/ed25519consensus v0.2.0 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.207 // indirect
@@ -398,6 +402,7 @@ require (
 	github.com/multiformats/go-multihash v0.2.3 // indirect
 	github.com/multiformats/go-varint v0.0.7 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/oklog/run v1.1.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect

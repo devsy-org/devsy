@@ -15,6 +15,7 @@ func NewInternalCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Hidden: true,
 	}
 	cmd.AddCommand(NewAgentCmd(globalFlags))
+	cmd.AddCommand(NewRuntimeSupervisorCmd())
 	cmd.AddCommand(NewDaemonLocalCmd(globalFlags))
 	cmd.AddCommand(NewLogsDaemonCmd(globalFlags))
 	cmd.AddCommand(NewRunUserCommandsCmd(globalFlags))

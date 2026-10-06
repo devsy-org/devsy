@@ -57,6 +57,31 @@ not an image-building capability in the runtime plugin.
 
 For the protocol and SDK contract, see [Runtime Protocol v1](./runtime-protocol.mdx).
 
+### Host adapter progress
+
+The internal host now negotiates Runtime Protocol v1 Info and performs preflight,
+Find, TargetArchitecture, RunImage, Start, Stop, and Delete calls. Each operation
+uses a fresh plugin process owned by the SDK supervisor, exposed through a
+hidden helper in the running Devsy executable. Cancellation also covers startup
+and terminates the leased process tree. This is a prerequisite implementation;
+Exec, Logs, and workspace driver registration remain separate stages.
+
+The host inherits its environment for compatibility with proxy, certificate,
+HOME/XDG, Docker, and runtime CLI settings. Provider environment overrides and
+the verified runtime binary key are forwarded; plugin transport metadata keeps
+precedence. Arguments are passed literally without shell expansion, and
+text diagnostics are redacted before logging.
+
+Before every operation the host rechecks the prepared runtime's checksum and
+permissions. Relative declarations also reject symlink targets outside their
+binary directory; explicit absolute declarations retain their documented
+behavior. These checks do not provide a filesystem sandbox or atomic
+verification-to-execution guarantee. The runtime and its directories must be
+trusted. Unix command descendants must remain in the supervised process group
+and retain signalable privileges; detached or elevated services need their own
+owner. Real-runtime compatibility and startup measurements against a complete
+workspace launch remain gates before runtime cutover or session reuse.
+
 ## Docker Driver
 
 The Docker driver is the default driver that Devsy uses to deploy the workspace container.

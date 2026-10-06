@@ -1,2 +1,3 @@
 {"name":"github.com/grpc-ecosystem/go-grpc-middleware/v2","licenceFile":"LICENSE","licenceType":"Apache-2.0"}
 {"name":"github.com/segmentio/asm","licenceFile":"LICENSE","licenceType":"MIT-0"}
+{"name":"github.com/devsy-org/devsy-runtime-sdk","licenceType":"MPL-2.0"}
