@@ -22,7 +22,7 @@ import (
 const startupTimeout = 15 * time.Second
 
 // Host opens an owned plugin session per operation. It is not yet registered
-// as a workspace driver; Exec and Logs are added in the next integration stage.
+// as a workspace driver; factory integration is a separate stage.
 type Host struct {
 	config           provider.ProviderAgentConfig
 	binariesDir      string

@@ -64,7 +64,19 @@ Find, TargetArchitecture, RunImage, Start, Stop, and Delete calls. Each operatio
 uses a fresh plugin process owned by the SDK supervisor, exposed through a
 hidden helper in the running Devsy executable. Cancellation also covers startup
 and terminates the leased process tree. This is a prerequisite implementation;
-Exec, Logs, and workspace driver registration remain separate stages.
+workspace driver registration and image-backend integration remain a separate stage.
+
+The host also supports binary-safe Exec with separate stdout/stderr, literal argv,
+stdin closure, and terminal exit status. Shell commands use `/bin/sh -c`; text
+stdout and stderr are redacted, while `RawStdout` and argv execution preserve raw
+stdout for protocol consumers. Logs capability is checked before launch and its
+merged binary stream is written to stdout.
+
+Once Exec streaming starts, the host closes closable stdin on completion or
+cancellation. Blocking input must unblock when closed or when the caller context
+is canceled, and output writers must return from writes. Go cannot interrupt an
+arbitrary blocking reader or writer. The host joins the input pump and reaps the
+owned plugin session before returning.
 
 The host inherits its environment for compatibility with proxy, certificate,
 HOME/XDG, Docker, and runtime CLI settings. Provider environment overrides and
