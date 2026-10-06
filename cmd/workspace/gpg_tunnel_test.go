@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/devsy-org/devsy/pkg/port"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -70,6 +73,85 @@ func TestGPGTunnelEnsureForwardBoundKeepsActiveForward(t *testing.T) {
 	}
 	if starts != 0 {
 		t.Fatalf("startForward calls = %d, want 0", starts)
+	}
+}
+
+func TestGPGTunnelRebindsWhenManagedReverseForwardExits(t *testing.T) {
+	ctx := context.Background()
+	var listeners []net.Listener
+	starts := 0
+	tunnel := &gpgTunnel{cmd: &SSHCmd{}}
+	tunnel.startForward = func(
+		ctx context.Context,
+		client *ssh.Client,
+		_ []string,
+	) (*managedReverseForward, error) {
+		forward, listener, err := startTestManagedReverseForward(ctx, client)
+		if err != nil {
+			return nil, err
+		}
+		listeners = append(listeners, listener)
+		starts++
+		return forward, nil
+	}
+	t.Cleanup(tunnel.stopForward)
+
+	if err := tunnel.ensureForwardBound(ctx, nil, "/host/gpg-agent.sock"); err != nil {
+		t.Fatalf("initial ensureForwardBound() error = %v", err)
+	}
+	if err := listeners[0].Close(); err != nil {
+		t.Fatalf("close first listener: %v", err)
+	}
+	waitForManagedReverseForward(t, tunnel.forward)
+	if err := tunnel.ensureForwardBound(ctx, nil, "/host/gpg-agent.sock"); err != nil {
+		t.Fatalf("replacement ensureForwardBound() error = %v", err)
+	}
+	if starts != 2 {
+		t.Fatalf("startForward calls = %d, want 2", starts)
+	}
+}
+
+func startTestManagedReverseForward(
+	ctx context.Context,
+	client *ssh.Client,
+) (*managedReverseForward, net.Listener, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, nil, err
+	}
+	forwardCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go runManagedReverseForward(managedReverseForwardRun{
+		ctx:    forwardCtx,
+		cancel: cancel,
+		client: client,
+		forward: boundReverseForward{
+			portMapping: "gpg socket",
+			mapping: port.Mapping{
+				Host:      port.Address{Protocol: "tcp", Address: listener.Addr().String()},
+				Container: port.Address{Protocol: "tcp", Address: "127.0.0.1:1"},
+			},
+			listener: listener,
+		},
+		doneChan: done,
+	})
+	return &managedReverseForward{cancel: cancel, done: done}, listener, nil
+}
+
+func waitForManagedReverseForward(t *testing.T, forward *managedReverseForward) {
+	t.Helper()
+	select {
+	case <-forward.done:
+	case <-time.After(time.Second):
+		t.Fatal("managed forward did not report listener exit")
+	}
+	select {
+	case _, ok := <-forward.done:
+		if ok {
+			t.Fatal("managed forward reported more than one result")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("managed forward did not close its completion channel")
 	}
 }
 
