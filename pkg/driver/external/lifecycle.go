@@ -9,7 +9,6 @@ import (
 	"github.com/devsy-org/devsy-runtime-sdk/runtimev1"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -42,7 +41,8 @@ func (h *Host) FindDevContainer(
 		return nil, errors.New("workspace ID is required")
 	}
 	var container *config.ContainerDetails
-	err := h.call(ctx, "Find", func(client runtimev1.RuntimeDriverClient) error {
+	operation := h.forWorkspace(workspaceID, nil)
+	err := operation.call(ctx, "Find", func(client runtimev1.RuntimeDriverClient) error {
 		response, err := client.Find(ctx, &runtimev1.FindRequest{WorkspaceId: workspaceID})
 		if err != nil {
 			return err
@@ -55,7 +55,7 @@ func (h *Host) FindDevContainer(
 		}
 		container, err = convertContainer(response.Container)
 		if container != nil {
-			container.State.Error = h.redactor.Redact(container.State.Error)
+			container.State.Error = operation.redactor.Redact(container.State.Error)
 		}
 		return err
 	})
@@ -67,20 +67,21 @@ func (h *Host) TargetArchitecture(ctx context.Context, workspaceID string) (stri
 		return "", errors.New("workspace ID is required")
 	}
 	var architecture string
-	err := h.call(ctx, "TargetArchitecture", func(client runtimev1.RuntimeDriverClient) error {
-		response, err := client.TargetArchitecture(
-			ctx,
-			&runtimev1.TargetArchitectureRequest{WorkspaceId: workspaceID},
-		)
-		if err != nil {
-			return err
-		}
-		architecture = response.GetArchitecture()
-		if architecture != "amd64" && architecture != "arm64" {
-			return fmt.Errorf("invalid runtime target architecture %q", architecture)
-		}
-		return nil
-	})
+	err := h.forWorkspace(workspaceID, nil).
+		call(ctx, "TargetArchitecture", func(client runtimev1.RuntimeDriverClient) error {
+			response, err := client.TargetArchitecture(
+				ctx,
+				&runtimev1.TargetArchitectureRequest{WorkspaceId: workspaceID},
+			)
+			if err != nil {
+				return err
+			}
+			architecture = response.GetArchitecture()
+			if architecture != "amd64" && architecture != "arm64" {
+				return fmt.Errorf("invalid runtime target architecture %q", architecture)
+			}
+			return nil
+		})
 	return architecture, err
 }
 
@@ -89,12 +90,7 @@ func (h *Host) RunImage(ctx context.Context, request *runtimev1.RunImageRequest)
 	if err := h.validateRunImage(request); err != nil {
 		return err
 	}
-	operation := *h
-	environment := make([]string, 0, len(request.Environment))
-	for key, value := range request.Environment {
-		environment = append(environment, key+"="+value)
-	}
-	operation.redactor = secrets.Combine(h.redactor, secrets.NewRedactor(environment))
+	operation := h.forWorkspace(request.WorkspaceId, request.Environment)
 	return operation.call(ctx, "RunImage", func(client runtimev1.RuntimeDriverClient) error {
 		_, err := client.RunImage(ctx, request)
 		return err
@@ -124,33 +120,36 @@ func (h *Host) StartDevContainer(ctx context.Context, workspaceID string) error 
 	if workspaceID == "" {
 		return errors.New("workspace ID is required")
 	}
-	return h.call(ctx, "Start", func(client runtimev1.RuntimeDriverClient) error {
-		_, err := client.Start(ctx, &runtimev1.StartRequest{WorkspaceId: workspaceID})
-		return err
-	})
+	return h.forWorkspace(workspaceID, nil).
+		call(ctx, "Start", func(client runtimev1.RuntimeDriverClient) error {
+			_, err := client.Start(ctx, &runtimev1.StartRequest{WorkspaceId: workspaceID})
+			return err
+		})
 }
 
 func (h *Host) StopDevContainer(ctx context.Context, workspaceID string) error {
 	if workspaceID == "" {
 		return errors.New("workspace ID is required")
 	}
-	return h.call(ctx, "Stop", func(client runtimev1.RuntimeDriverClient) error {
-		_, err := client.Stop(ctx, &runtimev1.StopRequest{WorkspaceId: workspaceID})
-		return err
-	})
+	return h.forWorkspace(workspaceID, nil).
+		call(ctx, "Stop", func(client runtimev1.RuntimeDriverClient) error {
+			_, err := client.Stop(ctx, &runtimev1.StopRequest{WorkspaceId: workspaceID})
+			return err
+		})
 }
 
 func (h *Host) DeleteDevContainer(ctx context.Context, workspaceID string) error {
 	if workspaceID == "" {
 		return errors.New("workspace ID is required")
 	}
-	return h.call(ctx, "Delete", func(client runtimev1.RuntimeDriverClient) error {
-		_, err := client.Delete(ctx, &runtimev1.DeleteRequest{WorkspaceId: workspaceID})
-		if status.Code(err) == codes.NotFound {
-			return nil
-		}
-		return err
-	})
+	return h.forWorkspace(workspaceID, nil).
+		call(ctx, "Delete", func(client runtimev1.RuntimeDriverClient) error {
+			_, err := client.Delete(ctx, &runtimev1.DeleteRequest{WorkspaceId: workspaceID})
+			if status.Code(err) == codes.NotFound {
+				return nil
+			}
+			return err
+		})
 }
 
 func convertContainer(source *runtimev1.ContainerDetails) (*config.ContainerDetails, error) {

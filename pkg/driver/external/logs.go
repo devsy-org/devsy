@@ -32,13 +32,14 @@ func (h *Host) GetDevContainerLogs(
 	if stdout == nil {
 		stdout = io.Discard
 	}
-	return h.call(ctx, "Logs", func(client runtimev1.RuntimeDriverClient) error {
-		stream, err := client.Logs(ctx, &runtimev1.LogsRequest{WorkspaceId: workspaceID})
-		if err != nil {
-			return err
-		}
-		return receiveLogs(stream, stdout)
-	})
+	return h.forWorkspace(workspaceID, nil).
+		call(ctx, "Logs", func(client runtimev1.RuntimeDriverClient) error {
+			stream, err := client.Logs(ctx, &runtimev1.LogsRequest{WorkspaceId: workspaceID})
+			if err != nil {
+				return err
+			}
+			return receiveLogs(stream, stdout)
+		})
 }
 
 func receiveLogs(stream runtimev1.RuntimeDriver_LogsClient, stdout io.Writer) error {

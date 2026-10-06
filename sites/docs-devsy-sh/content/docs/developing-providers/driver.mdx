@@ -72,6 +72,11 @@ stdout and stderr are redacted, while `RawStdout` and argv execution preserve ra
 stdout for protocol consumers. Logs capability is checked before launch and its
 merged binary stream is written to stdout.
 
+The host retains environment values supplied through RunImage for that workspace
+throughout its lifetime, including prior values from retries or failed requests.
+Later text output, errors, and diagnostics use that workspace's redaction snapshot;
+raw stdout and merged Logs remain binary streams for their callers to handle.
+
 Once Exec streaming starts, the host closes closable stdin on completion or
 cancellation. Blocking input must unblock when closed or when the caller context
 is canceled, and output writers must return from writes. Go cannot interrupt an

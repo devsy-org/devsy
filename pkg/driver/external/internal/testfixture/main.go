@@ -122,6 +122,11 @@ func (f *fixture) RunImage(
 	ctx context.Context,
 	request *runtimev1.RunImageRequest,
 ) (*runtimev1.RunImageResponse, error) {
+	if f.mode == "stream-workspace-secret" {
+		if err := f.saveEnvironment(request); err != nil {
+			return nil, err
+		}
+	}
 	if f.mode != "env-error" {
 		return f.Driver.RunImage(ctx, request)
 	}

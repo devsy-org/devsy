@@ -72,9 +72,10 @@ func (h *Host) exec(
 	if start.WorkspaceId == "" || len(start.Argv) == 0 || start.Argv[0] == "" {
 		return errors.New("external runtime Exec requires workspace ID and a nonempty executable")
 	}
-	output, flush := h.commandOutput(streams, raw)
+	operation := h.forWorkspace(start.WorkspaceId, nil)
+	output, flush := operation.commandOutput(streams, raw)
 	var exit *runtimev1.ExecExit
-	err := h.call(ctx, "Exec", func(client runtimev1.RuntimeDriverClient) error {
+	err := operation.call(ctx, "Exec", func(client runtimev1.RuntimeDriverClient) error {
 		var err error
 		exit, err = execStream(ctx, client, start, output)
 		return err
@@ -84,10 +85,13 @@ func (h *Host) exec(
 		return err
 	}
 	if flushErr != nil {
-		return h.operationError(ctx, "Exec output", flushErr)
+		return operation.operationError(ctx, "Exec output", flushErr)
 	}
 	if exit.ExitCode != 0 || exit.Signal != "" {
-		return &CommandExitError{Code: exit.ExitCode, Signal: h.redactor.Redact(exit.Signal)}
+		return &CommandExitError{
+			Code:   exit.ExitCode,
+			Signal: operation.redactor.Redact(exit.Signal),
+		}
 	}
 	return nil
 }
@@ -159,7 +163,7 @@ func exchangeExec(
 	cancel(nil)
 	closeInput()
 	<-inputDone
-	if receiveErr != nil && inputCause != nil {
+	if inputCause != nil {
 		return nil, inputCause
 	}
 	// Recv owns command completion, including a command that exits before stdin EOF.

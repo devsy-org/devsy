@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +28,7 @@ func (f *fixture) Exec(stream execStream) error {
 		_, err := f.Preflight(stream.Context(), &runtimev1.PreflightRequest{})
 		return err
 	}
-	frames, err := fixtureFrames(f.mode, first.GetStart())
+	frames, err := f.fixtureFrames(first.GetStart())
 	if err != nil {
 		return err
 	}
@@ -41,21 +43,24 @@ func (f *fixture) Exec(stream execStream) error {
 	return nil
 }
 
-func fixtureFrames(
-	mode string,
+func (f *fixture) fixtureFrames(
 	start *runtimev1.ExecStart,
 ) ([]*runtimev1.ExecServerMessage, error) {
 	exit := &runtimev1.ExecServerMessage{
 		Payload: &runtimev1.ExecServerMessage_Exit{Exit: &runtimev1.ExecExit{}},
 	}
-	switch mode {
+	switch f.mode {
 	case "stream-secret":
 		return secretFrames(exit), nil
+	case "stream-repeated-secret":
+		return repeatedSecretFrames(exit), nil
+	case "stream-workspace-secret":
+		return f.workspaceSecretFrames(start.WorkspaceId, exit)
 	case "stream-metadata":
 		data, err := json.Marshal(start)
 		return []*runtimev1.ExecServerMessage{stdoutFrame(data), exit}, err
 	default:
-		return malformedFrames(mode, exit), nil
+		return malformedFrames(f.mode, exit), nil
 	}
 }
 
@@ -91,8 +96,15 @@ func stdoutFrame(data []byte) *runtimev1.ExecServerMessage {
 }
 
 func secretFrames(exit *runtimev1.ExecServerMessage) []*runtimev1.ExecServerMessage {
+	return splitSecretFrames("private-canary-value", exit)
+}
+
+func splitSecretFrames(
+	secret string,
+	exit *runtimev1.ExecServerMessage,
+) []*runtimev1.ExecServerMessage {
 	var frames []*runtimev1.ExecServerMessage
-	for _, chunk := range []string{"private-canary-", "value", "safe-tail"} {
+	for _, chunk := range []string{secret[:len(secret)/2], secret[len(secret)/2:], "safe-tail"} {
 		frames = append(frames, stdoutFrame([]byte(chunk)), &runtimev1.ExecServerMessage{
 			Payload: &runtimev1.ExecServerMessage_Stderr{
 				Stderr: &runtimev1.OutputChunk{Data: []byte(chunk)},
@@ -100,6 +112,49 @@ func secretFrames(exit *runtimev1.ExecServerMessage) []*runtimev1.ExecServerMess
 		})
 	}
 	return append(frames, exit)
+}
+
+func repeatedSecretFrames(exit *runtimev1.ExecServerMessage) []*runtimev1.ExecServerMessage {
+	return []*runtimev1.ExecServerMessage{
+		stdoutFrame([]byte("abcabc")),
+		{
+			Payload: &runtimev1.ExecServerMessage_Stderr{
+				Stderr: &runtimev1.OutputChunk{Data: []byte("abcabc")},
+			},
+		},
+		exit,
+	}
+}
+
+func (f *fixture) environmentPath(workspaceID string) string {
+	return filepath.Join(
+		f.directory,
+		fmt.Sprintf("%x-environment", sha256.Sum256([]byte(workspaceID))),
+	)
+}
+
+func (f *fixture) saveEnvironment(request *runtimev1.RunImageRequest) error {
+	data, err := json.Marshal(request.Environment)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(f.environmentPath(request.WorkspaceId), data, 0o600)
+}
+
+func (f *fixture) workspaceSecretFrames(
+	workspaceID string,
+	exit *runtimev1.ExecServerMessage,
+) ([]*runtimev1.ExecServerMessage, error) {
+	// #nosec G304 -- Reads a hash-named fixture file in the test-owned directory.
+	data, err := os.ReadFile(f.environmentPath(workspaceID))
+	if err != nil {
+		return nil, err
+	}
+	var environment map[string]string
+	if err := json.Unmarshal(data, &environment); err != nil {
+		return nil, err
+	}
+	return splitSecretFrames(environment["CUSTOM_VALUE"], exit), nil
 }
 
 func (f *fixture) Logs(

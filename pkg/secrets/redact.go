@@ -144,8 +144,35 @@ func (r *StreamingRedactor) RedactChunk(chunk string) string {
 	if formatStart := incompleteCredentialURLStart(combined); formatStart >= 0 {
 		cut = min(cut, formatStart)
 	}
+	cut = r.base.completeSecretBoundary(combined, cut)
 	r.pending = combined[cut:]
 	return r.base.Redact(combined[:cut])
+}
+
+// Follow the replacer's leftmost, longest-first matches. A complete secret
+// straddling cut must stay whole; overlapping matches must not make buffering
+// grow across an arbitrarily long repeated value.
+func (r *Redactor) completeSecretBoundary(value string, cut int) int {
+	if len(r.values) == 0 {
+		return cut
+	}
+	for offset := 0; offset < cut; {
+		length := r.secretMatchLength(value[offset:])
+		if offset+length > cut {
+			return offset
+		}
+		offset += max(length, 1)
+	}
+	return cut
+}
+
+func (r *Redactor) secretMatchLength(value string) int {
+	for _, secret := range r.values {
+		if strings.HasPrefix(value, secret) {
+			return len(secret)
+		}
+	}
+	return 0
 }
 
 // incompleteCredentialURLStart returns the start of a URL suffix that may
