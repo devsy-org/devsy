@@ -71,6 +71,9 @@ type gpgTunnel struct {
 	// Its completion is reconciled before setup so an exited loop can be rebound.
 	forward *managedReverseForward
 
+	// User mappings outlive the managed GPG loop and must only be bound once.
+	userReverseForwardsStarted bool
+
 	// failureReported prevents a repeated OSC 9977 notification while the
 	// tunnel stays down across health-check ticks.
 	failureReported bool
@@ -355,10 +358,10 @@ func (t *gpgTunnel) ensureForwardBound(
 		"start reverse forward of gpg-agent socket %s, keeping connection open",
 		gpgExtraSocketPath,
 	)
-	reverseForwardPorts := append(
-		[]string{gpg.ContainerSocketPath + ":" + gpgExtraSocketPath},
-		t.cmd.ReverseForwardPorts...,
-	)
+	reverseForwardPorts := []string{gpg.ContainerSocketPath + ":" + gpgExtraSocketPath}
+	if !t.userReverseForwardsStarted {
+		reverseForwardPorts = append(reverseForwardPorts, t.cmd.ReverseForwardPorts...)
+	}
 	startForward := t.startForward
 	if startForward == nil {
 		startForward = t.cmd.startReverseForwardsAndWait
@@ -368,6 +371,7 @@ func (t *gpgTunnel) ensureForwardBound(
 		return fmt.Errorf("start gpg-agent reverse forward: %w", err)
 	}
 	t.forward = forward
+	t.userReverseForwardsStarted = true
 	return nil
 }
 

@@ -9,10 +9,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/port"
 	"golang.org/x/crypto/ssh"
 )
@@ -78,33 +80,127 @@ func TestGPGTunnelEnsureForwardBoundKeepsActiveForward(t *testing.T) {
 
 func TestGPGTunnelRebindsWhenManagedReverseForwardExits(t *testing.T) {
 	ctx := context.Background()
-	var listeners []net.Listener
-	starts := 0
-	tunnel := &gpgTunnel{cmd: &SSHCmd{}}
-	tunnel.startForward = func(
-		ctx context.Context,
-		client *ssh.Client,
-		_ []string,
-	) (*managedReverseForward, error) {
-		forward, listener, err := startTestManagedReverseForward(ctx, client)
-		if err != nil {
-			return nil, err
-		}
-		listeners = append(listeners, listener)
-		starts++
-		return forward, nil
+	forwards := &testGPGReverseForwards{t: t, userMapping: "127.0.0.1:9000:127.0.0.1:9001"}
+	tunnel := &gpgTunnel{
+		cmd:          &SSHCmd{ReverseForwardPorts: []string{forwards.userMapping}},
+		startForward: forwards.start,
 	}
 	t.Cleanup(tunnel.stopForward)
 
 	if err := tunnel.ensureForwardBound(ctx, nil, "/host/gpg-agent.sock"); err != nil {
 		t.Fatalf("initial ensureForwardBound() error = %v", err)
 	}
-	if err := listeners[0].Close(); err != nil {
+	if err := forwards.listeners[0].Close(); err != nil {
 		t.Fatalf("close first listener: %v", err)
 	}
 	waitForManagedReverseForward(t, tunnel.forward)
 	if err := tunnel.ensureForwardBound(ctx, nil, "/host/gpg-agent.sock"); err != nil {
 		t.Fatalf("replacement ensureForwardBound() error = %v", err)
+	}
+	if len(forwards.listeners) != 2 {
+		t.Fatalf("startForward calls = %d, want 2", len(forwards.listeners))
+	}
+	assertUserReverseForwardActive(t, forwards.userForward, forwards.userListener)
+	replacement := tunnel.forward
+	tunnel.stopForward()
+	waitForManagedReverseForward(t, replacement)
+	assertReverseForwardListenerReleased(t, forwards.listeners[1])
+}
+
+type testGPGReverseForwards struct {
+	t            *testing.T
+	userMapping  string
+	userForward  *managedReverseForward
+	userListener net.Listener
+	listeners    []net.Listener
+}
+
+func (f *testGPGReverseForwards) start(
+	ctx context.Context,
+	client *ssh.Client,
+	mappings []string,
+) (*managedReverseForward, error) {
+	want := []string{gpg.ContainerSocketPath + ":/host/gpg-agent.sock"}
+	if len(f.listeners) == 0 {
+		want = append(want, f.userMapping)
+	}
+	if !slices.Equal(mappings, want) {
+		return nil, fmt.Errorf("forward mappings = %v, want %v", mappings, want)
+	}
+	if len(f.listeners) == 0 {
+		var err error
+		f.userForward, f.userListener, err = startTestManagedReverseForward(ctx, client)
+		if err != nil {
+			return nil, err
+		}
+		f.t.Cleanup(func() {
+			f.userForward.cancel()
+			waitForManagedReverseForward(f.t, f.userForward)
+		})
+	}
+	forward, listener, err := startTestManagedReverseForward(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	f.listeners = append(f.listeners, listener)
+	return forward, nil
+}
+
+func assertUserReverseForwardActive(
+	t *testing.T,
+	forward *managedReverseForward,
+	listener net.Listener,
+) {
+	t.Helper()
+	select {
+	case <-forward.done:
+		t.Fatal("GPG replacement stopped the independent user forward")
+	default:
+	}
+	duplicate, err := net.Listen("tcp", listener.Addr().String())
+	if err == nil {
+		_ = duplicate.Close()
+		t.Fatal("user forward listener was released during GPG replacement")
+	}
+}
+
+func assertReverseForwardListenerReleased(t *testing.T, stopped net.Listener) {
+	t.Helper()
+	if listener, err := net.Listen("tcp", stopped.Addr().String()); err != nil {
+		t.Fatalf("replacement listener still bound after stop: %v", err)
+	} else {
+		_ = listener.Close()
+	}
+}
+
+func TestGPGTunnelRetriesUserMappingsAfterInitialBindFailure(t *testing.T) {
+	userMapping := "127.0.0.1:9000:127.0.0.1:9001"
+	want := []string{gpg.ContainerSocketPath + ":/host/gpg-agent.sock", userMapping}
+	starts := 0
+	tunnel := &gpgTunnel{
+		cmd: &SSHCmd{ReverseForwardPorts: []string{userMapping}},
+		startForward: func(_ context.Context, _ *ssh.Client, mappings []string) (*managedReverseForward, error) {
+			starts++
+			if !slices.Equal(mappings, want) {
+				t.Fatalf("forward mappings = %v, want %v", mappings, want)
+			}
+			if starts == 1 {
+				return nil, errors.New("initial listener bind failed")
+			}
+			return &managedReverseForward{done: make(chan error)}, nil
+		},
+	}
+	if err := tunnel.ensureForwardBound(
+		context.Background(), nil, "/host/gpg-agent.sock",
+	); err == nil {
+		t.Fatal("initial listener bind failure was discarded")
+	}
+	if err := tunnel.ensureForwardBound(
+		context.Background(),
+		nil,
+		"/host/gpg-agent.sock",
+	); err != nil {
+		t.Fatalf("retry ensureForwardBound() error = %v", err)
 	}
 	if starts != 2 {
 		t.Fatalf("startForward calls = %d, want 2", starts)
