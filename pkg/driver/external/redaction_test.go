@@ -58,12 +58,33 @@ func (s *HostSuite) TestWorkspaceRedactionRetainsFailedRequestsAndPriorValues() 
 	}
 	operation := host.forWorkspace(fixtureWorkspace, nil)
 	s.Equal("*** ***", operation.redactor.Redact("first-private-value rotated-private-value"))
-	s.Len(host.redactions.values[fixtureWorkspace], 2)
+	s.Len(host.redactions.workspaces[fixtureWorkspace].values, 2)
 	s.Equal(
 		"first-private-value",
 		host.forWorkspace("other", nil).redactor.Redact("first-private-value"),
 	)
 	s.Equal("first-private-value", host.redactor.Redact("first-private-value"))
+}
+
+func (s *HostSuite) TestWorkspaceRedactionReusesUnchangedSnapshots() {
+	host := s.host(fake.Normal)
+	first := host.forWorkspace(
+		fixtureWorkspace,
+		map[string]string{workspaceSecretKey: workspaceCanary},
+	)
+	unchanged := host.forWorkspace(
+		fixtureWorkspace,
+		map[string]string{workspaceSecretKey: workspaceCanary},
+	)
+	s.Same(first.redactor, unchanged.redactor)
+	s.Same(first.redactor, host.forWorkspace(fixtureWorkspace, nil).redactor)
+	updated := host.forWorkspace(
+		fixtureWorkspace,
+		map[string]string{workspaceSecretKey: "rotated-private-value"},
+	)
+	s.NotSame(first.redactor, updated.redactor)
+	s.Equal("rotated-private-value", first.redactor.Redact("rotated-private-value"))
+	s.Equal("*** ***", updated.redactor.Redact(workspaceCanary+" rotated-private-value"))
 }
 
 func (s *HostSuite) TestConcurrentWorkspaceRedactionSnapshots() {
@@ -73,7 +94,7 @@ func (s *HostSuite) TestConcurrentWorkspaceRedactionSnapshots() {
 	for index := range count {
 		workers.Go(func() {
 			value := fmt.Sprintf("concurrent-private-%d-value", index)
-			host.forWorkspace(fixtureWorkspace, map[string]string{"VALUE": value})
+			host.forWorkspace(fixtureWorkspace, map[string]string{workspaceSecretKey: value})
 			_ = host.forWorkspace(fixtureWorkspace, nil).redactor.Redact(value)
 		})
 	}

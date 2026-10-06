@@ -1,6 +1,7 @@
 package secrets_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -19,6 +20,7 @@ func (s *StreamingBoundarySuite) TestKnownSecretsAcrossEverySplit() {
 		{"TOKEN=abababa"},
 		{"A=abcabcX", "B=abcabc"},
 		{"A=aba", "B=bab"},
+		{"TOKEN=abc\x00\xffabc"},
 	} {
 		redactor := secrets.NewRedactor(entries)
 		var values []string
@@ -44,6 +46,27 @@ func (s *StreamingBoundarySuite) TestKnownSecretsAcrossEverySplit() {
 		}
 		output.WriteString(stream.Flush())
 		s.Equal(want, output.String(), "one-byte chunks, entries %v", entries)
+	}
+}
+
+func BenchmarkStreamingBoundaryRetainedValues(b *testing.B) {
+	for _, count := range []int{1, 100, 1000} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			entries := make([]string, count)
+			for index := range count {
+				entries[index] = fmt.Sprintf("TOKEN=private-%d-value", index)
+			}
+			redactor := secrets.NewRedactor(entries)
+			input := strings.Repeat("ordinary output ", 2048) + "private-"
+			b.SetBytes(int64(len(input)))
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				stream := secrets.NewStreamingRedactor(redactor)
+				_ = stream.RedactChunk(input)
+				_ = stream.Flush()
+			}
+		})
 	}
 }
 

@@ -84,7 +84,7 @@ func newHost(ctx context.Context, options hostOptions) (*Host, error) {
 		environment:      slices.Clone(options.environment),
 		timeout:          options.timeout,
 		redactor:         secrets.NewEnvironmentRedactor(options.environment),
-		redactions:       &workspaceRedactions{values: make(map[string]map[string]struct{})},
+		redactions:       &workspaceRedactions{workspaces: make(map[string]*workspaceRedaction)},
 	}
 	// Freeze provider declarations so later caller mutation cannot change identity.
 	h.config.External.Args = slices.Clone(options.config.External.Args)

@@ -80,17 +80,29 @@ func (h *Host) exec(
 		exit, err = execStream(ctx, client, start, output)
 		return err
 	})
-	flushErr := flush()
+	return operation.commandResult(ctx, exit, err, flush())
+}
+
+func (h *Host) commandResult(
+	ctx context.Context,
+	exit *runtimev1.ExecExit,
+	err, flushErr error,
+) error {
 	if err != nil {
+		// Cleanup can finish after the caller deadline even when the transport
+		// reported its cancellation just before the local context timer fired.
+		if ctx.Err() != nil {
+			return h.operationError(ctx, "Exec", err)
+		}
 		return err
 	}
 	if flushErr != nil {
-		return operation.operationError(ctx, "Exec output", flushErr)
+		return h.operationError(ctx, "Exec output", flushErr)
 	}
 	if exit.ExitCode != 0 || exit.Signal != "" {
 		return &CommandExitError{
 			Code:   exit.ExitCode,
-			Signal: operation.redactor.Redact(exit.Signal),
+			Signal: h.redactor.Redact(exit.Signal),
 		}
 	}
 	return nil
