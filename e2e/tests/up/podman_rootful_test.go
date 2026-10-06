@@ -1,11 +1,16 @@
 package up
 
 import (
+	"bytes"
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func expiredContext(t *testing.T) context.Context {
@@ -105,4 +110,85 @@ func TestRunPodmanDiagnosticsStopsAtBudget(t *testing.T) {
 		return "diagnostic failed"
 	}, func(_, _ string) {})
 	assert.Equal(t, []string{"ps"}, commands)
+}
+
+func TestRootfulPodmanWrapper(t *testing.T) {
+	endpoint := "unix:///run/podman/podman.sock"
+	emptyEndpoint := ""
+	cases := []struct {
+		name       string
+		endpoint   *string
+		wantPrefix []string
+		args       []string
+	}{
+		{
+			name:       "configured endpoint",
+			endpoint:   &endpoint,
+			wantPrefix: []string{"podman", "--remote", "--url", endpoint},
+			args:       []string{"ps", "-a"},
+		},
+		{
+			name:       "preserves arguments",
+			endpoint:   &endpoint,
+			wantPrefix: []string{"podman", "--remote", "--url", endpoint},
+			args:       []string{"run", "value with spaces", "$(printf unsafe)"},
+		},
+		{
+			name:       "unset endpoint uses local mode",
+			wantPrefix: []string{"podman"},
+			args:       []string{"ps", "-a"},
+		},
+		{
+			name:       "empty endpoint uses local mode",
+			endpoint:   &emptyEndpoint,
+			wantPrefix: []string{"podman"},
+			args:       []string{"ps", "-a"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runRootfulPodmanWrapper(t, tc.endpoint, tc.args...)
+			require.Equal(t, append(tc.wantPrefix, tc.args...), got)
+			require.NotContains(t, got, "-E")
+		})
+	}
+}
+
+func runRootfulPodmanWrapper(t *testing.T, endpoint *string, args ...string) []string {
+	t.Helper()
+
+	dir := t.TempDir()
+	capturePath := filepath.Join(dir, "argv")
+	sudoPath := filepath.Join(dir, "sudo")
+	sudoScript := `#!/bin/sh
+printf '%s\0' "$@" > "$CAPTURE_FILE"
+	`
+	require.NoError(t, os.WriteFile(sudoPath, []byte(sudoScript), 0o600))
+	//nolint:gosec // G302: test executable needs owner execute permission.
+	require.NoError(t, os.Chmod(sudoPath, 0o700))
+
+	wrapperPath := filepath.Join(dir, "podman-rootful")
+	require.NoError(t, os.WriteFile(wrapperPath, []byte(rootfulPodmanWrapperScript()), 0o600))
+	//nolint:gosec // G302: generated wrapper needs owner execute permission.
+	require.NoError(t, os.Chmod(wrapperPath, 0o700))
+
+	//nolint:gosec // G204: generated wrapper path is test-controlled.
+	cmd := exec.Command(wrapperPath, args...)
+	cmd.Env = []string{"PATH=" + dir, "CAPTURE_FILE=" + capturePath}
+	if endpoint != nil {
+		cmd.Env = append(cmd.Env, "DOCKER_HOST="+*endpoint)
+	}
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+
+	argv, err := os.ReadFile(capturePath) //nolint:gosec // G304: test-controlled capture path.
+	require.NoError(t, err)
+	encodedArgs := bytes.Split(argv, []byte{0})
+	encodedArgs = encodedArgs[:len(encodedArgs)-1]
+	got := make([]string, len(encodedArgs))
+	for i, arg := range encodedArgs {
+		got[i] = string(arg)
+	}
+	return got
 }

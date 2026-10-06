@@ -88,6 +88,18 @@ func shouldAttemptPodmanRecovery(class podmanHealthClass) bool {
 	return class == podmanHealthTimeout || class == podmanHealthUnavailable
 }
 
+func rootfulPodmanWrapperScript() string {
+	return `#!/bin/sh
+set -eu
+
+if [ -n "${DOCKER_HOST:-}" ]; then
+	exec sudo podman --remote --url "$DOCKER_HOST" "$@"
+fi
+
+exec sudo podman "$@"
+`
+}
+
 // podmanDaemonGate records the first unrecoverable daemon failure so later
 // specs in the shard skip instead of cascading into identical infrastructure
 // failures that would bury the actionable one. Scoped to the test process,
@@ -311,7 +323,7 @@ func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Frame
 	wrapper, err := os.Create(wrapperPath) //nolint:gosec // G304: test-controlled path
 	framework.ExpectNoError(err)
 
-	_, err = wrapper.WriteString("#!/bin/sh\nsudo podman \"$@\"\n")
+	_, err = wrapper.WriteString(rootfulPodmanWrapperScript())
 	if err != nil {
 		_ = wrapper.Close()
 	}

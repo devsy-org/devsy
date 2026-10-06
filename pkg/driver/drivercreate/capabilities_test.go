@@ -19,6 +19,7 @@ func TestBuiltInCapabilities(t *testing.T) {
 		name                                        string
 		runtime                                     string
 		images, imageRunner, streaming, chown, argv bool
+		recreateRequired                            bool
 		recreate                                    driver.RecreateMode
 	}{
 		{name: provider.DockerDriver, images: true, imageRunner: true, recreate: driver.RecreateDelete},
@@ -27,7 +28,7 @@ func TestBuiltInCapabilities(t *testing.T) {
 		{name: provider.CustomDriver, streaming: true, chown: true, recreate: driver.RecreateStop},
 		{
 			name: provider.MicrosandboxDriver, images: true, imageRunner: true,
-			chown: true, argv: true, recreate: driver.RecreateDelete,
+			chown: true, argv: true, recreateRequired: true, recreate: driver.RecreateOnRun,
 		},
 	} {
 		t.Run(tc.name+tc.runtime, func(t *testing.T) {
@@ -55,6 +56,8 @@ func TestBuiltInCapabilities(t *testing.T) {
 			assert.Equal(t, tc.streaming, driver.DriverRequiresMountStreaming(bundle.Runtime))
 			assert.Equal(t, tc.chown, driver.DriverRequiresWorkspaceChown(bundle.Runtime))
 			assert.Equal(t, tc.recreate, driver.DriverRecreateMode(bundle.Runtime))
+			_, recreateRequired := bundle.Runtime.(driver.RecreateRequiredDriver)
+			assert.Equal(t, tc.recreateRequired, recreateRequired)
 			if tc.name == provider.MicrosandboxDriver {
 				assert.NotSame(t, bundle.Runtime, bundle.Images)
 				_, runtimeImages := bundle.Runtime.(driver.ImageBackend)
