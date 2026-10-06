@@ -3,8 +3,11 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -74,6 +77,77 @@ func TestGPGForwardFailureReasonUsesSafeCategory(t *testing.T) {
 	err := errors.New("start gpg-agent reverse forward: /private/path")
 	if got, want := gpgForwardFailureReason(err), "GPG reverse forwarding failed"; got != want {
 		t.Fatalf("gpgForwardFailureReason() = %q, want %q", got, want)
+	}
+}
+
+func TestWriteGPGForwardDiagnosticRedactsAndScopesDetails(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(
+		home, ".devsy", "desktop", "logs", "workspaces", "default", "ws-1", "ssh.log",
+	)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("create diagnostic directory: %v", err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv(gpgForwardDiagnosticFileEnv, path)
+	t.Setenv(gpgForwardSessionIDEnv, "session-123")
+	t.Setenv("TOKEN", "diagnostic-secret")
+
+	if !writeGPGForwardDiagnostic(errors.New(
+		"start gpg-agent reverse forward: token=diagnostic-secret",
+	)) {
+		t.Fatal("writeGPGForwardDiagnostic() = false, want true")
+	}
+
+	// #nosec G304 -- Test path is under its temporary home directory.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read diagnostic: %v", err)
+	}
+	var record gpgForwardDiagnostic
+	if err := json.Unmarshal(bytes.TrimSpace(data), &record); err != nil {
+		t.Fatalf("decode diagnostic: %v", err)
+	}
+	assertGPGForwardDiagnostic(t, record)
+	assertPrivateGPGDiagnosticFile(t, path)
+}
+
+func TestDesktopGPGDiagnosticPathRejectsOutsideLogRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := filepath.Join(home, "outside.log")
+	if _, err := desktopGPGDiagnosticPath(path); err == nil {
+		t.Fatalf("desktopGPGDiagnosticPath(%q) returned no error", path)
+	}
+}
+
+func assertGPGForwardDiagnostic(t *testing.T, record gpgForwardDiagnostic) {
+	t.Helper()
+	if record.Component != "gpg-forwarding" || record.Code != "reverse_forward_failed" {
+		t.Fatalf("diagnostic component/code = %q/%q", record.Component, record.Code)
+	}
+	if record.SessionID != "session-123" {
+		t.Fatalf("diagnostic session id = %q, want session-123", record.SessionID)
+	}
+	if strings.Contains(record.Message, "diagnostic-secret") {
+		t.Fatalf("diagnostic message exposed the secret: %q", record.Message)
+	}
+	if !strings.Contains(record.Message, "***") {
+		t.Fatalf("diagnostic message was not redacted: %q", record.Message)
+	}
+	if record.Timestamp == "" {
+		t.Fatal("diagnostic timestamp is empty")
+	}
+}
+
+func assertPrivateGPGDiagnosticFile(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat diagnostic: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("diagnostic permissions = %o, want 600", info.Mode().Perm())
 	}
 }
 

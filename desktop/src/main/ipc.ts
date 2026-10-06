@@ -2413,7 +2413,16 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       _event,
       args: { workspaceId: string; cols: number; rows: number },
     ) => {
-      return deps.pty.createSshSession(args.workspaceId, args.cols, args.rows)
+      const diagnosticLogPath = logStore.createDiagnosticLogPath(
+        state.workspaceContext(args.workspaceId),
+        args.workspaceId,
+      )
+      return deps.pty.createSshSession(
+        args.workspaceId,
+        args.cols,
+        args.rows,
+        diagnosticLogPath,
+      )
     },
   )
 

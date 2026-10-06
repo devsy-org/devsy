@@ -82,14 +82,27 @@ export class PtyManager {
     return sessionId
   }
 
-  createSshSession(workspaceId: string, cols: number, rows: number): string {
-    const pty = requirePty()
+  createSshSession(
+    workspaceId: string,
+    cols: number,
+    rows: number,
+    diagnosticLogPath?: string,
+  ): string {
+    const spawn = this.deps.spawnPty ?? requirePty().spawn
     const sessionId = crypto.randomUUID()
-    const proc = pty.spawn(this.deps.binaryPath, sshTerminalArgs(workspaceId), {
+    const proc = spawn(this.deps.binaryPath, sshTerminalArgs(workspaceId), {
       name: "xterm-256color",
       cols,
       rows,
-      env: this.env,
+      env: {
+        ...this.env,
+        ...(diagnosticLogPath
+          ? {
+              DEVSY_GPG_FORWARD_DIAGNOSTIC_FILE: diagnosticLogPath,
+              DEVSY_GPG_FORWARD_SESSION_ID: sessionId,
+            }
+          : {}),
+      },
     })
 
     this.wire(sessionId, proc, workspaceId)

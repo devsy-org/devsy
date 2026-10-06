@@ -3,9 +3,11 @@ package workspace
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/gpg"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	devssh "github.com/devsy-org/devsy/pkg/ssh"
 	"golang.org/x/crypto/ssh"
 )
@@ -26,6 +29,11 @@ const gpgForwardFailedOSC = 9977
 // gpgForwardFailedReasonMaxLen bounds the OSC payload, since the desktop
 // toast renders reason verbatim and it can originate from a remote error.
 const gpgForwardFailedReasonMaxLen = 256
+
+const (
+	gpgForwardDiagnosticFileEnv = "DEVSY_GPG_FORWARD_DIAGNOSTIC_FILE"
+	gpgForwardSessionIDEnv      = "DEVSY_GPG_FORWARD_SESSION_ID"
+)
 
 func writeGPGForwardFailedOSC(w io.Writer, reason string) {
 	runes := []rune(reason)
@@ -141,9 +149,105 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) bool {
 	}
 	log.Warnf("gpg agent forwarding failed (continuing without it): %v", err)
 	t.failureReported = true
+	reason := gpgForwardFailureReason(err)
+	if writeGPGForwardDiagnostic(err) {
+		reason += ": details saved in workspace logs"
+	}
 	// Emit OSC code for UI to detect.
-	writeGPGForwardFailedOSC(os.Stderr, gpgForwardFailureReason(err))
+	writeGPGForwardFailedOSC(os.Stderr, reason)
 	return false
+}
+
+type gpgForwardDiagnostic struct {
+	Timestamp string `json:"timestamp"`
+	Component string `json:"component"`
+	Code      string `json:"code"`
+	SessionID string `json:"sessionId,omitempty"`
+	Message   string `json:"message"`
+}
+
+func writeGPGForwardDiagnostic(err error) bool {
+	path, pathErr := desktopGPGDiagnosticPath(os.Getenv(gpgForwardDiagnosticFileEnv))
+	if pathErr != nil {
+		log.Debugf("resolve gpg agent forwarding diagnostic path: %v", pathErr)
+		return false
+	}
+
+	record, marshalErr := marshalGPGForwardDiagnostic(err)
+	if marshalErr != nil {
+		log.Debugf("encode gpg agent forwarding diagnostic: %v", marshalErr)
+		return false
+	}
+	// #nosec G304 G703 -- The path is validated to stay within Desktop's workspace log directory.
+	file, openErr := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	if openErr != nil {
+		log.Debugf("open gpg agent forwarding diagnostic: %v", openErr)
+		return false
+	}
+	if n, writeErr := file.Write(append(record, '\n')); writeErr != nil || n != len(record)+1 {
+		if writeErr == nil {
+			writeErr = io.ErrShortWrite
+		}
+		log.Debugf("write gpg agent forwarding diagnostic: %v", writeErr)
+		_ = file.Close()
+		return false
+	}
+	if closeErr := file.Close(); closeErr != nil {
+		log.Debugf("close gpg agent forwarding diagnostic: %v", closeErr)
+		return false
+	}
+	return true
+}
+
+func marshalGPGForwardDiagnostic(err error) ([]byte, error) {
+	message := secrets.NewEnvironmentRedactor(os.Environ()).Redact(err.Error())
+	if runes := []rune(message); len(runes) > 2048 {
+		message = string(runes[:2048])
+	}
+	return json.Marshal(gpgForwardDiagnostic{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Component: "gpg-forwarding",
+		Code:      gpgForwardFailureCode(err),
+		SessionID: os.Getenv(gpgForwardSessionIDEnv),
+		Message:   message,
+	})
+}
+
+func desktopGPGDiagnosticPath(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("diagnostic file path is not configured")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	root, err := filepath.Abs(filepath.Join(home, ".devsy", "desktop", "logs", "workspaces"))
+	if err != nil {
+		return "", fmt.Errorf("resolve Desktop log directory: %w", err)
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve diagnostic file path: %w", err)
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("diagnostic path is outside Desktop workspace logs")
+	}
+	return path, nil
+}
+
+func gpgForwardFailureCode(err error) string {
+	switch {
+	case strings.Contains(err.Error(), "start gpg-agent reverse forward"):
+		return "reverse_forward_failed"
+	case strings.Contains(err.Error(), "detect gpg-agent socket path"):
+		return "host_agent_socket_unavailable"
+	case strings.Contains(err.Error(), "export local ownertrust from GPG"):
+		return "host_gpg_configuration_unavailable"
+	default:
+		return "setup_failed"
+	}
 }
 
 func gpgForwardFailureReason(err error) string {

@@ -36,4 +36,34 @@ describe("PtyManager", () => {
       "workspace-id",
     ])
   })
+
+  it("passes a session-scoped diagnostic log path to the SSH CLI", () => {
+    const proc = {
+      onData: vi.fn(),
+      onExit: vi.fn(),
+    } as unknown as IPty
+    const spawnPty = vi
+      .fn()
+      .mockReturnValue(proc) as unknown as typeof import("node-pty").spawn
+    const manager = new PtyManager({
+      binaryPath: "/devsy",
+      getMainWindow: () => null,
+      spawnPty,
+    })
+
+    const sessionId = manager.createSshSession(
+      "workspace-id",
+      80,
+      24,
+      "/logs/ssh-diagnostics.log",
+    )
+
+    const options = spawnPty.mock.calls[0]?.[2] as {
+      env: Record<string, string>
+    }
+    expect(options.env.DEVSY_GPG_FORWARD_DIAGNOSTIC_FILE).toBe(
+      "/logs/ssh-diagnostics.log",
+    )
+    expect(options.env.DEVSY_GPG_FORWARD_SESSION_ID).toBe(sessionId)
+  })
 })

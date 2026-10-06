@@ -63,12 +63,22 @@ export class LogStore {
   createLogFile(context: string, workspaceId: string): string {
     const dir = this.workspaceLogDir(context, workspaceId)
     mkdirSync(dir, { recursive: true })
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
-    const suffix = String(counter++).padStart(4, "0")
-    const filename = `${timestamp}-${suffix}.log`
+    const filename = this.nextLogFilename()
     const filePath = join(dir, filename)
-    writeFileSync(filePath, "")
+    writeFileSync(filePath, "", { mode: 0o600 })
     return filePath
+  }
+
+  createDiagnosticLogPath(context: string, workspaceId: string): string {
+    const dir = this.workspaceLogDir(context, workspaceId)
+    mkdirSync(dir, { recursive: true })
+    return join(dir, this.nextLogFilename("-ssh-diagnostics"))
+  }
+
+  private nextLogFilename(suffix = ""): string {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+    const sequence = String(counter++).padStart(4, "0")
+    return `${timestamp}-${sequence}${suffix}.log`
   }
 
   appendLog(logPath: string, line: string): boolean {
