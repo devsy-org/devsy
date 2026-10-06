@@ -194,14 +194,16 @@ printf '%s\0' "$@" > "$CAPTURE_FILE"
 	return got
 }
 
-func TestRootfulPodmanUsesLocalDaemon(t *testing.T) {
+func TestRootfulPodmanUsesManagedDaemon(t *testing.T) {
 	cases := []struct {
 		endpoint string
 		local    bool
 	}{
 		{"", true},
 		{"unix:///run/podman/podman.sock", true},
-		{"unix:///custom/podman.sock", true},
+		{"unix:///var/run/podman/podman.sock", true},
+		{"unix:///run/user/1000/podman/podman.sock", false},
+		{"unix:///custom/podman.sock", false},
 		{"tcp://127.0.0.1:2375", false},
 		{"ssh://root@remote/run/podman/podman.sock", false},
 		{"unix://remote/run/podman/podman.sock", false},
@@ -210,12 +212,25 @@ func TestRootfulPodmanUsesLocalDaemon(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.endpoint, func(t *testing.T) {
-			assert.Equal(t, tc.local, rootfulPodmanUsesLocalDaemon(tc.endpoint))
+			assert.Equal(t, tc.local, rootfulPodmanUsesManagedDaemon(tc.endpoint))
 		})
 	}
 }
 
-func TestRemotePodmanCleanupPreservesLocalRecovery(t *testing.T) {
+func TestUnmanagedPodmanCleanupPreservesLocalRecovery(t *testing.T) {
+	for _, endpoint := range []string{
+		"ssh://root@remote/run/podman/podman.sock",
+		"unix:///custom/podman.sock",
+		"unix:///run/user/1000/podman/podman.sock",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			checkUnmanagedPodmanCleanup(t, endpoint)
+		})
+	}
+}
+
+func checkUnmanagedPodmanCleanup(t *testing.T, endpoint string) {
+	t.Helper()
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
 	require.NoError(t, os.Mkdir(binDir, 0o700))
@@ -233,7 +248,7 @@ func TestRemotePodmanCleanupPreservesLocalRecovery(t *testing.T) {
 	require.NoError(t, os.Chmod(filepath.Join(binDir, podmanSudoCommand), 0o700))
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CAPTURE_FILE", capture)
-	t.Setenv("DOCKER_HOST", "ssh://root@remote/run/podman/podman.sock")
+	t.Setenv("DOCKER_HOST", endpoint)
 	previousGate := rootfulDaemonGate
 	rootfulDaemonGate = &podmanDaemonGate{}
 	t.Cleanup(func() { rootfulDaemonGate = previousGate })

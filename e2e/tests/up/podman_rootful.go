@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -89,12 +88,12 @@ func shouldAttemptPodmanRecovery(class podmanHealthClass) bool {
 	return class == podmanHealthTimeout || class == podmanHealthUnavailable
 }
 
-func rootfulPodmanUsesLocalDaemon(endpoint string) bool {
+func rootfulPodmanUsesManagedDaemon(endpoint string) bool {
 	if endpoint == "" {
 		return true
 	}
-	parsed, err := url.Parse(endpoint)
-	return err == nil && parsed.Scheme == "unix" && parsed.Host == "" && parsed.Path != ""
+	return endpoint == "unix:///run/podman/podman.sock" ||
+		endpoint == "unix:///var/run/podman/podman.sock"
 }
 
 func rootfulPodmanWrapperScript() string {
@@ -321,8 +320,8 @@ func attemptPodmanRecovery(ctx context.Context, wrapperPath string) (podmanHealt
 func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Framework {
 	wrapperPath := initialDir + "/bin/" + podmanRootfulWrapperName
 
-	localDaemon := rootfulPodmanUsesLocalDaemon(os.Getenv("DOCKER_HOST"))
-	if since := rootfulDaemonGate.unhealthy(); localDaemon && since != "" {
+	managedDaemon := rootfulPodmanUsesManagedDaemon(os.Getenv("DOCKER_HOST"))
+	if since := rootfulDaemonGate.unhealthy(); managedDaemon && since != "" {
 		ginkgo.Skip(fmt.Sprintf(
 			"rootful Podman daemon unhealthy since first failure in %q; "+
 				"skipping to avoid cascading infrastructure failures",
@@ -357,7 +356,7 @@ func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Frame
 			healthErr,
 		)
 		collectPodmanDiagnostics(wrapperPath)
-		if localDaemon && shouldAttemptPodmanRecovery(class) {
+		if managedDaemon && shouldAttemptPodmanRecovery(class) {
 			if !rootfulDaemonGate.claimRecovery() {
 				rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
 				framework.ExpectNoError(
@@ -382,8 +381,8 @@ func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Frame
 				"[podman-recovery] daemon healthy again after single restart",
 			)
 		} else {
-			// Local service recovery cannot repair a remote endpoint or
-			// a responsive daemon error, so fail without gating.
+			// The managed service cannot repair another endpoint or a
+			// responsive daemon error, so fail without gating.
 			framework.ExpectNoError(healthErr)
 		}
 	}
@@ -426,7 +425,7 @@ func recoverPodmanCleanup(
 	// mirroring CleanupWorkspace.
 	recoveryCtx := context.WithoutCancel(ctx)
 	class, healthErr := checkPodmanHealth(recoveryCtx, wrapperPath)
-	if healthErr == nil || !rootfulPodmanUsesLocalDaemon(os.Getenv("DOCKER_HOST")) ||
+	if healthErr == nil || !rootfulPodmanUsesManagedDaemon(os.Getenv("DOCKER_HOST")) ||
 		!shouldAttemptPodmanRecovery(class) {
 		return cleanupErr
 	}
