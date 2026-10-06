@@ -3,6 +3,7 @@ package up
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -191,4 +192,65 @@ printf '%s\0' "$@" > "$CAPTURE_FILE"
 		got[i] = string(arg)
 	}
 	return got
+}
+
+func TestRootfulPodmanUsesLocalDaemon(t *testing.T) {
+	cases := []struct {
+		endpoint string
+		local    bool
+	}{
+		{"", true},
+		{"unix:///run/podman/podman.sock", true},
+		{"unix:///custom/podman.sock", true},
+		{"tcp://127.0.0.1:2375", false},
+		{"ssh://root@remote/run/podman/podman.sock", false},
+		{"unix://remote/run/podman/podman.sock", false},
+		{"unix://", false},
+		{":invalid", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.endpoint, func(t *testing.T) {
+			assert.Equal(t, tc.local, rootfulPodmanUsesLocalDaemon(tc.endpoint))
+		})
+	}
+}
+
+func TestRemotePodmanCleanupPreservesLocalRecovery(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	require.NoError(t, os.Mkdir(binDir, 0o700))
+	wrapper := "#!/bin/sh\necho 'cannot connect to remote endpoint' >&2\nexit 1\n"
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(binDir, podmanRootfulWrapperName), []byte(wrapper), 0o600),
+	)
+	//nolint:gosec // G302: test wrapper needs owner execute permission.
+	require.NoError(t, os.Chmod(filepath.Join(binDir, podmanRootfulWrapperName), 0o700))
+	capture := filepath.Join(dir, "sudo-commands")
+	sudo := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CAPTURE_FILE\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, podmanSudoCommand), []byte(sudo), 0o600))
+	//nolint:gosec // G302: test sudo stub needs owner execute permission.
+	require.NoError(t, os.Chmod(filepath.Join(binDir, podmanSudoCommand), 0o700))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CAPTURE_FILE", capture)
+	t.Setenv("DOCKER_HOST", "ssh://root@remote/run/podman/podman.sock")
+	previousGate := rootfulDaemonGate
+	rootfulDaemonGate = &podmanDaemonGate{}
+	t.Cleanup(func() { rootfulDaemonGate = previousGate })
+	cleanupErr := errors.New("remote cleanup failed")
+	require.ErrorIs(
+		t,
+		recoverPodmanCleanup(
+			context.Background(),
+			nil,
+			podmanCleanupDirs{initialDir: dir},
+			cleanupErr,
+		),
+		cleanupErr,
+	)
+	assert.Empty(t, rootfulDaemonGate.unhealthy())
+	assert.True(t, rootfulDaemonGate.claimRecovery())
+	commands, err := os.ReadFile(capture) //nolint:gosec // G304: test-controlled capture path.
+	require.NoError(t, err)
+	assert.NotContains(t, string(commands), "systemctl restart")
 }
