@@ -316,6 +316,9 @@ func (r *runner) mergeExistingContainerConfig(
 	containerDetails *config.ContainerDetails,
 	p *resolveParams,
 ) (*config.MergedDevContainerConfig, error) {
+	if _, ok := r.driver.(driver.RecreateRequiredDriver); ok {
+		return r.currentContainerIdentity(ctx, containerDetails, p)
+	}
 	imageMetadataConfig, err := metadata.GetImageMetadataFromContainer(
 		containerDetails,
 		p.substitutionContext,

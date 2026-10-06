@@ -606,3 +606,23 @@ func TestMigrationReplacesSavedUserSettingsWithCurrentConfiguration(t *testing.T
 		require.Equal(t, tt.want, d.remoteUser)
 	}
 }
+
+func TestOwnerIndependentReuseRefreshesDeveloperIdentity(t *testing.T) {
+	d := &migrationMockDriver{
+		provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+			mockDriver: &mockDriver{},
+		},
+	}
+	p := recreateResolveParams()
+	p.options.Recreate = false
+	p.parsedConfig.Config.RemoteUser = "current-user"
+	p.substitutionContext = &config.SubstitutionContext{}
+	details := runningContainerDetails()
+	details.Config.Labels[metadata.CreationConfigLabel] = stringTrue
+	details.Config.Labels[metadata.ImageMetadataLabel] = `[{"remoteUser":"previous-user"}]`
+	merged, err := newTestRunner(d).mergeExistingContainerConfig(context.Background(), details, p)
+	require.NoError(t, err)
+	require.Equal(t, "current-user", merged.RemoteUser)
+	require.False(t, d.stopCalled)
+	require.False(t, d.deleteCalled)
+}
