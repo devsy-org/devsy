@@ -231,18 +231,17 @@ func (r *runner) provisioningPreflightForRecreate(ctx context.Context, options U
 	return driver.DriverProvisioningPreflight(ctx, r.driver)
 }
 
-// findExistingDevContainer looks up the dev container, first checking that the
-// configured docker command exists. Returns nil details (without error) when
-// docker is unavailable.
 func (r *runner) findExistingDevContainer(
 	ctx context.Context,
 ) (*config.ContainerDetails, error) {
-	dockerCmd := "docker"
-	if r.workspaceConfig.Agent.Docker.Path != "" {
-		dockerCmd = r.workspaceConfig.Agent.Docker.Path
-	}
-	if !command.Exists(dockerCmd) {
-		return nil, nil
+	if _, dockerBacked := r.driver.(driver.DockerHelperProvider); dockerBacked {
+		dockerCmd := "docker"
+		if r.workspaceConfig.Agent.Docker.Path != "" {
+			dockerCmd = r.workspaceConfig.Agent.Docker.Path
+		}
+		if !command.Exists(dockerCmd) {
+			return nil, nil
+		}
 	}
 
 	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)

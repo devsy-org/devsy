@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
@@ -273,5 +275,43 @@ func TestImageRunValidationPreservesContainerBeforeRecreate(t *testing.T) {
 			assert.Equal(t, !reject, d.stopCalled)
 			assert.False(t, d.deleteCalled)
 		})
+	}
+}
+
+type dockerDiscoveryRuntime struct {
+	*mockDriver
+}
+
+func (d *dockerDiscoveryRuntime) DockerHelper() (*docker.DockerHelper, error) {
+	return nil, nil
+}
+
+func TestWorkspaceDiscoveryUsesRuntimeCapability(t *testing.T) {
+	for _, dockerBacked := range []bool{false, true} {
+		for _, withImages := range []bool{false, true} {
+			t.Run(fmt.Sprintf("docker=%t/images=%t", dockerBacked, withImages), func(t *testing.T) {
+				existing := runningContainerDetails()
+				base := &mockDriver{findResult: existing}
+				var runtimeDriver driver.Driver = base
+				if dockerBacked {
+					runtimeDriver = &dockerDiscoveryRuntime{mockDriver: base}
+				}
+				r := newTestRunner(runtimeDriver)
+				r.workspaceConfig.Agent.Docker.Path = filepath.Join(t.TempDir(), "missing-docker")
+				if withImages {
+					r.imageBackend = &separateImages{}
+				}
+				found, err := r.findExistingDevContainer(context.Background())
+				require.NoError(t, err)
+				if dockerBacked {
+					assert.Nil(t, found)
+				} else {
+					assert.Same(t, existing, found)
+					base.findErr = errors.New("runtime discovery failed")
+					_, err = r.findExistingDevContainer(context.Background())
+					assert.ErrorIs(t, err, base.findErr)
+				}
+			})
+		}
 	}
 }
