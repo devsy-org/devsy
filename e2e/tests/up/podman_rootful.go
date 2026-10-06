@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/onsi/ginkgo/v2"
 )
 
@@ -159,9 +161,9 @@ func checkPodmanHealth(ctx context.Context, wrapperPath string) (podmanHealthCla
 		return podmanHealthOK, nil
 	}
 	class := classifyPodmanHealthFailure(healthCtx, string(out))
-	return class, fmt.Errorf(
+	return class, redactPodmanError(err, fmt.Sprintf(
 		"rootful Podman readiness check failed (class: %s) or exceeded %s\n"+
-			"command: %s ps\nDOCKER_HOST: %s\ncontext err: %v\noutput:\n%s\nerror: %w",
+			"command: %s ps\nDOCKER_HOST: %s\ncontext err: %v\noutput:\n%s\nerror: %v",
 		class,
 		podmanHealthCheckTimeout,
 		wrapperPath,
@@ -169,7 +171,7 @@ func checkPodmanHealth(ctx context.Context, wrapperPath string) (podmanHealthCla
 		healthCtx.Err(),
 		string(out),
 		err,
-	)
+	))
 }
 
 // runDiagCommand never fails the caller: diagnostics are best-effort so a
@@ -188,6 +190,7 @@ func runDiagCommand(ctx context.Context, name string, args ...string) string {
 	if err != nil {
 		text += fmt.Sprintf("\n(command failed: %v; context err: %v)", err, diagCtx.Err())
 	}
+	text = redactPodmanDiagnostics(text)
 	limit := podmanDiagMaxOutput
 	if name == "ps" || name == "lslocks" || name == "sh" ||
 		strings.Contains(strings.Join(args, " "), "lslocks") {
@@ -294,12 +297,12 @@ func attemptPodmanRecovery(ctx context.Context, wrapperPath string) (podmanHealt
 	docker.PrepareForGroupCancellation(cmd)
 	started := time.Now()
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return podmanHealthPoisoned, fmt.Errorf(
-			"PODMAN_ROOTFUL_RECOVERY_FAILED: systemctl restart failed after %s: %w\noutput:\n%s",
+		return podmanHealthPoisoned, redactPodmanError(err, fmt.Sprintf(
+			"PODMAN_ROOTFUL_RECOVERY_FAILED: systemctl restart failed after %s: %v\noutput:\n%s",
 			time.Since(started),
 			err,
 			string(out),
-		)
+		))
 	}
 	ginkgo.GinkgoWriter.Printf("[podman-recovery] restart elapsed=%s\n", time.Since(started))
 	class, err := checkPodmanHealth(ctx, wrapperPath)
@@ -467,4 +470,50 @@ func recoverPodmanCleanup(
 		dirs.tempDir,
 	)
 	return nil
+}
+
+// Redact before truncation so a clipped URL cannot expose partial credentials.
+func redactPodmanDiagnostics(text string) string {
+	return secrets.Combine(secrets.NewRedactor(podmanEndpointSecrets(os.Getenv("DOCKER_HOST"))),
+		secrets.NewEnvironmentRedactor(os.Environ())).Redact(text)
+}
+
+func podmanEndpointSecrets(value string) []string {
+	endpoint, err := url.Parse(value)
+	if err != nil {
+		return []string{"endpoint=" + value}
+	}
+	if endpoint.User == nil {
+		return nil
+	}
+	entries := podmanUserinfoSecrets(endpoint.User.String())
+	entries = append(entries, "username="+endpoint.User.Username())
+	if password, ok := endpoint.User.Password(); ok {
+		entries = append(entries, "password="+password)
+	}
+	start, end := strings.Index(value, "://"), strings.LastIndex(value, "@")
+	if start >= 0 && end > start+3 {
+		entries = append(entries, podmanUserinfoSecrets(value[start+3:end])...)
+	}
+	return entries
+}
+
+func podmanUserinfoSecrets(userinfo string) []string {
+	entries := []string{"userinfo=" + userinfo}
+	if _, encoded, ok := strings.Cut(userinfo, ":"); ok {
+		entries = append(entries, "encoded="+encoded)
+	}
+	return entries
+}
+
+type podmanDiagnosticError struct {
+	cause   error
+	message string
+}
+
+func (e podmanDiagnosticError) Error() string { return e.message }
+func (e podmanDiagnosticError) Unwrap() error { return e.cause }
+
+func redactPodmanError(cause error, message string) error {
+	return podmanDiagnosticError{cause: cause, message: redactPodmanDiagnostics(message)}
 }

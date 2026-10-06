@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"io"
 	"net/http/httptest"
 	"os"
@@ -168,11 +169,6 @@ cat "$DEVSY_TEST_ARCHIVE"
 	args, err := os.ReadFile(argsFile)
 	s.Require().NoError(err)
 	s.Equal("save\nfinal-image:latest\n", string(args))
-	d := newDriver(newFakeClient(), nil, specDefaults{})
-	d.dockerPath = executable
-	details, err := d.InspectImage(context.Background(), "final-image:latest")
-	s.Require().NoError(err)
-	s.Equal(testUser, details.Config.User)
 }
 
 //nolint:gosec // Synthetic archives and executable fixtures under TempDir.
@@ -262,6 +258,76 @@ func (s *imageUserSuite) TestStreamImportHonorsCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	s.ErrorIs(loadImageSnapshot(ctx, "devsy-msb-image:test", img), context.DeadlineExceeded)
+}
+
+func (s *imageUserSuite) TestRegistryMetadataWithoutCLI() {
+	s.requirePOSIXShell()
+	server := httptest.NewServer(registry.New())
+	defer server.Close()
+	ref, err := name.NewTag(strings.TrimPrefix(server.URL, "http://") + "/metadata:latest")
+	s.Require().NoError(err)
+	img := s.snapshotImage(snapshotPasswd)
+	img, err = mutate.Config(img, v1.Config{User: testUser})
+	s.Require().NoError(err)
+	s.Require().NoError(remote.Write(ref, img))
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	dir := s.T().TempDir()
+	failingCLI := filepath.Join(dir, "failing-cli")
+	// #nosec G306 -- executable fixture under TempDir.
+	s.Require().NoError(os.WriteFile(failingCLI, []byte("#!/bin/sh\nexit 1\n"), 0o700))
+	for _, cli := range []string{filepath.Join(dir, "missing-cli"), failingCLI} {
+		d.dockerPath = cli
+		details, err := d.InspectImage(context.Background(), ref.Name())
+		s.Require().NoError(err)
+		s.Equal(testUser, details.Config.User)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = d.InspectImage(ctx, ref.Name())
+	s.ErrorIs(err, context.Canceled)
+}
+
+//nolint:gosec // Test-created executable under TempDir.
+func (s *imageUserSuite) TestInspectCachedImageConfig() {
+	s.requirePOSIXShell()
+	cfg := v1.Config{
+		User: testUser,
+		Env:  []string{"EXAMPLE=value"},
+		Labels: map[string]string{
+			"example": "value",
+		},
+		Entrypoint: []string{"/bin/sh"},
+		Cmd:        []string{"-l"},
+	}
+	dir := s.T().TempDir()
+	configFile, argsFile := filepath.Join(dir, "config.json"), filepath.Join(dir, "args")
+	configJSON, err := json.Marshal(cfg)
+	s.Require().NoError(err)
+	s.Require().NoError(os.WriteFile(configFile, configJSON, 0o600))
+	s.T().Setenv("DEVSY_TEST_CONFIG", configFile)
+	s.T().Setenv("DEVSY_TEST_ARGS", argsFile)
+	executable := filepath.Join(dir, "configured-cli")
+	script := `#!/bin/sh
+[ "$1" = image ] && [ "$2" = inspect ] || exit 1
+printf '%s\n' "$@" > "$DEVSY_TEST_ARGS"
+cat "$DEVSY_TEST_CONFIG"
+`
+	s.Require().NoError(os.WriteFile(executable, []byte(script), 0o700))
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	d.dockerPath = executable
+	details, err := d.InspectImage(context.Background(), "final-image:latest")
+	s.Require().NoError(err)
+	s.Equal(cfg.User, details.Config.User)
+	s.Equal(cfg.Env, details.Config.Env)
+	s.Equal(cfg.Labels, details.Config.Labels)
+	s.Equal(cfg.Entrypoint, details.Config.Entrypoint)
+	s.Equal(cfg.Cmd, details.Config.Cmd)
+	args, err := os.ReadFile(argsFile)
+	s.Require().NoError(err)
+	s.Equal("image\ninspect\n--format\n{{json .Config}}\nfinal-image:latest\n", string(args))
+	s.Require().NoError(os.WriteFile(configFile, []byte("invalid JSON"), 0o600))
+	_, err = d.InspectImage(context.Background(), "final-image:latest")
+	s.ErrorContains(err, "parse cached image config")
 }
 
 func (s *imageUserSuite) layer(files map[string]string) v1.Layer {

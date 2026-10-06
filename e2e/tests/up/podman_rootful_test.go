@@ -113,9 +113,15 @@ func TestRunPodmanDiagnosticsStopsAtBudget(t *testing.T) {
 	assert.Equal(t, []string{"ps"}, commands)
 }
 
+//nolint:gosec // Synthetic endpoint credentials verify unchanged routing.
 func TestRootfulPodmanWrapper(t *testing.T) {
+	const (
+		remoteFlag = "--remote"
+		urlFlag    = "--url"
+	)
 	endpoint := "unix:///run/podman/podman.sock"
 	emptyEndpoint := ""
+	credentialEndpoint := "ssh://fixture-user:fixture%40password@podman.example/run/podman.sock"
 	cases := []struct {
 		name       string
 		endpoint   *string
@@ -125,13 +131,19 @@ func TestRootfulPodmanWrapper(t *testing.T) {
 		{
 			name:       "configured endpoint",
 			endpoint:   &endpoint,
-			wantPrefix: []string{"podman", "--remote", "--url", endpoint},
+			wantPrefix: []string{"podman", remoteFlag, urlFlag, endpoint},
 			args:       []string{"ps", "-a"},
+		},
+		{
+			name:       "credential endpoint remains unchanged",
+			endpoint:   &credentialEndpoint,
+			wantPrefix: []string{"podman", remoteFlag, urlFlag, credentialEndpoint},
+			args:       []string{"ps"},
 		},
 		{
 			name:       "preserves arguments",
 			endpoint:   &endpoint,
-			wantPrefix: []string{"podman", "--remote", "--url", endpoint},
+			wantPrefix: []string{"podman", remoteFlag, urlFlag, endpoint},
 			args:       []string{"run", "value with spaces", "$(printf unsafe)"},
 		},
 		{
@@ -268,4 +280,42 @@ func checkUnmanagedPodmanCleanup(t *testing.T, endpoint string) {
 	commands, err := os.ReadFile(capture) //nolint:gosec // G304: test-controlled capture path.
 	require.NoError(t, err)
 	assert.NotContains(t, string(commands), "systemctl restart")
+}
+
+//nolint:gosec // Synthetic credentials exercise diagnostic redaction.
+func TestPodmanDiagnosticsRedactEndpointCredentials(t *testing.T) {
+	const endpoint = "ssh://fixture-user:fixture%40password@podman.example/run/podman.sock"
+	t.Setenv("DOCKER_HOST", endpoint)
+	dir := t.TempDir()
+	wrapper := filepath.Join(dir, "wrapper")
+	script := `#!/bin/sh
+printf 'cannot connect to %s; password=fixture@password; encoded=fixture%%40password\n' "$DOCKER_HOST"
+exit 1
+`
+	require.NoError(t, os.WriteFile(wrapper, []byte(script), 0o700))
+	class, err := checkPodmanHealth(context.Background(), wrapper)
+	require.Error(t, err)
+	assert.Equal(t, podmanHealthUnavailable, class)
+	var exitError *exec.ExitError
+	assert.ErrorAs(t, err, &exitError)
+	assert.Contains(t, err.Error(), "ssh://***@podman.example/run/podman.sock")
+	assert.Contains(t, err.Error(), "cannot connect")
+	diagnostics := runDiagCommand(context.Background(), wrapper)
+	// The error must remain safe even after the originating environment changes.
+	t.Setenv("DOCKER_HOST", "")
+	for _, text := range []string{err.Error(), errors.Unwrap(err).Error(), diagnostics} {
+		assert.NotContains(t, text, "fixture-user")
+		assert.NotContains(t, text, "fixture@password")
+		assert.NotContains(t, text, "fixture%40password")
+	}
+	assert.Contains(t, diagnostics, "podman.example")
+}
+
+//nolint:gosec // Synthetic credentials cover noncanonical URL escaping.
+func TestPodmanDiagnosticsRedactOriginalURLEscaping(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "ssh://fixture-user:fixture%4apassword@podman.example/run/podman.sock")
+	text := redactPodmanDiagnostics(
+		os.Getenv("DOCKER_HOST") + " fixture%4apassword fixtureJpassword",
+	)
+	assert.Equal(t, "ssh://***@podman.example/run/podman.sock *** ***", text)
 }

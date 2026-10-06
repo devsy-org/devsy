@@ -3,6 +3,7 @@ package microsandbox
 import (
 	"archive/tar"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -299,4 +300,35 @@ func localImageAvailable(ctx context.Context, dockerPath, ref string) bool {
 	}
 	// #nosec G204 -- configured Docker-compatible executable and fixed inspection arguments
 	return exec.CommandContext(ctx, dockerPath, "image", "inspect", ref).Run() == nil
+}
+
+func inspectImageConfig(ctx context.Context, dockerPath, ref string) (*v1.Config, error) {
+	if dockerPath == "" {
+		dockerPath = dockerExecutable
+	}
+	inspectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	// #nosec G204 -- configured Docker-compatible executable and fixed inspection arguments
+	out, err := exec.CommandContext(inspectCtx, dockerPath,
+		"image", "inspect", "--format", "{{json .Config}}", ref).Output()
+	if err == nil {
+		var cfg v1.Config
+		if err := json.Unmarshal(out, &cfg); err != nil {
+			return nil, fmt.Errorf("parse cached image config for %s: %w", ref, err)
+		}
+		return &cfg, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// A failed cache probe must not make Docker a requirement for registry images.
+	img, err := image.GetImageForArch(ctx, ref, runtime.GOARCH)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := img.ConfigFile()
+	if err != nil {
+		return nil, err
+	}
+	return &cfg.Config, nil
 }

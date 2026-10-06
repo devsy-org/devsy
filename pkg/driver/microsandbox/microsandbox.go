@@ -244,27 +244,18 @@ func (d *microsandboxDriver) InspectImage(
 	if _, err := d.TargetArchitecture(ctx, ""); err != nil {
 		return nil, err
 	}
-	img, cleanup, err := (filesystemUserResolver{dockerPath: d.dockerPath}).openImage(
-		ctx,
-		imageName,
-		false,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get image for %s: %w", imageName, err)
-	}
-	defer cleanup()
-	cfg, err := img.ConfigFile()
+	cfg, err := inspectImageConfig(ctx, d.dockerPath, imageName)
 	if err != nil {
 		return nil, fmt.Errorf("get image config for %s: %w", imageName, err)
 	}
 	return &config.ImageDetails{
 		ID: imageName,
 		Config: config.ImageDetailsConfig{
-			User:       cfg.Config.User,
-			Env:        cfg.Config.Env,
-			Labels:     cfg.Config.Labels,
-			Entrypoint: cfg.Config.Entrypoint,
-			Cmd:        cfg.Config.Cmd,
+			User:       cfg.User,
+			Env:        cfg.Env,
+			Labels:     cfg.Labels,
+			Entrypoint: cfg.Entrypoint,
+			Cmd:        cfg.Cmd,
 		},
 	}, nil
 }
