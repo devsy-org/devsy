@@ -93,8 +93,8 @@ func newHost(ctx context.Context, options hostOptions) (*Host, error) {
 				h.config.Binaries[key] = append(h.config.Binaries[key], nil)
 				continue
 			}
-			copy := *binary
-			h.config.Binaries[key] = append(h.config.Binaries[key], &copy)
+			snapshot := *binary
+			h.config.Binaries[key] = append(h.config.Binaries[key], &snapshot)
 		}
 	}
 	infoContext, cancel := context.WithTimeout(ctx, options.timeout)
