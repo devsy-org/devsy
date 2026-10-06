@@ -325,22 +325,32 @@ func loadImageSnapshot(ctx context.Context, imageRef string, img v1.Image) error
 		return fmt.Errorf("parse image reference %q: %w", imageRef, err)
 	}
 
-	tmp, err := os.CreateTemp("", "devsy-msb-*.tar")
+	// #nosec G204 -- resolved runtime binary and content-derived image reference
+	load := exec.CommandContext(ctx, msbBinary(), "load", "-t", imageRef)
+	var output strings.Builder
+	load.Stdout, load.Stderr = &output, &output
+	writer, err := load.StdinPipe()
 	if err != nil {
-		return fmt.Errorf("create image tarball: %w", err)
+		return fmt.Errorf("pipe image import: %w", err)
 	}
-	tmpPath := tmp.Name()
-	_ = tmp.Close()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	if err := tarball.WriteToFile(tmpPath, ref, img); err != nil {
-		return fmt.Errorf("write image tarball: %w", err)
+	defer func() { _ = writer.Close() }()
+	stopClose := context.AfterFunc(ctx, func() { _ = writer.Close() })
+	defer stopClose()
+	if err := load.Start(); err != nil {
+		return fmt.Errorf("start msb image import: %w", err)
 	}
-
-	// #nosec G204 -- args are a resolved binary path and an internally-created file
-	load := exec.CommandContext(ctx, msbBinary(), "load", "-i", tmpPath, "-t", imageRef)
-	if out, err := load.CombinedOutput(); err != nil {
-		return fmt.Errorf("msb load %q: %s: %w", imageRef, out, err)
+	writeErr := tarball.Write(ref, img, writer)
+	closeErr := writer.Close()
+	if err := errors.Join(writeErr, closeErr, ctx.Err()); err != nil {
+		_ = load.Process.Kill()
+		_ = load.Wait()
+		return fmt.Errorf("stream image %q: %s: %w", imageRef, output.String(), err)
+	}
+	if err := load.Wait(); err != nil {
+		return fmt.Errorf(
+			"msb load %q: %s: %w",
+			imageRef, output.String(), errors.Join(err, ctx.Err()),
+		)
 	}
 	return nil
 }

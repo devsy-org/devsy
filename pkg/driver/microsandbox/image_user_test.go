@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"io"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
@@ -124,9 +126,7 @@ func (s *imageUserSuite) TestCanceledExtraction() {
 
 //nolint:gosec // Synthetic account archive and executable fixture under TempDir.
 func (s *imageUserSuite) TestLocalFinalImageUsesConfiguredCLI() {
-	if runtime.GOOS == "windows" {
-		s.T().Skip("fixture executable requires a POSIX shell")
-	}
+	s.requirePOSIXShell()
 	img, err := mutate.AppendLayers(
 		empty.Image,
 		s.layer(map[string]string{passwdPath: snapshotPasswd}),
@@ -177,9 +177,7 @@ cat "$DEVSY_TEST_ARCHIVE"
 
 //nolint:gosec // Synthetic archives and executable fixtures under TempDir.
 func (s *imageUserSuite) TestSnapshotSurvivesRetagBeforeImport() {
-	if runtime.GOOS == "windows" {
-		s.T().Skip("fixture executable requires a POSIX shell")
-	}
+	s.requirePOSIXShell()
 	for _, source := range []string{"local", "registry"} {
 		s.Run(source, func() {
 			ctx := context.Background()
@@ -218,6 +216,10 @@ func (s *imageUserSuite) TestSnapshotSurvivesRetagBeforeImport() {
 			s.Require().NoError(err)
 			defer prepared.cleanup()
 			writeImage(replacement)
+			newer, err := client.PrepareImage(ctx, ref, false)
+			s.Require().NoError(err)
+			defer newer.cleanup()
+			s.NotEqual(prepared.reference, newer.reference)
 			owner, err := (filesystemUserResolver{}).ResolveImage(ctx, prepared.image, testUser)
 			s.Require().NoError(err)
 			s.Equal(mountOwner{2000, 2001}, *owner)
@@ -231,28 +233,35 @@ func (s *imageUserSuite) TestSnapshotSurvivesRetagBeforeImport() {
 			alias, err := os.ReadFile(aliasFile)
 			s.Require().NoError(err)
 			s.Equal(prepared.reference, string(alias))
-			newer, err := client.PrepareImage(ctx, ref, false)
-			s.Require().NoError(err)
-			defer newer.cleanup()
-			s.NotEqual(prepared.reference, newer.reference)
 		})
 	}
 }
 
-func (s *imageUserSuite) snapshotImage(accounts string) v1.Image {
-	img, err := mutate.AppendLayers(empty.Image, s.layer(map[string]string{passwdPath: accounts}))
-	s.Require().NoError(err)
-	return img
+//nolint:gosec // Test-created executable under TempDir.
+func (s *imageUserSuite) TestStreamImportReapsEarlyConsumerExit() {
+	s.requirePOSIXShell()
+	dir := s.T().TempDir()
+	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	script := "#!/bin/sh\necho rejected >&2\nexit 1\n"
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, "msb"), []byte(script), 0o700))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := loadImageSnapshot(ctx, "devsy-msb-image:test", s.snapshotImage(snapshotPasswd))
+	s.ErrorContains(err, "rejected")
+	s.NoError(ctx.Err(), "an early consumer exit must not leave a blocked writer")
 }
 
 //nolint:gosec // Test-created executable under TempDir.
-func (s *imageUserSuite) writeSnapshotImportCLI(dir string) {
-	msb := `#!/bin/sh
-[ "$1" = load ] || exit 1
-cp "$3" "$DEVSY_TEST_IMPORTED"
-printf '%s' "$5" > "$DEVSY_TEST_ALIAS"
-`
-	s.Require().NoError(os.WriteFile(filepath.Join(dir, "msb"), []byte(msb), 0o700))
+func (s *imageUserSuite) TestStreamImportHonorsCancellation() {
+	s.requirePOSIXShell()
+	dir := s.T().TempDir()
+	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	script := "#!/bin/sh\nexec sleep 60\n"
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, "msb"), []byte(script), 0o700))
+	img := s.snapshotImage(snapshotPasswd)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	s.ErrorIs(loadImageSnapshot(ctx, "devsy-msb-image:test", img), context.DeadlineExceeded)
 }
 
 func (s *imageUserSuite) layer(files map[string]string) v1.Layer {
@@ -270,4 +279,32 @@ func (s *imageUserSuite) layer(files map[string]string) v1.Layer {
 	)
 	s.Require().NoError(err)
 	return layer
+}
+
+func (s *imageUserSuite) snapshotImage(accounts string) v1.Image {
+	padding := make([]byte, 1024*1024)
+	_, err := rand.Read(padding)
+	s.Require().NoError(err)
+	img, err := mutate.AppendLayers(empty.Image, s.layer(map[string]string{
+		passwdPath: accounts, "padding.bin": string(padding),
+	}))
+	s.Require().NoError(err)
+	return img
+}
+
+//nolint:gosec // Test-created executable under TempDir.
+func (s *imageUserSuite) writeSnapshotImportCLI(dir string) {
+	msb := `#!/bin/sh
+[ "$1" = load ] || exit 1
+cat > "$DEVSY_TEST_IMPORTED"
+printf '%s' "$3" > "$DEVSY_TEST_ALIAS"
+`
+	s.T().Setenv("TMPDIR", filepath.Join(dir, "unavailable-temp"))
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, "msb"), []byte(msb), 0o700))
+}
+
+func (s *imageUserSuite) requirePOSIXShell() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("fixture executable requires a POSIX shell")
+	}
 }
