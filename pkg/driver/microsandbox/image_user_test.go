@@ -37,7 +37,7 @@ func (s *imageUserSuite) TestResolution() {
 		{"0", mountOwner{}},
 		{testUser, mountOwner{1000, 1002}},
 		{"1000", mountOwner{1000, 1002}},
-		{"1000:1001", mountOwner{1000, 1001}},
+		{testNumericIdentity, mountOwner{1000, 1001}},
 		{"vscode:developers", mountOwner{1000, 1001}},
 		{"vscode:1003", mountOwner{1000, 1003}},
 		{"1000:developers", mountOwner{1000, 1001}},
@@ -59,7 +59,7 @@ func (s *imageUserSuite) TestResolution() {
 }
 
 func (s *imageUserSuite) TestMissingAccounts() {
-	owner, err := ownerFromImage(context.Background(), empty.Image, "1000:1001")
+	owner, err := ownerFromImage(context.Background(), empty.Image, testNumericIdentity)
 	s.Require().NoError(err)
 	s.Equal(mountOwner{1000, 1001}, *owner)
 	_, err = ownerFromImage(context.Background(), empty.Image, testUser)
@@ -126,6 +126,11 @@ func (s *imageUserSuite) TestLocalFinalImageUsesConfiguredCLI() {
 		s.layer(map[string]string{passwdPath: "vscode:x:2000:2001:dev:/home/vscode:/bin/sh\n"}),
 	)
 	s.Require().NoError(err)
+	cfg, err := img.ConfigFile()
+	s.Require().NoError(err)
+	cfg.Config.User = testUser
+	img, err = mutate.ConfigFile(img, cfg)
+	s.Require().NoError(err)
 	dir := s.T().TempDir()
 	archive := filepath.Join(dir, "image.tar")
 	tag, err := name.NewTag("final-image:latest")
@@ -136,21 +141,26 @@ func (s *imageUserSuite) TestLocalFinalImageUsesConfiguredCLI() {
 	s.T().Setenv("DEVSY_TEST_ARGS", argsFile)
 	executable := filepath.Join(dir, "configured-cli")
 	script := `#!/bin/sh
+if [ "$1" = image ]; then exit 0; fi
 printf '%s\n' "$@" > "$DEVSY_TEST_ARGS"
 cat "$DEVSY_TEST_ARCHIVE"
 `
 	s.Require().NoError(os.WriteFile(executable, []byte(script), 0o700))
-	owner, err := (filesystemUserResolver{dockerPath: executable}).Resolve(
-		context.Background(),
-		"final-image:latest",
-		true,
-		testUser,
-	)
-	s.Require().NoError(err)
-	s.Equal(mountOwner{2000, 2001}, *owner)
+	for _, built := range []bool{true, false} {
+		owner, err := (filesystemUserResolver{dockerPath: executable}).Resolve(
+			context.Background(), "final-image:latest", built, testUser,
+		)
+		s.Require().NoError(err)
+		s.Equal(mountOwner{2000, 2001}, *owner)
+	}
 	args, err := os.ReadFile(argsFile)
 	s.Require().NoError(err)
 	s.Equal("save\nfinal-image:latest\n", string(args))
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	d.dockerPath = executable
+	details, err := d.InspectImage(context.Background(), "final-image:latest")
+	s.Require().NoError(err)
+	s.Equal(testUser, details.Config.User)
 }
 
 //nolint:gosec // Test-created executable and archive paths under TempDir.
@@ -167,12 +177,14 @@ func (s *imageUserSuite) TestLocalImportUsesConfiguredCLIAndDrainsArchive() {
 	s.T().Setenv("DEVSY_TEST_TARGET", target)
 	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	saveCLI := filepath.Join(dir, "save-cli")
-	s.Require().
-		NoError(os.WriteFile(saveCLI, []byte("#!/bin/sh\ncat \"$DEVSY_TEST_ARCHIVE\"\n"), 0o700))
+	saveScript := "#!/bin/sh\nif [ \"$1\" = image ]; then exit 0; fi\ncat \"$DEVSY_TEST_ARCHIVE\"\n"
+	s.Require().NoError(os.WriteFile(saveCLI, []byte(saveScript), 0o700))
 	s.Require().
 		NoError(os.WriteFile(filepath.Join(dir, "msb"), []byte("#!/bin/sh\ncat > \"$DEVSY_TEST_TARGET\"\n"), 0o700))
-	s.Require().
-		NoError((cliClient{dockerPath: saveCLI}).EnsureImage(context.Background(), "final-image:latest", true))
+	for _, built := range []bool{true, false} {
+		s.Require().
+			NoError((cliClient{dockerPath: saveCLI}).EnsureImage(context.Background(), "final-image:latest", built))
+	}
 	data, err := os.ReadFile(target)
 	s.Require().NoError(err)
 	s.Equal(content, string(data))

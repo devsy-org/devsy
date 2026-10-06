@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/image"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -21,6 +22,7 @@ import (
 const (
 	maxAccountFileSize = 4 << 20
 	rootUser           = "root"
+	dockerExecutable   = "docker"
 	passwdPath         = "etc/passwd"
 	groupPath          = "etc/group"
 )
@@ -46,22 +48,30 @@ func (r filesystemUserResolver) Resolve(
 	if owner, complete, err := explicitOwner(user); complete || err != nil {
 		return owner, err
 	}
-	var img v1.Image
-	var err error
-	if builtLocally {
-		var cleanup func()
-		img, cleanup, err = r.localImage(ctx, ref)
-		if err != nil {
-			return nil, err
-		}
-		defer cleanup()
-	} else {
-		img, err = image.GetImageForArch(ctx, ref, runtime.GOARCH)
-		if err != nil {
-			return nil, err
-		}
+	img, cleanup, err := r.openImage(ctx, ref, builtLocally)
+	if err != nil {
+		return nil, err
 	}
+	defer cleanup()
 	return ownerFromImage(ctx, img, user)
+}
+
+func (r filesystemUserResolver) openImage(
+	ctx context.Context,
+	ref string,
+	builtLocally bool,
+) (v1.Image, func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if builtLocally || localImageAvailable(ctx, r.dockerPath, ref) {
+		return r.localImage(ctx, ref)
+	}
+	img, err := image.GetImageForArch(ctx, ref, runtime.GOARCH)
+	if err != nil {
+		return nil, nil, err
+	}
+	return img, func() {}, nil
 }
 
 // The archive must remain available until lazy layer reads finish.
@@ -76,7 +86,7 @@ func (r filesystemUserResolver) localImage(
 	cleanup := func() { _ = os.Remove(archive.Name()) }
 	docker := r.dockerPath
 	if docker == "" {
-		docker = "docker"
+		docker = dockerExecutable
 	}
 	// #nosec G204 -- configured Docker-compatible executable, fixed subcommand, image argument
 	cmd := exec.CommandContext(ctx, docker, "save", ref)
@@ -285,4 +295,14 @@ func groupID(groups, group string) (uint32, error) {
 		return gid, nil
 	}
 	return 0, fmt.Errorf("group %q not found in final image /etc/group", group)
+}
+
+func localImageAvailable(ctx context.Context, dockerPath, ref string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if dockerPath == "" {
+		dockerPath = dockerExecutable
+	}
+	// #nosec G204 -- configured Docker-compatible executable and fixed inspection arguments
+	return exec.CommandContext(ctx, dockerPath, "image", "inspect", ref).Run() == nil
 }

@@ -216,10 +216,23 @@ execute image code. An unresolvable user fails provisioning before replacement
 of the existing VM. With `workspaceStatVirtualization: "off"`, Devsy omits the
 owner override.
 
+In Dockerless mode, the developer filesystem is built inside the VM after its
+workspace mount is created. Ownership synchronization therefore supports only
+`remoteUser: "root"` in this mode. Other identities fail before replacing an
+existing VM. For a non-root developer, use a prebuilt image or explicitly select
+`workspaceStatVirtualization: "off"` with private host permissions. Devsy never
+looks up the developer account in the unrelated Dockerless runner image.
+
+Image inspection, account resolution, and import prefer an image cached in the
+configured Docker-compatible CLI. This permits offline/private-registry startup
+and keeps metadata and mount ownership aligned with the image actually imported.
+Registry-only images do not require Docker initialization.
+
 Devsy-managed workspaces with an incompatible persisted workspace mount contract
 are automatically recreated once on `devsy up`, including workspaces created
 before the contract label existed. Changing either workspace permission policy
-also requires recreation. The host workspace and named volumes persist, but
+or the effective developer identity also requires recreation. The host workspace
+and named volumes persist, but
 changes stored only on the VM's root disk are lost, as with `--recreate`.
 Externally managed containers are never automatically replaced.
 

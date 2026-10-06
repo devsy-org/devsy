@@ -53,7 +53,7 @@ func (cliClient) Version(ctx context.Context) (string, error) {
 }
 
 func (c cliClient) EnsureImage(ctx context.Context, imageRef string, builtLocally bool) error {
-	if builtLocally {
+	if builtLocally || localImageAvailable(ctx, c.dockerPath, imageRef) {
 		return loadFromDocker(ctx, imageRef, c.dockerPath)
 	}
 	// #nosec G204 -- args are a resolved binary path and a validated image ref
@@ -311,7 +311,7 @@ func redactArgs(args []string) string {
 
 func loadFromDocker(ctx context.Context, image, dockerPath string) error {
 	if dockerPath == "" {
-		dockerPath = "docker"
+		dockerPath = dockerExecutable
 	}
 	docker, err := exec.LookPath(dockerPath)
 	if err != nil {

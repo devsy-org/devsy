@@ -175,6 +175,9 @@ type RunOptions struct {
 	// RemoteUser is the developer identity for remote tooling and workspace ownership.
 	RemoteUser string `json:"remoteUser,omitempty"`
 
+	// Dockerless builds the developer filesystem inside the runner after creation.
+	Dockerless bool `json:"dockerless,omitempty"`
+
 	// Entrypoint is the entrypoint of the container
 	Entrypoint string `json:"entrypoint,omitempty"`
 
@@ -227,12 +230,16 @@ type RunOptions struct {
 
 // RecreateRequiredDriver detects incompatible creation-time container contracts.
 type RecreateRequiredDriver interface {
-	RequiresRecreate(details *config.ContainerDetails) (bool, string)
+	RequiresRecreate(details *config.ContainerDetails, remoteUser string) (bool, string)
 }
 
-func DriverRequiresRecreate(d Driver, details *config.ContainerDetails) (bool, string) {
+func DriverRequiresRecreate(
+	d Driver,
+	details *config.ContainerDetails,
+	remoteUser string,
+) (bool, string) {
 	if migration, ok := d.(RecreateRequiredDriver); ok {
-		return migration.RequiresRecreate(details)
+		return migration.RequiresRecreate(details, remoteUser)
 	}
 	return false, ""
 }

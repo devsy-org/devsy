@@ -235,7 +235,8 @@ func hasFlagValue(args []string, flag, value string) bool {
 func TestInspectStoppedSandboxRetainsMountContract(t *testing.T) {
 	d := newDriver(newFakeClient(), nil, specDefaults{})
 	output := fmt.Sprintf(
-		`{"name":"%s","status":"Stopped","active_config":null,"config":{"labels":{"%s":"%s","%s":"root"}}}`,
+		`{"name":"%s","status":"Stopped","active_config":null,"config":{"labels":{`+
+			`"%s":"%s","devsy.sh/microsandbox-workspace-user":"root","%s":"root"}}}`,
 		wsName,
 		workspaceMountContractLabel,
 		d.workspaceMountContract(),
@@ -246,7 +247,7 @@ func TestInspectStoppedSandboxRetainsMountContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	details := toContainerDetails(info)
-	required, _ := d.RequiresRecreate(details)
+	required, _ := d.RequiresRecreate(details, rootUser)
 	if required {
 		t.Fatal("stopped sandbox lost persisted contract")
 	}
@@ -258,7 +259,8 @@ func TestInspectStoppedSandboxRetainsMountContract(t *testing.T) {
 func TestInspectUsesActiveContractWhenConfigHasPendingChanges(t *testing.T) {
 	d := newDriver(newFakeClient(), nil, specDefaults{})
 	output := fmt.Sprintf(
-		`{"name":"%s","status":"Running","active_config":{"labels":{"%s":"%s"}},"config":{"labels":{"%s":"pending"}}}`,
+		`{"name":"%s","status":"Running","active_config":{"labels":{`+
+			`"%s":"%s","devsy.sh/microsandbox-workspace-user":"root"}},"config":{"labels":{"%s":"pending"}}}`,
 		wsName,
 		workspaceMountContractLabel,
 		d.workspaceMountContract(),
@@ -268,7 +270,7 @@ func TestInspectUsesActiveContractWhenConfigHasPendingChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	required, _ := d.RequiresRecreate(toContainerDetails(info))
+	required, _ := d.RequiresRecreate(toContainerDetails(info), rootUser)
 	if required {
 		t.Fatal("pending configuration replaced active mount contract")
 	}

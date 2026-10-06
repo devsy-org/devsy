@@ -162,7 +162,7 @@ func (r *runner) prepareContainerRecreation(
 	details *config.ContainerDetails,
 	params *resolveParams,
 ) error {
-	if err := r.applyDriverRecreateRequirement(details, params); err != nil {
+	if err := r.applyDriverRecreateRequirement(ctx, details, params); err != nil {
 		return err
 	}
 	if err := r.applyTerminalSecretRecreateRequirement(details, params); err != nil {
@@ -324,6 +324,14 @@ func (r *runner) mergeExistingContainerConfig(
 		return nil, err
 	}
 
+	return r.mergeContainerMetadata(ctx, imageMetadataConfig, p)
+}
+
+func (r *runner) mergeContainerMetadata(
+	ctx context.Context,
+	imageMetadataConfig *config.ImageMetadataConfig,
+	p *resolveParams,
+) (*config.MergedDevContainerConfig, error) {
 	if p.options.ExtraDevContainerPath != "" {
 		if imageMetadataConfig == nil {
 			imageMetadataConfig = &config.ImageMetadataConfig{}
@@ -763,6 +771,9 @@ func (r *runner) runContainer(
 	}
 
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
+	if _, ok := r.driver.(driver.RecreateRequiredDriver); ok {
+		runOptions.Labels = append(runOptions.Labels, metadata.CreationConfigLabel+"="+stringTrue)
+	}
 
 	// Image drivers (Docker, Apple) build and run a local OCI image.
 	if imageDriver, ok := r.driver.(driver.ImageRunner); ok {
@@ -886,6 +897,7 @@ func (r *runner) getDockerlessRunOptions(
 		Image:      image,
 		User:       containerRootUser,
 		RemoteUser: effectiveRemoteUser(mergedConfig, buildInfo.Dockerless.User),
+		Dockerless: true,
 		Entrypoint: "/.dockerless/dockerless",
 		Cmd: []string{
 			"start",
@@ -1140,13 +1152,29 @@ func effectiveRemoteUser(merged *config.MergedDevContainerConfig, containerUser 
 }
 
 func (r *runner) applyDriverRecreateRequirement(
+	ctx context.Context,
 	details *config.ContainerDetails,
 	p *resolveParams,
 ) error {
 	if details == nil || p.options.Recreate {
 		return nil
 	}
-	required, reason := driver.DriverRequiresRecreate(r.driver, details)
+	if _, ok := r.driver.(driver.RecreateRequiredDriver); !ok {
+		return nil
+	}
+	merged, err := r.currentContainerIdentity(ctx, details, p)
+	if err != nil {
+		return err
+	}
+	containerUser := merged.ContainerUser
+	if containerUser == "" {
+		containerUser = details.Config.Labels[config.UserLabel]
+	}
+	required, reason := driver.DriverRequiresRecreate(
+		r.driver,
+		details,
+		effectiveRemoteUser(merged, containerUser),
+	)
 	if !required {
 		return nil
 	}
@@ -1156,4 +1184,24 @@ func (r *runner) applyDriverRecreateRequirement(
 	log.Infof("recreating workspace because %s", reason)
 	p.options.Recreate = true
 	return nil
+}
+
+func (r *runner) currentContainerIdentity(
+	ctx context.Context,
+	details *config.ContainerDetails,
+	p *resolveParams,
+) (*config.MergedDevContainerConfig, error) {
+	imageMetadata, err := metadata.GetImageMetadataFromContainer(details, p.substitutionContext)
+	if err != nil {
+		return nil, err
+	}
+	if details.Config.Labels[metadata.CreationConfigLabel] == stringTrue &&
+		len(imageMetadata.Config) > 0 {
+		imageMetadata.Config = imageMetadata.Config[:len(imageMetadata.Config)-1]
+	}
+	imageMetadata.Config = append(
+		imageMetadata.Config,
+		metadata.DevContainerConfigToImageMetadata(p.parsedConfig.Config),
+	)
+	return r.mergeContainerMetadata(ctx, imageMetadata, p)
 }

@@ -67,7 +67,7 @@ var _ = ginkgo.Describe(
 			})
 
 			// full up: boots the microVM, streams in the agent, opens the tunnel
-			err = f.DevsyUp(ctx, tempDir)
+			err = f.DevsyUp(ctx, tempDir, "--devcontainer", ".devcontainer.json")
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
@@ -106,6 +106,9 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(string(workloadUser))).To(gomega.Equal("0"))
 
+			developer, err := f.DevsySSHOnce(ctx, tempDir, "id -un")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(developer)).To(gomega.Equal("vscode"))
 			assertMicrosandboxHostEntries(ctx, f, tempDir, "fresh")
 			err = f.DevsyWorkspaceStop(ctx, tempDir)
 			framework.ExpectNoError(err)
@@ -117,6 +120,28 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(microsandboxCreationTime(ctx, sandbox)).NotTo(gomega.Equal(createdAt))
 			assertMicrosandboxHostEntries(ctx, f, tempDir, "recreated")
+
+			previousCreation := microsandboxCreationTime(ctx, sandbox)
+			configPath := filepath.Join(tempDir, ".devcontainer.json")
+			// #nosec G304 -- configuration copied into the test-owned temporary directory
+			data, err := os.ReadFile(configPath)
+			framework.ExpectNoError(err)
+			var devConfig map[string]any
+			framework.ExpectNoError(json.Unmarshal(data, &devConfig))
+			devConfig["remoteUser"] = "root"
+			data, err = json.Marshal(devConfig)
+			framework.ExpectNoError(err)
+			framework.ExpectNoError(os.WriteFile(configPath, data, 0o600))
+			err = f.DevsyWorkspaceStop(ctx, tempDir)
+			framework.ExpectNoError(err)
+			err = f.DevsyUp(ctx, tempDir, "--devcontainer", ".devcontainer.json")
+			framework.ExpectNoError(err)
+			gomega.Expect(microsandboxCreationTime(ctx, sandbox)).
+				NotTo(gomega.Equal(previousCreation))
+			developer, err = f.DevsySSHOnce(ctx, tempDir, "id -u")
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.TrimSpace(developer)).To(gomega.Equal("0"))
+			assertMicrosandboxHostEntries(ctx, f, tempDir, "identity-changed")
 		}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
 	},
 )
@@ -131,7 +156,7 @@ func assertMicrosandboxHostEntries(
 	identity, err := f.DevsySSHOnce(ctx, hostPath, `printf '%s:%s' "$(id -u)" "$(id -g)"`)
 	framework.ExpectNoError(err)
 	identity = strings.TrimSpace(identity)
-	gomega.Expect(identity).NotTo(gomega.Equal("0:0"))
+
 	for name, mode := range map[string]os.FileMode{prefix + "-file": 0o644, prefix + "-dir": 0o755} {
 		hostEntry := filepath.Join(hostPath, name)
 		if mode == 0o644 {

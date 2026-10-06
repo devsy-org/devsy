@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testNumericIdentity = "1000:1001"
+
 type recordingUserResolver struct {
 	image string
 	built bool
@@ -100,6 +102,7 @@ func TestWorkspaceOwnerPolicyOff(t *testing.T) {
 	options := &driver.RunOptions{
 		WorkspaceMount: &config.Mount{Source: testBindSrc, Target: testBindDst},
 		RemoteUser:     testUser,
+		Dockerless:     true,
 	}
 	owner, err := d.resolveWorkspaceOwner(context.Background(), options)
 	require.NoError(t, err)
@@ -118,13 +121,16 @@ func TestWorkspaceMountContractRecreation(t *testing.T) {
 	for _, label := range []string{"", "v1", d.workspaceMountContract(), "v2;stat=relaxed;host=mirror;owner=remote-user"} {
 		details := &config.ContainerDetails{
 			Config: config.ContainerDetailsConfig{
-				Labels: map[string]string{workspaceMountContractLabel: label},
+				Labels: map[string]string{
+					workspaceMountContractLabel: label,
+					workspaceRemoteUserLabel:    rootUser,
+				},
 			},
 		}
-		required, _ := driver.DriverRequiresRecreate(d, details)
+		required, _ := driver.DriverRequiresRecreate(d, details, rootUser)
 		require.Equal(t, label != d.workspaceMountContract(), required)
 	}
-	required, _ := d.RequiresRecreate(nil)
+	required, _ := d.RequiresRecreate(nil, rootUser)
 	require.False(t, required)
 }
 
@@ -146,4 +152,69 @@ func TestWorkspaceOwnerFallbackIdentity(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, tt.want, resolver.user)
 	}
+}
+
+func TestWorkspaceIdentityChangeRequiresRecreation(t *testing.T) {
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	spec := d.buildSpec(
+		wsID,
+		&driver.RunOptions{User: rootUser, RemoteUser: testUser},
+		nil,
+		&mountOwner{UID: 1000, GID: 1000},
+	)
+	details := toContainerDetails(&sandboxInfo{Labels: spec.Labels})
+	for _, user := range []string{testUser, "2000:2001", rootUser} {
+		required, _ := d.RequiresRecreate(details, user)
+		require.Equal(t, user != testUser, required)
+	}
+	d.workspaceMountPolicy.StatVirtualization = statVirtOff
+	details.Config.Labels[workspaceMountContractLabel] = d.workspaceMountContract()
+	required, _ := d.RequiresRecreate(details, rootUser)
+	require.False(t, required)
+}
+
+func TestDockerlessOwnerNeverLooksUpRunnerAccounts(t *testing.T) {
+	for _, user := range []string{testUser, "1000", testNumericIdentity, rootUser} {
+		t.Run(user, func(t *testing.T) {
+			f := newFakeClient()
+			f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
+			d := newDriver(f, nil, specDefaults{})
+			resolver := &recordingUserResolver{err: errors.New("runner accounts must not be read")}
+			d.userResolver = resolver
+			err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{
+				Image: imgX, User: rootUser, RemoteUser: user, Dockerless: true,
+				WorkspaceMount: &config.Mount{Source: testBindSrc, Target: testBindDst},
+			})
+			if user != rootUser {
+				require.ErrorContains(t, err, "non-root Dockerless workspace owner")
+				require.Empty(t, f.calls)
+				require.True(t, f.info[wsName].Running)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, &mountOwner{}, f.created[wsName].Mounts[0].Policy.Owner)
+			}
+			require.Zero(t, resolver.calls)
+		})
+	}
+}
+
+func TestBuildSpecPreservesImageMetadataAndImageUser(t *testing.T) {
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	spec := d.buildSpec(wsID, &driver.RunOptions{
+		Labels: []string{"devcontainer.metadata=[]", config.UserLabel + "=node"},
+		User:   rootUser, RemoteUser: testUser,
+	}, nil, nil)
+	require.Equal(t, "[]", spec.Labels["devcontainer.metadata"])
+	require.Equal(t, "node", spec.Labels[config.UserLabel])
+	require.Equal(t, rootUser, spec.Labels[userLabel])
+}
+
+func TestWorkspaceWithoutOwnerDoesNotMigrateOnIdentityChange(t *testing.T) {
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	spec := d.buildSpec(wsID, &driver.RunOptions{RemoteUser: testUser}, nil, nil)
+	required, _ := d.RequiresRecreate(
+		toContainerDetails(&sandboxInfo{Labels: spec.Labels}),
+		rootUser,
+	)
+	require.False(t, required)
 }
