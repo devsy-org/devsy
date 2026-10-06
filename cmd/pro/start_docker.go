@@ -232,7 +232,7 @@ func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) 
 		},
 	)
 	if waitErr != nil {
-		return "", fmt.Errorf("error waiting for loft router domain: %w", err)
+		return "", fmt.Errorf("error waiting for loft router domain: %w", waitErr)
 	}
 
 	return url, nil
@@ -350,7 +350,7 @@ func (cmd *StartCmd) inspectContainer(ctx context.Context, id string) (*Containe
 	if err != nil {
 		return nil, fmt.Errorf("parse inspect output: %w", err)
 	} else if len(containerDetails) == 0 {
-		return nil, fmt.Errorf("coudln't find container %s", id)
+		return nil, fmt.Errorf("couldn't find container %s", id)
 	}
 
 	return containerDetails[0], nil
