@@ -138,55 +138,10 @@ func (r *runner) resolveContainer(
 	params *resolveParams,
 	containerDetails *config.ContainerDetails,
 ) (*resolvedContainer, error) {
-	if err := r.applyDriverRecreateRequirement(containerDetails, params); err != nil {
+	if err := r.prepareContainerRecreation(ctx, containerDetails, params); err != nil {
 		return nil, err
 	}
-	options := params.options
-	if containerDetails != nil && !options.Recreate &&
-		r.needsTerminalSecretEnvironmentMigration(containerDetails) {
-		if err := r.validateTerminalSecretEnvironmentSupport(); err != nil {
-			return nil, err
-		}
-		if params.parsedConfig.Config.ContainerID != "" {
-			return nil, fmt.Errorf(
-				"cannot inject attached terminal secrets into externally managed container: "+
-					"the container does not have the required %s tmpfs mount",
-				config.SecretsEnvDir,
-			)
-		}
-		log.Info(
-			"recreating workspace because attached terminal secrets require the secure runtime mount",
-		)
-		options.Recreate = true
-		params.options.Recreate = true
-	}
-	if containerDetails != nil && !options.Recreate &&
-		needsSecretFileMountMigration(containerDetails, options.SecretsMount) {
-		if !driver.DriverSupportsMountType(r.driver, driver.MountTypeTmpfs) {
-			return nil, fmt.Errorf(
-				"the current provider does not support securely mounting workspace file secrets",
-			)
-		}
-		if params.parsedConfig.Config.ContainerID != "" {
-			return nil, fmt.Errorf(
-				"cannot inject file secrets into externally managed container: "+
-					"the container does not have the required %s tmpfs mount",
-				config.SecretsMountDir,
-			)
-		}
-		log.Info("recreating workspace because file secrets require the secure runtime mount")
-		options.Recreate = true
-		params.options.Recreate = true
-	}
-
-	if options.Recreate && params.parsedConfig.Config.ContainerID != "" {
-		return nil, fmt.Errorf("cannot recreate container not created by Devsy")
-	}
-	if err := r.provisioningPreflightForRecreate(ctx, options); err != nil {
-		return nil, err
-	}
-
-	if options.Recreate || containerDetails == nil {
+	if params.options.Recreate || containerDetails == nil {
 		return r.resolveNewContainer(ctx, params)
 	}
 
@@ -200,6 +155,76 @@ func (r *runner) resolveContainer(
 		substitutionContext.ContainerWorkspaceFolder = actual
 	}
 	return r.resolveExistingContainer(ctx, containerDetails, params)
+}
+
+func (r *runner) prepareContainerRecreation(
+	ctx context.Context,
+	details *config.ContainerDetails,
+	params *resolveParams,
+) error {
+	if err := r.applyDriverRecreateRequirement(details, params); err != nil {
+		return err
+	}
+	if err := r.applyTerminalSecretRecreateRequirement(details, params); err != nil {
+		return err
+	}
+	if err := r.applyFileSecretRecreateRequirement(details, params); err != nil {
+		return err
+	}
+	if params.options.Recreate && params.parsedConfig.Config.ContainerID != "" {
+		return fmt.Errorf("cannot recreate container not created by Devsy")
+	}
+	return r.provisioningPreflightForRecreate(ctx, params.options)
+}
+
+func (r *runner) applyTerminalSecretRecreateRequirement(
+	details *config.ContainerDetails,
+	params *resolveParams,
+) error {
+	if details == nil || params.options.Recreate ||
+		!r.needsTerminalSecretEnvironmentMigration(details) {
+		return nil
+	}
+	if err := r.validateTerminalSecretEnvironmentSupport(); err != nil {
+		return err
+	}
+	if params.parsedConfig.Config.ContainerID != "" {
+		return fmt.Errorf(
+			"cannot inject attached terminal secrets into externally managed container: "+
+				"the container does not have the required %s tmpfs mount",
+			config.SecretsEnvDir,
+		)
+	}
+	log.Info(
+		"recreating workspace because attached terminal secrets require the secure runtime mount",
+	)
+	params.options.Recreate = true
+	return nil
+}
+
+func (r *runner) applyFileSecretRecreateRequirement(
+	details *config.ContainerDetails,
+	params *resolveParams,
+) error {
+	if details == nil || params.options.Recreate ||
+		!needsSecretFileMountMigration(details, params.options.SecretsMount) {
+		return nil
+	}
+	if !driver.DriverSupportsMountType(r.driver, driver.MountTypeTmpfs) {
+		return fmt.Errorf(
+			"the current provider does not support securely mounting workspace file secrets",
+		)
+	}
+	if params.parsedConfig.Config.ContainerID != "" {
+		return fmt.Errorf(
+			"cannot inject file secrets into externally managed container: "+
+				"the container does not have the required %s tmpfs mount",
+			config.SecretsMountDir,
+		)
+	}
+	log.Info("recreating workspace because file secrets require the secure runtime mount")
+	params.options.Recreate = true
+	return nil
 }
 
 func (r *runner) provisioningPreflightForRecreate(ctx context.Context, options UpOptions) error {
