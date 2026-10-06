@@ -10,8 +10,6 @@ import (
 	"github.com/devsy-org/devsy-runtime-sdk/runtimev1"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/subprocess"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 var (
@@ -153,39 +151,31 @@ func exchangeExec(
 	stream runtimev1.RuntimeDriver_ExecClient,
 	streams driver.Streams,
 ) (*runtimev1.ExecExit, error) {
-	closeInput := sync.OnceFunc(func() {
-		if closer, ok := streams.Stdin.(io.Closer); ok {
-			_ = closer.Close()
-		}
-	})
+	input := &execInput{reader: streams.Stdin}
+	closeInput := sync.OnceFunc(input.close)
 	stop := context.AfterFunc(ctx, closeInput)
 	defer stop()
-	inputDone := make(chan error, 1)
+	inputDone := make(chan struct{})
 	go func() {
-		err := sendExecInput(ctx, stream, streams.Stdin)
+		defer close(inputDone)
+		err := sendExecInput(ctx, stream, input)
 		if err != nil && !errors.Is(err, io.EOF) {
 			cancel(err)
 		}
-		inputDone <- err
 	}()
 	exit, receiveErr := receiveExecOutput(stream, streams)
 	// Distinguish ordinary cleanup from an input failure that wins cancellation.
 	// Cancel before joining: Send may be flow-controlled and Read may be blocked.
 	cancel(errExecComplete)
 	closeInput()
-	inputErr := <-inputDone
+	<-inputDone
 	inputCause := context.Cause(ctx)
 	if inputCause != nil && inputCause != errExecComplete {
 		return nil, inputCause
 	}
-	if inputErr != nil && !isExecInputCleanupError(inputErr) {
-		return nil, inputErr
+	if err := input.readError(); err != nil {
+		return nil, err
 	}
 	// Recv owns command completion, including a command that exits before stdin EOF.
 	return exit, receiveErr
-}
-
-func isExecInputCleanupError(err error) bool {
-	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) ||
-		errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled
 }

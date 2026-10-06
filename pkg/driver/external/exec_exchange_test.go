@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"testing/iotest"
 
 	"github.com/devsy-org/devsy-runtime-sdk/runtimev1"
@@ -70,26 +71,17 @@ func (s *HostSuite) TestExecInputFailureAtCleanupBoundarySurvivesSuccessfulExit(
 func (s *HostSuite) TestExecCleanupInputErrorsPreserveSuccessfulExit() {
 	for _, cleanupErr := range []error{
 		io.ErrClosedPipe, context.Canceled, status.Error(codes.Canceled, "stream canceled"),
+		os.ErrClosed, io.ErrUnexpectedEOF, errors.New("custom reader closed"),
 	} {
 		s.Run(cleanupErr.Error(), func() {
 			ctx, cancel := context.WithCancelCause(context.Background())
 			defer cancel(nil)
-			input, producer := io.Pipe()
-			defer func() { _ = producer.Close() }()
-			ready := make(chan struct{})
-			cancelAtBoundary := func(cause error) {
-				cancel(cause)
-				_ = producer.CloseWithError(cleanupErr)
+			input := &closedInputReader{
+				ready: make(chan struct{}), closed: make(chan struct{}), err: cleanupErr,
 			}
 			exit, err := exchangeExec(
-				ctx,
-				cancelAtBoundary,
-				&completedExecStream{ready: ready},
-				driver.Streams{
-					Stdin:  &readyInputReader{Reader: input, ready: ready},
-					Stdout: io.Discard,
-					Stderr: io.Discard,
-				},
+				ctx, cancel, &completedExecStream{ready: input.ready},
+				driver.Streams{Stdin: input, Stdout: io.Discard, Stderr: io.Discard},
 			)
 			s.NoError(err)
 			s.NotNil(exit)
@@ -124,4 +116,22 @@ type readyInputReader struct {
 func (r *readyInputReader) Read(p []byte) (int, error) {
 	close(r.ready)
 	return r.Reader.Read(p)
+}
+
+// Models a reader whose Close unblocks Read with its own error type.
+type closedInputReader struct {
+	ready  chan struct{}
+	closed chan struct{}
+	err    error
+}
+
+func (r *closedInputReader) Read([]byte) (int, error) {
+	close(r.ready)
+	<-r.closed
+	return 0, r.err
+}
+
+func (r *closedInputReader) Close() error {
+	close(r.closed)
+	return nil
 }

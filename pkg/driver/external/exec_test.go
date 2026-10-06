@@ -159,6 +159,19 @@ func (s *HostSuite) TestExecEarlyExitClosesBlockedInput() {
 	s.ErrorIs(err, io.ErrClosedPipe)
 }
 
+func (s *HostSuite) TestExecEarlyExitClosesFileInput() {
+	host := s.runningHost(fake.Conformance)
+	input, producer, err := os.Pipe()
+	s.Require().NoError(err)
+	defer func() { _ = input.Close(); _ = producer.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.NoError(host.CommandContainerArgv(ctx, fixtureWorkspace,
+		[]string{earlyExitCommand}, driver.Streams{Stdin: input}))
+	_, err = input.Stat()
+	s.ErrorIs(err, os.ErrClosed)
+}
+
 func (s *HostSuite) TestExecDeadlineAndCrash() {
 	for _, mode := range []string{fake.ExecSlow, fake.ExecCrash} {
 		s.Run(mode, func() {
