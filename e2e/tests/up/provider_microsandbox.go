@@ -122,6 +122,14 @@ var _ = ginkgo.Describe(
 			assertMicrosandboxHostEntries(ctx, f, tempDir, "recreated")
 
 			previousCreation := microsandboxCreationTime(ctx, sandbox)
+			// #nosec G204 -- fixed command and Devsy-generated sandbox name
+			_, err = exec.CommandContext(
+				ctx, "msb", "exec", "--stream", sandbox, "--", "sh", "-c",
+				"echo preserved > /root/recreation-preserved.txt",
+			).
+				Output()
+			framework.ExpectNoError(err)
+
 			configPath := filepath.Join(tempDir, ".devcontainer.json")
 			// #nosec G304 -- configuration copied into the test-owned temporary directory
 			data, err := os.ReadFile(configPath)
@@ -132,9 +140,28 @@ var _ = ginkgo.Describe(
 			data, err = json.Marshal(devConfig)
 			framework.ExpectNoError(err)
 			framework.ExpectNoError(os.WriteFile(configPath, data, 0o600))
-			err = f.DevsyWorkspaceStop(ctx, tempDir)
+
+			stdout, stderr, err := f.DevsyUpStreams(
+				ctx, tempDir, "--devcontainer", ".devcontainer.json",
+			)
+			gomega.Expect(err).To(gomega.HaveOccurred())
+			gomega.Expect(stdout + stderr).To(gomega.ContainSubstring("--recreate"))
+			gomega.Expect(microsandboxCreationTime(ctx, sandbox)).To(gomega.Equal(previousCreation))
+			// #nosec G204 -- fixed command and Devsy-generated sandbox name
+			preserved, err := exec.CommandContext(
+				ctx,
+				"msb",
+				"exec",
+				"--stream",
+				sandbox,
+				"--",
+				"cat",
+				"/root/recreation-preserved.txt",
+			).
+				Output()
 			framework.ExpectNoError(err)
-			err = f.DevsyUp(ctx, tempDir, "--devcontainer", ".devcontainer.json")
+			gomega.Expect(strings.TrimSpace(string(preserved))).To(gomega.Equal("preserved"))
+			err = f.DevsyUp(ctx, tempDir, "--devcontainer", ".devcontainer.json", "--recreate")
 			framework.ExpectNoError(err)
 			gomega.Expect(microsandboxCreationTime(ctx, sandbox)).
 				NotTo(gomega.Equal(previousCreation))

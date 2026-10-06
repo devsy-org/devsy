@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -17,8 +16,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
-	"github.com/devsy-org/devsy/pkg/image"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
@@ -52,25 +51,36 @@ func (cliClient) Version(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func (c cliClient) EnsureImage(ctx context.Context, imageRef string, builtLocally bool) error {
-	if builtLocally || localImageAvailable(ctx, c.dockerPath, imageRef) {
-		return loadFromDocker(ctx, imageRef, c.dockerPath)
+func (c cliClient) PrepareImage(
+	ctx context.Context,
+	ref string,
+	builtLocally bool,
+) (*preparedImage, error) {
+	img, cleanup, err := filesystemUserResolver(c).openImage(ctx, ref, builtLocally)
+	if err != nil {
+		return nil, err
 	}
-	// #nosec G204 -- args are a resolved binary path and a validated image ref
-	out, err := exec.CommandContext(ctx, msbBinary(), "pull", imageRef).CombinedOutput()
-	if err == nil {
-		return nil
+	digest, err := img.Digest()
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("identify final image %q: %w", ref, err)
 	}
-	if loadErr := loadViaRegistry(ctx, imageRef); loadErr != nil {
-		return fmt.Errorf("msb pull %s: %s: %w; registry fallback: %v", imageRef, out, err, loadErr)
-	}
-	return nil
+	return &preparedImage{
+		reference: "devsy-msb-image:" + digest.Hex,
+		image:     img,
+		cleanup:   cleanup,
+	}, nil
+}
+
+func (cliClient) EnsureImage(ctx context.Context, prepared *preparedImage) error {
+	return loadImageSnapshot(ctx, prepared.reference, prepared.image)
+}
+
+func (c cliClient) PrepareVolumes(ctx context.Context, mounts []volumeMount) error {
+	return c.ensureVolumes(ctx, mounts)
 }
 
 func (c cliClient) Create(ctx context.Context, sandbox string, spec sandboxSpec) error {
-	if err := c.ensureVolumes(ctx, spec.Mounts); err != nil {
-		return err
-	}
 	return msbRun(ctx, runArgs(sandbox, spec)...)
 }
 
@@ -309,55 +319,10 @@ func redactArgs(args []string) string {
 	return strings.Join(out, " ")
 }
 
-func loadFromDocker(ctx context.Context, image, dockerPath string) error {
-	if dockerPath == "" {
-		dockerPath = dockerExecutable
-	}
-	docker, err := exec.LookPath(dockerPath)
-	if err != nil {
-		return fmt.Errorf("docker not found to load built image %q: %w", image, err)
-	}
-	// #nosec G204 -- docker/msb paths are resolved and the image ref is validated
-	save := exec.CommandContext(ctx, docker, "save", image)
-	// #nosec G204 -- docker/msb paths are resolved and the image ref is validated
-	load := exec.CommandContext(ctx, msbBinary(), "load", "-t", image)
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		return fmt.Errorf("pipe docker save: %w", err)
-	}
-	defer func() { _ = reader.Close() }()
-	defer func() { _ = writer.Close() }()
-	save.Stdout = writer
-	load.Stdin = reader
-	var saveErr strings.Builder
-	save.Stderr = &saveErr
-	var loadErr strings.Builder
-	load.Stderr = &loadErr
-	if err := load.Start(); err != nil {
-		return fmt.Errorf("start msb load: %w", err)
-	}
-	_ = reader.Close()
-	if err := save.Run(); err != nil {
-		// load is still running on the broken pipe; kill and reap it.
-		_ = load.Process.Kill()
-		_ = load.Wait()
-		return fmt.Errorf("docker save %q: %s: %w", image, saveErr.String(), err)
-	}
-	_ = writer.Close()
-	if err := load.Wait(); err != nil {
-		return fmt.Errorf("msb load %q: %s: %w", image, loadErr.String(), err)
-	}
-	return nil
-}
-
-func loadViaRegistry(ctx context.Context, imageRef string) error {
+func loadImageSnapshot(ctx context.Context, imageRef string, img v1.Image) error {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return fmt.Errorf("parse image reference %q: %w", imageRef, err)
-	}
-	img, err := image.GetImageForArch(ctx, imageRef, runtime.GOARCH)
-	if err != nil {
-		return fmt.Errorf("pull image %q: %w", imageRef, err)
 	}
 
 	tmp, err := os.CreateTemp("", "devsy-msb-*.tar")

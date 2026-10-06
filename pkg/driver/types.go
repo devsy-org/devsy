@@ -178,6 +178,9 @@ type RunOptions struct {
 	// Dockerless builds the developer filesystem inside the runner after creation.
 	Dockerless bool `json:"dockerless,omitempty"`
 
+	// AllowRecreate authorizes replacing an existing VM and discarding its root disk.
+	AllowRecreate bool `json:"allowRecreate,omitempty"`
+
 	// Entrypoint is the entrypoint of the container
 	Entrypoint string `json:"entrypoint,omitempty"`
 

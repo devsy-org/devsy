@@ -2,11 +2,17 @@ package devcontainer
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	migrationTerminal = "terminal"
+	migrationFile     = "file"
 )
 
 type secretMigrationDriver struct {
@@ -37,8 +43,8 @@ func TestSecretMigrationPreflightFailurePreservesExistingContainer(t *testing.T)
 		terminal, file, driver   bool
 		explicit, tmpfsSupported bool
 	}{
-		{name: "terminal", terminal: true, tmpfsSupported: true},
-		{name: "file", file: true, tmpfsSupported: true},
+		{name: migrationTerminal, terminal: true, tmpfsSupported: true},
+		{name: migrationFile, file: true, tmpfsSupported: true},
 		{name: "both", terminal: true, file: true, tmpfsSupported: true},
 		{name: "driver migration precedes secrets", terminal: true, file: true, driver: true},
 		{name: "explicit recreation skips migration", terminal: true, file: true, explicit: true},
@@ -126,5 +132,41 @@ func TestPrepareContainerRecreationKeepsCompatibleContainer(t *testing.T) {
 		require.NoError(t, r.prepareContainerRecreation(t.Context(), details, params))
 		require.False(t, params.options.Recreate)
 		require.False(t, d.provisioningCalled)
+	}
+}
+
+type onRunMigrationDriver struct{ *secretMigrationDriver }
+
+func (*onRunMigrationDriver) RecreateMode() driver.RecreateMode { return driver.RecreateOnRun }
+
+func TestOnRunMigrationRequiresExplicitRecreation(t *testing.T) {
+	for _, reason := range []string{"driver", migrationTerminal, migrationFile} {
+		for _, explicit := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/explicit=%t", reason, explicit), func(t *testing.T) {
+				_, params, base := newSecretMigrationRunner()
+				base.tmpfsSupported = true
+				base.required = reason == "driver"
+				r := newTestRunner(&onRunMigrationDriver{base})
+				params.options.Recreate = explicit
+				if reason == migrationTerminal {
+					r.workspaceConfig.CLIOptions.TerminalSecretEnvNames = []string{
+						terminalSecretSentinelName,
+					}
+				}
+				if reason == migrationFile {
+					params.options.SecretsMount = []string{secretFileMountRequestSentinel}
+				}
+				err := r.prepareContainerRecreation(t.Context(), runningContainerDetails(), params)
+				if explicit {
+					require.NoError(t, err)
+				} else {
+					require.ErrorContains(t, err, "--recreate")
+				}
+				require.Equal(t, explicit, params.options.Recreate)
+				require.False(t, base.stopCalled)
+				require.False(t, base.deleteCalled)
+				require.Equal(t, explicit, base.provisioningCalled)
+			})
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,12 +13,17 @@ import (
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/stretchr/testify/suite"
 )
+
+//nolint:gosec // Synthetic account fixture contains no credentials.
+const snapshotPasswd = "vscode:x:2000:2001:dev:/home/vscode:/bin/sh\n"
 
 type imageUserSuite struct{ suite.Suite }
 
@@ -76,7 +82,7 @@ func (s *imageUserSuite) TestFinalLayerOverridesAndWhiteouts() {
 	)
 	final := s.layer(
 		map[string]string{
-			passwdPath:      "vscode:x:2000:2001:dev:/home/vscode:/bin/sh\n",
+			passwdPath:      snapshotPasswd,
 			"etc/.wh.group": "",
 		},
 	)
@@ -123,7 +129,7 @@ func (s *imageUserSuite) TestLocalFinalImageUsesConfiguredCLI() {
 	}
 	img, err := mutate.AppendLayers(
 		empty.Image,
-		s.layer(map[string]string{passwdPath: "vscode:x:2000:2001:dev:/home/vscode:/bin/sh\n"}),
+		s.layer(map[string]string{passwdPath: snapshotPasswd}),
 	)
 	s.Require().NoError(err)
 	cfg, err := img.ConfigFile()
@@ -147,9 +153,15 @@ cat "$DEVSY_TEST_ARCHIVE"
 `
 	s.Require().NoError(os.WriteFile(executable, []byte(script), 0o700))
 	for _, built := range []bool{true, false} {
-		owner, err := (filesystemUserResolver{dockerPath: executable}).Resolve(
-			context.Background(), "final-image:latest", built, testUser,
+		resolver := filesystemUserResolver{dockerPath: executable}
+		snapshot, cleanup, err := resolver.openImage(
+			context.Background(),
+			"final-image:latest",
+			built,
 		)
+		s.Require().NoError(err)
+		defer cleanup()
+		owner, err := resolver.ResolveImage(context.Background(), snapshot, testUser)
 		s.Require().NoError(err)
 		s.Equal(mountOwner{2000, 2001}, *owner)
 	}
@@ -163,31 +175,84 @@ cat "$DEVSY_TEST_ARCHIVE"
 	s.Equal(testUser, details.Config.User)
 }
 
-//nolint:gosec // Test-created executable and archive paths under TempDir.
-func (s *imageUserSuite) TestLocalImportUsesConfiguredCLIAndDrainsArchive() {
+//nolint:gosec // Synthetic archives and executable fixtures under TempDir.
+func (s *imageUserSuite) TestSnapshotSurvivesRetagBeforeImport() {
 	if runtime.GOOS == "windows" {
-		s.T().Skip("fixture executables require a POSIX shell")
+		s.T().Skip("fixture executable requires a POSIX shell")
 	}
-	dir := s.T().TempDir()
-	source := filepath.Join(dir, "source")
-	target := filepath.Join(dir, "target")
-	content := strings.Repeat("archive data", 100000)
-	s.Require().NoError(os.WriteFile(source, []byte(content), 0o600))
-	s.T().Setenv("DEVSY_TEST_ARCHIVE", source)
-	s.T().Setenv("DEVSY_TEST_TARGET", target)
-	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	saveCLI := filepath.Join(dir, "save-cli")
-	saveScript := "#!/bin/sh\nif [ \"$1\" = image ]; then exit 0; fi\ncat \"$DEVSY_TEST_ARCHIVE\"\n"
-	s.Require().NoError(os.WriteFile(saveCLI, []byte(saveScript), 0o700))
-	s.Require().
-		NoError(os.WriteFile(filepath.Join(dir, "msb"), []byte("#!/bin/sh\ncat > \"$DEVSY_TEST_TARGET\"\n"), 0o700))
-	for _, built := range []bool{true, false} {
-		s.Require().
-			NoError((cliClient{dockerPath: saveCLI}).EnsureImage(context.Background(), "final-image:latest", built))
+	for _, source := range []string{"local", "registry"} {
+		s.Run(source, func() {
+			ctx := context.Background()
+			original := s.snapshotImage(snapshotPasswd)
+			replacement := s.snapshotImage("vscode:x:3000:3001:dev:/home/vscode:/bin/sh\n")
+			dir := s.T().TempDir()
+			archive := filepath.Join(dir, "source.tar")
+			imported := filepath.Join(dir, "imported.tar")
+			aliasFile := filepath.Join(dir, "alias")
+			s.T().Setenv("DEVSY_TEST_ARCHIVE", archive)
+			s.T().Setenv("DEVSY_TEST_IMPORTED", imported)
+			s.T().Setenv("DEVSY_TEST_ALIAS", aliasFile)
+			s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			cliPath := filepath.Join(dir, "configured-cli")
+			script := "#!/bin/sh\nif [ \"$1\" = image ]; then exit 0; fi\ncat \"$DEVSY_TEST_ARCHIVE\"\n"
+			ref := "final-image:latest"
+			if source == "registry" {
+				server := httptest.NewServer(registry.New())
+				defer server.Close()
+				ref = strings.TrimPrefix(server.URL, "http://") + "/final-image:latest"
+				script = "#!/bin/sh\nexit 1\n"
+			}
+			s.Require().NoError(os.WriteFile(cliPath, []byte(script), 0o700))
+			tag, err := name.NewTag(ref)
+			s.Require().NoError(err)
+			writeImage := func(img v1.Image) {
+				if source == "local" {
+					s.Require().NoError(tarball.WriteToFile(archive, tag, img))
+				} else {
+					s.Require().NoError(remote.Write(tag, img))
+				}
+			}
+			writeImage(original)
+			client := cliClient{dockerPath: cliPath}
+			prepared, err := client.PrepareImage(ctx, ref, false)
+			s.Require().NoError(err)
+			defer prepared.cleanup()
+			writeImage(replacement)
+			owner, err := (filesystemUserResolver{}).ResolveImage(ctx, prepared.image, testUser)
+			s.Require().NoError(err)
+			s.Equal(mountOwner{2000, 2001}, *owner)
+			s.writeSnapshotImportCLI(dir)
+			s.Require().NoError(client.EnsureImage(ctx, prepared))
+			importedImage, err := tarball.ImageFromPath(imported, nil)
+			s.Require().NoError(err)
+			importedOwner, err := ownerFromImage(ctx, importedImage, testUser)
+			s.Require().NoError(err)
+			s.Equal(*owner, *importedOwner)
+			alias, err := os.ReadFile(aliasFile)
+			s.Require().NoError(err)
+			s.Equal(prepared.reference, string(alias))
+			newer, err := client.PrepareImage(ctx, ref, false)
+			s.Require().NoError(err)
+			defer newer.cleanup()
+			s.NotEqual(prepared.reference, newer.reference)
+		})
 	}
-	data, err := os.ReadFile(target)
+}
+
+func (s *imageUserSuite) snapshotImage(accounts string) v1.Image {
+	img, err := mutate.AppendLayers(empty.Image, s.layer(map[string]string{passwdPath: accounts}))
 	s.Require().NoError(err)
-	s.Equal(content, string(data))
+	return img
+}
+
+//nolint:gosec // Test-created executable under TempDir.
+func (s *imageUserSuite) writeSnapshotImportCLI(dir string) {
+	msb := `#!/bin/sh
+[ "$1" = load ] || exit 1
+cp "$3" "$DEVSY_TEST_IMPORTED"
+printf '%s' "$5" > "$DEVSY_TEST_ALIAS"
+`
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, "msb"), []byte(msb), 0o700))
 }
 
 func (s *imageUserSuite) layer(files map[string]string) v1.Layer {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -40,6 +43,8 @@ type fakeClient struct {
 	calls        []string
 	execReq      execRequest
 	execName     string
+	failPrepare  error
+	failVolumes  error
 	failFind     error
 	failStop     error
 	failCreat    error
@@ -67,9 +72,20 @@ func (f *fakeClient) Version(context.Context) (string, error) {
 	return testVersion, nil
 }
 
-func (f *fakeClient) EnsureImage(_ context.Context, image string, _ bool) error {
-	f.calls = append(f.calls, "ensure:"+image)
+func (f *fakeClient) PrepareImage(_ context.Context, image string, _ bool) (*preparedImage, error) {
+	if f.failPrepare != nil {
+		return nil, f.failPrepare
+	}
+	return &preparedImage{reference: image, image: empty.Image, cleanup: func() {}}, nil
+}
+
+func (f *fakeClient) EnsureImage(_ context.Context, image *preparedImage) error {
+	f.calls = append(f.calls, "ensure:"+image.reference)
 	return f.failEnsure
+}
+
+func (f *fakeClient) PrepareVolumes(_ context.Context, _ []volumeMount) error {
+	return f.failVolumes
 }
 
 func (f *fakeClient) Create(_ context.Context, name string, spec sandboxSpec) error {
@@ -176,7 +192,11 @@ func TestRunDevContainerReplacesStaleSandbox(t *testing.T) {
 	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
 	d := newDriver(f, nil, specDefaults{})
 
-	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{Image: imgX})
+	err := d.RunDevContainer(
+		context.Background(),
+		wsID,
+		&driver.RunOptions{Image: imgX, AllowRecreate: true},
+	)
 	if err != nil {
 		t.Fatalf("RunDevContainer: %v", err)
 	}
@@ -735,6 +755,47 @@ func TestParseUint8(t *testing.T) {
 	for _, c := range cases {
 		if got := parseUint8(c.in); got != c.want {
 			t.Errorf("parseUint8(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+func TestReplacementRequiresConsentAndSuccessfulPreparation(t *testing.T) {
+	sentinel := errors.New("preparation failed")
+	for _, running := range []bool{false, true} {
+		for _, tc := range []struct {
+			name                 string
+			allow                bool
+			imageErr, volumesErr error
+		}{
+			{name: "consent"},
+			{name: "image", allow: true, imageErr: sentinel},
+			{name: "volumes", allow: true, volumesErr: sentinel},
+		} {
+			t.Run(fmt.Sprintf("running=%t/%s", running, tc.name), func(t *testing.T) {
+				f := newFakeClient()
+				original := &sandboxInfo{Name: wsName, Running: running, CreatedAt: time.Now()}
+				f.info[wsName] = original
+				f.failPrepare, f.failVolumes = tc.imageErr, tc.volumesErr
+				opts := &driver.RunOptions{Image: imgX, AllowRecreate: tc.allow}
+				err := newDriver(f, nil, specDefaults{}).RunDevContainer(t.Context(), wsID, opts)
+				require.Error(t, err)
+				if !tc.allow {
+					require.ErrorContains(t, err, "--recreate")
+				} else {
+					require.ErrorIs(t, err, sentinel)
+				}
+				require.Same(t, original, f.info[wsName])
+				require.Equal(t, running, original.Running)
+				require.Empty(t, f.created)
+				for _, call := range f.calls {
+					require.False(
+						t,
+						strings.HasPrefix(call, "stop:") || strings.HasPrefix(call, "remove:") ||
+							strings.HasPrefix(call, "create:"),
+						call,
+					)
+				}
+			})
 		}
 	}
 }

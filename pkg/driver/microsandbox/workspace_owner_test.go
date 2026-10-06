@@ -7,27 +7,25 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
 )
 
 const testNumericIdentity = "1000:1001"
 
 type recordingUserResolver struct {
-	image string
-	built bool
 	user  string
 	owner *mountOwner
 	err   error
 	calls int
 }
 
-func (r *recordingUserResolver) Resolve(
+func (r *recordingUserResolver) ResolveImage(
 	_ context.Context,
-	image string,
-	built bool,
+	_ v1.Image,
 	user string,
 ) (*mountOwner, error) {
-	r.image, r.built, r.user = image, built, user
+	r.user = user
 	r.calls++
 	return r.owner, r.err
 }
@@ -59,8 +57,6 @@ func TestWorkspaceOwnerKeepsContainerIdentity(t *testing.T) {
 		),
 	)
 	require.Equal(t, testUser, resolver.user)
-	require.Equal(t, testImage, resolver.image)
-	require.True(t, resolver.built)
 	spec := f.created[wsName]
 	require.Equal(t, rootUser, spec.User)
 	require.Equal(
@@ -104,7 +100,7 @@ func TestWorkspaceOwnerPolicyOff(t *testing.T) {
 		RemoteUser:     testUser,
 		Dockerless:     true,
 	}
-	owner, err := d.resolveWorkspaceOwner(context.Background(), options)
+	owner, err := d.resolveWorkspaceOwner(context.Background(), options, nil)
 	require.NoError(t, err)
 	require.Nil(t, owner)
 	require.Zero(t, resolver.calls)
@@ -147,7 +143,7 @@ func TestWorkspaceOwnerFallbackIdentity(t *testing.T) {
 				User:           tt.user,
 				RemoteUser:     tt.remote,
 				WorkspaceMount: &config.Mount{Source: testBindSrc, Target: testBindDst},
-			},
+			}, nil,
 		)
 		require.NoError(t, err)
 		require.Equal(t, tt.want, resolver.user)
@@ -182,7 +178,11 @@ func TestDockerlessOwnerNeverLooksUpRunnerAccounts(t *testing.T) {
 			resolver := &recordingUserResolver{err: errors.New("runner accounts must not be read")}
 			d.userResolver = resolver
 			err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{
-				Image: imgX, User: rootUser, RemoteUser: user, Dockerless: true,
+				Image:          imgX,
+				User:           rootUser,
+				RemoteUser:     user,
+				Dockerless:     true,
+				AllowRecreate:  true,
 				WorkspaceMount: &config.Mount{Source: testBindSrc, Target: testBindDst},
 			})
 			if user != rootUser {

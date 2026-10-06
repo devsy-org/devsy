@@ -195,11 +195,10 @@ func (r *runner) applyTerminalSecretRecreateRequirement(
 			config.SecretsEnvDir,
 		)
 	}
-	log.Info(
-		"recreating workspace because attached terminal secrets require the secure runtime mount",
+	return r.scheduleContainerRecreation(
+		params,
+		"attached terminal secrets require the secure runtime mount",
 	)
-	params.options.Recreate = true
-	return nil
 }
 
 func (r *runner) applyFileSecretRecreateRequirement(
@@ -222,9 +221,7 @@ func (r *runner) applyFileSecretRecreateRequirement(
 			config.SecretsMountDir,
 		)
 	}
-	log.Info("recreating workspace because file secrets require the secure runtime mount")
-	params.options.Recreate = true
-	return nil
+	return r.scheduleContainerRecreation(params, "file secrets require the secure runtime mount")
 }
 
 func (r *runner) provisioningPreflightForRecreate(ctx context.Context, options UpOptions) error {
@@ -773,6 +770,7 @@ func (r *runner) runContainer(
 		}
 	}
 
+	runOptions.AllowRecreate = p.options.Recreate
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
 	if _, ok := r.driver.(driver.RecreateRequiredDriver); ok {
 		runOptions.Labels = append(runOptions.Labels, metadata.CreationConfigLabel+"="+stringTrue)
@@ -1184,9 +1182,7 @@ func (r *runner) applyDriverRecreateRequirement(
 	if p.parsedConfig.Config.ContainerID != "" {
 		return fmt.Errorf("cannot migrate externally managed container: %s", reason)
 	}
-	log.Infof("recreating workspace because %s", reason)
-	p.options.Recreate = true
-	return nil
+	return r.scheduleContainerRecreation(p, reason)
 }
 
 func (r *runner) currentContainerIdentity(
@@ -1207,4 +1203,17 @@ func (r *runner) currentContainerIdentity(
 		metadata.DevContainerConfigToImageMetadata(p.parsedConfig.Config),
 	)
 	return r.mergeContainerMetadata(ctx, imageMetadata, p)
+}
+
+func (r *runner) scheduleContainerRecreation(params *resolveParams, reason string) error {
+	if driver.DriverRecreateMode(r.driver) == driver.RecreateOnRun {
+		return fmt.Errorf(
+			"workspace requires recreation because %s; back up VM-local data and rerun with --recreate: "+
+				"replacement discards the VM root disk and cannot roll back after removal",
+			reason,
+		)
+	}
+	log.Infof("recreating workspace because %s", reason)
+	params.options.Recreate = true
+	return nil
 }

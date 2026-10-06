@@ -21,6 +21,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 const userLabel = "devsy.sh/user"
@@ -312,18 +313,7 @@ func (d *microsandboxDriver) DeleteDevContainer(ctx context.Context, workspaceID
 	if err != nil {
 		return err
 	}
-	if info == nil {
-		return nil
-	}
-	if info.Running {
-		if err := d.client.Stop(ctx, name); err != nil {
-			return fmt.Errorf("stop microsandbox VM before delete: %w", err)
-		}
-	}
-	if err := d.client.Remove(ctx, name); err != nil {
-		return fmt.Errorf("remove microsandbox VM: %w", err)
-	}
-	return nil
+	return d.deleteSandbox(ctx, name, info)
 }
 
 func (d *microsandboxDriver) GetDevContainerLogs(
@@ -378,21 +368,41 @@ func (d *microsandboxDriver) runFromOptions(
 	if err := d.ProvisioningPreflight(ctx); err != nil {
 		return err
 	}
-	owner, err := d.resolveWorkspaceOwner(ctx, options)
+	prepared, err := d.client.PrepareImage(ctx, options.Image, options.ImageBuilt)
+	if err != nil {
+		return fmt.Errorf("prepare microsandbox final image: %w", err)
+	}
+	defer prepared.cleanup()
+	owner, err := d.resolveWorkspaceOwner(ctx, options, prepared.image)
 	if err != nil {
 		return err
 	}
 	warnUnsupportedOptions(options)
-	if err := d.client.EnsureImage(ctx, options.Image, options.ImageBuilt); err != nil {
+	if err := d.client.EnsureImage(ctx, prepared); err != nil {
 		return fmt.Errorf("ensure microsandbox final image: %w", err)
 	}
-	if err := d.DeleteDevContainer(ctx, workspaceID); err != nil {
+	info, err := d.client.Find(ctx, sandboxName(workspaceID))
+	if err != nil {
+		return err
+	}
+	if info != nil && !options.AllowRecreate {
+		return fmt.Errorf(
+			"microsandbox VM already exists; back up VM-local data and rerun with --recreate: " +
+				"replacement discards the VM root disk and cannot roll back after removal",
+		)
+	}
+	spec := d.buildSpec(workspaceID, options, hostReqs, owner)
+	spec.Image = prepared.reference
+	if err := d.client.PrepareVolumes(ctx, spec.Mounts); err != nil {
+		return fmt.Errorf("prepare microsandbox volumes: %w", err)
+	}
+	if err := d.deleteSandbox(ctx, sandboxName(workspaceID), info); err != nil {
 		return fmt.Errorf("clean stale microsandbox VM before create: %w", err)
 	}
 	if err := d.client.Create(
 		ctx,
 		sandboxName(workspaceID),
-		d.buildSpec(workspaceID, options, hostReqs, owner),
+		spec,
 	); err != nil {
 		return fmt.Errorf("create microsandbox VM: %w", err)
 	}
@@ -658,6 +668,7 @@ func (d *microsandboxDriver) workspaceMountContract() string {
 func (d *microsandboxDriver) resolveWorkspaceOwner(
 	ctx context.Context,
 	options *driver.RunOptions,
+	img v1.Image,
 ) (*mountOwner, error) {
 	if d.workspaceMountPolicy.StatVirtualization == statVirtOff ||
 		bindMount(options.WorkspaceMount) == nil {
@@ -674,7 +685,7 @@ func (d *microsandboxDriver) resolveWorkspaceOwner(
 		}
 		return &mountOwner{}, nil
 	}
-	owner, err := d.userResolver.Resolve(ctx, options.Image, options.ImageBuilt, user)
+	owner, err := d.userResolver.ResolveImage(ctx, img, user)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"resolve microsandbox workspace owner for remoteUser %q: %w",
@@ -693,4 +704,23 @@ func workspaceRemoteUser(options *driver.RunOptions) string {
 		return options.User
 	}
 	return rootUser
+}
+
+func (d *microsandboxDriver) deleteSandbox(
+	ctx context.Context,
+	name string,
+	info *sandboxInfo,
+) error {
+	if info == nil {
+		return nil
+	}
+	if info.Running {
+		if err := d.client.Stop(ctx, name); err != nil {
+			return fmt.Errorf("stop microsandbox VM before delete: %w", err)
+		}
+	}
+	if err := d.client.Remove(ctx, name); err != nil {
+		return fmt.Errorf("remove microsandbox VM: %w", err)
+	}
+	return nil
 }

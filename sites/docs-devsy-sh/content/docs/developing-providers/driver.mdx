@@ -223,22 +223,26 @@ existing VM. For a non-root developer, use a prebuilt image or explicitly select
 `workspaceStatVirtualization: "off"` with private host permissions. Devsy never
 looks up the developer account in the unrelated Dockerless runner image.
 
-Image inspection, account resolution, and import prefer an image cached in the
-configured Docker-compatible CLI. This permits offline/private-registry startup
-and keeps metadata and mount ownership aligned with the image actually imported.
-Registry-only images do not require Docker initialization.
+Image inspection and preparation prefer an image cached in the configured
+Docker-compatible CLI, permitting offline/private-registry startup. Preparation
+freezes the final image before account resolution and import. Both use that same
+snapshot, imported under a content-derived tag, so retagging the original image
+cannot change the imported filesystem or its fallback owner. Registry-only
+images do not require Docker initialization.
 
 Devsy-managed workspaces with an incompatible persisted workspace mount contract
-are automatically recreated once on `devsy up`, including workspaces created
-before the contract label existed. Changing either workspace permission policy
-or the effective developer identity also requires recreation. The host workspace
-and named volumes persist, but
-changes stored only on the VM's root disk are lost, as with `--recreate`.
-Externally managed containers are never automatically replaced.
+require explicit `devsy up --recreate`, including workspaces created before the
+contract label existed. Changing workspace permission policy or the effective
+developer identity also requires explicit recreation. Ordinary `devsy up` reports
+an actionable error and preserves the existing VM. Back up VM-local data before
+recreating: the host workspace and named volumes persist, but the VM root disk
+is discarded. Replacement cannot roll back failures after removal.
+Externally managed containers cannot be replaced through this flow.
 
 Devsy requires MicroSandbox v0.7.2 or newer when creating or recreating workspaces
 that use workspace ownership synchronization. Runtime compatibility, account
-resolution, and final image import are checked before removing an existing VM.
+resolution, final image import, and volume preparation complete before removing
+an existing VM.
 The provisioning version check does not block inspection, logs, stop, or deletion
 of an existing sandbox.
 Apple Silicon macOS is the canonical supported integration-test host; use

@@ -34,25 +34,19 @@ type imageUserIdentity struct {
 }
 
 type imageUserResolver interface {
-	Resolve(ctx context.Context, image string, builtLocally bool, user string) (*mountOwner, error)
+	ResolveImage(ctx context.Context, img v1.Image, user string) (*mountOwner, error)
 }
 
 type filesystemUserResolver struct{ dockerPath string }
 
-func (r filesystemUserResolver) Resolve(
+func (filesystemUserResolver) ResolveImage(
 	ctx context.Context,
-	ref string,
-	builtLocally bool,
+	img v1.Image,
 	user string,
 ) (*mountOwner, error) {
 	if owner, complete, err := explicitOwner(user); complete || err != nil {
 		return owner, err
 	}
-	img, cleanup, err := r.openImage(ctx, ref, builtLocally)
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
 	return ownerFromImage(ctx, img, user)
 }
 
