@@ -194,21 +194,39 @@ type boundReverseForward struct {
 	listener    net.Listener
 }
 
-// startReverseForwardsAndWait blocks until every forward's listener is bound,
-// unlike reverseForwardPorts which blocks for the forward's lifetime.
+// managedReverseForward owns the GPG socket's reverse-forward loop. done
+// receives its terminal result after the listener has been closed.
+type managedReverseForward struct {
+	cancel context.CancelFunc
+	done   <-chan error
+}
+
+type managedReverseForwardRun struct {
+	ctx      context.Context
+	cancel   context.CancelFunc
+	client   *ssh.Client
+	forward  boundReverseForward
+	timeout  time.Duration
+	doneChan chan<- error
+}
+
+// startReverseForwardsAndWait returns after every forward's listener is bound,
+// unlike reverseForwardPorts which blocks for the forward's lifetime. The
+// returned handle lets the GPG tunnel observe its first mapping's lifecycle;
+// any additional mappings retain their independent lifetime.
 func (cmd *SSHCmd) startReverseForwardsAndWait(
 	ctx context.Context,
 	containerClient *ssh.Client,
 	portMappings []string,
-) error {
+) (*managedReverseForward, error) {
 	timeout, err := cmd.forwardTimeout()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	bound, err := bindReverseForwards(containerClient, portMappings)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for _, b := range bound {
@@ -219,10 +237,41 @@ func (cmd *SSHCmd) startReverseForwardsAndWait(
 			b.mapping.Container.Protocol,
 			b.mapping.Container.Address,
 		)
+	}
+
+	forwardCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go runManagedReverseForward(managedReverseForwardRun{
+		ctx:      forwardCtx,
+		cancel:   cancel,
+		client:   containerClient,
+		forward:  bound[0],
+		timeout:  timeout,
+		doneChan: done,
+	})
+	for _, b := range bound[1:] {
 		go runReverseForwardInBackground(ctx, containerClient, b, timeout)
 	}
 
-	return nil
+	return &managedReverseForward{cancel: cancel, done: done}, nil
+}
+
+func runManagedReverseForward(run managedReverseForwardRun) {
+	defer close(run.doneChan)
+	err := devssh.RunReverseForward(run.ctx, run.client, devssh.ReverseForwardOpts{
+		Listener:         run.forward.listener,
+		RemoteAddr:       run.forward.mapping.Host.Address,
+		LocalNetwork:     run.forward.mapping.Container.Protocol,
+		LocalAddr:        run.forward.mapping.Container.Address,
+		ExitAfterTimeout: run.timeout,
+	})
+	if err != nil && !errors.Is(err, devssh.ErrIdleTimeout) && !errors.Is(err, io.EOF) &&
+		!errors.Is(err, context.Canceled) {
+		log.Errorf("error forwarding %s: %v", run.forward.portMapping, err)
+		err = fmt.Errorf("error forwarding %s: %w", run.forward.portMapping, err)
+	}
+	run.cancel()
+	run.doneChan <- err
 }
 
 func bindReverseForwards(

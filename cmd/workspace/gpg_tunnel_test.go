@@ -2,10 +2,80 @@ package workspace
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 )
+
+func TestGPGTunnelEnsureForwardBoundRebindsExitedForward(t *testing.T) {
+	firstDone := make(chan error, 1)
+	firstDone <- errors.New("forward exited")
+	close(firstDone)
+
+	secondDone := make(chan error)
+	starts := 0
+	tunnel := &gpgTunnel{
+		cmd:     &SSHCmd{},
+		forward: &managedReverseForward{done: firstDone},
+		startForward: func(
+			context.Context,
+			*ssh.Client,
+			[]string,
+		) (*managedReverseForward, error) {
+			starts++
+			return &managedReverseForward{done: secondDone}, nil
+		},
+	}
+
+	if err := tunnel.ensureForwardBound(
+		context.Background(), nil, "/host/gpg-agent.sock",
+	); err != nil {
+		t.Fatalf("ensureForwardBound() error = %v", err)
+	}
+	if starts != 1 {
+		t.Fatalf("startForward calls = %d, want 1", starts)
+	}
+	if tunnel.forward == nil || tunnel.forward.done != secondDone {
+		t.Fatal("ensureForwardBound() did not retain the replacement forward")
+	}
+}
+
+func TestGPGTunnelEnsureForwardBoundKeepsActiveForward(t *testing.T) {
+	done := make(chan error)
+	starts := 0
+	tunnel := &gpgTunnel{
+		cmd:     &SSHCmd{},
+		forward: &managedReverseForward{done: done},
+		startForward: func(
+			context.Context,
+			*ssh.Client,
+			[]string,
+		) (*managedReverseForward, error) {
+			starts++
+			return nil, errors.New("unexpected rebind")
+		},
+	}
+
+	if err := tunnel.ensureForwardBound(
+		context.Background(), nil, "/host/gpg-agent.sock",
+	); err != nil {
+		t.Fatalf("ensureForwardBound() error = %v", err)
+	}
+	if starts != 0 {
+		t.Fatalf("startForward calls = %d, want 0", starts)
+	}
+}
+
+func TestGPGForwardFailureReasonUsesSafeCategory(t *testing.T) {
+	err := errors.New("start gpg-agent reverse forward: /private/path")
+	if got, want := gpgForwardFailureReason(err), "GPG reverse forwarding failed"; got != want {
+		t.Fatalf("gpgForwardFailureReason() = %q, want %q", got, want)
+	}
+}
 
 func TestWriteGPGForwardFailedOSC_WellFormedSequence(t *testing.T) {
 	var buf bytes.Buffer

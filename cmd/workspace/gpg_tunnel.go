@@ -48,18 +48,20 @@ func writeGPGForwardFailedOSC(w io.Writer, reason string) {
 // another (owning) terminal's disconnect can re-establish it itself.
 const gpgTunnelHealthCheckInterval = 30 * time.Second
 
+const gpgForwardStopTimeout = 2 * time.Second
+
 // gpgTunnel owns the lifecycle of GPG-agent forwarding for one SSH session:
-// deciding whether it's requested, binding the reverse-listen socket at most
-// once, running the remote setup-gpg step, and periodically checking the
-// tunnel is still alive for as long as the session runs.
+// deciding whether it's requested, owning the reverse-forward lifecycle,
+// running the remote setup-gpg step, and periodically checking the tunnel.
 type gpgTunnel struct {
 	cmd     *SSHCmd
 	enabled bool
 
-	// forwardBound guards against re-binding the reverse-listen socket on a
-	// health-check retry: the listener stays open for the session, and the
-	// server rejects a second bind of the same path.
-	forwardBound bool
+	startForward func(context.Context, *ssh.Client, []string) (*managedReverseForward, error)
+
+	// forward is nil unless this session currently owns a live forwarding loop.
+	// Its completion is reconciled before setup so an exited loop can be rebound.
+	forward *managedReverseForward
 
 	// failureReported prevents a repeated OSC 9977 notification while the
 	// tunnel stays down across health-check ticks.
@@ -140,20 +142,32 @@ func (t *gpgTunnel) ensure(ctx context.Context, sshClient *ssh.Client) bool {
 	log.Warnf("gpg agent forwarding failed (continuing without it): %v", err)
 	t.failureReported = true
 	// Emit OSC code for UI to detect.
-	writeGPGForwardFailedOSC(os.Stderr, "check logs for details")
+	writeGPGForwardFailedOSC(os.Stderr, gpgForwardFailureReason(err))
 	return false
 }
 
+func gpgForwardFailureReason(err error) string {
+	switch {
+	case strings.Contains(err.Error(), "start gpg-agent reverse forward"):
+		return "GPG reverse forwarding failed"
+	case strings.Contains(err.Error(), "detect gpg-agent socket path"):
+		return "Host GPG agent socket unavailable"
+	case strings.Contains(err.Error(), "export local ownertrust from GPG"):
+		return "Unable to read host GPG configuration"
+	default:
+		return "GPG agent setup failed"
+	}
+}
+
 // setup runs the remote setup-gpg command, which imports the host's owner trust
-// and signing key into the container's gpg-agent. It also ensures the
-// reverse-forward socket is bound at most once per process, so concurrent
-// terminals don't race to bind the same path.
+// and signing key into the container's gpg-agent. It also ensures this session
+// owns a live reverse-forward listener before configuring the remote socket.
 func (t *gpgTunnel) setup(ctx context.Context, containerClient *ssh.Client) error {
 	log.Debugf("detecting gpg-agent socket path on host")
 	// this socket gets forwarded to the remote and symlinked in multiple paths
 	gpgExtraSocketPath, err := gpg.DetectAgentSocketPath()
 	if err != nil {
-		return err
+		return fmt.Errorf("detect gpg-agent socket path: %w", err)
 	}
 	log.Debugf("detected gpg-agent socket path %s", gpgExtraSocketPath)
 
@@ -222,14 +236,14 @@ func (t *gpgTunnel) buildSetupCommand(ctx context.Context) (string, error) {
 	return command, nil
 }
 
-// ensureForwardBound binds the reverse-listen socket at most once per
-// process.
+// ensureForwardBound keeps the GPG reverse-forward loop alive and starts a
+// replacement after the previous loop exits.
 func (t *gpgTunnel) ensureForwardBound(
 	ctx context.Context,
 	containerClient *ssh.Client,
 	gpgExtraSocketPath string,
 ) error {
-	if t.forwardBound {
+	if t.reconcileForward() {
 		return nil
 	}
 
@@ -241,12 +255,33 @@ func (t *gpgTunnel) ensureForwardBound(
 		[]string{gpg.ContainerSocketPath + ":" + gpgExtraSocketPath},
 		t.cmd.ReverseForwardPorts...,
 	)
-	err := t.cmd.startReverseForwardsAndWait(ctx, containerClient, reverseForwardPorts)
+	startForward := t.startForward
+	if startForward == nil {
+		startForward = t.cmd.startReverseForwardsAndWait
+	}
+	forward, err := startForward(ctx, containerClient, reverseForwardPorts)
 	if err != nil {
 		return fmt.Errorf("start gpg-agent reverse forward: %w", err)
 	}
-	t.forwardBound = true
+	t.forward = forward
 	return nil
+}
+
+// reconcileForward reports whether this tunnel still owns an active forward.
+func (t *gpgTunnel) reconcileForward() bool {
+	if t.forward == nil {
+		return false
+	}
+	select {
+	case err, ok := <-t.forward.done:
+		t.forward = nil
+		if ok && err != nil {
+			log.Debugf("gpg agent reverse forward exited: %v", err)
+		}
+		return false
+	default:
+		return true
+	}
 }
 
 // signalReadyOnce signals gpg forward readiness at most once per gpgTunnel:
@@ -299,11 +334,11 @@ func runGPGTunnelInBackground(
 	t *gpgTunnel,
 	sshClient *ssh.Client,
 ) (wait func()) {
-	if t.enabled && t.ensure(ctx, sshClient) {
+	tunnelCtx, cancel := context.WithCancel(ctx)
+	if t.enabled && t.ensure(tunnelCtx, sshClient) {
 		t.signalReadyOnce()
 	}
 
-	tunnelCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -312,5 +347,19 @@ func runGPGTunnelInBackground(
 	return func() {
 		cancel()
 		<-done
+		t.stopForward()
 	}
+}
+
+func (t *gpgTunnel) stopForward() {
+	if t.forward == nil {
+		return
+	}
+	t.forward.cancel()
+	select {
+	case <-t.forward.done:
+	case <-time.After(gpgForwardStopTimeout):
+		log.Debugf("timed out waiting for gpg agent reverse forward to stop")
+	}
+	t.forward = nil
 }
