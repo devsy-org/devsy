@@ -2,6 +2,7 @@ package external
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -23,7 +24,7 @@ func (h *Host) call(
 	ctx context.Context,
 	operation string,
 	rpc func(runtimev1.RuntimeDriverClient) error,
-) error {
+) (err error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -31,6 +32,9 @@ func (h *Host) call(
 	if err != nil {
 		return fmt.Errorf("external runtime %s: %w", operation, err)
 	}
+	// Normalize after owned cleanup so caller deadlines win over transport
+	// cancellation reported just before the local context timer fires.
+	defer func() { err = h.operationError(ctx, operation, err) }()
 	output := log.Writer(log.LevelDebug)
 	diagnostic := &diagnosticWriter{
 		writer: output,
@@ -63,18 +67,18 @@ func (h *Host) call(
 	started := time.Now()
 	transport, err := client.Client()
 	if err != nil {
-		return h.operationError(ctx, operation, err)
+		return err
 	}
 	instance, err := transport.Dispense(sdkplugin.Name)
 	if err != nil {
-		return h.operationError(ctx, operation, err)
+		return err
 	}
 	runtimeClient, ok := instance.(runtimev1.RuntimeDriverClient)
 	if !ok {
-		return fmt.Errorf("external runtime %s: invalid gRPC client", operation)
+		return errors.New("invalid gRPC client")
 	}
 	log.Debugf("External runtime %s startup completed in %s", operation, time.Since(started))
-	return h.operationError(ctx, operation, rpc(runtimeClient))
+	return rpc(runtimeClient)
 }
 
 // go-plugin holds its client lock throughout handshake, so Client.Kill cannot

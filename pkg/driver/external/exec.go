@@ -89,11 +89,6 @@ func (h *Host) commandResult(
 	err, flushErr error,
 ) error {
 	if err != nil {
-		// Cleanup can finish after the caller deadline even when the transport
-		// reported its cancellation just before the local context timer fired.
-		if ctx.Err() != nil {
-			return h.operationError(ctx, "Exec", err)
-		}
 		return err
 	}
 	if flushErr != nil {
