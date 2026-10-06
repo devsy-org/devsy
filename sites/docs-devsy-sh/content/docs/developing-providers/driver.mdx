@@ -25,8 +25,8 @@ If no driver is specified, the default is **Docker**
 ## External runtime declarations (under development)
 
 The provider schema accepts `agent.driver: external` and validates the configuration
-when the provider is installed. Runtime launching and workspace integration are
-not implemented yet; this declaration is preparation for the external host adapter.
+when the provider is installed. Devsy launches the declared runtime through the
+workspace driver factory and negotiates its Runtime Protocol v1 capabilities.
 
 ```yaml
 agent:
@@ -52,19 +52,32 @@ A declared local absolute path is also verified.
 
 `args` is a static argument array, with no shell or option substitution. Its first
 entry cannot be empty; later empty arguments are preserved. `imageBackend` accepts
-`docker` (the default) or `none`; it selects the future Devsy-side image backend,
+`docker` (the default) or `none`; it selects the Devsy-side image backend,
 not an image-building capability in the runtime plugin.
 
 For the protocol and SDK contract, see [Runtime Protocol v1](./runtime-protocol.mdx).
 
-### Host adapter progress
+### Runtime and image integration
 
 The internal host now negotiates Runtime Protocol v1 Info and performs preflight,
 Find, TargetArchitecture, RunImage, Start, Stop, and Delete calls. Each operation
 uses a fresh plugin process owned by the SDK supervisor, exposed through a
 hidden helper in the running Devsy executable. Cancellation also covers startup
-and terminates the leased process tree. This is a prerequisite implementation;
-workspace driver registration and image-backend integration remain a separate stage.
+and terminates the leased process tree. The workspace runner uses the external
+runtime for lifecycle and execution, and a separate Docker image backend for
+inspection, builds, tagging, and publication. Docker settings use `agent.docker`.
+Selecting `none` skips Docker backend construction; ordinary builds retain the
+existing dockerless fallback, while prebuild publication requires an image backend.
+
+Run options preserve image identity, entrypoint, literal arguments, environment,
+labels, privilege/init presence, namespace mappings, platform, and mount options.
+CPU, memory, storage, and GPU requirements are translated into protocol values.
+Invalid sizes, unsupported mount types, Compose external volumes, raw `runArgs`,
+`appPort` mappings (use port forwarding instead), and GPU core or
+memory requirements that v1 cannot express are rejected before runtime creation.
+During recreation, validation happens before stopping or removing the existing
+workspace. Mount streaming, workspace ownership, and recreate policy follow the
+negotiated runtime capabilities; in-place reprovisioning remains unsupported.
 
 The host also supports binary-safe Exec with separate stdout/stderr, literal argv,
 stdin closure, and terminal exit status. Shell commands use `/bin/sh -c`; text
@@ -74,6 +87,9 @@ merged binary stream is written to stdout.
 
 The host retains environment values supplied through RunImage for that workspace
 throughout its lifetime, including prior values from retries or failed requests.
+Retention belongs to the current workspace runner and is released with that host;
+it is not a persisted secret store and does not survive a new CLI process. Runtime
+plugins must keep diagnostics safe when values are not available to a new host.
 Later text output, errors, and diagnostics use that workspace's redaction snapshot;
 raw stdout and merged Logs remain binary streams for their callers to handle.
 

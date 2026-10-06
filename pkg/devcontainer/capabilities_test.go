@@ -3,11 +3,13 @@ package devcontainer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -228,4 +230,48 @@ func TestImageRuntimeDoesNotNeedImageBackend(t *testing.T) {
 	assert.Equal(t, r.id, d.params.WorkspaceID)
 	assert.Equal(t, "runtime-image", d.params.Options.Image)
 	assert.Nil(t, r.imageBackend)
+}
+
+type validatingImageRuntime struct {
+	*mockDriver
+	validationErr    error
+	validationParams *driver.RunImageDevContainerParams
+}
+
+func (d *validatingImageRuntime) ValidateRunImageDevContainer(
+	params *driver.RunImageDevContainerParams,
+) error {
+	d.validationParams = params
+	return d.validationErr
+}
+
+func TestImageRunValidationPreservesContainerBeforeRecreate(t *testing.T) {
+	for _, reject := range []bool{true, false} {
+		t.Run(fmt.Sprintf("reject=%t", reject), func(t *testing.T) {
+			sentinel := errors.New("unsupported creation settings")
+			d := &validatingImageRuntime{mockDriver: &mockDriver{}}
+			if reject {
+				d.validationErr = sentinel
+			}
+			r := newTestRunner(d)
+			r.workspaceConfig.Workspace = &provider.Workspace{ID: r.id, UID: "workspace-uid"}
+			r.imageBackend = &separateImages{details: &config.ImageDetails{ID: "image"}}
+			r.reporter = status.Nop()
+			p := recreateResolveParams()
+			p.parsedConfig.Config.Image = "alpine"
+			p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
+			p.substitutionContext = &config.SubstitutionContext{}
+			_, _, err := r.buildNewContainerConfig(context.Background(), p)
+			if reject {
+				require.ErrorIs(t, err, sentinel)
+			} else {
+				require.NoError(t, err)
+			}
+			require.NotNil(t, d.validationParams)
+			require.Equal(t, r.id, d.validationParams.WorkspaceID)
+			require.NotEmpty(t, d.validationParams.Options.Image)
+			assert.Equal(t, !reject, d.stopCalled)
+			assert.False(t, d.deleteCalled)
+		})
+	}
 }

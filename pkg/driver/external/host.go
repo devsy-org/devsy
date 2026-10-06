@@ -21,14 +21,14 @@ import (
 
 const startupTimeout = 15 * time.Second
 
-// Host opens an owned plugin session per operation. It is not yet registered
-// as a workspace driver; factory integration is a separate stage.
+// Host opens an owned plugin session per workspace runtime operation.
 type Host struct {
 	config           provider.ProviderAgentConfig
 	binariesDir      string
 	supervisorBinary string
 	supervisorArgs   []string
 	environment      []string
+	idLabels         []string
 	redactor         *secrets.Redactor
 	redactions       *workspaceRedactions
 	info             *runtimev1.InfoResponse
@@ -64,6 +64,7 @@ func New(ctx context.Context, workspace *provider.AgentWorkspaceInfo) (*Host, er
 			"runtime-supervisor",
 		},
 		environment: environment,
+		idLabels:    workspace.CLIOptions.IDLabels,
 		timeout:     startupTimeout,
 	})
 }
@@ -72,6 +73,7 @@ type hostOptions struct {
 	config                      provider.ProviderAgentConfig
 	directory, supervisorBinary string
 	supervisorArgs, environment []string
+	idLabels                    []string
 	timeout                     time.Duration
 }
 
@@ -82,6 +84,7 @@ func newHost(ctx context.Context, options hostOptions) (*Host, error) {
 		supervisorBinary: options.supervisorBinary,
 		supervisorArgs:   slices.Clone(options.supervisorArgs),
 		environment:      slices.Clone(options.environment),
+		idLabels:         slices.Clone(options.idLabels),
 		timeout:          options.timeout,
 		redactor:         secrets.NewEnvironmentRedactor(options.environment),
 		redactions:       &workspaceRedactions{workspaces: make(map[string]*workspaceRedaction)},

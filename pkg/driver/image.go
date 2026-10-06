@@ -33,6 +33,12 @@ type ImageRunner interface {
 	RunImageDevContainer(ctx context.Context, params *RunImageDevContainerParams) error
 }
 
+// ImageRunValidator checks resolved creation intent before an existing container
+// is stopped or removed. Validation must not change runtime state.
+type ImageRunValidator interface {
+	ValidateRunImageDevContainer(params *RunImageDevContainerParams) error
+}
+
 type ContainerUserUpdater interface {
 	UpdateContainerUserUID(
 		ctx context.Context,

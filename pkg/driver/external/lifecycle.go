@@ -85,7 +85,7 @@ func (h *Host) TargetArchitecture(ctx context.Context, workspaceID string) (stri
 	return architecture, err
 }
 
-// RunImage accepts resolved protocol intent; driver conversion is a later stage.
+// RunImage accepts resolved protocol intent and validates negotiated mount support.
 func (h *Host) RunImage(ctx context.Context, request *runtimev1.RunImageRequest) error {
 	if err := h.validateRunImage(request); err != nil {
 		return err
