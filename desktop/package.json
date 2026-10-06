@@ -38,7 +38,7 @@
     "@biomejs/biome": "2.5.15",
     "@electron/rebuild": "4.2.0",
     "@internationalized/date": "3.12.4",
-    "@lucide/svelte": "1.50.0",
+    "@lucide/svelte": "1.51.0",
     "@playwright/test": "1.63.0",
     "@sveltejs/vite-plugin-svelte": "6.2.4",
     "@tailwindcss/vite": "4.3.3",
