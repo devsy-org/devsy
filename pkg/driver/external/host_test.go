@@ -116,8 +116,17 @@ func (s *HostSuite) TestStartupTimeout() {
 }
 
 func (s *HostSuite) TestInfoNegotiationTimeout() {
-	_, err := s.newHost(context.Background(), "block-info", 500*time.Millisecond)
-	s.ErrorIs(err, context.DeadlineExceeded)
+	started := time.Now()
+	host, err := s.newHost(context.Background(), "block-info", 500*time.Millisecond)
+	s.Nil(host)
+	s.Require().Error(err)
+	// The server's deadline can reset the stream before the host's timer fires.
+	s.True(
+		errors.Is(err, context.DeadlineExceeded) ||
+			status.Code(err) == codes.DeadlineExceeded || status.Code(err) == codes.Canceled,
+		"expected deadline or stream cancellation, got %v", err,
+	)
+	s.Less(time.Since(started), 5*time.Second)
 }
 
 func (s *HostSuite) TestStructuredFailureAndCapabilitiesCopy() {
