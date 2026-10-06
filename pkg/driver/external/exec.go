@@ -13,6 +13,8 @@ import (
 )
 
 var (
+	errExecComplete = errors.New("external runtime Exec stream completed")
+
 	_ driver.Driver         = (*Host)(nil)
 	_ driver.ArgvExecDriver = (*Host)(nil)
 )
@@ -165,12 +167,13 @@ func exchangeExec(
 		}
 	}()
 	exit, receiveErr := receiveExecOutput(stream, streams)
-	inputCause := context.Cause(ctx)
+	// Distinguish ordinary cleanup from an input failure that wins cancellation.
 	// Cancel before joining: Send may be flow-controlled and Read may be blocked.
-	cancel(nil)
+	cancel(errExecComplete)
 	closeInput()
 	<-inputDone
-	if inputCause != nil {
+	inputCause := context.Cause(ctx)
+	if inputCause != nil && inputCause != errExecComplete {
 		return nil, inputCause
 	}
 	// Recv owns command completion, including a command that exits before stdin EOF.
