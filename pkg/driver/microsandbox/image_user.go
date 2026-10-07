@@ -13,10 +13,12 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/image"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
@@ -231,14 +233,12 @@ func layerAccountFiles(
 	layer v1.Layer,
 	files accountLayer,
 ) (map[string]string, map[string]bool, error) {
-	stream, err := layer.Uncompressed()
+	stream, cleanup, err := openAccountLayer(ctx, layer)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open image layer: %w", errors.Join(err, ctx.Err()))
+		return nil, nil, err
 	}
-	defer func() { _ = stream.Close() }()
-	stopClose := context.AfterFunc(ctx, func() { _ = stream.Close() })
-	defer stopClose()
-	reader := tar.NewReader(stream)
+	defer cleanup()
+	reader := tar.NewReader(accountContextReader{ctx: ctx, Reader: stream})
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
@@ -254,6 +254,49 @@ func layerAccountFiles(
 			return nil, nil, errors.Join(err, ctx.Err())
 		}
 	}
+}
+
+func openAccountLayer(ctx context.Context, layer v1.Layer) (io.ReadCloser, func(), error) {
+	source, err := layer.Compressed()
+	if err != nil {
+		return nil, nil, fmt.Errorf("open image layer: %w", errors.Join(err, ctx.Err()))
+	}
+	closeSource := sync.OnceFunc(func() { _ = source.Close() })
+	// Cancel the source read without closing a decoder concurrently with Read.
+	stopClose := context.AfterFunc(ctx, closeSource)
+	cleanupSource := func() { stopClose(); closeSource() }
+	decoded, err := partial.CompressedToLayer(accountCompressedLayer{Layer: layer, reader: source})
+	if err != nil {
+		cleanupSource()
+		return nil, nil, fmt.Errorf("prepare image layer decoder: %w", errors.Join(err, ctx.Err()))
+	}
+	stream, err := decoded.Uncompressed()
+	if err != nil {
+		cleanupSource()
+		return nil, nil, fmt.Errorf("decode image layer: %w", errors.Join(err, ctx.Err()))
+	}
+	return stream, func() { defer cleanupSource(); _ = stream.Close() }, nil
+}
+
+type accountCompressedLayer struct {
+	v1.Layer
+	reader io.Reader
+}
+
+type accountContextReader struct {
+	ctx context.Context
+	io.Reader
+}
+
+func (reader accountContextReader) Read(buf []byte) (int, error) {
+	if err := reader.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return reader.Reader.Read(buf)
+}
+
+func (layer accountCompressedLayer) Compressed() (io.ReadCloser, error) {
+	return io.NopCloser(layer.reader), nil
 }
 
 type accountLayer struct {

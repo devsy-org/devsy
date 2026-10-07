@@ -3,7 +3,9 @@ package microsandbox
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"io"
 	"net"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
@@ -167,6 +170,32 @@ func (s *imageUserSuite) TestCancellationClosesBlockedLayer() {
 	}
 }
 
+func (s *imageUserSuite) TestCancellationWithCompressedLayer() {
+	data := make([]byte, 1<<20)
+	_, err := rand.Read(data)
+	s.Require().NoError(err)
+	var buf bytes.Buffer
+	zipped := gzip.NewWriter(&buf)
+	writer := tar.NewWriter(zipped)
+	s.Require().
+		NoError(writer.WriteHeader(&tar.Header{Name: "unrelated", Size: int64(len(data)), Mode: 0o644}))
+	_, err = writer.Write(data)
+	s.Require().NoError(err)
+	s.Require().NoError(writer.Close())
+	s.Require().NoError(zipped.Close())
+	for range 10 {
+		ctx, cancel := context.WithCancel(context.Background())
+		input := &cancelingAccountReader{Reader: bytes.NewReader(buf.Bytes()), cancel: cancel}
+		source := io.NopCloser(input)
+		layer, err := partial.CompressedToLayer(compressedAccountLayer{reader: source})
+		s.Require().NoError(err)
+		_, err = ownerFromImage(ctx, accountLayerImage{Image: empty.Image, layer: layer}, testUser)
+		cancel()
+		s.ErrorIs(err, context.Canceled)
+		s.Positive(input.Len(), "cancelled extraction must not drain remaining compressed data")
+	}
+}
+
 func (s *imageUserSuite) accountImage(layers ...v1.Layer) v1.Image {
 	img, err := mutate.AppendLayers(empty.Image, layers...)
 	s.Require().NoError(err)
@@ -210,7 +239,7 @@ type blockingAccountLayer struct {
 	reader io.ReadCloser
 }
 
-func (layer blockingAccountLayer) Uncompressed() (io.ReadCloser, error) { return layer.reader, nil }
+func (layer blockingAccountLayer) Compressed() (io.ReadCloser, error) { return layer.reader, nil }
 
 type startedAccountReader struct {
 	net.Conn
@@ -223,4 +252,25 @@ func (reader *startedAccountReader) Read(buf []byte) (int, error) {
 	default:
 	}
 	return reader.Conn.Read(buf)
+}
+
+type compressedAccountLayer struct {
+	v1.Layer
+	reader io.ReadCloser
+}
+
+func (layer compressedAccountLayer) Compressed() (io.ReadCloser, error) { return layer.reader, nil }
+
+type cancelingAccountReader struct {
+	*bytes.Reader
+	cancel context.CancelFunc
+}
+
+func (reader *cancelingAccountReader) Read(buf []byte) (int, error) {
+	n, err := reader.Reader.Read(buf)
+	// Cancel before the final compressed block exercises decoder cleanup during Read.
+	if reader.Len() < 64<<10 {
+		reader.cancel()
+	}
+	return n, err
 }
