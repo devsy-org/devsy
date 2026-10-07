@@ -19,8 +19,8 @@ func TestOverlayNotRequiredForComposeProjectCleanup(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			workspace := t.TempDir()
 			writeJSONConfig(t, filepath.Join(workspace, ".devcontainer.json"), map[string]any{
-				"dockerComposeFile": overlayComposeFile,
-				"service":           overlayService,
+				overlayComposeFileKey: overlayComposeFile,
+				overlayServiceKey:     overlayService,
 			})
 			overlayPath := filepath.Join(workspace, "overlay.json")
 			if !missing {

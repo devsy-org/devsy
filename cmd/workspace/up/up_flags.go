@@ -64,7 +64,8 @@ func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 			&cmd.ExtraDevContainerPath,
 			names.DevContainerOverlay,
 			"",
-			"Layer supported runtime metadata onto the resolved config and apply features and install order before image build",
+			"Apply supported build selectors and features before image build; "+
+				"layer supported runtime metadata onto the resolved config",
 		),
 		flags.String(&cmd.FallbackImage, names.FallbackImage, "",
 			"Image to use when no devcontainer config is found"),

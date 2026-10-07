@@ -1,0 +1,5 @@
+{
+  "name": "Primary config replaced by structural overlay",
+  "image": "ghcr.io/devsy-org/test-images/base:alpine",
+  "initializeCommand": "exit 41"
+}

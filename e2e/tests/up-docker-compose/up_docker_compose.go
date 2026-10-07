@@ -667,6 +667,177 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(os.Remove(filepath.Join(tempDir, "overlay", "extra.json")))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
+		ginkgo.It(
+			"structural overlay service changes require recreate and preserve cleanup",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up-docker-compose/testdata/docker-compose-structural-overlay",
+					tc.initialDir,
+					tc.f,
+				)
+				framework.ExpectNoError(err)
+				overlayPath := filepath.Join(tempDir, "overlay", "extra.json")
+				workspace, err := devsyUpAndFindWorkspace(
+					ctx, tc.f, tempDir,
+					"--devcontainer-overlay", overlayPath,
+				)
+				framework.ExpectNoError(err)
+
+				initMarker, err := tc.execSSH(ctx, tempDir, "cat /workspaces/overlay-init-marker")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(initMarker)).To(gomega.Equal("overlay-init-ran"))
+				sidecarMarker, err := tc.execSSH(ctx, tempDir, "cat /workspaces/sidecar-marker")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(sidecarMarker)).To(gomega.Equal("sidecar-started"))
+
+				sidecarIDs, err := findComposeContainer(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "sidecar",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(sidecarIDs).To(gomega.HaveLen(1))
+				sidecar, err := tc.inspectContainer(ctx, sidecarIDs)
+				framework.ExpectNoError(err)
+				gomega.Expect(sidecar.State.Running).To(gomega.BeTrue())
+
+				//nolint:gosec // G304: fixture path is inside the test-owned temporary workspace.
+				contents, err := os.ReadFile(overlayPath)
+				framework.ExpectNoError(err)
+				alternateConfig := strings.Replace(
+					string(contents), `"service": "app"`, `"service": "alternate"`, 1,
+				)
+				gomega.Expect(alternateConfig).NotTo(gomega.Equal(string(contents)))
+				framework.ExpectNoError(os.WriteFile(overlayPath, []byte(alternateConfig), 0o600))
+				stdout, stderr, err := tc.f.DevsyUpStreams(
+					ctx, tempDir, "--devcontainer-overlay", overlayPath,
+				)
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(stdout + "\n" + stderr).To(gomega.ContainSubstring("--recreate"))
+
+				// A rejected config change must leave the selected app and sidecar running.
+				initMarker, err = tc.execSSH(ctx, tempDir, "cat /workspaces/overlay-init-marker")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(initMarker)).To(gomega.Equal("overlay-init-ran"))
+				appIDs, err := findComposeContainer(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(appIDs).To(gomega.HaveLen(1))
+				alternateIDs, err := findComposeContainer(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "alternate",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(alternateIDs).To(gomega.BeEmpty())
+
+				err = tc.f.DevsyUp(
+					ctx,
+					tempDir,
+					"--recreate",
+					"--devcontainer-overlay",
+					overlayPath,
+				)
+				framework.ExpectNoError(err)
+				appIDs, err = findComposeContainer(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(appIDs).To(gomega.BeEmpty())
+				alternateIDs, err = findComposeContainer(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "alternate",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(alternateIDs).To(gomega.HaveLen(1))
+				alternate, err := tc.inspectContainer(ctx, alternateIDs)
+				framework.ExpectNoError(err)
+				gomega.Expect(alternate.State.Running).To(gomega.BeTrue())
+				alternateMarker, err := tc.execSSH(ctx, tempDir, "cat /workspaces/alternate-marker")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(alternateMarker)).
+					To(gomega.Equal("alternate-started"))
+				sidecarIDs, err = findComposeContainer(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "sidecar",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(sidecarIDs).To(gomega.HaveLen(1))
+				sidecarMarker, err = tc.execSSH(ctx, tempDir, "cat /workspaces/sidecar-marker")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(sidecarMarker)).To(gomega.Equal("sidecar-started"))
+
+				composePath := filepath.Join(tempDir, "overlay", "docker-compose.yaml")
+				replacementPath := filepath.Join(
+					tempDir, "overlay", "docker-compose-replacement.yaml",
+				)
+				//nolint:gosec // G304: fixture path is inside the test-owned temporary workspace.
+				composeContents, err := os.ReadFile(composePath)
+				framework.ExpectNoError(err)
+				framework.ExpectNoError(os.WriteFile(replacementPath, composeContents, 0o600))
+				replacementConfig := strings.Replace(
+					alternateConfig,
+					`"dockerComposeFile": "docker-compose.yaml"`,
+					`"dockerComposeFile": ["docker-compose-replacement.yaml"]`,
+					1,
+				)
+				gomega.Expect(replacementConfig).NotTo(gomega.Equal(alternateConfig))
+				framework.ExpectNoError(os.WriteFile(overlayPath, []byte(replacementConfig), 0o600))
+				stdout, stderr, err = tc.f.DevsyUpStreams(
+					ctx, tempDir, "--devcontainer-overlay", overlayPath,
+				)
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(stdout + "\n" + stderr).To(gomega.ContainSubstring("--recreate"))
+
+				err = tc.f.DevsyUp(
+					ctx,
+					tempDir,
+					"--recreate",
+					"--devcontainer-overlay",
+					overlayPath,
+				)
+				framework.ExpectNoError(err)
+				alternateIDs, err = findComposeContainer(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "alternate",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(alternateIDs).To(gomega.HaveLen(1))
+				alternate, err = tc.inspectContainer(ctx, alternateIDs)
+				framework.ExpectNoError(err)
+				invocation := alternate.Config.Labels["devsy.compose.invocation"]
+				gomega.Expect(invocation).
+					To(gomega.ContainSubstring("docker-compose-replacement.yaml"))
+				gomega.Expect(invocation).NotTo(gomega.ContainSubstring(composePath))
+
+				framework.ExpectNoError(os.Remove(overlayPath))
+				missingStdout, missingStderr, err := tc.f.DevsyUpStreams(
+					ctx,
+					tempDir,
+					"--recreate",
+					"--devcontainer-overlay",
+					overlayPath,
+				)
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(missingStdout + "\n" + missingStderr).
+					To(gomega.ContainSubstring("overlay"))
+
+				framework.ExpectNoError(os.WriteFile(overlayPath, []byte("{"), 0o600))
+				corruptStdout, corruptStderr, err := tc.f.DevsyUpStreams(
+					ctx,
+					tempDir,
+					"--recreate",
+					"--devcontainer-overlay",
+					overlayPath,
+				)
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(corruptStdout + "\n" + corruptStderr).
+					To(gomega.ContainSubstring("overlay"))
+
+				// Leave the malformed overlay in place so deferred workspace cleanup
+				// exercises the invocation recorded at successful creation.
+				alternateMarker, err = tc.execSSH(ctx, tempDir, "cat /workspaces/alternate-marker")
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(alternateMarker)).
+					To(gomega.Equal("alternate-started"))
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
 		// Regression guard: a build-backed service with an explicit build.target
 		// and features must honor the real Dockerfile. Previously the Dockerfile
 		// contents were dropped when a target was set, producing a synthesized

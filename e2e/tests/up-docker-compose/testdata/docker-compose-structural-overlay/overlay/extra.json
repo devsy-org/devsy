@@ -1,0 +1,7 @@
+{
+  "initializeCommand": "printf 'overlay-init-ran\\n' > overlay-init-marker",
+  "dockerComposeFile": "docker-compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces",
+  "runServices": ["sidecar"]
+}

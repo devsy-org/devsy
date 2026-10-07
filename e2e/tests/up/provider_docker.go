@@ -354,6 +354,88 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
 
+		ginkgo.It(
+			"structural overlay replaces the image with its Dockerfile and context",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-extra-devcontainer-structural",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+				err = dtc.f.DevsyUp(ctx, tempDir,
+					names.Flag(names.DevContainerOverlay),
+					path.Join(tempDir, "overlay", "extra.json"),
+				)
+				framework.ExpectNoError(err)
+
+				osRelease, err := dtc.execSSH(ctx, tempDir, "grep '^ID=' /etc/os-release")
+				framework.ExpectNoError(err)
+				framework.ExpectEqual(strings.TrimSpace(osRelease), "ID=ubuntu")
+				generated, err := dtc.execSSH(ctx, tempDir, "cat /tmp/overlay-build-input.txt")
+				framework.ExpectNoError(err)
+				framework.ExpectEqual(strings.TrimSpace(generated), "generated-by-overlay-init")
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It("structural overlay replaces the primary image", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up/testdata/docker-extra-devcontainer-image-overlay",
+				dtc.initialDir,
+				dtc.f,
+			)
+			framework.ExpectNoError(err)
+			overlayPath := path.Join(tempDir, "overlay", "extra.json")
+			err = dtc.f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainerOverlay), overlayPath)
+			framework.ExpectNoError(err)
+
+			osRelease, err := dtc.execSSH(ctx, tempDir, "grep '^ID=' /etc/os-release")
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(strings.TrimSpace(osRelease), "ID=alpine")
+
+			//nolint:gosec // G304: fixture path is inside the test-owned temporary workspace.
+			contents, err := os.ReadFile(overlayPath)
+			framework.ExpectNoError(err)
+			updatedImage := strings.Replace(string(contents), ":alpine", ":ubuntu", 1)
+			gomega.Expect(updatedImage).NotTo(gomega.Equal(string(contents)))
+			framework.ExpectNoError(os.WriteFile(overlayPath, []byte(updatedImage), 0o600))
+			stdout, stderr, err := dtc.f.DevsyUpStreams(
+				ctx, tempDir, names.Flag(names.DevContainerOverlay), overlayPath,
+			)
+			gomega.Expect(err).To(gomega.HaveOccurred())
+			gomega.Expect(stdout + "\n" + stderr).To(gomega.ContainSubstring("--recreate"))
+			osRelease, err = dtc.execSSH(ctx, tempDir, "grep '^ID=' /etc/os-release")
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(strings.TrimSpace(osRelease), "ID=alpine")
+
+			err = dtc.f.DevsyUp(
+				ctx,
+				tempDir,
+				"--recreate",
+				names.Flag(names.DevContainerOverlay),
+				overlayPath,
+			)
+			framework.ExpectNoError(err)
+			osRelease, err = dtc.execSSH(ctx, tempDir, "grep '^ID=' /etc/os-release")
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(strings.TrimSpace(osRelease), "ID=ubuntu")
+
+			invalidBuild := `{"build":{"context":".","dockerfile":"overlay/missing.Dockerfile"}}`
+			framework.ExpectNoError(os.WriteFile(overlayPath, []byte(invalidBuild), 0o600))
+			err = dtc.f.DevsyUp(
+				ctx,
+				tempDir,
+				"--recreate",
+				names.Flag(names.DevContainerOverlay),
+				overlayPath,
+			)
+			gomega.Expect(err).To(gomega.HaveOccurred())
+			osRelease, err = dtc.execSSH(ctx, tempDir, "grep '^ID=' /etc/os-release")
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(strings.TrimSpace(osRelease), "ID=ubuntu")
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
 		ginkgo.It("extra devcontainer override", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
 				"tests/up/testdata/docker-extra-override",

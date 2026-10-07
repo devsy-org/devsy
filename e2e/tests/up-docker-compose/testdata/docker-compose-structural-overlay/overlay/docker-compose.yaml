@@ -1,0 +1,16 @@
+services:
+  app:
+    image: ghcr.io/devsy-org/test-images/base:ubuntu
+    command: sleep infinity
+    volumes:
+      - ..:/workspaces:cached
+  alternate:
+    image: ghcr.io/devsy-org/test-images/base:ubuntu
+    command: sh -c "echo alternate-started > /workspaces/alternate-marker && sleep infinity"
+    volumes:
+      - ..:/workspaces:cached
+  sidecar:
+    image: ghcr.io/devsy-org/test-images/base:alpine
+    command: sh -c "echo sidecar-started > /workspaces/sidecar-marker && sleep infinity"
+    volumes:
+      - ..:/workspaces:cached

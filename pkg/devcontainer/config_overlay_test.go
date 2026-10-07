@@ -14,22 +14,38 @@ import (
 )
 
 const (
-	overlayImageKey       = string(SourceImage)
-	overlayVersionKey     = "version"
-	overlayComposeFile    = "compose.yaml"
-	overlayService        = "overlay-test"
-	overlayNodeID         = "example/node"
-	overlayBaseID         = "example/base"
-	overlayExtraID        = "example/overlay"
-	overlayToolID         = "example/tool"
-	overlayBaseFile       = "/workspace/.devcontainer/devcontainer.json"
-	overlayImage          = "alpine:latest"
-	overlayDockerfile     = "Dockerfile"
-	overlayDockerfileKind = "Dockerfile config"
-	overlayBaseHashKey    = "base"
-	overlayFeaturesKey    = "features"
-	overlayFeatureV1Case  = "feature option v1"
-	overlayFeatureV2Case  = "feature option v2"
+	overlayImageKey             = string(SourceImage)
+	overlayVersionKey           = "version"
+	overlayComposeFile          = "compose.yaml"
+	overlayService              = "overlay-test"
+	overlayNodeID               = "example/node"
+	overlayBaseID               = "example/base"
+	overlayExtraID              = "example/overlay"
+	overlayToolID               = "example/tool"
+	overlayBaseFile             = "/workspace/.devcontainer/devcontainer.json"
+	overlayImage                = "alpine:latest"
+	overlayDockerfile           = "Dockerfile"
+	overlayDockerfileKind       = "Dockerfile config"
+	overlayBaseHashKey          = "base"
+	overlayFeaturesKey          = "features"
+	overlayFeatureV1Case        = "feature option v1"
+	overlayFeatureV2Case        = "feature option v2"
+	overlayBaseImage            = "base-image"
+	overlayBuildArgSharedKey    = "SHARED"
+	overlayBuildArgOverlayKey   = "OVERLAY"
+	overlayBuildKey             = "build"
+	overlayComposeFileKey       = "dockerComposeFile"
+	overlayServiceKey           = "service"
+	overlayLegacyDockerfileKey  = "dockerFile"
+	overlayDockerfileKey        = "dockerfile"
+	overlayContextKey           = "context"
+	overlayArgsKey              = "args"
+	overlayTargetKey            = "target"
+	overlayOptionsKey           = "options"
+	overlayCacheFromKey         = "cacheFrom"
+	overlayRunServicesKey       = "runServices"
+	overlayInitializeCommandKey = "initializeCommand"
+	overlayExtendsKey           = "extends"
 )
 
 func marshalConfigValue(t *testing.T, value any) string {
@@ -286,8 +302,14 @@ func TestGetSubstitutedConfigOverlayAppliesAcrossConfigKinds(t *testing.T) {
 		config any
 	}{
 		{name: overlayImageKey, config: map[string]any{overlayImageKey: overlayImage}},
-		{name: overlayDockerfileKind, config: map[string]any{"build": map[string]any{"dockerfile": overlayDockerfile}}},
-		{name: "Compose", config: map[string]any{"dockerComposeFile": overlayComposeFile, "service": overlayService}},
+		{
+			name:   overlayDockerfileKind,
+			config: map[string]any{overlayBuildKey: map[string]any{overlayDockerfileKey: overlayDockerfile}},
+		},
+		{
+			name:   "Compose",
+			config: map[string]any{overlayComposeFileKey: overlayComposeFile, overlayServiceKey: overlayService},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			workspace := t.TempDir()

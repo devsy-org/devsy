@@ -89,7 +89,8 @@ type runner struct {
 	id       string
 	idLabels []string
 
-	recovering bool
+	recovering      bool
+	overlayExisting *config.ContainerDetails
 
 	reporter status.Reporter
 }
@@ -170,6 +171,9 @@ func (r *runner) Up(
 		return nil, err
 	}
 	defer cleanupBuildInformation(substitutedConfig.Config)
+	if err := r.checkOverlayRecreation(ctx, substitutedConfig, options); err != nil {
+		return nil, err
+	}
 
 	// Recovery skips initializeCommand: a failing host hook must not block the
 	// recovery container.
@@ -201,6 +205,9 @@ func (r *runner) Up(
 		}
 	}
 
+	if err := r.validateOverlayAssets(ctx, substitutedConfig); err != nil {
+		return nil, err
+	}
 	params := &runContainerParams{
 		parsedConfig:        substitutedConfig,
 		substitutionContext: substitutionContext,

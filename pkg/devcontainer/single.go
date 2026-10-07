@@ -481,12 +481,6 @@ func (r *runner) buildNewContainerConfig(
 	}
 
 	_, validatesImageRun := r.driver.(driver.ImageRunValidator)
-	if p.options.Recreate && !validatesImageRun {
-		if err := r.deleteForRecreate(ctx); err != nil {
-			return nil, nil, err
-		}
-	}
-
 	mergedConfig, err := config.MergeConfiguration(
 		activeConfig.Config,
 		buildInfo.ImageMetadata.Config,
@@ -504,10 +498,10 @@ func (r *runner) buildNewContainerConfig(
 		if err := r.validateImageRun(p, activeConfig.Config, mergedConfig, buildInfo); err != nil {
 			return nil, nil, err
 		}
-		if p.options.Recreate {
-			if err := r.deleteForRecreate(ctx); err != nil {
-				return nil, nil, err
-			}
+	}
+	if p.options.Recreate {
+		if err := r.deleteForRecreate(ctx); err != nil {
+			return nil, nil, err
 		}
 	}
 
@@ -624,6 +618,13 @@ func (r *runner) newContainerHostWarnings(p *resolveParams) ([]string, error) {
 // deleteForRecreate removes the existing container before recreating it.
 // The runtime policy selects deletion or stopping.
 func (r *runner) deleteForRecreate(ctx context.Context) error {
+	if r.overlayExisting != nil {
+		if err := r.teardownOverlayExisting(ctx); err != nil {
+			return err
+		}
+		r.overlayExisting = nil
+		return nil
+	}
 	switch driver.DriverRecreateMode(r.driver) {
 	case driver.RecreateDelete:
 		if err := r.Delete(ctx, DeleteOptions{}); err != nil {
@@ -805,6 +806,10 @@ func (r *runner) runContainer(
 		}
 	}
 
+	runOptions.Labels = append(
+		runOptions.Labels,
+		overlayStructureLabel+"="+structuralSignature(p.parsedConfig.Config),
+	)
 	runOptions.AllowRecreate = p.options.Recreate
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
 	if _, ok := r.driver.(driver.RecreateRequiredDriver); ok {

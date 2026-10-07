@@ -615,7 +615,11 @@ func (r *runner) getSubstitutedConfigWithContext(
 	}
 	if overlay != nil {
 		rawConfig = config.CloneDevContainerConfig(rawConfig)
-		if err := applyOverlayBuildInputs(rawConfig, overlay); err != nil {
+		if err := applyOverlayPlanningInputs(
+			rawConfig,
+			overlay,
+			r.buildSubstitutionContext(options, rawConfig),
+		); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -744,6 +748,7 @@ func applyCLIOverrides(
 		parsedConfig.Dockerfile = ""
 		parsedConfig.DockerfileContainer = config.DockerfileContainer{}
 		parsedConfig.ImageContainer = config.ImageContainer{Image: options.DevContainerImage}
+		parsedConfig.ComposeContainer = config.ComposeContainer{}
 	}
 
 	return mergeAdditionalFeatures(parsedConfig, options.AdditionalFeatures)

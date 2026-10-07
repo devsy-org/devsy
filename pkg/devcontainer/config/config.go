@@ -36,6 +36,9 @@ type DevContainerConfig struct {
 	DockerfileContainer    `json:",inline"`
 	RunningContainer       `json:",inline"`
 
+	// Sources retains declaring-file provenance for phase-aware overlays.
+	Sources []ConfigSource `json:"-"`
+
 	// Origin is the origin from where this config was loaded
 	Origin string `json:"-"`
 }
@@ -44,6 +47,7 @@ func CloneDevContainerConfig(config *DevContainerConfig) *DevContainerConfig {
 	out := &DevContainerConfig{}
 	_ = convert(config, out)
 	out.Origin = config.Origin
+	out.Sources = append([]ConfigSource(nil), config.Sources...)
 	return out
 }
 
