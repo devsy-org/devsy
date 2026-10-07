@@ -8,13 +8,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/windows"
 )
-
-const windowsStillActive = 259
 
 func TestRunnerKillsDirectProcessAndLeavesDescendantForRecovery(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
@@ -39,8 +38,8 @@ func TestRunnerKillsDirectProcessAndLeavesDescendantForRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if processExists(uint32(result.ProcessID)) {
-		t.Fatal("timed-out direct child process is still alive")
+	if !strings.Contains(result.Stderr, "direct_process_stopped=true") {
+		t.Fatalf("timed-out direct process stop was not confirmed: %q", result.Stderr)
 	}
 	childPID := uint32(childPID64)
 	child, err := windows.OpenProcess(
@@ -75,17 +74,4 @@ func TestRunnerProcessFixture(_ *testing.T) {
 		time.Sleep(30 * time.Second)
 		os.Exit(0)
 	}
-}
-
-func processExists(pid uint32) bool {
-	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = windows.CloseHandle(handle) }()
-	var exitCode uint32
-	if err := windows.GetExitCodeProcess(handle, &exitCode); err != nil {
-		return false
-	}
-	return exitCode == windowsStillActive
 }

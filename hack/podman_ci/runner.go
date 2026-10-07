@@ -72,7 +72,7 @@ func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) CommandResult {
 			waitResult.stopped,
 		)
 		if !waitResult.stopped {
-			result.Stderr += "\nPODMAN_WINDOWS_TERMINATION_FAILED"
+			result.Stderr += "\nPODMAN_TERMINATION_FAILED"
 		}
 		return result
 	}
