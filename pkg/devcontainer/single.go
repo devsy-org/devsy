@@ -331,18 +331,15 @@ func (r *runner) mergeContainerMetadata(
 	imageMetadataConfig *config.ImageMetadataConfig,
 	p *resolveParams,
 ) (*config.MergedDevContainerConfig, error) {
-	if p.options.ExtraDevContainerPath != "" {
-		if imageMetadataConfig == nil {
-			imageMetadataConfig = &config.ImageMetadataConfig{}
-		}
-		extraConfig, parseErr := config.ParseDevContainerJSONFile(
-			ctx,
-			p.options.ExtraDevContainerPath,
-		)
-		if parseErr != nil {
-			return nil, parseErr
-		}
-		config.AddConfigToImageMetadata(extraConfig, imageMetadataConfig)
+	overlay, err := overlayForParsedConfig(ctx, p.parsedConfig, p.options.ExtraDevContainerPath)
+	if err != nil {
+		return nil, err
+	}
+	if imageMetadataConfig == nil {
+		imageMetadataConfig = &config.ImageMetadataConfig{}
+	}
+	if overlay != nil {
+		config.AddConfigToImageMetadata(overlay, imageMetadataConfig)
 	}
 
 	mergedConfig, err := config.MergeConfiguration(
@@ -353,11 +350,7 @@ func (r *runner) mergeContainerMetadata(
 		return nil, fmt.Errorf("merge config: %w", err)
 	}
 
-	if err := config.MergeExtraRemoteEnv(
-		ctx, mergedConfig, p.options.ExtraDevContainerPath,
-	); err != nil {
-		return nil, err
-	}
+	config.MergeExtraRemoteEnvConfig(mergedConfig, overlay)
 
 	return mergedConfig, nil
 }
@@ -502,13 +495,11 @@ func (r *runner) buildNewContainerConfig(
 		return nil, nil, fmt.Errorf("merge config: %w", err)
 	}
 
-	if err := config.MergeExtraRemoteEnv(
-		ctx,
-		mergedConfig,
-		p.options.ExtraDevContainerPath,
-	); err != nil {
+	overlay, err := overlayForParsedConfig(ctx, p.parsedConfig, p.options.ExtraDevContainerPath)
+	if err != nil {
 		return nil, nil, err
 	}
+	config.MergeExtraRemoteEnvConfig(mergedConfig, overlay)
 	if validatesImageRun {
 		if err := r.validateImageRun(p, activeConfig.Config, mergedConfig, buildInfo); err != nil {
 			return nil, nil, err
@@ -606,8 +597,9 @@ func recoveryDevContainerConfig(parsed *config.SubstitutedConfig) *config.Substi
 	}
 
 	return &config.SubstitutedConfig{
-		Config: cloned,
-		Raw:    parsed.Raw,
+		Config:  cloned,
+		Raw:     parsed.Raw,
+		Overlay: parsed.Overlay,
 	}
 }
 

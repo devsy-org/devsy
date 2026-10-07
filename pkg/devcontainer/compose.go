@@ -113,7 +113,7 @@ func (r *runner) stopDockerCompose(ctx context.Context, projectName string) erro
 		return fmt.Errorf("find docker compose: %w", err)
 	}
 
-	parsedConfig, _, err := r.getSubstitutedConfig(r.workspaceConfig.CLIOptions)
+	parsedConfig, err := r.resolveComposeProjectConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("get parsed config: %w", err)
 	}
@@ -141,7 +141,7 @@ func (r *runner) deleteDockerCompose(
 		return fmt.Errorf("find docker compose: %w", err)
 	}
 
-	parsedConfig, _, err := r.getSubstitutedConfig(r.workspaceConfig.CLIOptions)
+	parsedConfig, err := r.resolveComposeProjectConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("get parsed config: %w", err)
 	}
@@ -157,6 +157,16 @@ func (r *runner) deleteDockerCompose(
 	}
 
 	return nil
+}
+
+func (r *runner) resolveComposeProjectConfig(
+	ctx context.Context,
+) (*config.SubstitutedConfig, error) {
+	// Stopping and deleting a project must still work after its overlay is removed.
+	options := r.workspaceConfig.CLIOptions
+	options.ExtraDevContainerPath = ""
+	parsed, _, err := r.getSubstitutedConfigWithContext(ctx, options)
+	return parsed, err
 }
 
 func (r *runner) dockerComposeProjectFiles(
@@ -1009,15 +1019,15 @@ func mergeImageMetadataConfig(
 	imageMetadata *config.ImageMetadataConfig,
 	extraDevContainerPath string,
 ) (*config.MergedDevContainerConfig, error) {
-	if extraDevContainerPath != "" {
-		if imageMetadata == nil {
-			imageMetadata = &config.ImageMetadataConfig{}
-		}
-		extraConfig, err := config.ParseDevContainerJSONFile(ctx, extraDevContainerPath)
-		if err != nil {
-			return nil, err
-		}
-		config.AddConfigToImageMetadata(extraConfig, imageMetadata)
+	overlay, err := overlayForParsedConfig(ctx, parsedConfig, extraDevContainerPath)
+	if err != nil {
+		return nil, err
+	}
+	if imageMetadata == nil {
+		imageMetadata = &config.ImageMetadataConfig{}
+	}
+	if overlay != nil {
+		config.AddConfigToImageMetadata(overlay, imageMetadata)
 	}
 
 	mergedConfig, err := config.MergeConfiguration(parsedConfig.Config, imageMetadata.Config)
@@ -1025,9 +1035,7 @@ func mergeImageMetadataConfig(
 		return nil, fmt.Errorf("merge configuration: %w", err)
 	}
 
-	if err := config.MergeExtraRemoteEnv(ctx, mergedConfig, extraDevContainerPath); err != nil {
-		return nil, err
-	}
+	config.MergeExtraRemoteEnvConfig(mergedConfig, overlay)
 
 	return mergedConfig, nil
 }

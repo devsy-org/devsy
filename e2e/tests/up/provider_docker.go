@@ -299,13 +299,13 @@ var _ = ginkgo.Describe(
 
 		ginkgo.It("extra devcontainer merge", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
-				"tests/up/testdata/docker-extra-devcontainer",
+				"tests/up/testdata/docker-overlay-features",
 				dtc.initialDir,
 				dtc.f,
 			)
 			framework.ExpectNoError(err)
 
-			extraPath := path.Join(tempDir, "extra.json")
+			extraPath := path.Join(tempDir, "overlay", "extra.json")
 			err = dtc.f.DevsyUp(
 				ctx,
 				tempDir,
@@ -322,9 +322,37 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "extra_value")
 
+			for _, marker := range []string{"base-feature-installed", "overlay-feature-installed"} {
+				_, err = dtc.execSSH(ctx, tempDir, "test -f /tmp/"+marker)
+				framework.ExpectNoError(err)
+			}
+
 			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+		ginkgo.It(
+			"extra devcontainer features are installed for Dockerfile builds",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-extra-devcontainer-dockerfile",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+				err = dtc.f.DevsyUp(ctx, tempDir,
+					names.Flag(names.DevContainerOverlay),
+					path.Join(tempDir, "overlay", "extra.json"),
+				)
+				framework.ExpectNoError(err)
+
+				for _, marker := range []string{"base-feature-installed", "overlay-feature-installed"} {
+					_, err = dtc.execSSH(ctx, tempDir, "test -f /tmp/"+marker)
+					framework.ExpectNoError(err)
+				}
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
 
 		ginkgo.It("extra devcontainer override", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(

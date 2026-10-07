@@ -44,16 +44,15 @@ func (r *runner) build(
 		return nil, err
 	}
 
-	// Add extra devcontainer config if provided
-	if options.ExtraDevContainerPath != "" {
+	overlay, err := overlayForParsedConfig(ctx, parsedConfig, options.ExtraDevContainerPath)
+	if err != nil {
+		return nil, err
+	}
+	if overlay != nil {
 		if buildInfo.ImageMetadata == nil {
 			buildInfo.ImageMetadata = &config.ImageMetadataConfig{}
 		}
-		extraConfig, err := config.ParseDevContainerJSONFile(ctx, options.ExtraDevContainerPath)
-		if err != nil {
-			return nil, err
-		}
-		config.AddConfigToImageMetadata(extraConfig, buildInfo.ImageMetadata)
+		config.AddConfigToImageMetadata(overlay, buildInfo.ImageMetadata)
 	}
 
 	return buildInfo, nil

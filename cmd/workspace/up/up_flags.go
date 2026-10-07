@@ -60,8 +60,12 @@ func (cmd *UpCmd) registerBuildFlags(upCmd *cobra.Command) {
 			"Select the devcontainer config source, overriding project discovery: "+
 				`"none" (ignore the project config), "image:<ref>" (use only that image), `+
 				`"id:<name>" (a named .devcontainer/<name> profile), or a path to a devcontainer.json`),
-		flags.String(&cmd.ExtraDevContainerPath, names.DevContainerOverlay, "",
-			"Path to a devcontainer.json whose values merge on top of the resolved config"),
+		flags.String(
+			&cmd.ExtraDevContainerPath,
+			names.DevContainerOverlay,
+			"",
+			"Layer supported runtime metadata onto the resolved config and apply features and install order before image build",
+		),
 		flags.String(&cmd.FallbackImage, names.FallbackImage, "",
 			"Image to use when no devcontainer config is found"),
 		flags.String(&cmd.GPUAvailability, names.GPUAvailability, "",

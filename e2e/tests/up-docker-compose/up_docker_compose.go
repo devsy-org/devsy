@@ -645,6 +645,28 @@ var _ = ginkgo.Describe(
 				To(gomega.ContainSubstring("vcluster version 0.24.1"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
+		ginkgo.It("overlay features are installed for Compose builds", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up-docker-compose/testdata/docker-compose-overlay-features",
+				tc.initialDir,
+				tc.f,
+			)
+			framework.ExpectNoError(err)
+			_, err = devsyUpAndFindWorkspace(
+				ctx, tc.f, tempDir,
+				"--devcontainer-overlay",
+				filepath.Join(tempDir, "overlay", "extra.json"),
+			)
+			framework.ExpectNoError(err)
+
+			for _, marker := range []string{"base-feature-installed", "overlay-feature-installed"} {
+				_, err = tc.execSSH(ctx, tempDir, "test -f /tmp/"+marker)
+				framework.ExpectNoError(err)
+			}
+
+			framework.ExpectNoError(os.Remove(filepath.Join(tempDir, "overlay", "extra.json")))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
 		// Regression guard: a build-backed service with an explicit build.target
 		// and features must honor the real Dockerfile. Previously the Dockerfile
 		// contents were dropped when a target was set, producing a synthesized

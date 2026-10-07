@@ -1,0 +1,8 @@
+{
+  "remoteEnv": {
+    "EXTRA_VAR": "extra_value"
+  },
+  "features": {
+    "./features/overlay-feature": {}
+  }
+}
