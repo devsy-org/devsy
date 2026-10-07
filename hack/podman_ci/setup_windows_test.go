@@ -187,7 +187,6 @@ func TestWindowsPartialInitRecoveryRetriesWithFreshBudget(t *testing.T) {
 	runner := &windowsFakeRunner{
 		clock: clock, results: map[string][]CommandResult{
 			testMachineInit: {
-				CommandResult{TimedOut: true, Stderr: "init timed out"},
 				successResult(""),
 			},
 			"machine stop":  {failureResult("Error: podman-machine-default: VM does not exist")},
