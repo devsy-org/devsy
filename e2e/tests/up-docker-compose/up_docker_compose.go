@@ -682,6 +682,28 @@ var _ = ginkgo.Describe(
 					"--devcontainer-overlay", overlayPath,
 				)
 				framework.ExpectNoError(err)
+				//nolint:gosec // G304: path is inside the test-owned temporary workspace.
+				hostInitMarker, err := os.ReadFile(filepath.Join(tempDir, "overlay-init-marker"))
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(string(hostInitMarker))).
+					To(gomega.Equal("overlay-init-ran"))
+				expectedWorkspaceMountSource, err := filepath.EvalSymlinks(tempDir)
+				framework.ExpectNoError(err)
+				appIDs, err := findComposeContainer(
+					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app",
+				)
+				framework.ExpectNoError(err)
+				app, err := tc.inspectContainer(ctx, appIDs)
+				framework.ExpectNoError(err)
+				workspaceMountSource := ""
+				for _, containerMount := range app.Mounts {
+					if containerMount.Destination == "/workspaces" {
+						workspaceMountSource, err = filepath.EvalSymlinks(containerMount.Source)
+						framework.ExpectNoError(err)
+						break
+					}
+				}
+				gomega.Expect(workspaceMountSource).To(gomega.Equal(expectedWorkspaceMountSource))
 
 				initMarker, err := tc.execSSH(ctx, tempDir, "cat /workspaces/overlay-init-marker")
 				framework.ExpectNoError(err)
@@ -717,7 +739,7 @@ var _ = ginkgo.Describe(
 				initMarker, err = tc.execSSH(ctx, tempDir, "cat /workspaces/overlay-init-marker")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(initMarker)).To(gomega.Equal("overlay-init-ran"))
-				appIDs, err := findComposeContainer(
+				appIDs, err = findComposeContainer(
 					ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app",
 				)
 				framework.ExpectNoError(err)
