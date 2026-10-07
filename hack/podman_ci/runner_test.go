@@ -46,6 +46,9 @@ func TestExecRunnerTimesOutDirectChild(t *testing.T) {
 	if !result.TimedOut || result.ExitCode != nil {
 		t.Fatalf("expected timeout result, got %+v", result)
 	}
+	if !strings.Contains(result.Stderr, "PODMAN_COMMAND_TIMEOUT: direct_process_stopped=") {
+		t.Fatalf("timeout marker missing: %q", result.Stderr)
+	}
 }
 
 func TestRunnerHelperProcess(_ *testing.T) {

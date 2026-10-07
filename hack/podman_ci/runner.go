@@ -68,7 +68,7 @@ func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) CommandResult {
 	}
 	if waitResult.timedOut {
 		result.Stderr += fmt.Sprintf(
-			"\nPODMAN_WINDOWS_COMMAND_TIMEOUT: direct_process_stopped=%t",
+			"\nPODMAN_COMMAND_TIMEOUT: direct_process_stopped=%t",
 			waitResult.stopped,
 		)
 		if !waitResult.stopped {
