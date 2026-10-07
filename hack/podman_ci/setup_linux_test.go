@@ -214,6 +214,10 @@ func TestLinuxRootfulSetupOrderingAndEnvironment(t *testing.T) {
 func TestLinuxRootfulServiceContents(t *testing.T) {
 	fixture := testSetup(t, ModeRootful)
 	cfg, runner := fixture.cfg, fixture.runner
+	cfg.PodmanPath = filepath.Join(filepath.Dir(cfg.PodmanPath), "podman with spaces")
+	if err := os.WriteFile(cfg.PodmanPath, []byte(""), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	var serviceContents string
 	runner.fn = func(c recordedCommand) CommandResult {
 		if len(c.args) == 5 && slices.Equal(c.args[:3], []string{"install", "-m", "0644"}) {
@@ -232,7 +236,7 @@ func TestLinuxRootfulServiceContents(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	wantService := "[Service]\nExecStart=\nExecStart=" + cfg.PodmanPath + " --log-level=info system service --time=0\n"
+	wantService := "[Service]\nExecStart=\nExecStart=\"" + cfg.PodmanPath + "\" --log-level=info system service --time=0\n"
 	if serviceContents != wantService {
 		t.Fatalf("systemd service contents = %q, want %q", serviceContents, wantService)
 	}

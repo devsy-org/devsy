@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -119,7 +120,9 @@ func setupLinuxRootful(ctx context.Context, deps Dependencies, cfg SetupConfig) 
 }
 
 func configureRootfulService(ctx context.Context, deps Dependencies, cfg SetupConfig) error {
-	service := "[Service]\nExecStart=\nExecStart=" + cfg.PodmanPath + " --log-level=info system service --time=0\n"
+	service := "[Service]\nExecStart=\nExecStart=" + strconv.Quote(
+		cfg.PodmanPath,
+	) + " --log-level=info system service --time=0\n"
 	if err := installPrivilegedFile(
 		ctx,
 		deps,
