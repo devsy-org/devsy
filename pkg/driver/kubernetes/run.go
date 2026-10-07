@@ -145,12 +145,7 @@ func (k *KubernetesDriver) buildPod(
 	if err != nil {
 		return nil, err
 	}
-
-	volumeMounts, tmpfsVolumes := buildVolumeMounts(mount, options)
-	capabilities := buildCapabilities(options.CapAdd)
-	envVars, daemonConfig := splitEnvVars(options.Env)
-	envVars = withAgentInstallPathEnv(envVars, k.options.AgentInstallPath)
-
+	containerInputs := k.buildPodContainerInputs(options, mount)
 	serviceAccount, err := k.ensureServiceAccount(ctx, id)
 	if err != nil {
 		return nil, err
@@ -161,7 +156,7 @@ func (k *KubernetesDriver) buildPod(
 		return nil, err
 	}
 
-	daemonConfigSecretName, err := k.ensureDaemonConfig(ctx, id, daemonConfig)
+	daemonConfigSecretName, err := k.ensureDaemonConfig(ctx, id, containerInputs.daemonConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -175,10 +170,10 @@ func (k *KubernetesDriver) buildPod(
 		options:                options,
 		meta:                   meta,
 		initContainers:         initContainers,
-		volumeMounts:           volumeMounts,
-		tmpfsVolumes:           tmpfsVolumes,
-		capabilities:           capabilities,
-		envVars:                envVars,
+		volumeMounts:           containerInputs.volumeMounts,
+		tmpfsVolumes:           containerInputs.tmpfsVolumes,
+		capabilities:           containerInputs.capabilities,
+		envVars:                containerInputs.envVars,
 		serviceAccount:         serviceAccount,
 		daemonConfigSecretName: daemonConfigSecretName,
 		pullSecretsCreated:     pullSecretsCreated,
@@ -284,6 +279,32 @@ func loadPodTemplate(templatePath string) (*corev1.Pod, error) {
 			RestartPolicy: corev1.RestartPolicyNever,
 		},
 	}, nil
+}
+
+type podContainerInputs struct {
+	volumeMounts []corev1.VolumeMount
+	tmpfsVolumes []corev1.Volume
+	capabilities *corev1.Capabilities
+	envVars      []corev1.EnvVar
+	daemonConfig string
+}
+
+func (k *KubernetesDriver) buildPodContainerInputs(
+	options *driver.RunOptions,
+	mount *config.Mount,
+) *podContainerInputs {
+	volumeMounts, tmpfsVolumes := buildVolumeMounts(mount, options)
+	capabilities := buildCapabilities(options.CapAdd)
+	envVars, daemonConfig := splitEnvVars(options.Env)
+	envVars = withAgentInstallPathEnv(envVars, k.options.AgentInstallPath)
+
+	return &podContainerInputs{
+		volumeMounts: volumeMounts,
+		tmpfsVolumes: tmpfsVolumes,
+		capabilities: capabilities,
+		envVars:      envVars,
+		daemonConfig: daemonConfig,
+	}
 }
 
 func buildVolumeMounts(

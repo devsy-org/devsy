@@ -418,3 +418,100 @@ func TestAssemblePodSpecOpenShiftScenario(t *testing.T) {
 	}
 	assertRunAsUserAndNonRoot(t, devsyContainer.SecurityContext, 1002010000)
 }
+
+func TestBuildPodContainerInputs(t *testing.T) {
+	inputs := newTestPodContainerInputs()
+
+	t.Run("daemonConfig and capabilities", func(t *testing.T) {
+		assertDaemonConfigAndCaps(t, inputs)
+	})
+
+	t.Run("mounts", func(t *testing.T) {
+		assertContainerMounts(t, inputs)
+	})
+
+	t.Run("envVars", func(t *testing.T) {
+		assertContainerEnvVars(t, inputs)
+	})
+}
+
+func newTestPodContainerInputs() *podContainerInputs {
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{
+			AgentInstallPath: "/opt/devsy/bin/devsy",
+		},
+	}
+	options := &driver.RunOptions{
+		CapAdd: []string{"SYS_PTRACE"},
+		Env: map[string]string{
+			"FOO":                              "bar",
+			pkgconfig.EnvWorkspaceDaemonConfig: "daemon-json-data",
+		},
+		Mounts: []*config.Mount{
+			{
+				Type:   driver.MountTypeTmpfs,
+				Target: "/tmp",
+			},
+		},
+	}
+	mount := &config.Mount{
+		Type:   driver.MountTypeVolume,
+		Source: "test-workspace-pvc",
+		Target: "/workspaces/my-repo",
+	}
+
+	return k.buildPodContainerInputs(options, mount)
+}
+
+func assertDaemonConfigAndCaps(t *testing.T, inputs *podContainerInputs) {
+	t.Helper()
+	if inputs.daemonConfig != "daemon-json-data" {
+		t.Errorf("daemonConfig = %q, want %q", inputs.daemonConfig, "daemon-json-data")
+	}
+	if inputs.capabilities == nil || len(inputs.capabilities.Add) != 1 ||
+		inputs.capabilities.Add[0] != "SYS_PTRACE" {
+		t.Errorf("capabilities = %+v, want [SYS_PTRACE]", inputs.capabilities)
+	}
+}
+
+func assertContainerMounts(t *testing.T, inputs *podContainerInputs) {
+	t.Helper()
+	if len(inputs.volumeMounts) != 2 {
+		t.Fatalf("len(volumeMounts) = %d, want 2", len(inputs.volumeMounts))
+	}
+	if inputs.volumeMounts[0].MountPath != "/workspaces/my-repo" {
+		t.Errorf(
+			"volumeMounts[0].MountPath = %q, want %q",
+			inputs.volumeMounts[0].MountPath,
+			"/workspaces/my-repo",
+		)
+	}
+	if inputs.volumeMounts[1].MountPath != "/tmp" {
+		t.Errorf(
+			"volumeMounts[1].MountPath = %q, want %q",
+			inputs.volumeMounts[1].MountPath,
+			"/tmp",
+		)
+	}
+	if len(inputs.tmpfsVolumes) != 1 {
+		t.Fatalf("len(tmpfsVolumes) = %d, want 1", len(inputs.tmpfsVolumes))
+	}
+}
+
+func assertContainerEnvVars(t *testing.T, inputs *podContainerInputs) {
+	t.Helper()
+	envMap := make(map[string]string, len(inputs.envVars))
+	for _, env := range inputs.envVars {
+		envMap[env.Name] = env.Value
+	}
+
+	if envMap[pkgconfig.EnvAgentPath] != "/opt/devsy/bin/devsy" {
+		t.Errorf("missing or incorrect %s in envVars: %+v", pkgconfig.EnvAgentPath, inputs.envVars)
+	}
+	if envMap["FOO"] != "bar" {
+		t.Errorf("missing or incorrect FOO in envVars: %+v", inputs.envVars)
+	}
+	if _, exists := envMap[pkgconfig.EnvWorkspaceDaemonConfig]; exists {
+		t.Errorf("daemon config env var should have been stripped from envVars")
+	}
+}
