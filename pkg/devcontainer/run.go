@@ -171,8 +171,11 @@ func (r *runner) Up(
 		return nil, err
 	}
 	defer cleanupBuildInformation(substitutedConfig.Config)
-	if err := r.checkOverlayRecreation(ctx, substitutedConfig, options); err != nil {
-		return nil, err
+	defaultSelection := overlayConfigKind(substitutedConfig.Config) == overlayDefaultSelection
+	if !defaultSelection {
+		if err := r.checkOverlayRecreation(ctx, substitutedConfig, options); err != nil {
+			return nil, err
+		}
 	}
 
 	// Recovery skips initializeCommand: a failing host hook must not block the
@@ -205,7 +208,16 @@ func (r *runner) Up(
 		}
 	}
 
-	if err := r.validateOverlayAssets(ctx, substitutedConfig); err != nil {
+	if defaultSelection {
+		// Detection follows initialization so the hook can generate project files.
+		if err := r.resolveDefaultContainerConfig(substitutedConfig.Config, options); err != nil {
+			return nil, err
+		}
+		if err := r.checkOverlayRecreation(ctx, substitutedConfig, options); err != nil {
+			return nil, err
+		}
+	}
+	if err := r.validateOverlayUpAssets(ctx, substitutedConfig, options); err != nil {
 		return nil, err
 	}
 	params := &runContainerParams{
@@ -305,26 +317,41 @@ func (r *runner) runDefaultContainer(
 	ctx context.Context,
 	params *runContainerParams,
 ) (*config.Result, error) {
-	conf := params.parsedConfig.Config
+	if err := r.resolveDefaultContainerConfig(
+		params.parsedConfig.Config,
+		params.options,
+	); err != nil {
+		return nil, err
+	}
+	return r.runSingleContainer(ctx, params)
+}
+
+func (r *runner) resolveDefaultContainerConfig(
+	conf *config.DevContainerConfig,
+	options UpOptions,
+) error {
+	if overlayConfigKind(conf) != overlayDefaultSelection {
+		return nil
+	}
 
 	const missingProps = "dev container config is missing one of " +
 		"\"image\", \"dockerFile\" or \"dockerComposeFile\" properties"
 
-	if fallback := params.options.FallbackImage; fallback != "" {
+	if fallback := options.FallbackImage; fallback != "" {
 		log.Warnf("%s, using fallback image %q", missingProps, fallback)
 		conf.ImageContainer = config.ImageContainer{Image: fallback}
-		return r.runSingleContainer(ctx, params)
+		return nil
 	}
 
 	log.Warn(missingProps + ", defaulting to auto-detection")
 
 	lang, err := language.DetectLanguage(r.localWorkspaceFolder)
 	if err != nil || language.MapConfig[lang] == nil {
-		return nil, fmt.Errorf("could not detect project language and %s", missingProps)
+		return fmt.Errorf("could not detect project language and %s", missingProps)
 	}
 	conf.ImageContainer = language.MapConfig[lang].ImageContainer
 
-	return r.runSingleContainer(ctx, params)
+	return nil
 }
 
 func isDockerFileConfig(config *config.DevContainerConfig) bool {

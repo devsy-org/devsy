@@ -28,7 +28,10 @@ const (
 	overlayOptionsField                     = "options"
 )
 
-const overlayComposeSelection = "compose"
+const (
+	overlayComposeSelection = "compose"
+	overlayDefaultSelection = "default"
+)
 
 var overlayStructuralFields = []string{
 	overlayImageField,
@@ -597,7 +600,7 @@ func overlayConfigKind(c *config.DevContainerConfig) string {
 	case c.ContainerID != "":
 		return "attached"
 	default:
-		return "default"
+		return overlayDefaultSelection
 	}
 }
 

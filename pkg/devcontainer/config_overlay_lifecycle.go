@@ -203,6 +203,18 @@ func validateOverlayRecreation(parsed *config.SubstitutedConfig, options UpOptio
 
 // Asset checks happen after initialization, but before either creation path can
 // remove the existing resource. Initialization may generate these assets.
+func (r *runner) validateOverlayUpAssets(
+	ctx context.Context,
+	parsed *config.SubstitutedConfig,
+	options UpOptions,
+) error {
+	if options.Recovery && isDockerFileConfig(parsed.Config) {
+		// Dockerfile failures must reach the existing recovery-image build path.
+		return nil
+	}
+	return r.validateOverlayAssets(ctx, parsed)
+}
+
 func (r *runner) validateOverlayAssets(
 	ctx context.Context,
 	parsed *config.SubstitutedConfig,
