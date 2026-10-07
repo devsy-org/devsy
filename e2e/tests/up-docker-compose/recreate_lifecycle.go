@@ -92,7 +92,6 @@ var _ = ginkgo.Describe(
 						tc.f,
 					)
 					framework.ExpectNoError(err)
-					ginkgo.DeferCleanup(tc.f.DevsyWorkspaceDelete, tempDir)
 					composePath := filepath.Join(tempDir, "docker-compose.yaml")
 					// #nosec G304 -- composePath is within the temporary workspace created for this test.
 					composeConfig, err := os.ReadFile(composePath)
