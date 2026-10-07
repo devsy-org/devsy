@@ -814,7 +814,7 @@ func (r *runner) startContainer(
 	composeGlobalArgs, didRestoreFromPersistedShare := restorePersistedComposeArgsForStart(
 		container,
 		composeGlobalArgs,
-		params.forceOverrideRefresh,
+		params.forceOverrideRefresh || options.Recreate,
 	)
 
 	if container == nil || !didRestoreFromPersistedShare || params.forceOverrideRefresh {

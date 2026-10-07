@@ -1,0 +1,6 @@
+services:
+  app:
+    image: IMAGE_PLACEHOLDER
+    command: sleep infinity
+    volumes:
+      - .:/workspaces:cached

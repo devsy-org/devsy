@@ -1,0 +1,11 @@
+{
+  "name": "Compose lifecycle recreate regression",
+  "dockerComposeFile": "./docker-compose.yaml",
+  "service": "app",
+  "workspaceFolder": "/workspaces",
+  "onCreateCommand": {
+    "keep": "echo USER_HOOK_V1 >> /workspaces/keep.log",
+    "stable": "echo STABLE_USER_HOOK >> /workspaces/stable.log",
+    "removed": "echo REMOVED_USER_HOOK >> /workspaces/removed.log"
+  }
+}
