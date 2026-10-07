@@ -73,7 +73,6 @@ func (k *KubernetesDriver) ensureDevContainerPvc(
 	workspaceId string,
 	options *driver.RunOptions,
 ) (bool, *driver.RunOptions, error) {
-	initialize := false
 	pvc, containerInfo, err := k.getDevContainerPvc(ctx, workspaceId)
 	if err != nil {
 		return false, nil, err
@@ -90,15 +89,14 @@ func (k *KubernetesDriver) ensureDevContainerPvc(
 			return false, nil, err
 		}
 
-		initialize = true
+		return true, options, nil
 	}
 
-	// reuse driver.RunOptions from existing workspace if none provided
-	if options == nil && containerInfo != nil && containerInfo.Options != nil {
+	if options == nil && containerInfo != nil {
 		options = containerInfo.Options
 	}
 
-	return initialize, options, nil
+	return false, options, nil
 }
 
 func (k *KubernetesDriver) runContainer(
