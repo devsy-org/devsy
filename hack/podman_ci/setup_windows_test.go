@@ -322,6 +322,26 @@ func TestWindowsWatchdogTerminatesAndCanBeDisarmed(t *testing.T) {
 }
 
 func runWatchdogChild(mode string) {
+	if mode == "blocked-stderr" {
+		reader, stderr, err := os.Pipe()
+		if err != nil {
+			os.Exit(1)
+		}
+		defer reader.Close()
+		os.Stderr = stderr
+		writeDone := make(chan struct{})
+		go func() {
+			defer close(writeDone)
+			_, _ = stderr.Write(make([]byte, 1<<20))
+		}()
+		select {
+		case <-writeDone:
+			os.Exit(1)
+		case <-time.After(100 * time.Millisecond):
+		}
+		armWatchdog(750*time.Millisecond, &Logger{Out: io.Discard, Err: stderr})
+		select {}
+	}
 	wd := armWatchdog(750*time.Millisecond, &Logger{Out: os.Stdout, Err: os.Stderr})
 	if mode == "complete" {
 		wd.Stop()
@@ -342,8 +362,13 @@ func verifyWatchdogExpires(t *testing.T) {
 		t.Fatalf("blocked watchdog exit=%v output=%s", err, output)
 	}
 	if !strings.Contains(string(output), "hard_deadline_armed") ||
-		!strings.Contains(string(output), "PODMAN_WINDOWS_BOOTSTRAP_HARD_TIMEOUT") {
+		strings.Contains(string(output), "PODMAN_WINDOWS_BOOTSTRAP_HARD_TIMEOUT") {
 		t.Fatalf("watchdog markers missing: %s", output)
+	}
+	output, err = runWatchdogChildProcess(t, "blocked-stderr")
+	exit, ok = err.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 124 {
+		t.Fatalf("blocked-stderr watchdog exit=%v output=%s", err, output)
 	}
 }
 

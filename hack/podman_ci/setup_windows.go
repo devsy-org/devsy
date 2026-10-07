@@ -401,29 +401,22 @@ type (
 )
 
 func armWatchdog(timeout time.Duration, log *Logger) watchdog {
-	log.Printf(
-		"[podman-windows] hard_deadline_armed pid=%d timeout_ms=%d timeout_exit_code=124",
-		windows.GetCurrentProcessId(),
-		timeout.Milliseconds(),
-	)
 	watch := &timerWatchdog{stop: make(chan struct{})}
 	go func() {
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 		select {
 		case <-timer.C:
-			fmt.Fprintln(os.Stderr, "PODMAN_WINDOWS_BOOTSTRAP_HARD_TIMEOUT")
-			if err := windows.TerminateProcess(windows.CurrentProcess(), 124); err != nil {
-				fmt.Fprintf(
-					os.Stderr,
-					"PODMAN_WINDOWS_BOOTSTRAP_HARD_TIMEOUT: native termination failed: %v\n",
-					err,
-				)
-			}
+			_ = windows.TerminateProcess(windows.CurrentProcess(), 124)
 			os.Exit(124)
 		case <-watch.stop:
 		}
 	}()
+	log.Printf(
+		"[podman-windows] hard_deadline_armed pid=%d timeout_ms=%d timeout_exit_code=124",
+		windows.GetCurrentProcessId(),
+		timeout.Milliseconds(),
+	)
 	return watch
 }
 

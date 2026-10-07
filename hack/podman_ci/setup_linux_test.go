@@ -187,7 +187,15 @@ func TestLinuxRootlessSetupUsesPinnedPreflightWithoutSystemd(t *testing.T) {
 func TestLinuxRootfulSetupOrderingAndEnvironment(t *testing.T) {
 	fixture := testSetup(t, ModeRootful)
 	cfg, runner, files, clock := fixture.cfg, fixture.runner, fixture.files, fixture.clock
+	var serviceContents string
 	runner.fn = func(c recordedCommand) CommandResult {
+		if len(c.args) == 5 && slices.Equal(c.args[:3], []string{"install", "-m", "0644"}) {
+			contents, err := os.ReadFile(c.args[3])
+			if err != nil {
+				t.Fatalf("read temporary service file: %v", err)
+			}
+			serviceContents = string(contents)
+		}
 		if strings.Contains(strings.Join(c.args, " "), "OCIRuntime.Path") {
 			return successResult(cfg.CrunPath)
 		}
@@ -195,6 +203,10 @@ func TestLinuxRootfulSetupOrderingAndEnvironment(t *testing.T) {
 	}
 	if err := platformSetup(context.Background(), testDeps(runner, files, clock), cfg); err != nil {
 		t.Fatal(err)
+	}
+	wantService := "[Service]\nExecStart=\nExecStart=" + cfg.PodmanPath + " --log-level=info system service --time=0\n"
+	if serviceContents != wantService {
+		t.Fatalf("systemd service contents = %q, want %q", serviceContents, wantService)
 	}
 	reloadIndex := commandIndex(runner, "daemon-reload")
 	if reloadIndex < 0 || commandIndex(runner, "enable --now podman.socket") <= reloadIndex {
