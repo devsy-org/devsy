@@ -459,25 +459,9 @@ func (r *runner) buildNewContainerConfig(
 	ctx context.Context,
 	p *resolveParams,
 ) (*config.BuildInfo, *config.MergedDevContainerConfig, error) {
-	activeConfig := p.parsedConfig
-
-	buildInfo, err := r.build(
-		ctx,
-		activeConfig,
-		p.substitutionContext,
-		p.options.toBuildOptions(),
-	)
+	buildInfo, activeConfig, err := r.buildNewContainerImage(ctx, p)
 	if err != nil {
-		if !p.options.Recovery {
-			log.Info("dev container build failed; re-run with --recovery to " +
-				"start a recovery container with features and lifecycle commands disabled")
-			return nil, nil, clierr.Recoverable(fmt.Errorf("build image: %w", err))
-		}
-		buildInfo, activeConfig, err = r.buildRecoveryContainerConfig(ctx, p, err)
-		if err != nil {
-			return nil, nil, err
-		}
-		r.recovering = true
+		return nil, nil, err
 	}
 
 	_, validatesImageRun := r.driver.(driver.ImageRunValidator)
@@ -506,6 +490,34 @@ func (r *runner) buildNewContainerConfig(
 	}
 
 	return buildInfo, mergedConfig, nil
+}
+
+func (r *runner) buildNewContainerImage(
+	ctx context.Context,
+	p *resolveParams,
+) (*config.BuildInfo, *config.SubstitutedConfig, error) {
+	activeConfig := p.parsedConfig
+
+	buildInfo, err := r.build(
+		ctx,
+		activeConfig,
+		p.substitutionContext,
+		p.options.toBuildOptions(),
+	)
+	if err != nil {
+		if !p.options.Recovery {
+			log.Info("dev container build failed; re-run with --recovery to " +
+				"start a recovery container with features and lifecycle commands disabled")
+			return nil, nil, clierr.Recoverable(fmt.Errorf("build image: %w", err))
+		}
+		buildInfo, activeConfig, err = r.buildRecoveryContainerConfig(ctx, p, err)
+		if err != nil {
+			return nil, nil, err
+		}
+		r.recovering = true
+	}
+
+	return buildInfo, activeConfig, nil
 }
 
 func (r *runner) validateImageRun(
