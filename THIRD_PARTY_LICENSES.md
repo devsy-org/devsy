@@ -125,7 +125,7 @@ To regenerate this file after changing dependencies, run `task cli:licenses`.
 | [github.com/devsy-org/agentapi](https://github.com/devsy-org/agentapi) | `v1.0.1` | MPL-2.0 |
 | [github.com/devsy-org/api](https://github.com/devsy-org/api) | `v1.1.0` | MPL-2.0 |
 | [github.com/devsy-org/apiserver](https://github.com/devsy-org/apiserver) | `v1.5.4` | Apache-2.0 |
-| [github.com/devsy-org/devsy-runtime-sdk](https://github.com/devsy-org/devsy-runtime-sdk) | `v1.2.0` | MPL-2.0 |
+| [github.com/devsy-org/devsy-runtime-sdk](https://github.com/devsy-org/devsy-runtime-sdk) | `v1.3.1-0.20261007145132-396319707b83` | MPL-2.0 |
 | [github.com/devsy-org/ssh](https://github.com/devsy-org/ssh) | `v1.2.9` | BSD-3-Clause |
 | [github.com/distribution/reference](https://github.com/distribution/reference) | `v0.6.0` | Apache-2.0 |
 | [github.com/docker/cli](https://github.com/docker/cli) | `v29.8.0+incompatible` | Apache-2.0 |
@@ -379,7 +379,7 @@ To regenerate this file after changing dependencies, run `task cli:licenses`.
 | [k8s.io/metrics](https://github.com/kubernetes/metrics) | `v0.37.0` | Apache-2.0 |
 | [k8s.io/streaming](https://github.com/kubernetes/streaming) | `v0.37.1` | Apache-2.0 |
 | [k8s.io/utils](https://github.com/kubernetes/utils) | `v0.0.0-20260707023825-cf1189d6abe3` | Apache-2.0 |
-| [mvdan.cc/sh/v3](https://mvdan.cc/sh/v3) | `v3.14.0` | BSD-3-Clause |
+| [mvdan.cc/sh/v3](https://mvdan.cc/sh/v3) | `v3.14.1` | BSD-3-Clause |
 | [sigs.k8s.io/apiserver-network-proxy/konnectivity-client](https://sigs.k8s.io/apiserver-network-proxy/konnectivity-client) | `v0.36.0` | Apache-2.0 |
 | [sigs.k8s.io/controller-runtime](https://sigs.k8s.io/controller-runtime) | `v0.25.0` | Apache-2.0 |
 | [sigs.k8s.io/json](https://sigs.k8s.io/json) | `v0.0.0-20250730193827-2d320260d730` | Apache-2.0 |

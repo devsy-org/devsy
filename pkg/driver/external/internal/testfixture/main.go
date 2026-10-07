@@ -48,7 +48,8 @@ func serve(mode, state string, delay time.Duration) {
 	}
 	fixtureMode := mode
 	if fixtureMode == "blocked" || fixtureMode == "environment" || fixtureMode == "block-info" ||
-		fixtureMode == "env-error" || strings.HasPrefix(fixtureMode, "stream-") {
+		fixtureMode == "env-error" || fixtureMode == "workspace-identity" ||
+		strings.HasPrefix(fixtureMode, "stream-") {
 		fixtureMode = fake.Normal
 	}
 	runtime, err := fake.New(fake.Config{StateDir: state, Mode: fixtureMode})
@@ -122,6 +123,12 @@ func (f *fixture) RunImage(
 	ctx context.Context,
 	request *runtimev1.RunImageRequest,
 ) (*runtimev1.RunImageResponse, error) {
+	if f.mode == "workspace-identity" {
+		request.Labels = append(request.Labels,
+			"fixture.remote-user="+request.GetRemoteUser(),
+			"fixture.dockerless="+strconv.FormatBool(request.GetDockerless()),
+		)
+	}
 	if f.mode == "stream-workspace-secret" {
 		if err := f.saveEnvironment(request); err != nil {
 			return nil, err
