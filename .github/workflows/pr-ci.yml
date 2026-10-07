@@ -32,7 +32,7 @@ jobs:
               - 'e2e/**'
               - '.github/workflows/pr-ci.yml'
               - 'hack/licenses/**'
-              - 'hack/ci/setup-podman-windows*.ps1'
+              - 'hack/podman_ci/**'
               - 'THIRD_PARTY_LICENSES.md'
 
   precommit:
@@ -166,6 +166,32 @@ jobs:
             OS="darwin"
           fi
           echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
+
+      - name: test Podman CI helper
+        run: go test ./hack/podman_ci
+
+      - name: build Podman CI helper
+        if: runner.os == 'Linux' || runner.os == 'Windows'
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+        run: |
+          OUT_DIR="${{ runner.temp }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            OUT_DIR="${OUT_DIR//\\//}"
+          fi
+          OUT="$OUT_DIR/devsy-ci-podman"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            OUT="${OUT}.exe"
+          fi
+          go build -trimpath -o "$OUT" ./hack/podman_ci
+
+      - name: upload Podman CI helper
+        if: runner.os == 'Linux' || runner.os == 'Windows'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: devsy-ci-podman-${{ steps.os.outputs.runner_os }}
+          path: ${{ runner.temp }}/devsy-ci-podman*
 
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
@@ -717,6 +743,21 @@ jobs:
           fi
           echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
 
+      - name: download Podman CI helper
+        if: >
+          (
+            matrix.install-kind == true ||
+            matrix.install-podman == true ||
+            matrix.install-podman == 'rootless' ||
+            matrix.install-podman == 'rootful'
+          ) &&
+          (runner.os == 'Windows' || runner.os == 'Linux') &&
+          (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: devsy-ci-podman-${{ steps.os.outputs.runner_os }}
+          path: ${{ runner.temp }}/devsy-ci-podman/
+
       - name: download CLI artifacts
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -775,12 +816,6 @@ jobs:
           path: ${{ runner.temp }}/podman.msi
           key: ${{ runner.os }}-${{ runner.arch }}-podman-v5.8.2
 
-      - name: test Podman bootstrap helper (Windows)
-        if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
-        shell: pwsh
-        timeout-minutes: 1
-        run: .\hack\ci\setup-podman-windows.Tests.ps1
-
       - name: install podman (Windows)
         if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: pwsh
@@ -818,10 +853,11 @@ jobs:
         if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: pwsh
         timeout-minutes: 5
-        run: >
-          .\hack\ci\setup-podman-windows.ps1
-          -PodmanPath "C:\Program Files\RedHat\Podman\podman.exe"
-          -BootstrapTimeoutSeconds 270
+        run: |
+          & "$env:RUNNER_TEMP\devsy-ci-podman\devsy-ci-podman.exe" setup `
+            --mode rootful `
+            --podman-path "C:\Program Files\RedHat\Podman\podman.exe" `
+            --bootstrap-timeout 270s
 
       - name: cache kind.exe (Windows)
         if: matrix.install-kind == true && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
@@ -895,17 +931,17 @@ jobs:
 
           command -v newuidmap >/dev/null || sudo apt-get install -y uidmap
 
-      - name: Install Podman (Linux)
-        if: matrix.install-podman == 'rootless' && runner.os == 'Linux'
+      - name: configure and verify podman (Linux)
+        if: (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && runner.os == 'Linux'
         shell: bash
+        timeout-minutes: 5
         run: |
-          ./hack/ci/setup-podman-linux.sh rootless
-
-      - name: Install Podman (Linux rootful)
-        if: matrix.install-podman == 'rootful' && runner.os == 'Linux'
-        shell: bash
-        run: |
-          ./hack/ci/setup-podman-linux.sh rootful
+          chmod +x "${RUNNER_TEMP}/devsy-ci-podman/devsy-ci-podman"
+          "${RUNNER_TEMP}/devsy-ci-podman/devsy-ci-podman" setup \
+            --mode "${{ matrix.install-podman }}" \
+            --podman-path /usr/local/bin/podman \
+            --crun-path /usr/local/bin/crun \
+            --bootstrap-timeout 270s
 
       - name: get microsandbox latest version
         if: matrix.install-microsandbox == true && runner.os == 'Linux'
