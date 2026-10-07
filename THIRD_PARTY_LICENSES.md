@@ -125,7 +125,7 @@ To regenerate this file after changing dependencies, run `task cli:licenses`.
 | [github.com/devsy-org/agentapi](https://github.com/devsy-org/agentapi) | `v1.0.1` | MPL-2.0 |
 | [github.com/devsy-org/api](https://github.com/devsy-org/api) | `v1.1.0` | MPL-2.0 |
 | [github.com/devsy-org/apiserver](https://github.com/devsy-org/apiserver) | `v1.5.4` | Apache-2.0 |
-| [github.com/devsy-org/devsy-runtime-sdk](https://github.com/devsy-org/devsy-runtime-sdk) | `v1.3.1-0.20261007145132-396319707b83` | MPL-2.0 |
+| [github.com/devsy-org/devsy-runtime-sdk](https://github.com/devsy-org/devsy-runtime-sdk) | `v1.4.0` | MPL-2.0 |
 | [github.com/devsy-org/ssh](https://github.com/devsy-org/ssh) | `v1.2.9` | BSD-3-Clause |
 | [github.com/distribution/reference](https://github.com/distribution/reference) | `v0.6.0` | Apache-2.0 |
 | [github.com/docker/cli](https://github.com/docker/cli) | `v29.8.0+incompatible` | Apache-2.0 |
