@@ -13,6 +13,78 @@ $diagnosticReserve = [TimeSpan]::FromSeconds(25)
 $minimumRecoveryTime = [TimeSpan]::FromSeconds(60)
 $maximumTerminationReserve = [TimeSpan]::FromSeconds(5)
 
+function Start-BootstrapWatchdog {
+    param([TimeSpan]$Timeout)
+
+    if (-not $IsWindows) { throw 'The bootstrap watchdog requires Windows' }
+    if ($Timeout.TotalMilliseconds -le 0 -or $Timeout.TotalMilliseconds -gt [int]::MaxValue) {
+        throw 'The watchdog timeout must be a positive Int32 number of milliseconds'
+    }
+    if (-not ('Devsy.CI.BootstrapWatchdog' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Threading;
+
+namespace Devsy.CI
+{
+    public sealed class BootstrapWatchdog : IDisposable
+    {
+        private readonly object gate = new object();
+        private readonly ManualResetEvent completed = new ManualResetEvent(false);
+        private bool disposed;
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentProcess();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool TerminateProcess(IntPtr process, uint exitCode);
+
+        public BootstrapWatchdog(int timeoutMilliseconds)
+        {
+            var thread = new Thread(() =>
+            {
+                bool expired = !completed.WaitOne(timeoutMilliseconds);
+                lock (gate)
+                {
+                    if (expired && !disposed)
+                    {
+                        // No PowerShell callback, output write, or descendant enumeration
+                        // may delay the cutoff while the bootstrap runspace is blocked.
+                        if (!TerminateProcess(GetCurrentProcess(), 124))
+                        {
+                            Environment.FailFast("PODMAN_WINDOWS_BOOTSTRAP_HARD_TIMEOUT: native termination failed",
+                                new Win32Exception(Marshal.GetLastWin32Error()));
+                        }
+                    }
+                    completed.Dispose();
+                }
+            });
+            thread.IsBackground = true;
+            thread.Name = "Devsy Podman bootstrap deadline";
+            thread.Start();
+        }
+
+        public void Dispose()
+        {
+            lock (gate)
+            {
+                if (disposed) return;
+                disposed = true;
+                completed.Set();
+            }
+        }
+    }
+}
+'@
+    }
+    $watchdog = [Devsy.CI.BootstrapWatchdog]::new([int]$Timeout.TotalMilliseconds)
+    Write-Host "[podman-windows] hard_deadline_armed pid=$PID timeout_ms=$([int]$Timeout.TotalMilliseconds) timeout_exit_code=124"
+    return $watchdog
+}
+
 function New-BootstrapBudget {
     param([TimeSpan]$Timeout, [scriptblock]$Elapsed = $null)
 
@@ -271,4 +343,13 @@ function Invoke-PodmanBootstrap {
     }
 }
 
-if (-not $FunctionsOnly) { Invoke-PodmanBootstrap }
+if (-not $FunctionsOnly) {
+    # Preserve the cooperative budget and allow its terminal diagnostics to finish
+    # before the independent cutoff, still inside the five-minute step limit.
+    $watchdog = Start-BootstrapWatchdog ([TimeSpan]::FromSeconds($BootstrapTimeoutSeconds + 10))
+    try {
+        Invoke-PodmanBootstrap
+    } finally {
+        $watchdog.Dispose()
+    }
+}

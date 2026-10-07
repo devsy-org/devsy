@@ -12,6 +12,41 @@ function Assert-True($condition, $label) {
 
 $realRunner = ${function:Invoke-BoundedCommand}
 $realStopper = ${function:Stop-TimedOutProcess}
+if ($IsWindows) {
+    $watchdogScript = Join-Path ([IO.Path]::GetTempPath()) "$([Guid]::NewGuid().ToString('N')).ps1"
+    @'
+param([string]$HelperPath, [string]$Mode)
+. $HelperPath -PodmanPath (Join-Path $PSHOME 'pwsh.exe') -FunctionsOnly
+$watchdog = Start-BootstrapWatchdog ([TimeSpan]::FromMilliseconds(750))
+if ($Mode -eq 'complete') {
+    $watchdog.Dispose()
+    $watchdog.Dispose()
+    [Threading.Thread]::Sleep(1500)
+    Write-Output watchdog-disarmed
+} else {
+    [Threading.Thread]::Sleep(30000)
+}
+'@ | Set-Content -Path $watchdogScript
+    try {
+        foreach ($mode in @('expire', 'complete')) {
+            $watchdogResult = & $realRunner $pwshPath @(
+                '-NoProfile', '-File', "`"$watchdogScript`"",
+                '-HelperPath', "`"$PSScriptRoot/setup-podman-windows.ps1`"", '-Mode', $mode
+            ) ([TimeSpan]::FromSeconds(8))
+            Assert-True (-not $watchdogResult.TimedOut) "watchdog $mode scenario reached the outer test guard"
+            if ($mode -eq 'expire') {
+                Assert-Equal $watchdogResult.ExitCode 124 'blocked runspace watchdog exit'
+                Assert-True ($watchdogResult.Output -match 'hard_deadline_armed') 'watchdog was not armed before the blocked runspace'
+            } else {
+                Assert-Equal $watchdogResult.ExitCode 0 'disarmed watchdog exit'
+                Assert-True ($watchdogResult.Output -match 'watchdog-disarmed') 'completed bootstrap was killed after its deadline'
+            }
+        }
+    } finally {
+        Remove-Item $watchdogScript -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $completed = & $realRunner $pwshPath @('-NoProfile', '-Command', 'Write-Output short-command-complete') ([TimeSpan]::FromSeconds(4))
 Assert-True (-not $completed.TimedOut -and $completed.ExitCode -eq 0 -and $completed.Output -match 'short-command-complete') 'short command did not complete inside its timeout'
 
