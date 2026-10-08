@@ -47,6 +47,8 @@ type ProtectionManager struct {
 	readRemembered   func() (string, error)
 	saveRemembered   func(string) error
 	forgetRemembered func() error
+	// resolveNewFileKey overrides only the rekey target for individual test managers.
+	resolveNewFileKey func(dir, passphrase string) (*fileKey, error)
 	// phase is used for deterministic crash injection in recovery tests.
 	phase func(string) error
 }

@@ -22,6 +22,7 @@ const (
 func testProtectionManager(t *testing.T, dir, passphrase string) *ProtectionManager {
 	t.Helper()
 	p := NewProtectionManager(dir, DefaultUnlockResolver{ExplicitPassphrase: passphrase})
+	useFastPassphraseTargets(t, p)
 	p.readRemembered = func() (string, error) { return "", nil }
 	p.forgetRemembered = func() error { return nil }
 	return p
@@ -372,8 +373,7 @@ func TestRekeyAutomaticTransitionAndReset(t *testing.T) {
 func TestRememberVerifiesCredentialAndForgetDoesNotChangeBlob(t *testing.T) {
 	dir := t.TempDir()
 	credential := "remember-test-passphrase"
-	key, err := passphraseFileKey(credential)
-	require.NoError(t, err)
+	key := testPassphraseFileKey(t, credential)
 	path := filepath.Join(dir, EncryptedFileName)
 	require.NoError(
 		t,
@@ -520,8 +520,7 @@ func TestProtectionStatusNeverPromptsAndRememberRequiresCiphertext(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, SecretMissing, status.Availability)
 	require.ErrorIs(t, p.ChangePassphrase("replacement-for-missing-blob"), ErrSecretNotFound)
-	key, err := passphraseFileKey("actual-passphrase")
-	require.NoError(t, err)
+	key := testPassphraseFileKey(t, "actual-passphrase")
 	require.NoError(
 		t,
 		newFileBackend(filepath.Join(dir, EncryptedFileName), key).store(map[string]string{}),
@@ -595,8 +594,7 @@ func TestInvalidRecoveryJournalDoesNotChangeStore(t *testing.T) {
 func testPassphraseProtectionFixture(t *testing.T, passphrase string) *ProtectionManager {
 	t.Helper()
 	dir := t.TempDir()
-	key, err := passphraseFileKey(passphrase)
-	require.NoError(t, err)
+	key := testPassphraseFileKey(t, passphrase)
 	values := map[string]string{testRekeyBackendKey: testRekeyProtectedValue}
 	require.NoError(t, newFileBackend(filepath.Join(dir, EncryptedFileName), key).store(values))
 	idx, err := loadIndex(filepath.Join(dir, IndexFileName))

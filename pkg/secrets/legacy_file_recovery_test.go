@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"filippo.io/age"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,11 +27,27 @@ func (r unavailableLegacyKeyring) Probe(kind Backend, idx *index, key string) (b
 	return r.systemBackendRegistry.Probe(kind, idx, key)
 }
 
+// Keep production recovery and credential checks, reducing only subsequent writes.
+func (r unavailableLegacyKeyring) Open(
+	kind Backend,
+	idx *index,
+	intent BackendOpenIntent,
+) (backend, error) {
+	b, err := r.systemBackendRegistry.Open(kind, idx, intent)
+	if err == nil {
+		if file, ok := b.(*fileBackend); ok {
+			if recipient, ok := file.key.recipient.(*age.ScryptRecipient); ok {
+				recipient.SetWorkFactor(testScryptWorkFactor)
+			}
+		}
+	}
+	return b, err
+}
+
 func legacyRecoveryFixture(t *testing.T, credential string) (*localStore, *fileBackend) {
 	t.Helper()
 	dir := t.TempDir()
-	key, err := passphraseFileKey(legacyRecoveryPassphrase)
-	require.NoError(t, err)
+	key := testPassphraseFileKey(t, legacyRecoveryPassphrase)
 	blob := newFileBackend(filepath.Join(dir, EncryptedFileName), key)
 	require.NoError(
 		t,
