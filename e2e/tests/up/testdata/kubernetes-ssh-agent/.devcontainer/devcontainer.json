@@ -1,0 +1,5 @@
+{
+  "name": "Kubernetes private SSH Git regression",
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "postStartCommand": "printf 'post-start-complete\\n' > /tmp/devsy-1423-post-start"
+}
