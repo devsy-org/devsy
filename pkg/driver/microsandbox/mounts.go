@@ -138,7 +138,10 @@ func toVolumeMount(m *devcontainerconfig.Mount) (volumeMount, bool) {
 }
 
 func bindMount(m *devcontainerconfig.Mount) *volumeMount {
-	if m == nil || m.Source == "" || m.Target == "" {
+	if m == nil {
+		return nil
+	}
+	if m.Source == "" || m.Target == "" {
 		return nil
 	}
 	return &volumeMount{Target: m.Target, Source: m.Source, ReadOnly: m.IsReadOnly()}
