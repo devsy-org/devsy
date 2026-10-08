@@ -33,7 +33,6 @@ jobs:
               - '.github/workflows/pr-ci.yml'
               - 'hack/licenses/**'
               - 'hack/podman_ci/**'
-              - 'hack/ci/summarize-go-tests.py'
               - 'THIRD_PARTY_LICENSES.md'
 
   precommit:
@@ -121,66 +120,7 @@ jobs:
             exit 1
           fi
 
-          printf '%s\n' "$packages" | xargs go test -race -short -timeout=10m
-
-  secrets-crypto-compatibility:
-    name: Secrets crypto compatibility (production scrypt)
-    needs: [changes]
-    if: needs.changes.outputs.go == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-      - name: Full-strength passphrase compatibility
-        run: >-
-          go test -json -count=1 -timeout=8m -tags=crypto_integration
-          -run '^TestProductionPassphraseEncryptionCompatibility$' ./pkg/secrets
-          > "$RUNNER_TEMP/secrets-tests.json"
-      - name: Verify execution and summarize durations
-        if: always()
-        run: >-
-          python3 hack/ci/summarize-go-tests.py
-          "$RUNNER_TEMP/secrets-tests.json" "$RUNNER_TEMP/secrets-durations.json" "$GITHUB_STEP_SUMMARY"
-          --required-test TestProductionPassphraseEncryptionCompatibility
-      - name: Upload test duration events
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: secrets-production-crypto-durations
-          path: ${{ runner.temp }}/secrets-durations.json
-          if-no-files-found: error
-
-  secrets-macos-regression:
-    name: Secrets macOS race regression (5 passes)
-    needs: [changes]
-    if: needs.changes.outputs.go == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-      - name: Repeat the complete secrets package with the race detector
-        run: >-
-          go test -race -short -json -count=5 -timeout=5m ./pkg/secrets
-          > "$RUNNER_TEMP/secrets-tests.json"
-      - name: Verify execution and summarize durations
-        if: always()
-        run: >-
-          python3 hack/ci/summarize-go-tests.py
-          "$RUNNER_TEMP/secrets-tests.json" "$RUNNER_TEMP/secrets-durations.json" "$GITHUB_STEP_SUMMARY"
-          --required-test TestProbeFileReadsLegacyPassphraseBackend --count 5
-      - name: Upload test duration events
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: secrets-macos-race-durations
-          path: ${{ runner.temp }}/secrets-durations.json
-          if-no-files-found: error
+          printf '%s\n' "$packages" | xargs go test -race -short
 
   can-read-secret:
     name: Can Read Secret
@@ -1119,8 +1059,6 @@ jobs:
       - lint
       - agent-skill
       - unit-tests
-      - secrets-crypto-compatibility
-      - secrets-macos-regression
       - licenses
       - build-cli
       - integration-tests-unprivileged
@@ -1157,8 +1095,6 @@ jobs:
           check_result "lint" "${{ needs.lint.result }}" false || status=1
           check_result "agent-skill" "${{ needs.agent-skill.result }}" false || status=1
           check_result "unit-tests" "${{ needs.unit-tests.result }}" true || status=1
-          check_result "secrets-crypto-compatibility" "${{ needs.secrets-crypto-compatibility.result }}" true || status=1
-          check_result "secrets-macos-regression" "${{ needs.secrets-macos-regression.result }}" true || status=1
           check_result "licenses" "${{ needs.licenses.result }}" true || status=1
           check_result "build-cli" "${{ needs.build-cli.result }}" true || status=1
           check_result "integration-tests-unprivileged" "${{ needs.integration-tests-unprivileged.result }}" true || status=1

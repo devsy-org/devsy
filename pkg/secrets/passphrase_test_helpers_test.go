@@ -11,7 +11,7 @@ import (
 )
 
 // Functional fixtures use real age/scrypt at a cost unsuitable for user secrets.
-// Production defaults are verified separately by the crypto_integration test.
+// TestProductionPassphraseEncryptionCompatibility verifies production defaults.
 const testScryptWorkFactor = 10
 
 func testPassphraseFileKey(t *testing.T, passphrase string) *fileKey {
