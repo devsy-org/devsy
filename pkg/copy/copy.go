@@ -1,6 +1,7 @@
 package copy
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -62,6 +63,20 @@ func (fs ChownFailures) AllDenied() bool {
 		}
 	}
 	return len(fs) > 0
+}
+
+// AllVanished reports whether every recorded failure is for a missing entry.
+// Empty lists and mixed failures must not be suppressed as transient cleanup.
+func (failures ChownFailures) AllVanished() bool {
+	if len(failures) == 0 {
+		return false
+	}
+	for _, failure := range failures {
+		if !errors.Is(failure.Err, fs.ErrNotExist) {
+			return false
+		}
+	}
+	return true
 }
 
 func ChownR(path string, userName string) error {

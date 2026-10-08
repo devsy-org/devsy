@@ -4,12 +4,57 @@ package copy
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
 	"syscall"
 	"testing"
 )
+
+func TestChownFailuresAllVanished(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		failures ChownFailures
+		want     bool
+	}{
+		{name: "nil"},
+		{name: "empty", failures: ChownFailures{}},
+		{name: "missing", failures: ChownFailures{{Err: fs.ErrNotExist}}, want: true},
+		{name: "wrapped missing", failures: ChownFailures{{Err: fmt.Errorf("walk: %w", fs.ErrNotExist)}}, want: true},
+		{name: "multiple missing", failures: ChownFailures{{Err: fs.ErrNotExist}, {Err: syscall.ENOENT}}, want: true},
+		{name: "mixed permission", failures: ChownFailures{{Err: fs.ErrNotExist}, {Err: fs.ErrPermission}}},
+		{name: "mixed operation denied", failures: ChownFailures{{Err: fs.ErrNotExist}, {Err: syscall.EPERM}}},
+		{name: "mixed access denied", failures: ChownFailures{{Err: fs.ErrNotExist}, {Err: syscall.EACCES}}},
+		{name: "mixed IO", failures: ChownFailures{{Err: fs.ErrNotExist}, {Err: syscall.EIO}}},
+		{name: "mixed invalid path", failures: ChownFailures{{Err: fs.ErrNotExist}, {Err: syscall.ENOTDIR}}},
+		{name: "permission", failures: ChownFailures{{Err: fs.ErrPermission}}},
+		{name: "generic", failures: ChownFailures{{Err: errors.New("io failure")}}},
+		{name: "nil cause", failures: ChownFailures{{}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.failures.AllVanished(); got != test.want {
+				t.Errorf("AllVanished() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestChownRMissingRootReturnsAllVanished(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "removed-agent-dir")
+	err := ChownR(missing, currentUserName(t))
+	var failures ChownFailures
+	if !errors.As(err, &failures) {
+		t.Fatalf("ChownR missing directory error = %v; want ChownFailures", err)
+	}
+	if !failures.AllVanished() {
+		t.Fatalf("ChownR missing directory failures = %v; want all vanished", failures)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("ChownR missing directory should retain ENOENT: %v", err)
+	}
+}
 
 func currentUserName(t *testing.T) string {
 	t.Helper()
