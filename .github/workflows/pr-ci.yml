@@ -639,6 +639,8 @@ jobs:
             install-kind: false
             requires-secret: false
             install-microsandbox: true
+            test-timeout: 1200s
+            job-timeout-minutes: 25
 
           # Snapshot tests
 
@@ -943,35 +945,36 @@ jobs:
             --crun-path /usr/local/bin/crun \
             --bootstrap-timeout 270s
 
-      - name: get microsandbox latest version
+      - name: cache microsandbox release bundle (Linux)
         if: matrix.install-microsandbox == true && runner.os == 'Linux'
-        id: msb-version
-        run: |
-          version=$(curl -fsSL https://api.github.com/repos/superradcompany/microsandbox/releases/latest | grep '"tag_name"' | head -1 | sed 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: cache microsandbox (Linux)
-        if: matrix.install-microsandbox == true && runner.os == 'Linux'
-        id: msb-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            ~/.microsandbox
-            ~/.local/bin/msb
-            ~/.local/bin/microsandbox
-          key: ${{ runner.os }}-${{ runner.arch }}-microsandbox-${{ steps.msb-version.outputs.version }}
+          path: ${{ runner.temp }}/microsandbox-linux-x86_64-v0.7.7.tar.gz
+          key: ${{ runner.os }}-${{ runner.arch }}-microsandbox-bundle-v0.7.7
 
-      - name: Install microsandbox (Linux)
-        if: matrix.install-microsandbox == true && runner.os == 'Linux' && steps.msb-cache.outputs.cache-hit != 'true'
-        run: |
-          curl -fsSL https://install.microsandbox.dev | sh
-
-      - name: configure microsandbox (Linux)
+      - name: install checksum-pinned microsandbox (Linux)
         if: matrix.install-microsandbox == true && runner.os == 'Linux'
+        timeout-minutes: 5
         run: |
+          archive="${RUNNER_TEMP}/microsandbox-linux-x86_64-v0.7.7.tar.gz"
+          if [ ! -f "$archive" ]; then
+            curl -fsSL --retry 3 -o "$archive" \
+              https://github.com/superradcompany/microsandbox/releases/download/v0.7.7/microsandbox-linux-x86_64.tar.gz
+          fi
+          echo "b3cc4a5e3f52dfdd938a6f67ac4a9a959ddfe304bab56de4964044b8613f01bb  $archive" | sha256sum -c -
+          staging="$(mktemp -d)"
+          trap 'rm -rf "$staging"' EXIT
+          tar -xzf "$archive" -C "$staging"
+          mkdir -p "$HOME/.microsandbox/bin" "$HOME/.microsandbox/lib" "$HOME/.local/bin"
+          install -m 755 "$staging/msb" "$HOME/.microsandbox/bin/msb"
+          install -m 644 "$staging/libkrunfw.so.5.6.1" "$HOME/.microsandbox/lib/"
+          ln -sf libkrunfw.so.5.6.1 "$HOME/.microsandbox/lib/libkrunfw.so.5"
+          ln -sf libkrunfw.so.5 "$HOME/.microsandbox/lib/libkrunfw.so"
+          ln -sf "$HOME/.microsandbox/bin/msb" "$HOME/.local/bin/msb"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          # The e2e test skips gracefully if KVM is unavailable on the runner.
-          "$HOME/.local/bin/msb" doctor || true
+          "$HOME/.local/bin/msb" --version
+          sudo test -r /dev/kvm
+          sudo test -w /dev/kvm
 
       - name: remove docker
         if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
@@ -1011,6 +1014,7 @@ jobs:
           GH_CREDENTIAL_USERNAME: x-access-token
           TEST_TIMEOUT: ${{ matrix.test-timeout || '1500s' }}
           FLAKE_ATTEMPTS: ${{ matrix.flake-attempts || '1' }}
+          DEVSY_REQUIRE_MICROSANDBOX: ${{ matrix.install-microsandbox == true && 'true' || 'false' }}
         run: |
           if [ "${{ runner.os }}" == "Linux" ]; then
             if [ "${{ matrix.install-podman || '' }}" = "rootless" ]; then
@@ -1027,6 +1031,7 @@ jobs:
                 ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
             else
               sudo \
+                DEVSY_REQUIRE_MICROSANDBOX="${DEVSY_REQUIRE_MICROSANDBOX}" \
                 GH_USERNAME="${GH_USERNAME}" \
                 GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
                 GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \

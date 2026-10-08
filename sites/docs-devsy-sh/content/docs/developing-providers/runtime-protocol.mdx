@@ -43,6 +43,20 @@ The plugin binary is trusted provider code. The host resolves it from checksum-v
 
 ## Current implementation
 
-The SDK provides generated Go bindings, the shared plugin handshake, server helpers, and Info validation. Devsy integrates the host through the workspace driver factory, with separate image-backend selection and validation before recreation. Real fake-runtime processes exercise the production supervisor, factory, and workspace runner across image creation, discovery, command streams, logs, stop, and delete. Runtime backend extraction and parity testing are the next stage.
+The SDK provides generated Go bindings, the shared plugin handshake, server helpers, and Info validation. Devsy integrates the host through the workspace driver factory, with separate image-backend selection and validation before recreation. Real fake-runtime processes exercise the production supervisor, factory, and workspace runner across image creation, discovery, command streams, logs, stop, and delete. The external [MicroSandbox provider](https://github.com/devsy-org/devsy-provider-microsandbox) is distributed separately with checksum-pinned binaries. The built-in provider remains available while real-VM parity coverage grows.
+
+### MicroSandbox parity gate
+
+The `up-provider-microsandbox` E2E label runs the same lifecycle and ownership scenario against the built-in provider and the external v0.1.3 release, each with isolated Devsy configuration. CI pins MicroSandbox v0.7.7 by checksum and requires access to KVM; unavailable virtualization fails this job instead of producing a passing skipped test. Each provider scenario has a ten-minute deadline and the CI job has a 25-minute deadline.
+
+The shared scenario exercises agent delivery, SSH, a 1 MiB binary stdin/stdout round trip with separate stderr and a nonzero guest exit, root workload versus developer identity, bind-mount ownership and mode mirroring, stop/start, recreation, rejection of an identity change without recreation while preserving VM-local data, and deletion of the VM.
+
+Run it on Linux with KVM or Apple silicon after installing MicroSandbox v0.7.7 or newer:
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox
+```
+
+This baseline does not establish complete parity. Resource limits, hotplug ceilings, storage, ephemeral roots, egress denial, named volumes, tmpfs, alternate mount policies, locally built images, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. A green baseline alone does not authorize that cutover.
 
 For SDK development commands and package usage, see the [SDK README](https://github.com/devsy-org/devsy-runtime-sdk#readme).
