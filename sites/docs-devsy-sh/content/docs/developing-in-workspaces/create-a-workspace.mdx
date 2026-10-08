@@ -91,6 +91,52 @@ devsy workspace up ./path/to/my-folder
 
 Devsy syncs the folder onto the remote machine and builds the dev environment from the `devcontainer.json`.
 
+### Control local-folder uploads with `.devsyignore`
+
+Place `.devsyignore` at the root of your local workspace source to choose which
+files Devsy uploads when a provider streams the folder, including Kubernetes.
+The CLI and Desktop use the same transfer policy. For example:
+
+```text
+big/
+**/node_modules/
+docs/*.tgz
+build/
+!build/keep.txt
+```
+
+Rules use [Docker ignore syntax](https://docs.docker.com/build/concepts/context/#dockerignore-files),
+including `*`, `?`, character classes, `**`, and ordered `!` exceptions. Paths
+are relative to the workspace source root; the last matching rule wins.
+`build/` excludes `build` and its descendants while retaining `buildSrc`.
+`docs/*.tgz` excludes archives directly inside `docs`, while `**/node_modules/`
+excludes dependency folders at any depth. A rule can exclude `.devsyignore` itself.
+
+A missing ignore file permits the entire source to upload. An empty file is valid.
+An existing file that cannot be read or contains an invalid pattern stops the
+upload before any archive data is sent. Correct the file identified in the error
+and retry. This replaces the previous silent, unfiltered fallback. Debug logs
+identify the ignore file and rule count without listing the rules.
+
+Workspace rules do not filter additional configured bind mounts, even when they
+refer to the same source directory at a different container target. Configure
+those mounts deliberately: `.devsyignore` does not prevent their contents from
+being transferred. Local Docker bind mounts expose the host folder directly and
+do not remove ignored files. Remote Git clones also do not use this upload policy.
+`.gitignore` and `.dockerignore` are not substituted for `.devsyignore`; Docker
+image builds continue to use their own build-context rules.
+
+Devsy preserves only verified files generated for the current Dockerless build,
+including files inside a nested build context, when they are needed for startup.
+Other folders named `.devsy-internal` remain subject to the rules. A required
+generated context outside the authorized workspace source produces an error.
+
+For a workspace with a large `big/blob.bin`, dependency folders, and packaged
+archives, the example rules avoid transferring those files and reduce remote
+disk usage. The reduction depends on your source contents, rather than a fixed
+upload duration. [Workspace snapshots](./workspace-snapshots.mdx) also distinguish
+the workspace volume from independent bind mounts.
+
 #### Docker Image
 
 Create a workspace from a Docker image:

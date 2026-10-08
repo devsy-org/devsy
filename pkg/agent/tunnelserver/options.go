@@ -20,6 +20,15 @@ func WithWorkspace(workspace *provider2.Workspace) Option {
 	}
 }
 
+// WithWorkspaceMount marks the mount of the workspace folder. Only that mount is
+// streamed with the excludes of its ignore file.
+func WithWorkspaceMount(mount *config.Mount) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.workspaceMount = mount
+		return s
+	}
+}
+
 func WithForwarder(forwarder netstat.Forwarder) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.forwarder = forwarder

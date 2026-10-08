@@ -323,7 +323,11 @@ func (cmd *CreateCmd) pushVolumes(
 	}
 	mountPrefix := strings.TrimPrefix(mounts[0].Target, "/")
 
-	tunnelClient, cleanup, err := newLocalTunnelClient(ctx, mounts)
+	tunnelClient, cleanup, err := newLocalTunnelClient(
+		ctx,
+		mounts,
+		devcontainerconfig.GetWorkspaceMount(result),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create local snapshot tunnel: %w", err)
 	}
@@ -389,14 +393,19 @@ func redactedContainerEnv(env map[string]string) map[string]string {
 // without an actual SSH hop. The returned cleanup func must be called once
 // the client is no longer needed.
 func newLocalTunnelClient(
-	ctx context.Context, mounts []*devcontainerconfig.Mount,
+	ctx context.Context,
+	mounts []*devcontainerconfig.Mount,
+	workspaceMount *devcontainerconfig.Mount,
 ) (tunnel.TunnelClient, func(), error) {
 	serverCtx, cancel := context.WithCancel(ctx)
 
 	clientToServerR, clientToServerW := io.Pipe()
 	serverToClientR, serverToClientW := io.Pipe()
 
-	tunnelServ := tunnelserver.New(tunnelserver.WithMounts(mounts))
+	tunnelServ := tunnelserver.New(
+		tunnelserver.WithMounts(mounts),
+		tunnelserver.WithWorkspaceMount(workspaceMount),
+	)
 	serverDone := make(chan error, 1)
 	go func() {
 		serverDone <- tunnelServ.Run(serverCtx, clientToServerR, serverToClientW)
