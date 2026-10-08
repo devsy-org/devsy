@@ -103,17 +103,11 @@ func (d *dockerDriver) restartAndWait(
 			"restarting container %s (status=%s, attempt=%d/%d)",
 			container.ID, status, attempt, containerRestartAttempts,
 		)
-		if err := d.Docker.StartContainer(ctx, container.ID); err != nil {
-			lastErr = fmt.Errorf("start container: %w", err)
-		} else if err := d.Docker.WaitContainerRunning(ctx, container.ID); err != nil {
-			lastErr = fmt.Errorf("wait for container to be running: %w", err)
-		} else {
+		if lastErr = d.startAndWait(ctx, container.ID); lastErr == nil {
 			log.Debugf("container %s is running", container.ID)
 			return nil
 		}
-		if errors.Is(lastErr, docker.ErrContainerTerminal) ||
-			errors.Is(lastErr, context.Canceled) ||
-			errors.Is(lastErr, context.DeadlineExceeded) {
+		if isTerminalOrContextError(lastErr) {
 			return lastErr
 		}
 		log.Debugf("container %s restart attempt %d failed: %v", container.ID, attempt, lastErr)
@@ -123,6 +117,22 @@ func (d *dockerDriver) restartAndWait(
 		"%w: container %s did not stay running after %d attempts: %w",
 		docker.ErrContainerTerminal, container.ID, containerRestartAttempts, lastErr,
 	)
+}
+
+func (d *dockerDriver) startAndWait(ctx context.Context, containerID string) error {
+	if err := d.Docker.StartContainer(ctx, containerID); err != nil {
+		return fmt.Errorf("start container: %w", err)
+	}
+	if err := d.Docker.WaitContainerRunning(ctx, containerID); err != nil {
+		return fmt.Errorf("wait for container to be running: %w", err)
+	}
+	return nil
+}
+
+func isTerminalOrContextError(err error) bool {
+	return errors.Is(err, docker.ErrContainerTerminal) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded)
 }
 
 // unpauseAndWait unpauses a paused container and waits for it to be running.
