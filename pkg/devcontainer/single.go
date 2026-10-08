@@ -312,7 +312,7 @@ func (r *runner) mergeExistingContainerConfig(
 	containerDetails *config.ContainerDetails,
 	p *resolveParams,
 ) (*config.MergedDevContainerConfig, error) {
-	if _, ok := r.driver.(driver.RecreateRequiredDriver); ok {
+	if r.needsCurrentContainerIdentity() {
 		return r.currentContainerIdentity(ctx, containerDetails, p)
 	}
 	imageMetadataConfig, err := metadata.GetImageMetadataFromContainer(
@@ -824,7 +824,7 @@ func (r *runner) runContainer(
 	)
 	runOptions.AllowRecreate = p.options.Recreate
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
-	if _, ok := r.driver.(driver.RecreateRequiredDriver); ok {
+	if r.needsCurrentContainerIdentity() {
 		runOptions.Labels = append(runOptions.Labels, metadata.CreationConfigLabel+"="+stringTrue)
 	}
 
@@ -1212,7 +1212,7 @@ func (r *runner) applyDriverRecreateRequirement(
 	if details == nil || p.options.Recreate {
 		return nil
 	}
-	if _, ok := r.driver.(driver.RecreateRequiredDriver); !ok {
+	if !r.needsCurrentContainerIdentity() {
 		return nil
 	}
 	merged, err := r.currentContainerIdentity(ctx, details, p)
@@ -1223,10 +1223,24 @@ func (r *runner) applyDriverRecreateRequirement(
 	if containerUser == "" {
 		containerUser = details.Config.Labels[config.UserLabel]
 	}
+	remoteUser := effectiveRemoteUser(merged, containerUser)
+	if preflight, ok := r.driver.(driver.ReusePreflightDriver); ok {
+		if err := preflight.ReusePreflight(ctx, r.id, remoteUser); err != nil {
+			return err
+		}
+	}
+	return r.scheduleDriverRecreation(details, remoteUser, p)
+}
+
+func (r *runner) scheduleDriverRecreation(
+	details *config.ContainerDetails,
+	remoteUser string,
+	p *resolveParams,
+) error {
 	required, reason := driver.DriverRequiresRecreate(
 		r.driver,
 		details,
-		effectiveRemoteUser(merged, containerUser),
+		remoteUser,
 	)
 	if !required {
 		return nil
@@ -1235,6 +1249,12 @@ func (r *runner) applyDriverRecreateRequirement(
 		return fmt.Errorf("cannot migrate externally managed container: %s", reason)
 	}
 	return r.scheduleContainerRecreation(p, reason)
+}
+
+func (r *runner) needsCurrentContainerIdentity() bool {
+	_, migration := r.driver.(driver.RecreateRequiredDriver)
+	_, preflight := r.driver.(driver.ReusePreflightDriver)
+	return migration || preflight
 }
 
 func (r *runner) currentContainerIdentity(

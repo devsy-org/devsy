@@ -33,6 +33,22 @@ func (h *Host) ProvisioningPreflight(ctx context.Context) error {
 	})
 }
 
+func (h *Host) ReusePreflight(ctx context.Context, workspaceID, remoteUser string) error {
+	if !h.info.Capabilities.ReusePreflight {
+		return ctx.Err()
+	}
+	if workspaceID == "" || remoteUser == "" {
+		return errors.New("runtime reuse preflight requires workspace ID and remote user")
+	}
+	return h.forWorkspace(workspaceID, nil).
+		call(ctx, "ReusePreflight", func(client runtimev1.RuntimeDriverClient) error {
+			_, err := client.ReusePreflight(ctx, &runtimev1.ReusePreflightRequest{
+				WorkspaceId: workspaceID, RemoteUser: remoteUser,
+			})
+			return err
+		})
+}
+
 func (h *Host) FindDevContainer(
 	ctx context.Context,
 	workspaceID string,

@@ -14,6 +14,7 @@ var (
 	_ driver.MountDeliveryDriver  = (*Host)(nil)
 	_ driver.WorkspaceChowner     = (*Host)(nil)
 	_ driver.RecreatePolicyDriver = (*Host)(nil)
+	_ driver.ReusePreflightDriver = (*Host)(nil)
 )
 
 func (h *Host) SupportsMountType(kind string) bool {

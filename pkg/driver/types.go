@@ -236,6 +236,12 @@ type RecreateRequiredDriver interface {
 	RequiresRecreate(details *config.ContainerDetails, remoteUser string) (bool, string)
 }
 
+// ReusePreflightDriver validates an existing workspace against its resolved developer identity.
+// It must not mutate the workspace. An error aborts reuse without scheduling recreation.
+type ReusePreflightDriver interface {
+	ReusePreflight(ctx context.Context, workspaceID, remoteUser string) error
+}
+
 func DriverRequiresRecreate(
 	d Driver,
 	details *config.ContainerDetails,

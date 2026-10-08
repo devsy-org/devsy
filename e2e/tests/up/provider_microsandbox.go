@@ -94,11 +94,11 @@ var _ = ginkgo.Describe(
 					err := f.DevsyProviderDelete(cleanupCtx, name)
 					framework.ExpectNoError(err)
 				})
+				ginkgo.DeferCleanup(f.CleanupWorkspace, tempDir)
 
 				// full up: boots the microVM, streams in the agent, opens the tunnel
 				err = f.DevsyUp(ctx, tempDir, "--devcontainer", ".devcontainer.json")
 				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 				// the workspace is reachable over SSH
 				err = f.DevsySSHEchoTestString(ctx, tempDir)
@@ -209,8 +209,8 @@ var _ = ginkgo.Describe(
 			ginkgo.Entry("built-in", "microsandbox", "microsandbox-builtin-parity",
 				ginkgo.SpecTimeout(framework.TimeoutLong())),
 			ginkgo.Entry(
-				"external v0.1.3",
-				"github.com/devsy-org/devsy-provider-microsandbox@v0.1.3",
+				"external v0.1.4",
+				"github.com/devsy-org/devsy-provider-microsandbox@v0.1.4",
 				"microsandbox-external-parity",
 				ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),

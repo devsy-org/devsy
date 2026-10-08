@@ -242,7 +242,7 @@ func InitContentFolder(
 		return false, err
 	}
 	if exists {
-		return true, nil
+		return true, downloadWorkspaceBinaries(ctx, workspaceInfo)
 	}
 
 	if err := createContentFolder(workspaceInfo.ContentFolder); err != nil {
@@ -288,6 +288,9 @@ func downloadWorkspaceBinaries(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) error {
+	if len(workspaceInfo.Agent.Binaries) == 0 {
+		return nil
+	}
 	binariesDir, err := agent.GetAgentBinariesDir(
 		workspaceInfo.Agent.DataPath,
 		workspaceInfo.Workspace.Context,
