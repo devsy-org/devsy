@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -452,4 +453,87 @@ func TestEnsureContainerRunning_UnknownStateIsTerminal(t *testing.T) {
 	err := d.ensureContainerRunning(context.Background(), container)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, docker.ErrContainerTerminal)
+}
+
+func TestRestartAndWait_ContextCanceledExitsEarly(t *testing.T) {
+	dir := t.TempDir()
+	startsFile := filepath.Join(dir, "starts")
+	script := `#!/bin/sh
+case "$1" in
+  start)
+    echo 1 >> "` + startsFile + `"
+    echo started
+    ;;
+  inspect)
+    echo '[{"ID":"c1","State":{"Status":"exited","ExitCode":1}}]'
+    ;;
+esac
+`
+	bin := filepath.Join(dir, "docker-fake")
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755)) //nolint:gosec
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // canceled immediately
+
+	err := d.restartAndWait(
+		ctx,
+		newExitedContainer(),
+		config.ContainerStatusExited,
+	)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+
+	// Ensure loop did not make start attempts
+	_, readErr := os.ReadFile(startsFile) //nolint:gosec // test-controlled path
+	assert.True(t, os.IsNotExist(readErr), "canceled context must abort before attempting restart")
+}
+
+func TestRestartAndWait_TerminalErrorExitsEarlyWithoutRetrying(t *testing.T) {
+	dir := t.TempDir()
+	startsFile := filepath.Join(dir, "starts")
+	script := `#!/bin/sh
+case "$1" in
+  start)
+    echo 1 >> "` + startsFile + `"
+    echo started
+    ;;
+  inspect)
+    echo '[{"ID":"c1","State":{"Status":"dead","ExitCode":1}}]'
+    ;;
+esac
+`
+	bin := filepath.Join(dir, "docker-fake")
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755)) //nolint:gosec
+
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+	err := d.restartAndWait(
+		context.Background(),
+		newExitedContainer(),
+		config.ContainerStatusExited,
+	)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, docker.ErrContainerTerminal)
+
+	// Should abort on attempt 1, so startsFile should have exactly 1 attempt
+	startsData, readErr := os.ReadFile(startsFile) //nolint:gosec // test-controlled path
+	require.NoError(t, readErr)
+	lines := string(startsData)
+	assert.Equal(
+		t,
+		"1\n",
+		lines,
+		"terminal state must abort immediately without continuing attempts",
+	)
+}
+
+func TestIsTerminalOrContextError(t *testing.T) {
+	assert.False(t, isTerminalOrContextError(nil))
+	assert.False(t, isTerminalOrContextError(assert.AnError))
+	assert.True(t, isTerminalOrContextError(docker.ErrContainerTerminal))
+	assert.True(t, isTerminalOrContextError(context.Canceled))
+	assert.True(t, isTerminalOrContextError(context.DeadlineExceeded))
+	assert.True(t, isTerminalOrContextError(fmt.Errorf("wrapped: %w", docker.ErrContainerTerminal)))
+	assert.True(t, isTerminalOrContextError(fmt.Errorf("wrapped: %w", context.Canceled)))
+	assert.True(t, isTerminalOrContextError(fmt.Errorf("wrapped: %w", context.DeadlineExceeded)))
 }
