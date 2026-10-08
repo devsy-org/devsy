@@ -339,14 +339,18 @@ func (d *managedSSHClientDialer) managedStreamEndError(streamErr error) error {
 }
 
 func managedErrorOrFallback(ctx context.Context, managedErr, fallback error) error {
-	if managedErr != nil && !errors.Is(managedErr, io.EOF) &&
-		!errors.Is(managedErr, context.Canceled) && !errors.Is(managedErr, net.ErrClosed) {
+	if !isBenignManagedTermination(managedErr) {
 		return managedErr
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return fallback
+}
+
+func isBenignManagedTermination(err error) bool {
+	return err == nil || errors.Is(err, io.EOF) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, net.ErrClosed)
 }
 
 func managedTerminalError(ctx context.Context, transportDone <-chan error) error {
