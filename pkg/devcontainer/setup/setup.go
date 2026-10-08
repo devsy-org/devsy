@@ -723,16 +723,24 @@ func buildEnvMarker(
 }
 
 func chownAgentSock(setupInfo *config.Result) error {
-	user := config.GetRemoteUser(setupInfo)
 	agentSockFile := os.Getenv("SSH_AUTH_SOCK")
-	if agentSockFile != "" {
-		err := copy2.ChownR(filepath.Dir(agentSockFile), user)
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
+	if agentSockFile == "" {
+		return nil
 	}
 
-	return nil
+	socketDir := filepath.Dir(agentSockFile)
+	err := copy2.ChownR(socketDir, config.GetRemoteUser(setupInfo))
+	if err == nil {
+		return nil
+	}
+
+	var failures copy2.ChownFailures
+	if errors.As(err, &failures) && failures.AllVanished() {
+		log.Debugf("skip chown ssh agent socket directory %s: path vanished", socketDir)
+		return nil
+	}
+
+	return err
 }
 
 // setupKubeConfig retrieves and stores a KubeConfig file in the default location `$HOME/.kube/config`.
