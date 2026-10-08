@@ -118,12 +118,43 @@ func (t *tunnelServer) sourceTarOptions(
 		ProtectedDirectories: generated.directories,
 	}
 	if snapshot {
-		opts, err = snapshotTarOptions(policy, generated.paths)
+		opts, err = t.snapshotTarOptions(root, policy, generated.paths)
 		if err != nil {
 			return extract.TarOptions{}, nil, errors.Join(err, generated.close())
 		}
 	}
 	return opts, generated.close, nil
+}
+
+func (t *tunnelServer) snapshotTarOptions(
+	root string, policy workspaceIgnorePolicy, generated []string,
+) (extract.TarOptions, error) {
+	if t.snapshotBuildContextErr != nil {
+		return extract.TarOptions{}, t.snapshotBuildContextErr
+	}
+	context := t.snapshotBuildContext
+	if context == "" {
+		context = t.generatedBuildContext
+	}
+	if context == "" {
+		context = root
+	}
+	absolute, err := filepath.Abs(context)
+	if err != nil {
+		return extract.TarOptions{}, err
+	}
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return extract.TarOptions{}, err
+	}
+	residue, err := relativeWithin(
+		absoluteRoot,
+		filepath.Join(absolute, config.DevsyContextFeatureFolder),
+	)
+	if err == nil {
+		generated = append(append([]string(nil), generated...), residue)
+	}
+	return snapshotTarOptions(policy, generated)
 }
 
 func snapshotTarOptions(

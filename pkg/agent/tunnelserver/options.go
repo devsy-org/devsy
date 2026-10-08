@@ -28,6 +28,14 @@ func WithWorkspaceMount(mount *config.Mount) Option {
 	}
 }
 
+// WithSnapshotBuildContext identifies generated residue to exclude, never upload authority.
+func WithSnapshotBuildContext(context string) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.snapshotBuildContext = context
+		return s
+	}
+}
+
 func WithForwarder(forwarder netstat.Forwarder) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.forwarder = forwarder

@@ -105,10 +105,11 @@ cannot disambiguate multiple mounts.
 Files excluded from the workspace volume are absent from the snapshot and from a
 restore into an empty or reset target. Without `--reset`, Devsy skips restoring a
 target that already contains workspace files and retains its existing contents.
-A missing ignore file leaves the source unfiltered; an invalid or unreadable existing file
+A missing ignore file applies no user exclusions; an invalid or unreadable existing file
 stops snapshot streaming. Snapshot creation loads persisted workspace metadata,
-which does not grant generated-file transfer exceptions. Leftover folders named
-`.devsy-internal` therefore follow the workspace ignore rules and are retained
-when no rule excludes them. Add an explicit rule if you want to omit them from
-future snapshots; the basename alone does not exclude them. Tar target
-prefixes and the volume restore format are unchanged.
+which does not grant generated-file transfer exceptions. Devsy excludes its generated
+`.devsy-internal` directory at the configured build context, including files left
+behind by an interrupted build or failed cleanup. Unrelated folders with that name
+follow the workspace ignore rules. Missing build-context metadata stops snapshot
+creation; run `devsy up` to refresh it. Tar target prefixes and the volume restore
+format are unchanged.

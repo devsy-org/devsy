@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -487,7 +488,7 @@ func TestGeneratedSnapshotPathsAreLiteral(t *testing.T) {
 			require.NotContains(t, names, contextName+"/"+relative)
 			require.NotContains(t, names, contextName+"/private.txt")
 			require.Contains(t, names, contextName+"/keep.txt")
-			require.Contains(
+			require.NotContains(
 				t,
 				names,
 				contextName+"/"+config.DevsyContextFeatureFolder+"/unmanifested.txt",
@@ -526,7 +527,7 @@ func TestGeneratedEmptyDirectoryKeepsOnlyItsHeader(t *testing.T) {
 	require.NotContains(t, names, relative+"/later-secret.txt")
 }
 
-func TestGeneratedDirectorySnapshotRetainsUnmanifestedChildren(t *testing.T) {
+func TestGeneratedDirectorySnapshotExcludesContextResidue(t *testing.T) {
 	server, _ := stagedArtifactServer(t, 16)
 	root := server.generatedBuildContext
 	relative := config.DevsyContextFeatureFolder + "/required-empty"
@@ -541,7 +542,7 @@ func TestGeneratedDirectorySnapshotRetainsUnmanifestedChildren(t *testing.T) {
 	require.Empty(t, opts.ProtectedDirectories)
 	var archive bytes.Buffer
 	require.NoError(t, extract.WriteTarWithOptions(&archive, root, opts))
-	require.Contains(
+	require.NotContains(
 		t,
 		tarEntryNames(t, [][]byte{archive.Bytes()}),
 		relative+"/later-user-file.txt",
@@ -571,4 +572,109 @@ func TestGeneratedDirectoryRejectsChangedTypeBeforeStreaming(t *testing.T) {
 			require.Zero(t, stream.content.Len())
 		})
 	}
+}
+
+func TestSerializedBuildContextExcludesSnapshotResidue(t *testing.T) {
+	for _, contextName := range []string{".", ".devcontainer"} {
+		t.Run(contextName, func(t *testing.T) {
+			info := newSetupInfo(t)
+			mount := config.GetWorkspaceMount(info)
+			contextRoot := filepath.Join(mount.Source, contextName)
+			info.DevContainerConfigWithPath = &config.DevContainerConfigWithPath{
+				Config: &config.DevContainerConfig{
+					Origin: filepath.Join(contextRoot, "devcontainer.json"),
+				},
+				Path: filepath.ToSlash(filepath.Join(contextName, "devcontainer.json")),
+			}
+			info.SubstitutionContext.LocalWorkspaceFolder = mount.Source
+			data, err := json.Marshal(info)
+			require.NoError(t, err)
+			var persisted config.Result
+			require.NoError(t, json.Unmarshal(data, &persisted))
+			require.Empty(t, persisted.GeneratedBuildArtifacts)
+			require.Empty(t, persisted.GeneratedBuildContext)
+			writeFiles(t, contextRoot, config.DevsyContextFeatureFolder+"/residual-secret")
+			unrelated := "unrelated/" + config.DevsyContextFeatureFolder + "/keep"
+			writeFiles(t, mount.Source, unrelated)
+			other := persisted.MergedConfig.Mounts[0]
+			writeFiles(t, other.Source, config.DevsyContextFeatureFolder+"/keep")
+			require.NoError(
+				t,
+				os.WriteFile(
+					filepath.Join(mount.Source, pkgconfig.IgnoreFileName),
+					[]byte("!**/.devsy-internal/**\n"),
+					0o600,
+				),
+			)
+			server, err := newSetupServer(&persisted)
+			require.NoError(t, err)
+			stream := &mockStreamMountServer{}
+			require.NoError(t, server.StreamSnapshotVolumes(&tunnel.Empty{}, stream))
+			names := tarEntryNames(t, [][]byte{stream.content.Bytes()})
+			residue := filepath.ToSlash(
+				filepath.Join(
+					"workspaces/project",
+					contextName,
+					config.DevsyContextFeatureFolder,
+					"residual-secret",
+				),
+			)
+			require.NotContains(t, names, residue)
+			require.Contains(t, names, "workspaces/project/"+unrelated)
+			require.Contains(t, names, "home/user/.other/"+config.DevsyContextFeatureFolder+"/keep")
+		})
+	}
+}
+
+func TestSnapshotBuildContextNeverGrantsUploadAuthority(t *testing.T) {
+	info := newSetupInfo(t)
+	mount := config.GetWorkspaceMount(info)
+	contextRoot := filepath.Join(mount.Source, ".devcontainer")
+	secret := ".devcontainer/" + config.DevsyContextFeatureFolder + "/secret"
+	writeFiles(t, mount.Source, secret)
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(mount.Source, pkgconfig.IgnoreFileName),
+			[]byte(".devcontainer/\n"),
+			0o600,
+		),
+	)
+	server := New(
+		WithMounts([]*config.Mount{mount}),
+		WithWorkspaceMount(mount),
+		WithSnapshotBuildContext(contextRoot),
+	)
+	require.NotContains(t, streamMountEntries(t, server, mount), secret)
+}
+
+func TestSnapshotExternalBuildContextDoesNotExcludeWorkspaceLookalike(t *testing.T) {
+	root := t.TempDir()
+	name := config.DevsyContextFeatureFolder + "/user-file"
+	writeFiles(t, root, name)
+	server := New(WithSnapshotBuildContext(t.TempDir()))
+	opts, cleanup, err := server.sourceTarOptions(context.Background(), root, true, true)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, cleanup()) }()
+	var archive bytes.Buffer
+	require.NoError(t, extract.WriteTarWithOptions(&archive, root, opts))
+	require.Contains(t, tarEntryNames(t, [][]byte{archive.Bytes()}), name)
+}
+
+func TestSnapshotContextErrorDoesNotBlockWorkspaceUpload(t *testing.T) {
+	info := newSetupInfo(t)
+	info.DevContainerConfigWithPath = &config.DevContainerConfigWithPath{
+		Config: &config.DevContainerConfig{},
+	}
+	server, err := newSetupServer(info)
+	require.NoError(t, err)
+	mount := config.GetWorkspaceMount(info)
+	require.Contains(t, streamMountEntries(t, server, mount), srcMainGo)
+	stream := &mockStreamMountServer{}
+	require.ErrorContains(
+		t,
+		server.StreamSnapshotVolumes(&tunnel.Empty{}, stream),
+		"build context metadata",
+	)
+	require.Zero(t, stream.content.Len())
 }

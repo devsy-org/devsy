@@ -105,6 +105,12 @@ func newSetupServer(setupInfo *config.Result, options ...Option) (*tunnelServer,
 	tunnelServ.allowPlatformOptions = true
 	tunnelServ.generatedBuildArtifacts = setupInfo.GeneratedBuildArtifacts
 	tunnelServ.generatedBuildContext = setupInfo.GeneratedBuildContext
+	if setupInfo.DevContainerConfigWithPath != nil &&
+		setupInfo.DevContainerConfigWithPath.Config != nil {
+		tunnelServ.snapshotBuildContext, tunnelServ.snapshotBuildContextErr = config.SnapshotBuildContext(
+			setupInfo,
+		)
+	}
 	if err := tunnelServ.validateMountRoles(); err != nil {
 		return nil, err
 	}
@@ -129,6 +135,8 @@ type tunnelServer struct {
 	workspaceMount          *config.Mount
 	generatedBuildArtifacts []config.GeneratedBuildArtifact
 	generatedBuildContext   string
+	snapshotBuildContext    string
+	snapshotBuildContextErr error
 
 	forwarder              netstat.Forwarder
 	allowGitCredentials    bool
