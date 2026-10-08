@@ -125,8 +125,7 @@ type tunnelServer struct {
 	tunnel.UnimplementedTunnelServer
 
 	// stream mounts
-	mounts []*config.Mount
-	// workspaceMount is the mount of the workspace folder, if known
+	mounts                  []*config.Mount
 	workspaceMount          *config.Mount
 	generatedBuildArtifacts []config.GeneratedBuildArtifact
 	generatedBuildContext   string
@@ -515,11 +514,17 @@ func (t *tunnelServer) StreamWorkspace(
 		return fmt.Errorf("workspace is nil")
 	}
 
-	opts, err := t.sourceTarOptions(t.workspace.Source.LocalFolder, true, false)
+	opts, closePolicy, err := t.sourceTarOptions(
+		stream.Context(),
+		t.workspace.Source.LocalFolder,
+		true,
+		false,
+	)
 	if err != nil {
 		return err
 	}
 
+	defer closeTransferPolicy(closePolicy)
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	err = extract.WriteTarWithOptions(
 		buf,
@@ -556,11 +561,12 @@ func (t *tunnelServer) StreamMount(
 		return fmt.Errorf("mount %s is not allowed to download", message.Mount)
 	}
 
-	opts, err := t.mountTarOptions(mount, false)
+	opts, closePolicy, err := t.mountTarOptions(stream.Context(), mount, false)
 	if err != nil {
 		return err
 	}
 
+	defer closeTransferPolicy(closePolicy)
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	err = extract.WriteTarWithOptions(buf, mount.Source, opts)
 	if err != nil {
@@ -581,16 +587,17 @@ func (t *tunnelServer) StreamSnapshotVolumes(
 		)
 	}
 
-	// Resolve all policies before sending any part of this combined archive.
+	// Invalid policies must fail before the combined stream sends any data.
 	policies := make([]extract.TarOptions, len(t.mounts))
 	for i, m := range t.mounts {
 		if m == nil {
 			return fmt.Errorf("snapshot mount is nil")
 		}
-		opts, err := t.mountTarOptions(m, true)
+		opts, closePolicy, err := t.mountTarOptions(stream.Context(), m, true)
 		if err != nil {
 			return err
 		}
+		defer closeTransferPolicy(closePolicy)
 		policies[i] = opts
 	}
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
@@ -608,10 +615,6 @@ func (t *tunnelServer) StreamSnapshotVolumes(
 	return buf.Flush()
 }
 
-// appendDirToTar writes localDir's contents under prefix inside an
-// already-open tar.Writer, reusing extract.WriteTarExclude's on-disk walk by
-// tarring into a pipe and re-prefixing entries; kept simple since snapshot
-// volume archives combine multiple mount roots into one stream.
 func appendDirToTar(tw *tar.Writer, localDir, prefix string, opts extract.TarOptions) error {
 	pr, pw := io.Pipe()
 	defer func() { _ = pr.Close() }()

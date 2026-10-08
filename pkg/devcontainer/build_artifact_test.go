@@ -83,3 +83,56 @@ func TestDockerlessArtifactSymlinkRejectedBeforeWrite(t *testing.T) {
 		})
 	}
 }
+
+func TestGeneratedFeatureSymlinksRecordTargetsWithoutDereferencing(t *testing.T) {
+	for _, targetKind := range []string{"relative", "dangling", "external-directory"} {
+		t.Run(targetKind, func(t *testing.T) {
+			root := t.TempDir()
+			folder := filepath.Join(root, config.DevsyContextFeatureFolder)
+			require.NoError(t, os.MkdirAll(folder, 0o700))
+			dockerfile := filepath.Join(folder, "Dockerfile-with-features")
+			require.NoError(t, os.WriteFile(dockerfile, []byte("FROM scratch"), 0o600))
+			target := "missing-relative-target"
+			if targetKind == "relative" {
+				target = "../regular-target"
+				require.NoError(
+					t,
+					os.WriteFile(
+						filepath.Join(root, "regular-target"),
+						[]byte("outside generated context"),
+						0o600,
+					),
+				)
+			}
+			if targetKind == "external-directory" {
+				target = t.TempDir()
+				require.NoError(
+					t,
+					os.WriteFile(
+						filepath.Join(target, "secret.txt"),
+						[]byte("outside workspace"),
+						0o600,
+					),
+				)
+			}
+			link := filepath.Join(folder, "generated-link")
+			if err := os.Symlink(target, link); err != nil {
+				t.Skipf("symlink creation unavailable: %v", err)
+			}
+			manifest, err := dockerlessArtifactManifest(
+				dockerfile,
+				&feature.ExtendedBuildInfo{
+					FeaturesBuildInfo: &feature.BuildInfo{FeaturesFolder: folder},
+				},
+			)
+			require.NoError(t, err)
+			require.Len(t, manifest, 2)
+			require.Equal(
+				t,
+				config.GeneratedBuildArtifact{Path: link, LinkTarget: target},
+				manifest[1],
+			)
+			require.NotEmpty(t, manifest[0].SHA256)
+		})
+	}
+}

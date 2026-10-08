@@ -1,8 +1,13 @@
 package tunnelserver
 
 import (
+	"archive/tar"
+	"bytes"
+	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/extract"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/require"
 )
@@ -226,5 +232,266 @@ func assertWorkspacePolicyStopsTransfers(t *testing.T, root string) {
 		require.ErrorContains(t, err, "upload stopped")
 		require.ErrorContains(t, err, pkgconfig.IgnoreFileName)
 		require.Zero(t, stream.content.Len())
+	}
+}
+
+func isolatedArtifactStaging(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, dir)
+	}
+	return dir
+}
+
+func stagedArtifactServer(t *testing.T, size int64) (*tunnelServer, string) {
+	t.Helper()
+	root := t.TempDir()
+	relative := config.DevsyContextFeatureFolder + "/payload.bin"
+	artifact := filepath.Join(root, relative)
+	require.NoError(t, os.MkdirAll(filepath.Dir(artifact), 0o700))
+	// #nosec G304 -- the file is a fixture under this test's temporary root.
+	file, err := os.Create(artifact)
+	require.NoError(t, err)
+	require.NoError(t, file.Truncate(size))
+	hash := sha256.New()
+	_, err = io.Copy(hash, file)
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+	mount := &config.Mount{Type: testBindMountType, Source: root, Target: "/workspace"}
+	server := New(WithMounts([]*config.Mount{mount}), WithWorkspaceMount(mount))
+	server.generatedBuildContext = root
+	server.generatedBuildArtifacts = []config.GeneratedBuildArtifact{
+		{Path: artifact, SHA256: fmt.Sprintf("%x", hash.Sum(nil))},
+	}
+	return server, relative
+}
+
+func TestGeneratedArtifactsStageLargeImmutableBodiesOnDisk(t *testing.T) {
+	stagingDir := isolatedArtifactStaging(t)
+	server, relative := stagedArtifactServer(t, 40*1024*1024)
+	opts, cleanup, err := server.sourceTarOptions(
+		context.Background(),
+		server.generatedBuildContext,
+		true,
+		false,
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cleanup()) })
+	source := opts.ProtectedFiles[relative]
+	reader, ok := source.Reader.(*io.SectionReader)
+	require.True(t, ok, "large approved content must remain disk-backed")
+	backing, _, size := reader.Outer()
+	staged, ok := backing.(*os.File)
+	require.True(t, ok)
+	require.EqualValues(t, 40*1024*1024, size)
+	require.Equal(t, stagingDir, filepath.Dir(staged.Name()))
+	require.NoError(
+		t,
+		os.WriteFile(server.generatedBuildArtifacts[0].Path, []byte("changed"), 0o600),
+	)
+	hash := sha256.New()
+	copied, err := io.Copy(hash, source.Reader)
+	require.NoError(t, err)
+	require.Equal(t, size, copied)
+	require.Equal(t, server.generatedBuildArtifacts[0].SHA256, fmt.Sprintf("%x", hash.Sum(nil)))
+	require.NoError(t, cleanup())
+	require.NoFileExists(t, staged.Name())
+}
+
+func TestGeneratedArtifactStagingPreflightFailureCleansDisk(t *testing.T) {
+	stagingDir := isolatedArtifactStaging(t)
+	server, _ := stagedArtifactServer(t, 16)
+	invalid := server.generatedBuildArtifacts[0]
+	invalid.SHA256 = "changed-digest"
+	server.generatedBuildArtifacts = append(server.generatedBuildArtifacts, invalid)
+	_, _, err := server.sourceTarOptions(
+		context.Background(),
+		server.generatedBuildContext,
+		true,
+		false,
+	)
+	require.ErrorContains(t, err, "changed since build")
+	entries, err := os.ReadDir(stagingDir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+type generatedArtifactLifecycleStream struct {
+	mockStreamMountServer
+	ctx    context.Context
+	onSend func() error
+}
+
+func (s *generatedArtifactLifecycleStream) Context() context.Context { return s.ctx }
+
+func (s *generatedArtifactLifecycleStream) Send(chunk *tunnel.Chunk) error {
+	if s.onSend != nil {
+		return s.onSend()
+	}
+	return s.mockStreamMountServer.Send(chunk)
+}
+
+func TestGeneratedArtifactStagingReleasedAfterTransfer(t *testing.T) {
+	for _, outcome := range []string{"success", "send failure", "cancellation"} {
+		t.Run(outcome, func(t *testing.T) {
+			stagingDir := isolatedArtifactStaging(t)
+			server, _ := stagedArtifactServer(t, 16)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			stream := &generatedArtifactLifecycleStream{ctx: ctx}
+			switch outcome {
+			case "send failure":
+				stream.onSend = func() error { return errors.New("destination failed") }
+			case "cancellation":
+				stream.onSend = func() error { cancel(); return ctx.Err() }
+			}
+			err := server.StreamMount(
+				&tunnel.StreamMountRequest{Mount: server.mounts[0].String()},
+				stream,
+			)
+			if outcome == "success" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			entries, err := os.ReadDir(stagingDir)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+	}
+}
+
+func TestGeneratedArtifactCanceledPreflightCleansDisk(t *testing.T) {
+	stagingDir := isolatedArtifactStaging(t)
+	server, _ := stagedArtifactServer(t, 16)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := server.sourceTarOptions(ctx, server.generatedBuildContext, true, false)
+	require.ErrorIs(t, err, context.Canceled)
+	entries, err := os.ReadDir(stagingDir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+func TestGeneratedArtifactSnapshotDoesNotStageBodies(t *testing.T) {
+	stagingDir := isolatedArtifactStaging(t)
+	server, _ := stagedArtifactServer(t, 16)
+	opts, cleanup, err := server.sourceTarOptions(
+		context.Background(),
+		server.generatedBuildContext,
+		true,
+		true,
+	)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, cleanup()) }()
+	require.Empty(t, opts.ProtectedFiles)
+	entries, err := os.ReadDir(stagingDir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+}
+
+func TestGeneratedSymlinkArchivesApprovedTargetAfterMutation(t *testing.T) {
+	for _, target := range []string{"payload.bin", ".."} {
+		t.Run(target, func(t *testing.T) {
+			server, _ := stagedArtifactServer(t, 16)
+			root := server.generatedBuildContext
+			relative := config.DevsyContextFeatureFolder + "/link"
+			if err := os.Symlink(target, filepath.Join(root, relative)); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			server.generatedBuildArtifacts = []config.GeneratedBuildArtifact{
+				{Path: filepath.Join(root, relative), LinkTarget: target},
+			}
+			opts, cleanup, err := server.sourceTarOptions(context.Background(), root, true, false)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, cleanup()) }()
+			require.NoError(t, os.Remove(filepath.Join(root, relative)))
+			require.NoError(t, os.Symlink("changed-target", filepath.Join(root, relative)))
+			opts.Excludes = []string{"**"}
+			opts.Matcher = nil
+			var archive bytes.Buffer
+			require.NoError(t, extract.WriteTarWithOptions(&archive, root, opts))
+			header, err := tar.NewReader(&archive).Next()
+			require.NoError(t, err)
+			require.Equal(t, byte(tar.TypeSymlink), header.Typeflag)
+			require.Equal(t, target, header.Linkname)
+		})
+	}
+}
+
+func TestGeneratedSymlinkRejectsUnapprovedTargetsBeforeStreaming(t *testing.T) {
+	for _, target := range []string{"changed-target", "../../outside", "/absolute/outside"} {
+		t.Run(target, func(t *testing.T) {
+			server, _ := stagedArtifactServer(t, 16)
+			root := server.generatedBuildContext
+			link := filepath.Join(root, config.DevsyContextFeatureFolder, "link")
+			if err := os.Symlink(target, link); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			approved := target
+			if target == "changed-target" {
+				approved = "payload.bin"
+			}
+			server.generatedBuildArtifacts = []config.GeneratedBuildArtifact{
+				{Path: link, LinkTarget: approved},
+			}
+			stream := &mockStreamMountServer{}
+			err := server.StreamMount(
+				&tunnel.StreamMountRequest{Mount: server.mounts[0].String()},
+				stream,
+			)
+			require.Error(t, err)
+			require.Zero(t, stream.content.Len())
+		})
+	}
+}
+
+func TestGeneratedSnapshotPathsAreLiteral(t *testing.T) {
+	for _, contextName := range []string{"!nested", "[nested]"} {
+		t.Run(contextName, func(t *testing.T) {
+			server, relative := stagedArtifactServer(t, 16)
+			root := server.generatedBuildContext
+			nested := filepath.Join(root, contextName)
+			require.NoError(t, os.Mkdir(nested, 0o700))
+			require.NoError(
+				t,
+				os.Rename(
+					filepath.Join(root, config.DevsyContextFeatureFolder),
+					filepath.Join(nested, config.DevsyContextFeatureFolder),
+				),
+			)
+			server.generatedBuildContext = nested
+			server.generatedBuildArtifacts[0].Path = filepath.Join(nested, relative)
+			writeFiles(
+				t,
+				nested,
+				"keep.txt",
+				"private.txt",
+				config.DevsyContextFeatureFolder+"/unmanifested.txt",
+			)
+			require.NoError(
+				t,
+				os.WriteFile(
+					filepath.Join(root, pkgconfig.IgnoreFileName),
+					[]byte("**/private.txt\n"),
+					0o600,
+				),
+			)
+			opts, cleanup, err := server.sourceTarOptions(context.Background(), root, true, true)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, cleanup()) }()
+			var archive bytes.Buffer
+			require.NoError(t, extract.WriteTarWithOptions(&archive, root, opts))
+			names := tarEntryNames(t, [][]byte{archive.Bytes()})
+			require.NotContains(t, names, contextName+"/"+relative)
+			require.NotContains(t, names, contextName+"/private.txt")
+			require.Contains(t, names, contextName+"/keep.txt")
+			require.Contains(
+				t,
+				names,
+				contextName+"/"+config.DevsyContextFeatureFolder+"/unmanifested.txt",
+			)
+		})
 	}
 }

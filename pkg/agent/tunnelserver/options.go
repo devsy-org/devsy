@@ -20,8 +20,7 @@ func WithWorkspace(workspace *provider2.Workspace) Option {
 	}
 }
 
-// WithWorkspaceMount marks the mount of the workspace folder. Only that mount is
-// streamed with the excludes of its ignore file.
+// WithWorkspaceMount limits workspace ignore rules to this mount.
 func WithWorkspaceMount(mount *config.Mount) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.workspaceMount = mount

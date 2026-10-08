@@ -220,9 +220,7 @@ func TestStreamMountRPC_ProtectedArtifactUsesPreflightContents(t *testing.T) {
 	require.NoError(t, err)
 	first, err := stream.Recv()
 	require.NoError(t, err)
-	// Preflight has completed, while the 20 MiB earlier entry holds the sender
-	// before the later generated file. Changed source bytes must never replace
-	// the contents whose digest authorized the ignore exception.
+	// The earlier entry blocks the sender after preflight and before the artifact.
 	require.NoError(t, os.WriteFile(artifactPath, []byte("private replacement secret\n"), 0o600))
 	dest := t.TempDir()
 	require.NoError(
@@ -364,7 +362,6 @@ func TestStreamMountRPC_CancellationCannotExtractTruncatedArchive(t *testing.T) 
 	require.NoError(t, err)
 	require.NotEmpty(t, first.Content)
 	cancel()
-	// Preserve the already received header so extraction must consume the incomplete body.
 	require.Error(
 		t,
 		extract.Extract(

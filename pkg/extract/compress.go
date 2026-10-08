@@ -17,22 +17,23 @@ import (
 	"github.com/moby/patternmatcher"
 )
 
-// TarOptions configures WriteTarWithOptions.
 type TarOptions struct {
-	// Compress gzips the archive.
 	Compress bool
-	// Excludes are patterns relative to the archived folder, with the same
-	// syntax as a .dockerignore file.
+	// Docker ignore patterns relative to the archive root.
 	Excludes []string
-	// Matcher is an optional precompiled policy; when set it takes precedence over Excludes.
-	// A matcher must belong to one transfer because matching lazily compiles its patterns.
+	// Overrides Excludes; lazy compilation prevents sharing across transfers.
 	Matcher *patternmatcher.PatternMatcher
-	// ProtectedPaths are exact slash-separated paths relative to the archive root.
-	// Their contents bypass exclusions; existing path components must not be symlinks.
+	// Exact root-relative paths that bypass exclusions; symlink components are rejected.
 	ProtectedPaths []string
-	// ProtectedFiles supplies approved contents for exact files. Their bodies
-	// are archived from these bytes instead of reopening mutable source files.
-	ProtectedFiles map[string][]byte
+	// Immutable bodies for exact paths; the caller owns and closes their readers.
+	ProtectedFiles map[string]ProtectedFile
+	// ProtectedSymlinks archives approved link targets without dereferencing them.
+	ProtectedSymlinks map[string]string
+}
+
+type ProtectedFile struct {
+	Reader io.Reader
+	Size   int64
 }
 
 func WriteTarExclude(
@@ -48,8 +49,7 @@ func WriteTarExclude(
 	)
 }
 
-// WriteTarWithOptions writes the file or the contents of the folder at
-// localPath as a tar archive to writer.
+// WriteTarWithOptions archives a file or a directory's contents.
 func WriteTarWithOptions(writer io.Writer, localPath string, opts TarOptions) error {
 	absolute, err := filepath.Abs(localPath)
 	if err != nil {
@@ -107,23 +107,18 @@ func WriteTar(writer io.Writer, localPath string, compress bool) error {
 	return WriteTarExclude(writer, localPath, compress, nil)
 }
 
-// Archiver is responsible for compressing specific files and folders within a target directory.
 type Archiver struct {
 	basePath     string
 	writer       *tar.Writer
 	writtenFiles map[string]bool
 
-	// excludes holds the exclude patterns, with .dockerignore semantics. It is
-	// nil when nothing is excluded.
-	excludes *patternmatcher.PatternMatcher
-	// reincludes holds the components of each negation (!) pattern.
-	reincludes     [][]string
-	protectedPaths []string
-	protectedFiles map[string][]byte
+	excludes          *patternmatcher.PatternMatcher
+	reincludes        [][]string
+	protectedPaths    []string
+	protectedFiles    map[string]ProtectedFile
+	protectedSymlinks map[string]string
 }
 
-// NewArchiver creates a new archiver. excludedPaths are patterns relative to
-// basePath, with the same syntax as a .dockerignore file.
 func NewArchiver(basePath string, writer *tar.Writer, excludedPaths []string) (*Archiver, error) {
 	var excludes *patternmatcher.PatternMatcher
 	if len(excludedPaths) > 0 {
@@ -151,7 +146,6 @@ func newArchiver(
 	}
 }
 
-// reincludePatterns returns the components of each negation pattern.
 func reincludePatterns(excludes *patternmatcher.PatternMatcher) [][]string {
 	if excludes == nil || !excludes.Exclusions() {
 		return nil
@@ -166,7 +160,6 @@ func reincludePatterns(excludes *patternmatcher.PatternMatcher) [][]string {
 	return reincludes
 }
 
-// AddToArchive adds a new path to the archive.
 func (a *Archiver) AddToArchive(relativePath string) error {
 	relativePath = filepath.ToSlash(relativePath)
 	if relativePath != "" && !validArchivePath(relativePath) {
@@ -185,13 +178,46 @@ func (a *Archiver) configureProtection(opts TarOptions) error {
 		}
 	}
 	a.protectedPaths = append([]string(nil), opts.ProtectedPaths...)
-	for protected := range opts.ProtectedFiles {
+	a.protectedFiles = opts.ProtectedFiles
+	return a.validateProtectionSources(opts.ProtectedSymlinks)
+}
+
+func (a *Archiver) validateProtectionSources(links map[string]string) error {
+	for protected, source := range a.protectedFiles {
+		if source.Reader == nil || source.Size < 0 {
+			return fmt.Errorf("invalid protected file source %q", protected)
+		}
 		if err := validateProtectedFile(a.basePath, protected); err != nil {
 			return err
 		}
 		a.protectedPaths = append(a.protectedPaths, protected)
 	}
-	a.protectedFiles = opts.ProtectedFiles
+	for protected := range links {
+		if err := validateProtectedSymlink(a.basePath, protected); err != nil {
+			return err
+		}
+		a.protectedPaths = append(a.protectedPaths, protected)
+	}
+	a.protectedSymlinks = links
+	return nil
+}
+
+func validateProtectedSymlink(basePath, protected string) error {
+	if !validArchivePath(protected) || strings.ContainsAny(protected, `\:`) {
+		return fmt.Errorf("invalid protected symlink path %q", protected)
+	}
+	if parent := path.Dir(protected); parent != "." {
+		if err := validateProtectedPath(basePath, parent); err != nil {
+			return err
+		}
+	}
+	info, err := os.Lstat(filepath.Join(basePath, filepath.FromSlash(protected)))
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("protected symlink %q is no longer a symlink", protected)
+	}
 	return nil
 }
 
@@ -209,8 +235,7 @@ func (a *Archiver) writeArchive(writer io.Writer, relativePath string, compress 
 		archiveErr = a.verifyProtectedFilesArchived()
 	}
 	if archiveErr != nil {
-		// Finalizing either format can hide a pending transport error behind
-		// a clean archive EOF. These writers own no external resources.
+		// A success terminator would hide the pending transport error from extraction.
 		return archiveErr
 	}
 	closeErr := tarWriter.Close()
@@ -226,11 +251,14 @@ func (a *Archiver) verifyProtectedFilesArchived() error {
 			return fmt.Errorf("protected file %q was not archived", protected)
 		}
 	}
+	for protected := range a.protectedSymlinks {
+		if !a.writtenFiles[protected] {
+			return fmt.Errorf("protected symlink %q was not archived", protected)
+		}
+	}
 	return nil
 }
 
-// addToArchive adds a path to the archive. parentInfo holds the exclude
-// results of the parent directory, or the zero value when they are unknown.
 func (a *Archiver) addToArchive(relativePath string, parentInfo patternmatcher.MatchInfo) error {
 	if a.writtenFiles[relativePath] {
 		return nil
@@ -241,8 +269,8 @@ func (a *Archiver) addToArchive(relativePath string, parentInfo patternmatcher.M
 		return fmt.Errorf("stat archive path %q: %w", relativePath, err)
 	}
 
-	if approved, protected := a.protectedFiles[relativePath]; protected {
-		return a.tarApprovedFile(relativePath, stat, approved)
+	if protected, err := a.tarProtectedEntry(relativePath, stat); protected {
+		return err
 	}
 	if stat.IsDir() {
 		return a.addFolder(relativePath, stat, parentInfo)
@@ -258,7 +286,16 @@ func (a *Archiver) addToArchive(relativePath string, parentInfo patternmatcher.M
 	return a.tarFile(relativePath, stat)
 }
 
-// addFolder adds a folder and what is in it to the archive.
+func (a *Archiver) tarProtectedEntry(relativePath string, stat os.FileInfo) (bool, error) {
+	if approved, protected := a.protectedFiles[relativePath]; protected {
+		return true, a.tarApprovedFile(relativePath, stat, approved)
+	}
+	if target, protected := a.protectedSymlinks[relativePath]; protected {
+		return true, a.tarApprovedSymlink(relativePath, stat, target)
+	}
+	return false, nil
+}
+
 func (a *Archiver) addFolder(
 	relativePath string,
 	stat os.FileInfo,
@@ -273,8 +310,6 @@ func (a *Archiver) addFolder(
 		return err
 	}
 
-	// Skip an excluded folder without reading it, unless a negation
-	// pattern could re-include something below it.
 	if excluded && !a.hasProtectedDescendant(relativePath) && !a.mayReincludeBelow(relativePath) {
 		return nil
 	}
@@ -317,20 +352,18 @@ func (a *Archiver) hasProtectedDescendant(dir string) bool {
 	return false
 }
 
-// tarFolderWhole archives a folder and everything in it, ignoring the excludes.
 func (a *Archiver) tarFolderWhole(relativePath string, stat os.FileInfo) error {
 	whole := &Archiver{
-		basePath:       a.basePath,
-		writer:         a.writer,
-		writtenFiles:   a.writtenFiles,
-		protectedFiles: a.protectedFiles,
+		basePath:          a.basePath,
+		writer:            a.writer,
+		writtenFiles:      a.writtenFiles,
+		protectedFiles:    a.protectedFiles,
+		protectedSymlinks: a.protectedSymlinks,
 	}
 	return whole.tarFolder(relativePath, stat, false, patternmatcher.MatchInfo{})
 }
 
-// mayReincludeBelow reports whether a negation pattern could match a path
-// inside the excluded folder dir. It may return true for a pattern that turns
-// out not to match, but never false for one that does.
+// False positives cost traversal; false negatives discard re-included files.
 func (a *Archiver) mayReincludeBelow(dir string) bool {
 	dirComponents := strings.Split(path.Clean(filepath.ToSlash(dir)), "/")
 	for _, pattern := range a.reincludes {
@@ -341,15 +374,11 @@ func (a *Archiver) mayReincludeBelow(dir string) bool {
 	return false
 }
 
-// patternMayMatchBelow reports whether pattern could match a path below the
-// folder dir, both given as path components.
 func patternMayMatchBelow(pattern, dir []string) bool {
-	// "**" matches any number of folders, so do not try to rule it out
 	if strings.Contains(strings.Join(pattern, "/"), "**") {
 		return true
 	}
-	// A pattern matching dir itself, or one of its parents, was already
-	// applied to dir, which is still excluded
+	// The still-excluded parent has already evaluated patterns of this depth.
 	if len(pattern) <= len(dir) {
 		return false
 	}
@@ -362,8 +391,6 @@ func patternMayMatchBelow(pattern, dir []string) bool {
 	return true
 }
 
-// isExcluded matches relativePath against the exclude patterns. It also
-// returns the match results to pass down to the path's children.
 func (a *Archiver) isExcluded(
 	relativePath string,
 	parentInfo patternmatcher.MatchInfo,
@@ -372,16 +399,13 @@ func (a *Archiver) isExcluded(
 		return false, patternmatcher.MatchInfo{}, nil
 	}
 
-	// Patterns are relative to the archive root, so the root itself never matches
 	relativePath = path.Clean(filepath.ToSlash(relativePath))
 	if relativePath == "." || relativePath == "/" {
 		return false, patternmatcher.MatchInfo{}, nil
 	}
 
-	// With negations, the matcher can skip recording a rule on the parent
-	// because an earlier rule already decided its result. That skipped rule
-	// can still override a different decision on a descendant; recheck its
-	// ancestors instead of inheriting incomplete per-pattern results.
+	// Cached parent results can omit rules that later override a descendant
+	// under ordered negation; recompute ancestors to preserve last-match wins.
 	if a.excludes.Exclusions() {
 		parentInfo = patternmatcher.MatchInfo{}
 	}
@@ -464,7 +488,7 @@ func (a *Archiver) tarFile(target string, targetStat os.FileInfo) error {
 	return a.writeRegularFileBody(target, filePath, targetStat)
 }
 
-func (a *Archiver) tarApprovedFile(target string, stat os.FileInfo, approved []byte) error {
+func (a *Archiver) tarApprovedFile(target string, stat os.FileInfo, approved ProtectedFile) error {
 	if !stat.Mode().IsRegular() {
 		return fmt.Errorf("protected file %q is no longer a regular file", target)
 	}
@@ -472,12 +496,27 @@ func (a *Archiver) tarApprovedFile(target string, stat os.FileInfo, approved []b
 	if err != nil {
 		return err
 	}
-	hdr.Size = int64(len(approved))
+	hdr.Size = approved.Size
 	if err := a.writer.WriteHeader(hdr); err != nil {
 		return fmt.Errorf("tar write header: %w", err)
 	}
-	if _, err := a.writer.Write(approved); err != nil {
+	if _, err := io.CopyN(a.writer, approved.Reader, approved.Size); err != nil {
 		return fmt.Errorf("tar write protected file: %w", err)
+	}
+	a.writtenFiles[target] = true
+	return nil
+}
+
+func (a *Archiver) tarApprovedSymlink(target string, stat os.FileInfo, linkTarget string) error {
+	if stat.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("protected symlink %q is no longer a symlink", target)
+	}
+	hdr, err := tarFileHeader(target, stat, linkTarget)
+	if err != nil {
+		return err
+	}
+	if err := a.writer.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("tar write protected symlink: %w", err)
 	}
 	a.writtenFiles[target] = true
 	return nil

@@ -27,7 +27,6 @@ const (
 	testNodeModulesFile = "node_modules/lib/index.js"
 )
 
-// mockStreamMountServer collects the chunks sent by StreamMount.
 type mockStreamMountServer struct {
 	grpc.ServerStream
 
@@ -77,8 +76,6 @@ func streamMountEntries(t *testing.T, server *tunnelServer, mount *config.Mount)
 	return entries
 }
 
-// newSetupInfo returns a setup result with a workspace folder and another bind
-// mount, both with an ignore file that excludes node_modules.
 func newSetupInfo(t *testing.T) *config.Result {
 	t.Helper()
 
@@ -195,8 +192,6 @@ func TestStreamMount_InvalidIgnoreFileFailsBeforeUpload(t *testing.T) {
 	require.Zero(t, stream.content.Len())
 }
 
-// TestStreamMount_KeepsDockerlessBuildContext guards against #1108: the
-// dockerless build fails if the ignore file strips its build context.
 func TestStreamMount_KeepsDockerlessBuildContext(t *testing.T) {
 	setupInfo := newSetupInfo(t)
 	workspaceMount := config.GetWorkspaceMount(setupInfo)

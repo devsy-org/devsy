@@ -102,8 +102,10 @@ keeps additional bind mounts independent of those rules.
 The snapshot CLI currently requires a single workspace mount because restore
 cannot disambiguate multiple mounts.
 
-Files excluded from the workspace volume are absent after restore. A missing
-ignore file leaves the source unfiltered; an invalid or unreadable existing file
+Files excluded from the workspace volume are absent from the snapshot and from a
+restore into an empty or reset target. Without `--reset`, Devsy skips restoring a
+target that already contains workspace files and retains its existing contents.
+A missing ignore file leaves the source unfiltered; an invalid or unreadable existing file
 stops snapshot streaming. Snapshot creation loads persisted workspace metadata,
 which does not grant generated-file transfer exceptions. Leftover folders named
 `.devsy-internal` therefore follow the workspace ignore rules and are retained

@@ -43,6 +43,8 @@ func ValidateIDLabels(labels []string) error {
 type GeneratedBuildArtifact struct {
 	Path   string
 	SHA256 string
+	// Symlink targets grant no file-read authority.
+	LinkTarget string
 }
 
 type BuildInfo struct {

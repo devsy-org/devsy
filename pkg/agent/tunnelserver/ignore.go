@@ -1,6 +1,7 @@
 package tunnelserver
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -81,57 +82,71 @@ func (t *tunnelServer) validateMountRoles() error {
 }
 
 func (t *tunnelServer) mountTarOptions(
-	mount *config.Mount,
-	snapshot bool,
-) (extract.TarOptions, error) {
+	ctx context.Context, mount *config.Mount, snapshot bool,
+) (extract.TarOptions, func() error, error) {
 	workspace := t.workspaceMount != nil && mount.String() == t.workspaceMount.String()
-	return t.sourceTarOptions(mount.Source, workspace, snapshot)
+	return t.sourceTarOptions(ctx, mount.Source, workspace, snapshot)
 }
 
 func (t *tunnelServer) sourceTarOptions(
-	root string,
-	workspace, snapshot bool,
-) (extract.TarOptions, error) {
+	ctx context.Context, root string, workspace, snapshot bool,
+) (extract.TarOptions, func() error, error) {
 	if !workspace {
 		log.Debugf(
 			"transfer role=additional-bind source=%s workspace ignore rules applied=false",
 			root,
 		)
-		return extract.TarOptions{}, nil
+		return extract.TarOptions{}, func() error { return nil }, nil
 	}
 	policy, err := loadWorkspaceIgnore(root)
 	if err != nil {
-		return extract.TarOptions{}, err
+		return extract.TarOptions{}, nil, err
 	}
-	log.Debugf(
-		"transfer role=workspace source=%s ignore=%s present=%t rules=%d applied=%t",
-		root,
-		policy.sourcePath,
-		policy.present,
-		len(policy.patterns),
-		policy.present,
-	)
-	protected, err := t.protectedBuildFiles(root)
+	log.Debugf("transfer role=workspace source=%s ignore=%s present=%t rules=%d applied=%t",
+		root, policy.sourcePath, policy.present, len(policy.patterns), policy.present)
+	generated, err := t.prepareGeneratedTransfer(ctx, root, snapshot)
 	if err != nil {
-		return extract.TarOptions{}, fmt.Errorf(
+		return extract.TarOptions{}, nil, fmt.Errorf(
 			"workspace upload stopped: generated build artifacts: %w",
 			err,
 		)
 	}
-	opts := extract.TarOptions{Matcher: policy.matcher, ProtectedFiles: protected}
-	if snapshot && len(protected) > 0 {
-		patterns := append([]string(nil), policy.patterns...)
-		for p := range protected {
-			// These are literal paths, not user-authored expressions.
-			patterns = append(
-				patterns,
-				strings.NewReplacer(`\`, `\\`, "[", `\[`, "*", `\*`, "?", `\?`).Replace(p),
-			)
-		}
-		opts.Matcher, err = patternmatcher.New(patterns)
-		opts.ProtectedFiles = nil
+	opts := extract.TarOptions{
+		Matcher:           policy.matcher,
+		ProtectedFiles:    generated.files,
+		ProtectedSymlinks: generated.links,
 	}
-	return opts, err
+	if snapshot {
+		opts, err = snapshotTarOptions(policy, generated.paths)
+		if err != nil {
+			return extract.TarOptions{}, nil, errors.Join(err, generated.close())
+		}
+	}
+	return opts, generated.close, nil
+}
+
+func snapshotTarOptions(
+	policy workspaceIgnorePolicy,
+	generated []string,
+) (extract.TarOptions, error) {
+	if len(generated) == 0 {
+		return extract.TarOptions{Matcher: policy.matcher}, nil
+	}
+	patterns := append([]string(nil), policy.patterns...)
+	for _, p := range generated {
+		patterns = append(
+			patterns,
+			strings.NewReplacer("[", "[[]", "*", "[*]", "?", "[?]", "!", "[!]").Replace(p),
+		)
+	}
+	matcher, err := patternmatcher.New(patterns)
+	return extract.TarOptions{Matcher: matcher}, err
+}
+
+func closeTransferPolicy(closePolicy func() error) {
+	if err := closePolicy(); err != nil {
+		log.Warnf("clean up generated artifact staging: %v", err)
+	}
 }
 
 func relativeWithin(root, p string) (string, error) {
@@ -144,9 +159,24 @@ func relativeWithin(root, p string) (string, error) {
 	return filepath.ToSlash(relative), nil
 }
 
-func (t *tunnelServer) protectedBuildFiles(root string) (map[string][]byte, error) {
+type generatedTransfer struct {
+	files    map[string]extract.ProtectedFile
+	links    map[string]string
+	paths    []string
+	staging  *os.File
+	snapshot bool
+}
+
+func (t *tunnelServer) prepareGeneratedTransfer(
+	ctx context.Context, root string, snapshot bool,
+) (*generatedTransfer, error) {
+	generated := &generatedTransfer{
+		files:    map[string]extract.ProtectedFile{},
+		links:    map[string]string{},
+		snapshot: snapshot,
+	}
 	if len(t.generatedBuildArtifacts) == 0 {
-		return nil, nil
+		return generated, nil
 	}
 	root, err := filepath.Abs(root)
 	if err != nil {
@@ -156,19 +186,78 @@ func (t *tunnelServer) protectedBuildFiles(root string) (map[string][]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	files := make(map[string][]byte, len(t.generatedBuildArtifacts))
 	for _, artifact := range t.generatedBuildArtifacts {
 		relative, err := validatedArtifactPath(root, contextRoot, artifact.Path)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			err = generated.add(ctx, root, relative, artifact)
 		}
-		contents, err := readApprovedArtifact(root, relative, artifact.SHA256)
 		if err != nil {
-			return nil, err
+			return nil, errors.Join(err, generated.close())
 		}
-		files[relative] = contents
+		generated.paths = append(generated.paths, relative)
 	}
-	return files, nil
+	return generated, nil
+}
+
+func (g *generatedTransfer) close() error {
+	if g.staging == nil {
+		return nil
+	}
+	f := g.staging
+	g.staging = nil
+	return errors.Join(f.Close(), os.Remove(f.Name()))
+}
+
+func (g *generatedTransfer) add(
+	ctx context.Context, root, relative string, artifact config.GeneratedBuildArtifact,
+) error {
+	if artifact.LinkTarget != "" {
+		if err := approveGeneratedSymlink(root, relative, artifact.LinkTarget); err != nil {
+			return err
+		}
+		g.links[relative] = artifact.LinkTarget
+		return nil
+	}
+	if g.snapshot {
+		_, err := copyApprovedArtifact(
+			ctx,
+			io.Discard,
+			artifactSource{root, relative, artifact.SHA256},
+		)
+		return err
+	}
+	if err := g.ensureStaging(); err != nil {
+		return err
+	}
+	offset, err := g.staging.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return err
+	}
+	size, err := copyApprovedArtifact(
+		ctx,
+		g.staging,
+		artifactSource{root, relative, artifact.SHA256},
+	)
+	if err != nil {
+		return err
+	}
+	g.files[relative] = extract.ProtectedFile{
+		Reader: io.NewSectionReader(g.staging, offset, size),
+		Size:   size,
+	}
+	return nil
+}
+
+func (g *generatedTransfer) ensureStaging() error {
+	if g.staging != nil {
+		return nil
+	}
+	file, err := os.CreateTemp("", "devsy-build-artifacts-*")
+	if err != nil {
+		return fmt.Errorf("create generated artifact staging: %w", err)
+	}
+	g.staging = file
+	return nil
 }
 
 func (t *tunnelServer) artifactContextRoot(root string) (string, error) {
@@ -212,37 +301,91 @@ func artifactFileInfo(root, relative string) (os.FileInfo, error) {
 		if err != nil {
 			return nil, err
 		}
-		if info.Mode()&os.ModeSymlink != 0 {
+		if info.Mode()&os.ModeSymlink != 0 &&
+			current != filepath.Join(root, filepath.FromSlash(relative)) {
 			return nil, fmt.Errorf("generated artifact path %q contains a symlink", current)
 		}
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("generated artifact %q is not a regular file", current)
 	}
 	return info, nil
 }
 
-func readApprovedArtifact(root, relative, digest string) ([]byte, error) {
+func approveGeneratedSymlink(root, relative, approved string) error {
 	info, err := artifactFileInfo(root, relative)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("generated symlink %q changed since build preparation", relative)
+	}
+	absolute := filepath.Join(root, filepath.FromSlash(relative))
+	target, err := os.Readlink(absolute)
+	if err != nil {
+		return err
+	}
+	if target != approved {
+		return fmt.Errorf("generated symlink %q changed since build preparation", relative)
+	}
+	if !generatedSymlinkTargetWithin(root, absolute, target) {
+		return fmt.Errorf("generated symlink %q points outside the workspace", relative)
+	}
+	return nil
+}
+
+func generatedSymlinkTargetWithin(root, absolute, target string) bool {
+	if filepath.IsAbs(target) {
+		return false
+	}
+	relative, err := filepath.Rel(root, filepath.Join(filepath.Dir(absolute), target))
+	return err == nil && relative != ".." &&
+		!strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}
+
+type artifactSource struct {
+	root, relative, digest string
+}
+
+func copyApprovedArtifact(
+	ctx context.Context,
+	destination io.Writer,
+	source artifactSource,
+) (int64, error) {
+	root, relative, digest := source.root, source.relative, source.digest
+	info, err := artifactFileInfo(root, relative)
+	if err != nil {
+		return 0, err
+	}
+	if !info.Mode().IsRegular() {
+		return 0, fmt.Errorf(
+			"generated artifact %q is not a regular file or is a symlink",
+			relative,
+		)
 	}
 	absolute := filepath.Join(root, filepath.FromSlash(relative))
 	// #nosec G304 -- validated build manifest path inside the authorized workspace.
 	f, err := os.Open(absolute)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	contents, err := io.ReadAll(io.LimitReader(f, info.Size()+1))
-	closeErr := f.Close()
-	if err != nil {
-		return nil, err
+	h := sha256.New()
+	reader := &contextArtifactReader{ctx: ctx, reader: io.LimitReader(f, info.Size()+1)}
+	size, copyErr := io.Copy(io.MultiWriter(destination, h), reader)
+	if err := errors.Join(copyErr, f.Close()); err != nil {
+		return 0, err
 	}
-	if closeErr != nil {
-		return nil, closeErr
+	if size != info.Size() || fmt.Sprintf("%x", h.Sum(nil)) != digest {
+		return 0, fmt.Errorf("generated artifact %q changed since build preparation", absolute)
 	}
-	if int64(len(contents)) != info.Size() || fmt.Sprintf("%x", sha256.Sum256(contents)) != digest {
-		return nil, fmt.Errorf("generated artifact %q changed since build preparation", absolute)
+	return size, nil
+}
+
+type contextArtifactReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r *contextArtifactReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
 	}
-	return contents, nil
+	return r.reader.Read(p)
 }

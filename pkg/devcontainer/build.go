@@ -751,7 +751,7 @@ func featureSecretOpts(options provider.BuildOptions) *feature.SecretOptions {
 	return opts
 }
 
-// Capture only files produced by this build; later additions cannot acquire an ignore exception.
+// Later additions must not acquire ignore exceptions.
 func dockerlessArtifactManifest(
 	dockerfile string,
 	extended *feature.ExtendedBuildInfo,
@@ -806,6 +806,10 @@ func recordGeneratedArtifact(p string) (config.GeneratedBuildArtifact, error) {
 	info, err := os.Lstat(p)
 	if err != nil {
 		return config.GeneratedBuildArtifact{}, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(p)
+		return config.GeneratedBuildArtifact{Path: p, LinkTarget: target}, err
 	}
 	if !info.Mode().IsRegular() {
 		return config.GeneratedBuildArtifact{}, fmt.Errorf(

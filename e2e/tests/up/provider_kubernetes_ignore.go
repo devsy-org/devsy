@@ -88,7 +88,18 @@ var _ = ginkgo.Describe(
 					writeKubernetesIgnoreFixture(
 						workspace,
 						".devcontainer/feature/install.sh",
-						"#!/bin/sh\nset -eu\ntouch /tmp/devsy-ignore-feature-built\n",
+						"#!/bin/sh\nset -eu\ntest -L ./asset-link.txt\ncat ./asset-link.txt > /tmp/devsy-ignore-feature-built\n",
+					)
+					writeKubernetesIgnoreFixture(
+						workspace,
+						".devcontainer/feature/asset.txt",
+						"retained-feature-asset",
+					)
+					framework.ExpectNoError(
+						os.Symlink(
+							"asset.txt",
+							filepath.Join(workspace, ".devcontainer/feature/asset-link.txt"),
+						),
 					)
 					writeKubernetesIgnoreFixture(
 						workspace,
@@ -151,14 +162,13 @@ var _ = ginkgo.Describe(
 					"test ! -e build/remove.txt",
 					"test ! -e private/.devsy-internal/secret.key",
 					"test -f /additional/node_modules/lib/index.js",
-					// The 20 MiB source fixture should produce a small extracted workspace.
 					"test $(du -sk . | cut -f1) -lt 1024",
 				}
 				if dockerless {
 					checks = append(
 						checks,
 						"test -f /tmp/devsy-ignore-dockerless-built",
-						"test -f /tmp/devsy-ignore-feature-built",
+						`test "$(cat /tmp/devsy-ignore-feature-built)" = retained-feature-asset`,
 					)
 				}
 				output, err := f.DevsySSH(

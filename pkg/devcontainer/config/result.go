@@ -50,7 +50,6 @@ type DevContainerConfigWithPath struct {
 	Path string `json:"path,omitempty"`
 }
 
-// GetWorkspaceMount returns the mount of the workspace folder, or nil if there is none.
 func GetWorkspaceMount(result *Result) *Mount {
 	if result == nil || result.SubstitutionContext == nil ||
 		result.SubstitutionContext.WorkspaceMount == "" {
@@ -60,7 +59,6 @@ func GetWorkspaceMount(result *Result) *Mount {
 	return &workspaceMount
 }
 
-// GetMounts returns the workspace mount, if any, followed by the bind mounts of the config.
 func GetMounts(result *Result) []*Mount {
 	var mounts []*Mount
 	if workspaceMount := GetWorkspaceMount(result); workspaceMount != nil {

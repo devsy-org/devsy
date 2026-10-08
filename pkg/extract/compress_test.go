@@ -36,7 +36,6 @@ const (
 	ancestorSymlink = "ancestor symlink"
 )
 
-// testTree is the set of files created in the archived folder by newTestTree.
 var testTree = []string{
 	readmeFile,
 	".claude/settings.json",
@@ -68,8 +67,6 @@ func newTestTree(t *testing.T) string {
 	return root
 }
 
-// tarEntries archives root with excludes and returns the names of the regular
-// files and empty directories in the archive, sorted.
 func tarEntries(t *testing.T, root string, excludes []string) []string {
 	t.Helper()
 
@@ -603,7 +600,12 @@ func TestWriteTarProtectedFilesUseApprovedBytes(t *testing.T) {
 		)
 	}}
 	require.NoError(t, WriteTarWithOptions(writer, root, TarOptions{
-		Excludes: []string{"z/"}, ProtectedFiles: map[string][]byte{"z/artifact": approved},
+		Excludes: []string{
+			"z/",
+		},
+		ProtectedFiles: map[string]ProtectedFile{
+			"z/artifact": {Reader: bytes.NewReader(approved), Size: int64(len(approved))},
+		},
 	}))
 	reader := tar.NewReader(&writer.Buffer)
 	_, err := reader.Next()
@@ -642,8 +644,10 @@ func TestWriteTarProtectedFileMutationCannotOmitArtifact(t *testing.T) {
 				writer,
 				root,
 				TarOptions{
-					Excludes:       []string{"z/"},
-					ProtectedFiles: map[string][]byte{"z/artifact": []byte("approved")},
+					Excludes: []string{"z/"},
+					ProtectedFiles: map[string]ProtectedFile{
+						"z/artifact": {Reader: strings.NewReader("approved"), Size: 8},
+					},
 				},
 			)
 			require.Error(t, err)
