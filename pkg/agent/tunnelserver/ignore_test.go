@@ -495,3 +495,80 @@ func TestGeneratedSnapshotPathsAreLiteral(t *testing.T) {
 		})
 	}
 }
+
+func TestGeneratedEmptyDirectoryKeepsOnlyItsHeader(t *testing.T) {
+	server, _ := stagedArtifactServer(t, 16)
+	root := server.generatedBuildContext
+	relative := config.DevsyContextFeatureFolder + "/required-empty"
+	directory := filepath.Join(root, relative)
+	require.NoError(t, os.Mkdir(directory, 0o700))
+	server.generatedBuildArtifacts = append(server.generatedBuildArtifacts,
+		config.GeneratedBuildArtifact{Path: directory, Directory: true})
+	var baseline bytes.Buffer
+	require.NoError(t, extract.WriteTarWithOptions(&baseline, root, extract.TarOptions{}))
+	require.Contains(t, tarEntryNames(t, [][]byte{baseline.Bytes()}), relative)
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(root, pkgconfig.IgnoreFileName),
+			[]byte(config.DevsyContextFeatureFolder+"/\n"),
+			0o600,
+		),
+	)
+	opts, cleanup, err := server.sourceTarOptions(context.Background(), root, true, false)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, cleanup()) }()
+	writeFiles(t, directory, "later-secret.txt")
+	var archive bytes.Buffer
+	require.NoError(t, extract.WriteTarWithOptions(&archive, root, opts))
+	names := tarEntryNames(t, [][]byte{archive.Bytes()})
+	require.Contains(t, names, relative)
+	require.NotContains(t, names, relative+"/later-secret.txt")
+}
+
+func TestGeneratedDirectorySnapshotRetainsUnmanifestedChildren(t *testing.T) {
+	server, _ := stagedArtifactServer(t, 16)
+	root := server.generatedBuildContext
+	relative := config.DevsyContextFeatureFolder + "/required-empty"
+	directory := filepath.Join(root, relative)
+	require.NoError(t, os.Mkdir(directory, 0o700))
+	server.generatedBuildArtifacts = append(server.generatedBuildArtifacts,
+		config.GeneratedBuildArtifact{Path: directory, Directory: true})
+	writeFiles(t, directory, "later-user-file.txt")
+	opts, cleanup, err := server.sourceTarOptions(context.Background(), root, true, true)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, cleanup()) }()
+	require.Empty(t, opts.ProtectedDirectories)
+	var archive bytes.Buffer
+	require.NoError(t, extract.WriteTarWithOptions(&archive, root, opts))
+	require.Contains(
+		t,
+		tarEntryNames(t, [][]byte{archive.Bytes()}),
+		relative+"/later-user-file.txt",
+	)
+}
+
+func TestGeneratedDirectoryRejectsChangedTypeBeforeStreaming(t *testing.T) {
+	for _, kind := range []string{"file", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			server, _ := stagedArtifactServer(t, 16)
+			root := server.generatedBuildContext
+			directory := filepath.Join(root, config.DevsyContextFeatureFolder, "required-empty")
+			if kind == "file" {
+				require.NoError(t, os.WriteFile(directory, nil, 0o600))
+			} else if err := os.Symlink(t.TempDir(), directory); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			server.generatedBuildArtifacts = []config.GeneratedBuildArtifact{
+				{Path: directory, Directory: true},
+			}
+			stream := &mockStreamMountServer{}
+			err := server.StreamMount(
+				&tunnel.StreamMountRequest{Mount: server.mounts[0].String()},
+				stream,
+			)
+			require.ErrorContains(t, err, "no longer a directory")
+			require.Zero(t, stream.content.Len())
+		})
+	}
+}

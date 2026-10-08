@@ -45,6 +45,7 @@ type GeneratedBuildArtifact struct {
 	SHA256 string
 	// Symlink targets grant no file-read authority.
 	LinkTarget string
+	Directory  bool
 }
 
 type BuildInfo struct {

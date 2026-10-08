@@ -686,3 +686,35 @@ func TestWriteTarTraversalFailureCannotHideTransportError(t *testing.T) {
 		})
 	}
 }
+
+func TestProtectedDirectoryRejectsSymlinkBeforeWriting(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Symlink(t.TempDir(), filepath.Join(root, "protected-dir")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	var archive bytes.Buffer
+	err := WriteTarWithOptions(
+		&archive,
+		root,
+		TarOptions{ProtectedDirectories: []string{"protected-dir"}},
+	)
+	require.ErrorContains(t, err, "symbolic link")
+	require.Zero(t, archive.Len())
+}
+
+func TestProtectedDirectoryMutationCannotOmitHeader(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a-first.txt"), []byte("first"), 0o600))
+	directory := filepath.Join(root, "z-directory")
+	require.NoError(t, os.Mkdir(directory, 0o700))
+	writer := &mutatingArchiveWriter{beforeFirstWrite: func() {
+		require.NoError(t, os.Remove(directory))
+		require.NoError(t, os.WriteFile(directory, nil, 0o600))
+	}}
+	err := WriteTarWithOptions(
+		writer,
+		root,
+		TarOptions{ProtectedDirectories: []string{"z-directory"}},
+	)
+	require.ErrorContains(t, err, "no longer a directory")
+}

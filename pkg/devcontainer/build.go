@@ -790,7 +790,11 @@ func generatedArtifactFiles(
 			if err != nil {
 				return err
 			}
-			if !entry.IsDir() {
+			include, err := includeGeneratedArtifactEntry(p, entry)
+			if err != nil {
+				return err
+			}
+			if include {
 				paths = append(paths, p)
 			}
 			return nil
@@ -802,6 +806,14 @@ func generatedArtifactFiles(
 	return paths, nil
 }
 
+func includeGeneratedArtifactEntry(p string, entry fs.DirEntry) (bool, error) {
+	if !entry.IsDir() {
+		return true, nil
+	}
+	entries, err := os.ReadDir(p)
+	return len(entries) == 0, err
+}
+
 func recordGeneratedArtifact(p string) (config.GeneratedBuildArtifact, error) {
 	info, err := os.Lstat(p)
 	if err != nil {
@@ -810,6 +822,9 @@ func recordGeneratedArtifact(p string) (config.GeneratedBuildArtifact, error) {
 	if info.Mode()&os.ModeSymlink != 0 {
 		target, err := os.Readlink(p)
 		return config.GeneratedBuildArtifact{Path: p, LinkTarget: target}, err
+	}
+	if info.IsDir() {
+		return config.GeneratedBuildArtifact{Path: p, Directory: true}, nil
 	}
 	if !info.Mode().IsRegular() {
 		return config.GeneratedBuildArtifact{}, fmt.Errorf(

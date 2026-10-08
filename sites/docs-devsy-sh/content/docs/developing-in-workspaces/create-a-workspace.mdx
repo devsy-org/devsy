@@ -126,7 +126,7 @@ do not remove ignored files. Remote Git clones also do not use this upload polic
 `.gitignore` and `.dockerignore` are not substituted for `.devsyignore`; Docker
 image builds continue to use their own build-context rules.
 
-Devsy preserves only verified files generated for the current Dockerless build,
+Devsy preserves only verified artifacts generated for the current Dockerless build,
 including files inside a nested build context, when they are needed for startup.
 Other folders named `.devsy-internal` remain subject to the rules. A required
 generated context outside the authorized workspace source produces an error.

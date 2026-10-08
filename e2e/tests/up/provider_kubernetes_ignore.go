@@ -88,7 +88,8 @@ var _ = ginkgo.Describe(
 					writeKubernetesIgnoreFixture(
 						workspace,
 						".devcontainer/feature/install.sh",
-						"#!/bin/sh\nset -eu\ntest -L ./asset-link.txt\ncat ./asset-link.txt > /tmp/devsy-ignore-feature-built\n",
+						"#!/bin/sh\nset -eu\ntest -L ./asset-link.txt\ntest -d ./required-empty\n"+
+							"cat ./asset-link.txt > /tmp/devsy-ignore-feature-built\n",
 					)
 					writeKubernetesIgnoreFixture(
 						workspace,
@@ -99,6 +100,12 @@ var _ = ginkgo.Describe(
 						os.Symlink(
 							"asset.txt",
 							filepath.Join(workspace, ".devcontainer/feature/asset-link.txt"),
+						),
+					)
+					framework.ExpectNoError(
+						os.MkdirAll(
+							filepath.Join(workspace, ".devcontainer/feature/required-empty"),
+							0o700,
 						),
 					)
 					writeKubernetesIgnoreFixture(

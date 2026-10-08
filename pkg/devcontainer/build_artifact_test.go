@@ -136,3 +136,41 @@ func TestGeneratedFeatureSymlinksRecordTargetsWithoutDereferencing(t *testing.T)
 		})
 	}
 }
+
+func TestGeneratedManifestIncludesOnlyEmptyDirectories(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, config.DevsyContextFeatureFolder)
+	empty := filepath.Join(folder, "feature", "empty")
+	require.NoError(t, os.MkdirAll(empty, 0o700))
+	dockerfile := filepath.Join(folder, "Dockerfile-with-features")
+	require.NoError(t, os.WriteFile(dockerfile, []byte("FROM scratch"), 0o600))
+	manifest, err := dockerlessArtifactManifest(
+		dockerfile,
+		&feature.ExtendedBuildInfo{FeaturesBuildInfo: &feature.BuildInfo{FeaturesFolder: folder}},
+	)
+	require.NoError(t, err)
+	require.Len(t, manifest, 2)
+	require.Equal(t, config.GeneratedBuildArtifact{Path: empty, Directory: true}, manifest[1])
+	require.NotEmpty(t, manifest[0].SHA256)
+}
+
+func TestGeneratedDirectorySymlinkDoesNotRecordTargetDirectories(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, config.DevsyContextFeatureFolder)
+	require.NoError(t, os.MkdirAll(folder, 0o700))
+	dockerfile := filepath.Join(folder, "Dockerfile-with-features")
+	require.NoError(t, os.WriteFile(dockerfile, []byte("FROM scratch"), 0o600))
+	external := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(external, "unread-directory"), 0o700))
+	link := filepath.Join(folder, "generated-link")
+	if err := os.Symlink(external, link); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+	manifest, err := dockerlessArtifactManifest(
+		dockerfile,
+		&feature.ExtendedBuildInfo{FeaturesBuildInfo: &feature.BuildInfo{FeaturesFolder: folder}},
+	)
+	require.NoError(t, err)
+	require.Len(t, manifest, 2)
+	require.Equal(t, config.GeneratedBuildArtifact{Path: link, LinkTarget: external}, manifest[1])
+}

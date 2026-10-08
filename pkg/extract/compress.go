@@ -29,6 +29,8 @@ type TarOptions struct {
 	ProtectedFiles map[string]ProtectedFile
 	// ProtectedSymlinks archives approved link targets without dereferencing them.
 	ProtectedSymlinks map[string]string
+	// Exact directory headers bypass exclusions; their children retain normal filtering.
+	ProtectedDirectories []string
 }
 
 type ProtectedFile struct {
@@ -112,11 +114,12 @@ type Archiver struct {
 	writer       *tar.Writer
 	writtenFiles map[string]bool
 
-	excludes          *patternmatcher.PatternMatcher
-	reincludes        [][]string
-	protectedPaths    []string
-	protectedFiles    map[string]ProtectedFile
-	protectedSymlinks map[string]string
+	excludes             *patternmatcher.PatternMatcher
+	reincludes           [][]string
+	protectedPaths       []string
+	protectedFiles       map[string]ProtectedFile
+	protectedSymlinks    map[string]string
+	protectedDirectories []string
 }
 
 func NewArchiver(basePath string, writer *tar.Writer, excludedPaths []string) (*Archiver, error) {
@@ -179,7 +182,16 @@ func (a *Archiver) configureProtection(opts TarOptions) error {
 	}
 	a.protectedPaths = append([]string(nil), opts.ProtectedPaths...)
 	a.protectedFiles = opts.ProtectedFiles
-	return a.validateProtectionSources(opts.ProtectedSymlinks)
+	if err := a.validateProtectionSources(opts.ProtectedSymlinks); err != nil {
+		return err
+	}
+	for _, protected := range opts.ProtectedDirectories {
+		if err := validateProtectedDirectory(a.basePath, protected); err != nil {
+			return err
+		}
+	}
+	a.protectedDirectories = append([]string(nil), opts.ProtectedDirectories...)
+	return nil
 }
 
 func (a *Archiver) validateProtectionSources(links map[string]string) error {
@@ -199,6 +211,20 @@ func (a *Archiver) validateProtectionSources(links map[string]string) error {
 		a.protectedPaths = append(a.protectedPaths, protected)
 	}
 	a.protectedSymlinks = links
+	return nil
+}
+
+func validateProtectedDirectory(basePath, protected string) error {
+	if err := validateProtectedPath(basePath, protected); err != nil {
+		return err
+	}
+	info, err := os.Lstat(filepath.Join(basePath, filepath.FromSlash(protected)))
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("protected directory %q is no longer a directory", protected)
+	}
 	return nil
 }
 
@@ -232,7 +258,7 @@ func (a *Archiver) writeArchive(writer io.Writer, relativePath string, compress 
 	a.writer = tarWriter
 	archiveErr := a.AddToArchive(relativePath)
 	if archiveErr == nil {
-		archiveErr = a.verifyProtectedFilesArchived()
+		archiveErr = a.verifyProtectedEntriesArchived()
 	}
 	if archiveErr != nil {
 		// A success terminator would hide the pending transport error from extraction.
@@ -245,7 +271,7 @@ func (a *Archiver) writeArchive(writer io.Writer, relativePath string, compress 
 	return closeErr
 }
 
-func (a *Archiver) verifyProtectedFilesArchived() error {
+func (a *Archiver) verifyProtectedEntriesArchived() error {
 	for protected := range a.protectedFiles {
 		if !a.writtenFiles[protected] {
 			return fmt.Errorf("protected file %q was not archived", protected)
@@ -254,6 +280,11 @@ func (a *Archiver) verifyProtectedFilesArchived() error {
 	for protected := range a.protectedSymlinks {
 		if !a.writtenFiles[protected] {
 			return fmt.Errorf("protected symlink %q was not archived", protected)
+		}
+	}
+	for _, protected := range a.protectedDirectories {
+		if !a.writtenFiles[protected] {
+			return fmt.Errorf("protected directory %q was not archived", protected)
 		}
 	}
 	return nil
@@ -269,6 +300,9 @@ func (a *Archiver) addToArchive(relativePath string, parentInfo patternmatcher.M
 		return fmt.Errorf("stat archive path %q: %w", relativePath, err)
 	}
 
+	if err := a.writeProtectedDirectory(relativePath, stat); err != nil {
+		return err
+	}
 	if protected, err := a.tarProtectedEntry(relativePath, stat); protected {
 		return err
 	}
@@ -276,6 +310,14 @@ func (a *Archiver) addToArchive(relativePath string, parentInfo patternmatcher.M
 		return a.addFolder(relativePath, stat, parentInfo)
 	}
 
+	return a.addFile(relativePath, stat, parentInfo)
+}
+
+func (a *Archiver) addFile(
+	relativePath string,
+	stat os.FileInfo,
+	parentInfo patternmatcher.MatchInfo,
+) error {
 	excluded, _, err := a.isExcluded(relativePath, parentInfo)
 	if err != nil {
 		return err
@@ -284,6 +326,16 @@ func (a *Archiver) addToArchive(relativePath string, parentInfo patternmatcher.M
 		return nil
 	}
 	return a.tarFile(relativePath, stat)
+}
+
+func (a *Archiver) writeProtectedDirectory(relative string, info os.FileInfo) error {
+	if !slices.Contains(a.protectedDirectories, relative) {
+		return nil
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("protected directory %q is no longer a directory", relative)
+	}
+	return a.tarEmptyFolder(relative, info)
 }
 
 func (a *Archiver) tarProtectedEntry(relativePath string, stat os.FileInfo) (bool, error) {
@@ -344,9 +396,11 @@ func validateProtectedPath(basePath, protected string) error {
 }
 
 func (a *Archiver) hasProtectedDescendant(dir string) bool {
-	for _, protected := range a.protectedPaths {
-		if strings.HasPrefix(protected, dir+"/") {
-			return true
+	for _, paths := range [][]string{a.protectedPaths, a.protectedDirectories} {
+		for _, protected := range paths {
+			if strings.HasPrefix(protected, dir+"/") {
+				return true
+			}
 		}
 	}
 	return false
@@ -354,11 +408,12 @@ func (a *Archiver) hasProtectedDescendant(dir string) bool {
 
 func (a *Archiver) tarFolderWhole(relativePath string, stat os.FileInfo) error {
 	whole := &Archiver{
-		basePath:          a.basePath,
-		writer:            a.writer,
-		writtenFiles:      a.writtenFiles,
-		protectedFiles:    a.protectedFiles,
-		protectedSymlinks: a.protectedSymlinks,
+		basePath:             a.basePath,
+		writer:               a.writer,
+		writtenFiles:         a.writtenFiles,
+		protectedFiles:       a.protectedFiles,
+		protectedSymlinks:    a.protectedSymlinks,
+		protectedDirectories: a.protectedDirectories,
 	}
 	return whole.tarFolder(relativePath, stat, false, patternmatcher.MatchInfo{})
 }
@@ -428,7 +483,7 @@ func (a *Archiver) tarFolder(
 		return fmt.Errorf("read archive directory %q: %w", target, err)
 	}
 
-	if len(files) == 0 && target != "" && !excluded {
+	if len(files) == 0 && target != "" && !excluded && !a.writtenFiles[target] {
 		return a.tarEmptyFolder(target, targetStat)
 	}
 

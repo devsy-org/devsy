@@ -112,9 +112,10 @@ func (t *tunnelServer) sourceTarOptions(
 		)
 	}
 	opts := extract.TarOptions{
-		Matcher:           policy.matcher,
-		ProtectedFiles:    generated.files,
-		ProtectedSymlinks: generated.links,
+		Matcher:              policy.matcher,
+		ProtectedFiles:       generated.files,
+		ProtectedSymlinks:    generated.links,
+		ProtectedDirectories: generated.directories,
 	}
 	if snapshot {
 		opts, err = snapshotTarOptions(policy, generated.paths)
@@ -160,11 +161,12 @@ func relativeWithin(root, p string) (string, error) {
 }
 
 type generatedTransfer struct {
-	files    map[string]extract.ProtectedFile
-	links    map[string]string
-	paths    []string
-	staging  *os.File
-	snapshot bool
+	files       map[string]extract.ProtectedFile
+	links       map[string]string
+	paths       []string
+	directories []string
+	staging     *os.File
+	snapshot    bool
 }
 
 func (t *tunnelServer) prepareGeneratedTransfer(
@@ -194,7 +196,9 @@ func (t *tunnelServer) prepareGeneratedTransfer(
 		if err != nil {
 			return nil, errors.Join(err, generated.close())
 		}
-		generated.paths = append(generated.paths, relative)
+		if !artifact.Directory {
+			generated.paths = append(generated.paths, relative)
+		}
 	}
 	return generated, nil
 }
@@ -211,6 +215,9 @@ func (g *generatedTransfer) close() error {
 func (g *generatedTransfer) add(
 	ctx context.Context, root, relative string, artifact config.GeneratedBuildArtifact,
 ) error {
+	if artifact.Directory {
+		return g.addDirectory(root, relative)
+	}
 	if artifact.LinkTarget != "" {
 		if err := approveGeneratedSymlink(root, relative, artifact.LinkTarget); err != nil {
 			return err
@@ -245,6 +252,18 @@ func (g *generatedTransfer) add(
 		Reader: io.NewSectionReader(g.staging, offset, size),
 		Size:   size,
 	}
+	return nil
+}
+
+func (g *generatedTransfer) addDirectory(root, relative string) error {
+	info, err := artifactFileInfo(root, relative)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("generated directory %q is no longer a directory", relative)
+	}
+	g.directories = append(g.directories, relative)
 	return nil
 }
 
