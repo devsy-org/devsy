@@ -142,9 +142,14 @@ var _ = ginkgo.Describe(
 				up := func(phase string, args ...string) {
 					commandCtx, cancel := context.WithTimeout(ctx, framework.TimeoutModerate())
 					defer cancel()
+					// The clone override applies only to the current up invocation.
+					baseArgs := []string{
+						"workspace", "up", "--debug", "--ide", "none",
+						"--pull-from-inside-container=true",
+					}
 					stdout, stderr, err := f.ExecCommandCapture(
 						commandCtx,
-						append([]string{"workspace", "up", "--debug", "--ide", "none"}, args...),
+						append(baseArgs, args...),
 					)
 					gomega.Expect(err).
 						NotTo(gomega.HaveOccurred(), "%s first CLI attempt: stdout=%s stderr=%s", phase, stdout, stderr)
@@ -156,6 +161,11 @@ var _ = ginkgo.Describe(
 					} {
 						gomega.Expect(stdout+stderr).
 							NotTo(gomega.ContainSubstring(failure), "%s", phase)
+					}
+					if phase == "recreate" {
+						gomega.Expect(stdout+stderr).
+							To(gomega.ContainSubstring("cloning repository"),
+								"recreate must clone the private SSH source inside the pod")
 					}
 				}
 				verifyCheckout := func() {
@@ -178,7 +188,6 @@ var _ = ginkgo.Describe(
 					id,
 					"--id",
 					id,
-					"--pull-from-inside-container=true",
 				)
 				firstPod := kindSSHWorkspacePod(ctx, namespace, selector)
 				verifyCheckout()
