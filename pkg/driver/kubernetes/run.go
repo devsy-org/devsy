@@ -470,6 +470,12 @@ func (k *KubernetesDriver) ensurePullSecrets(
 	return k.EnsurePullSecret(ctx, getPullSecretsName(id), image)
 }
 
+func (k *KubernetesDriver) shouldDisableHostUsers() bool {
+	return k.options.KubernetesUserNamespaces == pkgconfig.BoolTrue ||
+		k.options.StrictSecurity == pkgconfig.BoolTrue ||
+		k.options.AgentSecurityContext != ""
+}
+
 func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecretsCreated bool) {
 	// avoids a problem where attaching volumes with large repositories would cause an extremely long pod startup time
 	// because changing the ownership of all files takes longer than the kubelet expects it to
@@ -478,9 +484,7 @@ func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecre
 			FSGroupChangePolicy: ptr.To(corev1.FSGroupChangeOnRootMismatch),
 		}
 	}
-	if (k.options.KubernetesUserNamespaces == pkgconfig.BoolTrue ||
-		k.options.StrictSecurity == pkgconfig.BoolTrue ||
-		k.options.AgentSecurityContext != "") && pod.Spec.HostUsers == nil {
+	if k.shouldDisableHostUsers() && pod.Spec.HostUsers == nil {
 		pod.Spec.HostUsers = new(bool)
 	}
 	if k.options.KubernetesPullSecretsEnabled == pkgconfig.BoolTrue && pullSecretsCreated {

@@ -193,6 +193,130 @@ func TestFinalizePodSpecRespectsTemplateHostUsers(t *testing.T) {
 	}
 }
 
+func TestFinalizePodSpecConfiguresSecurityContextAndRestartPolicy(t *testing.T) {
+	k := &KubernetesDriver{options: &provider2.ProviderKubernetesDriverConfig{}}
+	pod := &corev1.Pod{}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if pod.Spec.SecurityContext == nil {
+		t.Fatal("expected SecurityContext to be initialized")
+	}
+	if pod.Spec.SecurityContext.FSGroupChangePolicy == nil ||
+		*pod.Spec.SecurityContext.FSGroupChangePolicy != corev1.FSGroupChangeOnRootMismatch {
+		t.Errorf(
+			"FSGroupChangePolicy = %v, want %v",
+			pod.Spec.SecurityContext.FSGroupChangePolicy,
+			corev1.FSGroupChangeOnRootMismatch,
+		)
+	}
+	if pod.Spec.RestartPolicy != corev1.RestartPolicyNever {
+		t.Errorf("RestartPolicy = %v, want %v", pod.Spec.RestartPolicy, corev1.RestartPolicyNever)
+	}
+}
+
+func TestFinalizePodSpecPreservesExistingSecurityContext(t *testing.T) {
+	existingPolicy := corev1.FSGroupChangeAlways
+	k := &KubernetesDriver{options: &provider2.ProviderKubernetesDriverConfig{}}
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			SecurityContext: &corev1.PodSecurityContext{
+				FSGroupChangePolicy: &existingPolicy,
+			},
+		},
+	}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if pod.Spec.SecurityContext.FSGroupChangePolicy == nil ||
+		*pod.Spec.SecurityContext.FSGroupChangePolicy != corev1.FSGroupChangeAlways {
+		t.Errorf(
+			"FSGroupChangePolicy = %v, want %v",
+			pod.Spec.SecurityContext.FSGroupChangePolicy,
+			corev1.FSGroupChangeAlways,
+		)
+	}
+}
+
+func TestFinalizePodSpecSetsImagePullSecretsWhenEnabledAndCreated(t *testing.T) {
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{
+			KubernetesPullSecretsEnabled: pkgconfig.BoolTrue,
+		},
+	}
+	pod := &corev1.Pod{}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", true)
+
+	expectedName := getPullSecretsName("devsy-ws-1")
+	if len(pod.Spec.ImagePullSecrets) != 1 || pod.Spec.ImagePullSecrets[0].Name != expectedName {
+		t.Errorf(
+			"ImagePullSecrets = %v, want [{Name: %q}]",
+			pod.Spec.ImagePullSecrets,
+			expectedName,
+		)
+	}
+}
+
+func TestFinalizePodSpecOmitsImagePullSecretsWhenNotCreated(t *testing.T) {
+	k := &KubernetesDriver{
+		options: &provider2.ProviderKubernetesDriverConfig{
+			KubernetesPullSecretsEnabled: pkgconfig.BoolTrue,
+		},
+	}
+	pod := &corev1.Pod{}
+
+	k.finalizePodSpec(pod, "devsy-ws-1", false)
+
+	if len(pod.Spec.ImagePullSecrets) != 0 {
+		t.Errorf("ImagePullSecrets = %v, want empty", pod.Spec.ImagePullSecrets)
+	}
+}
+
+func TestShouldDisableHostUsers(t *testing.T) {
+	tests := []struct {
+		name     string
+		options  *provider2.ProviderKubernetesDriverConfig
+		expected bool
+	}{
+		{
+			name:     "default options disabled",
+			options:  &provider2.ProviderKubernetesDriverConfig{},
+			expected: false,
+		},
+		{
+			name: "user namespaces enabled",
+			options: &provider2.ProviderKubernetesDriverConfig{
+				KubernetesUserNamespaces: pkgconfig.BoolTrue,
+			},
+			expected: true,
+		},
+		{
+			name: "strict security enabled",
+			options: &provider2.ProviderKubernetesDriverConfig{
+				StrictSecurity: pkgconfig.BoolTrue,
+			},
+			expected: true,
+		},
+		{
+			name: "agent security context set",
+			options: &provider2.ProviderKubernetesDriverConfig{
+				AgentSecurityContext: "runAsUser: 1000",
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			k := &KubernetesDriver{options: tt.options}
+			if got := k.shouldDisableHostUsers(); got != tt.expected {
+				t.Errorf("shouldDisableHostUsers() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
 func findContainerByName(pod *corev1.Pod, name string) *corev1.Container {
 	for i := range pod.Spec.Containers {
 		if pod.Spec.Containers[i].Name == name {
