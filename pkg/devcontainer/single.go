@@ -1266,8 +1266,10 @@ func (r *runner) currentContainerIdentity(
 	if err != nil {
 		return nil, err
 	}
-	if details.Config.Labels[metadata.CreationConfigLabel] == stringTrue &&
-		len(imageMetadata.Config) > 0 {
+	// Older managed workspaces have a structural signature but no creation marker.
+	hasCreationConfig := details.Config.Labels[metadata.CreationConfigLabel] == stringTrue ||
+		details.Config.Labels[overlayStructureLabel] != ""
+	if hasCreationConfig && len(imageMetadata.Config) > 0 {
 		imageMetadata.Config = imageMetadata.Config[:len(imageMetadata.Config)-1]
 	}
 	imageMetadata.Config = append(

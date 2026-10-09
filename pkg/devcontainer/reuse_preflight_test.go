@@ -74,22 +74,37 @@ func TestReusePreflightSkippedForCreation(t *testing.T) {
 }
 
 func TestReusePreflightRefreshesDeveloperIdentity(t *testing.T) {
-	d := &reusePreflightMockDriver{
-		provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
-			mockDriver: &mockDriver{},
-		},
+	const featureUser = "feature-user"
+	for _, tc := range []struct{ name, label, value, want string }{
+		{"creation marker", metadata.CreationConfigLabel, stringTrue, featureUser},
+		{"legacy managed workspace", overlayStructureLabel, structuralSignature(&config.DevContainerConfig{}), featureUser},
+		{"unmarked image metadata", "", "", "old-user"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &reusePreflightMockDriver{
+				provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+					mockDriver: &mockDriver{},
+				},
+			}
+			r := newTestRunner(d)
+			p := recreateResolveParams()
+			p.options.Recreate = false
+			p.parsedConfig.Config.RemoteUser = ""
+			p.substitutionContext = &config.SubstitutionContext{}
+			details := runningContainerDetails()
+			if tc.label != "" {
+				details.Config.Labels[tc.label] = tc.value
+			}
+			details.Config.Labels[metadata.ImageMetadataLabel] = `[{"remoteUser":"feature-user"},{"remoteUser":"old-user"}]`
+			require.NoError(t, r.applyDriverRecreateRequirement(context.Background(), details, p))
+			require.Equal(t, tc.want, d.remoteUser)
+			merged, err := r.mergeExistingContainerConfig(context.Background(), details, p)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, merged.RemoteUser)
+			p.parsedConfig.Config.RemoteUser = reuseCurrentUser
+			merged, err = r.mergeExistingContainerConfig(context.Background(), details, p)
+			require.NoError(t, err)
+			require.Equal(t, reuseCurrentUser, merged.RemoteUser)
+		})
 	}
-	r := newTestRunner(d)
-	p := recreateResolveParams()
-	p.options.Recreate = false
-	p.substitutionContext = &config.SubstitutionContext{}
-	details := runningContainerDetails()
-	details.Config.Labels[metadata.CreationConfigLabel] = stringTrue
-	details.Config.Labels[metadata.ImageMetadataLabel] = `[{"remoteUser":"feature-user"},{"remoteUser":"old-user"}]`
-	require.NoError(t, r.applyDriverRecreateRequirement(context.Background(), details, p))
-	require.Equal(t, "feature-user", d.remoteUser)
-	p.parsedConfig.Config.RemoteUser = reuseCurrentUser
-	merged, err := r.mergeExistingContainerConfig(context.Background(), details, p)
-	require.NoError(t, err)
-	require.Equal(t, reuseCurrentUser, merged.RemoteUser)
 }
