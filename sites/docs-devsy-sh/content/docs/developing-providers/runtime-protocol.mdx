@@ -57,4 +57,10 @@ Run it on Linux with KVM or Apple silicon after installing MicroSandbox v0.7.7 o
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox
 ```
 
-This baseline does not establish complete parity. Resource limits, hotplug ceilings, storage, ephemeral roots, egress denial, named volumes, tmpfs, alternate mount policies, locally built images, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. A green baseline alone does not authorize that cutover.
+The separate `up-provider-microsandbox-images` label runs three image cases against each provider: registry fallback with an image absent from Docker, loading a Docker-only image, and a Dockerfile build with a local Dev Container Feature. Guest checks verify the image's filesystem and environment markers and the Feature's installed file and environment. The registry case uses an isolated loopback registry and verifies manifest reads; no external test registry credentials are required. CI gives this matrix a 20-minute test deadline and a 25-minute job deadline.
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-images
+```
+
+These scenarios do not establish complete parity. Resource limits, hotplug ceilings, storage, ephemeral roots, egress denial, named volumes, tmpfs, alternate mount policies, prebuilds, dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle and image checks alone do not authorize that cutover.
