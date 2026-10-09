@@ -3,43 +3,13 @@ title: Agent Control via MCP
 sidebar_label: Agent Control (MCP)
 ---
 
-# Agent Control via MCP
-
-`devsy mcp serve` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. MCP-compatible AI clients can connect to it and drive Devsy - listing, creating, and executing inside workspaces - without shelling out to the CLI themselves.
+`devsy mcp serve` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. AI clients that support MCP can use it to list, create, and run commands in workspaces.
 
 ```sh
 devsy mcp serve
 ```
 
-The server reads JSON-RPC frames from stdin and writes them to stdout. Configure your MCP client to launch the command; it will discover the registered tools at startup.
-
-## Tools exposed
-
-The server registers 11 tools across workspace and provider domains:
-
-| Tool | Purpose |
-|---|---|
-| `workspace_list` | List all workspaces with provider, IDE, and source. |
-| `workspace_status` | Get saved workspace configuration (not live running state). |
-| `workspace_create` | Create and start a new workspace. |
-| `workspace_start` | Start (or resume) an existing workspace. |
-| `workspace_stop` | Stop a running workspace. |
-| `workspace_delete` | Delete a workspace by name. Accepts `force=true`. |
-| `workspace_exec` | Run a one-shot command inside a running workspace. |
-| `provider_list` | List configured providers. |
-| `provider_add` | Add a provider from a registry name, GitHub URL, or local path. |
-| `provider_delete` | Remove a configured provider. |
-| `provider_use` | Set the default provider for new workspaces. |
-
-`workspace_exec` is bounded by three server flags:
-
-- `--exec-timeout-default` (default `5m`) - default per-call timeout.
-- `--exec-timeout-max` (default `30m`) - caller-supplied timeouts are clamped to this.
-- `--exec-output-cap` (default `100 KiB`) - per-stream byte cap; excess is replaced with a truncation marker.
-
-## Example client config
-
-The exact format depends on your MCP client, but every client needs the command to launch and any arguments. A generic JSON shape looks like:
+Configure your MCP client to launch that command. The exact config format depends on the client. A typical shape:
 
 ```json
 {
@@ -52,59 +22,36 @@ The exact format depends on your MCP client, but every client needs the command 
 }
 ```
 
-Check your client's documentation for where this config lives (e.g. `claude_desktop_config.json` for Claude Desktop). Refer to the [MCP specification](https://modelcontextprotocol.io/specification) for transport and tool semantics.
+## Tools
 
-## Install the Devsy Agent Skill
+| Tool | Purpose |
+|---|---|
+| `workspace_list` | List workspaces with provider, IDE, and source. |
+| `workspace_status` | Get the saved workspace configuration. It does not report whether the workspace is running. |
+| `workspace_create` | Create and start a workspace. |
+| `workspace_start` | Start an existing workspace. |
+| `workspace_stop` | Stop a running workspace. |
+| `workspace_delete` | Delete a workspace. Accepts `force=true`. |
+| `workspace_exec` | Run a one-shot command in a running workspace. |
+| `provider_list` | List configured providers. |
+| `provider_add` | Add a provider from a registry name, GitHub URL, or local path. |
+| `provider_delete` | Remove a provider. |
+| `provider_use` | Set the default provider. |
 
-MCP provides the tools to control Devsy. The first-party Agent Skill teaches
-an agent how to select workspaces and providers, execute commands, recover from
-timeouts, and use CLI diagnostics when needed. It is for using Devsy, rather
-than contributing to the Devsy source repository.
+To check whether a workspace is running, use `devsy workspace status <name> --result-format json`.
 
-After installing Devsy, configure your agent's MCP client to launch
-`devsy mcp serve`, then install the skill:
+`workspace_exec` is limited by flags on `devsy mcp serve`: `--exec-timeout-default` (5m), `--exec-timeout-max` (30m), and `--exec-output-cap` (100 KiB per stream). `--max-concurrent-ops` (8) limits concurrent exec, create, and start calls.
+
+## Agent skill
+
+Devsy also publishes an agent skill that teaches an agent how to pick workspaces and providers, run commands, and recover from timeouts. It is separate from the MCP server: installing it does not install Devsy or configure MCP. It needs Node.js for `npx`.
 
 ```sh
 npx skills add devsy-org/devsy --skill devsy
 ```
 
-For use across projects, add `-g`. To target a particular agent, use `--agent`:
-
-```sh
-npx skills add devsy-org/devsy --skill devsy -g
-npx skills add devsy-org/devsy --skill devsy --agent codex
-npx skills add devsy-org/devsy --skill devsy --agent claude-code
-```
-
-The Agent Skill and MCP configuration are separate. Installing the skill does
-not install Devsy, configure MCP, or set up a provider. The installer requires
-Node.js/`npx`; Devsy itself does not depend on it. See the
-[skills installer](https://github.com/vercel-labs/skills) for supported clients
-and updates. Follow your agent's instructions for reloading newly installed
-skills or MCP configuration.
-
-### Hand this to your agent
-
-Copy this prompt into the agent you want to use with Devsy:
-
-```text
-Set up the published first-party Devsy skill for this agent so you can operate
-Devsy workspaces for me. Check whether Devsy is installed and supports
-`devsy mcp serve`. Install the devsy skill from devsy-org/devsy for this agent;
-use a project installation unless I ask for global installation. Follow this
-agent's current MCP setup instructions to configure Devsy, preserving existing
-MCP entries. If installation or configuration cannot be completed, tell me
-which prerequisite is missing and the exact next step. Verify the integration
-by listing my Devsy workspaces without creating or changing any. Report what
-was installed/configured and whether the connection worked.
-```
-
-After setup, try: "Create a Devsy workspace for this repository and run its
-tests," or "Stop my example workspace." The skill prefers MCP tools and uses
-the CLI for operations the connected server does not expose. For live running
-state, the current MCP `workspace_status` result is only saved configuration;
-`devsy workspace status <name> --result-format json` probes live state.
+Add `-g` to install it for all projects, or `--agent` to target one agent.
 
 ## Security
 
-The MCP server has the same authority as your local Devsy CLI. A connected client can create, modify, and delete workspaces, run arbitrary commands inside them, and add or remove providers. Only enable `devsy mcp serve` for clients you trust.
+The MCP server has the same authority as your local Devsy CLI. A connected client can create and delete workspaces, run any command in them, and add or remove providers. Only use it with clients you trust.
