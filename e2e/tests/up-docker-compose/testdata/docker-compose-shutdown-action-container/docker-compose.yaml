@@ -5,5 +5,5 @@ services:
     volumes:
       - .:/workspaces:cached
   sidecar:
-    image: alpine:latest
+    image: ghcr.io/devsy-org/test-images/base:alpine@sha256:fbd195076b0c5d37580debed78de5e4dd238436cd5aa348339a4d48463ff71ae
     command: sleep infinity
