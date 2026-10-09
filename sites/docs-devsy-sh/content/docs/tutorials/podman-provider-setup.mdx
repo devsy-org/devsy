@@ -31,24 +31,17 @@ podman machine start
 
 ### Windows
 
-Podman runs inside WSL2.
+Install the [Windows Podman client](https://podman.io/docs/installation) and its WSL2-backed machine. Run Podman and Devsy from Windows, not from an executable installed only inside a WSL distribution.
 
-1. In PowerShell as Administrator, run `wsl --install` and restart when asked.
-2. In your WSL terminal, run `sudo apt-get update && sudo apt-get install -y podman`.
-3. Start the rootless API socket. If your distro has systemd:
+In PowerShell, initialize and start the machine if it does not already exist:
 
-   ```bash
-   systemctl --user enable --now podman.socket
-   ls -la $XDG_RUNTIME_DIR/podman/podman.sock
-   ```
+```powershell
+podman machine init
+podman machine start
+podman info
+```
 
-   Without systemd, start the service so it survives closing the terminal:
-
-   ```bash
-   setsid nohup podman system service --time=0 unix://$XDG_RUNTIME_DIR/podman/podman.sock >/tmp/podman-service.log 2>&1 &
-   ```
-
-4. Note the socket path. You need it for `PODMAN_HOST` below.
+Use the Windows named pipe from `podman machine inspect` for `PODMAN_HOST`, as described below. A Unix socket inside WSL is not a Windows endpoint.
 
 ## Add the provider
 
@@ -61,16 +54,21 @@ devsy provider add podman
 | Option | Default | Description |
 |--------|---------|-------------|
 | `PODMAN_PATH` | `podman` | Path to the `podman` binary, if it is not on `PATH`. |
-| `PODMAN_HOST` | unset | Podman socket or TCP address. Required on Windows, for example `unix:///run/user/<UID>/podman/podman.sock`, where `<UID>` is the output of `id -u`. |
+| `PODMAN_HOST` | unset | Podman API endpoint. On Windows, use the machine named pipe in `npipe:////./pipe/<pipe-name>` form, not a Unix socket inside WSL. On Linux and macOS, use `unix://` followed by the socket path. |
 | `PODMAN_ELEVATION` | `none` | Run `podman` through `pkexec`, `sudo` or `doas` to reach a rootful socket the current user cannot access. Leave it as `none` for rootless Podman. `pkexec` needs a desktop session with a polkit agent, so use `sudo` or `doas` on headless hosts. |
 | `INACTIVITY_TIMEOUT` | unset | Stop the container after this idle time, for example `10m` or `1h`. |
 
-Set options when adding the provider, or later:
+For a provider you already added, update its options:
+
+```bash
+devsy provider set podman --option PODMAN_PATH=/usr/local/bin/podman
+devsy provider get podman
+```
+
+Alternatively, set the option during the initial add instead of running the plain add command above:
 
 ```bash
 devsy provider add podman -o PODMAN_PATH=/usr/local/bin/podman
-devsy provider set podman --option PODMAN_PATH=/usr/local/bin/podman
-devsy provider get podman
 ```
 
 ## Rootless and rootful
@@ -79,10 +77,19 @@ Rootless is the default and the recommended setup. Containers run as your user. 
 
 On macOS and Windows, switch the Podman machine mode:
 
+For a new machine:
+
 ```bash
-podman machine init --rootful my-rootful-machine   # a new machine
-podman machine set --rootful                       # change the existing machine
-podman machine stop && podman machine start
+podman machine init --rootful my-rootful-machine
+podman machine start my-rootful-machine
+```
+
+Or switch the existing default machine:
+
+```bash
+podman machine stop
+podman machine set --rootful
+podman machine start
 ```
 
 Switching mode does not delete images, containers or volumes. They are hidden while the other mode is active and return when you switch back.
@@ -90,7 +97,12 @@ Switching mode does not delete images, containers or volumes. They are hidden wh
 On Linux, to reach a rootful socket without running everything as root, set `PODMAN_ELEVATION` to `sudo` or `doas`.
 
 <Callout>
-After switching a macOS or Windows machine to rootful, set `PODMAN_HOST` to the rootful socket. Run `podman machine inspect` and read `.ConnectionInfo.PodmanSocket.Path`. Keep `PODMAN_ELEVATION` as `none`, because the machine connection is already authenticated.
+After switching modes, run `podman machine inspect <machine-name>` for the machine you started and update `PODMAN_HOST`:
+
+- **macOS:** use `unix://` followed by `.ConnectionInfo.PodmanSocket.Path`.
+- **Windows:** read `.ConnectionInfo.PodmanPipe.Path` and use `npipe:////./pipe/<pipe-name>`, replacing `<pipe-name>` with the name after `\\.\pipe\` in that path.
+
+Keep `PODMAN_ELEVATION` as `none`, because the machine connection is already authenticated.
 </Callout>
 
 ## Start a workspace
