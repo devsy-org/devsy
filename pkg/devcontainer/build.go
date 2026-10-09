@@ -648,7 +648,13 @@ func dockerlessFallback(params *dockerlessFallbackParams) (*config.BuildInfo, er
 	extendedBuildInfo := params.extendedBuildInfo
 	options := params.options
 
-	contextPath := config.GetContextPath(parsedConfig.Config)
+	workspaceRoot, contextPath, err := config.CanonicalWorkspacePath(
+		params.localWorkspaceFolder,
+		config.GetContextPath(parsedConfig.Config),
+	)
+	if err != nil {
+		return nil, err
+	}
 	devsyInternalFolder := filepath.Join(contextPath, config.DevsyContextFeatureFolder)
 	if err := validateGeneratedArtifactDestination(
 		params.localWorkspaceFolder,
@@ -657,14 +663,18 @@ func dockerlessFallback(params *dockerlessFallbackParams) (*config.BuildInfo, er
 		return nil, err
 	}
 	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err := os.MkdirAll(devsyInternalFolder, 0o755)
+	err = os.MkdirAll(devsyInternalFolder, 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("create devsy folder: %w", err)
 	}
 
 	if extendedBuildInfo.FeaturesBuildInfo != nil {
 		featureFolder := extendedBuildInfo.FeaturesBuildInfo.FeaturesFolder
-		if filepath.Clean(featureFolder) != filepath.Clean(devsyInternalFolder) {
+		_, canonicalFeatureFolder, pathErr := config.CanonicalWorkspacePath(
+			params.localWorkspaceFolder,
+			featureFolder,
+		)
+		if pathErr != nil || canonicalFeatureFolder != devsyInternalFolder {
 			return nil, fmt.Errorf("generated feature directory does not match the build context")
 		}
 		if err := validateGeneratedArtifactDestination(
@@ -697,13 +707,20 @@ func dockerlessFallback(params *dockerlessFallbackParams) (*config.BuildInfo, er
 	if err != nil {
 		return nil, err
 	}
+	_, containerDockerfilePath, err := config.CanonicalWorkspacePath(
+		params.localWorkspaceFolder,
+		devsyDockerfile,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	// get build args and target
 	containerContext, containerDockerfile := getContainerContextAndDockerfile(
-		params.localWorkspaceFolder,
+		workspaceRoot,
 		params.containerWorkspaceFolder,
 		contextPath,
-		devsyDockerfile,
+		containerDockerfilePath,
 	)
 	buildArgs, target := build.GetBuildArgsAndTarget(parsedConfig, extendedBuildInfo)
 	return &config.BuildInfo{
@@ -850,27 +867,18 @@ func recordGeneratedArtifact(p string) (config.GeneratedBuildArtifact, error) {
 }
 
 func validateGeneratedArtifactDestination(workspace, destination string) error {
-	root, err := filepath.Abs(workspace)
-	if err != nil {
-		return err
-	}
-	absolute, err := filepath.Abs(destination)
+	root, absolute, err := config.CanonicalWorkspacePath(workspace, destination)
 	if err != nil {
 		return err
 	}
 	relative, err := filepath.Rel(root, absolute)
-	if err != nil || pathEscapesWorkspace(relative) {
+	if err != nil {
 		return fmt.Errorf(
 			"generated build artifact destination %q is outside workspace",
 			destination,
 		)
 	}
 	return rejectArtifactDestinationSymlinks(root, relative)
-}
-
-func pathEscapesWorkspace(relative string) bool {
-	return relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) ||
-		filepath.IsAbs(relative)
 }
 
 func rejectArtifactDestinationSymlinks(root, relative string) error {

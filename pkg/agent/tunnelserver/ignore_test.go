@@ -678,3 +678,51 @@ func TestSnapshotContextErrorDoesNotBlockWorkspaceUpload(t *testing.T) {
 	)
 	require.Zero(t, stream.content.Len())
 }
+
+func TestGeneratedTransferThroughSymlinkedWorkspace(t *testing.T) {
+	for _, contextName := range []string{".", ".devcontainer"} {
+		t.Run(contextName, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			alias := filepath.Join(t.TempDir(), "workspace")
+			if err := os.Symlink(root, alias); err != nil {
+				t.Skipf("symlink creation unavailable: %v", err)
+			}
+			relative := filepath.ToSlash(filepath.Join(
+				contextName,
+				config.DevsyContextFeatureFolder,
+				"payload.bin",
+			))
+			writeFiles(t, root, relative, "private.bin", "keep.txt")
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, pkgconfig.IgnoreFileName),
+				[]byte("*.bin\n"),
+				0o600,
+			))
+			mount := &config.Mount{
+				Type:   testBindMountType,
+				Source: alias,
+				Target: mountRPCWorkspaceTarget,
+			}
+			server := New(WithMounts([]*config.Mount{mount}), WithWorkspaceMount(mount))
+			server.generatedBuildContext = filepath.Join(root, contextName)
+			server.generatedBuildArtifacts = []config.GeneratedBuildArtifact{
+				{
+					Path:   filepath.Join(alias, filepath.FromSlash(relative)),
+					SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte(relative))),
+				},
+			}
+			names := streamMountEntries(t, server, mount)
+			require.Contains(t, names, relative)
+			require.Contains(t, names, "keep.txt")
+			require.NotContains(t, names, "private.bin")
+			server.generatedBuildArtifacts = nil
+			server.snapshotBuildContext = filepath.Join(root, contextName)
+			stream := &mockStreamMountServer{}
+			require.NoError(t, server.StreamSnapshotVolumes(&tunnel.Empty{}, stream))
+			snapshotNames := tarEntryNames(t, [][]byte{stream.content.Bytes()})
+			require.NotContains(t, snapshotNames, "workspace/"+relative)
+			require.Contains(t, snapshotNames, "workspace/keep.txt")
+		})
+	}
+}

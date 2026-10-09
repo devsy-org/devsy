@@ -139,20 +139,19 @@ func (t *tunnelServer) snapshotTarOptions(
 	if context == "" {
 		context = root
 	}
-	absolute, err := filepath.Abs(context)
+	absoluteRoot, _, err := config.CanonicalWorkspacePath(root, root)
 	if err != nil {
 		return extract.TarOptions{}, err
 	}
-	absoluteRoot, err := filepath.Abs(root)
-	if err != nil {
-		return extract.TarOptions{}, err
-	}
-	residue, err := relativeWithin(
-		absoluteRoot,
-		filepath.Join(absolute, config.DevsyContextFeatureFolder),
-	)
+	_, absolute, err := config.CanonicalWorkspacePath(root, context)
 	if err == nil {
-		generated = append(append([]string(nil), generated...), residue)
+		residue, relErr := relativeWithin(
+			absoluteRoot,
+			filepath.Join(absolute, config.DevsyContextFeatureFolder),
+		)
+		if relErr == nil {
+			generated = append(append([]string(nil), generated...), residue)
+		}
 	}
 	return snapshotTarOptions(policy, generated)
 }
@@ -211,7 +210,7 @@ func (t *tunnelServer) prepareGeneratedTransfer(
 	if len(t.generatedBuildArtifacts) == 0 {
 		return generated, nil
 	}
-	root, err := filepath.Abs(root)
+	canonicalRoot, _, err := config.CanonicalWorkspacePath(root, root)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +221,7 @@ func (t *tunnelServer) prepareGeneratedTransfer(
 	for _, artifact := range t.generatedBuildArtifacts {
 		relative, err := validatedArtifactPath(root, contextRoot, artifact.Path)
 		if err == nil {
-			err = generated.add(ctx, root, relative, artifact)
+			err = generated.add(ctx, canonicalRoot, relative, artifact)
 		}
 		if err != nil {
 			return nil, errors.Join(err, generated.close())
@@ -311,24 +310,19 @@ func (g *generatedTransfer) ensureStaging() error {
 }
 
 func (t *tunnelServer) artifactContextRoot(root string) (string, error) {
-	contextRoot, err := filepath.Abs(t.generatedBuildContext)
-	if err != nil || t.generatedBuildContext == "" {
+	if t.generatedBuildContext == "" {
 		return "", fmt.Errorf("missing generated build context")
 	}
-	if contextRoot != root {
-		if _, err := relativeWithin(root, contextRoot); err != nil {
-			return "", err
-		}
-	}
-	return contextRoot, nil
+	_, contextRoot, err := config.CanonicalWorkspacePath(root, t.generatedBuildContext)
+	return contextRoot, err
 }
 
 func validatedArtifactPath(root, contextRoot, artifact string) (string, error) {
-	absolute, err := filepath.Abs(artifact)
+	canonicalRoot, absolute, err := config.CanonicalWorkspacePath(root, artifact)
 	if err != nil {
 		return "", err
 	}
-	relative, err := relativeWithin(root, absolute)
+	relative, err := relativeWithin(canonicalRoot, absolute)
 	if err != nil {
 		return "", err
 	}
@@ -343,8 +337,7 @@ func validatedArtifactPath(root, contextRoot, artifact string) (string, error) {
 func artifactFileInfo(root, relative string) (os.FileInfo, error) {
 	current := root
 	var info os.FileInfo
-	components := append([]string{""}, strings.Split(relative, "/")...)
-	for _, component := range components {
+	for component := range strings.SplitSeq(relative, "/") {
 		current = filepath.Join(current, component)
 		var err error
 		info, err = os.Lstat(current)

@@ -11,8 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const artifactTestDockerfile = "FROM scratch"
+
 func TestDockerlessGeneratedArtifactManifestHasOnlyGeneratedFiles(t *testing.T) {
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	context := filepath.Join(root, ".devcontainer")
 	internal := filepath.Join(context, config.DevsyContextFeatureFolder)
 	require.NoError(t, os.MkdirAll(internal, 0o700))
@@ -29,7 +32,7 @@ func TestDockerlessGeneratedArtifactManifestHasOnlyGeneratedFiles(t *testing.T) 
 			},
 			extendedBuildInfo: &feature.ExtendedBuildInfo{},
 			buildInfo:         &config.ImageBuildInfo{},
-			dockerfileContent: "FROM scratch",
+			dockerfileContent: artifactTestDockerfile,
 		},
 	)
 	require.NoError(t, err)
@@ -40,6 +43,74 @@ func TestDockerlessGeneratedArtifactManifestHasOnlyGeneratedFiles(t *testing.T) 
 		result.GeneratedBuildArtifacts[0].Path,
 	)
 	require.NotEmpty(t, result.GeneratedBuildArtifacts[0].SHA256)
+}
+
+func TestDockerlessFallbackAcceptsWorkspaceRootSymlink(t *testing.T) {
+	if runtime.GOOS == goosWindows {
+		t.Skip("symlink creation requires privileges")
+	}
+	for _, canonicalOrigin := range []bool{false, true} {
+		name := map[bool]string{false: "alias-origin", true: "canonical-origin"}[canonicalOrigin]
+		t.Run(name, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			alias := filepath.Join(t.TempDir(), "workspace")
+			require.NoError(t, os.Symlink(root, alias))
+			originRoot := alias
+			if canonicalOrigin {
+				originRoot = root
+			}
+			context := filepath.Join(originRoot, "nested", "context")
+			featureFolder := filepath.Join(
+				alias,
+				"nested",
+				"context",
+				config.DevsyContextFeatureFolder,
+			)
+			result, err := dockerlessFallback(&dockerlessFallbackParams{
+				localWorkspaceFolder:     alias,
+				containerWorkspaceFolder: testWorkspaceFolder,
+				parsedConfig: &config.SubstitutedConfig{
+					Config: &config.DevContainerConfig{
+						Origin: filepath.Join(context, "devcontainer.json"),
+					},
+				},
+				extendedBuildInfo: &feature.ExtendedBuildInfo{
+					FeaturesBuildInfo: &feature.BuildInfo{FeaturesFolder: featureFolder},
+				},
+				buildInfo:         &config.ImageBuildInfo{},
+				dockerfileContent: artifactTestDockerfile,
+			})
+			require.NoError(t, err)
+			require.Equal(t, filepath.Join(root, "nested", "context"), result.GeneratedBuildContext)
+			require.Equal(t, testWorkspaceFolder+"/nested/context", result.Dockerless.Context)
+			require.Equal(
+				t,
+				testWorkspaceFolder+"/nested/context/"+config.DevsyContextFeatureFolder+"/Dockerfile-with-features",
+				result.Dockerless.Dockerfile,
+			)
+			require.Len(t, result.GeneratedBuildArtifacts, 1)
+			require.FileExists(t, result.GeneratedBuildArtifacts[0].Path)
+		})
+	}
+}
+
+func TestGeneratedArtifactDestinationRejectsSymlinksBelowRootAlias(t *testing.T) {
+	if runtime.GOOS == goosWindows {
+		t.Skip("symlink creation requires privileges")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	alias := filepath.Join(t.TempDir(), "workspace")
+	require.NoError(t, os.Symlink(root, alias))
+	require.NoError(t, os.Symlink(t.TempDir(), filepath.Join(root, "unsafe")))
+	for _, spelling := range []string{root, alias} {
+		err = validateGeneratedArtifactDestination(
+			alias,
+			filepath.Join(spelling, "unsafe", "Dockerfile"),
+		)
+		require.ErrorContains(t, err, "contains a symlink")
+	}
 }
 
 func TestDockerlessArtifactSymlinkRejectedBeforeWrite(t *testing.T) {
@@ -72,7 +143,7 @@ func TestDockerlessArtifactSymlinkRejectedBeforeWrite(t *testing.T) {
 					},
 					extendedBuildInfo: &feature.ExtendedBuildInfo{},
 					buildInfo:         &config.ImageBuildInfo{},
-					dockerfileContent: "FROM scratch",
+					dockerfileContent: artifactTestDockerfile,
 				},
 			)
 			require.ErrorContains(t, err, "symlink")
@@ -91,7 +162,7 @@ func TestGeneratedFeatureSymlinksRecordTargetsWithoutDereferencing(t *testing.T)
 			folder := filepath.Join(root, config.DevsyContextFeatureFolder)
 			require.NoError(t, os.MkdirAll(folder, 0o700))
 			dockerfile := filepath.Join(folder, "Dockerfile-with-features")
-			require.NoError(t, os.WriteFile(dockerfile, []byte("FROM scratch"), 0o600))
+			require.NoError(t, os.WriteFile(dockerfile, []byte(artifactTestDockerfile), 0o600))
 			target := "missing-relative-target"
 			if targetKind == "relative" {
 				target = "../regular-target"
@@ -143,7 +214,7 @@ func TestGeneratedManifestIncludesOnlyEmptyDirectories(t *testing.T) {
 	empty := filepath.Join(folder, "feature", "empty")
 	require.NoError(t, os.MkdirAll(empty, 0o700))
 	dockerfile := filepath.Join(folder, "Dockerfile-with-features")
-	require.NoError(t, os.WriteFile(dockerfile, []byte("FROM scratch"), 0o600))
+	require.NoError(t, os.WriteFile(dockerfile, []byte(artifactTestDockerfile), 0o600))
 	manifest, err := dockerlessArtifactManifest(
 		dockerfile,
 		&feature.ExtendedBuildInfo{FeaturesBuildInfo: &feature.BuildInfo{FeaturesFolder: folder}},
@@ -159,7 +230,7 @@ func TestGeneratedDirectorySymlinkDoesNotRecordTargetDirectories(t *testing.T) {
 	folder := filepath.Join(root, config.DevsyContextFeatureFolder)
 	require.NoError(t, os.MkdirAll(folder, 0o700))
 	dockerfile := filepath.Join(folder, "Dockerfile-with-features")
-	require.NoError(t, os.WriteFile(dockerfile, []byte("FROM scratch"), 0o600))
+	require.NoError(t, os.WriteFile(dockerfile, []byte(artifactTestDockerfile), 0o600))
 	external := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(external, "unread-directory"), 0o700))
 	link := filepath.Join(folder, "generated-link")

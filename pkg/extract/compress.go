@@ -63,8 +63,14 @@ func WriteTarWithOptions(writer io.Writer, localPath string, opts TarOptions) er
 		return fmt.Errorf("stat: %w", err)
 	}
 
-	basePath, relativePath := absolute, ""
-	if !stat.IsDir() {
+	var basePath string
+	relativePath := ""
+	if stat.IsDir() {
+		basePath, err = filepath.EvalSymlinks(absolute)
+		if err != nil {
+			return fmt.Errorf("resolve archive root: %w", err)
+		}
+	} else {
 		basePath, relativePath = filepath.Dir(absolute), filepath.Base(absolute)
 	}
 

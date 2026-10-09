@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -429,6 +430,71 @@ func TestWriteTarProtectedPathsRejectSymlinkComponents(t *testing.T) {
 	assert.Equal(t, "link", header.Name)
 	assert.Equal(t, byte(tar.TypeSymlink), header.Typeflag)
 	assert.Equal(t, outside, header.Linkname)
+	_, err = reader.Next()
+	require.ErrorIs(t, err, io.EOF)
+}
+
+func TestWriteTarSymlinkedDirectoryRoot(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "keep.txt"), []byte("contents"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "skip.txt"), []byte("excluded"), 0o600))
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	for _, protected := range []bool{false, true} {
+		t.Run(fmt.Sprintf("protected=%t", protected), func(t *testing.T) {
+			opts := TarOptions{Excludes: []string{"skip.txt"}}
+			if protected {
+				opts.Excludes = []string{"**"}
+				opts.ProtectedFiles = map[string]ProtectedFile{
+					"keep.txt": {
+						Reader: strings.NewReader("contents"),
+						Size:   int64(len("contents")),
+					},
+				}
+			}
+			var buf bytes.Buffer
+			require.NoError(t, WriteTarWithOptions(&buf, alias, opts))
+			reader := tar.NewReader(&buf)
+			header, err := reader.Next()
+			require.NoError(t, err)
+			assert.Equal(t, "keep.txt", header.Name)
+			assert.Equal(t, byte(tar.TypeReg), header.Typeflag)
+			body, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			assert.Equal(t, "contents", string(body))
+			_, err = reader.Next()
+			require.ErrorIs(t, err, io.EOF)
+		})
+	}
+	require.NoError(t, os.Symlink(root, filepath.Join(root, "child-link")))
+	var buf bytes.Buffer
+	err := WriteTarWithOptions(
+		&buf,
+		alias,
+		TarOptions{ProtectedPaths: []string{"child-link/keep.txt"}},
+	)
+	require.ErrorContains(t, err, "symbolic link")
+	assert.Zero(t, buf.Len())
+}
+
+func TestWriteTarExplicitFileSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target.txt")
+	require.NoError(t, os.WriteFile(target, []byte("contents"), 0o600))
+	link := filepath.Join(root, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	var buf bytes.Buffer
+	require.NoError(t, WriteTar(&buf, link, false))
+	reader := tar.NewReader(&buf)
+	header, err := reader.Next()
+	require.NoError(t, err)
+	assert.Equal(t, "link.txt", header.Name)
+	assert.Equal(t, byte(tar.TypeSymlink), header.Typeflag)
+	assert.Equal(t, target, header.Linkname)
 	_, err = reader.Next()
 	require.ErrorIs(t, err, io.EOF)
 }
