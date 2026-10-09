@@ -14,6 +14,7 @@ var (
 	_ driver.MountDeliveryDriver  = (*Host)(nil)
 	_ driver.WorkspaceChowner     = (*Host)(nil)
 	_ driver.RecreatePolicyDriver = (*Host)(nil)
+	_ driver.ReusePreflightDriver = (*Host)(nil)
 )
 
 func (h *Host) SupportsMountType(kind string) bool {
@@ -27,6 +28,11 @@ func (h *Host) RequiresMountStreaming() bool {
 
 func (h *Host) RequiresWorkspaceChown() bool {
 	return h.info.Capabilities.RequiresWorkspaceChown
+}
+
+// SupportsReusePreflight reflects the negotiated optional RPC.
+func (h *Host) SupportsReusePreflight() bool {
+	return h.info.Capabilities.ReusePreflight
 }
 
 func (h *Host) RecreateMode() driver.RecreateMode {

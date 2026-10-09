@@ -209,6 +209,10 @@ type AgentWorkspaceInfo struct {
 	// Origin holds the folder where this config was loaded from
 	Origin string `json:"-"`
 
+	// WorkspaceWasExisting records same-UID reuse during agent initialization.
+	// It is local ownership state, never supplied or persisted through JSON.
+	WorkspaceWasExisting bool `json:"-"`
+
 	// InjectTimeout specifies how long to wait for the agent to be injected into the dev container
 	InjectTimeout time.Duration `json:"injectTimeout,omitempty"`
 
