@@ -17,6 +17,6 @@ Where a workspace runs is decided by a [provider](./managing-providers/what-are-
 
 - **One environment definition.** `devcontainer.json` is the open standard, so the same file works on every provider.
 - **Your infrastructure.** Run workspaces on machines you already pay for. Machine providers can stop idle machines with an [inactivity timeout](./developing-in-workspaces/inactivity-timeout).
-- **No lock-in.** Move a workspace to another provider without changing its definition.
+- **No lock-in.** Recreate a workspace on another provider with the same definition. Transferring container and volume state requires a snapshot; a metadata-only import does not copy that state.
 - **Your editor.** VS Code, the JetBrains IDEs, and any editor that can connect over SSH.
 - **Desktop app and CLI.** The desktop app is for everyday use. The CLI is for automation.
