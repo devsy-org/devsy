@@ -137,7 +137,7 @@ Show available versions. Add `--prerelease` to include pre-releases and `--no-ca
 devsy provider versions <name>
 ```
 
-Fetch the provider's source again. Without a pinned tag this pulls the latest release. With a pinned tag it fetches that same version.
+Fetch the provider's source again. Registry entries and unpinned GitHub repositories resolve to the latest release; a pinned tag fetches that version. Local paths and direct `provider.yaml` URLs reload that source.
 
 ```sh
 devsy provider set-source <name>

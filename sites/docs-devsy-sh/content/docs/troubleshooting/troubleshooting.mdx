@@ -11,7 +11,7 @@ If Devsy Desktop cannot find tools such as `docker` in your `PATH`, start it thr
 
 ```sh
 #!/usr/bin/env sh
-exec $SHELL -c 'exec /Applications/Devsy.app/Contents/MacOS/Devsy'
+exec "$SHELL" -lic 'exec /Applications/Devsy.app/Contents/MacOS/Devsy'
 ```
 
 ### Port forwarding does not work without an IDE

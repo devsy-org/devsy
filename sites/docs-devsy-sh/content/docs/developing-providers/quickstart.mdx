@@ -65,5 +65,5 @@ exec:
       exit 1
     fi
   command: |-
-    ssh -oStrictHostKeyChecking=no -p ${PORT} "${EXTRA_FLAGS}" "${HOST}" "${COMMAND}"
+    ssh -oStrictHostKeyChecking=no -p ${PORT} ${EXTRA_FLAGS} "${HOST}" "${COMMAND}"
 ```
