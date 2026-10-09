@@ -59,6 +59,8 @@ DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsand
 
 The separate `up-provider-microsandbox-images` label runs three image cases against each provider: registry fallback with an image absent from Docker, loading a Docker-only image, and a Dockerfile build with a local Dev Container Feature. Guest checks verify the image's filesystem and environment markers and the Feature's installed file and environment. The registry case uses an isolated loopback registry and verifies manifest reads; no external test registry credentials are required. CI gives this matrix a 20-minute test deadline and a 25-minute job deadline.
 
+The image suite also requires the Docker CLI and a running Docker daemon, in addition to the MicroSandbox and virtualization prerequisites above.
+
 ```sh
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-images
 ```
