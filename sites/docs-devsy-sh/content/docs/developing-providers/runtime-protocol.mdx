@@ -4,7 +4,7 @@ description: Contract for external runtime driver authors using the Devsy Runtim
 ---
 
 <Callout type="info">
-Providers can select `agent.driver: external` using the [external runtime configuration](./driver). The SDK and Devsy host integration are available; backend extraction and parity testing remain in development.
+Providers select this protocol with `agent.driver: external`. See the [external driver](./driver.mdx#external-driver).
 </Callout>
 
 The canonical [protobuf schema](https://github.com/devsy-org/devsy-runtime-sdk/blob/main/proto/devsy/runtime/v1/runtime.proto) is maintained in the [Devsy Runtime SDK](https://github.com/devsy-org/devsy-runtime-sdk). The module path is `github.com/devsy-org/devsy-runtime-sdk`; the logical plugin name is `devsy-runtime`. HashiCorp application protocol 1 and Info API major 1/minor 1 are separate version checks. Same-major newer minor versions are accepted. Unknown mount/recreate enum values are rejected because they control host behavior.
@@ -39,10 +39,6 @@ Logs uses merged binary OutputChunk frames. Output buffering must remain bounded
 
 Use canonical gRPC status and attach RuntimeError details for stable categories, actionable messages, optional backend diagnostics, retryability, and structured context. Raw backend diagnostics must be redacted before display. Unknown detail fields remain forward-compatible; callers must not parse messages to classify errors.
 
-The plugin binary is trusted provider code. The host resolves it from checksum-verified `Agent.Binaries`, rather than PATH discovery, and runs it through the runtime supervisor. The magic cookie is not a security boundary. See the [driver guide](./driver) for process ownership and the environment-secret lifetime policy.
+The plugin binary is trusted provider code. The host resolves it from checksum-verified `Agent.Binaries`, rather than PATH discovery, and runs it through the runtime supervisor. The magic cookie is not a security boundary. 
 
-## Current implementation
-
-The SDK provides generated Go bindings, the shared plugin handshake, server helpers, and Info validation. Devsy integrates the host through the workspace driver factory, with separate image-backend selection and validation before recreation. Real fake-runtime processes exercise the production supervisor, factory, and workspace runner across image creation, discovery, command streams, logs, stop, and delete. Runtime backend extraction and parity testing are the next stage.
-
-For SDK development commands and package usage, see the [SDK README](https://github.com/devsy-org/devsy-runtime-sdk#readme).
+For SDK usage and development commands, see the [SDK README](https://github.com/devsy-org/devsy-runtime-sdk#readme).
