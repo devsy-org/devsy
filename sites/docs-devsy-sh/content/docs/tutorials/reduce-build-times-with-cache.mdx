@@ -23,7 +23,7 @@ With the Docker provider, the Docker daemon needs the containerd image store. Me
 }
 ```
 
-Restart Docker, then check that the storage driver is `containerd`:
+Restart Docker, then check that the containerd image store is active. The output should include `driver-type io.containerd.snapshotter.v1`:
 
 ```
 docker info --format '{{.DriverStatus}}'
@@ -49,4 +49,4 @@ Devsy reads your Dockerfile and `devcontainer.json`, finds the files that affect
 
 ## Builds in Kubernetes
 
-With the Kubernetes driver and no container runtime on your machine, Devsy builds the image in the cluster with Kaniko. Kaniko builds in userspace without root, which avoids the risks of Docker in Docker.
+With the Kubernetes driver and no container runtime on your machine, Devsy builds the image in the cluster with Kaniko. Kaniko builds in userspace without a Docker daemon. Whether it can run without root depends on the base image and Dockerfile commands.

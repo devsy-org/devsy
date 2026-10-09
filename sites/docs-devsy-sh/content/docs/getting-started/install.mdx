@@ -39,7 +39,7 @@ On macOS or Linux, the quickest option is the install script:
 curl -L https://devsy.sh/install.sh | sh
 ```
 
-The script downloads the latest CLI for your OS and architecture from [GitHub releases](https://github.com/devsy-org/devsy/releases), checks its SHA-256 checksum when the release publishes one, and installs `devsy` into `/usr/local/bin`. If it cannot write there and `sudo` is not available, it installs into `~/.local/bin`. Run it again to update. On Windows, use the PowerShell command in the Windows tab below.
+The script downloads the latest CLI for your OS and architecture from [GitHub releases](https://github.com/devsy-org/devsy/releases), checks its SHA-256 checksum when a matching checksum entry and `sha256sum` or `shasum` are available (otherwise it skips verification), and installs `devsy` into `/usr/local/bin`. If it cannot write there and `sudo` is not available, it installs into `~/.local/bin`. Run it again to update. On Windows, use the PowerShell command in the Windows tab below.
 
 Two environment variables customize the script:
 
