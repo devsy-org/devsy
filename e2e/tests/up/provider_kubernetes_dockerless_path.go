@@ -38,21 +38,20 @@ type dockerlessPathFixture struct {
 	containerName   string
 }
 
-func init() {
-	ginkgo.Describe("Kubernetes Dockerless image environment",
-		ginkgo.Label("up-provider-kubernetes", "up-provider-kubernetes-dockerless-path"),
-		func() {
-			ginkgo.DescribeTable(
-				"preserves image PATH after credentials cleanup",
-				runDockerlessPathFixture,
-				ginkgo.Entry("default remote PATH", false,
-					ginkgo.SpecTimeout(framework.TimeoutLong())),
-				ginkgo.Entry("remoteEnv appends to image PATH", true,
-					ginkgo.SpecTimeout(framework.TimeoutLong())),
-			)
-		},
-	)
-}
+var _ = ginkgo.Describe(
+	"Kubernetes Dockerless image environment",
+	ginkgo.Label("up-provider-kubernetes", "up-provider-kubernetes-dockerless-path"),
+	func() {
+		ginkgo.DescribeTable(
+			"preserves image PATH after credentials cleanup",
+			runDockerlessPathFixture,
+			ginkgo.Entry("default remote PATH", false,
+				ginkgo.SpecTimeout(framework.TimeoutLong())),
+			ginkgo.Entry("remoteEnv appends to image PATH", true,
+				ginkgo.SpecTimeout(framework.TimeoutLong())),
+		)
+	},
+)
 
 func runDockerlessPathFixture(ctx ginkgo.SpecContext, appendRemotePath bool) {
 	fixture := newDockerlessPathFixture(ctx, appendRemotePath)

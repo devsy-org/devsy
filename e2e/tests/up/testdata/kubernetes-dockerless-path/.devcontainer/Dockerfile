@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM ghcr.io/devsy-org/test-images/base:ubuntu
 
 RUN mkdir -p /opt/devsy-dockerless-path/bin /opt/devsy-dockerless-path/docker-config
 
