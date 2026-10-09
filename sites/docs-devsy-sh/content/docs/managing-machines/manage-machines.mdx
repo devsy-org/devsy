@@ -3,100 +3,39 @@ title: Manage Machines
 sidebar_label: Manage Machines
 ---
 
-## Create a machine
+A machine is a server created by a provider. See [What are machines](./what-are-machines.mdx). Run `devsy machine --help` for every command.
 
-Create a new machine with:
-
-```sh
-devsy machine create <name-of-machine> --provider <provider-name>
-```
-
-List all machines:
+## Create and list
 
 ```sh
+devsy machine create <name> --provider <provider-name>
 devsy machine list
 ```
 
-Example output:
-
-```
-  NAME | PROVIDER | AGE
--------+----------+------
-  <name-of-machine> | aws      | 21s
-```
-
-Check the state of a machine:
+## Check and inspect
 
 ```sh
-devsy machine status <name-of-machine>
+devsy machine status <name>
+devsy machine describe <name>
+devsy machine inspect <name>
 ```
 
-Example output:
+`describe` prints the provider's own summary. `inspect` prints the machine configuration as JSON, with sensitive options redacted and hidden options left out.
 
-```
-08:48:58 info Machine '<name-of-machine>' is 'Running'
-```
-
-## SSH into a machine
-
-Open an SSH session directly to the machine:
+## Connect
 
 ```sh
-devsy machine ssh <name-of-machine>
+devsy machine ssh <name>
 ```
 
-## Describe a machine
-
-Retrieve the provider-generated description of a machine (the same text-based summary the provider itself reports):
+## Stop, start, delete
 
 ```sh
-devsy machine describe <name-of-machine>
-```
-
-## Inspect a machine
-
-Print the machine's configuration as JSON, including its provider and provider options. Sensitive options are redacted and hidden options are omitted:
-
-```sh
-devsy machine inspect <name-of-machine>
-```
-
-## Stop a machine
-
-Stop a machine with:
-
-```sh
-devsy machine stop <name-of-machine>
-```
-
-Check the status afterwards:
-
-```sh
-devsy machine status <name-of-machine>
-```
-
-Example output:
-
-```
-08:58:58 info Machine '<name-of-machine>' is 'Stopped, you can start it via 'devsy machine start <name-of-machine>''
-```
-
-## Start a machine
-
-Restart a stopped machine with:
-
-```sh
-devsy machine start <name-of-machine>
-```
-
-## Delete a machine
-
-Delete a machine with:
-
-```sh
-devsy machine delete <name-of-machine>
+devsy machine stop <name>
+devsy machine start <name>
+devsy machine delete <name>
 ```
 
 <Callout type="warn">
-This is non-reversible. All workspace containers and data on the machine are lost.
+Deleting a machine cannot be undone. All workspace containers and data on it are lost.
 </Callout>
