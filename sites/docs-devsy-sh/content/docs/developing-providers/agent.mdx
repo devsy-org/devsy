@@ -42,6 +42,10 @@ Option values can be used in this section.
 
 Devsy tracks whether anyone is connected and stops the environment after the timeout. Nothing is erased. Devsy starts it again when the user returns.
 
-**Non-machine providers.** The agent ends the container's main process, which stops the container. Set the timeout with `containerInactivityTimeout`.
+### Non-machine providers
 
-**Machine providers.** Stopping only the container would leave the VM running and billed. Define `agent.exec.shutdown` with the command that stops or deletes the machine on the cloud side. Set the timeout with `inactivityTimeout`. The official cloud providers each do this their own way, for example with a cloud API call using a token saved in an option.
+The agent ends the container's main process, which stops the container. Set the timeout with `containerInactivityTimeout`.
+
+### Machine providers
+
+Stopping only the container would leave the VM running and billed. Define `agent.exec.shutdown` with the command that stops or deletes the machine on the cloud side. Set the timeout with `inactivityTimeout`. The official cloud providers each do this their own way, for example with a cloud API call using a token saved in an option.
