@@ -104,9 +104,9 @@ This applies all changes, including the Dockerfile, mounts, and features. Devsy 
 Changes outside volumes are lost. The project folder and other mounted paths are kept.
 </Callout>
 
-## Environment variables with the SSH provider
+## Environment variables in devcontainer.json
 
-To use `${localEnv:NAME}` in `devcontainer.json` with the SSH provider, the variable has to reach the remote machine.
+When you use `${localEnv:NAME}` in `devcontainer.json` with the SSH provider, the variable has to reach the remote machine.
 
 1. Reference the variable in `devcontainer.json`:
 
