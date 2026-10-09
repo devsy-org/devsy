@@ -7,7 +7,7 @@ A workspace is a containerized development environment that holds a project's so
 
 Devsy uses the [devcontainer.json](https://containers.dev/) specification, which VS Code dev containers and GitHub Codespaces also use, so a project that already has one needs no extra setup. If there is none, Devsy detects the project's language and offers a template.
 
-A workspace keeps its state when you stop and restart it. Once it exists, it is reachable over SSH at `WORKSPACE_NAME.devsy`, and Devsy can open it in a local IDE.
+A workspace keeps its state when you stop and restart it. While it is running, it is reachable over SSH at `WORKSPACE_NAME.devsy`. Devsy can open it in a local IDE if you select one.
 
 ## Create a workspace
 
@@ -21,7 +21,7 @@ Open **Workspaces** and click **Create**. The wizard has five steps:
 2. **Source.** Pick a template or an image, or enter a Git URL, image, or local path. **Show advanced options** lets you set the branch, commit, or PR, a project subfolder, the folder to open, the `devcontainer.json` path, and a prebuild repository.
 3. **IDE.** Optional. The default is none.
 4. **Review.** Check the workspace name and configuration. If the image has no build for your architecture, you can turn on **Run under emulation**.
-5. **Launch.** Devsy creates the workspace and streams progress, then opens your IDE.
+5. **Launch.** Devsy creates the workspace and streams progress, then opens your IDE if you selected one.
 
 The desktop app runs `devsy workspace up` for you.
 
@@ -122,7 +122,7 @@ Only the project folder and mounted volumes survive. Everything else in the cont
 
 ## Reset a workspace
 
-A reset starts from a clean slate. It pulls the latest Git changes or uploads your local folder again, and it keeps nothing.
+A reset pulls the latest Git changes or uploads your local folder again. For local-folder workspaces, it removes and re-seeds Devsy-managed named workspace volumes. Bind mounts and unmanaged volumes are not removed.
 
 ```sh
 devsy workspace up my-workspace --reset
