@@ -77,17 +77,38 @@ func executeBuild(opts DockerlessBuildOptions) error {
 	}
 
 	cleanup := setupDockerCredentials(opts)
+	return buildAndApplyContainerEnv(cleanup, func() error {
+		args := buildDockerlessArgs(binaryPath, opts)
+		return runDockerlessBuild(opts.Context, args, opts.Debug)
+	}, func() error {
+		return applyContainerEnv(opts.ImageConfigOutput)
+	})
+}
+
+func buildAndApplyContainerEnv(
+	cleanup func(),
+	build func() error,
+	applyImageEnv func() error,
+) error {
+	// Keep a fallback for a panic while building, without restoring the builder's
+	// environment a second time after the image environment has been applied.
+	defer func() {
+		if cleanup != nil {
+			cleanup()
+		}
+	}()
+
+	buildErr := build()
 	if cleanup != nil {
-		defer cleanup()
+		finishCleanup := cleanup
+		cleanup = nil
+		finishCleanup()
+	}
+	if buildErr != nil {
+		return buildErr
 	}
 
-	args := buildDockerlessArgs(binaryPath, opts)
-
-	if err := runDockerlessBuild(opts.Context, args, opts.Debug); err != nil {
-		return err
-	}
-
-	return applyContainerEnv(opts.ImageConfigOutput)
+	return applyImageEnv()
 }
 
 func validateBuildOptions(opts DockerlessBuildOptions) error {

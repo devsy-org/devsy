@@ -1,0 +1,13 @@
+{
+  "name": "Kubernetes Dockerless PATH regression",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "userEnvProbe": "none",
+  "remoteEnv": {
+    "DOCKER_CONFIG": "${containerEnv:DOCKER_CONFIG}"
+  },
+  "waitFor": "postStartCommand",
+  "postStartCommand": "devsy-dockerless-path-check > /opt/devsy-dockerless-path/post-start.env"
+}
