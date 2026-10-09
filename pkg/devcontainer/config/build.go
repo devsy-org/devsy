@@ -40,7 +40,18 @@ func ValidateIDLabels(labels []string) error {
 	return nil
 }
 
+type GeneratedBuildArtifact struct {
+	Path   string
+	SHA256 string
+	// Symlink targets grant no file-read authority.
+	LinkTarget string
+	Directory  bool
+}
+
 type BuildInfo struct {
+	GeneratedBuildContext   string                   `json:"-"`
+	GeneratedBuildArtifacts []GeneratedBuildArtifact `json:"-"`
+
 	BuiltLocally  bool
 	ImageName     string
 	PrebuildHash  string

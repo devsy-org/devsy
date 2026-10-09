@@ -5,7 +5,7 @@ sidebar_label: Workspace Snapshots
 
 ## Workspace Snapshots
 
-A snapshot captures a workspace's full working state at a point in time: the running container's filesystem (installed packages, config changes) and the contents of its bind-mounted volumes (your code, including uncommitted changes). Snapshots are stored as OCI artifacts in a registry you control, so you can restore them later, or use them to transfer a workspace to a different provider.
+A snapshot captures a workspace's working state at a point in time: the running container's filesystem (installed packages, config changes) and the contents of its bind-mounted volumes (your code, including uncommitted changes). Snapshots are stored as OCI artifacts in a registry you control, so you can restore them later, or use them to transfer a workspace to a different provider.
 
 <Callout title="Registry required">
 Snapshots are pushed to and pulled from an OCI registry (Docker Hub, GHCR, ECR, or a self-hosted `registry:2`), not stored locally. You need push/pull access to a registry before creating one.
@@ -91,3 +91,25 @@ Removes the snapshot's manifest from the registry. The underlying image and volu
 ## Identifying Snapshot Images
 
 The container image a snapshot commits is tagged `LABEL sh.devsy.snapshot=true`, so it can be identified with `docker inspect` or filtered with `docker images --filter label=sh.devsy.snapshot` even outside `devsy snapshot` tooling.
+
+## Volume filtering
+
+`.devsyignore` rules do not apply to the committed container image.
+
+When Devsy captures host bind mounts, `.devsyignore` applies only to the explicitly
+designated workspace mount, relative to that source root. The streaming protocol
+keeps additional bind mounts independent of those rules.
+The snapshot CLI currently requires a single workspace mount because restore
+cannot disambiguate multiple mounts.
+
+Files excluded from the workspace volume are absent from the snapshot and from a
+restore into an empty or reset target. Without `--reset`, Devsy skips restoring a
+target that already contains workspace files and retains its existing contents.
+A missing ignore file applies no user exclusions; an invalid or unreadable existing file
+stops snapshot streaming. Snapshot creation loads persisted workspace metadata,
+which does not grant generated-file transfer exceptions. Devsy excludes its generated
+`.devsy-internal` directory at the configured build context, including files left
+behind by an interrupted build or failed cleanup. Unrelated folders with that name
+follow the workspace ignore rules. Missing build-context metadata stops snapshot
+creation; run `devsy up` to refresh it. Tar target prefixes and the volume restore
+format are unchanged.

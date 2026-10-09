@@ -330,6 +330,8 @@ func (r *runner) prepareSetupInfo(params *setupContainerParams) (*setupInfo, err
 
 func (r *runner) buildResult(params *setupContainerParams) *config.Result {
 	result := &config.Result{
+		GeneratedBuildArtifacts: r.generatedBuildArtifacts,
+		GeneratedBuildContext:   r.generatedBuildContext,
 		DevContainerConfigWithPath: &config.DevContainerConfigWithPath{
 			Config: params.rawConfig,
 			Path:   getRelativeDevContainerJson(params.rawConfig.Origin, r.localWorkspaceFolder),
@@ -548,7 +550,7 @@ func (r *runner) executeSetup(
 			stdin,
 			r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
 			r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
-			config.GetMounts(result),
+			result,
 			tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
 			tunnelserver.WithSecrets(
 				secretsEnv,

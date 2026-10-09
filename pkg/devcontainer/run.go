@@ -84,7 +84,9 @@ type runner struct {
 	agentPath        string
 	agentDownloadURL string
 
-	localWorkspaceFolder string
+	localWorkspaceFolder    string
+	generatedBuildArtifacts []config.GeneratedBuildArtifact
+	generatedBuildContext   string
 
 	id       string
 	idLabels []string
