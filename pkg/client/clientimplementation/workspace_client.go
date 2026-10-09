@@ -978,6 +978,8 @@ type DeleteWorkspaceFolderParams struct {
 	WorkspaceID          string
 	SSHConfigPath        string
 	SSHConfigIncludePath string
+	// PreserveContent leaves the content directory intact when only managed records are owned.
+	PreserveContent bool
 }
 
 func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams) error {
@@ -989,6 +991,9 @@ func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams) error {
 		return err
 	}
 
+	if params.PreserveContent {
+		return nil
+	}
 	return removeWorkspaceContent(params.Context, params.WorkspaceID)
 }
 

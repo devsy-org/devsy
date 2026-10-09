@@ -124,6 +124,54 @@ func TestBinaryPreparationFailureCleanup(t *testing.T) {
 	}
 }
 
+func TestLocalFolderBinaryFailurePreservesUserContent(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		for _, managedPath := range []bool{false, true} {
+			t.Run(
+				fmt.Sprintf("existing=%t/managed_path=%t", existing, managedPath),
+				func(t *testing.T) {
+					info, sshConfig := binaryCleanupWorkspace(t, true)
+					info.WorkspaceWasExisting = existing
+					if !managedPath {
+						info.ContentFolder = t.TempDir()
+						require.NoError(t, os.WriteFile(
+							filepath.Join(
+								info.ContentFolder,
+								"user-data",
+							),
+							[]byte("preserved"),
+							0o600,
+						))
+					}
+					info.Workspace.Source.LocalFolder = info.ContentFolder
+					err := prepareWorkspace(
+						context.Background(),
+						prepareWorkspaceParams{workspaceInfo: info},
+					)
+					require.ErrorContains(t, err, "checksum")
+					require.ErrorIs(t, (&UpCmd{}).handleInitError(err, info), err)
+					data, readErr := os.ReadFile(filepath.Join(info.ContentFolder, "user-data"))
+					require.NoError(t, readErr)
+					require.Equal(t, "preserved", string(data))
+					data, readErr = os.ReadFile(info.Workspace.SSHConfigPath)
+					require.NoError(t, readErr)
+					if existing {
+						record, recordErr := os.ReadFile(
+							filepath.Join(info.Origin, provider.WorkspaceConfigFile),
+						)
+						require.NoError(t, recordErr)
+						require.Equal(t, "workspace record", string(record))
+						require.Equal(t, sshConfig, data)
+					} else {
+						require.NoDirExists(t, info.Origin)
+						require.NotContains(t, string(data), "binary-test")
+					}
+				},
+			)
+		}
+	}
+}
+
 func binaryCleanupWorkspace(t *testing.T, existing bool) (*provider.AgentWorkspaceInfo, []byte) {
 	t.Helper()
 	home := t.TempDir()

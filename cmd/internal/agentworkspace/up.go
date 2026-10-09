@@ -129,8 +129,12 @@ func (cmd *UpCmd) handleInitError(
 	if workspaceInfo.WorkspaceWasExisting {
 		return err
 	}
+	preserveContent := false
 	if _, existing := errors.AsType[*existingContentPreparationError](err); existing {
-		return err
+		if workspaceInfo.ContentFolder != workspaceInfo.Workspace.Source.LocalFolder {
+			return err
+		}
+		preserveContent = true
 	}
 	deleteErr := clientimplementation.DeleteWorkspaceFolder(
 		clientimplementation.DeleteWorkspaceFolderParams{
@@ -138,6 +142,7 @@ func (cmd *UpCmd) handleInitError(
 			WorkspaceID:          workspaceInfo.Workspace.ID,
 			SSHConfigPath:        workspaceInfo.Workspace.SSHConfigPath,
 			SSHConfigIncludePath: workspaceInfo.Workspace.SSHConfigIncludePath,
+			PreserveContent:      preserveContent,
 		},
 	)
 	if deleteErr != nil {
