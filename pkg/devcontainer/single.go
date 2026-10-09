@@ -312,7 +312,7 @@ func (r *runner) mergeExistingContainerConfig(
 	containerDetails *config.ContainerDetails,
 	p *resolveParams,
 ) (*config.MergedDevContainerConfig, error) {
-	if _, ok := r.driver.(driver.RecreateRequiredDriver); ok {
+	if r.needsCurrentContainerIdentity() {
 		return r.currentContainerIdentity(ctx, containerDetails, p)
 	}
 	imageMetadataConfig, err := metadata.GetImageMetadataFromContainer(
@@ -824,7 +824,7 @@ func (r *runner) runContainer(
 	)
 	runOptions.AllowRecreate = p.options.Recreate
 	runOptions.Env = r.addExtraEnvVars(runOptions.Env)
-	if _, ok := r.driver.(driver.RecreateRequiredDriver); ok {
+	if r.needsCurrentContainerIdentity() {
 		runOptions.Labels = append(runOptions.Labels, metadata.CreationConfigLabel+"="+stringTrue)
 	}
 
@@ -1212,7 +1212,7 @@ func (r *runner) applyDriverRecreateRequirement(
 	if details == nil || p.options.Recreate {
 		return nil
 	}
-	if _, ok := r.driver.(driver.RecreateRequiredDriver); !ok {
+	if !r.needsCurrentContainerIdentity() {
 		return nil
 	}
 	merged, err := r.currentContainerIdentity(ctx, details, p)
@@ -1223,10 +1223,25 @@ func (r *runner) applyDriverRecreateRequirement(
 	if containerUser == "" {
 		containerUser = details.Config.Labels[config.UserLabel]
 	}
+	remoteUser := effectiveRemoteUser(merged, containerUser)
+	if preflight, ok := r.driver.(driver.ReusePreflightDriver); ok &&
+		preflight.SupportsReusePreflight() {
+		if err := preflight.ReusePreflight(ctx, r.id, remoteUser); err != nil {
+			return err
+		}
+	}
+	return r.scheduleDriverRecreation(details, remoteUser, p)
+}
+
+func (r *runner) scheduleDriverRecreation(
+	details *config.ContainerDetails,
+	remoteUser string,
+	p *resolveParams,
+) error {
 	required, reason := driver.DriverRequiresRecreate(
 		r.driver,
 		details,
-		effectiveRemoteUser(merged, containerUser),
+		remoteUser,
 	)
 	if !required {
 		return nil
@@ -1235,6 +1250,14 @@ func (r *runner) applyDriverRecreateRequirement(
 		return fmt.Errorf("cannot migrate externally managed container: %s", reason)
 	}
 	return r.scheduleContainerRecreation(p, reason)
+}
+
+func (r *runner) needsCurrentContainerIdentity() bool {
+	if _, migration := r.driver.(driver.RecreateRequiredDriver); migration {
+		return true
+	}
+	preflight, ok := r.driver.(driver.ReusePreflightDriver)
+	return ok && preflight.SupportsReusePreflight()
 }
 
 func (r *runner) currentContainerIdentity(
@@ -1246,8 +1269,10 @@ func (r *runner) currentContainerIdentity(
 	if err != nil {
 		return nil, err
 	}
-	if details.Config.Labels[metadata.CreationConfigLabel] == stringTrue &&
-		len(imageMetadata.Config) > 0 {
+	// Older managed workspaces have a structural signature but no creation marker.
+	hasCreationConfig := details.Config.Labels[metadata.CreationConfigLabel] == stringTrue ||
+		details.Config.Labels[overlayStructureLabel] != ""
+	if hasCreationConfig && len(imageMetadata.Config) > 0 {
 		imageMetadata.Config = imageMetadata.Config[:len(imageMetadata.Config)-1]
 	}
 	imageMetadata.Config = append(

@@ -44,6 +44,8 @@ type CommandParams struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
+	// RawStdout keeps binary protocols out of text redaction and its suffix buffer.
+	RawStdout bool
 }
 
 // UpOptions configures a single Up invocation.
@@ -257,6 +259,7 @@ func (r *runner) Command(ctx context.Context, params CommandParams) error {
 		Stdin:       params.Stdin,
 		Stdout:      params.Stdout,
 		Stderr:      params.Stderr,
+		RawStdout:   params.RawStdout,
 	})
 }
 
