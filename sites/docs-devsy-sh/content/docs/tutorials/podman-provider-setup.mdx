@@ -41,7 +41,7 @@ podman machine start
 podman info
 ```
 
-Use the Windows named pipe from `podman machine inspect` for `PODMAN_HOST`, as described below. A Unix socket inside WSL is not a Windows endpoint.
+Use the Windows named pipe from `podman machine inspect` for `PODMAN_HOST`, as described below. A Unix socket inside WSL is not a Windows endpoint. Check `podman system connection list` and make the connection for this machine the default: Devsy uses the native Podman client as well as the Docker-compatible API.
 
 ## Add the provider
 
@@ -81,7 +81,7 @@ For a new machine:
 
 ```bash
 podman machine init --rootful my-rootful-machine
-podman machine start my-rootful-machine
+podman machine start --update-connection my-rootful-machine
 ```
 
 Or switch the existing default machine:
@@ -102,7 +102,7 @@ After switching modes, run `podman machine inspect <machine-name>` for the machi
 - **macOS:** use `unix://` followed by `.ConnectionInfo.PodmanSocket.Path`.
 - **Windows:** read `.ConnectionInfo.PodmanPipe.Path` and use `npipe:////./pipe/<pipe-name>`, replacing `<pipe-name>` with the name after `\\.\pipe\` in that path.
 
-Keep `PODMAN_ELEVATION` as `none`, because the machine connection is already authenticated.
+Check `podman system connection list` and select the connection for the same machine and rootful/rootless mode with `podman system connection default <connection-name>`. `PODMAN_HOST` selects the Docker-compatible API; the native Podman CLI uses its own default connection. Keep `PODMAN_ELEVATION` as `none`, because the machine connection is already authenticated.
 </Callout>
 
 ## Start a workspace
