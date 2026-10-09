@@ -209,8 +209,8 @@ var _ = ginkgo.Describe(
 			ginkgo.Entry("built-in", "microsandbox", "microsandbox-builtin-parity",
 				ginkgo.SpecTimeout(framework.TimeoutLong())),
 			ginkgo.Entry(
-				"external v0.1.4",
-				"github.com/devsy-org/devsy-provider-microsandbox@v0.1.4",
+				"external v0.1.5",
+				"github.com/devsy-org/devsy-provider-microsandbox@v0.1.5",
 				"microsandbox-external-parity",
 				ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),

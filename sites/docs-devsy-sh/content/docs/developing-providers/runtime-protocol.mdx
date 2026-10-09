@@ -47,7 +47,7 @@ For SDK usage and development commands, see the [SDK README](https://github.com/
 
 ## MicroSandbox parity gate
 
-The `up-provider-microsandbox` E2E label runs the same lifecycle and ownership scenario against the built-in provider and the external v0.1.4 release, each with isolated Devsy configuration. CI pins MicroSandbox v0.7.7 by checksum and requires access to KVM; unavailable virtualization fails this job instead of producing a passing skipped test. Each provider scenario has a ten-minute deadline and the CI job has a 25-minute deadline.
+The `up-provider-microsandbox` E2E label runs the same lifecycle and ownership scenario against the built-in provider and the external v0.1.5 release, each with isolated Devsy configuration. CI pins MicroSandbox v0.7.7 by checksum and requires access to KVM; unavailable virtualization fails this job instead of producing a passing skipped test. Each provider scenario has a ten-minute deadline and the CI job has a 25-minute deadline.
 
 The shared scenario exercises agent delivery, SSH, a 1 MiB binary stdin/stdout round trip with separate stderr and a nonzero guest exit, root workload versus developer identity, bind-mount ownership and mode mirroring, stop/start, recreation, rejection of an identity change without recreation while preserving VM-local data, and deletion of the VM.
 
