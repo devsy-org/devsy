@@ -3,117 +3,9 @@ title: Drivers
 sidebar_label: Drivers
 ---
 
-In Devsy you can specify a **Driver** in the [Agent's configuration](./agent.mdx).
+A driver decides how Devsy deploys the workspace container. Set it with `driver` in the [agent section](./agent.mdx). The default is `docker`.
 
-A Driver indicates how Devsy deploys the workspace container.
-
-Devsy currently supports five built-in driver types:
-
-- Docker driver
-- Kubernetes driver
-- Apple driver
-- Microsandbox driver
-- Custom driver
-
-The provider schema also accepts [external runtime declarations](#external-runtime-declarations-under-development).
-Their host adapter is under development.
-
-<Callout>
-If no driver is specified, the default is **Docker**
-</Callout>
-
-## External runtime declarations (under development)
-
-The provider schema accepts `agent.driver: external` and validates the configuration
-when the provider is installed. Devsy launches the declared runtime through the
-workspace driver factory and negotiates its Runtime Protocol v1 capabilities.
-
-```yaml
-agent:
-  driver: external
-  external:
-    binary: RUNTIME_DRIVER
-    args: ["serve"]
-    imageBackend: docker
-  binaries:
-    RUNTIME_DRIVER:
-      - os: linux
-        arch: amd64
-        path: https://example.com/runtime-driver
-        checksum: "<64 hexadecimal characters: SHA-256 of the extracted executable>"
-```
-
-`binary` is the exact key in `agent.binaries`, not an executable path or a name to
-search on `PATH`. Each declared platform requires a SHA-256 checksum and must
-appear only once. Declare the agent's OS and architecture, which may differ from
-the desktop's platform. The runtime must already be prepared in the agent binary
-directory; the resolver verifies its checksum and never downloads or removes files.
-A declared local absolute path is also verified.
-
-`args` is a static argument array, with no shell or option substitution. Its first
-entry cannot be empty; later empty arguments are preserved. `imageBackend` accepts
-`docker` (the default) or `none`; it selects the Devsy-side image backend,
-not an image-building capability in the runtime plugin.
-
-For the protocol and SDK contract, see [Runtime Protocol v1](./runtime-protocol.mdx).
-
-### Runtime and image integration
-
-The internal host now negotiates Runtime Protocol v1 Info and performs preflight,
-Find, TargetArchitecture, RunImage, Start, Stop, and Delete calls. Each operation
-uses a fresh plugin process owned by the SDK supervisor, exposed through a
-hidden helper in the running Devsy executable. Cancellation also covers startup
-and terminates the leased process tree. The workspace runner uses the external
-runtime for lifecycle and execution, and a separate Docker image backend for
-inspection, builds, tagging, and publication. Docker settings use `agent.docker`.
-Selecting `none` skips Docker backend construction; ordinary builds retain the
-existing dockerless fallback, while prebuild publication requires an image backend.
-
-Run options preserve image identity, entrypoint, literal arguments, environment,
-labels, privilege/init presence, namespace mappings, platform, and mount options.
-CPU, memory, storage, and GPU requirements are translated into protocol values.
-Invalid sizes, unsupported mount types, Compose external volumes, raw `runArgs`,
-`appPort` mappings (use port forwarding instead), and GPU core or
-memory requirements that v1 cannot express are rejected before runtime creation.
-During recreation, validation happens before stopping or removing the existing
-workspace. Mount streaming, workspace ownership, and recreate policy follow the
-negotiated runtime capabilities; in-place reprovisioning remains unsupported.
-
-The host also supports binary-safe Exec with separate stdout/stderr, literal argv,
-stdin closure, and terminal exit status. Shell commands use `/bin/sh -c`; text
-stdout and stderr are redacted, while `RawStdout` and argv execution preserve raw
-stdout for protocol consumers. Logs capability is checked before launch and its
-merged binary stream is written to stdout.
-
-The host retains environment values supplied through RunImage for that workspace
-throughout its lifetime, including prior values from retries or failed requests.
-Retention belongs to the current workspace runner and is released with that host;
-it is not a persisted secret store and does not survive a new CLI process. Runtime
-plugins must keep diagnostics safe when values are not available to a new host.
-Later text output, errors, and diagnostics use that workspace's redaction snapshot;
-raw stdout and merged Logs remain binary streams for their callers to handle.
-
-Once Exec streaming starts, the host closes closable stdin on completion or
-cancellation. Blocking input must unblock when closed or when the caller context
-is canceled, and output writers must return from writes. Go cannot interrupt an
-arbitrary blocking reader or writer. The host joins the input pump and reaps the
-owned plugin session before returning.
-
-The host inherits its environment for compatibility with proxy, certificate,
-HOME/XDG, Docker, and runtime CLI settings. Provider environment overrides and
-the verified runtime binary key are forwarded; plugin transport metadata keeps
-precedence. Arguments are passed literally without shell expansion, and
-text diagnostics are redacted before logging.
-
-Before every operation the host rechecks the prepared runtime's checksum and
-permissions. Relative declarations also reject symlink targets outside their
-binary directory; explicit absolute declarations retain their documented
-behavior. These checks do not provide a filesystem sandbox or atomic
-verification-to-execution guarantee. The runtime and its directories must be
-trusted. Unix command descendants must remain in the supervised process group
-and retain signalable privileges; detached or elevated services need their own
-owner. Real-runtime compatibility and startup measurements against a complete
-workspace launch remain gates before runtime cutover or session reuse.
+Built-in drivers: `docker`, `kubernetes`, `apple`, `microsandbox` and `custom`. A sixth, `external`, runs a runtime plugin and is [described below](#external-driver).
 
 ## Docker Driver
 
@@ -238,73 +130,18 @@ agent:
 
 ## Microsandbox Driver
 
-The Microsandbox driver boots the devcontainer image as a hardware-isolated
-microVM (via [libkrun](https://github.com/containers/libkrun)) using the
-[microsandbox](https://github.com/microsandbox/microsandbox) runtime. This is
-the driver used by the built-in `microsandbox` provider.
+The Microsandbox driver boots the devcontainer image as a hardware-isolated microVM using [microsandbox](https://github.com/microsandbox/microsandbox). It is used by the built-in `microsandbox` provider.
 
-Available options:
-- **memory**: guest memory limit in MiB. Empty uses the runtime default.
-- **cpus**: number of virtual CPUs. Empty uses the runtime default.
-- **maxMemory**: hotplug memory ceiling in MiB. Empty uses the runtime default.
-- **maxCpus**: hotplug CPU ceiling. Empty uses the runtime default.
-- **storage**: OCI root disk size in GiB. Empty uses the runtime default, falling
-  back to the devcontainer's `hostRequirements.storage` when set.
-- **blockEgress**: if true, deny the microVM outbound public network access (sandbox hardening).
-- **ephemeral**: if true, boot from a tmpfs root disk so the microVM's disk
-  state is discarded when it stops. Sized by `storage`/`hostRequirements.storage`,
-  or 8GiB if neither is set.
-- **workspaceHostPermissions**: controls chmod behavior for the primary workspace
-  bind mount. `mirror` (the default) mirrors guest rwx changes to the host;
-  `private` keeps them in MicroSandbox metadata.
-- **workspaceStatVirtualization**: controls workspace ownership and metadata
-  virtualization. `strict` (the default) requires compatible host metadata
-  support; `relaxed` tolerates filesystems without it; `off` exposes literal
-  host ownership and modes. `off` cannot be combined with `mirror`.
+Options:
+- **memory**, **cpus**: guest memory in MiB and virtual CPU count. Empty uses the runtime default.
+- **maxMemory**, **maxCpus**: ceilings for hotplugged memory and CPUs.
+- **storage**: root disk size in GiB. Falls back to the devcontainer's `hostRequirements.storage`.
+- **blockEgress**: deny the microVM outbound public network access.
+- **ephemeral**: boot from a tmpfs root disk, so disk state is discarded when the VM stops.
+- **workspaceHostPermissions**: `mirror` (default) mirrors guest permission changes on the workspace mount to the host. `private` keeps them in microsandbox metadata.
+- **workspaceStatVirtualization**: `strict` (default) requires host metadata support. `relaxed` tolerates filesystems without it. `off` exposes literal host ownership and modes, and cannot be combined with `mirror`.
 
-The primary workspace bind mount uses `stat-virt=strict` and `host-perms=mirror`
-by default, while additional bind mounts retain MicroSandbox's defaults.
-`containerUser` controls the workload execution user; `remoteUser` controls the
-workspace developer identity, falling back to `containerUser`, the image user,
-and then root. Devsy resolves the developer's numeric UID and primary GID from
-the final image's account files and sets them as the mount's guest-visible
-fallback owner. These IDs apply to host-created entries without per-file guest
-metadata; they do not change host inode ownership. Account resolution does not
-execute image code. An unresolvable user fails provisioning before replacement
-of the existing VM. With `workspaceStatVirtualization: "off"`, Devsy omits the
-owner override.
-
-In Dockerless mode, the developer filesystem is built inside the VM after its
-workspace mount is created. Ownership synchronization therefore supports only
-`remoteUser: "root"` in this mode. Other identities fail before replacing an
-existing VM. For a non-root developer, use a prebuilt image or explicitly select
-`workspaceStatVirtualization: "off"` with private host permissions. Devsy never
-looks up the developer account in the unrelated Dockerless runner image.
-
-Image inspection and preparation prefer an image cached in the configured
-Docker-compatible CLI, permitting offline/private-registry startup. Preparation
-freezes the final image before account resolution and import. Both use that same
-snapshot, imported under a content-derived tag, so retagging the original image
-cannot change the imported filesystem or its fallback owner. Registry-only
-images do not require Docker initialization.
-
-Devsy-managed workspaces with an incompatible persisted workspace mount contract
-require explicit `devsy up --recreate`, including workspaces created before the
-contract label existed. Changing workspace permission policy or the effective
-developer identity also requires explicit recreation. Ordinary `devsy up` reports
-an actionable error and preserves the existing VM. Back up VM-local data before
-recreating: the host workspace and named volumes persist, but the VM root disk
-is discarded. Replacement cannot roll back failures after removal.
-Externally managed containers cannot be replaced through this flow.
-
-Devsy requires MicroSandbox v0.7.2 or newer when creating or recreating workspaces
-that use workspace ownership synchronization. Runtime compatibility, account
-resolution, final image import, and volume preparation complete before removing
-an existing VM.
-The provisioning version check does not block inspection, logs, stop, or deletion
-of an existing sandbox.
-Apple Silicon macOS is the canonical supported integration-test host; use
-`relaxed` when a host filesystem cannot provide strict metadata virtualization.
+Changing the workspace permission policy or the developer identity requires `devsy up --recreate`. The VM root disk is discarded on recreate, so back up VM-local data first. The host workspace and named volumes persist.
 
 ```yaml
 agent:
@@ -313,27 +150,41 @@ agent:
   microsandbox:
     memory: "2048"
     blockEgress: "false"
-    ephemeral: "false"
-    workspaceHostPermissions: "mirror"
     workspaceStatVirtualization: "strict"
 ```
 
 ## Custom Driver
 
-The custom driver lets a provider fully own how the devcontainer lifecycle is
-implemented, by supplying its own shell commands instead of relying on
-Devsy's built-in Docker, Kubernetes, Apple or Microsandbox integration.
+The custom driver lets a provider implement the devcontainer lifecycle with its own shell commands. With `driver: custom`, these commands are required under `agent.custom`:
 
-When `driver: custom` is set, the following commands become required under
-`agent.custom`:
-- **findDevContainer**: locate an existing devcontainer
-- **commandDevContainer**: execute a command inside the devcontainer
-- **targetArchitecture**: determine the target architecture
-- **runDevContainer**: run the devcontainer
-- **startDevContainer**: start the devcontainer
-- **stopDevContainer**: stop the devcontainer
-- **deleteDevContainer**: delete the devcontainer
+- **findDevContainer**: find an existing devcontainer.
+- **commandDevContainer**: run a command inside it.
+- **targetArchitecture**: print the target architecture.
+- **runDevContainer**, **startDevContainer**, **stopDevContainer**, **deleteDevContainer**: run, start, stop and delete it.
 
-The optional **getDevContainerLogs** command retrieves devcontainer logs, and
-**canReprovision** signals whether the driver supports reprovisioning the
-devcontainer in place.
+Optional: **getDevContainerLogs** prints the logs, and **canReprovision** says whether the devcontainer can be reprovisioned in place.
+
+## External Driver
+
+`driver: external` runs a runtime plugin that speaks [Runtime Protocol v1](./runtime-protocol.mdx).
+
+```yaml
+agent:
+  driver: external
+  external:
+    binary: RUNTIME_DRIVER
+    args: ["serve"]
+    imageBackend: docker
+  binaries:
+    RUNTIME_DRIVER:
+      - os: linux
+        arch: amd64
+        path: https://example.com/runtime-driver
+        checksum: "<SHA-256 of the extracted executable>"
+```
+
+- **binary**: the exact key in `agent.binaries`. It is not a path and is never searched on `PATH`.
+- **args**: a fixed argument list. No shell or option substitution is applied.
+- **imageBackend**: `docker` (default) or `none`. It picks the Devsy-side image backend, not a build capability in the plugin. With `none`, prebuild publishing is unavailable.
+
+Each platform needs a SHA-256 checksum, and the runtime must already be in the agent binary directory. Devsy verifies the checksum before every operation and never downloads or removes the file. The plugin is trusted provider code and runs with the same access as Devsy.
