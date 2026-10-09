@@ -40,7 +40,7 @@ Configure your MCP client to launch that command. The exact config format depend
 
 To check whether a workspace is running, use `devsy workspace status <name> --result-format json`.
 
-`workspace_exec` is limited by flags on `devsy mcp serve`: `--exec-timeout-default` (5m), `--exec-timeout-max` (30m), and `--exec-output-cap` (100 KiB per stream). `--max-concurrent-ops` (8) limits concurrent exec, create, and start calls.
+`workspace_exec` is limited by flags on `devsy mcp serve`: `--exec-timeout-default` (5m), `--exec-timeout-max` (30m), and `--exec-output-cap` (100 KiB per stream). `--mcp-max-concurrent-ops` (8) limits concurrent exec, create, and start calls.
 
 ## Agent skill
 
