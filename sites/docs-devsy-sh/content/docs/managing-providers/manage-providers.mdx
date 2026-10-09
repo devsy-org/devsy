@@ -3,7 +3,7 @@ title: Manage Providers
 sidebar_label: Manage Providers
 ---
 
-Devsy providers include:
+Providers you can add:
 
 - [Docker (docker)](https://github.com/devsy-org/devsy/tree/main/providers/docker)
 - [Podman (podman)](https://github.com/devsy-org/devsy/tree/main/providers/podman)
@@ -18,376 +18,166 @@ Devsy providers include:
 - [Azure (azure)](https://github.com/devsy-org/devsy-provider-azure)
 - [Digital Ocean (digitalocean)](https://github.com/devsy-org/devsy-provider-digitalocean)
 
-Install these providers with the Devsy CLI:
+List what is available from the CLI:
 
-```
-devsy provider add docker
-```
-
-List available providers using the command:
-
-```
+```sh
 devsy provider list --available
 ```
 
-## Adding a Provider
+## Add a provider
 
 ### Devsy Desktop
 
-Open the Providers view and click **Add**. The provider wizard has four steps:
+Open **Providers** and click **Add**. The wizard has four steps:
 
-1. **Select** - pick a built-in preset, or enter a GitHub link, `provider.yaml` URL, or local file path in the **Provider Source** field below the presets.
-2. **Configure** - fill in provider-specific options (the form is generated from the provider's schema).
-3. **Initialize** - Devsy runs the provider init and streams logs.
-4. **Done** - review the result. Failures show the underlying error.
+1. **Select.** Pick a preset, or enter a GitHub link, a `provider.yaml` URL, or a local path under **Provider Source**.
+2. **Configure.** Fill in the options. The form comes from the provider's schema.
+3. **Initialize.** Devsy runs the provider init and streams the logs.
+4. **Done.** Review the result. A failure shows the underlying error.
 
-The ProviderSheet (click any provider in the list) exposes edit settings, switch version, update, delete, rename, set as default, and re-initialize.
-
-<Callout>
-  The Desktop Application calls `devsy provider add PROVIDER` under the hood.
-</Callout>
-
-#### Custom Providers
-
-In the Select step, type one of the following into the **Provider Source** field below the preset grid:
-
-- A GitHub link to the provider's project
-- A URL to a `provider.yaml`
-- A file path to a `provider.yaml`
+Click a provider in the list to edit its settings, switch version, update, re-initialize, rename, set it as default, or delete it.
 
 ### Devsy CLI
 
-Install any provider from the list with:
-
 ```sh
 devsy provider add docker
-devsy provider add podman
-devsy provider add kubernetes
-devsy provider add apple
-devsy provider add microsandbox
-devsy provider add lima
-devsy provider add orbstack
-devsy provider add ssh
-devsy provider add aws
-devsy provider add azure
-devsy provider add gcloud
-devsy provider add digitalocean
 ```
 
-<Callout title="Multiple providers at the same time">
-  You can use the `--name` flag to add multiple providers of the same type with
-  different options, for example `devsy provider add aws --name aws-gpu -o
-  AWS_INSTANCE_TYPE=p3.8xlarge`
-</Callout>
+Use `--name` to add the same provider more than once with different options:
 
-#### From GitHub
+```sh
+devsy provider add aws --name aws-gpu -o AWS_INSTANCE_TYPE=p3.8xlarge
+```
 
-You can specify a custom provider, directly from GitHub, by using the format
-`my-username/repo`, so for example:
+**From GitHub.** Devsy downloads the `provider.yaml` from the latest release. It uses your local HTTPS credentials, so private repositories work. Add `@` and a tag for another release.
 
 ```sh
 devsy provider add devsy-org/devsy-provider-terraform
-```
-
-Devsy will search the latest release for a `provider.yaml` and download that automatically. This should work for private GitHub repositories where Devsy will use the local https credentials to connect to the GitHub repository.
-
-If you want to install the provider from a different release, you can do the following:
-
-```sh
 devsy provider add my-org/my-repo@v0.0.1
 ```
 
-#### From Local Path
-
-If you have locally downloaded providers, you can also add them directly to
-Devsy, by pointing to the file path of `provider.yaml` manifest:
+**From a local path or URL.**
 
 ```sh
 devsy provider add ../devsy-provider-mock/provider.yaml
-```
-
-#### From URL
-
-You can also specify the URL to the `provider.yaml` file, for example:
-
-```sh
 devsy provider add https://github.com/devsy-org/devsy-provider-ssh/releases/download/v0.0.3/provider.yaml
 ```
 
-## Set Provider Options
+## Set provider options
 
-Each provider defines its own options, so they differ from provider to provider.
-
-### Desktop Options
-
-To manage options from the app, head over the `Providers` section, and click
-`Edit` on the provider you want to configure.
-
-### CLI Options
-
-Set options during the `add` or `init` phase:
+Each provider has its own options. In the desktop app, open **Providers** and click **Edit** on a provider. With the CLI, set options when you add or initialize:
 
 ```sh
 devsy provider add <provider-name> -o KEY=value
-```
-
-or
-
-```sh
 devsy provider init <provider-name> -o KEY=value
 ```
 
-To manage options later, list the current values with:
+List the options and their current values:
 
 ```sh
 devsy provider get <provider-name>
 ```
 
-An example output for the AWS Provider is:
-
-```
-          NAME            | REQUIRED |          DESCRIPTION           |         DEFAULT         |          VALUE
-----------------------------+----------+--------------------------------+-------------------------+--------------------------
-AGENT_PATH                | false    | The path where to inject the   | /var/lib/toolbox/devsy | /var/lib/toolbox/devsy
-                          |          | Devsy agent to.               |                         |
-AWS_ACCESS_KEY_ID         | false    | The AWS access key id          |                         |
-AWS_AMI                   | false    | The disk image to use.         |                         |
-AWS_DISK_SIZE             | false    | The disk size to use.          | 40                      | 40
-AWS_INSTANCE_TYPE         | false    | The machine type to use.       | c5.xlarge               | c5.xlarge
-AWS_REGION                | true     | The AWS cloud region to create |                         | us-west-2
-                          |          | the VM in, e.g. us-west-1      |                         |
-AWS_SECRET_ACCESS_KEY     | false    | The AWS secret access key      |                         |
-AWS_VPC_ID                | false    | The vpc id to use.             |                         |
-INACTIVITY_TIMEOUT        | false    | If defined, will automatically | 10m                     | 10m
-                          |          | stop the VM after the          |                         |
-                          |          | inactivity period.             |                         |
-INJECT_DOCKER_CREDENTIALS | false    | If Devsy should inject docker | true                    | true
-                          |          | credentials into the remote    |                         |
-                          |          | host.                          |                         |
-INJECT_GIT_CREDENTIALS    | false    | If Devsy should inject git    | true                    | true
-                          |          | credentials into the remote    |                         |
-                          |          | host.                          |                         |
-```
-
-This table is an overview. Change any option with:
+Change one later:
 
 ```sh
-devsy provider set <provider-name> --option <KEY>=<VALUE>
+devsy provider set <provider-name> --option KEY=VALUE
 ```
 
-For example, to change the disk size from 40GB to 120GB:
+## Docker provider
+
+Devsy follows the Docker CLI's rules for contexts and daemon endpoints. It keeps your existing Docker `config.json` and contexts, so contexts from Docker Desktop, OrbStack, or a remote endpoint keep working.
+
+Devsy picks the connection in the same order as the Docker CLI:
+
+1. `DOCKER_CONTEXT`
+2. `DOCKER_HOST`
+3. The active context in `$DOCKER_CONFIG/config.json`, or `~/.docker/config.json` when `DOCKER_CONFIG` is not set
+4. The local socket, `unix:///var/run/docker.sock`
+
+Set `DOCKER_CONTEXT` or `DOCKER_HOST` as a provider option or as an environment variable:
 
 ```sh
-devsy provider set aws --option AWS_DISK_SIZE=120
+devsy provider set docker -o DOCKER_CONTEXT=<context-name>
+devsy provider set docker -o DOCKER_HOST=ssh://user@docker-host
 ```
 
-Run `devsy provider get aws` again to confirm - the `VALUE` column for `AWS_DISK_SIZE` now reads `120`.
-
-
-## Docker Provider: Contexts and Daemon Endpoints
-
-Devsy follows standard Docker CLI context and endpoint semantics when running workspaces with the Docker provider.
-
-### Context Preservation
-
-When Devsy configures credentials for Docker, it automatically preserves your existing Docker client configuration (`config.json`) and stored context metadata (`contexts/`). This ensures that non-default Docker contexts-such as those managed by Docker Desktop (`desktop-linux`), OrbStack (`orbstack`), or custom remote endpoints-remain active and accessible during workspace creation and execution.
-
-### Explicit Context Selection (`DOCKER_CONTEXT`)
-
-You can target a specific Docker context explicitly:
-
-- Via provider option:
-  ```sh
-  devsy provider set docker -o DOCKER_CONTEXT=<context-name>
-  ```
-- Via environment variable:
-  ```sh
-  DOCKER_CONTEXT=<context-name> devsy workspace up <workspace>
-  ```
-
-When set, `DOCKER_CONTEXT` takes precedence over both `DOCKER_HOST` and the persisted current context set in `config.json`.
-
-### Explicit Daemon Targeting (`DOCKER_HOST`)
-
-To direct Docker commands directly to a specific socket or remote daemon endpoint without using a context, configure `DOCKER_HOST`:
-
-- Via provider option:
-  ```sh
-  devsy provider set docker -o DOCKER_HOST=ssh://user@docker-host
-  ```
-- Via environment variable:
-  ```sh
-  DOCKER_HOST=ssh://user@docker-host devsy workspace up <workspace>
-  ```
-
-For remote TCP daemons, enable mutual TLS authentication by configuring `DOCKER_TLS_VERIFY=1` and pointing `DOCKER_CERT_PATH` to your client certificates.
+For a remote TCP daemon with mutual TLS, set `DOCKER_TLS_VERIFY=1` and point `DOCKER_CERT_PATH` at your client certificates.
 
 ### Rancher Desktop
 
-Devsy supports Rancher Desktop through the Docker provider when Rancher Desktop uses the **Moby** container engine. It follows the same Docker context semantics described above; Rancher Desktop typically provides its CLI at `~/.rd/bin/docker` and uses the `rancher-desktop` context. On macOS, Devsy automatically checks that CLI location when `docker` is not available on the application `PATH`.
-
-You can configure both values explicitly:
+Rancher Desktop works with the Docker provider when it uses the Moby engine. If you use `containerd`, switch to Moby. On macOS Devsy looks for the CLI at `~/.rd/bin/docker` when `docker` is not on your `PATH`. You can set both values yourself:
 
 ```sh
 devsy provider set docker -o DOCKER_PATH="$HOME/.rd/bin/docker"
 devsy provider set docker -o DOCKER_CONTEXT=rancher-desktop
 ```
 
-For troubleshooting, verify the CLI and context directly, then inspect the Devsy provider configuration:
+## Single machine
 
-```sh
-"$HOME/.rd/bin/docker" context ls
-"$HOME/.rd/bin/docker" context inspect rancher-desktop
-"$HOME/.rd/bin/docker" --context rancher-desktop info
-devsy provider get docker
-```
-
-If Rancher Desktop is configured for `containerd`, switch it to Moby before using Devsy's Docker provider. Rancher Desktop `containerd`/`nerdctl` parity is not yet validated by this release.
-
-### Precedence
-
-Devsy resolves the active Docker connection in the same order as the Docker CLI:
-1. `DOCKER_CONTEXT` (explicit context selection)
-2. `DOCKER_HOST` (explicit daemon endpoint)
-3. Persisted active context in `$DOCKER_CONFIG/config.json` when `DOCKER_CONFIG` is set, and `~/.docker/config.json` otherwise (used for context resolution and credential preservation)
-4. Default local Unix socket (`unix:///var/run/docker.sock`)
-
-## Single Machine Provider
-
-By default, Devsy will use a separate machine for each workspace using the same provider,
-you can enable `Reuse machine` in a provider in order to use a single machine for all workspaces.
-
-In **the desktop app** the option is available in the option management interface for the provider
-(see section above)
-
-In **the CLI** you can set this option using:
+By default each workspace gets its own machine. To share one machine between all workspaces on a provider, turn on **Reuse machine** in the provider's options in the desktop app, or run:
 
 ```sh
 devsy provider init <provider-name> --single-machine
 ```
 
-## Default Provider
+## Default provider
 
-When you add a provider, you can mark it as the **default provider**. Devsy then uses it for any workspace you create without specifying another.
-
-In **the desktop app**, you can set a provider to be default in the option management interface for the provider
-(see section above)
-
-In **the CLI** you can set this option using:
+Devsy uses the default provider for workspaces that do not name one. Set it in the provider's options in the desktop app, or run:
 
 ```sh
 devsy provider use <provider-name>
 ```
 
-## Updating a Provider's Version or Source
+## Update a provider
 
-### List available versions
+Show available versions. Add `--prerelease` to include pre-releases and `--no-cache` to skip the version cache.
 
 ```sh
 devsy provider versions <name>
 ```
 
-The table shows the published tag, date, and whether it's the currently-installed version. Pass `--prerelease` to include pre-releases and `--no-cache` to bypass the version cache.
-
-### Re-fetch the current source
+Fetch the provider's source again. Without a pinned tag this pulls the latest release. With a pinned tag it fetches that same version.
 
 ```sh
 devsy provider set-source <name>
 ```
 
-Re-resolves the provider's existing source. If the source is a registry entry or a GitHub repo without a pinned tag, this pulls the latest release. If the source is already pinned (e.g. `github.com/org/repo@v0.1.0`), it re-fetches that same version - use `--version` to move to a different one.
-
-### Pin to a specific version
+Pin a version, or replace the source:
 
 ```sh
 devsy provider set-source <name> --version v0.2.0
-```
-
-Equivalent inline form (works for GitHub-hosted providers):
-
-```sh
-devsy provider set-source <name> github.com/my-org/my-repo@v0.2.0
-```
-
-### Point at a different source
-
-The `set-source` command also replaces the provider's source entirely - registry name, GitHub repo, URL, or local path:
-
-```sh
 devsy provider set-source <name> my-org/my-repo
 devsy provider set-source <name> https://path/to/provider.yaml
 devsy provider set-source <name> ../path-to/provider.yaml
 ```
 
-### Desktop
+In the desktop app, use the provider's **Select version**, **Update**, and **Initialize** actions.
 
-Open the Providers sidebar, select a provider, and use the ProviderSheet:
+Existing workspaces keep the provider version they were created with. Recreate one with `devsy workspace up <name> --recreate` to pick up the new version.
 
-- **Select version** - pick a tag from the versions dropdown to switch versions.
-- **Update** - jump to the latest release. The button surfaces an "Update available" banner when one is detected.
-- **Initialize** - re-run provider init (handy after upgrades).
+## Remove a provider
 
-Existing workspaces continue to use the version they were created with. Rebuild a workspace (`devsy workspace up <name> --recreate`) to pick up the new provider.
-
-## Removing a Provider
-
-### Devsy Desktop
-
-Navigate to the 'Providers' view and click on the trash icon of the provider
-you want to remove.
-
-If a workspace is currently using the provider, you'll be prompted to first
-remove that workspace, in order to then remove the provider.
-
-### Devsy CLI
-
-Remove an installed provider with:
+In the desktop app, click the trash icon on the provider. If a workspace uses it, Devsy asks you to remove that workspace first. With the CLI:
 
 ```sh
-devsy provider delete <provider name>
+devsy provider delete <provider-name>
 ```
 
 <Callout type="warn">
-  Remember first to delete any workspace related to this provider first, or move
-  them to another provider, else you'll not be able to interact with the
-  workspace until you re-install the provider used.
+Delete or move the provider's workspaces first. Otherwise you cannot use them until you add the provider again.
 </Callout>
 
-## Renaming a Provider
+## Rename a provider
 
-You can rename a provider using the `devsy provider rename` command. All workspaces and machines using the provider continue to work under the new name. Provider configuration, options, and state are fully preserved.
-
-### CLI
-
-```bash
+```sh
 devsy provider rename <current-name> <new-name>
 ```
 
-#### Example
+Workspaces, machines, options, and the default setting follow the new name. If any step fails, Devsy rolls the rename back.
 
-```bash
-devsy provider rename my-docker local-docker
-```
+- The new name must be unique and can use lowercase letters, numbers, and dashes, up to 32 characters.
+- Pro providers cannot be renamed.
+- Stop the provider's workspaces first.
 
-### Constraints
-
-- The new name must be unique - it cannot match an existing provider.
-- Provider names can only contain lowercase letters, numbers, and dashes, up to 32 characters.
-- Pro providers (proxy/daemon) cannot be renamed. They are managed by the platform.
-- Workspaces bound to the provider must be stopped before renaming.
-
-### What happens
-
-- The provider is moved to the new name with all options and settings intact.
-- All workspaces and machines associated with the provider are updated to reference the new name.
-- If the provider was the default, the default is updated to the new name.
-- If any step fails, the entire operation is rolled back to the original state.
-
-### GUI
-
-1. Navigate to the **Providers** section.
-2. Select the provider you want to rename.
-3. In the provider's configuration page, edit the **Provider Name** field.
-4. Click **Update Options** to save.
-
-Devsy will update the provider and all associated workspaces automatically.
+In the desktop app, edit **Provider Name** in the provider's configuration and click **Update Options**.

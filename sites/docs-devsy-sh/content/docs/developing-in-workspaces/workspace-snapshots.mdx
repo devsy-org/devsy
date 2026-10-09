@@ -3,113 +3,71 @@ title: Workspace Snapshots
 sidebar_label: Workspace Snapshots
 ---
 
-## Workspace Snapshots
-
-A snapshot captures a workspace's working state at a point in time: the running container's filesystem (installed packages, config changes) and the contents of its bind-mounted volumes (your code, including uncommitted changes). Snapshots are stored as OCI artifacts in a registry you control, so you can restore them later, or use them to transfer a workspace to a different provider.
+A snapshot captures a workspace at a point in time: the container's filesystem, such as installed packages and config changes, and the contents of its bind-mounted volume, including uncommitted code. Snapshots are stored as OCI artifacts in a registry you control. You can restore one later or use it to move a workspace to another provider.
 
 <Callout title="Registry required">
-Snapshots are pushed to and pulled from an OCI registry (Docker Hub, GHCR, ECR, or a self-hosted `registry:2`), not stored locally. You need push/pull access to a registry before creating one.
+Snapshots are pushed to and pulled from an OCI registry, not stored locally. You need push and pull access to one.
 </Callout>
 
-## Create a Snapshot
+## Limitations
 
-The workspace must already be running (`devsy workspace up` must have created it, so its mount information is available):
+- Only workspaces with exactly one bind mount are supported.
+- Only local providers, such as Docker and Podman, can create snapshots. Machine-provider workspaces cannot.
+
+## Create a snapshot
+
+The workspace must already exist and be running.
 
 ```sh
 devsy snapshot create my-workspace --registry ghcr.io/my-org/snapshots
 ```
 
-On success, the command prints the snapshot ref, which you'll use to restore it later:
+The command prints the snapshot reference, which you need to restore it. Add `--message` to describe the snapshot.
 
-```
-ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
-```
-
-Add `--message` to describe the snapshot:
-
-```sh
-devsy snapshot create my-workspace --registry ghcr.io/my-org/snapshots --message "before the auth refactor"
-```
-
-### Default Registry
-
-Rather than passing `--registry` every time, set a default for the current context:
+To avoid passing `--registry` each time, set a default for the context:
 
 ```sh
 devsy context set -o SNAPSHOT_REGISTRY=ghcr.io/my-org/snapshots
 ```
 
-### Limitations
-
-- Only workspaces with exactly one bind mount are supported today. Workspaces with multiple mounts (e.g. an extra `mounts` entry in `devcontainer.json`) aren't yet supported.
-- Only local providers (Docker, Podman) can create snapshots. Machine-provider workspaces aren't supported.
-
-## List Snapshots
+## List snapshots
 
 ```sh
 devsy snapshot list my-workspace --registry ghcr.io/my-org/snapshots
 ```
 
-Shows every snapshot pushed for that workspace, newest first.
+This shows every snapshot of that workspace, newest first.
 
-## Restore a Snapshot
-
-```sh
-devsy snapshot restore ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
-```
-
-This creates a new workspace from the snapshot's committed filesystem and volumes, skipping the devcontainer build entirely since the image is already built. By default the new workspace reuses the original workspace ID; pass `--workspace-id` to restore under a different one, or `--target-provider` to restore using a different provider than the one the snapshot was taken from.
-
-Equivalently, you can restore as part of `devsy workspace up`:
+## Restore a snapshot
 
 ```sh
-devsy workspace up --from-snapshot ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
+devsy snapshot restore <snapshot-ref>
 ```
 
-`--from-snapshot` can't be combined with a positional source or `--source`.
+This creates a workspace from the saved filesystem and volume and skips the devcontainer build. It reuses the original workspace ID. Use `--workspace-id` to pick another one, or `--target-provider` to restore onto a different provider.
 
-### Transferring Between Providers
-
-To move a workspace to a different provider, restore its snapshot with `--target-provider`:
+You can also restore as part of `devsy workspace up`. This cannot be combined with a source argument or `--source`.
 
 ```sh
-devsy snapshot restore ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk --target-provider kubernetes
+devsy workspace up --from-snapshot <snapshot-ref>
 ```
 
-## Delete a Snapshot
+To move a workspace to another provider, restore its snapshot with `--target-provider`.
+
+## Delete a snapshot
 
 ```sh
-devsy snapshot delete ghcr.io/my-org/snapshots:my-workspace-20260731150405-x7f2qk
+devsy snapshot delete <snapshot-ref>
 ```
 
-Removes the snapshot's manifest from the registry. The underlying image and volumes blobs are left for the registry's own garbage collection.
+This removes the manifest from the registry. The registry's own garbage collection removes the image and volume blobs.
 
-## Export and Import
+## Export and import
 
-`devsy workspace export`/`devsy workspace import` automatically carry a workspace's snapshot ref when the workspace was itself restored from one, so exporting and re-importing a snapshot-sourced workspace preserves its actual filesystem and volume state, not just its metadata - provided the snapshot manifest is still present in the registry and the environment doing the import has access to pull that registry artifact. If the manifest has been deleted or the import environment can't reach or authenticate to the registry, only the workspace's metadata carries over, not its filesystem/volume state.
+`devsy workspace export` and `devsy workspace import` carry the snapshot reference for a workspace that was restored from one. The import restores the real filesystem and volume only if the manifest still exists and the importing machine can pull from the registry. Otherwise only the workspace metadata carries over.
 
-## Identifying Snapshot Images
+## What is included
 
-The container image a snapshot commits is tagged `LABEL sh.devsy.snapshot=true`, so it can be identified with `docker inspect` or filtered with `docker images --filter label=sh.devsy.snapshot` even outside `devsy snapshot` tooling.
+The committed container image carries the label `sh.devsy.snapshot=true`, so you can find it with `docker images --filter label=sh.devsy.snapshot`.
 
-## Volume filtering
-
-`.devsyignore` rules do not apply to the committed container image.
-
-When Devsy captures host bind mounts, `.devsyignore` applies only to the explicitly
-designated workspace mount, relative to that source root. The streaming protocol
-keeps additional bind mounts independent of those rules.
-The snapshot CLI currently requires a single workspace mount because restore
-cannot disambiguate multiple mounts.
-
-Files excluded from the workspace volume are absent from the snapshot and from a
-restore into an empty or reset target. Without `--reset`, Devsy skips restoring a
-target that already contains workspace files and retains its existing contents.
-A missing ignore file applies no user exclusions; an invalid or unreadable existing file
-stops snapshot streaming. Snapshot creation loads persisted workspace metadata,
-which does not grant generated-file transfer exceptions. Devsy excludes its generated
-`.devsy-internal` directory at the configured build context, including files left
-behind by an interrupted build or failed cleanup. Unrelated folders with that name
-follow the workspace ignore rules. Missing build-context metadata stops snapshot
-creation; run `devsy up` to refresh it. Tar target prefixes and the volume restore
-format are unchanged.
+`.devsyignore` rules apply to the workspace mount and not to the container image. Files they exclude are missing from the snapshot. If snapshot creation reports missing build-context metadata, run `devsy up` to refresh it.

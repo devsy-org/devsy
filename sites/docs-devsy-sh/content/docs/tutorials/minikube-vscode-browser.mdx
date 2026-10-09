@@ -59,7 +59,7 @@ Now to start minikube from home:
 ~/minikube-start.sh
 ```
 
-Note: you need to start minikube between vm shutdown/reboots
+Start minikube again after every VM shutdown or reboot.
 
 #### Test your install
 
@@ -77,14 +77,14 @@ service/kubernetes   ClusterIP   10.96.0.1        <none>        443/TCP   4d14h
 
 ## Install Devsy
 
-Using the Devsy install for Linux deb [docs](https://devsy.sh/docs/getting-started/install)
+Install Devsy from the Linux DEB package, as described in [Install Devsy](../getting-started/install.mdx).
 
 Download the deb install
 
 ```sh
 
 cd ~/
-wget https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_amd64.deb?_gl=1*76i3lz*_ga*MTczNjE4NzI1My4xNjkxNDQ1ODU1*_ga_4RQQZ3WGE9*MTY5MjY4MTU4NS45LjAuMTY5MjY4MTU4Ny41OC4wLjA. -O Devsy_linux_amd64.deb
+wget https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_amd64.deb
 sudo dpkg -i Devsy_linux_amd64.deb
 ```
 
@@ -134,13 +134,13 @@ A `hostPath` volume must exist inside the Minikube node itself (the VM or contai
 minikube ssh -- sudo mkdir -p /mnt/data/devsy
 ```
 
-Create the persisent volume for the Kubernetes Provider.
+Create the persistent volume for the Kubernetes Provider.
 
 ```sh
 kubectl create -f ~/devsys/devsy-pv.yml
 ```
 
-Confirm the persisent volume has been created.
+Confirm the persistent volume has been created.
 
 ```sh
 kubectl get pv
@@ -150,16 +150,16 @@ devsy-pv                                  1Gi        RWO            Retain      
 
 ### Locate your kubeconfig
 
-List the director ~/.kube
+List `~/.kube`
 
 ```sh
 ls ~/.kube
 cache  completion.bash.inc  config
 ```
 
-Within .minikube the config file is the kubeconfig that can be used by Devsy kubernetes provider.
+The `config` file in `~/.kube` is the kubeconfig that can be used by Devsy kubernetes provider.
 
-Within the kubernetes provider the kubeconfig path will be
+In the Kubernetes provider, the kubeconfig path is
 
 ```
 /home/dev/.kube/config
