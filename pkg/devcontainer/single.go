@@ -1224,7 +1224,8 @@ func (r *runner) applyDriverRecreateRequirement(
 		containerUser = details.Config.Labels[config.UserLabel]
 	}
 	remoteUser := effectiveRemoteUser(merged, containerUser)
-	if preflight, ok := r.driver.(driver.ReusePreflightDriver); ok {
+	if preflight, ok := r.driver.(driver.ReusePreflightDriver); ok &&
+		preflight.SupportsReusePreflight() {
 		if err := preflight.ReusePreflight(ctx, r.id, remoteUser); err != nil {
 			return err
 		}
@@ -1252,9 +1253,11 @@ func (r *runner) scheduleDriverRecreation(
 }
 
 func (r *runner) needsCurrentContainerIdentity() bool {
-	_, migration := r.driver.(driver.RecreateRequiredDriver)
-	_, preflight := r.driver.(driver.ReusePreflightDriver)
-	return migration || preflight
+	if _, migration := r.driver.(driver.RecreateRequiredDriver); migration {
+		return true
+	}
+	preflight, ok := r.driver.(driver.ReusePreflightDriver)
+	return ok && preflight.SupportsReusePreflight()
 }
 
 func (r *runner) currentContainerIdentity(

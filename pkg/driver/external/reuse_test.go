@@ -35,7 +35,9 @@ func (s *HostSuite) TestReusePreflightAcrossFreshProcesses() {
 
 func (s *HostSuite) TestReusePreflightCapabilityNegotiation() {
 	host := s.host(fake.Normal)
+	s.True(host.SupportsReusePreflight())
 	host.info.Capabilities.ReusePreflight = false
+	s.False(host.SupportsReusePreflight())
 	// An invalid executable proves the optional RPC never launches a runtime.
 	host.config.Binaries[fixtureKey][0].Checksum = "invalid"
 	s.NoError(host.ReusePreflight(context.Background(), fixtureWorkspace, fixtureProcessUser))

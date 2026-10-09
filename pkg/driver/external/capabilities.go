@@ -30,6 +30,11 @@ func (h *Host) RequiresWorkspaceChown() bool {
 	return h.info.Capabilities.RequiresWorkspaceChown
 }
 
+// SupportsReusePreflight reflects the negotiated optional RPC.
+func (h *Host) SupportsReusePreflight() bool {
+	return h.info.Capabilities.ReusePreflight
+}
+
 func (h *Host) RecreateMode() driver.RecreateMode {
 	if h.info.Capabilities.RecreateMode == runtimev1.RecreateMode_RECREATE_MODE_DELETE {
 		return driver.RecreateDelete

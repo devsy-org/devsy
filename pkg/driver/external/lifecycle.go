@@ -34,7 +34,7 @@ func (h *Host) ProvisioningPreflight(ctx context.Context) error {
 }
 
 func (h *Host) ReusePreflight(ctx context.Context, workspaceID, remoteUser string) error {
-	if !h.info.Capabilities.ReusePreflight {
+	if !h.SupportsReusePreflight() {
 		return ctx.Err()
 	}
 	if workspaceID == "" || remoteUser == "" {

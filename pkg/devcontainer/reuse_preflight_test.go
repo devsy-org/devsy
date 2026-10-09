@@ -18,7 +18,10 @@ type reusePreflightMockDriver struct {
 	err                     error
 	workspaceID, remoteUser string
 	calls                   int
+	unsupported             bool
 }
+
+func (d *reusePreflightMockDriver) SupportsReusePreflight() bool { return !d.unsupported }
 
 func (d *reusePreflightMockDriver) ReusePreflight(_ context.Context, id, user string) error {
 	d.calls++
@@ -71,6 +74,29 @@ func TestReusePreflightSkippedForCreation(t *testing.T) {
 	p.options.Recreate = false
 	require.NoError(t, r.applyDriverRecreateRequirement(context.Background(), nil, p))
 	require.Zero(t, d.calls)
+}
+
+func TestReusePreflightUnsupportedPreservesCreationIdentity(t *testing.T) {
+	d := &reusePreflightMockDriver{
+		provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+			mockDriver: &mockDriver{},
+		},
+		unsupported: true,
+	}
+	r := newTestRunner(d)
+	p := recreateResolveParams()
+	p.options.Recreate = false
+	p.parsedConfig.Config.RemoteUser = reuseCurrentUser
+	p.substitutionContext = &config.SubstitutionContext{}
+	details := runningContainerDetails()
+	details.Config.Labels[overlayStructureLabel] = structuralSignature(&config.DevContainerConfig{})
+	details.Config.Labels[metadata.ImageMetadataLabel] = `[{"remoteUser":"old-user"}]`
+	merged, err := r.mergeExistingContainerConfig(context.Background(), details, p)
+	require.NoError(t, err)
+	require.Equal(t, "old-user", merged.RemoteUser)
+	require.NoError(t, r.applyDriverRecreateRequirement(context.Background(), details, p))
+	require.Zero(t, d.calls)
+	require.False(t, p.options.Recreate)
 }
 
 func TestReusePreflightRefreshesDeveloperIdentity(t *testing.T) {
