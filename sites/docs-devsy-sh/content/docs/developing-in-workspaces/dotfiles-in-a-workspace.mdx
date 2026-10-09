@@ -11,13 +11,13 @@ Pass the repository with `--dotfiles`:
 devsy workspace up https://github.com/example/repo --dotfiles https://github.com/my-user/my-dotfiles-repo
 ```
 
-Devsy then looks in the repository for one of these install scripts and runs the first it finds:
+Devsy then looks in the repository for one of these install scripts and uses the first that completes successfully, trying the next script if one fails:
 
 - `install.sh`, `install`
 - `bootstrap.sh`, `bootstrap`, `script/bootstrap`
 - `setup.sh`, `setup`, `setup/setup`
 
-If there is none, Devsy links every hidden file (names starting with `.`) into the container's `$HOME`.
+If no script succeeds, Devsy links hidden files (names starting with `.`) into the container's `$HOME`. It skips directories, so `.config/` needs an install script.
 
 To run a different script, name it:
 
