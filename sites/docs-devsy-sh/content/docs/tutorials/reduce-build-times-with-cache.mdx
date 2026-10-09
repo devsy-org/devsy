@@ -3,22 +3,19 @@ title: Reduce build times with remote caching
 sidebar_label: Reduce build times
 ---
 
-Devsy provides the ability to use a registry as a remote backend cache for your container builds. To enable it perform
+Devsy can use a container registry as a remote cache for builds. Prebuild once, and everyone who builds after that reuses the cached layers.
+
+## Set up
+
+Point Devsy at a registry path, in the form `domain/project/repo`:
 
 ```
-devsy context set -o REGISTRY_CACHE={registry}
+devsy context set -o REGISTRY_CACHE=gcr.io/my-project/my-dev-env
 ```
 
-where registry follows the syntax "\{domain\}/\{project\}/\{repo\}", such as gcr.io/my-project/my-dev-env
+With the Docker provider, the Docker daemon needs the containerd image store. Merge this into your existing `/etc/docker/daemon.json`, or use **Settings > Docker Engine** in Docker Desktop, and keep any other settings already in the file:
 
-
-If using the docker provider, ensure your docker environment has the image snapshotter enabled in your daemon (https://docs.docker.com/engine/storage/containerd/)
-
-Merge the `containerd-snapshotter` setting into your existing `/etc/docker/daemon.json` (or the platform-equivalent path, e.g. via Docker Desktop's Settings > Docker Engine on macOS/Windows) - do not overwrite the whole file, since it may already contain other settings such as registry mirrors or proxy configuration:
-
-```
-cat /etc/docker/daemon.json
-
+```json
 {
   "features": {
     "containerd-snapshotter": true
@@ -26,38 +23,30 @@ cat /etc/docker/daemon.json
 }
 ```
 
-Then restart Docker to apply the change:
-
-```
-sudo systemctl restart docker
-```
-
-Verify the active storage driver is now `containerd`:
+Restart Docker, then check that the storage driver is `containerd`:
 
 ```
 docker info --format '{{.DriverStatus}}'
 ```
 
-**Warning:** switching the storage backend does not delete any existing images or containers, but images/containers stored under the previous backend will not be visible while the new backend is active. If you don't see an image you expect after switching, it likely still exists under the previous storage driver rather than having been removed.
+<Callout type="warn">
+Switching the storage backend does not delete images or containers, but items stored under the old backend are not visible while the new one is active.
+</Callout>
 
-Then prebuild your image, this will populate the registry cache so that developers that need to build updates can build on top of the existing pre build.
+## Populate the cache
+
+Build the workspace image once to fill the cache:
 
 ```
 devsy workspace build my-workspace
 ```
 
-Now the next time you or anyone in your team needs to build an image, it can pull from the cache. If you've made changes to your environment, then Devsy will detect these changes and are
-built on top of the existing image layers.
+Later builds pull from the cache and build only what changed.
 
+## How Devsy detects changes
 
-#### How does Devsy detect changes?
+Devsy reads your Dockerfile and `devcontainer.json`, finds the files that affect the build, and hashes their contents into the image tag. When a file changes, the hash changes and Devsy rebuilds, reusing the cached layers it can. Follow Docker's Dockerfile best practices to keep rebuilds small.
 
-Devsy parses your Dockerfile and .devcontainer.json to detect file paths that can affect your build context. Devsy traverses these files and makes a hash of the file contents to use as the
-container's image tag. When you make changes to these files, the hash will change causing a rebuild. Thanks to the remote cache the previous layers will be built so only changes are needed. To
-reduce build times it is recommened to follow docker's best practices when writing Dockerfiles.
+## Builds in Kubernetes
 
-#### Why Kaniko?
-
-When Devsy uses the kubernetes driver and needs to build a devcontainer, but your local environment does not have a container runtime, it builds the container in the cluster. It does so using
-Kaniko, Kaniko builds the container in userspace and does not require super user priveleges. This is much more secure than docker in docker, where the docker daemon is either mounted locally on
-the container or over a network within the cluster, neither being ideal.
+With the Kubernetes driver and no container runtime on your machine, Devsy builds the image in the cluster with Kaniko. Kaniko builds in userspace without root, which avoids the risks of Docker in Docker.

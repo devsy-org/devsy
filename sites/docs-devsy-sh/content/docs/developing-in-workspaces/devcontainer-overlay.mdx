@@ -3,34 +3,35 @@ title: Devcontainer overlays
 sidebar_label: Devcontainer overlays
 ---
 
-Use `--devcontainer-overlay` to layer a second `devcontainer.json` over the config selected for a workspace:
+`--devcontainer-overlay` layers a second `devcontainer.json` over the config selected for a workspace:
 
 ```sh
 devsy workspace up <workspace> --devcontainer-overlay ./devcontainer/overlay.json
 ```
 
-The overlay participates in build planning before substitution and image creation. Supported build selectors are `image`, `dockerFile`, `context`, `build`, `dockerComposeFile`, `service`, and `runServices`. `initializeCommand`, `features`, and `overrideFeatureInstallOrder` also participate before the build. The primary config remains the effective origin; paths to assets declared in the overlay and local features are resolved relative to the file that declares them.
+The overlay is applied during build planning, before substitution and image creation. It supports these fields: `image`, `dockerFile`, `context`, `build`, `dockerComposeFile`, `service`, `runServices`, `initializeCommand`, `features` and `overrideFeatureInstallOrder`. It does not enable arbitrary config replacement. The primary config stays the effective origin. Paths inside the overlay, including local features, are relative to the file that declares them.
 
-## Replacement and clearing
+## How fields combine
 
-Fields absent from an overlay leave the primary value in place when both configs select the same build type. Selecting a different build type (image, Dockerfile, or Compose) clears incompatible fields from the previous type before applying the new selector. For example, an overlay that selects Compose can replace a primary image config without retaining its image selector.
+- **Same build type.** Fields missing from the overlay keep the primary value.
+- **Different build type** (image, Dockerfile or Compose). Fields from the previous type are cleared before the new selector applies. An overlay that selects Compose can replace a primary image config without keeping its image.
+- **`build`.** `args` merge by key, with overlay keys winning. `target`, `cacheFrom` and `options` replace the primary values.
+- **`dockerFile` and `context`.** The top-level forms are the same as `build.dockerfile` and `build.context`. Setting both forms to different paths is an error.
+- **Compose.** `dockerComposeFile` takes a path or a list, and replaces the primary selection as a whole. `service` replaces the service. `runServices` replaces the sidecar list. Relative paths resolve from the declaring file, including files reached through `extends`. Paths inside the Compose YAML follow Docker Compose's own rules.
+- **Required selectors.** They cannot be `null` or empty. Devsy reports an error instead of guessing.
+- **`initializeCommand`.** The overlay's command replaces the primary one. It runs on the host before the build, in the workspace root. A string runs through the shell, an array runs directly, and an object runs its commands in parallel. To disable the primary command, use `""`, `[]` or `{}`. `null` is an error.
+- **`runServices`.** Use `[]` to clear the primary list.
+- **Features.** Precedence is primary config, then overlay, then CLI `--features`.
+- **Runtime metadata.** The existing overlay behavior still applies. For example, `remoteEnv` values combine, with the overlay winning on matching keys.
 
-Within `build`, overlay `args` merge by key, so matching overlay keys replace primary keys and other primary arguments remain. `target`, `cacheFrom`, and `options` replace their primary values when supplied. The legacy top-level `dockerFile` and `context` fields normalize to `build.dockerfile` and `build.context`; setting both forms to different paths is an error. Structural selectors that must be present cannot be `null` or empty: Devsy reports an error instead of guessing. Explicit `null` is also an error for `initializeCommand`. Use an empty `initializeCommand` (`""`, `[]`, or `{}`) to disable the primary command, and use `"runServices": []` to clear the primary list.
+The feature lockfile stays next to the primary config. Structural overlays cannot attach to or replace a `containerID` config.
 
-`dockerComposeFile` accepts a path string or a list of paths. A supplied string or list replaces the primary Compose file selection as a whole; `service` replaces the selected service, and `runServices` replaces the sidecar list. Paths in these fields are substituted before resolution. Relative paths are resolved from the file that declares them, including files inherited through `extends`, then represented relative to the primary config origin; absolute paths remain absolute. Paths inside Compose YAML, such as build contexts and bind mounts, continue to follow Docker Compose's own project-directory rules. The feature lockfile remains beside the primary devcontainer config. Structural overlays cannot attach to or replace a `containerID` config.
+## Applying changes
 
-A missing or malformed overlay is an error. Devsy resolves it before replacing an existing workspace, so a failed change leaves the current workspace available. Use `--recreate` to apply a structural change to an existing workspace:
+A missing or malformed overlay is an error. Devsy reads it before replacing an existing workspace, so a failure leaves the current workspace available. To apply a structural change to an existing workspace, recreate it:
 
 ```sh
 devsy workspace up <workspace> --recreate --devcontainer-overlay ./devcontainer/overlay.json
 ```
 
-After a successful creation, workspace cleanup uses the recorded workspace invocation. It can still delete the workspace if the overlay file is later removed or malformed.
-
-The overlay's `initializeCommand` replaces the primary command when present. It runs on the host with the workspace root as its working directory, before the image build. A string runs through the shell; an argument array runs directly as one command; a named-object form runs its commands in parallel. Files it creates can be used by the build when they are inside the selected build context.
-
-## Feature and runtime behavior
-
-Overlay `features` and `overrideFeatureInstallOrder` participate in image planning before feature installation. The precedence is primary config, then overlay, then CLI `--features`. Local feature paths in the overlay are relative to the overlay file.
-
-Runtime metadata continues to layer onto the resolved config using Devsy's existing overlay behavior. For example, overlay `remoteEnv` values combine with primary values, with overlay values taking precedence for matching keys. This support list describes the fields consumed during build planning; it does not enable arbitrary structural config replacement.
+After a successful creation, workspace cleanup uses the recorded invocation, so you can still delete the workspace if the overlay file is later removed or broken.

@@ -1,28 +1,22 @@
 ---
 title: What is Devsy?
 sidebar_label: What is Devsy?
-description: Devsy runs devcontainer-based developer workspaces as Docker containers, Kubernetes pods, or microVMs on local machines, remote SSH hosts, or public and private clouds.
+description: Devsy runs devcontainer-based developer workspaces on your machine, a remote host, Kubernetes, or a cloud.
 ---
 
-Devsy enables organizations to scale their engineering operations through standardized, trusted development environments. Environments run as containers, Kubernetes pods, or hardware-isolated microVMs, defined by a [devcontainer.json](https://containers.dev/) that lives alongside your source. [Devsy providers](./managing-providers/what-are-providers) provision those environments on a developer's machine, any reachable remote host, or in a public or private cloud, and you can extend Devsy with your own custom providers.
+Devsy creates development workspaces from a [devcontainer.json](https://containers.dev/) that lives in your repository. A workspace runs as a container, a Kubernetes pod, or a microVM, and your IDE connects to it.
 
 <figure>
   <img src="/docs/media/devsy-flow.gif" alt="Animated demo of launching Devsy, connecting to a workspace, and opening it in an IDE" />
   <figcaption>Devsy</figcaption>
 </figure>
 
-Devsy connects each developer's local IDE to the infrastructure where the work runs. The same workspace can live on a laptop, a cloud machine, or a shared remote host, and Devsy creates and manages every workspace the same way. That consistency lets a team standardize on one environment definition and move between backends without re-learning their tooling.
+Where a workspace runs is decided by a [provider](./managing-providers/what-are-providers). Use a provider for your own machine, an SSH host, Kubernetes, or a cloud. You can also [write your own](./developing-providers/quickstart). Every workspace is created and managed the same way regardless of provider.
 
 ## Why Devsy?
 
-Devsy implements the open [DevContainer standard](https://containers.dev/), so the environment definition your team commits remains portable across every backend Devsy supports.
-
-For engineering organizations, Devsy delivers:
-* **Standardized environments**: Define a workspace once in `devcontainer.json` and give every engineer the same toolchain, dependencies, and configuration. New hires are productive on day one instead of spending days on setup.
-* **Cost efficiency at scale**: Run workspaces on the infrastructure you already pay for, and let Devsy shut down idle machines so you spend only on capacity in use.
-* **No vendor lock-in**: Choose the infrastructure that fits each team - local, cloud, Kubernetes, or remote SSH hosts. Switch a workspace's provider with a single command, with no rewrite of your environment definition.
-* **Flexible development**: Engineers get the same experience locally and remotely, from quick prototyping on a laptop to heavy builds on a cloud machine.
-* **Cross-IDE support**: VS Code and its variants and the full JetBrains suite are supported out of the box; any other editor can connect over SSH.
-* **Extensible**: Devsy is open source and extensible. If a provider doesn't exist for your platform, you can build one.
-* **Rich feature set**: Prebuilds, inactivity-based shutdown, and Git and Docker credential sync are built in, with more capabilities on the way.
-* **Desktop app and CLI**: The desktop application gives engineers a guided way to manage workspaces, while the CLI drives automation and platform integration across your organization.
+- **One environment definition.** `devcontainer.json` is the open standard, so the same file works on every provider.
+- **Your infrastructure.** Run workspaces on machines you already pay for. Machine providers can stop idle machines with an [inactivity timeout](./developing-in-workspaces/inactivity-timeout).
+- **No lock-in.** Move a workspace to another provider without changing its definition.
+- **Your editor.** VS Code, the JetBrains IDEs, and any editor that can connect over SSH.
+- **Desktop app and CLI.** The desktop app is for everyday use. The CLI is for automation.

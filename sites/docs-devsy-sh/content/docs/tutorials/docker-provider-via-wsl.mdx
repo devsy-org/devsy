@@ -3,50 +3,24 @@ title: Docker provider via WSL
 sidebar_label: Docker provider via WSL
 ---
 
-## Purpose
+This tutorial runs a Docker engine inside WSL2 and connects Devsy, running on Windows, to it over SSH. Docker and the project files stay in the WSL filesystem for speed, while Devsy and the editor run on Windows.
 
-This tutorial sets up a Docker engine inside WSL and connects Devsy, running on Windows, to it over SSH. It keeps Docker and the project files in the WSL filesystem for volume performance while running Devsy and the editor on Windows.
-
-
-## Installing Docker in WSL
+## Install Docker in WSL
 
 ### Enable WSL2
 
-Run these commands in **PowerShell as Administrator**.
-
-You can skip this step if WSL2 is already installed.
-
-On a recent Windows build, the single command below is the simplest path. It enables the required Windows features, downloads the WSL kernel, sets WSL2 as the default version, and installs a default Linux distribution:
+In PowerShell as Administrator, skip this step if WSL2 is already installed:
 
 ```powershell
 wsl --install
 ```
 
-If `wsl --install` is unavailable, or you need to enable the features by hand, enable both the Windows Subsystem for Linux and the Virtual Machine Platform. WSL2 requires both optional features: the Virtual Machine Platform provides the lightweight virtual machine that runs the Linux kernel, and without it WSL falls back to WSL1:
+This enables the required features and installs a default Linux distribution. Without `wsl --install`, enable both the Windows Subsystem for Linux and the Virtual Machine Platform features by hand, restart, and run `wsl --set-default-version 2`. Without the Virtual Machine Platform, WSL falls back to WSL1.
 
-```powershell
-dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
-dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
-```
-
-Restart the machine, then set WSL2 as the default version so the distribution installed in Step 2 runs as WSL2 rather than WSL1:
-
-```powershell
-wsl --set-default-version 2
-```
-
-### Install a WSL2 distribution
-
-If you ran `wsl --install` in Step 1 without naming a distribution, a default Linux distribution is installed and you can skip ahead. To install `Ubuntu-24.04`, run the following and supply the `username` and `password` when prompted:
-
-```powershell
-wsl --install Ubuntu-24.04
-```
-
-To open the Ubuntu shell, type `wsl` in PowerShell.
+To install a specific distribution, run `wsl --install Ubuntu-24.04` and set a username and password. Open its shell with `wsl`.
 
 <Callout type="info">
-Steps 3 and 5 use `systemctl` to start Docker and the SSH server. `systemctl` requires systemd enabled inside WSL. Ubuntu 24.04 installed through `wsl --install` has systemd enabled by default. If `systemctl` is unavailable, enable it by adding the following to `/etc/wsl.conf` inside WSL, then restart WSL (`wsl --shutdown` from PowerShell, followed by `wsl`):
+The steps below use `systemctl`, which needs systemd inside WSL. Distributions installed through `wsl --install` enable it by default. If it is missing, add this to `/etc/wsl.conf`, then run `wsl --shutdown` from PowerShell and start `wsl` again:
 
 ```ini
 [boot]
@@ -54,55 +28,20 @@ systemd=true
 ```
 </Callout>
 
-### Install Docker in the WSL distribution
+### Install Docker Engine
 
-Run the following inside WSL to install the Docker engine on Ubuntu 24.04. This follows the [official Docker Engine installation for Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
+Follow the [official Docker Engine installation for Ubuntu](https://docs.docker.com/engine/install/ubuntu/) inside WSL. Then add your user to the `docker` group and start the services:
 
 ```bash
-# If your machine is behind a corporate firewall,
-# define HTTP_PROXY and HTTPS_PROXY before running the commands below.
-
-sudo apt-get update
-sudo apt-get install ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo -E curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
 sudo usermod -aG docker $USER
-sudo systemctl enable --now docker.service
-sudo systemctl enable --now containerd.service
+sudo systemctl enable --now docker.service containerd.service
 ```
 
-### Configure a Docker daemon proxy (optional)
+Behind a corporate proxy, also [configure the Docker daemon proxy](https://docs.docker.com/engine/daemon/proxy/).
 
-If your machine is behind a corporate firewall, configure the Docker daemon to use the proxy. Run the following inside WSL:
+### Install an SSH server
 
-```bash
-sudo mkdir -p /etc/systemd/system/docker.service.d
-sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf > /dev/null <<EOF
-[Service]
-Environment="HTTP_PROXY=$HTTP_PROXY"
-Environment="HTTPS_PROXY=$HTTPS_PROXY"
-Environment="NO_PROXY=$NO_PROXY"
-Environment="http_proxy=$http_proxy"
-Environment="https_proxy=$https_proxy"
-Environment="no_proxy=$no_proxy"
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl restart docker.service containerd.service
-```
-
-### Install and start an OpenSSH server in WSL
-
-The Windows Docker client reaches the Docker daemon in WSL over SSH rather than over an unauthenticated TCP port. Install and start an SSH server inside WSL:
+The Windows Docker client reaches the daemon over SSH, not an open TCP port:
 
 ```bash
 sudo apt-get update
@@ -110,21 +49,11 @@ sudo apt-get install -y openssh-server
 sudo systemctl enable --now ssh.service
 ```
 
-WSL2 forwards `localhost` listening sockets from WSL to Windows, so the SSH server is reachable from Windows at `localhost` once it is running.
+WSL2 forwards `localhost` to Windows, so the server is reachable there. To avoid password prompts, run `ssh-keygen` on Windows and append the public key to `~/.ssh/authorized_keys` in WSL.
 
-To avoid a password prompt on each Docker CLI connection, set up SSH key authentication: generate a key pair on Windows with `ssh-keygen`, then append the public key to `~/.ssh/authorized_keys` inside WSL.
+## Connect Windows to the daemon
 
-## Connect the Windows Docker client to the Docker daemon in WSL
-
-### Install the Docker client for Windows
-
-Download the Docker CLI binary from the [Docker static binaries for Windows](https://download.docker.com/win/static/stable/x86_64/) index. Choose the latest stable `docker-*.zip`, extract it, and add the extracted directory to your `PATH` environment variable.
-
-Verify the installation by running `docker` in a new PowerShell window.
-
-### Create a Docker context for the WSL daemon
-
-Create a Docker context that connects to the WSL Docker daemon over SSH. Replace `<wsl-username>` with the username created in Step 2. Run these commands in PowerShell:
+Download the Docker CLI from the [Docker static binaries for Windows](https://download.docker.com/win/static/stable/x86_64/), extract it, and add its folder to `PATH`. Then create a context that uses SSH. Replace `<wsl-username>` with your WSL username:
 
 ```powershell
 docker context create lin --docker "host=ssh://<wsl-username>@localhost"
@@ -132,54 +61,36 @@ docker context use lin
 docker run hello-world
 ```
 
-The first connection prompts you to accept the SSH host key. If you did not set up key authentication in Step 5, it prompts for the WSL user's password as well.
+The first connection asks you to accept the SSH host key.
 
-## Connect Devsy to Docker in WSL
+## Connect Devsy
 
-### Configure the Devsy Docker provider
-
-Add the built-in Docker provider and point it at the WSL daemon over SSH. Set `DOCKER_HOST` to the same SSH endpoint used in Step 7, and `DOCKER_PATH` to the `docker` binary on `PATH`:
+Add the Docker provider and point it at the WSL daemon:
 
 ```bash
 devsy provider add docker -o DOCKER_HOST=ssh://<wsl-username>@localhost -o DOCKER_PATH=docker
 ```
 
-Replace `<wsl-username>` with your WSL username. Confirm the provider is configured:
+If the provider already exists, use `devsy provider set docker -o ...` with the same options. Check the result with `devsy provider get docker`.
 
-```bash
-devsy provider get docker
-```
-
-If the provider is already added, update its options with `devsy provider set` instead:
-
-```bash
-devsy provider set docker -o DOCKER_HOST=ssh://<wsl-username>@localhost -o DOCKER_PATH=docker
-```
-
-`DOCKER_HOST` is passed through to the Docker CLI as the `DOCKER_HOST` environment variable, so any value the Docker CLI accepts (here, an `ssh://` endpoint) works the same way as it does for `docker context`.
+`DOCKER_HOST` accepts anything the Docker CLI accepts.
 
 <Callout type="info" title="How Devsy mounts project files">
-
-When the Docker daemon runs inside WSL but Devsy runs on Windows, the daemon does not see the Windows filesystem at the same paths Windows does. Devsy detects a non-local `DOCKER_HOST` (an `ssh://` or `tcp://` endpoint, rather than the Docker Desktop engine's local socket) and converts Windows drive paths in mounts to their WSL `/mnt/` representation before passing them to the Docker CLI.
-
-For example, a project at `C:\Users\me\repo` is mounted as `/mnt/c/Users/me/repo` inside the container, matching the location the WSL Docker daemon can read. Keep project files on a Windows drive and let Devsy translate the path; placing project files directly under `\\wsl.localhost\...` UNC paths is not supported for mounts.
+When `DOCKER_HOST` is not a local socket, Devsy converts Windows drive paths in mounts to their WSL form. A project at `C:\Users\me\repo` is mounted as `/mnt/c/Users/me/repo`. Keep project files on a Windows drive. Paths under `\\wsl.localhost\...` are not supported for mounts.
 </Callout>
 
-### Connect the editor (SSH)
+## Connect your editor
 
-Create the workspace and open it in your editor. Devsy writes an SSH config entry for the workspace and the editor connects through Devsy's built-in SSH proxy:
+Create the workspace. Devsy adds an SSH config entry named `<workspace-name>.devsy`:
 
 ```bash
 devsy up
 ```
 
-In VS Code / VSCodium with the [Open Remote - SSH](https://marketplace.visualstudio.com/items?itemName=jeanp413.open-remote-ssh) extension, select **Open Folder in Remote...** and choose the host matching `<workspace-name>.devsy` from your SSH config. Devsy tunnels the editor's SSH session through the WSL Docker daemon into the devcontainer, so no manual SSH jump host configuration is required.
+In VS Code or VSCodium with the [Open Remote - SSH](https://marketplace.visualstudio.com/items?itemName=jeanp413.open-remote-ssh) extension, choose **Open Folder in Remote...** and select that host. Devsy tunnels the session into the dev container, so no jump host setup is needed.
 
-<Callout type="info" title="WSL host key and SSH agent">
-
-The Devsy tunnel reuses your local SSH keys and SSH agent. If you set up key authentication in Step 5, the same key works for the editor connection. If you see `write EPIPE` in the editor's remote-SSH log, run `devsy up` with `DEVSY_DEBUG=true` so the structured tunnel logs are surfaced - the underlying cause (for example the WSL SSH server not running, or the host key not yet trusted) is otherwise hidden behind the editor's generic pipe error.
-</Callout>
+The tunnel reuses your local SSH keys and agent. If the editor log shows `write EPIPE`, run `devsy up` with `DEVSY_DEBUG=true`. The real cause, such as the WSL SSH server not running or an untrusted host key, is otherwise hidden behind that generic error.
 
 ## Next steps
 
-With the provider configured, you can create a workspace that runs on the Docker daemon in WSL. Try any of the examples in [Create a Workspace](../developing-in-workspaces/create-a-workspace.mdx).
+See [Create a Workspace](../developing-in-workspaces/create-a-workspace.mdx).
