@@ -39,6 +39,6 @@ Logs uses merged binary OutputChunk frames. Output buffering must remain bounded
 
 Use canonical gRPC status and attach RuntimeError details for stable categories, actionable messages, optional backend diagnostics, retryability, and structured context. Raw backend diagnostics must be redacted before display. Unknown detail fields remain forward-compatible; callers must not parse messages to classify errors.
 
-The plugin binary is trusted provider code. The host resolves it from checksum-verified `Agent.Binaries`, rather than PATH discovery, and runs it through the runtime supervisor. The magic cookie is not a security boundary. 
+The plugin binary is trusted provider code. The host resolves it from checksum-verified `Agent.Binaries`, rather than PATH discovery, and runs it through the runtime supervisor. The magic cookie is not a security boundary.
 
 For SDK usage and development commands, see the [SDK README](https://github.com/devsy-org/devsy-runtime-sdk#readme).
