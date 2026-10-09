@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ssh"
@@ -165,4 +168,41 @@ func binaryCleanupWorkspace(t *testing.T, existing bool) (*provider.AgentWorkspa
 	require.NoError(t, err)
 	info.Agent.Binaries["RUNTIME"][0].Checksum = hex.EncodeToString(make([]byte, sha256.Size))
 	return info, sshConfig
+}
+
+func TestReusedWorkspaceWithoutContentPreservesState(t *testing.T) {
+	info, sshConfig := binaryCleanupWorkspace(t, false)
+	info.Workspace.UID = "same-workspace-uid"
+	info.Agent.Local = config.BoolTrue
+	data, err := json.Marshal(info)
+	require.NoError(t, err)
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(info.Origin, provider.WorkspaceConfigFile), data, 0o600),
+	)
+	encoded, err := compress.Compress(string(data))
+	require.NoError(t, err)
+	shouldExit, loaded, err := agent.WriteWorkspaceInfoAndDeleteOld(
+		encoded,
+		func(*provider.AgentWorkspaceInfo) error {
+			t.Fatal("same-UID workspace must not be replaced")
+			return nil
+		},
+	)
+	require.NoError(t, err)
+	require.False(t, shouldExit)
+	require.NotNil(t, loaded)
+	record, err := fs.ReadFile(os.DirFS(loaded.Origin), provider.WorkspaceConfigFile)
+	require.NoError(t, err)
+	err = prepareWorkspace(context.Background(), prepareWorkspaceParams{workspaceInfo: loaded})
+	require.ErrorContains(t, err, "checksum")
+	cmd := &UpCmd{}
+	require.ErrorIs(t, cmd.handleInitError(err, loaded), err)
+	got, err := fs.ReadFile(os.DirFS(loaded.Origin), provider.WorkspaceConfigFile)
+	require.NoError(t, err)
+	require.Equal(t, record, got)
+	got, err = fs.ReadFile(os.DirFS(filepath.Dir(loaded.Workspace.SSHConfigPath)), "ssh_config")
+	require.NoError(t, err)
+	require.Equal(t, sshConfig, got)
+	require.NoDirExists(t, loaded.ContentFolder)
 }

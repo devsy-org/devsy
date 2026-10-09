@@ -241,8 +241,11 @@ func handleStaleWorkspace(
 	deleteWorkspace func(*provider2.AgentWorkspaceInfo) error,
 ) (string, error) {
 	oldWorkspaceInfo, _ := ParseAgentWorkspaceInfo(workspaceConfig)
-	if oldWorkspaceInfo == nil ||
-		oldWorkspaceInfo.Workspace.UID == workspaceInfo.Workspace.UID {
+	if oldWorkspaceInfo == nil {
+		return workspaceDir, nil
+	}
+	if oldWorkspaceInfo.Workspace.UID == workspaceInfo.Workspace.UID {
+		workspaceInfo.WorkspaceWasExisting = true
 		return workspaceDir, nil
 	}
 

@@ -126,6 +126,9 @@ func (cmd *UpCmd) handleInitError(
 	err error,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) error {
+	if workspaceInfo.WorkspaceWasExisting {
+		return err
+	}
 	if _, existing := errors.AsType[*existingContentPreparationError](err); existing {
 		return err
 	}
