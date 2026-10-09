@@ -616,9 +616,18 @@ func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error 
 	case params.workspaceInfo.CLIOptions.Recreate:
 		phase = status.PhaseRebuildingWorkspace
 	}
-	return prepareWorkspaceWithStatus(ctx, params.reporter, phase, func(ctx context.Context) error {
+	err = prepareWorkspaceWithStatus(ctx, params.reporter, phase, func(ctx context.Context) error {
 		return prepareWorkspaceSource(ctx, params, exists)
 	})
+	if err != nil && !exists {
+		// An unfinished folder must not make the next attempt skip source preparation.
+		if cleanupErr := os.RemoveAll(params.workspaceInfo.ContentFolder); cleanupErr != nil {
+			return errors.Join(
+				err, fmt.Errorf("remove unfinished workspace content: %w", cleanupErr),
+			)
+		}
+	}
+	return err
 }
 
 func prepareWorkspaceWithStatus(

@@ -1,11 +1,15 @@
 package agentworkspace
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -15,11 +19,13 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/agent"
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 )
 
 func TestExistingContentPreparesAgentBinaries(t *testing.T) {
@@ -205,4 +211,85 @@ func TestReusedWorkspaceWithoutContentPreservesState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sshConfig, got)
 	require.NoDirExists(t, loaded.ContentFolder)
+}
+
+func TestSourcePreparationFailureCleanupAndRetry(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing_content=%t", existing), func(t *testing.T) {
+			info, sshConfig := binaryCleanupWorkspace(t, existing)
+			info.Agent.Binaries = nil
+			info.WorkspaceWasExisting = true
+			info.Workspace.Source.LocalFolder = "host-source"
+			info.CLIOptions.Recreate = existing
+			uploadErr := errors.New("source stream interrupted")
+			var archive bytes.Buffer
+			tw := tar.NewWriter(&archive)
+			require.NoError(t, tw.WriteHeader(&tar.Header{
+				Name: "source.txt", Mode: 0o600, Size: 6,
+			}))
+			_, err := tw.Write([]byte("source"))
+			require.NoError(t, err)
+			require.NoError(t, tw.Close())
+			client := &sourceRetryClient{archive: archive.Bytes(), firstError: uploadErr}
+			params := prepareWorkspaceParams{
+				workspaceInfo: info, client: client, logger: workspaceTestLogger{},
+			}
+			err = prepareWorkspace(context.Background(), params)
+			require.ErrorIs(t, err, uploadErr)
+			require.ErrorIs(t, (&UpCmd{}).handleInitError(err, info), uploadErr)
+			for _, file := range []struct{ dir, name, want string }{
+				{info.Origin, provider.WorkspaceConfigFile, "workspace record"},
+				{filepath.Dir(info.Workspace.SSHConfigPath), "ssh_config", string(sshConfig)},
+			} {
+				data, err := fs.ReadFile(os.DirFS(file.dir), file.name)
+				require.NoError(t, err)
+				require.Equal(t, file.want, string(data))
+			}
+			if existing {
+				data, err := fs.ReadFile(os.DirFS(info.ContentFolder), "user-data")
+				require.NoError(t, err)
+				require.Equal(t, "preserved", string(data))
+			} else {
+				require.NoDirExists(t, info.ContentFolder)
+			}
+			require.NoError(t, prepareWorkspace(context.Background(), params))
+			require.Equal(t, 2, client.calls)
+			data, err := fs.ReadFile(os.DirFS(info.ContentFolder), "source.txt")
+			require.NoError(t, err)
+			require.Equal(t, "source", string(data))
+		})
+	}
+}
+
+type sourceRetryClient struct {
+	tunnel.TunnelClient
+	archive    []byte
+	firstError error
+	calls      int
+}
+
+func (c *sourceRetryClient) StreamWorkspace(
+	context.Context, *tunnel.Empty, ...grpc.CallOption,
+) (grpc.ServerStreamingClient[tunnel.Chunk], error) {
+	c.calls++
+	if c.calls == 1 {
+		// A complete file arrives before the stream fails reading the next header.
+		return &sourceRetryStream{data: c.archive[:1024], err: c.firstError}, nil
+	}
+	return &sourceRetryStream{data: c.archive, err: io.EOF}, nil
+}
+
+type sourceRetryStream struct {
+	grpc.ClientStream
+	data []byte
+	err  error
+}
+
+func (s *sourceRetryStream) Recv() (*tunnel.Chunk, error) {
+	if len(s.data) == 0 {
+		return nil, s.err
+	}
+	data := s.data
+	s.data = nil
+	return &tunnel.Chunk{Content: data}, nil
 }
