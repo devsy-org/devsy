@@ -22,6 +22,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
 	"github.com/devsy-org/devsy/pkg/compress"
 	"github.com/devsy-org/devsy/pkg/config"
+	devcontainerconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/stretchr/testify/require"
@@ -214,13 +215,25 @@ func TestReusedWorkspaceWithoutContentPreservesState(t *testing.T) {
 }
 
 func TestSourcePreparationFailureCleanupAndRetry(t *testing.T) {
-	for _, existing := range []bool{false, true} {
-		t.Run(fmt.Sprintf("existing_content=%t", existing), func(t *testing.T) {
-			info, sshConfig := binaryCleanupWorkspace(t, existing)
+	for _, tc := range []struct {
+		name                     string
+		existing, fallbackConfig bool
+	}{
+		{name: "new content"},
+		{name: "existing content", existing: true},
+		{name: "fallback config", fallbackConfig: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info, sshConfig := binaryCleanupWorkspace(t, tc.existing)
 			info.Agent.Binaries = nil
 			info.WorkspaceWasExisting = true
 			info.Workspace.Source.LocalFolder = "host-source"
-			info.CLIOptions.Recreate = existing
+			info.CLIOptions.Recreate = tc.existing || tc.fallbackConfig
+			if tc.fallbackConfig {
+				info.LastDevContainerConfig = &devcontainerconfig.DevContainerConfigWithPath{
+					Path: ".devcontainer.json", Config: &devcontainerconfig.DevContainerConfig{},
+				}
+			}
 			uploadErr := errors.New("source stream interrupted")
 			var archive bytes.Buffer
 			tw := tar.NewWriter(&archive)
@@ -245,7 +258,7 @@ func TestSourcePreparationFailureCleanupAndRetry(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, file.want, string(data))
 			}
-			if existing {
+			if tc.existing {
 				data, err := fs.ReadFile(os.DirFS(info.ContentFolder), "user-data")
 				require.NoError(t, err)
 				require.Equal(t, "preserved", string(data))

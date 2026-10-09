@@ -239,39 +239,55 @@ func CreateRunner(
 	)
 }
 
+// InitContentFolder reports whether content or a fallback configuration permits
+// source reuse; that result does not indicate ownership of the content directory.
 func InitContentFolder(
 	ctx context.Context,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) (bool, error) {
+	state, err := initContentFolder(ctx, workspaceInfo)
+	return state.skipSource, err
+}
+
+type contentFolderState struct {
+	existed    bool
+	skipSource bool
+}
+
+func initContentFolder(
+	ctx context.Context,
+	workspaceInfo *provider.AgentWorkspaceInfo,
+) (contentFolderState, error) {
 	exists, err := contentFolderExists(workspaceInfo.ContentFolder)
+	state := contentFolderState{existed: exists, skipSource: exists}
 	if err != nil {
-		return false, err
+		return state, err
 	}
 	if exists {
 		if err := downloadWorkspaceBinaries(ctx, workspaceInfo); err != nil {
 			// Initialization cleanup must not own content that predates this attempt.
-			return true, &existingContentPreparationError{cause: err}
+			return state, &existingContentPreparationError{cause: err}
 		}
-		return true, nil
+		return state, nil
 	}
 
 	if err := createContentFolder(workspaceInfo.ContentFolder); err != nil {
-		return false, err
+		return state, err
 	}
 
 	if err := downloadWorkspaceBinaries(ctx, workspaceInfo); err != nil {
 		_ = os.RemoveAll(workspaceInfo.ContentFolder)
-		return false, err
+		return state, err
 	}
 
 	if workspaceInfo.LastDevContainerConfig != nil {
 		if err := ensureLastDevContainerJson(workspaceInfo); err != nil {
 			log.Errorf("ensure devcontainer.json: %v", err)
 		}
-		return true, nil
+		state.skipSource = true
 	}
 
-	return false, nil
+	return state, nil
 }
 
 type existingContentPreparationError struct {
@@ -600,11 +616,11 @@ func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error 
 		)
 	}
 
-	exists, err := InitContentFolder(ctx, params.workspaceInfo)
+	folder, err := initContentFolder(ctx, params.workspaceInfo)
 	if err != nil {
 		return err
 	}
-	if exists && !params.workspaceInfo.CLIOptions.Recreate {
+	if folder.skipSource && !params.workspaceInfo.CLIOptions.Recreate {
 		params.logger.Debugf("workspace exists, skip downloading")
 		return nil
 	}
@@ -617,9 +633,9 @@ func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error 
 		phase = status.PhaseRebuildingWorkspace
 	}
 	err = prepareWorkspaceWithStatus(ctx, params.reporter, phase, func(ctx context.Context) error {
-		return prepareWorkspaceSource(ctx, params, exists)
+		return prepareWorkspaceSource(ctx, params, folder.skipSource)
 	})
-	if err != nil && !exists {
+	if err != nil && !folder.existed {
 		// An unfinished folder must not make the next attempt skip source preparation.
 		if cleanupErr := os.RemoveAll(params.workspaceInfo.ContentFolder); cleanupErr != nil {
 			return errors.Join(
