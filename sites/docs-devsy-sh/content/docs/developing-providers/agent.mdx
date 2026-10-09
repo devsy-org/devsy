@@ -40,7 +40,7 @@ Option values can be used in this section.
 
 ## Stopping idle environments
 
-Devsy tracks whether anyone is connected and stops the environment after the timeout. Nothing is erased. Devsy starts it again when the user returns.
+Devsy tracks whether anyone is connected and stops the environment after the timeout. Devsy starts it again when the user returns. State persists only if the provider preserves the storage. A shutdown command that deletes the machine must keep workspace data separately, for example on a persistent volume.
 
 ### Non-machine providers
 
