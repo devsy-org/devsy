@@ -1,0 +1,8 @@
+{
+  "id": "parity",
+  "version": "1.0.0",
+  "name": "MicroSandbox image parity marker",
+  "containerEnv": {
+    "DEVSY_FEATURE_PARITY": "feature-parity"
+  }
+}
