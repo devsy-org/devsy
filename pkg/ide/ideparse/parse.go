@@ -386,38 +386,45 @@ func ParseOptions(options []string, ideOptions ide.Options) (map[string]config.O
 }
 
 func validateOptionValue(ideOption ide.Option, key, value string) error {
-	if ideOption.ValidationPattern != "" {
-		matcher, err := regexp.Compile(ideOption.ValidationPattern)
-		if err != nil {
-			return err
-		}
-
-		if !matcher.MatchString(value) {
-			if ideOption.ValidationMessage != "" {
-				return fmt.Errorf("%s", ideOption.ValidationMessage)
-			}
-
-			return fmt.Errorf(
-				"invalid value %q for option %q, has to match the following regEx: %s",
-				value,
-				key,
-				ideOption.ValidationPattern,
-			)
-		}
+	if err := validateOptionPattern(ideOption, key, value); err != nil {
+		return err
 	}
 
-	if len(ideOption.Enum) > 0 {
-		if !slices.Contains(ideOption.Enum, value) {
-			return fmt.Errorf(
-				"invalid value %q for option %q, has to match one of the following values: %v",
-				value,
-				key,
-				ideOption.Enum,
-			)
-		}
+	if len(ideOption.Enum) == 0 || slices.Contains(ideOption.Enum, value) {
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf(
+		"invalid value %q for option %q, has to match one of the following values: %v",
+		value,
+		key,
+		ideOption.Enum,
+	)
+}
+
+func validateOptionPattern(ideOption ide.Option, key, value string) error {
+	if ideOption.ValidationPattern == "" {
+		return nil
+	}
+
+	matcher, err := regexp.Compile(ideOption.ValidationPattern)
+	if err != nil {
+		return err
+	}
+
+	if matcher.MatchString(value) {
+		return nil
+	}
+	if ideOption.ValidationMessage != "" {
+		return fmt.Errorf("%s", ideOption.ValidationMessage)
+	}
+
+	return fmt.Errorf(
+		"invalid value %q for option %q, has to match the following regEx: %s",
+		value,
+		key,
+		ideOption.ValidationPattern,
+	)
 }
 
 func detect() string {

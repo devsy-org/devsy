@@ -78,6 +78,131 @@ func TestFindLatestVersion_MixedValidInvalid(t *testing.T) {
 	assert.Equal(t, "3", result)
 }
 
+func TestFindLatestVersion_EmptyAndZero(t *testing.T) {
+	const zeroVersion = "0.0.0"
+
+	tests := []struct {
+		name    string
+		current string
+		tags    []string
+		want    string
+	}{
+		{
+			name:    "nil tags",
+			current: "1",
+		},
+		{
+			name:    "empty tags",
+			current: "1",
+			tags:    []string{},
+		},
+		{
+			name:    "zero version equality",
+			current: "0",
+			tags:    []string{"0.0", zeroVersion},
+		},
+		{
+			name:    "zero version upgrade",
+			current: zeroVersion,
+			tags:    []string{"0", "0.0.1", zeroVersion},
+			want:    "0.0.1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, findLatestVersion(tt.current, tt.tags))
+		})
+	}
+}
+
+func TestFindLatestVersion_OrderingAndTies(t *testing.T) {
+	const (
+		majorMinorVersion = "2.0"
+		fullVersion       = "2.0.0"
+	)
+
+	tests := []struct {
+		name    string
+		current string
+		tags    []string
+		want    string
+	}{
+		{
+			name:    "equal normalized current",
+			current: "2",
+			tags:    []string{"1.9.9", majorMinorVersion, fullVersion},
+		},
+		{
+			name:    "unsorted maximum",
+			current: "1",
+			tags:    []string{"2", "4.1", "3.9.9", "1", "abc", tagLatest},
+			want:    "4.1",
+		},
+		{
+			name:    "normalized tie keeps bare major first",
+			current: "1",
+			tags:    []string{"2", majorMinorVersion, fullVersion},
+			want:    "2",
+		},
+		{
+			name:    "normalized tie keeps full version first",
+			current: "1",
+			tags:    []string{fullVersion, majorMinorVersion, "2"},
+			want:    fullVersion,
+		},
+		{
+			name:    "build metadata tie keeps first tag",
+			current: "1",
+			tags:    []string{"2.0.0+first", "2.0.0+second", fullVersion},
+			want:    "2.0.0+first",
+		},
+		{
+			name:    "build metadata does not upgrade current",
+			current: "2.0.0+current",
+			tags:    []string{"2.0.0+other", fullVersion},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, findLatestVersion(tt.current, tt.tags))
+		})
+	}
+}
+
+func TestFindLatestVersion_Prereleases(t *testing.T) {
+	const releaseVersion = "2.0.0"
+
+	tests := []struct {
+		name    string
+		current string
+		tags    []string
+		want    string
+	}{
+		{
+			name:    "prerelease ordering",
+			current: "2.0.0-alpha",
+			tags:    []string{"2.0.0-beta.2", "2.0.0-beta.10", "2.0.0-beta.1"},
+			want:    "2.0.0-beta.10",
+		},
+		{
+			name:    "release outranks prerelease",
+			current: "2.0.0-beta",
+			tags:    []string{releaseVersion, "2.0.0-rc.1", "2.0.0-alpha"},
+			want:    releaseVersion,
+		},
+		{
+			name:    "prerelease below current release",
+			current: releaseVersion,
+			tags:    []string{"2.0.0-rc.1", "1.9.9", releaseVersion},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, findLatestVersion(tt.current, tt.tags))
+		})
+	}
+}
+
 func TestCheckFeatureVersion_SkipsLocalPath(t *testing.T) {
 	_, ok := checkFeatureVersion("./local-feature")
 	assert.False(t, ok)
