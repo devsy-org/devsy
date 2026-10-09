@@ -126,6 +126,9 @@ func (cmd *UpCmd) handleInitError(
 	err error,
 	workspaceInfo *provider.AgentWorkspaceInfo,
 ) error {
+	if _, existing := errors.AsType[*existingContentPreparationError](err); existing {
+		return err
+	}
 	deleteErr := clientimplementation.DeleteWorkspaceFolder(
 		clientimplementation.DeleteWorkspaceFolderParams{
 			Context:              workspaceInfo.Workspace.Context,
@@ -242,7 +245,11 @@ func InitContentFolder(
 		return false, err
 	}
 	if exists {
-		return true, downloadWorkspaceBinaries(ctx, workspaceInfo)
+		if err := downloadWorkspaceBinaries(ctx, workspaceInfo); err != nil {
+			// Initialization cleanup must not own content that predates this attempt.
+			return true, &existingContentPreparationError{cause: err}
+		}
+		return true, nil
 	}
 
 	if err := createContentFolder(workspaceInfo.ContentFolder); err != nil {
@@ -263,6 +270,14 @@ func InitContentFolder(
 
 	return false, nil
 }
+
+type existingContentPreparationError struct {
+	cause error
+}
+
+func (e *existingContentPreparationError) Error() string { return e.cause.Error() }
+
+func (e *existingContentPreparationError) Unwrap() error { return e.cause }
 
 func contentFolderExists(path string) (bool, error) {
 	_, err := os.Stat(path)

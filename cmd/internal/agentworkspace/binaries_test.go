@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/stretchr/testify/require"
 )
 
@@ -73,4 +75,94 @@ func existingContentRuntime(t *testing.T, url string, payload []byte) *provider.
 			}}},
 		},
 	}
+}
+
+func TestBinaryPreparationFailureCleanup(t *testing.T) {
+	for _, existing := range []bool{true, false} {
+		t.Run(fmt.Sprintf("existing=%t", existing), func(t *testing.T) {
+			info, sshConfig := binaryCleanupWorkspace(t, existing)
+			err := prepareWorkspace(
+				context.Background(),
+				prepareWorkspaceParams{workspaceInfo: info},
+			)
+			require.ErrorContains(t, err, "checksum")
+			initErr := fmt.Errorf("initialize workspace: %w", err)
+			cmd := &UpCmd{}
+			require.ErrorIs(t, cmd.handleInitError(initErr, info), initErr)
+
+			if !existing {
+				require.NoDirExists(t, info.Origin)
+				require.NoDirExists(t, info.ContentFolder)
+				data, err := fs.ReadFile(
+					os.DirFS(filepath.Dir(info.Workspace.SSHConfigPath)),
+					"ssh_config",
+				)
+				require.NoError(t, err)
+				require.NotContains(t, string(data), "binary-test")
+				return
+			}
+			for _, file := range []struct{ dir, name, want string }{
+				{info.Origin, provider.WorkspaceConfigFile, "workspace record"},
+				{info.ContentFolder, "user-data", "preserved"},
+				{filepath.Dir(info.Workspace.SSHConfigPath), "ssh_config", string(sshConfig)},
+			} {
+				data, err := fs.ReadFile(os.DirFS(file.dir), file.name)
+				require.NoError(t, err)
+				require.Equal(t, file.want, string(data))
+			}
+		})
+	}
+}
+
+func binaryCleanupWorkspace(t *testing.T, existing bool) (*provider.AgentWorkspaceInfo, []byte) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv(config.EnvHome, home)
+	payload := []byte("invalid-checksum-runtime")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(payload)
+	}))
+	t.Cleanup(server.Close)
+	info := existingContentRuntime(t, server.URL, payload)
+	info.Agent.DataPath = home
+	var err error
+	info.Origin, err = provider.GetWorkspaceDir(info.Workspace.Context, info.Workspace.ID)
+	require.NoError(t, err)
+	info.ContentFolder, err = provider.GetWorkspaceContentDir(
+		info.Workspace.Context,
+		info.Workspace.ID,
+	)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(info.Origin, 0o750))
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(info.Origin, provider.WorkspaceConfigFile),
+			[]byte("workspace record"),
+			0o600,
+		),
+	)
+	if existing {
+		require.NoError(t, os.MkdirAll(info.ContentFolder, 0o750))
+		require.NoError(
+			t,
+			os.WriteFile(
+				filepath.Join(info.ContentFolder, "user-data"),
+				[]byte("preserved"),
+				0o600,
+			),
+		)
+	}
+	info.Workspace.SSHConfigPath = filepath.Join(t.TempDir(), "ssh_config")
+	require.NoError(t, ssh.ConfigureSSHConfig(ssh.SSHConfigParams{
+		SSHConfigPath: info.Workspace.SSHConfigPath,
+		Context:       info.Workspace.Context, Workspace: info.Workspace.ID, User: "root",
+	}))
+	sshConfig, err := fs.ReadFile(
+		os.DirFS(filepath.Dir(info.Workspace.SSHConfigPath)),
+		"ssh_config",
+	)
+	require.NoError(t, err)
+	info.Agent.Binaries["RUNTIME"][0].Checksum = hex.EncodeToString(make([]byte, sha256.Size))
+	return info, sshConfig
 }
