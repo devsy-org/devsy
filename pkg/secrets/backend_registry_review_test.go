@@ -44,8 +44,7 @@ func TestOpenKeyFromStoreClassifiesMissingAutoAndKeyringKeysAsUnavailable(t *tes
 func TestProbeFileRespectsPromptPolicyForLegacyOwnership(t *testing.T) {
 	const passphrase = "correct horse battery staple"
 	dir := t.TempDir()
-	key, err := passphraseFileKey(passphrase)
-	require.NoError(t, err)
+	key := testPassphraseFileKey(t, passphrase)
 	path := filepath.Join(dir, EncryptedFileName)
 	require.NoError(
 		t,
