@@ -142,9 +142,14 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 						// Create after setup so workspace chown cannot supply the guest fallback identity.
 						hostFile := filepath.Join(workspace, "policy-file")
 						framework.ExpectNoError(os.WriteFile(hostFile, []byte("host\n"), 0o600))
+						// CI runs as root; keep literal host ownership distinct from the guest fallback.
+						if os.Geteuid() == 0 {
+							framework.ExpectNoError(os.Chown(hostFile, 10001, 10002))
+						}
 						//nolint:gosec // explicit host modes are the behavior under test
 						framework.ExpectNoError(os.Chmod(hostFile, 0o644))
 						owner := microsandboxHostOwner(ctx, hostFile)
+						gomega.Expect(owner).NotTo(gomega.Equal("0:0"))
 						guestFile := "/workspaces/" + filepath.Base(workspace) + "/policy-file"
 						expectedOwner := "0:0"
 						if policy == "off" {
