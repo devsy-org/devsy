@@ -65,4 +65,12 @@ The image suite also requires the Docker CLI and a running Docker daemon, in add
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-images
 ```
 
-These scenarios do not establish complete parity. Resource limits, hotplug ceilings, storage, ephemeral roots, egress denial, named volumes, tmpfs, alternate mount policies, prebuilds, dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle and image checks alone do not authorize that cutover.
+The `up-provider-microsandbox-mounts` label runs five mount scenarios against each provider. It checks bidirectional bind access, read-only write rejection, named-volume persistence through stop/start and recreation, tmpfs reset, and strict/relaxed/off stat virtualization with private host permissions. Permission checks use host-created files after workspace setup so recursive chown cannot mask the guest ownership fallback. Each scenario has a ten-minute deadline; CI gives the matrix a 20-minute test deadline and a 25-minute job deadline. Test-owned named volumes are removed after workspace cleanup.
+
+This suite needs the same MicroSandbox and virtualization prerequisites as the lifecycle suite:
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-mounts
+```
+
+These scenarios do not establish complete parity. Resource limits, hotplug ceilings, storage capacity, ephemeral roots, egress denial, prebuilds, dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, and mount checks alone do not authorize that cutover.
