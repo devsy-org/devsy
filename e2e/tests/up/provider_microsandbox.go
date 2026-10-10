@@ -21,7 +21,11 @@ import (
 	"github.com/onsi/gomega"
 )
 
-const osLinux = "linux"
+const (
+	osLinux                      = "linux"
+	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.5"
+	microsandboxRootUser         = "root"
+)
 
 func skipIfNoMicrosandbox(ctx context.Context) {
 	checkMicrosandboxVersion(ctx)
@@ -166,7 +170,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				var devConfig map[string]any
 				framework.ExpectNoError(json.Unmarshal(data, &devConfig))
-				devConfig["remoteUser"] = "root"
+				devConfig["remoteUser"] = microsandboxRootUser
 				data, err = json.Marshal(devConfig)
 				framework.ExpectNoError(err)
 				framework.ExpectNoError(os.WriteFile(configPath, data, 0o600))
@@ -210,7 +214,7 @@ var _ = ginkgo.Describe(
 				ginkgo.SpecTimeout(framework.TimeoutLong())),
 			ginkgo.Entry(
 				"external v0.1.5",
-				"github.com/devsy-org/devsy-provider-microsandbox@v0.1.5",
+				microsandboxExternalProvider,
 				"microsandbox-external-parity",
 				ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
