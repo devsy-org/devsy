@@ -73,4 +73,12 @@ This suite needs the same MicroSandbox and virtualization prerequisites as the l
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-mounts
 ```
 
-These scenarios do not establish complete parity. Resource limits, hotplug ceilings, storage capacity, ephemeral roots, egress denial, prebuilds, dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, and mount checks alone do not authorize that cutover.
+The `up-provider-microsandbox-resources` label runs six scenarios against each provider: default CPU/memory sizing, explicit provider options overriding `hostRequirements`, zero provider values falling back to `hostRequirements`, effective resources below larger boot ceilings, and rejection of CPU or memory ceilings below the initial allocation. It checks the running VM's active configuration and the guest's online CPU count and `MemTotal`, allowing 128 MiB for kernel reservations rather than treating persisted configuration as proof of guest capacity.
+
+The ceiling scenario uses `msb modify` on the test-owned VM to grow CPU and memory to their boot ceilings, then checks guest convergence within 60 seconds. Requests beyond either ceiling must fail with a restart-required plan while preserving active resources, VM creation time, guest boot ID, and a filesystem marker. This exercises the capacity provisioned by each driver; Devsy does not expose a live-resize API. Each scenario has a ten-minute deadline, with a 20-minute CI test deadline and a 25-minute job deadline. The suite has the same runtime and virtualization prerequisites as lifecycle testing:
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-resources
+```
+
+These scenarios do not establish complete parity. Storage capacity, ephemeral roots, egress denial, prebuilds, dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, and resource checks alone do not authorize that cutover.
