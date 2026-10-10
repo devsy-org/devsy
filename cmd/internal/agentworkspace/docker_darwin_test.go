@@ -5,6 +5,7 @@ package agentworkspace
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -32,7 +33,13 @@ func TestFindDarwinDockerCLIRancherDesktopPath(t *testing.T) {
 	home := t.TempDir()
 	rancher := filepath.Join(home, ".rd", "bin", "docker")
 	writeExecutable(t, rancher)
-	path, err := findDarwinDockerCLIInPaths(darwinDockerCandidatePaths(home))
+	if !slices.Contains(darwinDockerCandidatePaths(home), rancher) {
+		t.Fatal("Rancher Desktop path missing from Docker CLI candidates")
+	}
+	// Use test-owned candidates so an installed Docker CLI cannot shadow the fixture.
+	path, err := findDarwinDockerCLIInPaths(
+		[]string{filepath.Join(home, "missing", "docker"), rancher},
+	)
 	if err != nil || path != rancher {
 		t.Fatalf("find docker CLI = %q, %v; want %q", path, err, rancher)
 	}
