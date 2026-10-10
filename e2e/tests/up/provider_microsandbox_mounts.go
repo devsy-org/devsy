@@ -39,12 +39,13 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 						f.DevsyProviderAdd(ctx, provider.source, "--name", provider.name),
 					)
 					ginkgo.DeferCleanup(f.DevsyProviderDelete, provider.name)
+					// Cleanup is LIFO: tear down the VM before attempting volume removal.
 					ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-						framework.ExpectNoError(f.CleanupWorkspace(cleanupCtx, workspace))
 						if volume != "" {
 							microsandboxMountCommand(cleanupCtx, "volume", "rm", volume)
 						}
 					})
+					ginkgo.DeferCleanup(f.CleanupWorkspace, workspace)
 				})
 
 				ginkgo.It(
