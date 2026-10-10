@@ -122,6 +122,15 @@ jobs:
 
           printf '%s\n' "$packages" | xargs go test -race -short
 
+      - name: test Compose UID expectation matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./e2e/tests/up-docker-compose -list '^TestExpectedUIDMapping$' \
+            | grep -Fx 'TestExpectedUIDMapping'
+          go test -race -short -count=1 -v ./e2e/tests/up-docker-compose \
+            -run '^TestExpectedUIDMapping$'
+
   can-read-secret:
     name: Can Read Secret
     runs-on: ubuntu-latest
@@ -1020,6 +1029,53 @@ jobs:
           client-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+
+      - name: test Compose UID mapping as existing non-root runner
+        if: runner.os == 'Linux' && matrix.label == 'up-docker-compose'
+        shell: bash
+        working-directory: ./e2e
+        env:
+          TEST_TIMEOUT: ${{ matrix.test-timeout || '1500s' }}
+        run: |
+          set -euo pipefail
+          id
+          test "$(id -u)" = 1001
+          test "$(id -g)" = 1001
+          getent passwd "$(id -u)"
+          getent group "$(id -g)"
+          test -d "$HOME" && test -w "$HOME"
+          test "$(stat -c %u "$HOME")" = "$(id -u)"
+          test -d "$RUNNER_TEMP" && test -w "$RUNNER_TEMP"
+          docker info
+          docker compose version
+          printf 'checkout=%s\n' "$(git rev-parse HEAD)"
+          sha256sum ./e2e.test ./bin/devsy-linux-amd64
+          ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" \
+            -ginkgo.fail-on-empty -ginkgo.flake-attempts=1 \
+            --ginkgo.label-filter=up-docker-compose \
+            --ginkgo.focus='implements updateRemoteUserUID with root container user$' \
+            --ginkgo.json-report="$RUNNER_TEMP/compose-uid-nonroot.json"
+          python3 - "$RUNNER_TEMP/compose-uid-nonroot.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as report:
+              suites = json.load(report)
+          assert isinstance(suites, list) and len(suites) == 1, "unexpected suite report shape"
+          suite = suites[0]
+          assert suite["SuiteConfig"]["DryRun"] is False, "dry-run is not execution"
+          assert suite["SuiteSucceeded"] is True, "suite failed"
+          selected = [
+              spec for spec in suite["SpecReports"]
+              if spec.get("LeafNodeType") == "It" and spec.get("State") != "skipped"
+          ]
+          assert len(selected) == 1, f"expected one executed leaf, found {len(selected)}"
+          spec = selected[0]
+          assert spec["LeafNodeText"] == "implements updateRemoteUserUID with root container user", "wrong UID spec"
+          assert spec["State"] == "passed", "UID spec did not pass"
+          assert spec["NumAttempts"] == 1, "unexpected retries"
+          print("one www-data UID spec passed in one attempt")
+          PY
 
       - name: run test
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
