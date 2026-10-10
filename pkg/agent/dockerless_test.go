@@ -94,13 +94,13 @@ func setupDockerlessEnvironmentTest(
 	})
 	require.NotNil(t, cleanup, "expected credentials cleanup")
 	return dockerlessEnvironmentFixture{
-		builderPath,
-		imagePath,
-		toolName,
-		toolPath,
-		credentialsDir,
-		credentialsDone,
-		cleanup,
+		builderPath:     builderPath,
+		imagePath:       imagePath,
+		toolName:        toolName,
+		toolPath:        toolPath,
+		credentialsDir:  credentialsDir,
+		credentialsDone: credentialsDone,
+		cleanup:         cleanup,
 	}
 }
 
