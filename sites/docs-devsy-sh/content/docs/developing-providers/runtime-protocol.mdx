@@ -47,7 +47,7 @@ For SDK usage and development commands, see the [SDK README](https://github.com/
 
 ## MicroSandbox parity gate
 
-The `up-provider-microsandbox` E2E label runs the same lifecycle and ownership scenario against the built-in provider and the external v0.1.5 release, each with isolated Devsy configuration. CI pins MicroSandbox v0.7.7 by checksum and requires access to KVM; unavailable virtualization fails this job instead of producing a passing skipped test. Each provider scenario has a ten-minute deadline and the CI job has a 25-minute deadline.
+The `up-provider-microsandbox` E2E label runs the same lifecycle and ownership scenario against the built-in provider and the external v0.1.6 release, each with isolated Devsy configuration. CI pins MicroSandbox v0.7.7 by checksum and requires access to KVM; unavailable virtualization fails this job instead of producing a passing skipped test. Each provider scenario has a ten-minute deadline and the CI job has a 25-minute deadline.
 
 The shared scenario exercises agent delivery, SSH, a 1 MiB binary stdin/stdout round trip with separate stderr and a nonzero guest exit, root workload versus developer identity, bind-mount ownership and mode mirroring, stop/start, recreation, rejection of an identity change without recreation while preserving VM-local data, and deletion of the VM.
 
@@ -65,4 +65,12 @@ The image suite also requires the Docker CLI and a running Docker daemon, in add
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-images
 ```
 
-These scenarios do not establish complete parity. Resource limits, hotplug ceilings, storage, ephemeral roots, egress denial, named volumes, tmpfs, alternate mount policies, prebuilds, dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle and image checks alone do not authorize that cutover.
+The `up-provider-microsandbox-mounts` label runs five mount scenarios against each provider. It checks bidirectional bind access, read-only write rejection, named-volume persistence through stop/start and recreation, tmpfs reset, and strict/relaxed/off stat virtualization with private host permissions. Permission checks use host-created files after workspace setup so recursive chown cannot mask the guest ownership fallback. Host mode changes under `off` must become visible after MicroSandbox's five-second guest attribute cache expires. Each scenario has a ten-minute deadline; CI gives the matrix a 20-minute test deadline and a 25-minute job deadline. Test-owned named volumes are removed after workspace cleanup.
+
+This suite needs the same MicroSandbox and virtualization prerequisites as the lifecycle suite:
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-mounts
+```
+
+These scenarios do not establish complete parity. Resource limits, hotplug ceilings, storage capacity, ephemeral roots, egress denial, prebuilds, dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, and mount checks alone do not authorize that cutover.
