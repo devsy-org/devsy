@@ -195,7 +195,7 @@ var _ = ginkgo.Describe("microsandbox resource parity",
 							microsandboxResourceJSON,
 						)
 						framework.ExpectNoError(err, string(out))
-						assertMicrosandboxResourcePlan(out, true, "live")
+						assertMicrosandboxResourcePlan(out, true, "live", "cpus", "memory")
 						expected.CPUs, expected.MemoryMiB = 2, 1536
 						assertMicrosandboxGuestResources(ctx, f, workspace, expected)
 						gomega.Expect(microsandboxActiveResources(ctx, sandbox)).
@@ -207,7 +207,9 @@ var _ = ginkgo.Describe("microsandbox resource parity",
 								target...)
 							out, err = microsandboxResourceCommand(ctx, args...)
 							gomega.Expect(err).To(gomega.HaveOccurred(), string(out))
-							assertMicrosandboxResourcePlan(out, false, "requires restart")
+							assertMicrosandboxResourcePlan(
+								out, false, "requires restart", strings.TrimPrefix(target[0], "--"),
+							)
 							gomega.Expect(microsandboxActiveResources(ctx, sandbox)).
 								To(gomega.Equal(expected))
 						}
@@ -344,18 +346,23 @@ func assertMicrosandboxGuestResources(
 	}).WithTimeout(time.Minute).WithPolling(time.Second).Should(gomega.Succeed())
 }
 
-func assertMicrosandboxResourcePlan(out []byte, applied bool, disposition string) {
+func assertMicrosandboxResourcePlan(
+	out []byte,
+	applied bool,
+	disposition string,
+	fields ...string,
+) {
 	var plan microsandboxResourcePlan
 	framework.ExpectNoError(json.Unmarshal(out, &plan), string(out))
 	gomega.Expect(plan.Applied).To(gomega.Equal(applied))
-	resourceChanges := 0
-	for _, change := range plan.Changes {
-		if change.Field == "cpus" || change.Field == "memory" {
-			resourceChanges++
-			gomega.Expect(change.Disposition).To(gomega.Equal(disposition), change.Field)
-		}
+	expected := make([]microsandboxResourceChange, 0, len(fields))
+	for _, field := range fields {
+		expected = append(
+			expected,
+			microsandboxResourceChange{Field: field, Disposition: disposition},
+		)
 	}
-	gomega.Expect(resourceChanges).To(gomega.BeNumerically(">", 0))
+	gomega.Expect(plan.Changes).To(gomega.ConsistOf(expected))
 }
 
 func microsandboxResourceCommand(ctx context.Context, args ...string) ([]byte, error) {
