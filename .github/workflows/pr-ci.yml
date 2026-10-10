@@ -669,6 +669,15 @@ jobs:
             test-timeout: 1200s
             job-timeout-minutes: 25
 
+          - label: up-provider-microsandbox-resources
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-microsandbox: true
+            test-timeout: 1200s
+            job-timeout-minutes: 25
+
           # Snapshot tests
 
           - label: snapshot
