@@ -207,8 +207,10 @@ var _ = ginkgo.Describe("microsandbox resource parity",
 								target...)
 							out, err = microsandboxResourceCommand(ctx, args...)
 							gomega.Expect(err).To(gomega.HaveOccurred(), string(out))
+							field := strings.TrimPrefix(target[0], "--")
+							// The runtime also plans the ceiling increase implied by this target.
 							assertMicrosandboxResourcePlan(
-								out, false, "requires restart", strings.TrimPrefix(target[0], "--"),
+								out, false, "requires restart", field, "max_"+field,
 							)
 							gomega.Expect(microsandboxActiveResources(ctx, sandbox)).
 								To(gomega.Equal(expected))
