@@ -331,9 +331,7 @@ func assertMicrosandboxGuestResources(
 			workspace,
 			"printf '%s %s\\n' \"$(grep -c '^processor' /proc/cpuinfo)\" \"$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)\"",
 		)
-		if err != nil {
-			gomega.StopTrying("read guest CPU and memory resources").Wrap(err).Now()
-		}
+		g.Expect(err).NotTo(gomega.HaveOccurred(), "read guest CPU and memory resources")
 		var cpus, memoryKiB int
 		_, err = fmt.Sscanf(strings.TrimSpace(out), "%d %d", &cpus, &memoryKiB)
 		if err != nil {
