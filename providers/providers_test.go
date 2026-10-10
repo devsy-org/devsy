@@ -46,3 +46,21 @@ func TestMicrosandboxProviderUsesMicrosandboxDriver(t *testing.T) {
 		)
 	}
 }
+
+func TestMicrosandboxProviderPreservesStatVirtualizationOptions(t *testing.T) {
+	cfg, err := provider.ParseProvider(strings.NewReader(providers.MicrosandboxProvider))
+	if err != nil {
+		t.Fatalf("parse microsandbox provider: %v", err)
+	}
+	option := cfg.Options["MICROSANDBOX_WORKSPACE_STAT_VIRTUALIZATION"]
+	if option == nil {
+		t.Fatal("missing workspace stat virtualization option")
+	}
+	values := make([]string, 0, len(option.Enum))
+	for _, choice := range option.Enum {
+		values = append(values, choice.Value)
+	}
+	if got := strings.Join(values, ","); got != "strict,relaxed,off" {
+		t.Errorf("workspace stat virtualization values = %q, want strict,relaxed,off", got)
+	}
+}

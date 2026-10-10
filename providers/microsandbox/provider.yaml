@@ -53,7 +53,7 @@ options:
         displayName: "Require stat virtualization support."
       - value: relaxed
         displayName: "Use stat virtualization where supported."
-      - value: off
+      - value: "off"
         displayName: "Expose literal host ownership and modes."
   INACTIVITY_TIMEOUT:
     description: "If defined, will automatically stop the microVM after the inactivity period. Examples: 10m, 1h"
