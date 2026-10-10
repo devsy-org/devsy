@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
@@ -153,14 +154,15 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 						gomega.Expect(owner).NotTo(gomega.Equal("0:0"))
 						guestFile := "/workspaces/" + filepath.Base(workspace) + "/policy-file"
 						expectedOwner := "0:0"
-						if policy == "off" {
+						virtualized := policy != "off"
+						if !virtualized {
 							expectedOwner = owner
 						}
 						out, err := f.DevsySSHOnce(ctx, workspace, "stat -c '%u:%g %a' "+guestFile)
 						framework.ExpectNoError(err)
 						gomega.Expect(strings.TrimSpace(out)).
 							To(gomega.Equal(expectedOwner + " 644"))
-						if policy == "off" {
+						if !virtualized {
 							framework.ExpectNoError(os.Chmod(hostFile, 0o600))
 						} else {
 							_, err = f.DevsySSHOnce(ctx, workspace, "chmod 600 "+guestFile)
@@ -170,6 +172,24 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 							gomega.Expect(info.Mode().Perm()).To(gomega.Equal(os.FileMode(0o644)))
 						}
 						gomega.Expect(microsandboxHostOwner(ctx, hostFile)).To(gomega.Equal(owner))
+						if !virtualized {
+							// MicroSandbox v0.7.7 caches guest attributes for five seconds after stat.
+							pollCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+							defer cancel()
+							gomega.Eventually(pollCtx, func() string {
+								out, err := f.DevsySSHOnce(
+									pollCtx,
+									workspace,
+									"stat -c '%u:%g %a' "+guestFile,
+								)
+								if err != nil {
+									gomega.StopTrying("read guest file attributes").Wrap(err).Now()
+								}
+								return strings.TrimSpace(out)
+							}).WithTimeout(15 * time.Second).WithPolling(time.Second).
+								Should(gomega.Equal(owner + " 600"))
+							return
+						}
 						out, err = f.DevsySSHOnce(ctx, workspace, "stat -c '%u:%g %a' "+guestFile)
 						framework.ExpectNoError(err)
 						gomega.Expect(strings.TrimSpace(out)).
