@@ -103,4 +103,12 @@ The `up-provider-microsandbox-egress` label checks default public TCP access and
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-egress
 ```
 
-These scenarios do not establish complete parity. Prebuilds, dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, and TCP-egress checks alone do not authorize that cutover. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
+The `up-provider-microsandbox-prebuilds` label publishes a Dockerfile with a local Feature to an isolated registry, then checks matching reuse and changed-Dockerfile invalidation against each provider. Matching reuse must read the published hash without invoking a Docker build or entering build-strategy selection. Changed input must miss a different hash, build the new image, and retain the old published manifest. Guest file and environment markers verify the selected image and Feature contents. The fixture removes only its own image tags and requires a Linux host with a local Docker daemon, buildx, and loopback HTTP registry access.
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-prebuilds
+```
+
+These scenarios do not establish complete parity. Dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, and prebuild checks alone do not authorize that cutover. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
+
+Prebuild invalidation coverage changes the Dockerfile; it does not independently establish hashing of local Feature script contents.
