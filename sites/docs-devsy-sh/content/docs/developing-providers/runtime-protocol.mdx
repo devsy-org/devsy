@@ -81,4 +81,12 @@ The ceiling scenario uses `msb modify` on the test-owned VM to grow CPU and memo
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-resources
 ```
 
-These scenarios do not establish complete parity. Storage capacity, ephemeral roots, egress denial, prebuilds, dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, and resource checks alone do not authorize that cutover.
+The `up-provider-microsandbox-storage` label runs three persistent-root scenarios against each provider: the runtime's default capacity, an explicit provider storage option overriding `hostRequirements.storage`, and a zero provider option falling back to a fractional-GiB host requirement rounded up to whole GiB. It checks active root-disk configuration and guest filesystem capacity, allowing for filesystem metadata instead of comparing free space with the raw disk size.
+
+Each scenario verifies that a VM-local file survives stop/start and disappears after recreation, while a host workspace file persists through both operations. Each scenario has a ten-minute deadline, with a 20-minute CI test deadline and a 25-minute job deadline. This suite uses the same runtime and virtualization prerequisites as the lifecycle suite:
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-storage
+```
+
+These scenarios do not establish complete parity. Ephemeral roots, egress denial, prebuilds, dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, and persistent-storage checks alone do not authorize that cutover.
