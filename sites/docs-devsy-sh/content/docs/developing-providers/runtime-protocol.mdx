@@ -109,6 +109,14 @@ The `up-provider-microsandbox-prebuilds` label publishes a Dockerfile with a loc
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-prebuilds
 ```
 
-These scenarios do not establish complete parity. Dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, and prebuild checks alone do not authorize that cutover. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
+The `up-provider-microsandbox-dockerless` label runs four scenarios against each provider with host Docker unavailable. It explicitly selects the existing Dockerless path; it does not test automatic fallback. Both the Docker CLI and Go client are directed to test-owned failures, while a real guest build must install a Dockerfile and local Feature. Image PATH, credentials-directory configuration, Feature environment and a bare-name executable are checked through setup hooks and SSH. The root scenario repeats up, stop/start and recreation, checking build reuse, VM identity, root-file persistence and preserved host data. A fixed non-root developer must succeed with `off` stat virtualization and private host permissions; fresh creation under `strict` or `relaxed` must fail before VM or build-volume creation, preserving host data and permissions.
+
+This suite requires Linux with KVM and public access to the base and Dockerless builder images. It does not require a usable host Docker daemon. Each scenario has a ten-minute deadline, with a 20-minute CI test deadline and a 25-minute job deadline. Cleanup removes only the fixture's workspace, VM, build volume and provider.
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-dockerless
+```
+
+These scenarios do not establish complete parity. Logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, and Dockerless checks alone do not authorize that cutover. Dockerless refusal checks cover fresh creation, not preservation after an invalid recreation request. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
 
 Prebuild invalidation coverage changes the Dockerfile; it does not independently establish hashing of local Feature script contents.
