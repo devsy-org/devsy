@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -281,30 +282,47 @@ func verifyContainerUser(
 		To(gomega.Equal(expectedUser), fmt.Sprintf("remote container user should be %s", expectedUser))
 }
 
+type userIDs struct {
+	uid, gid int
+}
+
+func expectedUIDMapping(goos string, host, defaults userIDs) (int, int) {
+	if goos == "linux" && host.uid != 0 {
+		return host.uid, host.gid
+	}
+	return defaults.uid, defaults.gid
+}
+
 func verifyUIDMapping(
 	containerUID, containerGID, hostUID, hostGID, defaultUID, defaultGID int,
 	username string,
 ) {
-	ginkgo.By(
-		fmt.Sprintf("container UID mapping: %s=%d, expected=%d", username, containerUID, hostUID),
+	expectedUID, expectedGID := expectedUIDMapping(
+		runtime.GOOS,
+		userIDs{uid: hostUID, gid: hostGID},
+		userIDs{uid: defaultUID, gid: defaultGID},
 	)
-	ginkgo.By(
-		fmt.Sprintf("container GID mapping: %s=%d, expected=%d", username, containerGID, hostGID),
+	ginkgo.By(fmt.Sprintf(
+		"container UID/GID mapping: user=%s os=%s host=%d:%d default=%d:%d actual=%d:%d expected=%d:%d",
+		username,
+		runtime.GOOS,
+		hostUID,
+		hostGID,
+		defaultUID,
+		defaultGID,
+		containerUID,
+		containerGID,
+		expectedUID,
+		expectedGID,
+	))
+	gomega.Expect(containerUID).To(
+		gomega.Equal(expectedUID),
+		fmt.Sprintf("%s UID should match computed platform expectation", username),
 	)
-
-	if hostUID == 0 {
-		ginkgo.By("running as root user on host")
-		gomega.Expect(containerUID).
-			To(gomega.Equal(defaultUID), fmt.Sprintf("%s user UID should remain %d when host is root", username, defaultUID))
-		gomega.Expect(containerGID).
-			To(gomega.Equal(defaultGID), fmt.Sprintf("%s user GID should remain %d when host is root", username, defaultGID))
-	} else {
-		ginkgo.By("running as non-root user on host")
-		gomega.Expect(containerUID).
-			To(gomega.Equal(hostUID), fmt.Sprintf("%s user UID should match host user UID", username))
-		gomega.Expect(containerGID).
-			To(gomega.Equal(hostGID), fmt.Sprintf("%s user GID should match host user GID", username))
-	}
+	gomega.Expect(containerGID).To(
+		gomega.Equal(expectedGID),
+		fmt.Sprintf("%s GID should match computed platform expectation", username),
+	)
 }
 
 func verifyHostFileAccess(filePath, expectedContent string) {
