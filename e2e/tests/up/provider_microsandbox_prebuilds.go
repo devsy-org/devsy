@@ -126,7 +126,7 @@ func (f *microsandboxPrebuildTest) publish(ctx context.Context) string {
 	writeMicrosandboxPrebuildConfig(f.workspace, f.repo)
 	writeMicrosandboxPrebuildDockerfile(f.workspace, filepath.Base(f.workspace)+"-published")
 	framework.ExpectNoError(f.framework.DevsyBuild(ctx, f.workspace,
-		"--repository", f.repo, "--devcontainer", ".devcontainer.json"))
+		"--repository", f.repo, "--devcontainer-path", ".devcontainer.json"))
 	gomega.Expect(f.counter.count()).To(gomega.BeNumerically(">", 0),
 		"publication must exercise the instrumented host Docker builder")
 	published := f.registry.publishedRefs(f.repo)
