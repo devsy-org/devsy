@@ -188,10 +188,10 @@ func TestResourceArgsEphemeralUsesTmpfsRootDisk(t *testing.T) {
 	}
 }
 
-func TestResourceArgsEphemeralWithoutSizeUsesDefault(t *testing.T) {
+func TestResourceArgsEphemeralWithoutSizeUsesRuntimeDefault(t *testing.T) {
 	if got := resourceArgs(sandboxSpec{Ephemeral: true}); !slices.Equal(
 		got,
-		[]string{flagRootDisk, fmt.Sprintf("tmpfs:%dG", defaultEphemeralRootDiskGB)},
+		[]string{flagRootDisk, "tmpfs"},
 	) {
 		t.Errorf("resourceArgs = %v", got)
 	}

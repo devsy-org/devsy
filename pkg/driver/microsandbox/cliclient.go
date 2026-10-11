@@ -192,10 +192,9 @@ func (cliClient) ensureVolumes(ctx context.Context, mounts []volumeMount) error 
 }
 
 const (
-	msbCmdRun                  = "run"
-	msbFlagDetach              = "--detach"
-	flagRootDisk               = "--root-disk"
-	defaultEphemeralRootDiskGB = 8
+	msbCmdRun     = "run"
+	msbFlagDetach = "--detach"
+	flagRootDisk  = "--root-disk"
 )
 
 // runArgs builds a detached `msb run` invocation, matching microsandbox's own
@@ -252,11 +251,11 @@ func resourceArgs(spec sandboxSpec) []string {
 		args = append(args, "--max-cpus", strconv.Itoa(int(spec.MaxCPUs)))
 	}
 	if spec.Ephemeral {
-		size := spec.RootDiskGB
-		if size == 0 {
-			size = defaultEphemeralRootDiskGB
+		disk := "tmpfs"
+		if spec.RootDiskGB > 0 {
+			disk = fmt.Sprintf("tmpfs:%dG", spec.RootDiskGB)
 		}
-		args = append(args, flagRootDisk, fmt.Sprintf("tmpfs:%dG", size))
+		args = append(args, flagRootDisk, disk)
 	} else if spec.RootDiskGB > 0 {
 		args = append(args, flagRootDisk, fmt.Sprintf("%dG", spec.RootDiskGB))
 	}

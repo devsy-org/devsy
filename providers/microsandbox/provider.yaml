@@ -34,7 +34,7 @@ options:
     default: "false"
     type: boolean
   MICROSANDBOX_EPHEMERAL:
-    description: "If true, boot from a tmpfs root disk so the microVM's disk state is discarded when it stops. Sized by MICROSANDBOX_STORAGE/hostRequirements.storage, or 8GiB if neither is set."
+    description: "If true, boot from a tmpfs root disk so the microVM's disk state is discarded when it stops. MICROSANDBOX_STORAGE/hostRequirements.storage sets its size; otherwise the runtime default applies."
     default: "false"
     type: boolean
   MICROSANDBOX_WORKSPACE_HOST_PERMISSIONS:
