@@ -515,16 +515,20 @@ func reportErr(err error, _ bool, _ io.Writer) error {
 // emitUpResult writes the JSON result envelope for a completed `up` invocation.
 func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
 	containerID := config2.GetContainerID(wctx.result)
+	workdir := wctx.workdir
 	var warnings []string
 	recovery := false
 	if wctx.result != nil {
 		warnings = wctx.result.HostWarnings
 		recovery = wctx.result.RecoveryContainer
+		if workdir == "" && wctx.result.SubstitutionContext != nil {
+			workdir = wctx.result.SubstitutionContext.ContainerWorkspaceFolder
+		}
 	}
 	_ = config2.WriteResultJSON(out, config2.ResultEnvelope{
 		ContainerID:           containerID,
 		RemoteUser:            wctx.user,
-		RemoteWorkspaceFolder: wctx.workdir,
+		RemoteWorkspaceFolder: workdir,
 		URL:                   ideURL,
 		Warnings:              warnings,
 		Recovery:              recovery,
@@ -685,7 +689,7 @@ func (cmd *UpCmd) resolveWorkdir(
 	result *config2.Result,
 	client client2.BaseWorkspaceClient,
 ) string {
-	workdir := result.SubstitutionContext.ContainerWorkspaceFolder
+	workdir := ""
 	if result.MergedConfig != nil && result.MergedConfig.WorkspaceFolder != "" {
 		workdir = result.MergedConfig.WorkspaceFolder
 	}
