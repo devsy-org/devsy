@@ -561,7 +561,8 @@ func (r *runner) executeSetup(
 		)
 	}
 
-	sshTunnelCmd := r.buildSSHTunnelCommand()
+	sshTunnelArgv := r.buildSSHTunnelArgv()
+	sshTunnelCmd := shellescape.QuoteCommand(sshTunnelArgv)
 
 	agentInjectFunc := func(
 		cancelCtx context.Context,
@@ -578,6 +579,7 @@ func (r *runner) executeSetup(
 				Stderr:  writer,
 			},
 			agent.ExecStartupWatchdogOptions{},
+			sshTunnelArgv...,
 		)
 	}
 
@@ -595,6 +597,7 @@ func (r *runner) execSetupSSHServer(
 	ctx context.Context,
 	req agent.ExecRequest,
 	watchdogOpts agent.ExecStartupWatchdogOptions,
+	argv ...string,
 ) error {
 	onStartupSilence := watchdogOpts.OnStartupSilence
 	watchdogOpts.OnStartupSilence = func() {
@@ -608,6 +611,11 @@ func (r *runner) execSetupSSHServer(
 	return agent.ExecWithStartupWatchdog(
 		ctx,
 		func(ctx context.Context, req agent.ExecRequest) error {
+			if execDriver, ok := r.driver.(driver.ArgvExecDriver); ok && len(argv) > 0 {
+				return execDriver.CommandContainerArgv(ctx, r.id, argv, driver.Streams{
+					Stdin: req.Stdin, Stdout: req.Stdout, Stderr: req.Stderr,
+				})
+			}
 			return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
 				WorkspaceID: r.id,
 				User:        containerRootUser,
@@ -623,9 +631,9 @@ func (r *runner) execSetupSSHServer(
 	)
 }
 
-func (r *runner) buildSSHTunnelCommand() string {
+func (r *runner) buildSSHTunnelArgv() []string {
 	args := []string{
-		shellescape.Quote(r.agentContainerPath()),
+		r.agentContainerPath(),
 		"internal", "ssh-server", names.Flag(names.Stdio),
 	}
 
@@ -633,13 +641,13 @@ func (r *runner) buildSSHTunnelCommand() string {
 		args = append(
 			args,
 			names.Flag(names.ReuseSSHAuthSock),
-			shellescape.Quote(r.workspaceConfig.CLIOptions.SSHAuthSockID),
+			r.workspaceConfig.CLIOptions.SSHAuthSockID,
 		)
 	}
 	if r.isDebugMode() {
 		args = append(args, names.Flag(names.Debug))
 	}
-	return strings.Join(args, " ")
+	return args
 }
 
 func getRelativeDevContainerJson(origin, localWorkspaceFolder string) string {

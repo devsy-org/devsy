@@ -109,6 +109,16 @@ The `up-provider-microsandbox-prebuilds` label publishes a Dockerfile with a loc
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-prebuilds
 ```
 
+The host starts its generated bootstrap SSH helper with literal arguments when the runtime supports argv execution, so setup can begin before the Dockerless filesystem provides `/bin/sh`. Runtimes without that capability retain command-string execution.
+
+The `up-provider-microsandbox-dockerless` label runs four scenarios against each provider with host Docker unavailable. It explicitly selects the existing Dockerless path; it does not test automatic fallback. Both the Docker CLI and Go client are directed to test-owned failures, while a real guest build must install a Dockerfile and local Feature. Image PATH, credentials-directory configuration, Feature environment and a bare-name executable are checked through setup hooks and SSH. The root scenario repeats up, stop/start and recreation, checking build reuse, VM identity, root-file persistence and preserved host data. A fixed non-root developer must succeed with `off` stat virtualization and private host permissions; fresh creation under `strict` or `relaxed` must fail before VM or build-volume creation, preserving host data and permissions.
+
+This suite requires Linux with KVM and public access to the base and Dockerless builder images. It does not require a usable host Docker daemon. Each scenario has a ten-minute deadline, with a 20-minute CI test deadline and a 25-minute job deadline. Cleanup removes only the fixture's workspace, VM, build volume and provider.
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-dockerless
+```
+
 The `up-provider-microsandbox-logs-cancel` label checks completed stdout/stderr workload logs while running and stopped, direct runtime Exec cancellation of a ready parent and child, and cancellation with blocked owned stdin against each provider. A separate SSH observer verifies process identity using PID, kernel start time, and a unique command marker. Caller return and process death must both occur within ten seconds of cancellation; the VM's creation time, boot ID, and source files must remain intact. Logs do not start a stopped VM. These checks do not establish log ordering, binary log fidelity, TTY cancellation, or cancellation of arbitrary nonclosable input.
 
 ```sh
@@ -117,6 +127,6 @@ DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsand
 
 For built-in Exec, cancellation closes non-file `io.ReadCloser` input whose `Close` unblocks `Read`; ordinary completion and caller-owned file input retain their ownership. Agent binary delivery owns its acquired source and closes it when the individual transfer attempt is canceled, before retrying with a fresh source. Cleanup joins cancellation callbacks before returning.
 
-These scenarios do not establish complete parity. Dockerless operation and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, logs, and cancellation checks alone do not authorize that cutover. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
+These scenarios do not establish complete parity. Runtime compatibility failures and invalid-recreate preservation still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, Dockerless, logs, and cancellation checks alone do not authorize that cutover. Dockerless refusal checks cover fresh creation, not preservation after an invalid recreation request. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
 
 Prebuild invalidation coverage changes the Dockerfile; it does not independently establish hashing of local Feature script contents.
