@@ -166,6 +166,15 @@ func checkTaskTransitionJSON(t *testing.T, output string, expected config.Status
 	require.NotEmpty(t, output)
 	require.Equal(t, byte('\n'), output[len(output)-1])
 	require.Equal(t, 1, strings.Count(output, "\n"))
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(output), &fields))
+	require.Len(t, fields, 8)
+	for _, key := range []string{
+		"kind", "schemaVersion", "operationId", "parentOperationId",
+		"phase", "step", "state", "durationMs",
+	} {
+		require.Contains(t, fields, key)
+	}
 	decoder := json.NewDecoder(strings.NewReader(output))
 	var got config.StatusEnvelope
 	require.NoError(t, decoder.Decode(&got))
