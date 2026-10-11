@@ -355,8 +355,11 @@ func (f *resolutionReplyFixture) terminateOwnedProcesses(t *testing.T) {
 		if !assert.NoError(t, err) || !alive {
 			continue
 		}
-		// PID and birth time are checked immediately before failure-only cleanup.
-		assert.NoError(t, p.Kill())
+		// IsRunning compares the cached birth time with a freshly observed process.
+		same, err := p.IsRunning()
+		if assert.NoError(t, err) && same {
+			assert.NoError(t, p.Kill())
+		}
 	}
 }
 

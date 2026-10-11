@@ -415,7 +415,12 @@ func terminateLostReplyProcess(t *testing.T, identity lostReplyProcess) {
 	}
 	// Recheck immediately before killing; never intentionally kill a reused PID.
 	started, err := p.CreateTime()
-	if assert.NoError(t, err) && started == identity.Started {
+	if !assert.NoError(t, err) || started != identity.Started {
+		return
+	}
+	// IsRunning refreshes identity; CreateTime on the same Process is cached.
+	same, err := p.IsRunning()
+	if assert.NoError(t, err) && same {
 		assert.NoError(t, p.Kill())
 	}
 }
