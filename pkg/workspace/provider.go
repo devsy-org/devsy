@@ -365,16 +365,7 @@ func updateProvider(ctx context.Context, p ProviderParams) (*provider.ProviderCo
 		return nil, err
 	}
 
-	err = config.UpdateConfig(p.DevsyConfig.DefaultContext, "", func(c *config.Config) error {
-		cleanupOldOptions(c, providerConfig)
-		clearInitialized(c, providerConfig.Name)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if err := downloadAndSaveProvider(ctx, p, providerConfig); err != nil {
+	if err := replaceProviderPrepared(ctx, p, providerConfig); err != nil {
 		return nil, err
 	}
 
