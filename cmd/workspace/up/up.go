@@ -685,7 +685,7 @@ func (cmd *UpCmd) resolveWorkdir(
 	result *config2.Result,
 	client client2.BaseWorkspaceClient,
 ) string {
-	workdir := ""
+	workdir := result.SubstitutionContext.ContainerWorkspaceFolder
 	if result.MergedConfig != nil && result.MergedConfig.WorkspaceFolder != "" {
 		workdir = result.MergedConfig.WorkspaceFolder
 	}

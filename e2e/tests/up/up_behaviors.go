@@ -160,6 +160,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		framework.ExpectNoError(err)
 
 		gomega.Expect(envelope.Outcome).To(gomega.Equal("success"))
+		gomega.Expect(envelope.RemoteWorkspaceFolder).NotTo(gomega.BeEmpty())
 		statusCount := 0
 		for _, line := range lines[:len(lines)-1] {
 			var status struct {
@@ -229,8 +230,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 				"expected exactly one success envelope in stdout, got %d", len(matched))
 			gomega.Expect(matched[0].ContainerID).NotTo(gomega.BeEmpty())
 			gomega.Expect(matched[0].RemoteUser).NotTo(gomega.BeEmpty())
-			// RemoteWorkspaceFolder may legitimately be empty when the
-			// devcontainer.json doesn't set a workspaceFolder.
+			gomega.Expect(matched[0].RemoteWorkspaceFolder).NotTo(gomega.BeEmpty())
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 	ginkgo.It("suppresses JSON envelope with --result-format plain", func(ctx context.Context) {
