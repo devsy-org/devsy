@@ -203,9 +203,10 @@ func (d *KubernetesDelivery) deliverViaExecStream(
 			if err != nil {
 				return &permanentDeliveryError{fmt.Errorf("acquire binary: %w", err)}
 			}
-			defer func() { _ = binary.Close() }()
+			owned := &execStreamSource{ReadCloser: binary}
+			defer func() { _ = owned.Close() }()
 
-			streamErr := d.execStreamOnce(ctx, destPath, binary, opts.SkipVersionCheck)
+			streamErr := d.execStreamOnce(ctx, destPath, owned, opts.SkipVersionCheck)
 			if streamErr != nil && isTransientDeliveryError(streamErr) &&
 				attempt < execStreamMaxAttempts {
 				log.Warnf(
@@ -220,6 +221,18 @@ func (d *KubernetesDelivery) deliverViaExecStream(
 		return perm.err
 	}
 	return err
+}
+
+// execStreamSource joins cancel-time closure with the acquiring owner's cleanup.
+type execStreamSource struct {
+	io.ReadCloser
+	closeOnce sync.Once
+	closeErr  error
+}
+
+func (s *execStreamSource) Close() error {
+	s.closeOnce.Do(func() { s.closeErr = s.ReadCloser.Close() })
+	return s.closeErr
 }
 
 type permanentDeliveryError struct{ err error }
@@ -241,6 +254,18 @@ func (d *KubernetesDelivery) execStreamOnce(
 
 	attemptCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
+	if source, ok := binary.(io.Closer); ok {
+		closed := make(chan struct{})
+		stop := context.AfterFunc(attemptCtx, func() {
+			_ = source.Close()
+			close(closed)
+		})
+		defer func() {
+			if !stop() {
+				<-closed
+			}
+		}()
+	}
 	progress := newProgressReader(binary)
 	monitorDone := make(chan struct{})
 	monitorStop := make(chan struct{})

@@ -109,6 +109,14 @@ The `up-provider-microsandbox-prebuilds` label publishes a Dockerfile with a loc
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-prebuilds
 ```
 
-These scenarios do not establish complete parity. Dockerless operation, logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, and prebuild checks alone do not authorize that cutover. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
+The `up-provider-microsandbox-logs-cancel` label checks completed stdout/stderr workload logs while running and stopped, direct runtime Exec cancellation of a ready parent and child, and cancellation with blocked owned stdin against each provider. A separate SSH observer verifies process identity using PID, kernel start time, and a unique command marker. Caller return and process death must both occur within ten seconds of cancellation; the VM's creation time, boot ID, and source files must remain intact. Logs do not start a stopped VM. These checks do not establish log ordering, binary log fidelity, TTY cancellation, or cancellation of arbitrary nonclosable input.
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-logs-cancel
+```
+
+For built-in Exec, cancellation closes non-file `io.ReadCloser` input whose `Close` unblocks `Read`; ordinary completion and caller-owned file input retain their ownership. Agent binary delivery owns its acquired source and closes it when the individual transfer attempt is canceled, before retrying with a fresh source. Cleanup joins cancellation callbacks before returning.
+
+These scenarios do not establish complete parity. Dockerless operation and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, logs, and cancellation checks alone do not authorize that cutover. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
 
 Prebuild invalidation coverage changes the Dockerfile; it does not independently establish hashing of local Feature script contents.
