@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+printf 'command=%s\nPATH=%s\nDOCKER_CONFIG=%s\nimage=%s\nfeature=%s\nidentity=%s:%s\n' \
+    "$(command -v devsy-dockerless-parity-check)" "$PATH" "${DOCKER_CONFIG-}" \
+    "${DEVSY_DOCKERLESS_IMAGE-}" "${DEVSY_FEATURE_PARITY-}" "$(id -u)" "$(id -g)"
+cat /usr/local/share/devsy-dockerless-marker
+cat /usr/local/share/devsy-feature-parity
