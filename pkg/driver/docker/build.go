@@ -260,9 +260,9 @@ func (s *buildkitStrategy) build(
 	platform string,
 	options *build.BuildOptions,
 ) error {
-	dockerClient, err := docker.NewClient(ctx)
+	dockerClient, err := s.newDockerClient(ctx)
 	if err != nil {
-		return fmt.Errorf("create docker client: %w", err)
+		return err
 	}
 	defer func() { _ = dockerClient.Close() }()
 
@@ -282,6 +282,30 @@ func (s *buildkitStrategy) build(
 		return fmt.Errorf("build: %w", err)
 	}
 	return nil
+}
+
+// newDockerClient targets the daemon configured for the provider. Runtimes that
+// are not plain docker, and elevated invocations, keep the process-environment
+// client.
+func (s *buildkitStrategy) newDockerClient(ctx context.Context) (*docker.Client, error) {
+	helper := s.driver.Docker
+	if helper.Elevator != nil || helper.IsPodman() || helper.IsNerdctl() {
+		client, err := docker.NewClient(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("create docker client: %w", err)
+		}
+		return client, nil
+	}
+
+	invocation, err := docker.NewDockerInvocation(helper)
+	if err != nil {
+		return nil, fmt.Errorf("capture docker invocation: %w", err)
+	}
+	client, err := docker.NewClientWithInvocation(ctx, invocation)
+	if err != nil {
+		return nil, fmt.Errorf("create docker client: %w", err)
+	}
+	return client, nil
 }
 
 func (s *buildkitStrategy) name() string {
