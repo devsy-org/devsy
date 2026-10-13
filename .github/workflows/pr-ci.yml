@@ -758,6 +758,14 @@ jobs:
             test-timeout: 900s
             job-timeout-minutes: 20
 
+          - label: docker-internal-buildkit
+            runner: windows-latest
+            free-disk-space: false
+            install-kind: true
+            requires-secret: false
+            test-timeout: 900s
+            job-timeout-minutes: 20
+
           - label: up-docker-wsl
             runner: windows-latest
             free-disk-space: false
