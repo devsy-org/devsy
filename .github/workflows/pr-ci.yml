@@ -146,6 +146,8 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          # Archiving the Windows Go cache exceeded this job's budget after tests passed.
+          cache: false
 
       - name: run provider update tests and require Windows coverage
         shell: pwsh
@@ -243,6 +245,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          # Windows cache archiving can consume the post-job budget after a successful build.
+          cache: ${{ runner.os != 'Windows' }}
 
       - name: get operating system lowercase
         id: os
