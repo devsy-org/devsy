@@ -49,7 +49,7 @@ var _ = ginkgo.Describe("agent delivery", ginkgo.Label("delivery"), func() {
 				// Verify binary in volume via docker run
 				out, err := exec.CommandContext(ctx, "docker", "run", "--rm",
 					"-v", "devsy-agent-"+workspaceID+":/opt/devsy",
-					"busybox:latest", "test", "-x", "/opt/devsy/devsy",
+					"ghcr.io/devsy-org/test-images/busybox:latest", "test", "-x", "/opt/devsy/devsy",
 				).CombinedOutput()
 				framework.ExpectNoError(
 					err, "binary should be executable in volume: %s", string(out),
@@ -65,7 +65,7 @@ var _ = ginkgo.Describe("agent delivery", ginkgo.Label("delivery"), func() {
 
 				out, err := exec.CommandContext(ctx, "docker", "run", "-d",
 					"--name", containerName,
-					"busybox:latest", "sleep", "120",
+					"ghcr.io/devsy-org/test-images/busybox:latest", "sleep", "120",
 				).CombinedOutput()
 				framework.ExpectNoError(err, "failed to start test container: %s", string(out))
 				ginkgo.DeferCleanup(func() {

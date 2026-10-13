@@ -18,7 +18,7 @@ const (
 	applyCommand   = "apply"
 	containerFlag  = "--container"
 	configFlag     = "--config"
-	alpineImage    = "alpine"
+	alpineImage    = "ghcr.io/devsy-org/test-images/alpine:latest"
 	dockerBin      = "docker"
 	imageKey       = "image"
 	devcontainerFn = "devcontainer.json"
