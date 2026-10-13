@@ -131,6 +131,77 @@ jobs:
           go test -race -short -count=1 -v ./e2e/tests/up-docker-compose \
             -run '^TestExpectedUIDMapping$'
 
+  provider-update-windows:
+    name: Provider Update Tests (windows-latest)
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: run provider update tests and require Windows coverage
+        shell: pwsh
+        run: |
+          $jsonPath = Join-Path $env:RUNNER_TEMP 'provider-update-windows.jsonl'
+          $exitPath = Join-Path $env:RUNNER_TEMP 'provider-update-windows.exitcode'
+          & go test -race -json -count=1 -timeout 10m ./pkg/workspace -run '^TestProviderUpdate' |
+            Tee-Object -FilePath $jsonPath
+          $testExitCode = $LASTEXITCODE
+          Set-Content -LiteralPath $exitPath -Value $testExitCode -NoNewline
+
+          if ($testExitCode -ne 0) {
+            Write-Error "Provider update tests failed with exit code $testExitCode"
+            exit $testExitCode
+          }
+
+          $events = @(
+            Get-Content -LiteralPath $jsonPath |
+              ForEach-Object { try { ConvertFrom-Json -InputObject $_ -ErrorAction Stop } catch { $null } } |
+              Where-Object { $null -ne $_ }
+          )
+          $criticalTests = @(
+            'TestProviderUpdateZipCompatibility/plain_archive',
+            'TestProviderUpdateZipCompatibility/contained_file_symlink',
+            'TestProviderUpdateTarContainedDirectoryLinkThenRegularMember',
+            'TestProviderUpdateContainedSeedDirectoryLinkChain',
+            'TestProviderUpdateArchivePreservesOwnedDaemon'
+          )
+          $status = 0
+          foreach ($testName in $criticalTests) {
+            $testEvents = @($events | Where-Object { $_.Test -eq $testName })
+            if ($testEvents.Count -eq 0) {
+              Write-Error "Required Windows provider update test produced no JSON events: $testName"
+              $status = 1
+              continue
+            }
+            if (@($testEvents | Where-Object { $_.Action -eq 'skip' }).Count -gt 0) {
+              Write-Error "Required Windows provider update test was skipped: $testName"
+              $status = 1
+              continue
+            }
+            if (@($testEvents | Where-Object { $_.Action -eq 'pass' }).Count -eq 0) {
+              Write-Error "Required Windows provider update test did not pass: $testName"
+              $status = 1
+            }
+          }
+          exit $status
+
+      - name: upload provider update test JSON on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: provider-update-windows-test-json
+          path: |
+            ${{ runner.temp }}/provider-update-windows.jsonl
+            ${{ runner.temp }}/provider-update-windows.exitcode
+          if-no-files-found: ignore
+
   can-read-secret:
     name: Can Read Secret
     runs-on: ubuntu-latest
@@ -1201,6 +1272,7 @@ jobs:
       - lint
       - agent-skill
       - unit-tests
+      - provider-update-windows
       - licenses
       - build-cli
       - integration-tests-unprivileged
@@ -1237,6 +1309,7 @@ jobs:
           check_result "lint" "${{ needs.lint.result }}" false || status=1
           check_result "agent-skill" "${{ needs.agent-skill.result }}" false || status=1
           check_result "unit-tests" "${{ needs.unit-tests.result }}" true || status=1
+          check_result "provider-update-windows" "${{ needs.provider-update-windows.result }}" true || status=1
           check_result "licenses" "${{ needs.licenses.result }}" true || status=1
           check_result "build-cli" "${{ needs.build-cli.result }}" true || status=1
           check_result "integration-tests-unprivileged" "${{ needs.integration-tests-unprivileged.result }}" true || status=1
