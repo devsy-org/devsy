@@ -17,25 +17,15 @@ const (
 	stderrTailBytes        = 4096
 )
 
-// StdioTransport dials the daemon by running `docker system dial-stdio`, which
-// bridges its stdin/stdout to the daemon endpoint resolved by the docker CLI
-// (DOCKER_HOST, contexts, ssh://, npipe, ...). Using the CLI keeps the SDK
-// client pointed at exactly the daemon the CLI would use.
 type StdioTransport struct {
 	Invocation *DockerInvocation
-	// ShutdownTimeout bounds how long Close waits for the subprocess to exit
-	// after its stdin is closed before killing it.
 	ShutdownTimeout time.Duration
 }
 
-// NewStdioTransport returns a transport for invocation with default timeouts.
 func NewStdioTransport(invocation *DockerInvocation) *StdioTransport {
 	return &StdioTransport{Invocation: invocation, ShutdownTimeout: defaultShutdownTimeout}
 }
 
-// Dial starts a dial-stdio subprocess and returns a connection to its stdio.
-// ctx only governs startup; the returned connection outlives it and the
-// subprocess is released by Close.
 func (t *StdioTransport) Dial(ctx context.Context) (net.Conn, error) {
 	if err := t.Invocation.validate(); err != nil {
 		return nil, err
@@ -82,14 +72,10 @@ func (t *StdioTransport) Dial(ctx context.Context) (net.Conn, error) {
 	}, nil
 }
 
-// DialContext adapts Dial to the signature of http.Transport.DialContext; the
-// network and address are ignored because the CLI resolves the endpoint.
 func (t *StdioTransport) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
 	return t.Dial(ctx)
 }
 
-// stdioConn is a net.Conn over a subprocess's stdin/stdout. Deadlines are not
-// supported and are accepted as no-ops, matching docker/cli's commandConn.
 type stdioConn struct {
 	cmd             *exec.Cmd
 	stdin           io.WriteCloser
@@ -119,15 +105,12 @@ func (c *stdioConn) Write(p []byte) (int, error) {
 	return c.stdin.Write(p)
 }
 
-// CloseWrite half-closes the connection so the daemon sees EOF on the stream.
 func (c *stdioConn) CloseWrite() error {
 	var err error
 	c.closeStdinOnce.Do(func() { err = c.stdin.Close() })
 	return err
 }
 
-// Close ends the stream, giving the subprocess ShutdownTimeout to exit before
-// killing it.
 func (c *stdioConn) Close() error {
 	c.closeOnce.Do(func() {
 		_ = c.CloseWrite()
@@ -153,8 +136,6 @@ func (c *stdioConn) SetDeadline(time.Time) error      { return nil }
 func (c *stdioConn) SetReadDeadline(time.Time) error  { return nil }
 func (c *stdioConn) SetWriteDeadline(time.Time) error { return nil }
 
-// reap waits for the subprocess exactly once and reports a non-zero exit with
-// the tail of its stderr.
 func (c *stdioConn) reap() error {
 	c.reapOnce.Do(func() {
 		err := c.cmd.Wait()
@@ -174,7 +155,6 @@ type stdioAddr struct{}
 func (stdioAddr) Network() string { return "stdio" }
 func (stdioAddr) String() string  { return "docker-system-dial-stdio" }
 
-// tailBuffer keeps the last limit bytes written to it.
 type tailBuffer struct {
 	mu    sync.Mutex
 	limit int

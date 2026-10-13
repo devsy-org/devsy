@@ -31,16 +31,12 @@ func NewClient(ctx context.Context) (*Client, error) {
 	return cli, nil
 }
 
-// NewClientWithInvocation creates a docker client whose connections are made
-// through `docker system dial-stdio` of the given invocation, so the client
-// targets the same daemon as the docker CLI would, including provider env.
 func NewClientWithInvocation(ctx context.Context, invocation *DockerInvocation) (*Client, error) {
 	if err := invocation.validate(); err != nil {
 		return nil, err
 	}
 
-	// The default host is kept only to build request URLs; every connection is
-	// made by the transport's dialer, and no proxy may sit in front of it.
+	// Host is unused: every connection goes through the stdio dialer.
 	cli, err := dockerclient.NewClientWithOpts(
 		dockerclient.WithHTTPClient(&http.Client{
 			Transport: &http.Transport{

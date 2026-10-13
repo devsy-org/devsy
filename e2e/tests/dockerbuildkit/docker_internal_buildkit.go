@@ -1,7 +1,4 @@
-// Package dockerbuildkit verifies that the in-process BuildKit client reaches
-// the daemon the docker CLI is configured for (issue #1469). The specs only
-// run on Windows, where the SDK default (local named pipe) differs from the
-// CLI target when a provider points DOCKER_HOST elsewhere.
+// Package dockerbuildkit covers internal BuildKit against the CLI's daemon on Windows.
 package dockerbuildkit
 
 import (

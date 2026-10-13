@@ -18,7 +18,6 @@ import (
 
 const helperModeEnv = "DEVSY_TEST_DIAL_STDIO_MODE"
 
-// TestMain lets the test binary stand in for `docker system dial-stdio`.
 func TestMain(m *testing.M) {
 	switch os.Getenv(helperModeEnv) {
 	case "":
@@ -36,8 +35,6 @@ func TestMain(m *testing.M) {
 	os.Exit(0)
 }
 
-// serveFakeDaemon answers /_ping and /info over stdio; /info reports the
-// DOCKER_HOST the subprocess was started with.
 func serveFakeDaemon() {
 	reader := bufio.NewReader(os.Stdin)
 	for {

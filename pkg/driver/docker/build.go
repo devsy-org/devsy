@@ -284,9 +284,7 @@ func (s *buildkitStrategy) build(
 	return nil
 }
 
-// newDockerClient targets the daemon configured for the provider. Runtimes that
-// are not plain docker, and elevated invocations, keep the process-environment
-// client.
+// Elevated, podman, and nerdctl runtimes keep the process-environment client.
 func (s *buildkitStrategy) newDockerClient(ctx context.Context) (*docker.Client, error) {
 	helper := s.driver.Docker
 	if helper.Elevator != nil || helper.IsPodman() || helper.IsNerdctl() {
