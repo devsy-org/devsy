@@ -23,7 +23,7 @@ import (
 
 const (
 	osLinux                      = "linux"
-	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.7"
+	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8"
 	microsandboxRootUser         = "root"
 )
 
@@ -213,7 +213,7 @@ var _ = ginkgo.Describe(
 			ginkgo.Entry("built-in", "microsandbox", "microsandbox-builtin-parity",
 				ginkgo.SpecTimeout(framework.TimeoutLong())),
 			ginkgo.Entry(
-				"external v0.1.7",
+				"external v0.1.8",
 				microsandboxExternalProvider,
 				"microsandbox-external-parity",
 				ginkgo.SpecTimeout(framework.TimeoutLong()),
