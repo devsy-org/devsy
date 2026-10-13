@@ -17,6 +17,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/download"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
+	"github.com/devsy-org/devsy/pkg/hash"
 	"github.com/google/uuid"
 )
 
@@ -28,6 +29,9 @@ func DownloadUpdateBinaries(
 	binaries map[string][]*ProviderBinary,
 	target string,
 ) (map[string]string, error) {
+	if err := validateUpdateBinaryKeys(binaries); err != nil {
+		return nil, err
+	}
 	result := map[string]string{}
 	for key, locations := range binaries {
 		binary := updateBinaryForPlatform(locations)
@@ -45,7 +49,27 @@ func DownloadUpdateBinaries(
 		}
 		result[key] = path
 	}
+	// A reused alias can observe another requested family's later replacement.
+	// Recheck the complete prepared result before any live publication.
+	for key, locations := range binaries {
+		binary := updateBinaryForPlatform(locations)
+		if !updateBinaryMatches(result[key], binary.Checksum) {
+			return nil, fmt.Errorf(
+				"prepared update binary %s no longer matches its requested checksum",
+				key,
+			)
+		}
+	}
 	return result, nil
+}
+
+func validateUpdateBinaryKeys(binaries map[string][]*ProviderBinary) error {
+	for key := range binaries {
+		if key == "" || optionNameRegEx.MatchString(key) {
+			return fmt.Errorf("unsafe provider update binary key %q", key)
+		}
+	}
+	return nil
 }
 
 func updateBinaryForPlatform(locations []*ProviderBinary) *ProviderBinary {
@@ -69,18 +93,59 @@ func prepareUpdateBinary(
 			binary.Path,
 		)
 	}
-	if !isRemotePath(binary.Path) || binary.ArchivePath == "" {
-		return downloadBinaryForPlatform(ctx, key, []*ProviderBinary{binary}, target)
-	}
 	family := filepath.Join(target, strings.ToLower(key))
 	path := getBinaryPath(binary, family)
-	// The legacy cache contains only the executable; seeded sidecars remain unchanged on a hit.
-	if verifyOrRemoveBinary(path, binary.Checksum) || fromCache(binary, family) {
+	// Installed aliases are reusable, but checksum misses must not delete their targets.
+	if updateBinaryMatches(path, binary.Checksum) {
 		return path, nil
+	}
+	archive := isRemotePath(binary.Path) && binary.ArchivePath != ""
+	// A cache miss replaces the entire archive family. Do not first unlink a
+	// selected old executable whose parent may intentionally be read-only.
+	if archive && !cachedUpdateBinaryAvailable(binary) {
+		return downloadWithRetryUsing(key, binary, func() (string, error) {
+			return downloadConfinedUpdateArchive(ctx, binary, family)
+		})
+	}
+	if err := prepareUpdateDestination(ctx, target, path); err != nil {
+		return "", fmt.Errorf("isolate update destination for %s: %w", key, err)
+	}
+	if !archive {
+		return downloadBinaryForPlatform(ctx, key, []*ProviderBinary{binary}, target)
+	}
+	return prepareUpdateArchive(ctx, key, binary, family)
+}
+
+func prepareUpdateArchive(
+	ctx context.Context,
+	key string,
+	binary *ProviderBinary,
+	family string,
+) (string, error) {
+	// The legacy cache contains only the executable; seeded sidecars remain unchanged on a hit.
+	if fromCache(binary, family) {
+		return getBinaryPath(binary, family), nil
 	}
 	return downloadWithRetryUsing(key, binary, func() (string, error) {
 		return downloadConfinedUpdateArchive(ctx, binary, family)
 	})
+}
+
+func cachedUpdateBinaryAvailable(binary *ProviderBinary) bool {
+	path, err := getCachedBinaryPath(binary.Path)
+	return err == nil && updateBinaryMatches(path, binary.Checksum)
+}
+
+// Match without the legacy verifier's destructive checksum-mismatch cleanup.
+func updateBinaryMatches(path, checksum string) bool {
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	if checksum == "" {
+		return true
+	}
+	actual, err := hash.File(path)
+	return err == nil && strings.EqualFold(actual, checksum)
 }
 
 func downloadConfinedUpdateArchive(
@@ -88,6 +153,12 @@ func downloadConfinedUpdateArchive(
 	binary *ProviderBinary,
 	family string,
 ) (_ string, err error) {
+	if err := validUpdateArchiveName(binary.ArchivePath); err != nil {
+		return "", err
+	}
+	if err := removeUpdateArchiveFamily(family); err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(family, dirPerms); err != nil {
 		return "", err
 	}
@@ -96,12 +167,6 @@ func downloadConfinedUpdateArchive(
 		return "", err
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
-	if err = validUpdateArchiveName(binary.ArchivePath); err != nil {
-		return "", err
-	}
-	if err = root.Remove(binary.ArchivePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return "", err
-	}
 	if err = fetchUpdateArchive(ctx, root, binary.Path); err != nil {
 		return "", err
 	}
@@ -109,6 +174,44 @@ func downloadConfinedUpdateArchive(
 		return "", err
 	}
 	return getBinaryPath(binary, family), nil
+}
+
+// Each download attempt replaces only its owned staged family; cache hits bypass this path.
+func removeUpdateArchiveFamily(family string) error {
+	info, err := os.Lstat(family)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		if err := makeUpdateArchiveFamilyWritable(family); err != nil {
+			return err
+		}
+	}
+	return os.RemoveAll(family)
+}
+
+func makeUpdateArchiveFamilyWritable(family string) error {
+	root, err := os.OpenRoot(family)
+	if err != nil {
+		return err
+	}
+	walkErr := fs.WalkDir(
+		root.FS(),
+		".",
+		func(name string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				return nil
+			}
+			return root.Chmod(name, 0o700)
+		},
+	)
+	return errors.Join(walkErr, root.Close())
 }
 
 func finalizeUpdateArchive(ctx context.Context, root *os.Root, selected string) error {
@@ -191,6 +294,9 @@ func extractConfinedUpdateTar(ctx context.Context, root *os.Root, input io.Reade
 }
 
 func materializeUpdateTarEntry(root *os.Root, input io.Reader, header *tar.Header) error {
+	if header.Typeflag == tar.TypeXGlobalHeader {
+		return nil
+	}
 	name := filepath.Clean(header.Name)
 	if err := updateArchiveParents(root, header.Name); err != nil {
 		return err
@@ -199,10 +305,7 @@ func materializeUpdateTarEntry(root *os.Root, input io.Reader, header *tar.Heade
 	case tar.TypeDir:
 		return root.MkdirAll(name, 0o755)
 	case tar.TypeSymlink:
-		if filepath.IsAbs(header.Linkname) {
-			return fmt.Errorf("absolute archive symlink is unsupported: %s", header.Linkname)
-		}
-		return root.Symlink(header.Linkname, name)
+		return materializeUpdateTarSymlink(root, name, header.Linkname)
 	case tar.TypeLink:
 		return materializeUpdateTarLink(root, name, header.Linkname)
 	case tar.TypeReg:
@@ -210,6 +313,13 @@ func materializeUpdateTarEntry(root *os.Root, input io.Reader, header *tar.Heade
 	default:
 		return fmt.Errorf("unsupported update archive entry type %d", header.Typeflag)
 	}
+}
+
+func materializeUpdateTarSymlink(root *os.Root, name, target string) error {
+	if filepath.IsAbs(target) {
+		return fmt.Errorf("absolute archive symlink is unsupported: %s", target)
+	}
+	return root.Symlink(target, name)
 }
 
 func materializeUpdateTarLink(root *os.Root, name, target string) error {

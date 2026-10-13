@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -62,6 +63,13 @@ func compatibilityTar(
 		require.NoError(t, gz.Close())
 	}
 	return out.Bytes()
+}
+
+func singleExecutableUpdateArchive(t *testing.T, selected string, content []byte) []byte {
+	t.Helper()
+	return compatibilityTar(t, false, []*tar.Header{
+		{Name: selected, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))},
+	}, map[string][]byte{selected: content})
 }
 
 func compatibilityZip(t *testing.T, entries []struct {
@@ -872,4 +880,716 @@ func TestProviderUpdateFailedBinaryRestorationRetainsBackup(t *testing.T) {
 		prepared.live,
 		"failed rename must not claim the old binaries were restored",
 	)
+}
+
+func TestProviderUpdatePAXGlobalMetadata(t *testing.T) {
+	f := newPreservationFixture(t)
+	f.seedBinary(updateRuntimeKey, []byte("old PAX runtime"))
+	content := []byte("new executable after global metadata")
+	const metadata = "global-metadata"
+	archive := compatibilityTar(t, false, []*tar.Header{
+		{
+			Name:       metadata,
+			Typeflag:   tar.TypeXGlobalHeader,
+			PAXRecords: map[string]string{"comment": "owned global metadata"},
+		},
+		{Name: updateRuntimeName, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))},
+	}, map[string][]byte{updateRuntimeName: content})
+	server := compatibilityArchiveServer(t, archive)
+	binary := updateTestBinary(server.URL+"/global.tar", content)
+	binary.ArchivePath = updateRuntimeName
+	err := f.update(map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}})
+	t.Logf("PAX global-header update result: %v", err)
+	require.NoError(t, err)
+	assertSelectedExecutable(t, f.binaryPath(updateRuntimeKey), content, binary.Checksum)
+	require.NoFileExists(t, filepath.Join(f.binaries, updateRuntimeName, metadata))
+	require.NoDirExists(t, filepath.Join(f.binaries, updateRuntimeName, metadata))
+	assertNoUpdateStaging(t, f)
+}
+
+const updateArchiveLink = "runtime-link"
+
+func linkedReplacementArchive(t *testing.T, linkType byte, content []byte, extra string) []byte {
+	t.Helper()
+	entries := []*tar.Header{
+		{Name: updateRuntimeName, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))},
+		{Name: updateArchiveLink, Typeflag: linkType, Linkname: updateRuntimeName, Mode: 0o777},
+		{Name: updateSidecarPath, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(content))},
+	}
+	bodies := map[string][]byte{updateRuntimeName: content, updateSidecarPath: content}
+	if extra != "" {
+		entries = append(
+			entries,
+			&tar.Header{Name: extra, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(content))},
+		)
+		bodies[extra] = content
+	}
+	return compatibilityTar(t, false, entries, bodies)
+}
+
+func assertLinkedReplacement(t *testing.T, f *preservationFixture, linkType byte, content []byte) {
+	t.Helper()
+	selected := f.binaryPath(updateRuntimeKey)
+	assertSelectedExecutable(t, selected, content, updateTestDigest(content))
+	link := filepath.Join(f.binaries, updateRuntimeName, updateArchiveLink)
+	// #nosec G304 -- Link is part of this test-owned provider archive.
+	linked, err := os.ReadFile(link)
+	require.NoError(t, err)
+	assert.Equal(t, content, linked)
+	if linkType == tar.TypeSymlink {
+		target, err := os.Readlink(link)
+		require.NoError(t, err)
+		assert.Equal(t, updateRuntimeName, target)
+	} else {
+		selectedInfo, err := os.Stat(selected)
+		require.NoError(t, err)
+		linkInfo, err := os.Stat(link)
+		require.NoError(t, err)
+		assert.True(t, os.SameFile(selectedInfo, linkInfo))
+	}
+	sidecar, err := os.ReadFile(filepath.Join(f.binaries, updateRuntimeName, "lib", "sidecar"))
+	require.NoError(t, err)
+	assert.Equal(t, content, sidecar)
+	for _, path := range []string{
+		f.binaryPath("UNRELATED"),
+		filepath.Join(f.dir, "owned-sentinel"),
+		filepath.Join(f.dir, "daemon", "owned-state"),
+	} {
+		// #nosec G304 -- These paths were populated and snapshotted by this isolated fixture.
+		actual, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, f.before[path], actual)
+	}
+	assert.False(t, f.assertAssociation().Initialized)
+	assertNoUpdateStaging(t, f)
+}
+
+func TestProviderUpdateConsecutiveLinkedArchives(t *testing.T) {
+	for _, linkType := range []byte{tar.TypeSymlink, tar.TypeLink} {
+		t.Run(
+			map[byte]string{tar.TypeSymlink: "symlink", tar.TypeLink: "hardlink"}[linkType],
+			func(t *testing.T) {
+				if linkType == tar.TypeSymlink {
+					requireProviderUpdateSymlinks(t)
+				}
+				f := newPreservationFixture(t)
+				f.seedBinary("UNRELATED", []byte("unrelated installed bytes"))
+				first, second := []byte("first linked release"), []byte("second linked release")
+				const stale = "obsolete-release-member"
+				archives := [][]byte{
+					linkedReplacementArchive(t, linkType, first, stale),
+					linkedReplacementArchive(t, linkType, second, ""),
+				}
+				var requests atomic.Int64
+				server := ownedProviderUpdateServer(
+					t,
+					func(w http.ResponseWriter, _ *http.Request) {
+						index := requests.Add(1) - 1
+						if index >= int64(len(archives)) {
+							http.Error(w, "unexpected additional request", http.StatusBadRequest)
+							return
+						}
+						_, _ = w.Write(archives[index])
+					},
+				)
+				for _, content := range [][]byte{first, second} {
+					binary := updateTestBinary(server.URL+"/linked.tar", content)
+					binary.ArchivePath = updateRuntimeName
+					err := f.update(
+						map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}},
+					)
+					t.Logf("consecutive archive request=%d result=%v", requests.Load(), err)
+					require.NoError(t, err)
+					assertLinkedReplacement(t, f, linkType, content)
+				}
+				require.EqualValues(
+					t,
+					2,
+					requests.Load(),
+					"changed checksum must fetch a new archive",
+				)
+				require.NoFileExists(t, filepath.Join(f.binaries, updateRuntimeName, stale))
+			},
+		)
+	}
+}
+
+func truncatedLinkedArchive(t *testing.T, linkType byte, content []byte) []byte {
+	t.Helper()
+	const partial = "attempt-only-member"
+	var data bytes.Buffer
+	writer := tar.NewWriter(&data)
+	for _, header := range []*tar.Header{
+		{Name: updateRuntimeName, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))},
+		{Name: updateArchiveLink, Typeflag: linkType, Linkname: updateRuntimeName, Mode: 0o777},
+		{Name: partial, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(content))},
+		{Name: "incomplete", Typeflag: tar.TypeReg, Mode: 0o644, Size: 128},
+	} {
+		require.NoError(t, writer.WriteHeader(header))
+		if header.Name == "incomplete" {
+			_, err := writer.Write([]byte("short"))
+			require.NoError(t, err)
+			break
+		}
+		if header.Typeflag == tar.TypeReg {
+			_, err := writer.Write(content)
+			require.NoError(t, err)
+		}
+	}
+	// Deliberately truncated member follows a completed link; this is a retriable tar read error.
+	require.Error(t, writer.Close())
+	return data.Bytes()
+}
+
+func TestProviderUpdateRetriesLinkedArchiveFromFreshFamily(t *testing.T) {
+	for _, linkType := range []byte{tar.TypeSymlink, tar.TypeLink} {
+		t.Run(
+			map[byte]string{tar.TypeSymlink: "symlink", tar.TypeLink: "hardlink"}[linkType],
+			func(t *testing.T) {
+				if linkType == tar.TypeSymlink {
+					requireProviderUpdateSymlinks(t)
+				}
+				f := newPreservationFixture(t)
+				f.seedBinary(updateRuntimeKey, []byte("old live runtime"))
+				f.seedBinary("UNRELATED", []byte("unrelated installed bytes"))
+				content := []byte("complete archive after retry")
+				first := truncatedLinkedArchive(t, linkType, content)
+				second := linkedReplacementArchive(t, linkType, content, "")
+				var requests atomic.Int64
+				server := ownedProviderUpdateServer(
+					t,
+					func(w http.ResponseWriter, _ *http.Request) {
+						if requests.Add(1) == 1 {
+							_, _ = w.Write(first)
+							return
+						}
+						_, _ = w.Write(second)
+					},
+				)
+				binary := updateTestBinary(server.URL+"/retry.tar", content)
+				binary.ArchivePath = updateRuntimeName
+				err := f.update(map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}})
+				t.Logf("linked archive retry requests=%d result=%v", requests.Load(), err)
+				require.EqualValues(t, 2, requests.Load())
+				require.NoError(t, err)
+				assertLinkedReplacement(t, f, linkType, content)
+				require.NoFileExists(
+					t,
+					filepath.Join(f.binaries, updateRuntimeName, "attempt-only-member"),
+				)
+				require.NoFileExists(t, filepath.Join(f.binaries, updateRuntimeName, "incomplete"))
+			},
+		)
+	}
+}
+
+func TestProviderUpdateFamilyAliasPreservesUnrelatedBinary(t *testing.T) {
+	for _, cache := range []bool{false, true} {
+		t.Run(
+			map[bool]string{false: "fresh archive", true: "offline executable cache"}[cache],
+			func(t *testing.T) {
+				requireProviderUpdateSymlinks(t)
+				f := newPreservationFixture(t)
+				old := []byte("unrelated executable must not change")
+				f.seedBinary("UNRELATED", old)
+				alias := filepath.Join(f.binaries, updateRuntimeName)
+				require.NoError(t, os.Symlink("unrelated", alias))
+				content := []byte("replacement through alias " + f.dir)
+				archive := singleExecutableUpdateArchive(t, updateRuntimeName, content)
+				var requests atomic.Int64
+				server := ownedProviderUpdateServer(
+					t,
+					func(w http.ResponseWriter, _ *http.Request) {
+						requests.Add(1)
+						_, _ = w.Write(archive)
+					},
+				)
+				binary := updateTestBinary(server.URL+"/family-alias.tar", content)
+				binary.ArchivePath = updateRuntimeName
+				binaries := map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}}
+				if cache {
+					warmProviderUpdateCache(t, binaries, server)
+				}
+				require.NoError(t, f.update(binaries))
+				require.EqualValues(
+					t,
+					1,
+					requests.Load(),
+					"offline cache case must not fetch again",
+				)
+				assertSelectedExecutable(
+					t,
+					f.binaryPath(updateRuntimeKey),
+					content,
+					binary.Checksum,
+				)
+				actual, err := os.ReadFile(f.binaryPath("UNRELATED"))
+				t.Logf(
+					"unrelated binary after successful replacement: read error=%v bytes=%q",
+					err,
+					actual,
+				)
+				require.NoError(
+					t,
+					err,
+					"updating an alias family must preserve the original target family",
+				)
+				assert.Equal(
+					t,
+					old,
+					actual,
+					"cache preparation must not overwrite another family's executable",
+				)
+				assertNoUpdateStaging(t, f)
+			},
+		)
+	}
+}
+
+func warmProviderUpdateCache(
+	t *testing.T,
+	binaries map[string][]*provider.ProviderBinary,
+	server *httptest.Server,
+) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := provider.DownloadBinaries(ctx, binaries, t.TempDir())
+	require.NoError(t, err)
+	server.Close()
+}
+
+func TestProviderUpdateFamilyAliasMatchingChecksumReuse(t *testing.T) {
+	requireProviderUpdateSymlinks(t)
+	f := newPreservationFixture(t)
+	content := []byte("valid installed executable behind a contained family alias")
+	f.seedBinary("UNRELATED", content)
+	alias := filepath.Join(f.binaries, updateRuntimeName)
+	require.NoError(t, os.Symlink("unrelated", alias))
+	binary := updateTestBinary("https://offline.invalid/matching-family.tar", content)
+	binary.ArchivePath = updateRuntimeName
+	require.NoError(t, f.update(map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}}))
+	assertSelectedExecutable(t, f.binaryPath(updateRuntimeKey), content, binary.Checksum)
+	assertSelectedExecutable(t, f.binaryPath("UNRELATED"), content, binary.Checksum)
+	target, err := os.Readlink(alias)
+	require.NoError(t, err)
+	assert.Equal(t, "unrelated", target, "matching installed reuse should not reset the family")
+	assertNoUpdateStaging(t, f)
+}
+
+func TestProviderUpdateReadOnlySelectedArchiveFamily(t *testing.T) {
+	if runtime.GOOS == updateWindowsOS || os.Geteuid() == 0 {
+		t.Skip("requires POSIX permission enforcement for an ordinary user")
+	}
+	for _, failure := range []bool{false, true} {
+		t.Run(
+			map[bool]string{false: "fresh download", true: "failed download"}[failure],
+			func(t *testing.T) {
+				f := newPreservationFixture(t)
+				f.seedBinary(updateRuntimeKey, []byte("old selected runtime"))
+				f.seedBinary("UNRELATED", []byte("unrelated runtime"))
+				oldMember := seedReadOnlySelectedUpdateFamily(t, f)
+				unrelatedInfo, err := os.Stat(f.binaryPath("UNRELATED"))
+				require.NoError(t, err)
+				content := []byte("fresh readonly-family replacement")
+				archive := singleExecutableUpdateArchive(t, updateRuntimeName, content)
+				server := ownedProviderUpdateServer(
+					t,
+					func(w http.ResponseWriter, _ *http.Request) {
+						if failure {
+							http.Error(w, "owned replacement missing", http.StatusNotFound)
+							return
+						}
+						_, _ = w.Write(archive)
+					},
+				)
+				binary := updateTestBinary(server.URL+"/readonly.tar", content)
+				binary.ArchivePath = updateRuntimeName
+				err = f.update(map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}})
+				if failure {
+					require.ErrorContains(t, err, "404")
+					f.assertFailedPreservation()
+					memberInfo, statErr := os.Stat(oldMember)
+					require.NoError(t, statErr)
+					assert.Equal(t, os.FileMode(0o440), memberInfo.Mode().Perm())
+					dirInfo, statErr := os.Stat(filepath.Dir(oldMember))
+					require.NoError(t, statErr)
+					assert.Equal(t, os.FileMode(0o550), dirInfo.Mode().Perm())
+				} else {
+					require.NoError(t, err)
+					assertSelectedExecutable(
+						t,
+						f.binaryPath(updateRuntimeKey),
+						content,
+						binary.Checksum,
+					)
+					require.NoDirExists(t, filepath.Dir(oldMember))
+				}
+				actual, readErr := os.ReadFile(f.binaryPath("UNRELATED"))
+				require.NoError(t, readErr)
+				assert.Equal(t, f.before[f.binaryPath("UNRELATED")], actual)
+				actualInfo, statErr := os.Stat(f.binaryPath("UNRELATED"))
+				require.NoError(t, statErr)
+				assert.Equal(t, unrelatedInfo.Mode().Perm(), actualInfo.Mode().Perm())
+				assertNoUpdateStaging(t, f)
+			},
+		)
+	}
+}
+
+func seedReadOnlySelectedUpdateFamily(t *testing.T, f *preservationFixture) string {
+	t.Helper()
+	oldMember := filepath.Join(f.binaries, updateRuntimeName, "old-readonly", "member")
+	f.put(oldMember, []byte("obsolete selected-family sidecar"))
+	t.Cleanup(func() { makeOwnedUpdateTreeRemovable(t, f.dir) })
+	// #nosec G302 -- Owned fixture must exercise removal of a read-only selected family.
+	require.NoError(t, os.Chmod(oldMember, 0o440))
+	// #nosec G302 -- Owned fixture preserves readable, non-writable directory permissions.
+	require.NoError(t, os.Chmod(filepath.Dir(oldMember), 0o550))
+	return oldMember
+}
+
+type updateAliasFixture struct {
+	fixture   *preservationFixture
+	selected  string
+	preserved map[string]os.FileMode
+}
+
+func newUpdateAliasFixture(t *testing.T, kind string) updateAliasFixture {
+	t.Helper()
+	requireProviderUpdateSymlinks(t)
+	f := newPreservationFixture(t)
+	f.seedBinary("UNRELATED", []byte("unrelated executable retained through alias replacement"))
+	unrelatedSidecar := filepath.Join(f.binaries, "unrelated", "sidecar")
+	f.put(unrelatedSidecar, []byte("unrelated ancillary content"))
+	family := filepath.Join(f.binaries, updateRuntimeName)
+	selected := updateRuntimeName
+	if kind == "family" {
+		require.NoError(t, os.Symlink("unrelated", family))
+	} else {
+		require.NoError(t, os.MkdirAll(family, 0o700))
+		if kind == "nested" {
+			selected = "bin/runtime"
+			require.NoError(t, os.Symlink("../unrelated", filepath.Join(family, "bin")))
+		} else {
+			require.Equal(t, "leaf", kind)
+			require.NoError(
+				t,
+				os.Symlink("../unrelated/runtime", filepath.Join(family, updateRuntimeName)),
+			)
+		}
+		f.put(filepath.Join(family, "sidecar"), []byte("selected family ancillary content"))
+	}
+	preserved := map[string]os.FileMode{}
+	for _, path := range []string{f.binaryPath("UNRELATED"), unrelatedSidecar, filepath.Join(family, "sidecar")} {
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		preserved[path] = info.Mode().Perm()
+		if _, ok := f.before[path]; !ok {
+			f.before[path], err = os.ReadFile(
+				path,
+			) // #nosec G304 -- Snapshot of an owned fixture alias.
+			require.NoError(t, err)
+		}
+	}
+	return updateAliasFixture{fixture: f, selected: selected, preserved: preserved}
+}
+
+func (a updateAliasFixture) assertReplacement(
+	t *testing.T,
+	binary *provider.ProviderBinary,
+	content []byte,
+) {
+	t.Helper()
+	selected := filepath.Join(a.fixture.binaries, updateRuntimeName, filepath.FromSlash(a.selected))
+	assertSelectedExecutable(t, selected, content, binary.Checksum)
+	for path, mode := range a.preserved {
+		actual, err := os.ReadFile(
+			path,
+		) // #nosec G304 -- All paths belong to this test-owned provider tree.
+		require.NoError(t, err)
+		assert.Equal(t, a.fixture.before[path], actual, path)
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.Equal(t, mode, info.Mode().Perm(), path)
+	}
+	a.fixture.assertAssociation()
+	assertNoUpdateStaging(t, a.fixture)
+}
+
+func TestProviderUpdateNestedAndLeafAliasOfflineCache(t *testing.T) {
+	for _, kind := range []string{"nested", "leaf"} {
+		t.Run(kind, func(t *testing.T) {
+			a := newUpdateAliasFixture(t, kind)
+			content := []byte("cached independent replacement " + a.fixture.dir)
+			archive := compatibilityTar(t, false, []*tar.Header{
+				{Name: a.selected, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))},
+			}, map[string][]byte{a.selected: content})
+			var requests atomic.Int64
+			server := ownedProviderUpdateServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				requests.Add(1)
+				_, _ = w.Write(archive)
+			})
+			binary := updateTestBinary(server.URL+"/nested-alias.tar", content)
+			binary.ArchivePath = a.selected
+			binaries := map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_, err := provider.DownloadBinaries(ctx, binaries, t.TempDir())
+			require.NoError(t, err)
+			server.Close()
+			require.NoError(
+				t,
+				a.fixture.update(binaries),
+				"warmed executable cache must work with the source offline",
+			)
+			require.EqualValues(
+				t,
+				1,
+				requests.Load(),
+				"replacement must not fetch the archive again",
+			)
+			a.assertReplacement(t, binary, content)
+		})
+	}
+}
+
+func TestProviderUpdatePlainAndLocalAncestorAlias(t *testing.T) {
+	for _, local := range []bool{false, true} {
+		t.Run(
+			map[bool]string{false: "plain remote", true: "relative local"}[local],
+			func(t *testing.T) {
+				a := newUpdateAliasFixture(t, "family")
+				content := []byte("independent plain replacement " + a.fixture.dir)
+				binary := updateTestBinary("source-runtime", content)
+				var requests atomic.Int64
+				if local {
+					t.Chdir(t.TempDir())
+					require.NoError(t, os.WriteFile(binary.Path, content, 0o600))
+				} else {
+					server := ownedProviderUpdateServer(
+						t,
+						func(w http.ResponseWriter, _ *http.Request) {
+							requests.Add(1)
+							_, _ = w.Write(content)
+						},
+					)
+					binary.Path = server.URL + "/plain-runtime"
+				}
+				require.NoError(
+					t,
+					a.fixture.update(
+						map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}},
+					),
+				)
+				if local {
+					actual, err := os.ReadFile(
+						binary.Path,
+					) // #nosec G304 -- Relative source in owned temporary cwd.
+					require.NoError(t, err)
+					assert.Equal(t, content, actual)
+				} else {
+					require.EqualValues(t, 1, requests.Load())
+				}
+				a.assertReplacement(t, binary, content)
+			},
+		)
+	}
+}
+
+func TestProviderUpdateAncestorRootAliasOfflineCache(t *testing.T) {
+	requireProviderUpdateSymlinks(t)
+	f := newPreservationFixture(t)
+	old := []byte("original root descendant remains unchanged")
+	f.seedBinary("UNRELATED", old)
+	f.put(
+		filepath.Join(f.binaries, "unrelated", "sidecar"),
+		[]byte("retained root descendant sidecar"),
+	)
+	require.NoError(t, os.Symlink(".", filepath.Join(f.binaries, updateRuntimeName)))
+	require.NoError(t, os.Symlink("unrelated", filepath.Join(f.binaries, "directory-link")))
+	require.NoError(t, os.Symlink("unrelated/runtime", filepath.Join(f.binaries, "file-link")))
+	content := []byte("root alias cached replacement " + f.dir)
+	selected := "unrelated/runtime"
+	archive := compatibilityTar(t, false, []*tar.Header{
+		{Name: selected, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))},
+	}, map[string][]byte{selected: content})
+	var requests atomic.Int64
+	server := ownedProviderUpdateServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write(archive)
+	})
+	binary := updateTestBinary(server.URL+"/ancestor-root.tar", content)
+	binary.ArchivePath = selected
+	binaries := map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := provider.DownloadBinaries(ctx, binaries, t.TempDir())
+	require.NoError(t, err)
+	server.Close()
+	require.NoError(
+		t,
+		f.update(binaries),
+		"ancestor-root cloning must complete within the fixture deadline",
+	)
+	require.EqualValues(t, 1, requests.Load(), "offline consumption must not refetch")
+	family := filepath.Join(f.binaries, updateRuntimeName)
+	assertSelectedExecutable(
+		t,
+		filepath.Join(family, filepath.FromSlash(selected)),
+		content,
+		binary.Checksum,
+	)
+	assertSelectedExecutable(t, f.binaryPath("UNRELATED"), old, updateTestDigest(old))
+	assertRebasedUpdateRootLinks(t, f, family, old)
+	assertNoUpdateStaging(t, f)
+}
+
+func assertRebasedUpdateRootLinks(t *testing.T, f *preservationFixture, family string, old []byte) {
+	t.Helper()
+	for _, link := range []string{"directory-link", "file-link"} {
+		path := filepath.Join(family, link)
+		info, err := os.Lstat(path)
+		require.NoError(t, err)
+		require.NotZero(t, info.Mode()&os.ModeSymlink)
+		resolved, err := filepath.EvalSymlinks(path)
+		require.NoError(t, err)
+		original, err := filepath.EvalSymlinks(filepath.Join(f.binaries, link))
+		require.NoError(t, err)
+		assert.Equal(
+			t,
+			original,
+			resolved,
+			"cloned link must keep the original target, not the replaced executable",
+		)
+	}
+	for _, path := range []string{
+		filepath.Join(family, "file-link"), filepath.Join(family, "directory-link", updateRuntimeName),
+	} {
+		assertSelectedExecutable(t, path, old, updateTestDigest(old))
+	}
+	for _, base := range []string{f.binaries, family} {
+		path := filepath.Join(base, "unrelated", "sidecar")
+		actual, err := os.ReadFile(path) // #nosec G304 -- Original or cloned test-owned sidecar.
+		require.NoError(t, err)
+		assert.Equal(t, f.before[filepath.Join(f.binaries, "unrelated", "sidecar")], actual)
+	}
+	entries, err := os.ReadDir(family)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		assert.NotContains(
+			t,
+			entry.Name(),
+			".update-destination-",
+			"temporary clone must not copy itself",
+		)
+	}
+	f.assertAssociation()
+}
+
+func TestProviderUpdateReadOnlyNestedSelectedExecutable(t *testing.T) {
+	if runtime.GOOS == updateWindowsOS || os.Geteuid() == 0 {
+		t.Skip("requires POSIX permission enforcement for an ordinary user")
+	}
+	f := newPreservationFixture(t)
+	f.seedBinary("UNRELATED", []byte(updateUnrelatedContent))
+	selected := "readonly/runtime"
+	oldPath := filepath.Join(f.binaries, updateRuntimeName, filepath.FromSlash(selected))
+	f.put(oldPath, []byte("old selected executable inside readonly directory"))
+	t.Cleanup(func() { makeOwnedUpdateTreeRemovable(t, f.dir) })
+	// #nosec G302 -- Owned executable deliberately has no owner-write permission.
+	require.NoError(t, os.Chmod(oldPath, 0o550))
+	// #nosec G302 -- Owned fixture directory must remain searchable but non-writable.
+	require.NoError(t, os.Chmod(filepath.Dir(oldPath), 0o550))
+	content := []byte("new selected executable after safe archive family reset")
+	archive := compatibilityTar(t, false, []*tar.Header{
+		{Name: "readonly", Typeflag: tar.TypeDir, Mode: 0o755},
+		{Name: selected, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))},
+	}, map[string][]byte{selected: content})
+	var requests atomic.Int64
+	server := ownedProviderUpdateServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write(archive)
+	})
+	binary := updateTestBinary(server.URL+"/readonly-selected.tar", content)
+	binary.ArchivePath = selected
+	require.NoError(t, f.update(map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}}))
+	require.EqualValues(
+		t,
+		1,
+		requests.Load(),
+		"fresh archive must be fetched without a seeded cache",
+	)
+	assertSelectedExecutable(t, oldPath, content, binary.Checksum)
+	actual, err := os.ReadFile(f.binaryPath("UNRELATED"))
+	require.NoError(t, err)
+	assert.Equal(t, f.before[f.binaryPath("UNRELATED")], actual)
+	f.assertAssociation()
+	assertNoUpdateStaging(t, f)
+}
+
+func TestProviderUpdateConflictingReusedFamilyAlias(t *testing.T) {
+	requireProviderUpdateSymlinks(t)
+	f := newPreservationFixture(t)
+	old := []byte("both selected families initially expose these old bytes")
+	f.seedBinary(updateFirstKey, old)
+	f.seedBinary(updateSecondKey, old)
+	firstFamily := filepath.Dir(f.binaryPath(updateFirstKey))
+	require.NoError(t, os.Remove(f.binaryPath(updateFirstKey)))
+	require.NoError(t, os.Remove(firstFamily))
+	target := filepath.Base(filepath.Dir(f.binaryPath(updateSecondKey)))
+	require.NoError(t, os.Symlink(target, firstFamily))
+	content := []byte("only the second family requests these new bytes")
+	var missingRequests, replacementRequests atomic.Int64
+	server := ownedProviderUpdateServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/missing-first" {
+			missingRequests.Add(1)
+			http.Error(w, "owned first-family source deliberately unavailable", http.StatusNotFound)
+			return
+		}
+		replacementRequests.Add(1)
+		_, _ = w.Write(content)
+	})
+	first := updateTestBinary(server.URL+"/missing-first", old)
+	second := updateTestBinary(server.URL+"/new-second", content)
+	err := f.update(map[string][]*provider.ProviderBinary{
+		updateFirstKey: {first}, updateSecondKey: {second},
+	})
+	require.EqualValues(t, 1, replacementRequests.Load())
+	t.Logf("first-family fetches=%d; update result=%v", missingRequests.Load(), err)
+	if err == nil {
+		// Independent materialization is permitted, but alias reuse must never
+		// publish the second family's bytes under the first family's checksum.
+		assertSelectedExecutable(t, f.binaryPath(updateFirstKey), old, first.Checksum)
+		assertSelectedExecutable(t, f.binaryPath(updateSecondKey), content, second.Checksum)
+	} else {
+		require.True(
+			t,
+			strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "checksum"),
+			"both map iteration orders must fail for the conflict, not an unrelated error: %v",
+			err,
+		)
+		f.assertFailedPreservation()
+		link, linkErr := os.Readlink(firstFamily)
+		require.NoError(t, linkErr)
+		assert.Equal(t, target, link)
+	}
+	assertNoUpdateStaging(t, f)
+}
+
+func TestProviderUpdateEmptyBinaryKeyPreservesUnrelatedFamily(t *testing.T) {
+	f := newPreservationFixture(t)
+	content := []byte("empty-key selected executable")
+	f.seedBinary("UNRELATED", []byte("retained unrelated installed executable"))
+	archive := compatibilityTar(t, false, []*tar.Header{
+		{Name: updateRuntimeName, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))},
+	}, map[string][]byte{updateRuntimeName: content})
+	server := compatibilityArchiveServer(t, archive)
+	binary := updateTestBinary(server.URL+"/empty-key.tar", content)
+	binary.ArchivePath = updateRuntimeName
+
+	err := f.update(map[string][]*provider.ProviderBinary{"": {binary}})
+	require.ErrorContains(t, err, "unsafe provider update binary key")
+	f.assertFailedPreservation()
+	assertNoUpdateStaging(t, f)
 }
