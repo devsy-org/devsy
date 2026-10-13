@@ -79,3 +79,40 @@ func setEnv(env map[string]string, kv string) {
 	}
 	env[name] = value
 }
+
+// daemonSelectorKeys are the environment variables that choose the daemon or
+// its transport security; a provider override of any of them changes the
+// effective Docker host.
+var daemonSelectorKeys = []string{
+	"DOCKER_HOST",
+	"DOCKER_CONTEXT",
+	"DOCKER_CONFIG",
+	"DOCKER_TLS_VERIFY",
+	"DOCKER_CERT_PATH",
+}
+
+// ProviderDaemonOverrides returns the daemon-selecting variable names whose
+// provider-configured value differs from the process environment. An empty
+// value and an absent variable are equivalent. Names only, never values.
+func ProviderDaemonOverrides(helper *DockerHelper) []string {
+	if helper == nil {
+		return nil
+	}
+	provider := map[string]string{}
+	for _, kv := range helper.Environment {
+		setEnv(provider, kv)
+	}
+	inv := &DockerInvocation{Env: provider}
+
+	var overridden []string
+	for _, key := range daemonSelectorKeys {
+		want, ok := inv.Lookup(key)
+		if !ok {
+			continue
+		}
+		if want != os.Getenv(key) {
+			overridden = append(overridden, key)
+		}
+	}
+	return overridden
+}

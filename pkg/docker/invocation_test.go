@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
-const testDockerCmd = "docker"
+const (
+	testDockerCmd = "docker"
+	dockerHostKey = "DOCKER_HOST"
+)
 
 type InvocationSuite struct {
 	suite.Suite
@@ -108,4 +112,44 @@ func (s *InvocationSuite) TestJSONRoundTrip() {
 	var got DockerInvocation
 	s.Require().NoError(json.Unmarshal(data, &got))
 	s.Equal(*inv, got)
+}
+
+func TestProviderDaemonOverrides(t *testing.T) {
+	t.Setenv(dockerHostKey, "unix:///a.sock")
+	t.Setenv("DOCKER_CONTEXT", "")
+	t.Setenv("DOCKER_TLS_VERIFY", "1")
+	t.Setenv("DOCKER_CERT_PATH", "/certs")
+	t.Setenv("DOCKER_CONFIG", "/cfg")
+
+	tests := []struct {
+		name string
+		env  []string
+		want []string
+	}{
+		{"no overrides", nil, nil},
+		{"identical values", []string{"DOCKER_HOST=unix:///a.sock", "DOCKER_CONFIG=/cfg"}, nil},
+		{"empty equals absent", []string{"DOCKER_CONTEXT="}, nil},
+		{"host differs", []string{"DOCKER_HOST=ssh://u@h"}, []string{dockerHostKey}},
+		{
+			"explicit empty clears set value",
+			[]string{"DOCKER_TLS_VERIFY="},
+			[]string{"DOCKER_TLS_VERIFY"},
+		},
+		{
+			"several, stable order",
+			[]string{"DOCKER_CERT_PATH=/other", "DOCKER_CONTEXT=x", "DOCKER_HOST=tcp://h"},
+			[]string{dockerHostKey, "DOCKER_CONTEXT", "DOCKER_CERT_PATH"},
+		},
+		{"non-selector ignored", []string{"HTTP_PROXY=http://p"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ProviderDaemonOverrides(&DockerHelper{Environment: tt.env})
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestProviderDaemonOverridesNilHelper(t *testing.T) {
+	require.Nil(t, ProviderDaemonOverrides(nil))
 }

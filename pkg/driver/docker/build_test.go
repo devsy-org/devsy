@@ -310,3 +310,71 @@ func TestExecuteBuildDecodesStructuredOutput(t *testing.T) {
 	assert.Equal(t, "build complete", entries[3].Message)
 	assert.NotContains(t, entries[2].Message, `{"level":"debug"`)
 }
+
+func elevatedDockerStrategy(t *testing.T, env ...string) *buildkitStrategy {
+	t.Helper()
+	bin := writeHelperScript(t, t.TempDir(), "docker-fake", "Docker version 24.0.7, build afdd53b")
+	elevator, err := docker.ElevatorFromName("sudo")
+	require.NoError(t, err)
+	return &buildkitStrategy{driver: &dockerDriver{Docker: &docker.DockerHelper{
+		DockerCommand: bin,
+		Builder:       docker.DockerBuilderBuildKit,
+		Elevator:      elevator,
+		Environment:   env,
+	}}}
+}
+
+func TestBuildkitNewDockerClient_ElevatedRejectsDaemonOverrides(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+	t.Setenv("DOCKER_CONTEXT", "")
+	t.Setenv("DOCKER_CONFIG", "/process/config")
+
+	s := elevatedDockerStrategy(t,
+		"DOCKER_HOST=ssh://user@remote",
+		"DOCKER_CONFIG=/provider/config",
+		"DOCKER_CONTEXT=remote",
+	)
+	client, err := s.newDockerClient(context.Background())
+
+	require.Error(t, err)
+	assert.Nil(t, client)
+	assert.ErrorContains(t, err, "DOCKER_HOST, DOCKER_CONTEXT, DOCKER_CONFIG")
+	assert.NotContains(t, err.Error(), "ssh://user@remote", "values must not be printed")
+}
+
+func TestBuildkitNewDockerClient_ElevatedKeepsProcessClientWithoutOverrides(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "unix:///var/run/docker.sock")
+
+	for name, env := range map[string][]string{
+		"none":               nil,
+		"equal host":         {"DOCKER_HOST=unix:///var/run/docker.sock"},
+		"unrelated variable": {"FOO=bar"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client, err := elevatedDockerStrategy(t, env...).newDockerClient(context.Background())
+			require.NoError(t, err)
+			require.NotNil(t, client)
+			t.Cleanup(func() { _ = client.Close() })
+		})
+	}
+}
+
+func TestBuildkitNewDockerClient_ForceInternalBuildKitNeverSwitchesToBuildx(t *testing.T) {
+	bin := writeHelperScript(t, t.TempDir(), "docker-fake", "Docker version 24.0.7, build afdd53b")
+	elevator, err := docker.ElevatorFromName("sudo")
+	require.NoError(t, err)
+	o := &buildOrchestrator{driver: &dockerDriver{Docker: &docker.DockerHelper{
+		DockerCommand: bin,
+		Builder:       docker.DockerBuilderBuildX,
+		Elevator:      elevator,
+		Environment:   []string{"DOCKER_HOST=ssh://user@remote"},
+	}}}
+
+	strategy := o.selectStrategy(provider.BuildOptions{
+		CLIOptions: provider.CLIOptions{ForceInternalBuildKit: true},
+	})
+
+	require.IsType(t, &buildkitStrategy{}, strategy)
+	_, err = strategy.(*buildkitStrategy).newDockerClient(context.Background())
+	assert.ErrorContains(t, err, "DOCKER_HOST")
+}
