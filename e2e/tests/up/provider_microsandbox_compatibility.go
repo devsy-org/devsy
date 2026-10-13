@@ -49,12 +49,12 @@ var _ = ginkgo.Describe(
 				}
 				fixture.recover(ctx)
 			},
-			ginkgo.Entry("built-in", "microsandbox", "microsandbox-compatibility-builtin",
+			ginkgo.Entry("built-in", "microsandbox", "msb-compat-builtin",
 				ginkgo.SpecTimeout(framework.TimeoutLong())),
 			ginkgo.Entry(
 				"external",
 				microsandboxExternalProvider,
-				"microsandbox-compatibility-external",
+				"msb-compat-external",
 				ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 		)
