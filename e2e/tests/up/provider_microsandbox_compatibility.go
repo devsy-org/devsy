@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/devsy/pkg/encoding"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	sshconfig "github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/onsi/ginkgo/v2"
@@ -144,11 +145,11 @@ func (fixture *compatibilityFixture) registerCleanup() {
 
 func (fixture *compatibilityFixture) upArgs() []string {
 	return []string{
-		"--devcontainer",
+		names.Flag(names.DevContainer),
 		".devcontainer.json",
-		"--uid",
+		names.Flag(names.UID),
 		fixture.uid,
-		"--id-label",
+		names.Flag(names.IDLabel),
 		fixture.label,
 	}
 }
