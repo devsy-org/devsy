@@ -206,10 +206,11 @@ func (f *microsandboxLogCancelFixture) loadRuntime(ctx context.Context, expected
 
 func (f *microsandboxLogCancelFixture) assertLogs(ctx context.Context) {
 	outMarker, errMarker := f.nonce+"-stdout", f.nonce+"-stderr"
+	// Earlier Exec traffic can leave binary log bytes without a line boundary.
 	command, cancel := context.WithTimeout(ctx, 30*time.Second)
 	err := f.runtime.CommandContainerArgv(command, f.uid,
 		[]string{
-			microsandboxCancelShell, "-c", "printf '%s\\n' \"$1\"; printf '%s\\n' \"$2\" >&2",
+			microsandboxCancelShell, "-c", "printf '\\n%s\\n' \"$1\"; printf '\\n%s\\n' \"$2\" >&2",
 			f.nonce, outMarker, errMarker,
 		},
 		driver.Streams{Stdout: io.Discard, Stderr: io.Discard})
