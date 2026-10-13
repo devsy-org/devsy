@@ -4,7 +4,6 @@ package up
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strings"
 
@@ -13,7 +12,7 @@ import (
 	"github.com/onsi/gomega"
 )
 
-const safeRecreateManagedConflictErr = "tmpfs root disk size (1024 MiB) must not exceed sandbox memory (512 MiB)"
+const safeRecreateManagedConflictErr = "max_memory 2048 MiB must be greater than or equal to memory 3072 MiB"
 
 var _ = ginkgo.Describe("MicroSandbox managed-policy rejected replacement",
 	ginkgo.Label("up-provider-microsandbox-managed-recreate"), func() {
@@ -29,9 +28,8 @@ var _ = ginkgo.Describe("MicroSandbox managed-policy rejected replacement",
 
 				// Prove an empty managed policy works before adding the conflicting override.
 				framework.ExpectNoError(clearSafeRecreateManagedPolicy())
-				framework.ExpectNoError(fixture.useManagedRecreateOptions(ctx, false))
 				fixture.writeConfig("2gb")
-				framework.ExpectNoError(setSafeRecreateManagedMemory512())
+				framework.ExpectNoError(setSafeRecreateManagedMemory3072())
 				out, err := microsandboxResourceCommand(ctx, "list", "--quiet")
 				framework.ExpectNoError(err, string(out))
 				gomega.Expect(strings.Fields(string(out))).
@@ -46,20 +44,18 @@ var _ = ginkgo.Describe("MicroSandbox managed-policy rejected replacement",
 					To(gomega.HaveOccurred(), "stdout: %s stderr: %s", stdout, stderr)
 				gomega.Expect(stdout+stderr).To(
 					gomega.ContainSubstring(safeRecreateManagedConflictErr),
-					"request must reach final managed-layer tmpfs validation",
+					"request must reach final managed-layer memory validation",
 				)
 				// Inspect status and host state before any command can start a stopped VM.
 				gomega.Expect(inspectSafeRecreate(ctx, fixture.sandbox)).
 					To(gomega.Equal(fixture.original))
 				fixture.assertHostState(ctx)
 
-				// Restore policy and original provider options before resuming stopped originals.
+				// Restore policy before resuming stopped originals.
 				framework.ExpectNoError(clearSafeRecreateManagedPolicy())
-				framework.ExpectNoError(fixture.useManagedRecreateOptions(ctx, true))
 				fixture.inspectOriginalFiles(ctx, stopped)
 
 				// The exact same request is valid without managed policy and must replace.
-				framework.ExpectNoError(fixture.useManagedRecreateOptions(ctx, false))
 				fixture.writeConfig("2gb")
 				framework.ExpectNoError(fixture.framework.DevsyUpRecreate(
 					ctx, append([]string{fixture.workspace}, fixture.upArgs()...)...,
@@ -113,23 +109,4 @@ func requireManagedRecreateFixture() {
 	}
 	gomega.Expect(marker).
 		To(gomega.Equal(safeRecreateManagedPolicyPath), "managed-policy fixture marker has unexpected path")
-}
-
-func (f *safeRecreateFixture) useManagedRecreateOptions(
-	ctx context.Context,
-	originalOptions bool,
-) error {
-	storage := 1
-	ephemeral := safeRecreateEnabledValue
-	if originalOptions {
-		storage = 2
-		ephemeral = "false"
-	}
-	return f.framework.DevsyProviderUse(ctx, f.provider,
-		microsandboxResourceOption, "MICROSANDBOX_MEMORY=0",
-		microsandboxResourceOption, fmt.Sprintf("MICROSANDBOX_MAX_MEMORY=%d", f.maxMemoryMiB),
-		microsandboxResourceOption, "MICROSANDBOX_CPUS=1",
-		microsandboxResourceOption, "MICROSANDBOX_MAX_CPUS=1",
-		microsandboxResourceOption, fmt.Sprintf("MICROSANDBOX_STORAGE=%d", storage),
-		microsandboxResourceOption, "MICROSANDBOX_EPHEMERAL="+ephemeral)
 }

@@ -37,13 +37,13 @@ type safeRecreateManagedFixturePaths struct {
 	work       string
 }
 
-// setSafeRecreateManagedMemory512 installs the valid policy used to make the
-// 2048 MiB / tmpfs:1G request invalid only after managed precedence is applied.
-func setSafeRecreateManagedMemory512() error {
+// setSafeRecreateManagedMemory3072 raises memory above the explicit 2048 MiB
+// boot ceiling only after managed precedence is applied.
+func setSafeRecreateManagedMemory3072() error {
 	policy := safeRecreateManagedPolicy{
 		Version: 1,
 		Overrides: safeRecreatePolicyOverrides{
-			SandboxDefaults: &safeRecreateSandboxDefaults{MemoryMiB: 512},
+			SandboxDefaults: &safeRecreateSandboxDefaults{MemoryMiB: 3072},
 		},
 	}
 	return writeSafeRecreateManagedPolicy(policy)

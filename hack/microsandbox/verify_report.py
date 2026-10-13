@@ -23,7 +23,7 @@ def _spec_labels(spec):
     return result
 
 
-def validate_report(path, expected_label, expected_count):
+def _read_suite_specs(path):
     try:
         reports = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -42,7 +42,10 @@ def validate_report(path, expected_label, expected_count):
     specs = suite.get("SpecReports")
     if not isinstance(specs, list):
         raise ValueError("report has no spec list")
+    return specs
 
+
+def _select_specs(specs, expected_label, expected_count):
     if any(not isinstance(spec, dict) for spec in specs):
         raise ValueError("report contains a malformed spec entry")
     selected = [spec for spec in specs if expected_label in _spec_labels(spec)]
@@ -50,6 +53,10 @@ def validate_report(path, expected_label, expected_count):
         raise ValueError(
             f"label {expected_label!r}: expected {expected_count} specs, found {len(selected)}"
         )
+    return selected
+
+
+def _validate_selected_specs(selected, expected_count):
     providers = {"microsandbox-builtin": 0, "microsandbox-external": 0}
     for index, spec in enumerate(selected, start=1):
         spec_labels = _spec_labels(spec)
@@ -70,6 +77,12 @@ def validate_report(path, expected_label, expected_count):
             f"provider label counts are {providers}, expected {expected_count // 2} each"
         )
     return len(selected)
+
+
+def validate_report(path, expected_label, expected_count):
+    specs = _read_suite_specs(path)
+    selected = _select_specs(specs, expected_label, expected_count)
+    return _validate_selected_specs(selected, expected_count)
 
 
 def main(argv=None):
