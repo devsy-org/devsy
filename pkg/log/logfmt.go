@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/buffer"
@@ -79,10 +80,14 @@ func (e *logfmtEncoder) EncodeEntry(
 }
 
 func quoteLogfmt(s string) string {
-	if s == "" || strings.ContainsAny(s, " \t\n\"=") {
+	if s == "" || strings.IndexFunc(s, needsLogfmtQuote) >= 0 {
 		return fmt.Sprintf("%q", s)
 	}
 	return s
+}
+
+func needsLogfmtQuote(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsControl(r) || r == '"' || r == '=' || r == '\\'
 }
 
 // Required interface methods - delegate to buffer for simple types.

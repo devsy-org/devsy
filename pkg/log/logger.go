@@ -37,7 +37,10 @@ type Config struct {
 
 // Init configures the global logger. Called once in root command PersistentPreRunE.
 func Init(cfg Config) {
-	cfg.Redactor = secrets.Combine(cfg.Redactor, secrets.NewEnvironmentRedactor(os.Environ()))
+	combined := secrets.Combine(cfg.Redactor, secrets.NewEnvironmentRedactor(os.Environ()))
+	// Redaction runs on the serialized record, so it must also know the escaped
+	// forms the encoders produce for values containing quotes or control bytes.
+	cfg.Redactor = secrets.WithLogEscapes(combined)
 	level := resolveLevel(cfg)
 	encoder := resolveEncoder(cfg.Format)
 	stderrWriter := zapcore.Lock(&redactingWriter{next: os.Stderr, redactor: cfg.Redactor})
@@ -191,9 +194,9 @@ func resolveEncoder(format string) zapcore.Encoder {
 	default:
 		// "text" - use console encoder, with color if stderr is a terminal
 		if colorEnabled() {
-			return zapcore.NewConsoleEncoder(colorEncoderConfig())
+			return newOneLineTextEncoder(zapcore.NewConsoleEncoder(colorEncoderConfig()))
 		}
-		return zapcore.NewConsoleEncoder(plainEncoderConfig())
+		return newOneLineTextEncoder(zapcore.NewConsoleEncoder(plainEncoderConfig()))
 	}
 }
 
