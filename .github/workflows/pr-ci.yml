@@ -138,7 +138,8 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.go == 'true'
     runs-on: windows-latest
-    timeout-minutes: 20
+    # Allow cold Go compilation and the post-job cache save to complete.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -146,8 +147,6 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-          # Archiving the Windows Go cache exceeded this job's budget after tests passed.
-          cache: false
 
       - name: run provider update tests and require Windows coverage
         shell: pwsh
@@ -242,7 +241,8 @@ jobs:
           - runner: ubuntu-latest
           - runner: macos-latest
           - runner: windows-latest
-            job_timeout_minutes: 30
+            # Cold builds need room to save the Go cache after artifact uploads.
+            job_timeout_minutes: 45
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.job_timeout_minutes || 20 }}
     steps:
@@ -251,8 +251,6 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-          # Windows cache archiving can consume the post-job budget after a successful build.
-          cache: ${{ runner.os != 'Windows' }}
 
       - name: get operating system lowercase
         id: os
