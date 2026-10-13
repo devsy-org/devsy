@@ -1094,6 +1094,8 @@ jobs:
           "DEVSY_E2E_SSH_DOCKER_HOST=$sshHost" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
           "DEVSY_E2E_WSL_DAEMON_ID=$wslId" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
           "DEVSY_CI_SSH_KEY=$key" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          # pwsh reports the last native exit code; the oracle probe above fails by design.
+          exit 0
 
       - name: install podman (Windows)
         if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
@@ -1413,6 +1415,7 @@ jobs:
           $listening = @(wsl.exe -d Ubuntu-24.04 -u root -- ss -ltn) + @(netstat -an | Select-String 'LISTENING')
           $insecure = $listening | Select-String -Pattern ':2375\s'
           if ($insecure) { throw "unauthenticated Docker TCP listener found: $insecure" }
+          exit 0
 
       - name: verify docker is installed
         if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
