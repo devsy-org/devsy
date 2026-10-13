@@ -75,11 +75,8 @@ type microsandboxLogCancelFixture struct {
 
 var _ = ginkgo.Describe("microsandbox logs and cancellation parity",
 	ginkgo.Label("up-provider-microsandbox-logs-cancel"), func() {
-		for _, selection := range []struct{ name, source, runtime string }{
-			{"builtin-logs-cancel", microsandboxResourceBuiltin, provider.MicrosandboxDriver},
-			{"external-logs-cancel", microsandboxExternalProvider, provider.ExternalDriver},
-		} {
-			ginkgo.Context(selection.name, func() {
+		for _, selection := range microsandboxProviders("builtin-logs-cancel", "external-logs-cancel") {
+			ginkgo.Context(selection.name, ginkgo.Label(selection.label), func() {
 				var fixture *microsandboxLogCancelFixture
 				ginkgo.BeforeEach(func(ctx context.Context) {
 					fixture = newMicrosandboxLogCancelFixture(ctx, selection.name, selection.source)

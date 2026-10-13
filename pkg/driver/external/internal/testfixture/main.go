@@ -56,7 +56,9 @@ func serve(mode, state string, delay time.Duration, nonce string) {
 		}
 	}
 	fixtureMode := underlyingFixtureMode(mode)
-	runtime, err := fake.New(fake.Config{StateDir: state, Mode: fixtureMode})
+	runtime, err := fake.New(fake.Config{
+		StateDir: state, Mode: fixtureMode, RecreateOnRun: mode == "recreate-on-run",
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -70,6 +72,7 @@ func underlyingFixtureMode(mode string) string {
 		"block-info",
 		"env-error",
 		"workspace-identity",
+		"recreate-on-run",
 		persistRunThenExit,
 		persistRunThenHold:
 		return fake.Normal

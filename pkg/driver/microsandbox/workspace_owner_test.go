@@ -173,6 +173,7 @@ func TestDockerlessOwnerNeverLooksUpRunnerAccounts(t *testing.T) {
 	for _, user := range []string{testUser, "1000", testNumericIdentity, rootUser} {
 		t.Run(user, func(t *testing.T) {
 			f := newFakeClient()
+			f.version = recreateTestVersion
 			f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
 			d := newDriver(f, nil, specDefaults{})
 			resolver := &recordingUserResolver{err: errors.New("runner accounts must not be read")}

@@ -40,24 +40,27 @@ var _ = ginkgo.Describe(
 	"recreated MicroSandbox workspaces with an injected CLI version fault",
 	ginkgo.Label("up-provider-microsandbox-compatibility"),
 	func() {
-		ginkgo.DescribeTable(
-			"preserves the existing workspace until the supported CLI is restored",
-			func(ctx context.Context, source, name string) {
-				fixture := newCompatibilityFixture(ctx, source, name)
-				for _, fault := range []string{"old", "malformed", "failing"} {
-					fixture.rejectVersionFault(ctx, fault)
-				}
-				fixture.recover(ctx)
-			},
-			ginkgo.Entry("built-in", "microsandbox", "msb-compat-builtin",
-				ginkgo.SpecTimeout(framework.TimeoutLong())),
-			ginkgo.Entry(
-				"external",
-				microsandboxExternalProvider,
-				"msb-compat-external",
-				ginkgo.SpecTimeout(framework.TimeoutLong()),
-			),
-		)
+		for _, selection := range microsandboxProviders("msb-compat-builtin", "msb-compat-external") {
+			ginkgo.Context(selection.name, ginkgo.Label(selection.label), func() {
+				ginkgo.It(
+					"preserves the existing workspace until the supported CLI is restored",
+					func(ctx context.Context) {
+						if runtime.GOOS == "windows" {
+							microsandboxUnavailable(
+								"the version shim uses a POSIX shell and covers native Linux/macOS",
+							)
+						}
+						session := newMicrosandboxTestSession(ctx)
+						fixture := newCompatibilityFixture(ctx, session, selection)
+						for _, fault := range []string{"old", "malformed", "failing"} {
+							fixture.rejectVersionFault(ctx, fault)
+						}
+						fixture.recover(ctx)
+					},
+					ginkgo.SpecTimeout(framework.TimeoutLong()),
+				)
+			})
+		}
 	},
 )
 
@@ -72,33 +75,22 @@ type compatibilityFixture struct {
 	sourceBefore                  compatibilityFileState
 }
 
-func newCompatibilityFixture(ctx context.Context, source, name string) *compatibilityFixture {
-	if runtime.GOOS == "windows" {
-		microsandboxUnavailable("the version shim uses a POSIX shell and covers native Linux/macOS")
-	}
-	skipIfNoMicrosandbox(ctx)
+func newCompatibilityFixture(
+	ctx context.Context,
+	session *microsandboxTestSession,
+	selection microsandboxProviderCase,
+) *compatibilityFixture {
 	realMSB := captureCompatibilityMSB()
-	initialDir, err := os.Getwd()
-	framework.ExpectNoError(err)
 	ownedHome := ginkgo.GinkgoT().TempDir()
-	ginkgo.GinkgoT().Setenv("DEVSY_HOME", ginkgo.GinkgoT().TempDir())
-	ginkgo.GinkgoT().Setenv("DEVSY_CONFIG", "")
 	// Pinned msb0.7.7 accepts an absent private config as an empty defaults patch.
 	msbHome := filepath.Join(ownedHome, "microsandbox")
 	ginkgo.GinkgoT().Setenv("MSB_HOME", msbHome)
 	ginkgo.GinkgoT().Setenv("MSB_CONFIG_PATH", filepath.Join(msbHome, "config.json"))
 	ginkgo.GinkgoT().Setenv("HOME", ownedHome)
 	ginkgo.GinkgoT().Setenv("USERPROFILE", ownedHome)
-	f := framework.NewDefaultFramework(filepath.Join(initialDir, "bin"))
-	tempDir, err := framework.CopyToTempDir("tests/up/testdata/microsandbox")
-	framework.ExpectNoError(err)
-	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-	framework.ExpectNoError(f.DevsyProviderAdd(ctx, source, "--name", name))
-	ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
-		defer cancel()
-		framework.ExpectNoError(f.DevsyProviderDelete(cleanupCtx, name))
-	})
+	f := session.framework
+	tempDir := session.copyWorkspace("tests/up/testdata/microsandbox")
+	session.addProvider(ctx, selection.source, selection.name)
 	shim := installCompatibilityMSBShim(ginkgo.GinkgoT(), realMSB, ownedHome)
 	fixture := &compatibilityFixture{
 		framework: f, shim: shim, hostPath: tempDir,
