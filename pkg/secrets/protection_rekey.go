@@ -39,7 +39,7 @@ func (p *ProtectionManager) rekey(passphrase string, requirePassphrase, automati
 	if err != nil {
 		return err
 	}
-	target, err := resolveFileKey(p.dir, passphrase)
+	target, err := p.newTargetFileKey(passphrase)
 	if err != nil {
 		return err
 	}
@@ -169,4 +169,11 @@ func requireEncryptedFile(dir string) error {
 		return ErrSecretNotFound
 	}
 	return err
+}
+
+func (p *ProtectionManager) newTargetFileKey(passphrase string) (*fileKey, error) {
+	if p.resolveNewFileKey != nil {
+		return p.resolveNewFileKey(p.dir, passphrase)
+	}
+	return resolveFileKey(p.dir, passphrase)
 }
