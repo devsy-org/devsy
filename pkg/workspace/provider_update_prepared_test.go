@@ -27,6 +27,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const updateLinkedSidecarPath = "current/lib/sidecar"
+
 // compatibilityArchiveServer serves bytes from an owned httptest server. The
 // common fixture cleanup closes idle connections and joins the server.
 func compatibilityArchiveServer(t *testing.T, archive []byte) *httptest.Server {
@@ -252,14 +254,51 @@ func TestProviderUpdateTarContainedDirectoryLinkThenRegularMember(t *testing.T) 
 			Size:     int64(len(runtimeBytes)),
 		},
 		{
-			Name:     "current/lib/sidecar",
+			Name:     updateLinkedSidecarPath,
 			Typeflag: tar.TypeReg,
 			Mode:     0o644,
 			Size:     int64(len(sidecarBytes)),
 		},
-	}, map[string][]byte{"current/runtime": runtimeBytes, "current/lib/sidecar": sidecarBytes})
+	}, map[string][]byte{"current/runtime": runtimeBytes, updateLinkedSidecarPath: sidecarBytes})
 	server := compatibilityArchiveServer(t, archive)
 	binary := updateTestBinary(server.URL+"/provider.tar", runtimeBytes)
+	binary.ArchivePath = filepath.Join(updateCurrentLink, updateRuntimeName)
+	require.NoError(t, f.update(map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}}))
+	assertSelectedExecutable(
+		t,
+		filepath.Join(f.binaries, updateRuntimeName, updateCurrentLink, updateRuntimeName),
+		runtimeBytes,
+		binary.Checksum,
+	)
+	link := filepath.Join(f.binaries, updateRuntimeName, updateCurrentLink)
+	target, err := os.Readlink(link)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join("releases", "v1"), filepath.FromSlash(target))
+	actual, err := os.ReadFile(
+		filepath.Join(f.binaries, updateRuntimeName, "releases", "v1", "lib", "sidecar"),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, sidecarBytes, actual)
+}
+
+func TestProviderUpdateZipContainedDirectoryLinkThenRegularMember(t *testing.T) {
+	requireProviderUpdateSymlinks(t)
+	f := newPreservationFixture(t)
+	runtimeBytes := []byte("runtime beneath contained zip directory link")
+	sidecarBytes := []byte("sibling reached through contained zip directory link")
+	archive := compatibilityZip(t, []struct {
+		name string
+		mode os.FileMode
+		body []byte
+	}{
+		{name: "releases/", mode: os.ModeDir | 0o755},
+		{name: "releases/v1/", mode: os.ModeDir | 0o755},
+		{name: updateCurrentLink, mode: os.ModeSymlink | 0o777, body: []byte("releases/v1")},
+		{name: "current/" + updateRuntimeName, mode: os.ModePerm | 0o755, body: runtimeBytes},
+		{name: updateLinkedSidecarPath, mode: os.ModePerm | 0o644, body: sidecarBytes},
+	})
+	server := compatibilityArchiveServer(t, archive)
+	binary := updateTestBinary(server.URL+"/provider.zip", runtimeBytes)
 	binary.ArchivePath = filepath.Join(updateCurrentLink, updateRuntimeName)
 	require.NoError(t, f.update(map[string][]*provider.ProviderBinary{updateRuntimeKey: {binary}}))
 	assertSelectedExecutable(

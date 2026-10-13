@@ -319,7 +319,9 @@ func materializeUpdateTarSymlink(root *os.Root, name, target string) error {
 	if filepath.IsAbs(target) {
 		return fmt.Errorf("absolute archive symlink is unsupported: %s", target)
 	}
-	return root.Symlink(target, name)
+	// Archive symlink targets use slash separators; os.Root.Symlink does not
+	// normalize them on Windows as os.Symlink does.
+	return root.Symlink(filepath.FromSlash(target), name)
 }
 
 func materializeUpdateTarLink(root *os.Root, name, target string) error {
@@ -406,7 +408,7 @@ func materializeUpdateZipLink(root *os.Root, name string, body io.Reader) error 
 	if filepath.IsAbs(string(target)) {
 		return errors.New("absolute archive symlink is unsupported")
 	}
-	return root.Symlink(string(target), name)
+	return root.Symlink(filepath.FromSlash(string(target)), name)
 }
 
 func validateUpdateArchiveLinks(ctx context.Context, root *os.Root) error {
