@@ -301,7 +301,10 @@ func (c *providerSeedCopier) copyLinks() error {
 		copied := false
 		for name, target := range c.links {
 			// Keep dot components intact: a preceding symlink can change their resolution.
-			_, err := c.destination.Stat(filepath.Dir(name) + string(filepath.Separator) + target)
+			_, err := provider.StatUpdatePath(
+				c.destination,
+				filepath.Dir(name)+string(filepath.Separator)+target,
+			)
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
@@ -338,7 +341,7 @@ func validateProviderSeed(ctx context.Context, root *os.Root, display string) er
 
 func validateProviderSeedEntry(root *os.Root, name string, entry fs.DirEntry) error {
 	if entry.Type()&os.ModeSymlink != 0 {
-		resolved, err := root.Stat(name)
+		resolved, err := provider.StatUpdatePath(root, name)
 		if err != nil {
 			return fmt.Errorf("unsafe provider update symlink %s: %w", name, err)
 		}

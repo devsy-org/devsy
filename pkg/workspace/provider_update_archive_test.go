@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -42,16 +43,24 @@ func TestProviderUpdateArchivePreservesOwnedDaemon(t *testing.T) {
 	requireProviderUpdateSymlinks(t)
 	f := newPreservationFixture(t)
 	f.seedBinary(updateRuntimeKey, []byte("old runtime"))
-	// Every link target cleans lexically to the extraction root, but the kernel
-	// follows prior links first. D reaches this test-owned provider directory.
-	archive := ownedContainmentArchive(t, []ownedArchiveEntry{
+	entries := []ownedArchiveEntry{
 		{name: "linkA", target: "."},
 		{name: "linkB", target: "linkA/.."},
 		{name: "linkC", target: "linkB/.."},
 		{name: "linkD", target: "linkC/.."},
 		{name: "linkD/daemon/owned-state", body: "archive escaped staging into owned daemon"},
 		{name: updateRuntimeName, body: updateExecutableContent},
-	})
+	}
+	if runtime.GOOS == updateWindowsOS {
+		// Windows cleans link targets before traversal, so use a direct relative
+		// escape to the fixture-owned daemon rather than the POSIX link-order chain.
+		entries = []ownedArchiveEntry{
+			{name: "escape", target: filepath.Join("..", "..", "..", "daemon")},
+			{name: "escape/owned-state", body: "archive escaped staging into owned daemon"},
+			{name: updateRuntimeName, body: updateExecutableContent},
+		}
+	}
+	archive := ownedContainmentArchive(t, entries)
 	server := ownedProviderUpdateServer(
 		t,
 		func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(archive) },

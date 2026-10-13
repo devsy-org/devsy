@@ -418,7 +418,7 @@ func validateUpdateArchiveLinks(ctx context.Context, root *os.Root) error {
 			return err
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			info, err := root.Stat(name)
+			info, err := StatUpdatePath(root, name)
 			if err != nil {
 				return fmt.Errorf("unsafe update archive symlink %s: %w", name, err)
 			}

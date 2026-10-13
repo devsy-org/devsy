@@ -115,7 +115,7 @@ func updateDestinationRelative(root, path string) (string, error) {
 func resolveUpdateDestination(root *os.Root, stageRoot, name string) (string, error) {
 	// Root.Stat checks confinement before EvalSymlinks supplies the canonical
 	// target needed to preserve a copied link's meaning after relocation.
-	if _, err := root.Stat(name); err != nil {
+	if _, err := StatUpdatePath(root, name); err != nil {
 		return "", err
 	}
 	resolved, err := filepath.EvalSymlinks(filepath.Join(stageRoot, name))
@@ -165,7 +165,7 @@ func resolveUpdateDirectory(root *os.Root, stageRoot, name string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	info, err := root.Stat(source)
+	info, err := StatUpdatePath(root, source)
 	if err != nil {
 		return "", err
 	}

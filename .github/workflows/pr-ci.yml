@@ -150,7 +150,7 @@ jobs:
         run: |
           $jsonPath = Join-Path $env:RUNNER_TEMP 'provider-update-windows.jsonl'
           $exitPath = Join-Path $env:RUNNER_TEMP 'provider-update-windows.exitcode'
-          & go test -race -json -count=1 -timeout 10m ./pkg/workspace -run '^TestProviderUpdate' |
+          & go test -race -json -count=1 -timeout 10m ./pkg/workspace ./pkg/provider -run '^(TestProviderUpdate|TestStatUpdatePath)' |
             Tee-Object -FilePath $jsonPath
           $testExitCode = $LASTEXITCODE
           Set-Content -LiteralPath $exitPath -Value $testExitCode -NoNewline
@@ -170,7 +170,11 @@ jobs:
             'TestProviderUpdateZipCompatibility/contained_file_symlink',
             'TestProviderUpdateTarContainedDirectoryLinkThenRegularMember',
             'TestProviderUpdateContainedSeedDirectoryLinkChain',
-            'TestProviderUpdateArchivePreservesOwnedDaemon'
+            'TestProviderUpdateArchivePreservesOwnedDaemon',
+            'TestStatUpdatePath/nested_dot_directory',
+            'TestStatUpdatePath/nested_cancelled_child',
+            'TestStatUpdatePath/external_target',
+            'TestStatUpdatePath/cycle'
           )
           $status = 0
           foreach ($testName in $criticalTests) {
