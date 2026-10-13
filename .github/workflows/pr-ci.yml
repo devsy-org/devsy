@@ -761,7 +761,7 @@ jobs:
           - label: docker-internal-buildkit
             runner: windows-latest
             free-disk-space: false
-            install-kind: true
+            install-kind: false
             requires-secret: false
             test-timeout: 900s
             job-timeout-minutes: 20
@@ -906,6 +906,62 @@ jobs:
         with:
           path: ${{ runner.temp }}/podman.msi
           key: ${{ runner.os }}-${{ runner.arch }}-podman-v5.8.2
+
+      - name: setup WSL2 Ubuntu (docker-internal-buildkit)
+        if: matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
+        uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
+        with:
+          distribution: Ubuntu-24.04
+          use-cache: true
+
+      - name: install docker-ce in WSL2 (docker-internal-buildkit)
+        if: matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
+        shell: wsl-bash {0}
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl
+          sudo install -m 0755 -d /etc/apt/keyrings
+          sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+            | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+          sudo mkdir -p /etc/docker
+          echo '{"hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2375"]}' | sudo tee /etc/docker/daemon.json >/dev/null
+          (sudo nohup /usr/bin/dockerd >/tmp/dockerd.log 2>&1 &)
+          for i in $(seq 1 60); do
+            sudo docker info >/dev/null 2>&1 && break
+            sleep 1
+          done
+          sudo docker info
+
+      - name: install docker CLI on Windows host (docker-internal-buildkit)
+        if: matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $zip = "$env:RUNNER_TEMP\docker.zip"
+          Invoke-WebRequest -Uri "https://download.docker.com/win/static/stable/x86_64/docker-29.9.0.zip" -OutFile $zip
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          $expected = "e3ff5d2e4cd1ad7e1c9bcb76f0df28a84853c43416a915323f08659d8487ad83"
+          if ($actual -ne $expected) { throw "SHA256 mismatch for docker CLI zip! Expected: $expected, Got: $actual" }
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\docker-cli"
+          "$env:RUNNER_TEMP\docker-cli\docker" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
+          "DOCKER_HOST=tcp://127.0.0.1:2375" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+
+      - name: verify real docker daemon (docker-internal-buildkit)
+        if: matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          docker version
+          $name = docker info --format '{{.Name}} {{.OperatingSystem}} {{.ServerVersion}}'
+          Write-Host $name
+          if ($name -match 'podman') { throw "daemon is Podman, expected Docker Engine" }
+          if ($name -notmatch 'Ubuntu') { throw "daemon is not docker-ce in WSL2: $name" }
 
       - name: install podman (Windows)
         if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
@@ -1182,7 +1238,7 @@ jobs:
               GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
-              DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
+              DOCKER_HOST="${{ matrix.label == 'docker-internal-buildkit' && 'tcp://127.0.0.1:2375' || 'npipe:////./pipe/podman-machine-default' }}" \
               ./e2e.test.exe -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
           fi
 

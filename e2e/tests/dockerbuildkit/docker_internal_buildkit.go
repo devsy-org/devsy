@@ -44,9 +44,7 @@ var _ = ginkgo.Describe(
 				ginkgo.Skip("Windows only")
 			}
 			helper = &docker.DockerHelper{DockerCommand: dockerCmd}
-			if err := helper.Ping(ctx); err != nil {
-				ginkgo.Skip("docker daemon is unreachable: " + err.Error())
-			}
+			framework.ExpectNoError(helper.Ping(ctx), "docker daemon is unreachable")
 			diag, _ := exec.CommandContext(ctx, dockerCmd, "version").CombinedOutput()
 			ginkgo.GinkgoWriter.Printf("docker version:\n%s\n", diag)
 		})
