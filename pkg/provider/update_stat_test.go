@@ -1,8 +1,11 @@
 package provider
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,6 +13,7 @@ import (
 
 func TestStatUpdatePath(t *testing.T) {
 	base := t.TempDir()
+	requireUpdateStatSymlinks(t, base)
 	owned := filepath.Join(base, "owned")
 	nested := filepath.Join(owned, "nested")
 	require.NoError(t, os.MkdirAll(filepath.Join(nested, "sub"), 0o700))
@@ -68,4 +72,19 @@ func TestStatUpdatePath(t *testing.T) {
 		_, err := StatUpdatePath(root, filepath.Join("nested", "cycle-a"))
 		require.Error(t, err)
 	})
+}
+
+func requireUpdateStatSymlinks(t *testing.T, base string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		probe := filepath.Join(base, "symlink-capability")
+		err := os.Symlink(".", probe)
+		// ERROR_PRIVILEGE_NOT_HELD is Windows errno 1314; other setup errors must fail.
+		const privilegeNotHeld = syscall.Errno(1314)
+		if errors.Is(err, privilegeNotHeld) {
+			t.Skipf("Windows account cannot create symbolic links: %v", err)
+		}
+		require.NoError(t, err)
+		require.NoError(t, os.Remove(probe))
+	}
 }
