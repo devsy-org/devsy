@@ -1034,9 +1034,9 @@ jobs:
             }
           }
           $address = $null
-          foreach ($candidate in @("localhost", $vmIp)) {
+          foreach ($candidate in @("127.0.0.1", $vmIp)) {
             if (-not $candidate) { continue }
-            $attempts = if ($candidate -eq "localhost") { 20 } else { 40 }
+            $attempts = if ($candidate -eq "127.0.0.1") { 20 } else { 40 }
             for ($i = 0; $i -lt $attempts; $i++) {
               if (Test-SshBanner $candidate $port) { $address = $candidate; break }
               Start-Sleep -Seconds 1
@@ -1045,7 +1045,7 @@ jobs:
           }
           if (-not $address) {
             wsl.exe -d Ubuntu-24.04 -u root -- sh -c "cat /tmp/sshd.log; ss -ltnp"
-            throw "BLOCKED: neither localhost:$port nor the WSL VM address ($vmIp) reaches sshd"
+            throw "BLOCKED: neither 127.0.0.1:$port nor the WSL VM address ($vmIp) reaches sshd"
           }
           Write-Host "sshd reachable at ${address}:${port}"
 
@@ -1067,6 +1067,18 @@ jobs:
           $sshHost = "ssh://${user}@${address}:${port}"
           $wslId = ((wsl.exe -d Ubuntu-24.04 -u root -- docker info --format '{{.ID}}') -join '').Trim()
           if (-not $wslId) { throw "could not read WSL daemon ID" }
+
+          # ssh.exe itself must authenticate with the pinned key before Docker is involved.
+          $sshOk = $false
+          for ($i = 0; $i -lt 5 -and -not $sshOk; $i++) {
+            ssh -o BatchMode=yes -T $address true
+            if ($LASTEXITCODE -eq 0) { $sshOk = $true } else { Start-Sleep -Seconds 2 }
+          }
+          if (-not $sshOk) {
+            ssh -vvv -o BatchMode=yes -T $address true
+            wsl.exe -d Ubuntu-24.04 -u root -- sh -c "cat /tmp/sshd.log; ss -ltnp"
+            throw "ssh.exe cannot reach sshd at ${address}:${port} with the pinned key and host key"
+          }
 
           # Same daemon through SSH from Windows, and nothing reachable without it.
           $env:DOCKER_CONTEXT = ""
