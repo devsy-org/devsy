@@ -179,8 +179,7 @@ func TestInspectDecryptsFileOnlyOnce(t *testing.T) {
 
 func TestWrongHigherPriorityCredentialNeverFallsBack(t *testing.T) {
 	dir := t.TempDir()
-	key, err := passphraseFileKey("correct phrase")
-	require.NoError(t, err)
+	key := testPassphraseFileKey(t, "correct phrase")
 	require.NoError(
 		t,
 		newFileBackend(
