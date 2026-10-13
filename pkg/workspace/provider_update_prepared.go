@@ -14,6 +14,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/hash"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 )
 
@@ -23,6 +24,15 @@ func replaceProviderPrepared(
 	ctx context.Context,
 	p ProviderParams,
 	replacement *provider.ProviderConfig,
+) (err error) {
+	return replaceProviderPreparedWithOps(ctx, p, replacement, defaultProviderUpdateCommitOps())
+}
+
+func replaceProviderPreparedWithOps(
+	ctx context.Context,
+	p ProviderParams,
+	replacement *provider.ProviderConfig,
+	ops providerUpdateCommitOps,
 ) (err error) {
 	prepared, err := prepareProviderReplacement(ctx, p, replacement)
 	if err != nil {
@@ -34,21 +44,25 @@ func replaceProviderPrepared(
 				err,
 				fmt.Errorf("provider recovery artifacts retained at %s", prepared.stage),
 			)
-		} else if cleanupErr := removeProviderUpdateStage(prepared.stage); cleanupErr != nil {
+		} else if cleanupErr := ops.removeStage(prepared.stage); cleanupErr != nil {
+			if prepared.committed && err == nil {
+				log.Warnf(
+					"remove provider update staging %s after commit: %v",
+					prepared.stage,
+					cleanupErr,
+				)
+				return
+			}
 			err = errors.Join(
 				err,
-				fmt.Errorf(
-					"remove owned provider update staging (commit completed=%t): %w",
-					prepared.committed,
-					cleanupErr,
-				),
+				fmt.Errorf("remove owned provider update staging: %w", cleanupErr),
 			)
 		}
 	}()
 	if err = ctx.Err(); err != nil {
 		return err
 	}
-	return prepared.commit(p, replacement, defaultProviderUpdateCommitOps())
+	return prepared.commit(p, replacement, ops)
 }
 
 type preparedProviderReplacement struct {
@@ -425,14 +439,16 @@ type providerUpdateCommitOps struct {
 	saveManifest    func(string, *provider.ProviderConfig) error
 	updateConfig    func(string, string, func(*config.Config) error) error
 	restoreManifest func(string, []byte, fs.FileMode) error
+	removeStage     func(string) error
 }
 
 func defaultProviderUpdateCommitOps() providerUpdateCommitOps {
 	return providerUpdateCommitOps{
-		os.Rename,
-		provider.SaveProviderConfig,
-		config.UpdateConfig,
-		provider.WriteFileAtomic,
+		rename:          os.Rename,
+		saveManifest:    provider.SaveProviderConfig,
+		updateConfig:    config.UpdateConfig,
+		restoreManifest: provider.WriteFileAtomic,
+		removeStage:     removeProviderUpdateStage,
 	}
 }
 

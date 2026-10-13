@@ -608,6 +608,94 @@ func TestProviderUpdateSynchronousCommitRestoration(t *testing.T) {
 	}
 }
 
+func TestProviderUpdateStageCleanupFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		committed bool
+	}{{name: "after commit", committed: true}, {name: "before commit"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newPreservationFixture(t)
+			params, replacement, updated := cleanupFailureUpdateFixture(t, f)
+
+			cleanupErr := errors.New("owned staging cleanup failure")
+			var stage string
+			ops := defaultProviderUpdateCommitOps()
+			ops.removeStage = func(path string) error {
+				stage = path
+				return cleanupErr
+			}
+			t.Cleanup(func() {
+				if stage != "" {
+					require.NoError(t, os.RemoveAll(stage))
+				}
+			})
+			if !tc.committed {
+				commitErr := errors.New("owned manifest commit failure")
+				ops.saveManifest = func(string, *provider.ProviderConfig) error { return commitErr }
+				// The failed commit is rolled back; its original cause and the
+				// staging cleanup failure must both remain visible.
+				err := replaceProviderPreparedWithOps(
+					context.Background(),
+					params,
+					replacement,
+					ops,
+				)
+				require.ErrorIs(t, err, commitErr)
+				require.ErrorIs(t, err, cleanupErr)
+				require.DirExists(t, stage)
+				f.assertFailedPreservation()
+				return
+			}
+
+			require.NoError(
+				t,
+				replaceProviderPreparedWithOps(context.Background(), params, replacement, ops),
+			)
+			require.DirExists(
+				t,
+				stage,
+				"the simulated cleanup failure leaves only disposable staging data",
+			)
+			assertCommittedCleanupUpdate(t, f, updated)
+		})
+	}
+}
+
+func cleanupFailureUpdateFixture(
+	t *testing.T,
+	f *preservationFixture,
+) (ProviderParams, *provider.ProviderConfig, []byte) {
+	t.Helper()
+	f.seedBinary(updateRuntimeKey, []byte("old provider runtime"))
+	updated := []byte("updated provider runtime")
+	server := compatibilityArchiveServer(
+		t,
+		singleExecutableUpdateArchive(t, updateRuntimeName, updated),
+	)
+	binary := updateTestBinary(server.URL+"/runtime.tar", updated)
+	binary.ArchivePath = updateRuntimeName
+	params, replacement := preparedUpdateParams(t, f, map[string][]*provider.ProviderBinary{
+		updateRuntimeKey: {binary},
+	})
+	return params, replacement, updated
+}
+
+func assertCommittedCleanupUpdate(t *testing.T, f *preservationFixture, updated []byte) {
+	t.Helper()
+	assertSelectedExecutable(t, f.binaryPath(updateRuntimeKey), updated, updateTestDigest(updated))
+	stored, err := provider.LoadProviderConfig(testDefaultContext, f.name)
+	require.NoError(t, err)
+	assert.Equal(t, updateReplacementVersion, stored.Version)
+	state := f.assertAssociation()
+	assert.False(t, state.Initialized)
+	assert.True(t, state.InitAttempted)
+	assert.Equal(
+		t,
+		map[string]config.OptionValue{updateKeptOption: f.options[updateKeptOption]},
+		state.Options,
+	)
+}
+
 func updateCommitFailureOps(phase string, sentinel error) providerUpdateCommitOps {
 	ops := defaultProviderUpdateCommitOps()
 	switch phase {
