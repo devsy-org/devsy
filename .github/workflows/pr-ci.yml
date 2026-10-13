@@ -732,6 +732,15 @@ jobs:
             test-timeout: 1200s
             job-timeout-minutes: 25
 
+          - label: up-provider-microsandbox-managed-recreate
+            runner: ubuntu-latest
+            free-disk-space: false
+            install-kind: false
+            requires-secret: false
+            install-microsandbox: true
+            test-timeout: 1200s
+            job-timeout-minutes: 25
+
           - label: up-provider-microsandbox-logs-cancel
             runner: ubuntu-latest
             free-disk-space: false
@@ -1176,15 +1185,30 @@ jobs:
                 PATH="${PATH}" \
                 ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
             else
-              sudo \
-                DEVSY_REQUIRE_MICROSANDBOX="${DEVSY_REQUIRE_MICROSANDBOX}" \
-                GH_USERNAME="${GH_USERNAME}" \
-                GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
-                GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
-                KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
-                ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
-                PATH="${PATH}" \
-                ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
+              if [ "${{ matrix.label }}" = "up-provider-microsandbox-managed-recreate" ]; then
+                sudo \
+                  DEVSY_REQUIRE_MICROSANDBOX="${DEVSY_REQUIRE_MICROSANDBOX}" \
+                  DEVSY_REQUIRE_MSB_MANAGED_POLICY_FIXTURE="true" \
+                  GH_USERNAME="${GH_USERNAME}" \
+                  GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
+                  GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
+                  KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+                  ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
+                  PATH="${PATH}" \
+                  RUNNER_TEMP="${RUNNER_TEMP}" \
+                  ../hack/run-managed-policy-e2e.sh \
+                  ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
+              else
+                sudo \
+                  DEVSY_REQUIRE_MICROSANDBOX="${DEVSY_REQUIRE_MICROSANDBOX}" \
+                  GH_USERNAME="${GH_USERNAME}" \
+                  GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
+                  GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
+                  KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+                  ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
+                  PATH="${PATH}" \
+                  ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
+              fi
             fi
           else
             GH_USERNAME="${GH_USERNAME}" \

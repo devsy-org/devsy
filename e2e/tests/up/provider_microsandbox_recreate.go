@@ -35,7 +35,7 @@ var _ = ginkgo.Describe("MicroSandbox rejected replacement preservation",
 		ginkgo.DescribeTable(
 			"keeps the original generation until valid explicit replacement",
 			func(ctx context.Context, source, name string, stopped bool) {
-				fixture := newSafeRecreateFixture(ctx, source, name)
+				fixture := newSafeRecreateFixture(ctx, source, name, 1536)
 				fixture.initialize(ctx, stopped)
 				fixture.rejectInvalidReplacement(ctx)
 				fixture.inspectOriginalFiles(ctx, stopped)
@@ -76,6 +76,8 @@ type safeRecreateFixture struct {
 	framework                      *framework.Framework
 	workspace, sandbox, uid, label string
 	volume                         string
+	provider                       string
+	maxMemoryMiB                   int
 	volumeOwned                    bool
 	original                       safeRecreateInspection
 	bootID                         string
@@ -98,7 +100,11 @@ type safeRecreateFile struct {
 	Owner string
 }
 
-func newSafeRecreateFixture(ctx context.Context, source, name string) *safeRecreateFixture {
+func newSafeRecreateFixture(
+	ctx context.Context,
+	source, name string,
+	maxMemoryMiB int,
+) *safeRecreateFixture {
 	skipIfNoMicrosandbox(ctx)
 	initialDir, err := os.Getwd()
 	framework.ExpectNoError(err)
@@ -121,12 +127,17 @@ func newSafeRecreateFixture(ctx context.Context, source, name string) *safeRecre
 	})
 	framework.ExpectNoError(f.DevsyProviderUse(ctx, name,
 		microsandboxResourceOption, "MICROSANDBOX_MEMORY=0",
-		microsandboxResourceOption, "MICROSANDBOX_MAX_MEMORY=1536",
+		microsandboxResourceOption, fmt.Sprintf("MICROSANDBOX_MAX_MEMORY=%d", maxMemoryMiB),
 		microsandboxResourceOption, "MICROSANDBOX_CPUS=1",
 		microsandboxResourceOption, "MICROSANDBOX_MAX_CPUS=1",
 		microsandboxResourceOption, "MICROSANDBOX_STORAGE=2",
 		microsandboxResourceOption, "MICROSANDBOX_EPHEMERAL=false"))
-	fixture := &safeRecreateFixture{framework: f, workspace: workspace}
+	fixture := &safeRecreateFixture{
+		framework:    f,
+		workspace:    workspace,
+		provider:     name,
+		maxMemoryMiB: maxMemoryMiB,
+	}
 	fixture.uid = encoding.CreateNewUID("", filepath.Base(workspace))
 	fixture.sandbox = "devsy-" + fixture.uid
 	fixture.label = "devsy.safe-recreate=" + fixture.uid
@@ -229,7 +240,7 @@ func (f *safeRecreateFixture) initialize(ctx context.Context, stopped bool) {
 	f.bootID = microsandboxStorageBootID(ctx, f.framework, f.workspace)
 	gomega.Expect(microsandboxActiveResources(ctx, f.sandbox)).
 		To(gomega.Equal(microsandboxResources{
-			CPUs: 1, MemoryMiB: 1024, MaxCPUs: 1, MaxMemoryMiB: 1536,
+			CPUs: 1, MemoryMiB: 1024, MaxCPUs: 1, MaxMemoryMiB: f.maxMemoryMiB,
 		}))
 	if stopped {
 		framework.ExpectNoError(f.framework.DevsyWorkspaceStop(ctx, f.workspace))
@@ -324,7 +335,12 @@ func (f *safeRecreateFixture) replaceSuccessfully(ctx context.Context) {
 	framework.ExpectNoError(err, string(out))
 	f.assertPersistentMounts(ctx)
 	f.assertHostState(ctx)
-	expected := microsandboxResources{CPUs: 1, MemoryMiB: 1536, MaxCPUs: 1, MaxMemoryMiB: 1536}
+	expected := microsandboxResources{
+		CPUs:         1,
+		MemoryMiB:    1536,
+		MaxCPUs:      1,
+		MaxMemoryMiB: f.maxMemoryMiB,
+	}
 	gomega.Expect(microsandboxActiveResources(ctx, f.sandbox)).To(gomega.Equal(expected))
 	assertMicrosandboxGuestResources(ctx, f.framework, f.workspace, expected)
 }
