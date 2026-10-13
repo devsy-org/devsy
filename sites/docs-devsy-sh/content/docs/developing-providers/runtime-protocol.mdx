@@ -119,6 +119,12 @@ This suite requires Linux with KVM and public access to the base and Dockerless 
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-dockerless
 ```
 
+The `up-provider-microsandbox-compatibility` label checks each provider with a real VM while a test-owned shim injects old, malformed, or failing version responses. Other runtime arguments reach the supported CLI unchanged. Each refusal must preserve the running VM generation, guest root and source files, workspace record and SSH configuration without a mutating runtime command. Restoring the supported CLI must allow explicit recreation and a usable workspace. These tests establish preservation under injected version faults, not support for an actual historical MicroSandbox release; external discovery can report a version-command failure earlier than the built-in provider.
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-compatibility
+```
+
 These scenarios do not establish complete parity. Logs, cancellation, and runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, and Dockerless checks alone do not authorize that cutover. Dockerless refusal checks cover fresh creation, not preservation after an invalid recreation request. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
 
 Prebuild invalidation coverage changes the Dockerfile; it does not independently establish hashing of local Feature script contents.
