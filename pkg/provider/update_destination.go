@@ -12,21 +12,44 @@ import (
 	"strings"
 )
 
-// prepareUpdateDestination separates only the destination's aliases before an
-// update writes into the private staged tree. Installed read-only reuse bypasses
-// this helper. The provider operation lock excludes cooperating writers; this
-// is not a transaction against arbitrary concurrent filesystem replacement.
-func prepareUpdateDestination(ctx context.Context, stageRoot, selectedPath string) (err error) {
+// prepareUpdateDestination isolates destination aliases and retains temporary
+// write access only to staged parents it must mutate. Installed read-only reuse
+// bypasses this helper. Callers must restore the original modes before publishing.
+func prepareUpdateDestination(
+	ctx context.Context,
+	stageRoot, selectedPath string,
+) (restore func() error, err error) {
 	stageRoot, selected, err := absoluteUpdateDestination(stageRoot, selectedPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	root, err := os.OpenRoot(stageRoot)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer func() { err = errors.Join(err, root.Close()) }()
-	return isolateUpdateDestination(ctx, root, selected)
+	permissions := updateDestinationPermissions{root: root, changed: map[string]fs.FileMode{}}
+	if err := permissions.isolateDestination(ctx, selected); err != nil {
+		return nil, errors.Join(err, permissions.restore())
+	}
+	return permissions.restore, nil
+}
+
+// prepareUpdateDestinationParent makes an archive family's staged parent writable
+// while the family is removed and recreated, then restores its original mode.
+func prepareUpdateDestinationParent(stageRoot, selectedPath string) (func() error, error) {
+	stageRoot, selected, err := absoluteUpdateDestination(stageRoot, selectedPath)
+	if err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(stageRoot)
+	if err != nil {
+		return nil, err
+	}
+	permissions := updateDestinationPermissions{root: root, changed: map[string]fs.FileMode{}}
+	if err := permissions.allowWrite(filepath.Dir(selected)); err != nil {
+		return nil, errors.Join(err, permissions.restore())
+	}
+	return permissions.restore, nil
 }
 
 func absoluteUpdateDestination(stageRoot, selectedPath string) (string, string, error) {
@@ -51,32 +74,109 @@ func absoluteUpdateDestination(stageRoot, selectedPath string) (string, string, 
 	return canonical, selected, err
 }
 
-func isolateUpdateDestination(
+func (p *updateDestinationPermissions) isolateDestination(
 	ctx context.Context,
-	root *os.Root,
 	selected string,
 ) error {
 	parts := strings.Split(selected, string(filepath.Separator))
 	for index := range parts {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
 		name := filepath.Join(parts[:index+1]...)
-		info, err := root.Lstat(name)
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
+		continued, err := p.isolateEntry(ctx, name, index == len(parts)-1)
 		if err != nil {
 			return err
 		}
-		if index == len(parts)-1 {
-			return removeUpdateDestinationLeaf(root, name, info)
-		}
-		if err := isolateUpdateAncestor(ctx, root, name, info); err != nil {
-			return err
+		if !continued {
+			return nil
 		}
 	}
 	return nil
+}
+
+func (p *updateDestinationPermissions) isolateEntry(
+	ctx context.Context, name string, leaf bool,
+) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	info, err := p.root.Lstat(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, p.allowExistingParentWrite(filepath.Dir(name))
+	}
+	if err != nil {
+		return false, err
+	}
+	if leaf {
+		return false, p.isolateLeaf(name, info)
+	}
+	if err := p.isolateAncestor(ctx, name, info); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (p *updateDestinationPermissions) isolateLeaf(name string, info fs.FileInfo) error {
+	if !info.IsDir() {
+		if err := p.allowWrite(filepath.Dir(name)); err != nil {
+			return err
+		}
+	}
+	return removeUpdateDestinationLeaf(p.root, name, info)
+}
+
+func (p *updateDestinationPermissions) isolateAncestor(
+	ctx context.Context, name string, info fs.FileInfo,
+) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		if err := p.allowWrite(filepath.Dir(name)); err != nil {
+			return err
+		}
+	}
+	return isolateUpdateAncestor(ctx, p.root, name, info)
+}
+
+type updateDestinationPermissions struct {
+	root    *os.Root
+	changed map[string]fs.FileMode
+	order   []string
+}
+
+func (p *updateDestinationPermissions) allowWrite(name string) error {
+	if _, ok := p.changed[name]; ok {
+		return nil
+	}
+	info, err := p.root.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("provider update destination parent is not a directory: %s", name)
+	}
+	mode := info.Mode()
+	if mode.Perm()&0o200 == 0 {
+		if err := p.root.Chmod(name, mode|0o200); err != nil {
+			return fmt.Errorf("make staged update parent writable %s: %w", name, err)
+		}
+		p.changed[name] = mode
+		p.order = append(p.order, name)
+	}
+	return nil
+}
+
+func (p *updateDestinationPermissions) allowExistingParentWrite(name string) error {
+	if _, err := p.root.Lstat(name); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return p.allowWrite(name)
+}
+
+func (p *updateDestinationPermissions) restore() error {
+	var err error
+	for _, name := range slices.Backward(p.order) {
+		err = errors.Join(err, p.root.Chmod(name, p.changed[name]))
+	}
+	return errors.Join(err, p.root.Close())
 }
 
 func removeUpdateDestinationLeaf(root *os.Root, name string, info fs.FileInfo) error {

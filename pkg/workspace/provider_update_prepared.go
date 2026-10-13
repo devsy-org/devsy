@@ -169,7 +169,7 @@ func (p *preparedProviderReplacement) prepareBinaries(
 	if err != nil {
 		return err
 	}
-	locations, err := stagedProviderLocations(ctx, binaries)
+	locations, absoluteReferences, err := stagedProviderLocations(ctx, binaries, p.live, target)
 	if err != nil {
 		return fmt.Errorf("download binaries: validate preparation: %w", err)
 	}
@@ -181,7 +181,31 @@ func (p *preparedProviderReplacement) prepareBinaries(
 	}
 	// Archive sidecars are promoted together, but no link may lead outside staging.
 	_, err = copyProviderBinaryTree(ctx, target, "")
-	return err
+	if err != nil {
+		return err
+	}
+	return validateStagedAbsoluteReferences(ctx, absoluteReferences)
+}
+
+func validateStagedAbsoluteReferences(
+	ctx context.Context,
+	references []stagedAbsoluteProviderReference,
+) error {
+	for _, reference := range references {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := validateAbsoluteProviderBinaryAtPath(
+			reference.binary,
+			reference.stagedPath,
+		); err != nil {
+			return fmt.Errorf(
+				"absolute provider binary reference changed during preparation: %w",
+				err,
+			)
+		}
+	}
+	return nil
 }
 
 func requireRegularProviderPath(path string, directory bool) error {
@@ -375,27 +399,146 @@ func validateProviderSeedEntry(root *os.Root, name string, entry fs.DirEntry) er
 func stagedProviderLocations(
 	ctx context.Context,
 	binaries map[string][]*provider.ProviderBinary,
-) (map[string][]*provider.ProviderBinary, error) {
+	live, stagedRoot string,
+) (map[string][]*provider.ProviderBinary, []stagedAbsoluteProviderReference, error) {
 	staged := make(map[string][]*provider.ProviderBinary, len(binaries))
+	var absoluteReferences []stagedAbsoluteProviderReference
 	for key, locations := range binaries {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		staged[key] = locations
-		for _, location := range locations {
-			if location.OS != runtime.GOOS || location.Arch != runtime.GOARCH {
-				continue
-			}
-			if err := validateProviderUpdateLocation(location); err != nil {
-				return nil, err
-			}
-			if filepath.IsAbs(location.Path) {
-				delete(staged, key)
-			}
-			break
+		reference, absolute, err := stagedProviderLocationReference(locations, live, stagedRoot)
+		if err != nil {
+			return nil, nil, err
+		}
+		if reference != nil {
+			absoluteReferences = append(absoluteReferences, *reference)
+		}
+		if absolute {
+			delete(staged, key)
 		}
 	}
-	return staged, nil
+	return staged, absoluteReferences, nil
+}
+
+func stagedProviderLocationReference(
+	locations []*provider.ProviderBinary,
+	live, stagedRoot string,
+) (*stagedAbsoluteProviderReference, bool, error) {
+	for _, location := range locations {
+		if location.OS != runtime.GOOS || location.Arch != runtime.GOARCH {
+			continue
+		}
+		if err := validateProviderUpdateLocation(location); err != nil {
+			return nil, false, err
+		}
+		if !filepath.IsAbs(location.Path) {
+			return nil, false, nil
+		}
+		stagedPath, managed, err := projectManagedAbsoluteReference(location.Path, live, stagedRoot)
+		if err != nil {
+			return nil, true, err
+		}
+		if managed {
+			return &stagedAbsoluteProviderReference{
+				binary:     location,
+				stagedPath: stagedPath,
+			}, true, nil
+		}
+		return nil, true, nil
+	}
+	return nil, false, nil
+}
+
+type stagedAbsoluteProviderReference struct {
+	binary     *provider.ProviderBinary
+	stagedPath string
+}
+
+func projectManagedAbsoluteReference(path, live, stagedRoot string) (string, bool, error) {
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false, err
+	}
+	liveAbs, err := filepath.Abs(live)
+	if err != nil {
+		return "", false, err
+	}
+	stagedPath, managed, err := projectLexicalManagedReference(
+		path,
+		pathAbs,
+		liveAbs,
+		stagedRoot,
+	)
+	if err != nil || managed {
+		return stagedPath, managed, err
+	}
+	return rejectExternalManagedAlias(path, liveAbs)
+}
+
+func projectLexicalManagedReference(
+	path, pathAbs, liveAbs, stagedRoot string,
+) (string, bool, error) {
+	relative, err := filepath.Rel(liveAbs, pathAbs)
+	if err != nil || !filepath.IsLocal(relative) {
+		return "", false, nil
+	}
+	if filepath.Clean(path) != path {
+		return "", false, fmt.Errorf("ambiguous absolute provider reference path: %s", path)
+	}
+	return filepath.Join(stagedRoot, relative), true, nil
+}
+
+func rejectExternalManagedAlias(path, liveAbs string) (string, bool, error) {
+	// An external symlink into the live tree remains attached to the promoted path,
+	// but cannot be projected without changing its traversal semantics.
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve absolute provider reference %s: %w", path, err)
+	}
+	contained, err := sharesManagedDirectoryAncestor(liveAbs, resolvedPath)
+	if err != nil {
+		return "", false, err
+	}
+	if contained {
+		return "", false, unsupportedExternalManagedAlias(path)
+	}
+	return "", false, nil
+}
+
+func unsupportedExternalManagedAlias(path string) error {
+	return fmt.Errorf(
+		"absolute provider reference resolves into managed binaries through an external alias; unsupported: %s",
+		path,
+	)
+}
+
+func sharesManagedDirectoryAncestor(live, resolvedPath string) (bool, error) {
+	liveInfo, err := os.Stat(live)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("stat managed provider binaries %s: %w", live, err)
+	}
+	for ancestor := resolvedPath; ; ancestor = filepath.Dir(ancestor) {
+		info, err := os.Stat(ancestor)
+		if err != nil {
+			return false, fmt.Errorf(
+				"stat absolute provider reference ancestor %s: %w",
+				ancestor,
+				err,
+			)
+		}
+		if os.SameFile(liveInfo, info) {
+			return true, nil
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			return false, nil
+		}
+	}
 }
 
 func validateProviderUpdateLocation(location *provider.ProviderBinary) error {
@@ -413,7 +556,11 @@ func validateProviderUpdateLocation(location *provider.ProviderBinary) error {
 }
 
 func validateAbsoluteProviderBinary(location *provider.ProviderBinary) error {
-	info, err := os.Stat(location.Path)
+	return validateAbsoluteProviderBinaryAtPath(location, location.Path)
+}
+
+func validateAbsoluteProviderBinaryAtPath(location *provider.ProviderBinary, path string) error {
+	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
@@ -423,7 +570,7 @@ func validateAbsoluteProviderBinary(location *provider.ProviderBinary) error {
 	if location.Checksum == "" {
 		return nil
 	}
-	sum, err := hash.File(location.Path)
+	sum, err := hash.File(path)
 	if err != nil {
 		return err
 	}

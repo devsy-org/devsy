@@ -86,7 +86,7 @@ func prepareUpdateBinary(
 	key string,
 	binary *ProviderBinary,
 	target string,
-) (string, error) {
+) (path string, err error) {
 	if filepath.IsAbs(binary.Path) {
 		return "", fmt.Errorf(
 			"update preparation must validate absolute reference separately: %s",
@@ -94,38 +94,66 @@ func prepareUpdateBinary(
 		)
 	}
 	family := filepath.Join(target, strings.ToLower(key))
-	path := getBinaryPath(binary, family)
+	path = getBinaryPath(binary, family)
 	// Installed aliases are reusable, but checksum misses must not delete their targets.
 	if updateBinaryMatches(path, binary.Checksum) {
 		return path, nil
 	}
 	archive := isRemotePath(binary.Path) && binary.ArchivePath != ""
-	// A cache miss replaces the entire archive family. Do not first unlink a
-	// selected old executable whose parent may intentionally be read-only.
 	if archive && !cachedUpdateBinaryAvailable(binary) {
-		return downloadWithRetryUsing(key, binary, func() (string, error) {
-			return downloadConfinedUpdateArchive(ctx, binary, family)
-		})
+		return prepareFreshUpdateArchive(ctx, key, binary, target)
 	}
-	if err := prepareUpdateDestination(ctx, target, path); err != nil {
-		return "", fmt.Errorf("isolate update destination for %s: %w", key, err)
-	}
-	if !archive {
-		return downloadBinaryForPlatform(ctx, key, []*ProviderBinary{binary}, target)
-	}
-	return prepareUpdateArchive(ctx, key, binary, family)
+	return prepareSelectedUpdate(ctx, key, binary, target)
 }
 
-func prepareUpdateArchive(
+func prepareSelectedUpdate(
 	ctx context.Context,
 	key string,
 	binary *ProviderBinary,
-	family string,
-) (string, error) {
-	// The legacy cache contains only the executable; seeded sidecars remain unchanged on a hit.
+	target string,
+) (result string, err error) {
+	family := filepath.Join(target, strings.ToLower(key))
+	path := getBinaryPath(binary, family)
+	archive := isRemotePath(binary.Path) && binary.ArchivePath != ""
+	restoreDestination, err := prepareUpdateDestination(ctx, target, path)
+	if err != nil {
+		return "", fmt.Errorf("isolate update destination for %s: %w", key, err)
+	}
+	defer func() {
+		if restoreDestination != nil {
+			err = errors.Join(err, restoreDestination())
+		}
+	}()
+	if !archive {
+		return downloadBinaryForPlatform(ctx, key, []*ProviderBinary{binary}, target)
+	}
 	if fromCache(binary, family) {
 		return getBinaryPath(binary, family), nil
 	}
+	// A failed cache copy falls back to replacing the archive family. Restore
+	// selected-entry parents first so their modes are not applied to fresh archive directories.
+	if restoreErr := restoreDestination(); restoreErr != nil {
+		restoreDestination = nil
+		return "", fmt.Errorf("restore staged update destination permissions: %w", restoreErr)
+	}
+	restoreDestination = nil
+	return prepareFreshUpdateArchive(ctx, key, binary, target)
+}
+
+func prepareFreshUpdateArchive(
+	ctx context.Context,
+	key string,
+	binary *ProviderBinary,
+	target string,
+) (path string, err error) {
+	family := filepath.Join(target, strings.ToLower(key))
+	// An uncached archive replaces the whole family; only its staged parent needs
+	// temporary write access because the family reset handles descendant modes.
+	restoreFamily, err := prepareUpdateDestinationParent(target, family)
+	if err != nil {
+		return "", fmt.Errorf("prepare update family parent for %s: %w", key, err)
+	}
+	defer func() { err = errors.Join(err, restoreFamily()) }()
 	return downloadWithRetryUsing(key, binary, func() (string, error) {
 		return downloadConfinedUpdateArchive(ctx, binary, family)
 	})

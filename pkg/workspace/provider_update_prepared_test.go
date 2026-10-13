@@ -67,11 +67,11 @@ func compatibilityTar(
 	return out.Bytes()
 }
 
-func singleExecutableUpdateArchive(t *testing.T, selected string, content []byte) []byte {
+func singleExecutableUpdateArchive(t *testing.T, content []byte) []byte {
 	t.Helper()
 	return compatibilityTar(t, false, []*tar.Header{
-		{Name: selected, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))},
-	}, map[string][]byte{selected: content})
+		{Name: updateRuntimeName, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(content))},
+	}, map[string][]byte{updateRuntimeName: content})
 }
 
 func compatibilityZip(t *testing.T, entries []struct {
@@ -709,7 +709,7 @@ func cleanupFailureUpdateFixture(
 	updated := []byte("updated provider runtime")
 	server := compatibilityArchiveServer(
 		t,
-		singleExecutableUpdateArchive(t, updateRuntimeName, updated),
+		singleExecutableUpdateArchive(t, updated),
 	)
 	binary := updateTestBinary(server.URL+"/runtime.tar", updated)
 	binary.ArchivePath = updateRuntimeName
@@ -1222,7 +1222,7 @@ func TestProviderUpdateFamilyAliasPreservesUnrelatedBinary(t *testing.T) {
 				alias := filepath.Join(f.binaries, updateRuntimeName)
 				require.NoError(t, os.Symlink("unrelated", alias))
 				content := []byte("replacement through alias " + f.dir)
-				archive := singleExecutableUpdateArchive(t, updateRuntimeName, content)
+				archive := singleExecutableUpdateArchive(t, content)
 				var requests atomic.Int64
 				server := ownedProviderUpdateServer(
 					t,
@@ -1319,7 +1319,7 @@ func TestProviderUpdateReadOnlySelectedArchiveFamily(t *testing.T) {
 				unrelatedInfo, err := os.Stat(f.binaryPath("UNRELATED"))
 				require.NoError(t, err)
 				content := []byte("fresh readonly-family replacement")
-				archive := singleExecutableUpdateArchive(t, updateRuntimeName, content)
+				archive := singleExecutableUpdateArchive(t, content)
 				server := ownedProviderUpdateServer(
 					t,
 					func(w http.ResponseWriter, _ *http.Request) {
