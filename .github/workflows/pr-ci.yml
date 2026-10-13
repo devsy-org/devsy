@@ -1004,7 +1004,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "ssh-keygen failed" }
           icacls $key /inheritance:r /grant:r "$($env:USERNAME):(R)" | Out-Null
           $pub = (Get-Content "$key.pub" -Raw).Trim()
-          wsl.exe -d Ubuntu-24.04 -u root -- sh -c "printf '%s\n' '$pub' > /home/$user/.ssh/authorized_keys && chown $user:$user /home/$user/.ssh/authorized_keys && chmod 600 /home/$user/.ssh/authorized_keys"
+          wsl.exe -d Ubuntu-24.04 -u root -- sh -c "printf '%s\n' '$pub' > /home/${user}/.ssh/authorized_keys && chown ${user}:${user} /home/${user}/.ssh/authorized_keys && chmod 600 /home/${user}/.ssh/authorized_keys"
           if ($LASTEXITCODE -ne 0) { throw "could not install authorized key" }
 
           Start-Process wsl.exe -WindowStyle Hidden -ArgumentList "-d","Ubuntu-24.04","-u","root","--","sh","-c","`"exec /usr/sbin/sshd -D -e -f /etc/ssh/devsy_ci_sshd_config >/tmp/sshd.log 2>&1`""
