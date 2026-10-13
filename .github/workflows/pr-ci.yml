@@ -1017,20 +1017,29 @@ jobs:
 
           # Windows localhost forwarding to WSL2 is not guaranteed; fall back to the VM address.
           $vmIp = ((wsl.exe -d Ubuntu-24.04 -- hostname -I) -join ' ').Trim().Split(' ')[0]
+          # The WSL localhost relay accepts TCP before sshd listens, so readiness
+          # means the SSH identification banner was actually received.
+          function Test-SshBanner([string]$HostName, [int]$Port) {
+            $client = New-Object System.Net.Sockets.TcpClient
+            try {
+              $client.ReceiveTimeout = 3000
+              $client.Connect($HostName, $Port)
+              $buffer = New-Object byte[] 64
+              $read = $client.GetStream().Read($buffer, 0, $buffer.Length)
+              return ($read -ge 4 -and [Text.Encoding]::ASCII.GetString($buffer, 0, $read).StartsWith("SSH-"))
+            } catch {
+              return $false
+            } finally {
+              $client.Dispose()
+            }
+          }
           $address = $null
           foreach ($candidate in @("localhost", $vmIp)) {
             if (-not $candidate) { continue }
-            for ($i = 0; $i -lt 30 -and -not $address; $i++) {
-              $client = New-Object System.Net.Sockets.TcpClient
-              try {
-                $client.Connect($candidate, $port)
-                $address = $candidate
-              } catch {
-                Start-Sleep -Seconds 1
-              } finally {
-                $client.Dispose()
-              }
-              if ($candidate -eq "localhost" -and $i -ge 4) { break }
+            $attempts = if ($candidate -eq "localhost") { 20 } else { 40 }
+            for ($i = 0; $i -lt $attempts; $i++) {
+              if (Test-SshBanner $candidate $port) { $address = $candidate; break }
+              Start-Sleep -Seconds 1
             }
             if ($address) { break }
           }
