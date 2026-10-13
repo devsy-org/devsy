@@ -212,6 +212,7 @@ func (s *ImageRunSuite) TestNegotiatedCapabilities() {
 	for _, mode := range []runtimev1.RecreateMode{
 		runtimev1.RecreateMode_RECREATE_MODE_DELETE,
 		runtimev1.RecreateMode_RECREATE_MODE_STOP,
+		runtimev1.RecreateMode_RECREATE_MODE_ON_RUN,
 	} {
 		h := &Host{
 			info: &runtimev1.InfoResponse{
@@ -233,7 +234,20 @@ func (s *ImageRunSuite) TestNegotiatedCapabilities() {
 		want := driver.RecreateStop
 		if mode == runtimev1.RecreateMode_RECREATE_MODE_DELETE {
 			want = driver.RecreateDelete
+		} else if mode == runtimev1.RecreateMode_RECREATE_MODE_ON_RUN {
+			want = driver.RecreateOnRun
 		}
 		s.Equal(want, driver.DriverRecreateMode(h))
+	}
+}
+
+func (s *ImageRunSuite) TestReplacementPermissionForwardingIsRequestLocal() {
+	for _, allowed := range []bool{false, true, false} {
+		request, err := runImageRequest(&driver.RunImageDevContainerParams{
+			WorkspaceID: fixtureWorkspace,
+			Options:     &driver.RunOptions{Image: imageRunImage, AllowRecreate: allowed},
+		})
+		s.Require().NoError(err)
+		s.Equal(allowed, request.GetAllowRecreate())
 	}
 }

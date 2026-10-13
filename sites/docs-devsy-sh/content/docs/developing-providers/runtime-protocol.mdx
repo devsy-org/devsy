@@ -7,7 +7,7 @@ description: Contract for external runtime driver authors using the Devsy Runtim
 Providers select this protocol with `agent.driver: external`. See the [external driver](./driver.mdx#external-driver).
 </Callout>
 
-The canonical [protobuf schema](https://github.com/devsy-org/devsy-runtime-sdk/blob/main/proto/devsy/runtime/v1/runtime.proto) is maintained in the [Devsy Runtime SDK](https://github.com/devsy-org/devsy-runtime-sdk). The module path is `github.com/devsy-org/devsy-runtime-sdk`; the logical plugin name is `devsy-runtime`. HashiCorp application protocol 1 and Info API major 1/minor 2 are separate version checks. Same-major newer minor versions are accepted. Unknown mount/recreate enum values are rejected because they control host behavior.
+The canonical [protobuf schema](https://github.com/devsy-org/devsy-runtime-sdk/blob/main/proto/devsy/runtime/v1/runtime.proto) is maintained in the [Devsy Runtime SDK](https://github.com/devsy-org/devsy-runtime-sdk). The module path is `github.com/devsy-org/devsy-runtime-sdk`; the logical plugin name is `devsy-runtime`. HashiCorp application protocol 1 and Info API major 1/minor 3 are separate version checks. Same-major newer minor versions are accepted. Unknown mount/recreate enum values are rejected because they control host behavior.
 
 ## Runtime boundary
 
@@ -17,7 +17,7 @@ RunImage receives resolved intent. Its empty response acknowledges completion; F
 
 `remote_user` carries the developer identity used for workspace ownership, separately from the container process `user`. The host forwards both values without substituting one for the other. Runtimes use `remote_user` when set, otherwise `user`, otherwise `root` for workspace ownership. `dockerless` indicates that the host will build the developer filesystem after the image starts, so that identity may not yet exist in the image. A runtime that resolves mount ownership from image contents must validate this case before changing workspace resources. These fields describe provisioning intent and do not authorize replacement of an existing workspace.
 
-Runtime name, driver name/version, and capabilities are required in Info. Runtime version may be empty when a backend cannot report it without expensive setup. An empty mount list means no supported mount types. ProvisioningPreflight may be a no-op when its capability is false. Logs may return Unimplemented when its capability is false. Reprovision means RunImage can update an existing workspace with complete resolved intent; it does not imply that an empty request is safe. The Devsy host does not enable in-place reprovisioning; workspace changes follow the negotiated stop/delete recreate policy.
+Runtime name, driver name/version, and capabilities are required in Info. Runtime version may be empty when a backend cannot report it without expensive setup. An empty mount list means no supported mount types. ProvisioningPreflight may be a no-op when its capability is false. Logs may return Unimplemented when its capability is false. Reprovision means RunImage can update an existing workspace with complete resolved intent; it does not imply that an empty request is safe. The Devsy host does not enable in-place reprovisioning; workspace changes follow the negotiated recreation policy.
 
 TargetArchitecture returns canonical `amd64` or `arm64`. A runtime may require an existing workspace to answer; hosts must not require pre-start architecture discovery from such runtimes.
 
@@ -27,7 +27,13 @@ Find returns `found=false` for ordinary absence, without a NotFound RPC error. A
 
 Start on an already running workspace succeeds; missing returns NotFound. Stop on an already stopped workspace succeeds; missing may return NotFound. Delete normalizes missing state to success for cleanup. Provisioning compatibility checks must precede destructive teardown.
 
-API 1.2 adds optional `capabilities.reuse_preflight`. Before reusing a workspace, the host calls ReusePreflight with its workspace ID and current resolved developer identity. The runtime validates its own creation-time contract, such as mount policy or ownership, without starting, stopping, deleting, or modifying the workspace. An incompatible contract returns structured FailedPrecondition with explicit `--recreate` guidance. The host propagates that error without scheduling replacement, preserving the existing VM. Missing workspaces return NotFound; backend, permission, and context failures remain errors. When the capability is absent, hosts skip the RPC and retain their existing identity-resolution behavior. Explicit recreation follows the separate provisioning checks and negotiated stop/delete policy.
+API 1.2 adds optional `capabilities.reuse_preflight`. Before reusing a workspace, the host calls ReusePreflight with its workspace ID and current resolved developer identity. The runtime validates its own creation-time contract, such as mount policy or ownership, without starting, stopping, deleting, or modifying the workspace. An incompatible contract returns structured FailedPrecondition with explicit `--recreate` guidance. The host propagates that error without scheduling replacement, preserving the existing VM. Missing workspaces return NotFound; backend, permission, and context failures remain errors. When the capability is absent, hosts skip the RPC and retain their existing identity-resolution behavior. Explicit recreation follows separate provisioning checks and the negotiated recreation policy.
+
+API 1.3 adds negotiated recreation during RunImage. A host opts in with `InfoRequest.supports_recreate_on_run`; a supporting runtime responds with `RECREATE_MODE_ON_RUN`. Devsy then leaves the existing VM in place and forwards the current operation's explicit recreation permission as `RunImageRequest.allow_recreate`. Negotiation alone grants no replacement permission, and a later request with false remains false. Existing explicit reset and rebuild operations also grant recreation permission. Automatic identity or secret migrations must request consent instead of silently enabling replacement.
+
+Older hosts and providers retain their negotiated DELETE or STOP behavior. ON_RUN does not enable in-place reprovisioning: it delegates replacement to the runtime so final effective configuration can be validated before teardown.
+
+For MicroSandbox, explicit replacement requires v0.7.7 or newer even with workspace permission policy `off`. The built-in and supporting external driver pass `--replace` to that operation instead of stopping and removing the old VM first. The runtime validates the effective configuration, including managed overrides, before removing the target. This preserves the old VM when configuration is rejected; it does not roll back failures after replacement begins. Image preparation, cache imports or new volumes can precede final validation. Root preparation, launch failures, cancellation or crashes after teardown can still lose the old VM.
 
 ## Exec and Logs
 
@@ -47,7 +53,9 @@ For SDK usage and development commands, see the [SDK README](https://github.com/
 
 ## MicroSandbox parity gate
 
-The `up-provider-microsandbox` E2E label runs the same lifecycle and ownership scenario against the built-in provider and the external v0.1.7 release, each with isolated Devsy configuration. CI pins MicroSandbox v0.7.7 by checksum and requires access to KVM; unavailable virtualization fails this job instead of producing a passing skipped test. Each provider scenario has a ten-minute deadline and the CI job has a 25-minute deadline.
+MicroSandbox integration suites share a provider matrix and test-session setup. Their dedicated CI job defines the suite catalogue and common runtime installation once, while keeping each suite on an independent runner. Every native run must report the exact expected count, split equally between built-in and external provider cases, with no skips or retries. Dry-run and programmatic-focus reports cannot satisfy this gate. See [the test architecture guide](https://github.com/devsy-org/devsy/blob/main/e2e/tests/up/MICROSANDBOX.md) for fixture ownership and extension rules.
+
+The `up-provider-microsandbox` E2E label runs the same lifecycle and ownership scenario against the built-in provider and the external v0.1.8 release, each with isolated Devsy configuration. CI pins MicroSandbox v0.7.7 by checksum and requires access to KVM; unavailable virtualization fails this job instead of producing a passing skipped test. Each provider scenario has a ten-minute deadline and the CI job has a 25-minute deadline.
 
 The shared scenario exercises agent delivery, SSH, a 1 MiB binary stdin/stdout round trip with separate stderr and a nonzero guest exit, root workload versus developer identity, bind-mount ownership and mode mirroring, stop/start, recreation, rejection of an identity change without recreation while preserving VM-local data, and deletion of the VM.
 
@@ -119,6 +127,26 @@ This suite requires Linux with KVM and public access to the base and Dockerless 
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-dockerless
 ```
 
+The `up-provider-microsandbox-recreate` label tests rejected explicit replacement for running and stopped VMs against both providers. Each case checks the unchanged VM generation and active configuration before resuming a stopped original, then checks persistent root, bind and named-volume data together with the workspace and SSH records. A subsequent valid replacement must change the VM generation, reset the root marker and preserve the external data. These request-invalid cases do not establish preservation for managed-policy conflicts or failures after replacement begins. Each scenario has a ten-minute deadline, with a 20-minute CI test deadline and a 25-minute job deadline.
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-recreate
+```
+
+The Linux-only `up-provider-microsandbox-managed-recreate` label checks a valid 2048 MiB replacement with an explicit 2048 MiB boot ceiling. A managed policy raises initial memory to 3072 MiB, making the effective configuration invalid. The workspace retains its original provider options throughout; changing global provider defaults would not override those saved workspace values. Running and stopped originals must retain their VM generation, root and persistent mount data, workspace record and SSH files for both providers. Resetting the policy must allow the same replacement request. The CI wrapper overlays `/etc` in a private mount namespace before creating any policy file; its scratch remains in the disposable runner for job teardown. These checks require that isolated wrapper and do not establish rollback after replacement has begun. Each scenario and the suite retain the request-invalid suite's time bounds.
+
+On a disposable Linux host with the same prerequisites, prepare the E2E binaries and run the managed suite through its isolated wrapper. The scratch directory is retained for host teardown; running the label without the wrapper does not exercise these cases.
+
+```sh
+task cli:test:e2e:build
+(cd e2e && go test -c -o e2e.test .)
+(cd e2e && sudo env PATH="$PATH" RUNNER_TEMP="$(mktemp -d)" \
+  DEVSY_REQUIRE_MICROSANDBOX=true DEVSY_REQUIRE_MSB_MANAGED_POLICY_FIXTURE=true \
+  ../hack/run-managed-policy-e2e.sh ./e2e.test -test.v -ginkgo.v \
+  -test.timeout 1200s -ginkgo.fail-on-empty -ginkgo.flake-attempts=1 \
+  -ginkgo.label-filter=up-provider-microsandbox-managed-recreate)
+```
+
 The `up-provider-microsandbox-logs-cancel` label checks completed stdout/stderr workload logs while running and stopped, direct runtime Exec cancellation of a ready parent and child, and cancellation with blocked owned stdin against each provider. A separate SSH observer verifies process identity using PID, kernel start time, and a unique command marker. Caller return and process death must both occur within ten seconds of cancellation; the VM's creation time, boot ID, and source files must remain intact. Logs do not start a stopped VM. These checks do not establish log ordering, binary log fidelity, TTY cancellation, or cancellation of arbitrary nonclosable input.
 
 ```sh
@@ -127,6 +155,6 @@ DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsand
 
 For built-in Exec, cancellation closes non-file `io.ReadCloser` input whose `Close` unblocks `Read`; ordinary completion and caller-owned file input retain their ownership. Agent binary delivery owns its acquired source and closes it when the individual transfer attempt is canceled, before retrying with a fresh source. Cleanup joins cancellation callbacks before returning.
 
-These scenarios do not establish complete parity. Runtime compatibility failures and invalid-recreate preservation still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, Dockerless, logs, and cancellation checks alone do not authorize that cutover. Dockerless refusal checks cover fresh creation, not preservation after an invalid recreation request. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
+These scenarios do not establish complete parity. Runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, Dockerless, request-invalid and managed-policy recreation, logs, and cancellation checks alone do not authorize that cutover. Dockerless refusal checks cover fresh creation, not preservation after an invalid recreation request. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
 
 Prebuild invalidation coverage changes the Dockerfile; it does not independently establish hashing of local Feature script contents.

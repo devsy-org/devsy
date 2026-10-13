@@ -58,11 +58,8 @@ type microsandboxDockerlessFixtureState struct {
 
 var _ = ginkgo.Describe("microsandbox Dockerless parity",
 	ginkgo.Label("up-provider-microsandbox-dockerless"), func() {
-		for _, provider := range []struct{ name, source string }{
-			{"builtin-dockerless", microsandboxResourceBuiltin},
-			{"external-dockerless", microsandboxExternalProvider},
-		} {
-			ginkgo.Context(provider.name, func() {
+		for _, provider := range microsandboxProviders("builtin-dockerless", "external-dockerless") {
+			ginkgo.Context(provider.name, ginkgo.Label(provider.label), func() {
 				ginkgo.DescribeTable(
 					"runs without host Docker and enforces developer ownership",
 					func(ctx context.Context, testCase microsandboxDockerlessCase) {
