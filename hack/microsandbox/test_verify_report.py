@@ -10,7 +10,9 @@ LABEL = "up-provider-microsandbox-images"
 PROVIDERS = ("microsandbox-builtin", "microsandbox-external")
 
 
-def report(count=2):
+def report(count=2, provider_labels=None):
+    if provider_labels is None:
+        provider_labels = [PROVIDERS[index % 2] for index in range(count)]
     return [{
         "SuiteConfig": {"DryRun": False},
         "SuiteSucceeded": True,
@@ -18,7 +20,7 @@ def report(count=2):
         "SpecReports": [
             {
                 "ContainerHierarchyLabels": [[LABEL]],
-                "LeafNodeLabels": [PROVIDERS[index % 2]],
+                "LeafNodeLabels": [provider_labels[index]],
                 "LeafNodeType": "It",
                 "State": "passed",
                 "NumAttempts": 1,
@@ -42,6 +44,56 @@ class VerifyReportTest(unittest.TestCase):
     def test_accepts_exact_successful_label_count(self):
         self.write(report())
         self.assertEqual(validate_report(self.path, LABEL, 2), 2)
+
+    def test_accepts_odd_external_only_count(self):
+        self.write(report(3, [PROVIDERS[1]] * 3))
+        self.assertEqual(validate_report(self.path, LABEL, 3, provider_mode="external"), 3)
+
+    def test_external_mode_rejects_builtin_or_mixed_provider_labels(self):
+        cases = (
+            (
+                "builtin",
+                [[PROVIDERS[0]]] * 3,
+                "exactly the microsandbox-external",
+            ),
+            (
+                "mixed",
+                [[PROVIDERS[1]], [PROVIDERS[0]], [PROVIDERS[1]]],
+                "exactly the microsandbox-external",
+            ),
+            (
+                "ambiguous",
+                [list(PROVIDERS), [PROVIDERS[1]], [PROVIDERS[1]]],
+                "exactly one provider label",
+            ),
+        )
+        for name, labels, message in cases:
+            data = report(3)
+            for spec, provider_labels in zip(data[0]["SpecReports"], labels):
+                spec["LeafNodeLabels"] = provider_labels
+            self.write(data)
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, message):
+                validate_report(self.path, LABEL, 3, provider_mode="external")
+
+    def test_external_mode_rejects_skipped_or_retried_specs(self):
+        for field, value, message in (
+            ("State", "skipped", "not passed"),
+            ("NumAttempts", 2, "expected one"),
+        ):
+            data = report(3, [PROVIDERS[1]] * 3)
+            data[0]["SpecReports"][1][field] = value
+            self.write(data)
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, message):
+                validate_report(self.path, LABEL, 3, provider_mode="external")
+
+    def test_provider_mode_and_expected_count_are_validated(self):
+        self.write(report(1, [PROVIDERS[1]]))
+        with self.assertRaisesRegex(ValueError, "unsupported provider mode"):
+            validate_report(self.path, LABEL, 1, provider_mode="unknown")
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            validate_report(self.path, LABEL, 0, provider_mode="external")
+        with self.assertRaisesRegex(ValueError, "must be even in parity mode"):
+            validate_report(self.path, LABEL, 1)
 
     def test_rejects_missing_report(self):
         with self.assertRaisesRegex(ValueError, "cannot read"):
@@ -100,8 +152,8 @@ class VerifyReportTest(unittest.TestCase):
 
     def test_rejects_wrong_count(self):
         self.write(report())
-        with self.assertRaisesRegex(ValueError, "expected 3 specs, found 2"):
-            validate_report(self.path, LABEL, 3)
+        with self.assertRaisesRegex(ValueError, "expected 4 specs, found 2"):
+            validate_report(self.path, LABEL, 4)
 
     def test_rejects_missing_provider_coverage(self):
         data = report()

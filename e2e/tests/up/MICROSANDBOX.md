@@ -1,7 +1,7 @@
 # MicroSandbox integration tests
 
-Each capability has a Ginkgo label and scenario file. The built-in and external
-providers run the same contracts. Keep scenario assertions in those files so
+Each capability has a Ginkgo label and scenario file. Parity suites run the same
+contracts against the built-in and external providers. Keep scenario assertions in those files so
 resource, ownership and lifecycle expectations remain visible.
 
 ## Shared setup
@@ -33,8 +33,11 @@ and credentials are configured once in the job definition.
 Each matrix entry names its Ginkgo label and expected scenario count.
 `hack/microsandbox/verify_report.py` requires a real successful run with that
 exact count, split equally between the explicit `microsandbox-builtin` and
-`microsandbox-external` labels. Missing cases, skips, retries, dry runs and
-programmatic focus fail the gate. Reports and test output are retained even when
+`microsandbox-external` labels by default. A contract specific to the published
+provider uses an explicit `provider-mode: external` catalogue entry and requires
+every selected case to carry only the external provider label. Missing cases,
+skips, retries, dry runs and programmatic focus fail the gate. Reports and test
+output are retained even when
 the test command fails.
 
 To add a scenario:
@@ -47,6 +50,29 @@ To add a scenario:
 A new suite needs a catalogue entry only when it has a separate contract or
 isolation requirement. Avoid copying runner setup or adding a job for each
 individual assertion.
+
+## Published-provider registry consumption
+
+The Linux-only `up-provider-microsandbox-registry-consumer` suite exercises the
+production external host's Runtime Protocol `RunImage` path with the installed,
+checksum-verified provider. Its three external-only cases cover an owned TLS
+registry through a restricted CONNECT proxy, refusal without the fixture CA,
+and refusal without registry credentials. A private credential helper records
+the direct parent executable digest and operation identity without recording
+credentials. Successful image responses are checked against their actual body
+digests and byte counts, and the positive case verifies a guest marker.
+
+This contract calls `RunImage` directly because ordinary `up` resolves image
+metadata before invoking the provider. It proves the published provider's image
+consumer; ordinary workspace orchestration and remote agent binary preparation
+have separate contracts. Each case owns fresh runtime state and an immutable
+image reference. Registry seeding finishes before the measured listeners start,
+and fixture shutdown joins active handlers before observations are inspected.
+
+On Linux, the E2E test binary also serves as the private Docker credential helper.
+Its `TestMain` preserves the production runtime-supervisor dispatch and recognizes
+the helper only at its canonical, current-user-owned private path. Other test
+invocations retain the normal test runner path.
 
 ## Managed policy boundary
 

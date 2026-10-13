@@ -358,6 +358,9 @@ jobs:
             expected-spec-count: 4
           - label: up-provider-microsandbox-logs-cancel
             expected-spec-count: 6
+          - label: up-provider-microsandbox-registry-consumer
+            expected-spec-count: 3
+            provider-mode: external
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -392,6 +395,19 @@ jobs:
 
       - name: test Ginkgo report validator
         run: python3 -m unittest discover -s hack/microsandbox -p 'test_*.py'
+
+      - name: setup Go for registry fixture tests
+        if: matrix.label == 'up-provider-microsandbox-registry-consumer'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: test Linux registry fixture
+        if: matrix.label == 'up-provider-microsandbox-registry-consumer'
+        env:
+          GOTOOLCHAIN: local
+        run: go test -race -count=1 -timeout 90s ./e2e/framework/registryfixture
 
       - name: cache microsandbox release bundle (Linux)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -468,7 +484,8 @@ jobs:
           else
             python3 ../hack/microsandbox/verify_report.py \
               --report "$report" --label "${{ matrix.label }}" \
-              --expected-count "${{ matrix.expected-spec-count }}" || report_status=$?
+              --expected-count "${{ matrix.expected-spec-count }}" \
+              --provider-mode "${{ matrix.provider-mode || 'parity' }}" || report_status=$?
           fi
           if [ "$test_status" -ne 0 ]; then
             exit "$test_status"

@@ -56,13 +56,26 @@ def _select_specs(specs, expected_label, expected_count):
     return selected
 
 
-def _validate_selected_specs(selected, expected_count):
+def _validate_expected_count(expected_count, provider_mode):
+    if provider_mode not in ("parity", "external"):
+        raise ValueError(f"unsupported provider mode {provider_mode!r}")
+    if expected_count <= 0:
+        raise ValueError("expected spec count must be positive")
+    if provider_mode == "parity" and expected_count % 2:
+        raise ValueError("expected spec count must be even in parity mode")
+
+
+def _validate_selected_specs(selected, expected_count, provider_mode):
     providers = {"microsandbox-builtin": 0, "microsandbox-external": 0}
     for index, spec in enumerate(selected, start=1):
         spec_labels = _spec_labels(spec)
         provider_labels = spec_labels & providers.keys()
         if len(provider_labels) != 1:
             raise ValueError(f"selected spec {index} must have exactly one provider label")
+        if provider_mode == "external" and provider_labels != {"microsandbox-external"}:
+            raise ValueError(
+                f"selected spec {index} must have exactly the microsandbox-external provider label"
+            )
         providers[next(iter(provider_labels))] += 1
         if spec.get("LeafNodeType") != "It":
             raise ValueError(f"selected report {index} is not an It spec")
@@ -72,17 +85,20 @@ def _validate_selected_specs(selected, expected_count):
             raise ValueError(
                 f"selected spec {index} used {spec.get('NumAttempts')!r} attempts, expected one"
             )
-    if any(count != expected_count // 2 for count in providers.values()):
+    if provider_mode == "parity" and any(
+        count != expected_count // 2 for count in providers.values()
+    ):
         raise ValueError(
             f"provider label counts are {providers}, expected {expected_count // 2} each"
         )
     return len(selected)
 
 
-def validate_report(path, expected_label, expected_count):
+def validate_report(path, expected_label, expected_count, provider_mode="parity"):
+    _validate_expected_count(expected_count, provider_mode)
     specs = _read_suite_specs(path)
     selected = _select_specs(specs, expected_label, expected_count)
-    return _validate_selected_specs(selected, expected_count)
+    return _validate_selected_specs(selected, expected_count, provider_mode)
 
 
 def main(argv=None):
@@ -90,11 +106,14 @@ def main(argv=None):
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--label", required=True)
     parser.add_argument("--expected-count", required=True, type=int)
+    parser.add_argument("--provider-mode", choices=("parity", "external"), default="parity")
     args = parser.parse_args(argv)
-    if args.expected_count <= 0 or args.expected_count % 2:
-        parser.error("--expected-count must be a positive even number")
     try:
-        count = validate_report(args.report, args.label, args.expected_count)
+        _validate_expected_count(args.expected_count, args.provider_mode)
+    except ValueError as exc:
+        parser.error(str(exc))
+    try:
+        count = validate_report(args.report, args.label, args.expected_count, args.provider_mode)
     except ValueError as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
