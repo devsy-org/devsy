@@ -914,7 +914,7 @@ jobs:
           distribution: Ubuntu-24.04
           use-cache: true
 
-      - name: install docker-ce in WSL2 (docker-internal-buildkit)
+      - name: install docker-ce and sshd in WSL2 (docker-internal-buildkit)
         if: matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
         shell: wsl-bash {0}
         timeout-minutes: 10
@@ -922,15 +922,35 @@ jobs:
           set -euo pipefail
           export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update
-          sudo apt-get install -y ca-certificates curl
+          sudo apt-get install -y ca-certificates curl openssh-server
           sudo install -m 0755 -d /etc/apt/keyrings
           sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
             | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
           sudo apt-get update
           sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+          # The Docker API is reachable only through the UNIX socket, never TCP.
           sudo mkdir -p /etc/docker
-          echo '{"hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2375"]}' | sudo tee /etc/docker/daemon.json >/dev/null
+          echo '{"hosts": ["unix:///var/run/docker.sock"]}' | sudo tee /etc/docker/daemon.json >/dev/null
+          # Ephemeral test user: Docker socket access via the docker group, key-only SSH.
+          sudo useradd --create-home --shell /bin/bash --groups docker devsyci
+          sudo usermod --password '*' devsyci
+          sudo install -d -m 0700 -o devsyci -g devsyci /home/devsyci/.ssh
+          sudo mkdir -p /run/sshd
+          sudo ssh-keygen -q -t ed25519 -N '' -f /etc/ssh/devsy_ci_host_ed25519
+          sudo tee /etc/ssh/devsy_ci_sshd_config >/dev/null <<'EOF'
+          Port 2222
+          ListenAddress 0.0.0.0
+          HostKey /etc/ssh/devsy_ci_host_ed25519
+          PidFile /run/devsy-ci-sshd.pid
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication yes
+          PermitRootLogin no
+          AllowUsers devsyci
+          UsePAM no
+          AuthorizedKeysFile .ssh/authorized_keys
+          EOF
 
       - name: start docker daemon in WSL2 (docker-internal-buildkit)
         if: matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
@@ -941,13 +961,13 @@ jobs:
           Start-Process wsl.exe -WindowStyle Hidden -ArgumentList "-d","Ubuntu-24.04","-u","root","--","sh","-c","`"exec /usr/bin/dockerd >/tmp/dockerd.log 2>&1`""
           $ready = $false
           for ($i = 0; $i -lt 90; $i++) {
-            wsl.exe -d Ubuntu-24.04 -u root -- curl -fsS http://127.0.0.1:2375/_ping *> $null
+            wsl.exe -d Ubuntu-24.04 -u root -- docker info *> $null
             if ($LASTEXITCODE -eq 0) { $ready = $true; break }
             Start-Sleep -Seconds 1
           }
           if (-not $ready) {
             wsl.exe -d Ubuntu-24.04 -u root -- sh -c "tail -50 /tmp/dockerd.log; ss -ltnp"
-            throw "dockerd tcp://0.0.0.0:2375 did not become ready in WSL2"
+            throw "dockerd did not become ready on unix:///var/run/docker.sock in WSL2"
           }
           wsl.exe -d Ubuntu-24.04 -u root -- docker info
 
@@ -963,21 +983,96 @@ jobs:
           if ($actual -ne $expected) { throw "SHA256 mismatch for docker CLI zip! Expected: $expected, Got: $actual" }
           Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\docker-cli"
           "$env:RUNNER_TEMP\docker-cli\docker" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
-          $ip = ((wsl.exe -d Ubuntu-24.04 -- hostname -I) -join ' ').Trim().Split(' ')[0]
-          if (-not $ip) { throw "could not determine WSL2 IP" }
-          "DOCKER_HOST=tcp://${ip}:2375" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
-          "WSL_DOCKER_HOST=tcp://${ip}:2375" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          $dockerConfig = "$env:RUNNER_TEMP\docker-config"
+          New-Item -ItemType Directory -Force -Path $dockerConfig | Out-Null
+          "DOCKER_CONFIG=$dockerConfig" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
 
-      - name: verify real docker daemon (docker-internal-buildkit)
+      - name: ssh to WSL2 docker over unix socket (docker-internal-buildkit)
         if: matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
         shell: pwsh
-        timeout-minutes: 2
+        timeout-minutes: 5
         run: |
-          docker version
-          $name = docker info --format '{{.Name}} {{.OperatingSystem}} {{.ServerVersion}}'
-          Write-Host $name
-          if ($name -match 'podman') { throw "daemon is Podman, expected Docker Engine" }
-          if ($name -notmatch 'Ubuntu') { throw "daemon is not docker-ce in WSL2: $name" }
+          $ErrorActionPreference = "Stop"
+          $port = 2222
+          $user = "devsyci"
+          $sshDir = Join-Path $env:USERPROFILE ".ssh"
+          New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+          $key = Join-Path $env:RUNNER_TEMP "devsy_ci_ed25519"
+          Remove-Item -Force -ErrorAction SilentlyContinue $key, "$key.pub"
+          # Private key is generated on the Windows runner and never leaves it.
+          ssh-keygen -q -t ed25519 -N "" -f $key
+          if ($LASTEXITCODE -ne 0) { throw "ssh-keygen failed" }
+          icacls $key /inheritance:r /grant:r "$($env:USERNAME):(R)" | Out-Null
+          $pub = (Get-Content "$key.pub" -Raw).Trim()
+          wsl.exe -d Ubuntu-24.04 -u root -- sh -c "printf '%s\n' '$pub' > /home/$user/.ssh/authorized_keys && chown $user:$user /home/$user/.ssh/authorized_keys && chmod 600 /home/$user/.ssh/authorized_keys"
+          if ($LASTEXITCODE -ne 0) { throw "could not install authorized key" }
+
+          Start-Process wsl.exe -WindowStyle Hidden -ArgumentList "-d","Ubuntu-24.04","-u","root","--","sh","-c","`"exec /usr/sbin/sshd -D -e -f /etc/ssh/devsy_ci_sshd_config >/tmp/sshd.log 2>&1`""
+
+          # Pin the host key read from the WSL server; host key checking stays strict.
+          $hostPub = ((wsl.exe -d Ubuntu-24.04 -u root -- cat /etc/ssh/devsy_ci_host_ed25519.pub) -join '').Trim()
+          if (-not $hostPub) { throw "could not read WSL host key" }
+          $hostKey = ($hostPub -split ' ')[0..1] -join ' '
+          Write-Host "pinned host key: $hostKey"
+
+          # Windows localhost forwarding to WSL2 is not guaranteed; fall back to the VM address.
+          $vmIp = ((wsl.exe -d Ubuntu-24.04 -- hostname -I) -join ' ').Trim().Split(' ')[0]
+          $address = $null
+          foreach ($candidate in @("localhost", $vmIp)) {
+            if (-not $candidate) { continue }
+            for ($i = 0; $i -lt 30 -and -not $address; $i++) {
+              $client = New-Object System.Net.Sockets.TcpClient
+              try {
+                $client.Connect($candidate, $port)
+                $address = $candidate
+              } catch {
+                Start-Sleep -Seconds 1
+              } finally {
+                $client.Dispose()
+              }
+              if ($candidate -eq "localhost" -and $i -ge 4) { break }
+            }
+            if ($address) { break }
+          }
+          if (-not $address) {
+            wsl.exe -d Ubuntu-24.04 -u root -- sh -c "cat /tmp/sshd.log; ss -ltnp"
+            throw "BLOCKED: neither localhost:$port nor the WSL VM address ($vmIp) reaches sshd"
+          }
+          Write-Host "sshd reachable at ${address}:${port}"
+
+          $known = Join-Path $sshDir "known_hosts"
+          Set-Content -Path $known -Value "[${address}]:${port} $hostKey"
+          $config = @(
+            "Host $address",
+            "  HostName $address",
+            "  User $user",
+            "  Port $port",
+            "  IdentityFile $($key -replace '\\','/')",
+            "  IdentitiesOnly yes",
+            "  StrictHostKeyChecking yes",
+            "  UserKnownHostsFile $($known -replace '\\','/')",
+            "  PasswordAuthentication no"
+          )
+          Set-Content -Path (Join-Path $sshDir "config") -Value $config
+
+          $sshHost = "ssh://${user}@${address}:${port}"
+          $wslId = ((wsl.exe -d Ubuntu-24.04 -u root -- docker info --format '{{.ID}}') -join '').Trim()
+          if (-not $wslId) { throw "could not read WSL daemon ID" }
+
+          # Same daemon through SSH from Windows, and nothing reachable without it.
+          $env:DOCKER_CONTEXT = ""
+          $env:DOCKER_HOST = $sshHost
+          $viaSsh = (docker info --format '{{.ID}}').Trim()
+          if ($viaSsh -ne $wslId) { throw "daemon ID via SSH ($viaSsh) != WSL daemon ID ($wslId)" }
+          $env:DOCKER_HOST = "npipe:////./pipe/devsy-ci-no-daemon"
+          docker info *> $null
+          if ($LASTEXITCODE -eq 0) { throw "a Docker daemon is reachable without SSH; the regression oracle would be void" }
+
+          Write-Host "provider endpoint: $sshHost"
+          Write-Host "WSL daemon ID:     $wslId"
+          "DEVSY_E2E_SSH_DOCKER_HOST=$sshHost" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          "DEVSY_E2E_WSL_DAEMON_ID=$wslId" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          "DEVSY_CI_SSH_KEY=$key" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
 
       - name: install podman (Windows)
         if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
@@ -1212,7 +1307,7 @@ jobs:
           PY
 
       - name: run test
-        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
+        if: matrix.label != 'docker-internal-buildkit' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         shell: bash
         working-directory: ./e2e
         env:
@@ -1254,9 +1349,49 @@ jobs:
               GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
-              DOCKER_HOST="${{ matrix.label == 'docker-internal-buildkit' && '${WSL_DOCKER_HOST}' || 'npipe:////./pipe/podman-machine-default' }}" \
+              DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
               ./e2e.test.exe -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
           fi
+
+      - name: run test (docker-internal-buildkit)
+        if: matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
+        shell: bash
+        working-directory: ./e2e
+        env:
+          TEST_TIMEOUT: ${{ matrix.test-timeout || '1500s' }}
+        run: |
+          # The process daemon is deliberately a named pipe with no daemon behind
+          # it (issue #1469); the provider selects the WSL daemon over SSH. The dead
+          # DOCKER_HOST is scoped to this command only.
+          DOCKER_HOST="npipe:////./pipe/devsy-ci-no-daemon" \
+            DOCKER_CONTEXT="" \
+            ./e2e.test.exe -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty --ginkgo.label-filter="docker-internal-buildkit" \
+            --ginkgo.json-report=docker-internal-buildkit-report.json
+
+      - name: assert executed specs (docker-internal-buildkit)
+        if: matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
+        shell: pwsh
+        working-directory: ./e2e
+        run: |
+          $suite = (Get-Content docker-internal-buildkit-report.json -Raw | ConvertFrom-Json)[0]
+          $specs = $suite.SpecReports | Where-Object { $_.LeafNodeType -eq 'It' }
+          $specs | ForEach-Object { Write-Host ("{0,-8} {1}" -f $_.State, $_.LeafNodeText) }
+          $notPassed = @($specs | Where-Object { $_.State -ne 'passed' })
+          if ($specs.Count -lt 4 -or $notPassed.Count -gt 0) {
+            throw "expected 4 passed specs, got $($specs.Count) with $($notPassed.Count) not passed"
+          }
+
+      - name: tear down docker and sshd in WSL2 (docker-internal-buildkit)
+        if: always() && matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          wsl.exe -d Ubuntu-24.04 -u root -- sh -c "pkill -x sshd; pkill -x dockerd; rm -f /home/devsyci/.ssh/authorized_keys; true"
+          if ($env:DEVSY_CI_SSH_KEY) { Remove-Item -Force -ErrorAction SilentlyContinue $env:DEVSY_CI_SSH_KEY, "$($env:DEVSY_CI_SSH_KEY).pub" }
+          Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:USERPROFILE ".ssh\config"), (Join-Path $env:USERPROFILE ".ssh\known_hosts")
+          $listening = @(wsl.exe -d Ubuntu-24.04 -u root -- ss -ltn) + @(netstat -an | Select-String 'LISTENING')
+          $insecure = $listening | Select-String -Pattern ':2375\s'
+          if ($insecure) { throw "unauthenticated Docker TCP listener found: $insecure" }
 
       - name: verify docker is installed
         if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
