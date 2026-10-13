@@ -25,6 +25,15 @@ func absoluteReferenceArchiveBinary(t *testing.T, content []byte) *provider.Prov
 
 func TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget(t *testing.T) {
 	t.Run("unchanged managed target succeeds", testUnchangedManagedAbsoluteReference)
+	t.Run("changed managed target with matching new checksum succeeds", func(t *testing.T) {
+		assertManagedAbsoluteReplacementAccepted(t, false, true)
+	})
+	t.Run("replaced managed symlink with matching new checksum succeeds", func(t *testing.T) {
+		assertManagedAbsoluteReplacementAccepted(t, true, true)
+	})
+	t.Run("new managed target with matching checksum succeeds", func(t *testing.T) {
+		assertManagedAbsoluteReplacementAccepted(t, false, false)
+	})
 
 	t.Run("changed managed target rejects and preserves live state", func(t *testing.T) {
 		assertChangedManagedAbsoluteReferenceRejected(t, false)
@@ -44,6 +53,51 @@ func TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget(t *testing.T) {
 		"outside reference remains untouched while managed tree updates",
 		testOutsideAbsoluteReferenceUnchanged,
 	)
+}
+
+func assertManagedAbsoluteReplacementAccepted(t *testing.T, throughSymlink, seedTarget bool) {
+	t.Helper()
+	f := newPreservationFixture(t)
+	oldContent := []byte("old managed executable")
+	newContent := []byte("new managed executable")
+	if seedTarget {
+		f.seedBinary("B", oldContent)
+	}
+	aliasPath := f.binaryPath("B")
+	aliasKey := absoluteReferenceAliasKey
+	replacementKey := "B"
+	if throughSymlink {
+		requireProviderUpdateSymlinks(t)
+		aliasKey = "REFERENCE"
+		replacementKey = absoluteReferenceAliasKey
+		aliasPath = f.binaryPath(absoluteReferenceAliasKey)
+		require.NoError(t, os.MkdirAll(filepath.Dir(aliasPath), 0o700))
+		require.NoError(t, os.Symlink(filepath.Join("..", "b", updateRuntimeName), aliasPath))
+	}
+	alias := updateTestBinary(aliasPath, newContent)
+	err := f.update(map[string][]*provider.ProviderBinary{
+		aliasKey:       {alias},
+		replacementKey: {absoluteReferenceArchiveBinary(t, newContent)},
+	})
+	require.NoError(t, err)
+	// #nosec G304 -- aliasPath is confined to this fixture's owned provider tree.
+	actual, err := os.ReadFile(aliasPath)
+	require.NoError(t, err)
+	require.Equal(t, newContent, actual)
+	info, err := os.Lstat(aliasPath)
+	require.NoError(t, err)
+	require.True(t, info.Mode().IsRegular())
+	stored, err := provider.LoadProviderConfig(testDefaultContext, f.name)
+	require.NoError(t, err)
+	require.Equal(t, aliasPath, stored.Binaries[aliasKey][0].Path)
+	require.Equal(t, alias.Checksum, stored.Binaries[aliasKey][0].Checksum)
+	if throughSymlink {
+		preserved, readErr := os.ReadFile(f.binaryPath("B"))
+		require.NoError(t, readErr)
+		require.Equal(t, oldContent, preserved)
+	}
+	f.assertAssociation()
+	assertNoUpdateStaging(t, f)
 }
 
 func testUnchangedManagedAbsoluteReference(t *testing.T) {

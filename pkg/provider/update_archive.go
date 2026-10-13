@@ -336,7 +336,8 @@ func materializeUpdateTarEntry(root *os.Root, input io.Reader, header *tar.Heade
 		return materializeUpdateTarSymlink(root, name, header.Linkname)
 	case tar.TypeLink:
 		return materializeUpdateTarLink(root, name, header.Linkname)
-	case tar.TypeReg:
+	case tar.TypeReg, tar.TypeGNUSparse:
+		// archive/tar.Reader expands GNU sparse holes into the logical file stream.
 		return writeConfinedUpdateFile(root, name, input, header.FileInfo().Mode().Perm()|0o600)
 	default:
 		return fmt.Errorf("unsupported update archive entry type %d", header.Typeflag)

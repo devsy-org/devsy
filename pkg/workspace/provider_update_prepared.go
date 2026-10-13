@@ -394,8 +394,9 @@ func validateProviderSeedEntry(root *os.Root, name string, entry fs.DirEntry) er
 	return nil
 }
 
-// Absolute files are user-owned references, not downloader targets. In particular,
-// never call verifyOrRemoveBinary on them when a replacement checksum differs.
+// Absolute locations are references, never downloader targets. Managed references
+// are checked after preparation, which can replace or create their targets.
+// Outside references are checked in place without destructive checksum cleanup.
 func stagedProviderLocations(
 	ctx context.Context,
 	binaries map[string][]*provider.ProviderBinary,
@@ -430,11 +431,8 @@ func stagedProviderLocationReference(
 		if location.OS != runtime.GOOS || location.Arch != runtime.GOARCH {
 			continue
 		}
-		if err := validateProviderUpdateLocation(location); err != nil {
-			return nil, false, err
-		}
 		if !filepath.IsAbs(location.Path) {
-			return nil, false, nil
+			return nil, false, validateProviderUpdateLocation(location)
 		}
 		stagedPath, managed, err := projectManagedAbsoluteReference(location.Path, live, stagedRoot)
 		if err != nil {
@@ -446,7 +444,7 @@ func stagedProviderLocationReference(
 				stagedPath: stagedPath,
 			}, true, nil
 		}
-		return nil, true, nil
+		return nil, true, validateAbsoluteProviderBinary(location)
 	}
 	return nil, false, nil
 }
@@ -542,9 +540,6 @@ func sharesManagedDirectoryAncestor(live, resolvedPath string) (bool, error) {
 }
 
 func validateProviderUpdateLocation(location *provider.ProviderBinary) error {
-	if filepath.IsAbs(location.Path) {
-		return validateAbsoluteProviderBinary(location)
-	}
 	for _, target := range []string{location.Name, location.ArchivePath} {
 		clean := filepath.Clean(target)
 		if filepath.IsAbs(target) || clean == ".." ||
