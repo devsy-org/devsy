@@ -16,21 +16,22 @@ type preparedImage struct {
 }
 
 type sandboxSpec struct {
-	Image       string
-	User        string
-	Entrypoint  string
-	Cmd         []string
-	Memory      uint32
-	CPUs        uint8
-	Env         map[string]string
-	Labels      map[string]string
-	Ephemeral   bool
-	IdleTimeout time.Duration
-	Mounts      []volumeMount
-	MaxMemory   uint32
-	MaxCPUs     uint8
-	BlockEgress bool
-	RootDiskGB  uint32
+	AllowRecreate bool
+	Image         string
+	User          string
+	Entrypoint    string
+	Cmd           []string
+	Memory        uint32
+	CPUs          uint8
+	Env           map[string]string
+	Labels        map[string]string
+	Ephemeral     bool
+	IdleTimeout   time.Duration
+	Mounts        []volumeMount
+	MaxMemory     uint32
+	MaxCPUs       uint8
+	BlockEgress   bool
+	RootDiskGB    uint32
 }
 
 type volumeMount struct {

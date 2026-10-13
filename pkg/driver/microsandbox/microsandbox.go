@@ -93,7 +93,7 @@ func (d *microsandboxDriver) Preflight(ctx context.Context, _ driver.PreflightOp
 }
 
 // CanReprovision returns false: in-place reprovision passes nil options, which
-// a microVM cannot rebuild from. --recreate still works via delete+create.
+// a microVM cannot rebuild from. Explicit recreation uses runtime replacement.
 func (d *microsandboxDriver) CanReprovision() bool {
 	return false
 }
@@ -359,6 +359,11 @@ func (d *microsandboxDriver) runFromOptions(
 	if err := d.ProvisioningPreflight(ctx); err != nil {
 		return err
 	}
+	if options.AllowRecreate {
+		if err := d.recreationPreflight(ctx); err != nil {
+			return err
+		}
+	}
 	prepared, err := d.client.PrepareImage(ctx, options.Image, options.ImageBuilt)
 	if err != nil {
 		return fmt.Errorf("prepare microsandbox final image: %w", err)
@@ -383,12 +388,10 @@ func (d *microsandboxDriver) runFromOptions(
 		)
 	}
 	spec := d.buildSpec(workspaceID, options, hostReqs, owner)
+	spec.AllowRecreate = options.AllowRecreate
 	spec.Image = prepared.reference
 	if err := d.client.PrepareVolumes(ctx, spec.Mounts); err != nil {
 		return fmt.Errorf("prepare microsandbox volumes: %w", err)
-	}
-	if err := d.deleteSandbox(ctx, sandboxName(workspaceID), info); err != nil {
-		return fmt.Errorf("clean stale microsandbox VM before create: %w", err)
 	}
 	if err := d.client.Create(
 		ctx,

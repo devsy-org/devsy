@@ -49,10 +49,13 @@ func serve(mode, state string, delay time.Duration) {
 	fixtureMode := mode
 	if fixtureMode == "blocked" || fixtureMode == "environment" || fixtureMode == "block-info" ||
 		fixtureMode == "env-error" || fixtureMode == "workspace-identity" ||
+		fixtureMode == "recreate-on-run" ||
 		strings.HasPrefix(fixtureMode, "stream-") {
 		fixtureMode = fake.Normal
 	}
-	runtime, err := fake.New(fake.Config{StateDir: state, Mode: fixtureMode})
+	runtime, err := fake.New(fake.Config{
+		StateDir: state, Mode: fixtureMode, RecreateOnRun: mode == "recreate-on-run",
+	})
 	if err != nil {
 		panic(err)
 	}

@@ -36,10 +36,14 @@ func (h *Host) SupportsReusePreflight() bool {
 }
 
 func (h *Host) RecreateMode() driver.RecreateMode {
-	if h.info.Capabilities.RecreateMode == runtimev1.RecreateMode_RECREATE_MODE_DELETE {
+	switch h.info.Capabilities.RecreateMode {
+	case runtimev1.RecreateMode_RECREATE_MODE_DELETE:
 		return driver.RecreateDelete
+	case runtimev1.RecreateMode_RECREATE_MODE_ON_RUN:
+		return driver.RecreateOnRun
+	default:
+		return driver.RecreateStop
 	}
-	return driver.RecreateStop
 }
 
 func mountType(kind string) (runtimev1.MountType, bool) {

@@ -55,6 +55,7 @@ func runImageRequest(
 		User:              options.User,
 		RemoteUser:        options.RemoteUser,
 		Dockerless:        options.Dockerless,
+		AllowRecreate:     options.AllowRecreate,
 		Entrypoint:        options.Entrypoint,
 		Args:              slices.Clone(options.Cmd),
 		Environment:       maps.Clone(options.Env),
