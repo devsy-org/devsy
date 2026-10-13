@@ -107,7 +107,7 @@ func helperInvocation(t *testing.T, mode string, extra ...string) *DockerInvocat
 	return &DockerInvocation{DockerCmd: exe, Env: env}
 }
 
-func (s *StdioTransportSuite) dial(mode string, extra ...string) (*StdioTransport, *stdioConn) {
+func dial(s *StdioTransportSuite, mode string, extra ...string) (*StdioTransport, *stdioConn) {
 	transport := NewStdioTransport(helperInvocation(s.T(), mode, extra...))
 	transport.ShutdownTimeout = shortShutdown
 	conn, err := transport.Dial(context.Background())
@@ -116,7 +116,7 @@ func (s *StdioTransportSuite) dial(mode string, extra ...string) (*StdioTranspor
 	return transport, conn.(*stdioConn)
 }
 
-func (s *StdioTransportSuite) assertTimeout(err error) {
+func assertTimeout(s *StdioTransportSuite, err error) {
 	s.Require().Error(err)
 	s.ErrorIs(err, os.ErrDeadlineExceeded)
 	var netErr net.Error
@@ -131,7 +131,7 @@ func openConns(t *StdioTransport) int {
 }
 
 func (s *StdioTransportSuite) TestRoundTripAndHalfClose() {
-	_, conn := s.dial("echo")
+	_, conn := dial(s, "echo")
 
 	_, err := conn.Write([]byte("ping"))
 	s.Require().NoError(err)
@@ -146,7 +146,7 @@ func (s *StdioTransportSuite) TestRoundTripAndHalfClose() {
 }
 
 func (s *StdioTransportSuite) TestCloseWriteStillDrainsFinalResponse() {
-	_, conn := s.dial("echo")
+	_, conn := dial(s, "echo")
 
 	_, err := conn.Write([]byte("last words"))
 	s.Require().NoError(err)
@@ -161,7 +161,7 @@ func (s *StdioTransportSuite) TestCloseWriteStillDrainsFinalResponse() {
 }
 
 func (s *StdioTransportSuite) TestStreamsMoreThanOnePipeBuffer() {
-	_, conn := s.dial("echo")
+	_, conn := dial(s, "echo")
 	payload := bytes.Repeat([]byte("0123456789abcdef"), 1<<18) // 4 MiB
 
 	var wg sync.WaitGroup
@@ -181,11 +181,11 @@ func (s *StdioTransportSuite) TestStreamsMoreThanOnePipeBuffer() {
 }
 
 func (s *StdioTransportSuite) TestReadDeadlineExpiresAndCanBeReset() {
-	_, conn := s.dial("echo")
+	_, conn := dial(s, "echo")
 
 	s.Require().NoError(conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond)))
 	_, err := conn.Read(make([]byte, 1))
-	s.assertTimeout(err)
+	assertTimeout(s, err)
 
 	s.Require().NoError(conn.SetReadDeadline(time.Time{}))
 	_, err = conn.Write([]byte("x"))
@@ -196,35 +196,35 @@ func (s *StdioTransportSuite) TestReadDeadlineExpiresAndCanBeReset() {
 }
 
 func (s *StdioTransportSuite) TestWriteDeadlineExpiresWhenChildStopsReading() {
-	_, conn := s.dial("hang")
+	_, conn := dial(s, "hang")
 
 	s.Require().NoError(conn.SetWriteDeadline(time.Now().Add(100 * time.Millisecond)))
 	_, err := conn.Write(bytes.Repeat([]byte("x"), 16<<20))
-	s.assertTimeout(err)
+	assertTimeout(s, err)
 }
 
 func (s *StdioTransportSuite) TestCombinedDeadlineCoversBothDirections() {
-	_, conn := s.dial("hang")
+	_, conn := dial(s, "hang")
 	s.Require().NoError(conn.SetDeadline(time.Now().Add(100 * time.Millisecond)))
 
 	_, err := conn.Read(make([]byte, 1))
-	s.assertTimeout(err)
+	assertTimeout(s, err)
 	_, err = conn.Write(bytes.Repeat([]byte("x"), 16<<20))
-	s.assertTimeout(err)
+	assertTimeout(s, err)
 }
 
 func (s *StdioTransportSuite) TestReadAndWriteDeadlinesAreIndependent() {
-	_, conn := s.dial("echo")
+	_, conn := dial(s, "echo")
 	s.Require().NoError(conn.SetReadDeadline(time.Now().Add(-time.Second)))
 
 	_, err := conn.Write([]byte("still writable"))
 	s.Require().NoError(err)
 	_, err = conn.Read(make([]byte, 1))
-	s.assertTimeout(err)
+	assertTimeout(s, err)
 }
 
 func (s *StdioTransportSuite) TestCloseUnblocksBlockedReadAndWrite() {
-	_, conn := s.dial("hang")
+	_, conn := dial(s, "hang")
 
 	readDone := make(chan error, 1)
 	writeDone := make(chan error, 1)
@@ -251,7 +251,7 @@ func (s *StdioTransportSuite) TestCloseUnblocksBlockedReadAndWrite() {
 }
 
 func (s *StdioTransportSuite) TestConcurrentCloseIsSafe() {
-	_, conn := s.dial("echo")
+	_, conn := dial(s, "echo")
 
 	var wg sync.WaitGroup
 	for range 8 {
@@ -264,7 +264,7 @@ func (s *StdioTransportSuite) TestConcurrentCloseIsSafe() {
 }
 
 func (s *StdioTransportSuite) TestStdoutEOFFromLiveChildCannotBlockRead() {
-	transport, conn := s.dial("lingering")
+	transport, conn := dial(s, "lingering")
 
 	start := time.Now()
 	_, err := conn.Read(make([]byte, 1))
@@ -281,7 +281,7 @@ func (s *StdioTransportSuite) TestStdoutEOFFromLiveChildCannotBlockRead() {
 }
 
 func (s *StdioTransportSuite) TestSubprocessFailureSurfacesStderr() {
-	_, conn := s.dial("fail")
+	_, conn := dial(s, "fail")
 
 	_, err := conn.Read(make([]byte, 1))
 	s.Require().Error(err)
@@ -290,7 +290,7 @@ func (s *StdioTransportSuite) TestSubprocessFailureSurfacesStderr() {
 }
 
 func (s *StdioTransportSuite) TestStderrTailIsRedacted() {
-	_, conn := s.dial("fail-secret", "DOCKER_PASSWORD=hunter2-token")
+	_, conn := dial(s, "fail-secret", "DOCKER_PASSWORD=hunter2-token")
 
 	_, err := conn.Read(make([]byte, 1))
 	s.Require().Error(err)
@@ -317,7 +317,7 @@ func (s *StdioTransportSuite) TestCancelledContextDoesNotStartProcess() {
 }
 
 func (s *StdioTransportSuite) TestCloseKillsUnresponsiveSubprocess() {
-	transport, conn := s.dial("hang")
+	transport, conn := dial(s, "hang")
 
 	start := time.Now()
 	s.Require().NoError(conn.Close())
@@ -360,7 +360,7 @@ func (s *StdioTransportSuite) TestDialedConnOutlivesDialContext() {
 }
 
 func (s *StdioTransportSuite) TestTransportCloseReleasesOwnedConnections() {
-	transport, conn := s.dial("echo")
+	transport, conn := dial(s, "echo")
 
 	s.Require().NoError(transport.Close())
 	_, err := conn.Read(make([]byte, 1))
@@ -368,7 +368,7 @@ func (s *StdioTransportSuite) TestTransportCloseReleasesOwnedConnections() {
 	s.Zero(openConns(transport))
 }
 
-func (s *StdioTransportSuite) newDaemonClient() *Client {
+func newDaemonClient(s *StdioTransportSuite) *Client {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	client, err := NewClientWithInvocation(
@@ -384,7 +384,7 @@ func (s *StdioTransportSuite) newDaemonClient() *Client {
 func (s *StdioTransportSuite) TestClientPingsAndUsesInvocationEnv() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	client := s.newDaemonClient()
+	client := newDaemonClient(s)
 
 	_, err := client.Ping(ctx)
 	s.Require().NoError(err)
@@ -399,7 +399,7 @@ func (s *StdioTransportSuite) TestClientRejectsEmptyInvocation() {
 	s.Error(err)
 }
 
-func (s *StdioTransportSuite) echoThrough(conn net.Conn, msg string) {
+func echoThrough(s *StdioTransportSuite, conn net.Conn, msg string) {
 	_, err := conn.Write([]byte(msg))
 	s.Require().NoError(err)
 	buf := make([]byte, len(msg))
@@ -409,12 +409,12 @@ func (s *StdioTransportSuite) echoThrough(conn net.Conn, msg string) {
 }
 
 func (s *StdioTransportSuite) TestCancelledUpgradeReturnsPromptlyWithoutDisturbingOthers() {
-	client := s.newDaemonClient()
+	client := newDaemonClient(s)
 
 	healthy, err := client.DialHijack(context.Background(), "/session", "tcp", nil)
 	s.Require().NoError(err)
 	defer func() { _ = healthy.Close() }()
-	s.echoThrough(healthy, "before")
+	echoThrough(s, healthy, "before")
 	baseline := openConns(client.stdio)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -425,13 +425,13 @@ func (s *StdioTransportSuite) TestCancelledUpgradeReturnsPromptlyWithoutDisturbi
 	s.ErrorIs(err, context.Canceled)
 	s.Less(time.Since(start), boundedInterval)
 
-	s.echoThrough(healthy, "after")
+	echoThrough(s, healthy, "after")
 	s.Eventually(func() bool { return openConns(client.stdio) == baseline },
 		boundedInterval, 25*time.Millisecond, "aborted attempt's child must be cleaned up")
 }
 
 func (s *StdioTransportSuite) TestCancelBeforeUpgradeStartsDoesNotSpawn() {
-	client := s.newDaemonClient()
+	client := newDaemonClient(s)
 	before := openConns(client.stdio)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -442,7 +442,7 @@ func (s *StdioTransportSuite) TestCancelBeforeUpgradeStartsDoesNotSpawn() {
 }
 
 func (s *StdioTransportSuite) TestCancelAfterSuccessfulUpgradeKeepsConnection() {
-	client := s.newDaemonClient()
+	client := newDaemonClient(s)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	conn, err := client.DialHijack(ctx, "/session", "tcp", nil)
@@ -451,15 +451,15 @@ func (s *StdioTransportSuite) TestCancelAfterSuccessfulUpgradeKeepsConnection() 
 
 	cancel()
 	time.Sleep(100 * time.Millisecond)
-	s.echoThrough(conn, "still alive")
+	echoThrough(s, conn, "still alive")
 }
 
 func (s *StdioTransportSuite) TestClientCloseReleasesHijackedConnections() {
-	client := s.newDaemonClient()
+	client := newDaemonClient(s)
 
 	conn, err := client.DialHijack(context.Background(), "/session", "tcp", nil)
 	s.Require().NoError(err)
-	s.echoThrough(conn, "hi")
+	echoThrough(s, conn, "hi")
 
 	s.Require().NoError(client.Close())
 	_, err = conn.Read(make([]byte, 1))

@@ -43,6 +43,44 @@ func (t *StdioTransport) Dial(ctx context.Context) (net.Conn, error) {
 		return nil, fmt.Errorf("dial docker stdio: %w", err)
 	}
 
+	conn, err := t.spawn()
+	if err != nil {
+		return nil, err
+	}
+	conn.onClose = func() { t.untrack(conn) }
+	t.track(conn)
+
+	if attempt, ok := ctx.Value(hijackAttemptKey{}).(*hijackAttempt); ok &&
+		!attempt.register(conn) {
+		_ = conn.Close()
+		return nil, fmt.Errorf("dial docker stdio: %w", context.Cause(ctx))
+	}
+	return conn, nil
+}
+
+func (t *StdioTransport) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+	return t.Dial(ctx)
+}
+
+// Close tears down every connection still owned by the transport.
+func (t *StdioTransport) Close() error {
+	t.mu.Lock()
+	conns := make([]*stdioConn, 0, len(t.conns))
+	for c := range t.conns {
+		conns = append(conns, c)
+	}
+	t.mu.Unlock()
+
+	errs := make([]error, len(conns))
+	var wg sync.WaitGroup
+	for i, c := range conns {
+		wg.Go(func() { errs[i] = c.Close() })
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+func (t *StdioTransport) spawn() (*stdioConn, error) {
 	shutdownTimeout := t.ShutdownTimeout
 	if shutdownTimeout <= 0 {
 		shutdownTimeout = defaultShutdownTimeout
@@ -74,42 +112,14 @@ func (t *StdioTransport) Dial(ctx context.Context) (net.Conn, error) {
 		)
 	}
 
-	conn := newStdioConn(cmd, stdin, stdout, stderr, shutdownTimeout, t.Invocation.secretValues())
-	conn.onClose = func() { t.untrack(conn) }
-	t.track(conn)
-
-	if attempt, ok := ctx.Value(hijackAttemptKey{}).(*hijackAttempt); ok &&
-		!attempt.register(conn) {
-		_ = conn.Close()
-		return nil, fmt.Errorf("dial docker stdio: %w", context.Cause(ctx))
-	}
-	return conn, nil
-}
-
-func (t *StdioTransport) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
-	return t.Dial(ctx)
-}
-
-// Close tears down every connection still owned by the transport.
-func (t *StdioTransport) Close() error {
-	t.mu.Lock()
-	conns := make([]*stdioConn, 0, len(t.conns))
-	for c := range t.conns {
-		conns = append(conns, c)
-	}
-	t.mu.Unlock()
-
-	errs := make([]error, len(conns))
-	var wg sync.WaitGroup
-	for i, c := range conns {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs[i] = c.Close()
-		}()
-	}
-	wg.Wait()
-	return errors.Join(errs...)
+	return newStdioConn(stdioProc{
+		cmd:             cmd,
+		stdin:           stdin,
+		stdout:          stdout,
+		stderr:          stderr,
+		shutdownTimeout: shutdownTimeout,
+		redact:          t.Invocation.secretValues(),
+	}), nil
 }
 
 func (t *StdioTransport) track(c *stdioConn) {
@@ -173,22 +183,24 @@ type stdioConn struct {
 
 var _ net.Conn = (*stdioConn)(nil)
 
-func newStdioConn(
-	cmd *exec.Cmd,
-	stdin io.WriteCloser,
-	stdout io.ReadCloser,
-	stderr *tailBuffer,
-	shutdownTimeout time.Duration,
-	redact []string,
-) *stdioConn {
+type stdioProc struct {
+	cmd             *exec.Cmd
+	stdin           io.WriteCloser
+	stdout          io.ReadCloser
+	stderr          *tailBuffer
+	shutdownTimeout time.Duration
+	redact          []string
+}
+
+func newStdioConn(p stdioProc) *stdioConn {
 	c := &stdioConn{
-		cmd:             cmd,
-		tree:            attachProcessTree(cmd),
-		stdin:           stdin,
-		stdout:          stdout,
-		stderr:          stderr,
-		shutdownTimeout: shutdownTimeout,
-		redact:          redact,
+		cmd:             p.cmd,
+		tree:            attachProcessTree(p.cmd),
+		stdin:           p.stdin,
+		stdout:          p.stdout,
+		stderr:          p.stderr,
+		redact:          p.redact,
+		shutdownTimeout: p.shutdownTimeout,
 		stdoutDone:      make(chan struct{}),
 		exited:          make(chan struct{}),
 	}
@@ -200,6 +212,54 @@ func newStdioConn(
 	go c.reap()
 	return c
 }
+
+func (c *stdioConn) Read(p []byte) (int, error) {
+	n, err := c.appRead.Read(p)
+	switch {
+	case err == nil:
+		return n, nil
+	case c.closed.Load() && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe)):
+		return n, net.ErrClosed
+	case errors.Is(err, io.EOF):
+		if c.waitExited(min(c.shutdownTimeout, exitDiagnosticWait)) && c.waitErr != nil {
+			return n, c.waitErr
+		}
+	}
+	return n, err
+}
+
+func (c *stdioConn) Write(p []byte) (int, error) {
+	n, err := c.appWrite.Write(p)
+	if err != nil && c.closed.Load() && errors.Is(err, io.ErrClosedPipe) {
+		return n, net.ErrClosed
+	}
+	return n, err
+}
+
+func (c *stdioConn) CloseWrite() error {
+	c.closeWriteOnce.Do(func() { c.closeWriteErr = c.appWrite.Close() })
+	return c.closeWriteErr
+}
+
+func (c *stdioConn) Close() error {
+	c.closeOnce.Do(func() {
+		c.closeErr = c.shutdown()
+		if c.onClose != nil {
+			c.onClose()
+		}
+	})
+	return c.closeErr
+}
+
+func (c *stdioConn) LocalAddr() net.Addr  { return stdioAddr{} }
+func (c *stdioConn) RemoteAddr() net.Addr { return stdioAddr{} }
+
+func (c *stdioConn) SetDeadline(t time.Time) error {
+	return errors.Join(c.appRead.SetReadDeadline(t), c.appWrite.SetWriteDeadline(t))
+}
+
+func (c *stdioConn) SetReadDeadline(t time.Time) error  { return c.appRead.SetReadDeadline(t) }
+func (c *stdioConn) SetWriteDeadline(t time.Time) error { return c.appWrite.SetWriteDeadline(t) }
 
 func (c *stdioConn) pumpStdout() {
 	defer close(c.stdoutDone)
@@ -257,44 +317,6 @@ func (c *stdioConn) waitExited(d time.Duration) bool {
 	}
 }
 
-func (c *stdioConn) Read(p []byte) (int, error) {
-	n, err := c.appRead.Read(p)
-	switch {
-	case err == nil:
-		return n, nil
-	case c.closed.Load() && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe)):
-		return n, net.ErrClosed
-	case errors.Is(err, io.EOF):
-		if c.waitExited(min(c.shutdownTimeout, exitDiagnosticWait)) && c.waitErr != nil {
-			return n, c.waitErr
-		}
-	}
-	return n, err
-}
-
-func (c *stdioConn) Write(p []byte) (int, error) {
-	n, err := c.appWrite.Write(p)
-	if err != nil && c.closed.Load() && errors.Is(err, io.ErrClosedPipe) {
-		return n, net.ErrClosed
-	}
-	return n, err
-}
-
-func (c *stdioConn) CloseWrite() error {
-	c.closeWriteOnce.Do(func() { c.closeWriteErr = c.appWrite.Close() })
-	return c.closeWriteErr
-}
-
-func (c *stdioConn) Close() error {
-	c.closeOnce.Do(func() {
-		c.closeErr = c.shutdown()
-		if c.onClose != nil {
-			c.onClose()
-		}
-	})
-	return c.closeErr
-}
-
 // shutdown unblocks all caller I/O immediately, gives the child a bounded
 // chance to exit on stdin EOF, then kills the owned process tree.
 func (c *stdioConn) shutdown() error {
@@ -320,16 +342,6 @@ func (c *stdioConn) shutdown() error {
 		killErr,
 	)
 }
-
-func (c *stdioConn) LocalAddr() net.Addr  { return stdioAddr{} }
-func (c *stdioConn) RemoteAddr() net.Addr { return stdioAddr{} }
-
-func (c *stdioConn) SetDeadline(t time.Time) error {
-	return errors.Join(c.appRead.SetReadDeadline(t), c.appWrite.SetWriteDeadline(t))
-}
-
-func (c *stdioConn) SetReadDeadline(t time.Time) error  { return c.appRead.SetReadDeadline(t) }
-func (c *stdioConn) SetWriteDeadline(t time.Time) error { return c.appWrite.SetWriteDeadline(t) }
 
 type stdioAddr struct{}
 
