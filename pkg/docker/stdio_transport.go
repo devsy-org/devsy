@@ -18,7 +18,7 @@ const (
 )
 
 type StdioTransport struct {
-	Invocation *DockerInvocation
+	Invocation      *DockerInvocation
 	ShutdownTimeout time.Duration
 }
 
