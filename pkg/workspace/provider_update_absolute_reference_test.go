@@ -150,6 +150,7 @@ func assertChangedManagedAbsoluteReferenceRejected(t *testing.T, throughSymlink 
 	aliasKey := absoluteReferenceAliasKey
 	replacementKey := "B"
 	if throughSymlink {
+		requireProviderUpdateSymlinks(t)
 		aliasKey = "REFERENCE"
 		replacementKey = absoluteReferenceAliasKey
 		aliasPath = f.binaryPath(absoluteReferenceAliasKey)
