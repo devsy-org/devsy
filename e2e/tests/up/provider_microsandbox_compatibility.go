@@ -392,6 +392,7 @@ func assertNoCompatibilityMutation(calls []compatibilityMSBCall) {
 			"run",
 			"start",
 			"stop",
+			"load",
 			compatibilityRemoveCommand,
 			compatibilityDeleteCommand,
 			"modify",
