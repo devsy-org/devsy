@@ -234,7 +234,7 @@ jobs:
         if: matrix.runner == 'ubuntu-latest' || matrix.runner == 'windows-latest'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: e2e-test-linux
+          name: e2e-test-${{ steps.os.outputs.runner_os }}
           path: ./e2e/e2e.test*
 
 
