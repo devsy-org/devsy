@@ -2,7 +2,9 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -12,6 +14,8 @@ import (
 // Client is a client for docker.
 type Client struct {
 	dockerclient.CommonAPIClient
+
+	stdio *StdioTransport
 }
 
 // NewClient creates a new docker client.
@@ -37,11 +41,10 @@ func NewClientWithInvocation(ctx context.Context, invocation *DockerInvocation) 
 	}
 
 	// Host is unused: every connection goes through the stdio dialer.
+	transport := NewStdioTransport(invocation)
 	cli, err := dockerclient.NewClientWithOpts(
 		dockerclient.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				DialContext: NewStdioTransport(invocation).DialContext,
-			},
+			Transport: &http.Transport{DialContext: transport.DialContext},
 		}),
 	)
 	if err != nil {
@@ -49,7 +52,50 @@ func NewClientWithInvocation(ctx context.Context, invocation *DockerInvocation) 
 	}
 
 	cli.NegotiateAPIVersion(ctx)
-	return &Client{CommonAPIClient: cli}, nil
+	return &Client{CommonAPIClient: cli, stdio: transport}, nil
+}
+
+// DialHijack aborts only its own pending upgrade when ctx is cancelled; once the
+// upgrade succeeds the connection is no longer tied to ctx.
+func (c *Client) DialHijack(
+	ctx context.Context,
+	url, proto string,
+	meta map[string][]string,
+) (net.Conn, error) {
+	if c.stdio == nil {
+		return c.CommonAPIClient.DialHijack(ctx, url, proto, meta)
+	}
+
+	attempt := &hijackAttempt{}
+	negotiated := make(chan struct{})
+	defer close(negotiated)
+	go func() {
+		select {
+		case <-ctx.Done():
+			attempt.abort()
+		case <-negotiated:
+		}
+	}()
+
+	conn, err := c.CommonAPIClient.DialHijack(
+		context.WithValue(ctx, hijackAttemptKey{}, attempt), url, proto, meta,
+	)
+	if attempt.finish() {
+		if conn != nil {
+			_ = conn.Close()
+		}
+		return nil, fmt.Errorf("docker hijack %s aborted: %w", url, context.Cause(ctx))
+	}
+	return conn, err
+}
+
+// Close releases the SDK client and every dial-stdio process it still owns.
+func (c *Client) Close() error {
+	err := c.CommonAPIClient.Close()
+	if c.stdio != nil {
+		err = errors.Join(err, c.stdio.Close())
+	}
+	return err
 }
 
 func newDockerClient() (*Client, error) {
