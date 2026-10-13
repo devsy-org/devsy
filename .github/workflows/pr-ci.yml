@@ -160,7 +160,7 @@ jobs:
           Set-Content -LiteralPath $exitPath -Value $testExitCode -NoNewline
 
           if ($testExitCode -ne 0) {
-            Write-Error "Provider update tests failed with exit code $testExitCode"
+            Write-Host "::error::Provider update tests failed with exit code $testExitCode"
             exit $testExitCode
           }
 
@@ -191,17 +191,17 @@ jobs:
           foreach ($testName in $criticalTests) {
             $testEvents = @($events | Where-Object { $_.Test -eq $testName })
             if ($testEvents.Count -eq 0) {
-              Write-Error "Required Windows provider update test produced no JSON events: $testName"
+              Write-Host "::error::Required Windows provider update test produced no JSON events: $testName"
               $status = 1
               continue
             }
             if (@($testEvents | Where-Object { $_.Action -eq 'skip' }).Count -gt 0) {
-              Write-Error "Required Windows provider update test was skipped: $testName"
+              Write-Host "::error::Required Windows provider update test was skipped: $testName"
               $status = 1
               continue
             }
             if (@($testEvents | Where-Object { $_.Action -eq 'pass' }).Count -eq 0) {
-              Write-Error "Required Windows provider update test did not pass: $testName"
+              Write-Host "::error::Required Windows provider update test did not pass: $testName"
               $status = 1
             }
           }
