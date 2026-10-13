@@ -153,8 +153,14 @@ The `up-provider-microsandbox-logs-cancel` label checks completed stdout/stderr 
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-logs-cancel
 ```
 
+The `up-provider-microsandbox-compatibility` label checks preservation of a running workspace when a test-owned shim returns old, malformed, or failing version responses. It then restores the supported CLI and requires explicit recreation to succeed. The shim injects version-command faults while retaining a real supported VM; it does not emulate an actual historical MicroSandbox release. External-provider discovery may report a version-command failure earlier than the built-in runtime. These cases run on native Linux and macOS, not Windows.
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-compatibility
+```
+
 For built-in Exec, cancellation closes non-file `io.ReadCloser` input whose `Close` unblocks `Read`; ordinary completion and caller-owned file input retain their ownership. Agent binary delivery owns its acquired source and closes it when the individual transfer attempt is canceled, before retrying with a fresh source. Cleanup joins cancellation callbacks before returning.
 
-These scenarios do not establish complete parity. Runtime compatibility failures still require coverage before replacing the built-in provider. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, Dockerless, request-invalid and managed-policy recreation, logs, and cancellation checks alone do not authorize that cutover. Dockerless refusal checks cover fresh creation, not preservation after an invalid recreation request. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
+These scenarios do not establish complete parity. Compatibility shims verify preservation under injected version faults but do not establish behavior against an actual historical MicroSandbox release. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, Dockerless, request-invalid and managed-policy recreation, logs, and cancellation checks alone do not authorize that cutover. Dockerless refusal checks cover fresh creation, not preservation after an invalid recreation request. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
 
 Prebuild invalidation coverage changes the Dockerfile; it does not independently establish hashing of local Feature script contents.

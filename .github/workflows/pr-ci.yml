@@ -444,6 +444,8 @@ jobs:
             expected-spec-count: 4
           - label: up-provider-microsandbox-logs-cancel
             expected-spec-count: 6
+          - label: up-provider-microsandbox-compatibility
+            expected-spec-count: 2
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
