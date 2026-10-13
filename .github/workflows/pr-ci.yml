@@ -937,14 +937,18 @@ jobs:
         shell: pwsh
         timeout-minutes: 3
         run: |
-          Start-Process wsl.exe -WindowStyle Hidden -ArgumentList "-d","Ubuntu-24.04","-u","root","--","/usr/bin/dockerd"
+          wsl.exe -d Ubuntu-24.04 -u root -- sh -c "systemctl stop docker.service docker.socket 2>/dev/null; pkill -x dockerd; rm -f /var/run/docker.sock /var/run/docker.pid; true"
+          Start-Process wsl.exe -WindowStyle Hidden -ArgumentList "-d","Ubuntu-24.04","-u","root","--","sh","-c","`"exec /usr/bin/dockerd >/tmp/dockerd.log 2>&1`""
           $ready = $false
           for ($i = 0; $i -lt 90; $i++) {
-            wsl.exe -d Ubuntu-24.04 -u root -- docker info *> $null
+            wsl.exe -d Ubuntu-24.04 -u root -- curl -fsS http://127.0.0.1:2375/_ping *> $null
             if ($LASTEXITCODE -eq 0) { $ready = $true; break }
             Start-Sleep -Seconds 1
           }
-          if (-not $ready) { throw "dockerd did not become ready in WSL2" }
+          if (-not $ready) {
+            wsl.exe -d Ubuntu-24.04 -u root -- sh -c "tail -50 /tmp/dockerd.log; ss -ltnp"
+            throw "dockerd tcp://0.0.0.0:2375 did not become ready in WSL2"
+          }
           wsl.exe -d Ubuntu-24.04 -u root -- docker info
 
       - name: install docker CLI on Windows host (docker-internal-buildkit)
