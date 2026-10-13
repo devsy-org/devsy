@@ -950,7 +950,10 @@ jobs:
           if ($actual -ne $expected) { throw "SHA256 mismatch for docker CLI zip! Expected: $expected, Got: $actual" }
           Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\docker-cli"
           "$env:RUNNER_TEMP\docker-cli\docker" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
-          "DOCKER_HOST=tcp://127.0.0.1:2375" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          $ip = ((wsl.exe -d Ubuntu-24.04 -- hostname -I) -join ' ').Trim().Split(' ')[0]
+          if (-not $ip) { throw "could not determine WSL2 IP" }
+          "DOCKER_HOST=tcp://${ip}:2375" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          "WSL_DOCKER_HOST=tcp://${ip}:2375" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
 
       - name: verify real docker daemon (docker-internal-buildkit)
         if: matrix.label == 'docker-internal-buildkit' && runner.os == 'Windows'
@@ -1238,7 +1241,7 @@ jobs:
               GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
               KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
               PATH="${PATH}" \
-              DOCKER_HOST="${{ matrix.label == 'docker-internal-buildkit' && 'tcp://127.0.0.1:2375' || 'npipe:////./pipe/podman-machine-default' }}" \
+              DOCKER_HOST="${{ matrix.label == 'docker-internal-buildkit' && '${WSL_DOCKER_HOST}' || 'npipe:////./pipe/podman-machine-default' }}" \
               ./e2e.test.exe -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
           fi
 

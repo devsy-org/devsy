@@ -49,6 +49,14 @@ func serveFakeDaemon() {
 			body = string(data)
 			header = "Content-Type: application/json\r\n"
 		}
+		if req.Method == http.MethodHead {
+			_, _ = fmt.Fprintf(
+				os.Stdout,
+				"HTTP/1.1 200 OK\r\nApi-Version: 1.41\r\n%sContent-Length: %d\r\n\r\n",
+				header, len(body),
+			)
+			continue
+		}
 		_, _ = fmt.Fprintf(
 			os.Stdout,
 			"HTTP/1.1 200 OK\r\nApi-Version: 1.41\r\n%sContent-Length: %d\r\n\r\n%s",
