@@ -153,6 +153,8 @@ func (cliClient) Remove(ctx context.Context, sandbox string) error {
 
 // Exec uses --stream (byte-faithful stdio, no PTY) because the agent binary
 // injection and the SSH-over-stdio tunnel require it; a PTY stalls the tunnel.
+// Cancellation closes non-file ReadCloser input; Close must unblock Read.
+// File input and input after normal completion remain caller-owned.
 func (cliClient) Exec(ctx context.Context, sandbox string, req execRequest) error {
 	args := []string{"exec", "--stream"}
 	if req.User != "" {
@@ -169,7 +171,27 @@ func (cliClient) Exec(ctx context.Context, sandbox string, req execRequest) erro
 	cmd.Stdin = req.Stdin
 	cmd.Stdout = req.Stdout
 	cmd.Stderr = req.Stderr
-	return cmd.Run()
+	input, closable := req.Stdin.(io.ReadCloser)
+	_, file := req.Stdin.(*os.File)
+	if !closable || file {
+		return cmd.Run()
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// Non-file input is delegated for cancellation only. Keep the callback
+	// alive while Wait drains stdin, even if the child has already exited.
+	closed := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = input.Close()
+		close(closed)
+	})
+	defer func() {
+		if !stop() {
+			<-closed
+		}
+	}()
+	return cmd.Wait()
 }
 
 func (cliClient) Logs(ctx context.Context, sandbox string, w io.Writer) error {
