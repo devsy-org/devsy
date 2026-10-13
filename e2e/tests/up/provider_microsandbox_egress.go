@@ -41,11 +41,8 @@ type microsandboxEgressEndpoint struct {
 
 var _ = ginkgo.Describe("microsandbox egress parity",
 	ginkgo.Label("up-provider-microsandbox-egress"), func() {
-		for _, provider := range []struct{ name, source string }{
-			{"builtin-egress", microsandboxResourceBuiltin},
-			{"external-egress", microsandboxExternalProvider},
-		} {
-			ginkgo.Context(provider.name, func() {
+		for _, provider := range microsandboxProviders("builtin-egress", "external-egress") {
+			ginkgo.Context(provider.name, ginkgo.Label(provider.label), func() {
 				var f *framework.Framework
 				var workspace, initialDir string
 				var endpoint *microsandboxEgressEndpoint

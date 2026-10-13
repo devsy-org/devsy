@@ -64,55 +64,35 @@ var _ = ginkgo.Describe("MicroSandbox managed-policy rejected replacement",
 				framework.ExpectNoError(fixture.framework.DevsyUpRecreate(
 					ctx, append([]string{fixture.workspace}, fixture.upArgs()...)...,
 				))
-				after := inspectSafeRecreate(ctx, fixture.sandbox)
-				gomega.Expect(after.Status).To(gomega.Equal("Running"))
-				gomega.Expect(after.CreatedAt).NotTo(gomega.Equal(fixture.original.CreatedAt))
-				gomega.Expect(microsandboxStorageBootID(ctx, fixture.framework, fixture.workspace)).
-					NotTo(gomega.Equal(fixture.bootID))
-				out, err = safeRecreateExec(ctx, fixture.sandbox, "sh", "-c",
-					`test ! -e "$1"`, "sh", safeRecreateRootPath)
-				framework.ExpectNoError(err, string(out))
-				fixture.assertPersistentMounts(ctx)
-				fixture.assertHostState(ctx)
-				expected := microsandboxResources{
-					CPUs: 1, MemoryMiB: 2048, MaxCPUs: 1, MaxMemoryMiB: 2048,
-				}
-				gomega.Expect(microsandboxActiveResources(ctx, fixture.sandbox)).
-					To(gomega.Equal(expected))
-				assertMicrosandboxGuestResources(
-					ctx,
-					fixture.framework,
-					fixture.workspace,
-					expected,
-				)
+				fixture.assertReplacement(ctx, 2048)
 			},
 			ginkgo.Entry(
 				"builtin running",
 				microsandboxResourceBuiltin,
-				"safe-recreate-managed-builtin-running",
+				"msb-managed-builtin-running",
 				false,
-				ginkgo.SpecTimeout(framework.TimeoutLong()),
+				ginkgo.Label("microsandbox-builtin"), ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 			ginkgo.Entry(
 				"builtin stopped",
 				microsandboxResourceBuiltin,
-				"safe-recreate-managed-builtin-stopped",
+				"msb-managed-builtin-stopped",
 				true,
-				ginkgo.SpecTimeout(framework.TimeoutLong()),
+				ginkgo.Label("microsandbox-builtin"), ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 			ginkgo.Entry(
 				"external running",
 				microsandboxExternalProvider,
-				"safe-recreate-managed-external-running",
+				"msb-managed-external-running",
 				false,
-				ginkgo.SpecTimeout(framework.TimeoutLong()),
+				ginkgo.Label("microsandbox-external"), ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 			ginkgo.Entry(
 				"external stopped",
 				microsandboxExternalProvider,
-				"safe-recreate-managed-external-stopped",
+				"msb-managed-external-stopped",
 				true,
-				ginkgo.SpecTimeout(framework.TimeoutLong()),
+				ginkgo.Label("microsandbox-external"), ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 		)
 	})

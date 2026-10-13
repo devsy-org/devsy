@@ -46,28 +46,28 @@ var _ = ginkgo.Describe("MicroSandbox rejected replacement preservation",
 				microsandboxResourceBuiltin,
 				"safe-recreate-builtin-running",
 				false,
-				ginkgo.SpecTimeout(framework.TimeoutLong()),
+				ginkgo.Label("microsandbox-builtin"), ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 			ginkgo.Entry(
 				"builtin stopped",
 				microsandboxResourceBuiltin,
 				"safe-recreate-builtin-stopped",
 				true,
-				ginkgo.SpecTimeout(framework.TimeoutLong()),
+				ginkgo.Label("microsandbox-builtin"), ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 			ginkgo.Entry(
 				"external running",
 				microsandboxExternalProvider,
 				"safe-recreate-external-running",
 				false,
-				ginkgo.SpecTimeout(framework.TimeoutLong()),
+				ginkgo.Label("microsandbox-external"), ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 			ginkgo.Entry(
 				"external stopped",
 				microsandboxExternalProvider,
 				"safe-recreate-external-stopped",
 				true,
-				ginkgo.SpecTimeout(framework.TimeoutLong()),
+				ginkgo.Label("microsandbox-external"), ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 		)
 	})
@@ -105,26 +105,15 @@ func newSafeRecreateFixture(
 	source, name string,
 	maxMemoryMiB int,
 ) *safeRecreateFixture {
-	skipIfNoMicrosandbox(ctx)
-	initialDir, err := os.Getwd()
-	framework.ExpectNoError(err)
+	session := newMicrosandboxTestSession(ctx)
 	home := ginkgo.GinkgoT().TempDir()
 	ginkgo.GinkgoT().Setenv("HOME", home)
 	ginkgo.GinkgoT().Setenv("USERPROFILE", home)
-	ginkgo.GinkgoT().Setenv("DEVSY_HOME", ginkgo.GinkgoT().TempDir())
-	ginkgo.GinkgoT().Setenv("DEVSY_CONFIG", "")
 	ginkgo.GinkgoT().Setenv("MSB_HOME", filepath.Join(home, "microsandbox"))
 	ginkgo.GinkgoT().Setenv("MSB_CONFIG_PATH", filepath.Join(home, "microsandbox", "config.json"))
-	workspace, err := framework.CreateTempDir()
-	framework.ExpectNoError(err)
-	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, workspace)
-	f := framework.NewDefaultFramework(filepath.Join(initialDir, "bin"))
-	framework.ExpectNoError(f.DevsyProviderAdd(ctx, source, "--name", name))
-	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
-		defer cancel()
-		return f.DevsyProviderDelete(cleanupCtx, name)
-	})
+	workspace := session.newWorkspace()
+	f := session.framework
+	session.addProvider(ctx, source, name)
 	framework.ExpectNoError(f.DevsyProviderUse(ctx, name,
 		microsandboxResourceOption, "MICROSANDBOX_MEMORY=0",
 		microsandboxResourceOption, fmt.Sprintf("MICROSANDBOX_MAX_MEMORY=%d", maxMemoryMiB),
@@ -318,6 +307,10 @@ func (f *safeRecreateFixture) replaceSuccessfully(ctx context.Context) {
 	framework.ExpectNoError(
 		f.framework.DevsyUpRecreate(ctx, append([]string{f.workspace}, f.upArgs()...)...),
 	)
+	f.assertReplacement(ctx, 1536)
+}
+
+func (f *safeRecreateFixture) assertReplacement(ctx context.Context, memoryMiB int) {
 	after := inspectSafeRecreate(ctx, f.sandbox)
 	gomega.Expect(after.Status).To(gomega.Equal("Running"))
 	gomega.Expect(after.CreatedAt).NotTo(gomega.Equal(f.original.CreatedAt))
@@ -337,7 +330,7 @@ func (f *safeRecreateFixture) replaceSuccessfully(ctx context.Context) {
 	f.assertHostState(ctx)
 	expected := microsandboxResources{
 		CPUs:         1,
-		MemoryMiB:    1536,
+		MemoryMiB:    memoryMiB,
 		MaxCPUs:      1,
 		MaxMemoryMiB: f.maxMemoryMiB,
 	}

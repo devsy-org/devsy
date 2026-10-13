@@ -18,10 +18,9 @@ import (
 )
 
 const (
-	microsandboxResourceBuiltin = "microsandbox"
-	microsandboxResourceOption  = "--option"
-	microsandboxResourceJSON    = "json"
-	microsandboxResourceImage   = "ghcr.io/devsy-org/test-images/base:alpine"
+	microsandboxResourceOption = "--option"
+	microsandboxResourceJSON   = "json"
+	microsandboxResourceImage  = "ghcr.io/devsy-org/test-images/base:alpine"
 )
 
 type microsandboxResources struct {
@@ -47,29 +46,17 @@ type microsandboxResourceConfig struct {
 
 var _ = ginkgo.Describe("microsandbox resource parity",
 	ginkgo.Label("up-provider-microsandbox-resources"), func() {
-		for _, provider := range []struct{ name, source string }{
-			{"builtin-resources", microsandboxResourceBuiltin},
-			{"external-resources", microsandboxExternalProvider},
-		} {
-			ginkgo.Context(provider.name, func() {
+		for _, provider := range microsandboxProviders("builtin-resources", "external-resources") {
+			ginkgo.Context(provider.name, ginkgo.Label(provider.label), func() {
 				var f *framework.Framework
 				var workspace string
 
 				ginkgo.BeforeEach(func(ctx context.Context) {
-					skipIfNoMicrosandbox(ctx)
-					ginkgo.GinkgoT().Setenv("DEVSY_HOME", ginkgo.GinkgoT().TempDir())
-					ginkgo.GinkgoT().Setenv("DEVSY_CONFIG", "")
-					initialDir, err := os.Getwd()
-					framework.ExpectNoError(err)
-					f = framework.NewDefaultFramework(filepath.Join(initialDir, "bin"))
-					workspace, err = framework.CreateTempDir()
-					framework.ExpectNoError(err)
-					ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, workspace)
-					framework.ExpectNoError(
-						f.DevsyProviderAdd(ctx, provider.source, "--name", provider.name),
-					)
-					ginkgo.DeferCleanup(f.DevsyProviderDelete, provider.name)
-					ginkgo.DeferCleanup(f.CleanupWorkspace, workspace)
+					session := newMicrosandboxTestSession(ctx)
+					f = session.framework
+					workspace = session.newWorkspace()
+					session.addProvider(ctx, provider.source, provider.name)
+					session.cleanupWorkspace(workspace)
 				})
 
 				ginkgo.DescribeTable(

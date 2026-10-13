@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -36,36 +35,17 @@ type microsandboxStorageDisk struct {
 
 var _ = ginkgo.Describe("microsandbox storage parity",
 	ginkgo.Label("up-provider-microsandbox-storage"), func() {
-		for _, provider := range []struct{ name, source string }{
-			{"builtin-storage", microsandboxResourceBuiltin},
-			{"external-storage", microsandboxExternalProvider},
-		} {
-			ginkgo.Context(provider.name, func() {
+		for _, provider := range microsandboxProviders("builtin-storage", "external-storage") {
+			ginkgo.Context(provider.name, ginkgo.Label(provider.label), func() {
 				var f *framework.Framework
 				var workspace string
 
 				ginkgo.BeforeEach(func(ctx context.Context) {
-					skipIfNoMicrosandbox(ctx)
-					ginkgo.GinkgoT().Setenv("DEVSY_HOME", ginkgo.GinkgoT().TempDir())
-					ginkgo.GinkgoT().Setenv("DEVSY_CONFIG", "")
-					initialDir, err := os.Getwd()
-					framework.ExpectNoError(err)
-					f = framework.NewDefaultFramework(filepath.Join(initialDir, "bin"))
-					workspace, err = framework.CreateTempDir()
-					framework.ExpectNoError(err)
-					ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, workspace)
-					framework.ExpectNoError(
-						f.DevsyProviderAdd(ctx, provider.source, "--name", provider.name),
-					)
-					ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-						cleanupCtx, cancel := context.WithTimeout(
-							context.WithoutCancel(cleanupCtx),
-							time.Minute,
-						)
-						defer cancel()
-						return f.DevsyProviderDelete(cleanupCtx, provider.name)
-					})
-					ginkgo.DeferCleanup(f.CleanupWorkspace, workspace)
+					session := newMicrosandboxTestSession(ctx)
+					f = session.framework
+					workspace = session.newWorkspace()
+					session.addProvider(ctx, provider.source, provider.name)
+					session.cleanupWorkspace(workspace)
 				})
 
 				ginkgo.DescribeTable(
