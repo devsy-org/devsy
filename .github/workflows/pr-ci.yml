@@ -167,6 +167,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          # Windows cache archiving can consume the post-job budget after a successful build.
+          cache: ${{ runner.os != 'Windows' }}
 
       - name: get operating system lowercase
         id: os
@@ -358,6 +360,8 @@ jobs:
             expected-spec-count: 4
           - label: up-provider-microsandbox-logs-cancel
             expected-spec-count: 6
+          - label: up-provider-microsandbox-compatibility
+            expected-spec-count: 2
           - label: up-provider-microsandbox-registry-consumer
             expected-spec-count: 3
             provider-mode: external
