@@ -127,7 +127,23 @@ DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsand
 
 The `up-provider-microsandbox-recreate` label tests rejected explicit replacement for running and stopped VMs against both providers. Each case checks the unchanged VM generation and active configuration before resuming a stopped original, then checks persistent root, bind and named-volume data together with the workspace and SSH records. A subsequent valid replacement must change the VM generation, reset the root marker and preserve the external data. These request-invalid cases do not establish preservation for managed-policy conflicts or failures after replacement begins. Each scenario has a ten-minute deadline, with a 20-minute CI test deadline and a 25-minute job deadline.
 
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-recreate
+```
+
 The Linux-only `up-provider-microsandbox-managed-recreate` label checks a valid 2048 MiB / 1 GiB tmpfs replacement that becomes invalid after a managed policy sets memory to 512 MiB. Running and stopped originals must retain their VM generation, root and persistent mount data, workspace record and SSH files for both providers. Resetting the policy must allow the same replacement request. The CI wrapper overlays `/etc` in a private mount namespace before creating any policy file; its scratch remains in the disposable runner for job teardown. These checks require that isolated wrapper and do not establish rollback after replacement has begun. Each scenario and the suite retain the request-invalid suite's time bounds.
+
+On a disposable Linux host with the same prerequisites, prepare the E2E binaries and run the managed suite through its isolated wrapper. The scratch directory is retained for host teardown; running the label without the wrapper does not exercise these cases.
+
+```sh
+task cli:test:e2e:build
+(cd e2e && go test -c -o e2e.test .)
+(cd e2e && sudo env PATH="$PATH" RUNNER_TEMP="$(mktemp -d)" \
+  DEVSY_REQUIRE_MICROSANDBOX=true DEVSY_REQUIRE_MSB_MANAGED_POLICY_FIXTURE=true \
+  ../hack/run-managed-policy-e2e.sh ./e2e.test -test.v -ginkgo.v \
+  -test.timeout 1200s -ginkgo.fail-on-empty -ginkgo.flake-attempts=1 \
+  -ginkgo.label-filter=up-provider-microsandbox-managed-recreate)
+```
 
 The `up-provider-microsandbox-logs-cancel` label checks completed stdout/stderr workload logs while running and stopped, direct runtime Exec cancellation of a ready parent and child, and cancellation with blocked owned stdin against each provider. A separate SSH observer verifies process identity using PID, kernel start time, and a unique command marker. Caller return and process death must both occur within ten seconds of cancellation; the VM's creation time, boot ID, and source files must remain intact. Logs do not start a stopped VM. These checks do not establish log ordering, binary log fidelity, TTY cancellation, or cancellation of arbitrary nonclosable input.
 
