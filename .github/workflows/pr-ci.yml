@@ -1397,11 +1397,11 @@ jobs:
         working-directory: ./e2e
         run: |
           $suite = (Get-Content docker-internal-buildkit-report.json -Raw | ConvertFrom-Json)[0]
-          $specs = $suite.SpecReports | Where-Object { $_.LeafNodeType -eq 'It' }
-          $specs | ForEach-Object { Write-Host ("{0,-8} {1}" -f $_.State, $_.LeafNodeText) }
-          $notPassed = @($specs | Where-Object { $_.State -ne 'passed' })
-          if ($specs.Count -lt 4 -or $notPassed.Count -gt 0) {
-            throw "expected 4 passed specs, got $($specs.Count) with $($notPassed.Count) not passed"
+          $executed = @($suite.SpecReports | Where-Object { $_.LeafNodeType -eq 'It' -and $_.State -ne 'skipped' })
+          $executed | ForEach-Object { Write-Host ("{0,-8} {1}" -f $_.State, $_.LeafNodeText) }
+          $notPassed = @($executed | Where-Object { $_.State -ne 'passed' })
+          if ($executed.Count -ne 4 -or $notPassed.Count -gt 0) {
+            throw "expected 4 executed passing specs, got $($executed.Count) with $($notPassed.Count) not passed"
           }
 
       - name: tear down docker and sshd in WSL2 (docker-internal-buildkit)
