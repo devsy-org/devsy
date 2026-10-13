@@ -103,11 +103,11 @@ func (pb *PipeBridge) RunPair(
 	// side to be abandoned after joinTimeout).
 	tunnelErr, handlerErr := iojoin.Join(tunnelSide, handlerSide, joinTimeout, stop)
 	log.Debugf(
-		"pipe bridge completed: tunnel_err=%v handler_err=%v parent_err=%v pair_err=%v",
-		tunnelErr,
-		handlerErr,
-		ctx.Err(),
-		pairCtx.Err(),
+		"pipe bridge completed: tunnel_err=%s handler_err=%s parent_err=%s pair_err=%s",
+		log.ErrorForLog(tunnelErr),
+		log.ErrorForLog(handlerErr),
+		log.ErrorForLog(ctx.Err()),
+		log.ErrorForLog(pairCtx.Err()),
 	)
 	return ClassifyTunnelErrors(tunnelErr, handlerErr)
 }

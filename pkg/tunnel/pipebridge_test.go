@@ -3,13 +3,18 @@ package tunnel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util/goleaktest"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 )
 
 func TestMain(m *testing.M) {
@@ -402,4 +407,66 @@ func TestRunPairStopsBothSidesWhenParentContextCancelledBeforeEitherReturns(t *t
 	case <-time.After(3 * time.Second):
 		t.Fatal("RunPair hung after parent ctx cancellation with both sides blocked in Read")
 	}
+}
+
+// summarizedFailure mimics a typed error whose Error text carries a captured
+// diagnostic tail that log sites must not replay. It is defined locally because
+// pkg/tunnel cannot import pkg/devcontainer/sshtunnel.
+type summarizedFailure struct {
+	cause   error
+	summary string
+	tail    string
+}
+
+func (e *summarizedFailure) Error() string      { return e.summary + "\n" + e.tail }
+func (e *summarizedFailure) Unwrap() error      { return e.cause }
+func (e *summarizedFailure) LogSummary() string { return e.summary }
+
+var _ log.LogSummaryProvider = (*summarizedFailure)(nil)
+
+// Serial on purpose: it replaces the package-global logger, so it must not run
+// in parallel with other tests that log.
+func TestRunPairCompletionDoesNotReplayCapturedJSON(t *testing.T) {
+	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+
+	pb, err := NewPipeBridge()
+	require.NoError(t, err)
+	defer pb.Close()
+
+	cause := errors.New("exit status 1")
+	const (
+		summary = "run agent command failed: exit status 1"
+		line1   = `{"level":"debug","ts":"2026-10-13T22:41:48.610Z","msg":"credentials server started"}`
+		line2   = `{"kind":"error","outcome":"error","code":"UNKNOWN","message":"command failed"}`
+	)
+	failure := &summarizedFailure{cause: cause, summary: summary, tail: line1 + "\n" + line2}
+
+	tunnelFn := func(_ context.Context, _ *os.File, _ *os.File) error {
+		return fmt.Errorf("outer: %w", failure)
+	}
+	// Reading the closed bridge side yields EOF, so ClassifyTunnelErrors reports
+	// the tunnel error.
+	handler := func(_ context.Context, stdout *os.File, _ *os.File) error {
+		_, err := stdout.Read(make([]byte, 1))
+		return err
+	}
+
+	runErr := pb.RunPair(context.Background(), tunnelFn, handler)
+	require.Error(t, runErr)
+	require.ErrorIs(t, runErr, cause)
+	var provider log.LogSummaryProvider
+	require.ErrorAs(t, runErr, &provider)
+	assert.Equal(t, failure.Error(), errors.Unwrap(errors.Unwrap(runErr)).Error(),
+		"returned error keeps the full original text")
+
+	completed := logs.FilterMessageSnippet("pipe bridge completed").All()
+	require.Len(t, completed, 1)
+	entry := completed[0]
+	assert.Equal(t, zapcore.DebugLevel, entry.Level)
+	assert.Contains(t, entry.Message, "tunnel_err="+summary+" ")
+	assert.NotContains(t, entry.Message, `{"level"`)
+	assert.NotContains(t, entry.Message, `{"kind"`)
+	assert.NotContains(t, entry.Message, "credentials server started")
+	assert.NotContains(t, entry.Message, "\n")
+	assert.Contains(t, entry.Message, "handler_err=EOF")
 }
