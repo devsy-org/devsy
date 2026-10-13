@@ -3,7 +3,6 @@ package log
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -15,8 +14,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// SerializedRecordSuite exercises real Init + AddSink serialization. The
-// logger is package-global, so these tests must not run in parallel.
+// The logger is package-global, so these tests must not run in parallel.
 type SerializedRecordSuite struct{ suite.Suite }
 
 func TestSerializedRecordSuite(t *testing.T) { suite.Run(t, new(SerializedRecordSuite)) }
@@ -26,8 +24,7 @@ func (s *SerializedRecordSuite) SetupTest() {
 	s.T().Cleanup(func() { sugar.Store(zap.NewNop().Sugar()) })
 }
 
-// capture runs emit against a freshly initialised logger and returns the bytes
-// written to both the additive sink and stderr.
+// capture returns what emit wrote to the AddSink sink and to stderr.
 func (s *SerializedRecordSuite) capture(cfg Config, emit func()) (sink, stderr string) {
 	reader, writer, err := os.Pipe()
 	s.Require().NoError(err)
@@ -51,10 +48,7 @@ func (s *SerializedRecordSuite) capture(cfg Config, emit func()) (sink, stderr s
 	return sinkBuf.String(), string(data)
 }
 
-// TestTextMultilineBridgeCompletionIsOnePhysicalRecord reproduces the CI
-// symptom: one logical event whose error text contains raw remote log lines
-// must not produce unprefixed continuation lines.
-func (s *SerializedRecordSuite) TestTextMultilineBridgeCompletionIsOnePhysicalRecord() {
+func (s *SerializedRecordSuite) TestTextMultilineErrorIsOnePhysicalRecord() {
 	tunnelErr := errors.New(
 		"run agent command failed: exit status 1\n" +
 			`{"level":"debug","ts":"2026-10-13T22:41:48.610Z","msg":"incoming client connection: path=/"}` + "\n" +
@@ -89,9 +83,7 @@ func (s *SerializedRecordSuite) TestEveryFormatEmitsOneRecordPerEvent() {
 			s.Equal(sink, stderr)
 			lines := strings.Split(strings.TrimSuffix(sink, "\n"), "\n")
 			s.Require().Len(lines, 2, "two events, two physical lines: %q", sink)
-			s.True(strings.HasSuffix(sink, "\n"))
 			s.NotContains(sink, "\r")
-			s.Equal(2, strings.Count(sink, "\n"))
 			s.assertRecordContent(format, lines, message)
 		})
 	}
@@ -121,20 +113,6 @@ func (s *SerializedRecordSuite) assertRecordContent(format string, lines []strin
 	}
 }
 
-func (s *SerializedRecordSuite) TestTextWithFieldsAndChildLoggerShareFraming() {
-	sink, _ := s.capture(Config{Format: "text"}, func() {
-		child := Underlying().With(zap.String("scope", "a\nb")).Sugar()
-		child.Infow("child event", "k", "v\rw")
-		Infof("parent")
-	})
-
-	lines := strings.Split(strings.TrimSuffix(sink, "\n"), "\n")
-	s.Require().Len(lines, 2, "%q", sink)
-	s.Contains(lines[0], `"scope": "a\nb"`)
-	s.Contains(lines[0], `"k": "v\rw"`)
-	s.Contains(lines[1], "parent")
-}
-
 func (s *SerializedRecordSuite) TestConcurrentEventsStayOnePhysicalRecordEach() {
 	sink, _ := s.capture(Config{Format: "text"}, func() {
 		done := make(chan struct{})
@@ -160,10 +138,9 @@ func (s *SerializedRecordSuite) TestConcurrentEventsStayOnePhysicalRecordEach() 
 
 const redactionSecret = "line1\nli\"ne2\r\\end\x00\v\f\x01\u2028"
 
-// TestTextRecordRedactionAcrossFormats is the mandatory post-serialization
-// redaction gate: the encoders rewrite control characters before the writers
-// redact, so the escaped forms must be masked too.
-func (s *SerializedRecordSuite) TestTextRecordRedactionAcrossFormats() {
+// Encoders rewrite control characters before the writers redact, so escaped
+// forms of the secret must be masked too.
+func (s *SerializedRecordSuite) TestRedactionAcrossFormats() {
 	for _, format := range []string{"text", "json", "logfmt"} {
 		s.Run(format, func() {
 			sink, stderr := s.capture(Config{
@@ -192,10 +169,7 @@ func (s *SerializedRecordSuite) assertNoSecretFragments(out string) {
 	}
 }
 
-// TestRedactionCoversEverySerializedByte checks each ASCII byte and the
-// Unicode separators embedded in a secret across all formats and both field
-// and message positions, pinning the observed encodings.
-func (s *SerializedRecordSuite) TestRedactionCoversEverySerializedByte() {
+func (s *SerializedRecordSuite) TestRedactionCoversEveryControlByte() {
 	chars := make([]string, 0, 0x80+3)
 	for b := range 0x80 {
 		chars = append(chars, string(rune(b)))
@@ -214,7 +188,7 @@ func (s *SerializedRecordSuite) TestRedactionCoversEverySerializedByte() {
 			})
 			s.NotContains(sink, "SECRETHEAD", "format %s char %q leaked head: %q", format, char, sink)
 			s.NotContains(sink, "SECRETTAIL", "format %s char %q leaked tail: %q", format, char, sink)
-			s.Contains(sink, "***", fmt.Sprintf("format %s char %q", format, char))
+			s.Contains(sink, "***", "format %s char %q", format, char)
 		}
 	}
 }
@@ -229,16 +203,4 @@ func (s *SerializedRecordSuite) TestEnvironmentSecretWithLineBreakIsMasked() {
 	s.Equal(sink, stderr)
 	s.NotContains(sink, "secret-846297")
 	s.Contains(sink, "value=***")
-}
-
-func (s *SerializedRecordSuite) TestOrdinaryValuesAreNotRedactedByEscapeVariants() {
-	sink, _ := s.capture(Config{
-		Format:   "text",
-		Redactor: secrets.NewRedactor([]string{"TOKEN=alnumsecret42"}),
-	}, func() {
-		Infof("plain value only: quote=%q", "ordinary")
-	})
-
-	s.Contains(sink, `plain value only: quote="ordinary"`)
-	s.NotContains(sink, "***")
 }

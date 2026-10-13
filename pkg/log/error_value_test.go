@@ -79,7 +79,7 @@ func (s *ErrorForLogTestSuite) TestTruncationBoundaries() {
 }
 
 func (s *ErrorForLogTestSuite) TestTruncationIsRuneSafe() {
-	input := strings.Repeat("é世🙂", 1000) // 3000 runes, mixed 2/3/4-byte
+	input := strings.Repeat("é世🙂", 1000) // mixed 2/3/4-byte runes
 	got := truncateErrorSummary(input)
 	s.True(utf8.ValidString(got))
 	s.Equal(errorSummaryMaxRunes, utf8.RuneCountInString(got))
@@ -96,8 +96,7 @@ func (s *ErrorForLogTestSuite) TestInvalidUTF8IsNormalizedOnlyInSummary() {
 	s.Equal("bad\uFFFDbytes", got)
 	s.Equal(raw, err.Error(), "original error text is not mutated")
 
-	// Normalization happens before the rune count; each invalid run collapses
-	// to a single replacement rune, so interleave valid runes to exceed the cap.
+	// Each invalid run becomes one replacement rune before counting.
 	long := truncateErrorSummary(strings.Repeat("a\xff", 3000))
 	s.True(utf8.ValidString(long))
 	s.Equal(errorSummaryMaxRunes, utf8.RuneCountInString(long))

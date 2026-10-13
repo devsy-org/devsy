@@ -1,7 +1,6 @@
 package log
 
 import (
-	"errors"
 	"fmt"
 
 	zapbuffer "go.uber.org/zap/buffer"
@@ -10,23 +9,19 @@ import (
 
 var textRecordPool = zapbuffer.NewPool()
 
-// oneLineTextEncoder wraps a console encoder so every encoded entry is exactly
-// one physical record: a single terminating LF, with line breaks and terminal
-// control characters inside the record escaped as text. Escaping covers the
-// whole serialized record (message, fields, stack) because it is applied to
-// the inner encoder's output.
+// oneLineTextEncoder wraps a console encoder so every entry is a single
+// physical line: one terminating LF, with line breaks and terminal control
+// characters elsewhere in the record escaped as text.
 //
-// ESC is deliberately left untouched: the color level encoder emits ANSI
-// sequences and the serialized buffer does not distinguish formatter bytes from
-// payload bytes. Payload ANSI injection is therefore out of scope here.
+// ESC is left untouched on purpose: the color level encoder emits ANSI
+// sequences and the serialized buffer cannot distinguish them from payload.
 type oneLineTextEncoder struct{ zapcore.Encoder }
 
 func newOneLineTextEncoder(inner zapcore.Encoder) zapcore.Encoder {
 	return &oneLineTextEncoder{Encoder: inner}
 }
 
-// Clone must wrap a clone of the inner encoder because zap calls it in
-// Core.With and the inner encoder holds the accumulated With fields.
+// Clone wraps a clone of the inner encoder, which holds the With fields.
 func (e *oneLineTextEncoder) Clone() zapcore.Encoder {
 	return newOneLineTextEncoder(e.Encoder.Clone())
 }
@@ -42,28 +37,23 @@ func (e *oneLineTextEncoder) EncodeEntry(
 		}
 		return nil, err
 	}
-	if original == nil {
-		return nil, errors.New("text encoder returned nil buffer")
-	}
 
-	body, hasFinalLF := splitEncodedRecord(original.Bytes())
+	body := original.Bytes()
+	hasFinalLF := len(body) > 0 && body[len(body)-1] == '\n'
+	if hasFinalLF {
+		body = body[:len(body)-1]
+	}
 	if hasFinalLF && !needsRecordEscaping(body) {
 		return original, nil
 	}
 
+	// original is freed exactly once, after body has been copied out of it;
+	// ownership of normalized passes to the caller.
 	normalized := textRecordPool.Get()
 	appendEscapedRecordBody(normalized, body)
 	normalized.AppendByte('\n')
 	original.Free()
 	return normalized, nil
-}
-
-// splitEncodedRecord separates the single final LF terminator from the body.
-func splitEncodedRecord(b []byte) ([]byte, bool) {
-	if len(b) > 0 && b[len(b)-1] == '\n' {
-		return b[:len(b)-1], true
-	}
-	return b, false
 }
 
 func forbiddenASCII(b byte) bool {
@@ -89,6 +79,7 @@ func asciiRecordEscape(b byte) string {
 	return ""
 }
 
+// unicodeRecordEscape matches U+0085, U+2028 and U+2029 at the start of b.
 func unicodeRecordEscape(b []byte) (int, string) {
 	if len(b) >= 2 && b[0] == 0xc2 && b[1] == 0x85 {
 		return 2, `\u0085`

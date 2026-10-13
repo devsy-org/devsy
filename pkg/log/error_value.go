@@ -7,24 +7,20 @@ import (
 )
 
 const (
-	// errorSummaryMaxRunes bounds an operational log summary, including the
-	// truncation marker.
 	errorSummaryMaxRunes        = 2048
-	truncatedErrorSummarySuffix = "…[truncated]"
+	truncatedErrorSummarySuffix = "...[truncated]"
 )
 
 // LogSummaryProvider is implemented by errors whose Error text carries data
-// that must not be replayed into an application log record (for example a
-// captured diagnostic tail that was already emitted separately).
+// that must not be replayed into a log record, such as a diagnostic tail that
+// was already emitted separately.
 type LogSummaryProvider interface {
 	LogSummary() string
 }
 
-// ErrorForLog returns a bounded, log-safe description of err. The first
-// LogSummaryProvider found while unwrapping err supplies the summary;
-// otherwise err.Error() is used. The result is capped at 2,048 runes
-// including the truncation marker. It never mutates err and never trims
-// whitespace: embedded line breaks are escaped later by the text encoder.
+// ErrorForLog returns a log-safe description of err, capped at 2048 runes
+// including the truncation suffix. The first LogSummaryProvider found while
+// unwrapping err supplies the summary; otherwise err.Error() is used.
 func ErrorForLog(err error) string {
 	if err == nil {
 		return "<nil>"
@@ -42,9 +38,9 @@ func truncateErrorSummary(summary string) string {
 	if utf8.RuneCountInString(summary) <= errorSummaryMaxRunes {
 		return summary
 	}
-	available := errorSummaryMaxRunes - utf8.RuneCountInString(truncatedErrorSummarySuffix)
+	keep := errorSummaryMaxRunes - utf8.RuneCountInString(truncatedErrorSummarySuffix)
 	cutoff := 0
-	for range available {
+	for range keep {
 		_, width := utf8.DecodeRuneInString(summary[cutoff:])
 		cutoff += width
 	}

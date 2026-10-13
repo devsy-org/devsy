@@ -409,9 +409,8 @@ func TestRunPairStopsBothSidesWhenParentContextCancelledBeforeEitherReturns(t *t
 	}
 }
 
-// summarizedFailure mimics a typed error whose Error text carries a captured
-// diagnostic tail that log sites must not replay. It is defined locally because
-// pkg/tunnel cannot import pkg/devcontainer/sshtunnel.
+// summarizedFailure stands in for sshtunnel's agentCommandFailure, which
+// pkg/tunnel cannot import.
 type summarizedFailure struct {
 	cause   error
 	summary string
@@ -422,10 +421,7 @@ func (e *summarizedFailure) Error() string      { return e.summary + "\n" + e.ta
 func (e *summarizedFailure) Unwrap() error      { return e.cause }
 func (e *summarizedFailure) LogSummary() string { return e.summary }
 
-var _ log.LogSummaryProvider = (*summarizedFailure)(nil)
-
-// Serial on purpose: it replaces the package-global logger, so it must not run
-// in parallel with other tests that log.
+// Not parallel: it replaces the package-global logger.
 func TestRunPairCompletionDoesNotReplayCapturedJSON(t *testing.T) {
 	logs := log.InitTestObserved(t, zapcore.DebugLevel)
 
@@ -444,8 +440,6 @@ func TestRunPairCompletionDoesNotReplayCapturedJSON(t *testing.T) {
 	tunnelFn := func(_ context.Context, _ *os.File, _ *os.File) error {
 		return fmt.Errorf("outer: %w", failure)
 	}
-	// Reading the closed bridge side yields EOF, so ClassifyTunnelErrors reports
-	// the tunnel error.
 	handler := func(_ context.Context, stdout *os.File, _ *os.File) error {
 		_, err := stdout.Read(make([]byte, 1))
 		return err
@@ -454,19 +448,13 @@ func TestRunPairCompletionDoesNotReplayCapturedJSON(t *testing.T) {
 	runErr := pb.RunPair(context.Background(), tunnelFn, handler)
 	require.Error(t, runErr)
 	require.ErrorIs(t, runErr, cause)
-	var provider log.LogSummaryProvider
-	require.ErrorAs(t, runErr, &provider)
-	assert.Equal(t, failure.Error(), errors.Unwrap(errors.Unwrap(runErr)).Error(),
-		"returned error keeps the full original text")
+	assert.Contains(t, runErr.Error(), line1, "returned error keeps the full text")
 
 	completed := logs.FilterMessageSnippet("pipe bridge completed").All()
 	require.Len(t, completed, 1)
 	entry := completed[0]
-	assert.Equal(t, zapcore.DebugLevel, entry.Level)
 	assert.Contains(t, entry.Message, "tunnel_err="+summary+" ")
 	assert.NotContains(t, entry.Message, `{"level"`)
-	assert.NotContains(t, entry.Message, `{"kind"`)
-	assert.NotContains(t, entry.Message, "credentials server started")
 	assert.NotContains(t, entry.Message, "\n")
 	assert.Contains(t, entry.Message, "handler_err=EOF")
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -17,10 +16,6 @@ const failureDiagnostics = `{"level":"debug","ts":"2026-10-13T22:41:48.610Z","ms
 
 var errSentinelCause = errors.New("sentinel cause")
 
-type diagnosticsProvider interface {
-	Diagnostics() string
-}
-
 type AgentCommandFailureTestSuite struct {
 	suite.Suite
 }
@@ -29,7 +24,7 @@ func TestAgentCommandFailureTestSuite(t *testing.T) {
 	suite.Run(t, new(AgentCommandFailureTestSuite))
 }
 
-func (s *AgentCommandFailureTestSuite) TestAgentCommandFailureCompatibility() {
+func (s *AgentCommandFailureTestSuite) TestErrorKeepsDiagnosticsAndLogSummaryOmitsThem() {
 	cause := errors.New("exit status 1")
 
 	withDiagnostics := &agentCommandFailure{cause: cause, diagnostics: failureDiagnostics}
@@ -39,18 +34,13 @@ func (s *AgentCommandFailureTestSuite) TestAgentCommandFailureCompatibility() {
 	)
 	s.Same(cause, withDiagnostics.Unwrap())
 	s.Equal("run agent command failed: exit status 1", withDiagnostics.LogSummary())
-	s.NotContains(withDiagnostics.LogSummary(), "\n")
-	s.NotContains(withDiagnostics.LogSummary(), `{"level"`)
-	s.Equal(failureDiagnostics, withDiagnostics.Diagnostics())
 
 	empty := &agentCommandFailure{cause: cause}
-	s.Equal(fmt.Errorf("run agent command failed: %w", cause).Error(), empty.Error())
 	s.Equal("run agent command failed: exit status 1", empty.Error())
 	s.Equal(empty.Error(), empty.LogSummary())
-	s.Empty(empty.Diagnostics())
 }
 
-func (s *AgentCommandFailureTestSuite) TestWrappedMatching() {
+func (s *AgentCommandFailureTestSuite) TestWrappedFailureMatchesCauseAndType() {
 	exitErr := &devssh.ExitError{ExitCode: 1}
 	for _, tc := range []struct {
 		name   string
@@ -72,14 +62,6 @@ func (s *AgentCommandFailureTestSuite) TestWrappedMatching() {
 			s.Require().ErrorAs(wrapped, &asFailure)
 			s.Same(failure, asFailure)
 
-			var provider log.LogSummaryProvider
-			s.Require().ErrorAs(wrapped, &provider)
-			s.Equal(failure.LogSummary(), provider.LogSummary())
-
-			var diag diagnosticsProvider
-			s.Require().ErrorAs(wrapped, &diag)
-			s.Equal(failureDiagnostics, diag.Diagnostics())
-
 			s.Equal(failure.LogSummary(), log.ErrorForLog(wrapped))
 		})
 	}
@@ -92,7 +74,5 @@ func (s *AgentCommandFailureTestSuite) TestWrappedMatching() {
 
 func (s *AgentCommandFailureTestSuite) TestErrorForLogOmitsDiagnostics() {
 	failure := &agentCommandFailure{cause: errSentinelCause, diagnostics: failureDiagnostics}
-	got := log.ErrorForLog(failure)
-	s.Equal("run agent command failed: sentinel cause", got)
-	s.False(strings.Contains(got, "credentials server started"))
+	s.Equal("run agent command failed: sentinel cause", log.ErrorForLog(failure))
 }

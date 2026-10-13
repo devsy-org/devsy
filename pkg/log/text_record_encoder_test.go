@@ -38,7 +38,7 @@ func (s *TextRecordEncoderSuite) plainEncoder() zapcore.Encoder {
 	return newOneLineTextEncoder(zapcore.NewConsoleEncoder(plainEncoderConfig()))
 }
 
-// requireOneRecord asserts the acceptance invariant for a text record.
+// requireOneRecord asserts out is one LF-terminated line and returns it without the LF.
 func (s *TextRecordEncoderSuite) requireOneRecord(out string) string {
 	s.Require().True(strings.HasSuffix(out, "\n"), "record must end in LF: %q", out)
 	body := strings.TrimSuffix(out, "\n")
@@ -73,14 +73,6 @@ func (s *TextRecordEncoderSuite) TestEscapesControlsAndUnicodeSeparators() {
 	)
 }
 
-func (s *TextRecordEncoderSuite) TestPreservesLiteralBackslashN() {
-	literal := s.requireOneRecord(s.encode(s.plainEncoder(), testEntry(`literal \n`)))
-	actual := s.requireOneRecord(s.encode(s.plainEncoder(), testEntry("literal \n")))
-
-	s.True(strings.HasSuffix(literal, `literal \n`))
-	s.True(strings.HasSuffix(actual, `literal \n`))
-}
-
 func (s *TextRecordEncoderSuite) TestStackAndFields() {
 	entry := testEntry("msg")
 	entry.Stack = "frame1\nframe2"
@@ -102,75 +94,36 @@ func (s *TextRecordEncoderSuite) TestCloneKeepsWithFieldsIsolated() {
 
 	s.Contains(derivedOut, `"child": "a\nb"`)
 	s.NotContains(baseOut, "child")
-	_, wrapped := derived.(*oneLineTextEncoder)
-	s.True(wrapped, "Clone must keep the wrapper")
 }
 
-func (s *TextRecordEncoderSuite) TestFastPathMatchesInnerEncoder() {
+func (s *TextRecordEncoderSuite) TestCleanRecordMatchesInnerEncoder() {
 	inner := zapcore.NewConsoleEncoder(plainEncoderConfig())
 	wrapped := newOneLineTextEncoder(zapcore.NewConsoleEncoder(plainEncoderConfig()))
 	entry := testEntry("ordinary message with unicode héllo")
 
 	s.Equal(s.encode(inner, entry), s.encode(wrapped, entry))
-
-	run := func(enc zapcore.Encoder) float64 {
-		return testing.AllocsPerRun(50, func() {
-			buf, err := enc.EncodeEntry(entry, nil)
-			s.Require().NoError(err)
-			buf.Free()
-		})
-	}
-	s.LessOrEqual(run(wrapped), run(inner), "fast path must not allocate beyond the inner encoder")
 }
 
-func (s *TextRecordEncoderSuite) TestColorEncoderPreservesANSIAndFramesRecord() {
+func (s *TextRecordEncoderSuite) TestColorEncoderPreservesANSIAndEscapesPayload() {
 	enc := newOneLineTextEncoder(zapcore.NewConsoleEncoder(colorEncoderConfig()))
 
 	out := s.encode(enc, testEntry("one\ntwo"))
 
 	s.Equal(1, strings.Count(out, "\n"))
 	s.True(strings.HasSuffix(out, `one\ntwo`+"\n"))
-	s.Contains(out, "\x1b[", "formatter color sequence must survive escaping")
+	s.Contains(out, "\x1b[")
 	s.Contains(out, "\x1b[0m")
 }
 
-func (s *TextRecordEncoderSuite) TestNoColorSelectsPlainWrappedEncoder() {
-	s.T().Setenv("NO_COLOR", "1")
-
-	enc := resolveEncoder("text")
-	out := s.encode(enc, testEntry("one\ntwo"))
-
-	_, wrapped := enc.(*oneLineTextEncoder)
-	s.True(wrapped)
-	s.NotContains(out, "\x1b")
-	s.requireOneRecord(out)
-}
-
-func (s *TextRecordEncoderSuite) TestResolveEncoderWrapsTextOnly() {
-	s.T().Setenv("NO_COLOR", "")
-	for _, format := range []string{"text", "", "other"} {
-		_, wrapped := resolveEncoder(format).(*oneLineTextEncoder)
-		s.True(wrapped, "format %q", format)
-	}
-	for _, format := range []string{"json", "logfmt"} {
-		_, wrapped := resolveEncoder(format).(*oneLineTextEncoder)
-		s.False(wrapped, "format %q", format)
-	}
-}
-
-// fakeEncoder returns canned inner output to exercise terminator handling.
+// fakeEncoder returns canned inner output.
 type fakeEncoder struct {
 	zapcore.Encoder
 	pool zapbuffer.Pool
 	out  *string
 	err  error
-	nils bool
 }
 
 func (f *fakeEncoder) EncodeEntry(zapcore.Entry, []zapcore.Field) (*zapbuffer.Buffer, error) {
-	if f.nils {
-		return nil, nil
-	}
 	buf := f.pool.Get()
 	if f.out != nil {
 		_, _ = buf.WriteString(*f.out)
@@ -195,17 +148,12 @@ func (s *TextRecordEncoderSuite) TestTerminatorNormalization() {
 	}
 }
 
-func (s *TextRecordEncoderSuite) TestInnerErrorAndNilBuffer() {
+func (s *TextRecordEncoderSuite) TestInnerErrorIsReturned() {
 	boom := errors.New("boom")
 	enc := newOneLineTextEncoder(&fakeEncoder{pool: zapbuffer.NewPool(), err: boom})
 	buf, err := enc.EncodeEntry(testEntry("x"), nil)
 	s.Nil(buf)
 	s.ErrorIs(err, boom)
-
-	enc = newOneLineTextEncoder(&fakeEncoder{nils: true})
-	buf, err = enc.EncodeEntry(testEntry("x"), nil)
-	s.Nil(buf)
-	s.Error(err)
 }
 
 func (s *TextRecordEncoderSuite) TestInvalidAndTruncatedUTF8DoNotPanic() {

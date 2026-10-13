@@ -72,9 +72,8 @@ func Combine(redactors ...*Redactor) *Redactor {
 	return NewRedactor(entries)
 }
 
-// logTextEscaper mirrors the record-framing escapes the text log encoder
-// applies to a serialized record body. It lives here, rather than being
-// imported, because pkg/log depends on this package.
+// logTextEscaper mirrors the escapes oneLineTextEncoder applies in pkg/log.
+// It is duplicated here because pkg/log imports this package.
 var logTextEscaper = newLogTextEscaper()
 
 func newLogTextEscaper() *strings.Replacer {
@@ -99,12 +98,11 @@ func newLogTextEscaper() *strings.Replacer {
 	return strings.NewReplacer(pairs...)
 }
 
-// WithLogEscapes returns a redactor that masks every value known by r in the
-// forms the application log encoders can serialize it: the raw value, its
-// strconv-quoted form (logfmt), its JSON-escaped forms (json encoder and text
-// fields) and its text-record-escaped forms. r is not modified and the raw
-// values stay registered. A nil r yields a redactor with only format-based
-// masking.
+// WithLogEscapes returns a redactor that also masks every value of r in the
+// escaped forms the log encoders serialize it in (strconv, JSON, zap JSON and
+// text-record escapes). Redaction runs on serialized records, so raw values
+// alone would miss secrets containing quotes or control characters. A nil r
+// yields a redactor with only format-based masking.
 func WithLogEscapes(r *Redactor) *Redactor {
 	if r == nil {
 		return NewRedactor(nil)
@@ -120,19 +118,21 @@ func WithLogEscapes(r *Redactor) *Redactor {
 
 func logEscapeVariants(value string) []string {
 	quoted := strconv.Quote(value)
-	result := []string{value, quoted[1 : len(quoted)-1], logTextEscaper.Replace(value)}
-	if encoded, err := json.Marshal(value); err == nil {
-		result = append(result, string(encoded[1:len(encoded)-1]))
-	}
+	encoded, _ := json.Marshal(value) // cannot fail for a string
 	zapJSON := zapJSONEscape(value)
-	// The text encoder renders fields as zap JSON and then escapes the record,
-	// so U+0085/U+2028/U+2029/DEL inside that JSON are rewritten again.
-	return uniqueNonemptyStrings(append(result, zapJSON, logTextEscaper.Replace(zapJSON)))
+	return uniqueNonemptyStrings([]string{
+		value,
+		quoted[1 : len(quoted)-1],
+		logTextEscaper.Replace(value),
+		string(encoded[1 : len(encoded)-1]),
+		zapJSON,
+		// Text fields are zap JSON, then escaped again as a text record.
+		logTextEscaper.Replace(zapJSON),
+	})
 }
 
-// zapJSONEscape reproduces how zap's JSON encoder escapes a string value. It
-// differs from encoding/json for \b, \f and U+2028/U+2029, so it is a
-// distinct serialized form of the same secret.
+// zapJSONEscape reproduces zap's JSON string escaping, which differs from
+// encoding/json for \b, \f and U+2028/U+2029.
 func zapJSONEscape(value string) string {
 	var b strings.Builder
 	b.Grow(len(value))
@@ -160,8 +160,6 @@ func zapJSONEscape(value string) string {
 	return b.String()
 }
 
-// uniqueNonemptyStrings drops empty values and duplicates, keeping first-seen
-// order.
 func uniqueNonemptyStrings(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
 	result := make([]string, 0, len(values))
