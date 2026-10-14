@@ -70,11 +70,15 @@ func providerEnv(host string) []string {
 }
 
 func newProductionDriver(host string) driver.ImageDriver {
+	return newProductionDriverWithEnv(map[string]string{"DOCKER_HOST": host, "DOCKER_CONTEXT": ""})
+}
+
+func newProductionDriverWithEnv(env map[string]string) driver.ImageDriver {
 	info := &provider.AgentWorkspaceInfo{Workspace: &provider.Workspace{}}
 	info.Agent.Docker = provider.ProviderDockerDriverConfig{
 		Path:    dockerCmd,
 		Builder: "buildkit",
-		Env:     map[string]string{"DOCKER_HOST": host, "DOCKER_CONTEXT": ""},
+		Env:     env,
 	}
 	imageDriver, err := dockerdriver.NewDockerDriver(info)
 	framework.ExpectNoError(err)
@@ -270,6 +274,148 @@ var _ = ginkgo.Describe(
 					BuildDevContainer(ctx, newBuildRequest(tag))
 				gomega.Expect(err).To(gomega.HaveOccurred(),
 					"build succeeded: provider DOCKER_HOST was ignored")
+
+				_, err = dockerRun(ctx, nil, "image", "inspect", tag)
+				gomega.Expect(err).To(gomega.HaveOccurred(),
+					"image was built on the process daemon")
+			},
+		)
+	},
+)
+
+// deadProcessHost is a Windows named pipe with no daemon behind it.
+const deadProcessHost = "npipe:////./pipe/devsy-e2e-no-daemon"
+
+// contextManagementEnv isolates context-store commands from the runner's real
+// Docker config and from any ambient host/context selection.
+func contextManagementEnv(configDir string) []string {
+	return []string{"DOCKER_CONFIG=" + configDir, "DOCKER_HOST=", "DOCKER_CONTEXT="}
+}
+
+// namedContextEnv selects a daemon only through the Docker context store, the
+// way a provider's agent.docker.env would; it never sets DOCKER_HOST.
+func namedContextEnv(configDir, contextName string) []string {
+	return []string{"DOCKER_CONFIG=" + configDir, "DOCKER_CONTEXT=" + contextName}
+}
+
+// createDockerContext creates a uniquely named context in the isolated config
+// and removes it on cleanup, regardless of spec outcome.
+func createDockerContext(ctx context.Context, configDir, host string) string {
+	name := fmt.Sprintf("devsy-e2e-wsl-%d", time.Now().UnixNano())
+	mgmt := contextManagementEnv(configDir)
+	dockerOutput(ctx, mgmt, "context", "create", name, "--docker", "host="+host)
+	ginkgo.DeferCleanup(func(ctx context.Context) {
+		_, _ = dockerRun(ctx, mgmt, "context", "rm", "-f", name)
+	})
+	return name
+}
+
+var _ = ginkgo.Describe(
+	"docker internal buildkit named context",
+	ginkgo.Label("docker-internal-buildkit", "docker-context"),
+	func() {
+		var (
+			sshHost   string
+			wslID     string
+			configDir string
+		)
+
+		ginkgo.BeforeEach(func() {
+			if runtime.GOOS != "windows" {
+				ginkgo.Skip("Windows only")
+			}
+			sshHost = requireEnv(sshHostEnv)
+			wslID = requireEnv(wslDaemonEnv)
+			configDir = ginkgo.GinkgoT().TempDir()
+		})
+
+		ginkgo.It(
+			"BuildDevContainer builds on the named Docker context's daemon despite a dead process DOCKER_HOST",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				setProcessEnv("DOCKER_HOST", deadProcessHost)
+				setProcessEnv("DOCKER_CONTEXT", "")
+				_, err := dockerRun(ctx, nil, "info")
+				gomega.Expect(err).To(gomega.HaveOccurred(),
+					"process-env daemon must be unreachable for this regression to mean anything")
+
+				contextName := createDockerContext(ctx, configDir, sshHost)
+				gomega.Expect(dockerOutput(ctx, contextManagementEnv(configDir),
+					"context", "inspect", contextName, "--format", "{{.Endpoints.docker.Host}}")).
+					To(gomega.Equal(sshHost), "context does not resolve to the provisioned WSL endpoint")
+
+				// Docker CLI precedence is verified, not assumed: the dead process
+				// DOCKER_HOST is still in the environment, and the named context
+				// must win.
+				envVars := namedContextEnv(configDir, contextName)
+				gomega.Expect(dockerOutput(ctx, envVars, "info", "--format", "{{.ID}}")).
+					To(gomega.Equal(wslID), "named context did not select the WSL daemon")
+
+				invocation, err := docker.NewDockerInvocation(&docker.DockerHelper{
+					DockerCommand: dockerCmd,
+					Environment:   envVars,
+				})
+				framework.ExpectNoError(err)
+				selected, _ := invocation.Lookup("DOCKER_CONTEXT")
+				gomega.Expect(selected).To(gomega.Equal(contextName))
+				host, _ := invocation.Lookup("DOCKER_HOST")
+				gomega.Expect(host).To(gomega.Equal(deadProcessHost),
+					"scenario must not hard-code the SSH endpoint as DOCKER_HOST")
+
+				client, err := docker.NewClientWithInvocation(ctx, invocation)
+				framework.ExpectNoError(err)
+				defer func() { _ = client.Close() }()
+				info, err := client.Info(ctx)
+				framework.ExpectNoError(err, "SDK over dial-stdio failed to resolve the named context")
+				gomega.Expect(info.ID).To(gomega.Equal(wslID))
+
+				tag := uniqueTag()
+				ginkgo.DeferCleanup(func(ctx context.Context) {
+					_, _ = dockerRun(ctx, envVars, "rmi", "-f", tag)
+				})
+
+				built, err := newProductionDriverWithEnv(map[string]string{
+					"DOCKER_CONFIG":  configDir,
+					"DOCKER_CONTEXT": contextName,
+				}).BuildDevContainer(ctx, newBuildRequest(tag))
+				framework.ExpectNoError(err, "production BuildDevContainer failed")
+				gomega.Expect(built.ImageName).To(gomega.Equal(tag))
+
+				gomega.Expect(dockerOutput(ctx, envVars, "image", "inspect", "--format", "{{json .RepoTags}}", tag)).
+					To(gomega.ContainSubstring(tag), "built image missing on the named context's daemon")
+				gomega.Expect(dockerOutput(ctx, envVars, "info", "--format", "{{.ID}}")).
+					To(gomega.Equal(wslID))
+			},
+		)
+
+		ginkgo.It(
+			"BuildDevContainer fails for an invalid Docker context instead of using the process daemon",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			func(ctx context.Context) {
+				// Make the process daemon reachable so a silent fallback would succeed.
+				setProcessEnv("DOCKER_HOST", sshHost)
+				setProcessEnv("DOCKER_CONTEXT", "")
+				gomega.Expect(dockerOutput(ctx, nil, "info", "--format", "{{.ID}}")).
+					To(gomega.Equal(wslID), "process daemon must be reachable for this negative control")
+
+				// The isolated config has no contexts, so this name cannot resolve.
+				missing := fmt.Sprintf("devsy-e2e-missing-context-%d", time.Now().UnixNano())
+				envVars := namedContextEnv(configDir, missing)
+				_, err := dockerRun(ctx, envVars, "info")
+				gomega.Expect(err).To(gomega.HaveOccurred(),
+					"the Docker CLI must reject the invalid provider context")
+
+				tag := uniqueTag()
+				ginkgo.DeferCleanup(func(ctx context.Context) {
+					_, _ = dockerRun(ctx, nil, "rmi", "-f", tag)
+				})
+
+				_, err = newProductionDriverWithEnv(map[string]string{
+					"DOCKER_CONFIG":  configDir,
+					"DOCKER_CONTEXT": missing,
+				}).BuildDevContainer(ctx, newBuildRequest(tag))
+				gomega.Expect(err).To(gomega.HaveOccurred(),
+					"build succeeded: invalid provider context was ignored")
 
 				_, err = dockerRun(ctx, nil, "image", "inspect", tag)
 				gomega.Expect(err).To(gomega.HaveOccurred(),
