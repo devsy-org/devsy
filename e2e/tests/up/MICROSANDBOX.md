@@ -74,6 +74,16 @@ Its `TestMain` preserves the production runtime-supervisor dispatch and recogniz
 the helper only at its canonical, current-user-owned private path. Other test
 invocations retain the normal test runner path.
 
+The Linux-only `up-provider-microsandbox-remote-agent-binaries` case uses the
+published external provider with `agent.local: false` and a test-owned remote
+agent container. It verifies one runtime-binary download into that agent's
+workspace copy, then clears the agent's provider cache, makes the source return
+404, and requires a subsequent `up` to reuse the retained workspace binary.
+The guest check verifies the agent can still operate the workspace. This is a
+source-prepared remote-agent contract; it does not establish ordinary `up`
+image metadata resolution, general agent transfer behavior, or native results
+until the required Linux/KVM CI case passes.
+
 ## Runtime startup measurements
 
 The existing external lifecycle case optionally captures its ordinary fresh and

@@ -44,107 +44,121 @@ const (
 
 var _ = ginkgo.Describe("published MicroSandbox provider remote agent binaries",
 	ginkgo.Label("up-provider-microsandbox-remote-agent-binaries", "microsandbox-external"),
-	ginkgo.It("downloads the external runtime on the remote agent and reuses its workspace copy",
-		func(ctx ginkgo.SpecContext) {
-			session := newMicrosandboxTestSession(ctx)
-			framework.ExpectNoError(requireRemoteAgentHostPrerequisites())
+	func() {
+		ginkgo.It(
+			"downloads the external runtime on the remote agent and reuses its workspace copy",
+			func(ctx ginkgo.SpecContext) {
+				session := newMicrosandboxTestSession(ctx)
+				framework.ExpectNoError(requireRemoteAgentHostPrerequisites())
 
-			providerName := "case-a-remote-agent"
-			stageProviderName := "case-a-remote-stage"
-			session.addProvider(ctx, microsandboxExternalProvider, stageProviderName)
-			staged := prepareMicrosandboxConsumerProvider(ctx, stageProviderName)
-			runtimeBytes, err := os.ReadFile(staged.runtimeBinary)
-			framework.ExpectNoError(err)
-			runtimeRelativePath, err := remoteAgentRuntimeRelativePath(staged)
-			framework.ExpectNoError(err)
-			descriptor, err := provider.LoadProviderConfig(config.DefaultContext, stageProviderName)
-			framework.ExpectNoError(err)
-
-			containerName := "devsy-" + microsandboxConsumerID("agent")
-			agentHome := filepath.Join(
-				"/tmp/devsy-remote-agent-fixture",
-				microsandboxConsumerID("home"),
-				"agent",
-			)
-			bundleRoot, err := remoteAgentBundleRoot()
-			framework.ExpectNoError(err)
-			dockerPath, err := exec.LookPath("docker")
-			framework.ExpectNoError(err)
-			dockerPath, err = filepath.Abs(dockerPath)
-			framework.ExpectNoError(err)
-			preflightRemoteAgentContainer(ctx, bundleRoot, dockerPath, filepath.Dir(agentHome))
-
-			binaryName := descriptor.Agent.External.Binary
-			checksums := descriptor.Agent.Binaries[binaryName]
-			binaryEntry := remoteAgentLinuxBinary(checksums)
-			descriptorHash := strings.TrimPrefix(strings.ToLower(binaryEntry.Checksum), "sha256:")
-			gomega.Expect(descriptorHash).To(gomega.Equal(staged.runtimeHash))
-			agentPath := filepath.Join(
-				session.framework.DevsyBinDir,
-				session.framework.DevsyBinName,
-			)
-			server := startRemoteAgentArtifactServer(runtimeBytes, agentPath)
-			ginkgo.DeferCleanup(func(cleanupCtx ginkgo.SpecContext) error {
-				closeCtx, cancel := context.WithTimeout(
-					context.WithoutCancel(cleanupCtx), 10*time.Second,
+				providerName := "case-a-remote-agent"
+				stageProviderName := "case-a-remote-stage"
+				session.addProvider(ctx, microsandboxExternalProvider, stageProviderName)
+				staged := prepareMicrosandboxConsumerProvider(ctx, stageProviderName)
+				runtimeBytes, err := os.ReadFile(staged.runtimeBinary)
+				framework.ExpectNoError(err)
+				runtimeRelativePath, err := remoteAgentRuntimeRelativePath(staged)
+				framework.ExpectNoError(err)
+				descriptor, err := provider.LoadProviderConfig(
+					config.DefaultContext,
+					stageProviderName,
 				)
-				defer cancel()
-				return server.close(closeCtx)
-			})
+				framework.ExpectNoError(err)
 
-			descriptor.Name = providerName
-			descriptor.Agent.Local = types.StrBool("false")
-			descriptor.Agent.DataPath = agentHome
-			descriptor.Agent.DownloadURL = server.agentURL()
-			binaryEntry.Path = server.runtimeURL()
-			descriptor.Agent.Binaries[binaryName] = checksums
-			descriptor.Exec = remoteAgentCommands(containerName, bundleRoot, dockerPath, agentHome)
-			configPath := filepath.Join(ginkgo.GinkgoT().TempDir(), "provider.yaml")
-			configBytes, err := yaml.Marshal(descriptor)
-			framework.ExpectNoError(err)
-			framework.ExpectNoError(os.WriteFile(configPath, configBytes, 0o600))
-			session.addProvider(ctx, configPath, providerName)
-			framework.ExpectNoError(session.framework.DevsyProviderUse(ctx, providerName))
-
-			workspace := session.newWorkspace()
-			ginkgo.DeferCleanup(func(cleanupCtx ginkgo.SpecContext) error {
-				boundedCtx, cancel := context.WithTimeout(
-					context.WithoutCancel(cleanupCtx), 20*time.Second,
+				containerName := "devsy-" + microsandboxConsumerID("agent")
+				agentHome := filepath.Join(
+					"/tmp/devsy-remote-agent-fixture",
+					microsandboxConsumerID("home"),
+					"agent",
 				)
-				defer cancel()
-				return removeRemoteAgentContainer(boundedCtx, containerName)
-			})
-			ginkgo.DeferCleanup(session.framework.CleanupWorkspace, workspace)
-			framework.ExpectNoError(session.framework.DevsyUp(ctx, workspace))
-			gomega.Expect(server.requests.Load()).To(gomega.Equal(int32(1)),
-				"remote agent must fetch the published provider binary exactly once")
-			workspaceRecord, err := session.framework.FindWorkspace(ctx, workspace)
-			framework.ExpectNoError(err)
-			remoteBinaryPath := filepath.Join(
-				agentHome, "contexts", config.DefaultContext, "workspaces", workspaceRecord.ID,
-				"binaries", runtimeRelativePath,
-			)
-			firstBinary := assertRemoteAgentBinary(
-				ctx, containerName, remoteBinaryPath, staged.runtimeHash,
-			)
-			assertRemoteAgentGuest(ctx, session.framework, workspace)
+				bundleRoot, err := remoteAgentBundleRoot()
+				framework.ExpectNoError(err)
+				dockerPath, err := exec.LookPath("docker")
+				framework.ExpectNoError(err)
+				dockerPath, err = filepath.Abs(dockerPath)
+				framework.ExpectNoError(err)
+				preflightRemoteAgentContainer(ctx, bundleRoot, dockerPath, filepath.Dir(agentHome))
 
-			clearRemoteAgentBinaryCache(ctx, containerName, filepath.Dir(agentHome))
-			framework.ExpectNoError(session.framework.DevsyStop(ctx, workspace))
-			server.offline.Store(true)
-			framework.ExpectNoError(session.framework.DevsyUp(ctx, workspace))
-			gomega.Expect(server.requests.Load()).To(gomega.Equal(int32(1)),
-				"existing workspace binary must be reused when its source returns 404")
-			secondBinary := assertRemoteAgentBinary(
-				ctx, containerName, remoteBinaryPath, staged.runtimeHash,
-			)
-			gomega.Expect(secondBinary).To(
-				gomega.Equal(firstBinary),
-				"workspace binary identity must survive stop and restart",
-			)
-			assertRemoteAgentGuest(ctx, session.framework, workspace)
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()),
-	),
+				binaryName := descriptor.Agent.External.Binary
+				checksums := descriptor.Agent.Binaries[binaryName]
+				binaryEntry := remoteAgentLinuxBinary(checksums)
+				descriptorHash := strings.TrimPrefix(
+					strings.ToLower(binaryEntry.Checksum),
+					"sha256:",
+				)
+				gomega.Expect(descriptorHash).To(gomega.Equal(staged.runtimeHash))
+				agentPath := filepath.Join(
+					session.framework.DevsyBinDir,
+					session.framework.DevsyBinName,
+				)
+				server := startRemoteAgentArtifactServer(runtimeBytes, agentPath)
+				ginkgo.DeferCleanup(func(cleanupCtx ginkgo.SpecContext) error {
+					closeCtx, cancel := context.WithTimeout(
+						context.WithoutCancel(cleanupCtx), 10*time.Second,
+					)
+					defer cancel()
+					return server.close(closeCtx)
+				})
+
+				descriptor.Name = providerName
+				descriptor.Agent.Local = types.StrBool("false")
+				descriptor.Agent.DataPath = agentHome
+				descriptor.Agent.DownloadURL = server.agentURL()
+				binaryEntry.Path = server.runtimeURL()
+				descriptor.Agent.Binaries[binaryName] = checksums
+				descriptor.Exec = remoteAgentCommands(
+					containerName,
+					bundleRoot,
+					dockerPath,
+					agentHome,
+				)
+				configPath := filepath.Join(ginkgo.GinkgoT().TempDir(), "provider.yaml")
+				configBytes, err := yaml.Marshal(descriptor)
+				framework.ExpectNoError(err)
+				framework.ExpectNoError(os.WriteFile(configPath, configBytes, 0o600))
+				session.addProvider(ctx, configPath, providerName)
+				framework.ExpectNoError(session.framework.DevsyProviderUse(ctx, providerName))
+
+				workspace := session.newWorkspace()
+				ginkgo.DeferCleanup(func(cleanupCtx ginkgo.SpecContext) error {
+					boundedCtx, cancel := context.WithTimeout(
+						context.WithoutCancel(cleanupCtx), 20*time.Second,
+					)
+					defer cancel()
+					return removeRemoteAgentContainer(boundedCtx, containerName)
+				})
+				ginkgo.DeferCleanup(session.framework.CleanupWorkspace, workspace)
+				framework.ExpectNoError(session.framework.DevsyUp(ctx, workspace))
+				gomega.Expect(server.requests.Load()).To(gomega.Equal(int32(1)),
+					"remote agent must fetch the published provider binary exactly once")
+				workspaceRecord, err := session.framework.FindWorkspace(ctx, workspace)
+				framework.ExpectNoError(err)
+				remoteBinaryPath := filepath.Join(
+					agentHome, "contexts", config.DefaultContext, "workspaces", workspaceRecord.ID,
+					"binaries", runtimeRelativePath,
+				)
+				firstBinary := assertRemoteAgentBinary(
+					ctx, containerName, remoteBinaryPath, staged.runtimeHash,
+				)
+				assertRemoteAgentGuest(ctx, session.framework, workspace)
+
+				clearRemoteAgentBinaryCache(ctx, containerName, filepath.Dir(agentHome))
+				framework.ExpectNoError(session.framework.DevsyStop(ctx, workspace))
+				server.offline.Store(true)
+				framework.ExpectNoError(session.framework.DevsyUp(ctx, workspace))
+				gomega.Expect(server.requests.Load()).To(gomega.Equal(int32(1)),
+					"existing workspace binary must be reused when its source returns 404")
+				secondBinary := assertRemoteAgentBinary(
+					ctx, containerName, remoteBinaryPath, staged.runtimeHash,
+				)
+				gomega.Expect(secondBinary).To(
+					gomega.Equal(firstBinary),
+					"workspace binary identity must survive stop and restart",
+				)
+				assertRemoteAgentGuest(ctx, session.framework, workspace)
+			}, ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+	},
 )
 
 func remoteAgentRuntimeRelativePath(staged microsandboxConsumerProvider) (string, error) {

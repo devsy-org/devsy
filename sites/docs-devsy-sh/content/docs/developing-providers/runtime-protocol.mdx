@@ -167,6 +167,12 @@ The Linux-only `up-provider-microsandbox-registry-consumer` label exercises the 
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-registry-consumer
 ```
 
+The Linux-only `up-provider-microsandbox-remote-agent-binaries` label uses the published external provider with `agent.local: false` and a test-owned remote agent container. It checks that `up` downloads the runtime binary into the remote agent's workspace copy once, then clears the agent's provider cache, makes the source return 404, and requires a later `up` to reuse the retained workspace binary. A guest command verifies the workspace remains usable. This source-prepared case does not establish general agent delivery behavior or ordinary `up` image metadata resolution. Its external-provider behavior still requires native Linux/KVM CI evidence; documentation and catalogue changes are not runtime proof.
+
+```sh
+DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-remote-agent-binaries
+```
+
 The existing external lifecycle case also captures ordinary fresh and reused `up` wall time and filtered runtime startup events when CI supplies the pinned SDK performance tools. After both commands pass, a checksum-verified copy of the published runtime runs direct/supervised/supervised/direct Info/Find comparisons, each with a first launch and 100 warm samples. The JSON artifact records tool/runtime provenance and reaped processes. Startup events measure launch, handshake and dispense before RPC; they exclude binary resolution, RPC and reaping. These measurements use warm host caches, add no latency threshold or VM case, and do not claim cold-cache performance or total plugin overhead.
 
 These scenarios do not establish complete parity. Compatibility shims verify preservation under injected version faults but do not establish behavior against an actual historical MicroSandbox release. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, Dockerless, request-invalid and managed-policy recreation, logs, and cancellation checks alone do not authorize that cutover. Dockerless refusal checks cover fresh creation, not preservation after an invalid recreation request. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
