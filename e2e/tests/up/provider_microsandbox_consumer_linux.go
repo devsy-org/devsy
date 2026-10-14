@@ -460,6 +460,7 @@ func setMicrosandboxConsumerEnvironment(environment microsandboxConsumerEnvironm
 	for name, value := range map[string]string{
 		"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, ".config"),
 		"DOCKER_CONFIG": filepath.Join(home, ".docker"), "MSB_HOME": msbHome,
+		"MSB_CONFIG_PATH":        filepath.Join(msbHome, "config.json"),
 		"CASE_A_CREDENTIAL_ROOT": helper.root, "CASE_A_CREDENTIAL_CONFIG": helper.config,
 		"CASE_A_CREDENTIAL_OBSERVATIONS": helper.log, "CASE_A_OPERATION_ID": helper.operationID,
 		"HTTPS_PROXY": fixture.ProxyURL, "HTTP_PROXY": fixture.ProxyURL,
