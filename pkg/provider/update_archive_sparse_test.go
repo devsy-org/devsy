@@ -15,6 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	updateArchiveExecutablePath = "bin/runtime"
+	updateArchiveSidecarPath    = "bin/provider.json"
+)
+
 func TestExtractConfinedUpdateTarExpandsGNUSparseExecutable(t *testing.T) {
 	archive := gnuSparseUpdateArchive(t)
 	wantExecutable := []byte("#!/bin\x00\x00\x00sh\n")
@@ -36,24 +41,26 @@ func TestExtractConfinedUpdateTarExpandsGNUSparseExecutable(t *testing.T) {
 	require.NoError(t, extractConfinedUpdateTar(
 		context.Background(), root, bytes.NewReader(archive),
 	))
-	require.NoError(t, finalizeUpdateArchive(context.Background(), root, "bin/runtime"))
+	require.NoError(t, finalizeUpdateArchive(
+		context.Background(), root, updateArchiveExecutablePath,
+	))
 
-	executable, err := root.ReadFile("bin/runtime")
+	executable, err := root.ReadFile(updateArchiveExecutablePath)
 	require.NoError(t, err)
 	require.Equal(t, wantExecutable, executable)
-	executableInfo, err := root.Stat("bin/runtime")
+	executableInfo, err := root.Stat(updateArchiveExecutablePath)
 	require.NoError(t, err)
-	assertSparseUpdateFileMode(t, executableInfo, 0o755)
+	assertUpdateArchiveFileMode(t, executableInfo, 0o755)
 
-	sidecar, err := root.ReadFile("bin/provider.json")
+	sidecar, err := root.ReadFile(updateArchiveSidecarPath)
 	require.NoError(t, err)
 	require.Equal(t, wantSidecar, sidecar)
-	sidecarInfo, err := root.Stat("bin/provider.json")
+	sidecarInfo, err := root.Stat(updateArchiveSidecarPath)
 	require.NoError(t, err)
-	assertSparseUpdateFileMode(t, sidecarInfo, 0o640)
+	assertUpdateArchiveFileMode(t, sidecarInfo, 0o640)
 }
 
-func assertSparseUpdateFileMode(t *testing.T, info os.FileInfo, unixMode os.FileMode) {
+func assertUpdateArchiveFileMode(t *testing.T, info os.FileInfo, unixMode os.FileMode) {
 	t.Helper()
 	require.True(t, info.Mode().IsRegular())
 	if runtime.GOOS == windowsOS {
@@ -72,13 +79,16 @@ func gnuSparseUpdateArchive(t *testing.T) []byte {
 	writer := tar.NewWriter(&buf)
 	physical := []byte("#!/binsh\n")
 	require.NoError(t, writer.WriteHeader(&tar.Header{
-		Name: "bin/runtime", Mode: 0o755, Size: int64(len(physical)), Format: tar.FormatGNU,
+		Name:   updateArchiveExecutablePath,
+		Mode:   0o755,
+		Size:   int64(len(physical)),
+		Format: tar.FormatGNU,
 	}))
 	_, err := writer.Write(physical)
 	require.NoError(t, err)
 	sidecar := []byte("provider metadata\n")
 	require.NoError(t, writer.WriteHeader(&tar.Header{
-		Name: "bin/provider.json", Mode: 0o640, Size: int64(len(sidecar)),
+		Name: updateArchiveSidecarPath, Mode: 0o640, Size: int64(len(sidecar)),
 	}))
 	_, err = writer.Write(sidecar)
 	require.NoError(t, err)
@@ -122,5 +132,5 @@ func TestGNUArchiveFixtureHasExpandedSparseData(t *testing.T) {
 	require.Equal(t, []byte("#!/bin\x00\x00\x00sh\n"), body)
 	header, err = reader.Next()
 	require.NoError(t, err)
-	require.Equal(t, "bin/provider.json", header.Name)
+	require.Equal(t, updateArchiveSidecarPath, header.Name)
 }

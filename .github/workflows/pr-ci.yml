@@ -153,7 +153,7 @@ jobs:
         run: |
           $jsonPath = Join-Path $env:RUNNER_TEMP 'provider-update-windows.jsonl'
           $exitPath = Join-Path $env:RUNNER_TEMP 'provider-update-windows.exitcode'
-          & go test -race -json -count=1 -timeout 10m ./pkg/workspace ./pkg/provider -run '^(TestProviderUpdate|TestStatUpdatePath|TestExtractConfinedUpdateTarExpandsGNUSparseExecutable|TestGNUArchiveFixtureHasExpandedSparseData)' |
+          & go test -race -json -count=1 -timeout 10m ./pkg/workspace ./pkg/provider -run '^(TestProviderUpdate|TestStatUpdatePath|TestExtractConfinedUpdateTarExpandsGNUSparseExecutable|TestGNUArchiveFixtureHasExpandedSparseData|TestExtractConfinedUpdateTarPreservesContiguousFiles)' |
             Tee-Object -FilePath $jsonPath
           $testExitCode = $LASTEXITCODE
           Set-Content -LiteralPath $exitPath -Value $testExitCode -NoNewline
@@ -177,6 +177,7 @@ jobs:
             'TestProviderUpdateArchivePreservesOwnedDaemon',
             'TestExtractConfinedUpdateTarExpandsGNUSparseExecutable',
             'TestGNUArchiveFixtureHasExpandedSparseData',
+            'TestExtractConfinedUpdateTarPreservesContiguousFiles',
             'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/unchanged_managed_target_succeeds',
             'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/changed_managed_target_with_matching_new_checksum_succeeds',
             'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/replaced_managed_symlink_with_matching_new_checksum_succeeds',
