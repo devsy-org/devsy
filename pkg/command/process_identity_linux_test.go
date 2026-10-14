@@ -5,8 +5,12 @@ package command
 import (
 	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const processStatOpenOperation = "open"
@@ -147,5 +151,101 @@ func TestProcessTreeIdentityForMissingProcess(t *testing.T) {
 	}
 	if identity != "" {
 		t.Fatalf("processTreeIdentity for missing PID = %q, want empty identity", identity)
+	}
+}
+
+func fakeLinuxStats(stats map[int][]string, errs map[int]error) linuxStatReader {
+	return func(pid int) ([]string, bool, error) {
+		if err, ok := errs[pid]; ok {
+			return nil, false, err
+		}
+		fields, ok := stats[pid]
+		return fields, ok, nil
+	}
+}
+
+const absentLinuxGroup = int(^uint32(0) >> 1)
+
+type livingGroupCase struct {
+	name    string
+	pgid    int
+	pids    []int
+	stats   map[int][]string
+	errs    map[int]error
+	want    bool
+	wantErr bool
+}
+
+func linuxLivingGroupCases(liveGroup int) []livingGroupCase {
+	const absent = absentLinuxGroup
+	denied := &os.PathError{Op: processStatOpenOperation, Err: os.ErrPermission}
+	member := func(pgid int, state string) []string {
+		return []string{state, "1", strconv.Itoa(pgid), strconv.Itoa(pgid)}
+	}
+	return []livingGroupCase{
+		{
+			name:  "readable live member wins over unreadable unrelated entry",
+			pgid:  liveGroup,
+			pids:  []int{10, 11},
+			stats: map[int][]string{11: member(liveGroup, "S")},
+			errs:  map[int]error{10: denied},
+			want:  true,
+		},
+		{
+			name:  "zombie-only group has no living members",
+			pgid:  absent,
+			pids:  []int{absent},
+			stats: map[int][]string{absent: member(absent, "Z")},
+		},
+		{name: "vanished process is ignored", pgid: absent, pids: []int{10}},
+		{
+			name: "unreadable unrelated entry with absent group is complete",
+			pgid: absent,
+			pids: []int{10},
+			errs: map[int]error{10: denied},
+		},
+		{
+			name:    "unreadable unrelated entry with existing group fails closed",
+			pgid:    liveGroup,
+			pids:    []int{10},
+			errs:    map[int]error{10: denied},
+			wantErr: true,
+		},
+		{
+			name:    "unreadable leader fails closed",
+			pgid:    absent,
+			pids:    []int{absent},
+			errs:    map[int]error{absent: denied},
+			wantErr: true,
+		},
+		{
+			name:    "unexpected stat error fails closed",
+			pgid:    absent,
+			pids:    []int{10},
+			errs:    map[int]error{10: syscall.EIO},
+			wantErr: true,
+		},
+	}
+}
+
+func TestLinuxLivingGroupMembers(t *testing.T) {
+	for _, tc := range linuxLivingGroupCases(startLinuxProcessGroupHelper(t)) {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := linuxLivingGroupMembers(tc.pids, tc.pgid, fakeLinuxStats(tc.stats, tc.errs))
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.False(t, got)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestProcessGroupHasLivingMembersRejectsNonpositiveGroup(t *testing.T) {
+	for _, pgid := range []int{0, -1} {
+		_, err := processGroupHasLivingMembers(pgid)
+		require.Error(t, err)
 	}
 }
