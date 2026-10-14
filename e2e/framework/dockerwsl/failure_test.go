@@ -76,8 +76,8 @@ func hostFailureCases() []failureCase {
 			r.onResult("wsl-install", runenv.CommandResult{TimedOut: true, ExitCode: -1})
 		}, runenv.CodeDockerWSLInstall, "timed out"},
 		{"installer daemon cannot be stopped", func(r *wslRig) {
-			r.onResult("wsl-stop-installer", exitWith(1, "docker socket still present"))
-		}, runenv.CodeDockerWSLDaemon, "docker socket still present"},
+			r.onResult("wsl-stop-installer", exitWith(1, "installer dockerd still running"))
+		}, runenv.CodeDockerWSLDaemon, "installer dockerd still running"},
 		{"dockerd launch fails", func(r *wslRig) {
 			r.host.startErr = errors.New("CreateProcess: access denied")
 		}, runenv.CodeDockerWSLDaemon, "access denied"},

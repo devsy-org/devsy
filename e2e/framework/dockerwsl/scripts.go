@@ -75,7 +75,9 @@ dpkg-query -W -f='package ${Package}=${Version}\n' \
 
 // stopInstallerDaemonScript stops a docker service the package install started.
 // Preflight proved no docker socket existed beforehand, so any daemon here is
-// this fixture's.
+// this fixture's. A stopped daemon can leave its socket file behind, which
+// would read as a live daemon to the readiness checks that follow, so the
+// script removes it once no dockerd process remains.
 const stopInstallerDaemonScript = `set -u
 if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
   systemctl stop docker.service docker.socket >/dev/null 2>&1
@@ -83,13 +85,15 @@ fi
 if [ -e /var/run/docker.sock ] && command -v service >/dev/null 2>&1; then
   service docker stop >/dev/null 2>&1
 fi
+dockerd_running() { pgrep -x dockerd >/dev/null; }
 i=0
-while [ -e /var/run/docker.sock ] && [ "$i" -lt 15 ]; do sleep 1; i=$((i+1)); done
-if [ -e /var/run/docker.sock ]; then
-  echo "docker socket still present after stopping the installer daemon" >&2
-  ps -eo pid,user,args | grep '[d]ockerd' >&2
+while dockerd_running && [ "$i" -lt 15 ]; do sleep 1; i=$((i+1)); done
+if dockerd_running; then
+  echo "installer dockerd still running after stopping it" >&2
+  pgrep -ax dockerd >&2
   exit 1
 fi
+rm -f /var/run/docker.sock
 `
 
 // prepareRuntimeScript creates the owned runtime and log directories and the
