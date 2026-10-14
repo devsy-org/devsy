@@ -155,7 +155,12 @@ func (installer *linuxInstaller) prepareArchive(paths installerPaths) error {
 			paths.archive,
 			installer.bundle.url,
 		); err != nil {
-			return fmt.Errorf("download pinned MicroSandbox %s: %w", microsandboxVersion, err)
+			downloadErr := fmt.Errorf(
+				"download pinned MicroSandbox %s: %w",
+				microsandboxVersion,
+				err,
+			)
+			return errors.Join(downloadErr, removeInstallerArchive(paths.archive))
 		}
 	} else if err != nil {
 		return fmt.Errorf("inspect cached MicroSandbox archive: %w", err)
@@ -165,7 +170,15 @@ func (installer *linuxInstaller) prepareArchive(paths installerPaths) error {
 		return fmt.Errorf("checksum pinned MicroSandbox archive: %w", err)
 	}
 	if !strings.EqualFold(actual, installer.bundle.sha256) {
-		return fmt.Errorf("MicroSandbox archive checksum mismatch: got %s", actual)
+		mismatchErr := fmt.Errorf("MicroSandbox archive checksum mismatch: got %s", actual)
+		return errors.Join(mismatchErr, removeInstallerArchive(paths.archive))
+	}
+	return nil
+}
+
+func removeInstallerArchive(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove unusable MicroSandbox archive: %w", err)
 	}
 	return nil
 }

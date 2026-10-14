@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -87,9 +86,10 @@ func TestInstallLinuxBundleDownloadsPinnedArchiveBeforeExtraction(t *testing.T) 
 
 func TestInstallLinuxBundleRejectsBadChecksumBeforeExtraction(t *testing.T) {
 	fixture := newInstallerFixture(t)
-	fixture.cacheArchive(t, installerTarFixture(t))
-	fixture.bundle.sha256 = strings.Repeat("0", sha256.Size*2)
-	runner := &installerTestRunner{fixture: fixture}
+	validArchive := installerTarFixture(t)
+	fixture.cacheArchive(t, []byte("corrupt cached archive"))
+	fixture.bundle.sha256 = installerDigest(validArchive)
+	runner := &installerTestRunner{fixture: fixture, archive: validArchive}
 
 	err := fixture.installer(context.Background(), runner.run,
 		commandOutput{stdout: io.Discard, stderr: io.Discard}).install()
@@ -97,7 +97,36 @@ func TestInstallLinuxBundleRejectsBadChecksumBeforeExtraction(t *testing.T) {
 	require.Empty(t, runner.names)
 	_, err = os.Stat(filepath.Join(fixture.home, ".microsandbox"))
 	require.ErrorIs(t, err, os.ErrNotExist)
-	installerAssertOnlyCachedArchive(t, fixture.runnerTemp, fixture.bundle.filename)
+	installerAssertRunnerTempEmpty(t, fixture.runnerTemp)
+
+	err = fixture.installer(context.Background(), runner.run,
+		commandOutput{stdout: io.Discard, stderr: io.Discard}).install()
+	require.NoError(t, err)
+	require.True(t, runner.downloaded)
+	installerAssertInstalled(t, fixture)
+}
+
+func TestInstallLinuxBundleRemovesPartialDownloadForRetry(t *testing.T) {
+	fixture := newInstallerFixture(t)
+	validArchive := installerTarFixture(t)
+	fixture.bundle.sha256 = installerDigest(validArchive)
+	runner := &installerTestRunner{
+		fixture: fixture, archive: validArchive,
+		partialArchive: []byte("partial archive"), failDownload: errors.New("curl exited 22"),
+	}
+
+	err := fixture.installer(context.Background(), runner.run,
+		commandOutput{stdout: io.Discard, stderr: io.Discard}).install()
+	require.ErrorIs(t, err, runner.failDownload)
+	installerAssertRunnerTempEmpty(t, fixture.runnerTemp)
+
+	runner.failDownload = nil
+	runner.partialArchive = nil
+	err = fixture.installer(context.Background(), runner.run,
+		commandOutput{stdout: io.Discard, stderr: io.Discard}).install()
+	require.NoError(t, err)
+	require.True(t, runner.downloaded)
+	installerAssertInstalled(t, fixture)
 }
 
 func TestInstallLinuxBundlePreservesKVMCommandFailure(t *testing.T) {
@@ -179,6 +208,8 @@ func (fixture *installerTestFixture) cacheArchive(t *testing.T, archive []byte) 
 type installerTestRunner struct {
 	fixture        installerTestFixture
 	archive        []byte
+	partialArchive []byte
+	failDownload   error
 	failExtraction error
 	failKVMWrite   error
 	names          []string
@@ -222,7 +253,14 @@ func (runner *installerTestRunner) downloadArchive(args []string) error {
 		}
 	}
 	runner.downloaded = true
-	return os.WriteFile(want[4], runner.archive, 0o600)
+	archive := runner.archive
+	if runner.failDownload != nil {
+		archive = runner.partialArchive
+	}
+	if err := os.WriteFile(want[4], archive, 0o600); err != nil {
+		return err
+	}
+	return runner.failDownload
 }
 
 func (runner *installerTestRunner) checkKVM(args []string) error {
@@ -315,4 +353,11 @@ func installerAssertOnlyCachedArchive(t *testing.T, dir, archive string) {
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
 	require.Equal(t, archive, entries[0].Name())
+}
+
+func installerAssertRunnerTempEmpty(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
 }
