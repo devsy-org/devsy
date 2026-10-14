@@ -3,6 +3,7 @@
 package command
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 	"testing"
 	"time"
 )
+
+const testSavedIdentity = "1:2:3"
 
 func TestKillTerminatesRunningProcess(t *testing.T) {
 	cmd := exec.Command("sleep", "30")
@@ -285,13 +288,7 @@ func TestTerminateUnidentifiedProcessGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("terminateProcessRef: %v", err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for processGroupExists(pid) && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if processGroupExists(pid) {
-		t.Fatalf("worker group %d still has processes after termination", pid)
-	}
+	waitForNoLivingGroupMembers(t, pid)
 }
 
 func TestCleanupExitedIdentitylessGroupReportsSurvivingDescendants(t *testing.T) {
@@ -314,24 +311,114 @@ func TestCleanupExitedIdentitylessGroupReportsSurvivingDescendants(t *testing.T)
 	}
 }
 
-// startSigtermIgnoringGroup starts a group leader that outlives SIGTERM. The
-// child is reaped as soon as it exits, the way a supervising process does, so
-// an unreaped zombie does not keep the group looking populated.
 func startSigtermIgnoringGroup(t *testing.T) *exec.Cmd {
 	t.Helper()
-	cmd := exec.Command("sh", "-c", `trap "" TERM; sleep 30`)
+	ready := filepath.Join(t.TempDir(), "ready")
+	// #nosec G204 -- the fixed shell script and all paths are test-controlled.
+	cmd := exec.Command("sh", "-c", `trap '' TERM; printf 'ready\n' > "$1"; sleep 30`, "sh", ready)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start SIGTERM-ignoring group: %v", err)
 	}
-	reaped := make(chan struct{})
-	go func() {
-		_ = cmd.Wait()
-		close(reaped)
-	}()
 	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		<-reaped
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Wait()
 	})
-	return cmd
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		// #nosec G304 -- this test reads only its own temporary readiness file.
+		data, err := os.ReadFile(ready)
+		if err == nil && string(data) == "ready\n" {
+			return cmd
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("SIGTERM-ignoring group did not report readiness: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func waitForNoLivingGroupMembers(t *testing.T, pgid int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		live, err := processGroupHasLivingMembers(pgid)
+		if err != nil {
+			t.Fatalf("check living members of group %d: %v", pgid, err)
+		}
+		if !live {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("worker group %d still has living members after termination", pgid)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestKillWorkerTreeWithStaleIdentityLeavesLiveLeaderRunning(t *testing.T) {
+	pid := startUnixTestProcess(t, &syscall.SysProcAttr{Setpgid: true}).Process.Pid
+	identity := processTreeIdentityForTest(t, pid)
+	stale := identity[:strings.LastIndex(identity, ":")] + ":0"
+	if err := killWorkerTreeWithIdentity(pid, "detached-task", stale); err != nil {
+		t.Fatalf("killWorkerTreeWithIdentity with stale identity: %v", err)
+	}
+	if running, err := isRunning(strconv.Itoa(pid)); err != nil || !running {
+		t.Fatalf("live leader with stale identity: running=%t err=%v, want running", running, err)
+	}
+}
+
+func TestConfirmGroupEPERMKeepsLiveOrUnverifiedGroupErrors(t *testing.T) {
+	matchErr := errors.New("enumerate processes")
+	tests := []struct {
+		name     string
+		identity string
+		matcher  func(int, string) (bool, error)
+		wantNil  bool
+		wantErrs []error
+	}{
+		{
+			name:     "live matching member keeps EPERM",
+			identity: testSavedIdentity,
+			matcher:  func(int, string) (bool, error) { return true, nil },
+			wantErrs: []error{syscall.EPERM},
+		},
+		{
+			name:     "failed verification keeps EPERM and verification error",
+			identity: testSavedIdentity,
+			matcher:  func(int, string) (bool, error) { return false, matchErr },
+			wantErrs: []error{syscall.EPERM, matchErr},
+		},
+		{
+			name:     "no matching member confirms completion",
+			identity: testSavedIdentity,
+			matcher:  func(int, string) (bool, error) { return false, nil },
+			wantNil:  true,
+		},
+		{
+			name:     "missing identity never confirms completion",
+			identity: "",
+			matcher:  func(int, string) (bool, error) { return false, nil },
+			wantErrs: []error{syscall.EPERM},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := confirmGroupEPERM(1234, tc.identity, syscall.EPERM, tc.matcher)
+			if tc.wantNil {
+				if err != nil {
+					t.Fatalf("confirmGroupEPERM = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("confirmGroupEPERM = nil, want error")
+			}
+			for _, want := range tc.wantErrs {
+				if !errors.Is(err, want) {
+					t.Fatalf("confirmGroupEPERM = %v, want errors.Is %v", err, want)
+				}
+			}
+		})
+	}
 }
