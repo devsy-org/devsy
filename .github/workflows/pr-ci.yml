@@ -167,6 +167,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          # Windows cache archiving can consume the post-job budget after a successful build.
+          cache: ${{ runner.os != 'Windows' }}
 
       - name: get operating system lowercase
         id: os
@@ -358,6 +360,8 @@ jobs:
             expected-spec-count: 4
           - label: up-provider-microsandbox-logs-cancel
             expected-spec-count: 6
+          - label: up-provider-microsandbox-compatibility
+            expected-spec-count: 2
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -493,9 +497,6 @@ jobs:
     name: Test ${{ matrix.label }}${{ (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
     needs: [changes, can-read-secret, build-cli]
     if: needs.changes.outputs.go == 'true'
-    permissions:
-      contents: read
-      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -1139,15 +1140,6 @@ jobs:
           client-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
           private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
-
-      - name: log in to GHCR for test-images pulls
-        if: runner.os == 'Linux' && matrix.label == 'up-docker-compose'
-        env:
-          GHCR_USER: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-          printf '%s' "$GHCR_TOKEN" | sudo docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
       - name: test Compose UID mapping as existing non-root runner
         if: runner.os == 'Linux' && matrix.label == 'up-docker-compose'
