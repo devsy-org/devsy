@@ -72,7 +72,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"ensure workspace cleanup when failing to create a workspace",
 			func(ctx context.Context) {
-				f, err := setupDockerProvider(initialDir+"/bin", "docker")
+				f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyProviderDelete(cleanupCtx, "docker")
@@ -94,7 +94,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"should fail with error when bind mount source does not exist",
 			func(ctx context.Context) {
-				f, err := setupDockerProvider(initialDir+"/bin", "docker")
+				f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyProviderDelete(cleanupCtx, "docker")
@@ -116,7 +116,7 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.It("ensure workspace cleanup when not a git or folder", func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			initialList, err := f.DevsyList(ctx)
@@ -133,7 +133,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"launches a recovery container after a failed build",
 			func(ctx context.Context) {
-				f, err := setupDockerProvider(initialDir+"/bin", "docker")
+				f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyProviderDelete(cleanupCtx, "docker")

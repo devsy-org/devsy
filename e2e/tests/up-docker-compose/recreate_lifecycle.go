@@ -40,7 +40,7 @@ var _ = ginkgo.Describe(
 			tc.dockerHelper = &docker.DockerHelper{DockerCommand: recreateLifecycleDockerCommand}
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
-			tc.f, err = setupDockerProvider(filepath.Join(tc.initialDir, "bin"))
+			tc.f, err = framework.SetupDockerProvider(filepath.Join(tc.initialDir, "bin"), "docker")
 			framework.ExpectNoError(err)
 		})
 

@@ -34,7 +34,10 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			dtc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
-			dtc.f, err = setupDockerProvider(filepath.Join(dtc.initialDir, "bin"), "docker")
+			dtc.f, err = framework.SetupDockerProvider(
+				filepath.Join(dtc.initialDir, "bin"),
+				"docker",
+			)
 			framework.ExpectNoError(err)
 		})
 

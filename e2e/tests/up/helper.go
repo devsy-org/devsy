@@ -231,10 +231,6 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 	return tempDir, nil
 }
 
-func setupDockerProvider(binDir, dockerPath string) (*framework.Framework, error) {
-	return framework.SetupDockerProvider(binDir, dockerPath)
-}
-
 func setupWorkspaceAndUp(
 	ctx context.Context,
 	testdataPath, initialDir string,
