@@ -804,7 +804,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"managed secret injects into lifecycle commands via --secret",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-secret",
@@ -828,7 +828,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"managed secret mounts as a file under /run/secrets via --secret type=mount",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-secret-mount",
@@ -855,7 +855,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"adds a tmpfs before delivering a file secret to an existing workspace",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				contextName := fmt.Sprintf("late-file-secret-%d", time.Now().UnixNano())
 				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
@@ -922,7 +922,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"managed env var injects into the workspace via --env",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-secret",
@@ -961,7 +961,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"workspace environment overrides a context-attached managed environment value",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				contextName := fmt.Sprintf("managed-env-override-%d", time.Now().UnixNano())
 				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
@@ -1024,7 +1024,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"migrates an existing workspace when a terminal secret is attached later",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				contextName := fmt.Sprintf("late-secret-%d", time.Now().UnixNano())
 				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
@@ -1113,7 +1113,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"explicit lifecycle secret and secrets file do not reach terminal sessions",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-secret-attached", dtc.initialDir, dtc.f,
 				)

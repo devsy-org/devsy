@@ -20,7 +20,11 @@ var _ = ginkgo.Describe("devsy mcp serve", ginkgo.Label("mcp"), ginkgo.Ordered, 
 
 	ginkgo.It("lists a running workspace via workspace_list and execs a command via workspace_exec",
 		func(ctx context.Context) {
-			tempDir, f, err := setupWorkspaceAndUp(ctx, "tests/mcp/testdata/basic", initialDir)
+			tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
+				ctx,
+				"tests/mcp/testdata/basic",
+				initialDir,
+			)
 			framework.ExpectNoError(err)
 
 			client, err := f.StartMCPServer(ctx)

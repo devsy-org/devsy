@@ -28,25 +28,6 @@ const (
 	sshProbeTimeout = 20 * time.Second
 )
 
-// useFileSecretsBackend forces the file backend so tests do not depend on an OS
-// keyring (unavailable in CI); env is restored on cleanup.
-func useFileSecretsBackend() {
-	for k, v := range map[string]string{
-		"DEVSY_SECRETS_BACKEND":    "file",
-		"DEVSY_SECRETS_PASSPHRASE": "e2e-passphrase",
-	} {
-		prev, had := os.LookupEnv(k)
-		framework.ExpectNoError(os.Setenv(k, v))
-		ginkgo.DeferCleanup(func() {
-			if had {
-				_ = os.Setenv(k, prev)
-			} else {
-				_ = os.Unsetenv(k)
-			}
-		})
-	}
-}
-
 func (dtc *dockerTestContext) storeSecret(ctx context.Context, name, value string) {
 	_, err := dtc.f.ExecCommandOutput(ctx, []string{secretCmd, "set", name, "--value", value})
 	framework.ExpectNoError(err)
@@ -284,7 +265,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 	ctx context.Context,
 	tc contextAttachmentCase,
 ) {
-	useFileSecretsBackend()
+	framework.UseFileSecretsBackend()
 	contextName := fmt.Sprintf("%s-%d", tc.contextPrefix, time.Now().UnixNano())
 	framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
