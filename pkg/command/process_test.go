@@ -422,3 +422,97 @@ func TestConfirmGroupEPERMKeepsLiveOrUnverifiedGroupErrors(t *testing.T) {
 		})
 	}
 }
+
+var (
+	errSignalUnexpected = errors.New("unexpected")
+	errSignalVerify     = errors.New("enumerate processes")
+)
+
+type groupMatcher func(int, string) (bool, error)
+
+func matchesLiveMember(int, string) (bool, error) { return true, nil }
+func matchesNoMember(int, string) (bool, error)   { return false, nil }
+func matchFails(int, string) (bool, error)        { return false, errSignalVerify }
+
+type signalResultCase struct {
+	name     string
+	target   int
+	killErr  error
+	identity string
+	matcher  groupMatcher
+	want     signalOutcome
+	wantErrs []error
+}
+
+func groupCase(name string, killErr error, matcher groupMatcher) signalResultCase {
+	return signalResultCase{
+		name:     name,
+		target:   -42,
+		killErr:  killErr,
+		identity: testSavedIdentity,
+		matcher:  matcher,
+	}
+}
+
+func (c signalResultCase) onPositiveTarget() signalResultCase {
+	c.target = 42
+	return c
+}
+
+func (c signalResultCase) expect(want signalOutcome, wantErrs ...error) signalResultCase {
+	c.want = want
+	c.wantErrs = wantErrs
+	return c
+}
+
+func signalResultCases() []signalResultCase {
+	return []signalResultCase{
+		{name: "signal delivered", target: 42, want: signalSent},
+		groupCase("positive target gone", syscall.ESRCH, nil).
+			onPositiveTarget().expect(targetGone),
+		groupCase("group gone", syscall.ESRCH, nil).expect(targetGone),
+		groupCase("group EPERM without live member is gone", syscall.EPERM, matchesNoMember).
+			expect(targetGone),
+		groupCase("group EPERM with live member keeps error", syscall.EPERM, matchesLiveMember).
+			expect(signalSent, syscall.EPERM),
+		groupCase("group EPERM with failed verification keeps both", syscall.EPERM, matchFails).
+			expect(signalSent, syscall.EPERM, errSignalVerify),
+		groupCase("positive target EPERM is never confirmed", syscall.EPERM, matchesNoMember).
+			onPositiveTarget().expect(signalSent, syscall.EPERM),
+		groupCase("unexpected error is returned", errSignalUnexpected, matchesNoMember).
+			expect(signalSent, errSignalUnexpected),
+	}
+}
+
+func TestClassifySignalResult(t *testing.T) {
+	for _, tc := range signalResultCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := classifySignalResult(tc.target, tc.killErr, tc.identity, tc.matcher)
+			if got != tc.want {
+				t.Fatalf("outcome = %v, want %v", got, tc.want)
+			}
+			if len(tc.wantErrs) == 0 && err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			for _, want := range tc.wantErrs {
+				if !errors.Is(err, want) {
+					t.Fatalf("err = %v, want errors.Is %v", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestSignalProcessTreeReturnsImmediatelyWhenTargetAlreadyGone(t *testing.T) {
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run short-lived process: %v", err)
+	}
+	start := time.Now()
+	if err := signalProcessTree(cmd.Process.Pid, true, testSavedIdentity); err != nil {
+		t.Fatalf("signalProcessTree for exited process: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= time.Second {
+		t.Fatalf("signalProcessTree took %v for an already-exited target", elapsed)
+	}
+}

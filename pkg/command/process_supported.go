@@ -303,9 +303,20 @@ func isProcessGone(err error) bool {
 	return err != nil && errors.Is(err, syscall.ESRCH)
 }
 
+type signalOutcome int
+
+const (
+	signalSent signalOutcome = iota
+	targetGone
+)
+
 func signalProcessTree(target int, graceful bool, identity string) error {
-	if err := sendProcessSignal(target, syscall.SIGTERM, identity); err != nil {
+	outcome, err := sendProcessSignal(target, syscall.SIGTERM, identity)
+	if err != nil {
 		return fmt.Errorf("send SIGTERM to process target %d: %w", target, err)
+	}
+	if outcome == targetGone {
+		return nil
 	}
 	if graceful {
 		time.Sleep(2 * time.Second)
@@ -317,21 +328,44 @@ func signalProcessTree(target int, graceful bool, identity string) error {
 	if !matches {
 		return nil
 	}
-	if err := sendProcessSignal(target, syscall.SIGKILL, identity); err != nil {
+	if _, err := sendProcessSignal(target, syscall.SIGKILL, identity); err != nil {
 		return fmt.Errorf("send SIGKILL to process target %d: %w", target, err)
 	}
 	return nil
 }
 
-func sendProcessSignal(target int, sig syscall.Signal, identity string) error {
-	err := syscall.Kill(target, sig)
-	if err == nil || isProcessGone(err) {
-		return nil
+func sendProcessSignal(
+	target int,
+	sig syscall.Signal,
+	identity string,
+) (signalOutcome, error) {
+	return classifySignalResult(
+		target,
+		syscall.Kill(target, sig),
+		identity,
+		processGroupMatchesIdentity,
+	)
+}
+
+func classifySignalResult(
+	target int,
+	killErr error,
+	identity string,
+	matcher func(int, string) (bool, error),
+) (signalOutcome, error) {
+	switch {
+	case killErr == nil:
+		return signalSent, nil
+	case isProcessGone(killErr):
+		return targetGone, nil
+	case target < 0 && errors.Is(killErr, syscall.EPERM):
+		if err := confirmGroupEPERM(-target, identity, killErr, matcher); err != nil {
+			return signalSent, err
+		}
+		return targetGone, nil
+	default:
+		return signalSent, killErr
 	}
-	if target < 0 && errors.Is(err, syscall.EPERM) {
-		return confirmGroupEPERM(-target, identity, err, processGroupMatchesIdentity)
-	}
-	return err
 }
 
 func confirmGroupEPERM(
