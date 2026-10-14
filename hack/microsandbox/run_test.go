@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -377,5 +378,10 @@ type failingWriter struct{}
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("fixture writer failure") }
 
 func exitWithStatus(status int) error {
+	if runtime.GOOS == "windows" {
+		// The suite fixture deliberately replaces PATH; locate the native shell explicitly.
+		shell := filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe")
+		return exec.Command(shell, "/c", "exit", strconv.Itoa(status)).Run()
+	}
 	return exec.Command("sh", "-c", "exit "+strconv.Itoa(status)).Run()
 }

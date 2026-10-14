@@ -149,6 +149,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: test Go CI helpers on Windows
+        run: go test -race -count=1 -timeout 10m ./hack/microsandbox ./hack/provider_update_ci
+
       - name: run provider update tests and require Windows coverage
         shell: pwsh
         run: go run ./hack/provider_update_ci --artifacts-dir "$env:RUNNER_TEMP"
