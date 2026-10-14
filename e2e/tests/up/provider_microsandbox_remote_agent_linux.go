@@ -27,13 +27,14 @@ import (
 )
 
 type remoteAgentArtifactServer struct {
-	server   *http.Server
-	listener net.Listener
-	done     chan error
-	requests atomic.Int32
-	offline  atomic.Bool
-	runtime  []byte
-	agent    []byte
+	server          *http.Server
+	listener        net.Listener
+	done            chan error
+	runtimeRequests atomic.Int32
+	agentRequests   atomic.Int32
+	offline         atomic.Bool
+	runtime         []byte
+	agent           []byte
 }
 
 const (
@@ -129,8 +130,10 @@ var _ = ginkgo.Describe("published MicroSandbox provider remote agent binaries",
 				})
 				ginkgo.DeferCleanup(session.framework.CleanupWorkspace, workspace)
 				framework.ExpectNoError(session.framework.DevsyUp(ctx, workspace))
-				gomega.Expect(server.requests.Load()).To(gomega.Equal(int32(1)),
+				gomega.Expect(server.runtimeRequests.Load()).To(gomega.Equal(int32(1)),
 					"remote agent must fetch the published provider binary exactly once")
+				gomega.Expect(server.agentRequests.Load()).To(gomega.BeNumerically(">", 0),
+					"remote agent must fetch its agent binary from the fixture endpoint")
 				workspaceRecord, err := session.framework.FindWorkspace(ctx, workspace)
 				framework.ExpectNoError(err)
 				remoteBinaryPath := filepath.Join(
@@ -146,7 +149,7 @@ var _ = ginkgo.Describe("published MicroSandbox provider remote agent binaries",
 				framework.ExpectNoError(session.framework.DevsyStop(ctx, workspace))
 				server.offline.Store(true)
 				framework.ExpectNoError(session.framework.DevsyUp(ctx, workspace))
-				gomega.Expect(server.requests.Load()).To(gomega.Equal(int32(1)),
+				gomega.Expect(server.runtimeRequests.Load()).To(gomega.Equal(int32(1)),
 					"existing workspace binary must be reused when its source returns 404")
 				secondBinary := assertRemoteAgentBinary(
 					ctx, containerName, remoteBinaryPath, staged.runtimeHash,
@@ -200,32 +203,44 @@ func startRemoteAgentArtifactServer(
 		listener: listener, runtime: runtimeBinary, done: make(chan error, 1),
 	}
 	server.agent = agentBinary
-	mux := http.NewServeMux()
-	mux.HandleFunc("/agent/devsy-linux-amd64", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		_, _ = w.Write(server.agent)
-	})
-	mux.HandleFunc("/provider/runtime", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		server.requests.Add(1)
-		if server.offline.Load() {
-			http.NotFound(w, r)
-			return
-		}
-		_, _ = w.Write(server.runtime)
-	})
 	server.server = &http.Server{
-		Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
-		WriteTimeout: 3 * time.Minute, IdleTimeout: 30 * time.Second,
+		Handler:           server.artifactHandler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      3 * time.Minute,
+		IdleTimeout:       30 * time.Second,
 	}
 	go func() { server.done <- server.server.Serve(listener) }()
 	return server
+}
+
+func (s *remoteAgentArtifactServer) artifactHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/agent/devsy-linux-amd64", s.serveAgent)
+	mux.HandleFunc("/provider/runtime", s.serveRuntime)
+	return mux
+}
+
+func (s *remoteAgentArtifactServer) serveAgent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.agentRequests.Add(1)
+	_, _ = w.Write(s.agent)
+}
+
+func (s *remoteAgentArtifactServer) serveRuntime(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.runtimeRequests.Add(1)
+	if s.offline.Load() {
+		http.NotFound(w, r)
+		return
+	}
+	_, _ = w.Write(s.runtime)
 }
 
 func (s *remoteAgentArtifactServer) baseURL() string {
