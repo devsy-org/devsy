@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf16"
 )
@@ -131,30 +132,52 @@ func parseIdentityPublicKey(pub []byte) (string, error) {
 	return key, nil
 }
 
-// icaclsRestrictArgs removes inheritance and leaves the user read access only.
+// icaclsRestrictArgs drops the inherited entries and sets the user's own entry
+// to read-only. Explicit entries of other principals survive it.
 func icaclsRestrictArgs(key, user string) []string {
 	return []string{key, "/inheritance:r", "/grant:r", user + ":(R)"}
 }
 
-// verifyKeyACL checks `icacls <key>` output: every entry must belong to user.
-func verifyKeyACL(output, key, user string) error {
-	entries := 0
+// icaclsRemoveArgs deletes every entry of principal from the key's ACL.
+func icaclsRemoveArgs(key, principal string) []string {
+	return []string{key, "/remove", principal}
+}
+
+// aclPrincipals lists, in order, the principal of each entry in `icacls <key>`
+// output.
+func aclPrincipals(output, key string) []string {
+	var principals []string
 	for line := range strings.Lines(output) {
 		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), key))
 		if line == "" || strings.HasPrefix(line, "Successfully") {
 			continue
 		}
-		principal, _, ok := strings.Cut(line, ":(")
-		if !ok {
-			continue
-		}
-		entries++
-		if name := principal[strings.LastIndex(principal, `\`)+1:]; !strings.EqualFold(name, user) {
-			return fmt.Errorf("identity file ACL grants access to %q", principal)
+		if principal, _, ok := strings.Cut(line, ":("); ok {
+			principals = append(principals, principal)
 		}
 	}
-	if entries == 0 {
+	return principals
+}
+
+// foreignPrincipals lists the principals in the ACL other than user, once each.
+func foreignPrincipals(output, key, user string) []string {
+	var foreign []string
+	for _, principal := range aclPrincipals(output, key) {
+		name := principal[strings.LastIndex(principal, `\`)+1:]
+		if !strings.EqualFold(name, user) && !slices.Contains(foreign, principal) {
+			foreign = append(foreign, principal)
+		}
+	}
+	return foreign
+}
+
+// verifyKeyACL checks `icacls <key>` output: every entry must belong to user.
+func verifyKeyACL(output, key, user string) error {
+	if len(aclPrincipals(output, key)) == 0 {
 		return fmt.Errorf("identity file ACL lists no entry for %s", user)
+	}
+	if foreign := foreignPrincipals(output, key, user); len(foreign) > 0 {
+		return fmt.Errorf("identity file ACL grants access to %q", foreign[0])
 	}
 	return nil
 }

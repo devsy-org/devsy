@@ -113,6 +113,21 @@ func (s *WSLHelpersSuite) TestKeyACLVerification() {
 		[]string{key, "/inheritance:r", "/grant:r", "runner:(R)"},
 		icaclsRestrictArgs(key, "runner"),
 	)
+
+	listing := key + ` HOST\runner:(R)` + "\n" +
+		`  BUILTIN\Administrators:(F)` + "\n" +
+		`  NT AUTHORITY\SYSTEM:(F)` + "\n" +
+		`  BUILTIN\Administrators:(DENY)(W)` + "\n"
+	s.Equal(
+		[]string{`BUILTIN\Administrators`, `NT AUTHORITY\SYSTEM`},
+		foreignPrincipals(listing, key, "runner"),
+		"each foreign principal once, in listing order",
+	)
+	s.Empty(foreignPrincipals(ok, key, "runner"))
+	s.Equal(
+		[]string{key, "/remove", `NT AUTHORITY\SYSTEM`},
+		icaclsRemoveArgs(key, `NT AUTHORITY\SYSTEM`),
+	)
 }
 
 func (s *WSLHelpersSuite) TestNormalizeWSLOutput() {

@@ -294,21 +294,34 @@ func (d *dockerWSL) createIdentity(ctx context.Context) error {
 	return d.record(func(s *dockerWSLState) { s.Stage = stageIdentity })
 }
 
+// restrictKeyACL leaves the identity file readable by the current user alone.
+// ssh-keygen writes explicit entries (Administrators, SYSTEM) that dropping
+// inheritance does not remove, so each foreign principal is removed by name and
+// the result is verified.
 func (d *dockerWSL) restrictKeyACL(ctx context.Context, key string) error {
 	icacls, err := d.tool(toolICACLS)
 	if err != nil {
 		return err
 	}
 	user, _ := runenv.LookupEnv(d.env, "USERNAME", true)
-	if _, err := d.run(ctx, stageKey, runenv.CodeDockerWSLSSHNotReady, runenv.Command{
-		Path: icacls, Args: icaclsRestrictArgs(key, user), Timeout: wslQuickTimeout,
-	}); err != nil {
+	icaclsRun := func(args ...string) (runenv.CommandResult, error) {
+		return d.run(ctx, stageKey, runenv.CodeDockerWSLSSHNotReady, runenv.Command{
+			Path: icacls, Args: args, Timeout: wslQuickTimeout,
+		})
+	}
+	if _, err := icaclsRun(icaclsRestrictArgs(key, user)...); err != nil {
 		return err
 	}
-	res, err := d.run(ctx, stageKey, runenv.CodeDockerWSLSSHNotReady, runenv.Command{
-		Path: icacls, Args: []string{key}, Timeout: wslQuickTimeout,
-	})
+	res, err := icaclsRun(key)
 	if err != nil {
+		return err
+	}
+	for _, principal := range foreignPrincipals(res.Stdout, key, user) {
+		if _, err := icaclsRun(icaclsRemoveArgs(key, principal)...); err != nil {
+			return err
+		}
+	}
+	if res, err = icaclsRun(key); err != nil {
 		return err
 	}
 	if err := verifyKeyACL(res.Stdout, key, user); err != nil {

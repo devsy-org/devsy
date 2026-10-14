@@ -3,6 +3,7 @@ package dockerwsl
 import (
 	"context"
 	"encoding/base64"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -134,6 +135,34 @@ func (s *DockerWSLSetupSuite) TestAuthorizedKeyIsThePublicHalfOnly() {
 	}
 	s.True(found, "install-key receives user and base64 public key")
 	s.NotContains(s.rig.out.String()+s.Exports()+s.rig.files.Text(testStateFile), testPrivateKey)
+}
+
+// ssh-keygen leaves explicit Administrators and SYSTEM entries that dropping
+// inheritance does not remove; setup must delete them rather than fail.
+func (s *DockerWSLSetupSuite) TestKeygenACLEntriesOfOtherPrincipalsAreRemoved() {
+	acl := []string{`HOST\runner:(R)`, `BUILTIN\Administrators:(F)`, `NT AUTHORITY\SYSTEM:(F)`}
+	s.rig.on(
+		"icacls-show",
+		func(_ context.Context, c runenv.Command) (runenv.CommandResult, error) {
+			return runenv.CommandResult{
+				Stdout: c.Args[0] + " " + strings.Join(acl, "\n  ") + "\n",
+			}, nil
+		},
+	)
+	s.rig.on(
+		"icacls-remove",
+		func(_ context.Context, c runenv.Command) (runenv.CommandResult, error) {
+			acl = slices.DeleteFunc(acl, func(entry string) bool {
+				return strings.HasPrefix(entry, c.Args[2]+":")
+			})
+			return runenv.CommandResult{}, nil
+		},
+	)
+
+	s.Require().NoError(s.rig.setup())
+
+	s.Equal(2, s.rig.runner.count("icacls-remove"))
+	s.Equal([]string{`HOST\runner:(R)`}, acl)
 }
 
 func (s *DockerWSLSetupSuite) TestStageLinesAreStructured() {

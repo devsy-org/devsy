@@ -239,6 +239,8 @@ func classifyICACLS(args []string) string {
 		return "icacls-save"
 	case slices.Contains(args, "/restore"):
 		return "icacls-restore"
+	case slices.Contains(args, "/remove"):
+		return "icacls-remove"
 	case slices.Contains(args, "/inheritance:r"):
 		return "icacls-restrict"
 	}
