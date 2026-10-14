@@ -1,0 +1,14 @@
+[
+ {
+  "SuitePath": "/repo/e2e",
+  "SuiteDescription": "DevSy e2e suite",
+  "SuiteLabels": null,
+  "SuiteSucceeded": true,
+  "SuiteHasProgrammaticFocus": false,
+  "SpecialSuiteFailureReasons": null,
+  "PreRunStats": {
+   "TotalSpecs": 4,
+   "SpecsThatWillRun": 4
+  }
+ }
+]

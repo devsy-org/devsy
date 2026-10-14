@@ -1,0 +1,354 @@
+[
+ {
+  "SuitePath": "/repo/hack/ci/zzgen",
+  "SuiteDescription": "gen suite",
+  "SuiteLabels": [],
+  "SuiteSemVerConstraints": [],
+  "SuiteComponentSemVerConstraints": {},
+  "SuiteSucceeded": true,
+  "SuiteHasProgrammaticFocus": false,
+  "SpecialSuiteFailureReasons": null,
+  "PreRunStats": {
+   "TotalSpecs": 5,
+   "SpecsThatWillRun": 3
+  },
+  "StartTime": "2026-10-13T19:12:01.820123-06:00",
+  "EndTime": "2026-10-13T19:12:01.821064-06:00",
+  "RunTime": 940666,
+  "SuiteConfig": {
+   "RandomSeed": 1791940321,
+   "RandomizeAllSpecs": false,
+   "FocusStrings": null,
+   "SkipStrings": null,
+   "FocusFiles": null,
+   "SkipFiles": null,
+   "LabelFilter": "docker-internal-buildkit",
+   "SemVerFilter": "",
+   "FailOnPending": false,
+   "FailOnEmpty": true,
+   "FailFast": false,
+   "FlakeAttempts": 0,
+   "MustPassRepeatedly": 0,
+   "DryRun": false,
+   "PollProgressAfter": 0,
+   "PollProgressInterval": 0,
+   "Timeout": 3600000000000,
+   "EmitSpecProgress": false,
+   "OutputInterceptorMode": "",
+   "SourceRoots": null,
+   "GracePeriod": 30000000000,
+   "SleepOnFailure": 0,
+   "ParallelProcess": 1,
+   "ParallelTotal": 1,
+   "ParallelHost": ""
+  },
+  "SpecReports": [
+   {
+    "ContainerHierarchyTexts": [
+     "failing"
+    ],
+    "ContainerHierarchyLocations": [
+     {
+      "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+      "LineNumber": 23
+     }
+    ],
+    "ContainerHierarchyLabels": [
+     [
+      "failing"
+     ]
+    ],
+    "ContainerHierarchySemVerConstraints": [
+     []
+    ],
+    "ContainerHierarchyComponentSemVerConstraints": [
+     {}
+    ],
+    "LeafNodeType": "It",
+    "LeafNodeLocation": {
+     "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+     "LineNumber": 24
+    },
+    "LeafNodeLabels": [],
+    "LeafNodeSemVerConstraints": [],
+    "LeafNodeText": "fails",
+    "State": "skipped",
+    "StartTime": "2026-10-13T19:12:01.820259-06:00",
+    "EndTime": "0001-01-01T00:00:00Z",
+    "RunTime": 0,
+    "ParallelProcess": 1,
+    "NumAttempts": 0,
+    "MaxFlakeAttempts": 0,
+    "MaxMustPassRepeatedly": 0
+   },
+   {
+    "ContainerHierarchyTexts": [
+     "docker internal buildkit transport"
+    ],
+    "ContainerHierarchyLocations": [
+     {
+      "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+      "LineNumber": 15
+     }
+    ],
+    "ContainerHierarchyLabels": [
+     [
+      "docker-internal-buildkit"
+     ]
+    ],
+    "ContainerHierarchySemVerConstraints": [
+     []
+    ],
+    "ContainerHierarchyComponentSemVerConstraints": [
+     {}
+    ],
+    "LeafNodeType": "It",
+    "LeafNodeLocation": {
+     "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+     "LineNumber": 16
+    },
+    "LeafNodeLabels": [],
+    "LeafNodeSemVerConstraints": [],
+    "LeafNodeText": "dials the provider's daemon through docker system dial-stdio",
+    "State": "passed",
+    "StartTime": "2026-10-13T19:12:01.820408-06:00",
+    "EndTime": "2026-10-13T19:12:01.820559-06:00",
+    "RunTime": 150791,
+    "ParallelProcess": 1,
+    "NumAttempts": 1,
+    "MaxFlakeAttempts": 0,
+    "MaxMustPassRepeatedly": 0,
+    "SpecEvents": [
+     {
+      "SpecEventType": "Node",
+      "CodeLocation": {
+       "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+       "LineNumber": 16
+      },
+      "TimelineLocation": {
+       "Order": 1,
+       "Time": "2026-10-13T19:12:01.820411-06:00"
+      },
+      "Message": "dials the provider's daemon through docker system dial-stdio",
+      "NodeType": "It"
+     },
+     {
+      "SpecEventType": "Node (End)",
+      "CodeLocation": {
+       "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+       "LineNumber": 16
+      },
+      "TimelineLocation": {
+       "Order": 3,
+       "Time": "2026-10-13T19:12:01.820557-06:00"
+      },
+      "Message": "dials the provider's daemon through docker system dial-stdio",
+      "Duration": 145916,
+      "NodeType": "It"
+     }
+    ]
+   },
+   {
+    "ContainerHierarchyTexts": [
+     "docker internal buildkit transport"
+    ],
+    "ContainerHierarchyLocations": [
+     {
+      "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+      "LineNumber": 15
+     }
+    ],
+    "ContainerHierarchyLabels": [
+     [
+      "docker-internal-buildkit"
+     ]
+    ],
+    "ContainerHierarchySemVerConstraints": [
+     []
+    ],
+    "ContainerHierarchyComponentSemVerConstraints": [
+     {}
+    ],
+    "LeafNodeType": "It",
+    "LeafNodeLocation": {
+     "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+     "LineNumber": 17
+    },
+    "LeafNodeLabels": [],
+    "LeafNodeSemVerConstraints": [],
+    "LeafNodeText": "loads an image built by raw BuildKit into the provider's daemon",
+    "State": "passed",
+    "StartTime": "2026-10-13T19:12:01.820571-06:00",
+    "EndTime": "2026-10-13T19:12:01.820592-06:00",
+    "RunTime": 21125,
+    "ParallelProcess": 1,
+    "NumAttempts": 1,
+    "MaxFlakeAttempts": 0,
+    "MaxMustPassRepeatedly": 0,
+    "SpecEvents": [
+     {
+      "SpecEventType": "Node",
+      "CodeLocation": {
+       "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+       "LineNumber": 17
+      },
+      "TimelineLocation": {
+       "Order": 4,
+       "Time": "2026-10-13T19:12:01.820575-06:00"
+      },
+      "Message": "loads an image built by raw BuildKit into the provider's daemon",
+      "NodeType": "It"
+     },
+     {
+      "SpecEventType": "Node (End)",
+      "CodeLocation": {
+       "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+       "LineNumber": 17
+      },
+      "TimelineLocation": {
+       "Order": 6,
+       "Time": "2026-10-13T19:12:01.820591-06:00"
+      },
+      "Message": "loads an image built by raw BuildKit into the provider's daemon",
+      "Duration": 15666,
+      "NodeType": "It"
+     }
+    ]
+   },
+   {
+    "ContainerHierarchyTexts": [
+     "docker internal buildkit transport"
+    ],
+    "ContainerHierarchyLocations": [
+     {
+      "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+      "LineNumber": 15
+     }
+    ],
+    "ContainerHierarchyLabels": [
+     [
+      "docker-internal-buildkit"
+     ]
+    ],
+    "ContainerHierarchySemVerConstraints": [
+     []
+    ],
+    "ContainerHierarchyComponentSemVerConstraints": [
+     {}
+    ],
+    "LeafNodeType": "It",
+    "LeafNodeLocation": {
+     "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+     "LineNumber": 18
+    },
+    "LeafNodeLabels": [],
+    "LeafNodeSemVerConstraints": [],
+    "LeafNodeText": "skips itself",
+    "State": "skipped",
+    "StartTime": "2026-10-13T19:12:01.8206-06:00",
+    "EndTime": "2026-10-13T19:12:01.821049-06:00",
+    "RunTime": 448583,
+    "ParallelProcess": 1,
+    "Failure": {
+     "Message": "nope",
+     "Location": {
+      "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+      "LineNumber": 18,
+      "FullStackTrace": "github.com/devsy-org/devsy/hack/ci/zzgen.init.func1.3()\n\t/repo/hack/ci/zzgen/gen_test.go:18 +0x34"
+     },
+     "TimelineLocation": {
+      "Order": 8,
+      "Time": "2026-10-13T19:12:01.821042-06:00"
+     },
+     "FailureNodeContext": "leaf-node",
+     "FailureNodeType": "It",
+     "FailureNodeLocation": {
+      "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+      "LineNumber": 18
+     },
+     "ProgressReport": {
+      "LeafNodeLocation": {},
+      "SpecStartTime": "0001-01-01T00:00:00Z",
+      "CurrentNodeLocation": {},
+      "CurrentNodeStartTime": "0001-01-01T00:00:00Z",
+      "CurrentStepLocation": {},
+      "CurrentStepStartTime": "0001-01-01T00:00:00Z",
+      "TimelineLocation": {
+       "Time": "0001-01-01T00:00:00Z"
+      }
+     }
+    },
+    "NumAttempts": 1,
+    "MaxFlakeAttempts": 0,
+    "MaxMustPassRepeatedly": 0,
+    "SpecEvents": [
+     {
+      "SpecEventType": "Node",
+      "CodeLocation": {
+       "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+       "LineNumber": 18
+      },
+      "TimelineLocation": {
+       "Order": 7,
+       "Time": "2026-10-13T19:12:01.820601-06:00"
+      },
+      "Message": "skips itself",
+      "NodeType": "It"
+     },
+     {
+      "SpecEventType": "Node (End)",
+      "CodeLocation": {
+       "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+       "LineNumber": 18
+      },
+      "TimelineLocation": {
+       "Order": 9,
+       "Time": "2026-10-13T19:12:01.821047-06:00"
+      },
+      "Message": "skips itself",
+      "Duration": 446084,
+      "NodeType": "It"
+     }
+    ]
+   },
+   {
+    "ContainerHierarchyTexts": [
+     "other"
+    ],
+    "ContainerHierarchyLocations": [
+     {
+      "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+      "LineNumber": 20
+     }
+    ],
+    "ContainerHierarchyLabels": [
+     [
+      "other"
+     ]
+    ],
+    "ContainerHierarchySemVerConstraints": [
+     []
+    ],
+    "ContainerHierarchyComponentSemVerConstraints": [
+     {}
+    ],
+    "LeafNodeType": "It",
+    "LeafNodeLocation": {
+     "FileName": "/repo/hack/ci/zzgen/gen_test.go",
+     "LineNumber": 21
+    },
+    "LeafNodeLabels": [],
+    "LeafNodeSemVerConstraints": [],
+    "LeafNodeText": "unselected spec",
+    "State": "skipped",
+    "StartTime": "2026-10-13T19:12:01.821057-06:00",
+    "EndTime": "0001-01-01T00:00:00Z",
+    "RunTime": 0,
+    "ParallelProcess": 1,
+    "NumAttempts": 0,
+    "MaxFlakeAttempts": 0,
+    "MaxMustPassRepeatedly": 0
+   }
+  ]
+ }
+]

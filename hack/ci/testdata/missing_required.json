@@ -1,0 +1,67 @@
+[
+ {
+  "SuitePath": "/repo/e2e",
+  "SuiteDescription": "DevSy e2e suite",
+  "SuiteLabels": null,
+  "SuiteSucceeded": true,
+  "SuiteHasProgrammaticFocus": false,
+  "SpecialSuiteFailureReasons": null,
+  "PreRunStats": {
+   "TotalSpecs": 3,
+   "SpecsThatWillRun": 3
+  },
+  "SpecReports": [
+   {
+    "ContainerHierarchyTexts": [
+     "docker internal buildkit transport"
+    ],
+    "ContainerHierarchyLabels": [
+     [
+      "docker-internal-buildkit"
+     ]
+    ],
+    "LeafNodeType": "It",
+    "LeafNodeLabels": [],
+    "LeafNodeText": "dials the provider's daemon through docker system dial-stdio",
+    "State": "passed",
+    "RunTime": 1000000000,
+    "NumAttempts": 1,
+    "MaxFlakeAttempts": 1
+   },
+   {
+    "ContainerHierarchyTexts": [
+     "docker internal buildkit transport"
+    ],
+    "ContainerHierarchyLabels": [
+     [
+      "docker-internal-buildkit"
+     ]
+    ],
+    "LeafNodeType": "It",
+    "LeafNodeLabels": [],
+    "LeafNodeText": "loads an image built by raw BuildKit into the provider's daemon",
+    "State": "passed",
+    "RunTime": 1000000000,
+    "NumAttempts": 1,
+    "MaxFlakeAttempts": 1
+   },
+   {
+    "ContainerHierarchyTexts": [
+     "docker internal buildkit transport"
+    ],
+    "ContainerHierarchyLabels": [
+     [
+      "docker-internal-buildkit"
+     ]
+    ],
+    "LeafNodeType": "It",
+    "LeafNodeLabels": [],
+    "LeafNodeText": "BuildDevContainer builds on the provider's SSH daemon despite a dead process DOCKER_HOST",
+    "State": "passed",
+    "RunTime": 1000000000,
+    "NumAttempts": 1,
+    "MaxFlakeAttempts": 1
+   }
+  ]
+ }
+]
