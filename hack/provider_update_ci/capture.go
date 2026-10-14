@@ -131,9 +131,9 @@ func (c *outputCapture) finish() {
 func (c *outputCapture) events() map[string]testState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	copy := make(map[string]testState, len(c.states))
-	maps.Copy(copy, c.states)
-	return copy
+	snapshot := make(map[string]testState, len(c.states))
+	maps.Copy(snapshot, c.states)
+	return snapshot
 }
 
 func (c *outputCapture) err() error {
