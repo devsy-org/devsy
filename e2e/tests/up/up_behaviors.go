@@ -30,7 +30,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		framework.ExpectNoError(err)
 
 		dtc.dockerHelper = &docker.DockerHelper{DockerCommand: testDockerCommand}
-		dtc.f, err = setupDockerProvider(
+		dtc.f, err = framework.SetupDockerProvider(
 			filepath.Join(dtc.initialDir, "bin"), testDockerCommand,
 		)
 		framework.ExpectNoError(err)

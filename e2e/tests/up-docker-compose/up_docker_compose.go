@@ -66,7 +66,7 @@ var _ = ginkgo.Describe(
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
 
-			tc.f, err = setupDockerProvider(tc.initialDir + "/bin")
+			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 		})
 

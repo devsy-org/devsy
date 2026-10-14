@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,7 +105,7 @@ func TestGPGTunnelRebindsWhenManagedReverseForwardExits(t *testing.T) {
 	replacement := tunnel.forward
 	tunnel.stopForward()
 	waitForManagedReverseForward(t, replacement)
-	assertReverseForwardListenerReleased(t, forwards.listeners[1])
+	assertManagedReverseForwardListenerClosed(t, forwards.listeners[1])
 }
 
 type testGPGReverseForwards struct {
@@ -112,7 +113,7 @@ type testGPGReverseForwards struct {
 	userMapping  string
 	userForward  *managedReverseForward
 	userListener net.Listener
-	listeners    []net.Listener
+	listeners    []*closeObservedListener
 }
 
 func (f *testGPGReverseForwards) start(
@@ -164,13 +165,30 @@ func assertUserReverseForwardActive(
 	}
 }
 
-func assertReverseForwardListenerReleased(t *testing.T, stopped net.Listener) {
+func assertManagedReverseForwardListenerClosed(t *testing.T, stopped *closeObservedListener) {
 	t.Helper()
-	if listener, err := net.Listen("tcp", stopped.Addr().String()); err != nil {
-		t.Fatalf("replacement listener still bound after stop: %v", err)
-	} else {
-		_ = listener.Close()
+	select {
+	case <-stopped.closed:
+	default:
+		t.Fatal("managed forward completed without closing its owned listener")
 	}
+}
+
+type closeObservedListener struct {
+	net.Listener
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (l *closeObservedListener) Close() error {
+	if err := l.Listener.Close(); err != nil {
+		if errors.Is(err, net.ErrClosed) {
+			l.once.Do(func() { close(l.closed) })
+		}
+		return err
+	}
+	l.once.Do(func() { close(l.closed) })
+	return nil
 }
 
 func TestGPGTunnelRetriesUserMappingsAfterInitialBindFailure(t *testing.T) {
@@ -210,11 +228,12 @@ func TestGPGTunnelRetriesUserMappingsAfterInitialBindFailure(t *testing.T) {
 func startTestManagedReverseForward(
 	ctx context.Context,
 	client *ssh.Client,
-) (*managedReverseForward, net.Listener, error) {
+) (*managedReverseForward, *closeObservedListener, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, nil, err
 	}
+	observed := &closeObservedListener{Listener: listener, closed: make(chan struct{})}
 	forwardCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go runManagedReverseForward(managedReverseForwardRun{
@@ -224,14 +243,14 @@ func startTestManagedReverseForward(
 		forward: boundReverseForward{
 			portMapping: "gpg socket",
 			mapping: port.Mapping{
-				Host:      port.Address{Protocol: "tcp", Address: listener.Addr().String()},
+				Host:      port.Address{Protocol: "tcp", Address: observed.Addr().String()},
 				Container: port.Address{Protocol: "tcp", Address: "127.0.0.1:1"},
 			},
-			listener: listener,
+			listener: observed,
 		},
 		doneChan: done,
 	})
-	return &managedReverseForward{cancel: cancel, done: done}, listener, nil
+	return &managedReverseForward{cancel: cancel, done: done}, observed, nil
 }
 
 func waitForManagedReverseForward(t *testing.T, forward *managedReverseForward) {
