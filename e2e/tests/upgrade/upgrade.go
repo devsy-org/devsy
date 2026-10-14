@@ -45,7 +45,7 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			framework.PushFeatureTag(featureRepo + ":1.1.0")
 			framework.PushFeatureTag(featureRepo + ":2.0.0")
 
-			tempDir := writeDevcontainerJSON(fmt.Sprintf(`{
+			tempDir := framework.WriteTempDevcontainer("upgrade-test-*", fmt.Sprintf(`{
 	"image": "ubuntu:22.04",
 	"features": {"%s:1.0.0": {}}
 }`, featureRepo))
@@ -82,7 +82,7 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 	"image": "ubuntu:22.04",
 	"features": {"%s:1.0.0": {}}
 }`, featureRepo)
-			tempDir := writeDevcontainerJSON(originalContent)
+			tempDir := framework.WriteTempDevcontainer("upgrade-test-*", originalContent)
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -119,7 +119,7 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			framework.PushFeatureTag(featureB + ":1.0.0")
 			framework.PushFeatureTag(featureB + ":2.0.0")
 
-			tempDir := writeDevcontainerJSON(fmt.Sprintf(`{
+			tempDir := framework.WriteTempDevcontainer("upgrade-test-*", fmt.Sprintf(`{
 	"image": "ubuntu:22.04",
 	"features": {
 		"%s:1.0.0": {},
@@ -159,7 +159,7 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 
 			framework.PushFeatureTag(featureRepo + ":1.0.0")
 
-			tempDir := writeDevcontainerJSON(fmt.Sprintf(`{
+			tempDir := framework.WriteTempDevcontainer("upgrade-test-*", fmt.Sprintf(`{
 	"image": "ubuntu:22.04",
 	"features": {"%s:1.0.0": {}}
 }`, featureRepo))
@@ -192,7 +192,7 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			framework.PushFeatureTag(featureRepo + ":1.0.0")
 			framework.PushFeatureTag(featureRepo + ":2.0.0")
 
-			tempDir := writeDevcontainerJSON(fmt.Sprintf(`{
+			tempDir := framework.WriteTempDevcontainer("upgrade-test-*", fmt.Sprintf(`{
 	// Important comment
 	"image": "ubuntu:22.04",
 	"features": {"%s:1.0.0": {}}
@@ -214,23 +214,6 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 })
-
-func writeDevcontainerJSON(content string) string {
-	tempDir, err := os.MkdirTemp("", "upgrade-test-*")
-	framework.ExpectNoError(err)
-
-	devcontainerDir := filepath.Join(tempDir, ".devcontainer")
-	framework.ExpectNoError(os.MkdirAll(devcontainerDir, 0o750))
-	framework.ExpectNoError(
-		os.WriteFile(
-			filepath.Join(devcontainerDir, "devcontainer.json"),
-			[]byte(content),
-			0o600,
-		),
-	)
-
-	return tempDir
-}
 
 func readDevcontainerJSON(tempDir string) string {
 	// #nosec G304 -- path constructed from test temp directory
