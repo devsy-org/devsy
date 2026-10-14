@@ -50,27 +50,27 @@ type Expectation struct {
 	Required []string // spec identities (leaf text) that must each run once and pass
 }
 
-type specLine struct {
+type SpecLine struct {
 	Text  string
 	State string
 }
 
-// reportSummary counts specs and lists those selected by the label.
-type reportSummary struct {
+// ReportSummary counts specs and lists those selected by the label.
+type ReportSummary struct {
 	Total            int
 	Executed         int
 	Passed           int
 	SkippedSelected  int
 	SkippedUnmatched int
-	Selected         []specLine
+	Selected         []SpecLine
 }
 
-// validateReport enforces the report contract. The summary is always populated
+// Validate enforces the report contract. The summary is always populated
 // as far as parsing got, so callers can print it for failures too.
-func Validate(data []byte, want Expectation) (reportSummary, error) {
+func Validate(data []byte, want Expectation) (ReportSummary, error) {
 	report, err := decodeReport(data)
 	if err != nil {
-		return reportSummary{}, err
+		return ReportSummary{}, err
 	}
 	summary, problems := inspectSpecs(report, want.Label)
 	problems = append(problems, suiteProblems(report)...)
@@ -141,8 +141,8 @@ func suiteProblems(report ginkgoReport) []string {
 
 // inspectSpecs applies rule 3: any failed, timed-out, panicked, interrupted or
 // ambiguous spec fails the report, and executed specs must carry the label.
-func inspectSpecs(report ginkgoReport, label string) (reportSummary, []string) {
-	in := specInspector{label: label, summary: reportSummary{Total: len(report.SpecReports)}}
+func inspectSpecs(report ginkgoReport, label string) (ReportSummary, []string) {
+	in := specInspector{label: label, summary: ReportSummary{Total: len(report.SpecReports)}}
 	for _, spec := range report.SpecReports {
 		in.inspect(spec)
 	}
@@ -151,7 +151,7 @@ func inspectSpecs(report ginkgoReport, label string) (reportSummary, []string) {
 
 type specInspector struct {
 	label    string
-	summary  reportSummary
+	summary  ReportSummary
 	problems []string
 }
 
@@ -202,7 +202,7 @@ func (in *specInspector) countsAsSelected(spec ginkgoSpec) bool {
 }
 
 func (in *specInspector) record(spec ginkgoSpec) {
-	in.summary.Selected = append(in.summary.Selected, specLine{spec.LeafNodeText, spec.State})
+	in.summary.Selected = append(in.summary.Selected, SpecLine{spec.LeafNodeText, spec.State})
 }
 
 func (in *specInspector) problemf(format string, args ...any) {
@@ -264,7 +264,7 @@ func specHasLabel(spec ginkgoSpec, label string) bool {
 
 // formatSummary renders the succinct per-spec status; it never includes
 // environment data.
-func FormatSummary(path string, s reportSummary) string {
+func FormatSummary(path string, s ReportSummary) string {
 	var b strings.Builder
 	fmt.Fprintf(
 		&b,
