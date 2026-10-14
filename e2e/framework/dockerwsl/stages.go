@@ -330,7 +330,10 @@ func (d *dockerWSL) restrictKeyACL(ctx context.Context, key string) error {
 	return nil
 }
 
-func userMarker(runID string) string { return "devsy-ci:" + runID }
+// userMarker tags the CI account, in its passwd comment field, with the run that
+// owns it. The field is colon-separated and the marker is passed as a shell
+// word, so it contains neither colons nor whitespace.
+func userMarker(runID string) string { return "devsy-ci-run-" + runID }
 
 // configureSSHServer is the Linux half of W5: the account, the dedicated sshd
 // configuration and the authorized public key. Each resource is registered

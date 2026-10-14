@@ -153,6 +153,22 @@ func (s *WSLHelpersSuite) TestSanitizeRunID() {
 	s.Empty(sanitizeRunID("///"))
 }
 
+// useradd rejects a comment holding ':' (the passwd field separator), and the
+// marker travels as one shell word.
+func (s *WSLHelpersSuite) TestUserMarkerIsSafeForPasswdAndShell() {
+	for _, runID := range []string{
+		"77-1-e2e",
+		sanitizeRunID("38530445523-1-integration tests: build/2"),
+		sanitizeRunID(strings.Repeat("a:b ", 100)),
+	} {
+		marker := userMarker(runID)
+		s.NotContains(marker, ":", runID)
+		s.NotContains(marker, "\n", runID)
+		s.Equal(marker, strings.Fields(marker)[0], "one shell word: %q", marker)
+		s.Contains(marker, runID)
+	}
+}
+
 func (s *WSLHelpersSuite) TestScriptArgvRejectsUnsafeArguments() {
 	for _, bad := range []string{"", "a b", `a"b`, "a;b", "$(x)", "a\nb", "a'b"} {
 		_, err := wslScript{body: "true", args: []string{bad}}.argv()
