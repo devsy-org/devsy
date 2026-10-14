@@ -133,6 +133,17 @@ jobs:
           go test -race -short -count=1 -v ./e2e/tests/up-docker-compose \
             -run '^TestExpectedUIDMapping$'
 
+      - name: test runtime performance report checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          tests="$(go test ./e2e/tests/up -list '^Test(ProbeExpectationsValidateSDKReports|ValidateSDKToolRejectsDifferentBuildSource|ParseStartupEvents)$')"
+          for test_name in TestProbeExpectationsValidateSDKReports TestValidateSDKToolRejectsDifferentBuildSource TestParseStartupEvents; do
+            grep -Fx "$test_name" <<< "$tests"
+          done
+          go test -race -count=1 ./e2e/tests/up \
+            -run '^Test(ProbeExpectationsValidateSDKReports|ValidateSDKToolRejectsDifferentBuildSource|ParseStartupEvents)$'
+
   can-read-secret:
     name: Can Read Secret
     runs-on: ubuntu-latest
@@ -198,6 +209,31 @@ jobs:
             OUT="${OUT}.exe"
           fi
           go build -trimpath -o "$OUT" ./hack/podman_ci
+
+      - name: build pinned runtime performance tools
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+        run: |
+          sdk_module=github.com/devsy-org/devsy-runtime-sdk
+          sdk_version="$(go list -m -f '{{if .Replace}}replaced{{else}}{{.Version}}{{end}}' "$sdk_module")"
+          case "$sdk_version" in
+            v*) ;;
+            *) echo "::error::runtime performance tools require an unreplaced SDK version"; exit 1 ;;
+          esac
+          export GOBIN="${RUNNER_TEMP}/runtime-performance-tools"
+          mkdir -p "$GOBIN"
+          go install -trimpath "$sdk_module/cmd/devsy-runtime-spawn-probe@$sdk_version"
+          go install -trimpath "$sdk_module/cmd/devsy-runtime-supervisor@$sdk_version"
+          printf '%s\n' "$sdk_version" > "$GOBIN/sdk-version"
+
+      - name: upload runtime performance tools
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: runtime-performance-tools-linux
+          path: ${{ runner.temp }}/runtime-performance-tools/
 
       - name: upload Podman CI helper
         if: runner.os == 'Linux' || runner.os == 'Windows'
@@ -386,6 +422,20 @@ jobs:
           name: e2e-test-linux
           path: ./e2e/
 
+      - name: download runtime performance tools
+        if: matrix.label == 'up-provider-microsandbox'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: runtime-performance-tools-linux
+          path: ${{ runner.temp }}/runtime-performance-tools/
+
+      - name: prepare runtime performance capture
+        if: matrix.label == 'up-provider-microsandbox'
+        run: |
+          chmod +x "${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-spawn-probe" \
+            "${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-supervisor"
+          install -d -m 700 "${RUNNER_TEMP}/microsandbox-performance"
+
       - name: setup executable
         shell: bash
         working-directory: ./e2e
@@ -463,6 +513,17 @@ jobs:
             command=(../hack/run-managed-policy-e2e.sh "${command[@]}")
             fixture_environment=(DEVSY_REQUIRE_MSB_MANAGED_POLICY_FIXTURE=true "RUNNER_TEMP=${RUNNER_TEMP}")
           fi
+          performance_environment=()
+          if [ "${{ matrix.label }}" = "up-provider-microsandbox" ]; then
+            tools="${RUNNER_TEMP}/runtime-performance-tools"
+            performance_environment=(
+              "DEVSY_TEST_RUNTIME_SPAWN_PROBE=$tools/devsy-runtime-spawn-probe"
+              "DEVSY_TEST_RUNTIME_SUPERVISOR=$tools/devsy-runtime-supervisor"
+              "DEVSY_TEST_RUNTIME_PERFORMANCE_DIR=${RUNNER_TEMP}/microsandbox-performance"
+              "DEVSY_TEST_RUNTIME_REVISION=${{ github.sha }}"
+              "DEVSY_TEST_RUNTIME_SDK_VERSION=$(cat "$tools/sdk-version")"
+            )
+          fi
           set +e
           sudo \
             DEVSY_REQUIRE_MICROSANDBOX="${DEVSY_REQUIRE_MICROSANDBOX}" \
@@ -472,7 +533,7 @@ jobs:
             KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
             ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
             PATH="${PATH}" \
-            "${fixture_environment[@]}" "${command[@]}" 2>&1 | tee "$test_log"
+            "${fixture_environment[@]}" "${performance_environment[@]}" "${command[@]}" 2>&1 | tee "$test_log"
           pipeline_status=("${PIPESTATUS[@]}")
           set -e
           test_status=${pipeline_status[0]}
@@ -480,6 +541,9 @@ jobs:
           chown_status=0
           if [ -e "$report" ]; then
             sudo chown "$(id -u):$(id -g)" "$report" || chown_status=$?
+          fi
+          if [ "${{ matrix.label }}" = "up-provider-microsandbox" ]; then
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/microsandbox-performance" || chown_status=$?
           fi
           report_status=0
           if [ "$chown_status" -ne 0 ]; then
@@ -508,6 +572,15 @@ jobs:
             ${{ runner.temp }}/microsandbox-${{ matrix.label }}.json
             ${{ runner.temp }}/microsandbox-${{ matrix.label }}.log
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: upload runtime performance evidence
+        if: always() && matrix.label == 'up-provider-microsandbox'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: microsandbox-runtime-performance
+          path: ${{ runner.temp }}/microsandbox-performance/provider-performance.json
+          if-no-files-found: error
           retention-days: 14
 
   integration-tests:

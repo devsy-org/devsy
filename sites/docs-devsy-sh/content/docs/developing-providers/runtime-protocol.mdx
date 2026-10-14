@@ -167,6 +167,8 @@ The Linux-only `up-provider-microsandbox-registry-consumer` label exercises the 
 DEVSY_REQUIRE_MICROSANDBOX=true task cli:test:e2e:suite -- up-provider-microsandbox-registry-consumer
 ```
 
+The existing external lifecycle case also captures ordinary fresh and reused `up` wall time and filtered runtime startup events when CI supplies the pinned SDK performance tools. After both commands pass, a checksum-verified copy of the published runtime runs direct/supervised/supervised/direct Info/Find comparisons, each with a first launch and 100 warm samples. The JSON artifact records tool/runtime provenance and reaped processes. Startup events measure launch, handshake and dispense before RPC; they exclude binary resolution, RPC and reaping. These measurements use warm host caches, add no latency threshold or VM case, and do not claim cold-cache performance or total plugin overhead.
+
 These scenarios do not establish complete parity. Compatibility shims verify preservation under injected version faults but do not establish behavior against an actual historical MicroSandbox release. Green lifecycle, image, mount, resource, persistent-storage, ephemeral-root, TCP-egress, prebuild, Dockerless, request-invalid and managed-policy recreation, logs, and cancellation checks alone do not authorize that cutover. Dockerless refusal checks cover fresh creation, not preservation after an invalid recreation request. Egress coverage does not establish UDP, DNS, TLS, ingress, or live-policy modification behavior.
 
 Prebuild invalidation coverage changes the Dockerfile; it does not independently establish hashing of local Feature script contents.
