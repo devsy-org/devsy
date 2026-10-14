@@ -293,10 +293,28 @@ func contextManagementEnv(configDir string) []string {
 	return []string{"DOCKER_CONFIG=" + configDir, "DOCKER_HOST=", "DOCKER_CONTEXT="}
 }
 
-// namedContextEnv selects a daemon only through the Docker context store, the
-// way a provider's agent.docker.env would; it never sets DOCKER_HOST.
+const dockerHostEnv = "DOCKER_HOST"
+
+// namedContextSettings is how a provider's agent.docker.env selects a daemon
+// through the Docker context store. The Docker CLI lets DOCKER_HOST override a
+// context chosen via DOCKER_CONTEXT, so the provider also clears DOCKER_HOST
+// to keep an ambient process value from winning. It never hard-codes the
+// endpoint as DOCKER_HOST.
+func namedContextSettings(configDir, contextName string) map[string]string {
+	return map[string]string{
+		"DOCKER_CONFIG":  configDir,
+		dockerContextEnv: contextName,
+		dockerHostEnv:    "",
+	}
+}
+
+// namedContextEnv is namedContextSettings as a KEY=value list.
 func namedContextEnv(configDir, contextName string) []string {
-	return []string{"DOCKER_CONFIG=" + configDir, "DOCKER_CONTEXT=" + contextName}
+	var env []string
+	for key, value := range namedContextSettings(configDir, contextName) {
+		env = append(env, key+"="+value)
+	}
+	return env
 }
 
 // createDockerContext creates a uniquely named context in the isolated config
@@ -345,9 +363,20 @@ var _ = ginkgo.Describe(
 					"context", "inspect", contextName, "--format", "{{.Endpoints.docker.Host}}")).
 					To(gomega.Equal(sshHost), "context does not resolve to the provisioned WSL endpoint")
 
-				// Docker CLI precedence is verified, not assumed: the dead process
-				// DOCKER_HOST is still in the environment, and the named context
-				// must win.
+				// Pin the premise: with only the context selected, the dead process
+				// DOCKER_HOST wins. This is why a provider must clear it.
+				_, err = dockerRun(
+					ctx,
+					[]string{
+						"DOCKER_CONFIG=" + configDir,
+						dockerContextEnv + "=" + contextName,
+					},
+					"info",
+				)
+				gomega.Expect(err).To(gomega.HaveOccurred(),
+					"the Docker CLI no longer lets DOCKER_HOST override DOCKER_CONTEXT")
+
+				// With DOCKER_HOST cleared by the provider, the named context wins.
 				envVars := namedContextEnv(configDir, contextName)
 				gomega.Expect(dockerOutput(ctx, envVars, "info", "--format", "{{.ID}}")).
 					To(gomega.Equal(wslID), "named context did not select the WSL daemon")
@@ -359,9 +388,11 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				selected, _ := invocation.Lookup(dockerContextEnv)
 				gomega.Expect(selected).To(gomega.Equal(contextName))
-				host, _ := invocation.Lookup("DOCKER_HOST")
-				gomega.Expect(host).To(gomega.Equal(deadProcessHost),
-					"scenario must not hard-code the SSH endpoint as DOCKER_HOST")
+				host, overridden := invocation.Lookup(dockerHostEnv)
+				gomega.Expect(overridden).To(gomega.BeTrue(),
+					"the provider must override the process DOCKER_HOST explicitly")
+				gomega.Expect(host).To(gomega.BeEmpty(),
+					"the provider clears DOCKER_HOST rather than hard-coding the SSH endpoint")
 
 				client, err := docker.NewClientWithInvocation(ctx, invocation)
 				framework.ExpectNoError(err)
@@ -378,10 +409,9 @@ var _ = ginkgo.Describe(
 					_, _ = dockerRun(ctx, envVars, "rmi", "-f", tag)
 				})
 
-				built, err := newProductionDriverWithEnv(map[string]string{
-					"DOCKER_CONFIG":  configDir,
-					dockerContextEnv: contextName,
-				}).BuildDevContainer(ctx, newBuildRequest(tag))
+				built, err := newProductionDriverWithEnv(
+					namedContextSettings(configDir, contextName),
+				).BuildDevContainer(ctx, newBuildRequest(tag))
 				framework.ExpectNoError(err, "production BuildDevContainer failed")
 				gomega.Expect(built.ImageName).To(gomega.Equal(tag))
 
@@ -414,10 +444,9 @@ var _ = ginkgo.Describe(
 					_, _ = dockerRun(ctx, nil, "rmi", "-f", tag)
 				})
 
-				_, err = newProductionDriverWithEnv(map[string]string{
-					"DOCKER_CONFIG":  configDir,
-					dockerContextEnv: missing,
-				}).BuildDevContainer(ctx, newBuildRequest(tag))
+				_, err = newProductionDriverWithEnv(
+					namedContextSettings(configDir, missing),
+				).BuildDevContainer(ctx, newBuildRequest(tag))
 				gomega.Expect(err).To(gomega.HaveOccurred(),
 					"build succeeded: invalid provider context was ignored")
 
