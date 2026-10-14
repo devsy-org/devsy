@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/extract"
@@ -42,14 +43,25 @@ func TestExtractConfinedUpdateTarExpandsGNUSparseExecutable(t *testing.T) {
 	require.Equal(t, wantExecutable, executable)
 	executableInfo, err := root.Stat("bin/runtime")
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o755), executableInfo.Mode().Perm())
+	assertSparseUpdateFileMode(t, executableInfo, 0o755)
 
 	sidecar, err := root.ReadFile("bin/provider.json")
 	require.NoError(t, err)
 	require.Equal(t, wantSidecar, sidecar)
 	sidecarInfo, err := root.Stat("bin/provider.json")
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o640), sidecarInfo.Mode().Perm())
+	assertSparseUpdateFileMode(t, sidecarInfo, 0o640)
+}
+
+func assertSparseUpdateFileMode(t *testing.T, info os.FileInfo, unixMode os.FileMode) {
+	t.Helper()
+	require.True(t, info.Mode().IsRegular())
+	if runtime.GOOS == windowsOS {
+		// Windows reports writable regular files as 0666 instead of Unix permission bits.
+		require.Equal(t, os.FileMode(0o666), info.Mode().Perm())
+		return
+	}
+	require.Equal(t, unixMode, info.Mode().Perm())
 }
 
 // This fixture is a GNU sparse tar stream parsed by archive/tar.Reader. The
