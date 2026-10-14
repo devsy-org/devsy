@@ -74,6 +74,27 @@ Its `TestMain` preserves the production runtime-supervisor dispatch and recogniz
 the helper only at its canonical, current-user-owned private path. Other test
 invocations retain the normal test runner path.
 
+## Runtime startup measurements
+
+The existing external lifecycle case optionally captures its ordinary fresh and
+stop/resume `up` commands when CI supplies the runtime performance tools. The
+built-in case retains its existing path. No new suite, VM, deadline or latency
+threshold is added. After both commands succeed, the helper stages the published
+runtime from `Agent.Binaries`, verifies its manifest checksum and compares direct
+and supervised Info/Find launches in direct/supervised/supervised/direct order.
+Each run records one first launch and 100 warm samples with process-reaping checks.
+The tools are built from the checkout's pinned Runtime SDK version and their build
+metadata and selected supervisor digest are verified before accepting reports.
+
+The retained JSON includes the provider source, runtime digest, checkout revision,
+SDK version, command wall time and filtered startup-event durations. Startup events
+measure launch/handshake/dispense before RPC; they exclude binary resolution, RPC
+and reaping and must not be described as total plugin overhead. The comparison
+runs after both ordinary `up` captures so it does not prewarm their provider path.
+It measures warm host caches, not a cold-cache or end-to-end speedup guarantee.
+Raw probe stderr and environment values are not included in the performance artifact.
+Normal suites remain inactive when these optional CI paths are unset.
+
 ## Managed policy boundary
 
 Managed-policy recreation is Linux-only and runs through
