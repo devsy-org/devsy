@@ -263,3 +263,43 @@ func linuxProcessStatFields(stat []byte) ([]string, bool) {
 	}
 	return strings.Fields(statText[closingParen+2:]), true
 }
+
+func processIsLive(pid int) (bool, error) {
+	fields, ok, err := linuxProcessStat(pid)
+	if err != nil || !ok {
+		return false, err
+	}
+	if len(fields) == 0 {
+		return false, fmt.Errorf("read process state for process %d", pid)
+	}
+	return !linuxProcessStateIsExited(fields[0]), nil
+}
+
+func processGroupHasLivingMembers(pgid int) (bool, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		fields, ok, err := linuxProcessStat(pid)
+		if err != nil {
+			return false, err
+		}
+		if !ok || len(fields) == 0 {
+			continue
+		}
+		processGroup, _, ok := linuxProcessGroupIDs(fields)
+		if ok && processGroup == pgid && !linuxProcessStateIsExited(fields[0]) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func linuxProcessStateIsExited(state string) bool {
+	return state == "Z" || state == "X"
+}
