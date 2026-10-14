@@ -428,6 +428,9 @@ jobs:
           - label: up-provider-microsandbox-registry-consumer
             expected-spec-count: 3
             provider-mode: external
+          - label: up-provider-microsandbox-remote-agent-binaries
+            expected-spec-count: 1
+            provider-mode: external
           - label: up-provider-microsandbox-source-migration
             expected-spec-count: 2
             provider-mode: external

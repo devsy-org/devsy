@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
@@ -42,7 +41,7 @@ var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 		framework.PushFeatureTag(featureRepo + ":1.1.0")
 		framework.PushFeatureTag(featureRepo + ":2.0.0")
 
-		tempDir := writeDevcontainerJSON(fmt.Sprintf(`{
+		tempDir := framework.WriteTempDevcontainer("outdated-test-*", fmt.Sprintf(`{
 			"image": "ubuntu:22.04",
 			"features": {"%s:1.0.0": {}}
 		}`, featureRepo))
@@ -72,7 +71,7 @@ var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 			framework.PushFeatureTag(featureRepo + ":1.0.0")
 			framework.PushFeatureTag(featureRepo + ":1.1.0")
 
-			tempDir := writeDevcontainerJSON(fmt.Sprintf(`{
+			tempDir := framework.WriteTempDevcontainer("outdated-test-*", fmt.Sprintf(`{
 			"image": "ubuntu:22.04",
 			"features": {"%s:1.1.0": {}}
 		}`, featureRepo))
@@ -94,7 +93,7 @@ var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
-			tempDir := writeDevcontainerJSON(`{
+			tempDir := framework.WriteTempDevcontainer("outdated-test-*", `{
 			"image": "ubuntu:22.04"
 		}`)
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
@@ -110,19 +109,3 @@ var _ = ginkgo.Describe("outdated command", ginkgo.Label("outdated"), func() {
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
 })
-
-func writeDevcontainerJSON(content string) string {
-	tempDir, err := os.MkdirTemp("", "outdated-test-*")
-	framework.ExpectNoError(err)
-
-	devcontainerDir := filepath.Join(tempDir, ".devcontainer")
-	framework.ExpectNoError(os.MkdirAll(devcontainerDir, 0o750))
-	framework.ExpectNoError(
-		os.WriteFile(
-			filepath.Join(devcontainerDir, "devcontainer.json"),
-			[]byte(content),
-			0o600,
-		),
-	)
-	return tempDir
-}

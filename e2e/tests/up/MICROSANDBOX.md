@@ -85,6 +85,31 @@ Its `TestMain` preserves the production runtime-supervisor dispatch and recogniz
 the helper only at its canonical, current-user-owned private path. Other test
 invocations retain the normal test runner path.
 
+## Remote agent binary delivery
+
+The Linux-only `up-provider-microsandbox-remote-agent-binaries` row uses the
+published external provider with `agent.local: false` and a fresh, test-owned
+agent container. Separate endpoint counters prove a Devsy agent executable
+transfer and exactly one runtime download through `Agent.Binaries`. The runtime
+is checked against the published manifest and the workspace copy's checksum,
+executable mode and inode.
+
+Container preflight requires KVM access, Docker connectivity, curl and a
+populated system CA store for ordinary HTTPS image metadata resolution.
+
+After the first successful `up`, the case removes only the private agent's
+provider-download cache and makes the runtime endpoint return 404. Stop/start
+must retain the workspace binary's checksum and inode without another runtime
+GET, and guest commands must succeed before and after restart. The separate
+Devsy agent endpoint stays available; this is workspace-runtime reuse, not an
+offline-agent executable guarantee. Workspace, container and server cleanup
+have independent bounded attempts.
+
+The remote-agent acceptance expanded the catalogue to 15 suites/78 cases
+(37 built-in, 41 external). Earlier 77-case consumer reports do not prove the
+remote-agent case. Its native Linux/amd64 KVM report must pass once without
+selected skips; source checks, fixture unit tests and dry runs cannot prove it.
+
 ## Existing-workspace source migration
 
 The `up-provider-microsandbox-source-migration` external-only row covers explicit
@@ -104,7 +129,8 @@ The command-package unit test separately covers activation failure after a
 committed replacement: it retains the replacement source and workspace data,
 records the initialization error and preserves user options and default choice.
 
-This source-prepared contract requires two actual native cases, each passed once
+This row brings the configured catalogue to 16 suites/80 cases (37 built-in,
+43 external). It requires two actual native cases, each passed once
 without selected skips. Compilation and dry-run registration are not migration
 proof. Stored internal descriptors refresh executable blocks; they do not
 implicitly migrate driver or binaries. A future bundled-default transition must
