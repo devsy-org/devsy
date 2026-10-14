@@ -244,9 +244,17 @@ func (s *remoteAgentArtifactServer) serveRuntime(w http.ResponseWriter, r *http.
 }
 
 func (s *remoteAgentArtifactServer) baseURL() string {
-	return "http://host.docker.internal:" + strings.TrimPrefix(
-		s.listener.Addr().String(), "0.0.0.0:",
-	)
+	address, err := remoteAgentArtifactBaseURL(s.listener.Addr().String())
+	framework.ExpectNoError(err)
+	return address
+}
+
+func remoteAgentArtifactBaseURL(address string) (string, error) {
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", fmt.Errorf("parse remote agent artifact listener: %w", err)
+	}
+	return "http://" + net.JoinHostPort("host.docker.internal", port), nil
 }
 
 func (s *remoteAgentArtifactServer) runtimeURL() string { return s.baseURL() + "/provider/runtime" }

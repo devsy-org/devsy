@@ -14,6 +14,26 @@ const (
 	agentEndpointPath   = "/agent/devsy-linux-amd64"
 )
 
+func TestRemoteAgentArtifactBaseURLUsesListenerPort(t *testing.T) {
+	for _, address := range []string{"0.0.0.0:35437", "[::]:35437", "127.0.0.1:35437", "[::1]:35437"} {
+		t.Run(address, func(t *testing.T) {
+			got, err := remoteAgentArtifactBaseURL(address)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := "http://host.docker.internal:35437"; got != want {
+				t.Fatalf("artifact base URL = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestRemoteAgentArtifactBaseURLRejectsInvalidAddress(t *testing.T) {
+	if _, err := remoteAgentArtifactBaseURL("missing-port"); err == nil {
+		t.Fatal("expected an invalid listener address error")
+	}
+}
+
 func TestRemoteAgentArtifactEndpointsTrackIndependentGETs(t *testing.T) {
 	server := &remoteAgentArtifactServer{
 		runtime: []byte("runtime binary"),
