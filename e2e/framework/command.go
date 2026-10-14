@@ -372,6 +372,15 @@ func (f *Framework) DevsyProviderAdd(ctx context.Context, args ...string) error 
 	return nil
 }
 
+// DevsyProviderAddDocker adds a docker provider called name, using podman as
+// DOCKER_PATH when DOCKER_HOST points at a podman socket.
+func (f *Framework) DevsyProviderAddDocker(ctx context.Context, name string) error {
+	if strings.Contains(os.Getenv("DOCKER_HOST"), "podman") {
+		return f.DevsyProviderAdd(ctx, "docker", "--name", name, "--option=DOCKER_PATH=podman")
+	}
+	return f.DevsyProviderAdd(ctx, "docker", "--name", name)
+}
+
 func providerNameFromAddArgs(args []string) string {
 	if len(args) == 0 {
 		return ""

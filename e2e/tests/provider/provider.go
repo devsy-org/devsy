@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
@@ -12,14 +11,6 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
-
-func addDockerProvider(ctx context.Context, f *framework.Framework, name string) error {
-	dockerHost := os.Getenv("DOCKER_HOST")
-	if dockerHost != "" && strings.Contains(dockerHost, "podman") {
-		return f.DevsyProviderAdd(ctx, "docker", "--name", name, "--option=DOCKER_PATH=podman")
-	}
-	return f.DevsyProviderAdd(ctx, "docker", "--name", name)
-}
 
 var _ = ginkgo.Describe(
 	"devsy provider test suite",
@@ -336,7 +327,7 @@ spec:
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 
-				err = addDockerProvider(ctx, f, providerName)
+				err = f.DevsyProviderAddDocker(ctx, providerName)
 				framework.ExpectNoError(err)
 				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectNoError(err)
@@ -428,7 +419,7 @@ spec:
 				err = f.DevsyProviderDelete(ctx, renamedName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				err = addDockerProvider(ctx, f, providerName)
+				err = f.DevsyProviderAddDocker(ctx, providerName)
 				framework.ExpectNoError(err)
 				err = f.DevsyProviderUse(ctx, providerName)
 				framework.ExpectNoError(err)

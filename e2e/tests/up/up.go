@@ -31,7 +31,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 	})
 
 	ginkgo.It("with env vars", func(ctx context.Context) {
-		f, err := setupDockerProvider(filepath.Join(initialDir, "bin"), "docker")
+		f, err := framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), "docker")
 		framework.ExpectNoError(err)
 
 		name := "vscode-remote-try-python"

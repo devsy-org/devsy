@@ -50,8 +50,11 @@ var _ = ginkgo.Describe(
 				})
 				ginkgo.DeferCleanup(f.CleanupWorkspace, tempDir)
 
+				performance, err := newMicrosandboxPerformanceCapture(source, name, f)
+				framework.ExpectNoError(err)
+
 				// full up: boots the microVM, streams in the agent, opens the tunnel
-				err = f.DevsyUp(ctx, tempDir, "--devcontainer", ".devcontainer.json")
+				err = performance.up(ctx, tempDir, "fresh", "--devcontainer", ".devcontainer.json")
 				framework.ExpectNoError(err)
 
 				// the workspace is reachable over SSH
@@ -96,10 +99,11 @@ var _ = ginkgo.Describe(
 				assertMicrosandboxHostEntries(ctx, f, tempDir, "fresh")
 				err = f.DevsyWorkspaceStop(ctx, tempDir)
 				framework.ExpectNoError(err)
-				err = f.DevsyUp(ctx, tempDir)
+				err = performance.up(ctx, tempDir, "reused")
 				framework.ExpectNoError(err)
 				gomega.Expect(microsandboxCreationTime(ctx, sandbox)).To(gomega.Equal(createdAt))
 				assertMicrosandboxHostEntries(ctx, f, tempDir, "restarted")
+				framework.ExpectNoError(performance.compare(ctx))
 				err = f.DevsyUpRecreate(ctx, tempDir)
 				framework.ExpectNoError(err)
 				gomega.Expect(microsandboxCreationTime(ctx, sandbox)).NotTo(gomega.Equal(createdAt))

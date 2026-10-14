@@ -24,7 +24,7 @@ var _ = ginkgo.Describe("testing up command for windows", ginkgo.Label("up-docke
 		initialDir, err = os.Getwd()
 		framework.ExpectNoError(err)
 		dockerHelper = &docker.DockerHelper{DockerCommand: "podman"}
-		f, err = setupDockerProvider(filepath.Join(initialDir, "bin"), "podman")
+		f, err = framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), "podman")
 		framework.ExpectNoError(err)
 	})
 

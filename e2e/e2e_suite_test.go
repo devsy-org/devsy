@@ -50,6 +50,9 @@ func TestMain(m *testing.M) {
 		cmd.Execute()
 		return
 	}
+	if handled, code := dispatchFixtureCredentialHelper(); handled {
+		os.Exit(code)
+	}
 	os.Exit(m.Run())
 }
 

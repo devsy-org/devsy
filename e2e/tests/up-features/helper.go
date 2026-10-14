@@ -7,8 +7,6 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	"github.com/devsy-org/devsy/e2e/framework"
 )
 
 func createTarGzArchive(outputFilePath string, filePaths []string) error {
@@ -72,9 +70,4 @@ func addFileToTar(tarWriter *tar.Writer, filePath string) error {
 
 	_, err = io.Copy(tarWriter, file)
 	return err
-}
-
-//nolint:unparam // dockerPath is "podman" for the windows-only caller in wsl.go
-func setupDockerProvider(binDir, dockerPath string) (*framework.Framework, error) {
-	return framework.SetupDockerProvider(binDir, dockerPath)
 }

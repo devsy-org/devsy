@@ -31,6 +31,7 @@ jobs:
               - '.goreleaser.yml'
               - 'e2e/**'
               - 'hack/microsandbox/**'
+              - 'hack/provider_update_ci/**'
               - 'hack/run-managed-policy-e2e.sh'
               - '.github/workflows/pr-ci.yml'
               - 'hack/licenses/**'
@@ -133,6 +134,13 @@ jobs:
           go test -race -short -count=1 -v ./e2e/tests/up-docker-compose \
             -run '^TestExpectedUIDMapping$'
 
+      - name: test workspace fixture helpers
+        run: go test -race -short -count=1 -timeout 90s ./e2e/tests/up
+
+      - name: test Linux registry fixture
+        if: runner.os == 'Linux'
+        run: go test -race -count=1 -timeout 90s ./e2e/framework/registryfixture
+
   provider-update-windows:
     name: Provider Update Tests (windows-latest)
     needs: [changes]
@@ -148,66 +156,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: test Go CI helpers on Windows
+        run: go test -race -count=1 -timeout 10m ./hack/microsandbox ./hack/provider_update_ci
+
       - name: run provider update tests and require Windows coverage
         shell: pwsh
-        run: |
-          $jsonPath = Join-Path $env:RUNNER_TEMP 'provider-update-windows.jsonl'
-          $exitPath = Join-Path $env:RUNNER_TEMP 'provider-update-windows.exitcode'
-          & go test -race -json -count=1 -timeout 10m ./pkg/workspace ./pkg/provider -run '^(TestProviderUpdate|TestStatUpdatePath)' |
-            Tee-Object -FilePath $jsonPath
-          $testExitCode = $LASTEXITCODE
-          Set-Content -LiteralPath $exitPath -Value $testExitCode -NoNewline
-
-          if ($testExitCode -ne 0) {
-            Write-Host "::error::Provider update tests failed with exit code $testExitCode"
-            exit $testExitCode
-          }
-
-          $events = @(
-            Get-Content -LiteralPath $jsonPath |
-              ForEach-Object { try { ConvertFrom-Json -InputObject $_ -ErrorAction Stop } catch { $null } } |
-              Where-Object { $null -ne $_ }
-          )
-          $criticalTests = @(
-            'TestProviderUpdateZipCompatibility/plain_archive',
-            'TestProviderUpdateZipCompatibility/contained_file_symlink',
-            'TestProviderUpdateTarContainedDirectoryLinkThenRegularMember',
-            'TestProviderUpdateZipContainedDirectoryLinkThenRegularMember',
-            'TestProviderUpdateContainedSeedDirectoryLinkChain',
-            'TestProviderUpdateArchivePreservesOwnedDaemon',
-            'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/unchanged_managed_target_succeeds',
-            'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/changed_managed_target_with_matching_new_checksum_succeeds',
-            'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/replaced_managed_symlink_with_matching_new_checksum_succeeds',
-            'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/new_managed_target_with_matching_checksum_succeeds',
-            'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/changed_managed_target_rejects_and_preserves_live_state',
-            'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/contained_symlink_follows_changed_staged_target',
-            'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/external_symlink_into_managed_tree_fails_closed',
-            'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/case-variant_managed_path_cannot_bypass_validation',
-            'TestProviderUpdateAbsoluteReferenceUsesFinalStagedTarget/outside_reference_remains_untouched_while_managed_tree_updates',
-            'TestStatUpdatePath/nested_dot_directory',
-            'TestStatUpdatePath/nested_cancelled_child',
-            'TestStatUpdatePath/external_target',
-            'TestStatUpdatePath/cycle'
-          )
-          $status = 0
-          foreach ($testName in $criticalTests) {
-            $testEvents = @($events | Where-Object { $_.Test -eq $testName })
-            if ($testEvents.Count -eq 0) {
-              Write-Host "::error::Required Windows provider update test produced no JSON events: $testName"
-              $status = 1
-              continue
-            }
-            if (@($testEvents | Where-Object { $_.Action -eq 'skip' }).Count -gt 0) {
-              Write-Host "::error::Required Windows provider update test was skipped: $testName"
-              $status = 1
-              continue
-            }
-            if (@($testEvents | Where-Object { $_.Action -eq 'pass' }).Count -eq 0) {
-              Write-Host "::error::Required Windows provider update test did not pass: $testName"
-              $status = 1
-            }
-          }
-          exit $status
+        run: go run ./hack/provider_update_ci --artifacts-dir "$env:RUNNER_TEMP"
 
       - name: upload provider update test JSON on failure
         if: failure()
@@ -303,6 +257,30 @@ jobs:
         with:
           name: devsy-${{ steps.os.outputs.runner_os }}
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
+
+      - name: build MicroSandbox CI helper
+        if: runner.os == 'Linux'
+        env:
+          CGO_ENABLED: 0
+        run: go build -trimpath -o "${RUNNER_TEMP}/devsy-ci-microsandbox" ./hack/microsandbox
+
+      - name: build pinned runtime performance tools
+        if: runner.os == 'Linux'
+        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" build-performance-tools --output-dir "${RUNNER_TEMP}/runtime-performance-tools"'
+
+      - name: upload runtime performance tools
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: runtime-performance-tools-linux
+          path: ${{ runner.temp }}/runtime-performance-tools/
+
+      - name: upload MicroSandbox CI helper
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: devsy-ci-microsandbox-linux
+          path: ${{ runner.temp }}/devsy-ci-microsandbox
 
       - name: build e2e test binary
         if: matrix.runner == 'ubuntu-latest' || matrix.runner == 'windows-latest'
@@ -447,6 +425,12 @@ jobs:
             expected-spec-count: 6
           - label: up-provider-microsandbox-compatibility
             expected-spec-count: 2
+          - label: up-provider-microsandbox-registry-consumer
+            expected-spec-count: 3
+            provider-mode: external
+          - label: up-provider-microsandbox-source-migration
+            expected-spec-count: 2
+            provider-mode: external
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -468,6 +452,37 @@ jobs:
           name: e2e-test-linux
           path: ./e2e/
 
+      - name: download runtime performance tools
+        if: matrix.label == 'up-provider-microsandbox'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: runtime-performance-tools-linux
+          path: ${{ runner.temp }}/runtime-performance-tools/
+
+      - name: prepare runtime performance capture
+        if: matrix.label == 'up-provider-microsandbox'
+        shell: bash
+        run: |
+          chmod +x "${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-spawn-probe" \
+            "${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-supervisor"
+          install -d -m 700 "${RUNNER_TEMP}/microsandbox-performance"
+          {
+            echo "DEVSY_TEST_RUNTIME_SPAWN_PROBE=${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-spawn-probe"
+            echo "DEVSY_TEST_RUNTIME_SUPERVISOR=${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-supervisor"
+            echo "DEVSY_TEST_RUNTIME_PERFORMANCE_DIR=${RUNNER_TEMP}/microsandbox-performance"
+            echo "DEVSY_TEST_RUNTIME_REVISION=${{ github.sha }}"
+            echo "DEVSY_TEST_RUNTIME_SDK_VERSION=$(cat "${RUNNER_TEMP}/runtime-performance-tools/sdk-version")"
+          } >> "$GITHUB_ENV"
+
+      - name: download MicroSandbox CI helper
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: devsy-ci-microsandbox-linux
+          path: ${{ runner.temp }}
+
+      - name: setup MicroSandbox CI helper
+        run: chmod +x "${RUNNER_TEMP}/devsy-ci-microsandbox"
+
       - name: setup executable
         shell: bash
         working-directory: ./e2e
@@ -479,9 +494,6 @@ jobs:
           chmod +x ./e2e.test
           ls -R ./bin/
 
-      - name: test Ginkgo report validator
-        run: python3 -m unittest discover -s hack/microsandbox -p 'test_*.py'
-
       - name: cache microsandbox release bundle (Linux)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -490,82 +502,17 @@ jobs:
 
       - name: install checksum-pinned microsandbox (Linux)
         timeout-minutes: 5
-        run: |
-          archive="${RUNNER_TEMP}/microsandbox-linux-x86_64-v0.7.7.tar.gz"
-          if [ ! -f "$archive" ]; then
-            curl -fsSL --retry 3 -o "$archive" \
-              https://github.com/superradcompany/microsandbox/releases/download/v0.7.7/microsandbox-linux-x86_64.tar.gz
-          fi
-          echo "b3cc4a5e3f52dfdd938a6f67ac4a9a959ddfe304bab56de4964044b8613f01bb  $archive" | sha256sum -c -
-          staging="$(mktemp -d)"
-          trap 'rm -rf "$staging"' EXIT
-          tar -xzf "$archive" -C "$staging"
-          mkdir -p "$HOME/.microsandbox/bin" "$HOME/.microsandbox/lib" "$HOME/.local/bin"
-          install -m 755 "$staging/msb" "$HOME/.microsandbox/bin/msb"
-          install -m 644 "$staging/libkrunfw.so.5.6.1" "$HOME/.microsandbox/lib/"
-          ln -sf libkrunfw.so.5.6.1 "$HOME/.microsandbox/lib/libkrunfw.so.5"
-          ln -sf libkrunfw.so.5 "$HOME/.microsandbox/lib/libkrunfw.so"
-          ln -sf "$HOME/.microsandbox/bin/msb" "$HOME/.local/bin/msb"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/msb" --version
-          sudo test -r /dev/kvm
-          sudo test -w /dev/kvm
+        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" install-linux'
 
       - name: run MicroSandbox test
         shell: bash
-        working-directory: ./e2e
         env:
           GH_USERNAME: ${{ github.repository_owner }}
           GH_ACCESS_TOKEN: ${{ github.token }}
           GH_CREDENTIAL_USERNAME: x-access-token
           TEST_TIMEOUT: 1200s
           DEVSY_REQUIRE_MICROSANDBOX: "true"
-        run: |
-          set -uo pipefail
-          report="${RUNNER_TEMP}/microsandbox-${{ matrix.label }}.json"
-          test_log="${RUNNER_TEMP}/microsandbox-${{ matrix.label }}.log"
-          command=(./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}"
-            -ginkgo.fail-on-empty -ginkgo.flake-attempts=1
-            --ginkgo.label-filter="${{ matrix.label }}" -ginkgo.json-report="$report")
-          fixture_environment=()
-          if [ "${{ matrix.label }}" = "up-provider-microsandbox-managed-recreate" ]; then
-            command=(../hack/run-managed-policy-e2e.sh "${command[@]}")
-            fixture_environment=(DEVSY_REQUIRE_MSB_MANAGED_POLICY_FIXTURE=true "RUNNER_TEMP=${RUNNER_TEMP}")
-          fi
-          set +e
-          sudo \
-            DEVSY_REQUIRE_MICROSANDBOX="${DEVSY_REQUIRE_MICROSANDBOX}" \
-            GH_USERNAME="${GH_USERNAME}" \
-            GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
-            GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
-            KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
-            ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
-            PATH="${PATH}" \
-            "${fixture_environment[@]}" "${command[@]}" 2>&1 | tee "$test_log"
-          pipeline_status=("${PIPESTATUS[@]}")
-          set -e
-          test_status=${pipeline_status[0]}
-          log_status=${pipeline_status[1]}
-          chown_status=0
-          if [ -e "$report" ]; then
-            sudo chown "$(id -u):$(id -g)" "$report" || chown_status=$?
-          fi
-          report_status=0
-          if [ "$chown_status" -ne 0 ]; then
-            echo "::error::could not make Ginkgo report readable for artifact upload"
-            report_status="$chown_status"
-          else
-            python3 ../hack/microsandbox/verify_report.py \
-              --report "$report" --label "${{ matrix.label }}" \
-              --expected-count "${{ matrix.expected-spec-count }}" || report_status=$?
-          fi
-          if [ "$test_status" -ne 0 ]; then
-            exit "$test_status"
-          fi
-          if [ "$log_status" -ne 0 ]; then
-            exit "$log_status"
-          fi
-          exit "$report_status"
+        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" run --label "${{ matrix.label }}" --expected-count "${{ matrix.expected-spec-count }}" --provider-mode "${{ matrix.provider-mode || ''parity'' }}"'
 
       - name: upload MicroSandbox test evidence
         if: always()
@@ -576,6 +523,15 @@ jobs:
             ${{ runner.temp }}/microsandbox-${{ matrix.label }}.json
             ${{ runner.temp }}/microsandbox-${{ matrix.label }}.log
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: upload runtime performance evidence
+        if: always() && matrix.label == 'up-provider-microsandbox'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: microsandbox-runtime-performance
+          path: ${{ runner.temp }}/microsandbox-performance/provider-performance.json
+          if-no-files-found: error
           retention-days: 14
 
   integration-tests:
