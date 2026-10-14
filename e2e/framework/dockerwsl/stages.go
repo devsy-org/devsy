@@ -656,18 +656,41 @@ func (d *dockerWSL) sshDiagnostics(ctx context.Context, ssh, alias string, last 
 	return se
 }
 
+// sshDaemonID asks the daemon behind the SSH endpoint for its ID. The first
+// connection through a freshly started sshd and daemon can be slow or drop, so
+// timeouts and other transient failures are retried; authentication and
+// host-key failures are permanent and are not.
+func (d *dockerWSL) sshDaemonID(ctx context.Context, endpoint string) (string, error) {
+	var last error
+	for attempt := range sshAuthAttempts {
+		res, err := d.run(ctx, stageOracles, runenv.CodeDockerWSLEndpoint,
+			d.dockerCommand(endpoint, "info", "--format", "{{.ID}}"))
+		if err == nil {
+			id, parseErr := parseDaemonID(res.Stdout)
+			if parseErr != nil {
+				return "", runenv.NewStageError(
+					runenv.CodeDockerWSLEndpoint,
+					stageOracles,
+					parseErr,
+				)
+			}
+			return id, nil
+		}
+		last = err
+		_, permanent := classifySSHFailure(res.Stderr + res.Stdout)
+		if permanent || !d.pause(ctx, attempt, sshAuthAttempts, sshAuthGap) {
+			break
+		}
+	}
+	return "", last
+}
+
 // verifyOracles proves the SSH route reaches the WSL daemon, no TCP API exists
 // and the process-default pipe has no daemon. Only then are values exported.
 func (d *dockerWSL) verifyOracles(ctx context.Context) error {
-	endpoint := d.state.SSHEndpoint
-	res, err := d.run(ctx, stageOracles, runenv.CodeDockerWSLEndpoint,
-		d.dockerCommand(endpoint, "info", "--format", "{{.ID}}"))
+	sshID, err := d.sshDaemonID(ctx, d.state.SSHEndpoint)
 	if err != nil {
 		return err
-	}
-	sshID, err := parseDaemonID(res.Stdout)
-	if err != nil {
-		return runenv.NewStageError(runenv.CodeDockerWSLEndpoint, stageOracles, err)
 	}
 	wslID, err := d.wslDaemonID(ctx, stageOracles)
 	if err != nil {

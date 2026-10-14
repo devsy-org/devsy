@@ -235,6 +235,25 @@ func (s *DockerWSLFailureSuite) TestAuthenticationFailureIsNotRetried() {
 	s.Equal(1, s.rig.runner.count("ssh-verbose"), "one verbose transcript for diagnosis")
 }
 
+func (s *DockerWSLFailureSuite) TestSSHDockerInfoAuthenticationFailureIsNotRetried() {
+	s.rig.onResult(kindDockerInfoSSH, exitWith(255, "Permission denied (publickey)."))
+
+	err := s.rig.setup()
+
+	s.Equal([]runenv.Code{runenv.CodeDockerWSLEndpoint}, runenvtest.CodesOf(err))
+	s.Equal(1, s.rig.runner.count(kindDockerInfoSSH))
+}
+
+func (s *DockerWSLFailureSuite) TestSSHDockerInfoRetriesAreBounded() {
+	s.rig.onResult(kindDockerInfoSSH, runenv.CommandResult{ExitCode: -1, TimedOut: true})
+
+	err := s.rig.setup()
+
+	s.Equal([]runenv.Code{runenv.CodeDockerWSLEndpoint}, runenvtest.CodesOf(err))
+	s.Contains(err.Error(), "timed out")
+	s.Equal(sshAuthAttempts, s.rig.runner.count(kindDockerInfoSSH))
+}
+
 func (s *DockerWSLFailureSuite) TestUnverifiedCLINeverRuns() {
 	s.rig.dl.data = zipOf(s.T(), map[string]string{testExeEntry: "tampered"})
 	s.Require().Error(s.rig.setup())

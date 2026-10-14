@@ -232,6 +232,25 @@ func (s *DockerWSLSetupSuite) TestTransientSSHFailureIsRetried() {
 	s.Equal(int32(3), calls.Load())
 }
 
+// The first docker info through a fresh sshd can time out; setup must retry it.
+func (s *DockerWSLSetupSuite) TestFirstSSHDockerInfoTimeoutIsRetried() {
+	var calls atomic.Int32
+	s.rig.on(
+		kindDockerInfoSSH,
+		func(context.Context, runenv.Command) (runenv.CommandResult, error) {
+			if calls.Add(1) == 1 {
+				return runenv.CommandResult{ExitCode: -1, TimedOut: true}, nil
+			}
+			return runenv.CommandResult{Stdout: testDaemonID + "\n"}, nil
+		},
+	)
+
+	s.Require().NoError(s.rig.setup())
+
+	s.Equal(int32(2), calls.Load())
+	s.Equal(stageVerified, s.rig.state().Stage)
+}
+
 func (s *DockerWSLSetupSuite) TestRepeatedSetupIsANoOp() {
 	s.Require().NoError(s.rig.setup())
 	s.rig.runner.reset()

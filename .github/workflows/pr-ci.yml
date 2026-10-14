@@ -1299,7 +1299,7 @@ jobs:
           path: |
             e2e/*-report.json
             e2e/*-report.summary.txt
-            ${{ runner.temp }}/devsy-ci/diagnostics/**
+            ${{ runner.temp }}/devsy-ci/docker-wsl-diagnostics.log
           if-no-files-found: warn
 
       - name: tear down Docker WSL SSH profile
