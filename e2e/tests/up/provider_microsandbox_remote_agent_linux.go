@@ -312,7 +312,7 @@ esac`,
 const (
 	remoteAgentContainerImage = "ubuntu:24.04"
 	remoteAgentContainerInit  = `apt-get update &&
-apt-get install -y --no-install-recommends curl &&
+apt-get install -y --no-install-recommends ca-certificates curl &&
 rm -rf /var/lib/apt/lists/* &&
 touch /tmp/devsy-agent-ready &&
 sleep infinity`
@@ -324,6 +324,7 @@ test -c /dev/kvm &&
 test -r /dev/kvm &&
 test -w /dev/kvm &&
 command -v curl >/dev/null &&
+test -s /etc/ssl/certs/ca-certificates.crt &&
 /opt/devsy-microsandbox/bin/msb --version &&
 /usr/local/bin/docker version >/dev/null`
 )

@@ -94,6 +94,9 @@ transfer and exactly one runtime download through `Agent.Binaries`. The runtime
 is checked against the published manifest and the workspace copy's checksum,
 executable mode and inode.
 
+Container preflight requires KVM access, Docker connectivity, curl and a
+populated system CA store for ordinary HTTPS image metadata resolution.
+
 After the first successful `up`, the case removes only the private agent's
 provider-download cache and makes the runtime endpoint return 404. Stop/start
 must retain the workspace binary's checksum and inode without another runtime
