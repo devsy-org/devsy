@@ -1,0 +1,12 @@
+{
+  "name": "Overlay Dockerfile Feature Test",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteEnv": {
+    "BASE_VAR": "base_value"
+  },
+  "features": {
+    "./features/base-feature": {}
+  }
+}

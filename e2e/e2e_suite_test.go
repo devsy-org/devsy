@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/cmd"
 	"github.com/devsy-org/devsy/e2e/framework"
 	// Register tests.
 	_ "github.com/devsy-org/devsy/e2e/tests/build"
@@ -42,6 +43,18 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
+
+func TestMain(m *testing.M) {
+	// The external runtime self-execs this test binary as the real supervisor.
+	if len(os.Args) > 2 && os.Args[1] == "internal" && os.Args[2] == "runtime-supervisor" {
+		cmd.Execute()
+		return
+	}
+	if handled, code := dispatchFixtureCredentialHelper(); handled {
+		os.Exit(code)
+	}
+	os.Exit(m.Run())
+}
 
 // TestRunE2ETests checks configuration parameters (specified through flags) and then runs
 // E2E tests using the Ginkgo runner.

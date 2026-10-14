@@ -80,6 +80,9 @@ func resolveOCIExtends(
 		return nil, fmt.Errorf("extends: unmarshal OCI %q: %w", bare, err)
 	}
 	devContainer.Origin = "oci://" + bare
+	if err := devContainer.captureSource(normalized); err != nil {
+		return nil, err
+	}
 
 	if !devContainer.Extends.IsEmpty() {
 		parent, err := resolveExtendsArray(ctx, devContainer.Extends, "", visited)

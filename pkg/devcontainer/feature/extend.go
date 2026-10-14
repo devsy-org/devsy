@@ -190,7 +190,9 @@ ARG _DEV_CONTAINERS_BASE_IMAGE=placeholder`, syntax)
 
 func copyFeaturesToDestination(features []*config.FeatureSet, targetDir string) error {
 	// make sure the folder doesn't exist initially
-	_ = os.RemoveAll(targetDir)
+	if err := os.RemoveAll(targetDir); err != nil {
+		return fmt.Errorf("clean generated feature directory: %w", err)
+	}
 	for i, feature := range features {
 		featureDir := filepath.Join(targetDir, strconv.Itoa(i))
 		// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.

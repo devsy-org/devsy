@@ -1,0 +1,7 @@
+{
+  "name": "Primary non-Compose config replaced by structural Compose overlay",
+  "image": "ghcr.io/devsy-org/test-images/base:ubuntu",
+  "initializeCommand": "exit 42",
+  "workspaceFolder": "/workspaces",
+  "workspaceMount": ""
+}

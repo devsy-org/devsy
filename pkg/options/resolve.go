@@ -274,6 +274,9 @@ func ResolveAgentConfig(
 	agentConfig := providerConfig.Agent
 
 	resolveAgentBaseConfig(&agentConfig, options, devConfig)
+	if agentConfig.Driver == provider.ExternalDriver && agentConfig.External.ImageBackend == "" {
+		agentConfig.External.ImageBackend = provider.DockerDriver
+	}
 	resolveAgentDockerConfig(&agentConfig, options)
 	resolveAgentKubernetesConfig(&agentConfig, options)
 	resolveAgentAppleConfig(&agentConfig, options)

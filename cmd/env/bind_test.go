@@ -7,6 +7,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/stretchr/testify/require"
 )
@@ -119,4 +120,52 @@ func mustLoadConfig(t *testing.T) *config.Config {
 	cfg, err := config.LoadConfig("", "")
 	require.NoError(t, err)
 	return cfg
+}
+
+func TestAttachEnvironmentRejectsSameNamedAttachedSecret(t *testing.T) {
+	for _, reference := range []string{"TOKEN", "local:local/TOKEN"} {
+		t.Run(reference, func(t *testing.T) {
+			globalFlags := setupEnvCommandTest(t)
+			cfg := mustLoadConfig(t)
+			secretStore, err := secrets.NewSecretStoreForConfig(cfg)
+			require.NoError(t, err)
+			require.NoError(t, secretStore.Set(cfg.DefaultContext, "TOKEN", "protected"))
+			envs, err := envstore.NewStoreForConfig(cfg)
+			require.NoError(t, err)
+			require.NoError(t, envs.Set(cfg.DefaultContext, "TOKEN", "plaintext"))
+			cfg.Current().Secrets = []string{reference}
+			require.NoError(t, config.SaveConfig(cfg))
+			t.Setenv(secrets.EnvPassphrase, "")
+			err = (&AttachCmd{GlobalFlags: globalFlags}).Run(context.Background(), "TOKEN")
+			require.ErrorContains(t, err, "attached as a secret")
+			cfg = mustLoadConfig(t)
+			require.Empty(t, cfg.Current().EnvVars)
+			require.Equal(t, []string{reference}, cfg.Current().Secrets)
+			value, err := envs.Get(cfg.DefaultContext, "TOKEN")
+			require.NoError(t, err)
+			require.Equal(t, "plaintext", value)
+		})
+	}
+}
+
+func TestSetEnvironmentRejectsQualifiedAttachedSecret(t *testing.T) {
+	for _, reference := range []string{"local:local/TOKEN", "local/TOKEN"} {
+		t.Run(reference, func(t *testing.T) {
+			globalFlags := setupEnvCommandTest(t)
+			cfg := mustLoadConfig(t)
+			cfg.Current().Secrets = []string{reference}
+			require.NoError(t, config.SaveConfig(cfg))
+			envs, err := envstore.NewStoreForConfig(cfg)
+			require.NoError(t, err)
+			require.NoError(t, envs.Set(cfg.DefaultContext, "TOKEN", "existing"))
+			err = (&SetCmd{GlobalFlags: globalFlags, Value: "replacement"}).Run(
+				context.Background(),
+				"TOKEN",
+			)
+			require.ErrorContains(t, err, "attached as a secret")
+			value, err := envs.Get(cfg.DefaultContext, "TOKEN")
+			require.NoError(t, err)
+			require.Equal(t, "existing", value)
+		})
+	}
 }

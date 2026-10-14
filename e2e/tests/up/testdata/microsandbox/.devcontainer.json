@@ -1,6 +1,6 @@
 {
   "name": "microsandbox",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-  "containerUser": "vscode",
+  "containerUser": "root",
   "remoteUser": "vscode"
 }

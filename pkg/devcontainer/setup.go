@@ -3,8 +3,10 @@ package devcontainer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -27,6 +29,7 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/version"
 )
 
 const (
@@ -118,14 +121,29 @@ func (r *runner) injectAgentIntoContainer(ctx context.Context, timeout time.Dura
 	strategy := r.newAgentDelivery()
 
 	if strategy.Phase() == delivery.PhasePostStart {
-		if err := r.deliverPostStart(ctx, strategy); err != nil {
-			log.Warnf("platform-native delivery failed, falling back to legacy inject: %v", err)
-			return r.legacyInject(ctx, timeout)
-		}
-		return nil
+		return fallbackAgentDelivery(
+			func() error { return r.deliverPostStart(ctx, strategy) },
+			func() error { return r.legacyInject(ctx, timeout) },
+		)
 	}
 
 	return r.legacyInject(ctx, timeout)
+}
+
+func fallbackAgentDelivery(native, legacy func() error) error {
+	nativeErr := native()
+	if nativeErr == nil {
+		return nil
+	}
+	log.Warnf("platform-native delivery failed, falling back to legacy inject: %v", nativeErr)
+	legacyErr := legacy()
+	if legacyErr == nil {
+		return nil
+	}
+	return errors.Join(
+		fmt.Errorf("platform-native agent delivery failed: %w", nativeErr),
+		fmt.Errorf("legacy agent injection failed: %w", legacyErr),
+	)
 }
 
 func (r *runner) newAgentDelivery() delivery.AgentDelivery {
@@ -133,6 +151,12 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 	var dockerEnv []string
 	if r.workspaceConfig.Agent.Docker.Path != "" {
 		dockerCmd = r.workspaceConfig.Agent.Docker.Path
+	}
+	runtimeName := docker.DetectRuntime(dockerCmd).Name()
+	if configured := r.workspaceConfig.Agent.Docker.Runtime; configured != "" {
+		if runtime, err := docker.RuntimeFromName(configured); err == nil {
+			runtimeName = runtime.Name()
+		}
 	}
 	for k, v := range r.workspaceConfig.Agent.Docker.Env {
 		dockerEnv = append(dockerEnv, k+"="+v)
@@ -151,6 +175,7 @@ func (r *runner) newAgentDelivery() delivery.AgentDelivery {
 		WorkspaceConfig:            r.workspaceConfig,
 		WorkspaceID:                r.id,
 		DockerCommand:              dockerCmd,
+		Runtime:                    runtimeName,
 		DockerEnv:                  dockerEnv,
 		IsRemoteDocker:             docker.RemoteDockerHost(dockerEnv),
 		HelperImage:                r.workspaceConfig.Agent.Docker.HelperImage,
@@ -190,6 +215,10 @@ func (r *runner) deliverPostStart(ctx context.Context, strategy delivery.AgentDe
 		opts.BinarySource = mgr.AcquireBinary
 		opts.Arch = arch
 		opts.PreferInContainerDownload = !mgr.HasLocalOverride(arch)
+		opts.SkipVersionCheck = strings.TrimSpace(os.Getenv(pkgconfig.EnvAgentBinary)) != "" ||
+			os.Getenv(pkgconfig.EnvAgentURL) != "" ||
+			opts.DownloadURL != pkgconfig.DefaultAgentDownloadURL() ||
+			version.GetVersion() == version.DevVersion
 	}
 	if err := strategy.DeliverPostStart(ctx, opts); err != nil {
 		return fmt.Errorf("deliver agent (post-start): %w", err)
@@ -301,6 +330,8 @@ func (r *runner) prepareSetupInfo(params *setupContainerParams) (*setupInfo, err
 
 func (r *runner) buildResult(params *setupContainerParams) *config.Result {
 	result := &config.Result{
+		GeneratedBuildArtifacts: r.generatedBuildArtifacts,
+		GeneratedBuildContext:   r.generatedBuildContext,
 		DevContainerConfigWithPath: &config.DevContainerConfigWithPath{
 			Config: params.rawConfig,
 			Path:   getRelativeDevContainerJson(params.rawConfig.Origin, r.localWorkspaceFolder),
@@ -519,7 +550,7 @@ func (r *runner) executeSetup(
 			stdin,
 			r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
 			r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
-			config.GetMounts(result),
+			result,
 			tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
 			tunnelserver.WithSecrets(
 				secretsEnv,
@@ -530,7 +561,8 @@ func (r *runner) executeSetup(
 		)
 	}
 
-	sshTunnelCmd := r.buildSSHTunnelCommand()
+	sshTunnelArgv := r.buildSSHTunnelArgv()
+	sshTunnelCmd := shellescape.QuoteCommand(sshTunnelArgv)
 
 	agentInjectFunc := func(
 		cancelCtx context.Context,
@@ -547,6 +579,7 @@ func (r *runner) executeSetup(
 				Stderr:  writer,
 			},
 			agent.ExecStartupWatchdogOptions{},
+			sshTunnelArgv...,
 		)
 	}
 
@@ -564,6 +597,7 @@ func (r *runner) execSetupSSHServer(
 	ctx context.Context,
 	req agent.ExecRequest,
 	watchdogOpts agent.ExecStartupWatchdogOptions,
+	argv ...string,
 ) error {
 	onStartupSilence := watchdogOpts.OnStartupSilence
 	watchdogOpts.OnStartupSilence = func() {
@@ -577,6 +611,11 @@ func (r *runner) execSetupSSHServer(
 	return agent.ExecWithStartupWatchdog(
 		ctx,
 		func(ctx context.Context, req agent.ExecRequest) error {
+			if execDriver, ok := r.driver.(driver.ArgvExecDriver); ok && len(argv) > 0 {
+				return execDriver.CommandContainerArgv(ctx, r.id, argv, driver.Streams{
+					Stdin: req.Stdin, Stdout: req.Stdout, Stderr: req.Stderr,
+				})
+			}
 			return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
 				WorkspaceID: r.id,
 				User:        containerRootUser,
@@ -592,9 +631,9 @@ func (r *runner) execSetupSSHServer(
 	)
 }
 
-func (r *runner) buildSSHTunnelCommand() string {
+func (r *runner) buildSSHTunnelArgv() []string {
 	args := []string{
-		shellescape.Quote(r.agentContainerPath()),
+		r.agentContainerPath(),
 		"internal", "ssh-server", names.Flag(names.Stdio),
 	}
 
@@ -602,13 +641,13 @@ func (r *runner) buildSSHTunnelCommand() string {
 		args = append(
 			args,
 			names.Flag(names.ReuseSSHAuthSock),
-			shellescape.Quote(r.workspaceConfig.CLIOptions.SSHAuthSockID),
+			r.workspaceConfig.CLIOptions.SSHAuthSockID,
 		)
 	}
 	if r.isDebugMode() {
 		args = append(args, names.Flag(names.Debug))
 	}
-	return strings.Join(args, " ")
+	return args
 }
 
 func getRelativeDevContainerJson(origin, localWorkspaceFolder string) string {

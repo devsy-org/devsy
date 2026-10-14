@@ -25,6 +25,24 @@ describe("LogStore", () => {
     expect(logPath).toMatch(/\.log$/)
   })
 
+  it("reserves an SSH diagnostic log path without exposing raw PTY output", async () => {
+    const logPath = store.createDiagnosticLogPath(CTX, "ws-1")
+    expect(logPath).toContain(join("workspaces", CTX, "ws-1"))
+    expect(logPath).toMatch(/-ssh-diagnostics\.log$/)
+
+    store.appendLog(
+      logPath,
+      '{"component":"gpg-forwarding","code":"setup_failed"}',
+    )
+    await store.closeLog(logPath)
+
+    const entries = store.listLogs(CTX, "ws-1")
+    expect(entries).toHaveLength(1)
+    expect(store.readLog(CTX, "ws-1", entries[0].filename)).toContain(
+      '"component":"gpg-forwarding"',
+    )
+  })
+
   it("appends lines to a log file", async () => {
     const logPath = store.createLogFile(CTX, "ws-1")
     store.appendLog(logPath, "line 1")

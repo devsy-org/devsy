@@ -11,6 +11,9 @@ import type {
   ProviderVersion,
   ProviderVersionCheckResult,
   Secret,
+  SecretProtectionActionInput,
+  SecretProtectionActionResult,
+  SecretProtectionStatus,
   SshKeyInfo,
   Workspace,
 } from "$lib/types/index.js"
@@ -331,16 +334,64 @@ export async function contextDelete(name: string): Promise<void> {
   return invoke("context_delete", { name })
 }
 
+export async function secretProtectionStatus(): Promise<SecretProtectionStatus> {
+  const result = await invoke<SecretProtectionStatus | CommandEnvelope>(
+    "secret_protection_status",
+  )
+  if ("ok" in result) {
+    unwrapEnvelope(result)
+    throw new Error("Unable to load secret security status.")
+  }
+  return result
+}
+
+export function secretProtectionAction(
+  input: SecretProtectionActionInput,
+): Promise<SecretProtectionActionResult> {
+  return invoke<SecretProtectionActionResult>("secret_protection_action", {
+    ...input,
+  })
+}
+
+export function secretUnlockRequest(): Promise<SecretProtectionActionResult> {
+  return invoke<SecretProtectionActionResult>("secret_unlock_request")
+}
+
+export async function secretSessionClear(): Promise<void> {
+  const result = await invoke<undefined | CommandEnvelope>(
+    "secret_session_clear",
+  )
+  if (result) unwrapEnvelope(result)
+}
+
 export async function secretList(): Promise<Secret[]> {
   return invoke<Secret[]>("secret_list")
 }
 
-export async function secretSet(name: string, value: string): Promise<void> {
-  unwrapEnvelope(await invoke<CommandEnvelope>("secret_set", { name, value }))
+export async function secretSet(
+  name: string,
+  value: string,
+  context?: string,
+): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("secret_set", {
+      name,
+      value,
+      ...(context === undefined ? {} : { context }),
+    }),
+  )
 }
 
-export async function secretDelete(name: string): Promise<void> {
-  unwrapEnvelope(await invoke<CommandEnvelope>("secret_delete", { name }))
+export async function secretDelete(
+  name: string,
+  context?: string,
+): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("secret_delete", {
+      name,
+      ...(context === undefined ? {} : { context }),
+    }),
+  )
 }
 
 export async function secretAttach(
@@ -361,12 +412,24 @@ export async function secretDetach(
   )
 }
 
-export async function envList(): Promise<EnvVar[]> {
-  return invoke<EnvVar[]>("env_list")
+export async function envList(context?: string): Promise<EnvVar[]> {
+  return context === undefined
+    ? invoke<EnvVar[]>("env_list")
+    : invoke<EnvVar[]>("env_list", { context })
 }
 
-export async function envSet(name: string, value: string): Promise<void> {
-  unwrapEnvelope(await invoke<CommandEnvelope>("env_set", { name, value }))
+export async function envSet(
+  name: string,
+  value: string,
+  context?: string,
+): Promise<void> {
+  unwrapEnvelope(
+    await invoke<CommandEnvelope>("env_set", {
+      name,
+      value,
+      ...(context === undefined ? {} : { context }),
+    }),
+  )
 }
 
 export async function envDelete(name: string, context: string): Promise<void> {

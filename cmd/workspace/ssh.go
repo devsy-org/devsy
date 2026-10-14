@@ -542,7 +542,7 @@ func (cmd *SSHCmd) runInteractiveTunnelSession(
 			TermMode:        cmd.TermMode,
 			InstallTerminfo: cmd.InstallTerminfo,
 		},
-		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+		Exec: func(ctx context.Context, stdin io.Reader, stdout io.Writer, _ io.Writer) error {
 			if cmd.SSHKeepAliveInterval != DisableSSHKeepAlive {
 				go startSSHKeepAlive(ctx, params.containerClient, cmd.SSHKeepAliveInterval)
 			}
@@ -551,11 +551,12 @@ func (cmd *SSHCmd) runInteractiveTunnelSession(
 				Command: params.command,
 				Stdin:   stdin,
 				Stdout:  stdout,
-				Stderr:  stderr,
+				Stderr:  params.writer,
 				EnvVars: params.envVars,
 			})
 		},
-		Stderr: params.writer,
+		// Guest stderr is user data; only the outer helper emits JSON diagnostics.
+		Stderr: os.Stderr,
 	})
 }
 

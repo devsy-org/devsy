@@ -3,72 +3,44 @@ title: Stop or Delete a Workspace
 sidebar_label: Stop or Delete a Workspace
 ---
 
-## Stop a Workspace
+## Stop a workspace
 
-Stopping a workspace means to temporarily pause a container so that it doesn't consume any more computing resources such as CPU or memory.
-Depending on the provider used, this either means to stop a container (see [docker stop](https://docs.docker.com/engine/reference/commandline/stop/) for more information)
-or shutdown the underlying VM where the container is running.
-Devsy will automatically determine what specific action to take when a workspace is stopped.
+Stopping pauses a workspace so it stops using CPU and memory. Depending on the provider, Devsy stops the container or shuts down the VM it runs on. Its data is kept.
 
-### Devsy Desktop
+In Devsy Desktop, open the workspace's actions menu and choose **Stop**. With the CLI:
 
-In the 'Workspaces' view, open the actions menu for a running workspace and choose 'Stop'. The workspace immediately shows a **Stopping** status badge. Once stopped, the menu will show a 'Start' option to resume the workspace. Detailed operation progress remains available on the workspace detail surface.
-
-### Devsy CLI
-
-Run the following command to stop a workspace:
-```
+```sh
 devsy workspace stop my-workspace
 ```
 
-Afterwards, you can start the workspace via:
-```
+Start it again with:
+
+```sh
 devsy workspace up my-workspace
 ```
 
-### Automatic stop
+Some providers stop idle workspaces on their own. See [Auto-inactivity timeout](./inactivity-timeout.mdx).
 
-Some providers allow automatic stop of a workspace, usually to save costs when a workspace is not used.
-For example, the Google Cloud provider will shutdown the virtual machine where the workspace is running after it's unused for 10 minutes, by default.
-This means you need to start the workspace after it has been stopped when you want to reconnect.
+Stopping or deleting a workspace first cancels any running `devsy workspace up --detach` task for it. To cancel a task yourself, use `devsy workspace task cancel <task-id>`.
 
-### Background up tasks
+## Delete a workspace
 
-Stopping or deleting a workspace first cancels any active detached `devsy workspace up --detach` task for that workspace, so a background up cannot keep recreating or restarting a workspace you asked to stop.
-For current detached workers on Linux, macOS, and Windows, `devsy workspace task cancel <task-id>` terminates the task's process tree and records the task as canceled. On other Unix systems, or for older task records without a saved process identity, cancellation can fail when Devsy cannot safely identify surviving processes.
-While an SSH tunnel is attached, its health checks observe the workspace but never start a stopped one.
+Deleting removes the workspace and everything Devsy stores about it. Depending on the provider, that means removing a container or deleting a VM.
 
-## Delete a Workspace
+In Devsy Desktop, open the workspace's actions menu, choose **Delete**, and confirm. If the action fails, the error appears on the workspace detail page, where you can also open the logs.
 
-Deleting a workspace means to erase all state of an existing workspace and remove all traces of it within Devsy.
-Depending on the Devsy provider, this means either removing a Docker container or deleting a whole virtual machine.
-Devsy will automatically determine what specific action to take when a workspace is deleted.
+With the CLI:
 
-### Devsy Desktop
-
-In the 'Workspaces' view, open the actions menu for the workspace and choose 'Delete', then confirm the deletion dialog. The workspace immediately shows a **Deleting** status badge. The row disappears after deletion finishes and the workspace list confirms removal. Detailed operation progress, errors, and refresh recovery controls remain available on the workspace detail surface.
-
-Progress for desktop actions stays available when you navigate between pages or reload the window. If the action fails, its error remains visible on the workspace detail surface and you can open the workspace logs for details. If the action finishes but refreshing its status fails, use **Retry refresh** there; this refreshes the observation without repeating the action.
-
-Live action progress covers commands initiated by the desktop. Commands launched in a separate terminal are reflected by periodic status refreshes. Progress recovery after fully quitting and restarting the desktop is not supported.
-
-### Devsy CLI
-
-Run the following command to delete a workspace:
-```
+```sh
 devsy workspace delete my-workspace
 ```
 
-`devsy workspace down` (as well as `rm`) is an alias for `devsy workspace delete`. It performs the same full Devsy workspace teardown:
-```
-devsy workspace down my-workspace
-```
+`devsy workspace down` and `devsy workspace rm` are aliases for the same command.
 
-For Docker Compose-backed workspaces, teardown uses Compose `down` (with `--remove-volumes` remaining an opt-in flag to remove associated named volumes). Use `devsy workspace stop` when you want to stop a workspace while retaining its configuration and state so it can be started again later.
+If the provider is unreachable, you can force the delete:
 
-If deletion fails because the Provider is not reachable anymore or another error has occurred, you can also force delete a workspace via:
-```
+```sh
 devsy workspace delete my-workspace --force
 ```
 
-However, this means the workspace will only be deleted on the Devsy side locally, and any error raised by the used provider will be ignored. Only use this option with caution as this might leave previously created resources behind.
+This only removes the workspace on the Devsy side and ignores provider errors, so it can leave cloud resources behind.

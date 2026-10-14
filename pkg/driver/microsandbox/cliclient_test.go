@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/stretchr/testify/require"
 )
 
 func runPrefix() []string {
@@ -185,10 +188,10 @@ func TestResourceArgsEphemeralUsesTmpfsRootDisk(t *testing.T) {
 	}
 }
 
-func TestResourceArgsEphemeralWithoutSizeUsesDefault(t *testing.T) {
+func TestResourceArgsEphemeralWithoutSizeUsesRuntimeDefault(t *testing.T) {
 	if got := resourceArgs(sandboxSpec{Ephemeral: true}); !slices.Equal(
 		got,
-		[]string{flagRootDisk, fmt.Sprintf("tmpfs:%dG", defaultEphemeralRootDiskGB)},
+		[]string{flagRootDisk, "tmpfs"},
 	) {
 		t.Errorf("resourceArgs = %v", got)
 	}
@@ -227,4 +230,73 @@ func hasFlagValue(args []string, flag, value string) bool {
 		}
 	}
 	return false
+}
+
+func TestInspectStoppedSandboxRetainsMountContract(t *testing.T) {
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	output := fmt.Sprintf(
+		`{"name":"%s","status":"Stopped","active_config":null,"config":{"labels":{`+
+			`"%s":"%s","devsy.sh/microsandbox-workspace-user":"root","%s":"root"}}}`,
+		wsName,
+		workspaceMountContractLabel,
+		d.workspaceMountContract(),
+		userLabel,
+	)
+	info, err := parseSandboxInfo([]byte(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	details := toContainerDetails(info)
+	required, _ := d.RequiresRecreate(details, rootUser)
+	if required {
+		t.Fatal("stopped sandbox lost persisted contract")
+	}
+	if details.Config.User != "root" {
+		t.Fatal("stopped sandbox lost container identity")
+	}
+}
+
+func TestInspectUsesActiveContractWhenConfigHasPendingChanges(t *testing.T) {
+	d := newDriver(newFakeClient(), nil, specDefaults{})
+	output := fmt.Sprintf(
+		`{"name":"%s","status":"Running","active_config":{"labels":{`+
+			`"%s":"%s","devsy.sh/microsandbox-workspace-user":"root"}},"config":{"labels":{"%s":"pending"}}}`,
+		wsName,
+		workspaceMountContractLabel,
+		d.workspaceMountContract(),
+		workspaceMountContractLabel,
+	)
+	info, err := parseSandboxInfo([]byte(output))
+	if err != nil {
+		t.Fatal(err)
+	}
+	required, _ := d.RequiresRecreate(toContainerDetails(info), rootUser)
+	if required {
+		t.Fatal("pending configuration replaced active mount contract")
+	}
+}
+
+func TestInspectReportsPersistedMounts(t *testing.T) {
+	for _, field := range []string{"config", "active_config"} {
+		t.Run(field, func(t *testing.T) {
+			output := fmt.Sprintf(
+				`{"name":"%s","%s":{"mounts":[`+
+					`{"type":"Bind","host":"/host/project","guest":"/workspaces/project"},`+
+					`{"type":"Tmpfs","guest":"%s"}]}}`,
+				wsName,
+				field,
+				config.SecretsEnvDir,
+			)
+			info, err := parseSandboxInfo([]byte(output))
+			require.NoError(t, err)
+			require.Equal(t, []config.ContainerMount{
+				{
+					Type:        driver.MountTypeBind,
+					Source:      "/host/project",
+					Destination: "/workspaces/project",
+				},
+				{Type: driver.MountTypeTmpfs, Destination: config.SecretsEnvDir},
+			}, toContainerDetails(info).Mounts)
+		})
+	}
 }

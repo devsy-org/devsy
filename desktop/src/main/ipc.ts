@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import { mkdir, readdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import type { BrowserWindow } from "electron"
 import { app, dialog, ipcMain } from "electron"
@@ -16,7 +17,7 @@ import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import type { AppNavigationController } from "./app-navigation.js"
 import { sanitizeAppSettingsPatch } from "./app-settings.js"
-import type { CliRunner, StreamLine } from "./cli.js"
+import type { CliInvocationOptions, CliRunner, StreamLine } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
 import type { LogStore } from "./log-store.js"
 import { mainLog } from "./logging.js"
@@ -24,6 +25,8 @@ import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js
 import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
+import { isTrustedSecretIpcSender } from "./secret-ipc-policy.js"
+import { SecretSession } from "./secret-session.js"
 import type { SettingsService } from "./settings-service.js"
 import type { DaemonState } from "./state.js"
 import {
@@ -43,12 +46,52 @@ import { normalizeWorkspaceStatus } from "./workspace-status.js"
 
 const execFileAsync = promisify(execFile)
 
+interface SecretIpcFailure {
+  ok: false
+  message: string
+}
+
+type SecretUnlockResult = (SecretIpcFailure | { ok: true }) & {
+  remembered?: true
+}
+
+type SecretUnlockInput =
+  | SecretIpcFailure
+  | { ok: true; requestId?: string; passphrase?: string; remember: boolean }
+
+/** Validate and snapshot renderer input before any asynchronous approval. */
+function validateSecretUnlockInput(args: unknown): SecretUnlockInput {
+  if (!args || typeof args !== "object")
+    return { ok: false, message: "Invalid unlock request." }
+  const input = args as {
+    requestId?: string
+    passphrase?: unknown
+    remember?: unknown
+  }
+  const passphrase = input.passphrase
+  const remember = input.remember === undefined ? false : input.remember
+  if (typeof remember !== "boolean")
+    return { ok: false, message: "Invalid remember preference." }
+  if (
+    passphrase !== undefined &&
+    (typeof passphrase !== "string" || !passphrase.trim())
+  )
+    return { ok: false, message: "Enter a non-empty passphrase." }
+  return { ok: true, requestId: input.requestId, passphrase, remember }
+}
+
 interface SecretEntry {
   name: string
   context: string
   created?: string
   lastUsed?: string
   orphaned?: boolean
+  availability?:
+    | "available"
+    | "locked"
+    | "missing"
+    | "backend_unavailable"
+    | "unknown"
   backend?: "keyring" | "file"
   attached?: boolean
 }
@@ -116,6 +159,7 @@ interface IpcDependencies {
   onRendererReady?: (sender: Electron.WebContents) => void
   appNavigation?: AppNavigationController
   settingsService?: SettingsService
+  secretSessionTimeoutMs?: number
 }
 
 /** Format a line in zap console format so log-parser.ts can parse it. */
@@ -305,6 +349,442 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     machineDiagnosticsManager,
     getMainWindow,
   } = deps
+  const secretSession = new SecretSession(deps.secretSessionTimeoutMs)
+  // Clearing the session revokes cache updates from protection operations already in flight.
+  let secretCacheGeneration = 0
+  const requestSecretUnlock = async () => {
+    const win = getMainWindow()
+    return secretSession.request(
+      (requestId) => {
+        if (!win || win.isDestroyed()) return false
+        if (win.isMinimized()) win.restore()
+        if (!win.isVisible()) win.show()
+        win.focus()
+        win.webContents.send("secret_unlock_required", { requestId })
+        return true
+      },
+      win
+        ? (cancel) => {
+            const onNavigation = (
+              _event: Electron.Event,
+              _url: string,
+              isInPlace: boolean,
+              isMainFrame: boolean,
+            ) => {
+              if (!isInPlace && isMainFrame) cancel()
+            }
+            const onRendererGone = () => cancel()
+            const onClosed = () => cancel()
+            win.webContents.on("did-start-navigation", onNavigation)
+            win.webContents.on("render-process-gone", onRendererGone)
+            win.webContents.on("destroyed", onRendererGone)
+            win.on("closed", onClosed)
+            return () => {
+              win.webContents.removeListener(
+                "did-start-navigation",
+                onNavigation,
+              )
+              win.webContents.removeListener(
+                "render-process-gone",
+                onRendererGone,
+              )
+              win.webContents.removeListener("destroyed", onRendererGone)
+              win.removeListener("closed", onClosed)
+            }
+          }
+        : undefined,
+    )
+  }
+  cli.setUnlockHandler(requestSecretUnlock)
+  const secretDocumentURL =
+    !app.isPackaged && process.env.ELECTRON_RENDERER_URL
+      ? process.env.ELECTRON_RENDERER_URL
+      : pathToFileURL(join(__dirname, "../renderer/index.html")).href
+  const secretRequestDenied: SecretIpcFailure = {
+    ok: false,
+    message: "Secret operations require the main application window.",
+  }
+
+  const staleSecretUnlockRequest: SecretIpcFailure = {
+    ok: false,
+    message: "Unlock request is no longer active.",
+  }
+
+  const rememberedUnlockCanceled = {
+    ok: false,
+    remembered: true,
+    message:
+      "The passphrase was saved in the OS keychain, but unlocking was canceled. Use Forget to remove the remembered credential.",
+  } satisfies SecretUnlockResult
+  const credentialSubmissions = new Set<string>()
+  const secretUnlockNotices = new Map<
+    string,
+    { requestId: string; message: string }
+  >()
+
+  function retainRememberedUnlockNotice(requestId: string): SecretUnlockResult {
+    if (!secretUnlockNotices.has(requestId)) {
+      secretUnlockNotices.set(requestId, {
+        requestId,
+        message: rememberedUnlockCanceled.message,
+      })
+      try {
+        const win = getMainWindow()
+        if (win && !win.isDestroyed() && !win.webContents.isDestroyed())
+          win.webContents.send("secret_unlock_notice")
+      } catch {
+        // The replacement renderer can fetch retained notices after mounting.
+      }
+    }
+    return rememberedUnlockCanceled
+  }
+
+  ipcMain.handle("secret_unlock_notices", (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return { ok: true, notices: [...secretUnlockNotices.values()] }
+  })
+  ipcMain.handle("secret_unlock_notice_ack", (event, args: unknown) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    const requestId =
+      args &&
+      typeof args === "object" &&
+      !Array.isArray(args) &&
+      "requestId" in args
+        ? args.requestId
+        : undefined
+    if (typeof requestId !== "string" || !requestId.trim())
+      return { ok: false, message: "A valid unlock request ID is required." }
+    secretUnlockNotices.delete(requestId)
+    return { ok: true }
+  })
+
+  function pendingSecretUnlockFailure(
+    event: Electron.IpcMainInvokeEvent,
+    requestId: string | undefined,
+  ): SecretIpcFailure | undefined {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    if (!secretSession.isPending(requestId)) return staleSecretUnlockRequest
+    return undefined
+  }
+
+  async function rememberUnlockCredential(
+    event: Electron.IpcMainInvokeEvent,
+    win: BrowserWindow,
+    requestId: string | undefined,
+    passphrase: string,
+  ): Promise<SecretUnlockResult> {
+    try {
+      const confirmation = await dialog.showMessageBox(win, {
+        type: "warning",
+        title: "Secret protection",
+        message: "Remember the secrets passphrase in your OS keychain?",
+        detail:
+          "This changes the shared secret store across all contexts. Approved saving may finish after unlock cancellation; Forget removes the saved credential.",
+        buttons: ["Cancel", "Continue"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      const approvalFailure = pendingSecretUnlockFailure(event, requestId)
+      if (approvalFailure) return approvalFailure
+      if (confirmation.response !== 1)
+        return { ok: false, message: "Secret protection change canceled." }
+      await cli.runRaw(["secret", "protection", "remember"], {
+        env: { DEVSY_SECRETS_PASSPHRASE: passphrase },
+        unlockRetried: true,
+      })
+      if (pendingSecretUnlockFailure(event, requestId))
+        return rememberedUnlockCanceled
+      return { ok: true, remembered: true }
+    } catch {
+      return {
+        ok: false,
+        message: "The passphrase could not be verified and remembered.",
+      }
+    }
+  }
+
+  function completeSecretUnlock(
+    event: Electron.IpcMainInvokeEvent,
+    requestId: string | undefined,
+    passphrase: string | undefined,
+  ): SecretIpcFailure | { ok: true } {
+    const failure = pendingSecretUnlockFailure(event, requestId)
+    if (failure) return failure
+    if (!secretSession.submit(requestId, passphrase))
+      return staleSecretUnlockRequest
+    return { ok: true }
+  }
+
+  async function applySecretUnlockCredential(
+    event: Electron.IpcMainInvokeEvent,
+    win: BrowserWindow,
+    requestId: string,
+    passphrase: string,
+    remember: boolean,
+  ): Promise<SecretUnlockResult> {
+    if (!remember) return completeSecretUnlock(event, requestId, passphrase)
+    const remembered = await rememberUnlockCredential(
+      event,
+      win,
+      requestId,
+      passphrase,
+    )
+    if (!remembered.ok)
+      return remembered.remembered
+        ? retainRememberedUnlockNotice(requestId)
+        : remembered
+    // Approval authorizes persistence, but stale completion must not settle a newer unlock.
+    const completed = completeSecretUnlock(event, requestId, passphrase)
+    if (!completed.ok) return retainRememberedUnlockNotice(requestId)
+    return { ok: true, remembered: true }
+  }
+
+  ipcMain.handle("secret_unlock_submit", async (event, args: unknown) => {
+    const win = getMainWindow()
+    if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
+      return secretRequestDenied
+    const input = validateSecretUnlockInput(args)
+    if (!input.ok) return input
+    const { requestId, passphrase, remember } = input
+    if (!secretSession.isPending(requestId)) return staleSecretUnlockRequest
+    // Cancellation remains available while this request's approved remember is running.
+    if (passphrase === undefined)
+      return completeSecretUnlock(event, requestId, undefined)
+    if (credentialSubmissions.has(requestId))
+      return {
+        ok: false,
+        message: "An unlock submission is already in progress.",
+      }
+    credentialSubmissions.add(requestId)
+    try {
+      return await applySecretUnlockCredential(
+        event,
+        win,
+        requestId,
+        passphrase,
+        remember,
+      )
+    } finally {
+      credentialSubmissions.delete(requestId)
+    }
+  })
+  ipcMain.handle("secret_unlock_request", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    const generation = secretCacheGeneration
+    const passphrase = await requestSecretUnlock()
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    if (passphrase === undefined || generation !== secretCacheGeneration)
+      return { ok: false, message: "Secret unlock canceled." }
+    try {
+      const status = await cli.run<{
+        availability: string
+        reasonCode?: string
+      }>(["secret", "protection", "status"], {
+        env: { DEVSY_SECRETS_PASSPHRASE: passphrase },
+        allowUnlockPrompt: false,
+      })
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      if (generation !== secretCacheGeneration)
+        return { ok: false, message: "Secret unlock canceled." }
+      if (status.availability !== "available") {
+        const message = "The secret store could not be unlocked."
+        return {
+          ok: false,
+          message,
+          cliError: {
+            code: (status.reasonCode ?? "unlock_failed").replaceAll(
+              passphrase,
+              "***",
+            ),
+            message,
+          },
+        }
+      }
+      updateProtectedSessionCredential(event, generation, passphrase)
+      return { ok: true }
+    } catch (err) {
+      const error = (err as { cliError?: CLIError } | null)?.cliError
+      const message = "The secret store could not be unlocked."
+      return {
+        ok: false,
+        message,
+        cliError: error
+          ? {
+              code: error.code.replaceAll(passphrase, "***"),
+              message,
+            }
+          : undefined,
+      }
+    }
+  })
+  ipcMain.handle("secret_protection_status", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return {
+      ...(await cli.run<Record<string, unknown>>([
+        "secret",
+        "protection",
+        "status",
+      ])),
+      sessionUnlocked: cli.hasSessionPassphrase(),
+    }
+  })
+  ipcMain.handle("secret_session_clear", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    secretCacheGeneration++
+    cli.setSessionPassphrase(undefined)
+    secretSession.cancelCurrent()
+  })
+  function protectionApprovalFailure(
+    event: Electron.IpcMainInvokeEvent,
+    generation: number,
+    response: number,
+  ): SecretIpcFailure | undefined {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    if (generation !== secretCacheGeneration || response !== 1)
+      return { ok: false, message: "Secret protection change canceled." }
+    return undefined
+  }
+
+  function updateProtectedSessionCredential(
+    event: Electron.IpcMainInvokeEvent,
+    generation: number,
+    value: string | undefined,
+  ): void {
+    if (generation !== secretCacheGeneration) return
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return
+    cli.setSessionPassphrase(value)
+  }
+
+  ipcMain.handle(
+    "secret_protection_action",
+    async (
+      event,
+      args: {
+        action: string
+        newPassphrase?: string
+        currentPassphrase?: string
+      },
+    ) => {
+      const win = getMainWindow()
+      if (!win || !isTrustedSecretIpcSender(event, win, secretDocumentURL))
+        return secretRequestDenied
+      const allowed = [
+        "set-passphrase",
+        "change-passphrase",
+        "remove-passphrase",
+        "remember",
+        "forget",
+      ]
+      if (!args || typeof args !== "object" || !allowed.includes(args.action))
+        return { ok: false, message: "Unknown protection action." }
+      const action = args.action
+      const { newPassphrase, currentPassphrase } = args
+      if (
+        currentPassphrase !== undefined &&
+        typeof currentPassphrase !== "string"
+      )
+        return { ok: false, message: "Enter a valid current passphrase." }
+      if (newPassphrase !== undefined && typeof newPassphrase !== "string")
+        return { ok: false, message: "Enter a non-empty passphrase." }
+      const options: CliInvocationOptions = {
+        allowUnlockPrompt: false,
+        ...(currentPassphrase !== undefined
+          ? { env: { DEVSY_SECRETS_PASSPHRASE: currentPassphrase } }
+          : {}),
+      }
+      const cacheGeneration = secretCacheGeneration
+      const changesPassphrase = [
+        "set-passphrase",
+        "change-passphrase",
+      ].includes(action)
+      try {
+        const command = ["secret", "protection", action]
+        if (changesPassphrase) {
+          if (typeof newPassphrase !== "string" || !newPassphrase.trim())
+            return { ok: false, message: "Enter a non-empty passphrase." }
+        }
+        const descriptions: Record<string, string> = {
+          "set-passphrase": "Set a passphrase for all file-backed secrets?",
+          "change-passphrase":
+            "Change the passphrase for all file-backed secrets?",
+          "remove-passphrase":
+            "Remove passphrase protection from all file-backed secrets?",
+          remember: "Remember the secrets passphrase in your OS keychain?",
+          forget: "Forget the secrets passphrase stored in your OS keychain?",
+        }
+        const confirmation = await dialog.showMessageBox(win, {
+          type: "warning",
+          title: "Secret protection",
+          message: descriptions[action],
+          detail: "This changes the shared secret store across all contexts.",
+          buttons: ["Cancel", "Continue"],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        })
+        const approvalFailure = protectionApprovalFailure(
+          event,
+          cacheGeneration,
+          confirmation.response,
+        )
+        if (approvalFailure) return approvalFailure
+        if (changesPassphrase && typeof newPassphrase === "string") {
+          await cli.runRawStdin([...command, "--stdin"], newPassphrase, options)
+          updateProtectedSessionCredential(
+            event,
+            cacheGeneration,
+            newPassphrase,
+          )
+        } else {
+          await cli.runRaw(command, options)
+          if (action === "remove-passphrase")
+            updateProtectedSessionCredential(event, cacheGeneration, undefined)
+        }
+        return { ok: true }
+      } catch (err) {
+        // Preserve structured recovery information without sending credential
+        // material (or arbitrary error properties) back across the IPC boundary.
+        const redact = (value: string) =>
+          [currentPassphrase, newPassphrase].reduce<string>(
+            (text, credential) =>
+              credential ? text.replaceAll(credential, "***") : text,
+            value,
+          )
+        const error = (err as { cliError?: CLIError } | null)?.cliError
+        const cliError = error
+          ? {
+              code: redact(error.code),
+              message: redact(error.message),
+              hint: error.hint ? redact(error.hint) : undefined,
+              context: error.context
+                ? Object.fromEntries(
+                    Object.entries(error.context).map(([key, value]) => [
+                      redact(key),
+                      redact(value),
+                    ]),
+                  )
+                : undefined,
+            }
+          : undefined
+        return {
+          ok: false,
+          message: cliError?.message ?? "Secret protection operation failed.",
+          cliError,
+        }
+      }
+    },
+  )
   const tunnelProcesses = new Map<
     string,
     import("node:child_process").ChildProcess
@@ -1170,23 +1650,42 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     }
   })
 
-  ipcMain.handle("context_delete", async (_event, args: { name: string }) => {
+  ipcMain.handle("context_delete", async (event, args: { name: string }) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
     await cli.runRaw(["context", "delete", args.name])
   })
 
-  ipcMain.handle("secret_list", async () =>
-    cli.run<SecretEntry[]>(["secret", "list"]),
-  )
+  function variableContextArgs(context: string | undefined): string[] {
+    if (context === undefined) return []
+    if (typeof context !== "string" || !context.trim())
+      throw new Error("A valid context is required.")
+    return ["--context", context]
+  }
+
+  ipcMain.handle("secret_list", async (event) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return cli.run<SecretEntry[]>(["secret", "list"])
+  })
 
   // Returns an envelope rather than throwing so a structured cliError survives
   // the IPC boundary (see provider_init above).
   ipcMain.handle(
     "secret_set",
-    async (_event, args: { name: string; value: string }) => {
+    async (event, args: { name: string; value: string; context?: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
       trackEvent("secret_set")
       try {
         await cli.runRawStdin(
-          ["secret", "set", args.name, "--stdin"],
+          [
+            ...variableContextArgs(args.context),
+            "secret",
+            "set",
+            args.name,
+            "--stdin",
+          ],
           args.value,
         )
         return { ok: true } as const
@@ -1198,21 +1697,33 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("secret_delete", async (_event, args: { name: string }) => {
-    trackEvent("secret_delete")
-    try {
-      await cli.runRaw(["secret", "delete", args.name])
-      return { ok: true } as const
-    } catch (err) {
-      const cliError = (err as { cliError?: CLIError }).cliError
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, message, cliError } as const
-    }
-  })
+  ipcMain.handle(
+    "secret_delete",
+    async (event, args: { name: string; context?: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      trackEvent("secret_delete")
+      try {
+        await cli.runRaw([
+          ...variableContextArgs(args.context),
+          "secret",
+          "delete",
+          args.name,
+        ])
+        return { ok: true } as const
+      } catch (err) {
+        const cliError = (err as { cliError?: CLIError }).cliError
+        const message = err instanceof Error ? err.message : String(err)
+        return { ok: false, message, cliError } as const
+      }
+    },
+  )
 
   ipcMain.handle(
     "secret_attach",
-    async (_event, args: { name: string; context: string }) => {
+    async (event, args: { name: string; context: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
       trackEvent("secret_attach")
       try {
         if (!args.context) throw new Error("context is required")
@@ -1234,7 +1745,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "secret_detach",
-    async (_event, args: { name: string; context: string }) => {
+    async (event, args: { name: string; context: string }) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
       trackEvent("secret_detach")
       try {
         if (!args.context) throw new Error("context is required")
@@ -1254,16 +1767,25 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
-  ipcMain.handle("env_list", async () => cli.run<EnvEntry[]>(["env", "list"]))
+  ipcMain.handle("env_list", async (_event, args?: { context?: string }) =>
+    cli.run<EnvEntry[]>([...variableContextArgs(args?.context), "env", "list"]),
+  )
 
   // Returns an envelope rather than throwing so a structured cliError survives
   // the IPC boundary (see provider_init above).
   ipcMain.handle(
     "env_set",
-    async (_event, args: { name: string; value: string }) => {
+    async (_event, args: { name: string; value: string; context?: string }) => {
       trackEvent("env_set")
       try {
-        await cli.runRaw(["env", "set", args.name, "--value", args.value])
+        await cli.runRaw([
+          ...variableContextArgs(args.context),
+          "env",
+          "set",
+          args.name,
+          "--value",
+          args.value,
+        ])
         return { ok: true } as const
       } catch (err) {
         const cliError = (err as { cliError?: CLIError }).cliError
@@ -1621,8 +2143,11 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   }
   ipcMain.handle(
     "workspace_up",
-    (_event, args: Parameters<typeof runWorkspaceUp>[0]) =>
-      runWorkspaceUp(args).commandId,
+    (event, args: Parameters<typeof runWorkspaceUp>[0]) => {
+      if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+        return secretRequestDenied
+      return runWorkspaceUp(args).commandId
+    },
   )
 
   async function reconcileDetachedTask(
@@ -1853,26 +2378,26 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "--force",
       ]).commandId,
   )
-  ipcMain.handle(
-    "workspace_rebuild",
-    (_event, args: StopWorkspaceArgs) =>
-      startWorkspaceAction(args, "rebuilding", [
-        "workspace",
-        "up",
-        args.workspaceId,
-        "--recreate",
-      ]).commandId,
-  )
-  ipcMain.handle(
-    "workspace_reset",
-    (_event, args: StopWorkspaceArgs) =>
-      startWorkspaceAction(args, "resetting", [
-        "workspace",
-        "up",
-        args.workspaceId,
-        "--reset",
-      ]).commandId,
-  )
+  ipcMain.handle("workspace_rebuild", (event, args: StopWorkspaceArgs) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return startWorkspaceAction(args, "rebuilding", [
+      "workspace",
+      "up",
+      args.workspaceId,
+      "--recreate",
+    ]).commandId
+  })
+  ipcMain.handle("workspace_reset", (event, args: StopWorkspaceArgs) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      return secretRequestDenied
+    return startWorkspaceAction(args, "resetting", [
+      "workspace",
+      "up",
+      args.workspaceId,
+      "--reset",
+    ]).commandId
+  })
 
   // ── Terminal ──
   ipcMain.handle(
@@ -1888,7 +2413,16 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       _event,
       args: { workspaceId: string; cols: number; rows: number },
     ) => {
-      return deps.pty.createSshSession(args.workspaceId, args.cols, args.rows)
+      const diagnosticLogPath = logStore.createDiagnosticLogPath(
+        state.workspaceContext(args.workspaceId),
+        args.workspaceId,
+      )
+      return deps.pty.createSshSession(
+        args.workspaceId,
+        args.cols,
+        args.rows,
+        diagnosticLogPath,
+      )
     },
   )
 
@@ -2078,6 +2612,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("app_ready", (event) => {
     deps.onRendererReady?.(event.sender)
     setImmediate(() => {
+      secretSession.notifyPending()
       if (!event.sender.isDestroyed()) {
         event.sender.send("update-status", getLastStatus())
       }

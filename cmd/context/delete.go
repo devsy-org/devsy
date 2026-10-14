@@ -7,7 +7,6 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -43,31 +42,44 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run runs the command logic.
-func (cmd *DeleteCmd) Run(ctx context.Context, context string) error {
-	err := config.UpdateConfig(context, cmd.Provider, func(devsyConfig *config.Config) error {
-		if context == "" {
-			context = devsyConfig.DefaultContext
-		} else if devsyConfig.Contexts[context] == nil {
-			return fmt.Errorf("context %q doesn't exist", context)
-		}
-
-		if context == config.DefaultContext {
-			return fmt.Errorf("cannot delete 'default' context")
-		}
-
-		if err := deleteContextSecrets(devsyConfig, context); err != nil {
-			return err
-		}
-
-		delete(devsyConfig.Contexts, context)
-		resetContextReferences(devsyConfig, context)
-		return nil
-	})
+func (cmd *DeleteCmd) Run(_ context.Context, contextName string) error {
+	if contextName == "" && cmd.GlobalFlags != nil {
+		contextName = cmd.Context
+	}
+	unlock, err := config.LockConfigForContextDeletion(contextName)
 	if err != nil {
 		return err
 	}
+	defer unlock()
+	cfg, err := config.LoadConfig("", "")
+	if err != nil {
+		return err
+	}
+	intent, err := config.ReadContextDeletionIntent()
+	if err != nil {
+		return err
+	}
+	if intent != nil {
+		return resumeContextDeletion(cfg, intent)
+	}
+	return deleteRegisteredContext(cfg, contextName)
+}
 
-	return removeContextDir(context)
+func deleteRegisteredContext(cfg *config.Config, contextName string) error {
+	if contextName == "" {
+		contextName = cfg.DefaultContext
+	}
+	if cfg.Contexts[contextName] == nil {
+		return fmt.Errorf("context %q doesn't exist", contextName)
+	}
+	if contextName == config.DefaultContext {
+		return fmt.Errorf("cannot delete 'default' context")
+	}
+	request, err := newContextDeleteRequest(cfg, contextName)
+	if err != nil {
+		return err
+	}
+	return deleteContextValues(request)
 }
 
 // removeContextDir removes the directory for a deleted context.
@@ -92,24 +104,4 @@ func resetContextReferences(devsyConfig *config.Config, context string) {
 	if devsyConfig.OriginalContext == context {
 		devsyConfig.OriginalContext = config.DefaultContext
 	}
-}
-
-// deleteContextSecrets aborts (rather than orphaning stored values) if the store
-// is unavailable or a delete fails, so the deletion can be retried intact.
-func deleteContextSecrets(devsyConfig *config.Config, contextName string) error {
-	ctxConfig := devsyConfig.Contexts[contextName]
-	if ctxConfig == nil || len(ctxConfig.Secrets) == 0 {
-		return nil
-	}
-
-	store, err := secrets.NewStoreForConfig(devsyConfig)
-	if err != nil {
-		return fmt.Errorf("open secrets store for context %q: %w", contextName, err)
-	}
-	for _, name := range ctxConfig.Secrets {
-		if err := store.Delete(contextName, name); err != nil {
-			return fmt.Errorf("delete secret %q for context %q: %w", name, contextName, err)
-		}
-	}
-	return nil
 }

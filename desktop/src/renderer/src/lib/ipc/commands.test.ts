@@ -10,6 +10,8 @@ import {
   envAttach,
   envDelete,
   envDetach,
+  envList,
+  envSet,
   machineCreate,
   machineDelete,
   machineStatus,
@@ -17,7 +19,13 @@ import {
   providerAdd,
   providerSetOptions,
   secretAttach,
+  secretDelete,
   secretDetach,
+  secretProtectionAction,
+  secretProtectionStatus,
+  secretSessionClear,
+  secretSet,
+  secretUnlockRequest,
   sshKeyGenerate,
   sshKeyList,
   workspaceDelete,
@@ -392,5 +400,94 @@ describe("IPC commands", () => {
         name: "test-key",
       })
     })
+  })
+})
+
+describe("typed variable and protection commands", () => {
+  beforeEach(() => {
+    resetTauriMocks()
+    mockInvoke.mockResolvedValue({ ok: true })
+  })
+  it("transports row context for secret mutations and env update", async () => {
+    await secretSet("TOKEN", "value", "other")
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_set", {
+      name: "TOKEN",
+      value: "value",
+      context: "other",
+    })
+    await secretDelete("TOKEN", "other")
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_delete", {
+      name: "TOKEN",
+      context: "other",
+    })
+    await envSet("PORT", "", "other")
+    expect(mockInvoke).toHaveBeenLastCalledWith("env_set", {
+      name: "PORT",
+      value: "",
+      context: "other",
+    })
+  })
+  it("transports explicit context for environment listing", async () => {
+    const rows = [{ name: "PORT", value: "8080", context: "other" }]
+    mockInvoke.mockResolvedValue(rows)
+    expect(await envList("other")).toEqual(rows)
+    expect(mockInvoke).toHaveBeenLastCalledWith("env_list", {
+      context: "other",
+    })
+  })
+  it("preserves the default environment listing invocation", async () => {
+    mockInvoke.mockResolvedValue([])
+    expect(await envList()).toEqual([])
+    expect(mockInvoke).toHaveBeenLastCalledWith("env_list")
+  })
+  it("preserves omitted context payloads", async () => {
+    await secretSet("TOKEN", "value")
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_set", {
+      name: "TOKEN",
+      value: "value",
+    })
+  })
+  it("passes explicit current/new fields and retains structured failures", async () => {
+    const failure = {
+      ok: false,
+      cliError: { code: "unlock_failed", message: "failure" },
+    }
+    mockInvoke.mockResolvedValue(failure)
+    expect(
+      await secretProtectionAction({
+        action: "change-passphrase",
+        currentPassphrase: "current",
+        newPassphrase: "next",
+      }),
+    ).toEqual(failure)
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_protection_action", {
+      action: "change-passphrase",
+      currentPassphrase: "current",
+      newPassphrase: "next",
+    })
+  })
+  it("wraps status, unlock request and session clear channels", async () => {
+    mockInvoke.mockResolvedValue({
+      availability: "locked",
+      keySource: "passphrase",
+    })
+    await secretProtectionStatus()
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_protection_status")
+    await secretUnlockRequest()
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_unlock_request")
+    mockInvoke.mockResolvedValue(undefined)
+    await secretSessionClear()
+    expect(mockInvoke).toHaveBeenLastCalledWith("secret_session_clear")
+  })
+})
+
+describe("protection read and clear denial", () => {
+  it("rejects a status denial instead of storing it as status", async () => {
+    mockInvoke.mockResolvedValue({ ok: false, message: "Request denied." })
+    await expect(secretProtectionStatus()).rejects.toThrow("Request denied.")
+  })
+  it("surfaces session-clear denial", async () => {
+    mockInvoke.mockResolvedValue({ ok: false, message: "Request denied." })
+    await expect(secretSessionClear()).rejects.toThrow("Request denied.")
   })
 })

@@ -8,6 +8,7 @@ import (
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/stretchr/testify/require"
@@ -424,4 +425,204 @@ func TestIsRecoveryContainer(t *testing.T) {
 	if !isRecoveryContainer(recovery) {
 		t.Error("container with the recovery label must be flagged")
 	}
+}
+
+type migrationMockDriver struct {
+	*provisioningPreflightMockDriver
+	required       bool
+	migrationCalls int
+	remoteUser     string
+}
+
+func (d *migrationMockDriver) RequiresRecreate(
+	_ *config.ContainerDetails,
+	user string,
+) (bool, string) {
+	d.remoteUser = user
+	d.migrationCalls++
+	return d.required, "workspace mount contract changed"
+}
+
+func TestDriverMountContractMigration(t *testing.T) {
+	for _, tt := range []struct {
+		name                                                  string
+		required, explicit, external, wantRecreate, wantError bool
+		calls                                                 int
+	}{
+		{"incompatible", true, false, false, true, false, 1},
+		{"compatible", false, false, false, false, false, 1},
+		{"explicit", true, true, false, true, false, 0},
+		{"external", true, false, true, false, true, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &migrationMockDriver{
+				provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+					mockDriver: &mockDriver{},
+				},
+				required: tt.required,
+			}
+			r := newTestRunner(d)
+			params := recreateResolveParams()
+			params.options.Recreate = tt.explicit
+			if tt.external {
+				params.parsedConfig.Config.ContainerID = testContainerID
+			}
+			err := r.applyDriverRecreateRequirement(
+				context.Background(),
+				runningContainerDetails(),
+				params,
+			)
+			if tt.wantError {
+				require.ErrorContains(t, err, "cannot migrate externally managed container")
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.wantRecreate, params.options.Recreate)
+			require.Equal(t, tt.calls, d.migrationCalls)
+			require.False(t, d.stopCalled)
+			require.False(t, d.deleteCalled)
+		})
+	}
+}
+
+func TestAutomaticMigrationPreflightFailurePreservesExisting(t *testing.T) {
+	sentinel := errors.New("unsupported provisioning runtime")
+	d := &migrationMockDriver{
+		provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+			mockDriver:      &mockDriver{},
+			provisioningErr: sentinel,
+		},
+		required: true,
+	}
+	params := recreateResolveParams()
+	params.options.Recreate = false
+	_, err := newTestRunner(
+		d,
+	).resolveContainer(context.Background(), params, runningContainerDetails())
+	require.ErrorIs(t, err, sentinel)
+	require.True(t, d.provisioningCalled)
+	require.True(t, params.options.Recreate)
+	require.False(t, d.stopCalled)
+	require.False(t, d.deleteCalled)
+}
+
+func TestEffectiveRemoteUser(t *testing.T) {
+	for _, tt := range []struct{ remote, container, want string }{
+		{"vscode", containerRootUser, "vscode"}, {"", "node", "node"}, {"", "", containerRootUser},
+	} {
+		cfg := &config.MergedDevContainerConfig{}
+		cfg.RemoteUser = tt.remote
+		require.Equal(t, tt.want, effectiveRemoteUser(cfg, tt.container))
+	}
+}
+
+func TestRunOptionsSeparateDeveloperIdentity(t *testing.T) {
+	r := newTestRunner(&mockDriver{})
+	cfg := &config.MergedDevContainerConfig{}
+	cfg.ContainerUser = containerRootUser
+	cfg.RemoteUser = "vscode"
+	info := &config.BuildInfo{
+		ImageName:     "final-image",
+		ImageMetadata: &config.ImageMetadataConfig{},
+		ImageDetails:  &config.ImageDetails{},
+	}
+	info.ImageDetails.Config.User = "node"
+	options, err := r.getRunOptions(cfg, &config.SubstitutionContext{}, info, false)
+	require.NoError(t, err)
+	require.Equal(t, containerRootUser, options.User)
+	require.Equal(t, "vscode", options.RemoteUser)
+	info.Dockerless = &config.BuildInfoDockerless{User: "node"}
+	options, err = r.getDockerlessRunOptions(cfg, &config.SubstitutionContext{}, info, false)
+	require.NoError(t, err)
+	require.Equal(t, containerRootUser, options.User)
+	require.Equal(t, "vscode", options.RemoteUser)
+	require.True(t, options.Dockerless)
+}
+
+func TestMigrationUsesCurrentDeveloperIdentity(t *testing.T) {
+	for _, tt := range []struct{ remote, container, image, want string }{
+		{"new-user", containerRootUser, "node", "new-user"},
+		{"", "node", "vscode", "node"},
+		{"", "", "node", "node"},
+		{"", "", "", containerRootUser},
+	} {
+		d := &migrationMockDriver{
+			provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+				mockDriver: &mockDriver{},
+			},
+		}
+		p := recreateResolveParams()
+		p.options.Recreate = false
+		p.parsedConfig.Config.RemoteUser = tt.remote
+		p.parsedConfig.Config.ContainerUser = tt.container
+		details := runningContainerDetails()
+		details.Config.Labels[config.UserLabel] = tt.image
+		require.NoError(
+			t,
+			newTestRunner(d).applyDriverRecreateRequirement(context.Background(), details, p),
+		)
+		require.Equal(t, tt.want, d.remoteUser)
+		require.False(t, d.stopCalled)
+		require.False(t, d.deleteCalled)
+	}
+}
+
+func TestMigrationUsesImageMetadataDeveloperIdentity(t *testing.T) {
+	d := &migrationMockDriver{
+		provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+			mockDriver: &mockDriver{},
+		},
+	}
+	p := recreateResolveParams()
+	p.options.Recreate = false
+	p.substitutionContext = &config.SubstitutionContext{}
+	details := runningContainerDetails()
+	details.Config.Labels["devcontainer.metadata"] = `[{"remoteUser":"feature-user"}]`
+	require.NoError(
+		t,
+		newTestRunner(d).applyDriverRecreateRequirement(context.Background(), details, p),
+	)
+	require.Equal(t, "feature-user", d.remoteUser)
+}
+
+func TestMigrationReplacesSavedUserSettingsWithCurrentConfiguration(t *testing.T) {
+	for _, tt := range []struct{ current, want string }{{"root", "root"}, {"", "feature-user"}} {
+		d := &migrationMockDriver{
+			provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+				mockDriver: &mockDriver{},
+			},
+		}
+		p := recreateResolveParams()
+		p.options.Recreate = false
+		p.substitutionContext = &config.SubstitutionContext{}
+		p.parsedConfig.Config.RemoteUser = tt.current
+		details := runningContainerDetails()
+		details.Config.Labels[metadata.CreationConfigLabel] = stringTrue
+		details.Config.Labels[metadata.ImageMetadataLabel] = `[{"remoteUser":"feature-user"},{"remoteUser":"old-user"}]`
+		require.NoError(
+			t,
+			newTestRunner(d).applyDriverRecreateRequirement(context.Background(), details, p),
+		)
+		require.Equal(t, tt.want, d.remoteUser)
+	}
+}
+
+func TestOwnerIndependentReuseRefreshesDeveloperIdentity(t *testing.T) {
+	d := &migrationMockDriver{
+		provisioningPreflightMockDriver: &provisioningPreflightMockDriver{
+			mockDriver: &mockDriver{},
+		},
+	}
+	p := recreateResolveParams()
+	p.options.Recreate = false
+	p.parsedConfig.Config.RemoteUser = "current-user"
+	p.substitutionContext = &config.SubstitutionContext{}
+	details := runningContainerDetails()
+	details.Config.Labels[metadata.CreationConfigLabel] = stringTrue
+	details.Config.Labels[metadata.ImageMetadataLabel] = `[{"remoteUser":"previous-user"}]`
+	merged, err := newTestRunner(d).mergeExistingContainerConfig(context.Background(), details, p)
+	require.NoError(t, err)
+	require.Equal(t, "current-user", merged.RemoteUser)
+	require.False(t, d.stopCalled)
+	require.False(t, d.deleteCalled)
 }

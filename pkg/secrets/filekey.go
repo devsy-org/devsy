@@ -15,7 +15,17 @@ const KeyFileName = "secrets.key"
 
 const keyringKeyUser = "__filekey__"
 
-type keySource string
+// FileKeySource describes persisted encryption protection, independent of the
+// runtime source supplying a passphrase.
+type FileKeySource string
+
+type keySource = FileKeySource
+
+const (
+	FileKeyPassphrase FileKeySource = "passphrase"
+	FileKeyKeyring    FileKeySource = "keyring"
+	FileKeyLocalFile  FileKeySource = "file"
+)
 
 const (
 	keySourcePassphrase keySource = "passphrase"

@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { EventEmitter } from "node:events"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { ProviderJobs } from "../provider-jobs.js"
 import { WorkspaceJobs } from "../workspace-jobs.js"
@@ -7,8 +9,13 @@ import { WorkspaceJobs } from "../workspace-jobs.js"
 type Handler = (...args: unknown[]) => unknown
 
 const handlers = new Map<string, Handler>()
+let trustedEvent: unknown
 vi.mock("electron", () => ({
-  app: { getPath: () => "/tmp", getVersion: () => "0.0.0" },
+  app: {
+    getPath: () => "/tmp",
+    getAppPath: () => "/tmp",
+    getVersion: () => "0.0.0",
+  },
   dialog: {},
   ipcMain: {
     handle: (channel: string, fn: Handler) => handlers.set(channel, fn),
@@ -25,6 +32,7 @@ function setup() {
   let exit!: (code: number) => void
   let line!: (line: string, stream: "stdout") => void
   const cli = {
+    setUnlockHandler: vi.fn(),
     run: vi.fn(async () => ({ id: "task-1" })),
     runRaw: vi.fn(
       async () =>
@@ -42,6 +50,13 @@ function setup() {
     cancelFor: vi.fn(async () => {}),
   }
   const send = vi.fn()
+  const mainFrame = {
+    url: pathToFileURL(join(__dirname, "../../renderer/index.html")).href,
+    isDestroyed: () => false,
+  }
+  const webContents = { send, mainFrame, isDestroyed: () => false }
+  const win = { webContents, isDestroyed: () => false }
+  trustedEvent = { sender: webContents, senderFrame: mainFrame }
   const actions = registerIpcHandlers({
     cli,
     state: {
@@ -56,7 +71,7 @@ function setup() {
       onDrain: async () => {},
     },
     pty: { cancelFor: vi.fn(async () => {}) },
-    getMainWindow: () => ({ webContents: { send } }),
+    getMainWindow: () => win,
     providerJobs: new ProviderJobs(),
     workspaceJobs: jobs,
   } as unknown as Parameters<typeof registerIpcHandlers>[0])
@@ -72,12 +87,13 @@ function setup() {
 function invoke(channel: string, args: unknown = { workspaceId: "ws" }) {
   const handler = handlers.get(channel)
   if (!handler) throw new Error(`No handler registered for ${channel}`)
-  return handler({}, args)
+  return handler(trustedEvent, args)
 }
 async function flush() {
   for (let i = 0; i < 20; i++) await Promise.resolve()
 }
 beforeEach(() => {
+  vi.stubEnv("ELECTRON_RENDERER_URL", "")
   handlers.clear()
   vi.clearAllMocks()
   vi.useFakeTimers()

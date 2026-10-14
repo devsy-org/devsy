@@ -1,5 +1,7 @@
-import { render } from "@testing-library/svelte"
+import "@testing-library/jest-dom/vitest"
+import { cleanup, render, screen, waitFor } from "@testing-library/svelte"
 import { tick } from "svelte"
+import { get } from "svelte/store"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const getAppVersion = vi.fn()
@@ -8,6 +10,7 @@ const setReleaseChannel = vi.fn()
 const checkForUpdates = vi.fn()
 const downloadUpdate = vi.fn()
 const installUpdate = vi.fn()
+const setAutoDownload = vi.fn()
 
 vi.mock("$lib/ipc/commands.js", () => ({
   getAppVersion: (...a: unknown[]) => getAppVersion(...a),
@@ -16,6 +19,7 @@ vi.mock("$lib/ipc/commands.js", () => ({
   checkForUpdates: (...a: unknown[]) => checkForUpdates(...a),
   downloadUpdate: (...a: unknown[]) => downloadUpdate(...a),
   installUpdate: (...a: unknown[]) => installUpdate(...a),
+  setAutoDownload: (...a: unknown[]) => setAutoDownload(...a),
 }))
 
 const toastSuccess = vi.fn()
@@ -34,6 +38,7 @@ vi.mock("$lib/ipc/events.js", async (importOriginal) => {
   return { ...mod, onUpdateStatus: async () => () => {} }
 })
 
+import { autoUpdate } from "$lib/stores/settings.js"
 import { __setForTest, initUpdateStore } from "$lib/stores/updates.svelte.js"
 import UpdatesPanel from "./UpdatesPanel.svelte"
 
@@ -56,6 +61,11 @@ async function renderPanel(channel: "stable" | "beta") {
   await tick()
   await Promise.resolve()
   await tick()
+  await waitFor(() => {
+    expect(
+      cardButton(channel === "beta" ? /Preview/ : /Stable/),
+    ).toHaveAttribute("aria-checked", "true")
+  })
 }
 
 describe("UpdatesPanel channel switching", () => {
@@ -68,7 +78,7 @@ describe("UpdatesPanel channel switching", () => {
   })
 
   afterEach(() => {
-    document.body.innerHTML = ""
+    cleanup()
   })
 
   it("switches immediately and confirms via toast on a normal upgrade", async () => {
@@ -125,10 +135,10 @@ describe("UpdatesPanel status display", () => {
   })
 
   afterEach(() => {
-    document.body.innerHTML = ""
+    cleanup()
   })
 
-  it("renders up-to-date state with installed version and channel", async () => {
+  it("renders up-to-date state with the installed version and current version row", async () => {
     getAppVersion.mockResolvedValue("1.17.0")
     getReleaseChannel.mockResolvedValue("stable")
     await initUpdateStore()
@@ -140,7 +150,10 @@ describe("UpdatesPanel status display", () => {
 
     expect(document.body.textContent).toMatch(/devsy is up to date/i)
     expect(document.body.textContent).toMatch(/version 1\.17\.0/i)
-    expect(document.body.textContent).toMatch(/stable channel/i)
+    expect(document.body.textContent).not.toMatch(/stable channel/i)
+    expect(
+      screen.getByText("Current version").nextElementSibling,
+    ).toHaveTextContent("v1.17.0")
   })
 
   it("renders available update with both installed and available versions", async () => {
@@ -234,6 +247,9 @@ describe("UpdatesPanel status display", () => {
     expect(document.body.textContent).toMatch(
       /no releases on this channel yet/i,
     )
+    await waitFor(() =>
+      expect(document.body.textContent).toMatch(/preview channel/i),
+    )
   })
 
   it("renders error notice for malformed-version failures and does not claim up to date", async () => {
@@ -261,4 +277,155 @@ describe("UpdatesPanel status display", () => {
     )
     expect(retryBtn).toBeTruthy()
   })
+})
+
+describe("UpdatesPanel preferences", () => {
+  beforeEach(() => {
+    getAppVersion.mockReset()
+    getReleaseChannel.mockReset()
+    setReleaseChannel.mockReset()
+    setAutoDownload.mockReset()
+    setAutoDownload.mockResolvedValue(undefined)
+    autoUpdate.set(true)
+    localStorage.setItem("devsy-auto-update", "true")
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
+  it("renders compact, named release channel choices with selection state", async () => {
+    await renderPanel("beta")
+
+    expect(
+      screen.getByRole("radiogroup", { name: "Release channel" }),
+    ).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "Stable" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    )
+    expect(screen.getByRole("radio", { name: "Preview" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    )
+    expect(document.body.textContent).not.toMatch(
+      /released on a regular schedule|updated frequently/i,
+    )
+  })
+
+  it("names and describes automatic downloading and persists a toggle", async () => {
+    await renderPanel("stable")
+
+    const toggle = screen.getByRole("switch", {
+      name: "Automatically download updates",
+    })
+    expect(toggle).toHaveAccessibleDescription(
+      "Restart Devsy when you're ready to install.",
+    )
+    expect(toggle).toHaveAttribute("aria-checked", "true")
+    expect(document.body.textContent).not.toMatch(/update behavior/i)
+
+    toggle.click()
+    await tick()
+    await Promise.resolve()
+
+    expect(toggle).toHaveAttribute("aria-checked", "false")
+    expect(setAutoDownload).toHaveBeenCalledWith(false)
+  })
+
+  it("restores the automatic download preference when persistence fails", async () => {
+    await renderPanel("stable")
+    const failure = new Error("Unable to save auto-download preference")
+    setAutoDownload.mockRejectedValueOnce(failure)
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const toggle = screen.getByRole("switch", {
+      name: "Automatically download updates",
+    })
+
+    try {
+      toggle.click()
+      await tick()
+      await waitFor(() => {
+        expect(warning).toHaveBeenCalledWith(
+          "[settings] setAutoDownload failed; rolled back:",
+          failure,
+        )
+        expect(toggle).toHaveAttribute("aria-checked", "true")
+      })
+
+      expect(setAutoDownload).toHaveBeenCalledWith(false)
+      expect(get(autoUpdate)).toBe(true)
+      expect(localStorage.getItem("devsy-auto-update")).toBe("true")
+    } finally {
+      warning.mockRestore()
+    }
+  })
+
+  it("shows the running app version even when a different update is available", async () => {
+    await renderPanel("stable")
+    __setForTest({
+      state: "available",
+      currentVersion: "1.2.3",
+      availableVersion: "2.0.0",
+    })
+    await tick()
+
+    const term = screen.getByText("Current version")
+    expect(term.tagName).toBe("DT")
+    expect(term.nextElementSibling?.tagName).toBe("DD")
+    expect(term.nextElementSibling).toHaveTextContent("v1.2.3")
+  })
+
+  it("shows Unavailable when the running app version cannot be loaded", async () => {
+    getAppVersion.mockRejectedValue(new Error("Version unavailable"))
+    getReleaseChannel.mockResolvedValue("stable")
+    await initUpdateStore()
+    __setForTest({
+      state: "available",
+      currentVersion: "1.2.3",
+      availableVersion: "2.0.0",
+    })
+    render(UpdatesPanel)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(
+      screen.getByText("Current version").nextElementSibling,
+    ).toHaveTextContent("Unavailable")
+  })
+
+  it.each([
+    "checking",
+    "available",
+    "idle",
+    "not-eligible",
+    "up-to-date",
+    "not-available",
+  ] as const)(
+    "omits redundant channel metadata from the %s status",
+    async (state) => {
+      await renderPanel("stable")
+      if (state === "available") {
+        __setForTest({
+          state,
+          currentVersion: "1.2.3",
+          availableVersion: "2.0.0",
+        })
+      } else if (state === "not-eligible") {
+        __setForTest({
+          state: "not-available",
+          currentVersion: "1.2.3",
+          code: "not-eligible",
+        })
+      } else {
+        __setForTest({ state, currentVersion: "1.2.3" })
+      }
+      await tick()
+
+      const status = screen.getByRole("region", { name: "Update status" })
+      expect(status.textContent).not.toMatch(/stable channel|preview channel/i)
+      expect(status.textContent).toMatch(/1\.2\.3/)
+    },
+  )
 })

@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/cmd/internal/secretstore"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
@@ -26,16 +27,17 @@ their encrypted source file and are resolved only when needed.`,
 	secretsCmd.AddCommand(NewAttachCmd(flags))
 	secretsCmd.AddCommand(NewDetachCmd(flags))
 	secretsCmd.AddCommand(NewSourceCmd(flags))
+	secretsCmd.AddCommand(NewProtectionCmd(flags))
 	return secretsCmd
 }
 
-func resolveContext(globalFlags *flags.GlobalFlags) (string, secrets.Store, error) {
+func resolveContext(globalFlags *flags.GlobalFlags) (string, secrets.SecretStore, error) {
 	devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
 	if err != nil {
 		return "", nil, err
 	}
 
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	store, err := secrets.NewSecretStoreForConfig(devsyConfig, secretstore.Options())
 	if err != nil {
 		return "", nil, err
 	}

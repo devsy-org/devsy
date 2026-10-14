@@ -43,7 +43,7 @@ repos:
         # Tracked upstream: https://github.com/rhysd/actionlint/issues/693
         args: ["-ignore", "unexpected key \"background\" for step"]
   - repo: https://github.com/biomejs/pre-commit
-    rev: v2.5.11
+    rev: v2.5.13
     hooks:
       - id: biome-format
         exclude: '^(\.github/actions/|\.vscode/|sites/|examples/)'
@@ -62,10 +62,10 @@ repos:
     rev: v2.13.2
     hooks:
       - id: golangci-lint
-        language_version: 1.26.8
+        language_version: 1.26.9
         args: ["--timeout=10m"]
       - id: golangci-lint-fmt
-        language_version: 1.26.8
+        language_version: 1.26.9
   - repo: local
     hooks:
       - id: golangci-lint-ci-parity

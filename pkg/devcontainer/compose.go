@@ -113,17 +113,12 @@ func (r *runner) stopDockerCompose(ctx context.Context, projectName string) erro
 		return fmt.Errorf("find docker compose: %w", err)
 	}
 
-	parsedConfig, _, err := r.getSubstitutedConfig(r.workspaceConfig.CLIOptions)
+	args, err := r.composeTeardownArgs(ctx, projectName)
 	if err != nil {
-		return fmt.Errorf("get parsed config: %w", err)
+		return fmt.Errorf("get original Compose invocation: %w", err)
 	}
 
-	projFiles, err := r.dockerComposeProjectFiles(parsedConfig)
-	if err != nil {
-		return fmt.Errorf("get compose/env files: %w", err)
-	}
-
-	err = composeHelper.Stop(ctx, projectName, projFiles.composeGlobalArgs)
+	err = composeHelper.Stop(ctx, projectName, args)
 	if err != nil {
 		return err
 	}
@@ -141,22 +136,27 @@ func (r *runner) deleteDockerCompose(
 		return fmt.Errorf("find docker compose: %w", err)
 	}
 
-	parsedConfig, _, err := r.getSubstitutedConfig(r.workspaceConfig.CLIOptions)
+	args, err := r.composeTeardownArgs(ctx, projectName)
 	if err != nil {
-		return fmt.Errorf("get parsed config: %w", err)
+		return fmt.Errorf("get original Compose invocation: %w", err)
 	}
 
-	projFiles, err := r.dockerComposeProjectFiles(parsedConfig)
-	if err != nil {
-		return fmt.Errorf("get compose/env files: %w", err)
-	}
-
-	err = composeHelper.Remove(ctx, projectName, projFiles.composeGlobalArgs, removeVolumes)
+	err = composeHelper.Remove(ctx, projectName, args, removeVolumes)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (r *runner) resolveComposeProjectConfig(
+	ctx context.Context,
+) (*config.SubstitutedConfig, error) {
+	// Stopping and deleting a project must still work after its overlay is removed.
+	options := r.workspaceConfig.CLIOptions
+	options.ExtraDevContainerPath = ""
+	parsed, _, err := r.getSubstitutedConfigWithContext(ctx, options)
+	return parsed, err
 }
 
 func (r *runner) dockerComposeProjectFiles(
@@ -814,10 +814,11 @@ func (r *runner) startContainer(
 	composeGlobalArgs, didRestoreFromPersistedShare := restorePersistedComposeArgsForStart(
 		container,
 		composeGlobalArgs,
-		params.forceOverrideRefresh,
+		params.forceOverrideRefresh || options.Recreate,
 	)
 
-	if container == nil || !didRestoreFromPersistedShare || params.forceOverrideRefresh {
+	if container == nil || !didRestoreFromPersistedShare || params.forceOverrideRefresh ||
+		r.overlayExisting != nil {
 		composeGlobalArgs, err = r.buildComposeOverrideArgs(ctx, &composeOverrideParams{
 			startParams:       params,
 			composeService:    &composeService,
@@ -829,6 +830,13 @@ func (r *runner) startContainer(
 		}
 	}
 
+	if r.overlayExisting != nil && options.Recreate {
+		if err := r.teardownOverlayExisting(ctx); err != nil {
+			return nil, err
+		}
+		r.overlayExisting = nil
+		container = nil
+	}
 	if container != nil && options.Recreate {
 		if err := r.recreateDevContainer(ctx, container); err != nil {
 			return nil, err
@@ -953,6 +961,14 @@ func (r *runner) buildComposeOverrideArgs(
 
 	if overrideComposeUpFilePath != "" {
 		composeGlobalArgs = append(composeGlobalArgs, "-f", overrideComposeUpFilePath)
+		if err := recordComposeInvocation(
+			overrideComposeUpFilePath,
+			start.parsedConfig.Config.Service,
+			start.project.WorkingDir,
+			composeGlobalArgs,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	return composeGlobalArgs, nil
@@ -981,6 +997,7 @@ func (r *runner) generateComposeUpOverride(
 	additionalLabels := map[string]string{
 		metadata.ImageMetadataLabel: extendResult.metadataLabel,
 		config.UserLabel:            imageDetails.Config.User,
+		overlayStructureLabel:       structuralSignature(start.parsedConfig.Config),
 	}
 	overrideComposeUpFilePath, err := r.extendedDockerComposeUp(&composeUpParams{
 		parsedConfig:         start.parsedConfig,
@@ -1009,15 +1026,15 @@ func mergeImageMetadataConfig(
 	imageMetadata *config.ImageMetadataConfig,
 	extraDevContainerPath string,
 ) (*config.MergedDevContainerConfig, error) {
-	if extraDevContainerPath != "" {
-		if imageMetadata == nil {
-			imageMetadata = &config.ImageMetadataConfig{}
-		}
-		extraConfig, err := config.ParseDevContainerJSONFile(ctx, extraDevContainerPath)
-		if err != nil {
-			return nil, err
-		}
-		config.AddConfigToImageMetadata(extraConfig, imageMetadata)
+	overlay, err := overlayForParsedConfig(ctx, parsedConfig, extraDevContainerPath)
+	if err != nil {
+		return nil, err
+	}
+	if imageMetadata == nil {
+		imageMetadata = &config.ImageMetadataConfig{}
+	}
+	if overlay != nil {
+		config.AddConfigToImageMetadata(overlay, imageMetadata)
 	}
 
 	mergedConfig, err := config.MergeConfiguration(parsedConfig.Config, imageMetadata.Config)
@@ -1025,9 +1042,7 @@ func mergeImageMetadataConfig(
 		return nil, fmt.Errorf("merge configuration: %w", err)
 	}
 
-	if err := config.MergeExtraRemoteEnv(ctx, mergedConfig, extraDevContainerPath); err != nil {
-		return nil, err
-	}
+	config.MergeExtraRemoteEnvConfig(mergedConfig, overlay)
 
 	return mergedConfig, nil
 }

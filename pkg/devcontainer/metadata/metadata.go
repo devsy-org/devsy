@@ -10,6 +10,9 @@ import (
 
 const ImageMetadataLabel = pkgconfig.DevcontainerMetadataLabel
 
+// CreationConfigLabel identifies a metadata chain ending with the creation-time workspace config.
+const CreationConfigLabel = "devsy.sh/metadata-creation-config"
+
 const metadataLabelSizeWarningThreshold = 100 * 1024
 
 func MarshalImageMetadata(raw []*config.ImageMetadata) ([]byte, error) {

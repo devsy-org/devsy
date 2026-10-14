@@ -3,48 +3,31 @@ title: Prebuild a Workspace
 sidebar_label: Prebuild a Workspace
 ---
 
-## Prebuild a Workspace
+A prebuild is an image built ahead of time from `devcontainer.json`, its features, and any Dockerfile. When a prebuild exists, Devsy starts from it instead of building, which saves time on complex environments.
 
-Prebuilding a workspace means building a ready-to-use docker image out of the `devcontainer.json`, its referenced features and optionally a linked `Dockerfile`.
-Usually when creating a new workspace, Devsy will first build a docker image based on the configuration and then later use this image to create the development environment.
-With prebuilds, this step can be omitted and Devsy can directly use the docker image to start the development environment. This can save start up time, especially for more complex development environments.
+## How it works
 
-### How does it work?
+Devsy hashes the devcontainer configuration and uses `devsy-` plus the hash as the image tag. When you point Devsy at an image repository, it looks for that tag and uses the image if found.
 
-Based on the `devcontainer.json` configuration, Devsy will generate a hash in the form of `devsy-HASH` and use this as a tag for the created docker image.
-You can then reference docker image repositories, where Devsy will search this tag and if found uses it instead of building the image itself.
+Build and push a prebuild:
 
-To prebuild a workspace, you can run the following command:
-```
-# Prebuild the docker image for github.com/my-org/my-repo and save it in image registry ghcr.io/my-org/my-repo
+```sh
 devsy workspace build github.com/my-org/my-repo --repository ghcr.io/my-org/my-repo
 ```
 
-<Callout title="Detecting existing Prebuilds">
-Devsy will only build the workspace if there isn't an existing prebuild found in the specified docker image repository
-</Callout>
+Devsy skips the build if the repository already has an image with the matching tag. It uses your current provider, so you can prebuild on a remote provider or a dedicated one.
 
-Devsy will use the current provider for doing this, which means you can also use remote providers to prebuild an image. You can even have a separate provider just for prebuilding images.
+## Use a prebuild
 
-## Using Prebuilds
+Pass the repository when you create a workspace:
 
-Using prebuilds means you specify a docker image repository, where Devsy will search for an image with a specific hash generated from the devcontainer configuration. You can either specify this prebuild repository via a flag during workspace creation or directly in the `devcontainer.json`.
-
-<Callout title="Prebuild not found">
-If a prebuild cannot be found in the given repository or credentials are missing locally, Devsy will just skip the repository.
-</Callout>
-
-### Reference Prebuild Repository as Flag
-
-When creating a new workspace, you can define the prebuild repository via the `--prebuild-repo` flag:
-```
+```sh
 devsy workspace up github.com/my-org/my-repo --prebuild-repo ghcr.io/my-org/my-repo
 ```
 
-### Reference Prebuild Repository in devcontainer.json
+Or set it in `devcontainer.json`, which suits builds run from CI:
 
-It's also possible to include the prebuild repository directly in the `devcontainer.json`, which makes it easy to automate prebuilding through a CI/CD pipeline on changes. You can specify the prebuild repository via:
-```
+```json
 {
   "name": "my-project",
   "customizations": {
@@ -54,3 +37,5 @@ It's also possible to include the prebuild repository directly in the `devcontai
   }
 }
 ```
+
+If no matching image is found, or you lack credentials for the repository, Devsy skips it and builds as usual.

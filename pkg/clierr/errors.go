@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -22,6 +23,11 @@ const (
 	CodeDockerDaemonUnreachable    Code = "docker_daemon_unreachable"
 	CodeCanceled                   Code = "canceled"
 	CodeDeadlineExceeded           Code = "deadline_exceeded"
+	CodeUnlockRequired             Code = "unlock_required"
+	CodeUnlockFailed               Code = "unlock_failed"
+	CodeSecretBackendUnavailable   Code = "secret_backend_unavailable"
+	CodeSecretStoreCorrupt         Code = "secret_store_corrupt"
+	CodeSecretNotFound             Code = "secret_not_found"
 )
 
 type CLIError struct {
@@ -108,32 +114,51 @@ func Classify(err error) *CLIError {
 		return cliErr
 	}
 
-	if errors.Is(err, ErrBuildFailedRecoverable) {
-		return &CLIError{
-			Code:    CodeBuildFailedRecoverable,
-			Message: err.Error(),
-			wrapped: err,
+	for _, classify := range classifiers {
+		if classified := classify(err); classified != nil {
+			return classified
 		}
 	}
 
-	if errors.Is(err, ErrRateLimited) {
-		return &CLIError{
-			Code:    CodeRateLimited,
-			Message: "Rate limited by an upstream API. Wait and retry, or authenticate for a higher limit.",
-			wrapped: err,
-		}
-	}
+	return &CLIError{Code: CodeUnknown, Message: err.Error(), wrapped: err}
+}
 
-	if errors.Is(err, context.Canceled) {
+var classifiers = []func(error) *CLIError{
+	classifySecretError,
+	classifyBuildFailure,
+	classifyRateLimit,
+	classifyContextError,
+	classifyDockerDaemonError,
+}
+
+func classifyBuildFailure(err error) *CLIError {
+	if !errors.Is(err, ErrBuildFailedRecoverable) {
+		return nil
+	}
+	return &CLIError{Code: CodeBuildFailedRecoverable, Message: err.Error(), wrapped: err}
+}
+
+func classifyRateLimit(err error) *CLIError {
+	if !errors.Is(err, ErrRateLimited) {
+		return nil
+	}
+	return &CLIError{
+		Code:    CodeRateLimited,
+		Message: "Rate limited by an upstream API. Wait and retry, or authenticate for a higher limit.",
+		wrapped: err,
+	}
+}
+
+func classifyContextError(err error) *CLIError {
+	switch {
+	case errors.Is(err, context.Canceled):
 		return &CLIError{
 			Code:    CodeCanceled,
 			Message: "Operation canceled.",
 			Hint:    "Retry the operation when ready.",
 			wrapped: err,
 		}
-	}
-
-	if errors.Is(err, context.DeadlineExceeded) {
+	case errors.Is(err, context.DeadlineExceeded):
 		return &CLIError{
 			Code:    CodeDeadlineExceeded,
 			Message: "Operation timed out.",
@@ -141,18 +166,44 @@ func Classify(err error) *CLIError {
 			wrapped: err,
 		}
 	}
+	return nil
+}
 
-	message := err.Error()
-	lowerMessage := strings.ToLower(message)
-	if strings.Contains(lowerMessage, "cannot connect to the docker daemon") ||
-		strings.Contains(lowerMessage, "is the docker daemon running") {
-		return &CLIError{
-			Code:    CodeDockerDaemonUnreachable,
-			Message: dockerDaemonUnavailableMessage,
-			Hint:    "Start the Docker daemon for the selected context and retry.",
-			wrapped: err,
+func classifyDockerDaemonError(err error) *CLIError {
+	message := strings.ToLower(err.Error())
+	if !strings.Contains(message, "cannot connect to the docker daemon") &&
+		!strings.Contains(message, "is the docker daemon running") {
+		return nil
+	}
+	return &CLIError{
+		Code:    CodeDockerDaemonUnreachable,
+		Message: dockerDaemonUnavailableMessage,
+		Hint:    "Start the Docker daemon for the selected context and retry.",
+		wrapped: err,
+	}
+}
+
+func classifySecretError(err error) *CLIError {
+	for _, state := range []struct {
+		target error
+		code   Code
+		hint   string
+	}{
+		{
+			secrets.ErrUnlockRequired,
+			CodeUnlockRequired,
+			"Supply DEVSY_SECRETS_PASSPHRASE, DEVSY_SECRETS_PASSPHRASE_FILE, " +
+				"a remembered credential, or run interactively.",
+		},
+		{secrets.ErrUnlockFailed, CodeUnlockFailed, "Verify the passphrase and encrypted store, then retry."},
+		{secrets.ErrBackendUnavailable, CodeSecretBackendUnavailable, "Restore access to the secret backend and retry."},
+		{secrets.ErrStoreCorrupt, CodeSecretStoreCorrupt, "Restore a valid encrypted store backup."},
+		{secrets.ErrSecretNotFound, CodeSecretNotFound, "Create or repair the required secret and retry."},
+	} {
+		if errors.Is(err, state.target) {
+			return &CLIError{Code: state.code, Message: err.Error(), Hint: state.hint, wrapped: err}
 		}
 	}
 
-	return &CLIError{Code: CodeUnknown, Message: message, wrapped: err}
+	return nil
 }

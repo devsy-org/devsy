@@ -1,6 +1,6 @@
 module github.com/devsy-org/devsy
 
-go 1.26.8
+go 1.26.9
 
 require (
 	al.essio.dev/pkg/shellescape v1.6.1
@@ -16,16 +16,17 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.8
-	github.com/compose-spec/compose-go/v2 v2.14.0
+	github.com/compose-spec/compose-go/v2 v2.15.0
 	github.com/containers/image/v5 v5.36.2
 	github.com/creack/pty v1.1.24
 	github.com/creativeprojects/go-selfupdate v1.6.0
 	github.com/devsy-org/agentapi v1.0.1
 	github.com/devsy-org/api v1.1.0
 	github.com/devsy-org/apiserver v1.5.4
+	github.com/devsy-org/devsy-runtime-sdk v1.6.0
 	github.com/devsy-org/ssh v1.2.9
 	github.com/distribution/reference v0.6.0
-	github.com/docker/cli v29.7.2+incompatible
+	github.com/docker/cli v29.8.0+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/docker-credential-helpers v0.9.9
 	github.com/docker/go-connections v0.8.1
@@ -36,21 +37,22 @@ require (
 	github.com/gofrs/flock v0.13.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-containerregistry v0.22.0
+	github.com/google/go-containerregistry v0.22.1
 	github.com/google/go-containerregistry/pkg/authn/kubernetes v0.0.0-20260731170845-2ea098f4b134
-	github.com/google/go-github/v91 v91.0.0
 	github.com/google/go-github/v91 v91.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
+	github.com/hashicorp/go-hclog v1.6.3
+	github.com/hashicorp/go-plugin v1.8.0
 	github.com/joho/godotenv v1.5.1
 	github.com/moby/buildkit v0.33.0
 	github.com/moby/patternmatcher v0.6.1
 	github.com/moby/sys/mountinfo v0.7.2
 	github.com/moby/term v0.5.2
 	github.com/modelcontextprotocol/go-sdk v1.7.0
-	github.com/onsi/ginkgo/v2 v2.32.1
+	github.com/onsi/ginkgo/v2 v2.32.2
 	github.com/onsi/gomega v1.43.0
 	github.com/pkg/sftp v1.13.11
 	github.com/posthog/posthog-go v1.25.1
@@ -84,8 +86,8 @@ require (
 	k8s.io/kubectl v0.37.0
 	k8s.io/streaming v0.37.1
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
-	mvdan.cc/sh/v3 v3.14.0
-	sigs.k8s.io/controller-runtime v0.24.1
+	mvdan.cc/sh/v3 v3.14.1
+	sigs.k8s.io/controller-runtime v0.25.0
 	sigs.k8s.io/yaml v1.6.0
 	tailscale.com v1.102.3
 )
@@ -323,6 +325,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
 	github.com/hashicorp/vault/api v1.23.0 // indirect
+	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/hdevalence/ed25519consensus v0.2.0 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.207 // indirect
@@ -399,6 +402,7 @@ require (
 	github.com/multiformats/go-multihash v0.2.3 // indirect
 	github.com/multiformats/go-varint v0.0.7 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/oklog/run v1.1.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
@@ -530,7 +534,7 @@ require (
 	gopkg.in/mail.v2 v2.3.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gvisor.dev/gvisor v0.0.0-20260224225140-573d5e7127a8 // indirect
-	k8s.io/apiextensions-apiserver v0.36.2 // indirect
+	k8s.io/apiextensions-apiserver v0.37.0 // indirect
 	k8s.io/apiserver v0.37.1 // indirect
 	k8s.io/cli-runtime v0.37.0 // indirect
 	k8s.io/component-base v0.37.1 // indirect

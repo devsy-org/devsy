@@ -28,6 +28,10 @@ func (r *Result) Err() error {
 }
 
 type Result struct {
+	// GeneratedBuildArtifacts is local transfer authority, never accepted from a remote result.
+	GeneratedBuildContext   string                   `json:"-"`
+	GeneratedBuildArtifacts []GeneratedBuildArtifact `json:"-"`
+
 	DevContainerConfigWithPath *DevContainerConfigWithPath `json:"DevContainerConfigWithPath"`
 	MergedConfig               *MergedDevContainerConfig   `json:"MergedConfig"`
 	SubstitutionContext        *SubstitutionContext        `json:"SubstitutionContext"`
@@ -46,14 +50,25 @@ type DevContainerConfigWithPath struct {
 	Path string `json:"path,omitempty"`
 }
 
+func GetWorkspaceMount(result *Result) *Mount {
+	if result == nil || result.SubstitutionContext == nil ||
+		result.SubstitutionContext.WorkspaceMount == "" {
+		return nil
+	}
+	workspaceMount := ParseMount(result.SubstitutionContext.WorkspaceMount)
+	return &workspaceMount
+}
+
 func GetMounts(result *Result) []*Mount {
 	var mounts []*Mount
-	if result.SubstitutionContext.WorkspaceMount != "" {
-		workspaceMount := ParseMount(result.SubstitutionContext.WorkspaceMount)
-		mounts = append(mounts, &workspaceMount)
+	if workspaceMount := GetWorkspaceMount(result); workspaceMount != nil {
+		mounts = append(mounts, workspaceMount)
+	}
+	if result == nil || result.MergedConfig == nil {
+		return mounts
 	}
 	for _, m := range result.MergedConfig.Mounts {
-		if m.Type == "bind" {
+		if m != nil && m.Type == "bind" {
 			mounts = append(mounts, m)
 		}
 	}

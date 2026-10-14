@@ -6,25 +6,16 @@ import type { ReleaseChannel } from "$lib/ipc/commands.js"
 export interface ChannelMeta {
   value: ReleaseChannel
   label: string
-  cadence: string
-  description: string
-  unstable: boolean
 }
 
 export const CHANNELS: ChannelMeta[] = [
   {
     value: "stable",
     label: "Stable",
-    cadence: "Released on a regular schedule",
-    description: "Production-ready builds, tested before release.",
-    unstable: false,
   },
   {
     value: "beta",
     label: "Preview",
-    cadence: "Updated frequently",
-    description: "Early access to new features. May be unstable.",
-    unstable: true,
   },
 ]
 

@@ -4,6 +4,7 @@
     "create-a-workspace",
     "connect-to-a-workspace",
     "devcontainer-json",
+    "devcontainer-overlay",
     "prebuild-a-workspace",
     "workspace-snapshots",
     "continuous-integration",

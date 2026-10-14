@@ -9,9 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -19,7 +17,6 @@ import (
 
 	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/agent/tunnel"
-	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devsyconfig"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
@@ -33,7 +30,6 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/stdio"
-	"github.com/moby/patternmatcher/ignorefile"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -81,19 +77,45 @@ func RunSetupServer(
 	reader io.Reader,
 	writer io.WriteCloser,
 	allowGitCredentials, allowDockerCredentials bool,
-	mounts []*config.Mount,
+	setupInfo *config.Result,
 	options ...Option,
 ) (*config.Result, error) {
 	options = append(options,
-		WithMounts(mounts),
 		WithAllowGitCredentials(allowGitCredentials),
 		WithAllowDockerCredentials(allowDockerCredentials),
+	)
+	tunnelServ, err := newSetupServer(setupInfo, options...)
+	if err != nil {
+		return nil, err
+	}
+
+	return tunnelServ.RunWithResult(ctx, reader, writer)
+}
+
+func newSetupServer(setupInfo *config.Result, options ...Option) (*tunnelServer, error) {
+	if setupInfo == nil || setupInfo.SubstitutionContext == nil || setupInfo.MergedConfig == nil {
+		return nil, fmt.Errorf("invalid setup result: missing mount configuration")
+	}
+	options = append(options,
+		WithMounts(config.GetMounts(setupInfo)),
+		WithWorkspaceMount(config.GetWorkspaceMount(setupInfo)),
 		WithAllowKubeConfig(true),
 	)
 	tunnelServ := New(options...)
 	tunnelServ.allowPlatformOptions = true
+	tunnelServ.generatedBuildArtifacts = setupInfo.GeneratedBuildArtifacts
+	tunnelServ.generatedBuildContext = setupInfo.GeneratedBuildContext
+	if setupInfo.DevContainerConfigWithPath != nil &&
+		setupInfo.DevContainerConfigWithPath.Config != nil {
+		tunnelServ.snapshotBuildContext, tunnelServ.snapshotBuildContextErr = config.SnapshotBuildContext(
+			setupInfo,
+		)
+	}
+	if err := tunnelServ.validateMountRoles(); err != nil {
+		return nil, err
+	}
 
-	return tunnelServ.RunWithResult(ctx, reader, writer)
+	return tunnelServ, nil
 }
 
 func New(options ...Option) *tunnelServer {
@@ -109,7 +131,12 @@ type tunnelServer struct {
 	tunnel.UnimplementedTunnelServer
 
 	// stream mounts
-	mounts []*config.Mount
+	mounts                  []*config.Mount
+	workspaceMount          *config.Mount
+	generatedBuildArtifacts []config.GeneratedBuildArtifact
+	generatedBuildContext   string
+	snapshotBuildContext    string
+	snapshotBuildContextErr error
 
 	forwarder              netstat.Forwarder
 	allowGitCredentials    bool
@@ -495,18 +522,23 @@ func (t *tunnelServer) StreamWorkspace(
 		return fmt.Errorf("workspace is nil")
 	}
 
-	// Get .devsyignore files to exclude
-	excludes := []string{}
-	f, err := os.Open(filepath.Join(t.workspace.Source.LocalFolder, pkgconfig.IgnoreFileName))
-	if err == nil {
-		excludes, err = ignorefile.ReadAll(f)
-		if err != nil {
-			log.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
-		}
+	opts, closePolicy, err := t.sourceTarOptions(
+		stream.Context(),
+		t.workspace.Source.LocalFolder,
+		true,
+		false,
+	)
+	if err != nil {
+		return err
 	}
 
+	defer closeTransferPolicy(closePolicy)
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
-	err = extract.WriteTarExclude(buf, t.workspace.Source.LocalFolder, false, excludes)
+	err = extract.WriteTarWithOptions(
+		buf,
+		t.workspace.Source.LocalFolder,
+		opts,
+	)
 	if err != nil {
 		return err
 	}
@@ -528,7 +560,7 @@ func (t *tunnelServer) StreamMount(
 
 	var mount *config.Mount
 	for _, m := range t.mounts {
-		if m.String() == message.Mount {
+		if m != nil && m.String() == message.Mount {
 			mount = m
 			break
 		}
@@ -537,10 +569,14 @@ func (t *tunnelServer) StreamMount(
 		return fmt.Errorf("mount %s is not allowed to download", message.Mount)
 	}
 
-	excludes := t.workspaceIgnoreExcludes()
+	opts, closePolicy, err := t.mountTarOptions(stream.Context(), mount, false)
+	if err != nil {
+		return err
+	}
 
+	defer closeTransferPolicy(closePolicy)
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
-	err := extract.WriteTarExclude(buf, mount.Source, false, excludes)
+	err = extract.WriteTarWithOptions(buf, mount.Source, opts)
 	if err != nil {
 		return err
 	}
@@ -559,13 +595,24 @@ func (t *tunnelServer) StreamSnapshotVolumes(
 		)
 	}
 
+	// Invalid policies must fail before the combined stream sends any data.
+	policies := make([]extract.TarOptions, len(t.mounts))
+	for i, m := range t.mounts {
+		if m == nil {
+			return fmt.Errorf("snapshot mount is nil")
+		}
+		opts, closePolicy, err := t.mountTarOptions(stream.Context(), m, true)
+		if err != nil {
+			return err
+		}
+		defer closeTransferPolicy(closePolicy)
+		policies[i] = opts
+	}
 	buf := bufio.NewWriterSize(NewStreamWriter(stream), 10*1024)
 	tw := tar.NewWriter(buf)
-
-	excludes := append(t.workspaceIgnoreExcludes(), config.BuildArtifactExcludes()...)
-	for _, m := range t.mounts {
+	for i, m := range t.mounts {
 		prefix := strings.TrimPrefix(m.Target, "/")
-		if err := appendDirToTar(tw, m.Source, prefix, excludes); err != nil {
+		if err := appendDirToTar(tw, m.Source, prefix, policies[i]); err != nil {
 			return fmt.Errorf("tar mount %s: %w", m.Target, err)
 		}
 	}
@@ -576,17 +623,13 @@ func (t *tunnelServer) StreamSnapshotVolumes(
 	return buf.Flush()
 }
 
-// appendDirToTar writes localDir's contents under prefix inside an
-// already-open tar.Writer, reusing extract.WriteTarExclude's on-disk walk by
-// tarring into a pipe and re-prefixing entries; kept simple since snapshot
-// volume archives combine multiple mount roots into one stream.
-func appendDirToTar(tw *tar.Writer, localDir, prefix string, excludes []string) error {
+func appendDirToTar(tw *tar.Writer, localDir, prefix string, opts extract.TarOptions) error {
 	pr, pw := io.Pipe()
 	defer func() { _ = pr.Close() }()
 
 	errCh := make(chan error, 1)
 	go func() {
-		err := extract.WriteTarExclude(pw, localDir, false, excludes)
+		err := extract.WriteTarWithOptions(pw, localDir, opts)
 		errCh <- err
 		_ = pw.CloseWithError(err)
 	}()
@@ -673,23 +716,6 @@ func (t *tunnelServer) resolveHostGitCredentials(
 
 func (t *tunnelServer) platformStreamBlocked() bool {
 	return t.platformOptions != nil && t.platformOptions.Enabled && !t.allowPlatformOptions
-}
-
-func (t *tunnelServer) workspaceIgnoreExcludes() []string {
-	excludes := []string{}
-	if t.workspace == nil {
-		return excludes
-	}
-
-	f, err := os.Open(filepath.Join(t.workspace.Source.LocalFolder, pkgconfig.IgnoreFileName))
-	if err == nil {
-		defer func() { _ = f.Close() }()
-		excludes, err = ignorefile.ReadAll(f)
-		if err != nil {
-			log.Warnf("error reading %s file: error=%v", pkgconfig.IgnoreFileName, err)
-		}
-	}
-	return excludes
 }
 
 func (t *tunnelServer) getResult() *config.Result {

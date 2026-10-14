@@ -2,13 +2,12 @@ package env
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/internal/managedvalue"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +30,7 @@ func NewDeleteCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
-	if err := secrets.ValidateName(name); err != nil {
+	if err := envstore.ValidateName(name); err != nil {
 		return err
 	}
 	unlock, err := config.LockConfig()
@@ -44,16 +43,13 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 		return err
 	}
 	contextName := devsyConfig.DefaultContext
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	store, err := envstore.NewStoreForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
-	meta, err := store.Meta(contextName, name)
+	_, err = store.Meta(contextName, name)
 	if err != nil {
 		return err
-	}
-	if meta.Sensitive() {
-		return fmt.Errorf("%q is a secret; use \"devsy secret delete\"", name)
 	}
 	if err := deleteEnvironmentValue(deleteEnvRequest{
 		config:  devsyConfig,
@@ -70,7 +66,7 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 
 type deleteEnvRequest struct {
 	config  *config.Config
-	store   secrets.Store
+	store   interface{ Delete(string, string) error }
 	context string
 	name    string
 	save    func(*config.Config) error

@@ -2,17 +2,15 @@ package env
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -42,14 +40,8 @@ func NewSetCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *SetCmd) Run(_ context.Context, arg string) error {
-	name, value := arg, cmd.Value
-	if k, v, ok := strings.Cut(arg, "="); ok {
-		if cmd.valueSet {
-			return fmt.Errorf("specify the value inline as NAME=VALUE or with --value, not both")
-		}
-		name, value = k, v
-	}
-	if err := secrets.ValidateName(name); err != nil {
+	name, value, err := parseEnvAssignment(arg, cmd.Value, cmd.valueSet)
+	if err != nil {
 		return err
 	}
 
@@ -63,25 +55,37 @@ func (cmd *SetCmd) Run(_ context.Context, arg string) error {
 		return err
 	}
 	contextName := devsyConfig.DefaultContext
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	ctxConfig := devsyConfig.Contexts[contextName]
+	if attachedLocalSecret(ctxConfig, name) {
+		return fmt.Errorf(
+			"%q is attached as a secret; detach it before converting it to an environment variable",
+			name,
+		)
+	}
+	store, err := envstore.NewStoreForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
-	if meta, metaErr := store.Meta(contextName, name); metaErr == nil {
-		ctxConfig := devsyConfig.Contexts[contextName]
-		if meta.Sensitive() && ctxConfig != nil && slices.Contains(ctxConfig.Secrets, name) {
-			return fmt.Errorf(
-				"%q is attached as a secret; detach it before converting it to an environment variable",
-				name,
-			)
-		}
-	} else if !errors.Is(metaErr, secrets.ErrSecretNotFound) {
-		return metaErr
-	}
-	if err := store.Set(contextName, name, value, secrets.KindEnv); err != nil {
+	if err := store.Set(contextName, name, value); err != nil {
 		return err
 	}
 
 	log.Infof("env var %q set in context %q", name, contextName)
 	return nil
+}
+
+func parseEnvAssignment(arg, value string, valueSet bool) (string, string, error) {
+	name := arg
+	if k, v, ok := strings.Cut(arg, "="); ok {
+		if valueSet {
+			return "", "", fmt.Errorf(
+				"specify the value inline as NAME=VALUE or with --value, not both",
+			)
+		}
+		name, value = k, v
+	}
+	if err := envstore.ValidateName(name); err != nil {
+		return "", "", err
+	}
+	return name, value, nil
 }

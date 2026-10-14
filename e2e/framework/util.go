@@ -62,6 +62,24 @@ func CopyToTempDir(relativePath string) (string, error) {
 	return CopyToTempDirInDir("", relativePath)
 }
 
+// WriteTempDevcontainer writes content to devcontainer.json inside a new temp dir named by prefix and returns the dir.
+// The caller owns cleanup of the returned dir.
+func WriteTempDevcontainer(prefix, content string) string {
+	tempDir, err := os.MkdirTemp("", prefix)
+	ExpectNoError(err)
+
+	devcontainerDir := filepath.Join(tempDir, ".devcontainer")
+	ExpectNoError(os.MkdirAll(devcontainerDir, 0o750))
+	ExpectNoError(
+		os.WriteFile(
+			filepath.Join(devcontainerDir, "devcontainer.json"),
+			[]byte(content),
+			0o600,
+		),
+	)
+	return tempDir
+}
+
 func CleanupTempDir(initialDir, tempDir string) {
 	err := os.Chdir(initialDir)
 	ExpectNoError(err)

@@ -25,7 +25,7 @@ var _ = ginkgo.Describe(
 
 		ginkgo.It("should execute lifecycle hooks via run-user-commands",
 			func(ctx context.Context) {
-				tempDir, f, err := setupWorkspaceAndUp(
+				tempDir, f, err := framework.SetupDockerWorkspaceAndUp(
 					ctx,
 					"tests/runusercommands/testdata/lifecycle",
 					initialDir,

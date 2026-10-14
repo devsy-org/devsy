@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+printf 'command=%s\nPATH=%s\nDOCKER_CONFIG=%s\n' \
+    "$(command -v devsy-dockerless-path-check)" "$PATH" "${DOCKER_CONFIG-}"

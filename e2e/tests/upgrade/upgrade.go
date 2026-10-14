@@ -1,9 +1,6 @@
 package upgrade
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"net/http/httptest"
@@ -12,13 +9,7 @@ import (
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
-	"github.com/google/go-containerregistry/pkg/v1/empty"
-	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/static"
-	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -50,11 +41,11 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			regHost := strings.TrimPrefix(srv.URL, "http://")
 			featureRepo := regHost + "/test/my-feature"
 
-			pushFeatureTag(featureRepo + ":1.0.0")
-			pushFeatureTag(featureRepo + ":1.1.0")
-			pushFeatureTag(featureRepo + ":2.0.0")
+			framework.PushFeatureTag(featureRepo + ":1.0.0")
+			framework.PushFeatureTag(featureRepo + ":1.1.0")
+			framework.PushFeatureTag(featureRepo + ":2.0.0")
 
-			tempDir := writeDevcontainerJSON(fmt.Sprintf(`{
+			tempDir := framework.WriteTempDevcontainer("upgrade-test-*", fmt.Sprintf(`{
 	"image": "ubuntu:22.04",
 	"features": {"%s:1.0.0": {}}
 }`, featureRepo))
@@ -84,14 +75,14 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			regHost := strings.TrimPrefix(srv.URL, "http://")
 			featureRepo := regHost + "/test/my-feature"
 
-			pushFeatureTag(featureRepo + ":1.0.0")
-			pushFeatureTag(featureRepo + ":2.0.0")
+			framework.PushFeatureTag(featureRepo + ":1.0.0")
+			framework.PushFeatureTag(featureRepo + ":2.0.0")
 
 			originalContent := fmt.Sprintf(`{
 	"image": "ubuntu:22.04",
 	"features": {"%s:1.0.0": {}}
 }`, featureRepo)
-			tempDir := writeDevcontainerJSON(originalContent)
+			tempDir := framework.WriteTempDevcontainer("upgrade-test-*", originalContent)
 			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
@@ -123,12 +114,12 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			featureA := regHost + "/test/feature-a"
 			featureB := regHost + "/test/feature-b"
 
-			pushFeatureTag(featureA + ":1.0.0")
-			pushFeatureTag(featureA + ":2.0.0")
-			pushFeatureTag(featureB + ":1.0.0")
-			pushFeatureTag(featureB + ":2.0.0")
+			framework.PushFeatureTag(featureA + ":1.0.0")
+			framework.PushFeatureTag(featureA + ":2.0.0")
+			framework.PushFeatureTag(featureB + ":1.0.0")
+			framework.PushFeatureTag(featureB + ":2.0.0")
 
-			tempDir := writeDevcontainerJSON(fmt.Sprintf(`{
+			tempDir := framework.WriteTempDevcontainer("upgrade-test-*", fmt.Sprintf(`{
 	"image": "ubuntu:22.04",
 	"features": {
 		"%s:1.0.0": {},
@@ -166,9 +157,9 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			regHost := strings.TrimPrefix(srv.URL, "http://")
 			featureRepo := regHost + "/test/my-feature"
 
-			pushFeatureTag(featureRepo + ":1.0.0")
+			framework.PushFeatureTag(featureRepo + ":1.0.0")
 
-			tempDir := writeDevcontainerJSON(fmt.Sprintf(`{
+			tempDir := framework.WriteTempDevcontainer("upgrade-test-*", fmt.Sprintf(`{
 	"image": "ubuntu:22.04",
 	"features": {"%s:1.0.0": {}}
 }`, featureRepo))
@@ -198,10 +189,10 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 			regHost := strings.TrimPrefix(srv.URL, "http://")
 			featureRepo := regHost + "/test/my-feature"
 
-			pushFeatureTag(featureRepo + ":1.0.0")
-			pushFeatureTag(featureRepo + ":2.0.0")
+			framework.PushFeatureTag(featureRepo + ":1.0.0")
+			framework.PushFeatureTag(featureRepo + ":2.0.0")
 
-			tempDir := writeDevcontainerJSON(fmt.Sprintf(`{
+			tempDir := framework.WriteTempDevcontainer("upgrade-test-*", fmt.Sprintf(`{
 	// Important comment
 	"image": "ubuntu:22.04",
 	"features": {"%s:1.0.0": {}}
@@ -224,23 +215,6 @@ var _ = ginkgo.Describe("upgrade command", ginkgo.Label("upgrade"), func() {
 	)
 })
 
-func writeDevcontainerJSON(content string) string {
-	tempDir, err := os.MkdirTemp("", "upgrade-test-*")
-	framework.ExpectNoError(err)
-
-	devcontainerDir := filepath.Join(tempDir, ".devcontainer")
-	framework.ExpectNoError(os.MkdirAll(devcontainerDir, 0o750))
-	framework.ExpectNoError(
-		os.WriteFile(
-			filepath.Join(devcontainerDir, "devcontainer.json"),
-			[]byte(content),
-			0o600,
-		),
-	)
-
-	return tempDir
-}
-
 func readDevcontainerJSON(tempDir string) string {
 	// #nosec G304 -- path constructed from test temp directory
 	data, err := os.ReadFile(
@@ -249,42 +223,4 @@ func readDevcontainerJSON(tempDir string) string {
 	framework.ExpectNoError(err)
 
 	return string(data)
-}
-
-func pushFeatureTag(refStr string) {
-	layer := static.NewLayer(
-		buildFeatureTarGz(
-			"devcontainer-feature.json",
-			`{"id":"my-feature","version":"1.0.0"}`,
-		),
-		types.OCILayer,
-	)
-
-	img, err := mutate.AppendLayers(empty.Image, layer)
-	framework.ExpectNoError(err)
-
-	ref, err := name.ParseReference(refStr, name.Insecure)
-	framework.ExpectNoError(err)
-
-	framework.ExpectNoError(remote.Write(ref, img))
-}
-
-func buildFeatureTarGz(filename, content string) []byte {
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-
-	hdr := &tar.Header{
-		Name: filename,
-		Mode: 0o644,
-		Size: int64(len(content)),
-	}
-	gomega.Expect(tw.WriteHeader(hdr)).To(gomega.Succeed())
-
-	_, err := tw.Write([]byte(content))
-	framework.ExpectNoError(err)
-	gomega.Expect(tw.Close()).To(gomega.Succeed())
-	gomega.Expect(gz.Close()).To(gomega.Succeed())
-
-	return buf.Bytes()
 }

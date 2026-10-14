@@ -1,6 +1,10 @@
 version: "3"
 
 tasks:
+  agent-skill:validate:
+    desc: validate the end-user Devsy skill and installer discovery (requires Node 22.20+ and Python 3.11+)
+    cmd: ./hack/ci/validate-agent-skill.sh
+
   cli:tidy:
     desc: tidy go.mod and go.sum
     cmd: go mod tidy

@@ -402,22 +402,25 @@ func (d *dockerDriver) FindDevContainer(
 			config.GetIDLabels(workspaceId, d.IDLabels),
 		)
 	}
-	if err != nil {
-		return nil, err
-	} else if containerDetails == nil {
-		return nil, nil
+	if err != nil || containerDetails == nil {
+		return containerDetails, err
 	}
 
-	if containerDetails.Config.User != "" {
-		if containerDetails.Config.Labels == nil {
-			containerDetails.Config.Labels = map[string]string{}
-		}
-		if containerDetails.Config.Labels[config.UserLabel] == "" {
-			containerDetails.Config.Labels[config.UserLabel] = containerDetails.Config.User
-		}
-	}
+	ensureUserLabel(containerDetails)
 
 	return containerDetails, nil
+}
+
+func ensureUserLabel(details *config.ContainerDetails) {
+	if details == nil || details.Config.User == "" {
+		return
+	}
+	if details.Config.Labels == nil {
+		details.Config.Labels = make(map[string]string)
+	}
+	if details.Config.Labels[config.UserLabel] == "" {
+		details.Config.Labels[config.UserLabel] = details.Config.User
+	}
 }
 
 func (d *dockerDriver) RequiresMountStreaming() bool { return false }

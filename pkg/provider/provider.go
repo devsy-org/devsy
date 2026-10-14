@@ -117,8 +117,7 @@ type ProviderAgentConfig struct {
 	// Dockerless holds custom dockerless configuration
 	Dockerless ProviderDockerlessOptions `json:"dockerless"`
 
-	// Driver is the driver to use for deploying the devcontainer. Currently supports
-	// docker (default) or kubernetes (experimental)
+	// Driver selects the runtime used to deploy the devcontainer.
 	Driver string `json:"driver,omitempty"`
 
 	// Docker holds docker specific configuration
@@ -135,6 +134,8 @@ type ProviderAgentConfig struct {
 
 	// Microsandbox holds microsandbox microVM specific configuration
 	Microsandbox ProviderMicrosandboxDriverConfig `json:"microsandbox"`
+
+	External ProviderExternalDriverConfig `json:"external,omitzero"`
 }
 
 type ProviderDockerlessOptions struct {
@@ -316,7 +317,16 @@ const (
 	CustomDriver       = "custom"
 	AppleDriver        = "apple"
 	MicrosandboxDriver = "microsandbox"
+	ExternalDriver     = "external"
 )
+
+// ProviderExternalDriverConfig selects a declared agent binary, not a PATH executable.
+type ProviderExternalDriverConfig struct {
+	Binary string `json:"binary,omitempty"`
+	// Args is static argv appended to the executable, without shell or option expansion.
+	Args         types.StrArray `json:"args,omitempty"`
+	ImageBackend string         `json:"imageBackend,omitempty"`
+}
 
 // ProviderAppleDriverConfig holds configuration for the Apple container driver,
 // which runs Linux containers as lightweight VMs on Apple silicon (macOS 26+).

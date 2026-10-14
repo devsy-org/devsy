@@ -201,6 +201,7 @@ func CloneAgentWorkspaceInfo(agentWorkspaceInfo *AgentWorkspaceInfo) *AgentWorks
 	ret := &AgentWorkspaceInfo{}
 	_ = json.Unmarshal(out, ret)
 	ret.Origin = agentWorkspaceInfo.Origin
+	ret.WorkspaceWasExisting = agentWorkspaceInfo.WorkspaceWasExisting
 	ret.Workspace = CloneWorkspace(agentWorkspaceInfo.Workspace)
 	ret.Machine = CloneMachine(agentWorkspaceInfo.Machine)
 	return ret

@@ -108,6 +108,9 @@ func ParseDevContainerJSONFile(
 		return nil, err
 	}
 	devContainer.Origin = path
+	if err := devContainer.captureSource(normalized); err != nil {
+		return nil, err
+	}
 
 	devContainer, err = resolveExtends(ctx, devContainer, path)
 	if err != nil {

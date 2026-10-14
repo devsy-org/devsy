@@ -43,6 +43,9 @@ type PostStartOptions struct {
 	Arch                      string
 	DownloadURL               string
 	PreferInContainerDownload bool
+	// SkipVersionCheck permits custom agent versions while retaining transfer
+	// completeness and executable validation.
+	SkipVersionCheck bool
 }
 
 // Cleaner removes the resources a delivery created for a workspace. Cleanup is

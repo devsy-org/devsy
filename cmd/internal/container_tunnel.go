@@ -101,11 +101,12 @@ func (cmd *ContainerTunnelCmd) Run(cobraCtx context.Context) error {
 	return agent.Tunnel(ctx, agent.TunnelOptions{
 		Exec: func(ctx context.Context, req agent.ExecRequest) error {
 			return runner.Command(ctx, devcontainer.CommandParams{
-				User:    req.User,
-				Command: req.Command,
-				Stdin:   req.Stdin,
-				Stdout:  req.Stdout,
-				Stderr:  req.Stderr,
+				User:      req.User,
+				Command:   req.Command,
+				Stdin:     req.Stdin,
+				Stdout:    req.Stdout,
+				Stderr:    req.Stderr,
+				RawStdout: true,
 			})
 		},
 		RuntimeHealthCheck: containerRuntimeHealthCheck(workspaceInfo),

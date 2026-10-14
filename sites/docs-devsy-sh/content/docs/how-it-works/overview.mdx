@@ -3,26 +3,17 @@ title: How it works
 sidebar_label: Overview
 ---
 
-Devsy provisions workspaces on any infrastructure. It wraps the CLI tools you already use - `docker`, `gcloud`, and others - to deploy your development environment and run the dev container, or talks to a provider's API directly (for example, the Kubernetes driver uses the Kubernetes API rather than shelling out to `kubectl`). When creating a workspace, Devsy deploys an agent to both the host machine and the container to handle port forwarding, credential forwarding, and log streaming. The agent acts as a control plane across your development environment.
-
-Devsy uses a client-agent architecture. The client deploys its own agent, which hosts a gRPC server and an SSH server. This resembles a browser-server architecture where the front end is delivered to a remote host. Two practical wins:
-
-- No version conflict between client and server - you only install the client.
-- No infrastructure to manage.
-
-For easier debugging, Devsy pipes the agent's STDIO to your local shell so you can see what's happening locally and inside the container.
-
-Below is a high level overview of how Devsy uses your local environment, a source repo and a devcontainer to deploy your workspace to the cloud.
+Devsy has a client and an agent. The client is the CLI or desktop app on your machine. When you create a workspace, the client installs its own agent on the host and inside the container, so you only ever install the client. The agent forwards ports, forwards credentials, and streams logs, and it runs an SSH server that your IDE connects to.
 
 <figure>
   <img src="/docs/media/c4_workspaces.png" alt="Devsy Architecture" />
   <figcaption>Devsy - Component Diagram</figcaption>
 </figure>
 
-Devsy connects to the workspace through a vendor-specific channel called the **tunnel**. When you run `devsy workspace up`, Devsy picks a provider based on your context and starts your devcontainer. Machine providers create a VM first if needed. Once the devcontainer is running, Devsy deploys the agent into it.
+When you run `devsy workspace up`, Devsy picks a provider, starts the devcontainer, and deploys the agent into it. Machine providers create a VM first if needed. Providers wrap the tools you already use, such as `docker` or `gcloud`, or call an API directly, as the Kubernetes driver does.
 
-The tunnel's transport depends on the provider - AWS uses Instance Connect, Kubernetes uses the Kubernetes API's exec/attach mechanism, and so on. The Devsy agent starts an SSH server over the tunnel's STDIO so the local CLI/UI can forward ports. Devsy then opens your local IDE and connects it to the devcontainer over SSH.
+The client reaches the agent through a **tunnel**, and the transport depends on the provider. AWS uses Instance Connect and Kubernetes uses pod exec. The agent runs an SSH server over the tunnel, and Devsy opens your IDE over that SSH connection. Port forwarding works only while an IDE or SSH session is open.
 
-Port forwarding requires an active IDE or SSH session - Devsy needs the agent's SSH server, which only runs while one of those connections is open.
+To skip the build, create a workspace from a saved [snapshot](../developing-in-workspaces/workspace-snapshots.mdx) with `devsy workspace up --from-snapshot`.
 
-Instead of building from a devcontainer each time, you can also create a workspace from a previously saved [workspace snapshot](../developing-in-workspaces/workspace-snapshots.mdx) with `devsy workspace up --from-snapshot`, which restores the container filesystem and volumes directly and skips the build step entirely.
+For what happens during `up`, see [How Devsy deploys workspaces](./deploying-workspaces.mdx).

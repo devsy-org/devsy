@@ -7,6 +7,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -239,6 +240,46 @@ func TestManagedDialerPreservesInvalidBannerErrorWhenTransportCompletesFirst(t *
 		require.NotErrorIs(t, err, providerErr)
 	case <-time.After(time.Second):
 		t.Fatal("managed dialer did not collect the completed handshake error")
+	}
+}
+
+func TestManagedErrorOrFallback(t *testing.T) {
+	fallback := errors.New("handshake stream ended")
+	concrete := errors.New("managed transport failed")
+	live := context.Background()
+	canceled, cancel := context.WithCancel(live)
+	cancel()
+	expired, cancelExpired := context.WithDeadline(live, time.Unix(0, 0))
+	defer cancelExpired()
+	eof := fmt.Errorf("transport: %w", io.EOF)
+	closed := fmt.Errorf("transport: %w", net.ErrClosed)
+	unexpectedEOF := fmt.Errorf("transport: %w", io.ErrUnexpectedEOF)
+	deadline := context.DeadlineExceeded
+
+	tests := []struct {
+		name       string
+		ctx        context.Context
+		managedErr error
+		want       error
+	}{
+		{"nil returns fallback", live, nil, fallback},
+		{"EOF returns fallback", live, eof, fallback},
+		{"canceled returns fallback", live, context.Canceled, fallback},
+		{"closed returns fallback", live, closed, fallback},
+		{"unexpected EOF is returned", live, unexpectedEOF, unexpectedEOF},
+		{"deadline exceeded is returned", live, deadline, deadline},
+		{"concrete error is returned", live, concrete, concrete},
+		{"nil returns context cancellation", canceled, nil, context.Canceled},
+		{"EOF returns context cancellation", canceled, eof, context.Canceled},
+		{"closed returns context deadline", expired, closed, deadline},
+		{"canceled returns context deadline", expired, context.Canceled, deadline},
+		{"concrete error wins over cancellation", canceled, concrete, concrete},
+		{"concrete error wins over deadline", expired, concrete, concrete},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, managedErrorOrFallback(tt.ctx, tt.managedErr, fallback))
+		})
 	}
 }
 

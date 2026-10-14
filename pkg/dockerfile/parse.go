@@ -71,12 +71,15 @@ func (d *Dockerfile) BuildContextFiles() []string {
 	files := make([]string, 0, 8)
 	for _, stage := range d.Stages {
 		for _, in := range stage.Instructions {
-			if cmd, err := instructions.ParseCommand(in); err == nil {
-				if addCmd, ok := cmd.(*instructions.AddCommand); ok {
-					files = append(files, addCmd.SourcePaths...)
-				} else if copyCmd, ok := cmd.(*instructions.CopyCommand); ok {
-					files = append(files, copyCmd.SourcePaths...)
-				}
+			cmd, err := instructions.ParseCommand(in)
+			if err != nil {
+				continue
+			}
+			switch cmd := cmd.(type) {
+			case *instructions.AddCommand:
+				files = append(files, cmd.SourcePaths...)
+			case *instructions.CopyCommand:
+				files = append(files, cmd.SourcePaths...)
 			}
 		}
 	}

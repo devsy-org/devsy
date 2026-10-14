@@ -20,6 +20,22 @@ func WithWorkspace(workspace *provider2.Workspace) Option {
 	}
 }
 
+// WithWorkspaceMount limits workspace ignore rules to this mount.
+func WithWorkspaceMount(mount *config.Mount) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.workspaceMount = mount
+		return s
+	}
+}
+
+// WithSnapshotBuildContext identifies generated residue to exclude, never upload authority.
+func WithSnapshotBuildContext(context string) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.snapshotBuildContext = context
+		return s
+	}
+}
+
 func WithForwarder(forwarder netstat.Forwarder) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.forwarder = forwarder

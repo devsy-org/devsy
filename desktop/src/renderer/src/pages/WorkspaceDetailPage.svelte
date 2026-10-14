@@ -435,7 +435,7 @@ function handleSshExit(exitCode?: number, _signal?: number) {
 
 function handleGpgForwardFailed(reason: string) {
   toasts.error(
-    `GPG agent forwarding failed for ${id}, continuing without it: ${reason}`,
+    `GPG agent forwarding is unavailable for ${id}: ${reason}. The terminal will continue without GPG signing.`,
   )
 }
 

@@ -28,25 +28,6 @@ const (
 	sshProbeTimeout = 20 * time.Second
 )
 
-// useFileSecretsBackend forces the file backend so tests do not depend on an OS
-// keyring (unavailable in CI); env is restored on cleanup.
-func useFileSecretsBackend() {
-	for k, v := range map[string]string{
-		"DEVSY_SECRETS_BACKEND":    "file",
-		"DEVSY_SECRETS_PASSPHRASE": "e2e-passphrase",
-	} {
-		prev, had := os.LookupEnv(k)
-		framework.ExpectNoError(os.Setenv(k, v))
-		ginkgo.DeferCleanup(func() {
-			if had {
-				_ = os.Setenv(k, prev)
-			} else {
-				_ = os.Unsetenv(k)
-			}
-		})
-	}
-}
-
 func (dtc *dockerTestContext) storeSecret(ctx context.Context, name, value string) {
 	_, err := dtc.f.ExecCommandOutput(ctx, []string{secretCmd, "set", name, "--value", value})
 	framework.ExpectNoError(err)
@@ -85,10 +66,6 @@ func (btc *baseTestContext) execSSHCapture(
 		[]string{cmdWorkspace, cmdSSH, flagCommand, command, projectName},
 	)
 	return strings.TrimSpace(output), err
-}
-
-func (btc *baseTestContext) execSSH(ctx context.Context, tempDir, command string) (string, error) {
-	return btc.f.DevsySSH(ctx, tempDir, command)
 }
 
 type dockerTestContext struct {
@@ -250,10 +227,6 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 	return tempDir, nil
 }
 
-func setupDockerProvider(binDir, dockerPath string) (*framework.Framework, error) {
-	return framework.SetupDockerProvider(binDir, dockerPath)
-}
-
 func setupWorkspaceAndUp(
 	ctx context.Context,
 	testdataPath, initialDir string,
@@ -284,7 +257,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 	ctx context.Context,
 	tc contextAttachmentCase,
 ) {
-	useFileSecretsBackend()
+	framework.UseFileSecretsBackend()
 	contextName := fmt.Sprintf("%s-%d", tc.contextPrefix, time.Now().UnixNano())
 	framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
@@ -305,7 +278,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 
 	// Intentionally no --env/--secret argument: the context binding is the source.
 	framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
-	out, err := dtc.execSSH(
+	out, err := dtc.f.DevsySSH(
 		ctx,
 		tempDir,
 		`if [ "$(cat `+tc.checkFile+`)" = expected-value ]; then printf present; else printf absent; fi`,
@@ -316,10 +289,10 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 		fileCheck := `if [ -e /run/devsy/secrets-env/` + tc.sessionFile + ` ]; then ` +
 			`stat -c '%U:%a' /run/devsy/secrets-env/` + tc.sessionFile +
 			`; else printf missing; fi`
-		out, err = dtc.execSSH(ctx, tempDir, fileCheck)
+		out, err = dtc.f.DevsySSH(ctx, tempDir, fileCheck)
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("vscode:600"))
-		out, err = dtc.execSSH(ctx, tempDir, tc.sessionCheck)
+		out, err = dtc.f.DevsySSH(ctx, tempDir, tc.sessionCheck)
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
 	}
@@ -327,7 +300,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, "detach", tc.name})
 	framework.ExpectNoError(err)
 	framework.ExpectNoError(dtc.f.DevsyUpRecreate(ctx, tempDir))
-	out, err = dtc.execSSH(
+	out, err = dtc.f.DevsySSH(
 		ctx,
 		tempDir,
 		`if [ -s `+tc.checkFile+` ]; then printf present; else printf absent; fi`,
@@ -335,7 +308,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 	framework.ExpectNoError(err)
 	gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
 	if tc.sessionCheck != "" {
-		out, err = dtc.execSSH(ctx, tempDir, tc.sessionCheck)
+		out, err = dtc.f.DevsySSH(ctx, tempDir, tc.sessionCheck)
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
 	}

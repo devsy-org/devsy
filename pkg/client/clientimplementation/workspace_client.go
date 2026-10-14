@@ -482,6 +482,11 @@ func (s *workspaceClient) compressedAgentInfo(
 	cliOptions provider.CLIOptions,
 ) (string, *provider.AgentWorkspaceInfo, error) {
 	agentInfo := s.agentInfo(cliOptions)
+	if agentInfo.Agent.Driver == provider.ExternalDriver {
+		if err := provider.ValidateExternalDriverConfig(agentInfo.Agent); err != nil {
+			return "", nil, fmt.Errorf("validate external runtime configuration: %w", err)
+		}
+	}
 
 	out, err := json.Marshal(agentInfo)
 	if err != nil {
@@ -973,6 +978,8 @@ type DeleteWorkspaceFolderParams struct {
 	WorkspaceID          string
 	SSHConfigPath        string
 	SSHConfigIncludePath string
+	// PreserveContent leaves the content directory intact when only managed records are owned.
+	PreserveContent bool
 }
 
 func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams) error {
@@ -984,6 +991,9 @@ func DeleteWorkspaceFolder(params DeleteWorkspaceFolderParams) error {
 		return err
 	}
 
+	if params.PreserveContent {
+		return nil
+	}
 	return removeWorkspaceContent(params.Context, params.WorkspaceID)
 }
 

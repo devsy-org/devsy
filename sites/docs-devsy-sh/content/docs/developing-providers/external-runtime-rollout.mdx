@@ -1,0 +1,37 @@
+---
+title: External MicroSandbox Runtime Rollout Decision
+sidebar_label: Runtime Rollout Decision
+description: Evidence and conditions for a future fresh-install source change to the external MicroSandbox provider.
+---
+
+**Status: proposed and gated.** The external provider is validated for the covered Linux/KVM scenarios, but the fresh-install choice has not changed. Existing internal providers continue to use the embedded MicroSandbox driver. A reviewed Desktop preset change can select the published source for new installations after these documented compatibility and evidence boundaries are accepted.
+
+## Current host and runtime contract
+
+Devsy starts a supervised provider process for each runtime operation. It selects the executable from the selected `Agent.Binaries` entry, requires its SHA-256 declaration, verifies the resolved file and its bytes, then launches it through the Devsy runtime supervisor. The SDK transports protocol messages; it does not download or establish trust in the provider executable. The published provider is trusted host code and runs with the local agent user's authority.
+
+The external provider inherits the host process environment, then receives Devsy's resolved provider values and explicit extra values. This preserves existing provider behavior for settings such as `PATH`, `HOME`, proxy configuration, Docker credentials, and temporary directories. The current evidence does not justify an environment allowlist. Provider installation downloads and runtime image downloads are separate from the host's verification of the selected `Agent.Binaries` executable.
+
+Runtime Protocol v1 uses Info API 1.3 to negotiate recreation-on-run support. Negotiation does not grant permission: Devsy forwards the current operation's explicit recreation permission, and the runtime validates effective configuration before replacing a workspace. This is replacement, not in-place reprovisioning. Failures after replacement starts do not have a general rollback guarantee.
+
+## Verified behavior
+
+PR #1483 established the Linux/KVM parity foundation and is merged. The source-migration acceptance is [PR #1487](https://github.com/devsy-org/devsy/pull/1487), tested head [`0aeea936`](https://github.com/devsy-org/devsy/commit/0aeea936aba901a4d2a1622458cda1dfb9ac0cdf), implementation run [38628263920](https://github.com/devsy-org/devsy/actions/runs/38628263920). Its exact-head CI completed 88 jobs successfully. The Linux/KVM native catalogue passed 80 cases once: 37 built-in and 43 external. It includes three external-only registry-consumer cases, one remote-agent delivery case, and two existing-workspace source-migration cases. The change is merged at [`e4286137`](https://github.com/devsy-org/devsy/commit/e42861373711f28aea7262baa5561a5e97f5a17a) after completed Greptile and full CodeRabbit review, including supplemental security/architecture analysis.
+
+The registry cases exercise the published provider against an owned TLS registry and credential helper. They cover successful authenticated access, missing CA refusal, and missing credentials refusal. The remote-agent case checks provider runtime download and workspace-copy reuse when its runtime endpoint returns 404. Its separate Devsy-agent endpoint stays available; this is not an offline-agent guarantee. The source migration cases use the actual `provider set-source` command on an existing provider named `microsandbox`, once while its workspace is running and once while stopped. They check provider source and options, workspace association, VM generation, and guest root, volume, and host-bind markers. The running VM keeps its boot ID. The stopped VM remains stopped until ordinary `up`, then resumes with preserved markers.
+
+The separate Windows provider-update job exercises Go archive and provider-update tests; it is not evidence of a MicroSandbox VM running on Windows. Native provider/VM evidence is Linux/amd64 with KVM only.
+
+## Proposed fresh-install change
+
+Change only the Desktop Microsandbox preset to install the pinned source [`github.com/devsy-org/devsy-provider-microsandbox@v0.1.8`](https://github.com/devsy-org/devsy-provider-microsandbox/releases/tag/v0.1.8), while retaining the provider name `microsandbox`. The existing Desktop setup path uses `provider add ... --use=false`; this preserves its current default-provider behavior. The explicit embedded source alias `microsandbox` remains available, as does the embedded manifest for parity tests and compatibility with existing internal provider records.
+
+This proposal is fresh-install only. Existing records change source only through the supported `provider set-source` command. Changing the embedded manifest does not migrate those records. If initialization fails after a source change is committed, the new source remains selected and the provider records `InitError`; the command does not promise rollback. The running and stopped migration cases provide evidence for the tested successful transition, not for rollback after arbitrary failures.
+
+## Limits and decision conditions
+
+The performance artifact from run 38628263920 records one Linux/amd64 hosted run with SDK v1.6.0 and provider v0.1.8. It observed fresh and reused `up` wall times of 13.504s and 6.335s. Four direct/supervised/supervised/direct probe runs collected one first sample and 100 warm `Info` and `Find` samples each; all 808 launches were reaped. The artifact marks `cold_cache_measured=false`. These are observations, not thresholds, cold-start results, or evidence that supervision improves performance. No process pool is proposed.
+
+Other provider-supported host profiles remain untested here. Upstream requires Apple Silicon on macOS, KVM on Linux, and WHP on Windows; this campaign does not claim runtime parity on those other hosts. The registry tests do not cover every proxy, Docker daemon/context/socket, credential-store, or temp-directory configuration. Neither the built-in driver nor the external provider guarantees removal of every effect after a failed or interrupted create; use a fresh `Find` and explicit cleanup where recovery is needed. The exact native VM artifacts surviving a particular interruption remain unproven.
+
+The source-migration review and merge gates are complete. A fresh-install preset change remains a separate reviewed implementation and must preserve these platform, performance, environment, and recovery limits. Keep the embedded provider and existing records intact until the explicit migration path and compatibility window are accepted.

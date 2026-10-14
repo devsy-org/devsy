@@ -29,6 +29,7 @@ type mockClient struct {
 	waitErr    error
 	startErr   error
 	stopErr    error
+	logsErr    error
 	calls      []string   // ordered event log, e.g. "stop:c1", "remove:c1"
 	ranArgs    [][]string // exec/run argument lists, in call order
 	runWithDir string     // dir passed to the last RunWithDir call
@@ -96,8 +97,9 @@ func (m *mockClient) Remove(_ context.Context, id string) error {
 	return nil
 }
 
-func (m *mockClient) GetContainerLogs(context.Context, string, io.Writer, io.Writer) error {
-	return nil
+func (m *mockClient) GetContainerLogs(_ context.Context, id string, _, _ io.Writer) error {
+	m.calls = append(m.calls, "logs:"+id)
+	return m.logsErr
 }
 
 func running(id string) *config.ContainerDetails {
@@ -257,5 +259,64 @@ func TestCommandDevContainer_NotFound(t *testing.T) {
 	err := d.CommandDevContainer(context.Background(), &driver.CommandParams{WorkspaceID: "ws"})
 	if err == nil {
 		t.Error("expected error when container not found")
+	}
+}
+
+func TestRequireDevContainer_LifecycleOperations(t *testing.T) {
+	tests := []struct {
+		name     string
+		call     func(d *appleDriver) error
+		wantCall string
+	}{
+		{
+			name: "StartDevContainer",
+			call: func(d *appleDriver) error {
+				return d.StartDevContainer(context.Background(), "ws")
+			},
+			wantCall: "start:c1",
+		},
+		{
+			name: "StopDevContainer",
+			call: func(d *appleDriver) error {
+				return d.StopDevContainer(context.Background(), "ws")
+			},
+			wantCall: "stop:c1",
+		},
+		{
+			name: "GetDevContainerLogs",
+			call: func(d *appleDriver) error {
+				return d.GetDevContainerLogs(context.Background(), "ws", nil, nil)
+			},
+			wantCall: "logs:c1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name+"_Success", func(t *testing.T) {
+			m := &mockClient{found: running("c1")}
+			d := &appleDriver{Apple: m}
+			if err := tt.call(d); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if want := []string{tt.wantCall}; !slices.Equal(m.calls, want) {
+				t.Errorf("call order = %v, want %v", m.calls, want)
+			}
+		})
+
+		t.Run(tt.name+"_NotFound", func(t *testing.T) {
+			d := &appleDriver{Apple: &mockClient{found: nil}}
+			err := tt.call(d)
+			if err == nil || err.Error() != "container not found" {
+				t.Fatalf("expected container not found error, got %v", err)
+			}
+		})
+
+		t.Run(tt.name+"_FindError", func(t *testing.T) {
+			d := &appleDriver{Apple: &mockClient{foundErr: errors.New("lookup failed")}}
+			err := tt.call(d)
+			if err == nil || err.Error() != "lookup failed" {
+				t.Fatalf("expected lookup error, got %v", err)
+			}
+		})
 	}
 }

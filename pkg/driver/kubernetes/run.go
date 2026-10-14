@@ -73,7 +73,6 @@ func (k *KubernetesDriver) ensureDevContainerPvc(
 	workspaceId string,
 	options *driver.RunOptions,
 ) (bool, *driver.RunOptions, error) {
-	initialize := false
 	pvc, containerInfo, err := k.getDevContainerPvc(ctx, workspaceId)
 	if err != nil {
 		return false, nil, err
@@ -90,15 +89,14 @@ func (k *KubernetesDriver) ensureDevContainerPvc(
 			return false, nil, err
 		}
 
-		initialize = true
+		return true, options, nil
 	}
 
-	// reuse driver.RunOptions from existing workspace if none provided
-	if options == nil && containerInfo != nil && containerInfo.Options != nil {
+	if options == nil && containerInfo != nil {
 		options = containerInfo.Options
 	}
 
-	return initialize, options, nil
+	return false, options, nil
 }
 
 func (k *KubernetesDriver) runContainer(
@@ -147,12 +145,7 @@ func (k *KubernetesDriver) buildPod(
 	if err != nil {
 		return nil, err
 	}
-
-	volumeMounts, tmpfsVolumes := buildVolumeMounts(mount, options)
-	capabilities := buildCapabilities(options.CapAdd)
-	envVars, daemonConfig := splitEnvVars(options.Env)
-	envVars = withAgentInstallPathEnv(envVars, k.options.AgentInstallPath)
-
+	containerInputs := k.buildPodContainerInputs(options, mount)
 	serviceAccount, err := k.ensureServiceAccount(ctx, id)
 	if err != nil {
 		return nil, err
@@ -163,7 +156,7 @@ func (k *KubernetesDriver) buildPod(
 		return nil, err
 	}
 
-	daemonConfigSecretName, err := k.ensureDaemonConfig(ctx, id, daemonConfig)
+	daemonConfigSecretName, err := k.ensureDaemonConfig(ctx, id, containerInputs.daemonConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -177,10 +170,10 @@ func (k *KubernetesDriver) buildPod(
 		options:                options,
 		meta:                   meta,
 		initContainers:         initContainers,
-		volumeMounts:           volumeMounts,
-		tmpfsVolumes:           tmpfsVolumes,
-		capabilities:           capabilities,
-		envVars:                envVars,
+		volumeMounts:           containerInputs.volumeMounts,
+		tmpfsVolumes:           containerInputs.tmpfsVolumes,
+		capabilities:           containerInputs.capabilities,
+		envVars:                containerInputs.envVars,
 		serviceAccount:         serviceAccount,
 		daemonConfigSecretName: daemonConfigSecretName,
 		pullSecretsCreated:     pullSecretsCreated,
@@ -286,6 +279,32 @@ func loadPodTemplate(templatePath string) (*corev1.Pod, error) {
 			RestartPolicy: corev1.RestartPolicyNever,
 		},
 	}, nil
+}
+
+type podContainerInputs struct {
+	volumeMounts []corev1.VolumeMount
+	tmpfsVolumes []corev1.Volume
+	capabilities *corev1.Capabilities
+	envVars      []corev1.EnvVar
+	daemonConfig string
+}
+
+func (k *KubernetesDriver) buildPodContainerInputs(
+	options *driver.RunOptions,
+	mount *config.Mount,
+) *podContainerInputs {
+	volumeMounts, tmpfsVolumes := buildVolumeMounts(mount, options)
+	capabilities := buildCapabilities(options.CapAdd)
+	envVars, daemonConfig := splitEnvVars(options.Env)
+	envVars = withAgentInstallPathEnv(envVars, k.options.AgentInstallPath)
+
+	return &podContainerInputs{
+		volumeMounts: volumeMounts,
+		tmpfsVolumes: tmpfsVolumes,
+		capabilities: capabilities,
+		envVars:      envVars,
+		daemonConfig: daemonConfig,
+	}
 }
 
 func buildVolumeMounts(
@@ -451,6 +470,12 @@ func (k *KubernetesDriver) ensurePullSecrets(
 	return k.EnsurePullSecret(ctx, getPullSecretsName(id), image)
 }
 
+func (k *KubernetesDriver) shouldDisableHostUsers() bool {
+	return k.options.KubernetesUserNamespaces == pkgconfig.BoolTrue ||
+		k.options.StrictSecurity == pkgconfig.BoolTrue ||
+		k.options.AgentSecurityContext != ""
+}
+
 func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecretsCreated bool) {
 	// avoids a problem where attaching volumes with large repositories would cause an extremely long pod startup time
 	// because changing the ownership of all files takes longer than the kubelet expects it to
@@ -459,9 +484,7 @@ func (k *KubernetesDriver) finalizePodSpec(pod *corev1.Pod, id string, pullSecre
 			FSGroupChangePolicy: ptr.To(corev1.FSGroupChangeOnRootMismatch),
 		}
 	}
-	if (k.options.KubernetesUserNamespaces == pkgconfig.BoolTrue ||
-		k.options.StrictSecurity == pkgconfig.BoolTrue ||
-		k.options.AgentSecurityContext != "") && pod.Spec.HostUsers == nil {
+	if k.shouldDisableHostUsers() && pod.Spec.HostUsers == nil {
 		pod.Spec.HostUsers = new(bool)
 	}
 	if k.options.KubernetesPullSecretsEnabled == pkgconfig.BoolTrue && pullSecretsCreated {

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
@@ -16,6 +18,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/version"
+	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	execerr "k8s.io/client-go/util/exec"
 	"k8s.io/client-go/util/retry"
@@ -37,13 +40,26 @@ type KubernetesDelivery struct {
 	// InstallPath overrides where the agent binary is installed inside the
 	// container.
 	InstallPath string
+
+	// execStreamIdleTimeout overrides the idle timeout in tests.
+	execStreamIdleTimeout       time.Duration
+	execStreamCompletionTimeout time.Duration
 }
 
 const (
-	noDownloadToolExitCode   = 127
-	downloadTimeoutSeconds   = 25
-	execStreamAttemptTimeout = 30 * time.Second
-	execStreamMaxAttempts    = 2
+	noDownloadToolExitCode      = 127
+	downloadTimeoutSeconds      = 25
+	execStreamIdleTimeout       = 30 * time.Second
+	execStreamMaxAttempts       = 2
+	execStreamCleanupTimeout    = 5 * time.Second
+	execStreamCompletionTimeout = 2 * time.Minute
+)
+
+var (
+	errExecStreamIdleTimeout       = errors.New("exec-stream delivery stalled")
+	errExecStreamCompletionTimeout = errors.New(
+		"exec-stream delivery did not complete after source EOF",
+	)
 )
 
 func (d *KubernetesDelivery) Phase() DeliveryPhase {
@@ -65,15 +81,22 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 	destPath := d.destPath()
 
 	// Skip delivery when the in-pod binary already matches.
-	expected := d.expectedVersion()
-	if actual := d.detectVersion(ctx, destPath); actual != "" && actual == expected {
-		log.Debugf("remote agent version matches expected version %s, skipping delivery", expected)
-		return nil
+	if !opts.SkipVersionCheck {
+		expected := d.expectedVersion()
+		if actual := d.detectVersion(ctx, destPath); actual != "" && actual == expected {
+			log.Debugf(
+				"remote agent version matches expected version %s, skipping delivery",
+				expected,
+			)
+			return nil
+		}
 	}
 
+	var downloadErr error
 	if opts.PreferInContainerDownload {
 		if err := d.deliverViaDownload(ctx, destPath, opts.DownloadURL, opts.Arch); err != nil {
-			log.Debugf(
+			downloadErr = err
+			log.Warnf(
 				"in-container download unavailable, falling back to exec-stream delivery: %v",
 				err,
 			)
@@ -84,11 +107,22 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 	}
 
 	if err := d.deliverViaExecStream(ctx, destPath, opts); err != nil {
-		return fmt.Errorf("write binary to container: %w", err)
+		return deliveryFailure(downloadErr, err)
 	}
 
 	log.Debugf("delivered agent binary to pod via kubernetes exec-stream")
 	return nil
+}
+
+func deliveryFailure(downloadErr, streamErr error) error {
+	streamErr = fmt.Errorf("exec-stream delivery failed: %w", streamErr)
+	if downloadErr == nil {
+		return streamErr
+	}
+	return errors.Join(
+		fmt.Errorf("in-container download failed: %w", downloadErr),
+		streamErr,
+	)
 }
 
 func (d *KubernetesDelivery) Cleanup(_ context.Context, _ string) error {
@@ -161,16 +195,18 @@ func (d *KubernetesDelivery) deliverViaExecStream(
 		wait.Backoff{Steps: execStreamMaxAttempts},
 		isTransientDeliveryError,
 		func() error {
+			if err := ctx.Err(); err != nil {
+				return &permanentDeliveryError{err}
+			}
 			attempt++
 			binary, err := opts.BinarySource(ctx, opts.Arch)
 			if err != nil {
 				return &permanentDeliveryError{fmt.Errorf("acquire binary: %w", err)}
 			}
-			defer func() { _ = binary.Close() }()
+			owned := &execStreamSource{ReadCloser: binary}
+			defer func() { _ = owned.Close() }()
 
-			attemptCtx, cancel := context.WithTimeout(ctx, execStreamAttemptTimeout)
-			defer cancel()
-			streamErr := d.execStreamOnce(attemptCtx, destPath, binary)
+			streamErr := d.execStreamOnce(ctx, destPath, owned, opts.SkipVersionCheck)
 			if streamErr != nil && isTransientDeliveryError(streamErr) &&
 				attempt < execStreamMaxAttempts {
 				log.Warnf(
@@ -181,11 +217,22 @@ func (d *KubernetesDelivery) deliverViaExecStream(
 			return streamErr
 		},
 	)
-	var perm *permanentDeliveryError
-	if errors.As(err, &perm) {
+	if perm, ok := errors.AsType[*permanentDeliveryError](err); ok {
 		return perm.err
 	}
 	return err
+}
+
+// execStreamSource joins cancel-time closure with the acquiring owner's cleanup.
+type execStreamSource struct {
+	io.ReadCloser
+	closeOnce sync.Once
+	closeErr  error
+}
+
+func (s *execStreamSource) Close() error {
+	s.closeOnce.Do(func() { s.closeErr = s.ReadCloser.Close() })
+	return s.closeErr
 }
 
 type permanentDeliveryError struct{ err error }
@@ -198,15 +245,249 @@ func (d *KubernetesDelivery) execStreamOnce(
 	ctx context.Context,
 	destPath string,
 	binary io.Reader,
+	skipVersionCheck bool,
 ) error {
-	quotedDest := shellescape.Quote(destPath)
-	script := fmt.Sprintf(
-		`set -e; d=$(dirname %s); mkdir -p "$d"; `+
-			`t=$(mktemp %s.XXXXXX); `+
-			`cat > "$t" && chmod 0755 "$t" && mv -f "$t" %s || { rm -f "$t"; exit 1; }`,
-		quotedDest, quotedDest, quotedDest,
+	tempPath, err := transferTempPath(destPath)
+	if err != nil {
+		return &permanentDeliveryError{err}
+	}
+
+	attemptCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	if source, ok := binary.(io.Closer); ok {
+		closed := make(chan struct{})
+		stop := context.AfterFunc(attemptCtx, func() {
+			_ = source.Close()
+			close(closed)
+		})
+		defer func() {
+			if !stop() {
+				<-closed
+			}
+		}()
+	}
+	progress := newProgressReader(binary)
+	monitorDone := make(chan struct{})
+	monitorStop := make(chan struct{})
+	monitor := execStreamProgressMonitor{
+		ctx:               attemptCtx,
+		cancel:            cancel,
+		progress:          progress,
+		idleTimeout:       d.idleTimeout(),
+		completionTimeout: d.completionTimeout(),
+		stop:              monitorStop,
+		done:              monitorDone,
+	}
+	go monitor.run()
+
+	quotedTemp := shellescape.Quote(tempPath)
+	stageScript := fmt.Sprintf(
+		`set -e; d=$(dirname %s); mkdir -p "$d"; rm -f %s; cat > %s`,
+		quotedTemp, quotedTemp, quotedTemp,
 	)
-	return d.Exec(ctx, []string{"sh", "-c", script}, driver.Streams{Stdin: binary})
+	stageErr := d.Exec(
+		attemptCtx,
+		[]string{"sh", "-c", stageScript},
+		driver.Streams{Stdin: progress},
+	)
+	close(monitorStop)
+	<-monitorDone
+	if cause := context.Cause(attemptCtx); cause != nil {
+		stageErr = cause
+	}
+	if stageErr == nil {
+		stageErr = progress.completionError()
+	}
+	if stageErr != nil {
+		d.cleanupStagedBinary(ctx, tempPath)
+		return stageErr
+	}
+
+	commitCtx, commitCancel := context.WithTimeout(ctx, d.idleTimeout())
+	defer commitCancel()
+	expectedVersion := d.expectedVersion()
+	if skipVersionCheck {
+		expectedVersion = ""
+	}
+	commitScript := validationCommitScript(tempPath, destPath, expectedVersion, progress.size())
+	var stderr bytes.Buffer
+	if err := d.Exec(
+		commitCtx,
+		[]string{"sh", "-c", commitScript},
+		driver.Streams{Stderr: &stderr},
+	); err != nil {
+		d.cleanupStagedBinary(ctx, tempPath)
+		validationErr := fmt.Errorf(
+			"validate staged agent: %w (%s)",
+			err,
+			strings.TrimSpace(stderr.String()),
+		)
+		if isTransientDeliveryError(err) {
+			return validationErr
+		}
+		return &permanentDeliveryError{validationErr}
+	}
+	return nil
+}
+
+func (d *KubernetesDelivery) idleTimeout() time.Duration {
+	if d.execStreamIdleTimeout > 0 {
+		return d.execStreamIdleTimeout
+	}
+	return execStreamIdleTimeout
+}
+
+func (d *KubernetesDelivery) completionTimeout() time.Duration {
+	if d.execStreamCompletionTimeout > 0 {
+		return d.execStreamCompletionTimeout
+	}
+	return execStreamCompletionTimeout
+}
+
+func transferTempPath(destPath string) (string, error) {
+	cleanDest := path.Clean(destPath)
+	if cleanDest == "." || cleanDest == "/" {
+		return "", fmt.Errorf("invalid agent destination path %q", destPath)
+	}
+	return path.Join(path.Dir(cleanDest), ".devsy-transfer-"+uuid.NewString()), nil
+}
+
+func validationCommitScript(tempPath, destPath, expectedVersion string, expectedSize int64) string {
+	quotedTemp := shellescape.Quote(tempPath)
+	quotedDest := shellescape.Quote(destPath)
+	quotedExpected := shellescape.Quote(expectedVersion)
+	return fmt.Sprintf(`set -e
+actual_size="$(wc -c < %s)"
+[ "$actual_size" -eq %d ] || {
+  rm -f %s
+  echo "staged Devsy agent size mismatch" >&2
+  exit 1
+}
+chmod 0755 %s
+actual="$(%s --version 2>/dev/null)" || {
+  rm -f %s
+  echo "staged Devsy agent is not executable" >&2
+  exit 1
+}
+if [ -n %s ] && [ "$actual" != %s ]; then
+  rm -f %s
+  echo "staged Devsy agent version mismatch" >&2
+  exit 1
+fi
+mv -f %s %s`,
+		quotedTemp, expectedSize, quotedTemp, quotedTemp, quotedTemp,
+		quotedTemp, quotedExpected, quotedExpected, quotedTemp, quotedTemp, quotedDest,
+	)
+}
+
+func (d *KubernetesDelivery) cleanupStagedBinary(parent context.Context, tempPath string) {
+	cleanupCtx, cancel := context.WithTimeout(
+		context.WithoutCancel(parent),
+		execStreamCleanupTimeout,
+	)
+	defer cancel()
+	if err := d.Exec(
+		cleanupCtx,
+		[]string{"sh", "-c", "rm -f " + shellescape.Quote(tempPath)},
+		driver.Streams{},
+	); err != nil {
+		log.Debugf("failed to clean up staged agent %s: %v", tempPath, err)
+	}
+}
+
+type progressReader struct {
+	reader       io.Reader
+	mu           sync.Mutex
+	lastProgress time.Time
+	bytesRead    int64
+	readErr      error
+	eofAt        time.Time
+}
+
+func newProgressReader(reader io.Reader) *progressReader {
+	return &progressReader{reader: reader, lastProgress: time.Now()}
+}
+
+func (r *progressReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if n > 0 {
+		r.lastProgress = time.Now()
+		r.bytesRead += int64(n)
+	}
+	if err != nil {
+		r.readErr = err
+		if errors.Is(err, io.EOF) && r.eofAt.IsZero() {
+			r.eofAt = time.Now()
+		}
+	}
+	return n, err
+}
+
+func (r *progressReader) completionError() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if errors.Is(r.readErr, io.EOF) && r.bytesRead > 0 {
+		return nil
+	}
+	if r.readErr != nil && !errors.Is(r.readErr, io.EOF) {
+		return &permanentDeliveryError{fmt.Errorf("read agent binary: %w", r.readErr)}
+	}
+	return fmt.Errorf("incomplete agent stream: %w", io.ErrUnexpectedEOF)
+}
+
+func (r *progressReader) size() int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.bytesRead
+}
+
+func (r *progressReader) timeoutError(
+	now time.Time,
+	idleTimeout, completionTimeout time.Duration,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.eofAt.IsZero() {
+		if now.Sub(r.eofAt) >= completionTimeout {
+			return errExecStreamCompletionTimeout
+		}
+		return nil
+	}
+	if now.Sub(r.lastProgress) >= idleTimeout {
+		return errExecStreamIdleTimeout
+	}
+	return nil
+}
+
+type execStreamProgressMonitor struct {
+	ctx               context.Context
+	cancel            context.CancelCauseFunc
+	progress          *progressReader
+	idleTimeout       time.Duration
+	completionTimeout time.Duration
+	stop              <-chan struct{}
+	done              chan<- struct{}
+}
+
+func (m *execStreamProgressMonitor) run() {
+	defer close(m.done)
+	ticker := time.NewTicker(max(m.idleTimeout/2, time.Nanosecond))
+	defer ticker.Stop()
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-m.stop:
+			return
+		case now := <-ticker.C:
+			if err := m.progress.timeoutError(now, m.idleTimeout, m.completionTimeout); err != nil {
+				m.cancel(err)
+				return
+			}
+		}
+	}
 }
 
 func isTransientDeliveryError(err error) bool {
@@ -217,6 +498,9 @@ func isTransientDeliveryError(err error) bool {
 		return false
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if errors.Is(err, errExecStreamIdleTimeout) || errors.Is(err, errExecStreamCompletionTimeout) {
 		return true
 	}
 	if _, ok := errors.AsType[net.Error](err); ok {

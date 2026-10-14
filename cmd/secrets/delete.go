@@ -6,6 +6,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/cmd/internal/managedvalue"
+	"github.com/devsy-org/devsy/cmd/internal/secretstore"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	devsysecrets "github.com/devsy-org/devsy/pkg/secrets"
@@ -44,7 +45,7 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 		return err
 	}
 	contextName := devsyConfig.DefaultContext
-	store, err := devsysecrets.NewStoreForConfig(devsyConfig)
+	store, err := devsysecrets.NewSecretStoreForConfig(devsyConfig, secretstore.Options())
 	if err != nil {
 		return err
 	}
@@ -73,7 +74,7 @@ func (cmd *DeleteCmd) Run(_ context.Context, name string) error {
 
 type deleteSecretRequest struct {
 	config  *config.Config
-	store   devsysecrets.Store
+	store   interface{ Delete(string, string) error }
 	context string
 	name    string
 	save    func(*config.Config) error

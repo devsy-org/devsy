@@ -41,7 +41,7 @@ var _ = ginkgo.Describe(
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
 
-			tc.f, err = setupDockerProvider(tc.initialDir + "/bin")
+			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 		})
 
@@ -642,19 +642,19 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			devContainerID, err := tc.execSSH(ctx, tempDir, "cat $HOME/dev-container-id.out")
+			devContainerID, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/dev-container-id.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(devContainerID).NotTo(gomega.BeEmpty())
 
-			containerEnvPath, err := tc.execSSH(ctx, tempDir, "cat $HOME/container-env-path.out")
+			containerEnvPath, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/container-env-path.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(containerEnvPath).To(gomega.ContainSubstring("/usr/local/bin"))
 
-			localEnvHome, err := tc.execSSH(ctx, tempDir, "cat $HOME/local-env-home.out")
+			localEnvHome, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/local-env-home.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(localEnvHome).To(gomega.Equal(os.Getenv("HOME")))
 
-			localWorkspaceFolder, err := tc.execSSH(
+			localWorkspaceFolder, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"cat $HOME/local-workspace-folder.out",
@@ -663,7 +663,7 @@ var _ = ginkgo.Describe(
 			gomega.Expect(framework.CleanString(localWorkspaceFolder)).
 				To(gomega.Equal(framework.CleanString(tempDir)))
 
-			localWorkspaceFolderBasename, err := tc.execSSH(
+			localWorkspaceFolderBasename, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"cat $HOME/local-workspace-folder-basename.out",
@@ -671,7 +671,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(localWorkspaceFolderBasename).To(gomega.Equal(filepath.Base(tempDir)))
 
-			containerWorkspaceFolder, err := tc.execSSH(
+			containerWorkspaceFolder, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"cat $HOME/container-workspace-folder.out",
@@ -679,7 +679,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(containerWorkspaceFolder).To(gomega.Equal("/workspaces"))
 
-			containerWorkspaceFolderBasename, err := tc.execSSH(
+			containerWorkspaceFolderBasename, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"cat $HOME/container-workspace-folder-basename.out",
@@ -859,8 +859,9 @@ var _ = ginkgo.Describe(
 				btc.initialDir, err = os.Getwd()
 				framework.ExpectNoError(err)
 
-				btc.f, err = setupDockerProvider(
+				btc.f, err = framework.SetupDockerProvider(
 					filepath.Join(btc.initialDir, "bin"),
+					"docker",
 				)
 				framework.ExpectNoError(err)
 			})

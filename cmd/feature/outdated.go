@@ -211,11 +211,13 @@ func checkFeatureVersion(featureID string) (outdatedEntry, bool) {
 // findLatestVersion finds the highest semver tag from the list that is newer
 // than the current tag. Returns empty string if current is already the latest.
 func findLatestVersion(current string, tags []string) string {
-	currentVer, currentErr := parseSemver(current)
+	currentVer, err := parseSemver(current)
+	if err != nil {
+		return ""
+	}
 
-	var best semver.Version
+	best := currentVer
 	var bestTag string
-	hasBest := false
 
 	for _, t := range tags {
 		if t == tagLatest {
@@ -227,15 +229,9 @@ func findLatestVersion(current string, tags []string) string {
 			continue
 		}
 
-		// If current tag is not valid semver, we cannot compare
-		if currentErr != nil {
-			continue
-		}
-
-		if ver.GT(currentVer) && (!hasBest || ver.GT(best)) {
+		if ver.GT(best) {
 			best = ver
 			bestTag = t
-			hasBest = true
 		}
 	}
 

@@ -77,6 +77,14 @@ function defaultState() {
         context: "default",
       },
     ],
+    secrets: [
+      { name: "E2E_API_TOKEN", context: "default", backend: "file", availability: "available", attached: true, created: "2026-04-20T08:00:00Z" },
+      { name: "E2E_STAGING_TOKEN", context: "staging", backend: "keyring", availability: "available", attached: false },
+    ],
+    envVars: [
+      { name: "E2E_API_URL", context: "default", value: "https://variables.example.test/api", attached: true },
+      { name: "E2E_STAGE_NAME", context: "staging", value: "staging", attached: false },
+    ],
     tasks: {},
     deletedTasks: {},
   }
@@ -86,6 +94,8 @@ function loadState() {
   try {
     const data = fs.readFileSync(STATE_FILE, "utf8")
     const state = JSON.parse(data)
+    state.secrets ??= defaultState().secrets
+    state.envVars ??= defaultState().envVars
     state.tasks = state.tasks || {}
     state.deletedTasks = state.deletedTasks || {}
     return state
@@ -121,6 +131,10 @@ function saveState(state, deletedTaskIds = []) {
 const state = loadState()
 
 const rawArgs = process.argv.slice(2)
+// Context is a global flag and can precede the root command.
+const contextIndex = rawArgs.indexOf("--context")
+const variableContext = contextIndex >= 0 ? rawArgs[contextIndex + 1] : "default"
+if (contextIndex >= 0) rawArgs.splice(contextIndex, 2)
 
 if (rawArgs[0] === "--version") {
   process.stdout.write("v0.1.0-test\n")
@@ -863,6 +877,30 @@ switch (cmd) {
         break
     }
     break
+
+  case "secret":
+  case "env": {
+    const rows = cmd === "secret" ? state.secrets : state.envVars
+    if (sub === "protection" && extra === "status") {
+      out({ availability: "available", keySource: "file", remembered: false,
+        rememberedAvailable: true, fileEntries: state.secrets.filter((row) => row.backend === "file") })
+    } else if (sub === "list") out(rows)
+    else if (["set", "delete", "attach", "detach"].includes(sub)) {
+      const index = rows.findIndex((row) => row.name === extra && row.context === variableContext)
+      if (sub === "set") {
+        const row = cmd === "secret"
+          ? { name: extra, context: variableContext, backend: "file", availability: "available", attached: false }
+          : { name: extra, context: variableContext, value: rawArgs[rawArgs.indexOf("--value") + 1] ?? "", attached: false }
+        if (cmd === "secret" && rawArgs.includes("--stdin")) fs.readFileSync(0, "utf8")
+        if (index >= 0) rows[index] = { ...rows[index], ...row, attached: rows[index].attached }
+        else rows.push(row)
+      } else if (sub === "delete" && index >= 0) rows.splice(index, 1)
+      else if (index >= 0) rows[index].attached = sub === "attach"
+      saveState(state)
+      out("")
+    } else out("")
+    break
+  }
 
   case "version":
     out("v0.1.0-test")

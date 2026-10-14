@@ -19,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/telemetry"
@@ -31,6 +32,8 @@ import (
 type UpCmd struct {
 	provider2.CLIOptions
 	*flags.GlobalFlags
+
+	secretOptions *secrets.StoreOptions
 
 	Machine string
 
@@ -512,16 +515,20 @@ func reportErr(err error, _ bool, _ io.Writer) error {
 // emitUpResult writes the JSON result envelope for a completed `up` invocation.
 func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
 	containerID := config2.GetContainerID(wctx.result)
+	workdir := wctx.workdir
 	var warnings []string
 	recovery := false
 	if wctx.result != nil {
 		warnings = wctx.result.HostWarnings
 		recovery = wctx.result.RecoveryContainer
+		if workdir == "" && wctx.result.SubstitutionContext != nil {
+			workdir = wctx.result.SubstitutionContext.ContainerWorkspaceFolder
+		}
 	}
 	_ = config2.WriteResultJSON(out, config2.ResultEnvelope{
 		ContainerID:           containerID,
 		RemoteUser:            wctx.user,
-		RemoteWorkspaceFolder: wctx.workdir,
+		RemoteWorkspaceFolder: workdir,
 		URL:                   ideURL,
 		Warnings:              warnings,
 		Recovery:              recovery,
@@ -532,15 +539,15 @@ func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
 	if err := cmd.validate(); err != nil {
 		return err
 	}
-	if cmd.Detach && cmd.taskID == "" {
-		return cmd.runDetached(args)
-	}
 	cmd.applyPullFromInsideContainerOverride(cobraCmd)
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
 		return fmt.Errorf("load devsy config: %w", err)
 	}
 	cmd.applyConfig(devsyConfig)
+	if cmd.Detach && cmd.taskID == "" {
+		return cmd.runDetached(args, devsyConfig)
+	}
 
 	ctx, cancel := WithSignals(cobraCmd.Context())
 	defer cancel()

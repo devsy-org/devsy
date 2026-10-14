@@ -15,7 +15,8 @@ type registeredSource struct {
 
 // Resolver routes a SecretRef to an explicitly registered source instance.
 type Resolver struct {
-	sources map[string]registeredSource
+	sources   map[string]registeredSource
+	envSource Source
 }
 
 func NewResolver() *Resolver {
@@ -78,4 +79,28 @@ func (r *Resolver) Resolve(ctx context.Context, ref SecretRef) (ResolvedSecret, 
 		resolved.Name = ref.Name
 	}
 	return resolved, nil
+}
+
+// ResolveEnvironment reads the dedicated local environment domain.
+func (r *Resolver) ResolveEnvironment(ctx context.Context, ref SecretRef) (ResolvedSecret, error) {
+	if ref.Source != LocalSourceName || (ref.Type != "" && ref.Type != LocalSourceName) {
+		return ResolvedSecret{}, fmt.Errorf("environment values must use the local store")
+	}
+	if r.envSource != nil {
+		return r.envSource.Get(ctx, ref.Name)
+	}
+	return ResolvedSecret{}, fmt.Errorf("local environment source is not configured")
+}
+
+// RegisterEnvironmentSource installs the separate plaintext source used by env
+// injection. Registering a secret source never enables environment resolution.
+func (r *Resolver) RegisterEnvironmentSource(source Source) error {
+	if source == nil {
+		return fmt.Errorf("environment source is nil")
+	}
+	if r.envSource != nil {
+		return fmt.Errorf("environment source is already configured")
+	}
+	r.envSource = source
+	return nil
 }

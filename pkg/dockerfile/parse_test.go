@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"testing"
 
+	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -26,6 +27,27 @@ func (s *ParseTestSuite) TestBuildContextFiles() {
 	s.Equal(2, len(files))
 	s.Equal("app", files[0])
 	s.Equal("files", files[1])
+}
+
+func (s *ParseTestSuite) TestBuildContextFilesPreservesAddAndCopyOrder() {
+	const sourceFile = "source.txt"
+	dockerFile, err := Parse(`FROM alpine AS build
+ADD archive.tar config.json /build/
+RUN echo done
+FROM alpine
+COPY source.txt other.txt /app/
+COPY --from=build /build/tool /usr/local/bin/
+COPY source.txt source.txt /copies/
+ADD assets /app/assets`)
+	s.Require().NoError(err)
+	dockerFile.Stages[0].Instructions = append(dockerFile.Stages[0].Instructions,
+		&parser.Node{Value: "INVALID"})
+
+	s.Equal([]string{
+		"archive.tar", "config.json", sourceFile, "other.txt", "/build/tool",
+		sourceFile, sourceFile, "assets",
+	},
+		dockerFile.BuildContextFiles())
 }
 
 func (s *ParseTestSuite) TestFindBaseImage() {

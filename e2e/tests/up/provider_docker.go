@@ -34,7 +34,10 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			dtc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
-			dtc.f, err = setupDockerProvider(filepath.Join(dtc.initialDir, "bin"), "docker")
+			dtc.f, err = framework.SetupDockerProvider(
+				filepath.Join(dtc.initialDir, "bin"),
+				"docker",
+			)
 			framework.ExpectNoError(err)
 		})
 
@@ -278,7 +281,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			out, err := dtc.execSSH(ctx, tempDir, "grep ^ID= /etc/os-release")
+			out, err := dtc.f.DevsySSH(ctx, tempDir, "grep ^ID= /etc/os-release")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "ID=alpine\n")
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -292,20 +295,20 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			out, err := dtc.execSSH(ctx, tempDir, "grep ^ID= /etc/os-release")
+			out, err := dtc.f.DevsySSH(ctx, tempDir, "grep ^ID= /etc/os-release")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "ID=alpine\n")
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("extra devcontainer merge", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
-				"tests/up/testdata/docker-extra-devcontainer",
+				"tests/up/testdata/docker-overlay-features",
 				dtc.initialDir,
 				dtc.f,
 			)
 			framework.ExpectNoError(err)
 
-			extraPath := path.Join(tempDir, "extra.json")
+			extraPath := path.Join(tempDir, "overlay", "extra.json")
 			err = dtc.f.DevsyUp(
 				ctx,
 				tempDir,
@@ -314,17 +317,127 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			out, err := dtc.execSSH(ctx, tempDir, "bash -l -c 'echo -n $BASE_VAR'")
+			out, err := dtc.f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $BASE_VAR'")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "base_value")
 
-			out, err = dtc.execSSH(ctx, tempDir, "bash -l -c 'echo -n $EXTRA_VAR'")
+			out, err = dtc.f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $EXTRA_VAR'")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "extra_value")
 
+			for _, marker := range []string{"base-feature-installed", "overlay-feature-installed"} {
+				_, err = dtc.f.DevsySSH(ctx, tempDir, "test -f /tmp/"+marker)
+				framework.ExpectNoError(err)
+			}
+
 			err = dtc.f.DevsyWorkspaceDelete(ctx, tempDir)
 			framework.ExpectNoError(err)
-		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+		ginkgo.It(
+			"extra devcontainer features are installed for Dockerfile builds",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-extra-devcontainer-dockerfile",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+				err = dtc.f.DevsyUp(ctx, tempDir,
+					names.Flag(names.DevContainerOverlay),
+					path.Join(tempDir, "overlay", "extra.json"),
+				)
+				framework.ExpectNoError(err)
+
+				for _, marker := range []string{"base-feature-installed", "overlay-feature-installed"} {
+					_, err = dtc.f.DevsySSH(ctx, tempDir, "test -f /tmp/"+marker)
+					framework.ExpectNoError(err)
+				}
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It(
+			"structural overlay replaces the image with its Dockerfile and context",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-extra-devcontainer-structural",
+					dtc.initialDir,
+					dtc.f,
+				)
+				framework.ExpectNoError(err)
+				err = dtc.f.DevsyUp(ctx, tempDir,
+					names.Flag(names.DevContainerOverlay),
+					path.Join(tempDir, "overlay", "extra.json"),
+				)
+				framework.ExpectNoError(err)
+
+				osRelease, err := dtc.f.DevsySSH(ctx, tempDir, "grep '^ID=' /etc/os-release")
+				framework.ExpectNoError(err)
+				framework.ExpectEqual(strings.TrimSpace(osRelease), "ID=ubuntu")
+				generated, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/overlay-build-input.txt")
+				framework.ExpectNoError(err)
+				framework.ExpectEqual(strings.TrimSpace(generated), "generated-by-overlay-init")
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It("structural overlay replaces the primary image", func(ctx context.Context) {
+			tempDir, err := setupWorkspace(
+				"tests/up/testdata/docker-extra-devcontainer-image-overlay",
+				dtc.initialDir,
+				dtc.f,
+			)
+			framework.ExpectNoError(err)
+			overlayPath := path.Join(tempDir, "overlay", "extra.json")
+			err = dtc.f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainerOverlay), overlayPath)
+			framework.ExpectNoError(err)
+
+			osRelease, err := dtc.f.DevsySSH(ctx, tempDir, "grep '^ID=' /etc/os-release")
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(strings.TrimSpace(osRelease), "ID=alpine")
+
+			//nolint:gosec // G304: fixture path is inside the test-owned temporary workspace.
+			contents, err := os.ReadFile(overlayPath)
+			framework.ExpectNoError(err)
+			updatedImage := strings.Replace(string(contents), ":alpine", ":ubuntu", 1)
+			gomega.Expect(updatedImage).NotTo(gomega.Equal(string(contents)))
+			framework.ExpectNoError(os.WriteFile(overlayPath, []byte(updatedImage), 0o600))
+			stdout, stderr, err := dtc.f.DevsyUpStreams(
+				ctx, tempDir, names.Flag(names.DevContainerOverlay), overlayPath,
+			)
+			gomega.Expect(err).To(gomega.HaveOccurred())
+			gomega.Expect(stdout + "\n" + stderr).To(gomega.ContainSubstring("--recreate"))
+			osRelease, err = dtc.f.DevsySSH(ctx, tempDir, "grep '^ID=' /etc/os-release")
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(strings.TrimSpace(osRelease), "ID=alpine")
+
+			err = dtc.f.DevsyUp(
+				ctx,
+				tempDir,
+				"--recreate",
+				names.Flag(names.DevContainerOverlay),
+				overlayPath,
+			)
+			framework.ExpectNoError(err)
+			osRelease, err = dtc.f.DevsySSH(ctx, tempDir, "grep '^ID=' /etc/os-release")
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(strings.TrimSpace(osRelease), "ID=ubuntu")
+
+			invalidBuild := `{"build":{"context":".","dockerfile":"overlay/missing.Dockerfile"}}`
+			framework.ExpectNoError(os.WriteFile(overlayPath, []byte(invalidBuild), 0o600))
+			err = dtc.f.DevsyUp(
+				ctx,
+				tempDir,
+				"--recreate",
+				names.Flag(names.DevContainerOverlay),
+				overlayPath,
+			)
+			gomega.Expect(err).To(gomega.HaveOccurred())
+			osRelease, err = dtc.f.DevsySSH(ctx, tempDir, "grep '^ID=' /etc/os-release")
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(strings.TrimSpace(osRelease), "ID=ubuntu")
+		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("extra devcontainer override", func(ctx context.Context) {
 			tempDir, err := setupWorkspace(
@@ -343,7 +456,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/test-var.out")
+			out, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/test-var.out")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(strings.TrimSpace(out), "overridden_value")
 
@@ -363,7 +476,7 @@ var _ = ginkgo.Describe(
 			err = dtc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/post-start-count.log")
+			out, err := dtc.f.DevsySSH(ctx, tempDir, "cat $HOME/post-start-count.log")
 			framework.ExpectNoError(err)
 			lines := strings.Count(strings.TrimSpace(out), "\n") + 1
 			gomega.Expect(lines).To(gomega.Equal(1),
@@ -377,7 +490,7 @@ var _ = ginkgo.Describe(
 			err = dtc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			out, err = dtc.execSSH(ctx, tempDir, "cat $HOME/post-start-count.log")
+			out, err = dtc.f.DevsySSH(ctx, tempDir, "cat $HOME/post-start-count.log")
 			framework.ExpectNoError(err)
 			lines = strings.Count(strings.TrimSpace(out), "\n") + 1
 			gomega.Expect(lines).To(gomega.Equal(2),
@@ -440,20 +553,20 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			// postStartCommand should have completed (runs before result is sent)
-			out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/post-start.out")
+			out, err := dtc.f.DevsySSH(ctx, tempDir, "cat $HOME/post-start.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("postStartDone"),
 				"postStartCommand should have completed before devsy up returned")
 
-			_, err = dtc.execSSH(ctx, tempDir, "cat $HOME/post-attach.out")
+			_, err = dtc.f.DevsySSH(ctx, tempDir, "cat $HOME/post-attach.out")
 			gomega.Expect(err).To(gomega.HaveOccurred(),
 				"postAttachCommand must still be blocked on the release marker")
 
-			_, err = dtc.execSSH(ctx, tempDir, "touch $HOME/release-post-attach")
+			_, err = dtc.f.DevsySSH(ctx, tempDir, "touch $HOME/release-post-attach")
 			framework.ExpectNoError(err)
 
 			gomega.Eventually(func() string {
-				out, err := dtc.execSSH(ctx, tempDir, "cat $HOME/post-attach.out 2>/dev/null")
+				out, err := dtc.f.DevsySSH(ctx, tempDir, "cat $HOME/post-attach.out 2>/dev/null")
 				if err != nil {
 					return ""
 				}
@@ -541,11 +654,11 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				one, err := dtc.execSSH(ctx, tempDir, "cat /tmp/post-create-one.out")
+				one, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/post-create-one.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(one)).To(gomega.Equal("postCreateOne"))
 
-				two, err := dtc.execSSH(ctx, tempDir, "cat /tmp/post-create-two.out")
+				two, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/post-create-two.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(two)).To(gomega.Equal("postCreateTwo"))
 			},
@@ -682,11 +795,11 @@ var _ = ginkgo.Describe(
 			err = dtc.f.DevsyUp(ctx, tempDir, "--secrets-file", secretsFile)
 			framework.ExpectNoError(err)
 
-			out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/secret-check.out")
+			out, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/secret-check.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("test-value-12345"))
 
-			out, err = dtc.execSSH(ctx, tempDir, "cat /tmp/another-secret-check.out")
+			out, err = dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/another-secret-check.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("second-secret-42"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -694,7 +807,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"managed secret injects into lifecycle commands via --secret",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-secret",
@@ -708,7 +821,7 @@ var _ = ginkgo.Describe(
 				err = dtc.f.DevsyUp(ctx, tempDir, "--secret", "MANAGED_SECRET")
 				framework.ExpectNoError(err)
 
-				out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/managed-secret-check.out")
+				out, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/managed-secret-check.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("managed-value-99"))
 			},
@@ -718,7 +831,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"managed secret mounts as a file under /run/secrets via --secret type=mount",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-secret-mount",
@@ -735,7 +848,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/mounted-secret-check.out")
+				out, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/mounted-secret-check.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("mounted-value-77"))
 			},
@@ -745,7 +858,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"adds a tmpfs before delivering a file secret to an existing workspace",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				contextName := fmt.Sprintf("late-file-secret-%d", time.Now().UnixNano())
 				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
@@ -767,7 +880,7 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
 				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
 
-				uid, err := dtc.execSSH(ctx, tempDir, `printf %s "$DEVSY_WORKSPACE_UID"`)
+				uid, err := dtc.f.DevsySSH(ctx, tempDir, `printf %s "$DEVSY_WORKSPACE_UID"`)
 				framework.ExpectNoError(err)
 				workspace := &provider2.Workspace{UID: strings.TrimSpace(uid)}
 				ids, err := dtc.findWorkspaceContainer(ctx, workspace)
@@ -800,7 +913,7 @@ var _ = ginkgo.Describe(
 					},
 				)))
 
-				out, err := dtc.execSSH(ctx, tempDir,
+				out, err := dtc.f.DevsySSH(ctx, tempDir,
 					`if [ "$(cat /run/secrets/late_file_secret)" = sentinel-late-file-secret ]; `+
 						`then printf present; else printf absent; fi`)
 				framework.ExpectNoError(err)
@@ -812,7 +925,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"managed env var injects into the workspace via --env",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-secret",
@@ -826,7 +939,7 @@ var _ = ginkgo.Describe(
 				err = dtc.f.DevsyUp(ctx, tempDir, "--env", "MANAGED_ENV")
 				framework.ExpectNoError(err)
 
-				out, err := dtc.execSSH(ctx, tempDir, "bash -l -c 'echo -n $MANAGED_ENV'")
+				out, err := dtc.f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $MANAGED_ENV'")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("env-value-55"))
 			},
@@ -851,7 +964,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"workspace environment overrides a context-attached managed environment value",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				contextName := fmt.Sprintf("managed-env-override-%d", time.Now().UnixNano())
 				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
@@ -877,7 +990,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(dtc.f.DevsyUp(
 					ctx, tempDir, "--workspace-env", "ATTACHED_ENV=custom-value",
 				))
-				out, err := dtc.execSSH(ctx, tempDir, `bash -l -c 'printf %s "$ATTACHED_ENV"'`)
+				out, err := dtc.f.DevsySSH(ctx, tempDir, `bash -l -c 'printf %s "$ATTACHED_ENV"'`)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("custom-value"))
 
@@ -887,7 +1000,7 @@ var _ = ginkgo.Describe(
 					"--workspace-env",
 					"ATTACHED_ENV=custom-value",
 				))
-				out, err = dtc.execSSH(ctx, tempDir, `bash -l -c 'printf %s "$ATTACHED_ENV"'`)
+				out, err = dtc.f.DevsySSH(ctx, tempDir, `bash -l -c 'printf %s "$ATTACHED_ENV"'`)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("custom-value"))
 			},
@@ -914,7 +1027,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"migrates an existing workspace when a terminal secret is attached later",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				contextName := fmt.Sprintf("late-secret-%d", time.Now().UnixNano())
 				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
@@ -934,7 +1047,7 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
 				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
 
-				uid, err := dtc.execSSH(ctx, tempDir, `printf %s "$DEVSY_WORKSPACE_UID"`)
+				uid, err := dtc.f.DevsySSH(ctx, tempDir, `printf %s "$DEVSY_WORKSPACE_UID"`)
 				framework.ExpectNoError(err)
 				workspace := &provider2.Workspace{UID: strings.TrimSpace(uid)}
 				ids, err := dtc.findWorkspaceContainer(ctx, workspace)
@@ -973,14 +1086,14 @@ var _ = ginkgo.Describe(
 					},
 				)))
 
-				out, err := dtc.execSSH(ctx, tempDir,
+				out, err := dtc.f.DevsySSH(ctx, tempDir,
 					`if [ -f /run/devsy/secrets-env/ATTACHED_SECRET ]; then `+
 						`if [ "$(cat /run/devsy/secrets-env/ATTACHED_SECRET)" = `+
 						`sentinel-late-secret ]; then printf file-attached; else printf file-other; fi; `+
 						`else printf file-absent; fi`)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("file-attached"))
-				out, err = dtc.execSSH(
+				out, err = dtc.f.DevsySSH(
 					ctx,
 					tempDir,
 					`case "$ATTACHED_SECRET" in `+
@@ -989,7 +1102,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("attached"))
-				mode, err := dtc.execSSH(
+				mode, err := dtc.f.DevsySSH(
 					ctx,
 					tempDir,
 					"stat -c %a /run/devsy/secrets-env/ATTACHED_SECRET",
@@ -1003,7 +1116,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"explicit lifecycle secret and secrets file do not reach terminal sessions",
 			func(ctx context.Context) {
-				useFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				tempDir, err := setupWorkspace(
 					"tests/up/testdata/docker-managed-secret-attached", dtc.initialDir, dtc.f,
 				)
@@ -1020,7 +1133,7 @@ var _ = ginkgo.Describe(
 					ctx, tempDir, "--secret", "SESSION_SCOPE_SECRET",
 				))
 				checkExplicitAbsent := `if [ -z "$SESSION_SCOPE_SECRET" ]; then printf absent; else printf present; fi`
-				out, err := dtc.execSSH(ctx, tempDir, checkExplicitAbsent)
+				out, err := dtc.f.DevsySSH(ctx, tempDir, checkExplicitAbsent)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
 
@@ -1028,7 +1141,7 @@ var _ = ginkgo.Describe(
 					ctx, tempDir, "--secrets-file", secretsFile,
 				))
 				checkFileAbsent := `if [ -z "$SESSION_FILE_SECRET" ]; then printf absent; else printf present; fi`
-				out, err = dtc.execSSH(ctx, tempDir, checkFileAbsent)
+				out, err = dtc.f.DevsySSH(ctx, tempDir, checkFileAbsent)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
 			},
@@ -1046,7 +1159,7 @@ var _ = ginkgo.Describe(
 			err = dtc.f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainer), "id:python")
 			framework.ExpectNoError(err)
 
-			out, err := dtc.execSSH(ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'")
+			out, err := dtc.f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "python")
 
@@ -1056,7 +1169,7 @@ var _ = ginkgo.Describe(
 			err = dtc.f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainer), "id:go")
 			framework.ExpectNoError(err)
 
-			out, err = dtc.execSSH(ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'")
+			out, err = dtc.f.DevsySSH(ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, "go")
 

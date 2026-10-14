@@ -2,11 +2,13 @@ package env
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/envstore"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/spf13/cobra"
@@ -27,7 +29,7 @@ func NewAttachCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *AttachCmd) Run(_ context.Context, name string) error {
-	if err := secrets.ValidateName(name); err != nil {
+	if err := envstore.ValidateName(name); err != nil {
 		return err
 	}
 	unlock, err := config.LockConfig()
@@ -60,18 +62,29 @@ func (cmd *AttachCmd) Run(_ context.Context, name string) error {
 }
 
 func verifyAttachableEnv(devsyConfig *config.Config, contextName, name string) error {
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	if attachedLocalSecret(devsyConfig.Contexts[contextName], name) {
+		return fmt.Errorf(
+			"%q is attached as a secret; detach it before attaching it as an environment variable",
+			name,
+		)
+	}
+	store, err := envstore.NewStoreForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
-	meta, err := store.Meta(contextName, name)
-	if err != nil {
-		return fmt.Errorf("cannot attach environment variable %q: %w", name, err)
+	if _, err := store.Meta(contextName, name); err == nil {
+		return nil
+	} else if !errors.Is(err, envstore.ErrNotFound) {
+		return err
 	}
-	if meta.Sensitive() {
+	secretStore, err := secrets.NewSecretStoreForConfig(devsyConfig)
+	if err != nil {
+		return err
+	}
+	if meta, err := secretStore.Meta(contextName, name); err == nil && meta.Sensitive() {
 		return fmt.Errorf("%q is a secret; use \"devsy secret\"", name)
 	}
-	return nil
+	return fmt.Errorf("cannot attach environment variable %q: %w", name, envstore.ErrNotFound)
 }
 
 type DetachCmd struct{ *flags.GlobalFlags }
@@ -89,7 +102,7 @@ func NewDetachCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *DetachCmd) Run(_ context.Context, name string) error {
-	if err := secrets.ValidateName(name); err != nil {
+	if err := envstore.ValidateName(name); err != nil {
 		return err
 	}
 	unlock, err := config.LockConfig()
@@ -117,4 +130,22 @@ func (cmd *DetachCmd) Run(_ context.Context, name string) error {
 	}
 	log.Infof("environment variable %q detached from context %q", name, contextName)
 	return nil
+}
+
+func attachedLocalSecret(ctxConfig *config.ContextConfig, name string) bool {
+	if ctxConfig == nil {
+		return false
+	}
+	for _, attached := range ctxConfig.Secrets {
+		// Conservatively preserve legacy local/NAME bindings as well as the
+		// canonical local:local/NAME reference understood by ParseRef.
+		if attached == secrets.LocalSourceName+"/"+name {
+			return true
+		}
+		ref, err := secrets.ParseRef(attached)
+		if err == nil && ref.Source == secrets.LocalSourceName && ref.Name == name {
+			return true
+		}
+	}
+	return false
 }

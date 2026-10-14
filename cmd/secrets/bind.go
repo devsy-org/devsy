@@ -31,7 +31,7 @@ func NewAttachCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 func verifyLocalSensitive(devsyConfig *config.Config, contextName, name string) error {
-	store, err := secrets.NewStoreForConfig(devsyConfig)
+	store, err := secrets.NewSecretStoreForConfig(devsyConfig)
 	if err != nil {
 		return err
 	}
@@ -86,6 +86,15 @@ func (cmd *AttachCmd) Run(ctx context.Context, name string) error {
 	}
 	contextName := devsyConfig.DefaultContext
 
+	if ref.Source == secrets.LocalSourceName {
+		if current := devsyConfig.Contexts[contextName]; current != nil &&
+			slices.Contains(current.EnvVars, ref.Name) {
+			return fmt.Errorf(
+				"%q is attached as an environment variable; detach it before attaching it as a secret",
+				ref.Name,
+			)
+		}
+	}
 	if err := verifySecretReference(ctx, devsyConfig, ref); err != nil {
 		return err
 	}

@@ -33,6 +33,8 @@ var VariableRegExp = regexp.MustCompile(`\${(.*?)}`)
 type SubstitutedConfig struct {
 	Config *DevContainerConfig
 	Raw    *DevContainerConfig
+	// Overlay retains the unmodified source for the runtime metadata merge.
+	Overlay *DevContainerConfig
 }
 
 type SubstitutionContext struct {

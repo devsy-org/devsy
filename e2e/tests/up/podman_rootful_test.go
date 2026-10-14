@@ -1,11 +1,17 @@
 package up
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func expiredContext(t *testing.T) context.Context {
@@ -105,4 +111,211 @@ func TestRunPodmanDiagnosticsStopsAtBudget(t *testing.T) {
 		return "diagnostic failed"
 	}, func(_, _ string) {})
 	assert.Equal(t, []string{"ps"}, commands)
+}
+
+//nolint:gosec // Synthetic endpoint credentials verify unchanged routing.
+func TestRootfulPodmanWrapper(t *testing.T) {
+	const (
+		remoteFlag = "--remote"
+		urlFlag    = "--url"
+	)
+	endpoint := "unix:///run/podman/podman.sock"
+	emptyEndpoint := ""
+	credentialEndpoint := "ssh://fixture-user:fixture%40password@podman.example/run/podman.sock"
+	cases := []struct {
+		name       string
+		endpoint   *string
+		wantPrefix []string
+		args       []string
+	}{
+		{
+			name:       "configured endpoint",
+			endpoint:   &endpoint,
+			wantPrefix: []string{"podman", remoteFlag, urlFlag, endpoint},
+			args:       []string{"ps", "-a"},
+		},
+		{
+			name:       "credential endpoint remains unchanged",
+			endpoint:   &credentialEndpoint,
+			wantPrefix: []string{"podman", remoteFlag, urlFlag, credentialEndpoint},
+			args:       []string{"ps"},
+		},
+		{
+			name:       "preserves arguments",
+			endpoint:   &endpoint,
+			wantPrefix: []string{"podman", remoteFlag, urlFlag, endpoint},
+			args:       []string{"run", "value with spaces", "$(printf unsafe)"},
+		},
+		{
+			name:       "unset endpoint uses local mode",
+			wantPrefix: []string{"podman"},
+			args:       []string{"ps", "-a"},
+		},
+		{
+			name:       "empty endpoint uses local mode",
+			endpoint:   &emptyEndpoint,
+			wantPrefix: []string{"podman"},
+			args:       []string{"ps", "-a"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runRootfulPodmanWrapper(t, tc.endpoint, tc.args...)
+			require.Equal(t, append(tc.wantPrefix, tc.args...), got)
+			require.NotContains(t, got, "-E")
+		})
+	}
+}
+
+func runRootfulPodmanWrapper(t *testing.T, endpoint *string, args ...string) []string {
+	t.Helper()
+
+	dir := t.TempDir()
+	capturePath := filepath.Join(dir, "argv")
+	sudoPath := filepath.Join(dir, "sudo")
+	sudoScript := `#!/bin/sh
+printf '%s\0' "$@" > "$CAPTURE_FILE"
+	`
+	require.NoError(t, os.WriteFile(sudoPath, []byte(sudoScript), 0o600))
+	//nolint:gosec // G302: test executable needs owner execute permission.
+	require.NoError(t, os.Chmod(sudoPath, 0o700))
+
+	wrapperPath := filepath.Join(dir, "podman-rootful")
+	require.NoError(t, os.WriteFile(wrapperPath, []byte(rootfulPodmanWrapperScript()), 0o600))
+	//nolint:gosec // G302: generated wrapper needs owner execute permission.
+	require.NoError(t, os.Chmod(wrapperPath, 0o700))
+
+	//nolint:gosec // G204: generated wrapper path is test-controlled.
+	cmd := exec.Command(wrapperPath, args...)
+	cmd.Env = []string{"PATH=" + dir, "CAPTURE_FILE=" + capturePath}
+	if endpoint != nil {
+		cmd.Env = append(cmd.Env, "DOCKER_HOST="+*endpoint)
+	}
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+
+	argv, err := os.ReadFile(capturePath) //nolint:gosec // G304: test-controlled capture path.
+	require.NoError(t, err)
+	encodedArgs := bytes.Split(argv, []byte{0})
+	encodedArgs = encodedArgs[:len(encodedArgs)-1]
+	got := make([]string, len(encodedArgs))
+	for i, arg := range encodedArgs {
+		got[i] = string(arg)
+	}
+	return got
+}
+
+func TestRootfulPodmanUsesManagedDaemon(t *testing.T) {
+	cases := []struct {
+		endpoint string
+		local    bool
+	}{
+		{"", true},
+		{"unix:///run/podman/podman.sock", true},
+		{"unix:///var/run/podman/podman.sock", true},
+		{"unix:///run/user/1000/podman/podman.sock", false},
+		{"unix:///custom/podman.sock", false},
+		{"tcp://127.0.0.1:2375", false},
+		{"ssh://root@remote/run/podman/podman.sock", false},
+		{"unix://remote/run/podman/podman.sock", false},
+		{"unix://", false},
+		{":invalid", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.endpoint, func(t *testing.T) {
+			assert.Equal(t, tc.local, rootfulPodmanUsesManagedDaemon(tc.endpoint))
+		})
+	}
+}
+
+func TestUnmanagedPodmanCleanupPreservesLocalRecovery(t *testing.T) {
+	for _, endpoint := range []string{
+		"ssh://root@remote/run/podman/podman.sock",
+		"unix:///custom/podman.sock",
+		"unix:///run/user/1000/podman/podman.sock",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			checkUnmanagedPodmanCleanup(t, endpoint)
+		})
+	}
+}
+
+func checkUnmanagedPodmanCleanup(t *testing.T, endpoint string) {
+	t.Helper()
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	require.NoError(t, os.Mkdir(binDir, 0o700))
+	wrapper := "#!/bin/sh\necho 'cannot connect to remote endpoint' >&2\nexit 1\n"
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(binDir, podmanRootfulWrapperName), []byte(wrapper), 0o600),
+	)
+	//nolint:gosec // G302: test wrapper needs owner execute permission.
+	require.NoError(t, os.Chmod(filepath.Join(binDir, podmanRootfulWrapperName), 0o700))
+	capture := filepath.Join(dir, "sudo-commands")
+	sudo := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CAPTURE_FILE\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, podmanSudoCommand), []byte(sudo), 0o600))
+	//nolint:gosec // G302: test sudo stub needs owner execute permission.
+	require.NoError(t, os.Chmod(filepath.Join(binDir, podmanSudoCommand), 0o700))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CAPTURE_FILE", capture)
+	t.Setenv("DOCKER_HOST", endpoint)
+	previousGate := rootfulDaemonGate
+	rootfulDaemonGate = &podmanDaemonGate{}
+	t.Cleanup(func() { rootfulDaemonGate = previousGate })
+	cleanupErr := errors.New("remote cleanup failed")
+	require.ErrorIs(
+		t,
+		recoverPodmanCleanup(
+			context.Background(),
+			nil,
+			podmanCleanupDirs{initialDir: dir},
+			cleanupErr,
+		),
+		cleanupErr,
+	)
+	assert.Empty(t, rootfulDaemonGate.unhealthy())
+	assert.True(t, rootfulDaemonGate.claimRecovery())
+	commands, err := os.ReadFile(capture) //nolint:gosec // G304: test-controlled capture path.
+	require.NoError(t, err)
+	assert.NotContains(t, string(commands), "systemctl restart")
+}
+
+//nolint:gosec // Synthetic credentials exercise diagnostic redaction.
+func TestPodmanDiagnosticsRedactEndpointCredentials(t *testing.T) {
+	const endpoint = "ssh://fixture-user:fixture%40password@podman.example/run/podman.sock"
+	t.Setenv("DOCKER_HOST", endpoint)
+	dir := t.TempDir()
+	wrapper := filepath.Join(dir, "wrapper")
+	script := `#!/bin/sh
+printf 'cannot connect to %s; password=fixture@password; encoded=fixture%%40password\n' "$DOCKER_HOST"
+exit 1
+`
+	require.NoError(t, os.WriteFile(wrapper, []byte(script), 0o700))
+	class, err := checkPodmanHealth(context.Background(), wrapper)
+	require.Error(t, err)
+	assert.Equal(t, podmanHealthUnavailable, class)
+	var exitError *exec.ExitError
+	assert.ErrorAs(t, err, &exitError)
+	assert.Contains(t, err.Error(), "ssh://***@podman.example/run/podman.sock")
+	assert.Contains(t, err.Error(), "cannot connect")
+	diagnostics := runDiagCommand(context.Background(), wrapper)
+	// The error must remain safe even after the originating environment changes.
+	t.Setenv("DOCKER_HOST", "")
+	for _, text := range []string{err.Error(), errors.Unwrap(err).Error(), diagnostics} {
+		assert.NotContains(t, text, "fixture-user")
+		assert.NotContains(t, text, "fixture@password")
+		assert.NotContains(t, text, "fixture%40password")
+	}
+	assert.Contains(t, diagnostics, "podman.example")
+}
+
+//nolint:gosec // Synthetic credentials cover noncanonical URL escaping.
+func TestPodmanDiagnosticsRedactOriginalURLEscaping(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "ssh://fixture-user:fixture%4apassword@podman.example/run/podman.sock")
+	text := redactPodmanDiagnostics(
+		os.Getenv("DOCKER_HOST") + " fixture%4apassword fixtureJpassword",
+	)
+	assert.Equal(t, "ssh://***@podman.example/run/podman.sock *** ***", text)
 }

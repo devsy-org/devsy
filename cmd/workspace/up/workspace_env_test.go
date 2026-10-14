@@ -41,7 +41,7 @@ func (s *WorkspaceEnvTestSuite) TestLiteralWorkspaceEnvShadowsAttachment() {
 	cmd := &UpCmd{}
 	cmd.WorkspaceEnv = []string{workspaceEnvLiteralAssignment}
 	resolver := secretspkg.NewResolver()
-	s.Require().NoError(resolver.Register("local", "local", fixedSource{
+	s.Require().NoError(resolver.RegisterEnvironmentSource(fixedSource{
 		values: map[string]string{workspaceEnvLogLevel: "stored-value"},
 	}))
 
@@ -54,7 +54,7 @@ func (s *WorkspaceEnvTestSuite) TestShadowingDoesNotDependOnValueLexicalOrder() 
 	cmd := &UpCmd{}
 	cmd.WorkspaceEnv = []string{workspaceEnvLogLevel + "=stored-value"}
 	resolver := secretspkg.NewResolver()
-	s.Require().NoError(resolver.Register("local", "local", fixedSource{
+	s.Require().NoError(resolver.RegisterEnvironmentSource(fixedSource{
 		values: map[string]string{workspaceEnvLogLevel: "custom-value"},
 	}))
 
@@ -71,7 +71,7 @@ func (s *WorkspaceEnvTestSuite) TestShadowedAttachmentIsNotResolved() {
 	cmd := &UpCmd{}
 	cmd.WorkspaceEnv = []string{workspaceEnvLogLevel + "=local"}
 	resolver := secretspkg.NewResolver()
-	s.Require().NoError(resolver.Register("local", "local", unavailableEnvSource{}))
+	s.Require().NoError(resolver.RegisterEnvironmentSource(unavailableEnvSource{}))
 
 	err := cmd.applyEnvVars(s.T().Context(), testEnvConfig(workspaceEnvLogLevel), resolver)
 	s.Require().NoError(err)

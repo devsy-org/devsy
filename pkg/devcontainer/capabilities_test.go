@@ -3,11 +3,16 @@ package devcontainer
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -135,7 +140,9 @@ type recreateDriver struct {
 func (d *recreateDriver) RecreateMode() driver.RecreateMode { return d.mode }
 
 func TestRecreatePolicy(t *testing.T) {
-	for _, mode := range []driver.RecreateMode{driver.RecreateDelete, driver.RecreateStop, "invalid"} {
+	for _, mode := range []driver.RecreateMode{
+		driver.RecreateDelete, driver.RecreateStop, driver.RecreateOnRun, "invalid",
+	} {
 		t.Run(string(mode), func(t *testing.T) {
 			d := &recreateDriver{
 				mode: mode,
@@ -226,4 +233,243 @@ func TestImageRuntimeDoesNotNeedImageBackend(t *testing.T) {
 	assert.Equal(t, r.id, d.params.WorkspaceID)
 	assert.Equal(t, "runtime-image", d.params.Options.Image)
 	assert.Nil(t, r.imageBackend)
+}
+
+type validatingImageRuntime struct {
+	*mockDriver
+	validationErr    error
+	validationParams *driver.RunImageDevContainerParams
+}
+
+func (d *validatingImageRuntime) ValidateRunImageDevContainer(
+	params *driver.RunImageDevContainerParams,
+) error {
+	d.validationParams = params
+	return d.validationErr
+}
+
+func TestImageRunValidationPreservesContainerBeforeRecreate(t *testing.T) {
+	for _, reject := range []bool{true, false} {
+		t.Run(fmt.Sprintf("reject=%t", reject), func(t *testing.T) {
+			sentinel := errors.New("unsupported creation settings")
+			d := &validatingImageRuntime{mockDriver: &mockDriver{}}
+			if reject {
+				d.validationErr = sentinel
+			}
+			r := newTestRunner(d)
+			r.workspaceConfig.Workspace = &provider.Workspace{ID: r.id, UID: "workspace-uid"}
+			r.imageBackend = &separateImages{details: &config.ImageDetails{ID: "image"}}
+			r.reporter = status.Nop()
+			p := recreateResolveParams()
+			p.parsedConfig.Config.Image = "alpine"
+			p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
+			p.substitutionContext = &config.SubstitutionContext{}
+			_, _, err := r.buildNewContainerConfig(context.Background(), p)
+			if reject {
+				require.ErrorIs(t, err, sentinel)
+			} else {
+				require.NoError(t, err)
+			}
+			require.NotNil(t, d.validationParams)
+			require.Equal(t, r.id, d.validationParams.WorkspaceID)
+			require.NotEmpty(t, d.validationParams.Options.Image)
+			assert.Equal(t, !reject, d.stopCalled)
+			assert.False(t, d.deleteCalled)
+		})
+	}
+}
+
+type dockerDiscoveryRuntime struct {
+	*mockDriver
+}
+
+func (d *dockerDiscoveryRuntime) DockerHelper() (*docker.DockerHelper, error) {
+	return nil, nil
+}
+
+func TestWorkspaceDiscoveryUsesRuntimeCapability(t *testing.T) {
+	for _, dockerBacked := range []bool{false, true} {
+		for _, withImages := range []bool{false, true} {
+			t.Run(fmt.Sprintf("docker=%t/images=%t", dockerBacked, withImages), func(t *testing.T) {
+				existing := runningContainerDetails()
+				base := &mockDriver{findResult: existing}
+				var runtimeDriver driver.Driver = base
+				if dockerBacked {
+					runtimeDriver = &dockerDiscoveryRuntime{mockDriver: base}
+				}
+				r := newTestRunner(runtimeDriver)
+				r.workspaceConfig.Agent.Docker.Path = filepath.Join(t.TempDir(), "missing-docker")
+				if withImages {
+					r.imageBackend = &separateImages{}
+				}
+				found, err := r.findExistingDevContainer(context.Background())
+				require.NoError(t, err)
+				if dockerBacked {
+					assert.Nil(t, found)
+				} else {
+					assert.Same(t, existing, found)
+					base.findErr = errors.New("runtime discovery failed")
+					_, err = r.findExistingDevContainer(context.Background())
+					assert.ErrorIs(t, err, base.findErr)
+				}
+			})
+		}
+	}
+}
+
+func TestBuildNewContainerConfigRecoveryDisabledWrapsRecoverable(t *testing.T) {
+	buildErr := errors.New("docker build failed: exit status 1")
+	d := &mockDriver{}
+	r := newTestRunner(d)
+	r.imageBackend = &separateImages{
+		details: &config.ImageDetails{ID: "image"},
+		err:     buildErr,
+	}
+	r.reporter = status.Nop()
+
+	p := recreateResolveParams()
+	p.options.Recovery = false
+	p.parsedConfig.Config.Image = "alpine"
+	p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
+	p.substitutionContext = &config.SubstitutionContext{}
+
+	buildInfo, mergedConfig, err := r.buildNewContainerConfig(context.Background(), p)
+	require.Error(t, err)
+	require.Nil(t, buildInfo)
+	require.Nil(t, mergedConfig)
+	require.False(t, r.recovering)
+
+	require.ErrorIs(t, err, clierr.ErrBuildFailedRecoverable)
+	require.ErrorIs(t, err, buildErr)
+	require.Contains(t, err.Error(), "build image:")
+	require.Contains(t, err.Error(), "docker build failed: exit status 1")
+}
+
+func TestBuildNewContainerConfigRecoveryEnabledSuccessSetsRecovering(t *testing.T) {
+	fallbackBuildInfo := &config.BuildInfo{
+		ImageName:     "recovery-image",
+		ImageMetadata: &config.ImageMetadataConfig{},
+	}
+
+	callCount := 0
+	backendMock := &buildCallMockImageBackend{
+		separateImages: &separateImages{
+			details:   &config.ImageDetails{ID: "recovery-image"},
+			buildInfo: fallbackBuildInfo,
+		},
+		inspectFn: func(ctx context.Context, image string) (*config.ImageDetails, error) {
+			callCount++
+			if callCount == 1 {
+				return nil, errors.New("primary inspect image failed")
+			}
+			return &config.ImageDetails{ID: image}, nil
+		},
+	}
+
+	d := &mockDriver{}
+	r := newTestRunner(d)
+	r.imageBackend = backendMock
+	r.reporter = status.Nop()
+
+	p := recreateResolveParams()
+	p.options.Recovery = true
+	p.options.Recreate = false
+	p.parsedConfig.Config.Image = "custom-image"
+	p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
+	p.substitutionContext = &config.SubstitutionContext{}
+
+	buildInfo, mergedConfig, err := r.buildNewContainerConfig(context.Background(), p)
+	require.NoError(t, err)
+	require.NotNil(t, buildInfo)
+	require.NotNil(t, mergedConfig)
+	require.True(t, r.recovering)
+	require.Equal(t, "custom-image", buildInfo.ImageName)
+}
+
+func TestBuildNewContainerConfigRecoveryEnabledFailureDoesNotSetRecovering(t *testing.T) {
+	primaryErr := errors.New("primary inspect failed")
+	recoveryErr := errors.New("recovery inspect failed")
+
+	callCount := 0
+	backendMock := &buildCallMockImageBackend{
+		separateImages: &separateImages{},
+		inspectFn: func(ctx context.Context, image string) (*config.ImageDetails, error) {
+			callCount++
+			if callCount == 1 {
+				return nil, primaryErr
+			}
+			return nil, recoveryErr
+		},
+	}
+
+	d := &mockDriver{}
+	r := newTestRunner(d)
+	r.imageBackend = backendMock
+	r.reporter = status.Nop()
+
+	p := recreateResolveParams()
+	p.options.Recovery = true
+	p.parsedConfig.Config.Image = "custom-image"
+	p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
+	p.substitutionContext = &config.SubstitutionContext{}
+
+	buildInfo, mergedConfig, err := r.buildNewContainerConfig(context.Background(), p)
+	require.Error(t, err)
+	require.Nil(t, buildInfo)
+	require.Nil(t, mergedConfig)
+	require.False(t, r.recovering)
+	require.ErrorIs(t, err, recoveryErr)
+	require.Contains(t, err.Error(), "build recovery image")
+	require.Contains(t, err.Error(), "primary inspect failed")
+}
+
+func TestBuildNewContainerConfigRecreateNonValidatorDeletesExisting(t *testing.T) {
+	d := &mockDriver{}
+	r := newTestRunner(d)
+	r.workspaceConfig.Workspace = &provider.Workspace{ID: r.id, UID: "workspace-uid"}
+	r.imageBackend = &separateImages{
+		details:   &config.ImageDetails{ID: "image"},
+		buildInfo: &config.BuildInfo{ImageName: "built-image"},
+	}
+	r.reporter = status.Nop()
+
+	p := recreateResolveParams()
+	p.options.Recreate = true
+	p.parsedConfig.Config.Image = "alpine"
+	p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
+	p.substitutionContext = &config.SubstitutionContext{}
+
+	buildInfo, mergedConfig, err := r.buildNewContainerConfig(context.Background(), p)
+	require.NoError(t, err)
+	require.NotNil(t, buildInfo)
+	require.NotNil(t, mergedConfig)
+
+	assert.True(t, d.stopCalled)
+	assert.False(t, d.deleteCalled)
+}
+
+type buildCallMockImageBackend struct {
+	*separateImages
+	buildFn   func(ctx context.Context, req driver.BuildRequest) (*config.BuildInfo, error)
+	inspectFn func(ctx context.Context, image string) (*config.ImageDetails, error)
+}
+
+func (b *buildCallMockImageBackend) InspectImage(
+	ctx context.Context,
+	image string,
+) (*config.ImageDetails, error) {
+	if b.inspectFn != nil {
+		return b.inspectFn(ctx, image)
+	}
+	return b.separateImages.InspectImage(ctx, image)
+}
+
+func (b *buildCallMockImageBackend) BuildDevContainer(
+	ctx context.Context,
+	req driver.BuildRequest,
+) (*config.BuildInfo, error) {
+	if b.buildFn != nil {
+		return b.buildFn(ctx, req)
+	}
+	return b.separateImages.BuildDevContainer(ctx, req)
 }

@@ -21,6 +21,7 @@ type Redactor struct {
 	replacer  *strings.Replacer
 	values    []string
 	maxLength int
+	matcher   *secretNode
 }
 
 // NewRedactor masks the values (not keys) of KEY=VALUE entries; empty values are ignored.
@@ -49,6 +50,7 @@ func NewRedactor(secretsEnv []string) *Redactor {
 		replacer:  strings.NewReplacer(pairs...),
 		values:    values,
 		maxLength: len(values[0]),
+		matcher:   newSecretMatcher(values),
 	}
 }
 
@@ -144,8 +146,39 @@ func (r *StreamingRedactor) RedactChunk(chunk string) string {
 	if formatStart := incompleteCredentialURLStart(combined); formatStart >= 0 {
 		cut = min(cut, formatStart)
 	}
+	cut = r.base.completeSecretBoundary(combined, cut)
 	r.pending = combined[cut:]
 	return r.base.Redact(combined[:cut])
+}
+
+// Follow the replacer's leftmost, longest-first matches. A complete secret
+// straddling cut must stay whole; overlapping matches must not make buffering
+// grow across an arbitrarily long repeated value.
+func (r *Redactor) completeSecretBoundary(value string, cut int) int {
+	if cut == len(value) || r.matcher == nil {
+		return cut
+	}
+	for offset := 0; offset < cut; {
+		length := r.secretMatchLength(value[offset:])
+		if offset+length > cut {
+			return offset
+		}
+		offset += max(length, 1)
+	}
+	return cut
+}
+
+func (r *Redactor) secretMatchLength(value string) int {
+	node := r.matcher
+	length := 0
+	for index := range len(value) {
+		node = node.children[value[index]]
+		if node == nil {
+			break
+		}
+		length = max(length, node.length)
+	}
+	return length
 }
 
 // incompleteCredentialURLStart returns the start of a URL suffix that may

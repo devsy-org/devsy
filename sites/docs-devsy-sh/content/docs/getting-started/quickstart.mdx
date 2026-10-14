@@ -5,23 +5,11 @@ sidebar_label: Quick Start
 
 import AddProvider from '../fragments/add-provider.mdx'
 
-Go from a fresh install to a running workspace in three steps: add a provider, start a workspace, and open it in your editor. First, [install Devsy](./install.mdx).
+Go from a fresh install to a running workspace: add a provider, start a workspace, open it in your editor. First, [install Devsy](./install.mdx).
 
-## Prerequisites
-
-Devsy connects a workspace to the editor you choose. Some paths run without any local install:
-
-- **VS Code Browser** (`--ide openvscode`) - opens in your browser, no local install.
-- **SSH / Vim / Neovim** (`--ide none`) - no local IDE; you connect over SSH.
-
-For a local editor, install the one you plan to use:
-
-- **VS Code** - [download VS Code](https://code.visualstudio.com/download).
-- **JetBrains** (IntelliJ, GoLand, PyCharm, WebStorm, RustRover, RubyMine, CLion) - install a [JetBrains IDE](https://www.jetbrains.com/) and [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/).
+Run `devsy ide list` to see every supported editor. VS Code Browser (`openvscode`) and `none` (SSH only) need nothing installed locally. For any other editor, install it first. JetBrains IDEs also need [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/).
 
 ## Devsy CLI
-
-Fastest path to a running workspace. Make sure the [Devsy CLI](./install.mdx#install-devsy-cli) is installed.
 
 ### 1. Add a provider
 
@@ -35,20 +23,13 @@ For other backends, see [Add a Devsy Provider](../managing-providers/manage-prov
 
 ### 2. Start a workspace
 
-Point Devsy at a repository and choose how to open it with `--ide`:
+Point Devsy at a repository and choose an editor with `--ide`:
 
 ```
-# VS Code in the browser
-devsy workspace up github.com/microsoft/vscode-remote-try-node --ide openvscode
-
-# VS Code, locally
 devsy workspace up github.com/microsoft/vscode-remote-try-node --ide vscode
-
-# No IDE - connect over SSH
-devsy workspace up github.com/microsoft/vscode-remote-try-node --ide none
 ```
 
-Devsy builds the dev container and opens your IDE connected to it. If you chose `--ide none`, connect over SSH:
+Devsy builds the dev container and opens the editor connected to it. With `--ide none`, connect over SSH:
 
 ```
 ssh WORKSPACE_NAME.devsy
@@ -56,42 +37,20 @@ ssh WORKSPACE_NAME.devsy
 
 ## Devsy Desktop
 
-Prefer a UI? Make sure [Devsy Desktop](./install.mdx) is installed.
-
 ### 1. Add a provider
 
 <AddProvider />
 
 ### 2. Start a workspace
 
-Go to **Workspaces** > **+ Create** to open the wizard:
-
-1. **Provider** - pick an initialized provider.
-2. **Source** - enter your repository URL or choose a quickstart template.
-3. **IDE** - choose how to open the workspace:
-   - **VS Code** - opens locally, connected to the dev container.
-   - **VS Code Browser** - opens in your browser, connected to the dev container.
-   - **JetBrains** - opens through JetBrains Gateway.
-   - **None** - connect over SSH (Vim/Neovim or a plain session).
-4. **Review** - confirm the configuration.
-5. **Launch** - start the workspace.
-
-The wizard streams logs as the workspace starts. When it's ready, your IDE opens connected to the dev container.
+Go to **Workspaces** > **+ Create** and follow the wizard: provider, source (a repository URL or a template), editor, review, launch. When the workspace is ready, the editor opens connected to it.
 
 <Callout title="JetBrains Gateway">
-If you chose a JetBrains IDE, Gateway opens with a prefilled form. Press **Check Connection and Continue** to start the IDE inside the workspace.
+For a JetBrains IDE, Gateway opens with a prefilled form. Select **Check Connection and Continue** to start the IDE inside the workspace.
 </Callout>
 
-### Connect over SSH
-
-If you chose **None**, connect once the workspace is running:
-
-```
-ssh WORKSPACE_NAME.devsy
-```
-
-For Vim/Neovim, either edit remote files over [Netrw](https://www.vim.org/scripts/script.php?script_id=1075) (`vim scp://WORKSPACE_NAME.devsy/path`) or SSH in and install your config as you would on any new machine.
+If you chose **None**, connect over SSH as shown above.
 
 <Callout title="Environment variables">
-To use environment variables in `devcontainer.json` - for example, to control the container image version - see [Environment variables in devcontainer.json](../developing-in-workspaces/devcontainer-json.mdx#environment-variables-in-devcontainerjson).
+To use environment variables in `devcontainer.json`, see [Environment variables in devcontainer.json](../developing-in-workspaces/devcontainer-json.mdx#environment-variables-in-devcontainerjson).
 </Callout>

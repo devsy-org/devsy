@@ -291,7 +291,13 @@ func (cmd *CreateCmd) imageDriver(
 	return &snapshotDriver{ImagePublisher: imgDriver, SnapshotCapableDriver: snapshotCapable}, nil
 }
 
-// pushedVolumes describes a successfully-pushed volumes blob.
+func validateSnapshotMountMetadata(result *devcontainerconfig.Result) error {
+	if result == nil || result.SubstitutionContext == nil || result.MergedConfig == nil {
+		return fmt.Errorf("workspace result is missing mount information; run `devsy up` first")
+	}
+	return nil
+}
+
 type pushedVolumes struct {
 	Digest       string
 	Size         int64
@@ -312,18 +318,25 @@ func (cmd *CreateCmd) pushVolumes(
 	if err != nil {
 		return nil, fmt.Errorf("load workspace result: %w", err)
 	}
-	if result == nil || result.SubstitutionContext == nil || result.MergedConfig == nil {
-		return nil, fmt.Errorf(
-			"workspace result is missing mount information; run `devsy up` first",
-		)
+	if err := validateSnapshotMountMetadata(result); err != nil {
+		return nil, err
 	}
 	mounts := devcontainerconfig.GetMounts(result)
 	if err := checkSingleMount(mounts); err != nil {
 		return nil, err
 	}
+	buildContext, err := devcontainerconfig.SnapshotBuildContext(result)
+	if err != nil {
+		return nil, err
+	}
 	mountPrefix := strings.TrimPrefix(mounts[0].Target, "/")
 
-	tunnelClient, cleanup, err := newLocalTunnelClient(ctx, mounts)
+	tunnelClient, cleanup, err := newLocalTunnelClient(
+		ctx,
+		mounts,
+		devcontainerconfig.GetWorkspaceMount(result),
+		buildContext,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create local snapshot tunnel: %w", err)
 	}
@@ -389,14 +402,21 @@ func redactedContainerEnv(env map[string]string) map[string]string {
 // without an actual SSH hop. The returned cleanup func must be called once
 // the client is no longer needed.
 func newLocalTunnelClient(
-	ctx context.Context, mounts []*devcontainerconfig.Mount,
+	ctx context.Context,
+	mounts []*devcontainerconfig.Mount,
+	workspaceMount *devcontainerconfig.Mount,
+	buildContext string,
 ) (tunnel.TunnelClient, func(), error) {
 	serverCtx, cancel := context.WithCancel(ctx)
 
 	clientToServerR, clientToServerW := io.Pipe()
 	serverToClientR, serverToClientW := io.Pipe()
 
-	tunnelServ := tunnelserver.New(tunnelserver.WithMounts(mounts))
+	tunnelServ := tunnelserver.New(
+		tunnelserver.WithMounts(mounts),
+		tunnelserver.WithWorkspaceMount(workspaceMount),
+		tunnelserver.WithSnapshotBuildContext(buildContext),
+	)
 	serverDone := make(chan error, 1)
 	go func() {
 		serverDone <- tunnelServ.Run(serverCtx, clientToServerR, serverToClientW)

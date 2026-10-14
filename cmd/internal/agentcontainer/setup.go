@@ -915,7 +915,7 @@ func configureSystemGitCredentials(
 	)
 	_ = os.Setenv(config2.EnvGitHelperPort, strconv.Itoa(serverPort))
 
-	gitConfig := git.At("", git.WithStrictHostKeyChecking(false)).Config()
+	gitConfig := git.At("/", git.WithStrictHostKeyChecking(false)).Config()
 	gitConfig, scope, err := addGitCredentialHelper(
 		ctx,
 		gitConfig,
@@ -967,7 +967,7 @@ func addGitCredentialHelper(
 	}
 	log.Debugf("system git config is not writable, falling back to %s's global config", remoteUser)
 	globalGitConfig := git.At(
-		"",
+		"/",
 		git.WithStrictHostKeyChecking(false),
 		git.WithEnv([]string{
 			"HOME=" + homeDir,

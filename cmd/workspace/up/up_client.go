@@ -151,6 +151,9 @@ func (cmd *UpCmd) prepareClientEnvironment(
 		log.Debug("running in platform mode")
 		config.MergeContextOptions(devsyConfig.Current(), os.Environ())
 	}
+	if err := cmd.preflightLocalValues(devsyConfig); err != nil {
+		return err
+	}
 	return cmd.validateFromSnapshot(ctx, args)
 }
 
@@ -280,7 +283,7 @@ func (cmd *UpCmd) prepareBootstrapGitToken(
 	if cmd.GitTokenSecret == "" {
 		return nil
 	}
-	resolver, err := secrets.NewResolverForConfig(devsyConfig)
+	resolver, err := secrets.NewResolverForConfig(devsyConfig, cmd.unlockOptions())
 	if err != nil {
 		return err
 	}
@@ -309,7 +312,14 @@ func (cmd *UpCmd) resolveStoredSecrets(
 		return nil
 	}
 
-	resolver, err := secrets.NewResolverForConfig(devsyConfig)
+	if len(requests) == 0 && len(cmd.BuildSecretNames) == 0 {
+		resolver, err := secrets.NewEnvironmentResolverForConfig(devsyConfig)
+		if err != nil {
+			return err
+		}
+		return cmd.applyEnvVars(ctx, devsyConfig, resolver)
+	}
+	resolver, err := secrets.NewResolverForConfig(devsyConfig, cmd.unlockOptions())
 	if err != nil {
 		return err
 	}
@@ -389,7 +399,8 @@ func collectEnvVarRequests(flags []string, devsyConfig *config.Config) ([]envVar
 			if err != nil {
 				return nil, fmt.Errorf("invalid attached environment variable %q: %w", name, err)
 			}
-			if ref.Source != secrets.LocalSourceName {
+			if ref.Source != secrets.LocalSourceName ||
+				(ref.Type != "" && ref.Type != secrets.LocalSourceName) {
 				return nil, fmt.Errorf(
 					"attached environment variable %q must use the local Devsy store",
 					name,
@@ -430,7 +441,8 @@ func parseEnvVarRequest(entry string) (envVarRequest, error) {
 	if err != nil {
 		return envVarRequest{}, err
 	}
-	if ref.Source != secrets.LocalSourceName {
+	if ref.Source != secrets.LocalSourceName ||
+		(ref.Type != "" && ref.Type != secrets.LocalSourceName) {
 		return envVarRequest{}, fmt.Errorf(
 			"--env only accepts Devsy-managed values; use --secret %s instead",
 			name,
@@ -507,7 +519,7 @@ func resolveEnvVarRequest(
 	resolver *secrets.Resolver,
 	req envVarRequest,
 ) (string, error) {
-	resolved, err := resolver.Resolve(ctx, req.ref)
+	resolved, err := resolver.ResolveEnvironment(ctx, req.ref)
 	if err != nil {
 		return "", err
 	}
