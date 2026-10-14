@@ -72,7 +72,7 @@ func (s *ErrorsSuite) TestRootCommandSurface() {
 	saved := extraCommands
 	s.T().Cleanup(func() { extraCommands = saved })
 	extraCommands = append(slices.Clone(saved), func(*Dependencies) *cobra.Command {
-		return &cobra.Command{Use: "docker-wsl", RunE: func(*cobra.Command, []string) error {
+		return &cobra.Command{Use: "seam-probe", RunE: func(*cobra.Command, []string) error {
 			return newStageError(CodeDockerWSLCleanup, "cleanup", errors.New("seam works"))
 		}}
 	})
@@ -84,9 +84,10 @@ func (s *ErrorsSuite) TestRootCommandSurface() {
 		names = append(names, c.Name())
 	}
 	s.Contains(names, "e2e")
-	s.Contains(names, "docker-wsl")
+	s.Contains(names, "docker-wsl", "the real docker-wsl command registers through the seam")
+	s.Contains(names, "seam-probe")
 
-	root.SetArgs([]string{"docker-wsl"})
+	root.SetArgs([]string{"seam-probe"})
 	err := root.Execute()
 	s.Equal([]Code{CodeDockerWSLCleanup}, codesOf(err))
 }
