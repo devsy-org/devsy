@@ -31,7 +31,7 @@ jobs:
               - '.goreleaser.yml'
               - 'e2e/**'
               - 'hack/microsandbox/**'
-              - 'hack/ci/test-provider-update-windows.ps1'
+              - 'hack/provider_update_ci/**'
               - 'hack/run-managed-policy-e2e.sh'
               - '.github/workflows/pr-ci.yml'
               - 'hack/licenses/**'
@@ -149,9 +149,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: build provider update CI helper
+        shell: pwsh
+        run: go build -trimpath -o "$env:RUNNER_TEMP/devsy-ci-provider-update.exe" ./hack/provider_update_ci
+
       - name: run provider update tests and require Windows coverage
         shell: pwsh
-        run: ./hack/ci/test-provider-update-windows.ps1 -ArtifactsDirectory $env:RUNNER_TEMP
+        run: '& "$env:RUNNER_TEMP/devsy-ci-provider-update.exe" --artifacts-dir "$env:RUNNER_TEMP"'
 
       - name: upload provider update test JSON on failure
         if: failure()
@@ -247,6 +251,19 @@ jobs:
         with:
           name: devsy-${{ steps.os.outputs.runner_os }}
           path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
+
+      - name: build MicroSandbox CI helper
+        if: runner.os == 'Linux'
+        env:
+          CGO_ENABLED: 0
+        run: go build -trimpath -o "${RUNNER_TEMP}/devsy-ci-microsandbox" ./hack/microsandbox
+
+      - name: upload MicroSandbox CI helper
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: devsy-ci-microsandbox-linux
+          path: ${{ runner.temp }}/devsy-ci-microsandbox
 
       - name: build e2e test binary
         if: matrix.runner == 'ubuntu-latest' || matrix.runner == 'windows-latest'
@@ -412,6 +429,15 @@ jobs:
           name: e2e-test-linux
           path: ./e2e/
 
+      - name: download MicroSandbox CI helper
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: devsy-ci-microsandbox-linux
+          path: ${{ runner.temp }}
+
+      - name: setup MicroSandbox CI helper
+        run: chmod +x "${RUNNER_TEMP}/devsy-ci-microsandbox"
+
       - name: setup executable
         shell: bash
         working-directory: ./e2e
@@ -423,9 +449,6 @@ jobs:
           chmod +x ./e2e.test
           ls -R ./bin/
 
-      - name: test Ginkgo report validator
-        run: python3 -m unittest discover -s hack/microsandbox -p 'test_*.py'
-
       - name: cache microsandbox release bundle (Linux)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -434,7 +457,7 @@ jobs:
 
       - name: install checksum-pinned microsandbox (Linux)
         timeout-minutes: 5
-        run: ./hack/microsandbox/install-linux.sh
+        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" install-linux'
 
       - name: run MicroSandbox test
         shell: bash
@@ -444,7 +467,7 @@ jobs:
           GH_CREDENTIAL_USERNAME: x-access-token
           TEST_TIMEOUT: 1200s
           DEVSY_REQUIRE_MICROSANDBOX: "true"
-        run: ./hack/microsandbox/run-ci.sh "${{ matrix.label }}" "${{ matrix.expected-spec-count }}"
+        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" run --label "${{ matrix.label }}" --expected-count "${{ matrix.expected-spec-count }}"'
 
       - name: upload MicroSandbox test evidence
         if: always()

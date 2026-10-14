@@ -26,15 +26,15 @@ callbacks into the session.
 
 The dedicated `integration-tests-microsandbox` job in
 `.github/workflows/pr-ci.yml` owns the suite catalogue, runner configuration and
-artifact uploads. `hack/microsandbox/install-linux.sh` installs and checks the
-pinned Linux bundle; `hack/microsandbox/run-ci.sh` owns test execution, managed
-fixture selection, output capture and report validation. Each
-suite still gets a fresh runner, a 25-minute job limit and a 20-minute test limit,
+artifact uploads. The Go utility in `hack/microsandbox` installs and checks the
+pinned Linux bundle and owns test execution, managed fixture selection, output
+capture and report validation. The Linux build job supplies its CI-only executable;
+it is not a Devsy release artifact. Each suite still gets a fresh runner, a 25-minute job limit and a 20-minute test limit,
 with one attempt. The checked runtime bundle, build artifacts, required KVM gate
 and credentials are configured once in the job definition.
 
 Each matrix entry names its Ginkgo label and expected scenario count.
-`hack/microsandbox/verify_report.py` requires a real successful run with that
+The helper's `verify-report` command requires a real successful run with that
 exact count, split equally between the explicit `microsandbox-builtin` and
 `microsandbox-external` labels. Missing cases, skips, retries, dry runs and
 programmatic focus fail the gate. Reports and test output are retained even when
