@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -19,6 +20,8 @@ type DockerDownloadSuite struct {
 	dl    *stubDownloader
 }
 
+var downloadDest = filepath.FromSlash("/dest")
+
 func TestDockerDownloadSuite(t *testing.T) { suite.Run(t, new(DockerDownloadSuite)) }
 
 func (s *DockerDownloadSuite) SetupTest() {
@@ -30,7 +33,7 @@ func (s *DockerDownloadSuite) SetupTest() {
 func (s *DockerDownloadSuite) Fetch(data []byte) (string, error) {
 	s.dl.data = data
 	src := dockerCLISource{URL: testZipURL, SHA256: sha256Hex(data)}
-	return fetchDockerCLI(context.Background(), s.deps, src, "/dest")
+	return fetchDockerCLI(context.Background(), s.deps, src, downloadDest)
 }
 
 func (s *DockerDownloadSuite) TestPinnedSourceMatchesReviewedRelease() {
@@ -43,16 +46,16 @@ func (s *DockerDownloadSuite) TestPinnedSourceMatchesReviewedRelease() {
 func (s *DockerDownloadSuite) TestVerifiedArchiveExtractsAndReturnsBinDir() {
 	bin, err := s.Fetch(validCLIZip(s.T()))
 	s.Require().NoError(err)
-	s.Equal("/dest/docker", bin)
-	s.Equal("MZ-docker", s.files.text("/dest/docker/docker.exe"))
-	s.Equal("MZ-dockerd", s.files.text("/dest/docker/dockerd.exe"))
+	s.Equal(filepath.Join(downloadDest, "docker"), bin)
+	s.Equal("MZ-docker", s.files.text(filepath.Join(downloadDest, "docker", "docker.exe")))
+	s.Equal("MZ-dockerd", s.files.text(filepath.Join(downloadDest, "docker", "dockerd.exe")))
 }
 
 func (s *DockerDownloadSuite) TestHashMismatchWritesNothing() {
 	s.dl.data = validCLIZip(s.T())
 	src := dockerCLISource{URL: testZipURL, SHA256: sha256Hex([]byte("other"))}
 
-	_, err := fetchDockerCLI(context.Background(), s.deps, src, "/dest")
+	_, err := fetchDockerCLI(context.Background(), s.deps, src, downloadDest)
 
 	s.Equal([]Code{CodeDockerCLIChecksum}, codesOf(err))
 	s.Empty(s.files.files, "an unverified archive must never reach disk")
@@ -73,7 +76,7 @@ func (s *DockerDownloadSuite) TestDownloadFailures() {
 			s.dl.data, s.dl.err, s.dl.partial = validCLIZip(s.T()), tc.err, tc.partial
 			src := dockerCLISource{URL: testZipURL, SHA256: sha256Hex(s.dl.data)}
 
-			_, err := fetchDockerCLI(context.Background(), s.deps, src, "/dest")
+			_, err := fetchDockerCLI(context.Background(), s.deps, src, downloadDest)
 
 			s.Equal([]Code{CodeDockerWSLInstall}, codesOf(err))
 			s.Empty(s.files.files)

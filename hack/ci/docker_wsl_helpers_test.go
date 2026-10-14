@@ -227,13 +227,13 @@ func (s *WSLStateSuite) Valid() *dockerWSLState {
 		SSHDPidfile:        sshdPidfile,
 		SSHDConfigDir:      sshdConfigDir,
 		CIUser:             ciUser,
-		SSHIdentityFile:    testFixture + "/id_ed25519",
-		KnownHostsFile:     testFixture + "/known_hosts",
-		DockerCLIDirectory: testFixture + "/docker-cli",
-		DockerBinDirectory: testFixture + "/docker-cli/docker",
-		DockerConfigDir:    testFixture + "/docker-config",
+		SSHIdentityFile:    fixtureFile("id_ed25519"),
+		KnownHostsFile:     fixtureFile("known_hosts"),
+		DockerCLIDirectory: fixtureFile("docker-cli"),
+		DockerBinDirectory: fixtureFile("docker-cli", "docker"),
+		DockerConfigDir:    fixtureFile("docker-config"),
 		SSHConfig:          testUserConfig,
-		SSHConfigBackup:    testFixture + "/ssh-config-original",
+		SSHConfigBackup:    fixtureFile("ssh-config-original"),
 	}
 	st.SSHHostAlias, st.SSHEndpoint = testAlias, "ssh://devsyci@"+testAlias
 	return st
@@ -246,17 +246,21 @@ func (s *WSLStateSuite) TestValidStatePasses() {
 
 func (s *WSLStateSuite) TestTamperedStateIsRejected() {
 	for name, mutate := range map[string]func(*dockerWSLState){
-		"version":          func(st *dockerWSLState) { st.Version = 2 },
-		"owner":            func(st *dockerWSLState) { st.Owner = "someone/else" },
-		"other run":        func(st *dockerWSLState) { st.RunID = "99-1-e2e" },
-		"distribution":     func(st *dockerWSLState) { st.Distribution = "Ubuntu; rm -rf /" },
-		"stage":            func(st *dockerWSLState) { st.Stage = "bogus" },
-		"alias":            func(st *dockerWSLState) { st.SSHHostAlias = "a b" },
-		"endpoint":         func(st *dockerWSLState) { st.SSHEndpoint = "ssh://root@x" },
-		"key outside":      func(st *dockerWSLState) { st.Owned.SSHIdentityFile = etcPasswd },
-		"key traversal":    func(st *dockerWSLState) { st.Owned.SSHIdentityFile = testFixture + "/../../../etc/passwd" },
-		"fixture itself":   func(st *dockerWSLState) { st.Owned.DockerCLIDirectory = testFixture },
-		"sibling run":      func(st *dockerWSLState) { st.Owned.DockerConfigDir = "/tmp/rt/devsy-ci/run-other/x" },
+		"version":      func(st *dockerWSLState) { st.Version = 2 },
+		"owner":        func(st *dockerWSLState) { st.Owner = "someone/else" },
+		"other run":    func(st *dockerWSLState) { st.RunID = "99-1-e2e" },
+		"distribution": func(st *dockerWSLState) { st.Distribution = "Ubuntu; rm -rf /" },
+		"stage":        func(st *dockerWSLState) { st.Stage = "bogus" },
+		"alias":        func(st *dockerWSLState) { st.SSHHostAlias = "a b" },
+		"endpoint":     func(st *dockerWSLState) { st.SSHEndpoint = "ssh://root@x" },
+		"key outside":  func(st *dockerWSLState) { st.Owned.SSHIdentityFile = hostEtcPasswd },
+		"key traversal": func(st *dockerWSLState) {
+			st.Owned.SSHIdentityFile = escapingFixture(3, "etc/passwd")
+		},
+		"fixture itself": func(st *dockerWSLState) { st.Owned.DockerCLIDirectory = testFixture },
+		"sibling run": func(st *dockerWSLState) {
+			st.Owned.DockerConfigDir = filepath.Join(testSiblingFixture, "x")
+		},
 		"state dir":        func(st *dockerWSLState) { st.Owned.KnownHostsFile = testStateDir },
 		"pidfile":          func(st *dockerWSLState) { st.Owned.DockerPidfile = etcPasswd },
 		"sshd config dir":  func(st *dockerWSLState) { st.Owned.SSHDConfigDir = "/etc/ssh" },

@@ -14,20 +14,20 @@ func TestGitHubFilesSuite(t *testing.T) { suite.Run(t, new(GitHubFilesSuite)) }
 
 func (s *GitHubFilesSuite) TestAppendsEnvAndPath() {
 	files := newMemFiles()
-	g := GitHubFiles{EnvPath: ghEnvFile, PathPath: "/gh/path", Files: files}
+	g := GitHubFiles{EnvPath: testGHEnv, PathPath: testGHPath, Files: files}
 
 	s.Require().NoError(g.SetEnv("DOCKER_SSH_HOST", "ssh://runner@127.0.0.1:2222"))
 	s.Require().NoError(g.SetEnv("EMPTY", ""))
 	s.Require().NoError(g.AddPath(`C:\tools\docker`))
 
-	s.Equal("DOCKER_SSH_HOST=ssh://runner@127.0.0.1:2222\nEMPTY=\n", string(files.files[ghEnvFile]))
-	s.Equal("C:\\tools\\docker\n", string(files.files["/gh/path"]))
-	s.EqualValues(0o600, files.modes[ghEnvFile])
+	s.Equal("DOCKER_SSH_HOST=ssh://runner@127.0.0.1:2222\nEMPTY=\n", string(files.files[testGHEnv]))
+	s.Equal("C:\\tools\\docker\n", string(files.files[testGHPath]))
+	s.EqualValues(0o600, files.modes[testGHEnv])
 }
 
 func (s *GitHubFilesSuite) TestRejectsBadInput() {
 	files := newMemFiles()
-	g := GitHubFiles{EnvPath: ghEnvFile, PathPath: "/gh/path", Files: files}
+	g := GitHubFiles{EnvPath: testGHEnv, PathPath: testGHPath, Files: files}
 
 	for _, name := range []string{"", "1BAD", "A-B", "A B", "A=B", "A\nB", "é"} {
 		s.Require().Error(g.SetEnv(name, "v"), "name %q", name)
@@ -60,6 +60,6 @@ func (s *GitHubFilesSuite) TestLocalModePrintsRedacted() {
 func (s *GitHubFilesSuite) TestAppendFailureIsReported() {
 	files := newMemFiles()
 	files.failAppend = errors.New("disk full")
-	g := GitHubFiles{EnvPath: ghEnvFile, Files: files}
+	g := GitHubFiles{EnvPath: testGHEnv, Files: files}
 	s.Require().ErrorContains(g.SetEnv("A", "b"), "disk full")
 }

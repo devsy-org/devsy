@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -213,7 +214,7 @@ func (s *DockerWSLFailureSuite) TestFailureCarriesBoundedSanitizedDiagnostics() 
 	s.LessOrEqual(len(diag), maxDiagnosticBytes+256)
 }
 
-func testFixtureDiagnostics() string { return "/tmp/rt/devsy-ci/" + diagnosticsFile }
+func testFixtureDiagnostics() string { return filepath.Join(testStateDir, diagnosticsFile) }
 
 func (s *DockerWSLFailureSuite) TestDaemonReadinessPollIsBounded() {
 	s.rig.onResult(kindWSLDockerInfo, exitWith(1, "no daemon"))
@@ -233,7 +234,7 @@ func (s *DockerWSLFailureSuite) TestUnverifiedCLINeverRuns() {
 	s.rig.dl.data = zipOf(s.T(), map[string]string{testExeEntry: "tampered"})
 	s.Require().Error(s.rig.setup())
 	s.Equal(0, s.rig.runner.count("docker-version"))
-	s.Empty(s.rig.files.under(testFixture + "/docker-cli"))
+	s.Empty(s.rig.files.under(fixtureFile("docker-cli")))
 }
 
 func (s *DockerWSLFailureSuite) TestFailedBannerReportsBothAddressesAndSkipsConfig() {
@@ -280,7 +281,7 @@ func (s *DockerWSLFailureSuite) TestStatePersistedBeforeEachLaterFailure() {
 	s.Equal(sshdConfigDir, st.Owned.SSHDConfigDir)
 	s.Equal(dockerPidfile, st.Owned.DockerPidfile)
 	s.Equal(testDaemonID, st.DaemonID)
-	s.Equal(testFixture+"/id_ed25519", st.Owned.SSHIdentityFile)
+	s.Equal(fixtureFile("id_ed25519"), st.Owned.SSHIdentityFile)
 	s.Empty(st.Owned.SSHDPidfile, "sshd was never started")
 	s.Empty(st.Owned.SSHConfig, "ssh config was never touched")
 }

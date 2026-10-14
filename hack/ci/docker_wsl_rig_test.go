@@ -29,16 +29,35 @@ import (
 const (
 	testRunID      = "77-1-e2e"
 	testAlias      = "devsy-ci-" + testRunID
-	testStateFile  = "/tmp/rt/devsy-ci/docker-wsl-state.json"
-	testFixture    = "/tmp/rt/devsy-ci/run-" + testRunID
-	testUserConfig = "/home/runneradmin/.ssh/config"
-	testGHEnv      = "/gh/env"
-	testGHPath     = "/gh/path"
 	testDaemonID   = "ABCD:EFGH:IJKL:MNOP"
 	testPrivateKey = "PRIVATE-KEY-BYTES-SENTINEL"
 	testVMIP       = "172.20.1.5"
 	testBanner     = "SSH-2.0-OpenSSH_9.6\r\n"
 )
+
+// Host paths are built with filepath so expectations match production output.
+var (
+	testStateDir       = filepath.FromSlash("/tmp/rt/devsy-ci")
+	testStateFile      = filepath.Join(testStateDir, "docker-wsl-state.json")
+	testFixture        = filepath.Join(testStateDir, "run-"+testRunID)
+	testSiblingFixture = filepath.Join(testStateDir, "run-other")
+	testUserConfig     = filepath.FromSlash("/home/runneradmin/.ssh/config")
+	testGHEnv          = filepath.FromSlash("/gh/env")
+	testGHPath         = filepath.FromSlash("/gh/path")
+	hostEtcPasswd      = filepath.FromSlash("/etc/passwd")
+)
+
+// fixtureFile joins elements under the run fixture directory.
+func fixtureFile(elem ...string) string {
+	return filepath.Join(append([]string{testFixture}, elem...)...)
+}
+
+// escapingFixture climbs levels directories above the fixture, then descends to the
+// slash-separated rest. Built by concatenation because filepath.Join collapses "..".
+func escapingFixture(levels int, rest string) string {
+	sep := string(filepath.Separator)
+	return testFixture + strings.Repeat(sep+"..", levels) + sep + filepath.FromSlash(rest)
+}
 
 // Command kinds and literals reused across the docker-wsl tests.
 const (
@@ -48,7 +67,6 @@ const (
 	kindWSLUnknown     = "wsl-unknown"
 	testExeEntry       = "docker/docker.exe"
 	etcPasswd          = "/etc/passwd"
-	testStateDir       = "/tmp/rt/devsy-ci"
 	httpBanner         = "HTTP/1.1 400\r\n"
 	partExit1          = "exit=1"
 	cmdDockerWSL       = "docker-wsl"
@@ -98,8 +116,9 @@ func (w *wslFiles) WriteFile(name string, data []byte, perm fs.FileMode) error {
 func (w *wslFiles) RemoveAll(path string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	root := filepath.Clean(path)
 	for name := range w.files {
-		if name == path || strings.HasPrefix(name, path+"/") {
+		if name == root || strings.HasPrefix(name, root+string(filepath.Separator)) {
 			delete(w.files, name)
 		}
 	}
@@ -109,9 +128,10 @@ func (w *wslFiles) RemoveAll(path string) error {
 func (w *wslFiles) under(dir string) []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	root := filepath.Clean(dir) + string(filepath.Separator)
 	var names []string
 	for name := range w.files {
-		if strings.HasPrefix(name, dir+"/") {
+		if strings.HasPrefix(name, root) {
 			names = append(names, name)
 		}
 	}

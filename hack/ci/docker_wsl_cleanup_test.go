@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -124,17 +125,20 @@ func (s *DockerWSLCleanupSuite) TestWrongJobStateIsRejectedUntouched() {
 }
 
 func (s *DockerWSLCleanupSuite) TestTamperedPathsAreNeverDeleted() {
+	keepme := filepath.Join(testStateDir, "keepme")
 	for name, mutate := range map[string]func(*dockerWSLState){
-		"identity outside fixture": func(st *dockerWSLState) { st.Owned.SSHIdentityFile = etcPasswd },
+		"identity outside fixture": func(st *dockerWSLState) { st.Owned.SSHIdentityFile = hostEtcPasswd },
 		"cli dir is state dir":     func(st *dockerWSLState) { st.Owned.DockerCLIDirectory = testStateDir },
-		"traversal":                func(st *dockerWSLState) { st.Owned.DockerConfigDir = testFixture + "/../../x" },
-		"other user":               func(st *dockerWSLState) { st.Owned.CIUser = "root" },
-		"version":                  func(st *dockerWSLState) { st.Version = 9 },
+		"traversal": func(st *dockerWSLState) {
+			st.Owned.DockerConfigDir = escapingFixture(2, "x")
+		},
+		"other user": func(st *dockerWSLState) { st.Owned.CIUser = "root" },
+		"version":    func(st *dockerWSLState) { st.Version = 9 },
 	} {
 		s.Run(name, func() {
 			s.SetupTest()
-			s.rig.files.files[etcPasswd] = []byte("root")
-			s.rig.files.files["/tmp/rt/devsy-ci/keepme"] = []byte("x")
+			s.rig.files.files[hostEtcPasswd] = []byte("root")
+			s.rig.files.files[keepme] = []byte("x")
 			st := newDockerWSLState(testRunID, defaultDistribution)
 			mutate(st)
 			s.Require().NoError(newStateStore(s.rig.files, testStateFile).save(st))
@@ -142,8 +146,8 @@ func (s *DockerWSLCleanupSuite) TestTamperedPathsAreNeverDeleted() {
 			err := s.rig.cleanup()
 
 			s.Require().Error(err)
-			s.True(s.rig.files.has(etcPasswd))
-			s.True(s.rig.files.has("/tmp/rt/devsy-ci/keepme"))
+			s.True(s.rig.files.has(hostEtcPasswd))
+			s.True(s.rig.files.has(keepme))
 			s.Empty(s.rig.runner.calls)
 		})
 	}
@@ -202,7 +206,7 @@ func (s *DockerWSLCleanupSuite) TestFailedRestoreKeepsTheBackup() {
 
 	s.Require().Error(err)
 	s.Contains(err.Error(), stepRestoreSSHConfig)
-	s.Equal(originalSSHConfig, s.rig.files.text(testFixture+"/ssh-config-original"),
+	s.Equal(originalSSHConfig, s.rig.files.text(fixtureFile("ssh-config-original")),
 		"the backup survives a failed restore")
 	s.True(s.rig.files.has(testStateFile))
 
@@ -272,14 +276,14 @@ func (s *DockerWSLCleanupSuite) TestPartialProgressDockerdLaunchFails() {
 func (s *DockerWSLCleanupSuite) TestPartialProgressAuthorizedKeyInstallFails() {
 	s.rig.onResult("wsl-install-key", exitWith(1, "install failed"))
 	s.Require().Error(s.rig.setup())
-	s.True(s.rig.files.has(testFixture + "/id_ed25519"))
+	s.True(s.rig.files.has(fixtureFile("id_ed25519")))
 
 	s.rig.runner.reset()
 	s.Require().NoError(s.rig.cleanup())
 
 	r := s.rig.runner
-	s.False(s.rig.files.has(testFixture + "/id_ed25519"))
-	s.False(s.rig.files.has(testFixture + "/id_ed25519.pub"))
+	s.False(s.rig.files.has(fixtureFile("id_ed25519")))
+	s.False(s.rig.files.has(fixtureFile("id_ed25519.pub")))
 	s.Equal(1, r.count("wsl-remove-user"))
 	s.Equal(0, r.count("wsl-stop-owned:"+sshdPidfile))
 	s.Equal(1, r.count("wsl-stop-owned:"+dockerPidfile))

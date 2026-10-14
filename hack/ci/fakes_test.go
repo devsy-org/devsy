@@ -25,7 +25,6 @@ const (
 	envRunnerTemp         = "RUNNER_TEMP=/tmp/rt"
 	envDockerContextEmpty = "DOCKER_CONTEXT="
 	hiddenDriveEntry      = `=C:=C:\x`
-	ghEnvFile             = "/gh/env"
 )
 
 // fakeRunner records commands and answers through handle.
@@ -74,7 +73,11 @@ func newMemFiles() *memFiles {
 	return &memFiles{files: map[string][]byte{}, modes: map[string]fs.FileMode{}}
 }
 
+// canon keys the fake FS by host-native path, so "/a/b" and `\a\b` agree on Windows.
+func canon(name string) string { return filepath.Clean(name) }
+
 func (m *memFiles) ReadFile(name string) ([]byte, error) {
+	name = canon(name)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	data, ok := m.files[name]
@@ -85,6 +88,7 @@ func (m *memFiles) ReadFile(name string) ([]byte, error) {
 }
 
 func (m *memFiles) WriteFile(name string, data []byte, perm fs.FileMode) error {
+	name = canon(name)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.files[name], m.modes[name] = append([]byte(nil), data...), perm
@@ -92,6 +96,7 @@ func (m *memFiles) WriteFile(name string, data []byte, perm fs.FileMode) error {
 }
 
 func (m *memFiles) AppendFile(name string, data []byte, perm fs.FileMode) error {
+	name = canon(name)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.failAppend != nil {
@@ -105,6 +110,7 @@ func (m *memFiles) AppendFile(name string, data []byte, perm fs.FileMode) error 
 func (m *memFiles) MkdirAll(string, fs.FileMode) error { return nil }
 
 func (m *memFiles) Stat(name string) (fs.FileInfo, error) {
+	name = canon(name)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	data, ok := m.files[name]
@@ -115,6 +121,7 @@ func (m *memFiles) Stat(name string) (fs.FileInfo, error) {
 }
 
 func (m *memFiles) Remove(name string) error {
+	name = canon(name)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.files[name]; !ok {
@@ -125,6 +132,7 @@ func (m *memFiles) Remove(name string) error {
 }
 
 func (m *memFiles) RemoveAll(path string) error {
+	path = canon(path)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.files, path)
@@ -132,6 +140,7 @@ func (m *memFiles) RemoveAll(path string) error {
 }
 
 func (m *memFiles) has(name string) bool {
+	name = canon(name)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	_, ok := m.files[name]

@@ -52,9 +52,9 @@ func (s *DockerWSLSetupSuite) TestHappyPathProvesThenExports() {
 	env := s.Exports()
 	s.Contains(env, envLineSSHHost)
 	s.Contains(env, envLineDaemon)
-	s.Contains(env, "DOCKER_CONFIG="+testFixture+"/docker-config\n")
+	s.Contains(env, "DOCKER_CONFIG="+fixtureFile("docker-config")+"\n")
 	s.Equal(
-		testFixture+"/docker-cli/docker\n",
+		fixtureFile("docker-cli", "docker")+"\n",
 		s.rig.files.text(testGHPath),
 		"directory, not exe path",
 	)
@@ -68,10 +68,10 @@ func (s *DockerWSLSetupSuite) TestHappyPathWiresSSHAndDockerExactly() {
 	s.True(strings.HasSuffix(cfg, "\n"+originalSSHConfig), "original bytes follow the block")
 	s.Contains(cfg, "HostName 127.0.0.1")
 	s.Contains(cfg, "StrictHostKeyChecking yes")
-	known := s.rig.files.text(testFixture + "/known_hosts")
+	known := s.rig.files.text(fixtureFile("known_hosts"))
 	s.Contains(known, testAlias+" ssh-ed25519 ")
 	s.Contains(known, "["+testAlias+"]:2222 ssh-ed25519 ")
-	s.Equal(originalSSHConfig, s.rig.files.text(testFixture+"/ssh-config-original"))
+	s.Equal(originalSSHConfig, s.rig.files.text(fixtureFile("ssh-config-original")))
 	s.Equal(1, s.rig.runner.count("icacls-save"), "existing config ACLs are saved")
 	s.Equal(1, s.rig.runner.count("icacls-restrict"))
 	s.Equal(1, s.rig.runner.count(kindDockerInfoDead))
@@ -86,7 +86,7 @@ func (s *DockerWSLSetupSuite) AssertDockerEnvironment() {
 		}
 		env := s.rig.runner.calls[i].Env
 		s.Contains(env, "DOCKER_CONTEXT=", "context is cleared for every oracle")
-		s.Contains(env, "DOCKER_CONFIG="+testFixture+"/docker-config")
+		s.Contains(env, "DOCKER_CONFIG="+fixtureFile("docker-config"))
 	}
 	for i, kind := range s.rig.runner.kinds {
 		if kind == kindDockerInfoSSH {
@@ -117,7 +117,7 @@ func (s *DockerWSLSetupSuite) AssertDetachedLaunches() {
 func (s *DockerWSLSetupSuite) TestAuthorizedKeyIsThePublicHalfOnly() {
 	s.Require().NoError(s.rig.setup())
 
-	pub := strings.TrimSpace(s.rig.files.text(testFixture + "/id_ed25519.pub"))
+	pub := strings.TrimSpace(s.rig.files.text(fixtureFile("id_ed25519.pub")))
 	pubKey, err := parseHostKey(pub)
 	s.Require().NoError(err)
 	want := base64.StdEncoding.EncodeToString([]byte(pubKey))
@@ -151,14 +151,14 @@ func (s *DockerWSLSetupSuite) TestLocalModeNeedsNoGitHubFiles() {
 		NoError(s.rig.controller(func(o *dockerWSLOptions) { o.RunID = testRunID }).setup(context.Background()))
 
 	s.Contains(s.rig.out.String(), "local env: "+envLineSSHHost)
-	s.Contains(s.rig.out.String(), "local path: "+testFixture+"/docker-cli/docker")
+	s.Contains(s.rig.out.String(), "local path: "+fixtureFile("docker-cli", "docker"))
 	s.Empty(s.rig.files.text(testGHEnv))
 }
 
 func (s *DockerWSLSetupSuite) TestUnsafeExportValuesAreRejected() {
 	d := s.rig.controller()
-	d.state.Owned.DockerBinDirectory = testFixture + "/bin"
-	d.state.Owned.DockerConfigDir = testFixture + "/cfg"
+	d.state.Owned.DockerBinDirectory = fixtureFile("bin")
+	d.state.Owned.DockerConfigDir = fixtureFile("cfg")
 	d.state.SSHEndpoint = wantEndpoint
 
 	err := d.export("id\nEVIL=1")
@@ -176,7 +176,7 @@ func (s *DockerWSLSetupSuite) TestDirectEndpointMode() {
 	st := s.rig.state()
 	s.Equal("ssh://devsyci@127.0.0.1:2222", st.SSHEndpoint)
 	s.NotContains(s.rig.files.text(testUserConfig), "HostKeyAlias")
-	s.Contains(s.rig.files.text(testFixture+"/known_hosts"), "[127.0.0.1]:2222 ssh-ed25519 ")
+	s.Contains(s.rig.files.text(fixtureFile("known_hosts")), "[127.0.0.1]:2222 ssh-ed25519 ")
 }
 
 func (s *DockerWSLSetupSuite) TestVMAddressFallbackAfterLoopbackFailure() {
