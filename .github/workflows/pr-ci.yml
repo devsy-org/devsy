@@ -1061,10 +1061,8 @@ jobs:
         run: |
           devsy-ci docker-wsl setup `
             --distribution Ubuntu-24.04 `
-            --bootstrap-timeout 4m `
-            --state-file "${{ runner.temp }}\devsy-ci\docker-wsl-state.json" `
-            --github-env "$env:GITHUB_ENV" `
-            --github-path "$env:GITHUB_PATH"
+            --timeout 4m `
+            --state-file "${{ runner.temp }}\devsy-ci\docker-wsl-state.json"
           if ($LASTEXITCODE -ne 0) { throw "devsy-ci docker-wsl setup failed with exit code $LASTEXITCODE" }
 
       - name: install podman (Windows)
