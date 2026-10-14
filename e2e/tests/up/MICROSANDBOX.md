@@ -25,7 +25,10 @@ callbacks into the session.
 ## Continuous integration
 
 The dedicated `integration-tests-microsandbox` job in
-`.github/workflows/pr-ci.yml` owns the suite catalogue and common setup. Each
+`.github/workflows/pr-ci.yml` owns the suite catalogue, runner configuration and
+artifact uploads. `hack/microsandbox/install-linux.sh` installs and checks the
+pinned Linux bundle; `hack/microsandbox/run-ci.sh` owns test execution, managed
+fixture selection, output capture and report validation. Each
 suite still gets a fresh runner, a 25-minute job limit and a 20-minute test limit,
 with one attempt. The checked runtime bundle, build artifacts, required KVM gate
 and credentials are configured once in the job definition.
