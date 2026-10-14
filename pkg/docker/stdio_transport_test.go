@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
@@ -26,27 +27,63 @@ const (
 	boundedInterval = 5 * time.Second
 )
 
-func TestMain(m *testing.M) {
-	switch os.Getenv(helperModeEnv) {
-	case "":
-		os.Exit(m.Run())
-	case "echo":
-		_, _ = io.Copy(os.Stdout, os.Stdin)
-	case "fail":
+var helperModes = map[string]func(){
+	"echo": func() { _, _ = io.Copy(os.Stdout, os.Stdin) },
+	"fail": func() {
 		_, _ = fmt.Fprintln(os.Stderr, "daemon unreachable")
 		os.Exit(3)
-	case "fail-secret":
+	},
+	"fail-secret": func() {
 		_, _ = fmt.Fprintln(os.Stderr, "auth failed for hunter2-token")
 		os.Exit(4)
-	case "hang":
-		time.Sleep(time.Minute)
-	case "lingering":
+	},
+	"hang": func() { time.Sleep(time.Minute) },
+	"lingering": func() {
 		_ = os.Stdout.Close()
 		time.Sleep(time.Minute)
-	case "daemon":
-		serveFakeDaemon()
+	},
+	"spawn-child": spawnHangingChild,
+	"daemon":      serveFakeDaemon,
+}
+
+func TestMain(m *testing.M) {
+	mode := os.Getenv(helperModeEnv)
+	if mode == "" {
+		os.Exit(m.Run())
+	}
+	if run, ok := helperModes[mode]; ok {
+		run()
 	}
 	os.Exit(0)
+}
+
+// spawnHangingChild starts a long-lived descendant immediately, reports its
+// pid on stdout and then hangs, standing in for docker.exe starting ssh.exe.
+func spawnHangingChild() {
+	exe, err := os.Executable()
+	if err != nil {
+		os.Exit(2)
+	}
+	//nolint:gosec // re-executes this test binary
+	cmd := exec.Command(exe)
+	cmd.Env = append(envWithout(os.Environ(), helperModeEnv), helperModeEnv+"=hang")
+	if err := cmd.Start(); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "start descendant:", err)
+		os.Exit(2)
+	}
+	_, _ = fmt.Fprintf(os.Stdout, "%d\n", cmd.Process.Pid)
+	time.Sleep(time.Minute)
+}
+
+func envWithout(environ []string, key string) []string {
+	prefix := strings.ToUpper(key) + "="
+	kept := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		if !strings.HasPrefix(strings.ToUpper(kv), prefix) {
+			kept = append(kept, kv)
+		}
+	}
+	return kept
 }
 
 func serveFakeDaemon() {
@@ -104,7 +141,7 @@ func helperInvocation(t *testing.T, mode string, extra ...string) *DockerInvocat
 		k, v, _ := strings.Cut(kv, "=")
 		env[k] = v
 	}
-	return &DockerInvocation{DockerCmd: exe, Env: env}
+	return &DockerInvocation{DockerCmd: exe, env: env}
 }
 
 func dial(s *StdioTransportSuite, mode string, extra ...string) (*StdioTransport, *stdioConn) {
@@ -301,7 +338,7 @@ func (s *StdioTransportSuite) TestStderrTailIsRedacted() {
 func (s *StdioTransportSuite) TestMissingCommandIsActionable() {
 	_, err := NewStdioTransport(&DockerInvocation{
 		DockerCmd: "devsy-no-such-docker-binary",
-		Env:       map[string]string{},
+		env:       map[string]string{},
 	}).Dial(context.Background())
 	s.Require().Error(err)
 	s.Contains(err.Error(), "devsy-no-such-docker-binary")

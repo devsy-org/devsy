@@ -10,9 +10,14 @@ import (
 
 var envCaseInsensitive = runtime.GOOS == "windows"
 
+// DockerInvocation is a source-independent snapshot of the docker command and
+// the merged environment (process values overlaid by provider values). The
+// environment is private: callers read it only through Lookup and Environ,
+// which never expose the backing map. It is intentionally not serialized, so
+// secret-bearing values cannot leak through encoding.
 type DockerInvocation struct {
-	DockerCmd string            `json:"dockerCmd"`
-	Env       map[string]string `json:"env"`
+	DockerCmd string
+	env       map[string]string
 }
 
 func NewDockerInvocation(helper *DockerHelper) (*DockerInvocation, error) {
@@ -30,17 +35,19 @@ func NewDockerInvocation(helper *DockerHelper) (*DockerInvocation, error) {
 	for _, kv := range helper.Environment {
 		setEnv(env, kv)
 	}
-	return &DockerInvocation{DockerCmd: helper.DockerCommand, Env: env}, nil
+	return &DockerInvocation{DockerCmd: helper.DockerCommand, env: env}, nil
 }
 
+// Lookup returns the snapshot value for name. An explicitly empty value is
+// distinct from an absent variable. Keys are case-insensitive on Windows only.
 func (i *DockerInvocation) Lookup(name string) (string, bool) {
-	if v, ok := i.Env[name]; ok {
+	if v, ok := i.env[name]; ok {
 		return v, true
 	}
 	if !envCaseInsensitive {
 		return "", false
 	}
-	for k, v := range i.Env {
+	for k, v := range i.env {
 		if strings.EqualFold(k, name) {
 			return v, true
 		}
@@ -48,9 +55,11 @@ func (i *DockerInvocation) Lookup(name string) (string, bool) {
 	return "", false
 }
 
+// Environ returns a fresh, sorted KEY=value slice; mutating it never affects
+// the invocation.
 func (i *DockerInvocation) Environ() []string {
-	environ := make([]string, 0, len(i.Env))
-	for k, v := range i.Env {
+	environ := make([]string, 0, len(i.env))
+	for k, v := range i.env {
 		environ = append(environ, k+"="+v)
 	}
 	sort.Strings(environ)
@@ -102,7 +111,7 @@ func ProviderDaemonOverrides(helper *DockerHelper) []string {
 	for _, kv := range helper.Environment {
 		setEnv(provider, kv)
 	}
-	inv := &DockerInvocation{Env: provider}
+	inv := &DockerInvocation{env: provider}
 
 	var overridden []string
 	for _, key := range daemonSelectorKeys {

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -21,14 +20,26 @@ const (
 	stderrTailBytes        = 4096
 )
 
+// errTransportClosed is returned (wrapped) by Dial once Close has begun.
+var errTransportClosed = errors.New("docker stdio transport is closed")
+
 var sensitiveEnvKey = regexp.MustCompile(`(?i)pass|secret|token|key`)
 
 type StdioTransport struct {
 	Invocation      *DockerInvocation
 	ShutdownTimeout time.Duration
 
-	mu    sync.Mutex
-	conns map[*stdioConn]struct{}
+	// launch is the process-start seam; nil means launchDialStdio.
+	launch dialLauncher
+
+	mu       sync.Mutex
+	cond     *sync.Cond // signalled when starting drops; lazily bound to mu
+	closed   bool       // guarded by mu; set once by Close, never cleared
+	starting int        // guarded by mu; admitted Dials not yet published or cleaned up
+	conns    map[*stdioConn]struct{}
+
+	closeOnce sync.Once
+	closeErr  error // read only after closeOnce.Do returns
 }
 
 func NewStdioTransport(invocation *DockerInvocation) *StdioTransport {
@@ -43,13 +54,10 @@ func (t *StdioTransport) Dial(ctx context.Context) (net.Conn, error) {
 		return nil, fmt.Errorf("dial docker stdio: %w", err)
 	}
 
-	conn, err := t.spawn()
+	conn, err := t.open()
 	if err != nil {
 		return nil, err
 	}
-	conn.onClose = func() { t.untrack(conn) }
-	t.track(conn)
-
 	if attempt, ok := ctx.Value(hijackAttemptKey{}).(*hijackAttempt); ok &&
 		!attempt.register(conn) {
 		_ = conn.Close()
@@ -62,15 +70,57 @@ func (t *StdioTransport) DialContext(ctx context.Context, _, _ string) (net.Conn
 	return t.Dial(ctx)
 }
 
-// Close tears down every connection still owned by the transport.
+// Close rejects further dials, waits for every admitted startup to be
+// published or cleaned up, then closes every tracked connection and returns
+// after their children are reaped. All callers observe the same outcome.
 func (t *StdioTransport) Close() error {
+	t.closeOnce.Do(func() { t.closeErr = t.shutdown() })
+	return t.closeErr
+}
+
+// open admits one startup, launches the child outside the lock and publishes
+// the connection, or cleans the child up before retiring the admission.
+func (t *StdioTransport) open() (*stdioConn, error) {
+	if err := t.beginDial(); err != nil {
+		return nil, fmt.Errorf("dial docker stdio: %w", err)
+	}
+
+	// Exactly one path retires the admission: publish on success, otherwise
+	// this deferred call after any child cleanup has finished.
+	published := false
+	defer func() {
+		if !published {
+			t.finishStarting()
+		}
+	}()
+
+	conn, err := t.spawn()
+	if err != nil {
+		return nil, err
+	}
+	if !t.publish(conn) {
+		return nil, errors.Join(
+			fmt.Errorf("dial docker stdio: %w", errTransportClosed),
+			conn.Close(), // never published: reap it before Close can return
+		)
+	}
+	published = true
+	return conn, nil
+}
+
+func (t *StdioTransport) shutdown() error {
 	t.mu.Lock()
+	t.closed = true
+	for t.starting > 0 {
+		t.startupCond().Wait()
+	}
 	conns := make([]*stdioConn, 0, len(t.conns))
 	for c := range t.conns {
 		conns = append(conns, c)
 	}
 	t.mu.Unlock()
 
+	// Not under mu: conn.Close -> onClose -> untrack takes it.
 	errs := make([]error, len(conns))
 	var wg sync.WaitGroup
 	for i, c := range conns {
@@ -85,50 +135,62 @@ func (t *StdioTransport) spawn() (*stdioConn, error) {
 	if shutdownTimeout <= 0 {
 		shutdownTimeout = defaultShutdownTimeout
 	}
-
-	// Deliberately not CommandContext: the process must outlive the dial ctx.
-	//nolint:gosec // command comes from trusted provider config
-	cmd := exec.Command(t.Invocation.DockerCmd, "system", "dial-stdio")
-	cmd.Env = t.Invocation.Environ()
-	setProcessGroupAttrs(cmd)
-
-	stderr := &tailBuffer{limit: stderrTailBytes}
-	cmd.Stderr = stderr
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("open stdin of %q dial-stdio: %w", t.Invocation.DockerCmd, err)
+	launch := t.launch
+	if launch == nil {
+		launch = launchDialStdio
 	}
-	stdout, err := cmd.StdoutPipe()
+
+	launched, err := launch(t.Invocation.launchSpec())
 	if err != nil {
-		_ = stdin.Close()
-		return nil, fmt.Errorf("open stdout of %q dial-stdio: %w", t.Invocation.DockerCmd, err)
-	}
-	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
-		_ = stdout.Close()
 		return nil, fmt.Errorf(
 			"start %q system dial-stdio (requires docker CLI 18.09+): %w",
 			t.Invocation.DockerCmd, err,
 		)
 	}
-
 	return newStdioConn(stdioProc{
-		cmd:             cmd,
-		stdin:           stdin,
-		stdout:          stdout,
-		stderr:          stderr,
+		launched:        launched,
 		shutdownTimeout: shutdownTimeout,
 		redact:          t.Invocation.secretValues(),
 	}), nil
 }
 
-func (t *StdioTransport) track(c *stdioConn) {
+// beginDial admits one Dial or rejects it once the transport is closed. Every
+// admission must be matched by exactly one finishStarting (or publish).
+func (t *StdioTransport) beginDial() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.closed {
+		return errTransportClosed
+	}
+	t.starting++
+	return nil
+}
+
+// finishStarting retires one admission and wakes a Close waiting on startups.
+func (t *StdioTransport) finishStarting() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.starting--
+	t.startupCond().Broadcast()
+}
+
+// publish is the successful dial's linearization point: it tracks c and
+// retires the admission, or reports false if Close already won, in which case
+// the caller owns c's cleanup and must finishStarting afterwards.
+func (t *StdioTransport) publish(c *stdioConn) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return false
+	}
+	c.onClose = func() { t.untrack(c) }
 	if t.conns == nil {
 		t.conns = make(map[*stdioConn]struct{})
 	}
 	t.conns[c] = struct{}{}
+	t.starting--
+	t.startupCond().Broadcast()
+	return true
 }
 
 func (t *StdioTransport) untrack(c *stdioConn) {
@@ -137,9 +199,17 @@ func (t *StdioTransport) untrack(c *stdioConn) {
 	delete(t.conns, c)
 }
 
+// startupCond returns the startup condition variable. t.mu must be held.
+func (t *StdioTransport) startupCond() *sync.Cond {
+	if t.cond == nil {
+		t.cond = sync.NewCond(&t.mu)
+	}
+	return t.cond
+}
+
 func (i *DockerInvocation) secretValues() []string {
 	var values []string
-	for k, v := range i.Env {
+	for k, v := range i.env {
 		if v == "" {
 			continue
 		}
@@ -158,11 +228,11 @@ func (i *DockerInvocation) secretValues() []string {
 // stdioConn bridges a child's stdio to a net.Conn through two independent
 // net.Pipe pairs, so each direction has real deadlines and can be half-closed.
 type stdioConn struct {
-	cmd             *exec.Cmd
-	tree            *processTree
+	proc            dialProcess
 	stdin           io.WriteCloser
 	stdout          io.ReadCloser
-	stderr          *tailBuffer
+	stderr          io.ReadCloser
+	stderrTail      *tailBuffer
 	redact          []string
 	shutdownTimeout time.Duration
 	onClose         func()
@@ -171,8 +241,10 @@ type stdioConn struct {
 	appWrite, writePump net.Conn
 
 	stdoutDone chan struct{}
+	stderrDone chan struct{}
 	exited     chan struct{}
-	waitErr    error
+	waitErr    error // written before exited closes
+	releaseErr error // written before exited closes
 
 	closed         atomic.Bool
 	closeOnce      sync.Once
@@ -184,24 +256,22 @@ type stdioConn struct {
 var _ net.Conn = (*stdioConn)(nil)
 
 type stdioProc struct {
-	cmd             *exec.Cmd
-	stdin           io.WriteCloser
-	stdout          io.ReadCloser
-	stderr          *tailBuffer
+	launched        *launchedStdio
 	shutdownTimeout time.Duration
 	redact          []string
 }
 
 func newStdioConn(p stdioProc) *stdioConn {
 	c := &stdioConn{
-		cmd:             p.cmd,
-		tree:            attachProcessTree(p.cmd),
-		stdin:           p.stdin,
-		stdout:          p.stdout,
-		stderr:          p.stderr,
+		proc:            p.launched.proc,
+		stdin:           p.launched.stdin,
+		stdout:          p.launched.stdout,
+		stderr:          p.launched.stderr,
+		stderrTail:      &tailBuffer{limit: stderrTailBytes},
 		redact:          p.redact,
 		shutdownTimeout: p.shutdownTimeout,
 		stdoutDone:      make(chan struct{}),
+		stderrDone:      make(chan struct{}),
 		exited:          make(chan struct{}),
 	}
 	c.appRead, c.readPump = net.Pipe()
@@ -209,6 +279,7 @@ func newStdioConn(p stdioProc) *stdioConn {
 
 	go c.pumpStdout()
 	go c.pumpStdin()
+	go c.pumpStderr()
 	go c.reap()
 	return c
 }
@@ -273,18 +344,34 @@ func (c *stdioConn) pumpStdin() {
 	_ = c.writePump.Close()
 }
 
-// reap is the only caller of cmd.Wait. os/exec requires stdout reads to finish
-// before Wait, and a child that closes stdout but lingers is killed after the
-// shutdown timeout so it can never pin the connection.
+func (c *stdioConn) pumpStderr() {
+	defer close(c.stderrDone)
+	_, _ = io.Copy(c.stderrTail, c.stderr)
+}
+
+// reap is the only caller of proc.Wait. A child that closes stdout but lingers
+// is killed after the shutdown timeout so it can never pin the connection.
+// Once the child is gone, Release closes the ownership handles (which also
+// reaps any straggling descendant) and the stderr drain is given a bounded
+// moment to finish so the diagnostic tail is complete.
 func (c *stdioConn) reap() {
 	<-c.stdoutDone
 
-	lingering := time.AfterFunc(c.shutdownTimeout, func() { _ = c.tree.kill() })
-	err := c.cmd.Wait()
+	lingering := time.AfterFunc(c.shutdownTimeout, func() { _ = c.proc.KillTree() })
+	err := c.proc.Wait()
 	lingering.Stop()
+	c.releaseErr = c.proc.Release()
+
+	drain := time.NewTimer(min(c.shutdownTimeout, exitDiagnosticWait))
+	select {
+	case <-c.stderrDone:
+	case <-drain.C:
+		_ = c.stderr.Close()
+		<-c.stderrDone
+	}
+	drain.Stop()
 
 	c.waitErr = c.describeExit(err)
-	c.tree.release()
 	close(c.exited)
 }
 
@@ -293,7 +380,7 @@ func (c *stdioConn) describeExit(err error) error {
 		return nil
 	}
 	described := fmt.Errorf("docker system dial-stdio failed: %w", err)
-	if tail := strings.TrimSpace(c.redactSecrets(c.stderr.String())); tail != "" {
+	if tail := strings.TrimSpace(c.redactSecrets(c.stderrTail.String())); tail != "" {
 		described = fmt.Errorf("%w: %s", described, tail)
 	}
 	return described
@@ -328,16 +415,16 @@ func (c *stdioConn) shutdown() error {
 	_ = c.stdout.Close()
 
 	if c.waitExited(c.shutdownTimeout) {
-		return nil
+		return c.releaseErr
 	}
-	killErr := c.tree.kill()
+	killErr := c.proc.KillTree()
 	if c.waitExited(c.shutdownTimeout) {
-		return nil
+		return c.releaseErr
 	}
 	return errors.Join(
 		fmt.Errorf(
 			"docker system dial-stdio (pid %d) did not exit within %s of being killed",
-			c.cmd.Process.Pid, c.shutdownTimeout,
+			c.proc.PID(), c.shutdownTimeout,
 		),
 		killErr,
 	)

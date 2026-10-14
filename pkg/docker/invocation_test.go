@@ -2,6 +2,9 @@ package docker
 
 import (
 	"encoding/json"
+	"os"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,57 +31,189 @@ func setCaseInsensitive(t *testing.T, v bool) {
 	t.Cleanup(func() { envCaseInsensitive = prev })
 }
 
-func (s *InvocationSuite) TestProviderEnvOverridesProcessEnv() {
-	s.T().Setenv("DEVSY_TEST_ONLY_PROCESS", "process")
-	s.T().Setenv("DOCKER_HOST", "unix:///process.sock")
-
-	inv, err := NewDockerInvocation(&DockerHelper{
-		DockerCommand: testDockerCmd,
-		Environment:   []string{"DOCKER_HOST=ssh://provider", "EXTRA=a=b"},
-	})
+func newTestInvocation(s *InvocationSuite, processEnv map[string]string, provider ...string) *DockerInvocation {
+	for k, v := range processEnv {
+		s.T().Setenv(k, v)
+	}
+	inv, err := NewDockerInvocation(&DockerHelper{DockerCommand: testDockerCmd, Environment: provider})
 	s.Require().NoError(err)
+	return inv
+}
+
+// countKeys counts environ entries whose key matches name, ignoring case.
+func countKeys(environ []string, name string) int {
+	n := 0
+	for _, kv := range environ {
+		if k, _, _ := strings.Cut(kv, "="); strings.EqualFold(k, name) {
+			n++
+		}
+	}
+	return n
+}
+
+func (s *InvocationSuite) TestProviderEnvOverridesProcessEnv() {
+	inv := newTestInvocation(s,
+		map[string]string{"DEVSY_TEST_ONLY_PROCESS": "process", dockerHostKey: "unix:///process.sock"},
+		"DOCKER_HOST=ssh://provider", "EXTRA=a=b")
 
 	s.Equal(testDockerCmd, inv.DockerCmd)
-	s.Equal("ssh://provider", inv.Env["DOCKER_HOST"])
-	s.Equal("process", inv.Env["DEVSY_TEST_ONLY_PROCESS"])
-	s.Equal("a=b", inv.Env["EXTRA"], "value keeps everything after the first '='")
+	host, ok := inv.Lookup(dockerHostKey)
+	s.True(ok)
+	s.Equal("ssh://provider", host)
+	process, ok := inv.Lookup("DEVSY_TEST_ONLY_PROCESS")
+	s.True(ok)
+	s.Equal("process", process)
+	extra, _ := inv.Lookup("EXTRA")
+	s.Equal("a=b", extra, "value keeps everything after the first '='")
+	s.Equal("unix:///process.sock", os.Getenv(dockerHostKey), "global process env must not change")
+}
+
+func (s *InvocationSuite) TestEmptyAndEqualsValuesAreExact() {
+	inv := newTestInvocation(s, nil, "EMPTY=", "EQ=a=b=", "NOEQUALS", "=novalue")
+
+	v, ok := inv.Lookup("EMPTY")
+	s.True(ok, "explicit empty is distinct from absent")
+	s.Empty(v)
+	v, ok = inv.Lookup("EQ")
+	s.True(ok)
+	s.Equal("a=b=", v)
+	_, ok = inv.Lookup("NOEQUALS")
+	s.False(ok, "entries without '=' are not variables")
+	_, ok = inv.Lookup("DEVSY_TEST_NEVER_SET")
+	s.False(ok)
+	s.Contains(inv.Environ(), "EMPTY=")
+	s.Contains(inv.Environ(), "EQ=a=b=")
+}
+
+func (s *InvocationSuite) TestProviderExplicitEmptyOverridesProcessValue() {
+	inv := newTestInvocation(s, map[string]string{"DOCKER_CONTEXT": "process-ctx"}, "DOCKER_CONTEXT=")
+
+	v, ok := inv.Lookup("DOCKER_CONTEXT")
+	s.True(ok)
+	s.Empty(v)
+	s.Contains(inv.Environ(), "DOCKER_CONTEXT=")
+	s.NotContains(inv.Environ(), "DOCKER_CONTEXT=process-ctx")
 }
 
 func (s *InvocationSuite) TestSnapshotIsIndependentOfLaterChanges() {
-	helper := &DockerHelper{DockerCommand: testDockerCmd, Environment: []string{"K=v1"}}
+	s.T().Setenv("K", "process")
+	helper := &DockerHelper{
+		DockerCommand: testDockerCmd,
+		Environment:   []string{"K=v1", "ONLY_PROVIDER=p"},
+	}
 	inv, err := NewDockerInvocation(helper)
 	s.Require().NoError(err)
 
 	helper.Environment[0] = "K=v2"
+	helper.Environment = append(helper.Environment, "LATE=1")
+	helper.DockerCommand = "other"
 	s.T().Setenv("K", "other")
+	s.T().Setenv("PROCESS_LATE", "1")
+	s.Require().NoError(os.Unsetenv("ONLY_PROVIDER"))
 
-	s.Equal("v1", inv.Env["K"])
+	s.Equal(testDockerCmd, inv.DockerCmd)
+	v, _ := inv.Lookup("K")
+	s.Equal("v1", v)
+	_, ok := inv.Lookup("LATE")
+	s.False(ok)
+	_, ok = inv.Lookup("PROCESS_LATE")
+	s.False(ok)
+	p, ok := inv.Lookup("ONLY_PROVIDER")
+	s.True(ok)
+	s.Equal("p", p)
+}
+
+func (s *InvocationSuite) TestReturnedSlicesAreCopies() {
+	inv := newTestInvocation(s, nil, "A=1", "B=2")
+
+	first := inv.Environ()
+	want := slices.Clone(first)
+	for idx := range first {
+		first[idx] = "MUTATED=x"
+	}
+	_ = append(first, "EXTRA=y")
+
+	s.Equal(want, inv.Environ())
+	v, _ := inv.Lookup("A")
+	s.Equal("1", v)
+	_, ok := inv.Lookup("MUTATED")
+	s.False(ok)
+	s.NotSame(&first[0], &inv.Environ()[0])
 }
 
 func (s *InvocationSuite) TestWindowsProviderEnvReplacesDifferentlyCasedProcessKey() {
 	setCaseInsensitive(s.T(), true)
-	s.T().Setenv("DOCKER_HOST", "unix:///process.sock")
+	inv := newTestInvocation(s, map[string]string{dockerHostKey: "unix:///process.sock"},
+		"docker_host=ssh://provider")
 
-	inv, err := NewDockerInvocation(&DockerHelper{
-		DockerCommand: testDockerCmd,
-		Environment:   []string{"docker_host=ssh://provider"},
-	})
-	s.Require().NoError(err)
-
-	count := 0
-	for k := range inv.Env {
-		if k == "DOCKER_HOST" || k == "docker_host" {
-			count++
-		}
+	s.Equal(1, countKeys(inv.Environ(), dockerHostKey), "no duplicate keys may reach the child")
+	for _, name := range []string{"DOCKER_HOST", "docker_host", "Docker_Host"} {
+		v, ok := inv.Lookup(name)
+		s.True(ok, name)
+		s.Equal("ssh://provider", v, name)
 	}
-	s.Equal(1, count)
-	v, ok := inv.Lookup("DOCKER_HOST")
-	s.True(ok)
+}
+
+func (s *InvocationSuite) TestWindowsLowercaseProcessKeyReplacedByProvider() {
+	setCaseInsensitive(s.T(), true)
+	inv := newTestInvocation(s, map[string]string{"docker_host": "unix:///process.sock"},
+		"DOCKER_HOST=ssh://provider")
+
+	s.Equal(1, countKeys(inv.Environ(), dockerHostKey))
+	v, _ := inv.Lookup("docker_host")
 	s.Equal("ssh://provider", v)
 }
 
+func (s *InvocationSuite) TestLinuxKeepsCaseSensitiveKeys() {
+	setCaseInsensitive(s.T(), false)
+	inv := newTestInvocation(s, map[string]string{"docker_host": "unix:///lower.sock"},
+		"DOCKER_HOST=ssh://provider")
+
+	s.Equal(2, countKeys(inv.Environ(), dockerHostKey), "differently cased keys are distinct")
+	lower, ok := inv.Lookup("docker_host")
+	s.True(ok)
+	s.Equal("unix:///lower.sock", lower)
+	upper, _ := inv.Lookup("DOCKER_HOST")
+	s.Equal("ssh://provider", upper)
+	_, ok = inv.Lookup("Docker_Host")
+	s.False(ok)
+}
+
+func (s *InvocationSuite) TestSelectorVariablesComeFromProvider() {
+	process := map[string]string{}
+	var provider []string
+	for _, key := range daemonSelectorKeys {
+		process[key] = "process-" + key
+		provider = append(provider, key+"=provider-"+key)
+	}
+	inv := newTestInvocation(s, process, provider...)
+
+	for _, key := range daemonSelectorKeys {
+		v, ok := inv.Lookup(key)
+		s.True(ok, key)
+		s.Equal("provider-"+key, v, key)
+		s.Contains(inv.Environ(), key+"=provider-"+key)
+		s.Equal(1, countKeys(inv.Environ(), key), key)
+	}
+}
+
+func (s *InvocationSuite) TestProviderContextInConfigReachesCLIAndSDKAlike() {
+	s.T().Setenv(dockerHostKey, "")
+	inv := newTestInvocation(s, nil, "DOCKER_CONFIG=/provider/cfg", "DOCKER_CONTEXT=wsl")
+
+	// the CLI child (Environ) and the SDK-side lookups read one snapshot
+	for _, key := range []string{"DOCKER_CONFIG", "DOCKER_CONTEXT"} {
+		v, ok := inv.Lookup(key)
+		s.Require().True(ok, key)
+		s.Contains(inv.Environ(), key+"="+v)
+	}
+	host, ok := inv.Lookup(dockerHostKey)
+	s.True(ok)
+	s.Empty(host, "no literal host is supplied; the context selects the daemon")
+}
+
 func (s *InvocationSuite) TestLookupCaseSensitivity() {
-	inv := &DockerInvocation{DockerCmd: testDockerCmd, Env: map[string]string{"Path": "x"}}
+	inv := &DockerInvocation{DockerCmd: testDockerCmd, env: map[string]string{"Path": "x"}}
 
 	setCaseInsensitive(s.T(), true)
 	v, ok := inv.Lookup("PATH")
@@ -100,18 +235,19 @@ func (s *InvocationSuite) TestRejectsUnusableHelpers() {
 }
 
 func (s *InvocationSuite) TestEnvironIsSortedKeyValuePairs() {
-	inv := &DockerInvocation{DockerCmd: testDockerCmd, Env: map[string]string{"B": "2", "A": "1"}}
+	inv := &DockerInvocation{DockerCmd: testDockerCmd, env: map[string]string{"B": "2", "A": "1"}}
 	s.Equal([]string{"A=1", "B=2"}, inv.Environ())
 }
 
-func (s *InvocationSuite) TestJSONRoundTrip() {
-	inv := &DockerInvocation{DockerCmd: testDockerCmd, Env: map[string]string{"A": "1"}}
+// The invocation is deliberately not serializable: encoding it must never
+// carry the environment, which can hold credentials.
+func (s *InvocationSuite) TestJSONDoesNotExposeEnvironment() {
+	inv := &DockerInvocation{DockerCmd: testDockerCmd, env: map[string]string{"DOCKER_HOST": "ssh://fake-secret"}}
 	data, err := json.Marshal(inv)
 	s.Require().NoError(err)
 
-	var got DockerInvocation
-	s.Require().NoError(json.Unmarshal(data, &got))
-	s.Equal(*inv, got)
+	s.NotContains(string(data), "fake-secret")
+	s.NotContains(string(data), "DOCKER_HOST")
 }
 
 func TestProviderDaemonOverrides(t *testing.T) {
