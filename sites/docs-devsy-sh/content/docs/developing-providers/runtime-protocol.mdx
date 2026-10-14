@@ -51,7 +51,7 @@ The plugin binary is trusted provider code. Devsy resolves the selected external
 
 ## Plugin process environment
 
-Devsy inherits the agent host's environment, then appends resolved provider/workspace values and explicit extra values. This is the environment of the trusted plugin and its runtime CLI children, separate from the guest environment carried in RunImage and ExecStart. The external driver preserves this behavior; it does not introduce an environment allowlist.
+Devsy inherits the agent host's environment, then appends resolved provider/workspace values. This external-driver path does not supply a separate extra-environment map. This is the environment of the trusted plugin and its runtime CLI children, separate from the guest environment carried in RunImage and ExecStart. The external driver preserves this behavior; it does not introduce an environment allowlist.
 
 `PATH` and home directories can select runtime CLIs and configuration. Proxy and CA settings, Docker configuration and credential helpers, and temporary-directory settings can affect the provider's image clients. Preserving those inputs does not prove every proxy topology, credential store or host profile works. The native consumer cases below cover their controlled registry/TLS/proxy/credential paths. Never log the full environment or secret-bearing runtime arguments; redact backend diagnostics before display.
 
