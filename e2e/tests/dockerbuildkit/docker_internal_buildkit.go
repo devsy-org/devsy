@@ -35,6 +35,7 @@ const (
 	wslDaemonEnv = "DEVSY_E2E_WSL_DAEMON_ID"
 
 	unreachableSSHHost = "ssh://devsy-ci-nobody@127.0.0.1:1"
+	dockerContextEnv   = "DOCKER_CONTEXT"
 )
 
 // dockerOutput runs the docker CLI with env layered over the process
@@ -70,7 +71,7 @@ func providerEnv(host string) []string {
 }
 
 func newProductionDriver(host string) driver.ImageDriver {
-	return newProductionDriverWithEnv(map[string]string{"DOCKER_HOST": host, "DOCKER_CONTEXT": ""})
+	return newProductionDriverWithEnv(map[string]string{"DOCKER_HOST": host, dockerContextEnv: ""})
 }
 
 func newProductionDriverWithEnv(env map[string]string) driver.ImageDriver {
@@ -263,7 +264,7 @@ var _ = ginkgo.Describe(
 				// Make the process daemon reachable (the same WSL daemon) so a
 				// silent fallback would succeed.
 				setProcessEnv("DOCKER_HOST", sshHost)
-				setProcessEnv("DOCKER_CONTEXT", "")
+				setProcessEnv(dockerContextEnv, "")
 
 				tag := uniqueTag()
 				ginkgo.DeferCleanup(func(ctx context.Context) {
@@ -334,7 +335,7 @@ var _ = ginkgo.Describe(
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
 				setProcessEnv("DOCKER_HOST", deadProcessHost)
-				setProcessEnv("DOCKER_CONTEXT", "")
+				setProcessEnv(dockerContextEnv, "")
 				_, err := dockerRun(ctx, nil, "info")
 				gomega.Expect(err).To(gomega.HaveOccurred(),
 					"process-env daemon must be unreachable for this regression to mean anything")
@@ -356,7 +357,7 @@ var _ = ginkgo.Describe(
 					Environment:   envVars,
 				})
 				framework.ExpectNoError(err)
-				selected, _ := invocation.Lookup("DOCKER_CONTEXT")
+				selected, _ := invocation.Lookup(dockerContextEnv)
 				gomega.Expect(selected).To(gomega.Equal(contextName))
 				host, _ := invocation.Lookup("DOCKER_HOST")
 				gomega.Expect(host).To(gomega.Equal(deadProcessHost),
@@ -366,7 +367,10 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				defer func() { _ = client.Close() }()
 				info, err := client.Info(ctx)
-				framework.ExpectNoError(err, "SDK over dial-stdio failed to resolve the named context")
+				framework.ExpectNoError(
+					err,
+					"SDK over dial-stdio failed to resolve the named context",
+				)
 				gomega.Expect(info.ID).To(gomega.Equal(wslID))
 
 				tag := uniqueTag()
@@ -376,7 +380,7 @@ var _ = ginkgo.Describe(
 
 				built, err := newProductionDriverWithEnv(map[string]string{
 					"DOCKER_CONFIG":  configDir,
-					"DOCKER_CONTEXT": contextName,
+					dockerContextEnv: contextName,
 				}).BuildDevContainer(ctx, newBuildRequest(tag))
 				framework.ExpectNoError(err, "production BuildDevContainer failed")
 				gomega.Expect(built.ImageName).To(gomega.Equal(tag))
@@ -394,7 +398,7 @@ var _ = ginkgo.Describe(
 			func(ctx context.Context) {
 				// Make the process daemon reachable so a silent fallback would succeed.
 				setProcessEnv("DOCKER_HOST", sshHost)
-				setProcessEnv("DOCKER_CONTEXT", "")
+				setProcessEnv(dockerContextEnv, "")
 				gomega.Expect(dockerOutput(ctx, nil, "info", "--format", "{{.ID}}")).
 					To(gomega.Equal(wslID), "process daemon must be reachable for this negative control")
 
@@ -412,7 +416,7 @@ var _ = ginkgo.Describe(
 
 				_, err = newProductionDriverWithEnv(map[string]string{
 					"DOCKER_CONFIG":  configDir,
-					"DOCKER_CONTEXT": missing,
+					dockerContextEnv: missing,
 				}).BuildDevContainer(ctx, newBuildRequest(tag))
 				gomega.Expect(err).To(gomega.HaveOccurred(),
 					"build succeeded: invalid provider context was ignored")

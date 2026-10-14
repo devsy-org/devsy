@@ -330,7 +330,7 @@ func TestBuildkitNewDockerClient_ElevatedRejectsDaemonOverrides(t *testing.T) {
 	t.Setenv("DOCKER_CONFIG", "/process/config")
 
 	s := elevatedDockerStrategy(t,
-		"DOCKER_HOST=ssh://user@remote",
+		remoteSSHHostEnv,
 		"DOCKER_CONFIG=/provider/config",
 		"DOCKER_CONTEXT=remote",
 	)
@@ -367,7 +367,7 @@ func TestBuildkitNewDockerClient_ForceInternalBuildKitNeverSwitchesToBuildx(t *t
 		DockerCommand: bin,
 		Builder:       docker.DockerBuilderBuildX,
 		Elevator:      elevator,
-		Environment:   []string{"DOCKER_HOST=ssh://user@remote"},
+		Environment:   []string{remoteSSHHostEnv},
 	}}}
 
 	strategy := o.selectStrategy(provider.BuildOptions{
@@ -381,7 +381,8 @@ func TestBuildkitNewDockerClient_ForceInternalBuildKitNeverSwitchesToBuildx(t *t
 
 const (
 	processDaemonSock = "unix:///tmp/devsy-test-process-daemon.sock"
-	secretMarker      = "devsy-secret-marker"
+	leakMarker        = "devsy-leak-marker"
+	remoteSSHHostEnv  = "DOCKER_HOST=ssh://user@remote"
 )
 
 // clearSelectorEnv pins every daemon selector to a known process value so the
@@ -401,7 +402,7 @@ func TestBuildkitNewDockerClient_ElevatedNamesOnlyDifferingSelectorKeys(t *testi
 	} {
 		t.Run(key, func(t *testing.T) {
 			clearSelectorEnv(t)
-			value := secretMarker + "-" + key
+			value := leakMarker + "-" + key
 
 			client, err := elevatedDockerStrategy(t, key+"="+value).
 				newDockerClient(context.Background())
@@ -409,8 +410,13 @@ func TestBuildkitNewDockerClient_ElevatedNamesOnlyDifferingSelectorKeys(t *testi
 			require.Error(t, err)
 			assert.Nil(t, client)
 			assert.ErrorContains(t, err, "overrides "+key+";")
-			assert.NotContains(t, err.Error(), secretMarker, "values must not be printed")
-			assert.NotContains(t, err.Error(), processDaemonSock, "process values must not be printed")
+			assert.NotContains(t, err.Error(), leakMarker, "values must not be printed")
+			assert.NotContains(
+				t,
+				err.Error(),
+				processDaemonSock,
+				"process values must not be printed",
+			)
 			for _, other := range []string{
 				"DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH",
 			} {
@@ -447,7 +453,12 @@ func TestBuildkitNewDockerClient_ElevatedIgnoresNonSelectorDifferences(t *testin
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	t.Cleanup(func() { _ = client.Close() })
-	assert.Equal(t, processDaemonSock, client.DaemonHost(), "elevated Docker keeps the process client")
+	assert.Equal(
+		t,
+		processDaemonSock,
+		client.DaemonHost(),
+		"elevated Docker keeps the process client",
+	)
 }
 
 func TestBuildkitNewDockerClient_PodmanAndNerdctlKeepProcessClient(t *testing.T) {
@@ -465,7 +476,7 @@ func TestBuildkitNewDockerClient_PodmanAndNerdctlKeepProcessClient(t *testing.T)
 					Runtime:       rt,
 					Elevator:      elevated,
 					Environment: []string{
-						"DOCKER_HOST=ssh://user@remote",
+						remoteSSHHostEnv,
 						"DOCKER_CONTEXT=remote",
 						"DOCKER_CONFIG=/provider/config",
 					},
@@ -489,7 +500,7 @@ func TestBuildkitNewDockerClient_UnelevatedDockerUsesProviderInvocation(t *testi
 	s := &buildkitStrategy{driver: &dockerDriver{Docker: &docker.DockerHelper{
 		DockerCommand: bin,
 		Builder:       docker.DockerBuilderBuildKit,
-		Environment:   []string{"DOCKER_HOST=ssh://user@remote"},
+		Environment:   []string{remoteSSHHostEnv},
 	}}}
 
 	client, err := s.newDockerClient(context.Background())
@@ -517,7 +528,7 @@ func TestSelectStrategy_PodmanAndNerdctlUnchanged(t *testing.T) {
 				DockerCommand: "docker-fake",
 				Runtime:       rt,
 				Builder:       docker.DockerBuilderBuildKit,
-				Environment:   []string{"DOCKER_HOST=ssh://user@remote"},
+				Environment:   []string{remoteSSHHostEnv},
 			}}}
 
 			strategy := o.selectStrategy(provider.BuildOptions{

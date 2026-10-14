@@ -12,8 +12,11 @@ import (
 )
 
 const (
-	testDockerCmd = "docker"
-	dockerHostKey = "DOCKER_HOST"
+	testDockerCmd      = "docker"
+	dockerHostKey      = "DOCKER_HOST"
+	dockerContextKey   = "DOCKER_CONTEXT"
+	lowerDockerHostKey = "docker_host"
+	processHostSock    = "unix:///process.sock"
 )
 
 type InvocationSuite struct {
@@ -31,11 +34,17 @@ func setCaseInsensitive(t *testing.T, v bool) {
 	t.Cleanup(func() { envCaseInsensitive = prev })
 }
 
-func newTestInvocation(s *InvocationSuite, processEnv map[string]string, provider ...string) *DockerInvocation {
+func newTestInvocation(
+	s *InvocationSuite,
+	processEnv map[string]string,
+	provider ...string,
+) *DockerInvocation {
 	for k, v := range processEnv {
 		s.T().Setenv(k, v)
 	}
-	inv, err := NewDockerInvocation(&DockerHelper{DockerCommand: testDockerCmd, Environment: provider})
+	inv, err := NewDockerInvocation(
+		&DockerHelper{DockerCommand: testDockerCmd, Environment: provider},
+	)
 	s.Require().NoError(err)
 	return inv
 }
@@ -52,9 +61,15 @@ func countKeys(environ []string, name string) int {
 }
 
 func (s *InvocationSuite) TestProviderEnvOverridesProcessEnv() {
-	inv := newTestInvocation(s,
-		map[string]string{"DEVSY_TEST_ONLY_PROCESS": "process", dockerHostKey: "unix:///process.sock"},
-		"DOCKER_HOST=ssh://provider", "EXTRA=a=b")
+	inv := newTestInvocation(
+		s,
+		map[string]string{
+			"DEVSY_TEST_ONLY_PROCESS": "process",
+			dockerHostKey:             processHostSock,
+		},
+		"DOCKER_HOST=ssh://provider",
+		"EXTRA=a=b",
+	)
 
 	s.Equal(testDockerCmd, inv.DockerCmd)
 	host, ok := inv.Lookup(dockerHostKey)
@@ -65,7 +80,7 @@ func (s *InvocationSuite) TestProviderEnvOverridesProcessEnv() {
 	s.Equal("process", process)
 	extra, _ := inv.Lookup("EXTRA")
 	s.Equal("a=b", extra, "value keeps everything after the first '='")
-	s.Equal("unix:///process.sock", os.Getenv(dockerHostKey), "global process env must not change")
+	s.Equal(processHostSock, os.Getenv(dockerHostKey), "global process env must not change")
 }
 
 func (s *InvocationSuite) TestEmptyAndEqualsValuesAreExact() {
@@ -86,9 +101,13 @@ func (s *InvocationSuite) TestEmptyAndEqualsValuesAreExact() {
 }
 
 func (s *InvocationSuite) TestProviderExplicitEmptyOverridesProcessValue() {
-	inv := newTestInvocation(s, map[string]string{"DOCKER_CONTEXT": "process-ctx"}, "DOCKER_CONTEXT=")
+	inv := newTestInvocation(
+		s,
+		map[string]string{dockerContextKey: "process-ctx"},
+		"DOCKER_CONTEXT=",
+	)
 
-	v, ok := inv.Lookup("DOCKER_CONTEXT")
+	v, ok := inv.Lookup(dockerContextKey)
 	s.True(ok)
 	s.Empty(v)
 	s.Contains(inv.Environ(), "DOCKER_CONTEXT=")
@@ -143,11 +162,11 @@ func (s *InvocationSuite) TestReturnedSlicesAreCopies() {
 
 func (s *InvocationSuite) TestWindowsProviderEnvReplacesDifferentlyCasedProcessKey() {
 	setCaseInsensitive(s.T(), true)
-	inv := newTestInvocation(s, map[string]string{dockerHostKey: "unix:///process.sock"},
+	inv := newTestInvocation(s, map[string]string{dockerHostKey: processHostSock},
 		"docker_host=ssh://provider")
 
 	s.Equal(1, countKeys(inv.Environ(), dockerHostKey), "no duplicate keys may reach the child")
-	for _, name := range []string{"DOCKER_HOST", "docker_host", "Docker_Host"} {
+	for _, name := range []string{"DOCKER_HOST", lowerDockerHostKey, "Docker_Host"} {
 		v, ok := inv.Lookup(name)
 		s.True(ok, name)
 		s.Equal("ssh://provider", v, name)
@@ -156,21 +175,21 @@ func (s *InvocationSuite) TestWindowsProviderEnvReplacesDifferentlyCasedProcessK
 
 func (s *InvocationSuite) TestWindowsLowercaseProcessKeyReplacedByProvider() {
 	setCaseInsensitive(s.T(), true)
-	inv := newTestInvocation(s, map[string]string{"docker_host": "unix:///process.sock"},
+	inv := newTestInvocation(s, map[string]string{lowerDockerHostKey: processHostSock},
 		"DOCKER_HOST=ssh://provider")
 
 	s.Equal(1, countKeys(inv.Environ(), dockerHostKey))
-	v, _ := inv.Lookup("docker_host")
+	v, _ := inv.Lookup(lowerDockerHostKey)
 	s.Equal("ssh://provider", v)
 }
 
 func (s *InvocationSuite) TestLinuxKeepsCaseSensitiveKeys() {
 	setCaseInsensitive(s.T(), false)
-	inv := newTestInvocation(s, map[string]string{"docker_host": "unix:///lower.sock"},
+	inv := newTestInvocation(s, map[string]string{lowerDockerHostKey: "unix:///lower.sock"},
 		"DOCKER_HOST=ssh://provider")
 
 	s.Equal(2, countKeys(inv.Environ(), dockerHostKey), "differently cased keys are distinct")
-	lower, ok := inv.Lookup("docker_host")
+	lower, ok := inv.Lookup(lowerDockerHostKey)
 	s.True(ok)
 	s.Equal("unix:///lower.sock", lower)
 	upper, _ := inv.Lookup("DOCKER_HOST")
@@ -202,7 +221,7 @@ func (s *InvocationSuite) TestProviderContextInConfigReachesCLIAndSDKAlike() {
 	inv := newTestInvocation(s, nil, "DOCKER_CONFIG=/provider/cfg", "DOCKER_CONTEXT=wsl")
 
 	// the CLI child (Environ) and the SDK-side lookups read one snapshot
-	for _, key := range []string{"DOCKER_CONFIG", "DOCKER_CONTEXT"} {
+	for _, key := range []string{"DOCKER_CONFIG", dockerContextKey} {
 		v, ok := inv.Lookup(key)
 		s.Require().True(ok, key)
 		s.Contains(inv.Environ(), key+"="+v)
@@ -242,7 +261,10 @@ func (s *InvocationSuite) TestEnvironIsSortedKeyValuePairs() {
 // The invocation is deliberately not serializable: encoding it must never
 // carry the environment, which can hold credentials.
 func (s *InvocationSuite) TestJSONDoesNotExposeEnvironment() {
-	inv := &DockerInvocation{DockerCmd: testDockerCmd, env: map[string]string{"DOCKER_HOST": "ssh://fake-secret"}}
+	inv := &DockerInvocation{
+		DockerCmd: testDockerCmd,
+		env:       map[string]string{"DOCKER_HOST": "ssh://fake-secret"},
+	}
 	data, err := json.Marshal(inv)
 	s.Require().NoError(err)
 
@@ -252,7 +274,7 @@ func (s *InvocationSuite) TestJSONDoesNotExposeEnvironment() {
 
 func TestProviderDaemonOverrides(t *testing.T) {
 	t.Setenv(dockerHostKey, "unix:///a.sock")
-	t.Setenv("DOCKER_CONTEXT", "")
+	t.Setenv(dockerContextKey, "")
 	t.Setenv("DOCKER_TLS_VERIFY", "1")
 	t.Setenv("DOCKER_CERT_PATH", "/certs")
 	t.Setenv("DOCKER_CONFIG", "/cfg")
@@ -274,7 +296,7 @@ func TestProviderDaemonOverrides(t *testing.T) {
 		{
 			"several, stable order",
 			[]string{"DOCKER_CERT_PATH=/other", "DOCKER_CONTEXT=x", "DOCKER_HOST=tcp://h"},
-			[]string{dockerHostKey, "DOCKER_CONTEXT", "DOCKER_CERT_PATH"},
+			[]string{dockerHostKey, dockerContextKey, "DOCKER_CERT_PATH"},
 		},
 		{"non-selector ignored", []string{"HTTP_PROXY=http://p"}, nil},
 	}
