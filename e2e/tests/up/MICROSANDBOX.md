@@ -25,20 +25,26 @@ callbacks into the session.
 ## Continuous integration
 
 The dedicated `integration-tests-microsandbox` job in
-`.github/workflows/pr-ci.yml` owns the suite catalogue and common setup. Each
-suite still gets a fresh runner, a 25-minute job limit and a 20-minute test limit,
-with one attempt. The checked runtime bundle, build artifacts, required KVM gate
+`.github/workflows/pr-ci.yml` owns the suite catalogue, runner configuration and
+artifact uploads. The Go utility in `hack/microsandbox` installs and checks the
+pinned Linux bundle and owns test execution, managed fixture selection, output
+capture and report validation. The Linux build job supplies its CI-only executable;
+it is not a Devsy release artifact. Each suite still gets a fresh runner, a
+25-minute job limit and a 20-minute test limit, with one attempt. The checked
+runtime bundle, build artifacts, required KVM gate
 and credentials are configured once in the job definition.
 
 Each matrix entry names its Ginkgo label and expected scenario count.
-`hack/microsandbox/verify_report.py` requires a real successful run with that
+The helper's `verify-report` command requires a real successful run with that
 exact count, split equally between the explicit `microsandbox-builtin` and
 `microsandbox-external` labels by default. A contract specific to the published
 provider uses an explicit `provider-mode: external` catalogue entry and requires
 every selected case to carry only the external provider label. Missing cases,
 skips, retries, dry runs and programmatic focus fail the gate. Reports and test
-output are retained even when
-the test command fails.
+output are retained even when the test command fails.
+
+Fixture and performance unit tests run by package in the existing unit-test jobs,
+so additions do not require maintaining a second test-name list.
 
 To add a scenario:
 
@@ -69,32 +75,54 @@ have separate contracts. Each case owns fresh runtime state and an immutable
 image reference. Registry seeding finishes before the measured listeners start,
 and fixture shutdown joins active handlers before observations are inspected.
 
+The previous 74-case native parity baseline remains evidence for those existing
+rows only. This external-only row brings the configured catalogue to 77 cases;
+the earlier 74-case run does not prove the new consumer cases or the expanded
+catalogue. Acceptance requires fresh current-head native reports for all rows.
+
 On Linux, the E2E test binary also serves as the private Docker credential helper.
 Its `TestMain` preserves the production runtime-supervisor dispatch and recognizes
 the helper only at its canonical, current-user-owned private path. Other test
 invocations retain the normal test runner path.
 
-The Linux-only `up-provider-microsandbox-remote-agent-binaries` case uses the
-published external provider with `agent.local: false` and a test-owned remote
-agent container. It verifies one runtime-binary download into that agent's
-workspace copy, then clears the agent's provider cache, makes the source return
-404, and requires a subsequent `up` to reuse the retained workspace binary.
-The guest check verifies the agent can still operate the workspace. This is a
-source-prepared remote-agent contract; it does not establish ordinary `up`
-image metadata resolution, general agent transfer behavior, or native results
-until the required Linux/KVM CI case passes.
+## Remote agent binary delivery
+
+The Linux-only `up-provider-microsandbox-remote-agent-binaries` row uses the
+published external provider with `agent.local: false` and a fresh, test-owned
+agent container. Separate endpoint counters prove a Devsy agent executable
+transfer and exactly one runtime download through `Agent.Binaries`. The runtime
+is checked against the published manifest and the workspace copy's checksum,
+executable mode and inode.
+
+After the first successful `up`, the case removes only the private agent's
+provider-download cache and makes the runtime endpoint return 404. Stop/start
+must retain the workspace binary's checksum and inode without another runtime
+GET, and guest commands must succeed before and after restart. The separate
+Devsy agent endpoint stays available; this is workspace-runtime reuse, not an
+offline-agent executable guarantee. Workspace, container and server cleanup
+have independent bounded attempts.
+
+This external-only row brings the configured catalogue to 15 suites/78 cases
+(37 built-in, 41 external). Earlier 77-case consumer reports do not prove the
+remote-agent case. Its native Linux/amd64 KVM report must pass once without
+selected skips; source checks, fixture unit tests and dry runs cannot prove it.
 
 ## Runtime startup measurements
 
-The existing external lifecycle case optionally captures its ordinary fresh and
-stop/resume `up` commands when CI supplies the runtime performance tools. The
+The existing two-case lifecycle label optionally captures its ordinary fresh
+and stop/resume `up` commands for the external provider when CI supplies all five
+performance inputs: `DEVSY_TEST_RUNTIME_SPAWN_PROBE`,
+`DEVSY_TEST_RUNTIME_SUPERVISOR`, `DEVSY_TEST_RUNTIME_PERFORMANCE_DIR`,
+`DEVSY_TEST_RUNTIME_REVISION`, and `DEVSY_TEST_RUNTIME_SDK_VERSION`. The
 built-in case retains its existing path. No new suite, VM, deadline or latency
 threshold is added. After both commands succeed, the helper stages the published
 runtime from `Agent.Binaries`, verifies its manifest checksum and compares direct
 and supervised Info/Find launches in direct/supervised/supervised/direct order.
 Each run records one first launch and 100 warm samples with process-reaping checks.
-The tools are built from the checkout's pinned Runtime SDK version and their build
-metadata and selected supervisor digest are verified before accepting reports.
+The same Go CI helper builds both tools through `build-performance-tools` from
+the unreplaced Runtime SDK version in `go.mod`. The producer uploads the tools
+and their SDK-version marker for native jobs to reuse. Their build metadata and
+selected supervisor digest are verified before accepting reports.
 
 The retained JSON includes the provider source, runtime digest, checkout revision,
 SDK version, command wall time and filtered startup-event durations. Startup events

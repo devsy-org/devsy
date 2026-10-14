@@ -29,7 +29,7 @@ var _ = ginkgo.Describe(
 
 			dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
 
-			f, err = setupDockerProvider(initialDir+"/bin", "docker")
+			f, err = framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 		})
 

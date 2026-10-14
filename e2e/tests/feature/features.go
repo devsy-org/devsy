@@ -1,9 +1,6 @@
 package feature
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -492,7 +489,7 @@ func pushFeatureWithAnnotations(refStr string, annotations map[string]string) {
 		) + `"}`
 
 	layer := static.NewLayer(
-		buildFeatureTarGz("devcontainer-feature.json", featureJSON),
+		framework.BuildFeatureTarGz("devcontainer-feature.json", featureJSON),
 		types.OCILayer,
 	)
 
@@ -529,22 +526,4 @@ func annotationOrDefault(annotations map[string]string, key, defaultVal string) 
 		return v
 	}
 	return defaultVal
-}
-
-func buildFeatureTarGz(filename, content string) []byte {
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-
-	hdr := &tar.Header{
-		Name: filename,
-		Mode: 0o644,
-		Size: int64(len(content)),
-	}
-	gomega.Expect(tw.WriteHeader(hdr)).To(gomega.Succeed())
-	_, err := tw.Write([]byte(content))
-	framework.ExpectNoError(err)
-	gomega.Expect(tw.Close()).To(gomega.Succeed())
-	gomega.Expect(gz.Close()).To(gomega.Succeed())
-	return buf.Bytes()
 }

@@ -24,7 +24,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"should allow checkout of a GitRepo from a commit hash",
 			func(ctx context.Context) {
-				f, err := setupDockerProvider(initialDir+"/bin", "docker")
+				f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 				framework.ExpectNoError(err)
 
 				name := "sha256-0c1547c"
@@ -43,7 +43,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"should allow checkout of a GitRepo from a pull request reference",
 			func(ctx context.Context) {
-				f, err := setupDockerProvider(initialDir+"/bin", "docker")
+				f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 				framework.ExpectNoError(err)
 
 				name := "devsy"

@@ -158,9 +158,17 @@ func downloadWithRetry(
 	binary *ProviderBinary,
 	targetFolder string,
 ) (string, error) {
+	return downloadWithRetryUsing(binaryName, binary, func() (string, error) {
+		return downloadBinary(ctx, binaryName, binary, targetFolder)
+	})
+}
+
+func downloadWithRetryUsing(
+	binaryName string, binary *ProviderBinary, fetch func() (string, error),
+) (string, error) {
 	var binaryPath string
 	err := retry.OnError(downloadBackoff, isRetriableError, func() error {
-		path, err := downloadBinary(ctx, binaryName, binary, targetFolder)
+		path, err := fetch()
 		if err != nil {
 			return err
 		}

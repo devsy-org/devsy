@@ -29,7 +29,7 @@ var _ = ginkgo.Describe(
 
 			ginkgo.BeforeEach(func(ctx context.Context) {
 				var err error
-				f, err = setupDockerProvider(initialDir+"/bin", "podman")
+				f, err = framework.SetupDockerProvider(initialDir+"/bin", "podman")
 				framework.ExpectNoError(err)
 			})
 

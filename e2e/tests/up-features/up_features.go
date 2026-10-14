@@ -31,7 +31,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 	})
 
 	ginkgo.It("lifecycle hooks execution", func(ctx context.Context) {
-		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
 		tempDir, err := framework.CopyToTempDir("tests/up-features/testdata/docker-features-hooks")
@@ -58,7 +58,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 	ginkgo.It("lifecycle hooks order feature before image", func(ctx context.Context) {
-		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
 		tempDir, err := framework.CopyToTempDir(
@@ -232,7 +232,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 	)
 
 	ginkgo.It("should install with lifecycle hooks", func(ctx context.Context) {
-		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
 		tempDir, err := framework.CopyToTempDir(
@@ -252,7 +252,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should automatically install dependsOn features",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -279,7 +279,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should not fail if same feature exists in dependsOn and installsAfter",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -306,7 +306,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle nested dependencies",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -333,7 +333,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should detect circular dependencies",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -357,7 +357,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle dependsOn with options",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -384,7 +384,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle mixed dependsOn and installsAfter",
 		ginkgo.Label("up-features", "mixed"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -411,7 +411,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should detect self-dependency",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -434,7 +434,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle non-existent dependency gracefully",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -457,7 +457,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle shared dependencies correctly",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -485,7 +485,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle forward reference dependencies",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -511,7 +511,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should handle same feature in dependsOn and installsAfter",
 		ginkgo.Label("up-features", "depends-on"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -541,7 +541,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"writes a devcontainer lockfile and reuses it under --frozen-lockfile",
 		ginkgo.Label("up-features", "lockfile"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -583,7 +583,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"fails --frozen-lockfile when no lockfile exists",
 		ginkgo.Label("up-features", "lockfile"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -605,7 +605,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"does not write a lockfile with --no-lockfile",
 		ginkgo.Label("up-features", "lockfile"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -630,7 +630,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"honors a committed lockfile and rejects a bogus pinned digest",
 		ginkgo.Label("up-features", "lockfile"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -716,7 +716,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 	)
 
 	ginkgo.It("resolves user variable in dockerfile", func(ctx context.Context) {
-		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
 		tempDir, err := framework.CopyToTempDir(
@@ -737,7 +737,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 	}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 	ginkgo.It("preserves user when feature is present with variable", func(ctx context.Context) {
-		f, err := setupDockerProvider(initialDir+"/bin", "docker")
+		f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 		framework.ExpectNoError(err)
 
 		tempDir, err := framework.CopyToTempDir(
@@ -761,7 +761,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should resolve legacy feature IDs in dependsOn",
 		ginkgo.Label("up-features", "depends-on", "legacy-id"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -788,7 +788,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should reject overrideFeatureInstallOrder that violates dependsOn",
 		ginkgo.Label("up-features", "override"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -810,7 +810,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should respect overrideFeatureInstallOrder when it satisfies dependsOn",
 		ginkgo.Label("up-features", "override"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -836,7 +836,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should install both versions when same feature has different versions",
 		ginkgo.Label("up-features", "version-aware"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(
@@ -866,7 +866,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-features"), func(
 		"should resolve secret options from environment variables",
 		ginkgo.Label("up-features", "secret-option"),
 		func(ctx context.Context) {
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			tempDir, err := framework.CopyToTempDir(

@@ -390,7 +390,7 @@ func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Frame
 		}
 	}
 
-	f, err := setupDockerProvider(initialDir+"/bin", wrapperPath)
+	f, err := framework.SetupDockerProvider(initialDir+"/bin", wrapperPath)
 	framework.ExpectNoError(err)
 	return f
 }

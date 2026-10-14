@@ -183,10 +183,6 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 	return tempDir, nil
 }
 
-func setupDockerProvider(binDir string) (*framework.Framework, error) {
-	return framework.SetupDockerProvider(binDir, "docker")
-}
-
 // findComposeContainer returns the compose container IDs for a workspace's
 // service, resolving devsy's actual project name first since it may not be
 // the sanitized workspace UID.
