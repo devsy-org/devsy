@@ -285,19 +285,21 @@ func processGroupHasLivingMembers(pgid int) (bool, error) {
 		if err != nil {
 			continue
 		}
-		fields, ok, err := linuxProcessStat(pid)
-		if err != nil {
-			return false, err
-		}
-		if !ok || len(fields) == 0 {
-			continue
-		}
-		processGroup, _, ok := linuxProcessGroupIDs(fields)
-		if ok && processGroup == pgid && !linuxProcessStateIsExited(fields[0]) {
-			return true, nil
+		member, err := linuxProcessIsLiveGroupMember(pid, pgid)
+		if err != nil || member {
+			return member, err
 		}
 	}
 	return false, nil
+}
+
+func linuxProcessIsLiveGroupMember(pid, pgid int) (bool, error) {
+	fields, ok, err := linuxProcessStat(pid)
+	if err != nil || !ok || len(fields) == 0 {
+		return false, err
+	}
+	processGroup, _, ok := linuxProcessGroupIDs(fields)
+	return ok && processGroup == pgid && !linuxProcessStateIsExited(fields[0]), nil
 }
 
 func linuxProcessStateIsExited(state string) bool {
