@@ -114,16 +114,6 @@ func waitForUnidentifiedGroupExit(pid int, identity string) error {
 	}
 }
 
-// A worker whose leader exited may still leave members behind.
-func processGroupExists(pid int) bool {
-	err := syscall.Kill(-pid, 0)
-	if isProcessGone(err) {
-		return false
-	}
-	// EPERM means the group exists but belongs to another user.
-	return true
-}
-
 func cleanupExitedProcessRef(ref ProcessRef) error {
 	if ref.TreeKind == ProcessTreeLegacyPID {
 		if ref.Identity == "" {
@@ -149,7 +139,11 @@ func terminateUnidentifiedExitedGroup(pid int) error {
 	if pid <= 0 {
 		return fmt.Errorf("invalid worker PID %d", pid)
 	}
-	if processGroupExists(pid) {
+	live, err := processGroupHasLivingMembers(pid)
+	if err != nil {
+		return fmt.Errorf("check worker group %d: %w", pid, err)
+	}
+	if live {
 		return fmt.Errorf(
 			"worker group %d still has processes and no saved identity identifies them",
 			pid,
@@ -240,8 +234,18 @@ func killWorkerTreeWithIdentity(parsedPid int, treeName, identity string) error 
 	if groupMatches {
 		return signalProcessTree(-parsedPid, false, identity)
 	}
+	live, err := processIsLive(parsedPid)
+	if err != nil {
+		return fmt.Errorf("check worker leader %d for worker %s: %w", parsedPid, treeName, err)
+	}
+	if !live {
+		return nil
+	}
 	currentIdentity, err := processTreeIdentity(parsedPid)
 	if err != nil {
+		if isProcessGone(err) {
+			return nil
+		}
 		return fmt.Errorf("read process tree identity for worker %d: %w", parsedPid, err)
 	}
 	// The saved group is empty, so a different identity at this PID is a reused process.
@@ -300,10 +304,7 @@ func isProcessGone(err error) bool {
 }
 
 func signalProcessTree(target int, graceful bool, identity string) error {
-	if err := syscall.Kill(target, syscall.SIGTERM); err != nil {
-		if isProcessGone(err) {
-			return nil // already exited
-		}
+	if err := sendProcessSignal(target, syscall.SIGTERM, identity); err != nil {
 		return fmt.Errorf("send SIGTERM to process target %d: %w", target, err)
 	}
 	if graceful {
@@ -316,9 +317,38 @@ func signalProcessTree(target int, graceful bool, identity string) error {
 	if !matches {
 		return nil
 	}
-	err = syscall.Kill(target, syscall.SIGKILL)
-	if err != nil && !isProcessGone(err) {
+	if err := sendProcessSignal(target, syscall.SIGKILL, identity); err != nil {
 		return fmt.Errorf("send SIGKILL to process target %d: %w", target, err)
+	}
+	return nil
+}
+
+func sendProcessSignal(target int, sig syscall.Signal, identity string) error {
+	err := syscall.Kill(target, sig)
+	if err == nil || isProcessGone(err) {
+		return nil
+	}
+	if target < 0 && errors.Is(err, syscall.EPERM) {
+		return confirmGroupEPERM(-target, identity, err, processGroupMatchesIdentity)
+	}
+	return err
+}
+
+func confirmGroupEPERM(
+	pgid int,
+	identity string,
+	killErr error,
+	matcher func(int, string) (bool, error),
+) error {
+	if identity == "" {
+		return killErr
+	}
+	matches, err := matcher(pgid, identity)
+	if err != nil {
+		return fmt.Errorf("verify process group %d after EPERM: %w: %w", pgid, killErr, err)
+	}
+	if matches {
+		return fmt.Errorf("process group %d still has matching processes: %w", pgid, killErr)
 	}
 	return nil
 }
