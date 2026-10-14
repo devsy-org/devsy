@@ -34,7 +34,6 @@ jobs:
               - 'hack/run-managed-policy-e2e.sh'
               - '.github/workflows/pr-ci.yml'
               - 'hack/licenses/**'
-              - 'hack/ci/**'
               - 'hack/podman_ci/**'
               - 'THIRD_PARTY_LICENSES.md'
 
@@ -208,7 +207,7 @@ jobs:
           path: ${{ runner.temp }}/devsy-ci-podman*
 
       - name: test devsy-ci
-        run: go test ./hack/ci
+        run: go test ./e2e/framework/runenv/... ./e2e/framework/specreport ./e2e/framework/e2erun ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
 
       - name: build devsy-ci
         shell: bash
@@ -224,7 +223,7 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then
             OUT="${OUT}.exe"
           fi
-          go build -trimpath -o "$OUT" ./hack/ci
+          go build -trimpath -o "$OUT" ./e2e/cmd/devsy-ci
 
       - name: upload devsy-ci
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

@@ -31,3 +31,23 @@ kind delete cluster
 # Install ginkgo and run in this directory
 ginkgo
 ```
+
+#### CI helpers
+
+CI drives the suite through `devsy-ci` (`e2e/cmd/devsy-ci`), which provisions a
+runtime, runs the compiled suite for one label, and verifies its Ginkgo report.
+The logic lives in `e2e/framework`:
+
+| Package | Responsibility |
+| --- | --- |
+| `runenv` | Subprocess, filesystem, clock, network and download seams, plus the typed `StageError`. |
+| `specreport` | Validates a Ginkgo JSON report against the expected label and spec titles. |
+| `e2erun` | Runs the test binary under a runtime profile and verifies the report. |
+| `dockerwsl` | Provisions and tears down dockerd in WSL2, reached over SSH, for Windows runners. |
+
+Their unit tests need no Docker, WSL or network:
+
+```bash
+go test ./e2e/framework/runenv/... ./e2e/framework/specreport \
+  ./e2e/framework/e2erun ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
+```
