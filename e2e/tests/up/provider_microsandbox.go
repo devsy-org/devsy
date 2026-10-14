@@ -13,62 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blang/semver/v4"
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
-
-const (
-	osLinux                      = "linux"
-	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.7"
-	microsandboxRootUser         = "root"
-)
-
-func skipIfNoMicrosandbox(ctx context.Context) {
-	checkMicrosandboxVersion(ctx)
-	switch {
-	case runtime.GOOS == osLinux:
-		kvm, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0)
-		if err != nil {
-			microsandboxUnavailable("microsandbox requires KVM (/dev/kvm not accessible)")
-		}
-		_ = kvm.Close()
-	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
-		// Apple silicon supports microsandbox via the hypervisor framework.
-	default:
-		microsandboxUnavailable("microsandbox requires Apple silicon or Linux with KVM")
-	}
-}
-
-func checkMicrosandboxVersion(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if _, err := exec.LookPath("msb"); err != nil {
-		microsandboxUnavailable("microsandbox runtime (msb) not found on PATH")
-	}
-	output, err := exec.CommandContext(ctx, "msb", "--version").Output()
-	if err != nil {
-		microsandboxUnavailable("microsandbox runtime (msb) cannot execute: " + err.Error())
-	}
-	version, err := semver.ParseTolerant(
-		strings.TrimPrefix(strings.TrimSpace(string(output)), "msb "),
-	)
-	if err != nil || version.LT(semver.Version{Major: 0, Minor: 7, Patch: 7}) {
-		microsandboxUnavailable(
-			"microsandbox parity requires msb v0.7.7 or newer: " + string(output),
-		)
-	}
-}
-
-func microsandboxUnavailable(reason string) {
-	if os.Getenv("DEVSY_REQUIRE_MICROSANDBOX") == "true" {
-		ginkgo.Fail(reason)
-	}
-	ginkgo.Skip(reason)
-}
 
 var _ = ginkgo.Describe(
 	"testing up command for microsandbox provider",
@@ -211,12 +161,12 @@ var _ = ginkgo.Describe(
 				gomega.Expect(string(output)).NotTo(gomega.ContainSubstring(sandbox))
 			},
 			ginkgo.Entry("built-in", "microsandbox", "microsandbox-builtin-parity",
-				ginkgo.SpecTimeout(framework.TimeoutLong())),
+				ginkgo.Label("microsandbox-builtin"), ginkgo.SpecTimeout(framework.TimeoutLong())),
 			ginkgo.Entry(
-				"external v0.1.7",
+				"external v0.1.8",
 				microsandboxExternalProvider,
 				"microsandbox-external-parity",
-				ginkgo.SpecTimeout(framework.TimeoutLong()),
+				ginkgo.Label("microsandbox-external"), ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 		)
 	},

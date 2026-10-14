@@ -17,36 +17,24 @@ import (
 
 var _ = ginkgo.Describe("microsandbox mount parity",
 	ginkgo.Label("up-provider-microsandbox-mounts"), func() {
-		for _, provider := range []struct{ name, source string }{
-			{"builtin", "microsandbox"},
-			{"external", microsandboxExternalProvider},
-		} {
-			ginkgo.Context(provider.name, func() {
+		for _, provider := range microsandboxProviders("builtin", "external") {
+			ginkgo.Context(provider.name, ginkgo.Label(provider.label), func() {
 				var f *framework.Framework
 				var workspace, volume string
 
 				ginkgo.BeforeEach(func(ctx context.Context) {
-					skipIfNoMicrosandbox(ctx)
-					ginkgo.GinkgoT().Setenv("DEVSY_HOME", ginkgo.GinkgoT().TempDir())
-					ginkgo.GinkgoT().Setenv("DEVSY_CONFIG", "")
-					initialDir, err := os.Getwd()
-					framework.ExpectNoError(err)
-					f = framework.NewDefaultFramework(filepath.Join(initialDir, "bin"))
-					workspace, err = framework.CreateTempDir()
-					framework.ExpectNoError(err)
+					session := newMicrosandboxTestSession(ctx)
+					f = session.framework
+					workspace = session.newWorkspace()
 					volume = ""
-					ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, workspace)
-					framework.ExpectNoError(
-						f.DevsyProviderAdd(ctx, provider.source, "--name", provider.name),
-					)
-					ginkgo.DeferCleanup(f.DevsyProviderDelete, provider.name)
+					session.addProvider(ctx, provider.source, provider.name)
 					// Cleanup is LIFO: tear down the VM before attempting volume removal.
 					ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 						if volume != "" {
 							microsandboxMountCommand(cleanupCtx, "volume", "rm", volume)
 						}
 					})
-					ginkgo.DeferCleanup(f.CleanupWorkspace, workspace)
+					session.cleanupWorkspace(workspace)
 				})
 
 				ginkgo.It(

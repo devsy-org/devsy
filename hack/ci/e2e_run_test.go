@@ -28,7 +28,6 @@ func (s *E2ERunSuite) TestLegacyLinuxSudoWhitelist() {
 
 	s.Equal("sudo", plan.suite.Path)
 	want := []string{
-		"DEVSY_REQUIRE_MICROSANDBOX=false",
 		envGHUser,
 		"GH_ACCESS_TOKEN=ghs_abcdefghijklmnopqrstuvwxyz0123",
 		"GH_CREDENTIAL_USERNAME=x-access-token",

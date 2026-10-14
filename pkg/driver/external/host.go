@@ -105,7 +105,7 @@ func newHost(ctx context.Context, options hostOptions) (*Host, error) {
 	infoContext, cancel := context.WithTimeout(ctx, options.timeout)
 	defer cancel()
 	err := h.call(infoContext, "Info", func(client runtimev1.RuntimeDriverClient) error {
-		info, err := client.Info(infoContext, &runtimev1.InfoRequest{})
+		info, err := client.Info(infoContext, &runtimev1.InfoRequest{SupportsRecreateOnRun: true})
 		if err != nil {
 			return err
 		}

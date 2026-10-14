@@ -22,11 +22,8 @@ type microsandboxEphemeralCase struct {
 
 var _ = ginkgo.Describe("microsandbox ephemeral root parity",
 	ginkgo.Label("up-provider-microsandbox-ephemeral"), func() {
-		for _, provider := range []struct{ name, source string }{
-			{"builtin-ephemeral", microsandboxResourceBuiltin},
-			{"external-ephemeral", microsandboxExternalProvider},
-		} {
-			ginkgo.Context(provider.name, func() {
+		for _, provider := range microsandboxProviders("builtin-ephemeral", "external-ephemeral") {
+			ginkgo.Context(provider.name, ginkgo.Label(provider.label), func() {
 				var f *framework.Framework
 				var workspace, volume, ownedLabel string
 				var volumeOwned bool

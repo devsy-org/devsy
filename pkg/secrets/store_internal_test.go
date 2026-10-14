@@ -399,10 +399,7 @@ func TestStore_InvalidNameRejected(t *testing.T) {
 
 func newPassphraseBackend(t *testing.T, path, passphrase string) *fileBackend {
 	t.Helper()
-	key, err := resolveFileKey(t.TempDir(), passphrase)
-	if err != nil {
-		t.Fatal(err)
-	}
+	key := testPassphraseFileKey(t, passphrase)
 	return newFileBackend(path, key)
 }
 
@@ -940,8 +937,7 @@ func TestProbeFileReadsLegacyPassphraseBackend(t *testing.T) {
 	t.Setenv(EnvPassphrase, "correct horse battery staple")
 	dir := t.TempDir()
 
-	fk, err := openPassphraseFileKey()
-	require.NoError(t, err)
+	fk := testPassphraseFileKey(t, "correct horse battery staple")
 	require.NoError(t, newFileBackend(filepath.Join(dir, EncryptedFileName), fk).
 		set(backendKey(testContext, "LEGACY"), "recovered"))
 	indexPath := filepath.Join(dir, IndexFileName)

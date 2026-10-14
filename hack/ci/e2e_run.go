@@ -462,7 +462,6 @@ func sudoPlan(env []string) e2ePlan {
 		return v
 	}
 	args := []string{
-		"DEVSY_REQUIRE_MICROSANDBOX=" + get("DEVSY_REQUIRE_MICROSANDBOX"),
 		"GH_USERNAME=" + get("GH_USERNAME"),
 		"GH_ACCESS_TOKEN=" + get("GH_ACCESS_TOKEN"),
 		"GH_CREDENTIAL_USERNAME=" + get("GH_CREDENTIAL_USERNAME"),

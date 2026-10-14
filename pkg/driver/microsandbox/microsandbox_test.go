@@ -189,6 +189,7 @@ func TestRunDevContainerBuildsSpec(t *testing.T) {
 
 func TestRunDevContainerReplacesStaleSandbox(t *testing.T) {
 	f := newFakeClient()
+	f.version = recreateTestVersion
 	f.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
 	d := newDriver(f, nil, specDefaults{})
 
@@ -203,13 +204,12 @@ func TestRunDevContainerReplacesStaleSandbox(t *testing.T) {
 	want := []string{
 		callEnsure,
 		callFind,
-		"stop:devsy-ws1",
-		callRemove,
 		"create:devsy-ws1",
 	}
 	if !slices.Equal(f.calls, want) {
 		t.Errorf("call order = %v, want %v", f.calls, want)
 	}
+	require.True(t, f.created[wsName].AllowRecreate)
 }
 
 func TestRunDevContainerRejectsOldRuntimeBeforeMutation(t *testing.T) {
@@ -773,6 +773,7 @@ func TestReplacementRequiresConsentAndSuccessfulPreparation(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("running=%t/%s", running, tc.name), func(t *testing.T) {
 				f := newFakeClient()
+				f.version = recreateTestVersion
 				original := &sandboxInfo{Name: wsName, Running: running, CreatedAt: time.Now()}
 				f.info[wsName] = original
 				f.failPrepare, f.failVolumes = tc.imageErr, tc.volumesErr

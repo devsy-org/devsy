@@ -30,6 +30,8 @@ jobs:
               - 'go.sum'
               - '.goreleaser.yml'
               - 'e2e/**'
+              - 'hack/microsandbox/**'
+              - 'hack/run-managed-policy-e2e.sh'
               - '.github/workflows/pr-ci.yml'
               - 'hack/licenses/**'
               - 'hack/ci/**'
@@ -166,6 +168,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          # Windows cache archiving can consume the post-job budget after a successful build.
+          cache: ${{ runner.os != 'Windows' }}
 
       - name: get operating system lowercase
         id: os
@@ -319,14 +323,14 @@ jobs:
       - name: download CLI artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: devsy-${{ steps.os.outputs.runner_os }}
+          pattern: devsy-linux
           path: ${{ runner.temp }}/devsy-bin/
           merge-multiple: true
 
       - name: download e2e test binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: e2e-test-${{ steps.os.outputs.runner_os }}
+          name: e2e-test-linux
           path: ./e2e/
 
       - name: setup executable
@@ -350,6 +354,171 @@ jobs:
           GH_CREDENTIAL_USERNAME: x-access-token
         run: |
           ./e2e.test -test.v -ginkgo.v -test.timeout 1500s -ginkgo.fail-on-empty --ginkgo.label-filter="${{ matrix.label }}"
+
+  integration-tests-microsandbox:
+    name: Test ${{ matrix.label }} on ubuntu-latest
+    needs: [changes, build-cli]
+    if: needs.changes.outputs.go == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: up-provider-microsandbox
+            expected-spec-count: 2
+          - label: up-provider-microsandbox-images
+            expected-spec-count: 6
+          - label: up-provider-microsandbox-mounts
+            expected-spec-count: 10
+          - label: up-provider-microsandbox-resources
+            expected-spec-count: 12
+          - label: up-provider-microsandbox-storage
+            expected-spec-count: 6
+          - label: up-provider-microsandbox-ephemeral
+            expected-spec-count: 6
+          - label: up-provider-microsandbox-egress
+            expected-spec-count: 4
+          - label: up-provider-microsandbox-prebuilds
+            expected-spec-count: 4
+          - label: up-provider-microsandbox-dockerless
+            expected-spec-count: 8
+          - label: up-provider-microsandbox-recreate
+            expected-spec-count: 4
+          - label: up-provider-microsandbox-managed-recreate
+            expected-spec-count: 4
+          - label: up-provider-microsandbox-logs-cancel
+            expected-spec-count: 6
+          - label: up-provider-microsandbox-compatibility
+            expected-spec-count: 2
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: install gnupg2
+        run: sudo apt-get install -y gnupg2
+
+      - name: download CLI artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: devsy-linux
+          path: ${{ runner.temp }}/devsy-bin/
+          merge-multiple: true
+
+      - name: download e2e test binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: e2e-test-linux
+          path: ./e2e/
+
+      - name: setup executable
+        shell: bash
+        working-directory: ./e2e
+        run: |
+          ls -R "${RUNNER_TEMP}/devsy-bin/"
+          mkdir -p ./bin/
+          find "${RUNNER_TEMP}/devsy-bin/" -type f -name "devsy-*" -exec cp {} ./bin \;
+          find ./bin -name "devsy-*" -exec chmod +x {} \;
+          chmod +x ./e2e.test
+          ls -R ./bin/
+
+      - name: test Ginkgo report validator
+        run: python3 -m unittest discover -s hack/microsandbox -p 'test_*.py'
+
+      - name: cache microsandbox release bundle (Linux)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/microsandbox-linux-x86_64-v0.7.7.tar.gz
+          key: ${{ runner.os }}-${{ runner.arch }}-microsandbox-bundle-v0.7.7
+
+      - name: install checksum-pinned microsandbox (Linux)
+        timeout-minutes: 5
+        run: |
+          archive="${RUNNER_TEMP}/microsandbox-linux-x86_64-v0.7.7.tar.gz"
+          if [ ! -f "$archive" ]; then
+            curl -fsSL --retry 3 -o "$archive" \
+              https://github.com/superradcompany/microsandbox/releases/download/v0.7.7/microsandbox-linux-x86_64.tar.gz
+          fi
+          echo "b3cc4a5e3f52dfdd938a6f67ac4a9a959ddfe304bab56de4964044b8613f01bb  $archive" | sha256sum -c -
+          staging="$(mktemp -d)"
+          trap 'rm -rf "$staging"' EXIT
+          tar -xzf "$archive" -C "$staging"
+          mkdir -p "$HOME/.microsandbox/bin" "$HOME/.microsandbox/lib" "$HOME/.local/bin"
+          install -m 755 "$staging/msb" "$HOME/.microsandbox/bin/msb"
+          install -m 644 "$staging/libkrunfw.so.5.6.1" "$HOME/.microsandbox/lib/"
+          ln -sf libkrunfw.so.5.6.1 "$HOME/.microsandbox/lib/libkrunfw.so.5"
+          ln -sf libkrunfw.so.5 "$HOME/.microsandbox/lib/libkrunfw.so"
+          ln -sf "$HOME/.microsandbox/bin/msb" "$HOME/.local/bin/msb"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/msb" --version
+          sudo test -r /dev/kvm
+          sudo test -w /dev/kvm
+
+      - name: run MicroSandbox test
+        shell: bash
+        working-directory: ./e2e
+        env:
+          GH_USERNAME: ${{ github.repository_owner }}
+          GH_ACCESS_TOKEN: ${{ github.token }}
+          GH_CREDENTIAL_USERNAME: x-access-token
+          TEST_TIMEOUT: 1200s
+          DEVSY_REQUIRE_MICROSANDBOX: "true"
+        run: |
+          set -uo pipefail
+          report="${RUNNER_TEMP}/microsandbox-${{ matrix.label }}.json"
+          test_log="${RUNNER_TEMP}/microsandbox-${{ matrix.label }}.log"
+          command=(./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}"
+            -ginkgo.fail-on-empty -ginkgo.flake-attempts=1
+            --ginkgo.label-filter="${{ matrix.label }}" -ginkgo.json-report="$report")
+          fixture_environment=()
+          if [ "${{ matrix.label }}" = "up-provider-microsandbox-managed-recreate" ]; then
+            command=(../hack/run-managed-policy-e2e.sh "${command[@]}")
+            fixture_environment=(DEVSY_REQUIRE_MSB_MANAGED_POLICY_FIXTURE=true "RUNNER_TEMP=${RUNNER_TEMP}")
+          fi
+          set +e
+          sudo \
+            DEVSY_REQUIRE_MICROSANDBOX="${DEVSY_REQUIRE_MICROSANDBOX}" \
+            GH_USERNAME="${GH_USERNAME}" \
+            GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
+            GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
+            KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+            ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
+            PATH="${PATH}" \
+            "${fixture_environment[@]}" "${command[@]}" 2>&1 | tee "$test_log"
+          pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+          test_status=${pipeline_status[0]}
+          log_status=${pipeline_status[1]}
+          chown_status=0
+          if [ -e "$report" ]; then
+            sudo chown "$(id -u):$(id -g)" "$report" || chown_status=$?
+          fi
+          report_status=0
+          if [ "$chown_status" -ne 0 ]; then
+            echo "::error::could not make Ginkgo report readable for artifact upload"
+            report_status="$chown_status"
+          else
+            python3 ../hack/microsandbox/verify_report.py \
+              --report "$report" --label "${{ matrix.label }}" \
+              --expected-count "${{ matrix.expected-spec-count }}" || report_status=$?
+          fi
+          if [ "$test_status" -ne 0 ]; then
+            exit "$test_status"
+          fi
+          if [ "$log_status" -ne 0 ]; then
+            exit "$log_status"
+          fi
+          exit "$report_status"
+
+      - name: upload MicroSandbox test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: microsandbox-${{ matrix.label }}-evidence
+          path: |
+            ${{ runner.temp }}/microsandbox-${{ matrix.label }}.json
+            ${{ runner.temp }}/microsandbox-${{ matrix.label }}.log
+          if-no-files-found: warn
+          retention-days: 14
 
   integration-tests:
     name: Test ${{ matrix.label }}${{ (matrix.install-podman == 'rootless' || matrix.install-podman == 'rootful') && format(' ({0})', matrix.install-podman) || '' }} on ${{ matrix.runner }}
@@ -668,87 +837,6 @@ jobs:
             free-disk-space: false
             install-kind: true
             requires-secret: false
-
-          - label: up-provider-microsandbox
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-microsandbox: true
-            test-timeout: 1200s
-            job-timeout-minutes: 25
-
-          - label: up-provider-microsandbox-images
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-microsandbox: true
-            test-timeout: 1200s
-            job-timeout-minutes: 25
-
-          - label: up-provider-microsandbox-mounts
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-microsandbox: true
-            test-timeout: 1200s
-            job-timeout-minutes: 25
-
-          - label: up-provider-microsandbox-resources
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-microsandbox: true
-            test-timeout: 1200s
-            job-timeout-minutes: 25
-
-          - label: up-provider-microsandbox-storage
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-microsandbox: true
-            test-timeout: 1200s
-            job-timeout-minutes: 25
-
-          - label: up-provider-microsandbox-ephemeral
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-microsandbox: true
-            test-timeout: 1200s
-            job-timeout-minutes: 25
-
-          - label: up-provider-microsandbox-egress
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-microsandbox: true
-            test-timeout: 1200s
-            job-timeout-minutes: 25
-
-          - label: up-provider-microsandbox-prebuilds
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-microsandbox: true
-            test-timeout: 1200s
-            job-timeout-minutes: 25
-
-          - label: up-provider-microsandbox-dockerless
-            runner: ubuntu-latest
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            install-microsandbox: true
-            test-timeout: 1200s
-            job-timeout-minutes: 25
 
           # Snapshot tests
 
@@ -1107,37 +1195,6 @@ jobs:
             --crun-path /usr/local/bin/crun \
             --bootstrap-timeout 270s
 
-      - name: cache microsandbox release bundle (Linux)
-        if: matrix.install-microsandbox == true && runner.os == 'Linux'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/microsandbox-linux-x86_64-v0.7.7.tar.gz
-          key: ${{ runner.os }}-${{ runner.arch }}-microsandbox-bundle-v0.7.7
-
-      - name: install checksum-pinned microsandbox (Linux)
-        if: matrix.install-microsandbox == true && runner.os == 'Linux'
-        timeout-minutes: 5
-        run: |
-          archive="${RUNNER_TEMP}/microsandbox-linux-x86_64-v0.7.7.tar.gz"
-          if [ ! -f "$archive" ]; then
-            curl -fsSL --retry 3 -o "$archive" \
-              https://github.com/superradcompany/microsandbox/releases/download/v0.7.7/microsandbox-linux-x86_64.tar.gz
-          fi
-          echo "b3cc4a5e3f52dfdd938a6f67ac4a9a959ddfe304bab56de4964044b8613f01bb  $archive" | sha256sum -c -
-          staging="$(mktemp -d)"
-          trap 'rm -rf "$staging"' EXIT
-          tar -xzf "$archive" -C "$staging"
-          mkdir -p "$HOME/.microsandbox/bin" "$HOME/.microsandbox/lib" "$HOME/.local/bin"
-          install -m 755 "$staging/msb" "$HOME/.microsandbox/bin/msb"
-          install -m 644 "$staging/libkrunfw.so.5.6.1" "$HOME/.microsandbox/lib/"
-          ln -sf libkrunfw.so.5.6.1 "$HOME/.microsandbox/lib/libkrunfw.so.5"
-          ln -sf libkrunfw.so.5 "$HOME/.microsandbox/lib/libkrunfw.so"
-          ln -sf "$HOME/.microsandbox/bin/msb" "$HOME/.local/bin/msb"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/msb" --version
-          sudo test -r /dev/kvm
-          sudo test -w /dev/kvm
-
       - name: remove docker
         if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         run: |
@@ -1223,7 +1280,6 @@ jobs:
           GH_CREDENTIAL_USERNAME: x-access-token
           TEST_TIMEOUT: ${{ matrix.test-timeout || '1500s' }}
           FLAKE_ATTEMPTS: ${{ matrix.flake-attempts || '1' }}
-          DEVSY_REQUIRE_MICROSANDBOX: ${{ matrix.install-microsandbox == true && 'true' || 'false' }}
           E2E_LABEL: ${{ matrix.label }}
           E2E_PROFILE: ${{ matrix.runtime-profile || 'legacy' }}
           E2E_PODMAN_MODE: ${{ matrix.install-podman || 'none' }}
@@ -1282,6 +1338,7 @@ jobs:
       - build-cli
       - integration-tests-unprivileged
       - integration-tests
+      - integration-tests-microsandbox
     steps:
       - name: Check required jobs
         run: |
@@ -1318,5 +1375,6 @@ jobs:
           check_result "build-cli" "${{ needs.build-cli.result }}" true || status=1
           check_result "integration-tests-unprivileged" "${{ needs.integration-tests-unprivileged.result }}" true || status=1
           check_result "integration-tests" "${{ needs.integration-tests.result }}" true || status=1
+          check_result "integration-tests-microsandbox" "${{ needs.integration-tests-microsandbox.result }}" true || status=1
 
           exit "$status"

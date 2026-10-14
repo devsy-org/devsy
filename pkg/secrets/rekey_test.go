@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -22,6 +23,7 @@ const (
 func testProtectionManager(t *testing.T, dir, passphrase string) *ProtectionManager {
 	t.Helper()
 	p := NewProtectionManager(dir, DefaultUnlockResolver{ExplicitPassphrase: passphrase})
+	useFastPassphraseTargets(t, p)
 	p.readRemembered = func() (string, error) { return "", nil }
 	p.forgetRemembered = func() error { return nil }
 	return p
@@ -372,8 +374,7 @@ func TestRekeyAutomaticTransitionAndReset(t *testing.T) {
 func TestRememberVerifiesCredentialAndForgetDoesNotChangeBlob(t *testing.T) {
 	dir := t.TempDir()
 	credential := "remember-test-passphrase"
-	key, err := passphraseFileKey(credential)
-	require.NoError(t, err)
+	key := testPassphraseFileKey(t, credential)
 	path := filepath.Join(dir, EncryptedFileName)
 	require.NoError(
 		t,
@@ -520,8 +521,7 @@ func TestProtectionStatusNeverPromptsAndRememberRequiresCiphertext(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, SecretMissing, status.Availability)
 	require.ErrorIs(t, p.ChangePassphrase("replacement-for-missing-blob"), ErrSecretNotFound)
-	key, err := passphraseFileKey("actual-passphrase")
-	require.NoError(t, err)
+	key := testPassphraseFileKey(t, "actual-passphrase")
 	require.NoError(
 		t,
 		newFileBackend(filepath.Join(dir, EncryptedFileName), key).store(map[string]string{}),
@@ -595,8 +595,7 @@ func TestInvalidRecoveryJournalDoesNotChangeStore(t *testing.T) {
 func testPassphraseProtectionFixture(t *testing.T, passphrase string) *ProtectionManager {
 	t.Helper()
 	dir := t.TempDir()
-	key, err := passphraseFileKey(passphrase)
-	require.NoError(t, err)
+	key := testPassphraseFileKey(t, passphrase)
 	values := map[string]string{testRekeyBackendKey: testRekeyProtectedValue}
 	require.NoError(t, newFileBackend(filepath.Join(dir, EncryptedFileName), key).store(values))
 	idx, err := loadIndex(filepath.Join(dir, IndexFileName))
@@ -612,4 +611,105 @@ func testPassphraseProtectionFixture(t *testing.T, passphrase string) *Protectio
 	)
 	require.NoError(t, idx.save())
 	return testProtectionManager(t, dir, passphrase)
+}
+
+func TestProductionPassphraseEncryptionCompatibility(t *testing.T) {
+	const (
+		passphrase = "production compatibility test passphrase"
+		value      = "exact recovered production fixture value"
+	)
+	key := backendKey("default", "LEGACY")
+	dir := t.TempDir()
+	resolver := DefaultUnlockResolver{ExplicitPassphrase: passphrase}
+	manager := NewProtectionManager(dir, resolver)
+	require.NoError(t, manager.SetPassphrase(passphrase))
+
+	indexPath := filepath.Join(dir, IndexFileName)
+	idx, err := loadIndex(indexPath)
+	require.NoError(t, err)
+	require.Equal(t, string(keySourcePassphrase), idx.data.KeySource)
+	require.Equal(t, string(keySourcePassphrase), idx.data.FileStore.KeySource)
+	fk, err := openExistingFileKeyWithResolver(dir, idx, resolver)
+	require.NoError(t, err)
+	blobPath := filepath.Join(dir, EncryptedFileName)
+	initialBlob, err := os.ReadFile(blobPath) // #nosec G304 -- isolated test directory.
+	require.NoError(t, err)
+	assertScryptHeader(t, initialBlob, "18")
+	backend := newFileBackend(blobPath, fk)
+	values, err := backend.load()
+	require.NoError(t, err)
+	require.Empty(t, values)
+	require.NoError(t, backend.set(key, value))
+
+	freshKey, err := openExistingFileKeyWithResolver(dir, idx, resolver)
+	require.NoError(t, err)
+	values, err = newFileBackend(blobPath, freshKey).load()
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{key: value}, values)
+	blob, err := os.ReadFile(blobPath) // #nosec G304 -- isolated test directory.
+	require.NoError(t, err)
+	assertScryptHeader(t, blob, "18")
+	assertProductionFilePermissions(t, blobPath)
+
+	wrongKey, err := openExistingFileKeyWithResolver(dir, idx,
+		DefaultUnlockResolver{ExplicitPassphrase: "incorrect compatibility passphrase"})
+	require.NoError(t, err)
+	values, err = newFileBackend(blobPath, wrongKey).load()
+	require.ErrorIs(t, err, ErrUnlockFailed)
+	require.Nil(t, values)
+	unchanged, err := os.ReadFile(blobPath) // #nosec G304 -- isolated test directory.
+	require.NoError(t, err)
+	require.Equal(t, blob, unchanged)
+	assertProductionLegacyCompatibility(t, resolver, blob, map[string]string{key: value})
+}
+
+func assertProductionFilePermissions(t *testing.T, path string) {
+	t.Helper()
+	const windowsOS = "windows"
+	if runtime.GOOS == windowsOS {
+		return
+	}
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+func assertProductionLegacyCompatibility(
+	t *testing.T, resolver UnlockMaterialResolver, blob []byte, expected map[string]string,
+) {
+	t.Helper()
+
+	// Reuse the production ciphertext with the catalog layout of older CLIs.
+	legacyDir := t.TempDir()
+	legacyBlobPath := filepath.Join(legacyDir, EncryptedFileName)
+	legacyIndexPath := filepath.Join(legacyDir, IndexFileName)
+	legacyCatalog := []byte(
+		"contexts:\n  default:\n    LEGACY:\n      name: LEGACY\n      context: default\n      kind: secret\n",
+	)
+	require.NoError(
+		t,
+		os.WriteFile(legacyBlobPath, blob, 0o600),
+	) // #nosec G703 -- isolated test directory.
+	require.NoError(t, os.WriteFile(legacyIndexPath, legacyCatalog, 0o600))
+	legacyIdx, err := loadIndex(legacyIndexPath)
+	require.NoError(t, err)
+	require.Empty(t, legacyIdx.data.KeySource)
+	registry, ok := newSystemBackendRegistry(legacyDir, resolver).(*systemBackendRegistry)
+	require.True(t, ok)
+	present, conclusive := registry.probeFile(legacyIdx, backendKey("default", "LEGACY"))
+	require.True(t, present)
+	require.True(t, conclusive)
+	legacyKey, err := openPassphraseFileKeyWithResolver(resolver)
+	require.NoError(t, err)
+	values, err := newFileBackend(legacyBlobPath, legacyKey).load()
+	require.NoError(t, err)
+	require.Equal(t, expected, values)
+	legacyBlobAfter, err := os.ReadFile(legacyBlobPath) // #nosec G304 -- isolated test directory.
+	require.NoError(t, err)
+	require.Equal(t, blob, legacyBlobAfter)
+	legacyCatalogAfter, err := os.ReadFile(
+		legacyIndexPath,
+	) // #nosec G304 -- isolated test directory.
+	require.NoError(t, err)
+	require.Equal(t, legacyCatalog, legacyCatalogAfter)
 }

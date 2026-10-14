@@ -27,11 +27,8 @@ const microsandboxPrebuildFixture = "tests/up/testdata/microsandbox-prebuilds"
 
 var _ = ginkgo.Describe("microsandbox prebuild parity",
 	ginkgo.Label("up-provider-microsandbox-prebuilds"), func() {
-		for _, provider := range []struct{ name, source string }{
-			{"prebuild-builtin", microsandboxResourceBuiltin},
-			{"prebuild-external", microsandboxExternalProvider},
-		} {
-			ginkgo.Context(provider.name, func() {
+		for _, provider := range microsandboxProviders("prebuild-builtin", "prebuild-external") {
+			ginkgo.Context(provider.name, ginkgo.Label(provider.label), func() {
 				ginkgo.DescribeTable(
 					"selects prebuilds by input hash",
 					func(ctx context.Context, changed bool) {

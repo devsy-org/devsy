@@ -27,29 +27,17 @@ const microsandboxImageFixture = "tests/up/testdata/microsandbox-images"
 
 var _ = ginkgo.Describe("microsandbox image backend parity",
 	ginkgo.Label("up-provider-microsandbox-images"), func() {
-		for _, provider := range []struct{ name, source string }{
-			{"builtin", "microsandbox"},
-			{"external", microsandboxExternalProvider},
-		} {
-			ginkgo.Context(provider.name, func() {
+		for _, provider := range microsandboxProviders("builtin", "external") {
+			ginkgo.Context(provider.name, ginkgo.Label(provider.label), func() {
 				var f *framework.Framework
 				var tempDir string
 
 				ginkgo.BeforeEach(func(ctx context.Context) {
-					skipIfNoMicrosandbox(ctx)
-					ginkgo.GinkgoT().Setenv("DEVSY_HOME", ginkgo.GinkgoT().TempDir())
-					ginkgo.GinkgoT().Setenv("DEVSY_CONFIG", "")
-					initialDir, err := os.Getwd()
-					framework.ExpectNoError(err)
-					f = framework.NewDefaultFramework(filepath.Join(initialDir, "bin"))
-					tempDir, err = framework.CopyToTempDir(microsandboxImageFixture)
-					framework.ExpectNoError(err)
-					ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
-					framework.ExpectNoError(
-						f.DevsyProviderAdd(ctx, provider.source, "--name", provider.name),
-					)
-					ginkgo.DeferCleanup(f.DevsyProviderDelete, provider.name)
-					ginkgo.DeferCleanup(f.CleanupWorkspace, tempDir)
+					session := newMicrosandboxTestSession(ctx)
+					f = session.framework
+					tempDir = session.copyWorkspace(microsandboxImageFixture)
+					session.addProvider(ctx, provider.source, provider.name)
+					session.cleanupWorkspace(tempDir)
 				})
 
 				ginkgo.It(

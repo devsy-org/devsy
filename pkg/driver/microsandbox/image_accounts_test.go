@@ -112,6 +112,7 @@ func (s *imageUserSuite) TestInvalidFinalAccountPreservesExistingSandbox() {
 		}),
 	)
 	client := &accountImageClient{fakeClient: newFakeClient(), image: image}
+	client.version = recreateTestVersion
 	client.info[wsName] = &sandboxInfo{Name: wsName, Running: true}
 	d := newDriver(client, nil, specDefaults{})
 	err := d.RunDevContainer(context.Background(), wsID, &driver.RunOptions{
