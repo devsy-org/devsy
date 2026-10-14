@@ -6,12 +6,20 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"strings"
 	"sync"
 )
 
 type testEvent struct {
-	Action string
-	Test   string
+	Action  string `json:"Action"`
+	Package string `json:"Package"`
+	Test    string `json:"Test"`
+	Output  string `json:"Output"`
+}
+
+type testID struct {
+	packagePath string
+	name        string
 }
 
 type outputCapture struct {
@@ -21,13 +29,15 @@ type outputCapture struct {
 	stderr        io.Writer
 	stdoutPending []byte
 	stderrPending []byte
-	states        map[string]testState
+	states        map[testID]testState
+	listed        map[testID]struct{}
 	writeErr      error
 }
 
 func newOutputCapture(log, stdout, stderr io.Writer) *outputCapture {
 	return &outputCapture{
-		log: log, stdout: stdout, stderr: stderr, states: make(map[string]testState),
+		log: log, stdout: stdout, stderr: stderr,
+		states: make(map[testID]testState), listed: make(map[testID]struct{}),
 	}
 }
 
@@ -93,19 +103,48 @@ func (c *outputCapture) writeArtifact(data []byte, stdout bool) {
 
 func (c *outputCapture) readEvent(line []byte) {
 	var event testEvent
-	if json.Unmarshal(bytes.TrimSpace(line), &event) != nil || event.Test == "" {
+	if json.Unmarshal(bytes.TrimSpace(line), &event) != nil || event.Package == "" {
 		return
 	}
-	state := c.states[event.Test]
-	switch event.Action {
+	if event.Test == "" {
+		c.readListedTests(event.Package, event.Output)
+		return
+	}
+	id := testID{packagePath: event.Package, name: event.Test}
+	c.applyTestEvent(id, event.Action)
+}
+
+func (c *outputCapture) applyTestEvent(id testID, action string) {
+	state := c.states[id]
+	switch action {
+	case "run":
+		state.started = true
 	case "pass":
 		state.passed = true
 	case "skip":
 		state.skipped = true
 	case "fail":
 		state.failed = true
+	default:
+		return
 	}
-	c.states[event.Test] = state
+	c.states[id] = state
+}
+
+func (c *outputCapture) readListedTests(packagePath, output string) {
+	for line := range strings.SplitSeq(output, "\n") {
+		name := strings.TrimSuffix(line, "\r")
+		if isListedTestName(name) {
+			c.listed[testID{packagePath: packagePath, name: name}] = struct{}{}
+		}
+	}
+}
+
+func isListedTestName(name string) bool {
+	if !strings.HasPrefix(name, "Test") || strings.ContainsAny(name, "/ \t\r\n") {
+		return false
+	}
+	return true
 }
 
 func (c *outputCapture) finish() {
@@ -128,11 +167,19 @@ func (c *outputCapture) finish() {
 	}
 }
 
-func (c *outputCapture) events() map[string]testState {
+func (c *outputCapture) events() map[testID]testState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	snapshot := make(map[string]testState, len(c.states))
+	snapshot := make(map[testID]testState, len(c.states))
 	maps.Copy(snapshot, c.states)
+	return snapshot
+}
+
+func (c *outputCapture) listedTests() map[testID]struct{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snapshot := make(map[testID]struct{}, len(c.listed))
+	maps.Copy(snapshot, c.listed)
 	return snapshot
 }
 

@@ -149,13 +149,9 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: build provider update CI helper
-        shell: pwsh
-        run: go build -trimpath -o "$env:RUNNER_TEMP/devsy-ci-provider-update.exe" ./hack/provider_update_ci
-
       - name: run provider update tests and require Windows coverage
         shell: pwsh
-        run: '& "$env:RUNNER_TEMP/devsy-ci-provider-update.exe" --artifacts-dir "$env:RUNNER_TEMP"'
+        run: go run ./hack/provider_update_ci --artifacts-dir "$env:RUNNER_TEMP"
 
       - name: upload provider update test JSON on failure
         if: failure()

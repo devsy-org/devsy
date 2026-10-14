@@ -15,10 +15,13 @@ const (
 	defaultArtifactName      = "provider-update-windows"
 	windowsTestTimeout       = "10m"
 	providerUpdateRunPattern = "^(TestProviderUpdate|TestStatUpdatePath|" +
-		"TestExtractConfinedUpdateTarExpandsGNUSparseExecutable|" +
-		"TestGNUArchiveFixtureHasExpandedSparseData|" +
-		"TestExtractConfinedUpdateTarPreservesContiguousFiles)"
+		"TestExtractConfinedUpdateTar|TestGNUArchiveFixture)"
 )
+
+var providerUpdatePackages = []string{
+	"github.com/devsy-org/devsy/pkg/workspace",
+	"github.com/devsy-org/devsy/pkg/provider",
+}
 
 func main() {
 	os.Exit(runCLI(os.Args[1:]))
@@ -52,12 +55,13 @@ func runProviderUpdateTests(artifactsDir string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	result := runGoTests(capture)
-	capture.finish()
-	result.exitCode = 1
-	if result.startErr == nil {
-		result.exitCode = processExitCode(result.waitErr)
+	expected, discoveryErr := discoverProviderTests(logFile, stdout, stderr)
+	result := testRunResult{discoveryErr: discoveryErr}
+	if discoveryErr == nil {
+		result = runGoTests(capture)
 	}
+	capture.finish()
+	result.exitCode = executionExitCode(result)
 	result.captureErr = capture.err()
 	exitWriteErr, logCloseErr := finishTestArtifacts(artifactsDir, logFile, result.exitCode)
 	result.exitWriteErr = exitWriteErr
@@ -66,10 +70,11 @@ func runProviderUpdateTests(artifactsDir string, stdout, stderr io.Writer) int {
 	if result.exitCode != 0 {
 		return result.exitCode
 	}
-	return validateResult(result, capture.events(), stderr)
+	return validateResult(result, expected, capture.events(), stderr)
 }
 
 type testRunResult struct {
+	discoveryErr error
 	startErr     error
 	waitErr      error
 	exitCode     int
@@ -94,10 +99,7 @@ func openTestArtifacts(
 }
 
 func runGoTests(capture *outputCapture) testRunResult {
-	command := exec.Command(
-		"go", "test", "-race", "-json", "-count=1", "-timeout", windowsTestTimeout,
-		"./pkg/workspace", "./pkg/provider", "-run", providerUpdateRunPattern,
-	)
+	command := providerTestCommand("-run")
 	command.Stdout = capture.stdoutWriter()
 	command.Stderr = capture.stderrWriter()
 	startErr := command.Start()
@@ -115,6 +117,9 @@ func finishTestArtifacts(artifactsDir string, logFile *os.File, goExitCode int) 
 }
 
 func reportExecutionErrors(stderr io.Writer, result testRunResult) {
+	if result.discoveryErr != nil {
+		reportf(stderr, "::error::%v\n", result.discoveryErr)
+	}
 	reportStartError(stderr, result.startErr)
 	reportWaitError(stderr, result)
 	reportArtifactErrors(stderr, result)
@@ -128,7 +133,7 @@ func reportStartError(stderr io.Writer, err error) {
 }
 
 func reportWaitError(stderr io.Writer, result testRunResult) {
-	if result.exitCode != 0 && result.startErr == nil {
+	if result.exitCode != 0 && result.startErr == nil && result.discoveryErr == nil {
 		reportf(
 			stderr,
 			"::error::Provider update tests failed with exit code %d\n",
@@ -162,8 +167,13 @@ func reportf(stderr io.Writer, format string, args ...any) {
 	_, _ = fmt.Fprintf(stderr, format, args...)
 }
 
-func validateResult(result testRunResult, events map[string]testState, stderr io.Writer) int {
-	issues := validateCriticalTests(events)
+func validateResult(
+	result testRunResult,
+	expected map[testID]struct{},
+	events map[testID]testState,
+	stderr io.Writer,
+) int {
+	issues := validateTestCoverage(expected, events)
 	for _, issue := range issues {
 		reportf(stderr, "::error::%s\n", issue)
 	}
@@ -186,4 +196,14 @@ func processExitCode(err error) int {
 		}
 	}
 	return 1
+}
+
+func executionExitCode(result testRunResult) int {
+	if result.discoveryErr != nil {
+		return processExitCode(result.discoveryErr)
+	}
+	if result.startErr != nil {
+		return 1
+	}
+	return processExitCode(result.waitErr)
 }

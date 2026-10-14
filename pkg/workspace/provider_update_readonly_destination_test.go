@@ -1,10 +1,11 @@
+//go:build !windows
+
 package workspace
 
 import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync/atomic"
 	"testing"
 
@@ -21,7 +22,7 @@ type readOnlyDirectUpdateCase struct {
 }
 
 func TestProviderUpdateDirectBinaryUnderReadOnlyParent(t *testing.T) {
-	if runtime.GOOS == updateWindowsOS || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("requires POSIX permission enforcement for an ordinary user")
 	}
 
@@ -121,7 +122,7 @@ func assertFailedReadOnlyDirectUpdate(
 }
 
 func TestDownloadUpdateBinaryUnderReadOnlyStagingRoot(t *testing.T) {
-	if runtime.GOOS == updateWindowsOS || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("requires POSIX permission enforcement for an ordinary user")
 	}
 

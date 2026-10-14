@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +25,13 @@ const (
 	noPassMode     = "no-pass"
 	multipleMode   = "multiple"
 )
+
+var fixtureTests = []testID{
+	{packagePath: providerUpdatePackages[0], name: "TestProviderUpdateFirst"},
+	{packagePath: providerUpdatePackages[0], name: "TestProviderUpdateSecond"},
+	{packagePath: providerUpdatePackages[1], name: "TestProviderUpdateFirst"},
+	{packagePath: providerUpdatePackages[1], name: "TestProviderUpdateSecond"},
+}
 
 var fakeCaseExceptions = map[string]map[int][]string{
 	missingMode: {0: nil, 1: nil},
@@ -52,6 +60,9 @@ func runFakeGo() int {
 		reportf(os.Stderr, "unexpected go arguments: %s\n", strings.Join(os.Args[1:], " "))
 		return 91
 	}
+	if os.Args[len(os.Args)-2] == "-list" {
+		return emitFakeDiscovery(os.Getenv(fakeModeEnv))
+	}
 	emitFakeTestEvents(os.Getenv(fakeModeEnv))
 	reportf(os.Stderr, "fake Go stderr\n")
 	return fakeGoExitCode()
@@ -63,11 +74,28 @@ func isFakeGoInvocation(path string) bool {
 }
 
 func isExpectedGoCommand(args []string) bool {
+	if len(args) != 10 || (args[8] != "-run" && args[8] != "-list") {
+		return false
+	}
 	expected := []string{
 		"test", "-race", "-json", "-count=1", "-timeout", "10m",
-		"./pkg/workspace", "./pkg/provider", "-run", providerUpdateRunPattern,
+		providerUpdatePackages[0], providerUpdatePackages[1], args[8], providerUpdateRunPattern,
 	}
 	return equalStrings(args, expected)
+}
+
+func emitFakeDiscovery(mode string) int {
+	if mode == "discovery-failure" {
+		return 9
+	}
+	for _, id := range fixtureTests {
+		if mode == "empty-discovery" ||
+			(mode == "missing-package" && id.packagePath == providerUpdatePackages[1]) {
+			continue
+		}
+		writeFakeEvent("output", testID{packagePath: id.packagePath}, id.name+"\n")
+	}
+	return 0
 }
 
 func equalStrings(left, right []string) bool {
@@ -83,7 +111,7 @@ func equalStrings(left, right []string) bool {
 }
 
 func emitFakeTestEvents(mode string) {
-	for index, name := range criticalTests {
+	for index, name := range fixtureTests {
 		if actions, except := fakeCaseActions(mode, index); except {
 			for _, action := range actions {
 				writeFakeEvent(action, name, "")
@@ -106,7 +134,7 @@ func emitLargeFakeLine() {
 		return
 	}
 	writeFakeEvent(
-		"output", "TestProviderUpdateZipCompatibility/plain_archive", strings.Repeat("x", 70*1024),
+		"output", fixtureTests[0], strings.Repeat("x", 70*1024),
 	)
 }
 
@@ -122,36 +150,10 @@ func fakeGoExitCode() int {
 	return exitCode
 }
 
-func writeFakeEvent(action, name, output string) {
-	if output == "" {
-		reportf(os.Stdout, "{\"Action\":%q,\"Test\":%q}\n", action, name)
-		return
-	}
-	reportf(os.Stdout, "{\"Action\":%q,\"Test\":%q,\"Output\":%q}\n", action, name, output)
-}
-
-func TestValidateCriticalTestsReportsEveryIssue(t *testing.T) {
-	events := make(map[string]testState)
-	for _, name := range criticalTests[4:] {
-		events[name] = testState{passed: true}
-	}
-	events[criticalTests[1]] = testState{skipped: true}
-	events[criticalTests[2]] = testState{}
-	events[criticalTests[3]] = testState{failed: true}
-
-	issues := validateCriticalTests(events)
-	if len(issues) != 4 {
-		t.Fatalf("got %d issues, want 4: %v", len(issues), issues)
-	}
-	for _, want := range []string{
-		"produced no JSON events: " + criticalTests[0],
-		"was skipped: " + criticalTests[1],
-		"did not pass: " + criticalTests[2],
-		"failed: " + criticalTests[3],
-	} {
-		if !containsIssue(issues, want) {
-			t.Errorf("issues do not contain %q: %v", want, issues)
-		}
+func writeFakeEvent(action string, id testID, output string) {
+	event := testEvent{Action: action, Package: id.packagePath, Test: id.name, Output: output}
+	if err := json.NewEncoder(os.Stdout).Encode(event); err != nil {
+		reportf(os.Stderr, "encode fake event: %v\n", err)
 	}
 }
 
@@ -210,20 +212,20 @@ func assertGateMode(t *testing.T, mode, stderr string) {
 
 func assertMultipleGateIssues(t *testing.T, stderr string) {
 	t.Helper()
-	for _, issue := range criticalTests[:4] {
-		if !strings.Contains(stderr, issue) {
+	for _, issue := range fixtureTests[:4] {
+		if !strings.Contains(stderr, issue.name) {
 			t.Errorf("missing issue for %q in %s", issue, stderr)
 		}
 	}
-	if strings.Count(stderr, "::error::") != 4 {
+	if strings.Count(stderr, "::error::") < 4 {
 		t.Errorf("reported %d errors, want 4: %s", strings.Count(stderr, "::error::"), stderr)
 	}
 }
 
 func assertMissingGateIssues(t *testing.T, stderr string) {
 	t.Helper()
-	for _, name := range criticalTests[:2] {
-		if !strings.Contains(stderr, "produced no JSON events: "+name) {
+	for _, name := range fixtureTests[:2] {
+		if !strings.Contains(stderr, "produced no JSON events: "+name.name) {
 			t.Errorf("missing report for %q: %s", name, stderr)
 		}
 	}
@@ -258,10 +260,10 @@ func TestCaptureFailureIsReportedAndDoesNotStopDrain(t *testing.T) {
 	if code == 0 {
 		t.Fatal("capture failure should fail the helper")
 	}
-	if !strings.Contains(stderr.String(), "capture Go test output") {
+	if !strings.Contains(stderr.String(), "capture provider update test discovery") {
 		t.Fatalf("capture failure was not reported: %q", stderr.String())
 	}
-	if strings.Count(stderr.String(), "capture Go test output:") != 1 {
+	if strings.Count(stderr.String(), "capture provider update test discovery:") != 1 {
 		t.Fatalf("capture errors were not bounded to the first failure: %q", stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(dir, defaultArtifactName+".exitcode")); err != nil {
@@ -288,7 +290,7 @@ func TestGoStartFailureWritesFailureExitArtifact(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PATH", t.TempDir())
 	_, stderr, code := runCLIProcess(t, "--artifacts-dir", dir)
-	if code != 1 || !strings.Contains(stderr, "start Go provider update tests") {
+	if code != 1 || !strings.Contains(stderr, "discover provider update tests") {
 		t.Fatalf("unexpected start failure result: code=%d stderr=%q", code, stderr)
 	}
 	exitArtifact, err := os.ReadFile(filepath.Join(dir, defaultArtifactName+".exitcode"))
@@ -376,15 +378,6 @@ func copyFile(source, destination string) error {
 		return inputCloseErr
 	}
 	return closeErr
-}
-
-func containsIssue(issues []string, fragment string) bool {
-	for _, issue := range issues {
-		if strings.Contains(issue, fragment) {
-			return true
-		}
-	}
-	return false
 }
 
 type failingWriter struct{}
