@@ -135,7 +135,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			names.Flag(names.UpdateRemoteUserUID), "off")
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "id -u")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "id -u")
 		framework.ExpectNoError(err)
 		gomega.Expect(out).NotTo(gomega.BeEmpty())
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -349,7 +349,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "ls ~/.file*")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "ls ~/.file*")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(
 			out,
@@ -368,7 +368,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "ls /tmp/worked")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "ls /tmp/worked")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(out, "/tmp/worked\n")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -382,7 +382,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "ls ~/.file*")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "ls ~/.file*")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(
 			out,
@@ -399,7 +399,7 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "cat ~/.branch_test")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "cat ~/.branch_test")
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(out, "test\n")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
@@ -415,10 +415,10 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 		)
 		framework.ExpectNoError(err)
 
-		_, err = dtc.execSSH(ctx, tempDir, "test -f /tmp/worked")
+		_, err = dtc.f.DevsySSH(ctx, tempDir, "test -f /tmp/worked")
 		framework.ExpectNoError(err)
 
-		out, err := dtc.execSSH(ctx, tempDir, "cat /tmp/lifecycle-order.log")
+		out, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/lifecycle-order.log")
 		framework.ExpectNoError(err)
 
 		lines := strings.Split(strings.TrimSpace(out), "\n")

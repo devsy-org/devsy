@@ -68,10 +68,6 @@ func (btc *baseTestContext) execSSHCapture(
 	return strings.TrimSpace(output), err
 }
 
-func (btc *baseTestContext) execSSH(ctx context.Context, tempDir, command string) (string, error) {
-	return btc.f.DevsySSH(ctx, tempDir, command)
-}
-
 type dockerTestContext struct {
 	baseTestContext
 }
@@ -282,7 +278,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 
 	// Intentionally no --env/--secret argument: the context binding is the source.
 	framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
-	out, err := dtc.execSSH(
+	out, err := dtc.f.DevsySSH(
 		ctx,
 		tempDir,
 		`if [ "$(cat `+tc.checkFile+`)" = expected-value ]; then printf present; else printf absent; fi`,
@@ -293,10 +289,10 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 		fileCheck := `if [ -e /run/devsy/secrets-env/` + tc.sessionFile + ` ]; then ` +
 			`stat -c '%U:%a' /run/devsy/secrets-env/` + tc.sessionFile +
 			`; else printf missing; fi`
-		out, err = dtc.execSSH(ctx, tempDir, fileCheck)
+		out, err = dtc.f.DevsySSH(ctx, tempDir, fileCheck)
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("vscode:600"))
-		out, err = dtc.execSSH(ctx, tempDir, tc.sessionCheck)
+		out, err = dtc.f.DevsySSH(ctx, tempDir, tc.sessionCheck)
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
 	}
@@ -304,7 +300,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, "detach", tc.name})
 	framework.ExpectNoError(err)
 	framework.ExpectNoError(dtc.f.DevsyUpRecreate(ctx, tempDir))
-	out, err = dtc.execSSH(
+	out, err = dtc.f.DevsySSH(
 		ctx,
 		tempDir,
 		`if [ -s `+tc.checkFile+` ]; then printf present; else printf absent; fi`,
@@ -312,7 +308,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 	framework.ExpectNoError(err)
 	gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
 	if tc.sessionCheck != "" {
-		out, err = dtc.execSSH(ctx, tempDir, tc.sessionCheck)
+		out, err = dtc.f.DevsySSH(ctx, tempDir, tc.sessionCheck)
 		framework.ExpectNoError(err)
 		gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("absent"))
 	}

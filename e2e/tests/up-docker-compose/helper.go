@@ -38,10 +38,6 @@ type baseTestContext struct {
 	initialDir   string
 }
 
-func (btc *baseTestContext) execSSH(ctx context.Context, tempDir, command string) (string, error) {
-	return btc.f.DevsySSH(ctx, tempDir, command)
-}
-
 func (btc *baseTestContext) inspectContainer(
 	ctx context.Context,
 	ids []string,
