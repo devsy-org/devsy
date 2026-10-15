@@ -119,11 +119,14 @@ func TestProviderVersionNeedsUpdate(t *testing.T) {
 func TestProviderUpdateSkipReasonResolvedGitHubSource(t *testing.T) {
 	original := provider.ProviderSource{Github: "org/provider", Raw: "org/provider@v1.0.0"}
 	changed := provider.ProviderSource{Github: "org/provider", Raw: "org/provider@v1.1.0"}
-	assert.Equal(
-		t,
-		provider.GetProviderSource(original, "provider"),
-		provider.GetProviderSource(changed, "provider"),
-	)
+	originalSource := provider.GetProviderSource(original, "provider")
+	changedSource := provider.GetProviderSource(changed, "provider")
+	originalBase, originalTag := provider.SplitSourceAndTag(originalSource)
+	changedBase, changedTag := provider.SplitSourceAndTag(changedSource)
+	assert.Equal(t, "github.com/org/provider", originalBase)
+	assert.Equal(t, originalBase, changedBase)
+	assert.Equal(t, "v1.0.0", originalTag)
+	assert.Equal(t, "v1.1.0", changedTag)
 	assert.Equal(t, "provider source changed", providerUpdateSkipReason(
 		original, changed, "v1.0.0", "v1.2.0",
 	))

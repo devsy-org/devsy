@@ -99,6 +99,10 @@ func loadCurrentProvider(
 		return "", "", errProviderNotFound
 	}
 
+	// This probe checks latest; ordinary source reloads retain the installed pin.
+	if strings.HasPrefix(source, "github.com/") {
+		source, _ = provider.SplitSourceAndTag(source)
+	}
 	return source, currentProvider.Config.Version, nil
 }
 
