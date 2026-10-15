@@ -108,7 +108,10 @@ tasks:
 
   cli:test:
     desc: run devsy unit tests
-    cmd: go test $(go list ./... | grep -v -e /test -e /e2e) -race -coverprofile=dist/profile.out -covermode=atomic
+    cmd: |
+      set -euo pipefail
+      packages="$(go run ./hack/unit_test_packages)"
+      go test -race -coverprofile=dist/profile.out -covermode=atomic $packages
 
   cli:test:e2e:build:
     desc: build devsy for e2e tests

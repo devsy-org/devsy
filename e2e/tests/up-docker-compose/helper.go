@@ -38,10 +38,6 @@ type baseTestContext struct {
 	initialDir   string
 }
 
-func (btc *baseTestContext) execSSH(ctx context.Context, tempDir, command string) (string, error) {
-	return btc.f.DevsySSH(ctx, tempDir, command)
-}
-
 func (btc *baseTestContext) inspectContainer(
 	ctx context.Context,
 	ids []string,
@@ -181,10 +177,6 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
 	ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 	return tempDir, nil
-}
-
-func setupDockerProvider(binDir string) (*framework.Framework, error) {
-	return framework.SetupDockerProvider(binDir, "docker")
 }
 
 // findComposeContainer returns the compose container IDs for a workspace's

@@ -20,17 +20,17 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/542974295"
 provenance = "github-attestations"
 
 [[tools.go]]
-version = "1.26.8"
+version = "1.26.9"
 backend = "core:go"
-specifiers = ["1.26.8"]
+specifiers = ["1.26.9"]
 
 [tools.go."platforms.linux-x64"]
-checksum = "sha256:d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
-url = "https://dl.google.com/go/go1.26.8.linux-amd64.tar.gz"
+checksum = "sha256:42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d"
+url = "https://dl.google.com/go/go1.26.9.linux-amd64.tar.gz"
 
 [tools.go."platforms.macos-arm64"]
-checksum = "sha256:a012b25b571bd0138a03dcd25375ceba866fe5ca822f426d2c66a4de56fd3f4b"
-url = "https://dl.google.com/go/go1.26.8.darwin-arm64.tar.gz"
+checksum = "sha256:f9bb7c0a02506c5d9bf0d1eb1f7ee6c7684f844ae49558308a0427b830e022cc"
+url = "https://dl.google.com/go/go1.26.9.darwin-arm64.tar.gz"
 
 [[tools.golangci-lint]]
 version = "2.13.2"
@@ -63,20 +63,20 @@ checksum = "sha256:bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6
 url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-arm64.tar.gz"
 
 [[tools.prek]]
-version = "0.5.2"
+version = "0.5.3"
 backend = "aqua:j178/prek"
-specifiers = ["0.5.2"]
+specifiers = ["0.5.3"]
 
 [tools.prek."platforms.linux-x64"]
-checksum = "sha256:a4d51a463cb15ee2929368cc4884eec4ef33dce3ff5101b40e8ad7e1205b8f40"
-url = "https://github.com/j178/prek/releases/download/v0.5.2/prek-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/j178/prek/releases/assets/541547346"
+checksum = "sha256:c1475ddc56df0003c780557d9b52273d9eb19c9ef8d91143f3ce03511182a36e"
+url = "https://github.com/j178/prek/releases/download/v0.5.3/prek-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/560889224"
 provenance = "github-attestations"
 
 [tools.prek."platforms.macos-arm64"]
-checksum = "sha256:f3ef7692f8873c36d9437c77389833d3165fbe705ea66e53e169d83a89055f9b"
-url = "https://github.com/j178/prek/releases/download/v0.5.2/prek-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/j178/prek/releases/assets/541547294"
+checksum = "sha256:6006cc4e69cfc86d55f4e407ca60ba960a521befa54fece94038639b1f4de381"
+url = "https://github.com/j178/prek/releases/download/v0.5.3/prek-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/j178/prek/releases/assets/560889174"
 provenance = "github-attestations"
 
 [[tools.protoc]]

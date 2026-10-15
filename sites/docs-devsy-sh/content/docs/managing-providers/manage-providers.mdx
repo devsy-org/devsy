@@ -154,6 +154,10 @@ devsy provider set-source <name> ../path-to/provider.yaml
 
 In the desktop app, use the provider's **Select version**, **Update**, and **Initialize** actions.
 
+Devsy prepares the replacement provider’s installation binaries (`binaries`) before changing the installed provider. Runtime binaries declared under `agent.binaries` are prepared later by workspace operations. A download, checksum, archive, or cancellation error during preparation keeps the installed binaries, provider settings, initialization state, and workspace associations intact. Absolute local binary paths are checked without modifying the referenced files. References into the managed binaries directory must also match the prepared result; ambiguous aliases into that directory are rejected before publication.
+
+If publishing the prepared update fails, Devsy attempts to restore the previous files. If restoration fails, the error identifies retained recovery artifacts; keep those files for recovery. This does not guarantee recovery after a process or machine crash. Initialization runs after publication: an initialization failure leaves the new provider installed and available for another initialization attempt.
+
 Existing workspaces keep the provider version they were created with. Recreate one with `devsy workspace up <name> --recreate` to pick up the new version.
 
 ## Remove a provider

@@ -34,7 +34,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			dtc.dockerHelper = &docker.DockerHelper{DockerCommand: testDockerCommand}
-			dtc.f, err = setupDockerProvider(
+			dtc.f, err = framework.SetupDockerProvider(
 				filepath.Join(dtc.initialDir, "bin"),
 				testDockerCommand,
 			)
@@ -63,11 +63,11 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				envValue, err := dtc.execSSH(ctx, tempDir, "cat /tmp/sops-env-check.out")
+				envValue, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/sops-env-check.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(envValue)).To(gomega.Equal(sopsE2EPlaintext))
 
-				mountValue, err := dtc.execSSH(ctx, tempDir, "cat /tmp/sops-mount-check.out")
+				mountValue, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/sops-mount-check.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(mountValue)).To(gomega.Equal(sopsE2EMounted))
 			},
@@ -88,7 +88,7 @@ var _ = ginkgo.Describe(
 				err = dtc.f.DevsyUp(ctx, tempDir)
 				framework.ExpectNoError(err)
 
-				value, err := dtc.execSSH(ctx, tempDir, "cat /tmp/sops-project-check.out")
+				value, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/sops-project-check.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(value)).To(gomega.Equal(sopsE2EPlaintext))
 			},
@@ -123,7 +123,7 @@ var _ = ginkgo.Describe(
 				err = dtc.f.DevsyUp(ctx, gitURI)
 				framework.ExpectNoError(err)
 
-				value, err := dtc.execSSH(ctx, tempDir, "cat /tmp/sops-project-check.out")
+				value, err := dtc.f.DevsySSH(ctx, tempDir, "cat /tmp/sops-project-check.out")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(value)).To(gomega.Equal(sopsE2EPlaintext))
 			},

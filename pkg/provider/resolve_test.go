@@ -24,6 +24,45 @@ func TestGetProviderSource_GithubCanonicalization(t *testing.T) {
 			want: canonicalGithub,
 		},
 		{
+			name: "pinned full GitHub path retains its tag",
+			src: ProviderSource{
+				Github: githubPath,
+				Raw:    "github.com/" + githubPath + "@v1.2.3",
+			},
+			want: canonicalGithub + "@v1.2.3",
+		},
+		{
+			name: "pinned shorthand uses canonical repository path",
+			src: ProviderSource{
+				Github: githubPath,
+				Raw:    "devsy-provider-ssh@v1.2.3",
+			},
+			want: canonicalGithub + "@v1.2.3",
+		},
+		{
+			name: "raw tag replaces a legacy GitHub tag without duplication",
+			src: ProviderSource{
+				Github: canonicalGithub + "@v1.0.0",
+				Raw:    "devsy-provider-ssh@v1.2.3",
+			},
+			want: canonicalGithub + "@v1.2.3",
+		},
+		{
+			name: "legacy GitHub field tag remains when raw is empty",
+			src: ProviderSource{
+				Github: canonicalGithub + "@v1.0.0",
+			},
+			want: canonicalGithub + "@v1.0.0",
+		},
+		{
+			name: "unpinned raw source remains canonical and unpinned",
+			src: ProviderSource{
+				Github: githubPath,
+				Raw:    "devsy-provider-ssh",
+			},
+			want: canonicalGithub,
+		},
+		{
 			name: "internal source returns raw",
 			src:  ProviderSource{Internal: true, Raw: "docker"},
 			want: "docker",

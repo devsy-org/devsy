@@ -80,6 +80,16 @@ function validateSecretUnlockInput(args: unknown): SecretUnlockInput {
   return { ok: true, requestId: input.requestId, passphrase, remember }
 }
 
+function providerVersionFlags(tag: unknown, required = false): string[] {
+  if (tag === undefined || tag === "") {
+    if (!required) return []
+    throw new Error("A provider version tag is required.")
+  }
+  if (typeof tag !== "string")
+    throw new Error("Provider version tag must be a string.")
+  return ["--version", tag]
+}
+
 interface SecretEntry {
   name: string
   context: string
@@ -1295,21 +1305,27 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   // set-source installs replacement binaries and clears Initialized, since
   // the new binary has not run its init. Chain init so the provider ends up
   // usable rather than sitting in a needs-re-init state the user must notice.
-  ipcMain.handle("provider_update", async (_event, args: { name: string }) => {
-    await withProviderJob(args.name, "updating", async () => {
-      await runProviderWithStatus(args.name, [
-        "provider",
-        "set-source",
-        args.name,
-        "--use=false",
-      ])
-      await runProviderWithStatus(args.name, ["provider", "init", args.name])
-    })
-  })
+  ipcMain.handle(
+    "provider_update",
+    async (_event, args: { name: string; tag?: unknown }) => {
+      const versionFlags = providerVersionFlags(args.tag)
+      await withProviderJob(args.name, "updating", async () => {
+        await runProviderWithStatus(args.name, [
+          "provider",
+          "set-source",
+          args.name,
+          "--use=false",
+          ...versionFlags,
+        ])
+        await runProviderWithStatus(args.name, ["provider", "init", args.name])
+      })
+    },
+  )
 
   ipcMain.handle(
     "provider_update_streaming",
-    async (_event, args: { name: string }) => {
+    async (_event, args: { name: string; tag?: unknown }) => {
+      const versionFlags = providerVersionFlags(args.tag)
       const cmdId = crypto.randomUUID()
       const win = deps.getMainWindow()
       providerJobs.start(args.name, "updating")
@@ -1366,7 +1382,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         let failure: CLIError | undefined
         try {
           sendProgress("Downloading provider update", "info")
-          await runStep(["provider", "set-source", args.name, "--use=false"])
+          await runStep([
+            "provider",
+            "set-source",
+            args.name,
+            "--use=false",
+            ...versionFlags,
+          ])
           sendProgress("Initializing updated provider", "info")
           await runStep(["provider", "init", args.name])
         } catch (error) {
@@ -1476,7 +1498,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "provider_set_version",
-    async (_event, args: { name: string; tag: string }) => {
+    async (_event, args: { name: string; tag?: unknown }) => {
+      const versionFlags = providerVersionFlags(args.tag, true)
       // Pinning a version swaps binaries via the same update path, so it
       // clears Initialized and needs the same re-init as a source change.
       await withProviderJob(args.name, "updating", async () => {
@@ -1484,8 +1507,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           "provider",
           "set-source",
           args.name,
-          "--version",
-          args.tag,
+          ...versionFlags,
         ])
         await runProviderWithStatus(args.name, ["provider", "init", args.name])
       })

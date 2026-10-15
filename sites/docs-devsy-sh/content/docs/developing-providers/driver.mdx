@@ -187,4 +187,6 @@ agent:
 - **args**: a fixed argument list. No shell or option substitution is applied.
 - **imageBackend**: `docker` (default) or `none`. It picks the Devsy-side image backend, not a build capability in the plugin. With `none`, prebuild publishing is unavailable.
 
-Each platform needs a SHA-256 checksum, and the runtime must already be in the agent binary directory. Devsy verifies the checksum before every operation and never downloads or removes the file. The plugin is trusted provider code and runs with the same access as Devsy.
+Every platform declaration for the selected `agent.external.binary` key requires a SHA-256 checksum. Agent setup prepares the executable; the external host verifies its bytes before launching each operation and does not download or remove it. The selected path can be relative to the prepared agent-binaries directory or an absolute local path. It must resolve to a regular file, with effective execute access on Unix. This verification applies to the selected external runtime, not every arbitrary provider installation binary. The supervisor is Devsy's own executable. The plugin is trusted provider code and runs with the agent user's access.
+
+See the [runtime rollout decision](./external-runtime-rollout.mdx) for MicroSandbox migration and compatibility limits.

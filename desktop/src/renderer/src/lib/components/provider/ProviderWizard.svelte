@@ -31,11 +31,17 @@ import { isCommandSuccess } from "$lib/utils/log-parser.js"
 import type { ProviderOption } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 
-const PRESETS = [
+type ProviderPreset = { name: string; description: string; source?: string }
+
+const PRESETS: ProviderPreset[] = [
   { name: "docker", description: "Local Docker containers" },
   { name: "podman", description: "Local Podman containers" },
   { name: "apple", description: "Apple containers (macOS 26+, Apple silicon)" },
-  { name: "microsandbox", description: "Hardware-isolated microVMs" },
+  {
+    name: "microsandbox",
+    source: "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8",
+    description: "Hardware-isolated microVMs",
+  },
   { name: "lima", description: "Linux VMs via Lima (macOS)" },
   {
     name: "orbstack",
@@ -48,6 +54,10 @@ const PRESETS = [
   { name: "azure", description: "Microsoft Azure" },
   { name: "digitalocean", description: "DigitalOcean Droplets" },
 ]
+
+function presetSource(preset: ProviderPreset): string {
+  return preset.source ?? preset.name
+}
 
 type Step = "select" | "configure" | "initialize" | "complete"
 type StepState = "pending" | "active" | "complete" | "error"
@@ -196,7 +206,8 @@ async function handleSelect() {
     error = "Provider source is required"
     return
   }
-  const name = customName.trim() || src
+  const preset = PRESETS.find((item) => presetSource(item) === src)
+  const name = customName.trim() || preset?.name || src
   if (nameExists(name)) {
     error = `Provider "${name}" already exists. Choose a different name.`
     return
@@ -381,9 +392,9 @@ function handleDone() {
               <button
                 type="button"
                 class="flex items-center gap-2.5 rounded-lg border p-3 text-left transition-colors hover:bg-accent/50
-                  {source === p.name ? 'border-primary ring-1 ring-primary' : ''}"
+                  {source === presetSource(p) ? 'border-primary ring-1 ring-primary' : ''}"
                 disabled={adding}
-                onclick={() => { source = p.name; customName = "" }}
+                onclick={() => { source = presetSource(p); customName = "" }}
               >
                 <ProviderIcon name={p.name} class="size-6 shrink-0" />
                 <div>

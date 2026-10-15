@@ -66,7 +66,7 @@ var _ = ginkgo.Describe(
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
 
-			tc.f, err = setupDockerProvider(tc.initialDir + "/bin")
+			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 		})
 
@@ -138,10 +138,10 @@ var _ = ginkgo.Describe(
 				checkFile := `if [ -f /run/devsy/secrets-env/COMPOSE_SESSION_SECRET ]; then ` +
 					`if [ "$(cat /run/devsy/secrets-env/COMPOSE_SESSION_SECRET)" = sentinel-compose-late-secret ]; ` +
 					`then printf file-attached; else printf file-other; fi; else printf file-absent; fi`
-				out, err := tc.execSSH(ctx, tempDir, checkFile)
+				out, err := tc.f.DevsySSH(ctx, tempDir, checkFile)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("file-attached"))
-				out, err = tc.execSSH(
+				out, err = tc.f.DevsySSH(
 					ctx,
 					tempDir,
 					`case "$COMPOSE_SESSION_SECRET" in `+
@@ -150,7 +150,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("attached"))
-				mode, err := tc.execSSH(
+				mode, err := tc.f.DevsySSH(
 					ctx,
 					tempDir,
 					"stat -c %a /run/devsy/secrets-env/COMPOSE_SESSION_SECRET",
@@ -217,7 +217,7 @@ var _ = ginkgo.Describe(
 						return mount.Destination == composeFileSecretsDir && mount.Type == "tmpfs"
 					},
 				)))
-				out, err := tc.execSSH(
+				out, err := tc.f.DevsySSH(
 					ctx,
 					tempDir,
 					"if [ -s /run/secrets/missing_app_secret ]; then printf present; else printf absent; fi",
@@ -273,13 +273,13 @@ var _ = ginkgo.Describe(
 				checkStored := `if [ -f /run/devsy/secrets-env/COMPOSE_SESSION_SECRET ] && ` +
 					`[ "$(cat /run/devsy/secrets-env/COMPOSE_SESSION_SECRET)" = sentinel-compose-secret ]; ` +
 					`then printf present; else printf absent; fi`
-				out, err := tc.execSSH(ctx, tempDir, checkStored)
+				out, err := tc.f.DevsySSH(ctx, tempDir, checkStored)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
 
 				checkPresent := `if [ "$COMPOSE_SESSION_SECRET" = sentinel-compose-secret ]; ` +
 					`then printf present; else printf absent; fi`
-				out, err = tc.execSSH(ctx, tempDir, checkPresent)
+				out, err = tc.f.DevsySSH(ctx, tempDir, checkPresent)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("present"))
 
@@ -294,7 +294,7 @@ var _ = ginkgo.Describe(
 				}
 				gomega.Expect(sessionMount).NotTo(gomega.BeNil())
 				gomega.Expect(sessionMount.Type).To(gomega.Equal(mount.TypeTmpfs))
-				mode, err := tc.execSSH(ctx, tempDir, "stat -c %a /run/devsy/secrets-env")
+				mode, err := tc.f.DevsySSH(ctx, tempDir, "stat -c %a /run/devsy/secrets-env")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(mode)).To(gomega.Equal("700"))
 
@@ -306,7 +306,7 @@ var _ = ginkgo.Describe(
 				checkDetached := `case "$COMPOSE_SESSION_SECRET" in ` +
 					`sentinel-compose-secret) printf attached;; base-value) printf base;; ` +
 					`'') printf absent;; *) printf other;; esac`
-				out, err = tc.execSSH(ctx, tempDir, checkDetached)
+				out, err = tc.f.DevsySSH(ctx, tempDir, checkDetached)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("base"))
 
@@ -342,7 +342,7 @@ var _ = ginkgo.Describe(
 						return mount.Destination == composeFileSecretsDir && mount.Type == "tmpfs"
 					},
 				)))
-				out, err = tc.execSSH(
+				out, err = tc.f.DevsySSH(
 					ctx,
 					tempDir,
 					`if [ "$(cat /run/secrets/compose_file_secret)" = sentinel-compose-file-secret ]; `+
@@ -400,11 +400,11 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			foo, err := tc.execSSH(ctx, tempDir, "cat $HOME/mnt1/foo.txt")
+			foo, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/mnt1/foo.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(foo)).To(gomega.Equal("BAR"))
 
-			bar, err := tc.execSSH(ctx, tempDir, "cat $HOME/mnt2/bar.txt")
+			bar, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/mnt2/bar.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(bar)).To(gomega.Equal("FOO"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -427,11 +427,11 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			seed, err := tc.execSSH(ctx, tempDir, "cat /home/vscode/mnt-ro/seed.txt")
+			seed, err := tc.f.DevsySSH(ctx, tempDir, "cat /home/vscode/mnt-ro/seed.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(seed)).To(gomega.Equal("SEED"))
 
-			opts, err := tc.execSSH(
+			opts, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"findmnt -n -T /home/vscode/mnt-ro -o OPTIONS",
@@ -460,7 +460,7 @@ var _ = ginkgo.Describe(
 				"writing to a readonly bind mount must fail",
 			)
 
-			fsType, err := tc.execSSH(
+			fsType, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"findmnt -n -T /home/vscode/scratch -o FSTYPE",
@@ -471,7 +471,7 @@ var _ = ginkgo.Describe(
 				"tmpfs mount should report fstype tmpfs",
 			)
 
-			tmpfsSize, err := tc.execSSH(
+			tmpfsSize, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"findmnt -n -T /home/vscode/scratch -o SIZE",
@@ -639,7 +639,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			vclusterVersionOutput, err := tc.execSSH(ctx, tempDir, "vcluster --version")
+			vclusterVersionOutput, err := tc.f.DevsySSH(ctx, tempDir, "vcluster --version")
 			framework.ExpectNoError(err)
 			gomega.Expect(vclusterVersionOutput).
 				To(gomega.ContainSubstring("vcluster version 0.24.1"))
@@ -660,7 +660,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			for _, marker := range []string{"base-feature-installed", "overlay-feature-installed"} {
-				_, err = tc.execSSH(ctx, tempDir, "test -f /tmp/"+marker)
+				_, err = tc.f.DevsySSH(ctx, tempDir, "test -f /tmp/"+marker)
 				framework.ExpectNoError(err)
 			}
 
@@ -705,10 +705,14 @@ var _ = ginkgo.Describe(
 				}
 				gomega.Expect(workspaceMountSource).To(gomega.Equal(expectedWorkspaceMountSource))
 
-				initMarker, err := tc.execSSH(ctx, tempDir, "cat /workspaces/overlay-init-marker")
+				initMarker, err := tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					"cat /workspaces/overlay-init-marker",
+				)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(initMarker)).To(gomega.Equal("overlay-init-ran"))
-				sidecarMarker, err := tc.execSSH(ctx, tempDir, "cat /workspaces/sidecar-marker")
+				sidecarMarker, err := tc.f.DevsySSH(ctx, tempDir, "cat /workspaces/sidecar-marker")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(sidecarMarker)).To(gomega.Equal("sidecar-started"))
 
@@ -736,7 +740,7 @@ var _ = ginkgo.Describe(
 				gomega.Expect(stdout + "\n" + stderr).To(gomega.ContainSubstring("--recreate"))
 
 				// A rejected config change must leave the selected app and sidecar running.
-				initMarker, err = tc.execSSH(ctx, tempDir, "cat /workspaces/overlay-init-marker")
+				initMarker, err = tc.f.DevsySSH(ctx, tempDir, "cat /workspaces/overlay-init-marker")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(initMarker)).To(gomega.Equal("overlay-init-ran"))
 				appIDs, err = findComposeContainer(
@@ -771,7 +775,11 @@ var _ = ginkgo.Describe(
 				alternate, err := tc.inspectContainer(ctx, alternateIDs)
 				framework.ExpectNoError(err)
 				gomega.Expect(alternate.State.Running).To(gomega.BeTrue())
-				alternateMarker, err := tc.execSSH(ctx, tempDir, "cat /workspaces/alternate-marker")
+				alternateMarker, err := tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					"cat /workspaces/alternate-marker",
+				)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(alternateMarker)).
 					To(gomega.Equal("alternate-started"))
@@ -780,7 +788,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 				gomega.Expect(sidecarIDs).To(gomega.HaveLen(1))
-				sidecarMarker, err = tc.execSSH(ctx, tempDir, "cat /workspaces/sidecar-marker")
+				sidecarMarker, err = tc.f.DevsySSH(ctx, tempDir, "cat /workspaces/sidecar-marker")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(sidecarMarker)).To(gomega.Equal("sidecar-started"))
 
@@ -852,7 +860,11 @@ var _ = ginkgo.Describe(
 
 				// Leave the malformed overlay in place so deferred workspace cleanup
 				// exercises the invocation recorded at successful creation.
-				alternateMarker, err = tc.execSSH(ctx, tempDir, "cat /workspaces/alternate-marker")
+				alternateMarker, err = tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					"cat /workspaces/alternate-marker",
+				)
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(alternateMarker)).
 					To(gomega.Equal("alternate-started"))
@@ -885,13 +897,13 @@ var _ = ginkgo.Describe(
 
 			// The "dev" stage overwrites the marker, so seeing "dev-stage"
 			// proves the real multi-stage Dockerfile (and its target) was built.
-			stageMarker, err := tc.execSSH(ctx, tempDir, "cat /stage-marker.txt")
+			stageMarker, err := tc.f.DevsySSH(ctx, tempDir, "cat /stage-marker.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(stageMarker)).
 				To(gomega.Equal("dev-stage"), "the requested build target stage should be used")
 
 			// The feature must still be installed on top of the targeted stage.
-			vclusterVersionOutput, err := tc.execSSH(ctx, tempDir, "vcluster --version")
+			vclusterVersionOutput, err := tc.f.DevsySSH(ctx, tempDir, "vcluster --version")
 			framework.ExpectNoError(err)
 			gomega.Expect(vclusterVersionOutput).
 				To(gomega.ContainSubstring("vcluster version 0.24.1"))
@@ -938,7 +950,7 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				ghVersionOutput, err := tc.execSSH(ctx, tempDirA, "gh --version")
+				ghVersionOutput, err := tc.f.DevsySSH(ctx, tempDirA, "gh --version")
 				framework.ExpectNoError(err)
 				gomega.Expect(ghVersionOutput).To(gomega.ContainSubstring("gh version"))
 
@@ -972,12 +984,12 @@ var _ = ginkgo.Describe(
 				)
 				framework.ExpectNoError(err)
 
-				nodeVersionOutput, err := tc.execSSH(ctx, tempDirB, "node --version")
+				nodeVersionOutput, err := tc.f.DevsySSH(ctx, tempDirB, "node --version")
 				framework.ExpectNoError(err)
 				gomega.Expect(strings.TrimSpace(nodeVersionOutput)).
 					To(gomega.MatchRegexp(`^v\d+\.`))
 
-				ghLookupOutput, err := tc.execSSH(
+				ghLookupOutput, err := tc.f.DevsySSH(
 					ctx,
 					tempDirB,
 					fmt.Sprintf("sh -lc %q", commandPresenceCheck("gh")),
@@ -991,7 +1003,7 @@ var _ = ginkgo.Describe(
 				gomega.Expect(imageIDAfterB).
 					To(gomega.Equal(initialImageID), "shared image tag should stay unchanged after project B")
 
-				nodeLookupOutput, err := tc.execSSH(
+				nodeLookupOutput, err := tc.f.DevsySSH(
 					ctx,
 					tempDirA,
 					fmt.Sprintf("sh -lc %q", commandPresenceCheck("node")),
@@ -1032,11 +1044,11 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(initializeCommand).To(gomega.ContainSubstring("initializeCommand"))
 
-			onCreateCommand, err := tc.execSSH(ctx, tempDir, "cat $HOME/on-create-command.out")
+			onCreateCommand, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/on-create-command.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(onCreateCommand).To(gomega.ContainSubstring("onCreateCommand"))
 
-			updateContentCommand, err := tc.execSSH(
+			updateContentCommand, err := tc.f.DevsySSH(
 				ctx,
 				tempDir,
 				"cat $HOME/update-content-command.out",
@@ -1044,15 +1056,23 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(updateContentCommand).To(gomega.Equal("updateContentCommand"))
 
-			postCreateCommand, err := tc.execSSH(ctx, tempDir, "cat $HOME/post-create-command.out")
+			postCreateCommand, err := tc.f.DevsySSH(
+				ctx,
+				tempDir,
+				"cat $HOME/post-create-command.out",
+			)
 			framework.ExpectNoError(err)
 			gomega.Expect(postCreateCommand).To(gomega.Equal("postCreateCommand"))
 
-			postStartCommand, err := tc.execSSH(ctx, tempDir, "cat $HOME/post-start-command.out")
+			postStartCommand, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/post-start-command.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(postStartCommand).To(gomega.Equal("postStartCommand"))
 
-			postAttachCommand, err := tc.execSSH(ctx, tempDir, "cat $HOME/post-attach-command.out")
+			postAttachCommand, err := tc.f.DevsySSH(
+				ctx,
+				tempDir,
+				"cat $HOME/post-attach-command.out",
+			)
 			framework.ExpectNoError(err)
 			gomega.Expect(postAttachCommand).To(gomega.Equal("postAttachCommand"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -1082,11 +1102,11 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			parallelA, err := tc.execSSH(ctx, tempDir, "cat $HOME/parallel-a.out")
+			parallelA, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/parallel-a.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(parallelA).To(gomega.Equal("parallelA"))
 
-			parallelB, err := tc.execSSH(ctx, tempDir, "cat $HOME/parallel-b.out")
+			parallelB, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/parallel-b.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(parallelB).To(gomega.Equal("parallelB"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -1116,7 +1136,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			quotedTest, err := tc.execSSH(ctx, tempDir, "cat $HOME/quoted-test.out")
+			quotedTest, err := tc.f.DevsySSH(ctx, tempDir, "cat $HOME/quoted-test.out")
 			framework.ExpectNoError(err)
 			gomega.Expect(quotedTest).To(gomega.Equal("quoted value"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
@@ -1233,7 +1253,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			buildArgs, err := tc.execSSH(ctx, tempDir, "cat /build-args.txt")
+			buildArgs, err := tc.f.DevsySSH(ctx, tempDir, "cat /build-args.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(buildArgs)).
 				To(gomega.Equal("ghcr.io/devsy-org/test-images/go:1"))
@@ -1257,7 +1277,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
-			buildArgs, err := tc.execSSH(ctx, tempDir, "cat /build-args.txt")
+			buildArgs, err := tc.f.DevsySSH(ctx, tempDir, "cat /build-args.txt")
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(buildArgs)).
 				To(gomega.Equal("ghcr.io/devsy-org/test-images/go:1"))

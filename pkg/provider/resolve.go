@@ -229,10 +229,18 @@ func GetProviderSource(src ProviderSource, configName string) string {
 	case src.Github != "":
 		// Canonicalize to github.com/<org>/<repo> so version helpers
 		// (classifyVersionSource, parseGitHubSourcePath) recognize it.
-		if strings.HasPrefix(src.Github, "github.com/") {
-			return src.Github
+		githubSource, githubTag := SplitSourceAndTag(src.Github)
+		if !strings.HasPrefix(githubSource, "github.com/") {
+			githubSource = "github.com/" + githubSource
 		}
-		return "github.com/" + src.Github
+		_, rawTag := SplitSourceAndTag(src.Raw)
+		if rawTag != "" {
+			githubTag = rawTag
+		}
+		if githubTag != "" {
+			return githubSource + "@" + githubTag
+		}
+		return githubSource
 	default:
 		return ""
 	}

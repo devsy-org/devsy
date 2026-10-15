@@ -169,8 +169,11 @@ export async function providerReleaseJob(name: string): Promise<void> {
   return invoke<void>("provider_release_job", { name })
 }
 
-export async function providerUpdateStreaming(name: string): Promise<string> {
-  return invoke<string>("provider_update_streaming", { name })
+export async function providerUpdateStreaming(
+  name: string,
+  tag?: string,
+): Promise<string> {
+  return invoke<string>("provider_update_streaming", { name, tag })
 }
 
 export async function providerRefreshState(name: string): Promise<void> {

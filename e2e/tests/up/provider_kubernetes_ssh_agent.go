@@ -2,10 +2,8 @@ package up
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,10 +11,8 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 )
 
 var _ = ginkgo.Describe(
@@ -39,15 +35,16 @@ var _ = ginkgo.Describe(
 				selector := "devsy.sh/created=true,issue-1423=" + id
 				source, sha := privateSSHGitFixture(ctx, initialDir, id, pubKey)
 
-				kindSSHCommand(ctx, nil, "kubectl", "create", "namespace", namespace)
+				fixtureCommand(ctx, 2*time.Minute, nil, "kubectl", "create", "namespace", namespace)
 				ginkgo.DeferCleanup(func(specCtx ginkgo.SpecContext) {
 					cleanupCtx, cancel := context.WithTimeout(
 						context.WithoutCancel(specCtx),
 						time.Minute,
 					)
 					defer cancel()
-					kindSSHCommand(
+					fixtureCommand(
 						cleanupCtx,
+						2*time.Minute,
 						nil,
 						"kubectl",
 						"delete",
@@ -88,7 +85,11 @@ var _ = ginkgo.Describe(
 						{"get", "events", "-n", namespace, "--sort-by=.lastTimestamp"},
 						{"logs", "-n", namespace, "-l", selector, "--all-containers", "--tail=200"},
 					} {
-						output, err := runKindSSHCommand(cleanupCtx, nil, "kubectl", args...)
+						output, err := runFixtureCommand(
+							cleanupCtx,
+							2*time.Minute,
+							nil,
+							append([]string{"kubectl"}, args...)...)
 						ginkgo.GinkgoWriter.Printf(
 							"Kubernetes failure diagnostics: %s\n%s\nerror: %v\n",
 							args,
@@ -101,8 +102,9 @@ var _ = ginkgo.Describe(
 				// Check the pod-to-service route before testing Devsy, so fixture failures
 				// cannot be confused with a first-up failure.
 				host, _, _ := strings.Cut(strings.TrimPrefix(source, "ssh://git@"), "/")
-				kindSSHCommand(
+				fixtureCommand(
 					ctx,
+					2*time.Minute,
 					nil,
 					"kubectl",
 					"run",
@@ -121,8 +123,9 @@ var _ = ginkgo.Describe(
 					pollCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 					defer cancel()
 					return strings.TrimSpace(
-						kindSSHCommand(
+						fixtureCommand(
 							pollCtx,
+							2*time.Minute,
 							nil,
 							"kubectl",
 							"get",
@@ -189,15 +192,15 @@ var _ = ginkgo.Describe(
 					"--id",
 					id,
 				)
-				firstPod := kindSSHWorkspacePod(ctx, namespace, selector)
+				firstPod := fixtureWorkspacePod(ctx, namespace, selector)
 				verifyCheckout()
 				up("repeat", id)
-				samePod := kindSSHWorkspacePod(ctx, namespace, selector)
+				samePod := fixtureWorkspacePod(ctx, namespace, selector)
 				gomega.Expect(samePod.UID).
 					To(gomega.Equal(firstPod.UID), "second up must keep the pod")
 				verifyCheckout()
 				up("recreate", id, "--recreate")
-				recreated := kindSSHWorkspacePod(ctx, namespace, selector)
+				recreated := fixtureWorkspacePod(ctx, namespace, selector)
 				gomega.Expect(recreated.UID).
 					NotTo(gomega.Equal(firstPod.UID), "recreate must replace the pod")
 				verifyCheckout()
@@ -219,7 +222,15 @@ func privateSSHGitFixture(
 	framework.ExpectNoError(err)
 	ginkgo.DeferCleanup(os.RemoveAll, buildDir)
 	sha := createKindSSHGitRepository(ctx, fixtureDir)
-	kindSSHCommand(ctx, nil, "cp", "-R", fixtureDir, filepath.Join(buildDir, "repository"))
+	fixtureCommand(
+		ctx,
+		2*time.Minute,
+		nil,
+		"cp",
+		"-R",
+		fixtureDir,
+		filepath.Join(buildDir, "repository"),
+	)
 	authorizedKey := "restrict,command=\"git-upload-pack /srv/repository.git\" " + pubKey + "\n"
 	framework.ExpectNoError(
 		os.WriteFile(filepath.Join(buildDir, "authorized_keys"), []byte(authorizedKey), 0o600),
@@ -239,7 +250,15 @@ func privateSSHGitFixture(
 	gomega.Eventually(func() error {
 		pollCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		out, err := runKindSSHCommand(pollCtx, env, "git", "ls-remote", source, "refs/heads/main")
+		out, err := runFixtureCommand(
+			pollCtx,
+			2*time.Minute,
+			env,
+			"git",
+			"ls-remote",
+			source,
+			"refs/heads/main",
+		)
 		if err != nil {
 			return fmt.Errorf("authenticated fixture readiness: %w: %s", err, out)
 		}
@@ -248,8 +267,9 @@ func privateSSHGitFixture(
 		}
 		return nil
 	}).WithTimeout(time.Minute).WithPolling(time.Second).Should(gomega.Succeed())
-	out, err := runKindSSHCommand(
+	out, err := runFixtureCommand(
 		ctx,
+		2*time.Minute,
 		[]string{"SSH_AUTH_SOCK=", "GIT_SSH_COMMAND=" + sshOptions + " -o IdentityAgent=none"},
 		"git",
 		"ls-remote",
@@ -263,10 +283,20 @@ func privateSSHGitFixture(
 }
 
 func createKindSSHGitRepository(ctx context.Context, fixtureDir string) string {
-	kindSSHCommand(ctx, nil, "git", "-C", fixtureDir, "init", "--initial-branch=main")
-	kindSSHCommand(ctx, nil, "git", "-C", fixtureDir, "add", ".")
-	kindSSHCommand(
+	fixtureCommand(
 		ctx,
+		2*time.Minute,
+		nil,
+		"git",
+		"-C",
+		fixtureDir,
+		"init",
+		"--initial-branch=main",
+	)
+	fixtureCommand(ctx, 2*time.Minute, nil, "git", "-C", fixtureDir, "add", ".")
+	fixtureCommand(
+		ctx,
+		2*time.Minute,
 		nil,
 		"git",
 		"-C",
@@ -281,33 +311,48 @@ func createKindSSHGitRepository(ctx context.Context, fixtureDir string) string {
 		"-m",
 		"Private SSH fixture",
 	)
-	sha := strings.TrimSpace(kindSSHCommand(ctx, nil, "git", "-C", fixtureDir, "rev-parse", "HEAD"))
+	sha := strings.TrimSpace(
+		fixtureCommand(ctx, 2*time.Minute, nil, "git", "-C", fixtureDir, "rev-parse", "HEAD"),
+	)
 	return sha
 }
 
 func startKindSSHGitServer(ctx context.Context, buildDir, id string) string {
 	image := "devsy-private-ssh-git:" + id
-	kindSSHCommand(ctx, nil, "docker", "build", "-t", image, buildDir)
+	fixtureCommand(ctx, 2*time.Minute, nil, "docker", "build", "-t", image, buildDir)
 	ginkgo.DeferCleanup(
 		func(specCtx ginkgo.SpecContext) {
 			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(specCtx), time.Minute)
 			defer cancel()
-			kindSSHCommand(cleanupCtx, nil, "docker", "image", "rm", image)
+			fixtureCommand(cleanupCtx, 2*time.Minute, nil, "docker", "image", "rm", image)
 		},
 	)
-	kindSSHCommand(ctx, nil, "docker", "run", "-d", "--name", id, "--network", "kind", image)
+	fixtureCommand(
+		ctx,
+		2*time.Minute,
+		nil,
+		"docker",
+		"run",
+		"-d",
+		"--name",
+		id,
+		"--network",
+		"kind",
+		image,
+	)
 	ginkgo.DeferCleanup(func(specCtx ginkgo.SpecContext) {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(specCtx), time.Minute)
 		defer cancel()
 		if ginkgo.CurrentSpecReport().Failed() {
-			out, err := runKindSSHCommand(cleanupCtx, nil, "docker", "logs", id)
+			out, err := runFixtureCommand(cleanupCtx, 2*time.Minute, nil, "docker", "logs", id)
 			ginkgo.GinkgoWriter.Printf("private SSH Git service logs:\n%s\nerror: %v\n", out, err)
 		}
-		kindSSHCommand(cleanupCtx, nil, "docker", "rm", "-f", id)
+		fixtureCommand(cleanupCtx, 2*time.Minute, nil, "docker", "rm", "-f", id)
 	})
 	host := strings.TrimSpace(
-		kindSSHCommand(
+		fixtureCommand(
 			ctx,
+			2*time.Minute,
 			nil,
 			"docker",
 			"inspect",
@@ -319,42 +364,6 @@ func startKindSSHGitServer(ctx context.Context, buildDir, id string) string {
 	gomega.Expect(host).
 		NotTo(gomega.BeEmpty(), "private SSH fixture requires the Kind Docker bridge")
 	return host
-}
-
-func kindSSHWorkspacePod(ctx context.Context, namespace, selector string) corev1.Pod {
-	var pod corev1.Pod
-	gomega.Eventually(func(g gomega.Gomega) {
-		pollCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		output, err := runKindSSHCommand(
-			pollCtx,
-			nil,
-			"kubectl",
-			"get",
-			"pods",
-			"-n",
-			namespace,
-			"-l",
-			selector,
-			"-o",
-			"json",
-		)
-		g.Expect(err).NotTo(gomega.HaveOccurred(), "workspace pod discovery: %s", output)
-		var pods corev1.PodList
-		g.Expect(json.Unmarshal([]byte(output), &pods)).To(gomega.Succeed())
-		g.Expect(pods.Items).To(gomega.HaveLen(1), "workspace-specific selector %s", selector)
-		pod = pods.Items[0]
-		g.Expect(pod.UID).NotTo(gomega.BeEmpty())
-		ready := false
-		for _, condition := range pod.Status.Conditions {
-			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-				ready = true
-			}
-		}
-		g.Expect(ready).To(gomega.BeTrue(), "workspace pod %s must be ready", pod.Name)
-	}).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(gomega.Succeed())
-	ginkgo.GinkgoWriter.Printf("workspace pod %s UID=%s\n", pod.Name, pod.UID)
-	return pod
 }
 
 func verifyKindSSHAgentCleanup(
@@ -378,25 +387,31 @@ func verifyKindSSHAgentCleanup(
 		"-o",
 		"ConnectTimeout=10",
 	}
-	kindSSHCommand(
+	fixtureCommand(
 		ctx,
+		2*time.Minute,
 		env,
-		"ssh",
-		append(
-			options,
-			"-o",
-			"ForwardAgent=yes",
-			"-o",
-			"ControlMaster=yes",
-			"-o",
-			"ControlPersist=60",
-			"-N",
-			"-f",
-			host,
-		)...)
+		append([]string{cmdSSH},
+			append(
+				options,
+				"-o",
+				"ForwardAgent=yes",
+				"-o",
+				"ControlMaster=yes",
+				"-o",
+				"ControlPersist=60",
+				"-N",
+				"-f",
+				host,
+			)...)...)
 	closed := false
 	closeMaster := func(cleanupCtx context.Context) {
-		kindSSHCommand(cleanupCtx, env, "ssh", append(options, "-O", "exit", host)...)
+		fixtureCommand(
+			cleanupCtx,
+			2*time.Minute,
+			env,
+			append([]string{cmdSSH},
+				append(options, "-O", "exit", host)...)...)
 	}
 	ginkgo.DeferCleanup(func(specCtx ginkgo.SpecContext) {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(specCtx), time.Minute)
@@ -406,7 +421,12 @@ func verifyKindSSHAgentCleanup(
 		}
 	})
 	remote := func(command string) string {
-		return kindSSHCommand(ctx, env, "ssh", append(options, host, "--", command)...)
+		return fixtureCommand(
+			ctx,
+			2*time.Minute,
+			env,
+			append([]string{cmdSSH},
+				append(options, host, "--", command)...)...)
 	}
 	socket := strings.TrimSpace(remote("printf %s \"$SSH_AUTH_SOCK\""))
 	gomega.Expect(socket).NotTo(gomega.BeEmpty())
@@ -430,28 +450,4 @@ func waitForKindSSHSocketCleanup(ctx context.Context, f *framework.Framework, id
 		"closed connection socket directory %s must be removed",
 		filepath.Dir(socket),
 	)
-}
-
-func runKindSSHCommand(
-	ctx context.Context,
-	env []string,
-	name string,
-	args ...string,
-) (string, error) {
-	commandCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	// #nosec G204 -- executable and arguments are controlled by this test fixture.
-	cmd := exec.CommandContext(commandCtx, name, args...)
-	docker.PrepareForGroupCancellation(cmd)
-	cmd.WaitDelay = 5 * time.Second
-	cmd.Env = append(os.Environ(), env...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
-func kindSSHCommand(ctx context.Context, env []string, name string, args ...string) string {
-	out, err := runKindSSHCommand(ctx, env, name, args...)
-	gomega.Expect(err).
-		NotTo(gomega.HaveOccurred(), "private SSH fixture command %s %v: %s", name, args, out)
-	return out
 }

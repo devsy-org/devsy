@@ -37,9 +37,9 @@ let description = $derived.by(() => {
     return `This will update ${providerName} from ${currentVersion} to ${latestVersion}, then re-initialize it.`
   }
   if (currentVersion) {
-    return `Currently on ${currentVersion}. DevSy could not determine the latest version. This update will re-fetch and re-initialize the provider.`
+    return `Currently on ${currentVersion}. DevSy could not determine the latest version. This will re-fetch the configured source and re-initialize the provider.`
   }
-  return "Check for and install the latest version, then re-initialize the provider."
+  return "Re-fetch the configured source and re-initialize the provider."
 })
 </script>
 

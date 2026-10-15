@@ -54,7 +54,7 @@ repos:
     hooks:
       - id: gitleaks
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.18.0
+    rev: v4.18.1
     hooks:
       - id: commitizen
         stages: [commit-msg]
@@ -62,10 +62,10 @@ repos:
     rev: v2.13.2
     hooks:
       - id: golangci-lint
-        language_version: 1.26.8
+        language_version: 1.26.9
         args: ["--timeout=10m"]
       - id: golangci-lint-fmt
-        language_version: 1.26.8
+        language_version: 1.26.9
   - repo: local
     hooks:
       - id: golangci-lint-ci-parity

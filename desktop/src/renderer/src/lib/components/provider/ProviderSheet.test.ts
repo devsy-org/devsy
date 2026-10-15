@@ -1,11 +1,16 @@
 import { render } from "@testing-library/svelte"
 import { tick } from "svelte"
+import type { Readable, Writable } from "svelte/store"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { providerVersions as providerVersionsStore } from "$lib/stores/providerVersions.js"
 import type {
   CommandProgress,
   Provider,
   ProviderJob,
 } from "$lib/types/index.js"
+
+type ProviderVersionsState =
+  typeof providerVersionsStore extends Readable<infer State> ? State : never
 
 const providerOptions = vi.fn()
 const providerUse = vi.fn()
@@ -23,6 +28,9 @@ const providerJobsBox = vi.hoisted(() => ({
   store: undefined as unknown as import("svelte/store").Writable<
     Record<string, ProviderJob>
   >,
+}))
+const providerVersionsBox = vi.hoisted(() => ({
+  store: undefined as unknown as Writable<ProviderVersionsState>,
 }))
 let progressCallback: ((progress: CommandProgress) => void) | null = null
 
@@ -62,22 +70,30 @@ vi.mock("$lib/stores/providers.js", async () => {
 
 vi.mock("$lib/stores/providerVersions.js", async () => {
   const { writable } = await import("svelte/store")
+  providerVersionsBox.store = writable<ProviderVersionsState>({
+    byProvider: {
+      ssh: {
+        versions: [
+          { tag: "0.1.0", current: true, publishedAt: "", prerelease: false },
+          { tag: "0.2.0", current: false, publishedAt: "", prerelease: false },
+        ],
+        unsupported: false,
+      },
+    },
+    updates: {
+      ssh: {
+        updateAvailable: true,
+        current: "0.1.0",
+        latest: "0.2.0",
+        unsupported: false,
+      },
+    },
+    lastCheckedAt: null,
+    refreshing: false,
+    refreshError: null,
+  })
   return {
-    providerVersions: writable({
-      byProvider: {
-        ssh: {
-          versions: [
-            { tag: "0.1.0", current: true },
-            { tag: "0.2.0", current: false },
-          ],
-          unsupported: false,
-        },
-      },
-      updates: {
-        ssh: { updateAvailable: true, current: "0.1.0", latest: "0.2.0" },
-      },
-      lastCheckedAt: null,
-    }),
+    providerVersions: providerVersionsBox.store,
     loadVersionsFor: (...args: unknown[]) => loadVersionsFor(...args),
     refreshUpdates: (...args: unknown[]) => refreshUpdates(...args),
   }
@@ -116,6 +132,17 @@ describe("ProviderSheet", () => {
   beforeEach(() => {
     progressCallback = null
     providerJobsBox.store.set({})
+    providerVersionsBox.store.update((state) => ({
+      ...state,
+      updates: {
+        ssh: {
+          updateAvailable: true,
+          current: "0.1.0",
+          latest: "0.2.0",
+          unsupported: false,
+        },
+      },
+    }))
     providerOptions.mockReset()
     providerOptions.mockImplementation(async (name: string) => {
       await new Promise((r) => setTimeout(r, MOCK_IPC_DELAY_MS))
@@ -312,7 +339,15 @@ describe("ProviderSheet", () => {
 
   it("confirming the update dialog starts one streaming provider update", async () => {
     const { unmount } = render(ProviderSheet, {
-      props: { provider: makeProvider("ssh"), open: true },
+      props: {
+        provider: makeProvider("ssh", {
+          source: {
+            github: "github.com/example/ssh-provider",
+            raw: "github.com/example/ssh-provider@0.1.0",
+          },
+        }),
+        open: true,
+      },
     })
 
     await flushAsync()
@@ -331,6 +366,78 @@ describe("ProviderSheet", () => {
       confirmDialog?.querySelectorAll("button") ?? [],
     ).find((b) => b.textContent?.trim() === "Update")
     confirmBtn?.click()
+    await flushAsync()
+
+    expect(providerUpdateStreaming).toHaveBeenCalledTimes(1)
+    expect(providerUpdateStreaming).toHaveBeenCalledWith("ssh", "0.2.0")
+    unmount()
+  })
+
+  it("leaves an unpinned GitHub update on the latest-release path", async () => {
+    const { unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("ssh", {
+          source: { github: "github.com/example/ssh-provider" },
+        }),
+        open: true,
+      },
+    })
+
+    await flushAsync()
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Update")
+      ?.click()
+    await tick()
+    const confirmDialog = Array.from(
+      document.querySelectorAll("[role='dialog']"),
+    ).find((dialog) => dialog.textContent?.includes("Update 'ssh' to 0.2.0"))
+    Array.from(confirmDialog?.querySelectorAll("button") ?? [])
+      .find((button) => button.textContent?.trim() === "Update")
+      ?.click()
+    await flushAsync()
+
+    expect(providerUpdateStreaming).toHaveBeenCalledTimes(1)
+    expect(providerUpdateStreaming).toHaveBeenCalledWith("ssh")
+    unmount()
+  })
+
+  it("reloads the configured source when the latest version is unknown", async () => {
+    providerVersionsBox.store.update((state) => ({
+      ...state,
+      updates: {
+        ssh: {
+          current: "0.1.0",
+          latest: "",
+          updateAvailable: false,
+          unsupported: false,
+        },
+      },
+    }))
+    const { unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("ssh", {
+          source: {
+            github: "github.com/example/ssh-provider",
+            raw: "github.com/example/ssh-provider@0.1.0",
+          },
+        }),
+        open: true,
+      },
+    })
+
+    await flushAsync()
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Update")
+      ?.click()
+    await tick()
+
+    const confirmDialog = Array.from(
+      document.querySelectorAll("[role='dialog']"),
+    ).find((dialog) => dialog.textContent?.includes("configured source"))
+    expect(confirmDialog).toBeDefined()
+    Array.from(confirmDialog?.querySelectorAll("button") ?? [])
+      .find((button) => button.textContent?.trim() === "Update")
+      ?.click()
     await flushAsync()
 
     expect(providerUpdateStreaming).toHaveBeenCalledTimes(1)

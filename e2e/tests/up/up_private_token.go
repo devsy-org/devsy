@@ -35,7 +35,7 @@ var _ = ginkgo.Describe(
 				credUser = username
 			}
 
-			f, err := setupDockerProvider(initialDir+"/bin", "docker")
+			f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 			framework.ExpectNoError(err)
 
 			// Register credential cleanup before writing to ensure cleanup on any failure

@@ -6,6 +6,7 @@
     "binaries",
     "agent",
     "driver",
-    "runtime-protocol"
+    "runtime-protocol",
+    "external-runtime-rollout"
   ]
 }

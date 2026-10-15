@@ -20,25 +20,6 @@ const (
 	ciSecretName = "MY_SECRET"
 )
 
-// useFileSecretsBackend forces the file backend so tests do not depend on an OS
-// keyring (unavailable in CI); env is restored on cleanup.
-func useFileSecretsBackend() {
-	for k, v := range map[string]string{
-		"DEVSY_SECRETS_BACKEND":    "file",
-		"DEVSY_SECRETS_PASSPHRASE": "e2e-passphrase",
-	} {
-		prev, had := os.LookupEnv(k)
-		framework.ExpectNoError(os.Setenv(k, v))
-		ginkgo.DeferCleanup(func() {
-			if had {
-				_ = os.Setenv(k, prev)
-			} else {
-				_ = os.Unsetenv(k)
-			}
-		})
-	}
-}
-
 func expectWorkspaceGone(ctx context.Context, f *framework.Framework, name string) {
 	list, err := f.DevsyListParsed(ctx)
 	framework.ExpectNoError(err)
@@ -161,7 +142,7 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 
 	ginkgo.It("should inject a managed secret via --secret into lifecycle commands",
 		func(ctx context.Context) {
-			useFileSecretsBackend()
+			framework.UseFileSecretsBackend()
 			tempDir, f := setupCIFrom(initialDir, "tests/ci/testdata/secrets")
 
 			_, err := f.ExecCommandOutput(ctx,
