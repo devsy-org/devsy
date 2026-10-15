@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
-	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver/kubernetes"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -94,7 +92,7 @@ func newDockerlessPathFixture(ctx context.Context, appendRemotePath bool) *docke
 		fixture.expectedPath += ":" + dockerlessPathRoot + "/remote-bin"
 		addDockerlessRemotePath(fixtureDir)
 	}
-	dockerlessPathKubectl(ctx, "create", "namespace", fixture.id)
+	fixtureCommand(ctx, time.Minute, nil, "kubectl", "create", "namespace", fixture.id)
 	ginkgo.DeferCleanup(fixture.deleteNamespace)
 	// Keep the built-in provider's Dockerless credentials enabled.
 	// Debug output records the helper created by the real callback.
@@ -111,7 +109,16 @@ func newDockerlessPathFixture(ctx context.Context, appendRemotePath bool) *docke
 func (fixture *dockerlessPathFixture) deleteNamespace(specCtx ginkgo.SpecContext) {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(specCtx), time.Minute)
 	defer cancel()
-	dockerlessPathKubectl(cleanupCtx, "delete", "namespace", fixture.id, "--wait=false")
+	fixtureCommand(
+		cleanupCtx,
+		time.Minute,
+		nil,
+		"kubectl",
+		"delete",
+		"namespace",
+		fixture.id,
+		"--wait=false",
+	)
 }
 
 func (fixture *dockerlessPathFixture) deleteProvider(specCtx ginkgo.SpecContext) {
@@ -163,7 +170,7 @@ func (fixture *dockerlessPathFixture) up(
 
 func (fixture *dockerlessPathFixture) verify(ctx context.Context, phase string) corev1.Pod {
 	selector := "devsy.sh/created=true,issue-1446=" + fixture.id
-	pod := dockerlessPathWorkspacePod(ctx, fixture.id, selector)
+	pod := fixtureWorkspacePod(ctx, fixture.id, selector)
 	fixture.containerName = ""
 	for _, container := range pod.Spec.Containers {
 		if container.Name == kubernetes.DevContainerName {
@@ -215,8 +222,10 @@ func (fixture *dockerlessPathFixture) verifyEnvironment(
 	// Raw kubectl exec reads files without treating the pod's original builder
 	// environment as the post-setup agent/SSH environment.
 	execInPod := func(args ...string) string {
-		baseArgs := []string{"exec", "-n", fixture.id, podName, "-c", fixture.containerName, "--"}
-		return dockerlessPathKubectl(commandCtx, append(baseArgs, args...)...)
+		baseArgs := []string{
+			"kubectl", "exec", "-n", fixture.id, podName, "-c", fixture.containerName, "--",
+		}
+		return fixtureCommand(commandCtx, time.Minute, nil, append(baseArgs, args...)...)
 	}
 	readFile := func(name string) string {
 		return execInPod("/bin/cat", name)
@@ -241,54 +250,4 @@ func (fixture *dockerlessPathFixture) verifyEnvironment(
 	}
 	execInPod("/bin/sh", "-c",
 		`for dir in /.dockerless/.docker/docker-credentials-*; do test ! -e "$dir" || exit 1; done`)
-}
-
-func dockerlessPathWorkspacePod(ctx context.Context, namespace, selector string) corev1.Pod {
-	var pod corev1.Pod
-	gomega.Eventually(func(g gomega.Gomega) {
-		pollCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		out, err := runDockerlessPathKubectl(
-			pollCtx,
-			"get",
-			"pods",
-			"-n",
-			namespace,
-			"-l",
-			selector,
-			"-o",
-			"json",
-		)
-		g.Expect(err).NotTo(gomega.HaveOccurred(), "workspace pod discovery: %s", out)
-		var pods corev1.PodList
-		g.Expect(json.Unmarshal([]byte(out), &pods)).To(gomega.Succeed())
-		g.Expect(pods.Items).To(gomega.HaveLen(1))
-		pod = pods.Items[0]
-		g.Expect(pod.UID).NotTo(gomega.BeEmpty())
-		ready := false
-		for _, condition := range pod.Status.Conditions {
-			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-				ready = true
-			}
-		}
-		g.Expect(ready).To(gomega.BeTrue(), "workspace pod %s must be ready", pod.Name)
-	}).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(gomega.Succeed())
-	return pod
-}
-
-func runDockerlessPathKubectl(ctx context.Context, args ...string) (string, error) {
-	commandCtx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	// #nosec G204 -- kubectl arguments are controlled by this test fixture.
-	cmd := exec.CommandContext(commandCtx, "kubectl", args...)
-	docker.PrepareForGroupCancellation(cmd)
-	cmd.WaitDelay = 5 * time.Second
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
-func dockerlessPathKubectl(ctx context.Context, args ...string) string {
-	out, err := runDockerlessPathKubectl(ctx, args...)
-	gomega.Expect(err).NotTo(gomega.HaveOccurred(), "kubectl %v: %s", args, out)
-	return out
 }
