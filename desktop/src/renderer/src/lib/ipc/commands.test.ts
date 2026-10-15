@@ -18,6 +18,7 @@ import {
   openDirectoryDialog,
   providerAdd,
   providerSetOptions,
+  providerUpdateStreaming,
   secretAttach,
   secretDelete,
   secretDetach,
@@ -39,6 +40,25 @@ describe("IPC commands", () => {
   beforeEach(() => {
     resetTauriMocks()
     mockInvoke.mockResolvedValue(undefined)
+  })
+
+  it("forwards a confirmed provider version without replacing its identity", async () => {
+    mockInvoke.mockResolvedValue("update-command")
+    expect(await providerUpdateStreaming("microsandbox", "v0.2.0")).toBe(
+      "update-command",
+    )
+    expect(mockInvoke).toHaveBeenCalledWith("provider_update_streaming", {
+      name: "microsandbox",
+      tag: "v0.2.0",
+    })
+  })
+
+  it("leaves provider refreshes without a confirmed version unversioned", async () => {
+    await providerUpdateStreaming("microsandbox")
+    expect(mockInvoke).toHaveBeenCalledWith("provider_update_streaming", {
+      name: "microsandbox",
+      tag: undefined,
+    })
   })
 
   describe("workspace commands", () => {

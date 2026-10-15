@@ -1295,21 +1295,25 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   // set-source installs replacement binaries and clears Initialized, since
   // the new binary has not run its init. Chain init so the provider ends up
   // usable rather than sitting in a needs-re-init state the user must notice.
-  ipcMain.handle("provider_update", async (_event, args: { name: string }) => {
-    await withProviderJob(args.name, "updating", async () => {
-      await runProviderWithStatus(args.name, [
-        "provider",
-        "set-source",
-        args.name,
-        "--use=false",
-      ])
-      await runProviderWithStatus(args.name, ["provider", "init", args.name])
-    })
-  })
+  ipcMain.handle(
+    "provider_update",
+    async (_event, args: { name: string; tag?: string }) => {
+      await withProviderJob(args.name, "updating", async () => {
+        await runProviderWithStatus(args.name, [
+          "provider",
+          "set-source",
+          args.name,
+          "--use=false",
+          ...(args.tag ? ["--version", args.tag] : []),
+        ])
+        await runProviderWithStatus(args.name, ["provider", "init", args.name])
+      })
+    },
+  )
 
   ipcMain.handle(
     "provider_update_streaming",
-    async (_event, args: { name: string }) => {
+    async (_event, args: { name: string; tag?: string }) => {
       const cmdId = crypto.randomUUID()
       const win = deps.getMainWindow()
       providerJobs.start(args.name, "updating")
@@ -1366,7 +1370,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         let failure: CLIError | undefined
         try {
           sendProgress("Downloading provider update", "info")
-          await runStep(["provider", "set-source", args.name, "--use=false"])
+          await runStep([
+            "provider",
+            "set-source",
+            args.name,
+            "--use=false",
+            ...(args.tag ? ["--version", args.tag] : []),
+          ])
           sendProgress("Initializing updated provider", "info")
           await runStep(["provider", "init", args.name])
         } catch (error) {

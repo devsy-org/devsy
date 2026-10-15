@@ -277,7 +277,16 @@ async function runUpdate() {
   updateLines = []
   confirmUpdateOpen = false
   try {
-    updateCommandId = await providerUpdateStreaming(name)
+    const latestVersion = $providerVersions.updates[name]?.latest
+    const source = provider.source
+    const isPinnedGithub =
+      !!source?.github &&
+      (source.github.includes("@") || source.raw?.includes("@"))
+    if (isPinnedGithub && latestVersion) {
+      updateCommandId = await providerUpdateStreaming(name, latestVersion)
+    } else {
+      updateCommandId = await providerUpdateStreaming(name)
+    }
     const matching = pendingUpdateProgress.filter(
       (progress) => progress.commandId === updateCommandId,
     )

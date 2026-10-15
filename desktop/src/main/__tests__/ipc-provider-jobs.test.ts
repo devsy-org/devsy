@@ -284,6 +284,34 @@ describe("provider job lifecycle over IPC", () => {
     expect(providerJobs.get("docker")).toBeUndefined()
   })
 
+  it.each(["provider_update", "provider_update_streaming"])(
+    "%s installs the confirmed version before initializing",
+    async (command) => {
+      const seen: string[][] = []
+      const { providerJobs } = setup((cliArgs) => {
+        seen.push(cliArgs)
+        return { lines: [], code: 0 }
+      })
+
+      await invoke(command, { name: "microsandbox", tag: "v0.2.0" })
+
+      await vi.waitFor(() =>
+        expect(providerJobs.get("microsandbox")).toBeUndefined(),
+      )
+      expect(seen).toEqual([
+        [
+          "provider",
+          "set-source",
+          "microsandbox",
+          "--use=false",
+          "--version",
+          "v0.2.0",
+        ],
+        ["provider", "init", "microsandbox"],
+      ])
+    },
+  )
+
   it("records the failure when the update's chained init fails", async () => {
     const { providerJobs } = setup((cliArgs) => ({
       lines: [],
