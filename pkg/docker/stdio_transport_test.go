@@ -341,8 +341,7 @@ func (s *StdioTransportSuite) TestCloseReleasesStderrPipe() {
 				_, _ = io.ReadAll(conn)
 			}
 			s.Require().NoError(conn.Close())
-			_, err := stderr.Stat()
-			s.ErrorIs(err, os.ErrClosed, "stderr must be closed before Close returns")
+			s.ErrorIs(stderr.Close(), os.ErrClosed, "stderr must be closed before Close returns")
 		})
 	}
 }
