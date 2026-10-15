@@ -13,7 +13,7 @@ task = "3.53.1"
 golangci-lint = "2.13.2"
 prek = "0.5.3"
 protoc = "36.1"
-gh = "2.100.0"
+gh = "2.101.0"
 
 [tasks.setup]
 depends = ["setup:dependencies", "setup:hooks"]
