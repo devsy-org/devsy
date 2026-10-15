@@ -15,6 +15,8 @@ import (
 
 type StartedSessionIdentitySuite struct{ suite.Suite }
 
+const darwinProcessZombie = 5
+
 func TestStartedSessionIdentitySuite(t *testing.T) {
 	suite.Run(t, new(StartedSessionIdentitySuite))
 }
@@ -45,4 +47,13 @@ func (s *StartedSessionIdentitySuite) TestOrdinaryGroupIsNotASession() {
 
 	_, err := StartedSessionIdentity(cmd.Process.Pid)
 	s.Error(err, "a group leader in the parent's session must not be treated as its own session")
+}
+
+func (s *StartedSessionIdentitySuite) TestExitTransitionDoesNotNeedMutableGroupFields() {
+	process := &unix.KinfoProc{}
+	process.Proc.P_starttime.Sec = 100
+	process.Proc.P_starttime.Usec = 200
+	identity, err := darwinStartedSessionIdentity(42, -1, syscall.ESRCH, process)
+	s.Require().NoError(err)
+	s.Equal("42:100:200", identity)
 }
