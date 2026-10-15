@@ -47,6 +47,10 @@ func (s *DockerWSLSetupSuite) TestHappyPathProvesThenExports() {
 
 	st := s.rig.state()
 	s.Equal(stageVerified, st.Stage)
+	s.False(
+		st.Owned.InstallerDaemon,
+		"installer shutdown completed before the fixture daemon starts",
+	)
 	s.Equal(testDaemonID, st.DaemonID)
 	s.Equal(wantEndpoint, st.SSHEndpoint)
 	s.Equal(testAlias, st.SSHHostAlias)

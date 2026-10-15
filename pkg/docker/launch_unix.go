@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sync"
+	"strconv"
+	"syscall"
+
+	"github.com/devsy-org/devsy/pkg/command"
 )
 
 // launchDialStdio starts the child in its own process group. The stream pipes
@@ -34,7 +37,9 @@ func launchDialStdio(spec launchSpec) (*launchedStdio, error) {
 	cmd := exec.Command(spec.path, spec.args...)
 	cmd.Env = spec.env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdinR, stdoutW, stderrW
-	setProcessGroupAttrs(cmd)
+	// A separate session lets identity-checked cleanup recognize descendants
+	// after the leader has exited, without targeting a reused PID.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	startErr := cmd.Start()
 	closeAll(stdinR, stdoutW, stderrW) // child ends; the child holds its own copies
@@ -42,46 +47,43 @@ func launchDialStdio(spec launchSpec) (*launchedStdio, error) {
 		closeAll(stdinW, stdoutR, stderrR)
 		return nil, startErr
 	}
+	identity, err := command.ProcessTreeIdentity(cmd.Process.Pid)
+	if err == nil && identity == "" {
+		err = errors.New("process identity is unavailable")
+	}
+	if err != nil {
+		killErr := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		waitErr := cmd.Wait()
+		closeAll(stdinW, stdoutR, stderrR)
+		return nil, errors.Join(
+			fmt.Errorf("capture docker stdio process identity: %w", err),
+			killErr,
+			waitErr,
+		)
+	}
 
 	return &launchedStdio{
-		proc:   &groupProcess{cmd: cmd},
+		proc:   &groupProcess{cmd: cmd, identity: identity},
 		stdin:  stdinW,
 		stdout: stdoutR,
 		stderr: stderrR,
 	}, nil
 }
 
-// groupProcess adapts an exec.Cmd led by its own process group.
+// groupProcess retains the session identity after exec.Cmd reaps its leader.
 type groupProcess struct {
-	cmd *exec.Cmd
-
-	mu     sync.Mutex
-	exited bool // guarded by mu; set once Wait has reaped the leader
+	cmd      *exec.Cmd
+	identity string
 }
 
 func (p *groupProcess) PID() int { return p.cmd.Process.Pid }
 
-func (p *groupProcess) Wait() error {
-	err := p.cmd.Wait()
-	p.mu.Lock()
-	p.exited = true
-	p.mu.Unlock()
-	return err
-}
+func (p *groupProcess) Wait() error { return p.cmd.Wait() }
 
-// KillTree signals the whole group while the leader is still unreaped, so a
-// recycled pid can never be targeted.
 func (p *groupProcess) KillTree() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.exited {
-		return nil
-	}
-	if err := killProcessGroup(p.cmd); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return err
-	}
-	return nil
+	return command.KillTreeWithIdentity(strconv.Itoa(p.PID()), "docker-stdio", p.identity)
 }
 
-// Release has no OS handles to free: the pipes belong to stdioConn.
-func (p *groupProcess) Release() error { return nil }
+func (p *groupProcess) Release() error {
+	return command.KillTreeAfterWorkerExit(strconv.Itoa(p.PID()), "docker-stdio", p.identity)
+}

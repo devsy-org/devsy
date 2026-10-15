@@ -113,6 +113,38 @@ func (s *DockerWSLCleanupSuite) TestCleanupTwiceIsHarmless() {
 	s.Empty(s.rig.runner.calls)
 }
 
+func (s *DockerWSLCleanupSuite) TestFailedInstallRetriesInstallerDaemonShutdown() {
+	for _, kind := range []string{kindInstallPackages, kindStopInstaller} {
+		s.Run(kind, func() {
+			rig := newWSLRig(s.T())
+			rig.onResult(kind, exitWith(1, "installer daemon remains"))
+			s.Require().Error(rig.setup())
+			rig.runner.reset()
+			rig.onResult(kindStopInstaller, exitWith(1, "shutdown failed"))
+
+			s.Error(rig.cleanup(), "failed shutdown must retain state for another cleanup")
+			s.True(rig.files.Has(testStateFile))
+			s.Equal(1, rig.runner.count(kindStopInstaller))
+
+			rig.runner.reset()
+			rig.onResult(kindStopInstaller, runenv.CommandResult{})
+			s.Require().NoError(rig.cleanup())
+			s.Equal(1, rig.runner.count(kindStopInstaller))
+			s.False(rig.files.Has(testStateFile))
+		})
+	}
+}
+
+func (s *DockerWSLCleanupSuite) TestPreexistingDaemonIsNotAcquiredOrStopped() {
+	s.rig.onResult("wsl-preflight", runenv.CommandResult{
+		Stdout: "socket=absent\nci_user=absent\nleftovers=no\ndockerd_running=present\n",
+	})
+	s.Require().Error(s.rig.setup())
+	s.Require().NoError(s.rig.cleanup())
+	s.Zero(s.rig.runner.count(kindInstallPackages))
+	s.Zero(s.rig.runner.count(kindStopInstaller))
+}
+
 func (s *DockerWSLCleanupSuite) TestWrongJobStateIsRejectedUntouched() {
 	other := newDockerWSLState("99-1-e2e", defaultDistribution)
 	other.Owned.CIUser = ciUser

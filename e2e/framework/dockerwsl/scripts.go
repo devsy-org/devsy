@@ -36,6 +36,14 @@ const (
 // preflightScript reports what already exists, so setup can refuse to touch a
 // daemon or account it did not create.
 const preflightScript = `set -u
+dockerd_running=absent
+for comm in /proc/[0-9]*/comm; do
+  if IFS= read -r name 2>/dev/null < "$comm" && [ "$name" = dockerd ]; then
+    dockerd_running=present
+    break
+  fi
+done
+echo "dockerd_running=$dockerd_running"
 if [ -e /var/run/docker.sock ]; then echo socket=present; else echo socket=absent; fi
 if dpkg-query -W -f='${Status}' docker-ce 2>/dev/null | grep -q 'install ok installed'; then
   echo docker_installed=yes

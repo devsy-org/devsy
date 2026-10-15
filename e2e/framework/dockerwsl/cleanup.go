@@ -19,6 +19,7 @@ const (
 	stepStopSSHD         = "stop-sshd"
 	stepRemoveUser       = "remove-ci-user"
 	stepStopDockerd      = "stop-dockerd"
+	stepStopInstaller    = "stop-installer-daemon"
 	stepRemoveLinuxFiles = "remove-linux-files"
 	stepVerifyNoTCP      = "verify-no-docker-tcp"
 	stepRemoveFixture    = "remove-windows-fixture"
@@ -67,19 +68,20 @@ func (d *dockerWSL) cleanup(ctx context.Context) error {
 
 func (d *dockerWSL) cleanupSteps() []cleanupStep {
 	o := d.state.Owned
-	processes := []string{stepStopSSHD, stepRemoveUser, stepStopDockerd}
+	processes := []string{stepStopSSHD, stepRemoveUser, stepStopDockerd, stepStopInstaller}
 	return []cleanupStep{
 		{name: stepRestoreSSHConfig, needed: o.SSHConfig != "", run: d.restoreSSHConfig},
 		{name: stepStopSSHD, needed: o.SSHDPidfile != "", run: d.stopSSHD},
 		{name: stepRemoveUser, needed: o.CIUser != "", run: d.removeUser},
 		{name: stepStopDockerd, needed: o.DockerPidfile != "", run: d.stopDockerd},
+		{name: stepStopInstaller, needed: o.InstallerDaemon, run: d.stopInstallerDaemon},
 		{
 			name: stepRemoveLinuxFiles, needed: d.hasLinuxResources(),
 			requires: processes, run: d.removeLinuxFiles,
 		},
 		{
-			name: stepVerifyNoTCP, needed: o.DockerPidfile != "",
-			requires: []string{stepStopDockerd}, run: d.verifyNoDockerTCP,
+			name: stepVerifyNoTCP, needed: o.DockerPidfile != "" || o.InstallerDaemon,
+			requires: []string{stepStopDockerd, stepStopInstaller}, run: d.verifyNoDockerTCP,
 		},
 		{
 			name: stepRemoveFixture, needed: d.hasWindowsResources(),
@@ -156,6 +158,12 @@ func (d *dockerWSL) stopSSHD(ctx context.Context) error {
 
 func (d *dockerWSL) stopDockerd(ctx context.Context) error {
 	return d.stopOwned(ctx, dockerPidfile, "dockerd", dockerdMarker)
+}
+
+func (d *dockerWSL) stopInstallerDaemon(ctx context.Context) error {
+	_, err := d.script(ctx, stageCleanup, runenv.CodeDockerWSLCleanup,
+		wslScript{body: stopInstallerDaemonScript, timeout: wslScriptTimeout})
+	return err
 }
 
 func (d *dockerWSL) removeUser(ctx context.Context) error {

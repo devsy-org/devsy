@@ -48,9 +48,10 @@ var (
 	distroPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 )
 
-// ownedResources lists every resource this attempt created. Paths here are
-// untrusted input to cleanup and are re-validated before use.
+// ownedResources records acquisition intent before side effects so partial
+// failures remain cleanable. Cleanup re-validates every recorded path.
 type ownedResources struct {
+	InstallerDaemon    bool   `json:"installer_daemon,omitempty"`
 	DockerPidfile      string `json:"docker_pidfile,omitempty"`
 	SSHDPidfile        string `json:"sshd_pidfile,omitempty"`
 	SSHDConfigDir      string `json:"sshd_config_dir,omitempty"`

@@ -62,17 +62,19 @@ func escapingFixture(levels int, rest string) string {
 
 // Command kinds and literals reused across the docker-wsl tests.
 const (
-	kindDockerInfoDead = "docker-info-dead"
-	kindDockerInfoSSH  = "docker-info-ssh"
-	kindWSLDockerInfo  = "wsl-docker-info"
-	kindWSLUnknown     = "wsl-unknown"
-	testExeEntry       = "docker/docker.exe"
-	etcPasswd          = "/etc/passwd"
-	httpBanner         = "HTTP/1.1 400\r\n"
-	partExit1          = "exit=1"
-	cmdDockerWSL       = "docker-wsl"
-	cmdSetup           = "setup"
-	testZipURL         = "https://example.test/d.zip"
+	kindDockerInfoDead  = "docker-info-dead"
+	kindDockerInfoSSH   = "docker-info-ssh"
+	kindWSLDockerInfo   = "wsl-docker-info"
+	kindWSLUnknown      = "wsl-unknown"
+	kindStopInstaller   = "wsl-stop-installer"
+	kindInstallPackages = "wsl-install"
+	testExeEntry        = "docker/docker.exe"
+	etcPasswd           = "/etc/passwd"
+	httpBanner          = "HTTP/1.1 400\r\n"
+	partExit1           = "exit=1"
+	cmdDockerWSL        = "docker-wsl"
+	cmdSetup            = "setup"
+	testZipURL          = "https://example.test/d.zip"
 )
 
 var (
@@ -81,8 +83,8 @@ var (
 	)
 	scriptKinds = map[string]string{
 		preflightScript:           "wsl-preflight",
-		installPackagesScript:     "wsl-install",
-		stopInstallerDaemonScript: "wsl-stop-installer",
+		installPackagesScript:     kindInstallPackages,
+		stopInstallerDaemonScript: kindStopInstaller,
 		prepareRuntimeScript:      "wsl-prepare",
 		createUserScript:          "wsl-create-user",
 		configureSSHDScript:       "wsl-configure-sshd",

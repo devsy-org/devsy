@@ -118,6 +118,9 @@ func (d *dockerWSL) preflightWSL(ctx context.Context) error {
 		"wsl preflight: socket=%s docker_installed=%s systemd=%s ci_user=%s leftovers=%s\n",
 		kv["socket"], kv["docker_installed"], kv["systemd"], kv["ci_user"], kv["leftovers"])
 	switch {
+	case kv["dockerd_running"] == "present":
+		return runenv.NewStageError(runenv.CodeDockerWSLDaemon, stageWSLCheck,
+			errors.New("a Docker daemon is already running; refusing to stop it"))
 	case kv["socket"] != "absent":
 		return runenv.NewStageError(runenv.CodeDockerWSLDaemon, stageWSLCheck, fmt.Errorf(
 			"%s already exists: a Docker daemon this run did not start is using it; refusing to stop it",
@@ -139,6 +142,9 @@ func (d *dockerWSL) preflightWSL(ctx context.Context) error {
 // installPackages is W2: Docker Engine and sshd from signed repositories, then
 // stop whatever service the installer started.
 func (d *dockerWSL) installPackages(ctx context.Context) error {
+	if err := d.record(func(s *dockerWSLState) { s.Owned.InstallerDaemon = true }); err != nil {
+		return err
+	}
 	res, err := d.script(ctx, stageInstall, runenv.CodeDockerWSLInstall,
 		wslScript{body: installPackagesScript, timeout: wslInstallTimeout})
 	if err != nil {
@@ -156,9 +162,11 @@ func (d *dockerWSL) installPackages(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
-	_, err = d.script(ctx, stageInstall, runenv.CodeDockerWSLDaemon,
-		wslScript{body: stopInstallerDaemonScript, timeout: wslScriptTimeout})
-	return err
+	if _, err := d.script(ctx, stageInstall, runenv.CodeDockerWSLDaemon,
+		wslScript{body: stopInstallerDaemonScript, timeout: wslScriptTimeout}); err != nil {
+		return err
+	}
+	return d.record(func(s *dockerWSLState) { s.Owned.InstallerDaemon = false })
 }
 
 // startDockerd is W3: a detached dockerd with its own pidfile and log, and a

@@ -45,8 +45,12 @@ var helperModes = map[string]func(){
 		_ = os.Stdout.Close()
 		time.Sleep(time.Minute)
 	},
-	"spawn-child": spawnHangingChild,
-	"daemon":      serveFakeDaemon,
+	"spawn-child": func() {
+		spawnChild()
+		time.Sleep(time.Minute)
+	},
+	"spawn-child-exit": spawnChild,
+	"daemon":           serveFakeDaemon,
 }
 
 func TestMain(m *testing.M) {
@@ -60,9 +64,9 @@ func TestMain(m *testing.M) {
 	os.Exit(0)
 }
 
-// spawnHangingChild starts a long-lived descendant immediately, reports its
-// pid on stdout and then hangs, standing in for docker.exe starting ssh.exe.
-func spawnHangingChild() {
+// spawnChild starts a long-lived descendant immediately and reports its pid,
+// standing in for docker starting SSH before it exits or waits.
+func spawnChild() {
 	exe, err := os.Executable()
 	if err != nil {
 		os.Exit(2)
@@ -75,7 +79,6 @@ func spawnHangingChild() {
 		os.Exit(2)
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "%d\n", cmd.Process.Pid)
-	time.Sleep(time.Minute)
 }
 
 func envWithout(environ []string, key string) []string {
