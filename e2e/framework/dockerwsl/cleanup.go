@@ -199,8 +199,12 @@ func (d *dockerWSL) restoreSSHConfig(ctx context.Context) error {
 		return fmt.Errorf("read %s: %w", o.SSHConfig, err)
 	}
 	restored, changed, err := d.restoredConfig(current)
-	if err != nil || !changed {
+	if err != nil {
 		return err
+	}
+	if !changed {
+		// A retry after a failed ACL restore sees the config already restored.
+		return d.restoreACL(ctx)
 	}
 	if o.SSHConfigExisted || len(restored) > 0 {
 		err = d.deps.Files.WriteFile(o.SSHConfig, restored, configFilePerm)

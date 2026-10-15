@@ -241,6 +241,18 @@ func (s *DockerWSLCleanupSuite) TestACLRestoreFailureIsReported() {
 	s.Contains(err.Error(), stepRestoreSSHConfig)
 }
 
+func (s *DockerWSLCleanupSuite) TestRetryAfterACLRestoreFailureRestoresTheACL() {
+	s.SetupOK()
+	s.rig.onResult("icacls-restore", exitWith(5, "Access is denied."))
+	s.Require().Error(s.rig.cleanup())
+	delete(s.rig.runner.overrides, "icacls-restore")
+
+	s.Require().NoError(s.rig.cleanup())
+
+	s.Equal(2, s.rig.runner.count("icacls-restore"), "the retry must finish the ACL restore")
+	s.False(s.rig.files.Has(testStateFile))
+}
+
 func (s *DockerWSLCleanupSuite) TestStateWithNoLinuxResourcesNeedsNoWSL() {
 	s.rig.onResult("wsl-list", exitWith(1, "x"))
 	s.rig.host.lookErr[toolWSL] = errTest("no wsl")
