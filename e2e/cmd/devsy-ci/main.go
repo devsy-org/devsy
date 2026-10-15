@@ -1,7 +1,7 @@
 // Command devsy-ci provisions and verifies the runtimes the E2E suite runs on.
 //
 // It is the composition root of the E2E CI helpers: it builds the real
-// runenv.Dependencies and wires the e2erun and dockerwsl commands to them. All
+// runenv.Dependencies and wires the dockerwsl command to them. All
 // behaviour lives in the e2e/framework packages.
 package main
 

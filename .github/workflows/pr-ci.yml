@@ -207,7 +207,7 @@ jobs:
           path: ${{ runner.temp }}/devsy-ci-podman*
 
       - name: test devsy-ci
-        run: go test ./e2e/framework/runenv/... ./e2e/framework/specreport ./e2e/framework/e2erun ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
+        run: go test ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
 
       - name: build devsy-ci
         shell: bash
@@ -880,6 +880,7 @@ jobs:
             requires-secret: false
             test-timeout: 900s
             job-timeout-minutes: 25
+            expected-spec-count: 6
 
           - label: up-docker-wsl
             runner: windows-latest
@@ -965,7 +966,7 @@ jobs:
           path: ${{ runner.temp }}/devsy-ci-podman/
 
       - name: download devsy-ci helper
-        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
+        if: matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: devsy-ci-${{ steps.os.outputs.runner_os }}
@@ -1014,7 +1015,7 @@ jobs:
           ls -R ./bin/
 
       - name: prepare devsy-ci helper
-        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
+        if: matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
         shell: bash
         run: |
           DIR="${RUNNER_TEMP}/devsy-ci-bin"
@@ -1025,7 +1026,7 @@ jobs:
           fi
           test -f "$DIR/$BIN" || { echo "missing $DIR/$BIN"; ls -R "$DIR"; exit 1; }
           chmod +x "$DIR/$BIN"
-          "$DIR/$BIN" e2e run --help > /dev/null
+          "$DIR/$BIN" docker-wsl setup --help > /dev/null
           if [ "${{ runner.os }}" == "Windows" ]; then
             DIR="$(cygpath -w "$DIR")"
           fi
@@ -1267,7 +1268,7 @@ jobs:
           PY
 
       - name: run test
-        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
+        if: (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true') && matrix.runtime-profile != 'docker-wsl-ssh'
         shell: bash
         working-directory: ./e2e
         env:
@@ -1277,28 +1278,80 @@ jobs:
           GH_CREDENTIAL_USERNAME: x-access-token
           TEST_TIMEOUT: ${{ matrix.test-timeout || '1500s' }}
           FLAKE_ATTEMPTS: ${{ matrix.flake-attempts || '1' }}
-          E2E_LABEL: ${{ matrix.label }}
-          E2E_PROFILE: ${{ matrix.runtime-profile || 'legacy' }}
-          E2E_PODMAN_MODE: ${{ matrix.install-podman || 'none' }}
-        # Profile, privilege and Podman handling live in devsy-ci, never in shell.
         run: |
-          devsy-ci e2e run \
-            --label "${E2E_LABEL}" \
-            --profile "${E2E_PROFILE}" \
-            --podman-mode "${E2E_PODMAN_MODE}" \
-            --timeout "${TEST_TIMEOUT}" \
-            --flake-attempts "${FLAKE_ATTEMPTS}" \
-            --report "${E2E_LABEL}-report.json" \
-            --state-file "${RUNNER_TEMP}/devsy-ci/docker-wsl-state.json"
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            if [ "${{ matrix.install-podman || '' }}" = "rootless" ]; then
+              echo "Podman rootless test identity:"
+              id
+              printf 'HOME=%s\n' "${HOME}"
+              printf 'XDG_RUNTIME_DIR=%s\n' "${XDG_RUNTIME_DIR:-}"
+              podman info
+              GH_USERNAME="${GH_USERNAME}" \
+                GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
+                GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
+                KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+                PATH="${PATH}" \
+                ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
+            else
+              sudo \
+                GH_USERNAME="${GH_USERNAME}" \
+                GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
+                GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
+                KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+                ${DOCKER_HOST:+DOCKER_HOST="${DOCKER_HOST}"} \
+                PATH="${PATH}" \
+                ./e2e.test -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
+            fi
+          else
+            GH_USERNAME="${GH_USERNAME}" \
+              GH_ACCESS_TOKEN="${GH_ACCESS_TOKEN}" \
+              GH_CREDENTIAL_USERNAME="${GH_CREDENTIAL_USERNAME}" \
+              KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}" \
+              PATH="${PATH}" \
+              DOCKER_HOST="npipe:////./pipe/podman-machine-default" \
+              ./e2e.test.exe -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
+          fi
 
-      - name: upload E2E diagnostics
-        if: always() && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
+      - name: run test (docker-wsl-ssh)
+        if: matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
+        shell: bash
+        working-directory: ./e2e
+        env:
+          GH_USERNAME: ${{ github.repository_owner }}
+          GH_ACCESS_TOKEN: ${{ github.token }}
+          GH_CREDENTIAL_USERNAME: x-access-token
+          TEST_TIMEOUT: ${{ matrix.test-timeout }}
+          EXPECTED_SPECS: ${{ matrix.expected-spec-count }}
+          # A pipe with no daemon behind it: the build must reach the provider's
+          # SSH daemon, never the process default (issue #1469).
+          DOCKER_HOST: npipe:////./pipe/devsy-ci-no-daemon
+          DOCKER_CONTEXT: ""
+        run: |
+          report="${{ matrix.label }}-report.json"
+          ./e2e.test.exe -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" \
+            -ginkgo.fail-on-empty -ginkgo.flake-attempts=1 \
+            --ginkgo.label-filter="${{ matrix.label }}" --ginkgo.json-report="$report"
+          python - "$report" "${EXPECTED_SPECS}" <<'PY'
+          import json
+          import sys
+
+          suite = json.load(open(sys.argv[1], encoding="utf-8"))[0]
+          want = int(sys.argv[2])
+          assert suite["SuiteSucceeded"] is True, "suite failed"
+          passed = [
+              spec for spec in suite["SpecReports"]
+              if spec.get("LeafNodeType") == "It" and spec.get("State") == "passed"
+          ]
+          assert len(passed) == want, f"expected {want} passed specs, found {len(passed)}"
+          PY
+
+      - name: upload docker-wsl diagnostics
+        if: always() && matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: e2e-diagnostics-${{ matrix.label }}-${{ matrix.install-podman || 'default' }}-${{ matrix.runner }}
+          name: e2e-diagnostics-${{ matrix.label }}
           path: |
-            e2e/*-report.json
-            e2e/*-report.summary.txt
+            e2e/${{ matrix.label }}-report.json
             ${{ runner.temp }}/devsy-ci/docker-wsl-diagnostics.log
           if-no-files-found: warn
 

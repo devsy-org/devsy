@@ -23,10 +23,6 @@ const (
 	CodeDockerWSLOracle       Code = "CI_DOCKER_WSL_ORACLE_INVALID"
 	CodeDockerWSLSetupTimeout Code = "CI_DOCKER_WSL_SETUP_TIMEOUT"
 	CodeDockerWSLCleanup      Code = "CI_DOCKER_WSL_CLEANUP_FAILED"
-	CodeE2EPreflightFailed    Code = "CI_E2E_PREFLIGHT_FAILED"
-	CodeE2ETestFailed         Code = "CI_E2E_TEST_FAILED"
-	CodeE2ETestTimeout        Code = "CI_E2E_TEST_TIMEOUT"
-	CodeE2EReportInvalid      Code = "CI_E2E_REPORT_INVALID"
 )
 
 const (

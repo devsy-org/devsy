@@ -28,16 +28,6 @@ const (
 	DeadDockerHost = "npipe:////./pipe/devsy-ci-no-daemon"
 )
 
-// requiredSpecs is the identity contract of the docker-wsl-ssh profile: each
-// title must execute exactly once and pass. Additional specs under the label
-// are allowed.
-var RequiredSpecs = []string{
-	"dials the provider's daemon through docker system dial-stdio",
-	"loads an image built by raw BuildKit into the provider's daemon",
-	"BuildDevContainer builds on the provider's SSH daemon despite a dead process DOCKER_HOST",
-	"BuildDevContainer fails instead of falling back to the process daemon",
-}
-
 // defaultStateFile is the setup/cleanup state location under
 // RUNNER_TEMP, or empty when RUNNER_TEMP is unset.
 func DefaultStateFile(env []string, goos string) string {
@@ -267,60 +257,6 @@ func runDockerWSL(
 		return err
 	}
 	return action(d, ctx)
-}
-
-// verifyDockerWSLSetup is the e2e preflight: the state file must record a
-// completed setup of this run and the exported endpoint must match it.
-func VerifySetup(ctx context.Context, deps *runenv.Dependencies, stateFile string) error {
-	d, err := newDockerWSL(deps, newHostPlatform(deps), dockerWSLOptions{StateFile: stateFile})
-	if err != nil {
-		return err
-	}
-	return d.preflight(ctx)
-}
-
-// preflight proves setup finished, the environment carries its exports and the
-// WSL daemon still answers with the recorded ID.
-func (d *dockerWSL) preflight(ctx context.Context) error {
-	const stage = "e2e-preflight"
-	bad := func(err error) error { return runenv.NewStageError(runenv.CodeDockerWSLEndpoint, stage, err) }
-	st, err := d.store.load()
-	if err != nil {
-		return bad(
-			fmt.Errorf("no completed docker-wsl setup (run `docker-wsl setup` first): %w", err),
-		)
-	}
-	if err := d.guard.validate(st); err != nil {
-		return bad(err)
-	}
-	if st.Stage != stageVerified {
-		return bad(fmt.Errorf("setup stopped at stage %q; it never completed", st.Stage))
-	}
-	if err := d.checkExports(st); err != nil {
-		return bad(err)
-	}
-	d.state = st
-	ctx, cancel := context.WithTimeout(ctx, wslQuickTimeout)
-	defer cancel()
-	id, err := d.wslDaemonID(ctx, stage)
-	if err != nil {
-		return err
-	}
-	if id != st.DaemonID {
-		return bad(fmt.Errorf("WSL daemon ID %s differs from the recorded %s", id, st.DaemonID))
-	}
-	return nil
-}
-
-func (d *dockerWSL) checkExports(st *dockerWSLState) error {
-	want := map[string]string{envSSHDockerHost: st.SSHEndpoint, envWSLDaemonID: st.DaemonID}
-	for name, value := range want {
-		got, _ := runenv.LookupEnv(d.env, name, true)
-		if value == "" || got != value {
-			return fmt.Errorf("%s is %q, setup recorded %q", name, got, value)
-		}
-	}
-	return nil
 }
 
 // setup runs W1-W6 under one budget. Each stage is persisted as it completes;
