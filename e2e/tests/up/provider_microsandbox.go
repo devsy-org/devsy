@@ -182,7 +182,7 @@ var _ = ginkgo.Describe(
 				ginkgo.Label("microsandbox-builtin"), ginkgo.SpecTimeout(framework.TimeoutLong())),
 			ginkgo.Entry(
 				"external v0.1.8",
-				provider.MicrosandboxDriver,
+				microsandboxExternalProvider,
 				"microsandbox-external-parity",
 				provider.ExternalDriver,
 				ginkgo.Label("microsandbox-external"), ginkgo.SpecTimeout(framework.TimeoutLong()),

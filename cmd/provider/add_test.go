@@ -49,7 +49,7 @@ func (s *addDeprecationSuite) SetupTest() {
 	previousTransport := client.Transport
 	client.Transport = providerAddRoundTripper(func(req *http.Request) (*http.Response, error) {
 		const manifestURL = "https://github.com/devsy-org/devsy-provider-microsandbox/" +
-			"releases/download/v0.1.8/provider.yaml"
+			"releases/latest/download/provider.yaml"
 		if req.URL.String() != manifestURL {
 			s.T().Fatalf("unexpected source request: %s", req.URL)
 		}
@@ -58,7 +58,7 @@ func (s *addDeprecationSuite) SetupTest() {
 	s.T().Cleanup(func() { client.Transport = previousTransport })
 }
 
-func (s *addDeprecationSuite) TestMicrosandboxAliasUsesPinnedExternalProvider() {
+func (s *addDeprecationSuite) TestMicrosandboxAliasUsesLatestExternalProvider() {
 	cmd := &AddCmd{GlobalFlags: &flags.GlobalFlags{}}
 	for _, tc := range []struct {
 		name string
@@ -74,12 +74,28 @@ func (s *addDeprecationSuite) TestMicrosandboxAliasUsesPinnedExternalProvider() 
 		)
 		s.Require().NoError(err)
 		s.Require().Equal(tc.want, resolved.name)
-		s.Require().Equal(currentMicrosandboxSource, resolved.source.Raw)
+		s.Require().Equal("github.com/devsy-org/devsy-provider-microsandbox", resolved.source.Raw)
 		s.Require().Equal("devsy-org/devsy-provider-microsandbox", resolved.source.Github)
 		parsed, err := providerpkg.ParseProvider(bytes.NewReader(resolved.raw))
 		s.Require().NoError(err)
 		s.Require().Equal(providerpkg.ExternalDriver, parsed.Agent.Driver)
 	}
+}
+
+func (s *addDeprecationSuite) TestExplicitMicrosandboxPinIsPreserved() {
+	const pinnedSource = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8"
+	client := devsyhttp.GetHTTPClient()
+	client.Transport = providerAddRoundTripper(func(req *http.Request) (*http.Response, error) {
+		s.Require().Equal("https://github.com/devsy-org/devsy-provider-microsandbox/"+
+			"releases/download/v0.1.8/provider.yaml", req.URL.String())
+		return providerAddResponse(req, externalMicrosandboxManifest), nil
+	})
+	cmd := &AddCmd{GlobalFlags: &flags.GlobalFlags{}}
+	resolved, err := cmd.resolveAddSource(context.Background(), []string{pinnedSource}, "")
+	s.Require().NoError(err)
+	s.Require().Equal(providerpkg.MicrosandboxDriver, resolved.name)
+	s.Require().Equal(pinnedSource, resolved.source.Raw)
+	s.Require().Equal("devsy-org/devsy-provider-microsandbox", resolved.source.Github)
 }
 
 func (s *addDeprecationSuite) TestCloneAndOtherSourcesRemainUnchanged() {

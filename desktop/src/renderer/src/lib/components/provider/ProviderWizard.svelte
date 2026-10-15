@@ -39,7 +39,7 @@ const PRESETS: ProviderPreset[] = [
   { name: "apple", description: "Apple containers (macOS 26+, Apple silicon)" },
   {
     name: "microsandbox",
-    source: "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8",
+    source: "github.com/devsy-org/devsy-provider-microsandbox",
     description: "Hardware-isolated microVMs",
   },
   { name: "lima", description: "Linux VMs via Lima (macOS)" },

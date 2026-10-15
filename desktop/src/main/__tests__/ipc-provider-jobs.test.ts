@@ -235,21 +235,26 @@ describe("provider job lifecycle over IPC", () => {
     expect(providerJobs.get("docker")?.activity).toBe("installing")
   })
 
-  it("adds and initializes the external Microsandbox preset without selecting a default", async () => {
-    const { cli, providerJobs } = setup()
-    const source = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8"
+  it.each([
+    "github.com/devsy-org/devsy-provider-microsandbox",
+    "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8",
+  ])(
+    "adds and initializes external source %s without selecting a default",
+    async (source) => {
+      const { cli, providerJobs } = setup()
 
-    await invoke("provider_add", { name: "microsandbox", source })
-    await invoke("provider_init", { name: "microsandbox" })
+      await invoke("provider_add", { name: "microsandbox", source })
+      await invoke("provider_init", { name: "microsandbox" })
 
-    expect(cli.runStreaming.mock.calls.map(([args]) => args)).toEqual([
-      ["provider", "add", source, "--use=false", "--name", "microsandbox"],
-      ["provider", "init", "microsandbox"],
-    ])
-    expect(cli.run).not.toHaveBeenCalled()
-    expect(cli.runRaw).not.toHaveBeenCalled()
-    expect(providerJobs.get("microsandbox")).toBeUndefined()
-  })
+      expect(cli.runStreaming.mock.calls.map(([args]) => args)).toEqual([
+        ["provider", "add", source, "--use=false", "--name", "microsandbox"],
+        ["provider", "init", "microsandbox"],
+      ])
+      expect(cli.run).not.toHaveBeenCalled()
+      expect(cli.runRaw).not.toHaveBeenCalled()
+      expect(providerJobs.get("microsandbox")).toBeUndefined()
+    },
+  )
 
   it("releases an abandoned job so the card stops spinning", async () => {
     const { providerJobs } = setup(() => ({ lines: [], code: 0 }))

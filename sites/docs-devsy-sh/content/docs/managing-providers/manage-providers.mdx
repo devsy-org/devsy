@@ -43,9 +43,10 @@ Click a provider in the list to edit its settings, switch version, update, re-in
 devsy provider add docker
 ```
 
-`devsy provider add microsandbox` installs the pinned external MicroSandbox
-provider from `github.com/devsy-org/devsy-provider-microsandbox@v0.1.8`. The Desktop
-MicroSandbox preset selects the same published source.
+`devsy provider add microsandbox` installs the latest published external MicroSandbox
+provider from `github.com/devsy-org/devsy-provider-microsandbox`. The Desktop
+MicroSandbox preset selects the same source. To install a specific release, append
+a tag, for example `github.com/devsy-org/devsy-provider-microsandbox@v0.1.8`.
 
 Existing built-in MicroSandbox installations are listed as **Deprecated built-in**
 in Desktop and marked deprecated by `devsy provider list`. Their names, defaults,

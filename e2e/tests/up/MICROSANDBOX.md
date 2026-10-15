@@ -12,9 +12,11 @@ The shared provider selector supplies the pinned source, runtime identity and
 provider label while callers retain their descriptive provider names.
 
 Built-in cases explicitly select `builtin:microsandbox`, which persists the
-original internal source identity. The fresh-install CLI alias `microsandbox`
-selects the pinned external provider; it must not silently replace the built-in
-half of these parity or existing-workspace migration tests.
+original internal source identity. External cases use the explicit published
+version in `microsandboxExternalProvider`, including the lifecycle and performance
+case. The fresh-install CLI alias `microsandbox` selects the latest external
+release; it must not introduce a moving version into these fixtures or silently
+replace the built-in half of the parity and migration tests.
 
 Workspace cleanup registration is explicit. Ginkgo cleanup runs in reverse
 order; register volume cleanup before workspace cleanup so the VM is torn down

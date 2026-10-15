@@ -44,8 +44,7 @@ vi.mock("$lib/stores/toasts.js", () => ({
 
 import ProviderWizard from "./ProviderWizard.svelte"
 
-const microsandboxSource =
-  "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8"
+const microsandboxSource = "github.com/devsy-org/devsy-provider-microsandbox"
 
 function makeProvider(name: string): Provider {
   return {
@@ -74,7 +73,7 @@ describe("ProviderWizard", () => {
     onCommandProgress.mockImplementation(async () => () => undefined)
   })
 
-  it("adds a fresh Microsandbox preset with the pinned source and keeps it selected", async () => {
+  it("adds a fresh Microsandbox preset with the latest source and keeps it selected", async () => {
     const page = renderWizard()
     const preset = screen.getByRole("button", {
       name: /microsandbox Hardware-isolated microVMs/,

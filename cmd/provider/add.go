@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const currentMicrosandboxSource = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8"
+const currentMicrosandboxSource = "github.com/devsy-org/devsy-provider-microsandbox"
 
 // AddCmd holds the cmd flags.
 type AddCmd struct {
