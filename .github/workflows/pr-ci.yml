@@ -106,17 +106,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          packages="$(go list -f '{{.ImportPath}}|{{.Dir}}' ./... | awk -F '|' -v root="$PWD" '
-            {
-              if (index($2, root) != 1 || (length($2) > length(root) && substr($2, length(root) + 1, 1) != "/")) {
-                print "Package directory is outside the repository: " $2 > "/dev/stderr"
-                exit 1
-              }
-
-              relative = substr($2, length(root) + 1)
-              if (relative !~ /(^|\/)(test|e2e)(\/|$)/) print $1
-            }
-          ')"
+          packages="$(go run ./hack/unit_test_packages)"
 
           if [[ -z "$packages" ]]; then
             echo "No unit-test packages found"
