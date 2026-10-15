@@ -6,6 +6,10 @@ on:
   workflow_dispatch:
   pull_request:
 
+# Default for every job; jobs needing more declare their own job-level permissions block.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -66,6 +70,10 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    # golangci-lint only-new-issues fetches the PR diff via the pulls API on pull_request.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
