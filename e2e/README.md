@@ -34,10 +34,12 @@ ginkgo
 
 #### CI helpers
 
-The reusable `docker-buildkit-windows.yml` workflow runs the native Windows
-transport tests and the `docker-internal-buildkit` regression specs. It provisions
-Docker Engine in WSL2, reached over SSH, with `devsy-ci docker-wsl setup`
-(`e2e/cmd/devsy-ci`). The logic lives in `e2e/framework`:
+The `Windows Transport Tests` job runs native transport and runtime-helper unit
+tests independently of CLI artifact builds. After that job and the builds pass,
+the reusable `docker-buildkit-windows.yml` workflow runs the
+`docker-internal-buildkit` regression specs. It provisions Docker Engine in WSL2,
+reached over SSH, with `devsy-ci docker-wsl setup` (`e2e/cmd/devsy-ci`). The runtime
+logic lives in `e2e/framework`:
 
 | Package | Responsibility |
 | --- | --- |

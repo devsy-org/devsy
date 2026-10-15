@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   docker-buildkit:
-    name: Windows transport and WSL SSH build
+    name: Windows WSL SSH build
     runs-on: windows-latest
     timeout-minutes: 25
     defaults:
@@ -22,16 +22,8 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: test native Windows transport
-        run: >-
-          go test -race -count=1 -v -timeout 5m ./pkg/docker
-          -run '^(TestInvocationSuite|TestProviderDaemonOverrides.*|TestStdioTransportSuite|TestLaunch.*|TestEnvBlock.*)$'
-
-      - name: test and build CI helper
-        run: |
-          go test -race -count=1 -timeout 5m ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go build -trimpath -o "$env:RUNNER_TEMP\devsy-ci.exe" ./e2e/cmd/devsy-ci
+      - name: build CI helper
+        run: go build -trimpath -o "$env:RUNNER_TEMP\devsy-ci.exe" ./e2e/cmd/devsy-ci
 
       - name: download Windows CLI
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8

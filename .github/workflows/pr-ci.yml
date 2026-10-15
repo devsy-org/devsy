@@ -135,6 +135,27 @@ jobs:
         if: runner.os == 'Linux'
         run: go test -race -count=1 -timeout 90s ./e2e/framework/registryfixture
 
+  windows-transport-tests:
+    name: Windows Transport Tests
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: test native Windows transport
+        run: >-
+          go test -race -count=1 -v -timeout 5m ./pkg/docker
+          -run '^(TestInvocationSuite|TestProviderDaemonOverrides.*|TestStdioTransportSuite|TestLaunch.*|TestEnvBlock.*)$'
+      - name: test E2E runtime helpers
+        run: go test -race -count=1 -timeout 5m ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
+
   provider-update-windows:
     name: Provider Update Tests (windows-latest)
     needs: [changes]
@@ -1276,7 +1297,7 @@ jobs:
         run: docker --version && docker ps
 
   docker-buildkit-windows:
-    needs: [changes, build-cli]
+    needs: [changes, build-cli, windows-transport-tests]
     if: needs.changes.outputs.go == 'true'
     uses: ./.github/workflows/docker-buildkit-windows.yml
 
@@ -1290,6 +1311,7 @@ jobs:
       - lint
       - agent-skill
       - unit-tests
+      - windows-transport-tests
       - provider-update-windows
       - licenses
       - build-cli
@@ -1329,6 +1351,7 @@ jobs:
           check_result "lint" "${{ needs.lint.result }}" false || status=1
           check_result "agent-skill" "${{ needs.agent-skill.result }}" false || status=1
           check_result "unit-tests" "${{ needs.unit-tests.result }}" true || status=1
+          check_result "windows-transport-tests" "${{ needs.windows-transport-tests.result }}" true || status=1
           check_result "provider-update-windows" "${{ needs.provider-update-windows.result }}" true || status=1
           check_result "licenses" "${{ needs.licenses.result }}" true || status=1
           check_result "build-cli" "${{ needs.build-cli.result }}" true || status=1
