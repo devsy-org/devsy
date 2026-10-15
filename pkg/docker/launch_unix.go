@@ -47,7 +47,7 @@ func launchDialStdio(spec launchSpec) (*launchedStdio, error) {
 		closeAll(stdinW, stdoutR, stderrR)
 		return nil, startErr
 	}
-	identity, err := command.ProcessTreeIdentity(cmd.Process.Pid)
+	identity, err := command.StartedSessionIdentity(cmd.Process.Pid)
 	if err == nil && identity == "" {
 		err = errors.New("process identity is unavailable")
 	}

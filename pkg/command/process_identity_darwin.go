@@ -14,6 +14,31 @@ import (
 
 const strongProcessIdentitySupported = true
 
+const darwinProcessZombie = 5
+
+// StartedSessionIdentity captures a child's tree identity before its parent
+// reaps it. The caller must have started the child with Setsid enabled.
+func StartedSessionIdentity(pid int) (string, error) {
+	sessionID, sessionErr := darwinSessionID(pid)
+	process, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil {
+		return "", err
+	}
+	if sessionErr != nil {
+		// Darwin drops getsid at exit, but sysctl retains an unreaped child's
+		// start time. The caller's Setsid contract supplies the session ID.
+		if !errors.Is(sessionErr, syscall.ESRCH) || process.Proc.P_stat != darwinProcessZombie ||
+			int(process.Eproc.Pgid) != pid {
+			return "", sessionErr
+		}
+		sessionID = pid
+	}
+	if sessionID != pid {
+		return "", errors.New("started process is not its own session leader")
+	}
+	return darwinProcessIdentity(sessionID, process), nil
+}
+
 func processTreeIdentity(pid int) (string, error) {
 	sessionID, err := darwinSessionID(pid)
 	if err != nil {
@@ -29,12 +54,16 @@ func processTreeIdentity(pid int) (string, error) {
 		}
 		return "", err
 	}
+	return darwinProcessIdentity(sessionID, process), nil
+}
+
+func darwinProcessIdentity(sessionID int, process *unix.KinfoProc) string {
 	return fmt.Sprintf(
 		"%d:%d:%d",
 		sessionID,
 		process.Proc.P_starttime.Sec,
 		process.Proc.P_starttime.Usec,
-	), nil
+	)
 }
 
 func processLookupConfirmsExit(pid int, lookupErr error) bool {
