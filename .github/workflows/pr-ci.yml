@@ -1299,41 +1299,38 @@ jobs:
       - integration-tests-microsandbox
     steps:
       - name: Check required jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          GO_CHANGES: ${{ needs.changes.outputs.go }}
         run: |
-          go_changes="${{ needs.changes.outputs.go }}"
+          # Always-required jobs: must end with "success" on every run.
+          # Any other job listed in `needs` is go-gated: it may be "skipped"
+          # when GO_CHANGES != "true". Adding a needed job requires no edit here.
+          always_required='["changes","precommit","lint","agent-skill"]'
 
-          check_result() {
-            local name="$1"
-            local result="$2"
-            local skip_when_no_go_changes="$3"
+          rows="$(printf '%s' "$NEEDS" | jq -r --argjson always "$always_required" '
+            to_entries[]
+            | .key as $name
+            | [$name, .value.result, (if ($always | index($name)) != null then "always" else "gated" end)]
+            | @tsv
+          ')"
 
+          status=0
+          while IFS=$'\t' read -r name result kind; do
             case "$result" in
               success)
                 ;;
               skipped)
-                if [[ "$skip_when_no_go_changes" != "true" || "$go_changes" == "true" ]]; then
+                if [[ "$kind" == "always" || "$GO_CHANGES" == "true" ]]; then
                   echo "::error::$name ended with result=skipped unexpectedly"
-                  return 1
+                  status=1
                 fi
                 ;;
               *)
                 echo "::error::$name ended with result=$result"
-                return 1
+                status=1
                 ;;
             esac
-          }
-
-          status=0
-          check_result "changes" "${{ needs.changes.result }}" false || status=1
-          check_result "precommit" "${{ needs.precommit.result }}" false || status=1
-          check_result "lint" "${{ needs.lint.result }}" false || status=1
-          check_result "agent-skill" "${{ needs.agent-skill.result }}" false || status=1
-          check_result "unit-tests" "${{ needs.unit-tests.result }}" true || status=1
-          check_result "provider-update-windows" "${{ needs.provider-update-windows.result }}" true || status=1
-          check_result "licenses" "${{ needs.licenses.result }}" true || status=1
-          check_result "build-cli" "${{ needs.build-cli.result }}" true || status=1
-          check_result "integration-tests-unprivileged" "${{ needs.integration-tests-unprivileged.result }}" true || status=1
-          check_result "integration-tests" "${{ needs.integration-tests.result }}" true || status=1
-          check_result "integration-tests-microsandbox" "${{ needs.integration-tests-microsandbox.result }}" true || status=1
+          done <<< "$rows"
 
           exit "$status"
