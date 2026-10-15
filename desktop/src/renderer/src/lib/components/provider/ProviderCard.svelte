@@ -65,6 +65,12 @@ function sourceDisplay(p: Provider): string {
     </div>
   </div>
 
+  {#if provider.deprecated}
+    <div class="mt-2">
+      <span class={badgeVariants({ variant: "outline" })}>Deprecated built-in</span>
+    </div>
+  {/if}
+
   {#if provider.description}
     <p class="mt-2 text-sm text-muted-foreground truncate">{provider.description}</p>
   {/if}

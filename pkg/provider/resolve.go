@@ -17,6 +17,9 @@ import (
 	"github.com/devsy-org/devsy/providers"
 )
 
+// DeprecatedMicrosandboxSource explicitly selects the legacy built-in provider.
+const DeprecatedMicrosandboxSource = "builtin:microsandbox"
+
 // ResolveProvider resolves a provider source string into raw provider YAML
 // bytes and a ProviderSource describing the origin (internal, URL, file, or
 // GitHub release).
@@ -24,6 +27,10 @@ func ResolveProvider(
 	ctx context.Context,
 	providerSource string,
 ) ([]byte, *ProviderSource, error) {
+	if providerSource == DeprecatedMicrosandboxSource {
+		// Keep stored legacy records compatible with embedded exec refresh and reload.
+		providerSource = MicrosandboxDriver
+	}
 	retSource := &ProviderSource{Raw: strings.TrimSpace(providerSource)}
 
 	if out, ok := resolveInternalProvider(providerSource, retSource); ok {

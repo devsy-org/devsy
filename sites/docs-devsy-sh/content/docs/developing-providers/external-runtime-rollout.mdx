@@ -4,7 +4,7 @@ sidebar_label: Runtime Rollout Decision
 description: Fresh Desktop provider selection, existing-provider migration, and external MicroSandbox runtime evidence.
 ---
 
-**Status: fresh Desktop preset selects the published provider.** The Microsandbox preset installs the pinned external source for a new provider while retaining the name `microsandbox`. Existing internal providers continue to use the embedded MicroSandbox driver until an explicit source migration. The runtime evidence remains limited to the covered Linux/KVM scenarios.
+**Status: fresh Desktop and CLI installs select the published provider; the built-in driver is deprecated.** The Microsandbox preset and `devsy provider add microsandbox` install the pinned external source for a new provider while retaining the name `microsandbox`. Existing internal providers continue to use the embedded MicroSandbox driver until an explicit source migration. The runtime evidence remains limited to the covered Linux/KVM scenarios.
 
 ## Current host and runtime contract
 
@@ -24,9 +24,16 @@ The separate Windows provider-update job exercises Go archive and provider-updat
 
 ## Fresh Desktop installation
 
-The Desktop Microsandbox preset installs the pinned source [`github.com/devsy-org/devsy-provider-microsandbox@v0.1.8`](https://github.com/devsy-org/devsy-provider-microsandbox/releases/tag/v0.1.8), while retaining the provider name `microsandbox`. Reloading this provider without a replacement source retains the pinned tag. For an already pinned GitHub provider, a Desktop update to a displayed version explicitly selects that version; refreshing without a known target retains the configured pin. The existing Desktop setup path uses `provider add ... --use=false`; this preserves its current default-provider behavior. The explicit embedded source alias `microsandbox` remains available, as does the embedded manifest for parity tests and compatibility with existing internal provider records.
+The Desktop Microsandbox preset and fresh CLI alias install the pinned source [`github.com/devsy-org/devsy-provider-microsandbox@v0.1.8`](https://github.com/devsy-org/devsy-provider-microsandbox/releases/tag/v0.1.8), while retaining the provider name `microsandbox`. Reloading this provider without a replacement source retains the pinned tag. For an already pinned GitHub provider, a Desktop update to a displayed version explicitly selects that version; refreshing without a known target retains the configured pin. The existing Desktop setup path uses `provider add ... --use=false`; this preserves its current default-provider behavior. CLI `--name` and `--use` retain their normal behavior. The explicit compatibility source `builtin:microsandbox` remains available, as does the embedded manifest for parity tests and compatibility with existing internal provider records.
 
-This choice applies only to a new provider. The wizard refuses an existing provider name before installation; it does not replace or migrate that record. Other presets and custom names retain their behavior, and entering `microsandbox` as a custom source explicitly chooses the embedded provider. Existing records change source only through the supported `provider set-source` command. Loading an internal provider refreshes its embedded Exec blocks, not its stored driver or binaries. If initialization fails after a source change is committed, the new source remains selected and the provider records `InitError`; the command does not promise rollback. The running and stopped migration cases provide evidence for the tested successful transition, not for rollback after arbitrary failures.
+This choice applies only to a new provider. The wizard refuses an existing provider name before installation; it does not replace or migrate that record. Other presets and custom names retain their behavior. Entering `builtin:microsandbox` as a custom source deliberately chooses the deprecated built-in provider. Source-omitted reloads of stored internal records retain their legacy meaning; the fresh-install alias does not reinterpret those records. Migrating a stored internal provider to the external runtime requires passing the full external source explicitly to `provider set-source`. Loading an internal provider refreshes its embedded Exec blocks, not its stored driver or binaries. If initialization fails after a source change is committed, the new source remains selected and the provider records `InitError`; the command does not promise rollback. The running and stopped migration cases provide evidence for the tested successful transition, not for rollback after arbitrary failures.
+
+Deprecation is reported separately from initialization and default-provider state.
+It follows the selected built-in driver, including custom-named installations and
+custom provider manifests using that driver. An external provider named
+`microsandbox` is not deprecated. No compatibility flag, automatic migration or
+runtime removal is introduced in this deprecation stage; those require their own
+announced transition and validation.
 
 ## Evidence and compatibility limits
 
@@ -34,4 +41,4 @@ The performance artifact from run 38628263920 records one Linux/amd64 hosted run
 
 Other provider-supported host profiles remain untested here. Upstream requires Apple Silicon on macOS, KVM on Linux, and WHP on Windows; this campaign does not claim runtime parity on those other hosts. The registry tests do not cover every proxy, Docker daemon/context/socket, credential-store, or temp-directory configuration. Neither the built-in driver nor the external provider guarantees removal of every effect after a failed or interrupted create; use a fresh `Find` and explicit cleanup where recovery is needed. The exact native VM artifacts surviving a particular interruption remain unproven.
 
-The source-migration review and merge gates are complete. The fresh Desktop selection preserves these platform, performance, environment, and recovery limits. The embedded source alias, manifest, built-in implementation and explicit built-in parity fixture remain available for existing records and deliberate embedded installs; this change removes none of them.
+The source-migration review and merge gates are complete. Fresh installation and deprecation preserve these platform, performance, environment, and recovery limits. The explicit compatibility selector, embedded manifest, built-in implementation and built-in parity fixture remain available for existing records and deliberate compatibility installs.

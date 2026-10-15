@@ -38,6 +38,7 @@ export interface ProviderEntry {
   state?: { initialized?: boolean; singleMachine?: boolean }
   status?: string
   default?: boolean
+  deprecated?: boolean
 }
 
 export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
@@ -50,6 +51,7 @@ export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
     options: entry.config.options ?? {},
     optionGroups: entry.config.optionGroups ?? [],
     isDefault: entry.default ?? false,
+    deprecated: entry.deprecated ?? false,
     status: entry.status ?? "not_initialized",
     state: {
       initialized: entry.state?.initialized ?? false,

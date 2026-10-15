@@ -529,6 +529,15 @@ async function handleSaveOptions() {
       {#if provider.description}
         <Sheet.Description>{provider.description}</Sheet.Description>
       {/if}
+      {#if provider.deprecated}
+        <Alert.Root class="border-amber-500/50 bg-amber-500/10">
+          <Alert.Title>Deprecated built-in provider</Alert.Title>
+          <Alert.Description>
+            This built-in provider is scheduled for removal. Existing provider records remain available
+            during the compatibility period.
+          </Alert.Description>
+        </Alert.Root>
+      {/if}
     </Sheet.Header>
 
     <div class="flex items-center gap-2 px-6">

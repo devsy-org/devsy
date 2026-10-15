@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer"
 	"github.com/devsy-org/devsy/pkg/docker"
+	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -34,7 +36,7 @@ var _ = ginkgo.Describe(
 		})
 
 		ginkgo.DescribeTable("runs the shared lifecycle and ownership contract",
-			func(ctx context.Context, source, name string) {
+			func(ctx context.Context, source, name, expectedDriver string) {
 				ginkgo.GinkgoT().Setenv("DEVSY_HOME", ginkgo.GinkgoT().TempDir())
 				ginkgo.GinkgoT().Setenv("DEVSY_CONFIG", "")
 				f := framework.NewDefaultFramework(initialDir + "/bin")
@@ -50,7 +52,18 @@ var _ = ginkgo.Describe(
 				})
 				ginkgo.DeferCleanup(f.CleanupWorkspace, tempDir)
 
-				performance, err := newMicrosandboxPerformanceCapture(source, name, f)
+				installed, err := provider.LoadProviderConfig(config.DefaultContext, name)
+				framework.ExpectNoError(err)
+				gomega.Expect(installed.Agent.Driver).To(gomega.Equal(expectedDriver))
+				isBuiltin := expectedDriver == provider.MicrosandboxDriver
+				gomega.Expect(installed.Source.Internal).To(gomega.Equal(isBuiltin))
+				expectedSource := microsandboxExternalProvider
+				if isBuiltin {
+					expectedSource = provider.MicrosandboxDriver
+				}
+				gomega.Expect(installed.Source.Raw).To(gomega.Equal(expectedSource))
+
+				performance, err := newMicrosandboxPerformanceCapture(installed.Source.Raw, name, f)
 				framework.ExpectNoError(err)
 
 				// full up: boots the microVM, streams in the agent, opens the tunnel
@@ -164,12 +177,14 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				gomega.Expect(string(output)).NotTo(gomega.ContainSubstring(sandbox))
 			},
-			ginkgo.Entry("built-in", "microsandbox", "microsandbox-builtin-parity",
+			ginkgo.Entry("built-in", microsandboxResourceBuiltin, "microsandbox-builtin-parity",
+				provider.MicrosandboxDriver,
 				ginkgo.Label("microsandbox-builtin"), ginkgo.SpecTimeout(framework.TimeoutLong())),
 			ginkgo.Entry(
 				"external v0.1.8",
-				microsandboxExternalProvider,
+				provider.MicrosandboxDriver,
 				"microsandbox-external-parity",
+				provider.ExternalDriver,
 				ginkgo.Label("microsandbox-external"), ginkgo.SpecTimeout(framework.TimeoutLong()),
 			),
 		)

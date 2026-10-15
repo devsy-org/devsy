@@ -51,6 +51,27 @@ describe("ProviderCard", () => {
     unmount()
   })
 
+  it("shows the deprecation badge only when the provider flag is set", () => {
+    const deprecated = render(ProviderCard, {
+      props: {
+        provider: makeProvider("custom-builtin-name", { deprecated: true }),
+      },
+    })
+    expect(deprecated.getByText("Deprecated built-in")).toBeDefined()
+    deprecated.unmount()
+
+    const external = render(ProviderCard, {
+      props: {
+        provider: makeProvider("microsandbox", {
+          source: { github: "example/provider" },
+          deprecated: false,
+        }),
+      },
+    })
+    expect(external.queryByText("Deprecated built-in")).toBeNull()
+    external.unmount()
+  })
+
   it("shows the initializing badge while an uninitialized provider is in flight", () => {
     providerJobs.set({
       ssh: { activity: "initializing", phase: "running_init" },

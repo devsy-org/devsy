@@ -111,11 +111,16 @@ func (cmd *ListCmd) renderInstalledPlain(
 ) error {
 	tableEntries := [][]string{}
 	for _, entry := range providers {
+		lifecycle := ""
+		if entry.Deprecated {
+			lifecycle = "deprecated"
+		}
 		tableEntries = append(tableEntries, []string{
 			entry.Config.Name,
 			entry.Config.Version,
 			strconv.FormatBool(devsyConfig.Current().DefaultProvider == entry.Config.Name),
 			string(entry.Status),
+			lifecycle,
 			entry.Config.Description,
 		})
 	}
@@ -128,6 +133,7 @@ func (cmd *ListCmd) renderInstalledPlain(
 		"Version",
 		"Default",
 		"Status",
+		"Lifecycle",
 		"Description",
 	}, tableEntries)
 

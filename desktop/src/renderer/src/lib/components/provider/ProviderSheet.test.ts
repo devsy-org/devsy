@@ -184,6 +184,32 @@ describe("ProviderSheet", () => {
     unmount()
   })
 
+  it("shows deprecation guidance from the provider flag, not its name", async () => {
+    const deprecated = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("custom-builtin-name", { deprecated: true }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    expect(deprecated.getByText("Deprecated built-in provider")).toBeDefined()
+    expect(deprecated.getByText(/scheduled for removal/i)).toBeDefined()
+    deprecated.unmount()
+
+    const external = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("microsandbox", {
+          source: { github: "example/provider" },
+          deprecated: false,
+        }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    expect(external.queryByText("Deprecated built-in provider")).toBeNull()
+    external.unmount()
+  })
+
   it("does not refetch when provider prop ref changes but name stays the same", async () => {
     const { rerender, unmount } = render(ProviderSheet, {
       props: { provider: makeProvider("ssh"), open: true },

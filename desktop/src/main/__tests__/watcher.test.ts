@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { Watcher } from "../watcher.js"
+import { parseProviderEntries, Watcher } from "../watcher.js"
 import { WorkspaceJobs } from "../workspace-jobs.js"
 
 function makeWatcher(
@@ -38,6 +38,32 @@ function makeWatcher(
   })
   return { watcher, cli, state, workspaceJobs }
 }
+
+describe("parseProviderEntries", () => {
+  it("maps the authoritative deprecation flag and defaults it for older CLI output", () => {
+    const [deprecated, legacy, external] = parseProviderEntries({
+      deprecated: {
+        config: { name: "custom-builtin-name" },
+        deprecated: true,
+      },
+      legacy: { config: { name: "legacy-provider" } },
+      external: {
+        config: {
+          name: "microsandbox",
+          source: { github: "example/provider" },
+        },
+        deprecated: false,
+      },
+    })
+
+    expect(deprecated).toMatchObject({
+      name: "custom-builtin-name",
+      deprecated: true,
+    })
+    expect(legacy).toMatchObject({ name: "legacy-provider", deprecated: false })
+    expect(external).toMatchObject({ name: "microsandbox", deprecated: false })
+  })
+})
 
 describe("Watcher.refreshProviders", () => {
   it("does not run concurrently with another in-flight provider query", async () => {

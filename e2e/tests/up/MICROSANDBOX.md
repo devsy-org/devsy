@@ -11,6 +11,11 @@ configuration, the CLI framework, temporary workspaces and provider registration
 The shared provider selector supplies the pinned source, runtime identity and
 provider label while callers retain their descriptive provider names.
 
+Built-in cases explicitly select `builtin:microsandbox`, which persists the
+original internal source identity. The fresh-install CLI alias `microsandbox`
+selects the pinned external provider; it must not silently replace the built-in
+half of these parity or existing-workspace migration tests.
+
 Workspace cleanup registration is explicit. Ginkgo cleanup runs in reverse
 order; register volume cleanup before workspace cleanup so the VM is torn down
 first. Specialized fixtures own their volumes, registries, endpoints, processes

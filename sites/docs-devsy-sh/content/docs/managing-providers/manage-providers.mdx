@@ -9,7 +9,7 @@ Providers you can add:
 - [Podman (podman)](https://github.com/devsy-org/devsy/tree/main/providers/podman)
 - [Kubernetes (kubernetes)](https://github.com/devsy-org/devsy/tree/main/providers/kubernetes)
 - [Apple (apple)](https://github.com/devsy-org/devsy/tree/main/providers/apple)
-- [Microsandbox (microsandbox)](https://github.com/devsy-org/devsy/tree/main/providers/microsandbox)
+- [MicroSandbox (microsandbox)](https://github.com/devsy-org/devsy-provider-microsandbox)
 - [Lima (lima)](https://github.com/devsy-org/devsy-provider-lima)
 - [OrbStack (orbstack)](https://github.com/devsy-org/devsy-provider-orbstack)
 - [SSH (ssh)](https://github.com/devsy-org/devsy-provider-ssh)
@@ -42,6 +42,28 @@ Click a provider in the list to edit its settings, switch version, update, re-in
 ```sh
 devsy provider add docker
 ```
+
+`devsy provider add microsandbox` installs the pinned external MicroSandbox
+provider from `github.com/devsy-org/devsy-provider-microsandbox@v0.1.8`. The Desktop
+MicroSandbox preset selects the same published source.
+
+Existing built-in MicroSandbox installations are listed as **Deprecated built-in**
+in Desktop and marked deprecated by `devsy provider list`. Their names, defaults,
+options and existing workspaces are unchanged. The label also applies to custom
+provider definitions that select the built-in MicroSandbox driver; it does not
+apply to an external provider merely named `microsandbox`.
+
+For deliberate compatibility use, `builtin:microsandbox` explicitly selects the
+deprecated implementation:
+
+```sh
+devsy provider add builtin:microsandbox --name legacy-microsandbox --use=false
+```
+
+Adding the external provider does not migrate an installed provider with the same
+name. Existing records retain their source until an explicit `provider set-source`
+operation. See the [runtime rollout decision](/docs/developing-providers/external-runtime-rollout)
+for the tested migration behavior and its compatibility limits.
 
 Use `--name` to add the same provider more than once with different options:
 

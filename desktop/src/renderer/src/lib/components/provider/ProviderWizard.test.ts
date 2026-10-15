@@ -111,7 +111,7 @@ describe("ProviderWizard", () => {
     page.unmount()
   })
 
-  it("keeps the literal Microsandbox source available for the embedded provider", async () => {
+  it("forwards the bare Microsandbox alias to the CLI", async () => {
     const page = renderWizard()
     await fireEvent.input(
       screen.getByPlaceholderText("github.com/org/provider"),

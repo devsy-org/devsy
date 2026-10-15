@@ -20,6 +20,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const currentMicrosandboxSource = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8"
+
 // AddCmd holds the cmd flags.
 type AddCmd struct {
 	*flags.GlobalFlags
@@ -177,7 +179,11 @@ func (cmd *AddCmd) resolveAddSource(
 		return resolvedAddSource{}, fmt.Errorf("specify either a URL or path, " +
 			"e.g. devsy provider add https://path/to/my/provider.yaml")
 	}
-	raw, source, err := provider.ResolveProvider(ctx, args[0])
+	sourceInput := args[0]
+	if sourceInput == provider.MicrosandboxDriver {
+		sourceInput = currentMicrosandboxSource
+	}
+	raw, source, err := provider.ResolveProvider(ctx, sourceInput)
 	if err != nil {
 		return resolvedAddSource{}, err
 	}

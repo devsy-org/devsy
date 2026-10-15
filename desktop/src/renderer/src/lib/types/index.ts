@@ -81,6 +81,7 @@ export interface Provider {
   options?: Record<string, ProviderOption>
   optionGroups?: ProviderOptionGroup[]
   isDefault?: boolean
+  deprecated?: boolean
   status?: ProviderStatus
   state?: {
     initialized?: boolean

@@ -19,9 +19,10 @@ import (
 var ErrNoWorkspaceFound = errors.New("no workspace found")
 
 type ProviderWithOptions struct {
-	Config *provider.ProviderConfig `json:"config,omitempty"`
-	State  *config.ProviderConfig   `json:"state,omitempty"`
-	Status provider.InitState       `json:"status,omitempty"`
+	Config     *provider.ProviderConfig `json:"config,omitempty"`
+	State      *config.ProviderConfig   `json:"state,omitempty"`
+	Status     provider.InitState       `json:"status,omitempty"`
+	Deprecated bool                     `json:"deprecated,omitempty"`
 }
 
 type ProviderParams struct {
@@ -66,6 +67,8 @@ func LoadAllProviders(
 	}
 
 	for name, entry := range retProviders {
+		entry.Deprecated = entry.Config != nil &&
+			entry.Config.Agent.Driver == provider.MicrosandboxDriver
 		status, err := provider.ResolveInitState(devsyConfig.DefaultContext, name, entry.State)
 		if err != nil {
 			log.Warnf("error resolving init state for provider %s: %v", name, err)
