@@ -23,12 +23,14 @@ import (
 
 const (
 	helperModeEnv   = "DEVSY_TEST_DIAL_STDIO_MODE"
+	helperEchoMode  = "echo"
+	helperHangMode  = "hang"
 	shortShutdown   = 150 * time.Millisecond
 	boundedInterval = 5 * time.Second
 )
 
 var helperModes = map[string]func(){
-	"echo": func() { _, _ = io.Copy(os.Stdout, os.Stdin) },
+	helperEchoMode: func() { _, _ = io.Copy(os.Stdout, os.Stdin) },
 	"fail": func() {
 		_, _ = fmt.Fprintln(os.Stderr, "daemon unreachable")
 		os.Exit(3)
@@ -37,7 +39,7 @@ var helperModes = map[string]func(){
 		_, _ = fmt.Fprintln(os.Stderr, "auth failed for hunter2-token")
 		os.Exit(4)
 	},
-	"hang": func() { time.Sleep(time.Minute) },
+	helperHangMode: func() { time.Sleep(time.Minute) },
 	"lingering": func() {
 		_ = os.Stdout.Close()
 		time.Sleep(time.Minute)
@@ -324,6 +326,25 @@ func (s *StdioTransportSuite) TestSubprocessFailureSurfacesStderr() {
 	s.Require().Error(err)
 	s.Contains(err.Error(), "daemon unreachable")
 	s.Contains(err.Error(), "exit status 3")
+}
+
+func (s *StdioTransportSuite) TestCloseReleasesStderrPipe() {
+	for _, mode := range []string{helperEchoMode, "fail", helperHangMode} {
+		s.Run(mode, func() {
+			_, conn := dial(s, mode)
+			stderr, ok := conn.stderr.(*os.File)
+			s.Require().True(ok)
+			if mode == helperEchoMode {
+				s.Require().NoError(conn.CloseWrite())
+			}
+			if mode != helperHangMode {
+				_, _ = io.ReadAll(conn)
+			}
+			s.Require().NoError(conn.Close())
+			_, err := stderr.Stat()
+			s.ErrorIs(err, os.ErrClosed, "stderr must be closed before Close returns")
+		})
+	}
 }
 
 func (s *StdioTransportSuite) TestStderrTailIsRedacted() {

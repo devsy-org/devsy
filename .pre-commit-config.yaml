@@ -46,9 +46,9 @@ repos:
     rev: v2.5.13
     hooks:
       - id: biome-format
-        exclude: '^(\.github/actions/|\.vscode/|sites/|examples/|e2e/framework/specreport/testdata/)'
+        exclude: '^(\.github/actions/|\.vscode/|sites/|examples/)'
       - id: biome-ci
-        exclude: '^(\.github/actions/|\.vscode/|sites/|examples/|e2e/framework/specreport/testdata/)'
+        exclude: '^(\.github/actions/|\.vscode/|sites/|examples/)'
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:

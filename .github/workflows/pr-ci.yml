@@ -34,6 +34,7 @@ jobs:
               - 'hack/provider_update_ci/**'
               - 'hack/run-managed-policy-e2e.sh'
               - '.github/workflows/pr-ci.yml'
+              - '.github/workflows/docker-buildkit-windows.yml'
               - 'hack/licenses/**'
               - 'hack/podman_ci/**'
               - 'THIRD_PARTY_LICENSES.md'
@@ -114,6 +115,9 @@ jobs:
           fi
 
           printf '%s\n' "$packages" | xargs go test -race -short
+
+      - name: test E2E runtime helpers
+        run: go test -race -count=1 ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
 
       - name: test Compose UID expectation matrix
         shell: bash
@@ -234,32 +238,6 @@ jobs:
         with:
           name: devsy-ci-podman-${{ steps.os.outputs.runner_os }}
           path: ${{ runner.temp }}/devsy-ci-podman*
-
-      - name: test devsy-ci
-        run: go test ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
-
-      - name: build devsy-ci
-        shell: bash
-        env:
-          CGO_ENABLED: 0
-        run: |
-          OUT_DIR="${RUNNER_TEMP}/devsy-ci-dist"
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            OUT_DIR="${OUT_DIR//\\//}"
-          fi
-          mkdir -p "$OUT_DIR"
-          OUT="$OUT_DIR/devsy-ci"
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            OUT="${OUT}.exe"
-          fi
-          go build -trimpath -o "$OUT" ./e2e/cmd/devsy-ci
-
-      - name: upload devsy-ci
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: devsy-ci-${{ steps.os.outputs.runner_os }}
-          path: ${{ runner.temp }}/devsy-ci-dist/devsy-ci*
-          if-no-files-found: error
 
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
@@ -906,16 +884,6 @@ jobs:
             test-timeout: 900s
             job-timeout-minutes: 20
 
-          - label: docker-internal-buildkit
-            runner: windows-latest
-            runtime-profile: docker-wsl-ssh
-            free-disk-space: false
-            install-kind: false
-            requires-secret: false
-            test-timeout: 900s
-            job-timeout-minutes: 25
-            expected-spec-count: 6
-
           - label: up-docker-wsl
             runner: windows-latest
             free-disk-space: false
@@ -999,13 +967,6 @@ jobs:
           name: devsy-ci-podman-${{ steps.os.outputs.runner_os }}
           path: ${{ runner.temp }}/devsy-ci-podman/
 
-      - name: download devsy-ci helper
-        if: matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: devsy-ci-${{ steps.os.outputs.runner_os }}
-          path: ${{ runner.temp }}/devsy-ci-bin/
-
       - name: download CLI artifacts
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -1048,24 +1009,6 @@ jobs:
           fi
           ls -R ./bin/
 
-      - name: prepare devsy-ci helper
-        if: matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
-        shell: bash
-        run: |
-          DIR="${RUNNER_TEMP}/devsy-ci-bin"
-          BIN="devsy-ci"
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            DIR="${DIR//\\//}"
-            BIN="devsy-ci.exe"
-          fi
-          test -f "$DIR/$BIN" || { echo "missing $DIR/$BIN"; ls -R "$DIR"; exit 1; }
-          chmod +x "$DIR/$BIN"
-          "$DIR/$BIN" docker-wsl setup --help > /dev/null
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            DIR="$(cygpath -w "$DIR")"
-          fi
-          echo "$DIR" >> "$GITHUB_PATH"
-
       - name: generate uuid
         if: matrix.install-kind == true && runner.os != 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         id: uuid
@@ -1081,24 +1024,6 @@ jobs:
         with:
           path: ${{ runner.temp }}/podman.msi
           key: ${{ runner.os }}-${{ runner.arch }}-podman-v5.8.2
-
-      - name: setup WSL2 Ubuntu (docker-wsl-ssh)
-        if: matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
-        uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
-        with:
-          distribution: Ubuntu-24.04
-          use-cache: true
-
-      - name: configure Docker WSL SSH profile
-        if: matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
-        shell: pwsh
-        timeout-minutes: 15
-        run: |
-          devsy-ci docker-wsl setup `
-            --distribution Ubuntu-24.04 `
-            --timeout 4m `
-            --state-file "${{ runner.temp }}\devsy-ci\docker-wsl-state.json"
-          if ($LASTEXITCODE -ne 0) { throw "devsy-ci docker-wsl setup failed with exit code $LASTEXITCODE" }
 
       - name: install podman (Windows)
         if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
@@ -1302,7 +1227,7 @@ jobs:
           PY
 
       - name: run test
-        if: (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true') && matrix.runtime-profile != 'docker-wsl-ssh'
+        if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
         shell: bash
         working-directory: ./e2e
         env:
@@ -1346,67 +1271,14 @@ jobs:
               ./e2e.test.exe -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" -ginkgo.fail-on-empty -ginkgo.flake-attempts="${FLAKE_ATTEMPTS}" --ginkgo.label-filter="${{ matrix.label }}"
           fi
 
-      - name: run test (docker-wsl-ssh)
-        if: matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
-        shell: bash
-        working-directory: ./e2e
-        env:
-          GH_USERNAME: ${{ github.repository_owner }}
-          GH_ACCESS_TOKEN: ${{ github.token }}
-          GH_CREDENTIAL_USERNAME: x-access-token
-          TEST_TIMEOUT: ${{ matrix.test-timeout }}
-          EXPECTED_SPECS: ${{ matrix.expected-spec-count }}
-          # A pipe with no daemon behind it: the build must reach the provider's
-          # SSH daemon, never the process default (issue #1469).
-          DOCKER_HOST: npipe:////./pipe/devsy-ci-no-daemon
-          DOCKER_CONTEXT: ""
-        run: |
-          report="${{ matrix.label }}-report.json"
-          ./e2e.test.exe -test.v -ginkgo.v -test.timeout "${TEST_TIMEOUT}" \
-            -ginkgo.fail-on-empty -ginkgo.flake-attempts=1 \
-            --ginkgo.label-filter="${{ matrix.label }}" --ginkgo.json-report="$report"
-          python - "$report" "${EXPECTED_SPECS}" <<'PY'
-          import json
-          import sys
-
-          suite = json.load(open(sys.argv[1], encoding="utf-8"))[0]
-          want = int(sys.argv[2])
-          assert suite["SuiteSucceeded"] is True, "suite failed"
-          passed = [
-              spec for spec in suite["SpecReports"]
-              if spec.get("LeafNodeType") == "It" and spec.get("State") == "passed"
-          ]
-          assert len(passed) == want, f"expected {want} passed specs, found {len(passed)}"
-          PY
-
-      - name: upload docker-wsl diagnostics
-        if: always() && matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: e2e-diagnostics-${{ matrix.label }}
-          path: |
-            e2e/${{ matrix.label }}-report.json
-            ${{ runner.temp }}/devsy-ci/docker-wsl-diagnostics.log
-          if-no-files-found: warn
-
-      - name: tear down Docker WSL SSH profile
-        if: always() && matrix.runtime-profile == 'docker-wsl-ssh' && runner.os == 'Windows'
-        shell: pwsh
-        timeout-minutes: 3
-        run: |
-          $ci = Get-Command devsy-ci -CommandType Application -ErrorAction SilentlyContinue
-          if (-not $ci) {
-            Write-Host "::warning::devsy-ci is unavailable, so no docker-wsl state was created and nothing was cleaned up; relying on runner disposal"
-            return
-          }
-          & $ci.Source docker-wsl cleanup `
-            --state-file "${{ runner.temp }}\devsy-ci\docker-wsl-state.json" `
-            --timeout 2m
-          if ($LASTEXITCODE -ne 0) { throw "devsy-ci docker-wsl cleanup failed with exit code $LASTEXITCODE" }
-
       - name: verify docker is installed
         if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         run: docker --version && docker ps
+
+  docker-buildkit-windows:
+    needs: [changes, build-cli]
+    if: needs.changes.outputs.go == 'true'
+    uses: ./.github/workflows/docker-buildkit-windows.yml
 
   ci-success:
     name: CI Success
@@ -1424,6 +1296,7 @@ jobs:
       - integration-tests-unprivileged
       - integration-tests
       - integration-tests-microsandbox
+      - docker-buildkit-windows
     steps:
       - name: Check required jobs
         run: |
@@ -1462,5 +1335,7 @@ jobs:
           check_result "integration-tests-unprivileged" "${{ needs.integration-tests-unprivileged.result }}" true || status=1
           check_result "integration-tests" "${{ needs.integration-tests.result }}" true || status=1
           check_result "integration-tests-microsandbox" "${{ needs.integration-tests-microsandbox.result }}" true || status=1
+
+          check_result "docker-buildkit-windows" "${{ needs.docker-buildkit-windows.result }}" true || status=1
 
           exit "$status"

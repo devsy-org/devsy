@@ -13,6 +13,7 @@ type Code string
 const (
 	CodeConfigInvalid         Code = "CI_CONFIG_INVALID"
 	CodeProfileUnsupported    Code = "CI_PROFILE_UNSUPPORTED"
+	CodeGinkgoReportInvalid   Code = "CI_GINKGO_REPORT_INVALID"
 	CodeDockerWSLDistroGone   Code = "CI_DOCKER_WSL_DISTRO_MISSING"
 	CodeDockerWSLInstall      Code = "CI_DOCKER_WSL_INSTALL_FAILED"
 	CodeDockerWSLDaemon       Code = "CI_DOCKER_WSL_DAEMON_NOT_READY"

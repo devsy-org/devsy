@@ -34,9 +34,10 @@ ginkgo
 
 #### CI helpers
 
-The Windows `docker-internal-buildkit` job provisions Docker Engine in WSL2,
-reached over SSH, with `devsy-ci docker-wsl setup` (`e2e/cmd/devsy-ci`). The
-logic lives in `e2e/framework`:
+The reusable `docker-buildkit-windows.yml` workflow runs the native Windows
+transport tests and the `docker-internal-buildkit` regression specs. It provisions
+Docker Engine in WSL2, reached over SSH, with `devsy-ci docker-wsl setup`
+(`e2e/cmd/devsy-ci`). The logic lives in `e2e/framework`:
 
 | Package | Responsibility |
 | --- | --- |
@@ -48,3 +49,8 @@ Their unit tests need no Docker, WSL or network:
 ```bash
 go test ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
 ```
+
+Ginkgo executes the specs directly. `devsy-ci check-report` checks its JSON
+report: all six BuildKit specs must pass on their first attempt, with no
+selected skips, dry run or programmatic focus. Teardown runs on success and
+failure, before the report and non-secret diagnostics are uploaded.

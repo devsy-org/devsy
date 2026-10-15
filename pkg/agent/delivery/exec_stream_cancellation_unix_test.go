@@ -234,6 +234,13 @@ func TestExecStreamAttemptCancellationOwnsSource(t *testing.T) {
 				select {
 				case cause := <-canceled:
 					require.ErrorIs(t, cause, testCase.cause)
+				case <-call.done:
+					select {
+					case cause := <-canceled:
+						require.ErrorIs(t, cause, testCase.cause)
+					default:
+						t.Fatalf("delivery returned before attempt cancellation: %v", call.err)
+					}
 				case <-time.After(execStreamCancellationTestBound):
 					t.Fatal("actual attempt cancellation was not observed")
 				}

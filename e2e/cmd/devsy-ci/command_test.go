@@ -19,5 +19,5 @@ func (s *CommandSuite) TestRootCommandSurface() {
 	for _, c := range root.Commands() {
 		names = append(names, c.Name())
 	}
-	s.ElementsMatch([]string{"docker-wsl"}, names)
+	s.ElementsMatch([]string{"docker-wsl", reportCommandName}, names)
 }

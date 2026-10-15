@@ -13,6 +13,6 @@ func newRootCommand(deps *runenv.Dependencies) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(dockerwsl.NewCommand(deps))
+	root.AddCommand(dockerwsl.NewCommand(deps), newReportCommand(deps))
 	return root
 }

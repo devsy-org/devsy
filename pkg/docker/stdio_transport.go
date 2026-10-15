@@ -346,6 +346,7 @@ func (c *stdioConn) pumpStdin() {
 
 func (c *stdioConn) pumpStderr() {
 	defer close(c.stderrDone)
+	defer func() { _ = c.stderr.Close() }()
 	_, _ = io.Copy(c.stderrTail, c.stderr)
 }
 
