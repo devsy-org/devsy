@@ -109,6 +109,27 @@ func TestLaunchRejectsBatchScript(t *testing.T) {
 	require.ErrorContains(t, err, "batch script")
 }
 
+func TestLaunchExitCode259DoesNotMeanRunning(t *testing.T) {
+	launched, err := launchDialStdio(helperInvocation(t, helperHangMode).launchSpec())
+	require.NoError(t, err)
+	proc, ok := launched.proc.(*jobProcess)
+	require.True(t, ok)
+	t.Cleanup(func() {
+		_ = proc.KillTree()
+		_ = proc.Release()
+		closeAll(launched.stdin, launched.stdout, launched.stderr)
+	})
+
+	require.True(t, processRunning(proc.PID()))
+	require.NoError(t, windows.TerminateJobObject(proc.job, 259))
+	event, err := windows.WaitForSingleObject(proc.proc, 5000)
+	require.NoError(t, err)
+	require.Equal(t, uint32(windows.WAIT_OBJECT_0), event)
+	require.ErrorIs(t, proc.Wait(), exitStatusError(259))
+	// The launcher retains its handles, keeping the exited PID available.
+	require.False(t, processRunning(proc.PID()))
+}
+
 func TestLaunchMissingExecutableFailsWithoutProcess(t *testing.T) {
 	_, err := launchDialStdio(launchSpec{path: "devsy-no-such-docker-binary"})
 	require.Error(t, err)

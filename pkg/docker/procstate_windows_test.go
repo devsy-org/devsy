@@ -8,12 +8,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const stillActive = 259 // STILL_ACTIVE exit code
-
 // processRunning reports whether pid is a live process.
 func processRunning(pid int) bool {
 	h, err := windows.OpenProcess(
-		windows.PROCESS_QUERY_LIMITED_INFORMATION,
+		windows.SYNCHRONIZE,
 		false,
 		uint32(pid), //nolint:gosec // pid fits uint32
 	)
@@ -22,9 +20,9 @@ func processRunning(pid int) bool {
 		return errors.Is(err, windows.ERROR_ACCESS_DENIED)
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
-	var code uint32
-	if err := windows.GetExitCodeProcess(h, &code); err != nil {
+	event, err := windows.WaitForSingleObject(h, 0)
+	if err != nil {
 		return true
 	}
-	return code == stillActive
+	return event != windows.WAIT_OBJECT_0
 }
