@@ -235,6 +235,22 @@ describe("provider job lifecycle over IPC", () => {
     expect(providerJobs.get("docker")?.activity).toBe("installing")
   })
 
+  it("adds and initializes the external Microsandbox preset without selecting a default", async () => {
+    const { cli, providerJobs } = setup()
+    const source = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8"
+
+    await invoke("provider_add", { name: "microsandbox", source })
+    await invoke("provider_init", { name: "microsandbox" })
+
+    expect(cli.runStreaming.mock.calls.map(([args]) => args)).toEqual([
+      ["provider", "add", source, "--use=false", "--name", "microsandbox"],
+      ["provider", "init", "microsandbox"],
+    ])
+    expect(cli.run).not.toHaveBeenCalled()
+    expect(cli.runRaw).not.toHaveBeenCalled()
+    expect(providerJobs.get("microsandbox")).toBeUndefined()
+  })
+
   it("releases an abandoned job so the card stops spinning", async () => {
     const { providerJobs } = setup(() => ({ lines: [], code: 0 }))
 

@@ -1,10 +1,10 @@
 ---
 title: External MicroSandbox Runtime Rollout Decision
 sidebar_label: Runtime Rollout Decision
-description: Evidence and conditions for a future fresh-install source change to the external MicroSandbox provider.
+description: Fresh Desktop provider selection, existing-provider migration, and external MicroSandbox runtime evidence.
 ---
 
-**Status: proposed and gated.** The external provider is validated for the covered Linux/KVM scenarios, but the fresh-install choice has not changed. Existing internal providers continue to use the embedded MicroSandbox driver. A reviewed Desktop preset change can select the published source for new installations after these documented compatibility and evidence boundaries are accepted.
+**Status: fresh Desktop preset selects the published provider.** The Microsandbox preset installs the pinned external source for a new provider while retaining the name `microsandbox`. Existing internal providers continue to use the embedded MicroSandbox driver until an explicit source migration. The runtime evidence remains limited to the covered Linux/KVM scenarios.
 
 ## Current host and runtime contract
 
@@ -22,16 +22,16 @@ The registry cases exercise the published provider against an owned TLS registry
 
 The separate Windows provider-update job exercises Go archive and provider-update tests; it is not evidence of a MicroSandbox VM running on Windows. Native provider/VM evidence is Linux/amd64 with KVM only.
 
-## Proposed fresh-install change
+## Fresh Desktop installation
 
-Change only the Desktop Microsandbox preset to install the pinned source [`github.com/devsy-org/devsy-provider-microsandbox@v0.1.8`](https://github.com/devsy-org/devsy-provider-microsandbox/releases/tag/v0.1.8), while retaining the provider name `microsandbox`. The existing Desktop setup path uses `provider add ... --use=false`; this preserves its current default-provider behavior. The explicit embedded source alias `microsandbox` remains available, as does the embedded manifest for parity tests and compatibility with existing internal provider records.
+The Desktop Microsandbox preset installs the pinned source [`github.com/devsy-org/devsy-provider-microsandbox@v0.1.8`](https://github.com/devsy-org/devsy-provider-microsandbox/releases/tag/v0.1.8), while retaining the provider name `microsandbox`. The existing Desktop setup path uses `provider add ... --use=false`; this preserves its current default-provider behavior. The explicit embedded source alias `microsandbox` remains available, as does the embedded manifest for parity tests and compatibility with existing internal provider records.
 
-This proposal is fresh-install only. Existing records change source only through the supported `provider set-source` command. Changing the embedded manifest does not migrate those records. If initialization fails after a source change is committed, the new source remains selected and the provider records `InitError`; the command does not promise rollback. The running and stopped migration cases provide evidence for the tested successful transition, not for rollback after arbitrary failures.
+This choice applies only to a new provider. The wizard refuses an existing provider name before installation; it does not replace or migrate that record. Other presets and custom names retain their behavior, and entering `microsandbox` as a custom source explicitly chooses the embedded provider. Existing records change source only through the supported `provider set-source` command. Loading an internal provider refreshes its embedded Exec blocks, not its stored driver or binaries. If initialization fails after a source change is committed, the new source remains selected and the provider records `InitError`; the command does not promise rollback. The running and stopped migration cases provide evidence for the tested successful transition, not for rollback after arbitrary failures.
 
-## Limits and decision conditions
+## Evidence and compatibility limits
 
 The performance artifact from run 38628263920 records one Linux/amd64 hosted run with SDK v1.6.0 and provider v0.1.8. It observed fresh and reused `up` wall times of 13.504s and 6.335s. Four direct/supervised/supervised/direct probe runs collected one first sample and 100 warm `Info` and `Find` samples each; all 808 launches were reaped. The artifact marks `cold_cache_measured=false`. These are observations, not thresholds, cold-start results, or evidence that supervision improves performance. No process pool is proposed.
 
 Other provider-supported host profiles remain untested here. Upstream requires Apple Silicon on macOS, KVM on Linux, and WHP on Windows; this campaign does not claim runtime parity on those other hosts. The registry tests do not cover every proxy, Docker daemon/context/socket, credential-store, or temp-directory configuration. Neither the built-in driver nor the external provider guarantees removal of every effect after a failed or interrupted create; use a fresh `Find` and explicit cleanup where recovery is needed. The exact native VM artifacts surviving a particular interruption remain unproven.
 
-The source-migration review and merge gates are complete. A fresh-install preset change remains a separate reviewed implementation and must preserve these platform, performance, environment, and recovery limits. Keep the embedded provider and existing records intact until the explicit migration path and compatibility window are accepted.
+The source-migration review and merge gates are complete. The fresh Desktop selection preserves these platform, performance, environment, and recovery limits. The embedded source alias, manifest, built-in implementation and explicit built-in parity fixture remain available for existing records and deliberate embedded installs; this change removes none of them.
