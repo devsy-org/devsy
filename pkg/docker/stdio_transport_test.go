@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	dockerclient "github.com/docker/docker/client"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -449,6 +450,41 @@ func (s *StdioTransportSuite) TestClientPingsAndUsesInvocationEnv() {
 	info, err := client.Info(ctx)
 	s.Require().NoError(err)
 	s.Equal("ssh://provider-host", info.Name)
+}
+
+func (s *StdioTransportSuite) TestClientHonorsInvocationAPIVersion() {
+	const processPin = "1.39"
+	for _, testCase := range []struct {
+		name, processVersion, providerVersion, want string
+		overrideProvider                            bool
+	}{
+		{name: "process pin", processVersion: processPin, want: processPin},
+		{name: "provider pin", processVersion: processPin, providerVersion: "1.40", want: "1.40", overrideProvider: true},
+		{name: "provider clears pin", processVersion: processPin, want: "1.41", overrideProvider: true},
+		{name: "no pin negotiates", want: "1.41"},
+	} {
+		s.Run(testCase.name, func() {
+			s.T().Setenv(dockerclient.EnvOverrideAPIVersion, testCase.processVersion)
+			exe, err := os.Executable()
+			s.Require().NoError(err)
+			env := []string{helperModeEnv + "=daemon"}
+			if testCase.overrideProvider {
+				env = append(env, dockerclient.EnvOverrideAPIVersion+"="+testCase.providerVersion)
+			}
+			invocation, err := NewDockerInvocation(
+				&DockerHelper{DockerCommand: exe, Environment: env},
+			)
+			s.Require().NoError(err)
+			s.T().Setenv(dockerclient.EnvOverrideAPIVersion, "1.38")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			client, err := NewClientWithInvocation(ctx, invocation)
+			s.Require().NoError(err)
+			defer func() { s.NoError(client.Close()) }()
+			s.Equal(testCase.want, client.ClientVersion())
+		})
+	}
 }
 
 func (s *StdioTransportSuite) TestClientRejectsEmptyInvocation() {

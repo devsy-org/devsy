@@ -42,7 +42,9 @@ func NewClientWithInvocation(ctx context.Context, invocation *DockerInvocation) 
 
 	// Host is unused: every connection goes through the stdio dialer.
 	transport := NewStdioTransport(invocation)
+	apiVersion, _ := invocation.Lookup(dockerclient.EnvOverrideAPIVersion)
 	cli, err := dockerclient.NewClientWithOpts(
+		dockerclient.WithVersion(apiVersion),
 		dockerclient.WithHTTPClient(&http.Client{
 			Transport: &http.Transport{DialContext: transport.DialContext},
 		}),
