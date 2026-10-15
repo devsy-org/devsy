@@ -30,7 +30,8 @@ This choice applies only to a new provider. The wizard refuses an existing provi
 
 Deprecation is reported separately from initialization and default-provider state.
 It follows the selected built-in driver, including custom-named installations and
-custom provider manifests using that driver. An external provider named
+custom provider manifests. Driver templates use saved provider options; listing
+does not run option commands to determine the value. An external provider named
 `microsandbox` is not deprecated. No compatibility flag, automatic migration or
 runtime removal is introduced in this deprecation stage; those require their own
 announced transition and validation.

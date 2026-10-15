@@ -11,6 +11,7 @@ import (
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/options/resolver"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
@@ -67,8 +68,11 @@ func LoadAllProviders(
 	}
 
 	for name, entry := range retProviders {
-		entry.Deprecated = entry.Config != nil &&
-			entry.Config.Agent.Driver == provider.MicrosandboxDriver
+		if entry.Config != nil {
+			options := provider.ToOptions(nil, nil, devsyConfig.ProviderOptions(entry.Config.Name))
+			driver := resolver.ResolveDefaultValue(entry.Config.Agent.Driver, options)
+			entry.Deprecated = driver == provider.MicrosandboxDriver
+		}
 		status, err := provider.ResolveInitState(devsyConfig.DefaultContext, name, entry.State)
 		if err != nil {
 			log.Warnf("error resolving init state for provider %s: %v", name, err)
