@@ -25,18 +25,31 @@ jobs:
         with:
           filters: |
             go:
+              # Go sources and root entry point.
               - '**/*.go'
+              - 'main.go'
+              # Go trees. Directory-level so embeds (providers/*/provider.yaml,
+              # pkg/inject/inject.sh, pkg/dockerfile/test_Dockerfile) and test
+              # fixtures are covered without enumerating files.
+              - 'cmd/**'
+              - 'pkg/**'
+              - 'providers/**'
+              - 'hack/**'
+              - 'e2e/**'
+              - '**/testdata/**'
+              # Non-Go file read by hack/install_script/install_test.go.
+              - 'sites/docs-devsy-sh/public/install.sh'
+              # Module, toolchain, lint, and build config.
               - 'go.mod'
               - 'go.sum'
+              - 'mise.toml'
+              - 'mise.lock'
+              - '.golangci.yaml'
+              - '.golangci-version'
               - '.goreleaser.yml'
-              - 'e2e/**'
-              - 'hack/microsandbox/**'
-              - 'hack/provider_update_ci/**'
-              - 'hack/run-managed-policy-e2e.sh'
-              - '.github/workflows/pr-ci.yml'
-              - 'hack/licenses/**'
-              - 'hack/podman_ci/**'
+              - 'Taskfile.yml'
               - 'THIRD_PARTY_LICENSES.md'
+              - '.github/workflows/pr-ci.yml'
 
   precommit:
     name: Pre-commit
