@@ -312,6 +312,77 @@ describe("provider job lifecycle over IPC", () => {
     },
   )
 
+  it.each(["provider_update", "provider_update_streaming"])(
+    "%s rejects a non-string version before opening a job",
+    async (command) => {
+      const { providerJobs, cli } = setup()
+
+      await expect(
+        invoke(command, { name: "docker", tag: { version: "v1" } }),
+      ).rejects.toThrow("Provider version tag must be a string.")
+
+      expect(providerJobs.get("docker")).toBeUndefined()
+      expect(cli.runRaw).not.toHaveBeenCalled()
+      expect(cli.runStreaming).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(["provider_update", "provider_update_streaming"])(
+    "%s treats an empty optional version as source reload",
+    async (command) => {
+      const seen: string[][] = []
+      const { providerJobs } = setup((cliArgs) => {
+        seen.push(cliArgs)
+        return { lines: [], code: 0 }
+      })
+
+      await invoke(command, { name: "docker", tag: "" })
+      await vi.waitFor(() => expect(providerJobs.get("docker")).toBeUndefined())
+
+      expect(seen).toEqual([
+        ["provider", "set-source", "docker", "--use=false"],
+        ["provider", "init", "docker"],
+      ])
+    },
+  )
+
+  it.each([undefined, "", 42])(
+    "provider_set_version rejects invalid required tag %s before opening a job",
+    async (tag) => {
+      const { providerJobs, cli } = setup()
+
+      await expect(
+        invoke("provider_set_version", { name: "docker", tag }),
+      ).rejects.toThrow(
+        tag === undefined || tag === ""
+          ? "A provider version tag is required."
+          : "Provider version tag must be a string.",
+      )
+
+      expect(providerJobs.get("docker")).toBeUndefined()
+      expect(cli.runStreaming).not.toHaveBeenCalled()
+    },
+  )
+
+  it("passes valid Git ref syntax as a separate set-version argument", async () => {
+    const seen: string[][] = []
+    const { providerJobs } = setup((cliArgs) => {
+      seen.push(cliArgs)
+      return { lines: [], code: 0 }
+    })
+
+    await invoke("provider_set_version", {
+      name: "docker",
+      tag: "release/candidate+1",
+    })
+    await vi.waitFor(() => expect(providerJobs.get("docker")).toBeUndefined())
+
+    expect(seen).toEqual([
+      ["provider", "set-source", "docker", "--version", "release/candidate+1"],
+      ["provider", "init", "docker"],
+    ])
+  })
+
   it("records the failure when the update's chained init fails", async () => {
     const { providerJobs } = setup((cliArgs) => ({
       lines: [],
