@@ -245,6 +245,77 @@ describe("ProviderSheet", () => {
     unmount()
   })
 
+  it("saves an explicitly selected empty enum value from an unset option", async () => {
+    providerOptions.mockResolvedValue({
+      STORED_MODE: {
+        name: "STORED_MODE",
+        value: "",
+        enum: [
+          { value: "", displayName: "Stored empty" },
+          { value: "fast", displayName: "Fast" },
+        ],
+      },
+      DEFAULT_MODE: {
+        name: "DEFAULT_MODE",
+        default: "",
+        enum: [
+          { value: "", displayName: "Default empty" },
+          { value: "safe", displayName: "Safe" },
+        ],
+      },
+      UNSET_MODE: {
+        name: "UNSET_MODE",
+        enum: [
+          { value: "", displayName: "No extra settings" },
+          { value: "fast", displayName: "Fast" },
+        ],
+      },
+      UNTOUCHED_MODE: {
+        name: "UNTOUCHED_MODE",
+        enum: [
+          { value: "", displayName: "Also unset" },
+          { value: "safe", displayName: "Safe" },
+        ],
+      },
+    })
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    try {
+      await flushAsync()
+
+      expect(screen.getByText("Stored empty")).toBeDefined()
+      expect(screen.getByText("Default empty")).toBeDefined()
+      const trigger = screen.getAllByText("-- Select --")[0].closest("button")
+      expect(trigger).not.toBeNull()
+      Object.defineProperty(trigger, "hasPointerCapture", {
+        value: () => false,
+      })
+      await fireEvent.pointerDown(trigger as HTMLButtonElement, {
+        button: 0,
+        pointerType: "mouse",
+      })
+      await fireEvent.pointerUp(
+        screen.getByRole("option", { name: "No extra settings" }),
+        { button: 0, pointerType: "mouse" },
+      )
+
+      const save = screen.getByRole("button", { name: "Save" })
+      expect(save.hasAttribute("disabled")).toBe(false)
+      await fireEvent.click(save)
+
+      await waitFor(() => {
+        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("ssh", {
+          STORED_MODE: "",
+          DEFAULT_MODE: "",
+          UNSET_MODE: "",
+        })
+      })
+    } finally {
+      unmount()
+    }
+  })
+
   it("shows deprecation guidance from the provider flag, not its name", async () => {
     const deprecated = render(ProviderSheet, {
       props: {

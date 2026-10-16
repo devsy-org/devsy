@@ -39,7 +39,11 @@ import {
 } from "$lib/stores/providerVersions.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
-import { normalizeProviderOptionEnums } from "$lib/utils/provider-option-enum.js"
+import {
+  initialProviderOptionValue,
+  normalizeProviderOptionEnums,
+  providerOptionEnumHasValue,
+} from "$lib/utils/provider-option-enum.js"
 import { isCommandSuccess } from "$lib/utils/log-parser.js"
 import { providerStatus } from "$lib/utils/provider-status.js"
 import type {
@@ -164,8 +168,15 @@ function openVersionSwitch(tag: string) {
 }
 
 let isDirty = $derived.by(() => {
-  for (const key of Object.keys(optionValues)) {
-    if (optionValues[key] !== (initialValues[key] ?? "")) return true
+  const keys = new Set([
+    ...Object.keys(optionValues),
+    ...Object.keys(initialValues),
+  ])
+  for (const key of keys) {
+    const hasCurrentValue = Object.hasOwn(optionValues, key)
+    const hadInitialValue = Object.hasOwn(initialValues, key)
+    if (hasCurrentValue !== hadInitialValue) return true
+    if (optionValues[key] !== initialValues[key]) return true
   }
   return false
 })
@@ -208,16 +219,13 @@ async function loadOptions() {
     const raw = await providerOptions(provider.name)
     options = raw as unknown as Record<string, ProviderOption>
 
+    const values: Record<string, string> = {}
     for (const [key, opt] of Object.entries(options)) {
-      if (opt.value != null) {
-        optionValues[key] = String(opt.value)
-      } else if (opt.default != null) {
-        optionValues[key] = String(opt.default)
-      } else {
-        optionValues[key] = ""
-      }
+      const value = initialProviderOptionValue(opt)
+      if (value !== undefined) values[key] = value
     }
-    initialValues = { ...optionValues }
+    optionValues = values
+    initialValues = { ...values }
   } catch (err) {
     toasts.error(`Failed to load options: ${extractErrorMessage(err)}`)
   } finally {
@@ -444,7 +452,9 @@ async function handleSaveOptions() {
   try {
     const values: Record<string, string> = {}
     for (const [key, val] of Object.entries(optionValues)) {
-      if (val !== "") values[key] = val
+      if (val !== "" || providerOptionEnumHasValue(options[key]?.enum, "")) {
+        values[key] = val
+      }
     }
     await providerSetOptions(provider.name, values)
     const updated = await providerList()
@@ -671,15 +681,18 @@ async function handleSaveOptions() {
                 {@const selectedOption = enumOptions.find((item) => item.value === optionValues[key])}
                 <Select.Root
                   type="single"
-                  value={optionValues[key] ?? ""}
-                  onValueChange={(v) => (optionValues[key] = v)}
+                  value={selectedOption?.selectValue ?? ""}
+                  onValueChange={(selectValue) => {
+                    const selected = enumOptions.find((item) => item.selectValue === selectValue)
+                    if (selected) optionValues[key] = selected.value
+                  }}
                 >
                   <Select.Trigger class="w-full h-9">
-                    <span>{selectedOption?.label || optionValues[key] || "-- Select --"}</span>
+                    <span>{selectedOption ? selectedOption.label : optionValues[key] || "-- Select --"}</span>
                   </Select.Trigger>
                   <Select.Content>
                     {#each enumOptions as option, index (index)}
-                      <Select.Item value={option.value} label={option.label}>
+                      <Select.Item value={option.selectValue} label={option.label}>
                         {option.label}
                       </Select.Item>
                     {/each}

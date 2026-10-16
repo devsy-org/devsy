@@ -143,6 +143,78 @@ describe("ProviderWizard", () => {
     page.unmount()
   })
 
+  it("saves a selected empty enum value while leaving an unset enum omitted", async () => {
+    providerOptions.mockResolvedValue({
+      TOKEN: { name: "TOKEN", displayName: "Token", required: true },
+      STORED_MODE: {
+        name: "STORED_MODE",
+        value: "",
+        enum: [
+          { value: "", displayName: "Stored empty" },
+          { value: "fast", displayName: "Fast" },
+        ],
+      },
+      DEFAULT_MODE: {
+        name: "DEFAULT_MODE",
+        default: "",
+        enum: [
+          { value: "", displayName: "Default empty" },
+          { value: "safe", displayName: "Safe" },
+        ],
+      },
+      UNSET_MODE: {
+        name: "UNSET_MODE",
+        enum: [
+          { value: "", displayName: "No extra settings" },
+          { value: "fast", displayName: "Fast" },
+        ],
+      },
+      UNTOUCHED_MODE: {
+        name: "UNTOUCHED_MODE",
+        enum: [
+          { value: "", displayName: "Also unset" },
+          { value: "safe", displayName: "Safe" },
+        ],
+      },
+    })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(await screen.findByText("Stored empty")).toBeDefined()
+    expect(screen.getByText("Default empty")).toBeDefined()
+    const modeTrigger = screen.getAllByText("Select...")[0]
+    const modeButton = modeTrigger.closest("button")
+    expect(modeButton).not.toBeNull()
+    Object.defineProperty(modeButton, "hasPointerCapture", {
+      value: () => false,
+    })
+    await fireEvent.pointerDown(modeButton as HTMLButtonElement, {
+      button: 0,
+      pointerType: "mouse",
+    })
+    await fireEvent.pointerUp(
+      await screen.findByRole("option", { name: "No extra settings" }),
+      { button: 0, pointerType: "mouse" },
+    )
+    await fireEvent.input(screen.getByRole("textbox"), {
+      target: { value: "secret" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitFor(() => {
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("docker", {
+        TOKEN: "secret",
+        STORED_MODE: "",
+        DEFAULT_MODE: "",
+        UNSET_MODE: "",
+      })
+    })
+    page.unmount()
+  })
+
   it("keeps ordinary presets using their name as the source", async () => {
     const page = renderWizard()
     await fireEvent.click(

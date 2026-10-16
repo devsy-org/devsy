@@ -28,7 +28,11 @@ import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import { isCommandSuccess } from "$lib/utils/log-parser.js"
-import { normalizeProviderOptionEnums } from "$lib/utils/provider-option-enum.js"
+import {
+  initialProviderOptionValue,
+  normalizeProviderOptionEnums,
+  providerOptionEnumHasValue,
+} from "$lib/utils/provider-option-enum.js"
 import type { ProviderOption } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 
@@ -246,15 +250,12 @@ async function loadProviderOptions(): Promise<boolean> {
   try {
     const raw = await providerOptions(providerName)
     options = raw as unknown as Record<string, ProviderOption>
+    const values: Record<string, string> = {}
     for (const [key, opt] of Object.entries(options)) {
-      if (opt.value != null) {
-        optionValues[key] = String(opt.value)
-      } else if (opt.default != null) {
-        optionValues[key] = String(opt.default)
-      } else {
-        optionValues[key] = ""
-      }
+      const value = initialProviderOptionValue(opt)
+      if (value !== undefined) values[key] = value
     }
+    optionValues = values
     return true
   } catch (err) {
     error = `Failed to load options: ${extractErrorMessage(err)}`
@@ -274,7 +275,9 @@ async function handleConfigure() {
   try {
     const values: Record<string, string> = {}
     for (const [key, val] of Object.entries(optionValues)) {
-      if (val !== "") values[key] = val
+      if (val !== "" || providerOptionEnumHasValue(options[key]?.enum, "")) {
+        values[key] = val
+      }
     }
     await providerSetOptions(providerName, values)
   } catch (err) {
@@ -490,15 +493,19 @@ function handleDone() {
                     {@const selectedOption = enumOptions.find((item) => item.value === optionValues[key])}
                     <Select.Root
                       type="single"
-                      value={optionValues[key] ?? ""}
-                      onValueChange={(v) => { optionValues[key] = v ?? ""; error = "" }}
+                      value={selectedOption?.selectValue ?? ""}
+                      onValueChange={(selectValue) => {
+                        const selected = enumOptions.find((item) => item.selectValue === selectValue)
+                        if (selected) optionValues[key] = selected.value
+                        error = ""
+                      }}
                     >
                       <Select.Trigger class="w-full">
-                        {selectedOption?.label || optionValues[key] || "Select..."}
+                        {selectedOption ? selectedOption.label : optionValues[key] || "Select..."}
                       </Select.Trigger>
                       <Select.Content>
                         {#each enumOptions as option, index (index)}
-                          <Select.Item value={option.value} label={option.label}>
+                          <Select.Item value={option.selectValue} label={option.label}>
                             {option.label}
                           </Select.Item>
                         {/each}
