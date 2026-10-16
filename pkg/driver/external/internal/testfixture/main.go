@@ -44,6 +44,9 @@ func main() {
 }
 
 func serve(mode, state string, delay time.Duration, nonce string) {
+	if mode == "stream-startup-stderr" {
+		_, _ = fmt.Fprintln(os.Stderr, "runtime startup diagnostic "+os.Getenv("FIXTURE_TOKEN"))
+	}
 	if mode == fake.CrashBeforeHandshake {
 		os.Exit(22)
 	}

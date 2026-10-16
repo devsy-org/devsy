@@ -427,6 +427,20 @@ func (r *runner) attemptPreStartDelivery(
 	p *resolveParams,
 	buildInfo *config.BuildInfo,
 ) {
+	strategy := r.newAgentDelivery()
+	switch strategy.Phase() {
+	case delivery.PhasePostStart:
+		log.Debug("agent delivery scheduled for post-start")
+		return
+	case delivery.PhasePreStart:
+	default:
+		log.Debugf(
+			"pre-start agent delivery skipped for unsupported phase %s",
+			strategy.Phase(),
+		)
+		return
+	}
+
 	runOptions, err := r.buildRunOptionsForDelivery(
 		mergedConfig,
 		p.substitutionContext,
@@ -434,10 +448,14 @@ func (r *runner) attemptPreStartDelivery(
 		len(p.options.SecretsMount) > 0,
 	)
 	if err != nil {
+		log.Debugf(
+			"pre-start agent delivery could not prepare run options; will use post-start: %v",
+			err,
+		)
 		return
 	}
-	if preStartErr := r.deliverPreStart(ctx, runOptions); preStartErr != nil {
-		log.Debugf("pre-start delivery skipped or failed, will use post-start: %v", preStartErr)
+	if preStartErr := r.deliverPreStart(ctx, strategy, runOptions); preStartErr != nil {
+		log.Debugf("pre-start agent delivery failed; will use post-start: %v", preStartErr)
 	}
 }
 
@@ -729,12 +747,11 @@ func (r *runner) buildRunOptionsForDelivery(
 	return r.getRunOptions(mergedConfig, substitutionContext, buildInfo, secretsMountRequired)
 }
 
-func (r *runner) deliverPreStart(ctx context.Context, runOptions *driver.RunOptions) error {
-	strategy := r.newAgentDelivery()
-	if strategy.Phase() != delivery.PhasePreStart {
-		return fmt.Errorf("strategy phase is %s, not pre-start", strategy.Phase())
-	}
-
+func (r *runner) deliverPreStart(
+	ctx context.Context,
+	strategy delivery.AgentDelivery,
+	runOptions *driver.RunOptions,
+) error {
 	binarySource, err := r.newBinarySource()
 	if err != nil {
 		return fmt.Errorf("create binary source: %w", err)

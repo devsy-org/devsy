@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util/goleaktest"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestMain(m *testing.M) {
@@ -182,6 +185,147 @@ func TestRunPairContextCancellation(t *testing.T) {
 	if err != nil {
 		t.Errorf("RunPair() error = %v, want nil", err)
 	}
+}
+
+func TestRunPairLogsSuccessfulCompletionWithoutCancellationNoise(t *testing.T) {
+	logs := capturePipeBridgeLogs(t)
+	pb, err := NewPipeBridge()
+	if err != nil {
+		t.Fatalf("NewPipeBridge() error = %v", err)
+	}
+	defer pb.Close()
+
+	if err := pb.RunPair(
+		context.Background(),
+		func(ctx context.Context, _ *os.File, _ *os.File) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+		func(context.Context, *os.File, *os.File) error { return nil },
+	); err != nil {
+		t.Fatalf("RunPair() error = %v, want nil", err)
+	}
+
+	entries := logs.All()
+	if len(entries) != 1 || entries[0].Message != "pipe bridge completed successfully" {
+		t.Fatalf("successful completion logs = %+v, want one plain success message", entries)
+	}
+}
+
+func TestRunPairLogsUnclassifiedTunnelFailureDetails(t *testing.T) {
+	logs := capturePipeBridgeLogs(t)
+	pb, err := NewPipeBridge()
+	if err != nil {
+		t.Fatalf("NewPipeBridge() error = %v", err)
+	}
+	defer pb.Close()
+
+	tunnelErr := errors.New("tunnel failed after handler completion")
+	err = pb.RunPair(
+		context.Background(),
+		func(ctx context.Context, _ *os.File, _ *os.File) error {
+			<-ctx.Done()
+			return tunnelErr
+		},
+		func(context.Context, *os.File, *os.File) error { return nil },
+	)
+	if err != nil {
+		t.Fatalf("RunPair() error = %v, want unchanged nil classification", err)
+	}
+
+	entries := logs.FilterMessageSnippet("tunnel_err=tunnel failed after handler completion")
+	if entries.Len() != 1 {
+		t.Fatalf("unclassified tunnel failure logs = %+v, want tunnel error details", logs.All())
+	}
+}
+
+func TestRunPairLogsHandlerFailureDetails(t *testing.T) {
+	logs := capturePipeBridgeLogs(t)
+	pb, err := NewPipeBridge()
+	if err != nil {
+		t.Fatalf("NewPipeBridge() error = %v", err)
+	}
+	defer pb.Close()
+
+	handlerErr := errors.New("handler failed")
+	err = pb.RunPair(
+		context.Background(),
+		func(ctx context.Context, _ *os.File, _ *os.File) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+		func(context.Context, *os.File, *os.File) error { return handlerErr },
+	)
+	if !errors.Is(err, handlerErr) {
+		t.Fatalf("RunPair() error = %v, want wrapped handler failure", err)
+	}
+
+	entries := logs.FilterMessageSnippet("handler_err=handler failed")
+	if entries.Len() != 1 {
+		t.Fatalf("handler failure logs = %+v, want handler error details", logs.All())
+	}
+}
+
+func TestRunPairLogsTunnelFailureDetails(t *testing.T) {
+	logs := capturePipeBridgeLogs(t)
+	pb, err := NewPipeBridge()
+	if err != nil {
+		t.Fatalf("NewPipeBridge() error = %v", err)
+	}
+	defer pb.Close()
+
+	tunnelErr := errors.New("dial failed")
+	err = pb.RunPair(
+		context.Background(),
+		func(context.Context, *os.File, *os.File) error { return tunnelErr },
+		func(_ context.Context, stdout *os.File, _ *os.File) error {
+			_, err := stdout.Read(make([]byte, 1))
+			return err
+		},
+	)
+	if !errors.Is(err, tunnelErr) {
+		t.Fatalf("RunPair() error = %v, want wrapped tunnel failure", err)
+	}
+
+	entries := logs.FilterMessageSnippet("tunnel_err=dial failed")
+	if entries.Len() != 1 {
+		t.Fatalf("tunnel failure logs = %+v, want tunnel error details", logs.All())
+	}
+}
+
+func TestRunPairLogsParentCancellationDetails(t *testing.T) {
+	logs := capturePipeBridgeLogs(t)
+	pb, err := NewPipeBridge()
+	if err != nil {
+		t.Fatalf("NewPipeBridge() error = %v", err)
+	}
+	defer pb.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	err = pb.RunPair(
+		ctx,
+		func(ctx context.Context, _ *os.File, _ *os.File) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+		func(context.Context, *os.File, *os.File) error {
+			cancel()
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("RunPair() error = %v, want nil for classified shutdown", err)
+	}
+
+	entries := logs.FilterMessageSnippet("parent_err=context canceled")
+	if entries.Len() != 1 {
+		t.Fatalf("parent cancellation logs = %+v, want cancellation details", logs.All())
+	}
+}
+
+func capturePipeBridgeLogs(t *testing.T) *observer.ObservedLogs {
+	t.Helper()
+	return log.InitTestObserved(t, zapcore.DebugLevel)
 }
 
 func TestRunPairPipesClosedAfterReturn(t *testing.T) {
