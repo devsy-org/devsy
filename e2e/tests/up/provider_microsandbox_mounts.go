@@ -11,8 +11,15 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+)
+
+const (
+	microsandboxSecretAttachCommand = "attach"
+	microsandboxSecretDeleteCommand = "delete"
+	microsandboxSecretSetCommand    = "set"
 )
 
 var _ = ginkgo.Describe("microsandbox mount parity",
@@ -38,8 +45,38 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 				})
 
 				ginkgo.It(
-					"shares writable binds and rejects writes to read-only binds",
+					"preserves bind policies and private secret tmpfs mounts",
 					func(ctx context.Context) {
+						framework.UseFileSecretsBackend()
+						const (
+							terminalFixtureName  = "MSB_TERMINAL_SECRET"
+							terminalFixtureValue = "terminal-secret-fixture"
+							fileFixtureName      = "MSB_FILE_SECRET"
+							fileFixtureValue     = "file-secret-fixture"
+						)
+						storeMicrosandboxSecret(ctx, f, terminalFixtureName, terminalFixtureValue)
+						storeMicrosandboxSecret(ctx, f, fileFixtureName, fileFixtureValue)
+						_, err := f.ExecCommandOutput(
+							ctx,
+							[]string{
+								secretCmd,
+								microsandboxSecretAttachCommand,
+								terminalFixtureName,
+							},
+						)
+						framework.ExpectNoError(err)
+						ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
+							cleanupCtx, cancel := context.WithTimeout(
+								context.WithoutCancel(cleanupCtx), time.Minute,
+							)
+							defer cancel()
+							_, err := f.ExecCommandOutput(
+								cleanupCtx,
+								[]string{secretCmd, "detach", terminalFixtureName},
+							)
+							return err
+						})
+
 						writable, readonly := ginkgo.GinkgoT().TempDir(), ginkgo.GinkgoT().TempDir()
 						for _, dir := range []string{writable, readonly} {
 							framework.ExpectNoError(
@@ -51,19 +88,30 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 							)
 						}
 						writeMicrosandboxMountConfig(workspace, []string{
-							"type=bind,source=" + writable + ",target=/parity-write",
-							"type=bind,source=" + readonly + ",target=/parity-read,readonly",
+							"type=bind,source=" + writable + ",target=/parity-write,consistency=cached",
+							"type=bind,source=" + readonly + ",target=/parity-read,readonly,consistency=delegated",
 						})
 						framework.ExpectNoError(
-							f.DevsyUp(ctx, workspace, "--devcontainer", ".devcontainer.json"),
+							f.DevsyUp(
+								ctx,
+								workspace,
+								"--devcontainer",
+								".devcontainer.json",
+								"--workspace-mount-consistency",
+								"consistent",
+								"--secret",
+								fileFixtureName+",type=mount,target=microsandbox-secret",
+							),
 						)
 						out, err := f.DevsySSHOnce(
 							ctx,
 							workspace,
-							"cat /parity-write/from-host /parity-read/from-host && printf 'guest\\n' > /parity-write/from-guest",
+							"cat /parity-write/from-host /parity-read/from-host && "+
+								"printf 'guest\\n' > /parity-write/from-guest",
 						)
 						framework.ExpectNoError(err)
 						gomega.Expect(out).To(gomega.Equal("host\nhost\n"))
+						assertMicrosandboxSecretMounts(ctx, f, workspace)
 						data, err := os.ReadFile(
 							filepath.Join(writable, "from-guest"),
 						) // #nosec G304 -- test-owned bind directory
@@ -221,6 +269,46 @@ func assertMicrosandboxPersistentMounts(
 			"test ! -e /parity-scratch/marker && cat /parity-volume/marker")
 	framework.ExpectNoError(err)
 	gomega.Expect(out).To(gomega.Equal("persistent\n"))
+}
+
+func storeMicrosandboxSecret(
+	ctx context.Context,
+	f *framework.Framework,
+	name, value string,
+) {
+	_, err := f.ExecCommandOutput(
+		ctx,
+		[]string{secretCmd, microsandboxSecretSetCommand, name, names.Flag(names.Value), value},
+	)
+	framework.ExpectNoError(err)
+	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
+		cleanupCtx, cancel := context.WithTimeout(
+			context.WithoutCancel(cleanupCtx), time.Minute,
+		)
+		defer cancel()
+		_, err := f.ExecCommandOutput(
+			cleanupCtx,
+			[]string{secretCmd, microsandboxSecretDeleteCommand, name},
+		)
+		return err
+	})
+}
+
+func assertMicrosandboxSecretMounts(ctx context.Context, f *framework.Framework, workspace string) {
+	out, err := f.DevsySSHOnce(ctx, workspace, `
+		test "$(stat -f -c %T /run/devsy/secrets-env)" = tmpfs &&
+		test "$(stat -c '%a:%U' /run/devsy/secrets-env)" = "700:$(id -un)" &&
+		test "$(stat -c '%a:%U' /run/devsy/secrets-env/MSB_TERMINAL_SECRET)" = "600:$(id -un)" &&
+		test "$(cat /run/devsy/secrets-env/MSB_TERMINAL_SECRET)" = 'terminal-secret-fixture' &&
+		test "$MSB_TERMINAL_SECRET" = 'terminal-secret-fixture' &&
+		test "$(stat -f -c %T /run/secrets)" = tmpfs &&
+		test "$(stat -c %a /run/secrets)" = 755 &&
+		test "$(stat -c '%a:%U' /run/secrets/microsandbox-secret)" = "600:$(id -un)" &&
+		test "$(cat /run/secrets/microsandbox-secret)" = 'file-secret-fixture' &&
+		printf 'secrets-ok\n'
+	`)
+	framework.ExpectNoError(err)
+	gomega.Expect(out).To(gomega.Equal("secrets-ok\n"))
 }
 
 func microsandboxMountCommand(ctx context.Context, args ...string) {
