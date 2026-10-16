@@ -411,10 +411,15 @@ func resultEnvelopeFrom(state *task.State) config2.ResultEnvelope {
 	if state.Result == nil {
 		return config2.ResultEnvelope{}
 	}
+	var workspaceFolder string
+	if state.Result.SubstitutionContext != nil {
+		workspaceFolder = state.Result.SubstitutionContext.ContainerWorkspaceFolder
+	}
 	return config2.ResultEnvelope{
-		ContainerID: config2.GetContainerID(state.Result),
-		RemoteUser:  config2.GetRemoteUser(state.Result),
-		Warnings:    state.Result.HostWarnings,
-		Recovery:    state.Result.RecoveryContainer,
+		ContainerID:           config2.GetContainerID(state.Result),
+		RemoteUser:            config2.GetRemoteUser(state.Result),
+		RemoteWorkspaceFolder: workspaceFolder,
+		Warnings:              state.Result.HostWarnings,
+		Recovery:              state.Result.RecoveryContainer,
 	}
 }
