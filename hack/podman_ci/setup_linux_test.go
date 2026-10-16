@@ -38,16 +38,6 @@ func (r *fakeRunner) Run(_ context.Context, spec CommandSpec) CommandResult {
 	return successResult("")
 }
 
-func successResult(out string) CommandResult {
-	code := 0
-	return CommandResult{ExitCode: &code, Stdout: out}
-}
-
-func failureResult(out string) CommandResult {
-	code := 1
-	return CommandResult{ExitCode: &code, Stderr: out}
-}
-
 func commandHas(r *fakeRunner, match func(recordedCommand) bool) bool {
 	return slices.ContainsFunc(r.calls, match)
 }
