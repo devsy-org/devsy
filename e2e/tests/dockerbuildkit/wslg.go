@@ -53,6 +53,10 @@ var _ = ginkgo.Describe("WSLg environment transport", ginkgo.Label("wslg"), func
 					"WSLG_DISTRO="+target.Distro,
 					"-o",
 					"WSLG_USER="+target.User,
+					// Streaming the development agent over the runner's WSL SSH
+					// connection can exceed the ordinary 20-second injection budget.
+					"-o",
+					"AGENT_INJECT_TIMEOUT=120",
 				),
 			)
 			framework.ExpectNoError(f.DevsyContextUse(ctx, "wslg-test"))
@@ -137,7 +141,10 @@ var _ = ginkgo.Describe("WSLg environment transport", ginkgo.Label("wslg"), func
 				To(gomega.BeEmpty())
 
 			framework.ExpectNoError(f.DevsyStop(ctx, dir))
-			_, stderr, err := f.ExecCommandCapture(ctx, []string{"up", dir, "--ide", "none"})
+			_, stderr, err := f.ExecCommandCapture(
+				ctx,
+				[]string{"workspace", "up", dir, "--ide", "none"},
+			)
 			gomega.Expect(err).To(gomega.HaveOccurred())
 			gomega.Expect(stderr).To(gomega.ContainSubstring("--recreate"))
 			framework.ExpectNoError(f.DevsyUp(ctx, dir, "--ide", "none", "--recreate"))
