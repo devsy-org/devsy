@@ -48,6 +48,25 @@ provider from `github.com/devsy-org/devsy-provider-microsandbox`. The Desktop
 MicroSandbox preset selects the same source. To install a specific release, append
 a tag, for example `github.com/devsy-org/devsy-provider-microsandbox@v0.1.8`.
 
+MicroSandbox also requires its own `msb` CLI on the machine running the workspace.
+Install it using the [official MicroSandbox instructions](https://github.com/superradcompany/microsandbox#install-the-cli).
+The npm package named `msb` is an unrelated microservices tool; the MicroSandbox
+npm package is named `microsandbox`. Installing the Devsy provider does not install
+the MicroSandbox engine.
+
+For a macOS Desktop installation, the official installer places the command in
+`~/.local/bin`; the MicroSandbox provider also checks that location and
+`~/.microsandbox/bin` when `msb` is absent from its inherited `PATH`. Check
+`msb --version` to confirm that the command is the MicroSandbox CLI. A terminal's
+Node version-manager installation and a GUI application's search path can differ.
+
+The provider definition and its workspace runtime files are prepared separately.
+Adding a provider saves its configuration. When a workspace starts, Devsy prepares
+the runtime executable for that workspace's host and verifies its checksum. A
+runtime download at this stage does not mean the provider is being added again;
+already verified workspace files are reused. The downloaded Devsy adapter still
+requires the separately installed MicroSandbox CLI.
+
 Existing built-in MicroSandbox installations are listed as **Deprecated built-in**
 in Desktop and marked deprecated by `devsy provider list`. Their names, defaults,
 options and existing workspaces are unchanged. The label also applies to custom

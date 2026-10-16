@@ -236,6 +236,7 @@ describe("provider job lifecycle over IPC", () => {
   })
 
   it.each([
+    "microsandbox",
     "github.com/devsy-org/devsy-provider-microsandbox",
     "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8",
   ])(

@@ -44,8 +44,6 @@ vi.mock("$lib/stores/toasts.js", () => ({
 
 import ProviderWizard from "./ProviderWizard.svelte"
 
-const microsandboxSource = "github.com/devsy-org/devsy-provider-microsandbox"
-
 function makeProvider(name: string): Provider {
   return {
     name,
@@ -86,9 +84,61 @@ describe("ProviderWizard", () => {
     await waitFor(() => {
       expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
         "microsandbox",
-        microsandboxSource,
+        undefined,
         false,
       )
+    })
+    page.unmount()
+  })
+
+  it("shows structured enum labels and saves their values with defaults", async () => {
+    providerOptions.mockResolvedValue({
+      SIZE: {
+        name: "SIZE",
+        default: "micro",
+        enum: [
+          { value: "micro", displayName: "Micro plan" },
+          { value: "large", displayName: "Large plan" },
+        ],
+      },
+      MODE: {
+        name: "MODE",
+        required: true,
+        enum: [
+          { value: "safe", displayName: "Safe mode" },
+          { value: "fast", displayName: "Fast mode" },
+        ],
+      },
+      ENABLED: { name: "ENABLED", type: "boolean", default: false },
+    })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(await screen.findByText("Micro plan")).toBeDefined()
+    const modeTrigger = screen.getByText("Select...").closest("button")
+    expect(modeTrigger).not.toBeNull()
+    Object.defineProperty(modeTrigger, "hasPointerCapture", {
+      value: () => false,
+    })
+    await fireEvent.pointerDown(modeTrigger as HTMLButtonElement, {
+      button: 0,
+      pointerType: "mouse",
+    })
+    await fireEvent.pointerUp(
+      await screen.findByRole("option", { name: "Fast mode" }),
+      { button: 0, pointerType: "mouse" },
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitFor(() => {
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("docker", {
+        SIZE: "micro",
+        MODE: "fast",
+        ENABLED: "false",
+      })
     })
     page.unmount()
   })
@@ -148,7 +198,7 @@ describe("ProviderWizard", () => {
     await waitFor(() => {
       expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
         "micro-lab",
-        microsandboxSource,
+        "microsandbox",
         false,
       )
     })

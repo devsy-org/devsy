@@ -28,10 +28,11 @@ import { providers } from "$lib/stores/providers.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
 import { isCommandSuccess } from "$lib/utils/log-parser.js"
+import { normalizeProviderOptionEnums } from "$lib/utils/provider-option-enum.js"
 import type { ProviderOption } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 
-type ProviderPreset = { name: string; description: string; source?: string }
+type ProviderPreset = { name: string; description: string }
 
 const PRESETS: ProviderPreset[] = [
   { name: "docker", description: "Local Docker containers" },
@@ -39,7 +40,6 @@ const PRESETS: ProviderPreset[] = [
   { name: "apple", description: "Apple containers (macOS 26+, Apple silicon)" },
   {
     name: "microsandbox",
-    source: "github.com/devsy-org/devsy-provider-microsandbox",
     description: "Hardware-isolated microVMs",
   },
   { name: "lima", description: "Linux VMs via Lima (macOS)" },
@@ -54,10 +54,6 @@ const PRESETS: ProviderPreset[] = [
   { name: "azure", description: "Microsoft Azure" },
   { name: "digitalocean", description: "DigitalOcean Droplets" },
 ]
-
-function presetSource(preset: ProviderPreset): string {
-  return preset.source ?? preset.name
-}
 
 type Step = "select" | "configure" | "initialize" | "complete"
 type StepState = "pending" | "active" | "complete" | "error"
@@ -206,7 +202,7 @@ async function handleSelect() {
     error = "Provider source is required"
     return
   }
-  const preset = PRESETS.find((item) => presetSource(item) === src)
+  const preset = PRESETS.find((item) => item.name === src)
   const name = customName.trim() || preset?.name || src
   if (nameExists(name)) {
     error = `Provider "${name}" already exists. Choose a different name.`
@@ -392,9 +388,9 @@ function handleDone() {
               <button
                 type="button"
                 class="flex items-center gap-2.5 rounded-lg border p-3 text-left transition-colors hover:bg-accent/50
-                  {source === presetSource(p) ? 'border-primary ring-1 ring-primary' : ''}"
+                  {source === p.name ? 'border-primary ring-1 ring-primary' : ''}"
                 disabled={adding}
-                onclick={() => { source = presetSource(p); customName = "" }}
+                onclick={() => { source = p.name; customName = "" }}
               >
                 <ProviderIcon name={p.name} class="size-6 shrink-0" />
                 <div>
@@ -490,17 +486,21 @@ function handleDone() {
                     <p class="text-xs text-muted-foreground">{opt.description}</p>
                   {/if}
                   {#if opt.enum && opt.enum.length > 0}
+                    {@const enumOptions = normalizeProviderOptionEnums(opt.enum)}
+                    {@const selectedOption = enumOptions.find((item) => item.value === optionValues[key])}
                     <Select.Root
                       type="single"
                       value={optionValues[key] ?? ""}
                       onValueChange={(v) => { optionValues[key] = v ?? ""; error = "" }}
                     >
                       <Select.Trigger class="w-full">
-                        {optionValues[key] || "Select..."}
+                        {selectedOption?.label || optionValues[key] || "Select..."}
                       </Select.Trigger>
                       <Select.Content>
-                        {#each opt.enum as val (val)}
-                          <Select.Item value={val}>{val}</Select.Item>
+                        {#each enumOptions as option, index (index)}
+                          <Select.Item value={option.value} label={option.label}>
+                            {option.label}
+                          </Select.Item>
                         {/each}
                       </Select.Content>
                     </Select.Root>

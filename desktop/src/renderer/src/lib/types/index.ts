@@ -39,6 +39,13 @@ export interface Workspace {
 
 export type OptionValue = string | number | boolean
 
+export interface ProviderOptionEnum {
+  value?: string
+  displayName?: string
+}
+
+export type ProviderOptionEnumValue = string | ProviderOptionEnum
+
 export interface ProviderSource {
   github?: string
   file?: string
@@ -58,7 +65,7 @@ export interface ProviderOption {
   description?: string
   default?: OptionValue
   value?: OptionValue
-  enum?: string[]
+  enum?: ProviderOptionEnumValue[]
   required?: boolean
   hidden?: boolean
   password?: boolean

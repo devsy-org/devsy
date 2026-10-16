@@ -343,6 +343,7 @@ func downloadWorkspaceBinaries(
 		)
 	}
 
+	log.Info("Preparing runtime files for this workspace; the provider is already configured")
 	_, err = provider.DownloadBinaries(ctx, workspaceInfo.Agent.Binaries, binariesDir)
 	if err != nil {
 		return fmt.Errorf(

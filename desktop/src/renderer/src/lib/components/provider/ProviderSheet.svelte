@@ -39,6 +39,7 @@ import {
 } from "$lib/stores/providerVersions.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+import { normalizeProviderOptionEnums } from "$lib/utils/provider-option-enum.js"
 import { isCommandSuccess } from "$lib/utils/log-parser.js"
 import { providerStatus } from "$lib/utils/provider-status.js"
 import type {
@@ -666,17 +667,21 @@ async function handleSaveOptions() {
                 <p class="text-xs text-muted-foreground">{opt.description}</p>
               {/if}
               {#if opt.enum && opt.enum.length > 0}
+                {@const enumOptions = normalizeProviderOptionEnums(opt.enum)}
+                {@const selectedOption = enumOptions.find((item) => item.value === optionValues[key])}
                 <Select.Root
                   type="single"
                   value={optionValues[key] ?? ""}
                   onValueChange={(v) => (optionValues[key] = v)}
                 >
                   <Select.Trigger class="w-full h-9">
-                    <span>{optionValues[key] || "-- Select --"}</span>
+                    <span>{selectedOption?.label || optionValues[key] || "-- Select --"}</span>
                   </Select.Trigger>
                   <Select.Content>
-                    {#each opt.enum as enumVal}
-                      <Select.Item value={enumVal} label={enumVal} />
+                    {#each enumOptions as option, index (index)}
+                      <Select.Item value={option.value} label={option.label}>
+                        {option.label}
+                      </Select.Item>
                     {/each}
                   </Select.Content>
                 </Select.Root>
