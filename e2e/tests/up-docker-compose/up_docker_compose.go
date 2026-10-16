@@ -714,7 +714,7 @@ var _ = ginkgo.Describe(
 						// #nosec G304 -- composePath is inside the test-owned temporary workspace.
 						contents, err := os.ReadFile(composePath)
 						framework.ExpectNoError(err)
-						contents = []byte(
+						contents = []byte("name: renamed-after-creation\n" +
 							strings.ReplaceAll(string(contents), "sleep infinity", "sleep 600"),
 						)
 						framework.ExpectNoError(os.WriteFile(composePath, contents, 0o600))

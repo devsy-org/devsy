@@ -7,9 +7,12 @@ import (
 )
 
 type ImageDetails struct {
-	ID       string
-	Config   ImageDetailsConfig
-	Metadata *ImageDetailsMetadata `json:"Metadata,omitempty"`
+	ID           string
+	OS           string `json:"Os,omitempty"`
+	Architecture string
+	Variant      string
+	Config       ImageDetailsConfig
+	Metadata     *ImageDetailsMetadata `json:"Metadata,omitempty"`
 }
 
 type ImageDetailsMetadata struct {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/containerd/platforms"
 	"github.com/devsy-org/devsy/pkg/compose"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
@@ -19,6 +20,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/dockerfile"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/google/go-containerregistry/pkg/name"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,6 +30,8 @@ import (
 var featureFolderCopyPattern = regexp.MustCompile(
 	`(COPY|ADD)(\s+)\./` + regexp.QuoteMeta(config.DevsyContextFeatureFolder) + `/`,
 )
+
+const composeDefaultPlatformEnv = "DOCKER_DEFAULT_PLATFORM"
 
 // prepareComposeBuildInfo modifies a compose project's devcontainer Dockerfile
 // to ensure it can be extended with features. If an Image is specified instead
@@ -289,7 +293,9 @@ func (r *runner) prepareExtendedComposeBuild(
 // creation plan describes the runtime's platform and immutable image identity.
 func prepareComposeServiceImage(ctx context.Context, params *buildAndExtendParams) error {
 	service := params.composeService
-	details, inspectErr := params.composeHelper.Docker.InspectImage(ctx, service.Image, false)
+	helper := params.composeHelper.Docker
+	platform := composeServicePlatform(service, helper.Environment)
+	details, inspectErr := inspectComposeServiceImage(ctx, helper, service.Image, platform)
 	if inspectErr != nil && !errors.Is(inspectErr, docker.ErrImageNotFound) {
 		return inspectErr
 	}
@@ -302,12 +308,53 @@ func prepareComposeServiceImage(ctx context.Context, params *buildAndExtendParam
 	}
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
-	if err := params.composeHelper.Docker.Pull(ctx, docker.PullOptions{
-		Image: service.Image, Platform: service.Platform, Stdout: writer, Stderr: writer,
+	if err := helper.Pull(ctx, docker.PullOptions{
+		Image: service.Image, Platform: platform, Stdout: writer, Stderr: writer,
 	}); err != nil {
 		return fmt.Errorf("pull compose service image: %w", err)
 	}
-	return nil
+	_, err = inspectComposeServiceImage(ctx, helper, service.Image, platform)
+	return err
+}
+
+func composeServicePlatform(service *composetypes.ServiceConfig, environment []string) string {
+	if service.Platform != "" {
+		return service.Platform
+	}
+	platform := os.Getenv(composeDefaultPlatformEnv)
+	for _, entry := range environment {
+		key, value, _ := strings.Cut(entry, "=")
+		if key == composeDefaultPlatformEnv {
+			platform = value
+		}
+	}
+	return platform
+}
+
+func inspectComposeServiceImage(
+	ctx context.Context,
+	helper *docker.DockerHelper,
+	image, platform string,
+) (*config.ImageDetails, error) {
+	details, err := helper.InspectImage(ctx, image, false)
+	if err != nil || platform == "" {
+		return details, err
+	}
+	requested, err := platforms.Parse(platform)
+	if err != nil {
+		return nil, fmt.Errorf("parse compose service platform: %w", err)
+	}
+	actual := ocispec.Platform{
+		OS: details.OS, Architecture: details.Architecture, Variant: details.Variant,
+	}
+	if !platforms.OnlyStrict(platforms.Normalize(requested)).Match(platforms.Normalize(actual)) {
+		return nil, fmt.Errorf(
+			"compose service image has no cached variant for platform %q: %w",
+			platform,
+			docker.ErrImageNotFound,
+		)
+	}
+	return details, nil
 }
 
 func composeServiceImageNeedsPull(

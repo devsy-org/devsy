@@ -57,6 +57,7 @@ func TestComposeImagePullPolicy(t *testing.T) {
 
 func TestComposeServiceImageResolution(t *testing.T) {
 	const localLatest = "local-base:latest"
+	t.Setenv(composeDefaultPlatformEnv, "")
 	if runtime.GOOS == goosWindows {
 		t.Skip("Docker command fixture requires a POSIX shell")
 	}
@@ -64,7 +65,7 @@ func TestComposeServiceImageResolution(t *testing.T) {
 	// #nosec G306 -- executable test-owned command fixture.
 	require.NoError(t, os.WriteFile(command, []byte(`#!/bin/sh
 case " $* " in
-  *" inspect "*) echo '[{"Id":"sha256:cached-image","Config":{}}]' ;;
+  *" inspect "*) echo '[{"Id":"sha256:cached-image","Os":"linux","Architecture":"amd64","Config":{}}]' ;;
   *" pull "*) exit 47 ;;
   *) exit 48 ;;
 esac
@@ -104,6 +105,125 @@ esac
 				require.ErrorContains(t, err, "pull compose service image")
 			} else {
 				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestComposeServicePlatform(t *testing.T) {
+	t.Setenv(composeDefaultPlatformEnv, platformLinuxAMD64)
+	for _, test := range []struct {
+		name        string
+		service     string
+		environment []string
+		want        string
+	}{
+		{"shell default", "", nil, platformLinuxAMD64},
+		{"provider override", "", []string{composeDefaultPlatformEnv + "=" + platformLinuxARM64}, platformLinuxARM64},
+		{
+			"service override", platformLinuxAMD64,
+			[]string{composeDefaultPlatformEnv + "=" + platformLinuxARM64},
+			platformLinuxAMD64,
+		},
+		{"empty provider override", "", []string{composeDefaultPlatformEnv + "="}, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, composeServicePlatform(
+				&composetypes.ServiceConfig{Platform: test.service}, test.environment,
+			))
+		})
+	}
+}
+
+func TestComposeCachedImagePlatform(t *testing.T) {
+	if runtime.GOOS == goosWindows {
+		t.Skip("Docker command fixture requires a POSIX shell")
+	}
+	t.Setenv(composeDefaultPlatformEnv, "")
+	command := filepath.Join(t.TempDir(), "docker-fixture")
+	// #nosec G306 -- executable test-owned command fixture.
+	require.NoError(t, os.WriteFile(command, []byte(`#!/bin/sh
+case " $* " in
+  *" inspect "*) echo '[{"Id":"sha256:cached-image","Os":"linux","Architecture":"amd64","Config":{}}]' ;;
+  *" pull "*) exit 47 ;;
+  *) exit 48 ;;
+esac
+`), 0o700))
+	for _, test := range []struct {
+		name     string
+		platform string
+		policy   string
+		wantErr  string
+	}{
+		{"matching cache", platformLinuxAMD64, "", ""},
+		{"architecture alias", "linux/x86_64", "", ""},
+		{"wrong platform is pulled", platformLinuxARM64, "", "pull compose service image"},
+		{"never rejects wrong platform", platformLinuxARM64, composetypes.PullPolicyNever, "no cached variant"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			params := &buildAndExtendParams{
+				composeHelper: &compose.ComposeHelper{
+					Docker: &docker.DockerHelper{DockerCommand: command},
+				},
+				composeService: &composetypes.ServiceConfig{
+					Image: exampleBaseImage, Platform: test.platform, PullPolicy: test.policy,
+				},
+				parsedConfig: &config.SubstitutedConfig{Config: &config.DevContainerConfig{}},
+			}
+			err := prepareComposeServiceImage(context.Background(), params)
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestComposePlatformPullIsVerified(t *testing.T) {
+	if runtime.GOOS == goosWindows {
+		t.Skip("Docker command fixture requires a POSIX shell")
+	}
+	t.Setenv(composeDefaultPlatformEnv, "")
+	dir := t.TempDir()
+	command := filepath.Join(dir, "docker-fixture")
+	// #nosec G306 -- executable test-owned command fixture.
+	require.NoError(t, os.WriteFile(command, []byte(`#!/bin/sh
+case " $* " in
+  *" inspect "*)
+    arch=amd64
+    if [ -f "$DEVSY_TEST_PULL_MARKER" ] && [ "$DEVSY_TEST_PULL_UPDATES" = yes ]; then arch=arm64; fi
+    printf '[{"Id":"sha256:cached-image","Os":"linux","Architecture":"%s","Config":{}}]\n' "$arch"
+    ;;
+  *" pull "*)
+    case " $* " in *" --platform linux/arm64 "*) ;; *) exit 48 ;; esac
+    touch "$DEVSY_TEST_PULL_MARKER"
+    ;;
+  *) exit 49 ;;
+esac
+`), 0o700))
+	for _, updates := range []string{"yes", "no"} {
+		t.Run(updates, func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "pulled")
+			params := &buildAndExtendParams{
+				composeHelper: &compose.ComposeHelper{Docker: &docker.DockerHelper{
+					DockerCommand: command,
+					Environment: []string{
+						"DEVSY_TEST_PULL_MARKER=" + marker,
+						"DEVSY_TEST_PULL_UPDATES=" + updates,
+					},
+				}},
+				composeService: &composetypes.ServiceConfig{
+					Image: exampleBaseImage, Platform: platformLinuxARM64,
+				},
+				parsedConfig: &config.SubstitutedConfig{Config: &config.DevContainerConfig{}},
+			}
+			err := prepareComposeServiceImage(context.Background(), params)
+			require.FileExists(t, marker)
+			if updates == "yes" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "no cached variant")
 			}
 		})
 	}

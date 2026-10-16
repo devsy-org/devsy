@@ -202,6 +202,9 @@ func (r *runner) runDockerCompose(
 	if err != nil {
 		return nil, fmt.Errorf("find docker compose: %w", err)
 	}
+	if runParams.options.NoBuild {
+		return r.runResumedDockerCompose(ctx, runParams, composeHelper)
+	}
 
 	projFiles, err := r.dockerComposeProjectFiles(parsedConfig)
 	if err != nil {
@@ -320,6 +323,9 @@ func (r *runner) ensureComposeContainer(
 	options := params.runParams.options
 	composeHelper := params.composeHelper
 	project := params.project
+	if options.NoBuild {
+		return nil, fmt.Errorf("compose restart must use the saved workspace identity")
+	}
 
 	containerDetails, err := composeHelper.FindDevContainer(
 		ctx,
@@ -337,15 +343,7 @@ func (r *runner) ensureComposeContainer(
 		return nil, err
 	}
 	if forceSecretRuntimeRefresh {
-		if options.NoBuild {
-			return nil, fmt.Errorf(
-				"compose workspace requires secure runtime mount migration; rerun workspace up explicitly before connecting",
-			)
-		}
 		log.Info("workspace secrets require secure runtime mounts")
-	}
-	if options.NoBuild {
-		return r.resumeComposeContainer(ctx, params, containerDetails)
 	}
 
 	// container already exists and is running, nothing to do

@@ -245,6 +245,36 @@ func TestComposeResumePreservesSavedInvocation(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestComposeResumeUsesWorkspaceIdentity(t *testing.T) {
+	details := &config.ContainerDetails{
+		ID: testContainerID,
+		Config: config.ContainerDetailsConfig{Labels: map[string]string{
+			pkgconfig.ComposeProjectLabel: composeTestProject,
+			pkgconfig.ComposeServiceLabel: composeSecretTestServiceName,
+		}},
+	}
+	driver := &mockDriver{findResult: details}
+	r := newTestRunner(driver)
+	parsed := &config.SubstitutedConfig{Config: &config.DevContainerConfig{
+		ComposeContainer: config.ComposeContainer{Service: "edited-service"},
+	}}
+	runParams := &runContainerParams{parsedConfig: parsed, options: UpOptions{NoBuild: true}}
+	params, found, err := r.composeResumeTarget(
+		context.Background(),
+		runParams,
+		&compose.ComposeHelper{},
+	)
+	require.NoError(t, err)
+	require.Same(t, details, found)
+	require.Equal(t, composeTestProject, params.project.Name)
+	require.Equal(t, composeSecretTestServiceName, params.runParams.parsedConfig.Config.Service)
+	require.Equal(t, "edited-service", parsed.Config.Service)
+	require.True(t, params.runParams.options.NoBuild)
+	driver.findResult = nil
+	_, _, err = r.composeResumeTarget(context.Background(), runParams, &compose.ComposeHelper{})
+	require.ErrorContains(t, err, "no reusable container")
+}
+
 func composeMetadataError(details *config.ContainerDetails) error {
 	_, err := verifiedComposeContract(details)
 	return err

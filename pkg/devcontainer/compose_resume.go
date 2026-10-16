@@ -5,9 +5,73 @@ import (
 	"fmt"
 	"strings"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/devsy-org/devsy/pkg/compose"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
 )
+
+func (r *runner) runResumedDockerCompose(
+	ctx context.Context,
+	runParams *runContainerParams,
+	helper *compose.ComposeHelper,
+) (*config.Result, error) {
+	params, details, err := r.composeResumeTarget(ctx, runParams, helper)
+	if err != nil {
+		return nil, err
+	}
+	_, refresh, err := r.composeSecretRuntimeOptions(details, runParams.options)
+	if err != nil {
+		return nil, err
+	}
+	if refresh {
+		return nil, fmt.Errorf(
+			"compose workspace requires secure runtime mount migration; rerun workspace up explicitly before connecting",
+		)
+	}
+	started, err := r.resumeComposeContainer(ctx, params, details)
+	if err != nil {
+		return nil, err
+	}
+	return r.finalizeComposeContainer(ctx, params.runParams, params.project, started)
+}
+
+func (r *runner) composeResumeTarget(
+	ctx context.Context,
+	runParams *runContainerParams,
+	helper *compose.ComposeHelper,
+) (*composeContainerParams, *config.ContainerDetails, error) {
+	details, err := r.driver.FindDevContainer(ctx, r.id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("find existing compose workspace: %w", err)
+	}
+	if details == nil {
+		return nil, nil, fmt.Errorf(
+			"compose workspace has no reusable container; rerun workspace up explicitly before connecting",
+		)
+	}
+	project := details.Config.Labels[pkgconfig.ComposeProjectLabel]
+	service := details.Config.Labels[pkgconfig.ComposeServiceLabel]
+	if project == "" || service == "" {
+		return nil, nil, fmt.Errorf(
+			"workspace container has no saved compose identity; rerun workspace up explicitly before connecting",
+		)
+	}
+	// Current Compose files may name a different project. Locate the instance
+	// by workspace ID, then carry its saved identity through start and setup.
+	parsed := *runParams.parsedConfig
+	devcontainer := *parsed.Config
+	devcontainer.Service = service
+	parsed.Config = &devcontainer
+	resumed := *runParams
+	resumed.parsedConfig = &parsed
+	return &composeContainerParams{
+		runParams:     &resumed,
+		composeHelper: helper,
+		project:       &composetypes.Project{Name: project},
+	}, details, nil
+}
 
 // Resume uses start rather than up: Compose must not replace a stopped instance
 // because a source file, image tag, or generated override changed since creation.
