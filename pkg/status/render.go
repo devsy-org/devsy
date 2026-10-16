@@ -37,6 +37,36 @@ func NewReporter(opts ReporterOptions) (Reporter, error) {
 	return newReporter(resolveFormat(opts), opts)
 }
 
+// CLIOptions configures the progress reporter for a CLI command.
+type CLIOptions struct {
+	Format   string
+	Out      io.Writer
+	Prefix   string
+	Pipeline Pipeline
+	Labels   map[Phase]string
+	Envelope func(Event) error
+	Verbose  bool
+}
+
+// NewCLIReporter builds the progress reporter for CLI commands: NewReporter
+// with failure details left to the command boundary, and every event stamped
+// with o.Pipeline.
+func NewCLIReporter(o CLIOptions) (Reporter, error) {
+	r, err := NewReporter(ReporterOptions{
+		Format:                 o.Format,
+		Out:                    o.Out,
+		Prefix:                 o.Prefix,
+		Labels:                 o.Labels,
+		Envelope:               o.Envelope,
+		Verbose:                o.Verbose,
+		SuppressFailureDetails: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ForPipeline(r, o.Pipeline), nil
+}
+
 func resolveFormat(opts ReporterOptions) string {
 	format := opts.Format
 	if format == "" {
