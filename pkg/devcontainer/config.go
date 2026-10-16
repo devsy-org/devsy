@@ -675,6 +675,8 @@ func (r *runner) buildSubstitutionContext(
 		maps.Copy(env, config.ListToObject(options.InitEnv))
 	}
 
+	maps.Copy(env, r.wslgSnapshot.Environment())
+
 	return &config.SubstitutionContext{
 		DevContainerID:           config.DeriveDevContainerID(r.localWorkspaceFolder, configFile),
 		LocalWorkspaceFolder:     r.localWorkspaceFolder,

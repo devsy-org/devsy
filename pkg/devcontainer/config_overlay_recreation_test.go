@@ -308,7 +308,7 @@ func TestComposeTeardownArgsUsesPersistedInvocation(t *testing.T) {
 
 	got, err := r.composeTeardownArgs(context.Background(), "project-name")
 	require.NoError(t, err)
-	require.Equal(t, append([]string{"--project-directory", projectDir}, args...), got)
+	require.Equal(t, append([]string{"--project-directory", projectDir}, args...), got.Args)
 }
 
 func TestComposeTeardownArgsRejectsMalformedInvocation(t *testing.T) {
@@ -359,7 +359,16 @@ func TestRecordComposeInvocationRoundTrip(t *testing.T) {
 	contents := "services:\n  " + composeDevService + ":\n    labels:\n      devsy.overlay.structure: v1:test\n"
 	require.NoError(t, os.WriteFile(overridePath, []byte(contents), 0o600))
 
-	require.NoError(t, recordComposeInvocation(overridePath, service, directory, args))
+	require.NoError(
+		t,
+		recordComposeInvocation(
+			composeInvocationRecord{
+				Path:       overridePath,
+				Service:    service,
+				Invocation: composeInvocation{Version: 1, Directory: directory, Args: args},
+			},
+		),
+	)
 
 	// #nosec G304 -- overridePath was created beneath t.TempDir above.
 	data, err := os.ReadFile(overridePath)

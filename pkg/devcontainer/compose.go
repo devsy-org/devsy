@@ -3,6 +3,7 @@ package devcontainer
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -104,7 +105,14 @@ func (r *runner) composeHelper() (*compose.ComposeHelper, error) {
 		)
 	}
 
-	return composeDriver.ComposeHelper()
+	helper, err := composeDriver.ComposeHelper()
+	if err != nil {
+		return nil, err
+	}
+	if r.wslgSnapshot != nil {
+		return helper.WithInvocationEnvironment(r.wslgSnapshot.Environment()), nil
+	}
+	return helper, nil
 }
 
 func (r *runner) stopDockerCompose(ctx context.Context, projectName string) error {
@@ -118,7 +126,7 @@ func (r *runner) stopDockerCompose(ctx context.Context, projectName string) erro
 		return fmt.Errorf("get original Compose invocation: %w", err)
 	}
 
-	err = composeHelper.Stop(ctx, projectName, args)
+	err = composeHelper.WithInvocationEnvironment(args.WSLgEnv).Stop(ctx, projectName, args.Args)
 	if err != nil {
 		return err
 	}
@@ -141,7 +149,8 @@ func (r *runner) deleteDockerCompose(
 		return fmt.Errorf("get original Compose invocation: %w", err)
 	}
 
-	err = composeHelper.Remove(ctx, projectName, args, removeVolumes)
+	err = composeHelper.WithInvocationEnvironment(args.WSLgEnv).
+		Remove(ctx, projectName, args.Args, removeVolumes)
 	if err != nil {
 		return err
 	}
@@ -234,10 +243,11 @@ func (r *runner) loadComposeProject(
 	projFiles composeProjectFiles,
 ) (*composetypes.Project, error) {
 	log.Debugf("Loading docker compose project %+v", projFiles.composeFiles)
-	project, err := compose.LoadDockerComposeProject(
+	project, err := compose.LoadDockerComposeProjectWithEnv(
 		ctx,
 		projFiles.composeFiles,
 		projFiles.envFiles,
+		r.wslgSnapshot.Environment(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("load docker compose project: %w", err)
@@ -327,6 +337,9 @@ func (r *runner) ensureComposeContainer(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find dev container: %w", err)
+	}
+	if err := r.checkWSLgReuse(containerDetails, options.Recreate); err != nil {
+		return nil, err
 	}
 	effectiveOptions, forceSecretRuntimeRefresh, err := r.composeSecretRuntimeOptions(
 		containerDetails,
@@ -961,12 +974,20 @@ func (r *runner) buildComposeOverrideArgs(
 
 	if overrideComposeUpFilePath != "" {
 		composeGlobalArgs = append(composeGlobalArgs, "-f", overrideComposeUpFilePath)
-		if err := recordComposeInvocation(
-			overrideComposeUpFilePath,
-			start.parsedConfig.Config.Service,
-			start.project.WorkingDir,
-			composeGlobalArgs,
-		); err != nil {
+		invocation := composeInvocation{
+			Version:   1,
+			Directory: start.project.WorkingDir,
+			Args:      composeGlobalArgs,
+		}
+		if replay := r.wslgReplay(); replay != nil {
+			invocation.Version = 2
+			invocation.WSLg = replay
+		}
+		if err := recordComposeInvocation(composeInvocationRecord{
+			Path:       overrideComposeUpFilePath,
+			Service:    start.parsedConfig.Config.Service,
+			Invocation: invocation,
+		}); err != nil {
 			return nil, err
 		}
 	}
@@ -994,11 +1015,18 @@ func (r *runner) generateComposeUpOverride(
 		return "", err
 	}
 
-	additionalLabels := map[string]string{
+	additionalLabels, err := r.wslgLabels()
+	if err != nil {
+		return "", err
+	}
+	if additionalLabels == nil {
+		additionalLabels = map[string]string{}
+	}
+	maps.Copy(additionalLabels, map[string]string{
 		metadata.ImageMetadataLabel: extendResult.metadataLabel,
 		config.UserLabel:            imageDetails.Config.User,
 		overlayStructureLabel:       structuralSignature(start.parsedConfig.Config),
-	}
+	})
 	overrideComposeUpFilePath, err := r.extendedDockerComposeUp(&composeUpParams{
 		parsedConfig:         start.parsedConfig,
 		mergedConfig:         mergedConfig,

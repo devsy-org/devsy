@@ -140,7 +140,7 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.go == 'true'
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
@@ -153,6 +153,8 @@ jobs:
         run: >-
           go test -race -count=1 -v -timeout 5m ./pkg/docker
           -run '^(TestInvocationSuite|TestProviderDaemonOverrides.*|TestStdioTransportSuite|TestLaunch.*|TestEnvBlock.*)$'
+      - name: test WSLg boundaries on native Windows
+        run: go test -race -count=1 -timeout 5m ./cmd/workspace/up ./pkg/wslg ./pkg/compose ./pkg/devcontainer -run '^TestWSLg'
       - name: test E2E runtime helpers
         run: go test -race -count=1 -timeout 5m ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
 

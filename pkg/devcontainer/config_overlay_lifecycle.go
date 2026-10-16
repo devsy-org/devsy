@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode/utf8"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/compose"
@@ -138,6 +140,9 @@ func (r *runner) checkOverlayRecreation(
 	r.overlayExisting = nil
 	details, err := r.findOverlayExisting(ctx)
 	if err != nil {
+		return err
+	}
+	if err := r.checkWSLgReuse(details, options.Recreate); err != nil {
 		return err
 	}
 	if details == nil ||
@@ -278,27 +283,37 @@ func (r *runner) validateOverlayDockerfileAssets(parsed *config.SubstitutedConfi
 }
 
 type composeInvocation struct {
-	Version   int      `json:"version"`
-	Args      []string `json:"args"`
-	Directory string   `json:"directory"`
+	Version   int         `json:"version"`
+	Args      []string    `json:"args"`
+	Directory string      `json:"directory"`
+	WSLg      *wslgReplay `json:"wslg,omitempty"`
 }
 
-func (r *runner) composeTeardownArgs(ctx context.Context, projectName string) ([]string, error) {
+type composeTeardownInvocation struct {
+	Args    []string
+	WSLgEnv map[string]string
+}
+
+func (r *runner) composeTeardownArgs(
+	ctx context.Context,
+	projectName string,
+) (*composeTeardownInvocation, error) {
 	details, err := r.driver.FindDevContainer(ctx, r.id)
 	if err != nil {
 		return nil, err
 	}
-	args, found, err := persistedComposeTeardownArgs(details, projectName)
+	invocation, found, err := persistedComposeTeardownArgs(details, projectName)
 	if found || err != nil {
-		return args, err
+		return invocation, err
 	}
-	return r.legacyComposeTeardownArgs(ctx, projectName)
+	args, err := r.legacyComposeTeardownArgs(ctx, projectName)
+	return &composeTeardownInvocation{Args: args}, err
 }
 
 func persistedComposeTeardownArgs(
 	details *config.ContainerDetails,
 	projectName string,
-) ([]string, bool, error) {
+) (*composeTeardownInvocation, bool, error) {
 	if details == nil || details.Config.Labels[pkgconfig.ComposeProjectLabel] != projectName {
 		return nil, false, nil
 	}
@@ -307,14 +322,18 @@ func persistedComposeTeardownArgs(
 		return nil, false, nil
 	}
 	var invocation composeInvocation
-	if err := json.Unmarshal([]byte(value), &invocation); err != nil {
-		return nil, true, fmt.Errorf("read persisted Compose invocation: %w", err)
+	if err := decodeWSLgMetadata(value, &invocation); err != nil {
+		return nil, true, fmt.Errorf("invalid persisted Compose invocation")
 	}
 	if err := validateComposeInvocation(invocation); err != nil {
 		return nil, true, err
 	}
 	args := append([]string{"--project-directory", invocation.Directory}, invocation.Args...)
-	return args, true, nil
+	result := &composeTeardownInvocation{Args: args}
+	if invocation.WSLg != nil {
+		result.WSLgEnv = invocation.WSLg.Environment
+	}
+	return result, true, nil
 }
 
 func validateComposeInvocation(invocation composeInvocation) error {
@@ -325,17 +344,30 @@ func validateComposeInvocation(invocation composeInvocation) error {
 		if invocation.Args[i] != "-f" && invocation.Args[i] != "--env-file" {
 			return fmt.Errorf("invalid persisted Compose argument %q", invocation.Args[i])
 		}
-		if invocation.Args[i+1] == "" {
-			return fmt.Errorf("empty persisted Compose path")
+		if invocation.Args[i+1] == "" || strings.HasPrefix(invocation.Args[i+1], "-") ||
+			!utf8.ValidString(invocation.Args[i+1]) ||
+			strings.ContainsAny(invocation.Args[i+1], "\x00\r\n") {
+			return fmt.Errorf("invalid persisted Compose path")
 		}
 	}
 	return nil
 }
 
 func validateComposeInvocationHeader(invocation composeInvocation) error {
-	if invocation.Version != 1 || invocation.Directory == "" || len(invocation.Args) == 0 ||
+	if (invocation.Version != 1 && invocation.Version != 2) || invocation.Directory == "" ||
+		len(invocation.Args) == 0 ||
 		len(invocation.Args)%2 != 0 {
 		return fmt.Errorf("invalid persisted Compose invocation")
+	}
+	if !utf8.ValidString(invocation.Directory) ||
+		strings.ContainsAny(invocation.Directory, "\x00\r\n") {
+		return fmt.Errorf("invalid persisted Compose directory")
+	}
+	if invocation.Version == 2 {
+		return validateWSLgReplay(invocation.WSLg)
+	}
+	if invocation.WSLg != nil {
+		return fmt.Errorf("unexpected WSLg metadata in v1 Compose invocation")
 	}
 	return nil
 }
@@ -451,7 +483,17 @@ func (r *runner) lastResolvedConfigOrigin(last *config.DevContainerConfigWithPat
 
 // The generated override must include its own path in the invocation label.
 // Update the YAML before Compose consumes it, after its final filename is known.
-func recordComposeInvocation(path, service, directory string, args []string) error {
+type composeInvocationRecord struct {
+	Path       string
+	Service    string
+	Invocation composeInvocation
+}
+
+func recordComposeInvocation(record composeInvocationRecord) error {
+	path, service := record.Path, record.Service
+	if err := validateComposeInvocation(record.Invocation); err != nil {
+		return err
+	}
 	// #nosec G304 -- the caller passes the generated Compose override path.
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -467,7 +509,7 @@ func recordComposeInvocation(path, service, directory string, args []string) err
 	}
 	if err := appendComposeInvocationLabel(
 		labels,
-		composeInvocation{Version: 1, Directory: directory, Args: args},
+		record.Invocation,
 	); err != nil {
 		return err
 	}
