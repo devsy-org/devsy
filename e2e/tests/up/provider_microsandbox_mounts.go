@@ -20,6 +20,8 @@ const (
 	microsandboxSecretAttachCommand = "attach"
 	microsandboxSecretDeleteCommand = "delete"
 	microsandboxSecretSetCommand    = "set"
+	microsandboxVscodeImage         = "mcr.microsoft.com/devcontainers/base:ubuntu"
+	microsandboxVscodeUser          = "vscode"
 )
 
 var _ = ginkgo.Describe("microsandbox mount parity",
@@ -87,10 +89,10 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 								),
 							)
 						}
-						writeMicrosandboxMountConfig(workspace, []string{
+						writeMicrosandboxUserMountConfig(workspace, []string{
 							"type=bind,source=" + writable + ",target=/parity-write,consistency=cached",
 							"type=bind,source=" + readonly + ",target=/parity-read,readonly,consistency=delegated",
-						})
+						}, microsandboxVscodeImage, microsandboxVscodeUser)
 						framework.ExpectNoError(
 							f.DevsyUp(
 								ctx,
@@ -103,8 +105,9 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 								fileFixtureName+",type=mount,target=microsandbox-secret",
 							),
 						)
-						out, err := f.DevsySSHOnce(
+						out, err := microsandboxSSHAsRootOnce(
 							ctx,
+							f,
 							workspace,
 							"cat /parity-write/from-host /parity-read/from-host && "+
 								"printf 'guest\\n' > /parity-write/from-guest",
@@ -117,14 +120,17 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 						) // #nosec G304 -- test-owned bind directory
 						framework.ExpectNoError(err)
 						gomega.Expect(string(data)).To(gomega.Equal("guest\n"))
-						_, err = f.DevsySSHOnce(
+						_, err = microsandboxSSHAsRootOnce(
 							ctx,
+							f,
 							workspace,
 							"printf 'forbidden\\n' > /parity-read/from-host",
 						)
 						gomega.Expect(err).To(gomega.HaveOccurred())
 						// A subsequent successful read distinguishes mount enforcement from lost SSH connectivity.
-						out, err = f.DevsySSHOnce(ctx, workspace, "cat /parity-read/from-host")
+						out, err = microsandboxSSHAsRootOnce(
+							ctx, f, workspace, "cat /parity-read/from-host",
+						)
 						framework.ExpectNoError(err)
 						gomega.Expect(out).To(gomega.Equal("host\n"))
 						data, err = os.ReadFile(
@@ -244,14 +250,18 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 	})
 
 func writeMicrosandboxMountConfig(dir string, mounts []string) {
+	writeMicrosandboxUserMountConfig(dir, mounts, microsandboxResourceImage, microsandboxRootUser)
+}
+
+func writeMicrosandboxUserMountConfig(dir string, mounts []string, image, remoteUser string) {
 	config := struct {
 		Image         string   `json:"image"`
 		ContainerUser string   `json:"containerUser"`
 		RemoteUser    string   `json:"remoteUser"`
 		Mounts        []string `json:"mounts,omitempty"`
 	}{
-		Image:         "ghcr.io/devsy-org/test-images/base:alpine",
-		ContainerUser: microsandboxRootUser, RemoteUser: microsandboxRootUser,
+		Image:         image,
+		ContainerUser: microsandboxRootUser, RemoteUser: remoteUser,
 		Mounts: mounts,
 	}
 	data, err := json.Marshal(config)
@@ -295,6 +305,15 @@ func storeMicrosandboxSecret(
 }
 
 func assertMicrosandboxSecretMounts(ctx context.Context, f *framework.Framework, workspace string) {
+	identity, err := f.DevsySSHOnce(
+		ctx,
+		workspace,
+		"test \"$(id -un)\" = "+microsandboxVscodeUser+" && "+
+			"test \"$(id -u)\" -ne 0 && printf 'nonroot-owner\\n'",
+	)
+	framework.ExpectNoError(err)
+	gomega.Expect(identity).To(gomega.Equal("nonroot-owner\n"))
+
 	out, err := f.DevsySSHOnce(ctx, workspace, `
 		test "$(stat -f -c %T /run/devsy/secrets-env)" = tmpfs &&
 		test "$(stat -c '%a:%U' /run/devsy/secrets-env)" = "700:$(id -un)" &&
@@ -309,6 +328,27 @@ func assertMicrosandboxSecretMounts(ctx context.Context, f *framework.Framework,
 	`)
 	framework.ExpectNoError(err)
 	gomega.Expect(out).To(gomega.Equal("secrets-ok\n"))
+}
+
+func microsandboxSSHAsRootOnce(
+	ctx context.Context,
+	f *framework.Framework,
+	workspace, command string,
+) (string, error) {
+	stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
+		cmdWorkspace,
+		cmdSSH,
+		workspace,
+		names.Flag(names.User),
+		microsandboxRootUser,
+		flagCommand,
+		command,
+		names.Flag(names.Debug),
+	})
+	if err != nil {
+		return "", fmt.Errorf("devsy ssh as root failed: %w (stderr: %s)", err, stderr)
+	}
+	return stdout, nil
 }
 
 func microsandboxMountCommand(ctx context.Context, args ...string) {
