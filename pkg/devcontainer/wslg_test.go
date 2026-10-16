@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -37,9 +39,9 @@ func (s *WSLgSuite) TestSubstitutionIsPerWorkspaceAndDoesNotInjectContainerEnv()
 		)
 		s.Require().NoError(err)
 		s.Equal(r.wslgSnapshot.Environment()[wslg.Display], parsed.Config.Image)
-		s.Equal("override", ctx.Env["CUSTOM"])
+		s.Equal("override", ctx.Env[wslgSubstitutionKey("CUSTOM")])
 		s.Empty(parsed.Config.ContainerEnv)
-		_, ok := ctx.Env[wslg.WaylandDisplay]
+		_, ok := ctx.Env[wslgSubstitutionKey(wslg.WaylandDisplay)]
 		s.False(ok)
 	}
 	_, ok := os.LookupEnv(wslg.Display)
@@ -232,4 +234,11 @@ func (s *WSLgSuite) snapshot(display string) *wslg.Snapshot {
 	)
 	s.Require().NoError(err)
 	return snap
+}
+
+func wslgSubstitutionKey(key string) string {
+	if runtime.GOOS == goosWindows {
+		return strings.ToLower(key)
+	}
+	return key
 }
