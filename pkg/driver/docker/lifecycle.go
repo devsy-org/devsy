@@ -23,15 +23,26 @@ const (
 	snapshotImageLabel = "sh.devsy.snapshot=true"
 )
 
+func (d *dockerDriver) requireDevContainer(
+	ctx context.Context,
+	workspaceID string,
+) (*config.ContainerDetails, error) {
+	container, err := d.FindDevContainer(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	} else if container == nil {
+		return nil, fmt.Errorf("container not found")
+	}
+	return container, nil
+}
+
 func (d *dockerDriver) CommandDevContainer(
 	ctx context.Context,
 	params *driver.CommandParams,
 ) error {
-	container, err := d.FindDevContainer(ctx, params.WorkspaceID)
+	container, err := d.requireDevContainer(ctx, params.WorkspaceID)
 	if err != nil {
 		return err
-	} else if container == nil {
-		return fmt.Errorf("container not found")
 	}
 
 	if err := d.ensureContainerRunning(ctx, container); err != nil {
@@ -172,22 +183,30 @@ func (d *dockerDriver) waitForRestart(
 	}
 }
 
-func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error {
+// runLoggedDockerCommand runs a docker subcommand and streams its output to the info log.
+func (d *dockerDriver) runLoggedDockerCommand(
+	ctx context.Context,
+	subcommand string,
+	args []string,
+) error {
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
 
+	log.Debugf(
+		"running docker %s command: command=%s, args=%s",
+		subcommand,
+		d.Docker.DockerCommand,
+		strings.Join(args, " "),
+	)
+	return d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer})
+}
+
+func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error {
 	args := []string{
 		"push",
 		image,
 	}
-
-	log.Debugf(
-		"running docker push command: command=%s, args=%s",
-		d.Docker.DockerCommand,
-		strings.Join(args, " "),
-	)
-	err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer})
-	if err != nil {
+	if err := d.runLoggedDockerCommand(ctx, "push", args); err != nil {
 		return fmt.Errorf("push image: %w", err)
 	}
 
@@ -195,22 +214,12 @@ func (d *dockerDriver) PushDevContainer(ctx context.Context, image string) error
 }
 
 func (d *dockerDriver) TagDevContainer(ctx context.Context, image, tag string) error {
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
 	args := []string{
 		"tag",
 		image,
 		tag,
 	}
-
-	log.Debugf(
-		"running docker tag command: command=%s, args=%s",
-		d.Docker.DockerCommand,
-		strings.Join(args, " "),
-	)
-	err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer})
-	if err != nil {
+	if err := d.runLoggedDockerCommand(ctx, "tag", args); err != nil {
 		return fmt.Errorf("tag image: %w", err)
 	}
 
@@ -225,17 +234,8 @@ func (d *dockerDriver) CommitContainer(ctx context.Context, workspaceID, tag str
 		return fmt.Errorf("container not found: workspaceID=%s", workspaceID)
 	}
 
-	writer := log.Writer(log.LevelInfo)
-	defer func() { _ = writer.Close() }()
-
 	args := []string{"commit", "--change", "LABEL " + snapshotImageLabel, container.ID, tag}
-
-	log.Debugf(
-		"running docker commit command: command=%s, args=%s",
-		d.Docker.DockerCommand,
-		strings.Join(args, " "),
-	)
-	if err := d.Docker.Run(ctx, args, docker.Streams{Stdout: writer, Stderr: writer}); err != nil {
+	if err := d.runLoggedDockerCommand(ctx, "commit", args); err != nil {
 		return fmt.Errorf("commit container %s: %w", container.ID, err)
 	}
 
@@ -262,22 +262,18 @@ func (d *dockerDriver) DeleteDevContainer(ctx context.Context, workspaceId strin
 }
 
 func (d *dockerDriver) StartDevContainer(ctx context.Context, workspaceId string) error {
-	container, err := d.FindDevContainer(ctx, workspaceId)
+	container, err := d.requireDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
-	} else if container == nil {
-		return fmt.Errorf("container not found")
 	}
 
 	return d.Docker.StartContainer(ctx, container.ID)
 }
 
 func (d *dockerDriver) StopDevContainer(ctx context.Context, workspaceId string) error {
-	container, err := d.FindDevContainer(ctx, workspaceId)
+	container, err := d.requireDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
-	} else if container == nil {
-		return fmt.Errorf("container not found")
 	}
 
 	return d.Docker.Stop(ctx, container.ID)
@@ -300,11 +296,9 @@ func (d *dockerDriver) GetDevContainerLogs(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
-	container, err := d.FindDevContainer(ctx, workspaceId)
+	container, err := d.requireDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
-	} else if container == nil {
-		return fmt.Errorf("container not found")
 	}
 
 	return d.Docker.GetContainerLogs(ctx, container.ID, stdout, stderr)

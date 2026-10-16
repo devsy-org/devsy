@@ -28,12 +28,9 @@ func (d *dockerDriver) UpdateContainerUserUID(
 	}
 	// target.containerUser is guaranteed non-empty by shouldUpdateUserUID
 
-	container, err := d.FindDevContainer(ctx, workspaceId)
+	container, err := d.requireDevContainer(ctx, workspaceId)
 	if err != nil {
 		return err
-	}
-	if container == nil {
-		return fmt.Errorf("container not found")
 	}
 
 	files, info, err := d.updateUserMappings(ctx, &userMappingParams{
