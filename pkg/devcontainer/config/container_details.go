@@ -3,11 +3,17 @@ package config
 import (
 	"encoding/json"
 	"strings"
+	"time"
 )
 
 type ImageDetails struct {
-	ID     string
-	Config ImageDetailsConfig
+	ID       string
+	Config   ImageDetailsConfig
+	Metadata *ImageDetailsMetadata `json:"Metadata,omitempty"`
+}
+
+type ImageDetailsMetadata struct {
+	LastTagTime time.Time
 }
 
 type ImageDetailsConfig struct {
@@ -20,6 +26,7 @@ type ImageDetailsConfig struct {
 
 type ContainerDetails struct {
 	ID      string                 `json:"ID,omitempty"`
+	ImageID string                 `json:"Image,omitempty"`
 	Created string                 `json:"Created,omitempty"`
 	State   ContainerDetailsState  `json:"State"`
 	Config  ContainerDetailsConfig `json:"Config"`

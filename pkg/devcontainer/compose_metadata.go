@@ -20,6 +20,7 @@ const (
 type composeContract struct {
 	Version   int    `json:"version"`
 	Workspace string `json:"workspace"`
+	Image     string `json:"image"`
 	Metadata  string `json:"metadata"`
 	Features  string `json:"features"`
 	Overlay   bool   `json:"overlay,omitempty"`
@@ -71,19 +72,8 @@ func verifiedComposeContract(details *config.ContainerDetails) (*composeContract
 	if err != nil {
 		return nil, err
 	}
-	metadataValue := labels[metadata.ImageMetadataLabel]
-	if metadataValue == "" || metadataDigest(metadataValue) != contract.Metadata {
-		return nil, fmt.Errorf(
-			"compose container lifecycle metadata is incomplete or changed; preserve workspace data and %s",
-			composeRecreateGuidance,
-		)
-	}
-	if err := metadata.ValidateImageMetadata(metadataValue); err != nil {
-		return nil, fmt.Errorf(
-			"invalid compose container lifecycle metadata: %w; %s",
-			err,
-			composeRecreateGuidance,
-		)
+	if err := verifyComposeRuntimeMetadata(details, contract); err != nil {
+		return nil, err
 	}
 	return contract, nil
 }
@@ -94,7 +84,7 @@ func parseComposeContract(value string) (*composeContract, error) {
 		[]byte(value),
 		&contract,
 	); err != nil || contract.Version != 1 || contract.Metadata == "" ||
-		contract.Features == "" || contract.Workspace == "" {
+		contract.Features == "" || contract.Workspace == "" || contract.Image == "" {
 		return nil, fmt.Errorf(
 			"compose container has an invalid or unsupported lifecycle contract; %s",
 			composeRecreateGuidance,
@@ -190,4 +180,33 @@ func (r *runner) previousComposeFeatureSignature(details *config.ContainerDetail
 		return "", nil
 	}
 	return composeFeatureSignature(last.Config)
+}
+
+func verifyComposeRuntimeMetadata(
+	details *config.ContainerDetails,
+	contract *composeContract,
+) error {
+	labels := details.Config.Labels
+	if details.ImageID == "" || strings.TrimPrefix(details.ImageID, "sha256:") !=
+		strings.TrimPrefix(contract.Image, "sha256:") {
+		return fmt.Errorf(
+			"compose container image does not match its lifecycle contract; preserve workspace data and %s",
+			composeRecreateGuidance,
+		)
+	}
+	metadataValue := labels[metadata.ImageMetadataLabel]
+	if metadataValue == "" || metadataDigest(metadataValue) != contract.Metadata {
+		return fmt.Errorf(
+			"compose container lifecycle metadata is incomplete or changed; preserve workspace data and %s",
+			composeRecreateGuidance,
+		)
+	}
+	if err := metadata.ValidateImageMetadata(metadataValue); err != nil {
+		return fmt.Errorf(
+			"invalid compose container lifecycle metadata: %w; %s",
+			err,
+			composeRecreateGuidance,
+		)
+	}
+	return nil
 }

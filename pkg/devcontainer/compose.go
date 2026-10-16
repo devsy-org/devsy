@@ -85,6 +85,7 @@ type buildAndExtendParams struct {
 // composeUpParams groups the inputs shared by extendedDockerComposeUp and
 // generateDockerComposeUpProject for producing the compose "up" override.
 type composeUpParams struct {
+	pinImage             bool
 	parsedConfig         *config.SubstitutedConfig
 	mergedConfig         *config.MergedDevContainerConfig
 	composeHelper        *compose.ComposeHelper
@@ -822,7 +823,6 @@ func (r *runner) startContainer(
 	parsedConfig := params.parsedConfig
 	project := params.project
 	composeHelper := params.composeHelper
-	composeGlobalArgs := params.composeGlobalArgs
 	container := params.container
 	options := params.options
 	if err := r.provisioningPreflightForRecreate(ctx, options); err != nil {
@@ -843,27 +843,14 @@ func (r *runner) startContainer(
 		return nil, err
 	}
 
-	composeGlobalArgs, didRestoreFromPersistedShare := restorePersistedComposeArgsForStart(
-		container,
-		composeGlobalArgs,
-		params.forceOverrideRefresh || options.Recreate,
-	)
-
-	expectedContract := ""
-	if container == nil || !didRestoreFromPersistedShare || params.forceOverrideRefresh ||
-		r.overlayExisting != nil {
-		var overrides composeOverrideArgs
-		overrides, err = r.buildComposeOverrideArgs(ctx, &composeOverrideParams{
-			startParams:       params,
-			composeService:    &composeService,
-			originalImageName: originalImageName,
-			composeGlobalArgs: composeGlobalArgs,
-		})
-		if err != nil {
-			return nil, err
-		}
-		composeGlobalArgs = overrides.args
-		expectedContract = overrides.contract
+	overrides, err := r.resolveComposeStartOverrides(ctx, &composeOverrideParams{
+		startParams:       params,
+		composeService:    &composeService,
+		originalImageName: originalImageName,
+		composeGlobalArgs: params.composeGlobalArgs,
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	if r.overlayExisting != nil && options.Recreate {
@@ -879,18 +866,46 @@ func (r *runner) startContainer(
 		}
 	}
 
-	details, err := r.composeUpAndFindContainer(ctx, &composeUpRunParams{
+	return r.composeUpAndVerifyContainer(ctx, &composeUpRunParams{
 		project:              project,
 		composeService:       &composeService,
 		composeHelper:        composeHelper,
-		composeGlobalArgs:    composeGlobalArgs,
+		composeGlobalArgs:    overrides.args,
 		parsedConfig:         parsedConfig,
 		hasExistingContainer: container != nil,
-	})
+	}, overrides.contract, container == nil || options.Recreate)
+}
+
+func (r *runner) resolveComposeStartOverrides(
+	ctx context.Context,
+	params *composeOverrideParams,
+) (composeOverrideArgs, error) {
+	start := params.startParams
+	args, restored := restorePersistedComposeArgsForStart(
+		start.container,
+		params.composeGlobalArgs,
+		start.forceOverrideRefresh || start.options.Recreate,
+	)
+	if start.container == nil || !restored || start.forceOverrideRefresh ||
+		r.overlayExisting != nil {
+		resolved := *params
+		resolved.composeGlobalArgs = args
+		return r.buildComposeOverrideArgs(ctx, &resolved)
+	}
+	return composeOverrideArgs{args: args}, nil
+}
+
+func (r *runner) composeUpAndVerifyContainer(
+	ctx context.Context,
+	params *composeUpRunParams,
+	expectedContract string,
+	verifyCreation bool,
+) (*config.ContainerDetails, error) {
+	details, err := r.composeUpAndFindContainer(ctx, params)
 	if err != nil {
 		return nil, err
 	}
-	if container == nil || options.Recreate {
+	if verifyCreation {
 		if err := verifyCreatedComposeContainer(details, expectedContract); err != nil {
 			return nil, err
 		}
@@ -999,7 +1014,7 @@ func (r *runner) buildComposeOverrideArgs(
 		currentImageName = params.originalImageName
 	}
 
-	imageDetails, err := r.inspectImage(ctx, currentImageName)
+	imageDetails, err := start.composeHelper.Docker.InspectImage(ctx, currentImageName, false)
 	if err != nil {
 		return composeOverrideArgs{}, fmt.Errorf("inspect image: %w", err)
 	}
@@ -1072,6 +1087,7 @@ func (r *runner) generateComposeUpOverride(
 	contract, err := json.Marshal(composeContract{
 		Version:   1,
 		Workspace: r.id,
+		Image:     imageDetails.ID,
 		Metadata:  metadataDigest(string(metadataValue)),
 		Features:  featureSignature,
 		Overlay:   overlay != nil,
@@ -1091,7 +1107,8 @@ func (r *runner) generateComposeUpOverride(
 		composeHelper:        start.composeHelper,
 		composeService:       params.composeService,
 		originalImageName:    params.originalImageName,
-		overrideImageName:    extendResult.buildImageName,
+		overrideImageName:    imageDetails.ID,
+		pinImage:             true,
 		imageDetails:         imageDetails,
 		additionalLabels:     additionalLabels,
 		secretsMountRequired: len(start.options.SecretsMount) > 0,

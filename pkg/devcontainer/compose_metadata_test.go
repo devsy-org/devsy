@@ -20,6 +20,7 @@ const (
 	composeFeatureTestID     = "feature:1"
 	composeTestWorkspace     = "test-workspace"
 	composeTestFeatureDigest = "v1:inputs"
+	composeTestImageID       = "sha256:creation-image"
 	composeTestProject       = "original"
 	composeTestEnvFlag       = "--env-file"
 	composeTestOverlayHook   = "overlay"
@@ -28,6 +29,7 @@ const (
 func TestComposeMetadataContract(t *testing.T) {
 	value := `[{"postStartCommand":"echo feature"},{}]`
 	details := &config.ContainerDetails{
+		ImageID: composeTestImageID,
 		Config: config.ContainerDetailsConfig{Labels: map[string]string{
 			metadata.ImageMetadataLabel: value,
 			composeContractLabel: marshalConfigValue(
@@ -35,6 +37,7 @@ func TestComposeMetadataContract(t *testing.T) {
 				composeContract{
 					Version:   1,
 					Workspace: composeTestWorkspace,
+					Image:     composeTestImageID,
 					Metadata:  metadataDigest(value),
 					Features:  composeTestFeatureDigest,
 				},
@@ -42,6 +45,11 @@ func TestComposeMetadataContract(t *testing.T) {
 		}},
 	}
 	require.NoError(t, composeMetadataError(details))
+	details.ImageID = "sha256:other-image"
+	require.ErrorContains(t, composeMetadataError(details), "image does not match")
+	details.ImageID = "creation-image"
+	require.NoError(t, composeMetadataError(details))
+	details.ImageID = composeTestImageID
 	for _, invalidContract := range []string{"null", "[]", "{", `{"version":2}`, `{"version":1}`} {
 		details.Config.Labels[composeContractLabel] = invalidContract
 		require.Error(t, composeMetadataError(details))
@@ -49,6 +57,7 @@ func TestComposeMetadataContract(t *testing.T) {
 	details.Config.Labels[composeContractLabel] = marshalConfigValue(t, composeContract{
 		Version:   1,
 		Workspace: composeTestWorkspace,
+		Image:     composeTestImageID,
 		Metadata:  metadataDigest(value),
 		Features:  composeTestFeatureDigest,
 	})
@@ -78,20 +87,24 @@ func TestComposeFeatureRecreation(t *testing.T) {
 	}
 	signature, err := composeFeatureSignature(base)
 	require.NoError(t, err)
-	details := &config.ContainerDetails{Config: config.ContainerDetailsConfig{
-		Labels: map[string]string{
-			composeContractLabel: marshalConfigValue(
-				t,
-				composeContract{
-					Version:   1,
-					Workspace: composeTestWorkspace,
-					Metadata:  metadataDigest(`[{}]`),
-					Features:  signature,
-				},
-			),
-			metadata.ImageMetadataLabel: `[{}]`,
+	details := &config.ContainerDetails{
+		ImageID: composeTestImageID,
+		Config: config.ContainerDetailsConfig{
+			Labels: map[string]string{
+				composeContractLabel: marshalConfigValue(
+					t,
+					composeContract{
+						Version:   1,
+						Workspace: composeTestWorkspace,
+						Image:     composeTestImageID,
+						Metadata:  metadataDigest(`[{}]`),
+						Features:  signature,
+					},
+				),
+				metadata.ImageMetadataLabel: `[{}]`,
+			},
 		},
-	}}
+	}
 	r := newTestRunner(&mockDriver{})
 	parsed := &config.SubstitutedConfig{Config: config.CloneDevContainerConfig(base)}
 	check := func(options UpOptions) error { return r.checkComposeFeatureRecreation(details, parsed, options) }
@@ -139,7 +152,7 @@ func TestComposeUpOverridePreservesEffectiveLifecycleMetadata(t *testing.T) {
 			Name:  composeSecretTestServiceName,
 			Image: "test:base",
 		},
-	}, composeExtendResult{imageMetadata: imageMetadata}, &config.ImageDetails{})
+	}, composeExtendResult{imageMetadata: imageMetadata}, &config.ImageDetails{ID: composeTestImageID})
 	require.NoError(t, err)
 	project, err := compose.LoadDockerComposeProject(
 		context.Background(),
@@ -148,8 +161,17 @@ func TestComposeUpOverridePreservesEffectiveLifecycleMetadata(t *testing.T) {
 	)
 	require.NoError(t, err)
 	labels := project.Services[composeSecretTestServiceName].Labels
+	require.Equal(t, composeTestImageID, project.Services[composeSecretTestServiceName].Image)
+	require.Equal(
+		t,
+		composetypes.PullPolicyNever,
+		project.Services[composeSecretTestServiceName].PullPolicy,
+	)
 	require.Equal(t, "retained", labels["user"])
-	details := &config.ContainerDetails{Config: config.ContainerDetailsConfig{Labels: labels}}
+	details := &config.ContainerDetails{
+		ImageID: composeTestImageID,
+		Config:  config.ContainerDetailsConfig{Labels: labels},
+	}
 	require.NoError(t, verifyCreatedComposeContainer(details, file.contract))
 	decoded, err := metadata.GetImageMetadataFromContainer(details, &config.SubstitutionContext{})
 	require.NoError(t, err)
@@ -175,6 +197,7 @@ func TestComposeResumeCannotFallBackToBuild(t *testing.T) {
 	_, err := r.resumeComposeContainer(context.Background(), params, nil)
 	require.ErrorContains(t, err, "no reusable container")
 	details := &config.ContainerDetails{
+		ImageID: composeTestImageID,
 		Config: config.ContainerDetailsConfig{Labels: map[string]string{
 			ConfigFilesLabel: filepath.Join(t.TempDir(), "missing.yaml"),
 		}},
@@ -198,6 +221,7 @@ func TestComposeResumePreservesSavedInvocation(t *testing.T) {
 		composeTestEnvFlag, envFile, "-f", file,
 	}}
 	details := &config.ContainerDetails{
+		ImageID: composeTestImageID,
 		Config: config.ContainerDetailsConfig{Labels: map[string]string{
 			pkgconfig.ComposeProjectLabel: composeTestProject,
 			ConfigFilesLabel:              file,
@@ -230,9 +254,9 @@ func TestComposeIdentityIsInstanceBound(t *testing.T) {
 	r := newTestRunner(&mockDriver{})
 	contract := composeContract{
 		Version:   1,
-		Workspace: r.id,
-		Metadata:  "v1:metadata",
-		Features:  composeTestFeatureDigest,
+		Workspace: r.id, Image: composeTestImageID,
+		Metadata: "v1:metadata",
+		Features: composeTestFeatureDigest,
 	}
 	labels := map[string]string{
 		composeContractLabel:          marshalConfigValue(t, contract),
@@ -240,7 +264,10 @@ func TestComposeIdentityIsInstanceBound(t *testing.T) {
 		pkgconfig.ComposeServiceLabel: composeSecretTestServiceName,
 		pkgconfig.DevcontainerIDLabel: r.id,
 	}
-	details := &config.ContainerDetails{Config: config.ContainerDetailsConfig{Labels: labels}}
+	details := &config.ContainerDetails{
+		ImageID: composeTestImageID,
+		Config:  config.ContainerDetailsConfig{Labels: labels},
+	}
 	verify := func() error {
 		return r.verifyComposeIdentity(details, composeTestProject, composeSecretTestServiceName)
 	}
