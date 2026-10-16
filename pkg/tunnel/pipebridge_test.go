@@ -3,13 +3,18 @@ package tunnel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util/goleaktest"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 )
 
 func TestMain(m *testing.M) {
@@ -402,4 +407,54 @@ func TestRunPairStopsBothSidesWhenParentContextCancelledBeforeEitherReturns(t *t
 	case <-time.After(3 * time.Second):
 		t.Fatal("RunPair hung after parent ctx cancellation with both sides blocked in Read")
 	}
+}
+
+// summarizedFailure stands in for sshtunnel's agentCommandFailure, which
+// pkg/tunnel cannot import.
+type summarizedFailure struct {
+	cause   error
+	summary string
+	tail    string
+}
+
+func (e *summarizedFailure) Error() string      { return e.summary + "\n" + e.tail }
+func (e *summarizedFailure) Unwrap() error      { return e.cause }
+func (e *summarizedFailure) LogSummary() string { return e.summary }
+
+// Not parallel: it replaces the package-global logger.
+func TestRunPairCompletionDoesNotReplayCapturedJSON(t *testing.T) {
+	logs := log.InitTestObserved(t, zapcore.DebugLevel)
+
+	pb, err := NewPipeBridge()
+	require.NoError(t, err)
+	defer pb.Close()
+
+	cause := errors.New("exit status 1")
+	const (
+		summary = "run agent command failed: exit status 1"
+		line1   = `{"level":"debug","ts":"2026-10-13T22:41:48.610Z","msg":"credentials server started"}`
+		line2   = `{"kind":"error","outcome":"error","code":"UNKNOWN","message":"command failed"}`
+	)
+	failure := &summarizedFailure{cause: cause, summary: summary, tail: line1 + "\n" + line2}
+
+	tunnelFn := func(_ context.Context, _ *os.File, _ *os.File) error {
+		return fmt.Errorf("outer: %w", failure)
+	}
+	handler := func(_ context.Context, stdout *os.File, _ *os.File) error {
+		_, err := stdout.Read(make([]byte, 1))
+		return err
+	}
+
+	runErr := pb.RunPair(context.Background(), tunnelFn, handler)
+	require.Error(t, runErr)
+	require.ErrorIs(t, runErr, cause)
+	assert.Contains(t, runErr.Error(), line1, "returned error keeps the full text")
+
+	completed := logs.FilterMessageSnippet("pipe bridge completed").All()
+	require.Len(t, completed, 1)
+	entry := completed[0]
+	assert.Contains(t, entry.Message, "tunnel_err="+summary+" ")
+	assert.NotContains(t, entry.Message, `{"level"`)
+	assert.NotContains(t, entry.Message, "\n")
+	assert.Contains(t, entry.Message, "handler_err=EOF")
 }

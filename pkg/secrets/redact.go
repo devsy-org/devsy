@@ -1,11 +1,14 @@
 package secrets
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 const redactMask = "***"
@@ -67,6 +70,110 @@ func Combine(redactors ...*Redactor) *Redactor {
 		}
 	}
 	return NewRedactor(entries)
+}
+
+// logTextEscaper mirrors the escapes oneLineTextEncoder applies in pkg/log.
+// It is duplicated here because pkg/log imports this package.
+var logTextEscaper = newLogTextEscaper()
+
+func newLogTextEscaper() *strings.Replacer {
+	pairs := []string{
+		"\n", `\n`,
+		"\r", `\r`,
+		"\v", `\v`,
+		"\f", `\f`,
+		"\x00", `\x00`,
+		"\x7f", `\x7f`,
+		"\u0085", `\u0085`,
+		"\u2028", `\u2028`,
+		"\u2029", `\u2029`,
+	}
+	for b := byte(1); b < 0x20; b++ {
+		switch b {
+		case '\t', 0x1b, '\n', '\r', '\v', '\f':
+			continue
+		}
+		pairs = append(pairs, string([]byte{b}), fmt.Sprintf(`\x%02x`, b))
+	}
+	return strings.NewReplacer(pairs...)
+}
+
+// WithLogEscapes returns a redactor that also masks every value of r in the
+// escaped forms the log encoders serialize it in (strconv, JSON, zap JSON and
+// text-record escapes). Redaction runs on serialized records, so raw values
+// alone would miss secrets containing quotes or control characters. A nil r
+// yields a redactor with only format-based masking.
+func WithLogEscapes(r *Redactor) *Redactor {
+	if r == nil {
+		return NewRedactor(nil)
+	}
+	entries := make([]string, 0, len(r.values)*5)
+	for i, original := range r.values {
+		for j, variant := range logEscapeVariants(original) {
+			entries = append(entries, fmt.Sprintf("DEVSY_LOG_VALUE_%d_%d=%s", i, j, variant))
+		}
+	}
+	return NewRedactor(entries)
+}
+
+func logEscapeVariants(value string) []string {
+	quoted := strconv.Quote(value)
+	encoded, _ := json.Marshal(value) // cannot fail for a string
+	zapJSON := zapJSONEscape(value)
+	return uniqueNonemptyStrings([]string{
+		value,
+		quoted[1 : len(quoted)-1],
+		logTextEscaper.Replace(value),
+		string(encoded[1 : len(encoded)-1]),
+		zapJSON,
+		// Text fields are zap JSON, then escaped again as a text record.
+		logTextEscaper.Replace(zapJSON),
+	})
+}
+
+// zapJSONEscape reproduces zap's JSON string escaping, which differs from
+// encoding/json for \b, \f and U+2028/U+2029.
+func zapJSONEscape(value string) string {
+	var b strings.Builder
+	b.Grow(len(value))
+	for i := 0; i < len(value); {
+		r, width := utf8.DecodeRuneInString(value[i:])
+		switch {
+		case r == utf8.RuneError && width == 1:
+			b.WriteString(`\ufffd`)
+		case r == '\\' || r == '"':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteString(value[i : i+width])
+		}
+		i += width
+	}
+	return b.String()
+}
+
+func uniqueNonemptyStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 // NewEnvironmentRedactor protects values from environment variables that are

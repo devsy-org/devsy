@@ -1,10 +1,13 @@
 package secrets_test
 
 import (
+	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/stretchr/testify/suite"
 )
 
 func TestRedactor_MasksValues(t *testing.T) {
@@ -145,5 +148,83 @@ func TestStreamingRedactor_MasksCredentialsSplitInsideFormatPrefix(t *testing.T)
 				t.Fatalf("streaming redaction = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+type LogEscapeSuite struct{ suite.Suite }
+
+func TestLogEscapeSuite(t *testing.T) { suite.Run(t, new(LogEscapeSuite)) }
+
+func (s *LogEscapeSuite) TestNilAndEmptyKeepFormatMasking() {
+	for _, base := range []*secrets.Redactor{nil, secrets.NewRedactor(nil)} {
+		r := secrets.WithLogEscapes(base)
+		s.Equal("plain", r.Redact("plain"))
+		s.Equal("https://***@host", r.Redact("https://user:pw@host"))
+	}
+}
+
+func (s *LogEscapeSuite) TestMasksRawQuotedJSONAndTextForms() {
+	const value = "a\nb\r\"c\"\\d\x00\x0b\x0c\u2028"
+	r := secrets.WithLogEscapes(secrets.NewRedactor([]string{"TOKEN=" + value}))
+
+	quoted := strings.Trim(strconv.Quote(value), `"`)
+	encoded, err := json.Marshal(value)
+	s.Require().NoError(err)
+	jsonBody := strings.Trim(string(encoded), `"`)
+	zapBody := `a\nb\r\"c\"\\d\u0000\u000b\u000c` + "\u2028"
+	textBody := `a\nb\r"c"\d\x00\v\f\u2028`
+	textFieldBody := `a\nb\r\"c\"\\d\u0000\u000b\u000c\u2028`
+
+	for name, form := range map[string]string{
+		"raw": value, "strconv": quoted, "json": jsonBody, "zapJSON": zapBody, "text": textBody,
+		"textField": textFieldBody,
+	} {
+		s.Equal("[***]", r.Redact("["+form+"]"), name)
+	}
+}
+
+func (s *LogEscapeSuite) TestDoesNotMutateInputAndKeepsRawValues() {
+	original := secrets.NewRedactor([]string{"TOKEN=a\nb"})
+	derived := secrets.WithLogEscapes(original)
+
+	s.Equal("***", derived.Redact("a\nb"))
+	s.Equal(`a\nb`, original.Redact(`a\nb`), "input redactor must not learn escaped forms")
+	s.Equal("***", original.Redact("a\nb"))
+}
+
+func (s *LogEscapeSuite) TestSafeValueHasSingleVariantAndOrdinaryTextUntouched() {
+	r := secrets.WithLogEscapes(secrets.NewRedactor([]string{"TOKEN=alnum42"}))
+
+	s.Equal("*** and other-value", r.Redact("alnum42 and other-value"))
+}
+
+func (s *LogEscapeSuite) TestValueWithEqualsSurvives() {
+	r := secrets.WithLogEscapes(secrets.NewRedactor([]string{"CONN=user=admin;pw=a\nb"}))
+
+	s.Equal("[***] [***]", r.Redact("[user=admin;pw=a\nb] [user=admin;pw=a\\nb]"))
+}
+
+func (s *LogEscapeSuite) TestLogEscapeVariantsPreserveLongestFirst() {
+	r := secrets.WithLogEscapes(secrets.NewRedactor([]string{"A=sec", "B=sec\nret"}))
+
+	input := "x sec\nret " + `sec\nret` + " sec y"
+	s.Equal("x *** *** *** y", r.Redact(input))
+}
+
+func (s *LogEscapeSuite) TestSplitWritesNeverLeakSerializedVariants() {
+	r := secrets.WithLogEscapes(secrets.NewRedactor([]string{"A=sec", "B=sec\nret\"x"}))
+	for _, input := range []string{
+		"ordinary " + `sec\nret\"x` + " tail",
+		"ordinary sec\nret\"x tail",
+		"ordinary " + `sec\nret"x` + " sec",
+	} {
+		want := r.Redact(input)
+		s.NotContains(want, "ret")
+		for split := 0; split <= len(input); split++ {
+			stream := secrets.NewStreamingRedactor(r)
+			got := stream.RedactChunk(input[:split]) + stream.RedactChunk(input[split:]) +
+				stream.Flush()
+			s.Equal(want, got, "input %q split %d", input, split)
+		}
 	}
 }
