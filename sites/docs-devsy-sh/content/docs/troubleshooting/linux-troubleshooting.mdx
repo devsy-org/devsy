@@ -82,7 +82,7 @@ devsy provider set podman --option PODMAN_HOST=unix:///run/user/$(id -u)/podman/
 sudo apt-get install -y podman-compose
 ```
 
-Install this on the host that runs Podman to support Compose-based workspaces. It does not install Compose inside the workspace container. If workspace scripts call `docker-compose` or `podman compose`, install those tools separately in the container.
+Install it on the host that runs Podman to support Compose-based workspaces. If scripts inside the workspace container call `docker-compose` or `podman compose`, install those tools in the container too.
 
 #### BuildKit syntax
 

@@ -8,10 +8,10 @@
 /docs/how-it-works/deploy-k8s                    /docs/how-it-works/deploying-workspaces#connecting-to-kubernetes  301!
 /docs/how-it-works/building-workspaces           /docs/how-it-works/deploying-workspaces#building-workspaces      301!
 
-/docs/managing-providers/add-provider            /docs/managing-providers/manage-providers#adding-a-provider      301!
-/docs/managing-providers/set-source               /docs/managing-providers/manage-providers#updating-a-providers-version-or-source  301!
-/docs/managing-providers/remove-provider          /docs/managing-providers/manage-providers#removing-a-provider    301!
-/docs/managing-providers/rename-provider          /docs/managing-providers/manage-providers#renaming-a-provider    301!
+/docs/managing-providers/add-provider            /docs/managing-providers/manage-providers#add-a-provider      301!
+/docs/managing-providers/set-source               /docs/managing-providers/manage-providers#update-a-provider  301!
+/docs/managing-providers/remove-provider          /docs/managing-providers/manage-providers#remove-a-provider    301!
+/docs/managing-providers/rename-provider          /docs/managing-providers/manage-providers#rename-a-provider    301!
 
 /docs/developing-in-workspaces/what-are-workspaces  /docs/developing-in-workspaces/create-a-workspace  301!
 /docs/developing-in-workspaces/stop-a-workspace     /docs/developing-in-workspaces/stop-and-delete-a-workspace#stop-a-workspace    301!

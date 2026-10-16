@@ -135,11 +135,7 @@ func (d *LocalDockerDelivery) createVolume(
 ) error {
 	args := append([]string{"volume", "create"}, pkgconfig.LabelArgs(labels)...)
 	args = append(args, name)
-	result, err := runCaptured(ctx, d.cmd(ctx, args...))
-	if err != nil {
-		return fmt.Errorf("%s: %w", capturedOutput(result), err)
-	}
-	return nil
+	return runDockerCLI(ctx, d.cmd(ctx, args...))
 }
 
 func (d *LocalDockerDelivery) helperImageName() string {
@@ -310,11 +306,7 @@ func (d *LocalDockerDelivery) populateVolumeWithHelper(
 	cmd := d.cmd(ctx, args...)
 	cmd.Stdin = binary
 
-	result, err := runCaptured(ctx, cmd)
-	if err != nil {
-		return fmt.Errorf("%s: %w", capturedOutput(result), err)
-	}
-	return nil
+	return runDockerCLI(ctx, cmd)
 }
 
 // populateVolumeDirectCopy writes the agent binary to a volume mountpoint the
@@ -391,11 +383,7 @@ func (d *LocalDockerDelivery) volumeMountpoint(
 // removeVolume force-removes a single named volume. It is safe to call for a
 // non-existent volume since removal is forced.
 func (d *LocalDockerDelivery) removeVolume(ctx context.Context, name string) error {
-	result, err := runCaptured(ctx, d.cmd(ctx, "volume", "rm", "-f", name))
-	if err != nil {
-		return fmt.Errorf("%s: %w", capturedOutput(result), err)
-	}
-	return nil
+	return runDockerCLI(ctx, d.cmd(ctx, "volume", "rm", "-f", name))
 }
 
 // listManagedVolumes returns the names of devsy-managed volumes owned by the
@@ -423,12 +411,7 @@ func (d *LocalDockerDelivery) listManagedVolumes(
 }
 
 func (d *LocalDockerDelivery) cmd(ctx context.Context, args ...string) *exec.Cmd {
-	// #nosec G204 -- args are constructed internally, not from user input
-	cmd := exec.CommandContext(ctx, d.dockerCommand(), args...)
-	if d.Environment != nil {
-		cmd.Env = append(os.Environ(), d.Environment...)
-	}
-	return cmd
+	return dockerCLI(ctx, d.dockerCommand(), d.Environment, args...)
 }
 
 func (d *LocalDockerDelivery) dockerCommand() string {

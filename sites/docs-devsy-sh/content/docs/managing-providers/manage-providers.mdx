@@ -43,49 +43,6 @@ Click a provider in the list to edit its settings, switch version, update, re-in
 devsy provider add docker
 ```
 
-`devsy provider add microsandbox` installs the latest published external MicroSandbox
-provider from `github.com/devsy-org/devsy-provider-microsandbox`. The Desktop
-MicroSandbox preset selects the same source. To install a specific release, append
-a tag, for example `github.com/devsy-org/devsy-provider-microsandbox@v0.1.8`.
-
-MicroSandbox also requires its own `msb` CLI on the machine running the workspace.
-Install it using the [official MicroSandbox instructions](https://github.com/superradcompany/microsandbox#install-the-cli).
-The npm package named `msb` is an unrelated microservices tool; the MicroSandbox
-npm package is named `microsandbox`. Installing the Devsy provider does not install
-the MicroSandbox engine.
-
-For a macOS Desktop installation, the official installer places the command in
-`~/.local/bin`. Desktop includes that directory before inherited version-manager
-shims when it launches CLI commands and terminals. The MicroSandbox provider also checks that location and
-`~/.microsandbox/bin` when `msb` is absent from its inherited `PATH`. Check
-`msb --version` to confirm that the command is the MicroSandbox CLI. A terminal's
-Node version-manager installation and a GUI application's search path can differ.
-
-The provider definition and its workspace runtime files are prepared separately.
-Adding a provider saves its configuration. When a workspace starts, Devsy prepares
-the runtime executable for that workspace's host and verifies its checksum. A
-runtime download at this stage does not mean the provider is being added again;
-already verified workspace files are reused. The downloaded Devsy adapter still
-requires the separately installed MicroSandbox CLI.
-
-Existing built-in MicroSandbox installations are listed as **Deprecated built-in**
-in Desktop and marked deprecated by `devsy provider list`. Their names, defaults,
-options and existing workspaces are unchanged. The label also applies to custom
-provider definitions that select the built-in MicroSandbox driver; it does not
-apply to an external provider merely named `microsandbox`.
-
-For deliberate compatibility use, `builtin:microsandbox` explicitly selects the
-deprecated implementation:
-
-```sh
-devsy provider add builtin:microsandbox --name legacy-microsandbox --use=false
-```
-
-Adding the external provider does not migrate an installed provider with the same
-name. Existing records retain their source until an explicit `provider set-source`
-operation. See the [runtime rollout decision](/docs/developing-providers/external-runtime-rollout)
-for the tested migration behavior and its compatibility limits.
-
 Use `--name` to add the same provider more than once with different options:
 
 ```sh
@@ -105,6 +62,34 @@ devsy provider add my-org/my-repo@v0.0.1
 devsy provider add ../devsy-provider-mock/provider.yaml
 devsy provider add https://github.com/devsy-org/devsy-provider-ssh/releases/download/v0.0.3/provider.yaml
 ```
+
+### MicroSandbox
+
+```sh
+devsy provider add microsandbox
+```
+
+This installs the latest external provider from `github.com/devsy-org/devsy-provider-microsandbox`. The Desktop preset uses the same source. For a specific release, append a tag:
+
+```sh
+devsy provider add github.com/devsy-org/devsy-provider-microsandbox@v0.1.8
+```
+
+The provider needs the `msb` CLI on the machine that runs the workspace. Install it with the [official MicroSandbox instructions](https://github.com/superradcompany/microsandbox#install-the-cli) and check it with `msb --version`. Replacing a workspace VM with `devsy up --recreate` requires MicroSandbox v0.7.7 or newer. The provider runs on Apple Silicon macOS, Linux with KVM, and Windows with Windows Hypervisor Platform.
+
+**Existing built-in installations.** The built-in MicroSandbox provider is deprecated, but existing providers and workspaces keep working. To switch one to the external provider, run:
+
+```sh
+devsy provider set-source <name> github.com/devsy-org/devsy-provider-microsandbox
+```
+
+To keep using the built-in one, add it explicitly:
+
+```sh
+devsy provider add builtin:microsandbox --name legacy-microsandbox --use=false
+```
+
+If a switch fails during initialization, the new source stays selected. Fix the cause and run `devsy provider init <name>`, or set the previous source again. Add `--version <tag>` to `set-source` to pin a release.
 
 ## Set provider options
 
@@ -196,10 +181,6 @@ devsy provider set-source <name> ../path-to/provider.yaml
 ```
 
 In the desktop app, use the provider's **Select version**, **Update**, and **Initialize** actions.
-
-Devsy prepares the replacement provider’s installation binaries (`binaries`) before changing the installed provider. Runtime binaries declared under `agent.binaries` are prepared later by workspace operations. A download, checksum, archive, or cancellation error during preparation keeps the installed binaries, provider settings, initialization state, and workspace associations intact. Absolute local binary paths are checked without modifying the referenced files. References into the managed binaries directory must also match the prepared result; ambiguous aliases into that directory are rejected before publication.
-
-If publishing the prepared update fails, Devsy attempts to restore the previous files. If restoration fails, the error identifies retained recovery artifacts; keep those files for recovery. This does not guarantee recovery after a process or machine crash. Initialization runs after publication: an initialization failure leaves the new provider installed and available for another initialization attempt.
 
 Existing workspaces keep the provider version they were created with. Recreate one with `devsy workspace up <name> --recreate` to pick up the new version.
 

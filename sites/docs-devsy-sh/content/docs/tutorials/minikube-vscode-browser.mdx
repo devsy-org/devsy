@@ -50,7 +50,7 @@ Add the following contents to minikube-start.sh:
 ```bash
 #!/bin/bash
 
-minikube start --vm-driver=docker --cni=calico
+minikube start --driver=docker --cni=calico
 ```
 
 Now to start minikube from home:
@@ -79,10 +79,9 @@ service/kubernetes   ClusterIP   10.96.0.1        <none>        443/TCP   4d14h
 
 Install Devsy from the Linux DEB package, as described in [Install Devsy](../getting-started/install.mdx).
 
-Download the deb install
+Download and install the DEB package:
 
 ```sh
-
 cd ~/
 wget https://github.com/devsy-org/devsy/releases/latest/download/Devsy_linux_amd64.deb
 sudo dpkg -i Devsy_linux_amd64.deb
