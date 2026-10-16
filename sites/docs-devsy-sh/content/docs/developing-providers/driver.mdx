@@ -5,7 +5,7 @@ sidebar_label: Drivers
 
 A driver decides how Devsy deploys the workspace container. Set it with `driver` in the [agent section](./agent.mdx). The default is `docker`.
 
-Built-in drivers: `docker`, `kubernetes`, `apple`, `microsandbox` and `custom`. A sixth, `external`, runs a runtime plugin and is [described below](#external-driver).
+Built-in drivers: `docker`, `kubernetes`, `apple`, `microsandbox` and `custom`. The `external` driver runs a runtime plugin and is [described below](#external-driver).
 
 ## Docker Driver
 
@@ -64,9 +64,9 @@ The allowed options for the Kubernetes driver are:
 - **podManifestTemplate**: a pod manifest template (inline YAML or a file path) used as the base to build the Devsy pod
 - **labels**: labels to add to the workspace pod, e.g. `devsy.sh/example=value,devsy.sh/example2=value2`
 - **strictSecurity**: Clears the hardcoded `runAsUser`/`runAsGroup`/`runAsNonRoot` fields (retaining capabilities and `privileged`), letting the cluster assign the container's UID/GID instead of forcing root. It sets `hostUsers: false` unless `podManifestTemplate` explicitly supplies `hostUsers`; this satisfies OpenShift `restricted-v3`.
-- **agentSecurityContext**: Inline YAML or a file path for a `corev1.SecurityContext` merged field by field onto the workspace and init containers. It can configure run-as, capabilities, privilege escalation, seccomp, and other supported security-context fields, overriding Devsy's defaults. It sets `hostUsers: false` unless `podManifestTemplate` explicitly supplies `hostUsers`. A matching named container in `podManifestTemplate` remains the highest-precedence override.
+- **agentSecurityContext**: inline YAML or a file path for a `corev1.SecurityContext` merged field by field onto the workspace and init containers, overriding Devsy's defaults. Sets `hostUsers: false` unless `podManifestTemplate` supplies it. A matching named container in `podManifestTemplate` takes precedence.
 - **agentInstallPath**: overrides where the agent binary is installed inside the devsy/devsy-init containers. Defaults to `/usr/local/bin/devsy`, which requires root to write; set this to a path under a writable mount (e.g. the workspace volume) when running non-root.
-- **kubernetesUserNamespaces**: Sets `hostUsers: false` (unless `podManifestTemplate` already set it), mapping the pod's UIDs into a Linux user namespace. `strictSecurity` and `agentSecurityContext` also opt in for OpenShift `restricted-v3`; provide `hostUsers` explicitly through `podManifestTemplate` on clusters without user-namespace support. UserNamespacesSupport is disabled by default in Kubernetes 1.30–1.32, enabled by default in 1.33–1.35, and becomes GA with the gate locked on from 1.36. Node-level support is also required (Linux kernel 6.3+, containerd 2.0+/CRI-O 1.25+).
+- **kubernetesUserNamespaces**: sets `hostUsers: false` (unless `podManifestTemplate` already sets it), mapping the pod's UIDs into a Linux user namespace. Requires Kubernetes 1.30+ with the `UserNamespacesSupport` gate enabled (on by default from 1.33), Linux kernel 6.3+, and containerd 2.0+ or CRI-O 1.25+. On clusters without support, set `hostUsers` through `podManifestTemplate` instead.
 
 <Callout>
 On OpenShift, the default container security context (fixed `runAsUser`/`runAsGroup`) is
@@ -78,9 +78,7 @@ container cannot write the default `/usr/local/bin/devsy`.
 </Callout>
 
 <Callout>
-Devsy also supports building images inside Kubernetes without Docker, via a
-`dockerless` build path (`agent.dockerless.disabled` / `agent.dockerless.image`).
-This replaces the previous buildkit-based building approach.
+Devsy builds images inside Kubernetes without Docker through the `dockerless` build path (`agent.dockerless.disabled` / `agent.dockerless.image`).
 </Callout>
 
 ### Example Kubernetes Provider
@@ -130,7 +128,7 @@ agent:
 
 ## Microsandbox Driver
 
-The Microsandbox driver boots the devcontainer image as a hardware-isolated microVM using [microsandbox](https://github.com/microsandbox/microsandbox). It is used by the built-in `microsandbox` provider.
+The Microsandbox driver boots the devcontainer image as a hardware-isolated microVM using [microsandbox](https://github.com/microsandbox/microsandbox). The built-in driver is deprecated. For new installs, use the [external MicroSandbox provider](../managing-providers/manage-providers.mdx#microsandbox).
 
 Options:
 - **memory**, **cpus**: guest memory in MiB and virtual CPU count. Empty uses the runtime default.
@@ -166,7 +164,7 @@ Optional: **getDevContainerLogs** prints the logs, and **canReprovision** says w
 
 ## External Driver
 
-`driver: external` runs a runtime plugin that speaks [Runtime Protocol v1](./runtime-protocol.mdx).
+`driver: external` runs a runtime plugin that speaks the Devsy runtime protocol. The [protobuf schema](https://github.com/devsy-org/devsy-runtime-sdk/blob/main/proto/devsy/runtime/v1/runtime.proto) and plugin SDK live in [devsy-runtime-sdk](https://github.com/devsy-org/devsy-runtime-sdk).
 
 ```yaml
 agent:
@@ -183,10 +181,12 @@ agent:
         checksum: "<SHA-256 of the extracted executable>"
 ```
 
-- **binary**: the exact key in `agent.binaries`. It is not a path and is never searched on `PATH`.
+- **binary**: the exact key in `agent.binaries`. It is not a path and is not searched on `PATH`.
 - **args**: a fixed argument list. No shell or option substitution is applied.
-- **imageBackend**: `docker` (default) or `none`. It picks the Devsy-side image backend, not a build capability in the plugin. With `none`, prebuild publishing is unavailable.
+- **imageBackend**: `docker` (default) or `none`. It selects the Devsy-side image backend. With `none`, prebuild publishing is unavailable.
 
-Every platform declaration for the selected `agent.external.binary` key requires a SHA-256 checksum. Agent setup prepares the executable; the external host verifies its bytes before launching each operation and does not download or remove it. The selected path can be relative to the prepared agent-binaries directory or an absolute local path. It must resolve to a regular file, with effective execute access on Unix. This verification applies to the selected external runtime, not every arbitrary provider installation binary. The supervisor is Devsy's own executable. The plugin is trusted provider code and runs with the agent user's access.
+Every platform entry for the selected `binary` key requires a SHA-256 `checksum`.
 
-See the [runtime rollout decision](./external-runtime-rollout.mdx) for MicroSandbox migration and compatibility limits.
+Agent setup prepares the executable. Before launching each operation, Devsy verifies its bytes and never downloads or removes it. The path is relative to the prepared agent-binaries directory, or an absolute local path. It must resolve to a regular file, with execute access on Unix.
+
+The plugin is trusted provider code and runs with the agent user's access. It inherits the agent host's environment, so avoid logging it.

@@ -264,33 +264,6 @@ devsy://import?workspace_id=<id>&workspace_uid=<uid>&devsy_pro_host=<host>&optio
 - `devsy_pro_host` (required): Devsy Pro host URL
 - `options` (optional): Additional options
 
-## Useful Task Commands
-
-```bash
-# View all available tasks
-task --list
-
-# CLI tasks
-task cli:build              # Build CLI for production
-task cli:build:dev          # Build CLI for development
-task cli:lint               # Run linters
-task cli:test               # Run unit tests
-task cli:tidy               # Tidy go.mod and go.sum
-
-# Desktop tasks
-task desktop:build          # Build desktop application
-task desktop:check          # Check code quality
-task desktop:dev            # Run in development mode
-task desktop:setup          # Setup Electron environment
-task desktop:test           # Run unit tests
-task desktop:test:e2e       # Run e2e tests
-
-# E2E testing
-task cli:test:e2e           # Run all e2e tests
-task cli:test:e2e:suite     # Run specific test suite
-task cli:test:e2e:focus     # Run focused tests
-```
-
 ## Repository Structure
 
 - `/cmd` - CLI command implementations

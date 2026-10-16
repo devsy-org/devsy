@@ -92,8 +92,8 @@ build/
 ```
 
 - A missing or empty file uploads everything.
-- An unreadable file or an invalid pattern stops the upload with an error that names the file.
-- It does not apply to extra bind mounts, to local Docker bind mounts, to remote Git clones, or to image builds, which use their own rules. `.gitignore` and `.dockerignore` are not used in its place.
+- An unreadable file or invalid pattern stops the upload with an error naming the file.
+- Only the workspace folder upload is filtered. Extra bind mounts, local Docker bind mounts, remote Git clones and image builds follow their own rules, and `.gitignore` and `.dockerignore` are not read.
 
 ## Inspect a workspace
 

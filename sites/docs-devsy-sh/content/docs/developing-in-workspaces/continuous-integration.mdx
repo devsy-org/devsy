@@ -8,14 +8,11 @@ sidebar_label: Continuous Integration
 ## How it works
 
 1. Resolves a workspace from the current directory (or a given source).
-2. Builds and starts the devcontainer (equivalent to `devsy workspace up`, without
-   launching an IDE or touching your SSH config).
-3. Runs the given command inside the running container.
-4. Deletes the workspace - always, even when the command fails - unless
-   `--keep` is passed.
+2. Builds and starts the devcontainer, like `devsy workspace up` without an IDE or SSH config changes.
+3. Runs the command inside the container.
+4. Deletes the workspace, even when the command fails, unless you pass `--keep`.
 
-A non-zero exit from the command propagates as the exit code of `devsy ci`, so a
-failing test or build fails the CI job.
+The command's exit code becomes the exit code of `devsy ci`, so a failing test fails the CI job.
 
 ## Usage
 
@@ -61,15 +58,13 @@ Run `devsy ci --help` for the full list. The most used:
 
 ## Pre-building and pushing images
 
-`devsy ci` focuses on running a command. To pre-build and publish a devcontainer
-image for reuse as a build cache, use `devsy workspace build`:
+To pre-build and publish a devcontainer image for reuse as a build cache, use `devsy workspace build`:
 
 ```sh
 devsy workspace build --repository ghcr.io/my-org/my-devcontainer --tag latest --push
 ```
 
-Downstream CI jobs can then reference that image via `--cache-from` to speed up
-builds.
+Later CI jobs can pass that image to `--cache-from` to speed up builds.
 
 ## GitHub Actions
 
