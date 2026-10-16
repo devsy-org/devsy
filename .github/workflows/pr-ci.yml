@@ -61,8 +61,12 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.14"
+      - name: setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
       - name: Validate skill and installer compatibility
-        run: ./hack/ci/validate-agent-skill.sh
+        run: go run ./hack/validate_agent_skill
 
   lint:
     name: Lint

@@ -41,7 +41,7 @@ The helper delegates format and naming validation to the upstream Agent Skills
 `skills` installations. Its repository-specific checks require the reference
 files and compare installed copies with the source; it does not implement a
 separate skill schema or parse installer display output. Both tools are pinned
-in `validate-agent-skill.sh`: `skills` by package version and `skills-ref` by
+in `hack/validate_agent_skill/main.go`: `skills` by package version and `skills-ref` by
 source commit.
 The helper requires Node.js 22.20+ and Python 3.11+ (set `PYTHON` if the default
 Python is older). It creates temporary virtualenv/install directories, removes
