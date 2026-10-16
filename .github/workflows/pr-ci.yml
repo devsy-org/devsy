@@ -116,6 +116,12 @@ jobs:
 
           printf '%s\n' "$packages" | xargs go test -race -short
 
+      - name: validate WSLg spec registration (dry run)
+        if: runner.os == 'Linux'
+        run: >-
+          go test -short -count=1 ./e2e -run '^TestRunE2ETests$' -args
+          -ginkgo.dry-run -ginkgo.fail-on-empty -ginkgo.label-filter=wslg
+
       - name: test E2E runtime helpers
         run: go test -race -count=1 ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
 

@@ -19,7 +19,6 @@ const wslgTestWindows = "windows"
 
 var _ = ginkgo.Describe("WSLg environment transport", ginkgo.Label("wslg"), func() {
 	ginkgo.DescribeTable("creates and cleans up a workspace using the selected WSL user's display",
-		ginkgo.SpecTimeout(framework.TimeoutLong()),
 		func(ctx context.Context, compose bool) {
 			if runtime.GOOS != wslgTestWindows {
 				ginkgo.Skip("native Windows WSL fixture required")
@@ -162,7 +161,7 @@ var _ = ginkgo.Describe("WSLg environment transport", ginkgo.Label("wslg"), func
 				),
 			)
 		},
-		ginkgo.Entry("image devcontainer", false),
-		ginkgo.Entry("Compose devcontainer", true),
+		ginkgo.Entry("image devcontainer", false, ginkgo.SpecTimeout(framework.TimeoutLong())),
+		ginkgo.Entry("Compose devcontainer", true, ginkgo.SpecTimeout(framework.TimeoutLong())),
 	)
 })

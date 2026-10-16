@@ -56,6 +56,7 @@ jobs:
           use-cache: true
 
       - name: provision Docker over WSL SSH
+        id: wsl_fixture
         timeout-minutes: 15
         run: >-
           & "$env:RUNNER_TEMP\devsy-ci.exe" docker-wsl setup
@@ -81,8 +82,11 @@ jobs:
             --label docker-internal-buildkit --expected-specs 6
 
       - name: install pinned Windows Compose plugin
+        id: compose_plugin
+        if: ${{ !cancelled() && steps.wsl_fixture.outcome == 'success' }}
         run: |
-          $pluginDir = Join-Path $env:USERPROFILE '.docker\cli-plugins'
+          if ([string]::IsNullOrEmpty($env:DOCKER_CONFIG)) { throw 'WSL fixture Docker config is missing' }
+          $pluginDir = Join-Path $env:DOCKER_CONFIG 'cli-plugins'
           New-Item -ItemType Directory -Force $pluginDir | Out-Null
           $plugin = Join-Path $pluginDir 'docker-compose.exe'
           Invoke-WebRequest `
@@ -93,6 +97,8 @@ jobs:
           if ($actualHash -ne $expectedHash) { throw 'Compose SHA256 mismatch' }
 
       - name: test real noninteractive WSLg discovery and Compose parity
+        id: wslg_probe
+        if: ${{ !cancelled() && steps.compose_plugin.outcome == 'success' }}
         env:
           DEVSY_WSLG_TEST_DISTRO: Ubuntu-24.04
           DEVSY_WSLG_TEST_USER: devsyci
@@ -103,6 +109,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: run WSLg workspace regression specs
+        if: ${{ !cancelled() && steps.wslg_probe.outcome == 'success' }}
         working-directory: ./e2e
         env:
           DEVSY_WSLG_TEST_DISTRO: Ubuntu-24.04
