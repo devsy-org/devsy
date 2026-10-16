@@ -15,8 +15,8 @@ import (
 )
 
 func (tc *testContext) verifyCachedImagePlatforms(ctx context.Context) {
-	const image = "ghcr.io/devsy-org/test-images/base:ubuntu" +
-		"@sha256:4bcb1b466771b1ba1ea110e2a27daea2f6093f9527fb75ee59703ec89b5561cb"
+	// Classic Docker stores cannot switch a digest reference between platforms.
+	const image = "ghcr.io/devsy-org/test-images/base:ubuntu"
 	for _, platform := range []string{"linux/arm64", "linux/amd64"} {
 		ginkgo.By("caching the fixture image for " + platform)
 		framework.ExpectNoError(tc.dockerHelper.Pull(ctx, docker.PullOptions{
