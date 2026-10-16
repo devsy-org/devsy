@@ -336,16 +336,31 @@ func (s *StdioTransportSuite) TestCloseReleasesStderrPipe() {
 	for _, mode := range []string{helperEchoMode, "fail", helperHangMode} {
 		s.Run(mode, func() {
 			_, conn := dial(s, mode)
-			stderr, ok := conn.stderr.(*os.File)
-			s.Require().True(ok)
 			if mode == helperEchoMode {
 				s.Require().NoError(conn.CloseWrite())
 			}
 			if mode != helperHangMode {
 				_, _ = io.ReadAll(conn)
 			}
+			start := time.Now()
 			s.Require().NoError(conn.Close())
-			s.ErrorIs(stderr.Close(), os.ErrClosed, "stderr must be closed before Close returns")
+			s.Less(
+				time.Since(start),
+				boundedInterval,
+				"Close must not wait for the child's normal exit",
+			)
+			for name, stream := range map[string]io.Closer{
+				"stdin": conn.stdin, "stdout": conn.stdout, "stderr": conn.stderr,
+			} {
+				file, ok := stream.(*os.File)
+				s.Require().True(ok)
+				s.ErrorIs(
+					file.Close(),
+					os.ErrClosed,
+					"%s must be closed before Close returns",
+					name,
+				)
+			}
 		})
 	}
 }

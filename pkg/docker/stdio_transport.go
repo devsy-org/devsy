@@ -242,6 +242,7 @@ type stdioConn struct {
 	appRead, readPump   net.Conn
 	appWrite, writePump net.Conn
 
+	stdinDone  chan struct{}
 	stdoutDone chan struct{}
 	stderrDone chan struct{}
 	exited     chan struct{}
@@ -272,6 +273,7 @@ func newStdioConn(p stdioProc) *stdioConn {
 		stderrTail:      &tailBuffer{limit: stderrTailBytes},
 		redact:          p.redact,
 		shutdownTimeout: p.shutdownTimeout,
+		stdinDone:       make(chan struct{}),
 		stdoutDone:      make(chan struct{}),
 		stderrDone:      make(chan struct{}),
 		exited:          make(chan struct{}),
@@ -336,11 +338,13 @@ func (c *stdioConn) SetWriteDeadline(t time.Time) error { return c.appWrite.SetW
 
 func (c *stdioConn) pumpStdout() {
 	defer close(c.stdoutDone)
+	defer func() { _ = c.stdout.Close() }()
 	_, _ = io.Copy(c.readPump, c.stdout)
 	_ = c.readPump.Close()
 }
 
 func (c *stdioConn) pumpStdin() {
+	defer close(c.stdinDone)
 	_, _ = io.Copy(c.stdin, c.writePump)
 	_ = c.stdin.Close()
 	_ = c.writePump.Close()
@@ -364,6 +368,8 @@ func (c *stdioConn) reap() {
 	err := c.proc.Wait()
 	lingering.Stop()
 	c.releaseErr = c.proc.Release()
+	_ = c.writePump.Close()
+	<-c.stdinDone
 
 	drain := time.NewTimer(min(c.shutdownTimeout, exitDiagnosticWait))
 	select {
@@ -418,9 +424,8 @@ func (c *stdioConn) shutdown() error {
 	for _, pipe := range []net.Conn{c.appRead, c.appWrite, c.readPump, c.writePump} {
 		_ = pipe.Close()
 	}
-	_ = c.stdin.Close()
-	_ = c.stdout.Close()
-
+	// OS pipe Close can wait for synchronous I/O on Windows. Each pump owns
+	// that close; keep this path free to reach the process-kill deadline.
 	if c.waitExited(c.shutdownTimeout) {
 		return c.releaseErr
 	}
