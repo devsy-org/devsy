@@ -504,12 +504,9 @@ func TestClassifySignalResult(t *testing.T) {
 }
 
 func TestSignalProcessTreeReturnsImmediatelyWhenTargetAlreadyGone(t *testing.T) {
-	cmd := exec.Command("true")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("run short-lived process: %v", err)
-	}
+	const absentPID = int(^uint32(0) >> 1)
 	start := time.Now()
-	if err := signalProcessTree(cmd.Process.Pid, true, testSavedIdentity); err != nil {
+	if err := signalProcessTree(absentPID, true, testSavedIdentity); err != nil {
 		t.Fatalf("signalProcessTree for exited process: %v", err)
 	}
 	if elapsed := time.Since(start); elapsed >= time.Second {
