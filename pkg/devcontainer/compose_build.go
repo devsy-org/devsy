@@ -293,14 +293,11 @@ func prepareComposeServiceImage(ctx context.Context, params *buildAndExtendParam
 	if inspectErr != nil && !errors.Is(inspectErr, docker.ErrImageNotFound) {
 		return inspectErr
 	}
-	pull, err := composeImageNeedsPull(service, details, time.Now())
+	pull, err := composeServiceImageNeedsPull(params, details, time.Now())
 	if err != nil {
 		return err
 	}
-	// With features, the service image becomes a build input; --pull refreshes
-	// that FROM image independently of the final service's pull policy.
-	forceFeatureBuildPull := params.pull && len(params.parsedConfig.Config.Features) > 0
-	if !pull && !forceFeatureBuildPull {
+	if !pull {
 		return inspectErr
 	}
 	writer := log.Writer(log.LevelInfo)
@@ -311,6 +308,28 @@ func prepareComposeServiceImage(ctx context.Context, params *buildAndExtendParam
 		return fmt.Errorf("pull compose service image: %w", err)
 	}
 	return nil
+}
+
+func composeServiceImageNeedsPull(
+	params *buildAndExtendParams,
+	details *config.ImageDetails,
+	now time.Time,
+) (bool, error) {
+	service := params.composeService
+	if len(params.parsedConfig.Config.Features) == 0 {
+		return composeImageNeedsPull(service, details, now)
+	}
+	// Feature extension turns this image into a Dockerfile FROM input. --pull
+	// refreshes it independently of the final service's pull policy. Otherwise,
+	// absent an explicit policy, preserve the build's local-cache default,
+	// including locally tagged latest images that have no registry counterpart.
+	if params.pull {
+		return true, nil
+	}
+	if service.PullPolicy == "" {
+		return details == nil, nil
+	}
+	return composeImageNeedsPull(service, details, now)
 }
 
 func composeImageNeedsPull(

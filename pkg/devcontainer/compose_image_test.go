@@ -55,7 +55,8 @@ func TestComposeImagePullPolicy(t *testing.T) {
 	}
 }
 
-func TestComposePullFlagOnlyRefreshesFeatureBuildBase(t *testing.T) {
+func TestComposeServiceImageResolution(t *testing.T) {
+	const localLatest = "local-base:latest"
 	if runtime.GOOS == goosWindows {
 		t.Skip("Docker command fixture requires a POSIX shell")
 	}
@@ -68,19 +69,42 @@ case " $* " in
   *) exit 48 ;;
 esac
 `), 0o700))
-	params := &buildAndExtendParams{
-		composeHelper: &compose.ComposeHelper{Docker: &docker.DockerHelper{DockerCommand: command}},
-		composeService: &composetypes.ServiceConfig{
-			Image: exampleBaseImage, PullPolicy: composetypes.PullPolicyNever,
-		},
-		parsedConfig: &config.SubstitutedConfig{Config: &config.DevContainerConfig{}},
-		pull:         true,
+	for _, test := range []struct {
+		name     string
+		image    string
+		policy   string
+		features bool
+		pull     bool
+		wantPull bool
+	}{
+		{"image-only never ignores build pull flag", exampleBaseImage, composetypes.PullPolicyNever, false, true, false},
+		{"feature build pull flag refreshes base", exampleBaseImage, composetypes.PullPolicyNever, true, true, true},
+		{"feature build reuses local latest by default", localLatest, "", true, false, false},
+		{"feature build pull flag refreshes latest", localLatest, "", true, true, true},
+		{"feature build honors explicit always", localLatest, composetypes.PullPolicyAlways, true, false, true},
+		{"image-only latest retains compose policy", localLatest, "", false, false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			devcontainer := &config.DevContainerConfig{}
+			if test.features {
+				devcontainer.Features = map[string]any{composeFeatureTestID: map[string]any{}}
+			}
+			params := &buildAndExtendParams{
+				composeHelper: &compose.ComposeHelper{
+					Docker: &docker.DockerHelper{DockerCommand: command},
+				},
+				composeService: &composetypes.ServiceConfig{
+					Image: test.image, PullPolicy: test.policy,
+				},
+				parsedConfig: &config.SubstitutedConfig{Config: devcontainer},
+				pull:         test.pull,
+			}
+			err := prepareComposeServiceImage(context.Background(), params)
+			if test.wantPull {
+				require.ErrorContains(t, err, "pull compose service image")
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
-	require.NoError(t, prepareComposeServiceImage(context.Background(), params))
-	params.parsedConfig.Config.Features = map[string]any{composeFeatureTestID: map[string]any{}}
-	require.ErrorContains(
-		t,
-		prepareComposeServiceImage(context.Background(), params),
-		"pull compose service image",
-	)
 }
