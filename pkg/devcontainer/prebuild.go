@@ -13,6 +13,10 @@ import (
 )
 
 func (r *runner) Build(ctx context.Context, options provider.BuildOptions) (string, error) {
+	if err := r.prepareWSLg(ctx, options.CLIOptions); err != nil {
+		return "", err
+	}
+	defer func() { r.wslgSnapshot = nil }()
 	if r.imageBackend == nil {
 		return "", fmt.Errorf("building requires an image backend")
 	}

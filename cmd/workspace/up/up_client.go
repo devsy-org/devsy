@@ -130,6 +130,9 @@ func (cmd *UpCmd) postResolveWorkspace(
 		}
 		return err
 	}
+	if err := cmd.preflightWSLgClient(devsyConfig, client); err != nil {
+		return cleanupOnFailure(err)
+	}
 	if err := cmd.prepareResolvedWorkspaceSecrets(ctx, devsyConfig, client); err != nil {
 		return cleanupOnFailure(err)
 	}

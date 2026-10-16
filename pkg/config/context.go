@@ -27,9 +27,26 @@ const (
 	ContextOptionSecretsBackend             = "SECRETS_BACKEND"
 	ContextOptionSnapshotRegistry           = "SNAPSHOT_REGISTRY"
 	ContextOptionLogLevel                   = "LOG_LEVEL"
+	ContextOptionWSLgEnabled                = "WSLG_ENABLED"
+	ContextOptionWSLgDistro                 = "WSLG_DISTRO"
+	ContextOptionWSLgUser                   = "WSLG_USER"
 )
 
 var ContextOptions = []ContextOption{
+	{
+		Name:        ContextOptionWSLgEnabled,
+		Description: "Discover WSLg display values for local Windows Docker workspaces (experimental)",
+		Default:     BoolFalse,
+		Enum:        []string{BoolTrue, BoolFalse},
+	},
+	{
+		Name:        ContextOptionWSLgDistro,
+		Description: "Exact WSL2 distribution containing the Docker daemon and WSLg session",
+	},
+	{
+		Name:        ContextOptionWSLgUser,
+		Description: "Non-root WSL user whose display values should be discovered",
+	},
 	{
 		Name:        ContextOptionSSHAddPrivateKeys,
 		Description: "Specifies if Devsy should automatically add ssh-keys to the ssh-agent",

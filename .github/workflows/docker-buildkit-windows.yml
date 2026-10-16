@@ -8,9 +8,9 @@ permissions:
 
 jobs:
   docker-buildkit:
-    name: Windows WSL SSH build
+    name: Windows WSL Docker
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     defaults:
       run:
         shell: pwsh
@@ -56,6 +56,7 @@ jobs:
           use-cache: true
 
       - name: provision Docker over WSL SSH
+        id: wsl_fixture
         timeout-minutes: 15
         run: >-
           & "$env:RUNNER_TEMP\devsy-ci.exe" docker-wsl setup
@@ -80,6 +81,53 @@ jobs:
             --report docker-internal-buildkit-report.json `
             --label docker-internal-buildkit --expected-specs 6
 
+      - name: install pinned Windows Compose plugin
+        id: compose_plugin
+        if: ${{ !cancelled() && steps.wsl_fixture.outcome == 'success' }}
+        run: |
+          if ([string]::IsNullOrEmpty($env:DOCKER_CONFIG)) { throw 'WSL fixture Docker config is missing' }
+          $pluginDir = Join-Path $env:DOCKER_CONFIG 'cli-plugins'
+          New-Item -ItemType Directory -Force $pluginDir | Out-Null
+          $plugin = Join-Path $pluginDir 'docker-compose.exe'
+          Invoke-WebRequest `
+            -Uri 'https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-windows-x86_64.exe' `
+            -OutFile $plugin
+          $expectedHash = '8aeaa0055e660e12cf07cd70680dc8333957fe6718528b91ec3da084eab62483'
+          $actualHash = (Get-FileHash -Path $plugin -Algorithm SHA256).Hash.ToLower()
+          if ($actualHash -ne $expectedHash) { throw 'Compose SHA256 mismatch' }
+
+      - name: test real noninteractive WSLg discovery and Compose parity
+        id: wslg_probe
+        if: ${{ !cancelled() && steps.compose_plugin.outcome == 'success' }}
+        env:
+          DEVSY_WSLG_TEST_DISTRO: Ubuntu-24.04
+          DEVSY_WSLG_TEST_USER: devsyci
+        run: |
+          docker compose version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -count=1 -v -timeout 3m ./pkg/wslg ./pkg/compose -run '^TestWSLg'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: run WSLg workspace regression specs
+        if: ${{ !cancelled() && steps.wslg_probe.outcome == 'success' }}
+        working-directory: ./e2e
+        env:
+          DEVSY_WSLG_TEST_DISTRO: Ubuntu-24.04
+          DEVSY_WSLG_TEST_USER: devsyci
+          GH_USERNAME: ${{ github.repository_owner }}
+          GH_ACCESS_TOKEN: ${{ github.token }}
+          GH_CREDENTIAL_USERNAME: x-access-token
+          DOCKER_HOST: npipe:////./pipe/devsy-ci-no-daemon
+          DOCKER_CONTEXT: ""
+        run: |
+          ./e2e.test.exe '-test.v' '-ginkgo.v' '-test.timeout=600s' `
+            '-ginkgo.fail-on-empty' '-ginkgo.flake-attempts=1' `
+            '-ginkgo.label-filter=wslg' '-ginkgo.json-report=wslg-report.json'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$env:RUNNER_TEMP\devsy-ci.exe" check-report `
+            --report wslg-report.json --label wslg --expected-specs 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: tear down Docker WSL SSH fixture
         if: always()
         timeout-minutes: 3
@@ -97,5 +145,6 @@ jobs:
           name: e2e-diagnostics-docker-internal-buildkit
           path: |
             e2e/docker-internal-buildkit-report.json
+            e2e/wslg-report.json
             ${{ runner.temp }}/devsy-ci/docker-wsl-diagnostics.log
           if-no-files-found: warn
