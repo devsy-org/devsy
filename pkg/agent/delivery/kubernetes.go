@@ -101,7 +101,7 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 				err,
 			)
 		} else {
-			log.Debugf("delivered agent binary to pod via in-container download")
+			log.Debugf("delivered agent binary to container via in-container download")
 			return nil
 		}
 	}
@@ -110,7 +110,7 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 		return deliveryFailure(downloadErr, err)
 	}
 
-	log.Debugf("delivered agent binary to pod via kubernetes exec-stream")
+	log.Debugf("delivered agent binary to container via exec-stream")
 	return nil
 }
 
