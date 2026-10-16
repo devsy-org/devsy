@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -388,10 +390,14 @@ func (c *stdioConn) describeExit(err error) error {
 }
 
 func (c *stdioConn) redactSecrets(s string) string {
-	for _, secret := range c.redact {
-		s = strings.ReplaceAll(s, secret, "***")
+	secrets := slices.Clone(c.redact)
+	// A shorter credential may otherwise leave a longer credential's suffix visible.
+	slices.SortFunc(secrets, func(a, b string) int { return cmp.Compare(len(b), len(a)) })
+	pairs := make([]string, 0, len(secrets)*2)
+	for _, secret := range secrets {
+		pairs = append(pairs, secret, "***")
 	}
-	return s
+	return strings.NewReplacer(pairs...).Replace(s)
 }
 
 func (c *stdioConn) waitExited(d time.Duration) bool {

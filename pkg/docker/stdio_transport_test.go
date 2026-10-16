@@ -359,6 +359,26 @@ func (s *StdioTransportSuite) TestStderrTailIsRedacted() {
 	s.NotContains(err.Error(), "hunter2-token")
 }
 
+func (s *StdioTransportSuite) TestStderrRedactsOverlappingSecretsLongestFirst() {
+	conn := &stdioConn{redact: []string{"hunter2", "hunter2-token"}}
+	s.Equal("*** ***", conn.redactSecrets("hunter2-token hunter2"))
+}
+
+func (s *StdioTransportSuite) TestStderrRedactsShortCredentials() {
+	//nolint:gosec // Synthetic URL credentials exercise stderr redaction.
+	invocation := &DockerInvocation{env: map[string]string{
+		"DOCKER_PASSWORD": "x",
+		"HTTPS_PROXY":     "http://user:p@proxy",
+	}}
+	conn := &stdioConn{redact: invocation.secretValues()}
+	s.Equal("*** ***", conn.redactSecrets("x p"))
+}
+
+func (s *StdioTransportSuite) TestStderrDoesNotRedactReplacementMarker() {
+	conn := &stdioConn{redact: []string{"hunter2-token", "*", "*"}}
+	s.Equal("***", conn.redactSecrets("hunter2-token"))
+}
+
 func (s *StdioTransportSuite) TestMissingCommandIsActionable() {
 	_, err := NewStdioTransport(&DockerInvocation{
 		DockerCmd: "devsy-no-such-docker-binary",
