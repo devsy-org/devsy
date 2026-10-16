@@ -84,12 +84,12 @@ When `DOCKER_HOST` is not a local socket, Devsy converts Windows drive paths in 
 Create the workspace. Devsy adds an SSH config entry named `<workspace-name>.devsy`:
 
 ```bash
-devsy up
+devsy workspace up
 ```
 
 In VS Code or VSCodium with the [Open Remote - SSH](https://marketplace.visualstudio.com/items?itemName=jeanp413.open-remote-ssh) extension, choose **Open Folder in Remote...** and select that host. Devsy tunnels the session into the dev container, so no jump host setup is needed.
 
-The tunnel reuses your local SSH keys and agent. If the editor log shows `write EPIPE`, run `devsy up` with `DEVSY_DEBUG=true`. The real cause, such as the WSL SSH server not running or an untrusted host key, is otherwise hidden behind that generic error.
+The tunnel reuses your local SSH keys and agent. If the editor log shows `write EPIPE`, run `devsy workspace up` with `DEVSY_DEBUG=true`. The real cause, such as the WSL SSH server not running or an untrusted host key, is otherwise hidden behind that generic error.
 
 ## Next steps
 
@@ -172,7 +172,7 @@ A read-only Unix socket mount still allows communication with its server. Trust 
 
 Wayland values can be referenced using the same explicit mapping, but `XDG_RUNTIME_DIR` is a **host** path with user ownership and permission requirements. Do not copy it blindly into the container or mount the whole host `/run/user` directory. Map only the daemon-visible Wayland socket into a container runtime directory owned by the intended user, or use an absolute socket path with a client that supports it. A native Wayland GUI recipe requires separate runtime acceptance; the X11 example does not prove it.
 
-Each up/recreate/build captures fresh display values. Already running containers can be reused only when the recorded distribution, user and values match. Stopped WSLg containers, changed values, newly enabled discovery and opting out all require explicit `devsy up --recreate`. After a WSL restart, use `--recreate` even if the strings match: socket identities may have changed.
+Each up/recreate/build captures fresh display values. Already running containers can be reused only when the recorded distribution, user and values match. Stopped WSLg containers, changed values, newly enabled discovery and opting out all require explicit `devsy workspace up --recreate`. After a WSL restart, use `--recreate` even if the strings match: socket identities may have changed.
 
 Stop and delete never probe WSL. Compose containers record an allowlisted v2 invocation label containing the distribution/user and the three present display values, plus the original Compose paths needed for cleanup. Image containers carry the same display identity marker. These labels are visible to anyone who can inspect the Docker daemon; they contain host connection metadata, not credentials. Cleanup still needs a reachable Docker daemon and, for Compose, the original project files.
 
