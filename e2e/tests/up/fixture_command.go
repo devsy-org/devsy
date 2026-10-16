@@ -45,6 +45,45 @@ func fixtureCommand(
 	return out
 }
 
+// kubectlFixture runs kubectl with args, bounded by timeout, and fails the current spec on error.
+func kubectlFixture(ctx context.Context, timeout time.Duration, args ...string) string {
+	return fixtureCommand(ctx, timeout, nil, append([]string{"kubectl"}, args...)...)
+}
+
+// createFixtureNamespace creates namespace and registers a DeferCleanup that deletes it without
+// waiting for finalizers. The cleanup is bounded to one minute.
+func createFixtureNamespace(ctx context.Context, timeout time.Duration, namespace string) {
+	kubectlFixture(ctx, timeout, "create", "namespace", namespace)
+	ginkgo.DeferCleanup(func(specCtx ginkgo.SpecContext) {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(specCtx), time.Minute)
+		defer cancel()
+		kubectlFixture(cleanupCtx, time.Minute, "delete", "namespace", namespace, "--wait=false")
+	})
+}
+
+// dumpFixtureDiagnostics writes pod, event, and log state for namespace to GinkgoWriter.
+// Command failures are printed, never fail the spec.
+func dumpFixtureDiagnostics(ctx context.Context, namespace, selector string) {
+	for _, args := range [][]string{
+		{"describe", "pods", "-n", namespace},
+		{"get", "events", "-n", namespace, "--sort-by=.lastTimestamp"},
+		{"logs", "-n", namespace, "-l", selector, "--all-containers", "--tail=200"},
+	} {
+		output, err := runFixtureCommand(
+			ctx,
+			2*time.Minute,
+			nil,
+			append([]string{"kubectl"}, args...)...,
+		)
+		ginkgo.GinkgoWriter.Printf(
+			"Kubernetes failure diagnostics: %s\n%s\nerror: %v\n",
+			args,
+			output,
+			err,
+		)
+	}
+}
+
 // fixtureWorkspacePod waits for exactly one ready workspace pod matching selector.
 func fixtureWorkspacePod(ctx context.Context, namespace, selector string) corev1.Pod {
 	var pod corev1.Pod
