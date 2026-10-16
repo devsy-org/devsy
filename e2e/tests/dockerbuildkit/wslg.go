@@ -111,7 +111,7 @@ var _ = ginkgo.Describe("WSLg environment transport", ginkgo.Label("wslg"), func
 			data, err := json.Marshal(config)
 			framework.ExpectNoError(err)
 			framework.ExpectNoError(
-				os.WriteFile(filepath.Join(dir, "devcontainer.json"), data, 0o600),
+				os.WriteFile(filepath.Join(dir, ".devcontainer.json"), data, 0o600),
 			)
 			ginkgo.DeferCleanup(
 				func(ctx context.Context) { framework.ExpectNoError(f.DevsyWorkspaceDelete(ctx, dir)) },
