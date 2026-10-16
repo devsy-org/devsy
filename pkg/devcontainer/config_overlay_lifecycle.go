@@ -140,6 +140,11 @@ func (r *runner) checkOverlayRecreation(
 	if err != nil {
 		return err
 	}
+	if details != nil {
+		if err := r.checkComposeFeatureRecreation(details, parsed, options); err != nil {
+			return err
+		}
+	}
 	if details == nil ||
 		!r.overlayStructureChanged(details, parsed, r.workspaceConfig.LastDevContainerConfig) {
 		return nil
@@ -288,14 +293,14 @@ func (r *runner) composeTeardownArgs(ctx context.Context, projectName string) ([
 	if err != nil {
 		return nil, err
 	}
-	args, found, err := persistedComposeTeardownArgs(details, projectName)
+	args, found, err := persistedComposeInvocationArgs(details, projectName)
 	if found || err != nil {
 		return args, err
 	}
 	return r.legacyComposeTeardownArgs(ctx, projectName)
 }
 
-func persistedComposeTeardownArgs(
+func persistedComposeInvocationArgs(
 	details *config.ContainerDetails,
 	projectName string,
 ) ([]string, bool, error) {

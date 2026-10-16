@@ -13,7 +13,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/compose"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/feature"
-	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/dockerfile"
 	"github.com/devsy-org/devsy/pkg/log"
 	"gopkg.in/yaml.v3"
@@ -140,21 +139,10 @@ func (r *runner) buildAndExtendDockerCompose(
 		return composeExtendResult{buildImageName: target.buildImageName}, err
 	}
 
-	imageMetadata, err := metadata.GetDevContainerMetadata(
-		params.substitutionContext,
-		prepared.imageBuildInfo.Metadata,
-		params.parsedConfig,
-		prepared.extendImageBuildInfo.Features,
-	)
-	if err != nil {
-		return composeExtendResult{buildImageName: target.buildImageName}, err
-	}
-
 	return composeExtendResult{
 		buildImageName:       target.buildImageName,
 		composeBuildFilePath: target.dockerComposeFilePath,
-		imageMetadata:        imageMetadata,
-		metadataLabel:        prepared.extendImageBuildInfo.MetadataLabel,
+		imageMetadata:        prepared.extendImageBuildInfo.MetadataConfig,
 	}, nil
 }
 

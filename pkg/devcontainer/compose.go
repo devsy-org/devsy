@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,7 +45,6 @@ type composeExtendResult struct {
 	buildImageName       string
 	composeBuildFilePath string
 	imageMetadata        *config.ImageMetadataConfig
-	metadataLabel        string
 }
 
 type persistedFileResult struct {
@@ -336,7 +336,15 @@ func (r *runner) ensureComposeContainer(
 		return nil, err
 	}
 	if forceSecretRuntimeRefresh {
+		if options.NoBuild {
+			return nil, fmt.Errorf(
+				"compose workspace requires secure runtime mount migration; rerun workspace up explicitly before connecting",
+			)
+		}
 		log.Info("workspace secrets require secure runtime mounts")
+	}
+	if options.NoBuild {
+		return r.resumeComposeContainer(ctx, params, containerDetails)
 	}
 
 	// container already exists and is running, nothing to do
@@ -345,15 +353,17 @@ func (r *runner) ensureComposeContainer(
 		return containerDetails, nil
 	}
 
-	containerDetails, didStartProject := r.tryStartExistingProject(ctx, &existingProjectParams{
-		parsedConfig:  parsedConfig,
-		composeHelper: composeHelper,
-		project:       project,
-		container:     containerDetails,
-		recreate:      effectiveOptions.Recreate,
-	})
-	if didStartProject {
-		return containerDetails, nil
+	if containerDetails != nil {
+		containerDetails, didStartProject := r.tryStartExistingProject(ctx, &existingProjectParams{
+			parsedConfig:  parsedConfig,
+			composeHelper: composeHelper,
+			project:       project,
+			container:     containerDetails,
+			recreate:      effectiveOptions.Recreate,
+		})
+		if didStartProject {
+			return containerDetails, nil
+		}
 	}
 
 	containerDetails, err = r.startContainer(ctx, &startContainerParams{
@@ -410,6 +420,17 @@ func (r *runner) finalizeComposeContainer(
 	parsedConfig := runParams.parsedConfig
 	substitutionContext := runParams.substitutionContext
 	options := runParams.options
+	contract, err := verifiedComposeContract(containerDetails)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.verifyComposeIdentity(
+		containerDetails,
+		project.Name,
+		parsedConfig.Config.Service,
+	); err != nil {
+		return nil, err
+	}
 
 	imageMetadataConfig, err := metadata.GetImageMetadataFromContainer(
 		containerDetails,
@@ -417,6 +438,12 @@ func (r *runner) finalizeComposeContainer(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get image metadata from container: %w", err)
+	}
+	if contract != nil && contract.Overlay &&
+		(parsedConfig.Overlay != nil || options.ExtraDevContainerPath != "") {
+		// Explicit up replaces the saved overlay entry; SSH uses it unchanged.
+		imageMetadataConfig.Raw = imageMetadataConfig.Raw[1:]
+		imageMetadataConfig.Config = imageMetadataConfig.Config[1:]
 	}
 
 	mergedConfig, err := mergeImageMetadataConfig(
@@ -801,6 +828,11 @@ func (r *runner) startContainer(
 	if err := r.provisioningPreflightForRecreate(ctx, options); err != nil {
 		return nil, err
 	}
+	if options.NoBuild {
+		return nil, fmt.Errorf(
+			"cannot build or recreate a compose workspace during SSH restart; rerun workspace up explicitly",
+		)
+	}
 
 	composeService, originalImageName, err := resolveComposeServiceImage(
 		project,
@@ -817,9 +849,11 @@ func (r *runner) startContainer(
 		params.forceOverrideRefresh || options.Recreate,
 	)
 
+	expectedContract := ""
 	if container == nil || !didRestoreFromPersistedShare || params.forceOverrideRefresh ||
 		r.overlayExisting != nil {
-		composeGlobalArgs, err = r.buildComposeOverrideArgs(ctx, &composeOverrideParams{
+		var overrides composeOverrideArgs
+		overrides, err = r.buildComposeOverrideArgs(ctx, &composeOverrideParams{
 			startParams:       params,
 			composeService:    &composeService,
 			originalImageName: originalImageName,
@@ -828,6 +862,8 @@ func (r *runner) startContainer(
 		if err != nil {
 			return nil, err
 		}
+		composeGlobalArgs = overrides.args
+		expectedContract = overrides.contract
 	}
 
 	if r.overlayExisting != nil && options.Recreate {
@@ -843,7 +879,7 @@ func (r *runner) startContainer(
 		}
 	}
 
-	return r.composeUpAndFindContainer(ctx, &composeUpRunParams{
+	details, err := r.composeUpAndFindContainer(ctx, &composeUpRunParams{
 		project:              project,
 		composeService:       &composeService,
 		composeHelper:        composeHelper,
@@ -851,6 +887,15 @@ func (r *runner) startContainer(
 		parsedConfig:         parsedConfig,
 		hasExistingContainer: container != nil,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if container == nil || options.Recreate {
+		if err := verifyCreatedComposeContainer(details, expectedContract); err != nil {
+			return nil, err
+		}
+	}
+	return details, nil
 }
 
 func restorePersistedComposeArgsForStart(
@@ -908,13 +953,23 @@ type composeOverrideParams struct {
 	composeGlobalArgs []string
 }
 
+type composeOverrideFile struct {
+	path     string
+	contract string
+}
+
+type composeOverrideArgs struct {
+	args     []string
+	contract string
+}
+
 // buildComposeOverrideArgs builds and feature-extends the compose project, then
 // generates the "up" override, returning composeGlobalArgs extended with any
 // generated override files.
 func (r *runner) buildComposeOverrideArgs(
 	ctx context.Context,
 	params *composeOverrideParams,
-) ([]string, error) {
+) (composeOverrideArgs, error) {
 	start := params.startParams
 	composeGlobalArgs := params.composeGlobalArgs
 
@@ -932,7 +987,7 @@ func (r *runner) buildComposeOverrideArgs(
 		noLockfile:          start.options.NoLockfile,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build and extend docker-compose: %w", err)
+		return composeOverrideArgs{}, fmt.Errorf("build and extend docker-compose: %w", err)
 	}
 
 	if extendResult.composeBuildFilePath != "" {
@@ -946,32 +1001,32 @@ func (r *runner) buildComposeOverrideArgs(
 
 	imageDetails, err := r.inspectImage(ctx, currentImageName)
 	if err != nil {
-		return nil, fmt.Errorf("inspect image: %w", err)
+		return composeOverrideArgs{}, fmt.Errorf("inspect image: %w", err)
 	}
 
-	overrideComposeUpFilePath, err := r.generateComposeUpOverride(
+	override, err := r.generateComposeUpOverride(
 		ctx,
 		params,
 		extendResult,
 		imageDetails,
 	)
 	if err != nil {
-		return nil, err
+		return composeOverrideArgs{}, err
 	}
 
-	if overrideComposeUpFilePath != "" {
-		composeGlobalArgs = append(composeGlobalArgs, "-f", overrideComposeUpFilePath)
+	if override.path != "" {
+		composeGlobalArgs = append(composeGlobalArgs, "-f", override.path)
 		if err := recordComposeInvocation(
-			overrideComposeUpFilePath,
+			override.path,
 			start.parsedConfig.Config.Service,
 			start.project.WorkingDir,
 			composeGlobalArgs,
 		); err != nil {
-			return nil, err
+			return composeOverrideArgs{}, err
 		}
 	}
 
-	return composeGlobalArgs, nil
+	return composeOverrideArgs{args: composeGlobalArgs, contract: override.contract}, nil
 }
 
 // generateComposeUpOverride merges the image metadata into the devcontainer
@@ -981,21 +1036,52 @@ func (r *runner) generateComposeUpOverride(
 	params *composeOverrideParams,
 	extendResult composeExtendResult,
 	imageDetails *config.ImageDetails,
-) (string, error) {
+) (composeOverrideFile, error) {
 	start := params.startParams
 
-	mergedConfig, err := mergeImageMetadataConfig(
+	overlay, err := overlayForParsedConfig(
 		ctx,
 		start.parsedConfig,
-		extendResult.imageMetadata,
 		start.options.ExtraDevContainerPath,
 	)
 	if err != nil {
-		return "", err
+		return composeOverrideFile{}, err
+	}
+	parsed := *start.parsedConfig
+	parsed.Overlay = overlay
+	mergedConfig, err := mergeImageMetadataConfig(ctx, &parsed, extendResult.imageMetadata, "")
+	if err != nil {
+		return composeOverrideFile{}, err
+	}
+	rawMetadata := extendResult.imageMetadata.Raw
+	if overlay != nil {
+		// Persist only the established runtime metadata fields, excluding feature
+		// options, host initialization, and source-selection inputs.
+		rawMetadata = append([]*config.ImageMetadata(nil), rawMetadata...)
+		rawMetadata[0] = metadata.DevContainerConfigToImageMetadata(overlay)
+	}
+	metadataValue, err := metadata.MarshalImageMetadata(rawMetadata)
+	if err != nil {
+		return composeOverrideFile{}, err
+	}
+	featureSignature, err := composeFeatureSignature(start.parsedConfig.Config)
+	if err != nil {
+		return composeOverrideFile{}, err
 	}
 
+	contract, err := json.Marshal(composeContract{
+		Version:   1,
+		Workspace: r.id,
+		Metadata:  metadataDigest(string(metadataValue)),
+		Features:  featureSignature,
+		Overlay:   overlay != nil,
+	})
+	if err != nil {
+		return composeOverrideFile{}, err
+	}
 	additionalLabels := map[string]string{
-		metadata.ImageMetadataLabel: extendResult.metadataLabel,
+		metadata.ImageMetadataLabel: string(metadataValue),
+		composeContractLabel:        string(contract),
 		config.UserLabel:            imageDetails.Config.User,
 		overlayStructureLabel:       structuralSignature(start.parsedConfig.Config),
 	}
@@ -1011,10 +1097,10 @@ func (r *runner) generateComposeUpOverride(
 		secretsMountRequired: len(start.options.SecretsMount) > 0,
 	})
 	if err != nil {
-		return "", fmt.Errorf("extend docker-compose up: %w", err)
+		return composeOverrideFile{}, fmt.Errorf("extend docker-compose up: %w", err)
 	}
 
-	return overrideComposeUpFilePath, nil
+	return composeOverrideFile{path: overrideComposeUpFilePath, contract: string(contract)}, nil
 }
 
 // mergeImageMetadataConfig folds any extra devcontainer config into the image
