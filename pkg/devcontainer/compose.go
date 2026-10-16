@@ -45,6 +45,7 @@ type composeExtendResult struct {
 	buildImageName       string
 	composeBuildFilePath string
 	imageMetadata        *config.ImageMetadataConfig
+	imageDetails         *config.ImageDetails
 }
 
 type persistedFileResult struct {
@@ -1007,12 +1008,7 @@ func (r *runner) buildComposeOverrideArgs(
 		composeGlobalArgs = append(composeGlobalArgs, "-f", extendResult.composeBuildFilePath)
 	}
 
-	currentImageName := extendResult.buildImageName
-	if currentImageName == "" {
-		currentImageName = params.originalImageName
-	}
-
-	imageDetails, err := start.composeHelper.Docker.InspectImage(ctx, currentImageName, false)
+	imageDetails, err := resolveComposeRuntimeImage(ctx, params, extendResult)
 	if err != nil {
 		return composeOverrideArgs{}, fmt.Errorf("inspect image: %w", err)
 	}
@@ -1040,6 +1036,26 @@ func (r *runner) buildComposeOverrideArgs(
 	}
 
 	return composeOverrideArgs{args: composeGlobalArgs, contract: override.contract}, nil
+}
+
+func resolveComposeRuntimeImage(
+	ctx context.Context,
+	params *composeOverrideParams,
+	extended composeExtendResult,
+) (*config.ImageDetails, error) {
+	if extended.imageDetails != nil {
+		return extended.imageDetails, nil
+	}
+	image := extended.buildImageName
+	if image == "" {
+		image = params.originalImageName
+	}
+	helper := params.startParams.composeHelper.Docker
+	return helper.InspectImageForPlatform(
+		ctx,
+		image,
+		composeServicePlatform(params.composeService, helper.Environment),
+	)
 }
 
 // generateComposeUpOverride merges the image metadata into the devcontainer
@@ -1086,6 +1102,7 @@ func (r *runner) generateComposeUpOverride(
 		Version:   1,
 		Workspace: r.id,
 		Image:     imageDetails.ID,
+		Manifest:  imageDetails.PlatformManifest,
 		Metadata:  metadataDigest(string(metadataValue)),
 		Features:  featureSignature,
 		Overlay:   overlay != nil,

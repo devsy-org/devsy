@@ -979,6 +979,12 @@ var _ = ginkgo.Describe(
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It(
+			"uses the requested platform when multiple image variants are cached",
+			func(ctx context.Context) { tc.verifyCachedImagePlatforms(ctx) },
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
+
+		ginkgo.It(
 			"does not retag shared image when applying features to image backed services",
 			func(ctx context.Context) {
 				const (

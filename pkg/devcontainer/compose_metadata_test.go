@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/types"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,6 +25,7 @@ const (
 	composeTestProject       = "original"
 	composeTestEnvFlag       = "--env-file"
 	composeTestOverlayHook   = "overlay"
+	composeEmptyMetadata     = `[{}]`
 )
 
 func TestComposeMetadataContract(t *testing.T) {
@@ -61,7 +63,7 @@ func TestComposeMetadataContract(t *testing.T) {
 		Metadata:  metadataDigest(value),
 		Features:  composeTestFeatureDigest,
 	})
-	for _, invalid := range []string{"", `[]`, `null`, `[null]`, `{`, `[{}]`} {
+	for _, invalid := range []string{"", `[]`, `null`, `[null]`, `{`, composeEmptyMetadata} {
 		t.Run(invalid, func(t *testing.T) {
 			details.Config.Labels[metadata.ImageMetadataLabel] = invalid
 			require.Error(t, composeMetadataError(details))
@@ -73,6 +75,31 @@ func TestComposeMetadataContract(t *testing.T) {
 	require.NoError(t, composeMetadataError(details))
 	details.Config.Labels = nil
 	require.NoError(t, composeMetadataError(details))
+}
+
+func TestComposeContractBindsSelectedManifest(t *testing.T) {
+	value := composeEmptyMetadata
+	contract := composeContract{
+		Version:   1,
+		Workspace: composeTestWorkspace,
+		Image:     composeTestImageID,
+		Manifest:  "sha256:selected",
+		Metadata:  metadataDigest(value),
+		Features:  composeTestFeatureDigest,
+	}
+	details := &config.ContainerDetails{
+		ImageID:                 composeTestImageID,
+		ImageManifestDescriptor: &ocispec.Descriptor{Digest: "sha256:selected"},
+		Config: config.ContainerDetailsConfig{Labels: map[string]string{
+			metadata.ImageMetadataLabel: value,
+			composeContractLabel:        marshalConfigValue(t, contract),
+		}},
+	}
+	require.NoError(t, composeMetadataError(details))
+	details.ImageManifestDescriptor.Digest = "sha256:other-platform"
+	require.ErrorContains(t, composeMetadataError(details), "image manifest does not match")
+	details.ImageManifestDescriptor = nil
+	require.ErrorContains(t, composeMetadataError(details), "image manifest does not match")
 }
 
 func TestComposeFeatureRecreation(t *testing.T) {
@@ -97,11 +124,11 @@ func TestComposeFeatureRecreation(t *testing.T) {
 						Version:   1,
 						Workspace: composeTestWorkspace,
 						Image:     composeTestImageID,
-						Metadata:  metadataDigest(`[{}]`),
+						Metadata:  metadataDigest(composeEmptyMetadata),
 						Features:  signature,
 					},
 				),
-				metadata.ImageMetadataLabel: `[{}]`,
+				metadata.ImageMetadataLabel: composeEmptyMetadata,
 			},
 		},
 	}

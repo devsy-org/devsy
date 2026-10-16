@@ -46,7 +46,6 @@ func (r *runner) build(
 	if err != nil {
 		return nil, err
 	}
-
 	overlay, err := overlayForParsedConfig(ctx, parsedConfig, options.ExtraDevContainerPath)
 	if err != nil {
 		return nil, err
@@ -257,7 +256,13 @@ func (r *runner) getImageBuildInfoFromImage(
 	if err != nil {
 		return nil, err
 	}
+	return imageBuildInfoFromDetails(substitutionContext, imageDetails)
+}
 
+func imageBuildInfoFromDetails(
+	substitutionContext *config.SubstitutionContext,
+	imageDetails *config.ImageDetails,
+) (*config.ImageBuildInfo, error) {
 	user := "root"
 	if imageDetails.Config.User != "" {
 		user = imageDetails.Config.User

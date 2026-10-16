@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +12,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/devsy-org/devsy/pkg/compose"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/stretchr/testify/require"
 )
@@ -100,7 +102,7 @@ esac
 				parsedConfig: &config.SubstitutedConfig{Config: devcontainer},
 				pull:         test.pull,
 			}
-			err := prepareComposeServiceImage(context.Background(), params)
+			_, err := prepareComposeServiceImage(context.Background(), params)
 			if test.wantPull {
 				require.ErrorContains(t, err, "pull compose service image")
 			} else {
@@ -170,7 +172,7 @@ esac
 				},
 				parsedConfig: &config.SubstitutedConfig{Config: &config.DevContainerConfig{}},
 			}
-			err := prepareComposeServiceImage(context.Background(), params)
+			_, err := prepareComposeServiceImage(context.Background(), params)
 			if test.wantErr == "" {
 				require.NoError(t, err)
 			} else {
@@ -218,7 +220,7 @@ esac
 				},
 				parsedConfig: &config.SubstitutedConfig{Config: &config.DevContainerConfig{}},
 			}
-			err := prepareComposeServiceImage(context.Background(), params)
+			_, err := prepareComposeServiceImage(context.Background(), params)
 			require.FileExists(t, marker)
 			if updates == "yes" {
 				require.NoError(t, err)
@@ -227,4 +229,39 @@ esac
 			}
 		})
 	}
+}
+
+func TestComposeMetadataUsesResolvedPlatform(t *testing.T) {
+	const selectedArchitecture = "amd64"
+	r := newTestRunner(&mockDriver{})
+	r.imageBackend = &separateImages{err: errors.New("mutable image tag was inspected again")}
+	details := &config.ImageDetails{
+		ID: "sha256:index", OS: "linux", Architecture: selectedArchitecture,
+		Config: config.ImageDetailsConfig{
+			User: "selected-user",
+			Labels: map[string]string{
+				metadata.ImageMetadataLabel: `[{"postStartCommand":"echo selected-platform"}]`,
+			},
+		},
+	}
+	info, err := r.prepareComposeBuildInfo(
+		context.Background(), &config.SubstitutionContext{},
+		&composetypes.ServiceConfig{Image: exampleBaseImage}, "selected-stage", details,
+	)
+	require.NoError(t, err)
+	require.Equal(t, "selected-user", info.imageBuildInfo.User)
+	require.Equal(t, selectedArchitecture, info.imageBuildInfo.ImageDetails.Architecture)
+	value, err := metadata.MarshalImageMetadata(info.imageBuildInfo.Metadata.Raw)
+	require.NoError(t, err)
+	require.Contains(t, string(value), "selected-platform")
+	runtimeImage, err := resolveComposeRuntimeImage(context.Background(), nil, composeExtendResult{
+		imageDetails: details,
+	})
+	require.NoError(t, err)
+	require.Same(
+		t,
+		details,
+		runtimeImage,
+		"runtime pinning must not resolve the mutable source tag again",
+	)
 }

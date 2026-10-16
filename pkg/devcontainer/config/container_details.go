@@ -4,15 +4,19 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type ImageDetails struct {
-	ID           string
-	OS           string `json:"Os,omitempty"`
-	Architecture string
-	Variant      string
-	Config       ImageDetailsConfig
-	Metadata     *ImageDetailsMetadata `json:"Metadata,omitempty"`
+	ID               string
+	OS               string `json:"Os,omitempty"`
+	Architecture     string
+	Variant          string
+	Config           ImageDetailsConfig
+	Metadata         *ImageDetailsMetadata `json:"Metadata,omitempty"`
+	Descriptor       *ocispec.Descriptor   `json:"Descriptor,omitempty"`
+	PlatformManifest string                `json:"-"`
 }
 
 type ImageDetailsMetadata struct {
@@ -28,12 +32,13 @@ type ImageDetailsConfig struct {
 }
 
 type ContainerDetails struct {
-	ID      string                 `json:"ID,omitempty"`
-	ImageID string                 `json:"Image,omitempty"`
-	Created string                 `json:"Created,omitempty"`
-	State   ContainerDetailsState  `json:"State"`
-	Config  ContainerDetailsConfig `json:"Config"`
-	Mounts  []ContainerMount       `json:"Mounts,omitempty"`
+	ID                      string                 `json:"ID,omitempty"`
+	ImageID                 string                 `json:"Image,omitempty"`
+	ImageManifestDescriptor *ocispec.Descriptor    `json:"ImageManifestDescriptor,omitempty"`
+	Created                 string                 `json:"Created,omitempty"`
+	State                   ContainerDetailsState  `json:"State"`
+	Config                  ContainerDetailsConfig `json:"Config"`
+	Mounts                  []ContainerMount       `json:"Mounts,omitempty"`
 }
 
 // ContainerMount represents a mount point on a container as returned by

@@ -21,6 +21,7 @@ type composeContract struct {
 	Version   int    `json:"version"`
 	Workspace string `json:"workspace"`
 	Image     string `json:"image"`
+	Manifest  string `json:"manifest,omitempty"`
 	Metadata  string `json:"metadata"`
 	Features  string `json:"features"`
 	Overlay   bool   `json:"overlay,omitempty"`
@@ -186,14 +187,10 @@ func verifyComposeRuntimeMetadata(
 	details *config.ContainerDetails,
 	contract *composeContract,
 ) error {
-	labels := details.Config.Labels
-	if details.ImageID == "" || strings.TrimPrefix(details.ImageID, "sha256:") !=
-		strings.TrimPrefix(contract.Image, "sha256:") {
-		return fmt.Errorf(
-			"compose container image does not match its lifecycle contract; preserve workspace data and %s",
-			composeRecreateGuidance,
-		)
+	if err := verifyComposeImageIdentity(details, contract); err != nil {
+		return err
 	}
+	labels := details.Config.Labels
 	metadataValue := labels[metadata.ImageMetadataLabel]
 	if metadataValue == "" || metadataDigest(metadataValue) != contract.Metadata {
 		return fmt.Errorf(
@@ -205,6 +202,24 @@ func verifyComposeRuntimeMetadata(
 		return fmt.Errorf(
 			"invalid compose container lifecycle metadata: %w; %s",
 			err,
+			composeRecreateGuidance,
+		)
+	}
+	return nil
+}
+
+func verifyComposeImageIdentity(details *config.ContainerDetails, contract *composeContract) error {
+	if details.ImageID == "" || strings.TrimPrefix(details.ImageID, "sha256:") !=
+		strings.TrimPrefix(contract.Image, "sha256:") {
+		return fmt.Errorf(
+			"compose container image does not match its lifecycle contract; preserve workspace data and %s",
+			composeRecreateGuidance,
+		)
+	}
+	if contract.Manifest != "" && (details.ImageManifestDescriptor == nil ||
+		string(details.ImageManifestDescriptor.Digest) != contract.Manifest) {
+		return fmt.Errorf(
+			"compose container image manifest does not match its lifecycle contract; preserve workspace data and %s",
 			composeRecreateGuidance,
 		)
 	}
