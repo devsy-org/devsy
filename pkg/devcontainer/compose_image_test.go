@@ -1,11 +1,17 @@
 package devcontainer
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/devsy-org/devsy/pkg/compose"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,4 +53,34 @@ func TestComposeImagePullPolicy(t *testing.T) {
 			require.Equal(t, test.want, pull)
 		})
 	}
+}
+
+func TestComposePullFlagOnlyRefreshesFeatureBuildBase(t *testing.T) {
+	if runtime.GOOS == goosWindows {
+		t.Skip("Docker command fixture requires a POSIX shell")
+	}
+	command := filepath.Join(t.TempDir(), "docker-fixture")
+	// #nosec G306 -- executable test-owned command fixture.
+	require.NoError(t, os.WriteFile(command, []byte(`#!/bin/sh
+case " $* " in
+  *" inspect "*) echo '[{"Id":"sha256:cached-image","Config":{}}]' ;;
+  *" pull "*) exit 47 ;;
+  *) exit 48 ;;
+esac
+`), 0o700))
+	params := &buildAndExtendParams{
+		composeHelper: &compose.ComposeHelper{Docker: &docker.DockerHelper{DockerCommand: command}},
+		composeService: &composetypes.ServiceConfig{
+			Image: exampleBaseImage, PullPolicy: composetypes.PullPolicyNever,
+		},
+		parsedConfig: &config.SubstitutedConfig{Config: &config.DevContainerConfig{}},
+		pull:         true,
+	}
+	require.NoError(t, prepareComposeServiceImage(context.Background(), params))
+	params.parsedConfig.Config.Features = map[string]any{composeFeatureTestID: map[string]any{}}
+	require.ErrorContains(
+		t,
+		prepareComposeServiceImage(context.Background(), params),
+		"pull compose service image",
+	)
 }

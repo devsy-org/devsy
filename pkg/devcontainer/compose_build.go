@@ -297,7 +297,10 @@ func prepareComposeServiceImage(ctx context.Context, params *buildAndExtendParam
 	if err != nil {
 		return err
 	}
-	if !pull && !params.pull {
+	// With features, the service image becomes a build input; --pull refreshes
+	// that FROM image independently of the final service's pull policy.
+	forceFeatureBuildPull := params.pull && len(params.parsedConfig.Config.Features) > 0
+	if !pull && !forceFeatureBuildPull {
 		return inspectErr
 	}
 	writer := log.Writer(log.LevelInfo)
