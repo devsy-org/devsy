@@ -18,7 +18,7 @@ import (
 const (
 	microsandboxResourceBuiltin  = provider.DeprecatedMicrosandboxSource
 	osLinux                      = "linux"
-	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.8"
+	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.10"
 	microsandboxRootUser         = "root"
 )
 

@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"encoding/json"
+	"fmt"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
@@ -14,6 +15,34 @@ const ImageMetadataLabel = pkgconfig.DevcontainerMetadataLabel
 const CreationConfigLabel = "devsy.sh/metadata-creation-config"
 
 const metadataLabelSizeWarningThreshold = 100 * 1024
+
+// ValidateImageMetadata is the strict counterpart to legacy permissive decoding.
+// Errors deliberately exclude metadata, which can contain commands and secrets.
+func ValidateImageMetadata(value string) error {
+	var entries []*config.ImageMetadata
+	if err := json.Unmarshal([]byte(value), &entries); err != nil {
+		var entry *config.ImageMetadata
+		if err := json.Unmarshal([]byte(value), &entry); err != nil || entry == nil {
+			return fmt.Errorf(
+				"invalid image metadata",
+			)
+		}
+		entries = []*config.ImageMetadata{entry}
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf(
+			"image metadata is empty",
+		)
+	}
+	for _, entry := range entries {
+		if entry == nil {
+			return fmt.Errorf(
+				"image metadata contains a null entry",
+			)
+		}
+	}
+	return nil
+}
 
 func MarshalImageMetadata(raw []*config.ImageMetadata) ([]byte, error) {
 	data, err := json.Marshal(raw)

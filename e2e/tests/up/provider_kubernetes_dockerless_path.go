@@ -92,8 +92,7 @@ func newDockerlessPathFixture(ctx context.Context, appendRemotePath bool) *docke
 		fixture.expectedPath += ":" + dockerlessPathRoot + "/remote-bin"
 		addDockerlessRemotePath(fixtureDir)
 	}
-	fixtureCommand(ctx, time.Minute, nil, "kubectl", "create", "namespace", fixture.id)
-	ginkgo.DeferCleanup(fixture.deleteNamespace)
+	createFixtureNamespace(ctx, time.Minute, fixture.id)
 	// Keep the built-in provider's Dockerless credentials enabled.
 	// Debug output records the helper created by the real callback.
 	framework.ExpectNoError(fixture.framework.DevsyProviderAdd(ctx, "kubernetes",
@@ -104,21 +103,6 @@ func newDockerlessPathFixture(ctx context.Context, appendRemotePath bool) *docke
 		framework.ExpectNoError(fixture.framework.CleanupWorkspace(specCtx, fixture.id))
 	})
 	return fixture
-}
-
-func (fixture *dockerlessPathFixture) deleteNamespace(specCtx ginkgo.SpecContext) {
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(specCtx), time.Minute)
-	defer cancel()
-	fixtureCommand(
-		cleanupCtx,
-		time.Minute,
-		nil,
-		"kubectl",
-		"delete",
-		"namespace",
-		fixture.id,
-		"--wait=false",
-	)
 }
 
 func (fixture *dockerlessPathFixture) deleteProvider(specCtx ginkgo.SpecContext) {
@@ -222,10 +206,8 @@ func (fixture *dockerlessPathFixture) verifyEnvironment(
 	// Raw kubectl exec reads files without treating the pod's original builder
 	// environment as the post-setup agent/SSH environment.
 	execInPod := func(args ...string) string {
-		baseArgs := []string{
-			"kubectl", "exec", "-n", fixture.id, podName, "-c", fixture.containerName, "--",
-		}
-		return fixtureCommand(commandCtx, time.Minute, nil, append(baseArgs, args...)...)
+		baseArgs := []string{"exec", "-n", fixture.id, podName, "-c", fixture.containerName, "--"}
+		return kubectlFixture(commandCtx, time.Minute, append(baseArgs, args...)...)
 	}
 	readFile := func(name string) string {
 		return execInPod("/bin/cat", name)

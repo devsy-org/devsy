@@ -35,3 +35,11 @@ devsy workspace up <workspace> --recreate --devcontainer-overlay ./devcontainer/
 ```
 
 You can still delete the workspace if the overlay file is later removed or broken.
+
+## Restarting Compose workspaces
+
+Compose workspaces keep the resolved feature and overlay lifecycle metadata in the container. SSH starts the existing container and runs its saved lifecycle hooks without the overlay file. Reconnecting to an already running container does not rerun `postStartCommand`.
+
+Changing feature IDs, options, or installation order requires `workspace up --recreate`. SSH does not install features, rebuild images, or replace a stopped container. If the saved Compose files are unavailable, restore them or run `workspace up`.
+
+If Devsy reports missing or invalid lifecycle metadata, recreate the workspace with the original configuration and overlay. Recreation replaces the container, so back up data stored outside persistent mounts first.

@@ -1,5 +1,6 @@
 {
   "id": "base-feature",
   "version": "1.0.0",
-  "name": "base-feature"
+  "name": "base-feature",
+  "postStartCommand": "echo base >> /tmp/base-starts"
 }

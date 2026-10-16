@@ -75,6 +75,9 @@ func (r *runner) generateDockerComposeUpProject(params *composeUpParams) *compos
 	if params.originalImageName != params.overrideImageName {
 		overrideService.Image = params.overrideImageName
 	}
+	if params.pinImage {
+		overrideService.PullPolicy = composetypes.PullPolicyNever
+	}
 
 	if !reflect.DeepEqual(userCommand, composeService.Command) {
 		overrideService.Command = userCommand

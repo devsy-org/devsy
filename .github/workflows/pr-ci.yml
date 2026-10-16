@@ -34,6 +34,7 @@ jobs:
               - 'hack/provider_update_ci/**'
               - 'hack/run-managed-policy-e2e.sh'
               - '.github/workflows/pr-ci.yml'
+              - '.github/workflows/docker-buildkit-windows.yml'
               - 'hack/licenses/**'
               - 'hack/podman_ci/**'
               - 'THIRD_PARTY_LICENSES.md'
@@ -115,6 +116,9 @@ jobs:
 
           printf '%s\n' "$packages" | xargs go test -race -short
 
+      - name: test E2E runtime helpers
+        run: go test -race -count=1 ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
+
       - name: test Compose UID expectation matrix
         shell: bash
         run: |
@@ -130,6 +134,27 @@ jobs:
       - name: test Linux registry fixture
         if: runner.os == 'Linux'
         run: go test -race -count=1 -timeout 90s ./e2e/framework/registryfixture
+
+  windows-transport-tests:
+    name: Windows Transport Tests
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: test native Windows transport
+        run: >-
+          go test -race -count=1 -v -timeout 5m ./pkg/docker
+          -run '^(TestInvocationSuite|TestProviderDaemonOverrides.*|TestStdioTransportSuite|TestLaunch.*|TestEnvBlock.*)$'
+      - name: test E2E runtime helpers
+        run: go test -race -count=1 -timeout 5m ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
 
   provider-update-windows:
     name: Provider Update Tests (windows-latest)
@@ -1271,6 +1296,11 @@ jobs:
         if: matrix.label == 'docker-install' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
         run: docker --version && docker ps
 
+  docker-buildkit-windows:
+    needs: [changes, build-cli, windows-transport-tests]
+    if: needs.changes.outputs.go == 'true'
+    uses: ./.github/workflows/docker-buildkit-windows.yml
+
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
@@ -1281,12 +1311,14 @@ jobs:
       - lint
       - agent-skill
       - unit-tests
+      - windows-transport-tests
       - provider-update-windows
       - licenses
       - build-cli
       - integration-tests-unprivileged
       - integration-tests
       - integration-tests-microsandbox
+      - docker-buildkit-windows
     steps:
       - name: Check required jobs
         run: |
@@ -1319,11 +1351,14 @@ jobs:
           check_result "lint" "${{ needs.lint.result }}" false || status=1
           check_result "agent-skill" "${{ needs.agent-skill.result }}" false || status=1
           check_result "unit-tests" "${{ needs.unit-tests.result }}" true || status=1
+          check_result "windows-transport-tests" "${{ needs.windows-transport-tests.result }}" true || status=1
           check_result "provider-update-windows" "${{ needs.provider-update-windows.result }}" true || status=1
           check_result "licenses" "${{ needs.licenses.result }}" true || status=1
           check_result "build-cli" "${{ needs.build-cli.result }}" true || status=1
           check_result "integration-tests-unprivileged" "${{ needs.integration-tests-unprivileged.result }}" true || status=1
           check_result "integration-tests" "${{ needs.integration-tests.result }}" true || status=1
           check_result "integration-tests-microsandbox" "${{ needs.integration-tests-microsandbox.result }}" true || status=1
+
+          check_result "docker-buildkit-windows" "${{ needs.docker-buildkit-windows.result }}" true || status=1
 
           exit "$status"

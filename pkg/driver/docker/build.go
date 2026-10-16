@@ -260,9 +260,9 @@ func (s *buildkitStrategy) build(
 	platform string,
 	options *build.BuildOptions,
 ) error {
-	dockerClient, err := docker.NewClient(ctx)
+	dockerClient, err := s.newDockerClient(ctx)
 	if err != nil {
-		return fmt.Errorf("create docker client: %w", err)
+		return err
 	}
 	defer func() { _ = dockerClient.Close() }()
 
@@ -282,6 +282,50 @@ func (s *buildkitStrategy) build(
 		return fmt.Errorf("build: %w", err)
 	}
 	return nil
+}
+
+// Podman and nerdctl keep the process-environment client. Elevated Docker also
+// does, but only when the provider does not retarget the daemon: dial-stdio
+// cannot run elevated, and silently using the process daemon would build on the
+// wrong host.
+func (s *buildkitStrategy) newDockerClient(ctx context.Context) (*docker.Client, error) {
+	helper := s.driver.Docker
+	if err := rejectElevatedDaemonOverrides(helper); err != nil {
+		return nil, err
+	}
+	if helper.Elevator != nil || helper.IsPodman() || helper.IsNerdctl() {
+		client, err := docker.NewClient(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("create docker client: %w", err)
+		}
+		return client, nil
+	}
+
+	invocation, err := docker.NewDockerInvocation(helper)
+	if err != nil {
+		return nil, fmt.Errorf("capture docker invocation: %w", err)
+	}
+	client, err := docker.NewClientWithInvocation(ctx, invocation)
+	if err != nil {
+		return nil, fmt.Errorf("create docker client: %w", err)
+	}
+	return client, nil
+}
+
+func rejectElevatedDaemonOverrides(helper *docker.DockerHelper) error {
+	if helper.Elevator == nil || helper.IsPodman() || helper.IsNerdctl() {
+		return nil
+	}
+	keys := docker.ProviderDaemonOverrides(helper)
+	if len(keys) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"internal BuildKit is unsupported with privilege elevation when the provider "+
+			"overrides %s; remove the elevation or the override, or use the "+
+			"docker buildx builder",
+		strings.Join(keys, ", "),
+	)
 }
 
 func (s *buildkitStrategy) name() string {

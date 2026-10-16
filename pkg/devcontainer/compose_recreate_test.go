@@ -34,6 +34,15 @@ func TestStartComposeContainerRecreateRefreshesOverrides(t *testing.T) {
 				},
 			}
 			buildErr := errors.New("fresh image inspection failed")
+			buildContext := t.TempDir()
+			require.NoError(
+				t,
+				os.WriteFile(
+					filepath.Join(buildContext, structuralDockerfile),
+					[]byte("FROM test:latest\n"),
+					0o600,
+				),
+			)
 			d := &mockDriver{stopErr: errors.New("stale overrides reached teardown")}
 			r := newTestRunner(d)
 			r.imageBackend = &separateImages{err: buildErr}
@@ -52,6 +61,10 @@ func TestStartComposeContainerRecreateRefreshesOverrides(t *testing.T) {
 						composeSecretTestServiceName: {
 							Name:  composeSecretTestServiceName,
 							Image: "test:latest",
+							Build: &composetypes.BuildConfig{
+								Context:    buildContext,
+								Dockerfile: structuralDockerfile,
+							},
 						},
 					},
 				},

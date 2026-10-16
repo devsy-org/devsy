@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -127,12 +126,11 @@ var _ = ginkgo.Describe(
 					f.DevsyProviderAdd(ctx, "kubernetes", "-o", "KUBERNETES_NAMESPACE="+namespace),
 				)
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-					// #nosec G204 -- namespace is a generated test name passed as one kubectl argument.
-					cmd := exec.CommandContext(
-						cleanupCtx, "kubectl", "delete", "namespace", namespace,
-						"--ignore-not-found", "--timeout=60s",
+					kubectlFixture(
+						cleanupCtx,
+						time.Minute,
+						"delete", "namespace", namespace, "--ignore-not-found", "--timeout=60s",
 					)
-					framework.ExpectNoError(cmd.Run())
 				})
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					framework.ExpectNoError(f.DevsyProviderDelete(cleanupCtx, "kubernetes"))

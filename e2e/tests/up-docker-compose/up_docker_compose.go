@@ -645,27 +645,96 @@ var _ = ginkgo.Describe(
 				To(gomega.ContainSubstring("vcluster version 0.24.1"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
-		ginkgo.It("overlay features are installed for Compose builds", func(ctx context.Context) {
-			tempDir, err := setupWorkspace(
-				"tests/up-docker-compose/testdata/docker-compose-overlay-features",
-				tc.initialDir,
-				tc.f,
-			)
-			framework.ExpectNoError(err)
-			_, err = devsyUpAndFindWorkspace(
-				ctx, tc.f, tempDir,
-				"--devcontainer-overlay",
-				filepath.Join(tempDir, "overlay", "extra.json"),
-			)
-			framework.ExpectNoError(err)
-
-			for _, marker := range []string{"base-feature-installed", "overlay-feature-installed"} {
-				_, err = tc.f.DevsySSH(ctx, tempDir, "test -f /tmp/"+marker)
+		ginkgo.It(
+			"overlay feature lifecycle survives SSH restarts without the overlay",
+			func(ctx context.Context) {
+				tempDir, err := setupWorkspace(
+					"tests/up-docker-compose/testdata/docker-compose-overlay-features",
+					tc.initialDir,
+					tc.f,
+				)
 				framework.ExpectNoError(err)
-			}
+				workspace, err := devsyUpAndFindWorkspace(
+					ctx, tc.f, tempDir,
+					"--devcontainer-overlay",
+					filepath.Join(tempDir, "overlay", "extra.json"),
+				)
+				framework.ExpectNoError(err)
 
-			framework.ExpectNoError(os.Remove(filepath.Join(tempDir, "overlay", "extra.json")))
-		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+				for _, marker := range []string{"base-feature-installed", "overlay-feature-installed"} {
+					_, err = tc.f.DevsySSH(ctx, tempDir, "test -f /tmp/"+marker)
+					framework.ExpectNoError(err)
+				}
+
+				installedOption, err := tc.f.DevsySSH(
+					ctx,
+					tempDir,
+					"cat /tmp/overlay-feature-option",
+				)
+				framework.ExpectNoError(err)
+				gomega.Expect(strings.TrimSpace(installedOption)).To(gomega.Equal("first"))
+				before, err := tc.getAppContainer(ctx, workspace)
+				framework.ExpectNoError(err)
+				ginkgo.GinkgoWriter.Printf(
+					"creation container=%s image=%s\n",
+					before.ID,
+					before.Image,
+				)
+				overlayPath := filepath.Join(tempDir, "overlay", "extra.json")
+				// #nosec G304 -- overlayPath is inside the test-owned temporary workspace.
+				originalOverlay, err := os.ReadFile(overlayPath)
+				framework.ExpectNoError(err)
+				changedOverlay := `{
+  "features": {"./features/overlay-feature": {"marker": "second"}},
+  "initializeCommand": "touch feature-drift-initialize"
+}`
+				framework.ExpectNoError(os.WriteFile(overlayPath, []byte(changedOverlay), 0o600))
+				stdout, stderr, err := tc.f.ExecCommandCapture(ctx, []string{
+					"workspace",
+					"up",
+					tempDir,
+					"--ide",
+					"none",
+					"--devcontainer-overlay",
+					overlayPath,
+				})
+				gomega.Expect(err).To(gomega.HaveOccurred())
+				gomega.Expect(stdout + stderr).To(gomega.ContainSubstring("--recreate"))
+				_, err = os.Stat(filepath.Join(tempDir, "feature-drift-initialize"))
+				gomega.Expect(os.IsNotExist(err)).To(gomega.BeTrue())
+				framework.ExpectNoError(os.WriteFile(overlayPath, originalOverlay, 0o600))
+				framework.ExpectNoError(
+					tc.f.DevsyUp(ctx, tempDir, "--devcontainer-overlay", overlayPath),
+				)
+				framework.ExpectNoError(os.Remove(overlayPath))
+				for start := 1; start <= 2; start++ {
+					if start == 2 {
+						framework.ExpectNoError(tc.f.DevsyWorkspaceStop(ctx, tempDir))
+						composePath := filepath.Join(tempDir, "docker-compose.yaml")
+						// #nosec G304 -- composePath is inside the test-owned temporary workspace.
+						contents, err := os.ReadFile(composePath)
+						framework.ExpectNoError(err)
+						contents = []byte("name: renamed-after-creation\n" +
+							strings.ReplaceAll(string(contents), "sleep infinity", "sleep 600"),
+						)
+						framework.ExpectNoError(os.WriteFile(composePath, contents, 0o600))
+					}
+					for _, name := range []string{"base", "overlay", "runtime-overlay"} {
+						count, err := tc.f.DevsySSH(ctx, tempDir, "wc -l < /tmp/"+name+"-starts")
+						framework.ExpectNoError(err)
+						gomega.Expect(strings.TrimSpace(count)).To(gomega.Equal(fmt.Sprint(start)))
+					}
+					after, err := tc.getAppContainer(ctx, workspace)
+					framework.ExpectNoError(err)
+					gomega.Expect(after.ID).To(gomega.Equal(before.ID))
+					gomega.Expect(after.Image).To(gomega.Equal(before.Image))
+					gomega.Expect(after.Config.Labels[pkgconfig.DevcontainerMetadataLabel]).
+						To(gomega.Equal(before.Config.Labels[pkgconfig.DevcontainerMetadataLabel]))
+				}
+				tc.verifyMissingComposeOverride(ctx, tempDir, before)
+			},
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
 
 		ginkgo.It(
 			"structural overlay service changes require recreate and preserve cleanup",
@@ -908,6 +977,12 @@ var _ = ginkgo.Describe(
 			gomega.Expect(vclusterVersionOutput).
 				To(gomega.ContainSubstring("vcluster version 0.24.1"))
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
+
+		ginkgo.It(
+			"uses the requested platform when multiple image variants are cached",
+			func(ctx context.Context) { tc.verifyCachedImagePlatforms(ctx) },
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+		)
 
 		ginkgo.It(
 			"does not retag shared image when applying features to image backed services",

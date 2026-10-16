@@ -173,12 +173,12 @@ func (cmd *ApplyCmd) prepareContainer(
 }
 
 func newStatusReporter(resultFormat string, out io.Writer, verbose bool) (status.Reporter, error) {
-	reporter, err := status.NewReporter(status.ReporterOptions{
-		Format:                 resultFormat,
-		Out:                    out,
-		Prefix:                 "config",
-		Verbose:                verbose,
-		SuppressFailureDetails: true,
+	return status.NewCLIReporter(status.CLIOptions{
+		Format:   resultFormat,
+		Out:      out,
+		Prefix:   "config",
+		Verbose:  verbose,
+		Pipeline: status.PipelineWorkspaceUp,
 		Labels: map[status.Phase]string{
 			status.PhaseResolvingConfig:      "resolving devcontainer config",
 			status.PhaseRunningLifecycleHook: "applying lifecycle configuration",
@@ -188,10 +188,6 @@ func newStatusReporter(resultFormat string, out io.Writer, verbose bool) (status
 			return devcconfig.WriteStatusJSON(out, e)
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
-	return status.ForPipeline(reporter, status.PipelineWorkspaceUp), nil
 }
 
 func (cmd *ApplyCmd) resolveDockerPath() string {
