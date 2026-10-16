@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { execFile, spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import { Readable } from "node:stream"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { CliRunner } from "../cli.js"
@@ -58,6 +60,34 @@ describe("CliRunner", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     cli = new CliRunner("/usr/local/bin/devsy")
+  })
+
+  it("passes standard user-local tools ahead of inherited shims on macOS", async () => {
+    const inheritedPath = "/fixture/mise/shims:/usr/bin:/bin"
+    vi.stubEnv("PATH", inheritedPath)
+    try {
+      const runner = new CliRunner("/usr/local/bin/devsy")
+      const mock = vi.mocked(execFile) as unknown as ReturnType<typeof vi.fn>
+      mock.mockImplementation(
+        (_cmd: string, _args: string[], _opts: unknown, callback: ExecCb) =>
+          callback(null, { stdout: "[]", stderr: "" }),
+      )
+      await runner.run(["provider", "list"])
+      const path = mock.mock.calls[0][2].env.PATH as string
+      if (process.platform === "darwin") {
+        const directories = path.split(":")
+        const userBin = join(homedir(), ".local", "bin")
+        expect(directories).toContain(userBin)
+        expect(directories.indexOf(userBin)).toBeLessThan(
+          directories.indexOf("/fixture/mise/shims"),
+        )
+      } else {
+        expect(path).toBe(inheritedPath)
+      }
+      expect(process.env.PATH).toBe(inheritedPath)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it("scopes session credentials and strips inherited unlock environment from env commands", async () => {

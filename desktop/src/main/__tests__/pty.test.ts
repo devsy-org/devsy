@@ -1,10 +1,44 @@
 // @vitest-environment node
 import { homedir, platform } from "node:os"
+import { join } from "node:path"
 import type { IPty } from "node-pty"
 import { describe, expect, it, vi } from "vitest"
 import { PtyManager, sshTerminalArgs } from "../pty.js"
 
 describe("PtyManager", () => {
+  it("keeps the bundled CLI and standard user-local tools ahead of inherited shims", () => {
+    const inheritedPath = "/fixture/mise/shims:/usr/bin:/bin"
+    vi.stubEnv("PATH", inheritedPath)
+    try {
+      const proc = { onData: vi.fn(), onExit: vi.fn() } as unknown as IPty
+      const spawnPty = vi.fn<typeof import("node-pty").spawn>(() => proc)
+      const manager = new PtyManager({
+        binaryPath: "/bundle/devsy",
+        getMainWindow: () => null,
+        spawnPty,
+      })
+      manager.createSshSession("workspace-id", 80, 24)
+      const options = spawnPty.mock.calls[0]?.[2] as {
+        env: Record<string, string>
+      }
+      const path = options.env.PATH
+      expect(path.startsWith("/bundle:")).toBe(true)
+      if (platform() === "darwin") {
+        const directories = path.split(":")
+        const userBin = join(homedir(), ".local", "bin")
+        expect(directories).toContain(userBin)
+        expect(directories.indexOf(userBin)).toBeLessThan(
+          directories.indexOf("/fixture/mise/shims"),
+        )
+      } else {
+        expect(path).toBe(`/bundle:${inheritedPath}`)
+      }
+      expect(process.env.PATH).toBe(inheritedPath)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it("starts local shells in the user's home directory", () => {
     const proc = {
       onData: vi.fn(),

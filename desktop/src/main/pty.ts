@@ -2,6 +2,7 @@ import { homedir, platform } from "node:os"
 import { dirname } from "node:path"
 import type { BrowserWindow } from "electron"
 import type { IPty } from "node-pty"
+import { desktopExecutablePath } from "./executable-path.js"
 
 // Lazy-load node-pty so the app can start even when the native module is unavailable
 // (e.g. during e2e tests where native bindings aren't rebuilt for Electron's ABI).
@@ -45,15 +46,12 @@ export class PtyManager {
   constructor(private deps: PtyDeps) {
     // Build an augmented PATH so shells spawned from the Electron GUI can find
     // the bundled devsy binary and common macOS tool directories.
-    const currentPath = process.env.PATH ?? ""
+    const currentPath = desktopExecutablePath(
+      process.env.PATH ?? "",
+      platform(),
+      homedir(),
+    )
     const extraDirs = [dirname(deps.binaryPath)]
-    if (platform() === "darwin") {
-      extraDirs.push(
-        "/usr/local/bin",
-        "/opt/homebrew/bin",
-        "/opt/homebrew/sbin",
-      )
-    }
     const missing = extraDirs.filter((d) => !currentPath.split(":").includes(d))
     const augmentedPath =
       missing.length > 0 ? `${missing.join(":")}:${currentPath}` : currentPath

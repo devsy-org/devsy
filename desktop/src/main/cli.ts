@@ -1,5 +1,6 @@
 import type { ChildProcess } from "node:child_process"
 import { execFile as execFileCb, spawn } from "node:child_process"
+import { homedir } from "node:os"
 import { createInterface } from "node:readline"
 import type { Readable } from "node:stream"
 import { promisify } from "node:util"
@@ -9,6 +10,7 @@ import {
   cliErrorFromLegacy,
 } from "../shared/cli-error.js"
 import { getAnalyticsDistinctId } from "./analytics.js"
+import { desktopExecutablePath } from "./executable-path.js"
 
 const execFile = promisify(execFileCb)
 const MAX_CONCURRENT = 50
@@ -156,8 +158,8 @@ function parseStderrLine(line: string): CliLogLine | undefined {
 
 /**
  * On macOS, GUI apps (including Electron) inherit a minimal PATH that excludes
- * /usr/local/bin and /opt/homebrew/bin. This means tools like docker, git, etc.
- * installed via Homebrew or Docker Desktop are invisible to child processes.
+ * Homebrew and user-local bin directories. This means separately installed tools
+ * can be invisible to child processes or shadowed by a version-manager shim.
  * We augment PATH so all spawned CLI processes can find these tools.
  */
 function buildEnv(): NodeJS.ProcessEnv {
@@ -170,16 +172,11 @@ function buildEnv(): NodeJS.ProcessEnv {
   if (process.platform !== "darwin") return baseEnv
 
   const currentPath = process.env.PATH ?? ""
-  const extraDirs = [
-    "/usr/local/bin",
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-  ]
-  const extraSet = new Set(extraDirs)
-  const existingDirs = currentPath
-    .split(":")
-    .filter((directory) => directory !== "" && !extraSet.has(directory))
-  const mergedPath = [...extraDirs, ...existingDirs].join(":")
+  const mergedPath = desktopExecutablePath(
+    currentPath,
+    process.platform,
+    homedir(),
+  )
   if (mergedPath === currentPath) return baseEnv
 
   return {

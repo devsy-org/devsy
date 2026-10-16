@@ -55,7 +55,8 @@ npm package is named `microsandbox`. Installing the Devsy provider does not inst
 the MicroSandbox engine.
 
 For a macOS Desktop installation, the official installer places the command in
-`~/.local/bin`; the MicroSandbox provider also checks that location and
+`~/.local/bin`. Desktop includes that directory before inherited version-manager
+shims when it launches CLI commands and terminals. The MicroSandbox provider also checks that location and
 `~/.microsandbox/bin` when `msb` is absent from its inherited `PATH`. Check
 `msb --version` to confirm that the command is the MicroSandbox CLI. A terminal's
 Node version-manager installation and a GUI application's search path can differ.
