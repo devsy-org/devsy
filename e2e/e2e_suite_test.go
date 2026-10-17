@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"os"
 	"runtime"
 	"testing"
@@ -43,6 +44,7 @@ import (
 	_ "github.com/devsy-org/devsy/e2e/tests/upgrade"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 func TestMain(m *testing.M) {
@@ -67,17 +69,14 @@ func TestRunE2ETests(t *testing.T) {
 		go framework.ServeAgent()
 
 		// wait for http server to be up and running (max 30s)
-		deadline := time.After(30 * time.Second)
-		for {
-			select {
-			case <-deadline:
-				t.Fatal("timeout waiting for DEVSY_AGENT_URL to be set after 30s")
-			default:
-			}
-			time.Sleep(time.Second)
-			if os.Getenv("DEVSY_AGENT_URL") != "" {
-				break
-			}
+		err := wait.PollUntilContextTimeout(
+			context.Background(), time.Second, 30*time.Second, true,
+			func(context.Context) (bool, error) {
+				return os.Getenv("DEVSY_AGENT_URL") != "", nil
+			},
+		)
+		if err != nil {
+			t.Fatal("timeout waiting for DEVSY_AGENT_URL to be set after 30s")
 		}
 	}
 	gomega.RegisterFailHandler(ginkgo.Fail)
