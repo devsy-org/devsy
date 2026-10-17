@@ -97,7 +97,7 @@ func checkInSync(hackDir, outFile string, deps []byte) error {
 		_ = diff.Run()
 		fmt.Fprintln(
 			os.Stderr,
-			"warning: THIRD_PARTY_LICENSES.md is out of date; run 'task cli:licenses' and commit the result",
+			"warning: THIRD_PARTY_LICENSES.md is out of date; run 'mise run cli:licenses' and commit the result",
 		)
 		return nil
 	}

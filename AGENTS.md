@@ -14,21 +14,21 @@ Toolchain is managed by mise. Install mise using `curl https://mise.run | sh`. I
 
 ## Common Developer Commands
 
-`task --list` shows developer commands. The most common tasks:
+`mise tasks` shows developer commands. The most common tasks:
 
 ### CLI (Go) Development
 
-- **Tidy Go modules**: `task cli:tidy`
-- **Lint CLI**: `task cli:lint` and `task cli:lint:ci` (or `task cli:lint:fix` to apply fixes)
-- **Format CLI**: `task cli:format`
-- **Run unit tests**: `task cli:test` (writes coverage to `dist/profile.out`; a `dist` directory is required, e.g. `mkdir -p dist`)
-- **Build development binary**: `task cli:build:dev` (output under `dist/devsy-dev_linux_amd64_v1/`)
+- **Tidy Go modules**: `mise run cli:tidy`
+- **Lint CLI**: `mise run cli:lint` and `mise run cli:lint:ci` (or `mise run cli:lint:fix` to apply fixes)
+- **Format CLI**: `mise run cli:format`
+- **Run unit tests**: `mise run cli:test` (writes coverage to `dist/profile.out`; a `dist` directory is required, e.g. `mkdir -p dist`)
+- **Build development binary**: `mise run cli:build:dev` (output under `dist/devsy-dev_linux_amd64_v1/`)
 
 ### Desktop (Electron/Svelte 5) Development
 
-- **Verify desktop code quality**: `task desktop:check` (Svelte check and TypeScript compiler)
-- **Run desktop unit tests**: `task desktop:test`
-- **Run desktop E2E (Playwright) tests**: `task desktop:test:e2e`
+- **Verify desktop code quality**: `mise run desktop:check` (Svelte check and TypeScript compiler)
+- **Run desktop unit tests**: `mise run desktop:test`
+- **Run desktop E2E (Playwright) tests**: `mise run desktop:test:e2e`
 
 ### Local Development: Agent Binary URL (`DEVSY_AGENT_URL`)
 
@@ -42,7 +42,7 @@ Local setup:
 
 ```bash
 # 1. Build the agent binary for the workspace's Linux arch (output: dist/devsy-dev_linux_amd64_v1/devsy-linux-amd64).
-task cli:build:dev
+mise run cli:build:dev
 
 # 2. Serve the built binary over HTTP.
 mkdir -p bin
@@ -64,18 +64,18 @@ The agent binary runs inside the (Linux) workspace, so it is a Linux binary (`de
 Desktop tests run inside an Electron browser environment. In headless or container environments, Electron commands require an `xvfb-run` prefix to emulate a display server:
 
 ```bash
-xvfb-run task desktop:test # Desktop unit tests headlessly
+xvfb-run mise run desktop:test # Desktop unit tests headlessly
 
-xvfb-run task desktop:test:e2e # Desktop E2E tests headlessly
+xvfb-run mise run desktop:test:e2e # Desktop E2E tests headlessly
 ```
 
 ### E2E (Ginkgo) Tests
 
 Devsy uses [Ginkgo](https://onsi.github.io/ginkgo/) for Go E2E and integration tests.
 
-- **All E2E tests**: `task cli:test:e2e`
-- **A focused test suite**: `task cli:test:e2e:suite -- "suite-name"`
-- **A specific test pattern**: `task cli:test:e2e:focus -- "test-pattern"`
+- **All E2E tests**: `mise run cli:test:e2e`
+- **A focused test suite**: `mise run cli:test:e2e:suite "suite-name"`
+- **A specific test pattern**: `mise run cli:test:e2e:focus "test-pattern"`
 
 ---
 
@@ -86,7 +86,7 @@ Devsy uses [Ginkgo](https://onsi.github.io/ginkgo/) for Go E2E and integration t
 - **Idiomatic**: Focus on simplicity, reliability, and efficiency when writing clear, idiomatic Go code.
 - **Style Guide**: Use the Uber style guide https://github.com/uber-go/guide/blob/master/style.md.
 - **Unit Testing**: Prefer using [testify suite](https://github.com/stretchr/testify#suite-package) (`testify/suite`) for writing unit tests.
-- **Linter**: `golangci-lint` via `task cli:lint` (or `task cli:lint:fix`). Run `task cli:lint:ci` before pushing changes.
+- **Linter**: `golangci-lint` via `mise run cli:lint` (or `mise run cli:lint:fix`). Run `mise run cli:lint:ci` before pushing changes.
 
 ### TypeScript / Svelte Code Style
 

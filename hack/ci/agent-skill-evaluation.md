@@ -1,6 +1,6 @@
 # Devsy skill behavioral evaluation
 
-`task agent-skill:validate` checks the skill's specification conformance, installer discovery, and installed copies for Codex and Claude Code. It does not test agent behavior, so run this evaluation when the skill changes.
+`mise run agent-skill:validate` checks the skill's specification conformance, installer discovery, and installed copies for Codex and Claude Code. It does not test agent behavior, so run this evaluation when the skill changes.
 
 ## Procedure
 

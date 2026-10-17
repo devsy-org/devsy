@@ -93,18 +93,3 @@ url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets
 checksum = "sha256:de56d57afe30c5d191b11d24ff93dd4025728d7fb43b773886b2d3613e0bdbb2"
 url = "https://github.com/protocolbuffers/protobuf/releases/download/v36.1/protoc-36.1-osx-aarch_64.zip"
 url_api = "https://api.github.com/repos/protocolbuffers/protobuf/releases/assets/538583189"
-
-[[tools.task]]
-version = "3.53.1"
-backend = "aqua:go-task/task"
-specifiers = ["3.53.1"]
-
-[tools.task."platforms.linux-x64"]
-checksum = "sha256:a54a408f6861ff921f6e87774180db31bacd8c1e7c944ca696db9fea49a82fc7"
-url = "https://github.com/go-task/task/releases/download/v3.53.1/task_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/go-task/task/releases/assets/519645449"
-
-[tools.task."platforms.macos-arm64"]
-checksum = "sha256:85d2d96c2380b33d7855b07b3f7a20dc7ca0eda999a26efa0fb5f6f32b366cd7"
-url = "https://github.com/go-task/task/releases/download/v3.53.1/task_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/go-task/task/releases/assets/519645491"

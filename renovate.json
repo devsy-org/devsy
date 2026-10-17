@@ -13,6 +13,17 @@
   "prConcurrentLimit": 1,
   "platformAutomerge": true,
   "postUpdateOptions": ["gomodTidy"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "prek hook repositories in prek.toml (Renovate has no prek manager yet)",
+      "managerFilePatterns": ["/(^|/)prek\\.toml$/"],
+      "matchStrings": [
+        "repo = \"https://github\\.com/(?<depName>[^\"]+)\"\\s+rev = \"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-tags"
+    }
+  ],
   "packageRules": [
     {
       "matchUpdateTypes": ["major"],
@@ -29,14 +40,15 @@
       "prPriority": 5
     },
     {
-      "matchManagers": ["pre-commit"],
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["prek.toml"],
       "automerge": true,
       "prPriority": 4
     },
     {
-      "matchManagers": ["pre-commit"],
-      "matchPackageNames": ["https://github.com/golangci/golangci-lint"],
-      "matchFileNames": [".pre-commit-config.yaml"],
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["golangci/golangci-lint"],
+      "matchFileNames": ["prek.toml"],
       "allowedVersions": "v2.13.2",
       "automerge": false,
       "description": "keep golangci-lint aligned with the pinned Go 1.26.8 toolchain"
