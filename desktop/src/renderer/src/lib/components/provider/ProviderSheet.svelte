@@ -325,6 +325,14 @@ async function handleToggleSingleMachine(enabled: boolean) {
     return
   }
 
+  providers.update((current) =>
+    current.map((item) =>
+      item.name === name
+        ? { ...item, state: { ...item.state, singleMachine: enabled } }
+        : item,
+    ),
+  )
+
   try {
     providers.set(await providerList())
     toasts.success(enabled ? "Reuse machine enabled" : "Reuse machine disabled")
