@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ProviderJobs } from "../provider-jobs.js"
+import { DaemonState } from "../state.js"
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 let trustedEvent: unknown
@@ -72,6 +73,8 @@ function setup(
     ),
     cancelFor: vi.fn(async () => undefined),
   }
+  const state = new DaemonState()
+  vi.spyOn(state, "workspaceContext").mockReturnValue("ctx")
   const send = vi.fn()
   const mainFrame = {
     url: pathToFileURL(join(__dirname, "../../renderer/index.html")).href,
@@ -82,7 +85,7 @@ function setup(
   trustedEvent = { sender: webContents, senderFrame: mainFrame }
   const deps = {
     cli,
-    state: { workspaceContext: () => "ctx", providerList: () => [] },
+    state,
     logStore: {
       createLogFile: () => "/tmp/log.txt",
       appendLog: () => true,
@@ -95,7 +98,13 @@ function setup(
   }
   // biome-ignore lint/suspicious/noExplicitAny: partial test doubles
   registerIpcHandlers(deps as any)
-  return { providerJobs, cli, send }
+  providerJobs.onChange(() =>
+    send("providers-changed", {
+      providers: state.providerList(),
+      jobs: providerJobs.snapshot(),
+    }),
+  )
+  return { providerJobs, cli, send, state }
 }
 
 function invoke(channel: string, args: Record<string, unknown>) {
@@ -171,6 +180,162 @@ describe("provider job lifecycle over IPC", () => {
       "-o",
       "REGION=local",
     ])
+  })
+
+  it.each([
+    ["provider_set_single_machine", true, false],
+    ["provider_set_single_machine", false, true],
+    ["provider_set_options", true, false],
+    ["provider_set_options", false, true],
+  ] as const)(
+    "updates only the named provider cache after successful %s mode=%s",
+    async (channel, desired, initial) => {
+      const { cli, state } = setup()
+      const provider = {
+        name: "docker",
+        state: { initialized: true, singleMachine: initial },
+        options: { REGION: "local" },
+      }
+      const sibling = {
+        name: "aws",
+        state: { initialized: false, singleMachine: true },
+      }
+      state.updateProviders([provider, sibling])
+      const startingRevision = state.providerReadRevision()
+      const args =
+        channel === "provider_set_single_machine"
+          ? { name: "docker", enabled: desired }
+          : {
+              name: "docker",
+              options: ["REGION=remote"],
+              singleMachine: desired,
+            }
+
+      await invoke(channel, args)
+
+      expect(cli.runRaw).toHaveBeenCalledOnce()
+      expect(state.providerReadRevision()).toBe(startingRevision + 1)
+      expect(
+        state.providerList().find(({ name }) => name === "docker"),
+      ).toEqual({
+        ...provider,
+        state: { initialized: true, singleMachine: desired },
+      })
+      expect(state.providerList().find(({ name }) => name === "aws")).toEqual(
+        sibling,
+      )
+      expect(provider.state.singleMachine).toBe(initial)
+    },
+  )
+
+  it.each([
+    ["provider_set_single_machine", { name: "docker", enabled: false }],
+    [
+      "provider_set_options",
+      { name: "docker", options: ["REGION=remote"], singleMachine: false },
+    ],
+  ] as const)(
+    "does not update cached mode when %s fails",
+    async (channel, args) => {
+      const { cli, state } = setup()
+      state.updateProviders([
+        { name: "docker", state: { initialized: true, singleMachine: true } },
+      ])
+      const startingRevision = state.providerReadRevision()
+      cli.runRaw.mockRejectedValueOnce(new Error("provider set failed"))
+
+      await expect(invoke(channel, args)).rejects.toThrow("provider set failed")
+
+      expect(state.providerReadRevision()).toBe(startingRevision)
+      expect(state.providerList()[0].state?.singleMachine).toBe(true)
+    },
+  )
+
+  it("leaves cached mode implicit when saving options without an explicit mode", async () => {
+    const { state } = setup()
+    state.updateProviders([
+      { name: "docker", state: { initialized: true, singleMachine: true } },
+    ])
+    const startingRevision = state.providerReadRevision()
+
+    await invoke("provider_set_options", {
+      name: "docker",
+      options: ["REGION=remote"],
+    })
+
+    expect(state.providerReadRevision()).toBe(startingRevision)
+    expect(state.providerList()[0].state?.singleMachine).toBe(true)
+  })
+
+  it("keeps confirmed mode in provider-job broadcasts when the subsequent provider list fails", async () => {
+    const { cli, providerJobs, send, state } = setup()
+    state.updateProviders([
+      {
+        name: "docker",
+        state: { initialized: true, singleMachine: true },
+      },
+      { name: "aws", state: { initialized: false, singleMachine: false } },
+    ])
+    await invoke("provider_set_single_machine", {
+      name: "docker",
+      enabled: false,
+    })
+
+    providerJobs.setRefresh(async () => {
+      await invoke("provider_list", {})
+    })
+    cli.run.mockRejectedValueOnce(new Error("provider list unavailable"))
+    providerJobs.start("aws", "updating")
+    await expect(providerJobs.finish("aws")).rejects.toThrow(
+      "provider list unavailable",
+    )
+    providerJobs.start("docker", "initializing")
+
+    expect(state.providerList()).toEqual([
+      { name: "aws", state: { initialized: false, singleMachine: false } },
+      { name: "docker", state: { initialized: true, singleMachine: false } },
+    ])
+    expect(send).toHaveBeenCalledWith(
+      "providers-changed",
+      expect.objectContaining({
+        providers: expect.arrayContaining([
+          expect.objectContaining({
+            name: "docker",
+            state: expect.objectContaining({ singleMachine: false }),
+          }),
+        ]),
+      }),
+    )
+  })
+
+  it("does not let a direct provider-list response started before a write replace its mode", async () => {
+    const { cli, state } = setup()
+    state.updateProviders([
+      { name: "docker", state: { initialized: true, singleMachine: true } },
+    ])
+    let resolveList!: (value: Record<string, unknown>) => void
+    cli.run.mockImplementationOnce(
+      () =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          resolveList = resolve
+        }),
+    )
+    const pendingList = invoke("provider_list", {})
+    await vi.waitFor(() => expect(cli.run).toHaveBeenCalledOnce())
+
+    await invoke("provider_set_single_machine", {
+      name: "docker",
+      enabled: false,
+    })
+    resolveList({
+      docker: {
+        config: { name: "docker" },
+        state: { initialized: true, singleMachine: true },
+      },
+    })
+    await pendingList
+
+    expect(state.providerList()[0].state?.singleMachine).toBe(false)
   })
 
   it("rejects malformed installation mode before saving options", async () => {

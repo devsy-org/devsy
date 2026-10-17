@@ -1151,12 +1151,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   // ── Providers ──
   ipcMain.handle("provider_list", async () => {
+    const readRevision = state.providerReadRevision()
     const raw = await cli.run<Record<string, ProviderEntry>>([
       "provider",
       "list",
     ])
     const providers = parseProviderEntries(raw)
-    state.updateProviders(providers)
+    state.updateProviders(providers, readRevision)
     return state.providerList()
   })
 
@@ -1478,6 +1479,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         cliArgs.push("-o", opt)
       }
       await cli.runRaw(cliArgs)
+      if (args.singleMachine !== undefined) {
+        state.confirmProviderSingleMachine(args.name, args.singleMachine)
+      }
     },
   )
 
@@ -1491,6 +1495,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "--skip-init",
         `--single-machine=${args.enabled}`,
       ])
+      state.confirmProviderSingleMachine(args.name, args.enabled)
     },
   )
 
