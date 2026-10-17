@@ -26,12 +26,20 @@ const scenes = [
   },
 ];
 
+const sceneDuration = 6500;
+
 export function ProductWalkthrough() {
   const [scene, setScene] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [inView, setInView] = useState(false);
   const [pageVisible, setPageVisible] = useState(true);
   const container = useRef<HTMLElement>(null);
+  const elapsed = useRef(0);
+
+  function resetProgress() {
+    elapsed.current = 0;
+    container.current?.style.setProperty('--tour-progress', '0');
+  }
 
   useEffect(() => {
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -57,23 +65,35 @@ export function ProductWalkthrough() {
 
   useEffect(() => {
     if (!playing || !inView || !pageVisible) return;
-    const timer = window.setTimeout(() => {
-      if (scene === scenes.length - 1) setPlaying(false);
-      else setScene(scene + 1);
-    }, 6500);
-    return () => window.clearTimeout(timer);
+    let previous = performance.now();
+    let frame: number;
+    const advance = (now: number) => {
+      elapsed.current = Math.min(
+        sceneDuration,
+        elapsed.current + now - previous,
+      );
+      previous = now;
+      container.current?.style.setProperty(
+        '--tour-progress',
+        String(elapsed.current / sceneDuration),
+      );
+      if (elapsed.current < sceneDuration) {
+        frame = window.requestAnimationFrame(advance);
+      } else {
+        elapsed.current = 0;
+        container.current?.style.setProperty('--tour-progress', '0');
+        setScene((scene + 1) % scenes.length);
+      }
+    };
+    frame = window.requestAnimationFrame(advance);
+    return () => window.cancelAnimationFrame(frame);
   }, [scene, playing, inView, pageVisible]);
 
   function togglePlayback() {
-    if (!playing && scene === scenes.length - 1) setScene(0);
     setPlaying(!playing);
   }
 
-  const playbackLabel = playing
-    ? 'Pause walkthrough'
-    : scene === scenes.length - 1
-      ? 'Replay walkthrough'
-      : 'Play walkthrough';
+  const playbackLabel = playing ? 'Pause walkthrough' : 'Play walkthrough';
 
   return (
     <section
@@ -81,33 +101,6 @@ export function ProductWalkthrough() {
       className="product-tour"
       aria-label="Devsy Desktop walkthrough"
     >
-      <div className="tour-heading">
-        <span>
-          <span className="tour-status-dot" aria-hidden="true" />
-          Meet your workspace
-        </span>
-        <button
-          className="tour-playback"
-          type="button"
-          aria-label={playbackLabel}
-          onClick={togglePlayback}
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            {playing ? (
-              <path d="M4 3h3v10H4zm5 0h3v10H9z" />
-            ) : (
-              <path d="m5 2 9 6-9 6z" />
-            )}
-          </svg>
-          {playing ? 'Pause' : scene === scenes.length - 1 ? 'Replay' : 'Play'}
-        </button>
-      </div>
       <div id="tour-screen" className="tour-screen">
         {scenes.map((item, index) => (
           /* biome-ignore lint/performance/noImgElement: Local optimized WebP assets; static export has no image optimizer. */
@@ -133,10 +126,11 @@ export function ProductWalkthrough() {
             aria-label={`Step ${index + 1}: ${item.title}`}
             aria-pressed={scene === index}
             aria-controls="tour-screen"
-            className={scene === index ? 'tour-step is-current' : 'tour-step'}
+            className={`tour-step${scene === index ? ' is-current' : ''}${scene > index ? ' is-complete' : ''}`}
             onFocus={() => setPlaying(false)}
             onClick={() => {
               setPlaying(false);
+              resetProgress();
               setScene(index);
             }}
           >
@@ -144,27 +138,50 @@ export function ProductWalkthrough() {
               0{index + 1}
             </span>
             <span>{item.title}</span>
+            <span className="tour-progress" aria-hidden="true">
+              <span className="tour-progress-fill" />
+            </span>
           </button>
         ))}
       </fieldset>
-      <div className="tour-descriptions">
-        {scenes.map((item, index) => (
-          <p
-            key={item.title}
-            aria-hidden={scene !== index}
-            className={
-              scene === index
-                ? 'tour-description is-current'
-                : 'tour-description'
-            }
+      <div className="tour-footer">
+        <div className="tour-descriptions">
+          {scenes.map((item, index) => (
+            <p
+              key={item.title}
+              aria-hidden={scene !== index}
+              className={
+                scene === index
+                  ? 'tour-description is-current'
+                  : 'tour-description'
+              }
+            >
+              {item.description}
+            </p>
+          ))}
+        </div>
+        <button
+          className="tour-playback"
+          type="button"
+          aria-label={playbackLabel}
+          onClick={togglePlayback}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            aria-hidden="true"
           >
-            {item.description}
-          </p>
-        ))}
+            {playing ? (
+              <path d="M4 3h3v10H4zm5 0h3v10H9z" />
+            ) : (
+              <path d="m5 2 9 6-9 6z" />
+            )}
+          </svg>
+          {playing ? 'Pause' : 'Play'}
+        </button>
       </div>
-      <p className="tour-note">
-        Devsy Desktop · Example workspace and sample configuration
-      </p>
     </section>
   );
 }
