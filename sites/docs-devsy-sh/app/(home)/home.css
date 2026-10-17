@@ -194,7 +194,10 @@ html:has(.home-page) {
 }
 .home-page .hero {
   padding-top: 80px;
-  padding-bottom: 72px;
+  padding-bottom: 48px;
+}
+.home-page #features {
+  padding-top: 48px;
 }
 .home-page .hero-grid {
   display: grid;
@@ -363,49 +366,6 @@ html:has(.home-page) {
 }
 .home-page .tour-description.is-current {
   visibility: visible;
-}
-.home-page .compatibility-strip {
-  display: grid;
-  grid-template-columns: auto minmax(32px, 1fr) auto;
-  align-items: center;
-  gap: 32px;
-  padding-block: 24px;
-  border-block: 1px solid var(--line);
-  font-size: 14px;
-  color: var(--muted);
-}
-.home-page .compatibility-start,
-.home-page .compatibility-editors {
-  display: grid;
-  gap: 10px;
-}
-.home-page .compatibility-label {
-  font-size: 12px;
-  font-weight: 500;
-}
-.home-page .compatibility-app {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0;
-  font-weight: 600;
-  color: var(--ink);
-}
-.home-page .compatibility-app > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-.home-page .compatibility-connector {
-  width: 100%;
-  height: 24px;
-  color: var(--line);
-}
-.home-page .compatibility-editors li {
-  padding: 3px 10px;
-  border-radius: 5px;
-  background: var(--soft);
-  font-size: 13px;
 }
 .home-page h2 {
   margin: 0 0 18px;
@@ -754,13 +714,6 @@ html:has(.home-page) {
   .home-page .lede {
     max-width: 52ch;
   }
-  .home-page .compatibility-strip {
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-  }
-  .home-page .compatibility-connector {
-    display: none;
-  }
   .home-page #anywhere .wrap,
   .home-page #contact .wrap {
     grid-template-columns: minmax(0, 1fr);
@@ -773,6 +726,9 @@ html:has(.home-page) {
   }
 }
 @media (max-width: 767px) {
+  .home-page #features {
+    padding-top: 24px;
+  }
   .home-page .wrap {
     padding-inline: 24px;
   }
@@ -782,9 +738,6 @@ html:has(.home-page) {
   .home-page .hero {
     padding-top: 42px;
     padding-bottom: 40px;
-  }
-  .home-page .compatibility-strip {
-    grid-template-columns: minmax(0, 1fr);
   }
   .home-page .tour-footer {
     align-items: flex-start;
@@ -866,15 +819,6 @@ html:has(.home-page) {
   }
 }
 
-.home-page .compatibility-editors ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  color: var(--ink);
-}
 .home-page .text-link {
   display: inline-flex;
   min-height: 44px;

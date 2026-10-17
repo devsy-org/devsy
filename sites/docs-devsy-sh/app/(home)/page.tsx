@@ -171,43 +171,6 @@ function Hero() {
   );
 }
 
-function Compatibility() {
-  return (
-    <div className="wrap compatibility-strip">
-      <div className="compatibility-start">
-        <span className="compatibility-label">Launch your way</span>
-        <p className="compatibility-app">
-          <span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-              <rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8m-4-4v4" />
-            </svg>
-            Desktop app
-          </span>
-          <span aria-hidden="true">+</span>
-          <span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-              <path d="m4 6 6 6-6 6m9 0h7" />
-            </svg>
-            CLI
-          </span>
-        </p>
-      </div>
-      <svg className="compatibility-connector" viewBox="0 0 100 24" preserveAspectRatio="none" fill="none" stroke="currentColor" aria-hidden="true">
-        <path d="M0 12h98m-7-6 7 6-7 6" vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div className="compatibility-editors">
-        <span className="compatibility-label">Keep the editor you know</span>
-        <ul>
-          <li>VS Code</li>
-          <li>Cursor</li>
-          <li>Zed</li>
-          <li>JetBrains</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
-
 function Features() {
   return (
     <section id="features" aria-labelledby="features-title">
@@ -585,8 +548,6 @@ export default function HomePage() {
       <div className="home-content" id="home-content" tabIndex={-1}>
         {/* HERO */}
         <Hero />
-
-        <Compatibility />
 
         {/* FEATURES */}
         <Features />
