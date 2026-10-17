@@ -12,6 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Above the PID ceiling of Linux (4194304) and macOS (99999), so the real
+// kernel never has a live process group with this ID. Cleanup paths probe the
+// real group with kill(-pgid, 0); a small literal like 4242 can collide with a
+// live group on a busy CI host and flake the test.
+const unusedProcessGroupPID = 99999999
+
 func newTaskStore(t *testing.T) *task.Store {
 	t.Helper()
 	store, err := task.NewStoreAt(t.TempDir())
@@ -39,7 +45,7 @@ func TestQuiesceUpTasksCancelsOnlyActiveUpTasksForWorkspace(t *testing.T) {
 	targetB := createUpTask(t, store, "ws-1")
 	terminal := createUpTask(t, store, "ws-1")
 	require.NoError(t, terminal.SetProcess(command.ProcessRef{
-		PID: 4242, TreeKind: command.ProcessTreeUnixGroup, TreeID: "4242",
+		PID: unusedProcessGroupPID, TreeKind: command.ProcessTreeUnixGroup, TreeID: "99999999",
 	}))
 	require.NoError(t, terminal.Succeed(nil))
 	otherWorkspace := createUpTask(t, store, "ws-2")
@@ -97,9 +103,9 @@ func TestQuiesceUpTasksCleansTerminalTaskTreeInsteadOfCancelling(t *testing.T) {
 	store := newTaskStore(t)
 	crashed := createUpTask(t, store, "ws-1")
 	require.NoError(t, crashed.SetProcess(command.ProcessRef{
-		PID:      4242,
+		PID:      unusedProcessGroupPID,
 		TreeKind: command.ProcessTreeUnixGroup,
-		TreeID:   "4242",
+		TreeID:   "99999999",
 	}))
 	require.NoError(t, crashed.HoldWorkerLock())
 	require.NoError(t, crashed.ReleaseWorkerLock())
@@ -122,7 +128,7 @@ func TestQuiesceUpTasksCleansTerminalTaskTreeInsteadOfCancelling(t *testing.T) {
 func TestQuiesceUpTasksCleansWorkerThatBecomesAbandonedDuringCancel(t *testing.T) {
 	store := newTaskStore(t)
 	tk := createUpTask(t, store, "ws-1")
-	ref := command.ProcessRef{PID: 99999999, TreeKind: command.ProcessTreeUnixGroup}
+	ref := command.ProcessRef{PID: unusedProcessGroupPID, TreeKind: command.ProcessTreeUnixGroup}
 	if runtime.GOOS == "windows" {
 		ref.TreeKind = command.ProcessTreeWindowsJob
 		ref.TreeID = "devsy-test-missing-job"
