@@ -6,6 +6,8 @@ export interface WorkspaceSource {
   gitCommit?: string
   localFolder?: string
   image?: string
+  container?: string
+  snapshot?: string
 }
 
 export interface WorkspaceIDEConfig {

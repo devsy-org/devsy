@@ -1,5 +1,6 @@
 <script lang="ts">
 import { MediaQuery } from "svelte/reactivity"
+import { theme } from "$lib/stores/settings.js"
 
 let { name, class: className = "size-10" }: { name: string; class?: string } =
   $props()
@@ -47,7 +48,8 @@ const src = $derived.by(() => {
       }
     }
   }
-  if (icon && darkMode.current && DARK_VARIANTS[icon]) {
+  const isDark = $theme === "dark" || ($theme === "system" && darkMode.current)
+  if (icon && isDark && DARK_VARIANTS[icon]) {
     return DARK_VARIANTS[icon]
   }
   return icon

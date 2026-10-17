@@ -258,11 +258,10 @@ test.describe
 
       await page.waitForTimeout(5000)
 
-      // The header has: h1, provider badge, status badge - target the status badge near h1
-      const headerArea = page
-        .locator("h1", { hasText: "node-js" })
-        .locator("..")
-      await expect(headerArea).toContainText("Stopped", { timeout: 10000 })
+      const status = page
+        .getByRole("region", { name: "Workspace status and actions" })
+        .getByRole("status")
+      await expect(status).toContainText("Stopped", { timeout: 10000 })
     })
 
     test("can rename a workspace", async () => {

@@ -937,9 +937,9 @@ function selectTemplate(t: { name: string; source: string }) {
         {#if isGit}
           <div class="grid grid-cols-2 gap-3">
             <div class="space-y-1.5">
-              <Label class="text-sm">Ref Type</Label>
+              <Label for="workspace-ref-type" class="text-sm">Ref Type</Label>
               <Select.Root type="single" bind:value={refType}>
-                <Select.Trigger class="h-8 w-full rounded-lg">
+                <Select.Trigger id="workspace-ref-type" class="h-8 w-full rounded-lg">
                   {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull / Merge Request"}
                 </Select.Trigger>
                 <Select.Content>
@@ -950,10 +950,11 @@ function selectTemplate(t: { name: string; source: string }) {
               </Select.Root>
             </div>
             <div class="space-y-1.5">
-              <Label class="text-sm">
+              <Label for="workspace-ref-value" class="text-sm">
                 {refType === "branch" ? "Branch name" : refType === "commit" ? "Commit SHA" : "PR / MR number"}
               </Label>
               <Input
+                id="workspace-ref-value"
                 placeholder={refType === "branch" ? "main" : refType === "commit" ? "abc123..." : "42"}
                 value={refValue}
                 oninput={(e) => (refValue = e.currentTarget.value)}
@@ -964,8 +965,9 @@ function selectTemplate(t: { name: string; source: string }) {
 
         {#if isGit}
           <div class="space-y-1.5">
-            <Label class="text-sm">Project subfolder</Label>
+            <Label for="workspace-subfolder" class="text-sm">Project subfolder</Label>
             <Input
+              id="workspace-subfolder"
               placeholder="packages/api"
               value={subPath}
               oninput={(e) => (subPath = e.currentTarget.value)}
@@ -977,8 +979,9 @@ function selectTemplate(t: { name: string; source: string }) {
         {/if}
 
         <div class="space-y-1.5">
-          <Label class="text-sm">Open folder in container</Label>
+          <Label for="workspace-folder" class="text-sm">Open folder in container</Label>
           <Input
+            id="workspace-folder"
             placeholder="/workspaces/app"
             value={workspaceFolder}
             oninput={(e) => (workspaceFolder = e.currentTarget.value)}
@@ -989,9 +992,9 @@ function selectTemplate(t: { name: string; source: string }) {
         </div>
 
         <div class="space-y-1.5">
-          <Label class="text-sm">Dev container source</Label>
+          <Label for="workspace-devcontainer-mode" class="text-sm">Dev container source</Label>
           <Select.Root type="single" bind:value={devcontainerMode}>
-            <Select.Trigger class="h-8 w-full rounded-lg">
+            <Select.Trigger id="workspace-devcontainer-mode" class="h-8 w-full rounded-lg">
               {devcontainerMode === "auto"
                 ? "Auto-detect (default)"
                 : devcontainerMode === "path"
@@ -1011,7 +1014,15 @@ function selectTemplate(t: { name: string; source: string }) {
             </Select.Content>
           </Select.Root>
           {#if devcontainerMode === "path" || devcontainerMode === "image" || devcontainerMode === "id"}
+            <Label for="workspace-devcontainer-value" class="text-sm">
+              {devcontainerMode === "path"
+                ? "Config file path"
+                : devcontainerMode === "image"
+                  ? "Container image"
+                  : "Profile name"}
+            </Label>
             <Input
+              id="workspace-devcontainer-value"
               placeholder={devcontainerMode === "path"
                 ? ".devcontainer/devcontainer.json"
                 : devcontainerMode === "image"
@@ -1035,8 +1046,9 @@ function selectTemplate(t: { name: string; source: string }) {
         </div>
 
         <div class="space-y-1.5">
-          <Label class="text-sm">Prebuild repository</Label>
+          <Label for="workspace-prebuild-repository" class="text-sm">Prebuild repository</Label>
           <Input
+            id="workspace-prebuild-repository"
             placeholder="ghcr.io/org/prebuilds (optional)"
             value={prebuildRepository}
             oninput={(e) => (prebuildRepository = e.currentTarget.value)}
@@ -1049,24 +1061,24 @@ function selectTemplate(t: { name: string; source: string }) {
 
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
   <Dialog.Content class="{currentStep === 'launch' ? 'sm:max-w-2xl' : 'sm:max-w-4xl'} max-h-[92vh] flex flex-col gap-0 p-0 overflow-hidden">
-    <Dialog.Header class="sr-only">
-      <Dialog.Title>Create Workspace</Dialog.Title>
-      <Dialog.Description>
-        Step-by-step wizard to create and launch a new workspace.
+    <Dialog.Header class="border-b px-6 pt-5 pb-3 text-left">
+      <Dialog.Title class="text-xl font-semibold tracking-tight">Create Workspace</Dialog.Title>
+      <Dialog.Description class="mt-1 text-sm text-muted-foreground">
+        Choose where it runs, what to open, then review before launch.
       </Dialog.Description>
     </Dialog.Header>
 
     {#if currentStep !== "launch"}
-      <div class="px-6 pt-5">
-        <Progress value={progressValue} max={100} class="h-1" />
+      <div class="px-6 pt-3">
+        <Progress value={progressValue} max={100} aria-label={`Step ${STEPS.findIndex((step) => step.id === currentStep) + 1} of ${STEPS.length}: ${STEPS.find((step) => step.id === currentStep)?.label}`} class="h-1" />
       </div>
     {/if}
 
     <!-- Step indicator -->
     {#if currentStep !== "launch"}
-    <div class="flex items-center justify-between px-6 pt-4 pb-2">
+    <ol aria-label="Workspace creation steps" class="flex items-center justify-between px-6 pt-4 pb-2">
       {#each STEPS as step, i (step.id)}
-        <div class="flex items-center gap-1.5">
+        <li aria-current={step.id === currentStep ? "step" : undefined} class="flex min-w-0 flex-1 items-center gap-1.5">
           <div
             class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium
               {stepStates[step.id] === 'complete' ? 'bg-primary text-primary-foreground' : ''}
@@ -1082,15 +1094,15 @@ function selectTemplate(t: { name: string; source: string }) {
               {i + 1}
             {/if}
           </div>
-          <span class="text-xs font-medium {stepStates[step.id] === 'active' ? 'text-foreground' : 'text-muted-foreground'}">
+          <span class="sr-only text-xs font-medium sm:not-sr-only {stepStates[step.id] === 'active' ? 'text-foreground' : 'text-muted-foreground'}">
             {step.label}
           </span>
-        </div>
-        {#if i < STEPS.length - 1}
-          <div class="mx-1 h-px flex-1 bg-border"></div>
-        {/if}
+          {#if i < STEPS.length - 1}
+            <div aria-hidden="true" class="mx-1 h-px flex-1 bg-border"></div>
+          {/if}
+        </li>
       {/each}
-    </div>
+    </ol>
     {/if}
 
     <!-- Step content -->
@@ -1116,10 +1128,11 @@ function selectTemplate(t: { name: string; source: string }) {
               Add Provider
             </Button>
           {:else}
-            <div class="space-y-2">
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {#each initializedProviders as p (p.name)}
                 <button
                   type="button"
+                  aria-pressed={selectedProvider === p.name}
                   class="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent/50
                     {selectedProvider === p.name ? 'border-primary ring-1 ring-primary' : ''}"
                   onclick={() => { selectedProvider = p.name }}
@@ -1141,14 +1154,6 @@ function selectTemplate(t: { name: string; source: string }) {
             </div>
           {/if}
 
-          <div class="flex justify-end gap-2 pt-2">
-            <Button
-              disabled={!selectedProvider || initializedProviders.length === 0}
-              onclick={continueFromProvider}
-            >
-              Continue
-            </Button>
-          </div>
         </div>
 
       {:else if currentStep === "source"}
@@ -1183,29 +1188,33 @@ function selectTemplate(t: { name: string; source: string }) {
           <!-- GIT -->
           {#if sourceType === "git"}
             <div class="space-y-4 pt-2" data-testid="source-panel">
-              <div class="space-y-2">
-                <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quick Start Templates</h3>
-                <div class="grid grid-cols-3 gap-2">
-                  {#each TEMPLATES as template (template.name)}
-                    <button
-                      type="button"
-                      class="flex flex-col items-center gap-1.5 rounded-lg border bg-card p-3 text-center text-sm transition-colors hover:bg-accent/50 active:scale-[0.98] {repoUrl === template.source ? 'border-primary ring-1 ring-primary' : ''}"
-                      onclick={() => selectTemplate(template)}
-                    >
-                      <LanguageIcon name={template.name} class="h-10 w-10" />
-                      <span class="truncate text-xs">{template.name}</span>
-                    </button>
-                  {/each}
-                </div>
-              </div>
-
               <div class="space-y-1.5">
-                <Label class="text-sm">Repository URL *</Label>
+                <Label for="workspace-repository-url" class="text-sm">Repository URL *</Label>
                 <Input
+                  id="workspace-repository-url"
+                  aria-describedby="workspace-repository-help"
                   placeholder="github.com/org/repo"
                   value={repoUrl}
                   oninput={(e) => (repoUrl = e.currentTarget.value)}
                 />
+                <p id="workspace-repository-help" class="text-xs text-muted-foreground">Enter a repository URL, or choose a template below.</p>
+              </div>
+
+              <div class="space-y-2">
+                <h3 class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quick Start Templates</h3>
+                <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {#each TEMPLATES as template (template.name)}
+                    <button
+                      type="button"
+                      aria-pressed={repoUrl === template.source}
+                      class="flex min-w-0 items-center gap-2 rounded-lg border bg-card p-2 text-left text-sm transition-colors hover:bg-accent/50 {repoUrl === template.source ? 'border-primary ring-1 ring-primary' : ''}"
+                      onclick={() => selectTemplate(template)}
+                    >
+                      <LanguageIcon name={template.name} class="h-6 w-6 shrink-0" />
+                      <span class="truncate text-xs">{template.name}</span>
+                    </button>
+                  {/each}
+                </div>
               </div>
 
               {@render advancedSection(true)}
@@ -1215,9 +1224,11 @@ function selectTemplate(t: { name: string; source: string }) {
           {:else if sourceType === "local"}
             <div class="space-y-4 pt-2" data-testid="source-panel">
               <div class="space-y-1.5">
-                <Label class="text-sm">Local Directory *</Label>
+                <Label for="workspace-local-directory" class="text-sm">Local Directory *</Label>
                 <div class="flex gap-2">
                   <Input
+                    id="workspace-local-directory"
+                    aria-describedby="workspace-local-directory-help"
                     placeholder="/path/to/project"
                     value={localPath}
                     oninput={(e) => (localPath = e.currentTarget.value)}
@@ -1225,7 +1236,7 @@ function selectTemplate(t: { name: string; source: string }) {
                   <Button variant="outline" onclick={handleBrowse}>Browse...</Button>
                 </div>
                 <p class="text-xs text-muted-foreground">
-                  Local sources require a provider running on this machine.
+                  <span id="workspace-local-directory-help">Local sources require a provider running on this machine.</span>
                 </p>
               </div>
 
@@ -1239,10 +1250,6 @@ function selectTemplate(t: { name: string; source: string }) {
             </div>
           {/if}
 
-          <div class="flex justify-between gap-2 pt-2">
-            <Button variant="outline" onclick={() => goToStep("provider")}>Back</Button>
-            <Button disabled={!primarySourceValue} onclick={continueFromSource}>Continue</Button>
-          </div>
         </div>
 
       {:else if currentStep === "ide"}
@@ -1253,11 +1260,11 @@ function selectTemplate(t: { name: string; source: string }) {
           </div>
 
           <div class="space-y-1.5">
-            <Label class="text-sm">IDE</Label>
+            <Label for="workspace-ide-picker" class="text-sm">IDE (optional)</Label>
             <Popover.Root bind:open={ideComboOpen}>
-              <Popover.Trigger class="w-full">
+              <Popover.Trigger id="workspace-ide-picker" class="w-full">
                 {#snippet child({ props })}
-                  <Button variant="outline" class="h-9 w-full justify-between" {...props}>
+                  <Button {...props} variant="outline" class="h-9 w-full justify-between">
                     <span class="flex items-center gap-2 flex-1 truncate text-left">
                       {#if ideIconSrc}
                         <img src={ideIconSrc} alt="" class="h-4 w-4 shrink-0" />
@@ -1290,12 +1297,9 @@ function selectTemplate(t: { name: string; source: string }) {
                 </Command.Root>
               </Popover.Content>
             </Popover.Root>
+            <p class="text-xs text-muted-foreground">Choose an IDE to open after setup, or select “None” to open the workspace later.</p>
           </div>
 
-          <div class="flex justify-between gap-2 pt-2">
-            <Button variant="outline" onclick={() => goToStep("source")}>Back</Button>
-            <Button onclick={continueFromIde}>Continue</Button>
-          </div>
         </div>
 
       {:else if currentStep === "review"}
@@ -1306,19 +1310,23 @@ function selectTemplate(t: { name: string; source: string }) {
           </div>
 
           <div class="space-y-1.5">
-            <Label class="text-sm">Workspace Name</Label>
+            <Label for="workspace-name" class="text-sm">Workspace Name</Label>
             <Input
+              id="workspace-name"
+              aria-invalid={resolvedIdInvalid || nameConflict}
+              aria-describedby={resolvedIdInvalid ? "workspace-name-invalid" : nameConflict ? "workspace-name-conflict" : "workspace-name-help"}
               placeholder="Optional - derived from source if empty"
               value={workspaceName}
               oninput={(e) => (workspaceName = e.currentTarget.value)}
             />
+            <p id="workspace-name-help" class="text-xs text-muted-foreground">Leave blank to derive a name from the source.</p>
           </div>
 
           {#if resolvedIdInvalid}
             <Alert.Root>
               <TriangleAlert class="h-4 w-4 text-amber-600" />
               <Alert.Description class="text-amber-700 dark:text-amber-400">
-                Please provide an explicit workspace name. The derived id is empty or invalid.
+                <span id="workspace-name-invalid">Please provide an explicit workspace name. The derived id is empty or invalid.</span>
               </Alert.Description>
             </Alert.Root>
           {/if}
@@ -1327,70 +1335,77 @@ function selectTemplate(t: { name: string; source: string }) {
             <Alert.Root>
               <TriangleAlert class="h-4 w-4 text-amber-600" />
               <Alert.Description class="text-amber-700 dark:text-amber-400">
-                A workspace named "{resolvedId}" already exists. Choose a different name.
+                <span id="workspace-name-conflict">A workspace named "{resolvedId}" already exists. Choose a different name.</span>
               </Alert.Description>
             </Alert.Root>
           {/if}
 
-          <div class="rounded-lg border bg-card p-4 text-sm space-y-2">
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">Provider</span>
-              <span class="font-medium truncate">{selectedProvider}</span>
+          <dl class="space-y-3 rounded-lg border bg-card p-4 text-sm">
+            <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+              <dt class="text-muted-foreground">Provider</dt>
+              <dd class="flex min-w-0 items-start gap-2 text-left font-medium">
+                <span class="[overflow-wrap:anywhere]">{selectedProvider}</span>
+                <Button type="button" aria-label="Edit provider" variant="ghost" size="sm" class="h-7 shrink-0 px-2" onclick={() => goToStep("provider")}>Edit</Button>
+              </dd>
             </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">Source type</span>
-              <span class="font-medium truncate capitalize">{sourceType}</span>
+            <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+              <dt class="text-muted-foreground">Source type</dt>
+              <dd class="text-left font-medium capitalize">{sourceType}</dd>
             </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">Source</span>
-              <span class="font-medium truncate font-mono">{assembled.source}</span>
+            <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+              <dt class="text-muted-foreground">Source</dt>
+              <dd class="flex min-w-0 items-start gap-2 text-left font-medium">
+                <span class="min-w-0 font-mono [overflow-wrap:anywhere]">{assembled.source}</span>
+                <Button type="button" aria-label="Edit source" variant="ghost" size="sm" class="h-7 shrink-0 px-2" onclick={() => goToStep("source")}>Edit</Button>
+              </dd>
             </div>
             {#if sourceType === "git" && refValue.trim()}
-              <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">
                   {refType === "branch" ? "Branch" : refType === "commit" ? "Commit" : "Pull / Merge request"}
-                </span>
-                <span class="font-medium truncate">{refValue}</span>
+                </dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{refValue}</dd>
               </div>
             {/if}
             {#if sourceType === "git" && subPath.trim()}
-              <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Project subfolder</span>
-                <span class="font-medium truncate">{subPath}</span>
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Project subfolder</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{subPath}</dd>
               </div>
             {/if}
             {#if assembled.devcontainer}
-              <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Dev container source</span>
-                <span class="font-medium truncate">{assembled.devcontainer}</span>
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Dev container source</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{assembled.devcontainer}</dd>
               </div>
             {/if}
             {#if assembled.prebuildRepository}
-              <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Prebuild repo</span>
-                <span class="font-medium truncate">{assembled.prebuildRepository}</span>
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Prebuild repo</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{assembled.prebuildRepository}</dd>
               </div>
             {/if}
             {#if workspaceFolder}
-              <div class="flex justify-between gap-3">
-                <span class="text-muted-foreground">Open folder in container</span>
-                <span class="font-medium truncate">{workspaceFolder}</span>
+              <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+                <dt class="text-muted-foreground">Open folder in container</dt>
+                <dd class="text-left font-medium [overflow-wrap:anywhere]">{workspaceFolder}</dd>
               </div>
             {/if}
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">IDE</span>
-              <span class="flex items-center gap-2 font-medium truncate">
+            <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+              <dt class="text-muted-foreground">IDE</dt>
+              <dd class="flex min-w-0 items-center gap-2 text-left font-medium">
                 {#if ideIconSrc}
                   <img src={ideIconSrc} alt="" class="h-4 w-4 shrink-0" />
                 {/if}
-                <span class="truncate">{ideLabel}</span>
-              </span>
+                <span>{ideLabel}</span>
+                <Button type="button" aria-label="Edit IDE" variant="ghost" size="sm" class="h-7 shrink-0 px-2" onclick={() => goToStep("ide")}>Edit</Button>
+              </dd>
             </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">Workspace ID</span>
-              <span class="font-medium truncate font-mono">{resolvedId}</span>
+            <div class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-start gap-3">
+              <dt class="text-muted-foreground">Workspace ID</dt>
+              <dd class="text-left font-medium font-mono [overflow-wrap:anywhere]">{resolvedId}</dd>
             </div>
-          </div>
+          </dl>
 
           {#if sourceType === "image" && compatLoading}
             <p class="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1448,15 +1463,6 @@ function selectTemplate(t: { name: string; source: string }) {
             </label>
           {/if}
 
-          <div class="flex justify-between gap-2 pt-2">
-            <Button variant="outline" onclick={() => goToStep("ide")}>Back</Button>
-            <Button
-              disabled={resolvedIdInvalid || nameConflict}
-              onclick={continueFromReview}
-            >
-              Launch
-            </Button>
-          </div>
         </div>
 
       {:else if currentStep === "launch"}
@@ -1532,6 +1538,33 @@ function selectTemplate(t: { name: string; source: string }) {
         </div>
       {/if}
     </div>
+    {#if currentStep !== "launch"}
+      <footer
+        aria-label="Workspace creation actions"
+        class="flex shrink-0 justify-between gap-2 border-t bg-popover px-6 py-4"
+      >
+        {#if currentStep === "provider"}
+          <span aria-hidden="true"></span>
+          <Button
+            disabled={!selectedProvider || initializedProviders.length === 0}
+            onclick={continueFromProvider}
+          >
+            Continue
+          </Button>
+        {:else if currentStep === "source"}
+          <Button variant="outline" onclick={() => goToStep("provider")}>Back</Button>
+          <Button disabled={!primarySourceValue} onclick={continueFromSource}>Continue</Button>
+        {:else if currentStep === "ide"}
+          <Button variant="outline" onclick={() => goToStep("source")}>Back</Button>
+          <Button onclick={continueFromIde}>Continue</Button>
+        {:else if currentStep === "review"}
+          <Button variant="outline" onclick={() => goToStep("ide")}>Back</Button>
+          <Button disabled={resolvedIdInvalid || nameConflict} onclick={continueFromReview}>
+            Launch
+          </Button>
+        {/if}
+      </footer>
+    {/if}
   </Dialog.Content>
 </Dialog.Root>
 

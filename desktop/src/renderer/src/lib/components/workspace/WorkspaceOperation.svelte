@@ -65,7 +65,7 @@ const badgeVariant = $derived(
   {#if density === "expanded" && (view.error || view.recovery || view.phase)}
     <span
       data-slot="workspace-operation-detail"
-      class="max-w-full truncate text-xs {view.error
+      class="max-w-full whitespace-normal text-sm leading-6 [overflow-wrap:anywhere] {view.error
         ? 'text-destructive'
         : view.recovery
           ? 'text-amber-600 dark:text-amber-400'

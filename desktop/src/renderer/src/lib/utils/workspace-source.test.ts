@@ -7,6 +7,7 @@ import type {
 import {
   buildDevcontainerArg,
   buildWorkspaceSource,
+  describeWorkspaceSource,
 } from "./workspace-source.js"
 
 function gitForm(overrides: Partial<GitSourceForm>): GitSourceForm {
@@ -275,4 +276,41 @@ describe("buildDevcontainerArg", () => {
     expect(buildDevcontainerArg({ mode: "image", value: "" })).toBeUndefined()
     expect(buildDevcontainerArg({ mode: "id", value: "   " })).toBeUndefined()
   })
+})
+
+describe("describeWorkspaceSource", () => {
+  it.each([
+    [
+      { gitRepository: "https://example.test/team/repository" },
+      "Repository",
+      "https://example.test/team/repository",
+    ],
+    [
+      { localFolder: "/Users/developer/a project" },
+      "Local folder",
+      "/Users/developer/a project",
+    ],
+    [
+      { image: "registry.example.test/team/image:version" },
+      "Container image",
+      "registry.example.test/team/image:version",
+    ],
+    [
+      { container: "imported-container-id" },
+      "Existing container",
+      "imported-container-id",
+    ],
+    [
+      { snapshot: "registry.example.test/team/snapshot:backup" },
+      "Snapshot",
+      "registry.example.test/team/snapshot:backup",
+    ],
+    [undefined, "Source", "Not available"],
+    [{}, "Source", "Not available"],
+  ] as const)(
+    "describes %j without replacing its reference",
+    (source, label, value) => {
+      expect(describeWorkspaceSource(source)).toEqual({ label, value })
+    },
+  )
 })

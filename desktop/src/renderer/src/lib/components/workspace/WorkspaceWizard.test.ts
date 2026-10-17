@@ -167,11 +167,107 @@ describe("WorkspaceWizard", () => {
 
   it("renders the provider step by default", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, unmount } = render(WorkspaceWizard, {
+    const { getByText, getByRole, unmount } = render(WorkspaceWizard, {
       props: { open: true },
     })
     await flushAsync()
     expect(getByText("Choose a Provider")).toBeTruthy()
+    expect(getByRole("heading", { name: "Create Workspace" })).toBeTruthy()
+    expect(getByRole("list", { name: "Workspace creation steps" })).toBeTruthy()
+    expect(
+      getByRole("progressbar", { name: "Step 1 of 5: Provider" }),
+    ).toBeTruthy()
+    expect(
+      document.querySelector('[aria-current="step"]')?.textContent,
+    ).toContain("Provider")
+    expect(
+      getByRole("button", { name: "docker" }).getAttribute("aria-pressed"),
+    ).toBe("false")
+    unmount()
+  })
+
+  it("associates source inputs with labels and exposes the selected template", async () => {
+    providers.set([makeProvider("docker")])
+    const { getByText, getByLabelText, getByRole, unmount } = render(
+      WorkspaceWizard,
+      { props: { open: true } },
+    )
+    await flushAsync()
+    await fireEvent.click(getByText("docker"))
+    await fireEvent.click(getActiveContinue(getByText))
+    await flushAsync()
+
+    expect(getByLabelText("Repository URL *")).toBeTruthy()
+    const pythonTemplate = getByText("Python").closest(
+      "button",
+    ) as HTMLButtonElement
+    expect(pythonTemplate).toBeTruthy()
+    await fireEvent.click(pythonTemplate)
+    await flushAsync()
+    expect(pythonTemplate.getAttribute("aria-pressed")).toBe("true")
+    expect(
+      (getByLabelText("Repository URL *") as HTMLInputElement).value,
+    ).toContain("vscode-remote-try-python")
+
+    await fireEvent.click(
+      getByRole("button", { name: "Show advanced options" }),
+    )
+    expect(getByLabelText("Dev container source")).toBeTruthy()
+    unmount()
+  })
+
+  it("lets the user edit reviewed provider and source without launching", async () => {
+    providers.set([makeProvider("docker"), makeProvider("ssh")])
+    const { getByText, getByLabelText, getByRole, unmount } = render(
+      WorkspaceWizard,
+      {
+        props: { open: true },
+      },
+    )
+    await flushAsync()
+    await fireEvent.click(getByRole("button", { name: "docker" }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    const sourceInput = getByLabelText("Repository URL *") as HTMLInputElement
+    const longSource = `https://example.test/team/${"workspace-path-segment/".repeat(8)}application`
+    await fireEvent.input(sourceInput, {
+      target: { value: longSource },
+    })
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+
+    expect(getByText(longSource)).toBeTruthy()
+    expect(workspaceUp).not.toHaveBeenCalled()
+
+    await fireEvent.click(getByRole("button", { name: "Edit source" }))
+    await flushAsync()
+    expect((getByLabelText("Repository URL *") as HTMLInputElement).value).toBe(
+      longSource,
+    )
+
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByRole("button", { name: "Edit provider" }))
+    await flushAsync()
+    await fireEvent.click(getByRole("button", { name: "ssh" }))
+    await flushAsync()
+    expect(
+      getByRole("button", { name: "ssh" }).getAttribute("aria-pressed"),
+    ).toBe("true")
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+    await fireEvent.click(getByText("Continue", { exact: true }))
+    await flushAsync()
+
+    expect(getByText("ssh")).toBeTruthy()
+    expect(workspaceUp).not.toHaveBeenCalled()
     unmount()
   })
 
@@ -257,7 +353,7 @@ describe("WorkspaceWizard", () => {
 
   it("defaults to git source type and accepts a repo url", async () => {
     providers.set([makeProvider("docker")])
-    const { getByText, unmount } = render(WorkspaceWizard, {
+    const { getByText, getByLabelText, unmount } = render(WorkspaceWizard, {
       props: { open: true },
     })
     await flushAsync()
@@ -281,6 +377,8 @@ describe("WorkspaceWizard", () => {
     await flushAsync()
 
     expect(getByText("Choose an IDE")).toBeTruthy()
+    expect(getByLabelText("IDE (optional)")).toBeTruthy()
+    expect(getByText(/select “None” to open the workspace later/i)).toBeTruthy()
     unmount()
   })
 
