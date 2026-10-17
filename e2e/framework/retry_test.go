@@ -690,5 +690,9 @@ func TestRetryFixed_ContextCanceledOnFinalAttempt(t *testing.T) {
 	assert.Equal(t, 2, calls)
 	require.ErrorIs(t, err, context.Canceled)
 	require.ErrorIs(t, err, errFinal)
-	assert.EqualError(t, err, "after 2 attempts: context canceled (last error: final attempt failed)")
+	assert.EqualError(
+		t,
+		err,
+		"after 2 attempts: context canceled (last error: final attempt failed)",
+	)
 }
