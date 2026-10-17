@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
 import './home.css';
+import { ProductWalkthrough } from './product-walkthrough';
 
 function useMobileNavigation() {
   const [navOpen, setNavOpen] = useState(false);
@@ -164,37 +165,9 @@ function Hero() {
             </a>
           </div>
         </div>
-        <figure className="hero-media">
-          {/* biome-ignore lint/performance/noImgElement: Static export has no image optimizer; dimensions reserve layout. */}
-          <img
-            src="/docs/media/workspace-terminal-demo.png"
-            alt="Devsy Desktop showing a running Docker workspace with an integrated terminal and CPU information output"
-            width={800}
-            height={533}
-            loading="eager"
-            fetchPriority="high"
-          />
-          <figcaption className="product-caption">A running Docker workspace and its terminal.</figcaption>
-        </figure>
+        <ProductWalkthrough />
       </div>
     </section>
-  );
-}
-
-function Compatibility() {
-  return (
-    <div className="wrap compatibility-strip">
-      <p className="compatibility-app">Desktop app <span aria-hidden="true">+</span> CLI</p>
-      <div className="compatibility-editors">
-        <span className="compatibility-label">Connect your editor</span>
-        <ul>
-          <li>VS Code</li>
-          <li>Cursor</li>
-          <li>Zed</li>
-          <li>JetBrains</li>
-        </ul>
-      </div>
-    </div>
   );
 }
 
@@ -305,15 +278,15 @@ function Providers() {
           <div className="provider-crop">
             {/* biome-ignore lint/performance/noImgElement: Static export has no image optimizer; dimensions reserve layout. */}
             <img
-              src="/docs/media/add-provider-1.png"
-              alt="Devsy Desktop provider chooser offering Docker, Podman, SSH, Kubernetes, and cloud providers"
-              width={2624}
-              height={1826}
+              src="/docs/media/home-provider-detail.webp"
+              alt="Current Devsy Desktop provider setup, with grouped local and remote choices and a review-before-initialization flow"
+              width={1008}
+              height={1038}
               loading="lazy"
               decoding="async"
             />
           </div>
-          <figcaption className="product-caption">Choose a provider in Devsy Desktop.</figcaption>
+          <figcaption className="product-caption">Choose a provider, review its settings, then initialize. Availability varies by platform.</figcaption>
         </figure>
         <div className="targets">
           <div className="target">
@@ -575,8 +548,6 @@ export default function HomePage() {
       <div className="home-content" id="home-content" tabIndex={-1}>
         {/* HERO */}
         <Hero />
-
-        <Compatibility />
 
         {/* FEATURES */}
         <Features />
