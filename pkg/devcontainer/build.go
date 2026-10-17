@@ -648,10 +648,10 @@ type dockerlessFallbackParams struct {
 	options                  provider.BuildOptions
 }
 
+// dockerlessFallback stages the devsy build files and returns the dockerless BuildInfo.
 func dockerlessFallback(params *dockerlessFallbackParams) (*config.BuildInfo, error) {
 	parsedConfig := params.parsedConfig
 	extendedBuildInfo := params.extendedBuildInfo
-	options := params.options
 
 	workspaceRoot, contextPath, err := config.CanonicalWorkspacePath(
 		params.localWorkspaceFolder,
@@ -660,58 +660,119 @@ func dockerlessFallback(params *dockerlessFallbackParams) (*config.BuildInfo, er
 	if err != nil {
 		return nil, err
 	}
-	devsyInternalFolder := filepath.Join(contextPath, config.DevsyContextFeatureFolder)
-	if err := validateGeneratedArtifactDestination(
-		params.localWorkspaceFolder,
-		devsyInternalFolder,
-	); err != nil {
-		return nil, err
-	}
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(devsyInternalFolder, 0o755)
+	devsyInternalFolder, err := createDevsyFolder(params.localWorkspaceFolder, contextPath)
 	if err != nil {
-		return nil, fmt.Errorf("create devsy folder: %w", err)
+		return nil, err
 	}
 
 	if extendedBuildInfo.FeaturesBuildInfo != nil {
-		featureFolder := extendedBuildInfo.FeaturesBuildInfo.FeaturesFolder
-		_, canonicalFeatureFolder, pathErr := config.CanonicalWorkspacePath(
+		err = validateFeaturesFolder(
 			params.localWorkspaceFolder,
-			featureFolder,
+			extendedBuildInfo.FeaturesBuildInfo.FeaturesFolder,
+			devsyInternalFolder,
 		)
-		if pathErr != nil || canonicalFeatureFolder != devsyInternalFolder {
-			return nil, fmt.Errorf("generated feature directory does not match the build context")
-		}
-		if err := validateGeneratedArtifactDestination(
-			params.localWorkspaceFolder,
-			filepath.Join(featureFolder, "Dockerfile-with-features"),
-		); err != nil {
+		if err != nil {
 			return nil, err
 		}
 	}
 
-	// build dockerfile
-	devsyDockerfile, err := build.RewriteDockerfile(params.dockerfileContent, extendedBuildInfo)
+	devsyDockerfile, err := writeDevsyDockerfile(
+		params.localWorkspaceFolder,
+		params.dockerfileContent,
+		devsyInternalFolder,
+		extendedBuildInfo,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("rewrite dockerfile: %w", err)
-	} else if devsyDockerfile == "" {
-		devsyDockerfile = filepath.Join(devsyInternalFolder, "Dockerfile-without-features")
-		if err := validateGeneratedArtifactDestination(
-			params.localWorkspaceFolder,
-			devsyDockerfile,
-		); err != nil {
-			return nil, err
-		}
-		err = os.WriteFile(devsyDockerfile, []byte(params.dockerfileContent), 0o600)
-		if err != nil {
-			return nil, fmt.Errorf("write devsy dockerfile: %w", err)
-		}
+		return nil, err
 	}
 
 	artifacts, err := dockerlessArtifactManifest(devsyDockerfile, extendedBuildInfo)
 	if err != nil {
 		return nil, err
 	}
+
+	dockerless, err := dockerlessContainerBuild(
+		params,
+		workspaceRoot,
+		contextPath,
+		devsyDockerfile,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &config.BuildInfo{
+		GeneratedBuildArtifacts: artifacts,
+		GeneratedBuildContext:   contextPath,
+		ImageMetadata:           extendedBuildInfo.MetadataConfig,
+		Dockerless:              dockerless,
+		RegistryCache:           params.options.RegistryCache,
+		Tags:                    params.options.Tag,
+	}, nil
+}
+
+// createDevsyFolder validates the devsy folder inside the build context and creates it.
+func createDevsyFolder(localWorkspaceFolder, contextPath string) (string, error) {
+	devsyInternalFolder := filepath.Join(contextPath, config.DevsyContextFeatureFolder)
+	if err := validateGeneratedArtifactDestination(
+		localWorkspaceFolder,
+		devsyInternalFolder,
+	); err != nil {
+		return "", err
+	}
+	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
+	err := os.MkdirAll(devsyInternalFolder, 0o755)
+	if err != nil {
+		return "", fmt.Errorf("create devsy folder: %w", err)
+	}
+	return devsyInternalFolder, nil
+}
+
+// validateFeaturesFolder checks that the generated feature folder is the devsy folder.
+func validateFeaturesFolder(localWorkspaceFolder, featureFolder, devsyInternalFolder string) error {
+	_, canonicalFeatureFolder, pathErr := config.CanonicalWorkspacePath(
+		localWorkspaceFolder,
+		featureFolder,
+	)
+	if pathErr != nil || canonicalFeatureFolder != devsyInternalFolder {
+		return fmt.Errorf("generated feature directory does not match the build context")
+	}
+	return validateGeneratedArtifactDestination(
+		localWorkspaceFolder,
+		filepath.Join(featureFolder, "Dockerfile-with-features"),
+	)
+}
+
+// writeDevsyDockerfile returns the rewritten Dockerfile path, or writes the original
+// Dockerfile into the devsy folder when RewriteDockerfile returns no path.
+func writeDevsyDockerfile(
+	localWorkspaceFolder, dockerfileContent, devsyInternalFolder string,
+	extendedBuildInfo *feature.ExtendedBuildInfo,
+) (string, error) {
+	devsyDockerfile, err := build.RewriteDockerfile(dockerfileContent, extendedBuildInfo)
+	if err != nil {
+		return "", fmt.Errorf("rewrite dockerfile: %w", err)
+	}
+	if devsyDockerfile != "" {
+		return devsyDockerfile, nil
+	}
+	devsyDockerfile = filepath.Join(devsyInternalFolder, "Dockerfile-without-features")
+	err = validateGeneratedArtifactDestination(localWorkspaceFolder, devsyDockerfile)
+	if err != nil {
+		return "", err
+	}
+	err = os.WriteFile(devsyDockerfile, []byte(dockerfileContent), 0o600)
+	if err != nil {
+		return "", fmt.Errorf("write devsy dockerfile: %w", err)
+	}
+	return devsyDockerfile, nil
+}
+
+// dockerlessContainerBuild maps the generated paths into the container and resolves
+// build args and target.
+func dockerlessContainerBuild(
+	params *dockerlessFallbackParams,
+	workspaceRoot, contextPath, devsyDockerfile string,
+) (*config.BuildInfoDockerless, error) {
 	_, containerDockerfilePath, err := config.CanonicalWorkspacePath(
 		params.localWorkspaceFolder,
 		devsyDockerfile,
@@ -719,30 +780,19 @@ func dockerlessFallback(params *dockerlessFallbackParams) (*config.BuildInfo, er
 	if err != nil {
 		return nil, err
 	}
-
-	// get build args and target
 	containerContext, containerDockerfile := getContainerContextAndDockerfile(
 		workspaceRoot,
 		params.containerWorkspaceFolder,
 		contextPath,
 		containerDockerfilePath,
 	)
-	buildArgs, target := build.GetBuildArgsAndTarget(parsedConfig, extendedBuildInfo)
-	return &config.BuildInfo{
-		GeneratedBuildArtifacts: artifacts,
-		GeneratedBuildContext:   contextPath,
-		ImageMetadata:           extendedBuildInfo.MetadataConfig,
-		Dockerless: &config.BuildInfoDockerless{
-			Context:    containerContext,
-			Dockerfile: containerDockerfile,
-
-			BuildArgs: buildArgs,
-			Target:    target,
-
-			User: params.buildInfo.User,
-		},
-		RegistryCache: options.RegistryCache,
-		Tags:          options.Tag,
+	buildArgs, target := build.GetBuildArgsAndTarget(params.parsedConfig, params.extendedBuildInfo)
+	return &config.BuildInfoDockerless{
+		Context:    containerContext,
+		Dockerfile: containerDockerfile,
+		BuildArgs:  buildArgs,
+		Target:     target,
+		User:       params.buildInfo.User,
 	}, nil
 }
 
