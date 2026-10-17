@@ -211,3 +211,34 @@ func waitForRetry(ctx context.Context, delay time.Duration) error {
 		return nil
 	}
 }
+
+// RetryFixed calls fn up to attempts times, sleeping delay between failed
+// attempts, and returns nil on the first success. When attempts are
+// exhausted it returns the last error wrapped with the attempt count.
+// Cancelling ctx stops retrying: the returned error wraps both ctx.Err() and
+// the last fn error. attempts below 1 is treated as 1.
+func RetryFixed(
+	ctx context.Context,
+	attempts int,
+	delay time.Duration,
+	fn func(ctx context.Context) error,
+) error {
+	for attempt := 1; ; attempt++ {
+		err := fn(ctx)
+		if err == nil {
+			return nil
+		}
+		if attempt >= attempts {
+			return fmt.Errorf("after %d attempts: %w", attempt, err)
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("after %d attempts: %w (last error: %w)", attempt, ctxErr, err)
+		}
+		ginkgo.GinkgoWriter.Printf(
+			"[retry] attempt %d/%d failed, retrying after %s: %v\n", attempt, attempts, delay, err,
+		)
+		if waitErr := waitForRetry(ctx, delay); waitErr != nil {
+			return fmt.Errorf("after %d attempts: %w (last error: %w)", attempt, waitErr, err)
+		}
+	}
+}

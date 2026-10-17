@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/docker"
-	"github.com/onsi/ginkgo/v2"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -62,12 +63,13 @@ func startLocalRegistry(
 	if err != nil {
 		return "", nil, err
 	}
-	cleanup := func() {
+	// cleanup is idempotent: the early-kill spec calls it before teardown.
+	cleanup := sync.OnceFunc(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = dockerHelper.Stop(cleanupCtx, id)
 		_ = dockerHelper.Remove(cleanupCtx, id)
-	}
+	})
 
 	if err := waitForRegistryReady(ctx); err != nil {
 		cleanup()
@@ -118,13 +120,10 @@ func waitForRegistryReady(ctx context.Context) error {
 // can fail with exit 125 moments after the daemon restart succeeds.
 const registryStartAttempts = 3
 
-// runRegistryContainerWithRetry runs registryImage, retrying a
-// handful of times on failure. Returns the started container's ID.
-//
-// The container ID is captured directly off `docker run -d`'s stdout rather
-// than looked up afterwards by a shared static label: a leaked registry
-// container from a previous (e.g. failed) spec would otherwise make a
-// label-based lookup ambiguous or match the wrong container.
+// registryStartRetryDelay is the fixed wait between attempts of
+// runRegistryContainerWithRetry.
+const registryStartRetryDelay = 3 * time.Second
+
 // registryLabels identifies the disposable registry fixture container so a
 // leaked one from a previous crashed/timed-out run can be found and removed.
 var registryLabels = []string{"devsy-e2e-snapshot-registry=true"}
@@ -175,28 +174,22 @@ func startRegistryContainer(
 // runRegistryContainerWithRetry runs registryImage, retrying a handful of
 // times on failure. Between attempts it re-sweeps for containers leaked by
 // the previous attempt, not just the ones from before the loop started.
+// Returns the started container's ID.
 func runRegistryContainerWithRetry(
 	ctx context.Context, dockerHelper *docker.DockerHelper,
 ) (string, error) {
-	var lastErr error
-	for attempt := 1; attempt <= registryStartAttempts; attempt++ {
-		removeLeakedRegistryContainers(ctx, dockerHelper)
-
-		id, err := startRegistryContainer(ctx, dockerHelper)
-		if err == nil {
-			return id, nil
-		}
-		lastErr = err
-		if attempt < registryStartAttempts {
-			ginkgo.GinkgoWriter.Printf(
-				"[retry] start local registry: attempt %d failed, retrying: %v\n", attempt, lastErr,
-			)
-			select {
-			case <-time.After(3 * time.Second):
-			case <-ctx.Done():
-				return "", fmt.Errorf("start local registry: %w", ctx.Err())
-			}
-		}
+	var id string
+	err := framework.RetryFixed(
+		ctx, registryStartAttempts, registryStartRetryDelay,
+		func(ctx context.Context) error {
+			removeLeakedRegistryContainers(ctx, dockerHelper)
+			var startErr error
+			id, startErr = startRegistryContainer(ctx, dockerHelper)
+			return startErr
+		},
+	)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("after %d attempts: %w", registryStartAttempts, lastErr)
+	return id, nil
 }
