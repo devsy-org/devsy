@@ -50,6 +50,19 @@ func checkReport(data []byte, label string, expected int) error {
 }
 
 func readReport(data []byte) (types.Report, error) {
+	report, err := decodeSuiteReport(data)
+	if err != nil {
+		return types.Report{}, err
+	}
+	if !report.SuiteSucceeded || report.SuiteConfig.DryRun || report.SuiteHasProgrammaticFocus {
+		return types.Report{}, errors.New(
+			"report must prove a successful run without dry-run or programmatic focus",
+		)
+	}
+	return report, nil
+}
+
+func decodeSuiteReport(data []byte) (types.Report, error) {
 	var reports []types.Report
 	if err := json.Unmarshal(data, &reports); err != nil {
 		return types.Report{}, fmt.Errorf("decode Ginkgo report: %w", err)
@@ -57,13 +70,7 @@ func readReport(data []byte) (types.Report, error) {
 	if len(reports) != 1 {
 		return types.Report{}, errors.New("expected exactly one Ginkgo suite report")
 	}
-	report := reports[0]
-	if !report.SuiteSucceeded || report.SuiteConfig.DryRun || report.SuiteHasProgrammaticFocus {
-		return types.Report{}, errors.New(
-			"report must prove a successful run without dry-run or programmatic focus",
-		)
-	}
-	return report, nil
+	return reports[0], nil
 }
 
 func checkSelectedSpecs(specs types.SpecReports, label string, expected int) error {

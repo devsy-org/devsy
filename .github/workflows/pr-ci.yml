@@ -123,6 +123,10 @@ jobs:
       - name: test E2E runtime helpers
         run: go test -race -count=1 ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
 
+      - name: check E2E CI label coverage
+        if: runner.os == 'Linux'
+        run: go run ./e2e/cmd/devsy-ci check-labels
+
       - name: test Compose UID expectation matrix
         shell: bash
         run: |
