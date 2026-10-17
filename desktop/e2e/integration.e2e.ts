@@ -125,10 +125,21 @@ test.describe
 
       await sheet.getByRole("button", { name: "Rename" }).click()
 
-      const renameInput = sheet.locator("input").first()
+      const renameForm = sheet.locator("form").filter({
+        has: page.getByRole("textbox", { name: "Provider name", exact: true }),
+      })
+      const renameInput = renameForm.getByRole("textbox", {
+        name: "Provider name",
+        exact: true,
+      })
+      await expect(renameInput).toBeVisible()
+      await expect(renameInput).toHaveValue("docker")
       await renameInput.fill("my-docker")
+      await expect(renameInput).toHaveValue("my-docker")
 
-      await sheet.getByRole("button", { name: "Save" }).first().click()
+      await renameForm
+        .getByRole("button", { name: "Save", exact: true })
+        .click()
 
       await sheet.waitFor({ state: "hidden", timeout: 10000 })
 
