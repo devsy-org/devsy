@@ -1,3 +1,5 @@
+//go:build linux || windows
+
 package main
 
 func successResult(out string) CommandResult {
