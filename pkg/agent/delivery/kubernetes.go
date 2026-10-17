@@ -241,6 +241,14 @@ func (e *permanentDeliveryError) Error() string { return e.err.Error() }
 
 func (e *permanentDeliveryError) Unwrap() error { return e.err }
 
+type execStreamAttempt struct {
+	attemptCtx context.Context
+	cancel     context.CancelCauseFunc
+	tempPath   string
+	destPath   string
+	progress   *progressReader
+}
+
 func (d *KubernetesDelivery) execStreamOnce(
 	ctx context.Context,
 	destPath string,
@@ -266,13 +274,28 @@ func (d *KubernetesDelivery) execStreamOnce(
 			}
 		}()
 	}
-	progress := newProgressReader(binary)
+	attempt := &execStreamAttempt{
+		attemptCtx: attemptCtx,
+		cancel:     cancel,
+		tempPath:   tempPath,
+		destPath:   destPath,
+		progress:   newProgressReader(binary),
+	}
+	if err := d.stageBinary(ctx, attempt); err != nil {
+		return err
+	}
+	return d.commitStagedBinary(ctx, attempt, skipVersionCheck)
+}
+
+// stageBinary streams the binary into attempt.tempPath through the progress
+// monitor, which cancels attempt.attemptCtx when the transfer stalls.
+func (d *KubernetesDelivery) stageBinary(ctx context.Context, attempt *execStreamAttempt) error {
 	monitorDone := make(chan struct{})
 	monitorStop := make(chan struct{})
 	monitor := execStreamProgressMonitor{
-		ctx:               attemptCtx,
-		cancel:            cancel,
-		progress:          progress,
+		ctx:               attempt.attemptCtx,
+		cancel:            attempt.cancel,
+		progress:          attempt.progress,
 		idleTimeout:       d.idleTimeout(),
 		completionTimeout: d.completionTimeout(),
 		stop:              monitorStop,
@@ -280,43 +303,53 @@ func (d *KubernetesDelivery) execStreamOnce(
 	}
 	go monitor.run()
 
-	quotedTemp := shellescape.Quote(tempPath)
+	quotedTemp := shellescape.Quote(attempt.tempPath)
 	stageScript := fmt.Sprintf(
 		`set -e; d=$(dirname %s); mkdir -p "$d"; rm -f %s; cat > %s`,
 		quotedTemp, quotedTemp, quotedTemp,
 	)
 	stageErr := d.Exec(
-		attemptCtx,
+		attempt.attemptCtx,
 		[]string{"sh", "-c", stageScript},
-		driver.Streams{Stdin: progress},
+		driver.Streams{Stdin: attempt.progress},
 	)
 	close(monitorStop)
 	<-monitorDone
-	if cause := context.Cause(attemptCtx); cause != nil {
+	if cause := context.Cause(attempt.attemptCtx); cause != nil {
 		stageErr = cause
 	}
 	if stageErr == nil {
-		stageErr = progress.completionError()
+		stageErr = attempt.progress.completionError()
 	}
 	if stageErr != nil {
-		d.cleanupStagedBinary(ctx, tempPath)
+		d.cleanupStagedBinary(ctx, attempt.tempPath)
 		return stageErr
 	}
+	return nil
+}
 
+// commitStagedBinary validates the staged binary and moves it to attempt.destPath.
+func (d *KubernetesDelivery) commitStagedBinary(
+	ctx context.Context,
+	attempt *execStreamAttempt,
+	skipVersionCheck bool,
+) error {
 	commitCtx, commitCancel := context.WithTimeout(ctx, d.idleTimeout())
 	defer commitCancel()
 	expectedVersion := d.expectedVersion()
 	if skipVersionCheck {
 		expectedVersion = ""
 	}
-	commitScript := validationCommitScript(tempPath, destPath, expectedVersion, progress.size())
+	commitScript := validationCommitScript(
+		attempt.tempPath, attempt.destPath, expectedVersion, attempt.progress.size(),
+	)
 	var stderr bytes.Buffer
 	if err := d.Exec(
 		commitCtx,
 		[]string{"sh", "-c", commitScript},
 		driver.Streams{Stderr: &stderr},
 	); err != nil {
-		d.cleanupStagedBinary(ctx, tempPath)
+		d.cleanupStagedBinary(ctx, attempt.tempPath)
 		validationErr := fmt.Errorf(
 			"validate staged agent: %w (%s)",
 			err,
