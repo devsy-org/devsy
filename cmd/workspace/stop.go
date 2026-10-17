@@ -57,29 +57,15 @@ func (cmd *StopCmd) Run(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 ) error {
-	reporter, err := newWorkspaceStatusReporter(
-		cmd.ResultFormat,
-		os.Stdout,
-		cmd.Verbosity > 0 || cmd.Debug,
-	)
+	reporter, err := cmd.newStatusReporter()
 	if err != nil {
 		return err
 	}
-	reporter = withWorkspaceJournal(reporter, client.Workspace())
-	return status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseStoppingWorkspace},
-		func(ctx context.Context) error {
-			return cmd.run(status.WithReporter(ctx, reporter), devsyConfig, client)
-		},
-	)
+	return cmd.runOperation(ctx, reporter, devsyConfig, client)
 }
 
 func (cmd *StopCmd) runArgs(ctx context.Context, args []string) error {
-	reporter, err := newWorkspaceStatusReporter(
-		cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug,
-	)
+	reporter, err := cmd.newStatusReporter()
 	if err != nil {
 		return err
 	}
@@ -108,6 +94,22 @@ func (cmd *StopCmd) runArgs(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	return cmd.runOperation(ctx, reporter, devsyConfig, client)
+}
+
+func (cmd *StopCmd) newStatusReporter() (status.Reporter, error) {
+	return newWorkspaceStatusReporter(
+		cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug,
+	)
+}
+
+// runOperation wraps the stop in a journaled status operation.
+func (cmd *StopCmd) runOperation(
+	ctx context.Context,
+	reporter status.Reporter,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
 	reporter = withWorkspaceJournal(reporter, client.Workspace())
 	return status.Run(
 		ctx,
@@ -130,15 +132,8 @@ func (cmd *StopCmd) run(
 		return err
 	}
 
-	// lock workspace
 	if !cmd.Platform.Enabled {
-		err := status.RunStep(
-			ctx,
-			status.PhaseStoppingWorkspace,
-			"Waiting for workspace lock",
-			client.Lock,
-		)
-		if err != nil {
+		if err := waitForLock(ctx, client); err != nil {
 			return err
 		}
 		defer client.Unlock()
@@ -151,7 +146,35 @@ func (cmd *StopCmd) run(
 		return err
 	}
 
-	// get instance status
+	if err := checkRunning(ctx, client); err != nil {
+		return err
+	}
+
+	// stop if single machine provider
+	wasStopped, err := cmd.stopSharedMachine(ctx, client, devsyConfig)
+	if err != nil {
+		return err
+	}
+	if !wasStopped {
+		if err := stopResources(ctx, client); err != nil {
+			return err
+		}
+	}
+
+	opener.KillBrowserTunnel(client.Context(), client.Workspace())
+	return nil
+}
+
+func waitForLock(ctx context.Context, client client2.BaseWorkspaceClient) error {
+	return status.RunStep(
+		ctx,
+		status.PhaseStoppingWorkspace,
+		"Waiting for workspace lock",
+		client.Lock,
+	)
+}
+
+func checkRunning(ctx context.Context, client client2.BaseWorkspaceClient) error {
 	var instanceStatus client2.Status
 	err := status.RunStep(
 		ctx,
@@ -165,13 +188,20 @@ func (cmd *StopCmd) run(
 	)
 	if err != nil {
 		return err
-	} else if instanceStatus != client2.StatusRunning {
+	}
+	if instanceStatus != client2.StatusRunning {
 		return fmt.Errorf("cannot stop workspace because it is %q", instanceStatus)
 	}
+	return nil
+}
 
-	// stop if single machine provider
+func (cmd *StopCmd) stopSharedMachine(
+	ctx context.Context,
+	client client2.BaseWorkspaceClient,
+	devsyConfig *config.Config,
+) (bool, error) {
 	var wasStopped bool
-	err = status.RunStep(
+	err := status.RunStep(
 		ctx,
 		status.PhaseStoppingWorkspace,
 		"Checking shared machine",
@@ -181,15 +211,11 @@ func (cmd *StopCmd) run(
 			return err
 		},
 	)
-	if err != nil {
-		return err
-	} else if wasStopped {
-		opener.KillBrowserTunnel(client.Context(), client.Workspace())
-		return nil
-	}
+	return wasStopped, err
+}
 
-	// stop environment
-	err = status.RunStep(
+func stopResources(ctx context.Context, client client2.BaseWorkspaceClient) error {
+	return status.RunStep(
 		ctx,
 		status.PhaseStoppingWorkspace,
 		"Stopping workspace resources",
@@ -197,13 +223,6 @@ func (cmd *StopCmd) run(
 			return client.Stop(ctx, client2.StopOptions{})
 		},
 	)
-	if err != nil {
-		return err
-	}
-
-	opener.KillBrowserTunnel(client.Context(), client.Workspace())
-
-	return nil
 }
 
 func (cmd *StopCmd) stopSingleMachine(
