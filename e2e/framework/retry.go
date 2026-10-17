@@ -228,11 +228,11 @@ func RetryFixed(
 		if err == nil {
 			return nil
 		}
-		if attempt >= attempts {
-			return fmt.Errorf("after %d attempts: %w", attempt, err)
-		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("after %d attempts: %w (last error: %w)", attempt, ctxErr, err)
+		}
+		if attempt >= attempts {
+			return fmt.Errorf("after %d attempts: %w", attempt, err)
 		}
 		ginkgo.GinkgoWriter.Printf(
 			"[retry] attempt %d/%d failed, retrying after %s: %v\n", attempt, attempts, delay, err,

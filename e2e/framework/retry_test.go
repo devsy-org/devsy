@@ -673,3 +673,22 @@ func TestRetryFixed_ContextCanceledDuringDelay(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	assert.EqualError(t, err, "after 1 attempts: context canceled (last error: attempt 1 failed)")
 }
+
+func TestRetryFixed_ContextCanceledOnFinalAttempt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errFinal := errors.New("final attempt failed")
+	calls := 0
+	err := RetryFixed(ctx, 2, 0, func(context.Context) error {
+		calls++
+		if calls == 2 {
+			cancel()
+			return errFinal
+		}
+		return fmt.Errorf("attempt %d failed", calls)
+	})
+	assert.Equal(t, 2, calls)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, errFinal)
+	assert.EqualError(t, err, "after 2 attempts: context canceled (last error: final attempt failed)")
+}
