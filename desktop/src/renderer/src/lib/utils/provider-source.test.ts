@@ -2,6 +2,31 @@ import { describe, expect, it } from "vitest"
 import { providerSourceReference } from "./provider-source.js"
 
 describe("providerSourceReference", () => {
+  it.each([
+    [
+      {
+        raw: "https://user:secret@example.test/provider.yaml?token=private#secret",
+      },
+      "https://example.test/provider.yaml (parameters hidden)",
+    ],
+    [
+      { url: "http://user:secret@example.test:8080/provider.yaml" },
+      "http://example.test:8080/provider.yaml",
+    ],
+    [
+      { raw: "https://example.test/provider.yaml?signature=private" },
+      "https://example.test/provider.yaml (parameters hidden)",
+    ],
+    [{ url: "https://user:secret@[invalid" }, "URL source"],
+  ])(
+    "hides URL credentials without changing the stored source %j",
+    (source, expected) => {
+      const original = { ...source }
+      expect(providerSourceReference(source)).toBe(expected)
+      expect(source).toEqual(original)
+    },
+  )
+
   it("keeps an explicitly selected release visible", () => {
     expect(
       providerSourceReference({

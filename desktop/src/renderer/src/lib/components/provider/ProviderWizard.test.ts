@@ -157,7 +157,7 @@ describe("ProviderWizard", () => {
     page.unmount()
   })
 
-  it("lets users review optional defaults before initialization", async () => {
+  it("leaves untouched optional defaults to CLI initialization", async () => {
     providerOptions.mockResolvedValue({
       REGION: { name: "REGION", default: "us-west-2" },
     })
@@ -177,13 +177,104 @@ describe("ProviderWizard", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     await waitFor(() => {
-      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("aws", {
-        REGION: "us-west-2",
-      })
+      expect(providerSetOptions).not.toHaveBeenCalled()
       expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("aws")
     })
     page.unmount()
   })
+
+  it("does not submit an untouched expression default", async () => {
+    const expression = "${PROVIDER_FOLDER}/config.json"
+    providerOptions.mockResolvedValue({
+      CONFIG: { name: "CONFIG", default: expression },
+    })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    const configInput = await screen.findByRole("textbox", { name: "CONFIG" })
+    expect((configInput as HTMLInputElement).value).toBe(expression)
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByRole("heading", { name: "Initializing docker" }),
+    ).toBeDefined()
+    expect(providerSetOptions).not.toHaveBeenCalled()
+    expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
+    page.unmount()
+  })
+
+  it("submits an explicitly edited expression default", async () => {
+    const expression = "${PROVIDER_FOLDER}/config.json"
+    providerOptions.mockResolvedValue({
+      CONFIG: { name: "CONFIG", default: expression },
+    })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    const configInput = (await screen.findByRole("textbox", {
+      name: "CONFIG",
+    })) as HTMLInputElement
+    await fireEvent.input(configInput, {
+      target: { value: "/tmp/custom.json" },
+    })
+    await fireEvent.input(configInput, { target: { value: expression } })
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    await waitFor(() => {
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "docker",
+        {
+          CONFIG: expression,
+        },
+        false,
+      )
+      expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
+    })
+    page.unmount()
+  })
+
+  it.each([true, false])(
+    "preserves Reuse machine %s while saving edited options",
+    async (reuseMachine) => {
+      providerOptions.mockResolvedValue({
+        REGION: { name: "REGION", default: "local" },
+      })
+      const page = renderWizard()
+      await fireEvent.click(
+        screen.getByRole("button", { name: /docker Local Docker/ }),
+      )
+      if (reuseMachine)
+        await fireEvent.click(
+          screen.getByRole("switch", { name: "Reuse machine" }),
+        )
+      await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+      await fireEvent.input(
+        await screen.findByRole("textbox", { name: "REGION" }),
+        { target: { value: "remote" } },
+      )
+      await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+      await waitFor(() => {
+        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+          "docker",
+          { REGION: "remote" },
+          reuseMachine,
+        )
+        expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
+      })
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "docker",
+        undefined,
+        reuseMachine,
+      )
+      page.unmount()
+    },
+  )
 
   it("retries loading options without adding the provider a second time", async () => {
     providerOptions
@@ -315,7 +406,7 @@ describe("ProviderWizard", () => {
     page.unmount()
   })
 
-  it("shows structured enum labels and saves their values with defaults", async () => {
+  it("shows enum defaults but submits only explicitly selected options", async () => {
     providerOptions.mockResolvedValue({
       SIZE: {
         name: "SIZE",
@@ -355,14 +446,20 @@ describe("ProviderWizard", () => {
       await screen.findByRole("option", { name: "Fast mode" }),
       { button: 0, pointerType: "mouse" },
     )
+    await fireEvent.input(screen.getByRole("textbox", { name: "ENABLED" }), {
+      target: { value: "false" },
+    })
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
     await waitFor(() => {
-      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("docker", {
-        SIZE: "micro",
-        MODE: "fast",
-        ENABLED: "false",
-      })
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "docker",
+        {
+          MODE: "fast",
+          ENABLED: "false",
+        },
+        false,
+      )
     })
     page.unmount()
   })
@@ -370,6 +467,7 @@ describe("ProviderWizard", () => {
   it("saves a selected empty enum value while leaving an unset enum omitted", async () => {
     providerOptions.mockResolvedValue({
       TOKEN: { name: "TOKEN", displayName: "Token", required: true },
+      STORED_TEXT: { name: "STORED_TEXT", value: "existing" },
       STORED_MODE: {
         name: "STORED_MODE",
         value: "",
@@ -400,6 +498,7 @@ describe("ProviderWizard", () => {
           { value: "safe", displayName: "Safe" },
         ],
       },
+      HIDDEN_MODE: { name: "HIDDEN_MODE", value: "hidden", hidden: true },
     })
     const page = renderWizard()
     await fireEvent.click(
@@ -423,18 +522,20 @@ describe("ProviderWizard", () => {
       await screen.findByRole("option", { name: "No extra settings" }),
       { button: 0, pointerType: "mouse" },
     )
-    await fireEvent.input(screen.getByRole("textbox"), {
+    await fireEvent.input(screen.getByRole("textbox", { name: /Token/ }), {
       target: { value: "secret" },
     })
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
     await waitFor(() => {
-      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("docker", {
-        TOKEN: "secret",
-        STORED_MODE: "",
-        DEFAULT_MODE: "",
-        UNSET_MODE: "",
-      })
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "docker",
+        {
+          TOKEN: "secret",
+          UNSET_MODE: "",
+        },
+        false,
+      )
     })
     page.unmount()
   })

@@ -121,6 +121,7 @@ let availableProvidersError = $state("")
 let providerName = $state("")
 let options = $state<Record<string, ProviderOption>>({})
 let optionValues = $state<Record<string, string>>({})
+let editedOptionKeys = $state<Record<string, true>>({})
 let loadingOptions = $state(false)
 let optionsLoaded = $state(false)
 let saving = $state(false)
@@ -197,6 +198,7 @@ function reset() {
   providerName = ""
   options = {}
   optionValues = {}
+  editedOptionKeys = {}
   loadingOptions = false
   saving = false
   initCommandId = null
@@ -320,6 +322,7 @@ async function loadProviderOptions(): Promise<boolean> {
       if (value !== undefined) values[key] = value
     }
     optionValues = values
+    editedOptionKeys = {}
     return true
   } catch (err) {
     optionsLoaded = false
@@ -352,11 +355,17 @@ async function handleConfigure() {
   try {
     const values: Record<string, string> = {}
     for (const [key, val] of Object.entries(optionValues)) {
-      if (val !== "" || providerOptionEnumHasValue(options[key]?.enum, "")) {
+      if (
+        editedOptionKeys[key] &&
+        !options[key]?.hidden &&
+        (val !== "" || providerOptionEnumHasValue(options[key]?.enum, ""))
+      ) {
         values[key] = val
       }
     }
-    await providerSetOptions(providerName, values)
+    if (Object.keys(values).length > 0) {
+      await providerSetOptions(providerName, values, singleMachine)
+    }
   } catch (err) {
     error = `Failed to save options: ${extractErrorMessage(err)}`
     saving = false
@@ -621,7 +630,10 @@ function handleDone() {
                       value={selectedOption?.selectValue ?? ""}
                       onValueChange={(selectValue) => {
                         const selected = enumOptions.find((item) => item.selectValue === selectValue)
-                        if (selected) optionValues[key] = selected.value
+                        if (selected) {
+                          optionValues[key] = selected.value
+                          editedOptionKeys[key] = true
+                        }
                         error = ""
                       }}
                     >
@@ -646,7 +658,11 @@ function handleDone() {
                       type={opt.password ? "password" : "text"}
                       placeholder={opt.default != null ? String(opt.default) : ""}
                       value={optionValues[key] ?? ""}
-                      oninput={(e) => { optionValues[key] = e.currentTarget.value; error = "" }}
+                      oninput={(e) => {
+                        optionValues[key] = e.currentTarget.value
+                        editedOptionKeys[key] = true
+                        error = ""
+                      }}
                       class={opt.required && !optionValues[key]?.trim() ? "border-amber-500" : ""}
                       disabled={saving}
                     />

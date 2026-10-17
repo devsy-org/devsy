@@ -481,11 +481,19 @@ async function handleSaveOptions() {
   try {
     const values: Record<string, string> = {}
     for (const [key, val] of Object.entries(optionValues)) {
-      if (val !== "" || providerOptionEnumHasValue(options[key]?.enum, "")) {
+      if (
+        !options[key]?.hidden &&
+        (val !== "" || providerOptionEnumHasValue(options[key]?.enum, "")) &&
+        (!Object.hasOwn(initialValues, key) || val !== initialValues[key])
+      ) {
         values[key] = val
       }
     }
-    await providerSetOptions(provider.name, values)
+    await providerSetOptions(
+      provider.name,
+      values,
+      provider.state?.singleMachine,
+    )
     const updated = await providerList()
     providers.set(updated)
     initialValues = { ...optionValues }

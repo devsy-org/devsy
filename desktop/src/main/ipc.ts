@@ -1460,8 +1460,20 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle(
     "provider_set_options",
-    async (_event, args: { name: string; options: string[] }) => {
+    async (
+      _event,
+      args: { name: string; options: string[]; singleMachine?: boolean },
+    ) => {
+      if (
+        args.singleMachine !== undefined &&
+        typeof args.singleMachine !== "boolean"
+      ) {
+        throw new Error("Single-machine selection must be a boolean.")
+      }
       const cliArgs = ["provider", "set", args.name, "--skip-init"]
+      if (args.singleMachine !== undefined) {
+        cliArgs.push(`--single-machine=${args.singleMachine}`)
+      }
       for (const opt of args.options) {
         cliArgs.push("-o", opt)
       }

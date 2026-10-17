@@ -264,6 +264,21 @@ describe("IPC commands", () => {
         options: [],
       })
     })
+
+    it.each([true, false])(
+      "providerSetOptions preserves installation mode %s",
+      async (singleMachine) => {
+        await providerSetOptions("custom", { REGION: "local" }, singleMachine)
+        expect(mockInvoke).toHaveBeenCalledExactlyOnceWith(
+          "provider_set_options",
+          {
+            name: "custom",
+            options: ["REGION=local"],
+            singleMachine,
+          },
+        )
+      },
+    )
   })
 
   describe("machine commands", () => {

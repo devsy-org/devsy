@@ -136,6 +136,55 @@ describe("provider job lifecycle over IPC", () => {
     expect(cli.runRaw).not.toHaveBeenCalled()
   })
 
+  it.each([true, false])(
+    "keeps the wizard's single-machine selection when saving options (%s)",
+    async (singleMachine) => {
+      const { cli } = setup()
+      await invoke("provider_set_options", {
+        name: "custom",
+        options: ["REGION=local"],
+        singleMachine,
+      })
+      expect(cli.runRaw).toHaveBeenCalledExactlyOnceWith([
+        "provider",
+        "set",
+        "custom",
+        "--skip-init",
+        `--single-machine=${singleMachine}`,
+        "-o",
+        "REGION=local",
+      ])
+    },
+  )
+
+  it("keeps existing option-save calls unchanged when no installation mode is supplied", async () => {
+    const { cli } = setup()
+    await invoke("provider_set_options", {
+      name: "docker",
+      options: ["REGION=local"],
+    })
+    expect(cli.runRaw).toHaveBeenCalledExactlyOnceWith([
+      "provider",
+      "set",
+      "docker",
+      "--skip-init",
+      "-o",
+      "REGION=local",
+    ])
+  })
+
+  it("rejects malformed installation mode before saving options", async () => {
+    const { cli } = setup()
+    await expect(
+      invoke("provider_set_options", {
+        name: "custom",
+        options: ["REGION=local"],
+        singleMachine: "true",
+      }),
+    ).rejects.toThrow("Single-machine selection must be a boolean.")
+    expect(cli.runRaw).not.toHaveBeenCalled()
+  })
+
   it.each([{}, ["docker", null], [""]])(
     "rejects malformed provider catalog data %j",
     async (result) => {

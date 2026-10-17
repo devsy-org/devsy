@@ -90,6 +90,8 @@ const PROVIDERS: Provider[] = [
   },
 ]
 
+const AVAILABLE_PROVIDERS = ["docker", "terraform"]
+
 const MACHINES: Machine[] = [
   {
     id: "docker-desktop",
@@ -217,6 +219,7 @@ const COMMANDS: Record<string, Handler> = {
 
   // Providers
   provider_list: () => PROVIDERS,
+  provider_available: () => AVAILABLE_PROVIDERS,
   provider_add: () => undefined,
   provider_delete: () => undefined,
   provider_use: () => undefined,

@@ -223,12 +223,50 @@ describe("ProviderSheet", () => {
     )
     await fireEvent.click(screen.getByRole("button", { name: /^Save$/ }))
     await waitFor(() =>
-      expect(providerSetOptions).toHaveBeenCalledWith("ssh", {
-        HOST: "new-host",
-        SIZE: "30",
-        INTERNAL: "private",
-      }),
+      expect(providerSetOptions).toHaveBeenCalledWith(
+        "ssh",
+        {
+          HOST: "new-host",
+        },
+        undefined,
+      ),
     )
+    unmount()
+  })
+
+  it("saves only changed visible options and preserves the machine mode", async () => {
+    const expression = "${PROVIDER_FOLDER}/config.json"
+    providerOptions.mockResolvedValue({
+      CONFIG: { name: "CONFIG", default: expression },
+      HOST: { name: "HOST", default: "localhost" },
+      STORED: { name: "STORED", value: "already-saved" },
+      HIDDEN: { name: "HIDDEN", value: "private", hidden: true },
+    })
+    const { unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("ssh", {
+          state: { initialized: true, singleMachine: true },
+        }),
+        open: true,
+      },
+    })
+    await flushAsync()
+
+    expect((screen.getByLabelText("CONFIG") as HTMLInputElement).value).toBe(
+      expression,
+    )
+    await fireEvent.input(screen.getByLabelText("HOST"), {
+      target: { value: "remote.example" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        { HOST: "remote.example" },
+        true,
+      )
+    })
     unmount()
   })
 
@@ -326,10 +364,14 @@ describe("ProviderSheet", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
-      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("ssh", {
-        SIZE: "large",
-        MODE: "burst",
-      })
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        {
+          SIZE: "large",
+          MODE: "burst",
+        },
+        undefined,
+      )
     })
     unmount()
   })
@@ -394,11 +436,13 @@ describe("ProviderSheet", () => {
       await fireEvent.click(save)
 
       await waitFor(() => {
-        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("ssh", {
-          STORED_MODE: "",
-          DEFAULT_MODE: "",
-          UNSET_MODE: "",
-        })
+        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+          "ssh",
+          {
+            UNSET_MODE: "",
+          },
+          undefined,
+        )
       })
     } finally {
       unmount()
