@@ -565,12 +565,18 @@ describe("ProviderWizard", () => {
         target: { value: "microsandbox" },
       },
     )
+    await fireEvent.input(
+      screen.getByPlaceholderText("Defaults to source name"),
+      {
+        target: { value: "microsandbox-lab" },
+      },
+    )
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
     await waitFor(() => {
       expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "microsandbox-lab",
         "microsandbox",
-        undefined,
         false,
       )
     })
@@ -632,6 +638,103 @@ describe("ProviderWizard", () => {
       expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
         "custom-provider",
         "https://example.test/provider.yaml",
+        false,
+      )
+    })
+    page.unmount()
+  })
+
+  it("requires an explicit name and source when typing a short source that matches the name", async () => {
+    const page = renderWizard()
+    await fireEvent.input(screen.getByLabelText("Provider source"), {
+      target: { value: "my-provider" },
+    })
+    await fireEvent.input(screen.getByLabelText(/Name/), {
+      target: { value: "" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByText(
+        "Enter an installation name for this custom source.",
+      ),
+    ).toBeDefined()
+    expect(providerAdd).not.toHaveBeenCalled()
+
+    await fireEvent.input(screen.getByLabelText(/Name/), {
+      target: { value: "my-provider" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "my-provider",
+        "my-provider",
+        false,
+      )
+    })
+    page.unmount()
+  })
+
+  it("treats an initial short source as custom and sends it explicitly", async () => {
+    const page = render(ProviderWizard, {
+      props: { open: true, initialSource: "work" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByText(
+        "Enter an installation name for this custom source.",
+      ),
+    ).toBeDefined()
+    expect(providerAdd).not.toHaveBeenCalled()
+
+    await fireEvent.input(
+      screen.getByPlaceholderText("Defaults to source name"),
+      {
+        target: { value: "work-lab" },
+      },
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "work-lab",
+        "work",
+        false,
+      )
+    })
+    page.unmount()
+  })
+
+  it("clears preset selection when manually entering the same preset source", async () => {
+    const page = renderWizard()
+    const dockerPreset = screen.getByRole("button", {
+      name: /docker Local Docker/,
+    })
+    await fireEvent.click(dockerPreset)
+    expect(dockerPreset.getAttribute("aria-pressed")).toBe("true")
+    await fireEvent.input(screen.getByLabelText("Provider source"), {
+      target: { value: "docker" },
+    })
+    expect(dockerPreset.getAttribute("aria-pressed")).toBe("false")
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByText(
+        "Enter an installation name for this custom source.",
+      ),
+    ).toBeDefined()
+    expect(providerAdd).not.toHaveBeenCalled()
+    await fireEvent.input(
+      screen.getByPlaceholderText("Defaults to source name"),
+      {
+        target: { value: "docker-custom" },
+      },
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "docker-custom",
+        "docker",
         false,
       )
     })

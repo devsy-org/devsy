@@ -108,11 +108,10 @@ let error = $state("")
 // Step 1 state
 let source = $state("")
 let customName = $state("")
+let selectedProviderOption = $state(false)
 let singleMachine = $state(false)
 let adding = $state(false)
-let needsCustomName = $derived(
-  !!source.trim() && !/^[a-z0-9-]{1,32}$/.test(source.trim()),
-)
+let needsCustomName = $derived(!!source.trim() && !selectedProviderOption)
 let availableProviders = $state<string[]>([])
 let loadingAvailableProviders = $state(false)
 let availableProvidersError = $state("")
@@ -193,6 +192,7 @@ function reset() {
   error = ""
   source = ""
   customName = ""
+  selectedProviderOption = false
   singleMachine = false
   adding = false
   providerName = ""
@@ -213,6 +213,7 @@ function reset() {
 $effect(() => {
   if (open && initialSource) {
     source = initialSource
+    selectedProviderOption = false
   }
   if (!open) {
     reset()
@@ -277,8 +278,9 @@ async function handleSelect() {
     error = "Enter an installation name for this custom source."
     return
   }
-  const preset = PRESETS.find((item) => item.name === src)
-  const name = customName.trim() || preset?.name || src
+  const name = customName.trim() || src
+  const providerSource =
+    selectedProviderOption && name === src ? undefined : src
   if (nameExists(name)) {
     error = `Provider "${name}" already exists. Choose a different name.`
     return
@@ -287,7 +289,7 @@ async function handleSelect() {
   error = ""
   adding = true
   try {
-    await providerAdd(name, name !== src ? src : undefined, singleMachine)
+    await providerAdd(name, providerSource, singleMachine)
     providerName = name
   } catch (err) {
     const msg = extractErrorMessage(err)
@@ -482,11 +484,11 @@ function handleDone() {
                 {#each PRESETS.filter((preset) => preset.category === category) as p (p.name)}
                   <button
                     type="button"
-                    aria-pressed={source === p.name}
+                    aria-pressed={selectedProviderOption && source === p.name}
                     class="flex min-h-14 items-center gap-2.5 rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
-                      {source === p.name ? 'border-primary bg-accent/40 ring-1 ring-primary' : ''}"
+                      {selectedProviderOption && source === p.name ? 'border-primary bg-accent/40 ring-1 ring-primary' : ''}"
                     disabled={adding}
-                    onclick={() => { source = p.name; customName = ""; error = "" }}
+                    onclick={() => { source = p.name; selectedProviderOption = true; customName = ""; error = "" }}
                   >
                     <ProviderIcon name={p.name} class="size-6 shrink-0" />
                     <span class="min-w-0">
@@ -517,11 +519,11 @@ function handleDone() {
                   {#each additionalProviders as name (name.toLowerCase())}
                     <button
                       type="button"
-                      aria-pressed={source === name}
+                      aria-pressed={selectedProviderOption && source === name}
                       class="flex min-h-14 items-center gap-2.5 rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
-                        {source === name ? 'border-primary bg-accent/40 ring-1 ring-primary' : ''}"
+                        {selectedProviderOption && source === name ? 'border-primary bg-accent/40 ring-1 ring-primary' : ''}"
                       disabled={adding}
-                      onclick={() => { source = name; customName = ""; error = "" }}
+                      onclick={() => { source = name; selectedProviderOption = true; customName = ""; error = "" }}
                     >
                       <ProviderIcon name={name} class="size-6 shrink-0" />
                       <span class="min-w-0">
@@ -551,7 +553,7 @@ function handleDone() {
                 id="provider-source"
                 placeholder="github.com/org/provider"
                 value={source}
-                oninput={(e) => { source = e.currentTarget.value; error = "" }}
+                oninput={(e) => { source = e.currentTarget.value; selectedProviderOption = false; error = "" }}
                 disabled={adding}
               />
             </div>
