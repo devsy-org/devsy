@@ -304,6 +304,10 @@ html:has(.home-page) {
 }
 .home-page .tour-steps {
   display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
 }

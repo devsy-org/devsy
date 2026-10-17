@@ -125,7 +125,7 @@ export function ProductWalkthrough() {
           />
         ))}
       </div>
-      <div className="tour-steps" role="group" aria-label="Walkthrough steps">
+      <fieldset className="tour-steps" aria-label="Walkthrough steps">
         {scenes.map((item, index) => (
           <button
             key={item.title}
@@ -146,7 +146,7 @@ export function ProductWalkthrough() {
             <span>{item.title}</span>
           </button>
         ))}
-      </div>
+      </fieldset>
       <div className="tour-descriptions">
         {scenes.map((item, index) => (
           <p
