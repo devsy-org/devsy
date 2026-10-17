@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -51,8 +53,12 @@ func TestSSHExecAppliesNumericCredentialsToChild(t *testing.T) {
 				require.NoError(t, err)
 				if usePTY {
 					err = execPTY(ptyExecParams{
-						sess: session, cmd: cmd,
-						ptyReq: ssh.Pty{Term: "xterm", Window: ssh.Window{Height: 24, Width: 80}},
+						sess: session,
+						cmd:  cmd,
+						ptyReq: ssh.Pty{
+							Term:   execTestTerminal,
+							Window: ssh.Window{Height: 24, Width: 80},
+						},
 					})
 				} else {
 					err = execNonPTY(session, cmd)
@@ -80,4 +86,100 @@ func TestSSHExecAppliesNumericCredentialsToChild(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestSSHExecSameNumericIdentityRunsWithoutPrivilege(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("same-identity privilege regression requires a non-root process")
+	}
+	account, groups := requireMatchingProcessAccount(t)
+	identity := account.Uid
+
+	for _, usePTY := range []bool{false, true} {
+		name := "non-PTY"
+		if usePTY {
+			name = "PTY"
+		}
+		t.Run(name, func(t *testing.T) {
+			session := &identityExecutionSession{identity: identity}
+			if usePTY {
+				input, writer := io.Pipe()
+				session.input = input
+				t.Cleanup(func() { _ = writer.Close(); _ = input.Close() })
+			}
+			srv := &server{
+				currentUser: "different-server-account",
+				shell:       []string{execTestShell},
+				workdir:     "/",
+			}
+			cmd, err := srv.getCommandWithSecretEnvironment(session, usePTY, nil)
+			require.NoError(t, err)
+
+			if usePTY {
+				err = execPTY(ptyExecParams{
+					sess: session,
+					cmd:  cmd,
+					ptyReq: ssh.Pty{
+						Term:   execTestTerminal,
+						Window: ssh.Window{Height: 24, Width: 80},
+					},
+				})
+			} else {
+				err = execNonPTY(session, cmd)
+			}
+			require.NoError(t, err)
+			if cmd.SysProcAttr != nil {
+				require.Nil(t, cmd.SysProcAttr.Credential)
+			}
+			parts := strings.Split(strings.TrimSpace(session.output.String()), ":")
+			require.Len(t, parts, 3)
+			require.Equal(t, account.Uid, parts[0])
+			require.Equal(t, account.Gid, parts[1])
+			require.Equal(
+				t,
+				effectiveGroupSet(groups, account.Gid),
+				effectiveGroupSet(strings.Fields(parts[2]), account.Gid),
+			)
+		})
+	}
+}
+
+func requireMatchingProcessAccount(t *testing.T) (*user.User, []string) {
+	t.Helper()
+	account, err := user.Current()
+	require.NoError(t, err)
+	groups, err := account.GroupIds()
+	require.NoError(t, err)
+	require.Equal(t, account.Uid, strconv.Itoa(os.Geteuid()))
+	require.Equal(t, account.Gid, strconv.Itoa(os.Getegid()))
+	currentGroups, err := os.Getgroups()
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		effectiveGroupSet(groups, account.Gid),
+		effectiveGroupSet(intGroupsAsStrings(currentGroups), account.Gid),
+	)
+	return account, groups
+}
+
+func intGroupsAsStrings(groups []int) []string {
+	values := make([]string, len(groups))
+	for i, group := range groups {
+		values[i] = strconv.Itoa(group)
+	}
+	return values
+}
+
+func effectiveGroupSet(groups []string, primary string) []string {
+	set := make(map[string]struct{}, len(groups)+1)
+	set[primary] = struct{}{}
+	for _, group := range groups {
+		set[group] = struct{}{}
+	}
+	values := make([]string, 0, len(set))
+	for group := range set {
+		values = append(values, group)
+	}
+	sort.Strings(values)
+	return values
 }

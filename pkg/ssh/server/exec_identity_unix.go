@@ -4,6 +4,8 @@ package server
 
 import (
 	"fmt"
+	"maps"
+	"os"
 	"os/exec"
 	"os/user"
 	"strconv"
@@ -52,11 +54,13 @@ func prepareExecIdentityWithLookups(
 	if err != nil {
 		return true, fmt.Errorf("resolve execution identity %q: %w", spec, err)
 	}
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	cmd.SysProcAttr.Credential = &syscall.Credential{
-		Uid: credentials.uid, Gid: credentials.gid, Groups: credentials.groups,
+	if !execCredentialsMatchCurrentProcess(credentials) {
+		if cmd.SysProcAttr == nil {
+			cmd.SysProcAttr = &syscall.SysProcAttr{}
+		}
+		cmd.SysProcAttr.Credential = &syscall.Credential{
+			Uid: credentials.uid, Gid: credentials.gid, Groups: credentials.groups,
+		}
 	}
 	username := strconv.FormatUint(uint64(credentials.uid), 10)
 	home := "/"
@@ -69,6 +73,44 @@ func prepareExecIdentityWithLookups(
 	}, nil)
 	cmd.Dir = home
 	return true, nil
+}
+
+func execCredentialsMatchCurrentProcess(credentials *execCredentials) bool {
+	if int64(credentials.uid) != int64(os.Geteuid()) ||
+		int64(credentials.gid) != int64(os.Getegid()) {
+		return false
+	}
+
+	groups, err := os.Getgroups()
+	if err != nil {
+		return false
+	}
+	return sameEffectiveGroupIDs(credentials.gid, credentials.groups, os.Getegid(), groups)
+}
+
+func sameEffectiveGroupIDs(
+	expectedPrimary uint32,
+	expectedSupplementary []uint32,
+	currentPrimary int,
+	currentSupplementary []int,
+) bool {
+	if int64(expectedPrimary) != int64(currentPrimary) {
+		return false
+	}
+	expectedSet := map[int64]struct{}{int64(expectedPrimary): {}}
+	for _, group := range expectedSupplementary {
+		expectedSet[int64(group)] = struct{}{}
+	}
+
+	currentSet := map[int64]struct{}{int64(currentPrimary): {}}
+	for _, group := range currentSupplementary {
+		if group < 0 {
+			return false
+		}
+		currentSet[int64(group)] = struct{}{}
+	}
+
+	return maps.Equal(expectedSet, currentSet)
 }
 
 func resolveExecCredentials(

@@ -4,8 +4,10 @@ package server
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"os/user"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -116,6 +118,53 @@ func TestPrepareExecIdentityPreservesCommandAttributes(t *testing.T) {
 	require.Equal(t, "1234", env["USER"])
 	require.Equal(t, "1234", env["LOGNAME"])
 	require.Equal(t, "/bin", env["PATH"])
+}
+
+func TestPrepareExecIdentitySkipsCredentialForCurrentProcessIdentity(t *testing.T) {
+	uid := strconv.Itoa(os.Geteuid())
+	gid := strconv.Itoa(os.Getegid())
+	currentGroups, err := os.Getgroups()
+	require.NoError(t, err)
+	groupIDs := make([]string, len(currentGroups))
+	for i, group := range currentGroups {
+		groupIDs[i] = strconv.Itoa(group)
+	}
+	account := &user.User{
+		Username: "current",
+		Uid:      uid,
+		Gid:      gid,
+		HomeDir:  "/tmp",
+	}
+	lookups := execIdentityLookups{
+		userByID: func(id string) (*user.User, error) {
+			require.Equal(t, uid, id)
+			return account, nil
+		},
+		groups: func(got *user.User) ([]string, error) {
+			require.Same(t, account, got)
+			return groupIDs, nil
+		},
+	}
+	cmd := exec.Command("true")
+	attrs := &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = attrs
+
+	handled, err := prepareExecIdentityWithLookups(cmd, uid, lookups)
+	require.NoError(t, err)
+	require.True(t, handled)
+	require.Same(t, attrs, cmd.SysProcAttr)
+	require.Nil(t, cmd.SysProcAttr.Credential)
+	require.Equal(t, "/tmp", cmd.Dir)
+}
+
+func TestSameEffectiveGroupIDsIgnoresOrderDuplicatesAndPrimaryRepresentation(t *testing.T) {
+	require.True(t, sameEffectiveGroupIDs(200, []uint32{300, 200, 200}, 200, []int{200, 300}))
+	require.True(t, sameEffectiveGroupIDs(200, []uint32{300}, 200, []int{300}))
+	require.True(t, sameEffectiveGroupIDs(200, nil, 200, nil))
+	require.False(t, sameEffectiveGroupIDs(200, []uint32{300}, 200, nil))
+	require.False(t, sameEffectiveGroupIDs(200, nil, 200, []int{300}))
+	require.False(t, sameEffectiveGroupIDs(200, nil, 200, []int{201}))
+	require.False(t, sameEffectiveGroupIDs(201, nil, 201, []int{-1}))
 }
 
 func TestPrepareExecIdentityLeavesNamedUserToExistingPath(t *testing.T) {

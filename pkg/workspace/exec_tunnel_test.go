@@ -174,6 +174,47 @@ func (s *tunnelExecSuite) TestSSHSessionPreservesGuestExitStatus() {
 	}
 }
 
+func (s *tunnelExecSuite) TestTunnelExecOutcomeKeepsGuestExitAfterLateCancellation() {
+	ctx, cancel := context.WithCancel(s.T().Context())
+	session := execTestSSHSession(s.T(), func(channel ssh.Channel) {
+		_, _ = channel.SendRequest(
+			"exit-status",
+			false,
+			ssh.Marshal(struct{ Status uint32 }{130}),
+		)
+	})
+	guestErr := runTunnelExecSession(ctx, session, ExecRequest{}, "guest-command")
+	s.Require().Error(guestErr)
+	var exit *ssh.ExitError
+	s.Require().ErrorAs(guestErr, &exit)
+
+	cancel()
+	code, err := resolveTunnelExecOutcome(ctx, guestErr)
+	s.NoError(err)
+	s.Equal(130, code)
+
+	joinedErr := errors.Join(fmt.Errorf("guest command: %w", guestErr), context.Canceled)
+	code, err = resolveTunnelExecOutcome(ctx, joinedErr)
+	s.Equal(-1, code)
+	s.ErrorIs(err, context.Canceled)
+	s.ErrorAs(err, &exit)
+
+	joinedDeadlineErr := errors.Join(
+		fmt.Errorf("guest command: %w", guestErr),
+		context.DeadlineExceeded,
+	)
+	code, err = resolveTunnelExecOutcome(context.Background(), joinedDeadlineErr)
+	s.Equal(-1, code)
+	s.ErrorIs(err, context.DeadlineExceeded)
+	s.ErrorAs(err, &exit)
+
+	transportCtx, cancelTransport := context.WithCancel(s.T().Context())
+	cancelTransport()
+	code, err = resolveTunnelExecOutcome(transportCtx, errors.New("tunnel closed"))
+	s.Equal(-1, code)
+	s.ErrorIs(err, context.Canceled)
+}
+
 func (s *tunnelExecSuite) TestSSHTransportFailureDoesNotEchoEnvironmentValues() {
 	session := execTestSSHSession(s.T(), func(ssh.Channel) {})
 	command, err := tunnelExecCommand(

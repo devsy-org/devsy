@@ -101,14 +101,21 @@ func (r *tunnelRuntime) Exec(ctx context.Context, req ExecRequest) (int, error) 
 		Run(ctx, func(ctx context.Context, conn *ssh.Client) error {
 			return runTunnelExec(ctx, conn, req, command)
 		}, r.config, nil)
+	return resolveTunnelExecOutcome(ctx, err)
+}
+
+func resolveTunnelExecOutcome(ctx context.Context, err error) (int, error) {
 	if err == nil {
 		return 0, nil
 	}
-	if ctx.Err() != nil {
-		return -1, ctx.Err()
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return -1, err
 	}
 	if exit, ok := errors.AsType[*ssh.ExitError](err); ok {
 		return exit.ExitStatus(), nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return -1, ctxErr
 	}
 	return -1, err
 }

@@ -17,6 +17,8 @@ import (
 
 const execTestShell = "/bin/sh"
 
+const execTestTerminal = "xterm"
+
 type commandLogSession struct {
 	ssh.Session
 	output bytes.Buffer
@@ -86,7 +88,7 @@ func TestCommandExecutionDoesNotLogShellArguments(t *testing.T) {
 				err = execPTY(ptyExecParams{
 					sess: session,
 					ptyReq: ssh.Pty{
-						Term:   "xterm",
+						Term:   execTestTerminal,
 						Window: ssh.Window{Height: 24, Width: 80},
 					},
 					cmd: cmd,
