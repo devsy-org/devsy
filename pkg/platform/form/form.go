@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"strings"
 
 	"charm.land/huh/v2"
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
@@ -16,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/platform/client"
+	"github.com/devsy-org/devsy/pkg/platform/parameters"
 	"github.com/devsy-org/devsy/pkg/platform/project"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
@@ -331,7 +331,7 @@ func renderedParametersForUpdate(
 }
 
 func buildFieldParameters(
-	parameters []storagev1.AppParameter,
+	appParameters []storagev1.AppParameter,
 	instance *managementv1.DevsyWorkspaceInstance,
 	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
 	selectedTemplateVersion string,
@@ -351,10 +351,10 @@ func buildFieldParameters(
 
 	fieldParameters := []*FieldParameter{}
 	// reuse existing parameters as starting point
-	for _, p := range parameters {
+	for _, p := range appParameters {
 		var value any = p.DefaultValue
 		if existingParameters != nil {
-			value = getDeepValue(existingParameters, p.Variable)
+			value = parameters.GetDeepValue(existingParameters, p.Variable)
 		}
 		fieldParameter := FieldParameter{AppParameter: p}
 		assignFieldValue(&fieldParameter, value)
@@ -647,47 +647,4 @@ func renderParameters(fieldParameters []*FieldParameter) (string, error) {
 	}
 
 	return string(rawParameters), nil
-}
-
-func getDeepValue(parameters any, path string) any {
-	if parameters == nil {
-		return nil
-	}
-
-	pathSegments := strings.Split(path, ".")
-	switch t := parameters.(type) {
-	case map[string]any:
-		return getDeepValueFromMap(t, pathSegments)
-	case []any:
-		return getDeepValueFromSlice(t, pathSegments)
-	}
-
-	return nil
-}
-
-func getDeepValueFromMap(t map[string]any, pathSegments []string) any {
-	val, ok := t[pathSegments[0]]
-	if !ok {
-		return nil
-	} else if len(pathSegments) == 1 {
-		return val
-	}
-
-	return getDeepValue(val, strings.Join(pathSegments[1:], "."))
-}
-
-func getDeepValueFromSlice(t []any, pathSegments []string) any {
-	index, err := strconv.Atoi(pathSegments[0])
-	if err != nil {
-		return nil
-	} else if index < 0 || index >= len(t) {
-		return nil
-	}
-
-	val := t[index]
-	if len(pathSegments) == 1 {
-		return val
-	}
-
-	return getDeepValue(val, strings.Join(pathSegments[1:], "."))
 }
