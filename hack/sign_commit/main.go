@@ -22,7 +22,6 @@
 package main
 
 import (
-	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -35,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/devsy-org/devsy/hack/githubapp"
 )
 
 const (
@@ -45,8 +44,6 @@ const (
 	envPrivateKeyPath = "DEVSY_GITHUB_APP_PRIVATE_KEY_PATH"
 	defaultRepo       = "devsy-org/devsy"
 	apiBase           = "https://api.github.com"
-	maxExpiration     = 10 * time.Minute
-	issuedAtSkew      = 60 * time.Second
 	mainBranch        = "main"
 	bodyKey           = "body"
 )
@@ -244,11 +241,11 @@ func appToken(owner string) (string, error) {
 	if clientID == "" {
 		return "", fmt.Errorf("client id missing: set %s or %s", envClientID, envAppID)
 	}
-	key, err := loadPrivateKey(os.Getenv(envPrivateKeyPath), os.Getenv(envPrivateKey))
+	key, err := githubapp.LoadPrivateKey(os.Getenv(envPrivateKeyPath), os.Getenv(envPrivateKey))
 	if err != nil {
 		return "", fmt.Errorf("load private key: %w", err)
 	}
-	jwtToken, err := generateJWT(clientID, key, time.Now())
+	jwtToken, err := githubapp.GenerateJWT(clientID, key, time.Now())
 	if err != nil {
 		return "", fmt.Errorf("generate jwt: %w", err)
 	}
@@ -348,33 +345,6 @@ func fileChanges(
 		adds = append(adds, addition{Path: p, Contents: base64.StdEncoding.EncodeToString(b)})
 	}
 	return adds, dels, nil
-}
-
-func generateJWT(clientID string, key *rsa.PrivateKey, now time.Time) (string, error) {
-	if clientID == "" {
-		return "", fmt.Errorf("client id missing: set %s or %s", envClientID, envAppID)
-	}
-	claims := jwt.RegisteredClaims{
-		Issuer:    clientID,
-		IssuedAt:  jwt.NewNumericDate(now.Add(-issuedAtSkew)),
-		ExpiresAt: jwt.NewNumericDate(now.Add(maxExpiration)),
-	}
-	return jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(key)
-}
-
-func loadPrivateKey(path, contents string) (*rsa.PrivateKey, error) {
-	switch {
-	case contents != "":
-		return jwt.ParseRSAPrivateKeyFromPEM([]byte(contents))
-	case path != "":
-		b, err := os.ReadFile(path) // #nosec G304 -- path from a trusted env var
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", path, err)
-		}
-		return jwt.ParseRSAPrivateKeyFromPEM(b)
-	default:
-		return nil, fmt.Errorf("no private key: set %s or %s", envPrivateKey, envPrivateKeyPath)
-	}
 }
 
 func installationURL(owner string) string {
