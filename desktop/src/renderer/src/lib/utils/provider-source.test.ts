@@ -5,6 +5,19 @@ describe("providerSourceReference", () => {
   it.each([
     [
       {
+        raw: "  https://user:canary-secret@example.test/provider.yaml?token=canary-token#canary-fragment  ",
+      },
+      "https://example.test/provider.yaml (parameters hidden)",
+    ],
+    [
+      {
+        raw: "\thttps://user:canary-secret@example.test/provider.yaml?token=canary-token\n",
+        url: "https://different.example/provider.yaml",
+      },
+      "https://example.test/provider.yaml (parameters hidden)",
+    ],
+    [
+      {
         raw: "https://user:secret@example.test/provider.yaml?token=private#secret",
       },
       "https://example.test/provider.yaml (parameters hidden)",
