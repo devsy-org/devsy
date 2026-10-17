@@ -18,9 +18,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/extract"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/internal/serverutil"
 	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
-	"github.com/devsy-org/devsy/pkg/util"
 )
 
 const (
@@ -115,7 +115,7 @@ func (o *GenericJetBrainsServer) GetVolume() string {
 
 func (o *GenericJetBrainsServer) Install(setupInfo *config.Result) error {
 	log.Infof("setup backend: displayName=%s, id=%s", o.options.DisplayName, o.options.ID)
-	baseFolder, err := getBaseFolder(o.userName)
+	baseFolder, err := serverutil.UserHome(o.userName)
 	if err != nil {
 		return err
 	}
@@ -205,21 +205,6 @@ func (o *GenericJetBrainsServer) installPlugins(
 	log.Infof("installed JetBrains plugins: plugins=%v", plugins)
 
 	return nil
-}
-
-func getBaseFolder(userName string) (string, error) {
-	var err error
-	homeFolder := ""
-	if userName != "" {
-		homeFolder, err = command.GetHome(userName)
-	} else {
-		homeFolder, err = util.UserHomeDir()
-	}
-	if err != nil {
-		return "", err
-	}
-
-	return homeFolder, nil
 }
 
 func (o *GenericJetBrainsServer) getDirectory(baseFolder string) string {

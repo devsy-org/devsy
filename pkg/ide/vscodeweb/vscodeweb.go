@@ -13,9 +13,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/internal/serverutil"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/util"
 )
 
 // Release URL format for the standalone VS Code CLI. The CLI tarball contains a
@@ -59,6 +59,14 @@ var Options = ide.Options{
 		Name:        DownloadAmd64Option,
 		Description: "The download url for the amd64 VS Code CLI",
 	},
+}
+
+var downloadSpec = serverutil.ReleaseSpec{
+	Options:       Options,
+	Amd64Option:   DownloadAmd64Option,
+	Arm64Option:   DownloadArm64Option,
+	Amd64Template: downloadAmd64Template,
+	Arm64Template: downloadArm64Template,
 }
 
 const archArm64 = "arm64"
@@ -137,10 +145,8 @@ func (v *VSCodeWeb) Install() error {
 		return fmt.Errorf("install settings: %w", err)
 	}
 
-	if v.userName != "" {
-		if err := copy2.ChownR(location, v.userName); err != nil {
-			return fmt.Errorf("chown: %w", err)
-		}
+	if err := serverutil.ChownIfNeeded(v.userName, location); err != nil {
+		return err
 	}
 
 	return nil
@@ -187,7 +193,7 @@ func (v *VSCodeWeb) Start() error {
 				"--host %q --port %q --server-data-dir %q",
 			binary, v.host, v.port, serverDataDir(location),
 		)
-		return suOrSh(v.userName, runCommand, location), nil
+		return serverutil.SuOrSh(v.userName, runCommand, location), nil
 	})
 }
 
@@ -207,20 +213,7 @@ func (v *VSCodeWeb) isInstalled(location, releaseURL string) bool {
 
 func (v *VSCodeWeb) getReleaseURL() string {
 	version := Options.GetValue(v.values, VersionOption)
-
-	var url string
-	if runtime.GOARCH == archArm64 {
-		url = Options.GetValue(v.values, DownloadArm64Option)
-		if url == "" {
-			url = fmt.Sprintf(downloadArm64Template, version)
-		}
-	} else {
-		url = Options.GetValue(v.values, DownloadAmd64Option)
-		if url == "" {
-			url = fmt.Sprintf(downloadAmd64Template, version)
-		}
-	}
-	return url
+	return downloadSpec.URL(v.values, runtime.GOARCH, version)
 }
 
 func (v *VSCodeWeb) installExtensions() error {
@@ -233,34 +226,19 @@ func (v *VSCodeWeb) installExtensions() error {
 		return err
 	}
 
-	out := log.Writer(log.LevelInfo)
-	defer func() { _ = out.Close() }()
-
 	binary := binaryPath(location)
-	var failed []string
-	for _, extension := range v.extensions {
-		log.Infof("Install extension %q", extension)
-		runCommand := fmt.Sprintf(
-			"%s serve-web --server-data-dir %q --install-extension %q",
-			binary, serverDataDir(location), extension,
-		)
-		cmd := suOrSh(v.userName, runCommand, "")
-		cmd.Stdout = out
-		cmd.Stderr = out
-		if err := cmd.Run(); err != nil {
-			log.Errorf("failed installing extension: extension=%q, error=%v", extension, err)
-			failed = append(failed, extension)
-		} else {
-			log.Infof("installed extension: extension=%q", extension)
-		}
-	}
-
-	// Escalate only on total failure - partial failures stay as logged
-	// warnings to match openvscode's behavior.
-	if len(failed) == len(v.extensions) {
-		return fmt.Errorf("all %d extensions failed to install: %v", len(failed), failed)
-	}
-	return nil
+	return serverutil.ExtensionInstall{
+		UserName:   v.userName,
+		Extensions: v.extensions,
+		Command: func(extension string) string {
+			return fmt.Sprintf(
+				"%s serve-web --server-data-dir %q --install-extension %q",
+				binary, serverDataDir(location), extension,
+			)
+		},
+		Quote:              strconv.Quote,
+		FailOnTotalFailure: true,
+	}.Run()
 }
 
 // installSettings writes settings.json to serve-web's Machine config dir, which
@@ -294,32 +272,6 @@ func (v *VSCodeWeb) installSettings() error {
 	return nil
 }
 
-// suOrSh builds an *exec.Cmd that runs runCommand either as the unprivileged
-// user (via `su <user> -c`) or as the current user (via `sh -c`). All arg
-// elements are constants from this package - runCommand itself is built from
-// constants plus internal values, not user-controlled binary paths.
-func suOrSh(userName, runCommand, workingDir string) *exec.Cmd {
-	var cmd *exec.Cmd
-	if userName != "" {
-		// #nosec G204 -- args are fixed constants; runCommand is internally built.
-		cmd = exec.Command("su", userName, "-c", runCommand)
-	} else {
-		// #nosec G204 -- args are fixed constants; runCommand is internally built.
-		cmd = exec.Command("sh", "-c", runCommand)
-	}
-	if workingDir != "" {
-		cmd.Dir = workingDir
-	}
-	return cmd
-}
-
-func userHome(userName string) (string, error) {
-	if userName != "" {
-		return command.GetHome(userName)
-	}
-	return util.UserHomeDir()
-}
-
 // binaryPath is the extracted VS Code CLI binary path.
 func binaryPath(location string) string {
 	return filepath.Join(location, "code")
@@ -345,14 +297,5 @@ func writeReleaseMarker(location, releaseURL string) error {
 // if needed. It is deliberately distinct from ~/.vscode-server (used by the
 // desktop VS Code remote server, whose binary is itself named code-server).
 func prepareVSCodeWebLocation(userName string) (string, error) {
-	homeFolder, err := userHome(userName)
-	if err != nil {
-		return "", err
-	}
-	folder := filepath.Join(homeFolder, ".vscode-web")
-	// #nosec G301 -- match openvscode-server convention for parity.
-	if err := os.MkdirAll(folder, 0o755); err != nil {
-		return "", err
-	}
-	return folder, nil
+	return serverutil.PrepareLocation(userName, ".vscode-web")
 }

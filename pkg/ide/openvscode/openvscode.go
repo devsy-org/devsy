@@ -14,9 +14,9 @@ import (
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	"github.com/devsy-org/devsy/pkg/extract"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/internal/serverutil"
 	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/util"
 )
 
 const (
@@ -60,6 +60,14 @@ var Options = ide.Options{
 		Name:        DownloadAmd64Option,
 		Description: "The download url for the amd64 vscode server binary",
 	},
+}
+
+var downloadSpec = serverutil.ReleaseSpec{
+	Options:       Options,
+	Amd64Option:   DownloadAmd64Option,
+	Arm64Option:   DownloadArm64Option,
+	Amd64Template: DownloadAmd64Template,
+	Arm64Template: DownloadArm64Template,
 }
 
 const DefaultVSCodePort = 10800
@@ -123,7 +131,7 @@ func (o *OpenVSCodeServer) Install() error {
 		return err
 	}
 
-	if err := chownIfNeeded(o.userName, location); err != nil {
+	if err := serverutil.ChownIfNeeded(o.userName, location); err != nil {
 		return err
 	}
 
@@ -131,16 +139,6 @@ func (o *OpenVSCodeServer) Install() error {
 		return fmt.Errorf("install settings: %w", err)
 	}
 
-	return nil
-}
-
-func chownIfNeeded(userName, location string) error {
-	if userName == "" {
-		return nil
-	}
-	if err := copy2.ChownR(location, userName); err != nil {
-		return fmt.Errorf("chown: %w", err)
-	}
 	return nil
 }
 
@@ -171,36 +169,13 @@ func (o *OpenVSCodeServer) Start() error {
 			o.host,
 			o.port,
 		)
-		args := []string{}
-		if o.userName != "" {
-			args = append(args, "su", o.userName, "-c", runCommand)
-		} else {
-			args = append(args, "sh", "-c", runCommand)
-		}
-		//nolint:gosec // G204: shell/su fixed above, runCommand built from internal binaryPath and config, not external input
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = location
-		return cmd, nil
+		return serverutil.SuOrSh(o.userName, runCommand, location), nil
 	})
 }
 
 func (o *OpenVSCodeServer) getReleaseUrl() string {
-	var url string
 	version := Options.GetValue(o.values, VersionOption)
-
-	if runtime.GOARCH == "arm64" {
-		url = Options.GetValue(o.values, DownloadArm64Option)
-		if url == "" {
-			url = fmt.Sprintf(DownloadArm64Template, version, version)
-		}
-	} else {
-		url = Options.GetValue(o.values, DownloadAmd64Option)
-		if url == "" {
-			url = fmt.Sprintf(DownloadAmd64Template, version, version)
-		}
-	}
-
-	return url
+	return downloadSpec.URL(o.values, runtime.GOARCH, version, version)
 }
 
 func (o *OpenVSCodeServer) installExtensions() error {
@@ -213,32 +188,14 @@ func (o *OpenVSCodeServer) installExtensions() error {
 		return err
 	}
 
-	out := log.Writer(log.LevelInfo)
-	defer func() { _ = out.Close() }()
-
 	binaryPath := filepath.Join(location, "bin", "openvscode-server")
-	for _, extension := range o.extensions {
-		log.Info("Install extension " + extension)
-		runCommand := fmt.Sprintf("%s --install-extension '%s'", binaryPath, extension)
-		args := []string{}
-		if o.userName != "" {
-			args = append(args, "su", o.userName, "-c", runCommand)
-		} else {
-			args = append(args, "sh", "-c", runCommand)
-		}
-		//nolint:gosec // G204: shell/su fixed above, runCommand built from internal binaryPath and config, not external input
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Stdout = out
-		cmd.Stderr = out
-		err = cmd.Run()
-		if err != nil {
-			log.Errorf("failed installing extension: extension=%s, error=%v", extension, err)
-		} else {
-			log.Infof("installed extension: extension=%s", extension)
-		}
-	}
-
-	return nil
+	return serverutil.ExtensionInstall{
+		UserName:   o.userName,
+		Extensions: o.extensions,
+		Command: func(extension string) string {
+			return fmt.Sprintf("%s --install-extension '%s'", binaryPath, extension)
+		},
+	}.Run()
 }
 
 func (o *OpenVSCodeServer) installSettings() error {
@@ -272,23 +229,5 @@ func (o *OpenVSCodeServer) installSettings() error {
 }
 
 func prepareOpenVSCodeServerLocation(userName string) (string, error) {
-	var err error
-	homeFolder := ""
-	if userName != "" {
-		homeFolder, err = command.GetHome(userName)
-	} else {
-		homeFolder, err = util.UserHomeDir()
-	}
-	if err != nil {
-		return "", err
-	}
-
-	folder := filepath.Join(homeFolder, ".openvscode-server")
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err = os.MkdirAll(folder, 0o755)
-	if err != nil {
-		return "", err
-	}
-
-	return folder, nil
+	return serverutil.PrepareLocation(userName, ".openvscode-server")
 }

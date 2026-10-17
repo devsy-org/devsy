@@ -17,9 +17,9 @@ import (
 	copy2 "github.com/devsy-org/devsy/pkg/copy"
 	devsyhttp "github.com/devsy-org/devsy/pkg/http"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/internal/serverutil"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/scanner"
-	"github.com/devsy-org/devsy/pkg/util"
 )
 
 const (
@@ -227,22 +227,5 @@ func (o *FleetServer) startMonitor() error {
 }
 
 func prepareFleetServerLocation(userName string) (string, error) {
-	var err error
-	homeFolder := ""
-	if userName != "" {
-		homeFolder, err = command.GetHome(userName)
-	} else {
-		homeFolder, err = util.UserHomeDir()
-	}
-	if err != nil {
-		return "", err
-	}
-
-	folder := filepath.Join(homeFolder, ".fleet-server")
-	err = os.MkdirAll(folder, 0o755) // #nosec G301
-	if err != nil {
-		return "", err
-	}
-
-	return folder, nil
+	return serverutil.PrepareLocation(userName, ".fleet-server")
 }
