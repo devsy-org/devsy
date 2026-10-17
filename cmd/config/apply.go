@@ -81,18 +81,7 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 
 	helper := &docker.DockerHelper{DockerCommand: cmd.resolveDockerPath()}
 
-	var containerDetails *devcconfig.ContainerDetails
-	var result *devcconfig.Result
-	err = status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseResolvingConfig},
-		func(ctx context.Context) error {
-			var resolveErr error
-			containerDetails, result, resolveErr = cmd.prepareContainer(ctx, helper)
-			return resolveErr
-		},
-	)
+	containerDetails, result, err := cmd.resolveContainer(ctx, reporter, helper)
 	if err != nil {
 		return err
 	}
@@ -105,12 +94,7 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		ctx,
 		reporter,
 		status.Operation{Phase: status.PhaseRunningLifecycleHook, Step: "install features"},
-		func(ctx context.Context) error {
-			if err := cmd.installFeatures(ctx, helper, result, emitJSON); err != nil {
-				return fmt.Errorf("feature installation: %w", err)
-			}
-			return nil
-		},
+		cmd.installFeaturesStep(helper, result, emitJSON),
 	); err != nil {
 		return err
 	}
@@ -154,6 +138,39 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		})
 	}
 	return nil
+}
+
+func (cmd *ApplyCmd) resolveContainer(
+	ctx context.Context,
+	reporter status.Reporter,
+	helper *docker.DockerHelper,
+) (*devcconfig.ContainerDetails, *devcconfig.Result, error) {
+	var containerDetails *devcconfig.ContainerDetails
+	var result *devcconfig.Result
+	err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseResolvingConfig},
+		func(ctx context.Context) error {
+			var resolveErr error
+			containerDetails, result, resolveErr = cmd.prepareContainer(ctx, helper)
+			return resolveErr
+		},
+	)
+	return containerDetails, result, err
+}
+
+func (cmd *ApplyCmd) installFeaturesStep(
+	helper *docker.DockerHelper,
+	result *devcconfig.Result,
+	emitJSON bool,
+) func(context.Context) error {
+	return func(ctx context.Context) error {
+		if err := cmd.installFeatures(ctx, helper, result, emitJSON); err != nil {
+			return fmt.Errorf("feature installation: %w", err)
+		}
+		return nil
+	}
 }
 
 func (cmd *ApplyCmd) prepareContainer(
