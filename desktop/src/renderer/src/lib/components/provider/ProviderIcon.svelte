@@ -36,4 +36,4 @@ const src = $derived.by(() => {
 })
 </script>
 
-<img {src} alt="{name} icon" class={className} />
+<img {src} alt="{name} icon" class="{className} {src === './icons/providers/lima.svg' ? 'dark:invert' : ''}" />

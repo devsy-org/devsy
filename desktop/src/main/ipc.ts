@@ -1151,12 +1151,13 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   // ── Providers ──
   ipcMain.handle("provider_list", async () => {
+    const readRevision = state.providerReadRevision()
     const raw = await cli.run<Record<string, ProviderEntry>>([
       "provider",
       "list",
     ])
     const providers = parseProviderEntries(raw)
-    state.updateProviders(providers)
+    state.updateProviders(providers, readRevision)
     return state.providerList()
   })
 
@@ -1443,18 +1444,44 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
+  ipcMain.handle("provider_available", async () => {
+    const names = await cli.run<unknown>(["provider", "list", "--available"])
+    if (
+      !Array.isArray(names) ||
+      names.some((name) => typeof name !== "string" || !name.trim())
+    ) {
+      throw new Error("Provider catalog returned invalid data.")
+    }
+    return names
+  })
+
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
     return cli.run(["provider", "get", args.name])
   })
 
   ipcMain.handle(
     "provider_set_options",
-    async (_event, args: { name: string; options: string[] }) => {
+    async (
+      _event,
+      args: { name: string; options: string[]; singleMachine?: boolean },
+    ) => {
+      if (
+        args.singleMachine !== undefined &&
+        typeof args.singleMachine !== "boolean"
+      ) {
+        throw new Error("Single-machine selection must be a boolean.")
+      }
       const cliArgs = ["provider", "set", args.name, "--skip-init"]
+      if (args.singleMachine !== undefined) {
+        cliArgs.push(`--single-machine=${args.singleMachine}`)
+      }
       for (const opt of args.options) {
         cliArgs.push("-o", opt)
       }
       await cli.runRaw(cliArgs)
+      if (args.singleMachine !== undefined) {
+        state.confirmProviderSingleMachine(args.name, args.singleMachine)
+      }
     },
   )
 
@@ -1468,6 +1495,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         "--skip-init",
         `--single-machine=${args.enabled}`,
       ])
+      state.confirmProviderSingleMachine(args.name, args.enabled)
     },
   )
 

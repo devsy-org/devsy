@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { DaemonState } from "../state.js"
 import { parseProviderEntries, Watcher } from "../watcher.js"
 import { WorkspaceJobs } from "../workspace-jobs.js"
 
@@ -9,6 +10,7 @@ function makeWatcher(
 ) {
   const state = {
     updateProviders: vi.fn().mockReturnValue(false),
+    providerReadRevision: vi.fn().mockReturnValue(0),
     providerList: vi.fn().mockReturnValue([]),
     workspaceList: vi.fn().mockReturnValue(workspaces),
     updateWorkspaceStatus: vi.fn((id: string, status: string) => {
@@ -107,6 +109,80 @@ describe("Watcher.refreshProviders", () => {
     await Promise.all([first, second])
 
     expect(events).toEqual(["start-1", "end-1", "start-2", "end-2"])
+  })
+
+  it("discards a provider snapshot read before a confirmed mode write", async () => {
+    let release!: (value: Record<string, unknown>) => void
+    const state = new DaemonState()
+    state.updateProviders([
+      { name: "docker", state: { initialized: true, singleMachine: true } },
+    ])
+    const cli = {
+      run: vi.fn(
+        () =>
+          new Promise<Record<string, unknown>>((resolve) => {
+            release = resolve
+          }),
+      ),
+    }
+    const watcher = new Watcher({
+      cli: cli as never,
+      state,
+      getMainWindow: () => null,
+      providerJobs: { snapshot: () => ({}) } as never,
+      workspaceJobs: new WorkspaceJobs(),
+    })
+
+    const polling = watcher.refreshProviders()
+    await vi.waitFor(() => expect(cli.run).toHaveBeenCalledOnce())
+    state.confirmProviderSingleMachine("docker", false)
+    release({
+      docker: {
+        config: { name: "docker" },
+        state: { initialized: true, singleMachine: true },
+      },
+    })
+    await polling
+
+    expect(state.providerList()[0].state?.singleMachine).toBe(false)
+  })
+
+  it("reads providers from the CLI after a mode write instead of the daemon cache", async () => {
+    const state = new DaemonState()
+    state.updateProviders([
+      { name: "docker", state: { initialized: true, singleMachine: false } },
+    ])
+    state.confirmProviderSingleMachine("docker", false)
+    const daemon = {
+      listProviders: vi.fn(async () => ({
+        docker: {
+          config: { name: "docker" },
+          state: { initialized: true, singleMachine: false },
+        },
+      })),
+    }
+    const cli = {
+      run: vi.fn(async () => ({
+        docker: {
+          config: { name: "docker" },
+          state: { initialized: true, singleMachine: true },
+        },
+      })),
+    }
+    const watcher = new Watcher({
+      cli: cli as never,
+      daemon: daemon as never,
+      state,
+      getMainWindow: () => null,
+      providerJobs: { snapshot: () => ({}) } as never,
+      workspaceJobs: new WorkspaceJobs(),
+    })
+
+    await watcher.refreshProviders()
+
+    expect(daemon.listProviders).not.toHaveBeenCalled()
+    expect(cli.run).toHaveBeenCalledExactlyOnceWith(["provider", "list"])
+    expect(state.providerList()[0].state?.singleMachine).toBe(true)
   })
 })
 

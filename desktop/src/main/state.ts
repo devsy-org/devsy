@@ -9,6 +9,7 @@ export interface Workspace {
 
 export interface Provider {
   name: string
+  state?: { singleMachine?: boolean; [key: string]: unknown }
   [key: string]: unknown
 }
 
@@ -25,6 +26,7 @@ export interface Context {
 export class DaemonState {
   private workspaces = new Map<string, Workspace>()
   private providers = new Map<string, Provider>()
+  private providerWriteRevision = 0
   private machines = new Map<string, Machine>()
   private contexts: Context[] = []
   private activeContext = ""
@@ -62,10 +64,32 @@ export class DaemonState {
     return () => this.workspaceListeners.delete(listener)
   }
 
-  updateProviders(list: Provider[]): boolean {
+  providerReadRevision(): number {
+    return this.providerWriteRevision
+  }
+
+  updateProviders(
+    list: Provider[],
+    readRevision = this.providerWriteRevision,
+  ): boolean {
+    if (readRevision < this.providerWriteRevision) return false
     const newMap = new Map(list.map((p) => [p.name, p]))
     if (this.mapsEqual(this.providers, newMap)) return false
     this.providers = newMap
+    return true
+  }
+
+  confirmProviderSingleMachine(name: string, singleMachine: boolean): boolean {
+    // Invalidate provider reads that started before the successful CLI write,
+    // even when the provider is not in the cache or already has this value.
+    this.providerWriteRevision++
+    const provider = this.providers.get(name)
+    if (!provider || provider.state?.singleMachine === singleMachine)
+      return false
+    this.providers.set(name, {
+      ...provider,
+      state: { ...provider.state, singleMachine },
+    })
     return true
   }
 

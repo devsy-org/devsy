@@ -17,6 +17,7 @@ import ErrorCard from "$lib/components/ErrorCard.svelte"
 import type { CLIError } from "$shared/cli-error.js"
 import {
   providerAdd,
+  providerAvailable,
   providerInitStreaming,
   providerList,
   providerOptions,
@@ -36,27 +37,49 @@ import {
 import type { ProviderOption } from "$lib/types/index.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
 
-type ProviderPreset = { name: string; description: string }
+type ProviderPreset = {
+  name: string
+  description: string
+  category: "Local" | "Remote" | "Cloud"
+}
 
 const PRESETS: ProviderPreset[] = [
-  { name: "docker", description: "Local Docker containers" },
-  { name: "podman", description: "Local Podman containers" },
-  { name: "apple", description: "Apple containers (macOS 26+, Apple silicon)" },
+  { name: "docker", description: "Local Docker containers", category: "Local" },
+  { name: "podman", description: "Local Podman containers", category: "Local" },
+  {
+    name: "apple",
+    description: "Apple containers (macOS 26+, Apple silicon)",
+    category: "Local",
+  },
   {
     name: "microsandbox",
     description: "Hardware-isolated microVMs",
+    category: "Local",
   },
-  { name: "lima", description: "Linux VMs via Lima (macOS)" },
+  {
+    name: "lima",
+    description: "Linux VMs via Lima (macOS)",
+    category: "Local",
+  },
   {
     name: "orbstack",
     description: "Fast containers and VMs via OrbStack (macOS)",
+    category: "Local",
   },
-  { name: "ssh", description: "Remote SSH machines" },
-  { name: "kubernetes", description: "Kubernetes clusters" },
-  { name: "aws", description: "Amazon Web Services" },
-  { name: "gcloud", description: "Google Cloud Platform" },
-  { name: "azure", description: "Microsoft Azure" },
-  { name: "digitalocean", description: "DigitalOcean Droplets" },
+  { name: "ssh", description: "Remote SSH machines", category: "Remote" },
+  {
+    name: "kubernetes",
+    description: "Kubernetes clusters",
+    category: "Remote",
+  },
+  { name: "aws", description: "Amazon Web Services", category: "Cloud" },
+  { name: "gcloud", description: "Google Cloud Platform", category: "Cloud" },
+  { name: "azure", description: "Microsoft Azure", category: "Cloud" },
+  {
+    name: "digitalocean",
+    description: "DigitalOcean Droplets",
+    category: "Cloud",
+  },
 ]
 
 type Step = "select" | "configure" | "initialize" | "complete"
@@ -85,14 +108,21 @@ let error = $state("")
 // Step 1 state
 let source = $state("")
 let customName = $state("")
+let selectedProviderOption = $state(false)
 let singleMachine = $state(false)
 let adding = $state(false)
+let needsCustomName = $derived(!!source.trim() && !selectedProviderOption)
+let availableProviders = $state<string[]>([])
+let loadingAvailableProviders = $state(false)
+let availableProvidersError = $state("")
 
 // Step 2 state
 let providerName = $state("")
 let options = $state<Record<string, ProviderOption>>({})
 let optionValues = $state<Record<string, string>>({})
+let editedOptionKeys = $state<Record<string, true>>({})
 let loadingOptions = $state(false)
+let optionsLoaded = $state(false)
 let saving = $state(false)
 
 // Step 3 state
@@ -101,9 +131,23 @@ let initLines = $state<string[]>([])
 let initRunning = $state(false)
 let initError = $state<CLIError | null>(null)
 let initStartError = $state("")
+let initSucceeded = $state(false)
 
 // Event listener cleanup
 let unlisten: UnlistenFn | null = null
+let mounted = false
+
+let additionalProviders = $derived.by(() => {
+  const presetNames = new Set(PRESETS.map((preset) => preset.name))
+  const seen = new Set<string>()
+  return availableProviders.flatMap((rawName) => {
+    const name = typeof rawName === "string" ? rawName.trim() : ""
+    const normalized = name.toLowerCase()
+    if (!name || presetNames.has(normalized) || seen.has(normalized)) return []
+    seen.add(normalized)
+    return [name]
+  })
+})
 
 let stepStates = $derived.by(() => {
   const states: Record<Step, StepState> = {
@@ -119,7 +163,7 @@ let stepStates = $derived.by(() => {
     else if (i === currentIdx) states[stepOrder[i]] = "active"
   }
   if (error && currentStep !== "initialize") states[currentStep] = "error"
-  if (initError) states.initialize = "error"
+  if (initError || initStartError) states.initialize = "error"
   return states
 })
 
@@ -148,11 +192,13 @@ function reset() {
   error = ""
   source = ""
   customName = ""
+  selectedProviderOption = false
   singleMachine = false
   adding = false
   providerName = ""
   options = {}
   optionValues = {}
+  editedOptionKeys = {}
   loadingOptions = false
   saving = false
   initCommandId = null
@@ -160,11 +206,14 @@ function reset() {
   initRunning = false
   initError = null
   initStartError = ""
+  optionsLoaded = false
+  initSucceeded = false
 }
 
 $effect(() => {
   if (open && initialSource) {
     source = initialSource
+    selectedProviderOption = false
   }
   if (!open) {
     reset()
@@ -172,6 +221,8 @@ $effect(() => {
 })
 
 onMount(async () => {
+  mounted = true
+  void loadAvailableProviders()
   unlisten = await onCommandProgress((progress) => {
     if (initCommandId && progress.commandId === initCommandId) {
       if (progress.message) {
@@ -180,6 +231,7 @@ onMount(async () => {
       if (progress.done) {
         initRunning = false
         if (isCommandSuccess(progress.success)) {
+          initSucceeded = true
           refreshAndComplete()
         } else {
           initError = progress.cliError ?? {
@@ -193,8 +245,24 @@ onMount(async () => {
 })
 
 onDestroy(() => {
+  mounted = false
   unlisten?.()
 })
+
+async function loadAvailableProviders() {
+  loadingAvailableProviders = true
+  availableProvidersError = ""
+  try {
+    const names = await providerAvailable()
+    if (mounted) availableProviders = Array.isArray(names) ? names : []
+  } catch (err) {
+    if (mounted) {
+      availableProvidersError = `Could not load additional providers: ${extractErrorMessage(err)}`
+    }
+  } finally {
+    if (mounted) loadingAvailableProviders = false
+  }
+}
 
 function nameExists(name: string): boolean {
   return get(providers).some((p) => p.name === name)
@@ -206,8 +274,13 @@ async function handleSelect() {
     error = "Provider source is required"
     return
   }
-  const preset = PRESETS.find((item) => item.name === src)
-  const name = customName.trim() || preset?.name || src
+  if (needsCustomName && !customName.trim()) {
+    error = "Enter an installation name for this custom source."
+    return
+  }
+  const name = customName.trim() || src
+  const providerSource =
+    selectedProviderOption && name === src ? undefined : src
   if (nameExists(name)) {
     error = `Provider "${name}" already exists. Choose a different name.`
     return
@@ -216,7 +289,7 @@ async function handleSelect() {
   error = ""
   adding = true
   try {
-    await providerAdd(name, name !== src ? src : undefined, singleMachine)
+    await providerAdd(name, providerSource, singleMachine)
     providerName = name
   } catch (err) {
     const msg = extractErrorMessage(err)
@@ -231,17 +304,11 @@ async function handleSelect() {
 
   const loaded = await loadProviderOptions()
   adding = false
-  if (!loaded) {
-    // Provider was created but we couldn't load its options. Stay on the
-    // select step so the user sees the error and can retry/back out.
-    return
-  }
-
-  if (requiredOptions.length === 0 || !hasUnfilledRequired) {
+  currentStep = "configure"
+  if (!loaded) return
+  if (visibleOptions.length === 0) {
     currentStep = "initialize"
     startInit()
-  } else {
-    currentStep = "configure"
   }
 }
 
@@ -250,14 +317,17 @@ async function loadProviderOptions(): Promise<boolean> {
   try {
     const raw = await providerOptions(providerName)
     options = raw as unknown as Record<string, ProviderOption>
+    optionsLoaded = true
     const values: Record<string, string> = {}
     for (const [key, opt] of Object.entries(options)) {
       const value = initialProviderOptionValue(opt)
       if (value !== undefined) values[key] = value
     }
     optionValues = values
+    editedOptionKeys = {}
     return true
   } catch (err) {
+    optionsLoaded = false
     error = `Failed to load options: ${extractErrorMessage(err)}`
     return false
   } finally {
@@ -265,7 +335,19 @@ async function loadProviderOptions(): Promise<boolean> {
   }
 }
 
+async function retryLoadProviderOptions() {
+  error = ""
+  await loadProviderOptions()
+}
+
 async function handleConfigure() {
+  if (!optionsLoaded) return
+  if (visibleOptions.length === 0) {
+    error = ""
+    currentStep = "initialize"
+    startInit()
+    return
+  }
   if (hasUnfilledRequired) {
     error = "Please fill in all required fields."
     return
@@ -275,11 +357,17 @@ async function handleConfigure() {
   try {
     const values: Record<string, string> = {}
     for (const [key, val] of Object.entries(optionValues)) {
-      if (val !== "" || providerOptionEnumHasValue(options[key]?.enum, "")) {
+      if (
+        editedOptionKeys[key] &&
+        !options[key]?.hidden &&
+        (val !== "" || providerOptionEnumHasValue(options[key]?.enum, ""))
+      ) {
         values[key] = val
       }
     }
-    await providerSetOptions(providerName, values)
+    if (Object.keys(values).length > 0) {
+      await providerSetOptions(providerName, values, singleMachine)
+    }
   } catch (err) {
     error = `Failed to save options: ${extractErrorMessage(err)}`
     saving = false
@@ -294,6 +382,7 @@ async function startInit() {
   initRunning = true
   initError = null
   initStartError = ""
+  initSucceeded = false
   initLines = []
   try {
     initCommandId = await providerInitStreaming(providerName)
@@ -317,6 +406,7 @@ async function refreshAndComplete() {
 // settled state: release the job so the card shows that rather than staying
 // busy on the install that already finished.
 async function handleSkipInit() {
+  initSucceeded = false
   await providerReleaseJob(providerName).catch(() => undefined)
   await refreshAndComplete()
 }
@@ -329,24 +419,30 @@ function handleDone() {
 
 <Dialog.Root bind:open>
   <Dialog.Content class="sm:max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
-    <Dialog.Header class="sr-only">
-      <Dialog.Title>Add Provider</Dialog.Title>
+    <Dialog.Header class="shrink-0 border-b px-6 py-4 text-left">
+      <Dialog.Title class="text-lg font-semibold">Add Provider</Dialog.Title>
       <Dialog.Description>
-        Step-by-step wizard to add and initialize a new provider.
+        Choose a provider, review its settings, then initialize it when you are ready.
       </Dialog.Description>
     </Dialog.Header>
 
     <!-- Progress bar -->
-    <div class="px-6 pt-5">
-      <Progress value={progressValue} max={100} class="h-1" />
+    <div class="shrink-0 px-6 pt-4">
+      <Progress
+        value={progressValue}
+        max={100}
+        class="h-1"
+        aria-label="Provider setup progress"
+      />
     </div>
 
     <!-- Step indicator -->
-    <div class="flex items-center justify-between px-6 pt-4 pb-2">
+    <ol aria-label="Provider setup steps" class="shrink-0 flex items-center justify-between gap-2 px-6 py-3">
       {#each STEPS as step, i (step.id)}
-        <div class="flex items-center gap-1.5">
-          <div
-            class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium
+        <li class="flex min-w-0 items-center gap-1.5" aria-current={currentStep === step.id ? "step" : undefined}>
+          <span
+            aria-hidden="true"
+            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium
               {stepStates[step.id] === 'complete' ? 'bg-primary text-primary-foreground' : ''}
               {stepStates[step.id] === 'active' ? 'bg-primary text-primary-foreground' : ''}
               {stepStates[step.id] === 'error' ? 'bg-destructive text-destructive-foreground' : ''}
@@ -359,19 +455,14 @@ function handleDone() {
             {:else}
               {i + 1}
             {/if}
-          </div>
-          <span class="text-xs font-medium {stepStates[step.id] === 'active' ? 'text-foreground' : 'text-muted-foreground'}">
-            {step.label}
           </span>
-        </div>
-        {#if i < STEPS.length - 1}
-          <div class="mx-1 h-px flex-1 bg-border"></div>
-        {/if}
+          <span class="truncate text-xs font-medium {stepStates[step.id] === 'active' ? 'text-foreground' : 'text-muted-foreground'}">{step.label}</span>
+        </li>
       {/each}
-    </div>
+    </ol>
 
     <!-- Step content -->
-    <div class="flex-1 overflow-y-auto px-6 pb-6 pt-2">
+    <div class="min-h-0 flex-1 overflow-y-auto px-6 py-3">
       {#if currentStep === "select"}
         <div class="space-y-4">
           <div>
@@ -386,23 +477,65 @@ function handleDone() {
             </Alert.Root>
           {/if}
 
-          <div class="grid grid-cols-2 gap-2">
-            {#each PRESETS as p (p.name)}
-              <button
-                type="button"
-                class="flex items-center gap-2.5 rounded-lg border p-3 text-left transition-colors hover:bg-accent/50
-                  {source === p.name ? 'border-primary ring-1 ring-primary' : ''}"
-                disabled={adding}
-                onclick={() => { source = p.name; customName = "" }}
-              >
-                <ProviderIcon name={p.name} class="size-6 shrink-0" />
-                <div>
-                  <div class="text-sm font-medium">{p.name}</div>
-                  <div class="text-xs text-muted-foreground">{p.description}</div>
+          {#each ["Local", "Remote", "Cloud"] as category}
+            <section aria-labelledby="preset-{category.toLowerCase()}" class="space-y-2">
+              <h3 id="preset-{category.toLowerCase()}" class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{category}</h3>
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {#each PRESETS.filter((preset) => preset.category === category) as p (p.name)}
+                  <button
+                    type="button"
+                    aria-pressed={selectedProviderOption && source === p.name}
+                    class="flex min-h-14 items-center gap-2.5 rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                      {selectedProviderOption && source === p.name ? 'border-primary bg-accent/40 ring-1 ring-primary' : ''}"
+                    disabled={adding}
+                    onclick={() => { source = p.name; selectedProviderOption = true; customName = ""; error = "" }}
+                  >
+                    <ProviderIcon name={p.name} class="size-6 shrink-0" />
+                    <span class="min-w-0">
+                      <span class="block text-sm font-medium">{p.name}</span>
+                      <span class="block text-xs text-muted-foreground">{p.description}</span>
+                    </span>
+                  </button>
+                {/each}
+              </div>
+            </section>
+          {/each}
+
+          {#if additionalProviders.length > 0 || loadingAvailableProviders || availableProvidersError}
+            <section aria-labelledby="preset-more" class="space-y-2">
+              <div>
+                <h3 id="preset-more" class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">More providers</h3>
+                <p class="text-xs text-muted-foreground">Discovered from Devsy’s provider list. Availability and setup requirements vary by provider.</p>
+              </div>
+              {#if loadingAvailableProviders}
+                <p role="status" class="text-xs text-muted-foreground">Loading additional providers…</p>
+              {:else if availableProvidersError}
+                <div class="flex flex-wrap items-center gap-2">
+                  <p role="alert" class="text-xs text-destructive">{availableProvidersError}</p>
+                  <Button variant="outline" size="sm" onclick={loadAvailableProviders}>Retry provider list</Button>
                 </div>
-              </button>
-            {/each}
-          </div>
+              {:else}
+                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {#each additionalProviders as name (name.toLowerCase())}
+                    <button
+                      type="button"
+                      aria-pressed={selectedProviderOption && source === name}
+                      class="flex min-h-14 items-center gap-2.5 rounded-lg border p-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                        {selectedProviderOption && source === name ? 'border-primary bg-accent/40 ring-1 ring-primary' : ''}"
+                      disabled={adding}
+                      onclick={() => { source = name; selectedProviderOption = true; customName = ""; error = "" }}
+                    >
+                      <ProviderIcon name={name} class="size-6 shrink-0" />
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium">{name}</span>
+                        <span class="block text-xs text-muted-foreground">Listed by Devsy</span>
+                      </span>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </section>
+          {/if}
 
           <div class="relative">
             <div class="absolute inset-0 flex items-center">
@@ -415,31 +548,37 @@ function handleDone() {
 
           <div class="space-y-3">
             <div class="space-y-1.5">
-              <Label>Provider Source</Label>
+              <Label for="provider-source">Provider source</Label>
               <Input
+                id="provider-source"
                 placeholder="github.com/org/provider"
                 value={source}
-                oninput={(e) => { source = e.currentTarget.value; error = "" }}
+                oninput={(e) => { source = e.currentTarget.value; selectedProviderOption = false; error = "" }}
                 disabled={adding}
               />
             </div>
             <div class="space-y-1.5">
-              <Label>Name <span class="text-muted-foreground font-normal">(optional)</span></Label>
+              <Label for="provider-name">Name <span class="text-muted-foreground font-normal">({needsCustomName ? "required for custom source" : "optional"})</span></Label>
               <Input
+                id="provider-name"
+                aria-required={needsCustomName || undefined}
+                aria-describedby="provider-name-help"
                 placeholder="Defaults to source name"
                 value={customName}
                 oninput={(e) => { customName = e.currentTarget.value; error = "" }}
                 disabled={adding}
               />
+              <p id="provider-name-help" class="text-xs text-muted-foreground">{needsCustomName ? "Choose a name for this installation so its settings and initialization use the same provider." : "Leave blank to use the provider name above."}</p>
             </div>
             <div class="flex items-center justify-between gap-4">
               <div class="space-y-0.5">
-                <Label>Reuse machine</Label>
+                <Label for="reuse-machine">Reuse machine</Label>
                 <p class="text-sm text-muted-foreground">
                   Run all workspaces on a single shared machine instead of one per workspace.
                 </p>
               </div>
               <Switch
+                id="reuse-machine"
                 checked={singleMachine}
                 onCheckedChange={(v) => { singleMachine = v }}
                 disabled={adding}
@@ -447,21 +586,13 @@ function handleDone() {
             </div>
           </div>
 
-          <Button class="w-full" disabled={adding || !source.trim()} onclick={handleSelect}>
-            {#if adding}
-              <Loader2 class="mr-2 h-4 w-4 animate-spin" />
-              Adding...
-            {:else}
-              Continue
-            {/if}
-          </Button>
         </div>
 
       {:else if currentStep === "configure"}
         <div class="space-y-4">
           <div>
             <h2 class="text-lg font-semibold">Configure {providerName}</h2>
-            <p class="text-sm text-muted-foreground">Fill in the required options to set up your provider.</p>
+            <p class="text-sm text-muted-foreground">Review provider settings before initialization. Required fields are marked with an asterisk.</p>
           </div>
 
           {#if error}
@@ -476,10 +607,15 @@ function handleDone() {
               <Spinner class="size-6" />
             </div>
           {:else}
+            {#if !optionsLoaded}
+              <Button variant="outline" class="w-full" onclick={retryLoadProviderOptions}>
+                Retry loading options
+              </Button>
+            {/if}
             <div class="space-y-3">
               {#each visibleOptions as [key, opt] (key)}
                 <div class="space-y-1.5">
-                  <Label class="flex items-center gap-1">
+                  <Label for="provider-option-{key}" class="flex items-center gap-1">
                     {opt.displayName ?? opt.name ?? key}
                     {#if opt.required}
                       <span class="text-destructive">*</span>
@@ -496,11 +632,18 @@ function handleDone() {
                       value={selectedOption?.selectValue ?? ""}
                       onValueChange={(selectValue) => {
                         const selected = enumOptions.find((item) => item.selectValue === selectValue)
-                        if (selected) optionValues[key] = selected.value
+                        if (selected) {
+                          optionValues[key] = selected.value
+                          editedOptionKeys[key] = true
+                        }
                         error = ""
                       }}
                     >
-                      <Select.Trigger class="w-full">
+                      <Select.Trigger
+                        id="provider-option-{key}"
+                        class="w-full"
+                        aria-label={opt.displayName ?? opt.name ?? key}
+                      >
                         {selectedOption ? selectedOption.label : optionValues[key] || "Select..."}
                       </Select.Trigger>
                       <Select.Content>
@@ -513,10 +656,15 @@ function handleDone() {
                     </Select.Root>
                   {:else}
                     <Input
+                      id="provider-option-{key}"
                       type={opt.password ? "password" : "text"}
                       placeholder={opt.default != null ? String(opt.default) : ""}
                       value={optionValues[key] ?? ""}
-                      oninput={(e) => { optionValues[key] = e.currentTarget.value; error = "" }}
+                      oninput={(e) => {
+                        optionValues[key] = e.currentTarget.value
+                        editedOptionKeys[key] = true
+                        error = ""
+                      }}
                       class={opt.required && !optionValues[key]?.trim() ? "border-amber-500" : ""}
                       disabled={saving}
                     />
@@ -525,14 +673,6 @@ function handleDone() {
               {/each}
             </div>
 
-            <Button class="w-full" disabled={saving || hasUnfilledRequired} onclick={handleConfigure}>
-              {#if saving}
-                <Loader2 class="mr-2 h-4 w-4 animate-spin" />
-                Saving...
-              {:else}
-                Continue
-              {/if}
-            </Button>
           {/if}
         </div>
 
@@ -545,8 +685,10 @@ function handleDone() {
                 Running provider initialization...
               {:else if initError}
                 Initialization encountered an issue.
-              {:else}
+              {:else if initSucceeded}
                 Initialization complete.
+              {:else}
+                Initialization has not completed.
               {/if}
             </p>
           </div>
@@ -581,20 +723,6 @@ function handleDone() {
             </div>
           {/if}
 
-          <div class="flex gap-2">
-            {#if initError}
-              <Button variant="outline" class="flex-1" onclick={startInit}>
-                Retry
-              </Button>
-              <Button variant="outline" class="flex-1" onclick={handleSkipInit}>
-                Skip
-              </Button>
-            {:else if !initRunning}
-              <Button class="w-full" onclick={refreshAndComplete}>
-                Continue
-              </Button>
-            {/if}
-          </div>
         </div>
 
       {:else if currentStep === "complete"}
@@ -606,7 +734,11 @@ function handleDone() {
             <div>
               <h2 class="text-lg font-semibold">Provider Added</h2>
               <p class="text-sm text-muted-foreground">
-                {providerName} is ready to use.
+                {#if initSucceeded}
+                  {providerName} is ready to use.
+                {:else}
+                  {providerName} was added but is not initialized yet. You can initialize it from Providers.
+                {/if}
               </p>
             </div>
           </div>
@@ -623,11 +755,34 @@ function handleDone() {
             </div>
           </div>
 
-          <Button class="w-full" onclick={handleDone}>
-            Done
-          </Button>
         </div>
       {/if}
     </div>
+
+    <footer class="shrink-0 border-t bg-background px-6 py-4">
+      {#if currentStep === "select"}
+        <Button class="w-full" disabled={adding || !source.trim()} onclick={handleSelect}>
+          {#if adding}<Loader2 class="mr-2 h-4 w-4 animate-spin" />Adding...{:else}Continue{/if}
+        </Button>
+      {:else if currentStep === "configure"}
+        <Button class="w-full" disabled={saving || loadingOptions || !optionsLoaded || hasUnfilledRequired} onclick={handleConfigure}>
+          {#if saving}<Loader2 class="mr-2 h-4 w-4 animate-spin" />Saving...{:else}Continue{/if}
+        </Button>
+      {:else if currentStep === "initialize"}
+        {#if initError}
+          <div class="flex gap-2">
+            <Button variant="outline" class="flex-1" onclick={startInit}>Retry</Button>
+            <Button variant="outline" class="flex-1" onclick={handleSkipInit}>Skip initialization</Button>
+          </div>
+        {:else if !initRunning && initStartError}
+          <div class="flex gap-2">
+            <Button variant="outline" class="flex-1" onclick={startInit}>Retry</Button>
+            <Button variant="outline" class="flex-1" onclick={handleSkipInit}>Skip initialization</Button>
+          </div>
+        {/if}
+      {:else if currentStep === "complete"}
+        <Button class="w-full" onclick={handleDone}>Done</Button>
+      {/if}
+    </footer>
   </Dialog.Content>
 </Dialog.Root>

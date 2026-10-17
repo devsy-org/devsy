@@ -51,6 +51,21 @@ describe("ProviderCard", () => {
     unmount()
   })
 
+  it("shows the configured source pin separately from the installed version", () => {
+    const source = `github.com/example/${"long-provider-name-".repeat(8)}@v1.2.3`
+    const { getByText, unmount } = render(ProviderCard, {
+      props: {
+        provider: makeProvider("custom-provider", {
+          source: { raw: source, github: "example/provider" },
+        }),
+      },
+    })
+    expect(getByText(source)).toBeDefined()
+    expect(getByText("Source")).toBeDefined()
+    expect(getByText("Version 0.1.0")).toBeDefined()
+    unmount()
+  })
+
   it("shows the deprecation badge only when the provider flag is set", () => {
     const deprecated = render(ProviderCard, {
       props: {

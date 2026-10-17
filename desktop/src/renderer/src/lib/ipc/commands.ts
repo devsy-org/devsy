@@ -188,14 +188,23 @@ export async function providerOptions(
   return invoke<Record<string, ProviderOption>>("provider_options", { name })
 }
 
+export async function providerAvailable(): Promise<string[]> {
+  return invoke<string[]>("provider_available")
+}
+
 export async function providerSetOptions(
   name: string,
   options: Record<string, OptionValue>,
+  singleMachine?: boolean,
 ): Promise<void> {
   const optionArgs = Object.entries(options).map(
     ([key, val]) => `${key}=${val}`,
   )
-  return invoke("provider_set_options", { name, options: optionArgs })
+  return invoke("provider_set_options", {
+    name,
+    options: optionArgs,
+    ...(singleMachine === undefined ? {} : { singleMachine }),
+  })
 }
 
 export async function providerRename(

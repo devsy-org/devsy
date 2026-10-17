@@ -31,7 +31,10 @@ function defaultState() {
               type: "string",
             },
           },
-          optionGroups: [],
+          optionGroups: [
+            { name: "Connection", options: ["DOCKER_HOST"] },
+            { name: "Storage", options: ["DISK_SIZE"] },
+          ],
         },
         state: { initialized: true },
         default: true,
@@ -678,7 +681,9 @@ switch (cmd) {
   case "provider":
     switch (sub) {
       case "list":
-        out(state.providers)
+        out(rawArgs.includes("--available")
+          ? ["docker", "kubernetes", "microsandbox", "terraform", "civo"]
+          : state.providers)
         break
       case "get":
       case "options":
@@ -702,7 +707,7 @@ switch (cmd) {
         })
         break
       case "add": {
-        const provName = extra
+        const provName = nameFlag || extra
         if (provName) {
           const takesDefault = !rawArgs.includes("--use=false")
           if (takesDefault) {
@@ -716,7 +721,7 @@ switch (cmd) {
               version: "v0.1.0",
               icon: "",
               description: "",
-              source: {},
+              source: { raw: extra },
               options: {},
               optionGroups: [],
             },

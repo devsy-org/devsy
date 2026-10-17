@@ -1,12 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte"
 import { tick } from "svelte"
-import type { Readable, Writable } from "svelte/store"
+import { get, type Readable, type Writable } from "svelte/store"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { providerVersions as providerVersionsStore } from "$lib/stores/providerVersions.js"
 import type {
   CommandProgress,
   Provider,
   ProviderJob,
+  ProviderOption,
 } from "$lib/types/index.js"
 
 type ProviderVersionsState =
@@ -20,6 +21,7 @@ const providerInit = vi.fn()
 const providerList = vi.fn()
 const providerRefreshState = vi.fn()
 const providerSetOptions = vi.fn()
+const providerSetSingleMachine = vi.fn()
 const providerRename = vi.fn()
 const providerSetVersion = vi.fn()
 const loadVersionsFor = vi.fn()
@@ -28,6 +30,9 @@ const providerJobsBox = vi.hoisted(() => ({
   store: undefined as unknown as import("svelte/store").Writable<
     Record<string, ProviderJob>
   >,
+}))
+const providersBox = vi.hoisted(() => ({
+  store: undefined as unknown as Writable<Provider[]>,
 }))
 const providerVersionsBox = vi.hoisted(() => ({
   store: undefined as unknown as Writable<ProviderVersionsState>,
@@ -44,6 +49,8 @@ vi.mock("$lib/ipc/commands.js", () => ({
   providerList: (...args: unknown[]) => providerList(...args),
   providerRefreshState: (...args: unknown[]) => providerRefreshState(...args),
   providerSetOptions: (...args: unknown[]) => providerSetOptions(...args),
+  providerSetSingleMachine: (...args: unknown[]) =>
+    providerSetSingleMachine(...args),
   providerRename: (...args: unknown[]) => providerRename(...args),
   providerSetVersion: (...args: unknown[]) => providerSetVersion(...args),
 }))
@@ -62,8 +69,9 @@ vi.mock("$lib/ipc/events.js", () => ({
 vi.mock("$lib/stores/providers.js", async () => {
   const { writable } = await import("svelte/store")
   providerJobsBox.store = writable({})
+  providersBox.store = writable<Provider[]>([])
   return {
-    providers: writable([]),
+    providers: providersBox.store,
     providerJobs: providerJobsBox.store,
   }
 })
@@ -112,6 +120,16 @@ import ProviderSheet from "./ProviderSheet.svelte"
 const MOCK_IPC_DELAY_MS = 10
 const TIMING_BUDGET_MS = 200
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 function makeProvider(name: string, extras: Partial<Provider> = {}): Provider {
   return {
     name,
@@ -131,6 +149,7 @@ async function flushAsync() {
 describe("ProviderSheet", () => {
   beforeEach(() => {
     progressCallback = null
+    providersBox.store.set([])
     providerJobsBox.store.set({})
     providerVersionsBox.store.update((state) => ({
       ...state,
@@ -162,6 +181,7 @@ describe("ProviderSheet", () => {
     providerList.mockResolvedValue([])
     providerRefreshState.mockResolvedValue(undefined)
     providerSetOptions.mockResolvedValue(undefined)
+    providerSetSingleMachine.mockResolvedValue(undefined)
     providerRename.mockResolvedValue(undefined)
     providerSetVersion.mockResolvedValue(undefined)
     loadVersionsFor.mockResolvedValue(undefined)
@@ -181,6 +201,554 @@ describe("ProviderSheet", () => {
 
     expect(providerOptions).toHaveBeenCalledTimes(1)
     expect(providerOptions).toHaveBeenCalledWith("ssh")
+    unmount()
+  })
+
+  it("uses manifest groups and keeps searched edits without exposing hidden fields", async () => {
+    providerOptions.mockResolvedValue({
+      HOST: {
+        name: "HOST",
+        displayName: "Host",
+        description: "Endpoint address",
+        default: "local",
+      },
+      SIZE: { name: "SIZE", displayName: "Disk size", default: "30" },
+      INTERNAL: { name: "INTERNAL", hidden: true, default: "private" },
+    })
+    const { unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("ssh", {
+          optionGroups: [{ name: "Connection", options: ["HOST"] }],
+        }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    expect(screen.getByRole("heading", { name: "Connection" })).toBeDefined()
+    expect(screen.queryByLabelText("INTERNAL")).toBeNull()
+    await fireEvent.input(screen.getByLabelText("Host"), {
+      target: { value: "new-host" },
+    })
+    await fireEvent.input(screen.getByLabelText("Search provider options"), {
+      target: { value: "disk" },
+    })
+    expect(screen.queryByLabelText("Host")).toBeNull()
+    expect(screen.getByLabelText("Disk size")).toBeDefined()
+    await fireEvent.input(screen.getByLabelText("Search provider options"), {
+      target: { value: "" },
+    })
+    expect((screen.getByLabelText("Host") as HTMLInputElement).value).toBe(
+      "new-host",
+    )
+    await fireEvent.click(screen.getByRole("button", { name: /^Save$/ }))
+    await waitFor(() =>
+      expect(providerSetOptions).toHaveBeenCalledWith(
+        "ssh",
+        {
+          HOST: "new-host",
+        },
+        undefined,
+      ),
+    )
+    unmount()
+  })
+
+  it("saves only changed visible options and preserves the machine mode", async () => {
+    const expression = "${PROVIDER_FOLDER}/config.json"
+    providerOptions.mockResolvedValue({
+      CONFIG: { name: "CONFIG", default: expression },
+      HOST: { name: "HOST", default: "localhost" },
+      STORED: { name: "STORED", value: "already-saved" },
+      HIDDEN: { name: "HIDDEN", value: "private", hidden: true },
+    })
+    const { unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("ssh", {
+          state: { initialized: true, singleMachine: true },
+        }),
+        open: true,
+      },
+    })
+    await flushAsync()
+
+    expect((screen.getByLabelText("CONFIG") as HTMLInputElement).value).toBe(
+      expression,
+    )
+    await fireEvent.input(screen.getByLabelText("HOST"), {
+      target: { value: "remote.example" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        { HOST: "remote.example" },
+        true,
+      )
+    })
+    unmount()
+  })
+
+  it("keeps option saving blocked until the machine toggle and list refresh finish", async () => {
+    const listRefresh = deferred<Provider[]>()
+    providerList.mockReturnValueOnce(listRefresh.promise)
+    providerOptions.mockResolvedValue({
+      HOST: { name: "HOST", default: "localhost" },
+    })
+    const { rerender, unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("ssh", {
+          state: { initialized: true, singleMachine: true },
+        }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    await fireEvent.input(screen.getByLabelText("HOST"), {
+      target: { value: "remote.example" },
+    })
+
+    const reuseSwitch = screen.getByRole("switch", { name: /Reuse machine/ })
+    const save = screen.getByRole("button", { name: "Save" })
+    await fireEvent.click(reuseSwitch)
+    await waitFor(() => {
+      expect(providerSetSingleMachine).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        false,
+      )
+      expect(reuseSwitch.hasAttribute("disabled")).toBe(true)
+      expect(save.hasAttribute("disabled")).toBe(true)
+    })
+
+    await fireEvent.click(save)
+    expect(providerSetOptions).not.toHaveBeenCalled()
+    listRefresh.resolve([
+      makeProvider("ssh", {
+        state: { initialized: true, singleMachine: false },
+      }),
+    ])
+    await waitFor(() => {
+      expect(reuseSwitch.hasAttribute("disabled")).toBe(false)
+      expect(save.hasAttribute("disabled")).toBe(false)
+    })
+
+    await rerender({
+      provider: makeProvider("ssh", {
+        state: { initialized: true, singleMachine: false },
+      }),
+      open: true,
+    })
+    await fireEvent.click(save)
+    await waitFor(() =>
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        { HOST: "remote.example" },
+        false,
+      ),
+    )
+    unmount()
+  })
+
+  it("keeps machine toggling blocked during save and re-enables after save failure", async () => {
+    const saveRequest = deferred<void>()
+    providerSetOptions.mockReturnValueOnce(saveRequest.promise)
+    providerOptions.mockResolvedValue({
+      HOST: { name: "HOST", default: "localhost" },
+      SIZE: {
+        name: "SIZE",
+        enum: [
+          { value: "small", displayName: "Small" },
+          { value: "large", displayName: "Large" },
+        ],
+      },
+    })
+    const { unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("ssh", {
+          state: { initialized: true, singleMachine: false },
+        }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    await fireEvent.input(screen.getByLabelText("HOST"), {
+      target: { value: "remote.example" },
+    })
+
+    const reuseSwitch = screen.getByRole("switch", { name: /Reuse machine/ })
+    const save = screen.getByRole("button", { name: "Save" })
+    const sizeTrigger = document.querySelector<HTMLButtonElement>(
+      "#provider-option-SIZE",
+    )
+    const reset = screen.getByRole("button", { name: "Reset" })
+    expect(sizeTrigger).not.toBeNull()
+    await fireEvent.click(save)
+    await waitFor(() => {
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        { HOST: "remote.example" },
+        false,
+      )
+      expect(save.hasAttribute("disabled")).toBe(true)
+      expect(reuseSwitch.hasAttribute("disabled")).toBe(true)
+      expect(sizeTrigger?.disabled).toBe(true)
+      expect((screen.getByLabelText("HOST") as HTMLInputElement).disabled).toBe(
+        true,
+      )
+      expect(reset.hasAttribute("disabled")).toBe(true)
+    })
+
+    await fireEvent.click(reuseSwitch)
+    expect(providerSetSingleMachine).not.toHaveBeenCalled()
+    saveRequest.reject(new Error("save failed"))
+    await waitFor(() => {
+      expect(save.hasAttribute("disabled")).toBe(false)
+      expect(reuseSwitch.hasAttribute("disabled")).toBe(false)
+      expect(sizeTrigger?.disabled).toBe(false)
+      expect((screen.getByLabelText("HOST") as HTMLInputElement).disabled).toBe(
+        false,
+      )
+      expect(reset.hasAttribute("disabled")).toBe(false)
+    })
+    expect((screen.getByLabelText("HOST") as HTMLInputElement).value).toBe(
+      "remote.example",
+    )
+
+    await fireEvent.click(reuseSwitch)
+    await waitFor(() =>
+      expect(providerSetSingleMachine).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        true,
+      ),
+    )
+    unmount()
+  })
+
+  it("keeps a successful machine change after the provider list refresh fails", async () => {
+    providerList.mockRejectedValueOnce(new Error("list unavailable"))
+    providerOptions.mockResolvedValue({
+      HOST: { name: "HOST", default: "localhost" },
+    })
+    const { rerender, unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("ssh", {
+          state: { initialized: true, singleMachine: true },
+        }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    const reuseSwitch = screen.getByRole("switch", { name: /Reuse machine/ })
+    await fireEvent.click(reuseSwitch)
+    await waitFor(() => {
+      expect(providerSetSingleMachine).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        false,
+      )
+      expect(reuseSwitch.getAttribute("aria-checked")).toBe("false")
+      expect(reuseSwitch.hasAttribute("disabled")).toBe(false)
+    })
+
+    await fireEvent.input(screen.getByLabelText("HOST"), {
+      target: { value: "remote.example" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() =>
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        { HOST: "remote.example" },
+        false,
+      ),
+    )
+
+    await rerender({
+      provider: makeProvider("ssh", {
+        state: { initialized: true, singleMachine: false },
+      }),
+      open: true,
+    })
+    await waitFor(() =>
+      expect(reuseSwitch.getAttribute("aria-checked")).toBe("false"),
+    )
+    await rerender({
+      provider: makeProvider("ssh", {
+        state: { initialized: true, singleMachine: true },
+      }),
+      open: true,
+    })
+    await waitFor(() =>
+      expect(reuseSwitch.getAttribute("aria-checked")).toBe("true"),
+    )
+    unmount()
+  })
+
+  it.each([
+    { initial: true, changed: false },
+    { initial: false, changed: true },
+  ])(
+    "keeps the confirmed machine mode after refresh failure and sheet remount ($initial -> $changed)",
+    async ({ initial, changed }) => {
+      const initialProvider = makeProvider("ssh", {
+        state: { initialized: true, singleMachine: initial },
+      })
+      const otherProvider = makeProvider("docker", {
+        version: "2.0.0",
+        isDefault: true,
+        state: { initialized: true, singleMachine: !initial },
+      })
+      providersBox.store.set([initialProvider, otherProvider])
+      providerOptions.mockResolvedValue({
+        HOST: { name: "HOST", default: "localhost" },
+      })
+      providerList.mockRejectedValueOnce(new Error("list unavailable"))
+
+      const firstSheet = render(ProviderSheet, {
+        props: { provider: initialProvider, open: true },
+      })
+      await flushAsync()
+      await fireEvent.click(
+        screen.getByRole("switch", { name: /Reuse machine/ }),
+      )
+
+      await waitFor(() => {
+        expect(providerSetSingleMachine).toHaveBeenCalledExactlyOnceWith(
+          "ssh",
+          changed,
+        )
+        expect(providerList).toHaveBeenCalledTimes(1)
+        expect(
+          screen
+            .getByRole("switch", { name: /Reuse machine/ })
+            .getAttribute("aria-checked"),
+        ).toBe(String(changed))
+        expect(
+          screen
+            .getByRole("switch", { name: /Reuse machine/ })
+            .hasAttribute("disabled"),
+        ).toBe(false)
+      })
+      firstSheet.unmount()
+
+      const storedProviders = get(providersBox.store)
+      const storedProvider = storedProviders.find(({ name }) => name === "ssh")
+      expect(storedProvider?.state?.singleMachine).toBe(changed)
+      expect(storedProviders.find(({ name }) => name === "docker")).toEqual(
+        otherProvider,
+      )
+      if (!storedProvider) throw new Error("updated provider was not stored")
+
+      const reopenedSheet = render(ProviderSheet, {
+        props: { provider: storedProvider, open: true },
+      })
+      await flushAsync()
+      expect(
+        screen
+          .getByRole("switch", { name: /Reuse machine/ })
+          .getAttribute("aria-checked"),
+      ).toBe(String(changed))
+      await fireEvent.input(screen.getByLabelText("HOST"), {
+        target: { value: "updated.example" },
+      })
+      await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+      await waitFor(() =>
+        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+          "ssh",
+          { HOST: "updated.example" },
+          changed,
+        ),
+      )
+      reopenedSheet.unmount()
+    },
+  )
+
+  it.each([
+    { confirmed: true, changedTo: false, reverseTo: true },
+    { confirmed: false, changedTo: true, reverseTo: false },
+  ])(
+    "restores the last confirmed mode when a reverse toggle fails with stale provider state ($confirmed -> $changedTo -> $reverseTo)",
+    async ({ confirmed, changedTo, reverseTo }) => {
+      providerSetSingleMachine.mockResolvedValueOnce(undefined)
+      providerList.mockRejectedValueOnce(new Error("list unavailable"))
+      const failedReverse = deferred<void>()
+      providerSetSingleMachine.mockReturnValueOnce(failedReverse.promise)
+      providerOptions.mockResolvedValue({
+        HOST: { name: "HOST", default: "localhost" },
+      })
+      const { unmount } = render(ProviderSheet, {
+        props: {
+          provider: makeProvider("ssh", {
+            state: { initialized: true, singleMachine: confirmed },
+          }),
+          open: true,
+        },
+      })
+      await flushAsync()
+
+      const reuseSwitch = screen.getByRole("switch", { name: /Reuse machine/ })
+      await fireEvent.click(reuseSwitch)
+      await waitFor(() => {
+        expect(providerSetSingleMachine).toHaveBeenNthCalledWith(
+          1,
+          "ssh",
+          changedTo,
+        )
+        expect(reuseSwitch.getAttribute("aria-checked")).toBe(String(changedTo))
+        expect(reuseSwitch.hasAttribute("disabled")).toBe(false)
+      })
+
+      await fireEvent.click(reuseSwitch)
+      await waitFor(() => {
+        expect(providerSetSingleMachine).toHaveBeenNthCalledWith(
+          2,
+          "ssh",
+          reverseTo,
+        )
+        expect(reuseSwitch.getAttribute("aria-checked")).toBe(String(reverseTo))
+      })
+      failedReverse.reject(new Error("reverse update failed"))
+      await waitFor(() => {
+        expect(reuseSwitch.hasAttribute("disabled")).toBe(false)
+        expect(reuseSwitch.getAttribute("aria-checked")).toBe(String(changedTo))
+      })
+
+      await fireEvent.input(screen.getByLabelText("HOST"), {
+        target: { value: "remote.example" },
+      })
+      await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+      await waitFor(() =>
+        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+          "ssh",
+          { HOST: "remote.example" },
+          changedTo,
+        ),
+      )
+      unmount()
+    },
+  )
+
+  it("persists a confirmed machine change when the sheet unmounts before the command resolves", async () => {
+    const update = deferred<void>()
+    const persistedProvider = makeProvider("ssh", {
+      state: { initialized: true, singleMachine: true },
+    })
+    const otherProvider = makeProvider("docker", {
+      state: { initialized: true, singleMachine: false },
+    })
+    providersBox.store.set([persistedProvider, otherProvider])
+    providerSetSingleMachine.mockReturnValueOnce(update.promise)
+    providerList.mockRejectedValueOnce(new Error("list unavailable"))
+    const sheet = render(ProviderSheet, {
+      props: { provider: persistedProvider, open: true },
+    })
+    await flushAsync()
+
+    await fireEvent.click(screen.getByRole("switch", { name: /Reuse machine/ }))
+    await waitFor(() =>
+      expect(providerSetSingleMachine).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        false,
+      ),
+    )
+    sheet.unmount()
+    update.resolve(undefined)
+
+    await waitFor(() => {
+      const storedProviders = get(providersBox.store)
+      expect(
+        storedProviders.find(({ name }) => name === "ssh")?.state
+          ?.singleMachine,
+      ).toBe(false)
+      expect(storedProviders.find(({ name }) => name === "docker")).toEqual(
+        otherProvider,
+      )
+    })
+  })
+
+  it("restores the prior mode when the machine update itself fails", async () => {
+    providerSetSingleMachine.mockRejectedValueOnce(new Error("update failed"))
+    providerOptions.mockResolvedValue({
+      HOST: { name: "HOST", default: "localhost" },
+    })
+    const persistedProvider = makeProvider("ssh", {
+      state: { initialized: true, singleMachine: true },
+    })
+    const otherProvider = makeProvider("docker", {
+      state: { initialized: true, singleMachine: false },
+    })
+    providersBox.store.set([persistedProvider, otherProvider])
+    const { unmount } = render(ProviderSheet, {
+      props: {
+        provider: persistedProvider,
+        open: true,
+      },
+    })
+    await flushAsync()
+    const reuseSwitch = screen.getByRole("switch", { name: /Reuse machine/ })
+    await fireEvent.click(reuseSwitch)
+    await waitFor(() => {
+      expect(reuseSwitch.hasAttribute("disabled")).toBe(false)
+      expect(reuseSwitch.getAttribute("aria-checked")).toBe("true")
+    })
+    const storedProviders = get(providersBox.store)
+    expect(storedProviders.find(({ name }) => name === "ssh")).toEqual(
+      persistedProvider,
+    )
+    expect(storedProviders.find(({ name }) => name === "docker")).toEqual(
+      otherProvider,
+    )
+
+    await fireEvent.input(screen.getByLabelText("HOST"), {
+      target: { value: "remote.example" },
+    })
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() =>
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        { HOST: "remote.example" },
+        true,
+      ),
+    )
+    unmount()
+  })
+
+  it("shows an options load failure with a retry instead of an empty configuration", async () => {
+    providerOptions.mockRejectedValueOnce(new Error("connection unavailable"))
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+    expect(
+      screen.getByText(/Failed to load options: connection unavailable/),
+    ).toBeDefined()
+    expect(screen.queryByText("No configurable options available.")).toBeNull()
+    await fireEvent.click(screen.getByRole("button", { name: "Retry options" }))
+    expect(await screen.findByLabelText("Token")).toBeDefined()
+    expect(providerOptions).toHaveBeenCalledTimes(2)
+    unmount()
+  })
+
+  it("does not apply a previous provider's late option response", async () => {
+    let resolveOld:
+      | ((options: Record<string, ProviderOption>) => void)
+      | undefined
+    providerOptions.mockImplementationOnce(
+      () =>
+        new Promise<Record<string, ProviderOption>>((resolve) => {
+          resolveOld = resolve
+        }),
+    )
+    const { rerender, unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+    await rerender({ provider: makeProvider("docker"), open: true })
+    await flushAsync()
+    expect(screen.getByText("token for docker")).toBeDefined()
+    if (!resolveOld) throw new Error("Old request was not started")
+    resolveOld({ OLD: { name: "OLD", displayName: "Old provider setting" } })
+    await flushAsync()
+    expect(screen.queryByLabelText("Old provider setting")).toBeNull()
+    expect(screen.getByText("token for docker")).toBeDefined()
     unmount()
   })
 
@@ -237,10 +805,14 @@ describe("ProviderSheet", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
-      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("ssh", {
-        SIZE: "large",
-        MODE: "burst",
-      })
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+        "ssh",
+        {
+          SIZE: "large",
+          MODE: "burst",
+        },
+        undefined,
+      )
     })
     unmount()
   })
@@ -305,11 +877,13 @@ describe("ProviderSheet", () => {
       await fireEvent.click(save)
 
       await waitFor(() => {
-        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("ssh", {
-          STORED_MODE: "",
-          DEFAULT_MODE: "",
-          UNSET_MODE: "",
-        })
+        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+          "ssh",
+          {
+            UNSET_MODE: "",
+          },
+          undefined,
+        )
       })
     } finally {
       unmount()

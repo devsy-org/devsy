@@ -5,7 +5,6 @@ import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
 import { Label } from "$lib/components/ui/label/index.js"
 import { Switch } from "$lib/components/ui/switch/index.js"
-import { Separator } from "$lib/components/ui/separator/index.js"
 import * as Select from "$lib/components/ui/select/index.js"
 import * as Alert from "$lib/components/ui/alert/index.js"
 import { badgeVariants } from "$lib/components/ui/badge/index.js"
@@ -45,6 +44,7 @@ import {
   providerOptionEnumHasValue,
 } from "$lib/utils/provider-option-enum.js"
 import { isCommandSuccess } from "$lib/utils/log-parser.js"
+import { providerSourceReference } from "$lib/utils/provider-source.js"
 import { providerStatus } from "$lib/utils/provider-status.js"
 import type {
   CommandProgress,
@@ -67,6 +67,9 @@ let optionValues = $state<Record<string, string>>({})
 let initialValues = $state<Record<string, string>>({})
 let saving = $state(false)
 let loading = $state(true)
+let optionsError = $state("")
+let optionSearch = $state("")
+let optionsRequest = 0
 let confirmDeleteOpen = $state(false)
 let deleting = $state(false)
 let renaming = $state(false)
@@ -88,6 +91,15 @@ let pendingUpdateProgress: CommandProgress[] = []
 let confirmSwitchOpen = $state(false)
 let targetTag = $state("")
 let switching = $state(false)
+let singleMachineOverride = $state<boolean | undefined>(undefined)
+let singleMachineOverrideProviderName = $state<string | null>(null)
+let togglingSingleMachine = $state(false)
+let effectiveSingleMachine = $derived(
+  singleMachineOverrideProviderName === provider.name &&
+    singleMachineOverride !== undefined
+    ? singleMachineOverride
+    : provider.state?.singleMachine,
+)
 let providerJob = $derived(provider ? $providerJobs[provider.name] : undefined)
 let status = $derived(
   provider
@@ -195,11 +207,27 @@ let versionEntry = $derived(
   provider ? $providerVersions.byProvider[provider.name] : undefined,
 )
 
+let visibleOptions = $derived(
+  Object.entries(options).filter(([, opt]) => !opt.hidden),
+)
+let matchingOptions = $derived.by(() => {
+  const query = optionSearch.trim().toLowerCase()
+  return visibleOptions.filter(
+    ([key, opt]) =>
+      !query ||
+      [key, opt.displayName, opt.description].some((text) =>
+        text?.toLowerCase().includes(query),
+      ),
+  )
+})
 let groupedOptions = $derived.by(() => {
   const groups: Record<string, [string, ProviderOption][]> = {}
-  for (const [key, opt] of Object.entries(options)) {
-    if (opt.hidden) continue
-    const group = opt.group ?? ""
+  for (const [key, opt] of matchingOptions) {
+    const group =
+      provider.optionGroups?.find((item) => item.options?.includes(key))
+        ?.name ||
+      opt.group ||
+      "General settings"
     if (!groups[group]) groups[group] = []
     groups[group].push([key, opt])
   }
@@ -214,9 +242,16 @@ let groupedOptions = $derived.by(() => {
 })
 
 async function loadOptions() {
+  const name = provider.name
+  const request = ++optionsRequest
   loading = true
+  optionsError = ""
+  options = {}
+  optionValues = {}
+  initialValues = {}
   try {
-    const raw = await providerOptions(provider.name)
+    const raw = await providerOptions(name)
+    if (request !== optionsRequest || provider.name !== name || !open) return
     options = raw as unknown as Record<string, ProviderOption>
 
     const values: Record<string, string> = {}
@@ -227,11 +262,25 @@ async function loadOptions() {
     optionValues = values
     initialValues = { ...values }
   } catch (err) {
-    toasts.error(`Failed to load options: ${extractErrorMessage(err)}`)
+    if (request !== optionsRequest || provider.name !== name || !open) return
+    optionsError = `Failed to load options: ${extractErrorMessage(err)}`
   } finally {
-    loading = false
+    if (request === optionsRequest && provider.name === name && open)
+      loading = false
   }
 }
+
+$effect(() => {
+  if (
+    singleMachineOverride !== undefined &&
+    (singleMachineOverrideProviderName !== provider.name ||
+      (!togglingSingleMachine &&
+        provider.state?.singleMachine === singleMachineOverride))
+  ) {
+    singleMachineOverride = undefined
+    singleMachineOverrideProviderName = null
+  }
+})
 
 $effect(() => {
   if (!open || !provider) {
@@ -240,6 +289,7 @@ $effect(() => {
   }
   if (loadedFor !== provider.name) {
     loadedFor = provider.name
+    optionSearch = ""
     loadOptions()
     loadVersionsFor(provider.name).catch(() => {})
   }
@@ -255,16 +305,41 @@ async function handleSetDefault() {
   }
 }
 
-let togglingSingleMachine = $state(false)
-
 async function handleToggleSingleMachine(enabled: boolean) {
+  if (saving || togglingSingleMachine) return
+  const name = provider.name
+  const previousOverride = singleMachineOverride
+  const previousOverrideProviderName = singleMachineOverrideProviderName
   togglingSingleMachine = true
+  singleMachineOverride = enabled
+  singleMachineOverrideProviderName = name
   try {
-    await providerSetSingleMachine(provider.name, enabled)
+    await providerSetSingleMachine(name, enabled)
+  } catch (err) {
+    if (provider.name === name && singleMachineOverrideProviderName === name) {
+      singleMachineOverride = previousOverride
+      singleMachineOverrideProviderName = previousOverrideProviderName
+    }
+    toasts.error(`Failed to update reuse machine: ${extractErrorMessage(err)}`)
+    togglingSingleMachine = false
+    return
+  }
+
+  providers.update((current) =>
+    current.map((item) =>
+      item.name === name
+        ? { ...item, state: { ...item.state, singleMachine: enabled } }
+        : item,
+    ),
+  )
+
+  try {
     providers.set(await providerList())
     toasts.success(enabled ? "Reuse machine enabled" : "Reuse machine disabled")
   } catch (err) {
-    toasts.error(`Failed to update reuse machine: ${extractErrorMessage(err)}`)
+    toasts.error(
+      `Reuse machine was updated, but provider state could not be refreshed: ${extractErrorMessage(err)}`,
+    )
   } finally {
     togglingSingleMachine = false
   }
@@ -441,6 +516,7 @@ async function handleRename() {
 }
 
 async function handleSaveOptions() {
+  if (saving || togglingSingleMachine) return
   const missing = requiredOptions
     .filter(([key]) => !optionValues[key]?.trim())
     .map(([, opt]) => opt.displayName ?? opt.name ?? "")
@@ -452,11 +528,15 @@ async function handleSaveOptions() {
   try {
     const values: Record<string, string> = {}
     for (const [key, val] of Object.entries(optionValues)) {
-      if (val !== "" || providerOptionEnumHasValue(options[key]?.enum, "")) {
+      if (
+        !options[key]?.hidden &&
+        (val !== "" || providerOptionEnumHasValue(options[key]?.enum, "")) &&
+        (!Object.hasOwn(initialValues, key) || val !== initialValues[key])
+      ) {
         values[key] = val
       }
     }
-    await providerSetOptions(provider.name, values)
+    await providerSetOptions(provider.name, values, effectiveSingleMachine)
     const updated = await providerList()
     providers.set(updated)
     initialValues = { ...optionValues }
@@ -472,11 +552,12 @@ async function handleSaveOptions() {
 {#if provider}
 <Sheet.Root bind:open>
   <Sheet.ResizableContent>
-    <Sheet.Header class="p-6">
-      <Sheet.Title class="flex items-center gap-2">
+    <Sheet.Header class="shrink-0 border-b p-6 pb-4">
+      <Sheet.Title class="flex flex-wrap items-center gap-2 pr-7 [overflow-wrap:anywhere]">
         {#if renaming}
           <form class="flex items-center gap-2" onsubmit={(e) => { e.preventDefault(); handleRename() }}>
             <Input
+              aria-label="Provider name"
               value={renameValue}
               oninput={(e) => (renameValue = e.currentTarget.value)}
               class="h-7 w-48 text-sm"
@@ -501,7 +582,7 @@ async function handleSaveOptions() {
               if (v && v !== currentTag) openVersionSwitch(v)
             }}
           >
-            <Select.Trigger class="w-[140px] h-7">
+            <Select.Trigger aria-label="Provider version" class="w-[140px] h-7">
               <span>{currentTag || "Select version"}</span>
             </Select.Trigger>
             <Select.Content>
@@ -551,7 +632,8 @@ async function handleSaveOptions() {
       {/if}
     </Sheet.Header>
 
-    <div class="flex items-center gap-2 px-6">
+    <div class="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 pb-6">
+    <section aria-label="Provider actions" class="flex flex-wrap items-center gap-2">
       {#if status.kind !== "ready" && status.kind !== "busy"}
         <Button variant="outline" size="sm" onclick={handleInitialize} disabled={initializing}>
           {#if initializing}
@@ -568,24 +650,31 @@ async function handleSaveOptions() {
         <Button variant="outline" size="sm" onclick={handleUpdate}>Update</Button>
       </ButtonGroup.Root>
       <Button variant="destructive" size="sm" onclick={() => (confirmDeleteOpen = true)}>Delete</Button>
-    </div>
+    </section>
 
-    <div class="flex items-center justify-between gap-4 px-6">
+    <section aria-labelledby="provider-source-title" class="rounded-lg border p-4">
+      <h3 id="provider-source-title" class="mb-2 text-sm font-semibold">Installation source</h3>
+      <p class="select-text font-mono text-xs leading-6 [overflow-wrap:anywhere]">{providerSourceReference(provider.source) ?? "Source not available"}</p>
+      <p class="mt-1 text-xs leading-5 text-muted-foreground">New workspaces use this provider's current configuration.</p>
+    </section>
+
+    <section aria-labelledby="provider-machine-title" class="flex items-start justify-between gap-4 rounded-lg border p-4">
       <div class="space-y-0.5">
-        <Label>Reuse machine</Label>
+        <Label for="provider-reuse-machine" id="provider-machine-title">Reuse machine</Label>
         <p class="text-sm text-muted-foreground">
           Run all workspaces on a single shared machine instead of one per workspace.
         </p>
       </div>
       <Switch
-        checked={provider.state?.singleMachine ?? false}
+        id="provider-reuse-machine"
+        checked={effectiveSingleMachine ?? false}
         onCheckedChange={handleToggleSingleMachine}
-        disabled={togglingSingleMachine}
+        disabled={togglingSingleMachine || saving}
       />
-    </div>
+    </section>
 
     {#if $providerVersions.updates[provider.name]?.updateAvailable === true}
-      <div class="px-6 pb-2">
+      <div class="pb-2">
         <Alert.Root class="border-amber-500/50 bg-amber-500/10">
           <Alert.Title>Update available: {$providerVersions.updates[provider.name].latest}</Alert.Title>
           <Alert.Description>
@@ -597,16 +686,14 @@ async function handleSaveOptions() {
       </div>
     {/if}
 
-    <Separator />
-
     {#if initError}
-      <div class="px-6 pt-4">
+      <div class="pt-4">
         <ErrorCard cliError={initError} />
       </div>
     {/if}
 
     {#if (showingLocalUpdate && (updating || updateError || updateStartError || updateLines.length > 0)) || persistedUpdateError || providerJob?.logs?.length}
-      <div class="space-y-3 px-6 pt-4">
+      <div class="space-y-3 pt-4">
         <div
           class="min-h-12 rounded-md border bg-muted/20 px-3 py-2"
           role="status"
@@ -652,29 +739,45 @@ async function handleSaveOptions() {
       </div>
     {/if}
 
-    <div class="flex-1 overflow-y-auto space-y-4 px-6 pb-6">
+    <section aria-labelledby="provider-options-title" class="space-y-4 border-t pt-5">
+      <div class="space-y-1">
+        <h3 id="provider-options-title" class="text-sm font-semibold">Provider options</h3>
+        <p class="text-xs leading-5 text-muted-foreground">Review settings supplied by this provider. Required fields are marked with an asterisk.</p>
+      </div>
+
+    <div class="space-y-4">
+      {#if !loading && !optionsError && visibleOptions.length > 0}
+        <Input aria-label="Search provider options" placeholder="Search options by name or description" value={optionSearch} oninput={(event) => (optionSearch = event.currentTarget.value)} />
+        <p class="text-xs text-muted-foreground" aria-live="polite">{matchingOptions.length} of {visibleOptions.length} options</p>
+      {/if}
       {#if loading}
         <p class="text-sm text-muted-foreground">Loading options...</p>
-      {:else if Object.keys(options).length === 0}
+      {:else if optionsError}
+        <Alert.Root variant="destructive"><Alert.Description>{optionsError}</Alert.Description></Alert.Root>
+        <Button variant="outline" size="sm" onclick={loadOptions}>Retry options</Button>
+      {:else if visibleOptions.length === 0}
         <p class="text-sm text-muted-foreground">No configurable options available.</p>
+      {:else if matchingOptions.length === 0}
+        <p class="text-sm text-muted-foreground">No options match your search.</p>
+        <Button variant="outline" size="sm" onclick={() => (optionSearch = "")}>Clear option search</Button>
       {:else}
         {#each Object.entries(groupedOptions) as [group, entries] (group)}
           {#if group}
-            <h3 class="text-xs font-medium text-muted-foreground uppercase tracking-wider pt-2">
+            <h4 class="border-b pb-2 pt-2 text-sm font-medium">
               {group}
-            </h3>
+            </h4>
           {/if}
 
           {#each entries as [key, opt] (key)}
             <div class="space-y-1.5">
-              <Label class="text-sm">
+              <Label for={`provider-option-${key}`} class="text-sm">
                 {opt.displayName ?? opt.name ?? key}
                 {#if opt.required}
                   <span class="text-destructive">*</span>
                 {/if}
               </Label>
               {#if opt.description}
-                <p class="text-xs text-muted-foreground">{opt.description}</p>
+                <p id={`provider-option-help-${key}`} class="text-xs leading-5 text-muted-foreground">{opt.description}</p>
               {/if}
               {#if opt.enum && opt.enum.length > 0}
                 {@const enumOptions = normalizeProviderOptionEnums(opt.enum)}
@@ -687,7 +790,7 @@ async function handleSaveOptions() {
                     if (selected) optionValues[key] = selected.value
                   }}
                 >
-                  <Select.Trigger class="w-full h-9">
+                  <Select.Trigger id={`provider-option-${key}`} aria-required={opt.required || undefined} aria-describedby={opt.description ? `provider-option-help-${key}` : undefined} class="w-full h-9" disabled={saving}>
                     <span>{selectedOption ? selectedOption.label : optionValues[key] || "-- Select --"}</span>
                   </Select.Trigger>
                   <Select.Content>
@@ -700,11 +803,14 @@ async function handleSaveOptions() {
                 </Select.Root>
               {:else}
                 <Input
+                  id={`provider-option-${key}`}
+                  aria-required={opt.required || undefined} aria-describedby={opt.description ? `provider-option-help-${key}` : undefined}
                   type={opt.password ? "password" : "text"}
                   placeholder={opt.default != null ? String(opt.default) : ""}
                   value={optionValues[key] ?? ""}
                   oninput={(e) => (optionValues[key] = e.currentTarget.value)}
                   class="h-9"
+                  disabled={saving}
                 />
               {/if}
             </div>
@@ -713,13 +819,20 @@ async function handleSaveOptions() {
       {/if}
     </div>
 
+    </section>
+    </div>
+
     {#if isDirty}
-      <Sheet.Footer class="p-6">
-        <div class="flex items-center gap-2">
-          <Button onclick={handleSaveOptions} disabled={saving} size="sm">
+      <Sheet.Footer class="shrink-0 border-t p-6">
+        <div class="flex flex-wrap items-center gap-2">
+          <Button
+            onclick={handleSaveOptions}
+            disabled={saving || togglingSingleMachine}
+            size="sm"
+          >
             {saving ? "Saving..." : "Save"}
           </Button>
-          <Button variant="outline" size="sm" onclick={() => { optionValues = { ...initialValues } }}>
+          <Button variant="outline" size="sm" onclick={() => { optionValues = { ...initialValues } }} disabled={saving}>
             Reset
           </Button>
           <span class="text-xs text-muted-foreground">Unsaved changes</span>

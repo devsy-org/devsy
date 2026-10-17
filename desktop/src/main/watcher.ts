@@ -312,20 +312,16 @@ export class Watcher {
   }
 
   private async pollProviders(): Promise<void> {
-    const daemon = this.deps.daemon
+    const readRevision = this.deps.state.providerReadRevision()
     try {
-      const raw = await this.queryWithFallback(
-        daemon
-          ? () => daemon.listProviders<Record<string, ProviderEntry>>()
-          : undefined,
-        () =>
-          this.deps.cli.run<Record<string, ProviderEntry>>([
-            "provider",
-            "list",
-          ]),
-      )
+      // Provider settings are written through the CLI; the daemon's provider
+      // list cache may lag that successful write.
+      const raw = await this.deps.cli.run<Record<string, ProviderEntry>>([
+        "provider",
+        "list",
+      ])
       const providers = parseProviderEntries(raw)
-      const changed = this.deps.state.updateProviders(providers)
+      const changed = this.deps.state.updateProviders(providers, readRevision)
       if (changed) {
         this.broadcastProviders()
       }
