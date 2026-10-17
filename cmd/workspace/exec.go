@@ -335,10 +335,16 @@ type execOpts struct {
 }
 
 func (cmd *ExecCmd) execInContainer(ctx context.Context, opts execOpts, args []string) error {
+	stdinIsTerminal := term.IsTerminal(
+		int(os.Stdin.Fd()),
+	) // #nosec G115 -- valid standard descriptor
+	stdoutIsTerminal := term.IsTerminal(
+		int(os.Stdout.Fd()),
+	) // #nosec G115 -- valid standard descriptor
 	code, err := opts.runtime.Exec(ctx, workspace2.ExecRequest{
 		Target: opts.target, Workdir: opts.workdir, Env: opts.envMap, Argv: args,
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
-		TTY: term.IsTerminal(int(os.Stdin.Fd())), // #nosec G115 -- valid file descriptor
+		TTY: stdinIsTerminal && stdoutIsTerminal,
 	})
 	if err != nil {
 		return err
