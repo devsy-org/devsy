@@ -85,9 +85,7 @@ func (cmd *UpCmd) Run(ctx context.Context) error {
 	if instance.Spec.TemplateRef != nil && templateUpdateRequired(instance) {
 		log.Info("Template update required")
 		oldInstance := instance.DeepCopy()
-		instance.Spec.TemplateRef.SyncOnce = true
-
-		instance, err = platform.UpdateInstance(
+		instance, err = platform.UpdateInstanceSyncTemplate(
 			ctx,
 			baseClient,
 			oldInstance,

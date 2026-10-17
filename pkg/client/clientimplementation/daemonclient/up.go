@@ -105,9 +105,7 @@ func syncTemplateIfRequired(
 
 	log.Debug("Template update required")
 	oldInstance := instance.DeepCopy()
-	instance.Spec.TemplateRef.SyncOnce = true
-
-	updated, err := platform.UpdateInstance(ctx, baseClient, oldInstance, instance)
+	updated, err := platform.UpdateInstanceSyncTemplate(ctx, baseClient, oldInstance, instance)
 	if err != nil {
 		return nil, fmt.Errorf("update instance: %w", err)
 	}
