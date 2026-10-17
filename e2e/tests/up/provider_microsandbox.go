@@ -244,6 +244,42 @@ exit 17`
 		gomega.Expect(stdout).To(gomega.ContainSubstring(expected))
 	}
 	gomega.Expect(stderr).To(gomega.ContainSubstring("exec-stderr-marker"))
+	assertMicrosandboxNumericExecIdentity(ctx, f, workspace)
+}
+
+func assertMicrosandboxNumericExecIdentity(
+	ctx context.Context,
+	f *framework.Framework,
+	folder string,
+) {
+	workspace, err := f.FindWorkspace(ctx, folder)
+	framework.ExpectNoError(err)
+	result, err := provider.LoadWorkspaceResult(workspace.Context, workspace.ID)
+	framework.ExpectNoError(err)
+	gomega.Expect(result.MergedConfig).NotTo(gomega.BeNil())
+	originalUser := result.MergedConfig.RemoteUser
+	defer func() {
+		result.MergedConfig.RemoteUser = originalUser
+		framework.ExpectNoError(provider.SaveWorkspaceResult(workspace, result))
+	}()
+	identity, stderr, err := captureWorkspaceExec(ctx, f, folder, microsandboxExecRequest{
+		Args: []string{"--", "sh", "-c", "printf '%s:%s' \"$(id -u)\" \"$(id -g)\""},
+	})
+	framework.ExpectNoError(err, "read fixture identity: %s", stderr)
+	uid, gid, found := strings.Cut(identity, ":")
+	gomega.Expect(found).To(gomega.BeTrue())
+	for user, expected := range map[string]string{
+		uid:        uid + ":" + gid,
+		uid + ":0": uid + ":0",
+	} {
+		result.MergedConfig.RemoteUser = user
+		framework.ExpectNoError(provider.SaveWorkspaceResult(workspace, result))
+		actual, stderr, err := captureWorkspaceExec(ctx, f, folder, microsandboxExecRequest{
+			Args: []string{"--", "sh", "-c", "printf '%s:%s' \"$(id -u)\" \"$(id -g)\""},
+		})
+		framework.ExpectNoError(err, "exec as %s: %s", user, stderr)
+		gomega.Expect(actual).To(gomega.Equal(expected))
+	}
 }
 
 type microsandboxExecRequest struct {

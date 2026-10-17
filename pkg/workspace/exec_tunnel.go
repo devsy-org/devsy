@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/tunnel"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 )
 
 // NewWorkspaceRuntime keeps agent-side runtimes on the workspace's transport,
@@ -95,7 +93,11 @@ func (r *tunnelRuntime) Exec(ctx context.Context, req ExecRequest) (int, error) 
 	if err != nil {
 		return -1, err
 	}
-	err = tunnel.NewContainerTunnel(r.client).
+	sshUser := ""
+	if tunnelExecCredentialIdentity(req.Target.User) {
+		sshUser = req.Target.User
+	}
+	err = tunnel.NewContainerTunnel(r.client).AsUser(sshUser).
 		Run(ctx, func(ctx context.Context, conn *ssh.Client) error {
 			return runTunnelExec(ctx, conn, req, command)
 		}, r.config, nil)
@@ -129,12 +131,20 @@ func tunnelExecCommand(req ExecRequest) (string, error) {
 	if req.Workdir != "" {
 		command = "cd -- " + shellescape.Quote(req.Workdir) + " && " + command
 	}
-	if req.Target.User != "" && req.Target.User != "root" {
-		command = "exec " + shellescape.QuoteCommand(
-			[]string{"su", "-s", "/bin/sh", "-c", command, req.Target.User},
-		)
+	return wrapTunnelExecUser(req.Target.User, command), nil
+}
+
+func wrapTunnelExecUser(user, command string) string {
+	if user == "" || user == "root" || tunnelExecCredentialIdentity(user) {
+		return command
 	}
-	return command, nil
+	return "exec " + shellescape.QuoteCommand(
+		[]string{"su", "-s", "/bin/sh", "-c", command, "--", user},
+	)
+}
+
+func tunnelExecCredentialIdentity(user string) bool {
+	return strings.Contains(user, ":") || (user != "" && strings.Trim(user, "0123456789") == "")
 }
 
 func (r *tunnelRuntime) ProbeEnv(
@@ -179,56 +189,18 @@ func runTunnelExec(ctx context.Context, conn *ssh.Client, req ExecRequest, comma
 	if err != nil {
 		return err
 	}
-	defer func() { _ = session.Close() }()
+	var restore func()
+	defer func() {
+		_ = session.Close()
+		if restore != nil {
+			restore()
+		}
+	}()
 	if req.TTY {
-		restore, err := requestTunnelExecPTY(session, req.Stdin)
+		restore, err = requestExecPTY(ctx, session, req.Stdin)
 		if err != nil {
 			return err
 		}
-		defer restore()
 	}
 	return runTunnelExecSession(ctx, session, req, command)
-}
-
-func requestTunnelExecPTY(session *ssh.Session, stdin io.Reader) (func(), error) {
-	terminal, err := prepareExecTerminal(stdin)
-	if err != nil {
-		return nil, err
-	}
-	if err := session.RequestPty(
-		"xterm-256color",
-		terminal.height,
-		terminal.width,
-		ssh.TerminalModes{},
-	); err != nil {
-		terminal.restore()
-		return nil, err
-	}
-	return terminal.restore, nil
-}
-
-type execTerminal struct {
-	width, height int
-	restore       func()
-}
-
-func prepareExecTerminal(stdin io.Reader) (execTerminal, error) {
-	terminal := execTerminal{width: 80, height: 24, restore: func() {}}
-	input, ok := stdin.(*os.File)
-	if !ok {
-		return terminal, nil
-	}
-	fd := int(input.Fd()) // #nosec G115 -- valid file descriptor
-	if !term.IsTerminal(fd) {
-		return terminal, nil
-	}
-	if width, height, err := term.GetSize(fd); err == nil {
-		terminal.width, terminal.height = width, height
-	}
-	state, err := term.MakeRaw(fd)
-	if err != nil {
-		return execTerminal{}, err
-	}
-	terminal.restore = func() { _ = term.Restore(fd, state) }
-	return terminal, nil
 }

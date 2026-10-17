@@ -25,6 +25,7 @@ import (
 type ContainerTunnel struct {
 	client               client.WorkspaceClient
 	updateConfigInterval time.Duration
+	user                 string
 }
 
 // NewContainerTunnel constructs a ContainerTunnel using the workspace client, if proxy is True then
@@ -39,6 +40,14 @@ func NewContainerTunnel(client client.WorkspaceClient) *ContainerTunnel {
 
 // Handler defines what to do once the tunnel has a client established.
 type Handler func(ctx context.Context, containerClient *ssh.Client) error
+
+// AsUser selects the inner workspace SSH identity on a copy of the tunnel.
+// Host transport and agent injection retain their existing identity.
+func (c *ContainerTunnel) AsUser(user string) *ContainerTunnel {
+	selected := *c
+	selected.user = user
+	return &selected
+}
 
 // Run creates an "outer" tunnel to the host to start the SSH server so that the "inner" tunnel can
 // connect to the container over SSH.
@@ -245,7 +254,7 @@ func (c *ContainerTunnel) runInContainer(
 		},
 		Handler: func(ctx context.Context) error {
 			containerClient, err := devssh.ClientFromManagedConn(
-				ctx, containerConn, devssh.ManagedClientOptions{},
+				ctx, containerConn, devssh.ManagedClientOptions{User: c.user},
 			)
 			if err != nil {
 				return fmt.Errorf("ssh client: %w", err)

@@ -370,6 +370,9 @@ func execWithRunner(ctx context.Context, req ExecRequest, run containerRunFunc) 
 	if err == nil {
 		return 0, nil
 	}
+	if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+		return -1, fmt.Errorf("exec in container %s: %w", req.Target.ContainerID, err)
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return exitErr.ExitCode(), nil

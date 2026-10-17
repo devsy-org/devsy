@@ -385,22 +385,30 @@ func (s *server) getCommandWithSecretEnvironment(
 	isPty bool,
 	secretEnv []string,
 ) (*exec.Cmd, error) {
-	var cmd *exec.Cmd
 	user := sess.User()
 	if user == s.currentUser {
 		user = ""
 	}
 
-	if user != "" {
+	//nolint:gosec // G204: shell configured by the ssh server, not user input
+	cmd := exec.Command(s.shell[0], buildShellArgs(s.shell[1:], sess, isPty)...)
+	cmd.Env = mergeSessionEnvironment(os.Environ(), secretEnv, sess.Environ())
+	handled, err := prepareExecIdentity(cmd, user)
+	if err != nil {
+		return nil, err
+	}
+	if user != "" && !handled {
 		//nolint:gosec // G204: args built from session request in the ssh server
-		cmd = exec.Command("su", buildSuArgs(sess, isPty)...)
-	} else {
-		//nolint:gosec // G204: shell configured by the ssh server, not user input
-		cmd = exec.Command(s.shell[0], buildShellArgs(s.shell[1:], sess, isPty)...)
+		suCmd := exec.Command("su", buildSuArgs(sess, isPty)...)
+		suCmd.Env = cmd.Env
+		cmd = suCmd
 	}
 
-	cmd.Dir = findWorkdir(s.workdir, user)
-	cmd.Env = mergeSessionEnvironment(os.Environ(), secretEnv, sess.Environ())
+	if handled {
+		cmd.Dir = findWorkdirWithHome(s.workdir, cmd.Dir)
+	} else {
+		cmd.Dir = findWorkdir(s.workdir, user)
+	}
 	return cmd, nil
 }
 

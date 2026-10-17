@@ -108,7 +108,7 @@ func (s *tunnelExecSuite) TestFindRequiresRunningOwnedWorkspaceAndMetadata() {
 }
 
 func (s *tunnelExecSuite) TestCommandPreservesLiteralArgvStreamsEnvironmentAndDirectory() {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == execTestWindowsOS {
 		s.T().Skip("POSIX guest shell contract")
 	}
 	dir := s.T().TempDir()
