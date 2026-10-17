@@ -17,7 +17,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/spf13/cobra"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // WorkspaceCmd holds the cmd flags.
@@ -74,7 +73,7 @@ func createFromInstanceEnv(
 		return fmt.Errorf("unmarshal workspace instance %s: %w", instanceEnv, err)
 	}
 
-	updatedInstance, err := createInstance(ctx, baseClient, instance)
+	updatedInstance, err := platform.CreateInstance(ctx, baseClient, instance)
 	if err != nil {
 		return err
 	}
@@ -152,7 +151,7 @@ func createFromEnv(ctx context.Context, baseClient client.Client) error {
 		return err
 	}
 
-	_, err = createInstance(ctx, baseClient, instance)
+	_, err = platform.CreateInstance(ctx, baseClient, instance)
 	if err != nil {
 		return err
 	}
@@ -182,24 +181,4 @@ func saveImportedWorkspaceConfig(
 	}
 
 	return nil
-}
-
-func createInstance(
-	ctx context.Context,
-	client client.Client,
-	instance *managementv1.DevsyWorkspaceInstance,
-) (*managementv1.DevsyWorkspaceInstance, error) {
-	managementClient, err := client.Management()
-	if err != nil {
-		return nil, err
-	}
-
-	updatedInstance, err := managementClient.Loft().ManagementV1().
-		DevsyWorkspaceInstances(instance.GetNamespace()).
-		Create(ctx, instance, metav1.CreateOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("create workspace instance: %w", err)
-	}
-
-	return platform.WaitForInstance(ctx, client, updatedInstance)
 }

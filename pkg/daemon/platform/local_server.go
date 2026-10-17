@@ -674,7 +674,7 @@ func (l *localServer) createWorkspace(
 	}
 	instance.TypeMeta = metav1.TypeMeta{}
 
-	updatedInstance, err := createInstance(r.Context(), l.pc, instance)
+	updatedInstance, err := platform.CreateInstance(r.Context(), l.pc, instance)
 	if err != nil {
 		http.Error(w, fmt.Errorf("create workspace: %w", err).Error(), http.StatusBadRequest)
 		return
@@ -703,7 +703,12 @@ func (l *localServer) updateWorkspace(
 		return
 	}
 
-	updatedInstance, err := updateInstance(r.Context(), l.pc, oldInstance, newInstance)
+	updatedInstance, err := platform.UpdateInstanceSyncTemplate(
+		r.Context(),
+		l.pc,
+		oldInstance,
+		newInstance,
+	)
 	if err != nil {
 		http.Error(w, fmt.Errorf("update workspace: %w", err).Error(), http.StatusBadRequest)
 		return
@@ -779,38 +784,4 @@ func tryJSON(w http.ResponseWriter, obj any) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
-}
-
-func createInstance(
-	ctx context.Context,
-	client platformclient.Client,
-	instance *managementv1.DevsyWorkspaceInstance,
-) (*managementv1.DevsyWorkspaceInstance, error) {
-	managementClient, err := client.Management()
-	if err != nil {
-		return nil, err
-	}
-
-	updatedInstance, err := managementClient.Loft().ManagementV1().
-		DevsyWorkspaceInstances(instance.GetNamespace()).
-		Create(ctx, instance, metav1.CreateOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("create workspace instance: %w", err)
-	}
-
-	return platform.WaitForInstance(ctx, client, updatedInstance)
-}
-
-func updateInstance(
-	ctx context.Context,
-	client platformclient.Client,
-	oldInstance *managementv1.DevsyWorkspaceInstance,
-	newInstance *managementv1.DevsyWorkspaceInstance,
-) (*managementv1.DevsyWorkspaceInstance, error) {
-	// This ensures the template is kept up to date with configuration changes
-	if newInstance.Spec.TemplateRef != nil {
-		newInstance.Spec.TemplateRef.SyncOnce = true
-	}
-
-	return platform.UpdateInstance(ctx, client, oldInstance, newInstance)
 }
