@@ -33,16 +33,6 @@ type recordedWindowsCommand struct {
 	timeout time.Duration
 }
 
-func successResult(out string) CommandResult {
-	code := 0
-	return CommandResult{ExitCode: &code, Stdout: out}
-}
-
-func failureResult(out string) CommandResult {
-	code := 1
-	return CommandResult{ExitCode: &code, Stderr: out}
-}
-
 func (r *windowsFakeRunner) Run(_ context.Context, spec CommandSpec) CommandResult {
 	command := strings.Join(spec.Args, " ")
 	r.calls = append(
