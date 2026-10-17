@@ -181,7 +181,7 @@ func (cmd *ExecCmd) runWithWorkspace(ctx context.Context, args []string) error {
 	}
 
 	workspaceConfig := client.WorkspaceConfig()
-	runtime, err := workspace2.NewContainerRuntime(workspaceConfig, cmd.DockerPath)
+	runtime, err := workspace2.NewWorkspaceRuntime(devsyConfig, client, cmd.DockerPath)
 	if err != nil {
 		return err
 	}
@@ -206,11 +206,10 @@ func (cmd *ExecCmd) runWithWorkspace(ctx context.Context, args []string) error {
 	envMap := workspace2.BuildExecEnv(result, cmd.RemoteEnv, probedEnv)
 
 	return cmd.execAndReport(ctx, execOpts{
-		dockerCmd: runtime.Command(),
-		dockerEnv: runtime.Environment(),
-		target:    target,
-		workdir:   workdir,
-		envMap:    envMap,
+		runtime: runtime,
+		target:  target,
+		workdir: workdir,
+		envMap:  envMap,
 	}, args, devcconfig.ResultEnvelope{
 		ContainerID:           containerDetails.ID,
 		RemoteUser:            user,
@@ -277,11 +276,10 @@ func (cmd *ExecCmd) runWithContainerID(ctx context.Context, args []string) error
 	workdir := containerDetails.Config.WorkingDir
 
 	return cmd.execAndReport(ctx, execOpts{
-		dockerCmd: runtime.Command(),
-		dockerEnv: runtime.Environment(),
-		target:    target,
-		workdir:   workdir,
-		envMap:    envMap,
+		runtime: runtime,
+		target:  target,
+		workdir: workdir,
+		envMap:  envMap,
 	}, args, devcconfig.ResultEnvelope{
 		ContainerID:           containerDetails.ID,
 		RemoteWorkspaceFolder: workdir,
@@ -330,55 +328,23 @@ func resolveUserEnvProbe(result *devcconfig.Result, cliOverride string) string {
 }
 
 type execOpts struct {
-	dockerCmd string
-	dockerEnv []string
-	target    workspace2.ContainerTarget
-	workdir   string
-	envMap    map[string]string
+	runtime workspace2.ContainerRuntime
+	target  workspace2.ContainerTarget
+	workdir string
+	envMap  map[string]string
 }
 
 func (cmd *ExecCmd) execInContainer(ctx context.Context, opts execOpts, args []string) error {
-	execArgs := []string{"exec", "-i"}
-	if term.IsTerminal(int(os.Stdin.Fd())) { // #nosec G115 -- fd is always a valid file descriptor
-		execArgs = append(execArgs, "-t")
-	}
-	for k, v := range opts.envMap {
-		execArgs = append(execArgs, "-e", k+"="+v)
-	}
-	if opts.workdir != "" {
-		execArgs = append(execArgs, "--workdir", opts.workdir)
-	}
-	if opts.target.User != "" {
-		execArgs = append(execArgs, "--user", opts.target.User)
-	}
-	execArgs = append(execArgs, opts.target.ContainerID)
-	execArgs = append(execArgs, args...)
-
-	redacted := strings.Join(redactExecArgs(execArgs), " ")
-	log.Debugf("executing in container: %s %s", opts.dockerCmd, redacted)
-
-	helper := &docker.DockerHelper{DockerCommand: opts.dockerCmd, Environment: opts.dockerEnv}
-	return helper.Run(ctx, execArgs, docker.Streams{
-		Stdin:  os.Stdin,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
+	code, err := opts.runtime.Exec(ctx, workspace2.ExecRequest{
+		Target: opts.target, Workdir: opts.workdir, Env: opts.envMap, Argv: args,
+		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
+		TTY: term.IsTerminal(int(os.Stdin.Fd())), // #nosec G115 -- valid file descriptor
 	})
-}
-
-func redactExecArgs(args []string) []string {
-	redacted := make([]string, len(args))
-	for i := 0; i < len(args); i++ {
-		if args[i] == "-e" && i+1 < len(args) {
-			redacted[i] = args[i]
-			i++
-			if k, _, ok := strings.Cut(args[i], "="); ok {
-				redacted[i] = k + "=<redacted>"
-			} else {
-				redacted[i] = args[i]
-			}
-		} else {
-			redacted[i] = args[i]
-		}
+	if err != nil {
+		return err
 	}
-	return redacted
+	if code != 0 {
+		return &workspace2.CommandExitError{Code: code}
+	}
+	return nil
 }

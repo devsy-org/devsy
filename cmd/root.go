@@ -290,6 +290,12 @@ func passthroughExitCode(err error, machineMode bool) (int, bool) {
 		}
 		return execExitErr.ExitCode(), true
 	}
+	if commandExit, ok := errors.AsType[*workspace.CommandExitError](err); ok {
+		if machineMode {
+			renderCLIError(clierr.Classify(commandExit), true)
+		}
+		return commandExit.Code, true
+	}
 	return 0, false
 }
 

@@ -308,3 +308,10 @@ func TestConfigureOutput_DefaultMachineModeUsesJSONLogs(t *testing.T) {
 	var record map[string]any
 	require.NoError(t, json.Unmarshal([]byte(line), &record), "machine-mode default log: %q", line)
 }
+
+func TestExitCodeForErrorPreservesWorkspaceCommandExit(t *testing.T) {
+	for _, machine := range []bool{false, true} {
+		err := fmt.Errorf("execute workspace command: %w", &workspace.CommandExitError{Code: 17})
+		assert.Equal(t, 17, exitCodeForError(err, machine))
+	}
+}

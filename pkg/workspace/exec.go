@@ -216,6 +216,20 @@ type ContainerRuntime interface {
 	// ProbeEnv reads the container's environment via shell. Returns an empty
 	// map on any failure; probeMode comes from devcconfig.UserEnvProbe.
 	ProbeEnv(ctx context.Context, target ContainerTarget, probeMode string) map[string]string
+}
+
+// CommandExitError preserves a guest command's exit status at the CLI boundary.
+type CommandExitError struct {
+	Code int
+}
+
+func (e *CommandExitError) Error() string {
+	return fmt.Sprintf("workspace command failed with exit code %d", e.Code)
+}
+
+// CommandRuntime exposes the native CLI used by legacy raw-command callers.
+type CommandRuntime interface {
+	ContainerRuntime
 
 	// Command returns the container CLI binary to invoke for a raw
 	// (interactive) exec that bypasses the helper.
@@ -233,6 +247,8 @@ type ExecRequest struct {
 	Argv    []string
 	Stdout  io.Writer
 	Stderr  io.Writer
+	Stdin   io.Reader
+	TTY     bool
 }
 
 // ContainerTarget identifies a container and the user to exec as.
@@ -326,6 +342,9 @@ type containerRunFunc func(
 // a non-zero process exit into a returned exit code rather than an error.
 func execWithRunner(ctx context.Context, req ExecRequest, run containerRunFunc) (int, error) {
 	execArgs := []string{"exec", "-i"}
+	if req.TTY {
+		execArgs = append(execArgs, "-t")
+	}
 	for k, v := range req.Env {
 		execArgs = append(execArgs, "-e", k+"="+v)
 	}
@@ -347,7 +366,7 @@ func execWithRunner(ctx context.Context, req ExecRequest, run containerRunFunc) 
 		stderr = io.Discard
 	}
 
-	err := run(ctx, execArgs, nil, stdout, stderr)
+	err := run(ctx, execArgs, req.Stdin, stdout, stderr)
 	if err == nil {
 		return 0, nil
 	}
@@ -366,6 +385,14 @@ func probeEnvWithRunner(
 	probe string,
 	run containerRunFunc,
 ) map[string]string {
+	return probeEnvWithCommand(ctx, probe, func(flag, command string, stdout io.Writer) error {
+		return run(ctx, buildProbeArgs(target, flag, command), nil, stdout, io.Discard)
+	})
+}
+
+type probeCommand func(flag, command string, stdout io.Writer) error
+
+func probeEnvWithCommand(ctx context.Context, probe string, run probeCommand) map[string]string {
 	userEnvProbe, err := devcconfig.NewUserEnvProbe(probe)
 	if err != nil {
 		log.Warnf("Invalid userEnvProbe %q, using default: %v", probe, err)
@@ -374,34 +401,21 @@ func probeEnvWithRunner(
 	if userEnvProbe == devcconfig.NoneProbe {
 		return map[string]string{}
 	}
-
 	shellFlag := probeShellFlag(userEnvProbe)
-	out, sep, probeErr := runProbeCommand(ctx, target, shellFlag, run)
-	if probeErr != nil {
-		log.Warnf("Failed to probe user env: %v", probeErr)
-		return map[string]string{}
-	}
-	return parseEnvOutput(out, sep)
-}
-
-func runProbeCommand(
-	ctx context.Context,
-	target ContainerTarget,
-	shellFlag string,
-	run containerRunFunc,
-) ([]byte, byte, error) {
-	args := buildProbeArgs(target, shellFlag, "cat /proc/self/environ")
 	var stdout bytes.Buffer
-	if err := run(ctx, args, nil, &stdout, io.Discard); err == nil {
-		return stdout.Bytes(), 0, nil
+	sep := byte(0)
+	if err := run(shellFlag, "cat /proc/self/environ", &stdout); err != nil {
+		if ctx.Err() != nil {
+			return map[string]string{}
+		}
+		stdout.Reset()
+		if err := run(shellFlag, "printenv", &stdout); err != nil {
+			log.Warnf("Failed to probe user env: %v", err)
+			return map[string]string{}
+		}
+		sep = '\n'
 	}
-
-	args = buildProbeArgs(target, shellFlag, "printenv")
-	stdout.Reset()
-	if err := run(ctx, args, nil, &stdout, io.Discard); err != nil {
-		return nil, 0, fmt.Errorf("probe user env: %w", err)
-	}
-	return stdout.Bytes(), '\n', nil
+	return parseEnvOutput(stdout.Bytes(), sep)
 }
 
 // ExecOneShotOptions configures a single non-interactive exec inside a
@@ -541,7 +555,7 @@ func resolveExecTarget(ctx context.Context, opts ExecOneShotOptions) (resolvedEx
 	unlock := client.Unlock
 
 	workspaceConfig := client.WorkspaceConfig()
-	runtime, err := NewContainerRuntime(workspaceConfig, "")
+	runtime, err := NewWorkspaceRuntime(devsyConfig, client, "")
 	if err != nil {
 		unlock()
 		return resolvedExecTarget{}, err
