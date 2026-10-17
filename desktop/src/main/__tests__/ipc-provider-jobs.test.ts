@@ -121,6 +121,40 @@ describe("provider job lifecycle over IPC", () => {
     vi.clearAllMocks()
   })
 
+  it("loads the install catalog through the existing CLI discovery command", async () => {
+    const { cli } = setup()
+    cli.run.mockResolvedValueOnce(["terraform", "civo"])
+    await expect(invoke("provider_available", {})).resolves.toEqual([
+      "terraform",
+      "civo",
+    ])
+    expect(cli.run).toHaveBeenCalledExactlyOnceWith([
+      "provider",
+      "list",
+      "--available",
+    ])
+    expect(cli.runRaw).not.toHaveBeenCalled()
+  })
+
+  it.each([{}, ["docker", null], [""]])(
+    "rejects malformed provider catalog data %j",
+    async (result) => {
+      const { cli } = setup()
+      cli.run.mockResolvedValueOnce(result)
+      await expect(invoke("provider_available", {})).rejects.toThrow(
+        "Provider catalog returned invalid data.",
+      )
+    },
+  )
+
+  it("keeps a catalog transfer failure visible to the caller", async () => {
+    const { cli } = setup()
+    cli.run.mockRejectedValueOnce(new Error("catalog unavailable"))
+    await expect(invoke("provider_available", {})).rejects.toThrow(
+      "catalog unavailable",
+    )
+  })
+
   it("forwards managed secret attachment intent to the CLI", async () => {
     const { cli } = setup()
     await invoke("secret_attach", { name: "DB_PASSWORD", context: "staging" })

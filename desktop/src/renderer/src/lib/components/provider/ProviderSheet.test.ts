@@ -7,6 +7,7 @@ import type {
   CommandProgress,
   Provider,
   ProviderJob,
+  ProviderOption,
 } from "$lib/types/index.js"
 
 type ProviderVersionsState =
@@ -181,6 +182,94 @@ describe("ProviderSheet", () => {
 
     expect(providerOptions).toHaveBeenCalledTimes(1)
     expect(providerOptions).toHaveBeenCalledWith("ssh")
+    unmount()
+  })
+
+  it("uses manifest groups and keeps searched edits without exposing hidden fields", async () => {
+    providerOptions.mockResolvedValue({
+      HOST: {
+        name: "HOST",
+        displayName: "Host",
+        description: "Endpoint address",
+        default: "local",
+      },
+      SIZE: { name: "SIZE", displayName: "Disk size", default: "30" },
+      INTERNAL: { name: "INTERNAL", hidden: true, default: "private" },
+    })
+    const { unmount } = render(ProviderSheet, {
+      props: {
+        provider: makeProvider("ssh", {
+          optionGroups: [{ name: "Connection", options: ["HOST"] }],
+        }),
+        open: true,
+      },
+    })
+    await flushAsync()
+    expect(screen.getByRole("heading", { name: "Connection" })).toBeDefined()
+    expect(screen.queryByLabelText("INTERNAL")).toBeNull()
+    await fireEvent.input(screen.getByLabelText("Host"), {
+      target: { value: "new-host" },
+    })
+    await fireEvent.input(screen.getByLabelText("Search provider options"), {
+      target: { value: "disk" },
+    })
+    expect(screen.queryByLabelText("Host")).toBeNull()
+    expect(screen.getByLabelText("Disk size")).toBeDefined()
+    await fireEvent.input(screen.getByLabelText("Search provider options"), {
+      target: { value: "" },
+    })
+    expect((screen.getByLabelText("Host") as HTMLInputElement).value).toBe(
+      "new-host",
+    )
+    await fireEvent.click(screen.getByRole("button", { name: /^Save$/ }))
+    await waitFor(() =>
+      expect(providerSetOptions).toHaveBeenCalledWith("ssh", {
+        HOST: "new-host",
+        SIZE: "30",
+        INTERNAL: "private",
+      }),
+    )
+    unmount()
+  })
+
+  it("shows an options load failure with a retry instead of an empty configuration", async () => {
+    providerOptions.mockRejectedValueOnce(new Error("connection unavailable"))
+    const { unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+    expect(
+      screen.getByText(/Failed to load options: connection unavailable/),
+    ).toBeDefined()
+    expect(screen.queryByText("No configurable options available.")).toBeNull()
+    await fireEvent.click(screen.getByRole("button", { name: "Retry options" }))
+    expect(await screen.findByLabelText("Token")).toBeDefined()
+    expect(providerOptions).toHaveBeenCalledTimes(2)
+    unmount()
+  })
+
+  it("does not apply a previous provider's late option response", async () => {
+    let resolveOld:
+      | ((options: Record<string, ProviderOption>) => void)
+      | undefined
+    providerOptions.mockImplementationOnce(
+      () =>
+        new Promise<Record<string, ProviderOption>>((resolve) => {
+          resolveOld = resolve
+        }),
+    )
+    const { rerender, unmount } = render(ProviderSheet, {
+      props: { provider: makeProvider("ssh"), open: true },
+    })
+    await flushAsync()
+    await rerender({ provider: makeProvider("docker"), open: true })
+    await flushAsync()
+    expect(screen.getByText("token for docker")).toBeDefined()
+    if (!resolveOld) throw new Error("Old request was not started")
+    resolveOld({ OLD: { name: "OLD", displayName: "Old provider setting" } })
+    await flushAsync()
+    expect(screen.queryByLabelText("Old provider setting")).toBeNull()
+    expect(screen.getByText("token for docker")).toBeDefined()
     unmount()
   })
 

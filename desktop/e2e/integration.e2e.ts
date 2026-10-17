@@ -95,7 +95,15 @@ test.describe
 
       await wizard.getByRole("button", { name: /^Continue$/ }).click()
 
-      // The mock provider has no required options, so the wizard advances to Complete.
+      await expect(
+        wizard.getByRole("heading", { name: "Configure docker" }),
+      ).toBeVisible()
+      await expect(wizard.getByLabel("Docker Host")).toHaveValue(
+        "unix:///var/run/docker.sock",
+      )
+      await expect(wizard.getByLabel("Disk Size")).toHaveValue("30")
+      await wizard.getByRole("button", { name: /^Continue$/ }).click()
+
       await wizard
         .getByRole("button", { name: "Done" })
         .waitFor({ timeout: 15000 })
@@ -163,6 +171,14 @@ test.describe
         .filter({ hasText: "Local Docker containers" })
         .click()
 
+      await wizard.getByRole("button", { name: /^Continue$/ }).click()
+      await expect(
+        wizard.getByRole("heading", { name: "Configure docker" }),
+      ).toBeVisible()
+      await expect(wizard.getByLabel("Docker Host")).toHaveValue(
+        "unix:///var/run/docker.sock",
+      )
+      await expect(wizard.getByLabel("Disk Size")).toHaveValue("30")
       await wizard.getByRole("button", { name: /^Continue$/ }).click()
 
       await wizard

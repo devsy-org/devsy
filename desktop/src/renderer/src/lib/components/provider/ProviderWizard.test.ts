@@ -12,6 +12,7 @@ import type { Provider } from "$lib/types/index.js"
 
 const {
   providerAdd,
+  providerAvailable,
   providerInitStreaming,
   providerList,
   providerOptions,
@@ -20,6 +21,7 @@ const {
   onCommandProgress,
 } = vi.hoisted(() => ({
   providerAdd: vi.fn(),
+  providerAvailable: vi.fn(),
   providerInitStreaming: vi.fn(),
   providerList: vi.fn(),
   providerOptions: vi.fn(),
@@ -30,6 +32,7 @@ const {
 
 vi.mock("$lib/ipc/commands.js", () => ({
   providerAdd,
+  providerAvailable,
   providerInitStreaming,
   providerList,
   providerOptions,
@@ -63,6 +66,7 @@ describe("ProviderWizard", () => {
     vi.clearAllMocks()
     providers.set([])
     providerAdd.mockResolvedValue(undefined)
+    providerAvailable.mockResolvedValue([])
     providerInitStreaming.mockResolvedValue("init-command")
     providerOptions.mockResolvedValue({})
     providerList.mockResolvedValue([])
@@ -73,11 +77,19 @@ describe("ProviderWizard", () => {
 
   it("adds a fresh Microsandbox preset with the latest source and keeps it selected", async () => {
     const page = renderWizard()
+    const steps = screen.getByRole("list", { name: "Provider setup steps" })
+    expect(
+      screen.getByRole("progressbar", { name: "Provider setup progress" }),
+    ).toBeDefined()
+    expect(steps.querySelector('[aria-current="step"]')?.textContent).toContain(
+      "Select",
+    )
     const preset = screen.getByRole("button", {
       name: /microsandbox Hardware-isolated microVMs/,
     })
 
     await fireEvent.click(preset)
+    expect(preset.getAttribute("aria-pressed")).toBe("true")
     expect(preset.className).toContain("ring-primary")
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
@@ -88,6 +100,218 @@ describe("ProviderWizard", () => {
         false,
       )
     })
+    page.unmount()
+  })
+
+  it("shows discovered catalog providers without replacing the preset list", async () => {
+    providerAvailable.mockResolvedValue([
+      "docker",
+      "terraform",
+      "terraform",
+      " ",
+      "civo",
+    ])
+    const page = renderWizard()
+    const terraform = await screen.findByRole("button", { name: /terraform/ })
+    expect(terraform.getAttribute("aria-pressed")).toBe("false")
+    expect(screen.getAllByRole("button", { name: /terraform/ })).toHaveLength(1)
+    expect(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    ).toBeDefined()
+
+    await fireEvent.click(terraform)
+    expect(terraform.getAttribute("aria-pressed")).toBe("true")
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "terraform",
+        undefined,
+        false,
+      )
+    })
+    page.unmount()
+  })
+
+  it("keeps custom sources usable when provider discovery fails and can retry", async () => {
+    providerAvailable
+      .mockRejectedValueOnce(new Error("catalog unavailable"))
+      .mockResolvedValueOnce(["terraform"])
+    const page = renderWizard()
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "catalog unavailable",
+    )
+    const sourceInput = screen.getByLabelText("Provider source")
+    expect((sourceInput as HTMLInputElement).disabled).toBe(false)
+    await fireEvent.input(sourceInput, { target: { value: "my-org/provider" } })
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Retry provider list" }),
+    )
+
+    expect(
+      await screen.findByRole("button", { name: /terraform/ }),
+    ).toBeDefined()
+    expect(
+      (screen.getByLabelText("Provider source") as HTMLInputElement).value,
+    ).toBe("my-org/provider")
+    expect(providerAdd).not.toHaveBeenCalled()
+    page.unmount()
+  })
+
+  it("lets users review optional defaults before initialization", async () => {
+    providerOptions.mockResolvedValue({
+      REGION: { name: "REGION", default: "us-west-2" },
+    })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /aws Amazon Web Services/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByRole("heading", { name: "Configure aws" }),
+    ).toBeDefined()
+    expect(screen.getByLabelText("REGION").getAttribute("placeholder")).toBe(
+      "us-west-2",
+    )
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => {
+      expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith("aws", {
+        REGION: "us-west-2",
+      })
+      expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("aws")
+    })
+    page.unmount()
+  })
+
+  it("retries loading options without adding the provider a second time", async () => {
+    providerOptions
+      .mockRejectedValueOnce(new Error("temporary read failure"))
+      .mockResolvedValueOnce({ REGION: { name: "REGION", default: "local" } })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByRole("heading", { name: "Configure docker" }),
+    ).toBeDefined()
+    expect(
+      await screen.findByText(/Failed to load options: temporary read failure/),
+    ).toBeDefined()
+    expect(
+      screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled"),
+    ).toBe(true)
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Retry loading options" }),
+    )
+
+    expect(await screen.findByRole("textbox", { name: "REGION" })).toBeDefined()
+    expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+      "docker",
+      undefined,
+      false,
+    )
+    expect(providerOptions).toHaveBeenCalledTimes(2)
+    page.unmount()
+  })
+
+  it("continues initialization after a retry loads no visible options", async () => {
+    providerOptions
+      .mockRejectedValueOnce(new Error("temporary read failure"))
+      .mockResolvedValueOnce({})
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByRole("heading", { name: "Configure docker" }),
+    ).toBeDefined()
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Retry loading options" }),
+    )
+    const continueButton = await screen.findByRole("button", {
+      name: "Continue",
+    })
+    expect(continueButton.hasAttribute("disabled")).toBe(false)
+
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(
+      await screen.findByRole("heading", { name: "Initializing docker" }),
+    ).toBeDefined()
+    expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+      "docker",
+      undefined,
+      false,
+    )
+    expect(providerOptions).toHaveBeenCalledTimes(2)
+    expect(providerSetOptions).not.toHaveBeenCalled()
+    expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker")
+    page.unmount()
+  })
+
+  it("keeps a failed init-start retryable and only reports ready after success", async () => {
+    let progressCallback:
+      | ((progress: {
+          commandId: string
+          done: boolean
+          success?: boolean
+        }) => void)
+      | undefined
+    onCommandProgress.mockImplementation(async (callback) => {
+      progressCallback = callback
+      return () => undefined
+    })
+    providerInitStreaming
+      .mockRejectedValueOnce(new Error("worker unavailable"))
+      .mockResolvedValueOnce("init-command")
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+
+    expect(
+      await screen.findByRole("heading", { name: "Initializing docker" }),
+    ).toBeDefined()
+    expect(
+      await screen.findByText(
+        /Failed to start initialization: worker unavailable/,
+      ),
+    ).toBeDefined()
+    expect(screen.queryByText(/is ready to use/)).toBeNull()
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    expect(providerInitStreaming).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText(/is ready to use/)).toBeNull()
+
+    progressCallback?.({ commandId: "init-command", done: true, success: true })
+    expect(await screen.findByText("docker is ready to use.")).toBeDefined()
+    page.unmount()
+  })
+
+  it("labels a skipped init as installed but not initialized", async () => {
+    providerInitStreaming.mockRejectedValueOnce(new Error("worker unavailable"))
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await screen.findByText(
+      /Failed to start initialization: worker unavailable/,
+    )
+    await fireEvent.click(
+      screen.getByRole("button", { name: "Skip initialization" }),
+    )
+
+    expect(
+      await screen.findByText(/was added but is not initialized yet/),
+    ).toBeDefined()
+    expect(screen.queryByText(/is ready to use/)).toBeNull()
+    expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
     page.unmount()
   })
 
@@ -292,10 +516,21 @@ describe("ProviderWizard", () => {
     )
     await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
 
+    expect(
+      await screen.findByText(
+        "Enter an installation name for this custom source.",
+      ),
+    ).toBeDefined()
+    expect(providerAdd).not.toHaveBeenCalled()
+    await fireEvent.input(
+      screen.getByPlaceholderText("Defaults to source name"),
+      { target: { value: "custom-provider" } },
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     await waitFor(() => {
       expect(providerAdd).toHaveBeenCalledExactlyOnceWith(
+        "custom-provider",
         "https://example.test/provider.yaml",
-        undefined,
         false,
       )
     })

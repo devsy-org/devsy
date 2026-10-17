@@ -1443,6 +1443,17 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     },
   )
 
+  ipcMain.handle("provider_available", async () => {
+    const names = await cli.run<unknown>(["provider", "list", "--available"])
+    if (
+      !Array.isArray(names) ||
+      names.some((name) => typeof name !== "string" || !name.trim())
+    ) {
+      throw new Error("Provider catalog returned invalid data.")
+    }
+    return names
+  })
+
   ipcMain.handle("provider_options", async (_event, args: { name: string }) => {
     return cli.run(["provider", "get", args.name])
   })
