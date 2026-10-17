@@ -93,6 +93,7 @@ let targetTag = $state("")
 let switching = $state(false)
 let singleMachineOverride = $state<boolean | undefined>(undefined)
 let singleMachineOverrideProviderName = $state<string | null>(null)
+let togglingSingleMachine = $state(false)
 let effectiveSingleMachine = $derived(
   singleMachineOverrideProviderName === provider.name &&
     singleMachineOverride !== undefined
@@ -273,7 +274,8 @@ $effect(() => {
   if (
     singleMachineOverride !== undefined &&
     (singleMachineOverrideProviderName !== provider.name ||
-      provider.state?.singleMachine === singleMachineOverride)
+      (!togglingSingleMachine &&
+        provider.state?.singleMachine === singleMachineOverride))
   ) {
     singleMachineOverride = undefined
     singleMachineOverrideProviderName = null
@@ -302,8 +304,6 @@ async function handleSetDefault() {
     toasts.error(`Failed to set default: ${extractErrorMessage(err)}`)
   }
 }
-
-let togglingSingleMachine = $state(false)
 
 async function handleToggleSingleMachine(enabled: boolean) {
   if (saving || togglingSingleMachine) return

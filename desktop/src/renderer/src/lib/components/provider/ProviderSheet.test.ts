@@ -477,6 +477,71 @@ describe("ProviderSheet", () => {
     unmount()
   })
 
+  it.each([
+    { confirmed: true, changedTo: false, reverseTo: true },
+    { confirmed: false, changedTo: true, reverseTo: false },
+  ])(
+    "restores the last confirmed mode when a reverse toggle fails with stale provider state ($confirmed -> $changedTo -> $reverseTo)",
+    async ({ confirmed, changedTo, reverseTo }) => {
+      providerSetSingleMachine.mockResolvedValueOnce(undefined)
+      providerList.mockRejectedValueOnce(new Error("list unavailable"))
+      const failedReverse = deferred<void>()
+      providerSetSingleMachine.mockReturnValueOnce(failedReverse.promise)
+      providerOptions.mockResolvedValue({
+        HOST: { name: "HOST", default: "localhost" },
+      })
+      const { unmount } = render(ProviderSheet, {
+        props: {
+          provider: makeProvider("ssh", {
+            state: { initialized: true, singleMachine: confirmed },
+          }),
+          open: true,
+        },
+      })
+      await flushAsync()
+
+      const reuseSwitch = screen.getByRole("switch", { name: /Reuse machine/ })
+      await fireEvent.click(reuseSwitch)
+      await waitFor(() => {
+        expect(providerSetSingleMachine).toHaveBeenNthCalledWith(
+          1,
+          "ssh",
+          changedTo,
+        )
+        expect(reuseSwitch.getAttribute("aria-checked")).toBe(String(changedTo))
+        expect(reuseSwitch.hasAttribute("disabled")).toBe(false)
+      })
+
+      await fireEvent.click(reuseSwitch)
+      await waitFor(() => {
+        expect(providerSetSingleMachine).toHaveBeenNthCalledWith(
+          2,
+          "ssh",
+          reverseTo,
+        )
+        expect(reuseSwitch.getAttribute("aria-checked")).toBe(String(reverseTo))
+      })
+      failedReverse.reject(new Error("reverse update failed"))
+      await waitFor(() => {
+        expect(reuseSwitch.hasAttribute("disabled")).toBe(false)
+        expect(reuseSwitch.getAttribute("aria-checked")).toBe(String(changedTo))
+      })
+
+      await fireEvent.input(screen.getByLabelText("HOST"), {
+        target: { value: "remote.example" },
+      })
+      await fireEvent.click(screen.getByRole("button", { name: "Save" }))
+      await waitFor(() =>
+        expect(providerSetOptions).toHaveBeenCalledExactlyOnceWith(
+          "ssh",
+          { HOST: "remote.example" },
+          changedTo,
+        ),
+      )
+      unmount()
+    },
+  )
+
   it("restores the prior mode when the machine update itself fails", async () => {
     providerSetSingleMachine.mockRejectedValueOnce(new Error("update failed"))
     providerOptions.mockResolvedValue({
