@@ -73,3 +73,26 @@ Ginkgo executes the specs directly. `devsy-ci check-report` checks its JSON
 report: all six BuildKit specs must pass on their first attempt, with no
 selected skips, dry run or programmatic focus. Teardown runs on success and
 failure, before the report and non-secret diagnostics are uploaded.
+
+## Label coverage guard
+
+`devsy-ci check-labels` requires every `It` spec in the e2e suite to match at least one
+CI label filter, and every filter to select at least one spec. Filters come from the
+`matrix.label` rows and the literal `--ginkgo.label-filter=` values in
+`.github/workflows/pr-ci.yml` and `.github/workflows/docker-buildkit-windows.yml`.
+Expressions such as `${{ matrix.label }}` are skipped. Filters are evaluated with
+Ginkgo's own parser.
+
+Run it from the repository root:
+
+```bash
+go run ./e2e/cmd/devsy-ci check-labels
+```
+
+The command builds the e2e test binary and lists its specs with `-ginkgo.dry-run`. Pass
+`--report <path>` to check an existing Ginkgo JSON report instead.
+
+Spec sets depend on the host OS, because build-tagged files such as `*_linux.go` are
+excluded elsewhere. Run the check on Linux to match the `unit-tests` CI job, which
+gates the step on `runner.os == 'Linux'`. On macOS, Linux-only labels report as
+selecting zero specs.

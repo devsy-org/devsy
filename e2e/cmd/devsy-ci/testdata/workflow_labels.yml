@@ -1,0 +1,26 @@
+name: fixture
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+  e2e:
+    strategy:
+      matrix:
+        include:
+          - label: up-alpha
+          - label: "up-beta"
+    steps:
+      - name: quoted expression
+        run: go test ./e2e -- --ginkgo.label-filter="up-gamma && !slow"
+      - name: single quoted
+        run: go test ./e2e -- --ginkgo.label-filter='up-delta'
+      - name: bare
+        run: go test ./e2e -- --ginkgo.label-filter=up-eps
+      - name: matrix expression
+        run: go test ./e2e -- --ginkgo.label-filter="${{ matrix.label }}"
+  windows:
+    steps:
+      - name: powershell
+        run: go test ./e2e -- -ginkgo.label-filter=up-zeta
