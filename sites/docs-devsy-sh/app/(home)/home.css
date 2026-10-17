@@ -387,6 +387,9 @@ html:has(.home-page) {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin: 0;
+  font-weight: 600;
+  color: var(--ink);
 }
 .home-page .compatibility-app > span {
   display: inline-flex;
@@ -863,11 +866,6 @@ html:has(.home-page) {
   }
 }
 
-.home-page .compatibility-app {
-  margin: 0;
-  font-weight: 600;
-  color: var(--ink);
-}
 .home-page .compatibility-editors ul {
   display: flex;
   flex-wrap: wrap;
