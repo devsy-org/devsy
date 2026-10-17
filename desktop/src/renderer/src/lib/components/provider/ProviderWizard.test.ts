@@ -8,7 +8,7 @@ import {
 import { get } from "svelte/store"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { providers } from "$lib/stores/providers.js"
-import type { Provider } from "$lib/types/index.js"
+import type { Provider, ProviderOption } from "$lib/types/index.js"
 
 const {
   providerAdd,
@@ -57,6 +57,16 @@ function makeProvider(name: string): Provider {
 
 function renderWizard() {
   return render(ProviderWizard, { open: true })
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
 }
 
 describe("ProviderWizard", () => {
@@ -760,5 +770,175 @@ describe("ProviderWizard", () => {
     expect(providerAdd).not.toHaveBeenCalled()
     expect(get(providers)).toEqual([existing])
     page.unmount()
+  })
+
+  it("releases an installed provider when the wizard is unmounted during configuration", async () => {
+    providerOptions.mockResolvedValue({ TOKEN: { name: "TOKEN" } })
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await screen.findByRole("heading", { name: "Configure docker" })
+
+    page.unmount()
+
+    expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+  })
+
+  it("releases a provider added after unmount without continuing setup", async () => {
+    const add = deferred<void>()
+    providerAdd.mockReturnValueOnce(add.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(providerAdd).toHaveBeenCalledOnce())
+
+    page.unmount()
+    add.resolve()
+
+    await waitFor(() => {
+      expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    })
+    expect(providerOptions).not.toHaveBeenCalled()
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+  })
+
+  it("does not release a provider when an abandoned add fails", async () => {
+    const add = deferred<void>()
+    providerAdd.mockReturnValueOnce(add.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(providerAdd).toHaveBeenCalledOnce())
+
+    page.unmount()
+    add.reject(new Error("add failed"))
+    await add.promise.catch(() => undefined)
+    await Promise.resolve()
+
+    expect(providerReleaseJob).not.toHaveBeenCalled()
+    expect(providerOptions).not.toHaveBeenCalled()
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+  })
+
+  it("does not let abandoned option loading initialize a reopened wizard", async () => {
+    const options = deferred<Record<string, ProviderOption>>()
+    providerOptions.mockReturnValueOnce(options.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(providerOptions).toHaveBeenCalledOnce())
+
+    await page.rerender({ open: false })
+    await page.rerender({ open: true })
+    options.resolve({})
+
+    await screen.findByRole("heading", { name: "Select a Provider" })
+    expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+    expect(providerSetOptions).not.toHaveBeenCalled()
+    page.unmount()
+  })
+
+  it("releases the installed provider when option loading is pending at unmount", async () => {
+    const options = deferred<Record<string, ProviderOption>>()
+    providerOptions.mockReturnValueOnce(options.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(providerOptions).toHaveBeenCalledOnce())
+
+    page.unmount()
+    options.resolve({})
+    await Promise.resolve()
+
+    expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+  })
+
+  it("does not initialize when an option save resolves after unmount", async () => {
+    const save = deferred<void>()
+    providerOptions.mockResolvedValue({ TOKEN: { name: "TOKEN" } })
+    providerSetOptions.mockReturnValueOnce(save.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await fireEvent.input(
+      await screen.findByRole("textbox", { name: "TOKEN" }),
+      {
+        target: { value: "secret" },
+      },
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(providerSetOptions).toHaveBeenCalledOnce())
+
+    page.unmount()
+    save.resolve()
+
+    expect(providerReleaseJob).toHaveBeenCalledExactlyOnceWith("docker")
+    await Promise.resolve()
+    expect(providerInitStreaming).not.toHaveBeenCalled()
+  })
+
+  it("keeps the job owned by the main process across close and unmount during init", async () => {
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() =>
+      expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker"),
+    )
+
+    await page.rerender({ open: false })
+    expect(providerReleaseJob).not.toHaveBeenCalled()
+
+    page.unmount()
+    expect(providerReleaseJob).not.toHaveBeenCalled()
+  })
+
+  it("keeps a pending init owned until the main command resolves", async () => {
+    const initialization = deferred<string>()
+    providerInitStreaming.mockReturnValueOnce(initialization.promise)
+    const page = renderWizard()
+    await fireEvent.click(
+      screen.getByRole("button", { name: /docker Local Docker/ }),
+    )
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() =>
+      expect(providerInitStreaming).toHaveBeenCalledExactlyOnceWith("docker"),
+    )
+
+    page.unmount()
+    expect(providerReleaseJob).not.toHaveBeenCalled()
+    initialization.resolve("init-command")
+    await Promise.resolve()
+
+    expect(providerReleaseJob).not.toHaveBeenCalled()
+    expect(providerList).not.toHaveBeenCalled()
+  })
+
+  it("unlistens if progress-listener registration finishes after unmount", async () => {
+    const registration = deferred<() => void>()
+    const stopListening = vi.fn()
+    onCommandProgress.mockReturnValueOnce(registration.promise)
+    const page = renderWizard()
+
+    page.unmount()
+    registration.resolve(stopListening)
+
+    await waitFor(() => expect(stopListening).toHaveBeenCalledOnce())
   })
 })

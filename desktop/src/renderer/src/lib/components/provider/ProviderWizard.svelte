@@ -84,6 +84,23 @@ const PRESETS: ProviderPreset[] = [
 
 type Step = "select" | "configure" | "initialize" | "complete"
 type StepState = "pending" | "active" | "complete" | "error"
+type SetupSession = {
+  providerName: string
+  installed: boolean
+  initStarted: boolean
+  releaseAttempted: boolean
+  commandId: string | null
+}
+
+function newSetupSession(): SetupSession {
+  return {
+    providerName: "",
+    installed: false,
+    initStarted: false,
+    releaseAttempted: false,
+    commandId: null,
+  }
+}
 
 const STEPS: { id: Step; label: string }[] = [
   { id: "select", label: "Select" },
@@ -126,7 +143,6 @@ let optionsLoaded = $state(false)
 let saving = $state(false)
 
 // Step 3 state
-let initCommandId = $state<string | null>(null)
 let initLines = $state<string[]>([])
 let initRunning = $state(false)
 let initError = $state<CLIError | null>(null)
@@ -136,6 +152,27 @@ let initSucceeded = $state(false)
 // Event listener cleanup
 let unlisten: UnlistenFn | null = null
 let mounted = false
+let activeSession = newSetupSession()
+
+function isCurrentSession(session: SetupSession): boolean {
+  return mounted && open && activeSession === session
+}
+
+function releaseProviderJob(
+  session: SetupSession,
+  allowAfterInit = false,
+): Promise<void> {
+  if (
+    !session.providerName ||
+    !session.installed ||
+    session.releaseAttempted ||
+    (session.initStarted && !allowAfterInit)
+  ) {
+    return Promise.resolve()
+  }
+  session.releaseAttempted = true
+  return providerReleaseJob(session.providerName).catch(() => undefined)
+}
 
 let additionalProviders = $derived.by(() => {
   const presetNames = new Set(PRESETS.map((preset) => preset.name))
@@ -185,9 +222,11 @@ let visibleOptions = $derived(
 )
 
 function reset() {
-  if (providerName && currentStep !== "complete" && !initRunning) {
-    void providerReleaseJob(providerName).catch(() => undefined)
+  const previousSession = activeSession
+  if (currentStep !== "complete") {
+    releaseProviderJob(previousSession)
   }
+  activeSession = newSetupSession()
   currentStep = "select"
   error = ""
   source = ""
@@ -201,7 +240,6 @@ function reset() {
   editedOptionKeys = {}
   loadingOptions = false
   saving = false
-  initCommandId = null
   initLines = []
   initRunning = false
   initError = null
@@ -223,8 +261,13 @@ $effect(() => {
 onMount(async () => {
   mounted = true
   void loadAvailableProviders()
-  unlisten = await onCommandProgress((progress) => {
-    if (initCommandId && progress.commandId === initCommandId) {
+  const stopListening = await onCommandProgress((progress) => {
+    if (
+      mounted &&
+      isCurrentSession(activeSession) &&
+      activeSession.commandId &&
+      progress.commandId === activeSession.commandId
+    ) {
       if (progress.message) {
         initLines = [...initLines, progress.message]
       }
@@ -232,7 +275,7 @@ onMount(async () => {
         initRunning = false
         if (isCommandSuccess(progress.success)) {
           initSucceeded = true
-          refreshAndComplete()
+          void refreshAndComplete(activeSession)
         } else {
           initError = progress.cliError ?? {
             code: "UNKNOWN",
@@ -242,10 +285,13 @@ onMount(async () => {
       }
     }
   })
+  if (mounted) unlisten = stopListening
+  else stopListening()
 })
 
 onDestroy(() => {
   mounted = false
+  releaseProviderJob(activeSession)
   unlisten?.()
 })
 
@@ -269,6 +315,7 @@ function nameExists(name: string): boolean {
 }
 
 async function handleSelect() {
+  const operationSession = activeSession
   const src = source.trim()
   if (!src) {
     error = "Provider source is required"
@@ -290,8 +337,15 @@ async function handleSelect() {
   adding = true
   try {
     await providerAdd(name, providerSource, singleMachine)
+    operationSession.providerName = name
+    operationSession.installed = true
+    if (!isCurrentSession(operationSession)) {
+      releaseProviderJob(operationSession)
+      return
+    }
     providerName = name
   } catch (err) {
+    if (!isCurrentSession(operationSession)) return
     const msg = extractErrorMessage(err)
     if (msg.includes("already exists")) {
       error = `Provider "${name}" already exists. Choose a different name.`
@@ -302,20 +356,24 @@ async function handleSelect() {
     return
   }
 
-  const loaded = await loadProviderOptions()
+  const loaded = await loadProviderOptions(operationSession)
+  if (!isCurrentSession(operationSession)) return
   adding = false
   currentStep = "configure"
   if (!loaded) return
   if (visibleOptions.length === 0) {
     currentStep = "initialize"
-    startInit()
+    void startInit(operationSession)
   }
 }
 
-async function loadProviderOptions(): Promise<boolean> {
+async function loadProviderOptions(
+  operationSession = activeSession,
+): Promise<boolean> {
   loadingOptions = true
   try {
     const raw = await providerOptions(providerName)
+    if (!isCurrentSession(operationSession)) return false
     options = raw as unknown as Record<string, ProviderOption>
     optionsLoaded = true
     const values: Record<string, string> = {}
@@ -327,25 +385,28 @@ async function loadProviderOptions(): Promise<boolean> {
     editedOptionKeys = {}
     return true
   } catch (err) {
+    if (!isCurrentSession(operationSession)) return false
     optionsLoaded = false
     error = `Failed to load options: ${extractErrorMessage(err)}`
     return false
   } finally {
-    loadingOptions = false
+    if (isCurrentSession(operationSession)) loadingOptions = false
   }
 }
 
 async function retryLoadProviderOptions() {
+  const operationSession = activeSession
   error = ""
-  await loadProviderOptions()
+  await loadProviderOptions(operationSession)
 }
 
 async function handleConfigure() {
+  const operationSession = activeSession
   if (!optionsLoaded) return
   if (visibleOptions.length === 0) {
     error = ""
     currentStep = "initialize"
-    startInit()
+    void startInit(operationSession)
     return
   }
   if (hasUnfilledRequired) {
@@ -369,36 +430,51 @@ async function handleConfigure() {
       await providerSetOptions(providerName, values, singleMachine)
     }
   } catch (err) {
+    if (!isCurrentSession(operationSession)) return
     error = `Failed to save options: ${extractErrorMessage(err)}`
     saving = false
     return
   }
+  if (!isCurrentSession(operationSession)) return
   saving = false
   currentStep = "initialize"
-  startInit()
+  void startInit(operationSession)
 }
 
-async function startInit() {
+async function startInit(operationSession = activeSession) {
+  if (!isCurrentSession(operationSession)) return
   initRunning = true
+  operationSession.initStarted = true
   initError = null
   initStartError = ""
   initSucceeded = false
   initLines = []
   try {
-    initCommandId = await providerInitStreaming(providerName)
+    const commandId = await providerInitStreaming(providerName)
+    operationSession.commandId = commandId
+    if (!isCurrentSession(operationSession)) return
   } catch (err) {
+    operationSession.initStarted = false
+    operationSession.commandId = null
+    if (!isCurrentSession(operationSession)) {
+      releaseProviderJob(operationSession)
+      return
+    }
     initRunning = false
     initStartError = `Failed to start initialization: ${err instanceof Error ? err.message : String(err)}`
   }
 }
 
-async function refreshAndComplete() {
+async function refreshAndComplete(operationSession: SetupSession) {
   try {
     const updated = await providerList()
+    if (!isCurrentSession(operationSession)) return
     providers.set(updated)
   } catch (err) {
+    if (!isCurrentSession(operationSession)) return
     toasts.error(`Failed to refresh providers: ${extractErrorMessage(err)}`)
   }
+  if (!isCurrentSession(operationSession)) return
   currentStep = "complete"
 }
 
@@ -406,9 +482,11 @@ async function refreshAndComplete() {
 // settled state: release the job so the card shows that rather than staying
 // busy on the install that already finished.
 async function handleSkipInit() {
+  const operationSession = activeSession
   initSucceeded = false
-  await providerReleaseJob(providerName).catch(() => undefined)
-  await refreshAndComplete()
+  await releaseProviderJob(operationSession, true)
+  if (!isCurrentSession(operationSession)) return
+  await refreshAndComplete(operationSession)
 }
 
 function handleDone() {
@@ -771,12 +849,12 @@ function handleDone() {
       {:else if currentStep === "initialize"}
         {#if initError}
           <div class="flex gap-2">
-            <Button variant="outline" class="flex-1" onclick={startInit}>Retry</Button>
+            <Button variant="outline" class="flex-1" onclick={() => startInit()}>Retry</Button>
             <Button variant="outline" class="flex-1" onclick={handleSkipInit}>Skip initialization</Button>
           </div>
         {:else if !initRunning && initStartError}
           <div class="flex gap-2">
-            <Button variant="outline" class="flex-1" onclick={startInit}>Retry</Button>
+            <Button variant="outline" class="flex-1" onclick={() => startInit()}>Retry</Button>
             <Button variant="outline" class="flex-1" onclick={handleSkipInit}>Skip initialization</Button>
           </div>
         {/if}

@@ -207,6 +207,51 @@ test.describe("Providers Page", () => {
 })
 
 test.describe("Provider lifecycle badges", () => {
+  test("releases an unfinished install when navigating away from provider setup", async () => {
+    const name = "abandon-probe"
+    const dialog = page.getByRole("dialog")
+    if (await dialog.isVisible()) await page.keyboard.press("Escape")
+    try {
+      await page
+        .getByRole("button", { name: "Add Provider", exact: true })
+        .click()
+      const wizard = page.getByRole("dialog", {
+        name: "Add Provider",
+        exact: true,
+      })
+      await wizard.getByRole("button", { name: /docker Local Docker/ }).click()
+      await wizard.getByLabel("Name (optional)").fill(name)
+      await wizard
+        .getByRole("button", { name: "Continue", exact: true })
+        .click()
+      await expect(
+        wizard.getByRole("heading", { name: `Configure ${name}` }),
+      ).toBeVisible()
+
+      await page.keyboard.press("Control+3")
+      await expect(wizard).toBeHidden()
+      const card = page
+        .locator('[data-slot="sidebar-inset"] main')
+        .getByRole("button", { name: new RegExp(name) })
+      await expect(card).toContainText(/not initialized/i, { timeout: 10000 })
+      await expect(card).not.toContainText(/installing|initializing/i)
+    } finally {
+      if (await dialog.isVisible()) await page.keyboard.press("Escape")
+      await page.evaluate(async (providerName) => {
+        await (
+          window as unknown as {
+            electronAPI: {
+              invoke: (
+                channel: string,
+                args: Record<string, unknown>,
+              ) => Promise<unknown>
+            }
+          }
+        ).electronAPI.invoke("provider_delete", { name: providerName })
+      }, name)
+    }
+  })
+
   test("never shows 'not initialized' while add+init is in flight", async () => {
     const main = page.locator('[data-slot="sidebar-inset"] main')
 
