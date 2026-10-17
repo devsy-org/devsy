@@ -91,6 +91,14 @@ let pendingUpdateProgress: CommandProgress[] = []
 let confirmSwitchOpen = $state(false)
 let targetTag = $state("")
 let switching = $state(false)
+let singleMachineOverride = $state<boolean | undefined>(undefined)
+let singleMachineOverrideProviderName = $state<string | null>(null)
+let effectiveSingleMachine = $derived(
+  singleMachineOverrideProviderName === provider.name &&
+    singleMachineOverride !== undefined
+    ? singleMachineOverride
+    : provider.state?.singleMachine,
+)
 let providerJob = $derived(provider ? $providerJobs[provider.name] : undefined)
 let status = $derived(
   provider
@@ -262,6 +270,17 @@ async function loadOptions() {
 }
 
 $effect(() => {
+  if (
+    singleMachineOverride !== undefined &&
+    (singleMachineOverrideProviderName !== provider.name ||
+      provider.state?.singleMachine === singleMachineOverride)
+  ) {
+    singleMachineOverride = undefined
+    singleMachineOverrideProviderName = null
+  }
+})
+
+$effect(() => {
   if (!open || !provider) {
     loadedFor = null
     return
@@ -287,13 +306,32 @@ async function handleSetDefault() {
 let togglingSingleMachine = $state(false)
 
 async function handleToggleSingleMachine(enabled: boolean) {
+  if (saving || togglingSingleMachine) return
+  const name = provider.name
+  const previousOverride = singleMachineOverride
+  const previousOverrideProviderName = singleMachineOverrideProviderName
   togglingSingleMachine = true
+  singleMachineOverride = enabled
+  singleMachineOverrideProviderName = name
   try {
-    await providerSetSingleMachine(provider.name, enabled)
+    await providerSetSingleMachine(name, enabled)
+  } catch (err) {
+    if (provider.name === name && singleMachineOverrideProviderName === name) {
+      singleMachineOverride = previousOverride
+      singleMachineOverrideProviderName = previousOverrideProviderName
+    }
+    toasts.error(`Failed to update reuse machine: ${extractErrorMessage(err)}`)
+    togglingSingleMachine = false
+    return
+  }
+
+  try {
     providers.set(await providerList())
     toasts.success(enabled ? "Reuse machine enabled" : "Reuse machine disabled")
   } catch (err) {
-    toasts.error(`Failed to update reuse machine: ${extractErrorMessage(err)}`)
+    toasts.error(
+      `Reuse machine was updated, but provider state could not be refreshed: ${extractErrorMessage(err)}`,
+    )
   } finally {
     togglingSingleMachine = false
   }
@@ -470,6 +508,7 @@ async function handleRename() {
 }
 
 async function handleSaveOptions() {
+  if (saving || togglingSingleMachine) return
   const missing = requiredOptions
     .filter(([key]) => !optionValues[key]?.trim())
     .map(([, opt]) => opt.displayName ?? opt.name ?? "")
@@ -489,11 +528,7 @@ async function handleSaveOptions() {
         values[key] = val
       }
     }
-    await providerSetOptions(
-      provider.name,
-      values,
-      provider.state?.singleMachine,
-    )
+    await providerSetOptions(provider.name, values, effectiveSingleMachine)
     const updated = await providerList()
     providers.set(updated)
     initialValues = { ...optionValues }
@@ -624,9 +659,9 @@ async function handleSaveOptions() {
       </div>
       <Switch
         id="provider-reuse-machine"
-        checked={provider.state?.singleMachine ?? false}
+        checked={effectiveSingleMachine ?? false}
         onCheckedChange={handleToggleSingleMachine}
-        disabled={togglingSingleMachine}
+        disabled={togglingSingleMachine || saving}
       />
     </section>
 
@@ -747,7 +782,7 @@ async function handleSaveOptions() {
                     if (selected) optionValues[key] = selected.value
                   }}
                 >
-                  <Select.Trigger id={`provider-option-${key}`} aria-required={opt.required || undefined} aria-describedby={opt.description ? `provider-option-help-${key}` : undefined} class="w-full h-9">
+                  <Select.Trigger id={`provider-option-${key}`} aria-required={opt.required || undefined} aria-describedby={opt.description ? `provider-option-help-${key}` : undefined} class="w-full h-9" disabled={saving}>
                     <span>{selectedOption ? selectedOption.label : optionValues[key] || "-- Select --"}</span>
                   </Select.Trigger>
                   <Select.Content>
@@ -767,6 +802,7 @@ async function handleSaveOptions() {
                   value={optionValues[key] ?? ""}
                   oninput={(e) => (optionValues[key] = e.currentTarget.value)}
                   class="h-9"
+                  disabled={saving}
                 />
               {/if}
             </div>
@@ -781,10 +817,14 @@ async function handleSaveOptions() {
     {#if isDirty}
       <Sheet.Footer class="shrink-0 border-t p-6">
         <div class="flex flex-wrap items-center gap-2">
-          <Button onclick={handleSaveOptions} disabled={saving} size="sm">
+          <Button
+            onclick={handleSaveOptions}
+            disabled={saving || togglingSingleMachine}
+            size="sm"
+          >
             {saving ? "Saving..." : "Save"}
           </Button>
-          <Button variant="outline" size="sm" onclick={() => { optionValues = { ...initialValues } }}>
+          <Button variant="outline" size="sm" onclick={() => { optionValues = { ...initialValues } }} disabled={saving}>
             Reset
           </Button>
           <span class="text-xs text-muted-foreground">Unsaved changes</span>
