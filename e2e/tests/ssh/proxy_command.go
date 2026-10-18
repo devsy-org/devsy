@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -31,9 +30,7 @@ var _ = ginkgo.Describe(
 			"should launch a workspace through an executable path containing spaces",
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
-				if runtime.GOOS != osWindows {
-					ginkgo.Skip("skipping on non-Windows")
-				}
+				framework.SkipUnlessOS("windows", "skipping on non-Windows")
 
 				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
 

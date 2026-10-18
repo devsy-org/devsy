@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -35,9 +34,7 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.BeforeAll(func(ctx ginkgo.SpecContext) {
-			if runtime.GOOS == osWindows {
-				ginkgo.Skip("UNIX sockets required; skipping on windows")
-			}
+			framework.SkipOnWindows("UNIX sockets required; skipping on windows")
 			var err error
 			initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)

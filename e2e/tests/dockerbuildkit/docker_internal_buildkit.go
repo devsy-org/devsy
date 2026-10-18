@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -143,9 +142,7 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.BeforeEach(func(ctx context.Context) {
-			if runtime.GOOS != "windows" {
-				ginkgo.Skip("Windows only")
-			}
+			framework.SkipUnlessOS("windows", "Windows only")
 			sshHost = requireEnv(sshHostEnv)
 			wslID = requireEnv(wslDaemonEnv)
 			envVars = providerEnv(sshHost)
@@ -340,9 +337,7 @@ var _ = ginkgo.Describe(
 		)
 
 		ginkgo.BeforeEach(func() {
-			if runtime.GOOS != "windows" {
-				ginkgo.Skip("Windows only")
-			}
+			framework.SkipUnlessOS("windows", "Windows only")
 			sshHost = requireEnv(sshHostEnv)
 			wslID = requireEnv(wslDaemonEnv)
 			configDir = ginkgo.GinkgoT().TempDir()

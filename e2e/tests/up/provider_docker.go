@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -269,9 +268,7 @@ var _ = ginkgo.Describe(
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("custom image", func(ctx context.Context) {
-			if runtime.GOOS == "windows" {
-				ginkgo.Skip("skipping on windows")
-			}
+			framework.SkipOnWindows("skipping on windows")
 
 			tempDir, err := dtc.setupAndUp(
 				ctx,

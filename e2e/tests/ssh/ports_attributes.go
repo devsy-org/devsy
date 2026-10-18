@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -30,9 +29,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 			"should forward port with onAutoForward=silent and skip port with onAutoForward=ignore",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
+				framework.SkipOnWindows("skipping on windows")
 
 				tempDir := framework.CopyTestdata("tests/ssh/testdata/ports-attributes", initialDir)
 
@@ -130,9 +127,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 			"should forward port with notify policy and apply label metadata",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
+				framework.SkipOnWindows("skipping on windows")
 
 				tempDir := framework.CopyTestdata("tests/ssh/testdata/ports-attributes", initialDir)
 
@@ -205,9 +200,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 			"should skip forwarding when requireLocalPort=true and host port is occupied",
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 			func(ctx context.Context) {
-				if runtime.GOOS == osWindows {
-					ginkgo.Skip("skipping on windows")
-				}
+				framework.SkipOnWindows("skipping on windows")
 
 				requirePort := 9503
 

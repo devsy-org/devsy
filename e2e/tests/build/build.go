@@ -16,7 +16,6 @@ import (
 
 const (
 	prebuildRepoName = "test-repo"
-	osWindows        = "windows"
 )
 
 func prepareDockerfileContent(dockerfilePath string) (string, error) {
@@ -320,9 +319,7 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 	ginkgo.It("build kubernetes dockerless",
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
-			if runtime.GOOS == osWindows {
-				ginkgo.Skip("skipping on windows")
-			}
+			framework.SkipOnWindows("skipping on windows")
 
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir := framework.CopyTestdata("tests/build/testdata/kubernetes", initialDir)
@@ -378,9 +375,7 @@ var _ = ginkgo.Describe("devsy build test suite", ginkgo.Label("build"), ginkgo.
 		"kubernetes dockerless build cleans up .devsy-internal after streaming",
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
-			if runtime.GOOS == osWindows {
-				ginkgo.Skip("skipping on windows")
-			}
+			framework.SkipOnWindows("skipping on windows")
 
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir := framework.CopyTestdata("tests/build/testdata/kubernetes", initialDir)
@@ -421,9 +416,7 @@ func validateKubernetesDeploymentWithoutDocker(
 	initialDir string,
 	action func(context.Context, *framework.Framework, string) error,
 ) {
-	if runtime.GOOS == osWindows {
-		ginkgo.Skip("skipping on Windows")
-	}
+	framework.SkipOnWindows("skipping on Windows")
 
 	f := framework.NewDefaultFramework(initialDir + "/bin")
 	tempDir := framework.CopyTestdata("tests/build/testdata/kubernetes", initialDir)

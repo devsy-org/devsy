@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/devsy-org/devsy/e2e/framework"
@@ -119,18 +118,14 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 	)
 
 	ginkgo.It("should accept --update-remote-user-uid=on", func(ctx context.Context) {
-		if runtime.GOOS != osLinux {
-			ginkgo.Skip("updateRemoteUserUID only applies on Linux")
-		}
+		framework.SkipUnlessOS("linux", "updateRemoteUserUID only applies on Linux")
 		_, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
 			names.Flag(names.UpdateRemoteUserUID), "on")
 		framework.ExpectNoError(err)
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("should accept --update-remote-user-uid=off", func(ctx context.Context) {
-		if runtime.GOOS != osLinux {
-			ginkgo.Skip("updateRemoteUserUID only applies on Linux")
-		}
+		framework.SkipUnlessOS("linux", "updateRemoteUserUID only applies on Linux")
 		tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker",
 			names.Flag(names.UpdateRemoteUserUID), "off")
 		framework.ExpectNoError(err)

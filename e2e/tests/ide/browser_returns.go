@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -240,9 +239,7 @@ var _ = ginkgo.Describe(
 			"passes --open-browser to the helper when --ide-launch=auto",
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
-				if runtime.GOOS != "linux" {
-					ginkgo.Skip("/proc/<pid>/cmdline inspection requires Linux")
-				}
+				framework.SkipUnlessOS("linux", "/proc/<pid>/cmdline inspection requires Linux")
 				f, tempDir := setupBrowserIDE(ctx, initialDir)
 
 				err := f.DevsyUpWithIDE(ctx,
