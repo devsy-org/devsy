@@ -279,7 +279,7 @@ devsy://import?workspace_id=<id>&workspace_uid=<uid>&devsy_pro_host=<host>&optio
 The pull request template asks for three things reviewers rely on:
 
 - **AI disclosure.** AI-assisted code is welcome. State the tool, model, and what it was used for, and make sure you understand every line you submit.
-- **Integration tests.** Behavior changes need Ginkgo e2e coverage under `e2e/tests/`. Unit tests alone are not enough. If you believe no integration test is needed, say why in the PR.
+- **Integration tests.** CLI behavior changes need Ginkgo e2e coverage under `e2e/tests/`. Desktop behavior changes need Playwright e2e coverage under `desktop/e2e/`. Unit tests alone are not enough. If you believe no integration test is needed, say why in the PR.
 - **Conventional Commit title.** The title becomes the squash commit subject.
 
 ## Getting Help

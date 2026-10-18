@@ -41,11 +41,12 @@ Fixes #
 Behavior changes need integration (e2e) test coverage. Unit tests alone are not enough
 for anything that touches the CLI, providers, workspaces, the agent, or the desktop app.
 
-- [ ] Added or updated integration tests under `e2e/tests/` (Ginkgo)
+- [ ] CLI / provider / agent change: added or updated Ginkgo integration tests under `e2e/tests/`
   - Suite / spec: <!-- e.g. e2e/tests/up, "should reuse an existing container" -->
   - Run with: <!-- e.g. mise run cli:test:e2e:focus "reuse an existing container" -->
-- [ ] Added or updated unit tests
-- [ ] Added or updated desktop tests (`mise run desktop:test` / `desktop:test:e2e`)
+- [ ] Desktop change: added or updated Playwright e2e tests under `desktop/e2e/`
+  - Run with: <!-- e.g. mise run desktop:test:e2e -->
+- [ ] Added or updated unit tests (`mise run cli:test` / `mise run desktop:test`)
 - [ ] No integration test needed, because: <!-- refactor with existing coverage, docs only, CI only. Name the existing spec that covers it. -->
 
 How I verified it manually:
