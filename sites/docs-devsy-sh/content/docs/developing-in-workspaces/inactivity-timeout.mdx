@@ -3,20 +3,31 @@ title: Auto-Inactivity Timeout
 sidebar_label: Auto-Inactivity Timeout
 ---
 
-Providers can stop workspaces that nobody is using, which saves cost. A machine stopped this way keeps its data, and Devsy restarts it when you start the workspace again.
+Providers can stop idle workspaces to save resources. The workspace keeps its data when the provider preserves storage. Start it again with `devsy workspace up`.
 
 ## Configure the timeout
 
-Each provider has an `INACTIVITY_TIMEOUT` option, for example `30m`. See [Set provider options](../managing-providers/manage-providers.mdx#set-provider-options). The provider's options show its default.
+Providers that support it expose an `INACTIVITY_TIMEOUT` option. Built-in providers with this option are Apple, Docker, Kubernetes, Microsandbox, and Podman. Values use Go duration format, for example `10m` or `1h`. See [Set provider options](../managing-providers/manage-providers.mdx#set-provider-options).
+
+If the option is unset, a machine provider's own default applies. Devsy uses 20 minutes when the provider sets no default. If `INACTIVITY_TIMEOUT` is unset, Docker, Kubernetes, Podman, Apple, and Microsandbox containers never time out.
 
 ## How it works
 
-**Non-machine providers** such as Docker, Podman, Kubernetes, and Microsandbox run a process in the container that tracks activity. When nobody has connected for the timeout, it ends the container's main process. The container stops, its state is kept, and Devsy restarts it later.
+**Non-machine providers** such as Docker, Podman, Kubernetes, Apple, and Microsandbox start a daemon in the container that watches for activity. When the timeout passes with no activity, that daemon exits. For Microsandbox, Devsy also passes the timeout to the microsandbox CLI as `--idle-timeout`.
 
 <Callout type="warn" title="Apple provider">
-The Apple provider deletes the container instead of stopping it. Only data on mounted volumes survives.
+The Apple provider's option is documented to delete the container instead of stopping it. Files outside mounted volumes are lost when a container is deleted.
 </Callout>
 
-**Machine providers** run a Devsy daemon on the VM. When there is no activity for the timeout, the daemon shuts the machine down or deletes it, whichever costs less for that cloud. Devsy restarts or recreates it when you resume.
+**Machine providers** run a Devsy daemon on the VM. When every workspace on the machine has been idle for the timeout, the daemon runs the `agent.exec.shutdown` command. That command is defined by the provider. State persists only if the provider keeps storage.
 
 See the [agent guide](../developing-providers/agent.mdx#machine-providers) for how providers implement this, and [Machine diagnostics](../managing-machines/machine-diagnostics.mdx) for debugging.
+
+## Shutdown action
+
+Set `shutdownAction` in `devcontainer.json`; it is not a provider option.
+
+- `none` disables the container timeout monitor. For machines, it also prevents `agent.exec.shutdown` from running.
+- Any other value enables the container timeout monitor. For machines, `agent.exec.shutdown` runs when the timeout passes, if the command is set.
+
+When `shutdownAction` is unset, the default is `stopCompose` for Compose workspaces and `stopContainer` otherwise. The inactivity timeout path only checks whether the value is `none`; the page does not describe per-value container effects.
