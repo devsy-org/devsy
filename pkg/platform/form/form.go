@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-const parameterTypeBoolean = "boolean"
+const ParameterTypeBoolean = "boolean"
 
 func CreateInstance(
 	ctx context.Context,
@@ -129,7 +129,7 @@ func renderedParametersForCreate(
 		return "", nil
 	}
 
-	fieldParameters := prepareParameters(parameters)
+	fieldParameters := PrepareParameters(parameters)
 	return runParameterForm(formCtx, fieldParameters)
 }
 
@@ -187,12 +187,12 @@ func resolveTemplateParameters(
 
 func runParameterForm(formCtx context.Context, fieldParameters []*FieldParameter) (string, error) {
 	if err := huh.NewForm(
-		huh.NewGroup(parameterFields(fieldParameters)...),
+		huh.NewGroup(ParameterFields(fieldParameters)...),
 	).RunWithContext(formCtx); err != nil {
 		return "", err
 	}
 
-	return renderParameters(fieldParameters)
+	return RenderParameters(fieldParameters)
 }
 
 func UpdateInstance(
@@ -365,7 +365,7 @@ func buildFieldParameters(
 }
 
 func assignFieldValue(fieldParameter *FieldParameter, value any) {
-	if fieldParameter.Type == parameterTypeBoolean {
+	if fieldParameter.Type == ParameterTypeBoolean {
 		assignBoolFieldValue(fieldParameter, value)
 		return
 	}
@@ -547,11 +547,11 @@ type FieldParameter struct {
 	BoolValue   bool
 }
 
-func prepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
+func PrepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
 	retParams := []*FieldParameter{}
 	for _, p := range parameters {
 		fieldParameter := FieldParameter{AppParameter: p}
-		if p.Type == parameterTypeBoolean {
+		if p.Type == ParameterTypeBoolean {
 			v, err := strconv.ParseBool(p.DefaultValue)
 			if err == nil {
 				fieldParameter.BoolValue = v
@@ -566,7 +566,7 @@ func prepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
 	return retParams
 }
 
-func parameterFields(fieldParameters []*FieldParameter) []huh.Field {
+func ParameterFields(fieldParameters []*FieldParameter) []huh.Field {
 	fields := []huh.Field{}
 	for _, param := range fieldParameters {
 		title := param.Label
@@ -583,7 +583,7 @@ func parameterFields(fieldParameters []*FieldParameter) []huh.Field {
 				Value(&param.StringValue)
 		case "password", "number", "string":
 			field = stringParameterField(param, title)
-		case parameterTypeBoolean:
+		case ParameterTypeBoolean:
 			field = huh.NewConfirm().
 				Title(title).
 				Description(param.Description).
@@ -635,7 +635,7 @@ func stringParameterField(param *FieldParameter, title string) huh.Field {
 	return input
 }
 
-func renderParameters(fieldParameters []*FieldParameter) (string, error) {
+func RenderParameters(fieldParameters []*FieldParameter) (string, error) {
 	p := map[string]any{}
 	for _, fp := range fieldParameters {
 		if fp.StringValue != "" {
