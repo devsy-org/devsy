@@ -5,13 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/devsy-org/devsy/cmd/pro/completion"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/config"
 	platformdaemon "github.com/devsy-org/devsy/pkg/daemon/platform"
-	cliflags "github.com/devsy-org/devsy/pkg/flags"
-	"github.com/devsy-org/devsy/pkg/flags/names"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
 )
@@ -24,56 +21,17 @@ type StatusCmd struct {
 }
 
 // NewStatusCmd creates a new command.
-//
-//nolint:dupl // structurally similar to NewNetcheckCmd; intentional sibling factory
 func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &StatusCmd{
 		GlobalFlags: flags,
 	}
 	c := &cobra.Command{
-		Use:   "status",
-		Short: "Get the status of the daemon",
-		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := proutil.FindProProvider(
-				cobraCmd.Context(),
-				cmd.Context,
-				cmd.Provider,
-				cmd.Host,
-			)
-			if err != nil {
-				return err
-			}
-
-			return cmd.Run(cobraCmd.Context(), devsyConfig, provider)
-		},
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			root := cmd.Root()
-			if root == nil {
-				return
-			}
-			if root.Annotations == nil {
-				root.Annotations = map[string]string{}
-			}
-			root.Annotations[config.AgentExecutedAnnotation] = "true"
-		},
+		Use:              "status",
+		Short:            "Get the status of the daemon",
+		RunE:             proutil.HostRunE(flags, &cmd.Host, cmd.Run),
+		PersistentPreRun: proutil.MarkAgentExecuted,
 	}
-
-	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
-	_ = c.MarkFlagRequired(names.Host)
-	proflags.BindEnv(c.Flags(), names.Host)
-	_ = c.RegisterFlagCompletionFunc(
-		names.Host,
-		func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			return completion.GetPlatformHostSuggestions(
-				rootCmd,
-				cmd.Context,
-				cmd.Provider,
-				args,
-				toComplete,
-				cmd.Owner,
-			)
-		},
-	)
+	proutil.AddHostFlag(c, &cmd.Host, proutil.WithHostCompletion(flags))
 
 	return c
 }

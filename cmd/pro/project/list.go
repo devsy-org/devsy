@@ -9,8 +9,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/proxycmd"
 	"github.com/devsy-org/devsy/pkg/config"
-	cliflags "github.com/devsy-org/devsy/pkg/flags"
-	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/spf13/cobra"
 )
@@ -31,24 +29,9 @@ func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Use:    "list",
 		Short:  "List projects",
 		Hidden: true,
-		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := proutil.FindProProvider(
-				cobraCmd.Context(),
-				cmd.Context,
-				cmd.Provider,
-				cmd.Host,
-			)
-			if err != nil {
-				return err
-			}
-
-			return cmd.Run(cobraCmd.Context(), devsyConfig, provider)
-		},
+		RunE:   proutil.HostRunE(globalFlags, &cmd.Host, cmd.Run),
 	}
-
-	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
-	_ = c.MarkFlagRequired(names.Host)
-	flags.BindEnv(c.Flags(), names.Host)
+	proutil.AddHostFlag(c, &cmd.Host)
 
 	return c
 }
