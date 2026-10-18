@@ -38,7 +38,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubectl/pkg/util/term"
 )
 
@@ -154,8 +153,7 @@ func (cmd *StartCmd) prepareKubernetes(ctx context.Context) (bool, error) {
 			ctx,
 			cmd.KubeClient,
 			cmd.RestConfig,
-			cmd.Context,
-			cmd.Namespace,
+			uninstallTarget{kubeContext: cmd.Context, namespace: cmd.Namespace},
 		)
 		if err != nil {
 			return false, err
@@ -576,8 +574,7 @@ func (cmd *StartCmd) prepareInstall(ctx context.Context) error {
 		ctx,
 		cmd.KubeClient,
 		cmd.RestConfig,
-		cmd.Context,
-		cmd.Namespace,
+		uninstallTarget{kubeContext: cmd.Context, namespace: cmd.Namespace},
 	)
 }
 
@@ -1082,155 +1079,6 @@ func (cmd *StartCmd) isLoggedIn(url string) bool {
 		)
 }
 
-func uninstall(
-	ctx context.Context,
-	kubeClient kubernetes.Interface,
-	restConfig *rest.Config,
-	kubeContext, namespace string,
-) error {
-	if err := runHelmUninstall(ctx, kubeClient, kubeContext, namespace); err != nil {
-		return err
-	}
-
-	if err := cleanupProResources(ctx, kubeClient, restConfig, namespace); err != nil {
-		return err
-	}
-
-	fmt.Fprint(os.Stderr, "\n")
-	log.Info("uninstalled Devsy Pro")
-	fmt.Fprint(os.Stderr, "\n")
-
-	return nil
-}
-
-func runHelmUninstall(
-	ctx context.Context,
-	kubeClient kubernetes.Interface,
-	kubeContext, namespace string,
-) error {
-	releaseName, err := resolveReleaseName(ctx, kubeClient, namespace)
-	if err != nil {
-		return err
-	}
-
-	args := []string{
-		"uninstall",
-		releaseName,
-		"--kube-context",
-		kubeContext,
-		"--namespace",
-		namespace,
-	}
-	log.Infof("Executing command: helm %s", strings.Join(args, " "))
-	helmCmd := exec.CommandContext(ctx, "helm", args...) // #nosec G204 -- internally constructed
-	output, err := helmCmd.CombinedOutput()
-	if err != nil {
-		log.Errorf("error during helm command: %s (%v)", string(output), err)
-	}
-
-	return nil
-}
-
-func cleanupProResources(
-	ctx context.Context,
-	kubeClient kubernetes.Interface,
-	restConfig *rest.Config,
-	namespace string,
-) error {
-	apiRegistrationClient, err := clientset.NewForConfig(restConfig)
-	if err != nil {
-		return err
-	}
-
-	err = deleteIgnoreNotFound(func() error {
-		return apiRegistrationClient.ApiregistrationV1().
-			APIServices().
-			Delete(ctx, "v1.management.devsy.sh", metav1.DeleteOptions{})
-	})
-	if err != nil {
-		return err
-	}
-
-	if err := deleteUser(ctx, restConfig, "admin"); err != nil {
-		return err
-	}
-
-	return deleteRemainingAgentResources(ctx, kubeClient, apiRegistrationClient, namespace)
-}
-
-func deleteRemainingAgentResources(
-	ctx context.Context,
-	kubeClient kubernetes.Interface,
-	apiRegistrationClient *clientset.Clientset,
-	namespace string,
-) error {
-	return deleteIgnoreNotFound(
-		func() error {
-			return kubeClient.CoreV1().
-				Secrets(namespace).
-				Delete(ctx, "loft-user-secret-admin", metav1.DeleteOptions{})
-		},
-		func() error {
-			return kubeClient.CoreV1().
-				Secrets(namespace).
-				Delete(ctx, LoftRouterDomainSecret, metav1.DeleteOptions{})
-		},
-		func() error {
-			return kubeClient.AdmissionregistrationV1().
-				ValidatingWebhookConfigurations().
-				Delete(ctx, "loft-agent", metav1.DeleteOptions{})
-		},
-		func() error {
-			return apiRegistrationClient.ApiregistrationV1().
-				APIServices().
-				Delete(ctx, "v1alpha1.tenancy.kiosk.sh", metav1.DeleteOptions{})
-		},
-		func() error {
-			return apiRegistrationClient.ApiregistrationV1().
-				APIServices().
-				Delete(ctx, "v1.cluster.devsy.sh", metav1.DeleteOptions{})
-		},
-		func() error {
-			return kubeClient.CoreV1().
-				ConfigMaps(namespace).
-				Delete(ctx, "loft-agent-controller", metav1.DeleteOptions{})
-		},
-		func() error {
-			return kubeClient.CoreV1().
-				ConfigMaps(namespace).
-				Delete(ctx, "loft-applied-defaults", metav1.DeleteOptions{})
-		},
-	)
-}
-
-func resolveReleaseName(
-	ctx context.Context,
-	kubeClient kubernetes.Interface,
-	namespace string,
-) (string, error) {
-	releaseName := config.ProReleaseName
-	deploy, err := kubeClient.AppsV1().
-		Deployments(namespace).
-		Get(ctx, defaultDeploymentName, metav1.GetOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
-		return "", err
-	} else if deploy != nil && deploy.Labels != nil && deploy.Labels["release"] != "" {
-		releaseName = deploy.Labels["release"]
-	}
-
-	return releaseName, nil
-}
-
-func deleteIgnoreNotFound(deletes ...func() error) error {
-	for _, del := range deletes {
-		if err := del(); err != nil && !kerrors.IsNotFound(err) {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func isAlreadyInstalled(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
@@ -1422,35 +1270,6 @@ func labelIngressSecret(
 		Secrets(secret.Namespace).
 		Patch(ctx, secret.Name, types.MergePatchType, data, metav1.PatchOptions{})
 	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func deleteUser(ctx context.Context, restConfig *rest.Config, name string) error {
-	loftClient, err := loftclientset.NewForConfig(restConfig)
-	if err != nil {
-		return err
-	}
-
-	user, err := loftClient.StorageV1().Users().Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return nil
-	} else if len(user.Finalizers) > 0 {
-		user.Finalizers = nil
-		_, err = loftClient.StorageV1().Users().Update(ctx, user, metav1.UpdateOptions{})
-		if err != nil {
-			if kerrors.IsConflict(err) {
-				return deleteUser(ctx, restConfig, name)
-			}
-
-			return err
-		}
-	}
-
-	err = loftClient.StorageV1().Users().Delete(ctx, name, metav1.DeleteOptions{})
-	if err != nil && !kerrors.IsNotFound(err) {
 		return err
 	}
 
