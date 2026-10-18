@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,63 +18,71 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testID          = "goland"
+	testVersion     = "2025.2"
+	latestAmd64URL  = "https://download.jetbrains.com/product?code=GO&platform=linux"
+	latestArm64URL  = "https://download.jetbrains.com/product?code=GO&platform=linuxARM64"
+	pinnedAmd64URL  = "https://download.jetbrains.com/go/goland-2025.2.tar.gz"
+	pinnedArm64URL  = "https://download.jetbrains.com/go/goland-2025.2-aarch64.tar.gz"
+	overrideAmd64   = "https://override.test/goland.tar.gz"
+	amd64Archive    = "amd64-archive"
+	arm64Archive    = "arm64-archive"
+	amd64ArchiveURL = "/amd64.tar.gz"
+	arm64ArchiveURL = "/arm64.tar.gz"
+)
+
+type downloadURLCase struct {
+	name      string
+	values    map[string]config.OptionValue
+	wantAmd64 string
+	wantArm64 string
+}
+
+var downloadURLCases = []downloadURLCase{
+	{
+		name:      "nil values select latest product URLs",
+		values:    nil,
+		wantAmd64: latestAmd64URL,
+		wantArm64: latestArm64URL,
+	},
+	{
+		name:      "empty version value falls back to latest",
+		values:    map[string]config.OptionValue{VersionOption: {Value: ""}},
+		wantAmd64: latestAmd64URL,
+		wantArm64: latestArm64URL,
+	},
+	{
+		name: "pinned version fills both architecture templates",
+		values: map[string]config.OptionValue{
+			VersionOption: {Value: testVersion},
+		},
+		wantAmd64: pinnedAmd64URL,
+		wantArm64: pinnedArm64URL,
+	},
+	{
+		name: "amd64 override replaces only the amd64 URL",
+		values: map[string]config.OptionValue{
+			VersionOption:       {Value: testVersion},
+			DownloadAmd64Option: {Value: overrideAmd64},
+		},
+		wantAmd64: overrideAmd64,
+		wantArm64: pinnedArm64URL,
+	},
+	{
+		name: "empty overrides fall back to pinned templates",
+		values: map[string]config.OptionValue{
+			VersionOption:       {Value: testVersion},
+			DownloadAmd64Option: {Value: ""},
+			DownloadArm64Option: {Value: ""},
+		},
+		wantAmd64: pinnedAmd64URL,
+		wantArm64: pinnedArm64URL,
+	},
+}
+
 func TestGetDownloadURLs(t *testing.T) {
-	const (
-		latestAmd64 = "https://download.jetbrains.com/product?code=GO&platform=linux"
-		latestArm64 = "https://download.jetbrains.com/product?code=GO&platform=linuxARM64"
-		pinnedAmd64 = "https://download.jetbrains.com/go/goland-2025.2.tar.gz"
-		pinnedArm64 = "https://download.jetbrains.com/go/goland-2025.2-aarch64.tar.gz"
-		overrideURL = "https://override.test/goland.tar.gz"
-	)
-
-	tests := []struct {
-		name      string
-		values    map[string]config.OptionValue
-		wantAmd64 string
-		wantArm64 string
-	}{
-		{
-			name:      "nil values select latest product URLs",
-			values:    nil,
-			wantAmd64: latestAmd64,
-			wantArm64: latestArm64,
-		},
-		{
-			name:      "empty version value falls back to latest",
-			values:    map[string]config.OptionValue{VersionOption: {Value: ""}},
-			wantAmd64: latestAmd64,
-			wantArm64: latestArm64,
-		},
-		{
-			name: "pinned version fills both architecture templates",
-			values: map[string]config.OptionValue{
-				VersionOption: {Value: "2025.2"},
-			},
-			wantAmd64: pinnedAmd64,
-			wantArm64: pinnedArm64,
-		},
-		{
-			name: "amd64 override replaces only the amd64 URL",
-			values: map[string]config.OptionValue{
-				VersionOption:       {Value: "2025.2"},
-				DownloadAmd64Option: {Value: overrideURL},
-			},
-			wantAmd64: overrideURL,
-			wantArm64: pinnedArm64,
-		},
-		{
-			name: "empty overrides fall back to pinned templates",
-			values: map[string]config.OptionValue{
-				VersionOption:       {Value: "2025.2"},
-				DownloadAmd64Option: {Value: ""},
-				DownloadArm64Option: {Value: ""},
-			},
-			wantAmd64: pinnedAmd64,
-			wantArm64: pinnedArm64,
-		},
-	}
-
-	for _, tt := range tests {
+	for _, tt := range downloadURLCases {
 		t.Run(tt.name, func(t *testing.T) {
 			amd64, arm64 := getDownloadURLs(
 				GolandOptions,
@@ -89,7 +98,7 @@ func TestGetDownloadURLs(t *testing.T) {
 }
 
 func TestGetDirectoryUnderHome(t *testing.T) {
-	s := newGenericServer("alice", &GenericOptions{ID: "goland"})
+	s := newGenericServer("alice", &GenericOptions{ID: testID})
 
 	assert.Equal(
 		t,
@@ -129,25 +138,32 @@ func writeArchive(t *testing.T, data []byte) string {
 	return p
 }
 
+// readFileIn reads name relative to dir, so the path under test stays a
+// fixed name inside a directory the test owns.
+func readFileIn(t *testing.T, dir, name string) []byte {
+	t.Helper()
+	data, err := fs.ReadFile(os.DirFS(dir), name)
+	require.NoError(t, err)
+	return data
+}
+
 func TestExtractArchiveStripsTopLevelDirectory(t *testing.T) {
 	archive := writeArchive(t, buildTarGz(t,
 		tarEntry{name: "goland-2025.2/bin/goland.sh", body: "#!/bin/sh\n"},
 		tarEntry{name: "goland-2025.2/product-info.json", body: "{}"},
 	))
 	dest := t.TempDir()
-	s := newGenericServer("alice", &GenericOptions{ID: "goland"})
+	s := newGenericServer("alice", &GenericOptions{ID: testID})
 
 	require.NoError(t, s.extractArchive(archive, dest))
 
-	got, err := os.ReadFile(filepath.Join(dest, "bin", "goland.sh"))
-	require.NoError(t, err)
-	assert.Equal(t, "#!/bin/sh\n", string(got))
+	assert.Equal(t, "#!/bin/sh\n", string(readFileIn(t, dest, "bin/goland.sh")))
 	assert.FileExists(t, filepath.Join(dest, "product-info.json"))
 	assert.NoDirExists(t, filepath.Join(dest, "goland-2025.2"))
 }
 
 func TestExtractArchiveErrors(t *testing.T) {
-	s := newGenericServer("alice", &GenericOptions{ID: "goland"})
+	s := newGenericServer("alice", &GenericOptions{ID: testID})
 
 	t.Run("missing archive", func(t *testing.T) {
 		missing := filepath.Join(t.TempDir(), "absent.tar.gz")
@@ -177,29 +193,31 @@ func TestExtractArchiveErrors(t *testing.T) {
 
 func TestDownloadSelectsArchitectureURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("body:" + r.URL.Path))
+		if r.URL.Path == arm64ArchiveURL {
+			_, _ = w.Write([]byte(arm64Archive))
+			return
+		}
+		_, _ = w.Write([]byte(amd64Archive))
 	}))
 	defer srv.Close()
 
 	s := newGenericServer("alice", &GenericOptions{
-		ID:            "goland",
+		ID:            testID,
 		DisplayName:   "Goland",
-		DownloadAmd64: srv.URL + "/amd64.tar.gz",
-		DownloadArm64: srv.URL + "/arm64.tar.gz",
+		DownloadAmd64: srv.URL + amd64ArchiveURL,
+		DownloadArm64: srv.URL + arm64ArchiveURL,
 	})
 	targetFolder := filepath.Join(t.TempDir(), "nested", "downloads")
 
 	got, err := s.download(targetFolder)
 	require.NoError(t, err)
 
-	wantPath := "/amd64.tar.gz"
+	wantBody := amd64Archive
 	if runtime.GOARCH == "arm64" {
-		wantPath = "/arm64.tar.gz"
+		wantBody = arm64Archive
 	}
-	assert.Equal(t, filepath.Join(targetFolder, "goland.tar.gz"), filepath.Clean(got))
-	body, err := os.ReadFile(got)
-	require.NoError(t, err)
-	assert.Equal(t, "body:"+wantPath, string(body))
+	assert.Equal(t, filepath.Join(targetFolder, testID+".tar.gz"), filepath.Clean(got))
+	assert.Equal(t, wantBody, string(readFileIn(t, filepath.Dir(got), filepath.Base(got))))
 }
 
 func TestDownloadHTTPErrorLeavesNoArchive(t *testing.T) {
@@ -210,7 +228,7 @@ func TestDownloadHTTPErrorLeavesNoArchive(t *testing.T) {
 
 	targetFolder := t.TempDir()
 	s := newGenericServer("alice", &GenericOptions{
-		ID:            "goland",
+		ID:            testID,
 		DisplayName:   "Goland",
 		DownloadAmd64: srv.URL + "/missing.tar.gz",
 		DownloadArm64: srv.URL + "/missing.tar.gz",
@@ -219,11 +237,11 @@ func TestDownloadHTTPErrorLeavesNoArchive(t *testing.T) {
 	_, err := s.download(targetFolder)
 
 	assert.ErrorContains(t, err, "404")
-	assert.NoFileExists(t, filepath.Join(targetFolder, "goland.tar.gz"))
+	assert.NoFileExists(t, filepath.Join(targetFolder, testID+".tar.gz"))
 }
 
 func TestInstallPluginsSkipsWhenNoneConfigured(t *testing.T) {
-	s := newGenericServer("alice", &GenericOptions{ID: "goland"})
+	s := newGenericServer("alice", &GenericOptions{ID: testID})
 	setupInfo := &devconfig.Result{MergedConfig: &devconfig.MergedDevContainerConfig{}}
 
 	// The install directory has no bin/remote-dev-server.sh; any attempt to
