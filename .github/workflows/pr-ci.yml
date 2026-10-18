@@ -32,7 +32,6 @@ jobs:
               - 'e2e/**'
               - 'hack/microsandbox/**'
               - 'hack/provider_update_ci/**'
-              - 'hack/run-managed-policy-e2e.sh'
               - '.github/workflows/pr-ci.yml'
               - '.github/workflows/docker-buildkit-windows.yml'
               - 'hack/licenses/**'

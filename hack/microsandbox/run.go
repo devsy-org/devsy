@@ -93,6 +93,11 @@ func executeSuite(
 		_, _ = fmt.Fprintf(output.stderr, "::error::%v\n", err)
 		return suiteExecution{testStatus: 2}
 	}
+	prefix, err := suiteCommandPrefix(cfg.label)
+	if err != nil {
+		_, _ = fmt.Fprintf(output.stderr, "::error::%v\n", err)
+		return suiteExecution{testStatus: 2}
+	}
 
 	reportPath := filepath.Join(cfg.tempDir, "microsandbox-"+cfg.label+".json")
 	logPath := filepath.Join(cfg.tempDir, "microsandbox-"+cfg.label+".log")
@@ -111,9 +116,7 @@ func executeSuite(
 		"--ginkgo.label-filter=" + cfg.label,
 		"-ginkgo.json-report=" + reportPath,
 	}
-	if cfg.label == managedPolicyLabel {
-		commandArgs = append([]string{"../hack/run-managed-policy-e2e.sh"}, commandArgs...)
-	}
+	commandArgs = append(prefix, commandArgs...)
 	args = append(args, commandArgs...)
 	cmd := exec.CommandContext(ctx, "sudo", args...)
 	cmd.Dir = filepath.Join(cfg.repositoryDir, "e2e")
@@ -179,6 +182,23 @@ func directoryExists(path string) bool {
 
 func isValidSuiteLabel(label string) bool {
 	return suiteLabelPattern.MatchString(label)
+}
+
+// currentExecutable resolves this binary for the managed-policy re-exec. It is a
+// variable so tests can make resolution fail.
+var currentExecutable = os.Executable
+
+// suiteCommandPrefix returns the argv prefix that routes the managed-policy suite
+// through this binary's managed-policy-e2e subcommand. Other labels get no prefix.
+func suiteCommandPrefix(label string) ([]string, error) {
+	if label != managedPolicyLabel {
+		return nil, nil
+	}
+	exe, err := currentExecutable()
+	if err != nil {
+		return nil, fmt.Errorf("resolve managed-policy wrapper: %w", err)
+	}
+	return []string{exe, managedPolicyE2ECommand}, nil
 }
 
 func suiteSudoArguments(cfg suiteConfig) ([]string, error) {

@@ -116,7 +116,16 @@ func TestRunSuiteManagedPolicyUsesWrapperAndFixtureEnvironment(t *testing.T) {
 	); code != 0 {
 		t.Fatalf("runSuite() = %d; stderr=%s", code, stderr.String())
 	}
-	if len(commands) != 2 || !stringArgsContain(commands[0], "../hack/run-managed-policy-e2e.sh") {
+	assertManagedPolicyInvocation(t, commands, tempDir)
+}
+
+func assertManagedPolicyInvocation(t *testing.T, commands [][]string, tempDir string) {
+	t.Helper()
+	exe, exeErr := os.Executable()
+	if exeErr != nil {
+		t.Fatal(exeErr)
+	}
+	if len(commands) != 2 || !isManagedPolicyInvocation(commands[0], exe) {
 		t.Fatalf("managed invocation = %#v", commands)
 	}
 	for _, want := range []string{
@@ -125,6 +134,38 @@ func TestRunSuiteManagedPolicyUsesWrapperAndFixtureEnvironment(t *testing.T) {
 		if !stringArgsContain(commands[0], want) {
 			t.Errorf("managed invocation lacks %q: %v", want, commands[0])
 		}
+	}
+}
+
+// isManagedPolicyInvocation reports whether argv runs exe with the managed-policy
+// wrapper command followed by ./e2e.test.
+func isManagedPolicyInvocation(argv []string, exe string) bool {
+	index := slices.Index(argv, exe)
+	return index >= 0 && index+2 < len(argv) &&
+		argv[index+1] == managedPolicyE2ECommand && argv[index+2] == "./e2e.test"
+}
+
+func TestRunSuiteManagedPolicyReportsExecutableResolutionFailureBeforeInvocation(t *testing.T) {
+	cfg, _ := newSuiteRunFixture(t, managedPolicyLabel)
+	original := currentExecutable
+	currentExecutable = func() (string, error) { return "", errors.New("no executable path") }
+	t.Cleanup(func() { currentExecutable = original })
+	var stdout, stderr bytes.Buffer
+	invoked := false
+	run := func(*exec.Cmd) error {
+		invoked = true
+		return nil
+	}
+	if code := runSuite(
+		context.Background(),
+		cfg,
+		run,
+		commandOutput{stdout: &stdout, stderr: &stderr},
+	); code != 2 {
+		t.Fatalf("runSuite() = %d, want 2; stderr=%s", code, stderr.String())
+	}
+	if invoked {
+		t.Fatal("managed-policy command ran after executable resolution failed")
 	}
 }
 
