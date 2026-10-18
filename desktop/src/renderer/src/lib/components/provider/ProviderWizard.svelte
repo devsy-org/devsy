@@ -109,6 +109,8 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "complete", label: "Done" },
 ]
 
+const footerPrimaryButtonClass = "ml-auto flex h-10 min-w-36 px-8"
+
 let {
   open = $bindable(false),
   initialSource,
@@ -839,11 +841,11 @@ function handleDone() {
 
     <footer class="shrink-0 border-t bg-background px-6 py-4">
       {#if currentStep === "select"}
-        <Button class="w-full" disabled={adding || !source.trim()} onclick={handleSelect}>
+        <Button class={footerPrimaryButtonClass} disabled={adding || !source.trim()} onclick={handleSelect}>
           {#if adding}<Loader2 class="mr-2 h-4 w-4 animate-spin" />Adding...{:else}Continue{/if}
         </Button>
       {:else if currentStep === "configure"}
-        <Button class="w-full" disabled={saving || loadingOptions || !optionsLoaded || hasUnfilledRequired} onclick={handleConfigure}>
+        <Button class={footerPrimaryButtonClass} disabled={saving || loadingOptions || !optionsLoaded || hasUnfilledRequired} onclick={handleConfigure}>
           {#if saving}<Loader2 class="mr-2 h-4 w-4 animate-spin" />Saving...{:else}Continue{/if}
         </Button>
       {:else if currentStep === "initialize"}
@@ -859,7 +861,7 @@ function handleDone() {
           </div>
         {/if}
       {:else if currentStep === "complete"}
-        <Button class="w-full" onclick={handleDone}>Done</Button>
+        <Button class={footerPrimaryButtonClass} onclick={handleDone}>Done</Button>
       {/if}
     </footer>
   </Dialog.Content>
