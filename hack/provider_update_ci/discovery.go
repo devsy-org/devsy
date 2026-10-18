@@ -6,8 +6,13 @@ import (
 	"os/exec"
 )
 
+// providerTestCommand omits -race: the Go runtime crashes intermittently on
+// windows/amd64 under -race during goroutine stack shrink/copy (observed in
+// net/http server teardown; matches golang/go#77975, #77955, #78041, still
+// reproducing on go1.26.9). pkg/workspace and pkg/provider keep -race
+// coverage on ubuntu-latest and macos-latest via the Unit Tests job.
 func providerTestCommand(selection string) *exec.Cmd {
-	args := []string{"test", "-race", "-json", "-count=1", "-timeout", windowsTestTimeout}
+	args := []string{"test", "-json", "-count=1", "-timeout", windowsTestTimeout}
 	args = append(args, providerUpdatePackages...)
 	args = append(args, selection, providerUpdateRunPattern)
 	return exec.Command("go", args...)

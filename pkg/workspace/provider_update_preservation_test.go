@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -47,7 +46,7 @@ func TestProviderUpdateFailedDownloadPreservesExisting(t *testing.T) {
 	}
 	raw, err := json.Marshal(replacement)
 	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), updateTestHangGuard)
 	defer cancel()
 	_, err = updateProvider(ctx, ProviderParams{
 		DevsyConfig:  f.config,

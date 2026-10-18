@@ -74,12 +74,12 @@ func isFakeGoInvocation(path string) bool {
 }
 
 func isExpectedGoCommand(args []string) bool {
-	if len(args) != 10 || (args[8] != "-run" && args[8] != "-list") {
+	if len(args) != 9 || (args[7] != "-run" && args[7] != "-list") {
 		return false
 	}
 	expected := []string{
-		"test", "-race", "-json", "-count=1", "-timeout", "10m",
-		providerUpdatePackages[0], providerUpdatePackages[1], args[8], providerUpdateRunPattern,
+		"test", "-json", "-count=1", "-timeout", "10m",
+		providerUpdatePackages[0], providerUpdatePackages[1], args[7], providerUpdateRunPattern,
 	}
 	return equalStrings(args, expected)
 }
