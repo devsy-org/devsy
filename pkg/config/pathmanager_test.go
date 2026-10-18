@@ -1,8 +1,11 @@
 package config
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultPathManagerSingleton(t *testing.T) {
@@ -15,6 +18,17 @@ func TestDefaultPathManagerSingleton(t *testing.T) {
 	if pm1 != pm2 {
 		t.Error("DefaultPathManager returned different instances")
 	}
+}
+
+func TestJoinUnderPropagatesParentErrorAndJoinsElems(t *testing.T) {
+	parentErr := errors.New("parent unavailable")
+	got, err := joinUnder(func() (string, error) { return "", parentErr }, "a", "b")
+	require.ErrorIs(t, err, parentErr)
+	require.Empty(t, got)
+
+	got, err = joinUnder(func() (string, error) { return "/base", nil }, "a", "b")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join("/base", "a", "b"), got)
 }
 
 func TestSetPathManagerOverride(t *testing.T) {
