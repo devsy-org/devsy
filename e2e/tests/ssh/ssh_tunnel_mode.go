@@ -44,14 +44,12 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should start workspace with --ssh-tunnel and SSH into it",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
 
 				f := setupTunnelProvider(ctx, initialDir)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				taskID, err := startDetachedTunnelUp(ctx, f, tempDir)
@@ -74,8 +72,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should write SSH config with Hostname and Port instead of ProxyCommand",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
 
 				sshConfigDir := ginkgo.GinkgoT().TempDir()
 				sshConfigPath := filepath.Join(sshConfigDir, "config")
@@ -84,7 +81,6 @@ var _ = ginkgo.Describe(
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				taskID, err := startDetachedTunnelUp(ctx, f, tempDir, "--ssh-config", sshConfigPath)
@@ -115,8 +111,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should establish a working local TCP tunnel listener",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
 
 				sshConfigDir := ginkgo.GinkgoT().TempDir()
 				sshConfigPath := filepath.Join(sshConfigDir, "config")
@@ -125,7 +120,6 @@ var _ = ginkgo.Describe(
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				taskID, err := startDetachedTunnelUp(ctx, f, tempDir, "--ssh-config", sshConfigPath)
@@ -163,14 +157,12 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should handle multiple sequential SSH commands via tunnel",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
 
 				f := setupTunnelProvider(ctx, initialDir)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				taskID, err := startDetachedTunnelUp(ctx, f, tempDir)
@@ -213,8 +205,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should fall back to ProxyCommand when tunnel mode is not enabled",
 			ginkgo.SpecTimeout(framework.TimeoutModerate()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
 
 				sshConfigDir := ginkgo.GinkgoT().TempDir()
 				sshConfigPath := filepath.Join(sshConfigDir, "config")
@@ -223,12 +214,11 @@ var _ = ginkgo.Describe(
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				devsyUpCtx, cancel := context.WithDeadline(ctx, time.Now().Add(5*time.Minute))
 				defer cancel()
-				err = f.DevsyUp(devsyUpCtx, tempDir, "--ssh-config", sshConfigPath)
+				err := f.DevsyUp(devsyUpCtx, tempDir, "--ssh-config", sshConfigPath)
 				framework.ExpectNoError(err)
 
 				configBytes, err := os.ReadFile(filepath.Clean(sshConfigPath))

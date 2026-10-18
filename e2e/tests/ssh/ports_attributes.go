@@ -34,17 +34,15 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 					ginkgo.Skip("skipping on windows")
 				}
 
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ports-attributes")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/ports-attributes", initialDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
+				err := f.DevsyProviderUse(ctx, "docker")
 				framework.ExpectNoError(err)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				err = f.DevsyUp(ctx, tempDir)
@@ -136,17 +134,15 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 					ginkgo.Skip("skipping on windows")
 				}
 
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ports-attributes")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/ports-attributes", initialDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				_ = f.DevsyProviderAdd(ctx, "docker")
-				err = f.DevsyProviderUse(ctx, "docker")
+				err := f.DevsyProviderUse(ctx, "docker")
 				framework.ExpectNoError(err)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				err = f.DevsyUp(ctx, tempDir)
@@ -225,8 +221,7 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 					_ = hostListener.Close()
 				})
 
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ports-attributes")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/ports-attributes", initialDir)
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				_ = f.DevsyProviderAdd(ctx, "docker")
@@ -235,7 +230,6 @@ var _ = ginkgo.Describe("devsy portsAttributes e2e",
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				err = f.DevsyUp(ctx, tempDir)

@@ -32,14 +32,12 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should cancel a detached tunnel task and keep the workspace stopped",
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
 
 				f := setupTunnelProvider(ctx, initialDir)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				taskID, err := startDetachedTunnelUp(ctx, f, tempDir)
@@ -73,14 +71,12 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should quiesce a persisted detached task when stop runs without a task ID",
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 			func(ctx context.Context) {
-				tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-				framework.ExpectNoError(err)
+				tempDir := framework.CopyTestdata("tests/ssh/testdata/local-test", initialDir)
 
 				f := setupTunnelProvider(ctx, initialDir)
 
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
 					_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-					framework.CleanupTempDir(initialDir, tempDir)
 				})
 
 				taskID, err := startDetachedTunnelUp(ctx, f, tempDir)

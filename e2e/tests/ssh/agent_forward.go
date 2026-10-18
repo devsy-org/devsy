@@ -42,15 +42,19 @@ var _ = ginkgo.Describe(
 			initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			tempDir, err = framework.CopyToTempDir("tests/ssh/testdata/agent-forward")
-			framework.ExpectNoError(err)
+			authSock, pubKey, agentClean = framework.StartMockSSHAgent(ginkgo.GinkgoT())
+			ginkgo.DeferCleanup(agentClean)
+
+			tempDir = framework.CopyTestdata("tests/ssh/testdata/agent-forward", initialDir)
 
 			f = framework.NewDefaultFramework(initialDir + "/bin")
 			_ = f.DevsyProviderAdd(ctx, "docker")
 			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)
 
-			authSock, pubKey, agentClean = framework.StartMockSSHAgent(ginkgo.GinkgoT())
+			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+			})
 
 			devsyUpCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 			defer cancel()
@@ -59,16 +63,6 @@ var _ = ginkgo.Describe(
 
 			// devsy up registers an OpenSSH host alias "<workspace>.devsy".
 			host = filepath.Base(tempDir) + ".devsy"
-		})
-
-		ginkgo.AfterAll(func(ctx ginkgo.SpecContext) {
-			if f != nil && tempDir != "" {
-				_ = f.DevsyWorkspaceDelete(ctx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			}
-			if agentClean != nil {
-				agentClean()
-			}
 		})
 
 		ginkgo.It(
