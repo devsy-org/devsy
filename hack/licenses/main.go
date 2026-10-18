@@ -1,16 +1,12 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 )
 
 const detectorVersion = "v0.10.0"
@@ -29,6 +25,21 @@ var releaseTargets = []struct{ os, arch string }{
 	{"windows", archARM64},
 }
 
+// commandRunner starts a subprocess. execCommand is used in production; tests
+// substitute a fake so that neither go nor git runs.
+type commandRunner func(cmd *exec.Cmd) error
+
+func execCommand(cmd *exec.Cmd) error {
+	return cmd.Run()
+}
+
+// generator carries the repository root and the process seams for one run.
+type generator struct {
+	root   string
+	runCmd commandRunner
+	stderr io.Writer
+}
+
 func main() {
 	check := flag.Bool("check", false,
 		"verify THIRD_PARTY_LICENSES.md is in sync instead of writing it")
@@ -41,76 +52,41 @@ func main() {
 }
 
 func run(check bool) error {
-	root, err := repoRoot()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
+	root, err := repoRoot(cwd)
+	if err != nil {
+		return err
+	}
+	g := generator{root: root, runCmd: execCommand, stderr: os.Stderr}
+	return g.generate(check)
+}
 
-	hackDir := filepath.Join(root, "hack", "licenses")
-	outFile := filepath.Join(root, "THIRD_PARTY_LICENSES.md")
+func (g generator) generate(check bool) error {
+	hackDir := filepath.Join(g.root, "hack", "licenses")
+	outFile := filepath.Join(g.root, "THIRD_PARTY_LICENSES.md")
 
-	deps, err := moduleListJSON(root)
+	deps, err := g.moduleListJSON()
 	if err != nil {
 		return fmt.Errorf("collecting module dependencies: %w", err)
 	}
 
 	if check {
-		return checkInSync(hackDir, outFile, deps)
+		return g.checkInSync(hackDir, outFile, deps)
 	}
 
-	fmt.Fprintln(os.Stderr, "Generating", filepath.Base(outFile)+"...")
-	if err := runDetector(hackDir, deps, outFile); err != nil {
+	_, _ = fmt.Fprintln(g.stderr, "Generating", filepath.Base(outFile)+"...")
+	if err := g.runDetector(hackDir, deps, outFile); err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "Wrote", outFile)
+	_, _ = fmt.Fprintln(g.stderr, "Wrote", outFile)
 	return nil
 }
 
-func checkInSync(hackDir, outFile string, deps []byte) error {
-	tmp, err := os.CreateTemp("", "third-party-licenses-*.md")
-	if err != nil {
-		return err
-	}
-	target := tmp.Name()
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(target) }()
-
-	fmt.Fprintln(os.Stderr, "Generating", filepath.Base(outFile)+"...")
-	if err := runDetector(hackDir, deps, target); err != nil {
-		return err
-	}
-
-	current, err := os.ReadFile(outFile)
-	if err != nil {
-		return fmt.Errorf("reading %s: %w", outFile, err)
-	}
-	generated, err := os.ReadFile(target)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(current, generated) {
-		diff := exec.Command("git", "--no-pager", "diff", "--no-index", "--", outFile, target)
-		diff.Stdout = os.Stderr
-		diff.Stderr = os.Stderr
-		_ = diff.Run()
-		fmt.Fprintln(
-			os.Stderr,
-			"warning: THIRD_PARTY_LICENSES.md is out of date; run 'mise run cli:licenses' and commit the result",
-		)
-		return nil
-	}
-
-	fmt.Fprintln(os.Stderr, "THIRD_PARTY_LICENSES.md is up to date.")
-	return nil
-}
-
-func repoRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
+// repoRoot returns the nearest directory at or above dir that contains go.mod.
+func repoRoot(dir string) (string, error) {
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir, nil
@@ -121,107 +97,4 @@ func repoRoot() (string, error) {
 		}
 		dir = parent
 	}
-}
-
-type goModule struct {
-	Path    string
-	Version string
-	Main    bool
-	Dir     string
-}
-
-type goPackage struct {
-	Module *goModule
-}
-
-func moduleListJSON(dir string) ([]byte, error) {
-	modules := map[string]goModule{}
-	for _, t := range releaseTargets {
-		mods, err := buildModules(dir, t.os, t.arch)
-		if err != nil {
-			return nil, fmt.Errorf("listing deps for %s/%s: %w", t.os, t.arch, err)
-		}
-		maps.Copy(modules, mods)
-	}
-
-	paths := make([]string, 0, len(modules))
-	for p := range modules {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetIndent("", "\t")
-	for _, p := range paths {
-		if err := enc.Encode(modules[p]); err != nil {
-			return nil, err
-		}
-	}
-	return buf.Bytes(), nil
-}
-
-func buildModules(dir, goos, goarch string) (map[string]goModule, error) {
-	cmd := exec.Command("go", "list", "-deps", "-mod=readonly", "-json", "./...")
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch)
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-
-	modules := map[string]goModule{}
-	dec := json.NewDecoder(bytes.NewReader(out))
-	for {
-		var pkg goPackage
-		if err := dec.Decode(&pkg); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, err
-		}
-		m := pkg.Module
-		if m == nil || m.Main || m.Path == "" {
-			continue
-		}
-		modules[m.Path] = *m
-	}
-	return modules, nil
-}
-
-func runDetector(hackDir string, deps []byte, outPath string) error {
-	tmpDir, err := os.MkdirTemp("", "go-licence-detector-")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	cmd := exec.Command("go", "run",
-		"go.elastic.co/go-licence-detector@"+detectorVersion,
-		"-rules", filepath.Join(hackDir, "rules.json"),
-		"-overrides", filepath.Join(hackDir, "overrides.ndjson"),
-		"-depsTemplate", filepath.Join(hackDir, "third-party-licenses.md.tmpl"),
-		"-depsOut", outPath,
-	)
-	cmd.Dir = tmpDir
-	cmd.Stdin = bytes.NewReader(deps)
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("go-licence-detector: %w", err)
-	}
-
-	return normalizeTrailingNewline(outPath)
-}
-
-func normalizeTrailingNewline(path string) error {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	normalized := append(bytes.TrimRight(content, "\n"), '\n')
-	if bytes.Equal(content, normalized) {
-		return nil
-	}
-	return os.WriteFile(path, normalized, 0o644)
 }
