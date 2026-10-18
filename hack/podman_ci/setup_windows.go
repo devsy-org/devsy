@@ -29,6 +29,7 @@ const (
 	windowsDiagnosticReserve   = 25 * time.Second
 	windowsMinimumRecoveryTime = 60 * time.Second
 	windowsHardDeadlinePadding = 10 * time.Second
+	maxTransientPullRetries    = 2
 )
 
 func platformSetup(ctx context.Context, deps Dependencies, cfg SetupConfig) error {
@@ -43,7 +44,17 @@ func setupWindows(ctx context.Context, deps Dependencies, cfg SetupConfig) error
 		return err
 	}
 	state := &windowsSetup{ctx: ctx, deps: deps, budget: budget, cfg: cfg}
-	return state.run()
+	runErr := state.run()
+	if runErr != nil {
+		// Per-command timeouts deliberately leave descendants (podman,
+		// gvproxy, win-sshproxy, wsl helpers) running so recovery and
+		// readiness polling can observe a still-booting machine. Once setup
+		// gives up for good, nothing else reaps them, so sweep them here to
+		// guarantee the step can exit promptly instead of leaving processes
+		// that may outlive our own bootstrap budget.
+		terminateStrayWindowsProcesses(deps.Log)
+	}
+	return runErr
 }
 
 type windowsSetup struct {
@@ -119,19 +130,11 @@ func (s *windowsSetup) initializeMachine(attempt int) error {
 	if attempt == 1 {
 		reserve += windowsMinimumRecoveryTime
 	}
-	initTimeout := s.budget.Bound(windowsInitTimeout, reserve)
-	if initTimeout <= 0 {
-		return fmt.Errorf(
-			"PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT attempt=%d output=%s",
-			attempt,
-			"PODMAN_WINDOWS_BOOTSTRAP_BUDGET_EXHAUSTED: insufficient initialization budget",
-		)
-	}
 	args := []string{commandMachine, machineInit}
-	result := s.runCommand(
-		CommandSpec{Path: s.cfg.PodmanPath, Args: args, Timeout: initTimeout},
-		reserve,
-	)
+	result, err := s.runMachineInit(attempt, args, reserve)
+	if err != nil {
+		return err
+	}
 	if result.TimedOut {
 		return fmt.Errorf(
 			"PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT attempt=%d %s",
@@ -150,6 +153,69 @@ func (s *windowsSetup) initializeMachine(attempt int) error {
 		attempt,
 		describeCommand(s.cfg.PodmanPath, args, result),
 	)
+}
+
+// runMachineInit runs `podman machine init`, retrying a bounded number of
+// times when the failure looks like a transient registry pull error (e.g. a
+// truncated read on the machine-os image blob) instead of immediately
+// burning a full attempt/recovery cycle.
+func (s *windowsSetup) runMachineInit(
+	attempt int,
+	args []string,
+	reserve time.Duration,
+) (CommandResult, error) {
+	for pullAttempt := 1; ; pullAttempt++ {
+		initTimeout := s.budget.Bound(windowsInitTimeout, reserve)
+		if initTimeout <= 0 {
+			return CommandResult{}, fmt.Errorf(
+				"PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT attempt=%d output=%s",
+				attempt,
+				"PODMAN_WINDOWS_BOOTSTRAP_BUDGET_EXHAUSTED: insufficient initialization budget",
+			)
+		}
+		result := s.runCommand(
+			CommandSpec{Path: s.cfg.PodmanPath, Args: args, Timeout: initTimeout},
+			reserve,
+		)
+		if s.shouldStopInitRetry(result, pullAttempt, reserve) {
+			return result, nil
+		}
+		s.deps.Log.Printf(
+			"[podman-windows] machine_init_transient_pull_retry attempt=%d pull_attempt=%d",
+			attempt,
+			pullAttempt,
+		)
+	}
+}
+
+func (s *windowsSetup) shouldStopInitRetry(
+	result CommandResult,
+	pullAttempt int,
+	reserve time.Duration,
+) bool {
+	return !isTransientPullError(result.Output()) ||
+		pullAttempt >= maxTransientPullRetries ||
+		s.budget.Remaining(reserve) < windowsMinimumRecoveryTime
+}
+
+// isTransientPullError reports whether a failed `podman machine init`
+// output looks like a transient registry/network error pulling the
+// machine-os image, rather than a durable configuration or environment
+// failure. Observed in CI: "writing blob: happened during read: unexpected
+// EOF" from a truncated image layer read.
+func isTransientPullError(output string) bool {
+	markers := []string{
+		"happened during read: unexpected EOF",
+		"connection reset by peer",
+		"TLS handshake timeout",
+		"i/o timeout",
+	}
+	for _, marker := range markers {
+		if strings.Contains(output, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *windowsSetup) verifyExistingMachine(attempt int) error {
@@ -407,6 +473,11 @@ func armWatchdog(timeout time.Duration, log *Logger) watchdog {
 		defer timer.Stop()
 		select {
 		case <-timer.C:
+			log.Printf(
+				"[podman-windows] hard_deadline_exceeded timeout_ms=%d",
+				timeout.Milliseconds(),
+			)
+			terminateStrayWindowsProcesses(log)
 			_ = windows.TerminateProcess(windows.CurrentProcess(), 124)
 			os.Exit(124)
 		case <-watch.stop:

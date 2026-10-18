@@ -46,3 +46,35 @@ func isInterestingWindowsProcess(name string) bool {
 		return false
 	}
 }
+
+// terminateStrayWindowsProcesses forcefully terminates any Podman/WSL helper
+// processes still running system-wide (podman, wsl, gvproxy, win-sshproxy).
+// It is called when devsy-ci-podman.exe is about to exit after a terminal
+// failure (including the hard watchdog deadline) so that no descendant
+// process is left behind holding handles or keeping a VM alive past our own
+// bootstrap budget: per-command timeouts deliberately leave descendants
+// running to let recovery/readiness polling observe a still-booting
+// machine, but once setup gives up for good there is no further attempt to
+// reap them.
+func terminateStrayWindowsProcesses(log *Logger) {
+	for _, process := range matchingWindowsProcesses() {
+		handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, process.PID)
+		if err != nil {
+			log.Printf(
+				"[podman-windows] stray_process_open_failed pid=%d name=%s err=%v",
+				process.PID,
+				process.Name,
+				err,
+			)
+			continue
+		}
+		killErr := windows.TerminateProcess(handle, 124)
+		_ = windows.CloseHandle(handle)
+		log.Printf(
+			"[podman-windows] stray_process_terminated pid=%d name=%s err=%v",
+			process.PID,
+			process.Name,
+			killErr,
+		)
+	}
+}

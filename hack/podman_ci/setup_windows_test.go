@@ -225,6 +225,44 @@ func TestWindowsPartialInitRecoveryRetriesWithFreshBudget(t *testing.T) {
 	}
 }
 
+func TestWindowsMachineInitRetriesTransientPullError(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1, 0)}
+	runner := &windowsFakeRunner{clock: clock, results: map[string][]CommandResult{
+		testMachineInit: {
+			failureResult("Error: writing blob: happened during read: unexpected EOF"),
+			successResult(""),
+		},
+	}, durations: map[string]time.Duration{}}
+	if err := setupWindows(
+		context.Background(),
+		windowsDependencies(runner, clock),
+		windowsConfig(t),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if countWindowsCalls(runner, testMachineInit) != 2 {
+		t.Fatalf("transient pull error did not retry machine init: %+v", runner.calls)
+	}
+	if countWindowsCalls(runner, "machine stop") != 0 {
+		t.Fatalf("transient pull retry should not trigger full recovery: %+v", runner.calls)
+	}
+}
+
+func TestWindowsMachineInitTransientPullRetryIsBounded(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1, 0)}
+	transientFailure := failureResult("Error: writing blob: happened during read: unexpected EOF")
+	runner := &windowsFakeRunner{clock: clock, results: map[string][]CommandResult{
+		testMachineInit: {transientFailure, transientFailure, transientFailure, transientFailure},
+	}, durations: map[string]time.Duration{}}
+	err := setupWindows(context.Background(), windowsDependencies(runner, clock), windowsConfig(t))
+	if err == nil || !strings.Contains(err.Error(), "unexpected EOF") {
+		t.Fatalf("expected terminal transient-pull failure, got %v", err)
+	}
+	if countWindowsCalls(runner, testMachineInit) != maxTransientPullRetries*2 {
+		t.Fatalf("expected bounded retries across both attempts: %+v", runner.calls)
+	}
+}
+
 func TestWindowsUnexpectedCleanupFailurePreventsRetry(t *testing.T) {
 	failedCommands := []string{
 		"machine stop", "machine rm -f", "--shutdown", testWSLList,
@@ -362,6 +400,7 @@ func verifyWatchdogExpires(t *testing.T) {
 		t.Fatalf("blocked watchdog exit=%v output=%s", err, output)
 	}
 	if !strings.Contains(string(output), "hard_deadline_armed") ||
+		!strings.Contains(string(output), "hard_deadline_exceeded") ||
 		strings.Contains(string(output), "PODMAN_WINDOWS_BOOTSTRAP_HARD_TIMEOUT") {
 		t.Fatalf("watchdog markers missing: %s", output)
 	}
