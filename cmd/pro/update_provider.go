@@ -62,14 +62,11 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	if provider.Source.Internal {
 		return nil
 	}
-	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, provider.Name)
+	unlock, err := provider2.LockProvider(devsyConfig.DefaultContext, provider.Name)
 	if err != nil {
-		return fmt.Errorf("get operation lock: %w", err)
+		return err
 	}
-	if err := opLock.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock: %w", err)
-	}
-	defer func() { _ = opLock.Unlock() }()
+	defer unlock()
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
 		return err

@@ -57,23 +57,17 @@ func (cmd *RenameCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	lock1, err := provider.GetProviderOperationLock(devsyConfig.DefaultContext, names[0])
+	unlock1, err := provider.LockProviderNamed(devsyConfig.DefaultContext, names[0])
 	if err != nil {
-		return fmt.Errorf("get operation lock for %s: %w", names[0], err)
+		return err
 	}
-	if err := lock1.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock for %s: %w", names[0], err)
-	}
-	defer func() { _ = lock1.Unlock() }()
+	defer unlock1()
 
-	lock2, err := provider.GetProviderOperationLock(devsyConfig.DefaultContext, names[1])
+	unlock2, err := provider.LockProviderNamed(devsyConfig.DefaultContext, names[1])
 	if err != nil {
-		return fmt.Errorf("get operation lock for %s: %w", names[1], err)
+		return err
 	}
-	if err := lock2.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock for %s: %w", names[1], err)
-	}
-	defer func() { _ = lock2.Unlock() }()
+	defer unlock2()
 
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {

@@ -108,14 +108,11 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		sort.Strings(names)
 	}
 	for _, name := range names {
-		opLock, lockErr := provider.GetProviderOperationLock(devsyConfig.DefaultContext, name)
+		unlock, lockErr := provider.LockProviderNamed(devsyConfig.DefaultContext, name)
 		if lockErr != nil {
-			return fmt.Errorf("get operation lock for %s: %w", name, lockErr)
+			return lockErr
 		}
-		if lockErr := opLock.Lock(); lockErr != nil {
-			return fmt.Errorf("acquire operation lock for %s: %w", name, lockErr)
-		}
-		defer func() { _ = opLock.Unlock() }()
+		defer unlock()
 	}
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {

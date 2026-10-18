@@ -23,6 +23,30 @@ func GetProviderOperationLock(contextName, providerName string) (*flock.Flock, e
 	return flock.New(filepath.Join(locksDir, providerName+".provider-operation.lock")), nil
 }
 
+// LockProvider acquires the operation lock for providerName in contextName and
+// returns the func that releases it. Errors are wrapped as "get operation lock"
+// or "acquire operation lock". Callers defer the returned func.
+func LockProvider(contextName, providerName string) (func(), error) {
+	return lockProvider(contextName, providerName, "")
+}
+
+// LockProviderNamed is LockProvider with the provider name in the error text
+// ("get operation lock for <name>: ...").
+func LockProviderNamed(contextName, providerName string) (func(), error) {
+	return lockProvider(contextName, providerName, " for "+providerName)
+}
+
+func lockProvider(contextName, providerName, errSuffix string) (func(), error) {
+	opLock, err := GetProviderOperationLock(contextName, providerName)
+	if err != nil {
+		return nil, fmt.Errorf("get operation lock%s: %w", errSuffix, err)
+	}
+	if err := opLock.Lock(); err != nil {
+		return nil, fmt.Errorf("acquire operation lock%s: %w", errSuffix, err)
+	}
+	return func() { _ = opLock.Unlock() }, nil
+}
+
 // GetProInstanceOperationLock serializes creation of one Pro host without
 // sharing a lock file with provider rename or lifecycle operations.
 func GetProInstanceOperationLock(contextName, host string) (*flock.Flock, error) {

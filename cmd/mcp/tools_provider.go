@@ -148,14 +148,11 @@ func runProviderDelete(ctx context.Context, g *flags.GlobalFlags, name string) e
 		return err
 	}
 
-	opLock, err := provider.GetProviderOperationLock(devsyConfig.DefaultContext, name)
+	unlock, err := provider.LockProvider(devsyConfig.DefaultContext, name)
 	if err != nil {
-		return fmt.Errorf("get operation lock: %w", err)
+		return err
 	}
-	if err := opLock.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock: %w", err)
-	}
-	defer func() { _ = opLock.Unlock() }()
+	defer unlock()
 
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, g.Provider)
 	if err != nil {

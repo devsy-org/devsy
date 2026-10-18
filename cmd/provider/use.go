@@ -1,8 +1,6 @@
 package provider
 
 import (
-	"fmt"
-
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -19,14 +17,11 @@ func UseProvider(contextOverride, providerOverride, name string) error {
 	if err != nil {
 		return err
 	}
-	opLock, err := provider.GetProviderOperationLock(initial.DefaultContext, name)
+	unlock, err := provider.LockProvider(initial.DefaultContext, name)
 	if err != nil {
-		return fmt.Errorf("get operation lock: %w", err)
+		return err
 	}
-	if err := opLock.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock: %w", err)
-	}
-	defer func() { _ = opLock.Unlock() }()
+	defer unlock()
 
 	var resolved string
 	err = config.UpdateConfig(

@@ -73,14 +73,11 @@ func (cmd *DeleteCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("specify a provider to delete")
 	}
 
-	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, provider)
+	unlock, err := provider2.LockProvider(devsyConfig.DefaultContext, provider)
 	if err != nil {
-		return fmt.Errorf("get operation lock: %w", err)
+		return err
 	}
-	if err := opLock.Lock(); err != nil {
-		return fmt.Errorf("acquire operation lock: %w", err)
-	}
-	defer func() { _ = opLock.Unlock() }()
+	defer unlock()
 
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
