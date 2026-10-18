@@ -37,9 +37,7 @@ var _ = ginkgo.Describe(
 				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", initialDir)
 
 				err = f.DevsyProviderAddDocker(ctx, providerName)
 				framework.ExpectNoError(err)
@@ -116,9 +114,7 @@ var _ = ginkgo.Describe(
 				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", initialDir)
 
 				err = f.DevsyProviderAddDocker(ctx, providerName)
 				framework.ExpectNoError(err)
@@ -175,9 +171,7 @@ var _ = ginkgo.Describe(
 				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", initialDir)
 
 				err = f.DevsyProviderAddDocker(ctx, providerName)
 				framework.ExpectNoError(err)
@@ -233,9 +227,7 @@ var _ = ginkgo.Describe(
 				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", initialDir)
 
 				err = f.DevsyProviderAddDocker(ctx, providerName)
 				framework.ExpectNoError(err)
@@ -279,9 +271,7 @@ var _ = ginkgo.Describe(
 				err := f.DevsyProviderDelete(ctx, providerName, "--ignore-not-found")
 				framework.ExpectNoError(err)
 
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", initialDir)
 
 				err = f.DevsyProviderAddDocker(ctx, providerName)
 				framework.ExpectNoError(err)

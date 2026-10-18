@@ -25,6 +25,16 @@ func SetupDockerWorkspace(testdataPath, initialDir string) (string, *Framework, 
 	return tempDir, f, nil
 }
 
+// CopyTestdata copies testdataPath to a temp dir, changes into it, and registers
+// cleanup that removes the temp dir and changes back to initialDir.
+func CopyTestdata(testdataPath, initialDir string) string {
+	tempDir, err := CopyToTempDir(testdataPath)
+	ExpectNoErrorWithOffset(1, err)
+	ginkgo.DeferCleanup(CleanupTempDir, initialDir, tempDir)
+
+	return tempDir
+}
+
 // SetupDockerWorkspaceAndUp is SetupDockerWorkspace followed by devsy up.
 func SetupDockerWorkspaceAndUp(
 	ctx context.Context,
