@@ -109,7 +109,7 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "complete", label: "Done" },
 ]
 
-const footerPrimaryButtonClass = "ml-auto flex h-10 min-w-36 px-8"
+const footerPrimaryButtonClass = "mx-auto flex h-11 min-w-44 px-10 text-base"
 
 let {
   open = $bindable(false),
