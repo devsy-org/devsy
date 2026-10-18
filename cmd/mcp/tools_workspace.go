@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -90,22 +89,26 @@ func handleWorkspaceList(ctx context.Context, g *flags.GlobalFlags) (workspaceLi
 }
 
 func handleWorkspaceStatus(ctx context.Context, g *flags.GlobalFlags, name string) (any, error) {
-	if name == "" {
-		return nil, fmt.Errorf("name is required")
+	ws, err := getWorkspaceClient(ctx, g, name)
+	if err != nil {
+		return nil, err
 	}
+	return ws.WorkspaceConfig(), nil
+}
+
+// getWorkspaceClient loads the devsy config and resolves an existing workspace by name.
+func getWorkspaceClient(
+	ctx context.Context, g *flags.GlobalFlags, name string,
+) (client2.BaseWorkspaceClient, error) {
 	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
 	if err != nil {
 		return nil, err
 	}
-	client, err := workspace.Get(ctx, workspace.GetOptions{
+	return workspace.Get(ctx, workspace.GetOptions{
 		DevsyConfig: devsyConfig,
 		Args:        []string{name},
 		Owner:       g.Owner,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return client.WorkspaceConfig(), nil
 }
 
 // errorResult builds an isError CallToolResult carrying the classified payload.
@@ -154,8 +157,8 @@ func registerWorkspaceStartTool(s *sdkmcp.Server, g *flags.GlobalFlags, sem *opS
 	}, safeHandler(func(
 		ctx context.Context, req *sdkmcp.CallToolRequest, in nameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Name == "" {
-			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		if err := requireField("name", in.Name); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		release, err := sem.acquire(ctx)
 		if err != nil {
@@ -177,8 +180,8 @@ func registerWorkspaceStopTool(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Name == "" {
-			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		if err := requireField("name", in.Name); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return stopWorkspace(ctx, g, in.Name) })
 	}))
@@ -192,8 +195,8 @@ func registerWorkspaceDeleteTool(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in nameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Name == "" {
-			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		if err := requireField("name", in.Name); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return deleteWorkspace(ctx, g, in.Name, in.Force) })
 	}))
@@ -215,8 +218,8 @@ func registerWorkspaceCreateTool(s *sdkmcp.Server, g *flags.GlobalFlags, sem *op
 	}, safeHandler(func(
 		ctx context.Context, req *sdkmcp.CallToolRequest, in createInput,
 	) (*sdkmcp.CallToolResult, any, error) {
-		if in.Source == "" {
-			return errorResult(fmt.Errorf("source is required")), nil, nil
+		if err := requireField("source", in.Source); err != nil {
+			return errorResult(err), nil, nil
 		}
 		release, err := sem.acquire(ctx)
 		if err != nil {
@@ -240,34 +243,18 @@ func startWorkspace(ctx context.Context, g *flags.GlobalFlags, name string) erro
 	// RunFromOptions creates the workspace if the name doesn't resolve;
 	// pre-check existence to keep workspace_start lookup-only. A TOCTOU race
 	// with a concurrent delete surfaces as an actionable error.
-	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
-	if err != nil {
-		return err
-	}
-	if _, err := workspace.Get(ctx, workspace.GetOptions{
-		DevsyConfig: devsyConfig,
-		Args:        []string{name},
-		Owner:       g.Owner,
-	}); err != nil {
+	if _, err := getWorkspaceClient(ctx, g, name); err != nil {
 		return err
 	}
 	return runUp(ctx, g, createInput{Source: name})
 }
 
 func stopWorkspace(ctx context.Context, g *flags.GlobalFlags, name string) error {
-	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
+	ws, err := getWorkspaceClient(ctx, g, name)
 	if err != nil {
 		return err
 	}
-	client, err := workspace.Get(ctx, workspace.GetOptions{
-		DevsyConfig: devsyConfig,
-		Args:        []string{name},
-		Owner:       g.Owner,
-	})
-	if err != nil {
-		return err
-	}
-	return client.Stop(ctx, client2.StopOptions{})
+	return ws.Stop(ctx, client2.StopOptions{})
 }
 
 func deleteWorkspace(ctx context.Context, g *flags.GlobalFlags, name string, force bool) error {
@@ -285,29 +272,18 @@ func deleteWorkspace(ctx context.Context, g *flags.GlobalFlags, name string, for
 }
 
 func createWorkspace(ctx context.Context, g *flags.GlobalFlags, in createInput) (any, error) {
-	if in.Source == "" {
-		return nil, fmt.Errorf("source is required")
-	}
 	if err := runUp(ctx, g, in); err != nil {
-		return nil, err
-	}
-	devsyConfig, err := config.LoadConfig(g.Context, g.Provider)
-	if err != nil {
 		return nil, err
 	}
 	lookup := in.Name
 	if lookup == "" {
 		lookup = in.Source
 	}
-	client, err := workspace.Get(ctx, workspace.GetOptions{
-		DevsyConfig: devsyConfig,
-		Args:        []string{lookup},
-		Owner:       g.Owner,
-	})
+	ws, err := getWorkspaceClient(ctx, g, lookup)
 	if err != nil {
 		return nil, err
 	}
-	return client.WorkspaceConfig(), nil
+	return ws.WorkspaceConfig(), nil
 }
 
 func runUp(ctx context.Context, g *flags.GlobalFlags, in createInput) error {

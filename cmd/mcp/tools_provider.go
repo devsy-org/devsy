@@ -58,8 +58,8 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerAddInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Source == "" {
-			return errorResult(fmt.Errorf("source is required")), opOK{}, nil
+		if err := requireField("source", in.Source); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return runProviderAdd(ctx, g, in) })
 	}))
@@ -70,8 +70,8 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Name == "" {
-			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		if err := requireField("name", in.Name); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return runProviderDelete(ctx, g, in.Name) })
 	}))
@@ -84,8 +84,8 @@ func registerProviderTools(s *sdkmcp.Server, g *flags.GlobalFlags) {
 	}, safeHandler(func(
 		ctx context.Context, _ *sdkmcp.CallToolRequest, in providerNameInput,
 	) (*sdkmcp.CallToolResult, opOK, error) {
-		if in.Name == "" {
-			return errorResult(fmt.Errorf("name is required")), opOK{}, nil
+		if err := requireField("name", in.Name); err != nil {
+			return errorResult(err), opOK{}, nil
 		}
 		return opResultHandler(func() error { return runProviderUse(ctx, g, in.Name) })
 	}))
