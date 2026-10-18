@@ -6,9 +6,11 @@ import (
 	"github.com/onsi/ginkgo/v2"
 )
 
+const osWindows = "windows"
+
 func SkipOnWindows(reason string) {
 	ginkgo.GinkgoHelper()
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == osWindows {
 		ginkgo.Skip(reason)
 	}
 }
