@@ -134,14 +134,14 @@ func resolveNewInstanceParameters(
 		return "", nil
 	}
 
-	fieldParameters := form.PrepareParameters(parameters)
+	fieldParameters := prepareParameters(parameters)
 	if err := huh.NewForm(
-		huh.NewGroup(form.ParameterFields(fieldParameters)...),
+		huh.NewGroup(parameterFields(fieldParameters)...),
 	).RunWithContext(formCtx); err != nil {
 		return "", err
 	}
 
-	return form.RenderParameters(fieldParameters)
+	return renderParameters(fieldParameters)
 }
 
 type buildNewInstanceParams struct {
@@ -301,13 +301,13 @@ func resolveInstanceParameters(
 	fieldParameters := fieldParametersWithValues(parameters, existingParameters)
 
 	err = huh.NewForm(
-		huh.NewGroup(form.ParameterFields(fieldParameters)...),
+		huh.NewGroup(parameterFields(fieldParameters)...),
 	).RunWithContext(formCtx)
 	if err != nil {
 		return "", err
 	}
 
-	return form.RenderParameters(fieldParameters)
+	return renderParameters(fieldParameters)
 }
 
 func existingParametersFor(
@@ -332,14 +332,14 @@ func existingParametersFor(
 func fieldParametersWithValues(
 	appParameters []storagev1.AppParameter,
 	existingParameters map[string]any,
-) []*form.FieldParameter {
-	fieldParameters := []*form.FieldParameter{}
+) []*FieldParameter {
+	fieldParameters := []*FieldParameter{}
 	for _, p := range appParameters {
 		var value any = p.DefaultValue
 		if existingParameters != nil {
 			value = parameters.GetDeepValue(existingParameters, p.Variable)
 		}
-		fieldParameter := form.FieldParameter{AppParameter: p}
+		fieldParameter := FieldParameter{AppParameter: p}
 		assignParameterValue(&fieldParameter, value)
 		fieldParameters = append(fieldParameters, &fieldParameter)
 	}
@@ -347,8 +347,8 @@ func fieldParametersWithValues(
 	return fieldParameters
 }
 
-func assignParameterValue(fieldParameter *form.FieldParameter, value any) {
-	if fieldParameter.Type == form.ParameterTypeBoolean {
+func assignParameterValue(fieldParameter *FieldParameter, value any) {
+	if fieldParameter.Type == paramTypeBoolean {
 		assignBoolValue(fieldParameter, value)
 		return
 	}
@@ -363,7 +363,7 @@ func assignParameterValue(fieldParameter *form.FieldParameter, value any) {
 	}
 }
 
-func assignBoolValue(fieldParameter *form.FieldParameter, value any) {
+func assignBoolValue(fieldParameter *FieldParameter, value any) {
 	switch v := value.(type) {
 	case bool:
 		fieldParameter.BoolValue = v
@@ -400,4 +400,125 @@ func applyInstanceChanges(
 	}
 
 	return newInstance
+}
+
+const paramTypeBoolean = "boolean"
+
+type FieldParameter struct {
+	storagev1.AppParameter
+
+	StringValue string
+	BoolValue   bool
+}
+
+func prepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
+	retParams := []*FieldParameter{}
+	for _, p := range parameters {
+		fieldParameter := FieldParameter{AppParameter: p}
+		if p.Type == paramTypeBoolean {
+			v, err := strconv.ParseBool(p.DefaultValue)
+			if err == nil {
+				fieldParameter.BoolValue = v
+			}
+		} else {
+			fieldParameter.StringValue = p.DefaultValue
+		}
+
+		retParams = append(retParams, &fieldParameter)
+	}
+
+	return retParams
+}
+
+func parameterFields(fieldParameters []*FieldParameter) []huh.Field {
+	fields := []huh.Field{}
+	for _, param := range fieldParameters {
+		fields = append(fields, parameterField(param))
+	}
+
+	return fields
+}
+
+func parameterField(param *FieldParameter) huh.Field {
+	title := param.Label
+	if title == "" {
+		title = param.Variable
+	}
+	paramType := param.Type
+	if paramType == "" {
+		paramType = "string"
+	}
+
+	switch paramType {
+	case "multiline":
+		return huh.NewText().
+			Title(title).
+			Description(param.Description).
+			Value(&param.StringValue)
+	case "password", "number", "string":
+		return stringParameterField(param, title)
+	case paramTypeBoolean:
+		return huh.NewConfirm().
+			Title(title).
+			Description(param.Description).
+			Value(&param.BoolValue)
+	}
+
+	return stringParameterField(param, title)
+}
+
+func stringParameterField(param *FieldParameter, title string) huh.Field {
+	// display a select field if param has options
+	if len(param.Options) > 0 {
+		opts := []huh.Option[string]{}
+		for _, o := range param.Options {
+			huhOption := huh.Option[string]{
+				Key:   o,
+				Value: o,
+			}
+			if o == param.DefaultValue {
+				huhOption = huhOption.Selected(true)
+			}
+			opts = append(opts, huhOption)
+		}
+
+		return huh.NewSelect[string]().
+			Title(title).
+			Options(opts...).
+			Value(&param.StringValue)
+	}
+
+	input := huh.NewInput().Title(title).
+		Description(param.Description).
+		Value(&param.StringValue)
+
+	if param.Type == "password" {
+		input.EchoMode(huh.EchoModePassword)
+	}
+	if param.Type == "number" {
+		input.Validate(func(s string) error {
+			_, err := strconv.ParseFloat(s, 64)
+			return err
+		})
+	}
+
+	return input
+}
+
+func renderParameters(fieldParameters []*FieldParameter) (string, error) {
+	p := map[string]any{}
+	for _, fp := range fieldParameters {
+		if fp.StringValue != "" {
+			p[fp.Variable] = fp.StringValue
+		} else if fp.BoolValue {
+			p[fp.Variable] = strconv.FormatBool(fp.BoolValue)
+		}
+	}
+
+	rawParameters, err := yaml.Marshal(p)
+	if err != nil {
+		return "", err
+	}
+
+	return string(rawParameters), nil
 }

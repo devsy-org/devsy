@@ -21,8 +21,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// ParameterTypeBoolean is the template parameter type for boolean values.
-const ParameterTypeBoolean = "boolean"
+const parameterTypeBoolean = "boolean"
 
 func CreateInstance(
 	ctx context.Context,
@@ -130,7 +129,7 @@ func renderedParametersForCreate(
 		return "", nil
 	}
 
-	fieldParameters := PrepareParameters(parameters)
+	fieldParameters := prepareParameters(parameters)
 	return runParameterForm(formCtx, fieldParameters)
 }
 
@@ -188,12 +187,12 @@ func resolveTemplateParameters(
 
 func runParameterForm(formCtx context.Context, fieldParameters []*FieldParameter) (string, error) {
 	if err := huh.NewForm(
-		huh.NewGroup(ParameterFields(fieldParameters)...),
+		huh.NewGroup(parameterFields(fieldParameters)...),
 	).RunWithContext(formCtx); err != nil {
 		return "", err
 	}
 
-	return RenderParameters(fieldParameters)
+	return renderParameters(fieldParameters)
 }
 
 func UpdateInstance(
@@ -366,7 +365,7 @@ func buildFieldParameters(
 }
 
 func assignFieldValue(fieldParameter *FieldParameter, value any) {
-	if fieldParameter.Type == ParameterTypeBoolean {
+	if fieldParameter.Type == parameterTypeBoolean {
 		assignBoolFieldValue(fieldParameter, value)
 		return
 	}
@@ -433,7 +432,7 @@ var latestTemplateVersion = huh.Option[string]{
 	Value: "",
 }
 
-// ProjectOptions lists the platform projects as select options.
+// ProjectOptions lists projects as huh options.
 func ProjectOptions(ctx context.Context, client client.Client) ([]ProjectOption, error) {
 	projects, err := list.Projects(ctx, client)
 	if err != nil {
@@ -451,7 +450,7 @@ func ProjectOptions(ctx context.Context, client client.Client) ([]ProjectOption,
 	return projectOptions, nil
 }
 
-// ClusterOptions lists the clusters of project as select options; cancels the form on error.
+// ClusterOptions lists clusters of a project as huh options.
 func ClusterOptions(
 	ctx context.Context,
 	client client.Client,
@@ -481,7 +480,7 @@ func ClusterOptions(
 	return opts
 }
 
-// TemplateOptions lists the project templates as select options, default template first.
+// TemplateOptions lists templates of a project as huh options, default first.
 func TemplateOptions(
 	ctx context.Context,
 	client client.Client,
@@ -522,7 +521,7 @@ func TemplateOptions(
 	return opts
 }
 
-// TemplateVersionOptions lists the "latest" option followed by the template versions.
+// TemplateVersionOptions lists template versions, latest first.
 func TemplateVersionOptions(
 	template *managementv1.DevsyWorkspaceTemplate,
 ) []huh.Option[string] {
@@ -548,12 +547,11 @@ type FieldParameter struct {
 	BoolValue   bool
 }
 
-// PrepareParameters wraps template parameters as field parameters seeded from their defaults.
-func PrepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
+func prepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
 	retParams := []*FieldParameter{}
 	for _, p := range parameters {
 		fieldParameter := FieldParameter{AppParameter: p}
-		if p.Type == ParameterTypeBoolean {
+		if p.Type == parameterTypeBoolean {
 			v, err := strconv.ParseBool(p.DefaultValue)
 			if err == nil {
 				fieldParameter.BoolValue = v
@@ -568,8 +566,7 @@ func PrepareParameters(parameters []storagev1.AppParameter) []*FieldParameter {
 	return retParams
 }
 
-// ParameterFields builds one huh field per parameter.
-func ParameterFields(fieldParameters []*FieldParameter) []huh.Field {
+func parameterFields(fieldParameters []*FieldParameter) []huh.Field {
 	fields := []huh.Field{}
 	for _, param := range fieldParameters {
 		title := param.Label
@@ -586,7 +583,7 @@ func ParameterFields(fieldParameters []*FieldParameter) []huh.Field {
 				Value(&param.StringValue)
 		case "password", "number", "string":
 			field = stringParameterField(param, title)
-		case ParameterTypeBoolean:
+		case parameterTypeBoolean:
 			field = huh.NewConfirm().
 				Title(title).
 				Description(param.Description).
@@ -638,8 +635,7 @@ func stringParameterField(param *FieldParameter, title string) huh.Field {
 	return input
 }
 
-// RenderParameters serializes the parameter values to YAML.
-func RenderParameters(fieldParameters []*FieldParameter) (string, error) {
+func renderParameters(fieldParameters []*FieldParameter) (string, error) {
 	p := map[string]any{}
 	for _, fp := range fieldParameters {
 		if fp.StringValue != "" {
