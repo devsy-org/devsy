@@ -100,11 +100,24 @@ func windowsDependencies(r *windowsFakeRunner, clock *fakeClock) Dependencies {
 
 func windowsConfig(t *testing.T) SetupConfig {
 	t.Helper()
+	stubStrayProcessSweep(t)
 	podman := filepath.Join(t.TempDir(), "podman.exe")
 	if err := os.WriteFile(podman, []byte(""), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return SetupConfig{Mode: ModeRootful, PodmanPath: podman, BootstrapTimeout: 270 * time.Second}
+}
+
+// stubStrayProcessSweep replaces the real system-wide process sweep with a
+// no-op for the duration of the test: fake-runner tests exercise setup
+// failure paths that call terminateStrayProcessesHook, and letting that
+// reach the real OS-level kill could terminate unrelated podman/wsl
+// processes on a developer's machine.
+func stubStrayProcessSweep(t *testing.T) {
+	t.Helper()
+	original := terminateStrayProcessesHook
+	terminateStrayProcessesHook = func(*Logger) {}
+	t.Cleanup(func() { terminateStrayProcessesHook = original })
 }
 
 func TestWindowsHealthyBootstrapAndExistingMachine(t *testing.T) {
@@ -252,13 +265,16 @@ func TestWindowsMachineInitTransientPullRetryIsBounded(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(1, 0)}
 	transientFailure := failureResult("Error: writing blob: happened during read: unexpected EOF")
 	runner := &windowsFakeRunner{clock: clock, results: map[string][]CommandResult{
-		testMachineInit: {transientFailure, transientFailure, transientFailure, transientFailure},
+		testMachineInit: {
+			transientFailure, transientFailure, transientFailure,
+			transientFailure, transientFailure, transientFailure,
+		},
 	}, durations: map[string]time.Duration{}}
 	err := setupWindows(context.Background(), windowsDependencies(runner, clock), windowsConfig(t))
 	if err == nil || !strings.Contains(err.Error(), "unexpected EOF") {
 		t.Fatalf("expected terminal transient-pull failure, got %v", err)
 	}
-	if countWindowsCalls(runner, testMachineInit) != maxTransientPullRetries*2 {
+	if countWindowsCalls(runner, testMachineInit) != (maxTransientPullRetries+1)*2 {
 		t.Fatalf("expected bounded retries across both attempts: %+v", runner.calls)
 	}
 }
@@ -360,6 +376,11 @@ func TestWindowsWatchdogTerminatesAndCanBeDisarmed(t *testing.T) {
 }
 
 func runWatchdogChild(mode string) {
+	// This process is a fresh re-exec of the test binary, so package vars
+	// are back to their defaults; neutralize the real system-wide sweep so
+	// the watchdog firing in these tests cannot kill unrelated podman/wsl
+	// processes on the host.
+	terminateStrayProcessesHook = func(*Logger) {}
 	if mode == "blocked-stderr" {
 		reader, stderr, err := os.Pipe()
 		if err != nil {

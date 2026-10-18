@@ -17,19 +17,20 @@ func runtimeGOOS() string               { return goosWindows }
 func platformDefaultPodmanPath() string { return `C:\Program Files\RedHat\Podman\podman.exe` }
 
 const (
-	commandWSL                 = "wsl.exe"
-	commandMachine             = "machine"
-	machineInit                = "init"
-	machineInspect             = "inspect"
-	machineStart               = "start"
-	windowsInitTimeout         = 150 * time.Second
-	windowsStartTimeout        = 90 * time.Second
-	windowsReadinessTimeout    = 45 * time.Second
-	windowsProbeTimeout        = 7 * time.Second
-	windowsDiagnosticReserve   = 25 * time.Second
-	windowsMinimumRecoveryTime = 60 * time.Second
-	windowsHardDeadlinePadding = 10 * time.Second
-	maxTransientPullRetries    = 2
+	commandWSL                          = "wsl.exe"
+	commandMachine                      = "machine"
+	machineInit                         = "init"
+	machineInspect                      = "inspect"
+	machineStart                        = "start"
+	windowsInitTimeout                  = 150 * time.Second
+	windowsStartTimeout                 = 90 * time.Second
+	windowsReadinessTimeout             = 45 * time.Second
+	windowsProbeTimeout                 = 7 * time.Second
+	windowsDiagnosticReserve            = 25 * time.Second
+	windowsMinimumRecoveryTime          = 60 * time.Second
+	windowsHardDeadlinePadding          = 10 * time.Second
+	windowsHardDeadlineDiagnosticsGrace = 2 * time.Second
+	maxTransientPullRetries             = 2
 )
 
 func platformSetup(ctx context.Context, deps Dependencies, cfg SetupConfig) error {
@@ -52,7 +53,7 @@ func setupWindows(ctx context.Context, deps Dependencies, cfg SetupConfig) error
 		// gives up for good, nothing else reaps them, so sweep them here to
 		// guarantee the step can exit promptly instead of leaving processes
 		// that may outlive our own bootstrap budget.
-		terminateStrayWindowsProcesses(deps.Log)
+		terminateStrayProcessesHook(deps.Log)
 	}
 	return runErr
 }
@@ -194,7 +195,7 @@ func (s *windowsSetup) shouldStopInitRetry(
 	reserve time.Duration,
 ) bool {
 	return !isTransientPullError(result.Output()) ||
-		pullAttempt >= maxTransientPullRetries ||
+		pullAttempt > maxTransientPullRetries ||
 		s.budget.Remaining(reserve) < windowsMinimumRecoveryTime
 }
 
@@ -473,11 +474,22 @@ func armWatchdog(timeout time.Duration, log *Logger) watchdog {
 		defer timer.Stop()
 		select {
 		case <-timer.C:
-			log.Printf(
-				"[podman-windows] hard_deadline_exceeded timeout_ms=%d",
-				timeout.Milliseconds(),
-			)
-			terminateStrayWindowsProcesses(log)
+			// Diagnostics/cleanup write to the same stdout the stalled setup
+			// path may already be blocked on; never let them stall the forced
+			// exit itself, so bound the attempt and terminate unconditionally.
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				log.Printf(
+					"[podman-windows] hard_deadline_exceeded timeout_ms=%d",
+					timeout.Milliseconds(),
+				)
+				terminateStrayProcessesHook(log)
+			}()
+			select {
+			case <-done:
+			case <-time.After(windowsHardDeadlineDiagnosticsGrace):
+			}
 			_ = windows.TerminateProcess(windows.CurrentProcess(), 124)
 			os.Exit(124)
 		case <-watch.stop:

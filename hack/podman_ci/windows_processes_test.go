@@ -14,8 +14,9 @@ import (
 // TestTerminateStrayWindowsProcessesKillsMatchingByName verifies that a
 // process matching one of the "interesting" Podman/WSL helper names (here,
 // win-sshproxy.exe) is observed by matchingWindowsProcesses and forcefully
-// terminated by terminateStrayWindowsProcesses, simulating the leftover
-// helper processes a timed-out podman machine start can leave running.
+// terminated by terminateWindowsProcesses. It targets only its own spawned
+// helper (not the system-wide terminateStrayWindowsProcesses sweep) so it
+// cannot kill unrelated podman/wsl processes a developer may have running.
 func TestTerminateStrayWindowsProcessesKillsMatchingByName(t *testing.T) {
 	exePath := copySelfAs(t, "win-sshproxy.exe")
 
@@ -29,35 +30,36 @@ func TestTerminateStrayWindowsProcessesKillsMatchingByName(t *testing.T) {
 		_, _ = cmd.Process.Wait()
 	})
 
-	if !waitForInterestingProcess(uint32(cmd.Process.Pid), 5*time.Second) {
+	helper, ok := waitForInterestingProcess(uint32(cmd.Process.Pid), 5*time.Second)
+	if !ok {
 		t.Fatal("helper process was not observed as an interesting Windows process")
 	}
 
-	terminateStrayWindowsProcesses(&Logger{Out: io.Discard, Err: io.Discard})
+	terminateWindowsProcesses([]processInfo{helper}, &Logger{Out: io.Discard, Err: io.Discard})
 
 	if !waitForProcessExit(cmd, 5*time.Second) {
 		t.Fatal("stray process survived the termination sweep")
 	}
 }
 
-func waitForInterestingProcess(pid uint32, timeout time.Duration) bool {
+func waitForInterestingProcess(pid uint32, timeout time.Duration) (processInfo, bool) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if processIsInteresting(pid) {
-			return true
+		if process, ok := findInterestingProcess(pid); ok {
+			return process, true
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	return false
+	return processInfo{}, false
 }
 
-func processIsInteresting(pid uint32) bool {
+func findInterestingProcess(pid uint32) (processInfo, bool) {
 	for _, process := range matchingWindowsProcesses() {
 		if process.PID == pid {
-			return true
+			return process, true
 		}
 	}
-	return false
+	return processInfo{}, false
 }
 
 func waitForProcessExit(cmd *exec.Cmd, timeout time.Duration) bool {
