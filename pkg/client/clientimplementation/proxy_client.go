@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -24,12 +23,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/terminal"
 	"github.com/devsy-org/devsy/pkg/transport"
 	"github.com/devsy-org/devsy/pkg/types"
-	"github.com/gofrs/flock"
-)
-
-const (
-	lockTimeout = 5 * time.Minute
-	lockRetry   = time.Second
 )
 
 func NewProxyClient(
@@ -43,14 +36,14 @@ func NewProxyClient(
 		workspace:   workspace,
 	}
 	pc.executor = &proxyExecutor{client: pc}
+	pc.locks = newClientLocks(pc.lockIDs)
 	return pc, nil
 }
 
 type proxyClient struct {
 	m sync.Mutex
 
-	workspaceLockOnce sync.Once
-	workspaceLock     *flock.Flock
+	locks *clientLocks
 
 	devsyConfig *config.Config
 	config      *provider.ProviderConfig
@@ -109,12 +102,13 @@ func (e *proxyExecutor) executeWithJSONLog(ctx context.Context, params execParam
 }
 
 func (s *proxyClient) Lock(ctx context.Context) error {
-	s.initLock()
+	if err := s.locks.ensureOpen(); err != nil {
+		return fmt.Errorf("init lock: %w", err)
+	}
 
 	// try to lock workspace
 	log.Debugf("Acquire workspace lock")
-	err := tryLock(ctx, s.workspaceLock, "workspace")
-	if err != nil {
+	if err := s.locks.lockWorkspace(ctx); err != nil {
 		return fmt.Errorf("error locking workspace: %w", err)
 	}
 	log.Debugf("Acquired workspace lock")
@@ -123,46 +117,15 @@ func (s *proxyClient) Lock(ctx context.Context) error {
 }
 
 func (s *proxyClient) Unlock() {
-	s.initLock()
+	if err := s.locks.ensureOpen(); err != nil {
+		log.Warnf("init lock: %v", err)
+		return
+	}
 
 	// try to unlock workspace
-	err := s.workspaceLock.Unlock()
-	if err != nil {
+	if err := s.locks.unlockWorkspace(); err != nil {
 		log.Warnf("Error unlocking workspace: %v", err)
 	}
-}
-
-func tryLock(ctx context.Context, lock *flock.Flock, name string) error {
-	done := scheduleLogMessage(
-		fmt.Sprintf(
-			"Trying to lock %s, seems like another process is running that blocks this %s",
-			name,
-			name,
-		),
-	)
-	defer close(done)
-
-	now := time.Now()
-	for time.Since(now) < lockTimeout {
-		locked, err := lock.TryLock()
-		if err != nil {
-			return err
-		} else if locked {
-			return nil
-		}
-
-		select {
-		case <-time.After(lockRetry):
-			continue
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-
-	return fmt.Errorf(
-		"timed out waiting to lock %s, seems like there is another process running on this machine that blocks it",
-		name,
-	)
 }
 
 func (s *proxyClient) Provider() string {
@@ -379,26 +342,11 @@ func (s *proxyClient) Status(
 	return client.ParseStatus(status.State)
 }
 
-func (s *proxyClient) initLock() {
-	s.workspaceLockOnce.Do(func() {
-		s.m.Lock()
-		defer s.m.Unlock()
+func (s *proxyClient) lockIDs() (string, string, string) {
+	s.m.Lock()
+	defer s.m.Unlock()
 
-		// get locks dir
-		workspaceLocksDir, err := provider.GetLocksDir(s.workspace.Context)
-		if err != nil {
-			panic(fmt.Errorf("get workspaces dir: %w", err))
-		}
-		// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-		if err = os.MkdirAll(workspaceLocksDir, 0o755); err != nil {
-			panic(fmt.Errorf("create workspace locks dir: %w", err))
-		}
-
-		// create workspace lock
-		s.workspaceLock = flock.New(
-			filepath.Join(workspaceLocksDir, s.workspace.ID+".workspace.lock"),
-		)
-	})
+	return s.workspace.Context, s.workspace.ID, ""
 }
 
 // checkPlatformVersion validates the platform provider version compatibility.
