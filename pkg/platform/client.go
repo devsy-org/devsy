@@ -30,7 +30,7 @@ func InitClientFromProvider(
 ) (client.Client, error) {
 	configPath, err := DevsyConfigPath(devsyConfig.DefaultContext, providerName)
 	if err != nil {
-		return nil, fmt.Errorf("loft config path: %w", err)
+		return nil, fmt.Errorf("devsy config path: %w", err)
 	}
 
 	return client.InitClientFromPath(ctx, configPath)

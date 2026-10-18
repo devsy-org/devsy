@@ -193,9 +193,10 @@ func DialInstance(
 	}
 	log.Debugf("Connect to workspace using host: %s", host)
 
-	loftURL := "wss://" + host + "/kubernetes/management/apis/management.devsy.sh/v1/namespaces/" + workspace.Namespace + "/devsyworkspaceinstances/" + workspace.Name + "/" + subResource
+	devsyURL := "wss://" + host + "/kubernetes/management/apis/management.devsy.sh/v1/namespaces/" +
+		workspace.Namespace + "/devsyworkspaceinstances/" + workspace.Name + "/" + subResource
 	if len(values) > 0 {
-		loftURL += "?" + values.Encode()
+		devsyURL += "?" + values.Encode()
 	}
 
 	dialer := websocket.Dialer{
@@ -204,7 +205,7 @@ func DialInstance(
 		HandshakeTimeout: 45 * time.Second,
 	}
 
-	conn, response, err := dialer.Dial(loftURL, map[string][]string{
+	conn, response, err := dialer.Dial(devsyURL, map[string][]string{
 		"Authorization": {"Bearer " + restConfig.BearerToken},
 	})
 	if err != nil {
@@ -213,11 +214,11 @@ func DialInstance(
 			headers, _ := json.Marshal(response.Header)
 			return nil, fmt.Errorf(
 				"%s: error dialing websocket %s (code %d): headers - %s, error -: %w",
-				string(out), loftURL, response.StatusCode, string(headers), err,
+				string(out), devsyURL, response.StatusCode, string(headers), err,
 			)
 		}
 
-		return nil, fmt.Errorf("error dialing websocket %s: %w", loftURL, err)
+		return nil, fmt.Errorf("error dialing websocket %s: %w", devsyURL, err)
 	}
 
 	return conn, nil

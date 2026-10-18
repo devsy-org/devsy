@@ -32,7 +32,7 @@ func WaitForPodReady(
 	kubeClient kubernetes.Interface,
 	namespace string,
 ) (*corev1.Pod, error) {
-	// wait until we have a running loft pod
+	// wait until we have a running devsy pod
 	now := time.Now()
 	pod := &corev1.Pod{}
 	err := wait.PollUntilContextTimeout(
@@ -41,12 +41,12 @@ func WaitForPodReady(
 		Timeout(),
 		true,
 		func(ctx context.Context) (bool, error) {
-			loftPod, found, err := pollLoftPodReady(ctx, kubeClient, namespace, &now)
+			devsyPod, found, err := pollDevsyPodReady(ctx, kubeClient, namespace, &now)
 			if err != nil {
 				return false, err
 			}
-			if loftPod != nil {
-				pod = loftPod
+			if devsyPod != nil {
+				pod = devsyPod
 			}
 			return found, nil
 		},
@@ -58,25 +58,25 @@ func WaitForPodReady(
 	return pod, nil
 }
 
-func pollLoftPodReady(
+func pollDevsyPodReady(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
 	namespace string,
 	now *time.Time,
 ) (*corev1.Pod, bool, error) {
-	loftPod := latestLoftPod(ctx, kubeClient, namespace, now)
-	if loftPod == nil {
+	devsyPod := latestDevsyPod(ctx, kubeClient, namespace, now)
+	if devsyPod == nil {
 		return nil, false, nil
 	}
 
 	found := false
-	for i := range loftPod.Status.ContainerStatuses {
-		containerStatus := loftPod.Status.ContainerStatuses[i]
+	for i := range devsyPod.Status.ContainerStatuses {
+		containerStatus := devsyPod.Status.ContainerStatuses[i]
 		ready, err := evalContainerStatus(evalContainerStatusParams{
 			ctx:             ctx,
 			kubeClient:      kubeClient,
 			namespace:       namespace,
-			loftPod:         loftPod,
+			devsyPod:        devsyPod,
 			containerStatus: containerStatus,
 			now:             now,
 		})
@@ -91,10 +91,10 @@ func pollLoftPodReady(
 		}
 	}
 
-	return loftPod, found, nil
+	return devsyPod, found, nil
 }
 
-func latestLoftPod(
+func latestDevsyPod(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
 	namespace string,
@@ -126,7 +126,7 @@ type evalContainerStatusParams struct {
 	ctx             context.Context
 	kubeClient      kubernetes.Interface
 	namespace       string
-	loftPod         *corev1.Pod
+	devsyPod        *corev1.Pod
 	containerStatus corev1.ContainerStatus
 	now             *time.Time
 }
@@ -138,7 +138,7 @@ func evalContainerStatus(params evalContainerStatusParams) (bool, error) {
 		return true, nil
 	case containerStatus.State.Terminated != nil ||
 		(containerStatus.State.Waiting != nil && CriticalStatus[containerStatus.State.Waiting.Reason]):
-		return false, loftPodFailureError(params)
+		return false, devsyPodFailureError(params)
 	case containerStatus.State.Waiting != nil && time.Now().After(params.now.Add(time.Second*10)):
 		logContainerWaiting(containerStatus)
 		*params.now = time.Now()
@@ -147,7 +147,7 @@ func evalContainerStatus(params evalContainerStatusParams) (bool, error) {
 	return false, nil
 }
 
-func loftPodFailureError(params evalContainerStatusParams) error {
+func devsyPodFailureError(params evalContainerStatusParams) error {
 	containerStatus := params.containerStatus
 	reason := ""
 	message := ""
@@ -161,7 +161,7 @@ func loftPodFailureError(params evalContainerStatusParams) error {
 
 	out, err := params.kubeClient.CoreV1().
 		Pods(params.namespace).
-		GetLogs(params.loftPod.Name, &corev1.PodLogOptions{
+		GetLogs(params.devsyPod.Name, &corev1.PodLogOptions{
 			Container: "manager",
 		}).
 		Do(params.ctx).

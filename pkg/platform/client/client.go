@@ -231,7 +231,7 @@ type keyStruct struct {
 func verifyHost(host string) error {
 	if !strings.HasPrefix(host, "https") {
 		return fmt.Errorf(
-			"cannot log into a non https loft instance %q, make sure you have TLS enabled",
+			"cannot log into a non https devsy instance %q, make sure you have TLS enabled",
 			host,
 		)
 	}
@@ -422,7 +422,7 @@ func (c *client) verifyConnection() error {
 		var authErr x509.UnknownAuthorityError
 		if errors.As(urlError.Err, &authErr) {
 			return fmt.Errorf(
-				"unsafe login endpoint %q, if you wish to login into an insecure loft endpoint run with the '--insecure' flag",
+				"unsafe login endpoint %q, if you wish to login into an insecure devsy endpoint run with the '--insecure' flag",
 				c.config.Host,
 			)
 		}
@@ -431,7 +431,7 @@ func (c *client) verifyConnection() error {
 	return fmt.Errorf("error logging in: %w", err)
 }
 
-// VerifyVersion checks if the Loft version is compatible with this CLI version.
+// VerifyVersion checks if the Devsy version is compatible with this CLI version.
 func VerifyVersion(baseClient Client) error {
 	v, err := baseClient.Version()
 	if err != nil {
