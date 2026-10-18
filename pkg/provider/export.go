@@ -86,17 +86,16 @@ func ExportWorkspace(context, workspaceID string) (*ExportWorkspaceConfig, error
 		return nil, err
 	}
 
-	buf := &bytes.Buffer{}
-	err = extract.WriteTarExclude(buf, workspaceDir, true, excludedPaths)
+	data, err := archiveDirBase64(workspaceDir, "workspace")
 	if err != nil {
-		return nil, fmt.Errorf("compress workspace dir: %w", err)
+		return nil, err
 	}
 
 	return &ExportWorkspaceConfig{
 		ID:      workspaceID,
 		UID:     workspaceConfig.UID,
 		Context: context,
-		Data:    base64.RawStdEncoding.EncodeToString(buf.Bytes()),
+		Data:    data,
 	}, nil
 }
 
@@ -111,16 +110,15 @@ func ExportMachine(context, machineID string) (*ExportMachineConfig, error) {
 		return nil, err
 	}
 
-	buf := &bytes.Buffer{}
-	err = extract.WriteTarExclude(buf, machineDir, true, excludedPaths)
+	data, err := archiveDirBase64(machineDir, "machine")
 	if err != nil {
-		return nil, fmt.Errorf("compress machine dir: %w", err)
+		return nil, err
 	}
 
 	return &ExportMachineConfig{
 		ID:      machineID,
 		Context: context,
-		Data:    base64.RawStdEncoding.EncodeToString(buf.Bytes()),
+		Data:    data,
 	}, nil
 }
 
@@ -138,10 +136,9 @@ func ExportProvider(
 		return nil, err
 	}
 
-	buf := &bytes.Buffer{}
-	err = extract.WriteTarExclude(buf, providerDir, true, excludedPaths)
+	data, err := archiveDirBase64(providerDir, "provider")
 	if err != nil {
-		return nil, fmt.Errorf("compress provider dir: %w", err)
+		return nil, err
 	}
 
 	var providerConfig *config.ProviderConfig
@@ -154,7 +151,18 @@ func ExportProvider(
 	return &ExportProviderConfig{
 		ID:      providerID,
 		Context: context,
-		Data:    base64.RawStdEncoding.EncodeToString(buf.Bytes()),
+		Data:    data,
 		Config:  providerConfig,
 	}, nil
+}
+
+// archiveDirBase64 tars dir (skipping excludedPaths) and returns it base64-encoded.
+// kind names the dir in the error message ("compress <kind> dir").
+func archiveDirBase64(dir, kind string) (string, error) {
+	buf := &bytes.Buffer{}
+	if err := extract.WriteTarExclude(buf, dir, true, excludedPaths); err != nil {
+		return "", fmt.Errorf("compress %s dir: %w", kind, err)
+	}
+
+	return base64.RawStdEncoding.EncodeToString(buf.Bytes()), nil
 }
