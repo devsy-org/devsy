@@ -21,3 +21,10 @@ func TestGetWorkspaceClient_UnknownNameReturnsError(t *testing.T) {
 		t.Fatalf("getWorkspaceClient for an unknown workspace name must return a nil client")
 	}
 }
+
+func TestHandleWorkspaceStatus_EmptyNameReturnsError(t *testing.T) {
+	_, err := handleWorkspaceStatus(context.Background(), &flags.GlobalFlags{}, "")
+	if err == nil || err.Error() != "name is required" {
+		t.Fatalf("handleWorkspaceStatus with empty name = %v, want \"name is required\"", err)
+	}
+}

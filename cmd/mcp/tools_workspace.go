@@ -89,6 +89,9 @@ func handleWorkspaceList(ctx context.Context, g *flags.GlobalFlags) (workspaceLi
 }
 
 func handleWorkspaceStatus(ctx context.Context, g *flags.GlobalFlags, name string) (any, error) {
+	if err := requireField("name", name); err != nil {
+		return nil, err
+	}
 	ws, err := getWorkspaceClient(ctx, g, name)
 	if err != nil {
 		return nil, err
