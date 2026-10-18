@@ -152,7 +152,7 @@ func (cmd *SleepCmd) patchSleep(
 		return fmt.Errorf("create patch: %w", err)
 	}
 
-	_, err = managementClient.Loft().
+	_, err = managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
 		Patch(ctx, workspaceInstance.Name, patch.Type(), patchData, metav1.PatchOptions{})
@@ -177,7 +177,7 @@ func waitForWorkspacePhase(
 		platform.Timeout(),
 		false,
 		func(ctx context.Context) (done bool, err error) {
-			workspaceInstance, err := params.managementClient.Loft().
+			workspaceInstance, err := params.managementClient.Devsy().
 				ManagementV1().
 				DevsyWorkspaceInstances(project.ProjectNamespace(params.projectName)).
 				Get(ctx, params.name, metav1.GetOptions{})

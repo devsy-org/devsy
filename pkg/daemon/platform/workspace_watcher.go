@@ -10,7 +10,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
-	loftclient "github.com/devsy-org/api/pkg/clientset/versioned"
+	devsyclient "github.com/devsy-org/api/pkg/clientset/versioned"
 	typedmanagementv1 "github.com/devsy-org/api/pkg/clientset/versioned/typed/management/v1"
 	informers "github.com/devsy-org/api/pkg/informers/externalversions"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -432,8 +432,8 @@ func (s *instanceStore) pingAndRecord(
 	s.metricsMu.Unlock()
 }
 
-func getClientSet(config *rest.Config) (loftclient.Interface, error) {
-	clientset, err := loftclient.NewForConfig(config)
+func getClientSet(config *rest.Config) (devsyclient.Interface, error) {
+	clientset, err := devsyclient.NewForConfig(config)
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +449,7 @@ func getClientSet(config *rest.Config) (loftclient.Interface, error) {
 var _ rest.Interface = (*extendedRESTClient)(nil)
 
 type extendedClientset struct {
-	*loftclient.Clientset
+	*devsyclient.Clientset
 	ManagementClient typedmanagementv1.ManagementV1Interface
 }
 

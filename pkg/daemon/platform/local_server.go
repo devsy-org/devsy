@@ -176,7 +176,7 @@ func (l *localServer) watchPlatform(stopChan <-chan struct{}) {
 		if err != nil {
 			log.Error(fmt.Errorf("create mangement client: %w", err))
 		} else {
-			_, err = managementClient.Loft().
+			_, err = managementClient.Devsy().
 				ManagementV1().
 				Selves().
 				Create(context.Background(), &managementv1.Self{}, metav1.CreateOptions{})
@@ -295,7 +295,7 @@ func (l *localServer) userProfile(
 	}
 	userName := l.pc.Self().Status.User.Name
 
-	profile, err := managementClient.Loft().
+	profile, err := managementClient.Devsy().
 		ManagementV1().
 		Users().
 		GetProfile(r.Context(), userName, metav1.GetOptions{})
@@ -322,7 +322,7 @@ func (l *localServer) updateUserProfile(
 		return err
 	}
 	userName := l.pc.Self().Status.User.Name
-	updatedProfile, err := managementClient.Loft().
+	updatedProfile, err := managementClient.Devsy().
 		ManagementV1().
 		Users().
 		UpdateProfile(r.Context(), userName, profile, metav1.CreateOptions{})
@@ -339,7 +339,7 @@ func (l *localServer) projects(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	projectList, err := managementClient.Loft().
+	projectList, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		List(r.Context(), metav1.ListOptions{})
@@ -365,7 +365,7 @@ func (l *localServer) projectTemplates(
 		return err
 	}
 
-	templateList, err := managementClient.Loft().
+	templateList, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		ListTemplates(r.Context(), projectName, metav1.GetOptions{})
@@ -393,7 +393,7 @@ func (l *localServer) projectClusters(
 		return err
 	}
 
-	clusterList, err := managementClient.Loft().
+	clusterList, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		ListClusters(r.Context(), projectName, metav1.GetOptions{})
@@ -422,7 +422,7 @@ func collectProjectWorkspaces(
 	ownerFilter workspaceOwnerFilter,
 ) ([]managementv1.DevsyWorkspaceInstance, error) {
 	ns := project.ProjectNamespace(p.GetName())
-	workspaceList, err := managementClient.Loft().
+	workspaceList, err := managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(ns).
 		List(ctx, metav1.ListOptions{})
@@ -462,7 +462,7 @@ func (l *localServer) listWorkspace(
 		return err
 	}
 
-	projectList, err := managementClient.Loft().
+	projectList, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		List(r.Context(), metav1.ListOptions{})

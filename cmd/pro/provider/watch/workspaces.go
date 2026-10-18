@@ -11,7 +11,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
-	loftclient "github.com/devsy-org/api/pkg/clientset/versioned"
+	devsyclient "github.com/devsy-org/api/pkg/clientset/versioned"
 	informers "github.com/devsy-org/api/pkg/informers/externalversions"
 	informermanagementv1 "github.com/devsy-org/api/pkg/informers/externalversions/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
@@ -89,7 +89,7 @@ func (cmd *WorkspacesCmd) Run(
 		return err
 	}
 
-	clientset, err := loftclient.NewForConfig(managementConfig)
+	clientset, err := devsyclient.NewForConfig(managementConfig)
 	if err != nil {
 		return err
 	}

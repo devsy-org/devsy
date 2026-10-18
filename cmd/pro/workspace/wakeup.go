@@ -145,7 +145,7 @@ func (cmd *WakeupCmd) patchWakeup(
 		return err
 	}
 
-	_, err = managementClient.Loft().
+	_, err = managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(project.ProjectNamespace(cmd.Project)).
 		Patch(ctx, workspaceInstance.Name, patch.Type(), patchData, metav1.PatchOptions{})

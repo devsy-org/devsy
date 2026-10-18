@@ -155,7 +155,7 @@ func (cmd *ClusterCmd) setupCluster(
 		return clusterSetup{}, err
 	}
 
-	accessKey, err := managementClient.Loft().
+	accessKey, err := managementClient.Devsy().
 		ManagementV1().
 		Clusters().
 		GetAccessKey(ctx, clusterName, metav1.GetOptions{})
@@ -175,7 +175,7 @@ func (cmd *ClusterCmd) createClusterResource(
 	managementClient kube.Interface,
 	params createClusterParams,
 ) error {
-	_, err := managementClient.Loft().ManagementV1().Clusters().Create(ctx, &managementv1.Cluster{
+	_, err := managementClient.Devsy().ManagementV1().Clusters().Create(ctx, &managementv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: params.clusterName,
 		},
@@ -401,7 +401,7 @@ func waitForClusterInitialized(
 		5*time.Minute,
 		false,
 		func(ctx context.Context) (done bool, err error) {
-			clusterInstance, err := managementClient.Loft().
+			clusterInstance, err := managementClient.Devsy().
 				ManagementV1().
 				Clusters().
 				Get(ctx, clusterName, metav1.GetOptions{})

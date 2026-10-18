@@ -3,14 +3,14 @@ package kube
 import (
 	"fmt"
 
-	loftclient "github.com/devsy-org/api/pkg/clientset/versioned"
+	devsyclient "github.com/devsy-org/api/pkg/clientset/versioned"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
 type Interface interface {
 	kubernetes.Interface
-	Loft() loftclient.Interface
+	Devsy() devsyclient.Interface
 }
 
 func NewForConfig(c *rest.Config) (Interface, error) {
@@ -19,22 +19,22 @@ func NewForConfig(c *rest.Config) (Interface, error) {
 		return nil, fmt.Errorf("create kube client: %w", err)
 	}
 
-	loftClient, err := loftclient.NewForConfig(c)
+	devsyClient, err := devsyclient.NewForConfig(c)
 	if err != nil {
-		return nil, fmt.Errorf("create loft client: %w", err)
+		return nil, fmt.Errorf("create devsy client: %w", err)
 	}
 
 	return &client{
-		Interface:  kubeClient,
-		loftClient: loftClient,
+		Interface:   kubeClient,
+		devsyClient: devsyClient,
 	}, nil
 }
 
 type client struct {
 	kubernetes.Interface
-	loftClient loftclient.Interface
+	devsyClient devsyclient.Interface
 }
 
-func (c *client) Loft() loftclient.Interface {
-	return c.loftClient
+func (c *client) Devsy() devsyclient.Interface {
+	return c.devsyClient
 }

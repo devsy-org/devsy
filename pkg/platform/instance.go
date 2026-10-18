@@ -94,7 +94,7 @@ func findInstanceByUID(
 	listOpts := metav1.ListOptions{
 		LabelSelector: storagev1.DevsyWorkspaceUIDLabel + "=" + uid,
 	}
-	workspaceList, err := managementClient.Loft().ManagementV1().
+	workspaceList, err := managementClient.Devsy().ManagementV1().
 		DevsyWorkspaceInstances(namespace).List(ctx, listOpts)
 	if err != nil {
 		return nil, err
@@ -112,7 +112,7 @@ func findInstanceByName(
 	name string,
 	namespace string,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
-	workspace, err := managementClient.Loft().ManagementV1().
+	workspace, err := managementClient.Devsy().ManagementV1().
 		DevsyWorkspaceInstances(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
@@ -251,7 +251,7 @@ func UpdateInstance(
 		return newInstance, nil
 	}
 
-	res, err := managementClient.Loft().ManagementV1().
+	res, err := managementClient.Devsy().ManagementV1().
 		DevsyWorkspaceInstances(oldInstance.GetNamespace()).
 		Patch(ctx, oldInstance.GetName(), patch.Type(), data, metav1.PatchOptions{})
 	if err != nil {
@@ -295,7 +295,7 @@ func getInstanceIfReady(
 	managementClient kube.Interface,
 	instance *managementv1.DevsyWorkspaceInstance,
 ) (*managementv1.DevsyWorkspaceInstance, bool, error) {
-	updatedInstance, err := managementClient.Loft().ManagementV1().
+	updatedInstance, err := managementClient.Devsy().ManagementV1().
 		DevsyWorkspaceInstances(instance.GetNamespace()).
 		Get(ctx, instance.GetName(), metav1.GetOptions{})
 	if err != nil {

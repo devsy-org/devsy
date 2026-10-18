@@ -61,7 +61,7 @@ func Projects(ctx context.Context, client client.Client) (*managementv1.ProjectL
 		return nil, err
 	}
 
-	projectList, err := managementClient.Loft().
+	projectList, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		List(ctx, metav1.ListOptions{})

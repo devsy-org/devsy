@@ -213,8 +213,7 @@ func collectProWorkspaceInfo(
 		return nil, fmt.Errorf("management: %w", err)
 	}
 
-	troubleshoot, err := managementClient.
-		Loft().
+	troubleshoot, err := managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(workspace.Namespace).
 		Troubleshoot(ctx, workspace.Name, metav1.GetOptions{})

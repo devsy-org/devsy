@@ -20,7 +20,7 @@ func CreateInstance(
 		return nil, err
 	}
 
-	updatedInstance, err := managementClient.Loft().ManagementV1().
+	updatedInstance, err := managementClient.Devsy().ManagementV1().
 		DevsyWorkspaceInstances(instance.GetNamespace()).
 		Create(ctx, instance, metav1.CreateOptions{})
 	if err != nil {

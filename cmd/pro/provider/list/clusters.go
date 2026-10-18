@@ -71,7 +71,7 @@ func Clusters(
 		return nil, err
 	}
 
-	clustersList, err := managementClient.Loft().
+	clustersList, err := managementClient.Devsy().
 		ManagementV1().
 		Projects().
 		ListClusters(ctx, projectName, metav1.GetOptions{})

@@ -126,7 +126,7 @@ func (c *client) RefreshSelf(ctx context.Context) error {
 		return fmt.Errorf("create mangement client: %w", err)
 	}
 
-	c.self, err = managementClient.Loft().
+	c.self, err = managementClient.Devsy().
 		ManagementV1().
 		Selves().
 		Create(ctx, &managementv1.Self{}, metav1.CreateOptions{})
@@ -159,7 +159,7 @@ func (c *client) Logout(ctx context.Context) error {
 		return fmt.Errorf("create management client: %w", err)
 	}
 
-	self, err := managementClient.Loft().
+	self, err := managementClient.Devsy().
 		ManagementV1().
 		Selves().
 		Create(ctx, &managementv1.Self{}, metav1.CreateOptions{})
@@ -168,7 +168,7 @@ func (c *client) Logout(ctx context.Context) error {
 	}
 
 	if self.Status.AccessKey != "" && self.Status.AccessKeyType == storagev1.AccessKeyTypeLogin {
-		err = managementClient.Loft().
+		err = managementClient.Devsy().
 			ManagementV1().
 			OwnedAccessKeys().
 			Delete(ctx, self.Status.AccessKey, metav1.DeleteOptions{})
@@ -387,7 +387,7 @@ func (c *client) deleteOldAccessKey() {
 		return
 	}
 
-	self, err := managementClient.Loft().
+	self, err := managementClient.Devsy().
 		ManagementV1().
 		Selves().
 		Create(context.TODO(), &managementv1.Self{}, metav1.CreateOptions{})
@@ -395,7 +395,7 @@ func (c *client) deleteOldAccessKey() {
 		return
 	}
 	if self.Status.AccessKey != "" && self.Status.AccessKeyType == storagev1.AccessKeyTypeLogin {
-		_ = managementClient.Loft().
+		_ = managementClient.Devsy().
 			ManagementV1().
 			OwnedAccessKeys().
 			Delete(context.TODO(), self.Status.AccessKey, metav1.DeleteOptions{})
@@ -409,7 +409,7 @@ func (c *client) verifyConnection() error {
 	}
 
 	// try to get self
-	_, err = managementClient.Loft().
+	_, err = managementClient.Devsy().
 		ManagementV1().
 		Selves().
 		Create(context.TODO(), &managementv1.Self{}, metav1.CreateOptions{})

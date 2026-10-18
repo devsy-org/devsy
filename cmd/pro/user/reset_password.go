@@ -117,7 +117,7 @@ func (cmd *PasswordCmd) resolveUser(
 	ctx context.Context,
 	managementClient kube.Interface,
 ) (*storagev1.User, error) {
-	user, err := managementClient.Loft().
+	user, err := managementClient.Devsy().
 		StorageV1().
 		Users().
 		Get(ctx, cmd.User, metav1.GetOptions{})
@@ -131,7 +131,7 @@ func (cmd *PasswordCmd) resolveUser(
 			)
 		}
 
-		user, err = managementClient.Loft().
+		user, err = managementClient.Devsy().
 			StorageV1().
 			Users().
 			Create(ctx, &storagev1.User{
@@ -164,7 +164,7 @@ func (cmd *PasswordCmd) persistPasswordRef(
 	if !changed {
 		return nil
 	}
-	_, err := managementClient.Loft().
+	_, err := managementClient.Devsy().
 		StorageV1().
 		Users().
 		Update(ctx, user, metav1.UpdateOptions{})

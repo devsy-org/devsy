@@ -7,8 +7,8 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
-	loftclient "github.com/devsy-org/api/pkg/clientset/versioned"
-	loftfake "github.com/devsy-org/api/pkg/clientset/versioned/fake"
+	devsyclient "github.com/devsy-org/api/pkg/clientset/versioned"
+	devsyfake "github.com/devsy-org/api/pkg/clientset/versioned/fake"
 	"github.com/devsy-org/devsy/pkg/platform/client"
 	"github.com/devsy-org/devsy/pkg/platform/kube"
 	"github.com/stretchr/testify/suite"
@@ -44,15 +44,15 @@ func (s *instanceOpsSuite) TestSetTemplateSyncOnceLeavesInstanceWithoutTemplateR
 
 func (s *instanceOpsSuite) TestCreateInstanceWrapsCreateError() {
 	createErr := errors.New("boom")
-	loft := loftfake.NewSimpleClientset()
-	loft.PrependReactor(
+	devsy := devsyfake.NewSimpleClientset()
+	devsy.PrependReactor(
 		"create",
 		"devsyworkspaceinstances",
 		func(k8stesting.Action) (bool, runtime.Object, error) {
 			return true, nil, createErr
 		},
 	)
-	pc := &instanceOpsPlatformClient{management: &instanceOpsKubeClient{loft: loft}}
+	pc := &instanceOpsPlatformClient{management: &instanceOpsKubeClient{devsy: devsy}}
 	instance := &managementv1.DevsyWorkspaceInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "ws", Namespace: "p-default"},
 	}
@@ -63,14 +63,14 @@ func (s *instanceOpsSuite) TestCreateInstanceWrapsCreateError() {
 	s.EqualError(err, "create workspace instance: boom")
 }
 
-// instanceOpsKubeClient provides only Loft(); other kube.Interface methods are unused by these tests.
+// instanceOpsKubeClient provides only Devsy(); other kube.Interface methods are unused by these tests.
 type instanceOpsKubeClient struct {
 	kube.Interface
-	loft loftclient.Interface
+	devsy devsyclient.Interface
 }
 
-func (c *instanceOpsKubeClient) Loft() loftclient.Interface {
-	return c.loft
+func (c *instanceOpsKubeClient) Devsy() devsyclient.Interface {
+	return c.devsy
 }
 
 // instanceOpsPlatformClient provides only Management(); other client.Client methods are unused by these tests.

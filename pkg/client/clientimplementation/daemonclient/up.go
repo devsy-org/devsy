@@ -177,7 +177,7 @@ func cancelActiveUpTask(
 	}
 
 	log.Warnf("Found active up task %s, attempting to cancel it", activeUpTask.ID)
-	_, err := managementClient.Loft().
+	_, err := managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(instance.Namespace).
 		Cancel(ctx, instance.Name, &managementv1.DevsyWorkspaceInstanceCancel{
@@ -191,7 +191,7 @@ func cancelActiveUpTask(
 }
 
 func createUpTask(ctx context.Context, params createUpTaskParams) (string, error) {
-	task, err := params.managementClient.Loft().
+	task, err := params.managementClient.Devsy().
 		ManagementV1().
 		DevsyWorkspaceInstances(params.instance.Namespace).
 		Up(ctx, params.instance.Name, &managementv1.DevsyWorkspaceInstanceUp{
@@ -226,7 +226,7 @@ func waitTaskDone(
 
 	// get result
 	tasks := &managementv1.DevsyWorkspaceInstanceTasks{}
-	err = managementClient.Loft().ManagementV1().RESTClient().Get().
+	err = managementClient.Devsy().ManagementV1().RESTClient().Get().
 		Namespace(instance.Namespace).
 		Resource("devsyworkspaceinstances").
 		Name(instance.Name).
@@ -311,7 +311,7 @@ func observeTask(
 			defer cancel()
 			defer cancelPrintCtx()
 
-			_, err := managementClient.Loft().
+			_, err := managementClient.Devsy().
 				ManagementV1().
 				DevsyWorkspaceInstances(instance.Namespace).
 				Cancel(timeoutCtx, instance.Name, &managementv1.DevsyWorkspaceInstanceCancel{
@@ -387,7 +387,7 @@ func openTaskLogsStream(
 	taskID string,
 ) (io.ReadCloser, error) {
 	log.Debugf("printing logs of task: %s", taskID)
-	logsReader, err := managementClient.Loft().ManagementV1().RESTClient().Get().
+	logsReader, err := managementClient.Devsy().ManagementV1().RESTClient().Get().
 		Namespace(workspace.Namespace).
 		Resource("devsyworkspaceinstances").
 		Name(workspace.Name).
@@ -582,7 +582,7 @@ func findActiveUpTask(
 	instance *managementv1.DevsyWorkspaceInstance,
 ) (*managementv1.DevsyWorkspaceInstanceTask, error) {
 	tasks := &managementv1.DevsyWorkspaceInstanceTasks{}
-	err := managementClient.Loft().ManagementV1().RESTClient().Get().
+	err := managementClient.Devsy().ManagementV1().RESTClient().Get().
 		Namespace(instance.Namespace).
 		Resource("devsyworkspaceinstances").
 		Name(instance.Name).
