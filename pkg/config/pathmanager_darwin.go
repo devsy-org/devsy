@@ -12,15 +12,15 @@ type darwinPathManager struct {
 	basePathManager
 }
 
-func newPlatformPathManager() PathManager {
-	pm := &darwinPathManager{}
+func newPlatformPathManager(readOnly bool) PathManager {
+	pm := &darwinPathManager{basePathManager: basePathManager{readOnly: readOnly}}
 	pm.pm = pm
 
 	return pm
 }
 
 func (d *darwinPathManager) ConfigDir() (string, error) {
-	if dir, ok, err := homeOverrideDir(); ok {
+	if dir, ok, err := d.homeOverrideDir(); ok {
 		return dir, err
 	}
 
@@ -29,11 +29,11 @@ func (d *darwinPathManager) ConfigDir() (string, error) {
 		return "", fmt.Errorf("config dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, "."+RepoName))
+	return d.ensureDir(filepath.Join(home, "."+RepoName))
 }
 
 func (d *darwinPathManager) DataDir() (string, error) {
-	if dir, ok, err := homeOverrideDir(); ok {
+	if dir, ok, err := d.homeOverrideDir(); ok {
 		return dir, err
 	}
 
@@ -42,11 +42,11 @@ func (d *darwinPathManager) DataDir() (string, error) {
 		return "", fmt.Errorf("data dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, "."+RepoName))
+	return d.ensureDir(filepath.Join(home, "."+RepoName))
 }
 
 func (d *darwinPathManager) CacheDir() (string, error) {
-	if dir, ok, err := homeOverrideDir("cache"); ok {
+	if dir, ok, err := d.homeOverrideDir("cache"); ok {
 		return dir, err
 	}
 
@@ -55,11 +55,11 @@ func (d *darwinPathManager) CacheDir() (string, error) {
 		return "", fmt.Errorf("cache dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, ".cache", RepoName))
+	return d.ensureDir(filepath.Join(home, ".cache", RepoName))
 }
 
 func (d *darwinPathManager) StateDir() (string, error) {
-	if dir, ok, err := homeOverrideDir("state"); ok {
+	if dir, ok, err := d.homeOverrideDir("state"); ok {
 		return dir, err
 	}
 
@@ -68,12 +68,12 @@ func (d *darwinPathManager) StateDir() (string, error) {
 		return "", fmt.Errorf("state dir: %w", err)
 	}
 
-	return ensureDir(filepath.Join(home, "."+RepoName, "state"))
+	return d.ensureDir(filepath.Join(home, "."+RepoName, "state"))
 }
 
 // RuntimeDir returns a directory for runtime state, such as sockets and PID files.
 func (d *darwinPathManager) RuntimeDir() (string, error) {
-	if dir, ok, err := homeOverrideDir("run"); ok {
+	if dir, ok, err := d.homeOverrideDir("run"); ok {
 		return dir, err
 	}
 
@@ -82,7 +82,7 @@ func (d *darwinPathManager) RuntimeDir() (string, error) {
 		return "", fmt.Errorf("runtime dir: %w", err)
 	}
 
-	dir, err := ensureDir(filepath.Join(home, "."+RepoName, "run"))
+	dir, err := d.ensureDir(filepath.Join(home, "."+RepoName, "run"))
 	if err != nil {
 		return "", err
 	}
