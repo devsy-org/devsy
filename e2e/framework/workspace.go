@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"os"
 
 	"github.com/onsi/ginkgo/v2"
 )
@@ -31,6 +32,15 @@ func CopyTestdata(testdataPath, initialDir string) string {
 	tempDir, err := CopyToTempDir(testdataPath)
 	ExpectNoErrorWithOffset(1, err)
 	ginkgo.DeferCleanup(CleanupTempDir, initialDir, tempDir)
+
+	return tempDir
+}
+
+// CopyTestdataNoChdir copies testdataPath to a temp dir and removes it on cleanup.
+func CopyTestdataNoChdir(testdataPath string) string {
+	tempDir, err := CopyToTempDirWithoutChdir(testdataPath)
+	ExpectNoErrorWithOffset(1, err)
+	ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 	return tempDir
 }

@@ -35,11 +35,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 
 	ginkgo.It("resolves single-level extends inheriting parent fields", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
-		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/extends/testdata/single-level",
-		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+		tempDir := framework.CopyTestdataNoChdir("tests/extends/testdata/single-level")
 
 		stdout, _, err := readConfiguration(ctx, f, tempDir)
 		framework.ExpectNoError(err)
@@ -54,11 +50,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 
 	ginkgo.It("deep merges map fields from parent and child", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
-		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/extends/testdata/deep-merge",
-		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+		tempDir := framework.CopyTestdataNoChdir("tests/extends/testdata/deep-merge")
 
 		stdout, _, err := readConfiguration(ctx, f, tempDir)
 		framework.ExpectNoError(err)
@@ -80,11 +72,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 
 	ginkgo.It("replaces array fields entirely from child", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
-		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/extends/testdata/array-replace",
-		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+		tempDir := framework.CopyTestdataNoChdir("tests/extends/testdata/array-replace")
 
 		stdout, _, err := readConfiguration(ctx, f, tempDir)
 		framework.ExpectNoError(err)
@@ -108,11 +96,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 
 	ginkgo.It("resolves multi-level extends chain", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
-		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/extends/testdata/multi-level",
-		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+		tempDir := framework.CopyTestdataNoChdir("tests/extends/testdata/multi-level")
 
 		stdout, _, err := readConfiguration(ctx, f, tempDir)
 		framework.ExpectNoError(err)
@@ -133,23 +117,15 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 
 	ginkgo.It("returns error on circular extends", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
-		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/extends/testdata/cycle",
-		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+		tempDir := framework.CopyTestdataNoChdir("tests/extends/testdata/cycle")
 
-		_, _, err = readConfiguration(ctx, f, tempDir)
+		_, _, err := readConfiguration(ctx, f, tempDir)
 		framework.ExpectError(err)
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("resolves array extends with multiple parents", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
-		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/extends/testdata/array-extends",
-		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+		tempDir := framework.CopyTestdataNoChdir("tests/extends/testdata/array-extends")
 
 		stdout, _, err := readConfiguration(ctx, f, tempDir)
 		framework.ExpectNoError(err)
@@ -173,13 +149,9 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 
 	ginkgo.It("returns error when extends references missing file", func(ctx context.Context) {
 		f := framework.NewDefaultFramework(initialDir + "/bin")
-		tempDir, err := framework.CopyToTempDirWithoutChdir(
-			"tests/extends/testdata/missing-file",
-		)
-		framework.ExpectNoError(err)
-		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+		tempDir := framework.CopyTestdataNoChdir("tests/extends/testdata/missing-file")
 
-		_, _, err = readConfiguration(ctx, f, tempDir)
+		_, _, err := readConfiguration(ctx, f, tempDir)
 		framework.ExpectError(err)
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
@@ -306,11 +278,7 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 		ginkgo.Label("extends"),
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDirWithoutChdir(
-				"tests/extends/testdata/varsub-localenv",
-			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
+			tempDir := framework.CopyTestdataNoChdir("tests/extends/testdata/varsub-localenv")
 
 			gomega.Expect(os.Setenv("TEST_EXTENDS_DIR", tempDir)).To(gomega.Succeed())
 			ginkgo.DeferCleanup(func() {
@@ -344,11 +312,9 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 		ginkgo.Label("extends"),
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDirWithoutChdir(
+			tempDir := framework.CopyTestdataNoChdir(
 				"tests/extends/testdata/varsub-workspace-folder",
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			stdout, _, err := readConfiguration(ctx, f, tempDir)
 			framework.ExpectNoError(err)
@@ -377,11 +343,9 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 		ginkgo.Label("extends"),
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDirWithoutChdir(
+			tempDir := framework.CopyTestdataNoChdir(
 				"tests/extends/testdata/varsub-localenv-default",
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			gomega.Expect(os.Unsetenv("DEVSY_UNSET_VAR")).To(gomega.Succeed())
 
@@ -412,15 +376,13 @@ var _ = ginkgo.Describe("extends property", ginkgo.Label("extends"), func() {
 		ginkgo.Label("extends"),
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
-			tempDir, err := framework.CopyToTempDirWithoutChdir(
+			tempDir := framework.CopyTestdataNoChdir(
 				"tests/extends/testdata/varsub-localenv-missing",
 			)
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tempDir) })
 
 			gomega.Expect(os.Unsetenv("DEVSY_NONEXISTENT_VAR")).To(gomega.Succeed())
 
-			_, _, err = readConfiguration(ctx, f, tempDir)
+			_, _, err := readConfiguration(ctx, f, tempDir)
 			framework.ExpectError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 })
