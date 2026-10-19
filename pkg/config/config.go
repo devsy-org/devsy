@@ -430,7 +430,11 @@ func lockConfigWithDeletionTarget(target string) (func(), error) {
 // will actually be replaced by an atomic save. A dangling configured symlink
 // must fail rather than being replaced by a regular file.
 func getConfigMutationPath() (string, error) {
-	configPath, err := GetConfigPath()
+	return getConfigMutationPathWithPathManager(DefaultPathManager())
+}
+
+func getConfigMutationPathWithPathManager(pm PathManager) (string, error) {
+	configPath, err := pm.ConfigFilePath()
 	if err != nil {
 		return "", err
 	}
