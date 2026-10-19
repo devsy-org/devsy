@@ -10,8 +10,8 @@ import (
 
 func ListPlatformInstances(
 	devsyConfig *config.Config,
-) ([]*provider2.ProInstance, error) {
-	platformInstanceDir, err := provider2.GetProInstancesDir(devsyConfig.DefaultContext)
+) ([]*provider2.PlatformInstance, error) {
+	platformInstanceDir, err := provider2.GetPlatformInstancesDir(devsyConfig.DefaultContext)
 	if err != nil {
 		return nil, err
 	}
@@ -21,9 +21,9 @@ func ListPlatformInstances(
 		return nil, err
 	}
 
-	retPlatformInstances := []*provider2.ProInstance{}
+	retPlatformInstances := []*provider2.PlatformInstance{}
 	for _, entry := range entries {
-		platformInstanceConfig, err := provider2.LoadProInstanceConfig(
+		platformInstanceConfig, err := provider2.LoadPlatformInstanceConfig(
 			devsyConfig.DefaultContext,
 			entry.Name(),
 		)
@@ -39,9 +39,9 @@ func ListPlatformInstances(
 }
 
 func FindProviderPlatformInstance(
-	platformInstances []*provider2.ProInstance,
+	platformInstances []*provider2.PlatformInstance,
 	providerName string,
-) (*provider2.ProInstance, bool) {
+) (*provider2.PlatformInstance, bool) {
 	for _, instance := range platformInstances {
 		if instance.Provider == providerName {
 			return instance, true

@@ -600,7 +600,7 @@ type GetProxyCommands struct {
 	// Self gets self for this provider
 	Self types.StrArray `json:"self,omitempty"`
 
-	// Version gets the for this pro instance
+	// Version gets the for this platform instance
 	Version types.StrArray `json:"version,omitempty"`
 }
 

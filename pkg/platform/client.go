@@ -17,7 +17,7 @@ func InitClientFromHost(
 ) (client.Client, error) {
 	provider, err := ProviderFromHost(ctx, devsyConfig, devsyProHost)
 	if err != nil {
-		return nil, fmt.Errorf("provider from pro instance: %w", err)
+		return nil, fmt.Errorf("provider from platform instance: %w", err)
 	}
 
 	return InitClientFromProvider(ctx, devsyConfig, provider)
@@ -41,15 +41,15 @@ func ProviderFromHost(
 	devsyConfig *config.Config,
 	devsyProHost string,
 ) (string, error) {
-	proInstanceConfig, err := provider.LoadProInstanceConfig(
+	platformInstanceConfig, err := provider.LoadPlatformInstanceConfig(
 		devsyConfig.DefaultContext,
 		devsyProHost,
 	)
 	if err != nil {
-		return "", fmt.Errorf("load pro instance %s: %w", devsyProHost, err)
+		return "", fmt.Errorf("load platform instance %s: %w", devsyProHost, err)
 	}
 
-	return proInstanceConfig.Provider, nil
+	return platformInstanceConfig.Provider, nil
 }
 
 func DevsyConfigPath(context string, providerName string) (string, error) {

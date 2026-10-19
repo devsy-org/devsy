@@ -48,7 +48,7 @@ func NewLogoutCmd(flags *proflags.GlobalFlags) *cobra.Command {
 			&cmd.IgnoreNotFound,
 			names.IgnoreNotFound,
 			false,
-			"Treat \"pro instance not found\" as a successful logout",
+			"Treat \"platform instance not found\" as a successful logout",
 		),
 	)
 	return logoutCmd
@@ -57,7 +57,7 @@ func NewLogoutCmd(flags *proflags.GlobalFlags) *cobra.Command {
 //nolint:cyclop,funlen // logout sequences provider/daemon teardown; complexity reflects domain workflow
 func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("specify a pro instance to log out of")
+		return fmt.Errorf("specify a platform instance to log out of")
 	}
 
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
@@ -65,23 +65,23 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	// load pro instance config
-	proInstanceName := args[0]
-	proInstanceConfig, err := provider.LoadProInstanceConfig(
+	// load platform instance config
+	platformInstanceName := args[0]
+	platformInstanceConfig, err := provider.LoadPlatformInstanceConfig(
 		devsyConfig.DefaultContext,
-		proInstanceName,
+		platformInstanceName,
 	)
 	if err != nil {
 		if os.IsNotExist(err) && cmd.IgnoreNotFound {
 			return nil
 		}
 
-		return fmt.Errorf("load pro instance %s: %w", proInstanceName, err)
+		return fmt.Errorf("load platform instance %s: %w", platformInstanceName, err)
 	}
 
 	providerConfig, err := provider.LoadProviderConfig(
 		devsyConfig.DefaultContext,
-		proInstanceConfig.Provider,
+		platformInstanceConfig.Provider,
 	)
 	if err != nil {
 		return fmt.Errorf("load provider: %w", err)
@@ -106,7 +106,7 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 			)
 		}
 
-		daemonClient := daemon.NewLocalClient(proInstanceConfig.Provider)
+		daemonClient := daemon.NewLocalClient(platformInstanceConfig.Provider)
 		err = daemonClient.Shutdown(ctx)
 		if err != nil {
 			log.Warnf("failed to shut down daemon: %v", err)
@@ -118,15 +118,18 @@ func (cmd *LogoutCmd) Run(ctx context.Context, args []string) error {
 		}
 	}
 
-	if err := deleteProInstanceFiles(devsyConfig.DefaultContext, proInstanceConfig); err != nil {
+	if err := deletePlatformInstanceFiles(
+		devsyConfig.DefaultContext,
+		platformInstanceConfig,
+	); err != nil {
 		return err
 	}
 
-	log.Infof("logged out of pro instance: proInstanceName=%s", proInstanceName)
+	log.Infof("logged out of platform instance: platformInstanceName=%s", platformInstanceName)
 	return nil
 }
 
-func deleteProInstanceFiles(contextName string, instance *provider.ProInstance) error {
+func deletePlatformInstanceFiles(contextName string, instance *provider.PlatformInstance) error {
 	opLock, err := provider.GetProviderOperationLock(contextName, instance.Provider)
 	if err != nil {
 		return err
@@ -144,14 +147,14 @@ func deleteProInstanceFiles(contextName string, instance *provider.ProInstance) 
 		return err
 	}
 
-	proInstanceDir, err := provider.GetProInstanceDir(contextName, instance.Host)
+	platformInstanceDir, err := provider.GetPlatformInstanceDir(contextName, instance.Host)
 	if err != nil {
 		return err
 	}
 
-	err = os.RemoveAll(proInstanceDir)
+	err = os.RemoveAll(platformInstanceDir)
 	if err != nil {
-		return fmt.Errorf("delete pro instance dir: %w", err)
+		return fmt.Errorf("delete platform instance dir: %w", err)
 	}
 
 	return nil

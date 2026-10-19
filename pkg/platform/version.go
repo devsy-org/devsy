@@ -18,8 +18,8 @@ type VersionObject struct {
 	DevsyVersion string `json:"devsyVersion,omitempty"`
 }
 
-func GetProInstanceDevsyVersion(proInstance *provider.ProInstance) (string, error) {
-	url := "https://" + proInstance.Host
+func GetPlatformInstanceDevsyVersion(platformInstance *provider.PlatformInstance) (string, error) {
+	url := "https://" + platformInstance.Host
 	return GetDevsyVersion(url)
 }
 

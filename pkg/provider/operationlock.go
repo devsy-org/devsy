@@ -47,17 +47,17 @@ func lockProvider(contextName, providerName, errSuffix string) (func(), error) {
 	return func() { _ = opLock.Unlock() }, nil
 }
 
-// GetProInstanceOperationLock serializes creation of one Pro host without
+// GetPlatformInstanceOperationLock serializes creation of one Platform host without
 // sharing a lock file with provider rename or lifecycle operations.
-func GetProInstanceOperationLock(contextName, host string) (*flock.Flock, error) {
+func GetPlatformInstanceOperationLock(contextName, host string) (*flock.Flock, error) {
 	if host == "" {
-		return nil, fmt.Errorf("pro instance host is empty")
+		return nil, fmt.Errorf("platform instance host is empty")
 	}
 	locksDir, err := ensureOperationLocksDir(contextName)
 	if err != nil {
 		return nil, err
 	}
-	digest := sha256.Sum256([]byte(ToProInstanceID(host)))
+	digest := sha256.Sum256([]byte(ToPlatformInstanceID(host)))
 	return flock.New(filepath.Join(locksDir, fmt.Sprintf("pro-instance-%x.lock", digest[:16]))), nil
 }
 

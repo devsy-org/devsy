@@ -40,7 +40,7 @@ func (s *loginSuite) TearDownTest() {
 }
 
 func (s *loginSuite) TestConcurrentLoginFindsCreatedInstance() {
-	lock, err := provider.GetProInstanceOperationLock("default", "pro.example")
+	lock, err := provider.GetPlatformInstanceOperationLock("default", "pro.example")
 	s.Require().NoError(err)
 	s.Require().NoError(lock.Lock())
 	s.T().Cleanup(func() { _ = lock.Unlock() })
@@ -57,7 +57,7 @@ func (s *loginSuite) TestConcurrentLoginFindsCreatedInstance() {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	s.Require().NoError(provider.SaveProInstanceConfig("default", &provider.ProInstance{
+	s.Require().NoError(provider.SavePlatformInstanceConfig("default", &provider.PlatformInstance{
 		Provider: testProProviderName,
 		Host:     "pro.example",
 	}))
@@ -67,11 +67,11 @@ func (s *loginSuite) TestConcurrentLoginFindsCreatedInstance() {
 }
 
 func (s *loginSuite) TestDifferentHostDoesNotWaitForLoginLock() {
-	lock, err := provider.GetProInstanceOperationLock("default", "first.example")
+	lock, err := provider.GetPlatformInstanceOperationLock("default", "first.example")
 	s.Require().NoError(err)
 	s.Require().NoError(lock.Lock())
 	defer func() { _ = lock.Unlock() }()
-	s.Require().NoError(provider.SaveProInstanceConfig("default", &provider.ProInstance{
+	s.Require().NoError(provider.SavePlatformInstanceConfig("default", &provider.PlatformInstance{
 		Provider: "other",
 		Host:     "second.example",
 	}))
@@ -92,7 +92,7 @@ func (s *loginSuite) TestDifferentHostDoesNotWaitForLoginLock() {
 }
 
 func (s *loginSuite) TestHostLockDoesNotConflictWithProviderLock() {
-	hostLock, err := provider.GetProInstanceOperationLock("default", "pro.example")
+	hostLock, err := provider.GetPlatformInstanceOperationLock("default", "pro.example")
 	s.Require().NoError(err)
 	providerLock, err := provider.GetProviderOperationLock("default", "pro-login")
 	s.Require().NoError(err)
@@ -105,15 +105,15 @@ func (s *loginSuite) TestHostLockDoesNotConflictWithProviderLock() {
 }
 
 func (s *loginSuite) TestEquivalentHostsShareLock() {
-	first, err := provider.GetProInstanceOperationLock("default", "Foo.Example.com")
+	first, err := provider.GetPlatformInstanceOperationLock("default", "Foo.Example.com")
 	s.Require().NoError(err)
-	second, err := provider.GetProInstanceOperationLock("default", "foo.example.com")
+	second, err := provider.GetPlatformInstanceOperationLock("default", "foo.example.com")
 	s.Require().NoError(err)
 	s.Equal(first.Path(), second.Path())
 }
 
 func (s *loginSuite) TestEquivalentHostFindsExistingInstance() {
-	s.Require().NoError(provider.SaveProInstanceConfig("default", &provider.ProInstance{
+	s.Require().NoError(provider.SavePlatformInstanceConfig("default", &provider.PlatformInstance{
 		Provider: testProProviderName,
 		Host:     "Foo.Example.com",
 	}))
@@ -124,14 +124,14 @@ func (s *loginSuite) TestEquivalentHostFindsExistingInstance() {
 }
 
 func (s *loginSuite) TestDistinctHostsWithSameInstanceIDAreRejected() {
-	s.Require().NoError(provider.SaveProInstanceConfig("default", &provider.ProInstance{
+	s.Require().NoError(provider.SavePlatformInstanceConfig("default", &provider.PlatformInstance{
 		Provider: testProProviderName,
 		Host:     "foo.example.com",
 	}))
 	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
 	_, err := cmd.prepareProvider(context.Background(), "https://foo-example.com")
 	s.Require().ErrorContains(err, "conflicts with existing host")
-	stored, err := provider.LoadProInstanceConfig("default", "foo.example.com")
+	stored, err := provider.LoadPlatformInstanceConfig("default", "foo.example.com")
 	s.Require().NoError(err)
 	s.Equal("foo.example.com", stored.Host)
 }

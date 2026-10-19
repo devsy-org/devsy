@@ -18,7 +18,7 @@ import (
 func CheckProviderUpdate(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	platformInstance *provider2.ProInstance,
+	platformInstance *provider2.PlatformInstance,
 ) error {
 	if version.GetVersion() == version.DevVersion {
 		log.Debugf("skipping provider upgrade check during development")
@@ -35,9 +35,9 @@ func CheckProviderUpdate(
 func checkProviderUpdateForInstance(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	platformInstance *provider2.ProInstance,
+	platformInstance *provider2.PlatformInstance,
 ) error {
-	newVersion, err := platform.GetProInstanceDevsyVersion(platformInstance)
+	newVersion, err := platform.GetPlatformInstanceDevsyVersion(platformInstance)
 	if err != nil {
 		return fmt.Errorf("version for platform instance %s: %w", platformInstance.Host, err)
 	}
@@ -161,7 +161,7 @@ func providerUpdateSkipReason(
 func GetProInstance(
 	devsyConfig *config.Config,
 	providerName string,
-) *provider2.ProInstance {
+) *provider2.PlatformInstance {
 	platformInstances, err := ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return nil

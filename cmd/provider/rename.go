@@ -235,7 +235,7 @@ func (r *renameState) restoreProviderState(ctx context.Context) error {
 }
 
 // validateProviderRename verifies that the provider exists, is not a pro
-// provider, is not backing a pro instance, and has configuration state.
+// provider, is not backing a platform instance, and has configuration state.
 func validateProviderRename(devsyConfig *config.Config, oldName string) error {
 	providerWithOptions, err := workspace.FindProvider(devsyConfig, oldName)
 	if err != nil {
@@ -247,14 +247,14 @@ func validateProviderRename(devsyConfig *config.Config, oldName string) error {
 		return fmt.Errorf("cannot rename a pro provider; pro providers are managed by the platform")
 	}
 
-	proInstances, err := workspace.ListPlatformInstances(devsyConfig)
+	platformInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
-		return fmt.Errorf("listing pro instances: %w", err)
+		return fmt.Errorf("listing platform instances: %w", err)
 	}
-	for _, inst := range proInstances {
+	for _, inst := range platformInstances {
 		if inst.Provider == oldName {
 			return fmt.Errorf(
-				"cannot rename provider %s: it is used by pro instance %s",
+				"cannot rename provider %s: it is used by platform instance %s",
 				oldName,
 				inst.Host,
 			)
