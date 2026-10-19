@@ -23,7 +23,7 @@ const (
 // setting the corresponding DEVSY_* env var pushes the value into the bound
 // pflag at registration time, satisfying cobra's required-flag check.
 func TestOptInEnvFlags_AppliesEnvValueToFlag(t *testing.T) {
-	t.Setenv(envProEnabled, "true")
+	t.Setenv(envPlatformEnabled, "true")
 	cases := []struct {
 		cmdPath    string
 		flagName   string
@@ -94,7 +94,7 @@ func TestOptInEnvFlags_NoEnvLeavesDefault(t *testing.T) {
 // BindEnv: setting DEVSY_HOST="" must NOT mark the flag as Changed (otherwise
 // MarkFlagRequired would be satisfied by an empty value).
 func TestOptInEnvFlags_EmptyEnvIsNoOp(t *testing.T) {
-	t.Setenv(envProEnabled, "true")
+	t.Setenv(envPlatformEnabled, "true")
 	t.Setenv(envDevsyHost, "")
 	rootCmd, _ := BuildRoot()
 	cmd := resolveCommand(t, rootCmd, "pro workspace list")
@@ -107,7 +107,7 @@ func TestOptInEnvFlags_EmptyEnvIsNoOp(t *testing.T) {
 // wins over a value supplied via DEVSY_*. This is the standard precedence
 // users expect: flag > env > default.
 func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
-	t.Setenv(envProEnabled, "true")
+	t.Setenv(envPlatformEnabled, "true")
 	t.Setenv(envDevsyHost, "env-value")
 	rootCmd, _ := BuildRoot()
 	// Replace the leaf command's RunE so Execute() doesn't try to actually
@@ -125,7 +125,7 @@ func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
 }
 
 func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
-	t.Setenv(envProEnabled, "true")
+	t.Setenv(envPlatformEnabled, "true")
 	t.Setenv(envDevsyHost, "from-env.example.com")
 	rootCmd, _ := BuildRoot()
 	leaf := resolveCommand(t, rootCmd, "pro workspace list")
@@ -139,17 +139,17 @@ func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
 	assert.Equal(t, "from-env.example.com", seen)
 }
 
-// TestOptInEnvFlags_ProSubcommandSweep asserts that DEVSY_HOST applies to
+// TestOptInEnvFlags_PlatformSubcommandSweep asserts that DEVSY_HOST applies to
 // every pro subcommand that exposes --host (and similarly for --project).
 // This catches the regression where a future addition to cmd/pro/ forgets
 // the inline BindEnv call.
-func TestOptInEnvFlags_ProSubcommandSweep(t *testing.T) {
-	t.Setenv(envProEnabled, "true")
+func TestOptInEnvFlags_PlatformSubcommandSweep(t *testing.T) {
+	t.Setenv(envPlatformEnabled, "true")
 	for _, env := range []string{envDevsyHost, envDevsyProject} {
 		t.Setenv(env, "sweep-"+strings.ToLower(env))
 	}
 	rootCmd, _ := BuildRoot()
-	proCmd := resolveCommand(t, rootCmd, "pro")
+	platformCmd := resolveCommand(t, rootCmd, "pro")
 
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
@@ -165,12 +165,12 @@ func TestOptInEnvFlags_ProSubcommandSweep(t *testing.T) {
 			walk(child)
 		}
 	}
-	walk(proCmd)
+	walk(platformCmd)
 }
 
-// TestProCommand_HiddenWhenDisabled verifies pro is gated off by default.
-func TestProCommand_HiddenWhenDisabled(t *testing.T) {
-	t.Setenv(envProEnabled, "")
+// TestPlatformCommand_HiddenWhenDisabled verifies pro is gated off by default.
+func TestPlatformCommand_HiddenWhenDisabled(t *testing.T) {
+	t.Setenv(envPlatformEnabled, "")
 	rootCmd, _ := BuildRoot()
 	for _, c := range rootCmd.Commands() {
 		use := c.Use

@@ -129,7 +129,7 @@ func (cmd *TroubleshootCmd) collectWorkspaceInfo(
 	}
 
 	if info.Workspace.Platform != nil {
-		info.WorkspaceTroubleshoot, err = collectWorkspaceProTroubleshoot(
+		info.WorkspaceTroubleshoot, err = collectWorkspacePlatformTroubleshoot(
 			ctx, info.Config, info.Workspace, info.DevsyProInstances,
 		)
 		if err != nil {
@@ -143,10 +143,10 @@ func (cmd *TroubleshootCmd) collectWorkspaceInfo(
 	}
 }
 
-// collectWorkspaceProTroubleshoot locates the platform instance that owns the given
+// collectWorkspacePlatformTroubleshoot locates the platform instance that owns the given
 // workspace and retrieves its troubleshooting info. It returns (nil, nil) when
 // no matching platform instance is configured.
-func collectWorkspaceProTroubleshoot(
+func collectWorkspacePlatformTroubleshoot(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	ws *pkgprovider.Workspace,

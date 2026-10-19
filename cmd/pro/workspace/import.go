@@ -75,7 +75,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("usage: devsy pro workspace import <devsy-pro-host>")
 	}
 
-	devsyProHost := args[0]
+	platformHost := args[0]
 	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err
@@ -89,7 +89,7 @@ func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	ref, err := cmd.findWorkspaceInstance(ctx, devsyConfig, devsyProHost)
+	ref, err := cmd.findWorkspaceInstance(ctx, devsyConfig, platformHost)
 	if err != nil {
 		return err
 	}
@@ -147,9 +147,9 @@ type workspaceInstanceRef struct {
 func (cmd *ImportCmd) findWorkspaceInstance(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	devsyProHost string,
+	platformHost string,
 ) (workspaceInstanceRef, error) {
-	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, devsyProHost)
+	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, platformHost)
 	if err != nil {
 		return workspaceInstanceRef{}, fmt.Errorf("resolve provider: %w", err)
 	}

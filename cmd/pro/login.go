@@ -245,7 +245,7 @@ func findInstance(
 
 func (cmd *LoginCmd) resolveNewProviderName(devsyConfig *config.Config, host string) error {
 	if cmd.Provider == "" {
-		cmd.Provider = config.ProReleaseName
+		cmd.Provider = config.PlatformReleaseName
 	}
 	cmd.Provider = provider.ToPlatformInstanceID(cmd.Provider)
 

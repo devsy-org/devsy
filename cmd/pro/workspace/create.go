@@ -33,7 +33,7 @@ func NewCreateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "Create workspace instance",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, provider, err := proutil.FindProProvider(
+			devsyConfig, provider, err := proutil.FindPlatformProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,

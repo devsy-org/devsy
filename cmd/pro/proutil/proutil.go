@@ -23,9 +23,9 @@ const (
 	HeaderDisplayName = "Display Name"
 )
 
-// FindProProvider resolves the devsy config and provider config for the given
+// FindPlatformProvider resolves the devsy config and provider config for the given
 // pro host.
-func FindProProvider(
+func FindPlatformProvider(
 	ctx context.Context,
 	context, provider, host string,
 ) (*config.Config, *providerpkg.ProviderConfig, error) {
@@ -50,9 +50,9 @@ type HostRunFunc func(
 	provider *providerpkg.ProviderConfig,
 ) error
 
-// findProProviderFn is FindProProvider behind a variable so HostRunE tests can
+// findPlatformProviderFn is FindPlatformProvider behind a variable so HostRunE tests can
 // stub provider resolution.
-var findProProviderFn = FindProProvider
+var findPlatformProviderFn = FindPlatformProvider
 
 // HostRunE returns a RunE that resolves the provider for *host and passes it to
 // run. *host is read when the command runs, after flag parsing.
@@ -63,7 +63,7 @@ func HostRunE(
 ) func(*cobra.Command, []string) error {
 	return func(cobraCmd *cobra.Command, _ []string) error {
 		ctx := cobraCmd.Context()
-		devsyConfig, pCfg, err := findProProviderFn(
+		devsyConfig, pCfg, err := findPlatformProviderFn(
 			ctx,
 			globalFlags.Context,
 			globalFlags.Provider,

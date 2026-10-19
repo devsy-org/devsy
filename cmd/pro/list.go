@@ -120,9 +120,9 @@ func (cmd *ListCmd) printJSON(
 	devsyConfig *config.Config,
 	platformInstances []*provider.PlatformInstance,
 ) error {
-	tableEntries := []*proTableEntry{}
+	tableEntries := []*platformTableEntry{}
 	for _, platformInstance := range platformInstances {
-		entry := &proTableEntry{
+		entry := &platformTableEntry{
 			PlatformInstance: platformInstance,
 			Context:          devsyConfig.DefaultContext,
 			Capabilities:     getCapabilities(devsyConfig, platformInstance),
@@ -148,7 +148,7 @@ func (cmd *ListCmd) printJSON(
 	return nil
 }
 
-type proTableEntry struct {
+type platformTableEntry struct {
 	*provider.PlatformInstance
 
 	Authenticated *bool        `json:"authenticated,omitempty"`

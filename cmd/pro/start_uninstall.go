@@ -39,7 +39,7 @@ func uninstall(
 		return err
 	}
 
-	if err := cleanupProResources(ctx, kubeClient, restConfig, target.namespace); err != nil {
+	if err := cleanupPlatformResources(ctx, kubeClient, restConfig, target.namespace); err != nil {
 		return err
 	}
 
@@ -78,7 +78,7 @@ func runHelmUninstall(
 	return nil
 }
 
-func cleanupProResources(
+func cleanupPlatformResources(
 	ctx context.Context,
 	kubeClient kubernetes.Interface,
 	restConfig *rest.Config,
@@ -155,7 +155,7 @@ func resolveReleaseName(
 	kubeClient kubernetes.Interface,
 	namespace string,
 ) (string, error) {
-	releaseName := config.ProReleaseName
+	releaseName := config.PlatformReleaseName
 	deploy, err := kubeClient.AppsV1().
 		Deployments(namespace).
 		Get(ctx, defaultDeploymentName, metav1.GetOptions{})

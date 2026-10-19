@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-const testProProviderName = "pro"
+const testPlatformProviderName = "pro"
 
 type loginSuite struct {
 	suite.Suite
@@ -58,12 +58,12 @@ func (s *loginSuite) TestConcurrentLoginFindsCreatedInstance() {
 	}
 
 	s.Require().NoError(provider.SavePlatformInstanceConfig("default", &provider.PlatformInstance{
-		Provider: testProProviderName,
+		Provider: testPlatformProviderName,
 		Host:     "pro.example",
 	}))
 	s.Require().NoError(lock.Unlock())
 	s.Require().NoError(<-result)
-	s.Equal(testProProviderName, cmd.Provider)
+	s.Equal(testPlatformProviderName, cmd.Provider)
 }
 
 func (s *loginSuite) TestDifferentHostDoesNotWaitForLoginLock() {
@@ -114,18 +114,18 @@ func (s *loginSuite) TestEquivalentHostsShareLock() {
 
 func (s *loginSuite) TestEquivalentHostFindsExistingInstance() {
 	s.Require().NoError(provider.SavePlatformInstanceConfig("default", &provider.PlatformInstance{
-		Provider: testProProviderName,
+		Provider: testPlatformProviderName,
 		Host:     "Foo.Example.com",
 	}))
 	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
 	_, err := cmd.prepareProvider(context.Background(), "https://foo.example.com")
 	s.Require().NoError(err)
-	s.Equal(testProProviderName, cmd.Provider)
+	s.Equal(testPlatformProviderName, cmd.Provider)
 }
 
 func (s *loginSuite) TestDistinctHostsWithSameInstanceIDAreRejected() {
 	s.Require().NoError(provider.SavePlatformInstanceConfig("default", &provider.PlatformInstance{
-		Provider: testProProviderName,
+		Provider: testPlatformProviderName,
 		Host:     "foo.example.com",
 	}))
 	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
