@@ -74,6 +74,13 @@ type PathManager interface {
 	// binaries (e.g. a git-lfs release fallback) can be installed.
 	SystemBinDir() (string, error)
 
+	// Dependency roots are shared across contexts. Resolving them may create
+	// the parent category roots, but does not create dependency subdirectories.
+	DependencyToolsDir() (string, error)
+	DependencyDownloadCacheDir() (string, error)
+	DependencyStateDir() (string, error)
+	DependencyLocksDir() (string, error)
+
 	// Config paths.
 	ConfigFilePath() (string, error)
 
@@ -119,6 +126,22 @@ type PathManager interface {
 // directory resolution to the embedded pm field (the concrete per-OS struct).
 type basePathManager struct {
 	pm PathManager // self-reference wired after construction
+}
+
+func (b *basePathManager) DependencyToolsDir() (string, error) {
+	return joinUnder(b.pm.DataDir, "tools")
+}
+
+func (b *basePathManager) DependencyDownloadCacheDir() (string, error) {
+	return joinUnder(b.pm.CacheDir, "dependencies")
+}
+
+func (b *basePathManager) DependencyStateDir() (string, error) {
+	return joinUnder(b.pm.StateDir, "dependencies")
+}
+
+func (b *basePathManager) DependencyLocksDir() (string, error) {
+	return joinUnder(b.DependencyStateDir, "locks")
 }
 
 // --- Config paths ---
