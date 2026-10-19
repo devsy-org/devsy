@@ -115,6 +115,22 @@ func (tc *testContext) getAppContainer(
 	return tc.inspectContainer(ctx, ids)
 }
 
+func (tc *testContext) expectSingleAppContainer(
+	ctx context.Context,
+	workspace *provider2.Workspace,
+) []string {
+	ids, err := findComposeContainer(
+		ctx,
+		tc.dockerHelper,
+		tc.composeHelper,
+		workspace.UID,
+		"app",
+	)
+	framework.ExpectNoError(err)
+	gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
+	return ids
+}
+
 func (tc *testContext) findAppAndSidecar(
 	ctx context.Context,
 	workspaceUID string,
