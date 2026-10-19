@@ -546,7 +546,7 @@ func (l *localServer) watchWorkspaces(
 		TsClient:       l.lc,
 	},
 		// we need to debounce events here to avoid spamming the client with too many events
-		throttle(func(instanceList []*ProWorkspaceInstance) {
+		throttle(func(instanceList []*WorkspaceInstance) {
 			if r.Context().Err() != nil {
 				return // Client disconnected, stop trying to write
 			}
@@ -576,15 +576,15 @@ func (l *localServer) watchWorkspaces(
 // every interval. If a call happens before the interval has elapsed,
 // the latest instanceList is saved and f will be called with it when possible.
 func throttle(
-	f func(instanceList []*ProWorkspaceInstance),
+	f func(instanceList []*WorkspaceInstance),
 	interval time.Duration,
-) func(instanceList []*ProWorkspaceInstance) {
+) func(instanceList []*WorkspaceInstance) {
 	var mu sync.Mutex
-	var lastExecuted time.Time          // Time of the last execution of f.
-	var pending []*ProWorkspaceInstance // Latest instanceList waiting to be processed.
-	var timer *time.Timer               // Timer scheduled to call f.
+	var lastExecuted time.Time       // Time of the last execution of f.
+	var pending []*WorkspaceInstance // Latest instanceList waiting to be processed.
+	var timer *time.Timer            // Timer scheduled to call f.
 
-	return func(instanceList []*ProWorkspaceInstance) {
+	return func(instanceList []*WorkspaceInstance) {
 		mu.Lock()
 		defer mu.Unlock()
 
