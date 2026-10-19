@@ -8,6 +8,8 @@ import (
 	"gotest.tools/assert"
 )
 
+const sharedOverlongPrefix = "abcdefghijklmnop"
+
 func TestSafeConcatNameMaxReturnsNamesThatFitUnchanged(t *testing.T) {
 	testCases := []struct {
 		name   string
@@ -39,7 +41,7 @@ func TestSafeConcatNameMaxTruncatesOverlongNamesToExactlyMax(t *testing.T) {
 		maxLen int
 	}{
 		{name: "one character over max", parts: []string{"abcdefghijklmnopq"}, maxLen: 16},
-		{name: "two long parts", parts: []string{"abcdefghijklmnop", "qrstuvwxyz"}, maxLen: 16},
+		{name: "two long parts", parts: []string{sharedOverlongPrefix, "qrstuvwxyz"}, maxLen: 16},
 		{name: "cut lands right after a dash", parts: []string{"abc-defghijklmnop"}, maxLen: 10},
 		{name: "many dashes", parts: []string{"a-b-c-d-e-f-g-h-i-j-k"}, maxLen: 12},
 	}
@@ -81,8 +83,8 @@ func TestSafeConcatNameMaxSuffixFormatDependsOnCutPoint(t *testing.T) {
 }
 
 func TestSafeConcatNameMaxDistinguishesOverlongNamesSharingPrefix(t *testing.T) {
-	first := SafeConcatNameMax([]string{"abcdefghijklmnop", "a"}, 16)
-	second := SafeConcatNameMax([]string{"abcdefghijklmnop", "b"}, 16)
+	first := SafeConcatNameMax([]string{sharedOverlongPrefix, "a"}, 16)
+	second := SafeConcatNameMax([]string{sharedOverlongPrefix, "b"}, 16)
 
 	assert.Assert(t, first != second, "both truncated to %q", first)
 }
