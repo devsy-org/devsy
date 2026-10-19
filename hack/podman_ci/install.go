@@ -204,5 +204,10 @@ func downloadFile(ctx context.Context, url, dest string) error {
 		return err
 	}
 	_, copyErr := io.Copy(f, resp.Body)
-	return errors.Join(copyErr, f.Close())
+	closeErr := f.Close()
+	if err := errors.Join(copyErr, closeErr); err != nil {
+		_ = os.Remove(dest)
+		return err
+	}
+	return nil
 }

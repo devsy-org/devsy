@@ -285,3 +285,19 @@ func TestDownloadFile(t *testing.T) {
 		t.Fatal("downloadFile() succeeded for HTTP 404")
 	}
 }
+
+func TestDownloadFileRemovesPartialFileOnTruncatedBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "100")
+		_, _ = w.Write([]byte("short"))
+	}))
+	t.Cleanup(server.Close)
+	dest := filepath.Join(t.TempDir(), "podman.msi")
+
+	if err := downloadFile(context.Background(), server.URL, dest); err == nil {
+		t.Fatal("downloadFile() succeeded for truncated body")
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Fatalf("partial download left at %s: stat err = %v", dest, err)
+	}
+}
