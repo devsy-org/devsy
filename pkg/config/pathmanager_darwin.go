@@ -12,8 +12,8 @@ type darwinPathManager struct {
 	basePathManager
 }
 
-func newPlatformPathManager(readOnly bool) PathManager {
-	pm := &darwinPathManager{basePathManager: basePathManager{readOnly: readOnly}}
+func newPlatformPathManager(settings pathManagerSettings) PathManager {
+	pm := &darwinPathManager{basePathManager: basePathManager{pathManagerSettings: settings}}
 	pm.pm = pm
 
 	return pm

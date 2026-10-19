@@ -12,8 +12,8 @@ type windowsPathManager struct {
 	basePathManager
 }
 
-func newPlatformPathManager(readOnly bool) PathManager {
-	pm := &windowsPathManager{basePathManager: basePathManager{readOnly: readOnly}}
+func newPlatformPathManager(settings pathManagerSettings) PathManager {
+	pm := &windowsPathManager{basePathManager: basePathManager{pathManagerSettings: settings}}
 	pm.pm = pm
 
 	return pm

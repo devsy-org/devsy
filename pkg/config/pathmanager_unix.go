@@ -12,8 +12,8 @@ type unixPathManager struct {
 	basePathManager
 }
 
-func newPlatformPathManager(readOnly bool) PathManager {
-	pm := &unixPathManager{basePathManager: basePathManager{readOnly: readOnly}}
+func newPlatformPathManager(settings pathManagerSettings) PathManager {
+	pm := &unixPathManager{basePathManager: basePathManager{pathManagerSettings: settings}}
 	pm.pm = pm
 	return pm
 }

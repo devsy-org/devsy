@@ -97,8 +97,13 @@ type PathManager interface {
 // basePathManager implements every sub-path method by delegating the top-level
 // directory resolution to the embedded pm field (the concrete per-OS struct).
 type basePathManager struct {
-	pm       PathManager // self-reference wired after construction
-	readOnly bool
+	pathManagerSettings
+	pm PathManager // self-reference wired after construction
+}
+
+type pathManagerSettings struct {
+	readOnly     bool
+	homeOverride string
 }
 
 func (b *basePathManager) DependencyToolsDir() (string, error) {
@@ -285,10 +290,13 @@ func (b *basePathManager) ensureDir(path string) (string, error) {
 	return path, nil
 }
 
-// homeOverrideDir roots sub beneath DEVSY_HOME when set, returning ok=false so
-// callers fall through to the OS-native default when it is unset.
+// homeOverrideDir prefers the instance home over DEVSY_HOME, falling through
+// to the OS-native default when both are empty.
 func (b *basePathManager) homeOverrideDir(sub ...string) (string, bool, error) {
-	home := os.Getenv(EnvHome)
+	home := b.homeOverride
+	if home == "" {
+		home = os.Getenv(EnvHome)
+	}
 	if home == "" {
 		return "", false, nil
 	}
@@ -311,13 +319,21 @@ var (
 
 // NewPathManager returns a new PathManager for the current platform.
 func NewPathManager() PathManager {
-	return newPlatformPathManager(false)
+	return newPlatformPathManager(pathManagerSettings{})
 }
 
 // NewReadOnlyPathManager resolves the same paths as NewPathManager without
 // creating directories. Returned paths need not exist or be writable.
 func NewReadOnlyPathManager() PathManager {
-	return newPlatformPathManager(true)
+	return NewReadOnlyPathManagerForHome("")
+}
+
+// NewReadOnlyPathManagerForHome resolves paths without creating directories.
+// A nonempty home overrides DEVSY_HOME; empty uses the environment/native defaults.
+// DEVSY_CONFIG still overrides ConfigFilePath, and SystemBinDir remains native.
+// Returned paths need not exist or be writable and do not establish confinement.
+func NewReadOnlyPathManagerForHome(home string) PathManager {
+	return newPlatformPathManager(pathManagerSettings{readOnly: true, homeOverride: home})
 }
 
 // DefaultPathManager returns the process-wide singleton PathManager.
