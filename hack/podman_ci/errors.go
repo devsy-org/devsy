@@ -17,7 +17,7 @@ func usageError(format string, args ...any) error {
 	return &ExitError{Code: 2, Err: fmt.Errorf(format, args...)}
 }
 
-func classifySetupError(err error) error {
+func classifyOperationalError(err error) error {
 	if err == nil {
 		return nil
 	}
