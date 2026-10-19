@@ -25,12 +25,14 @@ func (osFileSystem) OpenAppend(path string) (io.WriteCloser, error) {
 }
 
 type Dependencies struct {
-	Runner   Runner
-	Clock    Clock
-	Log      *Logger
-	Files    FileSystem
-	Budget   *Budget
-	Download Downloader
+	Runner         Runner
+	Clock          Clock
+	Log            *Logger
+	Files          FileSystem
+	Budget         *Budget
+	Download       Downloader
+	NewClusterName ClusterNamer
+	CreateCluster  ClusterCreator
 }
 
 func newRootCommand() *cobra.Command {
@@ -42,6 +44,7 @@ func newRootCommand() *cobra.Command {
 	}
 	root.AddCommand(newSetupCommand())
 	root.AddCommand(newInstallCommand())
+	root.AddCommand(newInstallKindCommand())
 	return root
 }
 

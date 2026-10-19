@@ -83,7 +83,7 @@ func installPodmanMSI(
 	if err != nil {
 		return fmt.Errorf("read podman MSI: %w", err)
 	}
-	if err := verifyMSIChecksum(msi, cfg.SHA256); err != nil {
+	if err := verifyChecksum("podman MSI", msi, cfg.SHA256); err != nil {
 		return err
 	}
 	deps.Log.Printf("Podman MSI checksum verified: %s", installSum(msi))
@@ -114,10 +114,15 @@ func installSum(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func verifyMSIChecksum(data []byte, expected string) error {
+func verifyChecksum(artifact string, data []byte, expected string) error {
 	actual := installSum(data)
 	if !strings.EqualFold(actual, expected) {
-		return fmt.Errorf("SHA256 mismatch for podman MSI! Expected: %s, Got: %s", expected, actual)
+		return fmt.Errorf(
+			"SHA256 mismatch for %s! Expected: %s, Got: %s",
+			artifact,
+			expected,
+			actual,
+		)
 	}
 	return nil
 }
