@@ -145,7 +145,7 @@ func (s *Store) ReconcileTask(ctx context.Context, id string) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !needsReconciliation(current) {
+	if !current.NeedsReconciliation() {
 		return current, nil
 	}
 	lock, ok := s.claimDeadWorkerLock(id)
@@ -159,16 +159,11 @@ func (s *Store) ReconcileTask(ctx context.Context, id string) (*State, error) {
 	return s.reconcileClaimedTask(ctx, id)
 }
 
-func needsReconciliation(state *State) bool {
-	return state != nil && !state.Status.Terminal() &&
-		!state.LaunchPending
-}
-
 // ReconcileState marks a task after its worker exits without a result. A
 // requested cancellation completes cleanup here; an abandoned task's tree is
 // cleaned up by the next workspace stop or delete.
 func (s *Store) ReconcileState(state *State) *State {
-	if !needsStateReconciliation(state) {
+	if !state.NeedsReconciliation() {
 		return state
 	}
 	lock, ok := s.claimDeadWorkerLock(state.ID)
@@ -177,18 +172,18 @@ func (s *Store) ReconcileState(state *State) *State {
 	}
 	defer func() { _ = lock.Unlock() }()
 	current, err := s.Get(state.ID)
-	if err != nil || !needsStateReconciliation(current) {
-		if err == nil {
-			return current
-		}
+	if err != nil {
 		return state
+	}
+	if !current.NeedsReconciliation() {
+		return current
 	}
 	if current.CancelRequested {
 		reconciled, err := s.reconcileClaimedCancellation(context.Background(), current)
-		if err == nil {
-			return reconciled
+		if err != nil {
+			return current
 		}
-		return current
+		return reconciled
 	}
 	return s.failAbandoned(current)
 }
@@ -239,11 +234,6 @@ func (s *Store) CleanupCanceledWorkerTree(ctx context.Context, id string) error 
 	}
 	ref, _ := state.ProcessReference()
 	return s.waitCanceledWorkerCleanup(ctx, id, ref)
-}
-
-func needsStateReconciliation(state *State) bool {
-	return state != nil && !state.Status.Terminal() &&
-		!state.LaunchPending
 }
 
 func hasProcessReference(state *State) bool {
@@ -429,7 +419,7 @@ func (s *Store) workerObservation(id string) (WorkerObservation, bool, error) {
 
 func (s *Store) reconcileClaimedTask(ctx context.Context, id string) (*State, error) {
 	current, err := s.Get(id)
-	if err != nil || !needsReconciliation(current) {
+	if err != nil || !current.NeedsReconciliation() {
 		return current, err
 	}
 	if current.CancelRequested {
@@ -499,23 +489,18 @@ func (s *Store) failAbandoned(state *State) *State {
 // tryWorkerLock claims the task's worker lock when no worker owns it. Unlike
 // claimDeadWorkerLock, it creates the lock file if the worker has not started.
 func (s *Store) tryWorkerLock(id string) (*flock.Flock, bool, error) {
-	path, err := s.workerLockPath(id)
-	if err != nil {
-		return nil, false, err
-	}
-	lock := flock.New(path)
-	locked, err := lock.TryLock()
-	if err != nil {
-		return nil, false, err
-	}
-	if !locked {
-		return nil, false, nil
-	}
-	return lock, true, nil
+	return s.tryLock(id, s.workerLockPath)
 }
 
 func (s *Store) tryLauncherLock(id string) (*flock.Flock, bool, error) {
-	path, err := s.launcherLockPath(id)
+	return s.tryLock(id, s.launcherLockPath)
+}
+
+func (s *Store) tryLock(
+	id string,
+	lockPath func(string) (string, error),
+) (*flock.Flock, bool, error) {
+	path, err := lockPath(id)
 	if err != nil {
 		return nil, false, err
 	}

@@ -435,3 +435,22 @@ func TestActiveForWorkspaceTreatsLiveWorkerAsActive(t *testing.T) {
 		t.Errorf("live worker task not reported active: %+v", active)
 	}
 }
+
+func TestStateNeedsReconciliation(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state *State
+		want  bool
+	}{
+		{name: "nil", state: nil, want: false},
+		{name: "pending", state: &State{Status: StatusPending}, want: true},
+		{name: "running", state: &State{Status: StatusRunning}, want: true},
+		{name: "launch pending", state: &State{Status: StatusRunning, LaunchPending: true}, want: false},
+		{name: "succeeded", state: &State{Status: StatusSucceeded}, want: false},
+		{name: "failed", state: &State{Status: StatusFailed}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, tc.state.NeedsReconciliation())
+		})
+	}
+}

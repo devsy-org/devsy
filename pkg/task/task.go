@@ -134,6 +134,12 @@ func (s *State) NeedsCanceledWorkerCleanup() bool {
 	return ok
 }
 
+// NeedsReconciliation reports whether a task has no terminal result and is not
+// mid-launch, so a worker that exited without recording one must be reconciled.
+func (s *State) NeedsReconciliation() bool {
+	return s != nil && !s.Status.Terminal() && !s.LaunchPending
+}
+
 func (t *Task) BeginLaunch() error {
 	launcherLock, available, err := t.store.tryLauncherLock(t.id)
 	if err != nil {
