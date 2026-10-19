@@ -9,6 +9,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/agent"
+	agentdaemon "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/machinediagnostics"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -454,4 +455,50 @@ func TestEvaluateMachineInactivityBlocksDisabledWorkspace(t *testing.T) {
 	require.Len(t, evaluation.statuses, 1)
 	assert.True(t, evaluation.statuses[0].BlocksMachineShutdown)
 	assert.Equal(t, "Auto-stop is not configured", evaluation.statuses[0].BlockerReason)
+}
+
+func TestInitDiagnostics(t *testing.T) {
+	t.Run("publishes a locator for the active recorder", func(t *testing.T) {
+		locatorPath := filepath.Join(t.TempDir(), "locator.json")
+		t.Setenv(machinediagnostics.RuntimeLocatorPathEnv, locatorPath)
+		root := t.TempDir()
+		cmd := &DaemonCmd{DiagnosticsReaderUID: os.Getuid(), DiagnosticsReaderGID: os.Getgid()}
+
+		cmd.initDiagnostics(
+			agentdaemon.StateLocation{Root: root, Layout: agentdaemon.StateLayoutCanonical},
+			locatorPath,
+		)
+		store, ok := cmd.recorder.(*machinediagnostics.Store)
+		require.True(t, ok)
+		t.Cleanup(func() { _ = store.Close() })
+
+		data, err := os.ReadFile(filepath.Clean(locatorPath))
+		require.NoError(t, err)
+		var locator machinediagnostics.Locator
+		require.NoError(t, json.Unmarshal(data, &locator))
+		assert.Equal(t, store.SessionID(), locator.SessionID)
+		assert.Equal(t, machinediagnostics.DiagnosticsDir(root), locator.DiagnosticsDir)
+		assert.Equal(t, string(agentdaemon.StateLayoutCanonical), locator.StateLayout)
+		assert.True(t, cmd.startedAt.Equal(locator.StartedAt))
+	})
+
+	t.Run("falls back to a nop recorder without a locator", func(t *testing.T) {
+		locatorPath := filepath.Join(t.TempDir(), "locator.json")
+		t.Setenv(machinediagnostics.RuntimeLocatorPathEnv, locatorPath)
+		cmd := &DaemonCmd{DiagnosticsReaderUID: os.Getuid(), DiagnosticsReaderGID: os.Getgid()}
+
+		cmd.initDiagnostics(
+			agentdaemon.StateLocation{
+				Root:   "relative-state",
+				Layout: agentdaemon.StateLayoutCanonical,
+			},
+			locatorPath,
+		)
+
+		require.NotNil(t, cmd.recorder)
+		_, isStore := cmd.recorder.(*machinediagnostics.Store)
+		assert.False(t, isStore)
+		_, err := os.Stat(locatorPath)
+		assert.ErrorIs(t, err, os.ErrNotExist)
+	})
 }
