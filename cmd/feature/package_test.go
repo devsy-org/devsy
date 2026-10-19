@@ -71,8 +71,7 @@ func TestPackageCmd_DiscoverFeatures(t *testing.T) {
 		0o600,
 	))
 
-	cmd := &PackageCmd{}
-	features, err := cmd.discoverFeatures(targetDir)
+	features, err := discoverLocalFeatures(targetDir, "read target directory", nil)
 	require.NoError(t, err)
 	assert.Len(t, features, 2)
 
@@ -87,15 +86,13 @@ func TestPackageCmd_DiscoverFeatures(t *testing.T) {
 func TestPackageCmd_DiscoverFeatures_EmptyDir(t *testing.T) {
 	targetDir := t.TempDir()
 
-	cmd := &PackageCmd{}
-	_, err := cmd.discoverFeatures(targetDir)
+	_, err := discoverLocalFeatures(targetDir, "read target directory", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no features found")
 }
 
 func TestPackageCmd_DiscoverFeatures_NonexistentDir(t *testing.T) {
-	cmd := &PackageCmd{}
-	_, err := cmd.discoverFeatures("/nonexistent/path")
+	_, err := discoverLocalFeatures("/nonexistent/path", "read target directory", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "read target directory")
 }
@@ -119,7 +116,7 @@ func TestPackageCmd_PackageFeature(t *testing.T) {
 
 	cmd := &PackageCmd{}
 
-	features, err := cmd.discoverFeatures(targetDir)
+	features, err := discoverLocalFeatures(targetDir, "read target directory", nil)
 	require.NoError(t, err)
 	require.Len(t, features, 1)
 
@@ -193,7 +190,7 @@ func TestPackageCmd_InvalidFeatureID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			feat := featureSource{
+			feat := localFeature{
 				dir:    "some-dir",
 				config: &config.FeatureConfig{ID: tt.id},
 			}
@@ -209,7 +206,7 @@ func TestPackageCmd_IDMustMatchDirectory(t *testing.T) {
 	targetDir := t.TempDir()
 	outputDir := t.TempDir()
 
-	feat := featureSource{
+	feat := localFeature{
 		dir:    "actual-dir",
 		config: &config.FeatureConfig{ID: "different-id", Version: "1.0.0", Name: "Test"},
 	}
@@ -223,7 +220,7 @@ func TestPackageCmd_MissingVersion(t *testing.T) {
 	targetDir := t.TempDir()
 	outputDir := t.TempDir()
 
-	feat := featureSource{
+	feat := localFeature{
 		dir:    testFeatureIDPkg,
 		config: &config.FeatureConfig{ID: testFeatureIDPkg, Name: "Test"},
 	}
@@ -237,7 +234,7 @@ func TestPackageCmd_MissingName(t *testing.T) {
 	targetDir := t.TempDir()
 	outputDir := t.TempDir()
 
-	feat := featureSource{
+	feat := localFeature{
 		dir:    testFeatureIDPkg,
 		config: &config.FeatureConfig{ID: testFeatureIDPkg, Version: "1.0.0"},
 	}
@@ -259,7 +256,7 @@ func TestPackageCmd_MissingInstallSh(t *testing.T) {
 	))
 
 	cmd := &PackageCmd{}
-	features, err := cmd.discoverFeatures(targetDir)
+	features, err := discoverLocalFeatures(targetDir, "read target directory", nil)
 	require.NoError(t, err)
 	require.Len(t, features, 1)
 
