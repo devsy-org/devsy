@@ -21,6 +21,7 @@ const (
 	msiexecPath       = "msiexec.exe"
 	podmanExe         = "podman.exe"
 	msiInstallTimeout = 4 * time.Minute
+	commandInstall    = "install"
 	msiLogTailLines   = 50
 	podmanSearchDepth = 4
 )
@@ -39,7 +40,7 @@ type InstallConfig struct {
 func newInstallCommand() *cobra.Command {
 	var cfg InstallConfig
 	cmd := &cobra.Command{
-		Use:   "install",
+		Use:   commandInstall,
 		Short: "Install Podman from a verified MSI",
 		RunE: func(*cobra.Command, []string) error {
 			logger := newLogger()
