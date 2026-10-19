@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/blang/semver/v4"
 	"github.com/devsy-org/devsy/pkg/clierr"
@@ -24,9 +26,26 @@ import (
 )
 
 const (
-	reportSchemaID            = "devsy.dependencies.report.v1"
-	reportSchemaVersion       = 1
-	flatArchiveLayoutPolicy   = "flat_verbatim_no_links"
+	reportSchemaID          = "devsy.dependencies.report.v1"
+	reportSchemaVersion     = 1
+	flatArchiveLayoutPolicy = "flat_verbatim_no_links"
+
+	keywordDefs       = "$defs"
+	keywordRef        = "$ref"
+	keywordType       = "type"
+	keywordConst      = "const"
+	keywordEnum       = "enum"
+	keywordMinLength  = "minLength"
+	keywordMinItems   = "minItems"
+	keywordProperties = "properties"
+	keywordItems      = "items"
+
+	schemaTypeObject  = "object"
+	schemaTypeArray   = "array"
+	schemaTypeString  = "string"
+	schemaTypeInteger = "integer"
+	schemaTypeBoolean = "boolean"
+
 	canonicalMicroSandboxRepo = "github.com/devsy-org/devsy-provider-microsandbox"
 	canonicalLimaRepo         = "github.com/devsy-org/devsy-provider-lima"
 	canonicalOrbStackRepo     = "github.com/devsy-org/devsy-provider-orbstack"
@@ -350,6 +369,13 @@ type schemaKeywordMutationCase struct {
 	errSub string
 }
 
+type schemaLiteralCase struct {
+	name   string
+	schema string
+	input  string
+	errSub string
+}
+
 type contractsSuite struct {
 	suite.Suite
 	contractsDir string
@@ -362,17 +388,27 @@ var (
 		"$id",
 		"title",
 		"description",
-		"$defs",
-		"$ref",
-		"type",
-		"const",
-		"enum",
-		"minLength",
-		"minItems",
+		keywordDefs,
+		keywordRef,
+		keywordType,
+		keywordConst,
+		keywordEnum,
+		keywordMinLength,
+		keywordMinItems,
 		"additionalProperties",
 		"required",
-		"properties",
-		"items",
+		keywordProperties,
+		keywordItems,
+	}
+	schemaMetadataKeywords = []string{"$schema", "$id", "title", "description"}
+	// schemaKeywordsByType lists the only validation keywords validateSchemaValue
+	// evaluates for each type; anything else would be accepted but ignored.
+	schemaKeywordsByType = map[string][]string{
+		schemaTypeObject:  {"additionalProperties", "required", keywordProperties},
+		schemaTypeArray:   {keywordMinItems, keywordItems},
+		schemaTypeString:  {keywordConst, keywordEnum, keywordMinLength},
+		schemaTypeInteger: {keywordConst},
+		schemaTypeBoolean: {},
 	}
 	allSurveyModes = []surveyMode{
 		surveyModePassive,
@@ -551,6 +587,31 @@ func (s *contractsSuite) TestCandidateFileObservationIdentityAndSymlinkRecheck()
 
 func (s *contractsSuite) TestSchemaLoaderRejectsUnsupportedValidationKeywords() {
 	s.verifyUnsupportedSchemaKeywordsRejected()
+}
+
+func (s *contractsSuite) TestSchemaExactIntegerAndUnicodeLengthConstraints() {
+	for _, tc := range buildInexactIntegerSchemaLiteralCases() {
+		s.Run(tc.name, func() {
+			_, err := parseSchemaBytes([]byte(tc.schema))
+			s.Require().ErrorContains(err, tc.errSub)
+		})
+	}
+	cases := slices.Concat(
+		buildExactIntegerValidationLiteralCases(),
+		buildUnicodeMinLengthLiteralCases(),
+	)
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			parsed, err := parseSchemaBytes([]byte(tc.schema))
+			s.Require().NoError(err)
+			err = validateRawJSONAgainstSchema([]byte(tc.input), parsed)
+			if tc.errSub == "" {
+				s.Require().NoError(err)
+				return
+			}
+			s.Require().ErrorContains(err, tc.errSub)
+		})
+	}
 }
 
 func (s *contractsSuite) TestValidFixturesAndScenarioInvariants() {
@@ -771,6 +832,9 @@ func (s *contractsSuite) TestOfflineAssetMissingAndConfigurationConflictSemantic
 			validateReportContract(selectedConflict),
 			"configuration conflict item must not select candidate",
 		)
+	})
+	s.Run("unexecuted candidate cannot claim compatible in passive or active reports", func() {
+		s.verifyUnexecutedCandidateCompatibleRejected(conflict)
 	})
 }
 
@@ -1809,12 +1873,68 @@ func (s *contractsSuite) verifySymlinkTargetUpdatePreservesLexicalPathWithDistin
 	)
 }
 
+func (s *contractsSuite) verifyUnexecutedCandidateCompatibleRejected(conflict *reportContract) {
+	passiveCandidateCompat := cloneReport(s.T(), conflict)
+	passiveCandidateCompat.Items[0].Candidates[1].Compatibility = compatibilityCompatible
+	s.Require().ErrorContains(
+		validateReportContract(passiveCandidateCompat),
+		"unexecuted candidate \"/usr/bin/docker\" (executed=false) must not claim verified compatibility=\"compatible\"",
+	)
+	rawPassive, err := json.Marshal(passiveCandidateCompat)
+	s.Require().NoError(err)
+	_, err = s.decodeAndValidateRaw(rawPassive)
+	s.Require().ErrorContains(
+		err,
+		"unexecuted candidate \"/usr/bin/docker\" (executed=false) must not claim verified compatibility=\"compatible\"",
+	)
+
+	activeWithUnprobed := s.buildActiveReportWithUnprobedSecondaryCandidate()
+	s.assertValidMutatedReport(activeWithUnprobed)
+
+	activeUnprobedCompat := cloneReport(s.T(), activeWithUnprobed)
+	activeUnprobedCompat.Items[0].Candidates[1].Compatibility = compatibilityCompatible
+	s.Require().ErrorContains(
+		validateReportContract(activeUnprobedCompat),
+		"unexecuted candidate \"/usr/local/bin/docker\" (executed=false) "+
+			"must not claim verified compatibility=\"compatible\"",
+	)
+}
+
+func (s *contractsSuite) buildActiveReportWithUnprobedSecondaryCandidate() *reportContract {
+	active := s.loadFixture(fixtureExternal)
+	active.Items[0].Candidates = append(active.Items[0].Candidates, candidateObservation{
+		Component:    "docker",
+		SourceKind:   candidateSourceWellKnownPath,
+		OptionName:   "DOCKER_PATH",
+		LexicalPath:  "/usr/local/bin/docker",
+		ResolvedPath: "/usr/local/bin/docker",
+		Observation: &candidateFileObservation{
+			FileIdentity: "illustrative-fid:darwin-arm64:usr-local-docker-77b1",
+			Platform:     active.Items[0].Candidates[0].Observation.Platform,
+		},
+		Executed:      false,
+		Selected:      false,
+		Availability:  availabilityAvailable,
+		Compatibility: compatibilityUnknown,
+		ReasonCode:    reasonVersionUnknown,
+		Detail:        "Unprobed secondary candidate on well-known path.",
+	})
+	return active
+}
+
 func (s *contractsSuite) verifyUnsupportedSchemaKeywordsRejected() {
 	schemaRaw := s.readRawFixture("schema.json")
 	_, err := parseSchemaBytes(schemaRaw)
 	s.Require().NoError(err)
+	s.verifyRefWithMetadataOnlySiblingAccepted(schemaRaw)
+	s.verifyZeroLimitsAccepted(schemaRaw)
 
-	for _, tc := range buildUnsupportedSchemaKeywordCases() {
+	cases := slices.Concat(
+		buildUnsupportedSchemaKeywordCases(),
+		buildIgnoredSchemaKeywordCombinationCases(),
+		buildInvalidSchemaConstraintValueCases(),
+	)
+	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			var doc map[string]any
 			s.Require().NoError(json.Unmarshal(schemaRaw, &doc))
@@ -1825,6 +1945,43 @@ func (s *contractsSuite) verifyUnsupportedSchemaKeywordsRejected() {
 			s.Require().ErrorContains(err, tc.errSub)
 		})
 	}
+}
+
+func (s *contractsSuite) verifyRefWithMetadataOnlySiblingAccepted(schemaRaw []byte) {
+	var doc map[string]any
+	s.Require().NoError(json.Unmarshal(schemaRaw, &doc))
+	avail := schemaRootPropertyMap(doc, "availability")
+	avail["title"] = "AvailabilityDim"
+	avail["description"] = "Documented $ref without validation siblings."
+	mutated, err := json.Marshal(doc)
+	s.Require().NoError(err)
+
+	parsed, err := parseSchemaBytes(mutated)
+	s.Require().NoError(err)
+	s.Require().NoError(validateRawJSONAgainstSchema(s.readRawFixture(fixtureMissing), parsed))
+}
+
+func (s *contractsSuite) verifyZeroLimitsAccepted(schemaRaw []byte) {
+	var doc map[string]any
+	s.Require().NoError(json.Unmarshal(schemaRaw, &doc))
+	schemaRootPropertyMap(doc, "message")["minLength"] = 0
+	schemaRootPropertyMap(doc, "items")["minItems"] = 0
+	relaxedRaw, err := json.Marshal(doc)
+	s.Require().NoError(err)
+	relaxed, err := parseSchemaBytes(relaxedRaw)
+	s.Require().NoError(err)
+
+	var report map[string]any
+	s.Require().NoError(json.Unmarshal(s.readRawFixture(fixtureMissing), &report))
+	report["message"] = ""
+	report["items"] = []any{}
+	reportRaw, err := json.Marshal(report)
+	s.Require().NoError(err)
+
+	s.Require().NoError(validateRawJSONAgainstSchema(reportRaw, relaxed))
+	baseline, err := parseSchemaBytes(schemaRaw)
+	s.Require().NoError(err)
+	s.Require().Error(validateRawJSONAgainstSchema(reportRaw, baseline))
 }
 
 func readTestFile(relPath string) ([]byte, error) {
@@ -1848,14 +2005,17 @@ func loadSchemaDoc(path string) (*jsonSchemaNode, error) {
 }
 
 func parseSchemaBytes(raw []byte) (*jsonSchemaNode, error) {
+	rawDec := json.NewDecoder(bytes.NewReader(raw))
+	rawDec.UseNumber()
 	var rawDoc any
-	if err := json.Unmarshal(raw, &rawDoc); err != nil {
+	if err := rawDec.Decode(&rawDoc); err != nil {
 		return nil, err
 	}
 	if err := validateSchemaNodeKeywords(rawDoc, "$"); err != nil {
 		return nil, err
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
 	dec.DisallowUnknownFields()
 	var root jsonSchemaNode
 	if err := dec.Decode(&root); err != nil {
@@ -1873,20 +2033,148 @@ func validateSchemaNodeKeywords(raw any, path string) error {
 	if !ok {
 		return fmt.Errorf("%s: schema node must be an object, got %T", path, raw)
 	}
-	for k, v := range nodeMap {
+	keys := slices.Sorted(maps.Keys(nodeMap))
+	for _, k := range keys {
 		if !slices.Contains(allowedSchemaNodeKeywords, k) {
 			return fmt.Errorf("%s: unsupported schema keyword %q", path, k)
 		}
-		if err := validateSchemaChildKeyword(k, v, path); err != nil {
+	}
+	if err := validateSchemaKeywordContext(nodeMap, keys, path); err != nil {
+		return err
+	}
+	for _, k := range keys {
+		if err := validateSchemaChildKeyword(k, nodeMap[k], path); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// validateSchemaKeywordContext rejects keyword/type combinations that
+// validateSchemaValue would otherwise skip without evaluating them.
+func validateSchemaKeywordContext(nodeMap map[string]any, keys []string, path string) error {
+	if _, isRef := nodeMap[keywordRef]; isRef {
+		return validateSchemaRefNode(keys, path)
+	}
+	typeName, _ := nodeMap[keywordType].(string)
+	supported, known := schemaKeywordsByType[typeName]
+	if !known {
+		return fmt.Errorf(
+			"%s: schema node requires type object, array, string, integer or boolean, got %v",
+			path,
+			nodeMap[keywordType],
+		)
+	}
+	if err := validateSchemaTypedKeywords(keys, supported, typeName, path); err != nil {
+		return err
+	}
+	return validateSchemaConstraintValues(nodeMap, typeName, path)
+}
+
+func validateSchemaTypedKeywords(keys, supported []string, typeName, path string) error {
+	for _, k := range keys {
+		if slices.Contains(schemaMetadataKeywords, k) || k == keywordType {
+			continue
+		}
+		if k == keywordDefs && path == "$" {
+			continue
+		}
+		if !slices.Contains(supported, k) {
+			return fmt.Errorf(
+				"%s: keyword %q is not supported on schema type %q",
+				path,
+				k,
+				typeName,
+			)
+		}
+	}
+	return nil
+}
+
+func validateSchemaRefNode(keys []string, path string) error {
+	for _, k := range keys {
+		if k != keywordRef && !slices.Contains(schemaMetadataKeywords, k) {
+			return fmt.Errorf("%s: $ref node cannot combine with validation keyword %q", path, k)
+		}
+	}
+	return nil
+}
+
+func validateSchemaConstraintValues(nodeMap map[string]any, typeName, path string) error {
+	if err := validateSchemaConst(nodeMap, typeName, path); err != nil {
+		return err
+	}
+	if enum, ok := nodeMap[keywordEnum]; ok {
+		if err := validateSchemaEnum(enum, path+"."+keywordEnum); err != nil {
+			return err
+		}
+	}
+	for _, keyword := range []string{keywordMinLength, keywordMinItems} {
+		if limit, ok := nodeMap[keyword]; ok {
+			if err := validateSchemaLimit(limit, path+"."+keyword); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateSchemaConst(nodeMap map[string]any, typeName, path string) error {
+	val, ok := nodeMap[keywordConst]
+	if !ok {
+		return nil
+	}
+	switch typeName {
+	case schemaTypeString:
+		if _, isString := val.(string); !isString {
+			return fmt.Errorf("%s.const: expected string const for type %q", path, typeName)
+		}
+	case schemaTypeInteger:
+		if _, isInteger := schemaIntegerToken(val); !isInteger {
+			return fmt.Errorf("%s.const: expected integer const for type %q", path, typeName)
+		}
+	}
+	return nil
+}
+
+func validateSchemaEnum(val any, path string) error {
+	values, ok := val.([]any)
+	if !ok || len(values) == 0 {
+		return fmt.Errorf("%s: expected non-empty string array", path)
+	}
+	for _, v := range values {
+		if _, isString := v.(string); !isString {
+			return fmt.Errorf("%s: expected non-empty string array", path)
+		}
+	}
+	return nil
+}
+
+// validateSchemaLimit accepts zero: minLength and minItems of 0 are valid
+// no-op limits that the evaluator handles correctly.
+func validateSchemaLimit(val any, path string) error {
+	limit, isInteger := schemaIntegerToken(val)
+	if !isInteger || limit < 0 {
+		return fmt.Errorf("%s: expected non-negative integer", path)
+	}
+	return nil
+}
+
+// schemaIntegerToken accepts only plain JSON integer tokens within int64.
+// Fraction or exponent forms are rejected rather than rounded so a schema
+// constraint can never silently differ from its written value.
+func schemaIntegerToken(val any) (int64, bool) {
+	num, ok := val.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	parsed, err := num.Int64()
+	return parsed, err == nil
+}
+
 func validateSchemaChildKeyword(key string, val any, path string) error {
 	switch key {
-	case "$defs", "properties":
+	case keywordDefs, keywordProperties:
 		subMap, ok := val.(map[string]any)
 		if !ok {
 			return fmt.Errorf("%s.%s: expected object map, got %T", path, key, val)
@@ -1896,8 +2184,8 @@ func validateSchemaChildKeyword(key string, val any, path string) error {
 				return err
 			}
 		}
-	case "items":
-		return validateSchemaNodeKeywords(val, path+".items")
+	case keywordItems:
+		return validateSchemaNodeKeywords(val, path+"."+keywordItems)
 	}
 	return nil
 }
@@ -1923,15 +2211,15 @@ func validateSchemaValue(root, node *jsonSchemaNode, path string, val any) error
 		return validateSchemaRef(root, node.Ref, path, val)
 	}
 	switch node.Type {
-	case "object":
+	case schemaTypeObject:
 		return validateSchemaObject(root, node, path, val)
-	case "array":
+	case schemaTypeArray:
 		return validateSchemaArray(root, node, path, val)
-	case "string":
+	case schemaTypeString:
 		return validateSchemaString(node, path, val)
-	case "integer":
+	case schemaTypeInteger:
 		return validateSchemaInteger(node, path, val)
-	case "boolean":
+	case schemaTypeBoolean:
 		return validateSchemaBoolean(path, val)
 	default:
 		return fmt.Errorf("%s: unsupported schema type %q", path, node.Type)
@@ -2017,11 +2305,11 @@ func validateSchemaString(node *jsonSchemaNode, path string, val any) error {
 	if !ok {
 		return fmt.Errorf("%s: expected string, got %T", path, val)
 	}
-	if len(s) < node.MinLength {
+	if length := utf8.RuneCountInString(s); length < node.MinLength {
 		return fmt.Errorf(
 			"%s: string length %d is below minLength %d",
 			path,
-			len(s),
+			length,
 			node.MinLength,
 		)
 	}
@@ -2043,8 +2331,15 @@ func validateSchemaInteger(node *jsonSchemaNode, path string, val any) error {
 	if err != nil {
 		return fmt.Errorf("%s: invalid integer %s: %w", path, num.String(), err)
 	}
-	if constFloat, ok := node.Const.(float64); ok && parsedInt != int64(constFloat) {
-		return fmt.Errorf("%s: expected const %d, got %d", path, int64(constFloat), parsedInt)
+	if node.Const == nil {
+		return nil
+	}
+	constInt, ok := schemaIntegerToken(node.Const)
+	if !ok {
+		return fmt.Errorf("%s: unsupported integer const %v", path, node.Const)
+	}
+	if parsedInt != constInt {
+		return fmt.Errorf("%s: expected const %d, got %d", path, constInt, parsedInt)
 	}
 	return nil
 }
@@ -3050,7 +3345,20 @@ func validateCandidateSelectionAndCompat(
 			c.LexicalPath,
 		)
 	}
-	return nil
+	return validateUnexecutedCandidateCompat(c)
+}
+
+// validateUnexecutedCandidateCompat applies per candidate, not per report: an
+// active report may still contain candidates that were never probed.
+func validateUnexecutedCandidateCompat(c *candidateObservation) error {
+	if c.Executed || c.Compatibility != compatibilityCompatible {
+		return nil
+	}
+	return fmt.Errorf(
+		"unexecuted candidate %q (executed=false) must not claim verified compatibility=%q",
+		c.LexicalPath,
+		c.Compatibility,
+	)
 }
 
 func validateCandidateSourceRules(ctx targetContext, c *candidateObservation) error {
@@ -3650,6 +3958,233 @@ func buildUnsupportedSchemaKeywordCases() []schemaKeywordMutationCase {
 				items["anyOf"] = []any{}
 			},
 			errSub: `$.$defs.managedRecipeStatus.properties.blockingGates.items: unsupported schema keyword "anyOf"`,
+		},
+	}
+}
+
+func buildIgnoredSchemaKeywordCombinationCases() []schemaKeywordMutationCase {
+	return []schemaKeywordMutationCase{
+		{
+			name: "boolean property with const false rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "executed")["const"] = false
+			},
+			errSub: `$.properties.executed: keyword "const" is not supported on schema type "boolean"`,
+		},
+		{
+			name: "$ref property with validation sibling minLength rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "availability")["minLength"] = 10
+			},
+			errSub: `$.properties.availability: $ref node cannot combine with validation keyword "minLength"`,
+		},
+		{
+			name: "$ref property with validation sibling const rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "availability")["const"] = "available"
+			},
+			errSub: `$.properties.availability: $ref node cannot combine with validation keyword "const"`,
+		},
+		{
+			name: "integer property with enum rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "schemaVersion")["enum"] = []string{"1"}
+			},
+			errSub: `$.properties.schemaVersion: keyword "enum" is not supported on schema type "integer"`,
+		},
+		{
+			name: "boolean property with minLength rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "executed")["minLength"] = 1
+			},
+			errSub: `$.properties.executed: keyword "minLength" is not supported on schema type "boolean"`,
+		},
+		{
+			name: "string property with minItems rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "message")["minItems"] = 1
+			},
+			errSub: `$.properties.message: keyword "minItems" is not supported on schema type "string"`,
+		},
+		{
+			name: "string property with properties rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "message")["properties"] = map[string]any{}
+			},
+			errSub: `$.properties.message: keyword "properties" is not supported on schema type "string"`,
+		},
+	}
+}
+
+func buildInvalidSchemaConstraintValueCases() []schemaKeywordMutationCase {
+	return []schemaKeywordMutationCase{
+		{
+			name: "string property with non-string const rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "schema")["const"] = false
+			},
+			errSub: `$.properties.schema.const: expected string const for type "string"`,
+		},
+		{
+			name: "integer property with non-integer const rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "schemaVersion")["const"] = "1"
+			},
+			errSub: `$.properties.schemaVersion.const: expected integer const for type "integer"`,
+		},
+		{
+			name: "integer property with fractional const rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "schemaVersion")["const"] = 1.5
+			},
+			errSub: `$.properties.schemaVersion.const: expected integer const for type "integer"`,
+		},
+		{
+			name: "string property with empty enum rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "surveyMode")["enum"] = []string{}
+			},
+			errSub: `$.properties.surveyMode.enum: expected non-empty string array`,
+		},
+		{
+			name: "string property with negative minLength rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "message")["minLength"] = -1
+			},
+			errSub: `$.properties.message.minLength: expected non-negative integer`,
+		},
+		{
+			name: "array property with negative minItems rejected",
+			mutate: func(doc map[string]any) {
+				schemaRootPropertyMap(doc, "items")["minItems"] = -1
+			},
+			errSub: `$.properties.items.minItems: expected non-negative integer`,
+		},
+	}
+}
+
+func schemaRootPropertyMap(doc map[string]any, prop string) map[string]any {
+	return doc["properties"].(map[string]any)[prop].(map[string]any)
+}
+
+func buildInexactIntegerSchemaLiteralCases() []schemaLiteralCase {
+	const constErr = `$.const: expected integer const for type "integer"`
+	return []schemaLiteralCase{
+		{
+			name:   "fractional const that rounds to 1 in float64 rejected",
+			schema: `{"type":"integer","const":1.0000000000000001}`,
+			errSub: constErr,
+		},
+		{
+			name:   "exponent const rejected",
+			schema: `{"type":"integer","const":1e0}`,
+			errSub: constErr,
+		},
+		{
+			name:   "const with zero fraction rejected",
+			schema: `{"type":"integer","const":1.0}`,
+			errSub: constErr,
+		},
+		{
+			name:   "const beyond int64 rejected",
+			schema: `{"type":"integer","const":9223372036854775808}`,
+			errSub: constErr,
+		},
+		{
+			name:   "fractional minLength that rounds to 1 in float64 rejected",
+			schema: `{"type":"string","minLength":1.0000000000000001}`,
+			errSub: `$.minLength: expected non-negative integer`,
+		},
+		{
+			name:   "exponent minItems rejected",
+			schema: `{"type":"array","minItems":1e0}`,
+			errSub: `$.minItems: expected non-negative integer`,
+		},
+		{
+			name:   "negative minLength literal rejected",
+			schema: `{"type":"string","minLength":-1}`,
+			errSub: `$.minLength: expected non-negative integer`,
+		},
+	}
+}
+
+func buildExactIntegerValidationLiteralCases() []schemaLiteralCase {
+	const beyondFloat64 = `{"type":"integer","const":9007199254740993}`
+	const ordinaryInteger = `{"type":"integer","const":1}`
+	return []schemaLiteralCase{
+		{
+			name:   "const beyond float64 precision rejects adjacent integer",
+			schema: beyondFloat64,
+			input:  `9007199254740992`,
+			errSub: `$: expected const 9007199254740993, got 9007199254740992`,
+		},
+		{
+			name:   "const beyond float64 precision accepts exact integer",
+			schema: beyondFloat64,
+			input:  `9007199254740993`,
+		},
+		{
+			name:   "ordinary integer const accepts match",
+			schema: ordinaryInteger,
+			input:  `1`,
+		},
+		{
+			name:   "ordinary integer const rejects mismatch",
+			schema: ordinaryInteger,
+			input:  `2`,
+			errSub: `$: expected const 1, got 2`,
+		},
+		{
+			name:   "ordinary integer const rejects fractional input",
+			schema: ordinaryInteger,
+			input:  `1.0`,
+			errSub: `$: expected integer`,
+		},
+		{
+			name:   "integer input beyond int64 rejected",
+			schema: `{"type":"integer"}`,
+			input:  `9223372036854775808`,
+			errSub: `$: invalid integer 9223372036854775808`,
+		},
+	}
+}
+
+func buildUnicodeMinLengthLiteralCases() []schemaLiteralCase {
+	const minTwo = `{"type":"string","minLength":2}`
+	const belowMinTwo = `$: string length 1 is below minLength 2`
+	return []schemaLiteralCase{
+		{
+			name:   "one two-byte character is below minLength 2",
+			schema: minTwo,
+			input:  `"\u00e9"`,
+			errSub: belowMinTwo,
+		},
+		{
+			name:   "one supplementary-plane character is below minLength 2",
+			schema: minTwo,
+			input:  `"\ud83d\ude00"`,
+			errSub: belowMinTwo,
+		},
+		{
+			name:   "two accented characters satisfy minLength 2",
+			schema: minTwo,
+			input:  `"\u00e9\u00e8"`,
+		},
+		{
+			name:   "two ASCII characters satisfy minLength 2",
+			schema: minTwo,
+			input:  `"ab"`,
+		},
+		{
+			name:   "one ASCII character is below minLength 2",
+			schema: minTwo,
+			input:  `"a"`,
+			errSub: belowMinTwo,
+		},
+		{
+			name:   "empty string satisfies minLength 0",
+			schema: `{"type":"string","minLength":0}`,
+			input:  `""`,
 		},
 	}
 }
