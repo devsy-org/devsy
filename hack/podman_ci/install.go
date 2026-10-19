@@ -58,10 +58,8 @@ func newInstallCommand() *cobra.Command {
 	cmd.Flags().StringVar(&cfg.MSIPath, "msi-path", "", "local path for the podman MSI")
 	cmd.Flags().StringVar(&cfg.InstallDir, "install-dir", "", "msiexec INSTALLDIR")
 	cmd.Flags().StringVar(&cfg.LogPath, "log-path", "", "msiexec verbose log path")
-	cmd.Flags().StringVar(
-		&cfg.GitHubPath, "github-path", os.Getenv("GITHUB_PATH"),
-		"file receiving the install dir for PATH",
-	)
+	cmd.Flags().
+		StringVar(&cfg.GitHubPath, "github-path", os.Getenv("GITHUB_PATH"), "file to append the install dir to")
 	for _, name := range []string{"url", "sha256", "msi-path", "install-dir", "log-path"} {
 		_ = cmd.MarkFlagRequired(name)
 	}
@@ -92,7 +90,7 @@ func installPodmanMSI(
 
 	res := deps.Runner.Run(ctx, CommandSpec{
 		Path:    msiexecPath,
-		Args:    msiexecArgs(cfg),
+		CmdLine: msiexecCommandLine(cfg),
 		Timeout: msiInstallTimeout,
 	})
 	deps.Log.Printf("MSI exit code: %s", exitCodeString(res.ExitCode))
@@ -106,11 +104,9 @@ func installPodmanMSI(
 	return appendGitHubPath(deps.Files, cfg.GitHubPath, cfg.InstallDir)
 }
 
-func msiexecArgs(cfg InstallConfig) []string {
-	return []string{
-		"/i", cfg.MSIPath, "/qn", "/norestart", "/l*v", cfg.LogPath,
-		fmt.Sprintf(`INSTALLDIR="%s"`, cfg.InstallDir),
-	}
+func msiexecCommandLine(cfg InstallConfig) string {
+	return fmt.Sprintf(`%s /i "%s" /qn /norestart /l*v "%s" INSTALLDIR="%s"`,
+		msiexecPath, cfg.MSIPath, cfg.LogPath, cfg.InstallDir)
 }
 
 func installSum(data []byte) string {
@@ -142,13 +138,9 @@ func logMissingPodman(deps Dependencies, cfg InstallConfig, searchRoot string) {
 }
 
 func tailLines(data []byte, n int) string {
-	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
+	text := strings.TrimRight(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	lines := strings.Split(text, "\n")
+	lines = lines[max(0, len(lines)-n):]
 	return strings.Join(lines, "\n")
 }
 

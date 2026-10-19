@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -143,18 +142,27 @@ func TestInstallPodmanMSISucceeds(t *testing.T) {
 	if call.Path != "msiexec.exe" {
 		t.Fatalf("msiexec path = %q, want msiexec.exe", call.Path)
 	}
-	wantArgs := []string{
-		"/i", fx.cfg.MSIPath, "/qn", "/norestart", "/l*v", fx.cfg.LogPath,
-		`INSTALLDIR="C:\Program Files\RedHat\Podman"`,
-	}
-	if !slices.Equal(call.Args, wantArgs) {
-		t.Fatalf("msiexec args = %q, want %q", call.Args, wantArgs)
+	if !strings.Contains(call.CmdLine, `INSTALLDIR="C:\Program Files\RedHat\Podman"`) {
+		t.Fatalf("msiexec command line = %q, missing quoted INSTALLDIR", call.CmdLine)
 	}
 	if got := fx.files.appends[fx.cfg.GitHubPath].String(); got != `C:\Program Files\RedHat\Podman`+"\n" {
 		t.Fatalf("GITHUB_PATH content = %q", got)
 	}
 	if !strings.Contains(fx.out.String(), "MSI exit code: 0") {
 		t.Fatalf("output %q missing msiexec exit code", fx.out.String())
+	}
+}
+
+func TestMSIExecCommandLine(t *testing.T) {
+	cfg := InstallConfig{
+		MSIPath:    `C:\tmp\podman.msi`,
+		LogPath:    `C:\tmp\podman-install.log`,
+		InstallDir: `C:\Program Files\RedHat\Podman`,
+	}
+	want := `msiexec.exe /i "C:\tmp\podman.msi" /qn /norestart ` +
+		`/l*v "C:\tmp\podman-install.log" INSTALLDIR="C:\Program Files\RedHat\Podman"`
+	if got := msiexecCommandLine(cfg); got != want {
+		t.Fatalf("msiexecCommandLine() = %q, want %q", got, want)
 	}
 }
 

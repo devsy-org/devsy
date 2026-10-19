@@ -1058,10 +1058,8 @@ jobs:
         run: |
           & "$env:RUNNER_TEMP\devsy-ci-podman\devsy-ci-podman.exe" install `
             --url "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi" `
-            --sha256 "eda54f26f9695d198d9a679fa45ae24ba35b78444f432b5fe0c122c5a3624c57" `
-            --msi-path "$env:RUNNER_TEMP\podman.msi" `
-            --install-dir "C:\Program Files\RedHat\Podman" `
-            --log-path "$env:RUNNER_TEMP\podman-install.log"
+            --sha256 "eda54f26f9695d198d9a679fa45ae24ba35b78444f432b5fe0c122c5a3624c57" --msi-path "$env:RUNNER_TEMP\podman.msi" `
+            --install-dir "C:\Program Files\RedHat\Podman" --log-path "$env:RUNNER_TEMP\podman-install.log"
 
       - name: start podman (Windows)
         if: (matrix.install-kind == true || matrix.install-podman == true) && runner.os == 'Windows' && (matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true')
