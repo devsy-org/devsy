@@ -28,12 +28,44 @@ func CreateInstance(
 	baseClient client.Client,
 	id, uid, source, picture string,
 ) (*managementv1.DevsyWorkspaceInstance, error) {
+	instance, _, err := createInstance(ctx, baseClient, InstanceIdentity{
+		ID:      id,
+		UID:     uid,
+		Source:  source,
+		Picture: picture,
+	})
+	return instance, err
+}
+
+func CreateInstanceOnCluster(
+	ctx context.Context,
+	baseClient client.Client,
+	identity InstanceIdentity,
+) (*managementv1.DevsyWorkspaceInstance, error) {
+	instance, selection, err := createInstance(ctx, baseClient, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	instance.Spec.Target.Cluster = &storagev1.WorkspaceTargetName{Name: selection.cluster.GetName()}
+	return instance, nil
+}
+
+type InstanceIdentity struct {
+	ID, UID, Source, Picture string
+}
+
+func createInstance(
+	ctx context.Context,
+	baseClient client.Client,
+	identity InstanceIdentity,
+) (*managementv1.DevsyWorkspaceInstance, createSelection, error) {
 	formCtx, cancelForm := context.WithCancel(ctx)
 	defer cancelForm()
 
 	selection, err := runCreateSelectionForm(ctx, baseClient, formCtx, cancelForm)
 	if err != nil {
-		return nil, err
+		return nil, createSelection{}, err
 	}
 
 	renderedParameters, err := renderedParametersForCreate(
@@ -42,23 +74,25 @@ func CreateInstance(
 		selection.templateVersion,
 	)
 	if err != nil {
-		return nil, err
+		return nil, createSelection{}, err
 	}
 
-	return buildCreatedInstance(buildCreatedInstanceParams{
-		id:                      id,
-		uid:                     uid,
-		source:                  source,
-		picture:                 picture,
+	instance := buildCreatedInstance(buildCreatedInstanceParams{
+		id:                      identity.ID,
+		uid:                     identity.UID,
+		source:                  identity.Source,
+		picture:                 identity.Picture,
 		selectedProject:         selection.project,
 		selectedTemplate:        selection.template,
 		selectedTemplateVersion: selection.templateVersion,
 		renderedParameters:      renderedParameters,
-	}), nil
+	})
+	return instance, selection, nil
 }
 
 type createSelection struct {
 	project         *managementv1.Project
+	cluster         *managementv1.Cluster
 	template        *managementv1.DevsyWorkspaceTemplate
 	templateVersion string
 }
@@ -111,6 +145,7 @@ func runCreateSelectionForm(
 
 	return createSelection{
 		project:         selectedProject,
+		cluster:         selectedCluster,
 		template:        selectedTemplate,
 		templateVersion: selectedTemplateVersion,
 	}, nil
