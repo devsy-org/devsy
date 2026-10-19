@@ -242,7 +242,19 @@ func CloneConfig(config *Config) *Config {
 }
 
 func LoadConfig(contextOverride string, providerOverride string) (*Config, error) {
-	configOrigin, err := GetConfigPath()
+	return LoadConfigWithPathManager(DefaultPathManager(), contextOverride, providerOverride)
+}
+
+// LoadConfigWithPathManager loads a config snapshot. Path-resolution effects follow
+// pm's policy; use NewReadOnlyPathManager to avoid creating roots during loading.
+func LoadConfigWithPathManager(
+	pm PathManager,
+	contextOverride, providerOverride string,
+) (*Config, error) {
+	if pm == nil {
+		return nil, fmt.Errorf("load config: path manager is required")
+	}
+	configOrigin, err := pm.ConfigFilePath()
 	if err != nil {
 		return nil, err
 	}

@@ -226,7 +226,20 @@ func ProviderExists(context, provider string) bool {
 }
 
 func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
-	providerDir, err := GetProviderDir(context, provider)
+	return LoadProviderConfigWithPathManager(config.DefaultPathManager(), context, provider)
+}
+
+// LoadProviderConfigWithPathManager loads a provider snapshot with the built-in
+// exec overlay. Path-resolution effects follow pm's policy; use
+// config.NewReadOnlyPathManager to avoid creating roots during loading.
+func LoadProviderConfigWithPathManager(
+	pm config.PathManager,
+	context, provider string,
+) (*ProviderConfig, error) {
+	if pm == nil {
+		return nil, fmt.Errorf("load provider config: path manager is required")
+	}
+	providerDir, err := pm.ProviderDir(context, provider)
 	if err != nil {
 		return nil, err
 	}
