@@ -430,12 +430,12 @@ func (c *client) initPlatformClient(ctx context.Context) (platformclient.Client,
 }
 
 func (c *client) getWorkspaceAddress() (ts.Addr, error) {
-	if c.workspace.Pro == nil || c.workspace.Pro.InstanceName == "" {
+	if c.workspace.Platform == nil || c.workspace.Platform.InstanceName == "" {
 		return ts.Addr{}, fmt.Errorf("workspace is not initialized")
 	}
 
 	return ts.NewAddr(
-		ts.GetWorkspaceHostname(c.workspace.Pro.InstanceName, c.workspace.Pro.Project),
+		ts.GetWorkspaceHostname(c.workspace.Platform.InstanceName, c.workspace.Platform.Project),
 		sshServer.DefaultUserPort,
 	), nil
 }

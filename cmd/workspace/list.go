@@ -97,8 +97,9 @@ func printPlainWorkspaces(workspaces []*provider.Workspace) {
 	tableEntries := [][]string{}
 	for _, entry := range workspaces {
 		name := entry.ID
-		if entry.IsPro() && entry.Pro.DisplayName != "" && entry.ID != entry.Pro.DisplayName {
-			name = fmt.Sprintf("%s (%s)", entry.Pro.DisplayName, entry.ID)
+		if entry.IsPlatform() && entry.Platform.DisplayName != "" &&
+			entry.ID != entry.Platform.DisplayName {
+			name = fmt.Sprintf("%s (%s)", entry.Platform.DisplayName, entry.ID)
 		}
 		tableEntries = append(tableEntries, []string{
 			name,
@@ -108,7 +109,7 @@ func printPlainWorkspaces(workspaces []*provider.Workspace) {
 			entry.IDE.Name,
 			time.Since(entry.LastUsedTimestamp.Time).Round(1 * time.Second).String(),
 			time.Since(entry.CreationTimestamp.Time).Round(1 * time.Second).String(),
-			fmt.Sprintf("%t", entry.IsPro()),
+			fmt.Sprintf("%t", entry.IsPlatform()),
 		})
 	}
 

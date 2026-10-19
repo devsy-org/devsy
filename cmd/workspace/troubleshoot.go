@@ -128,7 +128,7 @@ func (cmd *TroubleshootCmd) collectWorkspaceInfo(
 		info.addErr("workspace status", err)
 	}
 
-	if info.Workspace.Pro != nil {
+	if info.Workspace.Platform != nil {
 		info.WorkspaceTroubleshoot, err = collectWorkspaceProTroubleshoot(
 			ctx, info.Config, info.Workspace, info.DevsyProInstances,
 		)
@@ -165,7 +165,7 @@ func collectWorkspaceProTroubleshoot(
 		return nil, nil
 	}
 
-	return collectProWorkspaceInfo(ctx, devsyConfig, proInstance.Host, ws.UID, ws.Pro.Project)
+	return collectProWorkspaceInfo(ctx, devsyConfig, proInstance.Host, ws.UID, ws.Platform.Project)
 }
 
 // collectDaemonStatus returns the local daemon status when the client is a

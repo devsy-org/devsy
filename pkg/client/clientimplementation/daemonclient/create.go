@@ -49,7 +49,7 @@ func (c *client) Create(
 		return err
 	}
 
-	c.workspace.Pro = &provider.ProMetadata{
+	c.workspace.Platform = &provider.PlatformMetadata{
 		InstanceName: instance.Name,
 		Project:      project.ProjectFromNamespace(instance.Namespace),
 		DisplayName:  instance.Spec.DisplayName,

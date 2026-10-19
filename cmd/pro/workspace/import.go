@@ -223,7 +223,7 @@ func (cmd *ImportCmd) writeNewWorkspaceDefinition(
 		Provider: provider2.WorkspaceProviderConfig{Name: providerName},
 		Context:  devsyConfig.DefaultContext,
 		Imported: !cmd.Own,
-		Pro: &provider2.ProMetadata{
+		Platform: &provider2.PlatformMetadata{
 			InstanceName: instance.GetName(),
 			Project:      project.ProjectFromNamespace(instance.Namespace),
 			DisplayName:  instance.Spec.DisplayName,
@@ -248,7 +248,7 @@ func (cmd *ImportCmd) writeWorkspaceDefinition(
 		},
 		Context:  devsyConfig.DefaultContext,
 		Imported: !cmd.Own,
-		Pro: &provider2.ProMetadata{
+		Platform: &provider2.PlatformMetadata{
 			InstanceName: instance.GetName(),
 			Project:      instanceOpts[platform.ProjectEnv],
 			DisplayName:  instance.Spec.DisplayName,
