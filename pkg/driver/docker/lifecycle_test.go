@@ -151,6 +151,31 @@ esac
 		"a transient miss that resolves on retry must not fall back to pull")
 }
 
+func TestWaitForLocalImage_BoundsEachInspectAttempt(t *testing.T) {
+	origTimeout := imageInspectAttemptTimeout
+	imageInspectAttemptTimeout = 100 * time.Millisecond
+	t.Cleanup(func() {
+		imageInspectAttemptTimeout = origTimeout
+	})
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "docker-fake")
+	script := `#!/bin/sh
+case "$1" in
+  inspect) sleep 5 ;;
+esac
+`
+	//nolint:gosec // test helper script needs exec bit
+	require.NoError(t, os.WriteFile(bin, []byte(script), 0o755))
+	d := &dockerDriver{Docker: &docker.DockerHelper{DockerCommand: bin}}
+
+	start := time.Now()
+	err := d.waitForLocalImage(context.Background(), testImageRef)
+
+	require.Error(t, err)
+	assert.Less(t, time.Since(start), 2*time.Second)
+}
+
 func TestEnsureImage_ExternalImageSkipsRetryAndPullsImmediately(t *testing.T) {
 	withShortImageInspectPoll(t)
 

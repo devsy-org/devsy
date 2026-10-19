@@ -334,6 +334,7 @@ func (d *dockerDriver) RunImageDevContainer(
 var (
 	imageInspectPollInterval    = 500 * time.Millisecond
 	imageInspectPollMaxAttempts = 20
+	imageInspectAttemptTimeout  = 10 * time.Second
 )
 
 func (d *dockerDriver) EnsureImage(
@@ -377,12 +378,9 @@ func (d *dockerDriver) inspectImage(ctx context.Context, options *driver.RunOpti
 	return d.waitForLocalImage(ctx, options.Image)
 }
 
-// waitForLocalImage inspects image, retrying while the only failure is
-// ErrImageNotFound. Any other inspect error (e.g. daemon unreachable) stops
-// the retry immediately. Returns nil once found, or the last ErrImageNotFound
-// once imageInspectPollMaxAttempts inspects have failed. Bounding by attempt
-// count rather than wall-clock keeps the budget immune to slow individual
-// inspect calls (e.g. a loaded CI runner forking the docker CLI).
+// waitForLocalImage retries image-not-found failures up to a bounded number
+// of attempts. Each inspection also has its own deadline so a stalled Docker
+// CLI cannot block workspace startup indefinitely.
 func (d *dockerDriver) waitForLocalImage(ctx context.Context, image string) error {
 	var lastErr error
 	for attempt := 1; attempt <= imageInspectPollMaxAttempts; attempt++ {
@@ -393,7 +391,10 @@ func (d *dockerDriver) waitForLocalImage(ctx context.Context, image string) erro
 			case <-time.After(imageInspectPollInterval):
 			}
 		}
-		_, err := d.Docker.InspectImage(ctx, image, false)
+
+		inspectCtx, cancel := context.WithTimeout(ctx, imageInspectAttemptTimeout)
+		_, err := d.Docker.InspectImage(inspectCtx, image, false)
+		cancel()
 		if err == nil {
 			return nil
 		}
