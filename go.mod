@@ -13,7 +13,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.3-0.20260107145400-75610162e7da
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.12.0
 	github.com/blang/semver/v4 v4.0.0
-	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/bmatcuk/doublestar/v4 v4.10.1
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/compose-spec/compose-go/v2 v2.15.0
