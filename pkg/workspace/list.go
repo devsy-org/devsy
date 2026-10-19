@@ -25,36 +25,36 @@ import (
 func List(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	skipPro bool,
+	skipPlatform bool,
 	owner platform.OwnerFilter,
 ) ([]*providerpkg.Workspace, error) {
 	// list local workspaces
-	localWorkspaces, err := ListLocalWorkspaces(devsyConfig.DefaultContext, skipPro)
+	localWorkspaces, err := ListLocalWorkspaces(devsyConfig.DefaultContext, skipPlatform)
 	if err != nil {
 		return nil, err
 	}
 
-	proWorkspaces := []*providerpkg.Workspace{}
-	if !skipPro {
-		proWorkspaces, localWorkspaces = reconcileProWorkspaces(
+	platformWorkspaces := []*providerpkg.Workspace{}
+	if !skipPlatform {
+		platformWorkspaces, localWorkspaces = reconcilePlatformWorkspaces(
 			ctx, devsyConfig, localWorkspaces, owner,
 		)
 	}
 
-	return mergeWorkspaces(localWorkspaces, proWorkspaces), nil
+	return mergeWorkspaces(localWorkspaces, platformWorkspaces), nil
 }
 
-func reconcileProWorkspaces(
+func reconcilePlatformWorkspaces(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	localWorkspaces []*providerpkg.Workspace,
 	owner platform.OwnerFilter,
 ) ([]*providerpkg.Workspace, []*providerpkg.Workspace) {
-	proWorkspaceResults := listProWorkspaces(ctx, devsyConfig, owner)
+	platformWorkspaceResults := listPlatformWorkspaces(ctx, devsyConfig, owner)
 
-	proWorkspaces := []*providerpkg.Workspace{}
-	for _, result := range proWorkspaceResults {
-		proWorkspaces = append(proWorkspaces, result.workspaces...)
+	platformWorkspaces := []*providerpkg.Workspace{}
+	for _, result := range platformWorkspaceResults {
+		platformWorkspaces = append(platformWorkspaces, result.workspaces...)
 	}
 
 	// Check if every local file based workspace has a remote counterpart.
@@ -63,14 +63,14 @@ func reconcileProWorkspaces(
 	cleanedLocalWorkspaces := []*providerpkg.Workspace{}
 	for _, localWorkspace := range localWorkspaces {
 		if localWorkspace.IsPro() &&
-			shouldDeleteLocalWorkspace(ctx, localWorkspace, proWorkspaceResults) {
+			shouldDeleteLocalWorkspace(ctx, localWorkspace, platformWorkspaceResults) {
 			deleteLocalWorkspace(devsyConfig, localWorkspace)
 			continue
 		}
 		cleanedLocalWorkspaces = append(cleanedLocalWorkspaces, localWorkspace)
 	}
 
-	return proWorkspaces, cleanedLocalWorkspaces
+	return platformWorkspaces, cleanedLocalWorkspaces
 }
 
 func deleteLocalWorkspace(devsyConfig *config.Config, localWorkspace *providerpkg.Workspace) {
@@ -88,18 +88,18 @@ func deleteLocalWorkspace(devsyConfig *config.Config, localWorkspace *providerpk
 }
 
 func mergeWorkspaces(
-	localWorkspaces, proWorkspaces []*providerpkg.Workspace,
+	localWorkspaces, platformWorkspaces []*providerpkg.Workspace,
 ) []*providerpkg.Workspace {
 	workspaces := map[string]*providerpkg.Workspace{}
 	for _, workspace := range localWorkspaces {
 		workspaces[workspace.UID] = workspace
 	}
 
-	for _, proWorkspace := range proWorkspaces {
-		if localWorkspace, ok := workspaces[proWorkspace.UID]; ok {
-			proWorkspace.IDE = localWorkspace.IDE
+	for _, platformWorkspace := range platformWorkspaces {
+		if localWorkspace, ok := workspaces[platformWorkspace.UID]; ok {
+			platformWorkspace.IDE = localWorkspace.IDE
 		}
-		workspaces[proWorkspace.UID] = proWorkspace
+		workspaces[platformWorkspace.UID] = platformWorkspace
 	}
 
 	retWorkspaces := []*providerpkg.Workspace{}
@@ -112,7 +112,7 @@ func mergeWorkspaces(
 
 func ListLocalWorkspaces(
 	contextName string,
-	skipPro bool,
+	skipPlatform bool,
 ) ([]*providerpkg.Workspace, error) {
 	workspaceDir, err := providerpkg.GetWorkspacesDir(contextName)
 	if err != nil {
@@ -129,7 +129,7 @@ func ListLocalWorkspaces(
 		if workspaceConfig := loadLocalWorkspaceEntry(
 			contextName,
 			entry.Name(),
-			skipPro,
+			skipPlatform,
 		); workspaceConfig != nil {
 			retWorkspaces = append(retWorkspaces, workspaceConfig)
 		}
@@ -140,7 +140,7 @@ func ListLocalWorkspaces(
 
 func loadLocalWorkspaceEntry(
 	contextName, name string,
-	skipPro bool,
+	skipPlatform bool,
 ) *providerpkg.Workspace {
 	if strings.HasPrefix(name, ".") {
 		return nil
@@ -156,7 +156,7 @@ func loadLocalWorkspaceEntry(
 		return nil
 	}
 
-	if skipPro && workspaceConfig.IsPro() {
+	if skipPlatform && workspaceConfig.IsPro() {
 		return nil
 	}
 
@@ -171,17 +171,17 @@ func CountLocalWorkspaces(contextName string) (int, error) {
 	return len(workspaces), nil
 }
 
-type listProWorkspacesResult struct {
+type listPlatformWorkspacesResult struct {
 	workspaces []*providerpkg.Workspace
 	err        error
 }
 
-func listProWorkspaces(
+func listPlatformWorkspaces(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	owner platform.OwnerFilter,
-) map[string]listProWorkspacesResult {
-	results := map[string]listProWorkspacesResult{}
+) map[string]listPlatformWorkspacesResult {
+	results := map[string]listPlatformWorkspacesResult{}
 
 	// lock around `results`
 	var mu sync.Mutex
@@ -198,7 +198,7 @@ func listProWorkspaces(
 			continue
 		}
 
-		// only get pro providers
+		// only get platform providers
 		if !providerConfig.IsProxyProvider() && !providerConfig.IsDaemonProvider() {
 			continue
 		}
@@ -213,7 +213,7 @@ func listProWorkspaces(
 			)
 			mu.Lock()
 			defer mu.Unlock()
-			results[provider] = listProWorkspacesResult{
+			results[provider] = listPlatformWorkspacesResult{
 				workspaces: workspaces,
 				err:        err,
 			}
@@ -231,7 +231,7 @@ func listProWorkspacesForProvider(
 	providerConfig *providerpkg.ProviderConfig,
 	owner platform.OwnerFilter,
 ) ([]*providerpkg.Workspace, error) {
-	instances, err := listProInstances(ctx, listProInstancesParams{
+	instances, err := listPlatformInstances(ctx, listPlatformInstancesParams{
 		devsyConfig:    devsyConfig,
 		provider:       provider,
 		providerConfig: providerConfig,
@@ -239,14 +239,14 @@ func listProWorkspacesForProvider(
 	})
 	if err != nil {
 		if log.DebugEnabled() {
-			log.Warnf("Failed to list pro workspaces for provider %s: %v", provider, err)
+			log.Warnf("Failed to list platform workspaces for provider %s: %v", provider, err)
 		}
 		return nil, err
 	}
 
 	retWorkspaces := []*providerpkg.Workspace{}
 	for _, instance := range instances {
-		if workspace := proWorkspaceFromInstance(
+		if workspace := platformWorkspaceFromInstance(
 			instance,
 			provider,
 			devsyConfig.DefaultContext,
@@ -258,16 +258,16 @@ func listProWorkspacesForProvider(
 	return retWorkspaces, nil
 }
 
-type listProInstancesParams struct {
+type listPlatformInstancesParams struct {
 	devsyConfig    *config.Config
 	provider       string
 	providerConfig *providerpkg.ProviderConfig
 	owner          platform.OwnerFilter
 }
 
-func listProInstances(
+func listPlatformInstances(
 	ctx context.Context,
-	params listProInstancesParams,
+	params listPlatformInstancesParams,
 ) ([]managementv1.DevsyWorkspaceInstance, error) {
 	switch {
 	case params.providerConfig.IsProxyProvider():
@@ -280,29 +280,29 @@ func listProInstances(
 	case params.providerConfig.IsDaemonProvider():
 		return listInstancesDaemonProvider(ctx, params.provider, params.owner)
 	default:
-		return nil, fmt.Errorf("cannot list pro workspaces with provider %s", params.provider)
+		return nil, fmt.Errorf("cannot list platform workspaces with provider %s", params.provider)
 	}
 }
 
-func proWorkspaceFromInstance(
+func platformWorkspaceFromInstance(
 	instance managementv1.DevsyWorkspaceInstance,
 	provider string,
 	defaultContext string,
 ) *providerpkg.Workspace {
 	if instance.GetLabels() == nil {
-		log.Debugf("no labels for pro workspace %q found, skipping", instance.GetName())
+		log.Debugf("no labels for platform workspace %q found, skipping", instance.GetName())
 		return nil
 	}
 
 	id := instance.GetLabels()[storagev1.DevsyWorkspaceIDLabel]
 	if id == "" {
-		log.Debugf("no ID label for pro workspace %q found, skipping", instance.GetName())
+		log.Debugf("no ID label for platform workspace %q found, skipping", instance.GetName())
 		return nil
 	}
 
 	uid := instance.GetLabels()[storagev1.DevsyWorkspaceUIDLabel]
 	if uid == "" {
-		log.Debugf("no UID label for pro workspace %q found, skipping", instance.GetName())
+		log.Debugf("no UID label for platform workspace %q found, skipping", instance.GetName())
 		return nil
 	}
 
@@ -310,12 +310,12 @@ func proWorkspaceFromInstance(
 		ID:      id,
 		UID:     uid,
 		Context: defaultContext,
-		Source:  proWorkspaceSource(instance),
+		Source:  platformWorkspaceSource(instance),
 		Provider: providerpkg.WorkspaceProviderConfig{
 			Name: provider,
 		},
-		LastUsedTimestamp: proWorkspaceLastUsed(instance),
-		CreationTimestamp: proWorkspaceCreationTimestamp(instance),
+		LastUsedTimestamp: platformWorkspaceLastUsed(instance),
+		CreationTimestamp: platformWorkspaceCreationTimestamp(instance),
 		Pro: &providerpkg.ProMetadata{
 			InstanceName: instance.GetName(),
 			Project:      instance.GetLabels()[config.K8sProjectLabel],
@@ -324,7 +324,7 @@ func proWorkspaceFromInstance(
 	}
 }
 
-func proWorkspaceSource(
+func platformWorkspaceSource(
 	instance managementv1.DevsyWorkspaceInstance,
 ) providerpkg.WorkspaceSource {
 	source := providerpkg.WorkspaceSource{}
@@ -342,7 +342,7 @@ func proWorkspaceSource(
 	return *s
 }
 
-func proWorkspaceLastUsed(instance managementv1.DevsyWorkspaceInstance) types.Time {
+func platformWorkspaceLastUsed(instance managementv1.DevsyWorkspaceInstance) types.Time {
 	if sleepModeConfig := instance.Status.SleepModeConfig; sleepModeConfig != nil {
 		return types.Unix(sleepModeConfig.Status.LastActivity, 0)
 	}
@@ -363,7 +363,7 @@ func proWorkspaceLastUsed(instance managementv1.DevsyWorkspaceInstance) types.Ti
 	return types.Unix(ts, 0)
 }
 
-func proWorkspaceCreationTimestamp(instance managementv1.DevsyWorkspaceInstance) types.Time {
+func platformWorkspaceCreationTimestamp(instance managementv1.DevsyWorkspaceInstance) types.Time {
 	if instance.CreationTimestamp.IsZero() {
 		return types.Time{}
 	}
@@ -373,10 +373,10 @@ func proWorkspaceCreationTimestamp(instance managementv1.DevsyWorkspaceInstance)
 func shouldDeleteLocalWorkspace(
 	ctx context.Context,
 	localWorkspace *providerpkg.Workspace,
-	proWorkspaceResults map[string]listProWorkspacesResult,
+	platformWorkspaceResults map[string]listPlatformWorkspacesResult,
 ) bool {
 	// get the correct result for this local workspace
-	res, ok := proWorkspaceResults[localWorkspace.Provider.Name]
+	res, ok := platformWorkspaceResults[localWorkspace.Provider.Name]
 	if !ok {
 		return false
 	}
@@ -394,10 +394,13 @@ func shouldDeleteLocalWorkspace(
 		}
 	}
 
-	hasProCounterpart := slices.ContainsFunc(res.workspaces, func(w *providerpkg.Workspace) bool {
-		return localWorkspace.UID == w.UID
-	})
-	return !hasProCounterpart
+	hasPlatformCounterpart := slices.ContainsFunc(
+		res.workspaces,
+		func(w *providerpkg.Workspace) bool {
+			return localWorkspace.UID == w.UID
+		},
+	)
+	return !hasPlatformCounterpart
 }
 
 func listInstancesProxyProvider(
@@ -422,7 +425,7 @@ func listInstancesProxyProvider(
 			Stderr:               &stderr,
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to list pro workspaces: %s: %w", stderr.String(), err)
+		return nil, fmt.Errorf("failed to list platform workspaces: %s: %w", stderr.String(), err)
 	}
 	if stdout.Len() == 0 {
 		return nil, nil

@@ -199,7 +199,7 @@ func (cmd *LoginCmd) resolveInstance(
 		return nil, nil, err
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig)
+	proInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return nil, nil, err
 	}

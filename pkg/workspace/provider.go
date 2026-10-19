@@ -108,19 +108,22 @@ func FindProvider(
 func ProviderFromHost(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	proHost string,
+	platformHost string,
 ) (*provider.ProviderConfig, error) {
-	proInstanceConfig, err := provider.LoadProInstanceConfig(devsyConfig.DefaultContext, proHost)
+	platformInstanceConfig, err := provider.LoadProInstanceConfig(
+		devsyConfig.DefaultContext,
+		platformHost,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("load pro instance %s: %w", proHost, err)
+		return nil, fmt.Errorf("load platform instance %s: %w", platformHost, err)
 	}
 
-	foundProvider, err := FindProvider(devsyConfig, proInstanceConfig.Provider)
+	foundProvider, err := FindProvider(devsyConfig, platformInstanceConfig.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("find provider: %w", err)
 	}
 	if !foundProvider.Config.IsProxyProvider() && !foundProvider.Config.IsDaemonProvider() {
-		return nil, fmt.Errorf("provider is not a pro provider")
+		return nil, fmt.Errorf("provider is not a platform provider")
 	}
 
 	return foundProvider.Config, nil

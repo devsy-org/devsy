@@ -8,41 +8,41 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
-func ListProInstances(
+func ListPlatformInstances(
 	devsyConfig *config.Config,
 ) ([]*provider2.ProInstance, error) {
-	proInstanceDir, err := provider2.GetProInstancesDir(devsyConfig.DefaultContext)
+	platformInstanceDir, err := provider2.GetProInstancesDir(devsyConfig.DefaultContext)
 	if err != nil {
 		return nil, err
 	}
 
-	entries, err := os.ReadDir(proInstanceDir)
+	entries, err := os.ReadDir(platformInstanceDir)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
-	retProInstances := []*provider2.ProInstance{}
+	retPlatformInstances := []*provider2.ProInstance{}
 	for _, entry := range entries {
-		proInstanceConfig, err := provider2.LoadProInstanceConfig(
+		platformInstanceConfig, err := provider2.LoadProInstanceConfig(
 			devsyConfig.DefaultContext,
 			entry.Name(),
 		)
 		if err != nil {
-			log.Warnf("could not load pro instance: instance=%s, error=%v", entry.Name(), err)
+			log.Warnf("could not load platform instance: instance=%s, error=%v", entry.Name(), err)
 			continue
 		}
 
-		retProInstances = append(retProInstances, proInstanceConfig)
+		retPlatformInstances = append(retPlatformInstances, platformInstanceConfig)
 	}
 
-	return retProInstances, nil
+	return retPlatformInstances, nil
 }
 
-func FindProviderProInstance(
-	proInstances []*provider2.ProInstance,
+func FindProviderPlatformInstance(
+	platformInstances []*provider2.ProInstance,
 	providerName string,
 ) (*provider2.ProInstance, bool) {
-	for _, instance := range proInstances {
+	for _, instance := range platformInstances {
 		if instance.Provider == providerName {
 			return instance, true
 		}

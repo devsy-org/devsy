@@ -103,7 +103,7 @@ func DeleteProvider(
 	// if force is not set, check if the provider is associated with a pro instance or workspace
 	if !force {
 		// check if this provider is associated with a pro instance
-		proInstances, err := workspace.ListProInstances(devsyConfig)
+		proInstances, err := workspace.ListPlatformInstances(devsyConfig)
 		if err != nil {
 			return fmt.Errorf("list pro instances: %w", err)
 		}

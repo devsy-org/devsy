@@ -272,7 +272,7 @@ type DevsyProInstance struct {
 func collectPlatformInfo(
 	devsyConfig *config.Config,
 ) ([]DevsyProInstance, error) {
-	proInstanceList, err := workspace.ListProInstances(devsyConfig)
+	proInstanceList, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return nil, fmt.Errorf("list pro instances: %w", err)
 	}

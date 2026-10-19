@@ -193,7 +193,7 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 
 	if wsConfig.IsPro() {
 		return fmt.Errorf(
-			"cannot rename pro workspaces; pro workspaces are managed by the platform",
+			"cannot rename platform workspaces; they are managed by the platform",
 		)
 	}
 

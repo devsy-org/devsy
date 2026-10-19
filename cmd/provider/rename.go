@@ -247,7 +247,7 @@ func validateProviderRename(devsyConfig *config.Config, oldName string) error {
 		return fmt.Errorf("cannot rename a pro provider; pro providers are managed by the platform")
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig)
+	proInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return fmt.Errorf("listing pro instances: %w", err)
 	}

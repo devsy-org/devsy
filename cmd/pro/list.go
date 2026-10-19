@@ -61,7 +61,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig)
+	proInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return err
 	}

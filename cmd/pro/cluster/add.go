@@ -425,7 +425,7 @@ func ensureHost(devsyConfig *config.Config, host string) (string, error) {
 		return host, nil
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig)
+	proInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return "", fmt.Errorf("list pro instances: %w", err)
 	}

@@ -21,7 +21,7 @@ func GetPlatformHostSuggestions(
 		return nil, cobra.ShellCompDirectiveError
 	}
 
-	proInstances, err := workspace.ListProInstances(devsyConfig)
+	proInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}

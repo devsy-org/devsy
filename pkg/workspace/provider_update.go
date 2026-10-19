@@ -13,38 +13,42 @@ import (
 	"github.com/devsy-org/devsy/pkg/version"
 )
 
-// CheckProviderUpdate currently only ensures the local provider is in sync with the remote for Devsy Pro instances.
+// CheckProviderUpdate only ensures the local provider is in sync with the remote for Devsy Platform instances.
 // Potentially auto-upgrade other providers in the future.
 func CheckProviderUpdate(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	proInstance *provider2.ProInstance,
+	platformInstance *provider2.ProInstance,
 ) error {
 	if version.GetVersion() == version.DevVersion {
 		log.Debugf("skipping provider upgrade check during development")
 		return nil
 	}
-	if proInstance == nil {
-		log.Debug("no pro instance available, skipping provider upgrade check")
+	if platformInstance == nil {
+		log.Debug("no platform instance available, skipping provider upgrade check")
 		return nil
 	}
 
-	return checkProviderUpdateForInstance(ctx, devsyConfig, proInstance)
+	return checkProviderUpdateForInstance(ctx, devsyConfig, platformInstance)
 }
 
 func checkProviderUpdateForInstance(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	proInstance *provider2.ProInstance,
+	platformInstance *provider2.ProInstance,
 ) error {
-	newVersion, err := platform.GetProInstanceDevsyVersion(proInstance)
+	newVersion, err := platform.GetProInstanceDevsyVersion(platformInstance)
 	if err != nil {
-		return fmt.Errorf("version for pro instance %s: %w", proInstance.Host, err)
+		return fmt.Errorf("version for platform instance %s: %w", platformInstance.Host, err)
 	}
 
-	p, err := FindProvider(devsyConfig, proInstance.Provider)
+	p, err := FindProvider(devsyConfig, platformInstance.Provider)
 	if err != nil {
-		return fmt.Errorf("get provider config for pro provider %s: %w", proInstance.Provider, err)
+		return fmt.Errorf(
+			"get provider config for platform provider %s: %w",
+			platformInstance.Provider,
+			err,
+		)
 	}
 
 	if shouldSkipProviderUpdate(p.Config.Version == version.DevVersion, p.Config.Source.Internal) {
@@ -61,12 +65,12 @@ func checkProviderUpdateForInstance(
 
 	log.Infof(
 		"New provider version available, attempting to update %s from %s to %s",
-		proInstance.Provider,
+		platformInstance.Provider,
 		p.Config.Version,
 		newVersion,
 	)
 
-	return applyProviderUpdate(ctx, devsyConfig, proInstance.Provider, newVersion)
+	return applyProviderUpdate(ctx, devsyConfig, platformInstance.Provider, newVersion)
 }
 
 func providerVersionNeedsUpdate(newVersion, currentVersion string) (bool, error) {
@@ -158,19 +162,19 @@ func GetProInstance(
 	devsyConfig *config.Config,
 	providerName string,
 ) *provider2.ProInstance {
-	proInstances, err := ListProInstances(devsyConfig)
+	platformInstances, err := ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return nil
-	} else if len(proInstances) == 0 {
+	} else if len(platformInstances) == 0 {
 		return nil
 	}
 
-	proInstance, ok := FindProviderProInstance(proInstances, providerName)
+	platformInstance, ok := FindProviderPlatformInstance(platformInstances, providerName)
 	if !ok {
 		return nil
 	}
 
-	return proInstance
+	return platformInstance
 }
 
 // shouldSkipProviderUpdate returns true if the provider update check should be skipped.
