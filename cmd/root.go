@@ -145,7 +145,11 @@ func Execute() {
 	os.Exit(run())
 }
 
-func run() (code int) {
+func run() int {
+	return runWithRootFactory(BuildRoot)
+}
+
+func runWithRootFactory(buildRoot func() (*cobra.Command, *flags.GlobalFlags)) (code int) {
 	machineMode := false
 	collector := telemetry.FromContext(gocontext.Background()) // noop until BootstrapCLI
 	defer func() {
@@ -158,15 +162,18 @@ func run() (code int) {
 		collector.Flush()
 	}()
 
-	rootCmd, globalFlags := BuildRoot()
-	target := resolveTarget(rootCmd)
-	collector = telemetry.BootstrapCLI(target)
-	rootCmd.SetContext(telemetry.WithCollector(gocontext.Background(), collector))
+	rootCmd, globalFlags := buildRoot()
+	target, passive := resolveInvocation(rootCmd, os.Args[1:])
+	if !passive {
+		collector = telemetry.BootstrapCLI(target)
+	}
+	ctx := withInvocationPolicy(gocontext.Background(), passive)
+	rootCmd.SetContext(telemetry.WithCollector(ctx, collector))
 
 	isInternal := topLevelCommand(target) == internalCommand
 	machineMode = configureOutput(rootCmd, globalFlags, isInternal)
 
-	if !isInternal {
+	if !isInternal && !passive {
 		if shouldExit, err := flatpak.ReexecOnHost(); err != nil {
 			collector.RecordCLI(err)
 			return exitCodeForError(err, machineMode)
@@ -175,26 +182,27 @@ func run() (code int) {
 		}
 	}
 
-	err := rootCmd.Execute()
-	if devsyConfig, cfgErr := config.LoadConfig(
-		globalFlags.Context,
-		globalFlags.Provider,
-	); cfgErr == nil {
-		collector = telemetry.ApplyCLIConfig(devsyConfig, collector)
-	}
-
-	collector.RecordCLI(err)
+	collector, err := executeRoot(rootCmd, globalFlags, collector)
 	if err != nil {
 		return exitCodeForError(err, machineMode)
 	}
 	return 0
 }
 
-func resolveTarget(rootCmd *cobra.Command) *cobra.Command {
-	if found, _, err := rootCmd.Find(os.Args[1:]); err == nil && found != nil {
-		return found
+func executeRoot(
+	root *cobra.Command, globalFlags *flags.GlobalFlags, collector telemetry.CLICollector,
+) (telemetry.CLICollector, error) {
+	err := root.Execute()
+	if !passiveInvocation(root, nil) {
+		if snapshot, cfgErr := config.LoadConfig(
+			globalFlags.Context,
+			globalFlags.Provider,
+		); cfgErr == nil {
+			collector = telemetry.ApplyCLIConfig(snapshot, collector)
+		}
 	}
-	return rootCmd
+	collector.RecordCLI(err)
+	return collector, err
 }
 
 func configureOutput(
@@ -215,12 +223,16 @@ func configureOutput(
 			format = logOutputText
 		}
 	}
+	level := log.DefaultLevel
+	if !passiveInvocation(rootCmd, nil) {
+		level = defaultLogLevel(globalFlags)
+	}
 	log.Init(log.Config{
 		Verbosity:    globalFlags.Verbosity,
 		Quiet:        globalFlags.Quiet,
 		Debug:        globalFlags.Debug,
 		Level:        globalFlags.LogLevel,
-		DefaultLevel: defaultLogLevel(globalFlags),
+		DefaultLevel: level,
 		VerbositySet: rootCmd.PersistentFlags().Changed(names.Verbose),
 		Format:       format,
 		Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
@@ -355,58 +367,11 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	globalFlags := flags.SetGlobalFlags(persistentFlags)
 	_ = completion.RegisterFlagCompletionFuns(rootCmd, globalFlags)
 
-	rootCmd.PersistentPreRunE = func(cobraCmd *cobra.Command, _ []string) error {
-		if err := validateLogLevel(globalFlags.LogLevel); err != nil {
-			return err
-		}
-		if globalFlags.DevsyHome != "" {
-			_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
-		}
-		// A crashed deletion must be resumed before using or mutating its
-		// partially cleaned stores. This check reads only recovery metadata;
-		// the matching delete command validates and resumes under the config lock.
-		parent := cobraCmd.Parent()
-		isContextDelete := cobraCmd.Name() == "delete" && parent != nil &&
-			parent.Name() == "context"
-		if !isContextDelete {
-			if err := config.CheckPendingContextDeletion(); err != nil {
-				return err
-			}
-		}
-		cobraCmd.SilenceUsage = true
-		logFormat := globalFlags.LogOutput
-		if logFormat == "" {
-			if isMachineConsumer("", topLevelCommand(cobraCmd) == internalCommand) {
-				logFormat = logOutputJSON
-			} else {
-				logFormat = logOutputText
-			}
-		}
-
-		log.Init(log.Config{
-			Verbosity:    globalFlags.Verbosity,
-			Quiet:        globalFlags.Quiet,
-			Debug:        globalFlags.Debug,
-			Level:        globalFlags.LogLevel,
-			DefaultLevel: defaultLogLevel(globalFlags),
-			VerbositySet: persistentFlags.Changed(names.Verbose),
-			Format:       logFormat,
-			Redactor:     secrets.NewEnvironmentRedactor(os.Environ()),
-		})
-		klog.SetLogger(logr.New(log.LogrSink()))
-
-		devsyConfig, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
-		if err == nil {
-			current := telemetry.FromContext(cobraCmd.Context())
-			cobraCmd.SetContext(telemetry.WithCollector(
-				cobraCmd.Context(),
-				telemetry.ApplyCLIConfig(devsyConfig, current),
-			))
-		}
-		return nil
+	rootCmd.PersistentPreRunE = func(command *cobra.Command, args []string) error {
+		return prepareRootCommand(command, args, globalFlags)
 	}
-	rootCmd.PersistentPostRunE = func(_ *cobra.Command, _ []string) error {
-		if globalFlags.DevsyHome != "" {
+	rootCmd.PersistentPostRunE = func(command *cobra.Command, args []string) error {
+		if !passiveInvocation(command, args) && globalFlags.DevsyHome != "" {
 			_ = os.Unsetenv(config.EnvHome)
 		}
 		return nil
@@ -415,6 +380,78 @@ func BuildRoot() (*cobra.Command, *flags.GlobalFlags) {
 	registerSubcommands(rootCmd, globalFlags)
 
 	return rootCmd, globalFlags
+}
+
+func prepareRootCommand(
+	command *cobra.Command,
+	args []string,
+	globalFlags *flags.GlobalFlags,
+) error {
+	if err := validateLogLevel(globalFlags.LogLevel); err != nil {
+		return err
+	}
+	passive := passiveInvocation(command, args)
+	level, err := prepareRootConfig(command, globalFlags, passive)
+	if err != nil {
+		return err
+	}
+	configureCommandOutput(command, globalFlags, level)
+	if !passive {
+		applyCommandTelemetry(command, globalFlags)
+	}
+	return nil
+}
+
+func prepareRootConfig(
+	command *cobra.Command,
+	globalFlags *flags.GlobalFlags,
+	passive bool,
+) (string, error) {
+	if passive {
+		return preparePassive(command, globalFlags)
+	}
+	if globalFlags.DevsyHome != "" {
+		_ = os.Setenv(config.EnvHome, globalFlags.DevsyHome)
+	}
+	// A crashed deletion must be resumed before using its partially cleaned stores.
+	// The matching delete command validates and resumes under the config lock.
+	parent := command.Parent()
+	isContextDelete := command.Name() == "delete" && parent != nil && parent.Name() == "context"
+	if !isContextDelete {
+		if err := config.CheckPendingContextDeletion(); err != nil {
+			return "", err
+		}
+	}
+	return defaultLogLevel(globalFlags), nil
+}
+
+func configureCommandOutput(command *cobra.Command, globalFlags *flags.GlobalFlags, level string) {
+	command.SilenceUsage = true
+	logFormat := globalFlags.LogOutput
+	if logFormat == "" {
+		if isMachineConsumer("", topLevelCommand(command) == internalCommand) {
+			logFormat = logOutputJSON
+		} else {
+			logFormat = logOutputText
+		}
+	}
+	log.Init(log.Config{
+		Verbosity: globalFlags.Verbosity, Quiet: globalFlags.Quiet, Debug: globalFlags.Debug,
+		Level: globalFlags.LogLevel, DefaultLevel: level,
+		VerbositySet: command.Root().PersistentFlags().Changed(names.Verbose),
+		Format:       logFormat, Redactor: secrets.NewEnvironmentRedactor(os.Environ()),
+	})
+	klog.SetLogger(logr.New(log.LogrSink()))
+}
+
+func applyCommandTelemetry(command *cobra.Command, globalFlags *flags.GlobalFlags) {
+	snapshot, err := config.LoadConfig(globalFlags.Context, globalFlags.Provider)
+	if err == nil {
+		current := telemetry.FromContext(command.Context())
+		command.SetContext(
+			telemetry.WithCollector(command.Context(), telemetry.ApplyCLIConfig(snapshot, current)),
+		)
+	}
 }
 
 func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags) {
