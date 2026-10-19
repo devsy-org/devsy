@@ -12,7 +12,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
-	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -333,8 +332,8 @@ func (d *dockerDriver) RunImageDevContainer(
 }
 
 var (
-	imageInspectPollInterval = 500 * time.Millisecond
-	imageInspectPollTimeout  = 10 * time.Second
+	imageInspectPollInterval    = 500 * time.Millisecond
+	imageInspectPollMaxAttempts = 20
 )
 
 func (d *dockerDriver) EnsureImage(
@@ -381,27 +380,29 @@ func (d *dockerDriver) inspectImage(ctx context.Context, options *driver.RunOpti
 // waitForLocalImage inspects image, retrying while the only failure is
 // ErrImageNotFound. Any other inspect error (e.g. daemon unreachable) stops
 // the retry immediately. Returns nil once found, or the last ErrImageNotFound
-// once imageInspectPollTimeout elapses without the image appearing.
+// once imageInspectPollMaxAttempts inspects have failed. Bounding by attempt
+// count rather than wall-clock keeps the budget immune to slow individual
+// inspect calls (e.g. a loaded CI runner forking the docker CLI).
 func (d *dockerDriver) waitForLocalImage(ctx context.Context, image string) error {
 	var lastErr error
-	pollErr := wait.PollUntilContextTimeout(
-		ctx, imageInspectPollInterval, imageInspectPollTimeout, true,
-		func(ctx context.Context) (bool, error) {
-			_, err := d.Docker.InspectImage(ctx, image, false)
-			if err == nil {
-				return true, nil
+	for attempt := 1; attempt <= imageInspectPollMaxAttempts; attempt++ {
+		if attempt > 1 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(imageInspectPollInterval):
 			}
-			if errors.Is(err, docker.ErrImageNotFound) {
-				lastErr = err
-				return false, nil
-			}
-			return false, err
-		},
-	)
-	if pollErr != nil && lastErr != nil {
-		return lastErr
+		}
+		_, err := d.Docker.InspectImage(ctx, image, false)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, docker.ErrImageNotFound) {
+			return err
+		}
+		lastErr = err
 	}
-	return pollErr
+	return lastErr
 }
 
 func (d *dockerDriver) startContainer(
