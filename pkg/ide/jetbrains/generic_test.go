@@ -26,6 +26,7 @@ const (
 	pinnedAmd64URL  = "https://download.jetbrains.com/go/goland-2025.2.tar.gz"
 	pinnedArm64URL  = "https://download.jetbrains.com/go/goland-2025.2-aarch64.tar.gz"
 	overrideAmd64   = "https://override.test/goland.tar.gz"
+	overrideArm64   = "https://override.test/goland-arm64.tar.gz"
 	amd64Archive    = "amd64-archive"
 	arm64Archive    = "arm64-archive"
 	amd64ArchiveURL = "/amd64.tar.gz"
@@ -78,6 +79,15 @@ var downloadURLCases = []downloadURLCase{
 		},
 		wantAmd64: pinnedAmd64URL,
 		wantArm64: pinnedArm64URL,
+	},
+	{
+		name: "arm64 override replaces only the arm64 URL",
+		values: map[string]config.OptionValue{
+			VersionOption:       {Value: testVersion},
+			DownloadArm64Option: {Value: overrideArm64},
+		},
+		wantAmd64: pinnedAmd64URL,
+		wantArm64: overrideArm64,
 	},
 }
 
@@ -193,11 +203,14 @@ func TestExtractArchiveErrors(t *testing.T) {
 
 func TestDownloadSelectsArchitectureURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == arm64ArchiveURL {
+		switch r.URL.Path {
+		case arm64ArchiveURL:
 			_, _ = w.Write([]byte(arm64Archive))
-			return
+		case amd64ArchiveURL:
+			_, _ = w.Write([]byte(amd64Archive))
+		default:
+			http.NotFound(w, r)
 		}
-		_, _ = w.Write([]byte(amd64Archive))
 	}))
 	defer srv.Close()
 
