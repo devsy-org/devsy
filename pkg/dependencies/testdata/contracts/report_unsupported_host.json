@@ -1,0 +1,46 @@
+{
+  "schema": "devsy.dependencies.report.v1",
+  "schemaVersion": 1,
+  "surveyMode": "passive",
+  "executed": false,
+  "target": {
+    "contextName": "default",
+    "providerName": "microsandbox",
+    "providerType": "external",
+    "providerSourceId": "github.com/devsy-org/devsy-provider-microsandbox@v0.1.11",
+    "providerSourceKind": "canonical_external_release",
+    "adapterVersion": "v0.1.11",
+    "trustedBuiltinIdentity": true,
+    "configRevision": "cfg-rev-105",
+    "providerConfigRevision": "prov-rev-msb-05",
+    "evaluatedAt": "2026-10-19T05:04:00Z"
+  },
+  "host": {
+    "goos": "windows",
+    "goarch": "amd64",
+    "osVersion": "windows-11-24h2",
+    "virtualizationCapability": "unsupported"
+  },
+  "availability": "missing",
+  "compatibility": "incompatible",
+  "reachability": "not_applicable",
+  "policy": "unsupported",
+  "reasonCode": "dependency_platform_unsupported",
+  "message": "Managed MicroSandbox runtime is not supported on windows/amd64 hosts; Windows provides framework and fixture coverage only in this rollout.",
+  "hint": "Use a supported Linux or macOS host or switch to a supported Windows provider such as Docker or Podman.",
+  "items": [
+    {
+      "id": "microsandbox-runtime-pair",
+      "displayName": "MicroSandbox Runtime Pair (msb + libkrunfw)",
+      "required": true,
+      "executed": false,
+      "availability": "missing",
+      "compatibility": "incompatible",
+      "reachability": "not_applicable",
+      "policy": "unsupported",
+      "reasonCode": "dependency_platform_unsupported",
+      "candidates": []
+    }
+  ],
+  "actions": []
+}
