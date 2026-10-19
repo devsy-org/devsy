@@ -74,7 +74,7 @@ func (cmd *WorkspacesCmd) Run(
 		cmd.Context = config.DefaultContext
 	}
 
-	projectName := os.Getenv(config.EnvLoftProject)
+	projectName := os.Getenv(config.EnvProject)
 	if projectName == "" {
 		return fmt.Errorf("project name not found")
 	}
@@ -100,7 +100,7 @@ func (cmd *WorkspacesCmd) Run(
 	workspaceInformer := factory.Management().V1().DevsyWorkspaceInstances()
 
 	self := baseClient.Self()
-	filterByOwner := os.Getenv(config.EnvLoftFilterByOwner) == config.BoolTrue
+	filterByOwner := os.Getenv(config.EnvFilterByOwner) == config.BoolTrue
 	instanceStore := newStore(workspaceInformer, self, cmd.Context, filterByOwner)
 
 	_, err = workspaceInformer.Informer().

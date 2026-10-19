@@ -407,7 +407,7 @@ func listInstancesProxyProvider(
 	providerConfig *providerpkg.ProviderConfig,
 ) ([]managementv1.DevsyWorkspaceInstance, error) {
 	opts := devsyConfig.ProviderOptions(provider)
-	opts[config.EnvLoftFilterByOwner] = config.OptionValue{Value: "true"}
+	opts[config.EnvFilterByOwner] = config.OptionValue{Value: "true"}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 

@@ -68,8 +68,8 @@ func (cmd *StartCmd) startDocker(ctx context.Context) error {
 		return err
 	}
 
-	// try to find loft container
-	containerID, err := cmd.findLoftContainer(ctx, name, true)
+	// try to find devsy container
+	containerID, err := cmd.findDevsyContainer(ctx, name, true)
 	if err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 	}
 
 	// wait until Devsy is ready
-	host, err := cmd.waitForLoftDocker(ctx, containerID)
+	host, err := cmd.waitForDevsyDocker(ctx, containerID)
 	if err != nil {
 		return err
 	}
@@ -147,7 +147,7 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 		func(ctx context.Context) (bool, error) {
 			containerDetails, err := cmd.inspectContainer(ctx, containerID)
 			if err != nil {
-				return false, fmt.Errorf("inspect loft container: %w", err)
+				return false, fmt.Errorf("inspect devsy container: %w", err)
 			} else if containerDetails.State.Status == devcconfig.ContainerStatusExited ||
 				containerDetails.State.Status == devcconfig.ContainerStatusDead {
 				logs, _ := cmd.logsContainer(ctx, containerID)
@@ -194,7 +194,7 @@ Thanks for using Devsy Pro!
 	)
 }
 
-func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) (string, error) {
+func (cmd *StartCmd) waitForDevsyDocker(ctx context.Context, containerID string) (string, error) {
 	log.Info("Wait for Devsy Pro to become available")
 
 	// check for local port
@@ -223,7 +223,7 @@ func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) 
 		time.Minute*10,
 		true,
 		func(ctx context.Context) (bool, error) {
-			url, err = cmd.findLoftRouter(ctx, containerID)
+			url, err = cmd.findDevsyRouter(ctx, containerID)
 			if err != nil {
 				return false, nil
 			}
@@ -232,13 +232,13 @@ func (cmd *StartCmd) waitForLoftDocker(ctx context.Context, containerID string) 
 		},
 	)
 	if waitErr != nil {
-		return "", fmt.Errorf("error waiting for loft router domain: %w", waitErr)
+		return "", fmt.Errorf("error waiting for devsy router domain: %w", waitErr)
 	}
 
 	return url, nil
 }
 
-func (cmd *StartCmd) findLoftRouter(ctx context.Context, id string) (string, error) {
+func (cmd *StartCmd) findDevsyRouter(ctx context.Context, id string) (string, error) {
 	out, err := cmd.buildDockerCmd(ctx, "exec", id, "cat", "/var/lib/loft/loft-domain.txt").Output()
 	if err != nil {
 		return "", WrapCommandError(out, err)
@@ -252,7 +252,7 @@ func (cmd *StartCmd) prepareDocker() error {
 	_, err := exec.LookPath("docker")
 	if err != nil {
 		return fmt.Errorf(
-			"seems like docker is not installed. Docker is required for the installation of loft. " +
+			"seems like docker is not installed. Docker is required for the installation of devsy. " +
 				"Visit https://docs.docker.com/engine/install/ for install instructions",
 		)
 	}
@@ -325,7 +325,7 @@ func (cmd *StartCmd) runInDocker(ctx context.Context, name string) (string, erro
 		return "", err
 	}
 
-	return cmd.findLoftContainer(ctx, name, false)
+	return cmd.findDevsyContainer(ctx, name, false)
 }
 
 func (cmd *StartCmd) logsContainer(ctx context.Context, id string) (string, error) {
@@ -366,7 +366,7 @@ func (cmd *StartCmd) removeContainer(ctx context.Context, id string) error {
 	return nil
 }
 
-func (cmd *StartCmd) findLoftContainer(
+func (cmd *StartCmd) findDevsyContainer(
 	ctx context.Context,
 	name string,
 	onlyRunning bool,

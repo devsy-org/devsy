@@ -307,7 +307,7 @@ func (cmd *LoginCmd) addProviderByVersion(
 	if rv.LT(semver.Version{Major: 0, Minor: 6, Patch: 999}) &&
 		remoteVersion != versionpkg.DevVersion {
 		log.Debug("remote version < 0.7.0, installing proxy provider")
-		return cmd.addLoftProvider(ctx, devsyConfig, fullURL)
+		return cmd.addDevsyProvider(ctx, devsyConfig, fullURL)
 	}
 
 	_, err = workspace.AddProvider(ctx, devsyConfig, cmd.Provider, "pro")
@@ -375,12 +375,12 @@ func (cmd *LoginCmd) loginAndConfigure(
 	return nil
 }
 
-func (cmd *LoginCmd) addLoftProvider(
+func (cmd *LoginCmd) addDevsyProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	url string,
 ) error {
-	// find out loft version
+	// find out devsy version
 	err := cmd.resolveProviderSource(url)
 	if err != nil {
 		return err
@@ -482,7 +482,7 @@ func performLogin(params loginParams) error {
 		return params.loader.LoginWithAccessKey(params.url, params.accessKey, true, true)
 	}
 	if params.skipBrowserLogin {
-		return fmt.Errorf("unable to login to loft host")
+		return fmt.Errorf("unable to login to devsy host")
 	}
 
 	return params.loader.Login(params.url, true)

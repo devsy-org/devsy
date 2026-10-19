@@ -20,7 +20,7 @@ import (
 
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/api/pkg/auth"
-	loftclientset "github.com/devsy-org/api/pkg/clientset/versioned"
+	devsyclientset "github.com/devsy-org/api/pkg/clientset/versioned"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -42,9 +42,9 @@ import (
 )
 
 const (
-	LoftRouterDomainSecret = "loft-router-domain" // #nosec G101
-	passwordChangedHint    = "(has been changed)"
-	defaultUser            = "admin"
+	DevsyRouterDomainSecret = "loft-router-domain" // #nosec G101
+	passwordChangedHint     = "(has been changed)"
+	defaultUser             = "admin"
 
 	ingressNginx         = "ingress-nginx"
 	helmRepositoryConfig = "--repository-config=''"
@@ -364,14 +364,14 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 	}
 
 	// wait until deployment is ready
-	loftPod, err := cmd.waitForDeployment(ctx)
+	devsyPod, err := cmd.waitForDeployment(ctx)
 	if err != nil {
 		return err
 	}
 
 	// check if installed locally
 	if isInstalledLocally(ctx, cmd.KubeClient, cmd.Namespace) {
-		return cmd.successLocalOrRouter(ctx, loftPod)
+		return cmd.successLocalOrRouter(ctx, devsyPod)
 	}
 
 	// get login link
@@ -392,15 +392,15 @@ func (cmd *StartCmd) success(ctx context.Context) error {
 	return cmd.successRemote(ctx, host)
 }
 
-func (cmd *StartCmd) successLocalOrRouter(ctx context.Context, loftPod *corev1.Pod) error {
-	// check if loft domain secret is there
+func (cmd *StartCmd) successLocalOrRouter(ctx context.Context, devsyPod *corev1.Pod) error {
+	// check if devsy domain secret is there
 	if !cmd.NoTunnel {
-		loftRouterDomain, err := cmd.pingLoftRouter(ctx, loftPod)
+		devsyRouterDomain, err := cmd.pingDevsyRouter(ctx, devsyPod)
 		if err != nil {
-			log.Errorf("Error retrieving loft router domain: %v", err)
+			log.Errorf("Error retrieving devsy router domain: %v", err)
 			log.Info("Fallback to use port-forwarding")
-		} else if loftRouterDomain != "" {
-			return cmd.successLoftRouter(loftRouterDomain)
+		} else if devsyRouterDomain != "" {
+			return cmd.successDevsyRouter(devsyRouterDomain)
 		}
 	}
 
@@ -674,7 +674,7 @@ func checkCLITools(ctx context.Context, kubeContext string) error {
 	_, err := exec.LookPath("helm")
 	if err != nil {
 		return fmt.Errorf(
-			"seems like helm is not installed. Helm is required for the installation of loft. " +
+			"seems like helm is not installed. Helm is required for the installation of devsy. " +
 				"Visit https://helm.sh/docs/intro/install/ for install instructions",
 		)
 	}
@@ -687,7 +687,7 @@ func checkCLITools(ctx context.Context, kubeContext string) error {
 	_, err = exec.LookPath("kubectl")
 	if err != nil {
 		return fmt.Errorf(
-			"seems like kubectl is not installed. Kubectl is required for the installation of loft. " +
+			"seems like kubectl is not installed. Kubectl is required for the installation of devsy. " +
 				"Visit https://kubernetes.io/docs/tasks/tools/install-kubectl/ for install instructions",
 		)
 	}
@@ -843,9 +843,9 @@ func (cmd *StartCmd) ensureHostAndIngress(ctx context.Context) error {
 }
 
 func (cmd *StartCmd) waitForDeployment(ctx context.Context) (*corev1.Pod, error) {
-	// wait for loft pod to start
+	// wait for devsy pod to start
 	log.Info("waiting for Devsy Pro pod to be running")
-	loftPod, err := platform.WaitForPodReady(ctx, cmd.KubeClient, cmd.Namespace)
+	devsyPod, err := platform.WaitForPodReady(ctx, cmd.KubeClient, cmd.Namespace)
 	log.Infof("release Pod started")
 	if err != nil {
 		return nil, err
@@ -867,27 +867,27 @@ func (cmd *StartCmd) waitForDeployment(ctx context.Context) (*corev1.Pod, error)
 		cmd.Password = ""
 	}
 
-	return loftPod, nil
+	return devsyPod, nil
 }
 
-func (cmd *StartCmd) pingLoftRouter(ctx context.Context, loftPod *corev1.Pod) (string, error) {
-	loftRouterSecret, err := cmd.KubeClient.CoreV1().
-		Secrets(loftPod.Namespace).
-		Get(ctx, LoftRouterDomainSecret, metav1.GetOptions{})
+func (cmd *StartCmd) pingDevsyRouter(ctx context.Context, devsyPod *corev1.Pod) (string, error) {
+	devsyRouterSecret, err := cmd.KubeClient.CoreV1().
+		Secrets(devsyPod.Namespace).
+		Get(ctx, DevsyRouterDomainSecret, metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			return "", nil
 		}
 
-		return "", fmt.Errorf("find loft router domain secret: %w", err)
-	} else if loftRouterSecret.Data == nil || len(loftRouterSecret.Data["domain"]) == 0 {
+		return "", fmt.Errorf("find devsy router domain secret: %w", err)
+	} else if devsyRouterSecret.Data == nil || len(devsyRouterSecret.Data["domain"]) == 0 {
 		return "", nil
 	}
 
 	// get the domain from secret
-	loftRouterDomain := string(loftRouterSecret.Data["domain"])
+	devsyRouterDomain := string(devsyRouterSecret.Data["domain"])
 
-	// wait until loft is reachable at the given url
+	// wait until devsy is reachable at the given url
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -895,7 +895,7 @@ func (cmd *StartCmd) pingLoftRouter(ctx context.Context, loftPod *corev1.Pod) (s
 			},
 		},
 	}
-	log.Infof("Waiting until Devsy Pro is reachable at https://%s", loftRouterDomain)
+	log.Infof("Waiting until Devsy Pro is reachable at https://%s", devsyRouterDomain)
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second*3,
@@ -905,7 +905,7 @@ func (cmd *StartCmd) pingLoftRouter(ctx context.Context, loftPod *corev1.Pod) (s
 			req, err := http.NewRequestWithContext(
 				ctx,
 				http.MethodGet,
-				"https://"+loftRouterDomain+"/version",
+				"https://"+devsyRouterDomain+"/version",
 				nil,
 			)
 			if err != nil {
@@ -924,10 +924,10 @@ func (cmd *StartCmd) pingLoftRouter(ctx context.Context, loftPod *corev1.Pod) (s
 		return "", err
 	}
 
-	return loftRouterDomain, nil
+	return devsyRouterDomain, nil
 }
 
-func (cmd *StartCmd) successLoftRouter(url string) error {
+func (cmd *StartCmd) successDevsyRouter(url string) error {
 	if !cmd.NoLogin {
 		err := cmd.login(url)
 		if err != nil {
@@ -1030,7 +1030,7 @@ func (cmd *StartCmd) loginViaCLI(url string) error {
 		return err
 	}
 
-	// log into loft
+	// log into devsy
 	loader, err := client.NewClientFromPath(cmd.Config)
 	if err != nil {
 		return err
@@ -1103,10 +1103,10 @@ func getDefaultPassword(
 	kubeClient kubernetes.Interface,
 	namespace string,
 ) (string, error) {
-	loftNamespace, err := kubeClient.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+	devsyNamespace, err := kubeClient.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
 		if kerrors.IsNotFound(err) {
-			loftNamespace, err := kubeClient.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
+			devsyNamespace, err := kubeClient.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: namespace,
 				},
@@ -1115,13 +1115,13 @@ func getDefaultPassword(
 				return "", err
 			}
 
-			return string(loftNamespace.UID), nil
+			return string(devsyNamespace.UID), nil
 		}
 
 		return "", err
 	}
 
-	return string(loftNamespace.UID), nil
+	return string(devsyNamespace.UID), nil
 }
 
 func isInstalledLocally(
@@ -1282,17 +1282,17 @@ func ensureAdminPassword(
 	restConfig *rest.Config,
 	password string,
 ) (bool, error) {
-	loftClient, err := loftclientset.NewForConfig(restConfig)
+	devsyClient, err := devsyclientset.NewForConfig(restConfig)
 	if err != nil {
 		return false, err
 	}
 
-	admin, err := loftClient.StorageV1().Users().Get(ctx, "admin", metav1.GetOptions{})
+	admin, err := devsyClient.StorageV1().Users().Get(ctx, "admin", metav1.GetOptions{})
 	switch {
 	case err != nil && !kerrors.IsNotFound(err):
 		return false, err
 	case admin == nil:
-		admin, err = loftClient.StorageV1().Users().Create(ctx, &storagev1.User{
+		admin, err = devsyClient.StorageV1().Users().Create(ctx, &storagev1.User{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "admin",
 			},
@@ -1419,7 +1419,7 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	// we disable http2 as Kubernetes has problems with this
 	transport.ForceAttemptHTTP2 = false
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	// wait until loft is reachable at the given url
+	// wait until devsy is reachable at the given url
 	client := &http.Client{Transport: transport}
 	url := "https://" + host + "/version"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -1462,7 +1462,7 @@ func upgradeRelease(
 	chartName, chartRepo, kubeContext, namespace string,
 	extraArgs []string,
 ) error {
-	// now we install loft
+	// now we install devsy
 	args := []string{
 		"upgrade",
 		defaultReleaseName,

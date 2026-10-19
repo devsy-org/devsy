@@ -63,7 +63,7 @@ func (cmd *WorkspacesCmd) Run(ctx context.Context) error {
 		)
 	}
 
-	filterByOwner := os.Getenv(config.EnvLoftFilterByOwner) == config.BoolTrue
+	filterByOwner := os.Getenv(config.EnvFilterByOwner) == config.BoolTrue
 	workspaces := []*managementv1.DevsyWorkspaceInstance{}
 	for _, p := range projectList.Items {
 		workspaces = append(

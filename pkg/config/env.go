@@ -171,11 +171,11 @@ const (
 	// EnvProviderFolder is the provider folder path passed to providers.
 	EnvProviderFolder = "PROVIDER_FOLDER"
 
-	// EnvLoftProject is the Devsy project name for pro features.
-	EnvLoftProject = "DEVSY_PROJECT"
+	// EnvProject is the Devsy project name for pro features.
+	EnvProject = "DEVSY_PROJECT"
 
-	// EnvLoftFilterByOwner enables filtering by owner in Devsy.
-	EnvLoftFilterByOwner = "DEVSY_FILTER_BY_OWNER"
+	// EnvFilterByOwner enables filtering by owner in Devsy.
+	EnvFilterByOwner = "DEVSY_FILTER_BY_OWNER"
 
 	// EnvDevcontainerID is the devcontainer identifier.
 	EnvDevcontainerID = "DEVCONTAINER_ID"

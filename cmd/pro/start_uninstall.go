@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	loftclientset "github.com/devsy-org/api/pkg/clientset/versioned"
+	devsyclientset "github.com/devsy-org/api/pkg/clientset/versioned"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -120,7 +120,7 @@ func deleteRemainingAgentResources(
 		func() error {
 			return kubeClient.CoreV1().
 				Secrets(namespace).
-				Delete(ctx, LoftRouterDomainSecret, metav1.DeleteOptions{})
+				Delete(ctx, DevsyRouterDomainSecret, metav1.DeleteOptions{})
 		},
 		func() error {
 			return kubeClient.AdmissionregistrationV1().
@@ -179,17 +179,17 @@ func deleteIgnoreNotFound(deletes ...func() error) error {
 }
 
 func deleteUser(ctx context.Context, restConfig *rest.Config, name string) error {
-	loftClient, err := loftclientset.NewForConfig(restConfig)
+	devsyClient, err := devsyclientset.NewForConfig(restConfig)
 	if err != nil {
 		return err
 	}
 
-	user, err := loftClient.StorageV1().Users().Get(ctx, name, metav1.GetOptions{})
+	user, err := devsyClient.StorageV1().Users().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return nil
 	} else if len(user.Finalizers) > 0 {
 		user.Finalizers = nil
-		_, err = loftClient.StorageV1().Users().Update(ctx, user, metav1.UpdateOptions{})
+		_, err = devsyClient.StorageV1().Users().Update(ctx, user, metav1.UpdateOptions{})
 		if err != nil {
 			if kerrors.IsConflict(err) {
 				return deleteUser(ctx, restConfig, name)
@@ -199,7 +199,7 @@ func deleteUser(ctx context.Context, restConfig *rest.Config, name string) error
 		}
 	}
 
-	err = loftClient.StorageV1().Users().Delete(ctx, name, metav1.DeleteOptions{})
+	err = devsyClient.StorageV1().Users().Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil && !kerrors.IsNotFound(err) {
 		return err
 	}
