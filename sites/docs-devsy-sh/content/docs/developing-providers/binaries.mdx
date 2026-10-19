@@ -14,7 +14,6 @@ binaries:
       arch: amd64
       path: https://example.com/my-binary-linux-amd64  # URL or local path
       checksum: <sha256 of the file>
-      archivePath: bin/my-binary  # only if path is an archive
       name: my-binary             # optional, defaults to the file name
     - os: darwin
       arch: arm64
@@ -22,13 +21,33 @@ binaries:
       checksum: <sha256 of the file>
 ```
 
-Supported archives are `.tgz`, `.tar`, `.tar.gz` and `.zip`. When a user adds the provider, Devsy picks the item that matches their OS and architecture, downloads it and verifies the checksum.
+Supported archives are `.tgz`, `.tar`, `.tar.gz` and `.zip`. When a user adds the provider, Devsy picks the item that matches their OS and architecture, downloads it and, if `checksum` is set, verifies it.
 
 See the official providers, such as [devsy-provider-aws](https://github.com/devsy-org/devsy-provider-aws), for complete examples.
 
 <Callout>
 Not every provider needs `binaries`. Built-in providers that wrap a CLI the user already has, such as `docker`, expose an option like `DOCKER_PATH` instead of downloading one.
 </Callout>
+
+## Archives
+
+Set `archivePath` only when `path` is an archive. Devsy picks the extraction format from the `path` extension, not from `archivePath`. Setting `archivePath` on a direct binary URL makes Devsy try to extract the binary and fails with `unrecognized archive format`.
+
+```yaml
+binaries:
+  MY_BINARY:
+    - os: linux
+      arch: amd64
+      path: https://example.com/my-binary-linux-amd64.tar.gz
+      archivePath: bin/my-binary  # executable inside the archive
+      checksum: <sha256 of bin/my-binary after extraction>
+```
+
+Devsy extracts the whole archive into a folder for the binary and keeps its layout, then uses the file at `archivePath`. `name` has no effect on archives.
+
+## Checksum
+
+`checksum` is optional. When set, Devsy computes the SHA256 of the executable it will run, after extraction, and compares it case-insensitively. For a direct download this is the downloaded file. For an archive it is the extracted file at `archivePath`; the archive itself is never hashed. A mismatch deletes the file and fails the download without retrying.
 
 ## Use a binary
 
