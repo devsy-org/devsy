@@ -38,4 +38,4 @@ Or set it in `devcontainer.json`. The value can be a string or an array. Devsy c
 }
 ```
 
-If the lookup finds no matching image, or Devsy cannot read the repository (for example, missing credentials), it falls back to building as usual.
+If a repository lookup fails, including because of missing credentials, Devsy continues with the next repository. If no matching image is found, it falls back to building as usual. If Devsy finds an image but cannot inspect it, the build fails.
