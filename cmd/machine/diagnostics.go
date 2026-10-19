@@ -27,6 +27,7 @@ const (
 	maxRemoteDiagnosticsResponse = 2 * 1024 * 1024
 	unknownFreshness             = "unknown"
 	unavailableAvailability      = "unavailable"
+	localTimeLayout              = "2006-01-02 15:04:05"
 )
 
 type boundedDiagnosticsBuffer struct {
@@ -271,42 +272,8 @@ func renderDiagnosticsText(w io.Writer, result MachineDiagnostics) error {
 	if result.Source.Message != "" {
 		_, _ = fmt.Fprintf(w, "Diagnostic detail  %s\n", result.Source.Message)
 	}
-	if result.Daemon != nil { //nolint:nestif // daemon details are intentionally rendered as one group.
-		lastPatrol := "Not yet observed"
-		if result.Daemon.LastPatrolAt != nil {
-			lastPatrol = result.Daemon.LastPatrolAt.Local().Format("2006-01-02 15:04:05")
-		}
-		_, _ = fmt.Fprintf(
-			w,
-			"Devsy daemon       %s\nSnapshot freshness %s\nLast patrol        %s\nWorkspaces         %d\n",
-			result.Daemon.Health,
-			result.Source.Freshness,
-			lastPatrol,
-			result.Daemon.WorkspaceCount,
-		)
-		if result.Daemon.LastError != nil {
-			_, _ = fmt.Fprintf(
-				w,
-				"Last daemon error  %s (%s, %s)\n",
-				result.Daemon.LastError.Message,
-				result.Daemon.LastError.Code,
-				result.Daemon.LastError.Timestamp.Format(time.RFC3339),
-			)
-		}
-		if result.Daemon.ShutdownCandidate != nil {
-			eligible := "now"
-			if result.Daemon.ShutdownCandidate.EligibleAt != nil {
-				eligible = result.Daemon.ShutdownCandidate.EligibleAt.Local().
-					Format("2006-01-02 15:04:05")
-			}
-			_, _ = fmt.Fprintf(
-				w,
-				"Shutdown candidate %s (eligible %s)\n",
-				result.Daemon.ShutdownCandidate.WorkspaceID,
-				eligible,
-			)
-		}
-		renderWorkspaceDiagnostics(w, result.Daemon.Workspaces)
+	if result.Daemon != nil {
+		renderDaemonDiagnostics(w, result.Daemon, result.Source.Freshness)
 	}
 	for _, event := range result.Events {
 		_, _ = fmt.Fprintf(
@@ -321,6 +288,56 @@ func renderDiagnosticsText(w io.Writer, result MachineDiagnostics) error {
 	return nil
 }
 
+func renderDaemonDiagnostics(w io.Writer, daemon *machinediagnostics.Status, freshness string) {
+	_, _ = fmt.Fprintf(
+		w,
+		"Devsy daemon       %s\nSnapshot freshness %s\nLast patrol        %s\nWorkspaces         %d\n",
+		daemon.Health,
+		freshness,
+		optionalLocalTime(daemon.LastPatrolAt, "Not yet observed"),
+		daemon.WorkspaceCount,
+	)
+	renderLastDaemonError(w, daemon.LastError)
+	renderShutdownCandidate(w, daemon.ShutdownCandidate)
+	renderWorkspaceDiagnostics(w, daemon.Workspaces)
+}
+
+func renderLastDaemonError(w io.Writer, lastErr *machinediagnostics.DiagnosticError) {
+	if lastErr == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(
+		w,
+		"Last daemon error  %s (%s, %s)\n",
+		lastErr.Message,
+		lastErr.Code,
+		lastErr.Timestamp.Format(time.RFC3339),
+	)
+}
+
+func renderShutdownCandidate(w io.Writer, candidate *machinediagnostics.ShutdownCandidate) {
+	if candidate == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(
+		w,
+		"Shutdown candidate %s (eligible %s)\n",
+		candidate.WorkspaceID,
+		optionalLocalTime(candidate.EligibleAt, "now"),
+	)
+}
+
+func optionalLocalTime(at *time.Time, fallback string) string {
+	if at == nil {
+		return fallback
+	}
+	return formatLocalTime(*at)
+}
+
+func formatLocalTime(at time.Time) string {
+	return at.Local().Format(localTimeLayout)
+}
+
 func renderWorkspaceDiagnostics(w io.Writer, workspaces []machinediagnostics.WorkspaceStatus) {
 	if len(workspaces) == 0 {
 		return
@@ -329,10 +346,7 @@ func renderWorkspaceDiagnostics(w io.Writer, workspaces []machinediagnostics.Wor
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "WORKSPACE\tSTATE\tLAST ACTIVITY\tMACHINE SHUTDOWN STATUS")
 	for _, workspace := range workspaces {
-		lastActivity := "-"
-		if workspace.LastActivityAt != nil {
-			lastActivity = workspace.LastActivityAt.Local().Format("2006-01-02 15:04:05")
-		}
+		lastActivity := optionalLocalTime(workspace.LastActivityAt, "-")
 		_, _ = fmt.Fprintf(
 			tw,
 			"%s\t%s\t%s\t%s\n",
@@ -359,15 +373,13 @@ func workspaceAutoStopDetail(
 
 func workspaceBlockerDetail(workspace machinediagnostics.WorkspaceStatus) string {
 	if workspace.State == machinediagnostics.WorkspaceActive && workspace.IdleDeadlineAt != nil {
-		return workspace.BlockerReason + " (" + workspace.IdleDeadlineAt.Local().
-			Format("2006-01-02 15:04:05") +
-			")"
+		return workspace.BlockerReason + " (" + formatLocalTime(*workspace.IdleDeadlineAt) + ")"
 	}
 	return workspace.BlockerReason
 }
 
 func workspaceDeadlineDetail(workspace machinediagnostics.WorkspaceStatus) string {
-	deadline := workspace.IdleDeadlineAt.Local().Format("2006-01-02 15:04:05")
+	deadline := formatLocalTime(*workspace.IdleDeadlineAt)
 	if workspace.State == machinediagnostics.WorkspaceIdleDue {
 		return "Eligible now (" + deadline + ")"
 	}
