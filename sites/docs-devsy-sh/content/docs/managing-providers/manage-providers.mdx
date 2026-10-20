@@ -75,7 +75,7 @@ This installs the latest external provider from `github.com/devsy-org/devsy-prov
 devsy provider add github.com/devsy-org/devsy-provider-microsandbox@v0.1.8
 ```
 
-The provider needs the `msb` CLI on the machine that runs the workspace. Install it with the [official MicroSandbox instructions](https://github.com/superradcompany/microsandbox#install-the-cli) and check it with `msb --version`. Replacing a workspace VM with `devsy up --recreate` requires MicroSandbox v0.7.7 or newer. The provider runs on Apple Silicon macOS, Linux with KVM, and Windows with Windows Hypervisor Platform.
+The provider needs the `msb` CLI on the machine that runs the workspace. Install it with the [official MicroSandbox instructions](https://github.com/superradcompany/microsandbox#install-the-cli) and check it with `msb --version`. Replacing a workspace VM with `devsy workspace up <name> --recreate` requires MicroSandbox v0.7.7 or newer. The provider runs on Apple Silicon macOS, Linux with KVM, and Windows with Windows Hypervisor Platform.
 
 **Existing built-in installations.** The built-in MicroSandbox provider is deprecated, but existing providers and workspaces keep working. To switch one to the external provider, run:
 
@@ -182,18 +182,18 @@ devsy provider set-source <name> ../path-to/provider.yaml
 
 In the desktop app, use the provider's **Select version**, **Update**, and **Initialize** actions.
 
-Existing workspaces keep the provider version they were created with. Recreate one with `devsy workspace up <name> --recreate` to pick up the new version.
+Workspaces store the provider name and options, not a version. A version change applies to every workspace that uses the provider the next time DevSy uses them.
 
 ## Remove a provider
 
-In the desktop app, click the trash icon on the provider. If a workspace uses it, Devsy asks you to remove that workspace first. With the CLI:
+In the desktop app, open the provider and click **Delete**, then confirm. The delete fails while a workspace uses the provider. With the CLI:
 
 ```sh
 devsy provider delete <provider-name>
 ```
 
 <Callout type="warn">
-Delete or move the provider's workspaces first. Otherwise you cannot use them until you add the provider again.
+Delete or move the provider's workspaces first. Otherwise the CLI refuses the delete.
 </Callout>
 
 ## Rename a provider
@@ -205,7 +205,7 @@ devsy provider rename <current-name> <new-name>
 Workspaces, machines, options, and the default setting follow the new name. If any step fails, Devsy rolls the rename back.
 
 - The new name must be unique and can use lowercase letters, numbers, and dashes, up to 32 characters.
-- Pro providers cannot be renamed.
-- Stop the provider's workspaces first.
+- Platform providers cannot be renamed.
+- Running workspaces are stopped before they move to the new name.
 
-In the desktop app, edit **Provider Name** in the provider's configuration and click **Update Options**.
+In the desktop app, click **Rename** on the provider, enter the new name, and submit.
