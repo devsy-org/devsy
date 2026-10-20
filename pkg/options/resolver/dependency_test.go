@@ -10,6 +10,16 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	testParent         = "parent"
+	testChild          = "child"
+	testDefaultRef     = "${V}"
+	testGlobalChildErr = "cannot use a global option as a dependency of a non-global option. " +
+		`Option "child" used in children of option "parent"`
+	testLocalChildErr = "cannot use a non-local option as a dependency of a local option. " +
+		`Option "child" used in children of option "parent"`
+)
+
 type DependencyGuardTestSuite struct {
 	suite.Suite
 }
@@ -28,11 +38,11 @@ type dependencyCase struct {
 
 func childCase(parent, child *types.Option, wantErr string) dependencyCase {
 	return dependencyCase{
-		defs:    config.OptionDefinitions{"parent": parent, "child": child},
-		values:  map[string]config.OptionValue{"parent": {Children: []string{"child"}}},
+		defs:    config.OptionDefinitions{testParent: parent, testChild: child},
+		values:  map[string]config.OptionValue{testParent: {Children: []string{testChild}}},
 		wantErr: wantErr,
-		from:    "parent",
-		to:      "child",
+		from:    testParent,
+		to:      testChild,
 	}
 }
 
@@ -46,25 +56,12 @@ func variableCase(option, dep *types.Option, wantErr string) dependencyCase {
 	}
 }
 
-func (suite *DependencyGuardTestSuite) runCase(tc dependencyCase) {
-	g := graph.NewGraph[*types.Option]()
-	err := addOptionsToGraph(g, tc.defs, tc.values)
-	if tc.wantErr != "" {
-		suite.ErrorContains(err, tc.wantErr)
-		suite.False(g.HasEdge(tc.from, tc.to))
-		return
-	}
-	suite.Require().NoError(err)
-	suite.True(g.HasEdge(tc.from, tc.to))
-	suite.False(g.HasEdge(tc.to, tc.from))
-}
-
 func (suite *DependencyGuardTestSuite) TestChildScopeGuards() {
 	cases := map[string]dependencyCase{
 		"global child under non-global parent rejected": childCase(
 			&types.Option{},
 			&types.Option{Global: true},
-			`cannot use a global option as a dependency of a non-global option. Option "child" used in children of option "parent"`,
+			testGlobalChildErr,
 		),
 		"global child under global parent accepted": childCase(
 			&types.Option{Global: true}, &types.Option{Global: true}, "",
@@ -75,7 +72,7 @@ func (suite *DependencyGuardTestSuite) TestChildScopeGuards() {
 		"non-local child under local parent rejected": childCase(
 			&types.Option{Local: true},
 			&types.Option{},
-			`cannot use a non-local option as a dependency of a local option. Option "child" used in children of option "parent"`,
+			testLocalChildErr,
 		),
 		"local child under local parent accepted": childCase(
 			&types.Option{Local: true}, &types.Option{Local: true}, "",
@@ -93,12 +90,12 @@ func (suite *DependencyGuardTestSuite) TestChildScopeGuards() {
 func (suite *DependencyGuardTestSuite) TestVariableScopeGuards() {
 	cases := map[string]dependencyCase{
 		"global default referencing non-global variable rejected": variableCase(
-			&types.Option{Global: true, Default: "${V}"},
+			&types.Option{Global: true, Default: testDefaultRef},
 			&types.Option{},
 			`cannot use a non-global option as a dependency of a global option. Option "V" used in default of option "opt"`,
 		),
 		"global default referencing global variable accepted": variableCase(
-			&types.Option{Global: true, Default: "${V}"}, &types.Option{Global: true}, "",
+			&types.Option{Global: true, Default: testDefaultRef}, &types.Option{Global: true}, "",
 		),
 		"non-local command referencing local variable rejected": variableCase(
 			&types.Option{Command: "echo ${V}"},
@@ -106,7 +103,7 @@ func (suite *DependencyGuardTestSuite) TestVariableScopeGuards() {
 			`cannot use a local option as a dependency of a non-local option. Option "V" used in command of option "opt"`,
 		),
 		"local default referencing non-local variable accepted": variableCase(
-			&types.Option{Local: true, Default: "${V}"}, &types.Option{}, "",
+			&types.Option{Local: true, Default: testDefaultRef}, &types.Option{}, "",
 		),
 	}
 
@@ -116,31 +113,28 @@ func (suite *DependencyGuardTestSuite) TestVariableScopeGuards() {
 }
 
 func (suite *DependencyGuardTestSuite) TestUndefinedReferencesAreSkipped() {
-	defs := config.OptionDefinitions{"parent": {Global: true, Default: "${MISSING}"}}
-	values := map[string]config.OptionValue{"parent": {Children: []string{"ghost"}}}
+	defs := config.OptionDefinitions{testParent: {Global: true, Default: "${MISSING}"}}
+	values := map[string]config.OptionValue{testParent: {Children: []string{"ghost"}}}
 
 	g := graph.NewGraph[*types.Option]()
 	suite.Require().NoError(addOptionsToGraph(g, defs, values))
-	suite.False(g.HasEdge("parent", "ghost"))
-	suite.False(g.HasEdge("MISSING", "parent"))
+	suite.False(g.HasEdge(testParent, "ghost"))
+	suite.False(g.HasEdge("MISSING", testParent))
 }
 
 func (suite *DependencyGuardTestSuite) TestResolveRejectsIncompatibleGraph() {
-	defs := map[string]*types.Option{"parent": {}, "child": {Global: true}}
-	values := map[string]config.OptionValue{"parent": {Children: []string{"child"}}}
+	defs := map[string]*types.Option{testParent: {}, testChild: {Global: true}}
+	values := map[string]config.OptionValue{testParent: {Children: []string{testChild}}}
 
 	resolved, _, err := New(map[string]string{}, map[string]string{}).Resolve(
 		context.Background(), nil, defs, values,
 	)
 	suite.Nil(resolved)
-	suite.ErrorContains(
-		err,
-		`cannot use a global option as a dependency of a non-global option. Option "child" used in children of option "parent"`,
-	)
+	suite.ErrorContains(err, testGlobalChildErr)
 }
 
 func (suite *DependencyGuardTestSuite) TestResolveKeepsValidBoundaryUserValue() {
-	defs := map[string]*types.Option{"count": {Type: "number"}}
+	defs := map[string]*types.Option{"count": {Type: typeNumber}}
 
 	resolved, _, err := New(
 		map[string]string{"count": "-9223372036854775808"},
@@ -148,4 +142,17 @@ func (suite *DependencyGuardTestSuite) TestResolveKeepsValidBoundaryUserValue() 
 	).Resolve(context.Background(), nil, defs, map[string]config.OptionValue{})
 	suite.Require().NoError(err)
 	suite.Equal("-9223372036854775808", resolved["count"].Value)
+}
+
+func (suite *DependencyGuardTestSuite) runCase(tc dependencyCase) {
+	g := graph.NewGraph[*types.Option]()
+	err := addOptionsToGraph(g, tc.defs, tc.values)
+	if tc.wantErr != "" {
+		suite.ErrorContains(err, tc.wantErr)
+		suite.False(g.HasEdge(tc.from, tc.to))
+		return
+	}
+	suite.Require().NoError(err)
+	suite.True(g.HasEdge(tc.from, tc.to))
+	suite.False(g.HasEdge(tc.to, tc.from))
 }
