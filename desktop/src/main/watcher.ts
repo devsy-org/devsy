@@ -7,6 +7,7 @@ import type { CliRunner } from "./cli.js"
 import type { DaemonClient } from "./daemon-client.js"
 import { mainLog } from "./logging.js"
 import type { ProviderJobs } from "./provider-jobs.js"
+import { sendRendererEvent } from "./renderer-events.js"
 import type { DaemonState, Machine, Workspace } from "./state.js"
 import type { WorkspaceJobs } from "./workspace-jobs.js"
 import { normalizeWorkspaceStatus } from "./workspace-status.js"
@@ -381,9 +382,6 @@ export class Watcher {
   }
 
   private send(channel: string, payload: unknown): void {
-    const win = this.deps.getMainWindow()
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(channel, payload)
-    }
+    sendRendererEvent(this.deps.getMainWindow, channel, payload)
   }
 }

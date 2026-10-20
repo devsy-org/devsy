@@ -330,3 +330,85 @@ describe("workspace status ordering", () => {
     await expect(watcher.refreshWorkspaceStatus("ws")).resolves.toBeUndefined()
   })
 })
+
+describe("Watcher job broadcasts", () => {
+  it.each(
+    ["success", "failure"].flatMap((outcome) =>
+      ["send", "lookup", "window", "contents"].map((boundary) => [
+        outcome,
+        boundary,
+      ]),
+    ),
+  )(
+    "keeps %s reconciliation independent of renderer %s failure",
+    async (outcome, boundary) => {
+      const state = new DaemonState()
+      const workspaceJobs = new WorkspaceJobs()
+      const send = vi.fn()
+      const win = {
+        isDestroyed: vi.fn(() => false),
+        webContents: { isDestroyed: vi.fn(() => false), send },
+      }
+      const getMainWindow = vi.fn(() => win)
+      const cli = {
+        run: vi.fn(async () => [{ id: "ws", context: "default" }]),
+        runRaw: vi.fn(async () => JSON.stringify({ state: "running" })),
+      }
+      const watcher = new Watcher({
+        cli: cli as never,
+        state,
+        getMainWindow: getMainWindow as never,
+        providerJobs: { snapshot: () => ({}) } as never,
+        workspaceJobs,
+      })
+      workspaceJobs.onChange(() => watcher.broadcastWorkspaces())
+      const refresh = vi.fn(async () => {
+        await watcher.refreshWorkspaces()
+        await watcher.refreshWorkspaceStatus("ws")
+        watcher.broadcastWorkspaces()
+      })
+      workspaceJobs.setRefresh(refresh)
+      const generation = workspaceJobs.start("ws", "creating", "first")
+      send.mockClear()
+      if (boundary === "send")
+        send.mockImplementation(() => {
+          throw new Error("renderer delivery failed")
+        })
+      if (boundary === "lookup")
+        getMainWindow.mockImplementation(() => {
+          throw new Error("window lookup failed")
+        })
+      if (boundary === "window") win.isDestroyed.mockReturnValue(true)
+      if (boundary === "contents")
+        win.webContents.isDestroyed.mockReturnValue(true)
+      expect(() =>
+        workspaceJobs.phase("ws", "first", "Launching command"),
+      ).not.toThrow()
+      expect(() =>
+        workspaceJobs.progress("ws", "first", {
+          phase: "building_image",
+          state: "started",
+        }),
+      ).not.toThrow()
+      const originalError = outcome === "failure" ? "invalid ID" : undefined
+      await expect(
+        workspaceJobs.finish("ws", generation, originalError),
+      ).resolves.toBeUndefined()
+      expect(refresh).toHaveBeenCalledOnce()
+      expect(cli.run).toHaveBeenCalledOnce()
+      expect(cli.runRaw).toHaveBeenCalledOnce()
+      expect(workspaceJobs.get("ws")).toMatchObject({
+        state: outcome === "failure" ? "failed" : "succeeded",
+        error: originalError,
+        refreshError: undefined,
+      })
+      if (boundary === "window" || boundary === "contents")
+        expect(send).not.toHaveBeenCalled()
+      expect(() => workspaceJobs.start("ws", "creating", "retry")).not.toThrow()
+      expect(workspaceJobs.get("ws")).toMatchObject({
+        commandId: "retry",
+        state: "running",
+      })
+    },
+  )
+})

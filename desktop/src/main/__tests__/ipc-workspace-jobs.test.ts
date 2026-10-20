@@ -454,6 +454,84 @@ describe("workspace lifecycle IPC", () => {
     },
   )
 
+  it.each(["success", "failure"])(
+    "keeps %s and task ownership after status delivery throws",
+    async (outcome) => {
+      const ctx = setup()
+      invoke("workspace_up", { source: "ws", commandId: "up" })
+      await flush()
+      ctx.send.mockImplementation((channel) => {
+        if (channel === "workspace-status")
+          throw new Error("status renderer unavailable")
+      })
+      expect(() =>
+        ctx.line(
+          '{"kind":"status","schemaVersion":1,"phase":"building_image","state":"started"}',
+        ),
+      ).not.toThrow()
+      expect(ctx.jobs.get("ws")).toMatchObject({ state: "running" })
+      ctx.line(
+        outcome === "success"
+          ? '{"kind":"result","outcome":"success"}'
+          : '{"kind":"error","outcome":"error","code":"invalid_id","message":"invalid ID","hint":"Use lowercase"}',
+      )
+      await flush()
+      expect(ctx.jobs.get("ws")).toMatchObject({
+        state: outcome === "failure" ? "failed" : "succeeded",
+        ...(outcome === "failure" ? { error: "invalid ID" } : {}),
+      })
+      expect(ctx.closeLog).toHaveBeenCalledOnce()
+      const terminal = ctx.send.mock.calls.filter(
+        ([channel, progress]) =>
+          channel === "command-progress" && progress.done,
+      )
+      expect(terminal).toHaveLength(1)
+      if (outcome === "failure")
+        expect(terminal[0][1].cliError).toMatchObject({
+          code: "invalid_id",
+          message: "invalid ID",
+          hint: "Use lowercase",
+        })
+      invoke("workspace_up", { source: "ws", commandId: "retry" })
+      await flush()
+      expect(ctx.jobs.get("ws")).toMatchObject({
+        commandId: "retry",
+        state: "running",
+      })
+      expect(ctx.cli.run).not.toHaveBeenCalledWith([
+        "workspace",
+        "task",
+        "cancel",
+        "task-1",
+      ])
+    },
+  )
+
+  it.each([0, 1])(
+    "retains action outcome %s when forwarded status delivery throws",
+    async (exitCode) => {
+      const ctx = setup()
+      invoke("workspace_rebuild")
+      await flush()
+      ctx.send.mockImplementation((channel) => {
+        if (channel === "workspace-status")
+          throw new Error("status renderer unavailable")
+      })
+      expect(() =>
+        ctx.line(
+          '{"kind":"status","schemaVersion":1,"phase":"building_image","state":"started"}',
+        ),
+      ).not.toThrow()
+      expect(ctx.jobs.get("ws")?.state).toBe("running")
+      ctx.exit(exitCode)
+      await flush()
+      expect(ctx.jobs.get("ws")).toMatchObject({
+        state: exitCode === 0 ? "succeeded" : "failed",
+        ...(exitCode === 1 ? { error: "Command exited with code 1" } : {}),
+      })
+    },
+  )
+
   it("uses the same registry for tray stop", async () => {
     const ctx = setup()
     const completion = ctx.actions.workspaceActions.stop("ws")

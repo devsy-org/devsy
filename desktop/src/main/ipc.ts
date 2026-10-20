@@ -25,6 +25,7 @@ import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js
 import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
 import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
+import { sendRendererEvent } from "./renderer-events.js"
 import { isTrustedSecretIpcSender } from "./secret-ipc-policy.js"
 import { SecretSession } from "./secret-session.js"
 import type { SettingsService } from "./settings-service.js"
@@ -293,28 +294,22 @@ function createLogSink(
     if (!done && buf.length === 0) return
     const lines = buf
     buf = []
-    try {
-      const win = getWin()
-      if (!win || win.isDestroyed?.() || win.webContents.isDestroyed?.()) return
-      win.webContents.send("command-progress", {
-        commandId,
-        lines: lines.map(redactSensitiveText),
-        done,
-        ...(extra
-          ? {
-              ...extra,
-              message: extra.message
-                ? redactSensitiveText(extra.message)
-                : undefined,
-              cliError: extra.cliError
-                ? redactCLIError(extra.cliError)
-                : undefined,
-            }
-          : {}),
-      })
-    } catch {
-      mainLog.warn("[workspace-operation] progress delivery unavailable")
-    }
+    sendRendererEvent(getWin, "command-progress", {
+      commandId,
+      lines: lines.map(redactSensitiveText),
+      done,
+      ...(extra
+        ? {
+            ...extra,
+            message: extra.message
+              ? redactSensitiveText(extra.message)
+              : undefined,
+            cliError: extra.cliError
+              ? redactCLIError(extra.cliError)
+              : undefined,
+          }
+        : {}),
+    })
   }
 
   return {
@@ -964,7 +959,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     if (!workspaceJobs.owns(workspaceId, commandId)) return true
     const status = redactOperationStatus(normalizeOperationStatus(envelope))
     workspaceJobs.progress(workspaceId, commandId, status)
-    deps.getMainWindow()?.webContents.send("workspace-status", {
+    sendRendererEvent(deps.getMainWindow, "workspace-status", {
       commandId,
       workspaceId,
       ...status,
@@ -2107,7 +2102,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                   normalizeOperationStatus(envelope),
                 )
                 workspaceJobs.progress(wsId, cmdId, status)
-                deps.getMainWindow()?.webContents.send("workspace-status", {
+                sendRendererEvent(deps.getMainWindow, "workspace-status", {
                   commandId: cmdId,
                   workspaceId: wsId,
                   ...status,
