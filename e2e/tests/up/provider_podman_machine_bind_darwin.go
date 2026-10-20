@@ -288,7 +288,8 @@ func requirePodmanMachinePrerequisite(available bool, reason string) {
 	}
 	config, _ := ginkgo.GinkgoConfiguration()
 	message := "native gate BLOCKED: " + reason
-	if strings.TrimSpace(config.LabelFilter) == podmanMachineBindLabel {
+	// Ginkgo has already matched the full label expression before this spec runs.
+	if strings.TrimSpace(config.LabelFilter) != "" {
 		ginkgo.Fail(message, 1)
 	}
 	ginkgo.Skip(message, 1)
