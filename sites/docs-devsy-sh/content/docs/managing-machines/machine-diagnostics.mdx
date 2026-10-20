@@ -13,17 +13,19 @@ The output separates the provider's machine state from the daemon's state, and l
 
 ## When a machine stops
 
-The daemon stops a machine only when every workspace on it is idle. A workspace that is busy, invalid, or has auto-stop turned off blocks the stop. An inactivity timeout must be a positive duration such as `30m`.
+The daemon stops a machine only when every workspace on it passes its check. A workspace blocks the stop when it is busy, its inactivity deadline has not passed, its configuration is invalid, auto-stop is not configured, or its state file is unavailable.
 
-The shutdown candidate shown for a workspace is when it becomes eligible to stop. New activity moves it, and other workspaces can still block the machine.
+An inactivity timeout must be a positive duration such as `30m`. When unset, the provider's default applies. If the provider sets none, the daemon uses 20 minutes. See [Inactivity timeout](../developing-in-workspaces/inactivity-timeout.mdx).
+
+The shutdown candidate is one machine-level entry. It names the workspace with the latest inactivity deadline and shows that deadline as the eligible time. It appears only when no workspace blocks the stop. New activity moves the deadline.
 
 ## Fields
 
 | Field | Meaning |
 | --- | --- |
-| Provider state | The last machine state the provider reported. |
-| Daemon health | Whether the daemon's last operation succeeded. |
-| Snapshot freshness | Whether the daemon updated its snapshot recently. |
+| Provider state | The machine state the provider reports when you run the command. Shows `unknown` if the provider cannot be queried. |
+| Daemon health | `degraded` after the most recent patrol could not list workspace state or a shutdown action failed. Otherwise `healthy`. |
+| Snapshot freshness | `fresh`, `stale`, or `unknown`. A snapshot is stale when it is older than the greater of three patrol intervals or 90 seconds. |
 | Last patrol | When the daemon last checked workspace inactivity. |
 | Last daemon error | The latest failure in this daemon session. It stays after recovery, so check its timestamp. |
 | Shutdown candidate | Set when every workspace check allows a stop. Check the provider state to see whether the machine stopped. |
@@ -36,6 +38,6 @@ devsy machine logs <machine-name>
 
 This shows recent daemon events: starts and stops, workspace discovery, inactivity deadlines, and shutdown results. Add `--follow` to keep polling for new ones. Older events are rotated out, and the output tells you when it detects a gap.
 
-`shutdown.succeeded` means the stop command returned successfully. Check the provider state to confirm the machine stopped. If a completion event is missing, the machine may have shut down before it could be written.
+`shutdown.succeeded` means the stop command returned successfully. Check the provider state to confirm the machine stopped.
 
 Diagnostics never start a stopped machine. If they are stale or unavailable, check the provider state and connection first.
