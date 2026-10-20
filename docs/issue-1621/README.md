@@ -2,6 +2,8 @@
 
 This evidence concerns the SSH provider plus core agent injection. It does not qualify every provider. No release, merge, or managed activation is authorized by this document.
 
+Fixture snapshots below retain their original artifact revisions and scope. Later provider PR #152 CI on `e9c4c75e81853bcb11cf707d4aff9a49bb739411` passed all 18 Linux/Bash workspace integration cases with released core v1.24.0, five-platform snapshot packaging, and native Windows stdin tests. This adds bounded whole-CLI and Windows-runner evidence; it does not establish Desktop acceptance, whole-workspace coverage across every login shell, or published artifacts.
+
 ## Actual Linux fixture
 
 The 2026-10-20 run used disposable Ubuntu 26.04 aarch64 containers on a macOS host, OpenSSH 10.2p1, Bash 5.3.9, Zsh 5.9, Fish 4.2.1, Dash `/bin/sh`, and BusyBox 1.37.0. Five distinct non-root passwd entries used `/bin/{bash,zsh,fish,dash,ash}`. Password authentication, PAM, root login, and MOTD were disabled; public-key authentication used fresh temporary keys. Only an ephemeral localhost port was published. No host accounts, servers, shell configuration, or SSH keys were changed.
@@ -70,7 +72,8 @@ Working core base: `d3f6e421642575c5072badcf56bf5b0a5606bd41`. Final script/sour
 | Input | SHA-256 |
 | --- | --- |
 | Original v1.24.0 `inject.sh` | `c2effffd6bbb9e42146bce22e2393f55f19b88d7b152f59d09c3c1e749bc2e0b` |
-| Corrected `pkg/inject/inject.sh` | `b07ab67954708ee0bffac3b76a498374833a0383225bbf8acedf9e71c46d44c3` |
+| Pre-Dockerless-fix `pkg/inject/inject.sh` | `b07ab67954708ee0bffac3b76a498374833a0383225bbf8acedf9e71c46d44c3` |
+| Dockerless-compatible `pkg/inject/inject.sh` | `61d88ef1fd4394f35026d2c57cf3a3e29562385e2e8799a35a7f2fb097090294` |
 | `pkg/inject/script.go` | `752c82c5f3df1e60359658bc961c557b35995636dab88618ca8e791e21bf8e3e` |
 | `pkg/agent/inject.go` | `3ea3bb44cbc37132bde6569b68e0425ea8c91d744c3a6ea94988d99d3e6c61e7` |
 | Actual Linux agent executable | `5e5853e9e0653830858fe2438b46a7e8eb94a927bbbb4fda3142c2ddbe173bc4` |
@@ -94,6 +97,20 @@ python3 docs/issue-1621/ssh-fixture.py teardown --state "$FIXTURE_STATE" --name 
 `fixture.json` supplies the selected port and wrapper directory. The wrappers supply only the fixture SSH config, including the `ssh -G` lookup used by the built-in transport. Harnesses have `go:build ignore` and must be built explicitly. For baseline reproduction, export the original core into a fresh temporary directory, copy only `inject-harness.go` there, build it against that export's module, and run `matrix.py --baseline` with the original provider executable. Original-provider stderr contains its original timestamped logger.
 
 The `forced-replacement` synthetic case explicitly sets the installation condition true; it is not a version-parser test. `real-tunnel.go -check` accepts the actual generated version check when testing version selection. Low-level framing failures can be reproduced with `inject-harness -script-out`, then passing `pong\n100\nabc` and EOF to the provider `COMMAND` while its invocation-local PATH omits curl/wget. Do not modify host binaries or accounts.
+
+## Dockerless installer compatibility
+
+Core E2E on `16532a90792a78839335ffb066f95f1163776da4` exposed a separate container boundary. Kubernetes native staging failed first with a broken stdin stream/WebSocket EOF. Its cleanup call supplied no streams, which the Kubernetes API rejects. Those driver/delivery implementations are unchanged from the baseline; the initiating stream failure remains unproven. The subsequent legacy fallback exposed a confirmed regression: the Dockerless bootstrap filesystem has `/.dockerless/bin/sh` but no `/bin/sh`.
+
+Ordinary disposable execution of `ghcr.io/devsy-org/dockerless@sha256:8910f52719e38ffe986652efa04796d781575797627cdba3dd1ba8f977078303` confirmed both image variants use a static BusyBox shell at that bundled path. The ARM64 manifest is `sha256:1c1e4242bfe3662fe6531f52833b185c1cefc6e0ff01aa4279df3edd3a359663`; AMD64 is `sha256:58621764ce6d3921b68b05b7fb9fdca7250fc17f906e919961ba8725d87c7fd4`. AMD64 executed through existing emulation on the ARM64 host, rather than native AMD64 hardware.
+
+The immutable pre-fix bootstrap (`b07ab67954708ee0bffac3b76a498374833a0383225bbf8acedf9e71c46d44c3`) failed after `ping`, without requesting a payload. Original v1.24.0 injection succeeded in the same ARM64 image with a synthetic ELF payload and live follow-on. The corrected bootstrap selects the fixed bundled interpreter only when `DOCKERLESS=true`, `/bin/sh` is not executable, and the bundled interpreter is executable. Ordinary targets retain `/bin/sh`, which is preferred even in Dockerless containers when available. Missing prerequisites fail before permission probes or escalation; warm reuse does not require an installer.
+
+The corrected script (`61d88ef1fd4394f35026d2c57cf3a3e29562385e2e8799a35a7f2fb097090294`) passed six ordinary-image cold/warm/forced synthetic cells across both architectures, including hostile literal paths and exact 4 KiB plus live follow-on bytes. Four negative cells (disabled Dockerless or both interpreters missing, each architecture) failed explicitly without requesting payloads. The source-exact native staging command and cleanup separately passed on both architectures. These process tests do not reproduce Dockerless `start --wait`, its filesystem transition, or Kubernetes exec/WebSocket transport, and do not establish the initiating native failure's cause. No builder, privileged container, host mount, or security override was used.
+
+The actual bundled BusyBox `su` wrapper also preserved empty and hostile literal arguments byte-for-byte and live stdin on both architectures, using the existing root account from a root process. This verifies shell/argument compatibility, not non-root privilege escalation. Both diagnostic containers were removed after validation.
+
+Follow-ups remain precise: investigate Kubernetes staging diagnostics/stream closure in the Dockerless filesystem transition, and provide an explicit diagnostic stream for staged-file cleanup rather than submitting an all-false exec stream request. This change preserves native argv routing and configured interactive shells. SSH provider bootstrapping still requires `/bin/sh` before the core script executes.
 
 ## T9 boundary audit and release coordination
 

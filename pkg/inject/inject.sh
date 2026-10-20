@@ -7,6 +7,8 @@ INSTALL_PATH="$INSTALL_DIR/$INSTALL_FILENAME"
 PREFER_DOWNLOAD={{ .PreferDownload }}
 CHMOD_PATH={{ .ChmodPath }}
 INSTALLER_MODE=direct
+INSTALLER_SHELL=/bin/sh
+DOCKERLESS_SHELL=/.dockerless/bin/sh
 temp_file=
 
 command_exists() {
@@ -39,17 +41,19 @@ run_installer_script() {
     installer_code=$1
     shift
     case "$INSTALLER_MODE" in
-        direct) /bin/sh -c "$installer_code" devsy-install "$@" ;;
-        sudo) sudo -n -E /bin/sh -c "$installer_code" devsy-install "$@" ;;
+        direct) "$INSTALLER_SHELL" -c "$installer_code" devsy-install "$@" ;;
+        sudo) sudo -n -E "$INSTALLER_SHELL" -c "$installer_code" devsy-install "$@" ;;
         su)
             # su implementations disagree about forwarding arguments after -c.
             quote_installer_argument "$installer_code"
-            su_command="/bin/sh -c $quoted_argument devsy-install"
+            su_command=" -c $quoted_argument devsy-install"
+            quote_installer_argument "$INSTALLER_SHELL"
+            su_command="$quoted_argument$su_command"
             for installer_argument; do
                 quote_installer_argument "$installer_argument"
                 su_command="$su_command $quoted_argument"
             done
-            su -s /bin/sh -c "$su_command" root
+            su -s "$INSTALLER_SHELL" -c "$su_command" root
             ;;
     esac
 }
@@ -164,6 +168,14 @@ download_binary() {
 }
 
 setup_sudo() {
+    # Dockerless injects before the image filesystem supplies /bin/sh.
+    if [ "${DOCKERLESS:-}" = "true" ] && [ ! -x "$INSTALLER_SHELL" ] && [ -x "$DOCKERLESS_SHELL" ]; then
+        INSTALLER_SHELL=$DOCKERLESS_SHELL
+    fi
+    if [ ! -x "$INSTALLER_SHELL" ]; then
+        >&2 echo "Error: Agent installation requires executable /bin/sh (or the bundled Dockerless shell in Dockerless containers)"
+        return 1
+    fi
     if ! run_installer_script 'mkdir -p -- "$1" && probe=$(mktemp "$1/.devsy-write.XXXXXX") && rm -f -- "$probe"' "$INSTALL_DIR" 2>/dev/null; then
         if command_exists sudo; then
             if ! sudo -nl >/dev/null 2>&1; then
