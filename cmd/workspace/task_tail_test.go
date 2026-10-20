@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/stretchr/testify/require"
@@ -425,4 +428,113 @@ func TestFollowTaskRetryHonorsCancellation(t *testing.T) {
 	state, err := store.Get(tk.ID())
 	require.NoError(t, err)
 	require.False(t, state.Status.Terminal())
+}
+
+func TestFollowTaskReconciliationDiagnostics(t *testing.T) {
+	for _, level := range []string{"debug", "info"} {
+		t.Run(level, func(t *testing.T) {
+			config.SetPathManager(fakeRuntimeDirPathManager{dir: t.TempDir()})
+			t.Cleanup(config.ResetPathManager)
+			secret := strings.Repeat("test-value-", 8)
+			reader, writer, err := os.Pipe()
+			require.NoError(t, err)
+			original := os.Stdout
+			os.Stdout = writer
+			t.Cleanup(func() { os.Stdout = original; _ = reader.Close(); _ = writer.Close() })
+			log.InitTest(t)
+			log.Init(
+				log.Config{
+					Level:    level,
+					Format:   "json",
+					Redactor: secrets.NewRedactor([]string{"TOKEN=" + secret}),
+				},
+			)
+			var diagnostics bytes.Buffer
+			remove := log.AddSink(&diagnostics)
+			defer remove()
+			// Each follower must report its own first failure, suppress consecutive
+			// duplicates, and report a recurrence after successful reconciliation.
+			for range 2 {
+				runFollowerReconciliationSequence(t, secret)
+			}
+			_ = log.Sync()
+			os.Stdout = original
+			require.NoError(t, writer.Close())
+			output, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+			require.Len(t, lines, 2, "only terminal result envelopes belong on stdout")
+			for _, line := range lines {
+				var envelope map[string]any
+				require.NoError(t, json.Unmarshal([]byte(line), &envelope))
+				require.Equal(t, "result", envelope["kind"])
+				require.NotContains(t, line, "cleanup")
+			}
+			requireReconciliationDiagnostics(t, level, diagnostics.String(), secret)
+		})
+	}
+}
+
+func requireReconciliationDiagnostics(t *testing.T, level, diagnostics, secret string) {
+	t.Helper()
+	require.NotContains(t, diagnostics, secret)
+	if level == "info" {
+		require.Empty(t, diagnostics)
+		return
+	}
+	records := strings.Split(strings.TrimSpace(diagnostics), "\n")
+	require.Len(t, records, 6)
+	for i, line := range records {
+		var record map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		require.Equal(t, "debug", record["level"])
+		require.NotContains(t, record, "kind")
+		if i%3 == 1 {
+			require.Contains(t, record["msg"], "lock unavailable")
+		} else {
+			require.Contains(t, record["msg"], "cleanup ***")
+		}
+	}
+}
+
+func runFollowerReconciliationSequence(t *testing.T, secret string) {
+	t.Helper()
+	store, err := task.NewStoreAt(t.TempDir())
+	require.NoError(t, err)
+	tk, err := store.Create(task.CreateOptions{})
+	require.NoError(t, err)
+	sequence := []string{
+		"cleanup " + secret,
+		"cleanup " + secret,
+		"lock unavailable",
+		"lock unavailable",
+		"",
+		"cleanup " + secret,
+		"cleanup " + secret,
+	}
+	calls := 0
+	wrapper := failingReconciliationStore{
+		Store: store,
+		reconcile: func(_ context.Context, id string) (*task.State, error) {
+			if calls == len(sequence) {
+				require.NoError(t, tk.Succeed(nil))
+				return store.Get(id)
+			}
+			message := sequence[calls]
+			calls++
+			if message == "" {
+				return store.Get(id)
+			}
+			return nil, errors.New(message)
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	followErr := followTask(
+		ctx,
+		wrapper,
+		followTaskOptions{id: tk.ID(), interval: time.Millisecond, emitJSON: true},
+	)
+	cancel()
+	require.NoError(t, followErr)
+	require.Equal(t, len(sequence), calls)
 }
