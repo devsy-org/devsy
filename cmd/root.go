@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime/debug"
 	"slices"
 	"strings"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
 	"github.com/devsy-org/devsy/cmd/context"
+	"github.com/devsy-org/devsy/cmd/dependency"
 	envcmd "github.com/devsy-org/devsy/cmd/env"
 	"github.com/devsy-org/devsy/cmd/feature"
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -151,11 +151,11 @@ func run() int {
 
 func runWithRootFactory(buildRoot func() (*cobra.Command, *flags.GlobalFlags)) (code int) {
 	machineMode := false
+	inspection := false
 	collector := telemetry.FromContext(gocontext.Background()) // noop until BootstrapCLI
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorf("panic: %v\n%s", r, debug.Stack())
-			panicErr := clierr.NewPanic(r)
+			panicErr := invocationPanic(r, inspection)
 			collector.RecordCLI(panicErr)
 			code = exitCodeForError(panicErr, machineMode)
 		}
@@ -163,11 +163,15 @@ func runWithRootFactory(buildRoot func() (*cobra.Command, *flags.GlobalFlags)) (
 	}()
 
 	rootCmd, globalFlags := buildRoot()
-	target, passive := resolveInvocation(rootCmd, os.Args[1:])
+	target, remaining := resolveInvocationCommand(rootCmd, os.Args[1:])
+	passive := passiveCommand(target, remaining)
+	inspection = flags.IsDependencyInspection(target)
+	invocation := readInspectionInvocation(target, remaining)
 	if !passive {
 		collector = telemetry.BootstrapCLI(target)
 	}
 	ctx := withInvocationPolicy(gocontext.Background(), passive)
+	ctx = flags.WithInspectionInvocation(ctx, invocation)
 	rootCmd.SetContext(telemetry.WithCollector(ctx, collector))
 
 	isInternal := topLevelCommand(target) == internalCommand
@@ -211,7 +215,8 @@ func configureOutput(
 	isInternal bool,
 ) bool {
 	logOutput := logOutputFromArgs(os.Args[1:])
-	machineMode := isMachineConsumer(logOutput, isInternal)
+	invocation := flags.InspectionInvocationFromContext(rootCmd.Context())
+	machineMode := invocation.JSON || isMachineConsumer(logOutput, isInternal)
 	rootCmd.SilenceErrors = true
 	rootCmd.SilenceUsage = machineMode
 
@@ -386,7 +391,14 @@ func prepareRootCommand(
 	command *cobra.Command,
 	args []string,
 	globalFlags *flags.GlobalFlags,
-) error {
+) (err error) {
+	defer func() { err = inspectionStartupError(command, err) }()
+	if flags.IsDependencyInspection(command) {
+		if err := command.Context().Err(); err != nil {
+			return err
+		}
+	}
+
 	if err := validateLogLevel(globalFlags.LogLevel); err != nil {
 		return err
 	}
@@ -459,6 +471,7 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 		ci.NewCICmd(globalFlags),
 		cliconfig.NewConfigCmd(globalFlags),
 		context.NewContextCmd(globalFlags),
+		dependency.NewDependencyCmd(globalFlags),
 		envcmd.NewEnvCmd(globalFlags),
 		feature.NewFeatureCmd(globalFlags),
 		ide.NewIDECmd(globalFlags),

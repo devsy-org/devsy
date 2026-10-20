@@ -16,6 +16,11 @@ type passiveInvocationKey struct{}
 // Cobra's Find retains the deepest command even when legacy argument validation
 // fails. Its flag metadata must include help before resolving --help paths.
 func resolveInvocation(root *cobra.Command, args []string) (*cobra.Command, bool) {
+	target, remaining := resolveInvocationCommand(root, args)
+	return target, passiveCommand(target, remaining)
+}
+
+func resolveInvocationCommand(root *cobra.Command, args []string) (*cobra.Command, []string) {
 	root.InitDefaultHelpCmd()
 	root.InitDefaultCompletionCmd(args...)
 	initHelpFlags(root)
@@ -23,7 +28,7 @@ func resolveInvocation(root *cobra.Command, args []string) (*cobra.Command, bool
 	if target == nil {
 		target = root
 	}
-	return target, passiveCommand(target, remaining)
+	return target, remaining
 }
 
 func initHelpFlags(command *cobra.Command) {
