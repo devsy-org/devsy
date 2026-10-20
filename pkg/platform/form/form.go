@@ -77,16 +77,7 @@ func createInstance(
 		return nil, createSelection{}, err
 	}
 
-	instance := buildCreatedInstance(buildCreatedInstanceParams{
-		id:                      identity.ID,
-		uid:                     identity.UID,
-		source:                  identity.Source,
-		picture:                 identity.Picture,
-		selectedProject:         selection.project,
-		selectedTemplate:        selection.template,
-		selectedTemplateVersion: selection.templateVersion,
-		renderedParameters:      renderedParameters,
-	})
+	instance := buildCreatedInstance(identity, selection, renderedParameters)
 	return instance, selection, nil
 }
 
@@ -168,37 +159,33 @@ func renderedParametersForCreate(
 	return runParameterForm(formCtx, fieldParameters)
 }
 
-type buildCreatedInstanceParams struct {
-	id, uid, source, picture string
-	selectedProject          *managementv1.Project
-	selectedTemplate         *managementv1.DevsyWorkspaceTemplate
-	selectedTemplateVersion  string
-	renderedParameters       string
-}
-
-func buildCreatedInstance(p buildCreatedInstanceParams) *managementv1.DevsyWorkspaceInstance {
+func buildCreatedInstance(
+	identity InstanceIdentity,
+	selection createSelection,
+	renderedParameters string,
+) *managementv1.DevsyWorkspaceInstance {
 	return &managementv1.DevsyWorkspaceInstance{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: encoding.SafeConcatNameMax([]string{p.id}, 53) + "-",
-			Namespace:    project.ProjectNamespace(p.selectedProject.GetName()),
+			GenerateName: encoding.SafeConcatNameMax([]string{identity.ID}, 53) + "-",
+			Namespace:    project.ProjectNamespace(selection.project.GetName()),
 			Labels: map[string]string{
-				storagev1.DevsyWorkspaceIDLabel:  p.id,
-				storagev1.DevsyWorkspaceUIDLabel: p.uid,
-				config.K8sProjectLabel:           p.selectedProject.GetName(),
+				storagev1.DevsyWorkspaceIDLabel:  identity.ID,
+				storagev1.DevsyWorkspaceUIDLabel: identity.UID,
+				config.K8sProjectLabel:           selection.project.GetName(),
 			},
 			Annotations: map[string]string{
-				storagev1.DevsyWorkspacePictureAnnotation: p.picture,
-				storagev1.DevsyWorkspaceSourceAnnotation:  p.source,
+				storagev1.DevsyWorkspacePictureAnnotation: identity.Picture,
+				storagev1.DevsyWorkspaceSourceAnnotation:  identity.Source,
 			},
 		},
 		Spec: managementv1.DevsyWorkspaceInstanceSpec{
 			DevsyWorkspaceInstanceSpec: storagev1.DevsyWorkspaceInstanceSpec{
-				DisplayName: p.id,
+				DisplayName: identity.ID,
 				TemplateRef: &storagev1.TemplateRef{
-					Name:    p.selectedTemplate.GetName(),
-					Version: p.selectedTemplateVersion,
+					Name:    selection.template.GetName(),
+					Version: selection.templateVersion,
 				},
-				Parameters: p.renderedParameters,
+				Parameters: renderedParameters,
 			},
 		},
 	}
