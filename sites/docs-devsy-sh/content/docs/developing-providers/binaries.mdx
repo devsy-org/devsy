@@ -31,7 +31,7 @@ Not every provider needs `binaries`. Built-in providers that wrap a CLI the user
 
 ## Archives
 
-Set `archivePath` only when `path` is an archive. Devsy picks the extraction format from the `path` extension, not from `archivePath`. Setting `archivePath` on a direct binary URL makes Devsy try to extract the binary and fails with `unrecognized archive format`.
+Archive extraction applies only when `path` is an `http://` or `https://` URL. Devsy picks the extraction format from the `path` extension, not from `archivePath`. Devsy requires `archivePath` when `path` is an archive. Setting `archivePath` on a direct binary URL makes Devsy try to extract the binary and fails with `unrecognized archive format`.
 
 ```yaml
 binaries:
@@ -43,11 +43,13 @@ binaries:
       checksum: <sha256 of bin/my-binary after extraction>
 ```
 
-Devsy extracts the whole archive into a folder for the binary and keeps its layout, then uses the file at `archivePath`. `name` has no effect on archives.
+Devsy extracts the whole archive into a folder for the binary and keeps its layout, then uses the file at `archivePath`. For HTTP(S) archives, `name` is ignored.
 
 ## Checksum
 
-`checksum` is optional. When set, Devsy computes the SHA256 of the executable it will run, after extraction, and compares it case-insensitively. For a direct download this is the downloaded file. For an archive it is the extracted file at `archivePath`; the archive itself is never hashed. A mismatch deletes the file and fails the download without retrying.
+`checksum` is optional, except for the `agent.binaries` entry selected by `agent.external.binary`, which needs one for every platform. See [External Driver](./driver.mdx#external-driver).
+
+When set, Devsy computes the SHA256 of the file it will run and compares it case-insensitively. For an HTTP(S) archive that file is the extracted file at `archivePath`; the archive itself is never hashed. A mismatch deletes the file and fails the download without retrying.
 
 ## Use a binary
 
