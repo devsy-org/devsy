@@ -16,7 +16,7 @@ const (
 	GitHubAPIUserURL  = "https://api.github.com/users/" + RepoOwner
 	ProviderPrefix    = RepoName + "-provider-"
 
-	// PlatformReleaseName is the Helm release / product name for Devsy Pro.
+	// PlatformReleaseName is the Helm release / product name for Devsy Platform.
 	PlatformReleaseName = RepoName + "-pro"
 
 	// BinaryName is the CLI binary base name used in downloads and SSH host suffixes.

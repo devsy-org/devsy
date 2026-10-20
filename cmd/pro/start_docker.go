@@ -25,8 +25,8 @@ import (
 
 var (
 	ErrMissingContainer = errors.New("missing container")
-	//nolint:staticcheck // ST1005: "Devsy Pro" is a proper noun
-	ErrPlatformNotReachable = errors.New("Devsy Pro is not reachable")
+	//nolint:staticcheck // ST1005: "Devsy Platform" is a proper noun
+	ErrPlatformNotReachable = errors.New("Devsy Platform is not reachable")
 )
 
 type ContainerDetails struct {
@@ -59,7 +59,7 @@ type ContainerDetailsState struct {
 }
 
 func (cmd *StartCmd) startDocker(ctx context.Context) error {
-	log.Infof("Starting Devsy Pro in Docker")
+	log.Infof("Starting Devsy Platform in Docker")
 	name := config.PlatformReleaseName
 
 	// prepare installation
@@ -92,7 +92,7 @@ func (cmd *StartCmd) startDocker(ctx context.Context) error {
 	}
 
 	// Install Devsy
-	log.Info("Welcome to Devsy Pro!")
+	log.Info("Welcome to Devsy Platform!")
 	log.Info("This installer will help you get started.")
 
 	// make sure we are ready for installing
@@ -138,7 +138,7 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 	}
 
 	// wait for domain to become reachable
-	log.Infof("Wait for Devsy Pro to become available at %s", host)
+	log.Infof("Wait for Devsy Platform to become available at %s", host)
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second,
@@ -162,7 +162,7 @@ func (cmd *StartCmd) successDocker(ctx context.Context, containerID string) erro
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("error waiting for Devsy Pro: %w", err)
+		return fmt.Errorf("error waiting for Devsy Platform: %w", err)
 	}
 
 	// print success message
@@ -184,9 +184,9 @@ Login via CLI: %s
 
 #################################################################
 
-Devsy Pro was successfully installed and can now be reached at: %s
+Devsy Platform was successfully installed and can now be reached at: %s
 
-Thanks for using Devsy Pro!
+Thanks for using Devsy Platform!
 `,
 		greenBold(url),
 		greenBold("devsy pro login"+" "+url),
@@ -195,7 +195,7 @@ Thanks for using Devsy Pro!
 }
 
 func (cmd *StartCmd) waitForDevsyDocker(ctx context.Context, containerID string) (string, error) {
-	log.Info("Wait for Devsy Pro to become available")
+	log.Info("Wait for Devsy Platform to become available")
 
 	// check for local port
 	containerDetails, err := cmd.inspectContainer(ctx, containerID)
@@ -211,7 +211,7 @@ func (cmd *StartCmd) waitForDevsyDocker(ctx context.Context, containerID string)
 		return "", fmt.Errorf(
 			"%w: %s",
 			ErrPlatformNotReachable,
-			"cannot connect to Devsy Pro as it has no exposed port and --no-tunnel is enabled",
+			"cannot connect to Devsy Platform as it has no exposed port and --no-tunnel is enabled",
 		)
 	}
 
@@ -316,7 +316,7 @@ func (cmd *StartCmd) runInDocker(ctx context.Context, name string) (string, erro
 		args = append(args, "ghcr.io/devsy-org/devsy-pro:latest")
 	}
 
-	log.Infof("Start Devsy Pro via 'docker %s'", strings.Join(args, " "))
+	log.Infof("Start Devsy Platform via 'docker %s'", strings.Join(args, " "))
 	runCmd := cmd.buildDockerCmd(ctx, args...)
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr

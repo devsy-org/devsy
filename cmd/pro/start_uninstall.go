@@ -17,13 +17,13 @@ import (
 	"k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 )
 
-// uninstallTarget identifies the kube context and namespace Devsy Pro is installed in.
+// uninstallTarget identifies the kube context and namespace Devsy Platform is installed in.
 type uninstallTarget struct {
 	kubeContext string
 	namespace   string
 }
 
-// Helm flags used when uninstalling Devsy Pro.
+// Helm flags used when uninstalling Devsy Platform.
 const (
 	helmKubeContextFlag = "--kube-context"
 	helmNamespaceFlag   = "--namespace"
@@ -44,7 +44,7 @@ func uninstall(
 	}
 
 	fmt.Fprint(os.Stderr, "\n")
-	log.Info("uninstalled Devsy Pro")
+	log.Info("uninstalled Devsy Platform")
 	fmt.Fprint(os.Stderr, "\n")
 
 	return nil
