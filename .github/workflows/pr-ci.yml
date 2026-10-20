@@ -229,6 +229,7 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-latest
+            job_timeout_minutes: 45
           - runner: macos-latest
           - runner: windows-latest
             # Cold builds need room to save the Go cache after artifact uploads.
@@ -278,13 +279,27 @@ jobs:
           name: devsy-ci-podman-${{ steps.os.outputs.runner_os }}
           path: ${{ runner.temp }}/devsy-ci-podman*
 
+      - name: disk usage before Linux snapshot
+        if: runner.os == 'Linux'
+        run: |
+          df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
+
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: build --id devsy-${{ steps.os.outputs.runner_os }} --snapshot
+          args: >-
+            build --id devsy-${{ steps.os.outputs.runner_os }} --snapshot
+            ${{ runner.os == 'Linux' && '--parallelism=1' || '' }}
         env:
           DEVSY_CLI_VERSION: v0.0.0
+
+      - name: disk usage after Linux snapshot
+        if: always() && runner.os == 'Linux'
+        run: |
+          df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

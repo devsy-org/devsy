@@ -63,6 +63,8 @@ A later Ubuntu race run exposed an existing delivery-test observer race: stoppin
 
 The macOS hostile-path fixture previously pipelined tunnel bytes immediately after the binary, before `done`. Independent fragmented-write reproductions showed BSD `head` reading ahead into those premature bytes. Production `Inject` waits for `done` before bridging user stdin. The fixture now exercises that actual API and sequencing, retaining exact binary, URL, raw protocol, live NUL-containing payload, and substitution-sentinel assertions. The existing real-shell transfer test remains unchanged.
 
+Repeated Ubuntu 26.04 CLI snapshot builds exhausted runner disk quota while compiling or linking concurrent Linux architectures. The Linux build job now serializes those same two targets and allows 45 minutes for cold serial execution and follow-on steps. Read-only disk/cache diagnostics surround the snapshot. No target, test, action pin, permission, cache, or unrelated runner file is removed; macOS and Windows build concurrency is unchanged. Final-head GitHub execution remains the resource-fix gate.
+
 Working core base: `d3f6e421642575c5072badcf56bf5b0a5606bd41`. Final script/source SHA-256:
 
 | Input | SHA-256 |
