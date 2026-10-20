@@ -2,6 +2,8 @@ package devcontainer
 
 import (
 	"context"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,23 +14,76 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
-func TestRunInitializeCommand_ParallelTiming(t *testing.T) {
-	tmpDir := t.TempDir()
-	conf := &config.DevContainerConfig{}
-	conf.InitializeCommand = types.LifecycleHook{
-		"sleep-one": {"sleep", "0.5"},
-		"sleep-two": {"sleep", "0.5"},
-	}
-
-	start := time.Now()
-	err := runInitializeCommand(context.Background(), tmpDir, conf, nil)
-	elapsed := time.Since(start)
-
+func TestRunInitializeCommand_Parallel(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if elapsed >= 900*time.Millisecond {
-		t.Fatalf("expected parallel execution under 900ms, took %s", elapsed)
+	defer func() { _ = listener.Close() }()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() { _ = listener.Close() })
+	defer stop()
+	conf := &config.DevContainerConfig{}
+	command := []string{
+		executable,
+		"-test.run=^TestInitializeCommandBarrierHelper$",
+		listener.Addr().String(),
+	}
+	conf.InitializeCommand = types.LifecycleHook{"first": command, "second": command}
+	workspace := t.TempDir()
+	done := make(chan struct{})
+	var runErr error
+	go func() {
+		runErr = runInitializeCommand(
+			ctx,
+			workspace,
+			conf,
+			[]string{"DEVSY_INITIALIZE_BARRIER_HELPER=1"},
+		)
+		close(done)
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+	// Both commands must start before either can finish, even on a slow runner.
+	connections := make([]net.Conn, 0, 2)
+	for range 2 {
+		connection, err := listener.Accept()
+		if err != nil {
+			t.Fatalf("initialize commands did not reach barrier: %v", err)
+		}
+		defer func() { _ = connection.Close() }()
+		connections = append(connections, connection)
+	}
+	for _, connection := range connections {
+		if _, err := connection.Write([]byte{1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	<-done
+	if runErr != nil {
+		t.Fatalf("unexpected error: %v", runErr)
+	}
+}
+
+func TestInitializeCommandBarrierHelper(t *testing.T) {
+	if os.Getenv("DEVSY_INITIALIZE_BARRIER_HELPER") != "1" {
+		return
+	}
+	//nolint:gosec // G704: the parent test supplies its own loopback barrier listener address.
+	connection, err := net.DialTimeout("tcp", os.Args[len(os.Args)-1], 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = connection.Close() }()
+	if err := connection.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(connection, make([]byte, 1)); err != nil {
+		t.Fatal(err)
 	}
 }
 
