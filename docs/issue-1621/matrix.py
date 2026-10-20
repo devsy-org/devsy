@@ -46,8 +46,8 @@ if r.readline() == b"LIVE-FOLLOWON\\n":
                        '-payload', str(payload), '-input', str(input_file),
                        '-check', 'false' if phase == 'warm' else 'true']
                 c = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=30)
-                row = dict(shell=shell, builtin=builtin, phase=phase, harnessExit=c.returncode,
-                           **json.loads(c.stdout))
+                row = {'shell': shell, 'builtin': builtin, 'phase': phase,
+                       'harnessExit': c.returncode, **json.loads(c.stdout)}
                 row['rawPrefix'] = row.pop('rawStdout')[:30]
                 row.pop('stdout')
                 rows.append(row)
