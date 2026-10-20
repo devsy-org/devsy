@@ -182,7 +182,7 @@ devsy provider set-source <name> ../path-to/provider.yaml
 
 In the desktop app, use the provider's **Select version**, **Update**, and **Initialize** actions.
 
-Workspaces store the provider name and options, not a version. A version change applies to every workspace that uses the provider the next time DevSy uses them.
+Workspaces reference a provider by name rather than pinning its version. Devsy looks up the named provider when it loads a workspace.
 
 ## Remove a provider
 
@@ -206,6 +206,6 @@ Workspaces, machines, options, and the default setting follow the new name. If a
 
 - The new name must be unique and can use lowercase letters, numbers, and dashes, up to 32 characters.
 - Platform providers cannot be renamed.
-- Running workspaces are stopped before they move to the new name.
+- Renaming can stop running workspaces that use the provider.
 
 In the desktop app, click **Rename** on the provider, enter the new name, and submit.
