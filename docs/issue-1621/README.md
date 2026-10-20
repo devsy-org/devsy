@@ -59,6 +59,8 @@ Native Linux execution of the actual `TestBootstrapSuite` and unchanged `TestInj
 
 The first GitHub Ubuntu BusyBox step exposed a test-double portability issue: Ubuntu's BusyBox static standalone applets bypassed PATH-based `sleep` and `chmod` doubles. The original failures were reproduced in a disposable Linux ARM64 container using Ubuntu Noble `busybox-static` `1:1.36.1-6ubuntu3.1`, the same package version as CI. Test-only shell functions now inject the faults in the outer and nested installer shells; successful binary/live-stream tests still execute the unmodified generated script. The chmod fault must emit its marker and the installer error, while download fallback must follow three failed attempts. The corrected bootstrap suite and unchanged real-shell transfer tests passed natively with that package as `/bin/sh`. No production installer or CI assertion was relaxed; final-head GitHub AMD64 execution remains a separate gate.
 
+A later Ubuntu race run exposed an existing delivery-test observer race: stopping its pending `context.AfterFunc` could discard notification of a real attempt cancellation. The fixture now records the actual context cause after the runtime joins. The expected timeout causes, fresh-source retries, exact source close counts, bounded completion, and uncanceled outer-context assertions remain intact. Production delivery behavior is unchanged.
+
 Working core base: `d3f6e421642575c5072badcf56bf5b0a5606bd41`. Final script/source SHA-256:
 
 | Input | SHA-256 |
