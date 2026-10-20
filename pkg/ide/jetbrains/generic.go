@@ -34,6 +34,24 @@ const (
 	downloadAmd64OptionDescription = "The download url for the amd64 server binary"
 )
 
+func newProductOptions() ide.Options {
+	return ide.Options{
+		VersionOption: {
+			Name:        VersionOption,
+			Description: versionOptionDescription,
+			Default:     versionOptionDefault,
+		},
+		DownloadArm64Option: {
+			Name:        DownloadArm64Option,
+			Description: downloadArm64OptionDescription,
+		},
+		DownloadAmd64Option: {
+			Name:        DownloadAmd64Option,
+			Description: downloadAmd64OptionDescription,
+		},
+	}
+}
+
 func getLatestDownloadURL(code string, platform string) string {
 	return fmt.Sprintf("https://download.jetbrains.com/product?code=%s&platform=%s", code, platform)
 }
