@@ -39,8 +39,12 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 		})
 
-		ginkgo.It("should execute postCreateCommand in a running container",
-			func(ctx context.Context) {
+		lifecycleHookTimeout := ginkgo.SpecTimeout(framework.TimeoutShort())
+
+		// Empty table text keeps spec names identical to the standalone Its this replaces.
+		ginkgo.DescribeTable(
+			"",
+			func(ctx context.Context, hookKey, markerPath string) {
 				containerID := startAlpineContainer(ctx)
 				ginkgo.DeferCleanup(removeContainer, containerID)
 
@@ -49,8 +53,8 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tmpDir)
 
 				devcontainerJSON := map[string]any{
-					imageKey:             alpineImage,
-					postCreateCommandKey: "touch /tmp/setup-test-marker",
+					imageKey: alpineImage,
+					hookKey:  "touch " + markerPath,
 				}
 				writeDevcontainerJSON(tmpDir, devcontainerJSON)
 
@@ -62,36 +66,21 @@ var _ = ginkgo.Describe(
 				})
 				framework.ExpectNoError(err)
 
-				out := dockerExecInContainer(ctx, containerID, "cat", "/tmp/setup-test-marker")
+				out := dockerExecInContainer(ctx, containerID, "cat", markerPath)
 				gomega.Expect(out).To(gomega.BeEmpty())
-			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
-
-		ginkgo.It("should execute postStartCommand in a running container",
-			func(ctx context.Context) {
-				containerID := startAlpineContainer(ctx)
-				ginkgo.DeferCleanup(removeContainer, containerID)
-
-				tmpDir, err := framework.CreateTempDir()
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tmpDir)
-
-				devcontainerJSON := map[string]any{
-					imageKey:           alpineImage,
-					"postStartCommand": "touch /tmp/poststart-marker",
-				}
-				writeDevcontainerJSON(tmpDir, devcontainerJSON)
-
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-				_, _, err = f.ExecCommandCapture(ctx, []string{
-					configGroup, applyCommand,
-					containerFlag, containerID,
-					configFlag, filepath.Join(tmpDir, ".devcontainer", devcontainerFn),
-				})
-				framework.ExpectNoError(err)
-
-				out := dockerExecInContainer(ctx, containerID, "cat", "/tmp/poststart-marker")
-				gomega.Expect(out).To(gomega.BeEmpty())
-			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+			},
+			ginkgo.EntryDescription("should execute %[1]s in a running container"),
+			ginkgo.Entry(nil, postCreateCommandKey, "/tmp/setup-test-marker", lifecycleHookTimeout),
+			ginkgo.Entry(nil, "postStartCommand", "/tmp/poststart-marker", lifecycleHookTimeout),
+			ginkgo.Entry(nil, "onCreateCommand", "/tmp/oncreate-marker", lifecycleHookTimeout),
+			ginkgo.Entry(
+				nil,
+				"updateContentCommand",
+				"/tmp/updatecontent-marker",
+				lifecycleHookTimeout,
+			),
+			ginkgo.Entry(nil, "postAttachCommand", "/tmp/postattach-marker", lifecycleHookTimeout),
+		)
 
 		ginkgo.It("should pass containerEnv to lifecycle commands",
 			func(ctx context.Context) {
@@ -119,87 +108,6 @@ var _ = ginkgo.Describe(
 
 				out := dockerExecInContainer(ctx, containerID, "cat", "/tmp/env-marker")
 				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("hello_world"))
-			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
-
-		ginkgo.It("should execute onCreateCommand in a running container",
-			func(ctx context.Context) {
-				containerID := startAlpineContainer(ctx)
-				ginkgo.DeferCleanup(removeContainer, containerID)
-
-				tmpDir, err := framework.CreateTempDir()
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tmpDir)
-
-				devcontainerJSON := map[string]any{
-					imageKey:          alpineImage,
-					"onCreateCommand": "touch /tmp/oncreate-marker",
-				}
-				writeDevcontainerJSON(tmpDir, devcontainerJSON)
-
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-				_, _, err = f.ExecCommandCapture(ctx, []string{
-					configGroup, applyCommand,
-					containerFlag, containerID,
-					configFlag, filepath.Join(tmpDir, ".devcontainer", devcontainerFn),
-				})
-				framework.ExpectNoError(err)
-
-				out := dockerExecInContainer(ctx, containerID, "cat", "/tmp/oncreate-marker")
-				gomega.Expect(out).To(gomega.BeEmpty())
-			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
-
-		ginkgo.It("should execute updateContentCommand in a running container",
-			func(ctx context.Context) {
-				containerID := startAlpineContainer(ctx)
-				ginkgo.DeferCleanup(removeContainer, containerID)
-
-				tmpDir, err := framework.CreateTempDir()
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tmpDir)
-
-				devcontainerJSON := map[string]any{
-					imageKey:               alpineImage,
-					"updateContentCommand": "touch /tmp/updatecontent-marker",
-				}
-				writeDevcontainerJSON(tmpDir, devcontainerJSON)
-
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-				_, _, err = f.ExecCommandCapture(ctx, []string{
-					configGroup, applyCommand,
-					containerFlag, containerID,
-					configFlag, filepath.Join(tmpDir, ".devcontainer", devcontainerFn),
-				})
-				framework.ExpectNoError(err)
-
-				out := dockerExecInContainer(ctx, containerID, "cat", "/tmp/updatecontent-marker")
-				gomega.Expect(out).To(gomega.BeEmpty())
-			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
-
-		ginkgo.It("should execute postAttachCommand in a running container",
-			func(ctx context.Context) {
-				containerID := startAlpineContainer(ctx)
-				ginkgo.DeferCleanup(removeContainer, containerID)
-
-				tmpDir, err := framework.CreateTempDir()
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tmpDir)
-
-				devcontainerJSON := map[string]any{
-					imageKey:            alpineImage,
-					"postAttachCommand": "touch /tmp/postattach-marker",
-				}
-				writeDevcontainerJSON(tmpDir, devcontainerJSON)
-
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-				_, _, err = f.ExecCommandCapture(ctx, []string{
-					configGroup, applyCommand,
-					containerFlag, containerID,
-					configFlag, filepath.Join(tmpDir, ".devcontainer", devcontainerFn),
-				})
-				framework.ExpectNoError(err)
-
-				out := dockerExecInContainer(ctx, containerID, "cat", "/tmp/postattach-marker")
-				gomega.Expect(out).To(gomega.BeEmpty())
 			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("should pass remoteEnv to lifecycle commands",
