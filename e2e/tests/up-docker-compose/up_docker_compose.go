@@ -33,23 +33,6 @@ const (
 	composeFileSecretsDir      = "/run/secrets"
 )
 
-func useComposeFileSecretsBackend() {
-	for name, value := range map[string]string{
-		"DEVSY_SECRETS_BACKEND":    "file",
-		"DEVSY_SECRETS_PASSPHRASE": "e2e-passphrase",
-	} {
-		previous, hadPrevious := os.LookupEnv(name)
-		framework.ExpectNoError(os.Setenv(name, value))
-		ginkgo.DeferCleanup(func() {
-			if hadPrevious {
-				_ = os.Setenv(name, previous)
-			} else {
-				_ = os.Unsetenv(name)
-			}
-		})
-	}
-}
-
 var _ = ginkgo.Describe(
 	"devsy up docker compose test suite",
 	ginkgo.Label("up-docker-compose"),
@@ -73,7 +56,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"migrates an existing Compose workspace when a terminal secret is attached later",
 			func(ctx context.Context) {
-				useComposeFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				contextName := fmt.Sprintf("compose-late-secret-%d", time.Now().UnixNano())
 				framework.ExpectNoError(tc.f.DevsyContextCreate(ctx, contextName))
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
@@ -164,7 +147,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"refreshes saved Compose files for a new file secret after the app container is removed",
 			func(ctx context.Context) {
-				useComposeFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				tempDir, workspace, err := tc.setupAndStartWorkspace(
 					ctx,
 					"tests/up-docker-compose/testdata/docker-compose-shutdown-action-container",
@@ -231,7 +214,7 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"injects attached terminal secrets through a tmpfs mount",
 			func(ctx context.Context) {
-				useComposeFileSecretsBackend()
+				framework.UseFileSecretsBackend()
 				contextName := fmt.Sprintf("compose-secret-%d", time.Now().UnixNano())
 				framework.ExpectNoError(tc.f.DevsyContextCreate(ctx, contextName))
 				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
