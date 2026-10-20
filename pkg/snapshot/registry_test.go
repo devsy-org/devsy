@@ -119,6 +119,8 @@ func isolateTempDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("TMPDIR", dir)
+	t.Setenv("TMP", dir)
+	t.Setenv("TEMP", dir)
 	return dir
 }
 
