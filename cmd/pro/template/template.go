@@ -6,7 +6,7 @@ import (
 )
 
 // NewTemplateCmd builds the 'devsy pro template' parent command for managing
-// Pro templates.
+// Platform templates.
 func NewTemplateCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "template",

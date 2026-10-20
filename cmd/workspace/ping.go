@@ -63,7 +63,7 @@ func (cmd *PingCmd) Run(ctx context.Context, args []string) error {
 
 	daemonClient, ok := client.(client2.DaemonClient)
 	if !ok {
-		return fmt.Errorf("ping is only available for pro workspaces")
+		return fmt.Errorf("ping is only available for platform workspaces")
 	}
 
 	return daemonClient.Ping(ctx, os.Stdout)

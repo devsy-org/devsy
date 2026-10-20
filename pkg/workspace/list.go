@@ -204,7 +204,7 @@ func listPlatformWorkspaces(
 		}
 
 		wg.Go(func() {
-			workspaces, err := listProWorkspacesForProvider(
+			workspaces, err := listPlatformWorkspacesForProvider(
 				ctx,
 				devsyConfig,
 				provider,
@@ -224,7 +224,7 @@ func listPlatformWorkspaces(
 	return results
 }
 
-func listProWorkspacesForProvider(
+func listPlatformWorkspacesForProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	provider string,

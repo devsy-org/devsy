@@ -5,7 +5,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewUserCmd builds the 'devsy pro user' parent command for managing Pro users.
+// NewUserCmd builds the 'devsy pro user' parent command for managing Platform users.
 func NewUserCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "user",

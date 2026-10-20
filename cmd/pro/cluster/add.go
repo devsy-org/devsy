@@ -142,7 +142,7 @@ func (cmd *ClusterCmd) setupCluster(
 
 	devsyVersion, err := baseClient.Version()
 	if err != nil {
-		return clusterSetup{}, fmt.Errorf("get pro version: %w", err)
+		return clusterSetup{}, fmt.Errorf("get platform version: %w", err)
 	}
 
 	user, team := getUserOrTeam(baseClient)
@@ -430,8 +430,8 @@ func ensureHost(devsyConfig *config.Config, host string) (string, error) {
 		return "", fmt.Errorf("list platform instances: %w", err)
 	}
 	options := []string{}
-	for _, pro := range platformInstances {
-		options = append(options, pro.Host)
+	for _, instance := range platformInstances {
+		options = append(options, instance.Host)
 	}
 	h, err := log.QuestionDefault(&survey.QuestionOptions{
 		Question:     "Select Platform instance to connect your cluster to",

@@ -6,7 +6,7 @@ import (
 )
 
 // NewProjectCmd builds the 'devsy pro project' parent command for managing
-// Pro projects.
+// Platform projects.
 func NewProjectCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "project",
