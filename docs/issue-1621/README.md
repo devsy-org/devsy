@@ -57,6 +57,8 @@ The post-review provider artifact SHA-256 is `39468e46550ddf4a9ea3a1033cae10ef02
 
 Native Linux execution of the actual `TestBootstrapSuite` and unchanged `TestInjectScript_RealShell*` tests passed with `/bin/sh` pointing at BusyBox. Cross-compilation only produced the test executable; these results came from executing it in the Linux clone.
 
+The first GitHub Ubuntu BusyBox step exposed a test-double portability issue: Ubuntu's BusyBox static standalone applets bypassed PATH-based `sleep` and `chmod` doubles. The original failures were reproduced in a disposable Linux ARM64 container using Ubuntu Noble `busybox-static` `1:1.36.1-6ubuntu3.1`, the same package version as CI. Test-only shell functions now inject the faults in the outer and nested installer shells; successful binary/live-stream tests still execute the unmodified generated script. The chmod fault must emit its marker and the installer error, while download fallback must follow three failed attempts. The corrected bootstrap suite and unchanged real-shell transfer tests passed natively with that package as `/bin/sh`. No production installer or CI assertion was relaxed; final-head GitHub AMD64 execution remains a separate gate.
+
 Working core base: `d3f6e421642575c5072badcf56bf5b0a5606bd41`. Final script/source SHA-256:
 
 | Input | SHA-256 |

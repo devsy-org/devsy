@@ -54,15 +54,25 @@ func runBootstrap(
 	t *testing.T,
 	params *Params,
 	stdin []byte,
-	extraEnv ...string,
+	faultHooks ...string,
 ) (string, string, error) {
 	t.Helper()
 	script, err := GenerateScript(Script, params)
 	require.NoError(t, err)
+	if len(faultHooks) > 0 {
+		hooks := strings.Join(faultHooks, "\n") + "\n"
+		quotedHooks, quoteErr := QuotePOSIXLiteral(hooks)
+		require.NoError(t, quoteErr)
+		const installerAssignment = "installer_code=$1"
+		require.Equal(t, 1, strings.Count(script, installerAssignment))
+		// BusyBox standalone applets bypass PATH doubles; functions override them in both shells.
+		script = hooks + strings.Replace(
+			script, installerAssignment, "installer_code="+quotedHooks+"\"$1\"", 1,
+		)
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script)
-	cmd.Env = append(os.Environ(), extraEnv...)
 	cmd.Stdin = bytes.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -74,20 +84,12 @@ func binaryInput(binary []byte) []byte {
 	return append(fmt.Appendf(nil, "pong\n%d\n", len(binary)), binary...)
 }
 
-func fakeBootstrapTools(t *testing.T, chmodFails bool) string {
-	t.Helper()
-	tools := t.TempDir()
-	scripts := map[string]string{"curl": "exit 1", "sleep": "exit 0"}
+func bootstrapFailureHooks(chmodFails bool) string {
+	hooks := "curl() { return 1; }\nsleep() { :; }\n"
 	if chmodFails {
-		scripts["chmod"] = "exit 1"
+		hooks += "chmod() { printf '%s\\n' 'injected chmod failure' >&2; return 1; }\n"
 	}
-	for name, body := range scripts {
-		require.NoError(
-			t,
-			os.WriteFile(filepath.Join(tools, name), []byte("#!/bin/sh\n"+body+"\n"), 0o700),
-		)
-	}
-	return "PATH=" + tools + string(os.PathListSeparator) + os.Getenv("PATH")
+	return hooks
 }
 
 func (s *BootstrapSuite) TestHostilePathAndLiveBinaryStream() {
@@ -118,7 +120,8 @@ func (s *BootstrapSuite) TestHostilePathAndLiveBinaryStream() {
 }
 
 func (s *BootstrapSuite) TestFailedReplacementPreservesAgent() {
-	for _, failure := range []string{"short-transfer", "chmod"} {
+	const chmodFailure = "chmod"
+	for _, failure := range []string{"short-transfer", chmodFailure} {
 		s.Run(failure, func() {
 			installPath := filepath.Join(s.T().TempDir(), "agent")
 			original := []byte("old-working-agent")
@@ -133,9 +136,15 @@ func (s *BootstrapSuite) TestFailedReplacementPreservesAgent() {
 				s.T(),
 				bootstrapParams(installPath),
 				input,
-				fakeBootstrapTools(s.T(), failure == "chmod"),
+				bootstrapFailureHooks(failure == chmodFailure),
 			)
 			s.Error(err, stderr)
+			if failure == chmodFailure {
+				s.Contains(stderr, "injected chmod failure")
+				s.Contains(stderr, "Failed to make temporary agent executable")
+			} else {
+				s.Contains(stderr, "Failed to receive complete agent binary")
+			}
 			s.NotContains(stdout, "done\n")
 			installed, err := os.ReadFile(installPath)
 			s.Require().NoError(err)
@@ -158,10 +167,11 @@ func (s *BootstrapSuite) TestDownloadFailureFallsBackToStdin() {
 		s.T(),
 		params,
 		binaryInput([]byte("replacement")),
-		fakeBootstrapTools(s.T(), false),
+		bootstrapFailureHooks(false),
 	)
 	s.Require().NoError(err, stderr)
 	s.Contains(stderr, "Download failed, attempting stdin injection")
+	s.Equal(3, strings.Count(stderr, "Download attempt "))
 	s.Contains(stdout, "done\n")
 	installed, err := os.ReadFile(installPath)
 	s.Require().NoError(err)
