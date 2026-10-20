@@ -5,7 +5,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewClusterCmd builds the 'devsy pro cluster' parent command for managing
+// NewClusterCmd builds the 'devsy platform cluster' parent command for managing
 // Platform clusters.
 func NewClusterCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{

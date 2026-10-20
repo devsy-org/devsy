@@ -5,7 +5,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewWorkspaceCmd builds the 'devsy pro workspace' parent command for managing
+// NewWorkspaceCmd builds the 'devsy platform workspace' parent command for managing
 // Platform workspaces.
 func NewWorkspaceCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{

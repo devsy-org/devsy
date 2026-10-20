@@ -189,7 +189,7 @@ Devsy Platform was successfully installed and can now be reached at: %s
 Thanks for using Devsy Platform!
 `,
 		greenBold(url),
-		greenBold("devsy pro login"+" "+url),
+		greenBold("devsy platform login"+" "+url),
 		url,
 	)
 }

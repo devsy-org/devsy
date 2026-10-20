@@ -17,7 +17,8 @@ import (
 func NewPlatformCmd(flags *flags.GlobalFlags) *cobra.Command {
 	globalFlags := &proflags.GlobalFlags{GlobalFlags: flags}
 	platformCmd := &cobra.Command{
-		Use:           "pro",
+		Use:           "platform",
+		Aliases:       []string{"pro"},
 		Short:         "Devsy Platform commands",
 		SilenceUsage:  true,
 		SilenceErrors: true,

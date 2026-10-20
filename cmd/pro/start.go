@@ -332,7 +332,7 @@ func (cmd *StartCmd) upgrade(ctx context.Context) error {
 			return errors.New(
 				err.Error() + fmt.Sprintf(
 					"\n\nIf want to purge and reinstall Devsy Platform, run: %s\n",
-					greenBold("devsy pro start --reset"),
+					greenBold("devsy platform start --reset"),
 				),
 			)
 		}
@@ -470,7 +470,7 @@ func (cmd *StartCmd) printRemoteSuccessMessage(host string) {
 ##########################   LOGIN   ############################
 
 Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
@@ -486,7 +486,7 @@ Devsy Platform was successfully installed and can now be reached at: %s
 Thanks for using Devsy Platform!
 `,
 		greenBold(url),
-		greenBold("devsy pro login "+url),
+		greenBold("devsy platform login "+url),
 		"https://devsy.sh/docs/administration/ssl",
 		url)
 }
@@ -550,7 +550,7 @@ func (cmd *StartCmd) successLocal() error {
 ##########################   LOGIN   ############################
 
 Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
@@ -562,7 +562,7 @@ Login via CLI: %s
 Devsy Platform was successfully installed.
 
 Thanks for using Devsy Platform!
-`, greenBold(url), greenBold("devsy pro login"+" --insecure "+url))
+`, greenBold(url), greenBold("devsy platform login"+" --insecure "+url))
 	blockChan := make(chan bool)
 	<-blockChan
 	return nil
@@ -648,7 +648,7 @@ func (cmd *StartCmd) resolveKubeConfig(
 		contextToLoad = cmd.Context
 	} else if cfg.LastInstallContext != "" && cfg.LastInstallContext != contextToLoad {
 		contextToLoad, err = log.QuestionDefault(&survey.QuestionOptions{
-			Question: "Seems like you try to use 'devsy pro start' with a different kubernetes context than before. " +
+			Question: "Seems like you try to use 'devsy platform start' with a different kubernetes context than before. " +
 				"Choose which kubernetes context you want to use",
 			DefaultValue: contextToLoad,
 			Options:      []string{contextToLoad, cfg.LastInstallContext},
@@ -947,7 +947,7 @@ func (cmd *StartCmd) successDevsyRouter(url string) error {
 ##########################   LOGIN   ############################
 
 Username: `+greenBold("admin")+`
-Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy pro user reset-password")+`
+Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
 Login via CLI: %s
@@ -959,7 +959,7 @@ Devsy Platform was successfully installed and can now be reached at: %s
 Thanks for using Devsy Platform!
 `,
 		greenBold(url),
-		greenBold("devsy pro login"+" "+url),
+		greenBold("devsy platform login"+" "+url),
 		url,
 	)
 	return nil
@@ -1440,14 +1440,14 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 				"error decoding response from %s: %w. Try running '%s --reset'",
 				url,
 				err,
-				"devsy pro start",
+				"devsy platform start",
 			)
 		} else if v.Version == "" {
 			return false, fmt.Errorf(
 				"unexpected response from %s: %s. Try running '%s --reset'",
 				url,
 				string(out),
-				"devsy pro start",
+				"devsy platform start",
 			)
 		}
 
