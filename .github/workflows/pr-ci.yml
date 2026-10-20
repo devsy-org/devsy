@@ -154,8 +154,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: test native Windows detached task lifecycle
-        run: go test -race -count=1 -timeout 10m ./pkg/command ./pkg/task ./pkg/workspace ./cmd/workspace/up ./cmd/workspace
+      - name: test native Windows detached task storage and processes
+        run: go test -race -count=1 -timeout 10m ./pkg/command ./pkg/task ./pkg/workspace
+      - name: test native Windows detached workspace lifecycle
+        run: >-
+          go test -race -count=1 -timeout 10m
+          -run '^Test(Detached.*|DetachWorkspaceLabel.*|WorkerRecords.*|DuplicateWorkerCannotFailOwnerTask|FinalizeWorker.*|OpenTaskExitsWhenAlreadyCanceled|FollowTask.*|LogTailer.*|ResultEnvelopeFrom.*|EmitTaskTransition|ReportTaskStateJSON.*|TaskErrorMessage|TaskStatusEvent.*)$'
+          ./cmd/workspace/up ./cmd/workspace
       - name: test native Windows transport
         run: >-
           go test -race -count=1 -v -timeout 5m ./pkg/docker

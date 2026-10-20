@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/status"
@@ -24,6 +26,7 @@ func newTestTailer(t *testing.T, taskID string) (*logTailer, string) {
 	t.Cleanup(config.ResetPathManager)
 
 	tailer := newLogTailer(taskID)
+	t.Cleanup(func() { tailer.flush(io.Discard) })
 	if tailer.path == "" {
 		t.Fatal("newLogTailer produced an empty path")
 	}
@@ -326,4 +329,100 @@ func TestFollowTaskReconcilesExitedWorker(t *testing.T) {
 	state, err := store.Get(tk.ID())
 	require.NoError(t, err)
 	require.Equal(t, task.StatusFailed, state.Status)
+}
+
+type failingReconciliationStore struct {
+	*task.Store
+	reconcile func(context.Context, string) (*task.State, error)
+}
+
+func (s failingReconciliationStore) ReconcileTask(
+	ctx context.Context,
+	id string,
+) (*task.State, error) {
+	return s.reconcile(ctx, id)
+}
+
+func TestFollowTaskRetriesCleanupBeforeTerminalFailure(t *testing.T) {
+	config.SetPathManager(fakeRuntimeDirPathManager{dir: t.TempDir()})
+	t.Cleanup(config.ResetPathManager)
+	store, err := task.NewStoreAt(t.TempDir())
+	require.NoError(t, err)
+	tk, err := store.Create(task.CreateOptions{Command: "up"})
+	require.NoError(t, err)
+	require.NoError(t, tk.HoldWorkerLock())
+	require.NoError(t, tk.ReleaseWorkerLock())
+	path, err := config.DefaultPathManager().ProcessStreamsFile(task.WorkerProcessName(tk.ID()))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte("captured startup failure\n"), 0o600))
+	transient := errors.New("transient cleanup failure")
+	calls := 0
+	wrapper := failingReconciliationStore{
+		Store: store,
+		reconcile: func(ctx context.Context, id string) (*task.State, error) {
+			calls++
+			if calls == 1 {
+				return nil, transient
+			}
+			state, err := store.Get(id)
+			require.NoError(t, err)
+			require.False(t, state.Status.Terminal(), "cleanup failure must leave task retryable")
+			return store.ReconcileTask(ctx, id)
+		},
+	}
+	reader, writer, err := os.Pipe()
+	require.NoError(t, err)
+	original := os.Stderr
+	os.Stderr = writer
+	t.Cleanup(func() { os.Stderr = original; _ = reader.Close(); _ = writer.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	followErr := followTask(
+		ctx,
+		wrapper,
+		followTaskOptions{id: tk.ID(), interval: time.Millisecond, emitJSON: true},
+	)
+	os.Stderr = original
+	require.NoError(t, writer.Close())
+	logs, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Equal(t, 1, strings.Count(string(logs), "captured startup failure"))
+	require.Error(t, followErr)
+	require.NotErrorIs(t, followErr, transient)
+	require.NotErrorIs(t, followErr, context.DeadlineExceeded)
+	var classified *clierr.CLIError
+	require.ErrorAs(t, followErr, &classified)
+	require.Equal(t, 2, calls)
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.Equal(t, task.StatusFailed, state.Status)
+	require.Equal(t, state.Error, classified.Message)
+}
+
+func TestFollowTaskRetryHonorsCancellation(t *testing.T) {
+	config.SetPathManager(fakeRuntimeDirPathManager{dir: t.TempDir()})
+	t.Cleanup(config.ResetPathManager)
+	store, err := task.NewStoreAt(t.TempDir())
+	require.NoError(t, err)
+	tk, err := store.Create(task.CreateOptions{})
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	calls := 0
+	wrapper := failingReconciliationStore{
+		Store: store,
+		reconcile: func(context.Context, string) (*task.State, error) {
+			calls++
+			if calls == 2 {
+				cancel()
+			}
+			return nil, errors.New("cleanup unavailable")
+		},
+	}
+	err = followTask(ctx, wrapper, followTaskOptions{id: tk.ID(), interval: time.Millisecond})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 2, calls)
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.False(t, state.Status.Terminal())
 }

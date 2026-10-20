@@ -181,7 +181,12 @@ type followTaskOptions struct {
 	emitJSON bool
 }
 
-func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) error {
+type taskFollowerStore interface {
+	ReconcileTask(context.Context, string) (*task.State, error)
+	Get(string) (*task.State, error)
+}
+
+func followTask(ctx context.Context, store taskFollowerStore, opts followTaskOptions) error {
 	var last *task.State
 	ticker := time.NewTicker(opts.interval)
 	defer ticker.Stop()
@@ -195,7 +200,7 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 	for {
 		tailer.poll(os.Stderr)
 
-		state, err := store.ReconcileTask(ctx, opts.id)
+		state, err := readTaskForFollower(ctx, store, opts.id)
 		if err != nil {
 			return err
 		}
@@ -214,6 +219,22 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 		case <-ticker.C:
 		}
 	}
+}
+
+func readTaskForFollower(
+	ctx context.Context,
+	store taskFollowerStore,
+	id string,
+) (*task.State, error) {
+	state, err := store.ReconcileTask(ctx, id)
+	if err == nil {
+		return state, nil
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	// Cleanup can be retried; only persisted terminal state ends the follower.
+	return store.Get(id)
 }
 
 func emitTaskTransition(last, current *task.State, emitJSON bool) {
