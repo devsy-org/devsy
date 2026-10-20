@@ -382,6 +382,41 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
+  it.each([
+    ["Local Directory", "/var/home/dev/Projects/Backend", "Local Directory *"],
+    ["Git Repository", "https://example.com/Backend.git", "Repository URL *"],
+  ])(
+    "derives a valid ID from %s without changing the source",
+    async (tab, source, label) => {
+      providers.set([makeProvider("docker")])
+      const { getByText, getByLabelText, unmount } = render(WorkspaceWizard, {
+        props: { open: true },
+      })
+      await flushAsync()
+      await fireEvent.click(getByText("docker"))
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      if (tab === "Local Directory")
+        await fireEvent.click(getByText("Local Directory"))
+      await fireEvent.input(getByLabelText(label), {
+        target: { value: source },
+      })
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      await fireEvent.click(getActiveContinue(getByText))
+      await flushAsync()
+      expect(
+        (document.querySelector("#workspace-name") as HTMLInputElement).value,
+      ).toBe("backend")
+      await fireEvent.click(getLaunchButton())
+      await flushAsync()
+      expect(workspaceUp).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: "backend", source }),
+      )
+      unmount()
+    },
+  )
+
   it("shows the image picker when the Image tab is selected", async () => {
     providers.set([makeProvider("docker")])
     const { getByText, unmount } = render(WorkspaceWizard, {
@@ -431,6 +466,32 @@ describe("WorkspaceWizard", () => {
     expect(launchBtn.disabled).toBe(false)
     unmount()
   })
+
+  it.each(["Backend", "back_end", "back.end", "back end", "a".repeat(49)])(
+    "blocks invalid explicit ID %s with an accessible rule",
+    async (id) => {
+      providers.set([makeProvider("docker")])
+      const { getByText, unmount } = render(WorkspaceWizard, {
+        props: { open: true },
+      })
+      await flushAsync()
+      await advanceToReview(getByText)
+      const input = document.querySelector(
+        "#workspace-name",
+      ) as HTMLInputElement
+      await fireEvent.input(input, { target: { value: id } })
+      await flushAsync()
+      expect(input.value).toBe(id)
+      expect(input.getAttribute("aria-invalid")).toBe("true")
+      expect(input.getAttribute("aria-describedby")).toBe(
+        "workspace-name-invalid",
+      )
+      expect(getByText(/1-48 lowercase letters/)).toBeTruthy()
+      expect(getLaunchButton().disabled).toBe(true)
+      expect(workspaceUp).not.toHaveBeenCalled()
+      unmount()
+    },
+  )
 
   it("blocks Launch when the user edits the name into a conflict", async () => {
     providers.set([makeProvider("docker")])
@@ -1035,7 +1096,7 @@ describe("WorkspaceWizard", () => {
     const nameInput = document.querySelector(
       'input[placeholder*="derived from source"]',
     ) as HTMLInputElement
-    expect(nameInput.value).toBe("ubuntu-22.04")
+    expect(nameInput.value).toBe("ubuntu-22-04")
 
     const launchBtn = Array.from(document.querySelectorAll("button")).find(
       (b) => b.textContent?.trim() === "Launch",

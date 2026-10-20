@@ -147,6 +147,9 @@ func (cmd *UpCmd) prepareClientEnvironment(
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
 		return err
 	}
+	if err := workspace2.ValidateID(cmd.ID); err != nil {
+		return err
+	}
 	if cmd.Platform.Enabled {
 		log.Debug("running in platform mode")
 		config.MergeContextOptions(devsyConfig.Current(), os.Environ())

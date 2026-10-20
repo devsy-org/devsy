@@ -195,7 +195,7 @@ func followTask(ctx context.Context, store *task.Store, opts followTaskOptions) 
 	for {
 		tailer.poll(os.Stderr)
 
-		state, err := store.Get(opts.id)
+		state, err := store.ReconcileTask(ctx, opts.id)
 		if err != nil {
 			return err
 		}

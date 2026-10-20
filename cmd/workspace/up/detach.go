@@ -45,13 +45,10 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 	}
 
 	if err := t.BeginLaunch(); err != nil {
-		_ = t.Fail(err)
-		return fmt.Errorf("prepare detached up: %w", err)
+		return errors.Join(fmt.Errorf("prepare detached up: %w", err), t.Fail(err))
 	}
 	if err := launchDetached(t, cmd.detachedInvocationEnvironment()); err != nil {
-		_ = t.FinishLaunch()
-		_ = t.Fail(err)
-		return fmt.Errorf("launch detached up: %w", err)
+		return errors.Join(fmt.Errorf("launch detached up: %w", err), t.FinishLaunch(), t.Fail(err))
 	}
 	return cmd.renderDetachedTask(t)
 }
@@ -72,6 +69,9 @@ func (cmd *UpCmd) renderDetachedTask(t *task.Task) error {
 
 func (cmd *UpCmd) prepareDetached(cfg *config.Config) error {
 	if err := mergeDevsyUpOptions(&cmd.CLIOptions); err != nil {
+		return err
+	}
+	if err := workspace2.ValidateID(cmd.ID); err != nil {
 		return err
 	}
 	return cmd.preflightLocalValues(cfg)
@@ -149,7 +149,6 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 	}
 	t := store.Open(cmd.taskID)
 	if err := t.HoldWorkerLock(); err != nil {
-		failTask(t, err)
 		return nil, err
 	}
 	deadline := time.NewTimer(5 * time.Second)
@@ -159,9 +158,7 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 	for {
 		state, err := store.Get(cmd.taskID)
 		if err != nil {
-			failTask(t, err)
-			_ = t.ReleaseWorkerLock()
-			return nil, err
+			return nil, errors.Join(err, t.ReleaseWorkerLock())
 		}
 		if state.Status.Terminal() || state.CancelRequested {
 			if err := t.ReleaseWorkerLock(); err != nil {
@@ -172,35 +169,24 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 		if !state.LaunchPending {
 			if _, ok := state.ProcessReference(); !ok {
 				err := errors.New("detached worker launch did not publish process metadata")
-				failTask(t, err)
-				_ = t.ReleaseWorkerLock()
-				return nil, err
+				return nil, finalizeWorkerTask(t, err)
 			}
 			return t, nil
 		}
 		select {
 		case <-deadline.C:
 			err := errors.New("timed out waiting for detached worker launch metadata")
-			failTask(t, err)
-			_ = t.ReleaseWorkerLock()
-			return nil, err
+			return nil, finalizeWorkerTask(t, err)
 		case <-ticker.C:
 		}
 	}
 }
 
-func failTask(t *task.Task, err error) {
+func succeedTask(t *task.Task, result *config2.Result) error {
 	if t == nil {
-		return
+		return nil
 	}
-	_ = t.Fail(err)
-}
-
-func succeedTask(t *task.Task, result *config2.Result) {
-	if t == nil {
-		return
-	}
-	_ = t.Succeed(result)
+	return t.Succeed(result)
 }
 
 func (cmd *UpCmd) detachedInvocationEnvironment() []string {

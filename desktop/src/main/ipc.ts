@@ -192,7 +192,7 @@ interface ProgressSink {
       cliError?: CLIError
       success?: boolean
     },
-  ): Promise<void>
+  ): Promise<string | undefined>
 }
 
 function redactSensitiveText(value: string): string {
@@ -293,24 +293,28 @@ function createLogSink(
     if (!done && buf.length === 0) return
     const lines = buf
     buf = []
-    const win = getWin()
-    if (!win || win.isDestroyed?.()) return
-    win.webContents.send("command-progress", {
-      commandId,
-      lines: lines.map(redactSensitiveText),
-      done,
-      ...(extra
-        ? {
-            ...extra,
-            message: extra.message
-              ? redactSensitiveText(extra.message)
-              : undefined,
-            cliError: extra.cliError
-              ? redactCLIError(extra.cliError)
-              : undefined,
-          }
-        : {}),
-    })
+    try {
+      const win = getWin()
+      if (!win || win.isDestroyed?.() || win.webContents.isDestroyed?.()) return
+      win.webContents.send("command-progress", {
+        commandId,
+        lines: lines.map(redactSensitiveText),
+        done,
+        ...(extra
+          ? {
+              ...extra,
+              message: extra.message
+                ? redactSensitiveText(extra.message)
+                : undefined,
+              cliError: extra.cliError
+                ? redactCLIError(extra.cliError)
+                : undefined,
+            }
+          : {}),
+      })
+    } catch {
+      mainLog.warn("[workspace-operation] progress delivery unavailable")
+    }
   }
 
   return {
@@ -328,14 +332,21 @@ function createLogSink(
       finished = true
       const safeLine = redactSensitiveText(finalLine)
       buf.push(safeLine)
+      let flushError: string | undefined
       try {
-        appendLog?.(safeLine)
-        await flush?.()
+        try {
+          appendLog?.(safeLine)
+        } finally {
+          await flush?.()
+        }
       } catch (error) {
-        // Log persistence must not change a command's actual outcome.
+        flushError = redactSensitiveText(
+          `Workspace log could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+        )
         mainLog.warn("[workspace-operation] log flush failed", error)
       }
       post(true, { message: finalLine, ...extra })
+      return flushError
     },
   }
 }
@@ -2006,6 +2017,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         `[workspace-operation] ${cmdId} ${stage} ${Math.round(performance.now() - started)}ms`,
       )
     timing("accepted")
+    let failureSink = createLogSink(deps.getMainWindow, cmdId)
     const completion = (async () => {
       const logPath = logStore.createLogFile(state.workspaceContext(wsId), wsId)
       const sink = createLogSink(
@@ -2014,6 +2026,16 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         (line) => logStore.appendLog(logPath, line),
         () => logStore.closeLog(logPath),
       )
+
+      failureSink = sink
+      const finishUp = async (
+        line: string,
+        extra: Parameters<ProgressSink["done"]>[1],
+        error?: string,
+      ) => {
+        const flushError = await sink.done(line, extra)
+        await workspaceJobs.finish(wsId, generation, error, flushError)
+      }
 
       await serializePerWorkspace(wsId, async () => {
         // Tear down any prior run for this workspace before starting a new
@@ -2035,21 +2057,15 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           }
           taskId = submitted.id
         } catch (error) {
-          const err = error as Error & { cliError?: CLIError }
-          void sink.done(formatLogLine(err.message, "ERROR"), {
-            level: "error",
-            success: false,
-            cliError: err.cliError ?? {
-              code: "up_failed",
-              message: err.message,
+          const safe = redactCLIError(cliErrorOrFallback(error, "up_failed"))
+          await finishUp(
+            formatLogLine(safe.message, "ERROR"),
+            {
+              level: "error",
+              success: false,
+              cliError: safe,
             },
-          })
-          await workspaceJobs.finish(
-            wsId,
-            generation,
-            redactCLIError(
-              err.cliError ?? { code: "up_failed", message: err.message },
-            ).message,
+            safe.message,
           )
           return cmdId
         }
@@ -2105,32 +2121,28 @@ export function registerIpcHandlers(deps: IpcDependencies): {
                 signalledDone = true
                 releaseTask()
                 timing("completed")
-                void workspaceJobs.finish(wsId, generation)
-                void sink.done(formatted, { success: true })
+                void finishUp(formatted, { success: true })
                 return
               }
 
               if (envelope?.kind === "error") {
                 signalledDone = true
                 releaseTask()
-                void workspaceJobs.finish(
-                  wsId,
-                  generation,
-                  redactCLIError({
-                    code: envelope.code ?? "up_failed",
-                    message: envelope.message,
-                  }).message,
-                )
-                void sink.done(formatted, {
-                  level: "error",
-                  success: false,
-                  cliError: {
-                    code: envelope.code ?? "up_failed",
-                    message: envelope.message,
-                    hint: envelope.hint,
-                    context: envelope.context,
-                  },
+                const safe = redactCLIError({
+                  code: envelope.code ?? "up_failed",
+                  message: envelope.message,
+                  hint: envelope.hint,
+                  context: envelope.context,
                 })
+                void finishUp(
+                  formatted,
+                  {
+                    level: "error",
+                    success: false,
+                    cliError: safe,
+                  },
+                  safe.message,
+                )
                 return
               }
 
@@ -2183,11 +2195,19 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         return cmdId
       })
     })().catch(async (error) => {
-      await workspaceJobs.finish(
-        wsId,
-        generation,
-        redactCLIError(cliErrorOrFallback(error, "up_failed")).message,
-      )
+      const safe = redactCLIError(cliErrorOrFallback(error, "up_failed"))
+      let flushError: string | undefined
+      if (workspaceJobs.owns(wsId, cmdId)) {
+        flushError = await failureSink.done(
+          formatLogLine(safe.message, "ERROR"),
+          {
+            success: false,
+            level: "error",
+            cliError: safe,
+          },
+        )
+      }
+      await workspaceJobs.finish(wsId, generation, safe.message, flushError)
     })
     return { commandId: cmdId, completion }
   }
@@ -2226,12 +2246,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           const envelope = parseCliEnvelope(line)
           if (envelope?.kind === "result") {
             release()
-            await sink
-              .done(formatLogLine("Completed"), { success: true })
-              .catch((error) =>
-                mainLog.warn("[workspace-operation] log flush failed", error),
-              )
-            await workspaceJobs.finish(wsId, generation)
+            const flushError = await sink.done(formatLogLine("Completed"), {
+              success: true,
+            })
+            await workspaceJobs.finish(wsId, generation, undefined, flushError)
             return
           }
           if (envelope?.kind === "status")
@@ -2263,11 +2281,19 @@ export function registerIpcHandlers(deps: IpcDependencies): {
               code: task.errorCode ?? "up_failed",
               message: task.error || "Workspace task failed",
             })
-            await sink.done(formatLogLine(safe.message, "ERROR"), {
-              success: false,
-              cliError: safe,
-            })
-            await workspaceJobs.finish(wsId, generation, safe.message)
+            const flushError = await sink.done(
+              formatLogLine(safe.message, "ERROR"),
+              {
+                success: false,
+                cliError: safe,
+              },
+            )
+            await workspaceJobs.finish(
+              wsId,
+              generation,
+              safe.message,
+              flushError,
+            )
             return
           }
         } catch {

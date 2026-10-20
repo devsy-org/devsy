@@ -35,11 +35,7 @@ import {
   reduceWorkspaceLaunchTimeline,
 } from "$lib/utils/workspace-launch-timeline.js"
 import type { LaunchConfirmationState } from "$lib/utils/workspace-launch-presentation.js"
-import {
-  uniqueNamesGenerator,
-  adjectives,
-  animals,
-} from "unique-names-generator"
+
 import {
   workspaceUp,
   workspaceRefresh,
@@ -71,6 +67,13 @@ import {
   stripAnsi,
 } from "$lib/utils/log-parser.js"
 import type { UnlistenFn } from "$lib/ipc/types.js"
+
+import {
+  deriveWorkspaceId,
+  isValidWorkspaceId,
+  uniqueWorkspaceId,
+  workspaceIdRule,
+} from "$lib/utils/workspace-id.js"
 
 type Step = "provider" | "source" | "ide" | "review" | "launch"
 type StepState = "pending" | "active" | "complete" | "error"
@@ -380,15 +383,10 @@ let filteredIdes = $derived(
 )
 
 let resolvedId = $derived(
-  workspaceName.trim() || deriveWorkspaceNameFromSource(assembled.source),
+  workspaceName || deriveWorkspaceNameFromSource(assembled.source),
 )
 
-let resolvedIdInvalid = $derived(
-  resolvedId === "" ||
-    resolvedId === "." ||
-    resolvedId.includes(":") ||
-    !/^[A-Za-z0-9._-]+$/.test(resolvedId),
-)
+let resolvedIdInvalid = $derived(!isValidWorkspaceId(resolvedId))
 
 let nameConflict = $derived(
   resolvedId !== "" &&
@@ -758,6 +756,7 @@ async function handleLaunch(recovery = false) {
       }
     })
 
+    if (!isValidWorkspaceId(workspaceId)) throw new Error(workspaceIdRule)
     const cmdId = await workspaceUp({
       source: assembled.source,
       workspaceId,
@@ -846,32 +845,15 @@ function goToStep(step: Step) {
   currentStep = step
 }
 
-function randomName(): string {
-  return uniqueNamesGenerator({
-    dictionaries: [adjectives, animals],
-    separator: "-",
-    length: 2,
-    style: "lowerCase",
-  })
-}
-
 function deriveWorkspaceNameFromSource(source: string): string {
-  const leaf = source.trim().split(/[\\/]/).pop() ?? ""
-  return leaf
-    .replace(/\.git$/i, "")
-    .replace(/@.*$/, "")
-    .replace(/[^A-Za-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+  return deriveWorkspaceId(source)
 }
 
 function uniquifyName(base: string): string {
-  const existing = new Set($workspaces.map((ws) => ws.id.toLowerCase()))
-  if (base && !existing.has(base.toLowerCase())) return base
-  for (let i = 0; i < 50; i++) {
-    const candidate = randomName()
-    if (!existing.has(candidate.toLowerCase())) return candidate
-  }
-  return `${randomName()}-${Date.now().toString(36)}`
+  return uniqueWorkspaceId(
+    base,
+    $workspaces.map((ws) => ws.id),
+  )
 }
 
 function continueFromProvider() {
@@ -884,8 +866,6 @@ function continueFromSource() {
   if (!workspaceName.trim()) {
     const derived = deriveWorkspaceNameFromSource(assembled.source)
     if (derived) workspaceName = uniquifyName(derived)
-  } else {
-    workspaceName = uniquifyName(workspaceName.trim())
   }
   currentStep = "ide"
 }
@@ -912,12 +892,7 @@ function continueFromReview() {
 function selectTemplate(t: { name: string; source: string }) {
   repoUrl = t.source
   if (!workspaceName) {
-    workspaceName = uniquifyName(
-      t.name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, ""),
-    )
+    workspaceName = uniquifyName(deriveWorkspaceId(t.name))
   }
 }
 </script>
@@ -1326,7 +1301,7 @@ function selectTemplate(t: { name: string; source: string }) {
             <Alert.Root>
               <TriangleAlert class="h-4 w-4 text-amber-600" />
               <Alert.Description class="text-amber-700 dark:text-amber-400">
-                <span id="workspace-name-invalid">Please provide an explicit workspace name. The derived id is empty or invalid.</span>
+                <span id="workspace-name-invalid">{workspaceIdRule} Try "{deriveWorkspaceId(resolvedId)}".</span>
               </Alert.Description>
             </Alert.Root>
           {/if}

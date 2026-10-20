@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -515,24 +516,59 @@ func (s *Store) tryLock(
 	return lock, true, nil
 }
 
-// claimDeadWorkerLock acquires the task's worker lock, which only succeeds when
-// no worker holds it.
+// claimDeadWorkerLock claims reconciliation ownership after a worker releases
+// its lock or its saved identity proves it exited before claiming one.
 func (s *Store) claimDeadWorkerLock(id string) (*flock.Flock, bool) {
 	path, err := s.workerLockPath(id)
 	if err != nil {
 		return nil, false
 	}
-	// No lock file means the worker never got far enough to claim one.
-	if _, statErr := os.Stat(path); statErr != nil {
+	_, statErr := os.Stat(path)
+	if errors.Is(statErr, os.ErrNotExist) {
+		// Reconciliation must never manufacture evidence that a worker claimed its lock.
+		return claimConfirmedWorkerExit(
+			path+".reconcile",
+			func() bool { return s.workerExitConfirmed(id) },
+		)
+	}
+	if statErr != nil {
 		return nil, false
 	}
-
 	lock := flock.New(path)
 	locked, err := lock.TryLock()
 	if err != nil || !locked {
 		return nil, false
 	}
 	return lock, true
+}
+
+func claimConfirmedWorkerExit(path string, confirmed func() bool) (*flock.Flock, bool) {
+	if !confirmed() {
+		return nil, false
+	}
+	lock := flock.New(path)
+	locked, err := lock.TryLock()
+	if err != nil || !locked {
+		return nil, false
+	}
+	if !confirmed() {
+		_ = lock.Unlock()
+		return nil, false
+	}
+	return lock, true
+}
+
+func (s *Store) workerExitConfirmed(id string) bool {
+	state, err := s.Get(id)
+	if err != nil {
+		return false
+	}
+	ref, ok := state.ProcessReference()
+	if !ok {
+		return false
+	}
+	exited, err := command.ProcessExited(ref)
+	return err == nil && exited
 }
 
 // workerLockPath is distinct from the read-modify-write lock in withLock: this

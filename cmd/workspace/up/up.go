@@ -2,6 +2,7 @@ package up
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -63,7 +64,8 @@ type UpCmd struct {
 	// See cmd.runDetached.
 	Detach bool
 	// Set only on the detached child re-exec.
-	taskID string
+	taskID     string
+	workerTask *task.Task
 	// Out receives result/error JSON envelopes; nil falls back to os.Stdout.
 	Out io.Writer
 	// Set at the start of Run; nil until then.
@@ -261,6 +263,25 @@ func (cmd *UpCmd) Run(
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,
 	args []string,
+) (retErr error) {
+	if cmd.workerTask == nil && cmd.taskID != "" {
+		t, err := cmd.openTask()
+		if err != nil {
+			return err
+		}
+		cmd.workerTask = t
+		defer func() {
+			retErr = finalizeWorkerTask(t, retErr)
+			cmd.workerTask = nil
+		}()
+	}
+	return cmd.runWorkspace(ctx, devsyConfig, client)
+}
+
+func (cmd *UpCmd) runWorkspace(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
 ) error {
 	cmd.prepareWorkspace(client)
 
@@ -276,7 +297,6 @@ func (cmd *UpCmd) Run(
 
 	wctx, err := cmd.executeDevsyUp(ctx, devsyConfig, client)
 	if err != nil {
-		failTask(t, err)
 		return reportErr(err, emitJSON, out)
 	}
 	if wctx == nil || cmd.Prebuild {
@@ -291,11 +311,9 @@ func (cmd *UpCmd) Run(
 		out:         out,
 	})
 	if err != nil {
-		failTask(t, err)
 		return err
 	}
-	succeedTask(t, wctx.result)
-	return nil
+	return succeedTask(t, wctx.result)
 }
 
 func (cmd *UpCmd) configureRun(workspaceID string) (bool, io.Writer, error) {
@@ -324,28 +342,22 @@ func (cmd *UpCmd) finishWithoutWorkspace(
 	if err := status.Run(ctx, cmd.reporter(), status.Operation{
 		Phase: status.PhaseReady,
 	}, func(context.Context) error { return nil }); err != nil {
-		failTask(t, err)
 		return reportErr(err, emitJSON, out)
 	}
-	succeedTask(t, nil)
-	return nil // Platform mode or prebuild-only run.
+	return succeedTask(t, nil)
 }
 
-// setUpTask opens the run's task (if any), tees the status reporter into it,
+// setUpTask tees the status reporter into the claimed task (if any),
 // and records the workspace ID on it.
 func (cmd *UpCmd) setUpTask(
 	client client2.BaseWorkspaceClient,
 	emitJSON bool,
 	out io.Writer,
 ) (*task.Task, error) {
-	t, err := cmd.openTask()
-	if err != nil {
-		return nil, reportErr(err, emitJSON, out)
-	}
+	t := cmd.workerTask
 	if t != nil {
 		cmd.statusReporter = status.Tee(cmd.statusReporter, t.Reporter())
 		if err := t.SetWorkspaceID(client.Workspace()); err != nil {
-			failTask(t, err)
 			return nil, reportErr(err, emitJSON, out)
 		}
 	}
@@ -535,7 +547,21 @@ func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
 	})
 }
 
-func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) error {
+func (cmd *UpCmd) execute(cobraCmd *cobra.Command, args []string) (retErr error) {
+	t, err := cmd.openTask()
+	if err != nil {
+		return err
+	}
+	cmd.workerTask = t
+	defer func() {
+		retErr = finalizeWorkerTask(t, retErr)
+		cmd.workerTask = nil
+	}()
+
+	return cmd.executeUp(cobraCmd, args)
+}
+
+func (cmd *UpCmd) executeUp(cobraCmd *cobra.Command, args []string) error {
 	if err := cmd.validate(); err != nil {
 		return err
 	}
@@ -751,4 +777,19 @@ func watchForForceShutdown(ctx context.Context, done <-chan struct{}) {
 	case <-done:
 		signal.Stop(signals)
 	}
+}
+
+func finalizeWorkerTask(t *task.Task, err error) error {
+	if t == nil {
+		return err
+	}
+	if err != nil {
+		if failErr := t.Fail(err); failErr != nil {
+			err = errors.Join(err, fmt.Errorf("record detached task failure: %w", failErr))
+		}
+	}
+	if releaseErr := t.ReleaseWorkerLock(); releaseErr != nil {
+		err = errors.Join(err, fmt.Errorf("release detached worker lock: %w", releaseErr))
+	}
+	return err
 }

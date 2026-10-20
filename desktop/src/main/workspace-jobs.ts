@@ -79,20 +79,26 @@ export class WorkspaceJobs {
     this.generations.set(id, ++this.lastGeneration)
     if (this.jobs.delete(id)) this.emit()
   }
-  async finish(id: string, generation: number, error?: string): Promise<void> {
+  async finish(
+    id: string,
+    generation: number,
+    error?: string,
+    confirmationError?: string,
+  ): Promise<void> {
     const job = this.jobs.get(id)
     if (!job || this.generation(id) !== generation || job.state !== "running")
       return
     this.generations.set(id, ++this.lastGeneration) // invalidate pre-completion polls
     this.jobs.set(id, {
       ...job,
-      state: "reconciling",
+      state: error && confirmationError ? "failed" : "reconciling",
+      refreshError: confirmationError,
       phase:
         job.activity === "deleting" ? "Refreshing list" : "Refreshing status",
       error,
     })
     this.emit()
-    await this.retryRefresh(id)
+    if (!confirmationError) await this.retryRefresh(id)
   }
   async retryRefresh(id: string): Promise<void> {
     const job = this.jobs.get(id)

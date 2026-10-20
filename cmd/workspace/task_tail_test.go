@@ -290,3 +290,40 @@ func TestFollowTaskDrainsStatusBeforeResult(t *testing.T) {
 	require.Equal(t, "ide", completion.OperationID)
 	require.Contains(t, lines[2], `"kind":"result"`)
 }
+
+func TestFollowTaskReconcilesExitedWorker(t *testing.T) {
+	config.SetPathManager(fakeRuntimeDirPathManager{dir: t.TempDir()})
+	t.Cleanup(config.ResetPathManager)
+	store, err := task.NewStoreAt(t.TempDir())
+	require.NoError(t, err)
+	tk, err := store.Create(task.CreateOptions{Command: "up"})
+	require.NoError(t, err)
+	require.NoError(t, tk.HoldWorkerLock())
+	require.NoError(t, tk.ReleaseWorkerLock())
+	streamsPath, err := config.DefaultPathManager().
+		ProcessStreamsFile(task.WorkerProcessName(tk.ID()))
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(streamsPath, []byte("startup failed\n"), 0o600))
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	original := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = original; _ = r.Close(); _ = w.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	followErr := followTask(
+		ctx,
+		store,
+		followTaskOptions{id: tk.ID(), interval: time.Millisecond, emitJSON: true},
+	)
+	os.Stderr = original
+	require.NoError(t, w.Close())
+	logs, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Error(t, followErr)
+	require.NotErrorIs(t, followErr, context.DeadlineExceeded)
+	require.Equal(t, 1, strings.Count(string(logs), "startup failed"))
+	state, err := store.Get(tk.ID())
+	require.NoError(t, err)
+	require.Equal(t, task.StatusFailed, state.Status)
+}

@@ -71,7 +71,7 @@ func Resolve(
 	devsyConfig *config.Config,
 	params ResolveParams,
 ) (client.BaseWorkspaceClient, error) {
-	if err := validateDesiredID(params.DesiredID); err != nil {
+	if err := ValidateID(params.DesiredID); err != nil {
 		return nil, err
 	}
 
@@ -115,7 +115,8 @@ func Resolve(
 	return workspaceClient, nil
 }
 
-func validateDesiredID(desiredID string) error {
+// ValidateID checks an explicit workspace ID; empty leaves ID derivation to the source.
+func ValidateID(desiredID string) error {
 	if desiredID == "" {
 		return nil
 	}
