@@ -133,7 +133,7 @@ func validateRemoteBuildOptions(options provider.BuildOptions) error {
 		return fmt.Errorf("cannot build in this mode, rebuild the container with up command")
 	}
 	if !options.CLIOptions.Platform.Enabled {
-		return errors.New("remote builds are only supported in Devsy Pro")
+		return errors.New("remote builds are only supported in Devsy Platform")
 	}
 	if options.CLIOptions.Platform.Build == nil {
 		return errors.New("build options are required for remote builds")

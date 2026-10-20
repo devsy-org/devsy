@@ -94,7 +94,7 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	}
 	startCmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start a Devsy Pro instance",
+		Short: "Start a Devsy Platform instance",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context())
 		},
@@ -131,7 +131,7 @@ func (cmd *StartCmd) Run(ctx context.Context) error {
 	}
 
 	// Install Devsy
-	log.Info("Welcome to Devsy Pro!")
+	log.Info("Welcome to Devsy Platform!")
 	log.Info("This installer will help you to get started.")
 
 	// make sure we are ready for installing
@@ -331,7 +331,7 @@ func (cmd *StartCmd) upgrade(ctx context.Context) error {
 		if !cmd.Reset {
 			return errors.New(
 				err.Error() + fmt.Sprintf(
-					"\n\nIf want to purge and reinstall Devsy Pro, run: %s\n",
+					"\n\nIf want to purge and reinstall Devsy Platform, run: %s\n",
 					greenBold("devsy pro start --reset"),
 				),
 			)
@@ -451,7 +451,7 @@ func (cmd *StartCmd) successRemote(ctx context.Context, host string) error {
 		return err
 	}
 
-	log.Info("Devsy Pro is reachable at https://" + host)
+	log.Info("Devsy Platform is reachable at https://" + host)
 
 	cmd.printRemoteSuccessMessage(host)
 	return nil
@@ -481,9 +481,9 @@ Follow this guide to add a valid certificate: %s
 
 #################################################################
 
-Devsy Pro was successfully installed and can now be reached at: %s
+Devsy Platform was successfully installed and can now be reached at: %s
 
-Thanks for using Devsy Pro!
+Thanks for using Devsy Platform!
 `,
 		greenBold(url),
 		greenBold("devsy pro login "+url),
@@ -509,12 +509,12 @@ EXTERNAL-IP may be 'pending' for a while until your cloud provider has created a
 
 #########################################################################################################
 
-The command will wait until Devsy Pro is reachable under the host.
+The command will wait until Devsy Platform is reachable under the host.
 
 `)
 
 	log.Info(
-		"Waiting for you to configure DNS, so Devsy Pro can be reached on https://" + host,
+		"Waiting for you to configure DNS, so Devsy Platform can be reached on https://" + host,
 	)
 }
 
@@ -559,9 +559,9 @@ Login via CLI: %s
 
 #################################################################
 
-Devsy Pro was successfully installed.
+Devsy Platform was successfully installed.
 
-Thanks for using Devsy Pro!
+Thanks for using Devsy Platform!
 `, greenBold(url), greenBold("devsy pro login"+" --insecure "+url))
 	blockChan := make(chan bool)
 	<-blockChan
@@ -844,7 +844,7 @@ func (cmd *StartCmd) ensureHostAndIngress(ctx context.Context) error {
 
 func (cmd *StartCmd) waitForDeployment(ctx context.Context) (*corev1.Pod, error) {
 	// wait for devsy pod to start
-	log.Info("waiting for Devsy Pro pod to be running")
+	log.Info("waiting for Devsy Platform pod to be running")
 	devsyPod, err := platform.WaitForPodReady(ctx, cmd.KubeClient, cmd.Namespace)
 	log.Infof("release Pod started")
 	if err != nil {
@@ -895,7 +895,7 @@ func (cmd *StartCmd) pingDevsyRouter(ctx context.Context, devsyPod *corev1.Pod) 
 			},
 		},
 	}
-	log.Infof("Waiting until Devsy Pro is reachable at https://%s", devsyRouterDomain)
+	log.Infof("Waiting until Devsy Platform is reachable at https://%s", devsyRouterDomain)
 	err = wait.PollUntilContextTimeout(
 		ctx,
 		time.Second*3,
@@ -954,9 +954,9 @@ Login via CLI: %s
 
 #################################################################
 
-Devsy Pro was successfully installed and can now be reached at: %s
+Devsy Platform was successfully installed and can now be reached at: %s
 
-Thanks for using Devsy Pro!
+Thanks for using Devsy Platform!
 `,
 		greenBold(url),
 		greenBold("devsy pro login"+" "+url),
@@ -1146,7 +1146,7 @@ func enterHostNameQuestion() (string, error) {
 	return log.QuestionDefault(&survey.QuestionOptions{
 		Question: fmt.Sprintf(
 			"Enter a hostname for your %s instance (e.g. loft.my-domain.tld): \n ",
-			config.ProductNamePro,
+			config.ProductNamePlatform,
 		),
 		ValidationFunc: func(answer string) error {
 			u, err := netUrl.Parse("https://" + answer)
@@ -1500,7 +1500,7 @@ func upgradeRelease(
 		return fmt.Errorf("error during helm command: %s (%w)", string(output), err)
 	}
 
-	log.Infof("Devsy Pro has been deployed to your cluster!")
+	log.Infof("Devsy Platform has been deployed to your cluster!")
 	return nil
 }
 

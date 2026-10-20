@@ -39,7 +39,7 @@ const (
 	// EnvDisableTelemetry disables telemetry collection.
 	EnvDisableTelemetry = "DEVSY_DISABLE_TELEMETRY"
 
-	// EnvPlatformRunner is set by the Devsy Pro runner pod to mark runner-side CLI invocations.
+	// EnvPlatformRunner is set by the Devsy Platform runner pod to mark runner-side CLI invocations.
 	EnvPlatformRunner = "DEVSY_PRO_RUNNER"
 
 	// EnvTelemetryDistinctID is set by the desktop app on spawned CLI
@@ -114,7 +114,7 @@ const (
 	// EnvFlagsStatus holds extra flags for the status command.
 	EnvFlagsStatus = "DEVSY_FLAGS_STATUS"
 
-	// EnvSubdomain is the subdomain configuration for Devsy Pro.
+	// EnvSubdomain is the subdomain configuration for Devsy Platform.
 	EnvSubdomain = "DEVSY_SUBDOMAIN"
 
 	// EnvPrefix is the base prefix for all Devsy environment variables.

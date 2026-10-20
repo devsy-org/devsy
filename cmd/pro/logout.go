@@ -36,7 +36,7 @@ func NewLogoutCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	}
 	logoutCmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Log out of a Devsy Pro instance",
+		Short: "Log out of a Devsy Platform instance",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
