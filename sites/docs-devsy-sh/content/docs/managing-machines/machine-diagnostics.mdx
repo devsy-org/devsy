@@ -24,7 +24,7 @@ The shutdown candidate is one machine-level entry. It names the workspace with t
 | Field | Meaning |
 | --- | --- |
 | Provider state | The machine state the provider reports when you run the command. Shows `unknown` if the provider cannot be queried. |
-| Daemon health | `degraded` after the most recent patrol could not list workspace state or a shutdown action failed. Otherwise `healthy`. |
+| Daemon health | `degraded` after the most recent patrol could not list workspace state or a shutdown action failed. Otherwise `healthy`. With no snapshot, health is not shown. |
 | Snapshot freshness | `fresh`, `stale`, or `unknown`. A snapshot is stale when it is older than the greater of three patrol intervals or 90 seconds. |
 | Last patrol | When the daemon last checked workspace inactivity. |
 | Last daemon error | The latest failure in this daemon session. It stays after recovery, so check its timestamp. |
@@ -38,6 +38,6 @@ devsy machine logs <machine-name>
 
 This shows recent daemon events: starts and stops, workspace discovery, inactivity deadlines, and shutdown results. Add `--follow` to keep polling for new ones. Older events are rotated out, and the output tells you when it detects a gap.
 
-`shutdown.succeeded` means the stop command returned successfully. Check the provider state to confirm the machine stopped.
+`shutdown.succeeded` means the stop command returned successfully. Check the provider state to confirm the machine stopped. If a completion event is missing, the machine may have shut down before it could be written.
 
 Diagnostics never start a stopped machine. If they are stale or unavailable, check the provider state and connection first.
