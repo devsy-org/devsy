@@ -5,13 +5,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -99,6 +102,71 @@ func TestPushBlobStreaming_MatchesPushBlobDigest(t *testing.T) {
 
 	require.Equal(t, bufferedDigest, streamedDigest)
 	require.Equal(t, bufferedSize, streamedSize)
+}
+
+func spoolFilesIn(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
+func isolateTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	return dir
+}
+
+func TestPushBlobStreaming_RemovesSpoolWhenReadFails(t *testing.T) {
+	spoolDir := isolateTempDir(t)
+	host := newTestRegistry(t)
+	readErr := errors.New("source disconnected")
+	src := io.MultiReader(strings.NewReader("partial"), iotest.ErrReader(readErr))
+
+	_, _, err := PushBlobStreaming(
+		context.Background(),
+		host+"/acme/snapshots",
+		VolumesMediaType,
+		src,
+	)
+
+	require.ErrorIs(t, err, readErr)
+	require.Empty(t, spoolFilesIn(t, spoolDir))
+}
+
+func TestPushBlobStreaming_RemovesSpoolWhenUploadFails(t *testing.T) {
+	spoolDir := isolateTempDir(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+	host := strings.TrimPrefix(srv.URL, "http://")
+
+	_, _, err := PushBlobStreaming(
+		context.Background(),
+		host+"/acme/snapshots",
+		VolumesMediaType,
+		strings.NewReader("upload me"),
+	)
+
+	require.ErrorContains(t, err, "push blob to")
+	require.Empty(t, spoolFilesIn(t, spoolDir))
+}
+
+func TestPushBlobStreaming_RejectsInvalidRepositoryBeforeSpooling(t *testing.T) {
+	spoolDir := isolateTempDir(t)
+	src := strings.NewReader("never read")
+
+	_, _, err := PushBlobStreaming(context.Background(), "UPPERCASE/Repo", VolumesMediaType, src)
+
+	require.ErrorContains(t, err, "parse repository")
+	require.Equal(t, len("never read"), src.Len())
+	require.Empty(t, spoolFilesIn(t, spoolDir))
 }
 
 func TestPushPullManifest_RoundTrip(t *testing.T) {
