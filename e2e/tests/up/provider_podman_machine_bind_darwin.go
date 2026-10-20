@@ -17,12 +17,13 @@ import (
 )
 
 const (
-	podmanMachineCommand = "machine"
-	podmanJSONFormat     = "json"
-	podmanFormatFlag     = "--format"
-	podmanMarkerTarget   = "/tmp/devsy-engine-only-marker"
-	podmanMarkerName     = "/marker"
-	podmanHomeEnv        = "DEVSY_HOME"
+	podmanMachineBindLabel = "up-provider-podman-machine-bind"
+	podmanMachineCommand   = "machine"
+	podmanJSONFormat       = "json"
+	podmanFormatFlag       = "--format"
+	podmanMarkerTarget     = "/tmp/devsy-engine-only-marker"
+	podmanMarkerName       = "/marker"
+	podmanHomeEnv          = "DEVSY_HOME"
 )
 
 type podmanMachineConnection struct {
@@ -60,16 +61,13 @@ type podmanBindFixture struct {
 }
 
 var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
-	ginkgo.Label("up-provider-podman-machine-bind"), func() {
+	ginkgo.Label(podmanMachineBindLabel), func() {
 		ginkgo.It(
 			"mounts a guest-only source without creating or changing it",
 			func(ctx context.Context) {
 				quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
 				podman, err := exec.LookPath("podman")
-				framework.ExpectNoError(
-					err,
-					"native gate requires an installed Podman CLI and running machine",
-				)
+				requirePodmanMachinePrerequisite(err == nil, "Podman CLI is not installed")
 				run := func(args ...string) string {
 					// #nosec G204 -- executable is resolved Podman; arguments are test commands and quoted owned fixture paths.
 					output, cmdErr := exec.CommandContext(ctx, podman, args...).CombinedOutput()
@@ -79,8 +77,8 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 				for _, key := range []string{
 					"CONTAINER_HOST", "CONTAINER_CONNECTION", "DOCKER_HOST", "DEVSY_CONFIG", "DEVSY_PROVIDER",
 				} {
-					gomega.Expect(os.Getenv(key)).
-						To(gomega.BeEmpty(), "%s would override the isolated provider or selected connection", key)
+					requirePodmanMachinePrerequisite(os.Getenv(key) == "",
+						key+" overrides the isolated provider or selected connection")
 				}
 				var connections []podmanMachineConnection
 				framework.ExpectNoError(
@@ -97,8 +95,10 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 						selected = i
 					}
 				}
-				gomega.Expect(selected).
-					To(gomega.BeNumerically(">=", 0), "a default native connection is required")
+				requirePodmanMachinePrerequisite(
+					selected >= 0,
+					"no default native Podman connection is configured",
+				)
 				connection := connections[selected]
 				endpoint, err := url.Parse(connection.URI)
 				framework.ExpectNoError(err)
@@ -119,20 +119,24 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 				for _, entry := range machineNames {
 					inspectArgs = append(inspectArgs, entry.Name)
 				}
-				gomega.Expect(machineNames).NotTo(gomega.BeEmpty())
+				requirePodmanMachinePrerequisite(
+					len(machineNames) > 0,
+					"no Podman machines are available",
+				)
 				framework.ExpectNoError(json.Unmarshal([]byte(run(inspectArgs...)), &machines))
 				machine := ""
 				for _, candidate := range machines {
-					if candidate.State == "running" &&
-						fmt.Sprint(candidate.SSHConfig.Port) == endpoint.Port() &&
+					if fmt.Sprint(candidate.SSHConfig.Port) == endpoint.Port() &&
 						candidate.SSHConfig.RemoteUsername == endpoint.User.Username() {
 						gomega.Expect(machine).
 							To(gomega.BeEmpty(), "connection must identify exactly one machine")
+						requirePodmanMachinePrerequisite(candidate.State == "running",
+							"selected Podman machine is not running")
 						machine = candidate.Name
 					}
 				}
 				gomega.Expect(machine).
-					NotTo(gomega.BeEmpty(), "selected connection must match a running machine's SSH port and user")
+					NotTo(gomega.BeEmpty(), "selected connection must match a machine's SSH port and user")
 				gomega.Expect(endpoint.Hostname()).
 					To(gomega.BeElementOf("127.0.0.1", "localhost", "::1"))
 				guest := func(script string) string { return run(podmanMachineCommand, cmdSSH, machine, "sh -c "+quote(script)) }
@@ -277,3 +281,15 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 			ginkgo.SpecTimeout(framework.TimeoutLong()),
 		)
 	})
+
+func requirePodmanMachinePrerequisite(available bool, reason string) {
+	if available {
+		return
+	}
+	config, _ := ginkgo.GinkgoConfiguration()
+	message := "native gate BLOCKED: " + reason
+	if strings.TrimSpace(config.LabelFilter) == podmanMachineBindLabel {
+		ginkgo.Fail(message, 1)
+	}
+	ginkgo.Skip(message, 1)
+}
