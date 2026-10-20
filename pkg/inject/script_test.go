@@ -93,25 +93,45 @@ func bootstrapFailureHooks(chmodFails bool) string {
 }
 
 func (s *BootstrapSuite) TestHostilePathAndLiveBinaryStream() {
+	const liveInput = "live-tunnel\x00bytes\n"
 	root := s.T().TempDir()
 	sentinel := filepath.Join(root, "substitution-ran")
 	installPath := filepath.Join(root, "bin ' \\ \n雪 $(touch substitution-ran)", "agent '\"`$()")
 	params := bootstrapParams(installPath)
 	params.DownloadURLs = &DownloadURLs{Base: "https://invalid/'\"`$(touch " + sentinel + ")\\\r\n"}
-	params.Command = "printf '%s\\n' \"$DEVSY_AGENT_URL\"; cat"
+	params.Command = fmt.Sprintf("printf '%%s\\n' \"$DEVSY_AGENT_URL\"; head -c %d", len(liveInput))
 	binary := make([]byte, 4096)
 	_, err := rand.Read(binary)
 	s.Require().NoError(err)
 	copy(binary, []byte{0, '\'', '\\', '"', '$', '\n'})
-	input := append(binaryInput(binary), []byte("live-tunnel\x00bytes\n")...)
-	stdout, stderr, err := runBootstrap(s.T(), params, input)
-	s.Require().NoError(err, stderr)
+	var rawOutput, stderr syncBuffer
+	var userOutput bytes.Buffer
+	executed, err := Inject(s.T().Context(), InjectOptions{
+		Exec: func(ctx context.Context, script string, stdin io.Reader, stdout, diagnostics io.Writer) error {
+			cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script)
+			cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, io.MultiWriter(
+				stdout,
+				&rawOutput,
+			), diagnostics
+			return cmd.Run()
+		},
+		LocalFile:    func(bool) (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(binary)), nil },
+		ScriptParams: params,
+		Stdin:        strings.NewReader(liveInput),
+		Stdout:       &userOutput,
+		Stderr:       &stderr,
+		Timeout:      5 * time.Second,
+	})
+	s.Require().NoError(err, stderr.String())
+	s.True(executed)
+	stdout := rawOutput.String()
 	s.True(strings.HasPrefix(stdout, "ping\nARM-"), stdout)
 	s.Equal(1, strings.Count(stdout, "done\n"))
 	s.True(
-		strings.HasSuffix(stdout, "done\n"+params.DownloadURLs.Base+"\nlive-tunnel\x00bytes\n"),
+		strings.HasSuffix(stdout, "done\n"+params.DownloadURLs.Base+"\n"+liveInput),
 		stdout,
 	)
+	s.Equal(params.DownloadURLs.Base+"\n"+liveInput, userOutput.String())
 	installed, err := os.ReadFile(installPath)
 	s.Require().NoError(err)
 	s.Equal(binary, installed)

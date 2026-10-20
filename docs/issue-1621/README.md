@@ -61,6 +61,8 @@ The first GitHub Ubuntu BusyBox step exposed a test-double portability issue: Ub
 
 A later Ubuntu race run exposed an existing delivery-test observer race: stopping its pending `context.AfterFunc` could discard notification of a real attempt cancellation. The fixture now records the actual context cause after the runtime joins. The expected timeout causes, fresh-source retries, exact source close counts, bounded completion, and uncanceled outer-context assertions remain intact. Production delivery behavior is unchanged.
 
+The macOS hostile-path fixture previously pipelined tunnel bytes immediately after the binary, before `done`. Independent fragmented-write reproductions showed BSD `head` reading ahead into those premature bytes. Production `Inject` waits for `done` before bridging user stdin. The fixture now exercises that actual API and sequencing, retaining exact binary, URL, raw protocol, live NUL-containing payload, and substitution-sentinel assertions. The existing real-shell transfer test remains unchanged.
+
 Working core base: `d3f6e421642575c5072badcf56bf5b0a5606bd41`. Final script/source SHA-256:
 
 | Input | SHA-256 |
