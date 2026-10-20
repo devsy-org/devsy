@@ -51,7 +51,7 @@ func NewWatchCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The pro instance to use"))
+	cliflags.Add(c, cliflags.String(&cmd.Host, names.Host, "", "The platform instance to use"))
 	_ = c.MarkFlagRequired(names.Host)
 	flags.BindEnv(c.Flags(), names.Host)
 	cliflags.Add(c, cliflags.String(&cmd.Project, names.Project, "", "The project to use"))

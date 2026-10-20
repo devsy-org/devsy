@@ -17,14 +17,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Shared table headers used across pro resource listings.
+// Shared table headers used across platform resource listings.
 const (
 	HeaderName        = "Name"
 	HeaderDisplayName = "Display Name"
 )
 
 // FindPlatformProvider resolves the devsy config and provider config for the given
-// pro host.
+// platform host.
 func FindPlatformProvider(
 	ctx context.Context,
 	context, provider, host string,
@@ -42,7 +42,7 @@ func FindPlatformProvider(
 	return devsyConfig, pCfg, nil
 }
 
-// HostRunFunc runs a host-scoped pro command with its resolved devsy config and
+// HostRunFunc runs a host-scoped platform command with its resolved devsy config and
 // provider.
 type HostRunFunc func(
 	ctx context.Context,
@@ -83,7 +83,7 @@ type hostFlagOptions struct {
 // HostFlagOption configures AddHostFlag.
 type HostFlagOption func(*hostFlagOptions)
 
-// WithHostCompletion registers shell completion for --host listing pro instances.
+// WithHostCompletion registers shell completion for --host listing platform instances.
 func WithHostCompletion(globalFlags *proflags.GlobalFlags) HostFlagOption {
 	return func(o *hostFlagOptions) { o.completionFlags = globalFlags }
 }
@@ -96,7 +96,7 @@ func AddHostFlag(c *cobra.Command, dest *string, opts ...HostFlagOption) {
 		opt(&o)
 	}
 
-	cliflags.Add(c, cliflags.String(dest, names.Host, "", "The pro instance to use"))
+	cliflags.Add(c, cliflags.String(dest, names.Host, "", "The platform instance to use"))
 	_ = c.MarkFlagRequired(names.Host)
 	cliflags.BindEnv(c.Flags(), names.Host)
 

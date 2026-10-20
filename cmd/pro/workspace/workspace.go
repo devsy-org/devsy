@@ -6,11 +6,11 @@ import (
 )
 
 // NewWorkspaceCmd builds the 'devsy pro workspace' parent command for managing
-// Pro workspaces.
+// Platform workspaces.
 func NewWorkspaceCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workspace",
-		Short: "Manage Devsy Pro workspaces",
+		Short: "Manage Devsy Platform workspaces",
 		Args:  cobra.NoArgs,
 	}
 	cmd.AddCommand(NewListCmd(globalFlags))

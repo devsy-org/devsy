@@ -52,7 +52,7 @@ func NewAddCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 
 	c := &cobra.Command{
 		Use:   "add <cluster-name>",
-		Short: "Add current cluster to Devsy Pro",
+		Short: "Add current cluster to Devsy Platform",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
@@ -142,7 +142,7 @@ func (cmd *ClusterCmd) setupCluster(
 
 	devsyVersion, err := baseClient.Version()
 	if err != nil {
-		return clusterSetup{}, fmt.Errorf("get pro version: %w", err)
+		return clusterSetup{}, fmt.Errorf("get platform version: %w", err)
 	}
 
 	user, team := getUserOrTeam(baseClient)
@@ -430,8 +430,8 @@ func ensureHost(devsyConfig *config.Config, host string) (string, error) {
 		return "", fmt.Errorf("list platform instances: %w", err)
 	}
 	options := []string{}
-	for _, pro := range platformInstances {
-		options = append(options, pro.Host)
+	for _, instance := range platformInstances {
+		options = append(options, instance.Host)
 	}
 	h, err := log.QuestionDefault(&survey.QuestionOptions{
 		Question:     "Select Platform instance to connect your cluster to",

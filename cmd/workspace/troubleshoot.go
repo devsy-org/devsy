@@ -133,7 +133,7 @@ func (cmd *TroubleshootCmd) collectWorkspaceInfo(
 			ctx, info.Config, info.Workspace, info.DevsyProInstances,
 		)
 		if err != nil {
-			info.addErr("collect pro workspace info", err)
+			info.addErr("collect platform workspace info", err)
 		}
 	}
 
