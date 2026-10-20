@@ -26,6 +26,7 @@ jobs:
           filters: |
             go:
               - '**/*.go'
+              - 'pkg/inject/**'
               - 'go.mod'
               - 'go.sum'
               - '.goreleaser.yml'
@@ -120,6 +121,18 @@ jobs:
           fi
 
           printf '%s\n' "$packages" | xargs go test -race -short
+
+      - name: test agent bootstrap with BusyBox sh
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y busybox-static
+          original_sh="$(readlink /bin/sh)"
+          trap 'sudo ln -sf "$original_sh" /bin/sh' EXIT
+          sudo ln -sf /bin/busybox /bin/sh
+          go test -race -count=1 -timeout 90s ./pkg/inject -run '^(TestBootstrapSuite|TestInjectScript_RealShell.*)$'
 
       - name: test E2E runtime helpers
         run: go test -race -count=1 ./e2e/framework/runenv/... ./e2e/framework/dockerwsl ./e2e/cmd/devsy-ci
