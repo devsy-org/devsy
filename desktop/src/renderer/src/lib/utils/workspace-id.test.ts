@@ -17,7 +17,18 @@ describe("workspace IDs", () => {
   )
   it.each([
     "/var/home/dev/Projects/Backend",
+    "/home/dev/@work/Backend",
+    "/home/first@corp/Backend",
+    "C:\\Users\\first@corp\\Backend",
+    "./first@corp/Backend",
+    "../first@corp/Backend",
+    "~/first@corp/Backend",
     "https://example.com/Backend.git",
+    "ssh://git@host/org/Backend.git@main",
+    "https://user@example.com/org/Backend.git@sha256:abc123",
+    "git@host:org/Backend.git@feature/foo@subpath:sub/path",
+    "github.com/org/Backend@pull/123/head",
+    "file:///projects/Backend.git@main",
     "https://example.com/Backend.git@feature/foo",
     "git@host:org/Backend.git",
     "github.com/org/Backend@main@subpath:sub/path",
@@ -26,6 +37,13 @@ describe("workspace IDs", () => {
     const original = source
     expect(deriveWorkspaceId(source)).toBe("backend")
     expect(source).toBe(original)
+  })
+  it.each([
+    "/home/dev/Backend@work",
+    "C:\\Users\\dev\\Backend@work",
+    "Backend@work",
+  ])("preserves the local basename in %s", (source) => {
+    expect(deriveWorkspaceId(source)).toBe("backend-work")
   })
   it("normalizes, truncates and falls back to valid IDs", () => {
     for (const source of ["a".repeat(80), "___", "App.Name With Spaces"])

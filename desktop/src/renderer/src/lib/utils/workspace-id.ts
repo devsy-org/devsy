@@ -6,15 +6,20 @@ export function isValidWorkspaceId(id: string): boolean {
 }
 
 export function deriveWorkspaceId(source: string): string {
-  const repository = source
-    .trim()
-    .replace(/^[^/@]+@[^:]+:/, "")
-    .replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*\//i, "")
-    .split("@")[0]
+  const trimmed = source.trim()
+  const isRepository =
+    /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ||
+    /^[^/@\\]+@[^:/\\]+:/.test(trimmed) ||
+    /^[^/@\\]+\.[^/@\\]+\//.test(trimmed)
+  const repository = isRepository
+    ? trimmed
+        .replace(/^[^/@]+@[^:]+:/, "")
+        .replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*\//i, "")
+        .split("@")[0]
+    : trimmed
   const leaf = repository.split(/[\\/]/).pop() ?? ""
   return (
     leaf
-      .replace(/@.*$/, "")
       .replace(/\.git$/i, "")
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, "-")

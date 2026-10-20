@@ -29,7 +29,7 @@ vi.mock("../analytics.js", () => ({
 const { registerIpcHandlers } = await import("../ipc.js")
 function setup() {
   const jobs = new WorkspaceJobs()
-  let exit!: (code: number) => void
+  let exit!: (code: number, error?: unknown) => void
   let line!: (line: string, stream: "stdout") => void
   const cli = {
     setUnlockHandler: vi.fn(),
@@ -89,7 +89,7 @@ function setup() {
     webContents,
     send,
     actions,
-    exit: (code: number) => exit(code),
+    exit: (code: number, error?: unknown) => exit(code, error),
     line: (text: string) => line(text, "stdout"),
   }
 }
@@ -529,6 +529,46 @@ describe("workspace lifecycle IPC", () => {
         state: exitCode === 0 ? "succeeded" : "failed",
         ...(exitCode === 1 ? { error: "Command exited with code 1" } : {}),
       })
+    },
+  )
+
+  it.each([0, 1])(
+    "keeps action outcome %s unconfirmed when log close fails",
+    async (exitCode) => {
+      const ctx = setup()
+      vi.stubEnv("TEST_API_TOKEN", "private-token")
+      ctx.closeLog.mockRejectedValueOnce(new Error("disk unavailable"))
+      invoke("workspace_rebuild")
+      await flush()
+      ctx.exit(exitCode, {
+        code: "action_failed",
+        message: "Cannot rebuild private-token",
+      })
+      await flush()
+      expect(ctx.jobs.get("ws")).toMatchObject({
+        state: exitCode === 0 ? "reconciling" : "failed",
+        refreshError: "Workspace log could not be saved: disk unavailable",
+        error: exitCode === 0 ? undefined : "Cannot rebuild ***",
+      })
+      const terminal = () =>
+        ctx.send.mock.calls.filter(
+          ([channel, value]) => channel === "command-progress" && value.done,
+        )
+      expect(terminal()).toHaveLength(1)
+      expect(terminal()[0][1].success).toBe(exitCode === 0)
+      if (exitCode !== 0)
+        expect(terminal()[0][1].cliError).toMatchObject({
+          code: "action_failed",
+          message: "Cannot rebuild ***",
+        })
+      await ctx.jobs.retryRefresh("ws")
+      expect(ctx.jobs.get("ws")).toMatchObject({
+        state: exitCode === 0 ? "succeeded" : "failed",
+        refreshError: undefined,
+        error: exitCode === 0 ? undefined : "Cannot rebuild ***",
+      })
+      expect(terminal()).toHaveLength(1)
+      expect(ctx.closeLog).toHaveBeenCalledOnce()
     },
   )
 

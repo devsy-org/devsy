@@ -2391,29 +2391,35 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             .catch(reject)
         })
         timing("completed")
-        await sink
+        const flushError = await sink
           .done(formatLogLine("Completed"), { success: true })
-          .catch((error) =>
-            mainLog.warn("[workspace-operation] log flush failed", error),
-          )
-        await workspaceJobs.finish(args.workspaceId, generation)
+          .catch((error) => {
+            mainLog.warn("[workspace-operation] log flush failed", error)
+            return undefined
+          })
+        await workspaceJobs.finish(
+          args.workspaceId,
+          generation,
+          undefined,
+          flushError,
+        )
         timing("reconciled")
       } catch (error) {
         const cliError = redactCLIError(
           cliErrorOrFallback(error, "workspace_operation_failed"),
         )
-        if (sink)
-          await sink
-            .done(formatLogLine(cliError.message, "ERROR"), {
-              success: false,
-              level: "error",
-              cliError,
-            })
-            .catch(() => {})
+        const flushError = await sink
+          ?.done(formatLogLine(cliError.message, "ERROR"), {
+            success: false,
+            level: "error",
+            cliError,
+          })
+          .catch(() => undefined)
         await workspaceJobs.finish(
           args.workspaceId,
           generation,
           cliError.message,
+          flushError,
         )
         throw error
       }
