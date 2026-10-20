@@ -18,8 +18,6 @@ func TestDependencyGuardTestSuite(t *testing.T) {
 	suite.Run(t, new(DependencyGuardTestSuite))
 }
 
-// dependencyCase: wantErr is the scope error that must be returned (empty means accepted).
-// from->to must be an edge when accepted and absent when rejected.
 type dependencyCase struct {
 	defs    config.OptionDefinitions
 	values  map[string]config.OptionValue
