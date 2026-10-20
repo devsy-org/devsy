@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
@@ -288,9 +289,16 @@ func requirePodmanMachinePrerequisite(available bool, reason string) {
 	}
 	config, _ := ginkgo.GinkgoConfiguration()
 	message := "native gate BLOCKED: " + reason
-	// Ginkgo has already matched the full label expression before this spec runs.
-	if strings.TrimSpace(config.LabelFilter) != "" {
+	if isPodmanMachineQualificationFilter(config.LabelFilter) {
 		ginkgo.Fail(message, 1)
 	}
 	ginkgo.Skip(message, 1)
+}
+
+func isPodmanMachineQualificationFilter(filter string) bool {
+	// Ginkgo validates syntax first; only a standalone label requests native qualification.
+	label := strings.TrimFunc(filter, func(r rune) bool {
+		return r == '(' || r == ')' || unicode.IsSpace(r)
+	})
+	return strings.ToLower(label) == podmanMachineBindLabel
 }
