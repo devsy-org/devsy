@@ -169,7 +169,7 @@ func saveImportedWorkspaceConfig(
 	if err != nil {
 		return fmt.Errorf("load workspace config: %w", err)
 	}
-	workspaceConfig.Pro = &provider.ProMetadata{
+	workspaceConfig.Platform = &provider.PlatformMetadata{
 		InstanceName: instance.GetName(),
 		Project:      project.ProjectFromNamespace(instance.GetNamespace()),
 		DisplayName:  instance.Spec.DisplayName,

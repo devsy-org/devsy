@@ -60,7 +60,7 @@ type ContainerDetailsState struct {
 
 func (cmd *StartCmd) startDocker(ctx context.Context) error {
 	log.Infof("Starting Devsy Pro in Docker")
-	name := config.ProReleaseName
+	name := config.PlatformReleaseName
 
 	// prepare installation
 	err := cmd.prepareDocker()

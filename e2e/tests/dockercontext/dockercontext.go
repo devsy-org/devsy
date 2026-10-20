@@ -95,9 +95,7 @@ var _ = ginkgo.Describe(
 				err = exec.CommandContext(ctx, "docker", "context", "use", testContextName).Run()
 				framework.ExpectNoError(err)
 
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/docker")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/docker", initialDir)
 				ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 				stdout, stderr, err := f.DevsyUpStreams(ctx, tempDir)
@@ -141,9 +139,7 @@ var _ = ginkgo.Describe(
 					}
 				})
 
-				tempDir, err := framework.CopyToTempDir("tests/up/testdata/docker")
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+				tempDir := framework.CopyTestdata("tests/up/testdata/docker", initialDir)
 				ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
 
 				stdout, stderr, err := f.DevsyUpStreams(ctx, tempDir)

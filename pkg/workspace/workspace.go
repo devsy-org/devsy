@@ -738,7 +738,7 @@ func findWorkspace(
 			continue
 		}
 
-		if workspace.IsPro() {
+		if workspace.IsPlatform() {
 			workspace.Imported = true
 			if err := providerpkg.SaveWorkspaceConfig(workspace); err != nil {
 				return nil, fmt.Errorf("save workspace config: %w", err)
@@ -807,7 +807,7 @@ func selectPlatformWorkspace(
 	params selectWorkspaceParams,
 ) (platformWorkspaceSelection, error) {
 	for _, workspace := range workspaces {
-		if workspace.ID != selectedWorkspace.ID || !workspace.IsPro() {
+		if workspace.ID != selectedWorkspace.ID || !workspace.IsPlatform() {
 			continue
 		}
 		providerConfig, err := importSelectedPlatformWorkspace(devsyConfig, workspace, params)
@@ -855,8 +855,8 @@ func promptWorkspaceSelection(workspaces []*providerpkg.Workspace) (*providerpkg
 	options := make([]huh.Option[*providerpkg.Workspace], 0, len(workspaces))
 	for _, workspace := range workspaces {
 		key := workspace.ID
-		if workspace.IsPro() && workspace.Pro.DisplayName != "" {
-			key = fmt.Sprintf("%s (%s)", workspace.Pro.DisplayName, workspace.ID)
+		if workspace.IsPlatform() && workspace.Platform.DisplayName != "" {
+			key = fmt.Sprintf("%s (%s)", workspace.Platform.DisplayName, workspace.ID)
 		}
 		options = append(options, huh.NewOption(key, workspace))
 	}

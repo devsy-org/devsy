@@ -70,13 +70,13 @@ func (s *hostFlagSuite) TestFlagValueSetsDest() {
 }
 
 func (s *hostFlagSuite) TestHostRunEResolvesHostAtRunTime() {
-	orig := findProProviderFn
-	s.T().Cleanup(func() { findProProviderFn = orig })
+	orig := findPlatformProviderFn
+	s.T().Cleanup(func() { findPlatformProviderFn = orig })
 
 	var gotContext, gotProvider, gotHost string
 	devsyConfig := &config.Config{}
 	pCfg := &providerpkg.ProviderConfig{Name: "p"}
-	findProProviderFn = func(
+	findPlatformProviderFn = func(
 		_ context.Context,
 		ctxName, providerName, host string,
 	) (*config.Config, *providerpkg.ProviderConfig, error) {
@@ -110,11 +110,11 @@ func (s *hostFlagSuite) TestHostRunEResolvesHostAtRunTime() {
 }
 
 func (s *hostFlagSuite) TestHostRunEPropagatesResolveErrorWithoutRunning() {
-	orig := findProProviderFn
-	s.T().Cleanup(func() { findProProviderFn = orig })
+	orig := findPlatformProviderFn
+	s.T().Cleanup(func() { findPlatformProviderFn = orig })
 
 	boom := errors.New("resolve failed")
-	findProProviderFn = func(
+	findPlatformProviderFn = func(
 		context.Context,
 		string, string, string,
 	) (*config.Config, *providerpkg.ProviderConfig, error) {

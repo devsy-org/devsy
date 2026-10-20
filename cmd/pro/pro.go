@@ -13,10 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewProCmd returns a new command.
-func NewProCmd(flags *flags.GlobalFlags) *cobra.Command {
+// NewPlatformCmd returns a new command.
+func NewPlatformCmd(flags *flags.GlobalFlags) *cobra.Command {
 	globalFlags := &proflags.GlobalFlags{GlobalFlags: flags}
-	proCmd := &cobra.Command{
+	platformCmd := &cobra.Command{
 		Use:           "pro",
 		Short:         "Devsy Pro commands",
 		SilenceUsage:  true,
@@ -28,22 +28,22 @@ func NewProCmd(flags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	proCmd.AddCommand(NewLoginCmd(globalFlags))
-	proCmd.AddCommand(NewLogoutCmd(globalFlags))
-	proCmd.AddCommand(NewListCmd(globalFlags))
-	proCmd.AddCommand(NewStartCmd(globalFlags))
-	proCmd.AddCommand(NewSelfCmd(globalFlags))
-	proCmd.AddCommand(NewVersionCmd(globalFlags))
-	proCmd.AddCommand(NewHealthCmd(globalFlags))
-	proCmd.AddCommand(NewCheckUpdateCmd(globalFlags))
-	proCmd.AddCommand(NewUpdateProviderCmd(globalFlags))
+	platformCmd.AddCommand(NewLoginCmd(globalFlags))
+	platformCmd.AddCommand(NewLogoutCmd(globalFlags))
+	platformCmd.AddCommand(NewListCmd(globalFlags))
+	platformCmd.AddCommand(NewStartCmd(globalFlags))
+	platformCmd.AddCommand(NewSelfCmd(globalFlags))
+	platformCmd.AddCommand(NewVersionCmd(globalFlags))
+	platformCmd.AddCommand(NewHealthCmd(globalFlags))
+	platformCmd.AddCommand(NewCheckUpdateCmd(globalFlags))
+	platformCmd.AddCommand(NewUpdateProviderCmd(globalFlags))
 
-	proCmd.AddCommand(procluster.NewClusterCmd(globalFlags))
-	proCmd.AddCommand(proproject.NewProjectCmd(globalFlags))
-	proCmd.AddCommand(protemplate.NewTemplateCmd(globalFlags))
-	proCmd.AddCommand(prouser.NewUserCmd(globalFlags))
-	proCmd.AddCommand(proworkspace.NewWorkspaceCmd(globalFlags))
-	proCmd.AddCommand(daemon.NewCmd(globalFlags))
-	proCmd.AddCommand(provider.NewProProviderCmd(globalFlags))
-	return proCmd
+	platformCmd.AddCommand(procluster.NewClusterCmd(globalFlags))
+	platformCmd.AddCommand(proproject.NewProjectCmd(globalFlags))
+	platformCmd.AddCommand(protemplate.NewTemplateCmd(globalFlags))
+	platformCmd.AddCommand(prouser.NewUserCmd(globalFlags))
+	platformCmd.AddCommand(proworkspace.NewWorkspaceCmd(globalFlags))
+	platformCmd.AddCommand(daemon.NewCmd(globalFlags))
+	platformCmd.AddCommand(provider.NewPlatformProviderCmd(globalFlags))
+	return platformCmd
 }

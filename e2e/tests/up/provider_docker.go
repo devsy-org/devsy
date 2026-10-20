@@ -46,12 +46,10 @@ var _ = ginkgo.Describe(
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 		ginkgo.It("existing running container", func(ctx context.Context) {
-			tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, dtc.initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", dtc.initialDir)
 			ginkgo.DeferCleanup(dtc.f.DevsyWorkspaceDelete, tempDir)
 
-			err = dtc.dockerHelper.Run(
+			err := dtc.dockerHelper.Run(
 				ctx,
 				[]string{
 					"run",

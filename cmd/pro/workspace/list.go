@@ -33,7 +33,7 @@ func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:  "List Workspaces",
 		Hidden: true,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
-			devsyConfig, providerConfig, err := proutil.FindProProvider(
+			devsyConfig, providerConfig, err := proutil.FindPlatformProvider(
 				cobraCmd.Context(),
 				cmd.Context,
 				cmd.Provider,

@@ -191,7 +191,7 @@ func Rename(ctx context.Context, opts RenameOptions) error {
 		return fmt.Errorf("loading workspace config: %w", err)
 	}
 
-	if wsConfig.IsPro() {
+	if wsConfig.IsPlatform() {
 		return fmt.Errorf(
 			"cannot rename platform workspaces; they are managed by the platform",
 		)

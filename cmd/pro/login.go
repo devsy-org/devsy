@@ -125,7 +125,10 @@ func (cmd *LoginCmd) prepareProvider(ctx context.Context, fullURL string) (*conf
 	if err != nil {
 		return nil, fmt.Errorf("invalid url %s: %w", fullURL, err)
 	}
-	loginLock, err := provider.GetProInstanceOperationLock(initial.DefaultContext, parsedURL.Host)
+	loginLock, err := provider.GetPlatformInstanceOperationLock(
+		initial.DefaultContext,
+		parsedURL.Host,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get Pro login lock: %w", err)
 	}
@@ -187,7 +190,7 @@ func (cmd *LoginCmd) normalizeURL(fullURL string) (string, error) {
 func (cmd *LoginCmd) resolveInstance(
 	fullURL string,
 	contextName string,
-) (*config.Config, *provider.ProInstance, error) {
+) (*config.Config, *provider.PlatformInstance, error) {
 	parsedURL, err := url.Parse(fullURL)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid url %s: %w", fullURL, err)
@@ -199,12 +202,12 @@ func (cmd *LoginCmd) resolveInstance(
 		return nil, nil, err
 	}
 
-	proInstances, err := workspace.ListPlatformInstances(devsyConfig)
+	platformInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	currentInstance, err := findInstance(proInstances, host)
+	currentInstance, err := findInstance(platformInstances, host)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -220,15 +223,18 @@ func (cmd *LoginCmd) resolveInstance(
 	return devsyConfig, nil, nil
 }
 
-func findInstance(instances []*provider.ProInstance, host string) (*provider.ProInstance, error) {
-	instanceID := provider.ToProInstanceID(host)
+func findInstance(
+	instances []*provider.PlatformInstance,
+	host string,
+) (*provider.PlatformInstance, error) {
+	instanceID := provider.ToPlatformInstanceID(host)
 	for _, inst := range instances {
 		if strings.EqualFold(inst.Host, host) {
 			return inst, nil
 		}
-		if provider.ToProInstanceID(inst.Host) == instanceID {
+		if provider.ToPlatformInstanceID(inst.Host) == instanceID {
 			return nil, fmt.Errorf(
-				"pro instance host %q conflicts with existing host %q after normalization",
+				"platform instance host %q conflicts with existing host %q after normalization",
 				host,
 				inst.Host,
 			)
@@ -239,9 +245,9 @@ func findInstance(instances []*provider.ProInstance, host string) (*provider.Pro
 
 func (cmd *LoginCmd) resolveNewProviderName(devsyConfig *config.Config, host string) error {
 	if cmd.Provider == "" {
-		cmd.Provider = config.ProReleaseName
+		cmd.Provider = config.PlatformReleaseName
 	}
-	cmd.Provider = provider.ToProInstanceID(cmd.Provider)
+	cmd.Provider = provider.ToPlatformInstanceID(cmd.Provider)
 
 	providers, err := workspace.LoadAllProviders(devsyConfig)
 	if err != nil {
@@ -249,7 +255,7 @@ func (cmd *LoginCmd) resolveNewProviderName(devsyConfig *config.Config, host str
 	}
 
 	if providers[cmd.Provider] != nil {
-		cmd.Provider = provider.ToProInstanceID(config.BinaryName + "-" + host)
+		cmd.Provider = provider.ToPlatformInstanceID(config.BinaryName + "-" + host)
 		if providers[cmd.Provider] != nil {
 			return fmt.Errorf(
 				"provider %s already exists, choose a different name via --provider",
@@ -264,7 +270,7 @@ func (cmd *LoginCmd) resolveNewProviderName(devsyConfig *config.Config, host str
 func (cmd *LoginCmd) ensureProvider(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	currentInstance *provider.ProInstance,
+	currentInstance *provider.PlatformInstance,
 	fullURL string,
 ) (*config.Config, error) {
 	if currentInstance != nil {
@@ -272,7 +278,7 @@ func (cmd *LoginCmd) ensureProvider(
 	}
 
 	parsedURL, _ := url.Parse(fullURL)
-	instance := &provider.ProInstance{
+	instance := &provider.PlatformInstance{
 		Provider:          cmd.Provider,
 		Host:              parsedURL.Host,
 		CreationTimestamp: types.Now(),
@@ -282,7 +288,10 @@ func (cmd *LoginCmd) ensureProvider(
 		return nil, err
 	}
 
-	if err := provider.SaveProInstanceConfig(devsyConfig.DefaultContext, instance); err != nil {
+	if err := provider.SavePlatformInstanceConfig(
+		devsyConfig.DefaultContext,
+		instance,
+	); err != nil {
 		return nil, err
 	}
 

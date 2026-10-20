@@ -78,8 +78,9 @@ type Workspace struct {
 	// Origin is the place where this config file was loaded from
 	Origin string `json:"-"`
 
-	// Pro signals this workspace is remote and doesn't necessarily exist locally. It also has more metadata about the pro workspace
-	Pro *ProMetadata `json:"pro,omitempty"`
+	// Platform signals this workspace is remote and doesn't necessarily exist locally.
+	// It also has more metadata about the platform workspace
+	Platform *PlatformMetadata `json:"pro,omitempty"`
 
 	// Path to the file where the SSH config to access the workspace is stored
 	SSHConfigPath string `json:"sshConfigPath,omitempty"`
@@ -88,7 +89,7 @@ type Workspace struct {
 	SSHConfigIncludePath string `json:"sshConfigIncludePath,omitempty"`
 }
 
-type ProMetadata struct {
+type PlatformMetadata struct {
 	// InstanceName is the platform CRD name for this workspace
 	InstanceName string `json:"instanceName,omitempty"`
 
@@ -550,6 +551,6 @@ func isPlausibleGitSource(s string) bool {
 	return !strings.Contains(u.Host, ":") || u.Port() != ""
 }
 
-func (w *Workspace) IsPro() bool {
-	return w.Pro != nil
+func (w *Workspace) IsPlatform() bool {
+	return w.Platform != nil
 }

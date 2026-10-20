@@ -42,7 +42,7 @@ func (cmd *StartCmd) registerClusterFlags(startCmd *cobra.Command) {
 		cliflags.String(
 			&cmd.Namespace,
 			names.Namespace,
-			config.ProReleaseName,
+			config.PlatformReleaseName,
 			"The namespace to install into",
 		),
 		cliflags.String(

@@ -21,14 +21,14 @@ func GetPlatformHostSuggestions(
 		return nil, cobra.ShellCompDirectiveError
 	}
 
-	proInstances, err := workspace.ListPlatformInstances(devsyConfig)
+	platformInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
 
 	var suggestions []string
 
-	for _, instance := range proInstances {
+	for _, instance := range platformInstances {
 		if strings.HasPrefix(instance.Host, toComplete) {
 			suggestions = append(suggestions, instance.Host)
 		}

@@ -425,21 +425,21 @@ func ensureHost(devsyConfig *config.Config, host string) (string, error) {
 		return host, nil
 	}
 
-	proInstances, err := workspace.ListPlatformInstances(devsyConfig)
+	platformInstances, err := workspace.ListPlatformInstances(devsyConfig)
 	if err != nil {
-		return "", fmt.Errorf("list pro instances: %w", err)
+		return "", fmt.Errorf("list platform instances: %w", err)
 	}
 	options := []string{}
-	for _, pro := range proInstances {
+	for _, pro := range platformInstances {
 		options = append(options, pro.Host)
 	}
 	h, err := log.QuestionDefault(&survey.QuestionOptions{
-		Question:     "Select Pro instance to connect your cluster to",
+		Question:     "Select Platform instance to connect your cluster to",
 		Options:      options,
 		DefaultValue: options[0],
 	})
 	if err != nil {
-		return "", fmt.Errorf("select pro instance: %w", err)
+		return "", fmt.Errorf("select platform instance: %w", err)
 	}
 
 	return h, nil

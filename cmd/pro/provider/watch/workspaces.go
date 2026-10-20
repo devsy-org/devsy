@@ -289,7 +289,7 @@ func (s *instanceStore) buildInstance(
 func (s *instanceStore) importedInstance(
 	workspace *provider.Workspace,
 ) *WorkspaceInstance {
-	if !workspace.Imported || workspace.Pro == nil {
+	if !workspace.Imported || workspace.Platform == nil {
 		return nil
 	}
 
@@ -304,7 +304,7 @@ func (s *instanceStore) importedInstance(
 	}
 
 	l, err := s.informer.Lister().
-		DevsyWorkspaceInstances(project.ProjectFromNamespace(workspace.Pro.Project)).
+		DevsyWorkspaceInstances(project.ProjectFromNamespace(workspace.Platform.Project)).
 		List(selector)
 	if err != nil {
 		return nil

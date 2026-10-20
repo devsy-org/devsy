@@ -110,7 +110,7 @@ func ProviderFromHost(
 	devsyConfig *config.Config,
 	platformHost string,
 ) (*provider.ProviderConfig, error) {
-	platformInstanceConfig, err := provider.LoadProInstanceConfig(
+	platformInstanceConfig, err := provider.LoadPlatformInstanceConfig(
 		devsyConfig.DefaultContext,
 		platformHost,
 	)

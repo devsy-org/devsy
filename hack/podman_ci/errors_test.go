@@ -12,10 +12,10 @@ func TestExitCodeForError(t *testing.T) {
 		want int
 	}{
 		{name: "cobra usage error", err: errors.New("required flag not set"), want: 2},
-		{name: "typed usage error", err: classifySetupError(usageError("invalid mode")), want: 2},
+		{name: "typed usage error", err: classifyOperationalError(usageError("invalid mode")), want: 2},
 		{
 			name: "operational error",
-			err:  classifySetupError(errors.New("setup failed")),
+			err:  classifyOperationalError(errors.New("setup failed")),
 			want: 1,
 		},
 	} {

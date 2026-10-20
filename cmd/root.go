@@ -55,10 +55,10 @@ const (
 	flagLogOutput = "--" + names.LogOutput
 	flagLogFormat = "--" + names.LogFormat
 
-	// envProEnabled gates registration of the `pro` command tree. The pro
+	// envPlatformEnabled gates registration of the `pro` command tree. The pro
 	// feature is not ready for general use; set DEVSY_PRO_ENABLED=true to
 	// expose it (e.g. for internal testing).
-	envProEnabled = "DEVSY_PRO_ENABLED"
+	envPlatformEnabled = "DEVSY_PRO_ENABLED"
 
 	internalCommand = "internal"
 
@@ -78,8 +78,8 @@ const (
     $ devsy provider add docker`
 )
 
-func proEnabled() bool {
-	return os.Getenv(envProEnabled) == "true"
+func platformEnabled() bool {
+	return os.Getenv(envPlatformEnabled) == "true"
 }
 
 // isMachineLogFormat reports whether the configured --log-output mode produces
@@ -472,7 +472,7 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 		wsCmdPkg.NewWorkspaceCmd(globalFlags),
 		cmdinternal.NewInternalCmd(globalFlags),
 	)
-	if proEnabled() {
-		rootCmd.AddCommand(pro.NewProCmd(globalFlags))
+	if platformEnabled() {
+		rootCmd.AddCommand(pro.NewPlatformCmd(globalFlags))
 	}
 }

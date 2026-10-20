@@ -15,8 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewProProviderCmd creates a new cobra command.
-func NewProProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
+// NewPlatformProviderCmd creates a new cobra command.
+func NewPlatformProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use:    "provider",
 		Short:  "Devsy Pro provider commands",

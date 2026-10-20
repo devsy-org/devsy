@@ -51,7 +51,7 @@ const (
 	trueString           = "true"
 )
 
-var defaultReleaseName = config.ProReleaseName
+var defaultReleaseName = config.PlatformReleaseName
 
 var defaultDeploymentName = "loft" // Need to update helm chart if we change this!
 
@@ -89,8 +89,8 @@ type StartCmd struct {
 func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &StartCmd{
 		GlobalFlags: *flags,
-		Product:     config.ProReleaseName,
-		ChartName:   config.ProReleaseName,
+		Product:     config.PlatformReleaseName,
+		ChartName:   config.PlatformReleaseName,
 	}
 	startCmd := &cobra.Command{
 		Use:   "start",

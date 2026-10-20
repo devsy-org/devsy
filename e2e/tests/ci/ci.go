@@ -181,9 +181,7 @@ func setupCI(initialDir string) (string, *framework.Framework) {
 }
 
 func setupCIFrom(initialDir, testdataPath string) (string, *framework.Framework) {
-	tempDir, err := framework.CopyToTempDir(testdataPath)
-	framework.ExpectNoError(err)
-	ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+	tempDir := framework.CopyTestdata(testdataPath, initialDir)
 
 	f, err := framework.SetupDockerProvider(initialDir+"/bin", "docker")
 	framework.ExpectNoError(err)

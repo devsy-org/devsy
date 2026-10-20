@@ -240,13 +240,13 @@ func readOnlyDataCases(pm PathManager, data string) []readOnlyPathCase {
 			filepath.Join(provider, "daemon"),
 		},
 		{
-			"ProInstancesDir",
-			func() (string, error) { return pm.ProInstancesDir("ctx") },
+			"PlatformInstancesDir",
+			func() (string, error) { return pm.PlatformInstancesDir("ctx") },
 			filepath.Join(context, "pro_instances"),
 		},
 		{
-			"ProInstanceDir",
-			func() (string, error) { return pm.ProInstanceDir("ctx", "host") },
+			"PlatformInstanceDir",
+			func() (string, error) { return pm.PlatformInstanceDir("ctx", "host") },
 			filepath.Join(context, "pro_instances", "host"),
 		},
 		{

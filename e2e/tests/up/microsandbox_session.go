@@ -111,10 +111,7 @@ func (s *microsandboxTestSession) newWorkspace() string {
 }
 
 func (s *microsandboxTestSession) copyWorkspace(source string) string {
-	workspace, err := framework.CopyToTempDir(source)
-	framework.ExpectNoError(err)
-	ginkgo.DeferCleanup(framework.CleanupTempDir, s.initialDir, workspace)
-	return workspace
+	return framework.CopyTestdata(source, s.initialDir)
 }
 
 func (s *microsandboxTestSession) addProvider(ctx context.Context, source, name string) {

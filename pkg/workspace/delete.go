@@ -37,22 +37,11 @@ type DeleteOptions struct {
 func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 	client := opts.Client
 	if client == nil {
-		err := progress.RunStep(
-			ctx,
-			progress.PhaseDeletingWorkspace,
-			"Loading workspace",
-			func(ctx context.Context) error {
-				var err error
-				client, err = Get(
-					ctx,
-					GetOptions{DevsyConfig: opts.DevsyConfig, Args: opts.Args, Owner: opts.Owner},
-				)
-				return err
-			},
-		)
+		loaded, err := loadDeleteClient(ctx, opts)
 		if err != nil {
 			return handleDeleteLoadError(ctx, opts, err)
 		}
+		client = loaded
 	}
 
 	defer opener.KillBrowserTunnel(client.Context(), client.Workspace())
@@ -64,18 +53,7 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 	}
 
 	if !opts.Force && client.WorkspaceConfig().Imported {
-		var id string
-		err := progress.RunStep(
-			ctx,
-			progress.PhaseDeletingWorkspace,
-			"Removing local workspace",
-			func(context.Context) error {
-				var err error
-				id, _, err = deleteImportedWorkspace(client, opts)
-				return err
-			},
-		)
-		return id, err
+		return removeImportedLocalWorkspace(ctx, client, opts)
 	}
 
 	unlock, status, err := checkBeforeDelete(ctx, client, opts)
@@ -92,8 +70,60 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 
 	stopIfRunning(ctx, client, status)
 
+	id, err := removeWorkspaceResources(ctx, client, opts)
+	if err != nil {
+		return id, err
+	}
+	return id, cleanupDeletedWorkspaceFiles(ctx, opts)
+}
+
+func loadDeleteClient(
+	ctx context.Context,
+	opts DeleteOptions,
+) (client2.BaseWorkspaceClient, error) {
+	var client client2.BaseWorkspaceClient
+	err := progress.RunStep(
+		ctx,
+		progress.PhaseDeletingWorkspace,
+		"Loading workspace",
+		func(ctx context.Context) error {
+			var err error
+			client, err = Get(
+				ctx,
+				GetOptions{DevsyConfig: opts.DevsyConfig, Args: opts.Args, Owner: opts.Owner},
+			)
+			return err
+		},
+	)
+	return client, err
+}
+
+func removeImportedLocalWorkspace(
+	ctx context.Context,
+	client client2.BaseWorkspaceClient,
+	opts DeleteOptions,
+) (string, error) {
 	var id string
-	err = progress.RunStep(
+	err := progress.RunStep(
+		ctx,
+		progress.PhaseDeletingWorkspace,
+		"Removing local workspace",
+		func(context.Context) error {
+			var err error
+			id, _, err = deleteImportedWorkspace(client, opts)
+			return err
+		},
+	)
+	return id, err
+}
+
+func removeWorkspaceResources(
+	ctx context.Context,
+	client client2.BaseWorkspaceClient,
+	opts DeleteOptions,
+) (string, error) {
+	var id string
+	err := progress.RunStep(
 		ctx,
 		progress.PhaseDeletingWorkspace,
 		"Removing workspace resources",
@@ -103,19 +133,20 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 			return err
 		},
 	)
-	if err == nil {
-		err = progress.RunStep(
-			ctx,
-			progress.PhaseDeletingWorkspace,
-			"Cleaning local files",
-			func(context.Context) error {
-				SweepOrphanWorkspaceDirs(opts.DevsyConfig.DefaultContext)
-				SweepOrphanContentDirs(opts.DevsyConfig.DefaultContext)
-				return nil
-			},
-		)
-	}
 	return id, err
+}
+
+func cleanupDeletedWorkspaceFiles(ctx context.Context, opts DeleteOptions) error {
+	return progress.RunStep(
+		ctx,
+		progress.PhaseDeletingWorkspace,
+		"Cleaning local files",
+		func(context.Context) error {
+			SweepOrphanWorkspaceDirs(opts.DevsyConfig.DefaultContext)
+			SweepOrphanContentDirs(opts.DevsyConfig.DefaultContext)
+			return nil
+		},
+	)
 }
 
 // stopIfRunning stops the workspace before deletion when it is currently

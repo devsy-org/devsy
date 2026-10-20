@@ -62,7 +62,7 @@ func reconcilePlatformWorkspaces(
 	// legitimately gone and those where the host was temporarily unreachable.
 	cleanedLocalWorkspaces := []*providerpkg.Workspace{}
 	for _, localWorkspace := range localWorkspaces {
-		if localWorkspace.IsPro() &&
+		if localWorkspace.IsPlatform() &&
 			shouldDeleteLocalWorkspace(ctx, localWorkspace, platformWorkspaceResults) {
 			deleteLocalWorkspace(devsyConfig, localWorkspace)
 			continue
@@ -156,7 +156,7 @@ func loadLocalWorkspaceEntry(
 		return nil
 	}
 
-	if skipPlatform && workspaceConfig.IsPro() {
+	if skipPlatform && workspaceConfig.IsPlatform() {
 		return nil
 	}
 
@@ -316,7 +316,7 @@ func platformWorkspaceFromInstance(
 		},
 		LastUsedTimestamp: platformWorkspaceLastUsed(instance),
 		CreationTimestamp: platformWorkspaceCreationTimestamp(instance),
-		Pro: &providerpkg.ProMetadata{
+		Platform: &providerpkg.PlatformMetadata{
 			InstanceName: instance.GetName(),
 			Project:      instance.GetLabels()[config.K8sProjectLabel],
 			DisplayName:  instance.Spec.DisplayName,

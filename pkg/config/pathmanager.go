@@ -27,7 +27,7 @@ func joinUnder(parent func() (string, error), elems ...string) (string, error) {
 //	    ├── contents/<id>                   (WorkspaceContentsDir/WorkspaceContentDir - parent never removed)
 //	    ├── machines/<id>                   (MachineDir)
 //	    ├── providers/<name>/{binaries,daemon} (ProviderDir)
-//	    ├── pro_instances/<id>              (ProInstanceDir)
+//	    ├── pro_instances/<id>              (PlatformInstanceDir)
 //	    └── locks/                          (LocksDir)
 //	CacheDir()                              (default $HOME/.cache/devsy, or $DEVSY_HOME/cache when set)
 //	├── agents/, providers/, features/<hash>/, platform/, keys/
@@ -70,8 +70,8 @@ type PathManager interface {
 	ProviderDir(context, providerName string) (string, error)
 	ProviderBinariesDir(context, providerName string) (string, error)
 	ProviderDaemonDir(context, providerName string) (string, error)
-	ProInstancesDir(context string) (string, error)
-	ProInstanceDir(context, proInstanceHost string) (string, error)
+	PlatformInstancesDir(context string) (string, error)
+	PlatformInstanceDir(context, platformInstanceHost string) (string, error)
 	LocksDir(context string) (string, error)
 
 	// Cache sub-paths.
@@ -204,12 +204,14 @@ func (b *basePathManager) ProviderDaemonDir(context, providerName string) (strin
 	return b.inContext(context, "providers", providerName, "daemon")
 }
 
-func (b *basePathManager) ProInstancesDir(context string) (string, error) {
+func (b *basePathManager) PlatformInstancesDir(context string) (string, error) {
 	return b.inContext(context, "pro_instances")
 }
 
-func (b *basePathManager) ProInstanceDir(context, proInstanceHost string) (string, error) {
-	return b.inContext(context, "pro_instances", proInstanceHost)
+func (b *basePathManager) PlatformInstanceDir(
+	context, platformInstanceHost string,
+) (string, error) {
+	return b.inContext(context, "pro_instances", platformInstanceHost)
 }
 
 func (b *basePathManager) LocksDir(context string) (string, error) {

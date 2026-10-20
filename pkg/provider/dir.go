@@ -16,17 +16,17 @@ import (
 )
 
 const (
-	WorkspaceConfigFile   = "workspace.json"
-	WorkspaceResultFile   = "workspace_result.json"
-	MachineConfigFile     = "machine.json"
-	ProInstanceConfigFile = "pro.json"
-	ProviderConfigFile    = "provider.json"
+	WorkspaceConfigFile        = "workspace.json"
+	WorkspaceResultFile        = "workspace_result.json"
+	MachineConfigFile          = "machine.json"
+	PlatformInstanceConfigFile = "pro.json"
+	ProviderConfigFile         = "provider.json"
 
 	DaemonStateFile = config.BinaryName + "_ts.state"
 )
 
-func GetProInstancesDir(context string) (string, error) {
-	return config.DefaultPathManager().ProInstancesDir(context)
+func GetPlatformInstancesDir(context string) (string, error) {
+	return config.DefaultPathManager().PlatformInstancesDir(context)
 }
 
 func GetMachinesDir(context string) (string, error) {
@@ -110,23 +110,27 @@ func GetWorkspaceLogDir(context, workspaceID string) (string, error) {
 	return config.DefaultPathManager().WorkspaceLogDir(context, workspaceID)
 }
 
-func GetProInstanceDir(context, proInstanceHost string) (string, error) {
-	if err := requireID("pro instance host", proInstanceHost); err != nil {
+func GetPlatformInstanceDir(context, platformInstanceHost string) (string, error) {
+	if err := requireID("platform instance host", platformInstanceHost); err != nil {
 		return "", err
 	}
 
-	return config.DefaultPathManager().ProInstanceDir(context, ToProInstanceID(proInstanceHost))
+	return config.DefaultPathManager().
+		PlatformInstanceDir(context, ToPlatformInstanceID(platformInstanceHost))
 }
 
 var (
-	proInstanceIDRegEx1 = regexp.MustCompile(`[^\w\-]`)
-	proInstanceIDRegEx2 = regexp.MustCompile(`[^0-9a-z\-]+`)
+	platformInstanceIDRegEx1 = regexp.MustCompile(`[^\w\-]`)
+	platformInstanceIDRegEx2 = regexp.MustCompile(`[^0-9a-z\-]+`)
 )
 
-func ToProInstanceID(url string) string {
+func ToPlatformInstanceID(url string) string {
 	url = strings.TrimPrefix(url, "https://")
 	url = strings.ToLower(url)
-	url = proInstanceIDRegEx2.ReplaceAllString(proInstanceIDRegEx1.ReplaceAllString(url, "-"), "")
+	url = platformInstanceIDRegEx2.ReplaceAllString(
+		platformInstanceIDRegEx1.ReplaceAllString(url, "-"),
+		"",
+	)
 	url = strings.Trim(url, "-")
 	return id.SafeConcatNameMax([]string{url}, 32)
 }
@@ -141,13 +145,13 @@ func WorkspaceExists(context, workspaceID string) bool {
 	return err == nil
 }
 
-func ProInstanceExists(context, proInstanceID string) bool {
-	proDir, err := GetProInstanceDir(context, proInstanceID)
+func PlatformInstanceExists(context, platformInstanceID string) bool {
+	platformInstanceDir, err := GetPlatformInstanceDir(context, platformInstanceID)
 	if err != nil {
 		return false
 	}
 
-	_, err = os.Stat(proDir)
+	_, err = os.Stat(platformInstanceDir)
 	return err == nil
 }
 
@@ -160,13 +164,13 @@ func SaveProviderConfig(context string, provider *ProviderConfig) error {
 	return saveJSON(providerDir, ProviderConfigFile, provider, 0o600)
 }
 
-func SaveProInstanceConfig(context string, proInstance *ProInstance) error {
-	proDir, err := GetProInstanceDir(context, proInstance.Host)
+func SavePlatformInstanceConfig(context string, platformInstance *PlatformInstance) error {
+	platformInstanceDir, err := GetPlatformInstanceDir(context, platformInstance.Host)
 	if err != nil {
 		return err
 	}
 
-	return saveJSON(proDir, ProInstanceConfigFile, proInstance, 0o600)
+	return saveJSON(platformInstanceDir, PlatformInstanceConfigFile, platformInstance, 0o600)
 }
 
 func SaveWorkspaceResult(workspace *Workspace, result *config2.Result) error {
@@ -305,13 +309,15 @@ func LoadMachineConfig(context, machineID string) (*Machine, error) {
 	return machineConfig, nil
 }
 
-func LoadProInstanceConfig(context, proInstanceHost string) (*ProInstance, error) {
-	proDir, err := GetProInstanceDir(context, proInstanceHost)
+func LoadPlatformInstanceConfig(context, platformInstanceHost string) (*PlatformInstance, error) {
+	platformInstanceDir, err := GetPlatformInstanceDir(context, platformInstanceHost)
 	if err != nil {
 		return nil, err
 	}
 
-	return loadJSON[ProInstance](filepath.Join(proDir, ProInstanceConfigFile))
+	return loadJSON[PlatformInstance](
+		filepath.Join(platformInstanceDir, PlatformInstanceConfigFile),
+	)
 }
 
 func LoadWorkspaceConfig(context, workspaceID string) (*Workspace, error) {

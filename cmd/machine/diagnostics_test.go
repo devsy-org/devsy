@@ -160,6 +160,180 @@ func TestRenderDiagnosticsTextIncludesWorkspaceInactivityDetails(t *testing.T) {
 	assert.Contains(t, text, "Workspace configuration is invalid")
 }
 
+type renderDiagnosticsTextCase struct {
+	name   string
+	result MachineDiagnostics
+	want   string
+}
+
+func runRenderDiagnosticsTextCases(t *testing.T, tests []renderDiagnosticsTextCase) {
+	t.Helper()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output bytes.Buffer
+			require.NoError(t, renderDiagnosticsText(&output, tt.result))
+			assert.Equal(t, tt.want, output.String())
+		})
+	}
+}
+
+func diagnosticsTestTime(hour, minute int) time.Time {
+	return time.Date(2026, 10, 18, hour, minute, 0, 0, time.UTC)
+}
+
+func diagnosticsLocalClock(at time.Time) string {
+	return at.Local().Format("2006-01-02 15:04:05")
+}
+
+const diagnosticsTestWorkspaceID = "api"
+
+func diagnosticsTestFixture() (MachineInfo, CollectionSource) {
+	return MachineInfo{ID: "machine-1", State: "running"},
+		CollectionSource{Availability: "available", Freshness: "fresh"}
+}
+
+func TestRenderDiagnosticsTextWithoutDaemon(t *testing.T) {
+	machine, source := diagnosticsTestFixture()
+	header := "Machine            machine-1\nProvider state     running\nDiagnostics        available\n"
+
+	runRenderDiagnosticsTextCases(t, []renderDiagnosticsTextCase{
+		{
+			name:   "no daemon",
+			result: MachineDiagnostics{Machine: machine, Source: source},
+			want:   header,
+		},
+		{
+			name: "no daemon with diagnostic message",
+			result: MachineDiagnostics{
+				Machine: machine,
+				Source: CollectionSource{
+					Availability: "unavailable",
+					Freshness:    "unknown",
+					Message:      "agent offline",
+				},
+			},
+			want: "Machine            machine-1\nProvider state     running\nDiagnostics        unavailable\n" +
+				"Diagnostic detail  agent offline\n",
+		},
+	})
+}
+
+func TestRenderDiagnosticsTextWithDaemon(t *testing.T) {
+	machine, source := diagnosticsTestFixture()
+	lastPatrol := diagnosticsTestTime(10, 0)
+	daemonHeader := "Machine            machine-1\nProvider state     running\nDiagnostics        available\n" +
+		"Devsy daemon       healthy\nSnapshot freshness fresh\n"
+
+	runRenderDiagnosticsTextCases(t, []renderDiagnosticsTextCase{
+		{
+			name: "daemon without patrol",
+			result: MachineDiagnostics{
+				Machine: machine,
+				Source:  source,
+				Daemon:  &machinediagnostics.Status{Health: machinediagnostics.DaemonHealthy},
+			},
+			want: daemonHeader + "Last patrol        Not yet observed\nWorkspaces         0\n",
+		},
+		{
+			name: "shutdown candidate without eligibility time",
+			result: MachineDiagnostics{
+				Machine: machine,
+				Source:  source,
+				Daemon: &machinediagnostics.Status{
+					Health:         machinediagnostics.DaemonHealthy,
+					LastPatrolAt:   &lastPatrol,
+					WorkspaceCount: 1,
+					ShutdownCandidate: &machinediagnostics.ShutdownCandidate{
+						WorkspaceID: diagnosticsTestWorkspaceID,
+					},
+				},
+			},
+			want: daemonHeader + "Last patrol        " + diagnosticsLocalClock(lastPatrol) + "\n" +
+				"Workspaces         1\n" +
+				"Shutdown candidate " + diagnosticsTestWorkspaceID + " (eligible now)\n",
+		},
+	})
+}
+
+func TestRenderDiagnosticsTextFullReport(t *testing.T) {
+	lastPatrol := diagnosticsTestTime(10, 0)
+	lastActivity := diagnosticsTestTime(9, 45)
+	deadline := diagnosticsTestTime(10, 30)
+	want := "Machine            machine-1\nProvider state     running\nDiagnostics        available\n" +
+		"Devsy daemon       degraded\n" +
+		"Snapshot freshness fresh\n" +
+		"Last patrol        " + diagnosticsLocalClock(
+		lastPatrol,
+	) + "\n" +
+		"Workspaces         2\n" +
+		"Last daemon error  provider timeout (patrol_failed, 2026-10-18T09:55:00Z)\n" +
+		"Shutdown candidate " + diagnosticsTestWorkspaceID + " (eligible " + diagnosticsLocalClock(
+		deadline,
+	) + ")\n" +
+		"\nWorkspace inactivity:\n" +
+		"WORKSPACE  STATE   LAST ACTIVITY        MACHINE SHUTDOWN STATUS\n" +
+		diagnosticsTestWorkspaceID + "        active  " + diagnosticsLocalClock(
+		lastActivity,
+	) + "  " +
+		diagnosticsLocalClock(
+			deadline,
+		) + "\n" +
+		"docs       busy    -                    Delayed while workspace is busy\n" +
+		"2026-10-18T10:05:00Z warn  patrol.failed provider timeout\n"
+
+	runRenderDiagnosticsTextCases(t, []renderDiagnosticsTextCase{
+		{
+			name:   "daemon with error, eligible candidate, workspaces, and events",
+			result: diagnosticsFullReportResult(lastPatrol, lastActivity, deadline),
+			want:   want,
+		},
+	})
+}
+
+func diagnosticsFullReportResult(lastPatrol, lastActivity, deadline time.Time) MachineDiagnostics {
+	machine, source := diagnosticsTestFixture()
+	errorAt := diagnosticsTestTime(9, 55)
+	eventAt := diagnosticsTestTime(10, 5)
+	return MachineDiagnostics{
+		Machine: machine,
+		Source:  source,
+		Daemon: &machinediagnostics.Status{
+			Health:         machinediagnostics.DaemonDegraded,
+			LastPatrolAt:   &lastPatrol,
+			WorkspaceCount: 2,
+			LastError: &machinediagnostics.DiagnosticError{
+				Code:      "patrol_failed",
+				Message:   "provider timeout",
+				Timestamp: errorAt,
+			},
+			ShutdownCandidate: &machinediagnostics.ShutdownCandidate{
+				WorkspaceID: diagnosticsTestWorkspaceID,
+				EligibleAt:  &deadline,
+			},
+			Workspaces: []machinediagnostics.WorkspaceStatus{
+				{
+					ID:             diagnosticsTestWorkspaceID,
+					State:          machinediagnostics.WorkspaceActive,
+					LastActivityAt: &lastActivity,
+					IdleDeadlineAt: &deadline,
+				},
+				{ID: "docs", State: machinediagnostics.WorkspaceBusy},
+			},
+		},
+		Events: []machinediagnostics.Event{
+			{
+				SchemaVersion: machinediagnostics.SchemaVersion,
+				SessionID:     "session-1",
+				Sequence:      1,
+				Timestamp:     eventAt,
+				Level:         machinediagnostics.LevelWarn,
+				Type:          machinediagnostics.EventPatrolFailed,
+				Message:       "provider timeout",
+			},
+		},
+	}
+}
+
 func TestWorkspaceAutoStopDetailMarksPastDeadlineEligibleNow(t *testing.T) {
 	deadline := time.Now().Add(-time.Minute)
 	detail := workspaceAutoStopDetail(machinediagnostics.WorkspaceStatus{

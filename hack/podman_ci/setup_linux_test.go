@@ -210,7 +210,7 @@ func TestLinuxRootfulServiceContents(t *testing.T) {
 	}
 	var serviceContents string
 	runner.fn = func(c recordedCommand) CommandResult {
-		if len(c.args) == 5 && slices.Equal(c.args[:3], []string{"install", "-m", "0644"}) {
+		if len(c.args) == 5 && slices.Equal(c.args[:3], []string{commandInstall, "-m", "0644"}) {
 			contents, err := os.ReadFile(c.args[3])
 			if err != nil {
 				t.Fatalf("read temporary service file: %v", err)

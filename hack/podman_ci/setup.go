@@ -25,11 +25,14 @@ func (osFileSystem) OpenAppend(path string) (io.WriteCloser, error) {
 }
 
 type Dependencies struct {
-	Runner Runner
-	Clock  Clock
-	Log    *Logger
-	Files  FileSystem
-	Budget *Budget
+	Runner         Runner
+	Clock          Clock
+	Log            *Logger
+	Files          FileSystem
+	Budget         *Budget
+	Download       Downloader
+	NewClusterName ClusterNamer
+	CreateCluster  ClusterCreator
 }
 
 func newRootCommand() *cobra.Command {
@@ -40,6 +43,8 @@ func newRootCommand() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.AddCommand(newSetupCommand())
+	root.AddCommand(newInstallCommand())
+	root.AddCommand(newInstallKindCommand())
 	return root
 }
 
@@ -60,7 +65,7 @@ func newSetupCommand() *cobra.Command {
 				Log:    logger,
 				Files:  osFileSystem{},
 			}
-			return classifySetupError(setup(context.Background(), deps, cfg))
+			return classifyOperationalError(setup(context.Background(), deps, cfg))
 		},
 	}
 	cmd.Flags().StringVar(&cfg.PodmanPath, "podman-path", cfg.PodmanPath, "Podman executable path")

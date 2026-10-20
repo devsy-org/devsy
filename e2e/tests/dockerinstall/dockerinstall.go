@@ -25,11 +25,9 @@ var _ = ginkgo.Describe(
 		ginkgo.It("should install Docker when not present", func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 
-			tempDir, err := framework.CopyToTempDir("tests/up/testdata/docker")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			tempDir := framework.CopyTestdata("tests/up/testdata/docker", initialDir)
 
-			err = f.DevsyProviderAdd(ctx, "docker")
+			err := f.DevsyProviderAdd(ctx, "docker")
 			framework.ExpectNoError(err)
 			err = f.DevsyProviderUse(ctx, "docker")
 			framework.ExpectNoError(err)

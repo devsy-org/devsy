@@ -208,7 +208,7 @@ func passiveProcessEnvironment(homes string) []string {
 		config.EnvConfig,
 		config.EnvDisableTelemetry,
 		config.EnvUI,
-		config.EnvProRunner,
+		config.EnvPlatformRunner,
 		"HOME",
 		"USERPROFILE",
 		"XDG_CONFIG_HOME",

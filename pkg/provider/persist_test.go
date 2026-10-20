@@ -26,9 +26,9 @@ func TestRequireID(t *testing.T) {
 		{name: "empty machine id", kind: "machine id", wantErr: "machine id is empty"},
 		{name: "empty workspace id", kind: "workspace id", wantErr: "workspace id is empty"},
 		{
-			name:    "empty pro instance host",
-			kind:    "pro instance host",
-			wantErr: "pro instance host is empty",
+			name:    "empty platform instance host",
+			kind:    "platform instance host",
+			wantErr: "platform instance host is empty",
 		},
 	}
 	for _, tt := range tests {
