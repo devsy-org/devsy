@@ -52,7 +52,7 @@ func NewAddCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 
 	c := &cobra.Command{
 		Use:   "add <cluster-name>",
-		Short: "Add current cluster to Devsy Pro",
+		Short: "Add current cluster to Devsy Platform",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)

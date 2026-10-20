@@ -10,7 +10,7 @@ import (
 func NewClusterCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cluster",
-		Short: "Manage Devsy Pro clusters",
+		Short: "Manage Devsy Platform clusters",
 		Args:  cobra.NoArgs,
 	}
 	cmd.AddCommand(NewAddCmd(globalFlags))

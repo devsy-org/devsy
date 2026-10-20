@@ -10,7 +10,7 @@ import (
 func NewTemplateCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "template",
-		Short: "Manage Devsy Pro templates",
+		Short: "Manage Devsy Platform templates",
 		Args:  cobra.NoArgs,
 	}
 	cmd.AddCommand(NewListCmd(globalFlags))

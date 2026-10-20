@@ -9,7 +9,7 @@ import (
 func NewUserCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "user",
-		Short: "Manage Devsy Pro users",
+		Short: "Manage Devsy Platform users",
 		Args:  cobra.NoArgs,
 	}
 	cmd.AddCommand(NewResetPasswordCmd(globalFlags))

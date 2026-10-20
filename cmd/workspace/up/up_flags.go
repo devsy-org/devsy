@@ -199,7 +199,7 @@ func (cmd *UpCmd) registerWorkspaceIdentityFlags(upCmd *cobra.Command) {
 		flags.StringArray(&cmd.ProviderOptions, names.ProviderOption, nil,
 			"Provider option (KEY=VALUE, repeatable)"),
 		flags.Bool(&cmd.Reconfigure, names.Reconfigure, false,
-			"Reconfigure this workspace's options (Devsy Pro only)"),
+			"Reconfigure this workspace's options (Devsy Platform only)"),
 		flags.Bool(&cmd.Prebuild, names.Prebuild, false,
 			"Run only the prebuild lifecycle (onCreateCommand + updateContentCommand), then stop"),
 		flags.Bool(&cmd.Pull, names.Pull, false, "Pull a newer base image when building"),
