@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -168,6 +169,53 @@ func TestPushBlobStreaming_RejectsInvalidRepositoryBeforeSpooling(t *testing.T) 
 
 	require.ErrorContains(t, err, "parse repository")
 	require.Equal(t, len("never read"), src.Len())
+	require.Empty(t, spoolFilesIn(t, spoolDir))
+}
+
+// panicReader and goexitReader simulate a source that aborts mid-copy.
+type panicReader struct{}
+
+func (panicReader) Read([]byte) (int, error) { panic("source exploded") }
+
+type goexitReader struct{}
+
+func (goexitReader) Read([]byte) (int, error) {
+	runtime.Goexit()
+	return 0, nil
+}
+
+func TestPushBlobStreaming_RemovesSpoolWhenReaderPanics(t *testing.T) {
+	spoolDir := isolateTempDir(t)
+	host := newTestRegistry(t)
+
+	require.PanicsWithValue(t, "source exploded", func() {
+		_, _, _ = PushBlobStreaming(
+			context.Background(),
+			host+"/acme/snapshots",
+			VolumesMediaType,
+			panicReader{},
+		)
+	})
+
+	require.Empty(t, spoolFilesIn(t, spoolDir))
+}
+
+func TestPushBlobStreaming_RemovesSpoolWhenReaderGoexits(t *testing.T) {
+	spoolDir := isolateTempDir(t)
+	host := newTestRegistry(t)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		_, _, _ = PushBlobStreaming(
+			context.Background(),
+			host+"/acme/snapshots",
+			VolumesMediaType,
+			goexitReader{},
+		)
+	}()
+	<-done
+
 	require.Empty(t, spoolFilesIn(t, spoolDir))
 }
 

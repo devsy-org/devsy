@@ -148,15 +148,23 @@ func spoolBlob(r io.Reader) (spooledBlob, error) {
 		return spooledBlob{}, fmt.Errorf("create temp file for blob spool: %w", err)
 	}
 	blob := spooledBlob{path: f.Name()}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			// Close before remove: Windows cannot delete an open file. Also runs on panic or runtime.Goexit from r.
+			_ = f.Close()
+			blob.remove()
+		}
+	}()
 
 	blob.size, err = copyToSpool(f, r)
 	if err == nil {
 		blob.digest, err = digestOfFile(blob.path)
 	}
 	if err != nil {
-		blob.remove()
 		return spooledBlob{}, err
 	}
+	handedOff = true
 	return blob, nil
 }
 
