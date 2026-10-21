@@ -110,6 +110,8 @@ The corrected script (`61d88ef1fd4394f35026d2c57cf3a3e29562385e2e8799a35a7f2fb09
 
 The actual bundled BusyBox `su` wrapper also preserved empty and hostile literal arguments byte-for-byte and live stdin on both architectures, using the existing root account from a root process. This verifies shell/argument compatibility, not non-root privilege escalation. Both diagnostic containers were removed after validation.
 
+Persistent `TestPrivilegedInstallerModesLiveStream` and `TestPrivilegedInstallerFailureStatus` exercise the real dispatcher in sudo/su mode using strict test doubles. The doubles validate invocation flags and pass the requested code unchanged to a real POSIX shell; markers stay off protocol stdout. Actual `Inject` sequencing checks hostile paths/URLs, exact binary and live NUL-containing bytes, one `done`, and failure status 37. These deterministic tests require no host privilege operation and complement, rather than replace, the real-tool evidence above.
+
 Follow-ups remain precise: investigate Kubernetes staging diagnostics/stream closure in the Dockerless filesystem transition, and provide an explicit diagnostic stream for staged-file cleanup rather than submitting an all-false exec stream request. This change preserves native argv routing and configured interactive shells. SSH provider bootstrapping still requires `/bin/sh` before the core script executes.
 
 ## T9 boundary audit and release coordination
