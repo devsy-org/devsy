@@ -112,12 +112,11 @@ protoc -I . tunnel.proto --go_out=. --go_opt=paths=source_relative --go-grpc_out
 '''
 
 [tasks."cli:test"]
-description = "run devsy unit tests"
+description = "run the unit-test tier defined in hack/ci/suites.yaml"
 shell = "bash -c"
 run = '''
 set -euo pipefail
-packages="$(go run ./hack/unit_test_packages)"
-go test -race -coverprofile=dist/profile.out -covermode=atomic $packages
+go run ./hack/ci unit --coverprofile=dist/profile.out
 '''
 
 [tasks."cli:test:e2e:build"]
