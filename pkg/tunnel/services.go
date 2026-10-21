@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -50,8 +52,10 @@ type RunServicesOptions struct {
 	Workspace                      *provider.Workspace
 	ConfigureDockerCredentials     bool
 	ConfigureGitCredentials        bool
+	ConfigureGitHubCredentials     bool
 	ConfigureGitSSHSignatureHelper bool
 	GitSSHSigningKey               string
+	HostOwner                      string
 	// ExtraListeners holds pre-bound listeners keyed by "host:port" so the
 	// helper can skip net.Listen and avoid a probe-to-listen TOCTOU race.
 	ExtraListeners map[string]net.Listener
@@ -112,6 +116,7 @@ func runTunnelServer(ctx context.Context, cancel context.CancelFunc, p tunnelSer
 		p.forwarder,
 		p.opts.Workspace,
 		tunnelserver.WithPlatformOptions(p.opts.PlatformOptions),
+		tunnelserver.WithAllowGitHubCredentials(p.opts.ConfigureGitHubCredentials),
 	)
 	if err != nil {
 		p.errChan <- fmt.Errorf("run tunnel server: %w", err)
@@ -155,6 +160,10 @@ func buildCredentialsCommand(ctx context.Context, opts RunServicesOptions) strin
 	)
 	if opts.ConfigureGitCredentials {
 		command += " --configure-git-helper"
+	}
+	if opts.ConfigureGitHubCredentials {
+		command += " --host-owner " + shellescape.Quote(opts.HostOwner)
+		command += " --configure-github-helper"
 	}
 	if opts.ConfigureGitSSHSignatureHelper {
 		workingDir := ""
@@ -216,13 +225,14 @@ func runServicesIteration(
 	}()
 
 	command := buildCredentialsCommand(ctx, opts)
+	diagnostic := &boundedPreparationOutput{}
 
 	err = devssh.Run(cancelCtx, devssh.RunOptions{
 		Client:  opts.ContainerClient,
 		Command: command,
 		Stdin:   stdinReader,
 		Stdout:  stdoutWriter,
-		Stderr:  writer,
+		Stderr:  io.MultiWriter(writer, diagnostic),
 	})
 	if err != nil {
 		// Drain errChan to allow goroutine to exit cleanly
@@ -230,7 +240,7 @@ func runServicesIteration(
 		case <-errChan:
 		default:
 		}
-		return err
+		return classifyServicesStartupError(err, diagnostic)
 	}
 	return <-errChan
 }
@@ -239,6 +249,9 @@ func runServicesIteration(
 // to run the credentials server remotely and the services server locally to
 // communicate with the container.
 func RunServices(ctx context.Context, opts RunServicesOptions) error {
+	if opts.HostOwner == "" {
+		opts.HostOwner = hostCredentialOwner()
+	}
 	exitAfterTimeout := getExitAfterTimeout(opts.DevsyConfig, opts.DisableIdleTimeout)
 
 	fp := portForwardParams{
@@ -264,8 +277,54 @@ func RunServices(ctx context.Context, opts RunServicesOptions) error {
 	}, func(err error) bool {
 		return ctx.Err() == nil
 	}, func() error {
-		return runServicesIteration(ctx, opts, forwardedPorts, resolver)
+		return runOptionalGitHubServices(ctx, opts, func(current RunServicesOptions) error {
+			return runServicesIteration(ctx, current, forwardedPorts, resolver)
+		})
 	})
+}
+
+func runOptionalGitHubServices(
+	ctx context.Context,
+	opts RunServicesOptions,
+	run func(RunServicesOptions) error,
+) error {
+	err := run(opts)
+	if !errors.Is(err, errUnsupportedGitHubServiceOptions) ||
+		!opts.ConfigureGitHubCredentials || ctx.Err() != nil {
+		return err
+	}
+	log.Debug("GitHub credential service unavailable; retrying other credential services")
+	opts.ConfigureGitHubCredentials = false
+	opts.HostOwner = ""
+	return run(opts)
+}
+
+var errUnsupportedGitHubServiceOptions = errors.New(
+	"agent does not support GitHub credential service options",
+)
+
+func classifyServicesStartupError(err error, diagnostic *boundedPreparationOutput) error {
+	var exit *devssh.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode == 0 || diagnostic.overflow {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(diagnostic.data))
+	for {
+		var record struct {
+			Kind    string `json:"kind"`
+			Message string `json:"message"`
+		}
+		if decoder.Decode(&record) != nil {
+			return err
+		}
+		if record.Kind != "error" {
+			continue
+		}
+		switch record.Message {
+		case "unknown flag: --host-owner", "unknown flag: --configure-github-helper":
+			return fmt.Errorf("%w: %w", errUnsupportedGitHubServiceOptions, err)
+		}
+	}
 }
 
 // buildPortAttributeResolver loads port attributes from the container result.

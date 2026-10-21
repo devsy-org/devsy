@@ -121,6 +121,43 @@ jobs:
           version: v2.13.2
           only-new-issues: true
 
+  # Native host tests: they execute the real `gh` CLI and, on macOS, the native
+  # keyring, so they run per host OS outside the unit tier's package list.
+  github-credential-host-tests:
+    name: GitHub Credential Host Tests (${{ matrix.runner }})
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+      - name: record native host and available CLI versions
+        run: |
+          go env GOOS GOARCH
+          gh --version
+      - name: execute native credential discovery and process-bound regressions
+        env:
+          DEVSY_TEST_REAL_GH: "1"
+          DEVSY_TEST_NATIVE_KEYRING: ${{ runner.os == 'macOS' && '1' || '0' }}
+        run: >-
+          go test -race -count=1 -v -timeout 5m ./pkg/ghcredentials
+          -run '^(TestNative.*|TestHostLookupEnvironmentAndGuestEnvironmentAreIndependent|TestRegisteredGuestDeclinesAmbiguousKeyringResult)$'
+      - name: test strict fixture report validation
+        run: go test -race -count=1 -v ./e2e/framework/ghfixture
+      - name: test native credential service boundaries
+        run: >-
+          go test -race -count=1 -v -timeout 2m ./pkg/tunnel ./pkg/credentials
+          -run '^(TestCredentials.*Host.*|TestOptionalGitHubService.*|TestServicesStartup.*)$'
+
   # Unit tier: every Go test that needs no running workspace. The steps per
   # runner are defined under `unit` in hack/ci/suites.yaml.
   unit-tests:
@@ -257,6 +294,8 @@ jobs:
             ${{ runner.os == 'Linux' && '--parallelism=1' || '' }}
         env:
           DEVSY_CLI_VERSION: v0.0.0
+          # Ubuntu 26.04 quotas /tmp: https://github.com/actions/runner-images/issues/14777
+          GOTMPDIR: ${{ runner.temp }}
 
       - name: disk usage after Linux snapshot
         if: always() && runner.os == 'Linux'
@@ -292,6 +331,23 @@ jobs:
         with:
           name: devsy-ci-microsandbox-linux
           path: ${{ runner.temp }}/devsy-ci-microsandbox
+
+      - name: build Linux GitHub credential fixtures
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+        run: |
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH="$arch" go build -trimpath -o "${RUNNER_TEMP}/ghfixture-linux-${arch}" ./e2e/cmd/ghfixture
+          done
+
+      - name: upload Linux GitHub credential fixtures
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ghfixture-linux
+          path: ${{ runner.temp }}/ghfixture-linux-*
 
       - name: build e2e test binary
         if: matrix.runner == 'ubuntu-latest' || matrix.runner == 'windows-latest'
@@ -570,6 +626,13 @@ jobs:
           name: e2e-test-${{ matrix.os }}
           path: ./e2e/
 
+      - name: download GitHub credential fixture
+        if: matrix.ghfixture_linux
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ghfixture-linux
+          path: ./e2e/bin/
+
       - name: setup executable
         shell: bash
         run: '"$CI_TOOL" e2e prepare --bin-src "$RUNNER_TEMP/devsy-bin" --e2e-dir ./e2e'
@@ -745,6 +808,7 @@ jobs:
       - lint
       - agent-skill
       - unit-tests
+      - github-credential-host-tests
       - provider-update-windows
       - licenses
       - build-cli

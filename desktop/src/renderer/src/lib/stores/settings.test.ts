@@ -3,8 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest"
 
 import {
   applyTheme,
+  CONTEXT_OPTION_KEYS,
   cycleTheme,
+  DEFAULT_CONTEXT_OPTIONS,
   getWorkspaceRecoveryState,
+  parseContextOptions,
   setWorkspaceRecoveryState,
   theme,
 } from "./settings.js"
@@ -105,5 +108,33 @@ describe("settings store", () => {
       })
       expect(getWorkspaceRecoveryState("ws-1")).toEqual({})
     })
+  })
+})
+
+describe("GitHub CLI context forwarding", () => {
+  it("defaults off for absent and empty options", () => {
+    expect(DEFAULT_CONTEXT_OPTIONS.githubCliCredentialForwarding).toBe(false)
+    expect(parseContextOptions({}).githubCliCredentialForwarding).toBe(false)
+    expect(
+      parseContextOptions({ SSH_INJECT_GITHUB_CREDENTIALS: { value: "" } })
+        .githubCliCredentialForwarding,
+    ).toBe(false)
+    expect(CONTEXT_OPTION_KEYS.githubCliCredentialForwarding).toBe(
+      "SSH_INJECT_GITHUB_CREDENTIALS",
+    )
+  })
+  it("stays independent from Git and Docker", () => {
+    const enabled = parseContextOptions({
+      SSH_INJECT_GITHUB_CREDENTIALS: { value: "true" },
+      SSH_INJECT_GIT_CREDENTIALS: { value: "false" },
+      SSH_INJECT_DOCKER_CREDENTIALS: { value: "false" },
+    })
+    expect(enabled.githubCliCredentialForwarding).toBe(true)
+    expect(enabled.gitCredentialForwarding).toBe(false)
+    expect(enabled.dockerCredentialForwarding).toBe(false)
+    expect(
+      parseContextOptions({ SSH_INJECT_GITHUB_CREDENTIALS: { value: "false" } })
+        .githubCliCredentialForwarding,
+    ).toBe(false)
   })
 })

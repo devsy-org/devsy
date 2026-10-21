@@ -329,6 +329,18 @@ func (s *matrixSuite) TestEmbeddedManifestEntriesAreComplete() {
 	s.NotEmpty(seen)
 }
 
+// Footgun: the workflow downloads the GitHub fixture for suites that do not declare it, or
+// skips it for the suite that does.
+func (s *matrixSuite) TestGHFixtureFlag() {
+	linux := Suite{
+		Label:    "ssh",
+		Runner:   matrixUbuntuRunner,
+		Fixtures: []string{fixtureGHFixtureLinux},
+	}
+	s.True(newMatrixEntry(linux).GHFixtureLinux)
+	s.False(newMatrixEntry(Suite{Label: "ssh", Runner: matrixUbuntuRunner}).GHFixtureLinux)
+}
+
 func (s *matrixSuite) testManifest() *Manifest {
 	s.T().Helper()
 	m, err := ParseManifest([]byte(matrixTestManifest))

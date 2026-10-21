@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -57,6 +58,7 @@ type matrixEntry struct {
 	SetupPodmanLinux   bool   `json:"setup_podman_linux"`
 	SetupPodmanWindows bool   `json:"setup_podman_windows"`
 	NeedsPodmanHelper  bool   `json:"needs_podman_helper"`
+	GHFixtureLinux     bool   `json:"ghfixture_linux"`
 }
 
 // matrixCLI prints the job matrices for the PR workflow.
@@ -209,5 +211,6 @@ func newMatrixEntry(s Suite) matrixEntry {
 		SetupPodmanLinux:   setupPodmanLinux,
 		SetupPodmanWindows: setupPodmanWindows,
 		NeedsPodmanHelper:  setupPodmanLinux || setupPodmanWindows,
+		GHFixtureLinux:     linux && slices.Contains(s.Fixtures, fixtureGHFixtureLinux),
 	}
 }

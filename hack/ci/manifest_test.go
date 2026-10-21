@@ -210,6 +210,23 @@ func (s *manifestSuite) TestUnitStepRunsOn() {
 	s.False(posix.RunsOn(osWindows))
 }
 
+// Footgun: a typo in a fixture name, or a Linux-only fixture on a Windows runner, makes the
+// job download an artifact that cannot exist and fail late.
+func (s *manifestSuite) TestFixtureValidation() {
+	m, err := ParseManifest([]byte(testGroupsYAML +
+		"    - { group: integration, label: x, fixtures: [ghfixture-linux] }\n"))
+	s.Require().NoError(err)
+	s.Equal([]string{fixtureGHFixtureLinux}, s.mustFindIn(m, "x", "ubuntu-latest").Fixtures)
+
+	for _, entry := range []string{
+		"    - { group: integration, label: x, fixtures: [nope] }\n",
+		"    - { group: integration, label: x, runner: windows-latest, fixtures: [ghfixture-linux] }\n",
+	} {
+		_, err := ParseManifest([]byte(testGroupsYAML + entry))
+		s.ErrorIs(err, errInvalidSuite, entry)
+	}
+}
+
 func (s *manifestSuite) mustFind(label, runner string) Suite {
 	s.T().Helper()
 	return s.mustFindIn(s.m, label, runner)

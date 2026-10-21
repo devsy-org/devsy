@@ -859,6 +859,7 @@ switch (cmd) {
           DOTFILES_SCRIPT: { value: "" },
           SSH_INJECT_DOCKER_CREDENTIALS: { value: "true" },
           SSH_INJECT_GIT_CREDENTIALS: { value: "true" },
+          SSH_INJECT_GITHUB_CREDENTIALS: { value: "false" },
           GIT_SSH_SIGNATURE_FORWARDING: { value: "true" },
           SSH_AGENT_FORWARDING: { value: "true" },
           SSH_ADD_PRIVATE_KEYS: { value: "true" },
@@ -869,10 +870,28 @@ switch (cmd) {
           EXIT_AFTER_TIMEOUT: { value: "true" },
           SSH_CONFIG_PATH: { value: "" },
           SSH_CONFIG_INCLUDE_PATH: { value: "" },
+          ...(state.contextOptions?.[variableContext] || {}),
         })
         break
+      case "set": {
+        if (state.failContextSave) {
+          process.stderr.write("fixture context save failure\n")
+          process.exit(1)
+        }
+        const name = extra || variableContext
+        state.contextOptions ??= {}
+        state.contextOptions[name] ??= {}
+        for (let i = 0; i < rawArgs.length; i++) {
+          if (rawArgs[i] === "-o") {
+            const [key, ...values] = rawArgs[++i].split("=")
+            state.contextOptions[name][key] = {value: values.join("=")}
+          }
+        }
+        saveState(state)
+        out("")
+        break
+      }
       case "use":
-      case "set":
       case "create":
       case "delete":
         out("")

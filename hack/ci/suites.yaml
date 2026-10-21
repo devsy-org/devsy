@@ -67,6 +67,12 @@ unit:
       packages: [./e2e/framework/registryfixture]
       args: [-race, -count=1, -timeout=90s]
 
+    - name: github-api-oracle
+      description: Linux GitHub API oracle fixture
+      os: [linux]
+      packages: [./e2e/framework/ghfixture]
+      args: [-race, -count=1, -timeout=90s]
+
     - name: windows-transport
       description: native Windows Docker transport
       os: [windows]
@@ -114,6 +120,8 @@ e2e:
 
   # Labels executed by another workflow or intentionally not run in PR CI.
   ungated:
+    - label: gh-forwarding
+      reason: sub-label that always accompanies the ssh suite label
     - label: up-provider-podman-machine-bind
       reason: darwin-only spec that needs a local Podman machine; run manually on macOS
     - label: gpg
@@ -159,7 +167,7 @@ e2e:
     - { group: integration, label: tunnel, flake_attempts: 2 }
     - { group: integration, label: mcp }
     - { group: integration, label: provider, free_disk_space: true, install_kind: true, flake_attempts: 2 }
-    - { group: integration, label: ssh }
+    - { group: integration, label: ssh, fixtures: [ghfixture-linux] }
     - { group: integration, label: ssh-agent-forward }
     - { group: integration, label: ssh-ports-attributes }
     - { group: integration, label: ssh-tunnel-mode }

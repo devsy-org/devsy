@@ -3,7 +3,6 @@ package tunnel
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -12,6 +11,7 @@ import (
 
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/credentials"
 	"github.com/devsy-org/devsy/pkg/exitcode"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -39,7 +39,8 @@ type BrowserTunnelParams struct {
 
 	// DaemonStartFunc is called when the client is a DaemonClient.
 	// If nil, the SSH tunnel path is always used.
-	DaemonStartFunc func(ctx context.Context) error
+	DaemonStartFunc func(ctx context.Context, prepared func()) error
+	OnPrepared      func(ctx context.Context)
 
 	// DisableIdleTimeout opts forwarded ports out of the
 	// EXIT_AFTER_TIMEOUT idle shutdown. Set by callers whose lifecycle
@@ -59,7 +60,7 @@ func StartBrowserTunnel(ctx context.Context, p BrowserTunnelParams) error {
 	}
 
 	if p.DaemonStartFunc != nil {
-		return p.DaemonStartFunc(ctx)
+		return p.DaemonStartFunc(ctx, func() { notifyBrowserPrepared(ctx, p) })
 	}
 
 	return startBrowserTunnelSSH(ctx, p)
@@ -96,37 +97,56 @@ func runBrowserTunnelServices(
 	p BrowserTunnelParams,
 	containerClient *ssh.Client,
 ) error {
-	log.Infow("browser tunnel ready", "url", p.TargetURL, "done", "true")
+	return runPreparedBrowserServices(ctx, p, func(prepared func(credentials.Readiness)) error {
+		return RunPreparedServices(
+			ctx,
+			RunServicesOptions{
+				DevsyConfig:     p.DevsyConfig,
+				ContainerClient: containerClient,
+				User:            p.User,
+				ForwardPorts:    p.ForwardPorts,
+				ExtraPorts:      p.ExtraPorts,
+				Workspace:       p.Client.WorkspaceConfig(),
+				ConfigureDockerCredentials: p.DevsyConfig.ContextOption(
+					config.ContextOptionSSHInjectDockerCredentials,
+				) == config.BoolTrue,
+				ConfigureGitHubCredentials: p.DevsyConfig.ContextOption(
+					config.ContextOptionGitHubCLIForwarding,
+				) == config.BoolTrue,
+				ConfigureGitCredentials: p.DevsyConfig.ContextOption(
+					config.ContextOptionSSHInjectGitCredentials,
+				) == config.BoolTrue,
+				ConfigureGitSSHSignatureHelper: p.DevsyConfig.ContextOption(
+					config.ContextOptionGitSSHSignatureForwarding,
+				) == config.BoolTrue,
+				GitSSHSigningKey:   p.GitSSHSigningKey,
+				ExtraListeners:     p.ExtraListeners,
+				DisableIdleTimeout: p.DisableIdleTimeout,
+			},
+			prepared,
+		)
+	})
+}
 
-	err := RunServices(
-		ctx,
-		RunServicesOptions{
-			DevsyConfig:     p.DevsyConfig,
-			ContainerClient: containerClient,
-			User:            p.User,
-			ForwardPorts:    p.ForwardPorts,
-			ExtraPorts:      p.ExtraPorts,
-			Workspace:       p.Client.WorkspaceConfig(),
-			ConfigureDockerCredentials: p.DevsyConfig.ContextOption(
-				config.ContextOptionSSHInjectDockerCredentials,
-			) == config.BoolTrue,
-			ConfigureGitCredentials: p.DevsyConfig.ContextOption(
-				config.ContextOptionSSHInjectGitCredentials,
-			) == config.BoolTrue,
-			ConfigureGitSSHSignatureHelper: p.DevsyConfig.ContextOption(
-				config.ContextOptionGitSSHSignatureForwarding,
-			) == config.BoolTrue,
-			GitSSHSigningKey:   p.GitSSHSigningKey,
-			ExtraListeners:     p.ExtraListeners,
-			DisableIdleTimeout: p.DisableIdleTimeout,
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("run credentials server in browser tunnel: %w", err)
+func runPreparedBrowserServices(
+	ctx context.Context,
+	p BrowserTunnelParams,
+	run func(func(credentials.Readiness)) error,
+) error {
+	return run(func(status credentials.Readiness) {
+		log.Debugw("browser credentials prepared", "status", status.GitHubState)
+		notifyBrowserPrepared(ctx, p)
+	})
+}
+
+func notifyBrowserPrepared(ctx context.Context, p BrowserTunnelParams) {
+	if ctx.Err() != nil {
+		return
 	}
-
-	<-ctx.Done()
-	return nil
+	log.Infow("browser tunnel ready", "url", p.TargetURL, "done", "true")
+	if p.OnPrepared != nil {
+		p.OnPrepared(ctx)
+	}
 }
 
 // SetupBackhaul sets up a long-running SSH connection for backhaul.

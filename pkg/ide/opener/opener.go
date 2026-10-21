@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/credentials"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/ide/codeserver"
@@ -272,20 +273,20 @@ func makeDaemonStartFunc(
 	params IDEParams,
 	forwardPorts bool,
 	extraPorts []string,
-) func(ctx context.Context) error {
+) func(ctx context.Context, prepared func()) error {
 	daemonClient, ok := params.Client.(client2.DaemonClient)
 	if !ok {
 		return nil
 	}
 
-	return func(ctx context.Context) error {
+	return func(ctx context.Context, prepared func()) error {
 		toolClient, _, err := daemonClient.SSHClients(ctx, params.User)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = toolClient.Close() }()
 
-		err = clientimplementation.StartServicesDaemon(
+		return clientimplementation.RunPreparedServicesDaemon(
 			ctx,
 			clientimplementation.StartServicesDaemonOptions{
 				DevsyConfig:      params.DevsyConfig,
@@ -296,13 +297,11 @@ func makeDaemonStartFunc(
 				ExtraPorts:       extraPorts,
 				GitSSHSigningKey: params.GitSSHSigningKey,
 			},
+			func(status credentials.Readiness) {
+				pkglog.Debugw("browser credentials prepared", "status", status.GitHubState)
+				prepared()
+			},
 		)
-		if err != nil {
-			return err
-		}
-		<-ctx.Done()
-
-		return nil
 	}
 }
 

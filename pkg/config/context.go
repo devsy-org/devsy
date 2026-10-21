@@ -12,6 +12,7 @@ const (
 	ContextOptionGitSSHSignatureForwarding  = "GIT_SSH_SIGNATURE_FORWARDING"
 	ContextOptionSSHInjectDockerCredentials = "SSH_INJECT_DOCKER_CREDENTIALS"
 	ContextOptionSSHInjectGitCredentials    = "SSH_INJECT_GIT_CREDENTIALS"
+	ContextOptionGitHubCLIForwarding        = "SSH_INJECT_GITHUB_CREDENTIALS"
 	ContextOptionExitAfterTimeout           = "EXIT_AFTER_TIMEOUT"
 	ContextOptionTelemetry                  = "TELEMETRY"
 	ContextOptionAgentURL                   = "AGENT_URL"
@@ -30,6 +31,12 @@ const (
 )
 
 var ContextOptions = []ContextOption{
+	{
+		Name:        ContextOptionGitHubCLIForwarding,
+		Description: "Specifies if Devsy should forward host GitHub CLI authentication into the workspace",
+		Default:     BoolFalse,
+		Enum:        []string{BoolTrue, BoolFalse},
+	},
 	{
 		Name:        ContextOptionSSHAddPrivateKeys,
 		Description: "Specifies if Devsy should automatically add ssh-keys to the ssh-agent",

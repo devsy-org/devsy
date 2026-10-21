@@ -27,6 +27,8 @@ const (
 
 	defaultProviderMode = "parity"
 
+	fixtureGHFixtureLinux = "ghfixture-linux"
+
 	// runtimeDockerWSL is a Windows suite whose Docker daemon is a WSL2 fixture the workflow provisions.
 	runtimeDockerWSL = "docker-wsl"
 )
@@ -132,6 +134,8 @@ type Suite struct {
 	ProviderMode       string `yaml:"provider_mode"`
 	PerformanceCapture bool   `yaml:"performance_capture"`
 	Runtime            string `yaml:"runtime"`
+	// Fixtures names prebuilt artifacts the job downloads next to the e2e binary.
+	Fixtures []string `yaml:"fixtures"`
 
 	// Resolved is the effective privilege after group inheritance.
 	Resolved bool `yaml:"-"`
@@ -215,6 +219,9 @@ func (s Suite) validate() error {
 		return fmt.Errorf("%w: %s has install_podman %q", errInvalidSuite, s.Label, s.InstallPodman)
 	case s.requiresSpecCount() && s.ExpectedSpecCount <= 0:
 		return fmt.Errorf("%w: %s needs expected_spec_count", errInvalidSuite, s.Label)
+	}
+	if err := s.validateFixtures(); err != nil {
+		return err
 	}
 	return s.validateRuntime()
 }
@@ -331,4 +338,22 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// validateFixtures rejects unknown fixture names and Linux fixtures on other runners.
+func (s Suite) validateFixtures() error {
+	for _, name := range s.Fixtures {
+		if name != fixtureGHFixtureLinux {
+			return fmt.Errorf("%w: %s has unknown fixture %q", errInvalidSuite, s.Label, name)
+		}
+		if s.OS() != osLinux {
+			return fmt.Errorf(
+				"%w: %s needs a Linux runner for fixture %q",
+				errInvalidSuite,
+				s.Label,
+				name,
+			)
+		}
+	}
+	return nil
 }

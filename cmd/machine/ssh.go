@@ -59,6 +59,7 @@ var (
 type SSHSessionOptions struct {
 	TermMode        string
 	InstallTerminfo bool
+	EnvVars         map[string]string
 }
 
 type StartSSHSessionOptions struct {
@@ -242,6 +243,11 @@ func RunSSHSession(ctx context.Context, sshClient *ssh.Client, options RunSSHSes
 		return err
 	}
 	defer func() { _ = session.Close() }()
+	for key, value := range options.SessionOptions.EnvVars {
+		if err := session.Setenv(key, value); err != nil {
+			return fmt.Errorf("set SSH session environment: %w", err)
+		}
+	}
 
 	if err := configureAgentForwarding(sshClient, session, options.AgentForwarding); err != nil {
 		return err
