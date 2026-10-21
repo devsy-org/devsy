@@ -158,6 +158,8 @@ func (s *manifestSuite) TestFindSuite() {
 	found, err := s.m.FindSuite("provider", "windows-latest")
 	s.Require().NoError(err)
 	s.Equal("windows-latest", found.Runner)
+	_, err = s.m.FindSuite("provider", "macos-latest")
+	s.ErrorIs(err, errInvalidSuite, "no provider suite runs on macos-latest")
 
 	_, err = s.m.FindSuite("no-such-label", "")
 	s.ErrorIs(err, errInvalidSuite)
@@ -251,6 +253,16 @@ func invalidSuiteCases() []manifestCase {
 			want: errUnknownGroup,
 		},
 		{
+			name: "empty label",
+			yaml: testGroupsYAML + "    - { group: integration, label: '' }\n",
+			want: errInvalidSuite,
+		},
+		{
+			name: "group without suite defaults",
+			yaml: "e2e:\n  groups:\n    bare: {}\n  suites:\n    - { group: bare, label: x }\n",
+			want: errInvalidSuite,
+		},
+		{
 			name: "duplicate runner and label",
 			yaml: testGroupsYAML +
 				"    - { group: integration, label: x }\n" +
@@ -292,6 +304,11 @@ func invalidUnitStepCases() []manifestCase {
 		{
 			name: "unit step without packages or discover",
 			yaml: "unit:\n  steps:\n    - name: bare\n",
+			want: errInvalidStep,
+		},
+		{
+			name: "unit step without name",
+			yaml: "unit:\n  steps:\n    - packages: [./pkg/x]\n",
 			want: errInvalidStep,
 		},
 		{

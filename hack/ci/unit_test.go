@@ -281,7 +281,7 @@ func (s *unitSuite) TestMissingTests() {
 }
 
 func (s *unitSuite) TestBusyboxRestoresShellWhenTestFails() {
-	h := s.harness(osLinux, func(line string) (string, error) {
+	h := s.actionsHarness(osLinux, func(line string) (string, error) {
 		if strings.HasPrefix(line, "readlink") {
 			return "dash\n", nil
 		}
@@ -304,7 +304,7 @@ func (s *unitSuite) TestBusyboxRestoresShellWhenTestFails() {
 }
 
 func (s *unitSuite) TestBusyboxRestoreFailureIsReported() {
-	h := s.harness(osLinux, func(line string) (string, error) {
+	h := s.actionsHarness(osLinux, func(line string) (string, error) {
 		if strings.HasPrefix(line, "readlink") {
 			return "dash\n", nil
 		}
@@ -319,7 +319,7 @@ func (s *unitSuite) TestBusyboxRestoreFailureIsReported() {
 }
 
 func (s *unitSuite) TestBusyboxFailsWhenShellIsNotSymlink() {
-	h := s.harness(osLinux, func(line string) (string, error) {
+	h := s.actionsHarness(osLinux, func(line string) (string, error) {
 		if strings.HasPrefix(line, "readlink") {
 			return "\n", nil
 		}
@@ -329,6 +329,24 @@ func (s *unitSuite) TestBusyboxFailsWhenShellIsNotSymlink() {
 	err := h.runner.runStep(s.step("linux-busybox"))
 	s.ErrorIs(err, errShellNotSymlink)
 	s.NotContains(h.fake.calls, "sudo ln -sf /bin/busybox /bin/sh")
+}
+
+func (s *unitSuite) TestBusyboxSkippedOutsideActions() {
+	h := s.harness(osLinux, func(line string) (string, error) {
+		if strings.Contains(line, "-list") {
+			return "TestBootstrap\n", nil
+		}
+		return "", nil
+	})
+
+	s.NoError(h.runner.runStep(s.step("linux-busybox")))
+	s.NotContains(h.fake.calls, "sudo apt-get update -qq")
+	s.NotContains(h.fake.calls, "sudo ln -sf /bin/busybox /bin/sh")
+	s.NotContains(h.fake.calls, "go test -race -count=1 -run ^TestBootstrap$ ./pkg/inject")
+	s.Contains(
+		h.stdout.String(),
+		"skipping linux-busybox: host_shell busybox runs only in GitHub Actions",
+	)
 }
 
 func (s *unitSuite) TestBusyboxRejectedOffLinux() {
@@ -562,4 +580,8 @@ func (s *unitSuite) step(name string) UnitStep {
 
 func (s *unitSuite) harness(goos string, respond func(string) (string, error)) *unitHarness {
 	return newUnitHarness(s.root, goos, nil, respond)
+}
+
+func (s *unitSuite) actionsHarness(goos string, respond func(string) (string, error)) *unitHarness {
+	return newUnitHarness(s.root, goos, map[string]string{gitHubActionsEnv: "true"}, respond)
 }

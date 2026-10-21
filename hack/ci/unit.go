@@ -211,10 +211,19 @@ func (u unitRunner) checkHostShell(step UnitStep) error {
 }
 
 func (u unitRunner) withHostShell(step UnitStep, run func() error) error {
-	if step.HostShell == hostShellBusybox {
-		return u.withBusyboxShell(run)
+	if step.HostShell != hostShellBusybox {
+		return run()
 	}
-	return run()
+	if !u.inActions() {
+		_, _ = fmt.Fprintf(
+			u.stdout,
+			"skipping %s: host_shell %s runs only in GitHub Actions\n",
+			step.Name,
+			hostShellBusybox,
+		)
+		return nil
+	}
+	return u.withBusyboxShell(run)
 }
 
 // withBusyboxShell points /bin/sh at BusyBox for the duration of run. The

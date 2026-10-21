@@ -377,7 +377,11 @@ func (r e2eRunner) kubeconfig() string {
 	if kubeconfig := r.getenv("KUBECONFIG"); kubeconfig != "" {
 		return kubeconfig
 	}
-	return filepath.Join(r.getenv("HOME"), ".kube", "config")
+	home := r.getenv("HOME")
+	if home == "" && r.opts.GOOS == osWindows {
+		home = r.getenv("USERPROFILE")
+	}
+	return filepath.Join(home, ".kube", "config")
 }
 
 func (r e2eRunner) dockerHost() string {

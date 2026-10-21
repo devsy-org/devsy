@@ -402,6 +402,18 @@ func (s *E2ECommandSuite) TestRunWindowsUsesExeWithoutSudo() {
 	s.Equal(e2eWantTestArgs(e2eTestTimeout, 1), spec.Args)
 }
 
+func (s *E2ECommandSuite) TestRunWindowsKubeconfigFallsBackToUserProfile() {
+	s.env["HOME"] = ""
+	s.env["USERPROFILE"] = `C:\Users\runner`
+
+	s.Require().NoError(s.runnerFor(osWindows).run(context.Background(), e2eTargetSuite(false)))
+
+	s.Require().Len(s.fake.specs, 1)
+	kubeconfig, ok := e2eEnvValue(s.fake.specs[0].Env, "KUBECONFIG")
+	s.True(ok)
+	s.Equal(filepath.Join(`C:\Users\runner`, ".kube", "config"), kubeconfig)
+}
+
 func (s *E2ECommandSuite) TestRunMacOSRunsDirectly() {
 	s.Require().NoError(s.runnerFor(osDarwin).run(context.Background(), e2eTargetSuite(true)))
 
