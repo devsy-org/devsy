@@ -13,6 +13,7 @@ import (
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/docker/docker/api/types/container"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -265,7 +266,25 @@ var _ = ginkgo.Describe("up command behaviors", ginkgo.Label("up-behaviors"), fu
 			gomega.Expect(ok).
 				To(gomega.BeTrue(), "stdout should contain a failed status envelope: %s", stdout)
 			gomega.Expect(envelope.Error.Message).
-				To(gomega.ContainSubstring("bind mount source path does not exist"))
+				To(gomega.ContainSubstring("failed to start dev container"))
+			gomega.Expect(envelope.Error.Message).To(gomega.ContainSubstring("/nonexistent/path"))
+			gomega.Expect(envelope.Error.Message).
+				NotTo(gomega.ContainSubstring("bind mount source path does not exist"))
+
+			workspace, err := dtc.f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+			ids, err := dtc.findWorkspaceContainer(ctx, workspace)
+			framework.ExpectNoError(err)
+			if len(ids) > 0 {
+				var details []container.InspectResponse
+				framework.ExpectNoError(dtc.dockerHelper.Inspect(ctx, ids, "container", &details))
+				gomega.Expect(details).To(gomega.HaveLen(len(ids)))
+				for _, detail := range details {
+					gomega.Expect(detail.State).NotTo(gomega.BeNil())
+					gomega.Expect(detail.State.Running).To(gomega.BeFalse(),
+						"failed up must not leave container %s running", detail.ID)
+				}
+			}
 		},
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 	)
