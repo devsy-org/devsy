@@ -72,7 +72,7 @@ func NewImportCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 
 func (cmd *ImportCmd) Run(ctx context.Context, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: devsy pro workspace import <devsy-pro-host>")
+		return fmt.Errorf("usage: devsy platform workspace import <devsy-platform-host>")
 	}
 
 	platformHost := args[0]

@@ -53,7 +53,7 @@ func NewSleepCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 			names.PreventWakeup,
 			-1,
 			"The amount of seconds this workspace should sleep until it can be woken up again (use 0 for infinite sleeping). "+
-				"During this time the space can only be woken up by `devsy pro workspace wakeup`, "+
+				"During this time the space can only be woken up by `devsy platform workspace wakeup`, "+
 				"manually deleting the annotation on the namespace or through the UI",
 		),
 	)
