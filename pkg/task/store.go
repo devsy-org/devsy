@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -96,7 +97,12 @@ func (s *Store) Get(id string) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path) // #nosec G304 -- path validated by s.path
+	file, err := openTaskFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read task %s: %w", id, err)
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("read task %s: %w", id, err)
 	}

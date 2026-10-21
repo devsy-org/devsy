@@ -3,6 +3,8 @@ package workspace
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -159,4 +161,17 @@ func TestQuiesceUpTasksBoundsEachCancellation(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
+}
+
+func TestQuiesceUpTasksRejectsUnverifiedTerminalLaunch(t *testing.T) {
+	dir := t.TempDir()
+	store, err := task.NewStoreAt(dir)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "interrupted.json"), []byte(
+		`{"id":"interrupted","command":"up","workspaceId":"ws-1","status":"failed","launchPending":true}`,
+	), 0o600))
+
+	err = QuiesceUpTasks(store, "ws-1")
+	require.ErrorContains(t, err, "cannot verify cleanup of a legacy abandoned launch")
+	assert.True(t, taskState(t, store, "interrupted").LaunchPending)
 }

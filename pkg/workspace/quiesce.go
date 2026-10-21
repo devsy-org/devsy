@@ -41,7 +41,7 @@ func quiesceUpTasks(
 	var errs []error
 	handled := 0
 	for _, state := range states {
-		if state.Status.Terminal() && !state.NeedsExitedWorkerCleanup() &&
+		if state.Status.Terminal() && !state.LaunchPending && !state.NeedsExitedWorkerCleanup() &&
 			!state.NeedsCanceledWorkerCleanup() {
 			continue
 		}
