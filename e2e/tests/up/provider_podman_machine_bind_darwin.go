@@ -46,9 +46,12 @@ type podmanMachineInspection struct {
 
 type (
 	podmanMachineName     struct{ Name string }
-	podmanMachineSecurity struct{ Rootless bool }
-	podmanMachineSocket   struct{ Path string }
-	podmanMachineHost     struct {
+	podmanMachineSecurity struct {
+		Rootless       bool
+		SELinuxEnabled bool
+	}
+	podmanMachineSocket struct{ Path string }
+	podmanMachineHost   struct {
 		Security     podmanMachineSecurity
 		Hostname     string
 		RemoteSocket podmanMachineSocket
@@ -140,7 +143,18 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 					NotTo(gomega.BeEmpty(), "selected connection must match a machine's SSH port and user")
 				gomega.Expect(endpoint.Hostname()).
 					To(gomega.BeElementOf("127.0.0.1", "localhost", "::1"))
-				guest := func(script string) string { return run(podmanMachineCommand, cmdSSH, machine, "sh -c "+quote(script)) }
+
+				// Machine SSH otherwise follows machine rootful mode instead of the selected connection's user.
+				guestSSHArgs := []string{
+					podmanMachineCommand,
+					cmdSSH,
+					"--username",
+					endpoint.User.Username(),
+					machine,
+				}
+				guest := func(script string) string {
+					return run(append(guestSSHArgs, "sh -c "+quote(script))...)
+				}
 				var info podmanMachineInfo
 				framework.ExpectNoError(
 					json.Unmarshal([]byte(run("info", podmanFormatFlag, podmanJSONFormat)), &info),
@@ -155,7 +169,8 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 					guest(`printf %s "$XDG_RUNTIME_DIR"`),
 				)
 				gomega.Expect(info.Host.Hostname).To(gomega.Equal(guest("hostname")))
-				gomega.Expect(endpoint.Path).To(gomega.Equal(info.Host.RemoteSocket.Path))
+				gomega.Expect(endpoint.Path).
+					To(gomega.Equal(strings.TrimPrefix(info.Host.RemoteSocket.Path, "unix://")))
 				gomega.Expect(guest(`id -un`)).To(gomega.Equal(endpoint.User.Username()))
 				ginkgo.GinkgoWriter.Printf(
 					"Podman version: %s; selected connection: %s; machine: %s\n",
@@ -174,8 +189,8 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 					cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 					defer cancel()
 					// #nosec G204 -- resolved Podman removes only the quoted directory created by this spec.
-					output, cleanupErr := exec.CommandContext(cleanupCtx, podman, podmanMachineCommand, cmdSSH, machine,
-						"sh -c "+quote("rm -rf -- "+quote(source))).
+					output, cleanupErr := exec.CommandContext(cleanupCtx, podman,
+						append(guestSSHArgs, "sh -c "+quote("rm -rf -- "+quote(source)))...).
 						CombinedOutput()
 					framework.ExpectNoError(cleanupErr, "remove owned guest fixture: %s", output)
 				})
@@ -191,22 +206,26 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 						source+podmanMarkerName,
 					),
 				)
+				snapshotFormat := "%a:%u:%g:%s:%Y"
+				if info.Host.Security.SELinuxEnabled {
+					// Label only the owned fixture so SELinux permits the unchanged readonly bind.
+					guest("chcon -t container_file_t -- " + quote(source+podmanMarkerName))
+					snapshotFormat += ":%C"
+				}
+
 				_, err = os.Stat(source + podmanMarkerName)
 				gomega.Expect(os.IsNotExist(err)).
 					To(gomega.BeTrue(), "fixture must be absent on macOS: %s", source)
 				gomega.Expect(guest("cat " + quote(source+podmanMarkerName))).
 					To(gomega.Equal(marker))
-				before := guest(
-					"stat -c '%a:%u:%g:%s:%Y' " + quote(
-						source,
-					) + " " + quote(
-						source+podmanMarkerName,
-					),
-				)
+				snapshotCommand := "stat -c " + quote(snapshotFormat) + " " + quote(source) + " " +
+					quote(source+podmanMarkerName)
+				before := guest(snapshotCommand)
 
 				initialDir, err := os.Getwd()
 				framework.ExpectNoError(err)
-				devsyHome, err := os.MkdirTemp("", "devsy-machine-bind-home-")
+				// Keep the SSH agent socket below the Darwin Unix socket path limit.
+				devsyHome, err := os.MkdirTemp("/tmp", "ds-")
 				framework.ExpectNoError(err)
 				ginkgo.DeferCleanup(func() { framework.ExpectNoError(os.RemoveAll(devsyHome)) })
 				previousHome, hadHome := os.LookupEnv(podmanHomeEnv)
@@ -246,7 +265,7 @@ var _ = ginkgo.Describe("Podman Machine engine-side bind sources",
 				framework.ExpectNoError(f.DevsyWorkspaceDelete(ctx, workspace))
 				gomega.Expect(guest("cat " + quote(source+podmanMarkerName))).
 					To(gomega.Equal(marker))
-				gomega.Expect(guest("stat -c '%a:%u:%g:%s:%Y' " + quote(source) + " " + quote(source+podmanMarkerName))).
+				gomega.Expect(guest(snapshotCommand)).
 					To(gomega.Equal(before))
 				_, err = os.Stat(source + podmanMarkerName)
 				gomega.Expect(os.IsNotExist(err)).To(gomega.BeTrue())
