@@ -169,6 +169,52 @@ func (s *matrixSuite) TestWindowsPodmanOnlySuiteMapping() {
 	}, entry)
 }
 
+func (s *matrixSuite) TestDockerWSLSuiteMapping() {
+	entry := newMatrixEntry(Suite{
+		Group:             groupIntegration,
+		Label:             "docker-wsl-provider",
+		Runner:            matrixWindowsRunner,
+		Resolved:          true,
+		TestTimeout:       matrixWindowsTimeout,
+		JobTimeoutMinutes: 20,
+		FlakeAttempts:     1,
+		ExpectedSpecCount: 3,
+		Runtime:           runtimeDockerWSL,
+	})
+
+	s.Equal(matrixEntry{
+		Name:              "docker-wsl-provider",
+		Title:             "Test docker-wsl-provider on windows-latest",
+		Runner:            matrixWindowsRunner,
+		OS:                osWindows,
+		Privileged:        true,
+		TestTimeout:       matrixWindowsTimeout,
+		JobTimeoutMinutes: 20,
+		FlakeAttempts:     1,
+		ExpectedSpecCount: 3,
+		Runtime:           runtimeDockerWSL,
+		SetupDockerWSL:    true,
+	}, entry)
+
+	line, err := json.Marshal(entry)
+	s.Require().NoError(err)
+	s.Contains(
+		string(line),
+		`"performance_capture":false,"runtime":"docker-wsl","setup_docker_wsl":true,"setup_kind_linux":false`,
+	)
+}
+
+func (s *matrixSuite) TestPlainSuiteHasNoRuntime() {
+	entry := newMatrixEntry(Suite{
+		Group:  groupIntegration,
+		Label:  matrixProviderLabel,
+		Runner: matrixUbuntuRunner,
+	})
+
+	s.Empty(entry.Runtime)
+	s.False(entry.SetupDockerWSL)
+}
+
 func (s *matrixSuite) TestSecretSuitesOmittedUnlessAvailable() {
 	m := s.testManifest()
 

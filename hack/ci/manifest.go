@@ -26,6 +26,9 @@ const (
 	podmanRootful  = "rootful"
 
 	defaultProviderMode = "parity"
+
+	// runtimeDockerWSL is a Windows suite whose Docker daemon is a WSL2 fixture the workflow provisions.
+	runtimeDockerWSL = "docker-wsl"
 )
 
 var (
@@ -128,6 +131,7 @@ type Suite struct {
 	ExpectedSpecCount  int    `yaml:"expected_spec_count"`
 	ProviderMode       string `yaml:"provider_mode"`
 	PerformanceCapture bool   `yaml:"performance_capture"`
+	Runtime            string `yaml:"runtime"`
 
 	// Resolved is the effective privilege after group inheritance.
 	Resolved bool `yaml:"-"`
@@ -209,14 +213,37 @@ func (s Suite) validate() error {
 		)
 	case !validPodmanMode(s.InstallPodman):
 		return fmt.Errorf("%w: %s has install_podman %q", errInvalidSuite, s.Label, s.InstallPodman)
-	case s.Group == groupMicrosandbox && s.ExpectedSpecCount <= 0:
+	case s.requiresSpecCount() && s.ExpectedSpecCount <= 0:
 		return fmt.Errorf("%w: %s needs expected_spec_count", errInvalidSuite, s.Label)
 	}
-	return nil
+	return s.validateRuntime()
 }
 
 func (s Suite) hasRequiredFields() bool {
 	return s.Runner != "" && s.TestTimeout != "" && s.JobTimeoutMinutes > 0 && s.FlakeAttempts > 0
+}
+
+// requiresSpecCount reports whether the suite must pin how many specs it selects.
+func (s Suite) requiresSpecCount() bool {
+	return s.Group == groupMicrosandbox || s.Runtime == runtimeDockerWSL
+}
+
+func (s Suite) validateRuntime() error {
+	switch {
+	case s.Runtime == "":
+		return nil
+	case s.Runtime != runtimeDockerWSL:
+		return fmt.Errorf("%w: %s has runtime %q", errInvalidSuite, s.Label, s.Runtime)
+	case s.OS() != osWindows:
+		return fmt.Errorf(
+			"%w: %s runtime %s needs a windows runner, not %s",
+			errInvalidSuite,
+			s.Label,
+			s.Runtime,
+			s.Runner,
+		)
+	}
+	return nil
 }
 
 // SuitesIn returns the resolved suites of one group in manifest order.

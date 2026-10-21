@@ -163,6 +163,20 @@ func (s *manifestSuite) TestFindSuite() {
 	s.ErrorIs(err, errInvalidSuite)
 }
 
+// Footgun: a docker-wsl suite is parsed without the Windows runner or the spec count that its
+// JSON report check depends on, or a plain integration suite is forced to pin a spec count.
+func (s *manifestSuite) TestRuntimeDockerWSLSuite() {
+	m, err := ParseManifest([]byte(testGroupsYAML +
+		"    - { group: integration, label: x, runner: windows-latest, runtime: docker-wsl, expected_spec_count: 2 }\n"))
+	s.Require().NoError(err)
+	wsl := s.mustFindIn(m, "x", "windows-latest")
+	s.Equal(runtimeDockerWSL, wsl.Runtime)
+	s.Equal(2, wsl.ExpectedSpecCount)
+
+	_, err = ParseManifest([]byte(testGroupsYAML + "    - { group: integration, label: y }\n"))
+	s.NoError(err, "integration suites without a runtime do not need expected_spec_count")
+}
+
 // Footgun: a rejected manifest is accepted because a validation rule was lost
 // in refactoring, letting a bad suite reach the CI matrix.
 func (s *manifestSuite) TestParseRejectsInvalidEntries() {
@@ -198,7 +212,12 @@ func (s *manifestSuite) TestUnitStepRunsOn() {
 
 func (s *manifestSuite) mustFind(label, runner string) Suite {
 	s.T().Helper()
-	found, err := s.m.FindSuite(label, runner)
+	return s.mustFindIn(s.m, label, runner)
+}
+
+func (s *manifestSuite) mustFindIn(m *Manifest, label, runner string) Suite {
+	s.T().Helper()
+	found, err := m.FindSuite(label, runner)
 	s.Require().NoError(err)
 	return found
 }
@@ -229,6 +248,23 @@ func invalidSuiteCases() []manifestCase {
 		{
 			name: "bad install_podman value",
 			yaml: testGroupsYAML + "    - { group: integration, label: x, install_podman: sometimes }\n",
+			want: errInvalidSuite,
+		},
+		{
+			name: "unknown runtime",
+			yaml: testGroupsYAML + "    - { group: integration, label: x, runtime: hyperv }\n",
+			want: errInvalidSuite,
+		},
+		{
+			name: "docker-wsl on a linux runner",
+			yaml: testGroupsYAML +
+				"    - { group: integration, label: x, runtime: docker-wsl, expected_spec_count: 1 }\n",
+			want: errInvalidSuite,
+		},
+		{
+			name: "docker-wsl without expected_spec_count",
+			yaml: testGroupsYAML +
+				"    - { group: integration, label: x, runner: windows-latest, runtime: docker-wsl }\n",
 			want: errInvalidSuite,
 		},
 	}

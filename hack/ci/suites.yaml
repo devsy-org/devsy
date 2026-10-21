@@ -38,7 +38,7 @@ unit:
 
     - name: e2e-runtime-helpers
       description: E2E runtime helper packages
-      packages: [./e2e/framework/runenv/..., ./e2e/framework/dockerwsl, ./e2e/cmd/devsy-ci]
+      packages: [./e2e/framework/runenv/..., ./e2e/framework/dockerwsl, ./e2e/framework/ginkgoreport, ./e2e/cmd/devsy-ci]
       args: [-race, -count=1, -timeout=5m]
 
     - name: e2e-framework
@@ -114,8 +114,6 @@ e2e:
 
   # Labels executed by another workflow or intentionally not run in PR CI.
   ungated:
-    - label: docker-internal-buildkit
-      reason: run by docker-buildkit-windows.yml
     - label: gpg
       reason: sub-label that always accompanies a gated suite label
     - label: microsandbox-builtin
@@ -220,6 +218,17 @@ e2e:
     - { group: integration, label: ssh-proxy-command, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
     - { group: integration, label: ssh-tunnel-mode, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
     - { group: integration, label: task-cancel, runner: windows-latest, install_podman: rootful, test_timeout: 900s, job_timeout_minutes: 20 }
+
+    # --- integration: Windows with a Docker Engine in WSL2, reached over SSH ---
+    # The workflow provisions the daemon with `devsy-ci docker-wsl setup`; the
+    # report must show exactly expected_spec_count specs passing first try.
+    - group: integration
+      label: docker-internal-buildkit
+      runner: windows-latest
+      runtime: docker-wsl
+      expected_spec_count: 6
+      test_timeout: 900s
+      job_timeout_minutes: 25
 
     # --- microsandbox ---
     - { group: microsandbox, label: up-provider-microsandbox, expected_spec_count: 2, performance_capture: true }

@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+
+	"github.com/devsy-org/devsy/e2e/framework/ginkgoreport"
 )
 
 const (
@@ -22,6 +24,8 @@ const (
 	devsyBinaryPrefix    = "devsy-"
 	executableMode       = fs.FileMode(0o755)
 	windowsDockerHost    = "npipe:////./pipe/podman-machine-default"
+	windowsDockerWSLHost = "npipe:////./pipe/devsy-ci-no-daemon"
+	reportNameSuffix     = "-report.json"
 
 	postCheckDockerInstalled = "docker-installed"
 	dockerBinary             = "docker"
@@ -43,10 +47,11 @@ type focusedChecksFunc func(context.Context, commandRunner, Suite, e2eOptions) e
 
 // e2eRunner executes one Ginkgo suite through the e2e binary.
 type e2eRunner struct {
-	runner  commandRunner
-	getenv  func(string) string
-	focused focusedChecksFunc
-	opts    e2eOptions
+	runner   commandRunner
+	getenv   func(string) string
+	readFile func(string) ([]byte, error)
+	focused  focusedChecksFunc
+	opts     e2eOptions
 }
 
 // e2eCLI implements `ci e2e prepare` and `ci e2e run`.
@@ -101,9 +106,10 @@ func e2eRunCLI(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 	r := e2eRunner{
-		runner:  execRunner{},
-		getenv:  os.Getenv,
-		focused: runFocusedChecks,
+		runner:   execRunner{},
+		getenv:   os.Getenv,
+		readFile: os.ReadFile,
+		focused:  runFocusedChecks,
 		opts: e2eOptions{
 			E2EDir:  *e2eDir,
 			TempDir: os.Getenv("RUNNER_TEMP"),
@@ -244,8 +250,8 @@ func e2eMarkTestBinary(goos, e2eDir string) error {
 	return nil
 }
 
-// run executes one suite: focused checks, optional rootless diagnostics, the e2e binary and then
-// the suite's post checks.
+// run executes one suite: focused checks, optional rootless diagnostics, the e2e binary, the
+// report check and then the suite's post checks.
 func (r e2eRunner) run(ctx context.Context, suite Suite) error {
 	r.printBanner(suite)
 	if err := r.focused(ctx, r.runner, suite, r.opts); err != nil {
@@ -259,12 +265,43 @@ func (r e2eRunner) run(ctx context.Context, suite Suite) error {
 	if err := r.runner.Run(ctx, r.binarySpec(suite)); err != nil {
 		return fmt.Errorf("e2e run: %w", err)
 	}
+	if err := r.checkReport(suite); err != nil {
+		return err
+	}
 	for _, check := range suite.PostChecks {
 		if err := r.postCheck(ctx, check); err != nil {
 			return fmt.Errorf("post check %s: %w", check, err)
 		}
 	}
 	return nil
+}
+
+// checkReport verifies the Ginkgo JSON report of a suite that pins its spec count. It runs after
+// the binary succeeded and before the post checks.
+func (r e2eRunner) checkReport(suite Suite) error {
+	if !reportEnabled(suite) {
+		return nil
+	}
+	name := reportFileName(suite.Label)
+	data, err := r.readFile(filepath.Join(r.opts.E2EDir, name))
+	if err != nil {
+		return fmt.Errorf("read report %s: %w", name, err)
+	}
+	if err := ginkgoreport.Check(data, suite.Label, suite.ExpectedSpecCount); err != nil {
+		return fmt.Errorf("verify report %s: %w", name, err)
+	}
+	_, _ = fmt.Fprintf(r.opts.Stdout, "report check passed: %d specs\n", suite.ExpectedSpecCount)
+	return nil
+}
+
+// reportEnabled reports whether the suite's selected specs are verified from a Ginkgo JSON report.
+func reportEnabled(suite Suite) bool {
+	return suite.ExpectedSpecCount > 0 && suite.Group != groupMicrosandbox
+}
+
+// reportFileName is the JSON report name, relative to the e2e directory the binary runs in.
+func reportFileName(label string) string {
+	return label + reportNameSuffix
 }
 
 func (r e2eRunner) printBanner(suite Suite) {
@@ -295,7 +332,7 @@ func (r e2eRunner) binarySpec(suite Suite) commandSpec {
 		name = "./" + e2eTestBinaryWindows
 	}
 	args := e2eTestArgs(suite)
-	env := r.e2eEnv()
+	env := r.e2eEnv(suite)
 	spec := commandSpec{
 		Name:   name,
 		Args:   args,
@@ -313,7 +350,7 @@ func (r e2eRunner) binarySpec(suite Suite) commandSpec {
 }
 
 // e2eEnv returns the variables the e2e binary needs, as K=V pairs in a fixed order.
-func (r e2eRunner) e2eEnv() []string {
+func (r e2eRunner) e2eEnv(suite Suite) []string {
 	env := []string{
 		"GH_USERNAME=" + r.getenv("GH_USERNAME"),
 		"GH_ACCESS_TOKEN=" + r.getenv("GH_ACCESS_TOKEN"),
@@ -321,10 +358,19 @@ func (r e2eRunner) e2eEnv() []string {
 		"KUBECONFIG=" + r.kubeconfig(),
 		"PATH=" + r.getenv("PATH"),
 	}
-	if dockerHost := r.dockerHost(); dockerHost != "" {
-		env = append(env, "DOCKER_HOST="+dockerHost)
+	return append(env, r.dockerEnv(suite)...)
+}
+
+// dockerEnv returns the Docker client variables of the suite. A docker-wsl suite talks to the
+// WSL2 fixture and clears DOCKER_CONTEXT so that the explicit host is used.
+func (r e2eRunner) dockerEnv(suite Suite) []string {
+	if suite.Runtime == runtimeDockerWSL {
+		return []string{"DOCKER_HOST=" + windowsDockerWSLHost, "DOCKER_CONTEXT="}
 	}
-	return env
+	if dockerHost := r.dockerHost(); dockerHost != "" {
+		return []string{"DOCKER_HOST=" + dockerHost}
+	}
+	return nil
 }
 
 func (r e2eRunner) kubeconfig() string {
@@ -341,9 +387,10 @@ func (r e2eRunner) dockerHost() string {
 	return r.getenv("DOCKER_HOST")
 }
 
-// e2eTestArgs returns the Go test and Ginkgo flags for one suite.
+// e2eTestArgs returns the Go test and Ginkgo flags for one suite. A suite with a pinned spec count
+// also writes its JSON report next to the binary.
 func e2eTestArgs(suite Suite) []string {
-	return []string{
+	args := []string{
 		"-test.v",
 		"-ginkgo.v",
 		"-test.timeout", suite.TestTimeout,
@@ -351,6 +398,10 @@ func e2eTestArgs(suite Suite) []string {
 		fmt.Sprintf("-ginkgo.flake-attempts=%d", suite.FlakeAttempts),
 		"--ginkgo.label-filter=" + suite.Label,
 	}
+	if reportEnabled(suite) {
+		args = append(args, "-ginkgo.json-report="+reportFileName(suite.Label))
+	}
+	return args
 }
 
 func (r e2eRunner) postCheck(ctx context.Context, name string) error {

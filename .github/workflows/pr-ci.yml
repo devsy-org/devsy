@@ -44,7 +44,6 @@ jobs:
               - 'hack/microsandbox/**'
               - 'hack/provider_update_ci/**'
               - '.github/workflows/pr-ci.yml'
-              - '.github/workflows/docker-buildkit-windows.yml'
               - 'hack/licenses/**'
               - 'hack/podman_ci/**'
               - 'THIRD_PARTY_LICENSES.md'
@@ -220,6 +219,7 @@ jobs:
           fi
           go build -trimpath -o "$OUT_DIR/devsy-ci-podman$SUFFIX" ./hack/podman_ci
           go build -trimpath -o "$OUT_DIR/devsy-ci-tool$SUFFIX" ./hack/ci
+          go build -trimpath -o "$OUT_DIR/devsy-ci-e2e$SUFFIX" ./e2e/cmd/devsy-ci
 
       - name: upload Podman CI helper
         if: runner.os == 'Linux' || runner.os == 'Windows'
@@ -227,6 +227,13 @@ jobs:
         with:
           name: devsy-ci-podman-${{ steps.os.outputs.runner_os }}
           path: ${{ runner.temp }}/devsy-ci-podman*
+
+      - name: upload E2E runtime helper
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: devsy-ci-e2e-${{ steps.os.outputs.runner_os }}
+          path: ${{ runner.temp }}/devsy-ci-e2e*
 
       - name: upload CI tool
         if: runner.os == 'Linux' || runner.os == 'Windows'
@@ -535,6 +542,13 @@ jobs:
           name: devsy-ci-podman-${{ matrix.os }}
           path: ${{ runner.temp }}/devsy-ci-podman/
 
+      - name: download E2E runtime helper
+        if: matrix.setup_docker_wsl
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: devsy-ci-e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/devsy-ci-e2e/
+
       - name: download CLI artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -655,6 +669,22 @@ jobs:
             --crun-path /usr/local/bin/crun \
             --bootstrap-timeout 270s
 
+      - name: setup WSL2 Ubuntu
+        if: matrix.setup_docker_wsl
+        uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
+        with:
+          distribution: Ubuntu-24.04
+          use-cache: true
+
+      - name: provision Docker over WSL SSH
+        if: matrix.setup_docker_wsl
+        shell: pwsh
+        timeout-minutes: 15
+        run: >-
+          & "$env:RUNNER_TEMP\devsy-ci-e2e\devsy-ci-e2e.exe" docker-wsl setup
+          --distribution Ubuntu-24.04 --timeout 4m
+          --state-file "$env:RUNNER_TEMP\devsy-ci\docker-wsl-state.json"
+
       # Runs the suite's `host_setup` actions from hack/ci/suites.yaml
       # (for example removing Docker or trusting a local registry).
       - name: host setup
@@ -681,10 +711,26 @@ jobs:
           GH_CREDENTIAL_USERNAME: x-access-token
         run: '"$CI_TOOL" e2e run --label "${{ matrix.name }}" --runner "${{ matrix.runner }}" --e2e-dir ./e2e'
 
-  docker-buildkit-windows:
-    needs: [changes, build-cli]
-    if: needs.changes.outputs.go == 'true'
-    uses: ./.github/workflows/docker-buildkit-windows.yml
+      - name: tear down Docker WSL SSH fixture
+        if: always() && matrix.setup_docker_wsl
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          if (Test-Path "$env:RUNNER_TEMP\devsy-ci-e2e\devsy-ci-e2e.exe") {
+            & "$env:RUNNER_TEMP\devsy-ci-e2e\devsy-ci-e2e.exe" docker-wsl cleanup `
+              --state-file "$env:RUNNER_TEMP\devsy-ci\docker-wsl-state.json" --timeout 2m
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: upload report and setup or teardown diagnostics
+        if: always() && matrix.setup_docker_wsl
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: e2e-diagnostics-${{ matrix.name }}
+          path: |
+            e2e/${{ matrix.name }}-report.json
+            ${{ runner.temp }}/devsy-ci/docker-wsl-diagnostics.log
+          if-no-files-found: warn
 
   ci-success:
     name: CI Success
@@ -705,7 +751,6 @@ jobs:
       - integration-tests-unprivileged
       - integration-tests
       - integration-tests-microsandbox
-      - docker-buildkit-windows
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 

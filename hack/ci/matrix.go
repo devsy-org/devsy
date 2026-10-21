@@ -50,6 +50,8 @@ type matrixEntry struct {
 	ExpectedSpecCount  int    `json:"expected_spec_count"`
 	ProviderMode       string `json:"provider_mode"`
 	PerformanceCapture bool   `json:"performance_capture"`
+	Runtime            string `json:"runtime"`
+	SetupDockerWSL     bool   `json:"setup_docker_wsl"`
 	SetupKindLinux     bool   `json:"setup_kind_linux"`
 	SetupKindWindows   bool   `json:"setup_kind_windows"`
 	SetupPodmanLinux   bool   `json:"setup_podman_linux"`
@@ -200,6 +202,8 @@ func newMatrixEntry(s Suite) matrixEntry {
 		ExpectedSpecCount:  s.ExpectedSpecCount,
 		ProviderMode:       s.ProviderMode,
 		PerformanceCapture: s.PerformanceCapture,
+		Runtime:            s.Runtime,
+		SetupDockerWSL:     s.Runtime == runtimeDockerWSL,
 		SetupKindLinux:     linux && s.InstallKind,
 		SetupKindWindows:   windows && s.InstallKind,
 		SetupPodmanLinux:   setupPodmanLinux,

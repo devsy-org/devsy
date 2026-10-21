@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/onsi/ginkgo/v2/types"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -72,6 +74,22 @@ func e2eTargetSuite(privileged bool) Suite {
 	}
 }
 
+// e2eSuiteReport returns a Ginkgo report whose specs all carry the target label and passed on
+// their first attempt.
+func e2eSuiteReport(specs int) types.Report {
+	r := types.Report{SuiteSucceeded: true}
+	for range specs {
+		r.SpecReports = append(r.SpecReports, types.SpecReport{
+			LeafNodeType:             types.NodeTypeIt,
+			LeafNodeText:             "spec",
+			ContainerHierarchyLabels: [][]string{{e2eTestTarget}},
+			State:                    types.SpecStatePassed,
+			NumAttempts:              1,
+		})
+	}
+	return r
+}
+
 func e2eWantTestArgs(timeout string, flakes int) []string {
 	return []string{
 		"-test.v",
@@ -87,11 +105,14 @@ func e2eWantTestArgs(timeout string, flakes int) []string {
 type E2ECommandSuite struct {
 	suite.Suite
 
-	dir    string
-	fake   *e2eFakeRunner
-	env    map[string]string
-	out    bytes.Buffer
-	errOut bytes.Buffer
+	dir     string
+	fake    *e2eFakeRunner
+	env     map[string]string
+	report  []byte
+	readErr error
+	reads   []string
+	out     bytes.Buffer
+	errOut  bytes.Buffer
 }
 
 func TestE2ECommandSuite(t *testing.T) {
@@ -110,6 +131,9 @@ func (s *E2ECommandSuite) SetupTest() {
 		"PATH":                   "/usr/bin:/bin",
 		"XDG_RUNTIME_DIR":        "/run/user/1001",
 	}
+	s.report = nil
+	s.readErr = nil
+	s.reads = nil
 	s.out.Reset()
 	s.errOut.Reset()
 }
@@ -235,6 +259,114 @@ func (s *E2ECommandSuite) TestRunLinuxPrivilegedOmitsUnsetDockerHost() {
 	spec := s.fake.specs[0]
 	_, ok := e2eEnvValue(spec.Args, "DOCKER_HOST")
 	s.False(ok)
+}
+
+func (s *E2ECommandSuite) TestRunDockerWSLUsesWSLDaemonAndClearsContext() {
+	target := e2eTargetSuite(false)
+	target.Runner = "windows-latest"
+	target.Runtime = runtimeDockerWSL
+	target.ExpectedSpecCount = 1
+	s.env["DOCKER_HOST"] = e2eTestDocker
+	s.setReport(e2eSuiteReport(1))
+
+	s.Require().NoError(s.runnerFor(osWindows).run(context.Background(), target))
+
+	spec := s.fake.specs[0]
+	host, ok := e2eEnvValue(spec.Env, "DOCKER_HOST")
+	s.True(ok)
+	s.Equal("npipe:////./pipe/devsy-ci-no-daemon", host)
+	s.NotEqual(windowsDockerHost, host)
+	dockerContext, ok := e2eEnvValue(spec.Env, "DOCKER_CONTEXT")
+	s.True(ok, "DOCKER_CONTEXT must be present so an inherited context is cleared")
+	s.Empty(dockerContext)
+}
+
+func (s *E2ECommandSuite) TestRunWithoutDockerWSLLeavesDockerContextUnset() {
+	s.Require().NoError(s.runnerFor(osLinux).run(context.Background(), e2eTargetSuite(false)))
+
+	_, ok := e2eEnvValue(s.fake.specs[0].Env, "DOCKER_CONTEXT")
+	s.False(ok)
+}
+
+func (s *E2ECommandSuite) TestJSONReportArgOnlyWithPinnedSpecCount() {
+	reportArg := "-ginkgo.json-report=" + e2eTestTarget + "-report.json"
+	tests := map[string]struct {
+		group string
+		count int
+		want  bool
+	}{
+		"pinned in integration":    {group: groupIntegration, count: 2, want: true},
+		"unpinned integration":     {group: groupIntegration, count: 0},
+		"pinned in microsandbox":   {group: groupMicrosandbox, count: 2},
+		"unpinned in unprivileged": {group: groupUnprivileged},
+	}
+	for name, tc := range tests {
+		target := e2eTargetSuite(false)
+		target.Group = tc.group
+		target.ExpectedSpecCount = tc.count
+		want := e2eWantTestArgs(e2eTestTimeout, 1)
+		if tc.want {
+			want = append(want, reportArg)
+		}
+		s.Equal(want, e2eTestArgs(target), name)
+	}
+}
+
+func (s *E2ECommandSuite) TestRunChecksReportBeforePostChecks() {
+	target := e2eTargetSuite(false)
+	target.ExpectedSpecCount = 2
+	target.PostChecks = []string{postCheckDockerInstalled}
+	s.setReport(e2eSuiteReport(2))
+
+	s.Require().NoError(s.runnerFor(osLinux).run(context.Background(), target))
+
+	s.Equal([]string{e2eTestBinPath, dockerBinary, dockerBinary}, s.fake.names())
+	s.Equal([]string{filepath.Join(s.dir, e2eTestTarget+"-report.json")}, s.reads)
+	s.Contains(s.out.String(), "report check passed: 2 specs\n")
+}
+
+func (s *E2ECommandSuite) TestRunRejectsReportThatFailsCheck() {
+	tests := map[string]func(*types.Report){
+		"fewer specs than expected": func(r *types.Report) { r.SpecReports = r.SpecReports[:1] },
+		"failed spec":               func(r *types.Report) { r.SpecReports[0].State = types.SpecStateFailed },
+		"suite not successful":      func(r *types.Report) { r.SuiteSucceeded = false },
+	}
+	for name, mutate := range tests {
+		s.Run(name, func() {
+			s.fake = &e2eFakeRunner{}
+			r := e2eSuiteReport(2)
+			mutate(&r)
+			s.setReport(r)
+			target := e2eTargetSuite(false)
+			target.ExpectedSpecCount = 2
+			target.PostChecks = []string{postCheckDockerInstalled}
+
+			err := s.runnerFor(osLinux).run(context.Background(), target)
+
+			s.ErrorContains(err, "verify report")
+			s.Equal([]string{e2eTestBinPath}, s.fake.names(), "post checks must not run")
+			s.NotContains(s.out.String(), "report check passed")
+		})
+	}
+}
+
+func (s *E2ECommandSuite) TestRunFailsWhenReportIsUnreadable() {
+	target := e2eTargetSuite(false)
+	target.ExpectedSpecCount = 2
+	target.PostChecks = []string{postCheckDockerInstalled}
+	s.readErr = errE2EBoom
+
+	err := s.runnerFor(osLinux).run(context.Background(), target)
+
+	s.ErrorIs(err, errE2EBoom)
+	s.Equal([]string{e2eTestBinPath}, s.fake.names())
+}
+
+func (s *E2ECommandSuite) TestRunSkipsReportWithoutPinnedSpecCount() {
+	s.Require().NoError(s.runnerFor(osLinux).run(context.Background(), e2eTargetSuite(false)))
+
+	s.Empty(s.reads)
+	s.NotContains(s.out.String(), "report check")
 }
 
 func (s *E2ECommandSuite) TestRunUnprivilegedRunsDirectly() {
@@ -410,8 +542,15 @@ func (s *E2ECommandSuite) TestCLIRejectsBadUsage() {
 
 func (s *E2ECommandSuite) runnerFor(goos string) e2eRunner {
 	return e2eRunner{
-		runner:  s.fake,
-		getenv:  func(key string) string { return s.env[key] },
+		runner: s.fake,
+		getenv: func(key string) string { return s.env[key] },
+		readFile: func(path string) ([]byte, error) {
+			s.reads = append(s.reads, path)
+			if s.readErr != nil {
+				return nil, s.readErr
+			}
+			return s.report, nil
+		},
 		focused: e2eNoFocusedChecks,
 		opts: e2eOptions{
 			E2EDir:  s.dir,
@@ -421,6 +560,13 @@ func (s *E2ECommandSuite) runnerFor(goos string) e2eRunner {
 			Stderr:  &s.errOut,
 		},
 	}
+}
+
+// setReport makes the fake report reader return r as a one-suite Ginkgo JSON report.
+func (s *E2ECommandSuite) setReport(r types.Report) {
+	data, err := json.Marshal([]types.Report{r})
+	s.Require().NoError(err)
+	s.report = data
 }
 
 func (s *E2ECommandSuite) writeFile(path string, mode os.FileMode) {
