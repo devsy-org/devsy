@@ -36,12 +36,17 @@ func TestOptInEnvFlags_AppliesEnvValueToFlag(t *testing.T) {
 		{flagName: cmdProvider, envName: "DEVSY_PROVIDER", want: "docker", persistent: true},
 		{flagName: "debug", envName: "DEVSY_DEBUG", want: "true", persistent: true},
 		{
-			cmdPath:  "pro workspace list",
+			cmdPath:  "platform workspace list",
 			flagName: "host",
 			envName:  envDevsyHost,
 			want:     "pro.example.com",
 		},
-		{cmdPath: "pro cluster list", flagName: "project", envName: envDevsyProject, want: "demo"},
+		{
+			cmdPath:  "platform cluster list",
+			flagName: "project",
+			envName:  envDevsyProject,
+			want:     "demo",
+		},
 		{
 			cmdPath:  "internal agent container setup",
 			flagName: "access-key",
@@ -97,7 +102,7 @@ func TestOptInEnvFlags_EmptyEnvIsNoOp(t *testing.T) {
 	t.Setenv(envPlatformEnabled, "true")
 	t.Setenv(envDevsyHost, "")
 	rootCmd, _ := BuildRoot()
-	cmd := resolveCommand(t, rootCmd, "pro workspace list")
+	cmd := resolveCommand(t, rootCmd, "platform workspace list")
 	f := cmd.Flags().Lookup(names.Host)
 	require.NotNil(t, f)
 	assert.False(t, f.Changed, "empty env value must not mark flag as Changed")
@@ -111,15 +116,15 @@ func TestOptInEnvFlags_CLIOverridesEnv(t *testing.T) {
 	t.Setenv(envDevsyHost, "env-value")
 	rootCmd, _ := BuildRoot()
 	// Replace the leaf command's RunE so Execute() doesn't try to actually
-	// talk to a pro instance; we only care that flag resolution put cli-value
+	// talk to a platform instance; we only care that flag resolution put cli-value
 	// in cmd.Host.
-	leaf := resolveCommand(t, rootCmd, "pro workspace list")
+	leaf := resolveCommand(t, rootCmd, "platform workspace list")
 	var seen string
 	leaf.RunE = func(c *cobra.Command, _ []string) error {
 		seen, _ = c.Flags().GetString(names.Host)
 		return nil
 	}
-	rootCmd.SetArgs([]string{"pro", cmdWorkspace, cmdList, "--host", "cli-value"})
+	rootCmd.SetArgs([]string{"platform", cmdWorkspace, cmdList, "--host", "cli-value"})
 	require.NoError(t, rootCmd.Execute())
 	assert.Equal(t, "cli-value", seen, "CLI flag must override env value")
 }
@@ -128,19 +133,19 @@ func TestOptInEnvFlags_EnvSatisfiesRequired(t *testing.T) {
 	t.Setenv(envPlatformEnabled, "true")
 	t.Setenv(envDevsyHost, "from-env.example.com")
 	rootCmd, _ := BuildRoot()
-	leaf := resolveCommand(t, rootCmd, "pro workspace list")
+	leaf := resolveCommand(t, rootCmd, "platform workspace list")
 	var seen string
 	leaf.RunE = func(c *cobra.Command, _ []string) error {
 		seen, _ = c.Flags().GetString(names.Host)
 		return nil
 	}
-	rootCmd.SetArgs([]string{"pro", cmdWorkspace, cmdList})
+	rootCmd.SetArgs([]string{"platform", cmdWorkspace, cmdList})
 	require.NoError(t, rootCmd.Execute(), "required --host must be satisfied by env")
 	assert.Equal(t, "from-env.example.com", seen)
 }
 
 // TestOptInEnvFlags_PlatformSubcommandSweep asserts that DEVSY_HOST applies to
-// every pro subcommand that exposes --host (and similarly for --project).
+// every platform subcommand that exposes --host (and similarly for --project).
 // This catches the regression where a future addition to cmd/pro/ forgets
 // the inline BindEnv call.
 func TestOptInEnvFlags_PlatformSubcommandSweep(t *testing.T) {
@@ -149,7 +154,7 @@ func TestOptInEnvFlags_PlatformSubcommandSweep(t *testing.T) {
 		t.Setenv(env, "sweep-"+strings.ToLower(env))
 	}
 	rootCmd, _ := BuildRoot()
-	platformCmd := resolveCommand(t, rootCmd, "pro")
+	platformCmd := resolveCommand(t, rootCmd, "platform")
 
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
@@ -168,7 +173,7 @@ func TestOptInEnvFlags_PlatformSubcommandSweep(t *testing.T) {
 	walk(platformCmd)
 }
 
-// TestPlatformCommand_HiddenWhenDisabled verifies pro is gated off by default.
+// TestPlatformCommand_HiddenWhenDisabled verifies platform is gated off by default.
 func TestPlatformCommand_HiddenWhenDisabled(t *testing.T) {
 	t.Setenv(envPlatformEnabled, "")
 	rootCmd, _ := BuildRoot()
@@ -179,9 +184,9 @@ func TestPlatformCommand_HiddenWhenDisabled(t *testing.T) {
 		}
 		require.NotEqual(
 			t,
-			"pro",
+			"platform",
 			use,
-			"pro command should not be registered when DEVSY_PRO_ENABLED is unset",
+			"platform command should not be registered when DEVSY_PRO_ENABLED is unset",
 		)
 	}
 }

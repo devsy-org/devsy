@@ -20,7 +20,7 @@ Devsy validates options when the provider is added and passes them to every comm
 
 - `displayName`: name shown by tools such as the Desktop app, instead of the option name.
 - `description`: shown by `devsy provider get` and in the Desktop app.
-- `default`: default value, as a string. It can reference other options, for example `${OTHER}-suffix`. Devsy resolves them in the right order.
+- `default`: default value, as a string. It can reference other options, for example `${OTHER}-suffix`. Devsy resolves them in the right order. Cannot be combined with `command`.
 - `required`: the value must be non-empty. Devsy prompts for it in the CLI, and the Desktop app asks for it.
 - `password`: treat the value as a secret. It is hidden in `devsy provider get` and entered in a password field in the Desktop app.
 - `type`: `string` (default), `multiline`, `duration`, `number` or `boolean`. Devsy validates the value against it.
@@ -32,7 +32,7 @@ Devsy validates options when the provider is added and passes them to every comm
 - `subOptionsCommand`: command that prints more `options`, in the same YAML shape, based on other option values.
 - `local`: fill the option separately for each machine or workspace.
 - `global`: reuse the option for every machine or workspace. Cannot be combined with `cache` or `mutable`.
-- `cache`: re-run `command` after this duration, for example `5m`. Use it for values that expire, such as tokens.
+- `cache`: re-run `command` after this duration, for example `5m`. Use it for values that expire, such as tokens. Requires `command`.
 - `hidden`: hide the option in the Desktop app and `devsy provider get`. Use it for internal values.
 - `mutable`: allow changing the value on an existing machine or workspace. Cannot be combined with `global`.
 

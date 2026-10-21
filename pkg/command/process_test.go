@@ -73,11 +73,15 @@ func TestKillTreeTerminatesGroupAfterWorkerExits(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = killTreeAfterWorkerExit(workerPID, "detached-task", identity) })
 
-	childPID := readTestPID(t, childPIDFile)
-
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("wait for worker exit: %v", err)
 	}
+	// #nosec G304 -- the exited worker has finished writing its own temporary PID file.
+	data, err := os.ReadFile(childPIDFile)
+	if err != nil {
+		t.Fatalf("read child PID: %v", err)
+	}
+	childPID := strings.TrimSpace(string(data))
 	waitForTestProcess(t, childPID, true)
 
 	if err := killTreeAfterWorkerExit(workerPID, "detached-task", identity); err != nil {
@@ -227,21 +231,6 @@ func processTreeIdentityForTest(t *testing.T, pid int) string {
 		t.Fatalf("read process tree identity: %v", err)
 	}
 	return identity
-}
-
-func readTestPID(t *testing.T, path string) string {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		// #nosec G304 -- this test reads only its own temporary PID file.
-		data, err := os.ReadFile(path)
-		if err == nil {
-			return strings.TrimSpace(string(data))
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("worker did not publish PID in %s", path)
-	return ""
 }
 
 func waitForTestProcess(t *testing.T, pid string, wantRunning bool) {

@@ -527,45 +527,45 @@ binaries:
 exec:
   proxy:
     up: |-
-      ${PRO_PROVIDER} pro provider up
+      ${PRO_PROVIDER} platform provider up
     ssh: |-
-      ${PRO_PROVIDER} pro provider ssh
+      ${PRO_PROVIDER} platform provider ssh
     stop: |-
-      ${PRO_PROVIDER} pro provider stop
+      ${PRO_PROVIDER} platform provider stop
     status: |-
-      ${PRO_PROVIDER} pro provider status
+      ${PRO_PROVIDER} platform provider status
     delete: |-
-      ${PRO_PROVIDER} pro provider delete
+      ${PRO_PROVIDER} platform provider delete
     health: |-
-      ${PRO_PROVIDER} pro provider health
+      ${PRO_PROVIDER} platform provider health
     daemon:
       start: |-
-        ${PRO_PROVIDER} pro provider daemon start
+        ${PRO_PROVIDER} platform provider daemon start
       status: |-
-        ${PRO_PROVIDER} pro provider daemon status
+        ${PRO_PROVIDER} platform provider daemon status
     create:
       workspace: |-
-        ${PRO_PROVIDER} pro provider create workspace
+        ${PRO_PROVIDER} platform provider create workspace
     get:
       workspace: |-
-        ${PRO_PROVIDER} pro provider get workspace
+        ${PRO_PROVIDER} platform provider get workspace
       self: |-
-        ${PRO_PROVIDER} pro provider get self
+        ${PRO_PROVIDER} platform provider get self
       version: |-
-        ${PRO_PROVIDER} pro provider get version
+        ${PRO_PROVIDER} platform provider get version
     update:
       workspace: |-
-        ${PRO_PROVIDER} pro provider update workspace
+        ${PRO_PROVIDER} platform provider update workspace
     watch:
       workspaces: |-
-        ${PRO_PROVIDER} pro provider watch workspaces
+        ${PRO_PROVIDER} platform provider watch workspaces
     list:
       workspaces: |-
-        ${PRO_PROVIDER} pro provider list workspaces
+        ${PRO_PROVIDER} platform provider list workspaces
       projects: |-
-        ${PRO_PROVIDER} pro provider list projects
+        ${PRO_PROVIDER} platform provider list projects
       templates: |-
-        ${PRO_PROVIDER} pro provider list templates
+        ${PRO_PROVIDER} platform provider list templates
       clusters: |-
-        ${PRO_PROVIDER} pro provider list clusters
+        ${PRO_PROVIDER} platform provider list clusters
 `

@@ -5,7 +5,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewProjectCmd builds the 'devsy pro project' parent command for managing
+// NewProjectCmd builds the 'devsy platform project' parent command for managing
 // Platform projects.
 func NewProjectCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
