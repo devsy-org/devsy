@@ -23,7 +23,7 @@ import (
 type ListCmd struct {
 	*flags.GlobalFlags
 
-	SkipPro bool
+	SkipPlatform bool
 }
 
 // NewListCmd creates a new destroy command.
@@ -42,8 +42,16 @@ func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	cliflags.Add(listCmd,
-		cliflags.Bool(&cmd.SkipPro, names.SkipPro, false, "Don't list platform workspaces"),
+	cliflags.Add(
+		listCmd,
+		cliflags.Bool(
+			&cmd.SkipPlatform,
+			names.SkipPlatform,
+			false,
+			"Don't list platform workspaces",
+		),
+		cliflags.Bool(&cmd.SkipPlatform, names.SkipProAlias, false, "Don't list platform workspaces").
+			Hidden(),
 	)
 	return listCmd
 }
@@ -55,7 +63,7 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	workspaces, err := workspace.List(ctx, devsyConfig, cmd.SkipPro, cmd.Owner)
+	workspaces, err := workspace.List(ctx, devsyConfig, cmd.SkipPlatform, cmd.Owner)
 	if err != nil {
 		return err
 	}

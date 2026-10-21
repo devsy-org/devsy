@@ -24,7 +24,7 @@ func newTestRoot(t *testing.T) *cobra.Command {
 	noop := func(*cobra.Command, []string) {}
 	ws := &cobra.Command{Use: "workspace", Short: "Manage workspaces"}
 	list := &cobra.Command{Use: "list", Short: "List workspaces", Run: noop}
-	list.Flags().Bool("skip-pro", false, "Don't list pro workspaces")
+	list.Flags().Bool("skip-platform", false, "Don't list platform workspaces")
 	ws.AddCommand(list)
 	root.AddCommand(ws)
 	root.AddCommand(&cobra.Command{Use: "loose", Short: "A loose command", Run: noop})
@@ -94,7 +94,7 @@ func TestRender_LeafSeparatesLocalFromGlobal(t *testing.T) {
 	out := renderHelp(t, newTestRoot(t), "workspace", "list")
 
 	assert.Contains(t, out, "devsy workspace list [flags]")
-	assert.Contains(t, sectionBody(t, out, "OPTIONS:"), "--skip-pro")
+	assert.Contains(t, sectionBody(t, out, "OPTIONS:"), "--skip-platform")
 	assert.Contains(t, sectionBody(t, out, "GLOBAL OPTIONS:"), "--provider")
 	// A leaf has no subcommands, so the footer hint would be a dead end.
 	assert.NotContains(t, out, "for more information about a subcommand")
