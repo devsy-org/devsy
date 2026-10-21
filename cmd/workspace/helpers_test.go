@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/client"
@@ -57,20 +58,36 @@ func (f *fakeWorkspaceClient) WorkspaceConfig() *provider.Workspace { return f.c
 func (f *fakeWorkspaceClient) Lock(context.Context) error           { return nil }
 func (f *fakeWorkspaceClient) Unlock()                              {}
 
-// captureStdout runs fn while redirecting os.Stdout to a pipe and returns
-// everything written.
+// captureStdout runs fn while redirecting os.Stdout to a temporary file and
+// returns everything written.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
-	orig := os.Stdout
-	r, w, err := os.Pipe()
+	capture, err := os.CreateTemp(t.TempDir(), "stdout")
 	require.NoError(t, err)
-	os.Stdout = w
-	defer func() { os.Stdout = orig }()
+	orig := os.Stdout
+	os.Stdout = capture
+	defer func() {
+		os.Stdout = orig
+		require.NoError(t, capture.Close())
+	}()
 
 	fn()
 
-	require.NoError(t, w.Close())
-	out, err := io.ReadAll(r)
+	_, err = capture.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	out, err := io.ReadAll(capture)
 	require.NoError(t, err)
 	return string(out)
+}
+
+func TestCaptureStdoutLargeOutput(t *testing.T) {
+	want := strings.Repeat("0123456789abcdef", 1<<16)
+	orig := os.Stdout
+	got := captureStdout(t, func() {
+		n, err := io.WriteString(os.Stdout, want)
+		require.NoError(t, err)
+		require.Equal(t, len(want), n)
+	})
+	require.Equal(t, want, got)
+	require.Same(t, orig, os.Stdout)
 }

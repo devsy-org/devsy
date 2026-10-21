@@ -5,7 +5,19 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/windows"
 )
+
+func TestGetWaitsForWriterHoldingExclusiveFileHandle(t *testing.T) {
+	assertTaskReadWaitsForWriter(t, func(path string) func() {
+		name, err := windows.UTF16PtrFromString(path)
+		require.NoError(t, err)
+		handle, err := windows.CreateFile(name, windows.GENERIC_READ, 0,
+			nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+		require.NoError(t, err)
+		return func() { require.NoError(t, windows.CloseHandle(handle)) }
+	})
+}
 
 func TestTaskReaderAllowsAtomicStateReplacement(t *testing.T) {
 	store := newTestStore(t)

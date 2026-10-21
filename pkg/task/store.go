@@ -27,6 +27,7 @@ type Store struct {
 	processController          command.ProcessController
 	afterClaimHook             func()
 	afterCancelLockClaimedHook func()
+	afterStateLockBlockedHook  func()
 }
 
 func NewStore() (*Store, error) {
@@ -79,7 +80,7 @@ func (s *Store) Delete(id string, force bool) error {
 	// Locked across the check and the removal so a concurrent update can't
 	// commit its atomic rename after the check and recreate the task.
 	return s.withLock(id, func() error {
-		state, err := s.Get(id)
+		state, err := s.readState(id)
 		if err != nil {
 			return err
 		}
@@ -94,24 +95,13 @@ func (s *Store) Delete(id string, force bool) error {
 }
 
 func (s *Store) Get(id string) (*State, error) {
-	path, err := s.path(id)
-	if err != nil {
-		return nil, err
-	}
-	file, err := openTaskFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read task %s: %w", id, err)
-	}
-	defer func() { _ = file.Close() }()
-	data, err := io.ReadAll(file)
-	if err != nil {
-		return nil, fmt.Errorf("read task %s: %w", id, err)
-	}
-	state := &State{}
-	if err := json.Unmarshal(data, state); err != nil {
-		return nil, fmt.Errorf("parse task %s: %w", id, err)
-	}
-	return state, nil
+	var state *State
+	err := s.withLock(id, func() error {
+		var err error
+		state, err = s.readState(id)
+		return err
+	})
+	return state, err
 }
 
 // Abandoned reports whether a non-terminal task's worker is gone.
@@ -324,6 +314,29 @@ func (s *Store) WaitForWorkerObservation(
 		case <-ticker.C:
 		}
 	}
+}
+
+// The caller must hold the state lock: Windows replacement can briefly make
+// the path unavailable, and lock-owning callbacks cannot acquire it again.
+func (s *Store) readState(id string) (*State, error) {
+	path, err := s.path(id)
+	if err != nil {
+		return nil, err
+	}
+	file, err := openTaskFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read task %s: %w", id, err)
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("read task %s: %w", id, err)
+	}
+	state := &State{}
+	if err := json.Unmarshal(data, state); err != nil {
+		return nil, fmt.Errorf("parse task %s: %w", id, err)
+	}
+	return state, nil
 }
 
 func (s *Store) markProcessCleanupComplete(id string) error {
@@ -589,7 +602,7 @@ func (s *Store) launcherLockPath(id string) (string, error) {
 
 func (s *Store) update(id string, mutate func(*State)) error {
 	return s.withLock(id, func() error {
-		state, err := s.Get(id)
+		state, err := s.readState(id)
 		if err != nil {
 			return err
 		}
@@ -609,9 +622,20 @@ func (s *Store) withLock(id string, fn func() error) error {
 	}
 
 	lock := flock.New(path + ".lock")
+	locked, err := lock.TryLock()
+	if err != nil {
+		return fmt.Errorf("lock task %s: %w", id, err)
+	}
+	if locked {
+		defer func() { _ = lock.Unlock() }()
+		return fn()
+	}
+	if s.afterStateLockBlockedHook != nil {
+		s.afterStateLockBlockedHook()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), lockTimeout)
 	defer cancel()
-	locked, err := lock.TryLockContext(ctx, 20*time.Millisecond)
+	locked, err = lock.TryLockContext(ctx, 20*time.Millisecond)
 	if err != nil {
 		return fmt.Errorf("lock task %s: %w", id, err)
 	}
@@ -700,7 +724,7 @@ func (s *Store) create(opts CreateOptions, launch bool) (*Task, error) {
 		state.LaunchPending = true
 		state.LaunchProtocol = 1
 	}
-	if err := s.write(state); err != nil {
+	if err := s.withLock(id, func() error { return s.write(state) }); err != nil {
 		return nil, errors.Join(err, releaseLauncherLock(t))
 	}
 	return t, nil

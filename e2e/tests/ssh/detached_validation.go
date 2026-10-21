@@ -3,6 +3,7 @@ package ssh
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/command"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/onsi/ginkgo/v2"
@@ -159,12 +162,14 @@ var _ = ginkgo.Describe(
 					home, err := os.MkdirTemp("", "devsy-worker-error-")
 					framework.ExpectNoError(err)
 					ginkgo.DeferCleanup(os.RemoveAll, home)
+					ginkgo.GinkgoT().Setenv(config.EnvHome, home)
+					config.ResetPathManager()
+					ginkgo.DeferCleanup(config.ResetPathManager)
 					cli := detachedValidationCLI{framework: f, home: home}
 					store, err := task.NewStoreAt(filepath.Join(home, "state", "tasks"))
 					framework.ExpectNoError(err)
-					tk, err := store.Create(task.CreateOptions{Command: "up"})
+					tk, err := store.CreateLaunch(task.CreateOptions{Command: "up"})
 					framework.ExpectNoError(err)
-					framework.ExpectNoError(tk.BeginLaunch())
 					expected := "prepare workspace client"
 					args := []string{
 						cmdWorkspace,
@@ -184,10 +189,12 @@ var _ = ginkgo.Describe(
 						)
 						expected = "load devsy config"
 					}
-					worker := cli.newCommand(ctx, args...)
-					framework.ExpectNoError(worker.Start())
-					framework.ExpectNoError(tk.SetPID(worker.Process.Pid))
-					gomega.Expect(worker.Wait()).To(gomega.HaveOccurred())
+					ref, err := cli.launchWorker(ctx, tk, args...)
+					framework.ExpectNoError(err)
+					ginkgo.DeferCleanup(tk.Cancel)
+					gomega.Eventually(func() (bool, error) {
+						return command.ProcessExited(ref)
+					}).WithContext(ctx).WithTimeout(10 * time.Second).Should(gomega.BeTrue())
 					state, err := store.Get(tk.ID())
 					framework.ExpectNoError(err)
 					gomega.Expect(state.Status).To(gomega.Equal(task.StatusFailed))
@@ -198,6 +205,41 @@ var _ = ginkgo.Describe(
 		}
 	},
 )
+
+func (cli detachedValidationCLI) launchWorker(
+	ctx context.Context,
+	tk *task.Task,
+	args ...string,
+) (command.ProcessRef, error) {
+	var ref command.ProcessRef
+	err := command.StartSupervisedBackground(command.SupervisedStartOptions{
+		Name:            task.WorkerProcessName(tk.ID()),
+		Lease:           tk.LaunchLease(),
+		AtomicOwnership: true,
+		OnPrepared:      tk.PrepareProcessOwnership,
+		OnStarted: func(started command.ProcessRef) error {
+			ref = started
+			if err := tk.PublishProcess(started); err != nil {
+				return err
+			}
+			commitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			return tk.CommitLaunch(commitCtx)
+		},
+	}, func() (*exec.Cmd, error) {
+		// Atomic Windows launch requires a plain command with file streams.
+		// #nosec G204 -- repository-built CLI fixture with spec-controlled arguments.
+		worker := exec.Command(
+			filepath.Join(cli.framework.DevsyBinDir, cli.framework.DevsyBinName),
+			args...)
+		worker.Env = detachedValidationEnvironment(cli.home)
+		return worker, nil
+	})
+	if err != nil {
+		return ref, errors.Join(err, tk.FailLaunch(err))
+	}
+	return ref, nil
+}
 
 func (cli detachedValidationCLI) expectFailureEnvelope(ctx context.Context, id, diagnostic string) {
 	followCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

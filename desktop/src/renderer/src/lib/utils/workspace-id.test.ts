@@ -17,6 +17,11 @@ describe("workspace IDs", () => {
   )
   it.each([
     "/var/home/dev/Projects/Backend",
+    "/home/dev/Backend/",
+    "/home/dev/@work/Backend//",
+    "/home/first@corp/Backend/",
+    "C:\\Users\\dev\\Backend\\",
+    "C:\\Users\\first@corp\\Backend\\",
     "/home/dev/@work/Backend",
     "/home/first@corp/Backend",
     "C:\\Users\\first@corp\\Backend",

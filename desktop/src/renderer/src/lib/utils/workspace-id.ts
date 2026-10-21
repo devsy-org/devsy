@@ -17,7 +17,7 @@ export function deriveWorkspaceId(source: string): string {
         .replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*\//i, "")
         .split("@")[0]
     : trimmed
-  const leaf = repository.split(/[\\/]/).pop() ?? ""
+  const leaf = repository.split(/[\\/]/).filter(Boolean).pop() ?? ""
   return (
     leaf
       .replace(/\.git$/i, "")

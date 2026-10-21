@@ -425,6 +425,13 @@ func prepareBackgroundTree(cmd *exec.Cmd) {
 }
 
 func processRefExited(ref ProcessRef) (bool, error) {
+	live, err := processIsLive(ref.PID)
+	if err != nil {
+		return false, err
+	}
+	if !live {
+		return true, nil
+	}
 	current, err := processTreeIdentity(ref.PID)
 	if err != nil {
 		return false, err
@@ -432,9 +439,5 @@ func processRefExited(ref ProcessRef) (bool, error) {
 	if current == "" || current != ref.Identity {
 		return true, nil
 	}
-	live, err := processIsLive(ref.PID)
-	if err != nil {
-		return false, err
-	}
-	return !live, nil
+	return false, nil
 }

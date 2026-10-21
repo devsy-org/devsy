@@ -4,10 +4,28 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/stretchr/testify/require"
 )
+
+func TestProcessExitedRecognizesUnreapedChild(t *testing.T) {
+	child := processExitTestChild()
+	require.NoError(t, child.Start())
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+	identity, err := ProcessTreeIdentity(child.Process.Pid)
+	require.NoError(t, err)
+	ref := ProcessRef{PID: child.Process.Pid, Identity: identity}
+	exited, err := ProcessExited(ref)
+	require.NoError(t, err)
+	require.False(t, exited)
+	require.NoError(t, child.Process.Kill())
+	require.Eventually(t, func() bool {
+		exited, err := ProcessExited(ref)
+		return err == nil && exited
+	}, time.Second, time.Millisecond, "exit must be observable before the parent reaps the child")
+}
 
 func TestProcessExitedRequiresSavedWorkerIdentity(t *testing.T) {
 	child := processExitTestChild()

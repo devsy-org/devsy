@@ -3,6 +3,8 @@ package task
 import (
 	"context"
 	"errors"
+	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +15,53 @@ import (
 const workspaceOne = "ws-1"
 
 const testProcessIdentity = "sess-1"
+
+func TestGetWaitsForWriterWhenRecordTemporarilyMissing(t *testing.T) {
+	assertTaskReadWaitsForWriter(t, func(path string) func() {
+		previous := path + ".previous"
+		require.NoError(t, os.Rename(path, previous))
+		return func() { require.NoError(t, os.Rename(previous, path)) }
+	})
+}
+
+func assertTaskReadWaitsForWriter(t *testing.T, interruptRead func(string) func()) {
+	t.Helper()
+	writer := newTestStore(t)
+	reader, err := NewStoreAt(writer.dir)
+	require.NoError(t, err)
+	tk, err := writer.Create(CreateOptions{})
+	require.NoError(t, err)
+	state, err := writer.Get(tk.ID())
+	require.NoError(t, err)
+	path, err := writer.path(tk.ID())
+	require.NoError(t, err)
+	blocked := make(chan struct{})
+	reader.afterStateLockBlockedHook = func() { close(blocked) }
+	type readResult struct {
+		state *State
+		err   error
+	}
+	read := make(chan readResult, 1)
+	require.NoError(t, writer.withLock(tk.ID(), func() error {
+		restore := sync.OnceFunc(interruptRead(path))
+		defer restore()
+		go func() {
+			state, err := reader.Get(tk.ID())
+			read <- readResult{state, err}
+		}()
+		select {
+		case <-blocked:
+		case result := <-read:
+			t.Fatalf("reader bypassed active writer: state=%+v error=%v", result.state, result.err)
+		}
+		restore()
+		state.Phase = "replacement-committed"
+		return writer.write(state)
+	}))
+	result := <-read
+	require.NoError(t, result.err)
+	require.Equal(t, "replacement-committed", result.state.Phase)
+}
 
 func createTaskWith(t *testing.T, store *Store, opts CreateOptions) *Task {
 	t.Helper()
