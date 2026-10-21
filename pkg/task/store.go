@@ -46,20 +46,12 @@ func NewStoreAt(dir string) (*Store, error) {
 }
 
 func (s *Store) Create(opts CreateOptions) (*Task, error) {
-	id := random.String(12)
-	now := time.Now()
-	state := &State{
-		ID:          id,
-		Command:     opts.Command,
-		WorkspaceID: opts.WorkspaceID,
-		Status:      StatusPending,
-		StartedAt:   now,
-		UpdatedAt:   now,
-	}
-	if err := s.write(state); err != nil {
-		return nil, err
-	}
-	return &Task{store: s, id: id}, nil
+	return s.create(opts, false)
+}
+
+// CreateLaunch acquires launch ownership before the task becomes visible.
+func (s *Store) CreateLaunch(opts CreateOptions) (*Task, error) {
+	return s.create(opts, true)
 }
 
 // Open returns a handle without reading the task's state.
@@ -89,16 +81,8 @@ func (s *Store) Delete(id string, force bool) error {
 		if err != nil {
 			return err
 		}
-		if state.NeedsExitedWorkerCleanup() || state.NeedsCanceledWorkerCleanup() {
-			return fmt.Errorf("task %s still needs process tree cleanup", id)
-		}
-		if !force {
-			if !state.Status.Terminal() {
-				return fmt.Errorf(
-					"task %s is still %s; cancel it first or delete with force",
-					id, state.Status,
-				)
-			}
+		if err := state.checkDeletion(force); err != nil {
+			return err
 		}
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("delete task %s: %w", id, err)
@@ -146,6 +130,9 @@ func (s *Store) ReconcileTask(ctx context.Context, id string) (*State, error) {
 	if err != nil {
 		return nil, err
 	}
+	if current.LaunchPending {
+		return s.reconcilePendingLaunch(ctx, id)
+	}
 	if !current.NeedsReconciliation() {
 		return current, nil
 	}
@@ -164,6 +151,9 @@ func (s *Store) ReconcileTask(ctx context.Context, id string) (*State, error) {
 // requested cancellation completes cleanup here; an abandoned task's tree is
 // cleaned up by the next workspace stop or delete.
 func (s *Store) ReconcileState(state *State) *State {
+	if state.hasPendingLaunch() {
+		return s.pendingLaunchState(state)
+	}
 	if !state.NeedsReconciliation() {
 		return state
 	}
@@ -193,7 +183,7 @@ func (s *Store) ReconcileState(state *State) *State {
 // Claiming the worker lock proves no worker is running, so a saved reference
 // that still points at live processes belongs to a crashed worker's tree.
 func (s *Store) CleanupExitedWorkerTree(id string) error {
-	state, err := s.Get(id)
+	state, err := s.stateAfterLaunchCleanup(id)
 	if err != nil {
 		return err
 	}
@@ -680,4 +670,31 @@ func syncDir(dir string) {
 	}
 	defer func() { _ = d.Close() }()
 	_ = d.Sync()
+}
+
+func (s *Store) create(opts CreateOptions, launch bool) (*Task, error) {
+	id := random.String(12)
+	t := &Task{store: s, id: id}
+	if launch {
+		if err := t.claimLaunchOwnership(); err != nil {
+			return nil, err
+		}
+	}
+	now := time.Now()
+	state := &State{
+		ID:          id,
+		Command:     opts.Command,
+		WorkspaceID: opts.WorkspaceID,
+		Status:      StatusPending,
+		StartedAt:   now,
+		UpdatedAt:   now,
+	}
+	if launch {
+		state.LaunchPending = true
+		state.LaunchProtocol = 1
+	}
+	if err := s.write(state); err != nil {
+		return nil, errors.Join(err, releaseLauncherLock(t))
+	}
+	return t, nil
 }

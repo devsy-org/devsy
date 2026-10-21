@@ -14,8 +14,11 @@ import (
 type CreateCommand func() (*exec.Cmd, error)
 
 type SupervisedStartOptions struct {
-	Name      string
-	OnStarted func(ProcessRef) error
+	Name            string
+	OnStarted       func(ProcessRef) error
+	Lease           *LaunchLease
+	AtomicOwnership bool
+	OnPrepared      func(string) error
 }
 
 // StartBackgroundOnce starts a background process, ensuring only one instance
@@ -160,18 +163,22 @@ func startSupervisedDetached(cmd *exec.Cmd, opts SupervisedStartOptions, streams
 	if err != nil {
 		return err
 	}
-	prepareBackgroundTree(cmd)
-	if err := cmd.Start(); err != nil {
+	if opts.Lease != nil {
+		opts.Lease.attach(cmd)
+	}
+	release, err := startOwnedBackground(cmd, opts.Name, opts.AtomicOwnership, opts.OnPrepared)
+	if err != nil {
 		closeFile(streamsF)
 		return fmt.Errorf("start process: %w", err)
 	}
+	defer release()
 	closeFile(streamsF)
 	pid := cmd.Process.Pid
 	cleanup := func() {
 		_ = abortSupervisedLaunch(pid, opts.Name)
 		_ = cmd.Wait()
 	}
-	if err := ownProcessTree(pid, opts.Name); err != nil {
+	if err := opts.ownTree(pid); err != nil {
 		cleanup()
 		return fmt.Errorf("assign process tree ownership for pid %d: %w", pid, err)
 	}
@@ -185,13 +192,27 @@ func startSupervisedDetached(cmd *exec.Cmd, opts SupervisedStartOptions, streams
 		cleanup()
 		return fmt.Errorf("publish process reference for pid %d: %w", pid, err)
 	}
-	if err := resumeBackgroundTree(pid); err != nil {
+	if err := opts.resumeTree(pid); err != nil {
 		_ = terminateProcessRef(ref)
 		cleanup()
 		return fmt.Errorf("resume process %d: %w", pid, err)
 	}
 	_ = cmd.Process.Release()
 	return nil
+}
+
+func (o SupervisedStartOptions) ownTree(pid int) error {
+	if o.AtomicOwnership {
+		return nil
+	}
+	return ownProcessTree(pid, o.Name)
+}
+
+func (o SupervisedStartOptions) resumeTree(pid int) error {
+	if o.AtomicOwnership {
+		return nil
+	}
+	return resumeBackgroundTree(pid)
 }
 
 func isProcessRunning(pidFile string) (bool, error) {
