@@ -114,6 +114,8 @@ e2e:
 
   # Labels executed by another workflow or intentionally not run in PR CI.
   ungated:
+    - label: up-provider-podman-machine-bind
+      reason: darwin-only spec that needs a local Podman machine; run manually on macOS
     - label: gpg
       reason: sub-label that always accompanies a gated suite label
     - label: microsandbox-builtin

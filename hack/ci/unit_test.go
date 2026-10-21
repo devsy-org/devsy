@@ -540,9 +540,10 @@ func (s *unitSuite) TestFilterUnitTestPackagesRejects() {
 }
 
 func (s *unitSuite) TestIsUnderRoot() {
-	s.True(isUnderRoot("/repo", "/repo"))
-	s.True(isUnderRoot("/repo/pkg", "/repo"))
-	s.False(isUnderRoot("/repo2/pkg", "/repo"))
+	root := s.T().TempDir()
+	s.True(isUnderRoot(root, root))
+	s.True(isUnderRoot(filepath.Join(root, "pkg"), root))
+	s.False(isUnderRoot(filepath.Join(root+"2", "pkg"), root))
 }
 
 func (s *unitSuite) at(rel string) string {
