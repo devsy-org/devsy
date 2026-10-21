@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/random"
 	"github.com/gofrs/flock"
+	"tailscale.com/atomicfile"
 )
 
 // lockTimeout bounds how long update waits to acquire a task's file lock.
@@ -661,7 +662,7 @@ func (s *Store) write(state *State) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp task file: %w", err)
 	}
-	if err := os.Rename(tmpPath, target); err != nil {
+	if err := atomicfile.Rename(tmpPath, target); err != nil {
 		return fmt.Errorf("commit task state: %w", err)
 	}
 	syncDir(s.dir)
