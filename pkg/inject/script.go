@@ -1,6 +1,7 @@
 package inject
 
 import (
+	"fmt"
 	"path"
 	"strconv"
 	"strings"
@@ -9,7 +10,7 @@ import (
 )
 
 func GenerateScript(script string, params *Params) (string, error) {
-	rawCode, err := template.FillTemplate(script, map[string]string{
+	values := map[string]string{
 		"Command":         params.Command,
 		"ExistsCheck":     params.ExistsCheck,
 		"InstallDir":      params.InstallDir(),
@@ -19,12 +20,33 @@ func GenerateScript(script string, params *Params) (string, error) {
 		"DownloadBase":    params.DownloadURLs.Base,
 		"DownloadAmd":     params.DownloadURLs.Amd,
 		"DownloadArm":     params.DownloadURLs.Arm,
-	})
+	}
+	for _, name := range []string{"Command", "ExistsCheck"} {
+		if strings.ContainsRune(values[name], 0) {
+			return "", fmt.Errorf("%s contains NUL", name)
+		}
+	}
+	for _, name := range []string{"InstallDir", "InstallFilename", "DownloadBase", "DownloadAmd", "DownloadArm"} {
+		quoted, err := QuotePOSIXLiteral(values[name])
+		if err != nil {
+			return "", fmt.Errorf("quote %s: %w", name, err)
+		}
+		values[name] = quoted
+	}
+	rawCode, err := template.FillTemplate(stripCarriageReturns(script), values)
 	if err != nil {
 		return "", err
 	}
 
-	return stripCarriageReturns(rawCode), nil
+	return rawCode, nil
+}
+
+// QuotePOSIXLiteral encodes one literal word for a POSIX shell, not a login shell.
+func QuotePOSIXLiteral(value string) (string, error) {
+	if strings.ContainsRune(value, 0) {
+		return "", fmt.Errorf("shell literal contains NUL")
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'", nil
 }
 
 type Params struct {

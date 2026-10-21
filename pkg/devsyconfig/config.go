@@ -13,7 +13,7 @@ import (
 )
 
 func AuthDevsyCliToPlatform(config *client.Config) error {
-	args := []string{"pro", "login", "--access-key", config.AccessKey, config.Host}
+	args := []string{"platform", "login", "--access-key", config.AccessKey, config.Host}
 	result, err := subprocess.Run(
 		context.Background(),
 		pkgconfig.BinaryName,
@@ -24,13 +24,13 @@ func AuthDevsyCliToPlatform(config *client.Config) error {
 	)
 	if err != nil {
 		log.Debugf(
-			"Failed executing `%s pro login`: %v, output: %s",
+			"Failed executing `%s platform login`: %v, output: %s",
 			pkgconfig.BinaryName,
 			err,
 			result.Stderr,
 		)
 		return fmt.Errorf(
-			"error executing '%s pro login' command: %w, host: %v",
+			"error executing '%s platform login' command: %w, host: %v",
 			pkgconfig.BinaryName,
 			err,
 			config.Host,
