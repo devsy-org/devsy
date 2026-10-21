@@ -64,14 +64,14 @@ func Inject(ctx context.Context, opts InjectOptions) (bool, error) {
 	logPreferredAgentDownloadURL(opts.ScriptParams)
 	scriptRawCode, err := GenerateScript(Script, opts.ScriptParams)
 	if err != nil {
-		return true, err
+		return false, err
 	}
 
 	log.Debug("execute inject script")
 	defer log.Debug("done injecting")
 	sess, err := newSession(opts, scriptRawCode, start)
 	if err != nil {
-		return true, err
+		return false, err
 	}
 	defer sess.Close()
 	select {

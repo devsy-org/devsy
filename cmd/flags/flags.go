@@ -98,7 +98,7 @@ func registerVerbosityFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
 }
 
 func registerHiddenFlags(flags *flag.FlagSet, globalFlags *GlobalFlags) {
-	flags.Var(&globalFlags.Owner, names.Owner, "Show pro workspaces for owner")
+	flags.Var(&globalFlags.Owner, names.Owner, "Show platform workspaces for owner")
 	_ = flags.MarkHidden(names.Owner)
 	flags.StringVar(&globalFlags.UID, names.UID, "", "Set UID for workspace")
 	_ = flags.MarkHidden(names.UID)

@@ -30,15 +30,11 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir := framework.CopyTestdataNoChdir("tests/configread/testdata")
 
-		stdout, _, err := f.ExecCommandCapture(ctx, []string{
+		result, err := f.ExecCommandJSON(ctx, []string{
 			cmdConfig, cmdRead,
 			"--workspace-folder", tempDir,
 		})
 		framework.ExpectNoError(err)
-
-		var result map[string]any
-		err = json.Unmarshal([]byte(stdout), &result)
-		framework.ExpectNoError(err, "output should be valid JSON")
 
 		gomega.Expect(result).To(gomega.HaveKey("configuration"))
 		gomega.Expect(result).To(gomega.HaveKey("workspace"))
@@ -68,15 +64,11 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir := framework.CopyTestdataNoChdir("tests/configread/testdata")
 
-		stdout, _, err := f.ExecCommandCapture(ctx, []string{
+		result, err := f.ExecCommandJSON(ctx, []string{
 			cmdConfig, cmdRead,
 			"--workspace-folder", tempDir,
 			"--include-features-configuration",
 		})
-		framework.ExpectNoError(err)
-
-		var result map[string]any
-		err = json.Unmarshal([]byte(stdout), &result)
 		framework.ExpectNoError(err)
 
 		gomega.Expect(result).To(gomega.HaveKey("features"))
@@ -92,15 +84,11 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir := framework.CopyTestdataNoChdir("tests/configread/testdata")
 
-			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+			result, err := f.ExecCommandJSON(ctx, []string{
 				cmdConfig, cmdRead,
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
-			framework.ExpectNoError(err)
-
-			var result map[string]any
-			err = json.Unmarshal([]byte(stdout), &result)
 			framework.ExpectNoError(err)
 
 			gomega.Expect(result).To(gomega.HaveKey("mergedConfiguration"))
@@ -138,15 +126,11 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir := framework.CopyTestdataNoChdir("tests/configread/testdata-port-range")
 
-			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+			result, err := f.ExecCommandJSON(ctx, []string{
 				cmdConfig, cmdRead,
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
-			framework.ExpectNoError(err)
-
-			var result map[string]any
-			err = json.Unmarshal([]byte(stdout), &result)
 			framework.ExpectNoError(err)
 
 			merged, ok := result["mergedConfiguration"].(map[string]any)
@@ -176,15 +160,11 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir := framework.CopyTestdataNoChdir("tests/configread/testdata-port-attributes")
 
-			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+			result, err := f.ExecCommandJSON(ctx, []string{
 				cmdConfig, cmdRead,
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
-			framework.ExpectNoError(err)
-
-			var result map[string]any
-			err = json.Unmarshal([]byte(stdout), &result)
 			framework.ExpectNoError(err)
 
 			merged, ok := result["mergedConfiguration"].(map[string]any)
@@ -212,15 +192,11 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir := framework.CopyTestdataNoChdir("tests/configread/testdata-container-env")
 
-		stdout, _, err := f.ExecCommandCapture(ctx, []string{
+		result, err := f.ExecCommandJSON(ctx, []string{
 			cmdConfig, cmdRead,
 			"--workspace-folder", tempDir,
 		})
 		framework.ExpectNoError(err)
-
-		var result map[string]any
-		err = json.Unmarshal([]byte(stdout), &result)
-		framework.ExpectNoError(err, "output should be valid JSON")
 
 		config, ok := result["configuration"].(map[string]any)
 		gomega.Expect(ok).To(gomega.BeTrue(), "configuration should be an object")
@@ -235,15 +211,11 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir := framework.CopyTestdataNoChdir("tests/configread/testdata-container-env")
 
-		stdout, _, err := f.ExecCommandCapture(ctx, []string{
+		result, err := f.ExecCommandJSON(ctx, []string{
 			cmdConfig, cmdRead,
 			"--workspace-folder", tempDir,
 			"--include-merged-configuration",
 		})
-		framework.ExpectNoError(err)
-
-		var result map[string]any
-		err = json.Unmarshal([]byte(stdout), &result)
 		framework.ExpectNoError(err)
 
 		merged, ok := result["mergedConfiguration"].(map[string]any)
@@ -259,15 +231,11 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir := framework.CopyTestdataNoChdir("tests/configread/testdata-host-requirements")
 
-		stdout, _, err := f.ExecCommandCapture(ctx, []string{
+		result, err := f.ExecCommandJSON(ctx, []string{
 			cmdConfig, cmdRead,
 			"--workspace-folder", tempDir,
 		})
 		framework.ExpectNoError(err)
-
-		var result map[string]any
-		err = json.Unmarshal([]byte(stdout), &result)
-		framework.ExpectNoError(err, "output should be valid JSON")
 
 		config, ok := result["configuration"].(map[string]any)
 		gomega.Expect(ok).To(gomega.BeTrue(), "configuration should be an object")
@@ -291,16 +259,12 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 				"--id-label", "devsy.readconfig.test=custom")
 			framework.ExpectNoError(err)
 
-			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+			result, err := f.ExecCommandJSON(ctx, []string{
 				cmdConfig, cmdRead,
 				"--id-label", "devsy.readconfig.test=custom",
 				"--include-merged-configuration",
 			})
 			framework.ExpectNoError(err)
-
-			var result map[string]any
-			err = json.Unmarshal([]byte(stdout), &result)
-			framework.ExpectNoError(err, "output should be valid JSON")
 
 			gomega.Expect(result).To(gomega.HaveKey("configuration"))
 			gomega.Expect(result).To(gomega.HaveKey("mergedConfiguration"))
@@ -328,15 +292,11 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 				_ = cmd.Run()
 			})
 
-			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+			result, err := f.ExecCommandJSON(ctx, []string{
 				cmdConfig, cmdRead,
 				"--container-id", containerID,
 			})
 			framework.ExpectNoError(err)
-
-			var result map[string]any
-			err = json.Unmarshal([]byte(stdout), &result)
-			framework.ExpectNoError(err, "output should be valid JSON")
 
 			gomega.Expect(result).To(gomega.HaveKey("configuration"))
 			gomega.Expect(result).To(gomega.HaveKey("workspace"))
@@ -414,16 +374,12 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 				_ = cmd.Run()
 			})
 
-			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+			result, err := f.ExecCommandJSON(ctx, []string{
 				cmdConfig, cmdRead,
 				"--container-id", containerID,
 				"--docker-path", "docker",
 			})
 			framework.ExpectNoError(err)
-
-			var result map[string]any
-			err = json.Unmarshal([]byte(stdout), &result)
-			framework.ExpectNoError(err, "output should be valid JSON")
 
 			config, ok := result["configuration"].(map[string]any)
 			gomega.Expect(ok).To(gomega.BeTrue())
@@ -450,15 +406,11 @@ var _ = ginkgo.Describe("config read command", ginkgo.Label("config-read"), func
 			f := framework.NewDefaultFramework(initialDir + "/bin")
 			tempDir := framework.CopyTestdataNoChdir(testdataDir)
 
-			stdout, _, err := f.ExecCommandCapture(ctx, []string{
+			result, err := f.ExecCommandJSON(ctx, []string{
 				cmdConfig, cmdRead,
 				"--workspace-folder", tempDir,
 				"--include-merged-configuration",
 			})
-			framework.ExpectNoError(err)
-
-			var result map[string]any
-			err = json.Unmarshal([]byte(stdout), &result)
 			framework.ExpectNoError(err)
 
 			merged, ok := result["mergedConfiguration"].(map[string]any)

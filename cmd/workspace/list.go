@@ -43,7 +43,7 @@ func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	}
 
 	cliflags.Add(listCmd,
-		cliflags.Bool(&cmd.SkipPro, names.SkipPro, false, "Don't list pro workspaces"),
+		cliflags.Bool(&cmd.SkipPro, names.SkipPro, false, "Don't list platform workspaces"),
 	)
 	return listCmd
 }
@@ -121,6 +121,6 @@ func printPlainWorkspaces(workspaces []*provider.Workspace) {
 		"IDE",
 		"Last Used",
 		"Age",
-		"Pro",
+		"Platform",
 	}, tableEntries)
 }

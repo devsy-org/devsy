@@ -133,7 +133,7 @@ func (cmd *TroubleshootCmd) collectWorkspaceInfo(
 			ctx, info.Config, info.Workspace, info.DevsyProInstances,
 		)
 		if err != nil {
-			info.addErr("collect pro workspace info", err)
+			info.addErr("collect platform workspace info", err)
 		}
 	}
 
@@ -165,12 +165,11 @@ func collectWorkspacePlatformTroubleshoot(
 		return nil, nil
 	}
 
-	return collectProWorkspaceInfo(
+	return collectPlatformWorkspaceInfo(
 		ctx,
 		devsyConfig,
 		platformInstance.Host,
-		ws.UID,
-		ws.Platform.Project,
+		platform.FindInstanceOptions{UID: ws.UID, ProjectName: ws.Platform.Project},
 	)
 }
 
@@ -191,22 +190,20 @@ func collectDaemonStatus(
 	return &status, nil
 }
 
-// collectProWorkspaceInfo collects troubleshooting information for a Devsy Pro instance.
+// collectPlatformWorkspaceInfo collects troubleshooting information for a Devsy Platform instance.
 // It initializes a client from the host, finds the workspace instance in the project, and retrieves
 // troubleshooting information using the management client.
-func collectProWorkspaceInfo(
+func collectPlatformWorkspaceInfo(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	host string,
-	workspaceUID string,
-	project string,
+	opts platform.FindInstanceOptions,
 ) (*managementv1.DevsyWorkspaceInstanceTroubleshoot, error) {
 	baseClient, err := platform.InitClientFromHost(ctx, devsyConfig, host)
 	if err != nil {
 		return nil, fmt.Errorf("init client from host: %w", err)
 	}
 
-	opts := platform.FindInstanceOptions{UID: workspaceUID, ProjectName: project}
 	workspace, err := platform.FindInstance(ctx, baseClient, opts)
 	if err != nil {
 		return nil, err

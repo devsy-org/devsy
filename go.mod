@@ -13,7 +13,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.3-0.20260107145400-75610162e7da
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.12.0
 	github.com/blang/semver/v4 v4.0.0
-	github.com/bmatcuk/doublestar/v4 v4.10.1
+	github.com/bmatcuk/doublestar/v4 v4.10.2
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/compose-spec/compose-go/v2 v2.15.0
@@ -27,7 +27,7 @@ require (
 	github.com/devsy-org/devsy-runtime-sdk v1.6.0
 	github.com/devsy-org/ssh v1.2.9
 	github.com/distribution/reference v0.6.0
-	github.com/docker/cli v29.8.0+incompatible
+	github.com/docker/cli v29.8.1+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/docker-credential-helpers v0.9.9
 	github.com/docker/go-connections v0.8.1
@@ -54,7 +54,7 @@ require (
 	github.com/moby/term v0.5.2
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/onsi/ginkgo/v2 v2.32.2
-	github.com/onsi/gomega v1.43.0
+	github.com/onsi/gomega v1.43.1
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pkg/sftp v1.13.11
 	github.com/posthog/posthog-go v1.25.2
@@ -89,7 +89,7 @@ require (
 	k8s.io/streaming v0.37.1
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	mvdan.cc/sh/v3 v3.14.1
-	sigs.k8s.io/controller-runtime v0.25.0
+	sigs.k8s.io/controller-runtime v0.25.1
 	sigs.k8s.io/yaml v1.6.0
 	tailscale.com v1.102.3
 )

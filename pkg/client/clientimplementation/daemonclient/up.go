@@ -284,7 +284,7 @@ func printInstanceInfo(instance *managementv1.DevsyWorkspaceInstance) {
 		Template:   instance.Spec.TemplateRef,
 		Parameters: instance.Spec.Parameters,
 	})
-	log.Debug("Starting pro workspace with configuration", string(workspaceConfig))
+	log.Debug("Starting platform workspace with configuration", string(workspaceConfig))
 }
 
 func observeTask(

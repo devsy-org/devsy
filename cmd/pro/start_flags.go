@@ -23,7 +23,7 @@ func (cmd *StartCmd) registerDockerFlags(startCmd *cobra.Command) {
 			&cmd.Docker,
 			names.Docker,
 			false,
-			"If enabled will try to deploy Devsy Pro to the local docker installation.",
+			"If enabled will try to deploy Devsy Platform to the local docker installation.",
 		),
 		cliflags.String(&cmd.DockerImage, names.DockerImage, "", "The docker image to install."),
 		cliflags.StringArray(&cmd.DockerArgs, names.DockerArg, []string{}, "Extra docker args"),
@@ -76,13 +76,13 @@ func (cmd *StartCmd) registerChartFlags(startCmd *cobra.Command) {
 			&cmd.ChartPath,
 			names.ChartPath,
 			"",
-			"The local chart path to deploy Devsy Pro",
+			"The local chart path to deploy Devsy Platform",
 		),
 		cliflags.String(
 			&cmd.ChartRepo,
 			names.ChartRepo,
 			"https://charts.devsy.sh/",
-			"The chart repo to deploy Devsy Pro",
+			"The chart repo to deploy Devsy Platform",
 		),
 	)
 }
@@ -113,7 +113,7 @@ func (cmd *StartCmd) registerLifecycleFlags(startCmd *cobra.Command) {
 			&cmd.Reset,
 			names.Reset,
 			false,
-			"If true, an existing instance will be deleted before installing Devsy Pro",
+			"If true, an existing instance will be deleted before installing Devsy Platform",
 		),
 		cliflags.Bool(
 			&cmd.NoWait,
@@ -131,7 +131,7 @@ func (cmd *StartCmd) registerLifecycleFlags(startCmd *cobra.Command) {
 			&cmd.NoLogin,
 			names.NoLogin,
 			false,
-			"If true, will not login to a Devsy Pro instance on start",
+			"If true, will not login to a Devsy Platform instance on start",
 		),
 	)
 }
