@@ -135,6 +135,9 @@ func (s *BootstrapSuite) TestHostilePathAndLiveBinaryStream() {
 	installed, err := os.ReadFile(installPath)
 	s.Require().NoError(err)
 	s.Equal(binary, installed)
+	info, err := os.Stat(installPath)
+	s.Require().NoError(err)
+	s.Equal(os.FileMode(0o755), info.Mode().Perm())
 	_, err = os.Stat(sentinel)
 	s.True(os.IsNotExist(err))
 }

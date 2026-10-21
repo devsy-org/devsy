@@ -19,6 +19,8 @@ Local folders suit early work. Once the devcontainer works, push it to a Git rep
 
 The SSH provider supports Bash, Zsh, and Fish login shells on Linux. Agent installation runs through the host's executable `/bin/sh`; interactive terminals and environment probing continue to use the account's configured shell. The workspace container's shell is configured separately.
 
+Dockerless containers are a separate bootstrap case: before their image filesystem is built, core can use the fixed `/.dockerless/bin/sh` bundle when `DOCKERLESS=true`, `/bin/sh` is not executable, and that bundled shell is executable. `/bin/sh` remains preferred when available. This does not change the SSH host prerequisite above.
+
 The host needs standard bootstrap tools, including `mkdir`, `mktemp`, `head` with `-c`, `wc`, `chmod`, `mv`, and `rm`. A download uses `curl` or `wget`; when neither is available, Devsy can transfer the agent over the SSH connection. The agent directory must permit execution and either be writable by the account or allow noninteractive privilege escalation.
 
 If startup reports `command not found: sh -c`, check the installed SSH provider version and its release notes for the POSIX bootstrap fix. Changing the account's shell is unnecessary. Both the external OpenSSH client and the built-in SSH transport use the same bootstrap launcher; switching transports does not repair a missing `/bin/sh` or a restricted account.

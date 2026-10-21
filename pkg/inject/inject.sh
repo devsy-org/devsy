@@ -93,7 +93,7 @@ prepare_temp() {
 
 publish_binary() {
     if [ "$CHMOD_PATH" = "true" ]; then
-        run_installer_script 'chmod -- +x "$1"' "$temp_file" || {
+        run_installer_script 'chmod -- 0755 "$1"' "$temp_file" || {
             >&2 echo "Error: Failed to make temporary agent executable"
             return 1
         }

@@ -71,11 +71,18 @@ func (s *BootstrapSuite) TestInstallerShellSelection() {
 			installed, readErr := os.ReadFile(installPath)
 			s.Require().NoError(readErr)
 			s.Equal(payload, installed)
+			info, statErr := os.Stat(installPath)
+			s.Require().NoError(statErr)
+			if tc.selected == "" {
+				s.Equal(os.FileMode(0o750), info.Mode().Perm())
+			} else {
+				s.Equal(os.FileMode(0o755), info.Mode().Perm())
+			}
 			for _, name := range []string{standardInterpreter, bundledInterpreter} {
 				_, statErr := os.Stat(filepath.Join(root, name+"-used"))
 				s.Equal(name == tc.selected, statErr == nil)
 			}
-			_, statErr := os.Stat(filepath.Join(root, "substitution-ran"))
+			_, statErr = os.Stat(filepath.Join(root, "substitution-ran"))
 			s.True(os.IsNotExist(statErr))
 		})
 	}

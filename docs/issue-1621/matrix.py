@@ -8,6 +8,29 @@ import shlex
 import subprocess
 
 
+def fixed_row_passes(row):
+    expected_requests = {'cold': 1, 'warm': 0, 'forced-replacement': 1}.get(row.get('phase'))
+    requests = row.get('localRequests')
+    return (
+        expected_requests is not None
+        and row.get('harnessExit') == 0
+        and row.get('executed') is True
+        and row.get('duplexExact') is True
+        and row.get('error') == ''
+        and row.get('execError') == ''
+        and row.get('stderr') == ''
+        and isinstance(requests, int)
+        and not isinstance(requests, bool)
+        and requests == expected_requests
+    )
+
+
+def require_fixed_rows(rows):
+    failures = [row for row in rows if not fixed_row_passes(row)]
+    if failures:
+        raise SystemExit('SSH matrix failed: ' + json.dumps(failures))
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--state', required=True, type=Path)
@@ -46,15 +69,15 @@ if r.readline() == b"LIVE-FOLLOWON\\n":
                        '-payload', str(payload), '-input', str(input_file),
                        '-check', 'false' if phase == 'warm' else 'true']
                 c = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=30)
-                row = {'shell': shell, 'builtin': builtin, 'phase': phase,
-                       'harnessExit': c.returncode, **json.loads(c.stdout)}
+                row = {**json.loads(c.stdout), 'shell': shell, 'builtin': builtin,
+                       'phase': phase, 'harnessExit': c.returncode}
                 row['rawPrefix'] = row.pop('rawStdout')[:30]
                 row.pop('stdout')
                 rows.append(row)
                 print(json.dumps(row), flush=True)
     a.output.write_text(json.dumps(rows, indent=2) + '\n')
     if not a.baseline:
-        assert all(r['duplexExact'] and not r['error'] and not r['stderr'] for r in rows)
+        require_fixed_rows(rows)
 
 
 if __name__ == '__main__':

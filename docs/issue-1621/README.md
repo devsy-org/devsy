@@ -73,7 +73,8 @@ Working core base: `d3f6e421642575c5072badcf56bf5b0a5606bd41`. Final script/sour
 | --- | --- |
 | Original v1.24.0 `inject.sh` | `c2effffd6bbb9e42146bce22e2393f55f19b88d7b152f59d09c3c1e749bc2e0b` |
 | Pre-Dockerless-fix `pkg/inject/inject.sh` | `b07ab67954708ee0bffac3b76a498374833a0383225bbf8acedf9e71c46d44c3` |
-| Dockerless-compatible `pkg/inject/inject.sh` | `61d88ef1fd4394f35026d2c57cf3a3e29562385e2e8799a35a7f2fb097090294` |
+| Pre-permissions-fix Dockerless-compatible `pkg/inject/inject.sh` | `61d88ef1fd4394f35026d2c57cf3a3e29562385e2e8799a35a7f2fb097090294` |
+| Readable staged-agent `pkg/inject/inject.sh` | `1c2b70523285dcca664a61180e5e56fccd09af4ef08a005cdf9ff2d36e62dcdd` |
 | `pkg/inject/script.go` | `752c82c5f3df1e60359658bc961c557b35995636dab88618ca8e791e21bf8e3e` |
 | `pkg/agent/inject.go` | `3ea3bb44cbc37132bde6569b68e0425ea8c91d744c3a6ea94988d99d3e6c61e7` |
 | Actual Linux agent executable | `5e5853e9e0653830858fe2438b46a7e8eb94a927bbbb4fda3142c2ddbe173bc4` |
@@ -113,6 +114,16 @@ The actual bundled BusyBox `su` wrapper also preserved empty and hostile literal
 Persistent `TestPrivilegedInstallerModesLiveStream` and `TestPrivilegedInstallerFailureStatus` exercise the real dispatcher in sudo/su mode using strict test doubles. The doubles validate invocation flags and pass the requested code unchanged to a real POSIX shell; markers stay off protocol stdout. Actual `Inject` sequencing checks hostile paths/URLs, exact binary and live NUL-containing bytes, one `done`, and failure status 37. These deterministic tests require no host privilege operation and complement, rather than replace, the real-tool evidence above.
 
 Follow-ups remain precise: investigate Kubernetes staging diagnostics/stream closure in the Dockerless filesystem transition, and provide an explicit diagnostic stream for staged-file cleanup rather than submitting an all-false exec stream request. This change preserves native argv routing and configured interactive shells. SSH provider bootstrapping still requires `/bin/sh` before the core script executes.
+
+## Elevated installation permissions
+
+CodeRabbit identified a staging regression: `mktemp` creates mode `0600`, so adding only executable bits published a root-owned `0711` agent after sudo installation. A non-root user could execute that file but could not reopen its own executable. Publication now sets the staged agent to `0755` before the atomic rename. The chmod-failure path still retains the prior agent and removes only staging files. Persistent direct, sudo/su-dispatcher, and Dockerless-selection tests assert the final mode; failure cases retain the original mode.
+
+An ordinary disposable Linux ARM64 container reproduced the mechanism with the actual `GenerateScript` and `Inject` APIs, a non-root uid 1001, and real noninteractive sudo into an unwritable root-owned destination. The immutable `61d88ef1...` script published root-owned `0711`; the native synthetic ELF started but failed `os.Open(os.Executable())` with permission denied and exit 42. With script `1c2b7052...`, the identical 2,403,587-byte ELF was root-owned `0755`, reopened and read itself, and completed an exact 4,124-byte binary/live exchange with empty stderr and no error. Both runs requested one payload. The rendered scripts differed only in `chmod -- +x` versus `chmod -- 0755`.
+
+The synthetic ELF SHA-256 was `8f3d322e43d67c91d924de36054d2a66702720da0ea109242c89595b85af77d3`; successful stdout SHA-256 was `445e35c83283238eb1b2ef4bfcdc4e6a53f9600c7f99136a662e8304d6298a12`. This is an actual permissions and streaming reproduction, not a new full Devsy-agent or whole-product qualification. Ubuntu uutils 0.10.0, GNU coreutils 9.4, and BusyBox 1.38 accepted the fixed chmod syntax. The container, its internal test user and sudo policy were removed; no host accounts or security settings changed.
+
+The fixed matrix validator now explicitly rejects failed child execution, missing or false execution/duplex indicators, nonempty injection/process errors or stderr, and incorrect payload request counts (cold/replacement one, warm zero). Evidence is written before failure, and host-owned exit/phase metadata cannot be overwritten by child JSON. Controlled validator-only subprocess tests under `python3 -O` verified both failure and baseline diagnostic behavior; they are not runtime-matrix evidence. The retained historical 30-cell result also passed the stricter gate.
 
 ## T9 boundary audit and release coordination
 
