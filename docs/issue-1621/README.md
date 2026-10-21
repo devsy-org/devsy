@@ -125,6 +125,12 @@ The synthetic ELF SHA-256 was `8f3d322e43d67c91d924de36054d2a66702720da0ea109242
 
 The fixed matrix validator now explicitly rejects failed child execution, missing or false execution/duplex indicators, nonempty injection/process errors or stderr, and incorrect payload request counts (cold/replacement one, warm zero). Evidence is written before failure, and host-owned exit/phase metadata cannot be overwritten by child JSON. Controlled validator-only subprocess tests under `python3 -O` verified both failure and baseline diagnostic behavior; they are not runtime-matrix evidence. The retained historical 30-cell result also passed the stricter gate.
 
+## Matrix child-failure evidence
+
+A later CodeRabbit review identified that a timed-out or malformed child result could stop the matrix before its evidence file was written. A controlled baseline reproduction confirmed that a successful row followed by `TimeoutExpired` escaped with no output file. The helper now records timeouts, failed child startup, invalid/non-object JSON, and missing or wrongly typed output fields as failed cells, retaining partial output and separate child-process stderr. The fixed gate rejects those cells after the complete evidence file is written; baseline runs remain diagnostic. Host-owned exit and diagnostic fields cannot be forged by child JSON.
+
+Run the persistent helper regressions with `python3 -O -m unittest discover -s docs/issue-1621 -p 'test_matrix.py'`. They simulate child failures in both baseline and fixed entry points, check that earlier and later rows survive, and execute a real local subprocess to verify nonzero exit and stderr override forged JSON metadata. They do not start SSH, containers, or the product and do not replace runtime qualification. Product-source hashes are unchanged by this helper-only follow-up.
+
 ## T9 boundary audit and release coordination
 
 Read-only inventory at base core `d3f6e421642575c5072badcf56bf5b0a5606bd41`:

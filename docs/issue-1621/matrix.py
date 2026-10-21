@@ -14,6 +14,8 @@ def fixed_row_passes(row):
     return (
         expected_requests is not None
         and row.get('harnessExit') == 0
+        and not row.get('harnessError')
+        and not row.get('harnessStderr')
         and row.get('executed') is True
         and row.get('duplexExact') is True
         and row.get('error') == ''
@@ -29,6 +31,44 @@ def require_fixed_rows(rows):
     failures = [row for row in rows if not fixed_row_passes(row)]
     if failures:
         raise SystemExit('SSH matrix failed: ' + json.dumps(failures))
+
+
+def captured_text(value):
+    if isinstance(value, bytes):
+        return value.decode('utf-8', errors='replace')
+    return value or ''
+
+
+def run_cell(cmd, env):
+    exit_code, output, diagnostics, failure = None, '', '', ''
+    try:
+        child = subprocess.run(cmd, env=env, capture_output=True, timeout=30)
+        exit_code = child.returncode
+        output, diagnostics = captured_text(child.stdout), captured_text(child.stderr)
+    except subprocess.TimeoutExpired as error:
+        output, diagnostics = captured_text(error.stdout), captured_text(error.stderr)
+        failure = f'harness timed out after {error.timeout} seconds'
+    except OSError as error:
+        failure = f'harness could not start: {error}'
+
+    result = {}
+    try:
+        decoded = json.loads(output)
+        if not isinstance(decoded, dict):
+            raise ValueError('harness JSON is not an object')
+        result = decoded
+        if not all(isinstance(result.get(key), str) for key in ('rawStdout', 'stdout')):
+            raise ValueError('harness JSON requires string rawStdout and stdout fields')
+    except ValueError as error:
+        failure = '; '.join(filter(None, (failure, str(error))))
+
+    raw = result.pop('rawStdout', output)
+    result.pop('stdout', None)
+    result.update(harnessExit=exit_code, harnessError=failure,
+                  harnessStderr=diagnostics, rawPrefix=(raw if isinstance(raw, str) else output)[:30])
+    if failure:
+        result['harnessOutput'] = output
+    return result
 
 
 def main():
@@ -68,11 +108,7 @@ if r.readline() == b"LIVE-FOLLOWON\\n":
                        '-builtin', builtin, '-dest', dest, '-command', shlex.quote(dest),
                        '-payload', str(payload), '-input', str(input_file),
                        '-check', 'false' if phase == 'warm' else 'true']
-                c = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=30)
-                row = {**json.loads(c.stdout), 'shell': shell, 'builtin': builtin,
-                       'phase': phase, 'harnessExit': c.returncode}
-                row['rawPrefix'] = row.pop('rawStdout')[:30]
-                row.pop('stdout')
+                row = {**run_cell(cmd, env), 'shell': shell, 'builtin': builtin, 'phase': phase}
                 rows.append(row)
                 print(json.dumps(row), flush=True)
     a.output.write_text(json.dumps(rows, indent=2) + '\n')
