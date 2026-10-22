@@ -117,8 +117,11 @@ async function loadOptions(name: string, isCurrent: () => boolean) {
     if (!isCurrent()) return
     opts = parseContextOptions(raw)
     initialOpts = { ...opts }
-  } catch {
-    // Keep defaults
+  } catch (err) {
+    if (isCurrent())
+      toasts.error(
+        `Failed to load context options: ${extractErrorMessage(err)}`,
+      )
   } finally {
     if (isCurrent()) loading = false
   }

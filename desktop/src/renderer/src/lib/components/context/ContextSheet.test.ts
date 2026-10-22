@@ -19,6 +19,7 @@ vi.mock("$lib/stores/toasts.js", () => ({
 
 type RawOptions = Awaited<ReturnType<typeof contextOptions>>
 let responses: Array<(options: RawOptions) => void>
+let rejections: Array<(reason: unknown) => void>
 
 async function settle() {
   for (let i = 0; i < 5; i++) await tick()
@@ -26,12 +27,17 @@ async function settle() {
 
 beforeEach(() => {
   responses = []
+  rejections = []
   vi.mocked(contextSetOptions).mockReset()
   vi.mocked(toasts.success).mockClear()
   vi.mocked(toasts.error).mockClear()
   vi.mocked(contextOptions).mockReset()
   vi.mocked(contextOptions).mockImplementation(
-    () => new Promise((resolve) => responses.push(resolve)),
+    () =>
+      new Promise((resolve, reject) => {
+        responses.push(resolve)
+        rejections.push(reject)
+      }),
   )
 })
 afterEach(cleanup)
@@ -183,7 +189,12 @@ describe("ContextSheet option loading", () => {
 
   it("keeps defaults available when the initial request fails", async () => {
     vi.mocked(contextOptions).mockRejectedValueOnce(
-      new Error("options unavailable"),
+      Object.assign(new Error("raw transport detail"), {
+        cliError: {
+          code: "context_load_failed",
+          message: "options unavailable",
+        },
+      }),
     )
     const ui = render(ContextSheet, {
       props: { context: { name: "default" }, isActive: true, open: true },
@@ -194,6 +205,10 @@ describe("ContextSheet option loading", () => {
     expect(github.hasAttribute("disabled")).toBe(false)
     expect(ui.queryByRole("button", { name: "Save" })).toBeNull()
     expect(contextOptions).toHaveBeenCalledTimes(1)
+    expect(toasts.error).toHaveBeenCalledExactlyOnceWith(
+      "Failed to load context options: options unavailable",
+    )
+    expect(contextSetOptions).not.toHaveBeenCalled()
   })
   it("uses defaults after a different context fails to load without saving previous context values", async () => {
     const ui = render(ContextSheet, {
@@ -222,4 +237,35 @@ describe("ContextSheet option loading", () => {
       "staging",
     )
   })
+  it.each(["close", "context change"])(
+    "ignores a rejected request after %s",
+    async (boundary) => {
+      const ui = render(ContextSheet, {
+        props: { context: { name: "default" }, isActive: true, open: true },
+      })
+      await settle()
+      if (boundary === "close") await ui.rerender({ open: false })
+      else await ui.rerender({ context: { name: "staging" } })
+      await settle()
+      rejections[0](new Error("obsolete request failed"))
+      await settle()
+      expect(toasts.error).not.toHaveBeenCalled()
+      if (boundary === "close") {
+        await ui.rerender({ open: true })
+        await settle()
+      }
+      expect(
+        ui.queryByRole("switch", { name: "GitHub CLI Credentials" }),
+      ).toBeNull()
+      responses[1]({ SSH_INJECT_GITHUB_CREDENTIALS: { value: "true" } })
+      await settle()
+      expect(
+        ui
+          .getByRole("switch", { name: "GitHub CLI Credentials" })
+          .getAttribute("aria-checked"),
+      ).toBe("true")
+      expect(ui.queryByRole("button", { name: "Save" })).toBeNull()
+      expect(toasts.error).not.toHaveBeenCalled()
+    },
+  )
 })
