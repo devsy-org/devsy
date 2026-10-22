@@ -80,6 +80,14 @@ unit:
       run: '^(TestInvocationSuite|TestProviderDaemonOverrides.*|TestStdioTransportSuite|TestLaunch.*|TestEnvBlock.*)$'
       args: [-race, -count=1, -v, -timeout=5m]
 
+    - name: windows-provider-launch
+      description: native Windows provider executable launch through the emulated shell
+      os: [windows]
+      packages: [./pkg/shell]
+      run: '^TestExecutablePathTestSuite$'
+      require_tests: [TestExecutablePathTestSuite]
+      args: [-race, -count=1, -v, -timeout=5m]
+
     - name: ci-tooling-windows
       description: Go CI helpers that also run on Windows
       os: [windows]

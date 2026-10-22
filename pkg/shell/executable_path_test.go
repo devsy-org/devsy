@@ -45,25 +45,16 @@ func (s *ExecutablePathTestSuite) SetupTest() {
 
 	self, err := os.Executable()
 	s.Require().NoError(err)
-	source, err := os.Open(self)
+	source, err := os.Open(self) //nolint:gosec // copies this test binary
 	s.Require().NoError(err)
 	defer func() { _ = source.Close() }()
-	target, err := os.OpenFile(s.executable, os.O_CREATE|os.O_WRONLY, 0o700)
+	target, err := os.OpenFile( //nolint:gosec // the copy must be executable
+		s.executable, os.O_CREATE|os.O_WRONLY, 0o700,
+	)
 	s.Require().NoError(err)
 	_, err = io.Copy(target, source)
 	s.Require().NoError(err)
 	s.Require().NoError(target.Close())
-}
-
-func (s *ExecutablePathTestSuite) run(command string, environ ...string) (string, error) {
-	var stdout, stderr bytes.Buffer
-	err := RunEmulatedShell(context.Background(), &CommandRunner{
-		Command: command,
-		Stdout:  &stdout,
-		Stderr:  &stderr,
-		Environ: append(os.Environ(), environ...),
-	})
-	return stdout.String(), err
 }
 
 func (s *ExecutablePathTestSuite) TestCommandVariableWithSpacesInPathIsNotSplit() {
@@ -100,4 +91,15 @@ func (s *ExecutablePathTestSuite) TestVariableArgumentWithSpacesStillSplits() {
 
 	s.Require().NoError(err)
 	s.Equal("a b\n", output)
+}
+
+func (s *ExecutablePathTestSuite) run(command string, environ ...string) (string, error) {
+	var stdout, stderr bytes.Buffer
+	err := RunEmulatedShell(context.Background(), &CommandRunner{
+		Command: command,
+		Stdout:  &stdout,
+		Stderr:  &stderr,
+		Environ: append(os.Environ(), environ...),
+	})
+	return stdout.String(), err
 }
