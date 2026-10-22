@@ -81,11 +81,11 @@ unit:
       args: [-race, -count=1, -v, -timeout=5m]
 
     - name: windows-provider-launch
-      description: native Windows provider executable launch through the emulated shell
+      description: native Windows provider executable launch and launch failure reporting
       os: [windows]
-      packages: [./pkg/shell]
-      run: '^TestExecutablePathTestSuite$'
-      require_tests: [TestExecutablePathTestSuite]
+      packages: [./pkg/shell, ./pkg/client/clientimplementation]
+      run: '^(TestExecutablePathTestSuite|TestProviderCommandErrorTestSuite)$'
+      require_tests: [TestExecutablePathTestSuite, TestProviderCommandErrorTestSuite]
       args: [-race, -count=1, -v, -timeout=5m]
 
     - name: ci-tooling-windows

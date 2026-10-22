@@ -46,6 +46,8 @@ func RunEmulatedShell(
 		return err
 	}
 
+	quoteExecutablePaths(parsed, expand.ListEnviron(runner.Environ...))
+
 	r, err := interp.New(buildRunnerOptions(shellRunnerOptions{
 		stdin:  runner.Stdin,
 		stdout: runner.Stdout,
@@ -68,6 +70,49 @@ func RunEmulatedShell(
 	}
 
 	return nil
+}
+
+// quoteExecutablePaths stops a command name such as ${PROVIDER_BINARY} from being
+// split on whitespace when it expands to one existing file, e.g. a binary under
+// C:\Users\Jane Doe. Values that are not a single file keep shell word splitting,
+// so a variable like DOCKER_PATH="sudo docker" still expands to a command and arguments.
+func quoteExecutablePaths(file *syntax.File, env expand.Environ) {
+	printer := syntax.NewPrinter()
+	syntax.Walk(file, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+
+		word := call.Args[0]
+		if len(word.Parts) != 1 {
+			return true
+		}
+		exp, ok := word.Parts[0].(*syntax.ParamExp)
+		if !ok || exp.Param == nil || !isPlainExpansion(printer, word, exp.Param.Value) {
+			return true
+		}
+		if isExistingFile(env.Get(exp.Param.Value).String()) {
+			word.Parts[0] = &syntax.DblQuoted{Parts: []syntax.WordPart{exp}}
+		}
+		return true
+	})
+}
+
+func isPlainExpansion(printer *syntax.Printer, word *syntax.Word, name string) bool {
+	var sb strings.Builder
+	if err := printer.Print(&sb, word); err != nil {
+		return false
+	}
+	return sb.String() == "$"+name || sb.String() == "${"+name+"}"
+}
+
+func isExistingFile(path string) bool {
+	if !strings.ContainsAny(path, " \t\n") {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 type shellRunnerOptions struct {
