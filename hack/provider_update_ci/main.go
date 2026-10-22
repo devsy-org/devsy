@@ -58,10 +58,11 @@ func runProviderUpdateTests(artifactsDir string, stdout, stderr io.Writer) int {
 	expected, discoveryErr := discoverProviderTests(logFile, stdout, stderr)
 	result := testRunResult{discoveryErr: discoveryErr}
 	if discoveryErr == nil {
-		result = runGoTests(capture)
+		result, capture = runGoTestsWithRetry(logFile, capture, stdout, stderr)
+	} else {
+		capture.finish()
+		result.exitCode = executionExitCode(result)
 	}
-	capture.finish()
-	result.exitCode = executionExitCode(result)
 	result.captureErr = capture.err()
 	exitWriteErr, logCloseErr := finishTestArtifacts(artifactsDir, logFile, result.exitCode)
 	result.exitWriteErr = exitWriteErr
