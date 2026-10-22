@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testPurpose = "unlock"
+
 // newTestResolver mirrors the base resolver Options() builds, with the process
 // environment and remembered-passphrase store pinned so the host cannot leak in.
 func newTestResolver(
@@ -35,13 +37,12 @@ func TestInvocationResolverReusesResolvedMaterial(t *testing.T) {
 
 	first, err := resolver.ResolvePassphrase(
 		context.Background(),
-		secrets.UnlockRequest{AllowPrompt: true, Purpose: "unlock"},
+		secrets.UnlockRequest{AllowPrompt: true, Purpose: testPurpose},
 	)
 	require.NoError(t, err)
-	// A later caller that may not prompt must still receive the cached material.
 	second, err := resolver.ResolvePassphrase(
 		context.Background(),
-		secrets.UnlockRequest{Purpose: "unlock"},
+		secrets.UnlockRequest{Purpose: testPurpose},
 	)
 	require.NoError(t, err)
 
@@ -64,7 +65,7 @@ func TestInvocationResolverRetriesAfterFailedPrompt(t *testing.T) {
 		}
 		return "retry-value", nil
 	})
-	request := secrets.UnlockRequest{AllowPrompt: true, Purpose: "unlock"}
+	request := secrets.UnlockRequest{AllowPrompt: true, Purpose: testPurpose}
 
 	_, err := resolver.ResolvePassphrase(context.Background(), request)
 	require.ErrorIs(t, err, promptErr)
@@ -91,7 +92,7 @@ func TestInvocationResolverMaterialIsEmptyUntilResolved(t *testing.T) {
 
 	_, err := resolver.ResolvePassphrase(
 		context.Background(),
-		secrets.UnlockRequest{AllowPrompt: true, Purpose: "unlock"},
+		secrets.UnlockRequest{AllowPrompt: true, Purpose: testPurpose},
 	)
 	require.NoError(t, err)
 
@@ -107,18 +108,16 @@ func TestInvocationResolverPromptsOnceForConcurrentCallers(t *testing.T) {
 		prompts.Add(1)
 		return "shared", nil
 	})
-	request := secrets.UnlockRequest{AllowPrompt: true, Purpose: "unlock"}
+	request := secrets.UnlockRequest{AllowPrompt: true, Purpose: testPurpose}
 
 	const callers = 16
 	var wg sync.WaitGroup
 	results := make([]secrets.UnlockMaterial, callers)
 	errs := make([]error, callers)
 	for i := range callers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			results[i], errs[i] = resolver.ResolvePassphrase(context.Background(), request)
-		}()
+		})
 	}
 	wg.Wait()
 
