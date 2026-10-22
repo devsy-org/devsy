@@ -38,7 +38,13 @@ unit:
 
     - name: e2e-runtime-helpers
       description: E2E runtime helper packages
-      packages: [./e2e/framework/runenv/..., ./e2e/framework/dockerwsl, ./e2e/framework/ginkgoreport, ./e2e/cmd/devsy-ci]
+      packages:
+        - ./e2e/framework/runenv/...
+        - ./e2e/framework/dockerwsl
+        - ./e2e/framework/ginkgoreport
+        - ./e2e/cmd/devsy-ci
+        - ./e2e/tests/ssh
+      require_tests: [TestProxyCommandExcerptProtectsFailureReport]
       args: [-race, -count=1, -timeout=5m]
 
     - name: e2e-framework
