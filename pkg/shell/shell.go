@@ -10,6 +10,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -46,14 +47,13 @@ func RunEmulatedShell(
 		return err
 	}
 
-	quoteExecutablePaths(parsed, expand.ListEnviron(runner.Environ...))
-
 	r, err := interp.New(buildRunnerOptions(shellRunnerOptions{
-		stdin:  runner.Stdin,
-		stdout: runner.Stdout,
-		stderr: runner.Stderr,
-		env:    runner.Environ,
-		dir:    dir,
+		stdin:       runner.Stdin,
+		stdout:      runner.Stdout,
+		stderr:      runner.Stderr,
+		env:         runner.Environ,
+		dir:         dir,
+		commandVars: commandVariables(parsed),
 	})...)
 	if err != nil {
 		return fmt.Errorf("create shell runner: %w", err)
@@ -72,12 +72,11 @@ func RunEmulatedShell(
 	return nil
 }
 
-// quoteExecutablePaths stops a command name such as ${PROVIDER_BINARY} from being
-// split on whitespace when it expands to one existing file, e.g. a binary under
-// C:\Users\Jane Doe. Values that are not a single file keep shell word splitting,
-// so a variable like DOCKER_PATH="sudo docker" still expands to a command and arguments.
-func quoteExecutablePaths(file *syntax.File, env expand.Environ) {
+// commandVariables returns the variables used alone as a command name, such as
+// PROVIDER_BINARY in "${PROVIDER_BINARY} init".
+func commandVariables(file *syntax.File) []string {
 	printer := syntax.NewPrinter()
+	var names []string
 	syntax.Walk(file, func(node syntax.Node) bool {
 		call, ok := node.(*syntax.CallExpr)
 		if !ok || len(call.Args) == 0 {
@@ -89,14 +88,12 @@ func quoteExecutablePaths(file *syntax.File, env expand.Environ) {
 			return true
 		}
 		exp, ok := word.Parts[0].(*syntax.ParamExp)
-		if !ok || exp.Param == nil || !isPlainExpansion(printer, word, exp.Param.Value) {
-			return true
-		}
-		if isExistingFile(env.Get(exp.Param.Value).String()) {
-			word.Parts[0] = &syntax.DblQuoted{Parts: []syntax.WordPart{exp}}
+		if ok && exp.Param != nil && isPlainExpansion(printer, word, exp.Param.Value) {
+			names = append(names, exp.Param.Value)
 		}
 		return true
 	})
+	return names
 }
 
 func isPlainExpansion(printer *syntax.Printer, word *syntax.Word, name string) bool {
@@ -105,6 +102,25 @@ func isPlainExpansion(printer *syntax.Printer, word *syntax.Word, name string) b
 		return false
 	}
 	return sb.String() == "$"+name || sb.String() == "${"+name+"}"
+}
+
+// joinExecutablePath undoes word splitting of a command variable that holds one existing
+// file, e.g. a binary under C:\Users\Jane Doe. The value is read when the command runs, so a
+// variable reassigned to a command with arguments, like DOCKER_PATH="sudo docker", keeps
+// shell word splitting.
+func joinExecutablePath(args []string, env expand.Environ, names []string) []string {
+	for _, name := range names {
+		value := env.Get(name).String()
+		if !isExistingFile(value) {
+			continue
+		}
+
+		fields := strings.Fields(value)
+		if len(args) >= len(fields) && slices.Equal(args[:len(fields)], fields) {
+			return append([]string{value}, args[len(fields):]...)
+		}
+	}
+	return args
 }
 
 func isExistingFile(path string) bool {
@@ -116,11 +132,12 @@ func isExistingFile(path string) bool {
 }
 
 type shellRunnerOptions struct {
-	stdin  io.Reader
-	stdout io.Writer
-	stderr io.Writer
-	env    []string
-	dir    string
+	stdin       io.Reader
+	stdout      io.Writer
+	stderr      io.Writer
+	env         []string
+	dir         string
+	commandVars []string
 }
 
 func buildRunnerOptions(p shellRunnerOptions) []interp.RunnerOption {
@@ -141,6 +158,7 @@ func buildRunnerOptions(p shellRunnerOptions) []interp.RunnerOption {
 		// command to an absolute path so IsBuiltin returns false and the
 		// real binary is executed via the exec handler.
 		interp.CallHandler(func(ctx context.Context, args []string) ([]string, error) {
+			args = joinExecutablePath(args, interp.HandlerCtx(ctx).Env, p.commandVars)
 			if args[0] == "kill" {
 				args[0] = "/bin/kill"
 			}

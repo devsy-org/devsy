@@ -86,6 +86,23 @@ func (s *ExecutablePathTestSuite) TestCommandVariableWithArgumentsStillSplits() 
 	s.Equal("hello world\n", output)
 }
 
+func (s *ExecutablePathTestSuite) TestReassignedCommandVariableStillSplits() {
+	output, err := s.run("CMD='echo hello'; $CMD world", "CMD="+s.executable)
+
+	s.Require().NoError(err)
+	s.Equal("hello world\n", output)
+}
+
+func (s *ExecutablePathTestSuite) TestCommandVariableAssignedInScriptIsNotSplit() {
+	output, err := s.run(
+		"PROVIDER='"+s.executable+"'; ${PROVIDER} init",
+		helperProcessEnv+"=1",
+	)
+
+	s.Require().NoError(err)
+	s.Equal("helper ran with init", output)
+}
+
 func (s *ExecutablePathTestSuite) TestVariableArgumentWithSpacesStillSplits() {
 	output, err := s.run("echo ${ARGS}", "ARGS=a b")
 
