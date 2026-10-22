@@ -738,7 +738,18 @@ jobs:
             --bootstrap-timeout 270s
 
       - name: setup WSL2 Ubuntu
+        id: setup_wsl
         if: matrix.setup_docker_wsl
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
+        with:
+          distribution: Ubuntu-24.04
+          use-cache: true
+
+      - name: setup WSL2 Ubuntu (retry)
+        if: matrix.setup_docker_wsl && steps.setup_wsl.outcome != 'success'
+        timeout-minutes: 5
         uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
         with:
           distribution: Ubuntu-24.04
