@@ -1,0 +1,16 @@
+name: relocate tmp
+description: >-
+  Point TMPDIR and GOTMPDIR at the runner temp directory on Linux. Ubuntu 26.04
+  runners mount /tmp as a ~7.8G RAM-backed tmpfs with a user quota, so large
+  builds fail with "disk quota exceeded".
+  https://github.com/actions/runner-images/issues/14777
+runs:
+  using: composite
+  steps:
+    - if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        {
+          echo "TMPDIR=$RUNNER_TEMP"
+          echo "GOTMPDIR=$RUNNER_TEMP"
+        } >> "$GITHUB_ENV"
