@@ -18,6 +18,7 @@ import (
 
 const (
 	defaultShutdownTimeout = 5 * time.Second
+	killReapTimeout        = 5 * time.Second
 	exitDiagnosticWait     = time.Second
 	stderrTailBytes        = 4096
 )
@@ -430,13 +431,15 @@ func (c *stdioConn) shutdown() error {
 		return c.releaseErr
 	}
 	killErr := c.proc.KillTree()
-	if c.waitExited(c.shutdownTimeout) {
+	// A killed tree must exit regardless of the grace period; reaping also
+	// covers Release's process-table scan and the stderr drain.
+	if c.waitExited(killReapTimeout) {
 		return c.releaseErr
 	}
 	return errors.Join(
 		fmt.Errorf(
 			"docker system dial-stdio (pid %d) did not exit within %s of being killed",
-			c.proc.PID(), c.shutdownTimeout,
+			c.proc.PID(), killReapTimeout,
 		),
 		killErr,
 	)
