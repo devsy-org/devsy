@@ -261,6 +261,31 @@ func TestGetDeepValue(t *testing.T) {
 		},
 		{name: "path through scalar yields nil", parameters: withItems, path: "text.length"},
 		{name: "unsupported root type yields nil", parameters: "plain", path: "a"},
+		{
+			name:       "empty path looks up the empty-string key",
+			parameters: map[string]any{"": "blank"},
+			path:       "",
+			want:       "blank",
+		},
+		{
+			name:       "empty segment is a literal map key",
+			parameters: map[string]any{"a": map[string]any{"": 2}},
+			path:       "a.",
+			want:       2,
+		},
+		{name: "nil value mid-path yields nil", parameters: map[string]any{"a": nil}, path: "a.b"},
+		{
+			name:       "plus-signed index parses via Atoi",
+			parameters: withItems,
+			path:       "items.+1",
+			want:       "y",
+		},
+		{
+			name:       "zero-padded index parses via Atoi",
+			parameters: withItems,
+			path:       "items.01",
+			want:       "y",
+		},
 	}
 
 	for _, tc := range cases {
