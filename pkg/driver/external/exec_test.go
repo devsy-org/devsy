@@ -29,8 +29,7 @@ func (s *HostSuite) TestExecLargeDuplexBinaryStream() {
 	// Larger than the gRPC flow-control window; NUL and invalid UTF-8 stay intact.
 	data := bytes.Repeat([]byte{0, 255, 'a', '\n', 128}, 1<<20)
 	var stdout, stderr bytes.Buffer
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	ctx := s.T().Context()
 	err := host.CommandContainerArgv(ctx, fixtureWorkspace, []string{"duplex"}, driver.Streams{
 		Stdin: bytes.NewReader(data), Stdout: &stdout, Stderr: &stderr,
 	})
