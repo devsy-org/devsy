@@ -20,7 +20,7 @@ Do not operate real workspaces or providers. To check a real connection, only li
 | Delete foo. | Verify identity if needed; normal delete, not force. |
 | Clean up foo. | Resolve intent; no inferred delete/reset/force. |
 | Create on my Kubernetes provider; its configured name is `team-k8s`. | List providers, use `team-k8s`, no duplicate provider/default mutation. |
-| Workspace exists but connections fail. | Config lookup is not live state; CLI status/describe/events/logs as appropriate, Pro-only ping, no default recreate. |
+| Workspace exists but connections fail. | Config lookup is not live state; CLI status/describe/events/logs as appropriate, Platform-only ping, no default recreate. |
 | Fix Devsy `cmd/mcp/tools_workspace.go`. | Follow repository contributor instructions; operating skill does not replace `AGENTS.md`. |
 | Add Docker without changing my default. | List providers; reuse if suitable, otherwise CLI add with `--use=false`, then init with required options when setup for use is intended; verify status/default before creating. MCP false/omitted `use` is insufficient in the current adapter. |
 | Exec reports timeout/truncation after a command with side effects. | Report incomplete outcome, inspect effects; no blind command rerun. |

@@ -130,10 +130,10 @@ func (cmd *LoginCmd) prepareProvider(ctx context.Context, fullURL string) (*conf
 		parsedURL.Host,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("get Pro login lock: %w", err)
+		return nil, fmt.Errorf("get Platform login lock: %w", err)
 	}
 	if err := loginLock.Lock(); err != nil {
-		return nil, fmt.Errorf("acquire Pro login lock: %w", err)
+		return nil, fmt.Errorf("acquire Platform login lock: %w", err)
 	}
 	defer func() { _ = loginLock.Unlock() }()
 

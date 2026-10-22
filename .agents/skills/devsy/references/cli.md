@@ -49,7 +49,7 @@ not turn them into MCP's bounded exec response or reproduce its timeout limits.
   lifecycle journal, useful for pending/failed creation and start/stop operations.
 - `devsy workspace logs <name>`: agent logs; unsupported for proxy providers.
   Bound log collection with the host tool's timeout and focus on relevant errors.
-- `devsy workspace ping <name>`: hidden diagnostic for **Devsy Pro workspaces
+- `devsy workspace ping <name>`: hidden diagnostic for **Devsy Platform workspaces
   only**, not a general container-health probe.
 - `devsy workspace troubleshoot <name>`: hidden diagnostic that prints JSON
   including config/provider/workspace information and an optional `Errors`
