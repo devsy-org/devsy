@@ -2,7 +2,7 @@
 "use strict"
 // Mock devsy binary for e2e tests (cross-platform Node.js version)
 // Returns canned JSON responses for each subcommand
-// Handles --result-format json, --skip-pro, and other flags the app sends
+// Handles --result-format json, --skip-platform, --skip-pro, and other flags the app sends
 // Persists state to a JSON file so provider/workspace CRUD works across calls
 
 const fs = require("node:fs")
@@ -206,7 +206,12 @@ function parseArgs(args) {
       i += 2
       continue
     }
-    if (arg === "--skip-pro" || arg === "--force" || arg.startsWith("--use=")) {
+    if (
+      arg === "--skip-platform" ||
+      arg === "--skip-pro" ||
+      arg === "--force" ||
+      arg.startsWith("--use=")
+    ) {
       i++
       continue
     }

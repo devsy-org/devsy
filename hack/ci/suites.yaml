@@ -1,0 +1,274 @@
+# Test tier manifest for the PR workflow (.github/workflows/pr-ci.yml).
+#
+# This file is the single place that defines what tests exist, where they run
+# and how they run. The workflow contains no per-suite conditions; it asks
+# `hack/ci matrix` for its job matrices and `hack/ci unit|e2e|setup` for the
+# behaviour. hack/ci/manifest_test.go fails when a Ginkgo label or a Go test
+# package is not assigned to a tier here.
+#
+# To add a test:
+#   - Go unit test in an ordinary package: nothing to do, it is discovered.
+#   - Go test in a package under test/ or e2e/ that must run as a unit test:
+#     add the package to a `unit.steps` entry.
+#   - Ginkgo spec: add its label to `e2e.suites` (or to `e2e.ungated` with a
+#     reason when another workflow runs it).
+
+unit:
+  # One job per runner; every runner executes the steps whose `os` matches.
+  runners:
+    - { runner: ubuntu-latest, timeout_minutes: 30 }
+    - { runner: macos-latest, timeout_minutes: 45 }
+    - { runner: windows-latest, timeout_minutes: 30 }
+
+  # Steps run in order on each runner. `os` uses GOOS values; empty means all.
+  steps:
+    - name: packages
+      description: every package outside test/ and e2e/ directories, with the race detector
+      os: [linux, darwin]
+      discover: true
+      args: [-race, -short]
+
+    - name: agent-bootstrap-busybox
+      description: agent bootstrap script under BusyBox sh
+      os: [linux]
+      host_shell: busybox
+      packages: [./pkg/inject]
+      run: '^(TestBootstrapSuite|TestInjectScript_RealShell.*)$'
+      args: [-race, -count=1, -timeout=90s]
+
+    - name: e2e-runtime-helpers
+      description: E2E runtime helper packages
+      packages: [./e2e/framework/runenv/..., ./e2e/framework/dockerwsl, ./e2e/framework/ginkgoreport, ./e2e/cmd/devsy-ci]
+      args: [-race, -count=1, -timeout=5m]
+
+    - name: e2e-framework
+      description: shared E2E framework helpers
+      os: [linux, darwin]
+      packages: [./e2e/framework]
+      args: [-race, -short, -count=1, -timeout=5m]
+
+    - name: compose-uid-matrix
+      description: Compose UID expectation matrix
+      os: [linux, darwin]
+      packages: [./e2e/tests/up-docker-compose]
+      run: '^TestExpectedUIDMapping$'
+      require_tests: [TestExpectedUIDMapping]
+      args: [-race, -short, -count=1, -v]
+
+    - name: workspace-fixture-helpers
+      description: workspace fixture helpers
+      os: [linux, darwin]
+      packages: [./e2e/tests/up]
+      args: [-race, -short, -count=1, -timeout=90s]
+
+    - name: registry-fixture
+      description: Linux registry fixture
+      os: [linux]
+      packages: [./e2e/framework/registryfixture]
+      args: [-race, -count=1, -timeout=90s]
+
+    - name: github-api-oracle
+      description: Linux GitHub API oracle fixture
+      os: [linux]
+      packages: [./e2e/framework/ghfixture]
+      args: [-race, -count=1, -timeout=90s]
+
+    - name: windows-detached-task-storage
+      description: native Windows detached task storage and process ownership
+      os: [windows]
+      packages: [./pkg/command, ./pkg/task, ./pkg/workspace]
+      require_tests: [TestTaskQueriesRejectUncertainRecords, TestGetWaitsForWriterHoldingExclusiveFileHandle]
+      args: [-race, -count=1, -timeout=10m]
+
+    - name: windows-detached-workspace-lifecycle
+      description: native Windows detached workers, followers, and task results
+      os: [windows]
+      packages: [./cmd/workspace/up, ./cmd/workspace]
+      run: '^Test(Detached.*|DetachWorkspaceLabel.*|WorkerRecords.*|DuplicateWorkerCannotFailOwnerTask|FinalizeWorker.*|OpenTaskExitsWhenAlreadyCanceled|FollowTask.*|LogTailer.*|ResultEnvelopeFrom.*|EmitTaskTransition|ReportTaskStateJSON.*|TaskErrorMessage|TaskStatusEvent.*)$'
+      require_tests: [TestWorkerRecordsConfigAndClientErrors, TestDetachedWorkerCommitsBeforeWorkspaceWork, TestFollowTaskReconcilesExitedWorker]
+      args: [-race, -count=1, -timeout=10m]
+
+    - name: windows-transport
+      description: native Windows Docker transport
+      os: [windows]
+      packages: [./pkg/docker]
+      run: '^(TestInvocationSuite|TestProviderDaemonOverrides.*|TestStdioTransportSuite|TestLaunch.*|TestEnvBlock.*)$'
+      args: [-race, -count=1, -v, -timeout=5m]
+
+    - name: ci-tooling-windows
+      description: Go CI helpers that also run on Windows
+      os: [windows]
+      packages: [./hack/ci, ./hack/microsandbox, ./hack/podman_ci, ./hack/provider_update_ci]
+      args: [-race, -count=1, -timeout=10m]
+
+  # Packages that contain tests but are deliberately not unit tests.
+  excluded:
+    - package: ./e2e
+      reason: Ginkgo E2E suite, compiled to e2e.test and run by the e2e tier
+    - package: ./e2e/tests/...
+      reason: Ginkgo specs run by the e2e tier; helper tests are listed in unit.steps
+
+e2e:
+  # Defaults per group. A suite inherits these and overrides what differs.
+  groups:
+    unprivileged:
+      description: runs as the runner user and needs no container runtime privileges
+      runner: ubuntu-latest
+      privileged: false
+      test_timeout: 1500s
+      job_timeout_minutes: 45
+      flake_attempts: 1
+    integration:
+      description: runs the e2e binary with sudo on Linux
+      runner: ubuntu-latest
+      privileged: true
+      test_timeout: 1500s
+      job_timeout_minutes: 45
+      flake_attempts: 1
+    microsandbox:
+      description: runs through the MicroSandbox CI helper, which owns the report checks
+      runner: ubuntu-latest
+      privileged: false
+      test_timeout: 1200s
+      job_timeout_minutes: 25
+      flake_attempts: 1
+
+  # Labels executed by another workflow or intentionally not run in PR CI.
+  ungated:
+    - label: gh-forwarding
+      reason: sub-label that always accompanies the ssh suite label
+    - label: up-provider-podman-machine-bind
+      reason: darwin-only spec that needs a local Podman machine; run manually on macOS
+    - label: gpg
+      reason: sub-label that always accompanies a gated suite label
+    - label: microsandbox-builtin
+      reason: sub-label that always accompanies a microsandbox suite label
+    - label: microsandbox-external
+      reason: sub-label that always accompanies a microsandbox suite label
+
+    - label: depends-on
+      reason: sub-label that always accompanies the up-features suite label
+    - label: legacy-id
+      reason: sub-label that always accompanies the up-features suite label
+    - label: lockfile
+      reason: sub-label that always accompanies the up-features suite label
+    - label: mixed
+      reason: sub-label that always accompanies the up-features suite label
+    - label: override
+      reason: sub-label that always accompanies the up-features suite label
+    - label: secret-option
+      reason: sub-label that always accompanies the up-features suite label
+    - label: version-aware
+      reason: sub-label that always accompanies the up-features suite label
+    - label: up-provider-kubernetes-dockerless-path
+      reason: sub-label that always accompanies the up-provider-kubernetes suite label
+    - label: up-provider-kubernetes-ignore
+      reason: sub-label that always accompanies the up-provider-kubernetes suite label
+
+  suites:
+    # --- unprivileged ---
+    - { group: unprivileged, label: context }
+    - { group: unprivileged, label: extends }
+    - { group: unprivileged, label: outdated }
+    - { group: unprivileged, label: machine }
+    - { group: unprivileged, label: self-update }
+    - { group: unprivileged, label: upgrade }
+
+    # --- integration: Linux ---
+    - { group: integration, label: docker-context, test_timeout: 300s, job_timeout_minutes: 10 }
+    - { group: integration, label: ide }
+    - { group: integration, label: machine-provider }
+    - { group: integration, label: integration }
+    - { group: integration, label: tunnel, flake_attempts: 2 }
+    - { group: integration, label: mcp }
+    - { group: integration, label: provider, free_disk_space: true, install_kind: true, flake_attempts: 2 }
+    - { group: integration, label: ssh, fixtures: [ghfixture-linux] }
+    - { group: integration, label: ssh-agent-forward }
+    - { group: integration, label: ssh-ports-attributes }
+    - { group: integration, label: ssh-tunnel-mode }
+    - { group: integration, label: task-cancel }
+    - { group: integration, label: ssh-credentials-server-race }
+    - { group: integration, label: build, install_kind: true, requires_secret: true }
+    - group: integration
+      label: docker-install
+      host_setup: [remove-docker]
+      post_checks: [docker-installed]
+    - { group: integration, label: exec }
+    - { group: integration, label: ci }
+    - { group: integration, label: feature }
+    - { group: integration, label: extends-up }
+    - { group: integration, label: down }
+    - { group: integration, label: rename }
+    - { group: integration, label: delivery }
+    - { group: integration, label: logs }
+    - { group: integration, label: templates }
+    - { group: integration, label: config-apply }
+    - { group: integration, label: run-user-commands }
+    - { group: integration, label: config-read }
+    - { group: integration, label: up-workspaces, free_disk_space: true, install_kind: true }
+    - { group: integration, label: up-behaviors }
+    - { group: integration, label: up-handle-errors, free_disk_space: true, install_kind: true }
+    - { group: integration, label: up-private-token, requires_secret: true }
+    - { group: integration, label: up-provider-kubernetes, free_disk_space: true, install_kind: true }
+    - { group: integration, label: up-provider-kubernetes-restricted-scc, free_disk_space: true, install_kind: true }
+    - { group: integration, label: up-provider-docker, install_kind: true }
+    - { group: integration, label: snapshot, host_setup: [insecure-registry] }
+    - group: integration
+      label: up-docker-compose
+      # Runs first, as the existing non-root runner user, before the sudo run.
+      focused_checks:
+        - name: compose-uid-nonroot
+          focus: 'implements updateRemoteUserUID with root container user$'
+          expect_leaf: implements updateRemoteUserUID with root container user
+          require_uid: 1001
+          require_gid: 1001
+    - { group: integration, label: up-features, install_kind: true }
+
+    # --- integration: Podman on Linux ---
+    - { group: integration, label: up-provider-podman-rootless-basic, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-provider-podman-rootless-exec, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-provider-podman-rootless-lifecycle, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-provider-podman-rootless-config, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-provider-podman-rootless-features, runner: ubuntu-24.04, install_podman: rootless, privileged: false, test_timeout: 600s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-provider-podman-rootful-basic, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-provider-podman-rootful-lifecycle, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-provider-podman-rootful-lifecycle-2, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-provider-podman-rootful-config, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-provider-podman-rootful-features, runner: ubuntu-24.04, install_podman: rootful, test_timeout: 600s, job_timeout_minutes: 20 }
+
+    # --- integration: Windows (Docker API served by Podman) ---
+    - { group: integration, label: provider, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-docker-wsl, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
+    - { group: integration, label: up-features, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
+    - { group: integration, label: ssh-proxy-command, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
+    - { group: integration, label: ssh-tunnel-mode, runner: windows-latest, install_kind: true, test_timeout: 900s, job_timeout_minutes: 20 }
+    - { group: integration, label: task-cancel, runner: windows-latest, install_podman: rootful, test_timeout: 900s, job_timeout_minutes: 20 }
+
+    # --- integration: Windows with a Docker Engine in WSL2, reached over SSH ---
+    # The workflow provisions the daemon with `devsy-ci docker-wsl setup`; the
+    # report must show exactly expected_spec_count specs passing first try.
+    - group: integration
+      label: docker-internal-buildkit
+      runner: windows-latest
+      runtime: docker-wsl
+      expected_spec_count: 6
+      test_timeout: 900s
+      job_timeout_minutes: 25
+
+    # --- microsandbox ---
+    - { group: microsandbox, label: up-provider-microsandbox, expected_spec_count: 2, performance_capture: true }
+    - { group: microsandbox, label: up-provider-microsandbox-images, expected_spec_count: 6 }
+    - { group: microsandbox, label: up-provider-microsandbox-mounts, expected_spec_count: 10 }
+    - { group: microsandbox, label: up-provider-microsandbox-resources, expected_spec_count: 12 }
+    - { group: microsandbox, label: up-provider-microsandbox-storage, expected_spec_count: 6 }
+    - { group: microsandbox, label: up-provider-microsandbox-ephemeral, expected_spec_count: 6 }
+    - { group: microsandbox, label: up-provider-microsandbox-egress, expected_spec_count: 4 }
+    - { group: microsandbox, label: up-provider-microsandbox-prebuilds, expected_spec_count: 4 }
+    - { group: microsandbox, label: up-provider-microsandbox-dockerless, expected_spec_count: 8 }
+    - { group: microsandbox, label: up-provider-microsandbox-recreate, expected_spec_count: 4 }
+    - { group: microsandbox, label: up-provider-microsandbox-managed-recreate, expected_spec_count: 4 }
+    - { group: microsandbox, label: up-provider-microsandbox-logs-cancel, expected_spec_count: 6 }
+    - { group: microsandbox, label: up-provider-microsandbox-compatibility, expected_spec_count: 2 }
+    - { group: microsandbox, label: up-provider-microsandbox-registry-consumer, expected_spec_count: 3, provider_mode: external }
+    - { group: microsandbox, label: up-provider-microsandbox-remote-agent-binaries, expected_spec_count: 1, provider_mode: external }
+    - { group: microsandbox, label: up-provider-microsandbox-source-migration, expected_spec_count: 2, provider_mode: external }

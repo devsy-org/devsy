@@ -429,7 +429,7 @@ describe("CliRunner", () => {
       const result = await cli.run<{ id: string }[]>([
         "workspace",
         "list",
-        "--skip-pro",
+        "--skip-platform",
       ])
       expect(result).toEqual([{ id: "ws-1" }])
       expect(mockExecFile).toHaveBeenCalledWith(
@@ -437,7 +437,7 @@ describe("CliRunner", () => {
         [
           "workspace",
           "list",
-          "--skip-pro",
+          "--skip-platform",
           "--log-level",
           "info",
           "--result-format",
