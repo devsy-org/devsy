@@ -43,18 +43,22 @@ func (s *ExecutablePathTestSuite) SetupTest() {
 	}
 	s.executable = filepath.Join(dir, name)
 
+	s.copyTestBinary(s.executable)
+}
+
+func (s *ExecutablePathTestSuite) copyTestBinary(target string) {
 	self, err := os.Executable()
 	s.Require().NoError(err)
 	source, err := os.Open(self) //nolint:gosec // copies this test binary
 	s.Require().NoError(err)
 	defer func() { _ = source.Close() }()
-	target, err := os.OpenFile( //nolint:gosec // the copy must be executable
-		s.executable, os.O_CREATE|os.O_WRONLY, 0o700,
+	file, err := os.OpenFile( //nolint:gosec // the copy must be executable
+		target, os.O_CREATE|os.O_WRONLY, 0o700,
 	)
 	s.Require().NoError(err)
-	_, err = io.Copy(target, source)
+	_, err = io.Copy(file, source)
 	s.Require().NoError(err)
-	s.Require().NoError(target.Close())
+	s.Require().NoError(file.Close())
 }
 
 func (s *ExecutablePathTestSuite) TestCommandVariableWithSpacesInPathIsNotSplit() {
@@ -101,6 +105,24 @@ func (s *ExecutablePathTestSuite) TestCommandVariableAssignedInScriptIsNotSplit(
 
 	s.Require().NoError(err)
 	s.Equal("helper ran with init", output)
+}
+
+func (s *ExecutablePathTestSuite) TestLiteralCommandIsNotJoinedWithUnrelatedVariable() {
+	dir := s.T().TempDir()
+	ext := filepath.Ext(s.executable)
+	tool := filepath.Join(dir, "tool"+ext)
+	spacedTool := filepath.Join(dir, "tool status"+ext)
+	s.copyTestBinary(tool)
+	s.copyTestBinary(spacedTool)
+
+	output, err := s.run(
+		"'"+tool+"' status; $CMD",
+		"CMD="+spacedTool,
+		helperProcessEnv+"=1",
+	)
+
+	s.Require().NoError(err)
+	s.Equal("helper ran with status"+"helper ran with "+spacedTool, output)
 }
 
 func (s *ExecutablePathTestSuite) TestVariableArgumentWithSpacesStillSplits() {

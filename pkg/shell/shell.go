@@ -72,11 +72,11 @@ func RunEmulatedShell(
 	return nil
 }
 
-// commandVariables returns the variables used alone as a command name, such as
-// PROVIDER_BINARY in "${PROVIDER_BINARY} init".
-func commandVariables(file *syntax.File) []string {
+// commandVariables maps the position of each command whose name is a lone variable,
+// such as "${PROVIDER_BINARY} init", to that variable's name.
+func commandVariables(file *syntax.File) map[syntax.Pos]string {
 	printer := syntax.NewPrinter()
-	var names []string
+	names := map[syntax.Pos]string{}
 	syntax.Walk(file, func(node syntax.Node) bool {
 		call, ok := node.(*syntax.CallExpr)
 		if !ok || len(call.Args) == 0 {
@@ -89,7 +89,7 @@ func commandVariables(file *syntax.File) []string {
 		}
 		exp, ok := word.Parts[0].(*syntax.ParamExp)
 		if ok && exp.Param != nil && isPlainExpansion(printer, word, exp.Param.Value) {
-			names = append(names, exp.Param.Value)
+			names[word.Pos()] = exp.Param.Value
 		}
 		return true
 	})
@@ -108,19 +108,17 @@ func isPlainExpansion(printer *syntax.Printer, word *syntax.Word, name string) b
 // file, e.g. a binary under C:\Users\Jane Doe. The value is read when the command runs, so a
 // variable reassigned to a command with arguments, like DOCKER_PATH="sudo docker", keeps
 // shell word splitting.
-func joinExecutablePath(args []string, env expand.Environ, names []string) []string {
-	for _, name := range names {
-		value := env.Get(name).String()
-		if !isExistingFile(value) {
-			continue
-		}
-
-		fields := strings.Fields(value)
-		if len(args) >= len(fields) && slices.Equal(args[:len(fields)], fields) {
-			return append([]string{value}, args[len(fields):]...)
-		}
+func joinExecutablePath(args []string, env expand.Environ, name string) []string {
+	value := env.Get(name).String()
+	if !isExistingFile(value) {
+		return args
 	}
-	return args
+
+	fields := strings.Fields(value)
+	if len(args) < len(fields) || !slices.Equal(args[:len(fields)], fields) {
+		return args
+	}
+	return append([]string{value}, args[len(fields):]...)
 }
 
 func isExistingFile(path string) bool {
@@ -137,7 +135,7 @@ type shellRunnerOptions struct {
 	stderr      io.Writer
 	env         []string
 	dir         string
-	commandVars []string
+	commandVars map[syntax.Pos]string
 }
 
 func buildRunnerOptions(p shellRunnerOptions) []interp.RunnerOption {
@@ -158,7 +156,10 @@ func buildRunnerOptions(p shellRunnerOptions) []interp.RunnerOption {
 		// command to an absolute path so IsBuiltin returns false and the
 		// real binary is executed via the exec handler.
 		interp.CallHandler(func(ctx context.Context, args []string) ([]string, error) {
-			args = joinExecutablePath(args, interp.HandlerCtx(ctx).Env, p.commandVars)
+			hc := interp.HandlerCtx(ctx)
+			if name, ok := p.commandVars[hc.Pos]; ok {
+				args = joinExecutablePath(args, hc.Env, name)
+			}
 			if args[0] == "kill" {
 				args[0] = "/bin/kill"
 			}
