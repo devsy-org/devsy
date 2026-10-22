@@ -24,6 +24,7 @@ var (
 	errNeedsEmpty     = errors.New("needs variable is empty")
 	errNeedsInvalid   = errors.New("needs variable is not valid JSON")
 	errNeedsNoJobs    = errors.New("needs variable has no jobs")
+	errBadGoOutput    = errors.New("changes job go output is not true or false")
 	errUnexpectedArgs = errors.New("unexpected arguments")
 )
 
@@ -116,7 +117,13 @@ func (c successCheck) report(needs map[string]neededJob, opts successOptions) in
 	// Without a changes job nothing proves a skip was legitimate, so skips are rejected.
 	goChanged := true
 	if changes, ok := needs[changesJob]; ok {
-		goChanged = changes.Outputs[goOutput] == "true"
+		changed, err := goChangedFrom(changes)
+		if err != nil {
+			_, _ = fmt.Fprintf(c.stdout, "::error::%v\n", err)
+			failures++
+		} else {
+			goChanged = changed
+		}
 	} else {
 		_, _ = fmt.Fprintf(c.stdout, "::error::%s job missing from %s\n", changesJob, opts.needsEnv)
 		failures++
@@ -153,5 +160,20 @@ func jobProblem(job string, res neededJob, alwaysRun, goChanged bool) string {
 		return ""
 	default:
 		return job + " ended with result=" + res.Result
+	}
+}
+
+// goChangedFrom reads the go output of the changes job, trusted only after it succeeded.
+func goChangedFrom(changes neededJob) (bool, error) {
+	if changes.Result != resultSuccess {
+		return false, nil
+	}
+	switch value := changes.Outputs[goOutput]; value {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%w: %q", errBadGoOutput, value)
 	}
 }

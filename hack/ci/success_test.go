@@ -139,6 +139,38 @@ func (s *successSuite) TestMissingChangesRejectsSkippedJobs() {
 	s.Contains(res.stdout, "::error::unit-tests ended with result=skipped unexpectedly\n")
 }
 
+func (s *successSuite) TestChangesGoOutputMustBeTrueOrFalse() {
+	tests := []struct {
+		name    string
+		changes string
+	}{
+		{name: "missing output", changes: `{"result":"success","outputs":{}}`},
+		{name: "empty output", changes: `{"result":"success","outputs":{"go":""}}`},
+		{name: "yes", changes: `{"result":"success","outputs":{"go":"yes"}}`},
+		{name: "uppercase true", changes: `{"result":"success","outputs":{"go":"TRUE"}}`},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			needs := needsObject(entry("changes", tt.changes), entry("unit-tests", skippedJob))
+
+			res := s.runSuccess(needs)
+
+			s.Equal(1, res.code)
+			s.Contains(res.stdout, "::error::changes job go output is not true or false")
+			s.Contains(res.stdout, "::error::unit-tests ended with result=skipped unexpectedly\n")
+		})
+	}
+}
+
+func (s *successSuite) TestFailedChangesJobSkipsOutputCheck() {
+	needs := needsObject(entry("changes", failedJob), entry("unit-tests", skippedJob))
+
+	res := s.runSuccess(needs)
+
+	s.Equal(1, res.code)
+	s.Equal("::error::changes ended with result=failure\n", res.stdout)
+}
+
 func (s *successSuite) TestEmptyOrInvalidNeedsFails() {
 	tests := []struct {
 		name    string

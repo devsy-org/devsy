@@ -22,10 +22,13 @@ applies to the current OS, and the `Unit Tests` job runs it on each runner under
 
 ## Adding tests
 
-- **Go unit test in an ordinary package**: nothing to do. Every package outside
-  `test/` and `e2e/` directories is discovered.
-- **Go test under `e2e/` or `hack/` that must run as a unit test**: add the
+- **Go unit test in an ordinary package**: nothing to do. The `packages` step
+  discovers every package outside `test/` and `e2e/` directories, on Linux and
+  macOS only.
+- **Go test under `test/` or `e2e/` that must run as a unit test**: add the
   package to a `unit.steps` entry (or to `unit.excluded` with a reason).
+- **Go test that must run on Windows**: discovery does not run there, so list
+  its packages in a `unit.steps` entry with `os: [windows]`.
 - **Ginkgo spec**: add its label to `e2e.suites`, choosing a `group`. Set only
   what differs from the group defaults (`runner`, `test_timeout`,
   `install_kind`, `install_podman`, `requires_secret`, `host_setup`, ...). Labels
