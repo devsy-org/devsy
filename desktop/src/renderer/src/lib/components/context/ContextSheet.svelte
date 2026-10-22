@@ -41,6 +41,7 @@ let opts = $state<ContextOptions>({
   dotfilesUrl: "",
   dotfilesScript: "",
   dockerCredentialForwarding: true,
+  githubCliCredentialForwarding: false,
   gitCredentialForwarding: true,
   gitSshSignatureForwarding: true,
   sshAgentForwarding: true,
@@ -61,6 +62,7 @@ let initialOpts = $state<ContextOptions>({
   dotfilesUrl: "",
   dotfilesScript: "",
   dockerCredentialForwarding: true,
+  githubCliCredentialForwarding: false,
   gitCredentialForwarding: true,
   gitSshSignatureForwarding: true,
   sshAgentForwarding: true,
@@ -394,6 +396,14 @@ async function handleSaveAll() {
               <p class="text-xs text-muted-foreground">Forward Git credential helper to workspaces</p>
             </div>
             <Switch checked={opts.gitCredentialForwarding} onCheckedChange={() => toggleOption("gitCredentialForwarding")} disabled={saving || loading} />
+          </div>
+
+          <div class="flex items-center justify-between gap-4">
+            <div class="min-w-0">
+              <Label for="github-cli-credentials">GitHub CLI Credentials</Label>
+              <p id="github-cli-credentials-description" class="text-xs text-muted-foreground">Let workspaces use active host accounts on all GitHub hosts. Reconnect to apply.</p>
+            </div>
+            <Switch id="github-cli-credentials" aria-describedby="github-cli-credentials-description" checked={opts.githubCliCredentialForwarding} onCheckedChange={() => toggleOption("githubCliCredentialForwarding")} disabled={saving || loading} />
           </div>
 
           <div class="flex items-center justify-between">

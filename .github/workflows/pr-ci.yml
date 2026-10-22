@@ -153,6 +153,45 @@ jobs:
         if: runner.os == 'Linux'
         run: go test -race -count=1 -timeout 90s ./e2e/framework/registryfixture
 
+      - name: test Linux GitHub API oracle
+        if: runner.os == 'Linux'
+        run: go test -race -count=1 -timeout 90s ./e2e/framework/ghfixture
+
+  github-credential-host-tests:
+    name: GitHub Credential Host Tests (${{ matrix.runner }})
+    needs: [changes]
+    if: needs.changes.outputs.go == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+      - name: record native host and available CLI versions
+        run: |
+          go env GOOS GOARCH
+          gh --version
+      - name: execute native credential discovery and process-bound regressions
+        env:
+          DEVSY_TEST_REAL_GH: "1"
+          DEVSY_TEST_NATIVE_KEYRING: ${{ runner.os == 'macOS' && '1' || '0' }}
+        run: >-
+          go test -race -count=1 -v -timeout 5m ./pkg/ghcredentials
+          -run '^(TestNative.*|TestHostLookupEnvironmentAndGuestEnvironmentAreIndependent|TestRegisteredGuestDeclinesAmbiguousKeyringResult)$'
+      - name: test strict fixture report validation
+        run: go test -race -count=1 -v ./e2e/framework/ghfixture
+      - name: test native credential service boundaries
+        run: >-
+          go test -race -count=1 -v -timeout 2m ./pkg/tunnel ./pkg/credentials
+          -run '^(TestCredentials.*Host.*|TestOptionalGitHubService.*|TestServicesStartup.*)$'
+
   windows-transport-tests:
     name: Windows Transport Tests
     needs: [changes]
@@ -301,6 +340,8 @@ jobs:
             ${{ runner.os == 'Linux' && '--parallelism=1' || '' }}
         env:
           DEVSY_CLI_VERSION: v0.0.0
+          # Ubuntu 26.04 quotas /tmp: https://github.com/actions/runner-images/issues/14777
+          GOTMPDIR: ${{ runner.temp }}
 
       - name: disk usage after Linux snapshot
         if: always() && runner.os == 'Linux'
@@ -336,6 +377,23 @@ jobs:
         with:
           name: devsy-ci-microsandbox-linux
           path: ${{ runner.temp }}/devsy-ci-microsandbox
+
+      - name: build Linux GitHub credential fixtures
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+        run: |
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH="$arch" go build -trimpath -o "${RUNNER_TEMP}/ghfixture-linux-${arch}" ./e2e/cmd/ghfixture
+          done
+
+      - name: upload Linux GitHub credential fixtures
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ghfixture-linux
+          path: ${{ runner.temp }}/ghfixture-linux-*
 
       - name: build e2e test binary
         if: matrix.runner == 'ubuntu-latest' || matrix.runner == 'windows-latest'
@@ -1051,6 +1109,13 @@ jobs:
           name: e2e-test-${{ steps.os.outputs.runner_os }}
           path: ./e2e/
 
+      - name: download GitHub credential fixture
+        if: matrix.label == 'ssh' && runner.os == 'Linux'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ghfixture-linux
+          path: ./e2e/bin/
+
       - name: setup executable
         if: matrix.requires-secret == false || needs.can-read-secret.outputs.secret-set == 'true'
         shell: bash
@@ -1316,6 +1381,7 @@ jobs:
       - lint
       - agent-skill
       - unit-tests
+      - github-credential-host-tests
       - windows-transport-tests
       - provider-update-windows
       - licenses
@@ -1356,6 +1422,7 @@ jobs:
           check_result "lint" "${{ needs.lint.result }}" false || status=1
           check_result "agent-skill" "${{ needs.agent-skill.result }}" false || status=1
           check_result "unit-tests" "${{ needs.unit-tests.result }}" true || status=1
+          check_result "github-credential-host-tests" "${{ needs.github-credential-host-tests.result }}" true || status=1
           check_result "windows-transport-tests" "${{ needs.windows-transport-tests.result }}" true || status=1
           check_result "provider-update-windows" "${{ needs.provider-update-windows.result }}" true || status=1
           check_result "licenses" "${{ needs.licenses.result }}" true || status=1

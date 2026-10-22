@@ -31,6 +31,20 @@ const (
 	sshOptForwardAgentNo          = "ForwardAgent=no"
 )
 
+var _ = ginkgo.Describe(
+	"GitHub CLI credential forwarding",
+	ginkgo.Label(cmdSSH, "gh-forwarding"),
+	func() {
+		ginkgo.It(
+			"should forward host GitHub CLI authentication without a container login",
+			ginkgo.SpecTimeout(framework.TimeoutLong()),
+			testGitHubCLIForwarding,
+		)
+		ginkgo.It("should prepare credentials before the first public workspace SSH command",
+			ginkgo.SpecTimeout(framework.TimeoutLong()), testPublicGitHubCLIForwarding)
+	},
+)
+
 var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Ordered, func() {
 	var initialDir string
 
@@ -252,8 +266,8 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			// The signing key must be passed on each SSH invocation so the
 			// credentials server can configure the helper inside the container.
 			sshBase := []string{
-				"workspace",
-				"ssh",
+				cmdWorkspace,
+				cmdSSH,
 				"--agent-forwarding",
 				"--start-services",
 				"--git-ssh-signing-key", keyPath + ".pub",
@@ -261,7 +275,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			}
 
 			stdout, stderr, err := f.ExecCommandCapture(ctx,
-				append(sshBase, "--command", commitCmd),
+				append(sshBase, flagCommand, commitCmd),
 			)
 			ginkgo.GinkgoWriter.Printf("commit stdout: %s\n", stdout)
 			ginkgo.GinkgoWriter.Printf("commit stderr: %s\n", stderr)
@@ -287,7 +301,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			}, " && ")
 
 			stdout, stderr, err = f.ExecCommandCapture(ctx,
-				append(sshBase, "--command", verifyCmd),
+				append(sshBase, flagCommand, verifyCmd),
 			)
 			ginkgo.GinkgoWriter.Printf("verify stdout: %s\n", stdout)
 			ginkgo.GinkgoWriter.Printf("verify stderr: %s\n", stderr)
@@ -303,7 +317,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			// And confirm the signature log shows the correct principal
 			logCmd := "cd /tmp/test-sign-repo && git log --show-signature -1 2>&1"
 			stdout, stderr, err = f.ExecCommandCapture(ctx,
-				append(sshBase, "--command", logCmd),
+				append(sshBase, flagCommand, logCmd),
 			)
 			ginkgo.GinkgoWriter.Printf("log stdout: %s\n", stdout)
 			ginkgo.GinkgoWriter.Printf("log stderr: %s\n", stderr)
@@ -420,12 +434,12 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			}, " && ")
 
 			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
-				"workspace",
-				"ssh",
+				cmdWorkspace,
+				cmdSSH,
 				"--agent-forwarding",
 				"--start-services",
 				tempDir,
-				"--command", commitCmd,
+				flagCommand, commitCmd,
 			})
 			ginkgo.GinkgoWriter.Printf("error commit stdout: %s\n", stdout)
 			ginkgo.GinkgoWriter.Printf("error commit stderr: %s\n", stderr)
@@ -481,7 +495,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 			defer serverCancel()
 			// #nosec G204 -- test command with controlled arguments
 			serverCmd := exec.CommandContext(serverCtx, f.DevsyBinDir+"/"+f.DevsyBinName,
-				"workspace", "ssh", tempDir, "--command",
+				cmdWorkspace, cmdSSH, tempDir, flagCommand,
 				"go run /workspaces/"+filepath.Base(tempDir)+"/server.go "+strconv.Itoa(port),
 			)
 			err = serverCmd.Start()

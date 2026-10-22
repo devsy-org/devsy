@@ -21,6 +21,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/devsyconfig"
 	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/extract"
+	"github.com/devsy-org/devsy/pkg/ghcredentials"
 	"github.com/devsy-org/devsy/pkg/gitcredentials"
 	"github.com/devsy-org/devsy/pkg/gitsshsigning"
 	"github.com/devsy-org/devsy/pkg/gpg"
@@ -31,7 +32,9 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/stdio"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
+	grpcstatus "google.golang.org/grpc/status"
 )
 
 func RunServicesServer(
@@ -140,6 +143,8 @@ type tunnelServer struct {
 
 	forwarder              netstat.Forwarder
 	allowGitCredentials    bool
+	allowGitHubCredentials bool
+	githubAccounts         func(context.Context) ghcredentials.HostResult
 	allowDockerCredentials bool
 	allowKubeConfig        bool
 	allowPlatformOptions   bool
@@ -297,6 +302,24 @@ func (t *tunnelServer) GitUser(ctx context.Context, empty *tunnel.Empty) (*tunne
 	return &tunnel.Message{
 		Message: string(out),
 	}, nil
+}
+
+func (t *tunnelServer) GitHubCredentials(
+	ctx context.Context,
+	_ *tunnel.Empty,
+) (*tunnel.Message, error) {
+	if !t.allowGitHubCredentials {
+		return nil, grpcstatus.Error(codes.PermissionDenied, "GitHub CLI credentials forbidden")
+	}
+	resolve := t.githubAccounts
+	if resolve == nil {
+		resolve = ghcredentials.HostAccounts
+	}
+	b, err := json.Marshal(resolve(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("encode GitHub CLI accounts")
+	}
+	return &tunnel.Message{Message: string(b)}, nil
 }
 
 func (t *tunnelServer) GitCredentials(

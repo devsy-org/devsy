@@ -304,7 +304,13 @@ func startSigtermIgnoringGroup(t *testing.T) *exec.Cmd {
 	t.Helper()
 	ready := filepath.Join(t.TempDir(), "ready")
 	// #nosec G204 -- the fixed shell script and all paths are test-controlled.
-	cmd := exec.Command("sh", "-c", `trap '' TERM; printf 'ready\n' > "$1"; sleep 30`, "sh", ready)
+	cmd := exec.Command(
+		"sh",
+		"-c",
+		`trap '' TERM; printf 'ready\n' > "$1"; exec sleep 30`,
+		"sh",
+		ready,
+	)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start SIGTERM-ignoring group: %v", err)

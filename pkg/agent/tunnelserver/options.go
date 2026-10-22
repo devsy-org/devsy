@@ -13,6 +13,10 @@ import (
 
 type Option func(*tunnelServer) *tunnelServer
 
+func WithAllowGitHubCredentials(allow bool) Option {
+	return func(s *tunnelServer) *tunnelServer { s.allowGitHubCredentials = allow; return s }
+}
+
 func WithWorkspace(workspace *provider2.Workspace) Option {
 	return func(s *tunnelServer) *tunnelServer {
 		s.workspace = workspace

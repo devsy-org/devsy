@@ -772,7 +772,7 @@ const file_tunnel_proto_rawDesc = "" +
 	"\x04INFO\x10\x01\x12\b\n" +
 	"\x04DONE\x10\x02\x12\v\n" +
 	"\aWARNING\x10\x03\x12\t\n" +
-	"\x05ERROR\x10\x042\xad\a\n" +
+	"\x05ERROR\x10\x042\xe4\a\n" +
 	"\x06Tunnel\x12&\n" +
 	"\x04Ping\x12\r.tunnel.Empty\x1a\r.tunnel.Empty\"\x00\x12*\n" +
 	"\x03Log\x12\x12.tunnel.LogMessage\x1a\r.tunnel.Empty\"\x00\x12/\n" +
@@ -781,6 +781,7 @@ const file_tunnel_proto_rawDesc = "" +
 	"SendResult\x12\x0f.tunnel.Message\x1a\r.tunnel.Empty\"\x00\x127\n" +
 	"\x11DockerCredentials\x12\x0f.tunnel.Message\x1a\x0f.tunnel.Message\"\x00\x124\n" +
 	"\x0eGitCredentials\x12\x0f.tunnel.Message\x1a\x0f.tunnel.Message\"\x00\x125\n" +
+	"\x11GitHubCredentials\x12\r.tunnel.Empty\x1a\x0f.tunnel.Message\"\x00\x125\n" +
 	"\x0fGitSSHSignature\x12\x0f.tunnel.Message\x1a\x0f.tunnel.Message\"\x00\x12+\n" +
 	"\aGitUser\x12\r.tunnel.Empty\x1a\x0f.tunnel.Message\"\x00\x121\n" +
 	"\vDevsyConfig\x12\x0f.tunnel.Message\x1a\x0f.tunnel.Message\"\x00\x123\n" +
@@ -836,36 +837,38 @@ var file_tunnel_proto_depIdxs = []int32{
 	6,  // 7: tunnel.Tunnel.SendResult:input_type -> tunnel.Message
 	6,  // 8: tunnel.Tunnel.DockerCredentials:input_type -> tunnel.Message
 	6,  // 9: tunnel.Tunnel.GitCredentials:input_type -> tunnel.Message
-	6,  // 10: tunnel.Tunnel.GitSSHSignature:input_type -> tunnel.Message
-	13, // 11: tunnel.Tunnel.GitUser:input_type -> tunnel.Empty
-	6,  // 12: tunnel.Tunnel.DevsyConfig:input_type -> tunnel.Message
-	6,  // 13: tunnel.Tunnel.GPGPublicKeys:input_type -> tunnel.Message
-	6,  // 14: tunnel.Tunnel.KubeConfig:input_type -> tunnel.Message
-	13, // 15: tunnel.Tunnel.Secrets:input_type -> tunnel.Empty
-	4,  // 16: tunnel.Tunnel.ForwardPort:input_type -> tunnel.ForwardPortRequest
-	2,  // 17: tunnel.Tunnel.StopForwardPort:input_type -> tunnel.StopForwardPortRequest
-	13, // 18: tunnel.Tunnel.StreamWorkspace:input_type -> tunnel.Empty
-	1,  // 19: tunnel.Tunnel.StreamMount:input_type -> tunnel.StreamMountRequest
-	13, // 20: tunnel.Tunnel.StreamSnapshotVolumes:input_type -> tunnel.Empty
-	13, // 21: tunnel.Tunnel.Ping:output_type -> tunnel.Empty
-	13, // 22: tunnel.Tunnel.Log:output_type -> tunnel.Empty
-	13, // 23: tunnel.Tunnel.Status:output_type -> tunnel.Empty
-	13, // 24: tunnel.Tunnel.SendResult:output_type -> tunnel.Empty
-	6,  // 25: tunnel.Tunnel.DockerCredentials:output_type -> tunnel.Message
-	6,  // 26: tunnel.Tunnel.GitCredentials:output_type -> tunnel.Message
-	6,  // 27: tunnel.Tunnel.GitSSHSignature:output_type -> tunnel.Message
-	6,  // 28: tunnel.Tunnel.GitUser:output_type -> tunnel.Message
-	6,  // 29: tunnel.Tunnel.DevsyConfig:output_type -> tunnel.Message
-	6,  // 30: tunnel.Tunnel.GPGPublicKeys:output_type -> tunnel.Message
-	6,  // 31: tunnel.Tunnel.KubeConfig:output_type -> tunnel.Message
-	8,  // 32: tunnel.Tunnel.Secrets:output_type -> tunnel.SecretsResponse
-	5,  // 33: tunnel.Tunnel.ForwardPort:output_type -> tunnel.ForwardPortResponse
-	3,  // 34: tunnel.Tunnel.StopForwardPort:output_type -> tunnel.StopForwardPortResponse
-	9,  // 35: tunnel.Tunnel.StreamWorkspace:output_type -> tunnel.Chunk
-	9,  // 36: tunnel.Tunnel.StreamMount:output_type -> tunnel.Chunk
-	9,  // 37: tunnel.Tunnel.StreamSnapshotVolumes:output_type -> tunnel.Chunk
-	21, // [21:38] is the sub-list for method output_type
-	4,  // [4:21] is the sub-list for method input_type
+	13, // 10: tunnel.Tunnel.GitHubCredentials:input_type -> tunnel.Empty
+	6,  // 11: tunnel.Tunnel.GitSSHSignature:input_type -> tunnel.Message
+	13, // 12: tunnel.Tunnel.GitUser:input_type -> tunnel.Empty
+	6,  // 13: tunnel.Tunnel.DevsyConfig:input_type -> tunnel.Message
+	6,  // 14: tunnel.Tunnel.GPGPublicKeys:input_type -> tunnel.Message
+	6,  // 15: tunnel.Tunnel.KubeConfig:input_type -> tunnel.Message
+	13, // 16: tunnel.Tunnel.Secrets:input_type -> tunnel.Empty
+	4,  // 17: tunnel.Tunnel.ForwardPort:input_type -> tunnel.ForwardPortRequest
+	2,  // 18: tunnel.Tunnel.StopForwardPort:input_type -> tunnel.StopForwardPortRequest
+	13, // 19: tunnel.Tunnel.StreamWorkspace:input_type -> tunnel.Empty
+	1,  // 20: tunnel.Tunnel.StreamMount:input_type -> tunnel.StreamMountRequest
+	13, // 21: tunnel.Tunnel.StreamSnapshotVolumes:input_type -> tunnel.Empty
+	13, // 22: tunnel.Tunnel.Ping:output_type -> tunnel.Empty
+	13, // 23: tunnel.Tunnel.Log:output_type -> tunnel.Empty
+	13, // 24: tunnel.Tunnel.Status:output_type -> tunnel.Empty
+	13, // 25: tunnel.Tunnel.SendResult:output_type -> tunnel.Empty
+	6,  // 26: tunnel.Tunnel.DockerCredentials:output_type -> tunnel.Message
+	6,  // 27: tunnel.Tunnel.GitCredentials:output_type -> tunnel.Message
+	6,  // 28: tunnel.Tunnel.GitHubCredentials:output_type -> tunnel.Message
+	6,  // 29: tunnel.Tunnel.GitSSHSignature:output_type -> tunnel.Message
+	6,  // 30: tunnel.Tunnel.GitUser:output_type -> tunnel.Message
+	6,  // 31: tunnel.Tunnel.DevsyConfig:output_type -> tunnel.Message
+	6,  // 32: tunnel.Tunnel.GPGPublicKeys:output_type -> tunnel.Message
+	6,  // 33: tunnel.Tunnel.KubeConfig:output_type -> tunnel.Message
+	8,  // 34: tunnel.Tunnel.Secrets:output_type -> tunnel.SecretsResponse
+	5,  // 35: tunnel.Tunnel.ForwardPort:output_type -> tunnel.ForwardPortResponse
+	3,  // 36: tunnel.Tunnel.StopForwardPort:output_type -> tunnel.StopForwardPortResponse
+	9,  // 37: tunnel.Tunnel.StreamWorkspace:output_type -> tunnel.Chunk
+	9,  // 38: tunnel.Tunnel.StreamMount:output_type -> tunnel.Chunk
+	9,  // 39: tunnel.Tunnel.StreamSnapshotVolumes:output_type -> tunnel.Chunk
+	22, // [22:40] is the sub-list for method output_type
+	4,  // [4:22] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
 	4,  // [4:4] is the sub-list for extension extendee
 	0,  // [0:4] is the sub-list for field type_name

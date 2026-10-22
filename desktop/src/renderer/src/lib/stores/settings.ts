@@ -215,6 +215,7 @@ export interface ContextOptions {
   dotfilesUrl: string
   dotfilesScript: string
   dockerCredentialForwarding: boolean
+  githubCliCredentialForwarding: boolean
   gitCredentialForwarding: boolean
   gitSshSignatureForwarding: boolean
   sshAgentForwarding: boolean
@@ -248,6 +249,7 @@ export const DEFAULT_CONTEXT_OPTIONS: ContextOptions = {
   dotfilesUrl: "",
   dotfilesScript: "",
   dockerCredentialForwarding: true,
+  githubCliCredentialForwarding: false,
   gitCredentialForwarding: true,
   gitSshSignatureForwarding: true,
   sshAgentForwarding: true,
@@ -280,6 +282,7 @@ export const CONTEXT_OPTION_KEYS: Record<keyof ContextOptions, string> = {
   dotfilesUrl: "DOTFILES_URL",
   dotfilesScript: "DOTFILES_SCRIPT",
   dockerCredentialForwarding: "SSH_INJECT_DOCKER_CREDENTIALS",
+  githubCliCredentialForwarding: "SSH_INJECT_GITHUB_CREDENTIALS",
   gitCredentialForwarding: "SSH_INJECT_GIT_CREDENTIALS",
   gitSshSignatureForwarding: "GIT_SSH_SIGNATURE_FORWARDING",
   sshAgentForwarding: "SSH_AGENT_FORWARDING",
@@ -346,6 +349,8 @@ export function parseContextOptions(
     dotfilesUrl: str("DOTFILES_URL"),
     dotfilesScript: str("DOTFILES_SCRIPT"),
     dockerCredentialForwarding: bool("SSH_INJECT_DOCKER_CREDENTIALS", true),
+    githubCliCredentialForwarding:
+      str("SSH_INJECT_GITHUB_CREDENTIALS") === "true",
     gitCredentialForwarding: bool("SSH_INJECT_GIT_CREDENTIALS", true),
     gitSshSignatureForwarding: bool("GIT_SSH_SIGNATURE_FORWARDING", true),
     sshAgentForwarding: bool("SSH_AGENT_FORWARDING", true),
