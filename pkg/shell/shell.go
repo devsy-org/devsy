@@ -108,9 +108,9 @@ func isPlainExpansion(printer *syntax.Printer, word *syntax.Word, name string) b
 // file, e.g. a binary under C:\Users\Jane Doe. The value is read when the command runs, so a
 // variable reassigned to a command with arguments, like DOCKER_PATH="sudo docker", keeps
 // shell word splitting.
-func joinExecutablePath(args []string, env expand.Environ, name string) []string {
+func joinExecutablePath(args []string, env expand.Environ, dir, name string) []string {
 	value := env.Get(name).String()
-	if !isExistingFile(value) {
+	if !isExistingFile(dir, value) {
 		return args
 	}
 
@@ -121,9 +121,12 @@ func joinExecutablePath(args []string, env expand.Environ, name string) []string
 	return append([]string{value}, args[len(fields):]...)
 }
 
-func isExistingFile(path string) bool {
+func isExistingFile(dir, path string) bool {
 	if !strings.ContainsAny(path, " \t\n") {
 		return false
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
 	}
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
@@ -158,7 +161,7 @@ func buildRunnerOptions(p shellRunnerOptions) []interp.RunnerOption {
 		interp.CallHandler(func(ctx context.Context, args []string) ([]string, error) {
 			hc := interp.HandlerCtx(ctx)
 			if name, ok := p.commandVars[hc.Pos]; ok {
-				args = joinExecutablePath(args, hc.Env, name)
+				args = joinExecutablePath(args, hc.Env, hc.Dir, name)
 			}
 			if args[0] == "kill" {
 				args[0] = "/bin/kill"

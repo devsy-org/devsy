@@ -110,6 +110,43 @@ func (s *ExecutablePathTestSuite) TestLiteralCommandIsNotJoinedWithUnrelatedVari
 	s.Equal("helper ran with status"+"helper ran with "+spacedTool, output)
 }
 
+func (s *ExecutablePathTestSuite) TestRelativePathIsResolvedAgainstShellDirectory() {
+	shellDir := s.T().TempDir()
+	relative := filepath.Join("spaced dir", filepath.Base(s.executable))
+	s.Require().NoError(os.MkdirAll(filepath.Join(shellDir, "spaced dir"), 0o750))
+	s.copyTestBinary(filepath.Join(shellDir, relative))
+
+	output, err := s.run(
+		"cd '"+shellDir+"'; ${PROVIDER} init",
+		"PROVIDER="+relative,
+		helperProcessEnv+"=1",
+	)
+
+	s.Require().NoError(err)
+	s.Equal("helper ran with init", output)
+}
+
+func (s *ExecutablePathTestSuite) TestRelativePathExistingOnlyInProcessDirectoryIsNotJoined() {
+	processDir := s.T().TempDir()
+	shellDir := s.T().TempDir()
+	name := "spaced" + filepath.Ext(s.executable)
+	relative := "." + string(filepath.Separator) + name + " dir" +
+		string(filepath.Separator) + "provider"
+	s.Require().NoError(os.MkdirAll(filepath.Join(processDir, name+" dir"), 0o750))
+	s.copyTestBinary(filepath.Join(processDir, name+" dir", "provider"))
+	s.copyTestBinary(filepath.Join(shellDir, name))
+	s.T().Chdir(processDir)
+
+	output, err := s.run(
+		"cd '"+shellDir+"'; ${PROVIDER} init",
+		"PROVIDER="+relative,
+		helperProcessEnv+"=1",
+	)
+
+	s.Require().NoError(err)
+	s.Equal("helper ran with init", output)
+}
+
 func (s *ExecutablePathTestSuite) TestVariableArgumentWithSpacesStillSplits() {
 	output, err := s.run("echo ${ARGS}", "ARGS=a b")
 
