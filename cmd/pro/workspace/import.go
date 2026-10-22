@@ -186,7 +186,7 @@ func (cmd *ImportCmd) importInstance(
 	devsyConfig *config.Config,
 	ref workspaceInstanceRef,
 ) error {
-	// old pro provider
+	// old platform provider
 	if !ref.provider.HasHealthCheck() {
 		instanceOpts, err := resolveInstanceOptions(ctx, ref.instance, ref.baseClient)
 		if err != nil {
@@ -201,7 +201,7 @@ func (cmd *ImportCmd) importInstance(
 		return nil
 	}
 
-	// new pro provider
+	// new platform provider
 	err := cmd.writeNewWorkspaceDefinition(devsyConfig, ref.instance, ref.provider.Name)
 	if err != nil {
 		return fmt.Errorf("prepare workspace to import definition: %w", err)

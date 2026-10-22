@@ -171,7 +171,7 @@ type browserIDEInvocation struct {
 // detached background process so the CLI can return to the prompt while the
 // tunnel remains running.
 //
-// If params.Client is a DaemonClient (pro mode) this falls back to running
+// If params.Client is a DaemonClient (platform mode) this falls back to running
 // the tunnel inline because the daemon already runs out-of-process.
 //
 // If a tunnel is already running for this workspace, no new process is

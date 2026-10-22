@@ -66,7 +66,7 @@ func BootstrapCLI(cmd *cobra.Command) CLICollector {
 	}
 
 	isUI := os.Getenv(config.EnvUI) == config.BoolTrue
-	isPlatformRunner := os.Getenv(config.EnvPlatformRunner) == config.BoolTrue
+	isPlatformRunner := config.IsPlatformRunner()
 	if !isUI && !isPlatformRunner && isCIEnvironment() {
 		log.Debug("telemetry: disabled in CI environment")
 		return &noopCollector{}
@@ -144,7 +144,7 @@ func (d *cliCollector) RecordCLI(err error) {
 	}
 
 	eventType := config.BinaryName + "_cli"
-	if os.Getenv(config.EnvPlatformRunner) == config.BoolTrue {
+	if config.IsPlatformRunner() {
 		eventType = config.BinaryName + "_cli_runner"
 	}
 

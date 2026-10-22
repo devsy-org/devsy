@@ -265,7 +265,7 @@ const (
 	Version        = "version"
 )
 
-// Pro / platform commands.
+// Platform commands.
 const (
 	Channel          = "channel"
 	ChartPath        = "chart-path"

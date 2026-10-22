@@ -40,7 +40,10 @@ const (
 	EnvDisableTelemetry = "DEVSY_DISABLE_TELEMETRY"
 
 	// EnvPlatformRunner is set by the Devsy Platform runner pod to mark runner-side CLI invocations.
-	EnvPlatformRunner = "DEVSY_PRO_RUNNER"
+	EnvPlatformRunner = "DEVSY_PLATFORM_RUNNER"
+
+	// EnvPlatformRunnerLegacy is the pre-rename runner marker still set by existing runner pods.
+	EnvPlatformRunnerLegacy = "DEVSY_PRO_RUNNER"
 
 	// EnvTelemetryDistinctID is set by the desktop app on spawned CLI
 	// processes so their events share the desktop's analytics identity.
@@ -171,7 +174,7 @@ const (
 	// EnvProviderFolder is the provider folder path passed to providers.
 	EnvProviderFolder = "PROVIDER_FOLDER"
 
-	// EnvProject is the Devsy project name for pro features.
+	// EnvProject is the Devsy project name for platform features.
 	EnvProject = "DEVSY_PROJECT"
 
 	// EnvFilterByOwner enables filtering by owner in Devsy.
