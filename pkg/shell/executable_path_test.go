@@ -46,21 +46,6 @@ func (s *ExecutablePathTestSuite) SetupTest() {
 	s.copyTestBinary(s.executable)
 }
 
-func (s *ExecutablePathTestSuite) copyTestBinary(target string) {
-	self, err := os.Executable()
-	s.Require().NoError(err)
-	source, err := os.Open(self) //nolint:gosec // copies this test binary
-	s.Require().NoError(err)
-	defer func() { _ = source.Close() }()
-	file, err := os.OpenFile( //nolint:gosec // the copy must be executable
-		target, os.O_CREATE|os.O_WRONLY, 0o700,
-	)
-	s.Require().NoError(err)
-	_, err = io.Copy(file, source)
-	s.Require().NoError(err)
-	s.Require().NoError(file.Close())
-}
-
 func (s *ExecutablePathTestSuite) TestCommandVariableWithSpacesInPathIsNotSplit() {
 	output, err := s.run(
 		"${SSH_PROVIDER} init",
@@ -141,4 +126,19 @@ func (s *ExecutablePathTestSuite) run(command string, environ ...string) (string
 		Environ: append(os.Environ(), environ...),
 	})
 	return stdout.String(), err
+}
+
+func (s *ExecutablePathTestSuite) copyTestBinary(target string) {
+	self, err := os.Executable()
+	s.Require().NoError(err)
+	source, err := os.Open(self) //nolint:gosec // copies this test binary
+	s.Require().NoError(err)
+	defer func() { _ = source.Close() }()
+	file, err := os.OpenFile( //nolint:gosec // the copy must be executable
+		target, os.O_CREATE|os.O_WRONLY, 0o700,
+	)
+	s.Require().NoError(err)
+	_, err = io.Copy(file, source)
+	s.Require().NoError(err)
+	s.Require().NoError(file.Close())
 }
