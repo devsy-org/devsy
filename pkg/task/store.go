@@ -28,6 +28,7 @@ type Store struct {
 	afterClaimHook             func()
 	afterCancelLockClaimedHook func()
 	afterStateLockBlockedHook  func()
+	stateLockTimeout           time.Duration
 }
 
 func NewStore() (*Store, error) {
@@ -242,11 +243,22 @@ func (s *Store) List() ([]*State, error) {
 			continue
 		}
 		id := entry.Name()[:len(entry.Name())-len(".json")]
-		state, err := s.Get(id)
+		var state *State
+		err := s.withLock(id, func() error {
+			var readErr error
+			state, readErr = s.readState(id)
+			// Only an absent state read under the lock confirms concurrent deletion.
+			if errors.Is(readErr, os.ErrNotExist) {
+				return nil
+			}
+			return readErr
+		})
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("list task %s: %w", id, err)
 		}
-		states = append(states, state)
+		if state != nil {
+			states = append(states, state)
+		}
 	}
 
 	sort.Slice(states, func(i, j int) bool {
@@ -633,7 +645,11 @@ func (s *Store) withLock(id string, fn func() error) error {
 	if s.afterStateLockBlockedHook != nil {
 		s.afterStateLockBlockedHook()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), lockTimeout)
+	timeout := s.stateLockTimeout
+	if timeout == 0 {
+		timeout = lockTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	locked, err = lock.TryLockContext(ctx, 20*time.Millisecond)
 	if err != nil {

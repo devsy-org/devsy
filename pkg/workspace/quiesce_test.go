@@ -175,3 +175,19 @@ func TestQuiesceUpTasksRejectsUnverifiedTerminalLaunch(t *testing.T) {
 	require.ErrorContains(t, err, "cannot verify cleanup of a legacy abandoned launch")
 	assert.True(t, taskState(t, store, "interrupted").LaunchPending)
 }
+
+func TestQuiesceUpTasksRejectsMalformedTaskRecord(t *testing.T) {
+	dir := t.TempDir()
+	store, err := task.NewStoreAt(dir)
+	require.NoError(t, err)
+	tk := createUpTask(t, store, "ws-1")
+	path := filepath.Join(dir, tk.ID()+".json")
+	require.NoError(t, os.WriteFile(path, []byte("{"), 0o600))
+	called := false
+	err = quiesceUpTasks(context.Background(), store, "ws-1", func(context.Context, string) error {
+		called = true
+		return nil
+	})
+	require.ErrorContains(t, err, "list up tasks for workspace ws-1")
+	require.False(t, called)
+}

@@ -503,3 +503,67 @@ func TestStateNeedsReconciliation(t *testing.T) {
 		})
 	}
 }
+
+func TestTaskQueriesRejectUncertainRecords(t *testing.T) {
+	for _, failure := range []string{"state-lock", "malformed-state"} {
+		t.Run(failure, func(t *testing.T) {
+			store := newTestStore(t)
+			tk := createTaskWith(t, store, CreateOptions{WorkspaceID: workspaceOne, Command: "up"})
+			queries := map[string]func() ([]*State, error){
+				"List":               store.List,
+				"ForWorkspace":       func() ([]*State, error) { return store.ForWorkspace(workspaceOne, "up") },
+				"ActiveForWorkspace": func() ([]*State, error) { return store.ActiveForWorkspace(workspaceOne, "up") },
+			}
+			check := func() error {
+				for name, query := range queries {
+					t.Run(name, func(t *testing.T) {
+						states, err := query()
+						require.Error(t, err)
+						require.Nil(t, states)
+					})
+				}
+				return nil
+			}
+			if failure == "state-lock" {
+				store.stateLockTimeout = -time.Nanosecond
+				require.NoError(t, store.withLock(tk.ID(), check))
+			} else {
+				path, err := store.path(tk.ID())
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(path, []byte("{"), 0o600))
+				require.NoError(t, check())
+			}
+		})
+	}
+}
+
+func TestListOmitsRecordDeletedWhileWaitingForStateLock(t *testing.T) {
+	writer := newTestStore(t)
+	reader, err := NewStoreAt(writer.dir)
+	require.NoError(t, err)
+	tk := createTaskWith(t, writer, CreateOptions{})
+	path, err := writer.path(tk.ID())
+	require.NoError(t, err)
+	blocked := make(chan struct{})
+	reader.afterStateLockBlockedHook = func() { close(blocked) }
+	type result struct {
+		states []*State
+		err    error
+	}
+	read := make(chan result, 1)
+	require.NoError(t, writer.withLock(tk.ID(), func() error {
+		go func() {
+			states, err := reader.List()
+			read <- result{states, err}
+		}()
+		select {
+		case <-blocked:
+		case r := <-read:
+			t.Fatalf("listing bypassed writer: %+v", r)
+		}
+		return os.Remove(path)
+	}))
+	r := <-read
+	require.NoError(t, r.err)
+	require.Empty(t, r.states)
+}
