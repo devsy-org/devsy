@@ -1,4 +1,5 @@
 <script lang="ts">
+import { untrack } from "svelte"
 import { Info } from "@lucide/svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -84,7 +85,6 @@ let isDirty = $derived.by(() => {
 })
 
 let loading = $state(true)
-let hasLoadedOnce = $state(false)
 let saving = $state(false)
 let deleting = $state(false)
 let confirmDeleteOpen = $state(false)
@@ -106,25 +106,33 @@ async function handleDelete() {
   }
 }
 
-async function loadOptions() {
-  if (!hasLoadedOnce) {
-    loading = true
-  }
+let contextName = $derived(context.name)
+
+async function loadOptions(name: string, isCurrent: () => boolean) {
+  loading = true
+  opts = parseContextOptions({})
+  initialOpts = { ...opts }
   try {
-    const raw = await fetchContextOptions(context.name)
+    const raw = await fetchContextOptions(name)
+    if (!isCurrent()) return
     opts = parseContextOptions(raw)
     initialOpts = { ...opts }
   } catch {
     // Keep defaults
   } finally {
-    loading = false
-    hasLoadedOnce = true
+    if (isCurrent()) loading = false
   }
 }
 
 $effect(() => {
-  if (open) {
-    loadOptions()
+  const name = contextName
+  if (!open) return
+  let current = true
+  untrack(() => {
+    void loadOptions(name, () => current)
+  })
+  return () => {
+    current = false
   }
 })
 
