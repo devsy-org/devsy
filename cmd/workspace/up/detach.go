@@ -157,33 +157,47 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 	if err := t.HoldWorkerLock(); err != nil {
 		return nil, err
 	}
-	if err := waitForTaskLaunch(t, store); err != nil {
-		return nil, finalizeWorkerTask(t, err)
+	verifiedOwner, err := waitForTaskLaunch(t, store)
+	if err != nil {
+		if verifiedOwner {
+			return nil, finalizeWorkerTask(t, err)
+		}
+		if releaseErr := t.ReleaseWorkerLock(); releaseErr != nil {
+			err = errors.Join(err, fmt.Errorf("release detached worker lock: %w", releaseErr))
+		}
+		return nil, err
 	}
 	return t, nil
 }
 
-func waitForTaskLaunch(t *task.Task, store *task.Store) error {
+type workerLaunchProgress struct {
+	leaseRetained bool
+	verifiedOwner bool
+}
+
+func waitForTaskLaunch(t *task.Task, store *task.Store) (bool, error) {
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
-	leaseRetained := false
+	progress := workerLaunchProgress{}
 	for {
 		state, err := readWorkerLaunchState(t, store)
 		if err != nil {
-			return err
+			return progress.verifiedOwner, err
 		}
-		ready, err := advanceTaskLaunch(t, store, state, &leaseRetained)
+		ready, err := advanceTaskLaunch(t, store, state, &progress)
 		if err != nil {
-			return err
+			return progress.verifiedOwner, err
 		}
 		if ready {
-			return nil
+			return progress.verifiedOwner, nil
 		}
 		select {
 		case <-deadline.C:
-			return errors.New("timed out waiting for detached worker launch metadata")
+			return progress.verifiedOwner, errors.New(
+				"timed out waiting for detached worker launch metadata",
+			)
 		case <-ticker.C:
 		}
 	}
@@ -204,18 +218,21 @@ func advanceTaskLaunch(
 	t *task.Task,
 	store *task.Store,
 	state *task.State,
-	leaseRetained *bool,
+	progress *workerLaunchProgress,
 ) (bool, error) {
+	owner, err := verifyWorkerTaskOwner(state)
+	progress.verifiedOwner = owner
+	if err != nil {
+		return false, err
+	}
 	if !state.LaunchPending {
-		if _, ok := state.ProcessReference(); !ok {
-			return false, errors.New("detached worker launch did not publish process metadata")
-		}
 		return true, nil
 	}
 	if state.LaunchProtocol != 1 {
+		progress.verifiedOwner = false
 		return false, nil
 	}
-	if err := retainWorkerLaunchLease(leaseRetained); err != nil {
+	if err := retainWorkerLaunchLease(&progress.leaseRetained); err != nil {
 		return false, err
 	}
 	if err := checkWorkerLauncher(t, store); err != nil {
@@ -225,6 +242,29 @@ func advanceTaskLaunch(
 		return false, t.WorkerLaunchReady(os.Getpid())
 	}
 	return false, nil
+}
+
+// The worker lock excludes concurrent invocations; only the saved kernel identity
+// authorizes this invocation to acknowledge launch or persist startup failures.
+func verifyWorkerTaskOwner(state *task.State) (bool, error) {
+	ref, ok := state.ProcessReference()
+	if !ok {
+		if state.LaunchPending {
+			return false, nil
+		}
+		return false, errors.New("detached worker launch did not publish process metadata")
+	}
+	if ref.PID != os.Getpid() || ref.Identity == "" {
+		return false, errors.New("detached task belongs to a different or unverified worker")
+	}
+	identity, err := command.ProcessTreeIdentity(os.Getpid())
+	if err != nil {
+		return false, fmt.Errorf("verify detached worker identity: %w", err)
+	}
+	if identity == "" || identity != ref.Identity {
+		return false, errors.New("detached worker identity does not match task ownership")
+	}
+	return true, nil
 }
 
 func retainWorkerLaunchLease(retained *bool) error {
