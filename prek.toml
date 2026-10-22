@@ -64,7 +64,7 @@ hooks = [
 # Tracked upstream: https://github.com/rhysd/actionlint/issues/693
 [[repos]]
 repo = "https://github.com/rhysd/actionlint"
-rev = "v1.7.12"
+rev = "fd33e9f582a01a02885c93ae3775e1190cf63653"
 hooks = [
   {
     id = "actionlint",
