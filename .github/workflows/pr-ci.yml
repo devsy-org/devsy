@@ -134,7 +134,9 @@ jobs:
       matrix:
         runner: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+    # Cold Windows runs compile with -race and download modules before the
+    # post-job cache save, which alone can exceed 4 minutes.
+    timeout-minutes: ${{ matrix.runner == 'windows-latest' && 30 || 15 }}
     permissions:
       contents: read
     steps:
