@@ -3,6 +3,7 @@ package configapply
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -82,8 +83,9 @@ var _ = ginkgo.Describe(
 			ginkgo.Entry(nil, "postAttachCommand", "/tmp/postattach-marker", lifecycleHookTimeout),
 		)
 
-		ginkgo.It("should pass containerEnv to lifecycle commands",
-			func(ctx context.Context) {
+		ginkgo.DescribeTable(
+			"",
+			func(ctx context.Context, envKey, envName, envValue, markerPath string) {
 				containerID := startAlpineContainer(ctx)
 				ginkgo.DeferCleanup(removeContainer, containerID)
 
@@ -92,9 +94,13 @@ var _ = ginkgo.Describe(
 				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tmpDir)
 
 				devcontainerJSON := map[string]any{
-					imageKey:             alpineImage,
-					"containerEnv":       map[string]string{"MY_VAR": "hello_world"},
-					postCreateCommandKey: "sh -c 'echo -n $MY_VAR > /tmp/env-marker'",
+					imageKey: alpineImage,
+					envKey:   map[string]string{envName: envValue},
+					postCreateCommandKey: fmt.Sprintf(
+						"sh -c 'echo -n $%s > %s'",
+						envName,
+						markerPath,
+					),
 				}
 				writeDevcontainerJSON(tmpDir, devcontainerJSON)
 
@@ -106,38 +112,27 @@ var _ = ginkgo.Describe(
 				})
 				framework.ExpectNoError(err)
 
-				out := dockerExecInContainer(ctx, containerID, "cat", "/tmp/env-marker")
-				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal("hello_world"))
-			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
-
-		ginkgo.It("should pass remoteEnv to lifecycle commands",
-			func(ctx context.Context) {
-				containerID := startAlpineContainer(ctx)
-				ginkgo.DeferCleanup(removeContainer, containerID)
-
-				tmpDir, err := framework.CreateTempDir()
-				framework.ExpectNoError(err)
-				ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tmpDir)
-
-				remoteEnvValue := "remote_env_works"
-				devcontainerJSON := map[string]any{
-					imageKey:             alpineImage,
-					"remoteEnv":          map[string]string{"REMOTE_VAR": remoteEnvValue},
-					postCreateCommandKey: "sh -c 'echo -n $REMOTE_VAR > /tmp/remoteenv-marker'",
-				}
-				writeDevcontainerJSON(tmpDir, devcontainerJSON)
-
-				f := framework.NewDefaultFramework(initialDir + "/bin")
-				_, _, err = f.ExecCommandCapture(ctx, []string{
-					configGroup, applyCommand,
-					containerFlag, containerID,
-					configFlag, filepath.Join(tmpDir, ".devcontainer", devcontainerFn),
-				})
-				framework.ExpectNoError(err)
-
-				out := dockerExecInContainer(ctx, containerID, "cat", "/tmp/remoteenv-marker")
-				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal(remoteEnvValue))
-			}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+				out := dockerExecInContainer(ctx, containerID, "cat", markerPath)
+				gomega.Expect(strings.TrimSpace(out)).To(gomega.Equal(envValue))
+			},
+			ginkgo.EntryDescription("should pass %[1]s to lifecycle commands"),
+			ginkgo.Entry(
+				nil,
+				"containerEnv",
+				"MY_VAR",
+				"hello_world",
+				"/tmp/env-marker",
+				lifecycleHookTimeout,
+			),
+			ginkgo.Entry(
+				nil,
+				"remoteEnv",
+				"REMOTE_VAR",
+				"remote_env_works",
+				"/tmp/remoteenv-marker",
+				lifecycleHookTimeout,
+			),
+		)
 
 		ginkgo.It("should execute all lifecycle hooks in spec order",
 			func(ctx context.Context) {
