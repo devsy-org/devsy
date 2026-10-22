@@ -353,7 +353,7 @@ describe("workspace lifecycle IPC", () => {
       await flush()
       expect(ctx.jobs.get("ws")).toMatchObject({
         state: outcome === "success" ? "reconciling" : "failed",
-        refreshError: "Workspace log could not be saved: disk unavailable",
+        logError: "Workspace log could not be saved: disk unavailable",
         ...(outcome === "failure" ? { error: "invalid ID" } : {}),
       })
       const terminal = ctx.send.mock.calls.filter(
@@ -368,7 +368,10 @@ describe("workspace lifecycle IPC", () => {
         })
       await ctx.jobs.retryRefresh("ws")
       expect(ctx.jobs.get("ws")?.state).toBe(
-        outcome === "success" ? "succeeded" : "failed",
+        outcome === "success" ? "reconciling" : "failed",
+      )
+      expect(ctx.jobs.get("ws")?.logError).toBe(
+        "Workspace log could not be saved: disk unavailable",
       )
     },
   )
@@ -547,7 +550,7 @@ describe("workspace lifecycle IPC", () => {
       await flush()
       expect(ctx.jobs.get("ws")).toMatchObject({
         state: exitCode === 0 ? "reconciling" : "failed",
-        refreshError: "Workspace log could not be saved: disk unavailable",
+        logError: "Workspace log could not be saved: disk unavailable",
         error: exitCode === 0 ? undefined : "Cannot rebuild ***",
       })
       const terminal = () =>
@@ -563,7 +566,8 @@ describe("workspace lifecycle IPC", () => {
         })
       await ctx.jobs.retryRefresh("ws")
       expect(ctx.jobs.get("ws")).toMatchObject({
-        state: exitCode === 0 ? "succeeded" : "failed",
+        state: exitCode === 0 ? "reconciling" : "failed",
+        logError: "Workspace log could not be saved: disk unavailable",
         refreshError: undefined,
         error: exitCode === 0 ? undefined : "Cannot rebuild ***",
       })

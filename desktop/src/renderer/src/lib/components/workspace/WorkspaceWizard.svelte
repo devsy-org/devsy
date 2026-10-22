@@ -315,6 +315,9 @@ let launchJob = $derived(
 let jobMatchesAttempt = $derived(
   !!commandId && launchJob?.commandId === commandId,
 )
+let launchLogError = $derived(
+  jobMatchesAttempt ? launchJob?.logError : undefined,
+)
 let launchConfirmationState: LaunchConfirmationState = $derived(
   launchSuccess
     ? "confirmed"
@@ -322,7 +325,7 @@ let launchConfirmationState: LaunchConfirmationState = $derived(
       ? "failed"
       : launchRefreshRetrying
         ? "confirming"
-        : launchStatusRefreshError
+        : launchStatusRefreshError || launchLogError
           ? "stale"
           : launchCommandSucceeded
             ? "confirming"
@@ -340,6 +343,7 @@ $effect(() => {
     finishSuccessfulCommand(lastAttemptedId)
     if (job.refreshError) finishUnconfirmedLaunch(job.refreshError)
     else launchStatusRefreshError = null
+    if (job.logError) stopLaunchTimer()
     return
   }
   if (job.state === "succeeded") {
@@ -1450,6 +1454,7 @@ function selectTemplate(t: { name: string; source: string }) {
             running={launchRunning || launchConfirmationState === "confirming"}
             error={launchError || undefined}
             confirmationState={launchConfirmationState}
+            logError={launchLogError}
             refreshError={launchStatusRefreshError ?? undefined}
             refreshRetrying={launchRefreshRetrying}
             onRetryStatus={retryLaunchStatus}
@@ -1485,9 +1490,9 @@ function selectTemplate(t: { name: string; source: string }) {
             </div>
           {/if}
 
-          {#if launchError || launchSuccess || launchStatusRefreshError}
+          {#if launchError || launchSuccess || launchStatusRefreshError || launchLogError}
             <div class="flex flex-wrap justify-end gap-2 border-t pt-4">
-              {#if !launchError && (launchSuccess || launchStatusRefreshError)}
+              {#if !launchError && (launchSuccess || launchStatusRefreshError || launchLogError)}
                 <Button variant="outline" onclick={() => (open = false)}>Close</Button>
                 <Button
                   onclick={() => {
@@ -1498,6 +1503,7 @@ function selectTemplate(t: { name: string; source: string }) {
                 >
                   Open Workspace
                 </Button>
+                {#if launchLogError}<Button onclick={() => handleLaunch()}>Retry</Button>{/if}
               {:else if launchError}
                 <Button variant="outline" onclick={() => (open = false)}>Close</Button>
                 {#if launchBuildFailed && !launchIsRecovery}

@@ -23,6 +23,34 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 describe("WorkspaceOperation", () => {
+  it.each(["reconciling", "failed"] as const)(
+    "shows persistent log warning for %s without a spinner",
+    (state) => {
+      workspaceJobs.set({
+        ws: {
+          commandId: "cmd",
+          activity: "creating",
+          state,
+          phase: "",
+          logError: "Workspace log could not be saved: disk unavailable",
+          ...(state === "failed" ? { error: "CLI denied" } : {}),
+        },
+      })
+      const ui = render(WorkspaceOperation, {
+        id: "ws",
+        status: "Running",
+        density: "expanded",
+      })
+      expect(ui.getByText(/Workspace log could not be saved/)).toBeTruthy()
+      expect(ui.getByRole("status").getAttribute("aria-busy")).toBe("false")
+      expect(ui.queryByText(/Status may be out of date/)).toBeNull()
+      expect(
+        ui.queryByRole("button", { name: "Retry status for ws" }),
+      ).toBeNull()
+      if (state === "failed") expect(ui.getByText(/CLI denied/)).toBeTruthy()
+    },
+  )
+
   it("renders compact lifecycle status as a single-line badge", () => {
     const ui = render(WorkspaceOperation, {
       id: "ws",

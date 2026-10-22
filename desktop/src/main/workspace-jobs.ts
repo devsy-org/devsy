@@ -83,7 +83,7 @@ export class WorkspaceJobs {
     id: string,
     generation: number,
     error?: string,
-    confirmationError?: string,
+    logError?: string,
   ): Promise<void> {
     const job = this.jobs.get(id)
     if (!job || this.generation(id) !== generation || job.state !== "running")
@@ -91,21 +91,21 @@ export class WorkspaceJobs {
     this.generations.set(id, ++this.lastGeneration) // invalidate pre-completion polls
     this.jobs.set(id, {
       ...job,
-      state: error && confirmationError ? "failed" : "reconciling",
-      refreshError: confirmationError,
+      state: error && logError ? "failed" : "reconciling",
+      logError,
       phase:
         job.activity === "deleting" ? "Refreshing list" : "Refreshing status",
       error,
     })
     this.emit()
-    if (!confirmationError) await this.retryRefresh(id)
+    if (!logError) await this.retryRefresh(id)
   }
   async retryRefresh(id: string): Promise<void> {
     const job = this.jobs.get(id)
     if (
       !job ||
       (job.state !== "reconciling" &&
-        !(job.state === "failed" && job.refreshError)) ||
+        !(job.state === "failed" && (job.refreshError || job.logError))) ||
       this.refreshing.has(job.commandId)
     )
       return
@@ -115,7 +115,11 @@ export class WorkspaceJobs {
       if (this.jobs.get(id) !== job) return
       this.jobs.set(id, {
         ...job,
-        state: job.error ? "failed" : "succeeded",
+        state: job.error
+          ? "failed"
+          : job.logError
+            ? "reconciling"
+            : "succeeded",
         phase: job.error ? "See workspace logs for details" : "",
         refreshError: undefined,
       })

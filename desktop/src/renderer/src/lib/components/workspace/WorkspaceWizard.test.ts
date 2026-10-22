@@ -748,6 +748,33 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
+  it("keeps a log failure unconfirmed without a status spinner or completion", async () => {
+    providers.set([makeProvider("docker")])
+    const oncomplete = vi.fn()
+    const ui = render(WorkspaceWizard, { props: { open: true, oncomplete } })
+    await flushAsync()
+    await advanceToReview(ui.getByText)
+    await fireEvent.click(getLaunchButton())
+    await flushAsync()
+    ;(workspaceJobs as { set: (v: unknown) => void }).set({
+      python: {
+        commandId: "cmd-1",
+        activity: "creating",
+        state: "reconciling",
+        phase: "",
+        logError: "Workspace log could not be saved: disk unavailable",
+      },
+    })
+    await flushAsync()
+    expect(ui.getByText(/Workspace log could not be saved/)).toBeTruthy()
+    expect(ui.queryByText("Workspace ready")).toBeNull()
+    expect(ui.queryByText("Confirming workspace status")).toBeNull()
+    expect(ui.queryByRole("button", { name: "Retry status" })).toBeNull()
+    expect(ui.getByRole("button", { name: /^Retry$/ })).toBeTruthy()
+    expect(oncomplete).not.toHaveBeenCalled()
+    ui.unmount()
+  })
+
   it("keeps a refresh-only failure stale until Retry status confirms the workspace", async () => {
     providers.set([makeProvider("docker")])
     const oncomplete = vi.fn()

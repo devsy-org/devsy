@@ -10,6 +10,7 @@ function makeWatcher(
 ) {
   const state = {
     updateProviders: vi.fn().mockReturnValue(false),
+    updateWorkspaces: vi.fn().mockReturnValue(false),
     providerReadRevision: vi.fn().mockReturnValue(0),
     providerList: vi.fn().mockReturnValue([]),
     workspaceList: vi.fn().mockReturnValue(workspaces),
@@ -409,6 +410,48 @@ describe("Watcher job broadcasts", () => {
         commandId: "retry",
         state: "running",
       })
+    },
+  )
+})
+
+describe("Watcher log confirmation", () => {
+  it.each([undefined, "command denied"])(
+    "preserves log failures through polling and manual refresh (%s)",
+    async (error) => {
+      const { watcher, workspaceJobs } = makeWatcher(async () => ({}))
+      const refresh = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("offline"))
+        .mockResolvedValue(undefined)
+      workspaceJobs.setRefresh(refresh)
+      const generation = workspaceJobs.start("ws", "creating", "first")
+      await workspaceJobs.finish(
+        "ws",
+        generation,
+        error,
+        "Workspace log could not be saved: disk unavailable",
+      )
+      await (watcher as unknown as { pollOnce(): Promise<void> }).pollOnce()
+      expect(refresh).not.toHaveBeenCalled()
+      await workspaceJobs.retryRefresh("ws")
+      expect(workspaceJobs.get("ws")?.refreshError).toBe("offline")
+      await (watcher as unknown as { pollOnce(): Promise<void> }).pollOnce()
+      for (let i = 0; i < 20; i++) await Promise.resolve()
+      if (error) await workspaceJobs.retryRefresh("ws")
+      expect(refresh).toHaveBeenCalledTimes(2)
+      await workspaceJobs.retryRefresh("ws")
+      expect(workspaceJobs.get("ws")).toMatchObject({
+        state: error ? "failed" : "reconciling",
+        logError: "Workspace log could not be saved: disk unavailable",
+        refreshError: undefined,
+        error,
+      })
+      const next = workspaceJobs.start("ws", "creating", "retry")
+      expect(next).not.toBe(generation)
+      expect(workspaceJobs.get("ws")?.state).toBe("running")
+      expect(workspaceJobs.get("ws")?.logError).toBeUndefined()
+      await workspaceJobs.finish("ws", generation)
+      expect(workspaceJobs.get("ws")?.commandId).toBe("retry")
     },
   )
 })

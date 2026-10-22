@@ -14,12 +14,14 @@ export interface WorkspaceJob {
   phase: string
   status?: OperationStatus
   error?: string
+  logError?: string
   refreshError?: string
 }
 
 export function workspaceJobBusy(job?: WorkspaceJob): boolean {
   return (
-    job?.state === "running" || (job?.state === "reconciling" && !job.error)
+    job?.state === "running" ||
+    (job?.state === "reconciling" && !job.error && !job.logError)
   )
 }
 
@@ -153,6 +155,16 @@ export function presentWorkspaceStatus(input: {
   }
   const headline = HEADLINE[job.activity]
   if (job.state === "reconciling") {
+    if (job.logError) {
+      return {
+        headline,
+        tone: "warning",
+        busy: false,
+        announce: `${headline}. ${job.logError}`,
+        recovery: { message: job.logError, canRetry: !!job.refreshError },
+        detailsAvailable: true,
+      }
+    }
     if (job.refreshError) {
       const message = stalledMessage(job.activity)
       return {
