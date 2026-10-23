@@ -19,6 +19,9 @@ var _ = ginkgo.Describe(
 			func(ctx context.Context) {
 				initialDir, err := os.Getwd()
 				framework.ExpectNoError(err, "getting current working directory should not error")
+				if token := os.Getenv("GH_ACCESS_TOKEN"); token != "" {
+					ginkgo.GinkgoT().Setenv("GITHUB_TOKEN", token)
+				}
 
 				f := framework.NewDefaultFramework(initialDir + "/bin")
 				output, err := f.ExecCommandOutput(ctx, []string{"update", "--dry-run"})
