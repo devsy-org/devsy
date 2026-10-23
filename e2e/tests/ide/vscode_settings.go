@@ -16,30 +16,21 @@ const settingEditorFontSize = "editor.fontSize"
 var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), func() {
 	var (
 		tmpHome     string
-		origHome    string
 		settingsDir string
 	)
 
 	ginkgo.BeforeEach(func() {
 		var err error
-		origHome = os.Getenv("HOME")
-
 		tmpHome, err = os.MkdirTemp("", "vscode-settings-test-*")
 		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(func() { _ = os.RemoveAll(tmpHome) })
 
 		// On Linux, VS Code settings live at ~/.config/Code/User/settings.json
 		settingsDir = filepath.Join(tmpHome, ".config", "Code", "User")
 		err = os.MkdirAll(settingsDir, 0o750)
 		framework.ExpectNoError(err)
 
-		err = os.Setenv("HOME", tmpHome)
-		framework.ExpectNoError(err)
-	})
-
-	ginkgo.AfterEach(func() {
-		err := os.Setenv("HOME", origHome)
-		framework.ExpectNoError(err)
-		_ = os.RemoveAll(tmpHome)
+		framework.SetEnvForSpec("HOME", tmpHome)
 	})
 
 	settingsPath := func() string {
