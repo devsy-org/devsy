@@ -3,9 +3,12 @@ package secretstore
 import (
 	"context"
 	"errors"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/stretchr/testify/assert"
@@ -102,15 +105,53 @@ func TestInvocationResolverMaterialIsEmptyUntilResolved(t *testing.T) {
 	assert.Equal(t, secrets.PassphrasePrompt, material.Source)
 }
 
+// parkedCallers counts goroutines blocked on the resolver mutex inside
+// ResolvePassphrase. Callers cannot be observed entering the method directly, so
+// their goroutine stacks are inspected instead.
+func parkedCallers() int {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	count := 0
+	for stack := range strings.SplitSeq(string(buf), "\n\n") {
+		if strings.Contains(stack, "(*invocationResolver).ResolvePassphrase") &&
+			strings.Contains(stack, "Mutex).Lock") {
+			count++
+		}
+	}
+	return count
+}
+
+func waitForParkedCallers(want int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for parkedCallers() < want {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return true
+}
+
 func TestInvocationResolverPromptsOnceForConcurrentCallers(t *testing.T) {
+	const callers = 16
 	var prompts atomic.Int32
+	var contended atomic.Bool
 	resolver := newTestResolver(func(context.Context, secrets.UnlockRequest) (string, error) {
 		prompts.Add(1)
+		// Hold the prompt until every other caller is parked on the mutex, so the
+		// first resolution cannot finish before all callers have contended.
+		contended.Store(waitForParkedCallers(callers-1, 5*time.Second))
 		return "shared", nil
 	})
 	request := secrets.UnlockRequest{AllowPrompt: true, Purpose: testPurpose}
 
-	const callers = 16
 	var wg sync.WaitGroup
 	results := make([]secrets.UnlockMaterial, callers)
 	errs := make([]error, callers)
@@ -121,6 +162,7 @@ func TestInvocationResolverPromptsOnceForConcurrentCallers(t *testing.T) {
 	}
 	wg.Wait()
 
+	require.True(t, contended.Load(), "callers did not all contend on the resolver")
 	for i := range callers {
 		require.NoError(t, errs[i])
 		assert.Equal(t, "shared", results[i].Passphrase)
