@@ -1,0 +1,82 @@
+{
+  "schema": "devsy.dependencies.report.v1",
+  "schemaVersion": 1,
+  "surveyMode": "passive",
+  "executed": false,
+  "target": {
+    "contextName": "default",
+    "providerName": "docker",
+    "providerType": "docker",
+    "providerSourceId": "internal:docker",
+    "providerSourceKind": "builtin_internal",
+    "trustedBuiltinIdentity": true,
+    "configRevision": "cfg-rev-101",
+    "providerConfigRevision": "prov-rev-docker-01",
+    "evaluatedAt": "2026-10-19T05:00:00Z"
+  },
+  "host": {
+    "goos": "linux",
+    "goarch": "amd64",
+    "osVersion": "ubuntu-24.04",
+    "virtualizationCapability": "not_required"
+  },
+  "availability": "missing",
+  "compatibility": "unknown",
+  "reachability": "not_checked",
+  "policy": "external_only",
+  "reasonCode": "dependency_missing",
+  "message": "Docker CLI executable was not found in configured options or standard system locations.",
+  "hint": "Install Docker Engine or Docker Desktop externally, or set DOCKER_PATH to a valid docker executable.",
+  "items": [
+    {
+      "id": "docker-cli",
+      "displayName": "Docker CLI",
+      "required": true,
+      "executed": false,
+      "availability": "missing",
+      "compatibility": "unknown",
+      "reachability": "not_checked",
+      "policy": "external_only",
+      "reasonCode": "dependency_missing",
+      "candidates": [
+        {
+          "component": "docker",
+          "sourceKind": "well_known_path",
+          "optionName": "DOCKER_PATH",
+          "lexicalPath": "/usr/bin/docker",
+          "resolvedPath": "",
+          "isSymlink": false,
+          "executed": false,
+          "selected": false,
+          "availability": "missing",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_missing",
+          "detail": "stat /usr/bin/docker: no such file or directory"
+        },
+        {
+          "component": "docker",
+          "sourceKind": "well_known_path",
+          "optionName": "DOCKER_PATH",
+          "lexicalPath": "/usr/local/bin/docker",
+          "resolvedPath": "",
+          "isSymlink": false,
+          "executed": false,
+          "selected": false,
+          "availability": "missing",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_missing",
+          "detail": "stat /usr/local/bin/docker: no such file or directory"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "kind": "open_docs",
+      "label": "View Docker installation guide",
+      "enabled": true,
+      "requiresEffectAuthorization": false,
+      "requiresConfirmation": false
+    }
+  ]
+}

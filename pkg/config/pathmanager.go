@@ -7,34 +7,6 @@ import (
 	"sync"
 )
 
-// ensureDir creates the directory at path (and any parents) if it does not
-// already exist. It returns the path unchanged so callers can use it inline:
-//
-//	return ensureDir(filepath.Join(base, RepoName))
-func ensureDir(path string) (string, error) {
-	// #nosec G703 -- paths are derived from user-controlled env vars (XDG_*) or
-	// well-known OS defaults; path traversal is not a concern for a CLI tool
-	// running as the invoking user.
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		return "", fmt.Errorf("create directory %s: %w", path, err)
-	}
-
-	return path, nil
-}
-
-// homeOverrideDir roots sub beneath DEVSY_HOME when set, returning ok=false so
-// callers fall through to the OS-native default when it is unset.
-func homeOverrideDir(sub ...string) (string, bool, error) {
-	home := os.Getenv(EnvHome)
-	if home == "" {
-		return "", false, nil
-	}
-
-	dir, err := ensureDir(filepath.Join(append([]string{home}, sub...)...))
-
-	return dir, true, err
-}
-
 // joinUnder returns elems joined beneath the directory produced by parent.
 // A parent error is returned unchanged.
 func joinUnder(parent func() (string, error), elems ...string) (string, error) {
@@ -73,6 +45,13 @@ type PathManager interface {
 	// SystemBinDir is a directory on the user's PATH where standalone tool
 	// binaries (e.g. a git-lfs release fallback) can be installed.
 	SystemBinDir() (string, error)
+
+	// Dependency roots are shared across contexts. Resolving them may create
+	// the parent category roots, but does not create dependency subdirectories.
+	DependencyToolsDir() (string, error)
+	DependencyDownloadCacheDir() (string, error)
+	DependencyStateDir() (string, error)
+	DependencyLocksDir() (string, error)
 
 	// Config paths.
 	ConfigFilePath() (string, error)
@@ -118,7 +97,29 @@ type PathManager interface {
 // basePathManager implements every sub-path method by delegating the top-level
 // directory resolution to the embedded pm field (the concrete per-OS struct).
 type basePathManager struct {
+	pathManagerSettings
 	pm PathManager // self-reference wired after construction
+}
+
+type pathManagerSettings struct {
+	readOnly     bool
+	homeOverride string
+}
+
+func (b *basePathManager) DependencyToolsDir() (string, error) {
+	return joinUnder(b.pm.DataDir, "tools")
+}
+
+func (b *basePathManager) DependencyDownloadCacheDir() (string, error) {
+	return joinUnder(b.pm.CacheDir, "dependencies")
+}
+
+func (b *basePathManager) DependencyStateDir() (string, error) {
+	return joinUnder(b.pm.StateDir, "dependencies")
+}
+
+func (b *basePathManager) DependencyLocksDir() (string, error) {
+	return joinUnder(b.DependencyStateDir, "locks")
 }
 
 // --- Config paths ---
@@ -276,6 +277,37 @@ func (b *basePathManager) TaskDir() (string, error) {
 	return joinUnder(b.pm.StateDir, "tasks")
 }
 
+func (b *basePathManager) ensureDir(path string) (string, error) {
+	if b.readOnly {
+		return path, nil
+	}
+
+	// #nosec G703 -- paths are derived from user-controlled env vars (XDG_*) or
+	// well-known OS defaults; path traversal is not a concern for a CLI tool
+	// running as the invoking user.
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return "", fmt.Errorf("create directory %s: %w", path, err)
+	}
+
+	return path, nil
+}
+
+// homeOverrideDir prefers the instance home over DEVSY_HOME, falling through
+// to the OS-native default when both are empty.
+func (b *basePathManager) homeOverrideDir(sub ...string) (string, bool, error) {
+	home := b.homeOverride
+	if home == "" {
+		home = os.Getenv(EnvHome)
+	}
+	if home == "" {
+		return "", false, nil
+	}
+
+	dir, err := b.ensureDir(filepath.Join(append([]string{home}, sub...)...))
+
+	return dir, true, err
+}
+
 // inContext returns elems joined beneath ContextDir(context).
 func (b *basePathManager) inContext(context string, elems ...string) (string, error) {
 	return joinUnder(func() (string, error) { return b.ContextDir(context) }, elems...)
@@ -289,7 +321,21 @@ var (
 
 // NewPathManager returns a new PathManager for the current platform.
 func NewPathManager() PathManager {
-	return newPlatformPathManager()
+	return newPlatformPathManager(pathManagerSettings{})
+}
+
+// NewReadOnlyPathManager resolves the same paths as NewPathManager without
+// creating directories. Returned paths need not exist or be writable.
+func NewReadOnlyPathManager() PathManager {
+	return NewReadOnlyPathManagerForHome("")
+}
+
+// NewReadOnlyPathManagerForHome resolves paths without creating directories.
+// A nonempty home overrides DEVSY_HOME; empty uses the environment/native defaults.
+// DEVSY_CONFIG still overrides ConfigFilePath, and SystemBinDir remains native.
+// Returned paths need not exist or be writable and do not establish confinement.
+func NewReadOnlyPathManagerForHome(home string) PathManager {
+	return newPlatformPathManager(pathManagerSettings{readOnly: true, homeOverride: home})
 }
 
 // DefaultPathManager returns the process-wide singleton PathManager.

@@ -1,0 +1,107 @@
+{
+  "schema": "devsy.dependencies.report.v1",
+  "schemaVersion": 1,
+  "surveyMode": "passive",
+  "executed": false,
+  "target": {
+    "contextName": "default",
+    "providerName": "microsandbox",
+    "providerType": "external",
+    "providerSourceId": "github.com/devsy-org/devsy-provider-microsandbox@v0.1.11",
+    "providerSourceKind": "canonical_external_release",
+    "adapterVersion": "v0.1.11",
+    "trustedBuiltinIdentity": true,
+    "configRevision": "cfg-rev-103",
+    "providerConfigRevision": "prov-rev-msb-03",
+    "evaluatedAt": "2026-10-19T05:02:00Z"
+  },
+  "host": {
+    "goos": "linux",
+    "goarch": "amd64",
+    "osVersion": "ubuntu-24.04",
+    "virtualizationCapability": "kvm_available"
+  },
+  "availability": "incomplete",
+  "compatibility": "incompatible",
+  "reachability": "not_checked",
+  "policy": "external_only",
+  "reasonCode": "dependency_incomplete",
+  "message": "MicroSandbox runtime pair is incomplete: msb executable was found in ~/.local/bin/msb, but matching libkrunfw shared library is missing and version-manager shim ~/.local/share/mise/shims/msb was rejected.",
+  "hint": "Install both msb and libkrunfw from the same MicroSandbox release; prospective T08 option bindings MICROSANDBOX_PATH and MICROSANDBOX_LIBKRUNFW_PATH are illustrative until G01 adapter release lands.",
+  "items": [
+    {
+      "id": "microsandbox-runtime-pair",
+      "displayName": "MicroSandbox Runtime Pair (msb + libkrunfw)",
+      "required": true,
+      "executed": false,
+      "availability": "incomplete",
+      "compatibility": "incompatible",
+      "reachability": "not_checked",
+      "policy": "external_only",
+      "reasonCode": "dependency_incomplete",
+      "candidates": [
+        {
+          "component": "msb",
+          "sourceKind": "indirect_launcher",
+          "optionName": "MICROSANDBOX_PATH",
+          "lexicalPath": "/home/dev/.local/share/mise/shims/msb",
+          "resolvedPath": "/home/dev/.local/share/mise/shims/msb",
+          "isSymlink": false,
+          "observation": {
+            "fileIdentity": "illustrative-fid:linux-amd64:mise-shim-msb-41c0",
+            "platform": "linux/amd64"
+          },
+          "executed": false,
+          "selected": false,
+          "availability": "available",
+          "compatibility": "incompatible",
+          "reasonCode": "dependency_indirect_launcher",
+          "detail": "Rejected mise shim (illustrative prospective T08 MICROSANDBOX_PATH option); indirect version-manager launchers cannot guarantee paired libkrunfw ABI."
+        },
+        {
+          "component": "msb",
+          "sourceKind": "well_known_path",
+          "optionName": "MICROSANDBOX_PATH",
+          "lexicalPath": "/home/dev/.local/bin/msb",
+          "resolvedPath": "/home/dev/.local/bin/msb",
+          "isSymlink": false,
+          "observation": {
+            "fileIdentity": "illustrative-fid:linux-amd64:msb-local-bin-7e3b",
+            "platform": "linux/amd64"
+          },
+          "executed": false,
+          "selected": false,
+          "availability": "available",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_incomplete",
+          "detail": "Found msb binary without sibling libkrunfw.so.5 (illustrative prospective T08 MICROSANDBOX_PATH binding)."
+        },
+        {
+          "component": "libkrunfw",
+          "sourceKind": "well_known_path",
+          "optionName": "MICROSANDBOX_LIBKRUNFW_PATH",
+          "lexicalPath": "/home/dev/.local/lib/libkrunfw.so.5",
+          "resolvedPath": "",
+          "isSymlink": false,
+          "executed": false,
+          "selected": false,
+          "availability": "missing",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_incomplete",
+          "detail": "stat /home/dev/.local/lib/libkrunfw.so.5: no such file or directory (illustrative prospective T08 MICROSANDBOX_LIBKRUNFW_PATH binding)."
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "kind": "select",
+      "label": "Select external MicroSandbox binary and libkrunfw library",
+      "enabled": false,
+      "disabledReasonCode": "dependency_incomplete",
+      "requiresEffectAuthorization": true,
+      "requiresConfirmation": true,
+      "cliCommand": "devsy provider set microsandbox -o MICROSANDBOX_PATH=<path> -o MICROSANDBOX_LIBKRUNFW_PATH=<path>"
+    }
+  ]
+}

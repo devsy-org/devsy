@@ -1,0 +1,66 @@
+{
+  "schema": "devsy.dependencies.report.v1",
+  "schemaVersion": 1,
+  "surveyMode": "active_probe",
+  "executed": true,
+  "target": {
+    "contextName": "default",
+    "providerName": "orbstack",
+    "providerType": "external",
+    "providerSourceId": "github.com/devsy-org/devsy-provider-orbstack@v1.1.4",
+    "providerSourceKind": "canonical_external_release",
+    "adapterVersion": "v1.1.4",
+    "trustedBuiltinIdentity": true,
+    "configRevision": "cfg-rev-106",
+    "providerConfigRevision": "prov-rev-orb-06",
+    "evaluatedAt": "2026-10-19T05:05:00Z"
+  },
+  "host": {
+    "goos": "darwin",
+    "goarch": "arm64",
+    "osVersion": "macos-15.4",
+    "virtualizationCapability": "hypervisor_framework"
+  },
+  "availability": "available",
+  "compatibility": "compatible",
+  "reachability": "unreachable",
+  "policy": "external_only",
+  "reasonCode": "dependency_runtime_unreachable",
+  "message": "OrbStack CLI is installed and compatible, but the OrbStack runtime service is currently stopped.",
+  "hint": "Start OrbStack.app or run 'orbctl start', then retry provider status or initialization.",
+  "items": [
+    {
+      "id": "orbstack-cli",
+      "displayName": "OrbStack CLI & Runtime",
+      "required": true,
+      "executed": true,
+      "availability": "available",
+      "compatibility": "compatible",
+      "reachability": "unreachable",
+      "policy": "external_only",
+      "reasonCode": "dependency_runtime_unreachable",
+      "candidates": [
+        {
+          "component": "orbctl",
+          "sourceKind": "app_bundle",
+          "optionName": "ORBSTACK_PATH",
+          "lexicalPath": "/Applications/OrbStack.app/Contents/MacOS/bin/orbctl",
+          "resolvedPath": "/Applications/OrbStack.app/Contents/MacOS/bin/orbctl",
+          "isSymlink": false,
+          "observation": {
+            "fileIdentity": "illustrative-fid:darwin-arm64:orbctl-1.10.2-bundle-c81d",
+            "platform": "darwin/arm64",
+            "observedVersion": "1.10.2"
+          },
+          "executed": true,
+          "selected": true,
+          "availability": "available",
+          "compatibility": "compatible",
+          "reasonCode": "dependency_runtime_unreachable",
+          "detail": "Illustrative active probe: orbctl binary verified (v1.10.2), daemon status reports stopped"
+        }
+      ]
+    }
+  ],
+  "actions": []
+}
