@@ -1,7 +1,7 @@
-// Package proutil contains shared helpers used by the 'devsy platform' command and
+// Package cmdutil contains shared helpers used by the 'devsy platform' command and
 // its resource sub-groups (workspace, cluster, project, template). It exists to
 // avoid an import cycle between cmd/pro and its child packages.
-package proutil
+package cmdutil
 
 import (
 	"context"

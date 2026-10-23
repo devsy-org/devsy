@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/platform"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -32,10 +32,10 @@ func NewCheckUpdateCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Short:            "Check platform provider update",
 		Hidden:           true,
 		Annotations:      telemetry.SkipInUIAnnotation(),
-		RunE:             proutil.HostRunE(globalFlags, &cmd.Host, cmd.Run),
-		PersistentPreRun: proutil.MarkAgentExecuted,
+		RunE:             cmdutil.HostRunE(globalFlags, &cmd.Host, cmd.Run),
+		PersistentPreRun: cmdutil.MarkAgentExecuted,
 	}
-	proutil.AddHostFlag(c, &cmd.Host)
+	cmdutil.AddHostFlag(c, &cmd.Host)
 
 	return c
 }

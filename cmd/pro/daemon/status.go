@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/config"
 	platformdaemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
@@ -28,10 +28,10 @@ func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use:              "status",
 		Short:            "Get the status of the daemon",
-		RunE:             proutil.HostRunE(flags, &cmd.Host, cmd.Run),
-		PersistentPreRun: proutil.MarkAgentExecuted,
+		RunE:             cmdutil.HostRunE(flags, &cmd.Host, cmd.Run),
+		PersistentPreRun: cmdutil.MarkAgentExecuted,
 	}
-	proutil.AddHostFlag(c, &cmd.Host, proutil.WithHostCompletion(flags))
+	cmdutil.AddHostFlag(c, &cmd.Host, cmdutil.WithHostCompletion(flags))
 
 	return c
 }

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/client/proxycmd"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -29,9 +29,9 @@ func NewListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		Use:    "list",
 		Short:  "List projects",
 		Hidden: true,
-		RunE:   proutil.HostRunE(globalFlags, &cmd.Host, cmd.Run),
+		RunE:   cmdutil.HostRunE(globalFlags, &cmd.Host, cmd.Run),
 	}
-	proutil.AddHostFlag(c, &cmd.Host)
+	cmdutil.AddHostFlag(c, &cmd.Host)
 
 	return c
 }
@@ -41,7 +41,7 @@ func (cmd *ListProjectsCmd) Run(
 	devsyConfig *config.Config,
 	provider *provider.ProviderConfig,
 ) error {
-	headers := []string{proutil.HeaderName, proutil.HeaderDisplayName, "Description"}
+	headers := []string{cmdutil.HeaderName, cmdutil.HeaderDisplayName, "Description"}
 
 	return proxycmd.RunAndPrintTable(ctx, proxycmd.Options{
 		Command:     provider.Exec.Proxy.List.Projects,

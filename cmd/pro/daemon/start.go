@@ -10,8 +10,8 @@ import (
 	"syscall"
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
 	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -35,9 +35,9 @@ func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "start",
 		Short: "Start the client daemon",
-		RunE:  proutil.HostRunE(flags, &cmd.Host, cmd.Run),
+		RunE:  cmdutil.HostRunE(flags, &cmd.Host, cmd.Run),
 	}
-	proutil.AddHostFlag(c, &cmd.Host, proutil.WithHostCompletion(flags))
+	cmdutil.AddHostFlag(c, &cmd.Host, cmdutil.WithHostCompletion(flags))
 
 	return c
 }

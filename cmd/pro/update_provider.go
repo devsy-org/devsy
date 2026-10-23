@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
 	"github.com/devsy-org/devsy/cmd/pro/flags"
-	"github.com/devsy-org/devsy/cmd/pro/proutil"
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -36,7 +36,7 @@ func NewUpdateProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	proutil.AddHostFlag(c, &cmd.Host)
+	cmdutil.AddHostFlag(c, &cmd.Host)
 
 	return c
 }

@@ -1,4 +1,4 @@
-package proutil
+package cmdutil
 
 import (
 	"context"
