@@ -23,7 +23,7 @@ Dockerless containers are a separate bootstrap case: before their image filesyst
 
 The host needs standard bootstrap tools, including `mkdir`, `mktemp`, `head` with `-c`, `wc`, `chmod`, `mv`, and `rm`. A download uses `curl` or `wget`; when neither is available, Devsy can transfer the agent over the SSH connection. The agent directory must permit execution and either be writable by the account or allow noninteractive privilege escalation.
 
-Changing the account's shell is unnecessary. Both the external OpenSSH client and the built-in SSH transport use the same bootstrap launcher; switching transports does not repair a missing `/bin/sh` or a restricted account.
+Both the external OpenSSH client and the built-in SSH transport use the same bootstrap launcher; switching transports does not repair a missing `/bin/sh` or a restricted account.
 
 For locked-down accounts, ask the administrator to permit `/bin/sh` and the required tools, provide a writable executable agent directory, and check forced-command restrictions. Keep noninteractive shell startup output off stdout: it carries the bootstrap protocol and the live SSH tunnel. Send diagnostics to stderr and limit banners and prompts to interactive sessions.
 
