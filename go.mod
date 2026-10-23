@@ -57,7 +57,7 @@ require (
 	github.com/onsi/gomega v1.43.1
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pkg/sftp v1.13.11
-	github.com/posthog/posthog-go v1.25.3
+	github.com/posthog/posthog-go v1.27.0
 	github.com/shirou/gopsutil/v4 v4.26.8
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/spf13/cobra v1.10.2
