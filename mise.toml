@@ -9,7 +9,7 @@ locked = true
 [tools]
 go = "1.26.9"
 node = "24"
-golangci-lint = "2.13.2"
+golangci-lint = "2.14.0"
 prek = "0.5.3"
 protoc = "36.2"
 gh = "2.101.0"
