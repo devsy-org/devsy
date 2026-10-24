@@ -21,25 +21,7 @@ func startPty(cmd *Cmd, opt ...StartOption) (_ PTYCmd, _ Process, retErr error) 
 		o(&opts)
 	}
 
-	fullPath, err := exec.LookPath(cmd.Path)
-	if err != nil {
-		return nil, nil, err
-	}
-	pathPtr, err := windows.UTF16PtrFromString(fullPath)
-	if err != nil {
-		return nil, nil, err
-	}
-	argsPtr, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(cmd.Args))
-	if err != nil {
-		return nil, nil, err
-	}
-	if cmd.Dir == "" {
-		cmd.Dir, err = os.Getwd()
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	dirPtr, err := windows.UTF16PtrFromString(cmd.Dir)
+	winCmd, err := resolveCommand(cmd)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -53,47 +35,15 @@ func startPty(cmd *Cmd, opt ...StartOption) (_ PTYCmd, _ Process, retErr error) 
 			_ = winPty.Close()
 		}
 	}()
-	env := cmd.Env
-	if winPty.opts.sshReq != nil {
-		if env == nil {
-			env = os.Environ()
-		}
-		env = append(env, fmt.Sprintf("SSH_TTY=%s", winPty.Name()))
-	}
+	envBlock := processEnvBlock(cmd.Env, winPty)
 
-	attrs, err := windows.NewProcThreadAttributeList(1)
+	attrs, err := newConsoleAttrList(winPty.console)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer attrs.Delete()
-	// Taken from: https://github.com/microsoft/hcsshim/blob/2314362e977aa03b3ed245a4beb12d00422af0e2/internal/winapi/process.go#L6
-	err = attrs.Update(0x20016, unsafe.Pointer(winPty.console), unsafe.Sizeof(winPty.console))
-	if err != nil {
-		return nil, nil, err
-	}
 
-	startupInfo := &windows.StartupInfoEx{}
-	startupInfo.ProcThreadAttributeList = attrs.List()
-	startupInfo.StartupInfo.Flags = windows.STARTF_USESTDHANDLES
-	startupInfo.StartupInfo.Cb = uint32(unsafe.Sizeof(*startupInfo))
-	var envBlock *uint16
-	if env != nil {
-		envBlock = createEnvBlock(addCriticalEnv(dedupEnvCase(true, env)))
-	}
-	var processInfo windows.ProcessInformation
-	err = windows.CreateProcess(
-		pathPtr,
-		argsPtr,
-		nil,
-		nil,
-		false,
-		// https://docs.microsoft.com/en-us/windows/win32/procthread/process-creation-flags#create_unicode_environment
-		windows.CREATE_UNICODE_ENVIRONMENT|windows.EXTENDED_STARTUPINFO_PRESENT,
-		envBlock,
-		dirPtr,
-		&startupInfo.StartupInfo,
-		&processInfo,
-	)
+	processInfo, err := createConsoleProcess(winCmd, attrs, envBlock)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -115,21 +65,116 @@ func startPty(cmd *Cmd, opt ...StartOption) (_ PTYCmd, _ Process, retErr error) 
 		}
 	}()
 
-	errO := winPty.outputWrite.Close()
-	winPty.outputWrite = nil
-	errI := winPty.inputRead.Close()
-	winPty.inputRead = nil
-	if errO != nil {
-		return nil, nil, errO
-	}
-	if errI != nil {
-		return nil, nil, errI
+	if err = closeChildPipeEnds(winPty); err != nil {
+		return nil, nil, err
 	}
 	go wp.waitInternal()
 	if cmd.Context != nil {
 		go wp.killOnContext(cmd.Context)
 	}
 	return winPty, wp, nil
+}
+
+// winCommand holds the UTF-16 arguments for CreateProcess.
+type winCommand struct {
+	path    *uint16
+	cmdLine *uint16
+	dir     *uint16
+}
+
+// resolveCommand looks up the executable and defaults cmd.Dir to the working directory.
+func resolveCommand(cmd *Cmd) (winCommand, error) {
+	fullPath, err := exec.LookPath(cmd.Path)
+	if err != nil {
+		return winCommand{}, err
+	}
+	pathPtr, err := windows.UTF16PtrFromString(fullPath)
+	if err != nil {
+		return winCommand{}, err
+	}
+	argsPtr, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(cmd.Args))
+	if err != nil {
+		return winCommand{}, err
+	}
+	if cmd.Dir == "" {
+		cmd.Dir, err = os.Getwd()
+		if err != nil {
+			return winCommand{}, err
+		}
+	}
+	dirPtr, err := windows.UTF16PtrFromString(cmd.Dir)
+	if err != nil {
+		return winCommand{}, err
+	}
+	return winCommand{path: pathPtr, cmdLine: argsPtr, dir: dirPtr}, nil
+}
+
+// newConsoleAttrList returns a process attribute list that attaches the child to console.
+func newConsoleAttrList(console windows.Handle) (*windows.ProcThreadAttributeListContainer, error) {
+	attrs, err := windows.NewProcThreadAttributeList(1)
+	if err != nil {
+		return nil, err
+	}
+	// Taken from: https://github.com/microsoft/hcsshim/blob/2314362e977aa03b3ed245a4beb12d00422af0e2/internal/winapi/process.go#L6
+	err = attrs.Update(0x20016, unsafe.Pointer(console), unsafe.Sizeof(console))
+	if err != nil {
+		attrs.Delete()
+		return nil, err
+	}
+	return attrs, nil
+}
+
+// processEnvBlock returns the child's UTF-16 environment block, or nil to inherit the parent's.
+func processEnvBlock(env []string, pty *ptyWindows) *uint16 {
+	if pty.opts.sshReq != nil {
+		if env == nil {
+			env = os.Environ()
+		}
+		env = append(env, fmt.Sprintf("SSH_TTY=%s", pty.Name()))
+	}
+	if env == nil {
+		return nil
+	}
+	return createEnvBlock(addCriticalEnv(dedupEnvCase(true, env)))
+}
+
+// createConsoleProcess starts the command attached to attrs. On success the caller owns the returned handles.
+func createConsoleProcess(
+	cmd winCommand,
+	attrs *windows.ProcThreadAttributeListContainer,
+	envBlock *uint16,
+) (windows.ProcessInformation, error) {
+	startupInfo := &windows.StartupInfoEx{}
+	startupInfo.ProcThreadAttributeList = attrs.List()
+	startupInfo.StartupInfo.Flags = windows.STARTF_USESTDHANDLES
+	startupInfo.StartupInfo.Cb = uint32(unsafe.Sizeof(*startupInfo))
+	var processInfo windows.ProcessInformation
+	err := windows.CreateProcess(
+		cmd.path,
+		cmd.cmdLine,
+		nil,
+		nil,
+		false,
+		// https://docs.microsoft.com/en-us/windows/win32/procthread/process-creation-flags#create_unicode_environment
+		windows.CREATE_UNICODE_ENVIRONMENT|windows.EXTENDED_STARTUPINFO_PRESENT,
+		envBlock,
+		cmd.dir,
+		&startupInfo.StartupInfo,
+		&processInfo,
+	)
+	return processInfo, err
+}
+
+// closeChildPipeEnds closes the PTY pipe ends the child now holds; both are attempted before reporting the first error.
+func closeChildPipeEnds(p *ptyWindows) error {
+	errO := p.outputWrite.Close()
+	p.outputWrite = nil
+	errI := p.inputRead.Close()
+	p.inputRead = nil
+	if errO != nil {
+		return errO
+	}
+	return errI
 }
 
 // Taken from: https://github.com/microsoft/hcsshim/blob/7fbdca16f91de8792371ba22b7305bf4ca84170a/internal/exec/exec.go#L476
