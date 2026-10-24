@@ -43,4 +43,4 @@ If the provider is unreachable, you can force the delete:
 devsy workspace delete my-workspace --force
 ```
 
-This only removes the workspace on the Devsy side and ignores provider errors, so it can leave cloud resources behind.
+`--force` skips the status check and ignores errors from provider teardown. If the provider cannot be checked, Devsy skips provider teardown, so provider resources can be left behind.
