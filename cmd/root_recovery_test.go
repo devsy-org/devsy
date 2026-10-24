@@ -56,6 +56,11 @@ func TestStartupFencesInterruptedContextDeletion(t *testing.T) {
 	blob, err := os.ReadFile(blobPath)
 	require.NoError(t, err)
 	require.Equal(t, "not an encrypted store", string(blob))
+	// container info must not bypass the recovery gate via its own pre-run hook.
+	t.Setenv(config.EnvWorkspaceID, "")
+	root, _ = BuildRoot()
+	root.SetArgs([]string{containerCommandName, infoCommandName})
+	require.ErrorIs(t, root.Execute(), config.ErrContextDeletionPending)
 }
 
 func TestStartupRejectsMalformedDeletionIntentWithoutLeakingContent(t *testing.T) {

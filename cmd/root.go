@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/ci"
 	"github.com/devsy-org/devsy/cmd/completion"
 	cliconfig "github.com/devsy-org/devsy/cmd/config"
+	"github.com/devsy-org/devsy/cmd/container"
 	"github.com/devsy-org/devsy/cmd/context"
 	envcmd "github.com/devsy-org/devsy/cmd/env"
 	"github.com/devsy-org/devsy/cmd/feature"
@@ -421,6 +422,7 @@ func registerSubcommands(rootCmd *cobra.Command, globalFlags *flags.GlobalFlags)
 	rootCmd.AddCommand(
 		ci.NewCICmd(globalFlags),
 		cliconfig.NewConfigCmd(globalFlags),
+		container.NewContainerCmd(globalFlags, rootCmd.PersistentPreRunE),
 		context.NewContextCmd(globalFlags),
 		envcmd.NewEnvCmd(globalFlags),
 		feature.NewFeatureCmd(globalFlags),

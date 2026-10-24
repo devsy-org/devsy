@@ -257,6 +257,34 @@ var _ = ginkgo.Describe(
 				[]string{cmdWorkspace, cmdSSH, flagCommand, "echo $FOO", workspace.ID},
 			)
 			framework.ExpectNoError(err)
+
+			identity, err := tc.f.DevsySSH(
+				ctx,
+				workspace.ID,
+				"echo $"+pkgconfig.EnvWorkspaceID+" $"+pkgconfig.EnvWorkspaceUID,
+			)
+			framework.ExpectNoError(err)
+			gomega.Expect(strings.Fields(identity)).To(
+				gomega.Equal([]string{workspace.ID, workspace.UID}),
+			)
+
+			infoOutput, err := tc.f.DevsySSH(
+				ctx,
+				workspace.ID,
+				"devsy container info --result-format json",
+			)
+			framework.ExpectNoError(err)
+			var info struct {
+				SSHCommand string `json:"sshCommand"`
+				SSHHost    string `json:"sshHost"`
+				RemoteUser string `json:"remoteUser"`
+			}
+			framework.ExpectNoError(json.Unmarshal([]byte(infoOutput), &info))
+			gomega.Expect(info.SSHHost).To(gomega.Equal(workspace.ID + pkgconfig.SSHHostSuffix))
+			gomega.Expect(info.RemoteUser).NotTo(gomega.BeEmpty())
+			gomega.Expect(info.SSHCommand).To(
+				gomega.Equal("ssh " + info.RemoteUser + "@" + info.SSHHost),
+			)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
 		ginkgo.It("user", func(ctx context.Context) {

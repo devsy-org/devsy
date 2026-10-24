@@ -46,7 +46,7 @@ Fleet works only through a manually added SSH connection to `WORKSPACE_NAME.devs
 
 ### SSH
 
-Devsy adds a `WORKSPACE_NAME.devsy` entry to `~/.ssh/config` when it creates a workspace.
+When SSH configuration is enabled, Devsy adds a `WORKSPACE_NAME.devsy` entry to `~/.ssh/config` on the machine running Devsy when it creates a workspace.
 
 ```sh
 ssh WORKSPACE_NAME.devsy
@@ -58,6 +58,19 @@ Any IDE with remote SSH support can use this host. Without an `ssh` client, use 
 devsy workspace ssh my-workspace
 devsy workspace ssh my-workspace --command "echo Hello World"
 ```
+
+If you are already inside a Devsy container and need the host and remote user for a manually configured IDE connection, run this from the container terminal:
+
+```sh
+devsy container info
+devsy container info --result-format json
+```
+
+Run `devsy container info` inside the workspace container, not on your local machine. The printed `ssh` command works only from a client that has the matching Devsy SSH configuration on its host and a reachable transport. The `.devsy` suffix is an SSH alias that Devsy writes to the SSH config, not a network name that resolves on its own.
+
+When Devsy runs on a remote VM, a separate laptop or IDE client needs its own working SSH transport or host configuration. `devsy container info` does not configure it.
+
+Docker Compose workspaces created before Devsy injected `DEVSY_WORKSPACE_ID` into the service lack that variable, so `devsy container info` fails in them. Recreate the workspace to fix it.
 
 ## IDE options
 

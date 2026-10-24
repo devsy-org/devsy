@@ -146,7 +146,10 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
 	ginkgo.It("create workspace without devcontainer.json", func(ctx context.Context) {
-		const providerName = "test-docker"
+		const (
+			providerName = "test-docker"
+			remoteUser   = "vscode"
+		)
 
 		f := framework.NewDefaultFramework(initialDir + "/bin")
 		tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
@@ -168,6 +171,23 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 
 		workspace, err := f.FindWorkspace(ctx, tempDir)
 		framework.ExpectNoError(err)
+
+		infoOutput, err := f.DevsySSH(
+			ctx,
+			workspace.ID,
+			"devsy container info --result-format json",
+		)
+		framework.ExpectNoError(err)
+		sshHost := workspace.ID + pkgconfig.SSHHostSuffix
+		var info struct {
+			SSHCommand string `json:"sshCommand"`
+			SSHHost    string `json:"sshHost"`
+			RemoteUser string `json:"remoteUser"`
+		}
+		framework.ExpectNoError(json.Unmarshal([]byte(infoOutput), &info))
+		gomega.Expect(info.SSHHost).To(gomega.Equal(sshHost))
+		gomega.Expect(info.RemoteUser).To(gomega.Equal(remoteUser))
+		gomega.Expect(info.SSHCommand).To(gomega.Equal("ssh " + remoteUser + "@" + sshHost))
 
 		projectName := workspace.ID
 		eventsOutput, err := f.ExecCommandOutput(ctx, []string{
