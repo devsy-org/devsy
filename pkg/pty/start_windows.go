@@ -75,14 +75,12 @@ func startPty(cmd *Cmd, opt ...StartOption) (_ PTYCmd, _ Process, retErr error) 
 	return winPty, wp, nil
 }
 
-// winCommand holds the UTF-16 arguments for CreateProcess.
 type winCommand struct {
 	path    *uint16
 	cmdLine *uint16
 	dir     *uint16
 }
 
-// resolveCommand looks up the executable and defaults cmd.Dir to the working directory.
 func resolveCommand(cmd *Cmd) (winCommand, error) {
 	fullPath, err := exec.LookPath(cmd.Path)
 	if err != nil {
@@ -109,7 +107,6 @@ func resolveCommand(cmd *Cmd) (winCommand, error) {
 	return winCommand{path: pathPtr, cmdLine: argsPtr, dir: dirPtr}, nil
 }
 
-// newConsoleAttrList returns a process attribute list that attaches the child to console.
 func newConsoleAttrList(console windows.Handle) (*windows.ProcThreadAttributeListContainer, error) {
 	attrs, err := windows.NewProcThreadAttributeList(1)
 	if err != nil {
@@ -124,7 +121,6 @@ func newConsoleAttrList(console windows.Handle) (*windows.ProcThreadAttributeLis
 	return attrs, nil
 }
 
-// processEnvBlock returns the child's UTF-16 environment block, or nil to inherit the parent's.
 func processEnvBlock(env []string, pty *ptyWindows) *uint16 {
 	if pty.opts.sshReq != nil {
 		if env == nil {
@@ -165,7 +161,7 @@ func createConsoleProcess(
 	return processInfo, err
 }
 
-// closeChildPipeEnds closes the PTY pipe ends the child now holds; both are attempted before reporting the first error.
+// Close both ends even if one fails so neither handle is leaked.
 func closeChildPipeEnds(p *ptyWindows) error {
 	errO := p.outputWrite.Close()
 	p.outputWrite = nil
