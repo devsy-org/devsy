@@ -68,8 +68,9 @@ var _ = ginkgo.Describe("microsandbox mount parity",
 						)
 						framework.ExpectNoError(err)
 						ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-							cleanupCtx, cancel := context.WithTimeout(
-								context.WithoutCancel(cleanupCtx), time.Minute,
+							cleanupCtx, cancel := framework.DetachedCleanupContext(
+								cleanupCtx,
+								time.Minute,
 							)
 							defer cancel()
 							_, err := f.ExecCommandOutput(
@@ -292,9 +293,7 @@ func storeMicrosandboxSecret(
 	)
 	framework.ExpectNoError(err)
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-		cleanupCtx, cancel := context.WithTimeout(
-			context.WithoutCancel(cleanupCtx), time.Minute,
-		)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		_, err := f.ExecCommandOutput(
 			cleanupCtx,

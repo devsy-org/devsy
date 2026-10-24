@@ -117,7 +117,7 @@ func (fixture *microsandboxMigrationFixture) registerCleanup() {
 		if !fixture.volumeOwned {
 			return nil
 		}
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		out, err := microsandboxResourceCommand(cleanupCtx, "volume", "rm", fixture.volume)
 		if err != nil {
@@ -126,7 +126,7 @@ func (fixture *microsandboxMigrationFixture) registerCleanup() {
 		return nil
 	})
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		out, err := microsandboxResourceCommand(cleanupCtx, "list", "--quiet")
 		if err != nil {

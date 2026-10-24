@@ -117,7 +117,7 @@ func (s *microsandboxTestSession) copyWorkspace(source string) string {
 func (s *microsandboxTestSession) addProvider(ctx context.Context, source, name string) {
 	framework.ExpectNoError(s.framework.DevsyProviderAdd(ctx, source, "--name", name))
 	ginkgo.DeferCleanup(func(cleanupCtx context.Context) error {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), time.Minute)
+		cleanupCtx, cancel := framework.DetachedCleanupContext(cleanupCtx, time.Minute)
 		defer cancel()
 		return s.framework.DevsyProviderDelete(cleanupCtx, name)
 	})
