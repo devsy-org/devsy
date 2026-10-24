@@ -28,16 +28,6 @@ func (s *PythonToolSuite) SetupTest() {
 	}
 }
 
-// useFakeUv puts a uv stub first on PATH. The stub records its argv in
-// fakeUvArgsFile next to itself and then runs body.
-func (s *PythonToolSuite) useFakeUv(body string) string {
-	dir := s.T().TempDir()
-	script := "#!/bin/sh\necho \"$@\" >> \"$(dirname \"$0\")/" + fakeUvArgsFile + "\"\n" + body + "\n"
-	s.Require().NoError(os.WriteFile(filepath.Join(dir, "uv"), []byte(script), 0o700))
-	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return dir
-}
-
 func (s *PythonToolSuite) TestInstallSkippedWhenExecutableExists() {
 	dir := s.useFakeUv("exit 1")
 
@@ -60,7 +50,7 @@ func (s *PythonToolSuite) TestInstallRunsPackageInstallWithSelectedTool() {
 	})
 	s.Require().NoError(err)
 
-	args, err := os.ReadFile(filepath.Join(dir, fakeUvArgsFile))
+	args, err := os.ReadFile(filepath.Clean(filepath.Join(dir, fakeUvArgsFile)))
 	s.Require().NoError(err)
 	s.Equal("tool install notebook\n", string(args))
 }
@@ -76,4 +66,32 @@ func (s *PythonToolSuite) TestInstallFailureWrapsOutputWithDisplayName() {
 	s.Require().Error(err)
 	s.Contains(err.Error(), "error installing marimo: ")
 	s.Contains(err.Error(), "fake-uv-failure")
+}
+
+// useFakeUv puts a uv stub first on PATH. The stub records its argv in
+// fakeUvArgsFile next to itself and then runs body.
+func (s *PythonToolSuite) useFakeUv(body string) string {
+	dir := s.T().TempDir()
+	script := "#!/bin/sh\necho \"$@\" >> \"$(dirname \"$0\")/" + fakeUvArgsFile + "\"\n" + body + "\n"
+	s.Require().NoError(writeExecutable(filepath.Join(dir, "uv"), script))
+	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return dir
+}
+
+// writeExecutable creates an owner-only executable file. Permissions are set
+// on the open handle so the mode is 0700 without a path-based chmod.
+func writeExecutable(path, content string) error {
+	f, err := os.OpenFile(filepath.Clean(path), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(content); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Chmod(0o700); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
