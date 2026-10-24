@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
-    "@electron/rebuild": "4.2.0",
+    "@electron/rebuild": "4.2.1",
     "@internationalized/date": "3.12.4",
     "@lucide/svelte": "1.51.0",
     "@playwright/test": "1.63.0",
