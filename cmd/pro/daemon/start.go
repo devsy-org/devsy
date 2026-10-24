@@ -11,7 +11,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	daemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -22,13 +22,13 @@ import (
 
 // StartCmd holds the devsy daemon flags.
 type StartCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	Host string
 }
 
 // NewStartCmd creates a new command.
-func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewStartCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &StartCmd{
 		GlobalFlags: flags,
 	}

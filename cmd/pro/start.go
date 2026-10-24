@@ -21,7 +21,7 @@ import (
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
 	"github.com/devsy-org/api/pkg/auth"
 	devsyclientset "github.com/devsy-org/api/pkg/clientset/versioned"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
@@ -57,7 +57,7 @@ var defaultDeploymentName = "loft" // Need to update helm chart if we change thi
 
 // StartCmd holds the login cmd flags.
 type StartCmd struct {
-	proflags.GlobalFlags
+	platformflags.GlobalFlags
 
 	KubeClient       kubernetes.Interface
 	RestConfig       *rest.Config
@@ -86,7 +86,7 @@ type StartCmd struct {
 }
 
 // NewStartCmd creates a new command.
-func NewStartCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewStartCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &StartCmd{
 		GlobalFlags: *flags,
 		Product:     config.PlatformReleaseName,

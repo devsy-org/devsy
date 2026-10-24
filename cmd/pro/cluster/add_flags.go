@@ -1,7 +1,7 @@
 package cluster
 
 import (
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/spf13/cobra"
@@ -92,5 +92,5 @@ func (cmd *ClusterCmd) registerClusterFlags(c *cobra.Command) {
 		),
 		cliflags.String(&cmd.Host, names.Host, "", "The platform instance to use"),
 	)
-	proflags.BindEnv(c.Flags(), names.Host)
+	platformflags.BindEnv(c.Flags(), names.Host)
 }

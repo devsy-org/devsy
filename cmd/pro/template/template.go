@@ -1,13 +1,13 @@
 package template
 
 import (
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/spf13/cobra"
 )
 
 // NewTemplateCmd builds the 'devsy platform template' parent command for managing
 // Platform templates.
-func NewTemplateCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
+func NewTemplateCmd(globalFlags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "template",
 		Short: "Manage Devsy Platform templates",

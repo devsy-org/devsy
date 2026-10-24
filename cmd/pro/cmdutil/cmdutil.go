@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/pro/completion"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -57,7 +57,7 @@ var findPlatformProviderFn = FindPlatformProvider
 // HostRunE returns a RunE that resolves the provider for *host and passes it to
 // run. *host is read when the command runs, after flag parsing.
 func HostRunE(
-	globalFlags *proflags.GlobalFlags,
+	globalFlags *platformflags.GlobalFlags,
 	host *string,
 	run HostRunFunc,
 ) func(*cobra.Command, []string) error {
@@ -77,14 +77,14 @@ func HostRunE(
 }
 
 type hostFlagOptions struct {
-	completionFlags *proflags.GlobalFlags
+	completionFlags *platformflags.GlobalFlags
 }
 
 // HostFlagOption configures AddHostFlag.
 type HostFlagOption func(*hostFlagOptions)
 
 // WithHostCompletion registers shell completion for --host listing platform instances.
-func WithHostCompletion(globalFlags *proflags.GlobalFlags) HostFlagOption {
+func WithHostCompletion(globalFlags *platformflags.GlobalFlags) HostFlagOption {
 	return func(o *hostFlagOptions) { o.completionFlags = globalFlags }
 }
 

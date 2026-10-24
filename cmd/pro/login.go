@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/blang/semver/v4"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
@@ -26,7 +26,7 @@ const PROVIDER_BINARY = "PRO_PROVIDER"
 
 // LoginCmd holds the login cmd flags.
 type LoginCmd struct {
-	proflags.GlobalFlags
+	platformflags.GlobalFlags
 
 	AccessKey      string
 	Provider       string
@@ -41,7 +41,7 @@ type LoginCmd struct {
 }
 
 // NewLoginCmd creates a new command.
-func NewLoginCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewLoginCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &LoginCmd{
 		GlobalFlags: *flags,
 	}

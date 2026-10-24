@@ -6,7 +6,7 @@ import (
 	"time"
 
 	rootflags "github.com/devsy-org/devsy/cmd/flags"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/suite"
@@ -45,7 +45,7 @@ func (s *loginSuite) TestConcurrentLoginFindsCreatedInstance() {
 	s.Require().NoError(lock.Lock())
 	s.T().Cleanup(func() { _ = lock.Unlock() })
 
-	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
+	cmd := &LoginCmd{GlobalFlags: platformflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
 	result := make(chan error, 1)
 	go func() {
 		_, err := cmd.prepareProvider(context.Background(), "https://pro.example")
@@ -76,7 +76,7 @@ func (s *loginSuite) TestDifferentHostDoesNotWaitForLoginLock() {
 		Host:     "second.example",
 	}))
 
-	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
+	cmd := &LoginCmd{GlobalFlags: platformflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
 	result := make(chan error, 1)
 	go func() {
 		_, err := cmd.prepareProvider(context.Background(), "https://second.example")
@@ -117,7 +117,7 @@ func (s *loginSuite) TestEquivalentHostFindsExistingInstance() {
 		Provider: testPlatformProviderName,
 		Host:     "Foo.Example.com",
 	}))
-	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
+	cmd := &LoginCmd{GlobalFlags: platformflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
 	_, err := cmd.prepareProvider(context.Background(), "https://foo.example.com")
 	s.Require().NoError(err)
 	s.Equal(testPlatformProviderName, cmd.Provider)
@@ -128,7 +128,7 @@ func (s *loginSuite) TestDistinctHostsWithSameInstanceIDAreRejected() {
 		Provider: testPlatformProviderName,
 		Host:     "foo.example.com",
 	}))
-	cmd := &LoginCmd{GlobalFlags: proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
+	cmd := &LoginCmd{GlobalFlags: platformflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}}
 	_, err := cmd.prepareProvider(context.Background(), "https://foo-example.com")
 	s.Require().ErrorContains(err, "conflicts with existing host")
 	stored, err := provider.LoadPlatformInstanceConfig("default", "foo.example.com")

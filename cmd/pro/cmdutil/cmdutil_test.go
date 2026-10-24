@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	rootflags "github.com/devsy-org/devsy/cmd/flags"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -84,7 +84,7 @@ func (s *hostFlagSuite) TestHostRunEResolvesHostAtRunTime() {
 		return devsyConfig, pCfg, nil
 	}
 
-	gf := &proflags.GlobalFlags{
+	gf := &platformflags.GlobalFlags{
 		GlobalFlags: &rootflags.GlobalFlags{Context: "ctx-a", Provider: "prov-b"},
 	}
 	var host string
@@ -128,7 +128,7 @@ func (s *hostFlagSuite) TestHostRunEPropagatesResolveErrorWithoutRunning() {
 	}
 
 	var host string
-	gf := &proflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}
+	gf := &platformflags.GlobalFlags{GlobalFlags: &rootflags.GlobalFlags{}}
 	c := &cobra.Command{Use: testCmdName, RunE: HostRunE(gf, &host, run)}
 	c.SetOut(io.Discard)
 	c.SetErr(io.Discard)

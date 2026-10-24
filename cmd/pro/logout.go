@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -24,13 +24,13 @@ import (
 
 // LogoutCmd holds the logout cmd flags.
 type LogoutCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	IgnoreNotFound bool
 }
 
 // NewLogoutCmd creates a new command.
-func NewLogoutCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewLogoutCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &LogoutCmd{
 		GlobalFlags: flags,
 	}

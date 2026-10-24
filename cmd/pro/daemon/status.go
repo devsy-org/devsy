@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/pro/cmdutil"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	platformdaemon "github.com/devsy-org/devsy/pkg/daemon/platform"
 	providerpkg "github.com/devsy-org/devsy/pkg/provider"
@@ -15,13 +15,13 @@ import (
 
 // StatusCmd holds the Devsy daemon flags.
 type StatusCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	Host string
 }
 
 // NewStatusCmd creates a new command.
-func NewStatusCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewStatusCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &StatusCmd{
 		GlobalFlags: flags,
 	}

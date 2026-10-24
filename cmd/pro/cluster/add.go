@@ -11,7 +11,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/platform"
@@ -29,7 +29,7 @@ import (
 )
 
 type ClusterCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	Namespace        string
 	ServiceAccount   string
@@ -45,7 +45,7 @@ type ClusterCmd struct {
 }
 
 // NewAddCmd creates a new command.
-func NewAddCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
+func NewAddCmd(globalFlags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &ClusterCmd{
 		GlobalFlags: globalFlags,
 	}

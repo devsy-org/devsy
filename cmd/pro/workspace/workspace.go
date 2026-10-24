@@ -1,13 +1,13 @@
 package workspace
 
 import (
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/spf13/cobra"
 )
 
 // NewWorkspaceCmd builds the 'devsy platform workspace' parent command for managing
 // Platform workspaces.
-func NewWorkspaceCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
+func NewWorkspaceCmd(globalFlags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workspace",
 		Short: "Manage Devsy Platform workspaces",

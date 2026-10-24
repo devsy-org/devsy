@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -21,13 +21,13 @@ import (
 
 // ListCmd holds the list cmd flags.
 type ListCmd struct {
-	proflags.GlobalFlags
+	platformflags.GlobalFlags
 
 	Login bool
 }
 
 // NewListCmd creates a new command.
-func NewListCmd(flags *proflags.GlobalFlags) *cobra.Command {
+func NewListCmd(flags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &ListCmd{
 		GlobalFlags: *flags,
 	}

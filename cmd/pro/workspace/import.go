@@ -7,7 +7,7 @@ import (
 
 	managementv1 "github.com/devsy-org/api/pkg/apis/management/v1"
 	storagev1 "github.com/devsy-org/api/pkg/apis/storage/v1"
-	proflags "github.com/devsy-org/devsy/cmd/pro/flags"
+	platformflags "github.com/devsy-org/devsy/cmd/pro/flags"
 	"github.com/devsy-org/devsy/cmd/pro/provider/list"
 	"github.com/devsy-org/devsy/pkg/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
@@ -26,7 +26,7 @@ import (
 )
 
 type ImportCmd struct {
-	*proflags.GlobalFlags
+	*platformflags.GlobalFlags
 
 	WorkspaceId      string
 	WorkspaceUid     string
@@ -36,7 +36,7 @@ type ImportCmd struct {
 }
 
 // NewImportCmd creates a new command.
-func NewImportCmd(globalFlags *proflags.GlobalFlags) *cobra.Command {
+func NewImportCmd(globalFlags *platformflags.GlobalFlags) *cobra.Command {
 	cmd := &ImportCmd{
 		GlobalFlags: globalFlags,
 	}
