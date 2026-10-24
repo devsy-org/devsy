@@ -265,7 +265,11 @@ export class Watcher {
       const workspaces = await this.queryWithFallback(
         daemon ? () => daemon.listWorkspaces<Workspace[]>() : undefined,
         () =>
-          this.deps.cli.run<Workspace[]>(["workspace", "list", "--skip-pro"]),
+          this.deps.cli.run<Workspace[]>([
+            "workspace",
+            "list",
+            "--skip-platform",
+          ]),
       )
       if (generation !== this.deps.workspaceJobs.epoch) {
         if (strict)

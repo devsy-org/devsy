@@ -396,7 +396,11 @@ describe("Watcher job broadcasts", () => {
         workspaceJobs.finish("ws", generation, originalError),
       ).resolves.toBeUndefined()
       expect(refresh).toHaveBeenCalledOnce()
-      expect(cli.run).toHaveBeenCalledOnce()
+      expect(cli.run).toHaveBeenCalledExactlyOnceWith([
+        "workspace",
+        "list",
+        "--skip-platform",
+      ])
       expect(cli.runRaw).toHaveBeenCalledOnce()
       expect(workspaceJobs.get("ws")).toMatchObject({
         state: outcome === "failure" ? "failed" : "succeeded",
