@@ -27,6 +27,8 @@ const (
 	featureNameBadFeature = "bad-feature"
 )
 
+const installScriptEchoInstalled = "#!/bin/bash\necho installed\n"
+
 var _ = ginkgo.Describe("feature test", ginkgo.Label("feature"), func() {
 	var initialDir string
 
@@ -45,32 +47,13 @@ var _ = ginkgo.Describe("feature test", ginkgo.Label("feature"), func() {
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + fileBinSuffix)
 
-			projectDir, err := os.MkdirTemp("", "e2e-features-test-*")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(projectDir) })
-
-			srcDir := filepath.Join(projectDir, dirSrc, featureNameMyFeature)
-			framework.ExpectNoError(os.MkdirAll(srcDir, 0o750))
-			framework.ExpectNoError(os.WriteFile(
-				filepath.Join(srcDir, fileDevcontainerJSON),
-				[]byte(`{"id":"my-feature","version":"1.0.0","name":"My Feature"}`),
-				0o600,
-			))
-			// #nosec G306 -- test scripts must be executable
-			framework.ExpectNoError(os.WriteFile(
-				filepath.Join(srcDir, fileInstallSh),
-				[]byte("#!/bin/bash\necho 'feature installed'\n"),
-				0o750,
-			))
-
-			testDir := filepath.Join(projectDir, cmdTest, featureNameMyFeature)
-			framework.ExpectNoError(os.MkdirAll(testDir, 0o750))
-			// #nosec G306 -- test scripts must be executable
-			framework.ExpectNoError(os.WriteFile(
-				filepath.Join(testDir, fileTestSh),
-				[]byte("#!/bin/bash\necho 'test passed'\nexit 0\n"),
-				0o750,
-			))
+			projectDir := newFeatureProjectDir("e2e-features-test-*")
+			writeFeatureFixtures(projectDir, featureFixture{
+				id:            featureNameMyFeature,
+				displayName:   "My Feature",
+				installScript: "#!/bin/bash\necho 'feature installed'\n",
+				testScript:    "#!/bin/bash\necho 'test passed'\nexit 0\n",
+			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				cmdFeatures, cmdTest,
@@ -90,34 +73,21 @@ var _ = ginkgo.Describe("feature test", ginkgo.Label("feature"), func() {
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + fileBinSuffix)
 
-			projectDir, err := os.MkdirTemp("", "e2e-features-test-filter-*")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(projectDir) })
-
-			for _, feat := range []string{featureNameA, "feat-b"} {
-				srcDir := filepath.Join(projectDir, dirSrc, feat)
-				framework.ExpectNoError(os.MkdirAll(srcDir, 0o750))
-				framework.ExpectNoError(os.WriteFile(
-					filepath.Join(srcDir, fileDevcontainerJSON),
-					[]byte(`{"id":"`+feat+`","version":"1.0.0","name":"`+feat+`"}`),
-					0o600,
-				))
-				// #nosec G306 -- test scripts must be executable
-				framework.ExpectNoError(os.WriteFile(
-					filepath.Join(srcDir, fileInstallSh),
-					[]byte("#!/bin/bash\necho installed\n"),
-					0o750,
-				))
-
-				testDir := filepath.Join(projectDir, cmdTest, feat)
-				framework.ExpectNoError(os.MkdirAll(testDir, 0o750))
-				// #nosec G306 -- test scripts must be executable
-				framework.ExpectNoError(os.WriteFile(
-					filepath.Join(testDir, fileTestSh),
-					[]byte("#!/bin/bash\nexit 0\n"),
-					0o750,
-				))
-			}
+			projectDir := newFeatureProjectDir("e2e-features-test-filter-*")
+			writeFeatureFixtures(projectDir,
+				featureFixture{
+					id:            featureNameA,
+					displayName:   featureNameA,
+					installScript: installScriptEchoInstalled,
+					testScript:    "#!/bin/bash\nexit 0\n",
+				},
+				featureFixture{
+					id:            "feat-b",
+					displayName:   "feat-b",
+					installScript: installScriptEchoInstalled,
+					testScript:    "#!/bin/bash\nexit 0\n",
+				},
+			)
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				cmdFeatures, cmdTest,
@@ -137,32 +107,13 @@ var _ = ginkgo.Describe("feature test", ginkgo.Label("feature"), func() {
 		func(ctx context.Context) {
 			f := framework.NewDefaultFramework(initialDir + fileBinSuffix)
 
-			projectDir, err := os.MkdirTemp("", "e2e-features-test-fail-*")
-			framework.ExpectNoError(err)
-			ginkgo.DeferCleanup(func() { _ = os.RemoveAll(projectDir) })
-
-			srcDir := filepath.Join(projectDir, dirSrc, featureNameBadFeature)
-			framework.ExpectNoError(os.MkdirAll(srcDir, 0o750))
-			framework.ExpectNoError(os.WriteFile(
-				filepath.Join(srcDir, fileDevcontainerJSON),
-				[]byte(`{"id":"bad-feature","version":"1.0.0","name":"Bad Feature"}`),
-				0o600,
-			))
-			// #nosec G306 -- test scripts must be executable
-			framework.ExpectNoError(os.WriteFile(
-				filepath.Join(srcDir, fileInstallSh),
-				[]byte("#!/bin/bash\necho installed\n"),
-				0o750,
-			))
-
-			testDir := filepath.Join(projectDir, cmdTest, featureNameBadFeature)
-			framework.ExpectNoError(os.MkdirAll(testDir, 0o750))
-			// #nosec G306 -- test scripts must be executable
-			framework.ExpectNoError(os.WriteFile(
-				filepath.Join(testDir, fileTestSh),
-				[]byte("#!/bin/bash\necho 'test failed'\nexit 1\n"),
-				0o750,
-			))
+			projectDir := newFeatureProjectDir("e2e-features-test-fail-*")
+			writeFeatureFixtures(projectDir, featureFixture{
+				id:            featureNameBadFeature,
+				displayName:   "Bad Feature",
+				installScript: installScriptEchoInstalled,
+				testScript:    "#!/bin/bash\necho 'test failed'\nexit 1\n",
+			})
 
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				cmdFeatures, cmdTest,
@@ -175,3 +126,44 @@ var _ = ginkgo.Describe("feature test", ginkgo.Label("feature"), func() {
 		ginkgo.SpecTimeout(framework.TimeoutModerate()),
 	)
 })
+
+func newFeatureProjectDir(pattern string) string {
+	projectDir, err := os.MkdirTemp("", pattern)
+	framework.ExpectNoError(err)
+	ginkgo.DeferCleanup(func() { _ = os.RemoveAll(projectDir) })
+	return projectDir
+}
+
+type featureFixture struct {
+	id            string
+	displayName   string
+	installScript string
+	testScript    string
+}
+
+func writeFeatureFixtures(projectDir string, features ...featureFixture) {
+	for _, feature := range features {
+		srcDir := filepath.Join(projectDir, dirSrc, feature.id)
+		framework.ExpectNoError(os.MkdirAll(srcDir, 0o750))
+		framework.ExpectNoError(os.WriteFile(
+			filepath.Join(srcDir, fileDevcontainerJSON),
+			[]byte(`{"id":"`+feature.id+`","version":"1.0.0","name":"`+feature.displayName+`"}`),
+			0o600,
+		))
+		// #nosec G306 -- test scripts must be executable
+		framework.ExpectNoError(os.WriteFile(
+			filepath.Join(srcDir, fileInstallSh),
+			[]byte(feature.installScript),
+			0o750,
+		))
+
+		testDir := filepath.Join(projectDir, cmdTest, feature.id)
+		framework.ExpectNoError(os.MkdirAll(testDir, 0o750))
+		// #nosec G306 -- test scripts must be executable
+		framework.ExpectNoError(os.WriteFile(
+			filepath.Join(testDir, fileTestSh),
+			[]byte(feature.testScript),
+			0o750,
+		))
+	}
+}
