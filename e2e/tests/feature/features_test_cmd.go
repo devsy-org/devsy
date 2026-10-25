@@ -27,7 +27,7 @@ const (
 	featureNameBadFeature = "bad-feature"
 )
 
-const installScriptEchoInstalled = "#!/bin/bash\necho installed\n"
+const _installScriptEchoInstalled = "#!/bin/bash\necho installed\n"
 
 var _ = ginkgo.Describe("feature test", ginkgo.Label("feature"), func() {
 	var initialDir string
@@ -78,13 +78,13 @@ var _ = ginkgo.Describe("feature test", ginkgo.Label("feature"), func() {
 				featureFixture{
 					id:            featureNameA,
 					displayName:   featureNameA,
-					installScript: installScriptEchoInstalled,
+					installScript: _installScriptEchoInstalled,
 					testScript:    "#!/bin/bash\nexit 0\n",
 				},
 				featureFixture{
 					id:            "feat-b",
 					displayName:   "feat-b",
-					installScript: installScriptEchoInstalled,
+					installScript: _installScriptEchoInstalled,
 					testScript:    "#!/bin/bash\nexit 0\n",
 				},
 			)
@@ -111,7 +111,7 @@ var _ = ginkgo.Describe("feature test", ginkgo.Label("feature"), func() {
 			writeFeatureFixtures(projectDir, featureFixture{
 				id:            featureNameBadFeature,
 				displayName:   "Bad Feature",
-				installScript: installScriptEchoInstalled,
+				installScript: _installScriptEchoInstalled,
 				testScript:    "#!/bin/bash\necho 'test failed'\nexit 1\n",
 			})
 
