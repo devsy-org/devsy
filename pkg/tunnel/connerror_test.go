@@ -72,7 +72,10 @@ func TestClassifyTunnelErrors(t *testing.T) {
 		wantNil    bool
 		wantSubstr string
 	}{
-		{"handler nil", tunnelErr, nil, true, ""},
+		{"handler nil, no tunnel err", nil, nil, true, ""},
+		{"handler nil, permanent tunnel err", tunnelErr, nil, false, "agent command: dial failed"},
+		{"handler nil, shutdown tunnel err", context.Canceled, nil, true, ""},
+		{"handler nil, EOF tunnel err", io.EOF, nil, true, ""},
 		{"handler EOF with tunnel err", tunnelErr, io.EOF, false, "connect to server: dial failed"},
 		{"handler EOF no tunnel err", nil, io.EOF, true, ""},
 		{"handler non-EOF", nil, handlerNonEOF, false, "tunnel to container: handler broke"},
