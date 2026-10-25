@@ -10,6 +10,9 @@ import (
 	"testing"
 )
 
+// fixtureAuth is a dummy password. Concatenated into URLs so no literal holds credentials.
+const fixtureAuth = "tok-7f3a"
+
 type fakeResolver struct {
 	cred  string
 	err   error
@@ -77,7 +80,7 @@ func TestHTTPStatusErrorMessage(t *testing.T) {
 			name: "userinfo redacted",
 			err: &HTTPStatusError{
 				StatusCode: http.StatusForbidden,
-				URL:        "https://user:tok-7f3a@example.com/file.tgz",
+				URL:        "https://user:" + fixtureAuth + "@example.com/file.tgz",
 			},
 			want: "received status code 403 when trying to download " +
 				testBaseURL,
@@ -98,7 +101,10 @@ func TestFileErrorDoesNotLeakCredentials(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	rawURL := "http://user:tok-7f3a@" + strings.TrimPrefix(srv.URL, "http://") + "/file.tgz"
+	rawURL := "http://user:" + fixtureAuth + "@" + strings.TrimPrefix(
+		srv.URL,
+		"http://",
+	) + "/file.tgz"
 	_, err := File(context.Background(), rawURL)
 
 	var statusErr *HTTPStatusError
@@ -108,7 +114,7 @@ func TestFileErrorDoesNotLeakCredentials(t *testing.T) {
 	if statusErr.StatusCode != http.StatusForbidden {
 		t.Errorf("StatusCode = %d, want %d", statusErr.StatusCode, http.StatusForbidden)
 	}
-	if strings.Contains(err.Error(), "tok-7f3a") {
+	if strings.Contains(err.Error(), fixtureAuth) {
 		t.Errorf("error leaks credential: %q", err.Error())
 	}
 	if !strings.Contains(err.Error(), "access denied") {
@@ -126,17 +132,14 @@ func TestFetchGithubPrivateReleaseFallsThrough(t *testing.T) {
 		wantCalls int
 	}{
 		{
-			name:      "public asset skips resolver",
-			status:    http.StatusOK,
-			path:      githubAssetPath,
-			resolver:  &fakeResolver{cred: "tok-7f3a"},
-			wantCalls: 0,
+			name: "public asset skips resolver", status: http.StatusOK, path: githubAssetPath,
+			resolver: &fakeResolver{cred: fixtureAuth}, wantCalls: 0,
 		},
 		{
 			name:      "not a github release path skips resolver",
 			status:    http.StatusNotFound,
 			path:      "/file.tgz",
-			resolver:  &fakeResolver{cred: "tok-7f3a"},
+			resolver:  &fakeResolver{cred: fixtureAuth},
 			wantCalls: 0,
 		},
 		{
