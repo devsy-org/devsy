@@ -204,12 +204,14 @@ func listPlatformWorkspaces(
 		}
 
 		wg.Go(func() {
-			workspaces, err := listProWorkspacesForProvider(
+			workspaces, err := listPlatformWorkspacesForProvider(
 				ctx,
-				devsyConfig,
-				provider,
-				providerConfig,
-				owner,
+				listPlatformWorkspacesForProviderParams{
+					devsyConfig:    devsyConfig,
+					provider:       provider,
+					providerConfig: providerConfig,
+					owner:          owner,
+				},
 			)
 			mu.Lock()
 			defer mu.Unlock()
@@ -224,22 +226,30 @@ func listPlatformWorkspaces(
 	return results
 }
 
-func listProWorkspacesForProvider(
+type listPlatformWorkspacesForProviderParams struct {
+	devsyConfig    *config.Config
+	provider       string
+	providerConfig *providerpkg.ProviderConfig
+	owner          platform.OwnerFilter
+}
+
+func listPlatformWorkspacesForProvider(
 	ctx context.Context,
-	devsyConfig *config.Config,
-	provider string,
-	providerConfig *providerpkg.ProviderConfig,
-	owner platform.OwnerFilter,
+	params listPlatformWorkspacesForProviderParams,
 ) ([]*providerpkg.Workspace, error) {
 	instances, err := listPlatformInstances(ctx, listPlatformInstancesParams{
-		devsyConfig:    devsyConfig,
-		provider:       provider,
-		providerConfig: providerConfig,
-		owner:          owner,
+		devsyConfig:    params.devsyConfig,
+		provider:       params.provider,
+		providerConfig: params.providerConfig,
+		owner:          params.owner,
 	})
 	if err != nil {
 		if log.DebugEnabled() {
-			log.Warnf("Failed to list platform workspaces for provider %s: %v", provider, err)
+			log.Warnf(
+				"Failed to list platform workspaces for provider %s: %v",
+				params.provider,
+				err,
+			)
 		}
 		return nil, err
 	}
@@ -248,8 +258,8 @@ func listProWorkspacesForProvider(
 	for _, instance := range instances {
 		if workspace := platformWorkspaceFromInstance(
 			instance,
-			provider,
-			devsyConfig.DefaultContext,
+			params.provider,
+			params.devsyConfig.DefaultContext,
 		); workspace != nil {
 			retWorkspaces = append(retWorkspaces, workspace)
 		}

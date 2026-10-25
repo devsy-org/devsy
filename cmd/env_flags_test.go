@@ -39,7 +39,7 @@ func TestOptInEnvFlags_AppliesEnvValueToFlag(t *testing.T) {
 			cmdPath:  "platform workspace list",
 			flagName: "host",
 			envName:  envDevsyHost,
-			want:     "pro.example.com",
+			want:     "platform.example.com",
 		},
 		{
 			cmdPath:  "platform cluster list",

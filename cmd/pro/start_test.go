@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-const startTestHost = "pro.example.com"
+const startTestHost = "platform.example.com"
 
 type startSuite struct {
 	suite.Suite
@@ -66,11 +66,11 @@ func (s *startSuite) TestAppendHostArgsConfiguresIngress() {
 	)
 	for _, want := range []string{
 		"ingress.enabled=true",
-		"ingress.host=pro.example.com",
-		"env.DEVSY_HOST=pro.example.com",
+		"ingress.host=platform.example.com",
+		"env.DEVSY_HOST=platform.example.com",
 		"devsyIngress.enabled=true",
-		"devsyIngress.host=*.pro.example.com",
-		"env.DEVSY_SUBDOMAIN=*.pro.example.com",
+		"devsyIngress.host=*.platform.example.com",
+		"env.DEVSY_SUBDOMAIN=*.platform.example.com",
 	} {
 		s.True(hasSet(args, want), "missing %q in %v", want, args)
 	}
