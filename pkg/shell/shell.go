@@ -114,11 +114,17 @@ func joinExecutablePath(args []string, env expand.Environ, dir, name string) []s
 		return args
 	}
 
-	fields := strings.Fields(value)
+	fields := strings.FieldsFunc(value, isIFSDelimiter)
 	if len(args) < len(fields) || !slices.Equal(args[:len(fields)], fields) {
 		return args
 	}
 	return append([]string{value}, args[len(fields):]...)
+}
+
+// isIFSDelimiter matches the default IFS, so non-ASCII whitespace stays inside a field
+// exactly as the shell leaves it.
+func isIFSDelimiter(r rune) bool {
+	return r == ' ' || r == '\t' || r == '\n'
 }
 
 func isExistingFile(dir, path string) bool {

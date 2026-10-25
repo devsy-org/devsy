@@ -147,6 +147,22 @@ func (s *ExecutablePathTestSuite) TestRelativePathExistingOnlyInProcessDirectory
 	s.Equal("helper ran with init", output)
 }
 
+func (s *ExecutablePathTestSuite) TestNonBreakingSpaceStaysInsideTheJoinedPath() {
+	dir := filepath.Join(s.T().TempDir(), "Jane\u00a0Doe and co")
+	s.Require().NoError(os.MkdirAll(dir, 0o750))
+	executable := filepath.Join(dir, filepath.Base(s.executable))
+	s.copyTestBinary(executable)
+
+	output, err := s.run(
+		"${PROVIDER} init",
+		"PROVIDER="+executable,
+		helperProcessEnv+"=1",
+	)
+
+	s.Require().NoError(err)
+	s.Equal("helper ran with init", output)
+}
+
 func (s *ExecutablePathTestSuite) TestVariableArgumentWithSpacesStillSplits() {
 	output, err := s.run("echo ${ARGS}", "ARGS=a b")
 
