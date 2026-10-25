@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -325,6 +326,89 @@ func TestWindowsSecondFailedAttemptReturnsStableRecoveryMarker(t *testing.T) {
 	}
 }
 
+func TestWindowsStartHangIsAnnotatedAndRetriedOnce(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1, 0)}
+	runner := &windowsFakeRunner{
+		clock:   clock,
+		results: map[string][]CommandResult{},
+		durationQueues: map[string][]time.Duration{
+			testMachineStart: {windowsStartTimeout + time.Second},
+		},
+	}
+	var output bytes.Buffer
+	files := &summaryFS{}
+	deps := windowsDependencies(runner, clock)
+	deps.Log = &Logger{Out: &output, Err: io.Discard}
+	deps.Files = files
+	cfg := windowsConfig(t)
+	cfg.GitHubStepSummaryPath = testSummaryPath
+
+	if err := setupWindows(context.Background(), deps, cfg); err != nil {
+		t.Fatalf("retry after hang should recover: %v", err)
+	}
+
+	wantAnnotation := "::warning title=Windows podman start hang::" +
+		"PODMAN_WINDOWS_MACHINE_START_TIMEOUT attempt=1"
+	if strings.Count(output.String(), wantAnnotation) != 1 {
+		t.Fatalf("annotation missing or repeated: %s", output.String())
+	}
+	summary := files.appended[testSummaryPath].String()
+	if !strings.Contains(summary, "machine list") || !strings.Contains(summary, "wsl.exe -l -v") {
+		t.Fatalf("summary lacks diagnostics: %s", summary)
+	}
+	if countWindowsCalls(runner, testMachineStart) != 2 {
+		t.Fatalf("start calls = %d, want 2", countWindowsCalls(runner, testMachineStart))
+	}
+}
+
+func TestWindowsSecondStartHangFailsStepWithBothAnnotations(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1, 0)}
+	hang := windowsStartTimeout + time.Second
+	runner := &windowsFakeRunner{
+		clock:          clock,
+		results:        map[string][]CommandResult{},
+		durationQueues: map[string][]time.Duration{testMachineStart: {hang, hang}},
+	}
+	var output bytes.Buffer
+	deps := windowsDependencies(runner, clock)
+	deps.Log = &Logger{Out: &output, Err: io.Discard}
+
+	err := setupWindows(context.Background(), deps, windowsConfig(t))
+
+	if err == nil || !strings.HasPrefix(err.Error(), "PODMAN_WINDOWS_RECOVERY_FAILED:") {
+		t.Fatalf("second hang must fail the step, got %v", err)
+	}
+	for _, attempt := range []string{"attempt=1", "attempt=2"} {
+		want := "::warning title=Windows podman start hang::" +
+			"PODMAN_WINDOWS_MACHINE_START_TIMEOUT " + attempt
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("missing annotation for %s: %s", attempt, output.String())
+		}
+	}
+}
+
+func TestWindowsNonHangFailureIsNotAnnotatedAsHang(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1, 0)}
+	runner := &windowsFakeRunner{
+		clock: clock,
+		results: map[string][]CommandResult{
+			testMachineStart: {failureResult("pipe busy"), failureResult("pipe busy")},
+		},
+		durations: map[string]time.Duration{},
+	}
+	var output bytes.Buffer
+	deps := windowsDependencies(runner, clock)
+	deps.Log = &Logger{Out: &output, Err: io.Discard}
+
+	if err := setupWindows(context.Background(), deps, windowsConfig(t)); err == nil {
+		t.Fatal("expected failure")
+	}
+
+	if strings.Contains(output.String(), "::warning") {
+		t.Fatalf("non-timeout failure annotated as a hang: %s", output.String())
+	}
+}
+
 func TestWindowsBudgetExhaustionRejectsLateSuccess(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(1, 0)}
 	runner := &windowsFakeRunner{
@@ -388,10 +472,14 @@ func runWatchdogChild(mode string) {
 			os.Exit(1)
 		case <-time.After(100 * time.Millisecond):
 		}
-		armWatchdog(750*time.Millisecond, &Logger{Out: io.Discard, Err: stderr})
+		armWatchdog(750*time.Millisecond, &Logger{Out: io.Discard, Err: stderr}, hangReporter{})
 		select {}
 	}
-	wd := armWatchdog(750*time.Millisecond, &Logger{Out: os.Stdout, Err: os.Stderr})
+	wd := armWatchdog(
+		750*time.Millisecond,
+		&Logger{Out: os.Stdout, Err: os.Stderr},
+		hangReporter{},
+	)
 	if mode == "complete" {
 		wd.Stop()
 		wd.Stop()
