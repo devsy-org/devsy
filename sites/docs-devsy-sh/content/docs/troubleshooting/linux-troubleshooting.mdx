@@ -29,7 +29,7 @@ For locked-down accounts, ask the administrator to permit `/bin/sh` and the requ
 
 ### Fish startup configuration
 
-Anything in `config.fish` runs on every `fish -c` call, which can interfere with `devsy agent workspace up`. Move your customizations inside the `if status is-interactive` block:
+Anything in `config.fish` runs on every `fish -c` call, which can interfere with `devsy internal agent workspace up`. Move your customizations inside the `if status is-interactive` block:
 
 ```
 if status is-interactive
