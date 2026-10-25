@@ -74,6 +74,7 @@ type containerState struct {
 	tunnelClient  tunnel.TunnelClient
 	reporter      status.Reporter
 	secretsEnv    []string
+	lifecycle     *lifecycleHandshake
 }
 
 // Run runs the command logic.
@@ -95,6 +96,18 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 		reporter:      tunnelserver.NewTunnelStatusReporter(ctx, tunnelClient),
 	}
 
+	if !cmd.Prebuild {
+		state.lifecycle, err = beginLifecycle(
+			ctx,
+			config2.ContainerLifecycleDir,
+			workspaceInfo,
+			setupInfo.MergedConfig.ShutdownAction,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	_, err = tunnelserver.ReportResult(
 		ctx,
 		tunnelClient,
@@ -108,6 +121,9 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 			return state.setupInfo, nil
 		},
 	)
+	if err != nil && state.lifecycle != nil {
+		state.lifecycle.fail()
+	}
 	return err
 }
 
@@ -307,9 +323,11 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 		return err
 	}
 
-	shutdownAction := state.setupInfo.MergedConfig.ShutdownAction
-	if err := cmd.startContainerDaemon(state.workspaceInfo, shutdownAction); err != nil {
-		return err
+	if state.lifecycle == nil {
+		shutdownAction := state.setupInfo.MergedConfig.ShutdownAction
+		if err := cmd.startContainerDaemon(state.workspaceInfo, shutdownAction); err != nil {
+			return err
+		}
 	}
 
 	resolvedSetupInfo, err := compressSetupInfo(state.setupInfo)
@@ -331,6 +349,10 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 		log.Errorf("failed to start postAttachCommand: %v", err)
 	}
 
+	// Arm last so the background workers already hold the workspace active.
+	if state.lifecycle != nil {
+		return state.lifecycle.ready()
+	}
 	return nil
 }
 
@@ -495,6 +517,10 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 	workspaceInfo *provider2.ContainerWorkspaceInfo,
 	shutdownAction string,
 ) error {
+	// A managed container's main process owns the timer; never start a second one.
+	if isManagedLifecycle(workspaceInfo) {
+		return nil
+	}
 	if workspaceInfo.CLIOptions.Platform.Enabled ||
 		workspaceInfo.CLIOptions.DisableDaemon ||
 		workspaceInfo.ContainerTimeout == "" {

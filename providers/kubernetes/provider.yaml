@@ -61,7 +61,7 @@ options:
     description: If defined, Devsy will use the given service account for the dev container.
     global: true
   INACTIVITY_TIMEOUT:
-    description: "If defined, will automatically stop the pod after the inactivity period. Examples: 10m, 1h"
+    description: "If defined, the workspace pod stops after this much inactivity (no tracked SSH session or setup work). Empty or 0 disables it. The finished pod may stay visible until the next up, which replaces it and keeps the volume. Examples: 10m, 1h"
   POD_TIMEOUT:
     description: "Determines how long the provider waits for the workspace pod to come up. Examples: 10m, 1h"
     default: 10m
@@ -135,7 +135,6 @@ agent:
     clusterRole: ${CLUSTER_ROLE}
     serviceAccount: ${SERVICE_ACCOUNT}
     architecture: ${ARCHITECTURE}
-    inactivityTimeout: ${INACTIVITY_TIMEOUT}
     storageClass: ${STORAGE_CLASS}
     pvcAccessMode: ${PVC_ACCESS_MODE}
     pvcAnnotations: ${PVC_ANNOTATIONS}

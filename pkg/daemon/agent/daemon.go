@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,6 +30,7 @@ type DaemonConfig struct {
 	Ssh            SshConfig             `json:"ssh"`
 	Timeout        string                `json:"timeout"`
 	ShutdownAction string                `json:"shutdownAction,omitempty"`
+	Lifecycle      LifecycleConfig       `json:"lifecycle,omitzero"`
 }
 
 func BuildWorkspaceDaemonConfig(
@@ -39,6 +38,7 @@ func BuildWorkspaceDaemonConfig(
 	workspaceConfig *provider2.Workspace,
 	substitutionContext *config.SubstitutionContext,
 	mergedConfig *config.MergedDevContainerConfig,
+	lifecycle LifecycleOptions,
 ) (*DaemonConfig, error) {
 	var workdir string
 	if workspaceConfig.Source.GitSubPath != "" {
@@ -55,25 +55,28 @@ func BuildWorkspaceDaemonConfig(
 		workdir = substitutionContext.ContainerWorkspaceFolder
 	}
 
-	// Get remote user; default to "root" if empty.
-	user := mergedConfig.RemoteUser
-	if user == "" {
-		user = "root"
-	}
-
-	// build info isn't required in the workspace and can be omitted
-	platformOptions.Build = nil
-
-	shutdownAction := mergedConfig.ShutdownAction
-
 	daemonConfig := &DaemonConfig{
-		Platform: platformOptions,
-		Ssh: SshConfig{
-			Workdir: workdir,
-			User:    user,
-		},
-		ShutdownAction: shutdownAction,
+		Platform:       platformOptions,
+		Timeout:        FormatTimeout(lifecycle.Timeout),
+		ShutdownAction: mergedConfig.ShutdownAction,
 	}
+	if lifecycle.Managed {
+		daemonConfig.Lifecycle = LifecycleConfig{
+			Owner:          LifecycleOwnerManagedDaemon,
+			SetupArmsTimer: true,
+		}
+	}
+
+	// A timeout-only config must not request the embedded SSH or network server.
+	if platformOptions.AccessKey != "" {
+		user := mergedConfig.RemoteUser
+		if user == "" {
+			user = "root"
+		}
+		daemonConfig.Ssh = SshConfig{Workdir: workdir, User: user}
+	}
+	// build info isn't required in the workspace and can be omitted
+	daemonConfig.Platform.Build = nil
 
 	return daemonConfig, nil
 }
@@ -83,23 +86,20 @@ func GetEncodedWorkspaceDaemonConfig(
 	workspaceConfig *provider2.Workspace,
 	substitutionContext *config.SubstitutionContext,
 	mergedConfig *config.MergedDevContainerConfig,
+	lifecycle LifecycleOptions,
 ) (string, error) {
 	daemonConfig, err := BuildWorkspaceDaemonConfig(
 		platformOptions,
 		workspaceConfig,
 		substitutionContext,
 		mergedConfig,
+		lifecycle,
 	)
 	if err != nil {
 		return "", err
 	}
 
-	data, err := json.Marshal(daemonConfig)
-	if err != nil {
-		return "", err
-	}
-	encoded := base64.StdEncoding.EncodeToString(data)
-	return encoded, nil
+	return EncodeDaemonConfig(daemonConfig)
 }
 
 const systemdDir = "/etc/systemd/system"

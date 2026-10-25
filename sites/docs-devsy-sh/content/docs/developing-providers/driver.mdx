@@ -89,7 +89,7 @@ Example Kubernetes provider that uses local kubectl to run a workspace in the cu
 name: simple-kubernetes
 version: v0.0.1
 agent:
-  containerInactivityTimeout: 10m # Pod will automatically kill itself after timeout
+  containerInactivityTimeout: 10m # Pod stops itself after being idle for the timeout
   path: ${DEVSY}
   driver: kubernetes
   kubernetes:

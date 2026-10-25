@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/compress"
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/provider"
 )
 
@@ -31,7 +32,7 @@ func TestCompressWorkspaceConfig_StripsSecretValues(t *testing.T) {
 		},
 	}
 
-	compressed, err := r.compressWorkspaceConfig()
+	compressed, err := r.compressWorkspaceConfig(&config.MergedDevContainerConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

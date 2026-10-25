@@ -33,7 +33,7 @@ Option values can be used in this section.
 - **local**: set to `true` when Devsy runs directly on this machine instead of reaching a remote one. The built-in providers do this.
 - **driver**: how the container is deployed. One of `docker` (default), `kubernetes`, `apple`, `microsandbox`, `custom` or `external`. See [Drivers](./driver.mdx).
 - **inactivityTimeout**: how long to wait before stopping an idle machine. For machine providers.
-- **containerInactivityTimeout**: how long to wait before stopping an idle container. For non-machine providers.
+- **containerInactivityTimeout**: how long the container may be idle before it stops. A Go duration such as `10m`; empty or `0` disables it. For non-machine providers.
 - **injectGitCredentials**, **injectDockerCredentials**: whether to copy those credentials into the environment.
 - **exec.shutdown**: the command that stops the machine once it is idle. Option values are available in it.
 - **binaries**: helper binaries for `exec.shutdown`. Same format as [provider binaries](./binaries.mdx).
@@ -44,7 +44,9 @@ Devsy tracks whether anyone is connected and stops the environment after the tim
 
 ### Non-machine providers
 
-The agent ends the container's main process, which stops the container. Set the timeout with `containerInactivityTimeout`.
+Set the timeout with `containerInactivityTimeout`. It is a Go duration such as `10m`; empty or `0` disables it.
+
+On the `kubernetes` driver, the Devsy daemon is the pod's main process. It exits normally when the workspace has been idle for the timeout, which ends the pod while the volume is kept. Other container drivers start a detached daemon whose exit does not by itself stop the container. See [Auto-Inactivity Timeout](../developing-in-workspaces/inactivity-timeout.mdx#kubernetes) for activity rules and supported pod layouts.
 
 ### Machine providers
 

@@ -217,6 +217,7 @@ e2e:
     - { group: integration, label: up-private-token, requires_secret: true }
     - { group: integration, label: up-provider-kubernetes, free_disk_space: true, install_kind: true }
     - { group: integration, label: up-provider-kubernetes-restricted-scc, free_disk_space: true, install_kind: true }
+    - { group: integration, label: up-provider-kubernetes-inactivity, free_disk_space: true, install_kind: true, test_timeout: 60m, job_timeout_minutes: 75 }
     - { group: integration, label: up-provider-docker, install_kind: true }
     - { group: integration, label: snapshot, host_setup: [insecure-registry] }
     - group: integration

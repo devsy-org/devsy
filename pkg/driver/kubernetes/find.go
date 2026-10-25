@@ -2,10 +2,10 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/log"
-	corev1 "k8s.io/api/core/v1"
 )
 
 func (k *KubernetesDriver) FindDevContainer(
@@ -27,17 +27,12 @@ func (k *KubernetesDriver) FindDevContainer(
 	// check pod
 	pod, err := k.getPod(ctx, pvc.Name)
 	if err != nil {
-		log.Debugf("Error finding pod: %v", err)
-		log.Warn(
-			"If the pod does not come up automatically it is stuck in an error state. " +
-				"Recreate the workspace to recover from this",
-		)
-		pod = nil
+		return nil, fmt.Errorf("find pod for workspace %q: %w", workspaceId, err)
 	}
 
 	// determine status
 	status := config.ContainerStatusExited
-	if pod != nil && isPodRunning(pod) {
+	if pod != nil && classifyPod(pod) == podRunning {
 		status = config.ContainerStatusRunning
 	}
 
@@ -58,8 +53,4 @@ func (k *KubernetesDriver) FindDevContainer(
 			Labels: config.ListToObject(containerInfo.Options.Labels),
 		},
 	}, nil
-}
-
-func isPodRunning(pod *corev1.Pod) bool {
-	return pod.Status.Phase == corev1.PodRunning
 }

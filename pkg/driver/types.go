@@ -54,6 +54,12 @@ type WorkspaceChowner interface {
 	RequiresWorkspaceChown() bool
 }
 
+// ManagedLifecycleDriver is a capability interface for drivers whose container
+// main process is the Devsy daemon, which then owns inactivity shutdown.
+type ManagedLifecycleDriver interface {
+	ManagedLifecycle() bool
+}
+
 // ReprovisioningDriver is a capability interface for drivers that can reprovision
 // an existing devcontainer in place. Reprovisioning re-runs the container, so it
 // embeds RunOptionsDriver.

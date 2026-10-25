@@ -92,12 +92,12 @@ type ProviderAgentConfig struct {
 	// DownloadURL is the base url where to download the agent from
 	DownloadURL string `json:"downloadURL,omitempty"`
 
-	// Timeout is the timeout in minutes to wait until the agent tries
-	// to turn of the server.
+	// Timeout is the Go duration (e.g. 10m) of inactivity after which the agent
+	// tries to turn off the server.
 	Timeout string `json:"inactivityTimeout,omitempty"`
 
-	// ContainerTimeout is the timeout in minutes to wait until the agent tries
-	// to delete the container.
+	// ContainerTimeout is the Go duration (e.g. 10m) of inactivity after which the
+	// container is stopped. Empty or zero disables it.
 	ContainerTimeout string `json:"containerInactivityTimeout,omitempty"`
 
 	// InjectGitCredentials signals Devsy if git credentials should get synced into
@@ -440,7 +440,9 @@ type ProviderKubernetesDriverConfig struct {
 	ClusterRole                  string `json:"clusterRole,omitempty"`
 	ServiceAccount               string `json:"serviceAccount,omitempty"`
 
-	Architecture      string `json:"architecture,omitempty"`
+	Architecture string `json:"architecture,omitempty"`
+	// InactivityTimeout is a deprecated alias of Agent.ContainerTimeout, used only
+	// when the canonical field is empty.
 	InactivityTimeout string `json:"inactivityTimeout,omitempty"`
 	StorageClass      string `json:"storageClass,omitempty"`
 

@@ -112,6 +112,9 @@ func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
 		return err
 	}
 
+	stopActivity := startWorkerActivity(ctx)
+	defer stopActivity()
+
 	log.Debugf("running deferred lifecycle hooks")
 	deferred, err := setup.RunPreAttachHooks(ctx, setupInfo, setup.PreAttachOptions{
 		Prebuild: cmd.Prebuild,

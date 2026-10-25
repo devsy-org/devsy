@@ -154,6 +154,13 @@ type WorkspaceSource struct {
 	Snapshot string `json:"snapshot,omitempty"`
 }
 
+// ContainerLifecycleOwner identifies who owns inactivity shutdown in a container.
+type ContainerLifecycleOwner string
+
+// ContainerLifecycleOwnerManagedDaemon means the container's main process is the
+// Devsy daemon, which owns the inactivity timer.
+const ContainerLifecycleOwnerManagedDaemon ContainerLifecycleOwner = "managedDaemon"
+
 type ContainerWorkspaceInfo struct {
 	// IDE holds the ide config options
 	IDE WorkspaceIDEConfig `json:"ide"`
@@ -164,9 +171,13 @@ type ContainerWorkspaceInfo struct {
 	// Dockerless holds custom dockerless configuration
 	Dockerless ProviderDockerlessOptions `json:"dockerless"`
 
-	// ContainerTimeout is the timeout in minutes to wait until the agent tries
-	// to delete the container.
+	// ContainerTimeout is the effective Go duration of inactivity after which
+	// the container is stopped. Empty disables it.
 	ContainerTimeout string `json:"containerInactivityTimeout,omitempty"`
+
+	// LifecycleOwner names the process that owns inactivity shutdown inside the
+	// container. Empty means the legacy detached daemon.
+	LifecycleOwner ContainerLifecycleOwner `json:"lifecycleOwner,omitempty"`
 
 	// Source is a WorkspaceSource to be used inside the container
 	Source WorkspaceSource `json:"source"`

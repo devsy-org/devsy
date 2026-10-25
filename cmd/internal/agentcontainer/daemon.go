@@ -77,16 +77,30 @@ func (cmd *DaemonCmd) Run(c *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(c.Context(), os.Interrupt, syscall.SIGTERM)
 
 	g, ctx := errgroup.WithContext(ctx)
-	cmd.startDaemonTasks(ctx, g, timeoutDuration)
+	if err := cmd.startDaemonTasks(ctx, g, timeoutDuration); err != nil {
+		stop()
+		return err
+	}
 
 	err = g.Wait()
 	stop() // Restore default signal handling before exiting.
-	if err != nil {
-		log.Errorf("daemon error: %v", err)
-		os.Exit(1)
-	}
-	os.Exit(0)
+	os.Exit(daemonExitCode(err))
 	return nil // Unreachable but needed.
+}
+
+// daemonExitCode maps the task group result to a process exit code. Inactivity
+// expiry is the normal way a managed container stops, not a failure.
+func daemonExitCode(err error) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, agentd.ErrInactivityExpired):
+		log.Infof("inactivity timeout reached, daemon exiting")
+		return 0
+	default:
+		log.Errorf("daemon error: %v", err)
+		return 1
+	}
 }
 
 func (cmd *DaemonCmd) setupTimeout() (time.Duration, error) {
@@ -111,10 +125,11 @@ func (cmd *DaemonCmd) startDaemonTasks(
 	ctx context.Context,
 	g *errgroup.Group,
 	timeoutDuration time.Duration,
-) {
+) error {
 	var tasksStarted bool
 
-	// Start process reaper.
+	// Start process reaper only when this process really is the init process of
+	// its PID namespace; otherwise it would steal other processes' children.
 	if os.Getpid() == 1 {
 		g.Go(func() error {
 			agentd.RunProcessReaper(ctx)
@@ -130,11 +145,14 @@ func (cmd *DaemonCmd) startDaemonTasks(
 		})
 	}
 
-	// Start timeout monitor unless shutdownAction is "none".
-	if timeoutDuration > 0 && cmd.Config.ShutdownAction != config.ShutdownActionNone {
+	loop, err := cmd.newLifecycleLoop(timeoutDuration)
+	if err != nil {
+		return err
+	}
+	if loop != nil {
 		tasksStarted = true
 		g.Go(func() error {
-			return runTimeoutMonitor(ctx, timeoutDuration)
+			return loop.Run(ctx)
 		})
 	}
 
@@ -153,6 +171,36 @@ func (cmd *DaemonCmd) startDaemonTasks(
 			return nil
 		})
 	}
+	return nil
+}
+
+// newLifecycleLoop builds the inactivity loop. A managed daemon starts unarmed
+// and waits for setup; any other daemon with a timeout is armed immediately.
+func (cmd *DaemonCmd) newLifecycleLoop(timeout time.Duration) (*agentd.LifecycleLoop, error) {
+	monitor := &agentd.LifecycleMonitor{}
+	loop := &agentd.LifecycleLoop{Monitor: monitor, ActivityPath: config2.ContainerActivityFile}
+	enabled := timeout > 0 && cmd.Config.ShutdownAction != config.ShutdownActionNone
+
+	if !cmd.Config.Lifecycle.Managed() {
+		if !enabled {
+			return nil, nil
+		}
+		monitor.ArmNow(timeout, time.Now())
+		return loop, nil
+	}
+
+	owner, err := agentd.NewLifecycleOwner(config2.ContainerLifecycleDir)
+	if err != nil {
+		return nil, fmt.Errorf("publish container lifecycle owner: %w", err)
+	}
+	if err := sharedfile.EnsureMode(config2.ContainerActivityFile, 0o666); err != nil {
+		return nil, fmt.Errorf("ensure activity file: %w", err)
+	}
+	loop.Owner = owner
+	if enabled && !cmd.Config.Lifecycle.SetupArmsTimer {
+		monitor.ArmNow(timeout, time.Now())
+	}
+	return loop, nil
 }
 
 // loadConfig loads the daemon configuration from base64-encoded JSON.
@@ -205,29 +253,6 @@ func (cmd *DaemonCmd) shouldRunSsh() bool {
 	return cmd.Config.Ssh.Workdir != "" || cmd.Config.Ssh.User != ""
 }
 
-// runTimeoutMonitor monitors the activity file and signals an error if the timeout is exceeded.
-func runTimeoutMonitor(
-	ctx context.Context,
-	duration time.Duration,
-) error {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			stat, err := os.Stat(config2.ContainerActivityFile)
-			if err != nil {
-				continue
-			}
-			if !stat.ModTime().Add(duration).After(time.Now()) {
-				return errors.New("timeout reached, terminating daemon")
-			}
-		}
-	}
-}
-
 // runNetworkServer starts the network server.
 func runNetworkServer(
 	ctx context.Context,
@@ -260,6 +285,23 @@ func runNetworkServer(
 	return nil
 }
 
+// sshServerArgs builds the embedded SSH server command line. A managed daemon
+// asks it to record connection activity so Platform and direct SSH routes keep
+// the workspace alive.
+func sshServerArgs(cfg *agentd.DaemonConfig) []string {
+	args := []string{cmdInternal, cmdAgent, cmdContainer, "ssh-server"}
+	if cfg.Ssh.Workdir != "" {
+		args = append(args, names.Flag(names.Workdir), cfg.Ssh.Workdir)
+	}
+	if cfg.Ssh.User != "" {
+		args = append(args, names.Flag(names.RemoteUser), cfg.Ssh.User)
+	}
+	if cfg.Lifecycle.Managed() {
+		args = append(args, names.Flag(names.TrackActivity))
+	}
+	return args
+}
+
 // runSshServer starts the SSH server, sending SIGTERM on context cancellation
 // with a grace period before force-killing.
 func runSshServer(ctx context.Context, cmd *DaemonCmd) error {
@@ -268,13 +310,7 @@ func runSshServer(ctx context.Context, cmd *DaemonCmd) error {
 		return err
 	}
 
-	args := []string{cmdInternal, cmdAgent, cmdContainer, "ssh-server"}
-	if cmd.Config.Ssh.Workdir != "" {
-		args = append(args, names.Flag(names.Workdir), cmd.Config.Ssh.Workdir)
-	}
-	if cmd.Config.Ssh.User != "" {
-		args = append(args, names.Flag(names.RemoteUser), cmd.Config.Ssh.User)
-	}
+	args := sshServerArgs(cmd.Config)
 
 	sshCmd := exec.CommandContext(ctx, binaryPath, args...) // #nosec G204
 	sshCmd.Stdout = os.Stdout

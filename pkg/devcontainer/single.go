@@ -7,7 +7,9 @@ import (
 	"maps"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/devsy-org/api/pkg/devsy"
 	"github.com/devsy-org/devsy/pkg/agent/delivery"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/command"
@@ -390,7 +392,13 @@ func (r *runner) resolveNewContainer(
 		return nil, err
 	}
 
-	r.injectDaemonEntrypoint(p, mergedConfig)
+	if err := r.injectDaemonEntrypoint(p, mergedConfig); err != nil {
+		return nil, err
+	}
+
+	if err := r.validateManagedTimeoutTopology(mergedConfig, buildInfo); err != nil {
+		return nil, err
+	}
 
 	r.attemptPreStartDelivery(ctx, mergedConfig, p, buildInfo)
 
@@ -675,27 +683,97 @@ func (r *runner) deleteForRecreate(ctx context.Context) error {
 }
 
 // injectDaemonEntrypoint adds the workspace daemon config to the container
-// environment when platform configuration is provided.
+// environment for Platform workspaces and for drivers whose main process is the
+// managed lifecycle daemon.
 func (r *runner) injectDaemonEntrypoint(
 	p *resolveParams,
 	mergedConfig *config.MergedDevContainerConfig,
-) {
-	if p.options.Platform.AccessKey == "" {
-		return
+) error {
+	managed := r.managedLifecycle()
+	platform := p.options.Platform
+	if platform.AccessKey == "" {
+		platform = devsy.PlatformOptions{}
 	}
-	log.Debugf("Platform config detected, injecting Devsy daemon entrypoint.")
+	if !managed && platform.AccessKey == "" {
+		return nil
+	}
+
+	var timeout time.Duration
+	if managed {
+		var err error
+		timeout, err = r.effectiveContainerTimeout(mergedConfig.ShutdownAction)
+		if err != nil {
+			return err
+		}
+	}
 
 	data, err := agent.GetEncodedWorkspaceDaemonConfig(
-		p.options.Platform,
+		platform,
 		r.workspaceConfig.Workspace,
 		p.substitutionContext,
 		mergedConfig,
+		agent.LifecycleOptions{Managed: managed, Timeout: timeout},
 	)
 	if err != nil {
-		log.Errorf("Failed to marshal daemon config: %v", err)
-		return
+		return fmt.Errorf("build daemon config: %w", err)
 	}
 	mergedConfig.ContainerEnv[pkgconfig.EnvWorkspaceDaemonConfig] = data
+	return nil
+}
+
+// validateManagedTimeoutTopology rejects configurations in which the managed
+// daemon would not be the process whose exit stops the container.
+func (r *runner) validateManagedTimeoutTopology(
+	mergedConfig *config.MergedDevContainerConfig,
+	buildInfo *config.BuildInfo,
+) error {
+	if !r.managedLifecycle() {
+		return nil
+	}
+	timeout, err := r.effectiveContainerTimeout(mergedConfig.ShutdownAction)
+	if err != nil || timeout == 0 {
+		return err
+	}
+	return managedTimeoutConflict(timeout, mergedConfig, buildInfo)
+}
+
+func managedTimeoutConflict(
+	timeout time.Duration,
+	mergedConfig *config.MergedDevContainerConfig,
+	buildInfo *config.BuildInfo,
+) error {
+	if buildInfo.Dockerless != nil {
+		return fmt.Errorf(
+			"inactivity timeout %s is not supported with dockerless builds because the nested "+
+				"workspace container does not end the pod when it exits; unset the inactivity "+
+				"timeout or disable dockerless", timeout)
+	}
+	overridden := mergedConfig.OverrideCommand == nil || *mergedConfig.OverrideCommand
+	if overridden || buildInfo.ImageDetails == nil {
+		return nil
+	}
+	if len(buildInfo.ImageDetails.Config.Entrypoint)+len(buildInfo.ImageDetails.Config.Cmd) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"inactivity timeout %s requires the Devsy daemon to be the container's main process, "+
+			"but overrideCommand is false and the image entrypoint would run instead; set "+
+			"overrideCommand to true or unset the inactivity timeout", timeout)
+}
+
+func (r *runner) managedLifecycle() bool {
+	d, ok := r.driver.(driver.ManagedLifecycleDriver)
+	return ok && d.ManagedLifecycle()
+}
+
+func (r *runner) effectiveContainerTimeout(shutdownAction string) (time.Duration, error) {
+	agentConfig := r.workspaceConfig.Agent
+	return agent.ResolveInactivityTimeout(agent.TimeoutInputs{
+		Canonical:      agentConfig.ContainerTimeout,
+		Legacy:         agentConfig.Kubernetes.InactivityTimeout,
+		ShutdownAction: shutdownAction,
+		DisableDaemon:  r.workspaceConfig.CLIOptions.DisableDaemon,
+	})
 }
 
 // findRunningContainerOrFail re-fetches container details from the driver and
@@ -712,6 +790,13 @@ func (r *runner) findRunningContainerOrFail(
 	}
 	if details == nil {
 		return nil, fmt.Errorf("dev container %s not found after %s", r.id, operation)
+	}
+	// A terminal object must not satisfy startup when the daemon owns the lifecycle.
+	if r.managedLifecycle() && details.State.Status != config.ContainerStatusRunning {
+		return nil, fmt.Errorf(
+			"dev container %s is %s after %s, not running",
+			r.id, details.State.Status, operation,
+		)
 	}
 	return details, nil
 }

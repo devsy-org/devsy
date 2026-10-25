@@ -155,6 +155,7 @@ func TestBuildWorkspaceDaemonConfig_ShutdownAction(t *testing.T) {
 				&provider2.Workspace{},
 				&config.SubstitutionContext{},
 				merged,
+				LifecycleOptions{},
 			)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)

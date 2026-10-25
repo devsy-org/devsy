@@ -1,9 +1,13 @@
 package agentcontainer
 
 import (
+	"context"
 	"fmt"
+	"net"
+	"sync"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -19,6 +23,9 @@ type SSHServerCmd struct {
 	Address    string
 	Workdir    string
 	RemoteUser string
+
+	// TrackActivity records connection activity for the inactivity timer.
+	TrackActivity bool
 }
 
 // NewSSHServerCmd creates a new ssh command.
@@ -53,6 +60,12 @@ func NewSSHServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 			"",
 			"Directory where commands will run on the host",
 		),
+		cliflags.Bool(
+			&cmd.TrackActivity,
+			names.TrackActivity,
+			false,
+			"Record activity while connections are open",
+		),
 	)
 	return sshCmd
 }
@@ -75,5 +88,48 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	return server.ListenAndServe()
+	if !cmd.TrackActivity {
+		return server.ListenAndServe()
+	}
+
+	listener, err := net.Listen("tcp", cmd.Address)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cmd.Address, err)
+	}
+	return server.Serve(trackConnections(listener, startConnectionActivity))
+}
+
+func startConnectionActivity() (stop func()) {
+	return agentd.StartActivityWriter(context.Background(), agentd.ActivityIntervalForLifecycle())
+}
+
+// trackConnections records activity from the moment a connection is accepted
+// until it closes. The idle listener itself is not activity.
+func trackConnections(l net.Listener, start func() (stop func())) net.Listener {
+	return &activityListener{Listener: l, start: start}
+}
+
+type activityListener struct {
+	net.Listener
+	start func() (stop func())
+}
+
+func (l *activityListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &activityConn{Conn: conn, stop: l.start()}, nil
+}
+
+type activityConn struct {
+	net.Conn
+	stop func()
+	once sync.Once
+}
+
+func (c *activityConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.stop)
+	return err
 }

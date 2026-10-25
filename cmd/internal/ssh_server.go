@@ -11,6 +11,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/config"
+	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/sharedfile"
@@ -22,10 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	activityHeartbeatInterval = 10 * time.Second
-	activityFileMode          = 0o666
-)
+const activityFileMode = 0o666
 
 // shutdownTimeout bounds the grace period for in-flight SSH connections to
 // drain on context cancel before the listener is force-closed.
@@ -62,7 +60,7 @@ func NewSSHServerCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	f.BoolVar(&cmd.stdio, names.Stdio, false,
 		"Listen on stdin/stdout instead of an address")
 	f.BoolVar(&cmd.trackActivity, names.TrackActivity, false,
-		"Touch the activity file every "+activityHeartbeatInterval.String()+" (only with --stdio)")
+		"Record activity while connected (only with --stdio)")
 	f.StringVar(&cmd.reuseSSHAuthSock, names.ReuseSSHAuthSock, "",
 		"If set, reuse a pre-existing SSH_AUTH_SOCK in the workspace under /tmp")
 	_ = f.MarkHidden(names.ReuseSSHAuthSock)
@@ -106,7 +104,16 @@ func (cmd *sshServerCmd) run(ctx context.Context) error {
 
 func (cmd *sshServerCmd) serveStdio(ctx context.Context, server sshserver.Server) error {
 	if cmd.trackActivity {
-		go runActivityHeartbeat(ctx, config.ContainerActivityFile)
+		hbCtx, stopHeartbeat := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			runActivityHeartbeat(hbCtx, config.ContainerActivityFile)
+		}()
+		defer func() {
+			stopHeartbeat()
+			<-done
+		}()
 	}
 	go shutdownOnCancel(ctx, server) // #nosec G118 -- see shutdownOnCancel.
 	lis := stdio.NewStdioListener(os.Stdin, os.Stdout)
@@ -204,36 +211,13 @@ func decodeBase64Bytes(encoded, label string) ([]byte, error) {
 	return out, nil
 }
 
-// runActivityHeartbeat periodically updates the activity file's mtime so
-// outside watchers can detect liveness. Exits when ctx is canceled. Logs
-// only on success/failure transitions so a permanently broken file does
-// not spam the log.
+// runActivityHeartbeat records activity immediately, periodically while ctx is
+// live, and once more when ctx ends so a disconnect leaves a fresh timestamp.
 func runActivityHeartbeat(ctx context.Context, path string) {
-	if err := ensureActivityFile(path); err != nil {
-		log.Errorf("activity heartbeat: ensure file: %v", err)
-		return
-	}
-
-	t := time.NewTicker(activityHeartbeatInterval)
-	defer t.Stop()
-
-	var lastErr error
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-t.C:
-			err := os.Chtimes(path, now, now)
-			if (err == nil) != (lastErr == nil) {
-				if err != nil {
-					log.Errorf("activity heartbeat: %v", err)
-				} else {
-					log.Infof("activity heartbeat recovered")
-				}
-			}
-			lastErr = err
-		}
-	}
+	agentd.ActivityWriter{
+		Path:     path,
+		Interval: agentd.ActivityIntervalForLifecycle(),
+	}.Run(ctx)
 }
 
 func ensureActivityFile(path string) error {

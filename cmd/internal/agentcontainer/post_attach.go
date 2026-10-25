@@ -55,6 +55,9 @@ func (cmd *PostAttachCmd) Run(ctx context.Context) error {
 		return err
 	}
 
+	stopActivity := startWorkerActivity(ctx)
+	defer stopActivity()
+
 	log.Debugf("running postAttachCommand hooks")
 	// Mount values aren't in this process's env; read them back for redaction.
 	if err := setup.RunPostAttachHooks(
