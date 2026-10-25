@@ -54,7 +54,7 @@ require (
 	github.com/moby/term v0.5.2
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/onsi/ginkgo/v2 v2.33.0
-	github.com/onsi/gomega v1.43.1
+	github.com/onsi/gomega v1.44.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pkg/sftp v1.13.11
 	github.com/posthog/posthog-go v1.27.0
