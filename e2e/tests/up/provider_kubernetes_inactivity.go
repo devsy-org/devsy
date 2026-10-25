@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	flagIDEOption       = "--ide"
 	inactivityLabel     = "up-provider-kubernetes-inactivity"
 	inactivityImage     = "ghcr.io/devsy-org/test-images/go:1"
 	inactivityPollEvery = 3 * time.Second
@@ -351,12 +352,13 @@ var _ = ginkgo.Describe(
 				)
 
 				_, stderr, err := e.f.ExecCommandCapture(ctx,
-					[]string{cmdWorkspace, "up", e.dir, "--ide", "none"})
+					[]string{cmdWorkspace, "up", e.dir, flagIDEOption, kubernetesIgnoreIDE})
 				gomega.Expect(err).To(gomega.HaveOccurred())
 				gomega.Expect(stderr).To(gomega.ContainSubstring("sidecar"))
 				pvcs := &corev1.PersistentVolumeClaimList{}
 				framework.ExpectNoError(e.kubectlJSON(ctx, pvcs, "get", "pvc"))
-				gomega.Expect(pvcs.Items).To(gomega.BeEmpty(), "nothing is created for a rejected pod")
+				gomega.Expect(pvcs.Items).
+					To(gomega.BeEmpty(), "nothing is created for a rejected pod")
 
 				framework.ExpectNoError(e.f.DevsyWorkspaceDelete(ctx, e.dir))
 				framework.ExpectNoError(os.Chdir(initialDir))
