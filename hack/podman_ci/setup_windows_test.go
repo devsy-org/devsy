@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -183,6 +184,46 @@ func TestWindowsFirstInitReservesDiagnosticsAndRecovery(t *testing.T) {
 	}
 	if len(runner.calls) != 1 || runner.calls[0].timeout != 84999*time.Millisecond {
 		t.Fatalf("init bound = %+v", runner.calls)
+	}
+}
+
+func TestWindowsInitBudgetExhaustionAndRootfulTimeoutAreHangs(t *testing.T) {
+	tests := map[string]struct {
+		budget    time.Duration
+		durations map[string]time.Duration
+	}{
+		"init budget exhausted": {budget: time.Second},
+		"rootful timeout": {
+			budget:    270 * time.Second,
+			durations: map[string]time.Duration{"machine set --rootful": time.Minute},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			clock := &fakeClock{now: time.Unix(1, 0)}
+			runner := &windowsFakeRunner{
+				clock:     clock,
+				results:   map[string][]CommandResult{},
+				durations: test.durations,
+			}
+			budget, err := NewBudget(test.budget, clock)
+			if err != nil {
+				t.Fatal(err)
+			}
+			clock.Sleep(2 * time.Second)
+			state := &windowsSetup{
+				ctx:    context.Background(),
+				deps:   windowsDependencies(runner, clock),
+				budget: budget,
+				cfg:    windowsConfig(t),
+			}
+
+			err = state.startMachineAttempt(1)
+
+			if _, ok := errors.AsType[*hangError](err); !ok {
+				t.Fatalf("error = %v, want a hang error", err)
+			}
+		})
 	}
 }
 

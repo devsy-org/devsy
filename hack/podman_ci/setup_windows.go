@@ -186,11 +186,12 @@ func (s *windowsSetup) runMachineInit(
 	for pullAttempt := 1; ; pullAttempt++ {
 		initTimeout := s.budget.Bound(windowsInitTimeout, reserve)
 		if initTimeout <= 0 {
-			return CommandResult{}, fmt.Errorf(
-				"PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT attempt=%d output=%s",
-				attempt,
-				"PODMAN_WINDOWS_BOOTSTRAP_BUDGET_EXHAUSTED: insufficient initialization budget",
-			)
+			return CommandResult{}, &hangError{
+				code:    "PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT",
+				attempt: attempt,
+				detail: "output=PODMAN_WINDOWS_BOOTSTRAP_BUDGET_EXHAUSTED: " +
+					"insufficient initialization budget",
+			}
 		}
 		result := s.runCommand(
 			CommandSpec{Path: s.cfg.PodmanPath, Args: args, Timeout: initTimeout},
@@ -259,6 +260,13 @@ func (s *windowsSetup) configureRootful(attempt int) error {
 		CommandSpec{Path: s.cfg.PodmanPath, Args: args, Timeout: 20 * time.Second},
 		windowsDiagnosticReserve,
 	)
+	if result.TimedOut {
+		return &hangError{
+			code:    "PODMAN_WINDOWS_MACHINE_START_FAILED",
+			attempt: attempt,
+			detail:  describeCommand(s.cfg.PodmanPath, args, result),
+		}
+	}
 	if !result.Success() {
 		return fmt.Errorf(
 			"PODMAN_WINDOWS_MACHINE_START_FAILED attempt=%d %s",
@@ -547,12 +555,18 @@ func armWatchdog(timeout time.Duration, log *Logger, report hangReporter) watchd
 
 func handleHardDeadline(timeout time.Duration, log *Logger, report hangReporter) {
 	log.Printf("[podman-windows] hard_deadline_exceeded timeout_ms=%d", timeout.Milliseconds())
-	report.Report(
-		windowsHangTitle,
-		fmt.Sprintf("PODMAN_WINDOWS_HARD_DEADLINE timeout_ms=%d", timeout.Milliseconds()),
-		runningProcessesReport(),
-	)
+	processes := runningProcessesReport()
+	reported := make(chan struct{})
+	go func() {
+		defer close(reported)
+		report.Report(
+			windowsHangTitle,
+			fmt.Sprintf("PODMAN_WINDOWS_HARD_DEADLINE timeout_ms=%d", timeout.Milliseconds()),
+			processes,
+		)
+	}()
 	terminateStrayProcessesHook(log)
+	<-reported
 }
 
 func runningProcessesReport() string {
