@@ -58,24 +58,13 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 		"should start a new workspace with a docker provider (default) and SSH into it",
 		ginkgo.SpecTimeout(framework.TimeoutShort()),
 		func(ctx context.Context) {
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/local-test")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/local-test")
 
 			// Start up devsy workspace
 			devsyUpDeadline := time.Now().Add(5 * time.Minute)
 			devsyUpCtx, cancel := context.WithDeadline(ctx, devsyUpDeadline)
 			defer cancel()
-			err = f.DevsyUp(devsyUpCtx, tempDir)
+			err := f.DevsyUp(devsyUpCtx, tempDir)
 			framework.ExpectNoError(err)
 
 			devsySSHDeadline := time.Now().Add(20 * time.Second)
@@ -94,24 +83,13 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				ginkgo.Skip("skipping on windows")
 			}
 
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/gpg-forwarding")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/gpg-forwarding")
 
 			sshKeyDir := ginkgo.GinkgoT().TempDir()
 
 			keyPath := filepath.Join(sshKeyDir, "id_ed25519")
 			// #nosec G204 -- test command with controlled arguments
-			err = exec.Command(
+			err := exec.Command(
 				"ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-q",
 			).Run()
 			framework.ExpectNoError(err)
@@ -143,25 +121,14 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				ginkgo.Skip("skipping on windows")
 			}
 
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/gpg-forwarding")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/gpg-forwarding")
 
 			ginkgo.GinkgoT().Setenv("GNUPGHOME", ginkgo.GinkgoT().TempDir())
 			framework.ExpectNoError(
 				framework.ImportGpgKey(filepath.Join(tempDir, "gpg-private.key")),
 			)
 
-			err = f.DevsyUp(ctx, tempDir, names.Flag(names.SSHGPGForwarding))
+			err := f.DevsyUp(ctx, tempDir, names.Flag(names.SSHGPGForwarding))
 			framework.ExpectNoError(err)
 
 			sshCtx, cancelSSH := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
@@ -179,18 +146,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				ginkgo.Skip("skipping on windows")
 			}
 
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ssh-signing")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/ssh-signing")
 
 			// Generate a temporary SSH key for signing
 			sshKeyDir, err := os.MkdirTemp("", "devsy-ssh-signing-test")
@@ -343,21 +299,10 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				ginkgo.Skip("skipping on windows")
 			}
 
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ssh-signing")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/ssh-signing")
 
 			// Start workspace WITHOUT --git-ssh-signing-key
-			err = f.DevsyUp(ctx, tempDir)
+			err := f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
 			// Verify the helper script was NOT installed
@@ -390,18 +335,7 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 				ginkgo.Skip("skipping on windows")
 			}
 
-			tempDir, err := framework.CopyToTempDir("tests/ssh/testdata/ssh-signing")
-			framework.ExpectNoError(err)
-
-			f := framework.NewDefaultFramework(initialDir + "/bin")
-			_ = f.DevsyProviderAdd(ctx, "docker")
-			err = f.DevsyProviderUse(ctx, "docker")
-			framework.ExpectNoError(err)
-
-			ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
-				_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
-				framework.CleanupTempDir(initialDir, tempDir)
-			})
+			f, tempDir := setupSSHWorkspace(ctx, initialDir, "tests/ssh/testdata/ssh-signing")
 
 			// Generate a key but do NOT add it to the ssh-agent so signing will fail
 			sshKeyDir, err := os.MkdirTemp("", "devsy-ssh-signing-err-test")
@@ -546,3 +480,25 @@ var _ = ginkgo.Describe("devsy ssh test suite", ginkgo.Label("ssh"), ginkgo.Orde
 		},
 	)
 })
+
+func setupSSHWorkspace(
+	ctx context.Context,
+	initialDir, fixture string,
+) (*framework.Framework, string) {
+	ginkgo.GinkgoHelper()
+
+	tempDir, err := framework.CopyToTempDir(fixture)
+	framework.ExpectNoError(err)
+
+	f := framework.NewDefaultFramework(initialDir + "/bin")
+	_ = f.DevsyProviderAdd(ctx, "docker")
+	err = f.DevsyProviderUse(ctx, "docker")
+	framework.ExpectNoError(err)
+
+	ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+		_ = f.DevsyWorkspaceDelete(cleanupCtx, tempDir)
+		framework.CleanupTempDir(initialDir, tempDir)
+	})
+
+	return f, tempDir
+}
