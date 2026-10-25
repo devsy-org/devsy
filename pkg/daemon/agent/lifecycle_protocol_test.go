@@ -135,10 +135,10 @@ func TestOwnerRejectsSymlinkedControlRecord(t *testing.T) {
 
 func TestNewLifecycleOwnerRejectsSymlinkedDir(t *testing.T) {
 	base := t.TempDir()
-	real := filepath.Join(base, "real")
-	require.NoError(t, os.Mkdir(real, 0o755)) //nolint:gosec // test dir
+	target := filepath.Join(base, "target")
+	require.NoError(t, os.Mkdir(target, 0o755)) //nolint:gosec // test dir
 	link := filepath.Join(base, "link")
-	require.NoError(t, os.Symlink(real, link))
+	require.NoError(t, os.Symlink(target, link))
 
 	_, err := NewLifecycleOwner(link)
 
