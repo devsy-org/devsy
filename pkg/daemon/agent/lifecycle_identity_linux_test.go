@@ -4,11 +4,13 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -56,7 +58,13 @@ func TestInheritedSocketCannotRetainActivityAfterOriginalProcessDies(t *testing.
 	})
 	assert.False(t, idleForAnHour(monitor).Expired)
 	require.NoError(t, cmd.Process.Kill())
-	require.Error(t, cmd.Wait())
+	require.Eventually(
+		t,
+		func() bool { return isUnreapedZombie(report.PID) },
+		time.Second,
+		time.Millisecond,
+		"the opener must be dead but still owned by this living parent",
+	)
 	require.True(
 		t,
 		processExists(report.HolderPID),
@@ -74,6 +82,12 @@ func TestInheritedSocketCannotRetainActivityAfterOriginalProcessDies(t *testing.
 		"EOF from holder exit must not explain release",
 	)
 	assertReclaimedUIDBudget(t, dir)
+	require.True(
+		t,
+		isUnreapedZombie(report.PID),
+		"release and capacity recovery must precede reaping",
+	)
+	require.Error(t, cmd.Wait())
 }
 
 func assertReclaimedUIDBudget(t *testing.T, dir string) {
@@ -173,4 +187,11 @@ func TestLinuxLifecycleFailsClosedWithoutReadableProcIdentity(t *testing.T) {
 		ErrLifecycleOwnerMissing,
 		"unverifiable process identity must not start an owner",
 	)
+}
+
+func isUnreapedZombie(pid int) bool {
+	raw, err := os.ReadFile(
+		"/proc/" + strconv.Itoa(pid) + "/status",
+	) // #nosec G304 -- actual test child PID
+	return err == nil && bytes.Contains(raw, []byte("\nState:\tZ"))
 }

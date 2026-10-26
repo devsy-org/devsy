@@ -52,6 +52,8 @@ The managed activity socket is container-local, not host remote-access IPC. Its 
 
 Admission is bounded to 128 connections. Non-owner pending and registered connections share a 96-slot activity budget, with at most 32 per UID and 16 per PID. Owner-UID activity and release requests also enter that shared budget, so an embedded SSH carrier cannot consume the remaining setup/control reserve. Owner/root pending admission is provisional, not proof of a control role; deliberate abuse by that already-privileged UID is outside this boundary. Unprotected connections have a nonrenewable 10-second deadline, restarted only when protected work ends; release-only chatter and exact ACK retries cannot renew it. Live acknowledged setup and activity have no time lease. A denied activity registration closes only that incoming SSH connection, not the listener or existing sessions.
 
+An exited peer, including an unreaped zombie, loses its registration even if another process inherited its socket. Linux liveness uses process state and start time from the same `/proc` snapshot; it does not rely only on the PID remaining present.
+
 Managed-mode detection uses the same mounted daemon configuration as the daemon itself, ahead of the process environment. An unreadable or malformed configuration aborts registration; absent runtime discovery cannot select legacy mode when managed configuration is present. Linux registration and liveness checks fail closed when the process-start identity cannot be established.
 
 

@@ -9,8 +9,7 @@ import (
 	"strings"
 )
 
-// procStartTicks returns field 22 of /proc/<pid>/stat, which distinguishes a
-// process from a later one that reuses its PID.
+// procStartTicks returns the start identity of a live process from /proc.
 func procStartTicks(pid int) string {
 	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat") // #nosec G304
 	if err != nil {
@@ -27,6 +26,10 @@ func procStartTicks(pid int) string {
 	if len(fields) < 20 {
 		return ""
 	}
+	// Zombies retain both PID and start time until their living parent reaps them.
+	if fields[0] == "Z" || fields[0] == "X" || fields[0] == "x" {
+		return ""
+	}
 	return fields[19]
 }
 
@@ -34,7 +37,7 @@ func processStartIdentity(pid int) (string, error) {
 	ticks := procStartTicks(pid)
 	if ticks == "" {
 		return "", fmt.Errorf(
-			"%w: cannot read process start identity from /proc/%d/stat",
+			"%w: cannot establish live process identity from /proc/%d/stat",
 			ErrLifecycleOwnerMissing,
 			pid,
 		)
