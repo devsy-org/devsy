@@ -99,7 +99,7 @@ jobs:
             --arg artifact "$LINUX_ARTIFACT_ID" \
             --arg zipDigest "$LINUX_ARTIFACT_DIGEST" \
             --arg appimage "$appimage_sha" \
-            '{source:{runId:$run,head:$head},artifact:{id:$artifact,zipSha256:$zipDigest},appimage:{member:"Devsy_linux_x86_64.AppImage",sha256:$appimage},launchAttempts:[],observedWindows:{},sessionResult:"not_started",scope:"Exact D485 AppImage artifact integrity verified; no application launch or GNOME window observed yet."}' \
+            '{source:{runId:$run,head:$head},artifact:{id:$artifact,zipSha256:$zipDigest},appimage:{member:"Devsy_linux_x86_64.AppImage",sha256:$appimage},launchAttempts:[],windowCandidates:{},verifiedWindows:{},windowPidLinkage:{},sessionResult:"not_started",scope:"Exact D485 AppImage artifact integrity verified; no application launch or GNOME window candidate observed yet."}' \
             > "$proof_dir/proof.json"
 
       - name: Preflight GNOME package size before installing
@@ -387,22 +387,73 @@ jobs:
           import sys
           from pathlib import Path
 
-          def expected_app_id(app_id):
-              return app_id == "sh.devsy.app"
+          EXPECTED_WM_CLASS = "sh.devsy.app"
+          EXPECTED_TITLE = "Devsy"
 
-          if sys.argv[1] == "--self-test":
-              assert expected_app_id("sh.devsy.app")
-              assert not expected_app_id("devsy")
-              assert not expected_app_id("sh.devsy.app.desktop")
-              print("strict Devsy app-id cases passed")
+          def parse_candidates(text, expected_type="any"):
+              blocks = re.findall(r"uint64\s+(\d+)\s*:\s*\{([^{}]*)\}", text, re.S)
+
+              def property_value(block, key):
+                  match = re.search(rf"['\"]?{re.escape(key)}['\"]?\s*:\s*<([^>]*)>", block)
+                  return match.group(1).strip() if match else ""
+
+              candidates = []
+              for window_id, block in blocks:
+                  title = property_value(block, "title").strip("'\"")
+                  app_id = property_value(block, "app-id").strip("'\"")
+                  wm_class = property_value(block, "wm-class").strip("'\"")
+                  client_type_match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, "client-type"))
+                  hidden = property_value(block, "is-hidden")
+                  dimensions = {}
+                  for key in ("width", "height"):
+                      match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, key))
+                      if match:
+                          dimensions[key] = int(match.group(1))
+                  if not client_type_match or title != EXPECTED_TITLE or wm_class != EXPECTED_WM_CLASS:
+                      continue
+                  client_type = int(client_type_match.group(1))
+                  if client_type not in (0, 1) or (expected_type != "any" and client_type != int(expected_type)):
+                      continue
+                  if hidden != "false" or dimensions.get("width", 0) <= 0 or dimensions.get("height", 0) <= 0:
+                      continue
+                  candidates.append({
+                      "windowId": window_id,
+                      "title": title,
+                      "appId": app_id,
+                      "wmClass": wm_class,
+                      "clientType": client_type,
+                      "isHidden": False,
+                      **dimensions,
+                  })
+              return candidates
+
+          if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
+              actual = """({uint64 44739516: {'app-id': <'window:1'>, 'client-type': <uint32 1>, 'is-hidden': <false>, 'has-focus': <false>, 'width': <uint32 1000>, 'height': <uint32 737>, 'title': <'Devsy'>, 'wm-class': <'sh.devsy.app'>}},)"""
+              candidate = parse_candidates(actual)
+              assert len(candidate) == 1
+              assert candidate[0] == {
+                  "windowId": "44739516", "title": "Devsy", "appId": "window:1",
+                  "wmClass": "sh.devsy.app", "clientType": 1, "isHidden": False,
+                  "width": 1000, "height": 737,
+              }
+              assert parse_candidates(actual, "0") == []
+              assert len(parse_candidates(actual.replace("<uint32 1>", "<uint32 0>"), "0")) == 1
+              assert parse_candidates(actual.replace("sh.devsy.app", "other.app")) == []
+              assert parse_candidates(actual.replace("'Devsy'", "'Other'")) == []
+              assert parse_candidates(actual.replace("<false>", "<true>")) == []
+              assert parse_candidates(actual.replace("<uint32 1000>", "<uint32 0>")) == []
+              assert parse_candidates(actual.replace("<uint32 1>", "<uint32 2>")) == []
+              arbitrary_id_only = actual.replace("window:1", "window:999").replace("sh.devsy.app", "other.app")
+              assert parse_candidates(arbitrary_id_only) == []
+              print("candidate fixtures passed: actual window:1 record is only a candidate; wrong class/title, hidden, invalid geometry/type, and arbitrary window-id-only records rejected")
               raise SystemExit(0)
-          if sys.argv[1] == "--attempt":
+          if len(sys.argv) > 1 and sys.argv[1] == "--attempt":
               backend = sys.argv[2]
               proof_path = Path(sys.argv[3])
               proof = json.loads(proof_path.read_text())
               proof.setdefault("launchAttempts", []).append(backend)
-              proof["sessionResult"] = "launch_attempted_no_window"
-              proof["scope"] = f"AppImage process start attempted for {backend}; no GNOME window observed yet."
+              proof["sessionResult"] = "appimage_launch_attempted"
+              proof["scope"] = f"Exact AppImage process start attempted for {backend}; window candidate not yet observed."
               temporary = proof_path.with_suffix(".tmp")
               temporary.write_text(json.dumps(proof, indent=2) + "\n")
               temporary.replace(proof_path)
@@ -410,61 +461,36 @@ jobs:
 
           if len(sys.argv) != 5:
               raise SystemExit("usage: verify-window.py OUTPUT EXPECTED_TYPE BACKEND PROOF_JSON")
-          text = Path(sys.argv[1]).read_text()
+          output_path = Path(sys.argv[1])
           expected_type = sys.argv[2]
           backend = sys.argv[3]
           proof_path = Path(sys.argv[4])
-          window_blocks = re.findall(r"uint64\s+(\d+)\s*:\s*\{([^{}]*)\}", text, re.S)
-
-          def property_value(block, key):
-              match = re.search(rf"['\"]?{re.escape(key)}['\"]?\s*:\s*<([^>]*)>", block)
-              return match.group(1).strip() if match else ""
-
-          matches = []
-          for window_id, block in window_blocks:
-              title = property_value(block, "title").strip("'\"")
-              app_id = property_value(block, "app-id").strip("'\"")
-              wm_class = property_value(block, "wm-class").strip("'\"")
-              client_type_match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, "client-type"))
-              if not client_type_match or not expected_app_id(app_id):
-                  continue
-              client_type = int(client_type_match.group(1))
-              if expected_type != "any" and client_type != int(expected_type):
-                  continue
-              hidden_match = re.fullmatch(r"true|false", property_value(block, "is-hidden"))
-              dimensions = {}
-              for key in ("width", "height"):
-                  match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, key))
-                  if match:
-                      dimensions[key] = int(match.group(1))
-              matches.append({
-                  "windowId": window_id,
-                  "title": title,
-                  "appId": app_id,
-                  "wmClass": wm_class,
-                  "clientType": client_type,
-                  "isHidden": hidden_match.group(0) == "true" if hidden_match else None,
-                  **dimensions,
-              })
-
-          if not matches:
-              raise SystemExit("no GNOME window matched Devsy identity and expected client type")
-          identity = {"matchingWindows": matches}
+          candidates = parse_candidates(output_path.read_text(), expected_type)
+          identity = {"candidateWindows": candidates}
           identity_path = proof_path.with_name(f"{backend}-window-identity.json")
           identity_path.write_text(json.dumps(identity, indent=2) + "\n")
           proof = json.loads(proof_path.read_text())
-          proof.setdefault("observedWindows", {})[backend] = matches
-          proof["applicationLaunched"] = True
-          proof["sessionResult"] = "partial"
-          proof["scope"] = f"Devsy window observed in private {backend} GNOME session; remaining checks pending."
+          proof.setdefault("windowCandidates", {})[backend] = candidates
+          if len(candidates) == 1:
+              proof["sessionResult"] = "candidate_observed_unattributed"
+              proof["scope"] = f"Raw GNOME window candidate observed in private {backend} session; PID and exact-AppImage attribution pending."
+          elif candidates:
+              proof["sessionResult"] = "ambiguous_window_candidates"
+              proof["scope"] = f"Multiple raw GNOME window candidates observed in private {backend} session; exact-AppImage attribution was not attempted."
+          else:
+              proof["sessionResult"] = "no_exact_window_candidate"
+              proof["scope"] = f"No exact Devsy WM_CLASS/title candidate appeared in private {backend} GetWindows output."
           temporary = proof_path.with_suffix(".tmp")
           temporary.write_text(json.dumps(proof, indent=2) + "\n")
           temporary.replace(proof_path)
+          if len(candidates) != 1:
+              raise SystemExit(f"expected exactly one exact-WM_CLASS/title candidate, observed {len(candidates)}")
           print(json.dumps(identity, sort_keys=True))
           PY
           cat > "$proof_dir/verify-window-link.py" <<'PY'
           import ast
           import json
+          import os
           import re
           import subprocess
           import sys
@@ -472,25 +498,48 @@ jobs:
 
           EVAL_CODE = "JSON.stringify(global.get_window_actors().map(a => { const w = a.meta_window; const r = w.get_frame_rect(); return [w.get_id(), w.get_pid(), w.get_client_type(), r.x, r.y, r.width, r.height]; }))"
           IDENTITY_FIELDS = ("pid", "startTicks", "uid", "exe", "exeSha256", "mount", "appImagePath", "appImageSha256")
+          EXPECTED_APPIMAGE = "Devsy_linux_x86_64.AppImage"
+          EXPECTED_EXECUTABLE = "devsy-desktop"
+          EXPECTED_WM_CLASS = "sh.devsy.app"
+          EXPECTED_TITLE = "Devsy"
+
+          def exact_app_process(record, expected_hash):
+              mount = record.get("mount") or {}
+              exe = Path(record.get("exe", ""))
+              appimage_path = Path(record.get("appImagePath", ""))
+              mountpoint = Path(mount.get("mountpoint", ""))
+              exe_hash = record.get("exeSha256", "")
+              return (
+                  record.get("pid", 0) > 0 and record.get("startTicks", 0) > 0 and
+                  record.get("uid") == os.getuid() and exe.name == EXPECTED_EXECUTABLE and
+                  re.fullmatch(r"[0-9a-f]{64}", exe_hash) is not None and
+                  mountpoint.is_absolute() and exe.parent == mountpoint and
+                  mount.get("filesystem") == f"fuse.{EXPECTED_APPIMAGE}" and
+                  mount.get("source") == EXPECTED_APPIMAGE and
+                  appimage_path.is_absolute() and appimage_path.name == EXPECTED_APPIMAGE and
+                  record.get("appImageSha256") == expected_hash
+              )
 
           def linked_record(window, meta, before, after, expected_hash):
+              if window.get("wmClass") != EXPECTED_WM_CLASS or window.get("title") != EXPECTED_TITLE:
+                  raise ValueError("candidate is not the exact Devsy WM_CLASS/title")
               if str(meta[0]) != window["windowId"]:
-                  raise ValueError("MetaWindow id differs from the GetWindows id")
+                  raise ValueError("MetaWindow id differs from the GetWindows candidate id")
               if int(meta[1]) <= 0 or int(meta[2]) != window["clientType"]:
                   raise ValueError("MetaWindow PID or client type is invalid")
               if int(meta[5]) != window.get("width") or int(meta[6]) != window.get("height"):
                   raise ValueError("MetaWindow geometry differs from GetWindows geometry")
               if window.get("isHidden") is not False or int(meta[5]) <= 0 or int(meta[6]) <= 0:
-                  raise ValueError("Devsy window is hidden or has empty geometry")
+                  raise ValueError("Devsy candidate is hidden or has empty geometry")
               pid = int(meta[1])
               records = []
               for snapshot in (before, after):
                   record = next((item for item in snapshot["processes"] if item["pid"] == pid), None)
-                  if not record or record.get("appImageSha256") != expected_hash:
-                      raise ValueError("MetaWindow PID is not in the exact AppImage process tree")
+                  if not record or not exact_app_process(record, expected_hash):
+                      raise ValueError("MetaWindow PID is not owned by the exact mounted D485 AppImage process")
                   records.append(record)
               if any(records[0].get(key) != records[1].get(key) for key in IDENTITY_FIELDS):
-                  raise ValueError("MetaWindow process identity changed around screenshot")
+                  raise ValueError("MetaWindow PID/start/UID/executable/mount/AppImage identity changed around screenshot")
               return {
                   "windowId": window["windowId"],
                   "appId": window["appId"],
@@ -504,6 +553,19 @@ jobs:
                                  "y": int(meta[4]), "width": int(meta[5]), "height": int(meta[6])},
                   "appProcess": {key: records[1].get(key) for key in IDENTITY_FIELDS},
               }
+          def attribution_matches(window, linked, expected_hash):
+              if any(linked.get(key) != window.get(key) for key in
+                     ("windowId", "appId", "title", "wmClass", "clientType", "isHidden", "width", "height")):
+                  return False
+              meta = linked.get("metaWindow") or {}
+              process = linked.get("appProcess") or {}
+              return (
+                  meta.get("pid", 0) > 0 and meta.get("pid") == process.get("pid") and
+                  meta.get("clientType") == window.get("clientType") and
+                  meta.get("width") == window.get("width") and
+                  meta.get("height") == window.get("height") and
+                  exact_app_process(process, expected_hash)
+              )
 
           def parse_tuple(raw):
               match = re.fullmatch(r"\((true|false),\s*('.*')\)", raw.strip())
@@ -522,52 +584,84 @@ jobs:
               blocks = re.findall(r"uint64\s+(\d+)\s*:\s*\{([^{}]*)\}", raw, re.S)
               block = next((value for key, value in blocks if key == window_id), None)
               if block is None:
-                  raise ValueError("expected Devsy window disappeared from GetWindows")
+                  raise ValueError("candidate window disappeared from GetWindows")
               def prop(key):
                   match = re.search(rf"['\"]?{re.escape(key)}['\"]?\s*:\s*<([^>]*)>", block)
                   return match.group(1).strip() if match else ""
               app_id = prop("app-id").strip("'\"")
-              hidden = prop("is-hidden") == "true"
+              title = prop("title").strip("'\"")
+              wm_class = prop("wm-class").strip("'\"")
+              hidden = prop("is-hidden")
               client_type = re.search(r"(?:u?int\d+)\s+(\d+)", prop("client-type"))
               width = re.search(r"(?:u?int\d+)\s+(\d+)", prop("width"))
               height = re.search(r"(?:u?int\d+)\s+(\d+)", prop("height"))
-              if app_id != "sh.devsy.app" or not client_type or not width or not height or hidden:
-                  raise ValueError("current window no longer matches the visible sh.devsy.app identity")
-              return {"appId": app_id, "clientType": int(client_type.group(1)),
+              if title != EXPECTED_TITLE or wm_class != EXPECTED_WM_CLASS or hidden != "false" or \
+                 not client_type or not width or not height:
+                  raise ValueError("live candidate no longer has exact visible Devsy WM_CLASS/title and geometry")
+              return {"windowId": window_id, "title": title, "appId": app_id, "wmClass": wm_class,
+                      "clientType": int(client_type.group(1)), "isHidden": False,
                       "width": int(width.group(1)), "height": int(height.group(1))}
 
           def main():
               if sys.argv[1] == "--self-test":
-                  window = {"windowId": "17", "appId": "sh.devsy.app", "title": "Devsy",
-                            "wmClass": "", "clientType": 1, "isHidden": False, "width": 800, "height": 600}
-                  process = {"pid": 91, "startTicks": 1000, "uid": 1001, "exe": "/mount/devsy-desktop",
-                             "exeSha256": "exe", "mount": {"source": "appimage"}, "appImagePath": "/tmp/a",
-                             "appImageSha256": "image"}
-                  snapshot = {"processes": [process]}
+                  window = {"windowId": "17", "appId": "window:1", "title": EXPECTED_TITLE,
+                            "wmClass": EXPECTED_WM_CLASS, "clientType": 1, "isHidden": False,
+                            "width": 800, "height": 600}
+                  process = {"pid": 91, "startTicks": 1000, "uid": os.getuid(),
+                             "exe": "/tmp/.mount_D/devsy-desktop", "exeSha256": "a" * 64,
+                             "mount": {"mountpoint": "/tmp/.mount_D",
+                                       "filesystem": f"fuse.{EXPECTED_APPIMAGE}",
+                                       "source": EXPECTED_APPIMAGE},
+                             "appImagePath": f"/tmp/{EXPECTED_APPIMAGE}", "appImageSha256": "b" * 64}
+                  before = {"processes": [process]}
+                  after = {"processes": [dict(process)]}
                   good = [17, 91, 1, 0, 0, 800, 600]
-                  assert linked_record(window, good, snapshot, snapshot, "image")["metaWindow"]["pid"] == 91
-                  for meta, digest in (([18, 91, 1, 0, 0, 800, 600], "image"),
-                                       ([17, 92, 1, 0, 0, 800, 600], "image"),
-                                       ([17, 91, 0, 0, 0, 800, 600], "image"),
-                                       ([17, 91, 1, 0, 0, 1, 1], "image"),
-                                       (good, "other")):
+                  assert linked_record(window, good, before, after, "b" * 64)["metaWindow"]["pid"] == 91
+                  linked = linked_record(window, good, before, after, "b" * 64)
+                  assert attribution_matches(window, linked, "b" * 64)
+                  assert not attribution_matches(window, dict(linked, windowId="18"), "b" * 64)
+                  assert not attribution_matches(window, linked, "c" * 64)
+                  bad_snapshots = [
+                      {"processes": [dict(process, startTicks=1001)]},
+                      {"processes": [dict(process, uid=os.getuid() + 1)]},
+                      {"processes": [dict(process, exe="/tmp/.mount_other/devsy-desktop")]},
+                      {"processes": [dict(process, exeSha256="c" * 64)]},
+                      {"processes": [dict(process, mount={"mountpoint": "/tmp/.mount_other",
+                                                           "filesystem": f"fuse.{EXPECTED_APPIMAGE}",
+                                                           "source": EXPECTED_APPIMAGE})]},
+                      {"processes": [dict(process, appImagePath="/tmp/Devsy_linux_x86_64.AppImage",
+                                          appImageSha256="c" * 64)]},
+                  ]
+                  invalid = [
+                      ([18, 91, 1, 0, 0, 800, 600], before, after, "b" * 64),
+                      ([17, 92, 1, 0, 0, 800, 600], before, after, "b" * 64),
+                      ([17, 91, 0, 0, 0, 800, 600], before, after, "b" * 64),
+                      ([17, 91, 1, 0, 0, 1, 1], before, after, "b" * 64),
+                      (good, before, bad_snapshots[0], "b" * 64),
+                      (good, before, bad_snapshots[1], "b" * 64),
+                      (good, before, bad_snapshots[2], "b" * 64),
+                      (good, before, bad_snapshots[3], "b" * 64),
+                      (good, before, bad_snapshots[4], "b" * 64),
+                      (good, before, bad_snapshots[5], "b" * 64),
+                      (good, before, after, "c" * 64),
+                  ]
+                  for meta, prior, later, digest in invalid:
                       try:
-                          linked_record(window, meta, snapshot, snapshot, digest)
-                      except ValueError:
+                          linked_record(window, meta, prior, later, digest)
+                      except (KeyError, TypeError, ValueError):
                           continue
-                      raise AssertionError("invalid MetaWindow/process linkage was accepted")
-                  print("same-window PID linkage synthetic cases passed")
+                      raise AssertionError("invalid window/PID/AppImage provenance was accepted")
+                  print("same-window PID/start/UID/executable/mount/hash and updater-handoff rejection fixtures passed")
                   return
               if sys.argv[1] == "capture":
                   _, _, identity_path, before_path, after_path, expected_hash, output = sys.argv
-                  identity = json.loads(Path(identity_path).read_text())["matchingWindows"]
-                  if len(identity) != 1:
-                      raise SystemExit("expected exactly one sh.devsy.app window")
-                  window = identity[0]
+                  candidates = json.loads(Path(identity_path).read_text())["candidateWindows"]
+                  if len(candidates) != 1:
+                      raise SystemExit("expected exactly one raw Devsy WM_CLASS/title candidate")
+                  window = candidates[0]
                   current = current_window(window["windowId"])
-                  if current["appId"] != window["appId"] or current["clientType"] != window["clientType"] or \
-                     current["width"] != window["width"] or current["height"] != window["height"]:
-                      raise SystemExit("live GetWindows record changed from the observed Devsy window")
+                  if current != window:
+                      raise SystemExit("live GetWindows candidate changed before MetaWindow attribution")
                   raw = call("--dest", "org.gnome.Shell", "--object-path", "/org/gnome/Shell",
                              "--method", "org.gnome.Shell.Eval", EVAL_CODE)
                   success, encoded = parse_tuple(raw)
@@ -576,7 +670,7 @@ jobs:
                   meta_windows = json.loads(encoded)
                   matches = [item for item in meta_windows if str(item[0]) == window["windowId"]]
                   if len(matches) != 1:
-                      raise SystemExit("GetWindows ID did not map to exactly one MetaWindow")
+                      raise SystemExit("GetWindows candidate ID did not map to exactly one MetaWindow")
                   linked = linked_record(window, matches[0], json.loads(Path(before_path).read_text()),
                                          json.loads(Path(after_path).read_text()), expected_hash)
                   Path(output).write_text(json.dumps(linked, indent=2) + "\n")
@@ -587,9 +681,27 @@ jobs:
                   after = json.loads(Path(sys.argv[3]).read_text())
                   if before != after:
                       raise SystemExit("window/PID/process identity changed around screenshot")
-                  print("same Devsy MetaWindow and AppImage process identity observed before and after screenshot")
+                  print("same candidate window and exact AppImage process identity observed before and after screenshot")
                   return
-              raise SystemExit("usage: verify-window-link.py --self-test|capture|compare")
+              if sys.argv[1] == "attribute":
+                  _, _, identity_path, linked_path, proof_path, backend, screenshot_path = sys.argv
+                  candidates = json.loads(Path(identity_path).read_text())["candidateWindows"]
+                  linked = json.loads(Path(linked_path).read_text())
+                  proof = json.loads(Path(proof_path).read_text())
+                  candidate = candidates[0] if len(candidates) == 1 else {}
+                  if len(candidates) != 1 or proof.get("windowCandidates", {}).get(backend) != candidates or \
+                     not attribution_matches(candidate, linked, proof["appimage"]["sha256"]) or \
+                     not Path(screenshot_path).is_file() or Path(screenshot_path).stat().st_size == 0:
+                      raise SystemExit("candidate lacks same-window D485 PID/process linkage or screenshot")
+                  proof.setdefault("verifiedWindows", {})[backend] = [candidates[0]]
+                  proof.setdefault("windowPidLinkage", {})[backend] = linked
+                  proof["applicationLaunched"] = True
+                  proof["sessionResult"] = "window_attributed"
+                  proof["scope"] = f"GNOME candidate for {backend} was linked to the audited exact-AppImage process tree and screenshot; remaining checks pending."
+                  Path(proof_path).write_text(json.dumps(proof, indent=2) + "\n")
+                  print(f"verified window attribution recorded for {backend}")
+                  return
+              raise SystemExit("usage: verify-window-link.py --self-test|capture|compare|attribute")
 
           if __name__ == "__main__":
               main()
@@ -1142,11 +1254,13 @@ jobs:
                 python3 "$WINDOW_LINK_SCRIPT" capture "$PROOF_DIR/$backend-window-identity.json" \
                   "$screen_after" "$screen_after" "$image_sha" "$link_after"
                 python3 "$WINDOW_LINK_SCRIPT" compare "$link_before" "$link_after"
+                python3 "$WINDOW_LINK_SCRIPT" attribute "$PROOF_DIR/$backend-window-identity.json" \
+                  "$link_after" "$PROOF_DIR/proof.json" "$backend" "$image"
                 printf "backend=%s screenshot=%s\n" "$backend" "$image" >"$PROOF_DIR/$backend-screenshot-linkage.txt"
               }
               start_app wayland-default "$PROOF_DIR/devsy-wayland-default.log"
               observe_app wayland-default any
-              default_client_type=$(jq -er ".matchingWindows[0].clientType" "$PROOF_DIR/wayland-default-window-identity.json")
+              default_client_type=$(jq -er ".candidateWindows[0].clientType" "$PROOF_DIR/wayland-default-window-identity.json")
               printf "backend=wayland client-type=%s launchargs=none(default) app_pid=%s\n" "$default_client_type" "$app_pid" \
                 >"$PROOF_DIR/wayland-default-launch-mode.txt"
               capture_app_screenshot wayland-default "$PROOF_DIR/wayland-default.png" \
@@ -1247,6 +1361,8 @@ jobs:
               python3 "$WINDOW_LINK_SCRIPT" compare "$PROOF_DIR/x11-screenshot-before-link.json" \
                 "$PROOF_DIR/x11-screenshot-after-link.json"
               test -s "$PROOF_DIR/x11.png"
+              python3 "$WINDOW_LINK_SCRIPT" attribute "$identity" \
+                "$PROOF_DIR/x11-screenshot-after-link.json" "$PROOF_DIR/proof.json" x11 "$PROOF_DIR/x11.png"
               printf "backend=x11 client-type=1 launchargs=none(default) app_pid=%s\n" "$app_pid" >"$PROOF_DIR/x11-launch-mode.txt"
               cleanup_app
             '
@@ -1259,23 +1375,35 @@ jobs:
 
           proof_path = Path(sys.argv[1])
           proof = json.loads(proof_path.read_text())
-          windows = proof.get("observedWindows", {})
+          candidates = proof.get("windowCandidates", {})
+          windows = proof.get("verifiedWindows", {})
           errors = []
+
+          def valid_window(window):
+              return (
+                  window.get("wmClass") == "sh.devsy.app" and window.get("title") == "Devsy" and
+                  window.get("isHidden") is False and window.get("clientType") in (0, 1) and
+                  isinstance(window.get("width"), int) and window["width"] > 0 and
+                  isinstance(window.get("height"), int) and window["height"] > 0
+              )
+
+          default_candidates = candidates.get("wayland-default", [])
           default_windows = windows.get("wayland-default", [])
-          if len(default_windows) != 1 or default_windows[0].get("appId") != "sh.devsy.app":
-              errors.append("default Wayland launch did not produce exactly one sh.devsy.app window")
+          if len(default_candidates) != 1 or len(default_windows) != 1 or \
+             default_candidates[0] != default_windows[0] or not valid_window(default_windows[0]):
+              errors.append("default Wayland candidate was not uniquely linked to the exact Devsy WM_CLASS/title and AppImage process")
               default_type = None
           else:
               default_type = default_windows[0]["clientType"]
           required = ["wayland-default", "x11"]
           if default_type == 1:
               required.append("wayland-forced")
-              if not any(item.get("clientType") == 0 for item in windows.get("wayland-forced", [])):
-                  errors.append("default X11-on-Wayland outcome was not followed by forced Wayland client type 0")
+              if not any(valid_window(item) and item.get("clientType") == 0 for item in windows.get("wayland-forced", [])):
+                  errors.append("default X11-on-Wayland candidate was not followed by verified forced Wayland client type 0")
           elif default_type != 0:
               errors.append("default Wayland client type was not 0 or 1")
-          if not any(item.get("clientType") == 1 for item in windows.get("x11", [])):
-              errors.append("no actual X11 client window was observed")
+          if not any(valid_window(item) and item.get("clientType") == 1 for item in windows.get("x11", [])):
+              errors.append("no verified X11 client window was observed")
 
           readiness = {}
           for backend in ("wayland", "x11"):
@@ -1311,9 +1439,11 @@ jobs:
           provenance = []
           linkages = {}
           for backend in required:
+              candidates_for_backend = candidates.get(backend, [])
               observed = windows.get(backend, [])
-              if len(observed) != 1 or observed[0].get("appId") != "sh.devsy.app":
-                  errors.append(f"{backend} did not produce exactly one sh.devsy.app window")
+              if len(candidates_for_backend) != 1 or len(observed) != 1 or \
+                 candidates_for_backend[0] != observed[0] or not valid_window(observed[0]):
+                  errors.append(f"{backend} candidate was not linked to the exact Devsy WM_CLASS/title and AppImage process")
                   continue
               screenshot = "wayland-default.png" if backend == "wayland-default" else \
                   "wayland-forced.png" if backend == "wayland-forced" else "x11.png"
@@ -1376,11 +1506,11 @@ jobs:
           if errors:
               proof["sessionResult"] = "observed_with_acceptance_failures"
               proof["acceptanceErrors"] = errors
-              proof["scope"] = "GNOME window observations were captured, but one or more readiness, exact-app-identity, PID-linkage, screenshot, or AppImage-provenance checks failed."
+              proof["scope"] = "Raw GNOME candidates were retained separately; one or more exact WM_CLASS/title, MetaWindow PID, screenshot, readiness, or D485 AppImage-provenance checks failed."
               proof_path.write_text(json.dumps(proof, indent=2) + "\n")
               raise SystemExit("; ".join(errors))
           proof["sessionResult"] = "passed"
-          proof["scope"] = "Exact D485 AppImage windows were observed in default Wayland, forced Wayland only if default used X11, and X11 sessions. GNOME GetWindows window IDs were linked to MetaWindow PID/client-type/geometry and the audited exact-AppImage process tree before and after screenshots. MetaWindow PID is corroborating fixture evidence, not cryptographic attestation. Software-rendered feasibility only; not the complete T4 Add/Remove/move/update acceptance matrix."
+          proof["scope"] = "Exact Devsy WM_CLASS/title GNOME candidates were attributed only after their GetWindows IDs linked to MetaWindow PID/client-type/geometry and the audited D485 AppImage process tree before and after screenshots. GNOME app-id is retained as observed metadata, not standalone identity evidence. MetaWindow PID is corroborating fixture evidence, not cryptographic attestation. Software-rendered feasibility only; not the complete T4 Add/Remove/move/update acceptance matrix."
           proof_path.write_text(json.dumps(proof, indent=2) + "\n")
           PY
           printf 'GNOME feasibility: exact AppImage and same-window PID linkage observed in isolated GNOME sessions; software-rendered feasibility only.\n' \
