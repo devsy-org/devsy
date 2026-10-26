@@ -111,6 +111,16 @@ jobs:
           proof_dir="$RUNNER_TEMP/gnome-feasibility-proof"
           plan="$proof_dir/apt-plan.log"
           selected_file="$proof_dir/apt-selected-packages.txt"
+          update_log="$proof_dir/apt-update.log"
+          timeout --signal=TERM --kill-after=10s 180s sudo apt-get \
+            -o Acquire::Retries=2 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            update 2>&1 | tee "$update_log"
+          if grep -Eq '^(Err:|W:|E:)' "$update_log"; then
+            echo "::error::APT update reported repository errors; refusing to use stale or partial package indexes"
+            exit 1
+          fi
           apt-get -s --no-install-recommends install "${packages[@]}" > "$plan"
           grep -E '^[0-9]+ upgraded,' "$plan"
           : > "$selected_file"
