@@ -5,7 +5,13 @@ sidebar_label: Update Devsy
 
 ## Devsy Desktop
 
-Devsy Desktop checks GitHub for new releases while it runs. When one is available it downloads in the background and asks you to restart.
+Devsy Desktop checks GitHub for new releases while it runs. When one is available and automatic downloads are on (the default), it downloads in the background and asks you to restart.
+
+To manage updates, open **Settings > Updates**:
+
+- **Check now** starts a check immediately.
+- **Release channel**: choose **Stable** (the default) or **Preview**. Preview also offers prerelease builds. Switching from Preview to Stable asks for confirmation. Devsy does not downgrade automatically, so you stay on your current version until Stable catches up.
+- **Automatically download updates** is on by default. Turn it off to download manually: Devsy then shows a **Download update** button instead. When an update is downloaded, click **Restart** to install it.
 
 If you installed from a `.deb` or `.rpm` package, [download the latest package](https://github.com/devsy-org/devsy/releases/latest/) and install it again.
 
