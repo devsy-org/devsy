@@ -25,6 +25,8 @@ const listExtensionsArg = "--list-extensions"
 
 const containersExtension = "ms-vscode-remote.remote-containers"
 
+const remoteFolderScheme = "vscode-remote"
+
 type OpenParams struct {
 	Workspace  string
 	Folder     string
@@ -159,27 +161,50 @@ func validHostCLI(path string) bool {
 }
 
 func validHostCLIArgs(args []string) bool {
-	if len(args) == 1 && args[0] == listExtensionsArg {
-		return true
-	}
-	if len(args) == 2 && args[0] == "--install-extension" {
-		for _, config := range openConfigs {
-			if args[1] == config.sshExtension {
-				return true
-			}
-		}
+	if len(args) == 0 {
 		return false
 	}
+	switch args[0] {
+	case listExtensionsArg:
+		return len(args) == 1
+	case "--install-extension":
+		return validExtensionInstallArgs(args)
+	default:
+		return validFolderOpenArgs(args)
+	}
+}
+
+func validExtensionInstallArgs(args []string) bool {
+	if len(args) != 2 {
+		return false
+	}
+	for _, config := range openConfigs {
+		if args[1] == config.sshExtension {
+			return true
+		}
+	}
+	return false
+}
+
+func validFolderOpenArgs(args []string) bool {
 	if len(args) >= 2 && args[0] == "--disable-extension" && args[1] == containersExtension {
 		args = args[2:]
 	}
-	if len(args) != 3 || (args[0] != "--new-window" && args[0] != "--reuse-window") ||
-		args[1] != "--folder-uri" {
+	if len(args) != 3 {
 		return false
 	}
-	folder, err := url.Parse(args[2])
+	switch args[0] {
+	case "--new-window", "--reuse-window":
+		return args[1] == "--folder-uri" && validRemoteFolderURI(args[2])
+	default:
+		return false
+	}
+}
+
+func validRemoteFolderURI(rawURI string) bool {
+	folder, err := url.Parse(rawURI)
 	return err == nil &&
-		folder.Scheme == "vscode-remote" &&
+		folder.Scheme == remoteFolderScheme &&
 		strings.HasPrefix(folder.Host, "ssh-remote+") &&
 		strings.HasSuffix(folder.Host, pkgconfig.SSHHostSuffix)
 }
@@ -250,7 +275,15 @@ func (l hostLauncher) open(ctx context.Context, params OpenParams) error {
 	if cliErr != nil {
 		log.Warnw(
 			"editor CLI launch failed",
-			append(fields, "route", routeCLI, "stage", stageOf(cliErr), "class", classOf(cliErr))...,
+			append(
+				fields,
+				"route",
+				routeCLI,
+				"stage",
+				stageOf(cliErr),
+				"class",
+				classOf(cliErr),
+			)...,
 		)
 	}
 	if cliErr == nil {
@@ -300,7 +333,7 @@ func (l hostLauncher) openViaURI(params OpenParams) error {
 	pathStr := fmt.Sprintf("/ssh-remote+%s"+pkgconfig.SSHHostSuffix+"/%s", params.Workspace, folder)
 	u := &url.URL{
 		Scheme: config.scheme,
-		Host:   "vscode-remote",
+		Host:   remoteFolderScheme,
 		Path:   pathStr,
 	}
 	if params.NewWindow {
@@ -375,8 +408,17 @@ func (l hostLauncher) resolveCLI(config openConfig, fields []any) (string, error
 				lookupErrs = append(lookupErrs, err)
 				continue
 			}
-			log.Debugw("editor CLI resolved",
-				append(fields, "route", routeCLI, "stage", stageResolve, "cli_kind", cliKind(path))...)
+			log.Debugw(
+				"editor CLI resolved",
+				append(
+					fields,
+					"route",
+					routeCLI,
+					"stage",
+					stageResolve,
+					"cli_kind",
+					cliKind(path),
+				)...)
 			return path, nil
 		}
 		lookupErrs = append(lookupErrs, err)
@@ -448,7 +490,7 @@ func buildOpenArgs(workspace, folder string, newWindow, hasContainersExtension b
 	}
 
 	u := &url.URL{
-		Scheme: "vscode-remote",
+		Scheme: remoteFolderScheme,
 		Host:   "ssh-remote+" + workspace + pkgconfig.SSHHostSuffix,
 		Path:   strings.TrimPrefix(folder, "/"),
 	}

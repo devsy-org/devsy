@@ -348,7 +348,16 @@ fi
 if [ "$1" = "--install-extension" ]; then exit 99; fi
 printf '%s\n' "$@" > "$DEVSY_TEST_ARGV_FILE"
 `
-	s.Require().NoError(os.WriteFile(filepath.Join(dir, "codium"), []byte(script), 0o700))
+	root, err := os.OpenRoot(dir)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { s.NoError(root.Close()) })
+	executable, err := root.OpenFile("codium", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = executable.Close() })
+	_, err = executable.WriteString(script)
+	s.Require().NoError(err)
+	s.Require().NoError(executable.Chmod(0o700))
+	s.Require().NoError(executable.Close())
 	argvFile := filepath.Join(dir, "argv")
 	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	s.T().Setenv("DEVSY_TEST_ARGV_FILE", argvFile)
@@ -357,9 +366,9 @@ printf '%s\n' "$@" > "$DEVSY_TEST_ARGV_FILE"
 	params := testParams()
 	params.Folder = "/workspaces/a b/\u96ea"
 	params.NewWindow = true
-	_, err := s.openInOperation(params)
+	_, err = s.openInOperation(params)
 	s.Require().NoError(err)
-	argv, err := os.ReadFile(argvFile)
+	argv, err := root.ReadFile("argv")
 	s.Require().NoError(err)
 	s.Equal("--disable-extension\nms-vscode-remote.remote-containers\n--new-window\n"+
 		"--folder-uri\nvscode-remote://ssh-remote+ws.devsy/workspaces/a%20b/%E9%9B%AA\n", string(argv))
