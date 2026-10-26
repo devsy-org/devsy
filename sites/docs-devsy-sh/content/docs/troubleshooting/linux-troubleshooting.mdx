@@ -52,6 +52,14 @@ With SELinux, a mounted volume can fail with "Permission denied" even when owner
 }
 ```
 
+### Generic application icon on GNOME
+
+GNOME on Wayland takes the icon of a running window from an installed desktop entry named `sh.devsy.app.desktop`. The Flatpak, DEB and RPM packages install that entry and the matching `sh.devsy.app` icon.
+
+An AppImage you run directly is not installed anywhere, so GNOME has no desktop entry to match the window to and can show a generic icon. Integrate the AppImage with a tool such as [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher), or create your own desktop entry with `StartupWMClass=sh.devsy.app` and `Icon=sh.devsy.app`.
+
+If a launcher you pinned before updating still shows the wrong icon, unpin it and pin Devsy again.
+
 ### `ENAMETOOLONG` when opening a workspace in VS Code
 
 Some distributions have a very long `PATH`, which makes the SSH connection string too long. Set the SSH binary explicitly in VS Code. See [issue #1045](https://github.com/devsy-org/devsy/issues/1045).

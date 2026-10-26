@@ -225,6 +225,54 @@ jobs:
             --file "$app/Contents/Resources/bin/devsy" \
             --goos "$MATRIX_GO_OS" --goarch "$MATRIX_GO_ARCH"
 
+      - name: install desktop-file-utils
+        if: matrix.name == 'linux-x64'
+        run: sudo apt-get install -y desktop-file-utils rpm
+
+      - name: verify Linux desktop identity and icons in packages
+        if: matrix.name == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_id=sh.devsy.app
+          work="$RUNNER_TEMP/linux-package-check"
+          rm -rf "$work"
+          mkdir -p "$work"
+
+          appimage=$(find desktop/release -maxdepth 1 -name '*.AppImage' -print -quit)
+          deb=$(find desktop/release -maxdepth 1 -name '*.deb' -print -quit)
+          rpm=$(find desktop/release -maxdepth 1 -name '*.rpm' -print -quit)
+          for pkg in "$appimage" "$deb" "$rpm"; do
+            [ -n "$pkg" ] || { echo "::error::missing Linux package in desktop/release"; exit 1; }
+          done
+
+          mkdir "$work/appimage" && (cd "$work/appimage" && chmod +x "$GITHUB_WORKSPACE/$appimage" && "$GITHUB_WORKSPACE/$appimage" --appimage-extract >/dev/null)
+          mkdir "$work/deb" && dpkg-deb -x "$deb" "$work/deb"
+          mkdir "$work/rpm" && (cd "$work/rpm" && rpm2cpio "$GITHUB_WORKSPACE/$rpm" | cpio -idm --quiet)
+
+          appimage_root="$work/appimage/squashfs-root"
+          go run ./hack/release_artifacts verify-linux-desktop \
+            --app-id "$app_id" \
+            --desktop-file "$appimage_root/$app_id.desktop" \
+            --icon-root "$appimage_root" \
+            --require-file "$(find "$appimage_root" -path '*/resources/app-icon.png' -print -quit)"
+          for root in "$work/deb" "$work/rpm"; do
+            go run ./hack/release_artifacts verify-linux-desktop \
+              --app-id "$app_id" \
+              --desktop-file "$root/usr/share/applications/$app_id.desktop" \
+              --icon-root "$root/usr/share/icons" \
+              --require-file "$(find "$root" -path '*/resources/app-icon.png' -print -quit)"
+          done
+
+          desktop-file-validate \
+            "$appimage_root/$app_id.desktop" \
+            "$work/deb/usr/share/applications/$app_id.desktop" \
+            "$work/rpm/usr/share/applications/$app_id.desktop"
+
+          # The version step rewrites package.json in CI, so check what shipped.
+          packaged_name=$(cd desktop && node -e 'process.stdout.write(require("@electron/asar").extractFile(process.argv[1], "package.json"))' "$appimage_root/resources/app.asar" | jq -r .desktopName)
+          [ "$packaged_name" = "$app_id.desktop" ] || { echo "::error::bundled desktopName is '$packaged_name', expected $app_id.desktop"; exit 1; }
+
       - name: upload desktop artifacts to release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
@@ -377,6 +425,29 @@ jobs:
           manifest-path: desktop/flatpak/sh.devsy.app.yml
           cache-key: flatpak-builder-${{ github.sha }}
           upload-artifact: true
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: verify Flatpak desktop identity and exported icons
+        run: |
+          set -euo pipefail
+          dnf install -y --setopt=install_weak_deps=False desktop-file-utils ostree
+          app_id=sh.devsy.app
+          work="$RUNNER_TEMP/flatpak-bundle-check"
+          rm -rf "$work"
+          ostree init --repo="$work/repo" --mode=archive-z2
+          flatpak build-import-bundle "$work/repo" Devsy.flatpak
+          ref=$(ostree refs --repo="$work/repo" | grep "^app/$app_id/" | head -n 1)
+          ostree checkout --repo="$work/repo" --user-mode "$ref" "$work/files"
+          export_root="$work/files/export/share"
+          go run ./hack/release_artifacts verify-linux-desktop \
+            --app-id "$app_id" \
+            --desktop-file "$export_root/applications/$app_id.desktop" \
+            --icon-root "$export_root/icons/hicolor"
+          test -s "$export_root/icons/hicolor/128x128/apps/$app_id.png"
+          desktop-file-validate "$export_root/applications/$app_id.desktop"
 
       - name: upload flatpak bundle
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3

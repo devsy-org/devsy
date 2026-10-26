@@ -18,6 +18,7 @@ import {
   isAutomaticLoginLaunch,
   shouldSuppressInitialWindow,
 } from "./launch-context.js"
+import { linuxWindowIcon } from "./linux-desktop-identity.js"
 import { LogStore } from "./log-store.js"
 import { mainLog, setMainLogLevel } from "./logging.js"
 import { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
@@ -102,6 +103,12 @@ function createWindow(): void {
     minHeight: 700,
     show: false,
     title: "Devsy",
+    icon: linuxWindowIcon({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+    }),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
