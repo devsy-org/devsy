@@ -178,6 +178,10 @@ func (r recordReader) checkFile(f *os.File, name string) error {
 // decisions and acknowledgements use the connection, never writable files.
 func NewLifecycleOwner(dir string) (*LifecycleOwner, error) {
 	euid := os.Geteuid()
+	ticks, err := processStartIdentity(os.Getpid())
+	if err != nil {
+		return nil, err
+	}
 	if err := prepareRuntimeDir(dir, euid); err != nil {
 		return nil, err
 	}
@@ -197,7 +201,7 @@ func NewLifecycleOwner(dir string) (*LifecycleOwner, error) {
 	o.writeAck = writeSocketAck
 	err = writeRecord(dir, ownerFileName, OwnerRecord{
 		Version: LifecycleProtocolVersion, Generation: o.generation,
-		PID: os.Getpid(), StartTicks: procStartTicks(os.Getpid()),
+		PID: os.Getpid(), StartTicks: ticks,
 	}, euid)
 	if err != nil {
 		_ = o.Close()
@@ -335,14 +339,6 @@ func liveOwner(dir string, euid int) (*OwnerRecord, error) {
 }
 
 func ownerAlive(o OwnerRecord) bool { return o.PID > 0 && sameProcess(o.PID, o.StartTicks) }
-
-func sameProcess(pid int, startTicks string) bool {
-	if !processExists(pid) {
-		return false
-	}
-	ticks := procStartTicks(pid)
-	return startTicks == "" || ticks == "" || ticks == startTicks
-}
 
 func (c *LifecycleClient) readAcks() {
 	defer func() { _ = c.Close() }()

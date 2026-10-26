@@ -36,6 +36,11 @@ CPU use and processes you started yourself do not count. A command such as `nohu
 
 The daemon checks idle time about once a second at most, so a workspace stops up to a few seconds after the timeout passes. On Kubernetes, SSH sessions and hooks register with the managed daemon before doing work and remain active for their connection's lifetime. Registration and shutdown decisions stay in memory: failed activity-file writes or unavailable disk space cannot hide registered live work. Losing the daemon connection aborts the protected work rather than continuing without activity tracking. Other container daemons still use legacy activity-file timestamps; unreadable activity fails safe.
 
+Managed clients also read the daemon configuration mounted at `/var/run/secrets/devsy/daemon_config`; they do not rely only on the process environment or runtime directory. Missing discovery in a known managed workspace is an error, not a reason to fall back to file heartbeats. Linux process-start identity must remain readable through `/proc`; otherwise registration fails or the affected protected connection is cancelled.
+
+All Unix users in the same container intentionally retain the ability to inhibit idle stop through a live activity connection, as they could through the earlier shared heartbeat. This is not inter-user isolation inside a container. Only root or the daemon's own UID can change setup and timeout policy.
+
+
 ## Kubernetes
 
 Set `INACTIVITY_TIMEOUT` on the Kubernetes provider, for example `1h`. The deprecated `inactivityTimeout` field under `agent.kubernetes` in a custom provider is an alias used only when `containerInactivityTimeout` is empty. If both are set, they must match.

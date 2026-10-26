@@ -499,7 +499,7 @@ func TestLiveClientBoundRefusesUnprotectedWorkAndRecoversCapacity(t *testing.T) 
 		if first == nil {
 			first = client
 		}
-		require.NoError(t, client.Send(LifecycleStateActivity, "", ""))
+		require.NoError(t, client.Send(LifecycleStateSetup, "1m", ""))
 	}
 	writer := ActivityWriter{LifecycleDir: dir, RequireOwner: true}
 	ctx, stop, err := writer.Start(context.Background())
@@ -532,9 +532,42 @@ func TestClientVerifiesSocketPeerAgainstDiscoveryIdentity(t *testing.T) {
 	runLoop(t, &LifecycleLoop{Owner: owner, Monitor: &LifecycleMonitor{}})
 	require.NoError(t, writeRecord(dir, ownerFileName, OwnerRecord{
 		Version: LifecycleProtocolVersion, Generation: owner.Generation(), PID: os.Getppid(),
+		StartTicks: procStartTicks(os.Getppid()),
 	}, os.Geteuid()))
 
 	_, err := ConnectLifecycle(context.Background(), dir)
 
 	assert.ErrorIs(t, err, ErrLifecycleOwnerIncompatible)
+}
+
+func TestOwnerActivityCannotConsumeReservedControlAdmission(t *testing.T) {
+	owner, dir := newTestOwner(t)
+	monitor := &LifecycleMonitor{}
+	monitor.ArmNow(time.Minute, time.Now())
+	runLoop(t, &LifecycleLoop{Owner: owner, Monitor: monitor})
+	writer := ActivityWriter{LifecycleDir: dir, RequireOwner: true}
+	var stops []func()
+	for range maxOtherLifecycleClients {
+		_, stop, err := writer.Start(context.Background())
+		require.NoError(t, err)
+		stops = append(stops, stop)
+		t.Cleanup(stop)
+	}
+	_, stop, err := writer.Start(context.Background())
+	if stop != nil {
+		stop()
+	}
+	require.Error(t, err, "owner-UID activity must not consume the control reserve")
+	control := connectNow(t, dir)
+	require.NoError(t, control.Send(LifecycleStateSetup, "1m", ""))
+	require.NoError(t, control.Send(LifecycleStateReady, "1m", ""))
+	for _, stop := range stops {
+		stop()
+	}
+	require.Eventually(
+		t,
+		func() bool { return idleForAnHour(monitor).Expired },
+		time.Second,
+		time.Millisecond,
+	)
 }

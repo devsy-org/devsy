@@ -117,7 +117,7 @@ func assertNonrootControlReleasesCapacity(t *testing.T, dir string, reject func(
 	t.Helper()
 	for range maxLifecycleClients - 1 {
 		client := connectNow(t, dir)
-		require.NoError(t, client.Send(LifecycleStateActivity, "", ""))
+		require.NoError(t, client.Send(LifecycleStateSetup, "1m", ""))
 		defer func() { _ = client.Close() }()
 	}
 	writer := ActivityWriter{LifecycleDir: dir, RequireOwner: true}

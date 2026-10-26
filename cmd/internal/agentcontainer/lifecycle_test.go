@@ -4,10 +4,13 @@ package agentcontainer
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -16,8 +19,11 @@ import (
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	devsyssh "github.com/devsy-org/ssh"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 const testRoot = "root"
@@ -294,4 +300,203 @@ func TestTrackingLossClosesTheSSHConnection(t *testing.T) {
 	var buf [1]byte
 	_, err = client.Read(buf[:])
 	assert.ErrorIs(t, err, io.EOF, "SSH must not remain open without lifecycle tracking")
+}
+
+func TestSSHServerRejectsOnlyUnregisteredConnectionAndKeepsServing(t *testing.T) {
+	var attempts atomic.Int32
+	server, listener, done := newTrackedTestSSHServer(t, func() (context.Context, func(), error) {
+		if attempts.Add(1) == 2 {
+			return nil, nil, errors.New("activity capacity unavailable")
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		return ctx, cancel, nil
+	})
+	address := listener.Addr().String()
+	key := server.HostSigners[0].PublicKey()
+	existing, err := dialTrackedTestSSH(address, key)
+	require.NoError(t, err)
+	defer func() { _ = existing.Close() }()
+
+	denied, err := dialTrackedTestSSH(address, key)
+	if denied != nil {
+		_ = denied.Close()
+	}
+	require.Error(t, err, "a connection without registered activity must not reach SSH")
+	assertTrackedSSHCommand(t, existing)
+	later, err := dialTrackedTestSSH(address, key)
+	require.NoError(t, err, "one rejected admission must not terminate SSH serving")
+	defer func() { _ = later.Close() }()
+	assertTrackedSSHCommand(t, later)
+
+	require.NoError(t, listener.Close())
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, net.ErrClosed)
+	case <-time.After(time.Second):
+		t.Fatal("SSH serving did not terminate after the underlying listener closed")
+	}
+}
+
+func newTrackedTestSSHServer(
+	t *testing.T,
+	start func() (context.Context, func(), error),
+) (*devsyssh.Server, net.Listener, <-chan error) {
+	t.Helper()
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	signer, err := gossh.NewSignerFromKey(privateKey)
+	require.NoError(t, err)
+	server := &devsyssh.Server{Handler: func(session devsyssh.Session) {
+		_, _ = io.WriteString(session, "registered\n")
+	}}
+	server.AddHostKey(signer)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = server.Close(); _ = listener.Close() })
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(trackConnections(listener, start)) }()
+	return server, listener, done
+}
+
+func dialTrackedTestSSH(address string, key gossh.PublicKey) (*gossh.Client, error) {
+	conn, err := net.DialTimeout("tcp", address, time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if err := conn.SetDeadline(time.Now().Add(time.Second)); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	client, channels, requests, err := gossh.NewClientConn(conn, address, &gossh.ClientConfig{
+		User: "workspace", HostKeyCallback: gossh.FixedHostKey(key),
+	})
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	_ = conn.SetDeadline(time.Time{})
+	return gossh.NewClient(client, channels, requests), nil
+}
+
+func assertTrackedSSHCommand(t *testing.T, client *gossh.Client) {
+	t.Helper()
+	session, err := client.NewSession()
+	require.NoError(t, err)
+	defer func() { _ = session.Close() }()
+	out, err := session.Output("check")
+	require.NoError(t, err)
+	assert.Equal(t, "registered\n", string(out))
+}
+
+func TestEmbeddedSSHActivitySaturationPreservesControlAndExistingSessions(t *testing.T) {
+	owner, dir := publishOwner(t)
+	runLifecycleOwner(t, owner, dir)
+	writer := agentd.ActivityWriter{LifecycleDir: dir, RequireOwner: true}
+	admissions := make(chan error, 1)
+	server, listener, done := newTrackedTestSSHServer(t, func() (context.Context, func(), error) {
+		ctx, stop, err := writer.Start(context.Background())
+		admissions <- err
+		return ctx, stop, err
+	})
+	address, key := listener.Addr().String(), server.HostSigners[0].PublicKey()
+	existing, err := dialTrackedTestSSH(address, key)
+	require.NoError(t, err)
+	defer func() { _ = existing.Close() }()
+	require.NoError(t, nextSSHAdmission(t, admissions))
+	raw := saturateEmbeddedSSHActivity(t, address, admissions)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	control, err := agentd.ConnectLifecycle(ctx, dir)
+	require.NoError(
+		t,
+		err,
+		"owner-UID network activity must leave actual control admission available",
+	)
+	defer func() { _ = control.Close() }()
+	require.NoError(t, control.Send(agentd.LifecycleStateSetup, "1m", ""))
+	require.NoError(t, control.Send(agentd.LifecycleStateReady, "1m", ""))
+	assertTrackedSSHCommand(t, existing)
+	require.NoError(t, raw[0].Close())
+	var later *gossh.Client
+	require.Eventually(t, func() bool {
+		client, err := dialTrackedTestSSH(address, key)
+		admission := nextSSHAdmission(t, admissions)
+		if err != nil {
+			return false
+		}
+		assert.NoError(t, admission)
+		later = client
+		return true
+	}, 3*time.Second, 10*time.Millisecond)
+	defer func() { _ = later.Close() }()
+	assertTrackedSSHCommand(t, later)
+	require.NoError(t, listener.Close())
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, net.ErrClosed)
+	case <-time.After(time.Second):
+		t.Fatal("a real listener close must remain terminal")
+	}
+}
+
+func nextSSHAdmission(t *testing.T, admissions <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-admissions:
+		return err
+	case <-time.After(time.Second):
+		t.Fatal("SSH stopped accepting instead of reporting activity admission")
+		return nil
+	}
+}
+
+func saturateEmbeddedSSHActivity(t *testing.T, address string, admissions <-chan error) []net.Conn {
+	t.Helper()
+	var accepted []net.Conn
+	t.Cleanup(func() {
+		for _, conn := range accepted {
+			_ = conn.Close()
+		}
+	})
+	for range 129 {
+		conn, err := net.DialTimeout("tcp", address, time.Second)
+		require.NoError(t, err)
+		if nextSSHAdmission(t, admissions) == nil {
+			accepted = append(accepted, conn)
+			continue
+		}
+		defer func() { _ = conn.Close() }()
+		require.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+		var buf [1]byte
+		_, err = conn.Read(buf[:])
+		require.ErrorIs(t, err, io.EOF, "unregistered TCP must not reach the SSH handshake")
+		return accepted
+	}
+	t.Fatal("raw TCP activity exceeded the hard lifecycle resource bound")
+	return nil
+}
+
+func TestManagedSSHServerCancellationRemainsTerminal(t *testing.T) {
+	binary, err := os.Executable()
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	// #nosec G204 -- re-execute the current test binary with fixed test selection.
+	cmd := exec.CommandContext(ctx, binary, "-test.run=^TestManagedSSHServerContextChild$")
+	cmd.Env = append(os.Environ(), "DEVSY_MANAGED_SSH_CONTEXT_CHILD=1")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "managed listener did not terminate on cancellation: %s", output)
+}
+
+func TestManagedSSHServerContextChild(t *testing.T) {
+	if os.Getenv("DEVSY_MANAGED_SSH_CONTEXT_CHILD") == "" {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	command := &cobra.Command{}
+	command.SetContext(ctx)
+	cmd := &SSHServerCmd{Address: "127.0.0.1:0", TrackActivity: true}
+	assert.ErrorIs(t, cmd.Run(command, nil), context.Canceled)
 }

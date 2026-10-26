@@ -2,14 +2,11 @@ package agentcontainer
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -26,10 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	RootDir          = config2.ContainerDataDir
-	DaemonConfigPath = "/var/run/secrets/" + config2.BinaryName + "/daemon_config"
-)
+const RootDir = config2.ContainerDataDir
 
 type DaemonCmd struct {
 	Config *agentd.DaemonConfig
@@ -207,38 +201,20 @@ func (cmd *DaemonCmd) newLifecycleLoop(timeout time.Duration) (*agentd.Lifecycle
 // loadConfig loads the daemon configuration from base64-encoded JSON.
 // If a CLI-provided timeout exists, it will override the timeout in the config.
 func (cmd *DaemonCmd) loadConfig() error {
-	// check local file
-	encodedCfg := ""
-	configBytes, err := os.ReadFile(DaemonConfigPath)
+	cfg, err := agentd.LoadContainerDaemonConfig()
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			// check environment variable
-			encodedCfg = os.Getenv(config2.EnvWorkspaceDaemonConfig)
-		} else {
-			return fmt.Errorf("get daemon config file %s: %w", DaemonConfigPath, err)
-		}
-	} else {
-		encodedCfg = string(configBytes)
+		return err
 	}
-
-	if strings.TrimSpace(encodedCfg) != "" {
-		decoded, err := base64.StdEncoding.DecodeString(encodedCfg)
-		if err != nil {
-			return fmt.Errorf("error decoding daemon config: %w", err)
-		}
-		var cfg agentd.DaemonConfig
-		if err = json.Unmarshal(decoded, &cfg); err != nil {
-			return fmt.Errorf("error unmarshalling daemon config: %w", err)
-		}
-		if cmd.Config.Timeout != "" {
-			cfg.Timeout = cmd.Config.Timeout
-		}
-		if cmd.Config.ShutdownAction != "" {
-			cfg.ShutdownAction = cmd.Config.ShutdownAction
-		}
-		cmd.Config = &cfg
+	if cfg == nil {
+		return nil
 	}
-
+	if cmd.Config.Timeout != "" {
+		cfg.Timeout = cmd.Config.Timeout
+	}
+	if cmd.Config.ShutdownAction != "" {
+		cfg.ShutdownAction = cmd.Config.ShutdownAction
+	}
+	cmd.Config = cfg
 	return nil
 }
 

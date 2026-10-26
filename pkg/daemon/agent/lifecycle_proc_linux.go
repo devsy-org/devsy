@@ -3,6 +3,7 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -27,4 +28,20 @@ func procStartTicks(pid int) string {
 		return ""
 	}
 	return fields[19]
+}
+
+func processStartIdentity(pid int) (string, error) {
+	ticks := procStartTicks(pid)
+	if ticks == "" {
+		return "", fmt.Errorf(
+			"%w: cannot read process start identity from /proc/%d/stat",
+			ErrLifecycleOwnerMissing,
+			pid,
+		)
+	}
+	return ticks, nil
+}
+
+func sameProcess(pid int, startTicks string) bool {
+	return startTicks != "" && processExists(pid) && procStartTicks(pid) == startTicks
 }

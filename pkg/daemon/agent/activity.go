@@ -175,14 +175,11 @@ func StartActivityWriter(
 	ctx context.Context,
 	interval time.Duration,
 ) (context.Context, func(), error) {
-	required := false
-	if encoded := os.Getenv(config.EnvWorkspaceDaemonConfig); encoded != "" {
-		daemon, err := DecodeDaemonConfig(encoded)
-		if err != nil {
-			return nil, nil, err
-		}
-		required = daemon.Lifecycle.Managed()
+	daemon, err := LoadContainerDaemonConfig()
+	if err != nil {
+		return nil, nil, err
 	}
+	required := daemon != nil && daemon.Lifecycle.Managed()
 	return (ActivityWriter{
 		Path: config.ContainerActivityFile, LifecycleDir: config.ContainerLifecycleDir,
 		RequireOwner: required, Interval: interval,

@@ -16,13 +16,25 @@ import (
 	"github.com/tailscale/peercred"
 )
 
-const maxLifecycleClients = 128
+const (
+	maxLifecycleClients      = 128
+	reservedLifecycleClients = 32
+	maxOtherLifecycleClients = maxLifecycleClients - reservedLifecycleClients
+	maxLifecycleUIDClients   = 32
+	maxLifecyclePIDClients   = 16
+)
+
+var errLifecycleClientLimit = errors.New("lifecycle owner connection limit reached")
 
 type lifecycleSession struct {
 	conn         net.Conn
 	pid          int
 	startTicks   string
 	uid          string
+	privileged   bool
+	sharedSlot   bool
+	protected    bool
+	readDeadline time.Time
 	clientID     string
 	protectionID string
 	applied      ControlRecord
@@ -32,13 +44,16 @@ type lifecycleSession struct {
 // LifecycleOwner keeps live work and applied operations in memory. Discovery
 // and policy files are never evidence that a registered writer is healthy.
 type LifecycleOwner struct {
-	euid       int
-	generation string
-	listener   net.Listener
-	mu         sync.Mutex
-	closed     bool
-	clients    map[net.Conn]*lifecycleSession
-	writeAck   func(net.Conn, AckRecord) error
+	euid         int
+	generation   string
+	listener     net.Listener
+	mu           sync.Mutex
+	closed       bool
+	clients      map[net.Conn]*lifecycleSession
+	otherClients int
+	clientsByUID map[string]int
+	clientsByPID map[int]int
+	writeAck     func(net.Conn, AckRecord) error
 }
 
 func (o *LifecycleOwner) Close() error {
@@ -92,26 +107,33 @@ func (o *LifecycleOwner) addClient(conn net.Conn) (*lifecycleSession, error) {
 	}
 	pid, hasPID := creds.PID()
 	uid, hasUID := creds.UserID()
-	if !hasPID || !hasUID {
+	if !hasPID || !hasUID || pid <= 0 {
 		return nil, errors.New("lifecycle peer identity is unavailable")
 	}
-	s := &lifecycleSession{
-		conn: conn, pid: pid, uid: uid,
-		startTicks: procStartTicks(pid), protectionID: rand.Text(),
-	}
+	privileged := uid == "0" || uid == strconv.Itoa(o.euid)
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.closed || len(o.clients) >= maxLifecycleClients {
-		return nil, errors.New("lifecycle owner connection limit reached")
+	if o.closed || !o.canAdmit(uid, pid, privileged) {
+		return nil, errLifecycleClientLimit
+	}
+	ticks, err := processStartIdentity(pid)
+	if err != nil {
+		return nil, err
+	}
+	s := &lifecycleSession{
+		conn: conn, pid: pid, uid: uid, privileged: privileged, sharedSlot: !privileged,
+		startTicks: ticks, protectionID: rand.Text(),
+		readDeadline: time.Now().Add(ackWaitTimeout),
 	}
 	o.clients[conn] = s
+	o.countClient(s)
 	return s, nil
 }
 
 func (o *LifecycleOwner) removeClient(s *lifecycleSession, monitor *LifecycleMonitor) {
 	_ = s.conn.Close()
 	o.mu.Lock()
-	delete(o.clients, s.conn)
+	o.removeClientLocked(s)
 	id := s.protectionID
 	o.mu.Unlock()
 	monitor.Release(id, time.Now())
@@ -126,7 +148,7 @@ func (o *LifecycleOwner) pruneDeadClients(monitor *LifecycleMonitor, now time.Ti
 		}
 	}
 	for _, s := range dead {
-		delete(o.clients, s.conn)
+		o.removeClientLocked(s)
 		monitor.Release(s.protectionID, now)
 	}
 	o.mu.Unlock()
@@ -147,7 +169,7 @@ func (o *LifecycleOwner) authorize(s *lifecycleSession, rec ControlRecord) error
 	if rec.State == LifecycleStateActivity || rec.State == LifecycleStateRelease {
 		return nil
 	}
-	if s.uid == "0" || s.uid == strconv.Itoa(o.euid) {
+	if s.privileged {
 		return nil
 	}
 	return errors.New("lifecycle policy update requires the daemon's user or root")
@@ -163,20 +185,27 @@ func (o *LifecycleOwner) validate(s *lifecycleSession, rec ControlRecord) error 
 	if err := o.authorize(s, rec); err != nil {
 		return err
 	}
+	return o.validateSession(s, rec)
+}
+
+func (o *LifecycleOwner) validateSession(s *lifecycleSession, rec ControlRecord) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if o.closed || o.clients[s.conn] != s {
+		return ErrLifecycleOwnerMissing
+	}
 	if s.clientID != "" && s.clientID != rec.ClientID {
 		return errors.New("lifecycle connection changed client identity")
 	}
 	s.clientID = rec.ClientID
-	return nil
+	return o.classifyActivity(s, rec.State)
 }
 
 func (o *LifecycleOwner) serveClient(s *lifecycleSession, monitor *LifecycleMonitor) {
 	defer o.removeClient(s, monitor)
 	// An unauthenticated idle socket is not protected work and must not consume
 	// a connection slot indefinitely. Registered live work has no time lease.
-	_ = s.conn.SetReadDeadline(time.Now().Add(ackWaitTimeout))
+	_ = s.conn.SetReadDeadline(s.readDeadline)
 	scanner := bufio.NewScanner(s.conn)
 	scanner.Buffer(make([]byte, 512), maxRecordBytes)
 	// Applied results are connection-owned and retained independently of ACKs.
@@ -188,7 +217,6 @@ func (o *LifecycleOwner) serveClient(s *lifecycleSession, monitor *LifecycleMoni
 		if err := o.validate(s, rec); err != nil {
 			return
 		}
-		_ = s.conn.SetReadDeadline(time.Time{})
 		result, err := o.applyOperation(s, rec, monitor)
 		if err != nil {
 			return
@@ -212,7 +240,11 @@ func (o *LifecycleOwner) applyOperation(
 	}
 	state := rec
 	state.ClientID = s.protectionID
-	_, applyErr := monitor.Apply(state, time.Now())
+	now := time.Now()
+	_, applyErr := monitor.Apply(state, now)
+	if applyErr == nil {
+		s.transitionProtection(rec.State, now)
+	}
 	s.applied = rec
 	s.result = AckRecord{
 		Version: LifecycleProtocolVersion, Generation: o.generation,
@@ -229,4 +261,74 @@ func writeSocketAck(conn net.Conn, ack AckRecord) error {
 		return err
 	}
 	return json.NewEncoder(conn).Encode(ack)
+}
+
+func (o *LifecycleOwner) canAdmit(uid string, pid int, privileged bool) bool {
+	if len(o.clients) >= maxLifecycleClients {
+		return false
+	}
+	return privileged || (o.otherClients < maxOtherLifecycleClients &&
+		o.clientsByUID[uid] < maxLifecycleUIDClients &&
+		o.clientsByPID[pid] < maxLifecyclePIDClients)
+}
+
+func (o *LifecycleOwner) countClient(s *lifecycleSession) {
+	if s.sharedSlot {
+		o.otherClients++
+	}
+	if s.privileged {
+		return
+	}
+	if o.clientsByUID == nil {
+		o.clientsByUID = make(map[string]int)
+		o.clientsByPID = make(map[int]int)
+	}
+	o.clientsByUID[s.uid]++
+	o.clientsByPID[s.pid]++
+}
+
+func (o *LifecycleOwner) removeClientLocked(s *lifecycleSession) {
+	if _, present := o.clients[s.conn]; !present {
+		return
+	}
+	delete(o.clients, s.conn)
+	if s.sharedSlot {
+		o.otherClients--
+	}
+	if s.privileged {
+		return
+	}
+	o.clientsByUID[s.uid]--
+	o.clientsByPID[s.pid]--
+	if o.clientsByUID[s.uid] == 0 {
+		delete(o.clientsByUID, s.uid)
+	}
+	if o.clientsByPID[s.pid] == 0 {
+		delete(o.clientsByPID, s.pid)
+	}
+}
+
+func (s *lifecycleSession) transitionProtection(state LifecycleState, now time.Time) {
+	protected := state == LifecycleStateSetup || state == LifecycleStateActivity
+	if protected == s.protected {
+		return
+	}
+	s.protected = protected
+	s.readDeadline = time.Time{}
+	if !protected {
+		s.readDeadline = now.Add(ackWaitTimeout)
+	}
+	_ = s.conn.SetReadDeadline(s.readDeadline)
+}
+
+func (o *LifecycleOwner) classifyActivity(s *lifecycleSession, state LifecycleState) error {
+	if s.sharedSlot || (state != LifecycleStateActivity && state != LifecycleStateRelease) {
+		return nil
+	}
+	if o.otherClients >= maxOtherLifecycleClients {
+		return errLifecycleClientLimit
+	}
+	s.sharedSlot = true
+	o.otherClients++
+	return nil
 }

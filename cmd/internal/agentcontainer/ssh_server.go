@@ -72,7 +72,7 @@ func NewSSHServerCmd(flags *flags.GlobalFlags) *cobra.Command {
 }
 
 // Run runs the command logic.
-func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
+func (cmd *SSHServerCmd) Run(c *cobra.Command, _ []string) error {
 	server, err := sshserver.NewContainerServer(cmd.Address, cmd.Workdir)
 	if err != nil {
 		return err
@@ -93,18 +93,28 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 		return server.ListenAndServe()
 	}
 
+	ctx := c.Context()
 	listener, err := net.Listen("tcp", cmd.Address)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cmd.Address, err)
 	}
-	return server.Serve(trackConnections(listener, startConnectionActivity))
+	stopClosing := context.AfterFunc(ctx, func() { _ = listener.Close() })
+	defer stopClosing()
+	defer func() { _ = listener.Close() }()
+	err = server.Serve(trackConnections(listener, func() (context.Context, func(), error) {
+		return startConnectionActivity(ctx)
+	}))
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	return err
 }
 
-func startConnectionActivity() (context.Context, func(), error) {
+func startConnectionActivity(ctx context.Context) (context.Context, func(), error) {
 	return (agentd.ActivityWriter{
 		Path: pkgconfig.ContainerActivityFile, LifecycleDir: pkgconfig.ContainerLifecycleDir,
 		RequireOwner: true,
-	}).Start(context.Background())
+	}).Start(ctx)
 }
 
 // trackConnections records activity from the moment a connection is accepted
@@ -119,18 +129,25 @@ type activityListener struct {
 }
 
 func (l *activityListener) Accept() (net.Conn, error) {
-	conn, err := l.Listener.Accept()
-	if err != nil {
-		return nil, err
+	reportedFailure := false
+	for {
+		conn, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		ctx, stop, err := l.start()
+		if err != nil {
+			_ = conn.Close()
+			if !reportedFailure {
+				log.Debugf("reject SSH connection without activity registration: %v", err)
+				reportedFailure = true
+			}
+			continue
+		}
+		tracked := &activityConn{Conn: conn, stop: stop}
+		go func() { <-ctx.Done(); _ = tracked.Close() }()
+		return tracked, nil
 	}
-	ctx, stop, err := l.start()
-	if err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("register SSH connection activity: %w", err)
-	}
-	tracked := &activityConn{Conn: conn, stop: stop}
-	go func() { <-ctx.Done(); _ = tracked.Close() }()
-	return tracked, nil
 }
 
 type activityConn struct {
