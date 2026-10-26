@@ -267,7 +267,6 @@ jobs:
               app_id = property_value(block, "app-id").strip("'\"")
               wm_class = property_value(block, "wm-class").strip("'\"")
               client_type_match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, "client-type"))
-              process_id_match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, "pid"))
               if not client_type_match or not re.search(r"devsy", " ".join((title, app_id, wm_class)), re.I):
                   continue
               client_type = int(client_type_match.group(1))
@@ -279,7 +278,6 @@ jobs:
                   "appId": app_id,
                   "wmClass": wm_class,
                   "clientType": client_type,
-                  "processId": int(process_id_match.group(1)) if process_id_match else None,
               })
 
           if not matches:
@@ -584,6 +582,123 @@ jobs:
               raise SystemExit("usage: process-audit.py display|snapshot|stop ...")
           PY
           chmod 700 "$proof_dir/process-audit.py"
+          cat > "$proof_dir/enable-private-introspection.sh" <<'SH'
+          enable_private_introspection() {
+            local backend="$1" shell_pid="$2" host_display="$3" private_display="$4"
+            local stem="$PROOF_DIR/introspection-$backend"
+            local method="org.gnome.Shell.Introspect.GetWindows"
+            local expression="global.context.unsafe_mode = true"
+            local window_ids window_id window_properties focused
+            local -a windows
+
+            capture_failure() {
+              env -u WAYLAND_DISPLAY -u XAUTHORITY DISPLAY="$host_display" \
+                gnome-screenshot --file="$PROOF_DIR/introspection-$backend-failure-host.png" \
+                >"$stem-screenshot.log" 2>&1 || true
+            }
+            run_host_display() {
+              env -u XAUTHORITY DISPLAY="$host_display" "$@"
+            }
+
+            cat >"$stem-sources.txt" <<'REFS'
+          Introspect access check: https://raw.githubusercontent.com/GNOME/gnome-shell/46.0/js/misc/introspect.js
+          sender-checker authorization: https://raw.githubusercontent.com/GNOME/gnome-shell/46.0/js/misc/util.js
+          unsafe_mode control: https://raw.githubusercontent.com/GNOME/gnome-shell/46.0/js/ui/lookingGlass.js
+          REFS
+            if timeout 10s gdbus call --session --dest org.gnome.Shell \
+              --object-path /org/gnome/Shell/Introspect --method "$method" \
+              >"$stem-before.txt" 2>"$stem-before.err"; then
+              printf 'backend=%s status=already-accessible shellPid=%s privateDisplay=%s typedExpression=none\n' \
+                "$backend" "$shell_pid" "$private_display" >"$stem-setup.txt"
+              return 0
+            fi
+            if ! grep -Fq 'org.freedesktop.DBus.Error.AccessDenied' "$stem-before.err"; then
+              printf 'backend=%s status=preflight-error shellPid=%s privateDisplay=%s\n' \
+                "$backend" "$shell_pid" "$private_display" >"$stem-setup.txt"
+              capture_failure
+              return 1
+            fi
+            if [ "$backend" = wayland ]; then
+              window_ids=$(run_host_display xdotool search --onlyvisible --pid "$shell_pid" 2>"$stem-window-search.err" || true)
+              windows=()
+              if [ -n "$window_ids" ]; then
+                mapfile -t windows <<<"$window_ids"
+              fi
+              if [ "${#windows[@]}" -ne 1 ]; then
+                printf 'backend=%s status=owned-shell-window-not-unique count=%s shellPid=%s\n' \
+                  "$backend" "${#windows[@]}" "$shell_pid" >"$stem-setup.txt"
+                capture_failure
+                return 1
+              fi
+              window_id="${windows[0]}"
+              if ! window_properties=$(run_host_display xprop -id "$window_id" _NET_WM_PID WM_CLASS 2>"$stem-xprop.err"); then
+                printf 'backend=%s status=owned-shell-window-properties-unavailable windowId=%s\n' \
+                  "$backend" "$window_id" >"$stem-setup.txt"
+                capture_failure
+                return 1
+              fi
+              printf '%s\n' "$window_properties" >"$stem-shell-window.txt"
+              if ! grep -Eq "_NET_WM_PID\\(CARDINAL\\) = $shell_pid" "$stem-shell-window.txt" ||
+                ! grep -Eiq 'WM_CLASS\(STRING\).*gnome-shell' "$stem-shell-window.txt"; then
+                printf 'backend=%s status=host-window-identity-mismatch windowId=%s shellPid=%s\n' \
+                  "$backend" "$window_id" "$shell_pid" >"$stem-setup.txt"
+                capture_failure
+                return 1
+              fi
+              if ! run_host_display xdotool windowfocus --sync "$window_id" ||
+                ! focused=$(run_host_display xdotool getwindowfocus) ||
+                [ "$focused" != "$window_id" ]; then
+                printf 'backend=%s status=owned-shell-window-focus-failed windowId=%s focused=%s\n' \
+                  "$backend" "$window_id" "${focused:-unknown}" >"$stem-setup.txt"
+                capture_failure
+                return 1
+              fi
+            elif [ "$backend" != x11 ] || [ "$private_display" != "$host_display" ]; then
+              printf 'backend=%s status=unsupported-private-display-routing\n' "$backend" >"$stem-setup.txt"
+              capture_failure
+              return 1
+            fi
+
+            printf 'backend=%s status=access-denied; using Looking Glass in the disposable private GNOME session shellPid=%s privateDisplay=%s typedExpression=%s\n' \
+              "$backend" "$shell_pid" "$private_display" "$expression" >"$stem-setup.txt"
+            if ! run_host_display xdotool key --clearmodifiers Alt+F2 ||
+              ! run_host_display xdotool type --clearmodifiers --delay 40 lg; then
+              capture_failure
+              return 1
+            fi
+            if ! run_host_display xdotool key Return; then
+              capture_failure
+              return 1
+            fi
+            sleep 2
+            if ! run_host_display xdotool type --clearmodifiers --delay 10 "$expression"; then
+              run_host_display xdotool key --clearmodifiers Escape || true
+              capture_failure
+              return 1
+            fi
+            if ! run_host_display xdotool key Return; then
+              run_host_display xdotool key --clearmodifiers Escape || true
+              capture_failure
+              return 1
+            fi
+            sleep 1
+            if ! run_host_display xdotool key --clearmodifiers Escape; then
+              capture_failure
+              return 1
+            fi
+            sleep 1
+            if ! timeout 10s gdbus call --session --dest org.gnome.Shell \
+              --object-path /org/gnome/Shell/Introspect --method "$method" \
+              >"$stem-after.txt" 2>"$stem-after.err"; then
+              printf 'backend=%s status=enablement-unverified\n' "$backend" >>"$stem-setup.txt"
+              capture_failure
+              return 1
+            fi
+            printf 'status=enabled-and-confirmed\n' >>"$stem-setup.txt"
+          }
+          SH
+          chmod 700 "$proof_dir/enable-private-introspection.sh"
+          export PRIVATE_INTROSPECTION_SCRIPT="$proof_dir/enable-private-introspection.sh"
           export PROCESS_AUDIT_SCRIPT="$proof_dir/process-audit.py"
           HOST_DISPLAY="${DISPLAY:-:99}"
           Xvfb "$HOST_DISPLAY" -screen 0 1280x800x24 -nolisten tcp > "$proof_dir/xvfb.log" 2>&1 &
@@ -643,6 +758,9 @@ jobs:
               timeout 10s env DISPLAY="$nested_display" XAUTHORITY="$nested_auth" xdpyinfo >"$PROOF_DIR/nested-xdpyinfo.txt"
               timeout 30s env DISPLAY="$nested_display" XAUTHORITY="$nested_auth" glxinfo -B | tee "$PROOF_DIR/nested-software-renderer.txt"
               export DISPLAY="$nested_display" XAUTHORITY="$nested_auth"
+              # shellcheck disable=SC1090
+              source "$PRIVATE_INTROSPECTION_SCRIPT"
+              enable_private_introspection wayland "$shell_pid" "$host_display" "$nested_display"
               start_app() {
                 backend=$1
                 logfile=$2
@@ -727,6 +845,9 @@ jobs:
               sleep 8
               kill -0 "$shell_pid"
               gnome-shell --version | tee "$PROOF_DIR/gnome-x11-version.txt"
+              # shellcheck disable=SC1090
+              source "$PRIVATE_INTROSPECTION_SCRIPT"
+              enable_private_introspection x11 "$shell_pid" "$host_display" "$host_display"
               setsid "$APPIMAGE_PATH" >"$PROOF_DIR/devsy-x11.log" 2>&1 &
               app_pid=$!
               app_baseline="$PROOF_DIR/x11-process-before.json"
@@ -767,40 +888,62 @@ jobs:
           if not any(window["clientType"] == 1 for window in windows.get("x11", [])):
               raise SystemExit("no actual X11 client window was observed")
 
-          required = [
-              ("wayland-default", next((window for window in windows.get("wayland-default", []) if window["clientType"] == 0), None)),
-              ("wayland-forced", next((window for window in windows.get("wayland-forced", []) if window["clientType"] == 0), None)),
-              ("x11", next((window for window in windows.get("x11", []) if window["clientType"] == 1), None)),
-          ]
-          required = [(backend, window) for backend, window in required if window]
           expected_hash = proof["appimage"]["sha256"]
           provenance = []
           errors = []
-          for backend, window in required:
-              process_id = window.get("processId")
-              snapshot_path = proof_path.with_name(f"{backend}-process-after.json")
-              snapshot = json.loads(snapshot_path.read_text()) if snapshot_path.is_file() else {}
-              process = next((item for item in snapshot.get("processes", []) if item["pid"] == process_id), None)
-              matched = bool(process_id and process and process.get("appImageSha256") == expected_hash)
-              provenance.append({
+          for backend, observed in windows.items():
+              if not observed:
+                  continue
+              before_path = proof_path.with_name(f"{backend}-process-before.json")
+              after_path = proof_path.with_name(f"{backend}-process-after.json")
+              if not before_path.is_file() or not after_path.is_file():
+                  errors.append(f"{backend} is missing a before/after process snapshot")
+                  continue
+              before = json.loads(before_path.read_text())
+              after = json.loads(after_path.read_text())
+              before_root = next((item for item in before["processes"] if item["pid"] == before["rootPid"]), None)
+              after_root = next((item for item in after["processes"] if item["pid"] == after["rootPid"]), None)
+              same_process = bool(
+                  before_root and after_root and
+                  before["rootPid"] == after["rootPid"] and
+                  before["rootStartTicks"] == after["rootStartTicks"] and
+                  before_root["exe"] == after_root["exe"] and
+                  before_root["exeSha256"] == after_root["exeSha256"] and
+                  before_root["mount"] == after_root["mount"] and
+                  before_root["appImageSha256"] == expected_hash and
+                  after_root["appImageSha256"] == expected_hash
+              )
+              unexpected_app_processes = [
+                  item for item in after["processes"]
+                  if Path(item.get("exe", "")).name in {"devsy", "devsy-desktop"} and
+                  item.get("appImageSha256") != expected_hash
+              ]
+              record = {
                   "backend": backend,
-                  "windowProcessId": process_id,
-                  "process": process,
-                  "matchesVerifiedAppImage": matched,
-              })
-              if not matched:
-                  errors.append(f"{backend} window PID is not proven to use the exact verified AppImage")
+                  "windowIdentities": observed,
+                  "rootPid": after.get("rootPid"),
+                  "rootStartTicks": after.get("rootStartTicks"),
+                  "rootExecutable": after_root.get("exe") if after_root else None,
+                  "rootExecutableSha256": after_root.get("exeSha256") if after_root else None,
+                  "mount": after_root.get("mount") if after_root else None,
+                  "appImageSha256": after_root.get("appImageSha256") if after_root else None,
+                  "sameAppImageProcessBeforeAndAfterWindow": same_process,
+                  "unexpectedDevsyProcesses": unexpected_app_processes,
+              }
+              provenance.append(record)
+              if not same_process or unexpected_app_processes:
+                  errors.append(f"{backend} Devsy window is not associated with an unchanged process tree from the verified AppImage")
           proof["windowProcessProvenance"] = provenance
           if errors:
               proof["sessionResult"] = "window_observed_provenance_unverified"
-              proof["scope"] = "Devsy window observed, but process provenance does not tie it to the exact verified AppImage."
+              proof["scope"] = "Devsy window observed, but process snapshots do not establish an unchanged exact-AppImage process tree."
               proof_path.write_text(json.dumps(proof, indent=2) + "\n")
               raise SystemExit("; ".join(errors))
           proof["sessionResult"] = "passed"
-          proof["scope"] = "The exact verified AppImage process was tied by PID and APPIMAGE hash to Devsy windows in private GNOME Wayland and X11 sessions; software-rendered feasibility only, not the native desktop acceptance matrix."
+          proof["scope"] = "The exact verified AppImage process tree remained unchanged across matching Devsy window observations in private GNOME Wayland and X11 sessions. GNOME 46 GetWindows exposes no PID; linkage is by process continuity and no updater-binary mismatch, not direct window PID. Software-rendered feasibility only, not the native desktop acceptance matrix."
           proof_path.write_text(json.dumps(proof, indent=2) + "\n")
           PY
-          printf 'GNOME feasibility: verified AppImage process tied to Devsy Wayland client type 0 and X11 client type 1 windows; software-rendered private GNOME sessions; application not installed or released.\n' \
+          printf 'GNOME feasibility: verified AppImage process tree remained unchanged during Devsy Wayland client type 0 and X11 client type 1 observations; software-rendered private GNOME sessions; application not installed or released.\n' \
             | tee "$proof_dir/result.txt"
 
       - name: Upload bounded GNOME feasibility evidence
