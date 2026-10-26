@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const lifecyclePendingMode = "pending"
+
 type lifecycleDeadlineProbe struct {
 	opened time.Time
 	closed <-chan time.Time
@@ -25,7 +27,7 @@ func TestUnprotectedChatterAndExactRetriesCannotExtendConnectionLifetime(t *test
 	runLoop(t, &LifecycleLoop{Owner: owner, Monitor: monitor})
 	fresh := newLifecycleDeadlineProbe(t, owner, dir, "fresh")
 	retry := newLifecycleDeadlineProbe(t, owner, dir, "retry")
-	pending := newLifecycleDeadlineProbe(t, owner, dir, "pending")
+	pending := newLifecycleDeadlineProbe(t, owner, dir, lifecyclePendingMode)
 	protected := newLifecycleDeadlineProbe(t, owner, dir, "invalid-ready")
 	slow := newLifecycleDeadlineProbe(t, owner, dir, "slowloris")
 	for _, probe := range []*lifecycleDeadlineProbe{fresh, retry, pending, slow} {
@@ -59,7 +61,7 @@ func newLifecycleDeadlineProbe(
 		ClientID: mode, Sequence: 1, PID: os.Getpid(), StartTicks: procStartTicks(os.Getpid()),
 		State: LifecycleStateRelease,
 	}
-	if mode != "pending" && mode != "slowloris" {
+	if mode != lifecyclePendingMode && mode != "slowloris" {
 		initializeDeadlineProbe(t, conn, &record, mode)
 	}
 	closed := make(chan time.Time, 1)

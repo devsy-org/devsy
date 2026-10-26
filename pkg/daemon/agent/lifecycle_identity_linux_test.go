@@ -65,6 +65,17 @@ func TestInheritedSocketCannotRetainActivityAfterOriginalProcessDies(t *testing.
 		time.Millisecond,
 		"the opener must be dead but still owned by this living parent",
 	)
+	assertZombieReleaseBeforeReap(t, monitor, dir, report)
+	require.Error(t, cmd.Wait())
+}
+
+func assertZombieReleaseBeforeReap(
+	t *testing.T,
+	monitor *LifecycleMonitor,
+	dir string,
+	report inheritedPeerReport,
+) {
+	t.Helper()
 	require.True(
 		t,
 		processExists(report.HolderPID),
@@ -87,7 +98,6 @@ func TestInheritedSocketCannotRetainActivityAfterOriginalProcessDies(t *testing.
 		isUnreapedZombie(report.PID),
 		"release and capacity recovery must precede reaping",
 	)
-	require.Error(t, cmd.Wait())
 }
 
 func assertReclaimedUIDBudget(t *testing.T, dir string) {

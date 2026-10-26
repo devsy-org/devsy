@@ -72,7 +72,7 @@ func TestLowerTrustPendingClientsPreservePIDUIDAndOwnerFairness(t *testing.T) {
 	monitor := &LifecycleMonitor{}
 	monitor.ArmNow(time.Minute, time.Now())
 	runLoop(t, &LifecycleLoop{Owner: owner, Monitor: monitor})
-	pending := startCapacityPeer(t, dir, 65534, "pending")
+	pending := startCapacityPeer(t, dir, 65534, lifecyclePendingMode)
 	require.Equal(t, maxLifecyclePIDClients, pending.report.Live)
 	allowed := startCapacityPeer(t, dir, 65534, "activity")
 	require.Equal(t, maxLifecyclePIDClients, allowed.report.Live)
@@ -138,7 +138,7 @@ func TestLifecycleCapacityPeerChild(t *testing.T) {
 	dir := os.Getenv("DEVSY_CAPACITY_DIR")
 	var clients []*LifecycleClient
 	var pending []net.Conn
-	if mode == "pending" {
+	if mode == lifecyclePendingMode {
 		pending = openPendingCapacityConnections(t, dir)
 	} else {
 		clients = openRegisteredCapacityConnections(dir, mode)
@@ -156,7 +156,7 @@ func TestLifecycleCapacityPeerChild(t *testing.T) {
 	report := capacityPeerReport{lifecyclePeerIdentity: lifecyclePeerIdentity{
 		UID: os.Getuid(), GID: os.Getgid(), Groups: groups, PID: os.Getpid(),
 	}, Live: len(clients)}
-	if mode == "pending" {
+	if mode == lifecyclePendingMode {
 		report.Live = countOpenPendingConnections(pending)
 	}
 	require.NoError(t, json.NewEncoder(os.Stdout).Encode(report))
@@ -173,6 +173,7 @@ func openPendingCapacityConnections(t *testing.T, dir string) []net.Conn {
 	t.Helper()
 	var conns []net.Conn
 	for range maxLifecycleClients {
+		// #nosec G704 -- Unix IPC in this test's private fixture, not a network destination.
 		conn, err := net.DialTimeout("unix", dir+"/"+socketFileName, time.Second)
 		require.NoError(t, err)
 		conns = append(conns, conn)

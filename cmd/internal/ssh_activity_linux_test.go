@@ -27,6 +27,7 @@ func TestTrackedStdioUsesMountedManagedConfigWithoutEnvironmentOrDiscovery(t *te
 		Timeout: "1m", Lifecycle: agentd.LifecycleConfig{Owner: agentd.LifecycleOwnerManagedDaemon},
 	})
 	require.NoError(t, err)
+	// #nosec G301 -- mirror a Kubernetes secret directory traversable by the nonroot child.
 	require.NoError(t, os.MkdirAll(filepath.Dir(agentd.ContainerDaemonConfigPath), 0o755))
 	// #nosec G306 -- mirror the readable, root-owned Kubernetes projected secret.
 	require.NoError(t, os.WriteFile(agentd.ContainerDaemonConfigPath, []byte(encoded), 0o644))

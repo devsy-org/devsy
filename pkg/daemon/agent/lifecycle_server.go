@@ -101,14 +101,9 @@ func (o *LifecycleOwner) Serve(ctx context.Context, monitor *LifecycleMonitor) e
 }
 
 func (o *LifecycleOwner) addClient(conn net.Conn) (*lifecycleSession, error) {
-	creds, err := peercred.Get(conn)
+	pid, uid, err := readLifecyclePeer(conn)
 	if err != nil {
 		return nil, err
-	}
-	pid, hasPID := creds.PID()
-	uid, hasUID := creds.UserID()
-	if !hasPID || !hasUID || pid <= 0 {
-		return nil, errors.New("lifecycle peer identity is unavailable")
 	}
 	privileged := uid == "0" || uid == strconv.Itoa(o.euid)
 	o.mu.Lock()
@@ -128,6 +123,19 @@ func (o *LifecycleOwner) addClient(conn net.Conn) (*lifecycleSession, error) {
 	o.clients[conn] = s
 	o.countClient(s)
 	return s, nil
+}
+
+func readLifecyclePeer(conn net.Conn) (int, string, error) {
+	creds, err := peercred.Get(conn)
+	if err != nil {
+		return 0, "", err
+	}
+	pid, hasPID := creds.PID()
+	uid, hasUID := creds.UserID()
+	if !hasPID || !hasUID || pid <= 0 {
+		return 0, "", errors.New("lifecycle peer identity is unavailable")
+	}
+	return pid, uid, nil
 }
 
 func (o *LifecycleOwner) removeClient(s *lifecycleSession, monitor *LifecycleMonitor) {

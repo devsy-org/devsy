@@ -340,26 +340,6 @@ func liveOwner(dir string, euid int) (*OwnerRecord, error) {
 
 func ownerAlive(o OwnerRecord) bool { return o.PID > 0 && sameProcess(o.PID, o.StartTicks) }
 
-func (c *LifecycleClient) readAcks() {
-	defer func() { _ = c.Close() }()
-	scanner := bufio.NewScanner(c.conn)
-	scanner.Buffer(make([]byte, 512), maxRecordBytes)
-	for scanner.Scan() {
-		var ack AckRecord
-		if json.Unmarshal(scanner.Bytes(), &ack) != nil ||
-			!c.validAck(ack) {
-			return
-		}
-		select {
-		case c.acks <- ack:
-		case <-c.done:
-			return
-		default:
-			return
-		}
-	}
-}
-
 func (c *LifecycleClient) Done() <-chan struct{} { return c.done }
 
 func (c *LifecycleClient) Close() error {
@@ -407,6 +387,26 @@ func (c *LifecycleClient) Send(
 		State: state, Timeout: timeout, ShutdownAction: shutdownAction,
 	}
 	return c.sendRecord(rec)
+}
+
+func (c *LifecycleClient) readAcks() {
+	defer func() { _ = c.Close() }()
+	scanner := bufio.NewScanner(c.conn)
+	scanner.Buffer(make([]byte, 512), maxRecordBytes)
+	for scanner.Scan() {
+		var ack AckRecord
+		if json.Unmarshal(scanner.Bytes(), &ack) != nil ||
+			!c.validAck(ack) {
+			return
+		}
+		select {
+		case c.acks <- ack:
+		case <-c.done:
+			return
+		default:
+			return
+		}
+	}
 }
 
 func (c *LifecycleClient) sendRecord(rec ControlRecord) error {
