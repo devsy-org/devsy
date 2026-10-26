@@ -35,13 +35,48 @@ function Start-QuietProcess([string]$path, [string[]]$arguments, [string]$stage)
     return @{ Process = $process; Stdout = $stdout; Stderr = $stderr }
 }
 
+function Add-SafeProcessFailure([string]$stage, [string]$kind, [int]$exitCode, [string]$stderrPath) {
+    $stderrBytes = (Get-Item -Path $stderrPath).Length
+    $reader = [System.IO.StreamReader]::new($stderrPath)
+    $buffer = [char[]]::new(65536)
+    try {
+        $sampleLength = $reader.ReadBlock($buffer, 0, $buffer.Length)
+    } finally {
+        $reader.Dispose()
+    }
+    $stderrSample = [string]::new($buffer, 0, $sampleLength)
+    $diagnosticClass = "unclassified"
+    $categories = @(
+        @{ Pattern = '(?i)connection refused'; Name = 'connection-refused' },
+        @{ Pattern = '(?i)no route to host|network is unreachable'; Name = 'network-unreachable' },
+        @{ Pattern = '(?i)could not resolve|no such host|name resolution'; Name = 'host-resolution-failed' },
+        @{ Pattern = '(?i)permission denied|authentication failed|access denied'; Name = 'authentication-or-permission-denied' },
+        @{ Pattern = '(?i)timed out|timeout'; Name = 'timeout' },
+        @{ Pattern = '(?i)workspace.{0,80}(already exists|invalid|not found)|(already exists|invalid|not found).{0,80}workspace'; Name = 'workspace-state-failure' },
+        @{ Pattern = '(?i)provider.{0,80}(failed|unavailable|invalid|not found)'; Name = 'provider-failure' },
+        @{ Pattern = '(?i)docker|image|manifest'; Name = 'container-or-image-failure' },
+        @{ Pattern = '(?i)error|failed|fatal'; Name = 'application-error' }
+    )
+    foreach ($category in $categories) {
+        if ([regex]::IsMatch($stderrSample, $category.Pattern)) {
+            $diagnosticClass = $category.Name
+            break
+        }
+    }
+    $stderrSampleLines = @($stderrSample -split "\r?\n" | Where-Object { $_.Length -gt 0 }).Count
+    $safeStage = $stage -replace '[^a-zA-Z0-9-]', '-'
+    Add-Evidence "ProcessFailure=stage=$safeStage,kind=$kind,exitCode=$exitCode,stderrBytes=$stderrBytes,sampledBytes=$sampleLength,sampledLines=$stderrSampleLines,diagnosticClass=$diagnosticClass"
+}
+
 function Invoke-QuietProcess([string]$path, [string[]]$arguments, [int]$timeoutSeconds, [string]$stage) {
     $run = Start-QuietProcess $path $arguments $stage
     if (!$run.Process.WaitForExit($timeoutSeconds * 1000)) {
         Stop-Process -Id $run.Process.Id -Force -ErrorAction SilentlyContinue
+        Add-SafeProcessFailure $stage "timeout" -1 $run.Stderr
         throw "$stage timed out"
     }
     if ($run.Process.ExitCode -ne 0) {
+        Add-SafeProcessFailure $stage "exit" $run.Process.ExitCode $run.Stderr
         throw "$stage failed with exit $($run.Process.ExitCode)"
     }
     return [System.IO.File]::ReadAllText($run.Stdout)
