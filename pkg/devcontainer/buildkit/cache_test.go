@@ -77,7 +77,10 @@ func TestParseCacheEntryParsesRefAndTypedFields(t *testing.T) {
 			name: "typed entry keeps type and attrs",
 			in:   []string{"type=registry,ref=ghcr.io/x:cache"},
 			want: []client.CacheOptionsEntry{
-				{Type: cacheTypeRegistry, Attrs: map[string]string{cacheAttrRef: "ghcr.io/x:cache"}},
+				{
+					Type:  cacheTypeRegistry,
+					Attrs: map[string]string{cacheAttrRef: "ghcr.io/x:cache"},
+				},
 			},
 		},
 		{
