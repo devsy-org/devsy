@@ -71,9 +71,15 @@ describe("AppImage integration prompt", () => {
   })
 
   it("does not offer integration outside an AppImage", async () => {
-    ipc.supported = false
-    render(AppImageIntegrationPrompt)
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
-    expect(ipc.dismissed).toBe(false)
+    vi.useFakeTimers()
+    try {
+      ipc.supported = false
+      render(AppImageIntegrationPrompt)
+      await vi.runOnlyPendingTimersAsync()
+      expect(screen.queryByRole("dialog")).toBeNull()
+      expect(ipc.dismissed).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

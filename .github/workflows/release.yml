@@ -227,7 +227,7 @@ jobs:
 
       - name: install desktop-file-utils
         if: matrix.name == 'linux-x64'
-        run: sudo apt-get install -y desktop-file-utils rpm
+        run: sudo apt-get install -y desktop-file-utils rpm cpio
 
       - name: verify Linux desktop identity and icons in packages
         if: matrix.name == 'linux-x64'
