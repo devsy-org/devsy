@@ -1,850 +1,225 @@
 name: Pull Request
 
-# This workflow only wires GitHub Actions together. What tests exist, where they
-# run and how they run is defined in hack/ci/suites.yaml and implemented by the
-# Go CLI in hack/ci:
-#   - `plan` turns the manifest into the job matrices below.
-#   - unit tests run through `hack/ci unit`.
-#   - Ginkgo suites run through `hack/ci setup` and `hack/ci e2e`.
-#   - `ci-success` evaluates the needed jobs with `hack/ci success`.
-# Add or change a test in the manifest, not in this file.
-
+# Disposable diagnostic branch only. This branch is not a PR and is never merged.
+# Its workflow_dispatch performs one bounded verification against immutable CI artifacts.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-  pull_request:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions: {}
 
 jobs:
-  changes:
+  verify-linux-package-artifacts:
+    name: Verify final-head Linux package artifacts
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      go: ${{ steps.filter.outputs.go }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        id: filter
-        with:
-          filters: |
-            go:
-              - '**/*.go'
-              - 'pkg/inject/**'
-              - 'go.mod'
-              - 'go.sum'
-              - '.goreleaser.yml'
-              - 'e2e/**'
-              - 'hack/ci/**'
-              - 'hack/microsandbox/**'
-              - 'hack/provider_update_ci/**'
-              - '.github/workflows/pr-ci.yml'
-              - 'hack/licenses/**'
-              - 'hack/podman_ci/**'
-              - 'THIRD_PARTY_LICENSES.md'
-
-  plan:
-    name: Plan
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      unit: ${{ steps.matrix.outputs.unit }}
-      unprivileged: ${{ steps.matrix.outputs.unprivileged }}
-      integration: ${{ steps.matrix.outputs.integration }}
-      microsandbox: ${{ steps.matrix.outputs.microsandbox }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-
-      # Suites that need the GitHub App secret are left out of the matrices when
-      # the secret is unavailable (for example on pull requests from forks).
-      - name: build job matrices from hack/ci/suites.yaml
-        id: matrix
-        env:
-          SECRET_AVAILABLE: ${{ secrets.DEVSY_GITHUB_APP_ID != '' }}
-        run: go run ./hack/ci matrix --secret-available="$SECRET_AVAILABLE" >> "$GITHUB_OUTPUT"
-
-  precommit:
-    name: Pre-commit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
-
-      - run: prek run --all-files
-
-  agent-skill:
-    name: Agent Skill
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: "3.14"
-      - name: setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-      - name: Validate skill and installer compatibility
-        run: go run ./hack/validate_agent_skill
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: ./.github/actions/relocate-tmp
-
-      - name: setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
-        with:
-          version: v2.14.0
-          only-new-issues: true
-
-  # Native host tests: they execute the real `gh` CLI and, on macOS, the native
-  # keyring, so they run per host OS outside the unit tier's package list.
-  github-credential-host-tests:
-    name: GitHub Credential Host Tests (${{ matrix.runner }})
-    needs: [changes]
-    if: needs.changes.outputs.go == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.runner }}
-    # Cold Windows runs compile with -race and download modules before the
-    # post-job cache save, which alone can exceed 4 minutes.
-    timeout-minutes: ${{ matrix.runner == 'windows-latest' && 30 || 15 }}
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/relocate-tmp
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-      - name: record native host and available CLI versions
-        run: |
-          go env GOOS GOARCH
-          gh --version
-      - name: execute native credential discovery and process-bound regressions
-        env:
-          DEVSY_TEST_REAL_GH: "1"
-          DEVSY_TEST_NATIVE_KEYRING: ${{ runner.os == 'macOS' && '1' || '0' }}
-        run: >-
-          go test -race -count=1 -v -timeout 5m ./pkg/ghcredentials
-          -run '^(TestNative.*|TestHostLookupEnvironmentAndGuestEnvironmentAreIndependent|TestRegisteredGuestDeclinesAmbiguousKeyringResult)$'
-      - name: test strict fixture report validation
-        run: go test -race -count=1 -v ./e2e/framework/ghfixture
-      - name: test native credential service boundaries
-        run: >-
-          go test -race -count=1 -v -timeout 2m ./pkg/tunnel ./pkg/credentials
-          -run '^(TestCredentials.*Host.*|TestOptionalGitHubService.*|TestServicesStartup.*)$'
-
-  # Unit tier: every Go test that needs no running workspace. The steps per
-  # runner are defined under `unit` in hack/ci/suites.yaml.
-  unit-tests:
-    name: Unit Tests (${{ matrix.runner }})
-    needs: [changes, plan]
-    if: needs.changes.outputs.go == 'true'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.unit) }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.timeout_minutes }}
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: ./.github/actions/relocate-tmp
-
-      - name: setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-
-      - name: run unit tests
-        shell: bash
-        run: go run ./hack/ci unit
-
-  provider-update-windows:
-    name: Provider Update Tests (windows-latest)
-    needs: [changes]
-    if: needs.changes.outputs.go == 'true'
-    runs-on: windows-latest
-    # Allow cold Go compilation and the post-job cache save to complete.
     timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    env:
+      SOURCE_RUN_ID: "40297171031"
+      SOURCE_HEAD_SHA: "69dad22e2c3274c1107d0ba03c433e1ce49c3378"
+      LINUX_ARTIFACT_ID: "12639935552"
+      LINUX_ARTIFACT_DIGEST: "sha256:0e950613095177239e17a38550a9c63055a5fc9a488f9eb58d4cb9c3e88b4b2c"
+      FLATPAK_ARTIFACT_ID: "12640187992"
+      FLATPAK_ARTIFACT_DIGEST: "sha256:4be8280adec67fde65021e6dec2cb8562af40b74c4e115630c6fe3d671ea4bae"
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Checkout verifier source at artifact head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 69dad22e2c3274c1107d0ba03c433e1ce49c3378
 
-      - name: setup Go
+      - name: Verify source run and artifact identities before download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/diag/1652-artifact-verification-69dad
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD_SHA"
+
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")
+          jq -e \
+            --argjson id "$SOURCE_RUN_ID" \
+            --arg sha "$SOURCE_HEAD_SHA" \
+            '.id == $id and .head_sha == $sha and .event == "pull_request" and .conclusion == "success"' \
+            <<<"$run"
+
+          artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100")
+          jq -e \
+            --argjson id "$LINUX_ARTIFACT_ID" \
+            --arg digest "$LINUX_ARTIFACT_DIGEST" \
+            'any(.artifacts[]; .id == $id and .name == "desktop-ubuntu-latest" and .digest == $digest and .expired == false)' \
+            <<<"$artifacts"
+          jq -e \
+            --argjson id "$FLATPAK_ARTIFACT_ID" \
+            --arg digest "$FLATPAK_ARTIFACT_DIGEST" \
+            'any(.artifacts[]; .id == $id and .name == "Devsy-x86_64.flatpak" and .digest == $digest and .expired == false)' \
+            <<<"$artifacts"
+
+      - name: Download and checksum exact source artifacts
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          linux_zip="$RUNNER_TEMP/linux-artifact.zip"
+          flatpak_zip="$RUNNER_TEMP/flatpak-artifact.zip"
+          linux_dir="$RUNNER_TEMP/devsy-linux"
+          flatpak_dir="$RUNNER_TEMP/devsy-flatpak"
+          proof_dir="$RUNNER_TEMP/verification-proof"
+          mkdir -p "$proof_dir" "$linux_dir" "$flatpak_dir"
+
+          fetch_artifact_zip() {
+            local artifact_id="$1"
+            local output="$2"
+            local headers="$RUNNER_TEMP/artifact-$artifact_id.headers"
+            local response="$RUNNER_TEMP/artifact-$artifact_id.response"
+            local status
+            status=$(curl --silent --show-error \
+              --dump-header "$headers" \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header "Accept: application/vnd.github+json" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip")
+            if [ "$status" != 302 ]; then
+              rm -f "$headers" "$response"
+              echo "::error::artifact API did not return a redirect (HTTP $status)"
+              return 1
+            fi
+
+            local location
+            location=$(awk 'tolower($1) == "location:" { sub(/\r$/, "", $2); print $2; exit }' "$headers")
+            rm -f "$headers" "$response"
+            if [ -z "$location" ]; then
+              echo "::error::artifact API redirect did not include a download location"
+              return 1
+            fi
+            if ! curl --location --fail --silent --output "$output" "$location" 2>/dev/null; then
+              unset location
+              echo "::error::artifact archive transfer failed (URL redacted)"
+              return 1
+            fi
+            unset location
+          }
+
+          fetch_artifact_zip "$LINUX_ARTIFACT_ID" "$linux_zip"
+          printf '%s  %s\n' "${LINUX_ARTIFACT_DIGEST#sha256:}" "$linux_zip" | sha256sum --check
+          fetch_artifact_zip "$FLATPAK_ARTIFACT_ID" "$flatpak_zip"
+          printf '%s  %s\n' "${FLATPAK_ARTIFACT_DIGEST#sha256:}" "$flatpak_zip" | sha256sum --check
+
+          unzip -q "$linux_zip" -d "$linux_dir"
+          unzip -q "$flatpak_zip" -d "$flatpak_dir"
+          test -s "$linux_dir/Devsy_linux_amd64.deb"
+          test -s "$linux_dir/Devsy_linux_x86_64.AppImage"
+          test -s "$linux_dir/Devsy_linux_x86_64.rpm"
+          test -s "$flatpak_dir/Devsy.flatpak"
+
+          deb_sha=$(sha256sum "$linux_dir/Devsy_linux_amd64.deb" | cut -d ' ' -f 1)
+          appimage_sha=$(sha256sum "$linux_dir/Devsy_linux_x86_64.AppImage" | cut -d ' ' -f 1)
+          rpm_sha=$(sha256sum "$linux_dir/Devsy_linux_x86_64.rpm" | cut -d ' ' -f 1)
+          flatpak_sha=$(sha256sum "$flatpak_dir/Devsy.flatpak" | cut -d ' ' -f 1)
+          test "$deb_sha" = dd9e5b6780a8fb2264a8a1f53792a7276edbb64906f6396d84a8e592bd743b34
+          test "$appimage_sha" = 18dcb8362f7b3ff03538138f0e0715c29e3b484a4f6d0dab8613253ad9b2ebaa
+          printf '%s  %s\n' \
+            "$deb_sha" "$linux_dir/Devsy_linux_amd64.deb" \
+            "$appimage_sha" "$linux_dir/Devsy_linux_x86_64.AppImage" \
+            "$rpm_sha" "$linux_dir/Devsy_linux_x86_64.rpm" \
+            "$flatpak_sha" "$flatpak_dir/Devsy.flatpak" \
+            | tee "$proof_dir/package-sha256.txt"
+          jq -n \
+            --arg run "$SOURCE_RUN_ID" \
+            --arg head "$SOURCE_HEAD_SHA" \
+            --arg linuxId "$LINUX_ARTIFACT_ID" \
+            --arg linuxDigest "$LINUX_ARTIFACT_DIGEST" \
+            --arg flatpakId "$FLATPAK_ARTIFACT_ID" \
+            --arg flatpakDigest "$FLATPAK_ARTIFACT_DIGEST" \
+            --arg deb "$deb_sha" \
+            --arg appimage "$appimage_sha" \
+            --arg rpm "$rpm_sha" \
+            --arg flatpak "$flatpak_sha" \
+            '{source:{runId:$run,head:$head},artifacts:{linux:{id:$linuxId,zipSha256:$linuxDigest},flatpak:{id:$flatpakId,zipSha256:$flatpakDigest}},packages:{deb:{sha256:$deb},appimage:{sha256:$appimage},rpm:{sha256:$rpm},flatpak:{sha256:$flatpak}},scope:"Actual emitted package contents from head 69dad; no package executed or native graphical acceptance implied."}' \
+            > "$proof_dir/proof.json"
+
+      - name: Install native package verification tools
+        timeout-minutes: 8
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cpio desktop-file-utils flatpak ostree rpm unzip
+
+      - name: Set up Go verifier
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
 
-      - name: run provider update tests and require Windows coverage
-        shell: pwsh
-        run: go run ./hack/provider_update_ci --artifacts-dir "$env:RUNNER_TEMP"
-
-      - name: upload provider update test JSON on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: provider-update-windows-test-json
-          path: |
-            ${{ runner.temp }}/provider-update-windows.jsonl
-            ${{ runner.temp }}/provider-update-windows.exitcode
-          if-no-files-found: ignore
-
-  build-cli:
-    name: Build CLI Binary on ${{ matrix.runner }}
-    needs: [changes, precommit, lint]
-    if: needs.changes.outputs.go == 'true'
-    strategy:
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            job_timeout_minutes: 45
-          - runner: macos-latest
-          - runner: windows-latest
-            # Cold builds need room to save the Go cache after artifact uploads.
-            job_timeout_minutes: 45
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.job_timeout_minutes || 20 }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: ./.github/actions/relocate-tmp
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-
-      - name: get operating system lowercase
-        id: os
+      - name: Verify AppImage, DEB and RPM contents
+        timeout-minutes: 12
         shell: bash
         run: |
-          OS=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
-          if [ "$OS" == "macos" ]; then
-            OS="darwin"
-          fi
-          echo "runner_os=$OS" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/verification-proof/linux-package-verification.log") 2>&1
+          app_id=sh.devsy.app
+          work="$RUNNER_TEMP/linux-package-check"
+          linux="$RUNNER_TEMP/devsy-linux"
+          rm -rf "$work"
+          mkdir -p "$work"
 
-      - name: build CI helpers
-        if: runner.os == 'Linux' || runner.os == 'Windows'
-        shell: bash
-        env:
-          CGO_ENABLED: 0
-        run: |
-          OUT_DIR="${{ runner.temp }}"
-          SUFFIX=""
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            OUT_DIR="${OUT_DIR//\\//}"
-            SUFFIX=".exe"
-          fi
-          go build -trimpath -o "$OUT_DIR/devsy-ci-podman$SUFFIX" ./hack/podman_ci
-          go build -trimpath -o "$OUT_DIR/devsy-ci-tool$SUFFIX" ./hack/ci
-          go build -trimpath -o "$OUT_DIR/devsy-ci-e2e$SUFFIX" ./e2e/cmd/devsy-ci
+          appimage="$linux/Devsy_linux_x86_64.AppImage"
+          deb="$linux/Devsy_linux_amd64.deb"
+          rpm="$linux/Devsy_linux_x86_64.rpm"
+          mkdir "$work/appimage" && (cd "$work/appimage" && chmod +x "$appimage" && "$appimage" --appimage-extract >/dev/null)
+          mkdir "$work/deb" && dpkg-deb -x "$deb" "$work/deb"
+          mkdir "$work/rpm" && (cd "$work/rpm" && rpm2cpio "$rpm" | cpio -idm --quiet)
 
-      - name: upload Podman CI helper
-        if: runner.os == 'Linux' || runner.os == 'Windows'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: devsy-ci-podman-${{ steps.os.outputs.runner_os }}
-          path: ${{ runner.temp }}/devsy-ci-podman*
-
-      - name: upload E2E runtime helper
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: devsy-ci-e2e-${{ steps.os.outputs.runner_os }}
-          path: ${{ runner.temp }}/devsy-ci-e2e*
-
-      - name: upload CI tool
-        if: runner.os == 'Linux' || runner.os == 'Windows'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: devsy-ci-tool-${{ steps.os.outputs.runner_os }}
-          path: ${{ runner.temp }}/devsy-ci-tool*
-
-      - name: disk usage before Linux snapshot
-        if: runner.os == 'Linux'
-        run: |
-          df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
-          du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
-
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: >-
-            build --id devsy-${{ steps.os.outputs.runner_os }} --snapshot
-            ${{ runner.os == 'Linux' && '--parallelism=1' || '' }}
-        env:
-          DEVSY_CLI_VERSION: v0.0.0
-
-      - name: disk usage after Linux snapshot
-        if: always() && runner.os == 'Linux'
-        run: |
-          df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
-          du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: devsy-${{ steps.os.outputs.runner_os }}
-          path: dist/devsy-${{ steps.os.outputs.runner_os }}_*/devsy-${{ steps.os.outputs.runner_os }}-*
-
-      - name: build MicroSandbox CI helper
-        if: runner.os == 'Linux'
-        env:
-          CGO_ENABLED: 0
-        run: go build -trimpath -o "${RUNNER_TEMP}/devsy-ci-microsandbox" ./hack/microsandbox
-
-      - name: build pinned runtime performance tools
-        if: runner.os == 'Linux'
-        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" build-performance-tools --output-dir "${RUNNER_TEMP}/runtime-performance-tools"'
-
-      - name: upload runtime performance tools
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: runtime-performance-tools-linux
-          path: ${{ runner.temp }}/runtime-performance-tools/
-
-      - name: upload MicroSandbox CI helper
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: devsy-ci-microsandbox-linux
-          path: ${{ runner.temp }}/devsy-ci-microsandbox
-
-      - name: build Linux GitHub credential fixtures
-        if: runner.os == 'Linux'
-        shell: bash
-        env:
-          CGO_ENABLED: 0
-        run: |
-          for arch in amd64 arm64; do
-            GOOS=linux GOARCH="$arch" go build -trimpath -o "${RUNNER_TEMP}/ghfixture-linux-${arch}" ./e2e/cmd/ghfixture
+          appimage_root="$work/appimage/squashfs-root"
+          go run ./hack/release_artifacts verify-linux-desktop \
+            --app-id "$app_id" \
+            --desktop-file "$appimage_root/$app_id.desktop" \
+            --icon-root "$appimage_root/usr/share/icons/hicolor" \
+            --require-file "$appimage_root/resources/app-icon.png" \
+            --require-file "$appimage_root/devsy-desktop.png"
+          for root in "$work/deb" "$work/rpm"; do
+            go run ./hack/release_artifacts verify-linux-desktop \
+              --app-id "$app_id" \
+              --desktop-file "$root/usr/share/applications/$app_id.desktop" \
+              --icon-root "$root/usr/share/icons/hicolor" \
+              --require-file "$root/opt/Devsy/resources/app-icon.png"
           done
+          desktop-file-validate \
+            "$appimage_root/$app_id.desktop" \
+            "$work/deb/usr/share/applications/$app_id.desktop" \
+            "$work/rpm/usr/share/applications/$app_id.desktop"
 
-      - name: upload Linux GitHub credential fixtures
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: ghfixture-linux
-          path: ${{ runner.temp }}/ghfixture-linux-*
-
-      - name: build e2e test binary
-        if: matrix.runner == 'ubuntu-latest' || matrix.runner == 'windows-latest'
-        shell: bash
-        working-directory: ./e2e
-        env:
-          CGO_ENABLED: 0
-        run: |
-          OUT="e2e.test"
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            OUT="e2e.test.exe"
-          fi
-          go test -c -o "$OUT" ./
-
-      - name: upload e2e test binary
-        if: matrix.runner == 'ubuntu-latest' || matrix.runner == 'windows-latest'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: e2e-test-${{ steps.os.outputs.runner_os }}
-          path: ./e2e/e2e.test*
-
-  licenses:
-    name: Third-party licenses
-    needs: [changes, precommit, lint]
-    if: needs.changes.outputs.go == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-
-      - name: Check license policy and attribution
-        run: go run ./hack/licenses --check
-
-  # E2E tier, group "unprivileged": runs as the runner user.
-  integration-tests-unprivileged:
-    name: ${{ matrix.title }}
-    needs: [changes, plan, build-cli]
-    if: needs.changes.outputs.go == 'true'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.unprivileged) }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.job_timeout_minutes }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: download CI tool
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: devsy-ci-tool-${{ matrix.os }}
-          path: ${{ runner.temp }}/devsy-ci-tool/
-
-      - name: set up CI tool
+      - name: Import and verify Flatpak export
+        timeout-minutes: 12
         shell: bash
         run: |
-          tool="${RUNNER_TEMP//\\//}/devsy-ci-tool/devsy-ci-tool"
-          chmod +x "$tool"
-          echo "CI_TOOL=$tool" >> "$GITHUB_ENV"
-
-      - name: download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: devsy-${{ matrix.os }}
-          path: ${{ runner.temp }}/devsy-bin/
-          merge-multiple: true
-
-      - name: download e2e test binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: e2e-test-${{ matrix.os }}
-          path: ./e2e/
-
-      - name: setup executable
-        shell: bash
-        run: '"$CI_TOOL" e2e prepare --bin-src "$RUNNER_TEMP/devsy-bin" --e2e-dir ./e2e'
-
-      - name: run test
-        shell: bash
-        env:
-          GH_USERNAME: ${{ github.repository_owner }}
-          GH_ACCESS_TOKEN: ${{ github.token }}
-          GH_CREDENTIAL_USERNAME: x-access-token
-        run: '"$CI_TOOL" e2e run --label "${{ matrix.name }}" --runner "${{ matrix.runner }}" --e2e-dir ./e2e'
-
-  # E2E tier, group "microsandbox": the MicroSandbox CI helper owns the run and
-  # its report checks.
-  integration-tests-microsandbox:
-    name: ${{ matrix.title }}
-    needs: [changes, plan, build-cli]
-    if: needs.changes.outputs.go == 'true'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.microsandbox) }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.job_timeout_minutes }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: install gnupg2
-        run: sudo apt-get install -y gnupg2
-
-      - name: download CI tool
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: devsy-ci-tool-${{ matrix.os }}
-          path: ${{ runner.temp }}/devsy-ci-tool/
-
-      - name: set up CI tool
-        shell: bash
-        run: |
-          tool="${RUNNER_TEMP//\\//}/devsy-ci-tool/devsy-ci-tool"
-          chmod +x "$tool"
-          echo "CI_TOOL=$tool" >> "$GITHUB_ENV"
-
-      - name: download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: devsy-${{ matrix.os }}
-          path: ${{ runner.temp }}/devsy-bin/
-          merge-multiple: true
-
-      - name: download e2e test binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: e2e-test-${{ matrix.os }}
-          path: ./e2e/
-
-      - name: download runtime performance tools
-        if: matrix.performance_capture
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: runtime-performance-tools-linux
-          path: ${{ runner.temp }}/runtime-performance-tools/
-
-      - name: prepare runtime performance capture
-        if: matrix.performance_capture
-        shell: bash
-        run: |
-          chmod +x "${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-spawn-probe" \
-            "${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-supervisor"
-          install -d -m 700 "${RUNNER_TEMP}/microsandbox-performance"
-          {
-            echo "DEVSY_TEST_RUNTIME_SPAWN_PROBE=${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-spawn-probe"
-            echo "DEVSY_TEST_RUNTIME_SUPERVISOR=${RUNNER_TEMP}/runtime-performance-tools/devsy-runtime-supervisor"
-            echo "DEVSY_TEST_RUNTIME_PERFORMANCE_DIR=${RUNNER_TEMP}/microsandbox-performance"
-            echo "DEVSY_TEST_RUNTIME_REVISION=${{ github.sha }}"
-            echo "DEVSY_TEST_RUNTIME_SDK_VERSION=$(cat "${RUNNER_TEMP}/runtime-performance-tools/sdk-version")"
-          } >> "$GITHUB_ENV"
-
-      - name: download MicroSandbox CI helper
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: devsy-ci-microsandbox-linux
-          path: ${{ runner.temp }}
-
-      - name: setup MicroSandbox CI helper
-        run: chmod +x "${RUNNER_TEMP}/devsy-ci-microsandbox"
-
-      - name: setup executable
-        shell: bash
-        run: '"$CI_TOOL" e2e prepare --bin-src "$RUNNER_TEMP/devsy-bin" --e2e-dir ./e2e'
-
-      - name: cache microsandbox release bundle (Linux)
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/microsandbox-linux-x86_64-v0.7.7.tar.gz
-          key: ${{ runner.os }}-${{ runner.arch }}-microsandbox-bundle-v0.7.7
-
-      - name: install checksum-pinned microsandbox (Linux)
-        timeout-minutes: 5
-        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" install-linux'
-
-      - name: run MicroSandbox test
-        shell: bash
-        env:
-          GH_USERNAME: ${{ github.repository_owner }}
-          GH_ACCESS_TOKEN: ${{ github.token }}
-          GH_CREDENTIAL_USERNAME: x-access-token
-          TEST_TIMEOUT: ${{ matrix.test_timeout }}
-          DEVSY_REQUIRE_MICROSANDBOX: "true"
-        run: '"${RUNNER_TEMP}/devsy-ci-microsandbox" run --label "${{ matrix.name }}" --expected-count "${{ matrix.expected_spec_count }}" --provider-mode "${{ matrix.provider_mode }}"'
-
-      - name: upload MicroSandbox test evidence
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/verification-proof/flatpak-verification.log") 2>&1
+          command -v flatpak ostree desktop-file-validate
+          app_id=sh.devsy.app
+          work="$RUNNER_TEMP/flatpak-bundle-check"
+          rm -rf "$work"
+          mkdir -p "$work"
+          ostree init --repo="$work/repo" --mode=archive-z2
+          flatpak build-import-bundle "$work/repo" "$RUNNER_TEMP/devsy-flatpak/Devsy.flatpak"
+          ref=$(ostree refs --repo="$work/repo" | grep "^app/$app_id/" | head -n 1)
+          test -n "$ref"
+          ostree checkout --repo="$work/repo" --user-mode "$ref" "$work/files"
+          export_root="$work/files/export/share"
+          go run ./hack/release_artifacts verify-linux-desktop \
+            --app-id "$app_id" \
+            --desktop-file "$export_root/applications/$app_id.desktop" \
+            --icon-root "$export_root/icons/hicolor"
+          test -s "$export_root/icons/hicolor/128x128/apps/$app_id.png"
+          desktop-file-validate "$export_root/applications/$app_id.desktop"
+      - name: Upload bounded verification proof
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: microsandbox-${{ matrix.name }}-evidence
-          path: |
-            ${{ runner.temp }}/microsandbox-${{ matrix.name }}.json
-            ${{ runner.temp }}/microsandbox-${{ matrix.name }}.log
+          name: devsy-1652-artifact-verification-proof
+          path: ${{ runner.temp }}/verification-proof/
           if-no-files-found: warn
-          retention-days: 14
-
-      - name: upload runtime performance evidence
-        if: always() && matrix.performance_capture
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: microsandbox-runtime-performance
-          path: ${{ runner.temp }}/microsandbox-performance/provider-performance.json
-          if-no-files-found: error
-          retention-days: 14
-
-  # E2E tier, group "integration": runtimes (Docker, Podman, kind) are
-  # provisioned per suite from the matrix flags computed by `hack/ci matrix`.
-  integration-tests:
-    name: ${{ matrix.title }}
-    needs: [changes, plan, build-cli]
-    if: needs.changes.outputs.go == 'true'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.integration) }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: ${{ matrix.job_timeout_minutes }}
-    steps:
-      - uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
-        background: true
-        if: matrix.free_disk_space && matrix.os == 'linux'
-        with:
-          docker-images: false
-          swap-storage: false
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: install gnupg2
-        if: matrix.os == 'linux'
-        run: sudo apt-get install -y gnupg2
-
-      - name: download CI tool
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: devsy-ci-tool-${{ matrix.os }}
-          path: ${{ runner.temp }}/devsy-ci-tool/
-
-      - name: set up CI tool
-        shell: bash
-        run: |
-          tool="${RUNNER_TEMP//\\//}/devsy-ci-tool/devsy-ci-tool"
-          chmod +x "$tool"
-          echo "CI_TOOL=$tool" >> "$GITHUB_ENV"
-
-      - name: download Podman CI helper
-        if: matrix.needs_podman_helper
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: devsy-ci-podman-${{ matrix.os }}
-          path: ${{ runner.temp }}/devsy-ci-podman/
-
-      - name: download E2E runtime helper
-        if: matrix.setup_docker_wsl
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: devsy-ci-e2e-${{ matrix.os }}
-          path: ${{ runner.temp }}/devsy-ci-e2e/
-
-      - name: download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: devsy-${{ matrix.os }}
-          path: ${{ runner.temp }}/devsy-bin/
-          merge-multiple: true
-
-      - name: download Linux CLI artifacts for Windows
-        if: matrix.os == 'windows'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: devsy-linux
-          path: ${{ runner.temp }}/devsy-bin/
-          merge-multiple: true
-
-      - name: download e2e test binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: e2e-test-${{ matrix.os }}
-          path: ./e2e/
-
-      - name: download GitHub credential fixture
-        if: matrix.ghfixture_linux
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: ghfixture-linux
-          path: ./e2e/bin/
-
-      - name: setup executable
-        shell: bash
-        run: '"$CI_TOOL" e2e prepare --bin-src "$RUNNER_TEMP/devsy-bin" --e2e-dir ./e2e'
-
-      - name: generate uuid
-        if: matrix.setup_kind_linux
-        id: uuid
-        shell: bash
-        run: |
-          UUID=$(python -c "import uuid; print(uuid.uuid4().hex)")
-          echo "result=$UUID" >> "$GITHUB_OUTPUT"
-
-      - name: cache podman installer (Windows)
-        if: matrix.setup_podman_windows
-        id: podman-cache-windows
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/podman.msi
-          key: ${{ runner.os }}-${{ runner.arch }}-podman-v5.8.2
-
-      - name: install podman (Windows)
-        if: matrix.setup_podman_windows
-        shell: pwsh
-        timeout-minutes: 5
-        run: |
-          & "$env:RUNNER_TEMP\devsy-ci-podman\devsy-ci-podman.exe" install `
-            --url "https://github.com/containers/podman/releases/download/v5.8.2/podman-installer-windows-amd64.msi" `
-            --sha256 "eda54f26f9695d198d9a679fa45ae24ba35b78444f432b5fe0c122c5a3624c57" --msi-path "$env:RUNNER_TEMP\podman.msi" `
-            --install-dir "C:\Program Files\RedHat\Podman" --log-path "$env:RUNNER_TEMP\podman-install.log"
-
-      - name: start podman (Windows)
-        if: matrix.setup_podman_windows
-        shell: pwsh
-        timeout-minutes: 5
-        run: |
-          & "$env:RUNNER_TEMP\devsy-ci-podman\devsy-ci-podman.exe" setup `
-            --mode rootful `
-            --podman-path "C:\Program Files\RedHat\Podman\podman.exe" `
-            --bootstrap-timeout 270s
-
-      - name: cache kind.exe (Windows)
-        if: matrix.setup_kind_windows
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/kind.exe
-          key: ${{ runner.os }}-${{ runner.arch }}-kind-v0.33.0
-
-      - name: setup kind (Windows)
-        if: matrix.setup_kind_windows
-        shell: pwsh
-        env:
-          KIND_EXPERIMENTAL_PROVIDER: podman
-          DOCKER_HOST: npipe:////./pipe/podman-machine-default
-        run: |
-          & "$env:RUNNER_TEMP\devsy-ci-podman\devsy-ci-podman.exe" install-kind `
-            --url "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-windows-amd64" `
-            --sha256 "4b22adaa135368c5a465d56bbd8e520cbea87272a06ca00b6078e7b81515c9fc" `
-            --kind-path "$env:RUNNER_TEMP\kind.exe" `
-            --image "kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed"
-
-      # NOTE: skevetter/setup-kind does not work on Windows runners
-      - name: setup kind
-        if: matrix.setup_kind_linux
-        uses: skevetter/setup-kind@7febac2ed35df332069b3bb687c6b1fa00fc0883 # v1
-        with:
-          name: ${{ steps.uuid.outputs.result }}
-          version: v0.33.0
-          image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
-          skipClusterLogsExport: true
-
-      - name: cache podman installer (Linux)
-        if: matrix.setup_podman_linux
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/podman-linux-amd64.tar.gz
-          key: ${{ runner.os }}-${{ runner.arch }}-podman-static-v5.8.4-sha256-v2
-
-      - name: install podman (Linux)
-        if: matrix.setup_podman_linux
-        timeout-minutes: 5
-        run: |
-          "$CI_TOOL" setup podman-linux \
-            --archive "${RUNNER_TEMP}/podman-linux-amd64.tar.gz" \
-            --url https://github.com/mgoltzsche/podman-static/releases/download/v5.8.4/podman-linux-amd64.tar.gz \
-            --sha256 a58765fe8be6ab3fb79f892f1a027b4ce4a7e8eb589df1ef960c167cbde08d69 \
-            --extract-dir "${RUNNER_TEMP}"
-
-      - name: configure and verify podman (Linux)
-        if: matrix.setup_podman_linux
-        shell: bash
-        timeout-minutes: 5
-        run: |
-          chmod +x "${RUNNER_TEMP}/devsy-ci-podman/devsy-ci-podman"
-          "${RUNNER_TEMP}/devsy-ci-podman/devsy-ci-podman" setup \
-            --mode "${{ matrix.podman_mode }}" \
-            --podman-path /usr/local/bin/podman \
-            --crun-path /usr/local/bin/crun \
-            --bootstrap-timeout 270s
-
-      - name: setup WSL2 Ubuntu
-        id: setup_wsl
-        if: matrix.setup_docker_wsl
-        continue-on-error: true
-        timeout-minutes: 5
-        uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
-        with:
-          distribution: Ubuntu-24.04
-          use-cache: true
-
-      - name: setup WSL2 Ubuntu (retry)
-        if: matrix.setup_docker_wsl && steps.setup_wsl.outcome != 'success'
-        timeout-minutes: 5
-        uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
-        with:
-          distribution: Ubuntu-24.04
-          use-cache: true
-
-      - name: provision Docker over WSL SSH
-        if: matrix.setup_docker_wsl
-        shell: pwsh
-        timeout-minutes: 15
-        run: >-
-          & "$env:RUNNER_TEMP\devsy-ci-e2e\devsy-ci-e2e.exe" docker-wsl setup
-          --distribution Ubuntu-24.04 --timeout 4m
-          --state-file "$env:RUNNER_TEMP\devsy-ci\docker-wsl-state.json"
-
-      # Runs the suite's `host_setup` actions from hack/ci/suites.yaml
-      # (for example removing Docker or trusting a local registry).
-      - name: host setup
-        shell: bash
-        run: '"$CI_TOOL" setup host --label "${{ matrix.name }}" --runner "${{ matrix.runner }}"'
-
-      - name: generate GitHub App token
-        if: matrix.requires_secret
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
-        with:
-          client-id: ${{ secrets.DEVSY_GITHUB_APP_ID }}
-          private-key: ${{ secrets.DEVSY_GITHUB_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
-      # Focused checks, privilege (sudo), runtime environment and post checks
-      # all come from the suite definition.
-      - name: run test
-        shell: bash
-        env:
-          # NOTE: GitHub credentials are required for tests using private repos
-          GH_USERNAME: ${{ github.repository_owner }}
-          GH_ACCESS_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
-          GH_CREDENTIAL_USERNAME: x-access-token
-        run: '"$CI_TOOL" e2e run --label "${{ matrix.name }}" --runner "${{ matrix.runner }}" --e2e-dir ./e2e'
-
-      - name: tear down Docker WSL SSH fixture
-        if: always() && matrix.setup_docker_wsl
-        shell: pwsh
-        timeout-minutes: 3
-        run: |
-          if (Test-Path "$env:RUNNER_TEMP\devsy-ci-e2e\devsy-ci-e2e.exe") {
-            & "$env:RUNNER_TEMP\devsy-ci-e2e\devsy-ci-e2e.exe" docker-wsl cleanup `
-              --state-file "$env:RUNNER_TEMP\devsy-ci\docker-wsl-state.json" --timeout 2m
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-
-      - name: upload report and setup or teardown diagnostics
-        if: always() && matrix.setup_docker_wsl
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: e2e-diagnostics-${{ matrix.name }}
-          path: |
-            e2e/${{ matrix.name }}-report.json
-            ${{ runner.temp }}/devsy-ci/docker-wsl-diagnostics.log
-          if-no-files-found: warn
-
-  ci-success:
-    name: CI Success
-    runs-on: ubuntu-latest
-    if: always()
-    permissions:
-      contents: read
-    needs:
-      - changes
-      - plan
-      - precommit
-      - lint
-      - agent-skill
-      - unit-tests
-      - github-credential-host-tests
-      - provider-update-windows
-      - licenses
-      - build-cli
-      - integration-tests-unprivileged
-      - integration-tests
-      - integration-tests-microsandbox
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-
-      # Jobs gated on Go changes may be skipped only when no Go-relevant file
-      # changed; the jobs listed in --always-run must never be skipped.
-      - name: Check required jobs
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-        run: go run ./hack/ci success --always-run changes,plan,precommit,lint,agent-skill
+          retention-days: 7
