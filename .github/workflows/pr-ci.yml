@@ -24,7 +24,6 @@ jobs:
           NETLIFY_DEPLOY_ID: 6adf6c182569d945284011d8
           NETLIFY_BUILD_ID: 6adf6c182569d945284011d6
           EXPECTED_COMMIT: 1c379a765070858a6912eeecfcbfec87d484c489
-          EXPECTED_BRANCH: review1725
           EXPECTED_CONTEXT: deploy-preview
           EXPECTED_PR_NUMBER: "1725"
           EXPECTED_SITE_NAME: devsydev

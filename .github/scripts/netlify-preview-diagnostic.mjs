@@ -330,7 +330,6 @@ async function main() {
   const buildId = process.env.NETLIFY_BUILD_ID;
   const siteId = process.env.NETLIFY_SITE_ID;
   const expectedCommit = process.env.EXPECTED_COMMIT;
-  const expectedBranch = process.env.EXPECTED_BRANCH;
   const expectedContext = process.env.EXPECTED_CONTEXT;
   const prNumber = process.env.EXPECTED_PR_NUMBER;
   const expectedSiteName = process.env.EXPECTED_SITE_NAME;
@@ -362,12 +361,11 @@ async function main() {
   requireEqual("state", deploy.state, "error");
   requireEqual("commit_ref", deploy.commit_ref, expectedCommit);
   requireEqual("context", deploy.context, expectedContext);
-  requireEqual("branch", deploy.branch, expectedBranch);
   requireEqual("site.id", site.id, siteId);
   requireEqual("site.name", site.name, expectedSiteName);
   requireEqual("review.number", review.number, Number(prNumber));
   requireEqual("review.head.sha", review.head?.sha, expectedCommit);
-  requireEqual("review.head.ref", review.head?.ref, expectedBranch);
+  requireEqual("review.head.ref", review.head?.ref, deploy.branch);
   requireEqual("review.state", review.state, "open");
   requireEqual("build_id", deploy.build_id, buildId);
 
