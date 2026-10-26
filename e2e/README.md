@@ -40,10 +40,17 @@ The Docker lifecycle environment regression covers values containing `=` from bo
 mise run cli:test:e2e:focus "lifecycle hooks preserve equals signs"
 ```
 
-When testing local changes with Docker on macOS, set `DEVSY_AGENT_BINARY` to the
-absolute path of the built Linux agent matching the Docker architecture, such as
-`e2e/bin/devsy-linux-arm64`. This bypasses cached release agents; otherwise the
-container can run a released binary rather than the code under test.
+When testing local changes with Docker on macOS, run this from `e2e/` and point
+`DEVSY_AGENT_BINARY` at the local Linux agent matching the Docker architecture:
+
+```bash
+DEVSY_AGENT_BINARY="$PWD/bin/devsy-linux-arm64" \
+  GOMAXPROCS=1 GOFLAGS=-p=1 mise exec -- go tool ginkgo --focus \
+  "lifecycle hooks preserve equals signs"
+```
+
+This bypasses cached release agents; otherwise the container can run a released
+binary rather than the code under test.
 
 ## Kubernetes tests
 
