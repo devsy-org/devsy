@@ -62,6 +62,8 @@ Declining leaves the AppImage usable, but a generic or ungrouped GNOME Wayland i
 
 If you move the AppImage, launch it once from its new path to update Devsy's owned launcher automatically. Settings also offers **Update launcher** and **Remove**. Paths containing `=` cannot be represented in a desktop launcher; move the AppImage to another path. Read-only data directories and other integration failures are reported without preventing normal Devsy use.
 
+If you edit a launcher created by Devsy, Devsy leaves the entire edited file unchanged, including during updates or removal. Settings reports the conflict; manage that launcher manually or move it aside before using **Add to applications** again. A customized, shared or pre-existing icon is preserved when repairing or re-adding a launcher and is not claimed for later deletion.
+
 For manual integration, both the desktop entry and a persistent icon file must be installed. Do not reference an icon inside `/tmp/.mount_*`: it disappears when the AppImage exits. Use the package-specific icon name described above, or copy an icon to the user's icon-theme directory and reference that name. Refreshing the icon cache alone cannot repair a missing desktop entry or asset.
 
 After upgrading from v1.24.0, an old pinned launcher may still reference a previous desktop filename. Unpin that launcher and pin Devsy again. Check the applications directories for older `devsy-desktop.desktop` entries before creating another launcher; do not delete entries owned by another package.

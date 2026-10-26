@@ -95,10 +95,12 @@ export function parseExec(raw: string): string[] {
 
 interface DesktopEntry {
   path: string
+  content: Buffer
   values: Map<string, string>
 }
 
-function parseDesktopEntry(path: string, text: string): DesktopEntry {
+function parseDesktopEntry(path: string, content: Buffer): DesktopEntry {
+  const text = content.toString("utf8")
   const values = new Map<string, string>()
   let inGroup = false
   for (const rawLine of text.split("\n")) {
@@ -115,7 +117,7 @@ function parseDesktopEntry(path: string, text: string): DesktopEntry {
       }
     }
   }
-  return { path, values }
+  return { path, content, values }
 }
 
 function readDesktopEntries(directory: string): DesktopEntry[] {
@@ -131,7 +133,7 @@ function readDesktopEntries(directory: string): DesktopEntry[] {
     const path = join(directory, name)
     if (name.endsWith(".desktop")) {
       try {
-        entries.push(parseDesktopEntry(path, readFileSync(path, "utf-8")))
+        entries.push(parseDesktopEntry(path, readFileSync(path)))
       } catch (err) {
         throw new Error(
           `Could not inspect launcher ${path}: ${describeError(err)}`,
@@ -280,13 +282,13 @@ export class LinuxDesktopIntegration {
     let conflict: string | undefined
     for (const directory of this.applicationDirs()) {
       for (const entry of readDesktopEntries(directory)) {
-        if (
-          entry.path === userEntry &&
-          entry.values.get(OWNER_KEY) === "true" &&
-          entry.values.get(PATH_KEY) &&
-          !lstatSync(userEntry).isSymbolicLink()
-        ) {
+        if (entry.path === userEntry && this.isOwnedLauncher(entry)) {
           owned = entry
+        } else if (
+          entry.path === userEntry &&
+          entry.values.get(OWNER_KEY) === "true"
+        ) {
+          conflict ??= `The launcher at ${entry.path} was modified. Manage it manually or move it aside before adding Devsy again.`
         } else if (entry.path.endsWith(`/${ENTRY_FILE}`)) {
           conflict ??= `Devsy already has a launcher at ${entry.path}.`
         } else if (targetsAppImage(entry, canonicalImage)) {
@@ -321,24 +323,52 @@ export class LinuxDesktopIntegration {
     if (status.conflict) throw new Error(status.conflict)
 
     const userEntry = this.userEntryPath()
+    const previous = this.launcherForMutation(status.installed)
     const iconPath = this.iconPath()
     const iconExists = pathExists(iconPath)
-    if (iconExists && !this.ownsIcon(userEntry)) {
-      throw new Error(
-        `An icon Devsy does not own already exists at ${iconPath}.`,
-      )
+    let ownedIcon: OwnedIcon | undefined
+    let copiedIcon: Buffer | undefined
+    if (iconExists) {
+      if (!isFile(iconPath))
+        throw new Error(`The icon at ${iconPath} is not a file.`)
+      const ownedBytes = this.ownedIconContents(previous)
+      const recordedIconHash = previous?.values.get(ICON_HASH_KEY)
+      // Repairing a launcher must not replace a customized or shared icon.
+      if (
+        ownedBytes &&
+        recordedIconHash &&
+        !this.iconUsedElsewhere(userEntry) &&
+        fileMatches(iconPath, ownedBytes)
+      ) {
+        ownedIcon = { path: iconPath, hash: recordedIconHash }
+      }
+    } else {
+      copiedIcon = readFileSync(this.options.iconSource)
+      writeAtomically(iconPath, copiedIcon)
+      ownedIcon = {
+        path: iconPath,
+        hash: createHash("sha256").update(copiedIcon).digest("hex"),
+      }
     }
-    const icon = readFileSync(this.options.iconSource)
-    const iconHash = createHash("sha256").update(icon).digest("hex")
-    writeAtomically(iconPath, icon, iconExists)
     try {
       writeAtomically(
         userEntry,
-        renderDesktopEntry(status.appImagePath, iconPath, iconHash),
-        status.installed,
+        renderDesktopEntry(status.appImagePath, ownedIcon),
+        previous?.content,
       )
     } catch (err) {
-      if (!iconExists) removeIfPresent(iconPath)
+      // Keep the icon if any concurrent launcher may now reference it.
+      if (
+        copiedIcon &&
+        !pathExists(userEntry) &&
+        fileMatches(iconPath, copiedIcon)
+      ) {
+        try {
+          if (!this.iconUsedElsewhere(userEntry)) removeIfPresent(iconPath)
+        } catch {
+          // Unreadable application directories cannot establish exclusive ownership.
+        }
+      }
       throw err
     }
     await this.options.refreshDesktopDatabase(dirname(userEntry))
@@ -347,38 +377,95 @@ export class LinuxDesktopIntegration {
   private async removeLauncher(): Promise<void> {
     const status = this.status()
     if (status.problem) throw new Error(status.problem)
+    if (!status.installed && status.conflict) throw new Error(status.conflict)
     if (!status.supported || !status.installed) {
       throw new Error("Devsy did not add this launcher, so it was left alone.")
     }
     const userEntry = this.userEntryPath()
+    const previous = this.launcherForMutation(true)
+    if (!previous)
+      throw new Error("The Devsy launcher disappeared; nothing was removed.")
+    const ownedIcon = this.ownedIconContents(previous)
     // Check references before mutation; unreadable application directories
     // must not turn uncertainty about shared ownership into deletion.
-    const deleteIcon =
-      this.ownsIcon(userEntry) && !this.iconUsedElsewhere(userEntry)
+    const deleteIcon = ownedIcon && !this.iconUsedElsewhere(userEntry)
+    if (!fileMatches(userEntry, previous.content)) {
+      throw new Error(
+        `The launcher at ${userEntry} changed while removing it; it was left unchanged.`,
+      )
+    }
     unlinkSync(userEntry)
-    if (deleteIcon) removeIfPresent(this.iconPath())
+    if (deleteIcon && ownedIcon && fileMatches(this.iconPath(), ownedIcon)) {
+      removeIfPresent(this.iconPath())
+    }
     await this.options.refreshDesktopDatabase(dirname(userEntry))
   }
 
-  private ownsIcon(userEntry: string): boolean {
-    try {
-      const entry = parseDesktopEntry(
-        userEntry,
-        readFileSync(userEntry, "utf-8"),
-      )
+  private isOwnedLauncher(entry: DesktopEntry): boolean {
+    const recordedPath = unescapeDesktopString(entry.values.get(PATH_KEY) ?? "")
+    if (
+      entry.values.get(OWNER_KEY) !== "true" ||
+      !isAbsolute(recordedPath) ||
+      CONTROL_CHARS.test(recordedPath) ||
+      recordedPath.includes("=") ||
+      !lstatSync(entry.path).isFile()
+    )
+      return false
+    const iconPath = entry.values.get(ICON_KEY)
+    const iconHash = entry.values.get(ICON_HASH_KEY)
+    let ownedIcon: OwnedIcon | undefined
+    if (iconPath !== undefined || iconHash !== undefined) {
       if (
-        entry.values.get(OWNER_KEY) !== "true" ||
-        unescapeDesktopString(entry.values.get(ICON_KEY) ?? "") !==
-          this.iconPath() ||
-        !lstatSync(this.iconPath()).isFile()
+        !iconPath ||
+        !iconHash ||
+        unescapeDesktopString(iconPath) !== this.iconPath() ||
+        !/^[a-f0-9]{64}$/.test(iconHash)
       )
         return false
-      const hash = createHash("sha256")
-        .update(readFileSync(this.iconPath()))
-        .digest("hex")
-      return entry.values.get(ICON_HASH_KEY) === hash
+      ownedIcon = { path: this.iconPath(), hash: iconHash }
+    }
+    return entry.content.equals(
+      Buffer.from(renderDesktopEntry(recordedPath, ownedIcon)),
+    )
+  }
+
+  private launcherForMutation(wasInstalled: boolean): DesktopEntry | undefined {
+    const path = this.userEntryPath()
+    if (!pathExists(path)) {
+      if (wasInstalled)
+        throw new Error(
+          `The launcher at ${path} disappeared since it was checked.`,
+        )
+      return undefined
+    }
+    const entry = parseDesktopEntry(path, readFileSync(path))
+    if (!wasInstalled || !this.isOwnedLauncher(entry)) {
+      throw new Error(
+        `The launcher at ${path} changed since it was checked; it was left unchanged.`,
+      )
+    }
+    return entry
+  }
+
+  private ownedIconContents(
+    entry: DesktopEntry | undefined,
+  ): Buffer | undefined {
+    if (
+      !entry ||
+      unescapeDesktopString(entry.values.get(ICON_KEY) ?? "") !==
+        this.iconPath()
+    ) {
+      return undefined
+    }
+    try {
+      if (!lstatSync(this.iconPath()).isFile()) return undefined
+      const bytes = readFileSync(this.iconPath())
+      return entry.values.get(ICON_HASH_KEY) ===
+        createHash("sha256").update(bytes).digest("hex")
+        ? bytes
+        : undefined
     } catch {
-      return false
+      return undefined
     }
   }
 
@@ -414,10 +501,14 @@ function isFile(path: string): boolean {
   }
 }
 
+interface OwnedIcon {
+  path: string
+  hash: string
+}
+
 function renderDesktopEntry(
   appImagePath: string,
-  ownedIcon: string,
-  iconHash: string,
+  ownedIcon?: OwnedIcon,
 ): string {
   const lines = [
     "[Desktop Entry]",
@@ -433,28 +524,46 @@ function renderDesktopEntry(
     `${OWNER_KEY}=true`,
     `${PATH_KEY}=${escapeDesktopString(appImagePath).replace(/ /g, "\\s")}`,
   ]
-  lines.push(
-    `${ICON_KEY}=${escapeDesktopString(ownedIcon).replace(/ /g, "\\s")}`,
-  )
-  lines.push(`${ICON_HASH_KEY}=${iconHash}`)
+  if (ownedIcon) {
+    lines.push(
+      `${ICON_KEY}=${escapeDesktopString(ownedIcon.path).replace(/ /g, "\\s")}`,
+    )
+    lines.push(`${ICON_HASH_KEY}=${ownedIcon.hash}`)
+  }
   return `${lines.join("\n")}\n`
 }
 
 function writeAtomically(
   path: string,
   content: string | Buffer,
-  replace: boolean,
+  expected?: Buffer,
 ): void {
   const temporary = `${path}.${randomUUID()}.tmp`
   try {
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(temporary, content, { flag: "wx", mode: 0o644 })
-    if (replace) renameSync(temporary, path)
-    else linkSync(temporary, path)
+    if (expected === undefined) linkSync(temporary, path)
+    else {
+      if (!fileMatches(path, expected)) {
+        throw new Error(
+          "The existing file changed or could not be verified; it was left unchanged.",
+        )
+      }
+      renameSync(temporary, path)
+    }
   } catch (err) {
     throw new Error(`Could not write ${path}: ${describeError(err)}`)
   } finally {
     removeIfPresent(temporary)
+  }
+}
+
+function fileMatches(path: string, expected: Buffer): boolean {
+  try {
+    if (!lstatSync(path).isFile()) return false
+    return readFileSync(path).equals(expected)
+  } catch {
+    return false
   }
 }
 

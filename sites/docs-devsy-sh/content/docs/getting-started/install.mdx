@@ -29,7 +29,7 @@ The DEB and RPM packages declare their dependencies, and the AppImage and Flatpa
 
 For an AppImage, first move it to a permanent location and make it executable. On its first direct launch, Devsy offers **Add to applications**. This creates a user-local launcher and copies its icon outside the temporary AppImage mount. You can decline and add it later under **Settings > Applications menu**.
 
-If you move the AppImage later, start it once from its new location; Devsy updates a launcher it owns. **Settings > Applications menu > Remove** removes only that launcher and its owned icon. Devsy does not overwrite an existing system, Flatpak, user-managed or third-party AppImage launcher, or change another package's default `devsy://` handler.
+If you move the AppImage later, start it once from its new location; Devsy updates an unmodified launcher it owns. **Settings > Applications menu > Remove** removes only that unmodified launcher and its owned icon. User-edited launchers and customized, shared or pre-existing icons are preserved. Devsy does not overwrite an existing system, Flatpak, user-managed or third-party AppImage launcher, or change another package's default `devsy://` handler.
 
 Flatpak, DEB and RPM packages install their own launchers; the AppImage action is not used for those formats. See [Linux icon troubleshooting](/docs/troubleshooting/linux-troubleshooting#generic-application-icon-on-gnome) if a running window still shows a generic icon.
 

@@ -75,6 +75,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   chmodSync(root, 0o700)
   rmSync(root, { recursive: true, force: true })
 })
@@ -264,10 +265,17 @@ describe("install", () => {
     expect(result.status.installed).toBe(true)
   })
 
-  it("keeps an icon it did not write", async () => {
-    write(userIcon(), "someone else's icon")
-    await integration({ env: { APPIMAGE: appImage() } }).install()
-    expect(readFileSync(userIcon(), "utf-8")).toBe("someone else's icon")
+  it("adds a launcher without claiming an existing foreign icon", async () => {
+    const foreignIcon = Buffer.from("someone else's icon")
+    write(userIcon(), foreignIcon)
+    const target = integration({ env: { APPIMAGE: appImage() } })
+    const result = await target.install()
+    expect(result.error).toBeUndefined()
+    expect(result.status.installed).toBe(true)
+    expect(readFileSync(userIcon())).toEqual(foreignIcon)
+    await target.remove()
+    expect(existsSync(join(userApplications(), OWNED_ENTRY))).toBe(false)
+    expect(readFileSync(userIcon())).toEqual(foreignIcon)
   })
 
   it.skipIf(process.getuid?.() === 0)(
@@ -300,6 +308,9 @@ describe("moved AppImage", () => {
     const entry = readFileSync(join(userApplications(), OWNED_ENTRY), "utf-8")
     expect(entry).toContain(`Exec=${after} %U`)
     expect(entry).not.toContain("Old.AppImage")
+    expect((await moved.remove()).error).toBeUndefined()
+    expect(existsSync(join(userApplications(), OWNED_ENTRY))).toBe(false)
+    expect(existsSync(userIcon())).toBe(false)
   })
 
   it("leaves a declined launcher absent", async () => {
@@ -471,5 +482,154 @@ describe("ownership boundaries", () => {
     const result = await integration({ env: { APPIMAGE: path } }).install()
     expect(result.status.conflict).toContain(entry)
     expect(existsSync(userIcon())).toBe(false)
+  })
+})
+
+describe("launcher and icon ownership", () => {
+  it.each(["Exec", "Name", "custom field"] as const)(
+    "preserves a user-edited %s launcher through move, refresh and removal",
+    async (change) => {
+      const original = integration({
+        env: { APPIMAGE: appImage("Old.AppImage") },
+      })
+      expect((await original.install()).error).toBeUndefined()
+      const path = join(userApplications(), OWNED_ENTRY)
+      const generated = readFileSync(path, "utf8")
+      const edited =
+        change === "Exec"
+          ? generated.replace(/^(Exec=.*)$/m, "$1 --custom-argument")
+          : change === "Name"
+            ? generated.replace(/^Name=.*$/m, "Name=My development launcher")
+            : `${generated}X-Local-Preference=keep-me\n`
+      writeFileSync(path, edited)
+      const expectedBytes = readFileSync(path)
+      const moved = integration({
+        env: { APPIMAGE: appImage("Moved.AppImage") },
+      })
+
+      const refreshed = await moved.refreshOwned()
+      expect(refreshed.status.conflict).toBeDefined()
+      expect(refreshed.status.installed).toBe(false)
+      expect(readFileSync(path)).toEqual(expectedBytes)
+      expect((await moved.remove()).error).toBeDefined()
+      expect(readFileSync(path)).toEqual(expectedBytes)
+    },
+  )
+
+  it.each(["install", "remove"] as const)(
+    "rechecks an edit made after the status check before %s",
+    async (operation) => {
+      const target = integration({ env: { APPIMAGE: appImage() } })
+      expect((await target.install()).error).toBeUndefined()
+      const path = join(userApplications(), OWNED_ENTRY)
+      const edited = Buffer.from(
+        `${readFileSync(path, "utf8")}# keep this edit\n`,
+      )
+      const status = target.status.bind(target)
+      vi.spyOn(target, "status").mockImplementationOnce(() => {
+        const checked = status()
+        writeFileSync(path, edited)
+        return checked
+      })
+
+      const result =
+        operation === "install" ? await target.install() : await target.remove()
+      expect(result.error).toBeDefined()
+      expect(readFileSync(path)).toEqual(edited)
+    },
+  )
+
+  it("rechecks launcher bytes immediately before replacing the prepared file", async () => {
+    const path = join(userApplications(), OWNED_ENTRY)
+    const source = write(join(root, "source-icon.png"), ICON_BYTES)
+    let editBeforeReplacement = false
+    let edited = ""
+    const target = new LinuxDesktopIntegration({
+      platform: "linux",
+      env: {
+        APPIMAGE: appImage(),
+        XDG_DATA_HOME: join(root, "data"),
+        XDG_DATA_DIRS: join(root, "system"),
+      },
+      homeDir: join(root, "home"),
+      get iconSource() {
+        if (editBeforeReplacement) writeFileSync(path, edited)
+        return source
+      },
+      refreshDesktopDatabase: async () => {},
+    })
+    expect((await target.install()).error).toBeUndefined()
+    edited = `${readFileSync(path, "utf8")}X-Local-Preference=concurrent-edit\n`
+    rmSync(userIcon())
+    editBeforeReplacement = true
+
+    const result = await target.install()
+    expect(result.error).toBeDefined()
+    expect(readFileSync(path, "utf8")).toBe(edited)
+  })
+
+  it("repairs a moved AppImage while preserving a customized icon", async () => {
+    const original = integration({
+      env: { APPIMAGE: appImage("Old.AppImage") },
+    })
+    expect((await original.install()).error).toBeUndefined()
+    const customized = Buffer.from("custom icon bytes")
+    write(userIcon(), customized)
+    const movedPath = appImage("Moved.AppImage")
+    const moved = integration({ env: { APPIMAGE: movedPath } })
+
+    const result = await moved.refreshOwned()
+    expect(result.error).toBeUndefined()
+    expect(result.status).toMatchObject({ installed: true, needsUpdate: false })
+    const entry = readFileSync(join(userApplications(), OWNED_ENTRY), "utf8")
+    const exec = entry.split("\n").find((line) => line.startsWith("Exec="))
+    expect(parseExec(exec?.slice(5) ?? "")).toEqual([movedPath, "%U"])
+    expect(readFileSync(userIcon())).toEqual(customized)
+    expect((await moved.remove()).error).toBeUndefined()
+    expect(readFileSync(userIcon())).toEqual(customized)
+  })
+
+  it("re-adds after preserving a shared icon without adopting its ownership", async () => {
+    const target = integration({ env: { APPIMAGE: appImage() } })
+    expect((await target.install()).error).toBeUndefined()
+    const otherEntry = write(
+      join(root, "sys-a", "applications", "other-launcher.desktop"),
+      "[Desktop Entry]\nName=Other launcher\nIcon=sh.devsy.app\n",
+    )
+    const sharedBytes = readFileSync(userIcon())
+    expect((await target.remove()).error).toBeUndefined()
+    expect(readFileSync(userIcon())).toEqual(sharedBytes)
+
+    const result = await target.install()
+    expect(result.error).toBeUndefined()
+    expect(result.status.installed).toBe(true)
+    expect(readFileSync(userIcon())).toEqual(sharedBytes)
+    rmSync(otherEntry)
+    expect((await target.remove()).error).toBeUndefined()
+    expect(readFileSync(userIcon())).toEqual(sharedBytes)
+  })
+})
+
+describe("shared icon path repair", () => {
+  it("never overwrites or later adopts an icon shared during a path update", async () => {
+    const original = integration({
+      env: { APPIMAGE: appImage("Old.AppImage") },
+    })
+    expect((await original.install()).error).toBeUndefined()
+    const otherEntry = write(
+      join(root, "sys-a", "applications", "other-launcher.desktop"),
+      "[Desktop Entry]\nName=Other launcher\nIcon=sh.devsy.app\n",
+    )
+    const sharedBytes = readFileSync(userIcon())
+    const moved = integration({ env: { APPIMAGE: appImage("Moved.AppImage") } })
+    write(join(root, "icon-source.png"), "new bundled artwork")
+
+    const result = await moved.refreshOwned()
+    expect(result.error).toBeUndefined()
+    expect(result.status).toMatchObject({ installed: true, needsUpdate: false })
+    expect(readFileSync(userIcon())).toEqual(sharedBytes)
+    rmSync(otherEntry)
+    expect((await moved.remove()).error).toBeUndefined()
+    expect(readFileSync(userIcon())).toEqual(sharedBytes)
   })
 })
