@@ -242,6 +242,8 @@ jobs:
               proof_path = Path(sys.argv[3])
               proof = json.loads(proof_path.read_text())
               proof.setdefault("launchAttempts", []).append(backend)
+              proof["sessionResult"] = "launch_attempted_no_window"
+              proof["scope"] = f"AppImage process start attempted for {backend}; no GNOME window observed yet."
               temporary = proof_path.with_suffix(".tmp")
               temporary.write_text(json.dumps(proof, indent=2) + "\n")
               temporary.replace(proof_path)
@@ -265,6 +267,7 @@ jobs:
               app_id = property_value(block, "app-id").strip("'\"")
               wm_class = property_value(block, "wm-class").strip("'\"")
               client_type_match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, "client-type"))
+              process_id_match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, "pid"))
               if not client_type_match or not re.search(r"devsy", " ".join((title, app_id, wm_class)), re.I):
                   continue
               client_type = int(client_type_match.group(1))
@@ -276,6 +279,7 @@ jobs:
                   "appId": app_id,
                   "wmClass": wm_class,
                   "clientType": client_type,
+                  "processId": int(process_id_match.group(1)) if process_id_match else None,
               })
 
           if not matches:
@@ -285,6 +289,7 @@ jobs:
           identity_path.write_text(json.dumps(identity, indent=2) + "\n")
           proof = json.loads(proof_path.read_text())
           proof.setdefault("observedWindows", {})[backend] = matches
+          proof["applicationLaunched"] = True
           proof["sessionResult"] = "partial"
           proof["scope"] = f"Devsy window observed in private {backend} GNOME session; remaining checks pending."
           temporary = proof_path.with_suffix(".tmp")
@@ -293,13 +298,301 @@ jobs:
           print(json.dumps(identity, sort_keys=True))
           PY
           chmod 700 "$proof_dir/verify-window.py"
-          Xvfb :99 -screen 0 1280x800x24 -nolisten tcp > "$proof_dir/xvfb.log" 2>&1 &
+          cat > "$proof_dir/process-audit.py" <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import signal
+          import stat
+          import sys
+          import time
+          from pathlib import Path
+
+          HASH_CACHE = {}
+
+          def hash_file(path):
+              info = os.stat(path)
+              key = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+              if key not in HASH_CACHE:
+                  digest = hashlib.sha256()
+                  with open(path, "rb") as source:
+                      for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                          digest.update(chunk)
+                  HASH_CACHE[key] = digest.hexdigest()
+              return HASH_CACHE[key]
+
+          def mount_info(root, exe):
+              target = exe.removesuffix(" (deleted)")
+              matches = []
+              try:
+                  lines = (root / "mountinfo").read_text().splitlines()
+              except OSError:
+                  return None
+              for line in lines:
+                  before, separator, after = line.partition(" - ")
+                  if not separator:
+                      continue
+                  fields = before.split()
+                  mountpoint = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), fields[4])
+                  if target == mountpoint or target.startswith(mountpoint.rstrip("/") + "/"):
+                      after_fields = after.split()
+                      matches.append((len(mountpoint), {
+                          "mountpoint": mountpoint,
+                          "filesystem": after_fields[0],
+                          "source": after_fields[1] if len(after_fields) > 1 else "",
+                      }))
+              return max(matches, key=lambda match: match[0])[1] if matches else None
+
+          def proc_record(pid, detailed=False):
+              root = Path("/proc") / str(pid)
+              try:
+                  raw_stat = (root / "stat").read_text()
+                  fields = raw_stat[raw_stat.rfind(")") + 2:].split()
+                  exe = os.readlink(root / "exe")
+                  record = {
+                      "pid": pid,
+                      "ppid": int(fields[1]),
+                      "pgrp": int(fields[2]),
+                      "sid": int(fields[3]),
+                      "startTicks": int(fields[19]),
+                      "uid": root.stat().st_uid,
+                      "exe": exe,
+                  }
+                  if not detailed:
+                      return record
+                  env = {}
+                  for item in (root / "environ").read_bytes().split(b"\0"):
+                      key, separator, value = item.partition(b"=")
+                      if separator and key in {b"APPIMAGE", b"DISPLAY", b"WAYLAND_DISPLAY", b"XDG_RUNTIME_DIR", b"XAUTHORITY"}:
+                          env[key.decode()] = value.decode(errors="replace")
+                  image_path = env.get("APPIMAGE")
+                  record.update({
+                      "exeSha256": hash_file(root / "exe"),
+                      "argv": [x.decode(errors="replace") for x in (root / "cmdline").read_bytes().split(b"\0") if x],
+                      "mount": mount_info(root, exe),
+                      "appImagePath": image_path,
+                      "appImageSha256": hash_file(image_path) if image_path and Path(image_path).is_file() else None,
+                      "display": env.get("DISPLAY"),
+                      "waylandDisplay": env.get("WAYLAND_DISPLAY"),
+                      "runtimeDir": env.get("XDG_RUNTIME_DIR"),
+                      "xauthorityPath": env.get("XAUTHORITY"),
+                  })
+                  return record
+              except (OSError, ValueError, IndexError):
+                  return None
+
+          def all_processes(detailed=False):
+              records = {}
+              for entry in Path("/proc").iterdir():
+                  if entry.name.isdigit():
+                      record = proc_record(int(entry.name), detailed)
+                      if record:
+                          records[record["pid"]] = record
+              return records
+
+
+          def owned_tree(root_pid, records):
+              root = records.get(root_pid)
+              if not root:
+                  return []
+              children = {}
+              for record in records.values():
+                  if record["uid"] == root["uid"]:
+                      children.setdefault(record["ppid"], []).append(record["pid"])
+              selected = {root_pid}
+              pending = [root_pid]
+              while pending:
+                  parent = pending.pop()
+                  for child in children.get(parent, []):
+                      if child not in selected:
+                          selected.add(child)
+                          pending.append(child)
+              selected.update(record["pid"] for record in records.values()
+                              if record["uid"] == root["uid"] and
+                              (record["sid"] == root["sid"] or record["pgrp"] == root_pid))
+              return [records[pid] for pid in sorted(selected) if pid in records]
+
+          def write_json(path, value):
+              Path(path).write_text(json.dumps(value, indent=2) + "\n")
+
+          def version_hints(path):
+              try:
+                  return re.findall(r"current=([^ ]+)", Path(path).read_text())
+              except OSError:
+                  return []
+
+          def find_display(shell_pid, shell_log, output):
+              shell = proc_record(shell_pid)
+              if not shell:
+                  raise SystemExit("owned Mutter process is missing")
+              log_matches = re.findall(r"Using public X11 display ([^,\s]+)", Path(shell_log).read_text())
+              records = all_processes()
+              members = owned_tree(shell_pid, records)
+              candidates = []
+              for basic in members:
+                  try:
+                      args = [arg.decode(errors="replace") for arg in (Path("/proc") / str(basic["pid"]) / "cmdline").read_bytes().split(b"\0") if arg]
+                  except OSError:
+                      continue
+                  if Path(basic["exe"]).name != "Xwayland" and not any("Xwayland" in arg for arg in args):
+                      continue
+                  record = proc_record(basic["pid"], detailed=True)
+                  if not record:
+                      continue
+                  args = record["argv"]
+                  displays = [arg for arg in args if re.fullmatch(r":\d+(?:\.\d+)?", arg)]
+                  auth = None
+                  if "-auth" in args:
+                      index = args.index("-auth")
+                      if index + 1 < len(args):
+                          auth = args[index + 1]
+                  if not auth:
+                      auth = record["xauthorityPath"]
+                  candidates.append((record, displays[0] if displays else None, auth))
+              if len(log_matches) != 1 or len(candidates) != 1:
+                  raise SystemExit("could not uniquely identify the owned nested Xwayland display")
+              xwayland, display, auth = candidates[0]
+              if not display or display != log_matches[0] or xwayland["sid"] != shell["sid"]:
+                  raise SystemExit("nested Xwayland display did not match the owned Mutter session")
+              auth_path = Path(auth).resolve(strict=True) if auth else None
+              if not auth_path or not auth_path.is_file() or auth_path.stat().st_uid != shell["uid"]:
+                  raise SystemExit("owned nested Xwayland authority file is unavailable")
+              display_number = display[1:].split(".", 1)[0]
+              socket_path = Path("/tmp/.X11-unix") / f"X{display_number}"
+              if not socket_path.exists() or not stat.S_ISSOCK(socket_path.stat().st_mode):
+                  raise SystemExit("nested Xwayland socket is missing")
+              info = {
+                  "display": display,
+                  "xwaylandPid": xwayland["pid"],
+                  "xwaylandStartTicks": xwayland["startTicks"],
+                  "xwaylandExe": xwayland["exe"],
+                  "xauthorityPath": str(auth_path),
+                  "xauthorityMode": oct(stat.S_IMODE(auth_path.stat().st_mode)),
+                  "socketPath": str(socket_path),
+                  "shellPid": shell_pid,
+                  "shellStartTicks": shell["startTicks"],
+              }
+              write_json(output, info)
+              print(json.dumps(info, sort_keys=True))
+
+          def snapshot(root_pid, image_path, log_path, output):
+              records = all_processes()
+              members = owned_tree(root_pid, records)
+              if not members:
+                  raise SystemExit("AppImage root process disappeared before process snapshot")
+              members = [proc_record(item["pid"], detailed=True) for item in members]
+              members = [item for item in members if item]
+              image_sha = hash_file(image_path)
+              proof = {
+                  "rootPid": root_pid,
+                  "rootStartTicks": next(item["startTicks"] for item in members if item["pid"] == root_pid),
+                  "appImagePath": image_path,
+                  "appImageSha256": image_sha,
+                  "reportedVersions": version_hints(log_path),
+                  "processes": members,
+              }
+              write_json(output, proof)
+              print(json.dumps({"rootPid": root_pid, "processCount": len(members),
+                                "reportedVersions": proof["reportedVersions"],
+                                "appImageSha256": image_sha}, sort_keys=True))
+
+          def stop_tree(root_pid, baseline_path, output):
+              baseline = json.loads(Path(baseline_path).read_text()) if Path(baseline_path).is_file() else {}
+              expected_start = baseline.get("rootStartTicks")
+              known = {
+                  record["pid"]: {"startTicks": record["startTicks"], "uid": record["uid"]}
+                  for record in baseline.get("processes", [])
+              }
+
+              def refresh():
+                  records = all_processes()
+                  current = owned_tree(root_pid, records)
+                  root = next((item for item in current if item["pid"] == root_pid), None)
+                  if root and expected_start is not None and root["startTicks"] != expected_start:
+                      raise SystemExit("AppImage root PID was reused; refusing to signal it")
+                  if root is None:
+                      tracked = []
+                      for pid, identity in known.items():
+                          record = records.get(pid)
+                          if record and record["startTicks"] == identity["startTicks"] and record["uid"] == identity["uid"]:
+                              tracked.extend(owned_tree(pid, records))
+                      current = list({record["pid"]: record for record in tracked}.values())
+                  for record in current:
+                      known.setdefault(record["pid"], {
+                          "startTicks": record["startTicks"],
+                          "uid": record["uid"],
+                      })
+                  return records, current
+
+              def signal_known(records, sig):
+                  for pid in sorted(known, key=lambda value: value == root_pid):
+                      identity = known[pid]
+                      record = records.get(pid)
+                      if not record or record["startTicks"] != identity["startTicks"] or record["uid"] != identity["uid"]:
+                          continue
+                      if expected_start is not None and pid == root_pid and identity["startTicks"] != expected_start:
+                          continue
+                      try:
+                          os.kill(pid, sig)
+                      except ProcessLookupError:
+                          pass
+
+              def survivors_now():
+                  records = all_processes()
+                  return [
+                      {"pid": pid, **identity, "exe": records[pid]["exe"]}
+                      for pid, identity in known.items()
+                      if pid in records and records[pid]["startTicks"] == identity["startTicks"] and
+                      records[pid]["uid"] == identity["uid"]
+                  ]
+
+              records, current = refresh()
+              signal_known(records, signal.SIGTERM)
+              deadline = time.monotonic() + 5
+              while time.monotonic() < deadline:
+                  records, current = refresh()
+                  if not current and not survivors_now():
+                      break
+                  signal_known(records, signal.SIGTERM)
+                  time.sleep(0.2)
+              records, current = refresh()
+              signal_known(records, signal.SIGKILL)
+              deadline = time.monotonic() + 5
+              while time.monotonic() < deadline:
+                  records, current = refresh()
+                  survivors = survivors_now()
+                  if not survivors and not current:
+                      break
+                  time.sleep(0.2)
+              records, current = refresh()
+              survivors = survivors_now()
+              result = {"rootPid": root_pid, "trackedProcessCount": len(known),
+                        "survivors": survivors, "remainingTree": current}
+              write_json(output, result)
+              print(json.dumps(result, sort_keys=True))
+              if survivors or current:
+                  raise SystemExit("owned AppImage processes survived bounded cleanup")
+
+          if sys.argv[1] == "display":
+              find_display(int(sys.argv[2]), sys.argv[3], sys.argv[4])
+          elif sys.argv[1] == "snapshot":
+              snapshot(int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5])
+          elif sys.argv[1] == "stop":
+              stop_tree(int(sys.argv[2]), sys.argv[3], sys.argv[4])
+          else:
+              raise SystemExit("usage: process-audit.py display|snapshot|stop ...")
+          PY
+          chmod 700 "$proof_dir/process-audit.py"
+          export PROCESS_AUDIT_SCRIPT="$proof_dir/process-audit.py"
+          HOST_DISPLAY="${DISPLAY:-:99}"
+          Xvfb "$HOST_DISPLAY" -screen 0 1280x800x24 -nolisten tcp > "$proof_dir/xvfb.log" 2>&1 &
           xvfb_pid=$!
           trap 'kill "$xvfb_pid" 2>/dev/null || true; wait "$xvfb_pid" 2>/dev/null || true' EXIT
-          export DISPLAY=:99
+          export DISPLAY="$HOST_DISPLAY"
           timeout 30s bash -c 'until xdpyinfo >/dev/null 2>&1; do sleep 0.25; done'
-          glxinfo -B | tee "$proof_dir/software-renderer.txt"
-          grep -Eiq 'llvmpipe|softpipe|swrast' "$proof_dir/software-renderer.txt"
+          glxinfo -B | tee "$proof_dir/host-software-renderer.txt"
+          grep -Eiq 'llvmpipe|softpipe|swrast' "$proof_dir/host-software-renderer.txt"
 
           run_wayland_session() {
             local runtime="$profile/wayland-runtime"
@@ -308,13 +601,24 @@ jobs:
             export XDG_RUNTIME_DIR="$runtime"
             # shellcheck disable=SC2016
             dbus-run-session -- bash -euo pipefail -c '
+              host_display="$DISPLAY"
               setsid gnome-shell --wayland --nested --sm-disable >"$PROOF_DIR/gnome-wayland-shell.log" 2>&1 &
               shell_pid=$!
               app_pid=
+              app_baseline=
+              cleanup_app() {
+                if [ -n "$app_pid" ]; then
+                  python3 "$PROCESS_AUDIT_SCRIPT" stop "$app_pid" "$app_baseline" "$PROOF_DIR/$(basename "$app_baseline" .json)-cleanup.json" || return $?
+                  wait "$app_pid" 2>/dev/null || true
+                  app_pid=
+                fi
+              }
               cleanup() {
-                if [ -n "$app_pid" ]; then kill -- "-$app_pid" 2>/dev/null || true; fi
+                status=0
+                cleanup_app || status=$?
                 kill -- "-$shell_pid" 2>/dev/null || true
-                wait "$app_pid" "$shell_pid" 2>/dev/null || true
+                wait "$shell_pid" 2>/dev/null || true
+                return "$status"
               }
               trap cleanup EXIT
               for attempt in $(seq 1 180); do
@@ -324,85 +628,70 @@ jobs:
               wayland_socket=$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name "wayland-*" -print -quit)
               test -n "$wayland_socket"
               export WAYLAND_DISPLAY="${wayland_socket##*/}"
-              gnome-shell --version
-              setsid "$APPIMAGE_PATH" >"$PROOF_DIR/devsy-wayland-default.log" 2>&1 &
-              app_pid=$!
-              python3 "$VERIFY_WINDOW_SCRIPT" --attempt wayland-default "$PROOF_DIR/proof.json"
-              sleep 2
-              ensure_introspection() {
-                if ! gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
-                  --method org.gnome.Shell.Introspect.GetWindows >/dev/null 2>&1; then
-                  xdotool key --clearmodifiers Alt+F2
-                  sleep 1
-                  xdotool type --clearmodifiers --delay 40 lg
-                  xdotool key Return
-                  sleep 2
-                  xdotool type --clearmodifiers --delay 10 "global.context.unsafe_mode = true"
-                  xdotool key Return
-                  sleep 1
-                  gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
-                    --method org.gnome.Shell.Introspect.GetWindows >/dev/null
-                  xdotool key Escape
-                  sleep 1
-                fi
-              }
-              ensure_introspection
-              default_output="$PROOF_DIR/wayland-default-windows.txt"
-              default_identity="$PROOF_DIR/wayland-default-window-identity.json"
+              gnome-shell --version | tee "$PROOF_DIR/gnome-wayland-version.txt"
+              display_json="$PROOF_DIR/nested-wayland-display.json"
               for attempt in $(seq 1 60); do
-                if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
-                  --method org.gnome.Shell.Introspect.GetWindows > "$default_output" 2>"$default_output.err" \
-                  && python3 "$VERIFY_WINDOW_SCRIPT" "$default_output" any wayland-default "$PROOF_DIR/proof.json" \
-                    > "$PROOF_DIR/wayland-default-window-match.json" 2>/dev/null; then
+                if python3 "$PROCESS_AUDIT_SCRIPT" display "$shell_pid" "$PROOF_DIR/gnome-wayland-shell.log" "$display_json" \
+                  >>"$PROOF_DIR/nested-display-discovery.log" 2>&1; then
                   break
                 fi
                 sleep 0.5
               done
-              test -s "$default_identity"
-              cat "$default_output" | tee "$PROOF_DIR/wayland-default-launch.txt"
-              default_client_type=$(jq -r ".matchingWindows[0].clientType" "$default_identity")
-              default_wayland=false
-              if [ "$default_client_type" = 0 ]; then
-                default_wayland=true
-                printf "backend=wayland client-type=0 launchargs=none(default) app_pid=%s\n" "$app_pid" \
-                  > "$PROOF_DIR/wayland-launch-mode.txt"
-                env -u WAYLAND_DISPLAY GDK_BACKEND=x11 gnome-screenshot --file="$PROOF_DIR/wayland.png"
-              elif [ "$default_client_type" = 1 ]; then
-                printf "backend=wayland client-type=1 launchargs=none(default; XWayland) app_pid=%s\n" "$app_pid" \
-                  > "$PROOF_DIR/wayland-default-launch-mode.txt"
-              else
-                echo "Unexpected default Wayland client-type: $default_client_type" >&2
-                exit 1
-              fi
-              kill -- "-$app_pid" 2>/dev/null || true
-              wait "$app_pid" 2>/dev/null || true
-              app_pid=
-              if [ "$default_wayland" != true ]; then
-                setsid "$APPIMAGE_PATH" --ozone-platform=wayland --enable-features=UseOzonePlatform \
-                  >"$PROOF_DIR/devsy-wayland-forced.log" 2>&1 &
+              test -s "$display_json"
+              nested_display=$(jq -er ".display" "$display_json")
+              nested_auth=$(jq -er ".xauthorityPath" "$display_json")
+              timeout 10s env DISPLAY="$nested_display" XAUTHORITY="$nested_auth" xdpyinfo >"$PROOF_DIR/nested-xdpyinfo.txt"
+              timeout 30s env DISPLAY="$nested_display" XAUTHORITY="$nested_auth" glxinfo -B | tee "$PROOF_DIR/nested-software-renderer.txt"
+              export DISPLAY="$nested_display" XAUTHORITY="$nested_auth"
+              start_app() {
+                backend=$1
+                logfile=$2
+                app_baseline="$PROOF_DIR/$backend-process-before.json"
+                shift 2
+                setsid "$APPIMAGE_PATH" "$@" >"$logfile" 2>&1 &
                 app_pid=$!
-                python3 "$VERIFY_WINDOW_SCRIPT" --attempt wayland-forced "$PROOF_DIR/proof.json"
-                output="$PROOF_DIR/wayland-forced-windows.txt"
-                forced_identity="$PROOF_DIR/wayland-forced-window-identity.json"
+                python3 "$VERIFY_WINDOW_SCRIPT" --attempt "$backend" "$PROOF_DIR/proof.json"
+                python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$logfile" "$app_baseline"
+              }
+              observe_app() {
+                backend=$1
+                expected_type=$2
+                output="$PROOF_DIR/$backend-windows.txt"
+                identity="$PROOF_DIR/$backend-window-identity.json"
                 for attempt in $(seq 1 60); do
                   if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
-                    --method org.gnome.Shell.Introspect.GetWindows > "$output" 2>"$output.err" \
-                    && python3 "$VERIFY_WINDOW_SCRIPT" "$output" 0 wayland-forced "$PROOF_DIR/proof.json" \
-                      > "$PROOF_DIR/wayland-forced-window-match.json" 2>/dev/null; then
+                    --method org.gnome.Shell.Introspect.GetWindows >"$output" 2>"$output.err" \
+                    && python3 "$VERIFY_WINDOW_SCRIPT" "$output" "$expected_type" "$backend" "$PROOF_DIR/proof.json" \
+                      >"$PROOF_DIR/$backend-window-match.json" 2>"$PROOF_DIR/$backend-window-parser.err"; then
                     break
                   fi
                   sleep 0.5
                 done
-                test -s "$forced_identity"
-                cat "$output" | tee "$PROOF_DIR/wayland-forced-launch.txt"
-                env -u WAYLAND_DISPLAY GDK_BACKEND=x11 gnome-screenshot --file="$PROOF_DIR/wayland.png"
-                printf "backend=wayland client-type=0 launchargs=--ozone-platform=wayland --enable-features=UseOzonePlatform (forced probe; not default behavior) app_pid=%s\n" \
-                  "$app_pid" > "$PROOF_DIR/wayland-launch-mode.txt"
+                test -s "$identity"
+                python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-$backend.log" \
+                  "$PROOF_DIR/$backend-process-after.json"
+                cat "$output" >"$PROOF_DIR/$backend-window-observation.txt"
+              }
+              start_app wayland-default "$PROOF_DIR/devsy-wayland-default.log"
+              observe_app wayland-default any
+              default_client_type=$(jq -er ".matchingWindows[0].clientType" "$PROOF_DIR/wayland-default-window-identity.json")
+              printf "backend=wayland client-type=%s launchargs=none(default) app_pid=%s\n" "$default_client_type" "$app_pid" \
+                >"$PROOF_DIR/wayland-default-launch-mode.txt"
+              if [ "$default_client_type" = 0 ]; then
+                env -u WAYLAND_DISPLAY -u XAUTHORITY DISPLAY="$host_display" gnome-screenshot --file="$PROOF_DIR/wayland.png"
+              elif [ "$default_client_type" = 1 ]; then
+                cleanup_app
+                start_app wayland-forced "$PROOF_DIR/devsy-wayland-forced.log" --ozone-platform=wayland --enable-features=UseOzonePlatform
+                observe_app wayland-forced 0
+                env -u WAYLAND_DISPLAY -u XAUTHORITY DISPLAY="$host_display" gnome-screenshot --file="$PROOF_DIR/wayland.png"
+                printf "backend=wayland client-type=0 launchargs=--ozone-platform=wayland --enable-features=UseOzonePlatform (forced probe; not default behavior) app_pid=%s\n" "$app_pid" \
+                  >"$PROOF_DIR/wayland-forced-launch-mode.txt"
+              else
+                echo "Unexpected default Wayland client-type: $default_client_type" >&2
+                exit 1
               fi
               test -s "$PROOF_DIR/wayland.png"
-              kill -- "-$app_pid" 2>/dev/null || true
-              wait "$app_pid" 2>/dev/null || true
-              app_pid=
+              cleanup_app
             '
           }
           run_wayland_session
@@ -414,58 +703,53 @@ jobs:
             export XDG_RUNTIME_DIR="$runtime"
             # shellcheck disable=SC2016
             dbus-run-session -- bash -euo pipefail -c '
+              host_display="$DISPLAY"
               unset WAYLAND_DISPLAY
-              setsid gnome-shell --x11 --display="$DISPLAY" --sm-disable >"$PROOF_DIR/gnome-x11-shell.log" 2>&1 &
+              setsid gnome-shell --x11 --display="$host_display" --sm-disable >"$PROOF_DIR/gnome-x11-shell.log" 2>&1 &
               shell_pid=$!
               app_pid=
+              app_baseline=
+              cleanup_app() {
+                if [ -n "$app_pid" ]; then
+                  python3 "$PROCESS_AUDIT_SCRIPT" stop "$app_pid" "$app_baseline" "$PROOF_DIR/x11-process-cleanup.json" || return $?
+                  wait "$app_pid" 2>/dev/null || true
+                  app_pid=
+                fi
+              }
               cleanup() {
-                if [ -n "$app_pid" ]; then kill -- "-$app_pid" 2>/dev/null || true; fi
+                status=0
+                cleanup_app || status=$?
                 kill -- "-$shell_pid" 2>/dev/null || true
-                wait "$app_pid" "$shell_pid" 2>/dev/null || true
+                wait "$shell_pid" 2>/dev/null || true
+                return "$status"
               }
               trap cleanup EXIT
               sleep 8
               kill -0 "$shell_pid"
-              gnome-shell --version
+              gnome-shell --version | tee "$PROOF_DIR/gnome-x11-version.txt"
               setsid "$APPIMAGE_PATH" >"$PROOF_DIR/devsy-x11.log" 2>&1 &
               app_pid=$!
+              app_baseline="$PROOF_DIR/x11-process-before.json"
               python3 "$VERIFY_WINDOW_SCRIPT" --attempt x11 "$PROOF_DIR/proof.json"
-              sleep 2
-              if ! gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
-                --method org.gnome.Shell.Introspect.GetWindows >/dev/null 2>&1; then
-                xdotool key --clearmodifiers Alt+F2
-                sleep 1
-                xdotool type --clearmodifiers --delay 40 lg
-                xdotool key Return
-                sleep 2
-                xdotool type --clearmodifiers --delay 10 "global.context.unsafe_mode = true"
-                xdotool key Return
-                sleep 1
-                gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
-                  --method org.gnome.Shell.Introspect.GetWindows >/dev/null
-                xdotool key Escape
-                sleep 1
-              fi
+              python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$app_baseline"
               output="$PROOF_DIR/x11-windows.txt"
               identity="$PROOF_DIR/x11-window-identity.json"
               for attempt in $(seq 1 60); do
                 if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
-                  --method org.gnome.Shell.Introspect.GetWindows > "$output" 2>"$output.err" \
+                  --method org.gnome.Shell.Introspect.GetWindows >"$output" 2>"$output.err" \
                   && python3 "$VERIFY_WINDOW_SCRIPT" "$output" 1 x11 "$PROOF_DIR/proof.json" \
-                    > "$PROOF_DIR/x11-window-match.json" 2>/dev/null; then
+                    >"$PROOF_DIR/x11-window-match.json" 2>"$PROOF_DIR/x11-window-parser.err"; then
                   break
                 fi
                 sleep 0.5
               done
               test -s "$identity"
-              cat "$output"
-              env -u WAYLAND_DISPLAY GDK_BACKEND=x11 gnome-screenshot --file="$PROOF_DIR/x11.png"
+              python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$PROOF_DIR/x11-process-after.json"
+              cat "$output" >"$PROOF_DIR/x11-window-observation.txt"
+              env -u WAYLAND_DISPLAY DISPLAY="$host_display" gnome-screenshot --file="$PROOF_DIR/x11.png"
               test -s "$PROOF_DIR/x11.png"
-              printf "backend=x11 client-type=1 launchargs=none(default) app_pid=%s\n" "$app_pid" \
-                > "$PROOF_DIR/x11-launch-mode.txt"
-              kill -- "-$app_pid" 2>/dev/null || true
-              wait "$app_pid" 2>/dev/null || true
-              app_pid=
+              printf "backend=x11 client-type=1 launchargs=none(default) app_pid=%s\n" "$app_pid" >"$PROOF_DIR/x11-launch-mode.txt"
+              cleanup_app
             '
           }
           run_x11_session
@@ -482,12 +766,41 @@ jobs:
               raise SystemExit("no actual Wayland client window was observed")
           if not any(window["clientType"] == 1 for window in windows.get("x11", [])):
               raise SystemExit("no actual X11 client window was observed")
+
+          required = [
+              ("wayland-default", next((window for window in windows.get("wayland-default", []) if window["clientType"] == 0), None)),
+              ("wayland-forced", next((window for window in windows.get("wayland-forced", []) if window["clientType"] == 0), None)),
+              ("x11", next((window for window in windows.get("x11", []) if window["clientType"] == 1), None)),
+          ]
+          required = [(backend, window) for backend, window in required if window]
+          expected_hash = proof["appimage"]["sha256"]
+          provenance = []
+          errors = []
+          for backend, window in required:
+              process_id = window.get("processId")
+              snapshot_path = proof_path.with_name(f"{backend}-process-after.json")
+              snapshot = json.loads(snapshot_path.read_text()) if snapshot_path.is_file() else {}
+              process = next((item for item in snapshot.get("processes", []) if item["pid"] == process_id), None)
+              matched = bool(process_id and process and process.get("appImageSha256") == expected_hash)
+              provenance.append({
+                  "backend": backend,
+                  "windowProcessId": process_id,
+                  "process": process,
+                  "matchesVerifiedAppImage": matched,
+              })
+              if not matched:
+                  errors.append(f"{backend} window PID is not proven to use the exact verified AppImage")
+          proof["windowProcessProvenance"] = provenance
+          if errors:
+              proof["sessionResult"] = "window_observed_provenance_unverified"
+              proof["scope"] = "Devsy window observed, but process provenance does not tie it to the exact verified AppImage."
+              proof_path.write_text(json.dumps(proof, indent=2) + "\n")
+              raise SystemExit("; ".join(errors))
           proof["sessionResult"] = "passed"
-          proof["applicationLaunched"] = True
-          proof["scope"] = "D485 AppImage launched in isolated GNOME Wayland and X11 sessions; software-rendered feasibility only, not the native desktop acceptance matrix."
+          proof["scope"] = "The exact verified AppImage process was tied by PID and APPIMAGE hash to Devsy windows in private GNOME Wayland and X11 sessions; software-rendered feasibility only, not the native desktop acceptance matrix."
           proof_path.write_text(json.dumps(proof, indent=2) + "\n")
           PY
-          printf 'GNOME feasibility: D485 AppImage window observed with Wayland client type 0 and X11 client type 1; software-rendered private GNOME sessions; application not installed or released.\n' \
+          printf 'GNOME feasibility: verified AppImage process tied to Devsy Wayland client type 0 and X11 client type 1 windows; software-rendered private GNOME sessions; application not installed or released.\n' \
             | tee "$proof_dir/result.txt"
 
       - name: Upload bounded GNOME feasibility evidence
