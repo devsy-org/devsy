@@ -350,6 +350,7 @@ async function main() {
     "github_pull_request_preflight",
     `${GITHUB_API_ORIGIN}/repos/devsy-org/devsy/pulls/${encodeURIComponent(prNumber)}`,
     GITHUB_API_ORIGIN,
+    process.env.GITHUB_TOKEN,
   );
 
   appendRecord({ event: "deployment_preflight", deploy: metadataSummary(deploy) });

@@ -11,6 +11,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
     steps:
       - name: Checkout diagnostic branch without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -19,6 +20,7 @@ jobs:
 
       - name: Fetch bounded deployment metadata and logs
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: efb50055-f8d7-4150-9801-496da6d46bd8
           NETLIFY_DEPLOY_ID: 6adf6c182569d945284011d8
