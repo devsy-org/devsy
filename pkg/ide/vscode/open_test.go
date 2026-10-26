@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -16,8 +18,6 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 )
-
-const listExtensionsArg = "--list-extensions"
 
 type call struct {
 	path string
@@ -304,6 +304,66 @@ func (s *OpenSuite) TestMacAppPathIsCandidateOnlyOnDarwin() {
 	_, err = s.launcher.resolveCLI(config, nil)
 	s.Require().Error(err)
 	s.Equal([]string{"codium", config.macAppPath}, looked)
+}
+
+func (s *OpenSuite) TestHostCLIRejectsUntrustedCommands() {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		s.T().Skip("requires a POSIX shell")
+	}
+	marker := filepath.Join(s.T().TempDir(), "executed")
+	_, err = runHostCLI(context.Background(), sh, "-c", "touch \"$1\"", "sh", marker)
+	s.Require().Error(err)
+	_, statErr := os.Stat(marker)
+	s.ErrorIs(statErr, os.ErrNotExist)
+
+	for _, args := range [][]string{
+		{"--install-extension", "untrusted.extension"},
+		{"--user-data-dir", marker},
+		{"--reuse-window", "--folder-uri", "https://example.invalid/"},
+		{"--reuse-window", "--folder-uri", "vscode-remote://ssh-remote+ws.devsy/w", "--extra"},
+	} {
+		_, err = runHostCLI(context.Background(), filepath.Join(s.T().TempDir(), "codium"), args...)
+		s.Require().Error(err)
+		s.NotErrorIs(err, os.ErrNotExist)
+	}
+}
+
+func (s *OpenSuite) TestHostCLIEnumeratesAllExtensionsAndPreservesFolderArgv() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("fixture is a POSIX shell script, not Windows wrapper execution")
+	}
+	dir := filepath.Join(s.T().TempDir(), "editor space \u00e9")
+	s.Require().NoError(os.MkdirAll(dir, 0o700))
+	script := `#!/bin/sh
+if [ "$1" = "--list-extensions" ]; then
+  printf '%s\n' jeanp413.open-remote-ssh ms-vscode-remote.remote-containers
+  i=0
+  while [ "$i" -lt 260 ]; do
+    printf 'test.extension-%s\n' "$i"
+    i=$((i+1))
+  done
+  exit 0
+fi
+if [ "$1" = "--install-extension" ]; then exit 99; fi
+printf '%s\n' "$@" > "$DEVSY_TEST_ARGV_FILE"
+`
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, "codium"), []byte(script), 0o700))
+	argvFile := filepath.Join(dir, "argv")
+	s.T().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	s.T().Setenv("DEVSY_TEST_ARGV_FILE", argvFile)
+	s.launcher = newHostLauncher()
+	s.launcher.openURI = func(string) error { return errors.New("unexpected URI fallback") }
+	params := testParams()
+	params.Folder = "/workspaces/a b/\u96ea"
+	params.NewWindow = true
+	_, err := s.openInOperation(params)
+	s.Require().NoError(err)
+	argv, err := os.ReadFile(argvFile)
+	s.Require().NoError(err)
+	s.Equal("--disable-extension\nms-vscode-remote.remote-containers\n--new-window\n"+
+		"--folder-uri\nvscode-remote://ssh-remote+ws.devsy/workspaces/a%20b/%E9%9B%AA\n", string(argv))
+	s.Empty(s.records(zapcore.WarnLevel))
 }
 
 // openInOperation runs the launcher inside a real status operation, the way

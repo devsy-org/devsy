@@ -1,6 +1,7 @@
 package vscode
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,7 +18,10 @@ import (
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/subprocess"
 )
+
+const listExtensionsArg = "--list-extensions"
 
 const containersExtension = "ms-vscode-remote.remote-containers"
 
@@ -116,13 +120,68 @@ type hostLauncher struct {
 func newHostLauncher() hostLauncher {
 	return hostLauncher{
 		lookPath: exec.LookPath,
-		run: func(ctx context.Context, path string, args ...string) ([]byte, error) {
-			// #nosec G204 -- executable comes from the trusted flavor mapping; argv is not shell text.
-			return exec.CommandContext(ctx, path, args...).CombinedOutput()
-		},
-		openURI: devsyopen.Run,
-		goos:    runtime.GOOS,
+		run:      runHostCLI,
+		openURI:  devsyopen.Run,
+		goos:     runtime.GOOS,
 	}
+}
+
+func runHostCLI(ctx context.Context, path string, args ...string) ([]byte, error) {
+	if !validHostCLI(path) || !validHostCLIArgs(args) {
+		return nil, errors.New("unsupported editor command")
+	}
+	options := subprocess.Options{Redactor: secrets.NewEnvironmentRedactor(os.Environ())}
+	var stdout bytes.Buffer
+	if len(args) == 1 && args[0] == listExtensionsArg {
+		// Extension enumeration is functional data, not a diagnostic tail.
+		// Redacting or truncating it could hide an already-installed extension.
+		options.Stdout = &stdout
+	}
+	_, err := subprocess.Run(ctx, path, args, options)
+	return stdout.Bytes(), err
+}
+
+func validHostCLI(path string) bool {
+	if !filepath.IsAbs(path) {
+		return false
+	}
+	name := filepath.Base(path)
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".exe", ".cmd", ".bat", ".com":
+		name = strings.TrimSuffix(name, filepath.Ext(name))
+	}
+	for _, config := range openConfigs {
+		if strings.EqualFold(name, config.cliName) {
+			return true
+		}
+	}
+	return false
+}
+
+func validHostCLIArgs(args []string) bool {
+	if len(args) == 1 && args[0] == listExtensionsArg {
+		return true
+	}
+	if len(args) == 2 && args[0] == "--install-extension" {
+		for _, config := range openConfigs {
+			if args[1] == config.sshExtension {
+				return true
+			}
+		}
+		return false
+	}
+	if len(args) >= 2 && args[0] == "--disable-extension" && args[1] == containersExtension {
+		args = args[2:]
+	}
+	if len(args) != 3 || (args[0] != "--new-window" && args[0] != "--reuse-window") ||
+		args[1] != "--folder-uri" {
+		return false
+	}
+	folder, err := url.Parse(args[2])
+	return err == nil &&
+		folder.Scheme == "vscode-remote" &&
+		strings.HasPrefix(folder.Host, "ssh-remote+") &&
+		strings.HasSuffix(folder.Host, pkgconfig.SSHHostSuffix)
 }
 
 // stageError reports which launch stage failed and a coarse class of the
@@ -311,6 +370,11 @@ func (l hostLauncher) resolveCLI(config openConfig, fields []any) (string, error
 	for _, candidate := range candidates {
 		path, err := l.lookPath(candidate)
 		if err == nil {
+			path, err = filepath.Abs(path)
+			if err != nil {
+				lookupErrs = append(lookupErrs, err)
+				continue
+			}
 			log.Debugw("editor CLI resolved",
 				append(fields, "route", routeCLI, "stage", stageResolve, "cli_kind", cliKind(path))...)
 			return path, nil
@@ -341,7 +405,7 @@ func (l hostLauncher) listInstalledExtensions(
 	ctx context.Context,
 	cliPath, sshExtension string,
 ) (hasSSH, hasContainers bool, err error) {
-	out, err := l.run(ctx, cliPath, "--list-extensions")
+	out, err := l.run(ctx, cliPath, listExtensionsArg)
 	if err != nil {
 		return false, false, newStageError(stageListExtensions, err)
 	}

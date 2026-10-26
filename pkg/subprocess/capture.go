@@ -25,9 +25,13 @@ const (
 
 // Options configures a command invocation.
 type Options struct {
-	Dir      string
-	Env      []string
-	Stdin    io.Reader
+	Dir   string
+	Env   []string
+	Stdin io.Reader
+	// Stdout optionally receives complete, unredacted stdout for a protocol
+	// consumer. It must not be a diagnostic log sink. Result capture remains
+	// bounded and redacted independently.
+	Stdout   io.Writer
 	Redactor *secrets.Redactor
 	// SensitiveValues contains secret values that may appear in argv or in
 	// subprocess output but are not represented by a sensitive environment
@@ -163,7 +167,7 @@ func Run(ctx context.Context, binary string, args []string, options Options) (Re
 	}
 	cmd.Stdin = options.Stdin
 	redactor := commandRedactor(options)
-	result, err := RunCommand(cmd, redactor)
+	result, err := runCommand(cmd, redactor, options.Stdout)
 	err = withContextError(ctx, err)
 	result.OperationID = options.OperationID
 	return result, err
@@ -202,12 +206,19 @@ func withContextError(ctx context.Context, err error) error {
 // stdout and stderr capture. Existing command setup such as an explicit
 // environment, working directory, or stdin is preserved.
 func RunCommand(cmd *exec.Cmd, redactor *secrets.Redactor) (Result, error) {
+	return runCommand(cmd, redactor, nil)
+}
+
+func runCommand(cmd *exec.Cmd, redactor *secrets.Redactor, stdout io.Writer) (Result, error) {
 	if cmd == nil {
 		return Result{}, errors.New("subprocess command is nil")
 	}
 	out := NewBuffer(redactor)
 	errOut := NewBuffer(redactor)
 	cmd.Stdout = out
+	if stdout != nil {
+		cmd.Stdout = io.MultiWriter(out, stdout)
+	}
 	cmd.Stderr = errOut
 	binary := cmd.Path
 	args := []string(nil)
