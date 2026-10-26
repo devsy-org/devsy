@@ -197,15 +197,41 @@ jobs:
           proof_dir="$RUNNER_TEMP/gnome-feasibility-proof"
           selected_file="$proof_dir/apt-selected-packages.txt"
           package="libjavascriptcoregtk-6.0-1"
-          version=$(awk -F= -v package="$package" '$1 == package { count++; value=substr($0, index($0, "=") + 1) } END { if (count != 1) exit 1; print value }' "$selected_file")
-          mapfile -t source_uris < <(apt-cache policy "$package" | awk '$2 ~ /^https?:\/\// { print $2 }' | sort -u)
-          if ((${#source_uris[@]} != 1)) || [[ "${source_uris[0]}" != "http://azure.archive.ubuntu.com/ubuntu" ]]; then
-            echo "::error::Expected one Azure Ubuntu archive source for $package; refusing to probe a stale or ambiguous endpoint."
+          : >"$proof_dir/archive-probe.txt"
+          policy_exit=0
+          apt-cache policy "$package" \
+            >"$proof_dir/apt-cache-policy.stdout.txt" \
+            2>"$proof_dir/apt-cache-policy.stderr.txt" || policy_exit=$?
+          printf 'apt_cache_policy_exit=%s\n' "$policy_exit" >>"$proof_dir/archive-probe.txt"
+          source_files="$proof_dir/apt-source-files.txt"
+          : >"$source_files"
+          for source_path in /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/ubuntu.sources; do
+            source_name=${source_path##*/}
+            if [[ -r "$source_path" ]]; then
+              copy_exit=0
+              cp "$source_path" "$proof_dir/$source_name" 2>"$proof_dir/$source_name.copy.stderr.txt" || copy_exit=$?
+              printf '%s status=present copy_exit=%s\n' "$source_path" "$copy_exit" >>"$source_files"
+            else
+              printf '%s status=unavailable\n' "$source_path" >>"$source_files"
+            fi
+          done
+          version_exit=0
+          version=$(awk -F= -v package="$package" '$1 == package { count++; value=substr($0, index($0, "=") + 1) } END { if (count != 1) exit 1; print value }' "$selected_file") || version_exit=$?
+          printf 'selected_version_exit=%s\n' "$version_exit" >>"$proof_dir/archive-probe.txt"
+          if (( version_exit != 0 )) || [[ -z "$version" ]]; then
+            echo "::error::Selected package version is missing or ambiguous for $package"
             exit 1
           fi
-          apt_mirror="${source_uris[0]}"
-          metadata=$(apt-cache show "$package=$version")
-          record=$(printf '%s\n' "$metadata" | awk -v wanted_package="$package" -v wanted_version="$version" '
+          metadata_file="$proof_dir/apt-package-metadata.stdout.txt"
+          metadata_exit=0
+          apt-cache show "$package=$version" >"$metadata_file" 2>"$proof_dir/apt-package-metadata.stderr.txt" || metadata_exit=$?
+          printf 'apt_cache_show_exit=%s\n' "$metadata_exit" >>"$proof_dir/archive-probe.txt"
+          if (( metadata_exit != 0 )); then
+            echo "::error::APT metadata lookup failed for $package=$version; see captured stdout/stderr and exit status."
+            exit 1
+          fi
+          metadata_parse_exit=0
+          record=$(awk -v wanted_package="$package" -v wanted_version="$version" '
             BEGIN { RS = ""; FS = "\n" }
             {
               stanzas++
@@ -221,24 +247,29 @@ jobs:
             END {
               if (stanzas == 1 && package_count == 1 && actual_package == wanted_package &&
                   version_count == 1 && actual_version == wanted_version && size_count == 1 &&
-                  filename_count == 1 && hash_count == 1 && size ~ /^[0-9]+$/ &&
+                  filename_count == 1 && hash_count == 1 && size ~ /^[0-9]+$/ && size + 0 > 0 &&
                   filename ~ /^pool\/[A-Za-z0-9._\/+:-]+\.deb$/ &&
                   length(sha256) == 64 && sha256 !~ /[^[:xdigit:]]/)
                 print filename, size, tolower(sha256)
               else
                 exit 1
-            }')
+            }' "$metadata_file" 2>"$proof_dir/apt-package-metadata-parser.stderr.txt") || metadata_parse_exit=$?
+          printf 'metadata_parser_exit=%s\n' "$metadata_parse_exit" >>"$proof_dir/archive-probe.txt"
+          if (( metadata_parse_exit != 0 )) || [[ -z "$record" ]]; then
+            echo "::error::APT metadata is missing, duplicated, or invalid for $package=$version; see captured metadata and parser diagnostics."
+            exit 1
+          fi
           read -r filename expected_size expected_sha256 <<< "$record"
           max_bytes=8388608
+          printf 'package=%s\nversion=%s\nsize=%s\nfilename=%s\nsha256=%s\nprobe_endpoint_name=azure-http\nprobe_endpoint_url=http://azure.archive.ubuntu.com/ubuntu\n' \
+            "$package" "$version" "$expected_size" "$filename" "$expected_sha256" \
+            >>"$proof_dir/archive-probe.txt"
           if (( expected_size > max_bytes )); then
             echo "::error::Selected $package=$version exceeds the 8 MiB mirror-probe limit"
             exit 1
           fi
           temp_dir=$(mktemp -d "$RUNNER_TEMP/archive-probe.XXXXXX")
           trap 'rm -rf "$temp_dir"' EXIT
-          printf 'package=%s\nversion=%s\nsize=%s\nfilename=%s\nsha256=%s\napt_mirror=%s\n' \
-            "$package" "$version" "$expected_size" "$filename" "$expected_sha256" "$apt_mirror" \
-            >"$proof_dir/archive-probe.txt"
           region=$(curl --fail --silent --show-error --noproxy '*' --connect-timeout 1 --max-time 2 --max-filesize 64 \
             -H 'Metadata:true' -H 'Accept:text/plain' \
             'http://169.254.169.254/metadata/instance/compute/location?api-version=2021-02-01&format=text' \
@@ -293,7 +324,7 @@ jobs:
           }
           azure_ok=0
           official_ok=0
-          probe azure-http "$apt_mirror/$filename" || azure_ok=$?
+          probe azure-http "http://azure.archive.ubuntu.com/ubuntu/$filename" || azure_ok=$?
           probe official-https "https://archive.ubuntu.com/ubuntu/$filename" || official_ok=$?
           if (( azure_ok == 0 )); then
             printf 'result=azure_package_matches_signed_index\n' >>"$proof_dir/archive-probe.txt"
