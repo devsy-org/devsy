@@ -13,6 +13,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      t0_qualification:
+        type: boolean
+        default: false
+        description: Run only the branch-local native Windows T0 observation
   pull_request:
 
 concurrency:
@@ -20,7 +25,73 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  native-t0-qualification:
+    if: inputs.t0_qualification == true
+    name: Native Windows T0 qualification
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: setup WSL2 Ubuntu
+        id: setup_wsl
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
+        with:
+          distribution: Ubuntu-24.04
+          use-cache: true
+
+      - name: setup WSL2 Ubuntu (retry)
+        if: steps.setup_wsl.outcome != 'success'
+        timeout-minutes: 5
+        uses: Vampire/setup-wsl@d1da7f2c0322a5ee4f24975344f67fc0f5baf364 # v7.0.0
+        with:
+          distribution: Ubuntu-24.04
+          use-cache: true
+
+      - name: Run native T0 fixture qualification
+        shell: pwsh
+        timeout-minutes: 35
+        run: ./hack/native_t0_windows.ps1
+
+      - name: tear down Docker WSL SSH fixture
+        if: always()
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $helper = "$env:RUNNER_TEMP\devsy-ci-e2e.exe"
+          $state = "$env:RUNNER_TEMP\devsy-ci\docker-wsl-state.json"
+          if ((Test-Path $helper) -and (Test-Path $state)) {
+            & $helper docker-wsl cleanup --state-file $state --timeout 2m *> $null
+            if ($LASTEXITCODE -ne 0) { "DockerWSLCleanup=failed" | Add-Content "$env:RUNNER_TEMP\t0-evidence.txt" }
+          }
+
+      - name: Upload safe T0 observation
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-windows-t0-observation
+          path: |
+            ${{ runner.temp }}/t0-evidence.txt
+            ${{ runner.temp }}/t0-vscodium-*.png
+          if-no-files-found: warn
+
+      - name: Require T0 evidence record
+        if: always()
+        shell: pwsh
+        run: |
+          $evidence = "$env:RUNNER_TEMP\t0-evidence.txt"
+          if (!(Test-Path $evidence)) { throw "T0 evidence file is missing" }
+
   changes:
+    if: inputs.t0_qualification != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -74,6 +145,7 @@ jobs:
         run: go run ./hack/ci matrix --secret-available="$SECRET_AVAILABLE" >> "$GITHUB_OUTPUT"
 
   precommit:
+    if: inputs.t0_qualification != true
     name: Pre-commit
     runs-on: ubuntu-latest
     steps:
@@ -84,6 +156,7 @@ jobs:
       - run: prek run --all-files
 
   agent-skill:
+    if: inputs.t0_qualification != true
     name: Agent Skill
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -105,6 +178,7 @@ jobs:
         run: go run ./hack/validate_agent_skill
 
   lint:
+    if: inputs.t0_qualification != true
     name: Lint
     runs-on: ubuntu-latest
     steps:
@@ -818,9 +892,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    if: always()
-    permissions:
-      contents: read
+    if: always() && inputs.t0_qualification != true
     needs:
       - changes
       - plan
