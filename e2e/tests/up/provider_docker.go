@@ -321,13 +321,15 @@ var _ = ginkgo.Describe(
 					"--workspace-env", "TWO_EQ=a=b=c",
 					"--workspace-env", "COMMA_EQ=x=1,y=2",
 					"--workspace-env", "TRAILING_EQ=z=",
+					"--workspace-env", "REMOTE_EQ=inherited=value",
 					"--workspace-env-file", filepath.Join(tempDir, "workspace.env"),
 				))
 
 				expected := "PLAIN=hello\nONE_EQ=a=b\nTWO_EQ=a=b=c\nCOMMA_EQ=x=1,y=2\n" +
 					"TRAILING_EQ=z=\nFILE_ONE_EQ=k=v"
 				expectedHook := expected + "\nREMOTE_EQ=remote=a=b"
-				expectedEnvFile := expectedHook
+				expectedSSH := expected + "\nREMOTE_EQ=inherited=value"
+				expectedEnvFile := expectedSSH
 				for _, phase := range []string{"postCreate", "postStart"} {
 					out, err := readLifecycleFile(tempDir, phase+".env.out")
 					framework.ExpectNoError(err)
@@ -338,7 +340,7 @@ var _ = ginkgo.Describe(
 printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ=%s\nREMOTE_EQ=%s\n" \
   "$PLAIN" "$ONE_EQ" "$TWO_EQ" "$COMMA_EQ" "$TRAILING_EQ" "$FILE_ONE_EQ" "$REMOTE_EQ"'`)
 				framework.ExpectNoError(err)
-				gomega.Expect(out).To(gomega.Equal(expectedHook), "SSH environment")
+				gomega.Expect(out).To(gomega.Equal(expectedSSH), "SSH environment")
 
 				// Filter in the container so unrelated persisted values never reach test logs.
 				out, err = dtc.execSSHCapture(ctx, tempDir, `jq -r '.env |
