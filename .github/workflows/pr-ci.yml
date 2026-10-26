@@ -582,13 +582,95 @@ jobs:
               raise SystemExit("usage: process-audit.py display|snapshot|stop ...")
           PY
           chmod 700 "$proof_dir/process-audit.py"
+          cat > "$proof_dir/validate-owned-window.py" <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          def validate(expected, current, properties, window_count, display):
+              if window_count != 1 or display != expected["display"]:
+                  raise ValueError("owned host display/window is not unique")
+              if current["shell"] != expected["shell"] or current["xvfb"] != expected["xvfb"]:
+                  raise ValueError("owned GNOME Shell or Xvfb process identity changed")
+              if expected["shell"]["uid"] != expected["xvfb"]["uid"]:
+                  raise ValueError("owned GNOME Shell and Xvfb run under different users")
+              if Path(expected["shell"]["exe"]).name != "gnome-shell":
+                  raise ValueError("owned shell executable is not gnome-shell")
+              if Path(expected["xvfb"]["exe"]).name != "Xvfb" or display not in expected["xvfb"]["argv"]:
+                  raise ValueError("host display is not owned by the expected Xvfb process")
+              pid = re.search(r"_NET_WM_PID\(CARDINAL\)\s*=\s*(\d+)", properties)
+              if not pid or int(pid.group(1)) != expected["shell"]["pid"]:
+                  raise ValueError("window _NET_WM_PID does not match the owned shell")
+              wm_class = re.search(r"WM_CLASS\(STRING\)\s*=\s*(.*)", properties)
+              return {"display": display, "shell": expected["shell"], "xvfb": expected["xvfb"],
+                      "wmClass": wm_class.group(1).strip() if wm_class else None,
+                      "wmClassOptional": True}
+
+          def process_identity(pid):
+              root = Path("/proc") / str(pid)
+              raw = (root / "stat").read_text()
+              fields = raw[raw.rfind(")") + 2:].split()
+              return {"pid": int(pid), "startTicks": int(fields[19]),
+                      "uid": root.stat().st_uid, "exe": os.readlink(root / "exe"),
+                      "argv": [arg.decode(errors="replace") for arg in (root / "cmdline").read_bytes().split(b"\0") if arg]}
+
+
+          if sys.argv[1] == "self-test":
+              shell = {"pid": 41, "startTicks": 100, "uid": 1000, "exe": "/usr/bin/gnome-shell", "argv": []}
+              xvfb = {"pid": 42, "startTicks": 101, "uid": 1000, "exe": "/usr/bin/Xvfb", "argv": [":99"]}
+              expected = {"display": ":99", "shell": shell, "xvfb": xvfb}
+              assert validate(expected, expected, "_NET_WM_PID(CARDINAL) = 41", 1, ":99")["wmClass"] is None
+              assert validate(expected, expected,
+                              '_NET_WM_PID(CARDINAL) = 41\nWM_CLASS(STRING) = "gnome-shell", "Gnome-shell"',
+                              1, ":99")["wmClass"] == '"gnome-shell", "Gnome-shell"'
+              invalid = [
+                  ("_NET_WM_PID(CARDINAL) = 43", 1, ":99", expected),
+                  ("_NET_WM_PID(CARDINAL) = 41", 2, ":99", expected),
+                  ("_NET_WM_PID(CARDINAL) = 41", 1, ":88", expected),
+              ]
+              for properties, count, display, current in invalid:
+                  try:
+                      validate(expected, current, properties, count, display)
+                  except ValueError:
+                      continue
+                  raise AssertionError("invalid window identity was accepted")
+              for field, value in (("startTicks", 99), ("uid", 1001), ("exe", "/usr/bin/not-shell")):
+                  changed = {**expected, "shell": {**shell, field: value}}
+                  try:
+                      validate(expected, changed, "_NET_WM_PID(CARDINAL) = 41", 1, ":99")
+                  except ValueError:
+                      continue
+                  raise AssertionError(f"changed shell {field} was accepted")
+              print("owned host-window synthetic identity cases passed")
+          elif sys.argv[1] == "capture":
+              value = {"display": sys.argv[4], "shell": process_identity(sys.argv[2]),
+                       "xvfb": process_identity(sys.argv[3])}
+              if Path(value["shell"]["exe"]).name != "gnome-shell" or Path(value["xvfb"]["exe"]).name != "Xvfb":
+                  raise SystemExit("owned shell/Xvfb executable identity mismatch")
+              Path(sys.argv[5]).write_text(json.dumps(value, indent=2) + "\n")
+          elif sys.argv[1] == "verify":
+              expected = json.loads(Path(sys.argv[2]).read_text())
+              current = {"shell": process_identity(expected["shell"]["pid"]),
+                         "xvfb": process_identity(expected["xvfb"]["pid"])}
+              result = validate(expected, current, Path(sys.argv[3]).read_text(),
+                                int(sys.argv[4]), sys.argv[5])
+              Path(sys.argv[6]).write_text(json.dumps(result, indent=2) + "\n")
+              print(json.dumps(result, sort_keys=True))
+          else:
+              raise SystemExit("usage: validate-owned-window.py self-test|capture|verify")
+          PY
+          chmod 700 "$proof_dir/validate-owned-window.py"
+          python3 "$proof_dir/validate-owned-window.py" self-test
+          export OWNED_WINDOW_GUARD="$proof_dir/validate-owned-window.py"
           cat > "$proof_dir/enable-private-introspection.sh" <<'SH'
           enable_private_introspection() {
             local backend="$1" shell_pid="$2" host_display="$3" private_display="$4"
             local stem="$PROOF_DIR/introspection-$backend"
             local method="org.gnome.Shell.Introspect.GetWindows"
             local expression="global.context.unsafe_mode = true"
-            local window_ids window_id window_properties focused
+            local window_ids window_id window_properties focused identity_file
             local -a windows
 
             capture_failure() {
@@ -619,6 +701,14 @@ jobs:
               return 1
             fi
             if [ "$backend" = wayland ]; then
+              identity_file="$PROOF_DIR/introspection-$backend-owned-identity.json"
+              if ! python3 "$OWNED_WINDOW_GUARD" capture "$shell_pid" "$HOST_XVFB_PID" \
+                "$host_display" "$identity_file" >"$stem-identity-capture.log" 2>"$stem-identity-capture.err"; then
+                printf 'backend=%s status=owned-shell-or-xvfb-identity-unavailable shellPid=%s\n' \
+                  "$backend" "$shell_pid" >"$stem-setup.txt"
+                capture_failure
+                return 1
+              fi
               window_ids=$(run_host_display xdotool search --onlyvisible --pid "$shell_pid" 2>"$stem-window-search.err" || true)
               windows=()
               if [ -n "$window_ids" ]; then
@@ -638,8 +728,9 @@ jobs:
                 return 1
               fi
               printf '%s\n' "$window_properties" >"$stem-shell-window.txt"
-              if ! grep -Eq "_NET_WM_PID\\(CARDINAL\\) = $shell_pid" "$stem-shell-window.txt" ||
-                ! grep -Eiq 'WM_CLASS\(STRING\).*gnome-shell' "$stem-shell-window.txt"; then
+              if ! python3 "$OWNED_WINDOW_GUARD" verify "$identity_file" "$stem-shell-window.txt" \
+                "${#windows[@]}" "$host_display" "$stem-shell-window-identity.json" \
+                >"$stem-shell-window-identity.log" 2>"$stem-shell-window-identity.err"; then
                 printf 'backend=%s status=host-window-identity-mismatch windowId=%s shellPid=%s\n' \
                   "$backend" "$window_id" "$shell_pid" >"$stem-setup.txt"
                 capture_failure
@@ -649,6 +740,14 @@ jobs:
                 ! focused=$(run_host_display xdotool getwindowfocus) ||
                 [ "$focused" != "$window_id" ]; then
                 printf 'backend=%s status=owned-shell-window-focus-failed windowId=%s focused=%s\n' \
+                  "$backend" "$window_id" "${focused:-unknown}" >"$stem-setup.txt"
+                capture_failure
+                return 1
+              fi
+              if ! run_host_display xdotool key --clearmodifiers Escape ||
+                ! focused=$(run_host_display xdotool getwindowfocus) ||
+                [ "$focused" != "$window_id" ]; then
+                printf 'backend=%s status=owned-shell-window-focus-lost-after-overview-dismissal windowId=%s focused=%s\n' \
                   "$backend" "$window_id" "${focused:-unknown}" >"$stem-setup.txt"
                 capture_failure
                 return 1
@@ -703,6 +802,7 @@ jobs:
           HOST_DISPLAY="${DISPLAY:-:99}"
           Xvfb "$HOST_DISPLAY" -screen 0 1280x800x24 -nolisten tcp > "$proof_dir/xvfb.log" 2>&1 &
           xvfb_pid=$!
+          export HOST_XVFB_PID="$xvfb_pid"
           trap 'kill "$xvfb_pid" 2>/dev/null || true; wait "$xvfb_pid" 2>/dev/null || true' EXIT
           export DISPLAY="$HOST_DISPLAY"
           timeout 30s bash -c 'until xdpyinfo >/dev/null 2>&1; do sleep 0.25; done'
