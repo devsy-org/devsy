@@ -34,7 +34,7 @@ A workspace is active while any of these hold:
 
 CPU use and processes you started yourself do not count. A command such as `nohup make &` in a closed session does not keep the workspace alive.
 
-The daemon samples activity about once a second at most, so a workspace stops up to a few seconds after the timeout passes. For timeouts of a minute or more, sessions record activity every 10 seconds. Shorter timeouts use a proportionally shorter interval. If the daemon cannot read the activity file, it logs an error and does not stop the workspace.
+The daemon samples activity about once a second at most, so a workspace stops up to a few seconds after the timeout passes. For timeouts of a minute or more, sessions record activity every 10 seconds. Shorter timeouts use a proportionally shorter interval. If the daemon cannot read the activity file, it logs an error and does not stop the workspace. The same holds when a session or hook cannot write the activity file: the daemon logs an error and does not stop the workspace until recording recovers.
 
 ## Kubernetes
 
@@ -48,14 +48,18 @@ When the workspace stops:
 - Files on the workspace volume persist. Files written to the container filesystem outside mounted volumes are lost, because the new pod starts from the image.
 - `devsy workspace stop` still deletes the pod through the Kubernetes API from your machine. The pod gets no Kubernetes credentials of its own.
 
-Supported pod layout:
+Pod layout rules Devsy enforces:
 
 - One regular `devsy` container, any number of normal init containers, and native sidecars (init containers with `restartPolicy: Always`). Native sidecars end with the pod.
 - With a positive timeout, extra regular containers in `spec.containers`, from a pod manifest template or injected by an admission webhook, are rejected. The pod would keep running while they run. Devsy names the containers in the error. Without a timeout, or with `shutdownAction: none`, extra containers are allowed.
 - With a positive timeout, the Devsy daemon must be the container's main process. A `devcontainer.json` with `overrideCommand: false` and an image entrypoint or command is rejected.
 - Dockerless builds do not support a positive timeout.
 
-Existing pods created before this behavior have a main process that cannot enforce the timeout. `devsy workspace up` on such a pod fails with an error that says to stop and start the workspace once. Run `devsy workspace stop`, then `devsy workspace up`. The volume is kept; replacing the agent binary does not update a daemon that is already running.
+<Callout type="warn" title="Verification scope">
+The layout rules have unit coverage against a fake Kubernetes API. A kind cluster running Kubernetes v1.36.4 on Linux arm64 has also verified a single regular `devsy` container: two idle-stop/resume cycles preserved workspace volume data, and an open tracked SSH session prevented shutdown until disconnect. Native sidecars, additional init containers, restricted non-root pod security, Devsy Platform routes, and upgrades from an earlier Devsy version have not been verified on a real cluster. Test your layout on a non-production workspace before relying on the timeout.
+</Callout>
+
+Pods created by an earlier Devsy version have a main process that cannot enforce the timeout. Devsy detects this and `devsy workspace up` on such a pod fails with an error that says to stop and start the workspace once. Run `devsy workspace stop`, then `devsy workspace up`. Replacing the agent binary does not update a daemon that is already running.
 
 ## Shutdown action
 

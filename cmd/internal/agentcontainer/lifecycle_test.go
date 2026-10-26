@@ -36,42 +36,49 @@ func publishOwner(t *testing.T) (*agentd.LifecycleOwner, string) {
 	return owner, dir
 }
 
+func runLifecycleOwner(t *testing.T, owner *agentd.LifecycleOwner, dir string) *agentd.LifecycleMonitor {
+	t.Helper()
+	monitor := &agentd.LifecycleMonitor{}
+	loop := &agentd.LifecycleLoop{
+		Owner: owner, Monitor: monitor, ActivityPath: filepath.Join(dir, "activity"),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- loop.Run(ctx) }()
+	t.Cleanup(func() { cancel(); assert.NoError(t, <-done) })
+	return monitor
+}
+
 func TestBeginLifecycleSuspendsThenReadyArmsSameOwner(t *testing.T) {
 	owner, dir := publishOwner(t)
+	monitor := runLifecycleOwner(t, owner, dir)
+	monitor.ArmNow(time.Minute, time.Now())
 
 	h, err := beginLifecycle(
 		context.Background(), dir, managedInfo("1m"), config.ShutdownActionStopContainer,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, h)
-
-	rec, changed, err := owner.PollControl()
-	require.NoError(t, err)
-	require.True(t, changed)
-	assert.Equal(t, agentd.LifecycleStateSetup, rec.State)
-	assert.Equal(t, "1m", rec.Timeout)
-	assert.Equal(t, config.ShutdownActionStopContainer, rec.ShutdownAction)
+	assert.False(t, monitor.Evaluate(time.Now().Add(time.Hour), time.Time{}, nil).Expired,
+		"setup is suspended before beginLifecycle returns")
 
 	require.NoError(t, h.ready())
-	rec, changed, err = owner.PollControl()
-	require.NoError(t, err)
-	require.True(t, changed)
-	assert.Equal(t, agentd.LifecycleStateReady, rec.State)
+
+	assert.True(t, monitor.Evaluate(time.Now().Add(time.Hour), time.Time{}, nil).Expired,
+		"ready has re-armed the timer before returning")
 }
 
 func TestLifecycleFailureReleasesSuspension(t *testing.T) {
 	owner, dir := publishOwner(t)
+	monitor := runLifecycleOwner(t, owner, dir)
 	h, err := beginLifecycle(context.Background(), dir, managedInfo("1m"), "")
 	require.NoError(t, err)
-	_, _, err = owner.PollControl()
-	require.NoError(t, err)
+	assert.False(t, monitor.Evaluate(time.Now().Add(time.Hour), time.Time{}, nil).Expired)
 
 	h.fail()
 
-	rec, changed, err := owner.PollControl()
-	require.NoError(t, err)
-	require.True(t, changed)
-	assert.Equal(t, agentd.LifecycleStateFailed, rec.State)
+	assert.True(t, monitor.Evaluate(time.Now().Add(time.Hour), time.Time{}, nil).Expired,
+		"failed setup releases the suspension")
 }
 
 func TestBeginLifecycleMissingOwnerWithTimeoutIsMigrationError(t *testing.T) {

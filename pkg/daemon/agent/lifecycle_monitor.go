@@ -27,6 +27,9 @@ type Decision struct {
 	// failed safe and the timer is not effective.
 	ActivityUnreadable bool
 	Failures           int
+	// RecordingFailed means a writer cannot record activity, so an old timestamp
+	// proves nothing and expiry is withheld until recording recovers.
+	RecordingFailed bool
 }
 
 // LifecycleMonitor decides when the container has been idle for too long. It
@@ -38,6 +41,8 @@ type LifecycleMonitor struct {
 	suspended bool
 	armedAt   time.Time
 	failures  int
+	// recordingFailed is set while any activity writer reports it cannot record.
+	recordingFailed bool
 }
 
 // Apply updates the timer from a control record. It reports whether the activity
@@ -77,6 +82,14 @@ func (m *LifecycleMonitor) ArmNow(timeout time.Duration, now time.Time) {
 	m.timeout, m.armed, m.suspended, m.armedAt = timeout, timeout > 0, false, now
 }
 
+// SetRecordingFailed records whether any activity writer currently fails to
+// record activity.
+func (m *LifecycleMonitor) SetRecordingFailed(failed bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.recordingFailed = failed
+}
+
 // Evaluate checks the idle time. A missing activity file counts as no activity
 // since arming; any other read error fails safe.
 func (m *LifecycleMonitor) Evaluate(now, modTime time.Time, statErr error) Decision {
@@ -84,6 +97,9 @@ func (m *LifecycleMonitor) Evaluate(now, modTime time.Time, statErr error) Decis
 	defer m.mu.Unlock()
 	if !m.armed || m.suspended {
 		return Decision{}
+	}
+	if m.recordingFailed {
+		return Decision{RecordingFailed: true}
 	}
 	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		m.failures++
@@ -118,7 +134,7 @@ type LifecycleLoop struct {
 // Run returns ErrInactivityExpired when the container went idle, nil when ctx
 // ended first.
 func (l *LifecycleLoop) Run(ctx context.Context) error {
-	var controlErr, unreadable bool
+	var controlErr, unreadable, recordingFailed bool
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -129,6 +145,7 @@ func (l *LifecycleLoop) Run(ctx context.Context) error {
 		}
 		now := time.Now()
 		controlErr = l.applyControl(now, controlErr)
+		l.Monitor.SetRecordingFailed(ActivityRecordingFailing(l.ActivityPath))
 
 		fi, err := os.Stat(l.ActivityPath)
 		var mod time.Time
@@ -137,6 +154,7 @@ func (l *LifecycleLoop) Run(ctx context.Context) error {
 		}
 		d := l.Monitor.Evaluate(now, mod, err)
 		unreadable = logUnreadable(d, err, unreadable)
+		recordingFailed = logRecordingFailed(d, recordingFailed)
 		if d.Expired {
 			log.Infof("container idle for the configured inactivity timeout, shutting down")
 			return ErrInactivityExpired
@@ -159,17 +177,39 @@ func (l *LifecycleLoop) applyControl(now time.Time, hadErr bool) bool {
 	if !changed {
 		return false
 	}
-	reset, err := l.Monitor.Apply(rec, now)
-	if err != nil {
-		log.Errorf("apply container lifecycle control record: %v", err)
-		return true
-	}
-	if reset {
+	return l.applyRecord(rec, now)
+}
+
+func (l *LifecycleLoop) applyRecord(rec ControlRecord, now time.Time) bool {
+	reset, applyErr := l.Monitor.Apply(rec, now)
+	if applyErr == nil && reset {
 		if err := TouchActivity(l.ActivityPath, now); err != nil {
 			log.Errorf("reset activity timestamp: %v", err)
 		}
 	}
-	return false
+	// Acknowledge only after the state change took effect: setup waits for the
+	// ack before starting work the timer must not interrupt.
+	ackErr := l.Owner.Acknowledge(rec, applyErr)
+	if applyErr != nil {
+		log.Errorf("apply container lifecycle control record: %v", applyErr)
+	}
+	if ackErr != nil {
+		log.Errorf("acknowledge container lifecycle control record: %v", ackErr)
+	}
+	return applyErr != nil || ackErr != nil
+}
+
+func logRecordingFailed(d Decision, was bool) bool {
+	switch {
+	case d.RecordingFailed && !was:
+		log.Errorf("an activity writer cannot record activity; " +
+			"inactivity shutdown is withheld until recording recovers")
+		return true
+	case !d.RecordingFailed && was:
+		log.Infof("activity recording recovered; inactivity timeout is effective")
+		return false
+	}
+	return was
 }
 
 func logUnreadable(d Decision, err error, was bool) bool {

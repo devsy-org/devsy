@@ -2,7 +2,7 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,11 +29,20 @@ func connectNow(t *testing.T, dir string) *LifecycleClient {
 	return client
 }
 
+// mustPublish writes a control record without waiting for the owner, for tests
+// that drive the owner by hand.
+func mustPublish(t *testing.T, c *LifecycleClient, rec ControlRecord) uint64 {
+	t.Helper()
+	sequence, err := c.publish(rec.State, rec.Timeout, rec.ShutdownAction)
+	require.NoError(t, err)
+	return sequence
+}
+
 func TestSetupControlRecordReachesOwner(t *testing.T) {
 	owner, dir := newTestOwner(t)
 	client := connectNow(t, dir)
 
-	require.NoError(t, client.Send(LifecycleStateSetup, "1m", "stopContainer"))
+	mustPublish(t, client, control(LifecycleStateSetup, "1m", "stopContainer"))
 
 	rec, changed, err := owner.PollControl()
 	require.NoError(t, err)
@@ -47,30 +56,10 @@ func TestSetupControlRecordReachesOwner(t *testing.T) {
 	assert.False(t, changed, "an unchanged record is not reapplied")
 }
 
-func TestControlRecordCarriesNoExtraFields(t *testing.T) {
-	_, dir := newTestOwner(t)
-	require.NoError(t, connectNow(t, dir).Send(LifecycleStateReady, "1m", "none"))
-
-	raw, err := os.ReadFile(filepath.Join(dir, controlFileName)) //nolint:gosec // test path
-	require.NoError(t, err)
-	var fields map[string]any
-	require.NoError(t, json.Unmarshal(raw, &fields))
-
-	keys := make([]string, 0, len(fields))
-	for k := range fields {
-		keys = append(keys, k)
-	}
-	assert.ElementsMatch(
-		t,
-		[]string{"version", "generation", "timeout", "shutdownAction", "state"},
-		keys,
-	)
-}
-
 func TestStaleGenerationCannotArmNewOwner(t *testing.T) {
 	first, dir := newTestOwner(t)
 	oldClient := connectNow(t, dir)
-	require.NoError(t, oldClient.Send(LifecycleStateReady, "1m", ""))
+	mustPublish(t, oldClient, control(LifecycleStateReady, "1m", ""))
 	require.NotEmpty(t, first.Generation())
 
 	// A restarted daemon on the same directory discards the old record.
@@ -82,7 +71,7 @@ func TestStaleGenerationCannotArmNewOwner(t *testing.T) {
 	assert.False(t, changed)
 
 	// Even a stale record that reappears is ignored by generation.
-	require.NoError(t, oldClient.Send(LifecycleStateReady, "1m", ""))
+	mustPublish(t, oldClient, control(LifecycleStateReady, "1m", ""))
 	_, changed, err = second.PollControl()
 	require.NoError(t, err)
 	assert.False(t, changed)
@@ -150,9 +139,105 @@ func TestReadLifecycleTimeoutFollowsControlRecord(t *testing.T) {
 	_, ok := ReadLifecycleTimeout(dir)
 	assert.False(t, ok, "no control record yet")
 
-	require.NoError(t, connectNow(t, dir).Send(LifecycleStateSetup, "45s", ""))
+	mustPublish(t, connectNow(t, dir), control(LifecycleStateSetup, "45s", ""))
 
 	timeout, ok := ReadLifecycleTimeout(dir)
 	assert.True(t, ok)
 	assert.Equal(t, 45*time.Second, timeout)
+}
+
+func TestSendReturnsOnlyAfterOwnerAppliesTheRecord(t *testing.T) {
+	owner, dir := newTestOwner(t)
+	client := connectNow(t, dir)
+	sent := make(chan error, 1)
+	go func() { sent <- client.Send(LifecycleStateSetup, "1m", "") }()
+
+	select {
+	case err := <-sent:
+		t.Fatalf("Send returned before the owner applied the record: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	rec := pollNow(t, owner)
+	assert.Equal(t, LifecycleStateSetup, rec.State)
+	require.NoError(t, owner.Acknowledge(rec, nil))
+
+	select {
+	case err := <-sent:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Send did not return after the owner acknowledged the record")
+	}
+}
+
+func pollNow(t *testing.T, owner *LifecycleOwner) ControlRecord {
+	t.Helper()
+	rec, changed, err := owner.PollControl()
+	require.NoError(t, err)
+	require.True(t, changed)
+	return rec
+}
+
+func TestIdenticalRepeatedRecordsAreEachDeliveredToTheOwner(t *testing.T) {
+	owner, dir := newTestOwner(t)
+	client := connectNow(t, dir)
+
+	mustPublish(t, client, control(LifecycleStateReady, "1m", ""))
+	first := pollNow(t, owner)
+	mustPublish(t, client, control(LifecycleStateReady, "1m", ""))
+	second := pollNow(t, owner)
+
+	assert.Greater(t, second.Sequence, first.Sequence)
+}
+
+func TestSecondClientRecordIsNeverTakenForTheFirstClientsRecord(t *testing.T) {
+	owner, dir := newTestOwner(t)
+
+	mustPublish(t, connectNow(t, dir), control(LifecycleStateReady, "1m", ""))
+	first := pollNow(t, owner)
+	mustPublish(t, connectNow(t, dir), control(LifecycleStateReady, "1m", ""))
+	second := pollNow(t, owner)
+
+	assert.NotEqual(t, first.ClientID, second.ClientID)
+}
+
+func TestSendDoesNotAcceptAnotherClientsAcknowledgement(t *testing.T) {
+	owner, dir := newTestOwner(t)
+	first := connectNow(t, dir)
+	mustPublish(t, first, control(LifecycleStateReady, "1m", ""))
+	require.NoError(t, owner.Acknowledge(pollNow(t, owner), nil))
+
+	second := connectNow(t, dir)
+	second.ackTimeout = 100 * time.Millisecond
+
+	assert.ErrorIs(t, second.Send(LifecycleStateSetup, "1m", ""),
+		ErrLifecycleNotAcknowledged)
+}
+
+func TestSendFailsWhenOwnerNeverAcknowledges(t *testing.T) {
+	_, dir := newTestOwner(t)
+	client := connectNow(t, dir)
+	client.ackTimeout = 100 * time.Millisecond
+
+	err := client.Send(LifecycleStateSetup, "1m", "")
+
+	assert.ErrorIs(t, err, ErrLifecycleNotAcknowledged)
+}
+
+func TestSendSurfacesOwnerRejection(t *testing.T) {
+	owner, dir := newTestOwner(t)
+	client := connectNow(t, dir)
+	sent := make(chan error, 1)
+	go func() { sent <- client.Send(LifecycleStateSetup, "soon", "") }()
+
+	require.Eventually(t, func() bool {
+		rec, changed, err := owner.PollControl()
+		if err != nil || !changed {
+			return false
+		}
+		require.NoError(t, owner.Acknowledge(rec, errors.New("invalid lifecycle timeout")))
+		return true
+	}, 5*time.Second, 10*time.Millisecond)
+
+	assert.ErrorContains(t, <-sent, "invalid lifecycle timeout")
 }
