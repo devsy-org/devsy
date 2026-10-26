@@ -9,6 +9,9 @@ export interface Workspace {
 
 export interface Provider {
   name: string
+  icon?: string
+  iconDark?: string
+  iconRevision?: string
   state?: { singleMachine?: boolean; [key: string]: unknown }
   [key: string]: unknown
 }
@@ -27,6 +30,7 @@ export class DaemonState {
   private workspaces = new Map<string, Workspace>()
   private providers = new Map<string, Provider>()
   private providerWriteRevision = 0
+  private providerIconRevision = 0
   private machines = new Map<string, Machine>()
   private contexts: Context[] = []
   private activeContext = ""
@@ -68,6 +72,10 @@ export class DaemonState {
     return this.providerWriteRevision
   }
 
+  providerIconReadRevision(): number {
+    return this.providerIconRevision
+  }
+
   updateProviders(
     list: Provider[],
     readRevision = this.providerWriteRevision,
@@ -75,6 +83,16 @@ export class DaemonState {
     if (readRevision < this.providerWriteRevision) return false
     const newMap = new Map(list.map((p) => [p.name, p]))
     if (this.mapsEqual(this.providers, newMap)) return false
+    if (
+      this.providers.size !== newMap.size ||
+      list.some(
+        (provider) =>
+          !this.providers.has(provider.name) ||
+          this.providers.get(provider.name)?.iconRevision !==
+            provider.iconRevision,
+      )
+    )
+      this.providerIconRevision++
     this.providers = newMap
     return true
   }
@@ -105,6 +123,7 @@ export class DaemonState {
     const currentJson = JSON.stringify(this.contexts)
     if (contextsJson === currentJson && active === this.activeContext)
       return false
+    if (active !== this.activeContext) this.providerIconRevision++
     this.contexts = contexts
     this.activeContext = active
     return true

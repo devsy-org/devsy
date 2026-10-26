@@ -211,12 +211,15 @@ func CloneProvider(
 		return nil, err
 	}
 
+	// installProvider renames the loaded config after capturing its original
+	// identity, then copies its cached revision before publishing the clone.
+	source := sourceProvider.Config.Source
 	providerConfig, err := installProvider(
 		ctx,
 		ProviderParams{
 			DevsyConfig:  devsyConfig,
 			ProviderName: providerName,
-			Source:       &sourceProvider.Config.Source,
+			Source:       &source,
 		},
 		sourceProvider.Config)
 	if err != nil {
@@ -333,15 +336,11 @@ func loadProviderEntry(
 }
 
 func installRawProvider(ctx context.Context, p ProviderParams) (*provider.ProviderConfig, error) {
-	providerConfig, err := provider.ParseProvider(bytes.NewReader(p.Raw))
+	providerConfig, err := provider.ParseAuthorProvider(bytes.NewReader(p.Raw))
 	if err != nil {
 		return nil, err
 	}
-	return installProvider(ctx, ProviderParams{
-		DevsyConfig:  p.DevsyConfig,
-		ProviderName: p.ProviderName,
-		Source:       p.Source,
-	}, providerConfig)
+	return installProvider(ctx, p, providerConfig)
 }
 
 func installProvider(
@@ -353,6 +352,7 @@ func installProvider(
 		return nil, fmt.Errorf("provider source is required")
 	}
 
+	sourceName := providerConfig.Name
 	providerConfig.Source = *p.Source
 	if p.ProviderName != "" {
 		providerConfig.Name = p.ProviderName
@@ -360,6 +360,19 @@ func installProvider(
 
 	if err := checkProviderNotExists(p.DevsyConfig, providerConfig.Name); err != nil {
 		return nil, err
+	}
+
+	// Clone has no author bytes: copy the selected immutable revision before
+	// saving the renamed config, so it stays usable after deleting the source.
+	if len(p.Raw) > 0 {
+		prepareProviderIcons(ctx, p, providerConfig)
+	} else if err := provider.CopyProviderIcons(
+		ctx,
+		p.DevsyConfig.DefaultContext,
+		sourceName,
+		providerConfig,
+	); err != nil {
+		return nil, fmt.Errorf("copy provider icons: %w", err)
 	}
 
 	if err := downloadAndSaveProvider(ctx, p, providerConfig); err != nil {
@@ -383,7 +396,7 @@ func updateProvider(ctx context.Context, p ProviderParams) (*provider.ProviderCo
 }
 
 func parseAndValidateProvider(p ProviderParams) (*provider.ProviderConfig, error) {
-	providerConfig, err := provider.ParseProvider(bytes.NewReader(p.Raw))
+	providerConfig, err := provider.ParseAuthorProvider(bytes.NewReader(p.Raw))
 	if err != nil {
 		return nil, err
 	}
@@ -400,6 +413,26 @@ func parseAndValidateProvider(p ProviderParams) (*provider.ProviderConfig, error
 	}
 
 	return providerConfig, nil
+}
+
+// prepareProviderIcons stages the icon revision the installed manifest will
+// select. Icons are optional, so a cache failure only drops the revision and
+// the provider falls back to bundled artwork.
+func prepareProviderIcons(
+	ctx context.Context,
+	p ProviderParams,
+	providerConfig *provider.ProviderConfig,
+) {
+	err := provider.PrepareProviderIcons(
+		ctx,
+		p.DevsyConfig.DefaultContext,
+		providerConfig,
+		p.Raw,
+	)
+	if err != nil {
+		providerConfig.IconRevision = ""
+		log.Warnf("prepare icons for provider %s: %v", providerConfig.Name, err)
+	}
 }
 
 func checkProviderNotExists(devsyConfig *config.Config, providerName string) error {

@@ -31,6 +31,8 @@ export interface ProviderEntry {
     name?: string
     version?: string
     icon?: string
+    iconDark?: string
+    iconRevision?: string
     description?: string
     source?: Record<string, unknown>
     options?: Record<string, unknown>
@@ -47,6 +49,8 @@ export function parseProviderEntries(raw: Record<string, ProviderEntry>) {
     name: entry.config.name ?? "",
     version: entry.config.version ?? "",
     icon: entry.config.icon ?? "",
+    iconDark: entry.config.iconDark ?? "",
+    iconRevision: entry.config.iconRevision ?? "",
     description: entry.config.description ?? "",
     source: entry.config.source ?? {},
     options: entry.config.options ?? {},

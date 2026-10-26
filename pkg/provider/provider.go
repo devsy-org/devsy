@@ -26,6 +26,10 @@ type ProviderConfig struct {
 	// IconDark holds an image URL that will be displayed in dark mode
 	IconDark string `json:"iconDark,omitempty"`
 
+	// IconRevision selects the immutable cached icon revision installed with this
+	// provider. It is generated at install time and never read from author manifests.
+	IconRevision string `json:"iconRevision,omitempty"`
+
 	// Home holds the provider home URL
 	Home string `json:"home,omitempty"`
 
@@ -77,6 +81,14 @@ type ProviderSource struct {
 
 	// Raw is the exact string we used to load the provider
 	Raw string `json:"raw,omitempty"`
+
+	// ResolvedRef is the effective GitHub release tag this installation was taken
+	// from. It is installation provenance, not a pin for future updates.
+	ResolvedRef string `json:"resolvedRef,omitempty"`
+
+	// ResolvedManifestURL is the logical manifest URL used as the base for
+	// source-relative assets. Query strings and credentials are never stored.
+	ResolvedManifestURL string `json:"resolvedManifestURL,omitempty"`
 }
 
 type ProviderAgentConfig struct {

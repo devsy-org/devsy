@@ -187,7 +187,7 @@ func (cmd *AddCmd) resolveAddSource(
 	if providerName != "" {
 		return resolvedAddSource{raw: raw, source: source, name: providerName}, nil
 	}
-	parsed, err := provider.ParseProvider(bytes.NewReader(raw))
+	parsed, err := provider.ParseAuthorProvider(bytes.NewReader(raw))
 	if err != nil {
 		return resolvedAddSource{}, err
 	}

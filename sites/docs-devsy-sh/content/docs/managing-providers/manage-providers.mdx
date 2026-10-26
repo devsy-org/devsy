@@ -184,6 +184,17 @@ In the desktop app, use the provider's **Select version**, **Update**, and **Ini
 
 Workspaces reference a provider by name rather than pinning its version. Devsy looks up the named provider when it loads a workspace.
 
+## Provider icons
+
+A provider can supply its own logo through `icon` and `iconDark` in its `provider.yaml`. The Desktop app shows it on the provider card and in the setup flow. [Develop a provider](../developing-providers/quickstart.mdx#icons) explains where relative image paths point and which formats and sizes are accepted.
+
+- Devsy fetches the images when you add a provider, and again on `devsy provider set-source` or an update. Each installed provider has its own `provider-assets/` cache beside its configuration, so a restart or an offline session keeps showing the selected image revision.
+- Listing providers and opening the Desktop app never download images.
+- A provider installed before this feature shows the bundled logo until you update it or run `devsy provider set-source <name>`.
+- A missing or unusable image never makes an install or update fail. The Desktop app shows the bundled logo for the provider's name, or a generic placeholder.
+- In dark mode the app prefers the provider's dark image, then its light image. In light mode it uses the light image.
+- Cloning copies cached images and revision metadata into the new provider's own installation; renaming preserves them. Both keep the logo offline. Deleting the original provider does not remove the clone's logo.
+
 ## Remove a provider
 
 In the desktop app, open the provider and click **Delete**, then confirm. The delete fails while a workspace uses the provider. With the CLI:

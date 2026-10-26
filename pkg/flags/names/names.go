@@ -261,6 +261,7 @@ const (
 	FromExisting   = "from-existing"
 	Prerelease     = "prerelease"
 	ProviderSource = "provider-source"
+	Theme          = "theme"
 	Use            = "use"
 	Version        = "version"
 )

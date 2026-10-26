@@ -1,7 +1,15 @@
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
 import { DaemonState } from "../state.js"
 import { parseProviderEntries, Watcher } from "../watcher.js"
 import { WorkspaceJobs } from "../workspace-jobs.js"
+
+const fixtureDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../test-fixtures/provider-icons",
+)
 
 function makeWatcher(
   runProviderList: () => Promise<Record<string, unknown>>,
@@ -65,6 +73,33 @@ describe("parseProviderEntries", () => {
     })
     expect(legacy).toMatchObject({ name: "legacy-provider", deprecated: false })
     expect(external).toMatchObject({ name: "microsandbox", deprecated: false })
+  })
+
+  it("carries provider-owned icon fields from the CLI list JSON to renderer fields", () => {
+    const raw = JSON.parse(
+      readFileSync(join(fixtureDir, "provider-list.json"), "utf8"),
+    )
+
+    const [provider] = parseProviderEntries(raw)
+
+    expect(provider).toMatchObject({
+      name: "my-docker-fleet",
+      icon: "assets/light.svg",
+      iconDark: "assets/dark.svg",
+      iconRevision: "rev-a",
+    })
+  })
+
+  it("defaults icon fields to empty strings for providers without icons", () => {
+    const [provider] = parseProviderEntries({
+      plain: { config: { name: "plain" } },
+    })
+
+    expect(provider).toMatchObject({
+      icon: "",
+      iconDark: "",
+      iconRevision: "",
+    })
   })
 })
 
