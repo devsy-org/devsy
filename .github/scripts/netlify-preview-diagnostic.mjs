@@ -32,9 +32,12 @@ function redactText(value, additionalSecrets = []) {
   }
   return text
     .replace(/\bBearer\s+[^\s,;"']+/gi, "Bearer [REDACTED]")
-    .replace(/\b((?:NETLIFY|GITHUB|GH|ACTIONS)[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|CREDENTIAL|KEY))(\s*[:=]\s*)[^\s,;"']+/gi, "$1$2[REDACTED]")
-    .replace(/\b((?:authorization|proxy-authorization|x-api-key|x-auth-token|cookie|set-cookie))(\s*[:=]\s*)[^\r\n]+/gi, "$1$2[REDACTED]")
-    .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|api[_-]?key|password|passwd|secret|credential|private[_-]?key))(\s*[:=]\s*)[^\s,;"']+/gi, "$1$2[REDACTED]")
+    .replace(/(["']?)((?:[A-Z0-9_.-]+)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE[_-]?KEY|API[_-]?KEY|X-AUTH-TOKEN))\1(\s*[:=]\s*)(["']?)[^\s,;"'}]+(["']?)/gi, "$2$3[REDACTED]")
+    .replace(/\b((?:authorization|proxy-authorization))(\s*[:=]\s*)(?:(?:basic|bearer)\s+)?(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, "$1$2[REDACTED]")
+    .replace(/\b((?:x-api-key|x-auth-token))(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, "$1$2[REDACTED]")
+    .replace(/\b((?:cookie|set-cookie))(\s*[:=]\s*)[^\r\n]+/gi, "$1$2[REDACTED]")
+    .replace(/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g, "[REDACTED PRIVATE KEY]")
+    .replace(/\b((?:access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|api[_-]?key|password|passwd|secret|credential|private[_-]?key))(\s*[:=]\s*)[^\s,;"'}]+/gi, "$1$2[REDACTED]")
     .replace(/([?&](?:access_token|token|signature|sig|auth|x-amz-signature|x-amz-credential|x-amz-security-token)=)[^&#\s]+/gi, "$1[REDACTED]")
     .replace(/(https?:\/\/)[^/@\s]+:[^/@\s]+@/gi, "$1[REDACTED]@")
     .replace(/\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g, "[REDACTED]")
@@ -49,6 +52,57 @@ function stripControlCharacters(text) {
     if ((code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127) return "?";
     return character;
   }).join("");
+}
+function createPrivateKeyStreamRedactor() {
+  let pending = "";
+  let inPrivateKey = false;
+  const beginMarker = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
+  const endMarker = /-----END [A-Z0-9 ]*PRIVATE KEY-----/;
+  const markerLookbehind = 64;
+  return {
+    push(value) {
+      let input = pending + value;
+      let output = "";
+      pending = "";
+      while (input) {
+        if (inPrivateKey) {
+          const end = input.match(endMarker);
+          if (!end) {
+            pending = input.slice(-markerLookbehind);
+            return output;
+          }
+          input = input.slice(end.index + end[0].length);
+          inPrivateKey = false;
+          output += "[REDACTED PRIVATE KEY]";
+          continue;
+        }
+        const begin = input.match(beginMarker);
+        if (!begin) {
+          const keep = Math.min(input.length, markerLookbehind);
+          output += input.slice(0, input.length - keep);
+          pending = input.slice(input.length - keep);
+          return output;
+        }
+        output += input.slice(0, begin.index);
+        input = input.slice(begin.index + begin[0].length);
+        inPrivateKey = true;
+      }
+      return output;
+    },
+    finish() {
+      const result = inPrivateKey ? "[REDACTED INCOMPLETE PRIVATE KEY]" : pending;
+      pending = "";
+      inPrivateKey = false;
+      return result;
+    },
+  };
+}
+function hasVisibleBuildLogText(value) {
+  const visible = String(value ?? "")
+    .replace(/\[REDACTED(?: INCOMPLETE)? PRIVATE KEY\]/gi, "")
+    .replace(/\bBearer\s+\[REDACTED\]/gi, "")
+    .replace(/\b(?:[A-Z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE[_-]?KEY|API[_-]?KEY)|authorization|proxy-authorization|x-api-key|x-auth-token|cookie|set-cookie)\s*[:=]\s*\[REDACTED\]/gi, "");
+  return visible.trim().length > 0;
 }
 
 function safeValue(value, depth = 0) {
@@ -118,15 +172,6 @@ function metadataSummary(value) {
   return Object.assign(result, extractErrorFields(value));
 }
 
-function hasDirectCause(value) {
-  if (!value || typeof value !== "object") return false;
-  return ["error_message", "failure_message", "failure_reason", "error_code", "error_type"].some(
-    (key) => value[key] !== undefined && value[key] !== null && String(value[key]).trim() !== "",
-  ) || (typeof value.error === "string" && value.error.trim() !== "") || Boolean(
-    value.error && typeof value.error === "object" &&
-      ["message", "code", "type"].some((key) => value.error[key] !== undefined && value.error[key] !== null && String(value.error[key]).trim() !== ""),
-  );
-}
 
 async function readBoundedBody(response, maxBytes = MAX_HTTP_BYTES) {
   const declaredLength = Number(response.headers.get("content-length"));
@@ -204,24 +249,46 @@ async function requestJson(label, url, allowedOrigin, bearerToken = "") {
 function requireEqual(label, actual, expected) {
   if (actual !== expected) {
     appendRecord({ event: "preflight_mismatch", field: label, actual, expected });
-    throw new Error(`preflight ${label} mismatch`);
+    throw Object.assign(new Error(`preflight ${label} mismatch`), { preflightMismatch: true });
   }
 }
 
 function websocketCapture(deployId, siteId, accessToken) {
   return new Promise((resolve, reject) => {
     const Socket = globalThis.WebSocket;
+    const privateKeyRedactor = createPrivateKeyStreamRedactor();
     let socket;
     let timer;
     let finished = false;
     let logMessages = 0;
+    let buildLogTextFrames = 0;
+    let errorFrames = 0;
+    let transportError = false;
+    let timedOut = false;
+    let closeStatus = null;
+    let pendingLogType = "log";
     let messageChain = Promise.resolve();
     const startedAt = Date.now();
-    const done = (error = null) => {
+    const done = async () => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
-      messageChain.finally(() => error ? reject(error) : resolve({ logMessages, elapsed_ms: Date.now() - startedAt }));
+      await messageChain;
+      const tail = redactText(privateKeyRedactor.finish());
+      if (tail.trim()) {
+        appendRecord({ event: "deploy_log_tail", type: pendingLogType, message: tail });
+        if (pendingLogType !== "error" && hasVisibleBuildLogText(tail)) buildLogTextFrames += 1;
+      }
+      const capture = {
+        log_messages: logMessages,
+        build_log_text_frames: buildLogTextFrames,
+        error_frames: errorFrames,
+        transport_error: transportError,
+        timed_out: timedOut,
+        close: closeStatus,
+        elapsed_ms: Date.now() - startedAt,
+      };
+      resolve(capture);
     };
     try {
       socket = new Socket(LOG_SOCKET_URL);
@@ -230,24 +297,24 @@ function websocketCapture(deployId, siteId, accessToken) {
       return;
     }
     timer = setTimeout(() => {
+      timedOut = true;
       appendRecord({ event: "websocket_window_elapsed", window_ms: LOG_WINDOW_MS, log_messages: logMessages });
       socket.close(1000, "diagnostic window complete");
       done();
     }, LOG_WINDOW_MS);
     socket.addEventListener("open", () => {
       if (socket.url !== LOG_SOCKET_URL) {
-        appendRecord({ event: "websocket_redirect_blocked", expected_url: LOG_SOCKET_URL, actual_url: socket.url });
+        transportError = true;
         socket.close(1008, "unexpected log socket URL");
-        done(new Error("Netlify log WebSocket URL changed during connection; token was not sent"));
         return;
       }
       appendRecord({ event: "websocket_open", endpoint: LOG_SOCKET_URL });
       try {
         socket.send(JSON.stringify({ deploy_id: deployId, site_id: siteId, access_token: accessToken }));
       } catch (error) {
+        transportError = true;
         appendRecord({ event: "websocket_send_error", message: error?.message ?? "unknown socket send failure" });
         socket.close(1011, "log request could not be sent");
-        done(error);
       }
     });
     socket.addEventListener("message", (event) => {
@@ -281,11 +348,18 @@ function websocketCapture(deployId, siteId, accessToken) {
           appendRecord({ event: "websocket_message_parse_error", body_bytes: Buffer.byteLength(raw), message: "payload omitted" });
           return;
         }
-        const safeMessage = typeof message.message === "string" ? message.message : "";
+        if (!message || typeof message !== "object") {
+          appendRecord({ event: "websocket_message_omitted", reason: "unexpected frame shape" });
+          return;
+        }
+        const type = typeof message.type === "string" ? message.type : "log";
+        pendingLogType = type;
+        const scrubbedMessage = redactText(typeof message.message === "string" ? message.message : "");
+        const safeMessage = redactText(privateKeyRedactor.push(scrubbedMessage));
         const fields = {
           event: "deploy_log",
           timestamp: message.ts ?? "",
-          type: message.type ?? "log",
+          type,
           level: message.level ?? "",
           stage: message.stage ?? message.phase ?? "",
           status: message.status ?? "",
@@ -294,19 +368,23 @@ function websocketCapture(deployId, siteId, accessToken) {
         };
         appendRecord(fields);
         logMessages += 1;
-        if (message.type === "error") appendRecord({ event: "deploy_log_error", ...extractErrorFields(message) });
+        if (type === "error") errorFrames += 1;
+        else if (hasVisibleBuildLogText(safeMessage)) buildLogTextFrames += 1;
         if (artifactFull) socket.close(1000, "capture size limit reached");
       }).catch((error) => {
+        transportError = true;
         appendRecord({ event: "websocket_message_error", message: error.message });
         socket.close(1011, "message processing failed");
       });
     });
     socket.addEventListener("error", () => {
+      transportError = true;
       appendRecord({ event: "websocket_error", message: "WebSocket transport error; details omitted" });
       socket.close();
     });
     socket.addEventListener("close", (event) => {
-      appendRecord({ event: "websocket_closed", code: event.code, reason: event.reason, was_clean: event.wasClean });
+      closeStatus = { code: event.code, reason: event.reason, was_clean: event.wasClean };
+      appendRecord({ event: "websocket_closed", ...closeStatus });
       done();
     });
   });
@@ -371,6 +449,7 @@ async function main() {
   requireEqual("build_id", deploy.build_id, buildId);
 
   let build = null;
+  let buildMetadataStatus = "available";
   try {
     build = await requestJson(
       "build_metadata",
@@ -383,26 +462,23 @@ async function main() {
     if (build.site_id !== undefined) requireEqual("build.site_id", build.site_id, siteId);
     if (build.commit_ref !== undefined) requireEqual("build.commit_ref", build.commit_ref, expectedCommit);
   } catch (error) {
-    if (hasDirectCause(deploy)) {
-      appendRecord({ event: "direct_failure_cause", source: "deploy_metadata", fields: extractErrorFields(deploy) });
-      appendRecord({ event: "diagnostic_complete", source: "deploy_metadata", deploy_state: deploy.state, build_metadata_status: error.httpStatus ?? "unavailable" });
-      return;
-    }
-    if (error.httpStatus === 401 || error.httpStatus === 403) throw error;
-    if (error.responseData && hasDirectCause(error.responseData)) {
-      appendRecord({ event: "direct_failure_cause", source: "build_metadata", fields: extractErrorFields(error.responseData) });
-      appendRecord({ event: "diagnostic_complete", source: "build_metadata", deploy_state: deploy.state, build_metadata_status: error.httpStatus });
-      return;
-    }
-    appendRecord({ event: "build_metadata_unavailable", status: error.httpStatus ?? "network_or_body_error", message: error.message });
+    if (error.preflightMismatch) throw error;
+    buildMetadataStatus = error.httpStatus ?? "network_or_body_error";
+    appendRecord({
+      event: "build_metadata_unavailable",
+      status: buildMetadataStatus,
+      fields: error.responseData ? extractErrorFields(error.responseData) : {},
+      message: error.message,
+    });
   }
 
-  if (hasDirectCause(deploy) || (build && hasDirectCause(build))) {
-    if (hasDirectCause(deploy)) appendRecord({ event: "direct_failure_cause", source: "deploy_metadata", fields: extractErrorFields(deploy) });
-    if (build && hasDirectCause(build)) appendRecord({ event: "direct_failure_cause", source: "build_metadata", fields: extractErrorFields(build) });
-    appendRecord({ event: "diagnostic_complete", source: "metadata", deploy_state: deploy.state, build_state: build?.state ?? "unavailable" });
-    return;
-  }
+  appendRecord({
+    event: "deployment_stage_evidence",
+    deploy_state: deploy.state,
+    metadata_fields: extractErrorFields(deploy),
+    build_metadata_status: buildMetadataStatus,
+    build_metadata_fields: build ? extractErrorFields(build) : {},
+  });
 
   const tokenUrl = new URL("/access-control/generate-access-control-token", NETLIFY_ACCESS_ORIGIN);
   tokenUrl.searchParams.set("deploy_id", deployId);
@@ -415,22 +491,75 @@ async function main() {
   secretValues.add(accessToken);
   appendRecord({ event: "log_transport", endpoint: LOG_SOCKET_URL, access_control_token: "obtained; value withheld" });
   const capture = await websocketCapture(deployId, siteId, accessToken);
-  appendRecord({ event: "diagnostic_complete", source: "deploy_logs_websocket", ...capture, deploy_state: deploy.state, build_state: build?.state ?? "unavailable" });
+  if (capture.transport_error) {
+    appendRecord({ event: "diagnostic_unavailable", reason: "websocket_transport_error", ...capture });
+    throw new Error("Netlify deploy logs were not captured because the WebSocket transport failed");
+  }
+  if (capture.build_log_text_frames === 0) {
+    const reason = capture.log_messages === 0
+      ? "no_log_frames"
+      : capture.error_frames === capture.log_messages
+        ? "error_frames_without_build_log_text"
+        : "no_nonempty_build_log_text";
+    appendRecord({ event: "diagnostic_unavailable", reason, ...capture });
+    throw new Error(`Netlify deploy logs contained no non-error build log text: ${reason}`);
+  }
+  appendRecord({
+    event: "diagnostic_complete",
+    source: "deploy_logs_websocket",
+    result: "logs_captured_for_human_review",
+    ...capture,
+    deploy_state: deploy.state,
+    build_state: build?.state ?? "unavailable",
+    build_metadata_status: buildMetadataStatus,
+  });
+
 }
 
 function selfTestRedactor() {
   const fake = "NetlifySecretValue_0123456789";
   const genericBearer = "UnlistedBearerCredential_0123456789";
   const signedAccess = "SignedAccessCredential_0123456789";
-  const source = `Bearer ${fake} Bearer ${genericBearer} https://example.test/build?access_token=${signedAccess}&keep=1 NETLIFY_AUTH_TOKEN=${fake} GITHUB_TOKEN=PatternCredential_0123456789\nAuthorization: Basic BasicCredential_0123456789\nclient_secret=OAuthSecret_0123456789 Cookie: session=CookieCredential_0123456789\nhttps://user:password@example.test/ stage publish failed: missing asset`;
+  const source = `Bearer ${fake} Bearer ${genericBearer} https://example.test/build?access_token=${signedAccess}&keep=1 NETLIFY_AUTH_TOKEN=${fake} GITHUB_TOKEN=PatternCredential_0123456789 NPM_TOKEN=NpmCredential_0123456789 NODE_AUTH_TOKEN=NodeAuthCredential_0123456789\n{"NPM_TOKEN":"JsonNpmCredential_0123456789","password":"JsonPasswordCredential_0123456789"}\nAuthorization: Basic BasicCredential_0123456789 npm ERR! ERESOLVE unable to resolve dependency tree\nCookie: session=CookieCredential_0123456789\nhttps://user:password@example.test/ stage publish failed: missing asset`;
   const result = redactText(source, [fake]);
-  for (const secret of [fake, genericBearer, signedAccess, "PatternCredential_0123456789", "BasicCredential_0123456789", "OAuthSecret_0123456789", "CookieCredential_0123456789", "user:password"]) {
+  for (const secret of [fake, genericBearer, signedAccess, "PatternCredential_0123456789", "NpmCredential_0123456789", "NodeAuthCredential_0123456789", "JsonNpmCredential_0123456789", "JsonPasswordCredential_0123456789", "BasicCredential_0123456789", "CookieCredential_0123456789", "user:password"]) {
     assert.equal(result.includes(secret), false);
   }
   assert.match(result, /Bearer \[REDACTED\]/);
   assert.match(result, /access_token=\[REDACTED\]/);
   assert.match(result, /GITHUB_TOKEN=\[REDACTED\]/);
+  assert.match(result, /npm ERR! ERESOLVE unable to resolve dependency tree/);
   assert.match(result, /stage publish failed: missing asset/);
+  assert.equal(hasVisibleBuildLogText("NPM_TOKEN=[REDACTED]"), false);
+  assert.equal(hasVisibleBuildLogText("[REDACTED PRIVATE KEY]"), false);
+  assert.equal(hasVisibleBuildLogText("npm ERR! ERESOLVE NPM_TOKEN=[REDACTED]"), true);
+  const pemRedactor = createPrivateKeyStreamRedactor();
+  const pemPrefix = pemRedactor.push("install command -----BEGIN RSA PRIVATE KEY-----\nPrivateKeyFragmentOne");
+  const pemMiddle = pemRedactor.push("PrivateKeyFragmentTwo\n-----END RSA PRIVATE KEY-----\nnpm ERR! ERESOLVE");
+  const pemSuffix = pemRedactor.finish();
+  const pemResult = `${pemPrefix}${pemMiddle}${pemSuffix}`;
+  assert.equal(pemResult.includes("PrivateKeyFragmentOne"), false);
+  assert.equal(pemResult.includes("PrivateKeyFragmentTwo"), false);
+  assert.match(pemResult, /\[REDACTED PRIVATE KEY\]/);
+  assert.match(pemResult, /npm ERR! ERESOLVE/);
+  process.stdout.write("redactor edge checks passed\n");
+  const frameRedactor = createPrivateKeyStreamRedactor();
+  const frameOne = `NPM_TOKEN=NpmCredential_012345678901 {"password":"JsonPasswordCredential_012345678901"}\\n-----BEGIN RSA PRIVATE KEY-----\\nPrivateKeyFragmentOne`;
+  const frameTwo = "PrivateKeyFragmentTwo\\n-----END RSA PRIVATE KEY-----\\nInstall command exited with code 1";
+  const emittedRecords = [
+    redactText(frameRedactor.push(redactText(frameOne))),
+    redactText(frameRedactor.push(redactText(frameTwo))),
+    redactText(frameRedactor.finish()),
+  ];
+  const emittedText = emittedRecords.join("\n");
+  assert.equal(emittedText.includes("PrivateKeyFragmentOne"), false);
+  assert.equal(emittedText.includes("PrivateKeyFragmentTwo"), false);
+  assert.equal(emittedText.includes("NpmCredential_012345678901"), false);
+  assert.equal(emittedText.includes("JsonPasswordCredential_012345678901"), false);
+  assert.match(emittedText, /Install command exited with code 1/);
+  const boundaryBearer = `npm ERR! ERESOLVE boundary Bearer BearerBoundarySecret_Gamma123${"x".repeat(80)}`;
+  assert.equal(redactText(boundaryBearer).includes("BearerBoundarySecret_Gamma123"), false);
+  assert.ok(emittedRecords.every((record) => !record.includes("PRIVATE KEY-----\\nPrivateKey")));
   process.stdout.write("redactor edge checks passed\n");
 }
 
