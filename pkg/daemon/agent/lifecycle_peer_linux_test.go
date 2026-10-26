@@ -97,10 +97,12 @@ func TestRootOwnerAllowsNonrootActivityButRejectsControl(t *testing.T) {
 		"actual nonroot process holds activity under a root owner",
 	)
 
-	_, err = stdin.Write([]byte("control\n"))
-	require.NoError(t, err)
-	require.Equal(t, "rejected", readPeerLine(t, scanner))
-	require.NoError(t, cmd.Wait())
+	assertNonrootControlReleasesCapacity(t, dir, func() {
+		_, err = stdin.Write([]byte("control\n"))
+		require.NoError(t, err)
+		require.Equal(t, "rejected", readPeerLine(t, scanner))
+		require.NoError(t, cmd.Wait())
+	})
 
 	require.Eventually(
 		t,
@@ -109,4 +111,25 @@ func TestRootOwnerAllowsNonrootActivityButRejectsControl(t *testing.T) {
 		time.Millisecond,
 		"nonowner control cannot disable the timer or leave a permanent hold",
 	)
+}
+
+func assertNonrootControlReleasesCapacity(t *testing.T, dir string, reject func()) {
+	t.Helper()
+	for range maxLifecycleClients - 1 {
+		client := connectNow(t, dir)
+		require.NoError(t, client.Send(LifecycleStateActivity, "", ""))
+		defer func() { _ = client.Close() }()
+	}
+	writer := ActivityWriter{LifecycleDir: dir, RequireOwner: true}
+	_, _, err := writer.Start(context.Background())
+	require.Error(t, err, "a full owner must refuse untracked work")
+	reject()
+	require.Eventually(t, func() bool {
+		_, stop, err := writer.Start(context.Background())
+		if err != nil {
+			return false
+		}
+		stop()
+		return true
+	}, time.Second, time.Millisecond, "nonroot control rejection must return client capacity")
 }
