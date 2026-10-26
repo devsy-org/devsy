@@ -1,10 +1,10 @@
 package vscode
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
@@ -12,10 +12,11 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/devsy-org/devsy/pkg/command"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/log"
 	devsyopen "github.com/devsy-org/devsy/pkg/open"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/status"
 )
 
 const containersExtension = "ms-vscode-remote.remote-containers"
@@ -96,7 +97,10 @@ const (
 	stageURIDispatch    = "URI dispatch"
 )
 
-const maxLoggedOutputBytes = 2048
+const (
+	routeCLI = "cli"
+	routeURI = "uri"
+)
 
 type commandRunner func(ctx context.Context, path string, args ...string) ([]byte, error)
 
@@ -107,19 +111,53 @@ type hostLauncher struct {
 	run      commandRunner
 	openURI  func(uri string) error
 	goos     string
-	homeDir  string
 }
 
 func newHostLauncher() hostLauncher {
-	homeDir, _ := os.UserHomeDir()
 	return hostLauncher{
 		lookPath: exec.LookPath,
 		run: func(ctx context.Context, path string, args ...string) ([]byte, error) {
+			// #nosec G204 -- executable comes from the trusted flavor mapping; argv is not shell text.
 			return exec.CommandContext(ctx, path, args...).CombinedOutput()
 		},
 		openURI: devsyopen.Run,
 		goos:    runtime.GOOS,
-		homeDir: homeDir,
+	}
+}
+
+// stageError reports which launch stage failed and a coarse class of the
+// failure. Its text never includes the wrapped error or editor output: those
+// routinely contain host paths, URLs and tokens that cannot be reliably
+// redacted. The original error stays reachable through Unwrap.
+type stageError struct {
+	stage string
+	class string
+	err   error
+}
+
+func newStageError(stage string, err error) *stageError {
+	return &stageError{stage: stage, class: classifyFailure(err), err: err}
+}
+
+func (e *stageError) Error() string { return e.stage + " failed: " + e.class }
+
+func (e *stageError) Unwrap() error { return e.err }
+
+func classifyFailure(err error) string {
+	var exitErr *exec.ExitError
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.As(err, &exitErr):
+		return fmt.Sprintf("exit status %d", exitErr.ExitCode())
+	case errors.Is(err, exec.ErrNotFound), errors.Is(err, fs.ErrNotExist):
+		return "not found"
+	case errors.Is(err, fs.ErrPermission):
+		return "permission denied"
+	default:
+		return "error"
 	}
 }
 
@@ -132,12 +170,32 @@ func Open(ctx context.Context, params OpenParams) error {
 // open dispatches a launch request to the editor. Success means the OS or the
 // editor CLI accepted the request; it does not prove the editor stayed alive or
 // that the remote SSH connection was established.
+//
+// Records carry the status operation ID from ctx so they can be matched to the
+// up operation that requested the launch. They never include editor output or
+// error text, only the stage, route and failure class.
 func (l hostLauncher) open(ctx context.Context, params OpenParams) error {
-	name := params.Flavor.DisplayName()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, ok := openConfigs[params.Flavor]; !ok {
+		return newStageError(stageResolve, errors.New("unsupported editor flavor"))
+	}
+	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	fields := []any{
+		"operation", redactor.Redact(status.OperationID(ctx)),
+		"flavor", redactor.Redact(string(params.Flavor)),
+	}
 
-	cliErr := l.openViaCLI(ctx, params)
+	cliErr := l.openViaCLI(ctx, params, fields)
+	if cliErr != nil {
+		log.Warnw(
+			"editor CLI launch failed",
+			append(fields, "route", routeCLI, "stage", stageOf(cliErr), "class", classOf(cliErr))...,
+		)
+	}
 	if cliErr == nil {
-		log.Infof("launch request dispatched to %s through its CLI", name)
+		log.Infow("launch request dispatched", append(fields, "route", routeCLI)...)
 		return nil
 	}
 
@@ -145,17 +203,32 @@ func (l hostLauncher) open(ctx context.Context, params OpenParams) error {
 		return ctx.Err()
 	}
 
-	log.Warnf("%s CLI launch failed, falling back to URI handler: %v", name, cliErr)
+	log.Debugw("dispatching launch request",
+		append(fields, "route", routeURI, "stage", stageURIDispatch)...)
 	uriErr := l.openViaURI(params)
 	if uriErr == nil {
-		log.Infof(
-			"launch request dispatched to %s through its URI handler after CLI failure",
-			name,
-		)
+		log.Infow("launch request dispatched",
+			append(fields, "route", routeURI, "after_cli_failure", true)...)
 		return nil
 	}
 
+	log.Warnw("URI launch failed",
+		append(fields, "route", routeURI, "stage", stageOf(uriErr), "class", classOf(uriErr))...)
 	return errors.Join(cliErr, uriErr)
+}
+
+func stageOf(err error) string {
+	if stageErr, ok := errors.AsType[*stageError](err); ok {
+		return stageErr.stage
+	}
+	return ""
+}
+
+func classOf(err error) string {
+	if stageErr, ok := errors.AsType[*stageError](err); ok {
+		return stageErr.class
+	}
+	return classifyFailure(err)
 }
 
 func (l hostLauncher) openViaURI(params OpenParams) error {
@@ -178,26 +251,26 @@ func (l hostLauncher) openViaURI(params OpenParams) error {
 	}
 	openURL := u.String()
 
-	log.Debugf("opening URL %s", openURL)
 	if err := l.openURI(openURL); err != nil {
-		return fmt.Errorf("%s: flavor %s may not be installed on the host: %w",
-			stageURIDispatch, params.Flavor.DisplayName(), err)
+		return newStageError(stageURIDispatch, err)
 	}
 
 	return nil
 }
 
-func (l hostLauncher) openViaCLI(ctx context.Context, params OpenParams) error {
+func (l hostLauncher) openViaCLI(ctx context.Context, params OpenParams, fields []any) error {
 	config, ok := openConfigs[params.Flavor]
 	if !ok {
 		return fmt.Errorf("unknown flavor %s", params.Flavor)
 	}
 
-	cliPath, err := l.resolveCLI(params.Flavor, config)
+	cliPath, err := l.resolveCLI(config, fields)
 	if err != nil {
 		return err
 	}
 
+	log.Debugw("enumerating editor extensions",
+		append(fields, "route", routeCLI, "stage", stageListExtensions)...)
 	hasSSHExtension, hasContainersExtension, err := l.listInstalledExtensions(
 		ctx,
 		cliPath,
@@ -208,49 +281,49 @@ func (l hostLauncher) openViaCLI(ctx context.Context, params OpenParams) error {
 	}
 
 	if !hasSSHExtension {
+		log.Debugw("installing editor SSH extension",
+			append(fields, "route", routeCLI, "stage", stageInstallSSHExt)...)
 		if err := l.ensureSSHExtension(ctx, cliPath, config.sshExtension); err != nil {
 			return err
 		}
 	}
 
 	args := buildOpenArgs(params.Workspace, params.Folder, params.NewWindow, hasContainersExtension)
-	log.Debugf(
-		"flavor %s command %s %s",
-		params.Flavor.DisplayName(),
-		cliPath,
-		strings.Join(args, " "),
-	)
-	if _, err := l.runStage(ctx, stageCLIDispatch, cliPath, args...); err != nil {
-		return err
+	log.Debugw("dispatching launch request",
+		append(fields, "route", routeCLI, "stage", stageCLIDispatch)...)
+	if _, err := l.run(ctx, cliPath, args...); err != nil {
+		return newStageError(stageCLIDispatch, err)
 	}
 
 	return nil
 }
 
-// resolveCLI finds the editor CLI and records what kind of file it is: on
-// Windows a .cmd wrapper and a native executable fail in different ways.
-func (l hostLauncher) resolveCLI(flavor Flavor, config openConfig) (string, error) {
+// resolveCLI finds the editor CLI. It logs only the file kind, not the path: on
+// Windows a .cmd wrapper and a native executable fail in different ways, while
+// the path itself usually contains the user's name.
+func (l hostLauncher) resolveCLI(config openConfig, fields []any) (string, error) {
 	candidates := []string{config.cliName}
 	if l.goos == "darwin" {
 		candidates = append(candidates, config.macAppPath)
 	}
 
+	var lookupErrs []error
 	for _, candidate := range candidates {
 		path, err := l.lookPath(candidate)
 		if err == nil {
-			log.Debugf(
-				"flavor %s CLI resolved to %s (%s)",
-				flavor.DisplayName(),
-				path,
-				cliKind(path),
-			)
+			log.Debugw("editor CLI resolved",
+				append(fields, "route", routeCLI, "stage", stageResolve, "cli_kind", cliKind(path))...)
 			return path, nil
 		}
+		lookupErrs = append(lookupErrs, err)
 	}
 
-	return "", fmt.Errorf("%s: flavor %s binary is not found", stageResolve, flavor)
+	return "", newStageError(stageResolve, errors.Join(lookupErrs...))
 }
 
+// cliKind classifies the resolved file by extension only. It does not show how
+// the file is executed, so a "batch wrapper" result is not evidence about
+// native Windows .cmd launch behavior.
 func cliKind(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".cmd", ".bat":
@@ -268,9 +341,9 @@ func (l hostLauncher) listInstalledExtensions(
 	ctx context.Context,
 	cliPath, sshExtension string,
 ) (hasSSH, hasContainers bool, err error) {
-	out, err := l.runStage(ctx, stageListExtensions, cliPath, "--list-extensions")
+	out, err := l.run(ctx, cliPath, "--list-extensions")
 	if err != nil {
-		return false, false, err
+		return false, false, newStageError(stageListExtensions, err)
 	}
 
 	for ext := range strings.SplitSeq(string(out), "\n") {
@@ -291,39 +364,10 @@ func (l hostLauncher) listInstalledExtensions(
 }
 
 func (l hostLauncher) ensureSSHExtension(ctx context.Context, cliPath, sshExtension string) error {
-	args := []string{"--install-extension", sshExtension}
-	log.Debugf("%s %s", cliPath, strings.Join(args, " "))
-	_, err := l.runStage(ctx, stageInstallSSHExt, cliPath, args...)
-	return err
-}
-
-// runStage runs the editor CLI and attaches the stage name and bounded output to
-// any error, keeping the original error in the chain.
-func (l hostLauncher) runStage(
-	ctx context.Context,
-	stage, cliPath string,
-	args ...string,
-) ([]byte, error) {
-	out, err := l.run(ctx, cliPath, args...)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", stage, command.WrapCommandError(l.boundOutput(out), err))
+	if _, err := l.run(ctx, cliPath, "--install-extension", sshExtension); err != nil {
+		return newStageError(stageInstallSSHExt, err)
 	}
-
-	return out, nil
-}
-
-// boundOutput limits CLI output kept in errors and logs and masks the user's
-// home directory, which commonly appears in editor error text.
-func (l hostLauncher) boundOutput(out []byte) []byte {
-	if l.homeDir != "" {
-		out = bytes.ReplaceAll(out, []byte(l.homeDir), []byte("~"))
-	}
-
-	if len(out) > maxLoggedOutputBytes {
-		out = append(out[:maxLoggedOutputBytes:maxLoggedOutputBytes], "... [truncated]"...)
-	}
-
-	return out
+	return nil
 }
 
 func buildOpenArgs(workspace, folder string, newWindow, hasContainersExtension bool) []string {

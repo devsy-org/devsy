@@ -3,14 +3,21 @@ package vscode
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/devsy-org/devsy/pkg/log"
+	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 )
+
+const listExtensionsArg = "--list-extensions"
 
 type call struct {
 	path string
@@ -18,7 +25,7 @@ type call struct {
 }
 
 func (c call) isListExtensions() bool {
-	return len(c.args) == 1 && c.args[0] == "--list-extensions"
+	return len(c.args) == 1 && c.args[0] == listExtensionsArg
 }
 
 type OpenSuite struct {
@@ -65,57 +72,70 @@ func testParams() OpenParams {
 	return OpenParams{Workspace: "ws", Folder: "/workspaces/ws", Flavor: FlavorCodium}
 }
 
-func messages(logs *observer.ObservedLogs, level zapcore.Level) string {
-	var b strings.Builder
-	for _, entry := range logs.FilterLevelExact(level).All() {
-		b.WriteString(entry.Message + "\n")
-	}
-	return b.String()
-}
+func (s *OpenSuite) TestCLISuccessDispatchesOnceWithCorrelation() {
+	operationID, err := s.openInOperation(testParams())
 
-func (s *OpenSuite) TestCLISuccessDoesNotUseURI() {
-	s.Require().NoError(s.launcher.open(context.Background(), testParams()))
-
+	s.Require().NoError(err)
+	s.Require().NotEmpty(operationID)
 	s.Len(s.calls, 2)
-	s.Equal("/bin/codium", s.calls[1].path)
 	s.Empty(s.uris)
-	s.Contains(
-		messages(s.logs, zapcore.InfoLevel),
-		"launch request dispatched to VSCodium through its CLI",
-	)
+	dispatched := s.records(zapcore.InfoLevel)
+	s.Require().Len(dispatched, 1)
+	s.Equal(operationID, dispatched[0].ContextMap()["operation"])
+	s.Equal(string(FlavorCodium), dispatched[0].ContextMap()["flavor"])
+	s.Equal(routeCLI, dispatched[0].ContextMap()["route"])
+	resolved := s.logs.FilterField(zap.String("cli_kind", "no extension")).All()
+	s.Require().Len(resolved, 1)
+	s.Equal(stageResolve, resolved[0].ContextMap()["stage"])
 }
 
-func (s *OpenSuite) TestCLIFailureFallsBackAndKeepsDiagnostic() {
+func (s *OpenSuite) TestCLIFailureFallsBackAndKeepsCauseAndCorrelation() {
+	cliCause := errors.New("exit status 1")
 	s.runFn = func(_ context.Context, c call) ([]byte, error) {
 		if c.isListExtensions() {
 			return []byte("jeanp413.open-remote-ssh\n"), nil
 		}
-		return []byte("wrapper exploded"), errors.New("exit status 1")
+		return nil, cliCause
 	}
 
-	s.Require().NoError(s.launcher.open(context.Background(), testParams()))
+	operationID, err := s.openInOperation(testParams())
 
+	s.Require().NoError(err)
 	s.Require().Len(s.uris, 1)
 	s.Contains(s.uris[0], "codium://vscode-remote/")
-	warning := messages(s.logs, zapcore.WarnLevel)
-	s.Contains(warning, stageCLIDispatch)
-	s.Contains(warning, "wrapper exploded")
-	s.Contains(messages(s.logs, zapcore.InfoLevel), "through its URI handler after CLI failure")
+
+	failed := s.records(zapcore.WarnLevel)
+	s.Require().Len(failed, 1)
+	s.Equal(operationID, failed[0].ContextMap()["operation"])
+	s.Equal(routeCLI, failed[0].ContextMap()["route"])
+	s.Equal(stageCLIDispatch, failed[0].ContextMap()["stage"])
+
+	dispatched := s.records(zapcore.InfoLevel)
+	s.Require().Len(dispatched, 1)
+	s.Equal(operationID, dispatched[0].ContextMap()["operation"])
+	s.Equal(routeURI, dispatched[0].ContextMap()["route"])
+	s.Equal(true, dispatched[0].ContextMap()["after_cli_failure"])
 }
 
-func (s *OpenSuite) TestBothRouteFailuresAreJoined() {
-	cliCause := errors.New("exit status 1")
-	uriCause := errors.New("no handler")
+func (s *OpenSuite) TestBothRoutesFailingKeepsCausesAndLogsBothFailures() {
+	cliCause := errors.New("cli cause")
+	uriCause := errors.New("uri cause")
 	s.runFn = func(context.Context, call) ([]byte, error) { return nil, cliCause }
 	s.uriErr = uriCause
 
-	err := s.launcher.open(context.Background(), testParams())
+	operationID, err := s.openInOperation(testParams())
 
 	s.Require().Error(err)
 	s.ErrorIs(err, cliCause)
 	s.ErrorIs(err, uriCause)
-	s.Contains(err.Error(), stageListExtensions)
-	s.Contains(err.Error(), stageURIDispatch)
+	failed := s.records(zapcore.WarnLevel)
+	s.Require().Len(failed, 2)
+	for _, entry := range failed {
+		s.Equal(operationID, entry.ContextMap()["operation"])
+	}
+	s.Equal(stageListExtensions, failed[0].ContextMap()["stage"])
+	s.Equal(stageURIDispatch, failed[1].ContextMap()["stage"])
+	s.Empty(s.records(zapcore.InfoLevel))
 }
 
 func (s *OpenSuite) TestCancelledCLIDoesNotOpenURI() {
@@ -134,11 +154,14 @@ func (s *OpenSuite) TestCancelledCLIDoesNotOpenURI() {
 func (s *OpenSuite) TestMissingCLIFallsBackToURI() {
 	s.launcher.lookPath = func(string) (string, error) { return "", errors.New("not found") }
 
-	s.Require().NoError(s.launcher.open(context.Background(), testParams()))
+	_, err := s.openInOperation(testParams())
 
+	s.Require().NoError(err)
 	s.Empty(s.calls)
 	s.Len(s.uris, 1)
-	s.Contains(messages(s.logs, zapcore.WarnLevel), stageResolve)
+	failed := s.records(zapcore.WarnLevel)
+	s.Require().Len(failed, 1)
+	s.Equal(stageResolve, failed[0].ContextMap()["stage"])
 }
 
 func (s *OpenSuite) TestMissingSSHExtensionIsInstalledBeforeDispatch() {
@@ -156,8 +179,8 @@ func (s *OpenSuite) TestMissingSSHExtensionIsInstalledBeforeDispatch() {
 	s.Contains(s.calls[2].args, "--disable-extension")
 }
 
-func (s *OpenSuite) TestInstallFailureNamesStage() {
-	installErr := errors.New("exit status 1")
+func (s *OpenSuite) TestInstallFailureNamesStageAndKeepsCause() {
+	installErr := errors.New("install cause")
 	s.runFn = func(_ context.Context, c call) ([]byte, error) {
 		if c.isListExtensions() {
 			return nil, nil
@@ -165,30 +188,100 @@ func (s *OpenSuite) TestInstallFailureNamesStage() {
 		return nil, installErr
 	}
 
-	err := s.launcher.openViaCLI(context.Background(), testParams())
+	err := s.launcher.openViaCLI(context.Background(), testParams(), nil)
 
 	s.ErrorIs(err, installErr)
-	s.Contains(err.Error(), stageInstallSSHExt)
+	s.Equal(stageInstallSSHExt, stageOf(err))
 	s.Len(s.calls, 2)
 }
 
-func (s *OpenSuite) TestErrorOutputIsBoundedAndHomeIsMasked() {
-	s.launcher.homeDir = "/home/alice"
-	s.runFn = func(context.Context, call) ([]byte, error) {
-		out := "failed in /home/alice/.vscode " + strings.Repeat("x", 3*maxLoggedOutputBytes)
-		return []byte(out), errors.New("exit status 1")
+// Editor output, paths and error text can hold secrets that no exact-value
+// redactor knows about, so none of it may reach logs or rendered errors.
+func (s *OpenSuite) TestLogsAndErrorsOmitEditorOutputPathsAndErrorText() {
+	canaries := []string{
+		`C:\Users\Alice\AppData\Local\Programs\VSCodium\bin\codium.cmd`,
+		`c:/users/alice/appdata/local/programs/vscodium/bin/codium.cmd`,
+		`\\fileserver\share\alice\profile`,
+		`/home/alice/.config/VSCodium`,
+		"build-host.internal",
+		"token=unknown-query-token-8841",
+		"boundary-secret-value-7731",
 	}
-
-	err := s.launcher.openViaCLI(context.Background(), testParams())
-
-	s.Require().Error(err)
-	s.NotContains(err.Error(), "/home/alice")
-	s.Contains(err.Error(), "~/.vscode")
-	s.Contains(err.Error(), "[truncated]")
-	s.Less(len(err.Error()), 2*maxLoggedOutputBytes)
+	s.T().Setenv("DEVSY_TEST_TOKEN", canaries[6])
+	// Exercise the old truncation boundary and check the leaked prefix too.
+	output := strings.Repeat("x", 2040) + canaries[6] + strings.Repeat("y", 100)
+	leaky := fmt.Errorf("%s: %s", strings.Join(canaries, " "), output)
+	for _, failedStage := range []string{
+		stageResolve, stageListExtensions, stageInstallSSHExt, stageCLIDispatch,
+	} {
+		s.Run(failedStage, func() {
+			s.logs.TakeAll()
+			s.launcher.lookPath = func(string) (string, error) {
+				if failedStage == stageResolve {
+					return "", leaky
+				}
+				return canaries[0], nil
+			}
+			s.runFn = func(_ context.Context, c call) ([]byte, error) {
+				if c.isListExtensions() && failedStage != stageListExtensions {
+					if failedStage == stageInstallSSHExt {
+						return nil, nil
+					}
+					return []byte("jeanp413.open-remote-ssh\n"), nil
+				}
+				return []byte(output), leaky
+			}
+			s.uriErr = leaky
+			params := testParams()
+			params.Workspace = canaries[4]
+			params.Folder = canaries[1]
+			_, err := s.openInOperation(params)
+			s.Require().Error(err)
+			logged := s.everythingLogged() + err.Error()
+			for _, canary := range canaries {
+				s.NotContains(logged, canary)
+			}
+			s.NotContains(logged, canaries[6][:8])
+			s.NotContains(logged, "Alice")
+			s.NotContains(logged, "alice")
+			s.ErrorIs(err, leaky)
+			failed := s.records(zapcore.WarnLevel)
+			s.Require().Len(failed, 2)
+			s.Equal(failedStage, failed[0].ContextMap()["stage"])
+			s.Equal(stageURIDispatch, failed[1].ContextMap()["stage"])
+		})
+	}
 }
 
-func (s *OpenSuite) TestCLIKindDistinguishesWindowsWrappers() {
+func (s *OpenSuite) TestLogsOmitResolvedPathOnSuccess() {
+	const resolved = `C:\Users\Alice\AppData\Local\Programs\VSCodium\bin\codium.cmd`
+	s.launcher.lookPath = func(string) (string, error) { return resolved, nil }
+
+	s.Require().NoError(s.launcher.open(context.Background(), testParams()))
+
+	s.NotContains(s.everythingLogged(), "Alice")
+	s.NotContains(s.everythingLogged(), "alice")
+}
+
+func (s *OpenSuite) TestClassifyFailureUsesErrorKindsNotText() {
+	s.Equal("canceled", classifyFailure(fmt.Errorf("x: %w", context.Canceled)))
+	s.Equal("timeout", classifyFailure(fmt.Errorf("x: %w", context.DeadlineExceeded)))
+	s.Equal("error", classifyFailure(errors.New("anything else")))
+
+	_, lookErr := exec.LookPath("devsy-test-binary-that-does-not-exist")
+	s.Equal("not found", classifyFailure(lookErr))
+}
+
+func (s *OpenSuite) TestClassifyFailureReportsExitStatus() {
+	if runtime.GOOS == "windows" {
+		s.T().Skip("requires a POSIX shell")
+	}
+	exitErr := exec.Command("sh", "-c", "exit 3").Run()
+
+	s.Equal("exit status 3", classifyFailure(exitErr))
+}
+
+func (s *OpenSuite) TestCLIKindClassifiesByExtensionOnly() {
 	s.Equal("batch wrapper", cliKind(`C:\Program Files\VSCodium\bin\codium.CMD`))
 	s.Equal("native executable", cliKind(`C:\VSCodium\VSCodium.exe`))
 	s.Equal("no extension", cliKind("/usr/bin/codium"))
@@ -202,13 +295,50 @@ func (s *OpenSuite) TestMacAppPathIsCandidateOnlyOnDarwin() {
 	}
 	config := openConfigs[FlavorCodium]
 
-	_, err := s.launcher.resolveCLI(FlavorCodium, config)
+	_, err := s.launcher.resolveCLI(config, nil)
 	s.Require().Error(err)
 	s.Equal([]string{"codium"}, looked)
 
 	looked = nil
 	s.launcher.goos = "darwin"
-	_, err = s.launcher.resolveCLI(FlavorCodium, config)
+	_, err = s.launcher.resolveCLI(config, nil)
 	s.Require().Error(err)
 	s.Equal([]string{"codium", config.macAppPath}, looked)
+}
+
+// openInOperation runs the launcher inside a real status operation, the way
+// launchIDEPhase does, and returns the operation ID the launch was run under.
+func (s *OpenSuite) openInOperation(params OpenParams) (operationID string, err error) {
+	err = status.Run(
+		context.Background(),
+		status.Nop(),
+		status.Operation{Phase: status.PhaseLaunchingIDE},
+		func(ctx context.Context) error {
+			operationID = status.OperationID(ctx)
+			return s.launcher.open(ctx, params)
+		},
+	)
+	s.Require().NotEmpty(operationID)
+	for _, entry := range s.logs.AllUntimed() {
+		s.Equal(operationID, entry.ContextMap()["operation"])
+		s.Equal(string(params.Flavor), entry.ContextMap()["flavor"])
+	}
+	return operationID, err
+}
+
+func (s *OpenSuite) records(level zapcore.Level) []observer.LoggedEntry {
+	return s.logs.FilterLevelExact(level).AllUntimed()
+}
+
+// everythingLogged renders every message and structured field of every entry,
+// at every level, so privacy assertions cannot miss a field.
+func (s *OpenSuite) everythingLogged() string {
+	var b strings.Builder
+	for _, entry := range s.logs.AllUntimed() {
+		b.WriteString(entry.Message + "\n")
+		for key, value := range entry.ContextMap() {
+			fmt.Fprintf(&b, "%s=%v\n", key, value)
+		}
+	}
+	return b.String()
 }
