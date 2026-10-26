@@ -18,6 +18,10 @@ const (
 	cacheEnvToken        = "env-token"
 	cacheEnvURL          = "https://env-cache"
 	ghaScopeEntry        = "type=gha,scope=x"
+	cacheTypeGHA         = "gha"
+	cacheAttrScope       = "scope"
+	cacheExplicitToken   = "explicit-token"
+	cacheExplicitURL     = "https://explicit-url"
 )
 
 type parseCacheEntryCase struct {
@@ -149,6 +153,34 @@ func TestParseCacheEntryGhaTakesCredentialsFromEnvironment(t *testing.T) {
 				}},
 			},
 		},
+		{
+			name: "explicit gha token combines with url from environment",
+			in:   []string{ghaScopeEntry + ",token=" + cacheExplicitToken},
+			env: map[string]string{
+				cacheURLEnv: cacheEnvURL,
+			},
+			want: []client.CacheOptionsEntry{
+				{Type: cacheTypeGHA, Attrs: map[string]string{
+					cacheAttrScope: "x",
+					cacheAttrToken: cacheExplicitToken,
+					cacheAttrURL:   cacheEnvURL,
+				}},
+			},
+		},
+		{
+			name: "explicit gha url combines with token from environment",
+			in:   []string{ghaScopeEntry + ",url=" + cacheExplicitURL},
+			env: map[string]string{
+				cacheRuntimeTokenEnv: cacheEnvToken,
+			},
+			want: []client.CacheOptionsEntry{
+				{Type: cacheTypeGHA, Attrs: map[string]string{
+					cacheAttrScope: "x",
+					cacheAttrToken: cacheEnvToken,
+					cacheAttrURL:   cacheExplicitURL,
+				}},
+			},
+		},
 	})
 }
 
@@ -164,6 +196,23 @@ func TestParseCacheEntryDropsGhaWithoutCredentials(t *testing.T) {
 			in:   []string{ghaScopeEntry},
 			env: map[string]string{
 				cacheURLEnv: cacheEnvURL,
+			},
+			want: []client.CacheOptionsEntry{},
+		},
+		{
+			name: "gha entry dropped when only token is available",
+			in:   []string{ghaScopeEntry},
+			env: map[string]string{
+				cacheRuntimeTokenEnv: cacheEnvToken,
+			},
+			want: []client.CacheOptionsEntry{},
+		},
+		{
+			name: "explicit empty gha token and url drop entry despite environment",
+			in:   []string{ghaScopeEntry + ",token=,url="},
+			env: map[string]string{
+				cacheRuntimeTokenEnv: cacheEnvToken,
+				cacheURLEnv:          cacheEnvURL,
 			},
 			want: []client.CacheOptionsEntry{},
 		},
