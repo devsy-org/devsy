@@ -99,7 +99,7 @@ jobs:
             --arg artifact "$LINUX_ARTIFACT_ID" \
             --arg zipDigest "$LINUX_ARTIFACT_DIGEST" \
             --arg appimage "$appimage_sha" \
-            '{source:{runId:$run,head:$head},artifact:{id:$artifact,zipSha256:$zipDigest},appimage:{member:"Devsy_linux_x86_64.AppImage",sha256:$appimage},scope:"Actual D485 AppImage launched only in private disposable GNOME sessions; no install, release, or native-host acceptance implied."}' \
+            '{source:{runId:$run,head:$head},artifact:{id:$artifact,zipSha256:$zipDigest},appimage:{member:"Devsy_linux_x86_64.AppImage",sha256:$appimage},launchAttempts:[],observedWindows:{},sessionResult:"not_started",scope:"Exact D485 AppImage artifact integrity verified; no application launch or GNOME window observed yet."}' \
             > "$proof_dir/proof.json"
 
       - name: Preflight GNOME package size before installing
@@ -108,27 +108,72 @@ jobs:
         run: |
           set -euo pipefail
           packages=(dbus-daemon gnome-shell gnome-screenshot libfuse2t64 mesa-utils x11-utils xdotool xwayland xvfb)
-          apt-get -s --print-uris --no-install-recommends install "${packages[@]}" \
-            | tee "$RUNNER_TEMP/gnome-feasibility-proof/apt-plan.log"
-          download_bytes=$(awk '/^'\''https?:\/\// && $NF ~ /^[0-9]+$/ { total += $NF } END { print total + 0 }' "$RUNNER_TEMP/gnome-feasibility-proof/apt-plan.log")
+          proof_dir="$RUNNER_TEMP/gnome-feasibility-proof"
+          plan="$proof_dir/apt-plan.log"
+          selected_file="$proof_dir/apt-selected-packages.txt"
+          apt-get -s --no-install-recommends install "${packages[@]}" > "$plan"
+          grep -E '^[0-9]+ upgraded,' "$plan"
+          : > "$selected_file"
+          declare -A selected_packages=()
+          download_bytes=0
           installed_kib=0
           while read -r package version; do
             [ -n "$package" ] || continue
-            size=$(apt-cache show "$package=$version" | awk -F ': ' '$1 == "Installed-Size" { print $2; exit }')
-            if ! [[ "$size" =~ ^[0-9]+$ ]]; then
-              echo "::error::cannot calculate installed size for $package=$version"
+            if [[ -n "${selected_packages[$package]+x}" ]]; then
+              echo "::error::APT simulation selected $package more than once"
               exit 1
             fi
-            installed_kib=$((installed_kib + size))
-          done < <(awk '$1 == "Inst" { package=$2; version=$3; if (version ~ /^\[/) version=$4; gsub(/[\[\]()]/, "", version); print package, version }' "$RUNNER_TEMP/gnome-feasibility-proof/apt-plan.log")
-          planned_packages=$(awk '$1 == "Inst" { count++ } END { print count + 0 }' "$RUNNER_TEMP/gnome-feasibility-proof/apt-plan.log")
-          if (( download_bytes == 0 && planned_packages > 0 )); then
-            echo "::error::APT download size is missing from the plan; refusing install"
+            selected_packages["$package"]=1
+            metadata=$(apt-cache show "$package=$version")
+            sizes=$(printf '%s\n' "$metadata" | awk -v wanted_version="$version" '
+              BEGIN { RS = ""; FS = "\n" }
+              {
+                paragraphs++
+                versions = downloads = installs = 0
+                for (i = 1; i <= NF; i++) {
+                  if ($i ~ /^Version: /) {
+                    actual_version = $i
+                    sub(/^Version: /, "", actual_version)
+                    versions++
+                  } else if ($i ~ /^Size: /) {
+                    download = $i
+                    sub(/^Size: /, "", download)
+                    downloads++
+                  } else if ($i ~ /^Installed-Size: /) {
+                    installed = $i
+                    sub(/^Installed-Size: /, "", installed)
+                    installs++
+                  }
+                }
+              }
+              END {
+                if (paragraphs == 1 && versions == 1 && actual_version == wanted_version &&
+                    downloads == 1 && installs == 1 &&
+                    download ~ /^[0-9]+$/ && installed ~ /^[0-9]+$/)
+                  print download, installed
+              }')
+            read -r package_bytes package_kib <<< "$sizes"
+            if ! [[ "$package_bytes" =~ ^[0-9]+$ && "$package_kib" =~ ^[0-9]+$ ]]; then
+              echo "::error::missing or ambiguous exact size metadata for $package=$version"
+              exit 1
+            fi
+            printf '%s=%s\n' "$package" "$version" >> "$selected_file"
+            download_bytes=$((download_bytes + package_bytes))
+            installed_kib=$((installed_kib + package_kib))
+          done < <(awk '$1 == "Inst" { package=$2; version=$3; if (version ~ /^\[/) version=$4; gsub(/[\[\]()]/, "", version); print package, version }' "$plan")
+          planned_packages=${#selected_packages[@]}
+          installed_bytes=$((installed_kib * 1024))
+          printf 'APT preflight: planned_packages=%s download_bytes=%s installed_bytes=%s\n' \
+            "$planned_packages" "$download_bytes" "$installed_bytes" \
+            | tee "$proof_dir/size-preflight.txt"
+          if (( planned_packages == 0 )); then
+            echo "::error::APT simulation selected no packages; refusing an unbounded or empty GNOME install"
             exit 1
           fi
-          installed_bytes=$((installed_kib * 1024))
-          printf 'APT preflight: download_bytes=%s installed_bytes=%s\n' "$download_bytes" "$installed_bytes" \
-            | tee "$RUNNER_TEMP/gnome-feasibility-proof/size-preflight.txt"
+          if (( download_bytes == 0 )); then
+            echo "::error::APT archive sizes are missing; refusing install"
+            exit 1
+          fi
           if (( download_bytes > 536870912 || installed_bytes > 2147483648 )); then
             echo "::error::GNOME probe dependencies exceed the 512 MiB download or 2 GiB installed-size cap"
             exit 1
@@ -136,14 +181,27 @@ jobs:
 
       - name: Install bounded GNOME probe dependencies
         timeout-minutes: 8
+        shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get install --no-install-recommends -y \
-            dbus-daemon gnome-shell gnome-screenshot libfuse2t64 mesa-utils x11-utils xdotool xwayland xvfb
-          gnome-shell --version | tee "$RUNNER_TEMP/gnome-feasibility-proof/gnome-versions.txt"
-          dpkg-query -W -f="\${binary:Package} \${Version}\n" 'mutter*' | tee -a "$RUNNER_TEMP/gnome-feasibility-proof/gnome-versions.txt"
-          glxinfo -B | tee "$RUNNER_TEMP/gnome-feasibility-proof/software-renderer.txt"
-          grep -Eiq 'llvmpipe|softpipe|swrast' "$RUNNER_TEMP/gnome-feasibility-proof/software-renderer.txt"
+          proof_dir="$RUNNER_TEMP/gnome-feasibility-proof"
+          mapfile -t selected_specs < "$proof_dir/apt-selected-packages.txt"
+          if ((${#selected_specs[@]})); then
+            sudo apt-get install --no-install-recommends -y "${selected_specs[@]}"
+          fi
+          printf 'Selected exact APT package versions:\n'
+          cat "$proof_dir/apt-selected-packages.txt"
+          printf 'Installed package versions:\n' > "$proof_dir/installed-package-versions.txt"
+          for spec in "${selected_specs[@]}"; do
+            package="${spec%%=*}"
+            selected_version="${spec#*=}"
+            actual_version=$(dpkg-query -W -f="\${Version}" "$package")
+            test "$actual_version" = "$selected_version"
+            printf '%s=%s\n' "$package" "$actual_version" \
+              | tee -a "$proof_dir/installed-package-versions.txt"
+          done
+          gnome-shell --version | tee "$proof_dir/gnome-versions.txt"
+          dpkg-query -W -f="\${binary:Package} \${Version}\n" 'mutter*' | tee -a "$proof_dir/gnome-versions.txt"
       - name: Launch AppImage in isolated Wayland and X11 GNOME sessions
         timeout-minutes: 15
         shell: bash
@@ -154,7 +212,7 @@ jobs:
           profile="$RUNNER_TEMP/gnome-profile"
           mkdir -p "$profile"
           chmod +x "$appimage"
-          export APPIMAGE_PATH="$appimage" PROOF_DIR="$proof_dir"
+          export APPIMAGE_PATH="$appimage" PROOF_DIR="$proof_dir" VERIFY_WINDOW_SCRIPT="$proof_dir/verify-window.py"
           export HOME="$profile/home"
           export XDG_CONFIG_HOME="$profile/config"
           export XDG_DATA_HOME="$profile/data"
@@ -163,11 +221,75 @@ jobs:
           mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
           export LIBGL_ALWAYS_SOFTWARE=1
           export MESA_LOADER_DRIVER_OVERRIDE=swrast
+          cat > "$proof_dir/verify-window.py" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          if sys.argv[1] == "--attempt":
+              backend = sys.argv[2]
+              proof_path = Path(sys.argv[3])
+              proof = json.loads(proof_path.read_text())
+              proof.setdefault("launchAttempts", []).append(backend)
+              temporary = proof_path.with_suffix(".tmp")
+              temporary.write_text(json.dumps(proof, indent=2) + "\n")
+              temporary.replace(proof_path)
+              raise SystemExit(0)
+
+          if len(sys.argv) != 5:
+              raise SystemExit("usage: verify-window.py OUTPUT EXPECTED_TYPE BACKEND PROOF_JSON")
+          text = Path(sys.argv[1]).read_text()
+          expected_type = sys.argv[2]
+          backend = sys.argv[3]
+          proof_path = Path(sys.argv[4])
+          window_blocks = re.findall(r"uint64\s+(\d+)\s*:\s*\{([^{}]*)\}", text, re.S)
+
+          def property_value(block, key):
+              match = re.search(rf"['\"]?{re.escape(key)}['\"]?\s*:\s*<([^>]*)>", block)
+              return match.group(1).strip() if match else ""
+
+          matches = []
+          for window_id, block in window_blocks:
+              title = property_value(block, "title").strip("'\"")
+              app_id = property_value(block, "app-id").strip("'\"")
+              wm_class = property_value(block, "wm-class").strip("'\"")
+              client_type_match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, "client-type"))
+              if not client_type_match or not re.search(r"devsy", " ".join((title, app_id, wm_class)), re.I):
+                  continue
+              client_type = int(client_type_match.group(1))
+              if expected_type != "any" and client_type != int(expected_type):
+                  continue
+              matches.append({
+                  "windowId": window_id,
+                  "title": title,
+                  "appId": app_id,
+                  "wmClass": wm_class,
+                  "clientType": client_type,
+              })
+
+          if not matches:
+              raise SystemExit("no GNOME window matched Devsy identity and expected client type")
+          identity = {"matchingWindows": matches}
+          identity_path = proof_path.with_name(f"{backend}-window-identity.json")
+          identity_path.write_text(json.dumps(identity, indent=2) + "\n")
+          proof = json.loads(proof_path.read_text())
+          proof.setdefault("observedWindows", {})[backend] = matches
+          proof["sessionResult"] = "partial"
+          proof["scope"] = f"Devsy window observed in private {backend} GNOME session; remaining checks pending."
+          temporary = proof_path.with_suffix(".tmp")
+          temporary.write_text(json.dumps(proof, indent=2) + "\n")
+          temporary.replace(proof_path)
+          print(json.dumps(identity, sort_keys=True))
+          PY
+          chmod 700 "$proof_dir/verify-window.py"
           Xvfb :99 -screen 0 1280x800x24 -nolisten tcp > "$proof_dir/xvfb.log" 2>&1 &
           xvfb_pid=$!
           trap 'kill "$xvfb_pid" 2>/dev/null || true; wait "$xvfb_pid" 2>/dev/null || true' EXIT
           export DISPLAY=:99
           timeout 30s bash -c 'until xdpyinfo >/dev/null 2>&1; do sleep 0.25; done'
+          glxinfo -B | tee "$proof_dir/software-renderer.txt"
+          grep -Eiq 'llvmpipe|softpipe|swrast' "$proof_dir/software-renderer.txt"
 
           run_wayland_session() {
             local runtime="$profile/wayland-runtime"
@@ -195,34 +317,52 @@ jobs:
               gnome-shell --version
               setsid "$APPIMAGE_PATH" >"$PROOF_DIR/devsy-wayland-default.log" 2>&1 &
               app_pid=$!
+              python3 "$VERIFY_WINDOW_SCRIPT" --attempt wayland-default "$PROOF_DIR/proof.json"
               sleep 2
-              if ! gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect --method org.gnome.Shell.Introspect.GetWindows >/dev/null 2>&1; then
-                xdotool key --clearmodifiers Alt+F2
-                sleep 1
-                xdotool type --clearmodifiers --delay 40 lg
-                xdotool key Return
-                sleep 2
-                xdotool type --clearmodifiers --delay 10 "global.context.unsafe_mode = true"
-                xdotool key Return
-                sleep 1
-              fi
+              ensure_introspection() {
+                if ! gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
+                  --method org.gnome.Shell.Introspect.GetWindows >/dev/null 2>&1; then
+                  xdotool key --clearmodifiers Alt+F2
+                  sleep 1
+                  xdotool type --clearmodifiers --delay 40 lg
+                  xdotool key Return
+                  sleep 2
+                  xdotool type --clearmodifiers --delay 10 "global.context.unsafe_mode = true"
+                  xdotool key Return
+                  sleep 1
+                  gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
+                    --method org.gnome.Shell.Introspect.GetWindows >/dev/null
+                  xdotool key Escape
+                  sleep 1
+                fi
+              }
+              ensure_introspection
               default_output="$PROOF_DIR/wayland-default-windows.txt"
+              default_identity="$PROOF_DIR/wayland-default-window-identity.json"
               for attempt in $(seq 1 60); do
                 if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
                   --method org.gnome.Shell.Introspect.GetWindows > "$default_output" 2>"$default_output.err" \
-                  && grep -Eiq "Devsy|devsy" "$default_output"; then
+                  && python3 "$VERIFY_WINDOW_SCRIPT" "$default_output" any wayland-default "$PROOF_DIR/proof.json" \
+                    > "$PROOF_DIR/wayland-default-window-match.json" 2>/dev/null; then
                   break
                 fi
                 sleep 0.5
               done
+              test -s "$default_identity"
               cat "$default_output" | tee "$PROOF_DIR/wayland-default-launch.txt"
-              grep -E "app-id|wm-class|client-type|title" "$default_output" \
-                | tee "$PROOF_DIR/wayland-default-window-identity.txt" || true
+              default_client_type=$(jq -r ".matchingWindows[0].clientType" "$default_identity")
               default_wayland=false
-              if grep -Eiq "Devsy|devsy" "$default_output" && grep -Eq "client-type.*uint32 0" "$default_output"; then
+              if [ "$default_client_type" = 0 ]; then
                 default_wayland=true
+                printf "backend=wayland client-type=0 launchargs=none(default) app_pid=%s\n" "$app_pid" \
+                  > "$PROOF_DIR/wayland-launch-mode.txt"
                 env -u WAYLAND_DISPLAY GDK_BACKEND=x11 gnome-screenshot --file="$PROOF_DIR/wayland.png"
-                printf "backend=wayland client-type=0 launchargs=none(default)\n" > "$PROOF_DIR/wayland-launch-mode.txt"
+              elif [ "$default_client_type" = 1 ]; then
+                printf "backend=wayland client-type=1 launchargs=none(default; XWayland) app_pid=%s\n" "$app_pid" \
+                  > "$PROOF_DIR/wayland-default-launch-mode.txt"
+              else
+                echo "Unexpected default Wayland client-type: $default_client_type" >&2
+                exit 1
               fi
               kill -- "-$app_pid" 2>/dev/null || true
               wait "$app_pid" 2>/dev/null || true
@@ -231,23 +371,23 @@ jobs:
                 setsid "$APPIMAGE_PATH" --ozone-platform=wayland --enable-features=UseOzonePlatform \
                   >"$PROOF_DIR/devsy-wayland-forced.log" 2>&1 &
                 app_pid=$!
+                python3 "$VERIFY_WINDOW_SCRIPT" --attempt wayland-forced "$PROOF_DIR/proof.json"
                 output="$PROOF_DIR/wayland-forced-windows.txt"
+                forced_identity="$PROOF_DIR/wayland-forced-window-identity.json"
                 for attempt in $(seq 1 60); do
                   if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
                     --method org.gnome.Shell.Introspect.GetWindows > "$output" 2>"$output.err" \
-                    && grep -Eiq "Devsy|devsy" "$output"; then
+                    && python3 "$VERIFY_WINDOW_SCRIPT" "$output" 0 wayland-forced "$PROOF_DIR/proof.json" \
+                      > "$PROOF_DIR/wayland-forced-window-match.json" 2>/dev/null; then
                     break
                   fi
                   sleep 0.5
                 done
+                test -s "$forced_identity"
                 cat "$output" | tee "$PROOF_DIR/wayland-forced-launch.txt"
-                grep -E "app-id|wm-class|client-type|title" "$output" \
-                  | tee "$PROOF_DIR/wayland-forced-window-identity.txt"
-                grep -Eiq "Devsy|devsy" "$output"
-                grep -Eq "client-type.*uint32 0" "$output"
                 env -u WAYLAND_DISPLAY GDK_BACKEND=x11 gnome-screenshot --file="$PROOF_DIR/wayland.png"
-                printf "backend=wayland client-type=0 launchargs=--ozone-platform=wayland --enable-features=UseOzonePlatform (forced probe; not default behavior)\n" \
-                  > "$PROOF_DIR/wayland-launch-mode.txt"
+                printf "backend=wayland client-type=0 launchargs=--ozone-platform=wayland --enable-features=UseOzonePlatform (forced probe; not default behavior) app_pid=%s\n" \
+                  "$app_pid" > "$PROOF_DIR/wayland-launch-mode.txt"
               fi
               test -s "$PROOF_DIR/wayland.png"
               kill -- "-$app_pid" 2>/dev/null || true
@@ -279,8 +419,10 @@ jobs:
               gnome-shell --version
               setsid "$APPIMAGE_PATH" >"$PROOF_DIR/devsy-x11.log" 2>&1 &
               app_pid=$!
+              python3 "$VERIFY_WINDOW_SCRIPT" --attempt x11 "$PROOF_DIR/proof.json"
               sleep 2
-              if ! gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect --method org.gnome.Shell.Introspect.GetWindows >/dev/null 2>&1; then
+              if ! gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
+                --method org.gnome.Shell.Introspect.GetWindows >/dev/null 2>&1; then
                 xdotool key --clearmodifiers Alt+F2
                 sleep 1
                 xdotool type --clearmodifiers --delay 40 lg
@@ -289,30 +431,53 @@ jobs:
                 xdotool type --clearmodifiers --delay 10 "global.context.unsafe_mode = true"
                 xdotool key Return
                 sleep 1
+                gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
+                  --method org.gnome.Shell.Introspect.GetWindows >/dev/null
+                xdotool key Escape
+                sleep 1
               fi
               output="$PROOF_DIR/x11-windows.txt"
+              identity="$PROOF_DIR/x11-window-identity.json"
               for attempt in $(seq 1 60); do
                 if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
                   --method org.gnome.Shell.Introspect.GetWindows > "$output" 2>"$output.err" \
-                  && grep -Eiq "Devsy|devsy" "$output"; then
+                  && python3 "$VERIFY_WINDOW_SCRIPT" "$output" 1 x11 "$PROOF_DIR/proof.json" \
+                    > "$PROOF_DIR/x11-window-match.json" 2>/dev/null; then
                   break
                 fi
                 sleep 0.5
               done
+              test -s "$identity"
               cat "$output"
-              grep -Eiq "Devsy|devsy" "$output"
-              grep -E "app-id|wm-class|client-type|title" "$output" | tee "$PROOF_DIR/x11-window-identity.txt"
-              grep -Eq "client-type.*uint32 1" "$output"
               env -u WAYLAND_DISPLAY GDK_BACKEND=x11 gnome-screenshot --file="$PROOF_DIR/x11.png"
               test -s "$PROOF_DIR/x11.png"
-              printf "backend=x11 client-type=1 launchargs=none(default)\n" > "$PROOF_DIR/x11-launch-mode.txt"
+              printf "backend=x11 client-type=1 launchargs=none(default) app_pid=%s\n" "$app_pid" \
+                > "$PROOF_DIR/x11-launch-mode.txt"
               kill -- "-$app_pid" 2>/dev/null || true
               wait "$app_pid" 2>/dev/null || true
               app_pid=
             '
           }
           run_x11_session
-          printf 'GNOME feasibility: actual AppImage launched only in private XDG/D-Bus profiles; Wayland client type 0 and X11 client type 1 observed; application not installed or released.\n' \
+          python3 - "$proof_dir/proof.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          proof_path = Path(sys.argv[1])
+          proof = json.loads(proof_path.read_text())
+          windows = proof.get("observedWindows", {})
+          wayland_windows = windows.get("wayland-default", []) + windows.get("wayland-forced", [])
+          if not any(window["clientType"] == 0 for window in wayland_windows):
+              raise SystemExit("no actual Wayland client window was observed")
+          if not any(window["clientType"] == 1 for window in windows.get("x11", [])):
+              raise SystemExit("no actual X11 client window was observed")
+          proof["sessionResult"] = "passed"
+          proof["applicationLaunched"] = True
+          proof["scope"] = "D485 AppImage launched in isolated GNOME Wayland and X11 sessions; software-rendered feasibility only, not the native desktop acceptance matrix."
+          proof_path.write_text(json.dumps(proof, indent=2) + "\n")
+          PY
+          printf 'GNOME feasibility: D485 AppImage window observed with Wayland client type 0 and X11 client type 1; software-rendered private GNOME sessions; application not installed or released.\n' \
             | tee "$proof_dir/result.txt"
 
       - name: Upload bounded GNOME feasibility evidence
