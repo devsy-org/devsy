@@ -598,6 +598,27 @@ func TestExplicitStopWaitsForPodToBeGone(t *testing.T) {
 	assert.False(t, c.podExists(t))
 }
 
+func TestWaitPodDeletedIgnoresAlreadyAbsentPod(t *testing.T) {
+	c := newFakeCluster(t)
+
+	require.NoError(t, c.k.waitPodDeleted(context.Background(), testPodID))
+}
+
+func TestWaitPodDeletedTimesOutWhenPodStaysTerminating(t *testing.T) {
+	c := newFakeCluster(t)
+	podDeleteTimeout = 50 * time.Millisecond
+	c.putPod(t, c.pod(t, podSpec{uid: "u1", phase: corev1.PodRunning, deleting: true}))
+	c.cs.PrependReactor("delete", "pods", func(clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, nil
+	})
+
+	err := c.k.waitPodDeleted(context.Background(), testPodID)
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "timeout waiting for pod")
+	assert.True(t, c.podExists(t))
+}
+
 func runOptionsForWorkspace(timeout string) *driver.RunOptions {
 	cfg, _ := agentd.EncodeDaemonConfig(&agentd.DaemonConfig{
 		Timeout:        timeout,
