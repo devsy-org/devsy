@@ -1,7 +1,9 @@
+[CmdletBinding()]
+param([switch]$DiagnosticSelfTest)
 $ErrorActionPreference = "Stop"
 
 $root = (Get-Location).Path
-$runnerTemp = $env:RUNNER_TEMP
+$runnerTemp = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
 $report = Join-Path $runnerTemp "t0-evidence.txt"
 $sourceRevision = git -C $root rev-parse HEAD
 $devsy = Join-Path $runnerTemp "devsy.exe"
@@ -12,7 +14,7 @@ $stateFile = Join-Path $runnerTemp "devsy-ci\docker-wsl-state.json"
 $e2eHelper = Join-Path $runnerTemp "devsy-ci-e2e.exe"
 $script:knownOutputSecrets = @(
     Get-ChildItem Env: |
-        Where-Object { $_.Name -match '(?i)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)' } |
+        Where-Object { $_.Name -match '(?i)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|API_KEY|APIKEY)' } |
         ForEach-Object { [string]$_.Value } |
         Where-Object { $_.Length -ge 6 }
 )
@@ -75,9 +77,10 @@ function Redact-DiagnosticText([string]$text) {
         @{ Pattern = '(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)'; Replacement = '-----BEGIN PRIVATE KEY----- [REDACTED] -----END PRIVATE KEY-----' },
         @{ Pattern = '\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b'; Replacement = '[REDACTED]' },
         @{ Pattern = '(?i)(authorization:\s*(?:bearer|basic|token)\s+)\S+'; Replacement = '${1}[REDACTED]' },
-        @{ Pattern = '(?i)("(?:auth|identitytoken|registrytoken|password|token|access_token|refresh_token|client_secret|secret|credential|private_key)"\s*:\s*)"[^"]*"'; Replacement = '${1}"[REDACTED]"' },
+        @{ Pattern = '(?i)("(?:auth|identitytoken|registrytoken|password|token|access_token|refresh_token|client_secret|secret|credential|private_key|api_key|apikey)"\s*:\s*)"[^"]*"'; Replacement = '${1}"[REDACTED]"' },
         @{ Pattern = '(?i)(https?://[^/\s:@]+:)[^@\s/]+@'; Replacement = '${1}[REDACTED]@' },
-        @{ Pattern = '(?i)\b([A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)[A-Za-z0-9_]*)(\s*[=:]\s*)(?!\[REDACTED\])(["'']?)([^"''\s,}\]]+)\3'; Replacement = '${1}${2}${3}[REDACTED]${3}' }
+        @{ Pattern = '(?i)(?:x-api-key|api-key)\s*:\s*\S+'; Replacement = '[REDACTED]' },
+        @{ Pattern = '(?i)\b([A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|API_KEY|APIKEY)[A-Za-z0-9_]*)(\s*[=:]\s*)(?!\[REDACTED\])(["'']?)([^"''\s,}\]]+)\3'; Replacement = '${1}${2}${3}[REDACTED]${3}' }
     )
     foreach ($redaction in $redactions) {
         $text = [regex]::Replace($text, $redaction.Pattern, $redaction.Replacement)
@@ -140,41 +143,144 @@ function Select-SafeErrorFields($value, [int]$depth = 0) {
     return $null
 }
 
-function Add-SafeProcessOutput([string]$stage, [string]$stream, $captured) {
-    if (!$captured.Text) { return }
+function Get-SafeProcessOutput($captured, [switch]$ForceProjectionFailure) {
     $text = $captured.Text
     $format = "text"
-    $parsedJSON = $false
-    if (!$captured.Truncated) {
+    if ($text -and !$captured.Truncated) {
         try {
             $parsed = ConvertFrom-Json -InputObject $text -AsHashtable -ErrorAction Stop
-            $parsedJSON = $true
+            if ($ForceProjectionFailure) { throw "forced projection failure" }
             $selected = Select-SafeErrorFields $parsed
             if ($selected -is [System.Collections.IDictionary] -and $selected.Count -gt 0) {
                 $text = ConvertTo-Json -InputObject $selected -Compress -Depth 8
-                $format = "json"
             } else {
                 $text = "[structured JSON omitted: no standard error fields]"
-                $format = "json"
             }
+            $format = "json"
         } catch {
+            $text = $captured.Text
+            $format = "text"
         }
     }
-    if (!$parsedJSON) { $text = Redact-DiagnosticText $text }
+    $text = Redact-DiagnosticText $text
     $truncated = $captured.Truncated
     if ($text.Length -gt 4096) {
         $text = $text.Substring(0, 4096)
         $truncated = $true
     }
-    $safeStage = $stage -replace '[^a-zA-Z0-9-]', '-'
-    $lines = @($text -split "\r?\n")
-    foreach ($line in $lines | Select-Object -First 32) {
-        if ($line) { Add-Evidence "ProcessOutput=stage=$safeStage,stream=$stream,format=$format,text=$line" }
+    return [pscustomobject]@{
+        Text = $text
+        Format = $format
+        Truncated = $truncated
     }
-    if ($lines.Count -gt 32 -or $truncated) {
+}
+
+function Add-SafeProcessOutput([string]$stage, [string]$stream, $captured) {
+    if (!$captured.Text) { return }
+    $formatted = Get-SafeProcessOutput $captured
+    $safeStage = $stage -replace '[^a-zA-Z0-9-]', '-'
+    $lines = @($formatted.Text -split "\r?\n|\r")
+    foreach ($line in $lines | Select-Object -First 32) {
+        if ($line) { Add-Evidence "ProcessOutput=stage=$safeStage,stream=$stream,format=$($formatted.Format),text=$line" }
+    }
+    if ($lines.Count -gt 32 -or $formatted.Truncated) {
         Add-Evidence "ProcessOutputTruncated=stage=$safeStage,stream=$stream"
     }
 }
+function Invoke-DiagnosticSelfTest {
+    $testToken = "ghp_selftestToken12345678901234567890"
+    $testPassword = "selftest-password-SENTINEL"
+    $testApiKey = "selftest-api-key-SENTINEL"
+    $testPrivateKey = "selftest-private-key-SENTINEL"
+    $testEndpoint = "ssh://selftest-user@fixture-host:2222"
+    $testPath = Join-Path $runnerTemp "diagnostic-private-key-path"
+    foreach ($secret in @($testToken, $testPassword, $testApiKey, $testPrivateKey, $testEndpoint)) {
+        Add-KnownDiagnosticSecret $secret
+    }
+    Add-KnownDiagnosticPath $testPath
+
+    $ordinary = Get-SafeProcessOutput ([pscustomobject]@{
+        Text = "Error: detached worker launch failed: access denied opening task state"
+        Truncated = $false
+    })
+    if (!$ordinary.Text.Contains("detached worker launch failed") -or !$ordinary.Text.Contains("access denied")) {
+        throw "Diagnostic self-test failed: ordinary cause was lost"
+    }
+
+    $structuredRaw = ConvertTo-Json -InputObject @{
+        kind = "error"
+        outcome = "error"
+        code = "E_SELFTEST"
+        message = "detached worker failed with TOKEN=$testToken"
+        causes = @(@{ message = "connection refused at $testEndpoint" })
+        password = $testPassword
+    } -Compress
+    $structured = Get-SafeProcessOutput ([pscustomobject]@{
+        Text = $structuredRaw
+        Truncated = $false
+    })
+    if (!$structured.Text.Contains("E_SELFTEST") -or !$structured.Text.Contains("detached worker failed") -or !$structured.Text.Contains("connection refused")) {
+        throw "Diagnostic self-test failed: structured cause was lost"
+    }
+    if ($structured.Text.Contains($testToken) -or $structured.Text.Contains($testPassword) -or $structured.Text.Contains($testEndpoint)) {
+        throw "Diagnostic self-test failed: structured secret escaped"
+    }
+
+    $secretText = @"
+-----BEGIN OPENSSH PRIVATE KEY-----
+$testPrivateKey
+-----END OPENSSH PRIVATE KEY-----
+authorization: Bearer $testToken
+TOKEN=$testToken
+PASSWORD=$testPassword
+API_KEY=$testApiKey
+apikey=$testApiKey
+X-API-Key: $testApiKey
+url=https://fixture-user:$testPassword@registry.local/v2
+path=$testPath
+"@
+    $secrets = Get-SafeProcessOutput ([pscustomobject]@{
+        Text = $secretText
+        Truncated = $false
+    })
+    foreach ($secret in @($testToken, $testPassword, $testApiKey, $testPrivateKey, $testPath)) {
+        if ($secrets.Text.Contains($secret)) {
+            throw "Diagnostic self-test failed: known secret escaped"
+        }
+    }
+    if (!$secrets.Text.Contains("API_KEY=[REDACTED]") -or !$secrets.Text.Contains("apikey=[REDACTED]")) {
+        throw "Diagnostic self-test failed: API key form was not redacted"
+    }
+
+    $malformed = Get-SafeProcessOutput ([pscustomobject]@{
+        Text = "{`"error`":{`"code`":`"E_MALFORMED`",`"message`":`"worker failed at $testPath; API_KEY=$testApiKey"
+        Truncated = $false
+    })
+    if (!$malformed.Text.Contains("E_MALFORMED") -or !$malformed.Text.Contains("worker failed") -or $malformed.Text.Contains($testApiKey) -or $malformed.Text.Contains($testPath)) {
+        throw "Diagnostic self-test failed: malformed JSON was not safely retained"
+    }
+
+    $forcedProjection = Get-SafeProcessOutput ([pscustomobject]@{
+        Text = $structuredRaw
+        Truncated = $false
+    }) -ForceProjectionFailure
+    if (!$forcedProjection.Text.Contains("detached worker failed") -or !$forcedProjection.Text.Contains("connection refused") -or $forcedProjection.Text.Contains($testToken) -or $forcedProjection.Text.Contains($testEndpoint)) {
+        throw "Diagnostic self-test failed: projection failure bypassed redaction"
+    }
+
+    $boundaryFile = Join-Path $runnerTemp "t0-redactor-selftest.txt"
+    try {
+        [System.IO.File]::WriteAllText($boundaryFile, ("x" * 4090) + $testPath)
+        $boundary = Get-SafeProcessOutput (Read-BoundedProcessOutput $boundaryFile)
+        if ($boundary.Text.Contains($testPath) -or !$boundary.Truncated) {
+            throw "Diagnostic self-test failed: truncation boundary leaked a path"
+        }
+    } finally {
+        Remove-Item -LiteralPath $boundaryFile -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "DiagnosticSelfTest=passed"
+}
+
 
 function Add-SafeProcessFailure([string]$stage, [string]$kind, [int]$exitCode, [string]$stdoutPath, [string]$stderrPath) {
     $stdout = Read-BoundedProcessOutput $stdoutPath
@@ -399,6 +505,11 @@ function Run-DetachedPhase([string]$phase, [string]$workspaceID, [string]$folder
     return $true
 }
 
+if ($DiagnosticSelfTest) {
+    Invoke-DiagnosticSelfTest
+    return
+}
+
 try {
     Add-Evidence "RunnerInteractive=$([Environment]::UserInteractive),SessionId=$([Diagnostics.Process]::GetCurrentProcess().SessionId),Architecture=$env:PROCESSOR_ARCHITECTURE,Is64BitOS=$([Environment]::Is64BitOperatingSystem)"
 
@@ -460,6 +571,11 @@ try {
     go build -o $e2eHelper ./e2e/cmd/devsy-ci
     if ($LASTEXITCODE -ne 0) { throw "Windows Docker WSL helper build failed" }
     Add-Evidence "NativeBuilds=devsy.exe,linux-agent,command-observer,editor-route-probe,docker-wsl-helper"
+    $upHelp = Invoke-QuietProcess $devsy @("workspace", "up", "--help") 30 "workspace-up-help"
+    if ($upHelp -notmatch '(?m)^\s*USAGE:\s*$' -or $upHelp -notmatch '(?m)^\s*devsy workspace up \[flags\]') {
+        throw "workspace up CLI help guard failed"
+    }
+    Add-Evidence "WorkspaceUpHelpGuard=passed,route=devsy workspace up"
 
     $agentDir = Join-Path $runnerTemp "agent-files"
     New-Item -ItemType Directory -Force -Path $agentDir | Out-Null
