@@ -496,7 +496,7 @@ jobs:
           import sys
           from pathlib import Path
 
-          EVAL_CODE = "JSON.stringify(global.get_window_actors().map(a => { const w = a.meta_window; const r = w.get_frame_rect(); return [w.get_id(), w.get_pid(), w.get_client_type(), r.x, r.y, r.width, r.height]; }))"
+          EVAL_CODE = "global.get_window_actors().map(a => { const w = a.meta_window; const r = w.get_frame_rect(); return [w.get_id(), w.get_pid(), w.get_client_type(), r.x, r.y, r.width, r.height]; })"
           IDENTITY_FIELDS = ("pid", "startTicks", "uid", "exe", "exeSha256", "mount", "appImagePath", "appImageSha256")
           EXPECTED_APPIMAGE = "Devsy_linux_x86_64.AppImage"
           EXPECTED_EXECUTABLE = "devsy-desktop"
@@ -577,6 +577,75 @@ jobs:
               result = subprocess.run(["gdbus", "call", "--session", *args], text=True,
                                       capture_output=True, check=True, timeout=10)
               return result.stdout.strip()
+          def meta_window_snapshot(backend, candidate_id, proof_dir, capture_label):
+              base = Path(proof_dir) / f"{capture_label}-metawindow-eval"
+              command = ["gdbus", "call", "--session", "--dest", "org.gnome.Shell",
+                         "--object-path", "/org/gnome/Shell", "--method", "org.gnome.Shell.Eval",
+                         EVAL_CODE]
+              try:
+                  result = subprocess.run(command, text=True, capture_output=True, timeout=10)
+              except subprocess.TimeoutExpired as error:
+                  stdout = error.stdout.decode(errors="replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
+                  stderr = error.stderr.decode(errors="replace") if isinstance(error.stderr, bytes) else (error.stderr or "")
+                  (base.parent / f"{base.name}-stdout.txt").write_text(stdout)
+                  (base.parent / f"{base.name}-stderr.txt").write_text(stderr)
+                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps({
+                      "backend": backend, "capture": capture_label, "candidateWindowId": candidate_id,
+                      "method": "org.gnome.Shell.Eval", "objectPath": "/org/gnome/Shell",
+                      "expression": EVAL_CODE, "returnCode": None, "timedOut": True,
+                      "decodedType": None, "decodedRows": None,
+                  }, indent=2) + "\n")
+                  raise SystemExit("GNOME Shell MetaWindow Eval timed out")
+              (base.parent / f"{base.name}-stdout.txt").write_text(result.stdout)
+              (base.parent / f"{base.name}-stderr.txt").write_text(result.stderr)
+              diagnostic = {
+                  "backend": backend, "capture": capture_label,
+                  "candidateWindowId": candidate_id,
+                  "method": "org.gnome.Shell.Eval", "objectPath": "/org/gnome/Shell",
+                  "expression": EVAL_CODE, "returnCode": result.returncode, "evalSucceeded": None,
+                  "decodedType": None, "decodedRows": None,
+              }
+              if result.returncode:
+                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
+                  raise SystemExit(f"GNOME Shell MetaWindow Eval failed with exit code {result.returncode}")
+              try:
+                  success, encoded = parse_tuple(result.stdout)
+              except (ValueError, SyntaxError) as error:
+                  diagnostic["decodeError"] = str(error)
+                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
+                  raise SystemExit("GNOME Shell MetaWindow Eval returned an invalid tuple")
+              diagnostic["evalSucceeded"] = success
+              if not success:
+                  diagnostic["decodedType"] = type(encoded).__name__
+                  diagnostic["evalError"] = encoded
+                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
+                  raise SystemExit("GNOME Shell Eval refused MetaWindow inspection")
+              try:
+                  rows = json.loads(encoded)
+              except (json.JSONDecodeError, TypeError) as error:
+                  diagnostic["decodeError"] = str(error)
+                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
+                  raise SystemExit("GNOME Shell MetaWindow Eval returned invalid JSON")
+              diagnostic["decodedType"] = type(rows).__name__
+              diagnostic["decodedRows"] = rows
+              if not isinstance(rows, list) or any(
+                  not isinstance(row, list) or len(row) != 7 or
+                  any(type(value) is not int for value in row) for row in rows
+              ):
+                  diagnostic["shapeValid"] = False
+                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
+                  raise SystemExit("GNOME Shell MetaWindow Eval returned an unexpected row shape")
+              diagnostic["shapeValid"] = True
+              diagnostic["decodedRowCount"] = len(rows)
+              (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
+              return rows
+          def find_meta_window_row(rows, candidate_id):
+              matches = [row for row in rows if str(row[0]) == candidate_id]
+              if len(matches) != 1:
+                  raise ValueError("GetWindows candidate ID did not map to exactly one MetaWindow")
+              return matches[0]
+
+
 
           def current_window(window_id):
               raw = call("--dest", "org.gnome.Shell", "--object-path", "/org/gnome/Shell/Introspect",
@@ -654,7 +723,14 @@ jobs:
                   print("same-window PID/start/UID/executable/mount/hash and updater-handoff rejection fixtures passed")
                   return
               if sys.argv[1] == "capture":
-                  _, _, identity_path, before_path, after_path, expected_hash, output = sys.argv
+                  identity_path = sys.argv[2]
+                  before_path, after_path, expected_hash, output = sys.argv[3:]
+                  identity_name = Path(identity_path).name
+                  suffix = "-window-identity.json"
+                  if not identity_name.endswith(suffix):
+                      raise SystemExit("window identity path has an unexpected filename")
+                  backend = identity_name[:-len(suffix)]
+                  capture_label = Path(output).stem
                   candidates = json.loads(Path(identity_path).read_text())["candidateWindows"]
                   if len(candidates) != 1:
                       raise SystemExit("expected exactly one raw Devsy WM_CLASS/title candidate")
@@ -662,16 +738,12 @@ jobs:
                   current = current_window(window["windowId"])
                   if current != window:
                       raise SystemExit("live GetWindows candidate changed before MetaWindow attribution")
-                  raw = call("--dest", "org.gnome.Shell", "--object-path", "/org/gnome/Shell",
-                             "--method", "org.gnome.Shell.Eval", EVAL_CODE)
-                  success, encoded = parse_tuple(raw)
-                  if not success:
-                      raise SystemExit("GNOME Shell Eval refused MetaWindow inspection")
-                  meta_windows = json.loads(encoded)
-                  matches = [item for item in meta_windows if str(item[0]) == window["windowId"]]
-                  if len(matches) != 1:
-                      raise SystemExit("GetWindows candidate ID did not map to exactly one MetaWindow")
-                  linked = linked_record(window, matches[0], json.loads(Path(before_path).read_text()),
+                  meta_windows = meta_window_snapshot(backend, window["windowId"], Path(identity_path).parent, capture_label)
+                  try:
+                      meta = find_meta_window_row(meta_windows, window["windowId"])
+                  except ValueError as error:
+                      raise SystemExit(str(error))
+                  linked = linked_record(window, meta, json.loads(Path(before_path).read_text()),
                                          json.loads(Path(after_path).read_text()), expected_hash)
                   Path(output).write_text(json.dumps(linked, indent=2) + "\n")
                   print(json.dumps(linked, sort_keys=True))
