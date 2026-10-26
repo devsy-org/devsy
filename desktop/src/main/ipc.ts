@@ -369,7 +369,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   } = deps
   const secretSession = new SecretSession(deps.secretSessionTimeoutMs)
   const providerIcons = new ProviderIconReader(cli)
-  let providerIconStateRevision = -1
+  let providerIconContextRevision = -1
+  const providerIconIdentityRevisions = new Map<string, number>()
   // Clearing the session revokes cache updates from protection operations already in flight.
   let secretCacheGeneration = 0
   const requestSecretUnlock = async () => {
@@ -1178,22 +1179,46 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("provider_icon", async (event, args: ProviderIconRequest) => {
     if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
       throw new Error("Provider icons require the main application window.")
-    const stateRevision = state.providerIconReadRevision()
-    if (stateRevision !== providerIconStateRevision) {
-      providerIcons.invalidateAll()
-      providerIconStateRevision = stateRevision
-    }
     const context = args?.context || state.currentContext()
-    const result = await providerIcons.read({ ...args, context })
-    const currentStateRevision = state.providerIconReadRevision()
-    if (currentStateRevision !== stateRevision) {
+    const contextRevision = state.providerIconContextReadRevision()
+    if (contextRevision !== providerIconContextRevision) {
       providerIcons.invalidateAll()
-      providerIconStateRevision = currentStateRevision
+      providerIconContextRevision = contextRevision
+    }
+    const providerName = args.providerName
+    const identityKey = `${context}\0${providerName}`
+    const identityRevision = state.providerIconIdentityReadRevision(
+      context,
+      providerName,
+    )
+    const previousIdentityRevision =
+      providerIconIdentityRevisions.get(identityKey)
+    if (
+      previousIdentityRevision !== undefined &&
+      previousIdentityRevision !== identityRevision
+    )
+      providerIcons.invalidateProvider(providerName)
+    providerIconIdentityRevisions.set(identityKey, identityRevision)
+
+    const result = await providerIcons.read({ ...args, context })
+    const currentContextRevision = state.providerIconContextReadRevision()
+    if (currentContextRevision !== contextRevision) {
+      providerIcons.invalidateAll()
+      providerIconContextRevision = currentContextRevision
+      return { revision: "", stale: true }
+    }
+
+    const currentIdentityRevision = state.providerIconIdentityReadRevision(
+      context,
+      providerName,
+    )
+    if (currentIdentityRevision !== identityRevision) {
+      providerIcons.invalidateProvider(providerName)
       const current =
         context === state.currentContext()
           ? state
               .providerList()
-              .find((provider) => provider.name === args.providerName)
+              .find((provider) => provider.name === providerName)
           : undefined
       return { revision: current?.iconRevision ?? "", stale: true }
     }

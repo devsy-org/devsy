@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/clierr"
@@ -123,11 +123,12 @@ func FetchLatestGitHubReleaseTag(
 		return tag, err
 	}
 
-	parsed, parseErr := url.Parse(apiURL)
-	if parseErr != nil {
-		return "", err
-	}
-	_, password, resolveErr := resolver.Resolve(ctx, parsed.Scheme, parsed.Host, parsed.Path)
+	_, password, resolveErr := resolver.Resolve(
+		ctx,
+		"https",
+		"github.com",
+		"/"+strings.TrimPrefix(ownerRepo, "/"),
+	)
 	if resolveErr != nil || password == "" {
 		return "", err
 	}

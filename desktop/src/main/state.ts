@@ -30,7 +30,8 @@ export class DaemonState {
   private workspaces = new Map<string, Workspace>()
   private providers = new Map<string, Provider>()
   private providerWriteRevision = 0
-  private providerIconRevision = 0
+  private providerIconIdentityRevisions = new Map<string, number>()
+  private providerIconContextRevision = 0
   private machines = new Map<string, Machine>()
   private contexts: Context[] = []
   private activeContext = ""
@@ -72,8 +73,17 @@ export class DaemonState {
     return this.providerWriteRevision
   }
 
-  providerIconReadRevision(): number {
-    return this.providerIconRevision
+  providerIconContextReadRevision(): number {
+    return this.providerIconContextRevision
+  }
+
+  providerIconIdentityReadRevision(
+    context: string,
+    providerName: string,
+  ): number {
+    return (
+      this.providerIconIdentityRevisions.get(`${context}\0${providerName}`) ?? 0
+    )
   }
 
   updateProviders(
@@ -81,18 +91,28 @@ export class DaemonState {
     readRevision = this.providerWriteRevision,
   ): boolean {
     if (readRevision < this.providerWriteRevision) return false
-    const newMap = new Map(list.map((p) => [p.name, p]))
+    const newMap = new Map(list.map((provider) => [provider.name, provider]))
     if (this.mapsEqual(this.providers, newMap)) return false
-    if (
-      this.providers.size !== newMap.size ||
-      list.some(
-        (provider) =>
-          !this.providers.has(provider.name) ||
-          this.providers.get(provider.name)?.iconRevision !==
-            provider.iconRevision,
-      )
-    )
-      this.providerIconRevision++
+
+    const context = this.currentContext()
+    const names = new Set([...this.providers.keys(), ...newMap.keys()])
+    for (const name of names) {
+      const previous = this.providers.get(name)
+      const next = newMap.get(name)
+      if (
+        !previous ||
+        !next ||
+        previous.icon !== next.icon ||
+        previous.iconDark !== next.iconDark ||
+        previous.iconRevision !== next.iconRevision
+      ) {
+        const key = `${context}\0${name}`
+        this.providerIconIdentityRevisions.set(
+          key,
+          (this.providerIconIdentityRevisions.get(key) ?? 0) + 1,
+        )
+      }
+    }
     this.providers = newMap
     return true
   }
@@ -123,7 +143,9 @@ export class DaemonState {
     const currentJson = JSON.stringify(this.contexts)
     if (contextsJson === currentJson && active === this.activeContext)
       return false
-    if (active !== this.activeContext) this.providerIconRevision++
+    if (active !== this.activeContext) {
+      this.providerIconContextRevision++
+    }
     this.contexts = contexts
     this.activeContext = active
     return true

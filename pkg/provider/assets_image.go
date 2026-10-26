@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"image"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -65,32 +66,53 @@ func validateIconImage(data []byte, declaredContentType string) (string, error) 
 	return validateIconFormat(data)
 }
 
+type rasterImageDecoder struct {
+	format       string
+	mimeType     string
+	decodeConfig func(io.Reader) (image.Config, error)
+	decode       func(io.Reader) (image.Image, error)
+}
+
 func validateIconFormat(data []byte) (string, error) {
 	switch {
 	case bytes.HasPrefix(data, pngSignature):
-		cfg, err := png.DecodeConfig(bytes.NewReader(data))
-		if err != nil {
-			return "", fmt.Errorf("invalid PNG: %w", err)
-		}
-		return mimePNG, checkDimensions(cfg.Width, cfg.Height)
+		return validateRasterIcon(data, rasterImageDecoder{
+			format: "PNG", mimeType: mimePNG, decodeConfig: png.DecodeConfig, decode: png.Decode,
+		})
 	case bytes.HasPrefix(data, jpegPrefix):
-		cfg, err := jpeg.DecodeConfig(bytes.NewReader(data))
-		if err != nil {
-			return "", fmt.Errorf("invalid JPEG: %w", err)
-		}
-		return mimeJPEG, checkDimensions(cfg.Width, cfg.Height)
+		return validateRasterIcon(data, rasterImageDecoder{
+			format:       "JPEG",
+			mimeType:     mimeJPEG,
+			decodeConfig: jpeg.DecodeConfig,
+			decode:       jpeg.Decode,
+		})
 	case isRIFFWebP(data):
-		cfg, err := webp.DecodeConfig(bytes.NewReader(data))
-		if err != nil {
-			return "", fmt.Errorf("invalid WebP: %w", err)
-		}
-		return mimeWebP, checkDimensions(cfg.Width, cfg.Height)
+		return validateRasterIcon(data, rasterImageDecoder{
+			format:       "WebP",
+			mimeType:     mimeWebP,
+			decodeConfig: webp.DecodeConfig,
+			decode:       webp.Decode,
+		})
 	}
 
 	if err := validateSVG(data); err != nil {
 		return "", err
 	}
 	return mimeSVG, nil
+}
+
+func validateRasterIcon(data []byte, decoder rasterImageDecoder) (string, error) {
+	cfg, err := decoder.decodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("invalid %s: %w", decoder.format, err)
+	}
+	if err := checkDimensions(cfg.Width, cfg.Height); err != nil {
+		return "", err
+	}
+	if _, err := decoder.decode(bytes.NewReader(data)); err != nil {
+		return "", fmt.Errorf("invalid %s: %w", decoder.format, err)
+	}
+	return decoder.mimeType, nil
 }
 
 func isHTMLContentType(declared string) bool {

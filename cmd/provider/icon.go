@@ -44,6 +44,11 @@ func NewIconCmd(flags *flags.GlobalFlags) *cobra.Command {
 		Args:        cobra.ExactArgs(1),
 		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(_ *cobra.Command, args []string) error {
+			if cmd.Context != "" {
+				if err := config.ValidateContextPathName(cmd.Context); err != nil {
+					return fmt.Errorf("invalid provider icon context: %w", err)
+				}
+			}
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 			if err != nil {
 				return err
@@ -63,15 +68,7 @@ func NewIconCmd(flags *flags.GlobalFlags) *cobra.Command {
 
 // Run prints the cached icon of the installed provider for the selected theme.
 func (cmd *IconCmd) Run(devsyConfig *config.Config, providerName string, out io.Writer) error {
-	if err := validateProviderName(providerName); err != nil {
-		return err
-	}
-	if cmd.Theme != iconThemeLight && cmd.Theme != iconThemeDark {
-		return fmt.Errorf("unexpected theme %q, choose light or dark", cmd.Theme)
-	}
-	// The icon is a data contract for machine consumers, but an invalid
-	// format must still fail like it does for every other command.
-	if _, err := output.ResolveMode(cmd.ResultFormat); err != nil {
+	if err := cmd.validate(devsyConfig.DefaultContext, providerName); err != nil {
 		return err
 	}
 
@@ -89,4 +86,22 @@ func (cmd *IconCmd) Run(devsyConfig *config.Config, providerName string, out io.
 	}
 
 	return json.NewEncoder(out).Encode(result)
+}
+
+func (cmd *IconCmd) validate(defaultContext, providerName string) error {
+	if err := config.ValidateContextPathName(defaultContext); err != nil {
+		return fmt.Errorf("invalid provider icon context: %w", err)
+	}
+	if err := validateProviderName(providerName); err != nil {
+		return err
+	}
+	if cmd.Theme != iconThemeLight && cmd.Theme != iconThemeDark {
+		return fmt.Errorf("unexpected theme %q, choose light or dark", cmd.Theme)
+	}
+	// The icon is a data contract for machine consumers, but an invalid
+	// format must still fail like it does for every other command.
+	if _, err := output.ResolveMode(cmd.ResultFormat); err != nil {
+		return err
+	}
+	return nil
 }

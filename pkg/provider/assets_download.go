@@ -213,33 +213,29 @@ func (f *iconFetcher) get(
 
 func readIconHTTPResponse(resp *http.Response) (iconHTTPResponse, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return iconHTTPResponse{
-				status: resp.StatusCode,
-			}, fmt.Errorf(
-				"HTTP status %d",
-				resp.StatusCode,
-			)
+		return iconHTTPResponse{status: resp.StatusCode}, fmt.Errorf(
+			"HTTP status %d",
+			resp.StatusCode,
+		)
 	}
 	if resp.ContentLength > maxIconBytes {
-		return iconHTTPResponse{
-				status: resp.StatusCode,
-			}, fmt.Errorf(
-				"image exceeds %d bytes",
-				maxIconBytes,
-			)
+		return iconHTTPResponse{status: resp.StatusCode}, fmt.Errorf(
+			"image exceeds %d bytes",
+			maxIconBytes,
+		)
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxIconBytes+1))
 	if err != nil {
-		return iconHTTPResponse{status: resp.StatusCode}, errors.New(describeRequestError(err))
+		return iconHTTPResponse{status: resp.StatusCode}, errors.New(
+			describeRequestError(err),
+		)
 	}
 	if len(data) > maxIconBytes {
-		return iconHTTPResponse{
-				status: resp.StatusCode,
-			}, fmt.Errorf(
-				"image exceeds %d bytes",
-				maxIconBytes,
-			)
+		return iconHTTPResponse{status: resp.StatusCode}, fmt.Errorf(
+			"image exceeds %d bytes",
+			maxIconBytes,
+		)
 	}
 
 	return iconHTTPResponse{

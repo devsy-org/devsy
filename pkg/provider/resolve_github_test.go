@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -239,8 +240,14 @@ func (s *ResolveProvenanceSuite) TestLocalYAMLRetainsActualBase() {
 
 type tokenResolver struct{ token string }
 
-func (r tokenResolver) Resolve(context.Context, string, string, string) (string, string, error) {
-	return "", r.token, nil
+func (r tokenResolver) Resolve(
+	_ context.Context,
+	protocol, host, path string,
+) (string, string, error) {
+	if protocol != "https" || host != "github.com" || path != "/"+testReleaseRepo {
+		return "", "", fmt.Errorf("unexpected credential context %s://%s%s", protocol, host, path)
+	}
+	return "test-user", r.token, nil
 }
 
 func (s *ResolveProvenanceSuite) TestLatestLookupRetriesWithCredentialsAfterDenial() {
@@ -271,8 +278,35 @@ func (s *ResolveProvenanceSuite) TestLatestLookupRetriesWithCredentialsAfterDeni
 	s.Equal("v7", tag)
 
 	mu.Lock()
-	defer mu.Unlock()
-	s.Equal([]string{"", "", testIconAuthorization}, attempts)
+	gotAttempts := append([]string(nil), attempts...)
+	mu.Unlock()
+	s.Equal([]string{"", "", testIconAuthorization}, gotAttempts)
+
+	var iconPath, iconAuthorization string
+	raw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		iconPath = r.URL.Path
+		iconAuthorization = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(testIconSVGLight))
+	}))
+	s.T().Cleanup(raw.Close)
+	previousRaw := githubRawBaseURL
+	githubRawBaseURL = raw.URL
+	s.T().Cleanup(func() { githubRawBaseURL = previousRaw })
+
+	cfg, err := ParseAuthorProvider(strings.NewReader(testReleaseManifest))
+	s.Require().NoError(err)
+	cfg.Source = ProviderSource{
+		Raw:                 "github.com/" + testReleaseRepo,
+		Github:              testReleaseRepo,
+		ResolvedRef:         tag,
+		ResolvedManifestURL: "https://github.com/" + testReleaseRepo + "/releases/download/" + tag + "/provider.yaml",
+	}
+	s.Require().NoError(
+		PrepareProviderIcons(context.Background(), config.DefaultContext, cfg, nil),
+	)
+	s.Equal(testIconSVGLight, s.decoded(s.iconText(cfg)))
+	s.Equal("/"+testReleaseRepo+"/refs/tags/v7/assets/logo.svg", iconPath)
+	s.Empty(iconAuthorization, "the API credential must not be forwarded to raw asset requests")
 }
 
 func (s *ResolveProvenanceSuite) TestInstalledProvenanceSurvivesSaveLoad() {

@@ -26,6 +26,7 @@ const (
 		`<rect width="8" height="8" fill="#ff0000"/></svg>`
 	iconDarkSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">` +
 		`<rect width="8" height="8" fill="#0000ff"/></svg>`
+	iconResultFormatJSON = "json"
 )
 
 type providerIconCmdSuite struct {
@@ -123,6 +124,37 @@ func (s *providerIconCmdSuite) TestRejectsInvalidProviderIdentityBeforeDiskRead(
 	}
 }
 
+func (s *providerIconCmdSuite) TestRejectsUnsafeContextBeforeConfigRead() {
+	configPath := s.T().TempDir()
+	s.T().Setenv(config.EnvConfig, configPath)
+
+	for _, contextName := range []string{
+		"../../other",
+		`..\target`,
+		`C:\target`,
+		strings.Repeat("a", 256),
+	} {
+		global := &flags.GlobalFlags{Context: contextName, ResultFormat: iconResultFormatJSON}
+		command := NewIconCmd(global)
+		err := command.RunE(command, []string{iconProviderName})
+		s.ErrorContains(err, "invalid provider icon context")
+	}
+}
+
+func (s *providerIconCmdSuite) TestAcceptsSafeUnicodeLegacyContext() {
+	const legacyContext = "legacy-\u6771\u4eac"
+	s.devsyConfig.DefaultContext = legacyContext
+	s.devsyConfig.Contexts[legacyContext] = &config.ContextConfig{
+		Providers: map[string]*config.ProviderConfig{},
+	}
+	s.installWithIcons()
+
+	out, err := s.run(iconProviderName, "light")
+
+	s.Require().NoError(err)
+	s.NotEmpty(out)
+}
+
 func (s *providerIconCmdSuite) TestDoesNotInitializeProvider() {
 	s.installWithIcons()
 
@@ -194,7 +226,10 @@ func (s *providerIconCmdSuite) installWithIcons() *providerpkg.ProviderConfig {
 }
 
 func (s *providerIconCmdSuite) run(name, theme string) (string, error) {
-	cmd := &IconCmd{GlobalFlags: &flags.GlobalFlags{ResultFormat: "json"}, Theme: theme}
+	cmd := &IconCmd{
+		GlobalFlags: &flags.GlobalFlags{ResultFormat: iconResultFormatJSON},
+		Theme:       theme,
+	}
 	var out bytes.Buffer
 	err := cmd.Run(s.devsyConfig, name, &out)
 	return out.String(), err

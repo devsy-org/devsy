@@ -11,7 +11,10 @@ import type { CliRunner } from "./cli.js"
 const CLI_MAX_STDOUT_BYTES = 2 * 1024 * 1024
 const MAX_BASE64_LENGTH = Math.ceil(PROVIDER_ICON_MAX_BYTES / 3) * 4
 const MAX_CACHE_ENTRIES = 128
-const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/
+const MAX_CONTEXT_PATH_BYTES = 255
+const INVALID_CONTEXT_PATH_CHARACTERS = /[\\/:<>"|?*]/u
+const BASE64_PATTERN =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 interface CliProviderIconResult {
   revision?: unknown
@@ -34,6 +37,37 @@ function requireIdentifier(value: unknown, label: string): string {
   )
     throw new Error(`A valid ${label} is required.`)
   return value
+}
+
+function requireContext(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value.trim() === "" ||
+    hasContextControlCharacter(value) ||
+    value.startsWith("-") ||
+    value === "." ||
+    value === ".." ||
+    value.endsWith(".") ||
+    value.endsWith(" ") ||
+    Buffer.byteLength(value, "utf8") > MAX_CONTEXT_PATH_BYTES ||
+    INVALID_CONTEXT_PATH_CHARACTERS.test(value) ||
+    (process.platform === "win32" && isReservedWindowsContextName(value))
+  )
+    throw new Error("A valid context is required.")
+  return value
+}
+
+function hasContextControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index)
+    if (code < 0x20 || code === 0x7f) return true
+  }
+  return false
+}
+
+function isReservedWindowsContextName(value: string): boolean {
+  const basename = value.split(".", 1)[0].toUpperCase()
+  return /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(basename)
 }
 
 function requireTheme(value: unknown): ProviderIconTheme {
@@ -82,7 +116,7 @@ export function toObservedIcon(raw: unknown): ObservedIcon {
 export class ProviderIconReader {
   private cache = new Map<string, ObservedIcon>()
   private inFlight = new Map<string, Promise<ObservedIcon>>()
-  // Bumped by every invalidation so a read that started before it is not cached.
+  private providerEpochs = new Map<string, number>()
   private epoch = 0
 
   constructor(private cli: Pick<CliRunner, "run">) {}
@@ -91,7 +125,7 @@ export class ProviderIconReader {
     const providerName = requireIdentifier(request?.providerName, "provider")
     if (!/^[a-z0-9-]{1,32}$/.test(providerName))
       throw new Error("A valid provider is required.")
-    const context = requireIdentifier(request.context, "context")
+    const context = requireContext(request.context)
     const theme = requireTheme(request.theme)
     const expectedRevision =
       typeof request.expectedRevision === "string"
@@ -109,11 +143,16 @@ export class ProviderIconReader {
   }
 
   invalidateProvider(providerName: string): void {
-    this.epoch++
-    this.inFlight.clear()
     const marker = `\0${providerName}\0`
-    for (const key of this.cache.keys()) {
-      if (key.includes(marker)) this.cache.delete(key)
+    const keys = [...this.cache.keys(), ...this.inFlight.keys()].filter((key) =>
+      key.includes(marker),
+    )
+    for (const key of keys) {
+      const [context, name] = key.split("\0")
+      const scope = `${context}\0${name}`
+      this.providerEpochs.set(scope, (this.providerEpochs.get(scope) ?? 0) + 1)
+      this.cache.delete(key)
+      this.inFlight.delete(key)
     }
   }
 
@@ -121,6 +160,7 @@ export class ProviderIconReader {
     this.epoch++
     this.inFlight.clear()
     this.cache.clear()
+    this.providerEpochs.clear()
   }
 
   private touch(key: string): ObservedIcon | undefined {
@@ -139,9 +179,15 @@ export class ProviderIconReader {
     const pending = this.inFlight.get(requestKey)
     if (pending) return pending
 
+    const scope = `${request.context}\0${request.providerName}`
     const epoch = this.epoch
+    const providerEpoch = this.providerEpochs.get(scope) ?? 0
     const run = this.fetch(request).then((observed) => {
-      if (epoch === this.epoch && observed.revision) {
+      if (
+        epoch === this.epoch &&
+        providerEpoch === (this.providerEpochs.get(scope) ?? 0) &&
+        observed.revision
+      ) {
         this.store(
           cacheKey(
             request.context,

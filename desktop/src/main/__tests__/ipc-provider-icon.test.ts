@@ -171,6 +171,31 @@ describe("provider_icon IPC", () => {
     expect(cli.run).toHaveBeenCalledTimes(2)
   })
 
+  it("preserves a pending image when an unrelated provider is deleted", async () => {
+    const { cli, state } = setup()
+    state.updateProviders([
+      { name: "harvester", iconRevision: "rev-a" },
+      { name: "other", iconRevision: "other-a" },
+    ])
+    const { promise, resolve: finish } = Promise.withResolvers<typeof ICON>()
+    cli.run.mockImplementationOnce(() => promise)
+    const pending = invoke(trustedEvent, "provider_icon", iconArgs)
+
+    await invoke(trustedEvent, "provider_delete", { name: "other" })
+    state.updateProviders([{ name: "harvester", iconRevision: "rev-a" }])
+    finish(ICON)
+
+    const expected = {
+      revision: "rev-a",
+      dataUrl: `data:image/png;base64,${ICON.dataBase64}`,
+    }
+    await expect(pending).resolves.toEqual(expected)
+    await expect(
+      invoke(trustedEvent, "provider_icon", iconArgs),
+    ).resolves.toEqual(expected)
+    expect(cli.run).toHaveBeenCalledTimes(1)
+  })
+
   it("rejects cached bytes after polling observes an external source replacement", async () => {
     const { cli, state } = setup()
     state.updateProviders([{ name: "harvester", iconRevision: "rev-a" }])

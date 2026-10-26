@@ -55,7 +55,17 @@ func jpegBytes(t *testing.T, width, height int) []byte {
 	return buf.Bytes()
 }
 
-// webpExtendedBytes builds a VP8X header; dimension validation never decodes pixels.
+func validWebPBytes(t *testing.T) []byte {
+	t.Helper()
+	data, err := base64.StdEncoding.DecodeString("UklGRhwAAABXRUJQVlA4TBAAAAAvAAAAAAfQmf5H/wMR0f8A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// webpExtendedBytes builds an incomplete VP8X header for dimension bounds tests.
+
 func webpExtendedBytes(width, height uint32) []byte {
 	if width == 0 || height == 0 || width > 1<<24 || height > 1<<24 {
 		panic("VP8X dimensions must fit the 24-bit canvas fields")

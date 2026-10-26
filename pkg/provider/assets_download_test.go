@@ -3,6 +3,8 @@ package provider
 import (
 	"bytes"
 	"context"
+	"image/jpeg"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/stretchr/testify/suite"
+	"golang.org/x/image/webp"
 )
 
 const svgOpen = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">`
@@ -62,7 +65,7 @@ func (s *AssetDownloadSuite) TestValidateAcceptsSupportedFormats() {
 		{"png", pngBytes(s.T(), 16, 16), mimePNG},
 		{"png at the pixel limit", pngBytes(s.T(), maxIconDimension, 1), mimePNG},
 		{"jpeg", jpegBytes(s.T(), 16, 16), mimeJPEG},
-		{"webp", webpExtendedBytes(64, 64), mimeWebP},
+		{"webp", validWebPBytes(s.T()), mimeWebP},
 		{"svg", []byte(testIconSVGLight), mimeSVG},
 		{"svg with BOM and declaration", append(
 			[]byte("\xEF\xBB\xBF<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"),
@@ -80,6 +83,19 @@ func (s *AssetDownloadSuite) TestValidateAcceptsSupportedFormats() {
 }
 
 func (s *AssetDownloadSuite) TestValidateRejectsBadImages() {
+	truncatedPNG := pngBytes(s.T(), 4, 4)
+	truncatedPNG = truncatedPNG[:len(truncatedPNG)-12]
+	truncatedJPEG := jpegBytes(s.T(), 4, 4)
+	truncatedJPEG = truncatedJPEG[:len(truncatedJPEG)-2]
+	truncatedWebP := validWebPBytes(s.T())
+	truncatedWebP = truncatedWebP[:len(truncatedWebP)-2]
+	_, err := png.DecodeConfig(bytes.NewReader(truncatedPNG))
+	s.Require().NoError(err)
+	_, err = jpeg.DecodeConfig(bytes.NewReader(truncatedJPEG))
+	s.Require().NoError(err)
+	_, err = webp.DecodeConfig(bytes.NewReader(truncatedWebP))
+	s.Require().NoError(err)
+
 	tests := []struct {
 		name        string
 		data        []byte
@@ -105,6 +121,9 @@ func (s *AssetDownloadSuite) TestValidateRejectsBadImages() {
 		{"webp too wide", webpExtendedBytes(maxIconDimension+1, 8), ""},
 		{"truncated png", pngBytes(s.T(), 4, 4)[:12], ""},
 		{"truncated webp", webpExtendedBytes(8, 8)[:20], ""},
+		{"truncated PNG payload", truncatedPNG, ""},
+		{"truncated JPEG payload", truncatedJPEG, ""},
+		{"truncated WebP payload", truncatedWebP, ""},
 		{
 			"oversized",
 			append([]byte(testIconSVGLight), bytes.Repeat([]byte(" "), maxIconBytes)...),
@@ -223,7 +242,8 @@ func (s *AssetDownloadSuite) TestDownloadFailuresAreDiagnosedNotFatal() {
 
 	for _, path := range []string{
 		"/missing", "/html", "/png-as-html", "/declared-big", "/streamed-big",
-		"/broken.svg", "/huge.png", "/error",
+		"/truncated-png", "/truncated-jpeg", "/truncated-webp", "/broken.svg",
+		"/huge.png", "/error",
 	} {
 		s.Run(path, func() {
 			cfg := s.widgetWithIcons(srv.URL+path, srv.URL+"/ok.svg")
@@ -560,6 +580,12 @@ func (s *AssetDownloadSuite) widgetWithIcons(icon, iconDark string) *ProviderCon
 }
 
 func (s *AssetDownloadSuite) downloadFailureHandler() http.HandlerFunc {
+	truncatedPNG := pngBytes(s.T(), 4, 4)
+	truncatedPNG = truncatedPNG[:len(truncatedPNG)-12]
+	truncatedJPEG := jpegBytes(s.T(), 4, 4)
+	truncatedJPEG = truncatedJPEG[:len(truncatedJPEG)-2]
+	truncatedWebP := validWebPBytes(s.T())
+	truncatedWebP = truncatedWebP[:len(truncatedWebP)-2]
 	big := bytes.Repeat([]byte("a"), maxIconBytes+10)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ok.svg", func(w http.ResponseWriter, _ *http.Request) {
@@ -586,6 +612,15 @@ func (s *AssetDownloadSuite) downloadFailureHandler() http.HandlerFunc {
 	mux.HandleFunc("/huge.png", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(pngBytes(s.T(), maxIconDimension+1, 1))
 	})
+	for path, payload := range map[string][]byte{
+		"/truncated-png":  truncatedPNG,
+		"/truncated-jpeg": truncatedJPEG,
+		"/truncated-webp": truncatedWebP,
+	} {
+		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write(payload)
+		})
+	}
 	mux.HandleFunc("/error", func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	})

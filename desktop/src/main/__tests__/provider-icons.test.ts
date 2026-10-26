@@ -196,7 +196,11 @@ describe("ProviderIconReader", () => {
     ["provider name", { providerName: "" }],
     ["flag-like provider name", { providerName: "--help" }],
     ["context", { context: "" }],
-    ["flag-like context", { context: "-c" }],
+    ["dot traversal context", { context: "../../other" }],
+    ["slash context", { context: "default/other" }],
+    ["backslash context", { context: String.raw`default\other` }],
+    ["drive-shaped context", { context: "C:other" }],
+    ["oversized context", { context: "a".repeat(256) }],
     ["provider path", { providerName: "../harvester" }],
     ["uppercase provider", { providerName: "Harvester" }],
     ["oversized provider", { providerName: "a".repeat(33) }],
@@ -212,6 +216,16 @@ describe("ProviderIconReader", () => {
       expect(cli.run).not.toHaveBeenCalled()
     },
   )
+  it("accepts safe Unicode legacy contexts", async () => {
+    const { reader, cli } = makeReader(async () => cached("rev-a"))
+    const context = "legacy-\u6771\u4eac"
+
+    await reader.read(request({ context }))
+
+    expect(cli.run).toHaveBeenCalledTimes(1)
+    const args = cli.run.mock.calls[0][0]
+    expect(args[args.indexOf("--context") + 1]).toBe(context)
+  })
 
   it("rejects embedded context separators without exposing existing cached bytes", async () => {
     const { reader, cli } = makeReader(async () => cached("rev-a"))
