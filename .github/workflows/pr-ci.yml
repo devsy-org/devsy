@@ -189,6 +189,125 @@ jobs:
             exit 1
           fi
 
+      - name: Probe the selected package on Ubuntu archive endpoints
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof_dir="$RUNNER_TEMP/gnome-feasibility-proof"
+          selected_file="$proof_dir/apt-selected-packages.txt"
+          package="libjavascriptcoregtk-6.0-1"
+          version=$(awk -F= -v package="$package" '$1 == package { count++; value=substr($0, index($0, "=") + 1) } END { if (count != 1) exit 1; print value }' "$selected_file")
+          mapfile -t source_uris < <(apt-cache policy "$package" | awk '$2 ~ /^https?:\/\// { print $2 }' | sort -u)
+          if ((${#source_uris[@]} != 1)) || [[ "${source_uris[0]}" != "http://azure.archive.ubuntu.com/ubuntu" ]]; then
+            echo "::error::Expected one Azure Ubuntu archive source for $package; refusing to probe a stale or ambiguous endpoint."
+            exit 1
+          fi
+          apt_mirror="${source_uris[0]}"
+          metadata=$(apt-cache show "$package=$version")
+          record=$(printf '%s\n' "$metadata" | awk -v wanted_package="$package" -v wanted_version="$version" '
+            BEGIN { RS = ""; FS = "\n" }
+            {
+              stanzas++
+              package_count = version_count = size_count = filename_count = hash_count = 0
+              for (i = 1; i <= NF; i++) {
+                if ($i ~ /^Package: /) { actual_package = $i; sub(/^Package: /, "", actual_package); package_count++ }
+                else if ($i ~ /^Version: /) { actual_version = $i; sub(/^Version: /, "", actual_version); version_count++ }
+                else if ($i ~ /^Size: /) { size = $i; sub(/^Size: /, "", size); size_count++ }
+                else if ($i ~ /^Filename: /) { filename = $i; sub(/^Filename: /, "", filename); filename_count++ }
+                else if ($i ~ /^SHA256: /) { sha256 = $i; sub(/^SHA256: /, "", sha256); hash_count++ }
+              }
+            }
+            END {
+              if (stanzas == 1 && package_count == 1 && actual_package == wanted_package &&
+                  version_count == 1 && actual_version == wanted_version && size_count == 1 &&
+                  filename_count == 1 && hash_count == 1 && size ~ /^[0-9]+$/ &&
+                  filename ~ /^pool\/[A-Za-z0-9._\/+:-]+\.deb$/ &&
+                  length(sha256) == 64 && sha256 !~ /[^[:xdigit:]]/)
+                print filename, size, tolower(sha256)
+              else
+                exit 1
+            }')
+          read -r filename expected_size expected_sha256 <<< "$record"
+          max_bytes=8388608
+          if (( expected_size > max_bytes )); then
+            echo "::error::Selected $package=$version exceeds the 8 MiB mirror-probe limit"
+            exit 1
+          fi
+          temp_dir=$(mktemp -d "$RUNNER_TEMP/archive-probe.XXXXXX")
+          trap 'rm -rf "$temp_dir"' EXIT
+          printf 'package=%s\nversion=%s\nsize=%s\nfilename=%s\nsha256=%s\napt_mirror=%s\n' \
+            "$package" "$version" "$expected_size" "$filename" "$expected_sha256" "$apt_mirror" \
+            >"$proof_dir/archive-probe.txt"
+          region=$(curl --fail --silent --show-error --noproxy '*' --connect-timeout 1 --max-time 2 --max-filesize 64 \
+            -H 'Metadata:true' -H 'Accept:text/plain' \
+            'http://169.254.169.254/metadata/instance/compute/location?api-version=2021-02-01&format=text' \
+            2>/dev/null || true)
+          if [[ "$region" =~ ^[a-z0-9-]{1,32}$ ]]; then
+            printf 'runner_region=%s\n' "$region" >>"$proof_dir/archive-probe.txt"
+          else
+            printf 'runner_region=unavailable\n' >>"$proof_dir/archive-probe.txt"
+          fi
+          for host in azure.archive.ubuntu.com archive.ubuntu.com; do
+            dns_file="$temp_dir/$host.dns"
+            dns_status=0
+            timeout --signal=TERM --kill-after=1s 5s getent ahosts "$host" >"$dns_file" 2>/dev/null || dns_status=$?
+            if (( dns_status == 0 )); then
+              addresses=$(awk '!seen[$1]++ { printf "%s%s", separator, $1; separator="," } END { print "" }' "$dns_file")
+              if [[ -n "$addresses" ]]; then
+                printf '%s_dns_ips=%s\n%s_dns_status=ok\n' "$host" "$addresses" "$host" >>"$proof_dir/archive-probe.txt"
+              else
+                printf '%s_dns_status=no_addresses\n' "$host" >>"$proof_dir/archive-probe.txt"
+              fi
+            else
+              printf '%s_dns_status=failed_%s\n' "$host" "$dns_status" >>"$proof_dir/archive-probe.txt"
+            fi
+          done
+          probe() {
+            name=$1
+            url=$2
+            file="$temp_dir/$name.deb"
+            metrics="$proof_dir/$name-metrics.txt"
+            curl_exit=0
+            curl --fail --silent --show-error --location --max-redirs 5 --retry 0 \
+              --connect-timeout 5 --max-time 20 --max-filesize "$max_bytes" \
+              --proto '=http,https' --proto-redir '=http,https' \
+              --output "$file" \
+              --write-out 'http_status=%{http_code}\neffective_url=%{url_effective}\nremote_ip=%{remote_ip}\ntime_total=%{time_total}\nsize_download=%{size_download}\n' \
+              "$url" >"$metrics" 2>"$proof_dir/$name-curl-error.txt" || curl_exit=$?
+            printf 'curl_exit=%s\n' "$curl_exit" >>"$metrics"
+            if (( curl_exit != 0 )) || [[ ! -f "$file" ]]; then
+              printf 'verified=false\n' >>"$metrics"
+              return 1
+            fi
+            actual_size=$(stat -c '%s' "$file")
+            actual_sha256=$(sha256sum "$file")
+            actual_sha256=${actual_sha256%% *}
+            printf 'actual_size=%s\nactual_sha256=%s\n' "$actual_size" "$actual_sha256" >>"$metrics"
+            if [[ "$actual_size" == "$expected_size" && "$actual_sha256" == "$expected_sha256" ]]; then
+              printf 'verified=true\n' >>"$metrics"
+              return 0
+            fi
+            printf 'verified=false\n' >>"$metrics"
+            return 1
+          }
+          azure_ok=0
+          official_ok=0
+          probe azure-http "$apt_mirror/$filename" || azure_ok=$?
+          probe official-https "https://archive.ubuntu.com/ubuntu/$filename" || official_ok=$?
+          if (( azure_ok == 0 )); then
+            printf 'result=azure_package_matches_signed_index\n' >>"$proof_dir/archive-probe.txt"
+            exit 0
+          fi
+          if (( official_ok == 0 )); then
+            printf 'result=azure_failed_official_package_matches_signed_index\n' >>"$proof_dir/archive-probe.txt"
+            echo "::error::Azure package probe failed but official archive served the indexed bytes; stopping before APT install rather than switching the repository source."
+          else
+            printf 'result=both_package_probes_failed_or_mismatched\n' >>"$proof_dir/archive-probe.txt"
+            echo "::error::Neither bounded package probe verified the bytes; stopping before APT install."
+          fi
+          exit 1
+
       - name: Install bounded GNOME probe dependencies
         timeout-minutes: 8
         shell: bash
