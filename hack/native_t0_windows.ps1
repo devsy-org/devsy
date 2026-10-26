@@ -59,6 +59,25 @@ function Add-KnownDiagnosticPath([string]$path) {
     }
 }
 
+Add-KnownDiagnosticPath $runnerTemp
+Add-KnownDiagnosticPath $fixtureRoot
+Add-KnownDiagnosticPath $stateFile
+
+function Get-SafeErrorContext($context) {
+    if ($context -isnot [System.Collections.IDictionary]) { return [ordered]@{} }
+    $safe = [ordered]@{}
+    foreach ($key in @($context.Keys | Sort-Object)) {
+        $name = [string]$key
+        if ($name -match '(?i)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|API_KEY|APIKEY|AUTHORIZATION)') {
+            $safe[$name] = "[REDACTED]"
+        } elseif ($context[$key] -is [string]) {
+            $safe[$name] = Redact-DiagnosticText $context[$key]
+        }
+    }
+    return $safe
+}
+
+
 function Redact-DiagnosticText([string]$text) {
     foreach ($secret in @($script:knownOutputSecrets | Sort-Object Length -Descending)) {
         $text = $text.Replace($secret, "[REDACTED]")
@@ -123,10 +142,14 @@ function Select-SafeErrorFields($value, [int]$depth = 0) {
     if ($value -is [string]) { return Redact-DiagnosticText $value }
     if ($value -is [System.Collections.IDictionary]) {
         $selected = [ordered]@{}
-        foreach ($name in @("code", "kind", "message", "cause", "causes", "error")) {
+        foreach ($name in @("code", "kind", "message", "hint", "cause", "causes", "error", "context")) {
             foreach ($key in $value.Keys) {
                 if ([string]$key -ieq $name) {
-                    $selected[$key] = Select-SafeErrorFields $value[$key] ($depth + 1)
+                    if ($name -ieq "context") {
+                        $selected[$key] = Get-SafeErrorContext $value[$key]
+                    } else {
+                        $selected[$key] = Select-SafeErrorFields $value[$key] ($depth + 1)
+                    }
                     break
                 }
             }
@@ -278,6 +301,51 @@ path=$testPath
     } finally {
         Remove-Item -LiteralPath $boundaryFile -Force -ErrorAction SilentlyContinue
     }
+    $unregisteredApiKey = "unregistered-api-key-SENTINEL"
+    $taskState = @{
+        status = "failed"
+        command = "workspace up"
+        error = "detached worker failed at $testPath with TOKEN=$testToken"
+        errorCode = "docker_daemon_unreachable"
+        errorHint = "check $testPath with API_KEY=$testApiKey"
+        errorContext = @{
+            endpoint = $testEndpoint
+            privatePath = $testPath
+            token = $testToken
+            UNREGISTERED_API_KEY = $unregisteredApiKey
+            detail = "retained safe task context"
+        }
+        config = @{ secret = $testPassword }
+    }
+    $taskFailure = Get-SafeTaskFailure $taskState
+    if (!$taskFailure.Text.Contains("docker_daemon_unreachable") -or
+        !$taskFailure.Text.Contains("detached worker failed") -or
+        !$taskFailure.Text.Contains("check") -or
+        !$taskFailure.Text.Contains("retained safe task context")) {
+        throw "Diagnostic self-test failed: task failure fields were lost"
+    }
+    foreach ($secret in @($testToken, $testPassword, $testApiKey, $testEndpoint, $testPath)) {
+        if ($taskFailure.Text.Contains($secret)) {
+            throw "Diagnostic self-test failed: task failure secret escaped"
+        }
+    }
+    if (!$taskFailure.Text.Contains('"UNREGISTERED_API_KEY":"[REDACTED]"')) {
+        throw "Diagnostic self-test failed: unregistered context key was not masked"
+    }
+    if ($taskFailure.Text.Contains("workspace up") -or $taskFailure.Text.Contains("config")) {
+        throw "Diagnostic self-test failed: task state fields outside the projection escaped"
+    }
+    $forcedTaskFailure = Get-SafeTaskFailure $taskState -ForceProjectionFailure
+    if (!$forcedTaskFailure.Text.Contains("retained safe task context") -or
+        $forcedTaskFailure.Text.Contains($testToken) -or
+        $forcedTaskFailure.Text.Contains($testApiKey) -or
+        $forcedTaskFailure.Text.Contains($testEndpoint) -or
+        $forcedTaskFailure.Text.Contains($testPath) -or
+        $forcedTaskFailure.Text.Contains($unregisteredApiKey) -or
+        !$forcedTaskFailure.Text.Contains('"UNREGISTERED_API_KEY":"[REDACTED]"')) {
+        throw "Diagnostic self-test failed: task projection failure bypassed redaction"
+    }
+
     Write-Host "DiagnosticSelfTest=passed"
 }
 
@@ -369,10 +437,36 @@ function Write-EditorEvidence([string]$phase) {
 
 function Get-TaskState([string]$taskID) {
     $json = Invoke-QuietProcess $devsy @("workspace", "task", "list", "--result-format=json") 30 "task-list"
-    $states = @($json | ConvertFrom-Json)
+    $states = @($json | ConvertFrom-Json -AsHashtable)
     $state = $states | Where-Object { $_.id -eq $taskID } | Select-Object -First 1
     if (!$state) { throw "task status was unavailable" }
     return $state
+}
+
+function Get-SafeTaskFailure($state, [switch]$ForceProjectionFailure) {
+    $message = [string]$state.error
+    if (!$message) { $message = "task failed without a recorded error" }
+    $failure = [ordered]@{
+        code = [string]$state.errorCode
+        message = $message
+        hint = [string]$state.errorHint
+        context = Get-SafeErrorContext $state.errorContext
+    }
+    $captured = [pscustomobject]@{
+        Text = (ConvertTo-Json -InputObject $failure -Compress -Depth 5)
+        Truncated = $false
+    }
+    if ($ForceProjectionFailure) {
+        return Get-SafeProcessOutput $captured -ForceProjectionFailure
+    }
+    return Get-SafeProcessOutput $captured
+}
+
+function Add-SafeTaskFailure([string]$phase, $state) {
+    $formatted = Get-SafeTaskFailure $state
+    $safePhase = $phase -replace '[^a-zA-Z0-9-]', '-'
+    Add-Evidence "UpTaskFailure=phase=$safePhase,format=$($formatted.Format),text=$($formatted.Text)"
+    if ($formatted.Truncated) { Add-Evidence "UpTaskFailureTruncated=phase=$safePhase" }
 }
 
 function Get-WorkerPID($state) {
@@ -485,7 +579,11 @@ function Run-DetachedPhase([string]$phase, [string]$workspaceID, [string]$folder
     $workerPID = Get-WorkerPID $state
     Add-Evidence "UpTask=phase-$phase,status=$($state.status),workerPID=$workerPID,durationMs=$($state.durationMs)"
     if ($state.status -ne "succeeded") {
+        if ($state.status -eq "failed") { Add-SafeTaskFailure $phase $state }
         Add-Evidence "UpTaskResult=not-succeeded,phase=$phase"
+        if ($phase -eq "minimal-fresh") {
+            throw "first minimal workspace up task failed; see safe task diagnostic"
+        }
         return $false
     }
 
@@ -598,6 +696,7 @@ try {
     $fixtureState = Get-Content -Path $stateFile -Raw | ConvertFrom-Json
     $sshAlias = [string]$fixtureState.ssh_host_alias
     Add-KnownDiagnosticSecret ([string]$fixtureState.ssh_endpoint)
+    Add-KnownDiagnosticSecret $sshAlias
     foreach ($path in @($fixtureState.owned.ssh_identity_file, $fixtureState.owned.known_hosts_file)) {
         Add-KnownDiagnosticPath ([string]$path)
     }
