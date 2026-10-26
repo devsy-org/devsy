@@ -187,7 +187,7 @@ func (c *ContainerTunnel) updateConfig(ctx context.Context, sshClient *ssh.Clien
 				break
 			}
 
-			buf := &bytes.Buffer{}
+			buf := &containerTunnelOutput{}
 			command := fmt.Sprintf(
 				"%s internal agent workspace update-config --workspace-info %s",
 				shellescape.Quote(c.client.AgentPath()),
@@ -265,4 +265,21 @@ func (c *ContainerTunnel) runInContainer(
 			return handler(ctx, containerClient)
 		},
 	})
+}
+
+type containerTunnelOutput struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *containerTunnelOutput) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *containerTunnelOutput) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
 }
