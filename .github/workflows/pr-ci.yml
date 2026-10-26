@@ -1,34 +1,32 @@
 name: Pull Request
 
-# Disposable diagnostic branch only. This branch is not a PR and is never merged.
-# Its workflow_dispatch performs one bounded verification against immutable CI artifacts.
+# Disposable diagnostic branch only. This workflow is dispatch-only and is never merged.
 on:
   workflow_dispatch:
 
 permissions: {}
 
 jobs:
-  verify-linux-package-artifacts:
-    name: Verify final-head Linux package artifacts
-    runs-on: ubuntu-latest
+  gnome-appimage-feasibility:
+    name: Launch the final-head AppImage in isolated GNOME sessions
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       actions: read
       contents: read
     env:
-      SOURCE_RUN_ID: "40297171031"
-      SOURCE_HEAD_SHA: "69dad22e2c3274c1107d0ba03c433e1ce49c3378"
-      LINUX_ARTIFACT_ID: "12639935552"
-      LINUX_ARTIFACT_DIGEST: "sha256:0e950613095177239e17a38550a9c63055a5fc9a488f9eb58d4cb9c3e88b4b2c"
-      FLATPAK_ARTIFACT_ID: "12640187992"
-      FLATPAK_ARTIFACT_DIGEST: "sha256:4be8280adec67fde65021e6dec2cb8562af40b74c4e115630c6fe3d671ea4bae"
+      SOURCE_RUN_ID: "40320261347"
+      SOURCE_HEAD_SHA: "d485425ea9a6202a0024678511c64fa80cecdc87"
+      LINUX_ARTIFACT_ID: "12648983963"
+      LINUX_ARTIFACT_DIGEST: "sha256:13eb34d933bd0e9f32a13db3d954a54f632dde91a1fbdd3feed65a18a70ac916"
     steps:
-      - name: Checkout verifier source at artifact head
+      - name: Checkout exact source used for the AppImage
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 69dad22e2c3274c1107d0ba03c433e1ce49c3378
+          ref: d485425ea9a6202a0024678511c64fa80cecdc87
+          persist-credentials: false
 
-      - name: Verify source run and artifact identities before download
+      - name: Verify source run and artifact identity
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -51,175 +49,277 @@ jobs:
             --arg digest "$LINUX_ARTIFACT_DIGEST" \
             'any(.artifacts[]; .id == $id and .name == "desktop-ubuntu-latest" and .digest == $digest and .expired == false)' \
             <<<"$artifacts"
-          jq -e \
-            --argjson id "$FLATPAK_ARTIFACT_ID" \
-            --arg digest "$FLATPAK_ARTIFACT_DIGEST" \
-            'any(.artifacts[]; .id == $id and .name == "Devsy-x86_64.flatpak" and .digest == $digest and .expired == false)' \
-            <<<"$artifacts"
 
-      - name: Download and checksum exact source artifacts
-        timeout-minutes: 10
+      - name: Download and verify the exact Linux artifact once
+        timeout-minutes: 8
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          linux_zip="$RUNNER_TEMP/linux-artifact.zip"
-          flatpak_zip="$RUNNER_TEMP/flatpak-artifact.zip"
-          linux_dir="$RUNNER_TEMP/devsy-linux"
-          flatpak_dir="$RUNNER_TEMP/devsy-flatpak"
-          proof_dir="$RUNNER_TEMP/verification-proof"
-          mkdir -p "$proof_dir" "$linux_dir" "$flatpak_dir"
-
-          fetch_artifact_zip() {
-            local artifact_id="$1"
-            local output="$2"
-            local headers="$RUNNER_TEMP/artifact-$artifact_id.headers"
-            local response="$RUNNER_TEMP/artifact-$artifact_id.response"
-            local status
-            status=$(curl --silent --show-error \
-              --dump-header "$headers" \
-              --output "$response" \
-              --write-out '%{http_code}' \
-              --header "Authorization: Bearer $GH_TOKEN" \
-              --header "Accept: application/vnd.github+json" \
-              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip")
-            if [ "$status" != 302 ]; then
-              rm -f "$headers" "$response"
-              echo "::error::artifact API did not return a redirect (HTTP $status)"
-              return 1
-            fi
-
-            local location
-            location=$(awk 'tolower($1) == "location:" { sub(/\r$/, "", $2); print $2; exit }' "$headers")
+          artifact_zip="$RUNNER_TEMP/linux-artifact.zip"
+          artifact_dir="$RUNNER_TEMP/devsy-linux"
+          proof_dir="$RUNNER_TEMP/gnome-feasibility-proof"
+          mkdir -p "$artifact_dir" "$proof_dir"
+          headers="$RUNNER_TEMP/artifact.headers"
+          response="$RUNNER_TEMP/artifact.response"
+          status=$(curl --silent --show-error \
+            --dump-header "$headers" \
+            --output "$response" \
+            --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$LINUX_ARTIFACT_ID/zip")
+          if [ "$status" != 302 ]; then
             rm -f "$headers" "$response"
-            if [ -z "$location" ]; then
-              echo "::error::artifact API redirect did not include a download location"
-              return 1
-            fi
-            if ! curl --location --fail --silent --output "$output" "$location" 2>/dev/null; then
-              unset location
-              echo "::error::artifact archive transfer failed (URL redacted)"
-              return 1
-            fi
+            echo "::error::artifact API did not return a redirect (HTTP $status)"
+            exit 1
+          fi
+          location=$(awk 'tolower($1) == "location:" { sub(/\r$/, "", $2); print $2; exit }' "$headers")
+          rm -f "$headers" "$response"
+          if [ -z "$location" ]; then
+            echo "::error::artifact API redirect did not include a download location"
+            exit 1
+          fi
+          if ! curl --location --fail --silent --output "$artifact_zip" "$location" 2>/dev/null; then
             unset location
-          }
-
-          fetch_artifact_zip "$LINUX_ARTIFACT_ID" "$linux_zip"
-          printf '%s  %s\n' "${LINUX_ARTIFACT_DIGEST#sha256:}" "$linux_zip" | sha256sum --check
-          fetch_artifact_zip "$FLATPAK_ARTIFACT_ID" "$flatpak_zip"
-          printf '%s  %s\n' "${FLATPAK_ARTIFACT_DIGEST#sha256:}" "$flatpak_zip" | sha256sum --check
-
-          unzip -q "$linux_zip" -d "$linux_dir"
-          unzip -q "$flatpak_zip" -d "$flatpak_dir"
-          test -s "$linux_dir/Devsy_linux_amd64.deb"
-          test -s "$linux_dir/Devsy_linux_x86_64.AppImage"
-          test -s "$linux_dir/Devsy_linux_x86_64.rpm"
-          test -s "$flatpak_dir/Devsy.flatpak"
-
-          deb_sha=$(sha256sum "$linux_dir/Devsy_linux_amd64.deb" | cut -d ' ' -f 1)
-          appimage_sha=$(sha256sum "$linux_dir/Devsy_linux_x86_64.AppImage" | cut -d ' ' -f 1)
-          rpm_sha=$(sha256sum "$linux_dir/Devsy_linux_x86_64.rpm" | cut -d ' ' -f 1)
-          flatpak_sha=$(sha256sum "$flatpak_dir/Devsy.flatpak" | cut -d ' ' -f 1)
-          test "$deb_sha" = dd9e5b6780a8fb2264a8a1f53792a7276edbb64906f6396d84a8e592bd743b34
-          test "$appimage_sha" = 18dcb8362f7b3ff03538138f0e0715c29e3b484a4f6d0dab8613253ad9b2ebaa
-          printf '%s  %s\n' \
-            "$deb_sha" "$linux_dir/Devsy_linux_amd64.deb" \
-            "$appimage_sha" "$linux_dir/Devsy_linux_x86_64.AppImage" \
-            "$rpm_sha" "$linux_dir/Devsy_linux_x86_64.rpm" \
-            "$flatpak_sha" "$flatpak_dir/Devsy.flatpak" \
-            | tee "$proof_dir/package-sha256.txt"
+            echo "::error::artifact archive transfer failed (URL redacted)"
+            exit 1
+          fi
+          unset location GH_TOKEN
+          printf '%s  %s\n' "${LINUX_ARTIFACT_DIGEST#sha256:}" "$artifact_zip" | sha256sum --check
+          unzip -q "$artifact_zip" -d "$artifact_dir"
+          appimage="$artifact_dir/Devsy_linux_x86_64.AppImage"
+          test -s "$appimage"
+          appimage_sha=$(sha256sum "$appimage" | cut -d ' ' -f 1)
+          printf '%s  %s\n' "$appimage_sha" "$appimage" | tee "$proof_dir/appimage-sha256.txt"
           jq -n \
             --arg run "$SOURCE_RUN_ID" \
             --arg head "$SOURCE_HEAD_SHA" \
-            --arg linuxId "$LINUX_ARTIFACT_ID" \
-            --arg linuxDigest "$LINUX_ARTIFACT_DIGEST" \
-            --arg flatpakId "$FLATPAK_ARTIFACT_ID" \
-            --arg flatpakDigest "$FLATPAK_ARTIFACT_DIGEST" \
-            --arg deb "$deb_sha" \
+            --arg artifact "$LINUX_ARTIFACT_ID" \
+            --arg zipDigest "$LINUX_ARTIFACT_DIGEST" \
             --arg appimage "$appimage_sha" \
-            --arg rpm "$rpm_sha" \
-            --arg flatpak "$flatpak_sha" \
-            '{source:{runId:$run,head:$head},artifacts:{linux:{id:$linuxId,zipSha256:$linuxDigest},flatpak:{id:$flatpakId,zipSha256:$flatpakDigest}},packages:{deb:{sha256:$deb},appimage:{sha256:$appimage},rpm:{sha256:$rpm},flatpak:{sha256:$flatpak}},scope:"Actual emitted package contents from head 69dad; verified AppImage runtime used only for extraction, application not launched, no native graphical acceptance implied."}' \
+            '{source:{runId:$run,head:$head},artifact:{id:$artifact,zipSha256:$zipDigest},appimage:{member:"Devsy_linux_x86_64.AppImage",sha256:$appimage},scope:"Actual D485 AppImage launched only in private disposable GNOME sessions; no install, release, or native-host acceptance implied."}' \
             > "$proof_dir/proof.json"
 
-      - name: Install native package verification tools
+      - name: Preflight GNOME package size before installing
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          packages=(dbus-daemon gnome-shell gnome-screenshot libfuse2t64 mesa-utils x11-utils xdotool xwayland xvfb)
+          apt-get -s --print-uris --no-install-recommends install "${packages[@]}" \
+            | tee "$RUNNER_TEMP/gnome-feasibility-proof/apt-plan.log"
+          download_bytes=$(awk '/^'\''https?:\/\// && $NF ~ /^[0-9]+$/ { total += $NF } END { print total + 0 }' "$RUNNER_TEMP/gnome-feasibility-proof/apt-plan.log")
+          installed_kib=0
+          while read -r package version; do
+            [ -n "$package" ] || continue
+            size=$(apt-cache show "$package=$version" | awk -F ': ' '$1 == "Installed-Size" { print $2; exit }')
+            if ! [[ "$size" =~ ^[0-9]+$ ]]; then
+              echo "::error::cannot calculate installed size for $package=$version"
+              exit 1
+            fi
+            installed_kib=$((installed_kib + size))
+          done < <(awk '$1 == "Inst" { package=$2; version=$3; if (version ~ /^\[/) version=$4; gsub(/[\[\]()]/, "", version); print package, version }' "$RUNNER_TEMP/gnome-feasibility-proof/apt-plan.log")
+          planned_packages=$(awk '$1 == "Inst" { count++ } END { print count + 0 }' "$RUNNER_TEMP/gnome-feasibility-proof/apt-plan.log")
+          if (( download_bytes == 0 && planned_packages > 0 )); then
+            echo "::error::APT download size is missing from the plan; refusing install"
+            exit 1
+          fi
+          installed_bytes=$((installed_kib * 1024))
+          printf 'APT preflight: download_bytes=%s installed_bytes=%s\n' "$download_bytes" "$installed_bytes" \
+            | tee "$RUNNER_TEMP/gnome-feasibility-proof/size-preflight.txt"
+          if (( download_bytes > 536870912 || installed_bytes > 2147483648 )); then
+            echo "::error::GNOME probe dependencies exceed the 512 MiB download or 2 GiB installed-size cap"
+            exit 1
+          fi
+
+      - name: Install bounded GNOME probe dependencies
         timeout-minutes: 8
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y cpio desktop-file-utils flatpak ostree rpm unzip
-
-      - name: Set up Go verifier
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-
-      - name: Verify AppImage, DEB and RPM contents
-        timeout-minutes: 12
+          set -euo pipefail
+          sudo apt-get install --no-install-recommends -y \
+            dbus-daemon gnome-shell gnome-screenshot libfuse2t64 mesa-utils x11-utils xdotool xwayland xvfb
+          gnome-shell --version | tee "$RUNNER_TEMP/gnome-feasibility-proof/gnome-versions.txt"
+          dpkg-query -W -f="\${binary:Package} \${Version}\n" 'mutter*' | tee -a "$RUNNER_TEMP/gnome-feasibility-proof/gnome-versions.txt"
+          glxinfo -B | tee "$RUNNER_TEMP/gnome-feasibility-proof/software-renderer.txt"
+          grep -Eiq 'llvmpipe|softpipe|swrast' "$RUNNER_TEMP/gnome-feasibility-proof/software-renderer.txt"
+      - name: Launch AppImage in isolated Wayland and X11 GNOME sessions
+        timeout-minutes: 15
         shell: bash
         run: |
           set -euo pipefail
-          exec > >(tee -a "$RUNNER_TEMP/verification-proof/linux-package-verification.log") 2>&1
-          app_id=sh.devsy.app
-          work="$RUNNER_TEMP/linux-package-check"
-          linux="$RUNNER_TEMP/devsy-linux"
-          rm -rf "$work"
-          mkdir -p "$work"
+          proof_dir="$RUNNER_TEMP/gnome-feasibility-proof"
+          appimage="$RUNNER_TEMP/devsy-linux/Devsy_linux_x86_64.AppImage"
+          profile="$RUNNER_TEMP/gnome-profile"
+          mkdir -p "$profile"
+          chmod +x "$appimage"
+          export APPIMAGE_PATH="$appimage" PROOF_DIR="$proof_dir"
+          export HOME="$profile/home"
+          export XDG_CONFIG_HOME="$profile/config"
+          export XDG_DATA_HOME="$profile/data"
+          export XDG_CACHE_HOME="$profile/cache"
+          export XDG_STATE_HOME="$profile/state"
+          mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export MESA_LOADER_DRIVER_OVERRIDE=swrast
+          Xvfb :99 -screen 0 1280x800x24 -nolisten tcp > "$proof_dir/xvfb.log" 2>&1 &
+          xvfb_pid=$!
+          trap 'kill "$xvfb_pid" 2>/dev/null || true; wait "$xvfb_pid" 2>/dev/null || true' EXIT
+          export DISPLAY=:99
+          timeout 30s bash -c 'until xdpyinfo >/dev/null 2>&1; do sleep 0.25; done'
 
-          appimage="$linux/Devsy_linux_x86_64.AppImage"
-          deb="$linux/Devsy_linux_amd64.deb"
-          rpm="$linux/Devsy_linux_x86_64.rpm"
-          mkdir "$work/appimage" && (cd "$work/appimage" && chmod +x "$appimage" && "$appimage" --appimage-extract >/dev/null)
-          mkdir "$work/deb" && dpkg-deb -x "$deb" "$work/deb"
-          mkdir "$work/rpm" && (cd "$work/rpm" && rpm2cpio "$rpm" | cpio -idm --quiet)
+          run_wayland_session() {
+            local runtime="$profile/wayland-runtime"
+            mkdir -p "$runtime"
+            chmod 700 "$runtime"
+            export XDG_RUNTIME_DIR="$runtime"
+            # shellcheck disable=SC2016
+            dbus-run-session -- bash -euo pipefail -c '
+              setsid gnome-shell --wayland --nested --sm-disable >"$PROOF_DIR/gnome-wayland-shell.log" 2>&1 &
+              shell_pid=$!
+              app_pid=
+              cleanup() {
+                if [ -n "$app_pid" ]; then kill -- "-$app_pid" 2>/dev/null || true; fi
+                kill -- "-$shell_pid" 2>/dev/null || true
+                wait "$app_pid" "$shell_pid" 2>/dev/null || true
+              }
+              trap cleanup EXIT
+              for attempt in $(seq 1 180); do
+                compgen -G "$XDG_RUNTIME_DIR/wayland-*" >/dev/null && break
+                sleep 0.25
+              done
+              wayland_socket=$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name "wayland-*" -print -quit)
+              test -n "$wayland_socket"
+              export WAYLAND_DISPLAY="${wayland_socket##*/}"
+              gnome-shell --version
+              setsid "$APPIMAGE_PATH" >"$PROOF_DIR/devsy-wayland-default.log" 2>&1 &
+              app_pid=$!
+              sleep 2
+              if ! gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect --method org.gnome.Shell.Introspect.GetWindows >/dev/null 2>&1; then
+                xdotool key --clearmodifiers Alt+F2
+                sleep 1
+                xdotool type --clearmodifiers --delay 40 lg
+                xdotool key Return
+                sleep 2
+                xdotool type --clearmodifiers --delay 10 "global.context.unsafe_mode = true"
+                xdotool key Return
+                sleep 1
+              fi
+              default_output="$PROOF_DIR/wayland-default-windows.txt"
+              for attempt in $(seq 1 60); do
+                if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
+                  --method org.gnome.Shell.Introspect.GetWindows > "$default_output" 2>"$default_output.err" \
+                  && grep -Eiq "Devsy|devsy" "$default_output"; then
+                  break
+                fi
+                sleep 0.5
+              done
+              cat "$default_output" | tee "$PROOF_DIR/wayland-default-launch.txt"
+              grep -E "app-id|wm-class|client-type|title" "$default_output" \
+                | tee "$PROOF_DIR/wayland-default-window-identity.txt" || true
+              default_wayland=false
+              if grep -Eiq "Devsy|devsy" "$default_output" && grep -Eq "client-type.*uint32 0" "$default_output"; then
+                default_wayland=true
+                env -u WAYLAND_DISPLAY GDK_BACKEND=x11 gnome-screenshot --file="$PROOF_DIR/wayland.png"
+                printf "backend=wayland client-type=0 launchargs=none(default)\n" > "$PROOF_DIR/wayland-launch-mode.txt"
+              fi
+              kill -- "-$app_pid" 2>/dev/null || true
+              wait "$app_pid" 2>/dev/null || true
+              app_pid=
+              if [ "$default_wayland" != true ]; then
+                setsid "$APPIMAGE_PATH" --ozone-platform=wayland --enable-features=UseOzonePlatform \
+                  >"$PROOF_DIR/devsy-wayland-forced.log" 2>&1 &
+                app_pid=$!
+                output="$PROOF_DIR/wayland-forced-windows.txt"
+                for attempt in $(seq 1 60); do
+                  if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
+                    --method org.gnome.Shell.Introspect.GetWindows > "$output" 2>"$output.err" \
+                    && grep -Eiq "Devsy|devsy" "$output"; then
+                    break
+                  fi
+                  sleep 0.5
+                done
+                cat "$output" | tee "$PROOF_DIR/wayland-forced-launch.txt"
+                grep -E "app-id|wm-class|client-type|title" "$output" \
+                  | tee "$PROOF_DIR/wayland-forced-window-identity.txt"
+                grep -Eiq "Devsy|devsy" "$output"
+                grep -Eq "client-type.*uint32 0" "$output"
+                env -u WAYLAND_DISPLAY GDK_BACKEND=x11 gnome-screenshot --file="$PROOF_DIR/wayland.png"
+                printf "backend=wayland client-type=0 launchargs=--ozone-platform=wayland --enable-features=UseOzonePlatform (forced probe; not default behavior)\n" \
+                  > "$PROOF_DIR/wayland-launch-mode.txt"
+              fi
+              test -s "$PROOF_DIR/wayland.png"
+              kill -- "-$app_pid" 2>/dev/null || true
+              wait "$app_pid" 2>/dev/null || true
+              app_pid=
+            '
+          }
+          run_wayland_session
 
-          appimage_root="$work/appimage/squashfs-root"
-          go run ./hack/release_artifacts verify-linux-desktop \
-            --app-id "$app_id" \
-            --desktop-file "$appimage_root/$app_id.desktop" \
-            --icon-root "$appimage_root/usr/share/icons/hicolor" \
-            --require-file "$appimage_root/resources/app-icon.png" \
-            --require-file "$appimage_root/devsy-desktop.png"
-          for root in "$work/deb" "$work/rpm"; do
-            go run ./hack/release_artifacts verify-linux-desktop \
-              --app-id "$app_id" \
-              --desktop-file "$root/usr/share/applications/$app_id.desktop" \
-              --icon-root "$root/usr/share/icons/hicolor" \
-              --require-file "$root/opt/Devsy/resources/app-icon.png"
-          done
-          desktop-file-validate \
-            "$appimage_root/$app_id.desktop" \
-            "$work/deb/usr/share/applications/$app_id.desktop" \
-            "$work/rpm/usr/share/applications/$app_id.desktop"
+          run_x11_session() {
+            local runtime="$profile/x11-runtime"
+            mkdir -p "$runtime"
+            chmod 700 "$runtime"
+            export XDG_RUNTIME_DIR="$runtime"
+            # shellcheck disable=SC2016
+            dbus-run-session -- bash -euo pipefail -c '
+              unset WAYLAND_DISPLAY
+              setsid gnome-shell --x11 --display="$DISPLAY" --sm-disable >"$PROOF_DIR/gnome-x11-shell.log" 2>&1 &
+              shell_pid=$!
+              app_pid=
+              cleanup() {
+                if [ -n "$app_pid" ]; then kill -- "-$app_pid" 2>/dev/null || true; fi
+                kill -- "-$shell_pid" 2>/dev/null || true
+                wait "$app_pid" "$shell_pid" 2>/dev/null || true
+              }
+              trap cleanup EXIT
+              sleep 8
+              kill -0 "$shell_pid"
+              gnome-shell --version
+              setsid "$APPIMAGE_PATH" >"$PROOF_DIR/devsy-x11.log" 2>&1 &
+              app_pid=$!
+              sleep 2
+              if ! gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect --method org.gnome.Shell.Introspect.GetWindows >/dev/null 2>&1; then
+                xdotool key --clearmodifiers Alt+F2
+                sleep 1
+                xdotool type --clearmodifiers --delay 40 lg
+                xdotool key Return
+                sleep 2
+                xdotool type --clearmodifiers --delay 10 "global.context.unsafe_mode = true"
+                xdotool key Return
+                sleep 1
+              fi
+              output="$PROOF_DIR/x11-windows.txt"
+              for attempt in $(seq 1 60); do
+                if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
+                  --method org.gnome.Shell.Introspect.GetWindows > "$output" 2>"$output.err" \
+                  && grep -Eiq "Devsy|devsy" "$output"; then
+                  break
+                fi
+                sleep 0.5
+              done
+              cat "$output"
+              grep -Eiq "Devsy|devsy" "$output"
+              grep -E "app-id|wm-class|client-type|title" "$output" | tee "$PROOF_DIR/x11-window-identity.txt"
+              grep -Eq "client-type.*uint32 1" "$output"
+              env -u WAYLAND_DISPLAY GDK_BACKEND=x11 gnome-screenshot --file="$PROOF_DIR/x11.png"
+              test -s "$PROOF_DIR/x11.png"
+              printf "backend=x11 client-type=1 launchargs=none(default)\n" > "$PROOF_DIR/x11-launch-mode.txt"
+              kill -- "-$app_pid" 2>/dev/null || true
+              wait "$app_pid" 2>/dev/null || true
+              app_pid=
+            '
+          }
+          run_x11_session
+          printf 'GNOME feasibility: actual AppImage launched only in private XDG/D-Bus profiles; Wayland client type 0 and X11 client type 1 observed; application not installed or released.\n' \
+            | tee "$proof_dir/result.txt"
 
-      - name: Import and verify Flatpak export
-        timeout-minutes: 12
-        shell: bash
-        run: |
-          set -euo pipefail
-          exec > >(tee -a "$RUNNER_TEMP/verification-proof/flatpak-verification.log") 2>&1
-          command -v flatpak ostree desktop-file-validate
-          app_id=sh.devsy.app
-          work="$RUNNER_TEMP/flatpak-bundle-check"
-          rm -rf "$work"
-          mkdir -p "$work"
-          ostree init --repo="$work/repo" --mode=archive-z2
-          flatpak build-import-bundle "$work/repo" "$RUNNER_TEMP/devsy-flatpak/Devsy.flatpak"
-          ref=$(ostree refs --repo="$work/repo" | grep "^app/$app_id/" | head -n 1)
-          test -n "$ref"
-          ostree checkout --repo="$work/repo" --user-mode "$ref" "$work/files"
-          export_root="$work/files/export/share"
-          go run ./hack/release_artifacts verify-linux-desktop \
-            --app-id "$app_id" \
-            --desktop-file "$export_root/applications/$app_id.desktop" \
-            --icon-root "$export_root/icons/hicolor"
-          test -s "$export_root/icons/hicolor/128x128/apps/$app_id.png"
-          desktop-file-validate "$export_root/applications/$app_id.desktop"
-      - name: Upload bounded verification proof
+      - name: Upload bounded GNOME feasibility evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: devsy-1652-artifact-verification-proof
-          path: ${{ runner.temp }}/verification-proof/
+          name: devsy-1652-gnome-feasibility
+          path: ${{ runner.temp }}/gnome-feasibility-proof/
           if-no-files-found: warn
           retention-days: 7
