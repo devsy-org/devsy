@@ -10,6 +10,13 @@ $openTest = Join-Path $runnerTemp "vscode-t0.test.exe"
 $fixtureRoot = Join-Path $runnerTemp "t0-fixtures"
 $stateFile = Join-Path $runnerTemp "devsy-ci\docker-wsl-state.json"
 $e2eHelper = Join-Path $runnerTemp "devsy-ci-e2e.exe"
+$script:knownOutputSecrets = @(
+    Get-ChildItem Env: |
+        Where-Object { $_.Name -match '(?i)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)' } |
+        ForEach-Object { [string]$_.Value } |
+        Where-Object { $_.Length -ge 6 }
+)
+$script:knownOutputPaths = @()
 $server = $null
 
 New-Item -ItemType Directory -Force -Path (Split-Path $stateFile) | Out-Null
@@ -35,16 +42,144 @@ function Start-QuietProcess([string]$path, [string[]]$arguments, [string]$stage)
     return @{ Process = $process; Stdout = $stdout; Stderr = $stderr }
 }
 
-function Add-SafeProcessFailure([string]$stage, [string]$kind, [int]$exitCode, [string]$stderrPath) {
-    $stderrBytes = (Get-Item -Path $stderrPath).Length
-    $reader = [System.IO.StreamReader]::new($stderrPath)
-    $buffer = [char[]]::new(65536)
+function Add-KnownDiagnosticSecret([string]$value) {
+    if ($value -and $value.Length -ge 6 -and $script:knownOutputSecrets -notcontains $value) {
+        $script:knownOutputSecrets += $value
+    }
+}
+
+function Add-KnownDiagnosticPath([string]$path) {
+    if (!$path) { return }
+    foreach ($value in @($path, $path.Replace('\', '/'), $path.Replace('/', '\'))) {
+        if ($value -and $script:knownOutputPaths -notcontains $value) {
+            $script:knownOutputPaths += $value
+        }
+    }
+}
+
+function Redact-DiagnosticText([string]$text) {
+    foreach ($secret in @($script:knownOutputSecrets | Sort-Object Length -Descending)) {
+        $text = $text.Replace($secret, "[REDACTED]")
+        $jsonSecret = ConvertTo-Json -InputObject $secret -Compress
+        if ($jsonSecret.Length -gt 2) {
+            $text = $text.Replace($jsonSecret.Substring(1, $jsonSecret.Length - 2), "[REDACTED]")
+        }
+    }
+    foreach ($path in $script:knownOutputPaths) {
+        $jsonPath = (ConvertTo-Json -InputObject $path -Compress).Trim('"')
+        foreach ($value in @($path, $jsonPath)) {
+            $text = [regex]::Replace($text, [regex]::Escape($value), "[REDACTED_PATH]", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        }
+    }
+    $redactions = @(
+        @{ Pattern = '(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)'; Replacement = '-----BEGIN PRIVATE KEY----- [REDACTED] -----END PRIVATE KEY-----' },
+        @{ Pattern = '\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b'; Replacement = '[REDACTED]' },
+        @{ Pattern = '(?i)(authorization:\s*(?:bearer|basic|token)\s+)\S+'; Replacement = '${1}[REDACTED]' },
+        @{ Pattern = '(?i)("(?:auth|identitytoken|registrytoken|password|token|access_token|refresh_token|client_secret|secret|credential|private_key)"\s*:\s*)"[^"]*"'; Replacement = '${1}"[REDACTED]"' },
+        @{ Pattern = '(?i)(https?://[^/\s:@]+:)[^@\s/]+@'; Replacement = '${1}[REDACTED]@' },
+        @{ Pattern = '(?i)\b([A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY)[A-Za-z0-9_]*)(\s*[=:]\s*)(?!\[REDACTED\])(["'']?)([^"''\s,}\]]+)\3'; Replacement = '${1}${2}${3}[REDACTED]${3}' }
+    )
+    foreach ($redaction in $redactions) {
+        $text = [regex]::Replace($text, $redaction.Pattern, $redaction.Replacement)
+    }
+    return [regex]::Replace($text, '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '?')
+}
+
+function Read-BoundedProcessOutput([string]$path) {
+    $file = Get-Item -LiteralPath $path
+    $maxRedactionLength = 0
+    foreach ($value in @($script:knownOutputSecrets) + @($script:knownOutputPaths)) {
+        $maxRedactionLength = [Math]::Max($maxRedactionLength, $value.Length)
+    }
+    if ($maxRedactionLength -gt 65536) {
+        return [pscustomobject]@{
+            Bytes = $file.Length
+            Text = "[diagnostic omitted: redaction context exceeds limit]"
+            Truncated = $true
+        }
+    }
+    $readLimit = 4096 + [Math]::Max(512, $maxRedactionLength)
+    $reader = [System.IO.StreamReader]::new($path)
+    $buffer = [char[]]::new($readLimit)
     try {
         $sampleLength = $reader.ReadBlock($buffer, 0, $buffer.Length)
+        $truncated = $reader.Peek() -ge 0
     } finally {
         $reader.Dispose()
     }
-    $stderrSample = [string]::new($buffer, 0, $sampleLength)
+    return [pscustomobject]@{
+        Bytes = $file.Length
+        Text = [string]::new($buffer, 0, $sampleLength)
+        Truncated = $truncated
+    }
+}
+
+function Select-SafeErrorFields($value, [int]$depth = 0) {
+    if ($depth -gt 8) { return "[cause-depth-limit]" }
+    if ($null -eq $value -or $value -is [ValueType]) { return $value }
+    if ($value -is [string]) { return Redact-DiagnosticText $value }
+    if ($value -is [System.Collections.IDictionary]) {
+        $selected = [ordered]@{}
+        foreach ($name in @("code", "kind", "message", "cause", "causes", "error")) {
+            foreach ($key in $value.Keys) {
+                if ([string]$key -ieq $name) {
+                    $selected[$key] = Select-SafeErrorFields $value[$key] ($depth + 1)
+                    break
+                }
+            }
+        }
+        return $selected
+    }
+    if ($value -is [System.Collections.IEnumerable]) {
+        $selected = @()
+        foreach ($item in $value) {
+            $selected += ,(Select-SafeErrorFields $item ($depth + 1))
+        }
+        return ,$selected
+    }
+    return $null
+}
+
+function Add-SafeProcessOutput([string]$stage, [string]$stream, $captured) {
+    if (!$captured.Text) { return }
+    $text = $captured.Text
+    $format = "text"
+    $parsedJSON = $false
+    if (!$captured.Truncated) {
+        try {
+            $parsed = ConvertFrom-Json -InputObject $text -AsHashtable -ErrorAction Stop
+            $parsedJSON = $true
+            $selected = Select-SafeErrorFields $parsed
+            if ($selected -is [System.Collections.IDictionary] -and $selected.Count -gt 0) {
+                $text = ConvertTo-Json -InputObject $selected -Compress -Depth 8
+                $format = "json"
+            } else {
+                $text = "[structured JSON omitted: no standard error fields]"
+                $format = "json"
+            }
+        } catch {
+        }
+    }
+    if (!$parsedJSON) { $text = Redact-DiagnosticText $text }
+    $truncated = $captured.Truncated
+    if ($text.Length -gt 4096) {
+        $text = $text.Substring(0, 4096)
+        $truncated = $true
+    }
+    $safeStage = $stage -replace '[^a-zA-Z0-9-]', '-'
+    $lines = @($text -split "\r?\n")
+    foreach ($line in $lines | Select-Object -First 32) {
+        if ($line) { Add-Evidence "ProcessOutput=stage=$safeStage,stream=$stream,format=$format,text=$line" }
+    }
+    if ($lines.Count -gt 32 -or $truncated) {
+        Add-Evidence "ProcessOutputTruncated=stage=$safeStage,stream=$stream"
+    }
+}
+
+function Add-SafeProcessFailure([string]$stage, [string]$kind, [int]$exitCode, [string]$stdoutPath, [string]$stderrPath) {
+    $stdout = Read-BoundedProcessOutput $stdoutPath
+    $stderr = Read-BoundedProcessOutput $stderrPath
+    $combined = "$($stdout.Text)`n$($stderr.Text)"
     $diagnosticClass = "unclassified"
     $categories = @(
         @{ Pattern = '(?i)connection refused'; Name = 'connection-refused' },
@@ -58,25 +193,26 @@ function Add-SafeProcessFailure([string]$stage, [string]$kind, [int]$exitCode, [
         @{ Pattern = '(?i)error|failed|fatal'; Name = 'application-error' }
     )
     foreach ($category in $categories) {
-        if ([regex]::IsMatch($stderrSample, $category.Pattern)) {
+        if ([regex]::IsMatch($combined, $category.Pattern)) {
             $diagnosticClass = $category.Name
             break
         }
     }
-    $stderrSampleLines = @($stderrSample -split "\r?\n" | Where-Object { $_.Length -gt 0 }).Count
     $safeStage = $stage -replace '[^a-zA-Z0-9-]', '-'
-    Add-Evidence "ProcessFailure=stage=$safeStage,kind=$kind,exitCode=$exitCode,stderrBytes=$stderrBytes,sampledBytes=$sampleLength,sampledLines=$stderrSampleLines,diagnosticClass=$diagnosticClass"
+    Add-Evidence "ProcessFailure=stage=$safeStage,kind=$kind,exitCode=$exitCode,stdoutBytes=$($stdout.Bytes),stderrBytes=$($stderr.Bytes),diagnosticClass=$diagnosticClass"
+    Add-SafeProcessOutput $stage "stdout" $stdout
+    Add-SafeProcessOutput $stage "stderr" $stderr
 }
 
 function Invoke-QuietProcess([string]$path, [string[]]$arguments, [int]$timeoutSeconds, [string]$stage) {
     $run = Start-QuietProcess $path $arguments $stage
     if (!$run.Process.WaitForExit($timeoutSeconds * 1000)) {
         Stop-Process -Id $run.Process.Id -Force -ErrorAction SilentlyContinue
-        Add-SafeProcessFailure $stage "timeout" -1 $run.Stderr
+        Add-SafeProcessFailure $stage "timeout" -1 $run.Stdout $run.Stderr
         throw "$stage timed out"
     }
     if ($run.Process.ExitCode -ne 0) {
-        Add-SafeProcessFailure $stage "exit" $run.Process.ExitCode $run.Stderr
+        Add-SafeProcessFailure $stage "exit" $run.Process.ExitCode $run.Stdout $run.Stderr
         throw "$stage failed with exit $($run.Process.ExitCode)"
     }
     return [System.IO.File]::ReadAllText($run.Stdout)
@@ -140,7 +276,7 @@ function Get-WorkerPID($state) {
 }
 
 function Start-DetachedUp([string]$phase, [string]$workspaceID, [string]$folder, [bool]$recreate) {
-    $arguments = @("up", "--detach", "--ide=codium", "--id=$workspaceID", "--no-lockfile", "--result-format=json")
+    $arguments = @("workspace", "up", "--detach", "--ide=codium", "--id=$workspaceID", "--no-lockfile", "--result-format=json")
     if ($recreate) { $arguments += "--recreate" }
     $arguments += $folder
     $json = Invoke-QuietProcess $devsy $arguments 120 "submit-$phase" | ConvertFrom-Json
@@ -345,6 +481,16 @@ try {
     $null = Invoke-QuietProcess $e2eHelper @("docker-wsl", "setup", "--distribution", "Ubuntu-24.04", "--timeout", "4m", "--state-file", $stateFile) 900 "docker-wsl-setup"
     $fixtureState = Get-Content -Path $stateFile -Raw | ConvertFrom-Json
     $sshAlias = [string]$fixtureState.ssh_host_alias
+    Add-KnownDiagnosticSecret ([string]$fixtureState.ssh_endpoint)
+    foreach ($path in @($fixtureState.owned.ssh_identity_file, $fixtureState.owned.known_hosts_file)) {
+        Add-KnownDiagnosticPath ([string]$path)
+    }
+    $identityFile = [string]$fixtureState.owned.ssh_identity_file
+    if ($identityFile -and (Test-Path -LiteralPath $identityFile)) {
+        $privateKey = [System.IO.File]::ReadAllText($identityFile)
+        Add-KnownDiagnosticSecret $privateKey.Trim()
+        Add-KnownDiagnosticSecret ([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($privateKey)))
+    }
     if (!$sshAlias -or $sshAlias -match '[\s/@]') { throw "Docker WSL SSH fixture alias was unavailable" }
     Add-Evidence "DockerWSLFixture=ready,distribution=Ubuntu-24.04,sshHostAliasPresent=true"
 
@@ -364,7 +510,7 @@ try {
     $null = Run-DetachedPhase "reporter-fresh" "t0-reporter" $reporter $false
 
     $foregroundStarted = Get-Date
-    $arguments = @("up", "--ide=codium", "--id=t0-reporter", "--recreate", "--no-lockfile", "--result-format=json", $reporter)
+    $arguments = @("workspace", "up", "--ide=codium", "--id=t0-reporter", "--recreate", "--no-lockfile", "--result-format=json", $reporter)
     $run = Start-QuietProcess $devsy $arguments "foreground-recreate"
     if (!$run.Process.WaitForExit(900000)) {
         Stop-Process -Id $run.Process.Id -Force -ErrorAction SilentlyContinue
