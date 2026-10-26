@@ -1,11 +1,14 @@
 package vscode
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -83,12 +86,58 @@ var openConfigs = map[Flavor]openConfig{
 	},
 }
 
+// Launch stages prefix errors so a failure can be traced to the step that
+// produced it rather than to the overall launch.
+const (
+	stageResolve        = "resolve executable"
+	stageListExtensions = "list extensions"
+	stageInstallSSHExt  = "install SSH extension"
+	stageCLIDispatch    = "CLI dispatch"
+	stageURIDispatch    = "URI dispatch"
+)
+
+const maxLoggedOutputBytes = 2048
+
+type commandRunner func(ctx context.Context, path string, args ...string) ([]byte, error)
+
+// hostLauncher holds the host side effects of launching an editor so tests can
+// replace them without starting a GUI application.
+type hostLauncher struct {
+	lookPath func(file string) (string, error)
+	run      commandRunner
+	openURI  func(uri string) error
+	goos     string
+	homeDir  string
+}
+
+func newHostLauncher() hostLauncher {
+	homeDir, _ := os.UserHomeDir()
+	return hostLauncher{
+		lookPath: exec.LookPath,
+		run: func(ctx context.Context, path string, args ...string) ([]byte, error) {
+			return exec.CommandContext(ctx, path, args...).CombinedOutput()
+		},
+		openURI: devsyopen.Run,
+		goos:    runtime.GOOS,
+		homeDir: homeDir,
+	}
+}
+
 func Open(ctx context.Context, params OpenParams) error {
 	EnsureHostSettings(params.Flavor)
 
-	cliErr := openViaCLI(ctx, params)
+	return newHostLauncher().open(ctx, params)
+}
+
+// open dispatches a launch request to the editor. Success means the OS or the
+// editor CLI accepted the request; it does not prove the editor stayed alive or
+// that the remote SSH connection was established.
+func (l hostLauncher) open(ctx context.Context, params OpenParams) error {
+	name := params.Flavor.DisplayName()
+
+	cliErr := l.openViaCLI(ctx, params)
 	if cliErr == nil {
-		log.Infof("opened %s via CLI", params.Flavor.DisplayName())
+		log.Infof("launch request dispatched to %s through its CLI", name)
 		return nil
 	}
 
@@ -96,16 +145,20 @@ func Open(ctx context.Context, params OpenParams) error {
 		return ctx.Err()
 	}
 
-	browserErr := openViaBrowser(params)
-	if browserErr == nil {
-		log.Infof("opened %s via browser", params.Flavor.DisplayName())
+	log.Warnf("%s CLI launch failed, falling back to URI handler: %v", name, cliErr)
+	uriErr := l.openViaURI(params)
+	if uriErr == nil {
+		log.Infof(
+			"launch request dispatched to %s through its URI handler after CLI failure",
+			name,
+		)
 		return nil
 	}
 
-	return errors.Join(cliErr, browserErr)
+	return errors.Join(cliErr, uriErr)
 }
 
-func openViaBrowser(params OpenParams) error {
+func (l hostLauncher) openViaURI(params OpenParams) error {
 	config, ok := openConfigs[params.Flavor]
 	if !ok {
 		return fmt.Errorf("unknown flavor %s", params.Flavor)
@@ -126,31 +179,26 @@ func openViaBrowser(params OpenParams) error {
 	openURL := u.String()
 
 	log.Debugf("opening URL %s", openURL)
-	err := devsyopen.Run(openURL)
-	if err != nil {
-		log.Errorf(
-			"flavor %s is not installed on host device: %v",
-			params.Flavor.DisplayName(),
-			err,
-		)
-		return err
+	if err := l.openURI(openURL); err != nil {
+		return fmt.Errorf("%s: flavor %s may not be installed on the host: %w",
+			stageURIDispatch, params.Flavor.DisplayName(), err)
 	}
 
 	return nil
 }
 
-func openViaCLI(ctx context.Context, params OpenParams) error {
+func (l hostLauncher) openViaCLI(ctx context.Context, params OpenParams) error {
 	config, ok := openConfigs[params.Flavor]
 	if !ok {
 		return fmt.Errorf("unknown flavor %s", params.Flavor)
 	}
 
-	cliPath := getCLIPath(config)
-	if cliPath == "" {
-		return fmt.Errorf("flavor %s binary is not found", params.Flavor)
+	cliPath, err := l.resolveCLI(params.Flavor, config)
+	if err != nil {
+		return err
 	}
 
-	hasSSHExtension, hasContainersExtension, err := listInstalledExtensions(
+	hasSSHExtension, hasContainersExtension, err := l.listInstalledExtensions(
 		ctx,
 		cliPath,
 		config.sshExtension,
@@ -160,7 +208,7 @@ func openViaCLI(ctx context.Context, params OpenParams) error {
 	}
 
 	if !hasSSHExtension {
-		if err := ensureSSHExtension(ctx, cliPath, config.sshExtension); err != nil {
+		if err := l.ensureSSHExtension(ctx, cliPath, config.sshExtension); err != nil {
 			return err
 		}
 	}
@@ -172,21 +220,57 @@ func openViaCLI(ctx context.Context, params OpenParams) error {
 		cliPath,
 		strings.Join(args, " "),
 	)
-	out, err := exec.CommandContext(ctx, cliPath, args...).CombinedOutput()
-	if err != nil {
-		return command.WrapCommandError(out, err)
+	if _, err := l.runStage(ctx, stageCLIDispatch, cliPath, args...); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func listInstalledExtensions(
+// resolveCLI finds the editor CLI and records what kind of file it is: on
+// Windows a .cmd wrapper and a native executable fail in different ways.
+func (l hostLauncher) resolveCLI(flavor Flavor, config openConfig) (string, error) {
+	candidates := []string{config.cliName}
+	if l.goos == "darwin" {
+		candidates = append(candidates, config.macAppPath)
+	}
+
+	for _, candidate := range candidates {
+		path, err := l.lookPath(candidate)
+		if err == nil {
+			log.Debugf(
+				"flavor %s CLI resolved to %s (%s)",
+				flavor.DisplayName(),
+				path,
+				cliKind(path),
+			)
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("%s: flavor %s binary is not found", stageResolve, flavor)
+}
+
+func cliKind(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".cmd", ".bat":
+		return "batch wrapper"
+	case ".exe":
+		return "native executable"
+	case "":
+		return "no extension"
+	default:
+		return "other"
+	}
+}
+
+func (l hostLauncher) listInstalledExtensions(
 	ctx context.Context,
 	cliPath, sshExtension string,
 ) (hasSSH, hasContainers bool, err error) {
-	out, err := exec.CommandContext(ctx, cliPath, "--list-extensions").CombinedOutput()
+	out, err := l.runStage(ctx, stageListExtensions, cliPath, "--list-extensions")
 	if err != nil {
-		return false, false, command.WrapCommandError(out, err)
+		return false, false, err
 	}
 
 	for ext := range strings.SplitSeq(string(out), "\n") {
@@ -206,14 +290,40 @@ func listInstalledExtensions(
 	return hasSSH, hasContainers, nil
 }
 
-func ensureSSHExtension(ctx context.Context, cliPath, sshExtension string) error {
+func (l hostLauncher) ensureSSHExtension(ctx context.Context, cliPath, sshExtension string) error {
 	args := []string{"--install-extension", sshExtension}
 	log.Debugf("%s %s", cliPath, strings.Join(args, " "))
-	out, err := exec.CommandContext(ctx, cliPath, args...).CombinedOutput()
+	_, err := l.runStage(ctx, stageInstallSSHExt, cliPath, args...)
+	return err
+}
+
+// runStage runs the editor CLI and attaches the stage name and bounded output to
+// any error, keeping the original error in the chain.
+func (l hostLauncher) runStage(
+	ctx context.Context,
+	stage, cliPath string,
+	args ...string,
+) ([]byte, error) {
+	out, err := l.run(ctx, cliPath, args...)
 	if err != nil {
-		return command.WrapCommandError(out, err)
+		return nil, fmt.Errorf("%s: %w", stage, command.WrapCommandError(l.boundOutput(out), err))
 	}
-	return nil
+
+	return out, nil
+}
+
+// boundOutput limits CLI output kept in errors and logs and masks the user's
+// home directory, which commonly appears in editor error text.
+func (l hostLauncher) boundOutput(out []byte) []byte {
+	if l.homeDir != "" {
+		out = bytes.ReplaceAll(out, []byte(l.homeDir), []byte("~"))
+	}
+
+	if len(out) > maxLoggedOutputBytes {
+		out = append(out[:maxLoggedOutputBytes:maxLoggedOutputBytes], "... [truncated]"...)
+	}
+
+	return out
 }
 
 func buildOpenArgs(workspace, folder string, newWindow, hasContainersExtension bool) []string {
@@ -238,16 +348,4 @@ func buildOpenArgs(workspace, folder string, newWindow, hasContainersExtension b
 	args = append(args, "--folder-uri", folderURI)
 
 	return args
-}
-
-func getCLIPath(config openConfig) string {
-	if command.Exists(config.cliName) {
-		return config.cliName
-	}
-
-	if runtime.GOOS == "darwin" && command.Exists(config.macAppPath) {
-		return config.macAppPath
-	}
-
-	return ""
 }
