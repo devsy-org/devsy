@@ -69,26 +69,42 @@ func (cmd *ListCmd) Run(ctx context.Context) error {
 	return nil
 }
 
-func printMachinesPlain(devsyConfig *config.Config, entries []os.DirEntry) error {
-	tableEntries := [][]string{}
+func loadSortedMachines(
+	devsyConfig *config.Config,
+	entries []os.DirEntry,
+) ([]*provider.Machine, error) {
+	machines := make([]*provider.Machine, 0, len(entries))
 	for _, entry := range entries {
 		machineConfig, err := provider.LoadMachineConfig(
 			devsyConfig.DefaultContext,
 			entry.Name(),
 		)
 		if err != nil {
-			return fmt.Errorf("load machine config: %w", err)
+			return nil, fmt.Errorf("load machine config: %w", err)
 		}
 
+		machines = append(machines, machineConfig)
+	}
+	sort.SliceStable(machines, func(i, j int) bool {
+		return machines[i].ID < machines[j].ID
+	})
+	return machines, nil
+}
+
+func printMachinesPlain(devsyConfig *config.Config, entries []os.DirEntry) error {
+	machines, err := loadSortedMachines(devsyConfig, entries)
+	if err != nil {
+		return err
+	}
+
+	tableEntries := [][]string{}
+	for _, machineConfig := range machines {
 		tableEntries = append(tableEntries, []string{
 			machineConfig.ID,
 			machineConfig.Provider.Name,
 			time.Since(machineConfig.CreationTimestamp.Time).Round(1 * time.Second).String(),
 		})
 	}
-	sort.SliceStable(tableEntries, func(i, j int) bool {
-		return tableEntries[i][0] < tableEntries[j][0]
-	})
 
 	table.Print([]string{
 		"Name",
@@ -99,22 +115,12 @@ func printMachinesPlain(devsyConfig *config.Config, entries []os.DirEntry) error
 }
 
 func printMachinesJSON(devsyConfig *config.Config, entries []os.DirEntry) error {
-	tableEntries := []*provider.Machine{}
-	for _, entry := range entries {
-		machineConfig, err := provider.LoadMachineConfig(
-			devsyConfig.DefaultContext,
-			entry.Name(),
-		)
-		if err != nil {
-			return fmt.Errorf("load machine config: %w", err)
-		}
-
-		tableEntries = append(tableEntries, machineConfig)
+	machines, err := loadSortedMachines(devsyConfig, entries)
+	if err != nil {
+		return err
 	}
-	sort.SliceStable(tableEntries, func(i, j int) bool {
-		return tableEntries[i].ID < tableEntries[j].ID
-	})
-	out, err := json.Marshal(tableEntries)
+
+	out, err := json.Marshal(machines)
 	if err != nil {
 		return err
 	}
