@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -30,13 +31,20 @@ func managedInfo(timeout string) *provider2.ContainerWorkspaceInfo {
 
 func publishOwner(t *testing.T) (*agentd.LifecycleOwner, string) {
 	t.Helper()
-	dir := filepath.Join(t.TempDir(), "lifecycle")
+	dir, err := os.MkdirTemp("/tmp", "devsy-lifecycle-cmd-")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	owner, err := agentd.NewLifecycleOwner(dir)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = owner.Close() })
 	return owner, dir
 }
 
-func runLifecycleOwner(t *testing.T, owner *agentd.LifecycleOwner, dir string) *agentd.LifecycleMonitor {
+func runLifecycleOwner(
+	t *testing.T,
+	owner *agentd.LifecycleOwner,
+	dir string,
+) *agentd.LifecycleMonitor {
 	t.Helper()
 	monitor := &agentd.LifecycleMonitor{}
 	loop := &agentd.LifecycleLoop{
@@ -45,7 +53,12 @@ func runLifecycleOwner(t *testing.T, owner *agentd.LifecycleOwner, dir string) *
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- loop.Run(ctx) }()
-	t.Cleanup(func() { cancel(); assert.NoError(t, <-done) })
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			assert.ErrorIs(t, err, agentd.ErrLifecycleOwnerMissing)
+		}
+	})
 	return monitor
 }
 
@@ -59,6 +72,7 @@ func TestBeginLifecycleSuspendsThenReadyArmsSameOwner(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, h)
+	defer h.close()
 	assert.False(t, monitor.Evaluate(time.Now().Add(time.Hour), time.Time{}, nil).Expired,
 		"setup is suspended before beginLifecycle returns")
 
@@ -73,6 +87,7 @@ func TestLifecycleFailureReleasesSuspension(t *testing.T) {
 	monitor := runLifecycleOwner(t, owner, dir)
 	h, err := beginLifecycle(context.Background(), dir, managedInfo("1m"), "")
 	require.NoError(t, err)
+	defer h.close()
 	assert.False(t, monitor.Evaluate(time.Now().Add(time.Hour), time.Time{}, nil).Expired)
 
 	h.fail()
@@ -93,12 +108,12 @@ func TestBeginLifecycleMissingOwnerWithTimeoutIsMigrationError(t *testing.T) {
 	assert.Contains(t, err.Error(), "stop and start the workspace")
 }
 
-func TestBeginLifecycleMissingOwnerWithoutTimeoutIsSkipped(t *testing.T) {
-	h, err := beginLifecycle(
-		context.Background(), filepath.Join(t.TempDir(), "absent"), managedInfo(""), "",
-	)
+func TestBeginLifecycleRequiresManagedOwnerEvenWithoutTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	h, err := beginLifecycle(ctx, filepath.Join(t.TempDir(), "absent"), managedInfo(""), "")
 
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, agentd.ErrLifecycleOwnerMissing)
 	assert.Nil(t, h)
 }
 
@@ -189,9 +204,10 @@ func TestManagedLoopStartsUnarmedUntilSetup(t *testing.T) {
 
 type countingStarter struct{ started, stopped atomic.Int32 }
 
-func (c *countingStarter) start() func() {
+func (c *countingStarter) start() (context.Context, func(), error) {
 	c.started.Add(1)
-	return func() { c.stopped.Add(1) }
+	ctx, cancel := context.WithCancel(context.Background())
+	return ctx, func() { cancel(); c.stopped.Add(1) }, nil
 }
 
 func TestTrackConnectionsCountsConnectionsNotTheListener(t *testing.T) {
@@ -221,4 +237,61 @@ func TestTrackConnectionsCountsConnectionsNotTheListener(t *testing.T) {
 	_ = server.Close()
 
 	assert.Equal(t, int32(1), starter.stopped.Load(), "disconnect ends the activity writer once")
+}
+
+func TestSetupConnectionLossCancelsProtectedWork(t *testing.T) {
+	owner, dir := publishOwner(t)
+	monitor := runLifecycleOwner(t, owner, dir)
+	h, err := beginLifecycle(context.Background(), dir, managedInfo("1m"), "")
+	require.NoError(t, err)
+	defer h.close()
+
+	require.NoError(t, owner.Close())
+
+	select {
+	case <-h.ctx.Done():
+		assert.ErrorIs(t, context.Cause(h.ctx), agentd.ErrLifecycleOwnerMissing)
+	case <-time.After(time.Second):
+		t.Fatal("setup continued after its protection connection was lost")
+	}
+	require.Eventually(t, func() bool {
+		return monitor.Evaluate(time.Now().Add(time.Hour), time.Time{}, nil).Expired
+	}, time.Second, time.Millisecond)
+}
+
+func TestBeginLifecycleRequiresAcknowledgementBeforeReturningSetup(t *testing.T) {
+	_, dir := publishOwner(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	h, err := beginLifecycle(ctx, dir, managedInfo("1m"), "")
+
+	assert.ErrorIs(t, err, agentd.ErrLifecycleOwnerMissing)
+	assert.Nil(t, h)
+}
+
+func TestTrackingLossClosesTheSSHConnection(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	inner, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	listener := trackConnections(inner, func() (context.Context, func(), error) {
+		return ctx, cancel, nil
+	})
+	defer func() { _ = listener.Close() }()
+	accepted := make(chan net.Conn, 1)
+	go func() { conn, _ := listener.Accept(); accepted <- conn }()
+	client, err := net.Dial("tcp", inner.Addr().String())
+	require.NoError(t, err)
+	defer func() { _ = client.Close() }()
+	server := <-accepted
+	require.NotNil(t, server)
+	defer func() { _ = server.Close() }()
+
+	cancel()
+
+	require.NoError(t, client.SetReadDeadline(time.Now().Add(time.Second)))
+	var buf [1]byte
+	_, err = client.Read(buf[:])
+	assert.ErrorIs(t, err, io.EOF, "SSH must not remain open without lifecycle tracking")
 }

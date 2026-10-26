@@ -194,6 +194,7 @@ func (cmd *DaemonCmd) newLifecycleLoop(timeout time.Duration) (*agentd.Lifecycle
 		return nil, fmt.Errorf("publish container lifecycle owner: %w", err)
 	}
 	if err := sharedfile.EnsureMode(config2.ContainerActivityFile, 0o666); err != nil {
+		_ = owner.Close()
 		return nil, fmt.Errorf("ensure activity file: %w", err)
 	}
 	loop.Owner = owner

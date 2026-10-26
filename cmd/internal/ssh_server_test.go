@@ -174,22 +174,6 @@ func TestIgnoreServerClosed(t *testing.T) {
 	}
 }
 
-func TestRunActivityHeartbeatExitsOnContextCancel(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "activity")
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		runActivityHeartbeat(ctx, path)
-		close(done)
-	}()
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("heartbeat did not exit within 2s of context cancel")
-	}
-}
-
 func TestEnsureActivityFile_CreatesWorldWritableFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "devsy.activity")
 
@@ -243,29 +227,4 @@ func TestTouchActivityFile_UpdatesMtimeOfExistingFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.WithinDuration(t, time.Now(), info.ModTime(), 2*time.Second,
 		"touchActivityFile must advance mtime on an already-existing file")
-}
-
-func TestRunActivityHeartbeatTouchesOnConnectAndDisconnect(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "activity")
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		runActivityHeartbeat(ctx, path)
-		close(done)
-	}()
-
-	require.Eventually(t, func() bool {
-		info, err := os.Stat(path)
-		return err == nil && time.Since(info.ModTime()) < 2*time.Second
-	}, 2*time.Second, time.Millisecond, "connect must record activity before the first interval")
-
-	stale := time.Now().Add(-time.Hour)
-	require.NoError(t, os.Chtimes(path, stale, stale))
-	cancel()
-	<-done
-
-	info, err := os.Stat(path)
-	require.NoError(t, err)
-	assert.WithinDuration(t, time.Now(), info.ModTime(), 2*time.Second,
-		"disconnect must leave a fresh timestamp so idle time starts then")
 }

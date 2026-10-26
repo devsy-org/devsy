@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -8,51 +9,51 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync"
 	"time"
+
+	"github.com/tailscale/peercred"
 )
 
 const (
-	// LifecycleProtocolVersion is bumped when owner or control records change shape.
-	LifecycleProtocolVersion = 2
-
-	ownerFileName   = "owner.json"
-	controlFileName = "control.json"
-	ackFileName     = "ack.json"
-	// ackWaitTimeout bounds how long setup waits for the daemon to apply a record.
-	ackWaitTimeout   = 10 * time.Second
-	ackPollEvery     = 20 * time.Millisecond
-	maxRecordBytes   = 4096
-	connectPollEvery = 100 * time.Millisecond
-	runtimeDirMode   = 0o755
-	recordFileMode   = 0o644
+	LifecycleProtocolVersion = 3
+	ownerFileName            = "owner.json"
+	socketFileName           = "owner.sock"
+	ackWaitTimeout           = 10 * time.Second
+	ackPollEvery             = 100 * time.Millisecond
+	maxRecordBytes           = 4096
+	connectPollEvery         = 100 * time.Millisecond
+	runtimeDirMode           = 0o755
+	recordFileMode           = 0o644
 )
 
 var (
-	// ErrLifecycleOwnerMissing means no live managed daemon published an owner record.
-	ErrLifecycleOwnerMissing = errors.New("container lifecycle owner not found")
-	// ErrLifecycleNotAcknowledged means the owner did not confirm applying a record in time.
+	ErrLifecycleOwnerMissing = errors.New(
+		"container lifecycle owner unavailable; stop and start the workspace to replace its pod",
+	)
 	ErrLifecycleNotAcknowledged = errors.New(
 		"container lifecycle owner did not acknowledge the update",
 	)
-	// ErrLifecycleOwnerIncompatible means the owner speaks another protocol version.
-	ErrLifecycleOwnerIncompatible = errors.New("container lifecycle owner is incompatible")
+	ErrLifecycleOwnerIncompatible = errors.New(
+		"container lifecycle owner is incompatible; stop and start the workspace to replace its pod",
+	)
 )
 
-// LifecycleState is what setup tells the daemon about the timer.
 type LifecycleState string
 
 const (
-	// LifecycleStateSetup suspends the timer while synchronous setup runs.
-	LifecycleStateSetup LifecycleState = "setup"
-	// LifecycleStateReady resets activity and arms the timer.
-	LifecycleStateReady LifecycleState = "ready"
-	// LifecycleStateFailed releases the suspension and starts a fresh idle interval.
-	LifecycleStateFailed LifecycleState = "failed"
+	LifecycleStateSetup    LifecycleState = "setup"
+	LifecycleStateReady    LifecycleState = "ready"
+	LifecycleStateFailed   LifecycleState = "failed"
+	LifecycleStateActivity LifecycleState = "activity"
+	LifecycleStateRelease  LifecycleState = "release"
 )
 
-// OwnerRecord is published by the daemon process that owns the timer.
+// OwnerRecord identifies the daemon instance, not a lease on work.
 type OwnerRecord struct {
 	Version    int    `json:"version"`
 	Generation string `json:"generation"`
@@ -60,35 +61,29 @@ type OwnerRecord struct {
 	StartTicks string `json:"startTicks,omitempty"`
 }
 
-// ControlRecord is written by setup. It never carries credentials.
+// ControlRecord belongs to one connection and operation. PID/start identity
+// prevents inherited descriptors or PID reuse from orphaning setup protection.
 type ControlRecord struct {
 	Version        int            `json:"version"`
 	Generation     string         `json:"generation"`
 	ClientID       string         `json:"clientID"`
+	Sequence       uint64         `json:"sequence"`
+	PID            int            `json:"pid"`
+	StartTicks     string         `json:"startTicks,omitempty"`
 	Timeout        string         `json:"timeout"`
 	ShutdownAction string         `json:"shutdownAction"`
 	State          LifecycleState `json:"state"`
-	// Sequence is unique per Send, so an identical repeated state is never
-	// mistaken for one the owner already applied.
-	Sequence uint64 `json:"sequence"`
 }
 
-// AckRecord is published by the owner once it has applied the control record with
-// the same Sequence. Setup must not start protected work before it sees the ack.
 type AckRecord struct {
 	Version    int    `json:"version"`
 	Generation string `json:"generation"`
 	ClientID   string `json:"clientID"`
 	Sequence   uint64 `json:"sequence"`
-	// Error is set when the owner rejected the record.
-	Error string `json:"error,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
-// trustedOwner reports whether files owned by uid may be believed by a process
-// running as euid.
-func trustedOwner(uid, euid int) bool {
-	return uid == euid || uid == 0
-}
+func trustedOwner(uid, euid int) bool { return uid == euid || uid == 0 }
 
 func checkDir(dir string, euid int) error {
 	fi, err := os.Lstat(dir)
@@ -124,25 +119,20 @@ func writeRecord(dir, name string, v any, euid int) error {
 	if err != nil {
 		return fmt.Errorf("create lifecycle record: %w", err)
 	}
+	defer func() { _ = os.Remove(tmp) }()
 	if _, err := f.Write(raw); err != nil {
 		_ = f.Close()
-		_ = os.Remove(tmp)
 		return fmt.Errorf("write lifecycle record: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, filepath.Join(dir, name)); err != nil {
-		_ = os.Remove(tmp)
 		return fmt.Errorf("publish lifecycle record: %w", err)
 	}
 	return nil
 }
 
-// recordReader loads records from a runtime dir. When strict, the dir and each
-// file must be owned by a trusted uid; lenient reads only reject symlinks and
-// non-regular files.
 type recordReader struct {
 	dir    string
 	euid   int
@@ -184,40 +174,39 @@ func (r recordReader) checkFile(f *os.File, name string) error {
 	return nil
 }
 
-// LifecycleOwner is the daemon-side handle of the lifecycle protocol.
-type LifecycleOwner struct {
-	dir        string
-	euid       int
-	generation string
-	last       ControlRecord
-}
-
-// NewLifecycleOwner prepares a private runtime dir, discards records from any
-// earlier process, and publishes a fresh owner record.
+// NewLifecycleOwner binds before publishing discovery. All subsequent safety
+// decisions and acknowledgements use the connection, never writable files.
 func NewLifecycleOwner(dir string) (*LifecycleOwner, error) {
 	euid := os.Geteuid()
 	if err := prepareRuntimeDir(dir, euid); err != nil {
 		return nil, err
 	}
-	gen := make([]byte, 16)
-	if _, err := rand.Read(gen); err != nil {
+	listener, err := net.Listen("unix", filepath.Join(dir, socketFileName))
+	if err != nil {
 		return nil, err
 	}
-	o := &LifecycleOwner{dir: dir, euid: euid, generation: hex.EncodeToString(gen)}
-	pid := os.Getpid()
-	err := writeRecord(dir, ownerFileName, OwnerRecord{
-		Version:    LifecycleProtocolVersion,
-		Generation: o.generation,
-		PID:        pid,
-		StartTicks: procStartTicks(pid),
+	// #nosec G302 -- container-local activity accepts workspace users; controls require peer ownership.
+	if err := os.Chmod(filepath.Join(dir, socketFileName), 0o666); err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
+	o := &LifecycleOwner{
+		euid: euid, generation: rand.Text(), listener: listener,
+		clients: make(map[net.Conn]*lifecycleSession),
+	}
+	o.writeAck = writeSocketAck
+	err = writeRecord(dir, ownerFileName, OwnerRecord{
+		Version: LifecycleProtocolVersion, Generation: o.generation,
+		PID: os.Getpid(), StartTicks: procStartTicks(os.Getpid()),
 	}, euid)
 	if err != nil {
+		_ = o.Close()
 		return nil, err
 	}
 	return o, nil
 }
 
-func prepareRuntimeDir(dir string, euid int) error {
+func createRuntimeDir(dir string, euid int) error {
 	if err := os.MkdirAll(filepath.Dir(dir), runtimeDirMode); err != nil {
 		return err
 	}
@@ -230,27 +219,14 @@ func prepareRuntimeDir(dir string, euid int) error {
 	if err := os.Chmod(dir, runtimeDirMode); err != nil {
 		return err
 	}
-	if err := checkDir(dir, euid); err != nil {
-		return err
-	}
-	return discardStaleRecords(dir)
+	return checkDir(dir, euid)
 }
 
-func requireOwnedDir(dir string, euid int) error {
-	fi, err := os.Lstat(dir)
-	if err != nil {
+func prepareRuntimeDir(dir string, euid int) error {
+	if err := createRuntimeDir(dir, euid); err != nil {
 		return err
 	}
-	if uid, ok := fileOwner(fi); ok && uid != euid {
-		return fmt.Errorf("lifecycle runtime dir %s is owned by uid %d, not %d", dir, uid, euid)
-	}
-	return nil
-}
-
-// discardStaleRecords removes records from an earlier process or mount so they
-// cannot arm this one.
-func discardStaleRecords(dir string) error {
-	for _, name := range []string{ownerFileName, controlFileName, ackFileName} {
+	for _, name := range []string{ownerFileName, socketFileName} {
 		if err := os.Remove(
 			filepath.Join(dir, name),
 		); err != nil &&
@@ -261,86 +237,82 @@ func discardStaleRecords(dir string) error {
 	return nil
 }
 
-// Generation identifies this daemon process.
+func requireOwnedDir(dir string, euid int) error {
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("lifecycle runtime path %s is not a directory", dir)
+	}
+	if uid, ok := fileOwner(fi); ok && uid != euid {
+		return fmt.Errorf("lifecycle runtime dir %s is owned by uid %d, not %d", dir, uid, euid)
+	}
+	return nil
+}
+
 func (o *LifecycleOwner) Generation() string { return o.generation }
 
-// PollControl returns the control record when it is valid for this generation
-// and differs from the last one returned.
-func (o *LifecycleOwner) PollControl() (ControlRecord, bool, error) {
-	var rec ControlRecord
-	err := recordReader{dir: o.dir, euid: o.euid, strict: true}.read(controlFileName, &rec)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return ControlRecord{}, false, nil
-	case err != nil:
-		return ControlRecord{}, false, err
-	case rec.Version != LifecycleProtocolVersion || rec.Generation != o.generation:
-		return ControlRecord{}, false, nil
-	case rec == o.last:
-		return ControlRecord{}, false, nil
-	}
-	o.last = rec
-	return rec, true, nil
-}
-
-// Acknowledge tells the connected client that rec has been applied, or rejected
-// when applyErr is set.
-func (o *LifecycleOwner) Acknowledge(rec ControlRecord, applyErr error) error {
-	ack := AckRecord{
-		Version:    LifecycleProtocolVersion,
-		Generation: o.generation,
-		Sequence:   rec.Sequence,
-		ClientID:   rec.ClientID,
-	}
-	if applyErr != nil {
-		ack.Error = applyErr.Error()
-	}
-	return writeRecord(o.dir, ackFileName, ack, o.euid)
-}
-
-// LifecycleClient is the setup-side handle of the lifecycle protocol.
+// LifecycleClient never reconnects silently: losing protection cancels the work.
+// A fresh operation must explicitly connect to the current owner instance.
 type LifecycleClient struct {
-	dir        string
-	euid       int
-	clientID   string
+	conn       net.Conn
 	owner      OwnerRecord
+	clientID   string
+	mu         sync.Mutex
 	sequence   uint64
 	ackTimeout time.Duration
+	acks       chan AckRecord
+	done       chan struct{}
+	closeOnce  sync.Once
 }
 
-// ConnectLifecycle waits, bounded by ctx, for a live owner record in dir.
 func ConnectLifecycle(ctx context.Context, dir string) (*LifecycleClient, error) {
-	euid := os.Geteuid()
-	var lastErr error
 	for {
-		owner, err := liveOwner(dir, euid)
-		switch {
-		case owner != nil:
-			return &LifecycleClient{
-				dir:        dir,
-				euid:       euid,
-				owner:      *owner,
-				clientID:   rand.Text(),
-				ackTimeout: ackWaitTimeout,
-			}, nil
-		case errors.Is(err, ErrLifecycleOwnerIncompatible):
+		owner, err := liveOwner(dir, os.Geteuid())
+		if err != nil {
 			return nil, err
-		case err != nil:
-			lastErr = err
+		}
+		if owner != nil {
+			return connectOwner(ctx, dir, *owner)
 		}
 		select {
 		case <-ctx.Done():
-			if lastErr != nil {
-				return nil, fmt.Errorf("%w: %w", ErrLifecycleOwnerMissing, lastErr)
-			}
 			return nil, ErrLifecycleOwnerMissing
 		case <-time.After(connectPollEvery):
 		}
 	}
 }
 
-// liveOwner returns the published owner when its process is still the one that
-// wrote the record. A missing or stale record is (nil, nil).
+func connectOwner(ctx context.Context, dir string, owner OwnerRecord) (*LifecycleClient, error) {
+	ctx, cancel := context.WithTimeout(ctx, ackWaitTimeout)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", filepath.Join(dir, socketFileName))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrLifecycleOwnerMissing, err)
+	}
+	creds, err := peercred.Get(conn)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	uid, ok := creds.UserID()
+	pid, hasPID := creds.PID()
+	if !ok || (uid != "0" && uid != strconv.Itoa(os.Geteuid())) || (hasPID && pid != owner.PID) {
+		_ = conn.Close()
+		return nil, fmt.Errorf(
+			"%w: socket owner differs from discovery record",
+			ErrLifecycleOwnerIncompatible,
+		)
+	}
+	c := &LifecycleClient{
+		conn: conn, owner: owner, clientID: rand.Text(), ackTimeout: ackWaitTimeout,
+		acks: make(chan AckRecord, 8), done: make(chan struct{}),
+	}
+	go c.readAcks()
+	return c, nil
+}
+
 func liveOwner(dir string, euid int) (*OwnerRecord, error) {
 	var owner OwnerRecord
 	err := recordReader{dir: dir, euid: euid, strict: true}.read(ownerFileName, &owner)
@@ -348,22 +320,22 @@ func liveOwner(dir string, euid int) (*OwnerRecord, error) {
 	case errors.Is(err, os.ErrNotExist):
 		return nil, nil
 	case err != nil:
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrLifecycleOwnerMissing, err)
 	case owner.Version != LifecycleProtocolVersion:
-		return nil, fmt.Errorf("%w: protocol version %d, want %d",
-			ErrLifecycleOwnerIncompatible, owner.Version, LifecycleProtocolVersion)
+		return nil, fmt.Errorf(
+			"%w: protocol version %d, want %d",
+			ErrLifecycleOwnerIncompatible,
+			owner.Version,
+			LifecycleProtocolVersion,
+		)
 	case !ownerAlive(owner):
-		return nil, nil
+		return nil, ErrLifecycleOwnerMissing
 	}
 	return &owner, nil
 }
 
-func ownerAlive(o OwnerRecord) bool {
-	return o.PID > 0 && sameProcess(o.PID, o.StartTicks)
-}
+func ownerAlive(o OwnerRecord) bool { return o.PID > 0 && sameProcess(o.PID, o.StartTicks) }
 
-// sameProcess reports whether pid is alive and, when both sides know it, still
-// the process that started at startTicks.
 func sameProcess(pid int, startTicks string) bool {
 	if !processExists(pid) {
 		return false
@@ -372,75 +344,136 @@ func sameProcess(pid int, startTicks string) bool {
 	return startTicks == "" || ticks == "" || ticks == startTicks
 }
 
-// Send publishes the timer state for the connected owner and waits until the
-// owner has applied it, so callers can rely on the new state taking effect.
-func (c *LifecycleClient) Send(state LifecycleState, timeout, shutdownAction string) error {
-	sequence, err := c.publish(state, timeout, shutdownAction)
+func (c *LifecycleClient) readAcks() {
+	defer func() { _ = c.Close() }()
+	scanner := bufio.NewScanner(c.conn)
+	scanner.Buffer(make([]byte, 512), maxRecordBytes)
+	for scanner.Scan() {
+		var ack AckRecord
+		if json.Unmarshal(scanner.Bytes(), &ack) != nil ||
+			!c.validAck(ack) {
+			return
+		}
+		select {
+		case c.acks <- ack:
+		case <-c.done:
+			return
+		default:
+			return
+		}
+	}
+}
+
+func (c *LifecycleClient) Done() <-chan struct{} { return c.done }
+
+func (c *LifecycleClient) Close() error {
+	var err error
+	c.closeOnce.Do(func() { err = c.conn.Close(); close(c.done) })
+	return err
+}
+
+// ProtectedContext aborts work on socket loss instead of leaving it untracked.
+func (c *LifecycleClient) ProtectedContext(
+	parent context.Context,
+) (context.Context, context.CancelCauseFunc) {
+	ctx, cancel := context.WithCancelCause(parent)
+	go func() {
+		select {
+		case <-parent.Done():
+			cancel(context.Cause(parent))
+			_ = c.Close()
+		case <-c.done:
+			cancel(ErrLifecycleOwnerMissing)
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
+}
+
+// Send retries the same operation while the connection survives. The owner's
+// cached result makes acknowledgement recovery independent of applying state.
+func (c *LifecycleClient) Send(
+	state LifecycleState,
+	timeout, shutdownAction string,
+) (sendErr error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	defer func() {
+		if sendErr != nil {
+			_ = c.Close()
+		}
+	}()
+	c.sequence++
+	rec := ControlRecord{
+		Version: LifecycleProtocolVersion, Generation: c.owner.Generation,
+		ClientID: c.clientID, Sequence: c.sequence,
+		PID: os.Getpid(), StartTicks: procStartTicks(os.Getpid()),
+		State: state, Timeout: timeout, ShutdownAction: shutdownAction,
+	}
+	return c.sendRecord(rec)
+}
+
+func (c *LifecycleClient) sendRecord(rec ControlRecord) error {
+	raw, err := json.Marshal(rec)
 	if err != nil {
 		return err
 	}
-	return c.awaitAck(sequence)
-}
-
-func (c *LifecycleClient) publish(
-	state LifecycleState,
-	timeout, shutdownAction string,
-) (uint64, error) {
-	c.sequence++
-	err := writeRecord(c.dir, controlFileName, ControlRecord{
-		Version:        LifecycleProtocolVersion,
-		Generation:     c.owner.Generation,
-		ClientID:       c.clientID,
-		Timeout:        timeout,
-		ShutdownAction: shutdownAction,
-		State:          state,
-		Sequence:       c.sequence,
-	}, c.euid)
-	return c.sequence, err
-}
-
-func (c *LifecycleClient) readAck(sequence uint64) (AckRecord, bool) {
-	var ack AckRecord
-	err := recordReader{dir: c.dir, euid: c.euid, strict: true}.read(ackFileName, &ack)
-	ok := err == nil && ack.Version == LifecycleProtocolVersion &&
-		ack.Generation == c.owner.Generation && ack.ClientID == c.clientID &&
-		ack.Sequence == sequence
-	return ack, ok
-}
-
-func (c *LifecycleClient) awaitAck(sequence uint64) error {
+	if len(raw) >= maxRecordBytes {
+		return errors.New("lifecycle message exceeds size limit")
+	}
+	raw = append(raw, '\n')
 	deadline := time.Now().Add(c.ackTimeout)
 	for {
-		if ack, ok := c.readAck(sequence); ok {
-			if ack.Error != "" {
-				return fmt.Errorf("container lifecycle owner rejected the update: %s", ack.Error)
-			}
-			return nil
+		ack, err := c.exchange(raw, rec.Sequence, deadline)
+		if err != nil {
+			return err
 		}
-		if !ownerAlive(c.owner) {
-			return fmt.Errorf(
-				"%w: the owner exited before applying the update",
-				ErrLifecycleOwnerMissing,
-			)
+		if ack == nil {
+			continue
 		}
-		if !time.Now().Before(deadline) {
-			return ErrLifecycleNotAcknowledged
+		if ack.Error != "" {
+			return fmt.Errorf("container lifecycle owner rejected the update: %s", ack.Error)
 		}
-		time.Sleep(ackPollEvery)
+		return nil
 	}
 }
 
-// ReadLifecycleTimeout leniently reads the timeout from the current control
-// record, for deriving activity cadence. It reports false when there is none.
-func ReadLifecycleTimeout(dir string) (time.Duration, bool) {
-	var rec ControlRecord
-	err := recordReader{dir: dir}.read(controlFileName, &rec)
-	if err != nil || rec.Version != LifecycleProtocolVersion {
-		return 0, false
+func (c *LifecycleClient) exchange(
+	raw []byte,
+	sequence uint64,
+	deadline time.Time,
+) (*AckRecord, error) {
+	if err := c.conn.SetWriteDeadline(deadline); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrLifecycleOwnerMissing, err)
 	}
-	d, err := time.ParseDuration(rec.Timeout)
-	if err != nil || d <= 0 {
-		return 0, rec.Timeout == ""
+	if _, err := c.conn.Write(raw); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrLifecycleOwnerMissing, err)
 	}
-	return d, true
+	return c.awaitAck(sequence, deadline)
+}
+
+func (c *LifecycleClient) awaitAck(sequence uint64, deadline time.Time) (*AckRecord, error) {
+	timer := time.NewTimer(min(ackPollEvery, max(time.Until(deadline), 0)))
+	defer timer.Stop()
+	for {
+		select {
+		case ack := <-c.acks:
+			if ack.Sequence == sequence {
+				return &ack, nil
+			}
+		case <-c.done:
+			return nil, ErrLifecycleOwnerMissing
+		case <-timer.C:
+			if !time.Now().Before(deadline) {
+				return nil, ErrLifecycleNotAcknowledged
+			}
+			return nil, nil
+		}
+	}
+}
+
+func (c *LifecycleClient) validAck(ack AckRecord) bool {
+	return ack.Version == LifecycleProtocolVersion &&
+		ack.Generation == c.owner.Generation &&
+		ack.ClientID == c.clientID
 }

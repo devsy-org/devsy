@@ -8,38 +8,31 @@ import (
 	"fmt"
 	"time"
 
-	config2 "github.com/devsy-org/devsy/pkg/config"
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 )
 
 const (
-	// ownerWaitTimeout bounds how long setup waits for the managed daemon when a
-	// positive timeout depends on it.
+	// ownerWaitTimeout bounds managed-owner startup, even with no timer.
 	ownerWaitTimeout = 30 * time.Second
-	// optionalOwnerWait bounds the wait when no timeout is configured.
-	optionalOwnerWait = time.Second
 )
 
 // lifecycleHandshake is setup's side of the managed daemon protocol.
 type lifecycleHandshake struct {
-	sender         lifecycleSender
+	client         *agentd.LifecycleClient
+	ctx            context.Context
+	cancel         context.CancelCauseFunc
 	timeout        string
 	shutdownAction string
-}
-
-type lifecycleSender interface {
-	Send(state agentd.LifecycleState, timeout, shutdownAction string) error
 }
 
 func isManagedLifecycle(info *provider2.ContainerWorkspaceInfo) bool {
 	return info.LifecycleOwner == provider2.ContainerLifecycleOwnerManagedDaemon
 }
 
-// beginLifecycle connects to the container's managed daemon and suspends its
-// timer for the duration of setup. It returns nil when there is no handshake to
-// do: not a managed container, or no timeout and no daemon to update.
+// beginLifecycle requires an acknowledged managed owner before setup can run.
+// Unmanaged containers do not participate in this protocol.
 func beginLifecycle(
 	ctx context.Context,
 	dir string,
@@ -49,26 +42,18 @@ func beginLifecycle(
 	if !isManagedLifecycle(info) {
 		return nil, nil
 	}
-	wait := ownerWaitTimeout
-	if info.ContainerTimeout == "" {
-		wait = optionalOwnerWait
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, wait)
+	waitCtx, cancel := context.WithTimeout(ctx, ownerWaitTimeout)
 	defer cancel()
 
 	client, err := agentd.ConnectLifecycle(waitCtx, dir)
 	if err != nil {
-		if info.ContainerTimeout == "" && errors.Is(err, agentd.ErrLifecycleOwnerMissing) {
-			log.Debugf("no container lifecycle owner and no inactivity timeout configured")
-			return nil, nil
-		}
 		return nil, migrationError(err)
 	}
 
+	workCtx, stop := client.ProtectedContext(ctx)
 	h := &lifecycleHandshake{
-		sender:         client,
-		timeout:        info.ContainerTimeout,
-		shutdownAction: shutdownAction,
+		client: client, ctx: workCtx, cancel: stop,
+		timeout: info.ContainerTimeout, shutdownAction: shutdownAction,
 	}
 	if err := h.send(agentd.LifecycleStateSetup); err != nil {
 		return nil, err
@@ -85,10 +70,28 @@ func migrationError(err error) error {
 }
 
 func (h *lifecycleHandshake) send(state agentd.LifecycleState) error {
-	if err := h.sender.Send(state, h.timeout, h.shutdownAction); err != nil {
+	if err := h.client.Send(state, h.timeout, h.shutdownAction); err != nil {
+		h.cancel(err)
+		_ = h.client.Close()
 		return fmt.Errorf("update container lifecycle (%s): %w", state, err)
 	}
 	return nil
+}
+
+func (h *lifecycleHandshake) close() {
+	h.cancel(context.Canceled)
+	_ = h.client.Close()
+}
+
+func (h *lifecycleHandshake) finish(err error) error {
+	if err == nil {
+		return nil
+	}
+	h.fail()
+	if cause := context.Cause(h.ctx); errors.Is(cause, agentd.ErrLifecycleOwnerMissing) {
+		return migrationError(cause)
+	}
+	return err
 }
 
 // ready resets activity and arms the timer.
@@ -103,13 +106,7 @@ func (h *lifecycleHandshake) fail() {
 	}
 }
 
-// startWorkerActivity records activity for the lifetime of a background setup
-// worker when a managed daemon owns the timer. The returned stop function ends
-// the writer and leaves a fresh timestamp behind.
-func startWorkerActivity(ctx context.Context) (stop func()) {
-	timeout, ok := agentd.ReadLifecycleTimeout(config2.ContainerLifecycleDir)
-	if !ok {
-		return func() {}
-	}
-	return agentd.StartActivityWriter(ctx, agentd.HeartbeatInterval(timeout))
+// startWorkerActivity completes managed registration before starting hooks.
+func startWorkerActivity(ctx context.Context) (context.Context, func(), error) {
+	return agentd.StartActivityWriter(ctx, agentd.DefaultActivityInterval)
 }

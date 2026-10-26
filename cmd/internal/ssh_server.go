@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/cmd/flags"
-	"github.com/devsy-org/devsy/pkg/config"
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -104,21 +103,21 @@ func (cmd *sshServerCmd) run(ctx context.Context) error {
 
 func (cmd *sshServerCmd) serveStdio(ctx context.Context, server sshserver.Server) error {
 	if cmd.trackActivity {
-		hbCtx, stopHeartbeat := context.WithCancel(ctx)
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			runActivityHeartbeat(hbCtx, config.ContainerActivityFile)
-		}()
-		defer func() {
-			stopHeartbeat()
-			<-done
-		}()
+		workCtx, stop, err := agentd.StartActivityWriter(ctx, agentd.DefaultActivityInterval)
+		if err != nil {
+			return fmt.Errorf("register SSH activity: %w", err)
+		}
+		ctx = workCtx
+		defer stop()
 	}
 	go shutdownOnCancel(ctx, server) // #nosec G118 -- see shutdownOnCancel.
 	lis := stdio.NewStdioListener(os.Stdin, os.Stdout)
 	log.Debug("serving ssh on stdio")
-	return ignoreServerClosed(server.Serve(lis))
+	err := ignoreServerClosed(server.Serve(lis))
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+		return cause
+	}
+	return err
 }
 
 func (cmd *sshServerCmd) serveListener(ctx context.Context, server sshserver.Server) error {
@@ -211,21 +210,11 @@ func decodeBase64Bytes(encoded, label string) ([]byte, error) {
 	return out, nil
 }
 
-// runActivityHeartbeat records activity immediately, periodically while ctx is
-// live, and once more when ctx ends so a disconnect leaves a fresh timestamp.
-func runActivityHeartbeat(ctx context.Context, path string) {
-	agentd.ActivityWriter{
-		Path:     path,
-		Interval: agentd.ActivityIntervalForLifecycle(),
-	}.Run(ctx)
-}
-
 func ensureActivityFile(path string) error {
 	return sharedfile.EnsureMode(path, activityFileMode)
 }
 
-// touchActivityFile is for callers reporting activity on discrete events
-// rather than runActivityHeartbeat's fixed interval (e.g. fleet-server).
+// touchActivityFile records discrete legacy activity (for example fleet-server).
 func touchActivityFile(path string) {
 	if err := ensureActivityFile(path); err != nil {
 		log.Errorf("touch activity file: ensure file: %v", err)

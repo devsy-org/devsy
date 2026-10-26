@@ -13,7 +13,7 @@ If the option is unset, a machine provider's own default applies. Devsy uses 20 
 
 ## How it works
 
-**Kubernetes** runs the Devsy daemon as the main process of the workspace pod. The daemon starts without a timer. The `devsy workspace up` setup suspends the timer while it runs, then arms it, so a slow setup never counts as idle time. When the timeout passes with no activity, the daemon stops its children, logs that the inactivity timeout was reached, and exits normally. The pod ends, and the workspace volume is kept. See [Kubernetes](#kubernetes).
+**Kubernetes** runs the Devsy daemon as the main process of the workspace pod. Setup registers a persistent local connection and waits for the daemon to acknowledge suspension before starting protected work. A live setup has no expiring lease. Finishing or losing that setup connection releases its suspension and starts a fresh idle interval. When the timeout passes with no activity, the daemon stops its children, logs that the inactivity timeout was reached, and exits normally. The pod ends, and the workspace volume is kept. See [Kubernetes](#kubernetes).
 
 **Other non-machine providers** such as Docker, Podman, Apple, and Microsandbox start a detached daemon in the container that watches for activity. Its exit does not by itself stop the container. For Microsandbox, Devsy also passes the timeout to the microsandbox CLI as `--idle-timeout`.
 
@@ -34,7 +34,7 @@ A workspace is active while any of these hold:
 
 CPU use and processes you started yourself do not count. A command such as `nohup make &` in a closed session does not keep the workspace alive.
 
-The daemon samples activity about once a second at most, so a workspace stops up to a few seconds after the timeout passes. For timeouts of a minute or more, sessions record activity every 10 seconds. Shorter timeouts use a proportionally shorter interval. If the daemon cannot read the activity file, it logs an error and does not stop the workspace. The same holds when a session or hook cannot write the activity file: the daemon logs an error and does not stop the workspace until recording recovers.
+The daemon checks idle time about once a second at most, so a workspace stops up to a few seconds after the timeout passes. On Kubernetes, SSH sessions and hooks register with the managed daemon before doing work and remain active for their connection's lifetime. Registration and shutdown decisions stay in memory: failed activity-file writes or unavailable disk space cannot hide registered live work. Losing the daemon connection aborts the protected work rather than continuing without activity tracking. Other container daemons still use legacy activity-file timestamps; unreadable activity fails safe.
 
 ## Kubernetes
 
@@ -55,11 +55,11 @@ Pod layout rules Devsy enforces:
 - With a positive timeout, the Devsy daemon must be the container's main process. A `devcontainer.json` with `overrideCommand: false` and an image entrypoint or command is rejected.
 - Dockerless builds do not support a positive timeout.
 
-<Callout type="warn" title="Verification scope">
-The layout rules have unit coverage against a fake Kubernetes API. A kind cluster running Kubernetes v1.36.4 on Linux arm64 has also verified a single regular `devsy` container: two idle-stop/resume cycles preserved workspace volume data, and an open tracked SSH session prevented shutdown until disconnect. Native sidecars, additional init containers, restricted non-root pod security, Devsy Platform routes, and upgrades from an earlier Devsy version have not been verified on a real cluster. Test your layout on a non-production workspace before relying on the timeout.
+<Callout type="warn" title="Layout validation">
+The enforced restrictions above do not establish end-to-end support for every pod layout. Restricted non-root security, native sidecars/additional init containers, admission-webhook layouts, Devsy Platform routes, and upgrades from an earlier Devsy version require separate cluster validation. Test your layout on a non-production workspace before relying on the timeout.
 </Callout>
 
-Pods created by an earlier Devsy version have a main process that cannot enforce the timeout. Devsy detects this and `devsy workspace up` on such a pod fails with an error that says to stop and start the workspace once. Run `devsy workspace stop`, then `devsy workspace up`. Replacing the agent binary does not update a daemon that is already running.
+Existing pods whose running daemon uses an older lifecycle protocol must be replaced once. `devsy workspace up` reports the incompatible owner and asks you to stop and start the workspace. Run `devsy workspace stop`, then `devsy workspace up`. The persistent volume is retained; replacing the agent binary alone does not upgrade the daemon process that already owns the pod.
 
 ## Shutdown action
 

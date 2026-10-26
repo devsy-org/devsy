@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -99,19 +100,22 @@ func (cmd *SSHServerCmd) Run(_ *cobra.Command, _ []string) error {
 	return server.Serve(trackConnections(listener, startConnectionActivity))
 }
 
-func startConnectionActivity() (stop func()) {
-	return agentd.StartActivityWriter(context.Background(), agentd.ActivityIntervalForLifecycle())
+func startConnectionActivity() (context.Context, func(), error) {
+	return (agentd.ActivityWriter{
+		Path: pkgconfig.ContainerActivityFile, LifecycleDir: pkgconfig.ContainerLifecycleDir,
+		RequireOwner: true,
+	}).Start(context.Background())
 }
 
 // trackConnections records activity from the moment a connection is accepted
 // until it closes. The idle listener itself is not activity.
-func trackConnections(l net.Listener, start func() (stop func())) net.Listener {
+func trackConnections(l net.Listener, start func() (context.Context, func(), error)) net.Listener {
 	return &activityListener{Listener: l, start: start}
 }
 
 type activityListener struct {
 	net.Listener
-	start func() (stop func())
+	start func() (context.Context, func(), error)
 }
 
 func (l *activityListener) Accept() (net.Conn, error) {
@@ -119,7 +123,14 @@ func (l *activityListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &activityConn{Conn: conn, stop: l.start()}, nil
+	ctx, stop, err := l.start()
+	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("register SSH connection activity: %w", err)
+	}
+	tracked := &activityConn{Conn: conn, stop: stop}
+	go func() { <-ctx.Done(); _ = tracked.Close() }()
+	return tracked, nil
 }
 
 type activityConn struct {

@@ -4,11 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
@@ -17,43 +13,22 @@ import (
 )
 
 const (
-	// failureMarkerInfix separates the activity file path from the pid of a writer
-	// that currently cannot record activity.
-	failureMarkerInfix = ".failing."
-
-	// DefaultActivityInterval is the longest gap between activity touches.
 	DefaultActivityInterval = 10 * time.Second
-
-	activityFileMode = 0o666
-	minTickInterval  = 10 * time.Millisecond
+	activityFileMode        = 0o666
+	minTickInterval         = 10 * time.Millisecond
 )
 
-var writerSequence atomic.Uint64
-
-// HeartbeatInterval is how often activity is recorded for a given timeout: at
-// most the default cadence, and at most a third of short timeouts.
-func HeartbeatInterval(timeout time.Duration) time.Duration {
-	if timeout <= 0 {
-		return DefaultActivityInterval
-	}
-	return min(DefaultActivityInterval, max(timeout/3, minTickInterval))
-}
-
-// TouchActivity records activity at now, creating the shared file if needed.
 func TouchActivity(path string, now time.Time) error {
 	if err := sharedfile.EnsureMode(path, activityFileMode); err != nil {
 		return err
 	}
 	err := os.Chtimes(path, now, now)
 	if errors.Is(err, os.ErrPermission) {
-		// Setting an explicit time needs ownership; any writer may bump mtime.
 		return touchByWrite(path)
 	}
 	return err
 }
 
-// touchByWrite updates the modification time through a write, which the
-// 0666 activity file permits for every user.
 func touchByWrite(path string) error {
 	f, err := os.OpenFile(path, os.O_WRONLY, 0) // #nosec G304 -- fixed activity file path
 	if err != nil {
@@ -63,35 +38,99 @@ func touchByWrite(path string) error {
 	return errors.Join(writeErr, f.Close())
 }
 
-// ActivityWriter records activity immediately, periodically, and once more when
-// its context ends. Zero-value hooks use the real clock and file.
+// ActivityWriter retains file heartbeats for non-managed daemons. Managed work
+// is protected by its acknowledged connection, including when all writes fail.
 type ActivityWriter struct {
-	Path     string
-	Interval time.Duration
-	Touch    func(path string, now time.Time) error
-	Now      func() time.Time
-	// Tick returns a tick channel and its stop function.
-	Tick func(d time.Duration) (<-chan time.Time, func())
-	// Report publishes whether this writer currently fails to record activity.
-	// It defaults to a failure marker next to the activity file.
-	Report func(path string, failed bool) error
+	Path         string
+	LifecycleDir string
+	RequireOwner bool
+	Interval     time.Duration
+	Touch        func(string, time.Time) error
+	Now          func() time.Time
+	Tick         func(time.Duration) (<-chan time.Time, func())
 }
 
-// Run blocks until ctx is done.
+// Start returns only after registering with any live managed owner. The caller
+// must use workCtx and stop its work if that context is cancelled.
+func (w ActivityWriter) Start(ctx context.Context) (context.Context, func(), error) {
+	client, err := w.connect(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if client != nil {
+		return startRegisteredActivity(ctx, client)
+	}
+	w = w.withDefaults()
+	workCtx, cancel := context.WithCancel(ctx)
+	lastErr := w.record(nil)
+	done := make(chan struct{})
+	go func() { defer close(done); w.run(workCtx, lastErr) }()
+	var once sync.Once
+	return workCtx, func() { once.Do(func() { cancel(); <-done }) }, nil
+}
+
+func startRegisteredActivity(
+	ctx context.Context,
+	client *LifecycleClient,
+) (context.Context, func(), error) {
+	workCtx, cancel := client.ProtectedContext(ctx)
+	if err := client.Send(LifecycleStateActivity, "", ""); err != nil {
+		cancel(err)
+		_ = client.Close()
+		return nil, nil, err
+	}
+	// The live connection itself is the activity. No periodic file write or
+	// health publication is needed, even when storage is completely unavailable.
+	var once sync.Once
+	return workCtx, func() {
+		once.Do(func() {
+			cancel(context.Canceled)
+			if err := client.Send(LifecycleStateRelease, "", ""); err != nil {
+				log.Debugf("activity release failed; closing its protection connection: %v", err)
+			}
+			_ = client.Close()
+		})
+	}, nil
+}
+
+// Run records legacy file activity without claiming managed protection. Managed
+// callers use Start so registration completes before their work begins.
 func (w ActivityWriter) Run(ctx context.Context) {
 	w = w.withDefaults()
+	w.run(ctx, w.record(nil))
+}
 
-	var lastErr error
-	// A writer that exits has no recording left to vouch for or against.
-	defer func() { _ = w.Report(w.Path, false) }()
+func (w ActivityWriter) connect(ctx context.Context) (*LifecycleClient, error) {
+	if w.LifecycleDir == "" {
+		if w.RequireOwner {
+			return nil, ErrLifecycleOwnerMissing
+		}
+		return nil, nil
+	}
+	owner, err := liveOwner(w.LifecycleDir, os.Geteuid())
+	if err != nil {
+		return nil, err
+	}
+	if owner != nil {
+		return connectOwner(ctx, w.LifecycleDir, *owner)
+	}
+	if w.RequireOwner {
+		return nil, ErrLifecycleOwnerMissing
+	}
+	// A discovery gap in an existing managed runtime is not a legacy workspace.
+	if _, err := os.Lstat(w.LifecycleDir); !errors.Is(err, os.ErrNotExist) {
+		return nil, ErrLifecycleOwnerMissing
+	}
+	return nil, nil
+}
 
+func (w ActivityWriter) run(ctx context.Context, lastErr error) {
 	ticks, stop := w.Tick(w.Interval)
 	defer stop()
-	lastErr = w.record(lastErr)
 	for {
 		select {
 		case <-ctx.Done():
-			w.record(lastErr)
+			_ = w.record(lastErr)
 			return
 		case <-ticks:
 			lastErr = w.record(lastErr)
@@ -99,8 +138,6 @@ func (w ActivityWriter) Run(ctx context.Context) {
 	}
 }
 
-// record touches the activity file and publishes the resulting health. It
-// returns the touch error so the caller can detect transitions.
 func (w ActivityWriter) record(lastErr error) error {
 	err := w.Touch(w.Path, w.Now())
 	if (err == nil) != (lastErr == nil) {
@@ -108,13 +145,6 @@ func (w ActivityWriter) record(lastErr error) error {
 			log.Errorf("activity writer: %v", err)
 		} else {
 			log.Infof("activity writer recovered")
-		}
-	}
-	// Failures are re-reported each tick so a marker that could not be written
-	// once is retried.
-	if err != nil || lastErr != nil {
-		if reportErr := w.Report(w.Path, err != nil); reportErr != nil {
-			log.Errorf("activity writer: publish recording health: %v", reportErr)
 		}
 	}
 	return err
@@ -133,9 +163,6 @@ func (w ActivityWriter) withDefaults() ActivityWriter {
 	if w.Interval <= 0 {
 		w.Interval = DefaultActivityInterval
 	}
-	if w.Report == nil {
-		w.Report = recordingFailureReporter(w.Path)
-	}
 	return w
 }
 
@@ -144,84 +171,20 @@ func realTick(d time.Duration) (<-chan time.Time, func()) {
 	return t.C, t.Stop
 }
 
-// StartActivityWriter runs an ActivityWriter on the shared activity file until
-// the returned stop function is called; stop waits for the final touch.
-func StartActivityWriter(ctx context.Context, interval time.Duration) (stop func()) {
-	wctx, cancel := context.WithCancel(ctx)
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		ActivityWriter{Path: config.ContainerActivityFile, Interval: interval}.Run(wctx)
-	})
-	return func() {
-		cancel()
-		wg.Wait()
-	}
-}
-
-// failureMarkerPath prefixes markers with the writer's PID so the owner can
-// discard reports left by exited writers.
-func failureMarkerPath(activityPath string, pid int) string {
-	return activityPath + failureMarkerInfix + strconv.Itoa(pid)
-}
-
-// recordingFailureReporter isolates each writer's health, including concurrent
-// connections in one process.
-func recordingFailureReporter(activityPath string) func(string, bool) error {
-	marker := failureMarkerPath(activityPath, os.Getpid()) + "." +
-		strconv.FormatUint(writerSequence.Add(1), 10)
-	return func(_ string, failed bool) error {
-		if !failed {
-			if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-			return nil
-		}
-		f, err := openNoFollow(marker, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, activityFileMode)
+func StartActivityWriter(
+	ctx context.Context,
+	interval time.Duration,
+) (context.Context, func(), error) {
+	required := false
+	if encoded := os.Getenv(config.EnvWorkspaceDaemonConfig); encoded != "" {
+		daemon, err := DecodeDaemonConfig(encoded)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
-		_, writeErr := f.WriteString(procStartTicks(os.Getpid()))
-		return errors.Join(writeErr, f.Close())
+		required = daemon.Lifecycle.Managed()
 	}
-}
-
-// ActivityRecordingFailing reports whether any live writer has published a
-// failure marker for activityPath. Markers of exited writers are removed.
-func ActivityRecordingFailing(activityPath string) bool {
-	dir, base := filepath.Split(activityPath)
-	entries, err := os.ReadDir(filepath.Clean(dir))
-	if err != nil {
-		return true
-	}
-	prefix := base + failureMarkerInfix
-	failing := false
-	for _, entry := range entries {
-		writer, ok := strings.CutPrefix(entry.Name(), prefix)
-		if !ok {
-			continue
-		}
-		marker := filepath.Join(dir, entry.Name())
-		pidText, _, _ := strings.Cut(writer, ".")
-		if markerWriterAlive(marker, pidText) {
-			failing = true
-		} else {
-			_ = os.Remove(marker)
-		}
-	}
-	return failing
-}
-
-func markerWriterAlive(marker, pidText string) bool {
-	pid, err := strconv.Atoi(pidText)
-	if err != nil || pid <= 0 {
-		return false
-	}
-	if !processExists(pid) {
-		return false
-	}
-	ticks, err := sharedfile.ReadFile(marker)
-	if err != nil {
-		return true
-	}
-	return sameProcess(pid, string(ticks))
+	return (ActivityWriter{
+		Path: config.ContainerActivityFile, LifecycleDir: config.ContainerLifecycleDir,
+		RequireOwner: required, Interval: interval,
+	}).Start(ctx)
 }

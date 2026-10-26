@@ -46,7 +46,10 @@ Devsy tracks whether anyone is connected and stops the environment after the tim
 
 Set the timeout with `containerInactivityTimeout`. It is a Go duration such as `10m`; empty or `0` disables it.
 
-On the `kubernetes` driver, the Devsy daemon is the pod's main process. It exits normally when the workspace has been idle for the timeout, which ends the pod while the volume is kept. Other container drivers start a detached daemon whose exit does not by itself stop the container. See [Auto-Inactivity Timeout](../developing-in-workspaces/inactivity-timeout.mdx#kubernetes) for activity rules and supported pod layouts.
+On the `kubernetes` driver, the Devsy daemon is the pod's main process. SSH, hooks and setup obtain acknowledged protection over a persistent Unix socket before doing work. Setup suspension belongs to that connection, so a dead setup process cannot leave the timer suspended indefinitely; loss of the owner connection aborts the client work. The daemon exits normally when the workspace has been idle for the timeout, ending the pod while keeping its volume. Other container drivers start a detached daemon whose exit does not by itself stop the container. See [Auto-Inactivity Timeout](../developing-in-workspaces/inactivity-timeout.mdx#kubernetes) for activity rules and pod-layout restrictions.
+
+The managed activity socket is container-local, not host remote-access IPC. Its `0666` transport permissions let non-root workspace processes register activity under a root daemon; the owner checks kernel peer UID/PID and process-start identity, and only root or the daemon's own UID can change setup or timeout policy. Any local container user can keep a live activity registration, so this is not an authorization boundary against untrusted code already running in that container. Do not expose the socket outside the container. Host remote-access owner IPC retains its separate `0600` policy, and workspace authorization remains context plus workspace UID at the existing tunnel boundary.
+
 
 ### Machine providers
 

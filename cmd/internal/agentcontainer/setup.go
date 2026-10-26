@@ -107,6 +107,10 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 			return err
 		}
 	}
+	if state.lifecycle != nil {
+		ctx = state.lifecycle.ctx
+		defer state.lifecycle.close()
+	}
 
 	_, err = tunnelserver.ReportResult(
 		ctx,
@@ -121,8 +125,8 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 			return state.setupInfo, nil
 		},
 	)
-	if err != nil && state.lifecycle != nil {
-		state.lifecycle.fail()
+	if state.lifecycle != nil {
+		return state.lifecycle.finish(err)
 	}
 	return err
 }

@@ -112,7 +112,10 @@ func (cmd *DeferredHooksCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	stopActivity := startWorkerActivity(ctx)
+	ctx, stopActivity, err := startWorkerActivity(ctx)
+	if err != nil {
+		return fmt.Errorf("register deferred-hook activity: %w", err)
+	}
 	defer stopActivity()
 
 	log.Debugf("running deferred lifecycle hooks")
