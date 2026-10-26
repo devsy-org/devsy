@@ -33,6 +33,18 @@ mise run cli:test:e2e:focus "pattern"
 
 `cli:test:e2e:act:focus` runs a focused pattern through [act](https://github.com/nektos/act).
 
+The Docker lifecycle environment regression covers values containing `=` from both
+`--workspace-env` and `--workspace-env-file`, including restart and `remoteEnv` precedence:
+
+```bash
+mise run cli:test:e2e:focus "lifecycle hooks preserve equals signs"
+```
+
+When testing local changes with Docker on macOS, set `DEVSY_AGENT_BINARY` to the
+absolute path of the built Linux agent matching the Docker architecture, such as
+`e2e/bin/devsy-linux-arm64`. This bypasses cached release agents; otherwise the
+container can run a released binary rather than the code under test.
+
 ## Kubernetes tests
 
 Specs labeled `up-provider-kubernetes` or `build` need a kind cluster. The setup task

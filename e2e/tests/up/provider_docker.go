@@ -245,6 +245,69 @@ var _ = ginkgo.Describe(
 			gomega.Expect(unsetLine).To(gomega.Equal("UNSET=true"))
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+		ginkgo.It(
+			"lifecycle hooks preserve equals signs in environment values",
+			func(ctx context.Context) {
+				contextName := fmt.Sprintf("env-equals-%d", time.Now().UnixNano())
+				framework.ExpectNoError(dtc.f.DevsyContextCreate(ctx, contextName))
+				ginkgo.DeferCleanup(func(cleanupCtx context.Context) {
+					framework.ExpectNoError(dtc.f.DevsyContextUse(cleanupCtx, "default"))
+					framework.ExpectNoError(dtc.f.DevsyContextDelete(cleanupCtx, contextName))
+				})
+				framework.ExpectNoError(dtc.f.DevsyContextUse(ctx, contextName))
+				framework.ExpectNoError(
+					dtc.f.DevsyProviderAdd(ctx, "docker", "-o", "DOCKER_PATH=docker"),
+				)
+
+				tempDir, err := setupWorkspace(
+					"tests/up/testdata/docker-workspace-env-equals", dtc.initialDir, dtc.f,
+				)
+				framework.ExpectNoError(err)
+
+				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir,
+					"--workspace-env", "PLAIN=hello",
+					"--workspace-env", "ONE_EQ=a=b",
+					"--workspace-env", "TWO_EQ=a=b=c",
+					"--workspace-env", "COMMA_EQ=x=1,y=2",
+					"--workspace-env", "TRAILING_EQ=z=",
+					"--workspace-env", "REMOTE_EQ=inherited=value",
+					"--workspace-env-file", filepath.Join(tempDir, "workspace.env"),
+				))
+
+				expected := "PLAIN=hello\nONE_EQ=a=b\nTWO_EQ=a=b=c\nCOMMA_EQ=x=1,y=2\n" +
+					"TRAILING_EQ=z=\nFILE_ONE_EQ=k=v"
+				expectedHook := expected + "\nREMOTE_EQ=remote=a=b"
+				for _, phase := range []string{"postCreate", "postStart"} {
+					out, err := readLifecycleFile(tempDir, phase+".env.out")
+					framework.ExpectNoError(err)
+					gomega.Expect(out).To(gomega.Equal(expectedHook), phase)
+				}
+
+				out, err := dtc.execSSHCapture(ctx, tempDir, `bash -l -c '
+printf "PLAIN=%s\nONE_EQ=%s\nTWO_EQ=%s\nCOMMA_EQ=%s\nTRAILING_EQ=%s\nFILE_ONE_EQ=%s\n" \
+  "$PLAIN" "$ONE_EQ" "$TWO_EQ" "$COMMA_EQ" "$TRAILING_EQ" "$FILE_ONE_EQ"'`)
+				framework.ExpectNoError(err)
+				gomega.Expect(out).To(gomega.Equal(expected), "SSH environment")
+
+				// Filter in the container so unrelated persisted values never reach test logs.
+				out, err = dtc.execSSHCapture(ctx, tempDir, `jq -r '.env |
+"PLAIN=\(.PLAIN)\nONE_EQ=\(.ONE_EQ)\n" +
+"TWO_EQ=\(.TWO_EQ)\nCOMMA_EQ=\(.COMMA_EQ)\n" +
+"TRAILING_EQ=\(.TRAILING_EQ)\nFILE_ONE_EQ=\(.FILE_ONE_EQ)"' /etc/envfile.json`)
+				framework.ExpectNoError(err)
+				gomega.Expect(out).To(gomega.Equal(expected), "persisted environment")
+
+				// Remove the old output to prove postStartCommand runs again after restart.
+				framework.ExpectNoError(os.Remove(filepath.Join(tempDir, "postStart.env.out")))
+				framework.ExpectNoError(dtc.f.DevsyWorkspaceStop(ctx, tempDir))
+				framework.ExpectNoError(dtc.f.DevsyUp(ctx, tempDir))
+				out, err = readLifecycleFile(tempDir, "postStart.env.out")
+				framework.ExpectNoError(err)
+				gomega.Expect(out).To(gomega.Equal(expectedHook), "postStart after restart")
+			},
+			ginkgo.SpecTimeout(framework.TimeoutModerate()),
+		)
+
 		ginkgo.It("mounts", func(ctx context.Context) {
 			tempDir, err := dtc.setupAndUp(ctx, "tests/up/testdata/docker-mounts", "--debug")
 			framework.ExpectNoError(err)
