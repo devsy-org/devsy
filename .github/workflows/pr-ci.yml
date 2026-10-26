@@ -140,7 +140,7 @@ jobs:
             --arg appimage "$appimage_sha" \
             --arg rpm "$rpm_sha" \
             --arg flatpak "$flatpak_sha" \
-            '{source:{runId:$run,head:$head},artifacts:{linux:{id:$linuxId,zipSha256:$linuxDigest},flatpak:{id:$flatpakId,zipSha256:$flatpakDigest}},packages:{deb:{sha256:$deb},appimage:{sha256:$appimage},rpm:{sha256:$rpm},flatpak:{sha256:$flatpak}},scope:"Actual emitted package contents from head 69dad; no package executed or native graphical acceptance implied."}' \
+            '{source:{runId:$run,head:$head},artifacts:{linux:{id:$linuxId,zipSha256:$linuxDigest},flatpak:{id:$flatpakId,zipSha256:$flatpakDigest}},packages:{deb:{sha256:$deb},appimage:{sha256:$appimage},rpm:{sha256:$rpm},flatpak:{sha256:$flatpak}},scope:"Actual emitted package contents from head 69dad; verified AppImage runtime used only for extraction, application not launched, no native graphical acceptance implied."}' \
             > "$proof_dir/proof.json"
 
       - name: Install native package verification tools
