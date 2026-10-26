@@ -41,7 +41,7 @@ var _ = ginkgo.Describe(
 				envEqualsIsolatedHomeLabel,
 			) {
 				homeParent := os.TempDir()
-				if runtime.GOOS == "darwin" {
+				if runtime.GOOS == osDarwin {
 					homeParent = "/tmp"
 				}
 				home, err := os.MkdirTemp(homeParent, "devsy-e2e-")
