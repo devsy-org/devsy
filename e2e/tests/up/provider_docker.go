@@ -321,15 +321,14 @@ var _ = ginkgo.Describe(
 					"--workspace-env", "TWO_EQ=a=b=c",
 					"--workspace-env", "COMMA_EQ=x=1,y=2",
 					"--workspace-env", "TRAILING_EQ=z=",
-					"--workspace-env", "REMOTE_EQ=inherited=value",
 					"--workspace-env-file", filepath.Join(tempDir, "workspace.env"),
 				))
 
 				expected := "PLAIN=hello\nONE_EQ=a=b\nTWO_EQ=a=b=c\nCOMMA_EQ=x=1,y=2\n" +
 					"TRAILING_EQ=z=\nFILE_ONE_EQ=k=v"
 				expectedHook := expected + "\nREMOTE_EQ=remote=a=b"
-				expectedSSH := expected + "\nREMOTE_EQ=inherited=value"
-				expectedEnvFile := expectedSSH
+				expectedSSH := expectedHook
+				expectedEnvFile := expectedHook
 				for _, phase := range []string{"postCreate", "postStart"} {
 					out, err := readLifecycleFile(tempDir, phase+".env.out")
 					framework.ExpectNoError(err)

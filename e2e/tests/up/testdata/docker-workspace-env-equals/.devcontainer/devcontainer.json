@@ -2,6 +2,9 @@
   "image": "ghcr.io/devsy-org/test-images/go:1",
   "userEnvProbe": "loginInteractiveShell",
   "waitFor": "postStartCommand",
+  "containerEnv": {
+    "REMOTE_EQ": "inherited=value"
+  },
   "remoteEnv": {
     "REMOTE_EQ": "remote=a=b"
   },
