@@ -46,6 +46,16 @@ describe("SettingsService", () => {
     return { svc, onChanged }
   }
 
+  it("persists AppImage prompt dismissal without changing login startup", async () => {
+    const apply = vi.fn(async () => disabled)
+    const { svc } = service(apply)
+    await svc.update({ appImageIntegrationPromptDismissed: true })
+    const reloaded = new AppSettingsStore(join(dir, "app-settings.json"))
+    expect(reloaded.load().appImageIntegrationPromptDismissed).toBe(true)
+    expect(reloaded.get().runAtStartup).toBe(false)
+    expect(apply).not.toHaveBeenCalled()
+  })
+
   it("applies autostart and persists when enabling succeeds", async () => {
     const { svc, onChanged } = service(async () => enabled)
     const result = await svc.update({ runAtStartup: true })
@@ -174,6 +184,7 @@ describe("SettingsService", () => {
       trayNotifications: "failures",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
     expect(onChanged).not.toHaveBeenCalled()
   })
@@ -208,6 +219,7 @@ describe("SettingsService", () => {
       trayNotifications: "failures",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
     expect(result.startup.status).toBe("disabled")
   })
@@ -233,6 +245,7 @@ describe("SettingsService", () => {
       trayNotifications: "failures",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
     expect(result.startup.status).toBe("error")
     expect(store.get()).toEqual({
@@ -241,6 +254,7 @@ describe("SettingsService", () => {
       trayNotifications: "failures",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
     expect(onChanged).toHaveBeenCalledTimes(1)
     expect(onChanged).toHaveBeenCalledWith({
@@ -273,6 +287,7 @@ describe("SettingsService", () => {
       trayNotifications: "failures",
       desktopLogLevel: "info",
       cliCaptureLogLevel: "info",
+      appImageIntegrationPromptDismissed: false,
     })
     expect(result.startup).toMatchObject({ applied: false, enabled: true })
     expect(store.get().runAtStartup).toBe(true)

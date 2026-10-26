@@ -254,14 +254,15 @@ jobs:
           go run ./hack/release_artifacts verify-linux-desktop \
             --app-id "$app_id" \
             --desktop-file "$appimage_root/$app_id.desktop" \
-            --icon-root "$appimage_root" \
-            --require-file "$(find "$appimage_root" -path '*/resources/app-icon.png' -print -quit)"
+            --icon-root "$appimage_root/usr/share/icons/hicolor" \
+            --require-file "$appimage_root/resources/app-icon.png" \
+            --require-file "$appimage_root/devsy-desktop.png"
           for root in "$work/deb" "$work/rpm"; do
             go run ./hack/release_artifacts verify-linux-desktop \
               --app-id "$app_id" \
               --desktop-file "$root/usr/share/applications/$app_id.desktop" \
-              --icon-root "$root/usr/share/icons" \
-              --require-file "$(find "$root" -path '*/resources/app-icon.png' -print -quit)"
+              --icon-root "$root/usr/share/icons/hicolor" \
+              --require-file "$root/opt/Devsy/resources/app-icon.png"
           done
 
           desktop-file-validate \
@@ -433,10 +434,12 @@ jobs:
       - name: verify Flatpak desktop identity and exported icons
         run: |
           set -euo pipefail
-          dnf install -y --setopt=install_weak_deps=False desktop-file-utils ostree
+          # The pinned image is Freedesktop SDK based, without a distro package manager.
+          command -v flatpak ostree desktop-file-validate
           app_id=sh.devsy.app
           work="$RUNNER_TEMP/flatpak-bundle-check"
           rm -rf "$work"
+          mkdir -p "$work"
           ostree init --repo="$work/repo" --mode=archive-z2
           flatpak build-import-bundle "$work/repo" Devsy.flatpak
           ref=$(ostree refs --repo="$work/repo" | grep "^app/$app_id/" | head -n 1)

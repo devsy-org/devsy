@@ -19,6 +19,14 @@ import * as Command from "$lib/components/ui/command/index.js"
 import * as Popover from "$lib/components/ui/popover/index.js"
 import { Switch } from "$lib/components/ui/switch/index.js"
 import {
+  addToApplications,
+  integrationBusy,
+  integrationError,
+  integrationStatus,
+  refreshIntegrationStatus,
+  removeFromApplications,
+} from "$lib/stores/linux-desktop-integration.js"
+import {
   theme,
   applyTheme,
   uiScale,
@@ -162,6 +170,7 @@ onMount(() => {
   localOptionsStore.set(local)
   loading = false
   void syncDesktopSettingsFromMain()
+  void refreshIntegrationStatus()
 })
 
 function saveLocal(key: keyof LocalOptions, value: string | boolean) {
@@ -360,6 +369,45 @@ function saveLocal(key: keyof LocalOptions, value: string | boolean) {
           </div>
         </div>
       </section>
+
+      {#if $integrationStatus?.supported}
+        <section id="desktop-launcher" aria-labelledby="desktop-launcher-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
+          <h2 id="desktop-launcher-heading" class="text-lg font-semibold">Applications menu</h2>
+          <div class="mt-4 space-y-3">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <Label>Devsy launcher</Label>
+                <p class="text-xs text-muted-foreground" data-testid="launcher-state">
+                  {#if $integrationStatus.problem}
+                    {$integrationStatus.problem}
+                  {:else if $integrationStatus.conflict}
+                    {$integrationStatus.conflict} Devsy leaves it unchanged.
+                  {:else if $integrationStatus.installed && $integrationStatus.needsUpdate}
+                    The launcher points to an older AppImage location.
+                  {:else if $integrationStatus.installed}
+                    Devsy appears in your applications menu and opens devsy:// links.
+                  {:else}
+                    This AppImage has no launcher or icon in your applications menu.
+                  {/if}
+                </p>
+              </div>
+              <div class="flex gap-2">
+                {#if $integrationStatus.installed}
+                  {#if $integrationStatus.needsUpdate}
+                    <Button variant="outline" onclick={addToApplications} disabled={$integrationBusy || !!$integrationStatus.conflict}>Update launcher</Button>
+                  {/if}
+                  <Button variant="outline" onclick={removeFromApplications} disabled={$integrationBusy}>Remove</Button>
+                {:else}
+                  <Button variant="outline" onclick={addToApplications} disabled={$integrationBusy || !!$integrationStatus.conflict || !!$integrationStatus.problem}>Add to applications</Button>
+                {/if}
+              </div>
+            </div>
+            {#if $integrationError}
+              <p role="alert" class="text-xs text-yellow-600 dark:text-yellow-400">{$integrationError}</p>
+            {/if}
+          </div>
+        </section>
+      {/if}
 
       <section id="notifications" aria-labelledby="notifications-heading" class="scroll-mt-6 rounded-lg border p-4 sm:p-6">
         <h2 id="notifications-heading" class="text-lg font-semibold">Notifications</h2>

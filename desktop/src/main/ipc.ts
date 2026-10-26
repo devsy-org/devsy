@@ -19,6 +19,7 @@ import type { AppNavigationController } from "./app-navigation.js"
 import { sanitizeAppSettingsPatch } from "./app-settings.js"
 import type { CliInvocationOptions, CliRunner, StreamLine } from "./cli.js"
 import { loadCatalog } from "./image-catalog.js"
+import type { LinuxDesktopIntegration } from "./linux-desktop-integration.js"
 import type { LogStore } from "./log-store.js"
 import { mainLog } from "./logging.js"
 import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
@@ -170,6 +171,7 @@ interface IpcDependencies {
   onRendererReady?: (sender: Electron.WebContents) => void
   appNavigation?: AppNavigationController
   settingsService?: SettingsService
+  linuxDesktopIntegration?: LinuxDesktopIntegration
   secretSessionTimeoutMs?: number
 }
 
@@ -2760,6 +2762,27 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       return deps.settingsService.update(sanitizeAppSettingsPatch(args?.patch))
     },
   )
+
+  ipcMain.handle("get_linux_desktop_integration", () => {
+    if (!deps.linuxDesktopIntegration) {
+      throw new Error("Linux desktop integration unavailable")
+    }
+    return deps.linuxDesktopIntegration.status()
+  })
+
+  ipcMain.handle("install_linux_desktop_integration", () => {
+    if (!deps.linuxDesktopIntegration) {
+      throw new Error("Linux desktop integration unavailable")
+    }
+    return deps.linuxDesktopIntegration.install()
+  })
+
+  ipcMain.handle("remove_linux_desktop_integration", () => {
+    if (!deps.linuxDesktopIntegration) {
+      throw new Error("Linux desktop integration unavailable")
+    }
+    return deps.linuxDesktopIntegration.remove()
+  })
 
   // ── Analytics ──
   ipcMain.handle(

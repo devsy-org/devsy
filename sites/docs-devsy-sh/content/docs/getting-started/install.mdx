@@ -27,6 +27,12 @@ For earlier versions, see the [GitHub releases page](https://github.com/devsy-or
 The DEB and RPM packages declare their dependencies, and the AppImage and Flatpak bundle theirs. If the AppImage does not start, install FUSE 2 (`libfuse2` on Debian and Ubuntu) and try again.
 </Callout>
 
+For an AppImage, first move it to a permanent location and make it executable. On its first direct launch, Devsy offers **Add to applications**. This creates a user-local launcher and copies its icon outside the temporary AppImage mount. You can decline and add it later under **Settings > Applications menu**.
+
+If you move the AppImage later, start it once from its new location; Devsy updates a launcher it owns. **Settings > Applications menu > Remove** removes only that launcher and its owned icon. Devsy does not overwrite an existing system, Flatpak, user-managed or third-party AppImage launcher, or change another package's default `devsy://` handler.
+
+Flatpak, DEB and RPM packages install their own launchers; the AppImage action is not used for those formats. See [Linux icon troubleshooting](/docs/troubleshooting/linux-troubleshooting#generic-application-icon-on-gnome) if a running window still shows a generic icon.
+
 <Callout title="Windows dependency">
 If the app does not open, install [WebView 2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/?form=MA13LH). Recent versions of Windows include it.
 </Callout>
