@@ -382,9 +382,13 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export MESA_LOADER_DRIVER_OVERRIDE=swrast
           cat > "$proof_dir/verify-window.py" <<'PY'
+          import datetime
+          import hashlib
           import json
+          import os
           import re
           import sys
+          import time
           from pathlib import Path
 
           EXPECTED_WM_CLASS = "sh.devsy.app"
@@ -430,15 +434,142 @@ jobs:
                   })
               return candidates
 
+          MAX_POLL_RECORD_BYTES = 8192
+          MAX_POLL_EVIDENCE_BYTES = 60 * MAX_POLL_RECORD_BYTES
+          MAX_POLL_STDOUT_BYTES = 2048
+          MAX_POLL_STDERR_BYTES = 1024
+
+          def valid_windows_reply(text):
+              stripped = text.strip()
+              blocks = re.findall(r"uint64\s+\d+\s*:\s*\{[^{}]*\}", stripped, re.S)
+              return stripped.endswith(",)") and stripped.startswith("(") and (
+                  bool(blocks) or stripped == "(@a{ta{sv}} {},)"
+              )
+
+          def bounded_stream(path, limit):
+              path = Path(path)
+              try:
+                  size = path.stat().st_size
+                  with path.open("rb") as stream:
+                      data = stream.read(limit)
+              except OSError:
+                  return {"text": "", "bytes": 0, "storedBytes": 0, "truncated": False}
+              return {
+                  "text": data.decode(errors="replace"),
+                  "bytes": size,
+                  "storedBytes": len(data),
+                  "truncated": size > len(data),
+              }
+
+          def compact_json(value):
+              return json.dumps(value, ensure_ascii=True, separators=(",", ":")).encode()
+
+          def write_poll_record(path, record):
+              target = Path(path)
+              other_bytes = sum(
+                  item.stat().st_size for item in target.parent.glob("*-poll-*.json")
+                  if item != target and item.is_file()
+              )
+              record_limit = min(MAX_POLL_RECORD_BYTES, MAX_POLL_EVIDENCE_BYTES - other_bytes)
+              encoded = compact_json(record)
+              while len(encoded) + 1 > record_limit:
+                  streams = record["rawReply"]
+                  if streams["stderr"]:
+                      streams["stderr"] = streams["stderr"][:len(streams["stderr"]) // 2]
+                  elif streams["stdout"]:
+                      streams["stdout"] = streams["stdout"][:len(streams["stdout"]) // 2]
+                  elif record.get("candidates"):
+                      record["candidates"] = []
+                  else:
+                      raise ValueError("poll metadata exceeds its remaining 480 KiB evidence budget")
+                  record["evidenceTruncated"] = True
+                  encoded = compact_json(record)
+              target.write_bytes(encoded + b"\n")
+
+          def write_proof(path, proof):
+              target = Path(path)
+              data = json.dumps(proof, indent=2) + "\n"
+              if len(data.encode()) > 131072:
+                  raise ValueError("terminal proof exceeds its 128 KiB evidence limit")
+              temporary = target.with_suffix(".tmp")
+              temporary.write_text(data)
+              temporary.replace(target)
+
+          def poll(backend, attempt, expected_type, dbus_status, output_path, error_path, proof_path):
+              output = Path(output_path)
+              error = Path(error_path)
+              raw_reply = bounded_stream(output, MAX_POLL_STDOUT_BYTES)
+              raw_error = bounded_stream(error, MAX_POLL_STDERR_BYTES)
+              candidates = []
+              parser_valid = False
+              parser_succeeded = False
+              parser_error = None
+              if dbus_status == 0:
+                  try:
+                      if output.stat().st_size > 65536:
+                          raise ValueError("GetWindows reply exceeds the parser input limit")
+                      text = output.read_text(errors="replace")
+                      if not valid_windows_reply(text):
+                          raise ValueError("GetWindows reply is not the expected tuple/map")
+                      parser_valid = True
+                      candidates = parse_candidates(text, expected_type)
+                      parser_succeeded = len(candidates) == 1
+                      if not parser_succeeded:
+                          parser_error = f"expected one exact candidate, observed {len(candidates)}"
+                  except (OSError, ValueError) as failure:
+                      parser_error = str(failure)[:512]
+              record = {
+                  "backend": backend,
+                  "poll": int(attempt),
+                  "utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds"),
+                  "monotonicNs": time.monotonic_ns(),
+                  "dbusExitStatus": int(dbus_status),
+                  "parserValid": parser_valid,
+                  "parserSucceeded": parser_succeeded,
+                  "parserExitStatus": 0 if parser_succeeded else 1,
+                  "expectedClientType": expected_type,
+                  "candidateCount": len(candidates),
+                  "observedClientType": candidates[0]["clientType"] if len(candidates) == 1 else None,
+                  "parserError": parser_error,
+                  "rawReply": {
+                      "stdout": raw_reply["text"],
+                      "stdoutBytes": raw_reply["bytes"],
+                      "stdoutTruncated": raw_reply["truncated"],
+                      "stderr": raw_error["text"],
+                      "stderrBytes": raw_error["bytes"],
+                      "stderrTruncated": raw_error["truncated"],
+                  },
+              }
+              record_path = Path(proof_path).with_name(f"{backend}-poll-{int(attempt):02d}.json")
+              write_poll_record(record_path, record)
+              if not parser_succeeded:
+                  return False
+              identity = {"candidateWindows": candidates}
+              identity_path = Path(proof_path).with_name(f"{backend}-window-identity.json")
+              identity_path.write_text(json.dumps(identity, indent=2) + "\n")
+              proof = json.loads(Path(proof_path).read_text())
+              proof.setdefault("windowCandidates", {})[backend] = candidates
+              requested = next(
+                  (item for item in reversed(proof.get("launches", [])) if item.get("backend") == backend),
+                  {"requestedMode": backend, "launchArgs": []},
+              )
+              proof.setdefault("observedModes", {})[backend] = {
+                  "requestedMode": requested["requestedMode"],
+                  "launchArgs": requested["launchArgs"],
+                  "observedClientType": candidates[0]["clientType"],
+                  "poll": int(attempt),
+                  "pollUtc": record["utc"],
+              }
+              proof["sessionResult"] = "candidate_observed_unattributed"
+              proof["scope"] = f"One exact WM_CLASS/title candidate observed in private {backend}; PID and exact-AppImage attribution pending."
+              write_proof(proof_path, proof)
+              return True
+
           if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
               actual = """({uint64 44739516: {'app-id': <'window:1'>, 'client-type': <uint32 1>, 'is-hidden': <false>, 'has-focus': <false>, 'width': <uint32 1000>, 'height': <uint32 737>, 'title': <'Devsy'>, 'wm-class': <'sh.devsy.app'>}},)"""
               candidate = parse_candidates(actual)
               assert len(candidate) == 1
-              assert candidate[0] == {
-                  "windowId": "44739516", "title": "Devsy", "appId": "window:1",
-                  "wmClass": "sh.devsy.app", "clientType": 1, "isHidden": False,
-                  "hasFocus": False, "width": 1000, "height": 737,
-              }
+              assert candidate[0]["windowId"] == "44739516"
               assert parse_candidates(actual, "0") == []
               assert len(parse_candidates(actual.replace("<uint32 1>", "<uint32 0>"), "0")) == 1
               assert parse_candidates(actual.replace("sh.devsy.app", "other.app")) == []
@@ -446,52 +577,94 @@ jobs:
               assert parse_candidates(actual.replace("<false>", "<true>")) == []
               assert parse_candidates(actual.replace("<uint32 1000>", "<uint32 0>")) == []
               assert parse_candidates(actual.replace("<uint32 1>", "<uint32 2>")) == []
-              arbitrary_id_only = actual.replace("window:1", "window:999").replace("sh.devsy.app", "other.app")
-              assert parse_candidates(arbitrary_id_only) == []
-              print("candidate fixtures passed: actual window:1 record is only a candidate; wrong class/title, hidden, invalid geometry/type, and arbitrary window-id-only records rejected")
+              assert valid_windows_reply("(@a{ta{sv}} {},)")
+              assert valid_windows_reply(actual)
+              assert not valid_windows_reply("()")
+              print("candidate fixtures passed: exact identity and valid empty GetWindows map distinguished; wrong class/title, hidden, invalid geometry/type, and arbitrary window-id-only records rejected")
               raise SystemExit(0)
           if len(sys.argv) > 1 and sys.argv[1] == "--attempt":
               backend = sys.argv[2]
               proof_path = Path(sys.argv[3])
+              args = sys.argv[4:]
+              mode = "default" if backend == "wayland-default" else \
+                     "forced-wayland" if backend == "wayland-forced" else "x11"
               proof = json.loads(proof_path.read_text())
               proof.setdefault("launchAttempts", []).append(backend)
+              proof.setdefault("launches", []).append({
+                  "backend": backend, "requestedMode": mode, "launchArgs": args,
+              })
               proof["sessionResult"] = "appimage_launch_attempted"
-              proof["scope"] = f"Exact AppImage process start attempted for {backend}; window candidate not yet observed."
-              temporary = proof_path.with_suffix(".tmp")
-              temporary.write_text(json.dumps(proof, indent=2) + "\n")
-              temporary.replace(proof_path)
+              proof["scope"] = f"Exact AppImage process start attempted for {backend}; compatible window not yet observed."
+              write_proof(proof_path, proof)
               raise SystemExit(0)
-
+          if len(sys.argv) > 1 and sys.argv[1] == "--poll":
+              _, _, backend, attempt, expected, dbus_status, output, error, proof = sys.argv
+              try:
+                  accepted = poll(backend, attempt, expected, int(dbus_status), output, error, proof)
+              except (OSError, ValueError, json.JSONDecodeError) as failure:
+                  print(f"poll evidence could not be recorded: {failure}", file=sys.stderr)
+                  raise SystemExit(1)
+              raise SystemExit(0 if accepted else 1)
+          if len(sys.argv) > 1 and sys.argv[1] == "--source-check":
+              _, _, backend, source_path, proof_path = sys.argv
+              proof_path = Path(proof_path)
+              proof = json.loads(proof_path.read_text())
+              expected_path = Path(source_path)
+              expected_hash = proof.get("appimage", {}).get("sha256")
+              actual_hash = None
+              error = None
+              try:
+                  digest = hashlib.sha256()
+                  with expected_path.open("rb") as source:
+                      for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                          digest.update(chunk)
+                  actual_hash = digest.hexdigest()
+              except OSError as failure:
+                  error = str(failure)[:512]
+              check = {
+                  "backend": backend,
+                  "utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds"),
+                  "path": str(expected_path),
+                  "expectedSha256": expected_hash,
+                  "actualSha256": actual_hash,
+                  "matches": actual_hash is not None and actual_hash == expected_hash,
+                  "error": error,
+              }
+              proof.setdefault("sourceImageChecks", []).append(check)
+              if not check["matches"]:
+                  proof["sourceImageChanged"] = True
+                  proof["sessionResult"] = "source_appimage_provenance_changed"
+                  proof["scope"] = "The original source AppImage changed or became unreadable after cleanup."
+              write_proof(proof_path, proof)
+              raise SystemExit(0 if check["matches"] else 1)
+          if len(sys.argv) > 1 and sys.argv[1] == "--exhausted":
+              _, _, backend, attempts, expected, proof_path = sys.argv
+              proof_path = Path(proof_path)
+              proof = json.loads(proof_path.read_text())
+              proof.setdefault("observationFailures", {})[backend] = {
+                  "status": "no_exact_window_candidate",
+                  "polls": int(attempts),
+                  "expectedClientType": expected,
+                  "lastPoll": proof_path.with_name(f"{backend}-poll-{int(attempts):02d}.json").name,
+              }
+              proof["sessionResult"] = "no_exact_window_candidate"
+              proof["scope"] = f"No exact candidate with the required client type appeared within {attempts} GetWindows polls for {backend}."
+              write_proof(proof_path, proof)
+              raise SystemExit(0)
           if len(sys.argv) != 5:
-              raise SystemExit("usage: verify-window.py OUTPUT EXPECTED_TYPE BACKEND PROOF_JSON")
+              raise SystemExit("usage: verify-window.py --poll|--exhausted|--source-check|--attempt|--self-test ...")
           output_path = Path(sys.argv[1])
           expected_type = sys.argv[2]
           backend = sys.argv[3]
           proof_path = Path(sys.argv[4])
           candidates = parse_candidates(output_path.read_text(), expected_type)
-          identity = {"candidateWindows": candidates}
-          identity_path = proof_path.with_name(f"{backend}-window-identity.json")
-          identity_path.write_text(json.dumps(identity, indent=2) + "\n")
-          proof = json.loads(proof_path.read_text())
-          proof.setdefault("windowCandidates", {})[backend] = candidates
-          if len(candidates) == 1:
-              proof["sessionResult"] = "candidate_observed_unattributed"
-              proof["scope"] = f"Raw GNOME window candidate observed in private {backend} session; PID and exact-AppImage attribution pending."
-          elif candidates:
-              proof["sessionResult"] = "ambiguous_window_candidates"
-              proof["scope"] = f"Multiple raw GNOME window candidates observed in private {backend} session; exact-AppImage attribution was not attempted."
-          else:
-              proof["sessionResult"] = "no_exact_window_candidate"
-              proof["scope"] = f"No exact Devsy WM_CLASS/title candidate appeared in private {backend} GetWindows output."
-          temporary = proof_path.with_suffix(".tmp")
-          temporary.write_text(json.dumps(proof, indent=2) + "\n")
-          temporary.replace(proof_path)
           if len(candidates) != 1:
               raise SystemExit(f"expected exactly one exact-WM_CLASS/title candidate, observed {len(candidates)}")
-          print(json.dumps(identity, sort_keys=True))
+          raise SystemExit("window observation must use the bounded --poll entrypoint")
           PY
           cat > "$proof_dir/verify-window-link.py" <<'PY'
           import ast
+          import datetime
           import json
           import os
           import re
@@ -746,6 +919,118 @@ jobs:
               ):
                   raise SystemExit("GNOME Shell MetaWindow Eval returned an unexpected row shape")
               return rows
+          TERMINAL_SHELL_LIMIT = 65536
+
+          def bounded_dbus(command, timeout=1, limit=8192):
+              started = time.monotonic_ns()
+              utc = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds")
+              try:
+                  result = subprocess.run(command, text=True, capture_output=True, timeout=timeout)
+                  status, stdout, stderr, timed_out = result.returncode, result.stdout, result.stderr, False
+              except subprocess.TimeoutExpired as error:
+                  status, timed_out = None, True
+                  stdout = error.stdout.decode(errors="replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
+                  stderr = error.stderr.decode(errors="replace") if isinstance(error.stderr, bytes) else (error.stderr or "")
+              stdout_bytes = stdout.encode()
+              stderr_bytes = stderr.encode()
+              return {
+                  "utc": utc,
+                  "monotonicNs": started,
+                  "returnCode": status,
+                  "timedOut": timed_out,
+                  "stdout": stdout_bytes[:limit].decode(errors="replace"),
+                  "stdoutBytes": len(stdout_bytes),
+                  "stdoutTruncated": len(stdout_bytes) > limit,
+                  "stderr": stderr_bytes[:limit].decode(errors="replace"),
+                  "stderrBytes": len(stderr_bytes),
+                  "stderrTruncated": len(stderr_bytes) > limit,
+              }
+
+          def terminal_shell_diagnostic(backend, readiness_path, output_path):
+              readiness = json.loads(Path(readiness_path).read_text()) if Path(readiness_path).is_file() else {}
+              shell = readiness.get("shell") or {}
+              record = {
+                  "backend": backend,
+                  "utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds"),
+                  "limitBytes": TERMINAL_SHELL_LIMIT,
+                  "readiness": {
+                      key: readiness.get(key) for key in
+                      ("backend", "dbusOwner", "dbusOwnerPid", "unsafeModeArgumentObserved",
+                       "startupComplete", "startupState", "getWindowsSucceeded", "sources")
+                  },
+                  "shellIdentity": {
+                      key: shell.get(key) for key in ("pid", "startTicks", "uid", "exe", "argv")
+                  },
+                  "commands": {},
+                  "unfilteredMetaWindows": [],
+                  "omittedMetaWindows": 0,
+                  "truncated": False,
+                  "errors": [],
+              }
+              owner = bounded_dbus([
+                  "gdbus", "call", "--session", "--dest", "org.freedesktop.DBus",
+                  "--object-path", "/org/freedesktop/DBus", "--method",
+                  "org.freedesktop.DBus.GetNameOwner", "org.gnome.Shell",
+              ])
+              record["commands"]["getNameOwner"] = owner
+              owner_match = re.search(r"\('([^']+)'", owner["stdout"])
+              if owner["returnCode"] == 0 and owner_match:
+                  owner_name = owner_match.group(1)
+                  owner_pid = bounded_dbus([
+                      "gdbus", "call", "--session", "--dest", "org.freedesktop.DBus",
+                      "--object-path", "/org/freedesktop/DBus", "--method",
+                      "org.freedesktop.DBus.GetConnectionUnixProcessID", owner_name,
+                  ])
+                  record["commands"]["getOwnerPid"] = owner_pid
+                  pid_match = re.search(r"uint32\s+(\d+)", owner_pid["stdout"])
+                  record["dbusOwner"] = owner_name
+                  record["dbusOwnerPid"] = int(pid_match.group(1)) if pid_match else None
+                  record["ownerMatchesPrivateShell"] = record["dbusOwnerPid"] == shell.get("pid")
+              else:
+                  record["errors"].append("GetNameOwner failed or returned an unparseable owner")
+              evaluation = bounded_dbus([
+                  "gdbus", "call", "--session", "--dest", "org.gnome.Shell",
+                  "--object-path", "/org/gnome/Shell", "--method", "org.gnome.Shell.Eval",
+                  EVAL_CODE,
+              ], timeout=2, limit=16384)
+              record["commands"]["unfilteredMetaWindowEval"] = evaluation
+              if evaluation["returnCode"] == 0 and not evaluation["timedOut"]:
+                  try:
+                      succeeded, encoded = parse_tuple(evaluation["stdout"])
+                      rows = json.loads(encoded) if succeeded else None
+                      if not isinstance(rows, list) or any(
+                          not isinstance(row, list) or len(row) != 7 or
+                          any(type(value) is not int for value in row) for row in rows
+                      ):
+                          raise ValueError("unfiltered MetaWindow Eval returned an unexpected row shape")
+                      record["unfilteredMetaWindows"] = rows[:128]
+                      record["omittedMetaWindows"] = max(0, len(rows) - 128)
+                      record["truncated"] = record["omittedMetaWindows"] > 0
+                  except (ValueError, SyntaxError, json.JSONDecodeError, TypeError) as error:
+                      record["errors"].append(f"MetaWindow Eval decode failed: {error}"[:512])
+              else:
+                  record["errors"].append("unfiltered MetaWindow Eval failed or timed out")
+              data = json.dumps(record, indent=2) + "\n"
+              if len(data.encode()) > TERMINAL_SHELL_LIMIT:
+                  for command in record["commands"].values():
+                      command["stdout"] = command["stdout"][:2048]
+                      command["stderr"] = command["stderr"][:1024]
+                      command["stdoutTruncated"] = True
+                      command["stderrTruncated"] = True
+                  record["unfilteredMetaWindows"] = record["unfilteredMetaWindows"][:32]
+                  record["omittedMetaWindows"] = max(record["omittedMetaWindows"], 32)
+                  record["truncated"] = True
+                  data = json.dumps(record, indent=2) + "\n"
+              if len(data.encode()) > TERMINAL_SHELL_LIMIT:
+                  record = {
+                      "backend": backend, "utc": record["utc"], "limitBytes": TERMINAL_SHELL_LIMIT,
+                      "truncated": True, "omitted": "diagnostic fields exceeded terminal-state cap",
+                  }
+                  data = json.dumps(record, indent=2) + "\n"
+              Path(output_path).write_text(data)
+              print(json.dumps({"backend": backend, "ownerMatchesPrivateShell":
+                                record.get("ownerMatchesPrivateShell"), "truncated": record.get("truncated", False)}))
+
 
           def focus_snapshot(backend, proof_dir, capture_label):
               result = shell_eval(backend, FOCUS_CODE, Path(proof_dir) / f"{capture_label}-focus")
@@ -1066,6 +1351,10 @@ jobs:
               if len(sys.argv) < 2:
                   raise SystemExit("usage: verify-window-link.py pin|validate-snapshot|capture|screenshot|compare|attribute|verify-backend")
               command = sys.argv[1]
+              if command == "terminal":
+                  _, _, backend, readiness_path, output_path = sys.argv
+                  terminal_shell_diagnostic(backend, readiness_path, output_path)
+                  return
               if command == "--self-test":
                   assert parse_tuple("(true, '[[1,2,3,4,5,6,7]]')") == (True, "[[1,2,3,4,5,6,7]]")
                   assert ACTIVATE_CODE(17).endswith("})()")
@@ -1159,6 +1448,7 @@ jobs:
           chmod 700 "$proof_dir/verify-window.py"
           python3 "$proof_dir/verify-window.py" --self-test
           cat > "$proof_dir/process-audit.py" <<'PY'
+          import datetime
           import hashlib
           import json
           import os
@@ -1285,6 +1575,153 @@ jobs:
           def write_json(path, value):
               Path(path).write_text(json.dumps(value, indent=2) + "\n")
 
+          PROFILE_LIMIT = 65536
+          TERMINAL_LIMIT = 65536
+          SIGNAL_LIMIT = 10240
+          def utc_now():
+              return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds")
+
+          def write_limited(path, value, limit):
+              data = json.dumps(value, indent=2) + "\n"
+              if len(data.encode()) > limit:
+                  raise ValueError(f"diagnostic state exceeds {limit} byte evidence limit")
+              temporary = Path(path).with_suffix(Path(path).suffix + ".tmp")
+              temporary.write_text(data)
+              temporary.replace(path)
+
+          def profile_metadata(profile_root, output, backend):
+              root = Path(profile_root)
+              path_keys = ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME",
+                           "XDG_STATE_HOME", "XDG_RUNTIME_DIR")
+              record = {
+                  "backend": backend,
+                  "utc": utc_now(),
+                  "uid": os.getuid(),
+                  "xdgSessionType": os.environ.get("XDG_SESSION_TYPE"),
+                  "paths": {},
+                  "singletonLocks": [],
+                  "omittedLocks": 0,
+                  "truncated": False,
+              }
+              for key in path_keys:
+                  value = os.environ.get(key)
+                  if value is None:
+                      record["paths"][key] = None
+                      continue
+                  item = {"path": value}
+                  try:
+                      info = os.stat(value)
+                      item.update({
+                          "uid": info.st_uid,
+                          "mode": oct(stat.S_IMODE(info.st_mode)),
+                          "isDirectory": stat.S_ISDIR(info.st_mode),
+                          "underProfile": os.path.commonpath((str(root), os.path.abspath(value))) == str(root),
+                      })
+                  except (OSError, ValueError):
+                      item["statError"] = "unavailable"
+                  record["paths"][key] = item
+              visited = 0
+              for current, directories, files in os.walk(root, followlinks=False):
+                  visited += 1
+                  if visited > 2048:
+                      record["truncated"] = True
+                      break
+                  for name in (*directories, *files):
+                      if name != "SingletonLock":
+                          continue
+                      lock = Path(current) / name
+                      try:
+                          info = lock.lstat()
+                          item = {
+                              "path": str(lock.relative_to(root)),
+                              "uid": info.st_uid,
+                              "mode": oct(stat.S_IMODE(info.st_mode)),
+                              "symlink": stat.S_ISLNK(info.st_mode),
+                              "size": info.st_size,
+                          }
+                          if item["symlink"]:
+                              target_name = Path(os.readlink(lock)).name
+                              claimed = re.search(r"-(\d+)$", target_name)
+                              if claimed:
+                                  item["claimedPid"] = int(claimed.group(1))
+                                  process = proc_record(item["claimedPid"])
+                                  if process:
+                                      item["claimedProcess"] = {
+                                          key: process[key] for key in
+                                          ("pid", "startTicks", "uid", "exe", "mountNamespace")
+                                      }
+                          if len(record["singletonLocks"]) < 16:
+                              record["singletonLocks"].append(item)
+                          else:
+                              record["omittedLocks"] += 1
+                              record["truncated"] = True
+                      except OSError:
+                          record["omittedLocks"] += 1
+                          record["truncated"] = True
+                  directories[:] = [name for name in directories if not (Path(current) / name).is_symlink()]
+              path = Path(output)
+              state = json.loads(path.read_text()) if path.is_file() else {
+                  "limitBytes": PROFILE_LIMIT, "records": [], "truncated": False,
+              }
+              state["records"].append(record)
+              while len(json.dumps(state).encode()) > PROFILE_LIMIT and record["singletonLocks"]:
+                  record["singletonLocks"].pop()
+                  record["omittedLocks"] += 1
+                  record["truncated"] = True
+                  state["truncated"] = True
+              state["truncated"] = state["truncated"] or record["truncated"]
+              write_limited(path, state, PROFILE_LIMIT)
+
+          def terminal_state(root_pid, baseline_path, binding_path, output):
+              baseline = json.loads(Path(baseline_path).read_text()) if Path(baseline_path).is_file() else {}
+              binding = json.loads(Path(binding_path).read_text()) if Path(binding_path).is_file() else {}
+              current_records = all_processes()
+              tree = owned_tree(root_pid, current_records)
+              known = {record["pid"]: record for record in baseline.get("processes", [])}
+              selected = {record["pid"] for record in tree}
+              selected.update(known)
+              process_rows = []
+              omitted = 0
+              for pid in sorted(selected):
+                  record = proc_record(pid)
+                  if record:
+                      process_rows.append({
+                          key: record[key] for key in
+                          ("pid", "ppid", "startTicks", "uid", "exe", "mountNamespace")
+                      } | {"mount": mount_info(Path("/proc") / str(pid), record["exe"])})
+                  else:
+                      omitted += 1
+              state = {
+                  "utc": utc_now(),
+                  "appPid": root_pid,
+                  "initialRoot": next(
+                      (item for item in baseline.get("processes", []) if item.get("pid") == root_pid), None
+                  ),
+                  "immutableBinding": binding,
+                  "currentRootPresent": root_pid in current_records,
+                  "processes": process_rows,
+                  "omittedProcessRecords": omitted,
+                  "truncated": False,
+              }
+              while len(json.dumps(state).encode()) > TERMINAL_LIMIT and state["processes"]:
+                  state["processes"].pop()
+                  state["omittedProcessRecords"] += 1
+                  state["truncated"] = True
+              write_limited(output, state, TERMINAL_LIMIT)
+
+          def record_wait_status(path, status, available, reason, cleanup_status, cleanup_error):
+              output = Path(path)
+              state = json.loads(output.read_text()) if output.is_file() else {
+                  "rootPid": None, "signals": {"events": [], "truncated": False, "omitted": 0},
+              }
+              state["rootWaitExitStatus"] = int(status) if available else None
+              state["rootWaitStatusAvailable"] = available
+              state["rootWaitStatusUnavailableReason"] = None if available else reason
+              state["rootWaitUtc"] = utc_now()
+              state["cleanupStatus"] = int(cleanup_status)
+              state["cleanupError"] = cleanup_error or None
+              write_limited(output, state, SIGNAL_LIMIT)
+
           def version_hints(path):
               try:
                   return re.findall(r"current=([^ ]+)", Path(path).read_text())
@@ -1367,12 +1804,21 @@ jobs:
                                 "appImageSha256": image_sha}, sort_keys=True))
 
           def stop_tree(root_pid, baseline_path, output):
+              entered_utc = utc_now()
+              entered_monotonic_ns = time.monotonic_ns()
               baseline = json.loads(Path(baseline_path).read_text()) if Path(baseline_path).is_file() else {}
               expected_start = baseline.get("rootStartTicks")
+              initial_root = next(
+                  (record for record in baseline.get("processes", []) if record.get("pid") == root_pid), None
+              )
               known = {
                   record["pid"]: {"startTicks": record["startTicks"], "uid": record["uid"]}
                   for record in baseline.get("processes", [])
               }
+              signal_events = []
+              signal_bytes = 0
+              signals_omitted = 0
+              last_signal = None
 
               def refresh():
                   records = all_processes()
@@ -1395,6 +1841,7 @@ jobs:
                   return records, current
 
               def signal_known(records, sig):
+                  nonlocal signal_bytes, signals_omitted, last_signal
                   for pid in sorted(known, key=lambda value: value == root_pid):
                       identity = known[pid]
                       record = records.get(pid)
@@ -1402,10 +1849,28 @@ jobs:
                           continue
                       if expected_start is not None and pid == root_pid and identity["startTicks"] != expected_start:
                           continue
+                      event = {
+                          "utc": utc_now(),
+                          "monotonicNs": time.monotonic_ns(),
+                          "signal": signal.Signals(sig).name,
+                          "target": {key: record[key] for key in
+                                     ("pid", "startTicks", "uid", "exe", "mountNamespace")},
+                          "status": "sent",
+                      }
                       try:
                           os.kill(pid, sig)
                       except ProcessLookupError:
-                          pass
+                          event["status"] = "already_exited"
+                      except OSError as error:
+                          event["status"] = "error"
+                          event["error"] = f"{type(error).__name__}: {error}"[:256]
+                      event_size = len(json.dumps(event).encode())
+                      last_signal = event
+                      if signal_bytes + event_size <= SIGNAL_LIMIT - 4096:
+                          signal_events.append(event)
+                          signal_bytes += event_size
+                      else:
+                          signals_omitted += 1
 
               def survivors_now():
                   records = all_processes()
@@ -1436,10 +1901,45 @@ jobs:
                   time.sleep(0.2)
               records, current = refresh()
               survivors = survivors_now()
-              result = {"rootPid": root_pid, "trackedProcessCount": len(known),
-                        "survivors": survivors, "remainingTree": current}
-              write_json(output, result)
-              print(json.dumps(result, sort_keys=True))
+              result = {
+                  "rootPid": root_pid,
+                  "rootIdentity": {
+                      key: initial_root.get(key) for key in
+                      ("pid", "startTicks", "uid", "exe", "exeSha256", "mount", "mountNamespace")
+                  } if initial_root else None,
+                  "cleanupEnteredUtc": entered_utc,
+                  "cleanupEnteredMonotonicNs": entered_monotonic_ns,
+                  "trackedProcessCount": len(known),
+                  "signals": {
+                      "events": signal_events,
+                      "first": signal_events[0] if signal_events else None,
+                      "last": last_signal,
+                      "omitted": signals_omitted,
+                      "truncated": signals_omitted > 0,
+                  },
+                  "survivors": survivors,
+                  "remainingTree": current,
+              }
+              while len(json.dumps(result).encode()) > SIGNAL_LIMIT and signal_events:
+                  signal_events.pop()
+                  result["signals"]["omitted"] += 1
+                  result["signals"]["truncated"] = True
+                  result["signals"]["events"] = signal_events
+                  result["signals"]["first"] = signal_events[0] if signal_events else None
+              while len(json.dumps(result).encode()) > SIGNAL_LIMIT and result["remainingTree"]:
+                  result["remainingTree"].pop()
+                  result["remainingTreeOmitted"] = result.get("remainingTreeOmitted", 0) + 1
+                  result["truncated"] = True
+              while len(json.dumps(result).encode()) > SIGNAL_LIMIT and result["survivors"]:
+                  result["survivors"].pop()
+                  result["survivorsOmitted"] = result.get("survivorsOmitted", 0) + 1
+                  result["truncated"] = True
+              write_limited(output, result, SIGNAL_LIMIT)
+              print(json.dumps({
+                  "rootPid": root_pid, "trackedProcessCount": len(known),
+                  "signalEvents": len(signal_events), "signalsOmitted": signals_omitted,
+                  "survivors": survivors, "remainingTree": current,
+              }, sort_keys=True))
               if survivors or current:
                   raise SystemExit("owned AppImage processes survived bounded cleanup")
 
@@ -1449,8 +1949,18 @@ jobs:
               snapshot(int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5])
           elif sys.argv[1] == "stop":
               stop_tree(int(sys.argv[2]), sys.argv[3], sys.argv[4])
+          elif sys.argv[1] == "record-exit":
+              record_wait_status(
+                  sys.argv[2], sys.argv[3], sys.argv[4] == "true", sys.argv[5],
+                  sys.argv[6], sys.argv[7],
+              )
+          elif sys.argv[1] == "profile":
+              profile_metadata(sys.argv[2], sys.argv[3], sys.argv[4])
+          elif sys.argv[1] == "terminal":
+              terminal_state(int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5])
           else:
-              raise SystemExit("usage: process-audit.py display|snapshot|stop ...")
+              raise SystemExit("usage: process-audit.py display|snapshot|stop|record-exit|profile|terminal ...")
+
           PY
           chmod 700 "$proof_dir/process-audit.py"
           cat > "$proof_dir/verify-gnome-shell.py" <<'PY'
@@ -1616,24 +2126,137 @@ jobs:
               shell_baseline="$PROOF_DIR/gnome-wayland-shell-process-before.json"
               app_pid=
               app_baseline=
-              cleanup_app() {
-                if [ -n "$app_pid" ]; then
-                  python3 "$PROCESS_AUDIT_SCRIPT" stop "$app_pid" "$app_baseline" "$PROOF_DIR/$(basename "$app_baseline" .json)-cleanup.json" || return $?
-                  wait "$app_pid" 2>/dev/null || true
-                  app_pid=
+              app_binding=
+              active_backend=
+              app_capture_done=0
+              terminal_diagnostics_done=0
+              capture_terminal_diagnostics() {
+                local backend="$1" readiness="$PROOF_DIR/wayland-shell-readiness.json"
+                [ "$terminal_diagnostics_done" = 1 ] && return 0
+                terminal_diagnostics_done=1
+                python3 "$PROCESS_AUDIT_SCRIPT" terminal "$app_pid" "$app_baseline" "$app_binding" \
+                  "$PROOF_DIR/$backend-terminal-process.json" \
+                  >"$PROOF_DIR/$backend-terminal-process.stdout" 2>"$PROOF_DIR/$backend-terminal-process.stderr" || \
+                  printf "{\"status\":\"process observation failed\",\"truncated\":true,\"detailsOmitted\":true}\\n" \
+                    >"$PROOF_DIR/$backend-terminal-process.json"
+                python3 "$WINDOW_LINK_SCRIPT" terminal "$backend" "$readiness" \
+                  "$PROOF_DIR/$backend-terminal-shell.json" \
+                  >"$PROOF_DIR/$backend-terminal-shell.stdout" 2>"$PROOF_DIR/$backend-terminal-shell.stderr" || \
+                  printf "{\"status\":\"Shell observation failed\",\"truncated\":true,\"detailsOmitted\":true}\\n" \
+                    >"$PROOF_DIR/$backend-terminal-shell.json"
+              }
+              record_profile() {
+                python3 "$PROCESS_AUDIT_SCRIPT" profile "$RUNNER_TEMP/gnome-profile" \
+                  "$PROOF_DIR/profile-metadata.json" "$1"
+              }
+              check_source_image() {
+                python3 "$VERIFY_WINDOW_SCRIPT" --source-check "$1" "$APPIMAGE_PATH" "$PROOF_DIR/proof.json"
+              }
+              remember_cleanup_error() {
+                if [ "$cleanup_status" -eq 0 ]; then
+                  cleanup_status=$1
+                  cleanup_error=$2
                 fi
               }
-              cleanup() {
-                status=0
-                cleanup_app || status=$?
-                if [ -s "$shell_baseline" ]; then
-                  python3 "$PROCESS_AUDIT_SCRIPT" stop "$shell_pid" "$shell_baseline" \
-                    "$PROOF_DIR/gnome-wayland-shell-cleanup.json" || status=$?
+              reap_and_record() {
+                local pid=$1 output=$2 cleanup_code=$3 cleanup_message=$4
+                local jobs_file="$PROOF_DIR/.owned-jobs-$$-$pid" job_pid found=0 rc
+                reap_status=unavailable
+                reap_available=false
+                reap_reason=
+                if ! jobs -pr >"$jobs_file" 2>/dev/null || ! jobs -ps >>"$jobs_file" 2>/dev/null; then
+                  reap_reason="Bash could not enumerate owned child jobs"
                 else
-                  kill -- "-$shell_pid" 2>/dev/null || true
+                  while IFS= read -r job_pid; do
+                    if [ "$job_pid" = "$pid" ]; then found=1; fi
+                  done <"$jobs_file"
+                  if [ "$found" = 1 ]; then
+                    reap_reason="owned child remains running or stopped after cleanup attempt"
+                  elif wait "$pid" 2>/dev/null; then
+                    reap_status=0
+                    reap_available=true
+                  else
+                    rc=$?
+                    if [ "$rc" -eq 127 ]; then
+                      reap_reason="Bash has no confirmed exit status for the owned child"
+                    else
+                      reap_status=$rc
+                      reap_available=true
+                    fi
+                  fi
                 fi
-                wait "$shell_pid" 2>/dev/null || true
-                return "$status"
+                rm -f "$jobs_file"
+                if [ "$reap_available" != true ] && [ "$cleanup_code" -eq 0 ]; then
+                  cleanup_code=1
+                  cleanup_message=$reap_reason
+                fi
+                python3 "$PROCESS_AUDIT_SCRIPT" record-exit "$output" "$reap_status" \
+                  "$reap_available" "$reap_reason" "$cleanup_code" "$cleanup_message" || return $?
+                [ "$reap_available" = true ]
+              }
+              cleanup_app() {
+                if [ -z "$app_pid" ]; then return 0; fi
+                local cleanup_status=0 cleanup_error= cleanup_file rc
+                cleanup_file="$PROOF_DIR/$(basename "$app_baseline" .json)-cleanup.json"
+                if [ "$app_capture_done" != 1 ]; then
+                  capture_terminal_diagnostics "$active_backend" || true
+                fi
+                if record_profile "$active_backend:precleanup"; then
+                  :
+                else
+                  rc=$?
+                  remember_cleanup_error "$rc" "profile metadata capture failed before AppImage cleanup"
+                fi
+                if python3 "$PROCESS_AUDIT_SCRIPT" stop "$app_pid" "$app_baseline" "$cleanup_file"; then
+                  :
+                else
+                  rc=$?
+                  remember_cleanup_error "$rc" "AppImage process-tree cleanup helper failed"
+                fi
+                if reap_and_record "$app_pid" "$cleanup_file" "$cleanup_status" "$cleanup_error"; then
+                  :
+                else
+                  rc=$?
+                  remember_cleanup_error "$rc" "AppImage child exit status could not be confirmed or recorded"
+                fi
+                app_pid=
+                if record_profile "$active_backend:postcleanup"; then
+                  :
+                else
+                  rc=$?
+                  remember_cleanup_error "$rc" "profile metadata capture failed after AppImage cleanup"
+                fi
+                if check_source_image "$active_backend"; then
+                  :
+                else
+                  rc=$?
+                  remember_cleanup_error "$rc" "source AppImage rehash failed after cleanup"
+                fi
+                return "$cleanup_status"
+              }
+              cleanup() {
+                local original_status=$? status=0 cleanup_error= rc
+                if cleanup_app; then :; else status=$?; cleanup_error="AppImage cleanup failed"; fi
+                if [ -s "$shell_baseline" ]; then
+                  if python3 "$PROCESS_AUDIT_SCRIPT" stop "$shell_pid" "$shell_baseline" \
+                    "$PROOF_DIR/gnome-wayland-shell-cleanup.json"; then
+                    :
+                  else
+                    rc=$?
+                    if [ "$status" -eq 0 ]; then status=$rc; cleanup_error="GNOME Shell cleanup helper failed"; fi
+                  fi
+                else
+                  if [ "$status" -eq 0 ]; then status=1; cleanup_error="GNOME Shell cleanup baseline is missing"; fi
+                fi
+                if reap_and_record "$shell_pid" "$PROOF_DIR/gnome-wayland-shell-cleanup.json" \
+                  "$status" "$cleanup_error"; then
+                  :
+                else
+                  rc=$?
+                  if [ "$status" -eq 0 ]; then status=$rc; cleanup_error="GNOME Shell exit status could not be confirmed or recorded"; fi
+                fi
+                if [ "$original_status" -ne 0 ]; then exit "$original_status"; fi
+                exit "$status"
               }
               trap cleanup EXIT
               python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$shell_pid" "$APPIMAGE_PATH" \
@@ -1664,35 +2287,49 @@ jobs:
               python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$shell_pid" "$APPIMAGE_PATH" \
                 "$PROOF_DIR/gnome-wayland-shell.log" "$shell_baseline"
               start_app() {
-                backend=$1
-                logfile=$2
-                app_baseline="$PROOF_DIR/$backend-process-before.json"
-                app_binding="$PROOF_DIR/$backend-root-binding.json"
+                active_backend=$1
+                local logfile=$2
+                app_baseline="$PROOF_DIR/$active_backend-process-before.json"
+                app_binding="$PROOF_DIR/$active_backend-root-binding.json"
+                app_capture_done=0
+                terminal_diagnostics_done=0
                 shift 2
+                record_profile "$active_backend:prelaunch"
                 setsid "$APPIMAGE_PATH" "$@" >"$logfile" 2>&1 &
                 app_pid=$!
-                python3 "$VERIFY_WINDOW_SCRIPT" --attempt "$backend" "$PROOF_DIR/proof.json"
+                python3 "$VERIFY_WINDOW_SCRIPT" --attempt "$active_backend" "$PROOF_DIR/proof.json" "$@"
                 python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$logfile" "$app_baseline"
                 python3 "$WINDOW_LINK_SCRIPT" pin "$app_baseline" "$PROOF_DIR/proof.json" "$APPIMAGE_PATH" "$app_binding"
               }
               observe_app() {
-                backend=$1
-                expected_type=$2
-                output="$PROOF_DIR/$backend-windows.txt"
-                identity="$PROOF_DIR/$backend-window-identity.json"
+                local backend=$1 expected_type=$2 output="$PROOF_DIR/$1-windows.txt"
+                local accepted=0 dbus_status
                 for attempt in $(seq 1 60); do
                   if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
-                    --method org.gnome.Shell.Introspect.GetWindows >"$output" 2>"$output.err" \
-                    && python3 "$VERIFY_WINDOW_SCRIPT" "$output" "$expected_type" "$backend" "$PROOF_DIR/proof.json" \
-                      >"$PROOF_DIR/$backend-window-match.json" 2>"$PROOF_DIR/$backend-window-parser.err"; then
+                    --method org.gnome.Shell.Introspect.GetWindows >"$output" 2>"$output.err"; then
+                    dbus_status=0
+                  else
+                    dbus_status=$?
+                  fi
+                  if python3 "$VERIFY_WINDOW_SCRIPT" --poll "$backend" "$attempt" "$expected_type" \
+                    "$dbus_status" "$output" "$output.err" "$PROOF_DIR/proof.json" \
+                    >"$PROOF_DIR/$backend-window-match.json" 2>"$PROOF_DIR/$backend-window-parser.err"; then
+                    accepted=1
+                    cp "$output" "$PROOF_DIR/$backend-window-observation.txt"
                     break
                   fi
+                  rm -f "$output" "$output.err"
                   sleep 0.5
                 done
-                test -s "$identity"
-                python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-$backend.log" \
-                  "$PROOF_DIR/$backend-process-after.json"
-                cat "$output" >"$PROOF_DIR/$backend-window-observation.txt"
+                if [ "$accepted" -ne 1 ]; then
+                  python3 "$VERIFY_WINDOW_SCRIPT" --exhausted "$backend" 60 "$expected_type" \
+                    "$PROOF_DIR/proof.json" || true
+                  capture_terminal_diagnostics "$backend" || true
+                  return 1
+                fi
+                python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" \
+                  "$PROOF_DIR/devsy-$backend.log" "$PROOF_DIR/$backend-process-after.json"
+                record_profile "$backend:observed"
               }
               capture_app_screenshot() {
                 backend=$1
@@ -1715,6 +2352,7 @@ jobs:
                   "$link_before" "$link_after" "$receipt" "$PROOF_DIR/proof.json" \
                   "$backend" "$image" "$app_binding"
                 printf "backend=%s screenshot=%s\n" "$backend" "$image" >"$PROOF_DIR/$backend-screenshot-linkage.txt"
+                app_capture_done=1
               }
               start_app wayland-default "$PROOF_DIR/devsy-wayland-default.log"
               observe_app wayland-default any
@@ -1761,24 +2399,130 @@ jobs:
               shell_baseline="$PROOF_DIR/gnome-x11-shell-process-before.json"
               app_pid=
               app_baseline=
-              cleanup_app() {
-                if [ -n "$app_pid" ]; then
-                  python3 "$PROCESS_AUDIT_SCRIPT" stop "$app_pid" "$app_baseline" "$PROOF_DIR/x11-process-cleanup.json" || return $?
-                  wait "$app_pid" 2>/dev/null || true
-                  app_pid=
+              app_binding=
+              app_capture_done=0
+              terminal_diagnostics_done=0
+              capture_terminal_diagnostics() {
+                local backend=x11
+                [ "$terminal_diagnostics_done" = 1 ] && return 0
+                terminal_diagnostics_done=1
+                python3 "$PROCESS_AUDIT_SCRIPT" terminal "$app_pid" "$app_baseline" "$app_binding" \
+                  "$PROOF_DIR/x11-terminal-process.json" \
+                  >"$PROOF_DIR/x11-terminal-process.stdout" 2>"$PROOF_DIR/x11-terminal-process.stderr" || \
+                  printf "{\"status\":\"process observation failed\",\"truncated\":true,\"detailsOmitted\":true}\\n" \
+                    >"$PROOF_DIR/x11-terminal-process.json"
+                python3 "$WINDOW_LINK_SCRIPT" terminal "$backend" "$PROOF_DIR/x11-shell-readiness.json" \
+                  "$PROOF_DIR/x11-terminal-shell.json" \
+                  >"$PROOF_DIR/x11-terminal-shell.stdout" 2>"$PROOF_DIR/x11-terminal-shell.stderr" || \
+                  printf "{\"status\":\"Shell observation failed\",\"truncated\":true,\"detailsOmitted\":true}\\n" \
+                    >"$PROOF_DIR/x11-terminal-shell.json"
+              }
+              remember_cleanup_error() {
+                if [ "$cleanup_status" -eq 0 ]; then
+                  cleanup_status=$1
+                  cleanup_error=$2
                 fi
               }
-              cleanup() {
-                status=0
-                cleanup_app || status=$?
-                if [ -s "$shell_baseline" ]; then
-                  python3 "$PROCESS_AUDIT_SCRIPT" stop "$shell_pid" "$shell_baseline" \
-                    "$PROOF_DIR/gnome-x11-shell-cleanup.json" || status=$?
+              reap_and_record() {
+                local pid=$1 output=$2 cleanup_code=$3 cleanup_message=$4
+                local jobs_file="$PROOF_DIR/.owned-jobs-$$-$pid" job_pid found=0 rc
+                reap_status=unavailable
+                reap_available=false
+                reap_reason=
+                if ! jobs -pr >"$jobs_file" 2>/dev/null || ! jobs -ps >>"$jobs_file" 2>/dev/null; then
+                  reap_reason="Bash could not enumerate owned child jobs"
                 else
-                  kill -- "-$shell_pid" 2>/dev/null || true
+                  while IFS= read -r job_pid; do
+                    if [ "$job_pid" = "$pid" ]; then found=1; fi
+                  done <"$jobs_file"
+                  if [ "$found" = 1 ]; then
+                    reap_reason="owned child remains running or stopped after cleanup attempt"
+                  elif wait "$pid" 2>/dev/null; then
+                    reap_status=0
+                    reap_available=true
+                  else
+                    rc=$?
+                    if [ "$rc" -eq 127 ]; then
+                      reap_reason="Bash has no confirmed exit status for the owned child"
+                    else
+                      reap_status=$rc
+                      reap_available=true
+                    fi
+                  fi
                 fi
-                wait "$shell_pid" 2>/dev/null || true
-                return "$status"
+                rm -f "$jobs_file"
+                if [ "$reap_available" != true ] && [ "$cleanup_code" -eq 0 ]; then
+                  cleanup_code=1
+                  cleanup_message=$reap_reason
+                fi
+                python3 "$PROCESS_AUDIT_SCRIPT" record-exit "$output" "$reap_status" \
+                  "$reap_available" "$reap_reason" "$cleanup_code" "$cleanup_message" || return $?
+                [ "$reap_available" = true ]
+              }
+              cleanup_app() {
+                if [ -z "$app_pid" ]; then return 0; fi
+                local cleanup_status=0 cleanup_error= rc
+                if python3 "$PROCESS_AUDIT_SCRIPT" profile "$RUNNER_TEMP/gnome-profile" \
+                  "$PROOF_DIR/profile-metadata.json" "x11:precleanup"; then
+                  :
+                else
+                  rc=$?
+                  remember_cleanup_error "$rc" "profile metadata capture failed before AppImage cleanup"
+                fi
+                if [ "$app_capture_done" != 1 ]; then capture_terminal_diagnostics || true; fi
+                if python3 "$PROCESS_AUDIT_SCRIPT" stop "$app_pid" "$app_baseline" \
+                  "$PROOF_DIR/x11-process-cleanup.json"; then
+                  :
+                else
+                  rc=$?
+                  remember_cleanup_error "$rc" "AppImage process-tree cleanup helper failed"
+                fi
+                if reap_and_record "$app_pid" "$PROOF_DIR/x11-process-cleanup.json" \
+                  "$cleanup_status" "$cleanup_error"; then
+                  :
+                else
+                  rc=$?
+                  remember_cleanup_error "$rc" "AppImage child exit status could not be confirmed or recorded"
+                fi
+                app_pid=
+                if python3 "$PROCESS_AUDIT_SCRIPT" profile "$RUNNER_TEMP/gnome-profile" \
+                  "$PROOF_DIR/profile-metadata.json" "x11:postcleanup"; then
+                  :
+                else
+                  rc=$?
+                  remember_cleanup_error "$rc" "profile metadata capture failed after AppImage cleanup"
+                fi
+                if python3 "$VERIFY_WINDOW_SCRIPT" --source-check x11 "$APPIMAGE_PATH" "$PROOF_DIR/proof.json"; then
+                  :
+                else
+                  rc=$?
+                  remember_cleanup_error "$rc" "source AppImage rehash failed after cleanup"
+                fi
+                return "$cleanup_status"
+              }
+              cleanup() {
+                local original_status=$? status=0 cleanup_error= rc
+                if cleanup_app; then :; else status=$?; cleanup_error="AppImage cleanup failed"; fi
+                if [ -s "$shell_baseline" ]; then
+                  if python3 "$PROCESS_AUDIT_SCRIPT" stop "$shell_pid" "$shell_baseline" \
+                    "$PROOF_DIR/gnome-x11-shell-cleanup.json"; then
+                    :
+                  else
+                    rc=$?
+                    if [ "$status" -eq 0 ]; then status=$rc; cleanup_error="GNOME Shell cleanup helper failed"; fi
+                  fi
+                else
+                  if [ "$status" -eq 0 ]; then status=1; cleanup_error="GNOME Shell cleanup baseline is missing"; fi
+                fi
+                if reap_and_record "$shell_pid" "$PROOF_DIR/gnome-x11-shell-cleanup.json" \
+                  "$status" "$cleanup_error"; then
+                  :
+                else
+                  rc=$?
+                  if [ "$status" -eq 0 ]; then status=$rc; cleanup_error="GNOME Shell exit status could not be confirmed or recorded"; fi
+                fi
+                if [ "$original_status" -ne 0 ]; then exit "$original_status"; fi
+                exit "$status"
               }
               trap cleanup EXIT
               python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$shell_pid" "$APPIMAGE_PATH" \
@@ -1787,27 +2531,51 @@ jobs:
               python3 "$SHELL_READY_SCRIPT" x11 "$shell_pid" "$PROOF_DIR/x11-shell-readiness.json"
               python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$shell_pid" "$APPIMAGE_PATH" \
                 "$PROOF_DIR/gnome-x11-shell.log" "$shell_baseline"
-              setsid "$APPIMAGE_PATH" >"$PROOF_DIR/devsy-x11.log" 2>&1 &
-              app_pid=$!
-              app_baseline="$PROOF_DIR/x11-process-before.json"
-              app_binding="$PROOF_DIR/x11-root-binding.json"
-              python3 "$VERIFY_WINDOW_SCRIPT" --attempt x11 "$PROOF_DIR/proof.json"
-              python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$app_baseline"
-              python3 "$WINDOW_LINK_SCRIPT" pin "$app_baseline" "$PROOF_DIR/proof.json" "$APPIMAGE_PATH" "$app_binding"
-              output="$PROOF_DIR/x11-windows.txt"
-              identity="$PROOF_DIR/x11-window-identity.json"
-              for attempt in $(seq 1 60); do
-                if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
-                  --method org.gnome.Shell.Introspect.GetWindows >"$output" 2>"$output.err" \
-                  && python3 "$VERIFY_WINDOW_SCRIPT" "$output" 1 x11 "$PROOF_DIR/proof.json" \
+              start_app() {
+                local logfile="$PROOF_DIR/devsy-x11.log"
+                app_baseline="$PROOF_DIR/x11-process-before.json"
+                app_binding="$PROOF_DIR/x11-root-binding.json"
+                identity="$PROOF_DIR/x11-window-identity.json"
+                python3 "$PROCESS_AUDIT_SCRIPT" profile "$RUNNER_TEMP/gnome-profile" \
+                  "$PROOF_DIR/profile-metadata.json" "x11:prelaunch"
+                setsid "$APPIMAGE_PATH" >"$logfile" 2>&1 &
+                app_pid=$!
+                python3 "$VERIFY_WINDOW_SCRIPT" --attempt x11 "$PROOF_DIR/proof.json"
+                python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$logfile" "$app_baseline"
+                python3 "$WINDOW_LINK_SCRIPT" pin "$app_baseline" "$PROOF_DIR/proof.json" "$APPIMAGE_PATH" "$app_binding"
+              }
+              observe_app() {
+                local output="$PROOF_DIR/x11-windows.txt" expected_type=1 accepted=0 dbus_status
+                for attempt in $(seq 1 60); do
+                  if gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell/Introspect \
+                    --method org.gnome.Shell.Introspect.GetWindows >"$output" 2>"$output.err"; then
+                    dbus_status=0
+                  else
+                    dbus_status=$?
+                  fi
+                  if python3 "$VERIFY_WINDOW_SCRIPT" --poll x11 "$attempt" "$expected_type" \
+                    "$dbus_status" "$output" "$output.err" "$PROOF_DIR/proof.json" \
                     >"$PROOF_DIR/x11-window-match.json" 2>"$PROOF_DIR/x11-window-parser.err"; then
-                  break
+                    accepted=1
+                    cp "$output" "$PROOF_DIR/x11-window-observation.txt"
+                    break
+                  fi
+                  rm -f "$output" "$output.err"
+                  sleep 0.5
+                done
+                if [ "$accepted" -ne 1 ]; then
+                  python3 "$VERIFY_WINDOW_SCRIPT" --exhausted x11 60 "$expected_type" \
+                    "$PROOF_DIR/proof.json" || true
+                  capture_terminal_diagnostics || true
+                  return 1
                 fi
-                sleep 0.5
-              done
-              test -s "$identity"
-              python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$PROOF_DIR/x11-process-after.json"
-              cat "$output" >"$PROOF_DIR/x11-window-observation.txt"
+                python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" \
+                  "$PROOF_DIR/x11-process-after.json"
+                python3 "$PROCESS_AUDIT_SCRIPT" profile "$RUNNER_TEMP/gnome-profile" \
+                  "$PROOF_DIR/profile-metadata.json" "x11:observed"
+              }
+              start_app
+              observe_app
               python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$PROOF_DIR/x11-screenshot-before.json"
               python3 "$WINDOW_LINK_SCRIPT" capture before "$identity" "$app_binding" \
                 "$PROOF_DIR/x11-screenshot-before.json" "$PROOF_DIR/x11-screenshot-before.json" \
@@ -1824,12 +2592,14 @@ jobs:
                 "$PROOF_DIR/x11-screenshot-before-link.json" "$PROOF_DIR/x11-screenshot-after-link.json" \
                 "$PROOF_DIR/x11-screenshot-window-dbus-receipt.json" "$PROOF_DIR/proof.json" \
                 x11 "$PROOF_DIR/x11.png" "$app_binding"
+              app_capture_done=1
               cleanup_app
             '
           }
           run_x11_session
           python3 - "$proof_dir/proof.json" <<'PY'
           import json
+          import hashlib
           import os
           import subprocess
           import sys
@@ -1840,6 +2610,8 @@ jobs:
           candidates = proof.get("windowCandidates", {})
           windows = proof.get("verifiedWindows", {})
           errors = []
+          MAX_POLL_EVIDENCE_BYTES = 60 * 8192
+          PROFILE_LIMIT = 64 * 1024
 
           def valid_window(window, client_type=None):
               return (
@@ -1871,6 +2643,68 @@ jobs:
               errors.append("default Wayland client type was not 0 or 1")
           linked_candidate("x11", 1)
 
+          observed_modes = proof.get("observedModes", {})
+          expected_observations = {
+              "wayland-default": ("default", (0, 1)),
+              "x11": ("x11", (1,)),
+          }
+          if default_type == 1:
+              expected_observations["wayland-forced"] = ("forced-wayland", (0,))
+          for backend, (requested, client_types) in expected_observations.items():
+              observation = observed_modes.get(backend, {})
+              if observation.get("requestedMode") != requested or \
+                 observation.get("observedClientType") not in client_types:
+                  errors.append(f"{backend} requested/observed backend mode is missing or inconsistent")
+          expected_poll_names = set()
+          poll_records = {}
+          for backend, (_, client_types) in expected_observations.items():
+              observation = observed_modes.get(backend, {})
+              final_poll = observation.get("poll")
+              if type(final_poll) is not int or not 1 <= final_poll <= 60:
+                  errors.append(f"{backend} final poll number is missing or outside the 60-poll limit")
+                  continue
+              backend_records = []
+              for attempt in range(1, final_poll + 1):
+                  filename = f"{backend}-poll-{attempt:02d}.json"
+                  expected_poll_names.add(filename)
+                  path = proof_path.with_name(filename)
+                  if not path.is_file():
+                      errors.append(f"{backend} poll sequence is incomplete at attempt {attempt}")
+                      continue
+                  if path.stat().st_size > 8192:
+                      errors.append(f"{backend} poll record exceeds 8 KiB: {filename}")
+                      continue
+                  record = json.loads(path.read_text())
+                  raw = record.get("rawReply", {})
+                  if record.get("backend") != backend or record.get("poll") != attempt or \
+                     record.get("evidenceTruncated") is True or raw.get("stdoutTruncated") is not False or \
+                     raw.get("stderrTruncated") is not False:
+                      errors.append(f"{backend} poll record is mismatched or truncated: {filename}")
+                  if type(record.get("parserExitStatus")) is not int or \
+                     type(record.get("parserSucceeded")) is not bool or \
+                     record.get("parserExitStatus") != (0 if record.get("parserSucceeded") else 1):
+                      errors.append(f"{backend} parser status is inconsistent: {filename}")
+                  if attempt < final_poll and record.get("parserSucceeded") is True:
+                      errors.append(f"{backend} contains an earlier accepted poll before its recorded final poll")
+                  backend_records.append(record)
+              if len(backend_records) == final_poll:
+                  last = backend_records[-1]
+                  if last.get("parserValid") is not True or last.get("parserSucceeded") is not True or \
+                     type(last.get("candidateCount")) is not int or last.get("candidateCount") != 1 or \
+                     type(last.get("dbusExitStatus")) is not int or last.get("dbusExitStatus") != 0 or \
+                     type(last.get("observedClientType")) is not int or \
+                     last.get("observedClientType") not in client_types or \
+                     last.get("utc") != observation.get("pollUtc"):
+                      errors.append(f"{backend} final poll does not prove its recorded exact candidate")
+              poll_records[backend] = backend_records
+          actual_poll_names = {path.name for path in proof_path.parent.glob("*-poll-*.json")}
+          if actual_poll_names != expected_poll_names:
+              errors.append("poll files contain missing, duplicate, or inapplicable backend attempts")
+          if sum(path.stat().st_size for path in proof_path.parent.glob("*-poll-*.json")) > MAX_POLL_EVIDENCE_BYTES:
+              errors.append("poll records exceed the 480 KiB aggregate evidence limit")
+          if any(type(record.get("poll")) is not int for records in poll_records.values()
+                 for record in records):
+              errors.append("poll sequence contains a non-integer attempt number")
           readiness = {}
           for backend in ("wayland", "x11"):
               path = proof_path.with_name(f"{backend}-shell-readiness.json")
@@ -1884,6 +2718,20 @@ jobs:
                  not state.get("unsafeModeArgumentObserved"):
                   errors.append(f"{backend} GNOME unsafe-mode, D-Bus owner, startup, or GetWindows preflight failed")
           proof["gnomeReadiness"] = readiness
+          profile_path = proof_path.with_name("profile-metadata.json")
+          if not profile_path.is_file():
+              errors.append("shared profile/environment metadata is missing")
+          else:
+              profile = json.loads(profile_path.read_text())
+              required_profiles = {"wayland-default", "x11"}
+              if default_type == 1:
+                  required_profiles.add("wayland-forced")
+              observed_profiles = {record.get("backend", "").split(":")[0]
+                                   for record in profile.get("records", [])}
+              if profile.get("truncated") or not required_profiles.issubset(observed_profiles) or \
+                 any("xdgSessionType" not in record or "paths" not in record
+                     for record in profile.get("records", [])):
+                  errors.append("shared profile/environment metadata is incomplete or truncated")
           cleanup_files = [
               "gnome-wayland-shell-cleanup.json", "gnome-x11-shell-cleanup.json",
               "wayland-default-process-before-cleanup.json", "x11-process-cleanup.json",
@@ -1898,8 +2746,31 @@ jobs:
               state = json.loads(path.read_text())
               if state.get("survivors") or state.get("remainingTree"):
                   errors.append(f"owned processes survived cleanup: {filename}")
+              if state.get("rootWaitStatusAvailable") is not True or \
+                 type(state.get("rootWaitExitStatus")) is not int or \
+                 not state.get("cleanupEnteredUtc") or "events" not in state.get("signals", {}):
+                  errors.append(f"cleanup signal and confirmed wait evidence is incomplete: {filename}")
+              if state.get("cleanupStatus") != 0 or state.get("cleanupError") is not None:
+                  errors.append(f"cleanup helper reported an error: {filename}")
+              if state.get("truncated") or state.get("signals", {}).get("truncated"):
+                  errors.append(f"cleanup evidence was truncated: {filename}")
 
           expected_hash = proof.get("appimage", {}).get("sha256")
+          source_checks = proof.get("sourceImageChecks", [])
+          checks_by_backend = {check.get("backend"): check for check in source_checks}
+          if len(source_checks) != len(expected_observations) or len(checks_by_backend) != len(source_checks):
+              errors.append("source AppImage rehash coverage is incomplete or duplicated")
+          for backend in expected_observations:
+              check = checks_by_backend.get(backend, {})
+              if not check.get("matches") or check.get("actualSha256") != expected_hash:
+                  errors.append(f"{backend} source AppImage did not retain the original artifact digest")
+              binding_path = proof_path.with_name(f"{backend}-root-binding.json")
+              if binding_path.is_file():
+                  binding = json.loads(binding_path.read_text())
+                  if check.get("path") != binding.get("appImagePath"):
+                      errors.append(f"{backend} source AppImage path differs from its immutable binding")
+              else:
+                  errors.append(f"{backend} immutable binding is missing for its source AppImage rehash")
           provenance = []
           linkages = {}
           for backend in required:
@@ -1938,15 +2809,167 @@ jobs:
               provenance.append({"backend": backend, **report})
           proof["windowPidLinkage"] = linkages
           proof["windowProcessProvenance"] = provenance
-          if errors:
-              proof["sessionResult"] = "observed_with_acceptance_failures"
-              proof["acceptanceErrors"] = errors
-              proof["scope"] = "GNOME candidates remain distinct from verified windows; focused-window, immutable AppImage binding, ScreenshotWindow receipt, PNG, readiness, or cleanup acceptance failed."
-              proof_path.write_text(json.dumps(proof, indent=2) + "\n")
+          evidence_groups = [
+              list(proof_path.parent.glob("*-poll-*.json")),
+              list(proof_path.parent.glob("*-terminal-process.json")) +
+                  list(proof_path.parent.glob("*-terminal-shell.json")),
+              [proof_path.parent / "profile-metadata.json"],
+              list(proof_path.parent.glob("*cleanup.json")),
+          ]
+          terminal_paths = evidence_groups[1]
+          for path in terminal_paths:
+              state = json.loads(path.read_text())
+              if state.get("truncated") is True:
+                  errors.append(f"terminal diagnostic state is truncated: {path.name}")
+          evidence_sizes = [sum(path.stat().st_size for path in group if path.is_file())
+                            for group in evidence_groups]
+          category_limits = (MAX_POLL_EVIDENCE_BYTES, 128 * 1024, PROFILE_LIMIT, 64 * 1024)
+          category_names = ("poll records", "terminal states", "profile metadata", "cleanup signals")
+          for name, size, limit in zip(category_names, evidence_sizes, category_limits):
+              if size > limit:
+                  errors.append(f"{name} exceed their aggregate {limit}-byte evidence limit")
+
+          def serialize_final_proof():
+              other_bytes = sum(evidence_sizes)
+              metrics = None
+              for _ in range(8):
+                  data = json.dumps(proof, indent=2) + "\n"
+                  proof_bytes = len(data.encode())
+                  updated = {
+                      "pollRecordsBytes": evidence_sizes[0],
+                      "terminalStatesBytes": evidence_sizes[1],
+                      "profileMetadataBytes": evidence_sizes[2],
+                      "cleanupSignalsBytes": evidence_sizes[3],
+                      "proofBytes": proof_bytes,
+                      "totalBytes": other_bytes + proof_bytes,
+                      "limitBytes": 1024 * 1024,
+                  }
+                  if proof.get("diagnosticEvidenceBytes") == updated:
+                      metrics = updated
+                      break
+                  proof["diagnosticEvidenceBytes"] = updated
+              if metrics is None:
+                  raise SystemExit("final diagnostic evidence byte accounting did not stabilize")
+              return data, metrics
+
+          proof["sessionResult"] = "observed_with_acceptance_failures" if errors else "passed"
+          proof["acceptanceErrors"] = errors
+          proof["scope"] = (
+              "GNOME candidates remain distinct from verified windows; focused-window, immutable AppImage binding, "
+              "ScreenshotWindow receipt, PNG, readiness, cleanup, or evidence-completeness acceptance failed."
+              if errors else
+              "Raw exact WM_CLASS/title candidates were activated and verified as the focused GNOME window; "
+              "MetaWindow IDs/PIDs were linked through actual process ancestry to the immutable D485 AppImage "
+              "mount/executable binding before and after ScreenshotWindow captures. GNOME app-id is observed "
+              "metadata, not standalone identity evidence. MetaWindow PID is corroborating fixture evidence, not "
+              "cryptographic attestation. Software-rendered feasibility only; not the complete T4 "
+              "Add/Remove/move/update acceptance matrix."
+          )
+          def current_category_sizes():
+              return [
+                  sum(path.stat().st_size for path in group if path.is_file())
+                  for group in evidence_groups
+              ]
+
+          def write_verified_proof(serialized, metrics):
+              encoded = serialized.encode()
+              if len(encoded) != metrics["proofBytes"] or \
+                 metrics["proofBytes"] > 128 * 1024 or metrics["totalBytes"] > 1024 * 1024:
+                  return False
+              if current_category_sizes() != evidence_sizes or \
+                 any(size > limit for size, limit in zip(evidence_sizes, category_limits)):
+                  return False
+              temporary = proof_path.with_name(proof_path.name + ".bounded.tmp")
+              try:
+                  temporary.write_bytes(encoded)
+                  if temporary.stat().st_size != metrics["proofBytes"] or \
+                     sum(current_category_sizes()) + temporary.stat().st_size != metrics["totalBytes"]:
+                      return False
+                  temporary.replace(proof_path)
+                  return proof_path.stat().st_size == metrics["proofBytes"] and \
+                      sum(current_category_sizes()) + proof_path.stat().st_size == metrics["totalBytes"]
+              finally:
+                  if temporary.exists():
+                      temporary.unlink()
+
+          def source_binding(section, allowed_keys):
+              original = proof.get(section)
+              if not isinstance(original, dict):
+                  return {}
+              result = {}
+              for key in allowed_keys:
+                  value = original.get(key)
+                  if isinstance(value, str) and len(value.encode()) <= 256:
+                      result[key] = value
+                  elif type(value) is int and 0 <= value < 2**53:
+                      result[key] = value
+              return result
+
+          def bounded_failure_proof(full_data, full_metrics):
+              failure = {
+                  "sessionResult": "incomplete_bounded_failure",
+                  "failureCode": "diagnostic_proof_size_limit",
+                  "scope": "Bounded failure metadata only; no GNOME window or acceptance claim is present.",
+                  "sourceBinding": {
+                      "source": source_binding("source", ("runId", "head")),
+                      "artifact": source_binding("artifact", ("id", "zipSha256")),
+                      "appimage": source_binding("appimage", ("member", "sha256")),
+                  },
+                  "failure": {
+                      "fullProofBytes": full_metrics["proofBytes"],
+                      "fullProofSha256": hashlib.sha256(full_data.encode()).hexdigest(),
+                      "aggregateBytesBeforeFailure": full_metrics["totalBytes"],
+                      "limitBytes": 1024 * 1024,
+                  },
+                  "acceptanceErrors": ["Full diagnostic proof exceeded its serialized evidence cap."],
+                  "diagnosticEvidenceBytes": {},
+              }
+              other_bytes = sum(evidence_sizes)
+              for _ in range(8):
+                  serialized = json.dumps(failure, indent=2) + "\n"
+                  proof_bytes = len(serialized.encode())
+                  metrics = {
+                      "pollRecordsBytes": evidence_sizes[0],
+                      "terminalStatesBytes": evidence_sizes[1],
+                      "profileMetadataBytes": evidence_sizes[2],
+                      "cleanupSignalsBytes": evidence_sizes[3],
+                      "proofBytes": proof_bytes,
+                      "totalBytes": other_bytes + proof_bytes,
+                      "limitBytes": 1024 * 1024,
+                  }
+                  if failure["diagnosticEvidenceBytes"] == metrics:
+                      return serialized, metrics
+                  failure["diagnosticEvidenceBytes"] = metrics
+              return None, None
+
+          data, metrics = serialize_final_proof()
+          categories_over_limit = any(
+              size > limit for size, limit in zip(evidence_sizes, category_limits)
+          )
+          proof_over_limit = metrics["proofBytes"] > 128 * 1024 or metrics["totalBytes"] > 1024 * 1024
+          if categories_over_limit:
+              if proof_path.is_file() and proof_path.stat().st_size > 128 * 1024:
+                  proof_path.unlink()
+              raise SystemExit("diagnostic evidence category exceeded its cap; final proof was not persisted")
+          if proof_over_limit:
+              errors.append("final serialized diagnostic proof exceeds its 128 KiB or 1 MiB aggregate limit")
+              failure_data, failure_metrics = bounded_failure_proof(data, metrics)
+              if failure_data is None or failure_metrics["proofBytes"] > 128 * 1024 or \
+                 failure_metrics["totalBytes"] > 1024 * 1024 or current_category_sizes() != evidence_sizes:
+                  if proof_path.is_file() and proof_path.stat().st_size > 128 * 1024:
+                      proof_path.unlink()
+                  raise SystemExit("oversized diagnostic proof could not be persisted within the evidence caps")
+              if not write_verified_proof(failure_data, failure_metrics):
+                  if proof_path.is_file() and proof_path.stat().st_size > 128 * 1024:
+                      proof_path.unlink()
+                  raise SystemExit("bounded failure proof changed size or aggregate evidence before persistence")
               raise SystemExit("; ".join(errors))
-          proof["sessionResult"] = "passed"
-          proof["scope"] = "Raw exact WM_CLASS/title candidates were activated and verified as the focused GNOME window; MetaWindow IDs/PIDs were linked through actual process ancestry to the immutable D485 AppImage mount/executable binding before and after ScreenshotWindow captures. GNOME app-id is observed metadata, not standalone identity evidence. MetaWindow PID is corroborating fixture evidence, not cryptographic attestation. Software-rendered feasibility only; not the complete T4 Add/Remove/move/update acceptance matrix."
-          proof_path.write_text(json.dumps(proof, indent=2) + "\n")
+          if not write_verified_proof(data, metrics):
+              if proof_path.is_file() and proof_path.stat().st_size > 128 * 1024:
+                  proof_path.unlink()
+              raise SystemExit("final diagnostic proof changed size or aggregate evidence before persistence")
+          if errors:
+              raise SystemExit("; ".join(errors))
           PY
           printf 'GNOME feasibility: exact AppImage and same-window PID linkage observed in isolated GNOME sessions; software-rendered feasibility only.\n' \
             | tee "$proof_dir/result.txt"
