@@ -469,6 +469,32 @@ func TestFindDevContainerTreatsTerminalPodAsStopped(t *testing.T) {
 	assert.Equal(t, config.ContainerStatusExited, details.State.Status)
 }
 
+func TestFindDevContainerKeepsVolumeWithoutSavedOptionsFindable(t *testing.T) {
+	pvc := workspacePVC(t)
+	raw, err := json.Marshal(&DevContainerInfo{WorkspaceID: "ws"})
+	require.NoError(t, err)
+	pvc.Annotations[DevsyInfoAnnotation] = string(raw)
+	c := newFakeCluster(t, pvc)
+
+	details, err := c.k.FindDevContainer(context.Background(), "ws")
+
+	require.NoError(t, err, "stop and delete must still find a volume with no saved options")
+	require.NotNil(t, details)
+	assert.Equal(t, config.ContainerStatusExited, details.State.Status)
+	assert.Contains(t, details.LifecycleTopologyError, "no saved run options")
+}
+
+func TestVerifyDesiredPodReportsMissingPodWithoutInternalSentinel(t *testing.T) {
+	options := canonicalTopologyOptions(t, false)
+	c := newFakeCluster(t, savedRunVolume(t, options))
+
+	err := c.k.verifyDesiredPod(context.Background(), testPodID, options)
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, errPodChanged)
+	assert.Contains(t, err.Error(), "retry the operation")
+}
+
 func workspacePVC(t *testing.T) *corev1.PersistentVolumeClaim {
 	t.Helper()
 	info, err := json.Marshal(

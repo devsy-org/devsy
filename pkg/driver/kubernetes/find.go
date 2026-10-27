@@ -23,9 +23,6 @@ func (k *KubernetesDriver) FindDevContainer(
 	} else if pvc == nil {
 		return nil, nil
 	}
-	if containerInfo.Options == nil {
-		return nil, fmt.Errorf("workspace volume %q has no saved run options", workspaceId)
-	}
 
 	// check pod
 	pod, err := k.getPod(ctx, pvc.Name)
@@ -44,10 +41,21 @@ func (k *KubernetesDriver) FindDevContainer(
 	if pod != nil {
 		startedAt = pod.CreationTimestamp.String()
 	}
-	dockerless, imageEntrypoint, topologyErr := observedPodTopology(pod, containerInfo.Options)
-	topologyError := ""
-	if topologyErr != nil {
-		topologyError = topologyErr.Error()
+	// A volume without saved options still has to be found so stop and delete can clean it up.
+	var (
+		dockerless, imageEntrypoint bool
+		topologyError               string
+		labels                      = map[string]string{}
+	)
+	if containerInfo.Options == nil {
+		topologyError = fmt.Sprintf("workspace volume %q has no saved run options", workspaceId)
+	} else {
+		var topologyErr error
+		dockerless, imageEntrypoint, topologyErr = observedPodTopology(pod, containerInfo.Options)
+		if topologyErr != nil {
+			topologyError = topologyErr.Error()
+		}
+		labels = config.ListToObject(containerInfo.Options.Labels)
 	}
 
 	return &config.ContainerDetails{
@@ -61,7 +69,7 @@ func (k *KubernetesDriver) FindDevContainer(
 			StartedAt: startedAt,
 		},
 		Config: config.ContainerDetailsConfig{
-			Labels: config.ListToObject(containerInfo.Options.Labels),
+			Labels: labels,
 		},
 	}, nil
 }

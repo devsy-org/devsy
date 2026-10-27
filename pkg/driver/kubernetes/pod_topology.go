@@ -126,7 +126,11 @@ func (k *KubernetesDriver) verifyDesiredPod(
 		return err
 	}
 	if pod == nil {
-		return errPodChanged
+		return fmt.Errorf(
+			"pod for workspace %q is gone right after it started; it may have been deleted "+
+				"or already stopped for inactivity; retry the operation",
+			id,
+		)
 	}
 	return verifyDesiredTopology(pod, options)
 }
