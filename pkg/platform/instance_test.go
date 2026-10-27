@@ -77,7 +77,14 @@ func (s *instanceReadinessSuite) TestIsTemplateSyncedSyncOnceOverridesResolvedCo
 }
 
 func (s *instanceReadinessSuite) TestInstanceReadyRequiresPhaseAndTemplateSync() {
-	s.False(instanceReady(newInstanceWithPhase(storagev1.InstancePending)))
+	pending := newInstanceWithPhase(storagev1.InstancePending)
+	pending.Status.Conditions = agentstoragev1.Conditions{
+		templateResolvedCondition(corev1.ConditionTrue),
+	}
+	s.False(
+		instanceReady(pending),
+		"pending phase must block readiness even when template is synced",
+	)
 
 	instance := newInstanceWithPhase(storagev1.InstanceReady)
 	s.False(instanceReady(instance), "ready phase alone is not enough without template sync")
