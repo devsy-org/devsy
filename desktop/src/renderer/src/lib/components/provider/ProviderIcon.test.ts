@@ -257,13 +257,26 @@ describe("ProviderIcon", () => {
       expect(image(container).getAttribute("src")).toBe(DARK)
     })
 
-    it("treats a stale reply as no custom image and shows the fallback", async () => {
-      providerIcon.mockResolvedValue({ revision: "rev-b", stale: true })
-      const { container } = render(ProviderIcon, { props: custom })
+    it("bounds repeated stale replies and leaves unavailable lookups uncached", async () => {
+      let requests = 0
+      providerIcon.mockImplementation(() => {
+        requests += 1
+        if (requests <= 2) {
+          return Promise.resolve({ revision: "rev-b", stale: true })
+        }
+        return Promise.resolve({ revision: "rev-a", dataUrl: LIGHT })
+      })
+      const unavailable = render(ProviderIcon, { props: custom })
 
+      await waitFor(() => expect(requests).toBe(2))
+      expect(image(unavailable.container).getAttribute("src")).toBe(PLACEHOLDER)
+      unavailable.unmount()
+
+      const recovered = render(ProviderIcon, { props: custom })
       await waitFor(() =>
-        expect(image(container).getAttribute("src")).toBe(PLACEHOLDER),
+        expect(image(recovered.container).getAttribute("src")).toBe(LIGHT),
       )
+      expect(requests).toBe(3)
     })
 
     it("re-requests images after the active context changes", async () => {
@@ -278,6 +291,168 @@ describe("ProviderIcon", () => {
       expect(providerIcon).toHaveBeenLastCalledWith(
         expect.objectContaining({ context: "other" }),
       )
+    })
+
+    it("recovers an icon after an A-B-A switch during a pending read", async () => {
+      const firstA = Promise.withResolvers<ProviderIconReply>()
+      const freshA = Promise.withResolvers<ProviderIconReply>()
+      const freshAStarted = Promise.withResolvers<void>()
+      let contextACalls = 0
+      providerIcon.mockImplementation(
+        ({ context }: { context: string }): Promise<ProviderIconReply> => {
+          if (context === "work") {
+            contextACalls += 1
+            if (contextACalls === 1) return firstA.promise
+            freshAStarted.resolve()
+            return freshA.promise
+          }
+          return Promise.resolve({ revision: "rev-a", dataUrl: DARK })
+        },
+      )
+      const { container } = render(ProviderIcon, { props: custom })
+
+      activeContext.set("other")
+      await waitFor(() =>
+        expect(image(container).getAttribute("src")).toBe(DARK),
+      )
+
+      const paintedSources: string[] = []
+      const observer = new MutationObserver((records) => {
+        for (const record of records) {
+          if (record.attributeName === "src") {
+            paintedSources.push(
+              (record.target as HTMLImageElement).getAttribute("src") ?? "",
+            )
+          }
+        }
+      })
+      observer.observe(container, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ["src"],
+      })
+
+      activeContext.set("work")
+      firstA.resolve({ revision: "rev-a", dataUrl: DARK, stale: true })
+
+      await freshAStarted.promise
+      await firstA.promise
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(paintedSources).not.toContain(DARK)
+      observer.disconnect()
+
+      freshA.resolve({ revision: "rev-a", dataUrl: LIGHT })
+      await waitFor(() =>
+        expect(image(container).getAttribute("src")).toBe(LIGHT),
+      )
+    })
+
+    it("reloads the icon after a pending provider is deleted and re-added", async () => {
+      const revokedRequest = Promise.withResolvers<ProviderIconReply>()
+      const firstRequestStarted = Promise.withResolvers<void>()
+      let requests = 0
+      providerIcon.mockImplementation(() => {
+        requests += 1
+        if (requests === 1) {
+          firstRequestStarted.resolve()
+          return revokedRequest.promise
+        }
+        return Promise.resolve({ revision: "rev-a", dataUrl: LIGHT })
+      })
+      const removed = render(ProviderIcon, { props: custom })
+      await firstRequestStarted.promise
+      removed.unmount()
+      const current = render(ProviderIcon, { props: custom })
+      const paintedSources: string[] = []
+      const observer = new MutationObserver((records) => {
+        for (const record of records) {
+          if (record.attributeName === "src") {
+            paintedSources.push(
+              (record.target as HTMLImageElement).getAttribute("src") ?? "",
+            )
+          }
+        }
+      })
+      observer.observe(current.container, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ["src"],
+      })
+
+      revokedRequest.resolve({
+        revision: "rev-a",
+        dataUrl: DARK,
+        stale: true,
+      })
+      await waitFor(() =>
+        expect(image(current.container).getAttribute("src")).toBe(LIGHT),
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(paintedSources).not.toContain(DARK)
+      observer.disconnect()
+    })
+
+    it("recovers a remounted icon after other lookups evict its pending result", async () => {
+      const revokedRequest = Promise.withResolvers<ProviderIconReply>()
+      const firstRequestStarted = Promise.withResolvers<void>()
+      let originalRequests = 0
+      providerIcon.mockImplementation(
+        ({ providerName }: { providerName: string }) => {
+          if (providerName === custom.name) {
+            originalRequests += 1
+            if (originalRequests === 1) {
+              firstRequestStarted.resolve()
+              return revokedRequest.promise
+            }
+          }
+          return Promise.resolve({ revision: "rev-a", dataUrl: LIGHT })
+        },
+      )
+      const removed = render(ProviderIcon, { props: custom })
+      await firstRequestStarted.promise
+      removed.unmount()
+      const current = render(ProviderIcon, { props: custom })
+      const paintedSources: string[] = []
+      const observer = new MutationObserver((records) => {
+        for (const record of records) {
+          if (record.attributeName === "src") {
+            paintedSources.push(
+              (record.target as HTMLImageElement).getAttribute("src") ?? "",
+            )
+          }
+        }
+      })
+      observer.observe(current.container, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ["src"],
+      })
+
+      const otherIcons = Array.from({ length: 64 }, (_, index) =>
+        render(ProviderIcon, {
+          props: { ...custom, name: `other-${index}` },
+        }),
+      )
+      await waitFor(() => {
+        for (const other of otherIcons) {
+          expect(image(other.container).getAttribute("src")).toBe(LIGHT)
+        }
+      })
+
+      revokedRequest.resolve({
+        revision: "rev-a",
+        dataUrl: DARK,
+        stale: true,
+      })
+      await waitFor(() =>
+        expect(image(current.container).getAttribute("src")).toBe(LIGHT),
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(paintedSources).not.toContain(DARK)
+      observer.disconnect()
     })
 
     it("shares a pending lookup across cards without leaking another revision", async () => {

@@ -12,6 +12,9 @@ import (
 	"mime"
 	"strings"
 
+	"golang.org/x/image/riff"
+	"golang.org/x/image/vp8"
+	"golang.org/x/image/vp8l"
 	"golang.org/x/image/webp"
 )
 
@@ -67,10 +70,11 @@ func validateIconImage(data []byte, declaredContentType string) (string, error) 
 }
 
 type rasterImageDecoder struct {
-	format       string
-	mimeType     string
-	decodeConfig func(io.Reader) (image.Config, error)
-	decode       func(io.Reader) (image.Image, error)
+	format        string
+	mimeType      string
+	decodeConfig  func(io.Reader) (image.Config, error)
+	validateFrame func([]byte, image.Config) error
+	decode        func(io.Reader) (image.Image, error)
 }
 
 func validateIconFormat(data []byte) (string, error) {
@@ -88,10 +92,11 @@ func validateIconFormat(data []byte) (string, error) {
 		})
 	case isRIFFWebP(data):
 		return validateRasterIcon(data, rasterImageDecoder{
-			format:       "WebP",
-			mimeType:     mimeWebP,
-			decodeConfig: webp.DecodeConfig,
-			decode:       webp.Decode,
+			format:        "WebP",
+			mimeType:      mimeWebP,
+			decodeConfig:  webp.DecodeConfig,
+			validateFrame: validateWebPFrame,
+			decode:        webp.Decode,
 		})
 	}
 
@@ -109,10 +114,42 @@ func validateRasterIcon(data []byte, decoder rasterImageDecoder) (string, error)
 	if err := checkDimensions(cfg.Width, cfg.Height); err != nil {
 		return "", err
 	}
-	if _, err := decoder.decode(bytes.NewReader(data)); err != nil {
+	if err := validateRasterHeader(data, cfg, decoder.validateFrame); err != nil {
+		return "", err
+	}
+	decoded, err := decoder.decode(bytes.NewReader(data))
+	if err != nil {
 		return "", fmt.Errorf("invalid %s: %w", decoder.format, err)
 	}
+	if err := validateRasterOutput(decoded, cfg, decoder.validateFrame != nil); err != nil {
+		return "", err
+	}
 	return decoder.mimeType, nil
+}
+
+func validateRasterHeader(
+	data []byte,
+	cfg image.Config,
+	validateFrame func([]byte, image.Config) error,
+) error {
+	if validateFrame == nil {
+		return nil
+	}
+	return validateFrame(data, cfg)
+}
+
+func validateRasterOutput(decoded image.Image, cfg image.Config, checkCanvas bool) error {
+	if !checkCanvas {
+		return nil
+	}
+	bounds := decoded.Bounds()
+	if err := checkDimensions(bounds.Dx(), bounds.Dy()); err != nil {
+		return err
+	}
+	if bounds.Dx() != cfg.Width || bounds.Dy() != cfg.Height {
+		return errors.New("decoded WebP dimensions do not match its header")
+	}
+	return nil
 }
 
 func isHTMLContentType(declared string) bool {
@@ -130,6 +167,82 @@ func checkDimensions(width, height int) error {
 	if width > maxIconDimension || height > maxIconDimension {
 		return fmt.Errorf("image is %dx%d, larger than %d pixels per side",
 			width, height, maxIconDimension)
+	}
+	return nil
+}
+
+func validateWebPFrame(data []byte, canvas image.Config) error {
+	form, chunks, err := riff.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("invalid WebP: %w", err)
+	}
+	if form != (riff.FourCC{'W', 'E', 'B', 'P'}) {
+		return errors.New("invalid WebP form")
+	}
+	return validateWebPChunks(chunks, canvas, len(data))
+}
+
+func validateWebPChunks(chunks *riff.Reader, canvas image.Config, encodedLength int) error {
+	for {
+		chunkID, chunkLength, chunkData, err := chunks.Next()
+		if errors.Is(err, io.EOF) {
+			return errors.New("invalid WebP: image frame is missing")
+		}
+		if err != nil {
+			return fmt.Errorf("invalid WebP: %w", err)
+		}
+		if chunkID == (riff.FourCC{'V', 'P', '8', ' '}) &&
+			int64(chunkLength) > int64(encodedLength) {
+			return errors.New("invalid WebP: frame chunk exceeds encoded body")
+		}
+		frame, found, err := decodeWebPFrameChunk(chunkID, chunkLength, chunkData)
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		return validateWebPCanvas(frame, canvas)
+	}
+}
+
+func decodeWebPFrameChunk(
+	chunkID riff.FourCC,
+	chunkLength uint32,
+	chunkData io.Reader,
+) (image.Config, bool, error) {
+	switch chunkID {
+	case riff.FourCC{'V', 'P', '8', ' '}:
+		decoder := vp8.NewDecoder()
+		decoder.Init(chunkData, int(chunkLength))
+		header, err := decoder.DecodeFrameHeader()
+		if err != nil {
+			return image.Config{}, false, fmt.Errorf("invalid WebP frame: %w", err)
+		}
+		return image.Config{Width: header.Width, Height: header.Height}, true, nil
+	case riff.FourCC{'V', 'P', '8', 'L'}:
+		frame, err := vp8l.DecodeConfig(chunkData)
+		if err != nil {
+			return image.Config{}, false, fmt.Errorf("invalid WebP frame: %w", err)
+		}
+		return frame, true, nil
+	default:
+		return image.Config{}, false, nil
+	}
+}
+
+func validateWebPCanvas(frame, canvas image.Config) error {
+	if err := checkDimensions(frame.Width, frame.Height); err != nil {
+		return err
+	}
+	if frame.Width != canvas.Width || frame.Height != canvas.Height {
+		return fmt.Errorf(
+			"WebP frame dimensions %dx%d do not match canvas %dx%d",
+			frame.Width,
+			frame.Height,
+			canvas.Width,
+			canvas.Height,
+		)
 	}
 	return nil
 }

@@ -347,12 +347,50 @@ type githubIconCredentials struct {
 
 func (r githubIconCredentials) Resolve(
 	ctx context.Context,
-	_, host, _ string,
+	_, host, path string,
 ) (username, password string, err error) {
 	switch strings.ToLower(host) {
 	case "github.com", "raw.githubusercontent.com":
-		return r.inner.Resolve(ctx, iconSchemeHTTPS, "github.com", "")
+		repositoryPath := githubRepositoryCredentialPath(path)
+		if repositoryPath == "" {
+			return "", "", nil
+		}
+		return r.inner.Resolve(ctx, iconSchemeHTTPS, "github.com", repositoryPath)
 	default:
 		return "", "", nil
 	}
+}
+
+func githubRepositoryCredentialPath(path string) string {
+	if !strings.HasPrefix(path, "/") {
+		return ""
+	}
+	owner, remaining, found := strings.Cut(path[1:], "/")
+	if !found {
+		return ""
+	}
+	repository, _, _ := strings.Cut(remaining, "/")
+	if !isGitHubRepositorySegment(owner) || !isGitHubRepositorySegment(repository) {
+		return ""
+	}
+	return "/" + owner + "/" + repository
+}
+
+func isGitHubRepositorySegment(segment string) bool {
+	if segment == "" || segment == "." || segment == ".." {
+		return false
+	}
+	for i := range segment {
+		if !isGitHubRepositoryByte(segment[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func isGitHubRepositoryByte(value byte) bool {
+	lower := value | 0x20
+	return lower >= 'a' && lower <= 'z' ||
+		value >= '0' && value <= '9' ||
+		value == '.' || value == '_' || value == '-'
 }

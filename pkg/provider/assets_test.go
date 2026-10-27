@@ -64,6 +64,17 @@ func validWebPBytes(t *testing.T) []byte {
 	return data
 }
 
+func oversizedWebPFrameBytes(t *testing.T) []byte {
+	t.Helper()
+	data, err := base64.StdEncoding.DecodeString(
+		"UklGRiQAAABXRUJQVlA4TBcAAAAvABAAAAfQ//73v/8BICH8f69F9D/9AwA=",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 // webpExtendedBytes builds an incomplete VP8X header for dimension bounds tests.
 
 func webpExtendedBytes(width, height uint32) []byte {
@@ -81,6 +92,19 @@ func webpExtendedBytes(width, height uint32) []byte {
 	copy(data[24:27], dimension[:3])
 	binary.LittleEndian.PutUint32(dimension[:], height-1)
 	copy(data[27:30], dimension[:3])
+	return data
+}
+
+func webpExtendedFrameBytes(width, height uint32, frame []byte) []byte {
+	if len(frame) < 20 || string(frame[12:16]) != "VP8L" {
+		panic("frame must contain a VP8L chunk")
+	}
+	data := append(webpExtendedBytes(width, height), frame[12:]...)
+	riffSize := int64(len(data) - 8)
+	if riffSize < 0 || riffSize > int64(^uint32(0)) {
+		panic("WebP fixture exceeds RIFF chunk length")
+	}
+	binary.LittleEndian.PutUint32(data[4:8], uint32(riffSize))
 	return data
 }
 
