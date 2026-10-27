@@ -94,3 +94,15 @@ func (s *instanceReadinessSuite) TestInstanceReadyRequiresPhaseAndTemplateSync()
 	}
 	s.True(instanceReady(instance))
 }
+
+func (s *instanceReadinessSuite) TestInstanceReadyRejectsSyncOnceWhenTemplateResolved() {
+	instance := newInstanceWithPhase(storagev1.InstanceReady)
+	instance.Spec.TemplateRef = &storagev1.TemplateRef{SyncOnce: true}
+	instance.Status.Conditions = agentstoragev1.Conditions{
+		templateResolvedCondition(corev1.ConditionTrue),
+	}
+	s.False(
+		instanceReady(instance),
+		"SyncOnce must block readiness until the controller clears it",
+	)
+}
