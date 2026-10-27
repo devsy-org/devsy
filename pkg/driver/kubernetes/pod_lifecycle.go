@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -175,7 +176,9 @@ func (k *KubernetesDriver) reconcileDesiredPod(
 	pod *corev1.Pod,
 	options *driver.RunOptions,
 ) (bool, error) {
-	if classifyPod(pod) == podRunning && podLaunchDiffers(pod, options) {
+	// A pending pod has not started its containers, so replacing it loses nothing.
+	if state := classifyPod(pod); (state == podRunning || state == podPending) &&
+		podLaunchDiffers(pod, options) {
 		return false, k.deleteObservedPod(ctx, pod.Name, pod.UID)
 	}
 	reused, err := k.reconcileObservedPod(ctx, pod.Name, pod)
@@ -377,14 +380,39 @@ func validateNoExtraContainers(pod *corev1.Pod, timeout time.Duration) error {
 	return nil
 }
 
+// launchCommandChanged reports whether admission rewrote what the devsy
+// container executes, which could displace the managed daemon.
+func launchCommandChanged(requested, admitted *corev1.Pod) bool {
+	want, got := devsyContainer(requested), devsyContainer(admitted)
+	if want == nil || got == nil {
+		return false
+	}
+	return !slices.Equal(want.Command, got.Command) || !slices.Equal(want.Args, got.Args)
+}
+
+func devsyContainer(pod *corev1.Pod) *corev1.Container {
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name == DevContainerName {
+			return &pod.Spec.Containers[i]
+		}
+	}
+	return nil
+}
+
 // rejectAdmittedPod removes a freshly created pod whose admitted topology
 // violates the stop contract. The workspace volume is kept.
 func (k *KubernetesDriver) rejectAdmittedPod(
 	ctx context.Context,
-	created *corev1.Pod,
+	created, requested *corev1.Pod,
 	timeout time.Duration,
 ) error {
 	topologyErr := validatePodTopology(created, timeout)
+	if topologyErr == nil && timeout > 0 && launchCommandChanged(requested, created) {
+		topologyErr = fmt.Errorf(
+			"the %q container no longer starts the Devsy daemon as its main process",
+			DevContainerName,
+		)
+	}
 	if topologyErr == nil {
 		return nil
 	}

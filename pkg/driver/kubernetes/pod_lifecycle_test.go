@@ -734,11 +734,12 @@ func TestAdmittedPodWithInjectedContainerIsRemovedAndVolumeKept(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: testPodID, Namespace: testNamespace},
 	}
 	c := newFakeCluster(t, pvc)
-	admitted := c.pod(t, podSpec{uid: "u1", phase: corev1.PodPending})
+	requested := c.pod(t, podSpec{uid: "u1", phase: corev1.PodPending})
+	admitted := requested.DeepCopy()
 	admitted.Spec.Containers = append(admitted.Spec.Containers, corev1.Container{Name: "injected"})
 	c.putPod(t, admitted)
 
-	err := c.k.rejectAdmittedPod(context.Background(), admitted, time.Minute)
+	err := c.k.rejectAdmittedPod(context.Background(), admitted, requested, time.Minute)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "injected")
@@ -753,8 +754,62 @@ func TestAdmittedPodAcceptedWhenTopologyHolds(t *testing.T) {
 	pod := c.pod(t, podSpec{uid: "u1", phase: corev1.PodPending})
 	c.putPod(t, pod)
 
-	require.NoError(t, c.k.rejectAdmittedPod(context.Background(), pod, time.Minute))
+	err := c.k.rejectAdmittedPod(context.Background(), pod, pod.DeepCopy(), time.Minute)
+
+	require.NoError(t, err)
 	assert.True(t, c.podExists(t))
+}
+
+func TestAdmittedPodWithRewrittenCommandIsRemovedWhenTimeoutEnabled(t *testing.T) {
+	requested := newFakeCluster(t).pod(t, podSpec{uid: "u1", phase: corev1.PodPending})
+	requested.Spec.Containers[0].Command = []string{"/bin/sh"}
+	admitted := requested.DeepCopy()
+	admitted.Spec.Containers[0].Command = []string{"/webhook/entrypoint"}
+
+	t.Run("enabled", func(t *testing.T) {
+		c := newFakeCluster(t)
+		c.putPod(t, admitted)
+
+		err := c.k.rejectAdmittedPod(context.Background(), admitted, requested, time.Minute)
+
+		require.ErrorContains(t, err, "Devsy daemon as its main process")
+		assert.False(t, c.podExists(t))
+	})
+	t.Run("disabled", func(t *testing.T) {
+		c := newFakeCluster(t)
+		c.putPod(t, admitted)
+
+		require.NoError(t, c.k.rejectAdmittedPod(context.Background(), admitted, requested, 0))
+		assert.True(t, c.podExists(t), "no stop contract is at stake without a timeout")
+	})
+}
+
+func TestPendingPodWithDifferentLaunchRecipeIsReplaced(t *testing.T) {
+	c := newFakeCluster(t)
+	pod := c.pod(t, podSpec{uid: "u1", phase: corev1.PodPending})
+	pod.Spec.Containers[0].Image = "registry.example/old:1"
+	c.putPod(t, pod)
+	options := &driver.RunOptions{Image: "registry.example/new:2"}
+
+	reused, err := c.k.reconcileDesiredPod(context.Background(), pod, options)
+
+	require.NoError(t, err)
+	assert.False(t, reused, "the caller creates the requested pod")
+	assert.False(t, c.podExists(t), "a stale pending pod must not be waited on")
+}
+
+func TestSameRunOptionsTreatsNilAndEmptyCollectionsAsEqual(t *testing.T) {
+	const image = "registry.example/app:1"
+	nilForm := &driver.RunOptions{Image: image}
+	emptyForm := &driver.RunOptions{
+		Image: image, Cmd: []string{}, Env: map[string]string{}, Labels: []string{},
+	}
+
+	assert.True(t, sameRunOptions(nilForm, emptyForm))
+	assert.False(t, sameRunOptions(nilForm, &driver.RunOptions{Image: "other"}))
+	assert.False(t, sameRunOptions(nilForm, &driver.RunOptions{Image: image, Cmd: []string{"x"}}))
+	assert.True(t, sameRunOptions(nil, nil))
+	assert.False(t, sameRunOptions(nilForm, nil))
 }
 
 func TestExplicitStopWaitsForPodToBeGone(t *testing.T) {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"reflect"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/driver"
@@ -160,7 +159,7 @@ func (k *KubernetesDriver) persistRunOptions(
 	if err := verifyVolumeOwner(pvc, saved, options.UID); err != nil {
 		return err
 	}
-	if reflect.DeepEqual(saved.Options, options) {
+	if sameRunOptions(saved.Options, options) {
 		return nil
 	}
 	next := *saved

@@ -1,9 +1,10 @@
 package kubernetes
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"reflect"
 	"slices"
 	"strconv"
 
@@ -100,6 +101,17 @@ func validateImageMainRecipe(options *driver.RunOptions) error {
 	return nil
 }
 
+// sameRunOptions compares the persisted JSON form, in which a nil and an empty
+// collection are the same value.
+func sameRunOptions(a, b *driver.RunOptions) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	left, leftErr := json.Marshal(a)
+	right, rightErr := json.Marshal(b)
+	return leftErr == nil && rightErr == nil && bytes.Equal(left, right)
+}
+
 func (k *KubernetesDriver) verifyDesiredPod(
 	ctx context.Context,
 	id string,
@@ -115,7 +127,7 @@ func (k *KubernetesDriver) verifyDesiredPod(
 	if err := verifyVolumeOwner(pvc, info, options.UID); err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(info.Options, options) {
+	if !sameRunOptions(info.Options, options) {
 		return fmt.Errorf(
 			"workspace %q desired run configuration changed during startup; retry the operation",
 			id,

@@ -583,7 +583,7 @@ func (k *KubernetesDriver) runPod(
 	if err != nil {
 		return fmt.Errorf("create pod: %w", err)
 	}
-	if err := k.rejectAdmittedPod(ctx, created, timeout); err != nil {
+	if err := k.rejectAdmittedPod(ctx, created, pod, timeout); err != nil {
 		return err
 	}
 

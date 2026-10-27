@@ -57,13 +57,23 @@ func TestResolveInactivityTimeout(t *testing.T) {
 }
 
 func TestResolveInactivityTimeoutRejectsBadConfiguration(t *testing.T) {
+	const malformed = "soon"
 	tests := []struct {
 		name    string
 		in      TimeoutInputs
 		wantErr string
 	}{
-		{"malformed", TimeoutInputs{Canonical: "soon"}, "agent.containerInactivityTimeout"},
-		{"malformed legacy", TimeoutInputs{Legacy: "soon"}, "agent.kubernetes.inactivityTimeout"},
+		{"malformed", TimeoutInputs{Canonical: malformed}, "agent.containerInactivityTimeout"},
+		{
+			"malformed legacy",
+			TimeoutInputs{Legacy: malformed},
+			"agent.kubernetes.inactivityTimeout",
+		},
+		{
+			"malformed legacy beside canonical",
+			TimeoutInputs{Canonical: "10m", Legacy: malformed},
+			"agent.kubernetes.inactivityTimeout",
+		},
 		{"negative", TimeoutInputs{Canonical: "-1m"}, "must not be negative"},
 		{
 			"conflicting aliases",
