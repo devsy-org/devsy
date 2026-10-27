@@ -39,8 +39,11 @@ func PrepareCmdUser(cmd *exec.Cmd, userName string) error {
 func patchEnvVars(env []string, patches map[string]string) []string {
 	newEnv := map[string]string{}
 	for _, v := range env {
-		t := strings.Split(v, "=")
-		newEnv[t[0]] = t[1]
+		name, value, ok := strings.Cut(v, "=")
+		if !ok || name == "" {
+			continue
+		}
+		newEnv[name] = value
 	}
 
 	// apply patches
