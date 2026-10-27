@@ -2365,9 +2365,9 @@ jobs:
                 :
               elif [ "$default_client_type" = 1 ]; then
                 cleanup_app
-                start_app wayland-forced "$PROOF_DIR/devsy-wayland-forced.log" --ozone-platform=wayland --enable-features=UseOzonePlatform
+                start_app wayland-forced "$PROOF_DIR/devsy-wayland-forced.log" --ozone-platform=wayland --enable-features=UseOzonePlatform --disable-gpu-compositing
                 observe_app wayland-forced 0
-                printf "backend=wayland client-type=0 launchargs=--ozone-platform=wayland --enable-features=UseOzonePlatform (forced probe; not default behavior) app_pid=%s\n" "$app_pid" \
+                printf "backend=wayland client-type=0 launchargs=--ozone-platform=wayland --enable-features=UseOzonePlatform --disable-gpu-compositing (compositor experiment; not ordinary native-Wayland acceptance) app_pid=%s\n" "$app_pid" \
                   >"$PROOF_DIR/wayland-forced-launch-mode.txt"
                 capture_app_screenshot wayland-forced "$PROOF_DIR/wayland-forced.png" \
                   "$PROOF_DIR/devsy-wayland-forced.log"
@@ -2862,8 +2862,9 @@ jobs:
               "MetaWindow IDs/PIDs were linked through actual process ancestry to the immutable D485 AppImage "
               "mount/executable binding before and after ScreenshotWindow captures. GNOME app-id is observed "
               "metadata, not standalone identity evidence. MetaWindow PID is corroborating fixture evidence, not "
-              "cryptographic attestation. Software-rendered feasibility only; not the complete T4 "
-              "Add/Remove/move/update acceptance matrix."
+              "cryptographic attestation. Software-rendered feasibility only. The forced probe, if required, "
+              "disables GPU compositing; its success establishes flagged-path feasibility, not ordinary native "
+              "Wayland acceptance or the complete T4 Add/Remove/move/update acceptance matrix."
           )
           def current_category_sizes():
               return [
