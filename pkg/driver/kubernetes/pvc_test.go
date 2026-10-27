@@ -220,10 +220,10 @@ func newMockPvcDriver(
 		pvcs: make(map[string]*corev1.PersistentVolumeClaim),
 	}
 	for k, v := range initialPvcs {
-		copy := v.DeepCopy()
-		copy.UID = types.UID("pvc-" + copy.Name)
-		copy.ResourceVersion = "1"
-		mock.pvcs[k] = copy
+		pvc := v.DeepCopy()
+		pvc.UID = types.UID("pvc-" + pvc.Name)
+		pvc.ResourceVersion = "1"
+		mock.pvcs[k] = pvc
 	}
 	srv := httptest.NewServer(mock)
 	t.Cleanup(srv.Close)
