@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -69,13 +70,13 @@ func (cmd *LogsDaemonCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	command := fmt.Sprintf(
-		"%q internal agent workspace logs-daemon --context %q --id %q",
-		workspaceClient.AgentPath(),
-		workspaceClient.Context(),
-		workspaceClient.Workspace(),
+		"%s internal agent workspace logs-daemon --context %s --id %s",
+		shellescape.Quote(workspaceClient.AgentPath()),
+		shellescape.Quote(workspaceClient.Context()),
+		shellescape.Quote(workspaceClient.Workspace()),
 	)
 	if agentInfo.Agent.DataPath != "" {
-		command += fmt.Sprintf(" --agent-dir %q", agentInfo.Agent.DataPath)
+		command += " --agent-dir " + shellescape.Quote(agentInfo.Agent.DataPath)
 	}
 
 	var stdout bytes.Buffer

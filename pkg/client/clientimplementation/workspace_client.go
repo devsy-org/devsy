@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client"
@@ -721,10 +722,10 @@ func (s *workspaceClient) agentWorkspaceCommand(subcommand string) (string, erro
 	}
 
 	return fmt.Sprintf(
-		"%q internal agent workspace %s --workspace-info %q",
-		info.Agent.Path,
+		"%s internal agent workspace %s --workspace-info %s",
+		shellescape.Quote(info.Agent.Path),
 		subcommand,
-		compressed,
+		shellescape.Quote(compressed),
 	), nil
 }
 
@@ -1118,10 +1119,10 @@ func buildAgentCommand(
 	agentCommand, workspaceInfo string,
 ) string {
 	command := fmt.Sprintf(
-		"%q internal agent workspace %s --workspace-info %q",
-		workspaceClient.AgentPath(),
+		"%s internal agent workspace %s --workspace-info %s",
+		shellescape.Quote(workspaceClient.AgentPath()),
 		agentCommand,
-		workspaceInfo,
+		shellescape.Quote(workspaceInfo),
 	)
 	if log.DebugEnabled() {
 		command += " --debug"

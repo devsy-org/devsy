@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"al.essio.dev/pkg/shellescape"
 	"github.com/devsy-org/devsy/pkg/agent"
 	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	client2 "github.com/devsy-org/devsy/pkg/client"
@@ -207,15 +208,15 @@ func (cmd *UpCmd) devsyUpMachineSSH(
 		return nil, fmt.Errorf("get agent info: %w", err)
 	}
 
-	sshTunnelCmd := fmt.Sprintf("'%s' internal ssh-server --stdio", client.AgentPath())
+	sshTunnelCmd := shellescape.Quote(client.AgentPath()) + " internal ssh-server --stdio"
 	if log.DebugEnabled() {
 		sshTunnelCmd += " --debug" //nolint:goconst
 	}
 
 	agentCommand := fmt.Sprintf(
-		"%q internal agent workspace up --workspace-info %q",
-		client.AgentPath(),
-		workspaceInfo,
+		"%s internal agent workspace up --workspace-info %s",
+		shellescape.Quote(client.AgentPath()),
+		shellescape.Quote(workspaceInfo),
 	)
 	if log.DebugEnabled() {
 		agentCommand += " --debug"
