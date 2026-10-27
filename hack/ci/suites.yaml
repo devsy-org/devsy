@@ -143,6 +143,8 @@ e2e:
   ungated:
     - label: gh-forwarding
       reason: sub-label that always accompanies the ssh suite label
+    - label: env-equals-isolated-home
+      reason: sub-label that always accompanies the up-provider-docker suite label
     - label: up-provider-podman-machine-bind
       reason: darwin-only spec that needs a local Podman machine; run manually on macOS
     - label: gpg

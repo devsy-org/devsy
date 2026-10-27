@@ -45,6 +45,28 @@ Pass `--log-output json` to get errors as JSON with a stable `code` and a `messa
 
 Run with `--debug` to see the full error chain.
 
+### VS Code-family editor launch diagnostics
+
+For VS Code, VSCodium, and related editors, a failed CLI launch records the
+`flavor`, `operation`, `route`, failed `stage`, and failure `class` (for example,
+`exit status 1` or `permission denied`). A successful URI-handler fallback
+does not erase that CLI warning. With `--debug`, the logs also record executable
+resolution, extension enumeration/installation, and dispatch stages. Use the
+same `operation` value to correlate these records within the workspace task's
+logs; it comes from the active IDE-launch status operation.
+
+Executable paths, command arguments, folder URIs, editor output, and underlying
+error text are deliberately omitted from these diagnostics because they may
+contain private paths, host names, or credentials that cannot be reliably
+redacted. Failure classes and stage names remain available; callers can inspect
+the original errors programmatically. The resolved file's `cli_kind` identifies
+an executable or batch-wrapper filename, not proof that a Windows wrapper ran.
+
+"Launch request dispatched" means the editor CLI or OS URI handler accepted the
+request. It does not prove that the editor stayed running or connected over SSH.
+If the editor closes or does not connect, collect its own logs separately and
+review them for private data before sharing.
+
 ### Windows: `line 2: $'\r': command not found`
 
 Windows line endings break shell scripts inside the container. Add this to `.gitattributes`:

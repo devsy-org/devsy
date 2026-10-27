@@ -21,11 +21,12 @@ const (
 )
 
 type SetupConfig struct {
-	Mode             Mode
-	PodmanPath       string
-	CrunPath         string
-	BootstrapTimeout time.Duration
-	GitHubEnvPath    string
+	Mode                  Mode
+	PodmanPath            string
+	CrunPath              string
+	BootstrapTimeout      time.Duration
+	GitHubEnvPath         string
+	GitHubStepSummaryPath string
 }
 
 func validateConfig(cfg SetupConfig, goos string) error {

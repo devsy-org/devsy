@@ -245,16 +245,12 @@ func UpdateInstance(
 		return nil, err
 	}
 
-	newInstance := instance.DeepCopy()
-	applyInstanceChanges(applyInstanceChangesParams{
-		instance:                instance,
-		newInstance:             newInstance,
-		selectedTemplate:        selectedTemplate,
-		selectedTemplateVersion: selectedTemplateVersion,
-		renderedParameters:      renderedParameters,
-	})
-
-	return newInstance, nil
+	return applyInstanceChanges(
+		instance,
+		selectedTemplate,
+		selectedTemplateVersion,
+		renderedParameters,
+	), nil
 }
 
 func selectUpdateTemplate(
@@ -416,31 +412,25 @@ func assignBoolFieldValue(fieldParameter *FieldParameter, value any) {
 	}
 }
 
-type applyInstanceChangesParams struct {
-	instance                *managementv1.DevsyWorkspaceInstance
-	newInstance             *managementv1.DevsyWorkspaceInstance
-	selectedTemplate        *managementv1.DevsyWorkspaceTemplate
-	selectedTemplateVersion string
-	renderedParameters      string
-}
+func applyInstanceChanges(
+	instance *managementv1.DevsyWorkspaceInstance,
+	selectedTemplate *managementv1.DevsyWorkspaceTemplate,
+	selectedTemplateVersion, renderedParameters string,
+) *managementv1.DevsyWorkspaceInstance {
+	newInstance := instance.DeepCopy()
+	if instance.Spec.TemplateRef != nil &&
+		instance.Spec.TemplateRef.Name != selectedTemplate.GetName() {
+		newInstance.Spec.TemplateRef.Name = selectedTemplate.GetName()
+	}
+	if instance.Spec.TemplateRef != nil &&
+		instance.Spec.TemplateRef.Version != selectedTemplateVersion {
+		newInstance.Spec.TemplateRef.Version = selectedTemplateVersion
+	}
+	if instance.Spec.Parameters != renderedParameters {
+		newInstance.Spec.Parameters = renderedParameters
+	}
 
-func applyInstanceChanges(params applyInstanceChangesParams) {
-	instance := params.instance
-	newInstance := params.newInstance
-	// template
-	if instance.Spec.TemplateRef != nil &&
-		instance.Spec.TemplateRef.Name != params.selectedTemplate.GetName() {
-		newInstance.Spec.TemplateRef.Name = params.selectedTemplate.GetName()
-	}
-	// version
-	if instance.Spec.TemplateRef != nil &&
-		instance.Spec.TemplateRef.Version != params.selectedTemplateVersion {
-		newInstance.Spec.TemplateRef.Version = params.selectedTemplateVersion
-	}
-	// parameters
-	if instance.Spec.Parameters != params.renderedParameters {
-		newInstance.Spec.Parameters = params.renderedParameters
-	}
+	return newInstance
 }
 
 type (

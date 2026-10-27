@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -31,12 +32,21 @@ const (
 	windowsHardDeadlinePadding          = 10 * time.Second
 	windowsHardDeadlineDiagnosticsGrace = 2 * time.Second
 	maxTransientPullRetries             = 2
+	windowsHangTitle                    = "Windows podman start hang"
 )
 
 func platformSetup(ctx context.Context, deps Dependencies, cfg SetupConfig) error {
-	watchdog := armWatchdog(cfg.BootstrapTimeout+windowsHardDeadlinePadding, deps.Log)
+	watchdog := armWatchdog(
+		cfg.BootstrapTimeout+windowsHardDeadlinePadding,
+		deps.Log,
+		windowsHangReporter(deps, cfg),
+	)
 	defer watchdog.Stop()
 	return setupWindows(ctx, deps, cfg)
+}
+
+func windowsHangReporter(deps Dependencies, cfg SetupConfig) hangReporter {
+	return hangReporter{log: deps.Log, files: deps.Files, summaryPath: cfg.GitHubStepSummaryPath}
 }
 
 func setupWindows(ctx context.Context, deps Dependencies, cfg SetupConfig) error {
@@ -44,7 +54,13 @@ func setupWindows(ctx context.Context, deps Dependencies, cfg SetupConfig) error
 	if err != nil {
 		return err
 	}
-	state := &windowsSetup{ctx: ctx, deps: deps, budget: budget, cfg: cfg}
+	state := &windowsSetup{
+		ctx:    ctx,
+		deps:   deps,
+		budget: budget,
+		cfg:    cfg,
+		report: windowsHangReporter(deps, cfg),
+	}
 	runErr := state.run()
 	if runErr != nil {
 		// Per-command timeouts deliberately leave descendants (podman,
@@ -63,6 +79,7 @@ type windowsSetup struct {
 	deps   Dependencies
 	budget *Budget
 	cfg    SetupConfig
+	report hangReporter
 }
 
 func (s *windowsSetup) run() error {
@@ -99,7 +116,8 @@ func (s *windowsSetup) handleAttemptFailure(attempt int, failure error) error {
 	if canRecover {
 		reserve = windowsDiagnosticReserve
 	}
-	s.writeDiagnostics(reserve)
+	diagnostics := s.writeDiagnostics(reserve)
+	s.reportHang(failure, diagnostics)
 	if !canRecover || s.budget.Remaining(windowsDiagnosticReserve) < windowsMinimumRecoveryTime {
 		if canRecover {
 			s.writeDiagnostics(0)
@@ -137,11 +155,11 @@ func (s *windowsSetup) initializeMachine(attempt int) error {
 		return err
 	}
 	if result.TimedOut {
-		return fmt.Errorf(
-			"PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT attempt=%d %s",
-			attempt,
-			describeCommand(s.cfg.PodmanPath, args, result),
-		)
+		return &hangError{
+			code:    "PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT",
+			attempt: attempt,
+			detail:  describeCommand(s.cfg.PodmanPath, args, result),
+		}
 	}
 	if result.Success() {
 		return nil
@@ -168,11 +186,12 @@ func (s *windowsSetup) runMachineInit(
 	for pullAttempt := 1; ; pullAttempt++ {
 		initTimeout := s.budget.Bound(windowsInitTimeout, reserve)
 		if initTimeout <= 0 {
-			return CommandResult{}, fmt.Errorf(
-				"PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT attempt=%d output=%s",
-				attempt,
-				"PODMAN_WINDOWS_BOOTSTRAP_BUDGET_EXHAUSTED: insufficient initialization budget",
-			)
+			return CommandResult{}, &hangError{
+				code:    "PODMAN_WINDOWS_MACHINE_INIT_TIMEOUT",
+				attempt: attempt,
+				detail: "output=PODMAN_WINDOWS_BOOTSTRAP_BUDGET_EXHAUSTED: " +
+					"insufficient initialization budget",
+			}
 		}
 		result := s.runCommand(
 			CommandSpec{Path: s.cfg.PodmanPath, Args: args, Timeout: initTimeout},
@@ -241,6 +260,13 @@ func (s *windowsSetup) configureRootful(attempt int) error {
 		CommandSpec{Path: s.cfg.PodmanPath, Args: args, Timeout: 20 * time.Second},
 		windowsDiagnosticReserve,
 	)
+	if result.TimedOut {
+		return &hangError{
+			code:    "PODMAN_WINDOWS_MACHINE_START_FAILED",
+			attempt: attempt,
+			detail:  describeCommand(s.cfg.PodmanPath, args, result),
+		}
+	}
 	if !result.Success() {
 		return fmt.Errorf(
 			"PODMAN_WINDOWS_MACHINE_START_FAILED attempt=%d %s",
@@ -258,11 +284,11 @@ func (s *windowsSetup) startAndWait(attempt int) error {
 		windowsDiagnosticReserve,
 	)
 	if result.TimedOut {
-		return fmt.Errorf(
-			"PODMAN_WINDOWS_MACHINE_START_TIMEOUT attempt=%d %s",
-			attempt,
-			describeCommand(s.cfg.PodmanPath, args, result),
-		)
+		return &hangError{
+			code:    "PODMAN_WINDOWS_MACHINE_START_TIMEOUT",
+			attempt: attempt,
+			detail:  describeCommand(s.cfg.PodmanPath, args, result),
+		}
 	}
 	if !result.Success() {
 		return fmt.Errorf(
@@ -298,11 +324,11 @@ func (s *windowsSetup) waitForReady(attempt int) error {
 		)
 		s.deps.Clock.Sleep(sleep)
 	}
-	return fmt.Errorf(
-		"PODMAN_WINDOWS_READINESS_TIMEOUT attempt=%d last=%s",
-		attempt,
-		describeCommand(s.cfg.PodmanPath, []string{"info"}, last),
-	)
+	return &hangError{
+		code:    "PODMAN_WINDOWS_READINESS_TIMEOUT",
+		attempt: attempt,
+		detail:  "last=" + describeCommand(s.cfg.PodmanPath, []string{"info"}, last),
+	}
 }
 
 func (s *windowsSetup) recover(failure error) error {
@@ -390,7 +416,7 @@ func (s *windowsSetup) runCommand(spec CommandSpec, reserve time.Duration) Comma
 	return result
 }
 
-func (s *windowsSetup) writeDiagnostics(reserve time.Duration) {
+func (s *windowsSetup) writeDiagnostics(reserve time.Duration) string {
 	commands := []CommandSpec{
 		{Path: s.cfg.PodmanPath, Args: []string{"version"}, Timeout: 3 * time.Second},
 		{Path: s.cfg.PodmanPath, Args: []string{commandMachine, "list"}, Timeout: 3 * time.Second},
@@ -407,23 +433,51 @@ func (s *windowsSetup) writeDiagnostics(reserve time.Duration) {
 		{Path: commandWSL, Args: []string{"--status"}, Timeout: 3 * time.Second},
 		{Path: commandWSL, Args: []string{"-l", "-v"}, Timeout: 3 * time.Second},
 	}
+	var collected strings.Builder
+	record := func(line string) {
+		s.deps.Log.Printf("[podman-windows] %s", line)
+		collected.WriteString(line + "\n")
+	}
 	for _, command := range commands {
 		if s.budget.Remaining(reserve) <= 0 {
 			break
 		}
 		result := s.runCommand(command, reserve)
-		s.deps.Log.Printf(
-			"[podman-windows] %s %s: exit=%s timeout=%t %s",
+		record(fmt.Sprintf(
+			"%s %s: exit=%s timeout=%t %s",
 			command.Path,
 			strings.Join(command.Args, " "),
 			exitCodeString(result.ExitCode),
 			result.TimedOut,
 			result.Output(),
-		)
+		))
 	}
 	for _, process := range matchingWindowsProcesses() {
-		s.deps.Log.Printf("[podman-windows] process pid=%d name=%s", process.PID, process.Name)
+		record(describeProcess(process))
 	}
+	return collected.String()
+}
+
+func (s *windowsSetup) reportHang(failure error, diagnostics string) {
+	hang, ok := errors.AsType[*hangError](failure)
+	if !ok {
+		return
+	}
+	s.report.Report(windowsHangTitle, hang.summary(), hang.Error()+"\n\n"+diagnostics)
+}
+
+type hangError struct {
+	code    string
+	attempt int
+	detail  string
+}
+
+func (e *hangError) Error() string { return e.summary() + " " + e.detail }
+
+func (e *hangError) summary() string { return fmt.Sprintf("%s attempt=%d", e.code, e.attempt) }
+
+func describeProcess(process processInfo) string {
+	return fmt.Sprintf("process pid=%d name=%s", process.PID, process.Name)
 }
 
 func describeCommand(path string, args []string, result CommandResult) string {
@@ -467,7 +521,7 @@ type (
 	}
 )
 
-func armWatchdog(timeout time.Duration, log *Logger) watchdog {
+func armWatchdog(timeout time.Duration, log *Logger, report hangReporter) watchdog {
 	watch := &timerWatchdog{stop: make(chan struct{})}
 	go func() {
 		timer := time.NewTimer(timeout)
@@ -480,11 +534,7 @@ func armWatchdog(timeout time.Duration, log *Logger) watchdog {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				log.Printf(
-					"[podman-windows] hard_deadline_exceeded timeout_ms=%d",
-					timeout.Milliseconds(),
-				)
-				terminateStrayProcessesHook(log)
+				handleHardDeadline(timeout, log, report)
 			}()
 			select {
 			case <-done:
@@ -501,6 +551,30 @@ func armWatchdog(timeout time.Duration, log *Logger) watchdog {
 		timeout.Milliseconds(),
 	)
 	return watch
+}
+
+func handleHardDeadline(timeout time.Duration, log *Logger, report hangReporter) {
+	log.Printf("[podman-windows] hard_deadline_exceeded timeout_ms=%d", timeout.Milliseconds())
+	processes := runningProcessesReport()
+	reported := make(chan struct{})
+	go func() {
+		defer close(reported)
+		report.Report(
+			windowsHangTitle,
+			fmt.Sprintf("PODMAN_WINDOWS_HARD_DEADLINE timeout_ms=%d", timeout.Milliseconds()),
+			processes,
+		)
+	}()
+	terminateStrayProcessesHook(log)
+	<-reported
+}
+
+func runningProcessesReport() string {
+	var report strings.Builder
+	for _, process := range matchingWindowsProcesses() {
+		report.WriteString(describeProcess(process) + "\n")
+	}
+	return report.String()
 }
 
 func (w *timerWatchdog) Stop() { w.once.Do(func() { close(w.stop) }) }

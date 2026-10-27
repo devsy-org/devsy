@@ -18,6 +18,7 @@ import (
 const (
 	microsandboxResourceBuiltin  = provider.DeprecatedMicrosandboxSource
 	osLinux                      = "linux"
+	osDarwin                     = "darwin"
 	microsandboxExternalProvider = "github.com/devsy-org/devsy-provider-microsandbox@v0.1.10"
 	microsandboxRootUser         = "root"
 )
@@ -31,7 +32,7 @@ func skipIfNoMicrosandbox(ctx context.Context) {
 			microsandboxUnavailable("microsandbox requires KVM (/dev/kvm not accessible)")
 		}
 		_ = kvm.Close()
-	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
+	case runtime.GOOS == osDarwin && runtime.GOARCH == "arm64":
 		// Apple silicon supports microsandbox via the hypervisor framework.
 	default:
 		microsandboxUnavailable("microsandbox requires Apple silicon or Linux with KVM")
