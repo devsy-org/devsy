@@ -107,7 +107,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          packages=(dbus-daemon gnome-shell gnome-screenshot libfuse2t64 mesa-utils x11-utils xdotool xwayland xvfb)
+          packages=(dbus-daemon gnome-shell libfuse2t64 mesa-utils x11-utils xwayland xvfb)
           proof_dir="$RUNNER_TEMP/gnome-feasibility-proof"
           plan="$proof_dir/apt-plan.log"
           selected_file="$proof_dir/apt-selected-packages.txt"
@@ -404,7 +404,10 @@ jobs:
                   wm_class = property_value(block, "wm-class").strip("'\"")
                   client_type_match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, "client-type"))
                   hidden = property_value(block, "is-hidden")
-                  dimensions = {}
+                  focus = property_value(block, "has-focus")
+                  if focus not in ("true", "false"):
+                      continue
+                  dimensions = {"hasFocus": focus == "true"}
                   for key in ("width", "height"):
                       match = re.search(r"(?:u?int\d+)\s+(\d+)", property_value(block, key))
                       if match:
@@ -434,7 +437,7 @@ jobs:
               assert candidate[0] == {
                   "windowId": "44739516", "title": "Devsy", "appId": "window:1",
                   "wmClass": "sh.devsy.app", "clientType": 1, "isHidden": False,
-                  "width": 1000, "height": 737,
+                  "hasFocus": False, "width": 1000, "height": 737,
               }
               assert parse_candidates(actual, "0") == []
               assert len(parse_candidates(actual.replace("<uint32 1>", "<uint32 0>"), "0")) == 1
@@ -494,77 +497,191 @@ jobs:
           import re
           import subprocess
           import sys
+          import time
           from pathlib import Path
 
+          ACTIVATE_CODE = lambda window_id: (
+              "(() => { const w = global.get_window_actors().map(a => a.meta_window)"
+              f".find(w => w.get_id() === {int(window_id)}); if (!w) return false;"
+              "w.activate(global.get_current_time()); return true; })()"
+          )
+          FOCUS_CODE = (
+              "(() => { const w = global.display.get_focus_window(); if (!w) return null;"
+              "const r = w.get_frame_rect(); return [w.get_id(), w.get_pid(), w.get_client_type(),"
+              "r.x, r.y, r.width, r.height]; })()"
+          )
           EVAL_CODE = "global.get_window_actors().map(a => { const w = a.meta_window; const r = w.get_frame_rect(); return [w.get_id(), w.get_pid(), w.get_client_type(), r.x, r.y, r.width, r.height]; })"
-          IDENTITY_FIELDS = ("pid", "startTicks", "uid", "exe", "exeSha256", "mount", "appImagePath", "appImageSha256")
           EXPECTED_APPIMAGE = "Devsy_linux_x86_64.AppImage"
           EXPECTED_EXECUTABLE = "devsy-desktop"
           EXPECTED_WM_CLASS = "sh.devsy.app"
           EXPECTED_TITLE = "Devsy"
+          MOUNT_FIELDS = ("mountId", "device", "filesystemRoot", "mountpoint", "filesystem", "source")
+          PROCESS_FIELDS = ("pid", "ppid", "startTicks", "uid", "exe", "exeSha256", "mount", "mountNamespace")
 
-          def exact_app_process(record, expected_hash):
-              mount = record.get("mount") or {}
-              exe = Path(record.get("exe", ""))
-              appimage_path = Path(record.get("appImagePath", ""))
-              mountpoint = Path(mount.get("mountpoint", ""))
-              exe_hash = record.get("exeSha256", "")
+          def digest(value):
+              return re.fullmatch(r"[0-9a-f]{64}", str(value or "")) is not None
+
+          def exact_mount(mount, expected):
+              if not isinstance(mount, dict) or any(mount.get(key) != expected.get(key) for key in MOUNT_FIELDS):
+                  return False
               return (
-                  record.get("pid", 0) > 0 and record.get("startTicks", 0) > 0 and
-                  record.get("uid") == os.getuid() and exe.name == EXPECTED_EXECUTABLE and
-                  re.fullmatch(r"[0-9a-f]{64}", exe_hash) is not None and
-                  mountpoint.is_absolute() and exe.parent == mountpoint and
+                  isinstance(mount.get("mountId"), int) and mount["mountId"] > 0 and
+                  re.fullmatch(r"\d+:\d+", str(mount.get("device", ""))) is not None and
+                  Path(mount.get("filesystemRoot", "")).is_absolute() and
+                  Path(mount.get("mountpoint", "")).is_absolute() and
                   mount.get("filesystem") == f"fuse.{EXPECTED_APPIMAGE}" and
-                  mount.get("source") == EXPECTED_APPIMAGE and
-                  appimage_path.is_absolute() and appimage_path.name == EXPECTED_APPIMAGE and
-                  record.get("appImageSha256") == expected_hash
+                  mount.get("source") == EXPECTED_APPIMAGE
               )
 
-          def linked_record(window, meta, before, after, expected_hash):
-              if window.get("wmClass") != EXPECTED_WM_CLASS or window.get("title") != EXPECTED_TITLE:
-                  raise ValueError("candidate is not the exact Devsy WM_CLASS/title")
-              if str(meta[0]) != window["windowId"]:
-                  raise ValueError("MetaWindow id differs from the GetWindows candidate id")
-              if int(meta[1]) <= 0 or int(meta[2]) != window["clientType"]:
-                  raise ValueError("MetaWindow PID or client type is invalid")
-              if int(meta[5]) != window.get("width") or int(meta[6]) != window.get("height"):
-                  raise ValueError("MetaWindow geometry differs from GetWindows geometry")
-              if window.get("isHidden") is not False or int(meta[5]) <= 0 or int(meta[6]) <= 0:
-                  raise ValueError("Devsy candidate is hidden or has empty geometry")
-              pid = int(meta[1])
-              records = []
-              for snapshot in (before, after):
-                  record = next((item for item in snapshot["processes"] if item["pid"] == pid), None)
-                  if not record or not exact_app_process(record, expected_hash):
-                      raise ValueError("MetaWindow PID is not owned by the exact mounted D485 AppImage process")
-                  records.append(record)
-              if any(records[0].get(key) != records[1].get(key) for key in IDENTITY_FIELDS):
-                  raise ValueError("MetaWindow PID/start/UID/executable/mount/AppImage identity changed around screenshot")
-              return {
-                  "windowId": window["windowId"],
-                  "appId": window["appId"],
-                  "title": window["title"],
-                  "wmClass": window["wmClass"],
-                  "clientType": window["clientType"],
-                  "isHidden": window["isHidden"],
-                  "width": window["width"],
-                  "height": window["height"],
-                  "metaWindow": {"pid": pid, "clientType": int(meta[2]), "x": int(meta[3]),
-                                 "y": int(meta[4]), "width": int(meta[5]), "height": int(meta[6])},
-                  "appProcess": {key: records[1].get(key) for key in IDENTITY_FIELDS},
-              }
-          def attribution_matches(window, linked, expected_hash):
-              if any(linked.get(key) != window.get(key) for key in
-                     ("windowId", "appId", "title", "wmClass", "clientType", "isHidden", "width", "height")):
+          def exact_app_process(record, binding, require_initial_env=False):
+              if not isinstance(record, dict):
                   return False
-              meta = linked.get("metaWindow") or {}
-              process = linked.get("appProcess") or {}
+              expected = binding["mount"]
+              mount = record.get("mount") or {}
+              exe = Path(record.get("exe", ""))
+              mountpoint = Path(expected.get("mountpoint", ""))
+              appimage_path = record.get("appImagePath")
+              appimage_hash = record.get("appImageSha256")
+              try:
+                  inside_mount = os.path.commonpath((str(mountpoint), str(exe))) == str(mountpoint)
+              except ValueError:
+                  inside_mount = False
               return (
-                  meta.get("pid", 0) > 0 and meta.get("pid") == process.get("pid") and
-                  meta.get("clientType") == window.get("clientType") and
-                  meta.get("width") == window.get("width") and
-                  meta.get("height") == window.get("height") and
-                  exact_app_process(process, expected_hash)
+                  record.get("pid", 0) > 0 and record.get("startTicks", 0) > 0 and
+                  record.get("uid") == binding["uid"] and exe.is_absolute() and inside_mount and
+                  digest(record.get("exeSha256")) and exact_mount(mount, expected) and
+                  record.get("mountNamespace") == binding["mountNamespace"] and
+                  (appimage_path is None or appimage_path == binding["appImagePath"]) and
+                  (appimage_hash is None or appimage_hash == binding["appImageSha256"]) and
+                  (not require_initial_env or (
+                      appimage_path == binding["appImagePath"] and
+                      appimage_hash == binding["appImageSha256"]
+                  ))
+              )
+
+          def validate_snapshot(snapshot, binding, initial=False):
+              if snapshot.get("appImagePath") != binding["appImagePath"] or \
+                 snapshot.get("appImageSha256") != binding["appImageSha256"]:
+                  raise ValueError("top-level AppImage path/hash differs from the immutable launch binding")
+              if snapshot.get("rootPid") != binding["pid"] or \
+                 snapshot.get("rootStartTicks") != binding["startTicks"]:
+                  raise ValueError("AppImage root PID/start time changed")
+              root = next((item for item in snapshot.get("processes", []) if item.get("pid") == binding["pid"]), None)
+              if not root or any(root.get(key) != binding[key] for key in
+                                 ("startTicks", "uid", "exe", "exeSha256", "mountNamespace")) or \
+                 not exact_app_process(root, binding, require_initial_env=initial):
+                  raise ValueError("AppImage root process no longer matches its initial mount/executable binding")
+              return root
+
+          def pin_binding(snapshot, proof, expected_path):
+              expected_path = str(Path(expected_path))
+              expected_hash = proof.get("appimage", {}).get("sha256")
+              if not Path(expected_path).is_absolute() or Path(expected_path).name != EXPECTED_APPIMAGE or not digest(expected_hash):
+                  raise ValueError("source AppImage path or expected artifact digest is invalid")
+              if snapshot.get("appImagePath") != expected_path or snapshot.get("appImageSha256") != expected_hash:
+                  raise ValueError("initial process snapshot does not match the independently verified source AppImage")
+              root = next((item for item in snapshot.get("processes", []) if item.get("pid") == snapshot.get("rootPid")), None)
+              if not root or root.get("appImagePath") != expected_path or root.get("appImageSha256") != expected_hash:
+                  raise ValueError("initial AppImage root lacks exact APPIMAGE path/hash provenance")
+              mount = root.get("mount") or {}
+              exe = Path(root.get("exe", ""))
+              mountpoint = Path(mount.get("mountpoint", ""))
+              if exe.name != EXPECTED_EXECUTABLE or exe.parent != mountpoint or not digest(root.get("exeSha256")) or \
+                 not isinstance(root.get("startTicks"), int) or root["startTicks"] <= 0 or \
+                 not isinstance(root.get("uid"), int) or root["uid"] != os.getuid() or \
+                 not isinstance(root.get("mountNamespace"), str) or \
+                 not root["mountNamespace"] or not exact_mount(mount, mount):
+                  raise ValueError("initial AppImage root lacks executable, birth, UID, or FUSE mount-instance identity")
+              binding = {
+                  "version": 1, "appImagePath": expected_path, "appImageSha256": expected_hash,
+                  "pid": root["pid"], "startTicks": root["startTicks"], "uid": root["uid"],
+                  "exe": root["exe"], "exeSha256": root["exeSha256"],
+                  "mount": {key: mount[key] for key in MOUNT_FIELDS},
+                  "mountNamespace": root["mountNamespace"],
+              }
+              validate_snapshot(snapshot, binding, initial=True)
+              return binding
+
+          def process_chain(pid, snapshot, binding):
+              records = {item["pid"]: item for item in snapshot.get("processes", [])}
+              chain = []
+              seen = set()
+              current = pid
+              while current not in seen:
+                  seen.add(current)
+                  record = records.get(current)
+                  if not record or not exact_app_process(record, binding):
+                      raise ValueError("MetaWindow PID ancestry leaves the exact AppImage mount/namespace")
+                  chain.append(record)
+                  if current == binding["pid"]:
+                      return chain
+                  current = record.get("ppid")
+                  if not isinstance(current, int) or current <= 0:
+                      break
+              raise ValueError("MetaWindow PID is not an actual descendant of the bound AppImage root")
+
+          def linked_record(candidate, window, meta, before, after, binding, focus_before, focus_after):
+              if candidate.get("wmClass") != EXPECTED_WM_CLASS or candidate.get("title") != EXPECTED_TITLE or \
+                 window.get("wmClass") != EXPECTED_WM_CLASS or window.get("title") != EXPECTED_TITLE:
+                  raise ValueError("candidate is not the exact Devsy WM_CLASS/title")
+              if any(candidate.get(key) != window.get(key) for key in
+                     ("windowId", "appId", "wmClass", "title", "clientType", "isHidden")):
+                  raise ValueError("live GetWindows identity differs from its raw candidate")
+              if not window.get("hasFocus") or window.get("isHidden") is not False:
+                  raise ValueError("candidate is not the visible focused Shell window")
+              if str(meta[0]) != window["windowId"] or int(meta[1]) <= 0 or int(meta[2]) != window["clientType"]:
+                  raise ValueError("MetaWindow ID/PID/client type differs from GetWindows")
+              if int(meta[5]) != window.get("width") or int(meta[6]) != window.get("height") or \
+                 int(meta[5]) <= 0 or int(meta[6]) <= 0:
+                  raise ValueError("MetaWindow geometry differs from focused GetWindows geometry")
+              if focus_before != focus_after or str(focus_before[0]) != window["windowId"] or \
+                 focus_before[1] != meta[1] or focus_before[2] != meta[2] or \
+                 focus_before[5] != meta[5] or focus_before[6] != meta[6]:
+                  raise ValueError("focused Shell window differs from the MetaWindow candidate")
+              pid = int(meta[1])
+              validated = []
+              for snapshot in (before, after):
+                  validate_snapshot(snapshot, binding)
+                  chain = process_chain(pid, snapshot, binding)
+                  target = chain[0]
+                  if Path(target["exe"]).name != EXPECTED_EXECUTABLE or \
+                     target.get("exeSha256") != binding["exeSha256"]:
+                      raise ValueError("MetaWindow PID is not the expected bound Devsy executable")
+                  validated.append((target, chain))
+              def chain_identity(chain):
+                  return [[record.get(key) for key in PROCESS_FIELDS] for record in chain]
+              if chain_identity(validated[0][1]) != chain_identity(validated[1][1]):
+                  raise ValueError("AppImage descendant ancestry changed around screenshot")
+              if any(validated[0][0].get(key) != validated[1][0].get(key) for key in PROCESS_FIELDS):
+                  raise ValueError("MetaWindow process identity changed around screenshot")
+              return {
+                  "candidate": candidate, "window": window,
+                  "metaWindow": {"windowId": str(meta[0]), "pid": pid, "clientType": int(meta[2]),
+                                 "x": int(meta[3]), "y": int(meta[4]), "width": int(meta[5]), "height": int(meta[6])},
+                  "focus": {"windowId": str(focus_before[0]), "pid": int(focus_before[1]),
+                            "clientType": int(focus_before[2]), "x": int(focus_before[3]),
+                            "y": int(focus_before[4]), "width": int(focus_before[5]),
+                            "height": int(focus_before[6])},
+                  "appProcess": {key: validated[1][0].get(key) for key in PROCESS_FIELDS},
+                  "rootBinding": binding,
+              }
+
+          def attribution_matches(candidate, linked, binding):
+              window = linked.get("window") or {}
+              meta = linked.get("metaWindow") or {}
+              focus = linked.get("focus") or {}
+              return (
+                  linked.get("candidate") == candidate and
+                  all(candidate.get(key) == window.get(key) for key in
+                      ("windowId", "appId", "title", "wmClass", "clientType", "isHidden")) and
+                  window.get("wmClass") == EXPECTED_WM_CLASS and window.get("title") == EXPECTED_TITLE and
+                  window.get("isHidden") is False and window.get("hasFocus") is True and
+                  window.get("width", 0) > 0 and window.get("height", 0) > 0 and
+                  meta.get("windowId") == candidate.get("windowId") and meta.get("pid", 0) > 0 and
+                  meta.get("pid") == focus.get("pid") and meta.get("pid") == (linked.get("appProcess") or {}).get("pid") and
+                  focus.get("windowId") == candidate.get("windowId") and
+                  focus.get("clientType") == window.get("clientType") and
+                  linked.get("rootBinding") == binding
               )
 
           def parse_tuple(raw):
@@ -577,75 +694,72 @@ jobs:
               result = subprocess.run(["gdbus", "call", "--session", *args], text=True,
                                       capture_output=True, check=True, timeout=10)
               return result.stdout.strip()
-          def meta_window_snapshot(backend, candidate_id, proof_dir, capture_label):
-              base = Path(proof_dir) / f"{capture_label}-metawindow-eval"
+          def shell_eval(backend, expression, label):
+              base = Path(label)
               command = ["gdbus", "call", "--session", "--dest", "org.gnome.Shell",
                          "--object-path", "/org/gnome/Shell", "--method", "org.gnome.Shell.Eval",
-                         EVAL_CODE]
+                         expression]
               try:
                   result = subprocess.run(command, text=True, capture_output=True, timeout=10)
               except subprocess.TimeoutExpired as error:
                   stdout = error.stdout.decode(errors="replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
                   stderr = error.stderr.decode(errors="replace") if isinstance(error.stderr, bytes) else (error.stderr or "")
-                  (base.parent / f"{base.name}-stdout.txt").write_text(stdout)
-                  (base.parent / f"{base.name}-stderr.txt").write_text(stderr)
-                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps({
-                      "backend": backend, "capture": capture_label, "candidateWindowId": candidate_id,
-                      "method": "org.gnome.Shell.Eval", "objectPath": "/org/gnome/Shell",
-                      "expression": EVAL_CODE, "returnCode": None, "timedOut": True,
-                      "decodedType": None, "decodedRows": None,
-                  }, indent=2) + "\n")
-                  raise SystemExit("GNOME Shell MetaWindow Eval timed out")
-              (base.parent / f"{base.name}-stdout.txt").write_text(result.stdout)
-              (base.parent / f"{base.name}-stderr.txt").write_text(result.stderr)
+                  result_code, timed_out = None, True
+              else:
+                  stdout, stderr = result.stdout, result.stderr
+                  result_code, timed_out = result.returncode, False
+              base.with_name(base.name + "-stdout.txt").write_text(stdout)
+              base.with_name(base.name + "-stderr.txt").write_text(stderr)
               diagnostic = {
-                  "backend": backend, "capture": capture_label,
-                  "candidateWindowId": candidate_id,
-                  "method": "org.gnome.Shell.Eval", "objectPath": "/org/gnome/Shell",
-                  "expression": EVAL_CODE, "returnCode": result.returncode, "evalSucceeded": None,
-                  "decodedType": None, "decodedRows": None,
+                  "backend": backend, "method": "org.gnome.Shell.Eval", "objectPath": "/org/gnome/Shell",
+                  "expression": expression, "returnCode": result_code, "timedOut": timed_out,
+                  "evalSucceeded": None, "decodedType": None, "decodedValue": None,
               }
-              if result.returncode:
-                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
-                  raise SystemExit(f"GNOME Shell MetaWindow Eval failed with exit code {result.returncode}")
+              if timed_out or result_code:
+                  base.with_name(base.name + "-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
+                  raise SystemExit("GNOME Shell Eval timed out or failed")
               try:
-                  success, encoded = parse_tuple(result.stdout)
-              except (ValueError, SyntaxError) as error:
-                  diagnostic["decodeError"] = str(error)
-                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
-                  raise SystemExit("GNOME Shell MetaWindow Eval returned an invalid tuple")
-              diagnostic["evalSucceeded"] = success
-              if not success:
+                  success, encoded = parse_tuple(stdout)
+                  diagnostic["evalSucceeded"] = success
                   diagnostic["decodedType"] = type(encoded).__name__
-                  diagnostic["evalError"] = encoded
-                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
-                  raise SystemExit("GNOME Shell Eval refused MetaWindow inspection")
-              try:
-                  rows = json.loads(encoded)
-              except (json.JSONDecodeError, TypeError) as error:
+                  if success:
+                      value = json.loads(encoded)
+                      diagnostic["decodedType"] = type(value).__name__
+                      diagnostic["decodedValue"] = value
+                  else:
+                      diagnostic["decodedValue"] = encoded
+                      value = None
+              except (ValueError, SyntaxError, json.JSONDecodeError, TypeError) as error:
                   diagnostic["decodeError"] = str(error)
-                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
-                  raise SystemExit("GNOME Shell MetaWindow Eval returned invalid JSON")
-              diagnostic["decodedType"] = type(rows).__name__
-              diagnostic["decodedRows"] = rows
+                  base.with_name(base.name + "-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
+                  raise SystemExit("GNOME Shell Eval returned invalid tuple or single-layer JSON")
+              base.with_name(base.name + "-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
+              if not success:
+                  raise SystemExit("GNOME Shell Eval refused the requested observation")
+              return value
+
+          def meta_window_snapshot(backend, candidate_id, proof_dir, capture_label):
+              rows = shell_eval(backend, EVAL_CODE, Path(proof_dir) / f"{capture_label}-metawindow")
               if not isinstance(rows, list) or any(
                   not isinstance(row, list) or len(row) != 7 or
                   any(type(value) is not int for value in row) for row in rows
               ):
-                  diagnostic["shapeValid"] = False
-                  (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
                   raise SystemExit("GNOME Shell MetaWindow Eval returned an unexpected row shape")
-              diagnostic["shapeValid"] = True
-              diagnostic["decodedRowCount"] = len(rows)
-              (base.parent / f"{base.name}-decode.json").write_text(json.dumps(diagnostic, indent=2) + "\n")
               return rows
+
+          def focus_snapshot(backend, proof_dir, capture_label):
+              result = shell_eval(backend, FOCUS_CODE, Path(proof_dir) / f"{capture_label}-focus")
+              if result is None:
+                  return None
+              if not isinstance(result, list) or len(result) != 7 or any(type(value) is not int for value in result):
+                  raise SystemExit("GNOME Shell focused-window Eval returned an unexpected row shape")
+              return result
+
           def find_meta_window_row(rows, candidate_id):
               matches = [row for row in rows if str(row[0]) == candidate_id]
               if len(matches) != 1:
                   raise ValueError("GetWindows candidate ID did not map to exactly one MetaWindow")
               return matches[0]
-
-
 
           def current_window(window_id):
               raw = call("--dest", "org.gnome.Shell", "--object-path", "/org/gnome/Shell/Introspect",
@@ -661,119 +775,380 @@ jobs:
               title = prop("title").strip("'\"")
               wm_class = prop("wm-class").strip("'\"")
               hidden = prop("is-hidden")
+              focus = prop("has-focus")
               client_type = re.search(r"(?:u?int\d+)\s+(\d+)", prop("client-type"))
               width = re.search(r"(?:u?int\d+)\s+(\d+)", prop("width"))
               height = re.search(r"(?:u?int\d+)\s+(\d+)", prop("height"))
               if title != EXPECTED_TITLE or wm_class != EXPECTED_WM_CLASS or hidden != "false" or \
-                 not client_type or not width or not height:
+                 focus not in ("true", "false") or not client_type or not width or not height:
                   raise ValueError("live candidate no longer has exact visible Devsy WM_CLASS/title and geometry")
               return {"windowId": window_id, "title": title, "appId": app_id, "wmClass": wm_class,
-                      "clientType": int(client_type.group(1)), "isHidden": False,
+                      "clientType": int(client_type.group(1)), "isHidden": False, "hasFocus": focus == "true",
                       "width": int(width.group(1)), "height": int(height.group(1))}
 
-          def main():
-              if sys.argv[1] == "--self-test":
-                  window = {"windowId": "17", "appId": "window:1", "title": EXPECTED_TITLE,
-                            "wmClass": EXPECTED_WM_CLASS, "clientType": 1, "isHidden": False,
-                            "width": 800, "height": 600}
-                  process = {"pid": 91, "startTicks": 1000, "uid": os.getuid(),
-                             "exe": "/tmp/.mount_D/devsy-desktop", "exeSha256": "a" * 64,
-                             "mount": {"mountpoint": "/tmp/.mount_D",
-                                       "filesystem": f"fuse.{EXPECTED_APPIMAGE}",
-                                       "source": EXPECTED_APPIMAGE},
-                             "appImagePath": f"/tmp/{EXPECTED_APPIMAGE}", "appImageSha256": "b" * 64}
-                  before = {"processes": [process]}
-                  after = {"processes": [dict(process)]}
-                  good = [17, 91, 1, 0, 0, 800, 600]
-                  assert linked_record(window, good, before, after, "b" * 64)["metaWindow"]["pid"] == 91
-                  linked = linked_record(window, good, before, after, "b" * 64)
-                  assert attribution_matches(window, linked, "b" * 64)
-                  assert not attribution_matches(window, dict(linked, windowId="18"), "b" * 64)
-                  assert not attribution_matches(window, linked, "c" * 64)
-                  bad_snapshots = [
-                      {"processes": [dict(process, startTicks=1001)]},
-                      {"processes": [dict(process, uid=os.getuid() + 1)]},
-                      {"processes": [dict(process, exe="/tmp/.mount_other/devsy-desktop")]},
-                      {"processes": [dict(process, exeSha256="c" * 64)]},
-                      {"processes": [dict(process, mount={"mountpoint": "/tmp/.mount_other",
-                                                           "filesystem": f"fuse.{EXPECTED_APPIMAGE}",
-                                                           "source": EXPECTED_APPIMAGE})]},
-                      {"processes": [dict(process, appImagePath="/tmp/Devsy_linux_x86_64.AppImage",
-                                          appImageSha256="c" * 64)]},
-                  ]
-                  invalid = [
-                      ([18, 91, 1, 0, 0, 800, 600], before, after, "b" * 64),
-                      ([17, 92, 1, 0, 0, 800, 600], before, after, "b" * 64),
-                      ([17, 91, 0, 0, 0, 800, 600], before, after, "b" * 64),
-                      ([17, 91, 1, 0, 0, 1, 1], before, after, "b" * 64),
-                      (good, before, bad_snapshots[0], "b" * 64),
-                      (good, before, bad_snapshots[1], "b" * 64),
-                      (good, before, bad_snapshots[2], "b" * 64),
-                      (good, before, bad_snapshots[3], "b" * 64),
-                      (good, before, bad_snapshots[4], "b" * 64),
-                      (good, before, bad_snapshots[5], "b" * 64),
-                      (good, before, after, "c" * 64),
-                  ]
-                  for meta, prior, later, digest in invalid:
-                      try:
-                          linked_record(window, meta, prior, later, digest)
-                      except (KeyError, TypeError, ValueError):
-                          continue
-                      raise AssertionError("invalid window/PID/AppImage provenance was accepted")
-                  print("same-window PID/start/UID/executable/mount/hash and updater-handoff rejection fixtures passed")
-                  return
-              if sys.argv[1] == "capture":
-                  identity_path = sys.argv[2]
-                  before_path, after_path, expected_hash, output = sys.argv[3:]
-                  identity_name = Path(identity_path).name
-                  suffix = "-window-identity.json"
-                  if not identity_name.endswith(suffix):
-                      raise SystemExit("window identity path has an unexpected filename")
-                  backend = identity_name[:-len(suffix)]
-                  capture_label = Path(output).stem
-                  candidates = json.loads(Path(identity_path).read_text())["candidateWindows"]
-                  if len(candidates) != 1:
-                      raise SystemExit("expected exactly one raw Devsy WM_CLASS/title candidate")
-                  window = candidates[0]
-                  current = current_window(window["windowId"])
-                  if current != window:
-                      raise SystemExit("live GetWindows candidate changed before MetaWindow attribution")
-                  meta_windows = meta_window_snapshot(backend, window["windowId"], Path(identity_path).parent, capture_label)
+          def focused_candidate(backend, window_id, label, activate):
+              if activate:
+                  activated = shell_eval(
+                      backend, ACTIVATE_CODE(window_id), Path(label).with_name(Path(label).name + "-activate")
+                  )
+                  if activated is not True:
+                      raise SystemExit("GNOME Shell did not activate the exact candidate MetaWindow")
+              deadline = time.monotonic() + 8
+              last = None
+              attempt = 0
+              while time.monotonic() < deadline:
+                  attempt += 1
+                  focus = focus_snapshot(backend, Path(label).parent, f"{Path(label).name}-{attempt:02d}")
                   try:
-                      meta = find_meta_window_row(meta_windows, window["windowId"])
-                  except ValueError as error:
-                      raise SystemExit(str(error))
-                  linked = linked_record(window, meta, json.loads(Path(before_path).read_text()),
-                                         json.loads(Path(after_path).read_text()), expected_hash)
+                      window = current_window(window_id)
+                  except (ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                      window = None
+                  if window and focus and window["hasFocus"] and str(focus[0]) == window_id and \
+                     focus[2] == window["clientType"] and focus[5] == window["width"] and focus[6] == window["height"]:
+                      return focus, window
+                  last = {"focus": focus, "window": window}
+                  time.sleep(0.25)
+              raise SystemExit(f"exact candidate did not become the focused Shell window: {last}")
+
+          def png_dimensions(path):
+              import binascii
+              import struct
+              import zlib
+              data = Path(path).read_bytes()
+              if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+                  raise ValueError("ScreenshotWindow output is not a PNG")
+              offset, width, height, bit_depth, color_type, compressed = 8, 0, 0, 0, 0, bytearray()
+              seen_header = seen_end = seen_palette = seen_idat = idat_closed = False
+              palette_entries = 0
+              while offset + 12 <= len(data):
+                  size = struct.unpack(">I", data[offset:offset + 4])[0]
+                  kind = data[offset + 4:offset + 8]
+                  end = offset + 12 + size
+                  if end > len(data):
+                      raise ValueError("PNG chunk is truncated")
+                  payload = data[offset + 8:offset + 8 + size]
+                  expected_crc = struct.unpack(">I", data[offset + 8 + size:end])[0]
+                  if binascii.crc32(kind + payload) & 0xffffffff != expected_crc:
+                      raise ValueError("PNG chunk CRC is invalid")
+                  if not seen_header and kind != b"IHDR":
+                      raise ValueError("PNG IHDR is not the first chunk")
+                  if kind == b"IHDR":
+                      if seen_header or size != 13 or offset != 8:
+                          raise ValueError("PNG has an invalid IHDR")
+                      width, height, bit_depth, color_type, compression, filtering, interlace = struct.unpack(">IIBBBBB", payload)
+                      if width <= 0 or height <= 0 or width > 8192 or height > 8192 or \
+                         width * height > 16_000_000 or compression or filtering or interlace:
+                          raise ValueError("PNG dimensions or encoding are unsupported")
+                      seen_header = True
+                  elif kind == b"PLTE":
+                      if not seen_header or seen_palette or seen_idat or size == 0 or size > 768 or size % 3:
+                          raise ValueError("PNG palette is invalid or out of order")
+                      seen_palette = True
+                      palette_entries = size // 3
+                  elif kind == b"IDAT":
+                      if not seen_header or idat_closed:
+                          raise ValueError("PNG IDAT ordering is invalid")
+                      seen_idat = True
+                      compressed.extend(payload)
+                  elif kind == b"IEND":
+                      if size or not seen_header or not seen_idat:
+                          raise ValueError("PNG IEND is invalid")
+                      seen_end = True
+                      if end != len(data):
+                          raise ValueError("PNG has trailing data")
+                      break
+                  elif not kind[0] & 0x20:
+                      raise ValueError("PNG contains an unknown critical chunk")
+                  elif seen_idat:
+                      idat_closed = True
+                  offset = end
+              if not seen_header or not seen_end:
+                  raise ValueError("PNG is incomplete")
+              channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(color_type)
+              allowed_depths = {0: (1, 2, 4, 8, 16), 2: (8, 16), 3: (1, 2, 4, 8), 4: (8, 16), 6: (8, 16)}
+              if channels is None or bit_depth not in allowed_depths[color_type] or \
+                 (color_type == 3 and (not seen_palette or palette_entries > 1 << bit_depth)):
+                  raise ValueError("PNG color type, palette, or bit depth is invalid")
+              expected_size = height * (1 + (width * channels * bit_depth + 7) // 8)
+              decoder = zlib.decompressobj()
+              decoded = decoder.decompress(bytes(compressed), expected_size + 1)
+              if not decoder.eof or decoder.unused_data or decoder.unconsumed_tail or len(decoded) != expected_size:
+                  raise ValueError("PNG image data does not decode to its declared dimensions")
+              row_size = (width * channels * bit_depth + 7) // 8
+              if any(decoded[row * (row_size + 1)] > 4 for row in range(height)):
+                  raise ValueError("PNG scanline filter is invalid")
+              return {"width": width, "height": height, "bytes": len(data)}
+
+          def run_bounded(command, timeout):
+              try:
+                  return subprocess.run(command, text=True, capture_output=True, timeout=timeout)
+              except subprocess.TimeoutExpired as error:
+                  stdout = error.stdout.decode(errors="replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
+                  stderr = error.stderr.decode(errors="replace") if isinstance(error.stderr, bytes) else (error.stderr or "")
+                  return subprocess.CompletedProcess(command, None, stdout, stderr)
+          def screenshot_window(backend, screenshot_path, link_path, proof_dir):
+              target = Path(screenshot_path)
+              target.unlink(missing_ok=True)
+              link = json.loads(Path(link_path).read_text())
+              focus = link["focus"]
+              base = Path(proof_dir) / f"{backend}-screenshot-window-dbus"
+              readiness_name = "wayland" if backend.startswith("wayland-") else "x11"
+              readiness = json.loads((Path(proof_dir) / f"{readiness_name}-shell-readiness.json").read_text())
+              shell_pid = readiness.get("shell", {}).get("pid")
+              owner_command = [
+                  "gdbus", "call", "--session", "--dest", "org.freedesktop.DBus",
+                  "--object-path", "/org/freedesktop/DBus", "--method",
+                  "org.freedesktop.DBus.GetNameOwner", "org.gnome.Shell.Screenshot",
+              ]
+              owner_result = run_bounded(owner_command, 10)
+              owner = re.search(r"\('([^']+)'", owner_result.stdout)
+              owner_pid = None
+              owner_pid_stdout = ""
+              owner_pid_stderr = ""
+              owner_pid_return = None
+              if owner_result.returncode == 0 and owner:
+                  owner_pid_result = run_bounded([
+                      "gdbus", "call", "--session", "--dest", "org.freedesktop.DBus",
+                      "--object-path", "/org/freedesktop/DBus", "--method",
+                      "org.freedesktop.DBus.GetConnectionUnixProcessID", owner.group(1),
+                  ], 10)
+                  owner_pid_stdout = owner_pid_result.stdout
+                  owner_pid_stderr = owner_pid_result.stderr
+                  owner_pid_return = owner_pid_result.returncode
+                  match = re.search(r"uint32\s+(\d+)", owner_pid_stdout)
+                  if owner_pid_result.returncode == 0 and match:
+                      owner_pid = int(match.group(1))
+              base.with_name(base.name + "-owner-stdout.txt").write_text(owner_result.stdout)
+              base.with_name(base.name + "-owner-stderr.txt").write_text(owner_result.stderr)
+              base.with_name(base.name + "-owner-pid-stdout.txt").write_text(owner_pid_stdout)
+              base.with_name(base.name + "-owner-pid-stderr.txt").write_text(owner_pid_stderr)
+              receipt = {
+                  "backend": backend, "service": "org.gnome.Shell.Screenshot",
+                  "objectPath": "/org/gnome/Shell/Screenshot", "method": "ScreenshotWindow",
+                  "includeFrame": True, "includeCursor": False, "flash": False,
+                  "requestedPath": str(target), "focusedWindowId": focus["windowId"],
+                  "focusedPid": focus["pid"], "privateShellPid": shell_pid,
+                  "serviceOwner": owner.group(1) if owner else None, "serviceOwnerPid": owner_pid,
+                  "serviceOwnerReturnCode": owner_result.returncode,
+                  "serviceOwnerPidReturnCode": owner_pid_return,
+                  "methodInvoked": False, "returnCode": None, "success": False, "filenameUsed": None,
+              }
+              stdout, stderr = "", "ScreenshotWindow was not invoked."
+              if owner_result.returncode == 0 and owner and owner_pid_return == 0 and owner_pid == shell_pid:
+                  command = ["gdbus", "call", "--session", "--dest", "org.gnome.Shell.Screenshot",
+                             "--object-path", "/org/gnome/Shell/Screenshot",
+                             "--method", "org.gnome.Shell.Screenshot.ScreenshotWindow",
+                             "true", "false", "false", str(target)]
+                  receipt["methodInvoked"] = True
+                  try:
+                      result = subprocess.run(command, text=True, capture_output=True, timeout=30)
+                      stdout, stderr, receipt["returnCode"] = result.stdout, result.stderr, result.returncode
+                  except subprocess.TimeoutExpired as error:
+                      stdout = error.stdout.decode(errors="replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
+                      stderr = error.stderr.decode(errors="replace") if isinstance(error.stderr, bytes) else (error.stderr or "")
+                      receipt["timedOut"] = True
+              else:
+                  stderr = "ScreenshotWindow was blocked because the screenshot service owner was not the private GNOME Shell."
+              base.with_name(base.name + "-stdout.txt").write_text(stdout)
+              base.with_name(base.name + "-stderr.txt").write_text(stderr)
+              if receipt["methodInvoked"] and receipt["returnCode"] == 0:
+                  try:
+                      success, filename = parse_tuple(stdout)
+                      receipt["success"], receipt["filenameUsed"] = success, filename
+                  except (ValueError, SyntaxError) as error:
+                      receipt["decodeError"] = str(error)
+              if receipt["success"] and receipt["filenameUsed"] == str(target) and target.is_file():
+                  try:
+                      receipt["png"] = png_dimensions(target)
+                      import hashlib
+                      receipt["pngSha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+                  except (OSError, ValueError) as error:
+                      receipt["pngError"] = str(error)
+              receipt_path = base.with_name(base.name + "-receipt.json")
+              receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
+              if not receipt["methodInvoked"] or receipt["serviceOwnerPid"] != receipt["privateShellPid"] or \
+                 receipt["returnCode"] != 0 or not receipt["success"] or receipt["filenameUsed"] != str(target) or \
+                 not receipt.get("png"):
+                  raise SystemExit("private ScreenshotWindow owner, receipt, exact output path, or decoded PNG validation failed")
+              print(json.dumps(receipt, sort_keys=True))
+          def validate_receipt(receipt_path, screenshot_path, before_link, after_link, backend):
+              receipt = json.loads(Path(receipt_path).read_text())
+              target = Path(screenshot_path)
+              readiness_name = "wayland" if backend.startswith("wayland-") else "x11"
+              readiness = json.loads((Path(receipt_path).parent / f"{readiness_name}-shell-readiness.json").read_text())
+              shell_pid = readiness.get("shell", {}).get("pid")
+              if receipt.get("service") != "org.gnome.Shell.Screenshot" or \
+                 receipt.get("objectPath") != "/org/gnome/Shell/Screenshot" or \
+                 receipt.get("method") != "ScreenshotWindow" or receipt.get("methodInvoked") is not True or \
+                 receipt.get("serviceOwnerPid") != shell_pid or receipt.get("privateShellPid") != shell_pid or \
+                 receipt.get("success") is not True or receipt.get("returnCode") != 0 or \
+                 receipt.get("requestedPath") != str(target) or receipt.get("filenameUsed") != str(target):
+                  raise ValueError("ScreenshotWindow receipt does not prove exact private-shell service, output path, and PNG")
+              before_focus = before_link.get("focus") or {}
+              after_focus = after_link.get("focus") or {}
+              if before_focus != after_focus or receipt.get("focusedWindowId") != before_focus.get("windowId") or \
+                 receipt.get("focusedPid") != before_focus.get("pid"):
+                  raise ValueError("ScreenshotWindow receipt is not bound to the same focused MetaWindow and PID")
+              for suffix in ("stdout.txt", "stderr.txt", "owner-stdout.txt", "owner-stderr.txt",
+                             "owner-pid-stdout.txt", "owner-pid-stderr.txt"):
+                  if not Path(receipt_path).with_name(Path(receipt_path).name.replace("receipt.json", suffix)).is_file():
+                      raise ValueError("raw ScreenshotWindow service ownership or D-Bus output is missing")
+              owner_stdout = Path(receipt_path).with_name(Path(receipt_path).name.replace("receipt.json", "owner-stdout.txt")).read_text()
+              owner_pid_stdout = Path(receipt_path).with_name(Path(receipt_path).name.replace("receipt.json", "owner-pid-stdout.txt")).read_text()
+              owner_match = re.search(r"\('([^']+)'", owner_stdout)
+              owner_pid_match = re.search(r"uint32\s+(\d+)", owner_pid_stdout)
+              if receipt.get("serviceOwnerReturnCode") != 0 or receipt.get("serviceOwnerPidReturnCode") != 0 or \
+                 not owner_match or owner_match.group(1) != receipt.get("serviceOwner") or \
+                 not owner_pid_match or int(owner_pid_match.group(1)) != receipt.get("serviceOwnerPid"):
+                  raise ValueError("Screenshot service owner receipt differs from raw D-Bus ownership queries")
+              raw_stdout_path = Path(receipt_path).with_name(Path(receipt_path).name.replace("receipt.json", "stdout.txt"))
+              try:
+                  raw_success, raw_filename = parse_tuple(raw_stdout_path.read_text())
+              except (ValueError, SyntaxError) as error:
+                  raise ValueError("raw ScreenshotWindow D-Bus reply is malformed") from error
+              if (raw_success, raw_filename) != (receipt["success"], receipt["filenameUsed"]):
+                  raise ValueError("ScreenshotWindow receipt differs from the preserved raw D-Bus reply")
+              png = png_dimensions(target)
+              import hashlib
+              if receipt.get("png") != png or receipt.get("pngSha256") != hashlib.sha256(target.read_bytes()).hexdigest():
+                  raise ValueError("ScreenshotWindow receipt does not match the decoded PNG bytes")
+              return receipt
+
+          def validate_backend(identity_path, binding_path, initial_path, observed_path,
+                               before_path, after_path, before_link_path, after_link_path,
+                               receipt_path, screenshot_path, expected_hash):
+              binding = json.loads(Path(binding_path).read_text())
+              initial_snapshot = json.loads(Path(initial_path).read_text())
+              derived_binding = pin_binding(initial_snapshot, {"appimage": {"sha256": expected_hash}},
+                                            binding.get("appImagePath", ""))
+              if binding != derived_binding:
+                  raise ValueError("immutable AppImage binding differs from the initial independently verified root")
+              for path, initial in ((initial_path, True), (observed_path, False),
+                                    (before_path, False), (after_path, False)):
+                  validate_snapshot(json.loads(Path(path).read_text()), binding, initial=initial)
+              candidate_list = json.loads(Path(identity_path).read_text()).get("candidateWindows", [])
+              if len(candidate_list) != 1:
+                  raise ValueError("backend did not retain exactly one raw window candidate")
+              candidate = candidate_list[0]
+              before_link = json.loads(Path(before_link_path).read_text())
+              after_link = json.loads(Path(after_link_path).read_text())
+              before = json.loads(Path(before_path).read_text())
+              after = json.loads(Path(after_path).read_text())
+              if before_link != after_link:
+                  raise ValueError("same-window MetaWindow/process linkage changed around screenshot")
+              if not attribution_matches(candidate, after_link, binding):
+                  raise ValueError("raw candidate lacks focused same-window PID and immutable-root attribution")
+              meta = after_link["metaWindow"]
+              meta_row = [int(meta["windowId"]), meta["pid"], meta["clientType"], meta["x"], meta["y"],
+                          meta["width"], meta["height"]]
+              focus = after_link["focus"]
+              focus_row = [int(focus["windowId"]), focus["pid"], focus["clientType"], focus["x"],
+                           focus["y"], focus["width"], focus["height"]]
+              recomputed = linked_record(candidate, after_link["window"], meta_row, before, after,
+                                         binding, focus_row, focus_row)
+              if recomputed != after_link:
+                  raise ValueError("preserved linkage differs from actual before/after AppImage process snapshots")
+              backend_name = Path(identity_path).name.removesuffix("-window-identity.json")
+              receipt = validate_receipt(receipt_path, screenshot_path, before_link, after_link, backend_name)
+              for snapshot_path in (before_path, after_path):
+                  snapshot = json.loads(Path(snapshot_path).read_text())
+                  for record in snapshot.get("processes", []):
+                      if Path(record.get("exe", "")).name in {"devsy", EXPECTED_EXECUTABLE}:
+                          process_chain(record["pid"], snapshot, binding)
+              return {
+                  "identity": candidate, "rootBinding": binding, "linkage": after_link,
+                  "screenshotReceipt": receipt,
+                  "processSnapshots": {"initial": initial_path, "observed": observed_path,
+                                       "before": before_path, "after": after_path},
+              }
+
+          def main():
+              if len(sys.argv) < 2:
+                  raise SystemExit("usage: verify-window-link.py pin|validate-snapshot|capture|screenshot|compare|attribute|verify-backend")
+              command = sys.argv[1]
+              if command == "--self-test":
+                  assert parse_tuple("(true, '[[1,2,3,4,5,6,7]]')") == (True, "[[1,2,3,4,5,6,7]]")
+                  assert ACTIVATE_CODE(17).endswith("})()")
+                  print("Eval tuple and activation expression fixtures passed")
+                  return
+              if command == "pin":
+                  _, _, snapshot_path, proof_path, expected_path, output_path = sys.argv
+                  binding = pin_binding(json.loads(Path(snapshot_path).read_text()),
+                                        json.loads(Path(proof_path).read_text()), expected_path)
+                  Path(output_path).write_text(json.dumps(binding, indent=2) + "\n")
+                  print(json.dumps(binding, sort_keys=True))
+                  return
+              if command == "validate-snapshot":
+                  _, _, snapshot_path, binding_path, initial = sys.argv
+                  validate_snapshot(json.loads(Path(snapshot_path).read_text()),
+                                    json.loads(Path(binding_path).read_text()), initial == "true")
+                  print("snapshot matches immutable launch binding")
+                  return
+              if command == "capture":
+                  _, _, stage, identity_path, binding_path, before_path, after_path, output = sys.argv
+                  if stage not in ("before", "after"):
+                      raise SystemExit("capture stage must be before or after")
+                  identity = json.loads(Path(identity_path).read_text())
+                  candidates = identity.get("candidateWindows", [])
+                  if len(candidates) != 1:
+                      raise SystemExit("expected exactly one raw Devsy window candidate")
+                  candidate = candidates[0]
+                  binding = json.loads(Path(binding_path).read_text())
+                  before = json.loads(Path(before_path).read_text())
+                  after = json.loads(Path(after_path).read_text())
+                  validate_snapshot(before, binding)
+                  validate_snapshot(after, binding)
+                  label = Path(output).with_suffix("")
+                  backend = Path(identity_path).name.removesuffix("-window-identity.json")
+                  focus_before, _ = focused_candidate(
+                      backend, candidate["windowId"], label, stage == "before"
+                  )
+                  focus_after, current = focused_candidate(
+                      backend, candidate["windowId"], label.with_name(label.name + "-confirm"), False
+                  )
+                  rows = meta_window_snapshot(backend, candidate["windowId"], Path(identity_path).parent, label.name)
+                  meta = find_meta_window_row(rows, candidate["windowId"])
+                  linked = linked_record(candidate, current, meta, before, after, binding, focus_before, focus_after)
                   Path(output).write_text(json.dumps(linked, indent=2) + "\n")
                   print(json.dumps(linked, sort_keys=True))
                   return
-              if sys.argv[1] == "compare":
+              if command == "screenshot":
+                  _, _, backend, screenshot_path, before_link, proof_dir = sys.argv
+                  screenshot_window(backend, screenshot_path, before_link, proof_dir)
+                  return
+              if command == "compare":
                   before = json.loads(Path(sys.argv[2]).read_text())
                   after = json.loads(Path(sys.argv[3]).read_text())
                   if before != after:
                       raise SystemExit("window/PID/process identity changed around screenshot")
-                  print("same candidate window and exact AppImage process identity observed before and after screenshot")
+                  print("same focused candidate window and exact AppImage process identity observed before and after screenshot")
                   return
-              if sys.argv[1] == "attribute":
-                  _, _, identity_path, linked_path, proof_path, backend, screenshot_path = sys.argv
-                  candidates = json.loads(Path(identity_path).read_text())["candidateWindows"]
-                  linked = json.loads(Path(linked_path).read_text())
+              if command == "attribute":
+                  _, _, identity_path, before_link_path, after_link_path, receipt_path, proof_path, backend, screenshot_path, binding_path = sys.argv
                   proof = json.loads(Path(proof_path).read_text())
-                  candidate = candidates[0] if len(candidates) == 1 else {}
+                  candidates = json.loads(Path(identity_path).read_text()).get("candidateWindows", [])
+                  before_link = json.loads(Path(before_link_path).read_text())
+                  after_link = json.loads(Path(after_link_path).read_text())
+                  binding = json.loads(Path(binding_path).read_text())
                   if len(candidates) != 1 or proof.get("windowCandidates", {}).get(backend) != candidates or \
-                     not attribution_matches(candidate, linked, proof["appimage"]["sha256"]) or \
-                     not Path(screenshot_path).is_file() or Path(screenshot_path).stat().st_size == 0:
-                      raise SystemExit("candidate lacks same-window D485 PID/process linkage or screenshot")
-                  proof.setdefault("verifiedWindows", {})[backend] = [candidates[0]]
-                  proof.setdefault("windowPidLinkage", {})[backend] = linked
+                     before_link != after_link or not attribution_matches(candidates[0], after_link, binding):
+                      raise SystemExit("candidate lacks stable focused-window and immutable AppImage process linkage")
+                  validate_receipt(receipt_path, screenshot_path, before_link, after_link, backend)
+                  proof.setdefault("verifiedWindows", {})[backend] = [after_link["window"]]
+                  proof.setdefault("windowPidLinkage", {})[backend] = after_link
                   proof["applicationLaunched"] = True
                   proof["sessionResult"] = "window_attributed"
-                  proof["scope"] = f"GNOME candidate for {backend} was linked to the audited exact-AppImage process tree and screenshot; remaining checks pending."
+                  proof["scope"] = f"GNOME candidate for {backend} was linked to the immutable AppImage process binding and focused-window ScreenshotWindow receipt; remaining checks pending."
                   Path(proof_path).write_text(json.dumps(proof, indent=2) + "\n")
                   print(f"verified window attribution recorded for {backend}")
                   return
-              raise SystemExit("usage: verify-window-link.py --self-test|capture|compare|attribute")
+              if command == "verify-backend":
+                  _, _, identity, binding, initial, observed, before, after, before_link, after_link, receipt, screenshot, expected_hash = sys.argv
+                  print(json.dumps(validate_backend(identity, binding, initial, observed, before, after,
+                                                    before_link, after_link, receipt, screenshot, expected_hash),
+                                   sort_keys=True))
+                  return
+              raise SystemExit("unknown verify-window-link command: " + command)
 
           if __name__ == "__main__":
               main()
@@ -819,10 +1194,18 @@ jobs:
                   if not separator:
                       continue
                   fields = before.split()
-                  mountpoint = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), fields[4])
+                  if len(fields) < 6:
+                      continue
+                  unescape = lambda value: re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), value)
+                  mountpoint = unescape(fields[4])
                   if target == mountpoint or target.startswith(mountpoint.rstrip("/") + "/"):
                       after_fields = after.split()
+                      if not after_fields:
+                          continue
                       matches.append((len(mountpoint), {
+                          "mountId": int(fields[0]),
+                          "device": fields[2],
+                          "filesystemRoot": unescape(fields[3]),
                           "mountpoint": mountpoint,
                           "filesystem": after_fields[0],
                           "source": after_fields[1] if len(after_fields) > 1 else "",
@@ -842,6 +1225,7 @@ jobs:
                       "sid": int(fields[3]),
                       "startTicks": int(fields[19]),
                       "uid": root.stat().st_uid,
+                      "mountNamespace": os.readlink(root / "ns/mnt"),
                       "exe": exe,
                   }
                   if not detailed:
@@ -1283,11 +1667,13 @@ jobs:
                 backend=$1
                 logfile=$2
                 app_baseline="$PROOF_DIR/$backend-process-before.json"
+                app_binding="$PROOF_DIR/$backend-root-binding.json"
                 shift 2
                 setsid "$APPIMAGE_PATH" "$@" >"$logfile" 2>&1 &
                 app_pid=$!
                 python3 "$VERIFY_WINDOW_SCRIPT" --attempt "$backend" "$PROOF_DIR/proof.json"
                 python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$logfile" "$app_baseline"
+                python3 "$WINDOW_LINK_SCRIPT" pin "$app_baseline" "$PROOF_DIR/proof.json" "$APPIMAGE_PATH" "$app_binding"
               }
               observe_app() {
                 backend=$1
@@ -1316,18 +1702,18 @@ jobs:
                 screen_after="$PROOF_DIR/$backend-screenshot-after.json"
                 link_before="$PROOF_DIR/$backend-screenshot-before-link.json"
                 link_after="$PROOF_DIR/$backend-screenshot-after-link.json"
+                receipt="$PROOF_DIR/$backend-screenshot-window-dbus-receipt.json"
                 python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$logfile" "$screen_before"
-                image_sha=$(sha256sum "$APPIMAGE_PATH")
-                image_sha=${image_sha%% *}
-                python3 "$WINDOW_LINK_SCRIPT" capture "$PROOF_DIR/$backend-window-identity.json" \
-                  "$screen_before" "$screen_before" "$image_sha" "$link_before"
-                env -u WAYLAND_DISPLAY -u XAUTHORITY DISPLAY="$host_display" gnome-screenshot --file="$image"
+                python3 "$WINDOW_LINK_SCRIPT" capture before "$PROOF_DIR/$backend-window-identity.json" \
+                  "$app_binding" "$screen_before" "$screen_before" "$link_before"
+                python3 "$WINDOW_LINK_SCRIPT" screenshot "$backend" "$image" "$link_before" "$PROOF_DIR"
                 python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$logfile" "$screen_after"
-                python3 "$WINDOW_LINK_SCRIPT" capture "$PROOF_DIR/$backend-window-identity.json" \
-                  "$screen_after" "$screen_after" "$image_sha" "$link_after"
+                python3 "$WINDOW_LINK_SCRIPT" capture after "$PROOF_DIR/$backend-window-identity.json" \
+                  "$app_binding" "$screen_before" "$screen_after" "$link_after"
                 python3 "$WINDOW_LINK_SCRIPT" compare "$link_before" "$link_after"
                 python3 "$WINDOW_LINK_SCRIPT" attribute "$PROOF_DIR/$backend-window-identity.json" \
-                  "$link_after" "$PROOF_DIR/proof.json" "$backend" "$image"
+                  "$link_before" "$link_after" "$receipt" "$PROOF_DIR/proof.json" \
+                  "$backend" "$image" "$app_binding"
                 printf "backend=%s screenshot=%s\n" "$backend" "$image" >"$PROOF_DIR/$backend-screenshot-linkage.txt"
               }
               start_app wayland-default "$PROOF_DIR/devsy-wayland-default.log"
@@ -1404,8 +1790,10 @@ jobs:
               setsid "$APPIMAGE_PATH" >"$PROOF_DIR/devsy-x11.log" 2>&1 &
               app_pid=$!
               app_baseline="$PROOF_DIR/x11-process-before.json"
+              app_binding="$PROOF_DIR/x11-root-binding.json"
               python3 "$VERIFY_WINDOW_SCRIPT" --attempt x11 "$PROOF_DIR/proof.json"
               python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$app_baseline"
+              python3 "$WINDOW_LINK_SCRIPT" pin "$app_baseline" "$PROOF_DIR/proof.json" "$APPIMAGE_PATH" "$app_binding"
               output="$PROOF_DIR/x11-windows.txt"
               identity="$PROOF_DIR/x11-window-identity.json"
               for attempt in $(seq 1 60); do
@@ -1420,28 +1808,30 @@ jobs:
               test -s "$identity"
               python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$PROOF_DIR/x11-process-after.json"
               cat "$output" >"$PROOF_DIR/x11-window-observation.txt"
-              python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$PROOF_DIR/x11-screen-before.json"
-              image_sha=$(sha256sum "$APPIMAGE_PATH")
-              image_sha=${image_sha%% *}
-              python3 "$WINDOW_LINK_SCRIPT" capture "$identity" "$PROOF_DIR/x11-screen-before.json" \
-                "$PROOF_DIR/x11-screen-before.json" "$image_sha" "$PROOF_DIR/x11-screenshot-before-link.json"
-              env -u WAYLAND_DISPLAY DISPLAY="$host_display" gnome-screenshot --file="$PROOF_DIR/x11.png"
-              python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$PROOF_DIR/x11-screen-after.json"
-              python3 "$WINDOW_LINK_SCRIPT" capture "$identity" "$PROOF_DIR/x11-screen-after.json" \
-                "$PROOF_DIR/x11-screen-before.json" "$PROOF_DIR/x11-screen-after.json" "$image_sha" \
+              python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$PROOF_DIR/x11-screenshot-before.json"
+              python3 "$WINDOW_LINK_SCRIPT" capture before "$identity" "$app_binding" \
+                "$PROOF_DIR/x11-screenshot-before.json" "$PROOF_DIR/x11-screenshot-before.json" \
+                "$PROOF_DIR/x11-screenshot-before-link.json"
+              python3 "$WINDOW_LINK_SCRIPT" screenshot x11 "$PROOF_DIR/x11.png" \
+                "$PROOF_DIR/x11-screenshot-before-link.json" "$PROOF_DIR"
+              python3 "$PROCESS_AUDIT_SCRIPT" snapshot "$app_pid" "$APPIMAGE_PATH" "$PROOF_DIR/devsy-x11.log" "$PROOF_DIR/x11-screenshot-after.json"
+              python3 "$WINDOW_LINK_SCRIPT" capture after "$identity" "$app_binding" \
+                "$PROOF_DIR/x11-screenshot-before.json" "$PROOF_DIR/x11-screenshot-after.json" \
                 "$PROOF_DIR/x11-screenshot-after-link.json"
               python3 "$WINDOW_LINK_SCRIPT" compare "$PROOF_DIR/x11-screenshot-before-link.json" \
                 "$PROOF_DIR/x11-screenshot-after-link.json"
-              test -s "$PROOF_DIR/x11.png"
               python3 "$WINDOW_LINK_SCRIPT" attribute "$identity" \
-                "$PROOF_DIR/x11-screenshot-after-link.json" "$PROOF_DIR/proof.json" x11 "$PROOF_DIR/x11.png"
-              printf "backend=x11 client-type=1 launchargs=none(default) app_pid=%s\n" "$app_pid" >"$PROOF_DIR/x11-launch-mode.txt"
+                "$PROOF_DIR/x11-screenshot-before-link.json" "$PROOF_DIR/x11-screenshot-after-link.json" \
+                "$PROOF_DIR/x11-screenshot-window-dbus-receipt.json" "$PROOF_DIR/proof.json" \
+                x11 "$PROOF_DIR/x11.png" "$app_binding"
               cleanup_app
             '
           }
           run_x11_session
           python3 - "$proof_dir/proof.json" <<'PY'
           import json
+          import os
+          import subprocess
           import sys
           from pathlib import Path
 
@@ -1451,31 +1841,35 @@ jobs:
           windows = proof.get("verifiedWindows", {})
           errors = []
 
-          def valid_window(window):
+          def valid_window(window, client_type=None):
               return (
                   window.get("wmClass") == "sh.devsy.app" and window.get("title") == "Devsy" and
-                  window.get("isHidden") is False and window.get("clientType") in (0, 1) and
+                  window.get("isHidden") is False and window.get("hasFocus") is True and
+                  (client_type is None or window.get("clientType") == client_type) and
                   isinstance(window.get("width"), int) and window["width"] > 0 and
                   isinstance(window.get("height"), int) and window["height"] > 0
               )
 
-          default_candidates = candidates.get("wayland-default", [])
-          default_windows = windows.get("wayland-default", [])
-          if len(default_candidates) != 1 or len(default_windows) != 1 or \
-             default_candidates[0] != default_windows[0] or not valid_window(default_windows[0]):
-              errors.append("default Wayland candidate was not uniquely linked to the exact Devsy WM_CLASS/title and AppImage process")
-              default_type = None
-          else:
-              default_type = default_windows[0]["clientType"]
+          def linked_candidate(backend, client_type=None):
+              raw = candidates.get(backend, [])
+              verified = windows.get(backend, [])
+              if len(raw) != 1 or len(verified) != 1 or \
+                 any(raw[0].get(key) != verified[0].get(key) for key in
+                     ("windowId", "appId", "wmClass", "title", "clientType", "isHidden")) or \
+                 not valid_window(verified[0], client_type):
+                  errors.append(f"{backend} raw candidate was not linked to a focused exact Devsy window")
+                  return None
+              return verified[0]
+
+          default_window = linked_candidate("wayland-default")
+          default_type = default_window.get("clientType") if default_window else None
           required = ["wayland-default", "x11"]
           if default_type == 1:
               required.append("wayland-forced")
-              if not any(valid_window(item) and item.get("clientType") == 0 for item in windows.get("wayland-forced", [])):
-                  errors.append("default X11-on-Wayland candidate was not followed by verified forced Wayland client type 0")
+              linked_candidate("wayland-forced", 0)
           elif default_type != 0:
               errors.append("default Wayland client type was not 0 or 1")
-          if not any(valid_window(item) and item.get("clientType") == 1 for item in windows.get("x11", [])):
-              errors.append("no verified X11 client window was observed")
+          linked_candidate("x11", 1)
 
           readiness = {}
           for backend in ("wayland", "x11"):
@@ -1491,10 +1885,8 @@ jobs:
                   errors.append(f"{backend} GNOME unsafe-mode, D-Bus owner, startup, or GetWindows preflight failed")
           proof["gnomeReadiness"] = readiness
           cleanup_files = [
-              "gnome-wayland-shell-cleanup.json",
-              "gnome-x11-shell-cleanup.json",
-              "wayland-default-process-before-cleanup.json",
-              "x11-process-cleanup.json",
+              "gnome-wayland-shell-cleanup.json", "gnome-x11-shell-cleanup.json",
+              "wayland-default-process-before-cleanup.json", "x11-process-cleanup.json",
           ]
           if default_type == 1:
               cleanup_files.append("wayland-forced-process-before-cleanup.json")
@@ -1507,82 +1899,53 @@ jobs:
               if state.get("survivors") or state.get("remainingTree"):
                   errors.append(f"owned processes survived cleanup: {filename}")
 
-          expected_hash = proof["appimage"]["sha256"]
+          expected_hash = proof.get("appimage", {}).get("sha256")
           provenance = []
           linkages = {}
           for backend in required:
-              candidates_for_backend = candidates.get(backend, [])
+              candidate = candidates.get(backend, [])
               observed = windows.get(backend, [])
-              if len(candidates_for_backend) != 1 or len(observed) != 1 or \
-                 candidates_for_backend[0] != observed[0] or not valid_window(observed[0]):
-                  errors.append(f"{backend} candidate was not linked to the exact Devsy WM_CLASS/title and AppImage process")
+              if len(candidate) != 1 or len(observed) != 1:
                   continue
               screenshot = "wayland-default.png" if backend == "wayland-default" else \
                   "wayland-forced.png" if backend == "wayland-forced" else "x11.png"
-              if not proof_path.with_name(screenshot).is_file():
-                  errors.append(f"{backend} screenshot is missing")
-              before_link_path = proof_path.with_name(f"{backend}-screenshot-before-link.json")
-              after_link_path = proof_path.with_name(f"{backend}-screenshot-after-link.json")
-              if not before_link_path.is_file() or not after_link_path.is_file():
-                  errors.append(f"{backend} same-window screenshot linkage is missing")
-                  continue
-              before_link = json.loads(before_link_path.read_text())
-              after_link = json.loads(after_link_path.read_text())
-              if before_link != after_link:
-                  errors.append(f"{backend} MetaWindow/AppImage PID identity changed around screenshot")
-                  continue
-              linkages[backend] = after_link
-
-              before_path = proof_path.with_name(f"{backend}-process-before.json")
-              after_path = proof_path.with_name(f"{backend}-process-after.json")
-              if not before_path.is_file() or not after_path.is_file():
-                  errors.append(f"{backend} is missing a before/after process snapshot")
-                  continue
-              before = json.loads(before_path.read_text())
-              after = json.loads(after_path.read_text())
-              before_root = next((item for item in before["processes"] if item["pid"] == before["rootPid"]), None)
-              after_root = next((item for item in after["processes"] if item["pid"] == after["rootPid"]), None)
-              same_process = bool(
-                  before_root and after_root and
-                  before["rootPid"] == after["rootPid"] and
-                  before["rootStartTicks"] == after["rootStartTicks"] and
-                  before_root["exe"] == after_root["exe"] and
-                  before_root["exeSha256"] == after_root["exeSha256"] and
-                  before_root["mount"] == after_root["mount"] and
-                  before_root["appImageSha256"] == expected_hash and
-                  after_root["appImageSha256"] == expected_hash
-              )
-              unexpected_app_processes = [
-                  item for item in after["processes"]
-                  if Path(item.get("exe", "")).name in {"devsy", "devsy-desktop"} and
-                  item.get("appImageSha256") != expected_hash
+              receipt = proof_path.with_name(f"{backend}-screenshot-window-dbus-receipt.json")
+              before_link = proof_path.with_name(f"{backend}-screenshot-before-link.json")
+              after_link = proof_path.with_name(f"{backend}-screenshot-after-link.json")
+              paths = [
+                  proof_path.with_name(f"{backend}-root-binding.json"),
+                  proof_path.with_name(f"{backend}-process-before.json"),
+                  proof_path.with_name(f"{backend}-process-after.json"),
+                  proof_path.with_name(f"{backend}-screenshot-before.json"),
+                  proof_path.with_name(f"{backend}-screenshot-after.json"),
+                  before_link, after_link, receipt, proof_path.with_name(screenshot),
               ]
-              record = {
-                  "backend": backend,
-                  "windowIdentity": observed[0],
-                  "windowPidLinkage": after_link,
-                  "rootPid": after.get("rootPid"),
-                  "rootStartTicks": after.get("rootStartTicks"),
-                  "rootExecutable": after_root.get("exe") if after_root else None,
-                  "rootExecutableSha256": after_root.get("exeSha256") if after_root else None,
-                  "mount": after_root.get("mount") if after_root else None,
-                  "appImageSha256": after_root.get("appImageSha256") if after_root else None,
-                  "sameAppImageProcessBeforeAndAfterWindow": same_process,
-                  "unexpectedDevsyProcesses": unexpected_app_processes,
-              }
-              provenance.append(record)
-              if not same_process or unexpected_app_processes:
-                  errors.append(f"{backend} process tree changed or contains a non-D485 Devsy process")
+              if any(not path.is_file() for path in paths):
+                  errors.append(f"{backend} immutable binding, process snapshots, focused linkage, receipt, or PNG is missing")
+                  continue
+              command = [
+                  sys.executable, os.environ["WINDOW_LINK_SCRIPT"], "verify-backend",
+                  proof_path.with_name(f"{backend}-window-identity.json"),
+                  paths[0], paths[1], paths[2], paths[3], paths[4], paths[5], paths[6],
+                  paths[7], paths[8], str(expected_hash),
+              ]
+              result = subprocess.run(command, text=True, capture_output=True, timeout=20)
+              if result.returncode:
+                  errors.append(f"{backend} backend provenance/receipt/PNG validation failed: {result.stderr.strip()}")
+                  continue
+              report = json.loads(result.stdout)
+              linkages[backend] = report["linkage"]
+              provenance.append({"backend": backend, **report})
           proof["windowPidLinkage"] = linkages
           proof["windowProcessProvenance"] = provenance
           if errors:
               proof["sessionResult"] = "observed_with_acceptance_failures"
               proof["acceptanceErrors"] = errors
-              proof["scope"] = "Raw GNOME candidates were retained separately; one or more exact WM_CLASS/title, MetaWindow PID, screenshot, readiness, or D485 AppImage-provenance checks failed."
+              proof["scope"] = "GNOME candidates remain distinct from verified windows; focused-window, immutable AppImage binding, ScreenshotWindow receipt, PNG, readiness, or cleanup acceptance failed."
               proof_path.write_text(json.dumps(proof, indent=2) + "\n")
               raise SystemExit("; ".join(errors))
           proof["sessionResult"] = "passed"
-          proof["scope"] = "Exact Devsy WM_CLASS/title GNOME candidates were attributed only after their GetWindows IDs linked to MetaWindow PID/client-type/geometry and the audited D485 AppImage process tree before and after screenshots. GNOME app-id is retained as observed metadata, not standalone identity evidence. MetaWindow PID is corroborating fixture evidence, not cryptographic attestation. Software-rendered feasibility only; not the complete T4 Add/Remove/move/update acceptance matrix."
+          proof["scope"] = "Raw exact WM_CLASS/title candidates were activated and verified as the focused GNOME window; MetaWindow IDs/PIDs were linked through actual process ancestry to the immutable D485 AppImage mount/executable binding before and after ScreenshotWindow captures. GNOME app-id is observed metadata, not standalone identity evidence. MetaWindow PID is corroborating fixture evidence, not cryptographic attestation. Software-rendered feasibility only; not the complete T4 Add/Remove/move/update acceptance matrix."
           proof_path.write_text(json.dumps(proof, indent=2) + "\n")
           PY
           printf 'GNOME feasibility: exact AppImage and same-window PID linkage observed in isolated GNOME sessions; software-rendered feasibility only.\n' \
