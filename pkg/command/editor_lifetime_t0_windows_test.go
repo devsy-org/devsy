@@ -66,11 +66,23 @@ func TestNativeT0ObserveEditorLifetime(t *testing.T) {
 	}
 
 	var workerCreated, exited, workerKernel, workerUser windows.Filetime
-	if err := windows.GetProcessTimes(worker, &workerCreated, &exited, &workerKernel, &workerUser); err != nil {
+	if err := windows.GetProcessTimes(
+		worker,
+		&workerCreated,
+		&exited,
+		&workerKernel,
+		&workerUser,
+	); err != nil {
 		t.Fatalf("read worker creation time: %v", err)
 	}
 	var editorCreated, editorExited, editorKernel, editorUser windows.Filetime
-	if err := windows.GetProcessTimes(editor, &editorCreated, &editorExited, &editorKernel, &editorUser); err != nil {
+	if err := windows.GetProcessTimes(
+		editor,
+		&editorCreated,
+		&editorExited,
+		&editorKernel,
+		&editorUser,
+	); err != nil {
 		t.Fatalf("read editor creation time: %v", err)
 	}
 
@@ -121,7 +133,11 @@ func TestNativeT0ObserveEditorLifetime(t *testing.T) {
 	}
 	if processList.listed > uint32(len(processList.pids)) {
 		_ = windows.CloseHandle(job)
-		t.Fatalf("job process ID list exceeded observer capacity: assigned=%d listed=%d", processList.assigned, processList.listed)
+		t.Fatalf(
+			"job process ID list exceeded observer capacity: assigned=%d listed=%d",
+			processList.assigned,
+			processList.listed,
+		)
 	}
 	jobPIDs := make([]uintptr, processList.listed)
 	copy(jobPIDs, processList.pids[:processList.listed])

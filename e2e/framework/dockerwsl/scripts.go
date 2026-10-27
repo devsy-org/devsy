@@ -254,16 +254,40 @@ if [ -e /etc/ssh/devsy-ci ] || [ -e /run/devsy-ci ] || [ -e /tmp/devsy-ci ]; the
 fi
 `
 
-// diagnosticsScript prints bounded log tails and process state.
+// diagnosticsScript preserves up to the previous 8 KiB per daemon log as
+// complete bounded lines; PEM blocks and overlong lines are omitted.
 const diagnosticsScript = `set -u
 for f in /tmp/devsy-ci/dockerd.log /tmp/devsy-ci/sshd.log; do
-  echo "== tail $f"
-  tail -c 8192 "$f" 2>&1
+  echo "== tail $f (up to 8 complete 1KiB lines; PEM omitted)"
+  LC_ALL=C awk '
+    BEGIN { max_lines = 8; max_line_bytes = 1024; count = 0; in_key = 0 }
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----/ {
+      # A later BEGIN must not expose the following key body.
+      key_tail = $0
+      sub(/^.*-----BEGIN [A-Z ]*PRIVATE KEY-----/, "", key_tail)
+      in_key = (key_tail !~ /-----END [A-Z ]*PRIVATE KEY-----/)
+      next
+    }
+    in_key {
+      if (/-----END [A-Z ]*PRIVATE KEY-----/) in_key = 0
+      next
+    }
+    length($0) > max_line_bytes { next }
+    { lines[count % max_lines] = $0; count++ }
+    END {
+      start = count > max_lines ? count - max_lines : 0
+      for (i = start; i < count; i++) print lines[i % max_lines]
+    }
+  ' "$f" 2>&1
 done
 echo "== docker socket"
-ls -l /var/run/docker.sock 2>&1
-echo "== processes"
-ps -eo pid,user,args 2>&1 | grep -E '[d]ockerd|[s]shd' | cut -c1-200
-echo "== listeners"
-cut -c1-120 /proc/net/tcp 2>&1 | head -n 40
+ls -l /var/run/docker.sock 2>&1 | cut -c1-160
+echo "== processes (pid,ppid,user,comm; max 6)"
+ps -eo pid,ppid,user,comm 2>&1 | grep -E '[d]ockerd|[s]shd' | cut -c1-120 | head -n 6
+for f in /proc/net/tcp /proc/net/tcp6; do
+  if [ -r "$f" ]; then
+    echo "== listeners $f (ssh=08AE,docker-tcp=0947; max 4)"
+    awk '$4 == "0A" && ($2 ~ /:08AE$/ || $2 ~ /:0947$/) { if (count++ < 4) print substr($0, 1, 120) }' "$f" 2>&1
+  fi
+done
 `

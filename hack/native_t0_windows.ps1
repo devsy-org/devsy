@@ -14,7 +14,7 @@ $stateFile = Join-Path $runnerTemp "devsy-ci\docker-wsl-state.json"
 $e2eHelper = Join-Path $runnerTemp "devsy-ci-e2e.exe"
 $script:knownOutputSecrets = @(
     Get-ChildItem Env: |
-        Where-Object { $_.Name -match '(?i)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|API_KEY|APIKEY)' } |
+        Where-Object { $_.Name -match '(?i)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|API[_-]?KEY|APIKEY|AUTHORIZATION)' } |
         ForEach-Object { [string]$_.Value } |
         Where-Object { $_.Length -ge 6 }
 )
@@ -68,7 +68,7 @@ function Get-SafeErrorContext($context) {
     $safe = [ordered]@{}
     foreach ($key in @($context.Keys | Sort-Object)) {
         $name = [string]$key
-        if ($name -match '(?i)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|API_KEY|APIKEY|AUTHORIZATION)') {
+        if ($name -match '(?i)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|API[_-]?KEY|APIKEY|AUTHORIZATION)') {
             $safe[$name] = "[REDACTED]"
         } elseif ($context[$key] -is [string]) {
             $safe[$name] = Redact-DiagnosticText $context[$key]
@@ -92,22 +92,43 @@ function Redact-DiagnosticText([string]$text) {
             $text = [regex]::Replace($text, [regex]::Escape($value), "[REDACTED_PATH]", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
         }
     }
+    $privateKeyDepth = 0
+    foreach ($marker in [regex]::Matches($text, '(?i)-----BEGIN [A-Z ]*PRIVATE KEY-----|-----END [A-Z ]*PRIVATE KEY-----')) {
+        if ($marker.Value -match '(?i)-----BEGIN') {
+            $privateKeyDepth++
+        } elseif ($privateKeyDepth -eq 0) {
+            return "[diagnostic omitted: incomplete private-key block]"
+        } else {
+            $privateKeyDepth--
+        }
+    }
+    if ($privateKeyDepth -gt 0) {
+        return "[diagnostic omitted: incomplete private-key block]"
+    }
     $redactions = @(
         @{ Pattern = '(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)'; Replacement = '-----BEGIN PRIVATE KEY----- [REDACTED] -----END PRIVATE KEY-----' },
         @{ Pattern = '\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b'; Replacement = '[REDACTED]' },
         @{ Pattern = '(?i)(authorization:\s*(?:bearer|basic|token)\s+)\S+'; Replacement = '${1}[REDACTED]' },
-        @{ Pattern = '(?i)("(?:auth|identitytoken|registrytoken|password|token|access_token|refresh_token|client_secret|secret|credential|private_key|api_key|apikey)"\s*:\s*)"[^"]*"'; Replacement = '${1}"[REDACTED]"' },
         @{ Pattern = '(?i)(https?://[^/\s:@]+:)[^@\s/]+@'; Replacement = '${1}[REDACTED]@' },
-        @{ Pattern = '(?i)(?:x-api-key|api-key)\s*:\s*\S+'; Replacement = '[REDACTED]' },
-        @{ Pattern = '(?i)\b([A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|API_KEY|APIKEY)[A-Za-z0-9_]*)(\s*[=:]\s*)(?!\[REDACTED\])(["'']?)([^"''\s,}\]]+)\3'; Replacement = '${1}${2}${3}[REDACTED]${3}' }
+        @{ Pattern = '(?i)(?:x-api-key|api-key)\s*:\s*\S+'; Replacement = '[REDACTED]' }
     )
     foreach ($redaction in $redactions) {
         $text = [regex]::Replace($text, $redaction.Pattern, $redaction.Replacement)
     }
+
+    $secretNames = '(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|API[_-]?KEY|APIKEY|AUTHORIZATION|(?<![A-Za-z0-9])AUTH(?![A-Za-z0-9]))'
+    $secretKey = '(?:"[^"\r\n]*' + $secretNames + '[^"\r\n]*"|''[^''\r\n]*' + $secretNames + '[^''\r\n]*''|[A-Za-z0-9_.-]*' + $secretNames + '[A-Za-z0-9_.-]*)'
+    $secretPropertyPattern = '(?im)(?<key>' + $secretKey + ')[\t ]*:[\t ]*(?:"(?:\\.|[^"\\\r\n])*(?:"|(?=\r?$))|''(?:\\.|[^''\\\r\n])*(?:''|(?=\r?$))|(?:\{|\[)[\s\S]*\z|[^\s,}\]]*)'
+    $redactSecretProperty = [System.Text.RegularExpressions.MatchEvaluator]{
+        param($match)
+        return $match.Groups["key"].Value + ':"[REDACTED]"'
+    }
+    $text = [regex]::Replace($text, $secretPropertyPattern, $redactSecretProperty)
+    $text = [regex]::Replace($text, '(?i)\b([A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_KEY|ACCESS_KEY|API_KEY|APIKEY)[A-Za-z0-9_]*)(\s*[=:]\s*)(?!\[REDACTED\])(["'']?)([^"''\s,}\]]+)\3', '${1}${2}${3}[REDACTED]${3}')
     return [regex]::Replace($text, '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '?')
 }
 
-function Read-BoundedProcessOutput([string]$path) {
+function Read-BoundedProcessOutput([string]$path, [switch]$Tail, [int]$Limit = 4096) {
     $file = Get-Item -LiteralPath $path
     $maxRedactionLength = 0
     foreach ($value in @($script:knownOutputSecrets) + @($script:knownOutputPaths)) {
@@ -118,21 +139,72 @@ function Read-BoundedProcessOutput([string]$path) {
             Bytes = $file.Length
             Text = "[diagnostic omitted: redaction context exceeds limit]"
             Truncated = $true
+            Tail = [bool]$Tail
+            DroppedBoundary = $false
         }
     }
-    $readLimit = 4096 + [Math]::Max(512, $maxRedactionLength)
-    $reader = [System.IO.StreamReader]::new($path)
-    $buffer = [char[]]::new($readLimit)
+    $readLimit = $Limit + [Math]::Max(512, $maxRedactionLength)
+    $offset = [long]0
+    $truncated = $file.Length -gt $readLimit
+    if ($Tail -and $truncated) {
+        $offset = $file.Length - $readLimit
+    }
+    if ($offset -gt 0) {
+        return [pscustomobject]@{
+            Bytes = $file.Length
+            Text = ""
+            Truncated = $true
+            Tail = $true
+            DroppedBoundary = $true
+            OmissionReason = "contextless-tail-omitted"
+        }
+    }
+    $share = [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete
+    $stream = [System.IO.FileStream]::new($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, $share)
+    $reader = $null
     try {
+        if ($offset -gt 0) {
+            $null = $stream.Seek($offset, [System.IO.SeekOrigin]::Begin)
+        }
+        $reader = [System.IO.StreamReader]::new($stream)
+        $buffer = [char[]]::new($readLimit)
         $sampleLength = $reader.ReadBlock($buffer, 0, $buffer.Length)
-        $truncated = $reader.Peek() -ge 0
+        $hasMore = $reader.Peek() -ge 0
+        $text = [string]::new($buffer, 0, $sampleLength)
+        $droppedBoundary = $false
+        if ($offset -gt 0) {
+            $firstLineBreak = $text.IndexOf("`n")
+            if ($firstLineBreak -lt 0) {
+                $text = ""
+            } else {
+                $text = $text.Substring($firstLineBreak + 1)
+            }
+            $droppedBoundary = $true
+        }
+        if ($hasMore) {
+            $lastLineBreak = $text.LastIndexOf("`n")
+            if ($lastLineBreak -lt 0) {
+                $text = ""
+            } else {
+                $text = $text.Substring(0, $lastLineBreak + 1)
+            }
+            $droppedBoundary = $true
+            $truncated = $true
+        }
     } finally {
-        $reader.Dispose()
+        if ($null -ne $reader) {
+            $reader.Dispose()
+        } else {
+            $stream.Dispose()
+        }
     }
     return [pscustomobject]@{
         Bytes = $file.Length
-        Text = [string]::new($buffer, 0, $sampleLength)
+        Text = $text
         Truncated = $truncated
+        Tail = [bool]$Tail
+        DroppedBoundary = $droppedBoundary
+        OmissionReason = ""
     }
 }
 
@@ -188,28 +260,217 @@ function Get-SafeProcessOutput($captured, [switch]$ForceProjectionFailure) {
     $text = Redact-DiagnosticText $text
     $truncated = $captured.Truncated
     if ($text.Length -gt 4096) {
-        $text = $text.Substring(0, 4096)
+        if ($captured.Tail) {
+            $text = $text.Substring($text.Length - 4096)
+        } else {
+            $text = $text.Substring(0, 4096)
+        }
         $truncated = $true
     }
     return [pscustomobject]@{
         Text = $text
         Format = $format
         Truncated = $truncated
+        OmissionReason = $captured.OmissionReason
     }
 }
 
 function Add-SafeProcessOutput([string]$stage, [string]$stream, $captured) {
+    $safeStage = $stage -replace '[^a-zA-Z0-9-]', '-'
+    if ($captured.OmissionReason) {
+        Add-Evidence "ProcessOutputOmitted=stage=$safeStage,stream=$stream,reason=$($captured.OmissionReason),bytes=$($captured.Bytes)"
+        return
+    }
     if (!$captured.Text) { return }
     $formatted = Get-SafeProcessOutput $captured
-    $safeStage = $stage -replace '[^a-zA-Z0-9-]', '-'
     $lines = @($formatted.Text -split "\r?\n|\r")
-    foreach ($line in $lines | Select-Object -First 32) {
+    $selectedLines = if ($captured.Tail) { $lines | Select-Object -Last 32 } else { $lines | Select-Object -First 32 }
+    foreach ($line in $selectedLines) {
         if ($line) { Add-Evidence "ProcessOutput=stage=$safeStage,stream=$stream,format=$($formatted.Format),text=$line" }
     }
     if ($lines.Count -gt 32 -or $formatted.Truncated) {
         Add-Evidence "ProcessOutputTruncated=stage=$safeStage,stream=$stream"
     }
 }
+function Add-SafeProcessFileOutput([string]$stage, [string]$stream, [string]$path, [switch]$Tail, [switch]$Sections, [int]$Limit = 4096) {
+    if (!(Test-Path -LiteralPath $path)) {
+        Add-Evidence "ProcessCaptureUnavailable=stage=$stage,stream=$stream"
+        return
+    }
+    $captured = Read-BoundedProcessOutput $path -Tail:$Tail -Limit $Limit
+    $safeStage = $stage -replace '[^a-zA-Z0-9-]', '-'
+    $reason = if ($captured.OmissionReason) { $captured.OmissionReason } else { "none" }
+    Add-Evidence "ProcessFileCapture=stage=$safeStage,stream=$stream,bytes=$($captured.Bytes),truncated=$($captured.Truncated),boundaryDropped=$($captured.DroppedBoundary),reason=$reason"
+    if ($captured.OmissionReason) {
+        Add-Evidence "ProcessFileOmitted=stage=$safeStage,stream=$stream,reason=$($captured.OmissionReason)"
+        return
+    }
+    if ($Sections) {
+        $safeSections = @(Get-SafeDiagnosticSections $captured.Text)
+        if ($safeSections.Count -eq 0) {
+            Add-Evidence "ProcessSectionCapture=stage=$safeStage,status=unavailable,reason=no-complete-section-boundaries,boundaryDropped=$($captured.DroppedBoundary)"
+            return
+        }
+        Add-Evidence "ProcessSectionCapture=stage=$safeStage,status=captured,truncated=$($captured.Truncated),boundaryDropped=$($captured.DroppedBoundary)"
+        Add-SafeDiagnosticSections $stage $stream $captured.Text
+        return
+    }
+    Add-SafeProcessOutput $stage $stream $captured
+}
+
+function Get-SafeProcessFileOutput([string]$path, [switch]$ForceProjectionFailure, [switch]$Tail, [int]$Limit = 4096) {
+    $captured = Read-BoundedProcessOutput $path -Tail:$Tail -Limit $Limit
+    if ($ForceProjectionFailure) {
+        return Get-SafeProcessOutput $captured -ForceProjectionFailure
+    }
+    return Get-SafeProcessOutput $captured
+}
+
+function Get-SafeDiagnosticSections([string]$text) {
+    $safeText = Redact-DiagnosticText $text
+    $sections = [ordered]@{}
+    $currentSection = ""
+    foreach ($line in $safeText -split "\r?\n|\r") {
+        if ($line -match '^== tail .*/dockerd\.log') {
+            $currentSection = "dockerd"
+        } elseif ($line -match '^== tail .*/sshd\.log') {
+            $currentSection = "sshd"
+        } elseif ($line -match '^== docker socket') {
+            $currentSection = "docker-socket"
+        } elseif ($line -match '^== processes') {
+            $currentSection = "processes"
+        } elseif ($line -match '^== listeners .*/proc/net/tcp6') {
+            $currentSection = "listeners-tcp6"
+        } elseif ($line -match '^== listeners .*/proc/net/tcp') {
+            $currentSection = "listeners-tcp"
+        } elseif ($line -match '^== ') {
+            $currentSection = ""
+            continue
+        }
+        if ($currentSection -and $line -notmatch '^== ') {
+            if (!$sections.Contains($currentSection)) {
+                $sections[$currentSection] = @()
+            }
+            $sections[$currentSection] += $line
+        }
+    }
+
+    $safeSections = @()
+    foreach ($name in $sections.Keys) {
+        $sectionText = $sections[$name] -join "`n"
+        $limit = if ($name -in @("dockerd", "sshd")) { 4096 } else { 1024 }
+        $truncated = $sectionText.Length -gt $limit
+        if ($truncated) {
+            $sectionText = $sectionText.Substring($sectionText.Length - $limit)
+        }
+        $safeSections += [pscustomobject]@{
+            Name = $name
+            Text = $sectionText
+            Truncated = $truncated
+        }
+    }
+    return $safeSections
+}
+
+function Add-SafeDiagnosticSections([string]$stage, [string]$stream, [string]$text) {
+    $safeStage = $stage -replace '[^a-zA-Z0-9-]', '-'
+    foreach ($section in (Get-SafeDiagnosticSections $text)) {
+        Add-Evidence "ProcessSection=stage=$safeStage,stream=$stream,section=$($section.Name),characters=$($section.Text.Length),truncated=$($section.Truncated)"
+        foreach ($line in $section.Text -split "\r?\n|\r") {
+            if ($line) {
+                Add-Evidence "ProcessOutput=stage=$safeStage,stream=$stream,section=$($section.Name),format=text,text=$line"
+            }
+        }
+    }
+}
+
+
+function Capture-SafeProcessOutput([string]$path, [string[]]$arguments, [int]$timeoutSeconds, [string]$stage, [switch]$Tail) {
+    $run = Start-QuietProcess $path $arguments $stage
+    $timedOut = $false
+    $treeKill = "not-needed"
+    $killWaitTimedOut = $false
+    try {
+        $safeStage = $stage -replace '[^a-zA-Z0-9-]', '-'
+        $timedOut = !$run.Process.WaitForExit($timeoutSeconds * 1000)
+        if ($timedOut) {
+            try {
+                $run.Process.Kill($true)
+                $treeKill = "requested"
+            } catch {
+                $treeKill = "unavailable"
+                try {
+                    $run.Process.Kill()
+                    $treeKill = "parent-only"
+                } catch {
+                    Add-Evidence "ProcessCaptureKill=stage=$safeStage,status=failed,errorClass=$($_.Exception.GetType().Name)"
+                }
+            }
+            $killWaitTimedOut = !$run.Process.WaitForExit(5000)
+        }
+        $stdout = Read-BoundedProcessOutput $run.Stdout -Tail:$Tail
+        $stderr = Read-BoundedProcessOutput $run.Stderr -Tail:$Tail
+        $exitCode = if ($timedOut -or $killWaitTimedOut) { -1 } else { $run.Process.ExitCode }
+        Add-Evidence "ProcessCapture=stage=$safeStage,exitCode=$exitCode,timeout=$timedOut,treeKill=$treeKill,killWaitTimedOut=$killWaitTimedOut,stdoutBytes=$($stdout.Bytes),stderrBytes=$($stderr.Bytes),stdoutTruncated=$($stdout.Truncated),stderrTruncated=$($stderr.Truncated),stdoutBoundaryDropped=$($stdout.DroppedBoundary),stderrBoundaryDropped=$($stderr.DroppedBoundary)"
+        Add-SafeProcessOutput $stage "stdout" $stdout
+        Add-SafeProcessOutput $stage "stderr" $stderr
+        return [pscustomobject]@{
+            Succeeded = !$timedOut -and !$killWaitTimedOut -and $run.Process.ExitCode -eq 0
+            TimedOut = $timedOut
+            ExitCode = $exitCode
+            TreeKill = $treeKill
+            KillWaitTimedOut = $killWaitTimedOut
+        }
+    } finally {
+        $run.Process.Dispose()
+        foreach ($rawCapture in @(
+                @{ Stream = "stdout"; Path = $run.Stdout },
+                @{ Stream = "stderr"; Path = $run.Stderr }
+            )) {
+            try {
+                if (Test-Path -LiteralPath $rawCapture.Path) {
+                    Remove-Item -LiteralPath $rawCapture.Path -Force -ErrorAction Stop
+                }
+                if (Test-Path -LiteralPath $rawCapture.Path) {
+                    throw "raw process capture file remains"
+                }
+                Add-Evidence "ProcessCaptureRawFile=stream=$($rawCapture.Stream),status=deleted"
+            } catch {
+                Add-Evidence "ProcessCaptureRawFile=stream=$($rawCapture.Stream),status=deletion-failed,errorClass=$($_.Exception.GetType().Name)"
+            }
+        }
+    }
+}
+
+function Capture-FirstTaskFailureDiagnostics([string]$taskID) {
+    Add-KnownDiagnosticSecret $taskID
+    try {
+        $taskLogArgs = @("workspace", "task", "logs", $taskID, "--follow", "--interval=500ms", "--result-format=json")
+        $taskLogs = Capture-SafeProcessOutput $devsy $taskLogArgs 30 "task-logs" -Tail
+        Add-Evidence "TaskLogsCapture=status=$(if ($taskLogs.Succeeded) { 'success' } elseif ($taskLogs.TimedOut) { 'timeout' } else { 'failed' }),exitCode=$($taskLogs.ExitCode)"
+    } catch {
+        Add-Evidence "TaskLogsCapture=status=unavailable,errorClass=$($_.Exception.GetType().Name)"
+    }
+
+    $diagnosticFile = Join-Path (Split-Path $stateFile) "docker-wsl-diagnostics.log"
+    try {
+        $cleanupArgs = @("docker-wsl", "cleanup", "--state-file", $stateFile, "--timeout", "2m")
+        $cleanup = Capture-SafeProcessOutput $e2eHelper $cleanupArgs 150 "docker-wsl-failure-cleanup"
+        $stateRetained = Test-Path -LiteralPath $stateFile
+        $outerCleanup = if ($stateRetained) { "pending" } else { "not-needed" }
+        Add-Evidence "DockerWSLCleanup=status=$(if ($cleanup.Succeeded) { 'completed' } elseif ($cleanup.TimedOut) { 'timeout' } else { 'failed' }),exitCode=$($cleanup.ExitCode),stateRetained=$stateRetained,outerCleanup=$outerCleanup"
+    } catch {
+        $stateRetained = Test-Path -LiteralPath $stateFile
+        $outerCleanup = if ($stateRetained) { "pending" } else { "not-needed" }
+        Add-Evidence "DockerWSLCleanup=status=unavailable,errorClass=$($_.Exception.GetType().Name),stateRetained=$stateRetained,outerCleanup=$outerCleanup"
+    }
+    if (Test-Path -LiteralPath $diagnosticFile) {
+        Add-SafeProcessFileOutput "docker-wsl-failure-diagnostics" "stdout" $diagnosticFile -Tail -Sections -Limit 24576
+    } else {
+        Add-Evidence "DockerWSLDiagnostics=unavailable,reason=sidecar-missing"
+    }
+}
+
 function Invoke-DiagnosticSelfTest {
     $testToken = "ghp_selftestToken12345678901234567890"
     $testPassword = "selftest-password-SENTINEL"
@@ -217,6 +478,7 @@ function Invoke-DiagnosticSelfTest {
     $testPrivateKey = "selftest-private-key-SENTINEL"
     $testEndpoint = "ssh://selftest-user@fixture-host:2222"
     $testPath = Join-Path $runnerTemp "diagnostic-private-key-path"
+    $unregisteredSecret = "unregistered-api-key-SENTINEL"
     foreach ($secret in @($testToken, $testPassword, $testApiKey, $testPrivateKey, $testEndpoint)) {
         Add-KnownDiagnosticSecret $secret
     }
@@ -237,6 +499,7 @@ function Invoke-DiagnosticSelfTest {
         message = "detached worker failed with TOKEN=$testToken"
         causes = @(@{ message = "connection refused at $testEndpoint" })
         password = $testPassword
+        UNREGISTERED_API_KEY = $unregisteredSecret
     } -Compress
     $structured = Get-SafeProcessOutput ([pscustomobject]@{
         Text = $structuredRaw
@@ -247,6 +510,25 @@ function Invoke-DiagnosticSelfTest {
     }
     if ($structured.Text.Contains($testToken) -or $structured.Text.Contains($testPassword) -or $structured.Text.Contains($testEndpoint)) {
         throw "Diagnostic self-test failed: structured secret escaped"
+    }
+    if ($structured.Text.Contains($unregisteredSecret)) {
+        throw "Diagnostic self-test failed: unregistered structured secret escaped"
+    }
+    $rawSecretRecord = '{"message":"retained SSH cause","UNREGISTERED_API_KEY":"' + $unregisteredSecret + '"}'
+    foreach ($capturedText in @(
+            $rawSecretRecord,
+            ($rawSecretRecord + "`n" + '{"message":"later cause"}'),
+            ('{"message":"retained SSH cause","UNREGISTERED_API_KEY":"' + $unregisteredSecret)
+        )) {
+        $rawFallback = Get-SafeProcessOutput ([pscustomobject]@{
+            Text = $capturedText
+            Truncated = $true
+        })
+        if (!$rawFallback.Text.Contains("retained SSH cause") -or
+            $rawFallback.Text.Contains($unregisteredSecret) -or
+            !$rawFallback.Text.Contains('"UNREGISTERED_API_KEY":"[REDACTED]"')) {
+            throw "Diagnostic self-test failed: truncated or malformed secret property escaped"
+        }
     }
 
     $secretText = @"
@@ -287,7 +569,12 @@ path=$testPath
         Text = $structuredRaw
         Truncated = $false
     }) -ForceProjectionFailure
-    if (!$forcedProjection.Text.Contains("detached worker failed") -or !$forcedProjection.Text.Contains("connection refused") -or $forcedProjection.Text.Contains($testToken) -or $forcedProjection.Text.Contains($testEndpoint)) {
+    if (!$forcedProjection.Text.Contains("detached worker failed") -or
+        !$forcedProjection.Text.Contains("connection refused") -or
+        $forcedProjection.Text.Contains($testToken) -or
+        $forcedProjection.Text.Contains($testEndpoint) -or
+        $forcedProjection.Text.Contains($unregisteredSecret) -or
+        !$forcedProjection.Text.Contains('"UNREGISTERED_API_KEY":"[REDACTED]"')) {
         throw "Diagnostic self-test failed: projection failure bypassed redaction"
     }
 
@@ -300,6 +587,124 @@ path=$testPath
         }
     } finally {
         Remove-Item -LiteralPath $boundaryFile -Force -ErrorAction SilentlyContinue
+    }
+
+    $captureFile = Join-Path $runnerTemp "t0-process-output-selftest.txt"
+    $unregisteredCredential = "unregistered-api-key-SENTINEL"
+    $capturePayload = @{
+        error = @{
+            code = "E_CAPTURE"
+            message = "managed SSH handshake failed at $testPath with TOKEN=$testToken"
+            context = @{
+                UNREGISTERED_API_KEY = $unregisteredCredential
+                detail = "peer closed before SSH identification"
+            }
+        }
+    }
+    try {
+        [System.IO.File]::WriteAllText($captureFile, (ConvertTo-Json -InputObject $capturePayload -Compress -Depth 5))
+        $capturedOutput = Get-SafeProcessFileOutput $captureFile
+        if (!$capturedOutput.Text.Contains("managed SSH handshake failed") -or
+            !$capturedOutput.Text.Contains("peer closed before SSH identification") -or
+            $capturedOutput.Text.Contains($testToken) -or
+            $capturedOutput.Text.Contains($testPath) -or
+            $capturedOutput.Text.Contains($unregisteredCredential) -or
+            !$capturedOutput.Text.Contains('"UNREGISTERED_API_KEY":"[REDACTED]"')) {
+            throw "Diagnostic self-test failed: captured process output was not safely retained"
+        }
+        $forcedCapture = Get-SafeProcessFileOutput $captureFile -ForceProjectionFailure
+        if (!$forcedCapture.Text.Contains("managed SSH handshake failed") -or
+            !$forcedCapture.Text.Contains("peer closed before SSH identification") -or
+            $forcedCapture.Text.Contains($testToken) -or
+            $forcedCapture.Text.Contains($testPath) -or
+            $forcedCapture.Text.Contains($unregisteredCredential) -or
+            !$forcedCapture.Text.Contains('"UNREGISTERED_API_KEY":"[REDACTED]"')) {
+            throw "Diagnostic self-test failed: captured output projection fallback was unsafe"
+        }
+
+        [System.IO.File]::WriteAllText($captureFile, ("x" * 4090) + "API_KEY=$testApiKey" + ("z" * 1024))
+        $captureBoundary = Get-SafeProcessFileOutput $captureFile
+        if ($captureBoundary.Text.Contains($testApiKey) -or !$captureBoundary.Truncated) {
+            throw "Diagnostic self-test failed: captured output truncation boundary leaked a secret"
+        }
+        $maxRedactionLength = 0
+        foreach ($value in @($script:knownOutputSecrets) + @($script:knownOutputPaths)) {
+            $maxRedactionLength = [Math]::Max($maxRedactionLength, $value.Length)
+        }
+        $readLimit = 4096 + [Math]::Max(512, $maxRedactionLength)
+        $unregisteredPAT = "ghp_unregisteredBoundaryToken123456789012345"
+        $boundaryCause = "E_BOUNDARY: retained application cause`n"
+        $propertyPrefix = '"UNREGISTERED_API_KEY":"'
+        $paddingLength = $readLimit - $boundaryCause.Length - $propertyPrefix.Length - [int][Math]::Floor($unregisteredPAT.Length / 2)
+        $patStart = $boundaryCause.Length + $paddingLength + $propertyPrefix.Length
+        if ($patStart -ge $readLimit -or ($patStart + $unregisteredPAT.Length) -le $readLimit) {
+            throw "Diagnostic self-test failed: PAT did not straddle the reader limit"
+        }
+        $patBoundaryRaw = $boundaryCause + ("x" * $paddingLength) + $propertyPrefix + $unregisteredPAT + '"' + "`n"
+        [System.IO.File]::WriteAllText($captureFile, $patBoundaryRaw)
+        $patBoundary = Get-SafeProcessFileOutput $captureFile
+        if (!$patBoundary.Text.Contains("retained application cause") -or
+            $patBoundary.Text.Contains($unregisteredPAT) -or
+            $patBoundary.Text.Contains($propertyPrefix) -or
+            $patBoundary.Text.Contains($unregisteredPAT.Substring(0, 10)) -or
+            !$patBoundary.Truncated) {
+            throw "Diagnostic self-test failed: unregistered PAT crossed the read limit unsafely"
+        }
+
+        $sshCausePayload = @{ error = @{ code = "SSH_EOF"; message = "ClientFromManagedConn: EOF" } }
+        [System.IO.File]::WriteAllText($captureFile, (ConvertTo-Json -InputObject $sshCausePayload -Compress -Depth 4))
+        $evidenceBeforeCause = [System.IO.File]::ReadAllText($report)
+        Add-SafeProcessFileOutput "selftest-ssh-cause" "stderr" $captureFile
+        $evidenceAfterCause = [System.IO.File]::ReadAllText($report)
+        $causeEvidence = $evidenceAfterCause.Substring($evidenceBeforeCause.Length)
+        if (!$causeEvidence.Contains("ClientFromManagedConn: EOF") -or !$causeEvidence.Contains("SSH_EOF")) {
+            throw "Diagnostic self-test failed: safe task failure cause was omitted from evidence"
+        }
+        $longCause = "TERMINAL_SAFE_CAUSE=worker returned connection EOF"
+        $longLine = Get-SafeProcessOutput ([pscustomobject]@{
+            Text = ConvertTo-Json -InputObject @{ message = ("x" * 5000) + $longCause } -Compress
+            Truncated = $false
+            Tail = $true
+        })
+        if (!$longLine.Text -or !$longLine.Text.Contains($longCause)) {
+            throw "Diagnostic self-test failed: final clipping erased a long-line cause"
+        }
+
+        $pemCanary = "unregistered-pem-material-SENTINEL"
+        $helperSectionsRaw = @"
+== tail /tmp/devsy-ci/dockerd.log (up to 8 complete 1KiB lines; PEM omitted)
+dockerd cause=daemon startup failed
+== tail /tmp/devsy-ci/sshd.log (up to 8 complete 1KiB lines; PEM omitted)
+UNREGISTERED_API_KEY=$unregisteredSecret
+$("x" * 5000) SSHD_TERMINAL_CAUSE=client closed before identification
+-----BEGIN OPENSSH PRIVATE KEY-----
+$pemCanary
+-----END OPENSSH PRIVATE KEY-----
+== docker socket
+socket present
+== processes (pid,ppid,user,comm; max 6)
+sshd process present
+== listeners /proc/net/tcp (ssh=08AE,docker-tcp=0947; max 4)
+ssh listener present
+"@
+        $helperSections = @(Get-SafeDiagnosticSections $helperSectionsRaw)
+        $sectionNames = @($helperSections | ForEach-Object { $_.Name })
+        foreach ($name in @("dockerd", "sshd", "docker-socket", "processes", "listeners-tcp")) {
+            if ($name -notin $sectionNames) {
+                throw "Diagnostic self-test failed: helper section $name was lost"
+            }
+        }
+        $sshdSection = $helperSections | Where-Object { $_.Name -eq "sshd" } | Select-Object -First 1
+
+        $causePresent = $sshdSection.Text.Contains("SSHD_TERMINAL_CAUSE=client closed before identification")
+        $secretPresent = $sshdSection.Text.Contains($unregisteredSecret)
+        $pemPresent = $sshdSection.Text.Contains($pemCanary)
+        $secretFragmentPresent = $sshdSection.Text.Contains($unregisteredSecret.Substring(0, 10))
+        if (!$causePresent -or $secretPresent -or $pemPresent -or $secretFragmentPresent) {
+            throw "Diagnostic self-test failed: section cause=$causePresent,secret=$secretPresent,pem=$pemPresent,fragment=$secretFragmentPresent,characters=$($sshdSection.Text.Length)"
+        }
+    } finally {
+        Remove-Item -LiteralPath $captureFile -Force -ErrorAction SilentlyContinue
     }
     $unregisteredApiKey = "unregistered-api-key-SENTINEL"
     $taskState = @{
@@ -346,6 +751,73 @@ path=$testPath
         throw "Diagnostic self-test failed: task projection failure bypassed redaction"
     }
 
+    $escapedJsonRaw = '{"message":"retained SSH cause","api_key":"prefix\"SECRET_SUFFIX"}'
+    $escapedJsonOutput = Get-SafeProcessOutput ([pscustomobject]@{
+        Text = $escapedJsonRaw
+        Truncated = $false
+    }) -ForceProjectionFailure
+    $escapedJsonSafe = $escapedJsonOutput.Text.Contains("retained SSH cause") -and
+        !$escapedJsonOutput.Text.Contains("SECRET_SUFFIX")
+
+    $pemBoundaryFile = Join-Path $runnerTemp "t0-pem-tail-selftest.txt"
+    $pemBodyCanary = "UNREGISTERED_PEM_FILE_BODY_FRAGMENT_1234567890"
+    $pemBodyLine = "$pemBodyCanary`n"
+    $pemBodyLines = [int][Math]::Ceiling(($readLimit + 1024) / $pemBodyLine.Length)
+    $pemBoundaryRaw = "safe header`n-----BEGIN OPENSSH PRIVATE KEY-----`n" +
+        ($pemBodyLine * $pemBodyLines) + "-----END OPENSSH PRIVATE KEY-----`n" +
+        "PEM_SAFE_TERMINAL_CAUSE=client closed before SSH identification`n"
+    $pemBoundarySafe = $false
+    try {
+        [System.IO.File]::WriteAllText($pemBoundaryFile, $pemBoundaryRaw)
+        $pemBoundaryOutput = Get-SafeProcessFileOutput $pemBoundaryFile -Tail
+        $evidenceBeforePEM = [System.IO.File]::ReadAllText($report)
+        Add-SafeProcessFileOutput "selftest-pem-tail" "stderr" $pemBoundaryFile -Tail
+        $evidenceAfterPEM = [System.IO.File]::ReadAllText($report)
+        $pemEvidence = $evidenceAfterPEM.Substring($evidenceBeforePEM.Length)
+        $pemBoundarySafe = !$pemBoundaryOutput.Text -and
+            $pemBoundaryOutput.OmissionReason -eq "contextless-tail-omitted" -and
+            $pemEvidence.Contains("reason=contextless-tail-omitted") -and
+            !$pemEvidence.Contains($pemBodyCanary) -and
+            !$pemEvidence.Contains($pemBodyCanary.Substring(0, 16)) -and
+            !$pemEvidence.Contains("PEM_SAFE_TERMINAL_CAUSE")
+
+        foreach ($pemText in @(
+                "-----BEGIN OPENSSH PRIVATE KEY-----`n$($pemBodyCanary)`n-----END OPENSSH PRIVATE KEY-----`n",
+                "$($pemBodyCanary)`n-----END OPENSSH PRIVATE KEY-----`n",
+                "-----BEGIN OPENSSH PRIVATE KEY-----`n$($pemBodyCanary)`n"
+            )) {
+            [System.IO.File]::WriteAllText($pemBoundaryFile, $pemText)
+            $redactedPEM = Get-SafeProcessFileOutput $pemBoundaryFile
+            Add-SafeProcessFileOutput "selftest-pem-block" "stderr" $pemBoundaryFile
+            if ($redactedPEM.Text.Contains($pemBodyCanary) -or
+                $redactedPEM.Text.Contains($pemBodyCanary.Substring(0, 16))) {
+                $pemBoundarySafe = $false
+            }
+        }
+        $inlinePEM = ConvertTo-Json -InputObject @{
+            message = "-----BEGIN OPENSSH PRIVATE KEY----- $pemBodyCanary -----END OPENSSH PRIVATE KEY-----"
+            cause = "ClientFromManagedConn: EOF"
+        } -Compress
+        $inlinePEMSafe = Get-SafeProcessOutput ([pscustomobject]@{
+            Text = $inlinePEM
+            Truncated = $false
+        })
+        if (!$inlinePEMSafe.Text.Contains("ClientFromManagedConn: EOF") -or
+            $inlinePEMSafe.Text.Contains($pemBodyCanary)) {
+            $pemBoundarySafe = $false
+        }
+        $pemEvidenceAll = [System.IO.File]::ReadAllText($report)
+        if ($pemEvidenceAll.Contains($pemBodyCanary) -or
+            $pemEvidenceAll.Contains($pemBodyCanary.Substring(0, 16))) {
+            $pemBoundarySafe = $false
+        }
+    } finally {
+        Remove-Item -LiteralPath $pemBoundaryFile -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "PrivacyCanaries=escapedJsonValueSafe:$escapedJsonSafe,tailPEMBodySafe:$pemBoundarySafe"
+    if (!$escapedJsonSafe -or !$pemBoundarySafe) {
+        throw "Diagnostic self-test failed: privacy canary escaped or safe cause was not retained"
+    }
     Write-Host "DiagnosticSelfTest=passed"
 }
 
@@ -579,7 +1051,12 @@ function Run-DetachedPhase([string]$phase, [string]$workspaceID, [string]$folder
     $workerPID = Get-WorkerPID $state
     Add-Evidence "UpTask=phase-$phase,status=$($state.status),workerPID=$workerPID,durationMs=$($state.durationMs)"
     if ($state.status -ne "succeeded") {
-        if ($state.status -eq "failed") { Add-SafeTaskFailure $phase $state }
+        if ($state.status -eq "failed") {
+            Add-SafeTaskFailure $phase $state
+            if ($phase -eq "minimal-fresh") {
+                Capture-FirstTaskFailureDiagnostics $taskID
+            }
+        }
         Add-Evidence "UpTaskResult=not-succeeded,phase=$phase"
         if ($phase -eq "minimal-fresh") {
             throw "first minimal workspace up task failed; see safe task diagnostic"
@@ -697,7 +1174,13 @@ try {
     $sshAlias = [string]$fixtureState.ssh_host_alias
     Add-KnownDiagnosticSecret ([string]$fixtureState.ssh_endpoint)
     Add-KnownDiagnosticSecret $sshAlias
-    foreach ($path in @($fixtureState.owned.ssh_identity_file, $fixtureState.owned.known_hosts_file)) {
+    foreach ($path in @(
+            $fixtureState.owned.ssh_identity_file,
+            $fixtureState.owned.known_hosts_file,
+            $fixtureState.owned.ssh_config,
+            $fixtureState.owned.ssh_config_backup,
+            $fixtureState.owned.ssh_config_acl_backup
+        )) {
         Add-KnownDiagnosticPath ([string]$path)
     }
     $identityFile = [string]$fixtureState.owned.ssh_identity_file

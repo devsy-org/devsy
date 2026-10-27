@@ -41,7 +41,10 @@ func TestT0RealVSCodiumCLIToURIFallback(t *testing.T) {
 	)
 	sshExtension := ""
 	for _, extension := range strings.Split(strings.ReplaceAll(extensions, "\r\n", "\n"), "\n") {
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(extension)), "jeanp413.open-remote-ssh@") {
+		if strings.HasPrefix(
+			strings.ToLower(strings.TrimSpace(extension)),
+			"jeanp413.open-remote-ssh@",
+		) {
 			sshExtension = strings.TrimSpace(extension)
 			break
 		}
@@ -88,7 +91,8 @@ func runT0VSCodiumPowerShell(t *testing.T, command string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command).CombinedOutput()
+	output, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command).
+		CombinedOutput()
 	if err != nil {
 		t.Fatalf("VSCodium CLI probe failed (error type %T)", err)
 	}

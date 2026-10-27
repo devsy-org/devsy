@@ -80,3 +80,11 @@ Ginkgo executes the specs directly. `ci e2e run` (or `devsy-ci check-report`) ch
 report through `e2e/framework/ginkgoreport`: all six BuildKit specs must pass on their first attempt, with no
 selected skips, dry run or programmatic focus. Teardown runs on success and
 failure, before the report and non-secret diagnostics are uploaded.
+
+#### Native Windows T0 diagnostics
+
+The branch-local `native-t0-qualification` job runs only when the workflow is dispatched with `t0_qualification=true`. Its evidence is an observation, not proof of editor lifetime unless the actual GUI, process and SSH acceptance criteria are met.
+
+The PowerShell observer treats captured streams as untrusted. If a tail read would start at a nonzero file offset, it emits no stream text and records the byte count, truncation state and `contextless-tail-omitted` reason. Safe structured task errors are projected separately, so omitting a raw tail does not discard an independently available failure cause.
+
+The WSL helper samples at most eight complete lines of at most 1 KiB from each daemon log; PEM blocks and overlong lines are omitted. It redacts the captured output and caps each sidecar append at 20 KiB of diagnostic text plus bounded phase metadata. Repeated appends can make the sidecar larger than 20 KiB. The sidecar requests the state file mode (`0o600`); this does not prove Windows ACL enforcement. The runner evidence file's ACLs also require native verification. Never place credentials, private keys or full SSH configurations in evidence.

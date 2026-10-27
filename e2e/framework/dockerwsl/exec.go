@@ -24,7 +24,8 @@ const (
 	wslInstallTimeout = 3 * time.Minute
 	dockerCmdTimeout  = 15 * time.Second
 
-	maxDiagnosticBytes = 16 << 10
+	// Two 8 KiB daemon sections plus bounded socket, process, and listener state.
+	maxDiagnosticBytes = 20 << 10
 	diagnosticsFile    = "docker-wsl-diagnostics.log"
 	diagnosticPerm     = stateFilePerm
 )
