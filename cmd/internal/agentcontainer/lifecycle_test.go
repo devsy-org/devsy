@@ -501,19 +501,27 @@ func TestManagedSSHServerContextChild(t *testing.T) {
 	assert.ErrorIs(t, cmd.Run(command, nil), context.Canceled)
 }
 
+func readyPath(t *testing.T, cmd *exec.Cmd) string {
+	t.Helper()
+	for _, kv := range cmd.Env {
+		if v, ok := strings.CutPrefix(kv, envWorkerReadyFile+"="); ok {
+			return v
+		}
+	}
+	t.Fatal("the worker must be told where to report")
+	return ""
+}
+
 func TestWorkerReadinessWaitsForSpawnedWorkerRegistration(t *testing.T) {
 	workers, err := newWorkerReadiness()
 	require.NoError(t, err)
 	defer workers.close()
 	cmd := &exec.Cmd{}
-	workers.prepare("post-attach", cmd)
-	var path string
-	for _, kv := range cmd.Env {
-		if v, ok := strings.CutPrefix(kv, envWorkerReadyFile+"="); ok {
-			path = v
-		}
-	}
-	require.NotEmpty(t, path, "the worker must be told where to report")
+	require.NoError(t, workers.launch("post-attach", func(prepare func(*exec.Cmd)) error {
+		prepare(cmd)
+		return nil
+	}))
+	path := readyPath(t, cmd)
 
 	shortCtx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
@@ -530,18 +538,41 @@ func TestWorkerReadinessIsNoopForUnmanagedContainers(t *testing.T) {
 	var workers *workerReadiness
 	cmd := &exec.Cmd{}
 
-	workers.prepare("deferred-hooks", cmd)
+	err := workers.launch("deferred-hooks", func(prepare func(*exec.Cmd)) error {
+		prepare(cmd)
+		return nil
+	})
 
+	require.NoError(t, err)
 	assert.Empty(t, cmd.Env)
 	require.NoError(t, workers.wait(context.Background()))
 	workers.close()
 }
 
-func TestWorkerReadinessOnlyWaitsForWorkersThatWereSpawned(t *testing.T) {
+func TestWorkerReadinessDoesNotAwaitFailedOrSkippedLaunches(t *testing.T) {
 	workers, err := newWorkerReadiness()
 	require.NoError(t, err)
 	defer workers.close()
+	launchErr := errors.New("start process")
+
+	err = workers.launch("deferred-hooks", func(prepare func(*exec.Cmd)) error {
+		prepare(&exec.Cmd{})
+		return launchErr
+	})
+	require.ErrorIs(t, err, launchErr)
+	require.NoError(t, workers.launch("post-attach", func(func(*exec.Cmd)) error {
+		return nil
+	}), "a worker that was already running registers on its own")
 
 	require.NoError(t, workers.wait(context.Background()),
-		"a worker that was already running registers on its own and is not awaited")
+		"neither a failed nor a skipped launch may be awaited")
+}
+
+func TestWorkerReadinessRejectsMarkerOutsideReadinessDir(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "ready")
+	t.Setenv(envWorkerReadyFile, outside)
+
+	signalWorkerReady()
+
+	assert.NoFileExists(t, outside)
 }

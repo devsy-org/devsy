@@ -148,17 +148,26 @@ func newWorkerReadiness() (*workerReadiness, error) {
 	return &workerReadiness{dir: dir}, nil
 }
 
-// prepare tells a worker about to be spawned where to report registration. Call
-// it only when the worker is really started, so wait never expects a skipped one.
-func (w *workerReadiness) prepare(name string, cmd *exec.Cmd) {
-	if w == nil {
-		return
+// launch runs start, which receives a function that tells the worker about to
+// be spawned where to report registration. The worker is awaited only when
+// start succeeds and actually built a command, so a failed or skipped launch
+// cannot stall setup for a marker that will never arrive.
+func (w *workerReadiness) launch(name string, start func(prepare func(*exec.Cmd)) error) error {
+	built := false
+	err := start(func(cmd *exec.Cmd) {
+		built = true
+		if w == nil {
+			return
+		}
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		cmd.Env = append(cmd.Env, envWorkerReadyFile+"="+filepath.Join(w.dir, name))
+	})
+	if err == nil && built && w != nil {
+		w.spawned = append(w.spawned, name)
 	}
-	if cmd.Env == nil {
-		cmd.Env = os.Environ()
-	}
-	cmd.Env = append(cmd.Env, envWorkerReadyFile+"="+filepath.Join(w.dir, name))
-	w.spawned = append(w.spawned, name)
+	return err
 }
 
 // wait blocks until every prepared worker has registered or the bound elapses.

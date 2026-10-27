@@ -386,20 +386,22 @@ func (cmd *SetupContainerCmd) startDeferredHooks(
 	setupInfo, dotfilesRepo, dotfilesScript string, secretsEnv []string,
 	workers *workerReadiness,
 ) error {
-	return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
-		log.Debugf("starting deferred lifecycle hooks as background process")
-		execCmd, err := buildDeferredHooksCmd(
-			setupInfo,
-			cmd.Prebuild,
-			dotfilesRepo,
-			dotfilesScript,
-			secretsEnv,
-		)
-		if err != nil {
-			return nil, err
-		}
-		workers.prepare("deferred-hooks", execCmd)
-		return execCmd, nil
+	return workers.launch("deferred-hooks", func(prepare func(*exec.Cmd)) error {
+		return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
+			log.Debugf("starting deferred lifecycle hooks as background process")
+			execCmd, err := buildDeferredHooksCmd(
+				setupInfo,
+				cmd.Prebuild,
+				dotfilesRepo,
+				dotfilesScript,
+				secretsEnv,
+			)
+			if err != nil {
+				return nil, err
+			}
+			prepare(execCmd)
+			return execCmd, nil
+		})
 	})
 }
 
@@ -584,24 +586,26 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(
 		return nil
 	}
 
-	return command.StartBackground("devsy.post-attach", func() (*exec.Cmd, error) {
-		log.Debugf("starting postAttachCommand as background process")
-		binaryPath, err := os.Executable()
-		if err != nil {
-			return nil, err
-		}
+	return workers.launch("post-attach", func(prepare func(*exec.Cmd)) error {
+		return command.StartBackground("devsy.post-attach", func() (*exec.Cmd, error) {
+			log.Debugf("starting postAttachCommand as background process")
+			binaryPath, err := os.Executable()
+			if err != nil {
+				return nil, err
+			}
 
-		args := []string{
-			cmdInternal, cmdAgent, cmdContainer, "post-attach",
-			names.Flag(names.SetupInfo), cmd.SetupInfo,
-		}
-		execCmd := &exec.Cmd{
-			Path: binaryPath,
-			Args: append([]string{binaryPath}, args...),
-		}
-		execCmd.Env = secretsEnvOverride(state.secretsEnv)
-		workers.prepare("post-attach", execCmd)
-		return execCmd, nil
+			args := []string{
+				cmdInternal, cmdAgent, cmdContainer, "post-attach",
+				names.Flag(names.SetupInfo), cmd.SetupInfo,
+			}
+			execCmd := &exec.Cmd{
+				Path: binaryPath,
+				Args: append([]string{binaryPath}, args...),
+			}
+			execCmd.Env = secretsEnvOverride(state.secretsEnv)
+			prepare(execCmd)
+			return execCmd, nil
+		})
 	})
 }
 
