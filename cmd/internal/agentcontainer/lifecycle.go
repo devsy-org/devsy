@@ -6,6 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
@@ -16,6 +20,15 @@ import (
 const (
 	// ownerWaitTimeout bounds managed-owner startup, even with no timer.
 	ownerWaitTimeout = 30 * time.Second
+
+	// envWorkerReadyFile names the file a hook worker creates once it has registered.
+	envWorkerReadyFile = "DEVSY_WORKER_READY_FILE"
+	// workerReadyTimeout bounds how long setup waits for a spawned worker to register.
+	workerReadyTimeout = 10 * time.Second
+	workerReadyPoll    = 50 * time.Millisecond
+	workerReadyDirMode = 0o700
+
+	workerReadyDirPrefix = "devsy-worker-ready-"
 )
 
 // lifecycleHandshake is setup's side of the managed daemon protocol.
@@ -108,5 +121,91 @@ func (h *lifecycleHandshake) fail() {
 
 // startWorkerActivity completes managed registration before starting hooks.
 func startWorkerActivity(ctx context.Context) (context.Context, func(), error) {
-	return agentd.StartActivityWriter(ctx, agentd.DefaultActivityInterval)
+	ctx, stop, err := agentd.StartActivityWriter(ctx, agentd.DefaultActivityInterval)
+	if err == nil {
+		signalWorkerReady()
+	}
+	return ctx, stop, err
+}
+
+// workerReadiness lets setup keep its own protection until the hook workers it
+// spawned have registered theirs. Methods are no-ops on a nil receiver, which
+// is how unmanaged containers skip the handshake.
+type workerReadiness struct {
+	dir     string
+	spawned []string
+}
+
+func newWorkerReadiness() (*workerReadiness, error) {
+	dir, err := os.MkdirTemp("", workerReadyDirPrefix)
+	if err != nil {
+		return nil, fmt.Errorf("create worker readiness dir: %w", err)
+	}
+	if err := os.Chmod(dir, workerReadyDirMode); err != nil {
+		_ = os.RemoveAll(dir)
+		return nil, fmt.Errorf("secure worker readiness dir: %w", err)
+	}
+	return &workerReadiness{dir: dir}, nil
+}
+
+// prepare tells a worker about to be spawned where to report registration. Call
+// it only when the worker is really started, so wait never expects a skipped one.
+func (w *workerReadiness) prepare(name string, cmd *exec.Cmd) {
+	if w == nil {
+		return
+	}
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	cmd.Env = append(cmd.Env, envWorkerReadyFile+"="+filepath.Join(w.dir, name))
+	w.spawned = append(w.spawned, name)
+}
+
+// wait blocks until every prepared worker has registered or the bound elapses.
+func (w *workerReadiness) wait(ctx context.Context) error {
+	if w == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, workerReadyTimeout)
+	defer cancel()
+	ticker := time.NewTicker(workerReadyPoll)
+	defer ticker.Stop()
+	for _, name := range w.spawned {
+		for {
+			if _, err := os.Stat(filepath.Join(w.dir, name)); err == nil {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("hook worker %s did not register: %w", name, context.Cause(ctx))
+			case <-ticker.C:
+			}
+		}
+	}
+	return nil
+}
+
+func (w *workerReadiness) close() {
+	if w != nil {
+		_ = os.RemoveAll(w.dir)
+	}
+}
+
+// signalWorkerReady reports registration to the setup that spawned this worker.
+func signalWorkerReady() {
+	path := os.Getenv(envWorkerReadyFile)
+	if path == "" {
+		return
+	}
+	// Hooks inherit this process's env and have no use for the path.
+	_ = os.Unsetenv(envWorkerReadyFile)
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path ||
+		!strings.HasPrefix(filepath.Base(filepath.Dir(path)), workerReadyDirPrefix) {
+		log.Debugf("ignoring unexpected worker readiness path %q", path)
+		return
+	}
+	// #nosec G703 -- validated above to sit directly inside setup's private readiness dir.
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		log.Debugf("report worker registration: %v", err)
+	}
 }

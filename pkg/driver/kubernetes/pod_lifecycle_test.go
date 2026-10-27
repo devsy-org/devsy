@@ -484,6 +484,39 @@ func TestFindDevContainerKeepsVolumeWithoutSavedOptionsFindable(t *testing.T) {
 	assert.Contains(t, details.LifecycleTopologyError, "no saved run options")
 }
 
+func TestReusedRunningPodWithExtraContainerIsRejectedWhenTimeoutEnabled(t *testing.T) {
+	managed := agentd.LifecycleConfig{Owner: agentd.LifecycleOwnerManagedDaemon}
+	c := newFakeCluster(t)
+	pod := c.pod(t, podSpec{uid: "u1", phase: corev1.PodRunning})
+	pod.Spec.Containers = append(pod.Spec.Containers, corev1.Container{Name: "istio-proxy"})
+	c.putPod(t, pod)
+
+	reused, err := c.k.reconcileDesiredPod(
+		context.Background(), pod,
+		daemonOptions(t, agentd.DaemonConfig{Timeout: "1m", Lifecycle: managed}),
+	)
+
+	require.ErrorContains(t, err, "istio-proxy")
+	assert.False(t, reused)
+	assert.True(t, c.podExists(t), "a rejected reuse must not delete the pod")
+}
+
+func TestReusedRunningPodWithExtraContainerIsKeptWhenTimeoutDisabled(t *testing.T) {
+	managed := agentd.LifecycleConfig{Owner: agentd.LifecycleOwnerManagedDaemon}
+	c := newFakeCluster(t)
+	pod := c.pod(t, podSpec{uid: "u1", phase: corev1.PodRunning})
+	pod.Spec.Containers = append(pod.Spec.Containers, corev1.Container{Name: "istio-proxy"})
+	c.putPod(t, pod)
+
+	reused, err := c.k.reconcileDesiredPod(
+		context.Background(), pod,
+		daemonOptions(t, agentd.DaemonConfig{Lifecycle: managed}),
+	)
+
+	require.NoError(t, err)
+	assert.True(t, reused)
+}
+
 func TestVerifyDesiredPodReportsMissingPodWithoutInternalSentinel(t *testing.T) {
 	options := canonicalTopologyOptions(t, false)
 	c := newFakeCluster(t, savedRunVolume(t, options))

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -498,4 +499,49 @@ func TestManagedSSHServerContextChild(t *testing.T) {
 	command.SetContext(ctx)
 	cmd := &SSHServerCmd{Address: "127.0.0.1:0", TrackActivity: true}
 	assert.ErrorIs(t, cmd.Run(command, nil), context.Canceled)
+}
+
+func TestWorkerReadinessWaitsForSpawnedWorkerRegistration(t *testing.T) {
+	workers, err := newWorkerReadiness()
+	require.NoError(t, err)
+	defer workers.close()
+	cmd := &exec.Cmd{}
+	workers.prepare("post-attach", cmd)
+	var path string
+	for _, kv := range cmd.Env {
+		if v, ok := strings.CutPrefix(kv, envWorkerReadyFile+"="); ok {
+			path = v
+		}
+	}
+	require.NotEmpty(t, path, "the worker must be told where to report")
+
+	shortCtx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	require.ErrorContains(t, workers.wait(shortCtx), "post-attach did not register")
+
+	t.Setenv(envWorkerReadyFile, path)
+	signalWorkerReady()
+
+	require.NoError(t, workers.wait(context.Background()))
+	assert.Empty(t, os.Getenv(envWorkerReadyFile), "hooks must not inherit the marker path")
+}
+
+func TestWorkerReadinessIsNoopForUnmanagedContainers(t *testing.T) {
+	var workers *workerReadiness
+	cmd := &exec.Cmd{}
+
+	workers.prepare("deferred-hooks", cmd)
+
+	assert.Empty(t, cmd.Env)
+	require.NoError(t, workers.wait(context.Background()))
+	workers.close()
+}
+
+func TestWorkerReadinessOnlyWaitsForWorkersThatWereSpawned(t *testing.T) {
+	workers, err := newWorkerReadiness()
+	require.NoError(t, err)
+	defer workers.close()
+
+	require.NoError(t, workers.wait(context.Background()),
+		"a worker that was already running registers on its own and is not awaited")
 }

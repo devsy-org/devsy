@@ -339,22 +339,34 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 		return fmt.Errorf("re-serialize setup info: %w", err)
 	}
 
+	var workers *workerReadiness
+	if state.lifecycle != nil {
+		workers, err = newWorkerReadiness()
+		if err != nil {
+			return err
+		}
+		defer workers.close()
+	}
+
 	if !deferred.Empty() {
 		err = cmd.startDeferredHooks(
 			resolvedSetupInfo, cmd.DotfilesRepo, cmd.DotfilesScript,
-			state.secretsEnv,
+			state.secretsEnv, workers,
 		)
 		if err != nil {
 			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
 		}
 	}
 
-	if err := cmd.startPostAttachHooks(state); err != nil {
+	if err := cmd.startPostAttachHooks(state, workers); err != nil {
 		log.Errorf("failed to start postAttachCommand: %v", err)
 	}
 
-	// Arm last so the background workers already hold the workspace active.
+	// Arm last, once the spawned workers hold the workspace active themselves.
 	if state.lifecycle != nil {
+		if err := workers.wait(state.lifecycle.ctx); err != nil {
+			log.Errorf("hook protection not confirmed before arming: %v", err)
+		}
 		return state.lifecycle.ready()
 	}
 	return nil
@@ -372,16 +384,22 @@ func compressSetupInfo(setupInfo *config.Result) (string, error) {
 
 func (cmd *SetupContainerCmd) startDeferredHooks(
 	setupInfo, dotfilesRepo, dotfilesScript string, secretsEnv []string,
+	workers *workerReadiness,
 ) error {
 	return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
 		log.Debugf("starting deferred lifecycle hooks as background process")
-		return buildDeferredHooksCmd(
+		execCmd, err := buildDeferredHooksCmd(
 			setupInfo,
 			cmd.Prebuild,
 			dotfilesRepo,
 			dotfilesScript,
 			secretsEnv,
 		)
+		if err != nil {
+			return nil, err
+		}
+		workers.prepare("deferred-hooks", execCmd)
+		return execCmd, nil
 	})
 }
 
@@ -558,7 +576,10 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 	})
 }
 
-func (cmd *SetupContainerCmd) startPostAttachHooks(state *containerState) error {
+func (cmd *SetupContainerCmd) startPostAttachHooks(
+	state *containerState,
+	workers *workerReadiness,
+) error {
 	if len(state.setupInfo.MergedConfig.PostAttachCommands) == 0 {
 		return nil
 	}
@@ -579,6 +600,7 @@ func (cmd *SetupContainerCmd) startPostAttachHooks(state *containerState) error 
 			Args: append([]string{binaryPath}, args...),
 		}
 		execCmd.Env = secretsEnvOverride(state.secretsEnv)
+		workers.prepare("post-attach", execCmd)
 		return execCmd, nil
 	})
 }

@@ -178,7 +178,19 @@ func (k *KubernetesDriver) reconcileDesiredPod(
 	if classifyPod(pod) == podRunning && podLaunchDiffers(pod, options) {
 		return false, k.deleteObservedPod(ctx, pod.Name, pod.UID)
 	}
-	return k.reconcileObservedPod(ctx, pod.Name, pod)
+	reused, err := k.reconcileObservedPod(ctx, pod.Name, pod)
+	if err != nil || !reused {
+		return reused, err
+	}
+	// A pod admitted while the timeout was off can hold sidecars that outlive the daemon.
+	timeout, err := lifecycleTimeout(options)
+	if err != nil {
+		return false, fmt.Errorf("read lifecycle policy: %w", err)
+	}
+	if err := validatePodTopology(pod, timeout); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func storedProviderOptions(pod *corev1.Pod) *provider2.ProviderKubernetesDriverConfig {
