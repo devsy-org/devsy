@@ -64,9 +64,9 @@ func beginLifecycle(
 func migrationError(err error) error {
 	return fmt.Errorf(
 		"this container's main process does not support the Devsy inactivity lifecycle (%w); "+
-			"stop and start the workspace once (devsy workspace stop, then devsy up) to replace "+
-			"the pod. The workspace volume is kept; data written to the container filesystem "+
-			"outside mounted volumes is not", err)
+			"stop and start the workspace once (devsy workspace stop, then devsy workspace up) "+
+			"to replace the pod. The workspace volume is kept; data written to the "+
+			"container filesystem outside mounted volumes is not", err)
 }
 
 func (h *lifecycleHandshake) send(state agentd.LifecycleState) error {

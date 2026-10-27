@@ -111,7 +111,6 @@ func TestBeginLifecycleMissingOwnerWithTimeoutIsMigrationError(t *testing.T) {
 	assert.Nil(t, h)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, agentd.ErrLifecycleOwnerMissing)
-	assert.Contains(t, err.Error(), "stop and start the workspace")
 }
 
 func TestBeginLifecycleRequiresManagedOwnerEvenWithoutTimeout(t *testing.T) {

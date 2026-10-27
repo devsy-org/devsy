@@ -54,10 +54,11 @@ type WorkspaceChowner interface {
 	RequiresWorkspaceChown() bool
 }
 
-// ManagedLifecycleDriver is a capability interface for drivers whose container
-// main process is the Devsy daemon, which then owns inactivity shutdown.
+// ManagedLifecycleDriver identifies drivers that can run the container's main
+// process as the Devsy daemon. Actual ownership also depends on the run topology.
 type ManagedLifecycleDriver interface {
 	ManagedLifecycle() bool
+	SetLifecycleShutdownAction(shutdownAction string)
 }
 
 // ReprovisioningDriver is a capability interface for drivers that can reprovision
@@ -183,6 +184,9 @@ type RunOptions struct {
 
 	// Dockerless builds the developer filesystem inside the runner after creation.
 	Dockerless bool `json:"dockerless,omitempty"`
+
+	// ImageEntrypoint is set from inspected image metadata, never reconstructed from argv.
+	ImageEntrypoint bool `json:"imageEntrypoint,omitempty"`
 
 	// AllowRecreate authorizes replacing an existing VM and discarding its root disk.
 	AllowRecreate bool `json:"allowRecreate,omitempty"`

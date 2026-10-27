@@ -310,6 +310,12 @@ func (r *runner) legacyInject(ctx context.Context, timeout time.Duration) error 
 }
 
 func (r *runner) prepareSetupInfo(params *setupContainerParams) (*setupInfo, error) {
+	if params.containerDetails.LifecycleTopologyError != "" {
+		return nil, fmt.Errorf(
+			"workspace lifecycle topology: %s",
+			params.containerDetails.LifecycleTopologyError,
+		)
+	}
 	result := r.buildResult(params)
 
 	compressed, err := r.compressResult(result)
@@ -317,7 +323,11 @@ func (r *runner) prepareSetupInfo(params *setupContainerParams) (*setupInfo, err
 		return nil, err
 	}
 
-	workspaceConfigCompressed, err := r.compressWorkspaceConfig(result.MergedConfig)
+	workspaceConfigCompressed, err := r.compressWorkspaceConfig(
+		result.MergedConfig,
+		params.containerDetails.Dockerless,
+		params.containerDetails.ImageEntrypoint,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -378,6 +388,7 @@ func (r *runner) compressResult(result *config.Result) (string, error) {
 
 func (r *runner) compressWorkspaceConfig(
 	mergedConfig *config.MergedDevContainerConfig,
+	dockerless, imageEntrypoint bool,
 ) (string, error) {
 	cliOptions := r.workspaceConfig.CLIOptions
 	cliOptions.SecretsEnv = nil
@@ -399,12 +410,14 @@ func (r *runner) compressWorkspaceConfig(
 		Agent:            r.workspaceConfig.Agent,
 		ContentFolder:    r.workspaceConfig.ContentFolder,
 	}
+	lifecycle, err := r.lifecycleOptions(mergedConfig, dockerless, imageEntrypoint)
+	if err != nil {
+		return "", err
+	}
 	if r.managedLifecycle() {
-		timeout, err := r.effectiveContainerTimeout(mergedConfig.ShutdownAction)
-		if err != nil {
-			return "", err
-		}
-		workspaceConfig.ContainerTimeout = agentd.FormatTimeout(timeout)
+		workspaceConfig.ContainerTimeout = agentd.FormatTimeout(lifecycle.Timeout)
+	}
+	if lifecycle.Managed {
 		workspaceConfig.LifecycleOwner = provider2.ContainerLifecycleOwnerManagedDaemon
 	}
 	workspaceConfig.PullFromInsideContainer = resolvePullFromInsideContainer(

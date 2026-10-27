@@ -39,10 +39,11 @@ func NewKubernetesDriver(
 	log.Debugf("Use Kubernetes Namespace %q", namespace)
 
 	return &KubernetesDriver{
-		client:      client,
-		namespace:   namespace,
-		options:     &options,
-		agentConfig: &workspaceInfo.Agent,
+		client:        client,
+		namespace:     namespace,
+		options:       &options,
+		agentConfig:   &workspaceInfo.Agent,
+		disableDaemon: workspaceInfo.CLIOptions.DisableDaemon,
 	}, nil
 }
 
@@ -74,12 +75,20 @@ type KubernetesDriver struct {
 
 	client *Client
 
-	options     *provider2.ProviderKubernetesDriverConfig
-	agentConfig *provider2.ProviderAgentConfig
+	options           *provider2.ProviderKubernetesDriverConfig
+	agentConfig       *provider2.ProviderAgentConfig
+	disableDaemon     bool
+	shutdownAction    string
+	hasShutdownAction bool
 }
 
 func (k *KubernetesDriver) CanReprovision() bool {
 	return true
+}
+
+func (k *KubernetesDriver) SetLifecycleShutdownAction(shutdownAction string) {
+	k.shutdownAction = shutdownAction
+	k.hasShutdownAction = true
 }
 
 func (k *KubernetesDriver) SupportsMountType(mountType string) bool {

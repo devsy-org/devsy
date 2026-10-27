@@ -46,6 +46,33 @@ type LifecycleOptions struct {
 	Timeout time.Duration
 }
 
+// ResolveManagedLifecycle selects ownership for a managed-capable driver's topology.
+// Dockerless owns the pod process; its nested workspace cannot stop that pod.
+func ResolveManagedLifecycle(
+	timeout time.Duration,
+	dockerless, imageEntrypoint bool,
+) (LifecycleOptions, error) {
+	if dockerless {
+		if timeout > 0 {
+			return LifecycleOptions{}, fmt.Errorf(
+				"inactivity timeout %s is not supported with dockerless builds because the nested "+
+					"workspace container does not end the pod when it exits; unset the inactivity "+
+					"timeout or disable dockerless", timeout)
+		}
+		return LifecycleOptions{}, nil
+	}
+	if imageEntrypoint {
+		if timeout > 0 {
+			return LifecycleOptions{}, fmt.Errorf(
+				"inactivity timeout %s requires the Devsy daemon to be the container's main "+
+					"process, but overrideCommand is false and the image entrypoint would run "+
+					"instead; set overrideCommand to true or unset the inactivity timeout", timeout)
+		}
+		return LifecycleOptions{}, nil
+	}
+	return LifecycleOptions{Managed: true, Timeout: timeout}, nil
+}
+
 // TimeoutInputs are the configured values that decide the effective timeout.
 type TimeoutInputs struct {
 	// Canonical is agent.containerInactivityTimeout.
@@ -152,7 +179,11 @@ func EncodeDaemonConfig(cfg *DaemonConfig) (string, error) {
 // RefreshLifecycle rewrites the generated lifecycle policy of a stored encoded
 // daemon config, leaving platform and SSH settings untouched. An empty stored
 // config yields a minimal timeout-only config.
-func RefreshLifecycle(encoded string, timeout time.Duration) (string, error) {
+func RefreshLifecycle(
+	encoded string,
+	lifecycle LifecycleOptions,
+	shutdownAction string,
+) (string, error) {
 	cfg := &DaemonConfig{}
 	if encoded != "" {
 		var err error
@@ -160,7 +191,11 @@ func RefreshLifecycle(encoded string, timeout time.Duration) (string, error) {
 			return "", err
 		}
 	}
-	cfg.Timeout = FormatTimeout(timeout)
-	cfg.Lifecycle = LifecycleConfig{Owner: LifecycleOwnerManagedDaemon, SetupArmsTimer: true}
+	cfg.Timeout = FormatTimeout(lifecycle.Timeout)
+	cfg.ShutdownAction = shutdownAction
+	cfg.Lifecycle = LifecycleConfig{}
+	if lifecycle.Managed {
+		cfg.Lifecycle = LifecycleConfig{Owner: LifecycleOwnerManagedDaemon, SetupArmsTimer: true}
+	}
 	return EncodeDaemonConfig(cfg)
 }

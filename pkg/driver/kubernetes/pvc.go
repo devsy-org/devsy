@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"reflect"
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -123,4 +125,80 @@ func (k *KubernetesDriver) getDevContainerInformation(
 	}
 
 	return string(containerInfo), nil
+}
+
+func (k *KubernetesDriver) resolveRunOptions(
+	saved *DevContainerInfo,
+	options *driver.RunOptions,
+) (*driver.RunOptions, error) {
+	if options == nil && saved != nil {
+		options = saved.Options
+	}
+	if options == nil {
+		return nil, fmt.Errorf("no options provided and no saved run configuration available")
+	}
+	resolved, err := k.refreshStoredLifecycle(options)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateImageMainRecipe(resolved); err != nil {
+		return nil, err
+	}
+	if err := k.preflightTemplate(resolved); err != nil {
+		return nil, err
+	}
+	return resolved, nil
+}
+
+// A single resource-version-guarded update publishes intent before pod/config changes.
+func (k *KubernetesDriver) persistRunOptions(
+	ctx context.Context,
+	pvc *corev1.PersistentVolumeClaim,
+	saved *DevContainerInfo,
+	options *driver.RunOptions,
+) error {
+	if err := verifyVolumeOwner(pvc, saved, options.UID); err != nil {
+		return err
+	}
+	if reflect.DeepEqual(saved.Options, options) {
+		return nil
+	}
+	next := *saved
+	next.Options = options
+	raw, err := json.Marshal(&next)
+	if err != nil {
+		return err
+	}
+	updated := pvc.DeepCopy()
+	updated.Annotations[DevsyInfoAnnotation] = string(raw)
+	_, err = k.client.Client().CoreV1().PersistentVolumeClaims(k.namespace).
+		Update(ctx, updated, metav1.UpdateOptions{})
+	if kerrors.IsForbidden(err) {
+		return fmt.Errorf(
+			"persist workspace run configuration: Kubernetes permission update on "+
+				"persistentvolumeclaims in namespace %q is required for changed run configuration: %w",
+			k.namespace, err,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf(
+			"persist workspace run configuration; no pod/config changes were made: %w",
+			err,
+		)
+	}
+	return nil
+}
+
+func verifyVolumeOwner(
+	pvc *corev1.PersistentVolumeClaim,
+	info *DevContainerInfo,
+	workspaceUID string,
+) error {
+	if uid := pvc.Labels[DevsyWorkspaceUIDLabel]; uid != "" && uid != workspaceUID {
+		return fmt.Errorf("workspace volume %q belongs to a different workspace", pvc.Name)
+	}
+	if info.Options != nil && info.Options.UID != "" && info.Options.UID != workspaceUID {
+		return fmt.Errorf("workspace volume %q has run options for a different workspace", pvc.Name)
+	}
+	return nil
 }

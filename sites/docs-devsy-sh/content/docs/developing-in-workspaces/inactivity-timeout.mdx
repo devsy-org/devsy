@@ -47,11 +47,17 @@ Set `INACTIVITY_TIMEOUT` on the Kubernetes provider, for example `1h`. The depre
 
 The timeout is off when it is empty or `0`, when `shutdownAction` is `none`, or when `devsy workspace up` runs with `--disable-daemon`. A negative or unparsable value is an error. `stopCompose` with a positive timeout is rejected on Kubernetes.
 
+`--disable-daemon` applies only to that invocation; it is not saved as a permanent timeout exemption. A later invocation without the flag uses the current provider timeout and shutdown action again.
+
+The Kubernetes credentials Devsy uses on your machine need `update` permission on `persistentvolumeclaims` in the workspace namespace when the saved run configuration changes, including a recreation that changes the workspace image or Dockerless topology. Devsy atomically updates only its run-information annotation before changing daemon configuration or creating the replacement pod. Unchanged run options do not cause an update. Devsy does not change your RBAC roles automatically. A denied or conflicting update prevents those subsequent changes and retains the volume and its previous record. An explicit `--recreate` can already have stopped the old pod through the existing recreation flow; it does not promise that the old process remains running after an error.
+
 When the workspace stops:
 
 - The pod object can stay visible in the `Succeeded` or `Failed` phase until the next `devsy workspace up` or an explicit `devsy workspace stop`. The next `up` deletes that finished pod and creates a new one that mounts the same persistent volume claim. No recreate flag is needed.
 - Files on the workspace volume persist. Files written to the container filesystem outside mounted volumes are lost, because the new pod starts from the image.
 - `devsy workspace stop` still deletes the pod through the Kubernetes API from your machine. The pod gets no Kubernetes credentials of its own.
+
+When `WORKSPACE_VOLUME_MOUNT` selects a parent of the workspace folder, the pod mounts that parent while the saved logical workspace folder remains unchanged. Reuse and resume keep the same workspace subdirectory on the volume.
 
 Pod layout rules Devsy enforces:
 
@@ -59,6 +65,10 @@ Pod layout rules Devsy enforces:
 - With a positive timeout, extra regular containers in `spec.containers`, from a pod manifest template or injected by an admission webhook, are rejected. The pod would keep running while they run. Devsy names the containers in the error. Without a timeout, or with `shutdownAction: none`, extra containers are allowed.
 - With a positive timeout, the Devsy daemon must be the container's main process. A `devcontainer.json` with `overrideCommand: false` and an image entrypoint or command is rejected.
 - Dockerless builds do not support a positive timeout.
+
+The configured pod manifest template is checked against the merged shutdown action and the current invocation's `--disable-daemon` before an explicit `--recreate` stops the existing pod. Admission-webhook changes can only be checked after pod creation.
+
+At zero effective timeout, Dockerless and an external image main (`overrideCommand: false` with an image entrypoint or command) do not advertise a managed lifecycle owner. The ordinary default entrypoint still uses the managed daemon at zero, so setup and connection tracking retain the same owner contract.
 
 <Callout type="warn" title="Layout validation">
 The enforced restrictions above do not establish end-to-end support for every pod layout. Restricted non-root security, native sidecars/additional init containers, admission-webhook layouts, Devsy Platform routes, and upgrades from an earlier Devsy version require separate cluster validation. Test your layout on a non-production workspace before relying on the timeout.

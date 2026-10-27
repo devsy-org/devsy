@@ -25,11 +25,13 @@ const (
 	DevContainerName  = pkgconfig.BinaryName
 	InitContainerName = pkgconfig.BinaryName + "-init"
 
-	DevsyCreatedLabel          = pkgconfig.K8sCreatedLabel
-	DevsyWorkspaceLabel        = pkgconfig.K8sWorkspaceLabel
-	DevsyWorkspaceUIDLabel     = pkgconfig.K8sWorkspaceUIDLabel
-	DevsyInfoAnnotation        = pkgconfig.K8sInfoAnnotation
-	DevsyLastAppliedAnnotation = pkgconfig.K8sLastAppliedAnnotation
+	DevsyCreatedLabel              = pkgconfig.K8sCreatedLabel
+	DevsyWorkspaceLabel            = pkgconfig.K8sWorkspaceLabel
+	DevsyWorkspaceUIDLabel         = pkgconfig.K8sWorkspaceUIDLabel
+	DevsyInfoAnnotation            = pkgconfig.K8sInfoAnnotation
+	DevsyLastAppliedAnnotation     = pkgconfig.K8sLastAppliedAnnotation
+	DevsyDockerlessAnnotation      = DevsyInfoAnnotation + "-dockerless"
+	DevsyImageEntrypointAnnotation = DevsyInfoAnnotation + "-image-entrypoint"
 )
 
 var ExtraDevsyLabels = map[string]string{
@@ -49,19 +51,22 @@ func (k *KubernetesDriver) RunDevContainer(
 	log.Debugf("Running devcontainer for workspace %q", workspaceId)
 	workspaceId = getID(workspaceId)
 
-	if err := k.preflightTemplate(options); err != nil {
-		return err
-	}
-	if err := k.ensureNamespace(ctx); err != nil {
-		return err
-	}
-
 	initialize, options, err := k.ensureDevContainerPvc(ctx, workspaceId, options)
 	if err != nil {
 		return err
 	}
 
-	return k.runContainer(ctx, workspaceId, options, initialize)
+	if err := k.runContainer(ctx, workspaceId, options, initialize); err != nil {
+		return err
+	}
+	return k.verifyDesiredPod(ctx, workspaceId, options)
+}
+
+func (k *KubernetesDriver) ValidateRunImageDevContainer(
+	params *driver.RunImageDevContainerParams,
+) error {
+	_, err := k.resolveRunOptions(nil, params.Options)
+	return err
 }
 
 // preflightTemplate rejects an unusable pod template before any cluster object,
@@ -98,12 +103,16 @@ func (k *KubernetesDriver) ensureDevContainerPvc(
 	if err != nil {
 		return false, nil, err
 	}
+	options, err = k.resolveRunOptions(containerInfo, options)
+	if err != nil {
+		return false, nil, err
+	}
+	if err := k.verifyExistingPodOwner(ctx, workspaceId, options.UID); err != nil {
+		return false, nil, err
+	}
 	if pvc == nil {
-		if options == nil {
-			return false, nil, fmt.Errorf(
-				"no options provided and no persistent volume claim found for workspace %q",
-				workspaceId,
-			)
+		if err := k.ensureNamespace(ctx); err != nil {
+			return false, nil, err
 		}
 
 		if err := k.createPersistentVolumeClaim(ctx, workspaceId, options); err != nil {
@@ -113,11 +122,8 @@ func (k *KubernetesDriver) ensureDevContainerPvc(
 		return true, options, nil
 	}
 
-	if options == nil && containerInfo != nil {
-		var err error
-		if options, err = k.refreshStoredLifecycle(containerInfo.Options); err != nil {
-			return false, nil, err
-		}
+	if err := k.persistRunOptions(ctx, pvc, containerInfo, options); err != nil {
+		return false, nil, err
 	}
 
 	return false, options, nil
@@ -220,6 +226,11 @@ func (k *KubernetesDriver) buildPod(
 	}); err != nil {
 		return nil, err
 	}
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations[DevsyDockerlessAnnotation] = strconv.FormatBool(options.Dockerless)
+	pod.Annotations[DevsyImageEntrypointAnnotation] = strconv.FormatBool(options.ImageEntrypoint)
 
 	return pod, nil
 }
@@ -301,7 +312,9 @@ func (k *KubernetesDriver) resolveWorkspaceMount(
 			mount.Target,
 		)
 	default:
-		mount.Target = k.options.WorkspaceVolumeMount
+		podMount := *mount
+		podMount.Target = k.options.WorkspaceVolumeMount
+		mount = &podMount
 		log.Debugf("Using workspace volume mount: %s", k.options.WorkspaceVolumeMount)
 	}
 
@@ -720,19 +733,7 @@ func (k *KubernetesDriver) StartDevContainer(ctx context.Context, workspaceId st
 	log.Debugf("Starting devcontainer for workspace %q", workspaceId)
 	defer log.Debugf("Done starting devcontainer for workspace %q", workspaceId)
 
-	workspaceId = getID(workspaceId)
-	_, containerInfo, err := k.getDevContainerPvc(ctx, workspaceId)
-	if err != nil {
-		return err
-	} else if containerInfo == nil {
-		return fmt.Errorf("persistent volume %q not found", workspaceId)
-	}
-
-	options, err := k.refreshStoredLifecycle(containerInfo.Options)
-	if err != nil {
-		return err
-	}
-	return k.runContainer(ctx, workspaceId, options, false)
+	return k.RunDevContainer(ctx, workspaceId, nil)
 }
 
 func getID(workspaceID string) string {

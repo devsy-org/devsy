@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/driver"
@@ -26,12 +27,14 @@ import (
 )
 
 const (
-	testNamespace = "devsy-test"
-	testPodID     = "devsy-ws"
-	testWorkspace = "ws-uid"
+	testNamespace             = "devsy-test"
+	testPodID                 = "devsy-ws"
+	testWorkspace             = "ws-uid"
+	podResourceName           = "pods"
+	preservedCustomerMetadata = "keep"
 )
 
-var podsResource = schema.GroupResource{Resource: "pods"}
+var podsResource = schema.GroupResource{Resource: podResourceName}
 
 type fakeCluster struct {
 	cs *fake.Clientset
@@ -91,7 +94,7 @@ func (c *fakeCluster) pod(t *testing.T, s podSpec) *corev1.Pod {
 		Status: corev1.PodStatus{Phase: s.phase},
 	}
 	if !s.foreign {
-		pod.Labels[DevsyCreatedLabel] = "true"
+		pod.Labels[DevsyCreatedLabel] = pkgconfig.BoolTrue
 	}
 	if s.deleting {
 		now := metav1.Now()
@@ -132,7 +135,7 @@ func (c *fakeCluster) podExists(t *testing.T) bool {
 func (c *fakeCluster) deleteCalls() int {
 	n := 0
 	for _, a := range c.cs.Actions() {
-		if a.Matches("delete", "pods") {
+		if a.Matches("delete", podResourceName) {
 			n++
 		}
 	}
@@ -260,9 +263,13 @@ func TestReconcileTerminatingPodWaitsForDeletionThenAllowsCreate(t *testing.T) {
 
 func TestReconcileForbiddenLookupIsNotAbsence(t *testing.T) {
 	c := newFakeCluster(t)
-	c.cs.PrependReactor("get", "pods", func(clienttesting.Action) (bool, runtime.Object, error) {
-		return true, nil, kerrors.NewForbidden(podsResource, testPodID, errors.New("rbac"))
-	})
+	c.cs.PrependReactor(
+		"get",
+		podResourceName,
+		func(clienttesting.Action) (bool, runtime.Object, error) {
+			return true, nil, kerrors.NewForbidden(podsResource, testPodID, errors.New("rbac"))
+		},
+	)
 
 	reused, err := c.reconcile(context.Background())
 
@@ -275,9 +282,13 @@ func TestReconcileForbiddenLookupIsNotAbsence(t *testing.T) {
 func TestReconcileDeleteForbiddenSurfaces(t *testing.T) {
 	c := newFakeCluster(t)
 	c.putPod(t, c.pod(t, podSpec{uid: "u1", phase: corev1.PodFailed}))
-	c.cs.PrependReactor("delete", "pods", func(clienttesting.Action) (bool, runtime.Object, error) {
-		return true, nil, kerrors.NewForbidden(podsResource, testPodID, errors.New("rbac"))
-	})
+	c.cs.PrependReactor(
+		"delete",
+		podResourceName,
+		func(clienttesting.Action) (bool, runtime.Object, error) {
+			return true, nil, kerrors.NewForbidden(podsResource, testPodID, errors.New("rbac"))
+		},
+	)
 
 	_, err := c.reconcile(context.Background())
 
@@ -289,9 +300,13 @@ func TestReconcileDeleteForbiddenSurfaces(t *testing.T) {
 func TestWaitPodGoneDoesNotTreatLookupErrorsAsDeleted(t *testing.T) {
 	c := newFakeCluster(t)
 	c.putPod(t, c.pod(t, podSpec{uid: "u1", phase: corev1.PodFailed}))
-	c.cs.PrependReactor("get", "pods", func(clienttesting.Action) (bool, runtime.Object, error) {
-		return true, nil, errors.New("connection refused")
-	})
+	c.cs.PrependReactor(
+		"get",
+		podResourceName,
+		func(clienttesting.Action) (bool, runtime.Object, error) {
+			return true, nil, errors.New("connection refused")
+		},
+	)
 
 	err := c.k.waitPodGone(context.Background(), testPodID, "u1")
 
@@ -305,7 +320,7 @@ func TestReconcileUIDConflictReobservesReplacementPod(t *testing.T) {
 	var conflicted atomic.Bool
 	c.cs.PrependReactor(
 		"delete",
-		"pods",
+		podResourceName,
 		func(a clienttesting.Action) (bool, runtime.Object, error) {
 			if conflicted.Swap(true) {
 				return false, nil, nil
@@ -319,7 +334,7 @@ func TestReconcileUIDConflictReobservesReplacementPod(t *testing.T) {
 				},
 			})
 			require.NoError(t, c.cs.Tracker().Update(
-				corev1.SchemeGroupVersion.WithResource("pods"), replacement, testNamespace,
+				corev1.SchemeGroupVersion.WithResource(podResourceName), replacement, testNamespace,
 			))
 			return true, nil, kerrors.NewConflict(podsResource, testPodID, errors.New("uid"))
 		},
@@ -338,7 +353,7 @@ func TestReconcileDeleteCarriesObservedUID(t *testing.T) {
 	var got *types.UID
 	c.cs.PrependReactor(
 		"delete",
-		"pods",
+		podResourceName,
 		func(a clienttesting.Action) (bool, runtime.Object, error) {
 			if del, ok := a.(clienttesting.DeleteActionImpl); ok &&
 				del.DeleteOptions.Preconditions != nil {
@@ -430,9 +445,13 @@ func TestReplacementPreservesWorkspaceVolume(t *testing.T) {
 
 func TestFindDevContainerReportsLookupErrors(t *testing.T) {
 	c := newFakeCluster(t, workspacePVC(t))
-	c.cs.PrependReactor("get", "pods", func(clienttesting.Action) (bool, runtime.Object, error) {
-		return true, nil, kerrors.NewForbidden(podsResource, testPodID, errors.New("rbac"))
-	})
+	c.cs.PrependReactor(
+		"get",
+		podResourceName,
+		func(clienttesting.Action) (bool, runtime.Object, error) {
+			return true, nil, kerrors.NewForbidden(podsResource, testPodID, errors.New("rbac"))
+		},
+	)
 
 	details, err := c.k.FindDevContainer(context.Background(), "ws")
 
@@ -561,6 +580,96 @@ func TestRefreshStoredLifecycleLegacyAliasAndConflict(t *testing.T) {
 	assert.ErrorContains(t, err, "conflicts")
 }
 
+func TestStoredLifecycleOwnershipFollowsDockerlessTopology(t *testing.T) {
+	for _, dockerless := range []bool{false, true} {
+		name := "ordinary image keeps managed ownership"
+		if dockerless {
+			name = "dockerless clears stale managed ownership"
+		}
+		t.Run(name, func(t *testing.T) {
+			c := newFakeCluster(t)
+			cfg := agentd.DaemonConfig{
+				Timeout:        "1m",
+				ShutdownAction: config.ShutdownActionStopContainer,
+				Lifecycle: agentd.LifecycleConfig{
+					Owner: agentd.LifecycleOwnerManagedDaemon, SetupArmsTimer: true,
+				},
+				Ssh: agentd.SshConfig{User: "vscode", Workdir: "/workspaces/app"},
+			}
+			cfg.Platform.AccessKey = "key"
+			cfg.Platform.PlatformHost = "platform"
+			cfg.Platform.WorkspaceHost = "workspace"
+			stored := daemonOptions(t, cfg)
+			stored.Dockerless = dockerless
+			original := stored.Env["DEVSY_WORKSPACE_DAEMON_CONFIG"]
+
+			refreshed, err := c.k.refreshStoredLifecycle(stored)
+			require.NoError(t, err)
+			got, err := agentd.DecodeDaemonConfig(refreshed.Env["DEVSY_WORKSPACE_DAEMON_CONFIG"])
+			require.NoError(t, err)
+			assert.Equal(t, !dockerless, got.Lifecycle.Managed())
+			assert.Equal(t, !dockerless, got.Lifecycle.SetupArmsTimer)
+			assert.Empty(t, got.Timeout)
+			assert.Equal(t, cfg.Platform, got.Platform)
+			assert.Equal(t, cfg.Ssh, got.Ssh)
+			assert.Equal(t, cfg.ShutdownAction, got.ShutdownAction)
+			assert.Equal(t, original, stored.Env["DEVSY_WORKSPACE_DAEMON_CONFIG"])
+		})
+	}
+}
+
+func TestDockerlessResumeRejectsEnabledTimeoutBeforeMutation(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		name := "canonical"
+		if legacy {
+			name = "legacy"
+		}
+		t.Run(name, func(t *testing.T) {
+			pvc := workspacePVC(t)
+			info, err := json.Marshal(&DevContainerInfo{
+				WorkspaceID: "ws",
+				Options:     &driver.RunOptions{UID: testWorkspace, Dockerless: true},
+			})
+			require.NoError(t, err)
+			pvc.Annotations[DevsyInfoAnnotation] = string(info)
+			c := newFakeCluster(t, pvc)
+			if legacy {
+				c.k.options.InactivityTimeout = "1m"
+			} else {
+				c.k.agentConfig.ContainerTimeout = "1m"
+			}
+
+			err = c.k.RunDevContainer(context.Background(), "ws", nil)
+			require.ErrorContains(t, err, "dockerless")
+			for _, action := range c.cs.Actions() {
+				assert.Equal(
+					t,
+					"get",
+					action.GetVerb(),
+					"invalid resume must not mutate cluster state",
+				)
+			}
+		})
+	}
+}
+
+func TestDockerlessStoredLifecycleHonorsShutdownNone(t *testing.T) {
+	c := newFakeCluster(t)
+	c.k.agentConfig.ContainerTimeout = "1m"
+	stored := daemonOptions(t, agentd.DaemonConfig{
+		ShutdownAction: config.ShutdownActionNone,
+	})
+	stored.Dockerless = true
+
+	refreshed, err := c.k.refreshStoredLifecycle(stored)
+	require.NoError(t, err)
+	cfg, err := agentd.DecodeDaemonConfig(refreshed.Env["DEVSY_WORKSPACE_DAEMON_CONFIG"])
+	require.NoError(t, err)
+	assert.False(t, cfg.Lifecycle.Managed())
+	assert.Empty(t, cfg.Timeout)
+	assert.Equal(t, config.ShutdownActionNone, cfg.ShutdownAction)
+}
+
 func TestAdmittedPodWithInjectedContainerIsRemovedAndVolumeKept(t *testing.T) {
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{Name: testPodID, Namespace: testNamespace},
@@ -608,9 +717,13 @@ func TestWaitPodDeletedTimesOutWhenPodStaysTerminating(t *testing.T) {
 	c := newFakeCluster(t)
 	podDeleteTimeout = 50 * time.Millisecond
 	c.putPod(t, c.pod(t, podSpec{uid: "u1", phase: corev1.PodRunning, deleting: true}))
-	c.cs.PrependReactor("delete", "pods", func(clienttesting.Action) (bool, runtime.Object, error) {
-		return true, nil, nil
-	})
+	c.cs.PrependReactor(
+		"delete",
+		podResourceName,
+		func(clienttesting.Action) (bool, runtime.Object, error) {
+			return true, nil, nil
+		},
+	)
 
 	err := c.k.waitPodDeleted(context.Background(), testPodID)
 
@@ -635,12 +748,14 @@ func runOptionsForWorkspace(timeout string) *driver.RunOptions {
 }
 
 func readyOnCreate(c *fakeCluster, uid types.UID) {
+	nextUID := uid
 	c.cs.PrependReactor(
 		"create",
-		"pods",
+		podResourceName,
 		func(a clienttesting.Action) (bool, runtime.Object, error) {
 			pod := a.(clienttesting.CreateAction).GetObject().(*corev1.Pod)
-			pod.UID = uid
+			pod.UID = nextUID
+			nextUID += "-next"
 			pod.Status.Phase = corev1.PodRunning
 			pod.Status.ContainerStatuses = nil
 			for _, container := range pod.Spec.Containers {
@@ -697,8 +812,12 @@ func TestRunContainerRejectsExtraContainersBeforeTouchingTheCluster(t *testing.T
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "istio-proxy")
 	for _, a := range c.cs.Actions() {
-		assert.False(t, a.Matches("create", "pods") || a.Matches("delete", "pods") ||
-			a.Matches("create", "secrets"), "nothing is created or deleted: %v", a)
+		assert.False(t,
+			a.Matches("create", podResourceName) ||
+				a.Matches("delete", podResourceName) ||
+				a.Matches("create", "secrets"),
+			"nothing is created or deleted: %v", a,
+		)
 	}
 }
 
@@ -721,7 +840,7 @@ func TestRunContainerRemovesPodWhoseAdmittedTopologyBreaksTheContract(t *testing
 	c := newFakeCluster(t)
 	c.cs.PrependReactor(
 		"create",
-		"pods",
+		podResourceName,
 		func(a clienttesting.Action) (bool, runtime.Object, error) {
 			pod := a.(clienttesting.CreateAction).GetObject().(*corev1.Pod)
 			pod.UID = "admitted"
@@ -738,6 +857,183 @@ func TestRunContainerRemovesPodWhoseAdmittedTopologyBreaksTheContract(t *testing
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "webhook-injected")
 	assert.False(t, c.podExists(t))
+}
+
+func TestDockerlessSuppressorsSurviveRepeatAndResume(t *testing.T) {
+	for _, disableDaemon := range []bool{false, true} {
+		name := "shutdown none"
+		if disableDaemon {
+			name = "current disable-daemon flag"
+		}
+		t.Run(name, func(t *testing.T) {
+			c := newFakeCluster(t)
+			c.k.agentConfig.ContainerTimeout = "1m"
+			c.k.disableDaemon = disableDaemon
+			options := topologyRunOptions(t, true)
+			action := config.ShutdownActionStopContainer
+			if !disableDaemon {
+				action = config.ShutdownActionNone
+			}
+			options.Env = daemonOptions(t, agentd.DaemonConfig{
+				ShutdownAction: action,
+			}).Env
+			readyOnCreate(c, "initial")
+			ctx := context.Background()
+
+			require.NoError(t, c.k.RunDevContainer(ctx, "ws", options))
+			require.NoError(t, c.k.RunDevContainer(ctx, "ws", nil))
+			assertRunningTopology(t, c, options)
+			require.NoError(t, c.k.StopDevContainer(ctx, "ws"))
+			require.NoError(t, c.k.StartDevContainer(ctx, "ws"))
+			assertRunningTopology(t, c, options)
+
+			c.k.disableDaemon = false
+			c.k.SetLifecycleShutdownAction(config.ShutdownActionStopContainer)
+			c.cs.ClearActions()
+			err := c.k.RunDevContainer(ctx, "ws", nil)
+			require.ErrorContains(t, err, "dockerless")
+			assertOnlyReads(t, c)
+		})
+	}
+}
+
+func TestDockerlessRejectsNewPositivePolicyBeforeResumeMutation(t *testing.T) {
+	c := newFakeCluster(t)
+	options := topologyRunOptions(t, true)
+	readyOnCreate(c, "initial")
+	ctx := context.Background()
+	require.NoError(t, c.k.RunDevContainer(ctx, "ws", options))
+	require.NoError(t, c.k.StopDevContainer(ctx, "ws"))
+	c.k.agentConfig.ContainerTimeout = "1m"
+	c.cs.ClearActions()
+
+	err := c.k.StartDevContainer(ctx, "ws")
+
+	require.ErrorContains(t, err, "dockerless")
+	assertOnlyReads(t, c)
+}
+
+func TestExternalImageMainStaysUnmanagedAcrossResume(t *testing.T) {
+	c := newFakeCluster(t)
+	options := runOptionsForWorkspace("")
+	options.ImageEntrypoint = true
+	options.Cmd = []string{"-c", `exec "$@"`, "-", "/app"}
+	options.Env = daemonOptions(t, agentd.DaemonConfig{
+		ShutdownAction: config.ShutdownActionStopContainer,
+	}).Env
+	ctx := context.Background()
+	readyOnCreate(c, "external")
+	require.NoError(t, c.k.RunDevContainer(ctx, "ws", options))
+	require.NoError(t, c.k.RunDevContainer(ctx, "ws", nil))
+	assertRunningTopology(t, c, options)
+	require.NoError(t, c.k.StopDevContainer(ctx, "ws"))
+	require.NoError(t, c.k.StartDevContainer(ctx, "ws"))
+	assertRunningTopology(t, c, options)
+	c.k.agentConfig.ContainerTimeout = "1m"
+	c.cs.ClearActions()
+
+	err := c.k.RunDevContainer(ctx, "ws", nil)
+
+	require.ErrorContains(t, err, "overrideCommand")
+	assertOnlyReads(t, c)
+}
+
+func TestLegacyDockerlessResumeDoesNotRequireGenerationMetadata(t *testing.T) {
+	options := topologyRunOptions(t, true)
+	options.Env = map[string]string{"DOCKERLESS": pkgconfig.BoolTrue}
+	pvc := workspacePVC(t)
+	pvc.Annotations["customer.example/annotation"] = preservedCustomerMetadata
+	raw, err := json.Marshal(&DevContainerInfo{WorkspaceID: "ws", Options: options})
+	require.NoError(t, err)
+	pvc.Annotations[DevsyInfoAnnotation] = string(raw)
+	c := newFakeCluster(t, pvc)
+	c.putPod(t, c.pod(t, podSpec{uid: "legacy", phase: corev1.PodSucceeded}))
+	readyOnCreate(c, "resumed")
+
+	require.NoError(t, c.k.RunDevContainer(context.Background(), "ws", nil))
+
+	assertRunningTopology(t, c, options)
+	kept, err := c.cs.CoreV1().PersistentVolumeClaims(testNamespace).
+		Get(context.Background(), testPodID, metav1.GetOptions{})
+	require.NoError(t, err)
+	assertPreservedVolume(t, pvc, kept)
+}
+
+func TestCurrentShutdownActionOverridesStoredNoneOnResume(t *testing.T) {
+	c := newFakeCluster(t)
+	c.k.agentConfig.ContainerTimeout = "1m"
+	options := runOptionsForWorkspace("")
+	options.Env = daemonOptions(t, agentd.DaemonConfig{
+		ShutdownAction: config.ShutdownActionNone,
+		Lifecycle:      agentd.LifecycleConfig{Owner: agentd.LifecycleOwnerManagedDaemon},
+	}).Env
+	ctx := context.Background()
+	readyOnCreate(c, "disabled")
+	require.NoError(t, c.k.RunDevContainer(ctx, "ws", options))
+	require.NoError(t, c.k.StopDevContainer(ctx, "ws"))
+	c.k.SetLifecycleShutdownAction(config.ShutdownActionStopContainer)
+
+	require.NoError(t, c.k.StartDevContainer(ctx, "ws"))
+
+	secret, err := c.cs.CoreV1().Secrets(testNamespace).
+		Get(ctx, getDaemonSecretName(testPodID), metav1.GetOptions{})
+	require.NoError(t, err)
+	cfg, err := agentd.DecodeDaemonConfig(string(secret.Data[DaemonConfigKey]))
+	require.NoError(t, err)
+	timeout, err := lifecycleTimeout(daemonOptions(t, *cfg))
+	require.NoError(t, err)
+	assert.Equal(t, time.Minute, timeout)
+	assert.Equal(t, config.ShutdownActionStopContainer, cfg.ShutdownAction)
+}
+
+func topologyRunOptions(t *testing.T, dockerless bool) *driver.RunOptions {
+	t.Helper()
+	options := runOptionsForWorkspace("")
+	options.Dockerless = dockerless
+	if dockerless {
+		options.Image = "example/dockerless:1"
+		options.Entrypoint = "/.dockerless/dockerless"
+		options.Cmd = []string{"start", "--wait"}
+		options.Env = daemonOptions(t, agentd.DaemonConfig{
+			ShutdownAction: config.ShutdownActionStopContainer,
+		}).Env
+	}
+	return options
+}
+
+func assertRunningTopology(t *testing.T, c *fakeCluster, options *driver.RunOptions) {
+	t.Helper()
+	ctx := context.Background()
+	details, err := c.k.FindDevContainer(ctx, "ws")
+	require.NoError(t, err)
+	assert.Equal(t, options.Dockerless, details.Dockerless)
+	assert.Equal(t, options.ImageEntrypoint, details.ImageEntrypoint)
+	pod, err := c.cs.CoreV1().Pods(testNamespace).Get(ctx, testPodID, metav1.GetOptions{})
+	require.NoError(t, err)
+	var main *corev1.Container
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name == DevContainerName {
+			main = &pod.Spec.Containers[i]
+		}
+	}
+	require.NotNil(t, main)
+	assert.Equal(t, options.Image, main.Image)
+	assert.Equal(t, []string{options.Entrypoint}, main.Command)
+	assert.Equal(t, options.Cmd, main.Args)
+	secret, err := c.cs.CoreV1().Secrets(testNamespace).
+		Get(ctx, getDaemonSecretName(testPodID), metav1.GetOptions{})
+	require.NoError(t, err)
+	cfg, err := agentd.DecodeDaemonConfig(string(secret.Data[DaemonConfigKey]))
+	require.NoError(t, err)
+	assert.Equal(t, !options.Dockerless && !options.ImageEntrypoint, cfg.Lifecycle.Managed())
+	assert.Empty(t, cfg.Timeout)
+}
+
+func assertOnlyReads(t *testing.T, c *fakeCluster) {
+	t.Helper()
+	for _, action := range c.cs.Actions() {
+		assert.Equal(t, "get", action.GetVerb(), "policy rejection must not mutate cluster state")
+	}
 }
 
 func writeFile(path, content string) error {

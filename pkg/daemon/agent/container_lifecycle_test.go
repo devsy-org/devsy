@@ -134,7 +134,10 @@ func TestRefreshLifecycleKeepsPlatformAndReplacesPolicy(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	refreshed, err := RefreshLifecycle(stored, 2*time.Minute)
+	refreshed, err := RefreshLifecycle(
+		stored, LifecycleOptions{Managed: true, Timeout: 2 * time.Minute},
+		config.ShutdownActionStopContainer,
+	)
 	require.NoError(t, err)
 	cfg, err := DecodeDaemonConfig(refreshed)
 	require.NoError(t, err)
@@ -146,8 +149,8 @@ func TestRefreshLifecycleKeepsPlatformAndReplacesPolicy(t *testing.T) {
 	assert.Equal(t, config.ShutdownActionStopContainer, cfg.ShutdownAction)
 }
 
-func TestRefreshLifecycleFromNothingIsTimeoutOnly(t *testing.T) {
-	refreshed, err := RefreshLifecycle("", 0)
+func TestRefreshLifecycleKeepsZeroTimeoutManaged(t *testing.T) {
+	refreshed, err := RefreshLifecycle("", LifecycleOptions{Managed: true}, "")
 	require.NoError(t, err)
 	cfg, err := DecodeDaemonConfig(refreshed)
 	require.NoError(t, err)

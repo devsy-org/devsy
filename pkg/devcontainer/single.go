@@ -265,7 +265,17 @@ func (r *runner) resolveExistingContainer(
 		r.recovering = true
 	}
 
-	containerDetails, err := r.ensureRunning(ctx, containerDetails)
+	var mergedConfig *config.MergedDevContainerConfig
+	var err error
+	if d, ok := r.driver.(driver.ManagedLifecycleDriver); ok && d.ManagedLifecycle() {
+		mergedConfig, err = r.mergeExistingContainerConfig(ctx, containerDetails, p)
+		if err != nil {
+			return nil, err
+		}
+		d.SetLifecycleShutdownAction(mergedConfig.ShutdownAction)
+	}
+
+	containerDetails, err = r.ensureRunning(ctx, containerDetails)
 	if err != nil {
 		return nil, err
 	}
@@ -275,9 +285,11 @@ func (r *runner) resolveExistingContainer(
 		p.substitutionContext.ContainerWorkspaceFolder = containerDetails.Config.WorkingDir
 	}
 
-	mergedConfig, err := r.mergeExistingContainerConfig(ctx, containerDetails, p)
-	if err != nil {
-		return nil, err
+	if mergedConfig == nil {
+		mergedConfig, err = r.mergeExistingContainerConfig(ctx, containerDetails, p)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	containerDetails, err = r.reprovisionIfNeeded(ctx, containerDetails)
@@ -392,11 +404,11 @@ func (r *runner) resolveNewContainer(
 		return nil, err
 	}
 
-	if err := r.injectDaemonEntrypoint(p, mergedConfig); err != nil {
-		return nil, err
-	}
-
-	if err := r.validateManagedTimeoutTopology(mergedConfig, buildInfo); err != nil {
+	imageEntrypoint := buildInfo.Dockerless == nil &&
+		usesImageEntrypoint(mergedConfig, buildInfo.ImageDetails)
+	if err := r.injectDaemonEntrypoint(
+		p, mergedConfig, buildInfo.Dockerless != nil, imageEntrypoint,
+	); err != nil {
 		return nil, err
 	}
 
@@ -415,6 +427,9 @@ func (r *runner) resolveNewContainer(
 	if err != nil {
 		return nil, err
 	}
+	// New run options take precedence over metadata from an existing workspace volume.
+	containerDetails.Dockerless = buildInfo.Dockerless != nil
+	containerDetails.ImageEntrypoint = imageEntrypoint
 
 	if w := r.lingerWarning(ctx); w != "" {
 		hostWarnings = append(hostWarnings, w)
@@ -490,7 +505,6 @@ func (r *runner) buildNewContainerConfig(
 		return nil, nil, err
 	}
 
-	_, validatesImageRun := r.driver.(driver.ImageRunValidator)
 	mergedConfig, err := config.MergeConfiguration(
 		activeConfig.Config,
 		buildInfo.ImageMetadata.Config,
@@ -504,10 +518,8 @@ func (r *runner) buildNewContainerConfig(
 		return nil, nil, err
 	}
 	config.MergeExtraRemoteEnvConfig(mergedConfig, overlay)
-	if validatesImageRun {
-		if err := r.validateImageRun(p, activeConfig.Config, mergedConfig, buildInfo); err != nil {
-			return nil, nil, err
-		}
+	if err := r.validateImageRun(p, activeConfig.Config, mergedConfig, buildInfo); err != nil {
+		return nil, nil, err
 	}
 	if p.options.Recreate {
 		if err := r.deleteForRecreate(ctx); err != nil {
@@ -552,6 +564,16 @@ func (r *runner) validateImageRun(
 	mergedConfig *config.MergedDevContainerConfig,
 	buildInfo *config.BuildInfo,
 ) error {
+	if d, ok := r.driver.(driver.ManagedLifecycleDriver); ok && d.ManagedLifecycle() {
+		d.SetLifecycleShutdownAction(mergedConfig.ShutdownAction)
+	}
+	if err := r.validateManagedTimeoutTopology(mergedConfig, buildInfo); err != nil {
+		return err
+	}
+	validator, validates := r.driver.(driver.ImageRunValidator)
+	if !validates {
+		return nil
+	}
 	var options *driver.RunOptions
 	var err error
 	if buildInfo.Dockerless != nil {
@@ -572,7 +594,7 @@ func (r *runner) validateImageRun(
 	if err != nil {
 		return fmt.Errorf("validate image run options: %w", err)
 	}
-	return r.driver.(driver.ImageRunValidator).ValidateRunImageDevContainer(
+	return validator.ValidateRunImageDevContainer(
 		&driver.RunImageDevContainerParams{
 			WorkspaceID: r.id, Options: options, ParsedConfig: parsedConfig,
 		},
@@ -688,23 +710,18 @@ func (r *runner) deleteForRecreate(ctx context.Context) error {
 func (r *runner) injectDaemonEntrypoint(
 	p *resolveParams,
 	mergedConfig *config.MergedDevContainerConfig,
+	dockerless, imageEntrypoint bool,
 ) error {
-	managed := r.managedLifecycle()
+	lifecycle, err := r.lifecycleOptions(mergedConfig, dockerless, imageEntrypoint)
+	if err != nil {
+		return err
+	}
 	platform := p.options.Platform
 	if platform.AccessKey == "" {
 		platform = devsy.PlatformOptions{}
 	}
-	if !managed && platform.AccessKey == "" {
+	if !r.managedLifecycle() && platform.AccessKey == "" {
 		return nil
-	}
-
-	var timeout time.Duration
-	if managed {
-		var err error
-		timeout, err = r.effectiveContainerTimeout(mergedConfig.ShutdownAction)
-		if err != nil {
-			return err
-		}
 	}
 
 	data, err := agent.GetEncodedWorkspaceDaemonConfig(
@@ -712,7 +729,7 @@ func (r *runner) injectDaemonEntrypoint(
 		r.workspaceConfig.Workspace,
 		p.substitutionContext,
 		mergedConfig,
-		agent.LifecycleOptions{Managed: managed, Timeout: timeout},
+		lifecycle,
 	)
 	if err != nil {
 		return fmt.Errorf("build daemon config: %w", err)
@@ -742,28 +759,31 @@ func managedTimeoutConflict(
 	mergedConfig *config.MergedDevContainerConfig,
 	buildInfo *config.BuildInfo,
 ) error {
-	if buildInfo.Dockerless != nil {
-		return fmt.Errorf(
-			"inactivity timeout %s is not supported with dockerless builds because the nested "+
-				"workspace container does not end the pod when it exits; unset the inactivity "+
-				"timeout or disable dockerless", timeout)
-	}
-	overridden := mergedConfig.OverrideCommand == nil || *mergedConfig.OverrideCommand
-	if overridden || buildInfo.ImageDetails == nil {
-		return nil
-	}
-	if len(buildInfo.ImageDetails.Config.Entrypoint)+len(buildInfo.ImageDetails.Config.Cmd) == 0 {
-		return nil
-	}
-	return fmt.Errorf(
-		"inactivity timeout %s requires the Devsy daemon to be the container's main process, "+
-			"but overrideCommand is false and the image entrypoint would run instead; set "+
-			"overrideCommand to true or unset the inactivity timeout", timeout)
+	_, err := agent.ResolveManagedLifecycle(
+		timeout,
+		buildInfo.Dockerless != nil,
+		usesImageEntrypoint(mergedConfig, buildInfo.ImageDetails),
+	)
+	return err
 }
 
 func (r *runner) managedLifecycle() bool {
 	d, ok := r.driver.(driver.ManagedLifecycleDriver)
 	return ok && d.ManagedLifecycle()
+}
+
+func (r *runner) lifecycleOptions(
+	mergedConfig *config.MergedDevContainerConfig,
+	dockerless, imageEntrypoint bool,
+) (agent.LifecycleOptions, error) {
+	if !r.managedLifecycle() {
+		return agent.LifecycleOptions{}, nil
+	}
+	timeout, err := r.effectiveContainerTimeout(mergedConfig.ShutdownAction)
+	if err != nil {
+		return agent.LifecycleOptions{}, err
+	}
+	return agent.ResolveManagedLifecycle(timeout, dockerless, imageEntrypoint)
 }
 
 func (r *runner) effectiveContainerTimeout(shutdownAction string) (time.Duration, error) {
@@ -1125,25 +1145,26 @@ func (r *runner) getRunOptions(
 	}
 
 	return &driver.RunOptions{
-		UID:            r.workspaceUID(),
-		Image:          buildInfo.ImageName,
-		ImageBuilt:     buildInfo.BuiltLocally,
-		User:           user,
-		RemoteUser:     effectiveRemoteUser(mergedConfig, user),
-		Entrypoint:     entrypoint,
-		Cmd:            cmd,
-		Env:            mergedConfig.ContainerEnv,
-		CapAdd:         mergedConfig.CapAdd,
-		Labels:         labels,
-		Privileged:     mergedConfig.Privileged,
-		Init:           mergedConfig.Init,
-		WorkspaceMount: workspaceMountPtr,
-		SecurityOpt:    mergedConfig.SecurityOpt,
-		Mounts:         mounts,
-		Userns:         substitutionContext.Userns,
-		UidMap:         substitutionContext.UidMap,
-		GidMap:         substitutionContext.GidMap,
-		Platform:       r.workspaceConfig.CLIOptions.RunPlatform,
+		UID:             r.workspaceUID(),
+		Image:           buildInfo.ImageName,
+		ImageBuilt:      buildInfo.BuiltLocally,
+		User:            user,
+		RemoteUser:      effectiveRemoteUser(mergedConfig, user),
+		ImageEntrypoint: usesImageEntrypoint(mergedConfig, buildInfo.ImageDetails),
+		Entrypoint:      entrypoint,
+		Cmd:             cmd,
+		Env:             mergedConfig.ContainerEnv,
+		CapAdd:          mergedConfig.CapAdd,
+		Labels:          labels,
+		Privileged:      mergedConfig.Privileged,
+		Init:            mergedConfig.Init,
+		WorkspaceMount:  workspaceMountPtr,
+		SecurityOpt:     mergedConfig.SecurityOpt,
+		Mounts:          mounts,
+		Userns:          substitutionContext.Userns,
+		UidMap:          substitutionContext.UidMap,
+		GidMap:          substitutionContext.GidMap,
+		Platform:        r.workspaceConfig.CLIOptions.RunPlatform,
 	}, nil
 }
 
@@ -1279,6 +1300,15 @@ func GetStartScript(mergedConfig *config.MergedDevContainerConfig) string {
 	return joinShellStatements(statements...)
 }
 
+func usesImageEntrypoint(
+	mergedConfig *config.MergedDevContainerConfig,
+	imageDetails *config.ImageDetails,
+) bool {
+	return imageDetails != nil && mergedConfig.OverrideCommand != nil &&
+		!*mergedConfig.OverrideCommand &&
+		len(imageDetails.Config.Entrypoint)+len(imageDetails.Config.Cmd) > 0
+}
+
 func GetContainerEntrypointAndArgs(
 	mergedConfig *config.MergedDevContainerConfig,
 	imageDetails *config.ImageDetails,
@@ -1288,8 +1318,7 @@ func GetContainerEntrypointAndArgs(
 		GetStartScript(mergedConfig),
 		"-",
 	} // `wait $!` allows for the `trap` to run (synchronous `sleep` would not).
-	if imageDetails != nil && mergedConfig.OverrideCommand != nil &&
-		!*mergedConfig.OverrideCommand {
+	if usesImageEntrypoint(mergedConfig, imageDetails) {
 		cmd = append(cmd, imageDetails.Config.Entrypoint...)
 		cmd = append(cmd, imageDetails.Config.Cmd...)
 	}

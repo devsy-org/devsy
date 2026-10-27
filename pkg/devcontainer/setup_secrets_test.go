@@ -32,7 +32,7 @@ func TestCompressWorkspaceConfig_StripsSecretValues(t *testing.T) {
 		},
 	}
 
-	compressed, err := r.compressWorkspaceConfig(&config.MergedDevContainerConfig{})
+	compressed, err := r.compressWorkspaceConfig(&config.MergedDevContainerConfig{}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

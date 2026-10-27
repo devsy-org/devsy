@@ -121,7 +121,7 @@ func (k *KubernetesDriver) reconcileExistingPod(
 			return false, err
 		}
 
-		reused, err := k.reconcileObservedPod(ctx, id, pod)
+		reused, err := k.reconcileDesiredPod(ctx, pod, options)
 		if errors.Is(err, errPodChanged) {
 			continue
 		}
@@ -168,6 +168,17 @@ func (k *KubernetesDriver) reconcileObservedPod(
 		}
 	}
 	return true, nil
+}
+
+func (k *KubernetesDriver) reconcileDesiredPod(
+	ctx context.Context,
+	pod *corev1.Pod,
+	options *driver.RunOptions,
+) (bool, error) {
+	if classifyPod(pod) == podRunning && podLaunchDiffers(pod, options) {
+		return false, k.deleteObservedPod(ctx, pod.Name, pod.UID)
+	}
+	return k.reconcileObservedPod(ctx, pod.Name, pod)
 }
 
 func storedProviderOptions(pod *corev1.Pod) *provider2.ProviderKubernetesDriverConfig {
@@ -231,7 +242,10 @@ func (k *KubernetesDriver) waitPodGone(ctx context.Context, id string, uid types
 // daemon, which owns inactivity shutdown.
 func (k *KubernetesDriver) ManagedLifecycle() bool { return true }
 
-var _ driver.ManagedLifecycleDriver = (*KubernetesDriver)(nil)
+var (
+	_ driver.ManagedLifecycleDriver = (*KubernetesDriver)(nil)
+	_ driver.ImageRunValidator      = (*KubernetesDriver)(nil)
+)
 
 // effectiveTimeout resolves the current provider timeout for a stored shutdown action.
 func (k *KubernetesDriver) effectiveTimeout(shutdownAction string) (time.Duration, error) {
@@ -243,6 +257,7 @@ func (k *KubernetesDriver) effectiveTimeout(shutdownAction string) (time.Duratio
 		Canonical:      canonical,
 		Legacy:         k.options.InactivityTimeout,
 		ShutdownAction: shutdownAction,
+		DisableDaemon:  k.disableDaemon,
 	})
 }
 
@@ -264,11 +279,20 @@ func (k *KubernetesDriver) refreshStoredLifecycle(
 		}
 		action = cfg.ShutdownAction
 	}
+	if k.hasShutdownAction {
+		action = k.shutdownAction
+	}
 	timeout, err := k.effectiveTimeout(action)
 	if err != nil {
 		return nil, err
 	}
-	refreshed, err := agentd.RefreshLifecycle(stored, timeout)
+	lifecycle, err := agentd.ResolveManagedLifecycle(
+		timeout, options.Dockerless, options.ImageEntrypoint,
+	)
+	if err != nil {
+		return nil, err
+	}
+	refreshed, err := agentd.RefreshLifecycle(stored, lifecycle, action)
 	if err != nil {
 		return nil, err
 	}
