@@ -573,11 +573,15 @@ func TestOwnerActivityCannotConsumeReservedControlAdmission(t *testing.T) {
 }
 
 func TestDuplicateAcknowledgementsDoNotCloseALiveConnection(t *testing.T) {
+	const (
+		generation = "ack-generation"
+		clientID   = "ack-client"
+	)
 	owner, client := net.Pipe()
 	c := &LifecycleClient{
 		conn:     client,
-		owner:    OwnerRecord{Generation: "generation"},
-		clientID: "client",
+		owner:    OwnerRecord{Generation: generation},
+		clientID: clientID,
 		acks:     make(chan AckRecord, 8),
 		done:     make(chan struct{}),
 	}
@@ -586,8 +590,8 @@ func TestDuplicateAcknowledgementsDoNotCloseALiveConnection(t *testing.T) {
 	defer func() { _ = owner.Close() }()
 
 	raw, err := json.Marshal(AckRecord{
-		Version: LifecycleProtocolVersion, Generation: "generation",
-		ClientID: "client", Sequence: 1,
+		Version: LifecycleProtocolVersion, Generation: generation,
+		ClientID: clientID, Sequence: 1,
 	})
 	require.NoError(t, err)
 	raw = append(raw, '\n')
