@@ -137,7 +137,7 @@ func storeIconRevision(
 	}
 
 	revisionFile := filepath.Join(cacheDir, iconRevisionsDir, revision+".json")
-	if _, statErr := os.Stat(revisionFile); statErr == nil {
+	if existingRevisionVerifies(cacheDir, revision) {
 		return revision, false, nil
 	}
 
@@ -150,6 +150,16 @@ func storeIconRevision(
 	}
 
 	return revision, true, nil
+}
+
+func existingRevisionVerifies(cacheDir, revision string) bool {
+	root, err := os.OpenRoot(cacheDir)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = root.Close() }()
+	_, err = loadIconRevision(root, revision)
+	return err == nil
 }
 
 func storeIconBlobs(

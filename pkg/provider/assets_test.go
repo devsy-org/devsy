@@ -690,6 +690,29 @@ func (s *AssetsSuite) TestReadDetectsTamperedRevisionMetadata() {
 	s.Error(err)
 }
 
+func (s *AssetsSuite) TestPrepareRewritesCorruptRevisionMetadata() {
+	srv := newIconServer(s, map[string][]byte{testIconLogoPath: []byte(testIconSVGLight)})
+	cfg := s.widget(srv.URL+testIconLogoPath, "", ProviderSource{})
+	s.Require().NoError(PrepareProviderIcons(context.Background(), config.DefaultContext, cfg, nil))
+	revision := cfg.IconRevision
+
+	dir, err := GetProviderAssetsDir(config.DefaultContext, cfg.Name)
+	s.Require().NoError(err)
+	file := filepath.Join(dir, iconRevisionsDir, revision+".json")
+	s.Require().NoError(os.WriteFile(file, []byte("not json"), 0o600))
+
+	s.Require().NoError(PrepareProviderIcons(context.Background(), config.DefaultContext, cfg, nil))
+	s.Equal(revision, cfg.IconRevision, "the same content must keep its content-addressed revision")
+
+	light, err := ReadProviderIcon(config.DefaultContext, cfg, "light")
+	s.Require().NoError(err)
+	s.Equal(revision, light.Revision)
+	s.Equal(mimeSVG, light.MimeType)
+	decoded, err := base64.StdEncoding.DecodeString(light.DataBase64)
+	s.Require().NoError(err)
+	s.Equal(testIconSVGLight, string(decoded))
+}
+
 func (s *AssetsSuite) TestReadReportsMissingRevisionMetadata() {
 	srv := newIconServer(s, map[string][]byte{testIconLogoPath: []byte(testIconSVGLight)})
 	cfg := s.widget(srv.URL+testIconLogoPath, "", ProviderSource{})
