@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,13 +28,22 @@ func (s *providerIconSuite) TestAddCanceledDuringIconFetchDoesNotPublishProvider
 
 	s.ErrorIs(err, context.Canceled)
 	s.Nil(added)
-	// Icon staging may exist; only the installed manifest and config publish a provider.
 	dir, pathErr := provider.GetProviderDir(testDefaultContext, iconTestProvider)
 	s.Require().NoError(pathErr)
-	_, manifestErr := os.Stat(filepath.Join(dir, provider.ProviderConfigFile))
-	s.ErrorIs(manifestErr, os.ErrNotExist)
+	_, dirErr := os.Stat(dir)
+	s.ErrorIs(dirErr, os.ErrNotExist)
 	s.NotContains(s.reload().Current().Providers, iconTestProvider)
 	s.Equal(beforeConfig, s.iconRegressionConfigBytes())
+	retrySource := s.writeSource(s.iconManifest(), map[string]string{
+		iconTestLight: svgFill(iconRed),
+		iconTestDark:  svgFill(iconBlue),
+	})
+	retried := s.add(retrySource)
+	s.Require().NotNil(retried)
+	stored := s.installed(iconTestProvider)
+	s.Equal(retried, stored)
+	s.requireImage(s.readIcon(stored, iconThemeLight), svgFill(iconRed))
+	s.requireImage(s.readIcon(stored, iconThemeDark), svgFill(iconBlue))
 }
 
 func (s *providerIconSuite) TestUpdateCanceledDuringIconFetchPreservesInstalledProvider() {
@@ -89,6 +99,9 @@ func (s *providerIconSuite) TestCloneWithCorruptIconCacheKeepsProviderUsable() {
 func (s *providerIconSuite) TestCloneCanceledWithMissingIconCacheDoesNotPublishProvider() {
 	_, original := s.iconRegressionInstalledProvider()
 	s.makeIconCacheUnavailable(original, false)
+	sourceDir, sourceErr := provider.GetProviderDir(testDefaultContext, iconTestProvider)
+	s.Require().NoError(sourceErr)
+	beforeSourceDir := s.iconRegressionTree(sourceDir)
 	beforeManifest := s.iconRegressionManifestBytes()
 	beforeConfig := s.iconRegressionConfigBytes()
 	ctx, cancel := context.WithCancel(s.T().Context())
@@ -98,12 +111,110 @@ func (s *providerIconSuite) TestCloneCanceledWithMissingIconCacheDoesNotPublishP
 
 	s.ErrorIs(err, context.Canceled)
 	s.Nil(clone)
-	dir, pathErr := provider.GetProviderDir(testDefaultContext, iconRegressionCloneName)
+	cloneDir, pathErr := provider.GetProviderDir(testDefaultContext, iconRegressionCloneName)
 	s.Require().NoError(pathErr)
-	_, manifestErr := os.Stat(filepath.Join(dir, provider.ProviderConfigFile))
-	s.ErrorIs(manifestErr, os.ErrNotExist)
+	_, cloneErr := os.Stat(cloneDir)
+	s.ErrorIs(cloneErr, os.ErrNotExist)
 	s.Equal(beforeManifest, s.iconRegressionManifestBytes())
 	s.Equal(beforeConfig, s.iconRegressionConfigBytes())
+	s.Equal(beforeSourceDir, s.iconRegressionTree(sourceDir))
+
+	retried, retryErr := CloneProvider(
+		s.T().Context(),
+		s.reload(),
+		iconRegressionCloneName,
+		iconTestProvider,
+	)
+	s.Require().NoError(retryErr)
+	s.Require().NotNil(retried)
+	s.Equal(retried.Config, s.installed(iconRegressionCloneName))
+}
+
+// cancelOnceStagedContext reports cancellation only after marker exists. It
+// lets a test cancel at a known point inside icon staging, after files are
+// written but before the operation publishes the provider.
+type cancelOnceStagedContext struct {
+	context.Context
+	marker string
+}
+
+func (c cancelOnceStagedContext) Err() error {
+	if _, err := os.Stat(c.marker); err == nil {
+		return context.Canceled
+	}
+	return c.Context.Err()
+}
+
+func (s *providerIconSuite) TestAddCanceledAfterIconStagingRemovesProviderDirAndAllowsRetry() {
+	dir, err := provider.GetProviderDir(testDefaultContext, iconTestProvider)
+	s.Require().NoError(err)
+	assetsDir, err := provider.GetProviderAssetsDir(testDefaultContext, iconTestProvider)
+	s.Require().NoError(err)
+	beforeConfig := s.iconRegressionConfigBytes()
+	source := s.writeSource(s.iconManifest(), map[string]string{
+		iconTestLight: svgFill(iconRed),
+		iconTestDark:  svgFill(iconBlue),
+	})
+	// storeIconBlobs creates revisions after both blobs are written and before
+	// the revision metadata; the next ctx.Err check then reports cancellation.
+	ctx := cancelOnceStagedContext{
+		Context: s.T().Context(),
+		marker:  filepath.Join(assetsDir, "revisions"),
+	}
+
+	added, err := AddProvider(ctx, s.reload(), iconTestProvider, source)
+	s.ErrorIs(err, context.Canceled)
+	s.Nil(added)
+	_, statErr := os.Stat(dir)
+	s.ErrorIs(statErr, os.ErrNotExist)
+	s.Equal(beforeConfig, s.iconRegressionConfigBytes())
+
+	retried := s.add(source)
+	s.Require().NotNil(retried)
+	stored := s.installed(iconTestProvider)
+	s.Equal(retried, stored)
+	s.requireImage(s.readIcon(stored, iconThemeLight), svgFill(iconRed))
+	s.requireImage(s.readIcon(stored, iconThemeDark), svgFill(iconBlue))
+}
+
+func (s *providerIconSuite) TestCloneCanceledAfterIconCopyRemovesCloneDirAndAllowsRetry() {
+	_, original := s.iconRegressionInstalledProvider()
+	sourceDir, err := provider.GetProviderDir(testDefaultContext, iconTestProvider)
+	s.Require().NoError(err)
+	cloneDir, err := provider.GetProviderDir(testDefaultContext, iconRegressionCloneName)
+	s.Require().NoError(err)
+	cloneAssets, err := provider.GetProviderAssetsDir(testDefaultContext, iconRegressionCloneName)
+	s.Require().NoError(err)
+	beforeConfig := s.iconRegressionConfigBytes()
+	beforeSourceDir := s.iconRegressionTree(sourceDir)
+	// copyIconVariant creates blobs after copying the light variant; the dark
+	// variant's ctx.Err check then reports cancellation mid-copy.
+	ctx := cancelOnceStagedContext{
+		Context: s.T().Context(),
+		marker:  filepath.Join(cloneAssets, "blobs"),
+	}
+
+	clone, err := CloneProvider(ctx, s.reload(), iconRegressionCloneName, iconTestProvider)
+	s.ErrorIs(err, context.Canceled)
+	s.Nil(clone)
+	_, statErr := os.Stat(cloneDir)
+	s.ErrorIs(statErr, os.ErrNotExist)
+	s.Equal(beforeConfig, s.iconRegressionConfigBytes())
+	s.Equal(beforeSourceDir, s.iconRegressionTree(sourceDir))
+
+	retried, err := CloneProvider(
+		s.T().Context(),
+		s.reload(),
+		iconRegressionCloneName,
+		iconTestProvider,
+	)
+	s.Require().NoError(err)
+	s.Require().NotNil(retried)
+	stored := s.installed(iconRegressionCloneName)
+	s.Equal(retried.Config, stored)
+	s.Equal(original.IconRevision, stored.IconRevision)
+	s.requireImage(s.readIcon(stored, iconThemeLight), svgFill(iconRed))
+	s.requireImage(s.readIcon(stored, iconThemeDark), svgFill(iconBlue))
 }
 
 func (s *providerIconSuite) TestCloneWithMissingIconCacheStillRejectsUnavailableBinary() {
@@ -226,6 +337,28 @@ func (s *providerIconSuite) iconRegressionReadFile(directory, name string) []byt
 	s.Require().NoError(readErr)
 	s.Require().NoError(closeErr)
 	return raw
+}
+
+func (s *providerIconSuite) iconRegressionTree(directory string) map[string]string {
+	root, err := os.OpenRoot(directory)
+	s.Require().NoError(err)
+	files := map[string]string{}
+	walk := func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() {
+			return walkErr
+		}
+		raw, readErr := root.ReadFile(name)
+		if readErr != nil {
+			return readErr
+		}
+		files[name] = string(raw)
+		return nil
+	}
+	treeErr := fs.WalkDir(root.FS(), ".", walk)
+	closeErr := root.Close()
+	s.Require().NoError(treeErr)
+	s.Require().NoError(closeErr)
+	return files
 }
 
 type blockedProviderIconFixture struct {

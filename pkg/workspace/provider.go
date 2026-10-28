@@ -362,22 +362,20 @@ func installProvider(
 		return nil, err
 	}
 
+	providerDir, dirErr := provider.GetProviderDir(
+		p.DevsyConfig.DefaultContext,
+		providerConfig.Name,
+	)
+	if dirErr != nil {
+		return nil, dirErr
+	}
+	saved := false
+	defer removeUnsavedProviderDir(&saved, providerDir)
+
 	// Clone has no author bytes: copy the selected immutable revision before
 	// saving the renamed config, so it stays usable after deleting the source.
-	var iconErr error
-	if len(p.Raw) > 0 {
-		iconErr = prepareProviderIcons(ctx, p, providerConfig)
-	} else {
-		err := provider.CopyProviderIcons(
-			ctx,
-			p.DevsyConfig.DefaultContext,
-			sourceName,
-			providerConfig,
-		)
-		iconErr = handleProviderIconError(ctx, providerConfig, err)
-	}
-	if iconErr != nil {
-		return nil, iconErr
+	if err := stageProviderIcons(ctx, p, providerConfig, sourceName); err != nil {
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -386,8 +384,37 @@ func installProvider(
 	if err := downloadAndSaveProvider(ctx, p, providerConfig); err != nil {
 		return nil, err
 	}
+	saved = true
 
 	return providerConfig, nil
+}
+
+// removeUnsavedProviderDir removes a provider dir that a failed install created.
+func removeUnsavedProviderDir(saved *bool, providerDir string) {
+	if !*saved {
+		_ = os.RemoveAll(providerDir)
+	}
+}
+
+// stageProviderIcons stages the icon revision the installed manifest will
+// select. Clone has no author bytes, so it copies the selected immutable
+// revision from sourceName instead.
+func stageProviderIcons(
+	ctx context.Context,
+	p ProviderParams,
+	providerConfig *provider.ProviderConfig,
+	sourceName string,
+) error {
+	if len(p.Raw) > 0 {
+		return prepareProviderIcons(ctx, p, providerConfig)
+	}
+	err := provider.CopyProviderIcons(
+		ctx,
+		p.DevsyConfig.DefaultContext,
+		sourceName,
+		providerConfig,
+	)
+	return handleProviderIconError(ctx, providerConfig, err)
 }
 
 func updateProvider(ctx context.Context, p ProviderParams) (*provider.ProviderConfig, error) {
