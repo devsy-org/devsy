@@ -364,15 +364,23 @@ func installProvider(
 
 	// Clone has no author bytes: copy the selected immutable revision before
 	// saving the renamed config, so it stays usable after deleting the source.
+	var iconErr error
 	if len(p.Raw) > 0 {
-		prepareProviderIcons(ctx, p, providerConfig)
-	} else if err := provider.CopyProviderIcons(
-		ctx,
-		p.DevsyConfig.DefaultContext,
-		sourceName,
-		providerConfig,
-	); err != nil {
-		return nil, fmt.Errorf("copy provider icons: %w", err)
+		iconErr = prepareProviderIcons(ctx, p, providerConfig)
+	} else {
+		err := provider.CopyProviderIcons(
+			ctx,
+			p.DevsyConfig.DefaultContext,
+			sourceName,
+			providerConfig,
+		)
+		iconErr = handleProviderIconError(ctx, providerConfig, err)
+	}
+	if iconErr != nil {
+		return nil, iconErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	if err := downloadAndSaveProvider(ctx, p, providerConfig); err != nil {
@@ -417,22 +425,35 @@ func parseAndValidateProvider(p ProviderParams) (*provider.ProviderConfig, error
 
 // prepareProviderIcons stages the icon revision the installed manifest will
 // select. Icons are optional, so a cache failure only drops the revision and
-// the provider falls back to bundled artwork.
+// the provider falls back to bundled artwork. Caller cancellation aborts the
+// provider operation.
 func prepareProviderIcons(
 	ctx context.Context,
 	p ProviderParams,
 	providerConfig *provider.ProviderConfig,
-) {
+) error {
 	err := provider.PrepareProviderIcons(
 		ctx,
 		p.DevsyConfig.DefaultContext,
 		providerConfig,
 		p.Raw,
 	)
+	return handleProviderIconError(ctx, providerConfig, err)
+}
+
+func handleProviderIconError(
+	ctx context.Context,
+	providerConfig *provider.ProviderConfig,
+	err error,
+) error {
+	if callerErr := ctx.Err(); callerErr != nil {
+		return callerErr
+	}
 	if err != nil {
 		providerConfig.IconRevision = ""
 		log.Warnf("prepare icons for provider %s: %v", providerConfig.Name, err)
 	}
+	return nil
 }
 
 func checkProviderNotExists(devsyConfig *config.Config, providerName string) error {

@@ -309,7 +309,14 @@ func openContainedLocalIcon(root *os.Root, directory, relative string) (*os.File
 	if err != nil {
 		return nil, err
 	}
-	return root.Open(target)
+	info, err := root.Stat(target)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("not a regular file")
+	}
+	return openLocalIconFile(root, target)
 }
 
 func describeFileError(err error) error {

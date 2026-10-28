@@ -249,7 +249,7 @@ func buildGithubURL(path, release string) string {
 		"%s/%s/releases/download/%s/provider.yaml",
 		githubWebBaseURL,
 		path,
-		release,
+		url.PathEscape(release),
 	)
 }
 

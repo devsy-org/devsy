@@ -95,7 +95,9 @@ func prepareProviderReplacement(
 	// without binaries, or one whose binaries are unchanged, still selects a
 	// new revision. Immutable per-provider revisions make a failed commit harmless:
 	// the restored manifest keeps pointing at the previous complete revision.
-	prepareProviderIcons(ctx, p, replacement)
+	if err = prepareProviderIcons(ctx, p, replacement); err != nil {
+		return nil, err
+	}
 	if !prepared.replaceBinaries {
 		return prepared, ctx.Err()
 	}

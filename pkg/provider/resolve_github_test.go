@@ -61,6 +61,14 @@ func (r *releaseServer) handle(w http.ResponseWriter, req *http.Request) {
 		_, _ = w.Write([]byte(testReleaseManifest))
 	case strings.HasPrefix(path, "/"+testReleaseRepo+"/releases/download/") &&
 		strings.HasSuffix(path, "/provider.yaml"):
+		tag := strings.TrimSuffix(
+			strings.TrimPrefix(path, "/"+testReleaseRepo+"/releases/download/"),
+			"/provider.yaml",
+		)
+		if _, found := r.logos[tag]; !found {
+			http.NotFound(w, req)
+			return
+		}
 		_, _ = w.Write([]byte(testReleaseManifest))
 	default:
 		r.handleLogo(w, req)
@@ -153,6 +161,38 @@ func (s *ResolveProvenanceSuite) TestLatestUsesDesignatedEndpointOnly() {
 		s.server.seen("/repos/"+testReleaseRepo+"/releases"),
 		"the newest-published list is never used",
 	)
+}
+
+func (s *ResolveProvenanceSuite) TestLatestTagIsEscapedInManifestRequest() {
+	for _, tt := range []struct {
+		tag     string
+		escaped string
+	}{
+		{tag: "release#1", escaped: "release%231"},
+		{tag: "release%2F1", escaped: "release%252F1"},
+	} {
+		s.Run(tt.tag, func() {
+			s.server.mu.Lock()
+			s.server.latest = tt.tag
+			s.server.logos[tt.tag] = testIconSVGLight
+			s.server.mu.Unlock()
+
+			cfg, _ := s.install("github.com/" + testReleaseRepo)
+
+			s.True(s.server.seen("/repos/" + testReleaseRepo + "/releases/latest"))
+			s.True(
+				s.server.seen(
+					"/" + testReleaseRepo + "/releases/download/" + tt.tag + "/provider.yaml",
+				),
+			)
+			s.Equal(tt.tag, cfg.Source.ResolvedRef)
+			s.Equal(
+				s.server.URL+"/"+testReleaseRepo+"/releases/download/"+tt.escaped+"/provider.yaml",
+				cfg.Source.ResolvedManifestURL,
+			)
+			s.Equal(testIconSVGLight, s.decoded(s.iconText(cfg)))
+		})
+	}
 }
 
 func (s *ResolveProvenanceSuite) TestExplicitTagIsRetainedWithoutMetadataLookup() {

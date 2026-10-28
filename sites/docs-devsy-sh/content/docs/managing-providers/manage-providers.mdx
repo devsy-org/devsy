@@ -191,9 +191,9 @@ A provider can supply its own logo through `icon` and `iconDark` in its `provide
 - Devsy fetches the images when you add a provider, and again on `devsy provider set-source` or an update. Each installed provider has its own `provider-assets/` cache beside its configuration, so a restart or an offline session keeps showing the selected image revision.
 - Listing providers and opening the Desktop app never download images.
 - A provider installed before this feature shows the bundled logo until you update it or run `devsy provider set-source <name>`.
-- A missing or unusable image never makes an install or update fail. The Desktop app shows the bundled logo for the provider's name, or a generic placeholder.
+- Missing or unusable artwork never blocks adding, updating or cloning an otherwise valid provider. The Desktop app shows the bundled logo for the provider's name, or a generic placeholder. Caller cancellation remains an operation error.
 - In dark mode the app prefers the provider's dark image, then its light image. In light mode it uses the light image.
-- Cloning copies cached images and revision metadata into the new provider's own installation; renaming preserves them. Both keep the logo offline. Deleting the original provider does not remove the clone's logo.
+- Cloning copies available cached images and revision metadata into the new provider's own installation; renaming preserves them. Deleting the original provider does not remove the clone's cached logo.
 
 ## Remove a provider
 

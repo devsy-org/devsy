@@ -80,7 +80,7 @@ icon: assets/logo.svg
 iconDark: assets/logo-dark.svg
 ```
 
-Devsy downloads the images once, when the provider is added or updated, and stores them in a `provider-assets/` directory alongside that installed provider's configuration. Each configuration selects a complete immutable image revision. The Desktop app reads it from disk; listing providers never downloads images, so cached logos also work offline. Cloning copies the cached bytes and revision metadata into the destination installation, independently of the original provider.
+Devsy downloads the images once, when the provider is added or updated, and stores them in a `provider-assets/` directory alongside that installed provider's configuration. Each configuration selects a complete immutable image revision. The Desktop app reads it from disk; listing providers never downloads images, so cached logos also work offline. Cloning copies available cached bytes and revision metadata into the destination installation, independently of the original provider. If the source cache is missing or corrupt, the clone remains usable with the bundled logo or placeholder instead.
 
 Devsy does not guess a logo. It does not look for `logo.svg` and does not read a repository homepage. Only the two fields above count.
 
@@ -108,6 +108,7 @@ For a GitHub source, Devsy installs the `provider.yaml` attached to the release.
 ### Formats and limits
 
 - PNG, JPEG, WebP and SVG. Devsy checks the file content, not only the extension, and rejects HTML error or login pages.
+- Local artwork must be a regular file. Directories, FIFOs and device files are unavailable artwork.
 - At most 1 MiB per image.
 - Raster images may be at most 4096 pixels on each side.
 - SVG must be well formed. DTDs, entities, scripts, `foreignObject`, embedded documents and external references are rejected. Shapes, paths, gradients and references to elements in the same file are fine.
@@ -116,6 +117,8 @@ For a GitHub source, Devsy installs the `provider.yaml` attached to the release.
 ### Icons are optional
 
 A missing, invalid or unreachable image never blocks installing or updating the provider. Devsy records that variant as missing and the Desktop app falls back. It logs at most one short warning per failed asset revision, combining both variants and removing the query string and credentials.
+
+Caller cancellation is propagated as an operation error; it is not treated as an optional artwork failure.
 
 If you update a provider and its new icon cannot be fetched, the Desktop app does not keep showing the previous provider's logo for that variant. A later `devsy provider set-source <name>` fetches it again.
 

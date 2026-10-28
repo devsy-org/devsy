@@ -172,24 +172,37 @@ describe("ProviderIconReader", () => {
     expect(cli.run).toHaveBeenCalledTimes(4)
   })
 
-  it("does not cache a read that was in flight when its provider was invalidated", async () => {
-    const gates = [
-      Promise.withResolvers<unknown>(),
-      Promise.withResolvers<unknown>(),
-    ]
-    let next = 0
-    const { reader, cli } = makeReader(() => gates[next++].promise)
+  it.each(["provider", "context"] as const)(
+    "returns stale without old bytes after pending-read %s invalidation",
+    async (scope) => {
+      const gates = [
+        Promise.withResolvers<unknown>(),
+        Promise.withResolvers<unknown>(),
+      ]
+      let next = 0
+      const { reader } = makeReader(() => gates[next++].promise)
+      const newData = Buffer.from("<svg id='updated'/>").toString("base64")
+      const newImage = `data:image/svg+xml;base64,${newData}`
 
-    const inFlight = reader.read(request())
-    reader.invalidateProvider("harvester")
-    gates[0].resolve(cached("rev-a"))
-    await inFlight
+      const inFlight = reader.read(request())
+      if (scope === "provider") reader.invalidateProvider("harvester")
+      else reader.invalidateAll()
+      const after = reader.read(request({ expectedRevision: "rev-b" }))
+      gates[1].resolve(cached("rev-b", { dataBase64: newData }))
+      await expect(after).resolves.toEqual({
+        revision: "rev-b",
+        dataUrl: newImage,
+      })
 
-    const after = reader.read(request())
-    gates[1].resolve(cached("rev-a"))
-    await after
-    expect(cli.run).toHaveBeenCalledTimes(2)
-  })
+      gates[0].resolve(cached("rev-a"))
+      const stale = await inFlight
+      expect(stale).toEqual({ revision: "rev-a", stale: true })
+      expect(stale).not.toHaveProperty("dataUrl")
+      await expect(
+        reader.read(request({ expectedRevision: "rev-b" })),
+      ).resolves.toEqual({ revision: "rev-b", dataUrl: newImage })
+    },
+  )
 
   it.each([
     ["theme", { theme: "sepia" }],

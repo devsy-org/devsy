@@ -134,10 +134,17 @@ export class ProviderIconReader {
     if (expectedRevision.includes("\0"))
       throw new Error("A valid icon revision is required.")
 
+    const scope = `${context}\0${providerName}`
+    const epoch = this.epoch
+    const providerEpoch = this.providerEpochs.get(scope) ?? 0
     const requestKey = cacheKey(context, providerName, expectedRevision, theme)
     const cached = expectedRevision ? this.touch(requestKey) : undefined
     const observed = cached ?? (await this.load(requestKey, request))
-    if (observed.revision !== expectedRevision)
+    if (
+      epoch !== this.epoch ||
+      providerEpoch !== (this.providerEpochs.get(scope) ?? 0) ||
+      observed.revision !== expectedRevision
+    )
       return { revision: observed.revision, stale: true }
     return observed
   }
