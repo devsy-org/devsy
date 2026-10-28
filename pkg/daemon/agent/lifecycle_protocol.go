@@ -399,12 +399,27 @@ func (c *LifecycleClient) readAcks() {
 			!c.validAck(ack) {
 			return
 		}
+		if !c.deliverAck(ack) {
+			return
+		}
+	}
+}
+
+// deliverAck queues ack for the sender. Every resend makes the owner repeat the
+// same ACK and nothing drains them between sends, so a full queue holds stale
+// duplicates: drop the oldest instead of closing a live protected connection.
+func (c *LifecycleClient) deliverAck(ack AckRecord) bool {
+	for {
 		select {
 		case c.acks <- ack:
+			return true
 		case <-c.done:
-			return
+			return false
 		default:
-			return
+			select {
+			case <-c.acks:
+			default:
+			}
 		}
 	}
 }

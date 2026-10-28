@@ -571,3 +571,40 @@ func TestOwnerActivityCannotConsumeReservedControlAdmission(t *testing.T) {
 		time.Millisecond,
 	)
 }
+
+func TestDuplicateAcknowledgementsDoNotCloseALiveConnection(t *testing.T) {
+	owner, client := net.Pipe()
+	c := &LifecycleClient{
+		conn:     client,
+		owner:    OwnerRecord{Generation: "generation"},
+		clientID: "client",
+		acks:     make(chan AckRecord, 8),
+		done:     make(chan struct{}),
+	}
+	go c.readAcks()
+	defer func() { _ = c.Close() }()
+	defer func() { _ = owner.Close() }()
+
+	raw, err := json.Marshal(AckRecord{
+		Version: LifecycleProtocolVersion, Generation: "generation",
+		ClientID: "client", Sequence: 1,
+	})
+	require.NoError(t, err)
+	raw = append(raw, '\n')
+	for range 4 * cap(c.acks) {
+		_, err := owner.Write(raw)
+		require.NoError(t, err)
+	}
+
+	select {
+	case <-c.done:
+		t.Fatal("stale duplicate acknowledgements must not close a protected connection")
+	case <-time.After(200 * time.Millisecond):
+	}
+	select {
+	case ack := <-c.acks:
+		assert.Equal(t, uint64(1), ack.Sequence, "a matching acknowledgement is still delivered")
+	default:
+		t.Fatal("expected a buffered acknowledgement")
+	}
+}
