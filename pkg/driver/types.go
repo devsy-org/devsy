@@ -54,6 +54,15 @@ type WorkspaceChowner interface {
 	RequiresWorkspaceChown() bool
 }
 
+// ImageDetailsDriver is a capability interface for drivers that can supply the
+// image config of a prebuilt image themselves, so the client does not need to
+// read it from the registry.
+type ImageDetailsDriver interface {
+	// ImageDetails returns the configured details for imageName, or nil when
+	// none are configured.
+	ImageDetails(imageName string) (*config.ImageDetails, error)
+}
+
 // ManagedLifecycleDriver identifies drivers that can run the container's main
 // process as the Devsy daemon. Actual ownership also depends on the run topology.
 type ManagedLifecycleDriver interface {

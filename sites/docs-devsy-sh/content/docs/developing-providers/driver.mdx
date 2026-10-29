@@ -53,6 +53,7 @@ The allowed options for the Kubernetes driver are:
 - **clusterRole**: if defined, Devsy will create a role binding for the given cluster role for the workspace container. This is useful if you need Kubernetes access within the workspace container
 - **serviceAccount**: if defined, Devsy will use the given service account for the dev container
 - **architecture**: the CPU architecture to use for the workspace pod, e.g. `amd64`, `arm64`. If empty, Devsy inspects the cluster's nodes to auto-detect it (and errors out if the cluster has mixed architectures).
+- **imageDetails**: path to a JSON file with the image config of the devcontainer.json `image` (for example the output of `crane config <image>`). When set, Devsy reads the user, env, entrypoint, cmd and `devcontainer.metadata` label from the file instead of fetching the image config from the registry on the client. See [Starting workspaces without registry access](#starting-workspaces-without-registry-access).
 - **inactivityTimeout**: after how much time to automatically stop the pod due to inactivity
 - **storageClass**: the storage class to use to create the persistent volume claim
 - **diskSize**: the default size for the persistent volume to use, e.g. `10Gi`
@@ -80,6 +81,23 @@ container cannot write the default `/usr/local/bin/devsy`.
 <Callout>
 Devsy builds images inside Kubernetes without Docker through the `dockerless` build path (`agent.dockerless.disabled` / `agent.dockerless.image`).
 </Callout>
+
+### Starting workspaces without registry access
+
+For a devcontainer.json with a prebuilt `image`, Devsy reads the image config (user, env, entrypoint, cmd and the `devcontainer.metadata` label) from the registry on the machine that runs Devsy. In clusters that already have their own registry credentials, the person starting the workspace would otherwise need registry read access and a local `docker login` just for this step.
+
+To skip it, produce the image config next to the image, for example in CI, and point the `IMAGE_DETAILS` option at the file:
+
+```bash
+crane config registry.example.com/team/image@sha256:<digest> > image-details.json
+devsy provider set kubernetes -o IMAGE_DETAILS=$PWD/image-details.json
+```
+
+The file can be an OCI image config (as printed by `crane config`), a single `docker image inspect` object, or the JSON of Devsy's image details. Devsy never contacts the registry for this step when the option is set, and it fails if the file is missing or invalid. Notes:
+
+- Pin the image by digest in devcontainer.json, so the file always matches the image the cluster pulls.
+- This applies to the devcontainer.json `image`. Dockerfile builds still read their base image from the registry, and `features` are built from the image as usual.
+- Also set `ARCHITECTURE` (for example `amd64`). Otherwise Devsy lists the cluster's nodes to detect it, which needs cluster-scoped permissions.
 
 ### Example Kubernetes Provider
 

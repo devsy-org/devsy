@@ -252,11 +252,27 @@ func (r *runner) getImageBuildInfoFromImage(
 	substitutionContext *config.SubstitutionContext,
 	imageName string,
 ) (*config.ImageBuildInfo, error) {
-	imageDetails, err := r.inspectImage(ctx, imageName)
+	imageDetails, err := r.configuredImageDetails(imageName)
 	if err != nil {
 		return nil, err
 	}
+	if imageDetails == nil {
+		imageDetails, err = r.inspectImage(ctx, imageName)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return imageBuildInfoFromDetails(substitutionContext, imageDetails)
+}
+
+// configuredImageDetails returns image details the driver was configured with,
+// or nil when the image has to be inspected.
+func (r *runner) configuredImageDetails(imageName string) (*config.ImageDetails, error) {
+	d, ok := r.driver.(driver.ImageDetailsDriver)
+	if !ok {
+		return nil, nil
+	}
+	return d.ImageDetails(imageName)
 }
 
 func imageBuildInfoFromDetails(
