@@ -172,6 +172,8 @@ e2e:
       reason: sub-label that always accompanies the up-provider-kubernetes suite label
     - label: up-provider-kubernetes-ignore
       reason: sub-label that always accompanies the up-provider-kubernetes suite label
+    - label: up-provider-kubernetes-image-details
+      reason: sub-label that always accompanies the up-provider-kubernetes suite label
 
   suites:
     # --- unprivileged ---
