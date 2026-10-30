@@ -2,6 +2,7 @@ package gitsshsigning
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -153,4 +154,75 @@ func (s *HelperTestSuite) TestRemoveSignatureHelper_DropsEmptyGpgSSHSection() {
 	assert.NotContains(s.T(), result, `[gpg "ssh"]`,
 		"empty section should be dropped entirely")
 	assert.Contains(s.T(), result, "[commit]")
+}
+
+func TestUpdateGitConfig_WindowsBackslashPathQuotingAndCleanRemoval(t *testing.T) {
+	dir := t.TempDir()
+	gitConfigPath := filepath.Join(dir, ".gitconfig")
+	initial := "[user]\n\tname = Test User\n\temail = test@example.com"
+	require.NoError(t, os.WriteFile(gitConfigPath, []byte(initial), 0o600))
+
+	winKeyPath := `C:\Users\alice\.ssh\git_signing_ed25519`
+	require.NoError(t, updateGitConfig(gitConfigPath, "", winKeyPath))
+
+	content, err := os.ReadFile(gitConfigPath) // #nosec G304 -- test path from t.TempDir
+	require.NoError(t, err)
+	assert.Contains(
+		t,
+		string(content),
+		`signingkey = "C:\\Users\\alice\\.ssh\\git_signing_ed25519"`,
+	)
+
+	//nolint:gosec // test-only git config verification
+	out, err := exec.Command(
+		"git",
+		"config",
+		"--file",
+		gitConfigPath,
+		"--get",
+		"user.signingkey",
+	).CombinedOutput()
+	require.NoError(t, err, "git config failed to parse quoted path: %s", string(out))
+	assert.Equal(t, winKeyPath, strings.TrimSpace(string(out)))
+
+	cleaned := removeSignatureHelper(string(content))
+	assert.NotContains(t, cleaned, "git_signing_ed25519")
+	assert.NotContains(t, cleaned, "devsy-ssh-signature")
+	assert.Equal(t, initial, cleaned)
+}
+
+func TestFormatGitConfigValue_QuotesOnlySpecialCharacters(t *testing.T) {
+	unixPath := "/Users/alice/.ssh/id_ed25519"
+	assert.Equal(t, unixPath, formatGitConfigValue(unixPath))
+	assert.Equal(
+		t,
+		testSyntheticPublicKey,
+		formatGitConfigValue(testSyntheticPublicKey),
+	)
+	assert.Equal(
+		t,
+		`"/path/with \"quotes\"/key"`,
+		formatGitConfigValue(`/path/with "quotes"/key`),
+	)
+	assert.Equal(
+		t,
+		`"/path/with\ninjected"`,
+		formatGitConfigValue("/path/with\r\ninjected"),
+	)
+	hashAndSemiPath := "/Users/alice/c#-app;v2/.ssh/git_signing_ed25519"
+	assert.Equal(t, `"`+hashAndSemiPath+`"`, formatGitConfigValue(hashAndSemiPath))
+
+	gitConfigPath := filepath.Join(t.TempDir(), ".gitconfig")
+	require.NoError(t, updateGitConfig(gitConfigPath, "", hashAndSemiPath))
+	//nolint:gosec // test-only git config verification
+	out, err := exec.Command(
+		"git",
+		"config",
+		"--file",
+		gitConfigPath,
+		"--get",
+		"user.signingkey",
+	).CombinedOutput()
+	require.NoError(t, err, "git config failed on #/; path: %s", string(out))
+	assert.Equal(t, hashAndSemiPath, strings.TrimSpace(string(out)))
 }

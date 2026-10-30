@@ -96,6 +96,14 @@ func WithGitToken(token *provider2.GitToken) Option {
 	}
 }
 
+// WithGitSSHSigningKey configures the host Git SSH signing key for fallback resolution.
+func WithGitSSHSigningKey(signingKey string) Option {
+	return func(s *tunnelServer) *tunnelServer {
+		s.gitSSHSigningKey = signingKey
+		return s
+	}
+}
+
 // WithStatusReporter forwards inbound StatusUpdate RPCs to reporter. A nil
 // reporter is ignored, since it would replace the Nop default and panic.
 func WithStatusReporter(reporter status.Reporter) Option {

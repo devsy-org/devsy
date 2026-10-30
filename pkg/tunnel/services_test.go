@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const testCtxName = "default"
@@ -58,7 +61,10 @@ func TestGetExitAfterTimeout_DisableIdleTimeoutOverridesDisabled(t *testing.T) {
 	)
 }
 
-const testBaseCommand = "devsy internal agent container credentials-server --user root"
+const (
+	testBaseCommand = "devsy internal agent container credentials-server --user root"
+	testUser        = "testuser"
+)
 
 func TestAddGitSSHSigningKey_ExplicitKey(t *testing.T) {
 	command := testBaseCommand
@@ -71,7 +77,7 @@ func TestAddGitSSHSigningKey_ExplicitKey(t *testing.T) {
 func TestAddGitSSHSigningKey_ExplicitKeyTakesPrecedence(t *testing.T) {
 	// When an explicit key is provided, it should be used regardless
 	// of what ExtractGitConfiguration might return from host .gitconfig.
-	command := testBaseCommand
+	command := "credentials-server --user dev"
 	explicitKey := "/explicit/key.pub"
 	result := addGitSSHSigningKey(context.Background(), command, explicitKey, "")
 
@@ -94,7 +100,7 @@ func TestAddGitSSHSigningKey_EmptyExplicitKey_FallsBackToHostConfig(t *testing.T
 
 func TestBuildCredentialsCommand_IncludesSigningKey(t *testing.T) {
 	opts := RunServicesOptions{
-		User:                           "testuser",
+		User:                           testUser,
 		ConfigureGitSSHSignatureHelper: true,
 		GitSSHSigningKey:               "/my/key.pub",
 	}
@@ -107,7 +113,7 @@ func TestBuildCredentialsCommand_IncludesSigningKey(t *testing.T) {
 
 func TestBuildCredentialsCommand_NoSigningKey(t *testing.T) {
 	opts := RunServicesOptions{
-		User:                           "testuser",
+		User:                           testUser,
 		ConfigureGitSSHSignatureHelper: false,
 	}
 	command := buildCredentialsCommand(context.Background(), opts)
@@ -216,4 +222,65 @@ func TestOptionalGitHubServicePreservesPolicyAfterUnrelatedFailure(t *testing.T)
 			assert.Equal(t, 1, calls)
 		})
 	}
+}
+
+func TestAddGitSSHSigningKey_ExpandsTildeExplicitKey(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	result := addGitSSHSigningKey(
+		context.Background(),
+		testBaseCommand,
+		"~/.ssh/git_signing_ed25519",
+		"",
+	)
+
+	expectedPath := filepath.Join(tmpHome, ".ssh", "git_signing_ed25519")
+	encoded := base64.StdEncoding.EncodeToString([]byte(expectedPath))
+	assert.Equal(t, testBaseCommand+" --git-user-signing-key "+encoded, result)
+}
+
+func TestAddGitSSHSigningKey_ExpandsTildeFromHostGitConfig(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	gitConfig := "[gpg]\n\tformat = ssh\n[user]\n\tsigningkey = ~/.ssh/git_signing_ed25519\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tmpHome, ".gitconfig"), []byte(gitConfig), 0o600))
+
+	workingDir := t.TempDir()
+	result := addGitSSHSigningKey(context.Background(), testBaseCommand, "", workingDir)
+
+	expectedPath := filepath.Join(tmpHome, ".ssh", "git_signing_ed25519")
+	encoded := base64.StdEncoding.EncodeToString([]byte(expectedPath))
+	assert.Equal(t, testBaseCommand+" --git-user-signing-key "+encoded, result)
+}
+
+func TestBuildCredentialsCommand_ExpandsTildeSigningKey(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	opts := RunServicesOptions{
+		User:                           testUser,
+		ConfigureGitSSHSignatureHelper: true,
+		GitSSHSigningKey:               "~/.ssh/id_ed25519",
+	}
+	command := buildCredentialsCommand(context.Background(), opts)
+
+	expectedPath := filepath.Join(tmpHome, ".ssh", "id_ed25519")
+	encoded := base64.StdEncoding.EncodeToString([]byte(expectedPath))
+	assert.Contains(t, command, "--git-user-signing-key "+encoded)
+	assert.Contains(t, command, "--user testuser")
+}
+
+func TestResolveGitSSHSigningKey_DisabledHelperReturnsEmpty(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	opts := RunServicesOptions{
+		ConfigureGitSSHSignatureHelper: false,
+		GitSSHSigningKey:               "~/.ssh/id_ed25519",
+	}
+	assert.Empty(t, resolveGitSSHSigningKey(context.Background(), opts))
 }

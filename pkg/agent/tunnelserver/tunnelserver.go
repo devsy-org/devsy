@@ -152,9 +152,10 @@ type tunnelServer struct {
 	result                 *config.Result
 	workspace              *provider2.Workspace
 
-	platformOptions *devsy.PlatformOptions
-	secrets         []*tunnel.Secret
-	gitToken        *provider2.GitToken
+	platformOptions  *devsy.PlatformOptions
+	secrets          []*tunnel.Secret
+	gitToken         *provider2.GitToken
+	gitSSHSigningKey string
 
 	statusReporter status.Reporter
 }
@@ -394,7 +395,7 @@ func (t *tunnelServer) GitSSHSignature(
 		return nil, fmt.Errorf("git ssh sign request: %w", err)
 	}
 
-	signatureResponse, err := signatureRequest.Sign()
+	signatureResponse, err := signatureRequest.SignWithHostKey(t.gitSSHSigningKey)
 	if err != nil {
 		return nil, fmt.Errorf("get git ssh signature: %w", err)
 	}
