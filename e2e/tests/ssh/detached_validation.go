@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/onsi/ginkgo/v2"
@@ -75,7 +76,8 @@ var _ = ginkgo.Describe("detached workspace input validation", ginkgo.Label("tas
 				"--provider=missing-provider-1471",
 				source,
 			)
-			framework.ExpectNoError(err)
+			gomega.Expect(err).NotTo(gomega.HaveOccurred(), "CLI output: %s",
+				secrets.NewEnvironmentRedactor(detachedValidationEnvironment(home)).Redact(out))
 			var envelope struct {
 				Kind string `json:"kind"`
 				ID   string `json:"id"`
@@ -236,9 +238,57 @@ func (cli detachedValidationCLI) launchWorker(
 		return worker, nil
 	})
 	if err != nil {
+		redactor := secrets.NewEnvironmentRedactor(detachedValidationEnvironment(cli.home))
+		store, storeErr := task.NewStoreAt(filepath.Join(cli.home, "state", "tasks"))
+		if storeErr != nil {
+			ginkgo.GinkgoWriter.Printf("task store: %s\n", redactor.Redact(storeErr.Error()))
+		} else {
+			state, stateErr := store.Get(tk.ID())
+			if stateErr != nil {
+				ginkgo.GinkgoWriter.Printf("task state: %s\n", redactor.Redact(stateErr.Error()))
+			} else {
+				data, marshalErr := json.Marshal(state)
+				if marshalErr != nil {
+					ginkgo.GinkgoWriter.Printf(
+						"task state: %s\n",
+						redactor.Redact(marshalErr.Error()),
+					)
+				} else {
+					ginkgo.GinkgoWriter.Printf("task state: %s\n", redactor.Redact(string(data)))
+				}
+			}
+		}
+		streamsPath, pathErr := config.DefaultPathManager().
+			ProcessStreamsFile(task.WorkerProcessName(tk.ID()))
+		if pathErr != nil {
+			ginkgo.GinkgoWriter.Printf(
+				"worker streams path: %s\n",
+				redactor.Redact(pathErr.Error()),
+			)
+		} else {
+			streams, readErr := readDiagnosticStreams(cli.home, streamsPath)
+			if readErr != nil {
+				ginkgo.GinkgoWriter.Printf("worker streams: %s\n", redactor.Redact(readErr.Error()))
+			} else {
+				ginkgo.GinkgoWriter.Printf("worker streams: %s\n", redactor.Redact(string(streams)))
+			}
+		}
 		return ref, errors.Join(err, tk.FailLaunch(err))
 	}
 	return ref, nil
+}
+
+func readDiagnosticStreams(home, path string) ([]byte, error) {
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	relative, err := filepath.Rel(home, path)
+	if err != nil {
+		return nil, err
+	}
+	return root.ReadFile(relative)
 }
 
 func (cli detachedValidationCLI) expectFailureEnvelope(ctx context.Context, id, diagnostic string) {
