@@ -583,6 +583,7 @@ func setupIsolatedTildeSigningHome() (string, string) {
 	t.Setenv("DEVSY_HOME", filepath.Join(hostHome, ".devsy"))
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(hostHome, ".gitconfig"))
 	t.Setenv(envSSHAuthSock, "")
 
 	return writeTildeSigningKeyAndGitConfig(hostHome)
@@ -655,5 +656,11 @@ func buildTildeSigningScript(privKeyBase64, pubKey string) string {
 		gitAddFileCmd,
 		"git commit -m 'signed via workspace tilde override' 2>&1",
 		gitVerifyCommitCmd,
+		"ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/workspace_only_ed25519",
+		"git config user.signingkey '~/.ssh/workspace_only_ed25519'",
+		"echo third >> file.txt",
+		gitAddFileCmd,
+		"! git commit -m 'workspace-only key must not sign' 2>&1",
+		"test \"$(git rev-list --count HEAD)\" = 2",
 	}, " && ")
 }
