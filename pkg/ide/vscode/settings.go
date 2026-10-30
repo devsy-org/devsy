@@ -5,14 +5,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/util"
 	"github.com/tailscale/hujson"
 )
 
-const settingUseExecServer = "remote.SSH.useExecServer"
+const (
+	settingUseExecServer  = "remote.SSH.useExecServer"
+	settingConnectTimeout = "remote.SSH.connectTimeout"
+)
 
 var userSettingsDirNames = map[Flavor]string{
 	FlavorStable:      "Code",
@@ -43,6 +48,24 @@ func EnsureHostSettings(flavor Flavor) {
 	if err := mergeUserSettings(settingsPath, required); err != nil {
 		log.Debugf("failed to update VS Code host settings: %v", err)
 	}
+}
+
+func ensureHostSettingsWithTimeout(flavor Flavor, value string) error {
+	if !regexp.MustCompile(Options[SSHConnectTimeout].ValidationPattern).MatchString(value) {
+		return fmt.Errorf("%s", Options[SSHConnectTimeout].ValidationMessage)
+	}
+	timeout, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("invalid SSH_CONNECT_TIMEOUT: %w", err)
+	}
+	path, err := userSettingsPath(flavor)
+	if err != nil {
+		return err
+	}
+	return mergeUserSettings(path, map[string]any{
+		settingUseExecServer:  false,
+		settingConnectTimeout: float64(timeout),
+	})
 }
 
 // removeUserSetting removes a single key from the VS Code user settings file.

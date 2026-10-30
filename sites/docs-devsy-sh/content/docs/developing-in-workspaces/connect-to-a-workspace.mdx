@@ -32,6 +32,14 @@ devsy workspace up my-workspace --ide vscode
 
 If that fails, connect VS Code to `WORKSPACE_NAME.devsy` over SSH.
 
+For a slow SSH connection, set the Remote - SSH connection timeout in seconds:
+
+```sh
+devsy workspace up my-workspace --ide vscode --ide-option SSH_CONNECT_TIMEOUT=60
+```
+
+Alternatively, set the option for all VS Code workspaces with `devsy ide set vscode -o SSH_CONNECT_TIMEOUT=60`. The value must be a positive whole number of seconds, up to 999999999. When specified, Devsy writes `remote.SSH.connectTimeout` to the host user settings for the selected editor flavor. This setting applies globally to all Remote - SSH hosts in that editor, including non-Devsy hosts. If the option is not set, Devsy leaves the existing timeout unchanged. For other VS Code-based editors, use their IDE name in place of `vscode`.
+
 ### JetBrains IDEs
 
 Install [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/). You need a license for the IDE you use. Start the workspace with the IDE name, for example:

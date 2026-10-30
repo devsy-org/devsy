@@ -412,13 +412,13 @@ func (r *runner) resolveNewContainer(
 		return nil, err
 	}
 
-	r.attemptPreStartDelivery(ctx, mergedConfig, p, buildInfo)
+	runOptions := r.attemptPreStartDelivery(ctx, mergedConfig, p, buildInfo)
 
 	if seedErr := r.seedWorkspaceVolume(ctx, p); seedErr != nil {
 		return nil, fmt.Errorf("seed workspace volume: %w", seedErr)
 	}
 
-	err = r.runContainer(ctx, p, mergedConfig, buildInfo)
+	err = r.runContainer(ctx, p, mergedConfig, buildInfo, runOptions)
 	if err != nil {
 		return nil, fmt.Errorf("runner run container: %w", err)
 	}
@@ -442,26 +442,24 @@ func (r *runner) resolveNewContainer(
 	}, nil
 }
 
-// attemptPreStartDelivery builds run options and attempts pre-start agent
-// delivery. Failures are non-fatal: the caller falls back to post-start.
 func (r *runner) attemptPreStartDelivery(
 	ctx context.Context,
 	mergedConfig *config.MergedDevContainerConfig,
 	p *resolveParams,
 	buildInfo *config.BuildInfo,
-) {
+) *driver.RunOptions {
 	strategy := r.newAgentDelivery()
 	switch strategy.Phase() {
 	case delivery.PhasePostStart:
 		log.Debug("agent delivery scheduled for post-start")
-		return
+		return nil
 	case delivery.PhasePreStart:
 	default:
 		log.Debugf(
 			"pre-start agent delivery skipped for unsupported phase %s",
 			strategy.Phase(),
 		)
-		return
+		return nil
 	}
 
 	runOptions, err := r.buildRunOptionsForDelivery(
@@ -475,11 +473,14 @@ func (r *runner) attemptPreStartDelivery(
 			"pre-start agent delivery could not prepare run options; will use post-start: %v",
 			err,
 		)
-		return
+		return nil
 	}
+	runOptions.Env = maps.Clone(runOptions.Env)
 	if preStartErr := r.deliverPreStart(ctx, strategy, runOptions); preStartErr != nil {
 		log.Debugf("pre-start agent delivery failed; will use post-start: %v", preStartErr)
+		return nil
 	}
+	return runOptions
 }
 
 func (r *runner) lingerWarning(ctx context.Context) string {
@@ -912,12 +913,11 @@ func (r *runner) runContainer(
 	p *resolveParams,
 	mergedConfig *config.MergedDevContainerConfig,
 	buildInfo *config.BuildInfo,
+	runOptions *driver.RunOptions,
 ) error {
 	var err error
 
-	// build run options for dockerless mode
-	var runOptions *driver.RunOptions
-	if buildInfo.Dockerless != nil {
+	if runOptions == nil && buildInfo.Dockerless != nil {
 		runOptions, err = r.getDockerlessRunOptions(
 			mergedConfig,
 			p.substitutionContext,
@@ -927,7 +927,7 @@ func (r *runner) runContainer(
 		if err != nil {
 			return fmt.Errorf("build dockerless run options: %w", err)
 		}
-	} else {
+	} else if runOptions == nil {
 		// build run options
 		runOptions, err = r.getRunOptions(
 			mergedConfig,
