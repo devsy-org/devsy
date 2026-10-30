@@ -337,7 +337,7 @@ func resolveAgentKubernetesConfig(
 	k8s.KubernetesConfig = resolver.ResolveDefaultValue(k8s.KubernetesConfig, options)
 	k8s.KubernetesNamespace = resolver.ResolveDefaultValue(k8s.KubernetesNamespace, options)
 	k8s.Architecture = resolver.ResolveDefaultValue(k8s.Architecture, options)
-	k8s.ImageDetails = resolver.ResolveDefaultValue(k8s.ImageDetails, options)
+	k8s.ImageConfigFile = resolver.ResolveDefaultValue(k8s.ImageConfigFile, options)
 	k8s.InactivityTimeout = resolver.ResolveDefaultValue(k8s.InactivityTimeout, options)
 	k8s.StorageClass = resolver.ResolveDefaultValue(k8s.StorageClass, options)
 	k8s.PvcAccessMode = resolver.ResolveDefaultValue(k8s.PvcAccessMode, options)

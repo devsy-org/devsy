@@ -12,17 +12,17 @@ import (
 )
 
 const (
-	imageDetailsMarkerEnv   = "IMAGE_DETAILS_MARKER"
-	imageDetailsMarkerValue = "from-image-details-file"
+	imageConfigFileMarkerEnv   = "IMAGE_CONFIG_FILE_MARKER"
+	imageConfigFileMarkerValue = "from-image-config-file"
 )
 
-// writeImageDetailsFile writes an OCI-style image config whose
+// writeImageConfigFile writes an OCI-style image config whose
 // devcontainer.metadata label sets a marker env var the real image lacks, so
 // seeing the marker in the workspace proves the file was used instead of the
 // registry.
-func writeImageDetailsFile() string {
+func writeImageConfigFile() string {
 	metadata, err := json.Marshal([]map[string]any{
-		{"containerEnv": map[string]string{imageDetailsMarkerEnv: imageDetailsMarkerValue}},
+		{"containerEnv": map[string]string{imageConfigFileMarkerEnv: imageConfigFileMarkerValue}},
 	})
 	framework.ExpectNoError(err)
 
@@ -34,14 +34,14 @@ func writeImageDetailsFile() string {
 	})
 	framework.ExpectNoError(err)
 
-	path := filepath.Join(ginkgo.GinkgoT().TempDir(), "image-details.json")
+	path := filepath.Join(ginkgo.GinkgoT().TempDir(), "image-config.json")
 	framework.ExpectNoError(os.WriteFile(path, content, 0o600))
 	return path
 }
 
 var _ = ginkgo.Describe(
-	"kubernetes IMAGE_DETAILS option",
-	ginkgo.Label("up-provider-kubernetes", "up-provider-kubernetes-image-details"),
+	"kubernetes IMAGE_CONFIG_FILE option",
+	ginkgo.Label("up-provider-kubernetes", "up-provider-kubernetes-image-config-file"),
 	func() {
 		var initialDir string
 
@@ -52,27 +52,27 @@ var _ = ginkgo.Describe(
 		})
 
 		ginkgo.It(
-			"applies the image config from the IMAGE_DETAILS file",
+			"applies the image config from the IMAGE_CONFIG_FILE file",
 			func(ctx context.Context) {
-				e := newIdleEnv(ctx, initialDir, "IMAGE_DETAILS="+writeImageDetailsFile())
+				e := newIdleEnv(ctx, initialDir, "IMAGE_CONFIG_FILE="+writeImageConfigFile())
 
 				framework.ExpectNoError(e.up(ctx))
-				gomega.Expect(e.ssh(ctx, "echo $"+imageDetailsMarkerEnv)).
-					To(gomega.Equal(imageDetailsMarkerValue))
+				gomega.Expect(e.ssh(ctx, "echo $"+imageConfigFileMarkerEnv)).
+					To(gomega.Equal(imageConfigFileMarkerValue))
 			},
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)
 
 		ginkgo.It(
-			"fails clearly when the IMAGE_DETAILS file is missing",
+			"fails clearly when the IMAGE_CONFIG_FILE file is missing",
 			func(ctx context.Context) {
 				missing := filepath.Join(ginkgo.GinkgoT().TempDir(), "missing.json")
-				e := newIdleEnv(ctx, initialDir, "IMAGE_DETAILS="+missing)
+				e := newIdleEnv(ctx, initialDir, "IMAGE_CONFIG_FILE="+missing)
 
 				_, stderr, err := e.f.ExecCommandCapture(ctx,
 					[]string{cmdWorkspace, "up", e.dir, flagIDEOption, kubernetesIgnoreIDE})
 				gomega.Expect(err).To(gomega.HaveOccurred())
-				gomega.Expect(stderr).To(gomega.ContainSubstring("read image details file"))
+				gomega.Expect(stderr).To(gomega.ContainSubstring("read image config file"))
 			},
 			ginkgo.SpecTimeout(framework.TimeoutShort()),
 		)

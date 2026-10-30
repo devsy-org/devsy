@@ -67,7 +67,7 @@ func (s *ImageDetailsSuite) TestOCIImageConfig() {
 func (s *ImageDetailsSuite) TestMissingFile() {
 	path := filepath.Join(s.T().TempDir(), "missing.json")
 	_, err := s.driver(path).ImageDetails(testImage)
-	s.Require().ErrorContains(err, "read image details file")
+	s.Require().ErrorContains(err, "read image config file")
 }
 
 func (s *ImageDetailsSuite) TestInvalidContent() {
@@ -86,13 +86,13 @@ func (s *ImageDetailsSuite) TestInvalidContent() {
 }
 
 func (s *ImageDetailsSuite) writeFile(content string) string {
-	path := filepath.Join(s.T().TempDir(), "image-details.json")
+	path := filepath.Join(s.T().TempDir(), "image-config.json")
 	s.Require().NoError(os.WriteFile(path, []byte(content), 0o600))
 	return path
 }
 
 func (s *ImageDetailsSuite) driver(path string) *KubernetesDriver {
 	return &KubernetesDriver{
-		options: &provider2.ProviderKubernetesDriverConfig{ImageDetails: path},
+		options: &provider2.ProviderKubernetesDriverConfig{ImageConfigFile: path},
 	}
 }
