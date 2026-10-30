@@ -206,7 +206,7 @@ func TestFormatGitConfigValue_QuotesOnlySpecialCharacters(t *testing.T) {
 	)
 	assert.Equal(
 		t,
-		`"/path/with\ninjected"`,
+		"\"/path/with\r\\ninjected\"",
 		formatGitConfigValue("/path/with\r\ninjected"),
 	)
 	hashAndSemiPath := "/Users/alice/c#-app;v2/.ssh/git_signing_ed25519"
@@ -225,4 +225,19 @@ func TestFormatGitConfigValue_QuotesOnlySpecialCharacters(t *testing.T) {
 	).CombinedOutput()
 	require.NoError(t, err, "git config failed on #/; path: %s", string(out))
 	assert.Equal(t, hashAndSemiPath, strings.TrimSpace(string(out)))
+
+	crPath := "/tmp/a\r\nb/key"
+	crConfigPath := filepath.Join(t.TempDir(), ".gitconfig")
+	require.NoError(t, updateGitConfig(crConfigPath, "", crPath))
+	//nolint:gosec // test-only git config verification
+	crOut, err := exec.Command(
+		"git",
+		"config",
+		"--file",
+		crConfigPath,
+		"--get",
+		"user.signingkey",
+	).Output()
+	require.NoError(t, err)
+	assert.Equal(t, crPath, strings.TrimSuffix(string(crOut), "\n"))
 }
