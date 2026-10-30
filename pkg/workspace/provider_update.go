@@ -146,7 +146,7 @@ func providerUpdateSkipReason(
 	originalSource, currentSource provider2.ProviderSource,
 	currentVersion, newVersion string,
 ) string {
-	if originalSource != currentSource {
+	if !sameProviderSource(originalSource, currentSource) {
 		return "provider source changed"
 	}
 	newV, newErr := semver.Parse(strings.TrimPrefix(newVersion, "v"))
@@ -155,6 +155,15 @@ func providerUpdateSkipReason(
 		return "provider already up to date"
 	}
 	return ""
+}
+
+// sameProviderSource compares the user-chosen source identity. The resolved
+// release provenance only records which snapshot was installed, so an update
+// to a newer snapshot of the same source is not a source change.
+func sameProviderSource(a, b provider2.ProviderSource) bool {
+	a.ResolvedRef, a.ResolvedManifestURL = "", ""
+	b.ResolvedRef, b.ResolvedManifestURL = "", ""
+	return a == b
 }
 
 // GetProInstance returns the ProInstance associated with the given provider name, or nil if not found.

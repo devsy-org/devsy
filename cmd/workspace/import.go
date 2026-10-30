@@ -299,6 +299,9 @@ func (cmd *ImportCmd) importProvider(
 		return fmt.Errorf("load provider config: %w", err)
 	}
 	providerConfig.Name = cmd.ProviderID
+	// The icon cache is local to the exporting machine's context; the imported
+	// provider falls back to bundled artwork until it is next updated.
+	providerConfig.IconRevision = ""
 
 	// save provider config
 	err = provider.SaveProviderConfig(devsyConfig.DefaultContext, providerConfig)

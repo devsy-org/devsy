@@ -1,5 +1,6 @@
-import { render } from "@testing-library/svelte"
+import { render, waitFor } from "@testing-library/svelte"
 import { describe, expect, it, vi } from "vitest"
+import type * as Commands from "$lib/ipc/commands.js"
 import type { Provider } from "$lib/types/index.js"
 
 vi.mock("$lib/stores/providerVersions.js", async () => {
@@ -12,6 +13,13 @@ vi.mock("$lib/stores/providerVersions.js", async () => {
     }),
   }
 })
+
+const { providerIcon } = vi.hoisted(() => ({ providerIcon: vi.fn() }))
+
+vi.mock("$lib/ipc/commands.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof Commands>()),
+  providerIcon,
+}))
 
 import { providerJobs } from "$lib/stores/providers.js"
 import ProviderCard from "./ProviderCard.svelte"
@@ -148,6 +156,24 @@ describe("ProviderCard", () => {
 
     expect((container.textContent ?? "").toLowerCase()).toContain(
       "not initialized",
+    )
+    unmount()
+  })
+
+  it("renders the provider's own icon from the installed icon metadata", async () => {
+    const dataUrl = "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="
+    providerIcon.mockResolvedValue({ revision: "rev-a", dataUrl })
+    const { container, unmount } = render(ProviderCard, {
+      props: {
+        provider: makeProvider("my-docker-fleet", {
+          icon: "assets/logo.svg",
+          iconRevision: "rev-a",
+        }),
+      },
+    })
+
+    await waitFor(() =>
+      expect(container.querySelector("img")?.getAttribute("src")).toBe(dataUrl),
     )
     unmount()
   })

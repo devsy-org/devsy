@@ -86,6 +86,12 @@ export interface Provider {
   name: string
   version?: string
   source?: ProviderSource
+  /** Manifest-authored light icon reference; never rendered directly. */
+  icon?: string
+  /** Manifest-authored dark icon reference; never rendered directly. */
+  iconDark?: string
+  /** Selects the immutable cached icon revision; changes on asset/source update. */
+  iconRevision?: string
   description?: string
   options?: Record<string, ProviderOption>
   optionGroups?: ProviderOptionGroup[]

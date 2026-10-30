@@ -339,6 +339,23 @@ func validDeletionContextName(name string) bool {
 		(runtime.GOOS != "windows" || !reservedWindowsContextName(name))
 }
 
+const maxContextPathComponentBytes = 255
+
+// ValidateContextPathName accepts safe legacy context names while rejecting
+// values that could escape the context directory when used as one path part.
+func ValidateContextPathName(name string) error {
+	if invalidContextPathName(name) {
+		return errors.New("context name must be a safe path component")
+	}
+	if len(name) > maxContextPathComponentBytes {
+		return errors.New("context name exceeds the path component limit")
+	}
+	if runtime.GOOS == "windows" && reservedWindowsContextName(name) {
+		return errors.New("context name is a reserved Windows device name")
+	}
+	return nil
+}
+
 // ValidateContextName applies portable creation rules so a new context can be
 // deleted safely on every supported platform.
 func ValidateContextName(name string) error {

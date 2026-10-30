@@ -1,0 +1,13 @@
+{
+  "my-docker-fleet": {
+    "config": {
+      "name": "my-docker-fleet",
+      "version": "v1.0.0",
+      "icon": "assets/light.svg",
+      "iconDark": "assets/dark.svg",
+      "iconRevision": "rev-a"
+    },
+    "state": { "initialized": true },
+    "default": false
+  }
+}

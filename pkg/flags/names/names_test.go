@@ -186,6 +186,7 @@ var wireNames = []struct {
 	{names.FromExisting, "from-existing"},
 	{names.Prerelease, "prerelease"},
 	{names.ProviderSource, "provider-source"},
+	{names.Theme, "theme"},
 	{names.Use, "use"},
 	{names.Version, "version"},
 	{names.Channel, "channel"},

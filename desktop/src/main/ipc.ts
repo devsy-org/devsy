@@ -13,6 +13,7 @@ import {
   normalizeOperationStatus,
   parseCliEnvelope,
 } from "../shared/cli-error.js"
+import type { ProviderIconRequest } from "../shared/provider-icon.js"
 import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import { hashWorkspaceRef, trackEvent } from "./analytics.js"
 import type { AppNavigationController } from "./app-navigation.js"
@@ -24,6 +25,7 @@ import type { LogStore } from "./log-store.js"
 import { mainLog } from "./logging.js"
 import type { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
 import type { MachineDiagnosticsStore } from "./machine-diagnostics-store.js"
+import { ProviderIconReader } from "./provider-icons.js"
 import type { ProviderActivity, ProviderJobs } from "./provider-jobs.js"
 import type { PtyManager } from "./pty.js"
 import { sendRendererEvent } from "./renderer-events.js"
@@ -368,6 +370,9 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     getMainWindow,
   } = deps
   const secretSession = new SecretSession(deps.secretSessionTimeoutMs)
+  const providerIcons = new ProviderIconReader(cli)
+  let providerIconContextRevision = -1
+  const providerIconIdentityRevisions = new Map<string, number>()
   // Clearing the session revokes cache updates from protection operations already in flight.
   let secretCacheGeneration = 0
   const requestSecretUnlock = async () => {
@@ -987,6 +992,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     try {
       result = await fn()
     } catch (error) {
+      providerIcons.invalidateProvider(name)
       const cliError = (error as { cliError?: CLIError }).cliError
         ? redactCLIError((error as { cliError: CLIError }).cliError)
         : undefined
@@ -1000,6 +1006,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
       )
       throw error
     }
+    providerIcons.invalidateProvider(name)
     await providerJobs.finish(name)
     return result
   }
@@ -1169,6 +1176,57 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     return state.providerList()
   })
 
+  // Installed-asset reader only: the renderer names a provider and theme, never
+  // a URL or path. Same top-level-document sender policy as secret IPC.
+  ipcMain.handle("provider_icon", async (event, args: ProviderIconRequest) => {
+    if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
+      throw new Error("Provider icons require the main application window.")
+    const context = args?.context || state.currentContext()
+    const contextRevision = state.providerIconContextReadRevision()
+    if (contextRevision !== providerIconContextRevision) {
+      providerIcons.invalidateAll()
+      providerIconContextRevision = contextRevision
+    }
+    const providerName = args.providerName
+    const identityKey = `${context}\0${providerName}`
+    const identityRevision = state.providerIconIdentityReadRevision(
+      context,
+      providerName,
+    )
+    const previousIdentityRevision =
+      providerIconIdentityRevisions.get(identityKey)
+    if (
+      previousIdentityRevision !== undefined &&
+      previousIdentityRevision !== identityRevision
+    )
+      providerIcons.invalidateProvider(providerName)
+    providerIconIdentityRevisions.set(identityKey, identityRevision)
+
+    const result = await providerIcons.read({ ...args, context })
+    const currentContextRevision = state.providerIconContextReadRevision()
+    if (currentContextRevision !== contextRevision) {
+      providerIcons.invalidateAll()
+      providerIconContextRevision = currentContextRevision
+      return { revision: "", stale: true }
+    }
+
+    const currentIdentityRevision = state.providerIconIdentityReadRevision(
+      context,
+      providerName,
+    )
+    if (currentIdentityRevision !== identityRevision) {
+      providerIcons.invalidateProvider(providerName)
+      const current =
+        context === state.currentContext()
+          ? state
+              .providerList()
+              .find((provider) => provider.name === providerName)
+          : undefined
+      return { revision: current?.iconRevision ?? "", stale: true }
+    }
+    return result
+  })
+
   ipcMain.handle(
     "provider_add",
     async (
@@ -1203,6 +1261,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           ),
         )
         throw error
+      } finally {
+        providerIcons.invalidateProvider(args.name)
       }
     },
   )
@@ -1210,6 +1270,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
   ipcMain.handle("provider_delete", async (_event, args: { name: string }) => {
     trackEvent("provider_delete")
     await cli.runRaw(["provider", "delete", args.name])
+    providerIcons.invalidateProvider(args.name)
     // Drop any retained failure so a re-added provider starts clean.
     providerJobs.clear(args.name)
   })
@@ -1406,6 +1467,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
             message: errorMessage(error),
           }
         }
+        providerIcons.invalidateProvider(args.name)
         try {
           await providerJobs.finish(
             args.name,
@@ -1511,6 +1573,8 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     "provider_rename",
     async (_event, args: { name: string; newName: string }) => {
       await cli.runRaw(["provider", "rename", args.name, args.newName])
+      providerIcons.invalidateProvider(args.name)
+      providerIcons.invalidateProvider(args.newName)
     },
   )
 
@@ -1675,6 +1739,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
 
   ipcMain.handle("context_use", async (_event, args: { name: string }) => {
     await cli.runRaw(["context", "use", args.name])
+    providerIcons.invalidateAll()
   })
 
   ipcMain.handle(
@@ -1712,6 +1777,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     if (!isTrustedSecretIpcSender(event, getMainWindow(), secretDocumentURL))
       return secretRequestDenied
     await cli.runRaw(["context", "delete", args.name])
+    providerIcons.invalidateAll()
   })
 
   function variableContextArgs(context: string | undefined): string[] {

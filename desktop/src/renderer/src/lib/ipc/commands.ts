@@ -23,6 +23,10 @@ import type {
   LinuxDesktopIntegrationStatus,
 } from "$shared/linux-desktop-integration.js"
 import type { MachineDiagnosticsCache } from "$shared/machine-diagnostics-types.js"
+import type {
+  ProviderIconReply,
+  ProviderIconRequest,
+} from "$shared/provider-icon.js"
 import { invoke } from "./bridge.js"
 
 type CommandEnvelope =
@@ -132,6 +136,12 @@ export async function openDirectoryDialog(): Promise<string | null> {
 // Provider commands
 export async function providerList(): Promise<Provider[]> {
   return invoke<Provider[]>("provider_list")
+}
+
+export async function providerIcon(
+  request: ProviderIconRequest,
+): Promise<ProviderIconReply> {
+  return invoke<ProviderIconReply>("provider_icon", { ...request })
 }
 
 export async function providerAdd(
