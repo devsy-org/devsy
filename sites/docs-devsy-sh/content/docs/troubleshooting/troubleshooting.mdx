@@ -45,6 +45,16 @@ Pass `--log-output json` to get errors as JSON with a stable `code` and a `messa
 
 Run with `--debug` to see the full error chain.
 
+### Hide live progress while keeping diagnostics
+
+Pass `--no-status` to hide Devsy's live progress messages. Diagnostics still
+follow `--quiet`, `--log-level`, and diagnostic format settings, and a command's
+stdout and stderr remain on their original streams. Existing event and task
+recording also continues when available. Hiding progress does not disable
+capture or history. The flag cannot recover lifecycle output that was not
+retained when the command ran. See the [lifecycle transcript discussion](https://github.com/devsy-org/devsy/discussions/1724)
+for related work on retaining lifecycle output.
+
 ### VS Code-family editor launch diagnostics
 
 For VS Code, VSCodium, and related editors, a failed CLI launch records the

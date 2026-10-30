@@ -33,7 +33,7 @@ func TestDetachedRejectsInvalidIDBeforeCreatingTask(t *testing.T) {
 			store := isolatedTaskStore(t)
 			cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}}
 			cmd.ID = id
-			cmd.ResultFormat = "json"
+			cmd.ResultFormat = formatJSON
 			err := cmd.runDetached(nil, &config.Config{})
 			assert.ErrorContains(t, err, "workspace name")
 			tasks, err := store.List()
@@ -93,7 +93,7 @@ func TestWorkerRecordsConfigAndClientErrors(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, tk.SetPID(os.Getpid()))
 			cmd := &UpCmd{GlobalFlags: &flags.GlobalFlags{}, taskID: tk.ID()}
-			cmd.ResultFormat = "json"
+			cmd.ResultFormat = formatJSON
 			expected := "prepare workspace client"
 			switch stage {
 			case "config":

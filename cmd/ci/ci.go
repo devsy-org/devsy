@@ -209,7 +209,7 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	// workspace.
 	ctx, cancel := up.WithSignals(ctx)
 	defer cancel()
-	reporter, err := newStatusReporter(os.Stderr, cmd.Verbosity > 0 || cmd.Debug)
+	reporter, err := newStatusReporter(os.Stderr, cmd.Verbosity > 0 || cmd.Debug, cmd.NoStatus)
 	if err != nil {
 		return err
 	}
