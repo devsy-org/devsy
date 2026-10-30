@@ -24,11 +24,6 @@ type GitSSHSignatureResponse struct {
 	Signature []byte
 }
 
-// Sign signs the content using the requested key and returns the signature.
-func (req *GitSSHSignatureRequest) Sign() (*GitSSHSignatureResponse, error) {
-	return req.SignWithHostKey("")
-}
-
 // SignWithHostKey signs the content, preferring a matching host signing key file when available.
 func (req *GitSSHSignatureRequest) SignWithHostKey(
 	hostSigningKey string,

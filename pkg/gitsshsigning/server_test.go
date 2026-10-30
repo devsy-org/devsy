@@ -30,7 +30,7 @@ func TestSign_WithPublicKeyContent_WritesToTempFile(t *testing.T) {
 		PublicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForTesting test@example.com",
 	}
 
-	_, err := req.Sign()
+	_, err := req.SignWithHostKey("")
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "/tmp/.git_signing_key_does_not_exist")
 }
@@ -41,7 +41,7 @@ func TestSign_NonExistentKeyPath_ReturnsError(t *testing.T) {
 		KeyPath: "/tmp/.git_signing_key_does_not_exist",
 	}
 
-	_, err := req.Sign()
+	_, err := req.SignWithHostKey("")
 	require.ErrorContains(t, err, "no public key content or matching host signing key file")
 }
 
@@ -184,7 +184,7 @@ func TestSign_RejectsInvalidNamespace(t *testing.T) {
 			Content:   testCommitPayload,
 			Namespace: badNS,
 		}
-		_, err := req.Sign()
+		_, err := req.SignWithHostKey("")
 		require.ErrorContains(t, err, "invalid signing namespace")
 	}
 }
