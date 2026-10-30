@@ -2,6 +2,7 @@ package gitsshsigning
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -26,6 +27,7 @@ type GitSSHSignatureResponse struct {
 
 // SignWithHostKey signs the content, preferring a matching host signing key file when available.
 func (req *GitSSHSignatureRequest) SignWithHostKey(
+	ctx context.Context,
 	hostSigningKey string,
 ) (*GitSSHSignatureResponse, error) {
 	namespace, err := resolveSigningNamespace(req.Namespace)
@@ -39,7 +41,8 @@ func (req *GitSSHSignatureRequest) SignWithHostKey(
 	}
 	defer cleanup()
 	//nolint:gosec // keyFile is a controlled temp path or validated signing key path
-	cmd := exec.Command(
+	cmd := exec.CommandContext(
+		ctx,
 		"ssh-keygen",
 		"-Y",
 		"sign",

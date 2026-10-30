@@ -162,7 +162,7 @@ func TestIntegration_EndToEndPrivateKeyRelayWithoutSSHAgent(t *testing.T) {
 	var capturedTunnelPayload string
 	client := &mockCredentialsClient{
 		gitSSHSignatureFunc: func(
-			_ context.Context,
+			ctx context.Context,
 			msg *tunnel.Message,
 		) (*tunnel.Message, error) {
 			capturedTunnelPayload = msg.Message
@@ -170,7 +170,7 @@ func TestIntegration_EndToEndPrivateKeyRelayWithoutSSHAgent(t *testing.T) {
 			if err := json.Unmarshal([]byte(msg.Message), &req); err != nil {
 				return nil, err
 			}
-			resp, err := req.SignWithHostKey(hostPrivKey)
+			resp, err := req.SignWithHostKey(ctx, hostPrivKey)
 			if err != nil {
 				return nil, err
 			}

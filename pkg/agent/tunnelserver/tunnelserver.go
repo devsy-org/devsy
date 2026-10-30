@@ -395,7 +395,7 @@ func (t *tunnelServer) GitSSHSignature(
 		return nil, fmt.Errorf("git ssh sign request: %w", err)
 	}
 
-	signatureResponse, err := signatureRequest.SignWithHostKey(t.gitSSHSigningKey)
+	signatureResponse, err := signatureRequest.SignWithHostKey(ctx, t.gitSSHSigningKey)
 	if err != nil {
 		return nil, fmt.Errorf("get git ssh signature: %w", err)
 	}

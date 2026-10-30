@@ -1,6 +1,7 @@
 package gitsshsigning
 
 import (
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -30,7 +31,7 @@ func TestSign_WithPublicKeyContent_WritesToTempFile(t *testing.T) {
 		PublicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForTesting test@example.com",
 	}
 
-	_, err := req.SignWithHostKey("")
+	_, err := req.SignWithHostKey(t.Context(), "")
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "/tmp/.git_signing_key_does_not_exist")
 }
@@ -41,7 +42,7 @@ func TestSign_NonExistentKeyPath_ReturnsError(t *testing.T) {
 		KeyPath: "/tmp/.git_signing_key_does_not_exist",
 	}
 
-	_, err := req.SignWithHostKey("")
+	_, err := req.SignWithHostKey(t.Context(), "")
 	require.ErrorContains(t, err, "no public key content or matching host signing key file")
 }
 
@@ -102,7 +103,7 @@ func TestSign_MissingWorkspaceOverrideDoesNotUseHostKey(t *testing.T) {
 		Content: testCommitPayload,
 		KeyPath: "/home/vscode/.ssh/missing",
 	}
-	_, err := req.SignWithHostKey(hostKeyPath)
+	_, err := req.SignWithHostKey(t.Context(), hostKeyPath)
 
 	require.ErrorContains(t, err, "no public key content or matching host signing key file")
 }
@@ -120,7 +121,7 @@ func TestSign_HostTildePrivateKey_WithoutSSHAgent(t *testing.T) {
 		KeyPath: testTildeKeyPath,
 	}
 
-	resp, err := req.SignWithHostKey(testTildeKeyPath)
+	resp, err := req.SignWithHostKey(t.Context(), testTildeKeyPath)
 	require.NoError(t, err)
 	assertValidSSHSignature(t, pubLine, req, resp.Signature)
 }
@@ -140,7 +141,7 @@ func TestSignWithHostKey_ContainerPrivateKeyDifferentHome_WithoutSSHAgent(t *tes
 		KeyPath:   testContainerKeyPath,
 		PublicKey: derivedPub,
 	}
-	resp, err := reqWithPub.SignWithHostKey(testTildeKeyPath)
+	resp, err := reqWithPub.SignWithHostKey(t.Context(), testTildeKeyPath)
 	require.NoError(t, err)
 	assertValidSSHSignature(t, pubLine, reqWithPub, resp.Signature)
 
@@ -148,7 +149,7 @@ func TestSignWithHostKey_ContainerPrivateKeyDifferentHome_WithoutSSHAgent(t *tes
 		Content: testCommitPayload,
 		KeyPath: testTildeKeyPath,
 	}
-	respFallback, err := reqWithoutPub.SignWithHostKey(testTildeKeyPath)
+	respFallback, err := reqWithoutPub.SignWithHostKey(t.Context(), testTildeKeyPath)
 	require.NoError(t, err)
 	assertValidSSHSignature(t, pubLine, reqWithoutPub, respFallback.Signature)
 }
@@ -173,7 +174,7 @@ func TestSign_SamePathHostAndContainerPrivateKey_WithoutSSHAgent(t *testing.T) {
 	cleanup()
 	assert.FileExists(t, sharedKeyPath)
 
-	resp, err := req.SignWithHostKey(sharedKeyPath)
+	resp, err := req.SignWithHostKey(t.Context(), sharedKeyPath)
 	require.NoError(t, err)
 	assertValidSSHSignature(t, pubLine, req, resp.Signature)
 }
@@ -184,9 +185,25 @@ func TestSign_RejectsInvalidNamespace(t *testing.T) {
 			Content:   testCommitPayload,
 			Namespace: badNS,
 		}
-		_, err := req.SignWithHostKey("")
+		_, err := req.SignWithHostKey(t.Context(), "")
 		require.ErrorContains(t, err, "invalid signing namespace")
 	}
+}
+
+func TestSignWithHostKey_CancelledContextStopsSigning(t *testing.T) {
+	t.Setenv(envSSHAuthSock, "")
+	hostKeyPath := filepath.Join(t.TempDir(), testSSHDirName, testSigningKeyName)
+	_ = generateEd25519TestKey(t, hostKeyPath, "")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	req := &GitSSHSignatureRequest{
+		Content:   testCommitPayload,
+		PublicKey: extractPublicKeyForRequest(hostKeyPath),
+	}
+	_, err := req.SignWithHostKey(ctx, hostKeyPath)
+
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestResolveKeyFile_DoesNotUseRequestKeyPath(t *testing.T) {
