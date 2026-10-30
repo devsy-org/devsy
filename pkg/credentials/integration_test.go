@@ -125,9 +125,8 @@ func TestIntegration_SignatureRequest_IncludesPublicKeyContent(t *testing.T) {
 	t.Cleanup(func() { gitsshsigning.SetSignatureServerURL("") })
 
 	tmpDir := t.TempDir()
-	certFile := filepath.Join(tmpDir, "test_key.pub")
-	pubKeyContent := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest test@example.com"
-	require.NoError(t, os.WriteFile(certFile, []byte(pubKeyContent), 0o600))
+	privPath, pubKeyContent := generateDisposableEd25519KeyPair(t, tmpDir)
+	certFile := privPath + ".pub"
 
 	bufferFile := filepath.Join(tmpDir, "buffer")
 	require.NoError(t, os.WriteFile(bufferFile, []byte("commit content"), 0o600))

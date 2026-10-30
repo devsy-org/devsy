@@ -13,17 +13,9 @@ import (
 
 const (
 	maxKeyFileSize        = 64 * 1024
-	base64Alphabet        = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 	openSSHPrivateKeyType = "OPENSSH PRIVATE KEY"
 	openSSHKeyV1Magic     = "openssh-key-v1\x00"
 )
-
-var sshPublicKeyPrefixes = [...]string{
-	"ssh-",
-	"ecdsa-sha2-",
-	"sk-ssh-",
-	"sk-ecdsa-",
-}
 
 type openSSHPrivateKeyHeader struct {
 	CipherName string
@@ -126,35 +118,7 @@ func parsePublicKeyLine(data []byte) string {
 	if _, _, _, _, err := ssh.ParseAuthorizedKey(data); err == nil {
 		return trimmed
 	}
-	if hasSSHPublicKeyPrefix(trimmed) {
-		return trimmed
-	}
 	return ""
-}
-
-func hasSSHPublicKeyPrefix(line string) bool {
-	fields := strings.Fields(line)
-	if len(fields) < 2 || !isBase64Token(fields[1]) {
-		return false
-	}
-	for _, prefix := range sshPublicKeyPrefixes {
-		if strings.HasPrefix(fields[0], prefix) && len(fields[0]) > len(prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func isBase64Token(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i := range len(s) {
-		if strings.IndexByte(base64Alphabet, s[i]) < 0 {
-			return false
-		}
-	}
-	return true
 }
 
 func hostFileMatchesPublicKey(hostPath, publicKey string) bool {

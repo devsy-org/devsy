@@ -119,9 +119,9 @@ func TestRequestContentSignature_InvalidJSON(t *testing.T) {
 }
 
 func TestCreateSignatureRequestBody_IncludesPublicKeyContent(t *testing.T) {
-	certPath := filepath.Join(t.TempDir(), "test_key.pub")
-	pubKeyContent := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest test@example.com"
-	require.NoError(t, os.WriteFile(certPath, []byte(pubKeyContent), 0o600))
+	keyPath := filepath.Join(t.TempDir(), "test_key")
+	pubKeyContent := generateEd25519TestKey(t, keyPath, "")
+	certPath := keyPath + ".pub"
 
 	body, err := createSignatureRequestBody(
 		[]byte("commit content"),
@@ -141,6 +141,23 @@ func TestCreateSignatureRequestBody_MissingCertFile_OmitsPublicKey(t *testing.T)
 	body, err := createSignatureRequestBody(
 		[]byte("commit content"),
 		"/nonexistent/key.pub",
+		defaultSigningNamespace,
+	)
+	require.NoError(t, err)
+
+	var req GitSSHSignatureRequest
+	require.NoError(t, json.Unmarshal(body, &req))
+	assert.Empty(t, req.PublicKey)
+}
+
+func TestCreateSignatureRequestBody_UnparseablePublicKey_OmitsPublicKey(t *testing.T) {
+	certPath := filepath.Join(t.TempDir(), "bogus.pub")
+	bogus := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest test@example.com"
+	require.NoError(t, os.WriteFile(certPath, []byte(bogus), 0o600))
+
+	body, err := createSignatureRequestBody(
+		[]byte("commit content"),
+		certPath,
 		defaultSigningNamespace,
 	)
 	require.NoError(t, err)
@@ -266,7 +283,8 @@ func TestCreateSignatureRequestBody_MalformedPrivateKeyStub_NeverLeaksPrivateKey
 	require.NoError(t, json.Unmarshal(body, &req))
 	assert.Empty(t, req.PublicKey)
 
-	require.NoError(t, os.WriteFile(keyPath+".pub", []byte(testSyntheticPublicKey+"\n"), 0o600))
+	realPub := generateEd25519TestKey(t, filepath.Join(t.TempDir(), "real_ed25519"), "")
+	require.NoError(t, os.WriteFile(keyPath+".pub", []byte(realPub+"\n"), 0o600))
 
 	bodyWithPub, err := createSignatureRequestBody(
 		[]byte("commit content"),
@@ -276,7 +294,7 @@ func TestCreateSignatureRequestBody_MalformedPrivateKeyStub_NeverLeaksPrivateKey
 	require.NoError(t, err)
 	assert.NotContains(t, string(bodyWithPub), testPrivateKeyMarker)
 	require.NoError(t, json.Unmarshal(bodyWithPub, &req))
-	assert.Equal(t, testSyntheticPublicKey, req.PublicKey)
+	assert.Equal(t, realPub, req.PublicKey)
 }
 
 func TestHandleGitSSHProgramCall_ForwardsNamespace(t *testing.T) {
@@ -293,8 +311,9 @@ func TestHandleGitSSHProgramCall_ForwardsNamespace(t *testing.T) {
 	t.Cleanup(func() { SetSignatureServerURL("") })
 
 	dir := t.TempDir()
-	certPath := filepath.Join(dir, "key.pub")
-	require.NoError(t, os.WriteFile(certPath, []byte("ssh-ed25519 AAAAC3 test@example.com"), 0o600))
+	certKeyPath := filepath.Join(dir, "key")
+	_ = generateEd25519TestKey(t, certKeyPath, "")
+	certPath := certKeyPath + ".pub"
 	bufferFile := filepath.Join(dir, "buffer")
 	require.NoError(t, os.WriteFile(bufferFile, []byte("payload to sign"), 0o600))
 
