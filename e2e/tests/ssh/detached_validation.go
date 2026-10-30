@@ -178,6 +178,7 @@ var _ = ginkgo.Describe(
 						"up",
 						"--task-id",
 						tk.ID(),
+						"--debug",
 						"--result-format=json",
 						"--id=Backend",
 					}

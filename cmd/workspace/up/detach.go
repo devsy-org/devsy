@@ -14,6 +14,7 @@ import (
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/task"
@@ -154,9 +155,11 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 		return nil, err
 	}
 	t := store.Open(cmd.taskID)
+	log.Debugf("detached worker admission: acquiring worker lock")
 	if err := t.HoldWorkerLock(); err != nil {
 		return nil, err
 	}
+	log.Debugf("detached worker admission: waiting for launch metadata")
 	verifiedOwner, err := waitForTaskLaunch(t, store)
 	if err != nil {
 		if verifiedOwner {
@@ -182,14 +185,17 @@ func waitForTaskLaunch(t *task.Task, store *task.Store) (bool, error) {
 	defer ticker.Stop()
 	progress := workerLaunchProgress{}
 	for {
+		log.Debugf("detached worker admission: reading launch state")
 		state, err := readWorkerLaunchState(t, store)
 		if err != nil {
 			return progress.verifiedOwner, err
 		}
+		log.Debugf("detached worker admission: advancing launch state")
 		ready, err := advanceTaskLaunch(t, store, state, &progress)
 		if err != nil {
 			return progress.verifiedOwner, err
 		}
+		log.Debugf("detached worker admission: launch state advanced")
 		if ready {
 			return progress.verifiedOwner, nil
 		}
@@ -220,6 +226,7 @@ func advanceTaskLaunch(
 	state *task.State,
 	progress *workerLaunchProgress,
 ) (bool, error) {
+	log.Debugf("detached worker admission: verifying owner")
 	owner, err := verifyWorkerTaskOwner(state)
 	progress.verifiedOwner = owner
 	if err != nil {
@@ -232,13 +239,17 @@ func advanceTaskLaunch(
 		progress.verifiedOwner = false
 		return false, nil
 	}
+	log.Debugf("detached worker admission: retaining launch lease")
 	if err := retainWorkerLaunchLease(&progress.leaseRetained); err != nil {
 		return false, err
 	}
+	log.Debugf("detached worker admission: checking launcher")
 	if err := checkWorkerLauncher(t, store); err != nil {
 		return false, err
 	}
+	log.Debugf("detached worker admission: checking worker acknowledgement")
 	if state.PID != 0 && !state.WorkerReady {
+		log.Debugf("detached worker admission: acknowledging worker")
 		return false, t.WorkerLaunchReady(os.Getpid())
 	}
 	return false, nil
