@@ -155,11 +155,10 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 		return nil, err
 	}
 	t := store.Open(cmd.taskID)
-	log.Debugf("detached worker admission: acquiring worker lock")
 	if err := t.HoldWorkerLock(); err != nil {
+		log.Debugf("detached worker admission failed: worker lock")
 		return nil, err
 	}
-	log.Debugf("detached worker admission: waiting for launch metadata")
 	verifiedOwner, err := waitForTaskLaunch(t, store)
 	if err != nil {
 		if verifiedOwner {
@@ -185,22 +184,21 @@ func waitForTaskLaunch(t *task.Task, store *task.Store) (bool, error) {
 	defer ticker.Stop()
 	progress := workerLaunchProgress{}
 	for {
-		log.Debugf("detached worker admission: reading launch state")
 		state, err := readWorkerLaunchState(t, store)
 		if err != nil {
+			log.Debugf("detached worker admission failed: reading launch state")
 			return progress.verifiedOwner, err
 		}
-		log.Debugf("detached worker admission: advancing launch state")
 		ready, err := advanceTaskLaunch(t, store, state, &progress)
 		if err != nil {
 			return progress.verifiedOwner, err
 		}
-		log.Debugf("detached worker admission: launch state advanced")
 		if ready {
 			return progress.verifiedOwner, nil
 		}
 		select {
 		case <-deadline.C:
+			log.Debugf("detached worker admission failed: waiting for launch commit")
 			return progress.verifiedOwner, errors.New(
 				"timed out waiting for detached worker launch metadata",
 			)
@@ -226,10 +224,10 @@ func advanceTaskLaunch(
 	state *task.State,
 	progress *workerLaunchProgress,
 ) (bool, error) {
-	log.Debugf("detached worker admission: verifying owner")
 	owner, err := verifyWorkerTaskOwner(state)
 	progress.verifiedOwner = owner
 	if err != nil {
+		log.Debugf("detached worker admission failed: verifying owner")
 		return false, err
 	}
 	if !state.LaunchPending {
@@ -239,18 +237,20 @@ func advanceTaskLaunch(
 		progress.verifiedOwner = false
 		return false, nil
 	}
-	log.Debugf("detached worker admission: retaining launch lease")
 	if err := retainWorkerLaunchLease(&progress.leaseRetained); err != nil {
+		log.Debugf("detached worker admission failed: retaining launch lease")
 		return false, err
 	}
-	log.Debugf("detached worker admission: checking launcher")
 	if err := checkWorkerLauncher(t, store); err != nil {
+		log.Debugf("detached worker admission failed: checking launcher")
 		return false, err
 	}
-	log.Debugf("detached worker admission: checking worker acknowledgement")
 	if state.PID != 0 && !state.WorkerReady {
-		log.Debugf("detached worker admission: acknowledging worker")
-		return false, t.WorkerLaunchReady(os.Getpid())
+		if err := t.WorkerLaunchReady(os.Getpid()); err != nil {
+			log.Debugf("detached worker admission failed: acknowledging worker")
+			return false, err
+		}
+		return false, nil
 	}
 	return false, nil
 }

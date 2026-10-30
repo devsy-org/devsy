@@ -4,12 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/secrets"
+	"github.com/devsy-org/devsy/pkg/task"
+	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
 
@@ -58,6 +64,7 @@ func startDetachedTunnelUp(
 
 	out, err := f.ExecCommandOutput(ctx, args)
 	if err != nil {
+		reportDetachedLaunchFailure()
 		return "", err
 	}
 	var env struct {
@@ -72,6 +79,33 @@ func startDetachedTunnelUp(
 		return "", fmt.Errorf("unexpected task envelope %q", line)
 	}
 	return env.ID, nil
+}
+
+func reportDetachedLaunchFailure() {
+	store, err := task.NewStore()
+	if err != nil {
+		return
+	}
+	states, err := store.List()
+	if err != nil || len(states) == 0 {
+		return
+	}
+	state := states[0]
+	data, err := json.Marshal(state)
+	if err != nil {
+		return
+	}
+	redactor := secrets.NewEnvironmentRedactor(os.Environ())
+	ginkgo.GinkgoWriter.Printf("detached launch state: %s\n", redactor.Redact(string(data)))
+	path, err := config.DefaultPathManager().ProcessStreamsFile(task.WorkerProcessName(state.ID))
+	if err != nil {
+		return
+	}
+	streams, err := readDiagnosticStreams(filepath.Dir(path), path)
+	if err != nil {
+		return
+	}
+	ginkgo.GinkgoWriter.Printf("detached worker streams: %s\n", redactor.Redact(string(streams)))
 }
 
 func findDetachedUpTask(
