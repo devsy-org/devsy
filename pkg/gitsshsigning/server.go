@@ -75,10 +75,12 @@ func (req *GitSSHSignatureRequest) resolveKeyFile(hostSigningKey string) (string
 	hostKeyPath := ExpandSigningKeyPath(hostSigningKey)
 
 	if req.PublicKey == "" {
-		if regularFileExists(hostKeyPath) {
+		if hostKeyPath != "" &&
+			(req.KeyPath == hostSigningKey || req.KeyPath == hostKeyPath) &&
+			regularFileExists(hostKeyPath) {
 			return hostKeyPath, noop, nil
 		}
-		return "", noop, errors.New("no public key content or host signing key file")
+		return "", noop, errors.New("no public key content or matching host signing key file")
 	}
 
 	if hostKeyPath != "" && hostFileMatchesPublicKey(hostKeyPath, req.PublicKey) {

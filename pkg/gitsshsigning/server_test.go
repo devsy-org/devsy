@@ -42,7 +42,7 @@ func TestSign_NonExistentKeyPath_ReturnsError(t *testing.T) {
 	}
 
 	_, err := req.Sign()
-	require.ErrorContains(t, err, "no public key content or host signing key file")
+	require.ErrorContains(t, err, "no public key content or matching host signing key file")
 }
 
 func TestResolveKeyFile_PublicKey_CreatesAndCleansTempFile(t *testing.T) {
@@ -86,8 +86,25 @@ func TestResolveKeyFile_EmptyPublicKey_RequiresHostKey(t *testing.T) {
 	req := &GitSSHSignatureRequest{KeyPath: "/host/untrusted/key"}
 	_, cleanup, err := req.resolveKeyFile("")
 
-	require.ErrorContains(t, err, "no public key content or host signing key file")
+	require.ErrorContains(t, err, "no public key content or matching host signing key file")
 	cleanup()
+}
+
+func TestSign_MissingWorkspaceOverrideDoesNotUseHostKey(t *testing.T) {
+	hostHome := t.TempDir()
+	setTestHome(t, hostHome)
+	t.Setenv(envSSHAuthSock, "")
+
+	hostKeyPath := filepath.Join(hostHome, testSSHDirName, testSigningKeyName)
+	_ = generateEd25519TestKey(t, hostKeyPath, "")
+
+	req := &GitSSHSignatureRequest{
+		Content: testCommitPayload,
+		KeyPath: "/home/vscode/.ssh/missing",
+	}
+	_, err := req.SignWithHostKey(hostKeyPath)
+
+	require.ErrorContains(t, err, "no public key content or matching host signing key file")
 }
 
 func TestSign_HostTildePrivateKey_WithoutSSHAgent(t *testing.T) {
@@ -129,7 +146,7 @@ func TestSignWithHostKey_ContainerPrivateKeyDifferentHome_WithoutSSHAgent(t *tes
 
 	reqWithoutPub := &GitSSHSignatureRequest{
 		Content: testCommitPayload,
-		KeyPath: testContainerKeyPath,
+		KeyPath: testTildeKeyPath,
 	}
 	respFallback, err := reqWithoutPub.SignWithHostKey(testTildeKeyPath)
 	require.NoError(t, err)
