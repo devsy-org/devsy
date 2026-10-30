@@ -87,10 +87,10 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 			gomega.Expect(stdout).To(gomega.Equal(`child-out:[RUN] {"kind":"status"}`))
 			gomega.Expect(stderr).To(gomega.ContainSubstring("child-err"))
 			if wantStatus {
-				gomega.Expect(stderr).To(gomega.ContainSubstring("[RUN]"))
+				gomega.Expect(stderr).To(gomega.MatchRegexp(`\[RUN\]\s+ci:`))
 			} else {
-				gomega.Expect(stderr).NotTo(gomega.ContainSubstring("[RUN]"))
-				gomega.Expect(stderr).NotTo(gomega.ContainSubstring("[OK]"))
+				gomega.Expect(stderr).
+					NotTo(gomega.MatchRegexp(`\[(RUN|OK|FAIL)\]\s+(ci|workspace):`))
 			}
 			if len(flags) > 0 && flags[0] == noStatusFlag && len(flags) == 2 {
 				gomega.Expect(stderr).To(gomega.Equal("child-err"))
