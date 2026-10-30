@@ -227,6 +227,7 @@ func TestOptionalGitHubServicePreservesPolicyAfterUnrelatedFailure(t *testing.T)
 func TestAddGitSSHSigningKey_ExpandsTildeExplicitKey(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 
 	result := addGitSSHSigningKey(
 		context.Background(),
@@ -243,6 +244,7 @@ func TestAddGitSSHSigningKey_ExpandsTildeExplicitKey(t *testing.T) {
 func TestAddGitSSHSigningKey_ExpandsTildeFromHostGitConfig(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 
@@ -260,6 +262,7 @@ func TestAddGitSSHSigningKey_ExpandsTildeFromHostGitConfig(t *testing.T) {
 func TestBuildCredentialsCommand_ExpandsTildeSigningKey(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 
 	opts := RunServicesOptions{
 		User:                           testUser,
@@ -277,6 +280,7 @@ func TestBuildCredentialsCommand_ExpandsTildeSigningKey(t *testing.T) {
 func TestResolveGitSSHSigningKey_DisabledHelperReturnsEmpty(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 
 	opts := RunServicesOptions{
 		ConfigureGitSSHSignatureHelper: false,

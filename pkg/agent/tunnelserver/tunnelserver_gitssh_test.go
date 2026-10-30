@@ -38,6 +38,7 @@ func TestGitSSHSignature_DeserializesPublicKey(t *testing.T) {
 func TestGitSSHSignature_SignsWithHostKeyWithoutSSHAgent(t *testing.T) {
 	hostHome := t.TempDir()
 	t.Setenv("HOME", hostHome)
+	t.Setenv("USERPROFILE", hostHome)
 	t.Setenv("SSH_AUTH_SOCK", "")
 
 	sshDir := filepath.Join(hostHome, ".ssh")
