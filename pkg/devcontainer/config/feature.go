@@ -66,7 +66,8 @@ type FeatureConfig struct {
 	// The version of the Feature. Follows the semanatic versioning (semver) specification.
 	Version string `json:"version,omitempty"`
 
-	// Description of the Feature. For the best appearance in an implementing tool, refrain from including markdown or HTML in the description.
+	// Description of the Feature. For the best appearance in an implementing tool, refrain from
+	// including markdown or HTML in the description.
 	Description string `json:"description,omitempty"`
 
 	// Entrypoint script that should fire at container start up.

@@ -41,8 +41,7 @@ func quiesceUpTasks(
 	var errs []error
 	handled := 0
 	for _, state := range states {
-		if state.Status.Terminal() && !state.LaunchPending && !state.NeedsExitedWorkerCleanup() &&
-			!state.NeedsCanceledWorkerCleanup() {
+		if !needsQuiesce(state) {
 			continue
 		}
 		taskCtx, cancel := context.WithTimeout(ctx, upTaskCancellationTimeout)
@@ -105,4 +104,14 @@ func (StoreUpTaskQuiescer) Quiesce(ctx context.Context, workspaceID string) erro
 // against the default task store.
 func QuiesceUpTasksForWorkspace(workspaceID string) error {
 	return StoreUpTaskQuiescer{}.Quiesce(context.Background(), workspaceID)
+}
+
+// needsQuiesce reports whether a task still holds resources that a later
+// operation could collide with. A terminal task is skipped once its worker
+// and launch cleanup are done.
+func needsQuiesce(state *task.State) bool {
+	if !state.Status.Terminal() || state.LaunchPending {
+		return true
+	}
+	return state.NeedsExitedWorkerCleanup() || state.NeedsCanceledWorkerCleanup()
 }

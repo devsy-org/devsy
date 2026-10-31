@@ -86,7 +86,7 @@ func CleanupTempDir(initialDir, tempDir string) {
 
 	err = os.RemoveAll(tempDir)
 	if err != nil {
-		fmt.Println("WARN:", err)
+		fmt.Fprintln(os.Stdout, "WARN:", err)
 	}
 }
 

@@ -66,6 +66,7 @@ func FindPrivateKeys() ([]string, error) {
 		}
 
 		keyPath := filepath.Join(sshDir, entry.Name())
+		//nolint:gosec // path is the user key file
 		out, err := os.ReadFile(keyPath)
 		if err == nil {
 			_, err = ssh.ParsePrivateKey(out)

@@ -52,7 +52,7 @@ func Delete(ctx context.Context, opts DeleteOptions) (string, error) {
 		return "", err
 	}
 
-	if !opts.Force && client.WorkspaceConfig().Imported {
+	if isImportedLocalDelete(opts, client) {
 		return removeImportedLocalWorkspace(ctx, client, opts)
 	}
 
@@ -528,4 +528,10 @@ func (opts DeleteOptions) quiesce(ctx context.Context, workspaceID string) error
 		)
 	}
 	return nil
+}
+
+// isImportedLocalDelete reports whether the delete only unlinks an imported
+// local workspace, which a force delete never does.
+func isImportedLocalDelete(opts DeleteOptions, client client2.BaseWorkspaceClient) bool {
+	return !opts.Force && client.WorkspaceConfig().Imported
 }
