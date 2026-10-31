@@ -120,7 +120,7 @@ func (i *index) save() error {
 		return fmt.Errorf("marshal secrets index: %w", err)
 	}
 
-	return atomicWriteFile(i.path, out, 0o600)
+	return atomicWriteFile(i.path, out)
 }
 
 func (i *index) put(meta SecretMeta) {

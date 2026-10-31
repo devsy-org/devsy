@@ -340,33 +340,39 @@ type containerRunFunc func(
 
 // execWithRunner builds the exec argument list and runs it via run, translating
 // a non-zero process exit into a returned exit code rather than an error.
-func execWithRunner(ctx context.Context, req ExecRequest, run containerRunFunc) (int, error) {
-	execArgs := []string{"exec", "-i"}
+// execFlags returns the docker exec options that precede the container ID.
+func execFlags(req ExecRequest) []string {
+	args := []string{"exec", "-i"}
 	if req.TTY {
-		execArgs = append(execArgs, "-t")
+		args = append(args, "-t")
 	}
 	for k, v := range req.Env {
-		execArgs = append(execArgs, "-e", k+"="+v)
+		args = append(args, "-e", k+"="+v)
 	}
 	if req.Workdir != "" {
-		execArgs = append(execArgs, "--workdir", req.Workdir)
+		args = append(args, "--workdir", req.Workdir)
 	}
 	if req.Target.User != "" {
-		execArgs = append(execArgs, "--user", req.Target.User)
+		args = append(args, "--user", req.Target.User)
 	}
+
+	return args
+}
+
+func discardIfNil(w io.Writer) io.Writer {
+	if w == nil {
+		return io.Discard
+	}
+
+	return w
+}
+
+func execWithRunner(ctx context.Context, req ExecRequest, run containerRunFunc) (int, error) {
+	execArgs := execFlags(req)
 	execArgs = append(execArgs, req.Target.ContainerID)
 	execArgs = append(execArgs, req.Argv...)
 
-	stdout := req.Stdout
-	if stdout == nil {
-		stdout = io.Discard
-	}
-	stderr := req.Stderr
-	if stderr == nil {
-		stderr = io.Discard
-	}
-
-	err := run(ctx, execArgs, req.Stdin, stdout, stderr)
+	err := run(ctx, execArgs, req.Stdin, discardIfNil(req.Stdout), discardIfNil(req.Stderr))
 	if err == nil {
 		return 0, nil
 	}

@@ -8,7 +8,8 @@ import (
 
 // atomicWriteFile writes via a same-dir temp file then rename, so a crash
 // mid-write cannot leave a truncated store file.
-func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+// Files are created 0600: the store holds secrets.
+func atomicWriteFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(
 		dir,
@@ -27,7 +28,7 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
 
-	if err := tmp.Chmod(perm); err != nil {
+	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("chmod temp secrets file: %w", err)
 	}
