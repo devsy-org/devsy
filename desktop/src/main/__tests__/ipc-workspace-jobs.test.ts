@@ -98,6 +98,11 @@ function invoke(channel: string, args: unknown = { workspaceId: "ws" }) {
   if (!handler) throw new Error(`No handler registered for ${channel}`)
   return handler(trustedEvent, args)
 }
+const RESULT_LINE =
+  '{"kind":"result","outcome":"success","containerId":"c","remoteUser":"u","remoteWorkspaceFolder":"/w"}'
+const errorLine = (code: string, message: string) =>
+  JSON.stringify({ kind: "error", outcome: "error", code, message })
+const DETACHED = new Set(["rebuild", "reset"])
 async function flush() {
   for (let i = 0; i < 20; i++) await Promise.resolve()
 }
@@ -131,7 +136,13 @@ describe("workspace lifecycle IPC", () => {
       expect(ctx.cli.runStreaming).not.toHaveBeenCalled()
       release()
       await flush()
-      ctx.exit(0)
+      // Rebuild and reset follow a detached task and end on its result.
+      if (DETACHED.has(action)) {
+        expect(ctx.cli.run).toHaveBeenCalledWith(
+          expect.arrayContaining(["workspace", "up", "ws", "--detach"]),
+        )
+        ctx.line(RESULT_LINE)
+      } else ctx.exit(0)
       await flush()
       expect(ctx.jobs.get("ws")?.state).toBe("succeeded")
     },
@@ -526,7 +537,11 @@ describe("workspace lifecycle IPC", () => {
         ),
       ).not.toThrow()
       expect(ctx.jobs.get("ws")?.state).toBe("running")
-      ctx.exit(exitCode)
+      ctx.line(
+        exitCode === 0
+          ? RESULT_LINE
+          : errorLine("action_failed", "Command exited with code 1"),
+      )
       await flush()
       expect(ctx.jobs.get("ws")).toMatchObject({
         state: exitCode === 0 ? "succeeded" : "failed",
@@ -543,10 +558,11 @@ describe("workspace lifecycle IPC", () => {
       ctx.closeLog.mockRejectedValueOnce(new Error("disk unavailable"))
       invoke("workspace_rebuild")
       await flush()
-      ctx.exit(exitCode, {
-        code: "action_failed",
-        message: "Cannot rebuild private-token",
-      })
+      ctx.line(
+        exitCode === 0
+          ? RESULT_LINE
+          : errorLine("action_failed", "Cannot rebuild private-token"),
+      )
       await flush()
       expect(ctx.jobs.get("ws")).toMatchObject({
         state: exitCode === 0 ? "reconciling" : "failed",
@@ -584,5 +600,128 @@ describe("workspace lifecycle IPC", () => {
     ctx.exit(0)
     await completion
     expect(ctx.jobs.get("ws")?.state).toBe("succeeded")
+  })
+
+  describe("run identity", () => {
+    const RUN = "11111111-1111-4111-8111-111111111111"
+    const INV = "a1111111-0000-4000-8000-000000000001"
+
+    it.each([
+      ["rebuild", "--recreate"],
+      ["reset", "--reset"],
+    ])(
+      "submits %s as a detached up and keeps the run ID",
+      async (action, flag) => {
+        const ctx = setup()
+        ctx.cli.run.mockResolvedValue({
+          kind: "task",
+          id: "task-9",
+          runId: RUN,
+        })
+        invoke(`workspace_${action}`)
+        await flush()
+        expect(ctx.cli.run).toHaveBeenCalledWith([
+          "workspace",
+          "up",
+          "ws",
+          flag,
+          "--detach",
+        ])
+        expect(ctx.cli.runStreaming.mock.calls[0][0]).toEqual([
+          "workspace",
+          "task",
+          "logs",
+          "task-9",
+          "--follow",
+        ])
+        expect(ctx.jobs.get("ws")?.runId).toBe(RUN)
+        ctx.line(RESULT_LINE)
+        await flush()
+        expect(ctx.jobs.get("ws")).toMatchObject({
+          state: "succeeded",
+          runId: RUN,
+        })
+      },
+    )
+
+    it("takes the run ID from a result envelope when submission lacks one", async () => {
+      const ctx = setup()
+      invoke("workspace_rebuild")
+      await flush()
+      expect(ctx.jobs.get("ws")?.runId).toBeUndefined()
+      ctx.line(RESULT_LINE.replace("}", `,"runId":"${RUN}"}`))
+      await flush()
+      expect(ctx.jobs.get("ws")?.runId).toBe(RUN)
+    })
+
+    it("takes run and failed invocation from error context", async () => {
+      const ctx = setup()
+      invoke("workspace_reset")
+      await flush()
+      ctx.line(
+        JSON.stringify({
+          kind: "error",
+          outcome: "error",
+          code: "hook_failed",
+          message: "postCreateCommand failed",
+          context: { runId: RUN, failedInvocationId: INV },
+        }),
+      )
+      await flush()
+      expect(ctx.jobs.get("ws")).toMatchObject({
+        state: "failed",
+        runId: RUN,
+        failedInvocationId: INV,
+      })
+    })
+
+    it("keeps an old-envelope failure usable without run identity", async () => {
+      const ctx = setup()
+      invoke("workspace_rebuild")
+      await flush()
+      ctx.line(errorLine("x", "plain failure"))
+      await flush()
+      const job = ctx.jobs.get("ws")
+      expect(job).toMatchObject({ state: "failed", error: "plain failure" })
+      expect(job?.runId).toBeUndefined()
+    })
+
+    it("ignores identity that is not a canonical UUID", async () => {
+      const ctx = setup()
+      ctx.cli.run.mockResolvedValue({ kind: "task", id: "t", runId: "op-1" })
+      invoke("workspace_rebuild")
+      await flush()
+      expect(ctx.jobs.get("ws")?.runId).toBeUndefined()
+    })
+  })
+
+  describe("history reader", () => {
+    it("cancels only readers and leaves the task follower running", async () => {
+      const ctx = setup()
+      invoke("workspace_rebuild")
+      await flush()
+      const follower = ctx.actions.tunnelProcesses.get("ws")
+      expect(follower).toBeDefined()
+      ctx.cli.cancelFor.mockClear()
+      await invoke("workspace_log_run_cancel")
+      expect(ctx.cli.cancelFor).not.toHaveBeenCalled()
+      expect(ctx.actions.tunnelProcesses.get("ws")).toBe(follower)
+      expect(ctx.jobs.get("ws")?.state).toBe("running")
+    })
+
+    it("returns null for a superseded read instead of an error", async () => {
+      const ctx = setup()
+      ctx.cli.run.mockImplementation(() => new Promise(() => undefined))
+      const request = {
+        context: "default",
+        runId: "11111111-1111-4111-8111-111111111111",
+      }
+      const first = invoke(
+        "workspace_log_run_read",
+        request,
+      ) as Promise<unknown>
+      await invoke("workspace_log_run_cancel")
+      await expect(first).resolves.toBeNull()
+    })
   })
 })

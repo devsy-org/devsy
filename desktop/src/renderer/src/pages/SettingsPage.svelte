@@ -244,6 +244,7 @@ function saveLocal(key: keyof LocalOptions, value: string | boolean) {
           </Select.Root>
         </div>
         <p class="text-xs text-muted-foreground">Direct terminal CLI commands use their own context default, which is Warn unless overridden.</p>
+        <p class="text-xs text-muted-foreground">These levels only affect diagnostic files. Build and lifecycle output is retained separately and shown under Logs > Setup and build history, whatever level is set here.</p>
 
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>

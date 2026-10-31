@@ -16,6 +16,9 @@ export interface WorkspaceJob {
   error?: string
   logError?: string
   refreshError?: string
+  /** Durable history identity for this operation, when the CLI reported one. */
+  runId?: string
+  failedInvocationId?: string
 }
 
 export function workspaceJobBusy(job?: WorkspaceJob): boolean {
