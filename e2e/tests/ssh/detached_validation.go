@@ -63,6 +63,9 @@ var _ = ginkgo.Describe("detached workspace input validation", ginkgo.Label("tas
 			home, err := os.MkdirTemp("", "devsy-early-worker-")
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(os.RemoveAll, home)
+			ginkgo.GinkgoT().Setenv(config.EnvHome, home)
+			config.ResetPathManager()
+			ginkgo.DeferCleanup(config.ResetPathManager)
 			cli := detachedValidationCLI{framework: f, home: home}
 			source := filepath.Join(home, "Backend.API")
 			framework.ExpectNoError(os.MkdirAll(source, 0o700))
@@ -76,6 +79,9 @@ var _ = ginkgo.Describe("detached workspace input validation", ginkgo.Label("tas
 				"--provider=missing-provider-1471",
 				source,
 			)
+			if err != nil {
+				reportDetachedLaunchFailure()
+			}
 			gomega.Expect(err).NotTo(gomega.HaveOccurred(), "CLI output: %s",
 				secrets.NewEnvironmentRedactor(detachedValidationEnvironment(home)).Redact(out))
 			var envelope struct {
@@ -178,7 +184,6 @@ var _ = ginkgo.Describe(
 						"up",
 						"--task-id",
 						tk.ID(),
-						"--debug",
 						"--result-format=json",
 						"--id=Backend",
 					}
@@ -316,5 +321,6 @@ func (cli detachedValidationCLI) expectFailureEnvelope(ctx context.Context, id, 
 }
 
 func detachedValidationEnvironment(home string) []string {
-	return append(os.Environ(), "DEVSY_HOME="+home, "DEVSY_TEST_TOKEN=missing-provider-1471")
+	return append(os.Environ(), "DEVSY_HOME="+home, "DEVSY_TEST_TOKEN=missing-provider-1471",
+		"DEVSY_DETACHED_DIAGNOSTICS=1")
 }

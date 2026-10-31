@@ -14,7 +14,6 @@ import (
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/file"
 	"github.com/devsy-org/devsy/pkg/flags/names"
-	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/task"
@@ -156,7 +155,7 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 	}
 	t := store.Open(cmd.taskID)
 	if err := t.HoldWorkerLock(); err != nil {
-		log.Debugf("detached worker admission failed: worker lock")
+		traceDetachedAdmission("worker lock")
 		return nil, err
 	}
 	verifiedOwner, err := waitForTaskLaunch(t, store)
@@ -186,7 +185,7 @@ func waitForTaskLaunch(t *task.Task, store *task.Store) (bool, error) {
 	for {
 		state, err := readWorkerLaunchState(t, store)
 		if err != nil {
-			log.Debugf("detached worker admission failed: reading launch state")
+			traceDetachedAdmission("reading launch state")
 			return progress.verifiedOwner, err
 		}
 		ready, err := advanceTaskLaunch(t, store, state, &progress)
@@ -198,7 +197,7 @@ func waitForTaskLaunch(t *task.Task, store *task.Store) (bool, error) {
 		}
 		select {
 		case <-deadline.C:
-			log.Debugf("detached worker admission failed: waiting for launch commit")
+			traceDetachedAdmission("waiting for launch commit")
 			return progress.verifiedOwner, errors.New(
 				"timed out waiting for detached worker launch metadata",
 			)
@@ -227,7 +226,7 @@ func advanceTaskLaunch(
 	owner, err := verifyWorkerTaskOwner(state)
 	progress.verifiedOwner = owner
 	if err != nil {
-		log.Debugf("detached worker admission failed: verifying owner")
+		traceDetachedAdmission("verifying owner")
 		return false, err
 	}
 	if !state.LaunchPending {
@@ -238,21 +237,27 @@ func advanceTaskLaunch(
 		return false, nil
 	}
 	if err := retainWorkerLaunchLease(&progress.leaseRetained); err != nil {
-		log.Debugf("detached worker admission failed: retaining launch lease")
+		traceDetachedAdmission("retaining launch lease")
 		return false, err
 	}
 	if err := checkWorkerLauncher(t, store); err != nil {
-		log.Debugf("detached worker admission failed: checking launcher")
+		traceDetachedAdmission("checking launcher")
 		return false, err
 	}
 	if state.PID != 0 && !state.WorkerReady {
 		if err := t.WorkerLaunchReady(os.Getpid()); err != nil {
-			log.Debugf("detached worker admission failed: acknowledging worker")
+			traceDetachedAdmission("acknowledging worker")
 			return false, err
 		}
 		return false, nil
 	}
 	return false, nil
+}
+
+func traceDetachedAdmission(stage string) {
+	if os.Getenv("DEVSY_DETACHED_DIAGNOSTICS") == "1" {
+		fmt.Fprintln(os.Stderr, "detached worker admission failed:", stage)
+	}
 }
 
 // The worker lock excludes concurrent invocations; only the saved kernel identity
