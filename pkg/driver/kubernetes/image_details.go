@@ -43,11 +43,16 @@ func loadImageDetails(path, imageName string) (*config.ImageDetails, error) {
 		return nil, fmt.Errorf("parse image config file %q: %w", path, err)
 	}
 
-	if isEmptyImageConfig(details.Config) {
-		return nil, fmt.Errorf(
-			"image config file %q has no image config (User, Env, Labels, Entrypoint or Cmd)",
-			path,
-		)
+	// An image may legitimately have an empty config, so check that the
+	// config object is present rather than that any of its fields are set.
+	var probe struct {
+		Config json.RawMessage `json:"config"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return nil, fmt.Errorf("parse image config file %q: %w", path, err)
+	}
+	if len(probe.Config) == 0 || probe.Config[0] != '{' {
+		return nil, fmt.Errorf("image config file %q has no config object", path)
 	}
 
 	if details.ID == "" {
@@ -55,9 +60,4 @@ func loadImageDetails(path, imageName string) (*config.ImageDetails, error) {
 	}
 
 	return details, nil
-}
-
-func isEmptyImageConfig(c config.ImageDetailsConfig) bool {
-	return c.User == "" && len(c.Env) == 0 && len(c.Labels) == 0 &&
-		len(c.Entrypoint) == 0 && len(c.Cmd) == 0
 }

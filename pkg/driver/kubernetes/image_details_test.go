@@ -64,6 +64,16 @@ func (s *ImageDetailsSuite) TestOCIImageConfig() {
 	s.Equal("vscode", details.Config.User)
 }
 
+func (s *ImageDetailsSuite) TestEmptyConfig() {
+	// An image with no user, env, labels, entrypoint or cmd.
+	path := s.writeFile(`{"architecture": "amd64", "os": "linux", "config": {}}`)
+
+	details, err := s.driver(path).ImageDetails(testImage)
+	s.Require().NoError(err)
+	s.Equal(testImage, details.ID)
+	s.Empty(details.Config.User)
+}
+
 func (s *ImageDetailsSuite) TestMissingFile() {
 	path := filepath.Join(s.T().TempDir(), "missing.json")
 	_, err := s.driver(path).ImageDetails(testImage)
@@ -72,10 +82,12 @@ func (s *ImageDetailsSuite) TestMissingFile() {
 
 func (s *ImageDetailsSuite) TestInvalidContent() {
 	tests := map[string]string{
-		"empty":     "",
-		"array":     `[{"Config": {"User": "vscode"}}]`,
-		"bad json":  `{"Config": `,
-		"no config": `{"schemaVersion": 2, "layers": []}`,
+		"empty":       "",
+		"array":       `[{"Config": {"User": "vscode"}}]`,
+		"bad json":    `{"Config": `,
+		"no config":   `{"schemaVersion": 2, "layers": []}`,
+		"null config": `{"config": null}`,
+		"config list": `{"config": []}`,
 	}
 	for name, content := range tests {
 		s.Run(name, func() {
