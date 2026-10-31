@@ -3,11 +3,13 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/provider"
@@ -33,6 +35,36 @@ func TestLocalDockerDelivery_DeliverPreStart_RequiresBinarySource(t *testing.T) 
 	err := d.DeliverPreStart(context.Background(), PreStartOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "binary source is required")
+}
+
+func TestLocalDockerDeliveryRejectsOccupiedAgentMount(t *testing.T) {
+	for _, tc := range []struct {
+		workspace bool
+		target    string
+	}{
+		{target: "/opt/devsy/"},
+		{workspace: true, target: "/opt/devsy/"},
+		{target: "/opt/devsy/devsy"},
+		{workspace: true, target: "/opt/devsy/devsy"},
+	} {
+		t.Run(fmt.Sprintf("workspace=%t target=%s", tc.workspace, tc.target), func(t *testing.T) {
+			mount := &config.Mount{Type: "volume", Source: "user-data", Target: tc.target}
+			options := &driver.RunOptions{Env: map[string]string{"USER_VALUE": "preserved"}}
+			if tc.workspace {
+				options.WorkspaceMount = mount
+			} else {
+				options.Mounts = []*config.Mount{mount}
+			}
+			err := (&LocalDockerDelivery{DockerCommand: "not-a-docker-command"}).DeliverPreStart(
+				context.Background(),
+				PreStartOptions{RunOptions: options, BinarySource: fakeBinarySource},
+			)
+			require.ErrorContains(t, err, "/opt/devsy")
+			assert.Equal(t, "preserved", options.Env["USER_VALUE"])
+			assert.NotContains(t, options.Env, "DEVSY_AGENT_PATH")
+			assert.Equal(t, "user-data", mount.Source)
+		})
+	}
 }
 
 func TestLocalDockerDelivery_DeliverPostStart_ReturnsError(t *testing.T) {

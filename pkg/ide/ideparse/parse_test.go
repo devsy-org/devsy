@@ -8,6 +8,7 @@ import (
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/ide"
+	"github.com/devsy-org/devsy/pkg/ide/vscode"
 	"github.com/devsy-org/devsy/pkg/provider"
 )
 
@@ -15,6 +16,23 @@ const (
 	ideOpenVSCode = "openvscode"
 	ideVSCode     = "vscode"
 )
+
+func TestVSCodeSSHConnectTimeoutValidation(t *testing.T) {
+	for _, value := range []string{"1", "60", "999999999"} {
+		values, err := ParseOptions([]string{"SSH_CONNECT_TIMEOUT=" + value}, vscode.Options)
+		if err != nil || values[vscode.SSHConnectTimeout].Value != value {
+			t.Errorf("value %q: got %v, error %v", value, values, err)
+		}
+	}
+	for _, value := range []string{"", "0", "-1", "1.5", "abc", "1000000000"} {
+		if _, err := ParseOptions(
+			[]string{"SSH_CONNECT_TIMEOUT=" + value},
+			vscode.Options,
+		); err == nil {
+			t.Errorf("value %q should be rejected", value)
+		}
+	}
+}
 
 // setupTempHome redirects the path manager to a temp HOME so
 // SaveWorkspaceConfig writes under the test's tempdir.
