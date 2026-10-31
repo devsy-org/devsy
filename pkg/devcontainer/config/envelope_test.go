@@ -100,63 +100,15 @@ func TestWriteResultJSON(t *testing.T) {
 				t.Fatalf("WriteResultJSON returned error: %v", err)
 			}
 
-			output := buf.Bytes()
-			if output[len(output)-1] != '\n' {
-				t.Fatal("output must be newline-terminated")
-			}
-
-			var envelope ResultEnvelope
-			if err := json.Unmarshal(output, &envelope); err != nil {
-				t.Fatalf("output is not valid JSON: %v", err)
-			}
-
-			if envelope.Outcome != "success" {
-				t.Errorf("outcome = %q, want %q", envelope.Outcome, "success")
-			}
-			if envelope.ContainerID != tt.containerID {
-				t.Errorf("containerId = %q, want %q", envelope.ContainerID, tt.containerID)
-			}
-			if envelope.RemoteUser != tt.user {
-				t.Errorf("remoteUser = %q, want %q", envelope.RemoteUser, tt.user)
-			}
-			if envelope.RemoteWorkspaceFolder != tt.workdir {
-				t.Errorf("remoteWorkspaceFolder = %q, want %q",
-					envelope.RemoteWorkspaceFolder, tt.workdir)
-			}
-			if envelope.URL != tt.url {
-				t.Errorf("url = %q, want %q", envelope.URL, tt.url)
-			}
-			if tt.url == "" && bytes.Contains(output, []byte(`"url"`)) {
-				t.Error("url field must be omitted when empty")
-			}
-			if tt.url != "" && !bytes.Contains(output, []byte(`"url"`)) {
-				t.Error("url field must be present when set")
-			}
-			if len(tt.warnings) == 0 {
-				if envelope.Warnings != nil {
-					t.Errorf("warnings = %v, want nil (omitempty)", envelope.Warnings)
-				}
-				if bytes.Contains(output, []byte(`"warnings"`)) {
-					t.Error("warnings field must be omitted when empty")
-				}
-			}
-			if len(tt.warnings) > 0 {
-				if len(envelope.Warnings) != len(tt.warnings) {
-					t.Fatalf(
-						"warnings length = %d, want %d",
-						len(envelope.Warnings), len(tt.warnings),
-					)
-				}
-				for i, w := range tt.warnings {
-					if envelope.Warnings[i] != w {
-						t.Errorf("warnings[%d] = %q, want %q", i, envelope.Warnings[i], w)
-					}
-				}
-			}
-
-			if bytes.Contains(output[:len(output)-1], []byte("\n")) {
-				t.Error("JSON must be single-line (no embedded newlines)")
-			}
+			assertResultEnvelope(
+				t,
+				tt.containerID,
+				tt.user,
+				tt.workdir,
+				tt.url,
+				tt.warnings,
+				buf.Bytes(),
+			)
 		})
 	}
 }
@@ -533,5 +485,77 @@ func assertStatusEnvelopeFields(t *testing.T, got StatusEnvelope) {
 	}
 	if got.State != status.StateFailed {
 		t.Fatalf("current status fields missing: %+v", got)
+	}
+}
+
+// assertResultEnvelope checks one encoded result envelope against the values
+// it was written from.
+func assertResultEnvelope(
+	t *testing.T,
+	containerID, user, workdir, url string,
+	warnings []string,
+	output []byte,
+) {
+	t.Helper()
+	if output[len(output)-1] != '\n' {
+		t.Fatal("output must be newline-terminated")
+	}
+
+	var envelope ResultEnvelope
+	if err := json.Unmarshal(output, &envelope); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+
+	if envelope.Outcome != "success" {
+		t.Errorf("outcome = %q, want %q", envelope.Outcome, "success")
+	}
+	if envelope.ContainerID != containerID {
+		t.Errorf("containerId = %q, want %q", envelope.ContainerID, containerID)
+	}
+	if envelope.RemoteUser != user {
+		t.Errorf("remoteUser = %q, want %q", envelope.RemoteUser, user)
+	}
+	if envelope.RemoteWorkspaceFolder != workdir {
+		t.Errorf("remoteWorkspaceFolder = %q, want %q", envelope.RemoteWorkspaceFolder, workdir)
+	}
+	if envelope.URL != url {
+		t.Errorf("url = %q, want %q", envelope.URL, url)
+	}
+	assertOptionalField(t, output, "url", url != "")
+	assertWarnings(t, envelope.Warnings, warnings, output)
+
+	if bytes.Contains(output[:len(output)-1], []byte("\n")) {
+		t.Error("JSON must be single-line (no embedded newlines)")
+	}
+}
+
+// assertOptionalField checks that the named field appears only when present.
+func assertOptionalField(t *testing.T, output []byte, field string, present bool) {
+	t.Helper()
+	found := bytes.Contains(output, []byte(`"`+field+`"`))
+	if !present && found {
+		t.Errorf("%s field must be omitted when empty", field)
+	}
+	if present && !found {
+		t.Errorf("%s field must be present when set", field)
+	}
+}
+
+func assertWarnings(t *testing.T, got, want []string, output []byte) {
+	t.Helper()
+	if len(want) == 0 {
+		if got != nil {
+			t.Errorf("warnings = %v, want nil (omitempty)", got)
+		}
+		assertOptionalField(t, output, "warnings", false)
+		return
+	}
+	if len(got) != len(want) {
+		t.Fatalf("warnings length = %d, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("warnings[%d] = %q, want %q", i, got[i], w)
+		}
 	}
 }
