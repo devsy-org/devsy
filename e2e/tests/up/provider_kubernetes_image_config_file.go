@@ -5,11 +5,16 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
+
+// imageConfigArchOption sets ARCHITECTURE, which IMAGE_CONFIG_FILE requires. The
+// e2e cluster runs on the host, so its nodes share the host's architecture.
+const imageConfigArchOption = "ARCHITECTURE=" + runtime.GOARCH
 
 const (
 	imageConfigFileMarkerEnv   = "IMAGE_CONFIG_FILE_MARKER"
@@ -54,7 +59,8 @@ var _ = ginkgo.Describe(
 		ginkgo.It(
 			"applies the image config from the IMAGE_CONFIG_FILE file",
 			func(ctx context.Context) {
-				e := newIdleEnv(ctx, initialDir, "IMAGE_CONFIG_FILE="+writeImageConfigFile())
+				e := newIdleEnv(ctx, initialDir,
+					"IMAGE_CONFIG_FILE="+writeImageConfigFile(), imageConfigArchOption)
 
 				framework.ExpectNoError(e.up(ctx))
 				gomega.Expect(e.ssh(ctx, "echo $"+imageConfigFileMarkerEnv)).
@@ -67,7 +73,8 @@ var _ = ginkgo.Describe(
 			"fails clearly when the IMAGE_CONFIG_FILE file is missing",
 			func(ctx context.Context) {
 				missing := filepath.Join(ginkgo.GinkgoT().TempDir(), "missing.json")
-				e := newIdleEnv(ctx, initialDir, "IMAGE_CONFIG_FILE="+missing)
+				e := newIdleEnv(ctx, initialDir,
+					"IMAGE_CONFIG_FILE="+missing, imageConfigArchOption)
 
 				_, stderr, err := e.f.ExecCommandCapture(ctx,
 					[]string{cmdWorkspace, "up", e.dir, flagIDEOption, kubernetesIgnoreIDE})

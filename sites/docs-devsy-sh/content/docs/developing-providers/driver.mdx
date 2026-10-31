@@ -90,14 +90,14 @@ To skip it, produce the image config next to the image, for example in CI, and p
 
 ```bash
 crane config registry.example.com/team/image@sha256:<digest> > image-config.json
-devsy provider set kubernetes -o IMAGE_CONFIG_FILE=$PWD/image-config.json
+devsy provider set kubernetes -o IMAGE_CONFIG_FILE=$PWD/image-config.json -o ARCHITECTURE=amd64
 ```
 
 The file can be an OCI image config (as printed by `crane config`), a single `docker image inspect` object, or the JSON of Devsy's image details. Devsy never contacts the registry for this step when the option is set, and it fails if the file is missing or invalid. Notes:
 
 - Pin the image by digest in devcontainer.json, so the file always matches the image the cluster pulls.
 - This applies to the devcontainer.json `image`. Dockerfile builds still read their base image from the registry, and `features` are built from the image as usual.
-- Also set `ARCHITECTURE` (for example `amd64`). Otherwise Devsy lists the cluster's nodes to detect it, which needs cluster-scoped permissions.
+- `ARCHITECTURE` (for example `amd64`) is required, so Devsy does not list the cluster's nodes to detect it, which needs cluster-scoped permissions. If the file has an `architecture`, it must match. On a cluster with mixed architectures, also schedule the pod onto matching nodes, for example with `NODE_SELECTOR`.
 
 ### Example Kubernetes Provider
 

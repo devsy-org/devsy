@@ -18,8 +18,26 @@ func (k *KubernetesDriver) ImageDetails(imageName string) (*config.ImageDetails,
 		return nil, nil
 	}
 
+	// Without ARCHITECTURE, Devsy lists the cluster's nodes to detect it,
+	// which needs cluster-scoped permissions this option is meant to avoid.
+	if k.options.Architecture == "" {
+		return nil, fmt.Errorf("IMAGE_CONFIG_FILE requires the ARCHITECTURE option to be set")
+	}
+
 	log.Debugf("Reading image config for %q from %q", imageName, k.options.ImageConfigFile)
-	return loadImageDetails(k.options.ImageConfigFile, imageName)
+	details, err := loadImageDetails(k.options.ImageConfigFile, imageName)
+	if err != nil {
+		return nil, err
+	}
+
+	if details.Architecture != "" && details.Architecture != k.options.Architecture {
+		return nil, fmt.Errorf(
+			"image config file %q is for architecture %q, but ARCHITECTURE is %q",
+			k.options.ImageConfigFile, details.Architecture, k.options.Architecture,
+		)
+	}
+
+	return details, nil
 }
 
 // loadImageDetails parses an image config file. It accepts the JSON of

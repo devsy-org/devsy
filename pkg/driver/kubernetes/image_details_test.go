@@ -74,6 +74,22 @@ func (s *ImageDetailsSuite) TestEmptyConfig() {
 	s.Empty(details.Config.User)
 }
 
+func (s *ImageDetailsSuite) TestRequiresArchitecture() {
+	path := s.writeFile(`{"config": {}}`)
+	d := s.driver(path)
+	d.options.Architecture = ""
+
+	_, err := d.ImageDetails(testImage)
+	s.Require().ErrorContains(err, "requires the ARCHITECTURE option")
+}
+
+func (s *ImageDetailsSuite) TestArchitectureMismatch() {
+	path := s.writeFile(`{"architecture": "arm64", "os": "linux", "config": {}}`)
+
+	_, err := s.driver(path).ImageDetails(testImage)
+	s.Require().ErrorContains(err, `is for architecture "arm64", but ARCHITECTURE is "amd64"`)
+}
+
 func (s *ImageDetailsSuite) TestMissingFile() {
 	path := filepath.Join(s.T().TempDir(), "missing.json")
 	_, err := s.driver(path).ImageDetails(testImage)
@@ -105,6 +121,9 @@ func (s *ImageDetailsSuite) writeFile(content string) string {
 
 func (s *ImageDetailsSuite) driver(path string) *KubernetesDriver {
 	return &KubernetesDriver{
-		options: &provider2.ProviderKubernetesDriverConfig{ImageConfigFile: path},
+		options: &provider2.ProviderKubernetesDriverConfig{
+			ImageConfigFile: path,
+			Architecture:    "amd64",
+		},
 	}
 }
