@@ -23,6 +23,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/types"
 	pkgworkspace "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
 )
 
@@ -111,6 +112,7 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		EnvArgs:     envArgs,
 		Workdir:     workdir,
 		User:        devcconfig.GetRemoteUser(result),
+		Recorder:    workspacelogs.RecorderFrom(ctx),
 	}
 
 	if err := status.Run(
@@ -466,8 +468,10 @@ func (cmd *ApplyCmd) runApplyLifecycleHooks(
 	}
 
 	for _, hook := range hooks {
-		for _, h := range hook.cmds {
-			if err := workspace.ExecLifecycleHook(params, hook.name, h); err != nil {
+		for i, h := range hook.cmds {
+			indexed := *params
+			indexed.HookIndex = i
+			if err := workspace.ExecLifecycleHook(&indexed, hook.name, h); err != nil {
 				return fmt.Errorf("lifecycle hooks: %s: %w", hook.name, err)
 			}
 		}
