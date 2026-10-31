@@ -18,13 +18,15 @@ import (
 	"github.com/tonistiigi/fsutil"
 )
 
-func Build(
-	ctx context.Context,
-	client *buildkit.Client,
-	writer io.Writer,
-	platform string,
-	options *build.BuildOptions,
-) error {
+// BuildRequest describes one image build through BuildKit.
+type BuildRequest struct {
+	Writer   io.Writer
+	Platform string
+	Options  *build.BuildOptions
+}
+
+func Build(ctx context.Context, client *buildkit.Client, req BuildRequest) error {
+	writer, platform, options := req.Writer, req.Platform, req.Options
 	solveOptions, err := buildkitSolveOpt(platform, options)
 	if err != nil {
 		return err

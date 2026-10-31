@@ -343,15 +343,12 @@ func (cmd *LoginCmd) loginAndConfigure(
 	}
 
 	if cmd.Login {
-		err = login(
-			ctx,
-			devsyConfig,
-			fullURL,
-			cmd.Provider,
-			cmd.AccessKey,
-			false,
-			cmd.ForceBrowser,
-		)
+		err = login(ctx, devsyConfig, loginRequest{
+			URL:          fullURL,
+			ProviderName: cmd.Provider,
+			AccessKey:    cmd.AccessKey,
+			ForceBrowser: cmd.ForceBrowser,
+		})
 		if err != nil {
 			return err
 		}
@@ -463,14 +460,22 @@ func (cmd *LoginCmd) resolveProviderSource(url string) error {
 	return nil
 }
 
+// loginRequest carries the inputs of login.
+type loginRequest struct {
+	URL              string
+	ProviderName     string
+	AccessKey        string
+	SkipBrowserLogin bool
+	ForceBrowser     bool
+}
+
 func login(
 	ctx context.Context,
 	devsyConfig *config.Config,
-	url string,
-	providerName string,
-	accessKey string,
-	skipBrowserLogin, forceBrowser bool,
+	req loginRequest,
 ) error {
+	url, providerName, accessKey := req.URL, req.ProviderName, req.AccessKey
+	skipBrowserLogin, forceBrowser := req.SkipBrowserLogin, req.ForceBrowser
 	configPath, err := platform.DevsyConfigPath(devsyConfig.DefaultContext, providerName)
 	if err != nil {
 		return err

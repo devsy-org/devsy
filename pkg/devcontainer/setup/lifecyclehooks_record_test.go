@@ -330,8 +330,8 @@ func TestRecordsPostAttachSkipAndRun(t *testing.T) {
 	result := hooksResult(t, t.TempDir())
 	result.MergedConfig.PostAttachCommands = []types.LifecycleHook{{"": {"echo attached"}}}
 
-	require.NoError(t, RunPostAttachHooks(run.ctx, result, nil, nil, true))
-	require.NoError(t, RunPostAttachHooks(run.ctx, result, nil, nil))
+	require.NoError(t, RunPostAttachHooks(run.ctx, result, PostAttachOptions{Skip: true}))
+	require.NoError(t, RunPostAttachHooks(run.ctx, result, PostAttachOptions{}))
 
 	var skipped, ran int
 	for _, inv := range fold(run.records(t)) {

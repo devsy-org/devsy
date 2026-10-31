@@ -114,13 +114,11 @@ func SetupContainerPreAttach(
 // Called after the IDE has been opened.
 func SetupContainerPostAttach(ctx context.Context, cfg *ContainerSetupConfig) error {
 	log.Debugf("running post-attach lifecycle hooks")
-	if err := RunPostAttachHooks(
-		ctx,
-		cfg.SetupInfo,
-		cfg.SecretsEnv,
-		cfg.SecretsMount,
-		cfg.SkipPostAttach,
-	); err != nil {
+	if err := RunPostAttachHooks(ctx, cfg.SetupInfo, PostAttachOptions{
+		SecretsEnv:   cfg.SecretsEnv,
+		SecretsMount: cfg.SecretsMount,
+		Skip:         cfg.SkipPostAttach,
+	}); err != nil {
 		return fmt.Errorf("lifecycle hooks post-attach: %w", err)
 	}
 

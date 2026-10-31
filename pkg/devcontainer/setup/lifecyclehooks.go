@@ -502,13 +502,20 @@ func (d DeferredHooks) Run() error {
 
 // RunPostAttachHooks runs postAttachCommand only.
 // These run after the IDE has been opened and can be long-running.
+// PostAttachOptions carries the inputs of RunPostAttachHooks.
+type PostAttachOptions struct {
+	SecretsEnv   []string
+	SecretsMount []string
+	Skip         bool
+}
+
 func RunPostAttachHooks(
 	ctx context.Context,
 	setupInfo *config.Result,
-	secretsEnv []string,
-	secretsMount []string,
-	skipPostAttach ...bool,
+	opts PostAttachOptions,
 ) error {
+	secretsEnv, secretsMount := opts.SecretsEnv, opts.SecretsMount
+	skipPostAttach := []bool{opts.Skip}
 	params := hookRunParams{
 		ctx:      ctx,
 		commands: setupInfo.MergedConfig.PostAttachCommands,
@@ -591,7 +598,7 @@ func executeLifecycleHook(
 ) error {
 	if len(hook) <= 1 {
 		for k, c := range hook {
-			return runSingleHookCommand(ctx, p, envArr, k, c)
+			return runSingleHookCommand(ctx, p, envArr, hookCommand{key: k, c: c})
 		}
 	}
 
@@ -605,7 +612,7 @@ func executeLifecycleHook(
 	for k, c := range hook {
 		go func() {
 			defer wg.Done()
-			if err := runSingleHookCommand(ctx, p, envArr, k, c); err != nil {
+			if err := runSingleHookCommand(ctx, p, envArr, hookCommand{key: k, c: c}); err != nil {
 				mu.Lock()
 				errs = append(errs, fmt.Errorf("named command %q failed: %w", k, err))
 				mu.Unlock()
@@ -617,12 +624,19 @@ func executeLifecycleHook(
 	return errors.Join(errs...)
 }
 
+// hookCommand is one named command of a lifecycle phase.
+type hookCommand struct {
+	key string
+	c   []string
+}
+
 func runSingleHookCommand(
 	ctx context.Context,
 	p hookRunParams,
 	remoteEnvArr []string,
-	key string, c []string,
+	cmd hookCommand,
 ) error {
+	key, c := cmd.key, cmd.c
 	log.Debugf(
 		"running %s lifecycle hook: %s %s",
 		p.name, key, p.redactor.Redact(strings.Join(c, " ")),

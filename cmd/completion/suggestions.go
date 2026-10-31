@@ -47,13 +47,20 @@ func RegisterFlagCompletionFuns(rootCmd *cobra.Command, globalFlags *flags.Globa
 	return nil
 }
 
+// SuggestionRequest carries the inputs of the completion helpers.
+type SuggestionRequest struct {
+	Context    string
+	Provider   string
+	Args       []string
+	ToComplete string
+	Owner      platform.OwnerFilter
+}
+
 func GetWorkspaceSuggestions(
 	rootCmd *cobra.Command,
-	context, provider string,
-	args []string,
-	toComplete string,
-	owner platform.OwnerFilter,
+	req SuggestionRequest,
 ) ([]string, cobra.ShellCompDirective) {
+	context, provider, toComplete, owner := req.Context, req.Provider, req.ToComplete, req.Owner
 	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError

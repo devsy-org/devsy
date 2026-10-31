@@ -322,13 +322,11 @@ func (s *buildkitStrategy) buildStreamed(
 	}
 	defer func() { _ = buildKitClient.Close() }()
 
-	if err := buildkit.Build(
-		ctx,
-		buildKitClient,
-		streams.combined,
-		platform,
-		options,
-	); err != nil {
+	if err := buildkit.Build(ctx, buildKitClient, buildkit.BuildRequest{
+		Writer:   streams.combined,
+		Platform: platform,
+		Options:  options,
+	}); err != nil {
 		return fmt.Errorf("build: %w", err)
 	}
 	return nil

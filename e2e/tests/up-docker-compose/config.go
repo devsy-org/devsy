@@ -369,15 +369,15 @@ var _ = ginkgo.Describe(
 
 				containerUID := getContainerUID(ctx, tc.f, tempDir, username)
 				containerGID := getContainerGID(ctx, tc.f, tempDir, username)
-				verifyUIDMapping(
-					containerUID,
-					containerGID,
-					testUID,
-					testGID,
-					defaultUID,
-					defaultGID,
-					username,
-				)
+				verifyUIDMapping(uidMapping{
+					ContainerUID: containerUID,
+					ContainerGID: containerGID,
+					HostUID:      testUID,
+					HostGID:      testGID,
+					DefaultUID:   defaultUID,
+					DefaultGID:   defaultGID,
+					Username:     username,
+				})
 
 				verifyHostFileAccess(hostFile, expectedContent)
 				verifyHostFileOwnership(hostFile, testUID, testGID, testUID == 0)
@@ -427,15 +427,15 @@ var _ = ginkgo.Describe(
 
 				containerUID := getContainerUID(ctx, tc.f, tempDir, username)
 				containerGID := getContainerGID(ctx, tc.f, tempDir, username)
-				verifyUIDMapping(
-					containerUID,
-					containerGID,
-					testUID,
-					testGID,
-					defaultUID,
-					defaultGID,
-					username,
-				)
+				verifyUIDMapping(uidMapping{
+					ContainerUID: containerUID,
+					ContainerGID: containerGID,
+					HostUID:      testUID,
+					HostGID:      testGID,
+					DefaultUID:   defaultUID,
+					DefaultGID:   defaultGID,
+					Username:     username,
+				})
 
 				verifyHostFileAccess(hostFile, expectedContent)
 				verifyHostFileOwnership(hostFile, testUID, testGID, testUID == 0)

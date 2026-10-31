@@ -70,7 +70,8 @@ type SetupSpec struct {
 }
 
 func RunServicesServer(ctx context.Context, spec ServicesSpec) error {
-	options := append(spec.Options,
+	options := slices.Clone(spec.Options)
+	options = append(options,
 		WithForwarder(spec.Forwarder),
 		WithAllowGitCredentials(spec.AllowGitCredentials),
 		WithAllowDockerCredentials(spec.AllowDockerCredentials),
@@ -82,7 +83,8 @@ func RunServicesServer(ctx context.Context, spec ServicesSpec) error {
 }
 
 func RunUpServer(ctx context.Context, spec UpSpec) (*config.Result, error) {
-	options := append(spec.Options,
+	options := slices.Clone(spec.Options)
+	options = append(options,
 		WithWorkspace(spec.Workspace),
 		WithAllowGitCredentials(spec.AllowGitCredentials),
 		WithAllowDockerCredentials(spec.AllowDockerCredentials),
@@ -93,7 +95,8 @@ func RunUpServer(ctx context.Context, spec UpSpec) (*config.Result, error) {
 }
 
 func RunSetupServer(ctx context.Context, spec SetupSpec) (*config.Result, error) {
-	options := append(spec.Options,
+	options := slices.Clone(spec.Options)
+	options = append(options,
 		WithAllowGitCredentials(spec.AllowGitCredentials),
 		WithAllowDockerCredentials(spec.AllowDockerCredentials),
 	)

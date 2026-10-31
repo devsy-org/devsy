@@ -301,10 +301,17 @@ func expectedUIDMapping(goos string, host, defaults userIDs) (int, int) {
 	return defaults.uid, defaults.gid
 }
 
-func verifyUIDMapping(
-	containerUID, containerGID, hostUID, hostGID, defaultUID, defaultGID int,
-	username string,
-) {
+// uidMapping holds the IDs compared by verifyUIDMapping.
+type uidMapping struct {
+	ContainerUID, ContainerGID int
+	HostUID, HostGID           int
+	DefaultUID, DefaultGID     int
+	Username                   string
+}
+
+func verifyUIDMapping(m uidMapping) {
+	containerUID, containerGID, hostUID, hostGID := m.ContainerUID, m.ContainerGID, m.HostUID, m.HostGID
+	defaultUID, defaultGID, username := m.DefaultUID, m.DefaultGID, m.Username
 	expectedUID, expectedGID := expectedUIDMapping(
 		runtime.GOOS,
 		userIDs{uid: hostUID, gid: hostGID},

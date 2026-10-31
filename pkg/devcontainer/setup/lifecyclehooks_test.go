@@ -113,7 +113,7 @@ func (s *LifecycleHookTestSuite) TestLifecycleHooksNoOpWithEmptyConfig() {
 	assert.NoError(s.T(), err)
 	assert.True(s.T(), deferred.Empty())
 
-	err = RunPostAttachHooks(ctx, result, nil, nil)
+	err = RunPostAttachHooks(ctx, result, PostAttachOptions{})
 	assert.NoError(s.T(), err)
 }
 
@@ -735,7 +735,7 @@ func (s *LifecycleHookTestSuite) TestPostAttachHooksRunEveryTime() {
 
 	// Run postAttachCommand multiple times - it must execute every time.
 	for i := 1; i <= 3; i++ {
-		err := RunPostAttachHooks(context.Background(), result, nil, nil)
+		err := RunPostAttachHooks(context.Background(), result, PostAttachOptions{})
 		assert.NoError(t, err)
 
 		content, readErr := os.ReadFile(counterFile) //nolint:gosec // test file from TempDir

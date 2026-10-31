@@ -47,7 +47,14 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 			cobraCmd *cobra.Command, args []string, toComplete string,
 		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
-				cobraCmd.Root(), cmd.Context, cmd.Provider, args, toComplete, cmd.Owner,
+				cobraCmd.Root(),
+				completion.SuggestionRequest{
+					Context:    cmd.Context,
+					Provider:   cmd.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      cmd.Owner,
+				},
 			)
 		},
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
