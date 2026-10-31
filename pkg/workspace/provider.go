@@ -211,12 +211,15 @@ func CloneProvider(
 		return nil, err
 	}
 
+	// installProvider renames the loaded config after capturing its original
+	// identity, then copies its cached revision before publishing the clone.
+	source := sourceProvider.Config.Source
 	providerConfig, err := installProvider(
 		ctx,
 		ProviderParams{
 			DevsyConfig:  devsyConfig,
 			ProviderName: providerName,
-			Source:       &sourceProvider.Config.Source,
+			Source:       &source,
 		},
 		sourceProvider.Config)
 	if err != nil {
@@ -333,15 +336,11 @@ func loadProviderEntry(
 }
 
 func installRawProvider(ctx context.Context, p ProviderParams) (*provider.ProviderConfig, error) {
-	providerConfig, err := provider.ParseProvider(bytes.NewReader(p.Raw))
+	providerConfig, err := provider.ParseAuthorProvider(bytes.NewReader(p.Raw))
 	if err != nil {
 		return nil, err
 	}
-	return installProvider(ctx, ProviderParams{
-		DevsyConfig:  p.DevsyConfig,
-		ProviderName: p.ProviderName,
-		Source:       p.Source,
-	}, providerConfig)
+	return installProvider(ctx, p, providerConfig)
 }
 
 func installProvider(
@@ -353,6 +352,7 @@ func installProvider(
 		return nil, fmt.Errorf("provider source is required")
 	}
 
+	sourceName := providerConfig.Name
 	providerConfig.Source = *p.Source
 	if p.ProviderName != "" {
 		providerConfig.Name = p.ProviderName
@@ -362,11 +362,59 @@ func installProvider(
 		return nil, err
 	}
 
-	if err := downloadAndSaveProvider(ctx, p, providerConfig); err != nil {
+	providerDir, dirErr := provider.GetProviderDir(
+		p.DevsyConfig.DefaultContext,
+		providerConfig.Name,
+	)
+	if dirErr != nil {
+		return nil, dirErr
+	}
+	saved := false
+	defer removeUnsavedProviderDir(&saved, providerDir)
+
+	// Clone has no author bytes: copy the selected immutable revision before
+	// saving the renamed config, so it stays usable after deleting the source.
+	if err := stageProviderIcons(ctx, p, providerConfig, sourceName); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
+	if err := downloadAndSaveProvider(ctx, p, providerConfig); err != nil {
+		return nil, err
+	}
+	saved = true
+
 	return providerConfig, nil
+}
+
+// removeUnsavedProviderDir removes a provider dir that a failed install created.
+func removeUnsavedProviderDir(saved *bool, providerDir string) {
+	if !*saved {
+		_ = os.RemoveAll(providerDir)
+	}
+}
+
+// stageProviderIcons stages the icon revision the installed manifest will
+// select. Clone has no author bytes, so it copies the selected immutable
+// revision from sourceName instead.
+func stageProviderIcons(
+	ctx context.Context,
+	p ProviderParams,
+	providerConfig *provider.ProviderConfig,
+	sourceName string,
+) error {
+	if len(p.Raw) > 0 {
+		return prepareProviderIcons(ctx, p, providerConfig)
+	}
+	err := provider.CopyProviderIcons(
+		ctx,
+		p.DevsyConfig.DefaultContext,
+		sourceName,
+		providerConfig,
+	)
+	return handleProviderIconError(ctx, providerConfig, err)
 }
 
 func updateProvider(ctx context.Context, p ProviderParams) (*provider.ProviderConfig, error) {
@@ -383,7 +431,7 @@ func updateProvider(ctx context.Context, p ProviderParams) (*provider.ProviderCo
 }
 
 func parseAndValidateProvider(p ProviderParams) (*provider.ProviderConfig, error) {
-	providerConfig, err := provider.ParseProvider(bytes.NewReader(p.Raw))
+	providerConfig, err := provider.ParseAuthorProvider(bytes.NewReader(p.Raw))
 	if err != nil {
 		return nil, err
 	}
@@ -400,6 +448,39 @@ func parseAndValidateProvider(p ProviderParams) (*provider.ProviderConfig, error
 	}
 
 	return providerConfig, nil
+}
+
+// prepareProviderIcons stages the icon revision the installed manifest will
+// select. Icons are optional, so a cache failure only drops the revision and
+// the provider falls back to bundled artwork. Caller cancellation aborts the
+// provider operation.
+func prepareProviderIcons(
+	ctx context.Context,
+	p ProviderParams,
+	providerConfig *provider.ProviderConfig,
+) error {
+	err := provider.PrepareProviderIcons(
+		ctx,
+		p.DevsyConfig.DefaultContext,
+		providerConfig,
+		p.Raw,
+	)
+	return handleProviderIconError(ctx, providerConfig, err)
+}
+
+func handleProviderIconError(
+	ctx context.Context,
+	providerConfig *provider.ProviderConfig,
+	err error,
+) error {
+	if callerErr := ctx.Err(); callerErr != nil {
+		return callerErr
+	}
+	if err != nil {
+		providerConfig.IconRevision = ""
+		log.Warnf("prepare icons for provider %s: %v", providerConfig.Name, err)
+	}
+	return nil
 }
 
 func checkProviderNotExists(devsyConfig *config.Config, providerName string) error {

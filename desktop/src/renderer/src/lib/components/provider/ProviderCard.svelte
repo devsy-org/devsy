@@ -25,7 +25,13 @@ let status = $derived(providerStatus(provider, $providerJobs[provider.name]))
   {/if}
   <div class="flex flex-col gap-3">
     <div class="flex min-w-0 flex-wrap items-center gap-3">
-      <ProviderIcon name={provider.name} class="size-8 shrink-0" />
+      <ProviderIcon
+        name={provider.name}
+        icon={provider.icon}
+        iconDark={provider.iconDark}
+        iconRevision={provider.iconRevision}
+        class="size-8 shrink-0"
+      />
       <h3 class="min-w-0 text-lg font-semibold tracking-tight [overflow-wrap:anywhere]">{provider.name}</h3>
       {#if provider.isDefault}
         <span class="{badgeVariants({ variant: 'default' })} gap-1">

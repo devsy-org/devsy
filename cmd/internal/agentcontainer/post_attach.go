@@ -5,6 +5,7 @@ package agentcontainer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/compress"
@@ -55,6 +56,12 @@ func (cmd *PostAttachCmd) Run(ctx context.Context) error {
 		return err
 	}
 
+	ctx, stopActivity, err := startWorkerActivity(ctx)
+	if err != nil {
+		return fmt.Errorf("register post-attach activity: %w", err)
+	}
+	defer stopActivity()
+
 	log.Debugf("running postAttachCommand hooks")
 	// Mount values aren't in this process's env; read them back for redaction.
 	if err := setup.RunPostAttachHooks(
@@ -63,6 +70,9 @@ func (cmd *PostAttachCmd) Run(ctx context.Context) error {
 		secretsEnvFromEnvironment(),
 		setup.MountSecretsForRedaction(),
 	); err != nil {
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
 		log.Errorf("postAttachCommand failed: %v", err)
 	}
 

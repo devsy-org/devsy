@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,7 +113,11 @@ func downloadProviderGithub(
 		)
 	}
 
-	requestURL := buildGithubURL(path, release)
+	resolvedRef := release
+	if resolvedRef == "" {
+		resolvedRef = resolveLatestGithubRelease(ctx, path)
+	}
+	requestURL := buildGithubURL(path, resolvedRef)
 
 	body, err := download.File(
 		ctx,
@@ -129,10 +134,29 @@ func downloadProviderGithub(
 		return nil, nil, err
 	}
 
-	return out, &ProviderSource{
+	source := &ProviderSource{
 		Raw:    originalPath,
 		Github: path,
-	}, nil
+	}
+	if resolvedRef != "" {
+		source.ResolvedRef = resolvedRef
+		source.ResolvedManifestURL = requestURL
+	}
+
+	return out, source, nil
+}
+
+// resolveLatestGithubRelease pins an unversioned source to the release GitHub
+// currently designates as latest so manifest and icons come from one tag. A
+// metadata failure returns "" and leaves provenance unresolved: the manifest
+// still installs through the latest-download redirect.
+func resolveLatestGithubRelease(ctx context.Context, path string) string {
+	tag, err := FetchLatestGitHubReleaseTag(ctx, path, gitcredentials.Resolver{})
+	if err != nil {
+		log.Debugf("resolve latest release of %s: %v", path, err)
+		return ""
+	}
+	return tag
 }
 
 func resolveInternalProvider(
@@ -163,6 +187,7 @@ func resolveURLProvider(
 		return nil, true, fmt.Errorf("download provider: %w", err)
 	}
 	retSource.URL = providerSource
+	retSource.ResolvedManifestURL = logicalManifestURL(providerSource)
 	return out, true, nil
 }
 
@@ -213,11 +238,34 @@ func downloadProvider(ctx context.Context, url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
+// githubWebBaseURL hosts release downloads; tests point it at a local server.
+var githubWebBaseURL = "https://github.com"
+
 func buildGithubURL(path, release string) string {
 	if release == "" {
-		return fmt.Sprintf("https://github.com/%s/releases/latest/download/provider.yaml", path)
+		return fmt.Sprintf("%s/%s/releases/latest/download/provider.yaml", githubWebBaseURL, path)
 	}
-	return fmt.Sprintf("https://github.com/%s/releases/download/%s/provider.yaml", path, release)
+	return fmt.Sprintf(
+		"%s/%s/releases/download/%s/provider.yaml",
+		githubWebBaseURL,
+		path,
+		url.PathEscape(release),
+	)
+}
+
+// logicalManifestURL drops credentials, query and fragment so the stored base
+// for sibling assets never carries secrets from the manifest request.
+func logicalManifestURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
+	return parsed.String()
 }
 
 // GetProviderSource returns a canonical source string for the provider, used

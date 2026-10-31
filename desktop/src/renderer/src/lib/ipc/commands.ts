@@ -18,7 +18,15 @@ import type {
   Workspace,
 } from "$lib/types/index.js"
 import type { AppNavigationAcknowledgment } from "$shared/app-route.js"
+import type {
+  LinuxDesktopIntegrationResult,
+  LinuxDesktopIntegrationStatus,
+} from "$shared/linux-desktop-integration.js"
 import type { MachineDiagnosticsCache } from "$shared/machine-diagnostics-types.js"
+import type {
+  ProviderIconReply,
+  ProviderIconRequest,
+} from "$shared/provider-icon.js"
 import { invoke } from "./bridge.js"
 
 type CommandEnvelope =
@@ -128,6 +136,12 @@ export async function openDirectoryDialog(): Promise<string | null> {
 // Provider commands
 export async function providerList(): Promise<Provider[]> {
   return invoke<Provider[]>("provider_list")
+}
+
+export async function providerIcon(
+  request: ProviderIconRequest,
+): Promise<ProviderIconReply> {
+  return invoke<ProviderIconReply>("provider_icon", { ...request })
 }
 
 export async function providerAdd(
@@ -590,5 +604,21 @@ export async function setAppSettings(
   return invoke<import("$shared/app-settings.js").AppSettingsState>(
     "set_app_settings",
     { patch },
+  )
+}
+
+export async function getLinuxDesktopIntegration(): Promise<LinuxDesktopIntegrationStatus> {
+  return invoke<LinuxDesktopIntegrationStatus>("get_linux_desktop_integration")
+}
+
+export async function installLinuxDesktopIntegration(): Promise<LinuxDesktopIntegrationResult> {
+  return invoke<LinuxDesktopIntegrationResult>(
+    "install_linux_desktop_integration",
+  )
+}
+
+export async function removeLinuxDesktopIntegration(): Promise<LinuxDesktopIntegrationResult> {
+  return invoke<LinuxDesktopIntegrationResult>(
+    "remove_linux_desktop_integration",
   )
 }

@@ -74,6 +74,7 @@ type containerState struct {
 	tunnelClient  tunnel.TunnelClient
 	reporter      status.Reporter
 	secretsEnv    []string
+	lifecycle     *lifecycleHandshake
 }
 
 // Run runs the command logic.
@@ -95,6 +96,22 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 		reporter:      tunnelserver.NewTunnelStatusReporter(ctx, tunnelClient),
 	}
 
+	if !cmd.Prebuild {
+		state.lifecycle, err = beginLifecycle(
+			ctx,
+			config2.ContainerLifecycleDir,
+			workspaceInfo,
+			setupInfo.MergedConfig.ShutdownAction,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	if state.lifecycle != nil {
+		ctx = state.lifecycle.ctx
+		defer state.lifecycle.close()
+	}
+
 	_, err = tunnelserver.ReportResult(
 		ctx,
 		tunnelClient,
@@ -108,6 +125,9 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 			return state.setupInfo, nil
 		},
 	)
+	if state.lifecycle != nil {
+		return state.lifecycle.finish(err)
+	}
 	return err
 }
 
@@ -307,9 +327,11 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 		return err
 	}
 
-	shutdownAction := state.setupInfo.MergedConfig.ShutdownAction
-	if err := cmd.startContainerDaemon(state.workspaceInfo, shutdownAction); err != nil {
-		return err
+	if state.lifecycle == nil {
+		shutdownAction := state.setupInfo.MergedConfig.ShutdownAction
+		if err := cmd.startContainerDaemon(state.workspaceInfo, shutdownAction); err != nil {
+			return err
+		}
 	}
 
 	resolvedSetupInfo, err := compressSetupInfo(state.setupInfo)
@@ -317,20 +339,36 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 		return fmt.Errorf("re-serialize setup info: %w", err)
 	}
 
+	var workers *workerReadiness
+	if state.lifecycle != nil {
+		workers, err = newWorkerReadiness()
+		if err != nil {
+			return err
+		}
+		defer workers.close()
+	}
+
 	if !deferred.Empty() {
 		err = cmd.startDeferredHooks(
 			resolvedSetupInfo, cmd.DotfilesRepo, cmd.DotfilesScript,
-			state.secretsEnv,
+			state.secretsEnv, workers,
 		)
 		if err != nil {
 			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
 		}
 	}
 
-	if err := cmd.startPostAttachHooks(state); err != nil {
+	if err := cmd.startPostAttachHooks(state, workers); err != nil {
 		log.Errorf("failed to start postAttachCommand: %v", err)
 	}
 
+	// Arm last, once the spawned workers hold the workspace active themselves.
+	if state.lifecycle != nil {
+		if err := workers.wait(state.lifecycle.ctx); err != nil {
+			log.Errorf("hook protection not confirmed before arming: %v", err)
+		}
+		return state.lifecycle.ready()
+	}
 	return nil
 }
 
@@ -346,16 +384,24 @@ func compressSetupInfo(setupInfo *config.Result) (string, error) {
 
 func (cmd *SetupContainerCmd) startDeferredHooks(
 	setupInfo, dotfilesRepo, dotfilesScript string, secretsEnv []string,
+	workers *workerReadiness,
 ) error {
-	return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
-		log.Debugf("starting deferred lifecycle hooks as background process")
-		return buildDeferredHooksCmd(
-			setupInfo,
-			cmd.Prebuild,
-			dotfilesRepo,
-			dotfilesScript,
-			secretsEnv,
-		)
+	return workers.launch("deferred-hooks", func(prepare func(*exec.Cmd)) error {
+		return command.StartBackgroundOnce("devsy.deferred-hooks", func() (*exec.Cmd, error) {
+			log.Debugf("starting deferred lifecycle hooks as background process")
+			execCmd, err := buildDeferredHooksCmd(
+				setupInfo,
+				cmd.Prebuild,
+				dotfilesRepo,
+				dotfilesScript,
+				secretsEnv,
+			)
+			if err != nil {
+				return nil, err
+			}
+			prepare(execCmd)
+			return execCmd, nil
+		})
 	})
 }
 
@@ -495,6 +541,10 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 	workspaceInfo *provider2.ContainerWorkspaceInfo,
 	shutdownAction string,
 ) error {
+	// A managed container's main process owns the timer; never start a second one.
+	if isManagedLifecycle(workspaceInfo) {
+		return nil
+	}
 	if workspaceInfo.CLIOptions.Platform.Enabled ||
 		workspaceInfo.CLIOptions.DisableDaemon ||
 		workspaceInfo.ContainerTimeout == "" {
@@ -528,28 +578,34 @@ func (cmd *SetupContainerCmd) startContainerDaemon(
 	})
 }
 
-func (cmd *SetupContainerCmd) startPostAttachHooks(state *containerState) error {
+func (cmd *SetupContainerCmd) startPostAttachHooks(
+	state *containerState,
+	workers *workerReadiness,
+) error {
 	if len(state.setupInfo.MergedConfig.PostAttachCommands) == 0 {
 		return nil
 	}
 
-	return command.StartBackground("devsy.post-attach", func() (*exec.Cmd, error) {
-		log.Debugf("starting postAttachCommand as background process")
-		binaryPath, err := os.Executable()
-		if err != nil {
-			return nil, err
-		}
+	return workers.launch("post-attach", func(prepare func(*exec.Cmd)) error {
+		return command.StartBackground("devsy.post-attach", func() (*exec.Cmd, error) {
+			log.Debugf("starting postAttachCommand as background process")
+			binaryPath, err := os.Executable()
+			if err != nil {
+				return nil, err
+			}
 
-		args := []string{
-			cmdInternal, cmdAgent, cmdContainer, "post-attach",
-			names.Flag(names.SetupInfo), cmd.SetupInfo,
-		}
-		execCmd := &exec.Cmd{
-			Path: binaryPath,
-			Args: append([]string{binaryPath}, args...),
-		}
-		execCmd.Env = secretsEnvOverride(state.secretsEnv)
-		return execCmd, nil
+			args := []string{
+				cmdInternal, cmdAgent, cmdContainer, "post-attach",
+				names.Flag(names.SetupInfo), cmd.SetupInfo,
+			}
+			execCmd := &exec.Cmd{
+				Path: binaryPath,
+				Args: append([]string{binaryPath}, args...),
+			}
+			execCmd.Env = secretsEnvOverride(state.secretsEnv)
+			prepare(execCmd)
+			return execCmd, nil
+		})
 	})
 }
 

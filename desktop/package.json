@@ -1,6 +1,7 @@
 {
   "name": "devsy-desktop",
   "version": "0.1.0",
+  "desktopName": "sh.devsy.app.desktop",
   "private": true,
   "homepage": "https://devsy.sh",
   "author": {

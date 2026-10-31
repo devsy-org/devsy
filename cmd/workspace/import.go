@@ -92,6 +92,7 @@ func (cmd *ImportCmd) execute(ctx context.Context) error {
 		cmd.ResultFormat,
 		os.Stdout,
 		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
 	)
 	if err != nil {
 		return err
@@ -299,6 +300,9 @@ func (cmd *ImportCmd) importProvider(
 		return fmt.Errorf("load provider config: %w", err)
 	}
 	providerConfig.Name = cmd.ProviderID
+	// The icon cache is local to the exporting machine's context; the imported
+	// provider falls back to bundled artwork until it is next updated.
+	providerConfig.IconRevision = ""
 
 	// save provider config
 	err = provider.SaveProviderConfig(devsyConfig.DefaultContext, providerConfig)

@@ -99,7 +99,7 @@ func (cmd *StopCmd) runArgs(ctx context.Context, args []string) error {
 
 func (cmd *StopCmd) newStatusReporter() (status.Reporter, error) {
 	return newWorkspaceStatusReporter(
-		cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug,
+		cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug, cmd.NoStatus,
 	)
 }
 

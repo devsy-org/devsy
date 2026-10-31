@@ -18,6 +18,11 @@ import {
   isAutomaticLoginLaunch,
   shouldSuppressInitialWindow,
 } from "./launch-context.js"
+import { linuxWindowIcon } from "./linux-desktop-identity.js"
+import {
+  LinuxDesktopIntegration,
+  updateDesktopDatabase,
+} from "./linux-desktop-integration.js"
 import { LogStore } from "./log-store.js"
 import { mainLog, setMainLogLevel } from "./logging.js"
 import { MachineDiagnosticsManager } from "./machine-diagnostics-manager.js"
@@ -102,6 +107,12 @@ function createWindow(): void {
     minHeight: 700,
     show: false,
     title: "Devsy",
+    icon: linuxWindowIcon({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+    }),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
@@ -145,8 +156,9 @@ app.whenReady().then(async () => {
   initAnalytics()
   trackEvent("app_open")
 
-  // Register devsy:// as the default protocol handler for this app.
-  app.setAsDefaultProtocolClient(PROTOCOL)
+  // Linux packages and the AppImage integration advertise their handler in
+  // desktop entries; registering at launch would replace another package's default.
+  if (process.platform !== "linux") app.setAsDefaultProtocolClient(PROTOCOL)
 
   // Capture deep link from argv on Windows/Linux when launched via protocol URL.
   const startupUrl = process.argv.find((arg) =>
@@ -226,6 +238,13 @@ app.whenReady().then(async () => {
   const workspaceJobs = new WorkspaceJobs()
 
   const autostartEnv = detectAutostartEnvironment()
+  const linuxDesktopIntegration = new LinuxDesktopIntegration({
+    platform: process.platform,
+    env: app.isPackaged ? process.env : {},
+    homeDir: homedir(),
+    iconSource: join(app.getAppPath(), "resources", "icons", "128x128.png"),
+    refreshDesktopDatabase: updateDesktopDatabase,
+  })
   const settingsService = new SettingsService({
     store: appSettingsStore,
     applyAutostart: (settings) => applyAutostart(settings, autostartEnv),
@@ -295,6 +314,7 @@ app.whenReady().then(async () => {
     workspaceSnapshot: () => watcher?.workspaceSnapshot(),
     appNavigation,
     settingsService,
+    linuxDesktopIntegration,
   })
 
   // Start state watcher
@@ -373,6 +393,10 @@ app.whenReady().then(async () => {
   ) {
     createWindow()
   }
+
+  void linuxDesktopIntegration.refreshOwned().then(({ error }) => {
+    if (error) mainLog.warn("Could not update the Devsy launcher:", error)
+  })
 
   if (app.isPackaged) {
     initAutoUpdater(() => mainWindow)

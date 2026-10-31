@@ -12,10 +12,19 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	docker "github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/language"
+	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/workspacejournal"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+)
+
+const (
+	noStatusFlag     = "--no-status"
+	resultFormatFlag = "--result-format"
+	debugFlag        = "--debug"
+	eventsCommand    = "events"
+	ideNone          = "none"
 )
 
 var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), func() {
@@ -145,6 +154,44 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		framework.ExpectEqual(out, value, "should be set now")
 	}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	ginkgo.It("suppresses up progress while retaining workspace events",
+		func(ctx context.Context) {
+			f, err := framework.SetupDockerProvider(filepath.Join(initialDir, "bin"), "docker")
+			framework.ExpectNoError(err)
+
+			tempDir, err := framework.CopyToTempDir("tests/up/testdata/no-devcontainer")
+			framework.ExpectNoError(err)
+			ginkgo.DeferCleanup(framework.CleanupTempDir, initialDir, tempDir)
+			ginkgo.DeferCleanup(f.DevsyWorkspaceDelete, tempDir)
+
+			stdout, stderr, err := f.ExecCommandCapture(ctx, []string{
+				cmdWorkspace, "up", noStatusFlag, resultFormatFlag + "=plain", debugFlag,
+				flagIDEOption, ideNone, tempDir,
+			})
+			framework.ExpectNoError(err)
+			gomega.Expect(stdout).NotTo(gomega.ContainSubstring("[RUN]"))
+			gomega.Expect(stdout).NotTo(gomega.ContainSubstring("[OK]"))
+			gomega.Expect(stderr).To(gomega.ContainSubstring("resolving workspace with ide="))
+
+			workspace, err := f.FindWorkspace(ctx, tempDir)
+			framework.ExpectNoError(err)
+			eventsOutput, err := f.ExecCommandOutput(ctx, []string{
+				cmdWorkspace, eventsCommand, resultFormatFlag, output.ModeJSON, workspace.ID,
+			})
+			framework.ExpectNoError(err)
+			var eventEnvelope struct {
+				SchemaVersion int                      `json:"schemaVersion"`
+				Events        []workspacejournal.Event `json:"events"`
+			}
+			framework.ExpectNoError(json.Unmarshal([]byte(eventsOutput), &eventEnvelope))
+			gomega.Expect(eventEnvelope.Events).NotTo(gomega.BeEmpty())
+			gomega.Expect(eventEnvelope.Events[len(eventEnvelope.Events)-1]).To(gomega.SatisfyAll(
+				gomega.HaveField("WorkspaceID", workspace.ID),
+				gomega.HaveField("Pipeline", status.PipelineWorkspaceUp),
+				gomega.HaveField("State", status.StateSucceeded),
+			))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 	ginkgo.It("create workspace without devcontainer.json", func(ctx context.Context) {
 		const (
 			providerName = "test-docker"
@@ -191,7 +238,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 
 		projectName := workspace.ID
 		eventsOutput, err := f.ExecCommandOutput(ctx, []string{
-			cmdWorkspace, "events", "--result-format", "json", projectName,
+			cmdWorkspace, eventsCommand, resultFormatFlag, output.ModeJSON, projectName,
 		})
 		framework.ExpectNoError(err)
 		var eventEnvelope struct {

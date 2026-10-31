@@ -237,8 +237,16 @@ func TestLogTailerStreamsStatusLifecyclesSeparatelyFromLogs(t *testing.T) {
 			State: status.StateSucceeded, Duration: 3 * time.Second,
 		},
 	}
-	for _, event := range events {
-		require.NoError(t, devcconfig.WriteStatusJSON(&worker, event))
+	reporter, err := status.NewCLIReporter(status.CLIOptions{
+		Format:   formatJSON,
+		Out:      &worker,
+		Pipeline: status.PipelineWorkspaceUp,
+		Envelope: func(event status.Event) error { return devcconfig.WriteStatusJSON(&worker, event) },
+	})
+	require.NoError(t, err)
+	for i := range events {
+		events[i].Pipeline = status.PipelineWorkspaceUp
+		reporter.Report(events[i])
 	}
 	worker.WriteString("worker log\n{\"kind\":\"result\",\"outcome\":\"success\"}\n")
 	require.NoError(t, os.WriteFile(path, worker.Bytes(), 0o600))
@@ -445,7 +453,7 @@ func TestFollowTaskReconciliationDiagnostics(t *testing.T) {
 			log.Init(
 				log.Config{
 					Level:    level,
-					Format:   "json",
+					Format:   formatJSON,
 					Redactor: secrets.NewRedactor([]string{"TOKEN=" + secret}),
 				},
 			)

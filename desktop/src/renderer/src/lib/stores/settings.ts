@@ -19,6 +19,7 @@ const browser = typeof window !== "undefined"
 // ── UI Settings (localStorage) ──────────────────────────────────────
 
 export type Theme = "light" | "dark" | "system"
+export type EffectiveTheme = "light" | "dark"
 export type ColorScheme = "default" | "emerald" | "purple"
 export type UIScale = "xs" | "sm" | "md" | "lg" | "xl"
 export type SidebarPosition = "left" | "right"
@@ -74,18 +75,29 @@ export const theme = writable<Theme>(
   getStored(STORAGE_KEY, ["light", "dark", "system"] as const, "dark"),
 )
 
+function resolveEffectiveTheme(value: Theme): EffectiveTheme {
+  if (value !== "system") return value
+  if (!browser) return "dark"
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light"
+}
+
+// The theme actually painted: an explicit override, or the OS preference when
+// the setting is "system". Written only by applyTheme so the media-query
+// listener in initSettings stays the single owner of OS theme changes.
+export const effectiveTheme = writable<EffectiveTheme>(
+  resolveEffectiveTheme(
+    getStored(STORAGE_KEY, ["light", "dark", "system"] as const, "dark"),
+  ),
+)
+
 export function applyTheme(value: Theme) {
   if (!browser) return
   localStorage.setItem(STORAGE_KEY, value)
-  const root = document.documentElement
-  if (value === "system") {
-    const prefersDark = window.matchMedia(
-      "(prefers-color-scheme: dark)",
-    ).matches
-    root.classList.toggle("dark", prefersDark)
-  } else {
-    root.classList.toggle("dark", value === "dark")
-  }
+  const resolved = resolveEffectiveTheme(value)
+  document.documentElement.classList.toggle("dark", resolved === "dark")
+  effectiveTheme.set(resolved)
 }
 
 export function cycleTheme() {
@@ -372,6 +384,7 @@ export const openToTrayOnStartup = writable<boolean>(false)
 export const trayNotifications = writable<TrayNotificationLevel>("failures")
 export const desktopLogLevel = writable<LogLevel>("info")
 export const cliCaptureLogLevel = writable<LogLevel>("info")
+export const appImageIntegrationPromptDismissed = writable(false)
 export const startupStatus = writable<StartupStatus | null>(null)
 
 let desktopSettingsQueue: Promise<unknown> = Promise.resolve()
@@ -383,6 +396,9 @@ function applyAppSettingsState(state: AppSettingsState): void {
   trayNotifications.set(state.settings.trayNotifications)
   desktopLogLevel.set(state.settings.desktopLogLevel)
   cliCaptureLogLevel.set(state.settings.cliCaptureLogLevel)
+  appImageIntegrationPromptDismissed.set(
+    state.settings.appImageIntegrationPromptDismissed,
+  )
   startupStatus.set(state.startup)
 }
 

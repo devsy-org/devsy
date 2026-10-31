@@ -92,7 +92,12 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 		return err
 	}
 
-	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug)
+	reporter, err := newStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
+	)
 	if err != nil {
 		return err
 	}
@@ -187,7 +192,7 @@ func (cmd *AddCmd) resolveAddSource(
 	if providerName != "" {
 		return resolvedAddSource{raw: raw, source: source, name: providerName}, nil
 	}
-	parsed, err := provider.ParseProvider(bytes.NewReader(raw))
+	parsed, err := provider.ParseAuthorProvider(bytes.NewReader(raw))
 	if err != nil {
 		return resolvedAddSource{}, err
 	}
