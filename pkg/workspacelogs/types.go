@@ -253,10 +253,47 @@ func (r *Record) validateKind() error {
 		return r.validateOutput()
 	case KindInvocation:
 		return r.validateInvocation()
-	case KindProducer, KindCapture:
-		return nil
+	case KindProducer:
+		return r.validateProducer()
+	case KindCapture:
+		return r.validateCapture()
 	default:
 		return fmt.Errorf("%w: kind %q", ErrInvalidRecord, r.Kind)
+	}
+}
+
+func (r *Record) validateProducer() error {
+	switch r.ProducerState {
+	case "", ProducerReserved, ProducerRunning, ProducerTerminal, ProducerUnavailable:
+	default:
+		return fmt.Errorf("%w: producer state %q", ErrInvalidRecord, r.ProducerState)
+	}
+	if r.ChildProducerID != "" {
+		if err := requireID("childProducerId", r.ChildProducerID); err != nil {
+			return err
+		}
+	}
+
+	return validLocation(r.Location)
+}
+
+func (r *Record) validateCapture() error {
+	switch r.Condition {
+	case ConditionTruncated, ConditionRetentionGap, ConditionWriteError,
+		ConditionUnsupportedSource, ConditionSourceUnavailable, ConditionInterrupted,
+		ConditionCapacity, ConditionProducerCap, ConditionMalformedRecord:
+		return validLocation(r.Location)
+	default:
+		return fmt.Errorf("%w: condition %q", ErrInvalidRecord, r.Condition)
+	}
+}
+
+func validLocation(l Location) error {
+	switch l {
+	case "", LocationHost, LocationProviderHost, LocationContainer:
+		return nil
+	default:
+		return fmt.Errorf("%w: location %q", ErrInvalidRecord, l)
 	}
 }
 

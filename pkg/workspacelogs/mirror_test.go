@@ -257,3 +257,55 @@ func TestStoreSourceReportsSourceGap(t *testing.T) {
 	_, err = NewStoreSource(store).ReadAfter(runID, pid, 1, MaxPageBytes)
 	require.ErrorIs(t, err, ErrSourceGap)
 }
+
+func TestSinkRejectsUnknownProducerAndCaptureValues(t *testing.T) {
+	f := newSinkFixture(t)
+	pid := NewID()
+	seq := newSeq(f.runID, pid)
+
+	badState := seq.rec(Record{Kind: KindProducer, ProducerState: "done"})
+	res, err := f.sink.Append(batchOf(f.runID, pid, badState))
+	require.NoError(t, err)
+	require.Equal(t, MirrorRejected, res.Result)
+
+	badCondition := seq.rec(Record{Kind: KindCapture, Condition: "made-up"})
+	res, err = f.sink.Append(batchOf(f.runID, pid, badCondition))
+	require.NoError(t, err)
+	require.Equal(t, MirrorRejected, res.Result)
+
+	emptyCondition := seq.rec(Record{Kind: KindCapture})
+	res, err = f.sink.Append(batchOf(f.runID, pid, emptyCondition))
+	require.NoError(t, err)
+	require.Equal(t, MirrorRejected, res.Result)
+}
+
+func TestSinkAnswersProducerCapForWholeBatch(t *testing.T) {
+	f := newSinkFixture(t)
+	for range MaxProducers {
+		pid := NewID()
+		inv := NewID()
+		res, err := f.sink.Append(batchOf(f.runID, pid,
+			newSeq(f.runID, pid).invocation(inv, hookCreate, InvocationRunning)))
+		require.NoError(t, err)
+		require.Equal(t, MirrorAccepted, res.Result)
+	}
+
+	pid := NewID()
+	seq := newSeq(f.runID, pid)
+	inv := NewID()
+	req := batchOf(f.runID, pid,
+		seq.invocation(inv, hookCreate, InvocationRunning),
+		seq.output(inv, StreamStdout, "a\n"),
+		seq.output(inv, StreamStdout, "b\n"),
+	)
+	res, err := f.sink.Append(req)
+	require.NoError(t, err)
+	require.Equal(t, MirrorRetentionGap, res.Result)
+	require.Equal(t, req.LastSequence, res.Accepted)
+	require.Equal(t, req.FirstSequence, res.GapFirst)
+	require.Equal(t, req.LastSequence, res.GapLast)
+
+	again, err := f.sink.Append(req)
+	require.NoError(t, err)
+	require.Equal(t, MirrorRetentionGap, again.Result)
+}

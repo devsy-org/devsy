@@ -322,7 +322,8 @@ func newPage(limit, maxBytes int, pos map[string]uint64) *page {
 
 func (p *page) add(rec *Record) bool {
 	data, err := json.Marshal(rec)
-	if err != nil || len(p.records) >= p.limit || p.used+len(data)+1 > p.maxBytes {
+	if err != nil || len(p.records) >= p.limit ||
+		(len(p.records) > 0 && p.used+len(data)+1 > p.maxBytes) {
 		p.full = true
 
 		return false

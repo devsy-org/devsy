@@ -177,7 +177,7 @@ func (s *Sink) Append(req BatchRequest) (BatchResult, error) {
 	if gap, ok := s.excluded(req); ok {
 		return gap, nil
 	}
-	if res, done, err := s.register(req.ProducerID, &records[0]); done {
+	if res, done, err := s.register(req, &records[0]); done {
 		return res, err
 	}
 	res, err := s.opts.Store.Append(records)
@@ -268,7 +268,8 @@ func (s *Sink) excluded(req BatchRequest) (BatchResult, bool) {
 
 // register adds the producer to the run before its first batch. done reports
 // that the batch is answered without appending.
-func (s *Sink) register(producerID string, first *Record) (BatchResult, bool, error) {
+func (s *Sink) register(req BatchRequest, first *Record) (BatchResult, bool, error) {
+	producerID := req.ProducerID
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.known[producerID] {
@@ -285,10 +286,10 @@ func (s *Sink) register(producerID string, first *Record) (BatchResult, bool, er
 
 		return BatchResult{}, false, nil
 	case errors.Is(err, ErrProducerCap):
-		return BatchResult{
-			Result: MirrorRetentionGap, GapFirst: first.Sequence,
-			GapLast: first.Sequence, Detail: "producer limit reached",
-		}, true, nil
+		res := s.gap(req, 0)
+		res.Detail = "producer limit reached"
+
+		return res, true, nil
 	case errors.Is(err, ErrDiscoverySealed), errors.Is(err, ErrInvalidID):
 		return BatchResult{Result: MirrorRejected, Detail: err.Error()}, true, nil
 	default:

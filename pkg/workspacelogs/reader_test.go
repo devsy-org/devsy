@@ -360,3 +360,17 @@ func TestFailedInvocationsReportsLatestState(t *testing.T) {
 	_, err = s.FailedInvocations(NewID())
 	require.ErrorIs(t, err, ErrNotFound)
 }
+
+func TestReadReturnsFirstRecordLargerThanByteCap(t *testing.T) {
+	s, _ := newTestStore(t)
+	runID := newRun(t, s, "uid")
+	pid := newProducer(t, s, runID)
+	seq := newSeq(runID, pid)
+	inv := NewID()
+	mustAppend(t, s, seq.output(inv, StreamStdout, strings.Repeat("<", MaxChunkBytes)))
+
+	resp, err := s.Read(ReadRequest{RunID: runID, MaxBytes: 16 * 1024})
+	require.NoError(t, err)
+	assert.Len(t, resp.Records, 1)
+	assert.False(t, resp.HasMore)
+}
