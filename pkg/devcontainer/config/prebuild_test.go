@@ -10,6 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	prebuildTestAmd64 = "amd64"
+	prebuildTestArm64 = "arm64"
+	prebuildTestName = "test"
+)
+
 func TestNormalizeArchitecture(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -20,32 +26,32 @@ func TestNormalizeArchitecture(t *testing.T) {
 		{
 			name:         "extract from linux platform",
 			platform:     "linux/amd64",
-			architecture: "arm64",
-			want:         "amd64",
+			architecture: prebuildTestArm64,
+			want:         prebuildTestAmd64,
 		},
 		{
 			name:         "extract from linux arm64",
 			platform:     "linux/arm64",
-			architecture: "amd64",
-			want:         "arm64",
+			architecture: prebuildTestAmd64,
+			want:         prebuildTestArm64,
 		},
 		{
 			name:         "empty platform uses architecture",
 			platform:     "",
-			architecture: "amd64",
-			want:         "amd64",
+			architecture: prebuildTestAmd64,
+			want:         prebuildTestAmd64,
 		},
 		{
 			name:         "non-linux platform uses architecture",
 			platform:     "windows/amd64",
-			architecture: "arm64",
-			want:         "arm64",
+			architecture: prebuildTestArm64,
+			want:         prebuildTestArm64,
 		},
 		{
 			name:         "invalid platform format uses architecture",
 			platform:     "linux",
-			architecture: "amd64",
-			want:         "amd64",
+			architecture: prebuildTestAmd64,
+			want:         prebuildTestAmd64,
 		},
 	}
 
@@ -96,7 +102,7 @@ func TestNormalizeConfigForHash(t *testing.T) {
 	t.Run("deterministic output", func(t *testing.T) {
 		config := &DevContainerConfig{
 			DevContainerConfigBase: DevContainerConfigBase{
-				Name: "test",
+				Name: prebuildTestName,
 			},
 		}
 

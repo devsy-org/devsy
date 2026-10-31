@@ -280,6 +280,16 @@ func (r *runner) resolveExistingContainer(
 		return nil, err
 	}
 
+	return r.completeExistingContainer(ctx, containerDetails, mergedConfig, p)
+}
+
+func (r *runner) completeExistingContainer(
+	ctx context.Context,
+	containerDetails *config.ContainerDetails,
+	mergedConfig *config.MergedDevContainerConfig,
+	p *resolveParams,
+) (*resolvedContainer, error) {
+	var err error
 	// For non-managed containers with a workingDir, use it as the workspace folder.
 	if p.parsedConfig.Config.ContainerID != "" && containerDetails.Config.WorkingDir != "" {
 		p.substitutionContext.ContainerWorkspaceFolder = containerDetails.Config.WorkingDir
@@ -423,23 +433,32 @@ func (r *runner) resolveNewContainer(
 		return nil, fmt.Errorf("runner run container: %w", err)
 	}
 
+	result := &resolvedContainer{mergedConfig: mergedConfig, hostWarnings: hostWarnings}
+	if err := r.finishNewContainer(ctx, result, buildInfo, imageEntrypoint); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (r *runner) finishNewContainer(
+	ctx context.Context,
+	result *resolvedContainer,
+	buildInfo *config.BuildInfo,
+	imageEntrypoint bool,
+) error {
 	containerDetails, err := r.findRunningContainerOrFail(ctx, "creation")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	// New run options take precedence over metadata from an existing workspace volume.
 	containerDetails.Dockerless = buildInfo.Dockerless != nil
 	containerDetails.ImageEntrypoint = imageEntrypoint
+	result.details = containerDetails
 
 	if w := r.lingerWarning(ctx); w != "" {
-		hostWarnings = append(hostWarnings, w)
+		result.hostWarnings = append(result.hostWarnings, w)
 	}
-
-	return &resolvedContainer{
-		details:      containerDetails,
-		mergedConfig: mergedConfig,
-		hostWarnings: hostWarnings,
-	}, nil
+	return nil
 }
 
 // attemptPreStartDelivery builds run options and attempts pre-start agent
@@ -685,6 +704,10 @@ func (r *runner) deleteForRecreate(ctx context.Context) error {
 		r.overlayExisting = nil
 		return nil
 	}
+	return r.recreateByMode(ctx)
+}
+
+func (r *runner) recreateByMode(ctx context.Context) error {
 	switch driver.DriverRecreateMode(r.driver) {
 	case driver.RecreateDelete:
 		if err := r.Delete(ctx, DeleteOptions{}); err != nil {
@@ -1054,14 +1077,7 @@ func (r *runner) getDockerlessRunOptions(
 		image = r.workspaceConfig.Agent.Dockerless.Image
 	}
 
-	// we need to add an extra mount here, because otherwise the build config might get lost
-	mounts := mergedConfig.Mounts
-	mounts = append(mounts, &config.Mount{
-		Type:   "volume",
-		Source: "dockerless-" + r.id,
-		Target: "/workspaces/.dockerless",
-	})
-	mounts, err = r.withSecretsMount(mounts, secretsMountRequired)
+	mounts, err := r.dockerlessMounts(mergedConfig, secretsMountRequired)
 	if err != nil {
 		return nil, err
 	}
@@ -1099,6 +1115,31 @@ func (r *runner) getDockerlessRunOptions(
 	}, nil
 }
 
+func (r *runner) runLabels(marshalled []byte, imageUser string) []string {
+	labels := []string{
+		metadata.ImageMetadataLabel + "=" + string(marshalled),
+		config.UserLabel + "=" + imageUser,
+	}
+	if r.recovering {
+		labels = append(labels, pkgconfig.DockerRecoveryLabel+"="+pkgconfig.LabelValueTrue)
+	}
+	return labels
+}
+
+func (r *runner) dockerlessMounts(
+	mergedConfig *config.MergedDevContainerConfig,
+	secretsMountRequired bool,
+) ([]*config.Mount, error) {
+	// we need to add an extra mount here, because otherwise the build config might get lost
+	mounts := mergedConfig.Mounts
+	mounts = append(mounts, &config.Mount{
+		Type:   "volume",
+		Source: "dockerless-" + r.id,
+		Target: "/workspaces/.dockerless",
+	})
+	return r.withSecretsMount(mounts, secretsMountRequired)
+}
+
 func (r *runner) getRunOptions(
 	mergedConfig *config.MergedDevContainerConfig,
 	substitutionContext *config.SubstitutionContext,
@@ -1122,13 +1163,7 @@ func (r *runner) getRunOptions(
 		imageUser = buildInfo.ImageDetails.Config.User
 	}
 
-	labels := []string{
-		metadata.ImageMetadataLabel + "=" + string(marshalled),
-		config.UserLabel + "=" + imageUser,
-	}
-	if r.recovering {
-		labels = append(labels, pkgconfig.DockerRecoveryLabel+"="+pkgconfig.LabelValueTrue)
-	}
+	labels := r.runLabels(marshalled, imageUser)
 
 	user := imageUser
 	if mergedConfig.ContainerUser != "" {
@@ -1355,13 +1390,18 @@ func (r *runner) applyDriverRecreateRequirement(
 		containerUser = details.Config.Labels[config.UserLabel]
 	}
 	remoteUser := effectiveRemoteUser(merged, containerUser)
-	if preflight, ok := r.driver.(driver.ReusePreflightDriver); ok &&
-		preflight.SupportsReusePreflight() {
-		if err := preflight.ReusePreflight(ctx, r.id, remoteUser); err != nil {
-			return err
-		}
+	if err := r.reusePreflight(ctx, remoteUser); err != nil {
+		return err
 	}
 	return r.scheduleDriverRecreation(details, remoteUser, p)
+}
+
+func (r *runner) reusePreflight(ctx context.Context, remoteUser string) error {
+	preflight, ok := r.driver.(driver.ReusePreflightDriver)
+	if !ok || !preflight.SupportsReusePreflight() {
+		return nil
+	}
+	return preflight.ReusePreflight(ctx, r.id, remoteUser)
 }
 
 func (r *runner) scheduleDriverRecreation(

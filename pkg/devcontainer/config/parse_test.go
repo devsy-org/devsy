@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+const (
+	parseTestName = "test"
+)
+
 //nolint:cyclop // test function with multiple assertions
 func TestParseSecrets(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -103,12 +107,12 @@ func TestSaveDevContainerJSON(t *testing.T) {
 			args: args{
 				config: &DevContainerConfig{
 					ImageContainer: ImageContainer{
-						Image: "test",
+						Image: parseTestName,
 					},
 				},
 			},
 			wantErr:  false,
-			wantJSON: `{"image":"test"}`,
+			wantJSON: `{"image":parseTestName}`,
 		},
 	}
 	for _, tt := range tests {
@@ -151,7 +155,7 @@ func TestFindDevContainerConfigs(t *testing.T) {
 			t.Fatal(err)
 		}
 		// #nosec G306 -- TODO Consider using a more secure permission setting and ownership if needed.
-		if err := os.WriteFile(fullPath, []byte(`{"name":"test"}`), 0o644); err != nil {
+		if err := os.WriteFile(fullPath, []byte(`{"name":parseTestName}`), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

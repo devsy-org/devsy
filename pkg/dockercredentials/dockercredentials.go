@@ -236,7 +236,20 @@ func preserveDockerConfig(dockerConfigDir string) error {
 		return err
 	}
 
-	// Copy config.json if it exists
+	if err := preserveConfigFile(srcDir, dockerConfigDir); err != nil {
+		return err
+	}
+	if err := preserveCliPluginsExtraDir(
+		srcDir,
+		filepath.Join(dockerConfigDir, config.ConfigFileName),
+	); err != nil {
+		return err
+	}
+
+	return preserveContexts(srcDir, dockerConfigDir)
+}
+
+func preserveConfigFile(srcDir, dockerConfigDir string) error {
 	srcConfigFile := filepath.Join(srcDir, config.ConfigFileName)
 	if _, err := os.Stat(srcConfigFile); err == nil {
 		destConfigFile := filepath.Join(dockerConfigDir, config.ConfigFileName)
@@ -246,14 +259,10 @@ func preserveDockerConfig(dockerConfigDir string) error {
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect Docker config: %w", err)
 	}
-	if err := preserveCliPluginsExtraDir(
-		srcDir,
-		filepath.Join(dockerConfigDir, config.ConfigFileName),
-	); err != nil {
-		return err
-	}
+	return nil
+}
 
-	// Copy contexts if they exist
+func preserveContexts(srcDir, dockerConfigDir string) error {
 	srcContextsDir := filepath.Join(srcDir, "contexts")
 	if _, err := os.Stat(srcContextsDir); err == nil {
 		destContextsDir := filepath.Join(dockerConfigDir, "contexts")
@@ -263,7 +272,6 @@ func preserveDockerConfig(dockerConfigDir string) error {
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect Docker contexts: %w", err)
 	}
-
 	return nil
 }
 

@@ -86,6 +86,7 @@ func probeUserEnvWithFallback(
 	preferredShell []string,
 	userName string,
 ) map[string]string {
+	target := probeTarget{userEnvProbe, preferredShell, userName}
 	log.Debugf(
 		"running user env probe with shell %q, probe %q, user %q and command %q",
 		strings.Join(preferredShell, " "),
@@ -94,14 +95,7 @@ func probeUserEnvWithFallback(
 		"cat /proc/self/environ",
 	)
 
-	probedEnv, err := doProbe(
-		ctx,
-		userEnvProbe,
-		preferredShell,
-		userName,
-		"cat /proc/self/environ",
-		'\x00',
-	)
+	probedEnv, err := doProbe(ctx, target, "cat /proc/self/environ", '\x00')
 	if err == nil {
 		return probedEnv
 	}
@@ -114,14 +108,7 @@ func probeUserEnvWithFallback(
 		"printenv",
 	)
 
-	newProbedEnv, newErr := doProbe(
-		ctx,
-		userEnvProbe,
-		preferredShell,
-		userName,
-		"printenv",
-		'\n',
-	)
+	newProbedEnv, newErr := doProbe(ctx, target, "printenv", '\n')
 	if newErr != nil {
 		log.Warnf("failed to probe user environment variables: %v, %v", err, newErr)
 		return probedEnv
@@ -153,22 +140,26 @@ func parseProbeOutput(out []byte, sep byte) map[string]string {
 	return retEnv
 }
 
+type probeTarget struct {
+	userEnvProbe   UserEnvProbe
+	preferredShell []string
+	userName       string
+}
+
 func doProbe(
 	ctx context.Context,
-	userEnvProbe UserEnvProbe,
-	preferredShell []string,
-	userName string,
+	target probeTarget,
 	probeCmd string,
 	sep byte,
 ) (map[string]string, error) {
-	args := preferredShell
-	args = append(args, getShellArgs(userEnvProbe, probeCmd)...)
+	args := target.preferredShell
+	args = append(args, getShellArgs(target.userEnvProbe, probeCmd)...)
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(timeoutCtx, args[0], args[1:]...)
 
-	err := PrepareCmdUser(cmd, userName)
+	err := PrepareCmdUser(cmd, target.userName)
 	if err != nil {
 		return nil, fmt.Errorf("prepare probe: %w", err)
 	}
