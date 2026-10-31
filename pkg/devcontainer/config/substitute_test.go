@@ -68,8 +68,8 @@ func TestReplaceWithContextUnknownVarPreservedAsLiteral(t *testing.T) {
 		Env: map[string]string{"HOME": "/root"},
 	}
 	match := "${unknownVar}"
-	result := replaceWithContext(
-		false, ctx, match, "unknownVar", nil,
+	result := replaceWithContext(false, ctx)(
+		match, "unknownVar", nil,
 	)
 	if result != match {
 		t.Errorf(
@@ -82,8 +82,8 @@ func TestReplaceWithContextUnknownVarPreservedAsLiteral(t *testing.T) {
 func TestReplaceWithContextPreservesContainerEnv(t *testing.T) {
 	ctx := &SubstitutionContext{}
 	match := "${containerEnv:PATH}"
-	result := replaceWithContext(
-		false, ctx, match, containerEnvField, []string{testPATHKey},
+	result := replaceWithContext(false, ctx)(
+		match, containerEnvField, []string{testPATHKey},
 	)
 	if result != match {
 		t.Errorf(
@@ -112,8 +112,8 @@ func TestReplaceWithContextLocalEnvResolves(t *testing.T) {
 		Env: map[string]string{"HOME": "/root"},
 	}
 	match := "${localEnv:HOME}"
-	result := replaceWithContext(
-		false, ctx, match, "localEnv", []string{"HOME"},
+	result := replaceWithContext(false, ctx)(
+		match, "localEnv", []string{"HOME"},
 	)
 	if result != "/root" {
 		t.Errorf(
@@ -128,8 +128,8 @@ func TestReplaceWithContextEnvPreservedAsLiteral(t *testing.T) {
 		Env: map[string]string{"HOME": "/root"},
 	}
 	match := "${env:HOME}"
-	result := replaceWithContext(
-		false, ctx, match, "env", []string{"HOME"},
+	result := replaceWithContext(false, ctx)(
+		match, "env", []string{"HOME"},
 	)
 	if result != match {
 		t.Errorf(
@@ -144,8 +144,8 @@ func TestReplaceWithContextEnvDefaultPreservedAsLiteral(t *testing.T) {
 		Env: map[string]string{},
 	}
 	match := "${env:MISSING:default}"
-	result := replaceWithContext(
-		false, ctx, match, "env", []string{"MISSING", "default"},
+	result := replaceWithContext(false, ctx)(
+		match, "env", []string{"MISSING", "default"},
 	)
 	if result != match {
 		t.Errorf(
@@ -405,9 +405,7 @@ func TestRestrictedReplacePreservesContainerVars(t *testing.T) {
 		LocalWorkspaceFolder:     testWorkspaceFolder,
 		Env:                      map[string]string{"HOME": "/root"},
 	}
-	fullReplace := func(match, variable string, args []string) string {
-		return replaceWithContext(false, ctx, match, variable, args)
-	}
+	fullReplace := replaceWithContext(false, ctx)
 	restricted := restrictedReplace(fullReplace)
 
 	tests := []struct {

@@ -83,14 +83,7 @@ func SetupContainerPreAttach(
 		return DeferredHooks{}, err
 	}
 
-	if err := writeSecretFiles(cfg); err != nil {
-		return DeferredHooks{}, err
-	}
-	if err := writeSecretEnvironment(
-		cfg.SecretsEnv,
-		cfg.TerminalSecretEnvNames,
-		config.GetRemoteUser(cfg.SetupInfo),
-	); err != nil {
+	if err := writeSecrets(cfg); err != nil {
 		return DeferredHooks{}, err
 	}
 
@@ -381,10 +374,6 @@ func secretMountPath(target string) (string, error) {
 	return filepath.Join(config.SecretsMountDir, target), nil
 }
 
-func writeResultFile(cfg *ContainerSetupConfig) error {
-	return writeResultFileWithContext(context.Background(), cfg)
-}
-
 func writeResultFileWithContext(ctx context.Context, cfg *ContainerSetupConfig) error {
 	rawBytes, err := json.Marshal(cfg.SetupInfo)
 	if err != nil {
@@ -472,6 +461,17 @@ func setupWorkspaceOwnership(cfg *ContainerSetupConfig) error {
 	return nil
 }
 
+func writeSecrets(cfg *ContainerSetupConfig) error {
+	if err := writeSecretFiles(cfg); err != nil {
+		return err
+	}
+	return writeSecretEnvironment(
+		cfg.SecretsEnv,
+		cfg.TerminalSecretEnvNames,
+		config.GetRemoteUser(cfg.SetupInfo),
+	)
+}
+
 func setupEnvironment(cfg *ContainerSetupConfig) error {
 	log.Debugf("patching etc environment")
 
@@ -541,14 +541,9 @@ func linkRootHome(setupInfo *config.Result) error {
 
 func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	workspaceFolder := setupInfo.SubstitutionContext.ContainerWorkspaceFolder
-	present, err := workspaceFolderPresent(workspaceFolder)
-	if err != nil || !present {
-		return err
-	}
-
 	workspaceID := os.Getenv(pkgconfig.EnvWorkspaceID)
-	latched, err := workspaceChownLatched(workspaceID)
-	if err != nil || latched {
+	skip, err := skipWorkspaceChown(workspaceFolder, workspaceID)
+	if err != nil || skip {
 		return err
 	}
 
@@ -565,6 +560,14 @@ func chownWorkspace(setupInfo *config.Result, recursive bool) error {
 	}
 
 	return recordWorkspaceChown(workspaceID)
+}
+
+func skipWorkspaceChown(workspaceFolder, workspaceID string) (bool, error) {
+	present, err := workspaceFolderPresent(workspaceFolder)
+	if err != nil || !present {
+		return true, err
+	}
+	return workspaceChownLatched(workspaceID)
 }
 
 // Compose services are not guaranteed a workspaceMount.
