@@ -10,6 +10,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -47,11 +48,12 @@ func RunEmulatedShell(
 	}
 
 	r, err := interp.New(buildRunnerOptions(shellRunnerOptions{
-		stdin:  runner.Stdin,
-		stdout: runner.Stdout,
-		stderr: runner.Stderr,
-		env:    runner.Environ,
-		dir:    dir,
+		stdin:       runner.Stdin,
+		stdout:      runner.Stdout,
+		stderr:      runner.Stderr,
+		env:         runner.Environ,
+		dir:         dir,
+		commandVars: commandVariables(parsed),
 	})...)
 	if err != nil {
 		return fmt.Errorf("create shell runner: %w", err)
@@ -70,12 +72,79 @@ func RunEmulatedShell(
 	return nil
 }
 
+// commandVariables maps the position of each command whose name is a lone variable,
+// such as "${PROVIDER_BINARY} init", to that variable's name.
+func commandVariables(file *syntax.File) map[syntax.Pos]string {
+	printer := syntax.NewPrinter()
+	names := map[syntax.Pos]string{}
+	syntax.Walk(file, func(node syntax.Node) bool {
+		call, ok := node.(*syntax.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+
+		word := call.Args[0]
+		if len(word.Parts) != 1 {
+			return true
+		}
+		exp, ok := word.Parts[0].(*syntax.ParamExp)
+		if ok && exp.Param != nil && isPlainExpansion(printer, word, exp.Param.Value) {
+			names[word.Pos()] = exp.Param.Value
+		}
+		return true
+	})
+	return names
+}
+
+func isPlainExpansion(printer *syntax.Printer, word *syntax.Word, name string) bool {
+	var sb strings.Builder
+	if err := printer.Print(&sb, word); err != nil {
+		return false
+	}
+	return sb.String() == "$"+name || sb.String() == "${"+name+"}"
+}
+
+// joinExecutablePath undoes word splitting of a command variable that holds one existing
+// file, e.g. a binary under C:\Users\Jane Doe. The value is read when the command runs, so a
+// variable reassigned to a command with arguments, like DOCKER_PATH="sudo docker", keeps
+// shell word splitting.
+func joinExecutablePath(args []string, env expand.Environ, dir, name string) []string {
+	value := env.Get(name).String()
+	if !isExistingFile(dir, value) {
+		return args
+	}
+
+	fields := strings.FieldsFunc(value, isIFSDelimiter)
+	if len(args) < len(fields) || !slices.Equal(args[:len(fields)], fields) {
+		return args
+	}
+	return append([]string{value}, args[len(fields):]...)
+}
+
+// isIFSDelimiter matches the default IFS, so non-ASCII whitespace stays inside a field
+// exactly as the shell leaves it.
+func isIFSDelimiter(r rune) bool {
+	return r == ' ' || r == '\t' || r == '\n'
+}
+
+func isExistingFile(dir, path string) bool {
+	if !strings.ContainsAny(path, " \t\n") {
+		return false
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
 type shellRunnerOptions struct {
-	stdin  io.Reader
-	stdout io.Writer
-	stderr io.Writer
-	env    []string
-	dir    string
+	stdin       io.Reader
+	stdout      io.Writer
+	stderr      io.Writer
+	env         []string
+	dir         string
+	commandVars map[syntax.Pos]string
 }
 
 func buildRunnerOptions(p shellRunnerOptions) []interp.RunnerOption {
@@ -96,6 +165,10 @@ func buildRunnerOptions(p shellRunnerOptions) []interp.RunnerOption {
 		// command to an absolute path so IsBuiltin returns false and the
 		// real binary is executed via the exec handler.
 		interp.CallHandler(func(ctx context.Context, args []string) ([]string, error) {
+			hc := interp.HandlerCtx(ctx)
+			if name, ok := p.commandVars[hc.Pos]; ok {
+				args = joinExecutablePath(args, hc.Env, hc.Dir, name)
+			}
 			if args[0] == "kill" {
 				args[0] = "/bin/kill"
 			}
