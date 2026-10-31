@@ -74,7 +74,12 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		return err
 	}
 	emitJSON := mode == output.ModeJSON
-	reporter, err := newStatusReporter(cmd.ResultFormat, os.Stdout, cmd.Verbosity > 0 || cmd.Debug)
+	reporter, err := newStatusReporter(
+		cmd.ResultFormat,
+		os.Stdout,
+		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
+	)
 	if err != nil {
 		return err
 	}
@@ -189,12 +194,18 @@ func (cmd *ApplyCmd) prepareContainer(
 	return containerDetails, result, nil
 }
 
-func newStatusReporter(resultFormat string, out io.Writer, verbose bool) (status.Reporter, error) {
+func newStatusReporter(
+	resultFormat string,
+	out io.Writer,
+	verbose bool,
+	noStatus bool,
+) (status.Reporter, error) {
 	return status.NewCLIReporter(status.CLIOptions{
 		Format:   resultFormat,
 		Out:      out,
 		Prefix:   "config",
 		Verbose:  verbose,
+		NoStatus: noStatus,
 		Pipeline: status.PipelineWorkspaceUp,
 		Labels: map[status.Phase]string{
 			status.PhaseResolvingConfig:      "resolving devcontainer config",

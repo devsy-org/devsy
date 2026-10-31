@@ -92,6 +92,7 @@ func (cmd *ImportCmd) execute(ctx context.Context) error {
 		cmd.ResultFormat,
 		os.Stdout,
 		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
 	)
 	if err != nil {
 		return err
