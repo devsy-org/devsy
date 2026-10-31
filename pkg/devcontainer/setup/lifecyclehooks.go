@@ -21,6 +21,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/subprocess"
 	"github.com/devsy-org/devsy/pkg/types"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
 // LifecyclePhase identifies a devcontainer lifecycle command.
@@ -130,6 +131,12 @@ type hookRunParams struct {
 	redactor *secrets.Redactor
 	name     string
 	content  string
+	// hook is the lifecycle property name recorded for retained history.
+	hook string
+	// index is the merged-config position of the command being run.
+	index int
+	// plan shares invocation IDs between planning and execution.
+	plan *hookPlan
 }
 
 // lifecycleEnv holds the resolved environment for running lifecycle hooks.
@@ -235,6 +242,7 @@ func preAttachPhaseParams(
 				commands: mc.OnCreateCommands,
 				env:      env,
 				name:     "onCreateCommands",
+				hook:     string(PhaseOnCreate),
 				content:  cd.Created,
 			},
 		},
@@ -245,6 +253,7 @@ func preAttachPhaseParams(
 				commands: mc.UpdateContentCommands,
 				env:      env,
 				name:     "updateContentCommands",
+				hook:     string(PhaseUpdateContent),
 				content:  updateContentMarker,
 			},
 		},
@@ -255,6 +264,7 @@ func preAttachPhaseParams(
 				commands: mc.PostCreateCommands,
 				env:      env,
 				name:     "postCreateCommands",
+				hook:     string(PhasePostCreate),
 				content:  cd.Created,
 			},
 		},
@@ -265,6 +275,7 @@ func preAttachPhaseParams(
 				commands: mc.PostStartCommands,
 				env:      env,
 				name:     "postStartCommands",
+				hook:     string(PhasePostStart),
 				content:  cd.State.StartedAt,
 			},
 		},
@@ -321,8 +332,11 @@ func RunPreAttachHooks(
 	created := setupInfo.ContainerDetails.Created
 	all = insertDotfilesPhase(ctx, all, opts.Dotfiles, created)
 
+	recordExcludedPhases(ctx, all, opts)
+
 	// Remove skipped phases.
 	all = filterSkippedPhases(all, opts.Skip)
+	planPhases(ctx, all, opts.Prebuild)
 
 	if opts.Prebuild {
 		return DeferredHooks{}, runPrebuildHooks(all)
@@ -425,6 +439,9 @@ func runWithWaitFor(
 	waitFor LifecyclePhase,
 ) ([]phaseHook, error) {
 	if waitFor == PhaseInitializeCommand {
+		for _, ph := range all {
+			ph.params.recordAll(workspacelogs.InvocationDeferred, "")
+		}
 		return append([]phaseHook(nil), all...), nil
 	}
 
@@ -433,6 +450,7 @@ func runWithWaitFor(
 
 	for _, ph := range all {
 		if pastWaitFor {
+			ph.params.recordAll(workspacelogs.InvocationDeferred, "")
 			deferred = append(deferred, ph)
 			continue
 		}
@@ -491,21 +509,28 @@ func RunPostAttachHooks(
 	secretsMount []string,
 	skipPostAttach ...bool,
 ) error {
-	if len(skipPostAttach) > 0 && skipPostAttach[0] {
-		log.Debugf("skipping postAttachCommand (--skip-post-attach set)")
-		return nil
-	}
-	env := resolveLifecycleEnv(ctx, setupInfo)
-	redactor := mergeSecretsEnv(env.remoteEnv, secretsEnv, secretsMount)
-
-	return runHook(hookRunParams{
+	params := hookRunParams{
 		ctx:      ctx,
 		commands: setupInfo.MergedConfig.PostAttachCommands,
-		env:      env,
-		redactor: redactor,
 		name:     "postAttachCommands",
 		content:  "",
-	})
+		hook:     string(PhasePostAttach),
+		plan:     &hookPlan{},
+	}
+	if len(skipPostAttach) > 0 && skipPostAttach[0] {
+		log.Debugf("skipping postAttachCommand (--skip-post-attach set)")
+		params.recordSkipped(reasonExplicitSkip)
+		return nil
+	}
+	params.env = resolveLifecycleEnv(ctx, setupInfo)
+	params.redactor = mergeSecretsEnv(params.env.remoteEnv, secretsEnv, secretsMount)
+	if len(params.commands) == 0 {
+		params.recordSkipped(reasonNoCommand)
+		return nil
+	}
+	params.recordAll(workspacelogs.InvocationPending, "")
+
+	return runHook(params)
 }
 
 func runHook(p hookRunParams) error {
@@ -513,8 +538,14 @@ func runHook(p hookRunParams) error {
 		return nil
 	}
 
-	if skip, err := shouldSkipHook(p.name, p.content); err != nil || skip {
+	skip, err := shouldSkipHook(p.name, p.content)
+	if err != nil {
+		p.recordAll(workspacelogs.InvocationFailed, reasonMarkerCheckFailed)
 		return err
+	}
+	if skip {
+		p.recordSkipped(reasonAlreadyAttempted)
+		return nil
 	}
 
 	envArr := buildEnvArr(p.env.remoteEnv)
@@ -537,10 +568,11 @@ func buildEnvArr(remoteEnv map[string]string) []string {
 }
 
 func executeHookCommands(ctx context.Context, p hookRunParams, envArr []string) error {
-	for _, cmd := range p.commands {
+	for i, cmd := range p.commands {
 		if len(cmd) == 0 {
 			continue
 		}
+		p.index = i
 		if err := executeLifecycleHook(ctx, p, envArr, cmd); err != nil {
 			return err
 		}
@@ -595,25 +627,30 @@ func runSingleHookCommand(
 		"running %s lifecycle hook: %s %s",
 		p.name, key, p.redactor.Redact(strings.Join(c, " ")),
 	)
+	inv := p.invocation(ctx, key)
 	currentUser, err := user.Current()
 	if err != nil {
+		inv.record(workspacelogs.InvocationFailed, reasonUserLookupFailed)
 		return err
 	}
 
 	if len(c) == 0 {
 		log.Debugf("skipping empty command for lifecycle hook %s", p.name)
+		inv.record(workspacelogs.InvocationSkipped, reasonNoCommand)
 		return nil
 	}
 	args := buildCommandArgs(c, p.env.remoteUser, currentUser.Username)
 
 	resolvedPath, err := exec.LookPath(args[0])
 	if err != nil {
+		inv.record(workspacelogs.InvocationFailed, reasonCommandNotFound)
 		return fmt.Errorf("command not found: %s: %w", args[0], err)
 	}
 
 	return executeAndCapture(ctx, executeCaptureOptions{
 		binary: resolvedPath, args: args, phaseName: p.name, key: key,
 		command: c, dir: p.env.workspaceFolder, env: remoteEnvArr, redactor: p.redactor,
+		inv: inv,
 	})
 }
 
@@ -621,22 +658,30 @@ type executeCaptureOptions struct {
 	binary, phaseName, key, dir string
 	args, command, env          []string
 	redactor                    *secrets.Redactor
+	inv                         invocationRef
 }
 
 func executeAndCapture(ctx context.Context, options executeCaptureOptions) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	sink, closeSink := options.inv.sink()
+	options.inv.record(workspacelogs.InvocationRunning, "")
 	result, err := subprocess.Run(ctx, options.binary, options.args[1:], subprocess.Options{
-		Dir:      options.dir,
-		Env:      options.env,
-		Redactor: options.redactor,
+		Dir:        options.dir,
+		Env:        options.env,
+		Redactor:   options.redactor,
+		Diagnostic: sink,
 	})
+	// Flush retained output before the terminal record so readers never see
+	// a finished invocation with output still pending.
+	closeSink()
+	options.inv.finish(ctx, result, err)
 	if err != nil {
 		// Include only the bounded, redacted tail in the returned error. This
 		// gives normal users actionable diagnostics without replaying an
 		// unbounded subprocess stream or requiring debug mode.
-		details := result.DiagnosticOutput()
+		details := joinDetails(result.DiagnosticOutput(), options.inv.hint())
 		if details != "" {
 			return fmt.Errorf(
 				"%s: command %q failed: %s: %w",
@@ -726,4 +771,232 @@ func buildCommandArgs(c []string, remoteUser, currentUsername string) []string {
 		return []string{"su", remoteUser, "-c", shellescape.QuoteCommand(c)}
 	}
 	return c
+}
+
+// Skip and failure reasons recorded without command text or environment.
+const (
+	reasonNoCommand         = "no_command_configured"
+	reasonExplicitSkip      = "explicit_skip"
+	reasonAlreadyAttempted  = "already_attempted"
+	reasonPrebuildExcluded  = "prebuild_excluded"
+	reasonMarkerCheckFailed = "marker_check_failed"
+	reasonUserLookupFailed  = "user_lookup_failed"
+	reasonCommandNotFound   = "command_not_found"
+	reasonStartFailed       = "start_failed"
+	reasonSignaled          = "signaled"
+	hookPhase               = "lifecycle"
+)
+
+type hookCmdKey struct {
+	index int
+	key   string
+}
+
+// hookPlan hands out one invocation ID per command so the planned, deferred
+// and executed records of a command share an identity.
+type hookPlan struct {
+	mu  sync.Mutex
+	ids map[hookCmdKey]string
+}
+
+func (pl *hookPlan) id(index int, key string) string {
+	if pl == nil {
+		return workspacelogs.NewID()
+	}
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+	k := hookCmdKey{index: index, key: key}
+	if id, ok := pl.ids[k]; ok {
+		return id
+	}
+	if pl.ids == nil {
+		pl.ids = map[hookCmdKey]string{}
+	}
+	id := workspacelogs.NewID()
+	pl.ids[k] = id
+
+	return id
+}
+
+// invocationRef records transitions of one hook command. The zero value
+// records nothing.
+type invocationRef struct {
+	rec *workspacelogs.Recorder
+	inv workspacelogs.Invocation
+}
+
+func recorderFrom(ctx context.Context) *workspacelogs.Recorder {
+	if ctx == nil {
+		return nil
+	}
+
+	return workspacelogs.RecorderFrom(ctx)
+}
+
+func (p hookRunParams) invocation(ctx context.Context, key string) invocationRef {
+	rec := recorderFrom(ctx)
+	if rec == nil {
+		return invocationRef{}
+	}
+	index := p.index
+
+	return invocationRef{rec: rec, inv: workspacelogs.Invocation{
+		ID: p.plan.id(index, key), Phase: hookPhase, Hook: p.hook, Index: &index, Key: key,
+	}}
+}
+
+// recordAll records state for every command of the phase. A phase with no
+// commands has nothing to record.
+func (p hookRunParams) recordAll(state workspacelogs.InvocationState, reason string) {
+	if recorderFrom(p.ctx) == nil || p.hook == "" {
+		return
+	}
+	for i, cmd := range p.commands {
+		for _, key := range slices.Sorted(maps.Keys(cmd)) {
+			q := p
+			q.index = i
+			q.invocation(p.ctx, key).record(state, reason)
+		}
+	}
+}
+
+// recordSkipped records every command of the phase as skipped. A phase with
+// no commands records one skipped invocation with no index.
+func (p hookRunParams) recordSkipped(reason string) {
+	rec := recorderFrom(p.ctx)
+	if rec == nil || p.hook == "" {
+		return
+	}
+	if len(p.commands) == 0 {
+		rec.Invocation(workspacelogs.Invocation{
+			ID: workspacelogs.NewID(), Phase: hookPhase, Hook: p.hook,
+			State: workspacelogs.InvocationSkipped, Reason: reasonNoCommand,
+		})
+		return
+	}
+	p.recordAll(workspacelogs.InvocationSkipped, reason)
+}
+
+func (r invocationRef) record(state workspacelogs.InvocationState, reason string) {
+	if r.rec == nil {
+		return
+	}
+	inv := r.inv
+	inv.State = state
+	inv.Reason = reason
+	r.rec.Invocation(inv)
+}
+
+// finish records the terminal state from the command result.
+func (r invocationRef) finish(ctx context.Context, res subprocess.Result, err error) {
+	if r.rec == nil {
+		return
+	}
+	inv := r.inv
+	inv.Duration = res.Duration
+	inv.Signal = res.Signal
+	inv.State, inv.Reason = outcomeState(ctx, res, err)
+	if err == nil || res.ExitCode >= 0 {
+		code := res.ExitCode
+		inv.ExitCode = &code
+	}
+	r.rec.Invocation(inv)
+}
+
+func outcomeState(
+	ctx context.Context,
+	res subprocess.Result,
+	err error,
+) (workspacelogs.InvocationState, string) {
+	switch {
+	case err == nil:
+		return workspacelogs.InvocationSucceeded, ""
+	case ctx.Err() != nil:
+		return workspacelogs.InvocationCanceled, ""
+	case res.Signal != "":
+		return workspacelogs.InvocationFailed, reasonSignaled
+	case res.ExitCode < 0:
+		return workspacelogs.InvocationFailed, reasonStartFailed
+	default:
+		return workspacelogs.InvocationFailed, ""
+	}
+}
+
+// sink returns the diagnostic destinations and a function that flushes them.
+func (r invocationRef) sink() (subprocess.DiagnosticSink, func()) {
+	if r.rec == nil {
+		return subprocess.DiagnosticSink{}, func() {}
+	}
+	stdout := r.rec.Writer(r.inv.ID, workspacelogs.StreamStdout)
+	stderr := r.rec.Writer(r.inv.ID, workspacelogs.StreamStderr)
+
+	return subprocess.DiagnosticSink{Stdout: stdout, Stderr: stderr}, func() {
+		_ = stdout.Close()
+		_ = stderr.Close()
+	}
+}
+
+// hint tells the reader where retained output lives. It is empty when no run
+// is being recorded.
+func (r invocationRef) hint() string {
+	if r.rec == nil || r.rec.RunID() == "" {
+		return ""
+	}
+	hint := "full output: devsy workspace logs <workspace> --source setup --run " + r.rec.RunID()
+	if r.inv.Hook != "" {
+		hint += " --hook " + r.inv.Hook
+	}
+
+	return hint
+}
+
+func joinDetails(output, hint string) string {
+	if hint == "" {
+		return output
+	}
+	if output == "" {
+		return hint
+	}
+
+	return output + "\n" + hint
+}
+
+// recordExcludedPhases records phases that will not run because of a skip flag
+// or prebuild mode, or because they have no command.
+func recordExcludedPhases(ctx context.Context, all []phaseHook, opts PreAttachOptions) {
+	skipped := map[LifecyclePhase]bool{
+		PhasePostCreate: opts.Skip.PostCreate,
+		PhasePostStart:  opts.Skip.PostStart,
+		PhasePostAttach: opts.Skip.PostAttach,
+	}
+	for _, ph := range all {
+		p := ph.params
+		p.ctx = ctx
+		switch {
+		case len(p.commands) == 0:
+			p.recordSkipped(reasonNoCommand)
+		case skipped[ph.phase]:
+			p.recordSkipped(reasonExplicitSkip)
+		case opts.Prebuild && prebuildExcluded(ph.phase):
+			p.recordSkipped(reasonPrebuildExcluded)
+		}
+	}
+}
+
+func prebuildExcluded(phase LifecyclePhase) bool {
+	return phase != PhaseOnCreate && phase != PhaseUpdateContent
+}
+
+// planPhases assigns the pending state to every command that may still run.
+func planPhases(ctx context.Context, all []phaseHook, prebuild bool) {
+	for i := range all {
+		p := &all[i].params
+		p.plan = &hookPlan{}
+		if prebuild && prebuildExcluded(all[i].phase) {
+			continue
+		}
+		pc := *p
+		pc.ctx = ctx
+		pc.recordAll(workspacelogs.InvocationPending, "")
+	}
 }
