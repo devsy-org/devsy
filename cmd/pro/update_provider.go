@@ -9,6 +9,7 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/provider"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -64,16 +65,9 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 	defer unlock()
-	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
-	if err != nil {
+	devsyConfig, provider, err = cmd.reloadProvider(ctx, devsyConfig.DefaultContext)
+	if err != nil || provider == nil {
 		return err
-	}
-	provider, err = workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host)
-	if err != nil {
-		return fmt.Errorf("reload provider: %w", err)
-	}
-	if provider.Source.Internal {
-		return nil
 	}
 
 	providerSource, err := resolveNewProviderSource(devsyConfig, provider.Name, newVersion)
@@ -104,6 +98,27 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 	}
 
 	return nil
+}
+
+// reloadProvider reads the config and provider again under the provider lock.
+// A nil provider with a nil error means the provider is internal and needs no
+// update.
+func (cmd *UpdateProviderCmd) reloadProvider(
+	ctx context.Context,
+	contextName string,
+) (*config.Config, *provider.ProviderConfig, error) {
+	devsyConfig, err := config.LoadConfig(contextName, cmd.Provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	provider, err := workspace.ProviderFromHost(ctx, devsyConfig, cmd.Host)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reload provider: %w", err)
+	}
+	if provider.Source.Internal {
+		return nil, nil, nil
+	}
+	return devsyConfig, provider, nil
 }
 
 func resolveNewProviderSource(

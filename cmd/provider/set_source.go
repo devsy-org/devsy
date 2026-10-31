@@ -77,6 +77,17 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		return cmd.runPinVersion(ctx, devsyConfig, args)
 	}
 
+	return cmd.setSource(ctx, devsyConfig, providerName, args)
+}
+
+// setSource points the provider at the source in args and optionally activates it.
+// The caller holds the provider lock.
+func (cmd *SetSourceCmd) setSource(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	providerName string,
+	args []string,
+) error {
 	providerSource, err := sourceArg(args)
 	if err != nil {
 		return err

@@ -83,12 +83,8 @@ func (cmd *SetCmd) Run(_ context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if current := devsyConfig.Contexts[contextName]; current != nil &&
-		slices.Contains(current.EnvVars, name) {
-		return fmt.Errorf(
-			"%q is attached as an environment variable; detach it before converting it to a secret",
-			name,
-		)
+	if err := rejectEnvVarSecret(devsyConfig, contextName, name); err != nil {
+		return err
 	}
 
 	envs, err := envstore.NewStoreForConfig(devsyConfig)
@@ -107,6 +103,19 @@ func (cmd *SetCmd) Run(_ context.Context, name string) error {
 
 	log.Infof("secret %q set in context %q", name, contextName)
 	return nil
+}
+
+// rejectEnvVarSecret refuses to convert a name that is attached as an
+// environment variable into a secret.
+func rejectEnvVarSecret(devsyConfig *config.Config, contextName, name string) error {
+	current := devsyConfig.Contexts[contextName]
+	if current == nil || !slices.Contains(current.EnvVars, name) {
+		return nil
+	}
+	return fmt.Errorf(
+		"%q is attached as an environment variable; detach it before converting it to a secret",
+		name,
+	)
 }
 
 func (cmd *SetCmd) resolveValue(name string) (string, error) {

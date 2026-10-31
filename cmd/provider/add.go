@@ -107,18 +107,11 @@ func (cmd *AddCmd) Run(ctx context.Context, devsyConfig *config.Config, args []s
 	}
 	providerName = resolved.name
 
-	names := []string{providerName}
-	if cmd.FromExisting != "" && cmd.FromExisting != providerName {
-		names = append(names, cmd.FromExisting)
-		sort.Strings(names)
+	unlockProviders, err := cmd.lockProviders(devsyConfig, providerName)
+	if err != nil {
+		return err
 	}
-	for _, name := range names {
-		unlock, lockErr := provider.LockProviderNamed(devsyConfig.DefaultContext, name)
-		if lockErr != nil {
-			return lockErr
-		}
-		defer unlock()
-	}
+	defer unlockProviders()
 	devsyConfig, err = config.LoadConfig(devsyConfig.DefaultContext, cmd.Provider)
 	if err != nil {
 		return err
@@ -327,4 +320,29 @@ func getUserOption(allOptions []string, optionKey string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// lockProviders locks the new provider and the one it copies from, in name
+// order. The returned function releases every lock acquired so far.
+func (cmd *AddCmd) lockProviders(devsyConfig *config.Config, providerName string) (func(), error) {
+	names := []string{providerName}
+	if cmd.FromExisting != "" && cmd.FromExisting != providerName {
+		names = append(names, cmd.FromExisting)
+		sort.Strings(names)
+	}
+	var unlocks []func()
+	release := func() {
+		for _, unlock := range unlocks {
+			unlock()
+		}
+	}
+	for _, name := range names {
+		unlock, err := provider.LockProviderNamed(devsyConfig.DefaultContext, name)
+		if err != nil {
+			release()
+			return nil, err
+		}
+		unlocks = append(unlocks, unlock)
+	}
+	return release, nil
 }

@@ -388,10 +388,22 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 		!deferred.Empty(),
 		len(state.setupInfo.MergedConfig.PostAttachCommands) > 0,
 	)
+	cmd.launchWorkers(state, deferred, resolvedSetupInfo, workers)
+	state.run.sealDiscovery()
 
+	return armLifecycle(state, workers)
+}
+
+// launchWorkers starts the deferred and post-attach hook workers. A launch
+// failure is logged; the workers are optional and the workspace stays usable.
+func (cmd *SetupContainerCmd) launchWorkers(
+	state *containerState,
+	deferred setup.DeferredHooks,
+	resolvedSetupInfo string,
+	workers *workerReadiness,
+) {
 	if !deferred.Empty() {
-		err = cmd.startDeferredHooks(state, resolvedSetupInfo, workers)
-		if err != nil {
+		if err := cmd.startDeferredHooks(state, resolvedSetupInfo, workers); err != nil {
 			log.Errorf("failed to start deferred lifecycle hooks: %v", err)
 		}
 	}
@@ -399,9 +411,6 @@ func (cmd *SetupContainerCmd) setupPostAttach(
 	if err := cmd.startPostAttachHooks(state, workers); err != nil {
 		log.Errorf("failed to start postAttachCommand: %v", err)
 	}
-	state.run.sealDiscovery()
-
-	return armLifecycle(state, workers)
 }
 
 func (cmd *SetupContainerCmd) startDaemonUnlessLeased(state *containerState) error {

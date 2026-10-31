@@ -110,7 +110,12 @@ func (cmd *AttachCmd) Run(ctx context.Context, name string) error {
 	if err := verifySecretReference(ctx, devsyConfig, ref); err != nil {
 		return err
 	}
+	return attachToContext(devsyConfig, contextName, canonical)
+}
 
+// attachToContext adds the canonical secret reference to the context and saves
+// the config. Attaching a secret that is already attached is a no-op.
+func attachToContext(devsyConfig *config.Config, contextName, canonical string) error {
 	ctxConfig := devsyConfig.Contexts[contextName]
 	if ctxConfig == nil {
 		return fmt.Errorf("context %q doesn't exist", contextName)

@@ -229,22 +229,8 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	}()
 	workspaceClient := resolved.client
 
-	if _, ok := workspaceClient.(client.WorkspaceClient); !ok {
-		return fmt.Errorf("ci is currently not supported for proxy providers")
-	}
-
-	cmd.WaitFor = string(setup.PhasePostCreate)
-
-	if _, err := up.RunHeadless(ctx, workspaceClient, up.HeadlessOptions{
-		GlobalFlags:        cmd.GlobalFlags,
-		DevsyConfig:        devsyConfig,
-		CLIOptions:         cmd.CLIOptions,
-		Reporter:           reporter,
-		ProviderOptions:    cmd.ProviderOptions,
-		SecretsFile:        cmd.SecretsFile,
-		FeatureSecretsFile: cmd.FeatureSecretsFile,
-	}); err != nil {
-		return fmt.Errorf("start devcontainer: %w", err)
+	if err := cmd.startWorkspace(ctx, devsyConfig, workspaceClient, reporter); err != nil {
+		return err
 	}
 
 	log.Debugf("running command in devcontainer: %s", strings.Join(cmd.RunCmd, " "))
@@ -360,6 +346,34 @@ func (cmd *CICmd) validateEnv() error {
 			return fmt.Errorf("invalid %s value %q: must be KEY=VALUE format",
 				names.Flag(names.RemoteEnv), env)
 		}
+	}
+	return nil
+}
+
+// startWorkspace brings up the workspace for the CI command and waits for the
+// post-create phase.
+func (cmd *CICmd) startWorkspace(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	workspaceClient client.BaseWorkspaceClient,
+	reporter status.Reporter,
+) error {
+	if _, ok := workspaceClient.(client.WorkspaceClient); !ok {
+		return fmt.Errorf("ci is currently not supported for proxy providers")
+	}
+
+	cmd.WaitFor = string(setup.PhasePostCreate)
+
+	if _, err := up.RunHeadless(ctx, workspaceClient, up.HeadlessOptions{
+		GlobalFlags:        cmd.GlobalFlags,
+		DevsyConfig:        devsyConfig,
+		CLIOptions:         cmd.CLIOptions,
+		Reporter:           reporter,
+		ProviderOptions:    cmd.ProviderOptions,
+		SecretsFile:        cmd.SecretsFile,
+		FeatureSecretsFile: cmd.FeatureSecretsFile,
+	}); err != nil {
+		return fmt.Errorf("start devcontainer: %w", err)
 	}
 	return nil
 }
