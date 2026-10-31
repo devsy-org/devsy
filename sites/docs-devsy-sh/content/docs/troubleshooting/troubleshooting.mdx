@@ -45,6 +45,68 @@ Pass `--log-output json` to get errors as JSON with a stable `code` and a `messa
 
 Run with `--debug` to see the full error chain.
 
+### Find the right log
+
+Devsy keeps four kinds of logs. Pick by the question you have.
+
+| Question | Source | Command |
+| --- | --- | --- |
+| What is the container or runtime printing now? | Container and runtime logs | `devsy workspace logs WORKSPACE_NAME` |
+| What did the build and each lifecycle hook print, and how did each end? | Retained setup history | `devsy workspace logs WORKSPACE_NAME --source setup` |
+| What state changes did the workspace go through? | Status events | `devsy workspace events` |
+| What did a background task print? | Task logs | `devsy workspace task logs` |
+
+Reading logs never reruns lifecycle commands. It never starts, unpauses, rebuilds or installs anything, and it does not need a running workspace to show history that is already stored locally.
+
+### Read setup history
+
+List retained runs in the selected context, newest first. This works for removed workspaces too:
+
+```sh
+devsy workspace logs my-workspace --source setup --list
+```
+
+Read the latest run, including output of hooks that succeeded:
+
+```sh
+devsy workspace logs my-workspace --source setup --result-format=plain
+```
+
+Read one hook in one run. `RUN_ID` is the run UUID from `--list` or from the result of the command that created the run. It is not the workspace name or an `op-N` ID:
+
+```sh
+devsy workspace logs my-workspace --source setup --run RUN_ID \
+  --hook postCreateCommand --result-format=plain
+```
+
+Read one command from a hook that runs several named or parallel commands, using its invocation ID:
+
+```sh
+devsy workspace logs my-workspace --source setup --run RUN_ID --invocation INVOCATION_ID
+```
+
+Follow a run, including hooks that keep running after `devsy workspace up` returns. Ctrl-C stops only the reader:
+
+```sh
+devsy workspace logs my-workspace --source setup --run RUN_ID --follow
+```
+
+Read a run after a failed creation or CI cleanup removed the workspace. Without a workspace name you must give a run UUID:
+
+```sh
+devsy workspace logs --source setup --run RUN_ID --context CONTEXT
+```
+
+Page through long output with `--limit` and `--after`. The default is 500 output records per page and the maximum is 2000. For `--list` the default is 20 runs and the maximum is 100. `--after` takes the opaque cursor from the previous page and must be used with the same selectors:
+
+```sh
+devsy workspace logs my-workspace --source setup --run RUN_ID --limit 200 --after CURSOR
+```
+
+Use `--result-format=json` for a machine-readable response. Each invocation prints one bounded JSON response. With `--follow` it prints one JSON response per line.
+
+A hook that failed in the past is still a successful read, so the command exits zero and returns the hook's exit status as data. Invalid selectors and cursors, and unreadable local storage, are command errors. See [Setup history](./setup-history.mdx) for limits, redaction and when history is unavailable.
+
 ### Hide live progress while keeping diagnostics
 
 Pass `--no-status` to hide Devsy's live progress messages. Diagnostics still
@@ -52,8 +114,8 @@ follow `--quiet`, `--log-level`, and diagnostic format settings, and a command's
 stdout and stderr remain on their original streams. Existing event and task
 recording also continues when available. Hiding progress does not disable
 capture or history. The flag cannot recover lifecycle output that was not
-retained when the command ran. See the [lifecycle transcript discussion](https://github.com/devsy-org/devsy/discussions/1724)
-for related work on retaining lifecycle output.
+retained when the command ran. `--quiet` also leaves capture on, and setup
+history stays readable with both flags.
 
 ### VS Code-family editor launch diagnostics
 
