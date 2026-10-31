@@ -93,98 +93,100 @@ func isRetryableDockerError(stderr string) bool {
 	return false
 }
 
+type execFunc func(ctx context.Context) (stdout, stderr string, err error)
+
+// retryPolicy describes one retry loop. label prefixes the retry log line and
+// kind names the error class in the budget-exhausted message.
+type retryPolicy struct {
+	backoff   wait.Backoff
+	retryable func(err error, stderr string) bool
+	label     string
+	kind      string
+}
+
+// retryResult is the outcome of runWithRetry. gaveUp is set when the loop
+// stopped on a failed attempt, so callers add the attempt count to err.
+type retryResult struct {
+	stdout, stderr string
+	attempts       int
+	err            error
+	gaveUp         bool
+}
+
+func runWithRetry(ctx context.Context, policy retryPolicy, fn execFunc) retryResult {
+	var res retryResult
+	for res.attempts = 1; res.attempts <= policy.backoff.Steps; res.attempts++ {
+		if err := ctx.Err(); err != nil {
+			res.err = err
+			return res
+		}
+		res.stdout, res.stderr, res.err = fn(ctx)
+		if res.err == nil {
+			return res
+		}
+		if !policy.retryable(res.err, res.stderr) || res.attempts == policy.backoff.Steps {
+			break
+		}
+		delay := nextBackoffDelay(policy.backoff, res.attempts)
+		if !retryFitsBudget(ctx, delay) {
+			res.err = fmt.Errorf(
+				"after %d attempts: %s; retry not attempted because "+
+					"remaining deadline budget was insufficient (next retry delay: %s): %w",
+				res.attempts, policy.kind, delay, res.err,
+			)
+			return res
+		}
+		ginkgo.GinkgoWriter.Printf(
+			"%s attempt %d failed with transient error, retrying after %s: %s\n",
+			policy.label, res.attempts, delay, res.err,
+		)
+		if err := waitForRetry(ctx, delay); err != nil {
+			res.err = err
+			return res
+		}
+	}
+	res.gaveUp = true
+	return res
+}
+
 // execWithDockerRetry runs fn and retries if the failure looks transient:
 // either a Docker registry error or a retryable SSH setup error in stderr
 // (up commands build the tunnel before the workspace starts). Returns the
 // last stdout, stderr, and error.
-func execWithDockerRetry(
-	ctx context.Context,
-	fn func(ctx context.Context) (stdout, stderr string, err error),
-) (string, string, error) {
-	var lastStdout, lastStderr string
-	var lastErr error
-	attempt := 0
-
-	for attempt = 1; attempt <= dockerPullBackoff.Steps; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return lastStdout, lastStderr, err
-		}
-		lastStdout, lastStderr, lastErr = fn(ctx)
-		if lastErr == nil {
-			return lastStdout, lastStderr, nil
-		}
-		retryable := isRetryableDockerError(lastStderr) || isRetryableSSHError(lastErr, lastStderr)
-		if !retryable || attempt == dockerPullBackoff.Steps {
-			break
-		}
-		delay := nextBackoffDelay(dockerPullBackoff, attempt)
-		if !retryFitsBudget(ctx, delay) {
-			return lastStdout, lastStderr, fmt.Errorf(
-				"after %d attempts: retryable transient error; retry not attempted because "+
-					"remaining deadline budget was insufficient (next retry delay: %s): %w",
-				attempt, delay, lastErr,
-			)
-		}
-		ginkgo.GinkgoWriter.Printf(
-			"[retry] attempt %d failed with transient error, retrying after %s: %s\n",
-			attempt, delay, lastErr,
-		)
-		if err := waitForRetry(ctx, delay); err != nil {
-			return lastStdout, lastStderr, err
-		}
+func execWithDockerRetry(ctx context.Context, fn execFunc) (string, string, error) {
+	res := runWithRetry(ctx, retryPolicy{
+		backoff: dockerPullBackoff,
+		retryable: func(err error, stderr string) bool {
+			return isRetryableDockerError(stderr) || isRetryableSSHError(err, stderr)
+		},
+		label: "[retry]",
+		kind:  "retryable transient error",
+	}, fn)
+	if res.gaveUp {
+		return res.stdout, res.stderr, fmt.Errorf("after %d attempts: %w", res.attempts, res.err)
 	}
-	return lastStdout, lastStderr, fmt.Errorf("after %d attempts: %w", attempt, lastErr)
+	return res.stdout, res.stderr, res.err
 }
 
 // execWithSSHRetry runs fn and retries if the error indicates a transient SSH
 // connection failure. The fn callback must return stdout, stderr, and error so
 // that stderr can be inspected for SSH-specific patterns.
-func execWithSSHRetry(
-	ctx context.Context,
-	workspace string,
-	fn func(ctx context.Context) (stdout, stderr string, err error),
-) (string, error) {
-	var lastOut string
-	var lastStderr string
-	var lastErr error
-	attempt := 0
-
-	for attempt = 1; attempt <= sshBackoff.Steps; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return lastOut, err
-		}
-		lastOut, lastStderr, lastErr = fn(ctx)
-		if lastErr == nil {
-			return lastOut, nil
-		}
-		if !isRetryableSSHError(lastErr, lastStderr) || attempt == sshBackoff.Steps {
-			break
-		}
-		delay := nextBackoffDelay(sshBackoff, attempt)
-		if !retryFitsBudget(ctx, delay) {
-			return lastOut, fmt.Errorf(
-				"after %d attempts: retryable SSH error; retry not attempted because "+
-					"remaining deadline budget was insufficient (next retry delay: %s): %w",
-				attempt, delay, lastErr,
-			)
-		}
-		ginkgo.GinkgoWriter.Printf(
-			"[retry] ssh %s: attempt %d failed with transient error, retrying after %s: %s\n",
-			workspace, attempt, delay, lastErr,
+func execWithSSHRetry(ctx context.Context, workspace string, fn execFunc) (string, error) {
+	res := runWithRetry(ctx, retryPolicy{
+		backoff:   sshBackoff,
+		retryable: isRetryableSSHError,
+		label:     "[retry] ssh " + workspace + ":",
+		kind:      "retryable SSH error",
+	}, fn)
+	if !res.gaveUp || res.err == nil {
+		return res.stdout, res.err
+	}
+	if res.stderr != "" {
+		return res.stdout, fmt.Errorf(
+			"after %d attempts: %w (stderr: %s)", res.attempts, res.err, res.stderr,
 		)
-		if err := waitForRetry(ctx, delay); err != nil {
-			return lastOut, err
-		}
 	}
-	if lastErr != nil {
-		if lastStderr != "" {
-			return lastOut, fmt.Errorf(
-				"after %d attempts: %w (stderr: %s)", attempt, lastErr, lastStderr,
-			)
-		}
-		return lastOut, fmt.Errorf("after %d attempts: %w", attempt, lastErr)
-	}
-	return lastOut, lastErr
+	return res.stdout, fmt.Errorf("after %d attempts: %w", res.attempts, res.err)
 }
 
 func retryFitsBudget(ctx context.Context, delay time.Duration) bool {

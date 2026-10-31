@@ -146,6 +146,19 @@ func (cmd *StopCmd) run(
 		return err
 	}
 
+	if err := cmd.stopRunning(ctx, devsyConfig, client); err != nil {
+		return err
+	}
+
+	opener.KillBrowserTunnel(client.Context(), client.Workspace())
+	return nil
+}
+
+func (cmd *StopCmd) stopRunning(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
 	if err := checkRunning(ctx, client); err != nil {
 		return err
 	}
@@ -155,14 +168,10 @@ func (cmd *StopCmd) run(
 	if err != nil {
 		return err
 	}
-	if !wasStopped {
-		if err := stopResources(ctx, client); err != nil {
-			return err
-		}
+	if wasStopped {
+		return nil
 	}
-
-	opener.KillBrowserTunnel(client.Context(), client.Workspace())
-	return nil
+	return stopResources(ctx, client)
 }
 
 func waitForLock(ctx context.Context, client client2.BaseWorkspaceClient) error {

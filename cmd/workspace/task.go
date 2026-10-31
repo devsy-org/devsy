@@ -247,12 +247,7 @@ func readTaskForFollower(
 }
 
 func emitTaskTransition(last, current *task.State, emitJSON bool) {
-	if last != nil && last.Phase == current.Phase && last.Step == current.Step &&
-		last.Status == current.Status && last.OperationID == current.OperationID &&
-		(!emitJSON || last.DurationMs == current.DurationMs) {
-		return
-	}
-	if current.Phase == "" {
+	if taskTransitionUnchanged(last, current, emitJSON) || current.Phase == "" {
 		return
 	}
 	event := taskStatusEvent(current)
@@ -261,6 +256,15 @@ func emitTaskTransition(last, current *task.State, emitJSON bool) {
 		return
 	}
 	_, _ = fmt.Fprintf(os.Stdout, "task %s: %s\n", current.ID, current.Phase)
+}
+
+func taskTransitionUnchanged(last, current *task.State, emitJSON bool) bool {
+	if last == nil {
+		return false
+	}
+	same := last.Phase == current.Phase && last.Step == current.Step &&
+		last.Status == current.Status && last.OperationID == current.OperationID
+	return same && (!emitJSON || last.DurationMs == current.DurationMs)
 }
 
 func taskStatusEvent(current *task.State) status.Event {

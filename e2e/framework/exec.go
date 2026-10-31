@@ -82,7 +82,8 @@ func (f *Framework) ExecCommand(
 	return nil
 }
 
-// ExecCommandCapture executes the command string with the devsy test binary, and returns stdout, stderr, and any error that occurred.
+// ExecCommandCapture executes the command string with the devsy test binary, and returns
+// stdout, stderr, and any error that occurred.
 func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (string, string, error) {
 	var execOut bytes.Buffer
 	var execErr bytes.Buffer

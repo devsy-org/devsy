@@ -286,8 +286,28 @@ func (cmd *BuildCmd) build(
 	hop := tunnelserver.NewSetupLogHop(ctx, tunnelserver.HopOptions{Session: run, Receive: true})
 	defer hop.Close()
 
+	result, err := cmd.buildDevcontainer(ctx, reporter, workspaceClient, hop)
+	run.Finish(err, true)
+	if err != nil {
+		return clierr.WithContext(err, run.FailureContext())
+	}
+
+	if !emitJSON {
+		return nil
+	}
+
+	writeBuildResultJSON(result, run)
+	return nil
+}
+
+func (cmd *BuildCmd) buildDevcontainer(
+	ctx context.Context,
+	reporter status.Reporter,
+	workspaceClient client.WorkspaceClient,
+	hop *tunnelserver.SetupLogHop,
+) (*devcconfig.Result, error) {
 	var result *devcconfig.Result
-	err = status.Run(ctx, reporter, status.Operation{
+	err := status.Run(ctx, reporter, status.Operation{
 		Phase: status.PhaseBuildingImage,
 		Step:  "building devcontainer",
 	}, func(ctx context.Context) error {
@@ -303,17 +323,7 @@ func (cmd *BuildCmd) build(
 		)
 		return buildErr
 	})
-	run.Finish(err, true)
-	if err != nil {
-		return clierr.WithContext(err, run.FailureContext())
-	}
-
-	if !emitJSON {
-		return nil
-	}
-
-	writeBuildResultJSON(result, run)
-	return nil
+	return result, err
 }
 
 // startSetupRun starts the run that retains this build's output and installs
