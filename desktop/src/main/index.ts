@@ -1,7 +1,11 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { app, BrowserWindow, ipcMain, Notification, session } from "electron"
-import { settingsRoute, workspaceRoute } from "../shared/app-route.js"
+import {
+  settingsRoute,
+  workspaceLogsRoute,
+  workspaceRoute,
+} from "../shared/app-route.js"
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics.js"
 import { isAppQuitting, markAppQuitting } from "./app-lifecycle.js"
 import { AppNavigationController } from "./app-navigation.js"
@@ -276,7 +280,18 @@ app.whenReady().then(async () => {
       notification.show()
     },
     openWorkspace: (id) => showDevsy(workspaceRoute(id)),
-    openWorkspaceLogs: (id) => showDevsy(workspaceRoute(id, "logs")),
+    openWorkspaceLogs: (id) => {
+      const job = workspaceJobs.get(id)
+      showDevsy(
+        job?.state === "failed" && job.runId
+          ? workspaceLogsRoute(id, {
+              context: state.workspaceContext(id),
+              runId: job.runId,
+              invocationId: job.failedInvocationId,
+            })
+          : workspaceRoute(id, "logs"),
+      )
+    },
     openUpdates: () => showDevsy(settingsRoute()),
   })
   workspaceJobs.onChange(() => notifier.onJobsChanged(workspaceJobs.snapshot()))
