@@ -41,3 +41,31 @@ func (s *Store) FailedInvocations(runID string) ([]string, error) {
 
 	return failed, nil
 }
+
+// FailureContext returns the error context that identifies a failed run: the
+// run ID, plus the failed invocation when exactly one invocation failed.
+// Lookup problems yield whatever identity is known.
+func (s *Store) FailureContext(runID string) map[string]string {
+	if runID == "" {
+		return nil
+	}
+	values := map[string]string{ContextRunID: runID}
+	if s == nil {
+		return values
+	}
+	if failed, err := s.FailedInvocations(runID); err == nil && len(failed) == 1 {
+		values[ContextFailedInvocationID] = failed[0]
+	}
+
+	return values
+}
+
+// FailureContext is the Session form of Store.FailureContext. A nil Session
+// has no history to point at.
+func (s *Session) FailureContext() map[string]string {
+	if s == nil {
+		return nil
+	}
+
+	return s.Store.FailureContext(s.RunID)
+}

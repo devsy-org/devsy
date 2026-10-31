@@ -244,6 +244,13 @@ type CLIOptions struct {
 	// Platform are the platform options
 	Platform devsy.PlatformOptions `json:"platformOptions"`
 
+	// SetupRunID names the retained setup history this invocation records to.
+	// It is non-secret, set fresh for every invocation, and never reused from
+	// persisted state.
+	SetupRunID string `json:"setupRunId,omitempty"`
+	// SetupParentProducerID is the producer in the previous process hop.
+	SetupParentProducerID string `json:"setupParentProducerId,omitempty"`
+
 	// up options
 	ID                          string            `json:"id,omitempty"`
 	Source                      string            `json:"source,omitempty"`

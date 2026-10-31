@@ -172,6 +172,20 @@ func (s *Store) BindWorkspace(runID, uid, idAtStart string) error {
 	})
 }
 
+// SetTaskID associates a background task with a run created before the task
+// existed.
+func (s *Store) SetTaskID(runID, taskID string) error {
+	if len(taskID) > maxNameBytes {
+		return fmt.Errorf("%w: taskId is too long", ErrInvalidRecord)
+	}
+
+	return s.update(runID, func(m *RunManifest) error {
+		m.TaskID = taskID
+
+		return nil
+	})
+}
+
 // SetCommandState records the originating command's outcome.
 func (s *Store) SetCommandState(runID string, state CommandState) error {
 	return s.update(runID, func(m *RunManifest) error {

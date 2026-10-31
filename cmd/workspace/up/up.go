@@ -12,6 +12,7 @@ import (
 
 	"github.com/devsy-org/devsy/cmd/flags"
 	client2 "github.com/devsy-org/devsy/pkg/client"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -545,6 +546,7 @@ func emitUpResult(wctx *workspaceContext, ideURL string, out io.Writer) {
 		URL:                   ideURL,
 		Warnings:              warnings,
 		Recovery:              recovery,
+		RunID:                 wctx.runID,
 	})
 }
 
@@ -601,6 +603,7 @@ type workspaceContext struct {
 	user       string
 	workdir    string
 	tunnelPort int
+	runID      string
 }
 
 func (cmd *UpCmd) applyPullFromInsideContainerOverride(cobraCmd *cobra.Command) {
@@ -660,8 +663,28 @@ func (cmd *UpCmd) prepareWorkspace(client client2.BaseWorkspaceClient) {
 	}
 }
 
-// executeDevsyUp runs the agent and returns workspace context.
+// executeDevsyUp runs the agent and returns workspace context. The run that
+// retains its build and lifecycle output starts here so the foreground command,
+// the detached worker and the headless path all record the same way.
 func (cmd *UpCmd) executeDevsyUp(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) (*workspaceContext, error) {
+	run := cmd.startSetupRun(client)
+	wctx, err := cmd.runDevsyUp(run.Context(ctx), devsyConfig, client)
+	run.Finish(err, true)
+	if err != nil {
+		return nil, clierr.WithContext(err, run.FailureContext())
+	}
+	if wctx != nil && run != nil {
+		wctx.runID = run.RunID
+	}
+
+	return wctx, nil
+}
+
+func (cmd *UpCmd) runDevsyUp(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	client client2.BaseWorkspaceClient,

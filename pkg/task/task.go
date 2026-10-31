@@ -98,6 +98,17 @@ type Task struct {
 
 func (t *Task) ID() string { return t.id }
 
+// RunID returns the retained-history run bound to the task, or empty when the
+// task has none or its state cannot be read.
+func (t *Task) RunID() string {
+	state, err := t.store.readState(t.id)
+	if err != nil {
+		return ""
+	}
+
+	return state.RunID
+}
+
 func (s *State) Canceled() bool {
 	return s != nil && s.Status == StatusFailed && s.ErrorCode == string(clierr.CodeCanceled)
 }
