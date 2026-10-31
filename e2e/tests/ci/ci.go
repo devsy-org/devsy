@@ -74,6 +74,37 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 			expectWorkspaceGone(ctx, f, tempDir)
 		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
 
+	ginkgo.It("should keep setup history readable after teardown and keep the exit status",
+		func(ctx context.Context) {
+			tempDir, f := setupCIFrom(initialDir, "tests/ci/testdata/ci-setup-logs")
+
+			_, _, err := f.ExecCommandCapture(ctx, []string{
+				ciCommand, tempDir, "--", "sh", "-c", "exit 3",
+			})
+			var exitErr *exec.ExitError
+			gomega.Expect(errors.As(err, &exitErr)).To(gomega.BeTrue(),
+				"expected an exec.ExitError, got %v", err)
+			gomega.Expect(exitErr.ExitCode()).To(gomega.Equal(3))
+			expectWorkspaceGone(ctx, f, tempDir)
+
+			runs, err := f.DevsySetupRuns(ctx, "--context", "default")
+			framework.ExpectNoError(err)
+			runID := ""
+			for _, run := range runs.Runs {
+				if run.WorkspaceIDAtStart == workspace.ToID(tempDir) {
+					runID = run.RunID
+					break
+				}
+			}
+			gomega.Expect(runID).ToNot(gomega.BeEmpty(), "the ci run should stay in the index")
+
+			stdout, _, err := f.DevsySetupLogs(ctx, "--run", runID, "--context", "default",
+				resultFormatPlainFlag)
+			framework.ExpectNoError(err)
+			gomega.Expect(stdout).To(gomega.ContainSubstring("stdout | ci-out-marker"))
+			gomega.Expect(stdout).To(gomega.ContainSubstring("stderr | ci-err-marker"))
+		}, ginkgo.SpecTimeout(framework.TimeoutShort()))
+
 	ginkgo.DescribeTable(
 		"should preserve child streams and control progress visibility",
 		func(ctx context.Context, flags []string, wantStatus, wantDebug bool) {

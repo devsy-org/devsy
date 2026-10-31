@@ -1,0 +1,4 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "postCreateCommand": "i=1; while [ $i -le 300 ]; do echo early-line-$i; i=$((i+1)); done; exit 1"
+}

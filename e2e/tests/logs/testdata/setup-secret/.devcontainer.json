@@ -1,0 +1,5 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "waitFor": "postCreateCommand",
+  "postCreateCommand": "echo secret-line=$MY_SECRET; echo secret-err=$MY_SECRET >&2"
+}
