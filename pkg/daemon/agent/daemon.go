@@ -45,20 +45,7 @@ type WorkspaceDaemonInput struct {
 func BuildWorkspaceDaemonConfig(in WorkspaceDaemonInput) (*DaemonConfig, error) {
 	platformOptions, workspaceConfig := in.PlatformOptions, in.Workspace
 	substitutionContext, mergedConfig, lifecycle := in.SubstitutionContext, in.MergedConfig, in.Lifecycle
-	var workdir string
-	if workspaceConfig.Source.GitSubPath != "" {
-		substitutionContext.ContainerWorkspaceFolder = filepath.Join(
-			substitutionContext.ContainerWorkspaceFolder,
-			workspaceConfig.Source.GitSubPath,
-		)
-		workdir = substitutionContext.ContainerWorkspaceFolder
-	}
-	if workdir == "" && mergedConfig != nil {
-		workdir = mergedConfig.WorkspaceFolder
-	}
-	if workdir == "" && substitutionContext != nil {
-		workdir = substitutionContext.ContainerWorkspaceFolder
-	}
+	workdir := containerWorkdir(workspaceConfig, substitutionContext, mergedConfig)
 
 	daemonConfig := &DaemonConfig{
 		Platform:       platformOptions,
@@ -546,4 +533,28 @@ func isDaemonProcess(pid string) bool {
 	// Handle " (deleted)" suffix when binary was replaced during upgrade
 	baseName = strings.TrimSuffix(baseName, " (deleted)")
 	return baseName == pkgconfig.BinaryName
+}
+
+// containerWorkdir resolves the working directory inside the container, with
+// the git sub path applied to the substitution context when there is one.
+func containerWorkdir(
+	workspaceConfig *provider2.Workspace,
+	substitutionContext *config.SubstitutionContext,
+	mergedConfig *config.MergedDevContainerConfig,
+) string {
+	var workdir string
+	if workspaceConfig.Source.GitSubPath != "" {
+		substitutionContext.ContainerWorkspaceFolder = filepath.Join(
+			substitutionContext.ContainerWorkspaceFolder,
+			workspaceConfig.Source.GitSubPath,
+		)
+		workdir = substitutionContext.ContainerWorkspaceFolder
+	}
+	if workdir == "" && mergedConfig != nil {
+		workdir = mergedConfig.WorkspaceFolder
+	}
+	if workdir == "" && substitutionContext != nil {
+		workdir = substitutionContext.ContainerWorkspaceFolder
+	}
+	return workdir
 }

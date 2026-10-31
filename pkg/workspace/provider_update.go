@@ -95,12 +95,10 @@ func applyProviderUpdate(
 		return fmt.Errorf("find provider %s: %w", providerName, err)
 	}
 	originalSource := originalProvider.Config.Source
-	providerSource := provider2.GetProviderSource(originalSource, originalProvider.Config.Name)
-	sourceBase, _ := provider2.SplitSourceAndTag(providerSource)
-	if sourceBase == "" {
-		return fmt.Errorf("no provider source found %s", providerSource)
+	providerSource, err := sourceAtVersion(originalProvider, newVersion)
+	if err != nil {
+		return err
 	}
-	providerSource = sourceBase + "@" + newVersion
 
 	opLock, err := provider2.GetProviderOperationLock(devsyConfig.DefaultContext, providerName)
 	if err != nil {
@@ -189,4 +187,14 @@ func GetProInstance(
 // shouldSkipProviderUpdate returns true if the provider update check should be skipped.
 func shouldSkipProviderUpdate(isDevVersion, isInternal bool) bool {
 	return isDevVersion || isInternal
+}
+
+// sourceAtVersion returns the provider source pinned to newVersion.
+func sourceAtVersion(p *ProviderWithOptions, newVersion string) (string, error) {
+	providerSource := provider2.GetProviderSource(p.Config.Source, p.Config.Name)
+	sourceBase, _ := provider2.SplitSourceAndTag(providerSource)
+	if sourceBase == "" {
+		return "", fmt.Errorf("no provider source found %s", providerSource)
+	}
+	return sourceBase + "@" + newVersion, nil
 }
