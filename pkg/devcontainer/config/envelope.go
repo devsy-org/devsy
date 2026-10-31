@@ -247,5 +247,5 @@ func validStatusEnvelope(env StatusEnvelope) bool {
 	return env.Kind == KindStatus && env.SchemaVersion == 1 && env.Phase != "" &&
 		validState(env.State) && env.DurationMs >= 0 &&
 		env.DurationMs <= int64(time.Duration(1<<63-1)/time.Millisecond) &&
-		!(env.State == status.StateFailed && env.Error == nil)
+		(env.State != status.StateFailed || env.Error != nil)
 }

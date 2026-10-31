@@ -21,15 +21,18 @@ const (
 
 const envelopeTestSecret = "status-secret"
 
+// resultCase is one input of TestWriteResultJSON.
+type resultCase struct {
+	name        string
+	containerID string
+	user        string
+	workdir     string
+	url         string
+	warnings    []string
+}
+
 func TestWriteResultJSON(t *testing.T) {
-	tests := []struct {
-		name        string
-		containerID string
-		user        string
-		workdir     string
-		url         string
-		warnings    []string
-	}{
+	tests := []resultCase{
 		{
 			name:        "typical values",
 			containerID: "abc123def456",
@@ -100,15 +103,7 @@ func TestWriteResultJSON(t *testing.T) {
 				t.Fatalf("WriteResultJSON returned error: %v", err)
 			}
 
-			assertResultEnvelope(
-				t,
-				tt.containerID,
-				tt.user,
-				tt.workdir,
-				tt.url,
-				tt.warnings,
-				buf.Bytes(),
-			)
+			assertResultEnvelope(t, tt, buf.Bytes())
 		})
 	}
 }
@@ -490,13 +485,9 @@ func assertStatusEnvelopeFields(t *testing.T, got StatusEnvelope) {
 
 // assertResultEnvelope checks one encoded result envelope against the values
 // it was written from.
-func assertResultEnvelope(
-	t *testing.T,
-	containerID, user, workdir, url string,
-	warnings []string,
-	output []byte,
-) {
+func assertResultEnvelope(t *testing.T, want resultCase, output []byte) {
 	t.Helper()
+	containerID, user, workdir, url, warnings := want.containerID, want.user, want.workdir, want.url, want.warnings
 	if output[len(output)-1] != '\n' {
 		t.Fatal("output must be newline-terminated")
 	}
