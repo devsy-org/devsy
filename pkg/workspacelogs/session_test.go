@@ -11,7 +11,7 @@ import (
 
 func TestSessionRecordsAndFinishesRun(t *testing.T) {
 	s, _ := newTestStore(t)
-	sess := startSessionIn(s, SessionOptions{
+	sess := StartSessionIn(s, SessionOptions{
 		Run:      RunSpec{Context: testContext, Command: "up", WorkspaceUID: "u"},
 		Location: LocationHost,
 	})
@@ -33,10 +33,10 @@ func TestSessionRecordsAndFinishesRun(t *testing.T) {
 
 func TestSessionJoinsRunAndRecordsFailure(t *testing.T) {
 	s, _ := newTestStore(t)
-	first := startSessionIn(s, SessionOptions{Run: RunSpec{Context: testContext, Command: "up"}})
+	first := StartSessionIn(s, SessionOptions{Run: RunSpec{Context: testContext, Command: "up"}})
 	require.NotNil(t, first)
 
-	joined := startSessionIn(s, SessionOptions{
+	joined := StartSessionIn(s, SessionOptions{
 		RunID: first.RunID, ParentProducerID: first.ProducerID(),
 		Run: RunSpec{Context: testContext, Command: "up"}, Location: LocationContainer,
 	})
@@ -67,7 +67,7 @@ func TestNilSessionIsInert(t *testing.T) {
 
 func TestFinishMapsCancellation(t *testing.T) {
 	s, _ := newTestStore(t)
-	sess := startSessionIn(s, SessionOptions{Run: RunSpec{Context: testContext, Command: "up"}})
+	sess := StartSessionIn(s, SessionOptions{Run: RunSpec{Context: testContext, Command: "up"}})
 	require.NotNil(t, sess)
 
 	sess.Finish(context.Canceled, true)

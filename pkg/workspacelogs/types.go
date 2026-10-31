@@ -160,20 +160,24 @@ type Record struct {
 	Time          time.Time `json:"time"`
 
 	// Producer and invocation transitions.
-	ParentProducerID string          `json:"parentProducerId,omitempty"`
-	ProducerState    ProducerState   `json:"producerState,omitempty"`
-	DiscoverySealed  bool            `json:"discoverySealed,omitempty"`
-	InvocationID     string          `json:"invocationId,omitempty"`
-	Phase            string          `json:"phase,omitempty"`
-	Hook             string          `json:"hook,omitempty"`
-	HookIndex        *int            `json:"hookIndex,omitempty"`
-	HookKey          string          `json:"hookKey,omitempty"`
-	Location         Location        `json:"location,omitempty"`
-	State            InvocationState `json:"state,omitempty"`
-	Reason           string          `json:"reason,omitempty"`
-	DurationMillis   *int64          `json:"durationMillis,omitempty"`
-	ExitCode         *int            `json:"exitCode,omitempty"`
-	Signal           string          `json:"signal,omitempty"`
+	ParentProducerID string `json:"parentProducerId,omitempty"`
+	// ChildProducerID, on a producer record, reserves (or finalizes) a child
+	// producer the writer is about to launch. Mirrored stores learn about the
+	// child from this record, before any of its own records arrive.
+	ChildProducerID string          `json:"childProducerId,omitempty"`
+	ProducerState   ProducerState   `json:"producerState,omitempty"`
+	DiscoverySealed bool            `json:"discoverySealed,omitempty"`
+	InvocationID    string          `json:"invocationId,omitempty"`
+	Phase           string          `json:"phase,omitempty"`
+	Hook            string          `json:"hook,omitempty"`
+	HookIndex       *int            `json:"hookIndex,omitempty"`
+	HookKey         string          `json:"hookKey,omitempty"`
+	Location        Location        `json:"location,omitempty"`
+	State           InvocationState `json:"state,omitempty"`
+	Reason          string          `json:"reason,omitempty"`
+	DurationMillis  *int64          `json:"durationMillis,omitempty"`
+	ExitCode        *int            `json:"exitCode,omitempty"`
+	Signal          string          `json:"signal,omitempty"`
 
 	// Output.
 	Stream Stream `json:"stream,omitempty"`

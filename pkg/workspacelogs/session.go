@@ -16,9 +16,11 @@ type SessionOptions struct {
 	// ParentProducerID links this process's producer to the one that
 	// launched it.
 	ParentProducerID string
-	Run              RunSpec
-	Location         Location
-	Redactor         *secrets.Redactor
+	// ProducerID uses a producer ID reserved by the parent process.
+	ProducerID string
+	Run        RunSpec
+	Location   Location
+	Redactor   *secrets.Redactor
 }
 
 // Session is one process's handle on a run: the local store, the run, and a
@@ -39,10 +41,12 @@ func StartSession(opts SessionOptions) *Session {
 		return nil
 	}
 
-	return startSessionIn(store, opts)
+	return StartSessionIn(store, opts)
 }
 
-func startSessionIn(store *Store, opts SessionOptions) *Session {
+// StartSessionIn is StartSession against an explicit store, for processes that
+// keep their spool outside the default state directory.
+func StartSessionIn(store *Store, opts SessionOptions) *Session {
 	opts.Run.RunID = opts.RunID
 	m, err := store.CreateRun(opts.Run)
 	if err != nil {
@@ -53,6 +57,7 @@ func startSessionIn(store *Store, opts SessionOptions) *Session {
 		RunID:            m.RunID,
 		Location:         opts.Location,
 		ParentProducerID: opts.ParentProducerID,
+		ProducerID:       opts.ProducerID,
 		Redactor:         opts.Redactor,
 	})
 	if err != nil {

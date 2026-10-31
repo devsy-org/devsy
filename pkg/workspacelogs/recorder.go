@@ -22,6 +22,9 @@ type RecorderOptions struct {
 	Backend  Backend
 	RunID    string
 	Location Location
+	// ProducerID uses a producer ID its parent reserved earlier. Empty
+	// generates one.
+	ProducerID string
 	// ParentProducerID links this producer to the one that launched it.
 	ParentProducerID string
 	// Redactor masks known secrets before anything is persisted. Nil keeps text
@@ -66,7 +69,11 @@ func NewRecorder(opts RecorderOptions) (*Recorder, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	r := &Recorder{opts: opts, producerID: NewID()}
+	id := opts.ProducerID
+	if !ValidID(id) {
+		id = NewID()
+	}
+	r := &Recorder{opts: opts, producerID: id}
 	err := opts.Backend.RegisterProducer(opts.RunID, ProducerRef{
 		ProducerID:       r.producerID,
 		ParentProducerID: opts.ParentProducerID,
@@ -127,6 +134,39 @@ func (r *Recorder) Capture(c Condition, detail string, droppedBytes int64) {
 		Detail:       truncate(detail, MaxDetailBytes),
 		DroppedBytes: droppedBytes,
 	})
+}
+
+// ReserveChild records that a child producer will be launched and returns its
+// ID. Pass the ID to the child as RecorderOptions.ProducerID. Reserve every
+// child before sealing discovery.
+func (r *Recorder) ReserveChild(location Location) string {
+	id := NewID()
+	r.emit(&Record{
+		Kind:            KindProducer,
+		ChildProducerID: id,
+		ProducerState:   ProducerReserved,
+		Location:        location,
+	})
+
+	return id
+}
+
+// MarkChild records a factual outcome for a reserved child, for example
+// ProducerUnavailable when its launch was not observed. Reason is shown to
+// readers.
+func (r *Recorder) MarkChild(id string, state ProducerState, reason string) {
+	r.emit(&Record{
+		Kind:            KindProducer,
+		ChildProducerID: id,
+		ProducerState:   state,
+		Detail:          truncate(reason, MaxDetailBytes),
+	})
+}
+
+// SealDiscovery records that this producer has reserved every child it will
+// launch.
+func (r *Recorder) SealDiscovery() {
+	r.emit(&Record{Kind: KindProducer, DiscoverySealed: true})
 }
 
 // Close records the producer's final state. Close any DiagnosticWriter first.

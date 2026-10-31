@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -208,16 +209,24 @@ func (cmd *UpCmd) devsyUp(
 	workspaceInfo.CLIOptions.SecretsEnv = nil
 	workspaceInfo.CLIOptions.SecretsMount = nil
 
+	run := startProviderRun(workspaceInfo, append(slices.Clone(secretsEnv), secretsMount...))
+	cliOptions.SetupParentProducerID = run.ProducerID()
+	ctx = run.Context(ctx)
+
 	runner, err := CreateRunner(ctx, workspaceInfo)
 	if err != nil {
+		run.Finish(err, false)
 		return nil, err
 	}
 
 	reporter := tunnelserver.NewTunnelStatusReporter(ctx, tunnelClient)
-	return runner.Up(ctx, devcontainer.UpOptions{
+	result, err := runner.Up(ctx, devcontainer.UpOptions{
 		CLIOptions:    cliOptions,
 		RegistryCache: workspaceInfo.RegistryCache,
 	}, workspaceInfo.InjectTimeout, reporter)
+	run.Finish(err, false)
+
+	return result, err
 }
 
 func splitSecrets(secrets []*tunnel.Secret) (env, mount []string) {

@@ -993,6 +993,18 @@ func containerDataDir() string {
 	return writableContainerDataDirOnce()
 }
 
+// WorkspaceLogsRoot returns the container-side spool for retained setup
+// history, inside the already selected secure data directory, or empty when no
+// secure directory is available. The caller opens it as a workspacelogs store.
+func WorkspaceLogsRoot() string {
+	dir := containerDataDir()
+	if dir == "" {
+		return ""
+	}
+
+	return filepath.Join(dir, "workspace-logs")
+}
+
 func setupPlatformGitCredentials(
 	ctx context.Context,
 	userName string,

@@ -190,6 +190,20 @@ type ContainerWorkspaceInfo struct {
 
 	// Agent holds the agent info
 	Agent ProviderAgentConfig `json:"agent"`
+
+	// SetupRun names the retained setup history this container setup records
+	// into. Nil when no history is requested.
+	SetupRun *SetupRunRef `json:"setupRun,omitempty"`
+}
+
+// SetupRunRef identifies a retained setup history run and the workspace
+// generation it belongs to. It holds no secrets.
+type SetupRunRef struct {
+	RunID            string `json:"runId"`
+	ParentProducerID string `json:"parentProducerId,omitempty"`
+	Context          string `json:"context"`
+	WorkspaceUID     string `json:"workspaceUid,omitempty"`
+	WorkspaceID      string `json:"workspaceId,omitempty"`
 }
 
 type AgentWorkspaceInfo struct {

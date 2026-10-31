@@ -409,6 +409,7 @@ func (r *runner) compressWorkspaceConfig(
 		Source:           r.workspaceConfig.Workspace.Source,
 		Agent:            r.workspaceConfig.Agent,
 		ContentFolder:    r.workspaceConfig.ContentFolder,
+		SetupRun:         r.setupRunRef(cliOptions),
 	}
 	lifecycle, err := r.lifecycleOptions(mergedConfig, dockerless, imageEntrypoint)
 	if err != nil {
@@ -701,4 +702,21 @@ func filterWorkspaceMounts(
 	}
 
 	return retMounts
+}
+
+// setupRunRef describes the run this setup records into, or nil when the CLI
+// options name none.
+func (r *runner) setupRunRef(cliOptions provider2.CLIOptions) *provider2.SetupRunRef {
+	ws := r.workspaceConfig.Workspace
+	if cliOptions.SetupRunID == "" || ws == nil {
+		return nil
+	}
+
+	return &provider2.SetupRunRef{
+		RunID:            cliOptions.SetupRunID,
+		ParentProducerID: cliOptions.SetupParentProducerID,
+		Context:          ws.Context,
+		WorkspaceUID:     ws.UID,
+		WorkspaceID:      ws.ID,
+	}
 }

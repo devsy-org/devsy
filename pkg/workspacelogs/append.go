@@ -34,7 +34,9 @@ func (s *Store) Append(records []Record) (AppendResult, error) {
 		return AppendResult{}, err
 	}
 	if m.producer(producerID) < 0 {
-		return AppendResult{}, fmt.Errorf("%w: producer is not registered", ErrNotFound)
+		if err = s.registerFromFirstRecord(&records[0]); err != nil {
+			return AppendResult{}, err
+		}
 	}
 	if err = s.ensureDir(runsDirName, runID, producersDir, producerID); err != nil {
 		return AppendResult{}, err
@@ -266,6 +268,8 @@ func (m *RunManifest) apply(rec *Record) {
 		m.addCondition(ConditionCapacity)
 	case rec.Kind == KindCapture:
 		m.addCondition(rec.Condition)
+	case rec.Kind == KindProducer && rec.ChildProducerID != "":
+		m.applyChild(rec)
 	case rec.Kind == KindProducer:
 		if i := m.producer(rec.ProducerID); i >= 0 && rec.ProducerState != "" {
 			m.Producers[i].State = rec.ProducerState
@@ -275,4 +279,36 @@ func (m *RunManifest) apply(rec *Record) {
 			m.addCondition(ConditionSourceUnavailable)
 		}
 	}
+}
+
+// applyChild registers a reserved child or moves a known child to the state the
+// parent reports for it.
+func (m *RunManifest) applyChild(rec *Record) {
+	i := m.producer(rec.ChildProducerID)
+	if i >= 0 {
+		m.Producers[i].State = rec.ProducerState
+	} else if len(m.Producers) < MaxProducers {
+		m.Producers = append(m.Producers, ProducerRef{
+			ProducerID: rec.ChildProducerID, ParentProducerID: rec.ProducerID,
+			State: rec.ProducerState, Location: rec.Location,
+		})
+	} else {
+		m.addCondition(ConditionProducerCap)
+	}
+	if rec.ProducerState == ProducerUnavailable {
+		m.addCondition(ConditionSourceUnavailable)
+	}
+}
+
+// registerFromFirstRecord lets a mirrored producer introduce itself: only the
+// producer's own first record (sequence 1, state running or reserved) may.
+func (s *Store) registerFromFirstRecord(rec *Record) error {
+	if rec.Kind != KindProducer || rec.Sequence != 1 || rec.ChildProducerID != "" {
+		return fmt.Errorf("%w: producer is not registered", ErrNotFound)
+	}
+
+	return s.RegisterProducer(rec.RunID, ProducerRef{
+		ProducerID: rec.ProducerID, ParentProducerID: rec.ParentProducerID,
+		State: ProducerRunning, Location: rec.Location,
+	})
 }

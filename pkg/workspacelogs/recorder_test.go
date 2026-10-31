@@ -237,3 +237,75 @@ func rawRunFiles(t *testing.T, s *Store, runID string) string {
 
 	return readTree(t, dir)
 }
+
+func TestReservedChildIsKnownBeforeItStarts(t *testing.T) {
+	s, _ := newTestStore(t)
+	runID := newRun(t, s, "uid")
+	parent := newTestRecorder(t, s, runID, nil)
+
+	childID := parent.ReserveChild(LocationContainer)
+	parent.SealDiscovery()
+	parent.Close(ProducerTerminal, false)
+
+	m, err := s.Manifest(runID)
+	require.NoError(t, err)
+	require.Len(t, m.Producers, 2)
+	assert.Equal(t, childID, m.Producers[1].ProducerID)
+	assert.Equal(t, ProducerReserved, m.Producers[1].State)
+	assert.True(t, m.DiscoverySealed)
+	assert.False(t, m.Complete(), "a reserved child that has not run keeps the run incomplete")
+
+	child, err := NewRecorder(RecorderOptions{
+		Backend: s, RunID: runID, ProducerID: childID, ParentProducerID: parent.ProducerID(),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, childID, child.ProducerID())
+	child.Close(ProducerTerminal, false)
+
+	m, err = s.Manifest(runID)
+	require.NoError(t, err)
+	assert.Len(t, m.Producers, 2, "the child reuses its reserved entry")
+	assert.True(t, m.Complete())
+}
+
+func TestUnobservedChildLaunchIsUnavailableNotEmptySuccess(t *testing.T) {
+	s, _ := newTestStore(t)
+	runID := newRun(t, s, "uid")
+	parent := newTestRecorder(t, s, runID, nil)
+	childID := parent.ReserveChild(LocationContainer)
+
+	parent.MarkChild(childID, ProducerUnavailable, "launch_not_observed")
+	parent.SealDiscovery()
+	parent.Close(ProducerTerminal, false)
+
+	resp, err := s.Read(ReadRequest{RunID: runID})
+	require.NoError(t, err)
+	assert.False(t, resp.Complete)
+	assert.Equal(t, CapturePartial, resp.Run.CaptureState)
+	var unavailable bool
+	for _, a := range resp.Availability {
+		unavailable = unavailable || (a.ProducerID == childID && !a.Available)
+	}
+	assert.True(t, unavailable)
+}
+
+func TestMirroredProducerIntroducesItselfWithItsFirstRecord(t *testing.T) {
+	s, _ := newTestStore(t)
+	runID := newRun(t, s, "uid")
+	pid := NewID()
+	seq := newSeq(runID, pid)
+	first := seq.rec(
+		Record{Kind: KindProducer, ProducerState: ProducerRunning, Location: LocationContainer},
+	)
+
+	_, err := s.Append([]Record{seq.output(NewID(), StreamStdout, "no intro")})
+	require.ErrorIs(t, err, ErrNotFound, "output cannot introduce a producer")
+
+	seq.next = 1
+	res, err := s.Append([]Record{first})
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), res.Accepted)
+	m, err := s.Manifest(runID)
+	require.NoError(t, err)
+	assert.Equal(t, LocationContainer, m.Producers[0].Location)
+}
