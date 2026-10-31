@@ -140,10 +140,10 @@ func ensureDaemonDir(context, providerName string) (string, error) {
 func printStatus(status daemon.Status) {
 	out, err := json.Marshal(status)
 	if err != nil {
-		fmt.Printf("failed to marshal status: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stdout, "failed to marshal status: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println(string(out))
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 }
 
 func getUserName(self *managementv1.Self) string {
