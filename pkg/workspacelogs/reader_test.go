@@ -348,3 +348,15 @@ func TestSplitTextKeepsUTF8AndTrailingFragment(t *testing.T) {
 	assert.Equal(t, []string{"no newline"}, SplitText("no newline", MaxChunkBytes))
 	assert.Empty(t, SplitText("", MaxChunkBytes))
 }
+
+func TestFailedInvocationsReportsLatestState(t *testing.T) {
+	s, _ := newTestStore(t)
+	h := newHookRun(t, s)
+
+	failed, err := s.FailedInvocations(h.runID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{h.noisy}, failed, "the silent hook succeeded and is not listed")
+
+	_, err = s.FailedInvocations(NewID())
+	require.ErrorIs(t, err, ErrNotFound)
+}

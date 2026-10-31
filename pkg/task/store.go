@@ -732,6 +732,7 @@ func (s *Store) create(opts CreateOptions, launch bool) (*Task, error) {
 		ID:          id,
 		Command:     opts.Command,
 		WorkspaceID: opts.WorkspaceID,
+		RunID:       opts.RunID,
 		Status:      StatusPending,
 		StartedAt:   now,
 		UpdatedAt:   now,

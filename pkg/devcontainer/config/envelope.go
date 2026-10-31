@@ -29,6 +29,8 @@ type ResultEnvelope struct {
 	URL                   string   `json:"url,omitempty"`
 	Warnings              []string `json:"warnings,omitempty"`
 	Recovery              bool     `json:"recovery,omitempty"`
+	// RunID names the retained setup history of this run.
+	RunID string `json:"runId,omitempty"`
 }
 
 type ErrorEnvelope struct {
@@ -59,11 +61,19 @@ type StatusEnvelope struct {
 type TaskEnvelope struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`
+	// RunID names the retained setup history of the submitted run.
+	RunID string `json:"runId,omitempty"`
 }
 
 // WriteTaskJSON serializes a submitted task's ID as an NDJSON line to w.
 func WriteTaskJSON(w io.Writer, id string) error {
-	data, err := json.Marshal(TaskEnvelope{Kind: KindTask, ID: id})
+	return WriteTaskRunJSON(w, id, "")
+}
+
+// WriteTaskRunJSON is WriteTaskJSON with the run that records the task's
+// setup history.
+func WriteTaskRunJSON(w io.Writer, id, runID string) error {
+	data, err := json.Marshal(TaskEnvelope{Kind: KindTask, ID: id, RunID: runID})
 	if err != nil {
 		return err
 	}

@@ -1,0 +1,78 @@
+package workspacelogs
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSessionRecordsAndFinishesRun(t *testing.T) {
+	s, _ := newTestStore(t)
+	sess := startSessionIn(s, SessionOptions{
+		Run:      RunSpec{Context: testContext, Command: "up", WorkspaceUID: "u"},
+		Location: LocationHost,
+	})
+	require.NotNil(t, sess)
+
+	inv := NewID()
+	w := sess.Recorder.Writer(inv, StreamStdout)
+	_, _ = w.Write([]byte("hi"))
+	require.NoError(t, w.Close())
+	ctx := sess.Context(context.Background())
+	assert.Same(t, sess.Recorder, RecorderFrom(ctx))
+	sess.Finish(nil, true)
+
+	m, err := s.Manifest(sess.RunID)
+	require.NoError(t, err)
+	assert.Equal(t, CommandSucceeded, m.CommandState)
+	assert.Equal(t, CaptureComplete, m.CaptureState)
+}
+
+func TestSessionJoinsRunAndRecordsFailure(t *testing.T) {
+	s, _ := newTestStore(t)
+	first := startSessionIn(s, SessionOptions{Run: RunSpec{Context: testContext, Command: "up"}})
+	require.NotNil(t, first)
+
+	joined := startSessionIn(s, SessionOptions{
+		RunID: first.RunID, ParentProducerID: first.ProducerID(),
+		Run: RunSpec{Context: testContext, Command: "up"}, Location: LocationContainer,
+	})
+	require.NotNil(t, joined)
+	assert.Equal(t, first.RunID, joined.RunID)
+	joined.BindWorkspace("uid-9", "ws")
+	joined.Finish(errors.New("boom"), false)
+	first.Finish(nil, true)
+
+	m, err := s.Manifest(first.RunID)
+	require.NoError(t, err)
+	assert.Equal(t, CommandSucceeded, m.CommandState, "last writer wins, parent finished last")
+	require.NotNil(t, m.WorkspaceUID)
+	assert.Equal(t, "uid-9", *m.WorkspaceUID)
+	assert.Len(t, m.Producers, 2)
+	assert.Equal(t, first.ProducerID(), m.Producers[1].ParentProducerID)
+}
+
+func TestNilSessionIsInert(t *testing.T) {
+	var sess *Session
+	ctx := context.Background()
+
+	assert.Equal(t, ctx, sess.Context(ctx))
+	assert.Empty(t, sess.ProducerID())
+	sess.BindWorkspace("u", "w")
+	sess.Finish(errors.New("x"), true)
+}
+
+func TestFinishMapsCancellation(t *testing.T) {
+	s, _ := newTestStore(t)
+	sess := startSessionIn(s, SessionOptions{Run: RunSpec{Context: testContext, Command: "up"}})
+	require.NotNil(t, sess)
+
+	sess.Finish(context.Canceled, true)
+
+	m, err := s.Manifest(sess.RunID)
+	require.NoError(t, err)
+	assert.Equal(t, CommandCanceled, m.CommandState)
+}

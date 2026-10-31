@@ -439,7 +439,7 @@ func taskStateError(state *task.State) error {
 
 func resultEnvelopeFrom(state *task.State) config2.ResultEnvelope {
 	if state.Result == nil {
-		return config2.ResultEnvelope{}
+		return config2.ResultEnvelope{RunID: state.RunID}
 	}
 	var workspaceFolder string
 	if state.Result.SubstitutionContext != nil {
@@ -451,5 +451,6 @@ func resultEnvelopeFrom(state *task.State) config2.ResultEnvelope {
 		RemoteWorkspaceFolder: workspaceFolder,
 		Warnings:              state.Result.HostWarnings,
 		Recovery:              state.Result.RecoveryContainer,
+		RunID:                 state.RunID,
 	}
 }
