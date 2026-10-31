@@ -24,10 +24,10 @@ var (
 	)
 )
 
-const tokenFileLocation = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // token file path, not a credential
+//nolint:gosec // token file path, not a credential
+const tokenFileLocation = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
-// See
-// https://github.com/kubernetes/kubernetes/blob/30ae12d018697d3c5f04e225b11f242f5310e097/pkg/serviceaccount/claims.go#L55
+// Claims follow the kubernetes service account token format.
 type privateClaims struct {
 	jwt.RegisteredClaims
 	Kubernetes kubernetesClaim `json:"kubernetes.io"`

@@ -113,7 +113,7 @@ func (cmd *StatusCmd) Run(
 			return err
 		}
 
-		fmt.Print(string(out))
+		_, _ = fmt.Fprint(os.Stdout, string(out))
 	}
 
 	return nil

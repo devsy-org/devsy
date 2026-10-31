@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/devsy-org/devsy/cmd/completion"
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -77,7 +78,7 @@ func (cmd *ExportCmd) Run(ctx context.Context, devsyConfig *config.Config, args 
 		return err
 	}
 
-	fmt.Println(string(out))
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 	return nil
 }
 

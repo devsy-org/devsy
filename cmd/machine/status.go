@@ -76,7 +76,7 @@ func (cmd *StatusCmd) Run(ctx context.Context, args []string) error {
 			return err
 		}
 
-		fmt.Print(string(out))
+		_, _ = fmt.Fprint(os.Stdout, string(out))
 	}
 
 	return nil

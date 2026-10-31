@@ -72,6 +72,7 @@ func readAgentWorkspaceInfo(
 
 func ParseAgentWorkspaceInfo(workspaceConfigFile string) (*provider2.AgentWorkspaceInfo, error) {
 	// read workspace config
+	//nolint:gosec // path is inside the agent layout
 	out, err := os.ReadFile(workspaceConfigFile)
 	if err != nil {
 		return nil, err

@@ -7,27 +7,29 @@ import (
 )
 
 const (
-	ContextOptionSSHAddPrivateKeys          = "SSH_ADD_PRIVATE_KEYS"
-	ContextOptionGPGAgentForwarding         = "GPG_AGENT_FORWARDING"
-	ContextOptionGitSSHSignatureForwarding  = "GIT_SSH_SIGNATURE_FORWARDING"
-	ContextOptionSSHInjectDockerCredentials = "SSH_INJECT_DOCKER_CREDENTIALS" //nolint:gosec // option name
-	ContextOptionSSHInjectGitCredentials    = "SSH_INJECT_GIT_CREDENTIALS"    //nolint:gosec // option name, not a credential
-	ContextOptionGitHubCLIForwarding        = "SSH_INJECT_GITHUB_CREDENTIALS"
-	ContextOptionExitAfterTimeout           = "EXIT_AFTER_TIMEOUT"
-	ContextOptionTelemetry                  = "TELEMETRY"
-	ContextOptionAgentURL                   = "AGENT_URL"
-	ContextOptionDotfilesURL                = "DOTFILES_URL"
-	ContextOptionDotfilesScript             = "DOTFILES_SCRIPT"
-	ContextOptionSSHAgentForwarding         = "SSH_AGENT_FORWARDING"
-	ContextOptionSSHConfigPath              = "SSH_CONFIG_PATH"
-	ContextOptionSSHConfigIncludePath       = "SSH_CONFIG_INCLUDE_PATH"
-	ContextOptionAgentInjectTimeout         = "AGENT_INJECT_TIMEOUT"
-	ContextOptionRegistryCache              = "REGISTRY_CACHE"
-	ContextOptionSSHStrictHostKeyChecking   = "SSH_STRICT_HOST_KEY_CHECKING"
-	ContextOptionSSHTunnelMode              = "SSH_TUNNEL_MODE"
-	ContextOptionSecretsBackend             = "SECRETS_BACKEND"
-	ContextOptionSnapshotRegistry           = "SNAPSHOT_REGISTRY"
-	ContextOptionLogLevel                   = "LOG_LEVEL"
+	ContextOptionSSHAddPrivateKeys         = "SSH_ADD_PRIVATE_KEYS"
+	ContextOptionGPGAgentForwarding        = "GPG_AGENT_FORWARDING"
+	ContextOptionGitSSHSignatureForwarding = "GIT_SSH_SIGNATURE_FORWARDING"
+	//nolint:gosec // option name, not a credential
+	ContextOptionSSHInjectDockerCredentials = "SSH_INJECT_DOCKER_CREDENTIALS"
+	//nolint:gosec // option name, not a credential
+	ContextOptionSSHInjectGitCredentials  = "SSH_INJECT_GIT_CREDENTIALS"
+	ContextOptionGitHubCLIForwarding      = "SSH_INJECT_GITHUB_CREDENTIALS"
+	ContextOptionExitAfterTimeout         = "EXIT_AFTER_TIMEOUT"
+	ContextOptionTelemetry                = "TELEMETRY"
+	ContextOptionAgentURL                 = "AGENT_URL"
+	ContextOptionDotfilesURL              = "DOTFILES_URL"
+	ContextOptionDotfilesScript           = "DOTFILES_SCRIPT"
+	ContextOptionSSHAgentForwarding       = "SSH_AGENT_FORWARDING"
+	ContextOptionSSHConfigPath            = "SSH_CONFIG_PATH"
+	ContextOptionSSHConfigIncludePath     = "SSH_CONFIG_INCLUDE_PATH"
+	ContextOptionAgentInjectTimeout       = "AGENT_INJECT_TIMEOUT"
+	ContextOptionRegistryCache            = "REGISTRY_CACHE"
+	ContextOptionSSHStrictHostKeyChecking = "SSH_STRICT_HOST_KEY_CHECKING"
+	ContextOptionSSHTunnelMode            = "SSH_TUNNEL_MODE"
+	ContextOptionSecretsBackend           = "SECRETS_BACKEND"
+	ContextOptionSnapshotRegistry         = "SNAPSHOT_REGISTRY"
+	ContextOptionLogLevel                 = "LOG_LEVEL"
 )
 
 var ContextOptions = []ContextOption{
