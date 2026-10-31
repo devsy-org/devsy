@@ -80,16 +80,8 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 
 	destPath := d.destPath()
 
-	// Skip delivery when the in-pod binary already matches.
-	if !opts.SkipVersionCheck {
-		expected := d.expectedVersion()
-		if actual := d.detectVersion(ctx, destPath); actual != "" && actual == expected {
-			log.Debugf(
-				"remote agent version matches expected version %s, skipping delivery",
-				expected,
-			)
-			return nil
-		}
+	if !opts.SkipVersionCheck && d.versionMatches(ctx, destPath) {
+		return nil
 	}
 
 	var downloadErr error
@@ -112,6 +104,17 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 
 	log.Debugf("delivered agent binary to container via exec-stream")
 	return nil
+}
+
+// versionMatches reports whether the in-pod binary already has the expected version.
+func (d *KubernetesDelivery) versionMatches(ctx context.Context, destPath string) bool {
+	expected := d.expectedVersion()
+	actual := d.detectVersion(ctx, destPath)
+	if actual == "" || actual != expected {
+		return false
+	}
+	log.Debugf("remote agent version matches expected version %s, skipping delivery", expected)
+	return true
 }
 
 func deliveryFailure(downloadErr, streamErr error) error {
@@ -530,16 +533,20 @@ func isTransientDeliveryError(err error) bool {
 	if _, ok := errors.AsType[*permanentDeliveryError](err); ok {
 		return false
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	return isTimeoutError(err) || hasTransientMarker(err.Error())
+}
+
+func isTimeoutError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, errExecStreamIdleTimeout) ||
+		errors.Is(err, errExecStreamCompletionTimeout) {
 		return true
 	}
-	if errors.Is(err, errExecStreamIdleTimeout) || errors.Is(err, errExecStreamCompletionTimeout) {
-		return true
-	}
-	if _, ok := errors.AsType[net.Error](err); ok {
-		return true
-	}
-	msg := err.Error()
+	_, ok := errors.AsType[net.Error](err)
+	return ok
+}
+
+func hasTransientMarker(msg string) bool {
 	for _, marker := range []string{"i/o timeout", "broken pipe", "connection reset", "unexpected EOF"} {
 		if strings.Contains(msg, marker) {
 			return true

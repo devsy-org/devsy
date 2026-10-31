@@ -347,23 +347,8 @@ func (r *runner) ensureComposeContainer(
 		log.Info("workspace secrets require secure runtime mounts")
 	}
 
-	// container already exists and is running, nothing to do
-	if containerDetails != nil && containerDetails.State.Status == config.ContainerStatusRunning &&
-		!effectiveOptions.Recreate {
-		return containerDetails, nil
-	}
-
-	if containerDetails != nil {
-		containerDetails, didStartProject := r.tryStartExistingProject(ctx, &existingProjectParams{
-			parsedConfig:  parsedConfig,
-			composeHelper: composeHelper,
-			project:       project,
-			container:     containerDetails,
-			recreate:      effectiveOptions.Recreate,
-		})
-		if didStartProject {
-			return containerDetails, nil
-		}
+	if existing, ok := r.reuseExistingCompose(ctx, params, containerDetails, effectiveOptions); ok {
+		return existing, nil
 	}
 
 	containerDetails, err = r.startContainer(ctx, &startContainerParams{
@@ -384,6 +369,30 @@ func (r *runner) ensureComposeContainer(
 	}
 
 	return containerDetails, nil
+}
+
+// reuseExistingCompose returns the existing container when it is already
+// running, or after starting its existing project; ok is false when a fresh
+// start is needed.
+func (r *runner) reuseExistingCompose(
+	ctx context.Context,
+	params *composeContainerParams,
+	containerDetails *config.ContainerDetails,
+	options UpOptions,
+) (*config.ContainerDetails, bool) {
+	if containerDetails == nil {
+		return nil, false
+	}
+	if containerDetails.State.Status == config.ContainerStatusRunning && !options.Recreate {
+		return containerDetails, true
+	}
+	return r.tryStartExistingProject(ctx, &existingProjectParams{
+		parsedConfig:  params.runParams.parsedConfig,
+		composeHelper: params.composeHelper,
+		project:       params.project,
+		container:     containerDetails,
+		recreate:      options.Recreate,
+	})
 }
 
 func (r *runner) composeSecretRuntimeOptions(
@@ -439,12 +448,7 @@ func (r *runner) finalizeComposeContainer(
 	if err != nil {
 		return nil, fmt.Errorf("get image metadata from container: %w", err)
 	}
-	if contract != nil && contract.Overlay &&
-		(parsedConfig.Overlay != nil || options.ExtraDevContainerPath != "") {
-		// Explicit up replaces the saved overlay entry; SSH uses it unchanged.
-		imageMetadataConfig.Raw = imageMetadataConfig.Raw[1:]
-		imageMetadataConfig.Config = imageMetadataConfig.Config[1:]
-	}
+	dropReplacedOverlay(contract, parsedConfig, options, imageMetadataConfig)
 
 	mergedConfig, err := mergeImageMetadataConfig(
 		ctx,
@@ -461,14 +465,7 @@ func (r *runner) finalizeComposeContainer(
 		return nil, err
 	}
 
-	// expose the compose project name inside the container
-	if mergedConfig.RemoteEnv == nil {
-		mergedConfig.RemoteEnv = map[string]*string{}
-	}
-	composeName := project.Name
-	mergedConfig.RemoteEnv["DEVSY_COMPOSE_PROJECT_NAME"] = &composeName
-	composeAlias := project.Name
-	mergedConfig.RemoteEnv["COMPOSE_PROJECT_NAME"] = &composeAlias
+	exposeComposeProjectName(mergedConfig, project.Name)
 
 	hostWarnings, err := r.composeHostWarnings(parsedConfig, substitutionContext, options)
 	if err != nil {
@@ -485,6 +482,33 @@ func (r *runner) finalizeComposeContainer(
 		secretsEnv:          options.SecretsEnv,
 		secretsMount:        options.SecretsMount,
 	})
+}
+
+// dropReplacedOverlay removes the saved overlay entry when an explicit up
+// replaces it; SSH uses it unchanged.
+func dropReplacedOverlay(
+	contract *composeContract,
+	parsedConfig *config.SubstitutedConfig,
+	options UpOptions,
+	imageMetadataConfig *config.ImageMetadataConfig,
+) {
+	if contract == nil || !contract.Overlay ||
+		(parsedConfig.Overlay == nil && options.ExtraDevContainerPath == "") {
+		return
+	}
+	imageMetadataConfig.Raw = imageMetadataConfig.Raw[1:]
+	imageMetadataConfig.Config = imageMetadataConfig.Config[1:]
+}
+
+// exposeComposeProjectName sets the compose project name inside the container.
+func exposeComposeProjectName(mergedConfig *config.MergedDevContainerConfig, name string) {
+	if mergedConfig.RemoteEnv == nil {
+		mergedConfig.RemoteEnv = map[string]*string{}
+	}
+	composeName := name
+	mergedConfig.RemoteEnv["DEVSY_COMPOSE_PROJECT_NAME"] = &composeName
+	composeAlias := name
+	mergedConfig.RemoteEnv["COMPOSE_PROJECT_NAME"] = &composeAlias
 }
 
 // updateContainerUserUID updates the container user's UID/GID on Docker drivers.
@@ -852,17 +876,9 @@ func (r *runner) startContainer(
 		return nil, err
 	}
 
-	if r.overlayExisting != nil && options.Recreate {
-		if err := r.teardownOverlayExisting(ctx); err != nil {
-			return nil, err
-		}
-		r.overlayExisting = nil
-		container = nil
-	}
-	if container != nil && options.Recreate {
-		if err := r.recreateDevContainer(ctx, container); err != nil {
-			return nil, err
-		}
+	container, err = r.prepareComposeRecreate(ctx, container, options)
+	if err != nil {
+		return nil, err
 	}
 
 	return r.composeUpAndVerifyContainer(ctx, &composeUpRunParams{
@@ -873,6 +889,31 @@ func (r *runner) startContainer(
 		parsedConfig:         parsedConfig,
 		hasExistingContainer: container != nil,
 	}, overrides.contract, container == nil || options.Recreate)
+}
+
+// prepareComposeRecreate tears down state replaced by a recreate and returns
+// the container to reuse, which is nil when an overlay was torn down.
+func (r *runner) prepareComposeRecreate(
+	ctx context.Context,
+	container *config.ContainerDetails,
+	options UpOptions,
+) (*config.ContainerDetails, error) {
+	if !options.Recreate {
+		return container, nil
+	}
+	if r.overlayExisting != nil {
+		if err := r.teardownOverlayExisting(ctx); err != nil {
+			return nil, err
+		}
+		r.overlayExisting = nil
+		return nil, nil
+	}
+	if container != nil {
+		if err := r.recreateDevContainer(ctx, container); err != nil {
+			return nil, err
+		}
+	}
+	return container, nil
 }
 
 func (r *runner) resolveComposeStartOverrides(
@@ -1082,13 +1123,7 @@ func (r *runner) generateComposeUpOverride(
 	if err != nil {
 		return composeOverrideFile{}, err
 	}
-	rawMetadata := extendResult.imageMetadata.Raw
-	if overlay != nil {
-		// Persist only the established runtime metadata fields, excluding feature
-		// options, host initialization, and source-selection inputs.
-		rawMetadata = append([]*config.ImageMetadata(nil), rawMetadata...)
-		rawMetadata[0] = metadata.DevContainerConfigToImageMetadata(overlay)
-	}
+	rawMetadata := overlayRawMetadata(extendResult.imageMetadata.Raw, overlay)
 	metadataValue, err := metadata.MarshalImageMetadata(rawMetadata)
 	if err != nil {
 		return composeOverrideFile{}, err
@@ -1133,6 +1168,21 @@ func (r *runner) generateComposeUpOverride(
 	}
 
 	return composeOverrideFile{path: overrideComposeUpFilePath, contract: string(contract)}, nil
+}
+
+// overlayRawMetadata persists only the established runtime metadata fields of
+// the overlay, excluding feature options, host initialization, and
+// source-selection inputs.
+func overlayRawMetadata(
+	raw []*config.ImageMetadata,
+	overlay *config.DevContainerConfig,
+) []*config.ImageMetadata {
+	if overlay == nil {
+		return raw
+	}
+	raw = append([]*config.ImageMetadata(nil), raw...)
+	raw[0] = metadata.DevContainerConfigToImageMetadata(overlay)
+	return raw
 }
 
 // mergeImageMetadataConfig folds any extra devcontainer config into the image
