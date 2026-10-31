@@ -470,6 +470,7 @@ func (r *runner) buildImage(
 			return nil, err
 		}
 		if prebuilt != nil {
+			buildkit.RecordSkipped(ctx, "prebuild", "prebuild_reused")
 			return prebuilt, nil
 		}
 	}

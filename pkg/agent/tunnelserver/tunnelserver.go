@@ -31,6 +31,7 @@ import (
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/stdio"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
@@ -132,6 +133,9 @@ func New(options ...Option) *tunnelServer {
 
 type tunnelServer struct {
 	tunnel.UnimplementedTunnelServer
+
+	// setup log mirroring; nil leaves AppendSetupLogs unimplemented
+	setupLogSink *workspacelogs.Sink
 
 	// stream mounts
 	mounts                  []*config.Mount

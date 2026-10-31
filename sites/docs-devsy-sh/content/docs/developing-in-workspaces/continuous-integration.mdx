@@ -86,6 +86,17 @@ workspace command's success result JSON off stderr. Use
 `--result-format=json` when the caller needs the structured result; child
 stdout and stderr remain separate from Devsy diagnostics.
 
+## Setup history after cleanup
+
+`devsy ci` deletes the workspace, but the history of its build and lifecycle hooks stays in the local store. Read it by run ID after the job ends, or from an artifact step that runs on the same machine:
+
+```sh
+devsy workspace logs --source setup --list
+devsy workspace logs --source setup --run RUN_ID --context CONTEXT --result-format=plain
+```
+
+Retention is bounded. See [Setup history](../troubleshooting/setup-history.mdx). The history covers the build and the lifecycle hooks. The stdout and stderr of your own command after `--` stay on their normal streams and are not archived. Hooks still running when the command ends are not waited for.
+
 ## Pre-building and pushing images
 
 To pre-build and publish a devcontainer image for reuse as a build cache, use `devsy workspace build`:

@@ -163,6 +163,10 @@ func (k *KubernetesDriver) CommandDevContainer(
 	})
 }
 
+// SupportsRequireRunning reports that CommandDevContainer honors RequireRunning.
+// It only execs into the existing pod, so it never starts anything.
+func (k *KubernetesDriver) SupportsRequireRunning() bool { return true }
+
 // CommandContainerArgv execs argv in the workspace pod's dev container, streaming
 // the given stdin/stdout/stderr. Unlike CommandDevContainer it takes explicit
 // argv rather than wrapping the command in sh -c.

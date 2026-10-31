@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
 // Runner drives the lifecycle of a single workspace's dev container.
@@ -46,7 +48,14 @@ type CommandParams struct {
 	Stderr  io.Writer
 	// RawStdout keeps binary protocols out of text redaction and its suffix buffer.
 	RawStdout bool
+	// RequireRunning makes the call exec-only: it never starts or unpauses the
+	// workload and fails when the runtime cannot guarantee that.
+	RequireRunning bool
 }
+
+// ErrRequireRunningUnsupported is returned when the runtime cannot enforce an
+// exec-only call.
+var ErrRequireRunningUnsupported = errors.New("runtime does not support exec-only commands")
 
 // UpOptions configures a single Up invocation.
 type UpOptions struct {
@@ -187,10 +196,12 @@ func (r *runner) Up(
 	switch {
 	case options.Recovery:
 		status.Skip(reporter, status.PhaseInitializeCommand, "recovery mode")
+		recordInitializeSkipped(ctx, "recovery_excluded")
 	case options.Platform.Enabled:
 		// Platform workspaces execute initialization remotely; this host-side
 		// phase is intentionally not run and must not appear successful.
 		status.Skip(reporter, status.PhaseInitializeCommand, "platform mode")
+		recordInitializeSkipped(ctx, "platform_excluded")
 	default:
 		err = status.Run(
 			ctx,
@@ -252,14 +263,19 @@ func (r *runner) Up(
 }
 
 func (r *runner) Command(ctx context.Context, params CommandParams) error {
+	if params.RequireRunning && !driver.DriverSupportsRequireRunning(r.driver) {
+		return ErrRequireRunningUnsupported
+	}
+
 	return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
-		WorkspaceID: r.id,
-		User:        params.User,
-		Command:     params.Command,
-		Stdin:       params.Stdin,
-		Stdout:      params.Stdout,
-		Stderr:      params.Stderr,
-		RawStdout:   params.RawStdout,
+		WorkspaceID:    r.id,
+		User:           params.User,
+		Command:        params.Command,
+		Stdin:          params.Stdin,
+		Stdout:         params.Stdout,
+		Stderr:         params.Stderr,
+		RawStdout:      params.RawStdout,
+		RequireRunning: params.RequireRunning,
 	})
 }
 
@@ -297,6 +313,22 @@ func (r *runner) dispatchByConfigKind(
 	default:
 		return r.runDefaultContainer(ctx, params)
 	}
+}
+
+// recordInitializeSkipped keeps the reason the host-side initializeCommand did
+// not run in the retained setup history.
+func recordInitializeSkipped(ctx context.Context, reason string) {
+	rec := workspacelogs.RecorderFrom(ctx)
+	if rec == nil {
+		return
+	}
+	rec.Invocation(workspacelogs.Invocation{
+		ID:     workspacelogs.NewID(),
+		Phase:  "lifecycle",
+		Hook:   "initializeCommand",
+		State:  workspacelogs.InvocationSkipped,
+		Reason: reason,
+	})
 }
 
 // runInitializeCommand runs the host-side initializeCommand hook. The hook is

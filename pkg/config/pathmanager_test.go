@@ -78,6 +78,7 @@ func TestDevsyHomeOverride(t *testing.T) {
 		{"CacheDir", pm.CacheDir, filepath.Join(home, "cache")},
 		{"StateDir", pm.StateDir, filepath.Join(home, "state")},
 		{"RuntimeDir", pm.RuntimeDir, filepath.Join(home, "run")},
+		{"WorkspaceLogsDir", pm.WorkspaceLogsDir, filepath.Join(home, "state", "workspace-logs")},
 	}
 
 	for _, tt := range tests {

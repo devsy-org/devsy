@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 
 	"github.com/devsy-org/devsy/cmd/flags"
@@ -33,6 +34,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
 )
 
@@ -208,16 +210,31 @@ func (cmd *UpCmd) devsyUp(
 	workspaceInfo.CLIOptions.SecretsEnv = nil
 	workspaceInfo.CLIOptions.SecretsMount = nil
 
+	run := startProviderRun(workspaceInfo, append(slices.Clone(secretsEnv), secretsMount...))
+	cliOptions.SetupParentProducerID = run.ProducerID()
+	hop := tunnelserver.NewSetupLogHop(ctx, tunnelserver.HopOptions{
+		Session: run, Upstream: tunnelClient, Receive: true,
+	})
+	defer hop.Close()
+	ctx = tunnelserver.WithSetupLogOptions(run.Context(ctx), hop.Options())
+
 	runner, err := CreateRunner(ctx, workspaceInfo)
 	if err != nil {
+		run.Finish(err, false)
 		return nil, err
 	}
 
 	reporter := tunnelserver.NewTunnelStatusReporter(ctx, tunnelClient)
-	return runner.Up(ctx, devcontainer.UpOptions{
+	result, err := runner.Up(ctx, devcontainer.UpOptions{
 		CLIOptions:    cliOptions,
 		RegistryCache: workspaceInfo.RegistryCache,
 	}, workspaceInfo.InjectTimeout, reporter)
+	run.Finish(err, false)
+	if !hop.Flush(ctx) {
+		_ = run.Store.AddCondition(run.RunID, workspacelogs.ConditionInterrupted)
+	}
+
+	return result, err
 }
 
 func splitSecrets(secrets []*tunnel.Secret) (env, mount []string) {

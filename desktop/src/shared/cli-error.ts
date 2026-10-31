@@ -53,6 +53,8 @@ export interface CliResultEnvelope {
   url?: string
   warnings?: string[]
   recovery?: boolean
+  /** Durable history identity. Absent from envelopes written by older CLIs. */
+  runId?: string
 }
 
 export interface CliErrorEnvelope {
@@ -62,6 +64,40 @@ export interface CliErrorEnvelope {
   code?: string
   hint?: string
   context?: Record<string, string>
+}
+
+const RUN_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+export interface RunIdentity {
+  runId?: string
+  failedInvocationId?: string
+}
+
+/**
+ * Reads optional history identity from string-valued error context. Values
+ * that are not canonical UUIDs are dropped, never trusted.
+ */
+export function runIdentityFromContext(
+  context: Record<string, string> | undefined,
+): RunIdentity {
+  const identity: RunIdentity = {}
+  if (context?.runId && RUN_UUID.test(context.runId))
+    identity.runId = context.runId
+  if (
+    identity.runId &&
+    context?.failedInvocationId &&
+    RUN_UUID.test(context.failedInvocationId)
+  )
+    identity.failedInvocationId = context.failedInvocationId
+  return identity
+}
+
+/** Run ID from a result envelope or task submission, when present and valid. */
+export function runIdFromPayload(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const runId = (value as { runId?: unknown }).runId
+  return typeof runId === "string" && RUN_UUID.test(runId) ? runId : undefined
 }
 
 export function cliErrorFromEnvelope(value: unknown): CLIError | undefined {

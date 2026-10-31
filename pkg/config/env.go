@@ -86,6 +86,10 @@ const (
 	// EnvWorkspaceDaemonConfig holds the workspace daemon configuration.
 	EnvWorkspaceDaemonConfig = "DEVSY_WORKSPACE_DAEMON_CONFIG"
 
+	// EnvSetupRun passes the non-secret run reference (JSON) from the container
+	// setup process to the background hook workers it launches.
+	EnvSetupRun = "DEVSY_SETUP_RUN"
+
 	// EnvSecretsEnv passes base64-encoded KEY=VALUE secrets (newline-joined) to
 	// agent subprocesses via the environment (not argv, to keep them out of ps).
 	EnvSecretsEnv = "DEVSY_SECRETS_ENV" // #nosec G101 -- env var name, not a credential.

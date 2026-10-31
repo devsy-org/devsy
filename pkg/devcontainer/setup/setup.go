@@ -26,6 +26,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/sharedfile"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -991,6 +992,18 @@ func dirIsWritable(dir string) bool {
 
 func containerDataDir() string {
 	return writableContainerDataDirOnce()
+}
+
+// WorkspaceLogsRoot returns the container-side spool for retained setup
+// history, inside the already selected secure data directory, or empty when no
+// secure directory is available. The caller opens it as a workspacelogs store.
+func WorkspaceLogsRoot() string {
+	dir := containerDataDir()
+	if dir == "" {
+		return ""
+	}
+
+	return filepath.Join(dir, workspacelogs.SpoolDirName)
 }
 
 func setupPlatformGitCredentials(

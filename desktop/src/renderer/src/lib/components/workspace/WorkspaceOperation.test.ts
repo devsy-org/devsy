@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { mockInvoke, resetTauriMocks } from "$lib/__mocks__/tauri.js"
+import { goto } from "$lib/router.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { workspaceJobs } from "$lib/stores/workspaces.js"
 import WorkspaceOperation from "./WorkspaceOperation.svelte"
@@ -228,5 +229,29 @@ describe("WorkspaceOperation", () => {
     const ui = render(WorkspaceOperation, { id: "ws", status: "Running" })
 
     expect(ui.getByRole("status").getAttribute("aria-live")).toBe("assertive")
+  })
+  it("pins View logs to the failed run and invocation", async () => {
+    const run = "11111111-1111-4111-8111-111111111111"
+    const inv = "a1111111-0000-4000-8000-000000000001"
+    workspaceJobs.set({
+      ws: {
+        commandId: "up",
+        activity: "rebuilding",
+        state: "failed",
+        phase: "",
+        error: "hook failed",
+        runId: run,
+        failedInvocationId: inv,
+      },
+    })
+    const ui = render(WorkspaceOperation, {
+      id: "ws",
+      status: "Running",
+      density: "expanded",
+    })
+    await fireEvent.click(ui.getByRole("button", { name: "View logs for ws" }))
+    const url = new URL(vi.mocked(goto).mock.calls[0][0] as string, "http://x")
+    expect(url.searchParams.get("run")).toBe(run)
+    expect(url.searchParams.get("invocation")).toBe(inv)
   })
 })

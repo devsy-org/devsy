@@ -409,6 +409,7 @@ func (r *runner) compressWorkspaceConfig(
 		Source:           r.workspaceConfig.Workspace.Source,
 		Agent:            r.workspaceConfig.Agent,
 		ContentFolder:    r.workspaceConfig.ContentFolder,
+		SetupRun:         r.setupRunRef(cliOptions),
 	}
 	lifecycle, err := r.lifecycleOptions(mergedConfig, dockerless, imageEntrypoint)
 	if err != nil {
@@ -567,6 +568,7 @@ func (r *runner) executeSetup(
 	setupCommand string,
 	secretsEnv, secretsMount []string,
 ) (*config.Result, error) {
+	setupLogOptions := tunnelserver.SetupLogOptionsFrom(ctx)
 	runSetupServer := func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config.Result, error) {
 		return tunnelserver.RunSetupServer(
 			ctx,
@@ -575,13 +577,15 @@ func (r *runner) executeSetup(
 			r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
 			r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
 			result,
-			tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
-			tunnelserver.WithSecrets(
-				secretsEnv,
-				secretsMount,
-			),
-			tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
-			tunnelserver.WithStatusReporter(r.reporter),
+			append([]tunnelserver.Option{
+				tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
+				tunnelserver.WithSecrets(
+					secretsEnv,
+					secretsMount,
+				),
+				tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
+				tunnelserver.WithStatusReporter(r.reporter),
+			}, setupLogOptions...)...,
 		)
 	}
 
@@ -701,4 +705,21 @@ func filterWorkspaceMounts(
 	}
 
 	return retMounts
+}
+
+// setupRunRef describes the run this setup records into, or nil when the CLI
+// options name none.
+func (r *runner) setupRunRef(cliOptions provider2.CLIOptions) *provider2.SetupRunRef {
+	ws := r.workspaceConfig.Workspace
+	if cliOptions.SetupRunID == "" || ws == nil {
+		return nil
+	}
+
+	return &provider2.SetupRunRef{
+		RunID:            cliOptions.SetupRunID,
+		ParentProducerID: cliOptions.SetupParentProducerID,
+		Context:          ws.Context,
+		WorkspaceUID:     ws.UID,
+		WorkspaceID:      ws.ID,
+	}
 }
