@@ -234,7 +234,11 @@ func TestImageRuntimeDoesNotNeedImageBackend(t *testing.T) {
 	}
 	require.NoError(
 		t,
-		r.runContainer(context.Background(), params, &config.MergedDevContainerConfig{}, info, nil),
+		r.runContainer(
+			context.Background(),
+			params,
+			containerLaunch{&config.MergedDevContainerConfig{}, info, nil},
+		),
 	)
 	require.NotNil(t, d.params)
 	assert.Equal(t, r.id, d.params.WorkspaceID)

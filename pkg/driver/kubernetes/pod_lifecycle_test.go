@@ -224,16 +224,7 @@ func TestReconcileReplacesPodWhenOptionsChanged(t *testing.T) {
 func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
 	c := newFakeCluster(t)
 	c.putPod(t, c.pod(t, podSpec{uid: "u1", phase: corev1.PodPending}))
-	observed := make(chan struct{}, 1)
-	c.cs.PrependReactor(
-		"get", podResourceName, func(clienttesting.Action) (bool, runtime.Object, error) {
-			select {
-			case observed <- struct{}{}:
-			default:
-			}
-			return false, nil, nil
-		},
-	)
+	observed := observePodGets(c)
 	type result struct {
 		reused bool
 		err    error
@@ -253,12 +244,7 @@ func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
 		t.Fatalf("reconcile returned before the pod was ready: %+v", got)
 	case <-time.After(40 * time.Millisecond):
 	}
-	running := c.pod(t, podSpec{uid: "u1", phase: corev1.PodRunning})
-	running.Status.ContainerStatuses = []corev1.ContainerStatus{{
-		Name: DevContainerName, Ready: true,
-		State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
-	}}
-	c.putPod(t, running)
+	c.putPod(t, readyRunningPod(t, c))
 	select {
 	case got := <-done:
 		require.NoError(t, got.err)
@@ -266,6 +252,33 @@ func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("reconcile did not return after the pod became ready")
 	}
+}
+
+func observePodGets(c *fakeCluster) chan struct{} {
+	observed := make(chan struct{}, 1)
+	c.cs.PrependReactor(
+		"get", podResourceName, func(clienttesting.Action) (bool, runtime.Object, error) {
+			select {
+			case observed <- struct{}{}:
+			default:
+			}
+
+			return false, nil, nil
+		},
+	)
+
+	return observed
+}
+
+func readyRunningPod(t *testing.T, c *fakeCluster) *corev1.Pod {
+	t.Helper()
+	running := c.pod(t, podSpec{uid: "u1", phase: corev1.PodRunning})
+	running.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: DevContainerName, Ready: true,
+		State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+	}}
+
+	return running
 }
 
 func TestReconcileTerminatingPodWaitsForDeletionThenAllowsCreate(t *testing.T) {

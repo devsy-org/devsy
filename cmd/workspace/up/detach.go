@@ -253,14 +253,19 @@ func advanceTaskLaunch(
 		traceDetachedAdmission("checking launcher")
 		return false, err
 	}
-	if state.PID != 0 && !state.WorkerReady {
-		if err := t.WorkerLaunchReady(os.Getpid()); err != nil {
-			traceDetachedAdmission("acknowledging worker")
-			return false, err
-		}
-		return false, nil
+	return false, acknowledgeWorkerLaunch(t, state)
+}
+
+func acknowledgeWorkerLaunch(t *task.Task, state *task.State) error {
+	if state.PID == 0 || state.WorkerReady {
+		return nil
 	}
-	return false, nil
+	if err := t.WorkerLaunchReady(os.Getpid()); err != nil {
+		traceDetachedAdmission("acknowledging worker")
+		return err
+	}
+
+	return nil
 }
 
 func traceDetachedAdmission(stage string) {

@@ -428,7 +428,7 @@ func (r *runner) resolveNewContainer(
 		return nil, fmt.Errorf("seed workspace volume: %w", seedErr)
 	}
 
-	err = r.runContainer(ctx, p, mergedConfig, buildInfo, runOptions)
+	err = r.runContainer(ctx, p, containerLaunch{mergedConfig, buildInfo, runOptions})
 	if err != nil {
 		return nil, fmt.Errorf("runner run container: %w", err)
 	}
@@ -468,29 +468,12 @@ func (r *runner) attemptPreStartDelivery(
 	buildInfo *config.BuildInfo,
 ) *driver.RunOptions {
 	strategy := r.newAgentDelivery()
-	switch strategy.Phase() {
-	case delivery.PhasePostStart:
-		log.Debug("agent delivery scheduled for post-start")
-		return nil
-	case delivery.PhasePreStart:
-	default:
-		log.Debugf(
-			"pre-start agent delivery skipped for unsupported phase %s",
-			strategy.Phase(),
-		)
+	if !preStartPhaseSupported(strategy.Phase()) {
 		return nil
 	}
-	if _, local := strategy.(*delivery.LocalDockerDelivery); local {
-		for _, arg := range mergedConfig.RunArgs {
-			if arg == "--mount" || strings.HasPrefix(arg, "--mount=") ||
-				arg == "--volume" || strings.HasPrefix(arg, "--volume=") ||
-				arg == "--tmpfs" || strings.HasPrefix(arg, "--tmpfs=") ||
-				arg == "--volumes-from" || strings.HasPrefix(arg, "--volumes-from=") ||
-				arg == "-v" || strings.HasPrefix(arg, "-v=") ||
-				(strings.HasPrefix(arg, "-v") && len(arg) > 2) {
-				return nil
-			}
-		}
+	if _, local := strategy.(*delivery.LocalDockerDelivery); local &&
+		hasVolumeRunArg(mergedConfig.RunArgs) {
+		return nil
 	}
 
 	runOptions, err := r.buildRunOptionsForDelivery(
@@ -512,6 +495,36 @@ func (r *runner) attemptPreStartDelivery(
 		return nil
 	}
 	return runOptions
+}
+
+func preStartPhaseSupported(phase delivery.DeliveryPhase) bool {
+	switch phase {
+	case delivery.PhasePreStart:
+		return true
+	case delivery.PhasePostStart:
+		log.Debug("agent delivery scheduled for post-start")
+	default:
+		log.Debugf("pre-start agent delivery skipped for unsupported phase %s", phase)
+	}
+
+	return false
+}
+
+var volumeRunArgFlags = []string{"--mount", "--volume", "--tmpfs", "--volumes-from", "-v"}
+
+func hasVolumeRunArg(args []string) bool {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-v") && len(arg) > 2 {
+			return true
+		}
+		for _, flag := range volumeRunArgFlags {
+			if arg == flag || strings.HasPrefix(arg, flag+"=") {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (r *runner) lingerWarning(ctx context.Context) string {
@@ -945,36 +958,21 @@ func (r *runner) seedWorkspaceVolume(ctx context.Context, p *resolveParams) erro
 	})
 }
 
+type containerLaunch struct {
+	mergedConfig *config.MergedDevContainerConfig
+	buildInfo    *config.BuildInfo
+	runOptions   *driver.RunOptions
+}
+
 func (r *runner) runContainer(
 	ctx context.Context,
 	p *resolveParams,
-	mergedConfig *config.MergedDevContainerConfig,
-	buildInfo *config.BuildInfo,
-	runOptions *driver.RunOptions,
+	launch containerLaunch,
 ) error {
-	var err error
-
-	if runOptions == nil && buildInfo.Dockerless != nil {
-		runOptions, err = r.getDockerlessRunOptions(
-			mergedConfig,
-			p.substitutionContext,
-			buildInfo,
-			len(p.options.SecretsMount) > 0,
-		)
-		if err != nil {
-			return fmt.Errorf("build dockerless run options: %w", err)
-		}
-	} else if runOptions == nil {
-		// build run options
-		runOptions, err = r.getRunOptions(
-			mergedConfig,
-			p.substitutionContext,
-			buildInfo,
-			len(p.options.SecretsMount) > 0,
-		)
-		if err != nil {
-			return fmt.Errorf("build run options: %w", err)
-		}
+	mergedConfig := launch.mergedConfig
+	runOptions, err := r.resolveLaunchRunOptions(p, launch)
+	if err != nil {
+		return err
 	}
 
 	runOptions.Labels = append(
@@ -1006,6 +1004,34 @@ func (r *runner) runContainer(
 	}
 
 	return fmt.Errorf("driver does not support running a devcontainer")
+}
+
+func (r *runner) resolveLaunchRunOptions(
+	p *resolveParams,
+	launch containerLaunch,
+) (*driver.RunOptions, error) {
+	if launch.runOptions != nil {
+		return launch.runOptions, nil
+	}
+	hasSecrets := len(p.options.SecretsMount) > 0
+	if launch.buildInfo.Dockerless != nil {
+		runOptions, err := r.getDockerlessRunOptions(
+			launch.mergedConfig, p.substitutionContext, launch.buildInfo, hasSecrets,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("build dockerless run options: %w", err)
+		}
+
+		return runOptions, nil
+	}
+	runOptions, err := r.getRunOptions(
+		launch.mergedConfig, p.substitutionContext, launch.buildInfo, hasSecrets,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build run options: %w", err)
+	}
+
+	return runOptions, nil
 }
 
 // withResolvedUser returns a copy of parsedConfig carrying the effective user

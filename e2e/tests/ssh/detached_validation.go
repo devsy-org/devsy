@@ -246,24 +246,26 @@ func (cli detachedValidationCLI) launchWorker(
 		return worker, nil
 	})
 	if err != nil {
-		store, storeErr := task.NewStoreAt(filepath.Join(cli.home, "state", "tasks"))
-		if storeErr == nil {
-			state, stateErr := store.Get(tk.ID())
-			if stateErr == nil {
-				reportDiagnosticState(state)
-			}
-		}
-		streamsPath, pathErr := config.DefaultPathManager().
-			ProcessStreamsFile(task.WorkerProcessName(tk.ID()))
-		if pathErr == nil {
-			streams, readErr := readDiagnosticStreams(cli.home, streamsPath)
-			if readErr == nil {
-				ginkgo.GinkgoWriter.Printf("worker streams: %s\n", streams)
-			}
-		}
+		reportWorkerDiagnostics(cli.home, tk)
 		return ref, errors.Join(err, tk.FailLaunch(err))
 	}
 	return ref, nil
+}
+
+func reportWorkerDiagnostics(home string, tk *task.Task) {
+	if store, err := task.NewStoreAt(filepath.Join(home, "state", "tasks")); err == nil {
+		if state, err := store.Get(tk.ID()); err == nil {
+			reportDiagnosticState(state)
+		}
+	}
+	streamsPath, err := config.DefaultPathManager().
+		ProcessStreamsFile(task.WorkerProcessName(tk.ID()))
+	if err != nil {
+		return
+	}
+	if streams, err := readDiagnosticStreams(home, streamsPath); err == nil {
+		ginkgo.GinkgoWriter.Printf("worker streams: %s\n", streams)
+	}
 }
 
 func readDiagnosticStreams(home, path string) ([]byte, error) {
