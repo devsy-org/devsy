@@ -205,30 +205,61 @@ func (r *runner) Up(
 	return result, err
 }
 
-func (r *runner) resolveUpConfig(
-	ctx context.Context,
-	reporter status.Reporter,
-	options UpOptions,
-) (*config.SubstitutedConfig, *config.SubstitutionContext, error) {
-	var substitutedConfig *config.SubstitutedConfig
-	var substitutionContext *config.SubstitutionContext
-	err := status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseResolvingConfig},
-		func(ctx context.Context) error {
-			var resolveErr error
-			substitutedConfig, substitutionContext, resolveErr = r.getSubstitutedConfigWithContext(
-				ctx,
-				options.CLIOptions,
-			)
-			return resolveErr
-		},
-	)
-	if err != nil {
-		return nil, nil, err
+func (r *runner) Command(ctx context.Context, params CommandParams) error {
+	if params.RequireRunning && !driver.DriverSupportsRequireRunning(r.driver) {
+		return ErrRequireRunningUnsupported
 	}
-	return substitutedConfig, substitutionContext, nil
+
+	return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
+		WorkspaceID:    r.id,
+		User:           params.User,
+		Command:        params.Command,
+		Stdin:          params.Stdin,
+		Stdout:         params.Stdout,
+		Stderr:         params.Stderr,
+		RawStdout:      params.RawStdout,
+		RequireRunning: params.RequireRunning,
+	})
+}
+
+func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
+	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
+	if err != nil {
+		return nil, fmt.Errorf("find dev container: %w", err)
+	}
+	return containerDetails, nil
+}
+
+func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
+	return r.driver.GetDevContainerLogs(ctx, r.id, writer, writer)
+}
+
+func (r *runner) annotateUpResult(result *config.Result, selectionWarning string) {
+	if result == nil {
+		return
+	}
+	result.RecoveryContainer = r.recovering
+	if selectionWarning != "" {
+		result.HostWarnings = append(result.HostWarnings, selectionWarning)
+	}
+}
+
+func (r *runner) afterInitialize(
+	ctx context.Context,
+	substitutedConfig *config.SubstitutedConfig,
+	options UpOptions,
+	defaultSelection bool,
+) error {
+	if defaultSelection {
+		// Detection follows initialization so the hook can generate project files.
+		if err := r.resolveDefaultContainerConfig(substitutedConfig.Config, options); err != nil {
+			return err
+		}
+		if err := r.checkOverlayRecreation(ctx, substitutedConfig, options); err != nil {
+			return err
+		}
+	}
+	return r.validateOverlayUpAssets(ctx, substitutedConfig, options)
 }
 
 // runInitializePhase skips initializeCommand in recovery and platform modes.
@@ -269,61 +300,30 @@ func (r *runner) runInitializePhase(
 	}
 }
 
-func (r *runner) afterInitialize(
+func (r *runner) resolveUpConfig(
 	ctx context.Context,
-	substitutedConfig *config.SubstitutedConfig,
+	reporter status.Reporter,
 	options UpOptions,
-	defaultSelection bool,
-) error {
-	if defaultSelection {
-		// Detection follows initialization so the hook can generate project files.
-		if err := r.resolveDefaultContainerConfig(substitutedConfig.Config, options); err != nil {
-			return err
-		}
-		if err := r.checkOverlayRecreation(ctx, substitutedConfig, options); err != nil {
-			return err
-		}
-	}
-	return r.validateOverlayUpAssets(ctx, substitutedConfig, options)
-}
-
-func (r *runner) annotateUpResult(result *config.Result, selectionWarning string) {
-	if result == nil {
-		return
-	}
-	result.RecoveryContainer = r.recovering
-	if selectionWarning != "" {
-		result.HostWarnings = append(result.HostWarnings, selectionWarning)
-	}
-}
-
-func (r *runner) Command(ctx context.Context, params CommandParams) error {
-	if params.RequireRunning && !driver.DriverSupportsRequireRunning(r.driver) {
-		return ErrRequireRunningUnsupported
-	}
-
-	return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
-		WorkspaceID:    r.id,
-		User:           params.User,
-		Command:        params.Command,
-		Stdin:          params.Stdin,
-		Stdout:         params.Stdout,
-		Stderr:         params.Stderr,
-		RawStdout:      params.RawStdout,
-		RequireRunning: params.RequireRunning,
-	})
-}
-
-func (r *runner) Find(ctx context.Context) (*config.ContainerDetails, error) {
-	containerDetails, err := r.driver.FindDevContainer(ctx, r.id)
+) (*config.SubstitutedConfig, *config.SubstitutionContext, error) {
+	var substitutedConfig *config.SubstitutedConfig
+	var substitutionContext *config.SubstitutionContext
+	err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseResolvingConfig},
+		func(ctx context.Context) error {
+			var resolveErr error
+			substitutedConfig, substitutionContext, resolveErr = r.getSubstitutedConfigWithContext(
+				ctx,
+				options.CLIOptions,
+			)
+			return resolveErr
+		},
+	)
 	if err != nil {
-		return nil, fmt.Errorf("find dev container: %w", err)
+		return nil, nil, err
 	}
-	return containerDetails, nil
-}
-
-func (r *runner) Logs(ctx context.Context, writer io.Writer) error {
-	return r.driver.GetDevContainerLogs(ctx, r.id, writer, writer)
+	return substitutedConfig, substitutionContext, nil
 }
 
 // dispatchByConfigKind routes to the container implementation for the config's

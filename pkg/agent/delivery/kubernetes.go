@@ -106,17 +106,6 @@ func (d *KubernetesDelivery) DeliverPostStart(ctx context.Context, opts PostStar
 	return nil
 }
 
-// versionMatches reports whether the in-pod binary already has the expected version.
-func (d *KubernetesDelivery) versionMatches(ctx context.Context, destPath string) bool {
-	expected := d.expectedVersion()
-	actual := d.detectVersion(ctx, destPath)
-	if actual == "" || actual != expected {
-		return false
-	}
-	log.Debugf("remote agent version matches expected version %s, skipping delivery", expected)
-	return true
-}
-
 func deliveryFailure(downloadErr, streamErr error) error {
 	streamErr = fmt.Errorf("exec-stream delivery failed: %w", streamErr)
 	if downloadErr == nil {
@@ -130,6 +119,17 @@ func deliveryFailure(downloadErr, streamErr error) error {
 
 func (d *KubernetesDelivery) Cleanup(_ context.Context, _ string) error {
 	return nil
+}
+
+// versionMatches reports whether the in-pod binary already has the expected version.
+func (d *KubernetesDelivery) versionMatches(ctx context.Context, destPath string) bool {
+	expected := d.expectedVersion()
+	actual := d.detectVersion(ctx, destPath)
+	if actual == "" || actual != expected {
+		return false
+	}
+	log.Debugf("remote agent version matches expected version %s, skipping delivery", expected)
+	return true
 }
 
 func (d *KubernetesDelivery) deliverViaDownload(
