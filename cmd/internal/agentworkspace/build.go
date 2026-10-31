@@ -85,11 +85,14 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 		return err
 	}
 
+	run := startProviderRun(workspaceInfo, nil)
 	_, err = tunnelserver.ReportResult(
 		cancelCtx,
 		tunnelClient,
 		func(ctx context.Context) (*config2.Result, error) {
-			return nil, buildAndPushImages(ctx, runner, workspaceInfo)
+			buildErr := buildAndPushImages(run.Context(ctx), runner, workspaceInfo)
+			run.Finish(buildErr, false)
+			return nil, buildErr
 		},
 	)
 	return err

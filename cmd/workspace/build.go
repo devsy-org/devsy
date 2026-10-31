@@ -8,6 +8,7 @@ import (
 	cmdflags "github.com/devsy-org/devsy/cmd/flags"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
 	devcconfig "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	cliflags "github.com/devsy-org/devsy/pkg/flags"
@@ -16,8 +17,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/output"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/status"
 	workspace2 "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
 )
 
@@ -277,6 +280,9 @@ func (cmd *BuildCmd) build(
 		log.Debugf("cleaning up temporary workspace")
 	}()
 
+	run := cmd.startSetupRun(workspaceClient)
+	ctx = run.Context(ctx)
+
 	var result *devcconfig.Result
 	err = status.Run(ctx, reporter, status.Operation{
 		Phase: status.PhaseBuildingImage,
@@ -293,19 +299,48 @@ func (cmd *BuildCmd) build(
 		)
 		return buildErr
 	})
+	run.Finish(err, true)
 	if err != nil {
-		return err
+		return clierr.WithContext(err, run.FailureContext())
 	}
 
 	if !emitJSON {
 		return nil
 	}
 
-	writeBuildResultJSON(result)
+	writeBuildResultJSON(result, run)
 	return nil
 }
 
-func writeBuildResultJSON(result *devcconfig.Result) {
+// startSetupRun starts the run that retains this build's output and installs
+// its identity in the CLI options sent to the provider host. A storage problem
+// leaves history unrecorded and never fails the build.
+func (cmd *BuildCmd) startSetupRun(workspaceClient client.WorkspaceClient) *workspacelogs.Session {
+	cmd.CLIOptions.SetupRunID = ""
+	cmd.CLIOptions.SetupParentProducerID = ""
+
+	run := workspacelogs.StartSession(workspacelogs.SessionOptions{
+		Location: workspacelogs.LocationHost,
+		Redactor: secrets.NewEnvironmentRedactor(os.Environ()),
+		Run: workspacelogs.RunSpec{
+			Context:            workspaceClient.Context(),
+			WorkspaceIDAtStart: workspaceClient.Workspace(),
+			Command:            "build",
+		},
+	})
+	if run == nil {
+		return nil
+	}
+	if ws := workspaceClient.WorkspaceConfig(); ws != nil {
+		run.BindWorkspace(ws.UID, workspaceClient.Workspace())
+	}
+	cmd.CLIOptions.SetupRunID = run.RunID
+	cmd.CLIOptions.SetupParentProducerID = run.ProducerID()
+
+	return run
+}
+
+func writeBuildResultJSON(result *devcconfig.Result, run *workspacelogs.Session) {
 	workdir := ""
 	if result != nil && result.SubstitutionContext != nil {
 		workdir = result.SubstitutionContext.ContainerWorkspaceFolder
@@ -314,5 +349,14 @@ func writeBuildResultJSON(result *devcconfig.Result) {
 		ContainerID:           devcconfig.GetContainerID(result),
 		RemoteUser:            devcconfig.GetRemoteUser(result),
 		RemoteWorkspaceFolder: workdir,
+		RunID:                 runIDOf(run),
 	})
+}
+
+func runIDOf(run *workspacelogs.Session) string {
+	if run == nil {
+		return ""
+	}
+
+	return run.RunID
 }
