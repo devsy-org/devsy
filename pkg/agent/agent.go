@@ -539,18 +539,21 @@ func dockerReachable(dockerOverride string, envs map[string]string) (bool, error
 		Redactor: secrets.NewEnvironmentRedactor(redactionEnv),
 	})
 	if err != nil {
-		details := result.DiagnosticOutput()
-		if strings.Contains(strings.ToLower(details+" "+err.Error()), "permission denied") {
-			if dockerOverride == "" {
-				return true, nil
-			}
-		}
-
-		if details != "" {
-			return false, fmt.Errorf("%s ps: %s: %w", docker, details, err)
-		}
-		return false, fmt.Errorf("%s ps: %w", docker, err)
+		return dockerPSError(docker, dockerOverride, result.DiagnosticOutput(), err)
 	}
 
 	return false, nil
+}
+
+// dockerPSError classifies a failed `docker ps`: a permission error on the
+// default docker needs root to fix; anything else is returned to the caller.
+func dockerPSError(docker, dockerOverride, details string, err error) (bool, error) {
+	if strings.Contains(strings.ToLower(details+" "+err.Error()), "permission denied") &&
+		dockerOverride == "" {
+		return true, nil
+	}
+	if details != "" {
+		return false, fmt.Errorf("%s ps: %s: %w", docker, details, err)
+	}
+	return false, fmt.Errorf("%s ps: %w", docker, err)
 }
