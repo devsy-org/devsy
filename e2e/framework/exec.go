@@ -91,6 +91,7 @@ func (f *Framework) ExecCommandCapture(ctx context.Context, args []string) (stri
 	var execOut bytes.Buffer
 	var execErr bytes.Buffer
 
+	//nolint:gosec // e2e harness runs its own test commands by design
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay

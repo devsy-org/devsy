@@ -603,7 +603,7 @@ func (k *KubernetesDriver) runPod(
 
 	// wait for pod running
 	log.Debugf("Waiting for DevContainer Pod %q to come up", id)
-	_, err = k.waitPodRunning(ctx, id)
+	err = k.waitPodRunning(ctx, id)
 	if err != nil {
 		return err
 	}

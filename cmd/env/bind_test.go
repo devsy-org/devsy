@@ -48,6 +48,7 @@ func TestAttachAndDetachEnvironmentVariable(t *testing.T) {
 
 func TestAttachRejectsSecret(t *testing.T) {
 	globalFlags := setupEnvCommandTest(t)
+	//nolint:staticcheck // test needs the full Store interface, not the secret-only view
 	store, err := secrets.NewStoreForConfig(
 		mustLoadConfig(t),
 	) //nolint:staticcheck // test needs the full Store interface
@@ -78,6 +79,7 @@ func TestDeleteUnbindsEnvironmentVariable(t *testing.T) {
 func TestSetRejectsConvertingAttachedSecretToEnvironment(t *testing.T) {
 	globalFlags := setupEnvCommandTest(t)
 	cfg := mustLoadConfig(t)
+	//nolint:staticcheck // test needs the full Store interface, not the secret-only view
 	store, err := secrets.NewStoreForConfig(
 		cfg,
 	) //nolint:staticcheck // test needs the full Store interface

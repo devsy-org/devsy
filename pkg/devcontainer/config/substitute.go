@@ -160,6 +160,7 @@ func replaceWithContainerEnv(
 	}
 }
 
+//nolint:unparam // the value depends on the build platform; Windows builds pass true
 func replaceWithContext(isWindows bool, substitutionCtx *SubstitutionContext) ReplaceFunction {
 	return func(match, variable string, args []string) string {
 		switch variable {

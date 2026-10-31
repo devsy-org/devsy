@@ -48,6 +48,7 @@ func GetDockerlessBuildContext() string {
 }
 
 func ImageConfigExists(path string) bool {
+	//nolint:gosec // paths come from the internal agent layout
 	_, err := os.Stat(path)
 	return err == nil
 }

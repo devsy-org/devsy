@@ -164,7 +164,7 @@ func (k *KubernetesDriver) reconcileObservedPod(
 	}
 	log.Debugf("Pod %q already exists and nothing changed, skipping update", id)
 	if classifyPod(pod) == podPending {
-		if _, err := k.waitPodRunning(ctx, id); err != nil {
+		if err := k.waitPodRunning(ctx, id); err != nil {
 			return false, err
 		}
 	}

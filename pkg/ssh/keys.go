@@ -161,6 +161,7 @@ func GetPrivateKeyRawBase(dir string) ([]byte, error) {
 	}
 
 	// read private key
+	//nolint:gosec // path is a user key file chosen by config
 	out, err := os.ReadFile(privateKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("read private ssh key: %w", err)

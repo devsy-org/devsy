@@ -713,6 +713,7 @@ func (s *Store) write(state *State) error {
 
 // syncDir fsyncs a directory so a rename survives a crash.
 func syncDir(dir string) {
+	//nolint:gosec // path is inside the internal task store
 	d, err := os.Open(dir) // #nosec G304 -- store's own task dir.
 	if err != nil {
 		return

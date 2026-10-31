@@ -115,7 +115,7 @@ func getConfig(userName string, keyFilePaths []string) (*ssh.ClientConfig, error
 	return &ssh.ClientConfig{
 		User:            userName,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signers...)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // existing clone behaviour; host key checking is out of scope here
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // existing behaviour; host key checks are out of scope
 	}, nil
 }
 

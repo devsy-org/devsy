@@ -69,7 +69,7 @@ func (cmd *StatusCmd) Run(
 			return err
 		}
 
-		fmt.Println(string(out))
+		_, _ = fmt.Fprintln(os.Stdout, string(out))
 		return nil
 	}
 

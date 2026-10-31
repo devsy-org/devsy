@@ -493,6 +493,7 @@ var _ = ginkgo.Describe(
 
 			sshContext, sshCancel := context.WithCancel(context.Background())
 			go func() {
+				//nolint:gosec // e2e harness command by design
 				cmd := exec.CommandContext(
 					sshContext,
 					filepath.Join(tc.f.DevsyBinDir, tc.f.DevsyBinName),

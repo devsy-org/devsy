@@ -13,12 +13,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*corev1.Pod, error) {
+func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) error {
 	throttledLogger := throttledlogger.NewThrottledLogger(time.Second * 5)
 
 	timeoutDuration, err := time.ParseDuration(k.options.PodTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("parse pod timeout: %w", err)
+		return fmt.Errorf("parse pod timeout: %w", err)
 	}
 
 	started := time.Now()
@@ -45,7 +45,7 @@ func (k *KubernetesDriver) waitPodRunning(ctx context.Context, id string) (*core
 		},
 	)
 
-	return pod, err
+	return err
 }
 
 type podStatusParams struct {

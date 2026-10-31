@@ -328,6 +328,7 @@ func CreateWorkspaceBusyFile(folder string) {
 
 func HasWorkspaceBusyFile(folder string) bool {
 	filePath := filepath.Join(folder, config.WorkspaceBusyFile)
+	//nolint:gosec // paths come from the internal agent layout
 	_, err := os.Stat(filePath)
 	return err == nil
 }

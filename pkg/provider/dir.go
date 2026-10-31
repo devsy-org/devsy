@@ -246,6 +246,7 @@ func LoadProviderConfig(context, provider string) (*ProviderConfig, error) {
 	}
 
 	providerFile := filepath.Join(providerDir, ProviderConfigFile)
+	//nolint:gosec // path is inside the provider state directory
 	providerConfigBytes, err := os.ReadFile(providerFile)
 	if err != nil {
 		return nil, err

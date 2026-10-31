@@ -36,7 +36,11 @@ func NewStopCmd(flags *flags.GlobalFlags) *cobra.Command {
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.runArgs(cobraCmd.Context(), args)
 		},
-		ValidArgsFunction: func(rootCmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(
+			rootCmd *cobra.Command,
+			args []string,
+			toComplete string,
+		) ([]string, cobra.ShellCompDirective) {
 			return completion.GetWorkspaceSuggestions(
 				rootCmd,
 				cmd.Context,
