@@ -317,21 +317,7 @@ func attemptPodmanRecovery(ctx context.Context, wrapperPath string) (podmanHealt
 	return podmanHealthOK, nil
 }
 
-// setupRootfulPodman prepares the rootful Podman wrapper and docker provider
-// and gates the shard on daemon health: once recovery has failed, remaining
-// specs skip instead of re-failing on the same wedged infrastructure.
-func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Framework {
-	wrapperPath := initialDir + "/bin/" + podmanRootfulWrapperName
-
-	managedDaemon := rootfulPodmanUsesManagedDaemon(os.Getenv("DOCKER_HOST"))
-	if since := rootfulDaemonGate.unhealthy(); managedDaemon && since != "" {
-		ginkgo.Skip(fmt.Sprintf(
-			"rootful Podman daemon unhealthy since first failure in %q; "+
-				"skipping to avoid cascading infrastructure failures",
-			since,
-		))
-	}
-
+func writeRootfulWrapper(wrapperPath string) {
 	wrapper, err := os.Create(wrapperPath) //nolint:gosec // G304: test-controlled path
 	framework.ExpectNoError(err)
 
@@ -347,52 +333,112 @@ func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Frame
 	ginkgo.DeferCleanup(func() {
 		_ = os.Remove(wrapperPath)
 	})
+}
+
+// handleUnhealthyPodman fails the spec for an unhealthy daemon, attempting one
+// shard-wide restart first when the daemon is managed and the class is
+// recoverable.
+func handleUnhealthyPodman(
+	ctx context.Context,
+	wrapperPath string,
+	class podmanHealthClass,
+	healthErr error,
+	managedDaemon bool,
+) {
+	ginkgo.GinkgoWriter.Printf(
+		"[podman-health] PODMAN_ROOTFUL_HEALTH_%s: %v\n",
+		strings.ToUpper(class.String()),
+		healthErr,
+	)
+	collectPodmanDiagnostics(wrapperPath)
+	if !managedDaemon || !shouldAttemptPodmanRecovery(class) {
+		// The managed service cannot repair another endpoint or a
+		// responsive daemon error, so fail without gating.
+		framework.ExpectNoError(healthErr)
+		return
+	}
+	if !rootfulDaemonGate.claimRecovery() {
+		rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
+		framework.ExpectNoError(
+			fmt.Errorf(
+				"PODMAN_ROOTFUL_RUNTIME_POISONED: recovery already used: %w",
+				healthErr,
+			),
+		)
+	}
+	if postClass, recErr := attemptPodmanRecovery(ctx, wrapperPath); recErr != nil {
+		rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
+		framework.ExpectNoError(fmt.Errorf(
+			"PODMAN_ROOTFUL_RUNTIME_POISONED: rootful Podman daemon unhealthy; "+
+				"single recovery attempt failed (class: %s): %w "+
+				"(initial check: %v)",
+			postClass,
+			recErr,
+			healthErr,
+		))
+	}
+	ginkgo.GinkgoWriter.Println(
+		"[podman-recovery] daemon healthy again after single restart",
+	)
+}
+
+// setupRootfulPodman prepares the rootful Podman wrapper and docker provider
+// and gates the shard on daemon health: once recovery has failed, remaining
+// specs skip instead of re-failing on the same wedged infrastructure.
+func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Framework {
+	wrapperPath := initialDir + "/bin/" + podmanRootfulWrapperName
+
+	managedDaemon := rootfulPodmanUsesManagedDaemon(os.Getenv("DOCKER_HOST"))
+	if since := rootfulDaemonGate.unhealthy(); managedDaemon && since != "" {
+		ginkgo.Skip(fmt.Sprintf(
+			"rootful Podman daemon unhealthy since first failure in %q; "+
+				"skipping to avoid cascading infrastructure failures",
+			since,
+		))
+	}
+
+	writeRootfulWrapper(wrapperPath)
 
 	ginkgo.GinkgoWriter.Println("[podman-health] probe start")
 	started := time.Now()
 	class, healthErr := checkPodmanHealth(ctx, wrapperPath)
 	ginkgo.GinkgoWriter.Printf("[podman-health] class=%s elapsed=%s\n", class, time.Since(started))
 	if healthErr != nil {
-		ginkgo.GinkgoWriter.Printf(
-			"[podman-health] PODMAN_ROOTFUL_HEALTH_%s: %v\n",
-			strings.ToUpper(class.String()),
-			healthErr,
-		)
-		collectPodmanDiagnostics(wrapperPath)
-		if managedDaemon && shouldAttemptPodmanRecovery(class) {
-			if !rootfulDaemonGate.claimRecovery() {
-				rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
-				framework.ExpectNoError(
-					fmt.Errorf(
-						"PODMAN_ROOTFUL_RUNTIME_POISONED: recovery already used: %w",
-						healthErr,
-					),
-				)
-			}
-			if postClass, recErr := attemptPodmanRecovery(ctx, wrapperPath); recErr != nil {
-				rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
-				framework.ExpectNoError(fmt.Errorf(
-					"PODMAN_ROOTFUL_RUNTIME_POISONED: rootful Podman daemon unhealthy; "+
-						"single recovery attempt failed (class: %s): %w "+
-						"(initial check: %v)",
-					postClass,
-					recErr,
-					healthErr,
-				))
-			}
-			ginkgo.GinkgoWriter.Println(
-				"[podman-recovery] daemon healthy again after single restart",
-			)
-		} else {
-			// The managed service cannot repair another endpoint or a
-			// responsive daemon error, so fail without gating.
-			framework.ExpectNoError(healthErr)
-		}
+		handleUnhealthyPodman(ctx, wrapperPath, class, healthErr, managedDaemon)
 	}
 
 	f, err := framework.SetupDockerProvider(initialDir+"/bin", wrapperPath)
 	framework.ExpectNoError(err)
 	return f
+}
+
+// reportNonRootfulCleanupFailure keeps the minimal diagnostic for shards
+// without the rootful wrapper.
+func reportNonRootfulCleanupFailure() {
+	ginkgo.GinkgoWriter.Printf(
+		"cleanup failure podman ps -a:\n%s\n",
+		runDiagCommand(context.Background(), podmanBinName, "ps", "-a"),
+	)
+}
+
+func reportFailedCleanupRetry(
+	ctx context.Context,
+	wrapperPath, tempDir string,
+	retryErr error,
+) {
+	class, healthErr := checkPodmanHealth(ctx, wrapperPath)
+	if healthErr != nil && shouldAttemptPodmanRecovery(class) {
+		rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
+		ginkgo.GinkgoWriter.Printf(
+			"[podman-health] PODMAN_ROOTFUL_RUNTIME_POISONED after cleanup retry: %v\n",
+			healthErr,
+		)
+	}
+	ginkgo.GinkgoWriter.Printf(
+		"[podman-recovery] cleanup retry after daemon restart still failed for %s: %v\n",
+		tempDir,
+		retryErr,
+	)
 }
 
 type podmanCleanupDirs struct {
@@ -413,11 +459,7 @@ func recoverPodmanCleanup(
 ) error {
 	wrapperPath := dirs.initialDir + "/bin/" + podmanRootfulWrapperName
 	if _, err := os.Stat(wrapperPath); err != nil {
-		// Not a rootful shard: keep the previous minimal diagnostic.
-		ginkgo.GinkgoWriter.Printf(
-			"cleanup failure podman ps -a:\n%s\n",
-			runDiagCommand(context.Background(), podmanBinName, "ps", "-a"),
-		)
+		reportNonRootfulCleanupFailure()
 		return cleanupErr
 	}
 
@@ -447,22 +489,7 @@ func recoverPodmanCleanup(
 	}
 	retryErr := f.CleanupWorkspace(ctx, dirs.tempDir)
 	if retryErr != nil {
-		if class, healthErr := checkPodmanHealth(
-			recoveryCtx,
-			wrapperPath,
-		); healthErr != nil &&
-			shouldAttemptPodmanRecovery(class) {
-			rootfulDaemonGate.markUnhealthy(ginkgo.CurrentSpecReport().FullText())
-			ginkgo.GinkgoWriter.Printf(
-				"[podman-health] PODMAN_ROOTFUL_RUNTIME_POISONED after cleanup retry: %v\n",
-				healthErr,
-			)
-		}
-		ginkgo.GinkgoWriter.Printf(
-			"[podman-recovery] cleanup retry after daemon restart still failed for %s: %v\n",
-			dirs.tempDir,
-			retryErr,
-		)
+		reportFailedCleanupRetry(recoveryCtx, wrapperPath, dirs.tempDir, retryErr)
 		return retryErr
 	}
 	ginkgo.GinkgoWriter.Printf(
