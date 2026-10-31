@@ -348,21 +348,8 @@ func (d *microsandboxDriver) runFromOptions(
 	options *driver.RunOptions,
 	hostReqs *config.HostRequirements,
 ) error {
-	if options == nil {
-		return fmt.Errorf(
-			"microsandbox driver requires run options (in-place reprovision is unsupported)",
-		)
-	}
-	if options.Image == "" {
-		return fmt.Errorf("microsandbox driver requires an image to run")
-	}
-	if err := d.ProvisioningPreflight(ctx); err != nil {
+	if err := d.checkRunPreconditions(ctx, options); err != nil {
 		return err
-	}
-	if options.AllowRecreate {
-		if err := d.recreationPreflight(ctx); err != nil {
-			return err
-		}
 	}
 	prepared, err := d.client.PrepareImage(ctx, options.Image, options.ImageBuilt)
 	if err != nil {
@@ -377,6 +364,34 @@ func (d *microsandboxDriver) runFromOptions(
 	if err := d.client.EnsureImage(ctx, prepared); err != nil {
 		return fmt.Errorf("ensure microsandbox final image: %w", err)
 	}
+	if err := d.rejectExistingVM(ctx, workspaceID, options); err != nil {
+		return err
+	}
+	return d.createVM(ctx, workspaceID, options, hostReqs, owner, prepared)
+}
+
+// checkRunPreconditions rejects run options this driver cannot honour and runs
+// the provisioning and recreation preflights.
+func (d *microsandboxDriver) checkRunPreconditions(ctx context.Context, options *driver.RunOptions) error {
+	if options == nil {
+		return fmt.Errorf(
+			"microsandbox driver requires run options (in-place reprovision is unsupported)",
+		)
+	}
+	if options.Image == "" {
+		return fmt.Errorf("microsandbox driver requires an image to run")
+	}
+	if err := d.ProvisioningPreflight(ctx); err != nil {
+		return err
+	}
+	if options.AllowRecreate {
+		return d.recreationPreflight(ctx)
+	}
+	return nil
+}
+
+// rejectExistingVM refuses to replace an existing VM unless recreation was requested.
+func (d *microsandboxDriver) rejectExistingVM(ctx context.Context, workspaceID string, options *driver.RunOptions) error {
 	info, err := d.client.Find(ctx, sandboxName(workspaceID))
 	if err != nil {
 		return err
@@ -387,17 +402,25 @@ func (d *microsandboxDriver) runFromOptions(
 				"replacement discards the VM root disk and cannot roll back after removal",
 		)
 	}
+	return nil
+}
+
+// createVM prepares the volumes and creates the VM from the prepared image.
+func (d *microsandboxDriver) createVM(
+	ctx context.Context,
+	workspaceID string,
+	options *driver.RunOptions,
+	hostReqs *config.HostRequirements,
+	owner *mountOwner,
+	prepared *preparedImage,
+) error {
 	spec := d.buildSpec(workspaceID, options, hostReqs, owner)
 	spec.AllowRecreate = options.AllowRecreate
 	spec.Image = prepared.reference
 	if err := d.client.PrepareVolumes(ctx, spec.Mounts); err != nil {
 		return fmt.Errorf("prepare microsandbox volumes: %w", err)
 	}
-	if err := d.client.Create(
-		ctx,
-		sandboxName(workspaceID),
-		spec,
-	); err != nil {
+	if err := d.client.Create(ctx, sandboxName(workspaceID), spec); err != nil {
 		return fmt.Errorf("create microsandbox VM: %w", err)
 	}
 	return nil
