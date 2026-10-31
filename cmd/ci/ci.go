@@ -214,32 +214,20 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 		return err
 	}
 
-	devsyConfig, cfgErr := config.LoadConfig(cmd.Context, cmd.Provider)
+	devsyConfig, cfgErr := cmd.loadConfig()
 	if cfgErr != nil {
 		return cfgErr
 	}
-	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
-		cmd.StrictHostKeyChecking = true
-	}
 
-	workspaceClient, cleanup, teardown, resolveErr := cmd.resolveWorkspace(ctx, devsyConfig, source)
+	resolved, resolveErr := cmd.resolveWorkspace(ctx, devsyConfig, source)
 	if resolveErr != nil {
 		return resolveErr
 	}
-	// cleanup tears down the workspace; join error with the result.
+	// release tears down the workspace; join error with the result.
 	defer func() {
-		var cleanupErr error
-		if teardown {
-			cleanupErr = status.Run(context.Background(), reporter, status.Operation{
-				Phase: status.PhaseDeletingWorkspace,
-			}, func(context.Context) error {
-				return cleanup()
-			})
-		} else {
-			cleanupErr = cleanup()
-		}
-		err = errors.Join(err, cleanupErr)
+		err = errors.Join(err, resolved.release(reporter))
 	}()
+	workspaceClient := resolved.client
 
 	if _, ok := workspaceClient.(client.WorkspaceClient); !ok {
 		return fmt.Errorf("ci is currently not supported for proxy providers")
@@ -268,12 +256,40 @@ func (cmd *CICmd) execute(ctx context.Context, source string) (err error) {
 	})
 }
 
+func (cmd *CICmd) loadConfig() (*config.Config, error) {
+	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
+	if err != nil {
+		return nil, err
+	}
+	if devsyConfig.ContextOption(config.ContextOptionSSHStrictHostKeyChecking) == config.BoolTrue {
+		cmd.StrictHostKeyChecking = true
+	}
+	return devsyConfig, nil
+}
+
+type resolvedWorkspace struct {
+	client   client.BaseWorkspaceClient
+	cleanup  func() error
+	teardown bool
+}
+
+func (r *resolvedWorkspace) release(reporter status.Reporter) error {
+	if !r.teardown {
+		return r.cleanup()
+	}
+	return status.Run(context.Background(), reporter, status.Operation{
+		Phase: status.PhaseDeletingWorkspace,
+	}, func(context.Context) error {
+		return r.cleanup()
+	})
+}
+
 // resolveWorkspace resolves (creating if needed) the workspace to run in.
 func (cmd *CICmd) resolveWorkspace(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	source string,
-) (client.BaseWorkspaceClient, func() error, bool, error) {
+) (*resolvedWorkspace, error) {
 	var args []string
 	if source != "" {
 		args = []string{source}
@@ -282,7 +298,7 @@ func (cmd *CICmd) resolveWorkspace(
 
 	sshConfigPath, cleanupSSH, err := workspacecmd.NewTempSSHConfig()
 	if err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
 
 	workspaceClient, err := workspace2.Resolve(ctx, devsyConfig, workspace2.ResolveParams{
@@ -299,7 +315,7 @@ func (cmd *CICmd) resolveWorkspace(
 	})
 	if err != nil {
 		cleanupSSH()
-		return nil, nil, false, err
+		return nil, err
 	}
 
 	teardown := exists == "" && !cmd.Keep
@@ -310,7 +326,7 @@ func (cmd *CICmd) resolveWorkspace(
 		}
 		return nil
 	}
-	return workspaceClient, cleanup, teardown, nil
+	return &resolvedWorkspace{client: workspaceClient, cleanup: cleanup, teardown: teardown}, nil
 }
 
 // runInContainer runs the command inside the started container.

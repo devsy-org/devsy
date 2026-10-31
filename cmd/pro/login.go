@@ -19,6 +19,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 	versionpkg "github.com/devsy-org/devsy/pkg/version"
 	"github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/gofrs/flock"
 	"github.com/spf13/cobra"
 )
 
@@ -138,40 +139,48 @@ func (cmd *LoginCmd) prepareProvider(ctx context.Context, fullURL string) (*conf
 	defer func() { _ = loginLock.Unlock() }()
 
 	for {
-		devsyConfig, currentInstance, resolveErr := cmd.resolveInstance(
-			fullURL,
-			initial.DefaultContext,
-		)
-		if resolveErr != nil || currentInstance != nil {
-			return devsyConfig, resolveErr
+		devsyConfig, done, err := cmd.configureOnce(ctx, fullURL, initial)
+		if done {
+			return devsyConfig, err
 		}
-		providerName := cmd.Provider
-		opLock, lockErr := provider.GetProviderOperationLock(
-			devsyConfig.DefaultContext,
-			providerName,
-		)
-		if lockErr != nil {
-			return nil, fmt.Errorf("get operation lock: %w", lockErr)
-		}
-		if lockErr := opLock.Lock(); lockErr != nil {
-			return nil, fmt.Errorf("acquire operation lock: %w", lockErr)
-		}
-
-		devsyConfig, currentInstance, resolveErr = cmd.resolveInstance(
-			fullURL,
-			initial.DefaultContext,
-		)
-		if resolveErr != nil || currentInstance != nil || cmd.Provider != providerName {
-			_ = opLock.Unlock()
-			if resolveErr != nil || currentInstance != nil {
-				return devsyConfig, resolveErr
-			}
-			continue
-		}
-		configured, configureErr := cmd.ensureProvider(ctx, devsyConfig, nil, fullURL)
-		_ = opLock.Unlock()
-		return configured, configureErr
 	}
+}
+
+// configureOnce reports done=false when the provider changed while waiting
+// for its operation lock and resolution must be retried.
+func (cmd *LoginCmd) configureOnce(
+	ctx context.Context,
+	fullURL string,
+	initial *config.Config,
+) (*config.Config, bool, error) {
+	devsyConfig, currentInstance, resolveErr := cmd.resolveInstance(
+		fullURL,
+		initial.DefaultContext,
+	)
+	if resolveErr != nil || currentInstance != nil {
+		return devsyConfig, true, resolveErr
+	}
+	providerName := cmd.Provider
+	opLock, lockErr := lockProvider(devsyConfig.DefaultContext, providerName)
+	if lockErr != nil {
+		return nil, true, lockErr
+	}
+
+	devsyConfig, currentInstance, resolveErr = cmd.resolveInstance(
+		fullURL,
+		initial.DefaultContext,
+	)
+	settled := resolveErr != nil || currentInstance != nil
+	if settled || cmd.Provider != providerName {
+		_ = opLock.Unlock()
+		if settled {
+			return devsyConfig, true, resolveErr
+		}
+		return nil, false, nil
+	}
+	configured, configureErr := cmd.ensureProvider(ctx, devsyConfig, nil, fullURL)
+	_ = opLock.Unlock()
+	return configured, true, configureErr
 }
 
 func (cmd *LoginCmd) normalizeURL(fullURL string) (string, error) {
@@ -350,38 +359,54 @@ func (cmd *LoginCmd) loginAndConfigure(
 	}
 
 	if cmd.Use {
-		opLock, err := provider.GetProviderOperationLock(
-			devsyConfig.DefaultContext,
-			providerConfig.Name,
-		)
-		if err != nil {
-			return fmt.Errorf("get operation lock: %w", err)
-		}
-		if err := opLock.Lock(); err != nil {
-			return fmt.Errorf("acquire operation lock: %w", err)
-		}
-		defer func() { _ = opLock.Unlock() }()
-		providerConfig, err = provider.LoadProviderConfig(
-			devsyConfig.DefaultContext,
-			cmd.Provider,
-		)
-		if err != nil {
-			return fmt.Errorf("reload provider: %w", err)
-		}
-
-		// Post-login: preserve user values; resolver prunes anything stale.
-		err = providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
-			Provider:    providerConfig,
-			ContextName: devsyConfig.DefaultContext,
-			UserOptions: cmd.Options,
-		})
-		if err != nil {
-			return fmt.Errorf("configure provider: %w", err)
+		if err := cmd.useProvider(ctx, devsyConfig, providerConfig.Name); err != nil {
+			return err
 		}
 	}
 
 	log.Info("configured Devsy Platform")
 	return nil
+}
+
+func (cmd *LoginCmd) useProvider(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	providerName string,
+) error {
+	opLock, err := lockProvider(devsyConfig.DefaultContext, providerName)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = opLock.Unlock() }()
+	providerConfig, err := provider.LoadProviderConfig(
+		devsyConfig.DefaultContext,
+		cmd.Provider,
+	)
+	if err != nil {
+		return fmt.Errorf("reload provider: %w", err)
+	}
+
+	// Post-login: preserve user values; resolver prunes anything stale.
+	err = providercmd.ConfigureProvider(ctx, providercmd.ProviderOptionsConfig{
+		Provider:    providerConfig,
+		ContextName: devsyConfig.DefaultContext,
+		UserOptions: cmd.Options,
+	})
+	if err != nil {
+		return fmt.Errorf("configure provider: %w", err)
+	}
+	return nil
+}
+
+func lockProvider(contextName, providerName string) (*flock.Flock, error) {
+	opLock, err := provider.GetProviderOperationLock(contextName, providerName)
+	if err != nil {
+		return nil, fmt.Errorf("get operation lock: %w", err)
+	}
+	if err := opLock.Lock(); err != nil {
+		return nil, fmt.Errorf("acquire operation lock: %w", err)
+	}
+	return opLock, nil
 }
 
 func (cmd *LoginCmd) addDevsyProvider(

@@ -891,7 +891,7 @@ func (cmd *StartCmd) pingDevsyRouter(ctx context.Context, devsyPod *corev1.Pod) 
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+				InsecureSkipVerify: true, //nolint:gosec // self-signed platform cert
 			},
 		},
 	}
@@ -1003,13 +1003,13 @@ func (cmd *StartCmd) loginViaCLI(url string) error {
 		Username: defaultUser,
 		Password: cmd.Password,
 	}
-	loginRequestBytes, err := json.Marshal(loginRequest)
+	loginRequestBytes, err := json.Marshal(loginRequest) //nolint:gosec // login request body
 	if err != nil {
 		return err
 	}
 	loginRequestBuf := bytes.NewBuffer(loginRequestBytes)
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed platform cert
 	}
 	httpClient := &http.Client{Transport: tr}
 
@@ -1356,7 +1356,7 @@ func ensureAdminPasswordSecret(
 		return false, nil
 	}
 
-	// create the password secret if it was not found, this can happen if you delete the loft namespace without deleting the admin user
+	// recreate the password secret if missing, e.g. after the loft namespace was deleted without the admin user
 	secret = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ref.SecretName,
@@ -1418,7 +1418,7 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	// we disable http2 as Kubernetes has problems with this
 	transport.ForceAttemptHTTP2 = false
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // self-signed platform cert
 	// wait until devsy is reachable at the given url
 	client := &http.Client{Transport: transport}
 	url := "https://" + host + "/version"

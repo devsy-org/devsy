@@ -632,12 +632,7 @@ type prepareWorkspaceParams struct {
 // prepareWorkspace initializes the workspace content folder and downloads/prepares the workspace source.
 // Note: This function modifies params.workspaceInfo.ContentFolder when platform is enabled with a local folder.
 func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error {
-	if params.workspaceInfo.CLIOptions.Platform.Enabled &&
-		params.workspaceInfo.Workspace.Source.LocalFolder != "" {
-		params.workspaceInfo.ContentFolder = agent.GetAgentWorkspaceContentDir(
-			params.workspaceInfo.Origin,
-		)
-	}
+	useAgentContentDir(params.workspaceInfo)
 
 	folder, err := initContentFolder(ctx, params.workspaceInfo)
 	if err != nil {
@@ -648,13 +643,7 @@ func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error 
 		return nil
 	}
 
-	phase := status.Phase("")
-	switch {
-	case params.workspaceInfo.CLIOptions.Reset:
-		phase = status.PhaseResettingWorkspace
-	case params.workspaceInfo.CLIOptions.Recreate:
-		phase = status.PhaseRebuildingWorkspace
-	}
+	phase := prepareWorkspacePhase(params.workspaceInfo)
 	err = prepareWorkspaceWithStatus(ctx, params.reporter, phase, func(ctx context.Context) error {
 		return prepareWorkspaceSource(ctx, params, folder.skipSource)
 	})
@@ -667,6 +656,23 @@ func prepareWorkspace(ctx context.Context, params prepareWorkspaceParams) error 
 		}
 	}
 	return err
+}
+
+func useAgentContentDir(workspaceInfo *provider.AgentWorkspaceInfo) {
+	if workspaceInfo.CLIOptions.Platform.Enabled &&
+		workspaceInfo.Workspace.Source.LocalFolder != "" {
+		workspaceInfo.ContentFolder = agent.GetAgentWorkspaceContentDir(workspaceInfo.Origin)
+	}
+}
+
+func prepareWorkspacePhase(workspaceInfo *provider.AgentWorkspaceInfo) status.Phase {
+	switch {
+	case workspaceInfo.CLIOptions.Reset:
+		return status.PhaseResettingWorkspace
+	case workspaceInfo.CLIOptions.Recreate:
+		return status.PhaseRebuildingWorkspace
+	}
+	return ""
 }
 
 func prepareWorkspaceWithStatus(

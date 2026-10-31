@@ -115,24 +115,7 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		Recorder:    workspacelogs.RecorderFrom(ctx),
 	}
 
-	if err := status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseRunningLifecycleHook},
-		func(context.Context) error {
-			return cmd.runApplyLifecycleHooks(params, result)
-		},
-	); err != nil {
-		return err
-	}
-	if err := status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseReady},
-		func(context.Context) error {
-			return nil
-		},
-	); err != nil {
+	if err := cmd.runLifecycle(ctx, reporter, params, result); err != nil {
 		return err
 	}
 
@@ -145,6 +128,32 @@ func (cmd *ApplyCmd) Run(ctx context.Context) error {
 		})
 	}
 	return nil
+}
+
+func (cmd *ApplyCmd) runLifecycle(
+	ctx context.Context,
+	reporter status.Reporter,
+	params *workspace.LifecycleExecParams,
+	result *devcconfig.Result,
+) error {
+	if err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseRunningLifecycleHook},
+		func(context.Context) error {
+			return cmd.runApplyLifecycleHooks(params, result)
+		},
+	); err != nil {
+		return err
+	}
+	return status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseReady},
+		func(context.Context) error {
+			return nil
+		},
+	)
 }
 
 func (cmd *ApplyCmd) resolveContainer(
