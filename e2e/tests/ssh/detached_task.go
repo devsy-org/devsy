@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
-	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/task"
 	workspacepkg "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/onsi/ginkgo/v2"
@@ -104,12 +102,7 @@ func reportDetachedLaunchFailure(before map[string]struct{}, source string) {
 	if state == nil {
 		return
 	}
-	data, err := json.Marshal(state)
-	if err != nil {
-		return
-	}
-	redactor := secrets.NewEnvironmentRedactor(os.Environ())
-	ginkgo.GinkgoWriter.Printf("detached launch state: %s\n", redactor.Redact(string(data)))
+	reportDiagnosticState(state)
 	path, err := config.DefaultPathManager().ProcessStreamsFile(task.WorkerProcessName(state.ID))
 	if err != nil {
 		return
@@ -118,7 +111,18 @@ func reportDetachedLaunchFailure(before map[string]struct{}, source string) {
 	if err != nil {
 		return
 	}
-	ginkgo.GinkgoWriter.Printf("detached worker streams: %s\n", redactor.Redact(string(streams)))
+	ginkgo.GinkgoWriter.Printf("detached worker streams: %s\n", streams)
+}
+
+func reportDiagnosticState(state *task.State) {
+	ginkgo.GinkgoWriter.Printf(
+		"detached launch state: pidPublished=%t launchPending=%t launchOwned=%t workerReady=%t cleanupComplete=%t\n",
+		state.PID != 0,
+		state.LaunchPending,
+		state.LaunchOwned,
+		state.WorkerReady,
+		state.ProcessCleanupComplete,
+	)
 }
 
 func newDetachedTask(before map[string]struct{}, source string) *task.State {

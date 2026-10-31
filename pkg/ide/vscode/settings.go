@@ -105,20 +105,25 @@ func userSettingsPath(flavor Flavor) (string, error) {
 		return "", err
 	}
 
-	var base string
-	switch runtime.GOOS {
-	case "darwin":
-		base = filepath.Join(homeDir, "Library", "Application Support")
-	case "windows":
-		base = os.Getenv("APPDATA")
-		if base == "" {
-			base = filepath.Join(homeDir, "AppData", "Roaming")
-		}
-	default:
-		base = filepath.Join(homeDir, ".config")
-	}
-
+	base := userSettingsBaseDir(homeDir, runtime.GOOS)
 	return filepath.Join(base, dirName, "User", "settings.json"), nil
+}
+
+func userSettingsBaseDir(homeDir, goos string) string {
+	switch goos {
+	case "darwin":
+		return filepath.Join(homeDir, "Library", "Application Support")
+	case "windows":
+		if base := os.Getenv("APPDATA"); base != "" {
+			return base
+		}
+		return filepath.Join(homeDir, "AppData", "Roaming")
+	case "linux":
+		if base := os.Getenv("XDG_CONFIG_HOME"); base != "" {
+			return base
+		}
+	}
+	return filepath.Join(homeDir, ".config")
 }
 
 func readSettingsFile(path string) (map[string]any, error) {

@@ -1,7 +1,6 @@
 package ssh
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -247,39 +246,19 @@ func (cli detachedValidationCLI) launchWorker(
 		return worker, nil
 	})
 	if err != nil {
-		redactor := secrets.NewEnvironmentRedactor(detachedValidationEnvironment(cli.home))
 		store, storeErr := task.NewStoreAt(filepath.Join(cli.home, "state", "tasks"))
-		if storeErr != nil {
-			ginkgo.GinkgoWriter.Printf("task store: %s\n", redactor.Redact(storeErr.Error()))
-		} else {
+		if storeErr == nil {
 			state, stateErr := store.Get(tk.ID())
-			if stateErr != nil {
-				ginkgo.GinkgoWriter.Printf("task state: %s\n", redactor.Redact(stateErr.Error()))
-			} else {
-				data, marshalErr := json.Marshal(state)
-				if marshalErr != nil {
-					ginkgo.GinkgoWriter.Printf(
-						"task state: %s\n",
-						redactor.Redact(marshalErr.Error()),
-					)
-				} else {
-					ginkgo.GinkgoWriter.Printf("task state: %s\n", redactor.Redact(string(data)))
-				}
+			if stateErr == nil {
+				reportDiagnosticState(state)
 			}
 		}
 		streamsPath, pathErr := config.DefaultPathManager().
 			ProcessStreamsFile(task.WorkerProcessName(tk.ID()))
-		if pathErr != nil {
-			ginkgo.GinkgoWriter.Printf(
-				"worker streams path: %s\n",
-				redactor.Redact(pathErr.Error()),
-			)
-		} else {
+		if pathErr == nil {
 			streams, readErr := readDiagnosticStreams(cli.home, streamsPath)
-			if readErr != nil {
-				ginkgo.GinkgoWriter.Printf("worker streams: %s\n", redactor.Redact(readErr.Error()))
-			} else {
-				ginkgo.GinkgoWriter.Printf("worker streams: %s\n", redactor.Redact(string(streams)))
+			if readErr == nil {
+				ginkgo.GinkgoWriter.Printf("worker streams: %s\n", streams)
 			}
 		}
 		return ref, errors.Join(err, tk.FailLaunch(err))
@@ -303,10 +282,35 @@ func readDiagnosticStreams(home, path string) ([]byte, error) {
 	}
 	defer func() { _ = file.Close() }()
 	data, err := io.ReadAll(io.LimitReader(file, 64*1024+1))
-	if err != nil || len(data) <= 64*1024 {
-		return data, err
+	if err != nil {
+		return nil, err
 	}
-	return data[:bytes.LastIndexByte(data[:64*1024], '\n')+1], nil
+	return filterDiagnosticStreams(data), nil
+}
+
+func filterDiagnosticStreams(data []byte) []byte {
+	truncated := len(data) > 64*1024
+	if truncated {
+		data = data[:64*1024]
+	}
+	var result strings.Builder
+	for line := range strings.SplitSeq(string(data), "\n") {
+		switch strings.TrimSuffix(line, "\r") {
+		case "detached worker admission failed: worker lock",
+			"detached worker admission failed: reading launch state",
+			"detached worker admission failed: waiting for launch commit",
+			"detached worker admission failed: verifying owner",
+			"detached worker admission failed: retaining launch lease",
+			"detached worker admission failed: checking launcher",
+			"detached worker admission failed: acknowledging worker":
+			result.WriteString(strings.TrimSuffix(line, "\r"))
+			result.WriteByte('\n')
+		}
+	}
+	if truncated {
+		result.WriteString("[worker stream truncated at 65536 bytes]\n")
+	}
+	return []byte(result.String())
 }
 
 func (cli detachedValidationCLI) expectFailureEnvelope(ctx context.Context, id, diagnostic string) {

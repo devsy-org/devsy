@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -22,6 +23,21 @@ func TestSettingsSuite(t *testing.T) {
 
 func (s *SettingsSuite) SetupTest() {
 	s.tmpDir = s.T().TempDir()
+}
+
+func (s *SettingsSuite) TestLinuxSettingsRespectXDGConfigHome() {
+	xdg := filepath.Join(s.tmpDir, "xdg")
+	s.T().Setenv("XDG_CONFIG_HOME", xdg)
+	s.Equal(xdg, userSettingsBaseDir(s.tmpDir, "linux"))
+	if runtime.GOOS == "linux" {
+		s.T().Setenv("HOME", s.tmpDir)
+		s.Require().NoError(ensureHostSettingsWithTimeout(FlavorStable, "60"))
+		settings, err := readSettingsFile(filepath.Join(xdg, "Code", "User", "settings.json"))
+		s.Require().NoError(err)
+		s.Equal(float64(60), settings[settingConnectTimeout])
+	}
+	s.T().Setenv("XDG_CONFIG_HOME", "")
+	s.Equal(filepath.Join(s.tmpDir, ".config"), userSettingsBaseDir(s.tmpDir, "linux"))
 }
 
 func (s *SettingsSuite) TestHostTimeoutPreservesSettingsAndTargetsFlavor() {

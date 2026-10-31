@@ -15,11 +15,20 @@ import (
 func TestReadDiagnosticStreamsLimitsOutput(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, "worker.streams")
-	content := "complete line\n" + strings.Repeat("x", 64*1024)
+	marker := "detached worker admission failed: reading launch state\n"
+	content := "private credential\n" + marker + strings.Repeat("x", 64*1024)
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 	got, err := readDiagnosticStreams(home, path)
 	require.NoError(t, err)
-	require.Equal(t, "complete line\n", string(got))
+	require.Equal(t, marker+"[worker stream truncated at 65536 bytes]\n", string(got))
+	require.NoError(t, os.WriteFile(path, []byte(strings.Repeat("x", 64*1024+1)), 0o600))
+	got, err = readDiagnosticStreams(home, path)
+	require.NoError(t, err)
+	require.Equal(t, "[worker stream truncated at 65536 bytes]\n", string(got))
+	require.NoError(t, os.WriteFile(path, []byte(strings.Repeat("x", 64*1024)), 0o600))
+	got, err = readDiagnosticStreams(home, path)
+	require.NoError(t, err)
+	require.Empty(t, got)
 	_, err = readDiagnosticStreams(home, filepath.Join(t.TempDir(), "outside"))
 	require.Error(t, err)
 }
