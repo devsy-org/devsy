@@ -227,6 +227,7 @@ func startWorkerRun(secretEntries []string) *workspacelogs.Session {
 	return workspacelogs.StartSessionIn(store, workspacelogs.SessionOptions{
 		RunID:            ref.RunID,
 		ProducerID:       ref.ProducerID,
+		Resumed:          true,
 		ParentProducerID: validParent(ref.ParentProducerID),
 		Location:         workspacelogs.LocationContainer,
 		Redactor:         runRedactor(secretEntries),

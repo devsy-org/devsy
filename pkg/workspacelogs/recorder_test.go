@@ -309,3 +309,40 @@ func TestMirroredProducerIntroducesItselfWithItsFirstRecord(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, LocationContainer, m.Producers[0].Location)
 }
+
+func TestResumedWorkerDoesNotRepeatThePlan(t *testing.T) {
+	s, _ := newTestStore(t)
+	runID := newRun(t, s, "uid")
+	rec, err := NewRecorder(RecorderOptions{Backend: s, RunID: runID, Resumed: true})
+	require.NoError(t, err)
+	inv := NewID()
+
+	rec.Invocation(Invocation{ID: inv, Hook: hookCreate, State: InvocationPending})
+	rec.Invocation(Invocation{ID: inv, Hook: hookCreate, State: InvocationDeferred})
+	rec.Invocation(
+		Invocation{
+			ID:     NewID(),
+			Hook:   hookCreate,
+			State:  InvocationSkipped,
+			Reason: "no_command_configured",
+		},
+	)
+	rec.Invocation(
+		Invocation{
+			ID:     NewID(),
+			Hook:   hookCreate,
+			State:  InvocationSkipped,
+			Reason: "already_attempted",
+		},
+	)
+	rec.Invocation(Invocation{ID: inv, Hook: hookCreate, State: InvocationRunning})
+
+	var states []InvocationState
+	for _, r := range readAll(t, s, ReadRequest{RunID: runID}) {
+		if r.Kind == KindInvocation {
+			states = append(states, r.State)
+		}
+	}
+	assert.Equal(t, []InvocationState{InvocationSkipped, InvocationRunning}, states,
+		"the marker skip and real execution are kept, the plan is not repeated")
+}

@@ -18,9 +18,11 @@ type SessionOptions struct {
 	ParentProducerID string
 	// ProducerID uses a producer ID reserved by the parent process.
 	ProducerID string
-	Run        RunSpec
-	Location   Location
-	Redactor   *secrets.Redactor
+	// Resumed marks a worker continuing a run whose plan the parent recorded.
+	Resumed  bool
+	Run      RunSpec
+	Location Location
+	Redactor *secrets.Redactor
 }
 
 // Session is one process's handle on a run: the local store, the run, and a
@@ -58,6 +60,7 @@ func StartSessionIn(store *Store, opts SessionOptions) *Session {
 		Location:         opts.Location,
 		ParentProducerID: opts.ParentProducerID,
 		ProducerID:       opts.ProducerID,
+		Resumed:          opts.Resumed,
 		Redactor:         opts.Redactor,
 	})
 	if err != nil {

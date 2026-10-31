@@ -25,6 +25,9 @@ type RecorderOptions struct {
 	// ProducerID uses a producer ID its parent reserved earlier. Empty
 	// generates one.
 	ProducerID string
+	// Resumed marks a worker that continues a run whose launching process
+	// already recorded the plan. Plan-time transitions are not repeated.
+	Resumed bool
 	// ParentProducerID links this producer to the one that launched it.
 	ParentProducerID string
 	// Redactor masks known secrets before anything is persisted. Nil keeps text
@@ -106,6 +109,9 @@ func (r *Recorder) Err() error {
 
 // Invocation records a transition of one invocation, including silent ones.
 func (r *Recorder) Invocation(inv Invocation) {
+	if r.opts.Resumed && repeatsPlan(inv) {
+		return
+	}
 	rec := &Record{
 		Kind:         KindInvocation,
 		InvocationID: inv.ID,
@@ -298,4 +304,25 @@ func truncateDetail(s string) string {
 	}
 
 	return s[:cut]
+}
+
+// planSkipReasons are skip reasons decided from configuration alone, so the
+// process that planned the phase has already recorded them. Reasons that
+// depend on state seen by a later process (a once-marker) are not listed.
+var planSkipReasons = map[string]bool{
+	"no_command_configured": true,
+	"explicit_skip":         true,
+	"prebuild_excluded":     true,
+	"recovery_excluded":     true,
+}
+
+func repeatsPlan(inv Invocation) bool {
+	switch inv.State {
+	case InvocationPending, InvocationDeferred:
+		return true
+	case InvocationSkipped:
+		return planSkipReasons[inv.Reason]
+	default:
+		return false
+	}
 }
