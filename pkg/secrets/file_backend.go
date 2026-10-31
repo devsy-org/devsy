@@ -23,6 +23,7 @@ func newFileBackend(path string, key *fileKey) *fileBackend {
 }
 
 func (f *fileBackend) load() (map[string]string, error) {
+	//nolint:gosec // path is inside the internal secrets store
 	raw, err := os.ReadFile(f.path) // #nosec G304 -- path derived from config dir.
 	if err != nil {
 		if os.IsNotExist(err) {

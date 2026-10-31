@@ -157,7 +157,11 @@ func doProbe(
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(timeoutCtx, args[0], args[1:]...)
+	//nolint:gosec // probe command comes from the devcontainer config by design
+	cmd := exec.CommandContext(
+		timeoutCtx,
+		args[0],
+		args[1:]...) //nolint:gosec // probe command comes from the devcontainer config by design
 
 	err := PrepareCmdUser(cmd, target.userName)
 	if err != nil {

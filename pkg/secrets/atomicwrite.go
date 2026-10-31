@@ -11,7 +11,7 @@ import (
 // Files are created 0600: the store holds secrets.
 func atomicWriteFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(
+	if err := os.MkdirAll( //nolint:gosec // directory is the internal secrets store location
 		dir,
 		0o700,
 	); err != nil { //nolint:gosec // path is the internal secrets store location
@@ -26,7 +26,7 @@ func atomicWriteFile(path string, data []byte) error {
 		return fmt.Errorf("create temp secrets file: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
+	defer func() { _ = os.Remove(tmpName) }() //nolint:gosec // temp file is created in the internal secrets store
 
 	if err := tmp.Chmod(0o600); err != nil {
 		_ = tmp.Close()
@@ -43,7 +43,7 @@ func atomicWriteFile(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp secrets file: %w", err)
 	}
-	if err := os.Rename(
+	if err := os.Rename( //nolint:gosec // rename within the internal secrets store
 		tmpName,
 		path,
 	); err != nil { //nolint:gosec // path is the internal secrets store location
@@ -57,6 +57,7 @@ func atomicWriteFile(path string, data []byte) error {
 // syncDir fsyncs a directory so a rename is durable across a crash. Best-effort:
 // some filesystems reject directory sync, and durability is not correctness.
 func syncDir(dir string) {
+	//nolint:gosec // path is inside the internal secrets store
 	d, err := os.Open(dir) // #nosec G304 -- secrets config dir.
 	if err != nil {
 		return

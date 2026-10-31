@@ -273,6 +273,7 @@ func runDockerlessBuild(ctx context.Context, args []string, debug bool) error {
 	var stderrBuf bytes.Buffer
 	stderrWriter := io.MultiWriter(errWriter, &stderrBuf)
 
+	//nolint:gosec // command is built from the agent configuration by design
 	cmd := exec.CommandContext(ctx, "/.dockerless/dockerless", args...)
 	if debug {
 		debugWriter := log.Writer(log.LevelDebug)

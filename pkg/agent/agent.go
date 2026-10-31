@@ -402,7 +402,10 @@ func rerunAsRoot(workspaceInfo *provider2.AgentWorkspaceInfo) (bool, error) {
 	args := []string{"--preserve-env", binary}
 	args = append(args, os.Args[1:]...)
 	log.Debugf("re-run as root: command=%s", strings.Join(args, " "))
-	cmd := exec.Command("sudo", args...)
+	//nolint:gosec // sudo args are built internally from fixed flags
+	cmd := exec.Command(
+		"sudo",
+		args...) //nolint:gosec // sudo args are built internally from fixed flags
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -507,7 +510,6 @@ func sshServerCommand(agentPath string, debug bool) string {
 	}
 	return shellescape.QuoteCommand(args)
 }
-
 
 func dockerReachable(dockerOverride string, envs map[string]string) (bool, error) {
 	docker := "docker"

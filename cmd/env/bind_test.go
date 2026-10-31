@@ -48,7 +48,9 @@ func TestAttachAndDetachEnvironmentVariable(t *testing.T) {
 
 func TestAttachRejectsSecret(t *testing.T) {
 	globalFlags := setupEnvCommandTest(t)
-	store, err := secrets.NewStoreForConfig(mustLoadConfig(t)) //nolint:staticcheck // test needs the full Store interface
+	store, err := secrets.NewStoreForConfig(
+		mustLoadConfig(t),
+	) //nolint:staticcheck // test needs the full Store interface
 	require.NoError(t, err)
 	require.NoError(t, store.Set(config.DefaultContext, "API_TOKEN", "secret", secrets.KindSecret))
 	err = (&AttachCmd{GlobalFlags: globalFlags}).Run(context.Background(), "API_TOKEN")
@@ -76,7 +78,9 @@ func TestDeleteUnbindsEnvironmentVariable(t *testing.T) {
 func TestSetRejectsConvertingAttachedSecretToEnvironment(t *testing.T) {
 	globalFlags := setupEnvCommandTest(t)
 	cfg := mustLoadConfig(t)
-	store, err := secrets.NewStoreForConfig(cfg) //nolint:staticcheck // test needs the full Store interface
+	store, err := secrets.NewStoreForConfig(
+		cfg,
+	) //nolint:staticcheck // test needs the full Store interface
 	require.NoError(t, err)
 	require.NoError(t, store.Set(config.DefaultContext, "TOKEN", "secret", secrets.KindSecret))
 	cfg.Current().Secrets = []string{"TOKEN"}

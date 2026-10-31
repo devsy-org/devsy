@@ -32,11 +32,13 @@ func (s *HelperTestSuite) TestGet_Success() {
 		s.NoError(err)
 		s.Equal(testRegistry, request.ServerURL)
 
-		_ = json.NewEncoder(w).Encode(&Credentials{
-			ServerURL: testRegistry,
-			Username:  "testuser",
-			Secret:    "testpass", //nolint:gosec // test fixture
-		})
+		//nolint:gosec // test fixture credential, not a real secret
+		_ = json.NewEncoder(w).
+			Encode(&Credentials{ //nolint:gosec // test fixture credential, not a real secret
+				ServerURL: testRegistry,
+				Username:  "testuser",
+				Secret:    "testpass", //nolint:gosec // test fixture
+			})
 	}))
 	defer server.Close()
 
@@ -94,11 +96,13 @@ func (s *HelperTestSuite) TestGet_WorkspaceServerFallback() {
 			s.NoError(err)
 			s.Equal(testRegistry, request.ServerURL)
 
-			_ = json.NewEncoder(w).Encode(&Credentials{
-				ServerURL: testRegistry,
-				Username:  "workspaceuser",
-				Secret:    "workspacepass", //nolint:gosec // test fixture
-			})
+			//nolint:gosec // test fixture credential, not a real secret
+			_ = json.NewEncoder(w).
+				Encode(&Credentials{ //nolint:gosec // test fixture credential, not a real secret
+					ServerURL: testRegistry,
+					Username:  "workspaceuser",
+					Secret:    "workspacepass", //nolint:gosec // test fixture
+				})
 		}),
 	)
 	defer workspaceServer.Close()

@@ -188,7 +188,7 @@ func (o *GenericJetBrainsServer) installPlugins(
 
 	log.Infof("installing JetBrains plugins: plugins=%v", plugins)
 
-	installPluginsCommand := exec.Command(
+	installPluginsCommand := exec.Command( //nolint:gosec // fixed JetBrains CLI with arguments built internally
 		path.Join(targetLocation, "bin", "remote-dev-server.sh"),
 		append(
 			[]string{"installPlugins", "--give-consent-to-use-third-party-plugins"},
@@ -230,6 +230,7 @@ func (o *GenericJetBrainsServer) getDirectory(baseFolder string) string {
 }
 
 func (o *GenericJetBrainsServer) extractArchive(fromPath string, toPath string) error {
+	//nolint:gosec // path is inside the JetBrains config directory
 	file, err := os.Open(fromPath)
 	if err != nil {
 		return err
@@ -240,7 +241,7 @@ func (o *GenericJetBrainsServer) extractArchive(fromPath string, toPath string) 
 }
 
 func (o *GenericJetBrainsServer) download(targetFolder string) (string, error) {
-	err := os.MkdirAll(targetFolder, os.ModePerm)
+	err := os.MkdirAll(targetFolder, 0o750)
 	if err != nil {
 		return "", err
 	}

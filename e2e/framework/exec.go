@@ -25,6 +25,7 @@ const execWaitDelay = 30 * time.Second
 func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (string, error) {
 	var execOut bytes.Buffer
 
+	//nolint:gosec // e2e harness runs its own test commands by design
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
@@ -40,6 +41,7 @@ func (f *Framework) ExecCommandOutput(ctx context.Context, args []string) (strin
 
 // ExecCommandStdout executes the command string with the devsy test binary.
 func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error {
+	//nolint:gosec // e2e harness runs its own test commands by design
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay
@@ -61,6 +63,7 @@ func (f *Framework) ExecCommand(
 ) error {
 	var execOut bytes.Buffer
 
+	//nolint:gosec // e2e harness runs its own test commands by design
 	cmd := exec.CommandContext(ctx, filepath.Join(f.DevsyBinDir, f.DevsyBinName), args...)
 	docker.PrepareForGroupCancellation(cmd)
 	cmd.WaitDelay = execWaitDelay

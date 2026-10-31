@@ -210,7 +210,7 @@ func copyByType(fileInfo os.FileInfo, sourcePath, destPath string) error {
 }
 
 func File(srcFile, dstFile string, perm os.FileMode) error {
-	out, err := os.OpenFile(
+	out, err := os.OpenFile( //nolint:gosec // destination path comes from the caller by design
 		dstFile,
 		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
 		perm,

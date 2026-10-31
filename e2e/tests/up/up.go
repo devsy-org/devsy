@@ -93,7 +93,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		workspaceEnvFileInvalid := filepath.Join(tmpDir, ".invalid")
 		err = os.WriteFile(
 			workspaceEnvFileInvalid,
-			invalidData, 0o644)
+			invalidData, 0o600)
 		framework.ExpectNoError(err)
 
 		// set env var
@@ -103,6 +103,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		// create valid env file
 		validData := []byte("TEST_VAR=" + value)
 		workspaceEnvFileValid := filepath.Join(tmpDir, ".valid")
+		//nolint:gosec // test fixture file, world-readable is fine for the test
 		err = os.WriteFile(
 			workspaceEnvFileValid,
 			validData, 0o644)
@@ -129,6 +130,7 @@ var _ = ginkgo.Describe("testing up command", ginkgo.Label("up-workspaces"), fun
 		// create a second valid env file with a different env var
 		validData = []byte("TEST_OTHER_VAR=" + value)
 		workspaceEnvFileValid2 := filepath.Join(tmpDir, ".valid2")
+		//nolint:gosec // test fixture file, world-readable is fine for the test
 		err = os.WriteFile(
 			workspaceEnvFileValid2,
 			validData, 0o644)

@@ -1016,7 +1016,7 @@ func (cmd *StartCmd) loginViaCLI(url string) error {
 	loginRequestBuf := bytes.NewBuffer(loginRequestBytes)
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
+			InsecureSkipVerify: true, //nolint:gosec // existing behaviour for self-signed platform endpoints
 		}, //nolint:gosec // self-signed platform cert
 	}
 	httpClient := &http.Client{Transport: tr}
@@ -1427,7 +1427,7 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	// we disable http2 as Kubernetes has problems with this
 	transport.ForceAttemptHTTP2 = false
 	transport.TLSClientConfig = &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, //nolint:gosec // existing behaviour for self-signed platform endpoints
 	} //nolint:gosec // self-signed platform cert
 	// wait until devsy is reachable at the given url
 	client := &http.Client{Transport: transport}
