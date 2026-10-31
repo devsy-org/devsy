@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
 	"github.com/devsy-org/devsy/pkg/log"
 )
 
@@ -73,9 +74,47 @@ func loadImageDetails(path, imageName string) (*config.ImageDetails, error) {
 		return nil, fmt.Errorf("image config file %q has no config object", path)
 	}
 
+	if err := validateImageMetadata(
+		details.Config.Labels[metadata.ImageMetadataLabel],
+	); err != nil {
+		return nil, fmt.Errorf("image config file %q: %w", path, err)
+	}
+
 	if details.ID == "" {
 		details.ID = imageName
 	}
 
 	return details, nil
+}
+
+// validateImageMetadata checks that the devcontainer.metadata label is a JSON
+// object or an array of objects. Metadata read from the registry is ignored
+// with a warning when malformed, but a file the operator supplied should fail
+// instead of silently dropping its lifecycle commands and settings.
+func validateImageMetadata(raw string) error {
+	if raw == "" {
+		return nil
+	}
+
+	var entries []*config.ImageMetadata
+	if err := json.Unmarshal([]byte(raw), &entries); err == nil {
+		if entries == nil {
+			return fmt.Errorf("%s label is null", metadata.ImageMetadataLabel)
+		}
+		for _, entry := range entries {
+			if entry == nil {
+				return fmt.Errorf("%s label contains a null entry", metadata.ImageMetadataLabel)
+			}
+		}
+		return nil
+	}
+
+	single := &config.ImageMetadata{}
+	if raw[0] != '{' {
+		return fmt.Errorf("%s label must be a JSON object or array", metadata.ImageMetadataLabel)
+	}
+	if err := json.Unmarshal([]byte(raw), single); err != nil {
+		return fmt.Errorf("parse %s label: %w", metadata.ImageMetadataLabel, err)
+	}
+	return nil
 }

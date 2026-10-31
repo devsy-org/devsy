@@ -90,6 +90,42 @@ func (s *ImageDetailsSuite) TestArchitectureMismatch() {
 	s.Require().ErrorContains(err, `is for architecture "arm64", but ARCHITECTURE is "amd64"`)
 }
 
+func (s *ImageDetailsSuite) TestValidMetadata() {
+	tests := map[string]string{
+		"array":  `[{\"remoteUser\": \"vscode\"}]`,
+		"object": `{\"remoteUser\": \"vscode\"}`,
+		"empty":  `[]`,
+	}
+	for name, label := range tests {
+		s.Run(name, func() {
+			path := s.writeFile(
+				`{"config": {"Labels": {"devcontainer.metadata": "` + label + `"}}}`,
+			)
+			_, err := s.driver(path).ImageDetails(testImage)
+			s.NoError(err)
+		})
+	}
+}
+
+func (s *ImageDetailsSuite) TestInvalidMetadata() {
+	tests := map[string]string{
+		"bad json":   `[{\"remoteUser\": `,
+		"null entry": `[null]`,
+		"null":       `null`,
+		"string":     `\"vscode\"`,
+		"wrong type": `{\"remoteUser\": 1}`,
+	}
+	for name, label := range tests {
+		s.Run(name, func() {
+			path := s.writeFile(
+				`{"config": {"Labels": {"devcontainer.metadata": "` + label + `"}}}`,
+			)
+			_, err := s.driver(path).ImageDetails(testImage)
+			s.ErrorContains(err, "devcontainer.metadata")
+		})
+	}
+}
+
 func (s *ImageDetailsSuite) TestMissingFile() {
 	path := filepath.Join(s.T().TempDir(), "missing.json")
 	_, err := s.driver(path).ImageDetails(testImage)
