@@ -61,7 +61,7 @@ var flavorConfigs = map[Flavor]flavorConfig{
 	FlavorStable:      {"VS Code", ".vscode-server", "code-server"},
 	FlavorInsiders:    {"VS Code Insiders", ".vscode-server-insiders", "code-server-insiders"},
 	FlavorCursor:      {"Cursor", ".cursor-server", "cursor-server"},
-	FlavorPositron:    {"positron", ".positron-server", "positron-server"},
+	FlavorPositron:    {string(FlavorPositron), ".positron-server", "positron-server"},
 	FlavorCodium:      {"VSCodium", ".vscodium-server", "codium-server"},
 	FlavorWindsurf:    {"Windsurf", ".windsurf-server", "windsurf-server"},
 	FlavorAntigravity: {"Antigravity", ".antigravity-server", "antigravity-server"},
@@ -208,8 +208,10 @@ func (o *VsCodeServer) buildExtensionCommand(binPath, extension string) *exec.Cm
 
 	if o.userName != "" {
 		cmd := shellescape.QuoteCommand(append([]string{binPath}, args...))
+		//nolint:gosec // cmd is shell-quoted above
 		return exec.Command("su", o.userName, "-c", cmd)
 	}
+	//nolint:gosec // binPath is resolved from the server install location
 	return exec.Command(binPath, args...)
 }
 

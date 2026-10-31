@@ -208,6 +208,12 @@ func (k *KubernetesDriver) GetDevContainerLogs(
 	return nil
 }
 
+func (d *KubernetesDriver) RequiresMountStreaming() bool { return true }
+
+func (d *KubernetesDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
+
+func (d *KubernetesDriver) RequiresWorkspaceChown() bool { return true }
+
 func (k *KubernetesDriver) getDevContainerPvc(
 	ctx context.Context,
 	id string,
@@ -291,9 +297,3 @@ func (k *KubernetesDriver) deleteWorkspaceSecrets(ctx context.Context, workspace
 
 	return nil
 }
-
-func (d *KubernetesDriver) RequiresMountStreaming() bool { return true }
-
-func (d *KubernetesDriver) RecreateMode() driver.RecreateMode { return driver.RecreateStop }
-
-func (d *KubernetesDriver) RequiresWorkspaceChown() bool { return true }

@@ -47,8 +47,7 @@ func TestKubernetesPreflightUnreachable(t *testing.T) {
 	srv.Close() // nothing is listening on host anymore
 
 	err := newTestDriver(t, host).Preflight(context.Background(), driver.PreflightOptions{})
-	var perr *driver.PreflightError
-	if !errors.As(err, &perr) {
+	if _, ok := errors.AsType[*driver.PreflightError](err); !ok {
 		t.Fatalf("expected *driver.PreflightError for unreachable cluster, got %v (%T)", err, err)
 	}
 }
