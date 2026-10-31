@@ -1,9 +1,11 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,6 +72,7 @@ var _ = ginkgo.Describe("detached workspace input validation", ginkgo.Label("tas
 			source := filepath.Join(home, "Backend.API")
 			framework.ExpectNoError(os.MkdirAll(source, 0o700))
 			sentinel := filepath.Join(source, "KeepCase.txt")
+			before := detachedTaskIDs()
 			framework.ExpectNoError(os.WriteFile(sentinel, []byte("original source"), 0o600))
 			out, err := cli.command(ctx,
 				cmdWorkspace,
@@ -80,7 +83,7 @@ var _ = ginkgo.Describe("detached workspace input validation", ginkgo.Label("tas
 				source,
 			)
 			if err != nil {
-				reportDetachedLaunchFailure()
+				reportDetachedLaunchFailure(before, source)
 			}
 			gomega.Expect(err).NotTo(gomega.HaveOccurred(), "CLI output: %s",
 				secrets.NewEnvironmentRedactor(detachedValidationEnvironment(home)).Redact(out))
@@ -294,7 +297,16 @@ func readDiagnosticStreams(home, path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return root.ReadFile(relative)
+	file, err := root.Open(relative)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, 64*1024+1))
+	if err != nil || len(data) <= 64*1024 {
+		return data, err
+	}
+	return data[:bytes.LastIndexByte(data[:64*1024], '\n')+1], nil
 }
 
 func (cli detachedValidationCLI) expectFailureEnvelope(ctx context.Context, id, diagnostic string) {

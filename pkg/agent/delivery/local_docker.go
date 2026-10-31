@@ -50,11 +50,11 @@ func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStart
 		return fmt.Errorf("binary source is required for local docker delivery")
 	}
 	if mount := opts.RunOptions.WorkspaceMount; mount != nil &&
-		path.Clean(mount.Target) == volumeMountPath {
+		isAgentMountTarget(mount.Target) {
 		return fmt.Errorf("agent mount target %s is already in use", volumeMountPath)
 	}
 	for _, mount := range opts.RunOptions.Mounts {
-		if mount != nil && path.Clean(mount.Target) == volumeMountPath {
+		if mount != nil && isAgentMountTarget(mount.Target) {
 			return fmt.Errorf("agent mount target %s is already in use", volumeMountPath)
 		}
 	}
@@ -82,6 +82,11 @@ func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStart
 	opts.RunOptions.Env[pkgconfig.EnvAgentPath] = volumeMountPath + "/" + binaryName()
 
 	return nil
+}
+
+func isAgentMountTarget(target string) bool {
+	cleaned := path.Clean(target)
+	return cleaned == volumeMountPath || strings.HasPrefix(cleaned, volumeMountPath+"/")
 }
 
 func (d *LocalDockerDelivery) DeliverPostStart(_ context.Context, _ PostStartOptions) error {

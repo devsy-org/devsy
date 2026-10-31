@@ -38,11 +38,19 @@ func TestLocalDockerDelivery_DeliverPreStart_RequiresBinarySource(t *testing.T) 
 }
 
 func TestLocalDockerDeliveryRejectsOccupiedAgentMount(t *testing.T) {
-	for _, workspaceMount := range []bool{false, true} {
-		t.Run(fmt.Sprintf("workspace=%t", workspaceMount), func(t *testing.T) {
-			mount := &config.Mount{Type: "volume", Source: "user-data", Target: "/opt/devsy/"}
+	for _, tc := range []struct {
+		workspace bool
+		target    string
+	}{
+		{target: "/opt/devsy/"},
+		{workspace: true, target: "/opt/devsy/"},
+		{target: "/opt/devsy/devsy"},
+		{workspace: true, target: "/opt/devsy/devsy"},
+	} {
+		t.Run(fmt.Sprintf("workspace=%t target=%s", tc.workspace, tc.target), func(t *testing.T) {
+			mount := &config.Mount{Type: "volume", Source: "user-data", Target: tc.target}
 			options := &driver.RunOptions{Env: map[string]string{"USER_VALUE": "preserved"}}
-			if workspaceMount {
+			if tc.workspace {
 				options.WorkspaceMount = mount
 			} else {
 				options.Mounts = []*config.Mount{mount}

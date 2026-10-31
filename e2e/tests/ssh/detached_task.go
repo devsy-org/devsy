@@ -15,6 +15,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/task"
+	workspacepkg "github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
@@ -61,10 +62,11 @@ func startDetachedTunnelUp(
 	}
 	args = append(args, extraArgs...)
 	args = append(args, workspace)
+	before := detachedTaskIDs()
 
 	out, err := f.ExecCommandOutput(ctx, args)
 	if err != nil {
-		reportDetachedLaunchFailure()
+		reportDetachedLaunchFailure(before, workspace)
 		return "", err
 	}
 	var env struct {
@@ -81,16 +83,27 @@ func startDetachedTunnelUp(
 	return env.ID, nil
 }
 
-func reportDetachedLaunchFailure() {
+func detachedTaskIDs() map[string]struct{} {
 	store, err := task.NewStore()
 	if err != nil {
-		return
+		return nil
 	}
 	states, err := store.List()
-	if err != nil || len(states) == 0 {
+	if err != nil {
+		return nil
+	}
+	ids := make(map[string]struct{}, len(states))
+	for _, state := range states {
+		ids[state.ID] = struct{}{}
+	}
+	return ids
+}
+
+func reportDetachedLaunchFailure(before map[string]struct{}, source string) {
+	state := newDetachedTask(before, source)
+	if state == nil {
 		return
 	}
-	state := states[0]
 	data, err := json.Marshal(state)
 	if err != nil {
 		return
@@ -106,6 +119,43 @@ func reportDetachedLaunchFailure() {
 		return
 	}
 	ginkgo.GinkgoWriter.Printf("detached worker streams: %s\n", redactor.Redact(string(streams)))
+}
+
+func newDetachedTask(before map[string]struct{}, source string) *task.State {
+	if before == nil {
+		return nil
+	}
+	absolute, err := filepath.Abs(source)
+	if err != nil {
+		return nil
+	}
+	workspaceID := workspacepkg.ToID(absolute)
+	store, err := task.NewStore()
+	if err != nil {
+		return nil
+	}
+	states, err := store.List()
+	if err != nil {
+		return nil
+	}
+	return selectNewDetachedTask(states, before, workspaceID)
+}
+
+func selectNewDetachedTask(
+	states []*task.State, before map[string]struct{}, workspaceID string,
+) *task.State {
+	var state *task.State
+	for _, candidate := range states {
+		if _, existed := before[candidate.ID]; existed || candidate.Command != "up" ||
+			candidate.WorkspaceID != workspaceID {
+			continue
+		}
+		if state != nil {
+			return nil
+		}
+		state = candidate
+	}
+	return state
 }
 
 func findDetachedUpTask(

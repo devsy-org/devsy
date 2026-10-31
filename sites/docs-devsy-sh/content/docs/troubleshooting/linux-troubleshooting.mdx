@@ -35,7 +35,7 @@ If Remote - SSH reports `Connection timed out during banner exchange`, a slow pr
 
 If container logs repeatedly report `waiting for devsy agent to be available`, check whether the container's `DEVSY_AGENT_PATH` exists and whether its agent volume is mounted. A container created without the agent mount must be recreated after updating Devsy; restarting it cannot change its mounts.
 
-If a configured mount uses `/opt/devsy`, Devsy preserves that mount and installs the agent after the container starts. Docker mount flags in `runArgs` also use post-start installation.
+If a configured mount uses `/opt/devsy` or a path inside it, Devsy preserves that mount and installs the agent after the container starts. Docker mount flags in `runArgs` also use post-start installation.
 
 Recreating a container discards changes in its writable layer. Back up any data outside persistent workspace mounts before recreating it.
 

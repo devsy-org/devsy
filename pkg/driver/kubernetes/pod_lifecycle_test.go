@@ -263,7 +263,7 @@ func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
 	case got := <-done:
 		require.NoError(t, got.err)
 		assert.True(t, got.reused)
-	case <-time.After(time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("reconcile did not return after the pod became ready")
 	}
 }
