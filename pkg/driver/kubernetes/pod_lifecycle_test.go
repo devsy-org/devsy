@@ -232,8 +232,9 @@ func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
 			Name: DevContainerName, Ready: true,
 			State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
 		}}
-		c.putPod(t, running)
+		// Set before publishing: reconcile can return as soon as the pod is visible.
 		ready.Store(true)
+		c.putPod(t, running)
 	}()
 
 	reused, err := c.reconcile(context.Background())
