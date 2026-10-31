@@ -493,15 +493,14 @@ func (r *setupReader) followDone(
 		return true, ""
 	}
 	switch reason {
-	case workspacelogs.ReasonRefreshUnsupported, workspacelogs.ReasonSourceOffline,
-		reasonNoWorkspace, workspacelogs.ReasonNoSpool:
+	case workspacelogs.ReasonSourceOffline, workspacelogs.ReasonNoSpool:
 		return true, reason
 	}
 	if failures >= maxRefreshFailures {
 		return true, workspacelogs.ReasonRefreshFailed
 	}
 	if m, err := r.store.Manifest(resp.Run.RunID); err == nil && !m.Active() {
-		return true, ""
+		return true, reason
 	}
 
 	return false, ""

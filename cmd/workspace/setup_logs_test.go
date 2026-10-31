@@ -836,3 +836,23 @@ func TestAgentRefresherHonorsDeadline(t *testing.T) {
 	assert.Less(t, time.Since(start), refreshDeadline+2*time.Second)
 	assert.GreaterOrEqual(t, time.Since(start), refreshDeadline-100*time.Millisecond)
 }
+
+func TestFollowKeepsPollingLocalRunWithoutRefreshPath(t *testing.T) {
+	s := newStore(t)
+	run := seedRun(t, s, testUID)
+	run.hook(workspacelogs.InvocationRunning, nil)
+	ref := &fakeRefresher{reason: reasonNoWorkspace}
+	ref.onRefresh = func(call int) {
+		if call == 2 {
+			run.write(workspacelogs.StreamStdout, "late line\n")
+			run.hook(workspacelogs.InvocationSucceeded, nil)
+			run.finish()
+		}
+	}
+	h := newHarness(s, setupLogsFlags{RunID: run.runID, Follow: true}, ref, false)
+
+	require.NoError(t, h.reader.run(context.Background(), target()))
+
+	assert.GreaterOrEqual(t, ref.calls, 2)
+	assert.Contains(t, h.out.String(), "late line")
+}
