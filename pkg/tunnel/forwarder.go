@@ -79,11 +79,12 @@ func (f *forwarder) Forward(port string, _ netstat.PortForwardAttribute) error {
 		err := devssh.PortForward(
 			cancelCtx,
 			f.sshClient,
-			network,
-			localAddr,
-			network,
-			"localhost:"+port,
-			0,
+			devssh.PortForwardOpts{
+				LocalNetwork:  network,
+				LocalAddr:     localAddr,
+				RemoteNetwork: network,
+				RemoteAddr:    "localhost:" + port,
+			},
 		)
 		if err != nil {
 			log.Errorf("Error port forwarding %s: %v", port, err)

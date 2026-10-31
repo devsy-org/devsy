@@ -460,11 +460,12 @@ func forwardConfigPorts(ctx context.Context, p portForwardParams, result *config
 			if err := devssh.PortForward(
 				ctx,
 				p.containerClient,
-				"tcp",
-				fmt.Sprintf("localhost:%d", portNumber),
-				"tcp",
-				fmt.Sprintf("%s:%d", host, portNumber),
-				0,
+				devssh.PortForwardOpts{
+					LocalNetwork:  "tcp",
+					LocalAddr:     fmt.Sprintf("localhost:%d", portNumber),
+					RemoteNetwork: "tcp",
+					RemoteAddr:    fmt.Sprintf("%s:%d", host, portNumber),
+				},
 			); err != nil {
 				log.Errorf("error port forwarding %s: %v", port, err)
 			}
@@ -520,11 +521,13 @@ func forwardPort(ctx context.Context, p singlePortForwardParams) []string {
 				err = devssh.PortForward(
 					ctx,
 					p.containerClient,
-					"tcp",
-					hostAddr,
-					"tcp",
-					containerAddr,
-					p.exitAfterTimeout,
+					devssh.PortForwardOpts{
+						LocalNetwork:     "tcp",
+						LocalAddr:        hostAddr,
+						RemoteNetwork:    "tcp",
+						RemoteAddr:       containerAddr,
+						ExitAfterTimeout: p.exitAfterTimeout,
+					},
 				)
 			}
 			if err != nil {

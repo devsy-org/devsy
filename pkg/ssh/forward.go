@@ -27,23 +27,32 @@ type forwardTarget struct {
 
 type ForwardingFunction func(context.Context, net.Conn, *ssh.Client, forwardTarget)
 
+// PortForwardOpts names both ends of a forwarded connection. For a reverse
+// forward the local end is the one dialed and the remote end is the one listened on.
+type PortForwardOpts struct {
+	LocalNetwork     string
+	LocalAddr        string
+	RemoteNetwork    string
+	RemoteAddr       string
+	ExitAfterTimeout time.Duration
+}
+
 func PortForward(
 	ctx context.Context,
 	client *ssh.Client,
-	localNetwork, localAddr, remoteNetwork, remoteAddr string,
-	exitAfterTimeout time.Duration,
+	opts PortForwardOpts,
 ) error {
-	listener, err := net.Listen(localNetwork, localAddr)
+	listener, err := net.Listen(opts.LocalNetwork, opts.LocalAddr)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = listener.Close() }()
 
 	return portForwarding(ctx, client, listener, forwardRoute{
-		srcAddr:          localAddr,
-		dstNetwork:       remoteNetwork,
-		dstAddr:          remoteAddr,
-		exitAfterTimeout: exitAfterTimeout,
+		srcAddr:          opts.LocalAddr,
+		dstNetwork:       opts.RemoteNetwork,
+		dstAddr:          opts.RemoteAddr,
+		exitAfterTimeout: opts.ExitAfterTimeout,
 		forwardFn:        forward,
 	})
 }
@@ -80,19 +89,18 @@ func PortForwardWithListener(
 func ReversePortForward(
 	ctx context.Context,
 	client *ssh.Client,
-	remoteNetwork, remoteAddr, localNetwork, localAddr string,
-	exitAfterTimeout time.Duration,
+	opts PortForwardOpts,
 ) error {
-	listener, err := ReverseListen(client, remoteNetwork, remoteAddr)
+	listener, err := ReverseListen(client, opts.RemoteNetwork, opts.RemoteAddr)
 	if err != nil {
 		return err
 	}
 	return RunReverseForward(ctx, client, ReverseForwardOpts{
 		Listener:         listener,
-		RemoteAddr:       remoteAddr,
-		LocalNetwork:     localNetwork,
-		LocalAddr:        localAddr,
-		ExitAfterTimeout: exitAfterTimeout,
+		RemoteAddr:       opts.RemoteAddr,
+		LocalNetwork:     opts.LocalNetwork,
+		LocalAddr:        opts.LocalAddr,
+		ExitAfterTimeout: opts.ExitAfterTimeout,
 	})
 }
 

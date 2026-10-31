@@ -71,7 +71,7 @@ func (f *fileBackend) store(values map[string]string) error {
 		return fmt.Errorf("finalize encrypted secrets: %w", err)
 	}
 
-	return atomicWriteFile(f.path, buf.Bytes(), 0o600)
+	return atomicWriteFile(f.path, buf.Bytes())
 }
 
 func (f *fileBackend) set(key, value string) error {
