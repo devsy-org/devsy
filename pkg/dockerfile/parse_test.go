@@ -9,6 +9,10 @@ import (
 )
 
 const (
+	baseVersion = "BASE_VERSION"
+)
+
+const (
 	testBaseImageArg = "BASE_IMAGE"
 )
 
@@ -73,7 +77,10 @@ FROM ${BASE_IMAGE}:${BASE_VERSION}`
 	baseImage := d.FindBaseImage(map[string]string{}, "")
 	s.Equal("ubuntu:20.04", baseImage)
 
-	baseImage = d.FindBaseImage(map[string]string{testBaseImageArg: "debian", "BASE_VERSION": "11"}, "")
+	baseImage = d.FindBaseImage(
+		map[string]string{testBaseImageArg: "debian", baseVersion: "11"},
+		"",
+	)
 	s.Equal("debian:11", baseImage)
 }
 
@@ -85,7 +92,7 @@ FROM ${BASE_IMAGE}:${BASE_VERSION}`
 	s.NoError(err)
 
 	baseImage := d.FindBaseImage(
-		map[string]string{testBaseImageArg: "alpine", "BASE_VERSION": "3.18"},
+		map[string]string{testBaseImageArg: "alpine", baseVersion: "3.18"},
 		"",
 	)
 	s.Equal("alpine:3.18", baseImage)
@@ -123,7 +130,10 @@ COPY --from=builder /app /app`
 	baseImage = d.FindBaseImage(map[string]string{}, "builder")
 	s.Equal("golang:1.21", baseImage)
 
-	baseImage = d.FindBaseImage(map[string]string{testBaseImageArg: "node", "BASE_VERSION": "18"}, "")
+	baseImage = d.FindBaseImage(
+		map[string]string{testBaseImageArg: "node", baseVersion: "18"},
+		"",
+	)
 	s.Equal("node:18", baseImage)
 }
 

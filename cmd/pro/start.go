@@ -42,9 +42,15 @@ import (
 )
 
 const (
+	adminValue       = "admin"
+	namespaceValue   = "--namespace"
+	kubeContextValue = "--kube-context"
+)
+
+const (
 	DevsyRouterDomainSecret = "loft-router-domain" // #nosec G101
 	passwordChangedHint     = "(has been changed)"
-	defaultUser             = "admin"
+	defaultUser             = adminValue
 
 	ingressNginx         = "ingress-nginx"
 	helmRepositoryConfig = "--repository-config=''"
@@ -348,7 +354,7 @@ func (cmd *StartCmd) purgeManifests(ctx context.Context, manifests string) {
 	kubectlDelete := exec.CommandContext(ctx, // #nosec G204 -- args are internally constructed
 		"kubectl", "delete", "-f", "-",
 		"--context", cmd.Context,
-		"--namespace", cmd.Namespace,
+		namespaceValue, cmd.Namespace,
 		"--ignore-not-found=true",
 		"--grace-period=0", "--force",
 	)
@@ -469,7 +475,7 @@ func (cmd *StartCmd) printRemoteSuccessMessage(host string) {
 
 ##########################   LOGIN   ############################
 
-Username: `+greenBold("admin")+`
+Username: `+greenBold(adminValue)+`
 Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
@@ -549,7 +555,7 @@ func (cmd *StartCmd) successLocal() error {
 
 ##########################   LOGIN   ############################
 
-Username: `+greenBold("admin")+`
+Username: `+greenBold(adminValue)+`
 Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
@@ -946,7 +952,7 @@ func (cmd *StartCmd) successDevsyRouter(url string) error {
 
 ##########################   LOGIN   ############################
 
-Username: `+greenBold("admin")+`
+Username: `+greenBold(adminValue)+`
 Password: `+greenBold(password)+`  # Change via UI or via: `+greenBold("devsy platform user reset-password")+`
 
 Login via UI:  %s
@@ -1009,7 +1015,9 @@ func (cmd *StartCmd) loginViaCLI(url string) error {
 	}
 	loginRequestBuf := bytes.NewBuffer(loginRequestBytes)
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed platform cert
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		}, //nolint:gosec // self-signed platform cert
 	}
 	httpClient := &http.Client{Transport: tr}
 
@@ -1203,9 +1211,9 @@ func installNginxIngress(
 		helmRepositoryConfig,
 		"--repo",
 		"https://kubernetes.github.io/ingress-nginx",
-		"--kube-context",
+		kubeContextValue,
 		kubeContext,
-		"--namespace",
+		namespaceValue,
 		ingressNginx,
 		"--create-namespace",
 		"--set-string",
@@ -1287,19 +1295,19 @@ func ensureAdminPassword(
 		return false, err
 	}
 
-	admin, err := devsyClient.StorageV1().Users().Get(ctx, "admin", metav1.GetOptions{})
+	admin, err := devsyClient.StorageV1().Users().Get(ctx, adminValue, metav1.GetOptions{})
 	switch {
 	case err != nil && !kerrors.IsNotFound(err):
 		return false, err
 	case admin == nil:
 		admin, err = devsyClient.StorageV1().Users().Create(ctx, &storagev1.User{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "admin",
+				Name: adminValue,
 			},
 			Spec: storagev1.UserSpec{
-				Username: "admin",
+				Username: adminValue,
 				Email:    "test@domain.tld",
-				Subject:  "admin",
+				Subject:  adminValue,
 				Groups:   []string{"system:masters"},
 				PasswordRef: &storagev1.SecretRef{
 					SecretName:      "loft-user-secret-admin",
@@ -1418,7 +1426,9 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	// we disable http2 as Kubernetes has problems with this
 	transport.ForceAttemptHTTP2 = false
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // self-signed platform cert
+	transport.TLSClientConfig = &tls.Config{
+		InsecureSkipVerify: true,
+	} //nolint:gosec // self-signed platform cert
 	// wait until devsy is reachable at the given url
 	client := &http.Client{Transport: transport}
 	url := "https://" + host + "/version"
@@ -1470,9 +1480,9 @@ func upgradeRelease(
 		"--install",
 		"--create-namespace",
 		helmRepositoryConfig,
-		"--kube-context",
+		kubeContextValue,
 		kubeContext,
-		"--namespace",
+		namespaceValue,
 		namespace,
 	}
 	if chartRepo != "" {
@@ -1514,9 +1524,9 @@ func getReleaseManifests(
 		defaultReleaseName,
 		chartName,
 		helmRepositoryConfig,
-		"--kube-context",
+		kubeContextValue,
 		kubeContext,
-		"--namespace",
+		namespaceValue,
 		namespace,
 	}
 	if chartRepo != "" {

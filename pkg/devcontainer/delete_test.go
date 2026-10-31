@@ -17,6 +17,10 @@ import (
 )
 
 const (
+	exited = "exited"
+)
+
+const (
 	testContainerID   = "container-abc"
 	testStatusRunning = "running"
 )
@@ -73,7 +77,7 @@ func (m *mockDriver) GetDevContainerLogs(
 func newTestRunner(d driver.Driver) *runner {
 	return &runner{
 		driver: d,
-		id:     "test-workspace",
+		id:     testWorkspace,
 		workspaceConfig: &provider.AgentWorkspaceInfo{
 			Agent: provider.ProviderAgentConfig{
 				Driver: provider.CustomDriver,
@@ -138,7 +142,7 @@ func TestDelete_StoppedContainer_SkipsStopAndDeletes(t *testing.T) {
 	d := &mockDriver{
 		findResult: &config.ContainerDetails{
 			ID:     testContainerID,
-			State:  config.ContainerDetailsState{Status: "exited"},
+			State:  config.ContainerDetailsState{Status: exited},
 			Config: config.ContainerDetailsConfig{Labels: map[string]string{}},
 		},
 	}
@@ -160,7 +164,7 @@ func TestDelete_DeleteError_ReturnsError(t *testing.T) {
 	d := &mockDriver{
 		findResult: &config.ContainerDetails{
 			ID:     testContainerID,
-			State:  config.ContainerDetailsState{Status: "exited"},
+			State:  config.ContainerDetailsState{Status: exited},
 			Config: config.ContainerDetailsConfig{Labels: map[string]string{}},
 		},
 		deleteErr: fmt.Errorf("permission denied"),
@@ -206,7 +210,7 @@ func TestDelete_RequiredFailure_StillRunsLeftoverSteps(t *testing.T) {
 	d := &mockDriver{
 		findResult: &config.ContainerDetails{
 			ID:     testContainerID,
-			State:  config.ContainerDetailsState{Status: "exited"},
+			State:  config.ContainerDetailsState{Status: exited},
 			Config: config.ContainerDetailsConfig{Labels: map[string]string{}},
 		},
 		deleteErr: fmt.Errorf("daemon unreachable"),

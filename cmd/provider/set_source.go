@@ -92,7 +92,13 @@ func (cmd *SetSourceCmd) Run(ctx context.Context, devsyConfig *config.Config, ar
 		return err
 	}
 
-	providerConfig, err := updateProviderSource(ctx, reporter, devsyConfig, providerName, providerSource)
+	providerConfig, err := updateProviderSource(
+		ctx,
+		reporter,
+		devsyConfig,
+		providerName,
+		providerSource,
+	)
 	if err != nil {
 		return err
 	}

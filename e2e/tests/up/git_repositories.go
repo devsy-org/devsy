@@ -9,6 +9,10 @@ import (
 	"github.com/onsi/ginkgo/v2"
 )
 
+const (
+	subpathDevsyJupyterNotebookHelloWorld = "subpath--devsy-jupyter-notebook-hello-world"
+)
+
 var _ = ginkgo.Describe(
 	"testing up command for working with git repositories",
 	ginkgo.Label("up-workspaces"),
@@ -76,7 +80,7 @@ var _ = ginkgo.Describe(
 			)
 			framework.ExpectNoError(err)
 
-			id := "subpath--devsy-jupyter-notebook-hello-world"
+			id := subpathDevsyJupyterNotebookHelloWorld
 			out, err := f.DevsySSH(ctx, id, "pwd")
 			framework.ExpectNoError(err)
 			framework.ExpectEqual(out, fmt.Sprintf("/workspaces/%s\n", id), "should be subpath")

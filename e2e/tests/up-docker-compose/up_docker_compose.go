@@ -26,6 +26,11 @@ import (
 )
 
 const (
+	userValue = "--user"
+	root      = "root"
+)
+
+const (
 	composeSecretCommand       = "secret"
 	composeSecretSetCommand    = "set"
 	composeSecretDeleteCommand = "delete"
@@ -45,11 +50,11 @@ var _ = ginkgo.Describe(
 			tc.initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			tc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+			tc.dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
 
-			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", "docker")
+			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", dockerValue)
 			framework.ExpectNoError(err)
 		})
 
@@ -65,9 +70,9 @@ var _ = ginkgo.Describe(
 				})
 				framework.ExpectNoError(tc.f.DevsyContextUse(ctx, contextName))
 				framework.ExpectNoError(tc.f.DevsyProviderAdd(
-					ctx, "docker", "-o", "DOCKER_PATH=docker",
+					ctx, dockerValue, "-o", "DOCKER_PATH=docker",
 				))
-				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, "docker"))
+				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, dockerValue))
 
 				tempDir, workspace, err := tc.setupAndStartWorkspace(
 					ctx, "tests/up-docker-compose/testdata/docker-compose",
@@ -223,9 +228,9 @@ var _ = ginkgo.Describe(
 				})
 				framework.ExpectNoError(tc.f.DevsyContextUse(ctx, contextName))
 				framework.ExpectNoError(tc.f.DevsyProviderAdd(
-					ctx, "docker", "-o", "DOCKER_PATH=docker",
+					ctx, dockerValue, "-o", "DOCKER_PATH=docker",
 				))
-				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, "docker"))
+				framework.ExpectNoError(tc.f.DevsyProviderUse(ctx, dockerValue))
 
 				secretName := "COMPOSE_SESSION_SECRET"
 				_, err := tc.f.ExecCommandOutput(ctx, []string{
@@ -363,8 +368,8 @@ var _ = ginkgo.Describe(
 					flagCommand,
 					"touch /home/vscode/mnt1/foo.txt",
 					workspace.ID,
-					"--user",
-					"root",
+					userValue,
+					root,
 				},
 			)
 			framework.ExpectNoError(err)
@@ -377,8 +382,8 @@ var _ = ginkgo.Describe(
 					flagCommand,
 					"echo -n BAR > /home/vscode/mnt1/foo.txt",
 					workspace.ID,
-					"--user",
-					"root",
+					userValue,
+					root,
 				},
 			)
 			framework.ExpectNoError(err)
@@ -434,8 +439,8 @@ var _ = ginkgo.Describe(
 					flagCommand,
 					"touch /home/vscode/mnt-ro/should-not-write.txt",
 					workspace.ID,
-					"--user",
-					"root",
+					userValue,
+					root,
 				},
 			)
 			framework.ExpectError(

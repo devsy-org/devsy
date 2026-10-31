@@ -72,8 +72,8 @@ func TestStartComposeContainerRecreateRefreshesOverrides(t *testing.T) {
 				},
 				substitutionContext: &config.SubstitutionContext{},
 				project:             recreateTestProject(buildContext),
-				composeHelper: &compose.ComposeHelper{},
-				container:     container,
+				composeHelper:       &compose.ComposeHelper{},
+				container:           container,
 				options: UpOptions{
 					CLIOptions: provider.CLIOptions{Recreate: true, Reset: reset},
 				},

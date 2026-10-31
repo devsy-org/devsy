@@ -7,9 +7,9 @@ import (
 
 const (
 	probeTestUsrBin = "/usr/bin"
-	probeTestVar = "VAR"
-	probeTestName = "test"
-	probeTestValue = "value"
+	probeTestVar    = "VAR"
+	probeTestName   = "test"
+	probeTestValue  = "value"
 )
 
 //nolint:funlen,lll // It's just test input vectors.
@@ -25,9 +25,9 @@ func TestParseProbeOutput(t *testing.T) {
 			output: []byte("PATH=/usr/bin\x00HOME=/home/user\x00USER=testuser\x00"),
 			sep:    '\x00',
 			expected: map[string]string{
-				"PATH": probeTestUsrBin,
-				"HOME": "/home/user",
-				"USER": "testuser",
+				pathValue: probeTestUsrBin,
+				home:      "/home/user",
+				"USER":    "testuser",
 			},
 		},
 		{
@@ -47,7 +47,7 @@ func TestParseProbeOutput(t *testing.T) {
 			sep: '\x00',
 			expected: map[string]string{
 				"BASH_FUNC_scl%%": "() {  if [ \"$1\" = \"load\" -o \"$1\" = \"unload\" ]; then\n eval \"module $@\";\n else\n /usr/bin/scl \"$@\";\n fi\n}",
-				"PATH":            probeTestUsrBin,
+				pathValue:         probeTestUsrBin,
 			},
 		},
 		{
@@ -96,9 +96,9 @@ func TestParseProbeOutput(t *testing.T) {
 			output: []byte("PATH=/usr/bin\nHOME=/home/user\nUSER=testuser\n"),
 			sep:    '\n',
 			expected: map[string]string{
-				"PATH": probeTestUsrBin,
-				"HOME": "/home/user",
-				"USER": "testuser",
+				pathValue: probeTestUsrBin,
+				home:      "/home/user",
+				"USER":    "testuser",
 			},
 		},
 		{

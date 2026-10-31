@@ -19,9 +19,13 @@ import (
 )
 
 const (
+	hello = "hello"
+)
+
+const (
 	testWorkspacePath = "/workspaces/test"
-	testEchoCmd = "echo"
-	testDotfilesRepo = "https://github.com/user/dotfiles"
+	testEchoCmd       = "echo"
+	testDotfilesRepo  = "https://github.com/user/dotfiles"
 )
 
 type LifecycleHookTestSuite struct {
@@ -41,9 +45,9 @@ func (s *LifecycleHookTestSuite) TestArrayCommand() {
 	currentUser, err := user.Current()
 	s.Require().NoError(err)
 
-	c := []string{testEchoCmd, "hello", "world"}
+	c := []string{testEchoCmd, hello, "world"}
 	args := buildCommandArgs(c, currentUser.Username, currentUser.Username)
-	assert.Equal(s.T(), []string{testEchoCmd, "hello", "world"}, args)
+	assert.Equal(s.T(), []string{testEchoCmd, hello, "world"}, args)
 }
 
 func (s *LifecycleHookTestSuite) TestArrayCommandWithShellWrapper() {
@@ -68,7 +72,7 @@ func (s *LifecycleHookTestSuite) TestArrayCommandWithUserSwitch() {
 	currentUser, err := user.Current()
 	s.Require().NoError(err)
 
-	c := []string{testEchoCmd, "hello"}
+	c := []string{testEchoCmd, hello}
 	args := buildCommandArgs(c, "otheruser", currentUser.Username)
 	assert.Equal(s.T(), []string{"su", "otheruser", "-c", "echo hello"}, args)
 }
@@ -424,7 +428,7 @@ func (s *LifecycleHookTestSuite) TestSingleStringCommandBackwardCompat() {
 	err = executeHookCommands(context.Background(), p, envArr)
 
 	assert.NoError(t, err)
-	assertFileContains(t, dir, "out.txt", "hello")
+	assertFileContains(t, dir, "out.txt", hello)
 }
 
 func (s *LifecycleHookTestSuite) TestSingleNamedCommandNoGoroutine() {

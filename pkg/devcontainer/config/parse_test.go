@@ -155,7 +155,11 @@ func TestFindDevContainerConfigs(t *testing.T) {
 			t.Fatal(err)
 		}
 		// #nosec G306 -- TODO Consider using a more secure permission setting and ownership if needed.
-		if err := os.WriteFile(fullPath, []byte(`{"name":"` + parseTestName + `"}`), 0o644); err != nil {
+		if err := os.WriteFile(
+			fullPath,
+			[]byte(`{"name":"`+parseTestName+`"}`),
+			0o644,
+		); err != nil {
 			t.Fatal(err)
 		}
 	}

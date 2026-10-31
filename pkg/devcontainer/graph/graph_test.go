@@ -35,8 +35,8 @@ func (suite *GraphTestSuite) TestAddNode() {
 func (suite *GraphTestSuite) TestAddNodes() {
 	nodes := map[string]string{
 		testNode1: "data1",
-		"node2": "data2",
-		"node3": "data3",
+		"node2":   "data2",
+		"node3":   "data3",
 	}
 
 	err := suite.graph.AddNodes(nodes)
@@ -49,7 +49,7 @@ func (suite *GraphTestSuite) TestAddNodes() {
 	// Test duplicate node error
 	duplicateNodes := map[string]string{
 		testNode1: "new_data1",
-		"node4": "data4",
+		"node4":   "data4",
 	}
 	err = suite.graph.AddNodes(duplicateNodes)
 	suite.Error(err)

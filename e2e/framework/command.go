@@ -19,6 +19,10 @@ import (
 	"github.com/devsy-org/devsy/pkg/workspace"
 )
 
+const (
+	contextValue = "context"
+)
+
 var (
 	flagResultFormat = names.Flag(names.ResultFormat)
 	flagIDE          = names.Flag(names.IDE)
@@ -653,7 +657,7 @@ func (f *Framework) DevsyContextCreate(
 	name string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{"context", "create", name}
+	baseArgs := []string{contextValue, "create", name}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context create failed: %s", err.Error())
@@ -662,7 +666,7 @@ func (f *Framework) DevsyContextCreate(
 }
 
 func (f *Framework) DevsyContextUse(ctx context.Context, name string, extraArgs ...string) error {
-	baseArgs := []string{"context", cmdUse, name}
+	baseArgs := []string{contextValue, cmdUse, name}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context use failed: %s", err.Error())
@@ -675,7 +679,7 @@ func (f *Framework) DevsyContextDelete(
 	name string,
 	extraArgs ...string,
 ) error {
-	baseArgs := []string{"context", cmdDelete, name}
+	baseArgs := []string{contextValue, cmdDelete, name}
 	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context delete failed: %s", err.Error())

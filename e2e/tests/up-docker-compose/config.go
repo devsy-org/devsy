@@ -37,11 +37,11 @@ var _ = ginkgo.Describe(
 			tc.initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			tc.dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+			tc.dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 			tc.composeHelper, err = compose.NewComposeHelper(tc.dockerHelper)
 			framework.ExpectNoError(err)
 
-			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", "docker")
+			tc.f, err = framework.SetupDockerProvider(tc.initialDir+"/bin", dockerValue)
 			framework.ExpectNoError(err)
 		})
 
@@ -819,7 +819,7 @@ var _ = ginkgo.Describe(
 
 				btc.f, err = framework.SetupDockerProvider(
 					filepath.Join(btc.initialDir, "bin"),
-					"docker",
+					dockerValue,
 				)
 				framework.ExpectNoError(err)
 			})

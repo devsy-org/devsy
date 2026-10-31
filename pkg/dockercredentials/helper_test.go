@@ -126,7 +126,7 @@ func (s *HelperTestSuite) TestList_Success() {
 
 		_ = json.NewEncoder(w).Encode(&ListResponse{Registries: map[string]string{
 			testRegistry: "testuser",
-			"gcr.io":    "gcpuser",
+			"gcr.io":     "gcpuser",
 		}})
 	}))
 	defer server.Close()

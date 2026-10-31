@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	testPortRangeAttr = "8080-8090"
+	testPortRangeAttr      = "8080-8090"
 	labelThreeThousands    = "Three-thousands"
 	regexKeyThreeThousands = "^30\\d\\d$"
 )

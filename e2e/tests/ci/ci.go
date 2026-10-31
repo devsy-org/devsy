@@ -18,6 +18,10 @@ import (
 )
 
 const (
+	cat = "cat"
+)
+
+const (
 	ciCommand             = "ci"
 	secretCmd             = "secret"
 	ciSecretName          = "MY_SECRET"
@@ -372,7 +376,7 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				ciCommand, tempDir,
 				"--workspace-env", "WS_CI_VAR=ws_value",
-				"--", "cat", "/etc/envfile.json",
+				"--", cat, "/etc/envfile.json",
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(stdout).To(gomega.ContainSubstring(`"WS_CI_VAR":"ws_value"`))
@@ -401,7 +405,7 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				ciCommand, tempDir,
 				"--secrets-file", secretsFile,
-				"--", "cat", "/tmp/ci-secret.txt",
+				"--", cat, "/tmp/ci-secret.txt",
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.ContainSubstring("s3cr3t"))
@@ -423,7 +427,7 @@ var _ = ginkgo.Describe("devsy ci test suite", ginkgo.Label("ci"), ginkgo.Ordere
 			stdout, _, err := f.ExecCommandCapture(ctx, []string{
 				ciCommand, tempDir,
 				"--secret", ciSecretName,
-				"--", "cat", "/tmp/ci-secret.txt",
+				"--", cat, "/tmp/ci-secret.txt",
 			})
 			framework.ExpectNoError(err)
 			gomega.Expect(strings.TrimSpace(stdout)).To(gomega.ContainSubstring("managed-ci-42"))

@@ -13,6 +13,12 @@ import (
 	"github.com/devsy-org/devsy/pkg/status"
 )
 
+const (
+	vscodeValue       = "vscode"
+	workspacesProject = "/workspaces/project"
+	abc123            = "abc123"
+)
+
 const envelopeTestSecret = "status-secret"
 
 func TestWriteResultJSON(t *testing.T) {
@@ -27,8 +33,8 @@ func TestWriteResultJSON(t *testing.T) {
 		{
 			name:        "typical values",
 			containerID: "abc123def456",
-			user:        "vscode",
-			workdir:     "/workspaces/project",
+			user:        vscodeValue,
+			workdir:     workspacesProject,
 			warnings:    nil,
 		},
 		{
@@ -54,9 +60,9 @@ func TestWriteResultJSON(t *testing.T) {
 		},
 		{
 			name:        "with warnings",
-			containerID: "abc123",
-			user:        "vscode",
-			workdir:     "/workspaces/project",
+			containerID: abc123,
+			user:        vscodeValue,
+			workdir:     workspacesProject,
 			warnings: []string{
 				"cpus: required 128, available 4",
 				"memory: required 256gb (274877906944 bytes), available 17179869184 bytes",
@@ -64,17 +70,17 @@ func TestWriteResultJSON(t *testing.T) {
 		},
 		{
 			name:        "with url",
-			containerID: "abc123",
-			user:        "vscode",
-			workdir:     "/workspaces/project",
+			containerID: abc123,
+			user:        vscodeValue,
+			workdir:     workspacesProject,
 			url:         "http://localhost:8080/?folder=/workspaces/project",
 			warnings:    nil,
 		},
 		{
 			name:        "empty url omitted",
-			containerID: "abc123",
-			user:        "vscode",
-			workdir:     "/workspaces/project",
+			containerID: abc123,
+			user:        vscodeValue,
+			workdir:     workspacesProject,
 			url:         "",
 			warnings:    nil,
 		},

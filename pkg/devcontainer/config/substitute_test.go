@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+const (
+	home      = "HOME"
+	pathValue = "PATH"
+)
+
 func TestLookupValue(t *testing.T) {
 	tests := []struct {
 		name string
@@ -15,8 +20,8 @@ func TestLookupValue(t *testing.T) {
 	}{
 		{
 			name: "var set no default",
-			env:  map[string]string{"HOME": testRootHome},
-			args: []string{"HOME"},
+			env:  map[string]string{home: testRootHome},
+			args: []string{home},
 			want: testRootHome,
 		},
 		{
@@ -65,7 +70,7 @@ func TestLookupValue(t *testing.T) {
 
 func TestReplaceWithContextUnknownVarPreservedAsLiteral(t *testing.T) {
 	ctx := &SubstitutionContext{
-		Env: map[string]string{"HOME": testRootHome},
+		Env: map[string]string{home: testRootHome},
 	}
 	match := "${unknownVar}"
 	result := replaceWithContext(false, ctx)(
@@ -94,7 +99,7 @@ func TestReplaceWithContextPreservesContainerEnv(t *testing.T) {
 }
 
 func TestReplaceWithContainerEnvUnknownPreservedAsLiteral(t *testing.T) {
-	env := map[string]string{"PATH": testUsrBin}
+	env := map[string]string{pathValue: testUsrBin}
 	match := "${unknownVar}"
 	result := replaceWithContainerEnv(
 		env, match, "unknownVar", nil,
@@ -109,11 +114,11 @@ func TestReplaceWithContainerEnvUnknownPreservedAsLiteral(t *testing.T) {
 
 func TestReplaceWithContextLocalEnvResolves(t *testing.T) {
 	ctx := &SubstitutionContext{
-		Env: map[string]string{"HOME": testRootHome},
+		Env: map[string]string{home: testRootHome},
 	}
 	match := "${localEnv:HOME}"
 	result := replaceWithContext(false, ctx)(
-		match, "localEnv", []string{"HOME"},
+		match, "localEnv", []string{home},
 	)
 	if result != testRootHome {
 		t.Errorf(
@@ -125,11 +130,11 @@ func TestReplaceWithContextLocalEnvResolves(t *testing.T) {
 
 func TestReplaceWithContextEnvPreservedAsLiteral(t *testing.T) {
 	ctx := &SubstitutionContext{
-		Env: map[string]string{"HOME": testRootHome},
+		Env: map[string]string{home: testRootHome},
 	}
 	match := "${env:HOME}"
 	result := replaceWithContext(false, ctx)(
-		match, "env", []string{"HOME"},
+		match, "env", []string{home},
 	)
 	if result != match {
 		t.Errorf(
@@ -173,11 +178,11 @@ func TestResolveStringDefaultWithColons(t *testing.T) {
 }
 
 const (
-	testContainerEnvPathVar = "${containerEnv:PATH}"
-	testRootHome = "/root"
-	testUsrBin = "/usr/bin"
-	testMissingKey = "MISSING"
-	testVarKey = "VAR"
+	testContainerEnvPathVar                  = "${containerEnv:PATH}"
+	testRootHome                             = "/root"
+	testUsrBin                               = "/usr/bin"
+	testMissingKey                           = "MISSING"
+	testVarKey                               = "VAR"
 	testWorkspaceFolder                      = "/home/user/project"
 	testContainerWorkspaceFolder             = "/workspaces/project"
 	testDevContainerID                       = "abc123"
@@ -188,7 +193,7 @@ const (
 	testLOCKey                               = "LOC"
 	testContainerWorkspaceFolderName         = "containerWorkspaceFolder"
 	testContainerWorkspaceFolderBasenameName = "containerWorkspaceFolderBasename"
-	testPATHKey                              = "PATH"
+	testPATHKey                              = pathValue
 	testCaseResolvesCWF                      = "resolves containerWorkspaceFolder"
 	testCaseResolvesCWFBasename              = "resolves containerWorkspaceFolderBasename"
 	testProjectName                          = "project"
@@ -408,7 +413,7 @@ func TestRestrictedReplacePreservesContainerVars(t *testing.T) {
 	ctx := &SubstitutionContext{
 		ContainerWorkspaceFolder: testContainerWorkspaceFolder,
 		LocalWorkspaceFolder:     testWorkspaceFolder,
-		Env:                      map[string]string{"HOME": testRootHome},
+		Env:                      map[string]string{home: testRootHome},
 	}
 	fullReplace := replaceWithContext(false, ctx)
 	restricted := restrictedReplace(fullReplace)
@@ -449,7 +454,7 @@ func TestRestrictedReplacePreservesContainerVars(t *testing.T) {
 			name:     "resolves localEnv",
 			match:    "${localEnv:HOME}",
 			variable: "localEnv",
-			args:     []string{"HOME"},
+			args:     []string{home},
 			want:     testRootHome,
 		},
 	}

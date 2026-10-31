@@ -4,6 +4,10 @@ import (
 	"testing"
 )
 
+const (
+	devsy = "devsy"
+)
+
 // TestToID takes in a string which represents a workspace source and returns an appropriate
 // _human readable_ ID for it.
 // Note that these tests document the status quo and not the ideal state.
@@ -22,22 +26,22 @@ func toIDTestCases() []struct {
 		{
 			name:  "Simple URL, no @, parse repo name",
 			input: "github.com/devsy-org/devsy",
-			want:  "devsy",
+			want:  devsy,
 		},
 		{
 			name:  "URL with .git suffix",
 			input: "github.com/devsy-org/devsy.git",
-			want:  "devsy",
+			want:  devsy,
 		},
 		{
 			name:  "URL with .git suffix and https prefix",
 			input: "https://github.com/devsy-org/devsy.git",
-			want:  "devsy",
+			want:  devsy,
 		},
 		{
 			name:  "URL with trailing slash",
 			input: "github.com/devsy-org/devsy/",
-			want:  "devsy",
+			want:  devsy,
 		},
 		{
 			name:  "Bare string with no slash",
@@ -47,7 +51,7 @@ func toIDTestCases() []struct {
 		{
 			name:  "Local directory",
 			input: "/home/loft/devsy",
-			want:  "devsy",
+			want:  devsy,
 		},
 		{
 			name:  "Branch with valid characters",

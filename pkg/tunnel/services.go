@@ -461,9 +461,9 @@ func forwardConfigPorts(ctx context.Context, p portForwardParams, result *config
 				ctx,
 				p.containerClient,
 				devssh.PortForwardOpts{
-					LocalNetwork:  "tcp",
+					LocalNetwork:  tcp,
 					LocalAddr:     fmt.Sprintf("localhost:%d", portNumber),
-					RemoteNetwork: "tcp",
+					RemoteNetwork: tcp,
 					RemoteAddr:    fmt.Sprintf("%s:%d", host, portNumber),
 				},
 			); err != nil {
@@ -522,9 +522,9 @@ func forwardPort(ctx context.Context, p singlePortForwardParams) []string {
 					ctx,
 					p.containerClient,
 					devssh.PortForwardOpts{
-						LocalNetwork:     "tcp",
+						LocalNetwork:     tcp,
 						LocalAddr:        hostAddr,
-						RemoteNetwork:    "tcp",
+						RemoteNetwork:    tcp,
 						RemoteAddr:       containerAddr,
 						ExitAfterTimeout: p.exitAfterTimeout,
 					},

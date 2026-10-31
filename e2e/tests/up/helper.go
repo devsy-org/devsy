@@ -21,6 +21,10 @@ import (
 )
 
 const (
+	attach = "attach"
+)
+
+const (
 	secretCmd       = "secret"
 	envCmd          = "env"
 	cmdSSH          = "ssh"
@@ -273,7 +277,7 @@ func (dtc *dockerTestContext) verifyContextAttachment(
 	tempDir, err := setupWorkspace(tc.testdataDir, dtc.initialDir, dtc.f)
 	framework.ExpectNoError(err)
 	tc.store(ctx, tc.name, "expected-value")
-	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, "attach", tc.name})
+	_, err = dtc.f.ExecCommandOutput(ctx, []string{tc.command, attach, tc.name})
 	framework.ExpectNoError(err)
 
 	// Intentionally no --env/--secret argument: the context binding is the source.

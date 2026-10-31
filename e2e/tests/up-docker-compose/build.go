@@ -19,6 +19,10 @@ import (
 	"github.com/onsi/gomega"
 )
 
+const (
+	dockerValue = "docker"
+)
+
 var _ = ginkgo.Describe(
 	"devsy up docker compose test suite",
 	ginkgo.Label("up-docker-compose"),
@@ -33,11 +37,11 @@ var _ = ginkgo.Describe(
 			initialDir, err = os.Getwd()
 			framework.ExpectNoError(err)
 
-			dockerHelper = &docker.DockerHelper{DockerCommand: "docker"}
+			dockerHelper = &docker.DockerHelper{DockerCommand: dockerValue}
 			composeHelper, err = compose.NewComposeHelper(dockerHelper)
 			framework.ExpectNoError(err)
 
-			f, err = framework.SetupDockerProvider(initialDir+"/bin", "docker")
+			f, err = framework.SetupDockerProvider(initialDir+"/bin", dockerValue)
 			framework.ExpectNoError(err)
 		})
 

@@ -13,7 +13,7 @@ import (
 const (
 	prebuildTestAmd64 = "amd64"
 	prebuildTestArm64 = "arm64"
-	prebuildTestName = "test"
+	prebuildTestName  = "test"
 )
 
 func TestNormalizeArchitecture(t *testing.T) {

@@ -38,6 +38,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	docker = "docker"
+)
+
 // UpCmd holds the up cmd flags.
 type UpCmd struct {
 	*flags.GlobalFlags
@@ -509,7 +513,7 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 		return "", nil
 	}
 
-	if dockerCmd != "docker" {
+	if dockerCmd != docker {
 		path, err := exec.LookPath(dockerCmd)
 		if err != nil {
 			return "", fmt.Errorf("custom docker path %q not found: %w", dockerCmd, err)
@@ -517,7 +521,7 @@ func (w *workspaceInitializer) ensureDockerInstalled(ctx context.Context) (strin
 		return path, nil
 	}
 
-	if dockerCmd == "docker" && runtime.GOOS == "darwin" {
+	if dockerCmd == docker && runtime.GOOS == "darwin" {
 		return findDarwinDockerCLI()
 	}
 
@@ -548,7 +552,7 @@ func findDarwinDockerCLI() (string, error) {
 func darwinDockerCandidatePaths(homeDir string) []string {
 	paths := append([]string(nil), darwinDockerPaths...)
 	if homeDir != "" {
-		paths = append(paths, filepath.Join(homeDir, ".rd", "bin", "docker"))
+		paths = append(paths, filepath.Join(homeDir, ".rd", "bin", docker))
 	}
 	return paths
 }
@@ -571,7 +575,7 @@ func (w *workspaceInitializer) getDockerCommand() string {
 		log.Debugf("using custom docker path %s", w.workspaceInfo.Agent.Docker.Path)
 		return w.workspaceInfo.Agent.Docker.Path
 	}
-	return "docker"
+	return docker
 }
 
 func (w *workspaceInitializer) isDockerInstallDisabled() bool {
@@ -596,7 +600,7 @@ func (w *workspaceInitializer) waitForDocker(resultChan <-chan dockerInstallResu
 	result := <-resultChan
 
 	dockerPath := w.workspaceInfo.Agent.Docker.Path
-	if result.path != "" && (dockerPath == "" || dockerPath == "docker") {
+	if result.path != "" && (dockerPath == "" || dockerPath == docker) {
 		w.workspaceInfo.Agent.Docker.Path = result.path
 		log.Debugf("set docker path to %s", result.path)
 	}
@@ -973,7 +977,7 @@ func tryMergeRootlessDockerConfig() error {
 		return err
 	}
 
-	dockerConfigDir := filepath.Join(homeDir, ".config", "docker")
+	dockerConfigDir := filepath.Join(homeDir, ".config", docker)
 	if _, err := os.Stat(dockerConfigDir); errors.Is(err, os.ErrNotExist) {
 		return err
 	}
