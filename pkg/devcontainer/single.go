@@ -461,6 +461,18 @@ func (r *runner) attemptPreStartDelivery(
 		)
 		return nil
 	}
+	if _, local := strategy.(*delivery.LocalDockerDelivery); local {
+		for _, arg := range mergedConfig.RunArgs {
+			if arg == "--mount" || strings.HasPrefix(arg, "--mount=") ||
+				arg == "--volume" || strings.HasPrefix(arg, "--volume=") ||
+				arg == "--tmpfs" || strings.HasPrefix(arg, "--tmpfs=") ||
+				arg == "--volumes-from" || strings.HasPrefix(arg, "--volumes-from=") ||
+				arg == "-v" || strings.HasPrefix(arg, "-v=") ||
+				(strings.HasPrefix(arg, "-v") && len(arg) > 2) {
+				return nil
+			}
+		}
+	}
 
 	runOptions, err := r.buildRunOptionsForDelivery(
 		mergedConfig,

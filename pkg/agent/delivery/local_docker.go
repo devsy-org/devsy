@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -47,6 +48,15 @@ func (d *LocalDockerDelivery) Phase() DeliveryPhase {
 func (d *LocalDockerDelivery) DeliverPreStart(ctx context.Context, opts PreStartOptions) error {
 	if opts.BinarySource == nil {
 		return fmt.Errorf("binary source is required for local docker delivery")
+	}
+	if mount := opts.RunOptions.WorkspaceMount; mount != nil &&
+		path.Clean(mount.Target) == volumeMountPath {
+		return fmt.Errorf("agent mount target %s is already in use", volumeMountPath)
+	}
+	for _, mount := range opts.RunOptions.Mounts {
+		if mount != nil && path.Clean(mount.Target) == volumeMountPath {
+			return fmt.Errorf("agent mount target %s is already in use", volumeMountPath)
+		}
 	}
 
 	volumeName := volumePrefix + opts.WorkspaceID

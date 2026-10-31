@@ -11,6 +11,7 @@ import (
 
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
@@ -76,39 +77,37 @@ func TestResolveNewContainerPreStartDelivery(t *testing.T) {
 		t.Skip("requires a shell executable")
 	}
 
-	for _, failDelivery := range []bool{false, true} {
-		name := "success"
+	for _, tc := range []struct {
+		name     string
+		fail     bool
+		mount    bool
+		rawMount bool
+	}{
+		{name: "success"},
+		{name: "failure", fail: true},
+		{name: "occupied mount", mount: true},
+		{name: "raw mount", rawMount: true},
+	} {
 		script := "#!/bin/sh\ncase \"$1\" in\nvolume) exit 0 ;;\n" +
 			"run) printf '%s\\n' \"$TEST_AGENT_VERSION\" ;;\n*) exit 1 ;;\nesac\n"
-		if failDelivery {
-			name = "failure"
+		if tc.fail {
 			script = "#!/bin/sh\nexit 1\n"
 		}
-		t.Run(name, func(t *testing.T) {
-			dir := t.TempDir()
-			docker := filepath.Join(dir, "docker")
-			require.NoError(t, os.WriteFile(docker, []byte(script), 0o600))
-			chmod := exec.Command("chmod", "u+x", "docker")
-			chmod.Dir = dir
-			require.NoError(t, chmod.Run())
-			d := &imageOnlyRuntime{mockDriver: mockDriver{findResult: runningContainerDetails()}}
-			r := newTestRunner(d)
-			r.workspaceConfig.Agent.Driver = provider.DockerDriver
-			r.workspaceConfig.Agent.Docker.Path = docker
-			r.workspaceConfig.Agent.Docker.Env = map[string]string{
-				"TEST_AGENT_VERSION": version.GetVersion(),
-			}
-			r.workspaceConfig.Workspace = &provider.Workspace{
-				ID:  r.id,
-				UID: composeUpTestWorkspaceUID,
-			}
-			r.imageBackend = &separateImages{details: &config.ImageDetails{ID: overlayImageField}}
-			r.reporter = status.Nop()
+		t.Run(tc.name, func(t *testing.T) {
+			r, d := newPreStartTestRunner(t, script)
 
 			p := recreateResolveParams()
 			p.options.Recreate = false
 			p.parsedConfig.Config.Image = baseImageName
 			p.parsedConfig.Config.ContainerEnv = map[string]string{"USER_VALUE": "preserved"}
+			if tc.mount {
+				p.parsedConfig.Config.Mounts = []*config.Mount{{
+					Type: "volume", Source: "user-data", Target: "/opt/devsy",
+				}}
+			}
+			if tc.rawMount {
+				p.parsedConfig.Config.RunArgs = []string{"--volume=user-data:/opt/devsy"}
+			}
 			p.parsedConfig.Raw = config.CloneDevContainerConfig(p.parsedConfig.Config)
 			p.substitutionContext = &config.SubstitutionContext{}
 
@@ -117,16 +116,47 @@ func TestResolveNewContainerPreStartDelivery(t *testing.T) {
 			require.NotNil(t, d.params)
 			assert.Equal(t, "preserved", d.params.Options.Env["USER_VALUE"])
 			assert.NotContains(t, resolved.mergedConfig.ContainerEnv, pkgconfig.EnvAgentPath)
-			if failDelivery {
-				assert.NotContains(t, d.params.Options.Env, pkgconfig.EnvAgentPath)
-				assert.Empty(t, d.params.Options.Mounts)
-			} else {
-				assert.Equal(t, "/opt/devsy/devsy", d.params.Options.Env[pkgconfig.EnvAgentPath])
-				require.Len(t, d.params.Options.Mounts, 1)
-				assert.Equal(t, "devsy-agent-"+r.id, d.params.Options.Mounts[0].Source)
-				assert.Equal(t, "/opt/devsy", d.params.Options.Mounts[0].Target)
-				assert.Equal(t, "volume", d.params.Options.Mounts[0].Type)
-			}
+			assertPreStartDeliveryOptions(t, d.params.Options, r.id, tc.name)
 		})
 	}
+}
+
+func newPreStartTestRunner(t *testing.T, script string) (*runner, *imageOnlyRuntime) {
+	t.Helper()
+	dir := t.TempDir()
+	docker := filepath.Join(dir, "docker")
+	require.NoError(t, os.WriteFile(docker, []byte(script), 0o600))
+	chmod := exec.Command("chmod", "u+x", "docker")
+	chmod.Dir = dir
+	require.NoError(t, chmod.Run())
+	d := &imageOnlyRuntime{mockDriver: mockDriver{findResult: runningContainerDetails()}}
+	r := newTestRunner(d)
+	r.workspaceConfig.Agent.Driver = provider.DockerDriver
+	r.workspaceConfig.Agent.Docker.Path = docker
+	r.workspaceConfig.Agent.Docker.Env = map[string]string{
+		"TEST_AGENT_VERSION": version.GetVersion(),
+	}
+	r.workspaceConfig.Workspace = &provider.Workspace{ID: r.id, UID: composeUpTestWorkspaceUID}
+	r.imageBackend = &separateImages{details: &config.ImageDetails{ID: overlayImageField}}
+	r.reporter = status.Nop()
+	return r, d
+}
+
+func assertPreStartDeliveryOptions(t *testing.T, options *driver.RunOptions, id, scenario string) {
+	t.Helper()
+	if scenario != "success" {
+		assert.NotContains(t, options.Env, pkgconfig.EnvAgentPath)
+		if scenario == "occupied mount" {
+			require.Len(t, options.Mounts, 1)
+			assert.Equal(t, "user-data", options.Mounts[0].Source)
+		} else {
+			assert.Empty(t, options.Mounts)
+		}
+		return
+	}
+	assert.Equal(t, "/opt/devsy/devsy", options.Env[pkgconfig.EnvAgentPath])
+	require.Len(t, options.Mounts, 1)
+	assert.Equal(t, "devsy-agent-"+id, options.Mounts[0].Source)
+	assert.Equal(t, "/opt/devsy", options.Mounts[0].Target)
+	assert.Equal(t, "volume", options.Mounts[0].Type)
 }
