@@ -452,9 +452,7 @@ type ProviderKubernetesDriverConfig struct {
 	ClusterRole                  string `json:"clusterRole,omitempty"`
 	ServiceAccount               string `json:"serviceAccount,omitempty"`
 
-	Architecture string `json:"architecture,omitempty"`
-	// ImageConfigFile is a path to a JSON file with the image config of a prebuilt
-	// image, used instead of reading it from the registry on the client.
+	Architecture    string `json:"architecture,omitempty"`
 	ImageConfigFile string `json:"imageConfigFile,omitempty"`
 	// InactivityTimeout is a deprecated alias of Agent.ContainerTimeout, used only
 	// when the canonical field is empty.

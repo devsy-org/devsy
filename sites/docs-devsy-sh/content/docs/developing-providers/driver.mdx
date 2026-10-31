@@ -53,7 +53,7 @@ The allowed options for the Kubernetes driver are:
 - **clusterRole**: if defined, Devsy will create a role binding for the given cluster role for the workspace container. This is useful if you need Kubernetes access within the workspace container
 - **serviceAccount**: if defined, Devsy will use the given service account for the dev container
 - **architecture**: the CPU architecture to use for the workspace pod, e.g. `amd64`, `arm64`. If empty, Devsy inspects the cluster's nodes to auto-detect it (and errors out if the cluster has mixed architectures).
-- **imageConfigFile**: path to a JSON file with the image config of the devcontainer.json `image` (for example the output of `crane config <image>`). When set, Devsy reads the user, env, entrypoint, cmd and `devcontainer.metadata` label from the file instead of fetching the image config from the registry on the client. See [Starting workspaces without registry access](#starting-workspaces-without-registry-access).
+- **imageConfigFile**: path to a versioned JSON wrapper containing the digest-pinned image reference, platform and OCI config for the devcontainer.json `image`. When set, Devsy reads the user, env, entrypoint, cmd and `devcontainer.metadata` label from the file instead of fetching the image config from the registry on the client. See [Starting workspaces without registry access](#starting-workspaces-without-registry-access).
 - **inactivityTimeout**: after how much time to automatically stop the pod due to inactivity
 - **storageClass**: the storage class to use to create the persistent volume claim
 - **diskSize**: the default size for the persistent volume to use, e.g. `10Gi`
@@ -84,20 +84,9 @@ Devsy builds images inside Kubernetes without Docker through the `dockerless` bu
 
 ### Starting workspaces without registry access
 
-For a devcontainer.json with a prebuilt `image`, Devsy reads the image config (user, env, entrypoint, cmd and the `devcontainer.metadata` label) from the registry on the machine that runs Devsy. In clusters that already have their own registry credentials, the person starting the workspace would otherwise need registry read access and a local `docker login` just for this step.
+The Kubernetes driver can use a local image configuration file for a prebuilt `image` in `devcontainer.json`. Devsy reads the user, environment, entrypoint, command and `devcontainer.metadata` label from this file instead of requesting image configuration from the registry on the client. See [Kubernetes registry access](../managing-providers/kubernetes-registry-access.mdx) for the file format, setup and limitations.
 
-To skip it, produce the image config next to the image, for example in CI, and point the `IMAGE_CONFIG_FILE` option at the file:
-
-```bash
-crane config registry.example.com/team/image@sha256:<digest> > image-config.json
-devsy provider set kubernetes -o IMAGE_CONFIG_FILE=$PWD/image-config.json -o ARCHITECTURE=amd64
-```
-
-The file can be an OCI image config (as printed by `crane config`), a single `docker image inspect` object, or the JSON of Devsy's image details. Devsy never contacts the registry for this step when the option is set, and it fails if the file is missing or invalid. Notes:
-
-- Pin the image by digest in devcontainer.json, so the file always matches the image the cluster pulls.
-- This applies to the devcontainer.json `image`. Dockerfile builds still read their base image from the registry, and `features` are built from the image as usual.
-- `ARCHITECTURE` (for example `amd64`) is required, so Devsy does not list the cluster's nodes to detect it, which needs cluster-scoped permissions. If the file has an `architecture`, it must match. On a cluster with mixed architectures, also schedule the pod onto matching nodes, for example with `NODE_SELECTOR`.
+When a driver supports supplied image details, its `ImageDetails` capability method accepts an `ImageDetailsRequest` with `ImageName` and `UnsupportedReason`, then returns the validated `ImageDetails` or an error. The result is `nil, nil` only when the option is unset. Configured input must be validated for the requested image before use. Unsupported combinations and invalid files return errors. They must not fall back to registry inspection.
 
 ### Example Kubernetes Provider
 

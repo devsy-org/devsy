@@ -119,7 +119,7 @@ options:
     description: The cpu architecture to use for the workspace pod, e.g. amd64, arm64, etc.
     type: string
   IMAGE_CONFIG_FILE:
-    description: Path to a JSON file with the image config of the devcontainer's prebuilt image (e.g. the output of `crane config <image>`). If set, Devsy reads the user, env, entrypoint, cmd and devcontainer.metadata label from this file instead of fetching the image config from the registry, so the machine running Devsy needs no registry credentials. Devsy fails if the file is missing or invalid. Requires ARCHITECTURE to be set and to match the file's architecture. Pin the image by digest so the file matches the image the cluster pulls. Applies to the devcontainer.json image only; Dockerfile builds still read their base image from the registry.
+    description: Absolute local path to a version 1 image config file for a digest-pinned prebuilt image without Features. Requires matching ARCHITECTURE.
     type: string
 agent:
   containerInactivityTimeout: ${INACTIVITY_TIMEOUT}

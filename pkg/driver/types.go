@@ -54,13 +54,13 @@ type WorkspaceChowner interface {
 	RequiresWorkspaceChown() bool
 }
 
-// ImageDetailsDriver is a capability interface for drivers that can supply the
-// image config of a prebuilt image themselves, so the client does not need to
-// read it from the registry.
+type ImageDetailsRequest struct {
+	ImageName         string
+	UnsupportedReason string
+}
+
 type ImageDetailsDriver interface {
-	// ImageDetails returns the configured details for imageName, or nil when
-	// none are configured.
-	ImageDetails(imageName string) (*config.ImageDetails, error)
+	ImageDetails(request ImageDetailsRequest) (*config.ImageDetails, error)
 }
 
 // ManagedLifecycleDriver identifies drivers that can run the container's main

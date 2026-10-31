@@ -764,9 +764,6 @@ func optionsEqual(a, b *provider2.ProviderKubernetesDriverConfig) bool {
 	return aCopy == bCopy
 }
 
-// withoutLocalOptions returns a copy of options without settings that only
-// apply on the machine running Devsy. They must not be stored on the pod or
-// decide whether it gets replaced.
 func withoutLocalOptions(
 	options *provider2.ProviderKubernetesDriverConfig,
 ) provider2.ProviderKubernetesDriverConfig {
