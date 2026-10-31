@@ -445,13 +445,18 @@ func (x *imageConfigFixture) configureCredentialSpy() {
 		"docker-credential-desktop", "docker-credential-osxkeychain",
 		"docker-credential-pass", "docker-credential-secretservice",
 	} {
-		script := []byte("#!/bin/sh\necho called >> \"$IMAGE_CONFIG_HELPER_LOG\"\nexit 1\n")
+		script := []byte("#!/bin/sh\necho called >> \"$IMAGE_CONFIG_HELPER_LOG\"\n" +
+			"echo 'credentials not found in native keychain'\nexit 1\n")
 		framework.ExpectNoError(
 			(runenv.OsFileStore{}).WriteFile(filepath.Join(helperDir, helper), script, 0o700),
 		)
 	}
 	framework.SetEnvForSpec("PATH", helperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	framework.ExpectNoError(os.MkdirAll(filepath.Join(root, "empty-docker"), 0o700))
+	imageConfigWrite(
+		filepath.Join(root, "empty-docker", "config.json"),
+		map[string]string{"credsStore": "pass"},
+	)
 	framework.SetEnvForSpec("DEVSY_HOME", filepath.Join(root, "devsy"))
 	framework.SetEnvForSpec("DEVSY_SECRETS_BACKEND", "file")
 	framework.SetEnvForSpec("DEVSY_SECRETS_PASSPHRASE", "fixture")
@@ -591,6 +596,8 @@ var _ = ginkgo.Describe(
 					"logs", "--since", negativeStarted, x.registry)
 				gomega.Expect(negativeLogs).To(gomega.ContainSubstring(" 401 "))
 				gomega.Expect(negativeLogs).To(gomega.ContainSubstring("/manifests/"))
+				_, err = os.Stat(filepath.Join(x.root, "helper-calls"))
+				framework.ExpectNoError(err)
 				_, stderr, err = x.up(
 					ctx,
 					"--provider-option",
