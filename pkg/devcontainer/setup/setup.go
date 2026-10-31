@@ -26,6 +26,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/sharedfile"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -1002,7 +1003,7 @@ func WorkspaceLogsRoot() string {
 		return ""
 	}
 
-	return filepath.Join(dir, "workspace-logs")
+	return filepath.Join(dir, workspacelogs.SpoolDirName)
 }
 
 func setupPlatformGitCredentials(

@@ -16,6 +16,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
 // Runner drives the lifecycle of a single workspace's dev container.
@@ -195,10 +196,12 @@ func (r *runner) Up(
 	switch {
 	case options.Recovery:
 		status.Skip(reporter, status.PhaseInitializeCommand, "recovery mode")
+		recordInitializeSkipped(ctx, "recovery_excluded")
 	case options.Platform.Enabled:
 		// Platform workspaces execute initialization remotely; this host-side
 		// phase is intentionally not run and must not appear successful.
 		status.Skip(reporter, status.PhaseInitializeCommand, "platform mode")
+		recordInitializeSkipped(ctx, "platform_excluded")
 	default:
 		err = status.Run(
 			ctx,
@@ -310,6 +313,22 @@ func (r *runner) dispatchByConfigKind(
 	default:
 		return r.runDefaultContainer(ctx, params)
 	}
+}
+
+// recordInitializeSkipped keeps the reason the host-side initializeCommand did
+// not run in the retained setup history.
+func recordInitializeSkipped(ctx context.Context, reason string) {
+	rec := workspacelogs.RecorderFrom(ctx)
+	if rec == nil {
+		return
+	}
+	rec.Invocation(workspacelogs.Invocation{
+		ID:     workspacelogs.NewID(),
+		Phase:  "lifecycle",
+		Hook:   "initializeCommand",
+		State:  workspacelogs.InvocationSkipped,
+		Reason: reason,
+	})
 }
 
 // runInitializeCommand runs the host-side initializeCommand hook. The hook is
