@@ -23,6 +23,7 @@ func TestSettingsSuite(t *testing.T) {
 
 func (s *SettingsSuite) SetupTest() {
 	s.tmpDir = s.T().TempDir()
+	s.T().Setenv("XDG_CONFIG_HOME", filepath.Join(s.tmpDir, ".config"))
 }
 
 func (s *SettingsSuite) TestLinuxSettingsRespectXDGConfigHome() {
@@ -76,6 +77,7 @@ func (s *SettingsSuite) TestHostTimeoutReportsInvalidSettings() {
 	s.Require().NoError(err)
 	s.writeRaw(path, "{ invalid")
 	s.Error(ensureHostSettingsWithTimeout(FlavorStable, "60"))
+	s.writeJSON(path, map[string]any{})
 	s.Error(ensureHostSettingsWithTimeout(FlavorStable, "0"))
 }
 
