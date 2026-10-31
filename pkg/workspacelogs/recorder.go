@@ -1,6 +1,7 @@
 package workspacelogs
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -202,6 +203,12 @@ func (r *Recorder) emit(rec *Record) {
 	rec.Sequence = r.seq
 	rec.Time = r.opts.Now().UTC()
 	if _, err := r.opts.Backend.Append([]Record{*rec}); err != nil {
+		if rec.Kind == KindOutput && errors.Is(err, ErrCapacity) {
+			r.seq--
+			_ = r.opts.Backend.AddCondition(r.opts.RunID, ConditionCapacity)
+
+			return
+		}
 		r.failLocked(err)
 	}
 }

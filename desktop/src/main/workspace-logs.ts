@@ -47,7 +47,10 @@ export class WorkspaceLogError extends Error {
 }
 
 export interface WorkspaceLogCli {
-  run<T>(args: string[], options?: { maxBuffer?: number }): Promise<T>
+  run<T>(
+    args: string[],
+    options?: { maxBuffer?: number; signal?: AbortSignal },
+  ): Promise<T>
 }
 
 export interface ExportFs {
@@ -192,21 +195,27 @@ export class WorkspaceLogReader {
     signal: AbortSignal,
     slot: Slot,
   ): Promise<unknown> {
+    const child = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     let onAbort: (() => void) | undefined
     const guard = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new WorkspaceLogError("timeout", "Log read timed out")),
-        this.timeoutMs,
-      )
-      onAbort = () =>
+      timer = setTimeout(() => {
+        child.abort()
+        reject(new WorkspaceLogError("timeout", "Log read timed out"))
+      }, this.timeoutMs)
+      onAbort = () => {
+        child.abort()
         reject(new WorkspaceLogError("cancelled", "Log read was cancelled"))
+      }
       if (signal.aborted) onAbort()
       else signal.addEventListener("abort", onAbort, { once: true })
     })
     try {
       return await Promise.race([
-        this.cli.run<unknown>(args, { maxBuffer: MAX_RESPONSE_BYTES }),
+        this.cli.run<unknown>(args, {
+          maxBuffer: MAX_RESPONSE_BYTES,
+          signal: child.signal,
+        }),
         guard,
       ])
     } catch (error) {

@@ -3,7 +3,9 @@ package setup
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os/user"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -326,15 +328,19 @@ func TestRecordsPrebuildExclusion(t *testing.T) {
 }
 
 func TestRecordsPostAttachSkipAndRun(t *testing.T) {
-	run := newRecordedRun(t)
+	skippedRun, ranRun := newRecordedRun(t), newRecordedRun(t)
 	result := hooksResult(t, t.TempDir())
 	result.MergedConfig.PostAttachCommands = []types.LifecycleHook{{"": {"echo attached"}}}
 
-	require.NoError(t, RunPostAttachHooks(run.ctx, result, PostAttachOptions{Skip: true}))
-	require.NoError(t, RunPostAttachHooks(run.ctx, result, PostAttachOptions{}))
+	require.NoError(t, RunPostAttachHooks(skippedRun.ctx, result, PostAttachOptions{Skip: true}))
+	require.NoError(t, RunPostAttachHooks(ranRun.ctx, result, PostAttachOptions{}))
 
 	var skipped, ran int
-	for _, inv := range fold(run.records(t)) {
+	invocations := slices.Concat(
+		slices.Collect(maps.Values(fold(skippedRun.records(t)))),
+		slices.Collect(maps.Values(fold(ranRun.records(t)))),
+	)
+	for _, inv := range invocations {
 		switch inv.final() {
 		case workspacelogs.InvocationSkipped:
 			skipped++
@@ -368,4 +374,19 @@ func TestNoRecorderKeepsBehaviorAndErrorText(t *testing.T) {
 		"--source setup --run "+run.runID+" --hook postCreateCommand",
 	)
 	assert.True(t, strings.HasPrefix(recErr.Error(), "testHooks: command"))
+}
+
+func TestHookPlanGivesSameIDToCommandAcrossProcesses(t *testing.T) {
+	runID := workspacelogs.NewID()
+	first := (&hookPlan{}).id(runID, "postCreateCommand", 0, "build")
+	second := (&hookPlan{}).id(runID, "postCreateCommand", 0, "build")
+
+	assert.Equal(t, first, second)
+	assert.NotEqual(t, first, (&hookPlan{}).id(runID, "postCreateCommand", 1, "build"))
+	assert.NotEqual(
+		t,
+		first,
+		(&hookPlan{}).id(workspacelogs.NewID(), "postCreateCommand", 0, "build"),
+	)
+	assert.True(t, workspacelogs.ValidID(first))
 }

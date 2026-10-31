@@ -19,7 +19,7 @@ import {
 
 type Run = (
   args: string[],
-  options?: { maxBuffer?: number },
+  options?: { maxBuffer?: number; signal?: AbortSignal },
 ) => Promise<unknown>
 
 function reader(run: Run, timeoutMs?: number) {
@@ -64,7 +64,7 @@ describe("WorkspaceLogReader", () => {
         "--result-format",
         "json",
       ],
-      { maxBuffer: MAX_RESPONSE_BYTES },
+      { maxBuffer: MAX_RESPONSE_BYTES, signal: expect.any(AbortSignal) },
     )
   })
 
@@ -156,6 +156,33 @@ describe("WorkspaceLogReader", () => {
       })
       await vi.advanceTimersByTimeAsync(1001)
       await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("aborts the CLI child when a read is cancelled or times out", async () => {
+    const signals: (AbortSignal | undefined)[] = []
+    const stuck: Run = (_args, options) => {
+      signals.push(options?.signal)
+      return new Promise(() => undefined)
+    }
+    const { reader: r } = reader(stuck)
+    const cancelled = r.read(readArgs)
+    r.cancel()
+    await expect(cancelled).rejects.toMatchObject({ code: "cancelled" })
+    expect(signals[0]?.aborted).toBe(true)
+
+    vi.useFakeTimers()
+    try {
+      const { reader: timed } = reader(stuck, 1000)
+      const pending = timed.read(readArgs)
+      const assertion = expect(pending).rejects.toMatchObject({
+        code: "timeout",
+      })
+      await vi.advanceTimersByTimeAsync(1001)
+      await assertion
+      expect(signals[1]?.aborted).toBe(true)
     } finally {
       vi.useRealTimers()
     }

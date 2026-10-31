@@ -172,7 +172,7 @@ let jobPin = $derived.by(() => {
     : undefined
 })
 let pin = $derived(linkedRun ?? jobPin)
-let logContext = $derived(workspace?.context ?? linkedRun?.context ?? "default")
+let logContext = $derived(linkedRun?.context ?? workspace?.context ?? "default")
 // "pending" until a linked run is checked against the live workspace.
 let probed = $state<{ key: string; owned: boolean } | undefined>()
 let linkKey = $derived(

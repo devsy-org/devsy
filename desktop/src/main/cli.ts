@@ -51,6 +51,7 @@ export interface CliInvocationOptions {
   unlockRetried?: boolean
   /** Raises the stdout cap of run() above Node's 1 MiB default. */
   maxBuffer?: number
+  signal?: AbortSignal
 }
 
 export interface CliInvocationPolicy {
@@ -372,6 +373,9 @@ export class CliRunner {
                 ...(options.maxBuffer === undefined
                   ? {}
                   : { maxBuffer: options.maxBuffer }),
+                ...(options.signal === undefined
+                  ? {}
+                  : { signal: options.signal }),
               })
             ).stdout
           : await this.spawnWithStdin(

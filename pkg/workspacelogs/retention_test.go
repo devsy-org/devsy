@@ -2,6 +2,7 @@ package workspacelogs
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -125,4 +126,26 @@ func TestPruneIgnoresForeignEntries(t *testing.T) {
 
 	_, err := os.Stat(outside)
 	require.NoError(t, err, "pruning never follows a link out of the store")
+}
+
+func TestPruneRemovesAcknowledgementFilesOfPrunedRuns(t *testing.T) {
+	s, _ := newTestStore(t)
+	acks, err := NewAckStore(filepath.Join(s.Root(), AckDirName))
+	require.NoError(t, err)
+	var ids []string
+	for range MaxCompletedRuns + 1 {
+		id := newRun(t, s, uidA)
+		finishRun(t, s, id)
+		require.NoError(t, acks.Advance(AckKey{RunID: id, ProducerID: NewID(), Hop: HopInbound}, 3))
+		ids = append(ids, id)
+	}
+
+	require.NoError(t, s.Prune())
+
+	left, err := filepath.Glob(filepath.Join(s.Root(), AckDirName, ids[0]+".*.json"))
+	require.NoError(t, err)
+	assert.Empty(t, left)
+	kept, err := filepath.Glob(filepath.Join(s.Root(), AckDirName, ids[len(ids)-1]+".*.json"))
+	require.NoError(t, err)
+	assert.Len(t, kept, 1)
 }

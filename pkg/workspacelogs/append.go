@@ -187,6 +187,9 @@ func (w *batchWriter) fitOutput(line []byte, rec Record) ([]byte, Record, error)
 		if line, err = marshalLine(rec); err != nil {
 			return nil, Record{}, err
 		}
+		if w.runBytes+int64(len(line)) > MaxRunBytes-finalStateReserve {
+			return nil, Record{}, ErrCapacity
+		}
 	}
 
 	return w.checkCapacity(line, rec)
@@ -286,7 +289,10 @@ func (m *RunManifest) applyOwn(rec *Record) {
 	if i := m.producer(rec.ProducerID); i >= 0 && rec.ProducerState != "" {
 		m.Producers[i].State = rec.ProducerState
 	}
-	m.DiscoverySealed = m.DiscoverySealed || rec.DiscoverySealed
+	if i := m.producer(rec.ProducerID); i >= 0 && rec.DiscoverySealed {
+		m.Producers[i].Sealed = true
+	}
+	m.refreshDiscoverySealed()
 	if rec.ProducerState == ProducerUnavailable {
 		m.addCondition(ConditionSourceUnavailable)
 	}
@@ -322,4 +328,16 @@ func (s *Store) registerFromFirstRecord(rec *Record) error {
 		ProducerID: rec.ProducerID, ParentProducerID: rec.ParentProducerID,
 		State: ProducerRunning, Location: rec.Location,
 	})
+}
+
+func (m *RunManifest) refreshDiscoverySealed() {
+	if m.DiscoverySealed || len(m.Producers) == 0 {
+		return
+	}
+	for _, p := range m.Producers {
+		if p.ParentProducerID == "" && !p.Sealed {
+			return
+		}
+	}
+	m.DiscoverySealed = true
 }

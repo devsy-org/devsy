@@ -346,3 +346,32 @@ func TestResumedWorkerDoesNotRepeatThePlan(t *testing.T) {
 	assert.Equal(t, []InvocationState{InvocationSkipped, InvocationRunning}, states,
 		"the marker skip and real execution are kept, the plan is not repeated")
 }
+
+func TestNoisyHookStillRecordsItsOutcomeAfterOutputBudget(t *testing.T) {
+	s, _ := newTestStore(t)
+	runID := newRun(t, s, "uid")
+	rec := newTestRecorder(t, s, runID, nil)
+	inv := NewID()
+	rec.Invocation(
+		Invocation{ID: inv, Phase: "lifecycle", Hook: hookCreate, State: InvocationRunning},
+	)
+	out := rec.Writer(inv, StreamStdout)
+	chunk := strings.Repeat("n", MaxChunkBytes-1) + "\n"
+	for range (MaxRunBytes/MaxChunkBytes)*2 + 64 {
+		_, _ = out.Write([]byte(chunk))
+	}
+	require.NoError(t, out.Close())
+	exit := 3
+	rec.Invocation(Invocation{ID: inv, Hook: hookCreate, State: InvocationFailed, ExitCode: &exit})
+	rec.Close(ProducerTerminal, true)
+
+	require.NoError(t, rec.Err())
+	m, err := s.Manifest(runID)
+	require.NoError(t, err)
+	assert.Contains(t, m.Conditions, ConditionCapacity)
+	assert.Equal(t, ProducerTerminal, m.Producers[0].State)
+	recs := readAll(t, s, ReadRequest{RunID: runID, Hook: hookCreate})
+	last := recs[len(recs)-1]
+	assert.Equal(t, KindInvocation, last.Kind)
+	assert.Equal(t, InvocationFailed, last.State)
+}

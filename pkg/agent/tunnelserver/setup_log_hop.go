@@ -34,7 +34,9 @@ func NewSetupLogHop(ctx context.Context, opts HopOptions) *SetupLogHop {
 	if opts.Session == nil || (opts.Upstream == nil && !opts.Receive) {
 		return nil
 	}
-	acks, err := workspacelogs.NewAckStore(filepath.Join(opts.Session.Store.Root(), "mirror"))
+	acks, err := workspacelogs.NewAckStore(
+		filepath.Join(opts.Session.Store.Root(), workspacelogs.AckDirName),
+	)
 	if err != nil {
 		return nil
 	}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -363,6 +364,7 @@ type ProducerRef struct {
 	ParentProducerID string        `json:"parentProducerId,omitempty"`
 	State            ProducerState `json:"state"`
 	Location         Location      `json:"location,omitempty"`
+	Sealed           bool          `json:"discoverySealed,omitempty"`
 }
 
 // RunManifest is the per-run metadata file.
@@ -454,4 +456,8 @@ func (m *RunManifest) Active() bool {
 	}
 
 	return false
+}
+
+func DeterministicID(parts ...string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(strings.Join(parts, "\x00"))).String()
 }

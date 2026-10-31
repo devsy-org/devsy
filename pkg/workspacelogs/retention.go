@@ -28,6 +28,8 @@ const (
 	// metadataReserve is the part of a run's budget only metadata may use, so a
 	// full output budget cannot hide the terminal state of a hook.
 	metadataReserve = 256 * 1024
+
+	finalStateReserve = metadataReserve / 2
 )
 
 type runInfo struct {
@@ -155,7 +157,22 @@ func (s *Store) remove(r runInfo) bool {
 		return false
 	}
 
-	return os.RemoveAll(r.dir) == nil
+	if os.RemoveAll(r.dir) != nil {
+		return false
+	}
+	s.removeAcks(r.manifest.RunID)
+
+	return true
+}
+
+func (s *Store) removeAcks(runID string) {
+	matches, err := filepath.Glob(filepath.Join(s.root, AckDirName, runID+".*.json"))
+	if err != nil {
+		return
+	}
+	for _, m := range matches {
+		_ = os.Remove(m)
+	}
 }
 
 // storeFull reports whether the store has reached its total byte cap, so a new

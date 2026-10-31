@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -813,9 +814,12 @@ type hookPlan struct {
 	ids map[hookCmdKey]string
 }
 
-func (pl *hookPlan) id(index int, key string) string {
+func (pl *hookPlan) id(runID, hook string, index int, key string) string {
 	if pl == nil {
 		return workspacelogs.NewID()
+	}
+	if runID != "" {
+		return workspacelogs.DeterministicID(runID, hook, strconv.Itoa(index), key)
 	}
 	pl.mu.Lock()
 	defer pl.mu.Unlock()
@@ -855,7 +859,16 @@ func (p hookRunParams) invocation(ctx context.Context, key string) invocationRef
 	index := p.index
 
 	return invocationRef{rec: rec, inv: workspacelogs.Invocation{
-		ID: p.plan.id(index, key), Phase: hookPhase, Hook: p.hook, Index: &index, Key: key,
+		ID: p.plan.id(
+			rec.RunID(),
+			p.hook,
+			index,
+			key,
+		),
+		Phase: hookPhase,
+		Hook:  p.hook,
+		Index: &index,
+		Key:   key,
 	}}
 }
 

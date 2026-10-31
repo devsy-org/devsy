@@ -17,6 +17,8 @@ import (
 )
 
 const (
+	// AckDirName is the directory beside the runs that holds mirror acknowledgements.
+	AckDirName   = "mirror"
 	runsDirName  = "runs"
 	producersDir = "producers"
 	manifestName = "manifest.json"
