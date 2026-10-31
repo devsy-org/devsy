@@ -224,23 +224,48 @@ func TestReconcileReplacesPodWhenOptionsChanged(t *testing.T) {
 func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
 	c := newFakeCluster(t)
 	c.putPod(t, c.pod(t, podSpec{uid: "u1", phase: corev1.PodPending}))
-	var ready atomic.Bool
+	observed := make(chan struct{}, 1)
+	c.cs.PrependReactor(
+		"get", podResourceName, func(clienttesting.Action) (bool, runtime.Object, error) {
+			select {
+			case observed <- struct{}{}:
+			default:
+			}
+			return false, nil, nil
+		},
+	)
+	type result struct {
+		reused bool
+		err    error
+	}
+	done := make(chan result, 1)
 	go func() {
-		time.Sleep(40 * time.Millisecond)
-		running := c.pod(t, podSpec{uid: "u1", phase: corev1.PodRunning})
-		running.Status.ContainerStatuses = []corev1.ContainerStatus{{
-			Name: DevContainerName, Ready: true,
-			State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
-		}}
-		c.putPod(t, running)
-		ready.Store(true)
+		reused, err := c.reconcile(t.Context())
+		done <- result{reused: reused, err: err}
 	}()
-
-	reused, err := c.reconcile(context.Background())
-
-	require.NoError(t, err)
-	assert.True(t, reused)
-	assert.True(t, ready.Load(), "success must wait for the pod, not just its object")
+	select {
+	case <-observed:
+	case <-time.After(time.Second):
+		t.Fatal("reconcile did not inspect the pending pod")
+	}
+	select {
+	case got := <-done:
+		t.Fatalf("reconcile returned before the pod was ready: %+v", got)
+	case <-time.After(40 * time.Millisecond):
+	}
+	running := c.pod(t, podSpec{uid: "u1", phase: corev1.PodRunning})
+	running.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: DevContainerName, Ready: true,
+		State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+	}}
+	c.putPod(t, running)
+	select {
+	case got := <-done:
+		require.NoError(t, got.err)
+		assert.True(t, got.reused)
+	case <-time.After(time.Second):
+		t.Fatal("reconcile did not return after the pod became ready")
+	}
 }
 
 func TestReconcileTerminatingPodWaitsForDeletionThenAllowsCreate(t *testing.T) {
