@@ -33,6 +33,11 @@ import (
 	"github.com/tonistiigi/fsutil"
 )
 
+const (
+	localMountContext    = "context"
+	localMountDockerfile = "dockerfile"
+)
+
 type BuildRemoteOptions struct {
 	PrebuildHash         string
 	ParsedConfig         *config.SubstitutedConfig
@@ -263,7 +268,12 @@ func setupRegistryAuth(ref name.Reference, keychain authn.Keychain) ([]session.A
 	registry := ref.Context().RegistryStr()
 	return []session.Attachable{
 		authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
-			AuthConfigProvider: func(ctx context.Context, host string, scope []string, cacheCheck authprovider.ExpireCachedAuthCheck) (types.AuthConfig, error) {
+			AuthConfigProvider: func(
+				ctx context.Context,
+				host string,
+				scope []string,
+				cacheCheck authprovider.ExpireCachedAuthCheck,
+			) (types.AuthConfig, error) {
 				if host == registry {
 					return types.AuthConfig{
 						Username:      authConfig.Username,
@@ -320,8 +330,8 @@ func prepareSolveOptions(
 	solveOpts := client.SolveOpt{
 		Frontend: "dockerfile.v0",
 		FrontendAttrs: map[string]string{
-			"filename": filepath.Base(buildOpts.Dockerfile),
-			"context":  buildOpts.Context,
+			"filename":        filepath.Base(buildOpts.Dockerfile),
+			localMountContext: buildOpts.Context,
 		},
 		LocalMounts:  localMounts,
 		Session:      authSession,
@@ -390,8 +400,8 @@ func setupLocalMounts(buildOpts *build.BuildOptions) (map[string]fsutil.FS, erro
 	}
 
 	return map[string]fsutil.FS{
-		"dockerfile": dockerfileMount,
-		"context":    contextMount,
+		localMountDockerfile: dockerfileMount,
+		localMountContext:    contextMount,
 	}, nil
 }
 
@@ -446,7 +456,7 @@ func addMultiContexts(solveOpts *client.SolveOpt, buildOpts *build.BuildOptions)
 		}
 
 		localName := k
-		if k == "context" || k == "dockerfile" {
+		if k == localMountContext || k == localMountDockerfile {
 			localName = "_" + k
 		}
 
