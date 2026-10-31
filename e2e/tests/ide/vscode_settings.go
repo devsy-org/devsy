@@ -30,6 +30,7 @@ var _ = ginkgo.Describe("VS Code Settings JSONC Handling", ginkgo.Label("ide"), 
 		err = os.MkdirAll(settingsDir, 0o750)
 		framework.ExpectNoError(err)
 
+		framework.SetEnvForSpec("XDG_CONFIG_HOME", filepath.Join(tmpHome, ".config"))
 		framework.SetEnvForSpec("HOME", tmpHome)
 	})
 
