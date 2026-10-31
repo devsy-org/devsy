@@ -212,11 +212,15 @@ func openVSCodeFlavor(
 	params IDEParams,
 ) error {
 	return vscode.Open(ctx, vscode.OpenParams{
-		Workspace:  params.Client.Workspace(),
-		Folder:     params.Result.SubstitutionContext.ContainerWorkspaceFolder,
-		NewWindow:  vscode.Options.GetValue(ideOptions, vscode.OpenNewWindow) == config.BoolTrue,
-		Flavor:     vsCodeFlavorMap[ideName],
-		TunnelMode: params.TunnelMode,
+		Workspace: params.Client.Workspace(),
+		Folder:    params.Result.SubstitutionContext.ContainerWorkspaceFolder,
+		NewWindow: vscode.Options.GetValue(
+			ideOptions,
+			vscode.OpenNewWindow,
+		) == config.BoolTrue,
+		Flavor:            vsCodeFlavorMap[ideName],
+		TunnelMode:        params.TunnelMode,
+		SSHConnectTimeout: vscode.Options.GetValue(ideOptions, vscode.SSHConnectTimeout),
 	})
 }
 

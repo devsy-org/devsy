@@ -30,11 +30,12 @@ const containersExtension = "ms-vscode-remote.remote-containers"
 const remoteFolderScheme = "vscode-remote"
 
 type OpenParams struct {
-	Workspace  string
-	Folder     string
-	NewWindow  bool
-	Flavor     Flavor
-	TunnelMode bool
+	Workspace         string
+	Folder            string
+	NewWindow         bool
+	Flavor            Flavor
+	TunnelMode        bool
+	SSHConnectTimeout string
 }
 
 type openConfig struct {
@@ -248,7 +249,11 @@ func classifyFailure(err error) string {
 }
 
 func Open(ctx context.Context, params OpenParams) error {
-	EnsureHostSettings(params.Flavor)
+	if params.SSHConnectTimeout == "" {
+		EnsureHostSettings(params.Flavor)
+	} else if err := ensureHostSettingsWithTimeout(params.Flavor, params.SSHConnectTimeout); err != nil {
+		return fmt.Errorf("configure host Remote SSH timeout: %w", err)
+	}
 
 	return newHostLauncher().open(ctx, params)
 }

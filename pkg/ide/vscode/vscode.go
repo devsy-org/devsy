@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	OpenNewWindow = "OPEN_NEW_WINDOW"
+	OpenNewWindow     = "OPEN_NEW_WINDOW"
+	SSHConnectTimeout = "SSH_CONNECT_TIMEOUT"
 )
 
 type Flavor string
@@ -100,6 +101,13 @@ var Options = ide.Options{
 			"false",
 			"true",
 		},
+	},
+	SSHConnectTimeout: {
+		Name: SSHConnectTimeout,
+		Description: "Remote SSH connection timeout in positive seconds; " +
+			"applies globally to this editor flavor's host settings",
+		ValidationPattern: `^[1-9][0-9]{0,8}$`,
+		ValidationMessage: "SSH_CONNECT_TIMEOUT must be a positive whole number of seconds (at most 999999999)",
 	},
 }
 

@@ -27,6 +27,18 @@ Both the external OpenSSH client and the built-in SSH transport use the same boo
 
 For locked-down accounts, ask the administrator to permit `/bin/sh` and the required tools, provide a writable executable agent directory, and check forced-command restrictions. Keep noninteractive shell startup output off stdout: it carries the bootstrap protocol and the live SSH tunnel. Send diagnostics to stderr and limit banners and prompts to interactive sessions.
 
+### VS Code SSH connection timeout
+
+If Remote - SSH reports `Connection timed out during banner exchange`, a slow provider connection can exceed its default timeout. Increase `remote.SSH.connectTimeout` in VS Code user settings, for example to `60` seconds, and reconnect. This applies to all Remote - SSH hosts.
+
+### Workspace waits for the Devsy agent
+
+If container logs repeatedly report `waiting for devsy agent to be available`, check whether the container's `DEVSY_AGENT_PATH` exists and whether its agent volume is mounted. A container created without the agent mount must be recreated after updating Devsy; restarting it cannot change its mounts.
+
+If a configured mount uses `/opt/devsy` or a path inside it, Devsy preserves that mount and installs the agent after the container starts. Docker mount flags in `runArgs` also use post-start installation.
+
+Recreating a container discards changes in its writable layer. Back up any data outside persistent workspace mounts before recreating it.
+
 ### Fish startup configuration
 
 Anything in `config.fish` runs on every `fish -c` call, which can interfere with `devsy internal agent workspace up`. Move your customizations inside the `if status is-interactive` block:
