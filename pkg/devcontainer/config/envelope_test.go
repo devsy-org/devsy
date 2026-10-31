@@ -32,62 +32,7 @@ type resultCase struct {
 }
 
 func TestWriteResultJSON(t *testing.T) {
-	tests := []resultCase{
-		{
-			name:        "typical values",
-			containerID: "abc123def456",
-			user:        vscodeValue,
-			workdir:     workspacesProject,
-			warnings:    nil,
-		},
-		{
-			name:        "root user",
-			containerID: "sha256:abcdef1234567890",
-			user:        "root",
-			workdir:     "/workspaces/my-app",
-			warnings:    nil,
-		},
-		{
-			name:        "empty strings",
-			containerID: "",
-			user:        "",
-			workdir:     "",
-			warnings:    nil,
-		},
-		{
-			name:        "special characters in container ID",
-			containerID: "container:with/special-chars_123",
-			user:        "dev-user",
-			workdir:     "/workspaces/my project",
-			warnings:    nil,
-		},
-		{
-			name:        "with warnings",
-			containerID: abc123,
-			user:        vscodeValue,
-			workdir:     workspacesProject,
-			warnings: []string{
-				"cpus: required 128, available 4",
-				"memory: required 256gb (274877906944 bytes), available 17179869184 bytes",
-			},
-		},
-		{
-			name:        "with url",
-			containerID: abc123,
-			user:        vscodeValue,
-			workdir:     workspacesProject,
-			url:         "http://localhost:8080/?folder=/workspaces/project",
-			warnings:    nil,
-		},
-		{
-			name:        "empty url omitted",
-			containerID: abc123,
-			user:        vscodeValue,
-			workdir:     workspacesProject,
-			url:         "",
-			warnings:    nil,
-		},
-	}
+	tests := resultCases()
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -497,6 +442,21 @@ func assertResultEnvelope(t *testing.T, want resultCase, output []byte) {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
 
+	assertCoreFields(t, envelope, containerID, user, workdir, url)
+	assertOptionalField(t, output, "url", url != "")
+	assertWarnings(t, envelope.Warnings, warnings, output)
+
+	if bytes.Contains(output[:len(output)-1], []byte("\n")) {
+		t.Error("JSON must be single-line (no embedded newlines)")
+	}
+}
+
+func assertCoreFields(
+	t *testing.T,
+	envelope ResultEnvelope,
+	containerID, user, workdir, url string,
+) {
+	t.Helper()
 	if envelope.Outcome != "success" {
 		t.Errorf("outcome = %q, want %q", envelope.Outcome, "success")
 	}
@@ -511,12 +471,6 @@ func assertResultEnvelope(t *testing.T, want resultCase, output []byte) {
 	}
 	if envelope.URL != url {
 		t.Errorf("url = %q, want %q", envelope.URL, url)
-	}
-	assertOptionalField(t, output, "url", url != "")
-	assertWarnings(t, envelope.Warnings, warnings, output)
-
-	if bytes.Contains(output[:len(output)-1], []byte("\n")) {
-		t.Error("JSON must be single-line (no embedded newlines)")
 	}
 }
 
@@ -548,5 +502,65 @@ func assertWarnings(t *testing.T, got, want []string, output []byte) {
 		if got[i] != w {
 			t.Errorf("warnings[%d] = %q, want %q", i, got[i], w)
 		}
+	}
+}
+
+// resultCases lists the inputs of TestWriteResultJSON.
+func resultCases() []resultCase {
+	return []resultCase{
+		{
+			name:        "typical values",
+			containerID: "abc123def456",
+			user:        vscodeValue,
+			workdir:     workspacesProject,
+			warnings:    nil,
+		},
+		{
+			name:        "root user",
+			containerID: "sha256:abcdef1234567890",
+			user:        "root",
+			workdir:     "/workspaces/my-app",
+			warnings:    nil,
+		},
+		{
+			name:        "empty strings",
+			containerID: "",
+			user:        "",
+			workdir:     "",
+			warnings:    nil,
+		},
+		{
+			name:        "special characters in container ID",
+			containerID: "container:with/special-chars_123",
+			user:        "dev-user",
+			workdir:     "/workspaces/my project",
+			warnings:    nil,
+		},
+		{
+			name:        "with warnings",
+			containerID: abc123,
+			user:        vscodeValue,
+			workdir:     workspacesProject,
+			warnings: []string{
+				"cpus: required 128, available 4",
+				"memory: required 256gb (274877906944 bytes), available 17179869184 bytes",
+			},
+		},
+		{
+			name:        "with url",
+			containerID: abc123,
+			user:        vscodeValue,
+			workdir:     workspacesProject,
+			url:         "http://localhost:8080/?folder=/workspaces/project",
+			warnings:    nil,
+		},
+		{
+			name:        "empty url omitted",
+			containerID: abc123,
+			user:        vscodeValue,
+			workdir:     workspacesProject,
+			url:         "",
+			warnings:    nil,
+		},
 	}
 }

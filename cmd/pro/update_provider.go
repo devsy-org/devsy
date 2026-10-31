@@ -9,7 +9,6 @@ import (
 	"github.com/devsy-org/devsy/cmd/pro/flags"
 	providercmd "github.com/devsy-org/devsy/cmd/provider"
 	"github.com/devsy-org/devsy/pkg/config"
-	"github.com/devsy-org/devsy/pkg/provider"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/spf13/cobra"
@@ -106,7 +105,7 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 func (cmd *UpdateProviderCmd) reloadProvider(
 	ctx context.Context,
 	contextName string,
-) (*config.Config, *provider.ProviderConfig, error) {
+) (*config.Config, *provider2.ProviderConfig, error) {
 	devsyConfig, err := config.LoadConfig(contextName, cmd.Provider)
 	if err != nil {
 		return nil, nil, err
