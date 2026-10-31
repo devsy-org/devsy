@@ -54,37 +54,49 @@ func normalize(t *testing.T, v any) any {
 func stabilize(v any, ids map[string]string) any {
 	switch x := v.(type) {
 	case map[string]any:
-		keys := make([]string, 0, len(x))
-		for k := range x {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			if k == "nextCursor" {
-				x[k] = "opaque-cursor"
-
-				continue
-			}
-			x[k] = stabilize(x[k], ids)
-		}
+		return stabilizeMap(x, ids)
 	case []any:
 		for i, val := range x {
 			x[i] = stabilize(val, ids)
 		}
 	case string:
-		if ValidID(x) {
-			if _, ok := ids[x]; !ok {
-				ids[x] = stableID(len(ids) + 1)
-			}
-
-			return ids[x]
-		}
-		if len(x) > 10 && x[4] == '-' && x[10] == 'T' {
-			return "2026-10-30T12:00:00Z"
-		}
+		return stabilizeString(x, ids)
 	}
 
 	return v
+}
+
+func stabilizeMap(m map[string]any, ids map[string]string) map[string]any {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if k == "nextCursor" {
+			m[k] = "opaque-cursor"
+
+			continue
+		}
+		m[k] = stabilize(m[k], ids)
+	}
+
+	return m
+}
+
+func stabilizeString(s string, ids map[string]string) string {
+	if ValidID(s) {
+		if _, ok := ids[s]; !ok {
+			ids[s] = stableID(len(ids) + 1)
+		}
+
+		return ids[s]
+	}
+	if len(s) > 10 && s[4] == '-' && s[10] == 'T' {
+		return "2026-10-30T12:00:00Z"
+	}
+
+	return s
 }
 
 func stableID(n int) string {
