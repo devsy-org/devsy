@@ -21,6 +21,7 @@ func NewContainerCmd(flags *flags.GlobalFlags) *cobra.Command {
 	containerCmd.AddCommand(NewSetupContainerCmd(flags))
 	containerCmd.AddCommand(NewDeferredHooksCmd(flags))
 	containerCmd.AddCommand(NewPostAttachCmd(flags))
+	containerCmd.AddCommand(NewSetupLogsCmd(flags))
 	containerCmd.AddCommand(NewDaemonCmd())
 	containerCmd.AddCommand(NewVSCodeAsyncCmd())
 	for _, b := range browserIDEs {

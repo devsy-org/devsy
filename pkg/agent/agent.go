@@ -134,6 +134,17 @@ func ReadAgentWorkspaceInfo(
 	return false, workspaceInfo, nil
 }
 
+// ReadExistingAgentWorkspaceInfo reads already persisted workspace info and
+// nothing else. Unlike ReadAgentWorkspaceInfo it never re-runs as root, probes
+// Docker or invokes sudo, so a read-only history view cannot prompt for
+// elevation or provision state. A missing or unreadable file is an error the
+// caller reports as unavailable.
+func ReadExistingAgentWorkspaceInfo(
+	agentFolder, context, id string,
+) (*provider2.AgentWorkspaceInfo, error) {
+	return readAgentWorkspaceInfo(agentFolder, context, id)
+}
+
 func logWorkspaceInfoReadError(err error, agentFolder, context, id string) {
 	if errors.Is(err, ErrFindAgentHomeDir) {
 		log.Debugf(
