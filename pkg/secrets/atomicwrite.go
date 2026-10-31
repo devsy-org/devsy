@@ -10,11 +10,17 @@ import (
 // mid-write cannot leave a truncated store file.
 func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(
+		dir,
+		0o700,
+	); err != nil { //nolint:gosec // path is the internal secrets store location
 		return fmt.Errorf("create secrets dir: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	tmp, err := os.CreateTemp(
+		dir,
+		filepath.Base(path)+".tmp-*",
+	) //nolint:gosec // path is the internal secrets store location
 	if err != nil {
 		return fmt.Errorf("create temp secrets file: %w", err)
 	}
@@ -36,7 +42,10 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp secrets file: %w", err)
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := os.Rename(
+		tmpName,
+		path,
+	); err != nil { //nolint:gosec // path is the internal secrets store location
 		return fmt.Errorf("replace secrets file: %w", err)
 	}
 	syncDir(dir)
