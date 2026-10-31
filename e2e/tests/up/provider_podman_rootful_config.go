@@ -253,22 +253,22 @@ func eventuallySSH(f *framework.Framework, ctx context.Context, workspace, comma
 			if errors.Is(err, docker.ErrRuntimeUnavailable) {
 				return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(err)
 			}
-			if errors.Is(probeCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
-				consecutiveTimeouts++
-				if consecutiveTimeouts == 2 {
-					healthCtx, healthCancel := context.WithTimeout(ctx, 10*time.Second)
-					helper := &docker.DockerHelper{
-						DockerCommand: filepath.Join(f.DevsyBinDir, podmanRootfulWrapperName),
-					}
-					healthErr := helper.CheckRuntimeHealth(healthCtx)
-					healthCancel()
-					consecutiveTimeouts = 0
-					if errors.Is(healthErr, docker.ErrRuntimeUnavailable) {
-						return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(healthErr)
-					}
-				}
-			} else {
+			if !errors.Is(probeCtx.Err(), context.DeadlineExceeded) || ctx.Err() != nil {
 				consecutiveTimeouts = 0
+				return false, nil
+			}
+			consecutiveTimeouts++
+			if consecutiveTimeouts == 2 {
+				healthCtx, healthCancel := context.WithTimeout(ctx, 10*time.Second)
+				helper := &docker.DockerHelper{
+					DockerCommand: filepath.Join(f.DevsyBinDir, podmanRootfulWrapperName),
+				}
+				healthErr := helper.CheckRuntimeHealth(healthCtx)
+				healthCancel()
+				consecutiveTimeouts = 0
+				if errors.Is(healthErr, docker.ErrRuntimeUnavailable) {
+					return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(healthErr)
+				}
 			}
 			return false, nil
 		}

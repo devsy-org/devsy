@@ -294,7 +294,11 @@ func (cmd *CICmd) resolveWorkspace(
 	if source != "" {
 		args = []string{source}
 	}
-	exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner)
+	exists := workspace2.Exists(
+		ctx,
+		devsyConfig,
+		workspace2.LookupOptions{Args: args, Owner: cmd.Owner},
+	)
 
 	sshConfigPath, cleanupSSH, err := workspacecmd.NewTempSSHConfig()
 	if err != nil {

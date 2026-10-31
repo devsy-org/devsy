@@ -147,11 +147,11 @@ func openDesktopIDE(
 		return "", openJetBrains(ideName, ideOptions, params)
 
 	case string(config.IDEZed):
-		return "", zed.Open(
-			ctx, ideOptions, params.User,
-			params.Result.SubstitutionContext.ContainerWorkspaceFolder,
-			params.Client.Workspace(),
-		)
+		return "", zed.Open(ctx, ideOptions, zed.Target{
+			UserName:        params.User,
+			WorkspaceFolder: params.Result.SubstitutionContext.ContainerWorkspaceFolder,
+			WorkspaceID:     params.Client.Workspace(),
+		})
 
 	default:
 		return "", nil

@@ -71,7 +71,11 @@ func (cmd *RenameCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	if workspace.Exists(ctx, devsyConfig, []string{newName}, "", cmd.Owner) != "" {
+	if workspace.Exists(
+		ctx,
+		devsyConfig,
+		workspace.LookupOptions{Args: []string{newName}, Owner: cmd.Owner},
+	) != "" {
 		return fmt.Errorf("workspace %s already exists", newName)
 	}
 

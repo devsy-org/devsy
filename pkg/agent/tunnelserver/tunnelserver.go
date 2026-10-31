@@ -38,62 +38,71 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 )
 
-func RunServicesServer(
-	ctx context.Context,
-	reader io.Reader,
-	writer io.WriteCloser,
-	allowGitCredentials, allowDockerCredentials bool,
-	forwarder netstat.Forwarder,
-	workspace *provider2.Workspace,
-	options ...Option,
-) error {
-	options = append(options,
-		WithForwarder(forwarder),
-		WithAllowGitCredentials(allowGitCredentials),
-		WithAllowDockerCredentials(allowDockerCredentials),
-		WithWorkspace(workspace),
+// ServicesSpec configures RunServicesServer.
+type ServicesSpec struct {
+	Reader                 io.Reader
+	Writer                 io.WriteCloser
+	AllowGitCredentials    bool
+	AllowDockerCredentials bool
+	Forwarder              netstat.Forwarder
+	Workspace              *provider2.Workspace
+	Options                []Option
+}
+
+// UpSpec configures RunUpServer.
+type UpSpec struct {
+	Reader                 io.Reader
+	Writer                 io.WriteCloser
+	AllowGitCredentials    bool
+	AllowDockerCredentials bool
+	Workspace              *provider2.Workspace
+	Options                []Option
+}
+
+// SetupSpec configures RunSetupServer.
+type SetupSpec struct {
+	Reader                 io.Reader
+	Writer                 io.WriteCloser
+	AllowGitCredentials    bool
+	AllowDockerCredentials bool
+	SetupInfo              *config.Result
+	Options                []Option
+}
+
+func RunServicesServer(ctx context.Context, spec ServicesSpec) error {
+	options := append(spec.Options,
+		WithForwarder(spec.Forwarder),
+		WithAllowGitCredentials(spec.AllowGitCredentials),
+		WithAllowDockerCredentials(spec.AllowDockerCredentials),
+		WithWorkspace(spec.Workspace),
 	)
 	tunnelServ := New(options...)
 
-	return tunnelServ.Run(ctx, reader, writer)
+	return tunnelServ.Run(ctx, spec.Reader, spec.Writer)
 }
 
-func RunUpServer(
-	ctx context.Context,
-	reader io.Reader,
-	writer io.WriteCloser,
-	allowGitCredentials, allowDockerCredentials bool,
-	workspace *provider2.Workspace,
-	options ...Option,
-) (*config.Result, error) {
-	options = append(options,
-		WithWorkspace(workspace),
-		WithAllowGitCredentials(allowGitCredentials),
-		WithAllowDockerCredentials(allowDockerCredentials),
+func RunUpServer(ctx context.Context, spec UpSpec) (*config.Result, error) {
+	options := append(spec.Options,
+		WithWorkspace(spec.Workspace),
+		WithAllowGitCredentials(spec.AllowGitCredentials),
+		WithAllowDockerCredentials(spec.AllowDockerCredentials),
 	)
 	tunnelServ := New(options...)
 
-	return tunnelServ.RunWithResult(ctx, reader, writer)
+	return tunnelServ.RunWithResult(ctx, spec.Reader, spec.Writer)
 }
 
-func RunSetupServer(
-	ctx context.Context,
-	reader io.Reader,
-	writer io.WriteCloser,
-	allowGitCredentials, allowDockerCredentials bool,
-	setupInfo *config.Result,
-	options ...Option,
-) (*config.Result, error) {
-	options = append(options,
-		WithAllowGitCredentials(allowGitCredentials),
-		WithAllowDockerCredentials(allowDockerCredentials),
+func RunSetupServer(ctx context.Context, spec SetupSpec) (*config.Result, error) {
+	options := append(spec.Options,
+		WithAllowGitCredentials(spec.AllowGitCredentials),
+		WithAllowDockerCredentials(spec.AllowDockerCredentials),
 	)
-	tunnelServ, err := newSetupServer(setupInfo, options...)
+	tunnelServ, err := newSetupServer(spec.SetupInfo, options...)
 	if err != nil {
 		return nil, err
 	}
 
-	return tunnelServ.RunWithResult(ctx, reader, writer)
+	return tunnelServ.RunWithResult(ctx, spec.Reader, spec.Writer)
 }
 
 func newSetupServer(setupInfo *config.Result, options ...Option) (*tunnelServer, error) {

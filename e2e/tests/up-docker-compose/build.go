@@ -103,6 +103,7 @@ var _ = ginkgo.Describe(
 			err = os.Remove(origPath)
 			framework.ExpectNoError(err)
 
+			//nolint:gosec // test fixture path inside the temp directory
 			failingConfig, err := os.Open(filepath.Join(tempDir, "fail.devcontainer.json"))
 			framework.ExpectNoError(err)
 			defer func() { _ = failingConfig.Close() }()

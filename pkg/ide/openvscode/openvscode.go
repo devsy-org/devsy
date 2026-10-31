@@ -83,13 +83,19 @@ type OpenVSCodeServer struct {
 	port       string
 }
 
-func NewOpenVSCodeServer(
-	extensions []string,
-	settings string,
-	userName string,
-	host, port string,
-	values map[string]config.OptionValue,
-) *OpenVSCodeServer {
+// ServerConfig describes the code-server to create.
+type ServerConfig struct {
+	Extensions []string
+	Settings   string
+	UserName   string
+	Host       string
+	Port       string
+	Values     map[string]config.OptionValue
+}
+
+func NewOpenVSCodeServer(cfg ServerConfig) *OpenVSCodeServer {
+	extensions, settings, userName := cfg.Extensions, cfg.Settings, cfg.UserName
+	host, port, values := cfg.Host, cfg.Port, cfg.Values
 	return &OpenVSCodeServer{
 		values:     values,
 		extensions: extensions,

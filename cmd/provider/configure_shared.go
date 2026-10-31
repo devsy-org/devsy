@@ -96,8 +96,15 @@ func configureProviderOptions(
 		func(ctx context.Context) error {
 			var resolveErr error
 			resolvedConfig, resolveErr = options2.ResolveOptions(
-				ctx, devsyConfig, cfg.Provider, options,
-				cfg.SkipRequired, cfg.SkipSubOptions, cfg.SingleMachine,
+				ctx,
+				options2.ResolveOptionsRequest{
+					DevConfig:      devsyConfig,
+					ProviderConfig: cfg.Provider,
+					UserOptions:    options,
+					SkipRequired:   cfg.SkipRequired,
+					SkipSubOptions: cfg.SkipSubOptions,
+					SingleMachine:  cfg.SingleMachine,
+				},
 			)
 			return resolveErr
 		},

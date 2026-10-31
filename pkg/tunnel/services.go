@@ -107,18 +107,19 @@ func runTunnelServer(ctx context.Context, cancel context.CancelFunc, p tunnelSer
 	defer cancel()
 	defer func() { _ = p.stdoutReader.Close() }()
 	defer func() { _ = p.stdinWriter.Close() }()
-	err := tunnelserver.RunServicesServer(
-		ctx,
-		p.stdoutReader,
-		p.stdinWriter,
-		p.opts.ConfigureGitCredentials,
-		p.opts.ConfigureDockerCredentials,
-		p.forwarder,
-		p.opts.Workspace,
-		tunnelserver.WithPlatformOptions(p.opts.PlatformOptions),
-		tunnelserver.WithAllowGitHubCredentials(p.opts.ConfigureGitHubCredentials),
-		tunnelserver.WithGitSSHSigningKey(p.gitSSHSigningKey),
-	)
+	err := tunnelserver.RunServicesServer(ctx, tunnelserver.ServicesSpec{
+		Reader:                 p.stdoutReader,
+		Writer:                 p.stdinWriter,
+		AllowGitCredentials:    p.opts.ConfigureGitCredentials,
+		AllowDockerCredentials: p.opts.ConfigureDockerCredentials,
+		Forwarder:              p.forwarder,
+		Workspace:              p.opts.Workspace,
+		Options: []tunnelserver.Option{
+			tunnelserver.WithPlatformOptions(p.opts.PlatformOptions),
+			tunnelserver.WithAllowGitHubCredentials(p.opts.ConfigureGitHubCredentials),
+			tunnelserver.WithGitSSHSigningKey(p.gitSSHSigningKey),
+		},
+	})
 	if err != nil {
 		p.errChan <- fmt.Errorf("run tunnel server: %w", err)
 	}

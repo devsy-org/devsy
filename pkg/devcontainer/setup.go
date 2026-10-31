@@ -570,14 +570,13 @@ func (r *runner) executeSetup(
 ) (*config.Result, error) {
 	setupLogOptions := tunnelserver.SetupLogOptionsFrom(ctx)
 	runSetupServer := func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config.Result, error) {
-		return tunnelserver.RunSetupServer(
-			ctx,
-			stdout,
-			stdin,
-			r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
-			r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
-			result,
-			append([]tunnelserver.Option{
+		return tunnelserver.RunSetupServer(ctx, tunnelserver.SetupSpec{
+			Reader:                 stdout,
+			Writer:                 stdin,
+			AllowGitCredentials:    r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
+			AllowDockerCredentials: r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
+			SetupInfo:              result,
+			Options: append([]tunnelserver.Option{
 				tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
 				tunnelserver.WithSecrets(
 					secretsEnv,
@@ -585,8 +584,8 @@ func (r *runner) executeSetup(
 				),
 				tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
 				tunnelserver.WithStatusReporter(r.reporter),
-			}, setupLogOptions...)...,
-		)
+			}, setupLogOptions...),
+		})
 	}
 
 	sshTunnelArgv := r.buildSSHTunnelArgv()

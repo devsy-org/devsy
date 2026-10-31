@@ -88,14 +88,21 @@ func saveMachineIfChanged(
 	return provider.SaveMachineConfig(machine)
 }
 
+// ResolveWorkspaceRequest carries the inputs of ResolveAndSaveOptionsWorkspace.
+type ResolveWorkspaceRequest struct {
+	DevConfig         *config.Config
+	ProviderConfig    *provider.ProviderConfig
+	OriginalWorkspace *provider.Workspace
+	UserOptions       map[string]string
+	Options           []resolver.Option
+}
+
 func ResolveAndSaveOptionsWorkspace(
 	ctx context.Context,
-	devConfig *config.Config,
-	providerConfig *provider.ProviderConfig,
-	originalWorkspace *provider.Workspace,
-	userOptions map[string]string,
-	options ...resolver.Option,
+	req ResolveWorkspaceRequest,
 ) (*provider.Workspace, error) {
+	devConfig, providerConfig, originalWorkspace := req.DevConfig, req.ProviderConfig, req.OriginalWorkspace
+	userOptions, options := req.UserOptions, req.Options
 	if originalWorkspace == nil {
 		return nil, fmt.Errorf("originalWorkspace cannot be nil")
 	}
@@ -154,15 +161,22 @@ func ResolveAndSaveOptionsWorkspace(
 	return workspace, nil
 }
 
+// ResolveOptionsRequest carries the inputs of ResolveOptions.
+type ResolveOptionsRequest struct {
+	DevConfig      *config.Config
+	ProviderConfig *provider.ProviderConfig
+	UserOptions    map[string]string
+	SkipRequired   bool
+	SkipSubOptions bool
+	SingleMachine  *bool
+}
+
 func ResolveOptions(
 	ctx context.Context,
-	devConfig *config.Config,
-	providerConfig *provider.ProviderConfig,
-	userOptions map[string]string,
-	skipRequired bool,
-	skipSubOptions bool,
-	singleMachine *bool,
+	req ResolveOptionsRequest,
 ) (*config.Config, error) {
+	devConfig, providerConfig, userOptions := req.DevConfig, req.ProviderConfig, req.UserOptions
+	skipRequired, skipSubOptions, singleMachine := req.SkipRequired, req.SkipSubOptions, req.SingleMachine
 	if devConfig == nil {
 		return nil, nil
 	}

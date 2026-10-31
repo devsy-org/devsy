@@ -259,7 +259,7 @@ func handleDeleteLoadError(
 		)
 	}
 
-	workspaceID := Exists(ctx, opts.DevsyConfig, opts.Args, "", opts.Owner)
+	workspaceID := Exists(ctx, opts.DevsyConfig, LookupOptions{Args: opts.Args, Owner: opts.Owner})
 	if workspaceID == "" {
 		if opts.IgnoreNotFound {
 			return "", nil

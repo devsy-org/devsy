@@ -109,10 +109,18 @@ func (cmd *UpCmd) checkWorkspaceExisted(
 ) bool {
 	switch {
 	case cmd.ID != "":
-		return workspace2.Exists(ctx, devsyConfig, nil, cmd.ID, cmd.Owner) != ""
+		return workspace2.Exists(
+			ctx,
+			devsyConfig,
+			workspace2.LookupOptions{ID: cmd.ID, Owner: cmd.Owner},
+		) != ""
 	case len(args) > 0:
 		_, name := file.IsLocalDir(args[0])
-		return workspace2.Exists(ctx, devsyConfig, nil, workspace2.ToID(name), cmd.Owner) != ""
+		return workspace2.Exists(
+			ctx,
+			devsyConfig,
+			workspace2.LookupOptions{ID: workspace2.ToID(name), Owner: cmd.Owner},
+		) != ""
 	default:
 		return true
 	}

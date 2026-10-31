@@ -149,7 +149,11 @@ func (cmd *BuildCmd) execute(ctx context.Context, args []string) error {
 		return err
 	}
 
-	exists := workspace2.Exists(ctx, devsyConfig, args, "", cmd.Owner)
+	exists := workspace2.Exists(
+		ctx,
+		devsyConfig,
+		workspace2.LookupOptions{Args: args, Owner: cmd.Owner},
+	)
 	sshConfigPath, cleanup, err := NewTempSSHConfig()
 	if err != nil {
 		return err
