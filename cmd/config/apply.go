@@ -344,8 +344,7 @@ func (cmd *ApplyCmd) installFeatures(
 	if err := cmd.copyAndExecFeatures(
 		ctx,
 		helper,
-		featureSets,
-		featureStageDir,
+		featureStage{featureSets: featureSets, dir: featureStageDir},
 		emitJSON,
 	); err != nil {
 		return err
@@ -370,13 +369,20 @@ func (cmd *ApplyCmd) resolveFeatureSets(
 	return featureSets, nil
 }
 
+// featureStage is the feature set to copy into the container and the local
+// folder it is staged in.
+type featureStage struct {
+	featureSets []*devcconfig.FeatureSet
+	dir         string
+}
+
 func (cmd *ApplyCmd) copyAndExecFeatures(
 	ctx context.Context,
 	helper *docker.DockerHelper,
-	featureSets []*devcconfig.FeatureSet,
-	featureStageDir string,
+	stage featureStage,
 	emitJSON bool,
 ) error {
+	featureSets, featureStageDir := stage.featureSets, stage.dir
 	containerFeaturesPath := "/tmp/build-features"
 	streams := docker.Streams{Stdout: os.Stdout, Stderr: os.Stderr}
 	if emitJSON {

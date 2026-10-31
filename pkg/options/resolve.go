@@ -14,13 +14,20 @@ import (
 	"github.com/devsy-org/devsy/pkg/types"
 )
 
+// ResolveMachineRequest is the input to ResolveAndSaveOptionsMachine.
+type ResolveMachineRequest struct {
+	DevConfig       *config.Config
+	ProviderConfig  *provider.ProviderConfig
+	OriginalMachine *provider.Machine
+	UserOptions     map[string]string
+}
+
 func ResolveAndSaveOptionsMachine(
 	ctx context.Context,
-	devConfig *config.Config,
-	providerConfig *provider.ProviderConfig,
-	originalMachine *provider.Machine,
-	userOptions map[string]string,
+	req ResolveMachineRequest,
 ) (*provider.Machine, error) {
+	devConfig, providerConfig := req.DevConfig, req.ProviderConfig
+	originalMachine, userOptions := req.OriginalMachine, req.UserOptions
 	if originalMachine == nil {
 		return nil, fmt.Errorf("originalMachine cannot be nil")
 	}
@@ -58,13 +65,12 @@ func ResolveAndSaveOptionsMachine(
 	}
 
 	// remove global options
-	filterResolvedOptions(
-		resolvedOptions,
-		beforeConfigOptions,
-		devConfig.ProviderOptions(providerConfig.Name),
-		providerConfig.Options,
-		userOptions,
-	)
+	filterResolvedOptions(resolvedOptions, resolvedOptionScope{
+		beforeConfigOptions: beforeConfigOptions,
+		providerValues:      devConfig.ProviderOptions(providerConfig.Name),
+		providerOptions:     providerConfig.Options,
+		userOptions:         userOptions,
+	})
 
 	// save machine config
 	if machine != nil {
@@ -141,13 +147,12 @@ func ResolveAndSaveOptionsWorkspace(
 	}
 
 	// remove global options
-	filterResolvedOptions(
-		resolvedOptions,
-		beforeConfigOptions,
-		devConfig.ProviderOptions(providerConfig.Name),
-		providerConfig.Options,
-		userOptions,
-	)
+	filterResolvedOptions(resolvedOptions, resolvedOptionScope{
+		beforeConfigOptions: beforeConfigOptions,
+		providerValues:      devConfig.ProviderOptions(providerConfig.Name),
+		providerOptions:     providerConfig.Options,
+		userOptions:         userOptions,
+	})
 
 	// save workspace config
 	workspace.Provider.Options = resolvedOptions
@@ -495,30 +500,31 @@ func resolveAgentDownloadURL(devConfig *config.Config) string {
 	return config.DefaultAgentDownloadURL()
 }
 
+// resolvedOptionScope holds the option sources that decide which resolved
+// options are removed.
+type resolvedOptionScope struct {
+	beforeConfigOptions map[string]config.OptionValue
+	providerValues      map[string]config.OptionValue
+	providerOptions     map[string]*types.Option
+	userOptions         map[string]string
+}
+
 func filterResolvedOptions(
-	resolvedOptions, beforeConfigOptions, providerValues map[string]config.OptionValue,
-	providerOptions map[string]*types.Option,
-	userOptions map[string]string,
+	resolvedOptions map[string]config.OptionValue,
+	scope resolvedOptionScope,
 ) {
 	for k := range resolvedOptions {
-		if shouldRemoveResolvedOption(removeResolvedOptionParams{
-			k:                   k,
-			beforeConfigOptions: beforeConfigOptions,
-			providerValues:      providerValues,
-			providerOptions:     providerOptions,
-			userOptions:         userOptions,
-		}) {
+		if shouldRemoveResolvedOption(
+			removeResolvedOptionParams{k: k, resolvedOptionScope: scope},
+		) {
 			delete(resolvedOptions, k)
 		}
 	}
 }
 
 type removeResolvedOptionParams struct {
-	k                   string
-	beforeConfigOptions map[string]config.OptionValue
-	providerValues      map[string]config.OptionValue
-	providerOptions     map[string]*types.Option
-	userOptions         map[string]string
+	k string
+	resolvedOptionScope
 }
 
 func shouldRemoveResolvedOption(p removeResolvedOptionParams) bool {

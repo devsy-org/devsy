@@ -42,10 +42,10 @@ func NewUpdateProviderCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 }
 
 func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("new version is missing")
+	newVersion, err := newVersionArg(args)
+	if err != nil {
+		return err
 	}
-	newVersion := args[0]
 
 	devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)
 	if err != nil {
@@ -69,6 +69,23 @@ func (cmd *UpdateProviderCmd) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
+	return cmd.applyVersion(ctx, devsyConfig, provider, newVersion)
+}
+
+func newVersionArg(args []string) (string, error) {
+	if len(args) != 1 {
+		return "", fmt.Errorf("new version is missing")
+	}
+
+	return args[0], nil
+}
+
+func (cmd *UpdateProviderCmd) applyVersion(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	provider *provider2.ProviderConfig,
+	newVersion string,
+) error {
 	providerSource, err := resolveNewProviderSource(devsyConfig, provider.Name, newVersion)
 	if err != nil {
 		return err

@@ -194,43 +194,47 @@ var _ = ginkgo.Describe(
 					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
-				ginkgo.It("should select from multiple devcontainers", func(ctx context.Context) {
-					tempDir, err := setupWorkspace(
-						"tests/up/testdata/docker-multi-devcontainer",
-						initialDir,
-						f,
-					)
-					framework.ExpectNoError(err)
+				ginkgo.It( //nolint:dupl // rootful and rootless suites mirror each other
+					"should select from multiple devcontainers",
+					func(ctx context.Context) {
+						tempDir, err := setupWorkspace(
+							"tests/up/testdata/docker-multi-devcontainer",
+							initialDir,
+							f,
+						)
+						framework.ExpectNoError(err)
 
-					err = f.DevsyUp(
-						ctx,
-						tempDir,
-						names.Flag(names.DevContainer),
-						"id:python",
-					)
-					framework.ExpectNoError(err)
+						err = f.DevsyUp(
+							ctx,
+							tempDir,
+							names.Flag(names.DevContainer),
+							"id:python",
+						)
+						framework.ExpectNoError(err)
 
-					out, err := f.DevsySSH(
-						ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
-					)
-					framework.ExpectNoError(err)
-					framework.ExpectEqual(out, "python")
+						out, err := f.DevsySSH(
+							ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
+						)
+						framework.ExpectNoError(err)
+						framework.ExpectEqual(out, "python")
 
-					err = f.DevsyWorkspaceDelete(ctx, tempDir)
-					framework.ExpectNoError(err)
+						err = f.DevsyWorkspaceDelete(ctx, tempDir)
+						framework.ExpectNoError(err)
 
-					err = f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainer), "id:go")
-					framework.ExpectNoError(err)
+						err = f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainer), "id:go")
+						framework.ExpectNoError(err)
 
-					out, err = f.DevsySSH(
-						ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
-					)
-					framework.ExpectNoError(err)
-					framework.ExpectEqual(out, "go")
+						out, err = f.DevsySSH(
+							ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
+						)
+						framework.ExpectNoError(err)
+						framework.ExpectEqual(out, "go")
 
-					err = f.DevsyWorkspaceDelete(ctx, tempDir)
-					framework.ExpectNoError(err)
-				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+						err = f.DevsyWorkspaceDelete(ctx, tempDir)
+						framework.ExpectNoError(err)
+					},
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
+				)
 
 				ginkgo.It(
 					"should preserve localEnv expressions in build metadata",

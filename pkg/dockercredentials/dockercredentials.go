@@ -76,16 +76,28 @@ func ConfigureCredentialsContainer(userName string, port int) error {
 		configDir = filepath.Join(userHome, ".docker")
 	}
 
-	return configureCredentials(userName, "#!/bin/sh", "/usr/local/bin", configDir, port)
+	return configureCredentials(userName, port, credentialLayout{
+		shebang:   "#!/bin/sh",
+		targetDir: "/usr/local/bin",
+		configDir: configDir,
+	})
 }
 
 const AzureContainerRegistryUsername = "00000000-0000-0000-0000-000000000000"
 
+// credentialLayout is where the credential helper is installed and where it reads config.
+type credentialLayout struct {
+	shebang   string
+	targetDir string
+	configDir string
+}
+
 func configureCredentials(
-	userName, shebang string,
-	targetDir, configDir string,
+	userName string,
 	port int,
+	layout credentialLayout,
 ) error {
+	shebang, targetDir, configDir := layout.shebang, layout.targetDir, layout.configDir
 	binaryPath, err := os.Executable()
 	if err != nil {
 		return err
@@ -167,13 +179,11 @@ func ConfigureCredentialsDockerless(targetFolder string, port int) (string, erro
 		return "", err
 	}
 
-	err := configureCredentials(
-		"",
-		"#!/.dockerless/bin/sh",
-		dockerConfigDir,
-		dockerConfigDir,
-		port,
-	)
+	err := configureCredentials("", port, credentialLayout{
+		shebang:   "#!/.dockerless/bin/sh",
+		targetDir: dockerConfigDir,
+		configDir: dockerConfigDir,
+	})
 	if err != nil {
 		_ = os.RemoveAll(dockerConfigDir)
 		return "", err
@@ -202,7 +212,11 @@ func ConfigureCredentialsMachine(targetFolder string, port int) (string, error) 
 		return "", err
 	}
 
-	err := configureCredentials("", "#!/bin/sh", dockerConfigDir, dockerConfigDir, port)
+	err := configureCredentials("", port, credentialLayout{
+		shebang:   "#!/bin/sh",
+		targetDir: dockerConfigDir,
+		configDir: dockerConfigDir,
+	})
 	if err != nil {
 		_ = os.RemoveAll(dockerConfigDir)
 		return "", err

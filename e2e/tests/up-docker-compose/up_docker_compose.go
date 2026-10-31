@@ -1104,6 +1104,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			gomega.Expect(ids).To(gomega.HaveLen(1), "1 compose container to be created")
 
+			//nolint:gosec // test output file inside the temp directory
 			initializeCommand, err := os.ReadFile(filepath.Join(tempDir, "initialize-command.out"))
 			framework.ExpectNoError(err)
 			gomega.Expect(initializeCommand).To(gomega.ContainSubstring("initializeCommand"))

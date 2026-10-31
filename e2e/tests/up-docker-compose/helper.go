@@ -198,6 +198,8 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 // findComposeContainer returns the compose container IDs for a workspace's
 // service, resolving devsy's actual project name first since it may not be
 // the sanitized workspace UID.
+//
+//nolint:revive // suite call sites pass these positionally; a struct would not read better
 func findComposeContainer(
 	ctx context.Context,
 	dockerHelper *docker.DockerHelper,
@@ -341,6 +343,7 @@ func verifyUIDMapping(m uidMapping) {
 }
 
 func verifyHostFileAccess(filePath, expectedContent string) {
+	//nolint:gosec // filePath is a host path the test created
 	content, err := os.ReadFile(filePath)
 	framework.ExpectNoError(err)
 	gomega.Expect(string(content)).

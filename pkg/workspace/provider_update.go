@@ -114,30 +114,52 @@ func applyProviderUpdate(
 		return err
 	}
 
-	// Another command may have updated the provider while this one waited on
-	// the lock; never replace an equal or newer version with this one, and
-	// never undo a source change made in the meantime.
-	currentProvider, err := FindProvider(devsyConfig, providerName)
+	reason, err := currentSkipReason(devsyConfig, providerName, originalSource, newVersion)
 	if err != nil {
-		return fmt.Errorf("find provider %s: %w", providerName, err)
+		return err
 	}
-	if reason := providerUpdateSkipReason(
-		originalSource,
-		currentProvider.Config.Source,
-		currentProvider.Config.Version,
-		newVersion,
-	); reason != "" {
+	if reason != "" {
 		log.Infof("%s, skipping update: provider=%s", reason, providerName)
 		return nil
 	}
 
-	_, err = UpdateProvider(ctx, devsyConfig, providerName, providerSource)
+	return replaceProviderSource(ctx, devsyConfig, providerName, providerSource)
+}
+
+func replaceProviderSource(
+	ctx context.Context,
+	devsyConfig *config.Config,
+	providerName, providerSource string,
+) error {
+	_, err := UpdateProvider(ctx, devsyConfig, providerName, providerSource)
 	if err != nil {
 		return fmt.Errorf("update provider %s: %w", providerName, err)
 	}
 
 	log.Infof("updated provider: provider=%s", providerName)
 	return nil
+}
+
+// currentSkipReason re-reads the provider after the lock is taken. Another
+// command may have updated it while this one waited. Never replace an equal or
+// newer version with this one, and never undo a source change made in the meantime.
+func currentSkipReason(
+	devsyConfig *config.Config,
+	providerName string,
+	originalSource provider2.ProviderSource,
+	newVersion string,
+) (string, error) {
+	currentProvider, err := FindProvider(devsyConfig, providerName)
+	if err != nil {
+		return "", fmt.Errorf("find provider %s: %w", providerName, err)
+	}
+
+	return providerUpdateSkipReason(
+		originalSource,
+		currentProvider.Config.Source,
+		currentProvider.Config.Version,
+		newVersion,
+	), nil
 }
 
 func providerUpdateSkipReason(

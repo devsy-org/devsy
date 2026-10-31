@@ -36,13 +36,20 @@ const composeDefaultPlatformEnv = "DOCKER_DEFAULT_PLATFORM"
 // prepareComposeBuildInfo modifies a compose project's devcontainer Dockerfile
 // to ensure it can be extended with features. If an Image is specified instead
 // of a Build, the metadata from the Image is used to populate the build info.
+// composeBuildSource is the compose service to build, the stage to build to, and
+// the image the service resolved to.
+type composeBuildSource struct {
+	service     *composetypes.ServiceConfig
+	buildTarget string
+	resolved    *config.ImageDetails
+}
+
 func (r *runner) prepareComposeBuildInfo(
 	ctx context.Context,
 	subCtx *config.SubstitutionContext,
-	composeService *composetypes.ServiceConfig,
-	buildTarget string,
-	resolvedImage *config.ImageDetails,
+	src composeBuildSource,
 ) (composeBuildInfo, error) {
+	composeService, buildTarget, resolvedImage := src.service, src.buildTarget, src.resolved
 	if composeService.Build == nil {
 		imageBuildInfo, err := imageBuildInfoFromDetails(subCtx, resolvedImage)
 		if err != nil {
@@ -107,9 +114,11 @@ func (r *runner) prepareComposeDockerfileBuildInfo(
 		// through Dockerfile base-image inspection.
 		ctx,
 		subCtx,
-		string(originalDockerfile),
-		mappingToMap(composeService.Build.Args),
-		originalTarget,
+		dockerfileInput{
+			content:   string(originalDockerfile),
+			buildArgs: mappingToMap(composeService.Build.Args),
+			target:    originalTarget,
+		},
 	)
 	if err != nil {
 		return composeBuildInfo{}, err
@@ -263,13 +272,11 @@ func (r *runner) prepareExtendedComposeBuild(
 		}
 	}
 
-	buildInfo, err := r.prepareComposeBuildInfo(
-		ctx,
-		params.substitutionContext,
-		params.composeService,
-		defaultBuildTarget,
-		resolvedImage,
-	)
+	buildInfo, err := r.prepareComposeBuildInfo(ctx, params.substitutionContext, composeBuildSource{
+		service:     params.composeService,
+		buildTarget: defaultBuildTarget,
+		resolved:    resolvedImage,
+	})
 	if err != nil {
 		return preparedComposeBuild{}, err
 	}
@@ -418,7 +425,7 @@ func (r *runner) runComposeBuild(
 	step := buildkit.StartStep(ctx, "compose")
 	writer := step.Tee(logWriter, workspacelogs.StreamCombined)
 	log.Debugf("Run %s %s", composeHelper.Command, strings.Join(buildArgs, " "))
-	err := composeHelper.Run(ctx, buildArgs, nil, writer, writer)
+	err := composeHelper.Run(ctx, buildArgs, docker.Streams{Stdout: writer, Stderr: writer})
 	step.Finish(ctx, err)
 	return err
 }

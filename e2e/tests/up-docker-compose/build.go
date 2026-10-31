@@ -108,6 +108,7 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 			defer func() { _ = failingConfig.Close() }()
 
+			//nolint:gosec // test fixture path inside the temp directory
 			newConfig, err := os.Create(origPath)
 			framework.ExpectNoError(err)
 			defer func() { _ = newConfig.Close() }()

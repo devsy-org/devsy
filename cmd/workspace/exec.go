@@ -83,6 +83,12 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
+	addExecFlags(execCmd, cmd)
+
+	return execCmd
+}
+
+func addExecFlags(execCmd *cobra.Command, cmd *ExecCmd) {
 	cliflags.Add(execCmd,
 		cliflags.String(&cmd.WorkspaceFolder, names.WorkspaceFolder, "",
 			"Path to the workspace folder"),
@@ -100,8 +106,6 @@ func NewExecCmd(f *flags.GlobalFlags) *cobra.Command {
 		IDLabels:            &cmd.IDLabels,
 		ContainerDataFolder: &cmd.ContainerDataFolder,
 	})
-
-	return execCmd
 }
 
 func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {

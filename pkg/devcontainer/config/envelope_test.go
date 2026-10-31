@@ -442,7 +442,11 @@ func assertResultEnvelope(t *testing.T, want resultCase, output []byte) {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
 
-	assertCoreFields(t, envelope, containerID, user, workdir, url)
+	assertCoreFields(
+		t,
+		envelope,
+		coreFields{containerID: containerID, user: user, workdir: workdir, url: url},
+	)
 	assertOptionalField(t, output, "url", url != "")
 	assertWarnings(t, envelope.Warnings, warnings, output)
 
@@ -451,26 +455,31 @@ func assertResultEnvelope(t *testing.T, want resultCase, output []byte) {
 	}
 }
 
-func assertCoreFields(
-	t *testing.T,
-	envelope ResultEnvelope,
-	containerID, user, workdir, url string,
-) {
+// coreFields are the envelope fields every successful run reports.
+type coreFields struct {
+	containerID, user, workdir, url string
+}
+
+func assertCoreFields(t *testing.T, envelope ResultEnvelope, want coreFields) {
 	t.Helper()
 	if envelope.Outcome != "success" {
 		t.Errorf("outcome = %q, want %q", envelope.Outcome, "success")
 	}
-	if envelope.ContainerID != containerID {
-		t.Errorf("containerId = %q, want %q", envelope.ContainerID, containerID)
+	if envelope.ContainerID != want.containerID {
+		t.Errorf("containerId = %q, want %q", envelope.ContainerID, want.containerID)
 	}
-	if envelope.RemoteUser != user {
-		t.Errorf("remoteUser = %q, want %q", envelope.RemoteUser, user)
+	if envelope.RemoteUser != want.user {
+		t.Errorf("remoteUser = %q, want %q", envelope.RemoteUser, want.user)
 	}
-	if envelope.RemoteWorkspaceFolder != workdir {
-		t.Errorf("remoteWorkspaceFolder = %q, want %q", envelope.RemoteWorkspaceFolder, workdir)
+	if envelope.RemoteWorkspaceFolder != want.workdir {
+		t.Errorf(
+			"remoteWorkspaceFolder = %q, want %q",
+			envelope.RemoteWorkspaceFolder,
+			want.workdir,
+		)
 	}
-	if envelope.URL != url {
-		t.Errorf("url = %q, want %q", envelope.URL, url)
+	if envelope.URL != want.url {
+		t.Errorf("url = %q, want %q", envelope.URL, want.url)
 	}
 }
 

@@ -56,12 +56,17 @@ func getLatestDownloadURL(code string, platform string) string {
 	return fmt.Sprintf("https://download.jetbrains.com/product?code=%s&platform=%s", code, platform)
 }
 
+// downloadTemplates are fmt templates for a versioned download URL.
+type downloadTemplates struct {
+	amd64 string
+	arm64 string
+}
+
 func getDownloadURLs(
 	options ide.Options,
 	values map[string]config2.OptionValue,
 	productCode string,
-	templateAmd64 string,
-	templateArm64 string,
+	templates downloadTemplates,
 ) (string, string) {
 	version := options.GetValue(values, VersionOption)
 	var amd64Download, arm64Download string
@@ -71,11 +76,11 @@ func getDownloadURLs(
 	} else {
 		amd64Download = options.GetValue(values, DownloadAmd64Option)
 		if amd64Download == "" {
-			amd64Download = fmt.Sprintf(templateAmd64, version)
+			amd64Download = fmt.Sprintf(templates.amd64, version)
 		}
 		arm64Download = options.GetValue(values, DownloadArm64Option)
 		if arm64Download == "" {
-			arm64Download = fmt.Sprintf(templateArm64, version)
+			arm64Download = fmt.Sprintf(templates.arm64, version)
 		}
 	}
 

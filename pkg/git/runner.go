@@ -97,16 +97,25 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	err := cmd.Run()
 	result := RunResult{Stdout: []byte(outBuf.String()), Stderr: []byte(errBuf.String())}
 	flushErr := errors.Join(flushStream(streamOut), flushStream(streamErr))
-	if err == nil && flushErr != nil {
-		return result, fmt.Errorf("flush git output: %w", flushErr)
+
+	return result, finishRun(opts.Args, errBuf.String(), err, flushErr)
+}
+
+// finishRun returns the command failure, with any flush failure joined to it.
+// A flush failure alone is still an error because output may be missing.
+func finishRun(args []string, stderr string, runErr, flushErr error) error {
+	if runErr == nil {
+		if flushErr != nil {
+			return fmt.Errorf("flush git output: %w", flushErr)
+		}
+
+		return nil
 	}
-	if err != nil && flushErr != nil {
-		err = errors.Join(err, flushErr)
+	if flushErr != nil {
+		runErr = errors.Join(runErr, flushErr)
 	}
-	if err != nil {
-		return result, runFailure(opts.Args, errBuf.String(), err)
-	}
-	return result, nil
+
+	return runFailure(args, stderr, runErr)
 }
 
 func missingBinaryError(binary string, args []string) error {

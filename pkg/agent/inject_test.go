@@ -137,6 +137,7 @@ type MockExecFunc struct {
 	Err         error
 }
 
+//nolint:revive // matches the five-argument Exec field it is assigned to
 func (m *MockExecFunc) Exec(
 	ctx context.Context,
 	cmd string,

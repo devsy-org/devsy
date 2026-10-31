@@ -14,6 +14,7 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/metadata"
+	"github.com/devsy-org/devsy/pkg/docker"
 	"github.com/devsy-org/devsy/pkg/driver"
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -420,15 +421,13 @@ func (r *runner) composeSecretRuntimeOptions(
 
 // finalizeComposeContainer merges the container's metadata config and sets up
 // the running container.
-func (r *runner) finalizeComposeContainer(
-	ctx context.Context,
-	runParams *runContainerParams,
-	project *composetypes.Project,
+// verifyComposeContainer checks the container's compose contract and identity
+// before its image metadata is trusted.
+func (r *runner) verifyComposeContainer(
 	containerDetails *config.ContainerDetails,
-) (*config.Result, error) {
-	parsedConfig := runParams.parsedConfig
-	substitutionContext := runParams.substitutionContext
-	options := runParams.options
+	project *composetypes.Project,
+	parsedConfig *config.SubstitutedConfig,
+) (*composeContract, error) {
 	contract, err := verifiedComposeContract(containerDetails)
 	if err != nil {
 		return nil, err
@@ -438,6 +437,23 @@ func (r *runner) finalizeComposeContainer(
 		project.Name,
 		parsedConfig.Config.Service,
 	); err != nil {
+		return nil, err
+	}
+
+	return contract, nil
+}
+
+func (r *runner) finalizeComposeContainer(
+	ctx context.Context,
+	runParams *runContainerParams,
+	project *composetypes.Project,
+	containerDetails *config.ContainerDetails,
+) (*config.Result, error) {
+	parsedConfig := runParams.parsedConfig
+	substitutionContext := runParams.substitutionContext
+	options := runParams.options
+	contract, err := r.verifyComposeContainer(containerDetails, project, parsedConfig)
+	if err != nil {
 		return nil, err
 	}
 
@@ -622,7 +638,11 @@ func (r *runner) composeUpExistingProject(
 
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
-	if err := params.composeHelper.Run(ctx, upArgs, nil, writer, writer); err != nil {
+	if err := params.composeHelper.Run(
+		ctx,
+		upArgs,
+		docker.Streams{Stdout: writer, Stderr: writer},
+	); err != nil {
 		log.Debugf("could not reuse persisted compose project: %v", err)
 		return nil, err
 	}
@@ -1101,6 +1121,39 @@ func resolveComposeRuntimeImage(
 
 // generateComposeUpOverride merges the image metadata into the devcontainer
 // config and writes the compose "up" override file, returning its path.
+// composeOverrideLabels labels the override image with the metadata and contract
+// that a later up reads back to decide whether the image is still current.
+func composeOverrideLabels(
+	imageDetails *config.ImageDetails,
+	metadataValue, contract []byte,
+	structure string,
+) map[string]string {
+	return map[string]string{
+		metadata.ImageMetadataLabel: string(metadataValue),
+		composeContractLabel:        string(contract),
+		config.UserLabel:            imageDetails.Config.User,
+		overlayStructureLabel:       structure,
+	}
+}
+
+// marshalComposeContract records what the compose override was built from, so a
+// later up can tell whether the image is still current.
+func (r *runner) marshalComposeContract(
+	imageDetails *config.ImageDetails,
+	metadataValue, featureSignature string,
+	hasOverlay bool,
+) ([]byte, error) {
+	return json.Marshal(composeContract{
+		Version:   1,
+		Workspace: r.id,
+		Image:     imageDetails.ID,
+		Manifest:  imageDetails.PlatformManifest,
+		Metadata:  metadataDigest(metadataValue),
+		Features:  featureSignature,
+		Overlay:   hasOverlay,
+	})
+}
+
 func (r *runner) generateComposeUpOverride(
 	ctx context.Context,
 	params *composeOverrideParams,
@@ -1133,24 +1186,18 @@ func (r *runner) generateComposeUpOverride(
 		return composeOverrideFile{}, err
 	}
 
-	contract, err := json.Marshal(composeContract{
-		Version:   1,
-		Workspace: r.id,
-		Image:     imageDetails.ID,
-		Manifest:  imageDetails.PlatformManifest,
-		Metadata:  metadataDigest(string(metadataValue)),
-		Features:  featureSignature,
-		Overlay:   overlay != nil,
-	})
+	contract, err := r.marshalComposeContract(
+		imageDetails,
+		string(metadataValue),
+		featureSignature,
+		overlay != nil,
+	)
 	if err != nil {
 		return composeOverrideFile{}, err
 	}
-	additionalLabels := map[string]string{
-		metadata.ImageMetadataLabel: string(metadataValue),
-		composeContractLabel:        string(contract),
-		config.UserLabel:            imageDetails.Config.User,
-		overlayStructureLabel:       structuralSignature(start.parsedConfig.Config),
-	}
+	additionalLabels := composeOverrideLabels(
+		imageDetails, metadataValue, contract, structuralSignature(start.parsedConfig.Config),
+	)
 	overrideComposeUpFilePath, err := r.extendedDockerComposeUp(&composeUpParams{
 		parsedConfig:         start.parsedConfig,
 		mergedConfig:         mergedConfig,
@@ -1263,7 +1310,11 @@ func (r *runner) composeUpAndFindContainer(
 
 	writer := log.Writer(log.LevelInfo)
 	defer func() { _ = writer.Close() }()
-	if err := params.composeHelper.Run(ctx, upArgs, nil, writer, writer); err != nil {
+	if err := params.composeHelper.Run(
+		ctx,
+		upArgs,
+		docker.Streams{Stdout: writer, Stderr: writer},
+	); err != nil {
 		return nil, fmt.Errorf("docker-compose run: %w", err)
 	}
 

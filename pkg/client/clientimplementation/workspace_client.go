@@ -403,13 +403,12 @@ func (s *workspaceClient) refreshMachineOptions(
 		return nil
 	}
 
-	machine, err := options.ResolveAndSaveOptionsMachine(
-		ctx,
-		s.devsyConfig,
-		s.providerConfig,
-		s.providerMachine,
-		userOptions,
-	)
+	machine, err := options.ResolveAndSaveOptionsMachine(ctx, options.ResolveMachineRequest{
+		DevConfig:       s.devsyConfig,
+		ProviderConfig:  s.providerConfig,
+		OriginalMachine: s.providerMachine,
+		UserOptions:     userOptions,
+	})
 	if err != nil {
 		return err
 	}

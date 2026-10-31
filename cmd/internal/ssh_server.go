@@ -87,9 +87,12 @@ func (cmd *sshServerCmd) run(ctx context.Context) error {
 	log.Debugf("starting ssh server: stdio=%v", cmd.stdio)
 	sshserver.SweepStaleAgentSockets()
 
-	server, err := sshserver.NewServer(
-		cmd.address, hostKey, keys, cmd.workdir, cmd.reuseSSHAuthSock,
-	)
+	server, err := sshserver.NewServer(cmd.address, sshserver.ServerOptions{
+		HostKey:   hostKey,
+		Keys:      keys,
+		Workdir:   cmd.workdir,
+		ReuseSock: cmd.reuseSSHAuthSock,
+	})
 	if err != nil {
 		return fmt.Errorf("create ssh server: %w", err)
 	}

@@ -275,10 +275,12 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 
 	manifests, err := getReleaseManifests(
 		ctx,
-		chartName,
-		chartRepo,
-		cmd.Context,
-		cmd.Namespace,
+		helmTarget{
+			chartName:   chartName,
+			chartRepo:   chartRepo,
+			kubeContext: cmd.Context,
+			namespace:   cmd.Namespace,
+		},
 		extraArgs,
 	)
 	if err != nil {
@@ -290,10 +292,12 @@ func (cmd *StartCmd) retryUpgradeAfterPurge(
 	// Retry Devsy installation
 	err = upgradeRelease(
 		ctx,
-		chartName,
-		chartRepo,
-		cmd.Context,
-		cmd.Namespace,
+		helmTarget{
+			chartName:   chartName,
+			chartRepo:   chartRepo,
+			kubeContext: cmd.Context,
+			namespace:   cmd.Namespace,
+		},
 		extraArgs,
 	)
 	if err != nil {
@@ -327,10 +331,12 @@ func (cmd *StartCmd) upgrade(ctx context.Context) error {
 
 	err = upgradeRelease(
 		ctx,
-		chartName,
-		chartRepo,
-		cmd.Context,
-		cmd.Namespace,
+		helmTarget{
+			chartName:   chartName,
+			chartRepo:   chartRepo,
+			kubeContext: cmd.Context,
+			namespace:   cmd.Namespace,
+		},
 		extraArgs,
 	)
 	if err != nil {
@@ -1467,26 +1473,34 @@ func isHostReachable(ctx context.Context, host string) (bool, error) {
 	return false, nil
 }
 
+// helmTarget names the chart and the cluster a helm call acts on.
+type helmTarget struct {
+	chartName   string
+	chartRepo   string
+	kubeContext string
+	namespace   string
+}
+
 func upgradeRelease(
 	ctx context.Context,
-	chartName, chartRepo, kubeContext, namespace string,
+	target helmTarget,
 	extraArgs []string,
 ) error {
 	// now we install devsy
 	args := []string{
 		"upgrade",
 		defaultReleaseName,
-		chartName,
+		target.chartName,
 		"--install",
 		"--create-namespace",
 		helmRepositoryConfig,
 		kubeContextValue,
-		kubeContext,
+		target.kubeContext,
 		namespaceValue,
-		namespace,
+		target.namespace,
 	}
-	if chartRepo != "" {
-		args = append(args, "--repo", chartRepo)
+	if target.chartRepo != "" {
+		args = append(args, "--repo", target.chartRepo)
 	}
 	args = append(args, extraArgs...)
 
@@ -1497,8 +1511,8 @@ func upgradeRelease(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
-	if chartRepo != "" {
-		helmWorkDir, err := getHelmWorkdir(chartName)
+	if target.chartRepo != "" {
+		helmWorkDir, err := getHelmWorkdir(target.chartName)
 		if err != nil {
 			return err
 		}
@@ -1516,21 +1530,21 @@ func upgradeRelease(
 
 func getReleaseManifests(
 	ctx context.Context,
-	chartName, chartRepo, kubeContext, namespace string,
+	target helmTarget,
 	extraArgs []string,
 ) (string, error) {
 	args := []string{
 		"template",
 		defaultReleaseName,
-		chartName,
+		target.chartName,
 		helmRepositoryConfig,
 		kubeContextValue,
-		kubeContext,
+		target.kubeContext,
 		namespaceValue,
-		namespace,
+		target.namespace,
 	}
-	if chartRepo != "" {
-		args = append(args, "--repo", chartRepo)
+	if target.chartRepo != "" {
+		args = append(args, "--repo", target.chartRepo)
 	}
 	args = append(args, extraArgs...)
 
@@ -1538,8 +1552,8 @@ func getReleaseManifests(
 		ctx,
 		"helm",
 		args...) // #nosec G204 -- helm args are constructed internally
-	if chartRepo != "" {
-		helmWorkDir, err := getHelmWorkdir(chartName)
+	if target.chartRepo != "" {
+		helmWorkDir, err := getHelmWorkdir(target.chartName)
 		if err != nil {
 			return "", err
 		}

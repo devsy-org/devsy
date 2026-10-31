@@ -196,7 +196,11 @@ func (k *KubernetesDriver) GetDevContainerLogs(
 ) error {
 	workspaceID = getID(workspaceID)
 
-	logs, err := k.client.Logs(ctx, k.namespace, workspaceID, DevContainerName, true)
+	logs, err := k.client.Logs(ctx, logsTarget{
+		namespace: k.namespace,
+		pod:       workspaceID,
+		container: DevContainerName,
+	}, true)
 	if err != nil {
 		return fmt.Errorf("get logs: %w", err)
 	}

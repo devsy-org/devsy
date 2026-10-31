@@ -231,6 +231,7 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 	return tempDir, nil
 }
 
+//nolint:revive // suite call sites pass these positionally; a struct would not read better
 func setupWorkspaceAndUp(
 	ctx context.Context,
 	testdataPath, initialDir string,

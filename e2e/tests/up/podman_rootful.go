@@ -338,13 +338,19 @@ func writeRootfulWrapper(wrapperPath string) {
 // handleUnhealthyPodman fails the spec for an unhealthy daemon, attempting one
 // shard-wide restart first when the daemon is managed and the class is
 // recoverable.
+// podmanHealthFailure is a failed runtime health check and its classification.
+type podmanHealthFailure struct {
+	class podmanHealthClass
+	err   error
+}
+
 func handleUnhealthyPodman(
 	ctx context.Context,
 	wrapperPath string,
-	class podmanHealthClass,
-	healthErr error,
+	failure podmanHealthFailure,
 	managedDaemon bool,
 ) {
+	class, healthErr := failure.class, failure.err
 	ginkgo.GinkgoWriter.Printf(
 		"[podman-health] PODMAN_ROOTFUL_HEALTH_%s: %v\n",
 		strings.ToUpper(class.String()),
@@ -404,7 +410,12 @@ func setupRootfulPodman(ctx context.Context, initialDir string) *framework.Frame
 	class, healthErr := checkPodmanHealth(ctx, wrapperPath)
 	ginkgo.GinkgoWriter.Printf("[podman-health] class=%s elapsed=%s\n", class, time.Since(started))
 	if healthErr != nil {
-		handleUnhealthyPodman(ctx, wrapperPath, class, healthErr, managedDaemon)
+		handleUnhealthyPodman(
+			ctx,
+			wrapperPath,
+			podmanHealthFailure{class: class, err: healthErr},
+			managedDaemon,
+		)
 	}
 
 	f, err := framework.SetupDockerProvider(initialDir+"/bin", wrapperPath)

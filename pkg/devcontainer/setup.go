@@ -109,8 +109,7 @@ func (r *runner) setupContainer(
 				ctx,
 				info.result,
 				setupCommand,
-				params.secretsEnv,
-				params.secretsMount,
+				setupSecrets{env: params.secretsEnv, mount: params.secretsMount},
 			)
 			return executeErr
 		},
@@ -562,12 +561,18 @@ func (r *runner) isDebugMode() bool {
 	return log.DebugEnabled()
 }
 
+// setupSecrets are the secret env vars and mount paths passed to lifecycle commands.
+type setupSecrets struct {
+	env, mount []string
+}
+
 func (r *runner) executeSetup(
 	ctx context.Context,
 	result *config.Result,
 	setupCommand string,
-	secretsEnv, secretsMount []string,
+	secretOpts setupSecrets,
 ) (*config.Result, error) {
+	secretsEnv, secretsMount := secretOpts.env, secretOpts.mount
 	setupLogOptions := tunnelserver.SetupLogOptionsFrom(ctx)
 	runSetupServer := func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config.Result, error) {
 		return tunnelserver.RunSetupServer(ctx, tunnelserver.SetupSpec{

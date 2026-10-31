@@ -20,8 +20,10 @@ func NewDataSpellServer(
 		DataSpellOptions,
 		values,
 		DataSpellProductCode,
-		DataSpellDownloadAmd64Template,
-		DataSpellDownloadArm64Template,
+		downloadTemplates{
+			amd64: DataSpellDownloadAmd64Template,
+			arm64: DataSpellDownloadArm64Template,
+		},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "dataspell",

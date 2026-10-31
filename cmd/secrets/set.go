@@ -74,6 +74,12 @@ func (cmd *SetCmd) Run(_ context.Context, name string) error {
 		return err
 	}
 	defer unlock()
+
+	return cmd.setLocked(name, value)
+}
+
+// setLocked writes the secret while the config lock is held.
+func (cmd *SetCmd) setLocked(name, value string) error {
 	devsyConfig, err := config.LoadConfig(cmd.Context, "")
 	if err != nil {
 		return err

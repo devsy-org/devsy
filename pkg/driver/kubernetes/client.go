@@ -77,7 +77,7 @@ func (c *Client) Config() *rest.Config {
 }
 
 func (c *Client) FullLogs(ctx context.Context, namespace, pod, container string) ([]byte, error) {
-	logs, err := c.Logs(ctx, namespace, pod, container, true)
+	logs, err := c.Logs(ctx, logsTarget{namespace: namespace, pod: pod, container: container}, true)
 	if err != nil {
 		return nil, err
 	}
@@ -85,11 +85,13 @@ func (c *Client) FullLogs(ctx context.Context, namespace, pod, container string)
 	return io.ReadAll(logs)
 }
 
-func (c *Client) Logs(
-	ctx context.Context,
-	namespace, pod, container string,
-	follow bool,
-) (io.ReadCloser, error) {
+// logsTarget selects the container whose logs are read.
+type logsTarget struct {
+	namespace, pod, container string
+}
+
+func (c *Client) Logs(ctx context.Context, target logsTarget, follow bool) (io.ReadCloser, error) {
+	namespace, pod, container := target.namespace, target.pod, target.container
 	return c.client.CoreV1().Pods(namespace).GetLogs(pod, &corev1.PodLogOptions{
 		Container: container,
 		Follow:    follow,

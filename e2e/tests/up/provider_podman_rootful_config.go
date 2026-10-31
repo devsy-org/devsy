@@ -195,47 +195,88 @@ var _ = ginkgo.Describe(
 					ginkgo.SpecTimeout(framework.TimeoutModerate()),
 				)
 
-				ginkgo.It("should select from multiple devcontainers", func(ctx context.Context) {
-					tempDir, err := setupWorkspace(
-						"tests/up/testdata/docker-multi-devcontainer",
-						initialDir,
-						f,
-					)
-					framework.ExpectNoError(err)
+				ginkgo.It( //nolint:dupl // rootful and rootless suites mirror each other
+					"should select from multiple devcontainers",
+					func(ctx context.Context) {
+						tempDir, err := setupWorkspace(
+							"tests/up/testdata/docker-multi-devcontainer",
+							initialDir,
+							f,
+						)
+						framework.ExpectNoError(err)
 
-					err = f.DevsyUp(
-						ctx,
-						tempDir,
-						names.Flag(names.DevContainer),
-						"id:python",
-					)
-					framework.ExpectNoError(err)
+						err = f.DevsyUp(
+							ctx,
+							tempDir,
+							names.Flag(names.DevContainer),
+							"id:python",
+						)
+						framework.ExpectNoError(err)
 
-					out, err := f.DevsySSH(
-						ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
-					)
-					framework.ExpectNoError(err)
-					framework.ExpectEqual(out, "python")
+						out, err := f.DevsySSH(
+							ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
+						)
+						framework.ExpectNoError(err)
+						framework.ExpectEqual(out, "python")
 
-					err = f.DevsyWorkspaceDelete(ctx, tempDir)
-					framework.ExpectNoError(err)
+						err = f.DevsyWorkspaceDelete(ctx, tempDir)
+						framework.ExpectNoError(err)
 
-					err = f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainer), "id:go")
-					framework.ExpectNoError(err)
+						err = f.DevsyUp(ctx, tempDir, names.Flag(names.DevContainer), "id:go")
+						framework.ExpectNoError(err)
 
-					out, err = f.DevsySSH(
-						ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
-					)
-					framework.ExpectNoError(err)
-					framework.ExpectEqual(out, "go")
+						out, err = f.DevsySSH(
+							ctx, tempDir, "bash -l -c 'echo -n $DEVCONTAINER_TYPE'",
+						)
+						framework.ExpectNoError(err)
+						framework.ExpectEqual(out, "go")
 
-					err = f.DevsyWorkspaceDelete(ctx, tempDir)
-					framework.ExpectNoError(err)
-				}, ginkgo.SpecTimeout(framework.TimeoutModerate()))
+						err = f.DevsyWorkspaceDelete(ctx, tempDir)
+						framework.ExpectNoError(err)
+					},
+					ginkgo.SpecTimeout(framework.TimeoutModerate()),
+				)
 			})
 		})
 	},
 )
+
+// rootfulSSHProbe counts SSH probe timeouts against the rootful podman runtime.
+type rootfulSSHProbe struct {
+	dockerCommand       string
+	consecutiveTimeouts int
+}
+
+// failure classifies a failed SSH probe. It stops the wait only when the
+// runtime is unavailable, either reported directly or found unhealthy after
+// two consecutive timeouts.
+func (p *rootfulSSHProbe) failure(ctx, probeCtx context.Context, err error) (bool, error) {
+	if errors.Is(err, docker.ErrRuntimeUnavailable) {
+		return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(err)
+	}
+	if !errors.Is(probeCtx.Err(), context.DeadlineExceeded) || ctx.Err() != nil {
+		p.consecutiveTimeouts = 0
+		return false, nil
+	}
+	p.consecutiveTimeouts++
+	if p.consecutiveTimeouts == 2 {
+		p.consecutiveTimeouts = 0
+		healthErr := checkRootfulRuntimeHealth(ctx, p.dockerCommand)
+		if errors.Is(healthErr, docker.ErrRuntimeUnavailable) {
+			return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(healthErr)
+		}
+	}
+
+	return false, nil
+}
+
+func checkRootfulRuntimeHealth(ctx context.Context, dockerCommand string) error {
+	healthCtx, healthCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer healthCancel()
+	helper := &docker.DockerHelper{DockerCommand: dockerCommand}
+
+	return helper.CheckRuntimeHealth(healthCtx)
+}
 
 func eventuallySSH(f *framework.Framework, ctx context.Context, workspace, command string) string {
 	const (
@@ -244,36 +285,20 @@ func eventuallySSH(f *framework.Framework, ctx context.Context, workspace, comma
 		sshReadinessPollInterval   = 2 * time.Second
 	)
 	var output string
-	consecutiveTimeouts := 0
+	probe := &rootfulSSHProbe{
+		dockerCommand: filepath.Join(f.DevsyBinDir, podmanRootfulWrapperName),
+	}
 	gomega.Eventually(func() (bool, error) {
 		probeCtx, cancel := context.WithTimeout(ctx, sshReadinessProbeTimeout)
 		defer cancel()
 		out, err := f.DevsySSHOnce(probeCtx, workspace, command)
 		if err != nil {
-			if errors.Is(err, docker.ErrRuntimeUnavailable) {
-				return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(err)
-			}
-			if !errors.Is(probeCtx.Err(), context.DeadlineExceeded) || ctx.Err() != nil {
-				consecutiveTimeouts = 0
-				return false, nil
-			}
-			consecutiveTimeouts++
-			if consecutiveTimeouts == 2 {
-				healthCtx, healthCancel := context.WithTimeout(ctx, 10*time.Second)
-				helper := &docker.DockerHelper{
-					DockerCommand: filepath.Join(f.DevsyBinDir, podmanRootfulWrapperName),
-				}
-				healthErr := helper.CheckRuntimeHealth(healthCtx)
-				healthCancel()
-				consecutiveTimeouts = 0
-				if errors.Is(healthErr, docker.ErrRuntimeUnavailable) {
-					return false, gomega.StopTrying("SSH_RUNTIME_UNAVAILABLE").Wrap(healthErr)
-				}
-			}
-			return false, nil
+			return probe.failure(ctx, probeCtx, err)
 		}
 		output = strings.TrimSpace(out)
+
 		return true, nil
 	}).WithTimeout(sshReadinessOverallTimeout).WithPolling(sshReadinessPollInterval).Should(gomega.BeTrue())
+
 	return output
 }

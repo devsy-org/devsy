@@ -103,13 +103,10 @@ func (cmd *SetSourceCmd) setSource(
 		return err
 	}
 
-	providerConfig, err := updateProviderSource(
-		ctx,
-		reporter,
-		devsyConfig,
-		providerName,
-		providerSource,
-	)
+	providerConfig, err := updateProviderSource(ctx, reporter, devsyConfig, providerSourceChange{
+		name:   providerName,
+		source: providerSource,
+	})
 	if err != nil {
 		return err
 	}
@@ -136,12 +133,18 @@ func sourceArg(args []string) (string, error) {
 	}
 }
 
+// providerSourceChange names a provider and the source to switch it to.
+type providerSourceChange struct {
+	name, source string
+}
+
 func updateProviderSource(
 	ctx context.Context,
 	reporter status.Reporter,
 	devsyConfig *config.Config,
-	providerName, providerSource string,
+	change providerSourceChange,
 ) (*provider2.ProviderConfig, error) {
+	providerName, providerSource := change.name, change.source
 	var providerConfig *provider2.ProviderConfig
 	err := status.Run(
 		ctx,

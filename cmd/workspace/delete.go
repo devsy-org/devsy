@@ -115,7 +115,12 @@ func (cmd *DeleteCmd) Run(cobraCmd *cobra.Command, args []string) error {
 					args,
 				)
 			}
-			return cmd.deleteMultiple(ctx, devsyConfig, reporter, targets, args)
+			return cmd.deleteMultiple(
+				ctx,
+				devsyConfig,
+				reporter,
+				deleteBatch{targets: targets, args: args},
+			)
 		},
 	)
 
@@ -228,13 +233,19 @@ func (cmd *DeleteCmd) deleteSingle(
 	return nil
 }
 
+// deleteBatch is the resolved targets and the raw arguments of a multi-delete.
+type deleteBatch struct {
+	targets map[string]resolvedDeleteTarget
+	args    []string
+}
+
 func (cmd *DeleteCmd) deleteMultiple(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	reporter status.Reporter,
-	targets map[string]resolvedDeleteTarget,
-	args []string,
+	batch deleteBatch,
 ) error {
+	targets, args := batch.targets, batch.args
 	var errs []error
 	for _, arg := range args {
 		target := targets[arg]

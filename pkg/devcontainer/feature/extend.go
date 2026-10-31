@@ -74,11 +74,7 @@ func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, erro
 	ctx := params.Ctx
 	imageBuildInfo := params.ImageBuildInfo
 	devContainerConfig := params.DevContainerConfig
-	features, err := fetchFeatures(
-		executionCtx,
-		devContainerConfig.Config, params.ForceBuild, params.SecretOpts,
-		lockfileMode{write: true, frozen: params.FrozenLockfile, disabled: params.NoLockfile},
-	)
+	features, err := fetchFeatures(executionCtx, devContainerConfig.Config, params.fetchOptions())
 	if err != nil {
 		return nil, fmt.Errorf("fetch features: %w", err)
 	}
@@ -312,7 +308,7 @@ func ResolveFeatureOrderWithContext(
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return fetchFeatures(ctx, devContainerConfig, false, nil, lockfileMode{})
+	return fetchFeatures(ctx, devContainerConfig, featureFetchOptions{})
 }
 
 func applyUserFallback(user, composeServiceUser, imageUser string) string {
@@ -325,24 +321,41 @@ func applyUserFallback(user, composeServiceUser, imageUser string) string {
 	return imageUser
 }
 
+func (params *ExtendedBuildParams) fetchOptions() featureFetchOptions {
+	return featureFetchOptions{
+		forceBuild: params.ForceBuild,
+		secretOpts: params.SecretOpts,
+		lockMode: lockfileMode{
+			write:    true,
+			frozen:   params.FrozenLockfile,
+			disabled: params.NoLockfile,
+		},
+	}
+}
+
+// featureFetchOptions controls how fetchFeatures builds and locks the feature set.
+type featureFetchOptions struct {
+	forceBuild bool
+	secretOpts *SecretOptions
+	lockMode   lockfileMode
+}
+
 func fetchFeatures(
 	ctx context.Context,
 	devContainerConfig *config.DevContainerConfig,
-	forceBuild bool,
-	secretOpts *SecretOptions,
-	lockMode lockfileMode,
+	opts featureFetchOptions,
 ) ([]*config.FeatureSet, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	lock, err := prepareLock(devContainerConfig, lockMode)
+	lock, err := prepareLock(devContainerConfig, opts.lockMode)
 	if err != nil {
 		return nil, err
 	}
 	processor := &featureProcessor{
 		devContainerConfig: devContainerConfig,
-		forceBuild:         forceBuild,
-		secretOpts:         secretOpts,
+		forceBuild:         opts.forceBuild,
+		secretOpts:         opts.secretOpts,
 		lock:               lock,
 		ctx:                ctx,
 	}
@@ -367,7 +380,7 @@ func fetchFeatures(
 		return nil, fmt.Errorf("failed to get sorted feature sets: %w", err)
 	}
 
-	if err := lock.commit(devContainerConfig, lockMode); err != nil {
+	if err := lock.commit(devContainerConfig, opts.lockMode); err != nil {
 		return nil, err
 	}
 
@@ -495,10 +508,12 @@ func (p *featureProcessor) resolveTarballFeature(
 	log.Debugf("process feature: type=%s, id=%s", "url", id)
 	_, pinnedIntegrity, _ := p.lock.pin(id)
 	headers := config.GetDevsyCustomizations(p.devContainerConfig).FeatureDownloadHTTPHeaders
-	folder, integrity, err := processDirectTarFeature(
-		ctx,
-		id, headers, p.forceBuild, pinnedIntegrity,
-	)
+	folder, integrity, err := processDirectTarFeature(ctx, directTarRequest{
+		id:              id,
+		httpHeaders:     headers,
+		forceDownload:   p.forceBuild,
+		pinnedIntegrity: pinnedIntegrity,
+	})
 	if err != nil {
 		return nil, err
 	}

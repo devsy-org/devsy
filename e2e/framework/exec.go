@@ -55,6 +55,8 @@ func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error 
 }
 
 // ExecCommand executes the command string with the devsy test binary.
+//
+//nolint:revive // 28 call sites pass these positionally; a struct would not read better
 func (f *Framework) ExecCommand(
 	ctx context.Context,
 	captureStdOut, searchForString bool,

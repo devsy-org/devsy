@@ -20,8 +20,7 @@ func NewRiderServer(
 		RiderOptions,
 		values,
 		RiderProductCode,
-		RiderDownloadAmd64Template,
-		RiderDownloadArm64Template,
+		downloadTemplates{amd64: RiderDownloadAmd64Template, arm64: RiderDownloadArm64Template},
 	)
 	return newGenericServer(userName, &GenericOptions{
 		ID:            "rider",

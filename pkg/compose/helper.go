@@ -212,17 +212,15 @@ func (h *ComposeHelper) FindDevContainer(
 func (h *ComposeHelper) Run(
 	ctx context.Context,
 	args []string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
+	streams docker.Streams,
 ) error {
 	cmd := h.buildCmd(ctx, args...)
-	cmd.Stdin = stdin
-	cmd.Stdout = stdout
+	cmd.Stdin = streams.Stdin
+	cmd.Stdout = streams.Stdout
 
 	var stderrBuf strings.Builder
-	if stderr != nil {
-		cmd.Stderr = io.MultiWriter(stderr, &stderrBuf)
+	if streams.Stderr != nil {
+		cmd.Stderr = io.MultiWriter(streams.Stderr, &stderrBuf)
 	} else {
 		cmd.Stderr = &stderrBuf
 	}
