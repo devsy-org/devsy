@@ -51,6 +51,7 @@ func ExistsForUser(cmd, user string) bool {
 		return Exists(cmd)
 	}
 
-	_, err = exec.Command("su", user, "-l", "-c", command).CombinedOutput()
+	su := exec.Command("su", user, "-l", "-c", command) //nolint:gosec // fixed binary
+	_, err = su.CombinedOutput()
 	return err == nil
 }

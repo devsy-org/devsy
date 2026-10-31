@@ -260,7 +260,7 @@ func (t *tunnelServer) DockerCredentials(
 			return nil, err
 		}
 
-		out, err := json.Marshal(credentials)
+		out, err := json.Marshal(credentials) //nolint:gosec // credentials are the response payload
 		if err != nil {
 			return nil, err
 		}
@@ -355,7 +355,7 @@ func (t *tunnelServer) GitCredentials(
 		return nil, err
 	}
 
-	out, err := json.Marshal(credentials)
+	out, err := json.Marshal(credentials) //nolint:gosec // credentials are the response payload
 	if err != nil {
 		return nil, err
 	}
@@ -503,16 +503,28 @@ func (t *tunnelServer) Status(
 	ctx context.Context,
 	update *tunnel.StatusUpdate,
 ) (*tunnel.Empty, error) {
+	if err := validateStatusUpdate(update); err != nil {
+		return nil, err
+	}
+	t.statusReporter.Report(statusEvent(update))
+	return &tunnel.Empty{}, nil
+}
+
+func validateStatusUpdate(update *tunnel.StatusUpdate) error {
 	if update == nil || update.Phase == "" || !status.ValidState(status.State(update.State)) ||
 		update.DurationMs < 0 {
-		return nil, fmt.Errorf(
+		return fmt.Errorf(
 			"invalid status update: phase, duration, and recognized state are required",
 		)
 	}
 	if update.State == string(status.StateFailed) &&
 		(update.Error == nil || update.Error.Message == "") {
-		return nil, fmt.Errorf("invalid failed status update: structured error is required")
+		return fmt.Errorf("invalid failed status update: structured error is required")
 	}
+	return nil
+}
+
+func statusEvent(update *tunnel.StatusUpdate) status.Event {
 	// No Pipeline: the tunnel only carries container-side up events, and the
 	// host's reporter stamps the pipeline on arrival.
 	e := status.Event{
@@ -532,8 +544,7 @@ func (t *tunnelServer) Status(
 			Context: update.Error.Context,
 		}
 	}
-	t.statusReporter.Report(e)
-	return &tunnel.Empty{}, nil
+	return e
 }
 
 func (t *tunnelServer) StreamWorkspace(
