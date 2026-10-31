@@ -12,15 +12,15 @@ type windowsPathManager struct {
 	basePathManager
 }
 
-func newPlatformPathManager() PathManager {
-	pm := &windowsPathManager{}
+func newPlatformPathManager(settings pathManagerSettings) PathManager {
+	pm := &windowsPathManager{basePathManager: basePathManager{pathManagerSettings: settings}}
 	pm.pm = pm
 
 	return pm
 }
 
 func (w *windowsPathManager) ConfigDir() (string, error) {
-	if dir, ok, err := homeOverrideDir(); ok {
+	if dir, ok, err := w.homeOverrideDir(); ok {
 		return dir, err
 	}
 
@@ -29,11 +29,11 @@ func (w *windowsPathManager) ConfigDir() (string, error) {
 		return "", fmt.Errorf("config dir: APPDATA environment variable is not set")
 	}
 
-	return ensureDir(filepath.Join(appData, RepoName))
+	return w.ensureDir(filepath.Join(appData, RepoName))
 }
 
 func (w *windowsPathManager) DataDir() (string, error) {
-	if dir, ok, err := homeOverrideDir(); ok {
+	if dir, ok, err := w.homeOverrideDir(); ok {
 		return dir, err
 	}
 
@@ -42,11 +42,11 @@ func (w *windowsPathManager) DataDir() (string, error) {
 		return "", fmt.Errorf("data dir: LOCALAPPDATA environment variable is not set")
 	}
 
-	return ensureDir(filepath.Join(localAppData, RepoName))
+	return w.ensureDir(filepath.Join(localAppData, RepoName))
 }
 
 func (w *windowsPathManager) CacheDir() (string, error) {
-	if dir, ok, err := homeOverrideDir("cache"); ok {
+	if dir, ok, err := w.homeOverrideDir("cache"); ok {
 		return dir, err
 	}
 
@@ -55,11 +55,11 @@ func (w *windowsPathManager) CacheDir() (string, error) {
 		return "", fmt.Errorf("cache dir: LOCALAPPDATA environment variable is not set")
 	}
 
-	return ensureDir(filepath.Join(localAppData, RepoName, "cache"))
+	return w.ensureDir(filepath.Join(localAppData, RepoName, "cache"))
 }
 
 func (w *windowsPathManager) StateDir() (string, error) {
-	if dir, ok, err := homeOverrideDir("state"); ok {
+	if dir, ok, err := w.homeOverrideDir("state"); ok {
 		return dir, err
 	}
 
@@ -68,15 +68,15 @@ func (w *windowsPathManager) StateDir() (string, error) {
 		return "", fmt.Errorf("state dir: LOCALAPPDATA environment variable is not set")
 	}
 
-	return ensureDir(filepath.Join(localAppData, RepoName, "state"))
+	return w.ensureDir(filepath.Join(localAppData, RepoName, "state"))
 }
 
 func (w *windowsPathManager) RuntimeDir() (string, error) {
-	if dir, ok, err := homeOverrideDir("run"); ok {
+	if dir, ok, err := w.homeOverrideDir("run"); ok {
 		return dir, err
 	}
 
-	return ensureDir(filepath.Join(os.TempDir(), RepoName))
+	return w.ensureDir(filepath.Join(os.TempDir(), RepoName))
 }
 
 // SystemBinDir returns a PATH directory for installing standalone tool binaries.

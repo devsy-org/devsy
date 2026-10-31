@@ -1,0 +1,95 @@
+{
+  "schema": "devsy.dependencies.report.v1",
+  "schemaVersion": 1,
+  "surveyMode": "passive",
+  "executed": false,
+  "target": {
+    "contextName": "default",
+    "providerName": "microsandbox",
+    "providerType": "external",
+    "providerSourceId": "github.com/devsy-org/devsy-provider-microsandbox@v0.1.11",
+    "providerSourceKind": "canonical_external_release",
+    "adapterVersion": "v0.1.11",
+    "trustedBuiltinIdentity": true,
+    "configRevision": "cfg-rev-104",
+    "providerConfigRevision": "prov-rev-msb-04",
+    "evaluatedAt": "2026-10-19T05:03:00Z"
+  },
+  "host": {
+    "goos": "linux",
+    "goarch": "amd64",
+    "osVersion": "ubuntu-24.04",
+    "virtualizationCapability": "kvm_available"
+  },
+  "availability": "missing",
+  "compatibility": "unknown",
+  "reachability": "not_checked",
+  "policy": "managed_allowed",
+  "reasonCode": "dependency_recipe_unqualified",
+  "message": "Illustrative prospective managed MicroSandbox recipe for linux/amd64 is disabled: published adapter v0.1.11 has not released T08 path-pair or runtime-check support (G01) and Linux tuple gates G01, G02, G04, G06, G07, and G09 remain NOT RUN.",
+  "hint": "Install MicroSandbox externally; managed bundle installation remains disabled until a T08-capable adapter release and Linux amd64 qualification gates pass.",
+  "managedRecipe": {
+    "recipeId": "microsandbox-runtime-linux-amd64",
+    "tuple": "linux/amd64",
+    "candidateVersion": "v0.7.7",
+    "illustrativeBundleRoot": "/home/dev/.devsy/dependencies/store/microsandbox/v0.7.7-linux-amd64",
+    "enabled": false,
+    "qualificationState": "not_run",
+    "blockingGates": ["G01", "G02", "G04", "G06", "G07", "G09"],
+    "archiveLayout": "flat_verbatim_no_links",
+    "expectedFiles": ["msb", "libkrunfw.so.5.6.1"]
+  },
+  "items": [
+    {
+      "id": "microsandbox-runtime-pair",
+      "displayName": "MicroSandbox Runtime Pair (msb + libkrunfw)",
+      "required": true,
+      "executed": false,
+      "availability": "missing",
+      "compatibility": "unknown",
+      "reachability": "not_checked",
+      "policy": "managed_allowed",
+      "reasonCode": "dependency_recipe_unqualified",
+      "candidates": [
+        {
+          "component": "msb",
+          "sourceKind": "managed_store",
+          "optionName": "MICROSANDBOX_PATH",
+          "lexicalPath": "/home/dev/.devsy/dependencies/store/microsandbox/v0.7.7-linux-amd64/msb",
+          "resolvedPath": "",
+          "isSymlink": false,
+          "executed": false,
+          "selected": false,
+          "availability": "missing",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_recipe_unqualified",
+          "detail": "Illustrative prospective store path; adapter v0.1.11 lacks T08 path-pair/runtime-check support (G01) and recipe microsandbox-runtime-linux-amd64 is disabled prior to G01, G02, G04, G06, G07, and G09 qualification."
+        },
+        {
+          "component": "libkrunfw",
+          "sourceKind": "managed_store",
+          "optionName": "MICROSANDBOX_LIBKRUNFW_PATH",
+          "lexicalPath": "/home/dev/.devsy/dependencies/store/microsandbox/v0.7.7-linux-amd64/libkrunfw.so.5.6.1",
+          "resolvedPath": "",
+          "isSymlink": false,
+          "executed": false,
+          "selected": false,
+          "availability": "missing",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_recipe_unqualified",
+          "detail": "Illustrative prospective flat versioned firmware entry under illustrativeBundleRoot once T08 adapter and Linux amd64 gates are qualified."
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "kind": "install",
+      "label": "Install managed MicroSandbox runtime",
+      "enabled": false,
+      "disabledReasonCode": "dependency_recipe_unqualified",
+      "requiresEffectAuthorization": true,
+      "requiresConfirmation": true
+    }
+  ]
+}
