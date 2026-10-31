@@ -14,10 +14,27 @@ func (s *Store) FailedInvocations(runID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	state, order, err := s.latestStates(m)
+	if err != nil {
+		return nil, err
+	}
+	var failed []string
+	for _, id := range order {
+		if state[id] == InvocationFailed && len(failed) < MaxProducers {
+			failed = append(failed, id)
+		}
+	}
+
+	return failed, nil
+}
+
+// latestStates returns each invocation's latest state and the order the
+// invocations first appeared in.
+func (s *Store) latestStates(m *RunManifest) (map[string]InvocationState, []string, error) {
 	state := map[string]InvocationState{}
 	var order []string
 	for _, p := range m.Producers {
-		err = s.eachRecord(runID, p.ProducerID, 1, func(rec *Record) bool {
+		err := s.eachRecord(m.RunID, p.ProducerID, 1, func(rec *Record) bool {
 			if rec == nil || rec.Kind != KindInvocation {
 				return true
 			}
@@ -29,17 +46,11 @@ func (s *Store) FailedInvocations(runID string) ([]string, error) {
 			return true
 		})
 		if err != nil {
-			return nil, err
-		}
-	}
-	var failed []string
-	for _, id := range order {
-		if state[id] == InvocationFailed && len(failed) < MaxProducers {
-			failed = append(failed, id)
+			return nil, nil, err
 		}
 	}
 
-	return failed, nil
+	return state, order, nil
 }
 
 // FailureContext returns the error context that identifies a failed run: the

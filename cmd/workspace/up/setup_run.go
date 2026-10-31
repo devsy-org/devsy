@@ -15,8 +15,8 @@ import (
 // A storage problem leaves history unrecorded and never fails the command.
 func (cmd *UpCmd) startSetupRun(client client2.BaseWorkspaceClient) *workspacelogs.Session {
 	// A run reference never carries over from earlier state.
-	cmd.CLIOptions.SetupRunID = ""
-	cmd.CLIOptions.SetupParentProducerID = ""
+	cmd.SetupRunID = ""
+	cmd.SetupParentProducerID = ""
 
 	spec := workspacelogs.RunSpec{
 		Context:            client.Context(),
@@ -39,8 +39,8 @@ func (cmd *UpCmd) startSetupRun(client client2.BaseWorkspaceClient) *workspacelo
 	if ws := client.WorkspaceConfig(); ws != nil {
 		session.BindWorkspace(ws.UID, client.Workspace())
 	}
-	cmd.CLIOptions.SetupRunID = session.RunID
-	cmd.CLIOptions.SetupParentProducerID = session.ProducerID()
+	cmd.SetupRunID = session.RunID
+	cmd.SetupParentProducerID = session.ProducerID()
 
 	return session
 }

@@ -36,7 +36,7 @@ func recordedContext(t *testing.T) (context.Context, *workspacelogs.Store, strin
 	store, err := workspacelogs.Open(workspacelogs.Options{Root: t.TempDir()})
 	require.NoError(t, err)
 	m, err := store.CreateRun(workspacelogs.RunSpec{
-		Context: "default", WorkspaceUID: "uid", Command: "up",
+		Context: recordTestContext, WorkspaceUID: "uid", Command: "up",
 	})
 	require.NoError(t, err)
 	rec, err := workspacelogs.NewRecorder(workspacelogs.RecorderOptions{

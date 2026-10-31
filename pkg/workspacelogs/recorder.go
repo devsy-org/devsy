@@ -112,10 +112,10 @@ func (r *Recorder) Invocation(inv Invocation) {
 		Phase:        inv.Phase,
 		Hook:         inv.Hook,
 		HookIndex:    inv.Index,
-		HookKey:      truncate(inv.Key, MaxDetailBytes),
+		HookKey:      truncateDetail(inv.Key),
 		Location:     r.opts.Location,
 		State:        inv.State,
-		Reason:       truncate(inv.Reason, MaxDetailBytes),
+		Reason:       truncateDetail(inv.Reason),
 		ExitCode:     inv.ExitCode,
 		Signal:       inv.Signal,
 	}
@@ -131,7 +131,7 @@ func (r *Recorder) Capture(c Condition, detail string, droppedBytes int64) {
 	r.emit(&Record{
 		Kind:         KindCapture,
 		Condition:    c,
-		Detail:       truncate(detail, MaxDetailBytes),
+		Detail:       truncateDetail(detail),
 		DroppedBytes: droppedBytes,
 	})
 }
@@ -159,7 +159,7 @@ func (r *Recorder) MarkChild(id string, state ProducerState, reason string) {
 		Kind:            KindProducer,
 		ChildProducerID: id,
 		ProducerState:   state,
-		Detail:          truncate(reason, MaxDetailBytes),
+		Detail:          truncateDetail(reason),
 	})
 }
 
@@ -287,7 +287,8 @@ func completeUTF8(data []byte) int {
 	return len(data)
 }
 
-func truncate(s string, maxBytes int) string {
+func truncateDetail(s string) string {
+	const maxBytes = MaxDetailBytes
 	if len(s) <= maxBytes {
 		return s
 	}

@@ -9,11 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const recordTestContext = "default"
+
 func TestInitializeSkipIsRecordedWithItsReason(t *testing.T) {
 	store, err := workspacelogs.Open(workspacelogs.Options{Root: t.TempDir()})
 	require.NoError(t, err)
 	session := workspacelogs.StartSessionIn(store, workspacelogs.SessionOptions{
-		Run:      workspacelogs.RunSpec{Context: "default", Command: "up"},
+		Run:      workspacelogs.RunSpec{Context: recordTestContext, Command: "up"},
 		Location: workspacelogs.LocationHost,
 	})
 	require.NotNil(t, session)

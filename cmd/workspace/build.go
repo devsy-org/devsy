@@ -320,8 +320,8 @@ func (cmd *BuildCmd) build(
 // its identity in the CLI options sent to the provider host. A storage problem
 // leaves history unrecorded and never fails the build.
 func (cmd *BuildCmd) startSetupRun(workspaceClient client.WorkspaceClient) *workspacelogs.Session {
-	cmd.CLIOptions.SetupRunID = ""
-	cmd.CLIOptions.SetupParentProducerID = ""
+	cmd.SetupRunID = ""
+	cmd.SetupParentProducerID = ""
 
 	run := workspacelogs.StartSession(workspacelogs.SessionOptions{
 		Location: workspacelogs.LocationHost,
@@ -338,8 +338,8 @@ func (cmd *BuildCmd) startSetupRun(workspaceClient client.WorkspaceClient) *work
 	if ws := workspaceClient.WorkspaceConfig(); ws != nil {
 		run.BindWorkspace(ws.UID, workspaceClient.Workspace())
 	}
-	cmd.CLIOptions.SetupRunID = run.RunID
-	cmd.CLIOptions.SetupParentProducerID = run.ProducerID()
+	cmd.SetupRunID = run.RunID
+	cmd.SetupParentProducerID = run.ProducerID()
 
 	return run
 }

@@ -28,20 +28,7 @@ func (s *Store) Append(records []Record) (AppendResult, error) {
 	if err := validateBatch(records); err != nil {
 		return AppendResult{}, err
 	}
-	runID, producerID := records[0].RunID, records[0].ProducerID
-	m, err := s.Manifest(runID)
-	if err != nil {
-		return AppendResult{}, err
-	}
-	if m.producer(producerID) < 0 {
-		if err = s.registerFromFirstRecord(&records[0]); err != nil {
-			return AppendResult{}, err
-		}
-	}
-	if err = s.ensureDir(runsDirName, runID, producersDir, producerID); err != nil {
-		return AppendResult{}, err
-	}
-	dir, err := s.producerDir(runID, producerID)
+	dir, err := s.prepareProducer(&records[0])
 	if err != nil {
 		return AppendResult{}, err
 	}
@@ -58,11 +45,30 @@ func (s *Store) Append(records []Record) (AppendResult, error) {
 	})
 	// Producer and capture records that reached disk still update the manifest
 	// when a later record in the batch failed.
-	if applyErr := s.applyToManifest(runID, applied); lockErr == nil {
+	if applyErr := s.applyToManifest(records[0].RunID, applied); lockErr == nil {
 		lockErr = applyErr
 	}
 
 	return res, lockErr
+}
+
+// prepareProducer makes sure the producer is registered (a mirrored producer
+// may introduce itself) and returns its directory.
+func (s *Store) prepareProducer(first *Record) (string, error) {
+	m, err := s.Manifest(first.RunID)
+	if err != nil {
+		return "", err
+	}
+	if m.producer(first.ProducerID) < 0 {
+		if err = s.registerFromFirstRecord(first); err != nil {
+			return "", err
+		}
+	}
+	if err = s.ensureDir(runsDirName, first.RunID, producersDir, first.ProducerID); err != nil {
+		return "", err
+	}
+
+	return s.producerDir(first.RunID, first.ProducerID)
 }
 
 func validateBatch(records []Record) error {
@@ -271,28 +277,33 @@ func (m *RunManifest) apply(rec *Record) {
 	case rec.Kind == KindProducer && rec.ChildProducerID != "":
 		m.applyChild(rec)
 	case rec.Kind == KindProducer:
-		if i := m.producer(rec.ProducerID); i >= 0 && rec.ProducerState != "" {
-			m.Producers[i].State = rec.ProducerState
-		}
-		m.DiscoverySealed = m.DiscoverySealed || rec.DiscoverySealed
-		if rec.ProducerState == ProducerUnavailable {
-			m.addCondition(ConditionSourceUnavailable)
-		}
+		m.applyOwn(rec)
+	}
+}
+
+// applyOwn applies a producer's report about itself.
+func (m *RunManifest) applyOwn(rec *Record) {
+	if i := m.producer(rec.ProducerID); i >= 0 && rec.ProducerState != "" {
+		m.Producers[i].State = rec.ProducerState
+	}
+	m.DiscoverySealed = m.DiscoverySealed || rec.DiscoverySealed
+	if rec.ProducerState == ProducerUnavailable {
+		m.addCondition(ConditionSourceUnavailable)
 	}
 }
 
 // applyChild registers a reserved child or moves a known child to the state the
 // parent reports for it.
 func (m *RunManifest) applyChild(rec *Record) {
-	i := m.producer(rec.ChildProducerID)
-	if i >= 0 {
+	switch i := m.producer(rec.ChildProducerID); {
+	case i >= 0:
 		m.Producers[i].State = rec.ProducerState
-	} else if len(m.Producers) < MaxProducers {
+	case len(m.Producers) < MaxProducers:
 		m.Producers = append(m.Producers, ProducerRef{
 			ProducerID: rec.ChildProducerID, ParentProducerID: rec.ProducerID,
 			State: rec.ProducerState, Location: rec.Location,
 		})
-	} else {
+	default:
 		m.addCondition(ConditionProducerCap)
 	}
 	if rec.ProducerState == ProducerUnavailable {

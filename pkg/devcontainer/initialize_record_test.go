@@ -18,7 +18,7 @@ func recordedInitContext(t *testing.T) (context.Context, func() []workspacelogs.
 	t.Helper()
 	store, err := workspacelogs.Open(workspacelogs.Options{Root: t.TempDir()})
 	require.NoError(t, err)
-	m, err := store.CreateRun(workspacelogs.RunSpec{Context: "default", Command: "up"})
+	m, err := store.CreateRun(workspacelogs.RunSpec{Context: recordTestContext, Command: "up"})
 	require.NoError(t, err)
 	rec, err := workspacelogs.NewRecorder(workspacelogs.RecorderOptions{
 		Backend: store, RunID: m.RunID, Location: workspacelogs.LocationHost,
