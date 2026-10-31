@@ -73,13 +73,7 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 		binary = binGit
 	}
 	if !command.Exists(binary) {
-		if binary == binGit {
-			return RunResult{}, &CommandError{Args: opts.Args, ExitCode: -1, Err: ErrGitNotFound}
-		}
-		return RunResult{}, &CommandError{
-			Args: opts.Args, ExitCode: -1,
-			Err: fmt.Errorf("%q binary not found in PATH", binary),
-		}
+		return RunResult{}, missingBinaryError(binary, opts.Args)
 	}
 
 	cmd := exec.CommandContext(
@@ -96,24 +90,9 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 		stdoutRedactor = nil
 	}
 	outBuf := subprocess.NewBuffer(stdoutRedactor)
-	var streamOut *subprocess.StreamingRedactingWriter
-	if opts.Stdout != nil {
-		streamOut = &subprocess.StreamingRedactingWriter{
-			Next:     opts.Stdout,
-			Redactor: stdoutRedactor,
-		}
-		cmd.Stdout = io.MultiWriter(streamOut, outBuf)
-	} else {
-		cmd.Stdout = outBuf
-	}
+	streamOut := attachStream(&cmd.Stdout, outBuf, opts.Stdout, stdoutRedactor)
 	errBuf := subprocess.NewBuffer(redactor)
-	var streamErr *subprocess.StreamingRedactingWriter
-	if opts.Stderr != nil {
-		streamErr = &subprocess.StreamingRedactingWriter{Next: opts.Stderr, Redactor: redactor}
-		cmd.Stderr = io.MultiWriter(streamErr, errBuf)
-	} else {
-		cmd.Stderr = errBuf
-	}
+	streamErr := attachStream(&cmd.Stderr, errBuf, opts.Stderr, redactor)
 
 	err := cmd.Run()
 	result := RunResult{Stdout: []byte(outBuf.String()), Stderr: []byte(errBuf.String())}
@@ -125,18 +104,49 @@ func (execRunner) Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 		err = errors.Join(err, flushErr)
 	}
 	if err != nil {
-		cmdErr := &CommandError{
-			Args:     opts.Args,
-			ExitCode: -1,
-			Stderr:   strings.TrimSpace(errBuf.String()),
-			Err:      err,
-		}
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			cmdErr.ExitCode = exitErr.ExitCode()
-		}
-		return result, cmdErr
+		return result, runFailure(opts.Args, errBuf.String(), err)
 	}
 	return result, nil
+}
+
+func missingBinaryError(binary string, args []string) error {
+	if binary == binGit {
+		return &CommandError{Args: args, ExitCode: -1, Err: ErrGitNotFound}
+	}
+	return &CommandError{
+		Args: args, ExitCode: -1,
+		Err: fmt.Errorf("%q binary not found in PATH", binary),
+	}
+}
+
+// attachStream points *dst at the buffer and, when a live writer is given,
+// also at a redacting stream to it. It returns the stream to flush, or nil.
+func attachStream(
+	dst *io.Writer,
+	buf *subprocess.Buffer,
+	live io.Writer,
+	redactor *secrets.Redactor,
+) *subprocess.StreamingRedactingWriter {
+	if live == nil {
+		*dst = buf
+		return nil
+	}
+	stream := &subprocess.StreamingRedactingWriter{Next: live, Redactor: redactor}
+	*dst = io.MultiWriter(stream, buf)
+	return stream
+}
+
+func runFailure(args []string, stderr string, err error) *CommandError {
+	cmdErr := &CommandError{
+		Args:     args,
+		ExitCode: -1,
+		Stderr:   strings.TrimSpace(stderr),
+		Err:      err,
+	}
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		cmdErr.ExitCode = exitErr.ExitCode()
+	}
+	return cmdErr
 }
 
 func flushStream(stream *subprocess.StreamingRedactingWriter) error {
