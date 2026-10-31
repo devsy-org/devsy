@@ -221,6 +221,43 @@ func TestReconcileReplacesPodWhenOptionsChanged(t *testing.T) {
 	assert.False(t, c.podExists(t))
 }
 
+func TestReconcileReusesPodWhenOnlyImageConfigFileChanged(t *testing.T) {
+	c := newFakeCluster(t)
+	c.k.options.ImageConfigFile = "/new/image-config.json"
+	c.putPod(t, c.pod(t, podSpec{
+		uid:   "u1",
+		phase: corev1.PodRunning,
+		options: &provider2.ProviderKubernetesDriverConfig{
+			PodTimeout:      "2s",
+			DiskSize:        "1Gi",
+			ImageConfigFile: "/old/image-config.json",
+		},
+		devsy: &corev1.ContainerStatus{
+			State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+		},
+	}))
+
+	reused, err := c.reconcile(context.Background())
+
+	require.NoError(t, err)
+	assert.True(t, reused)
+	assert.Zero(t, c.deleteCalls())
+}
+
+func TestWithoutLocalOptionsDropsImageConfigFile(t *testing.T) {
+	options := &provider2.ProviderKubernetesDriverConfig{
+		DiskSize:        "1Gi",
+		ImageConfigFile: "/home/me/image-config.json",
+	}
+
+	raw, err := json.Marshal(withoutLocalOptions(options))
+
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "imageConfigFile")
+	assert.Contains(t, string(raw), "1Gi")
+	assert.Equal(t, "/home/me/image-config.json", options.ImageConfigFile)
+}
+
 func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
 	c := newFakeCluster(t)
 	c.putPod(t, c.pod(t, podSpec{uid: "u1", phase: corev1.PodPending}))
