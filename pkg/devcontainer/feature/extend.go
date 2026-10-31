@@ -73,13 +73,10 @@ func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, erro
 	}
 	ctx := params.Ctx
 	imageBuildInfo := params.ImageBuildInfo
-	target := params.Target
 	devContainerConfig := params.DevContainerConfig
-	forceBuild := params.ForceBuild
-	secretOpts := params.SecretOpts
 	features, err := fetchFeatures(
 		executionCtx,
-		devContainerConfig.Config, forceBuild, secretOpts,
+		devContainerConfig.Config, params.ForceBuild, params.SecretOpts,
 		lockfileMode{write: true, frozen: params.FrozenLockfile, disabled: params.NoLockfile},
 	)
 	if err != nil {
@@ -116,7 +113,7 @@ func GetExtendedBuildInfo(params *ExtendedBuildParams) (*ExtendedBuildInfo, erro
 	buildInfo, err := getFeatureBuildOptions(
 		contextPath,
 		&effectiveImageBuildInfo,
-		target,
+		params.Target,
 		features,
 	)
 	if err != nil {

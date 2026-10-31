@@ -165,21 +165,7 @@ func (r *runner) Up(
 		timeout,
 	)
 
-	var substitutedConfig *config.SubstitutedConfig
-	var substitutionContext *config.SubstitutionContext
-	err := status.Run(
-		ctx,
-		reporter,
-		status.Operation{Phase: status.PhaseResolvingConfig},
-		func(ctx context.Context) error {
-			var resolveErr error
-			substitutedConfig, substitutionContext, resolveErr = r.getSubstitutedConfigWithContext(
-				ctx,
-				options.CLIOptions,
-			)
-			return resolveErr
-		},
-	)
+	substitutedConfig, substitutionContext, err := r.resolveUpConfig(ctx, reporter, options)
 	if err != nil {
 		return nil, err
 	}
@@ -191,48 +177,10 @@ func (r *runner) Up(
 		}
 	}
 
-	// Recovery skips initializeCommand: a failing host hook must not block the
-	// recovery container.
-	switch {
-	case options.Recovery:
-		status.Skip(reporter, status.PhaseInitializeCommand, "recovery mode")
-		recordInitializeSkipped(ctx, "recovery_excluded")
-	case options.Platform.Enabled:
-		// Platform workspaces execute initialization remotely; this host-side
-		// phase is intentionally not run and must not appear successful.
-		status.Skip(reporter, status.PhaseInitializeCommand, "platform mode")
-		recordInitializeSkipped(ctx, "platform_excluded")
-	default:
-		err = status.Run(
-			ctx,
-			reporter,
-			status.Operation{Phase: status.PhaseInitializeCommand},
-			func(ctx context.Context) error {
-				if err := r.runInitializeCommand(
-					ctx,
-					substitutedConfig.Config,
-					options,
-				); err != nil {
-					return clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
-				}
-				return nil
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
+	if err := r.runInitializePhase(ctx, reporter, substitutedConfig, options); err != nil {
+		return nil, err
 	}
-
-	if defaultSelection {
-		// Detection follows initialization so the hook can generate project files.
-		if err := r.resolveDefaultContainerConfig(substitutedConfig.Config, options); err != nil {
-			return nil, err
-		}
-		if err := r.checkOverlayRecreation(ctx, substitutedConfig, options); err != nil {
-			return nil, err
-		}
-	}
-	if err := r.validateOverlayUpAssets(ctx, substitutedConfig, options); err != nil {
+	if err := r.afterInitialize(ctx, substitutedConfig, options, defaultSelection); err != nil {
 		return nil, err
 	}
 	params := &runContainerParams{
@@ -253,13 +201,100 @@ func (r *runner) Up(
 			return dispatchErr
 		},
 	)
-	if result != nil {
-		result.RecoveryContainer = r.recovering
-		if selectionWarning != "" {
-			result.HostWarnings = append(result.HostWarnings, selectionWarning)
+	r.annotateUpResult(result, selectionWarning)
+	return result, err
+}
+
+func (r *runner) resolveUpConfig(
+	ctx context.Context,
+	reporter status.Reporter,
+	options UpOptions,
+) (*config.SubstitutedConfig, *config.SubstitutionContext, error) {
+	var substitutedConfig *config.SubstitutedConfig
+	var substitutionContext *config.SubstitutionContext
+	err := status.Run(
+		ctx,
+		reporter,
+		status.Operation{Phase: status.PhaseResolvingConfig},
+		func(ctx context.Context) error {
+			var resolveErr error
+			substitutedConfig, substitutionContext, resolveErr = r.getSubstitutedConfigWithContext(
+				ctx,
+				options.CLIOptions,
+			)
+			return resolveErr
+		},
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return substitutedConfig, substitutionContext, nil
+}
+
+// runInitializePhase skips initializeCommand in recovery and platform modes.
+// Recovery skips it so a failing host hook cannot block the recovery container.
+func (r *runner) runInitializePhase(
+	ctx context.Context,
+	reporter status.Reporter,
+	substitutedConfig *config.SubstitutedConfig,
+	options UpOptions,
+) error {
+	switch {
+	case options.Recovery:
+		status.Skip(reporter, status.PhaseInitializeCommand, "recovery mode")
+		recordInitializeSkipped(ctx, "recovery_excluded")
+		return nil
+	case options.Platform.Enabled:
+		// Platform workspaces execute initialization remotely; this host-side
+		// phase is intentionally not run and must not appear successful.
+		status.Skip(reporter, status.PhaseInitializeCommand, "platform mode")
+		recordInitializeSkipped(ctx, "platform_excluded")
+		return nil
+	default:
+		return status.Run(
+			ctx,
+			reporter,
+			status.Operation{Phase: status.PhaseInitializeCommand},
+			func(ctx context.Context) error {
+				if err := r.runInitializeCommand(
+					ctx,
+					substitutedConfig.Config,
+					options,
+				); err != nil {
+					return clierr.Recoverable(fmt.Errorf("initialize command: %w", err))
+				}
+				return nil
+			},
+		)
+	}
+}
+
+func (r *runner) afterInitialize(
+	ctx context.Context,
+	substitutedConfig *config.SubstitutedConfig,
+	options UpOptions,
+	defaultSelection bool,
+) error {
+	if defaultSelection {
+		// Detection follows initialization so the hook can generate project files.
+		if err := r.resolveDefaultContainerConfig(substitutedConfig.Config, options); err != nil {
+			return err
+		}
+		if err := r.checkOverlayRecreation(ctx, substitutedConfig, options); err != nil {
+			return err
 		}
 	}
-	return result, err
+	return r.validateOverlayUpAssets(ctx, substitutedConfig, options)
+}
+
+func (r *runner) annotateUpResult(result *config.Result, selectionWarning string) {
+	if result == nil {
+		return
+	}
+	result.RecoveryContainer = r.recovering
+	if selectionWarning != "" {
+		result.HostWarnings = append(result.HostWarnings, selectionWarning)
+	}
 }
 
 func (r *runner) Command(ctx context.Context, params CommandParams) error {
