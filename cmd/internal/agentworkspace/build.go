@@ -14,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
 )
 
@@ -86,12 +87,21 @@ func (cmd *BuildCmd) Run(ctx context.Context) error {
 	}
 
 	run := startProviderRun(workspaceInfo, nil)
+	hop := tunnelserver.NewSetupLogHop(cancelCtx, tunnelserver.HopOptions{
+		Session: run, Upstream: tunnelClient,
+	})
+	defer hop.Close()
 	_, err = tunnelserver.ReportResult(
 		cancelCtx,
 		tunnelClient,
 		func(ctx context.Context) (*config2.Result, error) {
 			buildErr := buildAndPushImages(run.Context(ctx), runner, workspaceInfo)
 			run.Finish(buildErr, false)
+			// Drain before the result is reported and the temporary workspace
+			// is removed; an incomplete drain only marks capture partial.
+			if !hop.Flush(ctx) && run != nil {
+				_ = run.Store.AddCondition(run.RunID, workspacelogs.ConditionInterrupted)
+			}
 			return nil, buildErr
 		},
 	)

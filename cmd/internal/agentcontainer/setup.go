@@ -123,8 +123,12 @@ func (cmd *SetupContainerCmd) Run(ctx context.Context) error {
 			if err != nil {
 				return nil, err
 			}
+			hop := state.run.mirror(reportCtx, state.tunnelClient)
+			defer hop.Close()
 			err = cmd.runSetup(reportCtx, state)
 			state.run.finish(err)
+			// Drain before the result is reported and stdio is torn down.
+			state.run.drain(reportCtx, hop)
 			if err != nil {
 				return nil, err
 			}

@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	client2 "github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/clierr"
 	"github.com/devsy-org/devsy/pkg/config"
@@ -71,6 +72,8 @@ type UpCmd struct {
 	Out io.Writer
 	// Set at the start of Run; nil until then.
 	statusReporter status.Reporter
+	// setupHop mirrors retained setup history into this process's store.
+	setupHop *tunnelserver.SetupLogHop
 
 	// resolveWorkspace overrides workspace.Resolve; nil falls back to workspace.Resolve.
 	resolveWorkspace func(
@@ -672,6 +675,10 @@ func (cmd *UpCmd) executeDevsyUp(
 	client client2.BaseWorkspaceClient,
 ) (*workspaceContext, error) {
 	run := cmd.startSetupRun(client)
+	cmd.setupHop = tunnelserver.NewSetupLogHop(ctx, tunnelserver.HopOptions{
+		Session: run, Receive: true,
+	})
+	defer cmd.setupHop.Close()
 	wctx, err := cmd.runDevsyUp(run.Context(ctx), devsyConfig, client)
 	run.Finish(err, true)
 	if err != nil {

@@ -568,6 +568,7 @@ func (r *runner) executeSetup(
 	setupCommand string,
 	secretsEnv, secretsMount []string,
 ) (*config.Result, error) {
+	setupLogOptions := tunnelserver.SetupLogOptionsFrom(ctx)
 	runSetupServer := func(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*config.Result, error) {
 		return tunnelserver.RunSetupServer(
 			ctx,
@@ -576,13 +577,15 @@ func (r *runner) executeSetup(
 			r.workspaceConfig.Agent.InjectGitCredentials != stringFalse,
 			r.workspaceConfig.Agent.InjectDockerCredentials != stringFalse,
 			result,
-			tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
-			tunnelserver.WithSecrets(
-				secretsEnv,
-				secretsMount,
-			),
-			tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
-			tunnelserver.WithStatusReporter(r.reporter),
+			append([]tunnelserver.Option{
+				tunnelserver.WithPlatformOptions(&r.workspaceConfig.CLIOptions.Platform),
+				tunnelserver.WithSecrets(
+					secretsEnv,
+					secretsMount,
+				),
+				tunnelserver.WithGitToken(r.workspaceConfig.CLIOptions.GitToken),
+				tunnelserver.WithStatusReporter(r.reporter),
+			}, setupLogOptions...)...,
 		)
 	}
 

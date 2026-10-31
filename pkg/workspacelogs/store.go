@@ -76,6 +76,9 @@ func OpenDefault() (*Store, error) {
 	return Open(Options{Root: root})
 }
 
+// Root returns the storage directory.
+func (s *Store) Root() string { return s.root }
+
 // CreateRun creates a run, or joins the run named by spec.RunID. Joining
 // requires the stored context (and workspace UID, when both are set) to match.
 func (s *Store) CreateRun(spec RunSpec) (*RunManifest, error) {

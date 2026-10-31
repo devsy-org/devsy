@@ -6,6 +6,7 @@ import (
 	"os"
 
 	cmdflags "github.com/devsy-org/devsy/cmd/flags"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	"github.com/devsy-org/devsy/pkg/client"
 	"github.com/devsy-org/devsy/pkg/client/clientimplementation"
 	"github.com/devsy-org/devsy/pkg/clierr"
@@ -282,6 +283,8 @@ func (cmd *BuildCmd) build(
 
 	run := cmd.startSetupRun(workspaceClient)
 	ctx = run.Context(ctx)
+	hop := tunnelserver.NewSetupLogHop(ctx, tunnelserver.HopOptions{Session: run, Receive: true})
+	defer hop.Close()
 
 	var result *devcconfig.Result
 	err = status.Run(ctx, reporter, status.Operation{
@@ -295,6 +298,7 @@ func (cmd *BuildCmd) build(
 				WorkspaceClient: workspaceClient,
 				CLIOptions:      cmd.CLIOptions,
 				AgentCommand:    "build",
+				TunnelOptions:   hop.Options(),
 			},
 		)
 		return buildErr

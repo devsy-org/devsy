@@ -34,6 +34,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/provider"
 	"github.com/devsy-org/devsy/pkg/status"
 	"github.com/devsy-org/devsy/pkg/util"
+	"github.com/devsy-org/devsy/pkg/workspacelogs"
 	"github.com/spf13/cobra"
 )
 
@@ -211,7 +212,11 @@ func (cmd *UpCmd) devsyUp(
 
 	run := startProviderRun(workspaceInfo, append(slices.Clone(secretsEnv), secretsMount...))
 	cliOptions.SetupParentProducerID = run.ProducerID()
-	ctx = run.Context(ctx)
+	hop := tunnelserver.NewSetupLogHop(ctx, tunnelserver.HopOptions{
+		Session: run, Upstream: tunnelClient, Receive: true,
+	})
+	defer hop.Close()
+	ctx = tunnelserver.WithSetupLogOptions(run.Context(ctx), hop.Options())
 
 	runner, err := CreateRunner(ctx, workspaceInfo)
 	if err != nil {
@@ -225,6 +230,9 @@ func (cmd *UpCmd) devsyUp(
 		RegistryCache: workspaceInfo.RegistryCache,
 	}, workspaceInfo.InjectTimeout, reporter)
 	run.Finish(err, false)
+	if !hop.Flush(ctx) {
+		_ = run.Store.AddCondition(run.RunID, workspacelogs.ConditionInterrupted)
+	}
 
 	return result, err
 }

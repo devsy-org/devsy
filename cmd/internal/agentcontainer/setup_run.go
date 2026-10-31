@@ -3,9 +3,12 @@
 package agentcontainer
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 
+	"github.com/devsy-org/devsy/pkg/agent/tunnel"
+	"github.com/devsy-org/devsy/pkg/agent/tunnelserver"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/setup"
 	"github.com/devsy-org/devsy/pkg/log"
@@ -162,6 +165,29 @@ func (r *containerRun) workerEnv(env []string, childID string) []string {
 	}
 
 	return append(env, pkgconfig.EnvSetupRun+"="+string(ref))
+}
+
+// mirror starts sending this process's records to the provider host.
+func (r *containerRun) mirror(
+	ctx context.Context,
+	client tunnel.TunnelClient,
+) *tunnelserver.SetupLogHop {
+	if r == nil {
+		return nil
+	}
+
+	return tunnelserver.NewSetupLogHop(ctx, tunnelserver.HopOptions{
+		Session: r.session, Upstream: client,
+	})
+}
+
+// drain sends what is left within the sender's own cleanup budget. An
+// incomplete drain marks capture partial and never fails the setup.
+func (r *containerRun) drain(ctx context.Context, hop *tunnelserver.SetupLogHop) {
+	if r == nil || hop.Flush(ctx) {
+		return
+	}
+	_ = r.session.Store.AddCondition(r.session.RunID, workspacelogs.ConditionInterrupted)
 }
 
 // finish records the container process's outcome.
