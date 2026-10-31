@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
+	"github.com/devsy-org/devsy/pkg/task"
+	workspacepkg "github.com/devsy-org/devsy/pkg/workspace"
+	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 )
 
@@ -55,9 +60,11 @@ func startDetachedTunnelUp(
 	}
 	args = append(args, extraArgs...)
 	args = append(args, workspace)
+	before := detachedTaskIDs()
 
 	out, err := f.ExecCommandOutput(ctx, args)
 	if err != nil {
+		reportDetachedLaunchFailure(before, workspace)
 		return "", err
 	}
 	var env struct {
@@ -72,6 +79,87 @@ func startDetachedTunnelUp(
 		return "", fmt.Errorf("unexpected task envelope %q", line)
 	}
 	return env.ID, nil
+}
+
+func detachedTaskIDs() map[string]struct{} {
+	store, err := task.NewStore()
+	if err != nil {
+		return nil
+	}
+	states, err := store.List()
+	if err != nil {
+		return nil
+	}
+	ids := make(map[string]struct{}, len(states))
+	for _, state := range states {
+		ids[state.ID] = struct{}{}
+	}
+	return ids
+}
+
+func reportDetachedLaunchFailure(before map[string]struct{}, source string) {
+	state := newDetachedTask(before, source)
+	if state == nil {
+		return
+	}
+	reportDiagnosticState(state)
+	path, err := config.DefaultPathManager().ProcessStreamsFile(task.WorkerProcessName(state.ID))
+	if err != nil {
+		return
+	}
+	streams, err := readDiagnosticStreams(filepath.Dir(path), path)
+	if err != nil {
+		return
+	}
+	ginkgo.GinkgoWriter.Printf("detached worker streams: %s\n", streams)
+}
+
+func reportDiagnosticState(state *task.State) {
+	ginkgo.GinkgoWriter.Printf(
+		"detached launch state: pidPublished=%t launchPending=%t launchOwned=%t workerReady=%t cleanupComplete=%t\n",
+		state.PID != 0,
+		state.LaunchPending,
+		state.LaunchOwned,
+		state.WorkerReady,
+		state.ProcessCleanupComplete,
+	)
+}
+
+func newDetachedTask(before map[string]struct{}, source string) *task.State {
+	if before == nil {
+		return nil
+	}
+	absolute, err := filepath.Abs(source)
+	if err != nil {
+		return nil
+	}
+	workspaceID := workspacepkg.ToID(absolute)
+	store, err := task.NewStore()
+	if err != nil {
+		return nil
+	}
+	states, err := store.List()
+	if err != nil {
+		return nil
+	}
+	return selectNewDetachedTask(states, before, workspaceID)
+}
+
+func selectNewDetachedTask(
+	states []*task.State, before map[string]struct{}, workspaceID string,
+) *task.State {
+	var state *task.State
+	for _, candidate := range states {
+		if _, existed := before[candidate.ID]; existed || candidate.Command != "up" ||
+			candidate.WorkspaceID != workspaceID {
+			continue
+		}
+		if state != nil {
+			return nil
+		}
+		state = candidate
+	}
+	return state
 }
 
 func findDetachedUpTask(

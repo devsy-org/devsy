@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/devsy-org/devsy/pkg/command"
 	"github.com/devsy-org/devsy/pkg/config"
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/task"
 	"github.com/devsy-org/devsy/pkg/workspace"
 	"github.com/onsi/ginkgo/v2"
@@ -62,10 +64,14 @@ var _ = ginkgo.Describe("detached workspace input validation", ginkgo.Label("tas
 			home, err := os.MkdirTemp("", "devsy-early-worker-")
 			framework.ExpectNoError(err)
 			ginkgo.DeferCleanup(os.RemoveAll, home)
+			ginkgo.GinkgoT().Setenv(config.EnvHome, home)
+			config.ResetPathManager()
+			ginkgo.DeferCleanup(config.ResetPathManager)
 			cli := detachedValidationCLI{framework: f, home: home}
 			source := filepath.Join(home, "Backend.API")
 			framework.ExpectNoError(os.MkdirAll(source, 0o700))
 			sentinel := filepath.Join(source, "KeepCase.txt")
+			before := detachedTaskIDs()
 			framework.ExpectNoError(os.WriteFile(sentinel, []byte("original source"), 0o600))
 			out, err := cli.command(ctx,
 				cmdWorkspace,
@@ -75,7 +81,11 @@ var _ = ginkgo.Describe("detached workspace input validation", ginkgo.Label("tas
 				"--provider=missing-provider-1471",
 				source,
 			)
-			framework.ExpectNoError(err)
+			if err != nil {
+				reportDetachedLaunchFailure(before, source)
+			}
+			gomega.Expect(err).NotTo(gomega.HaveOccurred(), "CLI output: %s",
+				secrets.NewEnvironmentRedactor(detachedValidationEnvironment(home)).Redact(out))
 			var envelope struct {
 				Kind string `json:"kind"`
 				ID   string `json:"id"`
@@ -236,9 +246,71 @@ func (cli detachedValidationCLI) launchWorker(
 		return worker, nil
 	})
 	if err != nil {
+		store, storeErr := task.NewStoreAt(filepath.Join(cli.home, "state", "tasks"))
+		if storeErr == nil {
+			state, stateErr := store.Get(tk.ID())
+			if stateErr == nil {
+				reportDiagnosticState(state)
+			}
+		}
+		streamsPath, pathErr := config.DefaultPathManager().
+			ProcessStreamsFile(task.WorkerProcessName(tk.ID()))
+		if pathErr == nil {
+			streams, readErr := readDiagnosticStreams(cli.home, streamsPath)
+			if readErr == nil {
+				ginkgo.GinkgoWriter.Printf("worker streams: %s\n", streams)
+			}
+		}
 		return ref, errors.Join(err, tk.FailLaunch(err))
 	}
 	return ref, nil
+}
+
+func readDiagnosticStreams(home, path string) ([]byte, error) {
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	relative, err := filepath.Rel(home, path)
+	if err != nil {
+		return nil, err
+	}
+	file, err := root.Open(relative)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, 64*1024+1))
+	if err != nil {
+		return nil, err
+	}
+	return filterDiagnosticStreams(data), nil
+}
+
+func filterDiagnosticStreams(data []byte) []byte {
+	truncated := len(data) > 64*1024
+	if truncated {
+		data = data[:64*1024]
+	}
+	var result strings.Builder
+	for line := range strings.SplitSeq(string(data), "\n") {
+		switch strings.TrimSuffix(line, "\r") {
+		case "detached worker admission failed: worker lock",
+			"detached worker admission failed: reading launch state",
+			"detached worker admission failed: waiting for launch commit",
+			"detached worker admission failed: verifying owner",
+			"detached worker admission failed: retaining launch lease",
+			"detached worker admission failed: checking launcher",
+			"detached worker admission failed: acknowledging worker":
+			result.WriteString(strings.TrimSuffix(line, "\r"))
+			result.WriteByte('\n')
+		}
+	}
+	if truncated {
+		result.WriteString("[worker stream truncated at 65536 bytes]\n")
+	}
+	return []byte(result.String())
 }
 
 func (cli detachedValidationCLI) expectFailureEnvelope(ctx context.Context, id, diagnostic string) {
@@ -265,5 +337,6 @@ func (cli detachedValidationCLI) expectFailureEnvelope(ctx context.Context, id, 
 }
 
 func detachedValidationEnvironment(home string) []string {
-	return append(os.Environ(), "DEVSY_HOME="+home, "DEVSY_TEST_TOKEN=missing-provider-1471")
+	return append(os.Environ(), "DEVSY_HOME="+home, "DEVSY_TEST_TOKEN=missing-provider-1471",
+		"DEVSY_DETACHED_DIAGNOSTICS=1")
 }

@@ -155,6 +155,7 @@ func (cmd *UpCmd) openTask() (*task.Task, error) {
 	}
 	t := store.Open(cmd.taskID)
 	if err := t.HoldWorkerLock(); err != nil {
+		traceDetachedAdmission("worker lock")
 		return nil, err
 	}
 	verifiedOwner, err := waitForTaskLaunch(t, store)
@@ -184,6 +185,7 @@ func waitForTaskLaunch(t *task.Task, store *task.Store) (bool, error) {
 	for {
 		state, err := readWorkerLaunchState(t, store)
 		if err != nil {
+			traceDetachedAdmission("reading launch state")
 			return progress.verifiedOwner, err
 		}
 		ready, err := advanceTaskLaunch(t, store, state, &progress)
@@ -195,6 +197,7 @@ func waitForTaskLaunch(t *task.Task, store *task.Store) (bool, error) {
 		}
 		select {
 		case <-deadline.C:
+			traceDetachedAdmission("waiting for launch commit")
 			return progress.verifiedOwner, errors.New(
 				"timed out waiting for detached worker launch metadata",
 			)
@@ -223,6 +226,7 @@ func advanceTaskLaunch(
 	owner, err := verifyWorkerTaskOwner(state)
 	progress.verifiedOwner = owner
 	if err != nil {
+		traceDetachedAdmission("verifying owner")
 		return false, err
 	}
 	if !state.LaunchPending {
@@ -233,15 +237,27 @@ func advanceTaskLaunch(
 		return false, nil
 	}
 	if err := retainWorkerLaunchLease(&progress.leaseRetained); err != nil {
+		traceDetachedAdmission("retaining launch lease")
 		return false, err
 	}
 	if err := checkWorkerLauncher(t, store); err != nil {
+		traceDetachedAdmission("checking launcher")
 		return false, err
 	}
 	if state.PID != 0 && !state.WorkerReady {
-		return false, t.WorkerLaunchReady(os.Getpid())
+		if err := t.WorkerLaunchReady(os.Getpid()); err != nil {
+			traceDetachedAdmission("acknowledging worker")
+			return false, err
+		}
+		return false, nil
 	}
 	return false, nil
+}
+
+func traceDetachedAdmission(stage string) {
+	if os.Getenv("DEVSY_DETACHED_DIAGNOSTICS") == "1" {
+		fmt.Fprintln(os.Stderr, "detached worker admission failed:", stage)
+	}
 }
 
 // The worker lock excludes concurrent invocations; only the saved kernel identity
