@@ -207,6 +207,7 @@ const (
 	LogLevel             = "log-level"
 	LogFormat            = "log-format"
 	ResultFormat         = "result-format"
+	NoStatus             = "no-status"
 	SetupInfo            = "setup-info"
 	SecretsEnv           = "secrets-env"
 	OwnerTrust           = "ownertrust"

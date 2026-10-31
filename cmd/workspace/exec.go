@@ -107,6 +107,7 @@ func (cmd *ExecCmd) Run(ctx context.Context, args []string) error {
 		cmd.ResultFormat,
 		os.Stderr,
 		cmd.Verbosity > 0 || cmd.Debug,
+		cmd.NoStatus,
 	)
 	if err != nil {
 		return err

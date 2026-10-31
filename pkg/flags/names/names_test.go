@@ -137,6 +137,7 @@ var wireNames = []struct {
 	{names.LogOutput, "log-output"},
 	{names.LogFormat, "log-format"},
 	{names.ResultFormat, "result-format"},
+	{names.NoStatus, "no-status"},
 	{names.SetupInfo, "setup-info"},
 	{names.SecretsEnv, "secrets-env"},
 	{names.Value, "value"},
