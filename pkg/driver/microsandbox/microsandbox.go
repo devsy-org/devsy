@@ -403,58 +403,6 @@ func (d *microsandboxDriver) runFromOptions(
 	return nil
 }
 
-// buildSpec resolves sizing from, in priority order, the operator-configured
-// MICROSANDBOX_* defaults, then the devcontainer's hostRequirements, falling
-// back to the microsandbox runtime default (zero) when neither is set.
-func (d *microsandboxDriver) buildSpec(
-	workspaceID string,
-	options *driver.RunOptions,
-	hostReqs *config.HostRequirements,
-	owner *mountOwner,
-) sandboxSpec {
-	labels := config.ListToObject(options.Labels)
-	if labels == nil {
-		labels = map[string]string{}
-	}
-	maps.Copy(labels, config.ListToObject(config.GetIDLabels(workspaceID, d.idLabels)))
-	labels[workspaceMountContractLabel] = d.workspaceMountContract()
-	if owner != nil {
-		labels[workspaceRemoteUserLabel] = workspaceRemoteUser(options)
-	}
-	if options.User != "" {
-		labels[userLabel] = options.User
-	}
-	memory := d.defaults.memory
-	if memory == 0 {
-		memory = hostRequirementMemoryMiB(hostReqs)
-	}
-	cpus := d.defaults.cpus
-	if cpus == 0 {
-		cpus = hostRequirementCPUs(hostReqs)
-	}
-	rootDiskGB := d.defaults.rootDiskGB
-	if rootDiskGB == 0 {
-		rootDiskGB = hostRequirementStorageGB(hostReqs)
-	}
-	return sandboxSpec{
-		Image:       options.Image,
-		User:        options.User,
-		Entrypoint:  options.Entrypoint,
-		Cmd:         options.Cmd,
-		Memory:      memory,
-		CPUs:        cpus,
-		Env:         options.Env,
-		Labels:      labels,
-		Ephemeral:   d.defaults.ephemeral,
-		IdleTimeout: d.defaults.idleTimeout,
-		Mounts:      d.volumeMounts(options, owner),
-		MaxMemory:   d.defaults.maxMemory,
-		MaxCPUs:     d.defaults.maxCPUs,
-		BlockEgress: d.defaults.blockEgress,
-		RootDiskGB:  rootDiskGB,
-	}
-}
-
 func warnUnsupportedOptions(options *driver.RunOptions) {
 	var ignored []string
 	if isPrivileged(options) {
@@ -644,6 +592,58 @@ func (d *microsandboxDriver) RequiresRecreate(
 		return true, "microsandbox workspace developer identity changed"
 	}
 	return false, ""
+}
+
+// buildSpec resolves sizing from, in priority order, the operator-configured
+// MICROSANDBOX_* defaults, then the devcontainer's hostRequirements, falling
+// back to the microsandbox runtime default (zero) when neither is set.
+func (d *microsandboxDriver) buildSpec(
+	workspaceID string,
+	options *driver.RunOptions,
+	hostReqs *config.HostRequirements,
+	owner *mountOwner,
+) sandboxSpec {
+	labels := config.ListToObject(options.Labels)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	maps.Copy(labels, config.ListToObject(config.GetIDLabels(workspaceID, d.idLabels)))
+	labels[workspaceMountContractLabel] = d.workspaceMountContract()
+	if owner != nil {
+		labels[workspaceRemoteUserLabel] = workspaceRemoteUser(options)
+	}
+	if options.User != "" {
+		labels[userLabel] = options.User
+	}
+	memory := d.defaults.memory
+	if memory == 0 {
+		memory = hostRequirementMemoryMiB(hostReqs)
+	}
+	cpus := d.defaults.cpus
+	if cpus == 0 {
+		cpus = hostRequirementCPUs(hostReqs)
+	}
+	rootDiskGB := d.defaults.rootDiskGB
+	if rootDiskGB == 0 {
+		rootDiskGB = hostRequirementStorageGB(hostReqs)
+	}
+	return sandboxSpec{
+		Image:       options.Image,
+		User:        options.User,
+		Entrypoint:  options.Entrypoint,
+		Cmd:         options.Cmd,
+		Memory:      memory,
+		CPUs:        cpus,
+		Env:         options.Env,
+		Labels:      labels,
+		Ephemeral:   d.defaults.ephemeral,
+		IdleTimeout: d.defaults.idleTimeout,
+		Mounts:      d.volumeMounts(options, owner),
+		MaxMemory:   d.defaults.maxMemory,
+		MaxCPUs:     d.defaults.maxCPUs,
+		BlockEgress: d.defaults.blockEgress,
+		RootDiskGB:  rootDiskGB,
+	}
 }
 
 func (d *microsandboxDriver) workspaceMountContract() string {
