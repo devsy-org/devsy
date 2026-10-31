@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -46,7 +47,14 @@ type CommandParams struct {
 	Stderr  io.Writer
 	// RawStdout keeps binary protocols out of text redaction and its suffix buffer.
 	RawStdout bool
+	// RequireRunning makes the call exec-only: it never starts or unpauses the
+	// workload and fails when the runtime cannot guarantee that.
+	RequireRunning bool
 }
+
+// ErrRequireRunningUnsupported is returned when the runtime cannot enforce an
+// exec-only call.
+var ErrRequireRunningUnsupported = errors.New("runtime does not support exec-only commands")
 
 // UpOptions configures a single Up invocation.
 type UpOptions struct {
@@ -252,14 +260,19 @@ func (r *runner) Up(
 }
 
 func (r *runner) Command(ctx context.Context, params CommandParams) error {
+	if params.RequireRunning && !driver.DriverSupportsRequireRunning(r.driver) {
+		return ErrRequireRunningUnsupported
+	}
+
 	return r.driver.CommandDevContainer(ctx, &driver.CommandParams{
-		WorkspaceID: r.id,
-		User:        params.User,
-		Command:     params.Command,
-		Stdin:       params.Stdin,
-		Stdout:      params.Stdout,
-		Stderr:      params.Stderr,
-		RawStdout:   params.RawStdout,
+		WorkspaceID:    r.id,
+		User:           params.User,
+		Command:        params.Command,
+		Stdin:          params.Stdin,
+		Stdout:         params.Stdout,
+		Stderr:         params.Stderr,
+		RawStdout:      params.RawStdout,
+		RequireRunning: params.RequireRunning,
 	})
 }
 
