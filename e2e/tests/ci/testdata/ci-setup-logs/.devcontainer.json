@@ -1,0 +1,5 @@
+{
+  "image": "ghcr.io/devsy-org/test-images/go:1",
+  "waitFor": "postCreateCommand",
+  "postCreateCommand": "echo ci-out-marker; echo ci-err-marker >&2"
+}
