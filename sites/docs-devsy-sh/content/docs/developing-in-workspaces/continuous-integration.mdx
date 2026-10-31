@@ -56,6 +56,36 @@ Run `devsy ci --help` for the full list. The most used:
 - `--platform` runs the container under another platform, such as `linux/amd64`.
 - `--secret`, `--env`, `--build-secret`, and `--git-token` inject stored Devsy secrets and variables. See [Secrets](./secrets.mdx).
 
+### Control progress output
+
+Use `--no-status` to hide Devsy's live progress messages. It does not filter
+diagnostics or the command's own output.
+
+| Output | Effect of `--no-status` |
+| --- | --- |
+| Devsy progress | Hidden, including progress from the nested workspace command |
+| Devsy diagnostics | Still controlled by `--quiet`, `--log-level`, and diagnostic format |
+| Command stdout and stderr | Preserved on their original streams |
+| Recorded events | Still recorded where the command already records them |
+
+For example, keep warnings and errors while hiding progress:
+
+```sh
+devsy ci --no-status --result-format=plain --log-level=warn . -- bash .tools/test.sh
+```
+
+To show errors while hiding warnings, use `--quiet` instead. Quiet mode takes
+precedence over `--log-level=warn` and suppresses warnings too:
+
+```sh
+devsy ci --no-status --result-format=plain --quiet . -- bash .tools/test.sh
+```
+
+When stdout is redirected, use `--result-format=plain` to keep the nested
+workspace command's success result JSON off stderr. Use
+`--result-format=json` when the caller needs the structured result; child
+stdout and stderr remain separate from Devsy diagnostics.
+
 ## Pre-building and pushing images
 
 To pre-build and publish a devcontainer image for reuse as a build cache, use `devsy workspace build`:

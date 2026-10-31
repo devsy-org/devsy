@@ -58,6 +58,7 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 				cmd.ResultFormat,
 				os.Stdout,
 				cmd.Verbosity > 0 || cmd.Debug,
+				cmd.NoStatus,
 			)
 			if err != nil {
 				return err
