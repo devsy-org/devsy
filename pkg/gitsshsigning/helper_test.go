@@ -12,6 +12,13 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	cfgUserName    = "\tname = Test User"
+	cfgSignProgram = "\tprogram = devsy-ssh-signature"
+	cfgFormatSSH   = "\tformat = ssh"
+	cfgGPGSign     = "\tgpgsign = true"
+)
+
 type HelperTestSuite struct {
 	suite.Suite
 }
@@ -22,10 +29,10 @@ func TestHelperSuite(t *testing.T) {
 
 func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUnrelatedGpgConfig() {
 	input := strings.Join([]string{
-		"[user]", "\tname = Test User", "\temail = test@example.com",
-		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
-		"[gpg]", "\tformat = ssh", "\tprogram = /usr/bin/gpg2",
-		"[commit]", "\tgpgsign = true",
+		"[user]", cfgUserName, "\temail = test@example.com",
+		`[gpg "ssh"]`, cfgSignProgram,
+		"[gpg]", cfgFormatSSH, "\tprogram = /usr/bin/gpg2",
+		"[commit]", cfgGPGSign,
 		"[user]", "\tsigningkey = /path/to/key",
 	}, "\n")
 
@@ -40,9 +47,9 @@ func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUnrelatedGpgConfig(
 
 func (s *HelperTestSuite) TestRemoveSignatureHelper_RemovesDevsySections() {
 	input := strings.Join([]string{
-		"[user]", "\tname = Test User",
-		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
-		"[gpg]", "\tformat = ssh",
+		"[user]", cfgUserName,
+		`[gpg "ssh"]`, cfgSignProgram,
+		"[gpg]", cfgFormatSSH,
 		"[user]", "\tsigningkey = /path/to/key",
 	}, "\n")
 
@@ -63,10 +70,10 @@ func (s *HelperTestSuite) TestRemoveSignatureHelper_NoGpgSections() {
 
 func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUserOwnedGpgSSHKeys() {
 	input := strings.Join([]string{
-		"[user]", "\tname = Test User",
-		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
+		"[user]", cfgUserName,
+		`[gpg "ssh"]`, cfgSignProgram,
 		"\tallowedSignersFile = ~/.ssh/allowed_signers",
-		"[commit]", "\tgpgsign = true",
+		"[commit]", cfgGPGSign,
 	}, "\n")
 
 	result := removeSignatureHelper(input)
@@ -83,9 +90,9 @@ func (s *HelperTestSuite) TestRemoveSignatureHelper_PreservesUserOwnedSigningKey
 	// A [user] section with name + signingkey is user-owned; only the
 	// devsy-appended [user] section (signingkey-only) should be dropped.
 	input := strings.Join([]string{
-		"[user]", "\tname = Test User", "\tsigningkey = /my/gpg-key",
-		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
-		"[gpg]", "\tformat = ssh",
+		"[user]", cfgUserName, "\tsigningkey = /my/gpg-key",
+		`[gpg "ssh"]`, cfgSignProgram,
+		"[gpg]", cfgFormatSSH,
 		"[user]", "\tsigningkey = /devsy/injected-key",
 	}, "\n")
 
@@ -143,9 +150,9 @@ func TestUpdateGitConfig_DifferentKey(t *testing.T) {
 
 func (s *HelperTestSuite) TestRemoveSignatureHelper_DropsEmptyGpgSSHSection() {
 	input := strings.Join([]string{
-		"[user]", "\tname = Test User",
-		`[gpg "ssh"]`, "\tprogram = devsy-ssh-signature",
-		"[commit]", "\tgpgsign = true",
+		"[user]", cfgUserName,
+		`[gpg "ssh"]`, cfgSignProgram,
+		"[commit]", cfgGPGSign,
 	}, "\n")
 
 	result := removeSignatureHelper(input)
