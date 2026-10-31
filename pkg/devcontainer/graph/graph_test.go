@@ -7,6 +7,10 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	testNode1 = "node1"
+)
+
 type GraphTestSuite struct {
 	suite.Suite
 	graph *Graph[string]
@@ -17,20 +21,20 @@ func (suite *GraphTestSuite) SetupTest() {
 }
 
 func (suite *GraphTestSuite) TestAddNode() {
-	err := suite.graph.AddNode("node1", "data1")
+	err := suite.graph.AddNode(testNode1, "data1")
 	suite.NoError(err)
-	suite.Equal("data1", suite.graph.nodes["node1"])
+	suite.Equal("data1", suite.graph.nodes[testNode1])
 
 	// Test duplicate node error
-	err = suite.graph.AddNode("node1", "data2")
+	err = suite.graph.AddNode(testNode1, "data2")
 	suite.Error(err)
 	suite.Contains(err.Error(), "node1 already exists")
-	suite.Equal("data1", suite.graph.nodes["node1"])
+	suite.Equal("data1", suite.graph.nodes[testNode1])
 }
 
 func (suite *GraphTestSuite) TestAddNodes() {
 	nodes := map[string]string{
-		"node1": "data1",
+		testNode1: "data1",
 		"node2": "data2",
 		"node3": "data3",
 	}
@@ -44,13 +48,13 @@ func (suite *GraphTestSuite) TestAddNodes() {
 
 	// Test duplicate node error
 	duplicateNodes := map[string]string{
-		"node1": "new_data1",
+		testNode1: "new_data1",
 		"node4": "data4",
 	}
 	err = suite.graph.AddNodes(duplicateNodes)
 	suite.Error(err)
 	suite.Contains(err.Error(), "node1 already exists")
-	suite.Equal("data1", suite.graph.nodes["node1"])
+	suite.Equal("data1", suite.graph.nodes[testNode1])
 	suite.NotContains(suite.graph.nodes, "node4")
 }
 
@@ -194,9 +198,9 @@ func (suite *GraphTestSuite) TestUpdateNode() {
 		{
 			name: "update existing node",
 			setup: func() {
-				suite.Require().NoError(suite.graph.AddNode("node1", "original"))
+				suite.Require().NoError(suite.graph.AddNode(testNode1, "original"))
 			},
-			nodeID:  "node1",
+			nodeID:  testNode1,
 			newData: "updated",
 			wantErr: false,
 		},
