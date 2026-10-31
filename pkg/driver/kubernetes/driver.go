@@ -31,7 +31,8 @@ func NewKubernetesDriver(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
-	// Namespace can be defined in many ways, we first check the kube config, then the provider options KUBERNETES_NAMESPACE, then failing that the default "devsy"
+	// Namespace can be defined in many ways, we first check the kube config, then the provider options
+	// KUBERNETES_NAMESPACE, then failing that the default "devsy"
 	if namespace == "" || namespace == "default" || options.KubernetesNamespace != "" {
 		log.Debugf("Using Explicit Kubernetes Namespace")
 		namespace = options.KubernetesNamespace

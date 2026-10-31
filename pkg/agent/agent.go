@@ -508,16 +508,6 @@ func sshServerCommand(agentPath string, debug bool) string {
 	return shellescape.QuoteCommand(args)
 }
 
-func applyDockerEnv(cmd *exec.Cmd, envs map[string]string) {
-	if len(envs) == 0 {
-		return
-	}
-	newEnvs := os.Environ()
-	for k, v := range envs {
-		newEnvs = append(newEnvs, k+"="+v)
-	}
-	cmd.Env = newEnvs
-}
 
 func dockerReachable(dockerOverride string, envs map[string]string) (bool, error) {
 	docker := "docker"

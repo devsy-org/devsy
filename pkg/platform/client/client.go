@@ -417,10 +417,8 @@ func (c *client) verifyConnection() error {
 		return nil
 	}
 
-	var urlError *url.Error
-	if errors.As(err, &urlError) {
-		var authErr x509.UnknownAuthorityError
-		if errors.As(urlError.Err, &authErr) {
+	if urlError, ok := errors.AsType[*url.Error](err); ok {
+		if _, ok := errors.AsType[x509.UnknownAuthorityError](urlError.Err); ok {
 			return fmt.Errorf(
 				"unsafe login endpoint %q, if you wish to login into an insecure devsy endpoint run with the '--insecure' flag",
 				c.config.Host,

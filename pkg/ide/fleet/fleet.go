@@ -29,7 +29,8 @@ const (
 	DownloadArm64Option = "DOWNLOAD_ARM64"
 )
 
-const fleetDownloadBase = "https://download.jetbrains.com/product?code=FLL&release.type=preview&release.type=eap&platform="
+const fleetDownloadBase = "https://download.jetbrains.com/product?" +
+	"code=FLL&release.type=preview&release.type=eap&platform="
 
 var fleetVersionRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 

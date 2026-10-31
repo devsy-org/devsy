@@ -56,7 +56,8 @@ type FeatureSet struct {
 }
 
 type FeatureConfig struct {
-	// ID of the Feature. The id should be unique in the context of the repository/published package where the feature exists and must match the name of the directory where the devcontainer-feature.json resides.
+	// ID of the Feature. The id should be unique in the context of the repository/published package where the feature
+	// exists and must match the name of the directory where the devcontainer-feature.json resides.
 	ID string `json:"id,omitempty"`
 
 	// Display name of the Feature.
@@ -71,13 +72,16 @@ type FeatureConfig struct {
 	// Entrypoint script that should fire at container start up.
 	Entrypoint string `json:"entrypoint,omitempty"`
 
-	// Indicates that the Feature is deprecated, and will not receive any further updates/support. This property is intended to be used by the supporting tools for highlighting Feature deprecation.
+	// Indicates that the Feature is deprecated, and will not receive any further updates/support. This property is
+	// intended to be used by the supporting tools for highlighting Feature deprecation.
 	Deprecated bool `json:"deprecated,omitempty"`
 
-	// Array of old IDs used to publish this Feature. The property is useful for renaming a currently published Feature within a single namespace.
+	// Array of old IDs used to publish this Feature. The property is useful for renaming a currently published Feature
+	// within a single namespace.
 	LegacyIds []string `json:"legacyIds,omitempty"`
 
-	// Possible user-configurable options for this Feature. The selected options will be passed as environment variables when installing the Feature into the container.
+	// Possible user-configurable options for this Feature. The selected options will be passed as environment variables
+	// when installing the Feature into the container.
 	Options map[string]FeatureConfigOption `json:"options,omitempty"`
 
 	// URL to documentation for the Feature.
@@ -101,10 +105,12 @@ type FeatureConfig struct {
 	// Mounts a volume or bind mount into the container.
 	Mounts []*Mount `json:"mounts,omitempty"`
 
-	// Array of ID's of Features that should execute before this one. Allows control for feature authors on soft dependencies between different Features.
+	// Array of ID's of Features that should execute before this one. Allows control for feature authors on soft
+	// dependencies between different Features.
 	InstallsAfter []string `json:"installsAfter,omitempty"`
 
-	// The optional dependsOn property indicates a set of required, “hard” dependencies for a given Feature. Hard dependencies must be satisfied before this Feature is installed.
+	// The optional dependsOn property indicates a set of required, “hard” dependencies for a given Feature. Hard
+	// dependencies must be satisfied before this Feature is installed.
 	DependsOn DependsOnField `json:"dependsOn,omitempty"`
 
 	// Container environment variables.
@@ -181,12 +187,15 @@ type FeatureConfigOption struct {
 	// A description of the option displayed to the user by a supporting tool.
 	Description string `json:"description,omitempty"`
 
-	// The type of the option. Can be 'boolean' or 'string'.  Options of type 'string' should use the 'enum' or 'proposals' property to provide a list of allowed values.
+	// The type of the option. Can be 'boolean' or 'string'.  Options of type 'string' should use the 'enum' or 'proposals'
+	// property to provide a list of allowed values.
 	Type string `json:"type,omitempty"`
 
-	// Allowed values for this option.  Unlike 'proposals', the user cannot provide a custom value not included in the 'enum' array.
+	// Allowed values for this option.  Unlike 'proposals', the user cannot provide a custom value not included in the
+	// 'enum' array.
 	Enum []string `json:"enum,omitempty"`
 
-	// Suggested values for this option.  Unlike 'enum', the 'proposals' attribute indicates the installation script can handle arbitrary values provided by the user.
+	// Suggested values for this option.  Unlike 'enum', the 'proposals' attribute indicates the installation script can
+	// handle arbitrary values provided by the user.
 	Proposals []string `json:"proposals,omitempty"`
 }

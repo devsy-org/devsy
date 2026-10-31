@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	DownloadAmd64Template = "https://github.com/gitpod-io/openvscode-server/releases/download/openvscode-server-%s/openvscode-server-%s-linux-x64.tar.gz"
-	DownloadArm64Template = "https://github.com/gitpod-io/openvscode-server/releases/download/openvscode-server-%s/openvscode-server-%s-linux-arm64.tar.gz"
+	DownloadAmd64Template = "https://github.com/gitpod-io/openvscode-server/releases/download/" +
+		"openvscode-server-%s/openvscode-server-%s-linux-x64.tar.gz"
+	DownloadArm64Template = "https://github.com/gitpod-io/openvscode-server/releases/download/" +
+		"openvscode-server-%s/openvscode-server-%s-linux-arm64.tar.gz"
 )
 
 const (

@@ -26,7 +26,8 @@ var (
 
 const tokenFileLocation = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
-// See https://github.com/kubernetes/kubernetes/blob/30ae12d018697d3c5f04e225b11f242f5310e097/pkg/serviceaccount/claims.go#L55
+// See
+// https://github.com/kubernetes/kubernetes/blob/30ae12d018697d3c5f04e225b11f242f5310e097/pkg/serviceaccount/claims.go#L55
 type privateClaims struct {
 	jwt.RegisteredClaims
 	Kubernetes kubernetesClaim `json:"kubernetes.io"`
@@ -83,7 +84,8 @@ func GetKeychain(ctx context.Context) (authn.Keychain, error) {
 	}
 	keyChains = append(keyChains, authn.DefaultKeychain)
 
-	// Order matters here: We want to go through all of the cloud provider keychains before we hit the default keychain (docker config.json)
+	// Order matters here: We want to go through all of the cloud provider keychains before we hit the default keychain
+	// (docker config.json)
 	return authn.NewMultiKeychain(
 		keyChains...,
 	), nil
