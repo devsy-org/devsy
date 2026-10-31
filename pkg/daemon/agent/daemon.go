@@ -33,13 +33,18 @@ type DaemonConfig struct {
 	Lifecycle      LifecycleConfig       `json:"lifecycle,omitzero"`
 }
 
-func BuildWorkspaceDaemonConfig(
-	platformOptions devsy.PlatformOptions,
-	workspaceConfig *provider2.Workspace,
-	substitutionContext *config.SubstitutionContext,
-	mergedConfig *config.MergedDevContainerConfig,
-	lifecycle LifecycleOptions,
-) (*DaemonConfig, error) {
+// WorkspaceDaemonInput carries the inputs of the workspace daemon configuration.
+type WorkspaceDaemonInput struct {
+	PlatformOptions     devsy.PlatformOptions
+	Workspace           *provider2.Workspace
+	SubstitutionContext *config.SubstitutionContext
+	MergedConfig        *config.MergedDevContainerConfig
+	Lifecycle           LifecycleOptions
+}
+
+func BuildWorkspaceDaemonConfig(in WorkspaceDaemonInput) (*DaemonConfig, error) {
+	platformOptions, workspaceConfig := in.PlatformOptions, in.Workspace
+	substitutionContext, mergedConfig, lifecycle := in.SubstitutionContext, in.MergedConfig, in.Lifecycle
 	var workdir string
 	if workspaceConfig.Source.GitSubPath != "" {
 		substitutionContext.ContainerWorkspaceFolder = filepath.Join(
@@ -81,20 +86,8 @@ func BuildWorkspaceDaemonConfig(
 	return daemonConfig, nil
 }
 
-func GetEncodedWorkspaceDaemonConfig(
-	platformOptions devsy.PlatformOptions,
-	workspaceConfig *provider2.Workspace,
-	substitutionContext *config.SubstitutionContext,
-	mergedConfig *config.MergedDevContainerConfig,
-	lifecycle LifecycleOptions,
-) (string, error) {
-	daemonConfig, err := BuildWorkspaceDaemonConfig(
-		platformOptions,
-		workspaceConfig,
-		substitutionContext,
-		mergedConfig,
-		lifecycle,
-	)
+func GetEncodedWorkspaceDaemonConfig(in WorkspaceDaemonInput) (string, error) {
+	daemonConfig, err := BuildWorkspaceDaemonConfig(in)
 	if err != nil {
 		return "", err
 	}

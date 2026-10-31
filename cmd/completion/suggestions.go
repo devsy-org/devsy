@@ -17,11 +17,13 @@ func RegisterFlagCompletionFuns(rootCmd *cobra.Command, globalFlags *flags.Globa
 		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return GetProviderSuggestions(
 				rootCmd,
-				globalFlags.Context,
-				globalFlags.Provider,
-				args,
-				toComplete,
-				globalFlags.Owner,
+				SuggestionRequest{
+					Context:    globalFlags.Context,
+					Provider:   globalFlags.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      globalFlags.Owner,
+				},
 			)
 		},
 	); err != nil {
@@ -33,11 +35,13 @@ func RegisterFlagCompletionFuns(rootCmd *cobra.Command, globalFlags *flags.Globa
 		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			return GetContextSuggestions(
 				rootCmd,
-				globalFlags.Context,
-				globalFlags.Provider,
-				args,
-				toComplete,
-				globalFlags.Owner,
+				SuggestionRequest{
+					Context:    globalFlags.Context,
+					Provider:   globalFlags.Provider,
+					Args:       args,
+					ToComplete: toComplete,
+					Owner:      globalFlags.Owner,
+				},
 			)
 		},
 	); err != nil {
@@ -82,11 +86,9 @@ func GetWorkspaceSuggestions(
 
 func GetProviderSuggestions(
 	rootCmd *cobra.Command,
-	context, provider string,
-	args []string,
-	toComplete string,
-	owner platform.OwnerFilter,
+	req SuggestionRequest,
 ) ([]string, cobra.ShellCompDirective) {
+	context, provider, toComplete := req.Context, req.Provider, req.ToComplete
 	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
@@ -108,11 +110,9 @@ func GetProviderSuggestions(
 
 func GetContextSuggestions(
 	rootCmd *cobra.Command,
-	context, provider string,
-	args []string,
-	toComplete string,
-	owner platform.OwnerFilter,
+	req SuggestionRequest,
 ) ([]string, cobra.ShellCompDirective) {
+	context, provider, toComplete := req.Context, req.Provider, req.ToComplete
 	devsyConfig, err := config.LoadConfig(context, provider)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError

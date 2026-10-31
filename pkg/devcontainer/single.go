@@ -748,11 +748,13 @@ func (r *runner) injectDaemonEntrypoint(
 	}
 
 	data, err := agent.GetEncodedWorkspaceDaemonConfig(
-		platform,
-		r.workspaceConfig.Workspace,
-		p.substitutionContext,
-		mergedConfig,
-		lifecycle,
+		agent.WorkspaceDaemonInput{
+			PlatformOptions:     platform,
+			Workspace:           r.workspaceConfig.Workspace,
+			SubstitutionContext: p.substitutionContext,
+			MergedConfig:        mergedConfig,
+			Lifecycle:           lifecycle,
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("build daemon config: %w", err)
