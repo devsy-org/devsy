@@ -68,8 +68,7 @@ func (r *runner) validateWSLgSupport(options provider.CLIOptions) error {
 
 func (r *runner) localDockerWSLgScope(options provider.CLIOptions) bool {
 	return r.workspaceConfig.Agent.Local == pkgconfig.BoolTrue && !options.Platform.Enabled &&
-		(r.workspaceConfig.Agent.Driver == "" || r.workspaceConfig.Agent.Driver == provider.DockerDriver) &&
-		r.workspaceConfig.Workspace.Provider.Name == provider.DockerDriver
+		(r.workspaceConfig.Agent.Driver == "" || r.workspaceConfig.Agent.Driver == provider.DockerDriver)
 }
 
 func (r *runner) checkWSLgCollisions(options provider.CLIOptions) error {

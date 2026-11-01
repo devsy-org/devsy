@@ -38,7 +38,7 @@ func (cmd *UpCmd) preflightWSLgClient(
 		return nil
 	}
 	local, ok := client.(client2.WorkspaceClient)
-	if !ok || !local.AgentLocal() || client.Provider() != provider.DockerDriver {
+	if !ok || !local.AgentLocal() {
 		return wslg.ErrUnsupported
 	}
 	_, info, err := local.AgentInfo(cmd.CLIOptions)

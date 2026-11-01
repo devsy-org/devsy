@@ -14,6 +14,7 @@ import (
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/provider"
+	"github.com/devsy-org/devsy/pkg/types"
 	"github.com/devsy-org/devsy/pkg/wslg"
 	"github.com/stretchr/testify/suite"
 	"gopkg.in/yaml.v3"
@@ -86,6 +87,34 @@ func (s *WSLgSuite) TestReuseRequiresRecreateForStaleStoppedAndRevoked() {
 	s.NoError(r.checkWSLgReuse(details, false))
 	r.wslgSnapshot = s.snapshot(":0")
 	s.ErrorContains(r.checkWSLgReuse(details, false), "--recreate")
+}
+
+func (s *WSLgSuite) TestResumeRejectsStoppedWSLgContainer() {
+	r := newTestRunner(&mockDriver{})
+	r.wslgSnapshot = s.snapshot(":0")
+	labels, err := r.wslgLabels()
+	s.Require().NoError(err)
+	details := &config.ContainerDetails{}
+	details.Config.Labels = labels
+	s.ErrorContains(checkWSLgResume(details), "--recreate")
+	details.Config.Labels = map[string]string{wslgSnapshotLabel: "{"}
+	s.Error(checkWSLgResume(details))
+	details.Config.Labels = nil
+	s.NoError(checkWSLgResume(details))
+}
+
+func (s *WSLgSuite) TestScopeIgnoresProviderInstallationName() {
+	r := newTestRunner(&mockDriver{})
+	r.workspaceConfig.Agent = provider.ProviderAgentConfig{
+		Driver: provider.DockerDriver,
+		Local:  types.StrBool(pkgconfig.BoolTrue),
+	}
+	r.workspaceConfig.Workspace = &provider.Workspace{
+		Provider: provider.WorkspaceProviderConfig{Name: "my-docker"},
+	}
+	s.True(r.localDockerWSLgScope(provider.CLIOptions{}))
+	r.workspaceConfig.Agent.Driver = provider.KubernetesDriver
+	s.False(r.localDockerWSLgScope(provider.CLIOptions{}))
 }
 
 func (s *WSLgSuite) TestV2InvocationLabelRoundTripAndTeardown() {
