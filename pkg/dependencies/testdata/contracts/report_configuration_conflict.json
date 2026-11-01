@@ -1,0 +1,78 @@
+{
+  "schema": "devsy.dependencies.report.v1",
+  "schemaVersion": 1,
+  "surveyMode": "passive",
+  "executed": false,
+  "target": {
+    "contextName": "default",
+    "providerName": "docker",
+    "providerType": "docker",
+    "providerSourceId": "internal:docker",
+    "providerSourceKind": "builtin_internal",
+    "trustedBuiltinIdentity": true,
+    "configRevision": "cfg-rev-109",
+    "providerConfigRevision": "prov-rev-docker-09",
+    "evaluatedAt": "2026-10-19T05:08:00Z"
+  },
+  "host": {
+    "goos": "linux",
+    "goarch": "amd64",
+    "osVersion": "ubuntu-24.04",
+    "virtualizationCapability": "not_required"
+  },
+  "availability": "incomplete",
+  "compatibility": "incompatible",
+  "reachability": "not_checked",
+  "policy": "external_only",
+  "reasonCode": "dependency_configuration_conflict",
+  "message": "Environment override DEVSY_PROVIDER_DOCKER_DOCKER_PATH=/custom/missing/docker conflicts with persisted option DOCKER_PATH=/usr/bin/docker and points to a missing executable.",
+  "hint": "Clear the conflicting environment override or update DOCKER_PATH with 'devsy provider set docker -o DOCKER_PATH=<path>'.",
+  "items": [
+    {
+      "id": "docker-cli",
+      "displayName": "Docker CLI",
+      "required": true,
+      "executed": false,
+      "availability": "incomplete",
+      "compatibility": "incompatible",
+      "reachability": "not_checked",
+      "policy": "external_only",
+      "reasonCode": "dependency_configuration_conflict",
+      "candidates": [
+        {
+          "component": "docker",
+          "sourceKind": "explicit_env",
+          "optionName": "DOCKER_PATH",
+          "lexicalPath": "/custom/missing/docker",
+          "resolvedPath": "",
+          "isSymlink": false,
+          "executed": false,
+          "selected": false,
+          "availability": "missing",
+          "compatibility": "incompatible",
+          "reasonCode": "dependency_configuration_conflict",
+          "detail": "DEVSY_PROVIDER_DOCKER_DOCKER_PATH overrides persisted option DOCKER_PATH=/usr/bin/docker with a non-existent path."
+        },
+        {
+          "component": "docker",
+          "sourceKind": "explicit_option",
+          "optionName": "DOCKER_PATH",
+          "lexicalPath": "/usr/bin/docker",
+          "resolvedPath": "/usr/bin/docker",
+          "isSymlink": false,
+          "observation": {
+            "fileIdentity": "illustrative-fid:linux-amd64:usr-bin-docker-55d4",
+            "platform": "linux/amd64"
+          },
+          "executed": false,
+          "selected": false,
+          "availability": "available",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_configuration_conflict",
+          "detail": "Illustrative passive observation: persisted option DOCKER_PATH=/usr/bin/docker exists on disk but is shadowed by the conflicting DEVSY_PROVIDER_DOCKER_DOCKER_PATH environment override."
+        }
+      ]
+    }
+  ],
+  "actions": []
+}

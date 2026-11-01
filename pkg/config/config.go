@@ -242,7 +242,19 @@ func CloneConfig(config *Config) *Config {
 }
 
 func LoadConfig(contextOverride string, providerOverride string) (*Config, error) {
-	configOrigin, err := GetConfigPath()
+	return LoadConfigWithPathManager(DefaultPathManager(), contextOverride, providerOverride)
+}
+
+// LoadConfigWithPathManager loads a config snapshot. Path-resolution effects follow
+// pm's policy; use NewReadOnlyPathManager to avoid creating roots during loading.
+func LoadConfigWithPathManager(
+	pm PathManager,
+	contextOverride, providerOverride string,
+) (*Config, error) {
+	if pm == nil {
+		return nil, fmt.Errorf("load config: path manager is required")
+	}
+	configOrigin, err := pm.ConfigFilePath()
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +430,11 @@ func lockConfigWithDeletionTarget(target string) (func(), error) {
 // will actually be replaced by an atomic save. A dangling configured symlink
 // must fail rather than being replaced by a regular file.
 func getConfigMutationPath() (string, error) {
-	configPath, err := GetConfigPath()
+	return getConfigMutationPathWithPathManager(DefaultPathManager())
+}
+
+func getConfigMutationPathWithPathManager(pm PathManager) (string, error) {
+	configPath, err := pm.ConfigFilePath()
 	if err != nil {
 		return "", err
 	}

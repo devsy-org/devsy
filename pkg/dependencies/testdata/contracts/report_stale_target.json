@@ -1,0 +1,100 @@
+{
+  "schema": "devsy.dependencies.report.v1",
+  "schemaVersion": 1,
+  "surveyMode": "passive",
+  "executed": false,
+  "target": {
+    "contextName": "default",
+    "providerName": "microsandbox",
+    "providerType": "external",
+    "providerSourceId": "github.com/devsy-org/devsy-provider-microsandbox@v0.1.11",
+    "providerSourceKind": "canonical_external_release",
+    "adapterVersion": "v0.1.11",
+    "trustedBuiltinIdentity": true,
+    "configRevision": "cfg-rev-107",
+    "providerConfigRevision": "prov-rev-msb-07",
+    "staleAgainstRevision": "prov-rev-msb-08",
+    "evaluatedAt": "2026-10-19T05:06:00Z"
+  },
+  "host": {
+    "goos": "linux",
+    "goarch": "amd64",
+    "osVersion": "ubuntu-24.04",
+    "virtualizationCapability": "kvm_available"
+  },
+  "availability": "available",
+  "compatibility": "unknown",
+  "reachability": "not_checked",
+  "policy": "external_only",
+  "reasonCode": "dependency_selection_stale",
+  "message": "Passive dependency snapshot was evaluated against provider revision prov-rev-msb-07, which has been superseded by prov-rev-msb-08; illustrative prospective T08 path-pair options were not actively probed.",
+  "hint": "Refresh provider dependency status before applying any path selection or remediation action.",
+  "items": [
+    {
+      "id": "microsandbox-runtime-pair",
+      "displayName": "MicroSandbox Runtime Pair (msb + libkrunfw)",
+      "required": true,
+      "executed": false,
+      "availability": "available",
+      "compatibility": "unknown",
+      "reachability": "not_checked",
+      "policy": "external_only",
+      "reasonCode": "dependency_selection_stale",
+      "selectedPair": {
+        "msbLexicalPath": "/opt/microsandbox/msb",
+        "msbResolvedPath": "/opt/microsandbox/msb",
+        "libkrunfwLexicalPath": "/opt/microsandbox/libkrunfw.so.5.6.1",
+        "libkrunfwResolvedPath": "/opt/microsandbox/libkrunfw.so.5.6.1",
+        "sourceKind": "explicit_option"
+      },
+      "candidates": [
+        {
+          "component": "msb",
+          "sourceKind": "explicit_option",
+          "optionName": "MICROSANDBOX_PATH",
+          "lexicalPath": "/opt/microsandbox/msb",
+          "resolvedPath": "/opt/microsandbox/msb",
+          "isSymlink": false,
+          "observation": {
+            "fileIdentity": "illustrative-fid:linux-amd64:opt-msb-07a1",
+            "platform": "linux/amd64"
+          },
+          "executed": false,
+          "selected": true,
+          "availability": "available",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_selection_stale",
+          "detail": "Illustrative prospective T08 MICROSANDBOX_PATH binding captured at prov-rev-msb-07; passive survey does not execute runtime-check and v0.1.11 lacks G01 support."
+        },
+        {
+          "component": "libkrunfw",
+          "sourceKind": "explicit_option",
+          "optionName": "MICROSANDBOX_LIBKRUNFW_PATH",
+          "lexicalPath": "/opt/microsandbox/libkrunfw.so.5.6.1",
+          "resolvedPath": "/opt/microsandbox/libkrunfw.so.5.6.1",
+          "isSymlink": false,
+          "observation": {
+            "fileIdentity": "illustrative-fid:linux-amd64:opt-libkrunfw-5.6.1-07a2",
+            "platform": "linux/amd64"
+          },
+          "executed": false,
+          "selected": true,
+          "availability": "available",
+          "compatibility": "unknown",
+          "reasonCode": "dependency_selection_stale",
+          "detail": "Illustrative prospective T08 MICROSANDBOX_LIBKRUNFW_PATH binding captured at prov-rev-msb-07; superseded by prov-rev-msb-08."
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "kind": "select",
+      "label": "Select external MicroSandbox runtime paths",
+      "enabled": false,
+      "disabledReasonCode": "dependency_selection_stale",
+      "requiresEffectAuthorization": true,
+      "requiresConfirmation": true
+    }
+  ]
+}

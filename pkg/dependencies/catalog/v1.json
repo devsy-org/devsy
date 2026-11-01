@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "id": "devsy.dependencies.catalog.v1",
+  "managedStatus": "no_qualified_recipe",
+  "bindings": [
+    {
+      "id": "docker",
+      "source": {
+        "kind": "internal",
+        "internalId": "docker"
+      },
+      "executionContract": "internal_docker",
+      "adapterSemverRange": "",
+      "requiredRuntimeCheckSchema": 0,
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64",
+        "darwin/amd64",
+        "darwin/arm64",
+        "windows/amd64",
+        "windows/arm64"
+      ],
+      "guidanceId": "docker_setup",
+      "requirements": [
+        {
+          "toolId": "docker",
+          "purpose": "container_runtime",
+          "scope": "controller_host",
+          "requiredFor": ["create", "exec", "stop", "delete"],
+          "guidanceId": "docker_setup",
+          "executableOption": "DOCKER_PATH",
+          "probeId": "docker_version"
+        }
+      ]
+    },
+    {
+      "id": "podman",
+      "source": {
+        "kind": "internal",
+        "internalId": "podman"
+      },
+      "executionContract": "internal_podman",
+      "adapterSemverRange": "",
+      "requiredRuntimeCheckSchema": 0,
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64",
+        "darwin/amd64",
+        "darwin/arm64",
+        "windows/amd64",
+        "windows/arm64"
+      ],
+      "guidanceId": "podman_setup",
+      "requirements": [
+        {
+          "toolId": "podman",
+          "purpose": "container_runtime",
+          "scope": "controller_host",
+          "requiredFor": ["create", "exec", "stop", "delete"],
+          "guidanceId": "podman_setup",
+          "executableOption": "PODMAN_PATH",
+          "probeId": "podman_version"
+        }
+      ]
+    },
+    {
+      "id": "apple",
+      "source": {
+        "kind": "internal",
+        "internalId": "apple"
+      },
+      "executionContract": "internal_apple",
+      "adapterSemverRange": "",
+      "requiredRuntimeCheckSchema": 0,
+      "platforms": ["darwin/arm64"],
+      "guidanceId": "apple_container_setup",
+      "requirements": [
+        {
+          "toolId": "apple-container",
+          "purpose": "container_runtime",
+          "scope": "controller_host",
+          "requiredFor": ["create", "exec", "stop", "delete"],
+          "guidanceId": "apple_container_setup",
+          "executableOption": "CONTAINER_PATH",
+          "probeId": "container_version"
+        }
+      ]
+    },
+    {
+      "id": "kubernetes",
+      "source": {
+        "kind": "internal",
+        "internalId": "kubernetes"
+      },
+      "executionContract": "internal_kubernetes",
+      "adapterSemverRange": "",
+      "requiredRuntimeCheckSchema": 0,
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64",
+        "darwin/amd64",
+        "darwin/arm64",
+        "windows/amd64",
+        "windows/arm64"
+      ],
+      "guidanceId": "kubernetes_configuration",
+      "requirements": [
+        {
+          "toolId": "kubernetes-config",
+          "purpose": "cluster_configuration",
+          "scope": "controller_host",
+          "requiredFor": ["create", "exec", "stop", "delete"],
+          "guidanceId": "kubernetes_configuration",
+          "configurationOption": "KUBERNETES_CONFIG"
+        }
+      ]
+    },
+    {
+      "id": "microsandbox",
+      "source": {
+        "kind": "github",
+        "repository": "github.com/devsy-org/devsy-provider-microsandbox"
+      },
+      "executionContract": "external_microsandbox_v1",
+      "adapterSemverRange": "",
+      "requiredRuntimeCheckSchema": 1,
+      "platforms": ["linux/amd64", "linux/arm64", "darwin/arm64"],
+      "guidanceId": "microsandbox_setup",
+      "requirements": [
+        {
+          "toolId": "microsandbox",
+          "purpose": "microvm_runtime",
+          "scope": "controller_host",
+          "requiredFor": ["create", "exec", "stop", "delete"],
+          "guidanceId": "microsandbox_setup",
+          "probeId": "microsandbox_version"
+        },
+        {
+          "toolId": "docker",
+          "purpose": "image_backend",
+          "scope": "controller_host",
+          "requiredFor": ["create", "image-build"],
+          "probeId": "docker_version",
+          "guidanceId": "docker_setup",
+          "whenImageBackend": "docker"
+        }
+      ]
+    },
+    {
+      "id": "lima",
+      "source": {
+        "kind": "github",
+        "repository": "github.com/devsy-org/devsy-provider-lima"
+      },
+      "executionContract": "lima_exec_v1",
+      "adapterSemverRange": "",
+      "requiredRuntimeCheckSchema": 0,
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64",
+        "darwin/amd64",
+        "darwin/arm64"
+      ],
+      "guidanceId": "lima_setup",
+      "requirements": [
+        {
+          "toolId": "lima",
+          "purpose": "vm_runtime",
+          "scope": "controller_host",
+          "requiredFor": ["create", "exec", "stop", "delete"],
+          "guidanceId": "lima_setup",
+          "executableOption": "LIMA_PATH",
+          "probeId": "limactl_version"
+        }
+      ]
+    },
+    {
+      "id": "orbstack",
+      "source": {
+        "kind": "github",
+        "repository": "github.com/devsy-org/devsy-provider-orbstack"
+      },
+      "executionContract": "orbstack_exec_v1",
+      "adapterSemverRange": "",
+      "requiredRuntimeCheckSchema": 0,
+      "platforms": ["darwin/amd64", "darwin/arm64"],
+      "guidanceId": "orbstack_setup",
+      "requirements": [
+        {
+          "toolId": "orbstack",
+          "purpose": "vm_runtime",
+          "scope": "controller_host",
+          "requiredFor": ["create", "exec", "stop", "delete"],
+          "guidanceId": "orbstack_setup",
+          "executableOption": "ORBSTACK_PATH",
+          "probeId": "orbctl_version"
+        }
+      ]
+    }
+  ],
+  "recipes": []
+}
