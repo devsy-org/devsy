@@ -38,9 +38,10 @@ func NewIconCmd(flags *flags.GlobalFlags) *cobra.Command {
 	iconCmd := &cobra.Command{
 		Use:   "icon [name]",
 		Short: "Print a provider's cached icon as JSON",
-		Long: "Reads the icon cached for an installed provider. The result is always JSON: " +
-			"{revision, mimeType, dataBase64} for an image or {revision, missing: true} " +
-			"when the provider has no usable image for the theme. Never uses the network.",
+		Long: "Print a provider's cached icon as JSON.\n\n" +
+			"The output is {revision, mimeType, dataBase64} for an image, or " +
+			"{revision, missing: true} when the provider has no usable image for the " +
+			"theme. It never uses the network.",
 		Args:        cobra.ExactArgs(1),
 		Annotations: telemetry.SkipInUIAnnotation(),
 		RunE: func(_ *cobra.Command, args []string) error {

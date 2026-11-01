@@ -51,9 +51,10 @@ func NewCICmd(flags *flags.GlobalFlags) *cobra.Command {
 	ciCmd := &cobra.Command{
 		Use:   "ci [flags] [workspace-path|workspace-name] -- <cmd> [args...]",
 		Short: "Build a devcontainer, run a command inside it, then tear it down",
-		Long: `Builds an ephemeral devcontainer, runs the given command inside it, and
-deletes the workspace afterwards. A non-zero exit from that command propagates as the
-exit code of "devsy ci".`,
+		Long: `Build a devcontainer, run a command inside it, then tear it down.
+
+The workspace is deleted afterwards. A non-zero exit from the command is
+returned as the exit code of "devsy ci".`,
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			source, runCmd, err := splitArgs(cobraCmd, args, cmd.RunCmdString)
 			if err != nil {

@@ -35,8 +35,10 @@ func NewGenerateDocsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	generateDocsCmd := &cobra.Command{
 		Use:   "docs",
 		Short: "Generate markdown docs from feature metadata",
-		Long: `Scan a feature project's src/ directory and generate markdown
-documentation for each feature based on its devcontainer-feature.json.`,
+		Long: `Generate markdown docs from feature metadata.
+
+Scan a feature project's src/ directory and write markdown documentation
+for each feature from its devcontainer-feature.json.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {

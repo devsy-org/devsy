@@ -44,11 +44,11 @@ func NewTestCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	testCmd := &cobra.Command{
 		Use:   "test",
 		Short: "Test devcontainer features in isolation",
-		Long: `Run lifecycle hook tests for dev container features.
+		Long: `Test devcontainer features in isolation.
 
-Scans the project's src/ directory for features, builds test containers
-from a base image, installs each feature, and runs the corresponding
-test scripts from the test/ directory.`,
+Scan the project's src/ directory for features, build a test container from a
+base image, install each feature, and run its test scripts from the test/
+directory.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(_ *cobra.Command, _ []string) error {

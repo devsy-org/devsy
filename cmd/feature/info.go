@@ -44,11 +44,10 @@ func NewInfoCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	infoCmd := &cobra.Command{
 		Use:   "info <feature-id>",
 		Short: "Show OCI metadata for a published feature",
-		Long: `Fetch and display OCI metadata for a published dev container feature.
+		Long: `Show OCI metadata for a published feature.
 
-Accepts a feature ID like ghcr.io/devcontainers/features/go or
-ghcr.io/devcontainers/features/go:1 and pulls its OCI manifest
-to display metadata.`,
+Accept a feature ID such as ghcr.io/devcontainers/features/go or
+ghcr.io/devcontainers/features/go:1.`,
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
