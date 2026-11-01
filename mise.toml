@@ -10,7 +10,7 @@ locked = true
 go = "1.26.9"
 node = "24"
 golangci-lint = "2.14.0"
-prek = "0.5.3"
+prek = "0.5.4"
 protoc = "36.2"
 gh = "2.101.0"
 
