@@ -77,10 +77,10 @@ var (
 		logLabel:  "reverse port-forward",
 		forward: func(ctx context.Context, client *ssh.Client, mapping port.Mapping, timeout time.Duration) error {
 			return devssh.ReversePortForward(ctx, client, devssh.PortForwardOpts{
-				LocalNetwork:     mapping.Host.Protocol,
-				LocalAddr:        mapping.Host.Address,
-				RemoteNetwork:    mapping.Container.Protocol,
-				RemoteAddr:       mapping.Container.Address,
+				LocalNetwork:     mapping.Container.Protocol,
+				LocalAddr:        mapping.Container.Address,
+				RemoteNetwork:    mapping.Host.Protocol,
+				RemoteAddr:       mapping.Host.Address,
 				ExitAfterTimeout: timeout,
 			})
 		},
