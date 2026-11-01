@@ -11,10 +11,10 @@ import (
 
 func TestWorkspaceListEntryAddsPresentationFields(t *testing.T) {
 	ws := &provider.Workspace{
-		ID:           "node-js",
+		ID:           testWorkspaceName,
 		UID:          "uid-1",
-		DisplayName:  "Node JS",
-		SSHHostAlias: "node",
+		DisplayName:  testDisplayName,
+		SSHHostAlias: testSSHAlias,
 	}
 
 	encoded, err := json.Marshal(newWorkspaceListEntry(ws))
@@ -22,47 +22,51 @@ func TestWorkspaceListEntryAddsPresentationFields(t *testing.T) {
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(encoded, &got))
-	assert.Equal(t, "node-js", got["id"])
+	assert.Equal(t, testWorkspaceName, got["id"])
 	assert.Equal(t, "uid-1", got["uid"])
-	assert.Equal(t, "Node JS", got["displayName"])
-	assert.Equal(t, "node", got["sshHostAlias"])
+	assert.Equal(t, testDisplayName, got["displayName"])
+	assert.Equal(t, testSSHAlias, got["sshHostAlias"])
 	assert.Equal(t, "node.devsy", got["preferredSSHHost"])
 	assert.Equal(t, "node-js.devsy", got["canonicalSSHHost"])
 }
 
 func TestWorkspaceListEntryFallsBackToID(t *testing.T) {
-	ws := &provider.Workspace{ID: "node-js"}
+	ws := &provider.Workspace{ID: testWorkspaceName}
 
 	encoded, err := json.Marshal(newWorkspaceListEntry(ws))
 	require.NoError(t, err)
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(encoded, &got))
-	assert.Equal(t, "node-js", got["displayName"])
+	assert.Equal(t, testWorkspaceName, got["displayName"])
 	assert.Equal(t, "", got["sshHostAlias"])
 	assert.Equal(t, "node-js.devsy", got["preferredSSHHost"])
 	assert.Equal(t, "node-js.devsy", got["canonicalSSHHost"])
 }
 
 func TestWorkspaceListNameShowsLabelOnlyWhenDifferent(t *testing.T) {
-	assert.Equal(t, "node-js", workspaceListName(&provider.Workspace{ID: "node-js"}))
+	assert.Equal(
+		t,
+		testWorkspaceName,
+		workspaceListName(&provider.Workspace{ID: testWorkspaceName}),
+	)
 	assert.Equal(
 		t,
 		"Node JS (node-js)",
-		workspaceListName(&provider.Workspace{ID: "node-js", DisplayName: "Node JS"}),
+		workspaceListName(&provider.Workspace{ID: testWorkspaceName, DisplayName: testDisplayName}),
 	)
 }
 
 func TestDescribeRowsShowLabelAndHosts(t *testing.T) {
-	plain := describeRows(&provider.Workspace{ID: "node-js"}, "Running")
+	plain := describeRows(&provider.Workspace{ID: testWorkspaceName}, "Running")
 	assert.NotContains(t, rowFields(plain), "Label")
 	assert.NotContains(t, rowFields(plain), "Canonical SSH Host")
 	assert.Contains(t, rowFields(plain), "SSH Host")
 
 	aliased := describeRows(&provider.Workspace{
-		ID:           "node-js",
-		DisplayName:  "Node JS",
-		SSHHostAlias: "node",
+		ID:           testWorkspaceName,
+		DisplayName:  testDisplayName,
+		SSHHostAlias: testSSHAlias,
 	}, "Running")
 	assert.Contains(t, rowFields(aliased), "Label")
 	assert.Contains(t, rowFields(aliased), "Canonical SSH Host")

@@ -72,32 +72,17 @@ func resolveSymlinkTarget(path string) (string, error) {
 	return "", fmt.Errorf("resolve ssh config link %s: too many levels of symbolic links", path)
 }
 
-func writeFileAtomic(target string, data []byte) (retErr error) {
-	dir := filepath.Dir(target)
-	err := os.MkdirAll(dir, configDirMode)
-	if err != nil {
-		log.Debugf("error creating ssh directory: %v", err)
-	}
-
-	mode := defaultConfigMode
+func existingConfigMode(target string) os.FileMode {
 	info, err := os.Stat(target)
-	if err == nil {
-		mode = info.Mode().Perm()
-	}
-
-	temp, err := os.CreateTemp(dir, "."+filepath.Base(target)+".devsy-*")
 	if err != nil {
-		return fmt.Errorf("create temp ssh config: %w", err)
+		return defaultConfigMode
 	}
 
-	tempPath := temp.Name()
-	defer func() {
-		if retErr != nil {
-			_ = os.Remove(tempPath)
-		}
-	}()
+	return info.Mode().Perm()
+}
 
-	_, err = temp.Write(data)
+func fillTempConfig(temp *os.File, data []byte, mode os.FileMode) error {
+	_, err := temp.Write(data)
 	if err != nil {
 		_ = temp.Close()
 		return fmt.Errorf("write temp ssh config: %w", err)
@@ -118,6 +103,35 @@ func writeFileAtomic(target string, data []byte) (retErr error) {
 	err = temp.Close()
 	if err != nil {
 		return fmt.Errorf("close temp ssh config: %w", err)
+	}
+
+	return nil
+}
+
+func writeFileAtomic(target string, data []byte) (retErr error) {
+	dir := filepath.Dir(target)
+	err := os.MkdirAll(dir, configDirMode)
+	if err != nil {
+		log.Debugf("error creating ssh directory: %v", err)
+	}
+
+	mode := existingConfigMode(target)
+
+	temp, err := os.CreateTemp(dir, "."+filepath.Base(target)+".devsy-*")
+	if err != nil {
+		return fmt.Errorf("create temp ssh config: %w", err)
+	}
+
+	tempPath := temp.Name()
+	defer func() {
+		if retErr != nil {
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	err = fillTempConfig(temp, data, mode)
+	if err != nil {
+		return err
 	}
 
 	err = os.Rename(tempPath, target)

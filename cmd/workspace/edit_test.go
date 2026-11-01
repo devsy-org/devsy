@@ -13,6 +13,11 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const (
+	testDisplayName = "Node JS"
+	testSSHAlias    = "node"
+)
+
 type EditCmdSuite struct {
 	suite.Suite
 
@@ -32,36 +37,20 @@ func (s *EditCmdSuite) SetupTest() {
 	s.editErr = nil
 	s.out.Reset()
 	s.result = &workspace.PresentationResult{
-		ID:                   "node-js",
+		ID:                   testWorkspaceName,
 		UID:                  "uid-1",
 		Context:              "default",
-		DisplayName:          "Node JS",
-		SSHHostAlias:         "node",
-		EffectiveDisplayName: "Node JS",
+		DisplayName:          testDisplayName,
+		SSHHostAlias:         testSSHAlias,
+		EffectiveDisplayName: testDisplayName,
 		PreferredSSHHost:     "node.devsy",
 		CanonicalSSHHost:     "node-js.devsy",
 		SSHEntryUpdated:      true,
 	}
 }
 
-func (s *EditCmdSuite) newCmd(format string, args ...string) error {
-	globalFlags := &flags.GlobalFlags{ResultFormat: format}
-	cmd := newEditCmd(
-		globalFlags,
-		func(req workspace.PresentationRequest) (*workspace.PresentationResult, error) {
-			s.captured = req
-			return s.result, s.editErr
-		},
-	)
-	cmd.SetOut(&s.out)
-	cmd.SetErr(&s.out)
-	cmd.SetArgs(args)
-
-	return cmd.Execute()
-}
-
 func (s *EditCmdSuite) TestRequiresAnEditableFlag() {
-	err := s.newCmd(formatPlain, "node-js")
+	err := s.newCmd(formatPlain, testWorkspaceName)
 	s.Require().Error(err)
 	s.Contains(err.Error(), names.DisplayName)
 	s.Contains(err.Error(), names.SSHHostAlias)
@@ -69,16 +58,17 @@ func (s *EditCmdSuite) TestRequiresAnEditableFlag() {
 }
 
 func (s *EditCmdSuite) TestExpectedFlagsAloneAreNotEdits() {
-	err := s.newCmd(formatPlain, "node-js", "--"+names.ExpectedUID, "uid-1")
+	err := s.newCmd(formatPlain, testWorkspaceName, "--"+names.ExpectedUID, "uid-1")
 	s.Require().Error(err)
 }
 
 func (s *EditCmdSuite) TestOnlyChangedFlagsBecomePointers() {
-	s.Require().NoError(s.newCmd(formatPlain, "node-js", "--"+names.DisplayName, "Node JS"))
+	s.Require().
+		NoError(s.newCmd(formatPlain, testWorkspaceName, "--"+names.DisplayName, testDisplayName))
 
-	s.Equal("node-js", s.captured.ID)
+	s.Equal(testWorkspaceName, s.captured.ID)
 	s.Require().NotNil(s.captured.DisplayName)
-	s.Equal("Node JS", *s.captured.DisplayName)
+	s.Equal(testDisplayName, *s.captured.DisplayName)
 	s.Nil(s.captured.SSHHostAlias)
 	s.Nil(s.captured.ExpectedDisplayName)
 	s.Nil(s.captured.ExpectedSSHHostAlias)
@@ -87,7 +77,7 @@ func (s *EditCmdSuite) TestOnlyChangedFlagsBecomePointers() {
 
 func (s *EditCmdSuite) TestExplicitEmptyClearsOverride() {
 	s.Require().NoError(s.newCmd(
-		formatPlain, "node-js",
+		formatPlain, testWorkspaceName,
 		"--"+names.DisplayName, "",
 		"--"+names.SSHHostAlias, "",
 	))
@@ -100,8 +90,8 @@ func (s *EditCmdSuite) TestExplicitEmptyClearsOverride() {
 
 func (s *EditCmdSuite) TestExpectedFlagsPassThrough() {
 	s.Require().NoError(s.newCmd(
-		formatPlain, "node-js",
-		"--"+names.SSHHostAlias, "node",
+		formatPlain, testWorkspaceName,
+		"--"+names.SSHHostAlias, testSSHAlias,
 		"--"+names.ExpectedUID, "uid-1",
 		"--"+names.ExpectedDisplayName, "",
 		"--"+names.ExpectedSSHHostAlias, "old",
@@ -131,32 +121,35 @@ func (s *EditCmdSuite) TestExpectedFlagsAreHidden() {
 }
 
 func (s *EditCmdSuite) TestJSONOutputUsesCamelCaseResult() {
-	s.Require().NoError(s.newCmd(formatJSON, "node-js", "--"+names.DisplayName, "Node JS"))
+	s.Require().
+		NoError(s.newCmd(formatJSON, testWorkspaceName, "--"+names.DisplayName, testDisplayName))
 
 	var got map[string]any
 	s.Require().NoError(json.Unmarshal(s.out.Bytes(), &got))
-	s.Equal("node-js", got["id"])
+	s.Equal(testWorkspaceName, got["id"])
 	s.Equal("uid-1", got["uid"])
-	s.Equal("Node JS", got["displayName"])
-	s.Equal("node", got["sshHostAlias"])
-	s.Equal("Node JS", got["effectiveDisplayName"])
+	s.Equal(testDisplayName, got["displayName"])
+	s.Equal(testSSHAlias, got["sshHostAlias"])
+	s.Equal(testDisplayName, got["effectiveDisplayName"])
 	s.Equal("node.devsy", got["preferredSSHHost"])
 	s.Equal("node-js.devsy", got["canonicalSSHHost"])
 	s.Equal(true, got["sshEntryUpdated"])
 }
 
 func (s *EditCmdSuite) TestPlainOutputShowsLabelAndHosts() {
-	s.Require().NoError(s.newCmd(formatPlain, "node-js", "--"+names.DisplayName, "Node JS"))
+	s.Require().
+		NoError(s.newCmd(formatPlain, testWorkspaceName, "--"+names.DisplayName, testDisplayName))
 
 	text := s.out.String()
-	s.Contains(text, "Node JS")
+	s.Contains(text, testDisplayName)
 	s.Contains(text, "node.devsy")
 	s.Contains(text, "node-js.devsy")
 }
 
 func (s *EditCmdSuite) TestPlainOutputOmitsCanonicalWhenSame() {
 	s.result.PreferredSSHHost = s.result.CanonicalSSHHost
-	s.Require().NoError(s.newCmd(formatPlain, "node-js", "--"+names.DisplayName, "Node JS"))
+	s.Require().
+		NoError(s.newCmd(formatPlain, testWorkspaceName, "--"+names.DisplayName, testDisplayName))
 
 	s.NotContains(s.out.String(), "Canonical SSH Host")
 }
@@ -169,7 +162,7 @@ func (s *EditCmdSuite) TestPresentationErrorBecomesCLIError() {
 		Conflict: "other-ws",
 	}
 
-	err := s.newCmd(formatJSON, "node-js", "--"+names.DisplayName, "Dup")
+	err := s.newCmd(formatJSON, testWorkspaceName, "--"+names.DisplayName, "Dup")
 	s.Require().Error(err)
 
 	cliErr, ok := errors.AsType[*clierr.CLIError](err)
@@ -189,7 +182,7 @@ func (s *EditCmdSuite) TestPresentationErrorWithoutConflictOmitsKey() {
 		Message: "bad alias",
 	}
 
-	err := s.newCmd(formatPlain, "node-js", "--"+names.SSHHostAlias, "Bad Alias")
+	err := s.newCmd(formatPlain, testWorkspaceName, "--"+names.SSHHostAlias, "Bad Alias")
 	cliErr, ok := errors.AsType[*clierr.CLIError](err)
 	s.Require().True(ok)
 	s.Equal(map[string]string{"field": "sshHostAlias"}, cliErr.Context)
@@ -205,7 +198,7 @@ func (s *EditCmdSuite) TestJoinedRollbackErrorKeepsCodeAndFullMessage() {
 		errors.New("rollback failed"),
 	)
 
-	err := s.newCmd(formatPlain, "node-js", "--"+names.SSHHostAlias, "node")
+	err := s.newCmd(formatPlain, testWorkspaceName, "--"+names.SSHHostAlias, testSSHAlias)
 	cliErr, ok := errors.AsType[*clierr.CLIError](err)
 	s.Require().True(ok)
 	s.Equal(clierr.Code(workspace.PresentationCodeStale), cliErr.Code)
@@ -216,8 +209,24 @@ func (s *EditCmdSuite) TestJoinedRollbackErrorKeepsCodeAndFullMessage() {
 func (s *EditCmdSuite) TestOtherErrorsPassThrough() {
 	s.editErr = errors.New("boom")
 
-	err := s.newCmd(formatPlain, "node-js", "--"+names.DisplayName, "x")
+	err := s.newCmd(formatPlain, testWorkspaceName, "--"+names.DisplayName, "x")
 	s.Require().EqualError(err, "boom")
 	_, ok := errors.AsType[*clierr.CLIError](err)
 	s.False(ok)
+}
+
+func (s *EditCmdSuite) newCmd(format string, args ...string) error {
+	globalFlags := &flags.GlobalFlags{ResultFormat: format}
+	cmd := newEditCmd(
+		globalFlags,
+		func(req workspace.PresentationRequest) (*workspace.PresentationResult, error) {
+			s.captured = req
+			return s.result, s.editErr
+		},
+	)
+	cmd.SetOut(&s.out)
+	cmd.SetErr(&s.out)
+	cmd.SetArgs(args)
+
+	return cmd.Execute()
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -18,12 +19,12 @@ func ReplaceHostAliases(
 		return noop, false, err
 	}
 
-	_, err = os.Stat(target)
-	if errors.Is(err, fs.ErrNotExist) {
-		return noop, false, nil
-	}
+	exists, err := aliasTargetExists(target)
 	if err != nil {
-		return noop, false, fmt.Errorf("stat ssh config: %w", err)
+		return noop, false, err
+	}
+	if !exists {
+		return noop, false, nil
 	}
 
 	unlock, err := lockConfigFile(target)
@@ -32,7 +33,25 @@ func ReplaceHostAliases(
 	}
 	defer unlock()
 
-	original, err := os.ReadFile(target)
+	return rewriteAliasTarget(target, canonicalHost, preferredHost)
+}
+
+func aliasTargetExists(target string) (bool, error) {
+	_, err := os.Stat(target)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("stat ssh config: %w", err)
+	}
+
+	return true, nil
+}
+
+func rewriteAliasTarget(target, canonicalHost, preferredHost string) (func() error, bool, error) {
+	noop := func() error { return nil }
+
+	original, err := os.ReadFile(filepath.Clean(target))
 	if errors.Is(err, fs.ErrNotExist) {
 		return noop, false, nil
 	}

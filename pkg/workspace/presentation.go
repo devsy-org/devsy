@@ -160,6 +160,13 @@ func ValidatePresentation(
 		return nil
 	}
 
+	return validatePresentationConflicts(devsyConfig, id, label, alias)
+}
+
+func validatePresentationConflicts(
+	devsyConfig *config.Config,
+	id, label, alias string,
+) error {
 	others, err := listOtherWorkspaces(devsyConfig.DefaultContext, id)
 	if err != nil {
 		return err
@@ -186,12 +193,8 @@ func ValidatePresentation(
 }
 
 func EditPresentation(req PresentationRequest) (*PresentationResult, error) {
-	if req.DevsyConfig == nil || req.ID == "" {
-		return nil, newPresentationError(
-			PresentationFieldWorkspace,
-			PresentationCodeInvalid,
-			"a workspace id is required",
-		)
+	if err := requirePresentationID(req); err != nil {
+		return nil, err
 	}
 
 	unlock, err := lockPresentation()
@@ -209,21 +212,40 @@ func EditPresentation(req PresentationRequest) (*PresentationResult, error) {
 		return nil, err
 	}
 
-	aliasChanged := next.SSHHostAlias != current.SSHHostAlias
-	labelChanged := next.DisplayName != current.DisplayName
-	if err := checkPresentationConflicts(req, &next, labelChanged, aliasChanged); err != nil {
+	entryUpdated, err := persistPresentation(req, current, &next)
+	if err != nil {
 		return nil, err
 	}
 
-	entryUpdated := false
-	if labelChanged || aliasChanged {
-		entryUpdated, err = commitPresentation(current, &next, aliasChanged)
-		if err != nil {
-			return nil, err
-		}
+	return newPresentationResult(&next, entryUpdated), nil
+}
+
+func requirePresentationID(req PresentationRequest) error {
+	if req.DevsyConfig != nil && req.ID != "" {
+		return nil
 	}
 
-	return newPresentationResult(&next, entryUpdated), nil
+	return newPresentationError(
+		PresentationFieldWorkspace,
+		PresentationCodeInvalid,
+		"a workspace id is required",
+	)
+}
+
+func persistPresentation(
+	req PresentationRequest,
+	current, next *provider.Workspace,
+) (bool, error) {
+	aliasChanged := next.SSHHostAlias != current.SSHHostAlias
+	labelChanged := next.DisplayName != current.DisplayName
+	if err := checkPresentationConflicts(req, next, labelChanged, aliasChanged); err != nil {
+		return false, err
+	}
+	if !labelChanged && !aliasChanged {
+		return false, nil
+	}
+
+	return commitPresentation(current, next, aliasChanged)
 }
 
 func lockPresentation() (func(), error) {
@@ -275,32 +297,60 @@ func applyPresentationRequest(
 	req PresentationRequest,
 	current, next *provider.Workspace,
 ) error {
-	if req.ExpectedDisplayName != nil {
-		expected, err := NormalizeDisplayName(*req.ExpectedDisplayName)
-		if err != nil {
-			return err
-		}
-		if expected != current.DisplayName && expected != current.EffectiveDisplayName() {
-			return newPresentationError(
-				PresentationFieldDisplayName,
-				PresentationCodeStale,
-				"display name changed since it was loaded",
-			)
-		}
+	if err := checkExpectedDisplayName(req, current); err != nil {
+		return err
 	}
-	if req.ExpectedSSHHostAlias != nil {
-		expected, err := normalizeAliasForID(current.ID, *req.ExpectedSSHHostAlias)
-		if err != nil {
-			return err
-		}
-		if expected != current.SSHHostAlias {
-			return newPresentationError(
-				PresentationFieldSSHHostAlias,
-				PresentationCodeStale,
-				"ssh host alias changed since it was loaded",
-			)
-		}
+	if err := checkExpectedSSHHostAlias(req, current); err != nil {
+		return err
 	}
+
+	return applyPresentationChanges(req, current, next)
+}
+
+func checkExpectedDisplayName(req PresentationRequest, current *provider.Workspace) error {
+	if req.ExpectedDisplayName == nil {
+		return nil
+	}
+
+	expected, err := NormalizeDisplayName(*req.ExpectedDisplayName)
+	if err != nil {
+		return err
+	}
+	if expected != current.DisplayName && expected != current.EffectiveDisplayName() {
+		return newPresentationError(
+			PresentationFieldDisplayName,
+			PresentationCodeStale,
+			"display name changed since it was loaded",
+		)
+	}
+
+	return nil
+}
+
+func checkExpectedSSHHostAlias(req PresentationRequest, current *provider.Workspace) error {
+	if req.ExpectedSSHHostAlias == nil {
+		return nil
+	}
+
+	expected, err := normalizeAliasForID(current.ID, *req.ExpectedSSHHostAlias)
+	if err != nil {
+		return err
+	}
+	if expected != current.SSHHostAlias {
+		return newPresentationError(
+			PresentationFieldSSHHostAlias,
+			PresentationCodeStale,
+			"ssh host alias changed since it was loaded",
+		)
+	}
+
+	return nil
+}
+
+func applyPresentationChanges(
+	req PresentationRequest,
+	current, next *provider.Workspace,
+) error {
 	if req.DisplayName != nil {
 		label, err := NormalizeDisplayName(*req.DisplayName)
 		if err != nil {
@@ -334,14 +384,28 @@ func checkPresentationConflicts(
 	if err != nil {
 		return err
 	}
+
+	return checkNextConflicts(others, next, needsLabel, needsAlias)
+}
+
+func checkNextConflicts(
+	others []*provider.Workspace,
+	next *provider.Workspace,
+	needsLabel, needsAlias bool,
+) error {
 	if needsLabel {
 		if err := checkLabelConflict(others, next.DisplayName); err != nil {
 			return err
 		}
 	}
-	if !needsAlias {
-		return nil
+	if needsAlias {
+		return checkNextAliasConflicts(others, next)
 	}
+
+	return nil
+}
+
+func checkNextAliasConflicts(others []*provider.Workspace, next *provider.Workspace) error {
 	if err := checkAliasWorkspaceConflict(others, next.SSHHostAlias); err != nil {
 		return err
 	}

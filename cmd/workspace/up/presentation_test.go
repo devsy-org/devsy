@@ -10,17 +10,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testDetachFlag   = "--detach"
+	testDisplayLabel = "My Label"
+)
+
 func TestDetachedArgsKeepPresentationFlags(t *testing.T) {
 	got := detachedArgs([]string{
 		testRepoArg,
-		"--detach",
-		names.Flag(names.DisplayName), "My Label",
+		testDetachFlag,
+		names.Flag(names.DisplayName), testDisplayLabel,
 		names.FlagValue(names.SSHHostAlias, "short"),
 	})
 
 	assert.Equal(t, []string{
 		testRepoArg,
-		names.Flag(names.DisplayName), "My Label",
+		names.Flag(names.DisplayName), testDisplayLabel,
 		names.FlagValue(names.SSHHostAlias, "short"),
 	}, got)
 }
@@ -29,14 +34,14 @@ func TestUpCmdRegistersPresentationFlags(t *testing.T) {
 	cmd := NewUpCmd(&flags.GlobalFlags{})
 
 	require.NoError(t, cmd.ParseFlags([]string{
-		names.Flag(names.DisplayName), "My Label",
+		names.Flag(names.DisplayName), testDisplayLabel,
 		names.Flag(names.SSHHostAlias), "short",
 	}))
 	display, err := cmd.Flags().GetString(names.DisplayName)
 	require.NoError(t, err)
 	alias, err := cmd.Flags().GetString(names.SSHHostAlias)
 	require.NoError(t, err)
-	assert.Equal(t, "My Label", display)
+	assert.Equal(t, testDisplayLabel, display)
 	assert.Equal(t, "short", alias)
 }
 

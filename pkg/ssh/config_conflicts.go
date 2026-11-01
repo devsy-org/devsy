@@ -97,31 +97,47 @@ func (c *conflictScan) scanFile(path string, depth int) error {
 	}
 	c.visited[path] = struct{}{}
 
+	return c.scanLines(path, lines, depth)
+}
+
+func (c *conflictScan) scanLines(path string, lines []string, depth int) error {
 	inOwn := false
 	for _, line := range lines {
-		switch {
-		case isMarkerLine(line, c.ownMarker):
-			inOwn = true
-			continue
-		case isMarkerLine(line, c.ownEnd):
-			inOwn = false
-			continue
-		case inOwn:
+		var skip bool
+		inOwn, skip = c.trackOwnBlock(line, inOwn)
+		if skip {
 			continue
 		}
 
-		switch strings.ToLower(sshConfigKeyword(line)) {
-		case "host":
-			c.recordHosts(path, line)
-		case "include":
-			err = c.followIncludes(path, line, depth)
-			if err != nil {
-				return err
-			}
+		err := c.scanLine(path, line, depth)
+		if err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+func (c *conflictScan) scanLine(path, line string, depth int) error {
+	switch strings.ToLower(sshConfigKeyword(line)) {
+	case "host":
+		c.recordHosts(path, line)
+	case "include":
+		return c.followIncludes(path, line, depth)
+	}
+
+	return nil
+}
+
+func (c *conflictScan) trackOwnBlock(line string, inOwn bool) (bool, bool) {
+	switch {
+	case isMarkerLine(line, c.ownMarker):
+		return true, true
+	case isMarkerLine(line, c.ownEnd):
+		return false, true
+	default:
+		return inOwn, inOwn
+	}
 }
 
 func (c *conflictScan) recordHosts(path, line string) {
@@ -190,7 +206,7 @@ func (c *conflictScan) expandIncludePattern(pattern string) string {
 }
 
 func readConfigLines(path string) ([]string, error) {
-	file, err := os.Open(path)
+	file, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return nil, err
 	}

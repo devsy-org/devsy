@@ -38,23 +38,6 @@ func (s *SSHAliasTestSuite) SetupTest() {
 	s.cfgPath = filepath.Join(s.sshDir, "config")
 }
 
-func (s *SSHAliasTestSuite) write(path, content string) {
-	s.Require().NoError(os.MkdirAll(filepath.Dir(path), 0o700))
-	s.Require().NoError(os.WriteFile(path, []byte(content), 0o600))
-}
-
-func (s *SSHAliasTestSuite) read(path string) string {
-	data, err := os.ReadFile(path)
-	s.Require().NoError(err)
-
-	return string(data)
-}
-
-func (s *SSHAliasTestSuite) managedBlock(host string) string {
-	return MarkerStartPrefix + host + "\nHost " + host + "\n  User " + aliasTestUser + "\n" +
-		MarkerEndPrefix + host
-}
-
 func (s *SSHAliasTestSuite) TestDualHostLineProxyCommand() {
 	result, err := addHostSection("", aliasTestExec, addHostParams{
 		host:          aliasCanonicalHost,
@@ -222,7 +205,7 @@ func (s *SSHAliasTestSuite) TestReplaceHostAliasesFollowsSymlinkAndKeepsMode() {
 
 	realPath := filepath.Join(s.home, "real_config")
 	s.write(realPath, s.managedBlock(aliasCanonicalHost)+"\n")
-	s.Require().NoError(os.Chmod(realPath, 0o640))
+	s.Require().NoError(os.Chmod(realPath, 0o400))
 	s.Require().NoError(os.Symlink(realPath, s.cfgPath))
 
 	_, updated, err := ReplaceHostAliases(s.cfgPath, "", aliasCanonicalHost, aliasPreferredHost)
@@ -236,7 +219,7 @@ func (s *SSHAliasTestSuite) TestReplaceHostAliasesFollowsSymlinkAndKeepsMode() {
 
 	realInfo, err := os.Stat(realPath)
 	s.Require().NoError(err)
-	s.Equal(os.FileMode(0o640), realInfo.Mode().Perm())
+	s.Equal(os.FileMode(0o400), realInfo.Mode().Perm())
 }
 
 func (s *SSHAliasTestSuite) TestFindHostConflictsExcludesOwnBlock() {
@@ -362,4 +345,21 @@ func (s *SSHAliasTestSuite) TestFindHostConflictsUnreadableIncludeFails() {
 
 	_, err := FindHostConflicts(s.cfgPath, "", []string{aliasPreferredHost}, aliasCanonicalHost)
 	s.Error(err)
+}
+
+func (s *SSHAliasTestSuite) write(path, content string) {
+	s.Require().NoError(os.MkdirAll(filepath.Dir(path), 0o700))
+	s.Require().NoError(os.WriteFile(path, []byte(content), 0o600))
+}
+
+func (s *SSHAliasTestSuite) read(path string) string {
+	data, err := os.ReadFile(filepath.Clean(path))
+	s.Require().NoError(err)
+
+	return string(data)
+}
+
+func (s *SSHAliasTestSuite) managedBlock(host string) string {
+	return MarkerStartPrefix + host + "\nHost " + host + "\n  User " + aliasTestUser + "\n" +
+		MarkerEndPrefix + host
 }
