@@ -30,6 +30,8 @@ import (
 	clienttesting "k8s.io/client-go/testing"
 )
 
+const testDiskSize = "1Gi"
+
 const (
 	testNamespace             = "devsy-test"
 	testPodID                 = "devsy-ws"
@@ -59,7 +61,7 @@ func newFakeCluster(t *testing.T, objects ...runtime.Object) *fakeCluster {
 			namespace: testNamespace,
 			options: &provider2.ProviderKubernetesDriverConfig{
 				PodTimeout: "2s",
-				DiskSize:   "1Gi",
+				DiskSize:   testDiskSize,
 			},
 			agentConfig: &provider2.ProviderAgentConfig{},
 		},
@@ -233,7 +235,7 @@ func TestReconcileReusesPodWhenOnlyImageConfigFileChanged(t *testing.T) {
 		phase: corev1.PodRunning,
 		options: &provider2.ProviderKubernetesDriverConfig{
 			PodTimeout:      "2s",
-			DiskSize:        "1Gi",
+			DiskSize:        testDiskSize,
 			ImageConfigFile: "/old/image-config.json",
 		},
 		devsy: &corev1.ContainerStatus{
@@ -250,7 +252,7 @@ func TestReconcileReusesPodWhenOnlyImageConfigFileChanged(t *testing.T) {
 
 func TestWithoutLocalOptionsDropsImageConfigFile(t *testing.T) {
 	options := &provider2.ProviderKubernetesDriverConfig{
-		DiskSize:        "1Gi",
+		DiskSize:        testDiskSize,
 		ImageConfigFile: "/home/me/image-config.json",
 	}
 
@@ -258,7 +260,7 @@ func TestWithoutLocalOptionsDropsImageConfigFile(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotContains(t, string(raw), "imageConfigFile")
-	assert.Contains(t, string(raw), "1Gi")
+	assert.Contains(t, string(raw), testDiskSize)
 	assert.Equal(t, "/home/me/image-config.json", options.ImageConfigFile)
 }
 

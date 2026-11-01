@@ -29,7 +29,7 @@ const (
 	testArch       = "amd64"
 )
 
-var testComposeArgs = []string{"build"}
+var testComposeArgs = []string{overlayBuildField}
 
 func recordedContext(t *testing.T) (context.Context, *workspacelogs.Store, string) {
 	t.Helper()

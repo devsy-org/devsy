@@ -874,7 +874,7 @@ func TestComposeBuildArgsIncludesCoreArgs(t *testing.T) {
 		overrideComposeFilePath: "/tmp/override.yml",
 	})
 
-	for _, want := range []string{composeProjectNameFlag, "ws", "build", "/tmp/override.yml"} {
+	for _, want := range []string{composeProjectNameFlag, "ws", overlayBuildField, "/tmp/override.yml"} {
 		if !slices.Contains(args, want) {
 			t.Errorf("expected %q in %v", want, args)
 		}
