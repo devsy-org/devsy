@@ -262,6 +262,57 @@ var _ = ginkgo.Describe(
 				err = f.DevsyProviderDelete(ctx, providerName)
 				framework.ExpectNoError(err)
 			})
+
+		ginkgo.It("should edit label and ssh alias of a running workspace without recreating it",
+			ginkgo.SpecTimeout(framework.TimeoutModerate()),
+			func(ctx context.Context) {
+				providerName := "rename-provider7"
+				workspaceName := "rename-ws7"
+				otherWorkspaceName := "rename-ws7b"
+
+				f := setupNoDevcontainerWorkspace(ctx, initialDir, providerName, workspaceName)
+				before, err := f.FindWorkspace(ctx, workspaceName)
+				framework.ExpectNoError(err)
+
+				err = f.DevsyWorkspaceEdit(ctx, workspaceName,
+					"--display-name", "My Horse Social Network", "--ssh-host-alias", "my-project")
+				framework.ExpectNoError(err)
+
+				after, err := f.FindWorkspace(ctx, workspaceName)
+				framework.ExpectNoError(err)
+				gomega.Expect(after.ID).To(gomega.Equal(workspaceName))
+				gomega.Expect(after.UID).To(gomega.Equal(before.UID))
+				gomega.Expect(after.DisplayName).To(gomega.Equal("My Horse Social Network"))
+				gomega.Expect(after.SSHHostAlias).To(gomega.Equal("my-project"))
+
+				status, err := f.DevsyStatus(ctx, workspaceName)
+				framework.ExpectNoError(err)
+				gomega.Expect(string(status.State)).To(gomega.Equal("Running"))
+
+				tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", initialDir)
+				err = f.DevsyUp(ctx, tempDir, "--id", otherWorkspaceName)
+				framework.ExpectNoError(err)
+
+				err = f.DevsyWorkspaceEdit(ctx, otherWorkspaceName,
+					"--display-name", "my horse social network")
+				framework.ExpectError(err)
+				err = f.DevsyWorkspaceEdit(
+					ctx,
+					otherWorkspaceName,
+					"--ssh-host-alias",
+					"my-project",
+				)
+				framework.ExpectError(err)
+				err = f.DevsyWorkspaceEdit(ctx, workspaceName, "--ssh-host-alias", "")
+				framework.ExpectNoError(err)
+
+				err = f.DevsyWorkspaceDelete(ctx, otherWorkspaceName)
+				framework.ExpectNoError(err)
+				err = f.DevsyWorkspaceDelete(ctx, workspaceName)
+				framework.ExpectNoError(err)
+				err = f.DevsyProviderDelete(ctx, providerName)
+				framework.ExpectNoError(err)
+			})
 	})
 
 func setupNoDevcontainerWorkspace(

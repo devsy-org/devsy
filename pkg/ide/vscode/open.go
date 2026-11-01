@@ -28,7 +28,7 @@ const containersExtension = "ms-vscode-remote.remote-containers"
 const remoteFolderScheme = "vscode-remote"
 
 type OpenParams struct {
-	Workspace         string
+	SSHHost           string
 	Folder            string
 	NewWindow         bool
 	Flavor            Flavor
@@ -335,7 +335,7 @@ func (l hostLauncher) openViaURI(params OpenParams) error {
 	}
 
 	folder := strings.TrimPrefix(params.Folder, "/")
-	pathStr := fmt.Sprintf("/ssh-remote+%s"+pkgconfig.SSHHostSuffix+"/%s", params.Workspace, folder)
+	pathStr := "/ssh-remote+" + params.SSHHost + "/" + folder
 	u := &url.URL{
 		Scheme: config.scheme,
 		Host:   remoteFolderScheme,
@@ -385,7 +385,7 @@ func (l hostLauncher) openViaCLI(ctx context.Context, params OpenParams, fields 
 		}
 	}
 
-	args := buildOpenArgs(params.Workspace, params.Folder, params.NewWindow, hasContainersExtension)
+	args := buildOpenArgs(params.SSHHost, params.Folder, params.NewWindow, hasContainersExtension)
 	log.Debugw("dispatching launch request",
 		append(fields, "route", routeCLI, "stage", stageCLIDispatch)...)
 	if _, err := l.run(ctx, cliPath, args...); err != nil {
@@ -481,7 +481,7 @@ func (l hostLauncher) ensureSSHExtension(ctx context.Context, cliPath, sshExtens
 	return nil
 }
 
-func buildOpenArgs(workspace, folder string, newWindow, hasContainersExtension bool) []string {
+func buildOpenArgs(sshHost, folder string, newWindow, hasContainersExtension bool) []string {
 	args := make([]string, 0, 4)
 
 	if hasContainersExtension {
@@ -496,7 +496,7 @@ func buildOpenArgs(workspace, folder string, newWindow, hasContainersExtension b
 
 	u := &url.URL{
 		Scheme: remoteFolderScheme,
-		Host:   "ssh-remote+" + workspace + pkgconfig.SSHHostSuffix,
+		Host:   "ssh-remote+" + sshHost,
 		Path:   strings.TrimPrefix(folder, "/"),
 	}
 	folderURI := u.String()

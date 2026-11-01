@@ -66,6 +66,7 @@ flags before using them.
 | --- | --- |
 | `devsy workspace build <name-or-source>` | Build/prebuild the workspace environment; publishing behavior depends on flags/configuration. Inspect help and requested destination first. |
 | `devsy workspace rename <current-name> <new-name>` | Change workspace identity; refresh discovery afterward. |
+| `devsy workspace edit <id> [--display-name <label>] [--ssh-host-alias <alias>]` | Change the display label and preferred SSH host without renaming or recreating. The canonical `<id>.devsy` host stays valid. |
 | `devsy workspace set-ide <name> <ide>` | Change the configured IDE. |
 | `devsy workspace export <name>` | Hidden command exporting configuration JSON, **not a data backup**. |
 | `devsy workspace import --data '<exported-json>'` | Hidden configuration import; validate intended identities/provider references first. |

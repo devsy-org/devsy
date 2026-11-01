@@ -516,6 +516,121 @@ describe("WorkspaceWizard", () => {
     unmount()
   })
 
+  describe("display label and SSH alias", () => {
+    const field = (id: string) =>
+      document.querySelector(`#${id}`) as HTMLInputElement
+
+    async function reviewStep() {
+      providers.set([makeProvider("docker")])
+      const view = render(WorkspaceWizard, { props: { open: true } })
+      await flushAsync()
+      await advanceToReview(view.getByText)
+      return view
+    }
+
+    it("prefills label and alias from the proposed ID without sending them", async () => {
+      const { unmount } = await reviewStep()
+      expect(field("workspace-display-label").value).toBe("python")
+      expect(field("workspace-ssh-alias").value).toBe("python")
+      await fireEvent.click(getLaunchButton())
+      await flushAsync()
+      expect(workspaceUp).toHaveBeenCalledOnce()
+      const args = workspaceUp.mock.calls[0][0]
+      expect(args.workspaceId).toBe("python")
+      expect(args.displayName).toBeUndefined()
+      expect(args.sshHostAlias).toBeUndefined()
+      unmount()
+    })
+
+    it("follows the proposed ID until the user edits the field", async () => {
+      const { unmount } = await reviewStep()
+      await fireEvent.input(field("workspace-name"), {
+        target: { value: "renamed" },
+      })
+      await flushAsync()
+      expect(field("workspace-display-label").value).toBe("renamed")
+      await fireEvent.input(field("workspace-display-label"), {
+        target: { value: "My Python Box" },
+      })
+      await fireEvent.input(field("workspace-name"), {
+        target: { value: "again" },
+      })
+      await flushAsync()
+      expect(field("workspace-display-label").value).toBe("My Python Box")
+      unmount()
+    })
+
+    it("sends explicit values verbatim, independent of the internal ID", async () => {
+      workspaces.set([{ id: "python" }])
+      const { unmount } = await reviewStep()
+      const generatedId = field("workspace-name").value
+      expect(generatedId).not.toBe("python")
+      await fireEvent.input(field("workspace-display-label"), {
+        target: { value: "  Python Box  " },
+      })
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "pybox" },
+      })
+      await flushAsync()
+      await fireEvent.click(getLaunchButton())
+      await flushAsync()
+      expect(workspaceUp).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: generatedId,
+          displayName: "Python Box",
+          sshHostAlias: "pybox",
+        }),
+      )
+      unmount()
+    })
+
+    it("shows label conflicts before launch and blocks Launch", async () => {
+      workspaces.set([{ id: "other", displayName: "Taken" } as never])
+      const { unmount } = await reviewStep()
+      await fireEvent.input(field("workspace-display-label"), {
+        target: { value: "taken" },
+      })
+      await flushAsync()
+      const input = field("workspace-display-label")
+      expect(input.getAttribute("aria-invalid")).toBe("true")
+      expect(input.getAttribute("aria-describedby")).toContain(
+        "workspace-display-label-error",
+      )
+      expect(
+        document.querySelector("#workspace-display-label-error")?.textContent,
+      ).toContain("other")
+      expect(getLaunchButton().disabled).toBe(true)
+      unmount()
+    })
+
+    it("shows alias conflicts and validation errors before launch", async () => {
+      workspaces.set([{ id: "other", sshHostAlias: "dev" } as never])
+      const { unmount } = await reviewStep()
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "dev" },
+      })
+      await flushAsync()
+      expect(
+        document.querySelector("#workspace-ssh-alias-error")?.textContent,
+      ).toContain("already used")
+      expect(getLaunchButton().disabled).toBe(true)
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "Bad.Alias" },
+      })
+      await flushAsync()
+      expect(field("workspace-ssh-alias").getAttribute("aria-invalid")).toBe(
+        "true",
+      )
+      expect(getLaunchButton().disabled).toBe(true)
+      await fireEvent.input(field("workspace-ssh-alias"), {
+        target: { value: "fresh" },
+      })
+      await flushAsync()
+      expect(getLaunchButton().disabled).toBe(false)
+      unmount()
+    })
+  })
+
   it("registers the progress listener before awaiting workspaceUp", async () => {
     providers.set([makeProvider("docker")])
     let listenerRegisteredBeforeUp = false

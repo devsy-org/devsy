@@ -294,6 +294,7 @@ test.describe
     test("can rename a workspace", async () => {
       // We're on the node-js detail page after stopping it
 
+      await page.getByText("Technical details").click()
       await page.locator('[data-slot="workspace-rename-btn"]').click()
 
       const renameInput = page.locator('[data-slot="workspace-rename-input"]')

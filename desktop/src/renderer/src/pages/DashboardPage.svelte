@@ -11,6 +11,7 @@ import { activeContext } from "$lib/stores/contexts.js"
 import { workspaceStop } from "$lib/ipc/commands.js"
 import { toasts } from "$lib/stores/toasts.js"
 import { extractErrorMessage } from "$lib/utils/error.js"
+import { workspaceLabel } from "$lib/utils/workspaceLabel.js"
 
 let loading = $derived(
   $workspacesLoading || $providersLoading || $machinesLoading,
@@ -126,7 +127,7 @@ async function quickStop(wsId: string) {
                   class="min-w-0 truncate font-medium hover:underline text-left"
                   onclick={() => goto(`/workspaces/${ws.id}`)}
                 >
-                  {ws.id}
+                  {workspaceLabel(ws)}
                 </button>
                 <div class="flex shrink-0 gap-1">
                   <Button variant="outline" size="sm" onclick={() => goto(`/workspaces/${ws.id}`)}>

@@ -90,9 +90,34 @@ func sortWorkspacesByLastUsed(workspaces []*provider.Workspace) {
 	})
 }
 
+type workspaceListEntry struct {
+	*provider.Workspace
+	DisplayName      string `json:"displayName"`
+	SSHHostAlias     string `json:"sshHostAlias"`
+	PreferredSSHHost string `json:"preferredSSHHost"`
+	CanonicalSSHHost string `json:"canonicalSSHHost"`
+}
+
+func newWorkspaceListEntry(ws *provider.Workspace) *workspaceListEntry {
+	return &workspaceListEntry{
+		Workspace:        ws,
+		DisplayName:      ws.EffectiveDisplayName(),
+		SSHHostAlias:     ws.SSHHostAlias,
+		PreferredSSHHost: ws.PreferredSSHHost(),
+		CanonicalSSHHost: ws.CanonicalSSHHost(),
+	}
+}
+
 func printJSONWorkspaces(workspaces []*provider.Workspace) error {
 	sortWorkspacesByLastUsed(workspaces)
-	out, err := json.Marshal(workspaces)
+	var entries []*workspaceListEntry
+	if workspaces != nil {
+		entries = make([]*workspaceListEntry, 0, len(workspaces))
+	}
+	for _, ws := range workspaces {
+		entries = append(entries, newWorkspaceListEntry(ws))
+	}
+	out, err := json.Marshal(entries)
 	if err != nil {
 		return err
 	}
@@ -100,15 +125,19 @@ func printJSONWorkspaces(workspaces []*provider.Workspace) error {
 	return nil
 }
 
+func workspaceListName(ws *provider.Workspace) string {
+	label := ws.EffectiveDisplayName()
+	if label == ws.ID {
+		return ws.ID
+	}
+	return fmt.Sprintf("%s (%s)", label, ws.ID)
+}
+
 func printPlainWorkspaces(workspaces []*provider.Workspace) {
 	sortWorkspacesByLastUsed(workspaces)
 	tableEntries := [][]string{}
 	for _, entry := range workspaces {
-		name := entry.ID
-		if entry.IsPlatform() && entry.Platform.DisplayName != "" &&
-			entry.ID != entry.Platform.DisplayName {
-			name = fmt.Sprintf("%s (%s)", entry.Platform.DisplayName, entry.ID)
-		}
+		name := workspaceListName(entry)
 		tableEntries = append(tableEntries, []string{
 			name,
 			entry.Source.String(),

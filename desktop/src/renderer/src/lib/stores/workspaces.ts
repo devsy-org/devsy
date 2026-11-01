@@ -12,6 +12,7 @@ import {
   workspaceConfirmedToast,
   workspaceFailedHeadline,
 } from "$shared/workspace-operation.js"
+import type { WorkspacePresentationResult } from "$shared/workspace-presentation.js"
 import { toasts } from "./toasts.js"
 
 export const workspaces = writable<Workspace[]>([])
@@ -107,4 +108,24 @@ export function destroyWorkspaces() {
   seeded = false
   unlisten?.()
   unlisten = null
+}
+
+export function applyWorkspacePresentation(
+  result: WorkspacePresentationResult,
+) {
+  workspaces.update((list) =>
+    list.map((workspace) =>
+      workspace.id === result.id &&
+      workspace.uid === result.uid &&
+      (workspace.context ?? result.context) === result.context
+        ? {
+            ...workspace,
+            displayName: result.displayName || undefined,
+            sshHostAlias: result.sshHostAlias || undefined,
+            preferredSSHHost: result.preferredSSHHost,
+            canonicalSSHHost: result.canonicalSSHHost,
+          }
+        : workspace,
+    ),
+  )
 }

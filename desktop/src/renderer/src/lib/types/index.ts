@@ -25,6 +25,12 @@ export interface WorkspaceProviderConfig {
   options?: Record<string, OptionValue>
 }
 
+export interface WorkspacePlatformMetadata {
+  instanceName?: string
+  project?: string
+  displayName?: string
+}
+
 export interface Workspace {
   id: string
   uid?: string
@@ -37,6 +43,11 @@ export interface Workspace {
   lastUsed?: string
   context?: string
   status?: string
+  displayName?: string
+  sshHostAlias?: string
+  preferredSSHHost?: string
+  canonicalSSHHost?: string
+  pro?: WorkspacePlatformMetadata
 }
 
 export type OptionValue = string | number | boolean

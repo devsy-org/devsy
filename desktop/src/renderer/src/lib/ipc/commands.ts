@@ -27,6 +27,14 @@ import type {
   ProviderIconReply,
   ProviderIconRequest,
 } from "$shared/provider-icon.js"
+import type {
+  WorkspacePresentationErrorCode,
+  WorkspacePresentationFailure,
+  WorkspacePresentationField,
+  WorkspacePresentationReply,
+  WorkspacePresentationRequest,
+  WorkspacePresentationResult,
+} from "$shared/workspace-presentation.js"
 import { invoke } from "./bridge.js"
 
 type CommandEnvelope =
@@ -67,6 +75,8 @@ export function workspaceRefresh(workspaceId: string): Promise<void> {
 export async function workspaceUp(params: {
   source: string
   workspaceId?: string
+  displayName?: string
+  sshHostAlias?: string
   provider?: string
   ide?: string
   ideLaunch?: "auto" | "headless" | "skip"
@@ -120,6 +130,30 @@ export async function workspaceRename(
   newWorkspaceId: string,
 ): Promise<void> {
   return invoke("workspace_rename", { workspaceId, newWorkspaceId })
+}
+
+export class WorkspaceEditError extends Error {
+  readonly field: WorkspacePresentationField
+  readonly code: WorkspacePresentationErrorCode
+  readonly conflict?: string
+
+  constructor(failure: WorkspacePresentationFailure) {
+    super(failure.message)
+    this.name = "WorkspaceEditError"
+    this.field = failure.field
+    this.code = failure.code
+    this.conflict = failure.conflict
+  }
+}
+
+export async function workspaceEdit(
+  request: WorkspacePresentationRequest,
+): Promise<WorkspacePresentationResult> {
+  const reply = await invoke<WorkspacePresentationReply>("workspace_edit", {
+    ...request,
+  })
+  if (!reply.ok) throw new WorkspaceEditError(reply)
+  return reply.result
 }
 
 export async function workspaceSetIde(

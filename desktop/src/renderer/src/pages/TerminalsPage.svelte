@@ -19,6 +19,7 @@ import {
 } from "$lib/stores/terminals.js"
 import { destroyTerminalInstance } from "$lib/stores/terminal-instances.js"
 import { workspaces } from "$lib/stores/workspaces.js"
+import { workspaceLabel } from "$lib/utils/workspaceLabel.js"
 import TerminalComponent from "$lib/components/terminal/Terminal.svelte"
 import { Button } from "$lib/components/ui/button/index.js"
 import { Input } from "$lib/components/ui/input/index.js"
@@ -190,7 +191,7 @@ function handleExit() {
             {#each runningWorkspaces as ws (ws.id)}
               <DropdownMenu.Item onclick={() => createSsh(ws.id)}>
                 <Monitor class="mr-2 h-4 w-4" />
-                {ws.id}
+                {workspaceLabel(ws)}
               </DropdownMenu.Item>
             {/each}
           </DropdownMenu.Content>
@@ -239,7 +240,7 @@ function handleExit() {
                 {#each runningWorkspaces as ws (ws.id)}
                   <DropdownMenu.Item onclick={() => createSsh(ws.id)}>
                     <Monitor class="mr-2 h-4 w-4" />
-                    {ws.id}
+                    {workspaceLabel(ws)}
                   </DropdownMenu.Item>
                 {/each}
               </DropdownMenu.Content>

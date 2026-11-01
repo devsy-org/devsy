@@ -117,6 +117,18 @@ func TestGetDirectoryUnderHome(t *testing.T) {
 	)
 }
 
+func TestGatewayURLUsesGivenSSHHost(t *testing.T) {
+	s := newGenericServer("alice", &GenericOptions{ID: testID})
+
+	canonical := s.gatewayURL("/workspaces/ws", "ws.devsy")
+	assert.Contains(t, canonical, "&host=ws.devsy&")
+	assert.Contains(t, canonical, "&projectPath=%2Fworkspaces%2Fws&")
+
+	alias := s.gatewayURL("/workspaces/ws", "friendly.devsy")
+	assert.Contains(t, alias, "&host=friendly.devsy&port=22&user=alice&")
+	assert.NotContains(t, alias, "host=ws.devsy")
+}
+
 type tarEntry struct {
 	name string
 	body string

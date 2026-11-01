@@ -37,6 +37,9 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	if err := cmd.checkDetachedPresentation(cfg, workspaceID); err != nil {
+		return err
+	}
 	t, err := store.CreateLaunch(task.CreateOptions{
 		Command:     "up",
 		WorkspaceID: workspaceID,
@@ -49,6 +52,16 @@ func (cmd *UpCmd) runDetached(args []string, cfg *config.Config) error {
 		return errors.Join(fmt.Errorf("launch detached up: %w", err), t.FailLaunch(err))
 	}
 	return cmd.renderDetachedTask(t)
+}
+
+func (cmd *UpCmd) checkDetachedPresentation(cfg *config.Config, workspaceID string) error {
+	if !cmd.hasPresentation() {
+		return nil
+	}
+	ctx := context.Background()
+	existed := workspaceID == "" ||
+		workspace2.Exists(ctx, cfg, nil, workspaceID, cmd.Owner) != ""
+	return cmd.checkPresentation(cfg, workspaceID, existed)
 }
 
 func (cmd *UpCmd) renderDetachedTask(t *task.Task) error {

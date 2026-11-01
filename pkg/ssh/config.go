@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/devsy-org/devsy/pkg/config"
 	"github.com/devsy-org/devsy/pkg/flags/names"
@@ -17,8 +16,6 @@ import (
 	"github.com/devsy-org/devsy/pkg/scanner"
 	"github.com/devsy-org/devsy/pkg/util"
 )
-
-var configLock sync.Mutex
 
 var (
 	MarkerStartPrefix = "# Devsy Start "
@@ -40,20 +37,31 @@ type SSHConfigParams struct {
 	DevsyHome            string
 	Provider             string
 	TunnelPort           int // If > 0, use TCP tunnel mode instead of ProxyCommand
+	PreferredHost        string
+	UID                  string
 }
 
 func ConfigureSSHConfig(params SSHConfigParams) error {
-	configLock.Lock()
-	defer configLock.Unlock()
-
 	targetPath := params.SSHConfigPath
 	if params.SSHConfigIncludePath != "" {
 		targetPath = params.SSHConfigIncludePath
 	}
 
+	targetPath, err := resolveSymlinkTarget(targetPath)
+	if err != nil {
+		return err
+	}
+
+	unlock, err := lockConfigFile(targetPath)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	newFile, err := addHost(addHostParams{
 		path:            targetPath,
 		host:            params.Workspace + config.SSHHostSuffix,
+		preferredHost:   params.PreferredHost,
 		user:            params.User,
 		context:         params.Context,
 		workspace:       params.Workspace,
@@ -81,6 +89,7 @@ type DevsySSHEntry struct {
 type addHostParams struct {
 	path            string
 	host            string
+	preferredHost   string
 	user            string
 	context         string
 	workspace       string
@@ -189,13 +198,21 @@ type sshConfigBuilder struct {
 	lines []string
 }
 
-func newSSHConfigBuilder(host string) *sshConfigBuilder {
+func newSSHConfigBuilder(host, preferredHost string) *sshConfigBuilder {
 	return &sshConfigBuilder{
 		lines: []string{
 			MarkerStartPrefix + host,
-			"Host " + host,
+			hostLine(host, preferredHost),
 		},
 	}
+}
+
+func hostLine(canonicalHost, preferredHost string) string {
+	if preferredHost == "" || strings.EqualFold(preferredHost, canonicalHost) {
+		return "Host " + canonicalHost
+	}
+
+	return "Host " + preferredHost + " " + canonicalHost
 }
 
 func (b *sshConfigBuilder) addSSHOptions(provider string, agentForwarding bool) *sshConfigBuilder {
@@ -262,7 +279,7 @@ func buildProxyCommand(execPath string, params addHostParams) string {
 
 // buildSSHConfigLines creates the SSH config entry lines.
 func buildSSHConfigLines(params addHostParams, proxyCmd string) []string {
-	return newSSHConfigBuilder(params.host).
+	return newSSHConfigBuilder(params.host, params.preferredHost).
 		addSSHOptions(params.provider, params.agentForwarding).
 		addProxyCommand(proxyCmd).
 		addUser(params.user, params.host).
@@ -271,7 +288,7 @@ func buildSSHConfigLines(params addHostParams, proxyCmd string) []string {
 
 // buildTunnelConfigLines creates the SSH config entry lines for TCP tunnel mode.
 func buildTunnelConfigLines(params addHostParams) []string {
-	return newSSHConfigBuilder(params.host).
+	return newSSHConfigBuilder(params.host, params.preferredHost).
 		addSSHOptions(params.provider, params.agentForwarding).
 		addTunnelConnection(params.tunnelPort).
 		addUser(params.user, params.host).
@@ -398,13 +415,21 @@ func RemoveFromConfig(
 	sshConfigPath string,
 	sshConfigIncludePath string,
 ) error {
-	configLock.Lock()
-	defer configLock.Unlock()
-
 	targetPath := sshConfigPath
 	if sshConfigIncludePath != "" {
 		targetPath = sshConfigIncludePath
 	}
+
+	targetPath, err := resolveSymlinkTarget(targetPath)
+	if err != nil {
+		return err
+	}
+
+	unlock, err := lockConfigFile(targetPath)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	newFile, err := removeFromConfig(targetPath, workspaceID+config.SSHHostSuffix)
 	if err != nil {
@@ -415,13 +440,7 @@ func RemoveFromConfig(
 }
 
 func writeSSHConfig(path, content string) error {
-	// #nosec G301 -- TODO Consider using a more secure permission setting and ownership if needed.
-	err := os.MkdirAll(filepath.Dir(path), 0o755)
-	if err != nil {
-		log.Debugf("error creating ssh directory: %v", err)
-	}
-
-	err = os.WriteFile(path, []byte(content), 0o600)
+	err := writeFileAtomic(path, []byte(content))
 	if err != nil {
 		return fmt.Errorf("write ssh config: %w", err)
 	}
@@ -492,9 +511,9 @@ func scanHostSection(
 	for configScanner.Scan() {
 		text := configScanner.Text()
 		switch {
-		case strings.HasPrefix(text, startMarker):
+		case isMarkerLine(text, startMarker):
 			inSection = true
-		case strings.HasPrefix(text, endMarker):
+		case isMarkerLine(text, endMarker):
 			inSection = false
 		case !inSection:
 			newLines = append(newLines, text)
@@ -507,4 +526,8 @@ func scanHostSection(
 	}
 
 	return newLines, configScanner.Err()
+}
+
+func isMarkerLine(text, marker string) bool {
+	return strings.TrimRight(text, " \t\r") == marker
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/devsy-org/devsy/pkg/config"
 	config2 "github.com/devsy-org/devsy/pkg/devcontainer/config"
 	"github.com/devsy-org/devsy/pkg/file"
+	"github.com/devsy-org/devsy/pkg/flags/names"
 	"github.com/devsy-org/devsy/pkg/log"
 	options2 "github.com/devsy-org/devsy/pkg/options"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
@@ -81,6 +82,10 @@ func (cmd *UpCmd) prepareClient(
 	args = cmd.ensureArgs(args)
 
 	existed := cmd.checkWorkspaceExisted(ctx, devsyConfig, args)
+	presentationID := cmd.targetWorkspaceID(args)
+	if err := cmd.checkPresentation(devsyConfig, presentationID, existed); err != nil {
+		return nil, err
+	}
 
 	log.Debugf("resolving workspace with ide=%q launch=%q", cmd.IDE, cmd.IDELaunch)
 	resolver := cmd.resolveWorkspace
@@ -102,20 +107,92 @@ func (cmd *UpCmd) prepareClient(
 	return client, nil
 }
 
+func (cmd *UpCmd) targetWorkspaceID(args []string) string {
+	switch {
+	case cmd.ID != "":
+		return cmd.ID
+	case len(args) > 0:
+		_, name := file.IsLocalDir(args[0])
+		return workspace2.ToID(name)
+	default:
+		return ""
+	}
+}
+
 func (cmd *UpCmd) checkWorkspaceExisted(
 	ctx context.Context,
 	devsyConfig *config.Config,
 	args []string,
 ) bool {
-	switch {
-	case cmd.ID != "":
-		return workspace2.Exists(ctx, devsyConfig, nil, cmd.ID, cmd.Owner) != ""
-	case len(args) > 0:
-		_, name := file.IsLocalDir(args[0])
-		return workspace2.Exists(ctx, devsyConfig, nil, workspace2.ToID(name), cmd.Owner) != ""
-	default:
+	id := cmd.targetWorkspaceID(args)
+	if id == "" {
 		return true
 	}
+	return workspace2.Exists(ctx, devsyConfig, nil, id, cmd.Owner) != ""
+}
+
+func (cmd *UpCmd) hasPresentation() bool {
+	return cmd.DisplayName != "" || cmd.SSHHostAlias != ""
+}
+
+func (cmd *UpCmd) checkPresentation(
+	devsyConfig *config.Config,
+	id string,
+	existed bool,
+) error {
+	if !cmd.hasPresentation() {
+		return nil
+	}
+	if existed || id == "" {
+		log.Warnf(
+			"ignoring --%s and --%s: the workspace already exists, use 'devsy workspace edit'",
+			names.DisplayName,
+			names.SSHHostAlias,
+		)
+		return nil
+	}
+	return workspace2.ValidatePresentation(devsyConfig, id, cmd.DisplayName, cmd.SSHHostAlias)
+}
+
+func (cmd *UpCmd) persistPresentation(
+	devsyConfig *config.Config,
+	client client2.BaseWorkspaceClient,
+) error {
+	if !cmd.hasPresentation() {
+		return nil
+	}
+	ws := client.WorkspaceConfig()
+	if ws == nil {
+		return nil
+	}
+	if ws.IsPlatform() {
+		log.Warnf(
+			"ignoring --%s and --%s: platform workspaces are managed by the platform",
+			names.DisplayName,
+			names.SSHHostAlias,
+		)
+		return nil
+	}
+
+	req := workspace2.PresentationRequest{
+		DevsyConfig: devsyConfig,
+		ID:          ws.ID,
+		ExpectedUID: ws.UID,
+	}
+	if cmd.DisplayName != "" {
+		req.DisplayName = &cmd.DisplayName
+	}
+	if cmd.SSHHostAlias != "" {
+		req.SSHHostAlias = &cmd.SSHHostAlias
+	}
+	result, err := workspace2.EditPresentation(req)
+	if err != nil {
+		return err
+	}
+
+	ws.DisplayName = result.DisplayName
+	ws.SSHHostAlias = result.SSHHostAlias
+	return nil
 }
 
 func (cmd *UpCmd) postResolveWorkspace(
@@ -135,6 +212,11 @@ func (cmd *UpCmd) postResolveWorkspace(
 	}
 	if err := cmd.checkProviderUpdate(ctx, devsyConfig, client); err != nil {
 		return cleanupOnFailure(err)
+	}
+	if !existed {
+		if err := cmd.persistPresentation(devsyConfig, client); err != nil {
+			return cleanupOnFailure(err)
+		}
 	}
 	return nil
 }

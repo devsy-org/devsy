@@ -42,6 +42,9 @@ type UpCmd struct {
 
 	FromSnapshot string // snapshot ref to restore from, e.g. ghcr.io/acme/s:my-ws-20260731150405-abcxyz
 
+	DisplayName  string
+	SSHHostAlias string
+
 	ConfigureSSH       bool
 	GPGAgentForwarding bool
 	SSHTunnelMode      bool

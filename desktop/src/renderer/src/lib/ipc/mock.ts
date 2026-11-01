@@ -16,6 +16,15 @@ import type {
   Workspace,
 } from "$lib/types/index.js"
 import type { LinuxDesktopIntegrationStatus } from "$shared/linux-desktop-integration.js"
+import { workspaceLabel } from "$shared/workspace-label.js"
+import {
+  normalizeDisplayLabel,
+  SSH_HOST_SUFFIX,
+  validateWorkspacePresentationRequest,
+  type WorkspacePresentationFailure,
+  type WorkspacePresentationReply,
+  type WorkspacePresentationRequest,
+} from "$shared/workspace-presentation.js"
 
 // ── Sample data ──────────────────────────────────────────────────────
 
@@ -209,6 +218,106 @@ function nextId(): string {
   return `mock-${++counter}-${Date.now().toString(36)}`
 }
 
+function mockFailure(
+  failure: WorkspacePresentationFailure,
+): WorkspacePresentationReply {
+  return { ok: false, ...failure }
+}
+
+function mockWorkspaceEdit(
+  request: WorkspacePresentationRequest,
+): WorkspacePresentationReply {
+  const invalid = validateWorkspacePresentationRequest(request)
+  if (invalid) return mockFailure(invalid)
+  const target = WORKSPACES.find((w) => w.id === request.workspaceId)
+  if (!target || target.uid !== request.expectedUid) {
+    return mockFailure({
+      field: "workspace",
+      code: "not-found",
+      message: `Workspace ${request.workspaceId} was not found.`,
+    })
+  }
+  const others = WORKSPACES.filter((w) => w.id !== target.id)
+  const nextLabel =
+    request.displayName === undefined
+      ? (target.displayName ?? "")
+      : normalizeDisplayLabel(request.displayName)
+  const requestedAlias =
+    request.sshHostAlias === undefined
+      ? (target.sshHostAlias ?? "")
+      : request.sshHostAlias.trim()
+  const nextAlias = requestedAlias === target.id ? "" : requestedAlias
+
+  if (
+    request.expectedDisplayName !== undefined &&
+    request.expectedDisplayName !== (target.displayName ?? "")
+  ) {
+    return mockFailure({
+      field: "displayName",
+      code: "stale",
+      message: "The display label changed since you opened this page.",
+    })
+  }
+  if (
+    request.expectedSshHostAlias !== undefined &&
+    request.expectedSshHostAlias !== (target.sshHostAlias ?? "")
+  ) {
+    return mockFailure({
+      field: "sshHostAlias",
+      code: "stale",
+      message: "The SSH alias changed since you opened this page.",
+    })
+  }
+  if (nextLabel !== "") {
+    const clash = others.find(
+      (w) => workspaceLabel(w).toLowerCase() === nextLabel.toLowerCase(),
+    )
+    if (clash) {
+      return mockFailure({
+        field: "displayName",
+        code: "conflict",
+        message: `Display label is already used by workspace ${clash.id}.`,
+        conflict: clash.id,
+      })
+    }
+  }
+  if (nextAlias !== "") {
+    const host = `${nextAlias}${SSH_HOST_SUFFIX}`.toLowerCase()
+    const clash = others.find(
+      (w) =>
+        `${w.id}${SSH_HOST_SUFFIX}`.toLowerCase() === host ||
+        (w.sshHostAlias &&
+          `${w.sshHostAlias}${SSH_HOST_SUFFIX}`.toLowerCase() === host),
+    )
+    if (clash) {
+      return mockFailure({
+        field: "sshHostAlias",
+        code: "conflict",
+        message: `SSH host ${host} is already used by workspace ${clash.id}.`,
+        conflict: clash.id,
+      })
+    }
+  }
+  target.displayName = nextLabel || undefined
+  target.sshHostAlias = nextAlias || undefined
+  target.canonicalSSHHost = `${target.id}${SSH_HOST_SUFFIX}`
+  target.preferredSSHHost = `${nextAlias || target.id}${SSH_HOST_SUFFIX}`
+  return {
+    ok: true,
+    result: {
+      id: target.id,
+      uid: target.uid ?? "",
+      context: target.context ?? "default",
+      displayName: nextLabel,
+      sshHostAlias: nextAlias,
+      effectiveDisplayName: nextLabel || target.id,
+      preferredSSHHost: target.preferredSSHHost,
+      canonicalSSHHost: target.canonicalSSHHost,
+      sshEntryUpdated: nextAlias !== "",
+    },
+  }
+}
+
 // ── Mock command handlers ────────────────────────────────────────────
 
 type Handler = (args: Record<string, unknown>) => unknown
@@ -227,6 +336,8 @@ const COMMANDS: Record<string, Handler> = {
     const ws = WORKSPACES.find((w) => w.id === args.workspaceId)
     return ws?.status ?? "NotFound"
   },
+  workspace_edit: (args) =>
+    mockWorkspaceEdit(args as unknown as WorkspacePresentationRequest),
 
   // Providers
   provider_list: () => PROVIDERS,
