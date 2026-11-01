@@ -27,7 +27,7 @@ func NewInitCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &InitCmd{GlobalFlags: f}
 	initCmd := &cobra.Command{
 		Use:   "init [name]",
-		Short: "Run or re-run init and option resolution for an existing provider",
+		Short: "Initialize a provider and resolve its options",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)

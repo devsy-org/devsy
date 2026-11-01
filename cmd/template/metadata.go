@@ -21,7 +21,7 @@ func NewMetadataCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	metadataFlags := &MetadataFlags{}
 	metadataCmd := &cobra.Command{
 		Use:   "metadata",
-		Short: "Fetch published template metadata from OCI registry",
+		Short: "Show published template metadata from an OCI registry",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMetadata(metadataFlags)
 		},

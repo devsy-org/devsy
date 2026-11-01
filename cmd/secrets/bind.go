@@ -20,7 +20,7 @@ func NewAttachCmd(flags *flags.GlobalFlags) *cobra.Command {
 	cmd := &AttachCmd{GlobalFlags: flags}
 	attachCmd := &cobra.Command{
 		Use:   "attach NAME",
-		Short: "Bind a secret reference to the active context so it is injected automatically on up",
+		Short: "Bind a secret reference to the active context",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args[0])

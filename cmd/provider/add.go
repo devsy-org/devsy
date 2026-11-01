@@ -41,7 +41,7 @@ func NewAddCmd(f *flags.GlobalFlags) *cobra.Command {
 	}
 	addCmd := &cobra.Command{
 		Use:   "add [name, GitHub link, URL or path]",
-		Short: "Adds a new provider to Devsy",
+		Short: "Add a provider",
 		Args:  cobra.MaximumNArgs(1),
 		PreRunE: func(cobraCommand *cobra.Command, args []string) error {
 			if cmd.FromExisting != "" {
