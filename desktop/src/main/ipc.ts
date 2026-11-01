@@ -72,6 +72,48 @@ type SecretUnlockInput =
   | SecretIpcFailure
   | { ok: true; requestId?: string; passphrase?: string; remember: boolean }
 
+const protectionDescriptions: Record<string, string> = {
+  "set-passphrase": "Set a passphrase for all file-backed secrets?",
+  "change-passphrase": "Change the passphrase for all file-backed secrets?",
+  "remove-passphrase":
+    "Remove passphrase protection from all file-backed secrets?",
+  remember: "Remember the secrets passphrase in your OS keychain?",
+  forget: "Forget the secrets passphrase stored in your OS keychain?",
+}
+
+function protectionFailure(
+  err: unknown,
+  credentials: Array<string | undefined>,
+): { ok: false; message: string; cliError?: CLIError } {
+  const redact = (value: string) =>
+    credentials.reduce<string>(
+      (text, credential) =>
+        credential ? text.replaceAll(credential, "***") : text,
+      value,
+    )
+  const error = (err as { cliError?: CLIError } | null)?.cliError
+  const cliError = error
+    ? {
+        code: redact(error.code),
+        message: redact(error.message),
+        hint: error.hint ? redact(error.hint) : undefined,
+        context: error.context
+          ? Object.fromEntries(
+              Object.entries(error.context).map(([key, value]) => [
+                redact(key),
+                redact(value),
+              ]),
+            )
+          : undefined,
+      }
+    : undefined
+  return {
+    ok: false,
+    message: cliError?.message ?? "Secret protection operation failed.",
+    cliError,
+  }
+}
+
 /** Validate and snapshot renderer input before any asynchronous approval. */
 function validateSecretUnlockInput(args: unknown): SecretUnlockInput {
   if (!args || typeof args !== "object")
@@ -747,19 +789,10 @@ export function registerIpcHandlers(deps: IpcDependencies): {
           if (typeof newPassphrase !== "string" || !newPassphrase.trim())
             return { ok: false, message: "Enter a non-empty passphrase." }
         }
-        const descriptions: Record<string, string> = {
-          "set-passphrase": "Set a passphrase for all file-backed secrets?",
-          "change-passphrase":
-            "Change the passphrase for all file-backed secrets?",
-          "remove-passphrase":
-            "Remove passphrase protection from all file-backed secrets?",
-          remember: "Remember the secrets passphrase in your OS keychain?",
-          forget: "Forget the secrets passphrase stored in your OS keychain?",
-        }
         const confirmation = await dialog.showMessageBox(win, {
           type: "warning",
           title: "Secret protection",
-          message: descriptions[action],
+          message: protectionDescriptions[action],
           detail: "This changes the shared secret store across all contexts.",
           buttons: ["Cancel", "Continue"],
           defaultId: 0,
@@ -786,35 +819,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
         }
         return { ok: true }
       } catch (err) {
-        // Preserve structured recovery information without sending credential
-        // material (or arbitrary error properties) back across the IPC boundary.
-        const redact = (value: string) =>
-          [currentPassphrase, newPassphrase].reduce<string>(
-            (text, credential) =>
-              credential ? text.replaceAll(credential, "***") : text,
-            value,
-          )
-        const error = (err as { cliError?: CLIError } | null)?.cliError
-        const cliError = error
-          ? {
-              code: redact(error.code),
-              message: redact(error.message),
-              hint: error.hint ? redact(error.hint) : undefined,
-              context: error.context
-                ? Object.fromEntries(
-                    Object.entries(error.context).map(([key, value]) => [
-                      redact(key),
-                      redact(value),
-                    ]),
-                  )
-                : undefined,
-            }
-          : undefined
-        return {
-          ok: false,
-          message: cliError?.message ?? "Secret protection operation failed.",
-          cliError,
-        }
+        return protectionFailure(err, [currentPassphrase, newPassphrase])
       }
     },
   )

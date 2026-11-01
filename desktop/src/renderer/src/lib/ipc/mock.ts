@@ -291,6 +291,46 @@ function aliasConflictFailure(
   }
 }
 
+function nextPresentation(
+  request: WorkspacePresentationRequest,
+  target: MockWorkspace,
+): { label: string; alias: string } {
+  const label =
+    request.displayName === undefined
+      ? (target.displayName ?? "")
+      : normalizeDisplayLabel(request.displayName)
+  const requestedAlias =
+    request.sshHostAlias === undefined
+      ? (target.sshHostAlias ?? "")
+      : request.sshHostAlias.trim()
+  return { label, alias: requestedAlias === target.id ? "" : requestedAlias }
+}
+
+function applyPresentation(
+  target: MockWorkspace,
+  label: string,
+  alias: string,
+): WorkspacePresentationReply {
+  target.displayName = label || undefined
+  target.sshHostAlias = alias || undefined
+  target.canonicalSSHHost = `${target.id}${SSH_HOST_SUFFIX}`
+  target.preferredSSHHost = `${alias || target.id}${SSH_HOST_SUFFIX}`
+  return {
+    ok: true,
+    result: {
+      id: target.id,
+      uid: target.uid ?? "",
+      context: target.context ?? "default",
+      displayName: label,
+      sshHostAlias: alias,
+      effectiveDisplayName: label || target.id,
+      preferredSSHHost: target.preferredSSHHost,
+      canonicalSSHHost: target.canonicalSSHHost,
+      sshEntryUpdated: alias !== "",
+    },
+  }
+}
+
 function mockWorkspaceEdit(
   request: WorkspacePresentationRequest,
 ): WorkspacePresentationReply {
@@ -305,39 +345,13 @@ function mockWorkspaceEdit(
     })
   }
   const others = WORKSPACES.filter((w) => w.id !== target.id)
-  const nextLabel =
-    request.displayName === undefined
-      ? (target.displayName ?? "")
-      : normalizeDisplayLabel(request.displayName)
-  const requestedAlias =
-    request.sshHostAlias === undefined
-      ? (target.sshHostAlias ?? "")
-      : request.sshHostAlias.trim()
-  const nextAlias = requestedAlias === target.id ? "" : requestedAlias
-
+  const { label, alias } = nextPresentation(request, target)
   const failure =
     staleFailure(request, target) ??
-    labelConflictFailure(nextLabel, others) ??
-    aliasConflictFailure(nextAlias, others)
+    labelConflictFailure(label, others) ??
+    aliasConflictFailure(alias, others)
   if (failure) return mockFailure(failure)
-  target.displayName = nextLabel || undefined
-  target.sshHostAlias = nextAlias || undefined
-  target.canonicalSSHHost = `${target.id}${SSH_HOST_SUFFIX}`
-  target.preferredSSHHost = `${nextAlias || target.id}${SSH_HOST_SUFFIX}`
-  return {
-    ok: true,
-    result: {
-      id: target.id,
-      uid: target.uid ?? "",
-      context: target.context ?? "default",
-      displayName: nextLabel,
-      sshHostAlias: nextAlias,
-      effectiveDisplayName: nextLabel || target.id,
-      preferredSSHHost: target.preferredSSHHost,
-      canonicalSSHHost: target.canonicalSSHHost,
-      sshEntryUpdated: nextAlias !== "",
-    },
-  }
+  return applyPresentation(target, label, alias)
 }
 
 // ── Mock command handlers ────────────────────────────────────────────
