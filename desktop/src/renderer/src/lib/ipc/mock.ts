@@ -224,6 +224,73 @@ function mockFailure(
   return { ok: false, ...failure }
 }
 
+type MockWorkspace = (typeof WORKSPACES)[number]
+
+function staleFailure(
+  request: WorkspacePresentationRequest,
+  target: MockWorkspace,
+): WorkspacePresentationFailure | null {
+  if (
+    request.expectedDisplayName !== undefined &&
+    request.expectedDisplayName !== (target.displayName ?? "")
+  ) {
+    return {
+      field: "displayName",
+      code: "stale",
+      message: "The display label changed since you opened this page.",
+    }
+  }
+  if (
+    request.expectedSshHostAlias !== undefined &&
+    request.expectedSshHostAlias !== (target.sshHostAlias ?? "")
+  ) {
+    return {
+      field: "sshHostAlias",
+      code: "stale",
+      message: "The SSH alias changed since you opened this page.",
+    }
+  }
+  return null
+}
+
+function labelConflictFailure(
+  label: string,
+  others: MockWorkspace[],
+): WorkspacePresentationFailure | null {
+  if (label === "") return null
+  const clash = others.find(
+    (w) => workspaceLabel(w).toLowerCase() === label.toLowerCase(),
+  )
+  if (!clash) return null
+  return {
+    field: "displayName",
+    code: "conflict",
+    message: `Display label is already used by workspace ${clash.id}.`,
+    conflict: clash.id,
+  }
+}
+
+function aliasConflictFailure(
+  alias: string,
+  others: MockWorkspace[],
+): WorkspacePresentationFailure | null {
+  if (alias === "") return null
+  const host = `${alias}${SSH_HOST_SUFFIX}`.toLowerCase()
+  const clash = others.find(
+    (w) =>
+      `${w.id}${SSH_HOST_SUFFIX}`.toLowerCase() === host ||
+      (w.sshHostAlias &&
+        `${w.sshHostAlias}${SSH_HOST_SUFFIX}`.toLowerCase() === host),
+  )
+  if (!clash) return null
+  return {
+    field: "sshHostAlias",
+    code: "conflict",
+    message: `SSH host ${host} is already used by workspace ${clash.id}.`,
+    conflict: clash.id,
+  }
+}
+
 function mockWorkspaceEdit(
   request: WorkspacePresentationRequest,
 ): WorkspacePresentationReply {
@@ -248,56 +315,11 @@ function mockWorkspaceEdit(
       : request.sshHostAlias.trim()
   const nextAlias = requestedAlias === target.id ? "" : requestedAlias
 
-  if (
-    request.expectedDisplayName !== undefined &&
-    request.expectedDisplayName !== (target.displayName ?? "")
-  ) {
-    return mockFailure({
-      field: "displayName",
-      code: "stale",
-      message: "The display label changed since you opened this page.",
-    })
-  }
-  if (
-    request.expectedSshHostAlias !== undefined &&
-    request.expectedSshHostAlias !== (target.sshHostAlias ?? "")
-  ) {
-    return mockFailure({
-      field: "sshHostAlias",
-      code: "stale",
-      message: "The SSH alias changed since you opened this page.",
-    })
-  }
-  if (nextLabel !== "") {
-    const clash = others.find(
-      (w) => workspaceLabel(w).toLowerCase() === nextLabel.toLowerCase(),
-    )
-    if (clash) {
-      return mockFailure({
-        field: "displayName",
-        code: "conflict",
-        message: `Display label is already used by workspace ${clash.id}.`,
-        conflict: clash.id,
-      })
-    }
-  }
-  if (nextAlias !== "") {
-    const host = `${nextAlias}${SSH_HOST_SUFFIX}`.toLowerCase()
-    const clash = others.find(
-      (w) =>
-        `${w.id}${SSH_HOST_SUFFIX}`.toLowerCase() === host ||
-        (w.sshHostAlias &&
-          `${w.sshHostAlias}${SSH_HOST_SUFFIX}`.toLowerCase() === host),
-    )
-    if (clash) {
-      return mockFailure({
-        field: "sshHostAlias",
-        code: "conflict",
-        message: `SSH host ${host} is already used by workspace ${clash.id}.`,
-        conflict: clash.id,
-      })
-    }
-  }
+  const failure =
+    staleFailure(request, target) ??
+    labelConflictFailure(nextLabel, others) ??
+    aliasConflictFailure(nextAlias, others)
+  if (failure) return mockFailure(failure)
   target.displayName = nextLabel || undefined
   target.sshHostAlias = nextAlias || undefined
   target.canonicalSSHHost = `${target.id}${SSH_HOST_SUFFIX}`

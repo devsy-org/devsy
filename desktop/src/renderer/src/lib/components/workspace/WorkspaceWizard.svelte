@@ -425,6 +425,10 @@ let launchLabel = $derived(
 let launchAlias = $derived(
   explicitAlias !== "" && explicitAlias !== resolvedId ? explicitAlias : "",
 )
+let launchPresentation = $derived({
+  displayName: launchLabel || undefined,
+  sshHostAlias: launchAlias || undefined,
+})
 let labelError = $derived(
   displayLabelTouched ? validateDisplayLabel(displayLabel) : null,
 )
@@ -818,8 +822,7 @@ async function handleLaunch(recovery = false) {
     const cmdId = await workspaceUp({
       source: assembled.source,
       workspaceId,
-      displayName: launchLabel || undefined,
-      sshHostAlias: launchAlias || undefined,
+      ...launchPresentation,
       provider: selectedProvider || undefined,
       ide: selectedIde,
       ideLaunch: "auto",

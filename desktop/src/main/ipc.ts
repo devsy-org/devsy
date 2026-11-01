@@ -17,11 +17,9 @@ import type { ProviderIconRequest } from "../shared/provider-icon.js"
 import type { WorkspaceActivity } from "../shared/workspace-operation.js"
 import {
   buildWorkspaceEditArgs,
-  normalizeDisplayLabel,
+  buildWorkspaceUpPresentationArgs,
   parseWorkspacePresentationResult,
   presentationFailureFromCliError,
-  validateDisplayLabel,
-  validateSshAlias,
   validateWorkspacePresentationRequest,
   type WorkspacePresentationReply,
   type WorkspacePresentationRequest,
@@ -2130,18 +2128,7 @@ export function registerIpcHandlers(deps: IpcDependencies): {
     })
     const cliArgs = ["workspace", "up", args.source]
     if (args.workspaceId) cliArgs.push("--id", args.workspaceId)
-    const displayName = args.displayName?.trim()
-    if (displayName) {
-      const invalid = validateDisplayLabel(displayName)
-      if (invalid) throw new Error(invalid)
-      cliArgs.push("--display-name", normalizeDisplayLabel(displayName))
-    }
-    const sshHostAlias = args.sshHostAlias?.trim()
-    if (sshHostAlias) {
-      const invalid = validateSshAlias(sshHostAlias)
-      if (invalid) throw new Error(invalid)
-      cliArgs.push("--ssh-host-alias", sshHostAlias)
-    }
+    cliArgs.push(...buildWorkspaceUpPresentationArgs(args))
     if (args.provider) cliArgs.push("--provider", args.provider)
     if (args.ide) cliArgs.push("--ide", args.ide)
     if (args.ideLaunch) cliArgs.push("--ide-launch", args.ideLaunch)

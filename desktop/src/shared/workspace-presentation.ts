@@ -83,16 +83,13 @@ export function validateSshAlias(value: string): string | null {
   return null
 }
 
-export function validateWorkspacePresentationRequest(
+function invalidRequest(message: string): WorkspacePresentationFailure {
+  return { field: "workspace", code: "invalid", message }
+}
+
+function validateRequestStrings(
   request: WorkspacePresentationRequest,
 ): WorkspacePresentationFailure | null {
-  if (!request || typeof request !== "object") {
-    return {
-      field: "workspace",
-      code: "invalid",
-      message: "Invalid workspace edit request.",
-    }
-  }
   const strings: Array<[unknown, boolean]> = [
     [request.workspaceId, true],
     [request.expectedUid, true],
@@ -105,47 +102,34 @@ export function validateWorkspacePresentationRequest(
   for (const [value, required] of strings) {
     const missing = value === undefined || value === ""
     if (missing && required) {
-      return {
-        field: "workspace",
-        code: "invalid",
-        message: "Workspace identity is required to save changes.",
-      }
+      return invalidRequest("Workspace identity is required to save changes.")
     }
     if (value !== undefined && typeof value !== "string") {
-      return {
-        field: "workspace",
-        code: "invalid",
-        message: "Invalid workspace edit request.",
-      }
+      return invalidRequest("Invalid workspace edit request.")
     }
   }
+  return null
+}
+
+function validateRequestExpectations(
+  request: WorkspacePresentationRequest,
+): WorkspacePresentationFailure | null {
   if (request.displayName === undefined && request.sshHostAlias === undefined) {
-    return {
-      field: "workspace",
-      code: "invalid",
-      message: "Nothing to save.",
-    }
+    return invalidRequest("Nothing to save.")
   }
-  if (
-    request.displayName === undefined &&
-    request.expectedDisplayName !== undefined
-  ) {
-    return {
-      field: "workspace",
-      code: "invalid",
-      message: "Invalid workspace edit request.",
-    }
-  }
-  if (
-    request.sshHostAlias === undefined &&
-    request.expectedSshHostAlias !== undefined
-  ) {
-    return {
-      field: "workspace",
-      code: "invalid",
-      message: "Invalid workspace edit request.",
-    }
-  }
+  const orphanExpectation =
+    (request.displayName === undefined &&
+      request.expectedDisplayName !== undefined) ||
+    (request.sshHostAlias === undefined &&
+      request.expectedSshHostAlias !== undefined)
+  return orphanExpectation
+    ? invalidRequest("Invalid workspace edit request.")
+    : null
+}
+
+function validateRequestFields(
+  request: WorkspacePresentationRequest,
+): WorkspacePresentationFailure | null {
   if (request.displayName !== undefined) {
     const message = validateDisplayLabel(request.displayName)
     if (message) return { field: "displayName", code: "invalid", message }
@@ -155,6 +139,39 @@ export function validateWorkspacePresentationRequest(
     if (message) return { field: "sshHostAlias", code: "invalid", message }
   }
   return null
+}
+
+export function buildWorkspaceUpPresentationArgs(args: {
+  displayName?: string
+  sshHostAlias?: string
+}): string[] {
+  const result: string[] = []
+  const displayName = args.displayName?.trim()
+  if (displayName) {
+    const invalid = validateDisplayLabel(displayName)
+    if (invalid) throw new Error(invalid)
+    result.push("--display-name", normalizeDisplayLabel(displayName))
+  }
+  const sshHostAlias = args.sshHostAlias?.trim()
+  if (sshHostAlias) {
+    const invalid = validateSshAlias(sshHostAlias)
+    if (invalid) throw new Error(invalid)
+    result.push("--ssh-host-alias", sshHostAlias)
+  }
+  return result
+}
+
+export function validateWorkspacePresentationRequest(
+  request: WorkspacePresentationRequest,
+): WorkspacePresentationFailure | null {
+  if (!request || typeof request !== "object") {
+    return invalidRequest("Invalid workspace edit request.")
+  }
+  return (
+    validateRequestStrings(request) ??
+    validateRequestExpectations(request) ??
+    validateRequestFields(request)
+  )
 }
 
 export interface WorkspacePresentationBase {
