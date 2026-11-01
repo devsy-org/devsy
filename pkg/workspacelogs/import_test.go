@@ -3,6 +3,7 @@ package workspacelogs
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -168,4 +169,35 @@ func TestImportRemoteDoesNotBindUnboundRunToResponseUID(t *testing.T) {
 	m, err := local.Manifest(runID)
 	require.NoError(t, err)
 	require.Nil(t, m.WorkspaceUID)
+}
+
+func TestImportRemoteIgnoresRemoteClaimsOnLocalProducers(t *testing.T) {
+	resp, runID := remotePage(t)
+	local := localRunFor(t, runID, uidA)
+	producerID := resp.Records[0].ProducerID
+	require.NoError(t, local.RegisterProducer(runID, ProducerRef{
+		ProducerID: producerID, State: ProducerRunning, Location: LocationHost,
+	}))
+
+	res, err := local.ImportRemote(importReq(runID, uidA, resp))
+	require.NoError(t, err)
+	assert.Zero(t, res.Written)
+	assert.Equal(t, []string{producerID}, res.Stalled)
+	m, err := local.Manifest(runID)
+	require.NoError(t, err)
+	assert.Equal(t, ProducerRunning, m.Producers[0].State)
+	assert.Contains(t, m.Conditions, ConditionMalformedRecord)
+}
+
+func TestImportRemoteStallsOnMalformedProducerBatch(t *testing.T) {
+	resp, runID := remotePage(t)
+	local := localRunFor(t, runID, uidA)
+	resp.Records = append(resp.Records[:1:1], resp.Records[2:]...)
+
+	res, err := local.ImportRemote(importReq(runID, uidA, resp))
+	require.NoError(t, err, "a malformed remote batch stalls the producer, not the refresh")
+	assert.Len(t, res.Stalled, 1)
+	m, err := local.Manifest(runID)
+	require.NoError(t, err)
+	assert.Contains(t, m.Conditions, ConditionMalformedRecord)
 }

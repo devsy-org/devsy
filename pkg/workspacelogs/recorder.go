@@ -54,16 +54,18 @@ type Invocation struct {
 
 // Recorder writes one producer's records. It assigns the producer sequence and
 // never fails the caller: the first storage error disables the recorder, is
-// kept for Err, and later calls become no-ops so the recorded command's own
-// error and exit semantics are untouched.
+// kept for Err, and later calls become no-ops, except that Close still makes
+// one best-effort attempt, so the recorded command's own error and exit
+// semantics are untouched.
 type Recorder struct {
 	opts       RecorderOptions
 	producerID string
 
-	mu       sync.Mutex
-	seq      uint64
-	err      error
-	disabled bool
+	mu        sync.Mutex
+	seq       uint64
+	persisted uint64
+	err       error
+	disabled  bool
 }
 
 // NewRecorder registers a new producer in the run and records that it is
@@ -177,8 +179,19 @@ func (r *Recorder) SealDiscovery() {
 }
 
 // Close records the producer's final state. Close any DiagnosticWriter first.
+// A disabled recorder still makes one best-effort attempt so the producer does
+// not stay running in the run.
 func (r *Recorder) Close(state ProducerState, sealDiscovery bool) {
-	r.emit(&Record{Kind: KindProducer, ProducerState: state, DiscoverySealed: sealDiscovery})
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rec := &Record{Kind: KindProducer, ProducerState: state, DiscoverySealed: sealDiscovery}
+	if r.persisted == 0 {
+		rec.ParentProducerID = r.opts.ParentProducerID
+		rec.Location = r.opts.Location
+	}
+	if err := r.appendLocked(rec); err != nil && !r.disabled {
+		r.failLocked(err)
+	}
 }
 
 // Writer returns a writer for one invocation's stream. Each writer redacts on
@@ -196,21 +209,32 @@ func (r *Recorder) emit(rec *Record) {
 	if r.disabled {
 		return
 	}
+	err := r.appendLocked(rec)
+	if err == nil {
+		return
+	}
+	if rec.Kind == KindOutput && errors.Is(err, ErrCapacity) {
+		_ = r.opts.Backend.AddCondition(r.opts.RunID, ConditionCapacity)
+
+		return
+	}
+	r.failLocked(err)
+}
+
+func (r *Recorder) appendLocked(rec *Record) error {
 	r.seq++
 	rec.SchemaVersion = SchemaVersion
 	rec.RunID = r.opts.RunID
 	rec.ProducerID = r.producerID
 	rec.Sequence = r.seq
 	rec.Time = r.opts.Now().UTC()
-	if _, err := r.opts.Backend.Append([]Record{*rec}); err != nil {
-		if rec.Kind == KindOutput && errors.Is(err, ErrCapacity) {
-			r.seq--
-			_ = r.opts.Backend.AddCondition(r.opts.RunID, ConditionCapacity)
-
-			return
-		}
-		r.failLocked(err)
+	res, err := r.opts.Backend.Append([]Record{*rec})
+	r.persisted = max(r.persisted, res.Accepted)
+	if err != nil {
+		r.seq = r.persisted
 	}
+
+	return err
 }
 
 func (r *Recorder) fail(err error) {

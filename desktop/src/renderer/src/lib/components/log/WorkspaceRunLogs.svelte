@@ -145,6 +145,7 @@ let views = $derived.by(() => {
       .filter((a) => !a.available)
       .map((a) => a.producerId),
   )
+  table.markSettled(reader.complete)
   return table.list()
 })
 

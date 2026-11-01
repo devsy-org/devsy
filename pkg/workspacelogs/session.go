@@ -64,6 +64,11 @@ func StartSessionIn(store *Store, opts SessionOptions) *Session {
 		Redactor:         opts.Redactor,
 	})
 	if err != nil {
+		if opts.ParentProducerID == "" {
+			_ = store.SetCommandState(m.RunID, CommandFailed)
+			_ = store.SealDiscovery(m.RunID)
+		}
+
 		return nil
 	}
 
@@ -97,13 +102,16 @@ func (s *Session) BindWorkspace(uid, idAtStart string) {
 }
 
 // Finish records the command outcome and closes this process's producer. Pass
-// sealDiscovery only from the process that schedules no further producers.
+// sealDiscovery only from the process that schedules no further producers. That
+// process alone writes the command state.
 func (s *Session) Finish(err error, sealDiscovery bool) {
 	if s == nil {
 		return
 	}
 	s.Recorder.Close(ProducerTerminal, sealDiscovery)
-	_ = s.Store.SetCommandState(s.RunID, commandStateFor(err))
+	if sealDiscovery {
+		_ = s.Store.SetCommandState(s.RunID, commandStateFor(err))
+	}
 }
 
 func commandStateFor(err error) CommandState {

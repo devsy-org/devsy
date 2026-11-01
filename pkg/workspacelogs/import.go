@@ -109,7 +109,7 @@ func (s *Store) ImportRemote(req ImportRequest) (ImportResult, error) {
 	groups, order := groupByProducer(req.Response.Records)
 	var res ImportResult
 	for _, producerID := range order {
-		stalled, mergeErr := s.mergeProducer(req.RunID, producerID, groups[producerID], &res)
+		stalled, mergeErr := s.importProducer(m, producerID, groups[producerID], &res)
 		if mergeErr != nil {
 			return res, mergeErr
 		}
@@ -119,6 +119,16 @@ func (s *Store) ImportRemote(req ImportRequest) (ImportResult, error) {
 	}
 
 	return res, nil
+}
+
+func (s *Store) importProducer(
+	m *RunManifest, producerID string, records []Record, res *ImportResult,
+) (bool, error) {
+	if i := m.producer(producerID); i >= 0 && m.Producers[i].Location != LocationContainer {
+		return s.stall(m.RunID, nil, ConditionMalformedRecord)
+	}
+
+	return s.mergeProducer(m.RunID, producerID, records, res)
 }
 
 func validateImport(m *RunManifest, req ImportRequest) error {
@@ -197,18 +207,15 @@ func (s *Store) mergeProducer(
 		return false, err
 	}
 	batch, cond := storedPrefix(records)
-	if err := s.ensureProducer(runID, producerID); err != nil {
+	if err := s.ensureProducer(runID, producerID, records[0]); err != nil {
 		return s.stall(runID, err, ConditionSourceUnavailable)
 	}
 	if len(batch) > 0 {
 		out, err := s.Append(batch)
 		res.Written += out.Written
 		res.Duplicates += out.Duplicates
-		if errors.Is(err, ErrSequenceGap) {
-			return s.stall(runID, err, ConditionRetentionGap)
-		}
 		if err != nil {
-			return false, err
+			return s.stallOnAppendError(runID, err)
 		}
 	}
 	if cond != "" {
@@ -216,6 +223,19 @@ func (s *Store) mergeProducer(
 	}
 
 	return false, nil
+}
+
+func (s *Store) stallOnAppendError(runID string, err error) (bool, error) {
+	switch {
+	case errors.Is(err, ErrSequenceGap):
+		return s.stall(runID, err, ConditionRetentionGap)
+	case errors.Is(err, ErrCapacity):
+		return s.stall(runID, err, ConditionCapacity)
+	case errors.Is(err, ErrInvalidRecord):
+		return s.stall(runID, err, ConditionMalformedRecord)
+	default:
+		return false, err
+	}
 }
 
 // storedPrefix returns the records before the first synthetic note and the
@@ -230,10 +250,13 @@ func storedPrefix(records []Record) ([]Record, Condition) {
 	return records, ""
 }
 
-func (s *Store) ensureProducer(runID, producerID string) error {
-	return s.RegisterProducer(runID, ProducerRef{
-		ProducerID: producerID, State: ProducerRunning, Location: LocationContainer,
-	})
+func (s *Store) ensureProducer(runID, producerID string, first Record) error {
+	ref := ProducerRef{ProducerID: producerID, State: ProducerRunning, Location: LocationContainer}
+	if first.Kind == KindProducer {
+		ref.ParentProducerID = first.ParentProducerID
+	}
+
+	return s.RegisterProducer(runID, ref)
 }
 
 func (s *Store) stall(runID string, cause error, c Condition) (bool, error) {

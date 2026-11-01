@@ -214,6 +214,44 @@ func TestNewRecorderReportsRegistrationFailureAndStaysUsable(t *testing.T) {
 	rec.Close(ProducerTerminal, true)
 }
 
+type flakyBackend struct {
+	Backend
+	failing map[int]bool
+	appends int
+}
+
+func (f *flakyBackend) Append(recs []Record) (AppendResult, error) {
+	f.appends++
+	if f.failing[f.appends] {
+		return AppendResult{}, errors.New("disk full")
+	}
+
+	return f.Backend.Append(recs)
+}
+
+func TestCloseStillRecordsTerminalAfterStorageError(t *testing.T) {
+	s, _ := newTestStore(t)
+	runID := newRun(t, s, "uid")
+	backend := &flakyBackend{Backend: s, failing: map[int]bool{2: true}}
+	rec, err := NewRecorder(RecorderOptions{Backend: backend, RunID: runID, Location: LocationHost})
+	require.NoError(t, err)
+
+	rec.Invocation(Invocation{ID: NewID(), Hook: hookCreate, State: InvocationRunning})
+	rec.Invocation(Invocation{ID: NewID(), Hook: hookCreate, State: InvocationRunning})
+	require.Error(t, rec.Err())
+	rec.Close(ProducerTerminal, true)
+
+	m, err := s.Manifest(runID)
+	require.NoError(t, err)
+	require.Len(t, m.Producers, 1)
+	assert.Equal(t, ProducerTerminal, m.Producers[0].State)
+	assert.True(t, m.DiscoverySealed)
+	assert.False(t, m.Active())
+	recs := readAll(t, s, ReadRequest{RunID: runID})
+	require.Len(t, recs, 2)
+	assert.Equal(t, uint64(2), recs[1].Sequence, "terminal reuses the unstored sequence")
+}
+
 func TestRecorderTruncatesOptionalDisplayFields(t *testing.T) {
 	s, _ := newTestStore(t)
 	runID := newRun(t, s, "uid")

@@ -856,3 +856,22 @@ func TestFollowKeepsPollingLocalRunWithoutRefreshPath(t *testing.T) {
 	assert.GreaterOrEqual(t, ref.calls, 2)
 	assert.Contains(t, h.out.String(), "late line")
 }
+
+func TestPlainWriterStripsTerminalControlCharacters(t *testing.T) {
+	var out, errOut bytes.Buffer
+	w := &plainWriter{out: &out, errOut: &errOut}
+	exit := 1
+
+	w.record(&workspacelogs.Record{
+		Kind: workspacelogs.KindOutput, InvocationID: workspacelogs.NewID(),
+		Stream: workspacelogs.StreamStdout, Text: "a\x1b[31mred\x07\u009b\r\tb\n",
+	})
+	w.record(&workspacelogs.Record{
+		Kind: workspacelogs.KindInvocation, Hook: hookCreate, State: workspacelogs.InvocationFailed,
+		HookKey: "k\x1b]0;x\x07", Reason: "r\x1bz", Signal: "S\x00IG", ExitCode: &exit,
+	})
+
+	assert.Equal(t, "stdout | a[31mred\tb\n", strings.SplitN(out.String(), "# ", 2)[0])
+	assert.Contains(t, out.String(), "# "+hookCreate+" (k]0;x): failed rz exit=1 signal=SIG")
+	assert.NotContains(t, out.String(), "\x1b")
+}

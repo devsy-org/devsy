@@ -184,6 +184,43 @@ func TestRecordsFailureEvenWhenCallerIgnoresError(t *testing.T) {
 	}
 }
 
+func TestRecordsUnreachedCommandsAfterFailureAreSkipped(t *testing.T) {
+	run := newRecordedRun(t)
+	p := testParams(t, run.ctx,
+		types.LifecycleHook{"": {"exit 3"}},
+		types.LifecycleHook{"": {neverRun}},
+		types.LifecycleHook{"first": {neverRun}, "second": {neverRun}},
+	)
+
+	require.Error(t, executeHookCommands(run.ctx, p, nil))
+
+	got := byKey(t, run.records(t), "postCreateCommand")
+	assert.Equal(t, workspacelogs.InvocationFailed, got["0/"].final())
+	for _, slot := range []string{"1/", "2/first", "2/second"} {
+		require.Contains(t, got, slot)
+		assert.Equal(t, workspacelogs.InvocationSkipped, got[slot].final(), slot)
+		assert.Equal(t, reasonNotReached, got[slot].reason, slot)
+	}
+}
+
+func TestRecordsLaterPhasesAreSkippedWhenAnEarlierPhaseFails(t *testing.T) {
+	run := newRecordedRun(t)
+	result := hooksResult(t, t.TempDir())
+	result.MergedConfig.OnCreateCommands = []types.LifecycleHook{{"": {"exit 5"}}}
+
+	_, err := RunPreAttachHooks(run.ctx, result, PreAttachOptions{})
+	require.Error(t, err)
+
+	recs := run.records(t)
+	assert.Equal(t, workspacelogs.InvocationFailed, byKey(t, recs, "onCreateCommand")["0/"].final())
+	for _, hook := range []string{"postCreateCommand", "postStartCommand"} {
+		inv := byKey(t, recs, hook)["0/"]
+		require.NotNil(t, inv, hook)
+		assert.Equal(t, workspacelogs.InvocationSkipped, inv.final(), hook)
+		assert.Equal(t, reasonNotReached, inv.reason, hook)
+	}
+}
+
 func TestRecordsSilentSuccessHasNoOutput(t *testing.T) {
 	run := newRecordedRun(t)
 	p := testParams(t, run.ctx, types.LifecycleHook{"": {"true"}})
@@ -390,3 +427,5 @@ func TestHookPlanGivesSameIDToCommandAcrossProcesses(t *testing.T) {
 	)
 	assert.True(t, workspacelogs.ValidID(first))
 }
+
+const neverRun = "echo never"

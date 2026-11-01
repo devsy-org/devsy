@@ -322,3 +322,47 @@ func TestProducerCapMarksCapturePartial(t *testing.T) {
 	assert.Len(t, m.Producers, MaxProducers)
 	assert.Equal(t, CapturePartial, m.CaptureState)
 }
+
+func TestProducerStateNeverRegresses(t *testing.T) {
+	s, _ := newTestStore(t)
+	runID := newRun(t, s, "u")
+	pid := newProducer(t, s, runID)
+	seq := newSeq(runID, pid)
+
+	mustAppend(t, s, seq.terminal(false))
+	mustAppend(t, s, seq.rec(Record{Kind: KindProducer, ProducerState: ProducerRunning}))
+
+	m, err := s.Manifest(runID)
+	require.NoError(t, err)
+	assert.Equal(t, ProducerTerminal, m.Producers[0].State)
+}
+
+func TestOnlyParentMovesItsChild(t *testing.T) {
+	s, _ := newTestStore(t)
+	runID := newRun(t, s, "u")
+	parent := newProducer(t, s, runID)
+	stranger := newProducer(t, s, runID)
+	childID := NewID()
+	parentSeq := newSeq(runID, parent)
+	strangerSeq := newSeq(runID, stranger)
+	reserve := func(seq *producerSeq, state ProducerState) Record {
+		return seq.rec(Record{
+			Kind: KindProducer, ChildProducerID: childID, ProducerState: state,
+			Location: LocationContainer,
+		})
+	}
+
+	mustAppend(t, s, reserve(parentSeq, ProducerReserved))
+	mustAppend(t, s, reserve(strangerSeq, ProducerUnavailable))
+
+	m, err := s.Manifest(runID)
+	require.NoError(t, err)
+	child := m.Producers[m.producer(childID)]
+	assert.Equal(t, parent, child.ParentProducerID)
+	assert.Equal(t, ProducerReserved, child.State)
+
+	mustAppend(t, s, reserve(parentSeq, ProducerUnavailable))
+	m, err = s.Manifest(runID)
+	require.NoError(t, err)
+	assert.Equal(t, ProducerUnavailable, m.Producers[m.producer(childID)].State)
+}

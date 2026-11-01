@@ -287,7 +287,7 @@ func (m *RunManifest) apply(rec *Record) {
 // applyOwn applies a producer's report about itself.
 func (m *RunManifest) applyOwn(rec *Record) {
 	if i := m.producer(rec.ProducerID); i >= 0 && rec.ProducerState != "" {
-		m.Producers[i].State = rec.ProducerState
+		m.Producers[i].advance(rec.ProducerState)
 	}
 	if i := m.producer(rec.ProducerID); i >= 0 && rec.DiscoverySealed {
 		m.Producers[i].Sealed = true
@@ -299,11 +299,13 @@ func (m *RunManifest) applyOwn(rec *Record) {
 }
 
 // applyChild registers a reserved child or moves a known child to the state the
-// parent reports for it.
+// parent reports for it. Only the child's own parent may move it.
 func (m *RunManifest) applyChild(rec *Record) {
 	switch i := m.producer(rec.ChildProducerID); {
 	case i >= 0:
-		m.Producers[i].State = rec.ProducerState
+		if m.Producers[i].ParentProducerID == rec.ProducerID {
+			m.Producers[i].advance(rec.ProducerState)
+		}
 	case len(m.Producers) < MaxProducers:
 		m.Producers = append(m.Producers, ProducerRef{
 			ProducerID: rec.ChildProducerID, ParentProducerID: rec.ProducerID,
@@ -314,6 +316,25 @@ func (m *RunManifest) applyChild(rec *Record) {
 	}
 	if rec.ProducerState == ProducerUnavailable {
 		m.addCondition(ConditionSourceUnavailable)
+	}
+}
+
+func (p *ProducerRef) advance(next ProducerState) {
+	if next.rank() > p.State.rank() {
+		p.State = next
+	}
+}
+
+func (s ProducerState) rank() int {
+	switch s {
+	case ProducerReserved:
+		return 1
+	case ProducerRunning:
+		return 2
+	case ProducerTerminal, ProducerUnavailable:
+		return 3
+	default:
+		return 0
 	}
 }
 

@@ -224,6 +224,46 @@ describe("invocation table", () => {
     expect(view.exitCode).toBe(4)
   })
 
+  it("shows unfinished steps as completion unknown once the run is settled", () => {
+    const base = {
+      schemaVersion: 1,
+      kind: "invocation" as const,
+      runId: RUN,
+      producerId: PROD,
+      time: "t",
+      phase: "lifecycle",
+      hook: "postCreateCommand",
+    }
+    const table = new InvocationTable()
+    table.apply([
+      { ...base, invocationId: INV, sequence: 1, state: "running" },
+      {
+        ...base,
+        invocationId: "c0000000-0000-4000-8000-000000000003",
+        sequence: 2,
+        state: "pending",
+      },
+      {
+        ...base,
+        invocationId: "c0000000-0000-4000-8000-000000000004",
+        sequence: 3,
+        state: "skipped",
+        reason: "not_reached",
+      },
+    ])
+    expect(table.list().map((v) => v.state)).toEqual([
+      "running",
+      "pending",
+      "skipped",
+    ])
+    table.markSettled(true)
+    expect(table.list().map((v) => v.state)).toEqual([
+      "completion_unknown",
+      "completion_unknown",
+      "skipped",
+    ])
+  })
+
   it("does not let a later marker skip replace an executed result", () => {
     const table = new InvocationTable()
     const base = {

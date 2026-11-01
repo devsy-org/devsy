@@ -419,11 +419,14 @@ func insertDotfilesPhase(
 
 // runPrebuildHooks runs only onCreateCommand and updateContentCommand.
 func runPrebuildHooks(all []phaseHook) error {
-	for _, ph := range all {
+	for i, ph := range all {
 		if ph.phase != PhaseOnCreate && ph.phase != PhaseUpdateContent {
 			continue
 		}
 		if err := runPhaseHook(ph); err != nil {
+			recordNotReached(slices.DeleteFunc(slices.Clone(all[i+1:]), func(rest phaseHook) bool {
+				return prebuildExcluded(rest.phase)
+			}))
 			return err
 		}
 	}
@@ -449,13 +452,14 @@ func runWithWaitFor(
 	pastWaitFor := false
 	var deferred []phaseHook
 
-	for _, ph := range all {
+	for i, ph := range all {
 		if pastWaitFor {
 			ph.params.recordAll(workspacelogs.InvocationDeferred, "")
 			deferred = append(deferred, ph)
 			continue
 		}
 		if err := runPhaseHook(ph); err != nil {
+			recordNotReached(all[i+1:])
 			return nil, err
 		}
 		if ph.phase == waitFor {
@@ -493,8 +497,9 @@ func (d DeferredHooks) Empty() bool {
 
 // Run executes all deferred hooks sequentially.
 func (d DeferredHooks) Run() error {
-	for _, ph := range d.hooks {
+	for i, ph := range d.hooks {
 		if err := runPhaseHook(ph); err != nil {
+			recordNotReached(d.hooks[i+1:])
 			return err
 		}
 	}
@@ -582,6 +587,7 @@ func executeHookCommands(ctx context.Context, p hookRunParams, envArr []string) 
 		}
 		p.index = i
 		if err := executeLifecycleHook(ctx, p, envArr, cmd); err != nil {
+			p.recordFrom(i+1, workspacelogs.InvocationSkipped, reasonNotReached)
 			return err
 		}
 	}
@@ -795,6 +801,7 @@ const (
 	reasonAlreadyAttempted  = "already_attempted"
 	reasonPrebuildExcluded  = "prebuild_excluded"
 	reasonMarkerCheckFailed = "marker_check_failed"
+	reasonNotReached        = "not_reached"
 	reasonUserLookupFailed  = "user_lookup_failed"
 	reasonCommandNotFound   = "command_not_found"
 	reasonStartFailed       = "start_failed"
@@ -875,15 +882,28 @@ func (p hookRunParams) invocation(ctx context.Context, key string) invocationRef
 // recordAll records state for every command of the phase. A phase with no
 // commands has nothing to record.
 func (p hookRunParams) recordAll(state workspacelogs.InvocationState, reason string) {
+	p.recordFrom(0, state, reason)
+}
+
+// recordFrom records state for every command of the phase from index first on.
+func (p hookRunParams) recordFrom(first int, state workspacelogs.InvocationState, reason string) {
 	if recorderFrom(p.ctx) == nil || p.hook == "" {
 		return
 	}
-	for i, cmd := range p.commands {
-		for _, key := range slices.Sorted(maps.Keys(cmd)) {
+	for i := first; i < len(p.commands); i++ {
+		for _, key := range slices.Sorted(maps.Keys(p.commands[i])) {
 			q := p
 			q.index = i
 			q.invocation(p.ctx, key).record(state, reason)
 		}
+	}
+}
+
+// recordNotReached marks the commands of phases that never started because an
+// earlier phase failed.
+func recordNotReached(phases []phaseHook) {
+	for _, ph := range phases {
+		ph.params.recordFrom(0, workspacelogs.InvocationSkipped, reasonNotReached)
 	}
 }
 

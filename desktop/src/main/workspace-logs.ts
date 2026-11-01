@@ -287,6 +287,7 @@ class ExportFormatter {
 
   page(res: LogReadResponse): string {
     this.table.apply(res.records)
+    this.table.markSettled(res.complete && !res.hasMore)
     const parts: string[] = []
     if (!this.started) {
       this.started = true

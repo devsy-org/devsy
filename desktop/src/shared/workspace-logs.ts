@@ -524,6 +524,12 @@ function supersedes(prior: TransitionMark, next: TransitionMark): boolean {
   return next.time < prior.time
 }
 
+const IN_FLIGHT_STATES: readonly InvocationState[] = [
+  "pending",
+  "deferred",
+  "running",
+]
+
 /**
  * Folds record pages into per-invocation views. Pages may arrive in several
  * calls and late records may precede earlier ones, so each transition is
@@ -534,6 +540,7 @@ export class InvocationTable {
   private latest = new Map<string, TransitionMark>()
   private producerConditions = new Map<string, Set<CaptureCondition>>()
   private unavailable = new Set<string>()
+  private settled = false
 
   apply(records: LogRecord[]): void {
     for (const r of records) {
@@ -547,6 +554,15 @@ export class InvocationTable {
 
   markUnavailable(producerIds: string[]): void {
     for (const id of producerIds) this.unavailable.add(id)
+  }
+
+  /**
+   * Declares that every producer of the run has finished. A step that never
+   * reached a result is then shown as completion unknown instead of pending,
+   * deferred or running forever.
+   */
+  markSettled(settled: boolean): void {
+    this.settled = settled
   }
 
   list(): InvocationView[] {
@@ -627,7 +643,11 @@ export class InvocationTable {
     const missing =
       this.unavailable.has(v.producerId) ||
       conditions.some((c) => UNCAPTURED_CONDITIONS.includes(c))
-    return { ...v, conditions, uncaptured: missing }
+    const state =
+      this.settled && IN_FLIGHT_STATES.includes(v.state)
+        ? "completion_unknown"
+        : v.state
+    return { ...v, state, conditions, uncaptured: missing }
   }
 }
 

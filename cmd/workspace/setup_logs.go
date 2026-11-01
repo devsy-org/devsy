@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	"al.essio.dev/pkg/shellescape"
 	clientpkg "github.com/devsy-org/devsy/pkg/client"
@@ -692,7 +693,7 @@ func (w *plainWriter) output(rec *workspacelogs.Record) {
 		w.endLine()
 	}
 	w.key = key
-	text := rec.Text
+	text := stripControl(rec.Text)
 	if rec.Elided {
 		w.endLine()
 		text = fmt.Sprintf("[%d bytes not retained]\n", rec.Bytes)
@@ -744,18 +745,28 @@ func invocationLine(rec *workspacelogs.Record) string {
 	}
 	line := "# " + name
 	if rec.HookKey != "" {
-		line += " (" + rec.HookKey + ")"
+		line += " (" + stripControl(rec.HookKey) + ")"
 	}
 	line += ": " + string(rec.State)
 	if rec.Reason != "" {
-		line += " " + rec.Reason
+		line += " " + stripControl(rec.Reason)
 	}
 	if rec.ExitCode != nil {
 		line += fmt.Sprintf(" exit=%d", *rec.ExitCode)
 	}
 	if rec.Signal != "" {
-		line += " signal=" + rec.Signal
+		line += " signal=" + stripControl(rec.Signal)
 	}
 
 	return line
+}
+
+func stripControl(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return -1
+		}
+
+		return r
+	}, s)
 }
