@@ -197,9 +197,23 @@ func (r *Recorder) Close(state ProducerState, sealDiscovery bool) {
 // Writer returns a writer for one invocation's stream. Each writer redacts on
 // its own, so a secret split across writes is masked and streams do not mix.
 func (r *Recorder) Writer(invocationID string, stream Stream) *DiagnosticWriter {
+	return r.WriterRedacting(invocationID, stream, nil)
+}
+
+// WriterRedacting is Writer with extra values masked on top of the recorder's
+// own redactor.
+func (r *Recorder) WriterRedacting(
+	invocationID string,
+	stream Stream,
+	extra *secrets.Redactor,
+) *DiagnosticWriter {
+	redactor := r.opts.Redactor
+	if extra != nil {
+		redactor = secrets.Combine(redactor, extra)
+	}
 	return &DiagnosticWriter{
 		rec: r, invocationID: invocationID, stream: stream,
-		redactor: secrets.NewStreamingRedactor(r.opts.Redactor),
+		redactor: secrets.NewStreamingRedactor(redactor),
 	}
 }
 

@@ -203,3 +203,20 @@ func TestPrinterDrainKeepsFinalBytes(t *testing.T) {
 	assert.Contains(t, text, "fatal: final error line")
 	assert.Contains(t, text, "RUN make")
 }
+
+func TestStepMasksBuildSecretsInRecordedOutput(t *testing.T) {
+	ctx, store, runID := recordedContext(t)
+	step := StartStep(ctx, "buildkit", "TOKEN=hunter2-value")
+
+	w := step.Tee(&bytes.Buffer{}, workspacelogs.StreamCombined)
+	_, err := w.Write([]byte("using hunter2-value here\nsplit hunter2"))
+	require.NoError(t, err)
+	_, err = w.Write([]byte("-value end"))
+	require.NoError(t, err)
+	step.Finish(ctx, nil)
+
+	text := outputText(readRecords(t, store, runID), workspacelogs.StreamCombined)
+	assert.NotContains(t, text, "hunter2")
+	assert.Contains(t, text, "using ")
+	assert.Contains(t, text, " end")
+}

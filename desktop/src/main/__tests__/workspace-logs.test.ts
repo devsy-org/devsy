@@ -289,6 +289,25 @@ describe("export", () => {
     expect(await readdir(dir)).toEqual([])
   })
 
+  it("cancels an export that is waiting on a later page", async () => {
+    let started = false
+    const { reader: r } = reader(
+      (args) =>
+        new Promise((resolve) => {
+          if (args.includes("--after")) {
+            started = true
+            return
+          }
+          resolve(pagedRun()(args))
+        }),
+    )
+    const pending = r.exportRun(readArgs, join(dir, "out.txt"))
+    await vi.waitFor(() => expect(started).toBe(true))
+    r.cancel()
+    await expect(pending).rejects.toMatchObject({ code: "cancelled" })
+    expect(await readdir(dir)).toEqual([])
+  })
+
   it("fails when paging does not advance", async () => {
     const full = mockLogRunRead({ runId: MOCK_RUN_FAILED })
     const { reader: r } = reader(async () => ({

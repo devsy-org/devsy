@@ -541,7 +541,7 @@ func runStrategy(ctx context.Context, run strategyRun) error {
 	if run.platform != "" {
 		key += " " + run.platform
 	}
-	step := buildkit.StartStep(ctx, key)
+	step := buildkit.StartStep(ctx, key, run.options.BuildSecrets...)
 	err := streamed.buildStreamed(ctx, buildStreams{
 		stdout:   step.Tee(run.writer, workspacelogs.StreamStdout),
 		stderr:   step.Tee(run.writer, workspacelogs.StreamStderr),

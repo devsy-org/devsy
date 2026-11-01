@@ -93,20 +93,28 @@ export class WorkspaceLogReader {
   async runs(raw: unknown): Promise<LogIndexResponse> {
     const req = this.validated(() => validateRunsRequest(raw))
     const signal = this.begin("list")
-    const out = await this.exec(runsArgs(req), signal, "list")
     try {
-      const res = parseIndexResponse(out)
-      checkIndexIdentity(req, res)
-      return res
-    } catch (error) {
-      throw contractError(error)
+      const out = await this.exec(runsArgs(req), signal)
+      try {
+        const res = parseIndexResponse(out)
+        checkIndexIdentity(req, res)
+        return res
+      } catch (error) {
+        throw contractError(error)
+      }
+    } finally {
+      this.release("list", signal)
     }
   }
 
   async read(raw: unknown): Promise<LogReadResponse> {
     const req = this.validated(() => validateRunReadRequest(raw))
     const signal = this.begin("read")
-    return this.readPage(req, signal, "read")
+    try {
+      return await this.readPage(req, signal)
+    } finally {
+      this.release("read", signal)
+    }
   }
 
   /**
@@ -119,17 +127,21 @@ export class WorkspaceLogReader {
   ): Promise<{ bytes: number; gaps: boolean }> {
     const req = this.validated(() => validateRunExportRequest(raw))
     const signal = this.begin("export")
-    const temp = `${destination}.${randomUUID()}.tmp`
-    const handle = await this.fs.open(temp, "wx", 0o600)
     try {
-      const result = await this.writePages(req, signal, handle)
-      await handle.close()
-      await this.fs.rename(temp, destination)
-      return result
-    } catch (error) {
-      await handle.close().catch(() => undefined)
-      await this.fs.rm(temp, { force: true }).catch(() => undefined)
-      throw error
+      const temp = `${destination}.${randomUUID()}.tmp`
+      const handle = await this.fs.open(temp, "wx", 0o600)
+      try {
+        const result = await this.writePages(req, signal, handle)
+        await handle.close()
+        await this.fs.rename(temp, destination)
+        return result
+      } catch (error) {
+        await handle.close().catch(() => undefined)
+        await this.fs.rm(temp, { force: true }).catch(() => undefined)
+        throw error
+      }
+    } finally {
+      this.release("export", signal)
     }
   }
 
@@ -145,7 +157,6 @@ export class WorkspaceLogReader {
       const res = await this.readPage(
         { ...req, after, limit: EXPORT_PAGE_LIMIT },
         signal,
-        "export",
       )
       bytes += await writeText(handle, formatter.page(res), bytes)
       if (!res.hasMore) {
@@ -162,9 +173,8 @@ export class WorkspaceLogReader {
   private async readPage(
     req: LogRunReadRequest,
     signal: AbortSignal,
-    slot: Slot,
   ): Promise<LogReadResponse> {
-    const out = await this.exec(readArgs(req), signal, slot)
+    const out = await this.exec(readArgs(req), signal)
     try {
       const res = parseReadResponse(out)
       checkReadIdentity(req, res)
@@ -190,11 +200,11 @@ export class WorkspaceLogReader {
     return controller.signal
   }
 
-  private async exec(
-    args: string[],
-    signal: AbortSignal,
-    slot: Slot,
-  ): Promise<unknown> {
+  private release(slot: Slot, signal: AbortSignal): void {
+    if (this.inflight.get(slot)?.signal === signal) this.inflight.delete(slot)
+  }
+
+  private async exec(args: string[], signal: AbortSignal): Promise<unknown> {
     const child = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     let onAbort: (() => void) | undefined
@@ -224,7 +234,6 @@ export class WorkspaceLogReader {
     } finally {
       clearTimeout(timer)
       if (onAbort) signal.removeEventListener("abort", onAbort)
-      if (this.inflight.get(slot)?.signal === signal) this.inflight.delete(slot)
     }
   }
 }

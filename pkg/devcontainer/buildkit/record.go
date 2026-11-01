@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/secrets"
 	"github.com/devsy-org/devsy/pkg/workspacelogs"
 )
 
@@ -19,16 +20,20 @@ type Step struct {
 	id      string
 	started time.Time
 	writers []io.Closer
+	masked  *secrets.Redactor
 }
 
 // StartStep marks a build step running. It returns nil when no run is being
 // recorded.
-func StartStep(ctx context.Context, key string) *Step {
+func StartStep(ctx context.Context, key string, buildSecrets ...string) *Step {
 	rec := workspacelogs.RecorderFrom(ctx)
 	if rec == nil {
 		return nil
 	}
-	s := &Step{rec: rec, id: workspacelogs.NewID(), started: time.Now()}
+	s := &Step{
+		rec: rec, id: workspacelogs.NewID(), started: time.Now(),
+		masked: secrets.NewRedactor(buildSecrets),
+	}
 	rec.Invocation(workspacelogs.Invocation{
 		ID: s.id, Phase: buildPhase, Key: key, State: workspacelogs.InvocationRunning,
 	})
@@ -55,7 +60,7 @@ func (s *Step) Tee(dst io.Writer, stream workspacelogs.Stream) io.Writer {
 	if s == nil {
 		return dst
 	}
-	w := s.rec.Writer(s.id, stream)
+	w := s.rec.WriterRedacting(s.id, stream, s.masked)
 	s.writers = append(s.writers, w)
 
 	return io.MultiWriter(w, dst)

@@ -85,10 +85,11 @@ func BuildRemote(ctx context.Context, opts BuildRemoteOptions) (*config.BuildInf
 	}
 
 	if err := executeBuild(executeBuildParams{
-		Ctx:       ctx,
-		Client:    bk.Client,
-		Info:      bk.Info,
-		SolveOpts: solveOpts,
+		Ctx:          ctx,
+		Client:       bk.Client,
+		Info:         bk.Info,
+		SolveOpts:    solveOpts,
+		BuildSecrets: opts.Options.BuildSecrets,
 	}); err != nil {
 		return nil, err
 	}
@@ -471,10 +472,11 @@ func addMultiContexts(solveOpts *client.SolveOpt, buildOpts *build.BuildOptions)
 }
 
 type executeBuildParams struct {
-	Ctx       context.Context
-	Client    *client.Client
-	Info      *client.Info
-	SolveOpts client.SolveOpt
+	Ctx          context.Context
+	Client       *client.Client
+	Info         *client.Info
+	SolveOpts    client.SolveOpt
+	BuildSecrets []string
 }
 
 func executeBuild(params executeBuildParams) error {
@@ -484,7 +486,7 @@ func executeBuild(params executeBuildParams) error {
 		params.Info.BuildkitVersion.Version,
 	)
 
-	step := StartStep(params.Ctx, "buildkit-remote")
+	step := StartStep(params.Ctx, "buildkit-remote", params.BuildSecrets...)
 	err := runRemoteSolve(params, step)
 	step.Finish(params.Ctx, err)
 
