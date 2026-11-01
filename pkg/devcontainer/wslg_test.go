@@ -20,7 +20,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const wslgTestContext = "wslg-test"
+const (
+	wslgTestContext      = "wslg-test"
+	wslgTestBadFlagValue = "yes"
+)
 
 type WSLgSuite struct{ suite.Suite }
 
@@ -162,14 +165,14 @@ func (s *WSLgSuite) TestV2InvocationLabelRoundTripAndTeardown() {
 	replay, err := r.composeTeardownArgs(context.Background(), wslgTestContext)
 	s.Require().NoError(err)
 	s.Equal(":0$literal$$dollars", replay.WSLgEnv[wslg.Display])
-	s.Equal(append([]string{"--project-directory", dir}, invocation.Args...), replay.Args)
+	s.Equal(append([]string{composeProjectDirFlag, dir}, invocation.Args...), replay.Args)
 }
 
 func (s *WSLgSuite) TestCorruptReplayFailsClosed() {
 	good := composeInvocation{
 		Version:   2,
 		Directory: "project",
-		Args:      []string{"-f", "compose.yaml"},
+		Args:      []string{"-f", structuralComposeFile},
 		WSLg: &wslgReplay{
 			Target:      wslg.Target{Distro: "Ubuntu", User: "alice"},
 			Environment: map[string]string{wslg.Display: ":0"},
@@ -183,7 +186,7 @@ func (s *WSLgSuite) TestCorruptReplayFailsClosed() {
 	bad.Version = 3
 	s.Error(validateComposeInvocation(bad))
 	bad = good
-	bad.Args = []string{"--privileged", "yes"}
+	bad.Args = []string{"--privileged", wslgTestBadFlagValue}
 	s.Error(validateComposeInvocation(bad))
 	bad = good
 	bad.WSLg = &wslgReplay{

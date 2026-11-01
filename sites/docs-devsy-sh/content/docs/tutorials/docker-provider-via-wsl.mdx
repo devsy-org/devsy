@@ -97,7 +97,7 @@ See [Create a Workspace](../developing-in-workspaces/create-a-workspace.mdx).
 
 ## Experimental WSLg display discovery
 
-Windows Devsy can discover display connection values from an explicitly selected WSL2 distribution and non-root user. This is opt-in and requires the local `docker` provider with Docker Engine in that distribution, as configured above. Docker Desktop, Podman, remote providers and Devsy running inside WSL are outside this feature's scope. The Docker endpoint must reach the same distribution: its name or an SSH address alone does not establish that identity.
+Windows Devsy can discover display connection values from an explicitly selected WSL2 distribution and non-root user. This is opt-in and requires a local Docker provider (the built-in `docker` provider or a named copy of it) with Docker Engine in that distribution, as configured above. Docker Desktop, Podman, remote providers and Devsy running inside WSL are outside this feature's scope. The Docker endpoint must reach the same distribution: its name or an SSH address alone does not establish that identity.
 
 First check that a GUI application works directly in your distribution and that these commands from PowerShell return its display values. Replace the distribution and username:
 

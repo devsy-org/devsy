@@ -28,6 +28,7 @@ const (
 	FeaturesStartOverrideFilePrefix = "docker-compose.devcontainer.containerFeatures"
 
 	composeProjectNameFlag = "--project-name"
+	composeProjectDirFlag  = "--project-directory"
 )
 
 type composeProjectFiles struct {

@@ -333,7 +333,7 @@ func persistedComposeInvocationArgs(
 	if err := validateComposeInvocation(invocation); err != nil {
 		return nil, true, err
 	}
-	args := append([]string{"--project-directory", invocation.Directory}, invocation.Args...)
+	args := append([]string{composeProjectDirFlag, invocation.Directory}, invocation.Args...)
 	result := &composeTeardownInvocation{Args: args}
 	if invocation.WSLg != nil {
 		result.WSLgEnv = invocation.WSLg.Environment
@@ -450,7 +450,7 @@ func (r *runner) composeTeardownArgsWithExistingFiles(
 		}
 	}
 	return append(
-		[]string{"--project-directory", legacy.project.WorkingDir},
+		[]string{composeProjectDirFlag, legacy.project.WorkingDir},
 		files.composeGlobalArgs...), nil
 }
 

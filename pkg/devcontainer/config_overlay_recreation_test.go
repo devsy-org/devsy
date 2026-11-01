@@ -308,7 +308,7 @@ func TestComposeTeardownArgsUsesPersistedInvocation(t *testing.T) {
 
 	got, err := r.composeTeardownArgs(context.Background(), "project-name")
 	require.NoError(t, err)
-	require.Equal(t, append([]string{"--project-directory", projectDir}, args...), got.Args)
+	require.Equal(t, append([]string{composeProjectDirFlag, projectDir}, args...), got.Args)
 }
 
 func TestComposeTeardownArgsRejectsMalformedInvocation(t *testing.T) {
