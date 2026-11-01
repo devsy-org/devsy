@@ -159,6 +159,25 @@ describe("RunReader", () => {
     expect(offline.timers).toHaveLength(0)
   })
 
+  it("keeps polling while another source can still produce records", async () => {
+    const mixed = harness(async () =>
+      page([], {
+        complete: false,
+        run: summary({ commandState: "running" }),
+        availability: [
+          { producerId: PROD, available: false },
+          {
+            producerId: "b0000000-0000-4000-8000-000000000002",
+            available: true,
+          },
+        ],
+      }),
+    )
+    mixed.reader.start(request)
+    await settle()
+    expect(mixed.timers).toHaveLength(1)
+  })
+
   it("treats a null read as superseded, not as an error", async () => {
     const { reader } = harness(async () => null)
     reader.start(request)

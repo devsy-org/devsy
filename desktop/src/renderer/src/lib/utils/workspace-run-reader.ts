@@ -168,7 +168,8 @@ export class RunReader {
   private outstanding(): boolean {
     const run = this.state.run
     if (!run || this.state.complete) return false
-    if (this.state.availability?.some((a) => !a.available)) return false
+    const sources = this.state.availability
+    if (sources?.length && sources.every((a) => !a.available)) return false
     if (run.commandState === "running" || run.commandState === "pending")
       return true
     for (const state of this.invocationStates.values())
