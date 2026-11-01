@@ -24,7 +24,7 @@ func NewPublishCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	publishFlags := &PublishFlags{}
 	publishCmd := &cobra.Command{
 		Use:   "publish",
-		Short: "Package and push features to OCI registry",
+		Short: "Package and push features to an OCI registry",
 		Long: `Publish packaged dev container features to an OCI registry.
 
 Takes the path to a packaged feature directory (output of 'features package'

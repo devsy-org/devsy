@@ -43,7 +43,7 @@ func NewTestCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &TestCmd{GlobalFlags: globalFlags}
 	testCmd := &cobra.Command{
 		Use:   "test",
-		Short: "Test dev container features in isolation",
+		Short: "Test devcontainer features in isolation",
 		Long: `Run lifecycle hook tests for dev container features.
 
 Scans the project's src/ directory for features, builds test containers

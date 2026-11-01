@@ -21,6 +21,7 @@ const (
 	indent       = "  "
 	descIndent   = "      "
 	nameColumn   = 12
+	maxNameCol   = 28
 	defaultWidth = 80
 	maxWidth     = 100
 	minWidth     = 40
@@ -48,6 +49,7 @@ func render(cmd *cobra.Command, out io.Writer) {
 	var b strings.Builder
 	writeIntro(&b, cmd, width)
 	writeUsage(&b, cmd)
+	writeAliases(&b, cmd)
 	writeCommands(&b, cmd, width)
 	writeFlags(&b, cmd, width)
 	writeFooter(&b, cmd)
@@ -122,19 +124,59 @@ func writeCommands(b *strings.Builder, cmd *cobra.Command, width int) {
 
 	section(b, "SUBCOMMANDS")
 	sort.Slice(subs, func(i, j int) bool { return subs[i].Name() < subs[j].Name() })
-	for _, sub := range subs {
-		name := sub.Name()
+	labels := make([]string, len(subs))
+	col := nameColumn
+	for i, sub := range subs {
+		labels[i] = commandLabel(sub)
+		col = clamp(len(labels[i])+2, col, maxNameCol)
+	}
+	for i, sub := range subs {
 		b.WriteString(indent)
-		b.WriteString(theme.Command.Render(name))
+		b.WriteString(theme.Command.Render(sub.Name()))
+		if names := aliasNames(sub); len(names) > 0 {
+			b.WriteString(theme.Muted.Render(" (" + strings.Join(names, ", ") + ")"))
+		}
 		if sub.Short == "" {
 			b.WriteString("\n")
 			continue
 		}
-		// Pad from the plain name - the styled string carries escape bytes
+		// Pad from the plain label - the styled string carries escape bytes
 		// that would otherwise be counted as visible columns.
-		b.WriteString(strings.Repeat(" ", max(1, nameColumn-len(name))))
-		descCol := len(indent) + nameColumn
-		b.WriteString(wrapHanging(sub.Short, width, descCol))
+		b.WriteString(strings.Repeat(" ", max(1, col-len(labels[i]))))
+		b.WriteString(wrapHanging(sub.Short, width, len(indent)+col))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+}
+
+func aliasNames(cmd *cobra.Command) []string {
+	var names []string
+	for _, alias := range cmd.Aliases {
+		if alias != cmd.Name() {
+			names = append(names, alias)
+		}
+	}
+	return names
+}
+
+func commandLabel(cmd *cobra.Command) string {
+	label := cmd.Name()
+	if names := aliasNames(cmd); len(names) > 0 {
+		label += " (" + strings.Join(names, ", ") + ")"
+	}
+	return label
+}
+
+func writeAliases(b *strings.Builder, cmd *cobra.Command) {
+	names := aliasNames(cmd)
+	if len(names) == 0 || !cmd.HasParent() {
+		return
+	}
+	section(b, "ALIASES")
+	parent := cmd.Parent().CommandPath()
+	for _, name := range names {
+		b.WriteString(indent)
+		b.WriteString(parent + " " + theme.Command.Render(name))
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")

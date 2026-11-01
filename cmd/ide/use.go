@@ -30,7 +30,7 @@ func NewUseCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	useCmd := &cobra.Command{
 		Use:   "use <ide>",
-		Short: "Configure the default IDE to use (list available IDEs with 'devsy ide list')",
+		Short: "Set the default IDE",
 		Long: `Configure the default IDE to use
 
 Available IDEs can be listed with 'devsy ide list'`,

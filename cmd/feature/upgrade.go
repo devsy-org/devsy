@@ -28,7 +28,7 @@ func NewUpgradeCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &UpgradeCmd{GlobalFlags: f}
 	upgradeCmd := &cobra.Command{
 		Use:   "upgrade [feature...]",
-		Short: "Upgrades devcontainer feature versions to the latest available",
+		Short: "Upgrade devcontainer feature versions to the latest available",
 		Long: `Upgrades devcontainer feature versions in devcontainer.json to the latest
 available versions. If specific features are provided as arguments, only those
 features are upgraded. Otherwise, all outdated features are upgraded.`,
