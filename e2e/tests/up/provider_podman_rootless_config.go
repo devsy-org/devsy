@@ -43,11 +43,12 @@ var _ = ginkgo.Describe(
 				ginkgo.It("should substitute variables", func(ctx context.Context) {
 					tempDir, err := setupWorkspaceAndUp(
 						ctx,
-						"tests/up/testdata/docker-variables",
-						initialDir,
 						f,
-						"--init-env", "CUSTOM_VAR=custom_value",
-						"--init-env", "CUSTOM_IMAGE=ghcr.io/devsy-org/test-images/base:alpine",
+						workspaceSource{"tests/up/testdata/docker-variables", initialDir},
+						"--init-env",
+						"CUSTOM_VAR=custom_value",
+						"--init-env",
+						"CUSTOM_IMAGE=ghcr.io/devsy-org/test-images/base:alpine",
 					)
 					framework.ExpectNoError(err)
 
@@ -115,9 +116,8 @@ var _ = ginkgo.Describe(
 				ginkgo.It("should substitute variables with defaults", func(ctx context.Context) {
 					tempDir, err := setupWorkspaceAndUp(
 						ctx,
-						"tests/up/testdata/docker-variables-defaults",
-						initialDir,
 						f,
+						workspaceSource{"tests/up/testdata/docker-variables-defaults", initialDir},
 					)
 					framework.ExpectNoError(err)
 
@@ -274,9 +274,11 @@ var _ = ginkgo.Describe(
 
 						tempDir, err := setupWorkspaceAndUp(
 							ctx,
-							"tests/up/testdata/podman-local-env-metadata",
-							initialDir,
 							f,
+							workspaceSource{
+								"tests/up/testdata/podman-local-env-metadata",
+								initialDir,
+							},
 						)
 						framework.ExpectNoError(err)
 

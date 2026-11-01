@@ -255,19 +255,13 @@ func (f *Framework) DevsySSHOnce(
 }
 
 func (f *Framework) DevsySSHEchoTestString(ctx context.Context, workspace string) error {
-	err := f.ExecCommand(
-		ctx,
-		true,
-		true,
-		"mYtEsTsTrInG",
-		[]string{
-			cmdWorkspace,
-			cmdSSH,
-			flagCommand,
-			"echo 'bVl0RXNUc1RySW5H' | base64 -d",
-			workspace,
-		},
-	)
+	err := f.ExecCommandContaining(ctx, "mYtEsTsTrInG", []string{
+		cmdWorkspace,
+		cmdSSH,
+		flagCommand,
+		"echo 'bVl0RXNUc1RySW5H' | base64 -d",
+		workspace,
+	})
 	if err != nil {
 		return fmt.Errorf("devsy ssh failed: %s", err.Error())
 	}
@@ -278,7 +272,7 @@ func (f *Framework) DevsyProviderOptionsCheckNamespaceDescription(
 	ctx context.Context,
 	provider, searchStr string,
 ) error {
-	err := f.ExecCommand(ctx, true, true, searchStr, []string{cmdProvider, cmdGet, provider})
+	err := f.ExecCommandContaining(ctx, searchStr, []string{cmdProvider, cmdGet, provider})
 	if err != nil {
 		return fmt.Errorf(
 			"did not found value %s in devsy provider options output. error: %s",
@@ -291,7 +285,7 @@ func (f *Framework) DevsyProviderOptionsCheckNamespaceDescription(
 
 func (f *Framework) DevsyProviderList(ctx context.Context, extraArgs ...string) error {
 	baseArgs := []string{cmdProvider, cmdList}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy provider list failed: %s", err.Error())
 	}
@@ -305,18 +299,12 @@ func (f *Framework) DevsyProviderUse(
 ) error {
 	if len(extraArgs) > 0 {
 		configureArgs := []string{cmdProvider, "init", provider}
-		if err := f.ExecCommand(
-			ctx,
-			false,
-			true,
-			"",
-			append(configureArgs, extraArgs...),
-		); err != nil {
+		if err := f.ExecCommandStdout(ctx, append(configureArgs, extraArgs...)); err != nil {
 			return fmt.Errorf("devsy provider init failed: %s", err.Error())
 		}
 	}
 	useArgs := []string{cmdProvider, cmdUse, provider}
-	if err := f.ExecCommand(ctx, false, true, "", useArgs); err != nil {
+	if err := f.ExecCommandStdout(ctx, useArgs); err != nil {
 		return fmt.Errorf("devsy provider use failed: %s", err.Error())
 	}
 	return nil
@@ -345,7 +333,7 @@ func (f *Framework) DevsyStatus(
 func (f *Framework) DevsyStop(ctx context.Context, workspace string) error {
 	baseArgs := []string{cmdWorkspace, "stop"}
 	baseArgs = append(baseArgs, workspace)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy stop failed: %s", err.Error())
 	}
@@ -431,7 +419,7 @@ func (f *Framework) DevsyProviderRename(
 ) error {
 	baseArgs := []string{cmdProvider, "rename", oldName, newName}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy provider rename failed: %s", err.Error())
 	}
@@ -447,7 +435,7 @@ func (f *Framework) DevsyRename(
 ) error {
 	baseArgs := []string{cmdWorkspace, "rename", oldName, newName}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy rename failed: %s", err.Error())
 	}
@@ -471,7 +459,7 @@ func (f *Framework) DevsyProviderOptionsJSON(
 func (f *Framework) DevsyProviderSetSource(ctx context.Context, args ...string) error {
 	baseArgs := []string{cmdProvider, "set-source"}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy provider set-source failed: %s", err.Error())
 	}
@@ -481,7 +469,7 @@ func (f *Framework) DevsyProviderSetSource(ctx context.Context, args ...string) 
 func (f *Framework) DevsyMachineCreate(ctx context.Context, args []string) error {
 	baseArgs := []string{"machine", "create"}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy machine create failed: %s", err.Error())
 	}
@@ -491,7 +479,7 @@ func (f *Framework) DevsyMachineCreate(ctx context.Context, args []string) error
 func (f *Framework) DevsyMachineDelete(ctx context.Context, args []string) error {
 	baseArgs := []string{"machine", cmdDelete}
 	baseArgs = append(baseArgs, args...)
-	err := f.ExecCommand(ctx, false, false, "", baseArgs)
+	err := f.ExecCommandStdout(ctx, baseArgs)
 	if err != nil {
 		return fmt.Errorf("devsy machine delete failed: %s", err.Error())
 	}
@@ -528,7 +516,7 @@ func (f *Framework) DevsyWorkspaceDelete(
 	}
 	baseArgs = append(baseArgs, extraArgs...)
 
-	return f.ExecCommand(ctx, false, true, fmt.Sprintf("deleted workspace %s", workspace), baseArgs)
+	return f.ExecCommandStdout(ctx, baseArgs)
 }
 
 // DetachedCleanupContext bounds cleanup work to timeout without inheriting
@@ -645,7 +633,7 @@ func (f *Framework) DevsyProviderFindOption(
 	extraArgs ...string,
 ) error {
 	baseArgs := []string{cmdProvider, cmdGet, provider}
-	err := f.ExecCommand(ctx, false, true, searchStr, append(baseArgs, extraArgs...))
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy provider get failed: %s", err.Error())
 	}
@@ -658,7 +646,7 @@ func (f *Framework) DevsyContextCreate(
 	extraArgs ...string,
 ) error {
 	baseArgs := []string{contextValue, "create", name}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context create failed: %s", err.Error())
 	}
@@ -667,7 +655,7 @@ func (f *Framework) DevsyContextCreate(
 
 func (f *Framework) DevsyContextUse(ctx context.Context, name string, extraArgs ...string) error {
 	baseArgs := []string{contextValue, cmdUse, name}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context use failed: %s", err.Error())
 	}
@@ -680,7 +668,7 @@ func (f *Framework) DevsyContextDelete(
 	extraArgs ...string,
 ) error {
 	baseArgs := []string{contextValue, cmdDelete, name}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy context delete failed: %s", err.Error())
 	}
@@ -689,7 +677,7 @@ func (f *Framework) DevsyContextDelete(
 
 func (f *Framework) DevsyIDEUse(ctx context.Context, ide string, extraArgs ...string) error {
 	baseArgs := []string{"ide", cmdUse, ide}
-	err := f.ExecCommand(ctx, false, true, "", append(baseArgs, extraArgs...))
+	err := f.ExecCommandStdout(ctx, append(baseArgs, extraArgs...))
 	if err != nil {
 		return fmt.Errorf("devsy ide use failed %s", err.Error())
 	}

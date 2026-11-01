@@ -108,7 +108,7 @@ func (tc *testContext) getAppContainer(
 	ctx context.Context,
 	workspace *provider2.Workspace,
 ) (*container.InspectResponse, error) {
-	ids, err := findComposeContainer(ctx, tc.dockerHelper, tc.composeHelper, workspace.UID, "app")
+	ids, err := tc.findComposeContainer(ctx, workspace.UID, "app")
 	if err != nil {
 		return nil, err
 	}
@@ -119,11 +119,7 @@ func (tc *testContext) expectSingleAppContainer(
 	ctx context.Context,
 	workspace *provider2.Workspace,
 ) []string {
-	ids, err := findComposeContainer(
-		ctx,
-		tc.dockerHelper,
-		tc.composeHelper,
-		workspace.UID,
+	ids, err := tc.findComposeContainer(ctx, workspace.UID,
 		"app",
 	)
 	framework.ExpectNoError(err)
@@ -136,15 +132,11 @@ func (tc *testContext) findAppAndSidecar(
 	workspaceUID string,
 ) (appIDs, sidecarIDs []string) {
 	var err error
-	appIDs, err = findComposeContainer(
-		ctx, tc.dockerHelper, tc.composeHelper, workspaceUID, "app",
-	)
+	appIDs, err = tc.findComposeContainer(ctx, workspaceUID, "app")
 	framework.ExpectNoError(err)
 	gomega.Expect(appIDs).To(gomega.HaveLen(1))
 
-	sidecarIDs, err = findComposeContainer(
-		ctx, tc.dockerHelper, tc.composeHelper, workspaceUID, "sidecar",
-	)
+	sidecarIDs, err = tc.findComposeContainer(ctx, workspaceUID, "sidecar")
 	framework.ExpectNoError(err)
 	gomega.Expect(sidecarIDs).To(gomega.HaveLen(1))
 	return appIDs, sidecarIDs
@@ -198,19 +190,17 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 // findComposeContainer returns the compose container IDs for a workspace's
 // service, resolving devsy's actual project name first since it may not be
 // the sanitized workspace UID.
-//
-//nolint:revive // suite call sites pass these positionally; a struct would not read better
-func findComposeContainer(
+func (tc *testContext) findComposeContainer(
 	ctx context.Context,
-	dockerHelper *docker.DockerHelper,
-	composeHelper *compose.ComposeHelper,
 	workspaceUID, serviceName string,
 ) ([]string, error) {
-	projectName, err := composeProjectForWorkspace(ctx, dockerHelper, composeHelper, workspaceUID)
+	projectName, err := composeProjectForWorkspace(
+		ctx, tc.dockerHelper, tc.composeHelper, workspaceUID,
+	)
 	if err != nil {
 		return nil, err
 	}
-	return dockerHelper.FindContainer(ctx, []string{
+	return tc.dockerHelper.FindContainer(ctx, []string{
 		fmt.Sprintf("%s=%s", pkgconfig.ComposeProjectLabel, projectName),
 		fmt.Sprintf("%s=%s", pkgconfig.ComposeServiceLabel, serviceName),
 	})

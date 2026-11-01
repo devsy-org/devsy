@@ -51,7 +51,6 @@ func (m *mockDriver) DeleteDevContainer(_ context.Context, _ string) error {
 	return m.deleteErr
 }
 
-//nolint:revive // interface implementation requires 7 args
 func (m *mockDriver) CommandDevContainer(_ context.Context, _ *driver.CommandParams) error {
 	return nil
 }

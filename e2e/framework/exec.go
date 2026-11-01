@@ -54,12 +54,10 @@ func (f *Framework) ExecCommandStdout(ctx context.Context, args []string) error 
 	return nil
 }
 
-// ExecCommand executes the command string with the devsy test binary.
-//
-//nolint:revive // 28 call sites pass these positionally; a struct would not read better
-func (f *Framework) ExecCommand(
+// ExecCommandContaining executes the command string with the devsy test binary and
+// fails unless its stdout contains searchString.
+func (f *Framework) ExecCommandContaining(
 	ctx context.Context,
-	captureStdOut, searchForString bool,
 	searchString string,
 	args []string,
 ) error {
@@ -76,11 +74,7 @@ func (f *Framework) ExecCommand(
 		return err
 	}
 
-	if captureStdOut && searchForString {
-		if strings.Contains(execOut.String(), searchString) {
-			return nil
-		}
-
+	if !strings.Contains(execOut.String(), searchString) {
 		return fmt.Errorf("expected to find string %s in output", searchString)
 	}
 

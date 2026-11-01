@@ -139,7 +139,11 @@ func (dtc *dockerTestContext) setupAndUp(
 	testDataPath string,
 	upArgs ...string,
 ) (string, error) {
-	return setupWorkspaceAndUp(ctx, testDataPath, dtc.initialDir, dtc.f, upArgs...)
+	return setupWorkspaceAndUp(
+		ctx,
+		dtc.f,
+		workspaceSource{testDataPath, dtc.initialDir},
+		upArgs...)
 }
 
 func (dtc *dockerTestContext) findWorkspaceContainer(
@@ -231,14 +235,18 @@ func setupWorkspace(testdataPath, initialDir string, f *framework.Framework) (st
 	return tempDir, nil
 }
 
-//nolint:revive // suite call sites pass these positionally; a struct would not read better
+type workspaceSource struct {
+	testdataPath string
+	initialDir   string
+}
+
 func setupWorkspaceAndUp(
 	ctx context.Context,
-	testdataPath, initialDir string,
 	f *framework.Framework,
+	source workspaceSource,
 	args ...string,
 ) (string, error) {
-	tempDir, err := setupWorkspace(testdataPath, initialDir, f)
+	tempDir, err := setupWorkspace(source.testdataPath, source.initialDir, f)
 	if err != nil {
 		return "", err
 	}

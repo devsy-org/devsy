@@ -113,11 +113,7 @@ var _ = ginkgo.Describe(
 			err = tc.f.DevsyUp(ctx, tempDir)
 			framework.ExpectNoError(err)
 
-			restartIds, err := findComposeContainer(
-				ctx,
-				tc.dockerHelper,
-				tc.composeHelper,
-				workspace.UID,
+			restartIds, err := tc.findComposeContainer(ctx, workspace.UID,
 				"app",
 			)
 			framework.ExpectNoError(err)
@@ -145,16 +141,10 @@ var _ = ginkgo.Describe(
 			framework.ExpectNoError(err)
 
 			// Distinct markers verify the persisted selector survived restart.
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"[max]",
-				[]string{
-					cmdWorkspace, cmdSSH, flagCommand,
-					"echo \"[$SELECTED_PROFILE]\"", workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "[max]", []string{
+				cmdWorkspace, cmdSSH, flagCommand,
+				"echo \"[$SELECTED_PROFILE]\"", workspace.ID,
+			})
 			framework.ExpectNoError(err)
 
 			err = tc.f.DevsyWorkspaceDelete(ctx, tempDir)
@@ -203,16 +193,10 @@ var _ = ginkgo.Describe(
 				)
 
 				assertSelectionMarker := func(want string) {
-					err := tc.f.ExecCommand(
-						ctx,
-						true,
-						true,
-						"["+want+"]",
-						[]string{
-							cmdWorkspace, cmdSSH, flagCommand,
-							"echo \"[$SELECTION_MARKER]\"", workspace.ID,
-						},
-					)
+					err := tc.f.ExecCommandContaining(ctx, "["+want+"]", []string{
+						cmdWorkspace, cmdSSH, flagCommand,
+						"echo \"[$SELECTION_MARKER]\"", workspace.ID,
+					})
 					framework.ExpectNoError(err)
 				}
 				assertSelectionMarker("legacy")
@@ -249,10 +233,8 @@ var _ = ginkgo.Describe(
 
 			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
+			err = tc.f.ExecCommandContaining(
 				ctx,
-				true,
-				true,
 				"BAR",
 				[]string{cmdWorkspace, cmdSSH, flagCommand, "echo $FOO", workspace.ID},
 			)
@@ -296,10 +278,8 @@ var _ = ginkgo.Describe(
 
 			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
+			err = tc.f.ExecCommandContaining(
 				ctx,
-				true,
-				true,
 				"root",
 				[]string{cmdWorkspace, cmdSSH, flagCommand, "ps u -p 1", workspace.ID},
 			)
@@ -343,11 +323,7 @@ var _ = ginkgo.Describe(
 				ws, err := devsyUpAndFindWorkspace(ctx, tc.f, tempDir)
 				framework.ExpectNoError(err, "failed to setup workspace")
 
-				ids, err := findComposeContainer(
-					ctx,
-					tc.dockerHelper,
-					tc.composeHelper,
-					ws.UID,
+				ids, err := tc.findComposeContainer(ctx, ws.UID,
 					"webserver",
 				)
 				framework.ExpectNoError(err)
@@ -408,11 +384,7 @@ var _ = ginkgo.Describe(
 				ws, err := devsyUpAndFindWorkspace(ctx, tc.f, tempDir)
 				framework.ExpectNoError(err, "failed to setup workspace")
 
-				ids, err := findComposeContainer(
-					ctx,
-					tc.dockerHelper,
-					tc.composeHelper,
-					ws.UID,
+				ids, err := tc.findComposeContainer(ctx, ws.UID,
 					"devcontainer",
 				)
 				framework.ExpectNoError(err)
@@ -497,34 +469,22 @@ var _ = ginkgo.Describe(
 
 			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"/home/vscode/remote-env.out",
-				[]string{
-					cmdWorkspace,
-					cmdSSH,
-					flagCommand,
-					"ls $HOME/remote-env.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "/home/vscode/remote-env.out", []string{
+				cmdWorkspace,
+				cmdSSH,
+				flagCommand,
+				"ls $HOME/remote-env.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"BAR",
-				[]string{
-					cmdWorkspace,
-					cmdSSH,
-					flagCommand,
-					"cat $HOME/remote-env.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "BAR", []string{
+				cmdWorkspace,
+				cmdSSH,
+				flagCommand,
+				"cat $HOME/remote-env.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
@@ -538,31 +498,19 @@ var _ = ginkgo.Describe(
 			tc.expectSingleAppContainer(ctx, workspace)
 
 			// Verify SET_VAR is set
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"SET=hello",
-				[]string{
-					cmdWorkspace, cmdSSH, flagCommand,
-					"head -1 $HOME/remote-env-null.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "SET=hello", []string{
+				cmdWorkspace, cmdSSH, flagCommand,
+				"head -1 $HOME/remote-env-null.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 
 			// Verify UNSET_VAR was unset (not just empty)
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"UNSET=true",
-				[]string{
-					cmdWorkspace, cmdSSH, flagCommand,
-					"tail -1 $HOME/remote-env-null.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "UNSET=true", []string{
+				cmdWorkspace, cmdSSH, flagCommand,
+				"tail -1 $HOME/remote-env-null.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
@@ -575,19 +523,13 @@ var _ = ginkgo.Describe(
 
 			tc.expectSingleAppContainer(ctx, workspace)
 
-			err = tc.f.ExecCommand(
-				ctx,
-				true,
-				true,
-				"root",
-				[]string{
-					cmdWorkspace,
-					cmdSSH,
-					flagCommand,
-					"cat $HOME/remote-user.out",
-					workspace.ID,
-				},
-			)
+			err = tc.f.ExecCommandContaining(ctx, "root", []string{
+				cmdWorkspace,
+				cmdSSH,
+				flagCommand,
+				"cat $HOME/remote-user.out",
+				workspace.ID,
+			})
 			framework.ExpectNoError(err)
 		}, ginkgo.SpecTimeout(framework.TimeoutLong()))
 
