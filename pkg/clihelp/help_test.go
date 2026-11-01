@@ -179,4 +179,22 @@ func TestRender_SubcommandDescriptionsAlign(t *testing.T) {
 	body := sectionBody(t, renderHelp(t, root), "SUBCOMMANDS:")
 	assert.Contains(t, body, "resolve-dependencies  Resolve order")
 	assert.Contains(t, body, "loose                 A loose command")
+	assert.Contains(t, body, "workspace (ws)        Manage workspaces")
+}
+
+func TestRender_LongAliasedLabelStaysInsideWidth(t *testing.T) {
+	root := newTestRoot(t)
+	root.AddCommand(&cobra.Command{
+		Use:     "describe",
+		Aliases: []string{"show", "inspect", "details", "info"},
+		Short:   "Show details",
+		Run:     func(*cobra.Command, []string) {},
+	})
+
+	body := sectionBody(t, renderHelp(t, root), "SUBCOMMANDS:")
+	for line := range strings.SplitSeq(body, "\n") {
+		assert.LessOrEqual(t, len(line), defaultWidth, line)
+	}
+	assert.Contains(t, body, "describe (show, inspect, details, info)\n")
+	assert.Contains(t, body, "\n"+strings.Repeat(" ", 28)+"Show details")
 }

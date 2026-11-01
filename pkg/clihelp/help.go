@@ -124,11 +124,14 @@ func writeCommands(b *strings.Builder, cmd *cobra.Command, width int) {
 
 	section(b, "SUBCOMMANDS")
 	sort.Slice(subs, func(i, j int) bool { return subs[i].Name() < subs[j].Name() })
+	// Keep the description column inside the terminal so wrapped text never
+	// runs past the right edge.
+	limit := clamp(width/3, nameColumn, maxNameCol)
 	labels := make([]string, len(subs))
 	col := nameColumn
 	for i, sub := range subs {
 		labels[i] = commandLabel(sub)
-		col = clamp(len(labels[i])+2, col, maxNameCol)
+		col = clamp(len(labels[i])+2, col, limit)
 	}
 	for i, sub := range subs {
 		b.WriteString(indent)
@@ -142,7 +145,12 @@ func writeCommands(b *strings.Builder, cmd *cobra.Command, width int) {
 		}
 		// Pad from the plain label - the styled string carries escape bytes
 		// that would otherwise be counted as visible columns.
-		b.WriteString(strings.Repeat(" ", max(1, col-len(labels[i]))))
+		if len(labels[i]) >= col {
+			// Label overflows the column: start the description on its own line.
+			b.WriteString("\n" + strings.Repeat(" ", len(indent)+col))
+		} else {
+			b.WriteString(strings.Repeat(" ", col-len(labels[i])))
+		}
 		b.WriteString(wrapHanging(sub.Short, width, len(indent)+col))
 		b.WriteString("\n")
 	}
