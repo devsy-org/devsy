@@ -252,9 +252,16 @@ func (r *runner) getImageBuildInfoFromImage(
 	substitutionContext *config.SubstitutionContext,
 	imageName string,
 ) (*config.ImageBuildInfo, error) {
-	imageDetails, err := r.inspectImage(ctx, imageName)
-	if err != nil {
-		return nil, err
+	imageDetails := r.imageDetails
+	var err error
+	if imageDetails != nil && imageName != r.imageDetailsImage {
+		return nil, fmt.Errorf("configured image details do not match selected image %q", imageName)
+	}
+	if imageDetails == nil {
+		imageDetails, err = r.inspectImage(ctx, imageName)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return imageBuildInfoFromDetails(substitutionContext, imageDetails)
 }

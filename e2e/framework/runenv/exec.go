@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/devsy-org/devsy/pkg/docker"
 )
 
 const (
@@ -39,6 +41,9 @@ func (ExecRunner) Run(ctx context.Context, c Command) (CommandResult, error) {
 	stdout, stderr := newTailBuffer(maxCaptureBytes), newTailBuffer(maxCaptureBytes)
 	//nolint:gosec // G204: ExecRunner runs the command its caller specified, by design
 	cmd := exec.CommandContext(ctx, c.Path, c.Args...)
+	if c.CancelProcessGroup {
+		docker.PrepareForGroupCancellation(cmd)
+	}
 	cmd.Dir = c.Dir
 	cmd.Env = overlayEnv(os.Environ(), c.Env, runtime.GOOS == "windows")
 	cmd.WaitDelay = waitDelay

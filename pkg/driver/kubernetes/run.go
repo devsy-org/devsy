@@ -555,7 +555,7 @@ func (k *KubernetesDriver) runPod(
 	var err error
 
 	// set configuration before creating the pod
-	lastAppliedConfigRaw, err := json.Marshal(k.options)
+	lastAppliedConfigRaw, err := json.Marshal(withoutLocalOptions(k.options))
 	if err != nil {
 		return fmt.Errorf("marshal last applied config: %w", err)
 	}
@@ -750,18 +750,26 @@ func getDaemonSecretName(workspaceID string) string {
 
 func optionsEqual(a, b *provider2.ProviderKubernetesDriverConfig) bool {
 	// copy a and b and the compare them without the context, config, namespace and podTimeout
-	aCopy := *a
+	aCopy := withoutLocalOptions(a)
 	aCopy.KubernetesContext = ""
 	aCopy.KubernetesConfig = ""
 	aCopy.KubernetesNamespace = ""
 	aCopy.PodTimeout = ""
 
-	bCopy := *b
+	bCopy := withoutLocalOptions(b)
 	bCopy.KubernetesContext = ""
 	bCopy.KubernetesConfig = ""
 	bCopy.KubernetesNamespace = ""
 	bCopy.PodTimeout = ""
 	return aCopy == bCopy
+}
+
+func withoutLocalOptions(
+	options *provider2.ProviderKubernetesDriverConfig,
+) provider2.ProviderKubernetesDriverConfig {
+	c := *options
+	c.ImageConfigFile = ""
+	return c
 }
 
 func (k *KubernetesDriver) createNamespace(ctx context.Context) error {
