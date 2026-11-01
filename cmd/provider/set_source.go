@@ -32,7 +32,7 @@ func NewSetSourceCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	setSourceCmd := &cobra.Command{
 		Use:   "set-source [name] [name, GitHub link, URL or path]",
-		Short: "Set or change a provider's source (replaces the registered name, repo, URL, or path)",
+		Short: "Set a provider's source",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			ctx := cobraCmd.Context()
 

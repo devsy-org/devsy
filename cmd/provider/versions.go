@@ -30,7 +30,7 @@ func NewVersionsCmd(f *flags.GlobalFlags) *cobra.Command {
 	cmd := &VersionsCmd{GlobalFlags: f}
 	versionsCmd := &cobra.Command{
 		Use:   "versions [name]",
-		Short: "List available upstream versions for a provider",
+		Short: "List upstream versions for a provider",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			devsyConfig, err := config.LoadConfig(cmd.Context, cmd.Provider)

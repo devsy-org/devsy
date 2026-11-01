@@ -76,7 +76,7 @@ func NewDiagnosticsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	cmd := &DiagnosticsCmd{GlobalFlags: globalFlags}
 	c := &cobra.Command{
 		Use:   "diagnostics [name]",
-		Short: "Show Devsy machine diagnostic events and daemon status",
+		Short: "Show machine diagnostic events and daemon status",
 		RunE:  func(c *cobra.Command, args []string) error { return cmd.Run(c.Context(), args) },
 	}
 	cliflags.Add(

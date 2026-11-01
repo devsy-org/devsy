@@ -24,7 +24,7 @@ import (
 func NewTaskCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	taskCmd := &cobra.Command{
 		Use:   "task",
-		Short: "Manage background tasks (e.g. from 'up --detach')",
+		Short: "Manage background tasks",
 	}
 	taskCmd.AddCommand(newTaskListCmd(globalFlags))
 	taskCmd.AddCommand(newTaskGetCmd(globalFlags))
@@ -43,7 +43,7 @@ func newTaskListCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List background tasks, most recently started first",
+		Short:   "List background tasks",
 		Args:    cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			return cmd.run()

@@ -37,8 +37,10 @@ func NewResolveDepsCmd(globalFlags *flags.GlobalFlags) *cobra.Command {
 	resolveDepsCmd := &cobra.Command{
 		Use:   "resolve-dependencies",
 		Short: "Resolve feature install order from a devcontainer.json",
-		Long: `Read a devcontainer.json and output the resolved feature
-install order based on dependency declarations and install ordering.`,
+		Long: `Resolve feature install order from a devcontainer.json.
+
+Read the file and print the install order from its dependency and ordering
+declarations.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cobraCmd *cobra.Command, _ []string) error {

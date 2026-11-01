@@ -87,7 +87,7 @@ func NewSSHCmd(flags *flags.GlobalFlags) *cobra.Command {
 	}
 	sshCmd := &cobra.Command{
 		Use:   "ssh [name]",
-		Short: "SSH into the machine",
+		Short: "Open an SSH session to a machine",
 		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			return cmd.Run(cobraCmd.Context(), args)
 		},
