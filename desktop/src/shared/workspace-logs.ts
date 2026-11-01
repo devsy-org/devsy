@@ -505,8 +505,10 @@ function stateRank(state: InvocationState | undefined): number {
       return 1
     case "running":
       return 2
-    default:
+    case "skipped":
       return 3
+    default:
+      return 4
   }
 }
 

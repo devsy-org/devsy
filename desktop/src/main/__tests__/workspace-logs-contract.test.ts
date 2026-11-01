@@ -223,6 +223,40 @@ describe("invocation table", () => {
     expect(view.state).toBe("failed")
     expect(view.exitCode).toBe(4)
   })
+
+  it("does not let a later marker skip replace an executed result", () => {
+    const table = new InvocationTable()
+    const base = {
+      schemaVersion: 1,
+      kind: "invocation" as const,
+      runId: RUN,
+      invocationId: INV,
+      phase: "lifecycle",
+      hook: "postCreateCommand",
+    }
+    const worker = "b0000000-0000-4000-8000-000000000002"
+    table.apply([
+      {
+        ...base,
+        producerId: PROD,
+        sequence: 4,
+        time: "2026-01-01T00:00:01Z",
+        state: "succeeded",
+        exitCode: 0,
+      },
+      {
+        ...base,
+        producerId: worker,
+        sequence: 1,
+        time: "2026-01-01T00:00:09Z",
+        state: "skipped",
+        reason: "already_attempted",
+      },
+    ])
+    const [view] = table.list()
+    expect(view.state).toBe("succeeded")
+    expect(view.exitCode).toBe(0)
+  })
 })
 
 describe("transcript builder", () => {
