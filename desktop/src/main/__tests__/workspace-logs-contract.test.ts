@@ -190,6 +190,39 @@ describe("invocation table", () => {
     ])
     expect(table.list()[0].state).toBe("succeeded")
   })
+
+  it("keeps a worker result recorded at a lower sequence than the parent plan", () => {
+    const table = new InvocationTable()
+    const base = {
+      schemaVersion: 1,
+      kind: "invocation" as const,
+      runId: RUN,
+      invocationId: INV,
+      phase: "lifecycle",
+      hook: "postCreateCommand",
+    }
+    const worker = "b0000000-0000-4000-8000-000000000002"
+    table.apply([
+      {
+        ...base,
+        producerId: PROD,
+        sequence: 9,
+        time: "2026-01-01T00:00:01Z",
+        state: "deferred",
+      },
+      {
+        ...base,
+        producerId: worker,
+        sequence: 2,
+        time: "2026-01-01T00:00:05Z",
+        state: "failed",
+        exitCode: 4,
+      },
+    ])
+    const [view] = table.list()
+    expect(view.state).toBe("failed")
+    expect(view.exitCode).toBe(4)
+  })
 })
 
 describe("transcript builder", () => {

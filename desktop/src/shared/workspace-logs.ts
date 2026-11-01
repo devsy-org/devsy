@@ -490,6 +490,38 @@ const UNCAPTURED_CONDITIONS: readonly CaptureCondition[] = [
   "malformed_record",
 ]
 
+interface TransitionMark {
+  producerId: string
+  sequence: number
+  time: number
+  rank: number
+}
+
+function stateRank(state: InvocationState | undefined): number {
+  switch (state) {
+    case "pending":
+      return 0
+    case "deferred":
+      return 1
+    case "running":
+      return 2
+    default:
+      return 3
+  }
+}
+
+/**
+ * Sequences are only comparable inside one producer. Across producers a
+ * terminal state is never replaced by an earlier phase, and equal phases fall
+ * back to record time.
+ */
+function supersedes(prior: TransitionMark, next: TransitionMark): boolean {
+  if (prior.producerId === next.producerId)
+    return next.sequence < prior.sequence
+  if (prior.rank !== next.rank) return next.rank < prior.rank
+  return next.time < prior.time
+}
+
 /**
  * Folds record pages into per-invocation views. Pages may arrive in several
  * calls and late records may precede earlier ones, so each transition is
@@ -497,7 +529,7 @@ const UNCAPTURED_CONDITIONS: readonly CaptureCondition[] = [
  */
 export class InvocationTable {
   private views = new Map<string, InvocationView>()
-  private lastSeq = new Map<string, number>()
+  private latest = new Map<string, TransitionMark>()
   private producerConditions = new Map<string, Set<CaptureCondition>>()
   private unavailable = new Set<string>()
 
@@ -543,9 +575,15 @@ export class InvocationTable {
 
   private transition(r: LogRecord): void {
     const v = this.view(r)
-    const seqKey = `${r.invocationId}`
-    if (r.sequence < (this.lastSeq.get(seqKey) ?? 0)) return
-    this.lastSeq.set(seqKey, r.sequence)
+    const mark: TransitionMark = {
+      producerId: r.producerId,
+      sequence: r.sequence,
+      time: Date.parse(r.time) || 0,
+      rank: stateRank(r.state),
+    }
+    const prior = this.latest.get(v.id)
+    if (prior && supersedes(prior, mark)) return
+    this.latest.set(v.id, mark)
     v.state = r.state as InvocationState
     v.phase = r.phase ?? v.phase
     v.hook = r.hook ?? v.hook
