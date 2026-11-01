@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
+	goruntime "runtime"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/devsy-org/devsy/e2e/framework/runenv"
 	pkgconfig "github.com/devsy-org/devsy/pkg/config"
 	agentd "github.com/devsy-org/devsy/pkg/daemon/agent"
 	"github.com/devsy-org/devsy/pkg/devcontainer/config"
+	"github.com/devsy-org/devsy/pkg/dockercredentials"
 	"github.com/devsy-org/devsy/pkg/driver"
 	provider2 "github.com/devsy-org/devsy/pkg/provider"
 	"github.com/stretchr/testify/assert"
@@ -219,6 +223,43 @@ func TestReconcileReplacesPodWhenOptionsChanged(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, reused)
 	assert.False(t, c.podExists(t))
+}
+
+func TestReconcileReusesPodWhenOnlyImageConfigFileChanged(t *testing.T) {
+	c := newFakeCluster(t)
+	c.k.options.ImageConfigFile = "/new/image-config.json"
+	c.putPod(t, c.pod(t, podSpec{
+		uid:   "u1",
+		phase: corev1.PodRunning,
+		options: &provider2.ProviderKubernetesDriverConfig{
+			PodTimeout:      "2s",
+			DiskSize:        "1Gi",
+			ImageConfigFile: "/old/image-config.json",
+		},
+		devsy: &corev1.ContainerStatus{
+			State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+		},
+	}))
+
+	reused, err := c.reconcile(context.Background())
+
+	require.NoError(t, err)
+	assert.True(t, reused)
+	assert.Zero(t, c.deleteCalls())
+}
+
+func TestWithoutLocalOptionsDropsImageConfigFile(t *testing.T) {
+	options := &provider2.ProviderKubernetesDriverConfig{
+		DiskSize:        "1Gi",
+		ImageConfigFile: "/home/me/image-config.json",
+	}
+
+	raw, err := json.Marshal(withoutLocalOptions(options))
+
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "imageConfigFile")
+	assert.Contains(t, string(raw), "1Gi")
+	assert.Equal(t, "/home/me/image-config.json", options.ImageConfigFile)
 }
 
 func TestReconcilePendingPodWaitsForReadiness(t *testing.T) {
@@ -1190,4 +1231,78 @@ func assertOnlyReads(t *testing.T, c *fakeCluster) {
 
 func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)
+}
+
+func credentialHelperMarker(t *testing.T) string {
+	t.Helper()
+	if goruntime.GOOS == "windows" {
+		t.Skip("credential helper spy requires a Unix shell")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "called")
+	helper := filepath.Join(dir, "docker-credential-devsyspy")
+	script := "#!/bin/sh\nprintf called > \"$DEVSY_TEST_CREDENTIAL_MARKER\"\n" +
+		"printf '{\"Username\":\"test\",\"Secret\":\"test\"}\\n'\n"
+	require.NoError(t, (runenv.OsFileStore{}).WriteFile(helper, []byte(script), 0o700))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"credsStore":"devsyspy"}`), 0o600),
+	)
+	t.Setenv("DOCKER_CONFIG", dir)
+	t.Setenv("DEVSY_TEST_CREDENTIAL_MARKER", marker)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	_, err := dockercredentials.GetAuthConfig("registry.example.com")
+	require.NoError(t, err)
+	require.FileExists(t, marker)
+	require.NoError(t, os.Remove(marker))
+	return marker
+}
+
+func TestImageConfigPreservesClusterPullCredentials(t *testing.T) {
+	marker := credentialHelperMarker(t)
+	const adminSecret = "admin-pull"
+	account := &corev1.ServiceAccount{
+		ObjectMeta:       metav1.ObjectMeta{Name: "cluster-account", Namespace: testNamespace},
+		ImagePullSecrets: []corev1.LocalObjectReference{{Name: adminSecret}},
+	}
+	c := newFakeCluster(t, account)
+	c.k.options.ImageConfigFile = "/local/image.json"
+	c.k.options.ServiceAccount = account.Name
+	c.k.options.KubernetesPullSecretsEnabled = pkgconfig.BoolFalse
+	c.k.agentConfig.InjectDockerCredentials = pkgconfig.BoolFalse
+	template := filepath.Join(t.TempDir(), "pod.yaml")
+	require.NoError(t, writeFile(template, "spec:\n  imagePullSecrets:\n  - name: template-pull\n"))
+	c.k.options.PodManifestTemplate = template
+	reads := 0
+	c.cs.PrependReactor(
+		"get",
+		"secrets",
+		func(action clienttesting.Action) (bool, runtime.Object, error) {
+			if action.(clienttesting.GetAction).GetName() != adminSecret {
+				return false, nil, nil
+			}
+			reads++
+			return true, nil, kerrors.NewForbidden(
+				schema.GroupResource{Resource: "secrets"},
+				adminSecret,
+				errors.New("denied"),
+			)
+		},
+	)
+	options := runOptionsForWorkspace("1m")
+	options.Image = testImage
+	pod, err := c.k.buildPod(context.Background(), testPodID, options, false)
+	require.NoError(t, err)
+	assert.Equal(t, account.Name, pod.Spec.ServiceAccountName)
+	assert.Equal(
+		t,
+		[]corev1.LocalObjectReference{{Name: "template-pull"}},
+		pod.Spec.ImagePullSecrets,
+	)
+	saved, err := c.cs.CoreV1().ServiceAccounts(testNamespace).
+		Get(context.Background(), account.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, account.ImagePullSecrets, saved.ImagePullSecrets)
+	assert.Zero(t, reads)
+	assert.NoFileExists(t, marker)
 }

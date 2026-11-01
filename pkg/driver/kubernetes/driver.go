@@ -57,6 +57,7 @@ var (
 
 	_ driver.ReprovisioningDriver = (*KubernetesDriver)(nil)
 	_ driver.Preflighter          = (*KubernetesDriver)(nil)
+	_ driver.ImageDetailsDriver   = (*KubernetesDriver)(nil)
 )
 
 // Preflight verifies the cluster's API server is reachable. A remote cluster

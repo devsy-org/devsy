@@ -55,6 +55,15 @@ type WorkspaceChowner interface {
 	RequiresWorkspaceChown() bool
 }
 
+type ImageDetailsRequest struct {
+	ImageName         string
+	UnsupportedReason string
+}
+
+type ImageDetailsDriver interface {
+	ImageDetails(request ImageDetailsRequest) (*config.ImageDetails, error)
+}
+
 // ManagedLifecycleDriver identifies drivers that can run the container's main
 // process as the Devsy daemon. Actual ownership also depends on the run topology.
 type ManagedLifecycleDriver interface {

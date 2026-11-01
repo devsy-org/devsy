@@ -410,6 +410,7 @@ func (r *runner) compressWorkspaceConfig(
 		ContentFolder:    r.workspaceConfig.ContentFolder,
 		SetupRun:         r.setupRunRef(cliOptions),
 	}
+	workspaceConfig.Agent.Kubernetes.ImageConfigFile = ""
 	lifecycle, err := r.lifecycleOptions(mergedConfig, dockerless, imageEntrypoint)
 	if err != nil {
 		return "", err

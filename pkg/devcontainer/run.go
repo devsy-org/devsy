@@ -102,8 +102,10 @@ type runner struct {
 	id       string
 	idLabels []string
 
-	recovering      bool
-	overlayExisting *config.ContainerDetails
+	recovering        bool
+	overlayExisting   *config.ContainerDetails
+	imageDetails      *config.ImageDetails
+	imageDetailsImage string
 
 	reporter status.Reporter
 }
@@ -151,6 +153,8 @@ func (r *runner) Up(
 	timeout time.Duration,
 	reporter status.Reporter,
 ) (*config.Result, error) {
+	r.imageDetails = nil
+	r.imageDetailsImage = ""
 	if reporter == nil {
 		reporter = status.Nop()
 	}
@@ -250,6 +254,9 @@ func (r *runner) afterInitialize(
 	options UpOptions,
 	defaultSelection bool,
 ) error {
+	if err := r.prepareImageDetails(substitutedConfig, options, defaultSelection); err != nil {
+		return err
+	}
 	if defaultSelection {
 		// Detection follows initialization so the hook can generate project files.
 		if err := r.resolveDefaultContainerConfig(substitutedConfig.Config, options); err != nil {

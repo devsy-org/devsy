@@ -452,7 +452,8 @@ type ProviderKubernetesDriverConfig struct {
 	ClusterRole                  string `json:"clusterRole,omitempty"`
 	ServiceAccount               string `json:"serviceAccount,omitempty"`
 
-	Architecture string `json:"architecture,omitempty"`
+	Architecture    string `json:"architecture,omitempty"`
+	ImageConfigFile string `json:"imageConfigFile,omitempty"`
 	// InactivityTimeout is a deprecated alias of Agent.ContainerTimeout, used only
 	// when the canonical field is empty.
 	InactivityTimeout string `json:"inactivityTimeout,omitempty"`
