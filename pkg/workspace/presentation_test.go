@@ -32,6 +32,8 @@ func TestPresentationTestSuite(t *testing.T) {
 
 func (s *PresentationTestSuite) SetupTest() {
 	setupTestPathManager(s.T())
+	s.T().Setenv(config.EnvHome, s.T().TempDir())
+	config.ResetPathManager()
 	s.devsyConfig = &config.Config{DefaultContext: presentationContext}
 	s.sshDir = s.T().TempDir()
 }

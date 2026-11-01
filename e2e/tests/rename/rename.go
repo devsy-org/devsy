@@ -289,8 +289,7 @@ var _ = ginkgo.Describe(
 				framework.ExpectNoError(err)
 				gomega.Expect(string(status.State)).To(gomega.Equal("Running"))
 
-				tempDir := framework.CopyTestdata("tests/up/testdata/no-devcontainer", initialDir)
-				err = f.DevsyUp(ctx, tempDir, "--id", otherWorkspaceName)
+				err = f.DevsyUp(ctx, before.Source.LocalFolder, "--id", otherWorkspaceName)
 				framework.ExpectNoError(err)
 
 				err = f.DevsyWorkspaceEdit(ctx, otherWorkspaceName,
